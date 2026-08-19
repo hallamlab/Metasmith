@@ -1,17 +1,15 @@
-"""THE QUESTION -- how many DH10B ORFs can be adjudicated against curated EC truth,
-and does that cohort match the 1,288 the scadc replication reports?
-
-SCOPE   DH10B only. The cohort is rebuilt by the source study's own method; see
-        _common.load_cohort. EPI300 is not built here -- the seven-lane table's
-        N = 1,280 is EPI300 and is a different cohort.
-INPUT   data/fabfos/benchmarks/lane_dh10b/{annotations/dh10b.faa,generators/sprot_k12.tsv}
-        data/fabfos/originals/metanetx/4.5/reac_prop.tsv
-METHOD  md5 of each Swiss-Prot K-12 sequence carrying a level-4 EC, matched against
-        the md5 of each DH10B ORF; EC fanned out to MNXR through reac_prop classifs.
-ENV     PYTHONPATH="$PWD/src" mamba run -n msm python \
-            research/fabfos/annotation_lanes/pbert/build_cohort.py
-OUT     research/fabfos/annotation_lanes/pbert/cohort_dh10b.tsv   (committed; small)
-"""
+# THE QUESTION -- how many DH10B ORFs can be adjudicated against curated EC truth,
+# and does that cohort match the 1,288 the scadc replication reports?
+#
+# SCOPE   DH10B only. The cohort is rebuilt by the source study's own method; see
+#         _common.load_cohort. EPI300 is not built here -- the seven-lane table's
+#         N = 1,280 is EPI300 and is a different cohort.
+# INPUT   data/fabfos/benchmarks/lane_dh10b/{annotations/dh10b.faa,generators/sprot_k12.tsv}
+#         data/fabfos/originals/metanetx/4.5/reac_prop.tsv
+# METHOD  md5 of each Swiss-Prot K-12 sequence carrying a level-4 EC, matched against
+#         the md5 of each DH10B ORF; EC fanned out to MNXR through reac_prop classifs.
+# ENV     PYTHONPATH="$PWD/src" mamba run -n msm python             research/fabfos/annotation_lanes/pbert/build_cohort.py
+# OUT     research/fabfos/annotation_lanes/pbert/cohort_dh10b.tsv   (committed; small)
 from __future__ import annotations
 
 import sys

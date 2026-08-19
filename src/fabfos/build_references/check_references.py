@@ -62,10 +62,6 @@ def note(msg: str) -> None:
 
 
 def find(results: Path, name: str) -> Path | None:
-    """The first FILE matching `name`. Directories are skipped rather than returned:
-    a bake chunk names its seam directory `aam_pairs/`, so `*aam_pairs*` matched the
-    directory, and `read_parquet` died on the zero-byte `emptied.txt` inside it.
-    """
     hits = sorted(p for p in results.rglob(name) if p.is_file())
     return hits[0] if hits else None
 
@@ -103,13 +99,6 @@ def check_bake(vocab_p: Path, pairs_p: Path, dir_p: Path) -> dict | None:
 
 def check_equivalence(ident: dict, vocab_p: Path, pairs_p: Path, dir_p: Path,
                       src_pairs: Path, src_dir: Path) -> None:
-    """The compiled tables must build the same graph as the reference builder.
-
-    ``ecspr.model.build.graph_from_pairs`` works on the STRING tables and is the definition;
-    ``ecspr.bake.encoding.compile_atom_graph`` works on the compiled ones and is the thing being
-    checked. Node ORDER differs -- the baked table is sorted, so first-seen order differs
-    -- which is why nodes are compared as sets and conductances sorted before comparison.
-    """
     print("\nequivalence -- the compiled tables build the same graph as the builder")
     try:
         from ecspr.model.build import graph_from_pairs
@@ -162,17 +151,16 @@ MIRROR = "fabfos._deprecated_canon"
 
 
 def check_direction_constants() -> None:
-    """The build-side copy of the DIR_* block must equal the run-side one.
-
-    See the module docstring: these are the same numbers used at two different times, and
-    a divergence is invisible from either side alone.
-
-    A FAILURE TO IMPORT IS A FAILURE, not a note. This check spent a generation passing
-    because it named `fabfos.canon`, which had been renamed to `fabfos._deprecated_canon`
-    -- the ImportError was caught, reported as a note, and the mirror it exists to guard
-    went unchecked through every run since. An unimportable mirror and a diverged one are
-    the same outcome for the reader, so they get the same verdict.
-    """
+    # The build-side copy of the DIR_* block must equal the run-side one.
+    #
+    # See the module docstring: these are the same numbers used at two different times, and
+    # a divergence is invisible from either side alone.
+    #
+    # A FAILURE TO IMPORT IS A FAILURE, not a note. This check spent a generation passing
+    # because it named `fabfos.canon`, which had been renamed to `fabfos._deprecated_canon`
+    # -- the ImportError was caught, reported as a note, and the mirror it exists to guard
+    # went unchecked through every run since. An unimportable mirror and a diverged one are
+    # the same outcome for the reader, so they get the same verdict.
     print("\nconstants -- the direction ensemble's two copies agree")
     sys.path.insert(0, str(REPO / "src"))
     try:
@@ -236,7 +224,6 @@ def check_gem_tables(results: Path) -> None:
         # They share iECDH10B_1368 and the measured edit list is EMPTY, so identical is
         # the correct outcome; a divergence means one of them silently used another model.
         check("EPI300 and DH10B tables are identical apart from the host tag", same)
-
 
 
 # =====================================================================

@@ -45,15 +45,14 @@ CLOUD, ACCENT, GRID = "#2a78d6", "#eb6834", "#dedcd6"
 
 
 def clip_ratios(ratios: dict, clip: float) -> dict:
-    """Cap every reaction's directional asymmetry at `clip`:1, both ways.
-
-    `graph_from_pairs` treats a raw ratio as g_rev/g_fwd against the equation as MetaNetX
-    wrote it, then normalises to the favoured branch (see build.py) -- so clamping the raw
-    value into [1/clip, clip] before that step caps the favoured:disfavoured conductance
-    ratio at `clip`:1 regardless of which way the equation happens to be written. ratio==1.0
-    (zero ensemble votes, e.g. glgA/glgP) is unaffected either way -- there is nothing to
-    clip.
-    """
+    # Cap every reaction's directional asymmetry at `clip`:1, both ways.
+    #
+    # `graph_from_pairs` treats a raw ratio as g_rev/g_fwd against the equation as MetaNetX
+    # wrote it, then normalises to the favoured branch (see build.py) -- so clamping the raw
+    # value into [1/clip, clip] before that step caps the favoured:disfavoured conductance
+    # ratio at `clip`:1 regardless of which way the equation happens to be written. ratio==1.0
+    # (zero ensemble votes, e.g. glgA/glgP) is unaffected either way -- there is nothing to
+    # clip.
     lo, hi = 1.0 / clip, clip
     return {r: min(max(v, lo), hi) for r, v in ratios.items()}
 
@@ -97,7 +96,6 @@ def compute(a) -> pd.DataFrame:
 
 
 def symlog_bins(v, thr, n=48):
-    """Bin edges matching a symlog axis: a linear core, log wings on each side."""
     lo, hi = float(np.min(v)), float(np.max(v))
     edges = [-thr, thr]
     if lo < -thr:
@@ -125,8 +123,6 @@ def main():
     CACHE.mkdir(exist_ok=True)
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     tag_clip = f"_clip{a.clip_ratio:g}" if a.clip_ratio else ""
-    # `FABFOS_BAKE` names itself in every output, so a re-baked reference's figure sits
-    # beside the pinned one instead of overwriting the thing it is meant to be compared to.
     sys.path.insert(0, str(Path(__file__).resolve().parent))
     import bake_pairs
     tag_clip += bake_pairs.tag()
@@ -140,8 +136,6 @@ def main():
         print(f"[div] wrote {tsv}", file=sys.stderr)
 
     x, y = df.d_glgC.to_numpy(), df.d_talA.to_numpy()
-    # Below this a delta is solver noise rather than a response; it also sets the width of
-    # the symlog linear core, so the dead pile lands in one bin instead of smearing.
     thr = 1e-12
 
     import matplotlib
@@ -156,9 +150,9 @@ def main():
     gs = GridSpec(2, 2, figure=fig, width_ratios=(1, 3.2), height_ratios=(1, 3.2),
                   wspace=0.06, hspace=0.06, left=0.05, right=0.855,
                   bottom=0.09, top=0.97)
-    ax = fig.add_subplot(gs[1, 1])                       # scatter, bottom-right
-    axx = fig.add_subplot(gs[0, 1], sharex=ax)           # x marginal, above it
-    axy = fig.add_subplot(gs[1, 0], sharey=ax)           # y marginal, left of it
+    ax = fig.add_subplot(gs[1, 1])
+    axx = fig.add_subplot(gs[0, 1], sharex=ax)
+    axy = fig.add_subplot(gs[1, 0], sharey=ax)
 
     for b in (ax, axx, axy):
         b.set_facecolor(SURFACE)
@@ -172,10 +166,6 @@ def main():
     ax.axvline(0, color=GRID, lw=1, zorder=0)
     ax.scatter(x, y, s=13, c=CLOUD, alpha=0.30, linewidths=0, zorder=2)
 
-    # The two named metabolites, on top of the cloud with a surface ring. Which SIDE the
-    # label goes on is decided from the point's position, not fixed: these sit at cluster
-    # extremities, and a cluster that moves between runs takes a hard-coded offset off the
-    # panel edge -- which is how a label reads as "gen" instead of "glycogen".
     from matplotlib.patheffects import withStroke
     marks = [("glycogen", GLYCOGEN_MNXM, 4)]
     r5p = next((m for m in R5P_CANDIDATES if (df.mnxm == m).any()), None)
@@ -188,8 +178,6 @@ def main():
             continue
         px, py = float(row.d_glgC.iloc[0]), float(row.d_talA.iloc[0])
         ax.scatter([px], [py], s=64, c=ACCENT, edgecolors=SURFACE, linewidths=2, zorder=4)
-        # Label points inward: leftward from a point in the right half, rightward from one
-        # in the left half. ax.transLimits maps data to a 0..1 axes fraction on both scales.
         frac = ax.transLimits.transform((px, py))[0]
         ha = "right" if frac > 0.5 else "left"
         ax.annotate(label, (px, py), textcoords="offset points",
@@ -210,8 +198,6 @@ def main():
         b.spines["left" if b is axx else "bottom"].set_visible(False)
 
     if a.scale == "symlog":
-        # Every second decade only: symlog's default minor ticks make eight labels a decade
-        # apart on each side of zero and the axis stops being readable.
         dec = [1e-5, 1e-7, 1e-9, 1e-11]
         ticks = [-t for t in dec] + [0.0] + dec[::-1]
         for axis in (ax.xaxis, ax.yaxis):

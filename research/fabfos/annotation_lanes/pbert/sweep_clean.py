@@ -1,21 +1,19 @@
-"""THE QUESTION -- where should CLEAN abstain?
-
-CLEAN emits a full level-4 EC for ~99% of ORFs and never declines, so its coverage
-is an artifact of not abstaining rather than of reach. Its score is discriminative,
-so a threshold is available; the scadc ablation set it at 0.01 on the EPI300 curated
-cohort. This re-derives it on DH10B, the chassis the lane figures are quoted on.
-
-SCOPE   DH10B, the 1,288 adjudicable ORFs from build_cohort.py. No re-run of the
-        annotator: the copied dh10b.clean.tsv carries a score per predicted EC.
-INPUT   data/fabfos/benchmarks/lane_dh10b/annotations/dh10b.clean.tsv
-        research/fabfos/annotation_lanes/pbert/cohort_dh10b.tsv
-METHOD  Level-4 ECs only, as the source study filters, then a threshold sweep.
-        Scored on the same two axes as the pbert sweeps, in EC space, so the CLEAN
-        and pbert rows sit on one axis; see _common.py.
-ENV     PYTHONPATH="$PWD/src" mamba run -n msm python \
-            research/fabfos/annotation_lanes/pbert/sweep_clean.py
-OUT     research/fabfos/annotation_lanes/pbert/clean_abstain_dh10b.tsv   (committed)
-"""
+# THE QUESTION -- where should CLEAN abstain?
+#
+# CLEAN emits a full level-4 EC for ~99% of ORFs and never declines, so its coverage
+# is an artifact of not abstaining rather than of reach. Its score is discriminative,
+# so a threshold is available; the scadc ablation set it at 0.01 on the EPI300 curated
+# cohort. This re-derives it on DH10B, the chassis the lane figures are quoted on.
+#
+# SCOPE   DH10B, the 1,288 adjudicable ORFs from build_cohort.py. No re-run of the
+#         annotator: the copied dh10b.clean.tsv carries a score per predicted EC.
+# INPUT   data/fabfos/benchmarks/lane_dh10b/annotations/dh10b.clean.tsv
+#         research/fabfos/annotation_lanes/pbert/cohort_dh10b.tsv
+# METHOD  Level-4 ECs only, as the source study filters, then a threshold sweep.
+#         Scored on the same two axes as the pbert sweeps, in EC space, so the CLEAN
+#         and pbert rows sit on one axis; see _common.py.
+# ENV     PYTHONPATH="$PWD/src" mamba run -n msm python             research/fabfos/annotation_lanes/pbert/sweep_clean.py
+# OUT     research/fabfos/annotation_lanes/pbert/clean_abstain_dh10b.tsv   (committed)
 from __future__ import annotations
 
 import sys

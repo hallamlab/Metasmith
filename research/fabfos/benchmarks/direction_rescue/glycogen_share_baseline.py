@@ -59,7 +59,6 @@ _COMP = re.compile(r"_([a-z]{1,2})$")
 
 
 def biomass_precursors(universe: set) -> list:
-    """Carbon-bearing substrates of the AG1 model's biomass reaction, as MNXM."""
     cache = CACHE / "biggM_bridge.parquet"
     if cache.exists():
         br = pd.read_parquet(cache)

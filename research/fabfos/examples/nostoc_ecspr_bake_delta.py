@@ -34,7 +34,6 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-# The wide products' scalar diagnostics, under the long shape's names for them.
 DIAG = {"n_nodes": "_n_nodes", "n_edges": "_n_edges",
         "n_reactions_used": "_n_reactions_used", "n_aam_gap": "_n_aam_gap",
         "leak_frac": "_leak_frac", "total": "total"}
@@ -92,7 +91,6 @@ def main(argv=None):
     print(f"\nrow correspondence: {m._merge.value_counts().to_dict()}")
     both = m[m._merge == "both"]
 
-    # --- structure ---------------------------------------------------------------------
     print("\n=== structure, per network (element C) ===")
     st = both[(both.element == "C")
               & both.readout.isin(["_n_nodes", "_n_reactions_used", "_n_aam_gap"])]
@@ -106,7 +104,6 @@ def main(argv=None):
         out[f"d_{label}"] = (n - o).astype(int)
     print(out.to_string())
 
-    # --- the scalar the experiment reads -------------------------------------------------
     print("\n=== total injected current, per condition ===")
     t = both[both.readout == "total"].copy()
     t["d_%"] = (100 * (t.value_new - t.value_old) / t.value_old).round(2)
@@ -114,7 +111,6 @@ def main(argv=None):
           [["network", "condition_id", "element", "value_old", "value_new", "d_%"]]
           .round(6).to_string(index=False))
 
-    # --- the endpoint draws ---------------------------------------------------------------
     print("\n=== per-precursor draw: how far the measurement moved ===")
     d = both[~both.readout.str.startswith("_") & (both.readout != "total")]
     rows = []
@@ -135,7 +131,6 @@ def main(argv=None):
         ))
     print(pd.DataFrame(rows).to_string(index=False))
 
-    # --- abstentions ----------------------------------------------------------------------
     ab = both[both.readout == "_abstained"]
     if len(ab):
         changed = ab[ab.value_old != ab.value_new]

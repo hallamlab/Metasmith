@@ -53,14 +53,12 @@ POWER_FLOOR = 1e-12
 
 
 def circuit(edges: dict) -> AtomGraph:
-    """``{(tail, head): (gp, gm)}`` over metabolite names, one atom each."""
     return AtomGraph.from_edge_records(
         [((a, 0), (b, 0), gp, gm) for (a, b), (gp, gm) in edges.items()],
         dict(kind="conditioning_bench"))
 
 
 def responses(edges: dict, src: str, snk: str) -> tuple:
-    """``(C_eff, per-edge dlog C_eff / dlog g)`` keyed as ``edges`` is, from ONE solve."""
     g = circuit(edges)
     sol = solve(g, Terminal.metabolite(g, src), Terminal.metabolite(g, snk))
     ceff = float(sol.total)
@@ -74,8 +72,6 @@ def responses(edges: dict, src: str, snk: str) -> tuple:
 
 
 def spread(eps) -> dict:
-    """The bench's verdict on one configuration: how wide are the responders, and how
-    cleanly do they separate from the floor."""
     a = np.abs(np.asarray(list(eps.values()), float))
     live = a[a > POWER_FLOOR]
     out = dict(n_edges=len(a), n_floor=int((a <= POWER_FLOOR).sum()),
@@ -85,24 +81,11 @@ def spread(eps) -> dict:
     lg = np.sort(np.log10(live))
     out["decades_full"] = float(lg[-1] - lg[0])
     out["decades_5_95"] = float(np.percentile(lg, 95) - np.percentile(lg, 5))
-    # The largest jump between consecutive responders, in decades. A clean two-mode split
-    # shows up here as a gap comparable to the span; a smear shows up as a gap near zero.
     out["gap"] = float(np.max(np.diff(lg))) if len(lg) > 1 else np.nan
     return out
 
 
-# ---------------------------------------------------------------------------
-# chain -- how much does distance cost?
-# ---------------------------------------------------------------------------
-
 def family_chain(rows, lengths=(2, 4, 8, 16, 32)):
-    """A backbone S..T of length L, with a dead-end branch hanging off every node.
-
-    On the backbone every edge carries the whole current, so all L responses are 1/L: a
-    chain does NOT spread its levers, it partitions them evenly. The branches are the point
-    -- they are exactly zero, whatever their conductance, which is where four fifths of a
-    library sweep goes.
-    """
     for L in lengths:
         e = {(f"x{i}", f"x{i+1}"): (1.0, 1.0) for i in range(L)}
         for i in range(1, L):
@@ -113,18 +96,7 @@ def family_chain(rows, lengths=(2, 4, 8, 16, 32)):
                          backbone_min=min(on), backbone_max=max(on), **spread(eps)))
 
 
-# ---------------------------------------------------------------------------
-# diode -- the decades-in, decades-out law
-# ---------------------------------------------------------------------------
-
 def family_diode(rows, widths=(0, 1, 2, 3, 6, 9, 12, 15, 18)):
-    """Two routes S->T, one of them throttled by a single diode of backward ratio 10**-W.
-
-    The throttled route can only carry current the wrong way through its diode, so its share
-    of the dissipated power falls with the ratio. If it falls one decade per decade of W then
-    the direction table's decades ARE the response's decades, and bounding the table is the
-    whole of the fix.
-    """
     for W in widths:
         r = 10.0 ** -W
         e = {("S", "A"): (1.0, 1.0), ("A", "T"): (1.0, 1.0),
@@ -135,17 +107,12 @@ def family_diode(rows, widths=(0, 1, 2, 3, 6, 9, 12, 15, 18)):
                          **spread(eps)))
 
 
-# ---------------------------------------------------------------------------
-# fanout -- pair_w compounding
-# ---------------------------------------------------------------------------
-
 def family_fanout(rows, lengths=(2, 4, 8, 16, 32), weights=(1.0, 0.5)):
-    """The same backbone with every edge at `pair_w`, against one at 1.0.
-
-    `pair_w` is bounded in [0.5, 1] by construction (consensus 1.0, lone-member 0.5), so the
-    most it can do is one bit per edge. Whether that compounds into decades along a path is
-    the question; a two-point conductance is a harmonic mean, so it should not.
-    """
+    # The same backbone with every edge at `pair_w`, against one at 1.0.
+    #
+    # `pair_w` is bounded in [0.5, 1] by construction (consensus 1.0, lone-member 0.5), so the
+    # most it can do is one bit per edge. Whether that compounds into decades along a path is
+    # the question; a two-point conductance is a harmonic mean, so it should not.
     for L in lengths:
         for w in weights:
             e = {(f"x{i}", f"x{i+1}"): (w, w) for i in range(L)}
@@ -154,18 +121,7 @@ def family_fanout(rows, lengths=(2, 4, 8, 16, 32), weights=(1.0, 0.5)):
                              ceff=ceff, **spread(eps)))
 
 
-# ---------------------------------------------------------------------------
-# network -- the population
-# ---------------------------------------------------------------------------
-
 def _metabolic_shaped(rng, n_met=400, extra=600, dead_frac=0.25):
-    """A random graph with metabolism's shape: one connected core plus dead ends.
-
-    Built as a spanning tree (so it is connected without a rejection loop) plus chords, which
-    is what gives alternative routes; a fraction of the nodes then hang off it as dead ends.
-    Not a claim about metabolic topology -- it is the smallest generator that produces both
-    a responder population and a floor population at once.
-    """
     order = rng.permutation(n_met)
     e = {}
     for i in range(1, n_met):
@@ -183,14 +139,13 @@ def _metabolic_shaped(rng, n_met=400, extra=600, dead_frac=0.25):
 
 def family_network(rows, widths=(0, 1, 2, 3, 6, 9, 12, 15, 18), seeds=(0, 1, 2),
                    directed_frac=0.85, gp_decades=0.6):
-    """The decade width of the ratio table, swept, on a graph big enough to have a
-    distribution.
-
-    `directed_frac` and `gp_decades` are set from the real k12 GEM carbon graph: 15% of its
-    edges sit at ratio exactly 1.0, and its existence conductance spans 0.6 decades between
-    the 5th and 95th percentiles. So the only knob being swept is the one the real table
-    disagrees with a well-conditioned instrument about.
-    """
+    # The decade width of the ratio table, swept, on a graph big enough to have a
+    # distribution.
+    #
+    # `directed_frac` and `gp_decades` are set from the real k12 GEM carbon graph: 15% of its
+    # edges sit at ratio exactly 1.0, and its existence conductance spans 0.6 decades between
+    # the 5th and 95th percentiles. So the only knob being swept is the one the real table
+    # disagrees with a well-conditioned instrument about.
     for seed in seeds:
         rng = np.random.default_rng(seed)
         keys = _metabolic_shaped(rng)

@@ -147,7 +147,6 @@ def test_an_unknown_orientation_is_refused():
 
 
 def _chain_pairs(steps) -> pd.DataFrame:
-    """A series chain ``M0 -> M1 -> ... -> Mn``, one reaction and one carbon per step."""
     return pd.DataFrame([
         dict(mnxr=f"R{i}", element="C", substrate=f"M{i}", product=f"M{i + 1}",
              sub_idx=0, prod_idx=0, pair_w=1.0)
@@ -155,11 +154,6 @@ def _chain_pairs(steps) -> pd.DataFrame:
 
 
 def test_elasticities_partition_the_measurement():
-    """A series chain of k equal steps puts exactly 1/k on each, and they sum to 1.
-
-    This is what makes the spread readable as "how many levers": the shares are a
-    partition, not a ranking, so 1/sum(eps^2) counts the steps.
-    """
     p = _chain_pairs(4)
     w = {f"R{i}": 1.0 for i in range(4)}
     g = graph_from_pairs(p, "C", w, with_provenance=True)
@@ -172,7 +166,6 @@ def test_elasticities_partition_the_measurement():
 
 
 def test_elasticity_is_the_derivative_a_sweep_would_measure():
-    """The closed form against a numerical fold, on an unequal chain plus a parallel arm."""
     p = pd.concat([_chain_pairs(3),
                    pd.DataFrame([dict(mnxr="RB", element="C", substrate="M0",
                                       product="M2", sub_idx=0, prod_idx=0, pair_w=1.0)])])
@@ -197,12 +190,6 @@ def test_elasticities_need_provenance():
 
 
 def test_the_two_seams_bound_the_ratio_at_the_same_width():
-    """`build.DIRECTION_DECADE_CAP` and the bake's `DIR_DG_CLAMP` are one statement.
-
-    The bake bounds |dG'| in kJ/mol and the model bounds |log10 ratio| in decades, and
-    `ratio = exp(dG'/RT)` is what relates them. If they drift apart, a table baked under one
-    bound gets read under another and the graph silently stops describing the annotation.
-    """
     from ecspr.bake.direction import canon
     from ecspr.model.build import DIRECTION_DECADE_CAP
 

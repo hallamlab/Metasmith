@@ -48,9 +48,6 @@ import pandas as pd
 from ecspr.model import conditions as cond_mod
 from ecspr.model import probes
 
-# One deeper than it used to be: the driver moved into pilot/ alongside the
-# vs_gem harness, and the monorepo migration nested the whole tree under
-# research/fabfos/, so the repo root is five parents up, not three.
 ROOT = Path(__file__).resolve().parents[5]
 DEFAULT_OUT_DIR = Path(__file__).resolve().parent / "cache"
 
@@ -64,24 +61,14 @@ import bake_identity                                                          # 
 
 _BAKE = bake_identity.DEPLOYED
 
-# The host's own unit_id inside gpr_gem.parquet -- what "background" means for this
-# study. Read off the table rather than hardcoded, so a different host still works.
 BASELINE_ID = "baseline"
 
 
 def build_direction_ratios(out_path: Path) -> Path:
-    """Join metabolism_bake's direction.parquet through vocab.parquet onto mnxr, stamped
-    with the bake it came from."""
     return bake_identity.build_direction_ratios(out_path, _BAKE)
 
 
 def resolve_metabolite(name, exact_names, element) -> dict:
-    """A name -> one MNXM, restricted to the atom-pairs universe.
-
-    Was `ecspr_cli.py resolve-metabolite`. It is study-side now because which synonym
-    a name resolves to is an experiment-design decision, and burying it in the
-    instrument would put the answer at the mercy of a table nobody stated.
-    """
     pairs = pd.read_parquet(ATOM_PAIRS)
     pairs = pairs[pairs.element == element]
     universe = set(pairs["substrate"].unique()) | set(pairs["product"].unique())
@@ -94,8 +81,6 @@ def resolve_metabolite(name, exact_names, element) -> dict:
     if hits.empty:
         raise SystemExit(f"no candidate for {name!r} among {names} in the {element} "
                          f"atom-pairs universe")
-    # Most-connected candidate: the one actually load-bearing in the atom-transfer
-    # graph, not the first alphabetical match -- the rule scadc_ecspr_t1_refs.py uses.
     chosen = hits.id.value_counts().idxmax()
     row = hits[hits.id == chosen].iloc[0]
     print(f"[resolve] {name!r} -> {row.id} ({row['name']!r}, formula={row.formula}) "
@@ -105,14 +90,6 @@ def resolve_metabolite(name, exact_names, element) -> dict:
 
 
 def write_conditions(path, condition_id, host_unit, source, target, element):
-    """The LASER record as a MASK over the concatenated host + study GPR tables.
-
-    An `add` row is selected by its condition_id and its conductance sums onto the
-    host's; a `del` row names an MNXR to WITHHOLD, and withholding it by MNXR takes
-    the host's rows for that reaction out too -- which is what a deletion means. The
-    del rows are themselves dropped by the same mask, so nothing has to interpret an
-    `action` column at measurement time.
-    """
     edits = pd.read_parquet(EDITS)
     edits = edits[edits.condition_id == condition_id]
     if edits.empty:
@@ -136,11 +113,6 @@ def write_conditions(path, condition_id, host_unit, source, target, element):
 
 
 def check_coverage(target_mnxm, condition_id, element):
-    """AAM coverage diagnostic. The universal ground's draw only covers metabolites
-    that are actual NODES of the built graph -- present as a substrate/product of some
-    reaction IN THE WEIGHT SET, on an atom-pairs row for this element. A missing
-    readout is ambiguous between "zero flux" and "never became a node"; this makes
-    that visible up front rather than reading a missing row as zero."""
     pairs = pd.read_parquet(ATOM_PAIRS)
     pairs = pairs[pairs.element == element]
     edits = pd.read_parquet(EDITS)
@@ -215,9 +187,6 @@ def main():
     print(f"$ {' '.join(cmd)}", file=sys.stderr)
     subprocess.run(cmd, check=True)
 
-    # via the package reader, not a bare read_csv: pandas' default float
-    # converter is lossy in the last digits, and a pilot that cannot
-    # reproduce its own cached record to the last digit proves nothing.
     res = probes.read_results(results_path)
 
     def val(cid, readout):

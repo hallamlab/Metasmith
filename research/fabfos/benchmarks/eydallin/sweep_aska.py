@@ -76,10 +76,6 @@ _S: dict = {}
 
 
 def _ieff(weights: dict) -> float:
-    """The readout. Two-terminal conductance by default; the glycogen SHARE under
-    ``--probe share``, which is the same solve grounded somewhere other than the target so
-    that a clone diverting carbon away can score below the baseline. See
-    `monotonicity_ladder.py` for why the default cannot."""
     g = graph_from_pairs(_S["pairs"], _S["element"], weights, _S["ratios"])
     src = Terminal.metabolite(g, SOURCE_MNXM, label="glucose")
     if src.missing:

@@ -56,9 +56,6 @@ def load_libs(paths, exclude: list[str]):
     for p in paths:
         lib = TransformInstanceLibrary.Load(Path(str(p)).resolve())
         if exclude:
-            # invert=True excludes; the default keeps only what is named, which
-            # silently plans against one transform and reports every target
-            # dropped.
             hide = {k for k in lib.manifest if any(x in str(k) for x in exclude)}
             if hide:
                 masked += sorted(str(h) for h in hide)
@@ -129,7 +126,7 @@ def main() -> int:
         signal.setitimer(signal.ITIMER_REAL, 0)
         out.update(solve_s=None, over_budget=True, ok=None, steps=None,
                    note=f"killed at the {args.budget}s budget")
-    except Exception as e:  # a broken library is a result, not a crash
+    except Exception as e:
         signal.setitimer(signal.ITIMER_REAL, 0)
         out.update(solve_s=round(time.perf_counter() - t0, 3), over_budget=False,
                    ok=False, error=f"{type(e).__name__}: {e}"[:400])

@@ -1,16 +1,15 @@
-"""A forked library's ids survive a save/load round trip.
-
-`Pack` re-derives any entry whose `fork_id` disagrees with the library's before
-writing, so the ids on disk ARE the forked ids -- but `Unpack` never restored
-`fork_id` onto the entries it rebuilt. Every leaf therefore came back looking
-stale, and the first `Get()` after a `Load()` re-minted it: same file, same
-fork, a different id each time the library was reloaded, and a cache key that
-moved with it.
-
-Stamping the fork back on at unpack is idempotent precisely because `Pack`
-already reconciled them. The property this file pins is the round trip, not the
-fork mechanism itself: fork *changes* an id on purpose, and reloading must not.
-"""
+# A forked library's ids survive a save/load round trip.
+#
+# `Pack` re-derives any entry whose `fork_id` disagrees with the library's before
+# writing, so the ids on disk ARE the forked ids -- but `Unpack` never restored
+# `fork_id` onto the entries it rebuilt. Every leaf therefore came back looking
+# stale, and the first `Get()` after a `Load()` re-minted it: same file, same
+# fork, a different id each time the library was reloaded, and a cache key that
+# moved with it.
+#
+# Stamping the fork back on at unpack is idempotent precisely because `Pack`
+# already reconciled them. The property this file pins is the round trip, not the
+# fork mechanism itself: fork *changes* an id on purpose, and reloading must not.
 
 from __future__ import annotations
 
@@ -49,7 +48,6 @@ def test_a_forked_library_reloads_to_the_same_ids(tmp_path):
 
 
 def test_forking_still_changes_the_id(tmp_path):
-    """The round-trip fix must not make a fork a no-op -- that is its whole job."""
     plain = _library(tmp_path / "a").Get(Path("item.txt")).instance_id
     forked = _library(tmp_path / "b", fork="experiment-2").Get(Path("item.txt")).instance_id
     assert plain != forked

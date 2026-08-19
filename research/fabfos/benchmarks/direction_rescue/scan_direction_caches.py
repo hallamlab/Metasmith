@@ -43,7 +43,6 @@ PATTERN = "direction_ratios"
 
 
 def worktrees() -> list[Path]:
-    """Every checkout of this repo, bare one excluded -- a bare repo has no cache tree."""
     out = subprocess.run(["git", "worktree", "list", "--porcelain"],
                          capture_output=True, text=True, check=True).stdout
     paths, bare = [], False
@@ -68,12 +67,11 @@ def find_caches(root: Path) -> list[Path]:
 
 
 def content_hash(df: pd.DataFrame) -> str:
-    """A hash of the decoded table's meaning, not its bytes.
-
-    Sorted, and over the float64 ratios rather than their repr, so it is invariant to the
-    two decode spellings in this tree (a vocab `map` and a vocab `merge`) and to whether
-    the writer kept an index.
-    """
+    # A hash of the decoded table's meaning, not its bytes.
+    #
+    # Sorted, and over the float64 ratios rather than their repr, so it is invariant to the
+    # two decode spellings in this tree (a vocab `map` and a vocab `merge`) and to whether
+    # the writer kept an index.
     d = df[["mnxr", "ratio"]].sort_values("mnxr")
     h = hashlib.sha256()
     h.update("\n".join(d.mnxr.astype(str)).encode())
@@ -118,7 +116,7 @@ def main() -> None:
                 df = pd.read_parquet(path)
                 same = content_hash(df) == want_content
                 note = summarise(df)
-            except Exception as exc:                       # a cache too broken to read
+            except Exception as exc:
                 same, note = False, f"UNREADABLE: {exc}"
             v = verdict(bake_identity.stamp_of(path), want_stamp, same)
             bad += v != "current"

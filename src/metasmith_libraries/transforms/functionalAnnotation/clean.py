@@ -1,42 +1,41 @@
-"""CLEAN contrastive EC prediction for the ORFs -> clean_predictions.
-
-CLEAN (Yu et al., "Enzyme function prediction using contrastive learning",
-Science 2023) places a query enzyme by *function*: its supervised-contrastive
-objective pulls convergent-function / divergent-sequence enzymes together, so it
-reaches enzymes the homology channels (kofam KO, UniRef DIAMOND) miss. It is
-sequence-input but homology-defeating by construction.
-
-Runs the baked `external_clean` image (CUDA torch + ESM-1b weights + CLEAN
-maxsep assets under /app). ESM-1b (650M) mean-embeds the ORFs on the GPU, then
-CLEAN max-separation inference (`CLEAN_infer_fasta.py`) compares each query to the
-EC-cluster-center embeddings and emits, per ORF, the selected EC set with a
-GMM-calibrated confidence per call. Output is standardized to the 3-col TSV the
-GPR mapper consumes:
-
-    Query ID <TAB> Predicted EC number <TAB> clean_score
-
-`clean_score` IS A CONFIDENCE -- higher is better, bounded by 1 -- not the distance
-to the EC cluster centre. The 8.06 in CLEAN's own worked example is its un-calibrated
-path, and citing it is how this file once concluded the opposite; the calibrated one
-is what runs here, because the workspace below links `data/pretrained/gmm_ensumble.pkl`
-into place. The direction was settled by measurement, not by that reading. Against
-the 1,288-ORF DH10B truth set: correct calls sit at a
-median clean_score of 0.9973 and wrong ones at 0.1328, AUC 0.897 in the
-higher-is-better direction, and the ORFs with no known EC at all average 0.044 against
-0.884 for those that have one. The mapper stored it through a 1/(1+d) inversion until
-that was measured, which ranked every CLEAN call backwards.
-
-CLEAN never abstains -- a full level-4 EC for ~99% of ORFs -- so the mapper drops
-calls below `fabfos_evidence.CLEAN_MIN_SCORE` at parse time, where kofam drops a hit
-below its family threshold. Do not threshold here: this transform emits what CLEAN
-said, and the lane decides what to keep. CLEAN writes relative to CWD and /app is read-only under apptainer, so we
-run from a writable, bind-mounted /clean_ws that symlinks the baked read-only
-assets. Retyped from cyanoverse functionalAnnotation/clean_lane.py onto the dev2
-sequences::orfs -> annotation::clean_predictions scheme.
-
-GATED: needs the external_clean image (~ships ESM-1b weights + pretrained bundle)
-and a GPU to be practical.
-"""
+# CLEAN contrastive EC prediction for the ORFs -> clean_predictions.
+#
+# CLEAN (Yu et al., "Enzyme function prediction using contrastive learning",
+# Science 2023) places a query enzyme by *function*: its supervised-contrastive
+# objective pulls convergent-function / divergent-sequence enzymes together, so it
+# reaches enzymes the homology channels (kofam KO, UniRef DIAMOND) miss. It is
+# sequence-input but homology-defeating by construction.
+#
+# Runs the baked `external_clean` image (CUDA torch + ESM-1b weights + CLEAN
+# maxsep assets under /app). ESM-1b (650M) mean-embeds the ORFs on the GPU, then
+# CLEAN max-separation inference (`CLEAN_infer_fasta.py`) compares each query to the
+# EC-cluster-center embeddings and emits, per ORF, the selected EC set with a
+# GMM-calibrated confidence per call. Output is standardized to the 3-col TSV the
+# GPR mapper consumes:
+#
+#     Query ID <TAB> Predicted EC number <TAB> clean_score
+#
+# `clean_score` IS A CONFIDENCE -- higher is better, bounded by 1 -- not the distance
+# to the EC cluster centre. The 8.06 in CLEAN's own worked example is its un-calibrated
+# path, and citing it is how this file once concluded the opposite; the calibrated one
+# is what runs here, because the workspace below links `data/pretrained/gmm_ensumble.pkl`
+# into place. The direction was settled by measurement, not by that reading. Against
+# the 1,288-ORF DH10B truth set: correct calls sit at a
+# median clean_score of 0.9973 and wrong ones at 0.1328, AUC 0.897 in the
+# higher-is-better direction, and the ORFs with no known EC at all average 0.044 against
+# 0.884 for those that have one. The mapper stored it through a 1/(1+d) inversion until
+# that was measured, which ranked every CLEAN call backwards.
+#
+# CLEAN never abstains -- a full level-4 EC for ~99% of ORFs -- so the mapper drops
+# calls below `fabfos_evidence.CLEAN_MIN_SCORE` at parse time, where kofam drops a hit
+# below its family threshold. Do not threshold here: this transform emits what CLEAN
+# said, and the lane decides what to keep. CLEAN writes relative to CWD and /app is read-only under apptainer, so we
+# run from a writable, bind-mounted /clean_ws that symlinks the baked read-only
+# assets. Retyped from cyanoverse functionalAnnotation/clean_lane.py onto the dev2
+# sequences::orfs -> annotation::clean_predictions scheme.
+#
+# GATED: needs the external_clean image (~ships ESM-1b weights + pretrained bundle)
+# and a GPU to be practical.
 from pathlib import Path
 from metasmith.python_api import *
 
@@ -46,10 +45,6 @@ image = model.AddRequirement(lib.GetType("env::clean.env"))
 orfs  = model.AddRequirement(lib.GetType("sequences::orfs"))
 pred  = model.AddProduct(lib.GetType("annotation::clean_predictions"))
 
-# In-container wrapper: builds a writable workspace that symlinks the baked CLEAN
-# assets, runs maxsep inference over the ORFs, and reshapes CLEAN's ragged maxsep
-# CSV into the standardized 3-col TSV. Runs entirely offline (ESM-1b weights +
-# pretrained bundle baked into the image).
 WRAPPER = r'''
 import argparse, os, subprocess, sys
 
@@ -263,15 +258,8 @@ def protocol(context: ExecutionContext):
                 --workdir /clean_ws
         """,
     )
-    # The wrapper writes the 3-column header unconditionally, so existence says
-    # nothing: a CLEAN run that produced no calls leaves a valid, empty, header-only
-    # TSV that the GPR mapper reads as a lane with zero rows.
     n_rows = sum(1 for _ in open(opred.local)) - 1 if opred.local.exists() else 0
     print(f"[clean] {n_rows:,} EC calls", flush=True)
-    # The wrapper now refuses on incomplete coverage rather than reporting a
-    # partial table, so a non-empty output here means a complete one. The
-    # emptiness test stays because a wrapper that died before writing anything
-    # still leaves the header behind.
     return ExecutionResult(
         manifest=[{pred: opred.local}],
         success=n_rows > 0,

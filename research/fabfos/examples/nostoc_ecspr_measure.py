@@ -45,12 +45,6 @@ REPO = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO / "research/fabfos/examples"))
 from nostoc_ecspr import ARMS, ELEMENTS, NETS, UNITS, net_id  # noqa: E402
 
-# `ground` matches `transforms/fabfos/ecspr_measure.py`, kept as a constant rather than a
-# flag so a drift between the two is a diff in this file and not a forgotten argument.
-# `two-point` has no transform at all -- both probes now write `ecspr::results`, so
-# declaring a second producer of one type needs something to tell the planner them apart,
-# and that is a library decision rather than a missing file. Its conditions are composed
-# and staged regardless, so measuring it here is a read of what already exists.
 LEAK = "1e-6"
 ECSPR_ENV = "ecspr"
 PROBES = {"ground": "conditions_{src}.parquet",
@@ -58,7 +52,6 @@ PROBES = {"ground": "conditions_{src}.parquet",
 
 
 def units():
-    """The 21 measurement units as `(network_id, injecting member)`."""
     out, seen = [], set()
     for members, src in UNITS:
         for arm in ARMS:
@@ -72,17 +65,6 @@ def units():
 
 
 def shimmed_gpr(nid, work) -> Path:
-    """The composed GPR under the column names `ecspr.model.gpr` reads.
-
-    `gpr_4lane` -- and so every composed table cut from it -- names its unit `orf` and its
-    evidence `intermediate_id`, while the loader wants `unit_id` / `feature_id` /
-    `evidence_id`. THIS IS THE MAPPING FROM `benchmarks/aam_v3_nostoc.py`, not a second
-    one: it is the only assignment under which belief conservation means what `compose`
-    asserts it means (`sum(E_full) == n_orfs`), and the alternatives are wrong by a factor
-    rather than by a rounding. Reproduced here rather than imported because that module is
-    a benchmark with its own bake plumbing; if a third caller needs it, it belongs in
-    `ecspr.model.gpr` as a documented reader, not copied again.
-    """
     dest = work / "gpr_shimmed.parquet"
     if dest.exists():
         return dest
@@ -108,9 +90,6 @@ def measure(nid, src, element, out_root, probe="ground", threads=1):
            "--atom-pairs", str(d / "atom_pairs.parquet"),
            "--direction", str(d / "direction.parquet"),
            "--element", element,
-           # `--leak` is the universal ground's own parameter and the two-point probe
-           # rejects it outright: there is no leak to set when the sinks are merged into
-           # one terminal. Passing it anyway is an argparse error, not a silent default.
            *(("--leak", LEAK) if probe == "ground" else ()),
            "--shard-dir", str(shard),
            "--log", str(work / f"{stem}.log"),
@@ -121,19 +100,10 @@ def measure(nid, src, element, out_root, probe="ground", threads=1):
     t0 = time.time()
     r = subprocess.run(cmd, cwd=REPO, env=env, capture_output=True, text=True)
     dt = time.time() - t0
-    # NON-EMPTY, NOT MERELY PRESENT -- the transform's own success test. An abstaining
-    # condition still writes its diagnostic rows, so a zero-byte file means the command
-    # died before writing one.
     if r.returncode != 0 or not dest.exists() or dest.stat().st_size == 0:
         tail = (r.stderr or r.stdout or "").strip().splitlines()[-6:]
         return None, dt, f"FAILED rc={r.returncode}: " + " | ".join(tail)
 
-    # `--element` CHOOSES THE BASIS, NOT THE CONDITIONS. The whole conditions table is
-    # then run against that one basis, so a C invocation also "measures" the N, P and S
-    # rows -- against the carbon graph, where their source salt is not a node. Those come
-    # back `_missing_source=1, _abstained=1`, which is the honest answer to a question
-    # nobody asked, and concatenating four invocations without this filter would publish
-    # twelve such abstentions per unit beside the four real rows.
     df = pd.read_parquet(dest)
     keep = df[df.element == element]
     assert len(keep), f"{nid}__{src} {element}: basis element absent from the conditions"
@@ -157,9 +127,6 @@ def main(argv=None):
     if not todo:
         raise SystemExit(f"--only matched nothing; networks are "
                          f"{sorted({n for n, _ in units()})}")
-    # Smallest first. A three-member carbon graph is ~490k nodes against a singleton's
-    # 163k and the leaky solve is superlinear in that, so a run stopped early still holds
-    # the controls and every pairwise comparison rather than one unfinished triple.
     jobs = [(nid, src, el, pr) for nid, src in
             sorted(todo, key=lambda t: (t[0].count("-"), t[0]))
             for el in a.elements for pr in a.probes]
@@ -179,7 +146,6 @@ def main(argv=None):
             if path is None:
                 failed.append((nid, src, el, pr, status))
 
-    # One parquet per (unit, probe), four elements concatenated -- the pinned shape.
     for nid, src in todo:
         for pr in a.probes:
             pre = "" if pr == "ground" else "2t_"

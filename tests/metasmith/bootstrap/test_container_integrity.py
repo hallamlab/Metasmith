@@ -1,26 +1,25 @@
-"""Tests for "what a pull produced is actually usable", and the record of it.
-
-Antonio's report from Sockeye: several SIFs (metaphlan, kraken2, sylph) arrived
-with a bad squashfs superblock. Every arm of the materialise chain gated on
-`[ -e <sif> ]`, which a corrupt download satisfies, so the broken artifact was
-trusted on the run that fetched it and on every later run on that host -- the
-failure surfaced hops away, inside a tool that could not read its own rootfs.
-
-The probe is `apptainer exec <artifact> true`: it exercises the squashfs mount,
-which is the exact code path that produced those errors. A header-only
-inspection (`sif list`) would have passed on his images, and `apptainer verify`
-checks cryptographic signatures biocontainers do not carry.
-
-Verifying on every task would cost a container start per task, so a success
-writes a sibling stamp and the already-materialised test requires both. That
-also makes the fix self-healing for artifacts that predate it: no stamp means
-verify once -- adopting the artifact if it mounts, replacing it if it does not.
-
-Nothing here pulls a real image or starts a real container. The behavioural
-tests run the *emitted* shell against a stub `apptainer` on PATH that can be
-told to produce a good artifact, a corrupt one, or to fail outright -- so the
-thing under test is the chain's logic, which is where the defect lived.
-"""
+# Tests for "what a pull produced is actually usable", and the record of it.
+#
+# Antonio's report from Sockeye: several SIFs (metaphlan, kraken2, sylph) arrived
+# with a bad squashfs superblock. Every arm of the materialise chain gated on
+# `[ -e <sif> ]`, which a corrupt download satisfies, so the broken artifact was
+# trusted on the run that fetched it and on every later run on that host -- the
+# failure surfaced hops away, inside a tool that could not read its own rootfs.
+#
+# The probe is `apptainer exec <artifact> true`: it exercises the squashfs mount,
+# which is the exact code path that produced those errors. A header-only
+# inspection (`sif list`) would have passed on his images, and `apptainer verify`
+# checks cryptographic signatures biocontainers do not carry.
+#
+# Verifying on every task would cost a container start per task, so a success
+# writes a sibling stamp and the already-materialised test requires both. That
+# also makes the fix self-healing for artifacts that predate it: no stamp means
+# verify once -- adopting the artifact if it mounts, replacing it if it does not.
+#
+# Nothing here pulls a real image or starts a real container. The behavioural
+# tests run the *emitted* shell against a stub `apptainer` on PATH that can be
+# told to produce a good artifact, a corrupt one, or to fail outright -- so the
+# thing under test is the chain's logic, which is where the defect lived.
 
 import os
 import subprocess
@@ -44,19 +43,8 @@ def _apptainer(cache: Path, **kw) -> Environment:
 
 
 def _stamp_of(artifact: Path) -> Path:
-    """The sibling marker a verified artifact carries.
-
-    Spelled out here rather than read off the Environment so the test pins the
-    convention instead of agreeing with whatever the code currently does. It has
-    to be a *sibling*: the sandbox artifact is a directory, and a stamp inside it
-    would be swallowed by the `rm -rf` that replaces it.
-    """
     return Path(f"{artifact}.verified")
 
-
-# --------------------------------------------------------------------------
-# the stub runtime
-# --------------------------------------------------------------------------
 
 _STUB = r"""#!/bin/bash
 echo "$@" >> "$MSM_STUB_LOG"
@@ -118,7 +106,7 @@ exit 1
 
 
 class _Host:
-    """One fake execution host: a store directory and a stub apptainer."""
+    # One fake execution host: a store directory and a stub apptainer.
 
     def __init__(self, root: Path):
         self.store = root / "container_images"
@@ -164,21 +152,16 @@ def host(tmp_path) -> _Host:
 
 
 def _paths(env: Environment, host: _Host) -> tuple[Path, Path, Path, Path]:
-    """The four on-disk names, with the store expression already resolved.
-
-    The emitted command carries `${APPTAINER_CACHEDIR:-<cache>}` verbatim -- it
-    is expanded on the execution host, deliberately, so the fetch and the exec
-    cannot disagree. The test resolves it the same way the shell will.
-    """
+    # The four on-disk names, with the store expression already resolved.
+    #
+    # The emitted command carries `${APPTAINER_CACHEDIR:-<cache>}` verbatim -- it
+    # is expanded on the execution host, deliberately, so the fetch and the exec
+    # cannot disagree. The test resolves it the same way the shell will.
     def _real(p: Path) -> Path:
         return host.store / p.name
     sif, sandbox = env.GetLocalPath(), env.GetSandboxPath()
     return _real(sif), _real(sandbox), _stamp_of(_real(sif)), _stamp_of(_real(sandbox))
 
-
-# --------------------------------------------------------------------------
-# what the emitted command says
-# --------------------------------------------------------------------------
 
 class TestVerificationIsEmitted:
     @pytest.mark.parametrize("rootfs", [Rootfs.AUTO, Rootfs.SIF, Rootfs.SANDBOX])
@@ -197,8 +180,6 @@ class TestVerificationIsEmitted:
         assert f"{box_env.GetLocalPath()} true" not in box_env.MakeMaterialiseCommand()
 
     def test_force_clears_the_stamp_with_the_artifact(self, tmp_path):
-        # Otherwise an assertive deploy re-pulls into a stale "verified" claim,
-        # which is worse than the state it was clearing.
         env = _apptainer(tmp_path)
         cmd = env.MakeMaterialiseCommand(force=True)
         assert "rm -rf " in cmd
@@ -221,7 +202,7 @@ class TestVerificationIsEmitted:
 
 
 class TestMaterialisedTestRequiresStamp:
-    """The per-task reuse gate, consulted before every container invocation."""
+    # The per-task reuse gate, consulted before every container invocation.
 
     def test_auto_requires_a_stamp_beside_either_artifact(self, tmp_path):
         env = _apptainer(tmp_path)
@@ -242,13 +223,9 @@ class TestMaterialisedTestRequiresStamp:
         assert ".sif" not in test
 
 
-# --------------------------------------------------------------------------
-# what the emitted command does
-# --------------------------------------------------------------------------
-
 class TestChainBehaviour:
     def test_corrupt_pull_falls_through_to_the_build_rung(self, host, tmp_path):
-        """Antonio's case: the pull succeeds and produces an unusable image."""
+        # Antonio's case: the pull succeeds and produces an unusable image.
         env = _apptainer(host.store)
         res = host.run(env.MakeMaterialiseCommand(), pull="corrupt", build="good")
         sif, _, sif_stamp, _ = _paths(env, host)
@@ -282,11 +259,10 @@ class TestChainBehaviour:
         assert not sif_stamp.exists() and not sandbox_stamp.exists()
 
     def test_a_good_unstamped_artifact_is_adopted_without_refetching(self, host):
-        """An image that predates this fix must not cost a re-download.
-
-        `pull` is wired to fail outright, so any attempt to re-fetch shows up as
-        a non-zero exit rather than as a silent success.
-        """
+        # An image that predates this fix must not cost a re-download.
+        #
+        # `pull` is wired to fail outright, so any attempt to re-fetch shows up as
+        # a non-zero exit rather than as a silent success.
         env = _apptainer(host.store)
         sif, _, sif_stamp, _ = _paths(env, host)
         sif.write_text("GOOD")
@@ -296,7 +272,6 @@ class TestChainBehaviour:
         assert host.subcommands("pull") == [], "re-fetched an artifact that was fine"
 
     def test_a_corrupt_unstamped_artifact_is_replaced(self, host):
-        """The self-healing half: the store already holds one of Antonio's SIFs."""
         env = _apptainer(host.store)
         sif, _, sif_stamp, _ = _paths(env, host)
         sif.write_text("CORRUPT")
@@ -306,12 +281,11 @@ class TestChainBehaviour:
         assert sif_stamp.is_file()
 
     def test_verification_costs_one_container_start_per_host(self, host):
-        """Not one per task -- which is what the stamp buys.
-
-        A workflow of N tasks over one image consults the materialised test N
-        times and materialises once; the second invocation here stands for every
-        task after the first.
-        """
+        # Not one per task -- which is what the stamp buys.
+        #
+        # A workflow of N tasks over one image consults the materialised test N
+        # times and materialises once; the second invocation here stands for every
+        # task after the first.
         env = _apptainer(host.store)
         assert host.run(env.MakeMaterialiseCommand()).returncode == 0
         first = len(host.subcommands("exec"))
@@ -381,13 +355,6 @@ class TestRunTimeNeverNamesARegistry:
         assert str(env.GetLocalPath().parent) in cmd
 
     def test_the_store_root_follows_apptainer_cachedir(self, host, tmp_path):
-        """The setting Antonio set, doing what he expected it to do.
-
-        Asserted by running the emitted chain rather than by reading it: the
-        store root is a shell expression expanded on the execution host, so
-        whether it is honoured is a question about the shell, not about the
-        string.
-        """
         elsewhere = tmp_path/"scratch_cache"
         elsewhere.mkdir()
         env = _apptainer(host.store)

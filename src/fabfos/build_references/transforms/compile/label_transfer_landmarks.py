@@ -1,59 +1,58 @@
-"""R7 -- the labelled landmarks the kNN transfer lane votes against.
-
-ONE PARQUET, ONE ROW PER ACCESSION: the accession, its MNXR labels and its 512-float
-embedding side by side. Nothing addresses anything by row, which is the point. This
-artifact used to be an index parquet beside an .npy stack, and it shipped scrambled --
-see THE CHUNKS DO NOT SORT below.
-
-
-Swiss-Prot sequences, embedded with ProteinBERT, labelled with MetaNetX reaction ids
-mapped through Rhea. Those three clauses are one sentence and each is load-bearing:
-
-  SWISS-PROT      the sequences. `fabfos_data::swissprot`, the reviewed half of
-                  UniProtKB, ~93 MB.
-  PROTEINBERT     the embedder, from the same pinned image the run-side lane uses.
-  MNXR VIA RHEA   the labels. `ref::mnxr_lookup` rows with `id_source == "uniprot"`,
-                  which is exactly the rhea2uniprot route -- UniProt accession -> Rhea
-                  reaction -> MNXR through MetaNetX's `rhea:` xrefs.
-
-SWISS-PROT REPLACES UNIREF50 AS THE SEQUENCE SOURCE, and the reason is that the cut
-and the sequences now describe the same set. The pool is defined by the bridge's
-`reviewed` rows, and `reviewed` means the accession came from `rhea2uniprot.tsv`
-rather than `rhea2uniprot_trembl.tsv.gz` -- i.e. it means Swiss-Prot, exactly. Taking
-the sequences from UniRef50 instead meant an accession only had a sequence if it
-happened to be its cluster's REPRESENTATIVE: UniRef50 clusters at 50% identity, so an
-entry sitting under another entry's representative dropped out of the pool silently.
-That was counted rather than substituted for, but it was a coverage loss with no
-upside once ~93 MB of exactly the right sequences is already a source folder in the
-graph. It also drops an 8.8 GB gzip stream out of this transform's inputs.
-
-WHAT THIS IS NOT. The deployed pool is KEGG-derived -- 54,005 sequences keyed on KEGG
-gene ids (`dme:Dmel_CG3481`), labelled by KO, projecting KO -> MNXR. Building from the
-Rhea route means one label source instead of two (so a protein cannot be labelled one
-way here and a different way in the GPR mapper) and no KEGG-licensed sequences in the
-tree -- but a DIFFERENT set, so the pbert lane's numbers move. This is not a
-reproduction of the deployed lane and must not be reported as one.
-
-Two traps worth stating because both are silent:
-  * SAME MODEL. A pool embedded with a different model from the query is not a
-    weaker pool, it is a meaningless one -- cosine distance between two embedding
-    spaces is a number with no referent. Enforced by sharing `env::proteinbert.env`
-    with functionalAnnotation/proteinbert.py, whose flags are copied verbatim below.
-  * THE CHUNKS DO NOT SORT INTO THE ORDER THEY WERE WRITTEN. `pbert` writes fixed
-    1,024-sequence chunks in FASTA order, named `<stem>.1`, `<stem>.2`, ... with no
-    zero padding, so `sorted(glob("*.npy"))` gives `.1, .10, .11, ... .2, .20, ...`
-    while its index stays in FASTA order. The shipped artifact was assembled from
-    those two orders as though they agreed: every one of its 222,019 references
-    carried another protein\'s reactions, the length check passed, the label merge
-    passed, and the lane emitted a full, confident, wrong table. The chunks are
-    stacked by their integer suffix here, and the result is checked against the FASTA
-    this transform wrote before a label is attached to it.
-
-THE WEIGHTS ARE FREE. ProteinBERT's are baked into the pinned image, so this
-transform acquires no model and the pool is the only artifact it produces. That is
-also why it runs under a container runtime: `proteinbert.env` carries no `conda:`
-key, so there is no MAMBA path for it.
-"""
+# R7 -- the labelled landmarks the kNN transfer lane votes against.
+#
+# ONE PARQUET, ONE ROW PER ACCESSION: the accession, its MNXR labels and its 512-float
+# embedding side by side. Nothing addresses anything by row, which is the point. This
+# artifact used to be an index parquet beside an .npy stack, and it shipped scrambled --
+# see THE CHUNKS DO NOT SORT below.
+#
+#
+# Swiss-Prot sequences, embedded with ProteinBERT, labelled with MetaNetX reaction ids
+# mapped through Rhea. Those three clauses are one sentence and each is load-bearing:
+#
+#   SWISS-PROT      the sequences. `fabfos_data::swissprot`, the reviewed half of
+#                   UniProtKB, ~93 MB.
+#   PROTEINBERT     the embedder, from the same pinned image the run-side lane uses.
+#   MNXR VIA RHEA   the labels. `ref::mnxr_lookup` rows with `id_source == "uniprot"`,
+#                   which is exactly the rhea2uniprot route -- UniProt accession -> Rhea
+#                   reaction -> MNXR through MetaNetX's `rhea:` xrefs.
+#
+# SWISS-PROT REPLACES UNIREF50 AS THE SEQUENCE SOURCE, and the reason is that the cut
+# and the sequences now describe the same set. The pool is defined by the bridge's
+# `reviewed` rows, and `reviewed` means the accession came from `rhea2uniprot.tsv`
+# rather than `rhea2uniprot_trembl.tsv.gz` -- i.e. it means Swiss-Prot, exactly. Taking
+# the sequences from UniRef50 instead meant an accession only had a sequence if it
+# happened to be its cluster's REPRESENTATIVE: UniRef50 clusters at 50% identity, so an
+# entry sitting under another entry's representative dropped out of the pool silently.
+# That was counted rather than substituted for, but it was a coverage loss with no
+# upside once ~93 MB of exactly the right sequences is already a source folder in the
+# graph. It also drops an 8.8 GB gzip stream out of this transform's inputs.
+#
+# WHAT THIS IS NOT. The deployed pool is KEGG-derived -- 54,005 sequences keyed on KEGG
+# gene ids (`dme:Dmel_CG3481`), labelled by KO, projecting KO -> MNXR. Building from the
+# Rhea route means one label source instead of two (so a protein cannot be labelled one
+# way here and a different way in the GPR mapper) and no KEGG-licensed sequences in the
+# tree -- but a DIFFERENT set, so the pbert lane's numbers move. This is not a
+# reproduction of the deployed lane and must not be reported as one.
+#
+# Two traps worth stating because both are silent:
+#   * SAME MODEL. A pool embedded with a different model from the query is not a
+#     weaker pool, it is a meaningless one -- cosine distance between two embedding
+#     spaces is a number with no referent. Enforced by sharing `env::proteinbert.env`
+#     with functionalAnnotation/proteinbert.py, whose flags are copied verbatim below.
+#   * THE CHUNKS DO NOT SORT INTO THE ORDER THEY WERE WRITTEN. `pbert` writes fixed
+#     1,024-sequence chunks in FASTA order, named `<stem>.1`, `<stem>.2`, ... with no
+#     zero padding, so `sorted(glob("*.npy"))` gives `.1, .10, .11, ... .2, .20, ...`
+#     while its index stays in FASTA order. The shipped artifact was assembled from
+#     those two orders as though they agreed: every one of its 222,019 references
+#     carried another protein's reactions, the length check passed, the label merge
+#     passed, and the lane emitted a full, confident, wrong table. The chunks are
+#     stacked by their integer suffix here, and the result is checked against the FASTA
+#     this transform wrote before a label is attached to it.
+#
+# THE WEIGHTS ARE FREE. ProteinBERT's are baked into the pinned image, so this
+# transform acquires no model and the pool is the only artifact it produces. That is
+# also why it runs under a container runtime: `proteinbert.env` carries no `conda:`
+# key, so there is no MAMBA path for it.
 from metasmith.python_api import *
 
 lib   = TransformInstanceLibrary.ResolveParentLibrary(__file__)
@@ -64,24 +63,15 @@ source = model.AddRequirement(lib.GetType("fabfos_data::swissprot"))
 bridge = model.AddRequirement(lib.GetType("ref::mnxr_lookup"))
 pool   = model.AddProduct(lib.GetType("ref::label_transfer_landmarks"))
 
-# The cut that defines the pool: bridge rows whose id_source is uniprot and whose
-# evidence_quality is reviewed. The second condition is what makes Swiss-Prot the right
-# sequence source rather than merely a convenient one -- see the header.
 POOL_ID_SOURCE = "uniprot"
 POOL_EVIDENCE = "reviewed"
 
 FASTA_FILE = "uniprot_sprot.fasta.gz"
 RELDATE_FILE = "reldate.txt"
 
-# The layout the consumer reads: one table, and a provenance file read by nothing.
-# Landmarks are comparable to a query only if the model matches and reproducible only if
-# the sequence release does, and neither fact is recoverable from the table.
 TABLE_NAME = "landmarks.parquet"
 SOURCE_NAME = "source.txt"
 
-# The slice step: pick the pool members and write their sequences out as a FASTA for the
-# embedder. Split from the embedding step so the failure modes stay separable -- this half
-# fails on a join, the other on a GPU.
 SELECT = r'''
 import gzip, os
 from pathlib import Path
@@ -193,11 +183,6 @@ with open(SOURCE_OUT, "w") as fh:
         fh.write("reldate\t" + reldate.read_text().strip().replace("\n", " | ") + "\n")
 '''
 
-# The assemble step: stitch the embedder's chunks into one table whose every row
-# carries its own accession. The chunks are ordered by their integer suffix, never
-# lexicographically, and the resulting id order is checked against the FASTA this
-# transform wrote -- the one ordering here that neither the embedder nor a glob can
-# disturb.
 ASSEMBLE = r"""
 import re
 import shutil
@@ -302,8 +287,6 @@ def protocol(context: ExecutionContext):
         .ifVirtualEnvDo(env=image, cmd="python3 _pool_select.py")
 
     threads = context.params.get("cpus", 4)
-    # SAME MODEL as the query: these flags are functionalAnnotation/proteinbert.py's,
-    # verbatim.
     _cmd = f"""
         pbert run -i _pool.faa -o pbert_output \
             --threads {threads} --protein_size 512 --model_batch 1024 -x 1

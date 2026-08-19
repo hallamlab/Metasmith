@@ -90,8 +90,6 @@ def main():
         else:
             idx, val = _knn.topk(metrics[name])
             sub = slice(None)
-        # cosine of each retrieved neighbour -- the weighting stays cosine whatever
-        # metric retrieved them, and the twin cut is defined on it too.
         cos = np.einsum("nd,nkd->nk", cos_q[sub], cos_ref[idx]).astype(np.float32)
         np.savez_compressed(CACHE / f"knn_{name}.npz", idx=idx, val=val, cos=cos,
                             orf=qid[sub], own=own[sub])

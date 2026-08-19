@@ -1,12 +1,11 @@
-"""Should E_full be divided by n_orf? Two tests on real K-12 data.
-
-T1  Does n_orf carry real presence evidence, or is it an artifact?
-    Rank de-novo-nominated MNXR by E, E/n_orf, n_orf; score against iML1515's
-    reactome as the truth set (AUROC + precision@k).
-
-T2  Holding truth constant, does the de novo lane's E track SUBUNIT count?
-    Join de novo E onto iML1515's rule structure (AND-arity vs OR-arity).
-"""
+# Should E_full be divided by n_orf? Two tests on real K-12 data.
+#
+# T1  Does n_orf carry real presence evidence, or is it an artifact?
+#     Rank de-novo-nominated MNXR by E, E/n_orf, n_orf; score against iML1515's
+#     reactome as the truth set (AUROC + precision@k).
+#
+# T2  Holding truth constant, does the de novo lane's E track SUBUNIT count?
+#     Join de novo E onto iML1515's rule structure (AND-arity vs OR-arity).
 import ast
 import sys
 from pathlib import Path
@@ -48,7 +47,6 @@ def rule_struct(g):
 
 struct = gem.groupby("mnxr").apply(rule_struct, include_groups=False)
 
-# ---- de novo weights ----
 E = pd.Series(weights_from_rows(dn, "belief"), name="E")
 n_orf = dn.groupby("mnxr")["feature_id"].nunique().rename("n_orf")
 inuni = dn.groupby("mnxr")["in_atom_universe"].any().rename("in_universe")
@@ -86,7 +84,6 @@ print(j.groupby(j.n_enzymes.clip(upper=6)).agg(
     n=("E", "size"), E_med=("E", "median"), E_mean=("E", "mean"),
     Ediv_med=("E_div", "median"), n_orf_med=("n_orf", "median")).to_string())
 
-# partial: within single-enzyme reactions only, so OR-arity is held at 1
 s1 = j[j.n_enzymes == 1]
 print(f"\n  -- single-enzyme reactions only (n={len(s1)}), by subunit count --")
 print(s1.groupby(s1.max_subunits.clip(upper=6)).agg(

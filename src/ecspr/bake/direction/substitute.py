@@ -142,34 +142,21 @@ FARADAY = 96.485
 
 
 class Refused(SystemExit):
-    """A table row that cannot be admitted. Aborts, and names the row and the predicate.
-
-    ABORTS ON THE FIRST BAD ROW rather than skipping it, for the reason `curation.admit`
-    aborts: these are small hand-authored artifacts, so a bad row is an authoring error to
-    fix rather than noise to filter -- and filtering would let a stale id sit in the file
-    while its contribution silently read as zero.
-    """
+    pass
 
 
 def read_table(path: Path) -> pd.DataFrame:
-    """Parse a curated TSV. `#` is a comment ONLY at line start.
-
-    An inline `comment='#'` truncates any SMILES carrying a `#` triple bond -- nitrile
-    C#N, alkyne C#C -- silently dropping exactly the rows a curator most needs to supply.
-    """
     kept = [ln for ln in Path(path).read_text().splitlines()
             if not ln.lstrip().startswith("#")]
     return pd.read_csv(StringIO("\n".join(kept)), sep="\t")
 
 
 def _cited(value) -> bool:
-    """`pd.isna` FIRST: an empty cell arrives as NaN and `str(nan)` is 'nan', which is
-    truthy, so a bare emptiness test accepts a row with no citation at all."""
     return not pd.isna(value) and bool(str(value).strip())
 
 
 def _parse_terms(spec: str, row_id: str) -> list[tuple[str, float]]:
-    """`'1*MODEL:x;-1*MODEL:y'` -> [('MODEL:x', 1.0), ('MODEL:y', -1.0)]."""
+    # `'1*MODEL:x;-1*MODEL:y'` -> [('MODEL:x', 1.0), ('MODEL:y', -1.0)].
     out = []
     for term in str(spec).split(";"):
         term = term.strip()
@@ -201,17 +188,6 @@ _FORMULA_TOKEN = re.compile(r"([A-Z][a-z]?)(\d*)")
 
 
 def heavy_formula(formula) -> dict[str, int] | None:
-    """Heavy-atom counts from a MetaNetX `formula` string, or None if it is not one.
-
-    None means "this participant's composition is not knowable here" and every caller
-    treats it as a refusal to act, never as zero -- a missing formula that counted as an
-    empty molecule would make an unbalanced equation look balanced.
-
-    HYDROGEN IS DROPPED. MetaNetX writes each compound at its own charge convention, so
-    ADP-glucose and ADP differ by a proton nothing in the equation accounts for. Counting
-    H would refuse those rows over a bookkeeping convention; the members handle protonation
-    themselves, as they do for every reaction this lane never touches.
-    """
     f = str(formula or "").strip()
     if not f:
         return None
@@ -233,7 +209,6 @@ def heavy_formula(formula) -> dict[str, int] | None:
 
 
 def _apply(stoich: dict[str, float], rows: dict) -> dict[str, float]:
-    """`stoich` with each covered participant replaced by its row's terms."""
     out: dict[str, float] = {}
     for mnxm, coeff in stoich.items():
         row = rows.get(mnxm)
@@ -246,11 +221,10 @@ def _apply(stoich: dict[str, float], rows: dict) -> dict[str, float]:
 
 
 class Substitutions:
-    """Loaded tables, or nothing at all. `Substitutions()` covers no reaction.
-
-    The empty instance is the configuration every baseline was taken under and the one
-    that must leave the pipeline bit-identical, so it is the default rather than a mode.
-    """
+    # Loaded tables, or nothing at all. `Substitutions()` covers no reaction.
+    #
+    # The empty instance is the configuration every baseline was taken under and the one
+    # that must leave the pipeline bit-identical, so it is the default rather than a mode.
 
     def __init__(self, models: dict | None = None, rows: pd.DataFrame | None = None,
                  by_mnxm: dict | None = None, formulas: dict | None = None):
@@ -274,7 +248,6 @@ class Substitutions:
     # -- the two things the pipeline asks for -----------------------------
 
     def props(self, base: dict) -> dict:
-        """`base` widened with the model compounds. Never narrowed, never overwritten."""
         clash = set(base) & set(self.models)
         if clash:
             raise Refused(f"[substitute] model ids collide with MetaNetX accessions: "
@@ -289,14 +262,11 @@ class Substitutions:
         return out
 
     def _heavy(self, key: str) -> dict[str, int] | None:
-        """Heavy-atom counts for one participant, model compound or MetaNetX accession."""
         if key.startswith(MODEL_PREFIX):
             return heavy_formula((self.models.get(key) or {}).get("formula"))
         return heavy_formula(self.formulas.get(key))
 
     def _residual(self, stoich: dict[str, float]) -> dict[str, float] | None:
-        """Products minus substrates, per heavy element. None if any composition is not
-        knowable -- which is a refusal to judge the equation, never a zero."""
         res: dict[str, float] = {}
         for key, coeff in stoich.items():
             counts = self._heavy(key)
@@ -307,13 +277,6 @@ class Substitutions:
         return {el: v for el, v in res.items() if abs(v) > 1e-9}
 
     def _applied(self, stoich: dict[str, float]) -> dict:
-        """The rows that act on THIS reaction, keyed by the participant each replaces.
-
-        A carrier or thioester row is compound-keyed and always acts. A polymer row acts
-        only where the three conditions in the module docstring hold, so the same table
-        rewrites `Glycogen + Pi = G1P` and leaves `1,4-alpha-D-glucan -> Glycogen` exactly
-        as MetaNetX wrote it.
-        """
         hit = {m: self._by_mnxm[m] for m in stoich if m in self._by_mnxm}
         poly = {m: r for m, r in hit.items() if str(r["kind"]) == "polymer"}
         if not poly:
@@ -330,7 +293,6 @@ class Substitutions:
         return hit
 
     def rewrite(self, stoich: dict[str, float]) -> dict[str, float]:
-        """The equation as the members should see it. Identity when nothing is covered."""
         if not self._by_mnxm or not (set(stoich) & set(self._by_mnxm)):
             return stoich
         use = self._applied(stoich)
@@ -344,16 +306,15 @@ class Substitutions:
         return bool(self._applied(stoich))
 
     def sigma_sub(self, stoich: dict[str, float]) -> float:
-        """Congener spread over the participants this reaction substituted, in quadrature.
-
-        CARRIED SEPARATELY AND FOLDED IN LATER, never added to the member's own sigma.
-        `combine.eq_vote` detects an eQuilibrator group cancellation by testing sigma
-        against the floor; inflating the member's sigma lifts a cancelling zero over that
-        floor and re-promotes it to tier 1 -- precisely the defect r8 was baked to remove.
-
-        Over the rows that ACTUALLY acted, so a polymer row the scope declined contributes
-        no width to a reaction it did not touch.
-        """
+        # Congener spread over the participants this reaction substituted, in quadrature.
+        #
+        # CARRIED SEPARATELY AND FOLDED IN LATER, never added to the member's own sigma.
+        # `combine.eq_vote` detects an eQuilibrator group cancellation by testing sigma
+        # against the floor; inflating the member's sigma lifts a cancelling zero over that
+        # floor and re-promotes it to tier 1 -- precisely the defect r8 was baked to remove.
+        #
+        # Over the rows that ACTUALLY acted, so a polymer row the scope declined contributes
+        # no width to a reaction it did not touch.
         if not self._by_mnxm or not (set(stoich) & set(self._by_mnxm)):
             return 0.0
         var = 0.0
@@ -417,20 +378,19 @@ def _admit_models(df: pd.DataFrame, formulas: dict | None = None) -> dict:
 
 
 def _gate_replaceable(mnxm: str, props: dict, row_id: str) -> None:
-    """A CARRIER row may only displace a participant the member cannot use TODAY.
-
-    Tested with `thermo_dgbyg._has_wildcard` itself rather than a reimplementation, so the
-    admission predicate cannot drift from the abstention it is meant to be undoing. A row
-    that displaces a usable participant is not a substitution, it is an override of
-    MetaNetX chemistry, and nothing here reviewed that.
-
-    CARRIER AND THIOESTER ONLY, and the scoping is load-bearing rather than tidy. A
-    flattened polymer carries a perfectly readable wildcard-free SMILES -- glycogen's is
-    maltotetraose's -- so this gate refuses every polymer row by construction, and a
-    polymer row is not making this claim in the first place. What blocks the member there
-    is not an unreadable participant but a MISSING one, and `_gate_polymer` plus the
-    per-reaction scope in `Substitutions._applied` is where a polymer row earns its place.
-    """
+    # A CARRIER row may only displace a participant the member cannot use TODAY.
+    #
+    # Tested with `thermo_dgbyg._has_wildcard` itself rather than a reimplementation, so the
+    # admission predicate cannot drift from the abstention it is meant to be undoing. A row
+    # that displaces a usable participant is not a substitution, it is an override of
+    # MetaNetX chemistry, and nothing here reviewed that.
+    #
+    # CARRIER AND THIOESTER ONLY, and the scoping is load-bearing rather than tidy. A
+    # flattened polymer carries a perfectly readable wildcard-free SMILES -- glycogen's is
+    # maltotetraose's -- so this gate refuses every polymer row by construction, and a
+    # polymer row is not making this claim in the first place. What blocks the member there
+    # is not an unreadable participant but a MISSING one, and `_gate_polymer` plus the
+    # per-reaction scope in `Substitutions._applied` is where a polymer row earns its place.
     p = props.get(mnxm) or {}
     smi = p.get("smiles")
     if not smi:
@@ -445,14 +405,6 @@ def _gate_replaceable(mnxm: str, props: dict, row_id: str) -> None:
 
 def _gate_polymer(mnxm: str, terms: list, models: dict, formulas: dict | None,
                   row_id: str) -> None:
-    """A polymer row must be able to answer the balance question, and must change a count.
-
-    Two refusals, and both would otherwise surface as silent under-coverage rather than as
-    an authoring error. Without a formula the per-reaction scope can never conclude
-    anything and the row acts nowhere; with terms that sum to the polymer's own
-    composition the row is a rename, which closes no imbalance and therefore also acts
-    nowhere -- and a table row that provably cannot fire is a mistake, not a no-op.
-    """
     if not formulas:
         raise Refused(
             f"[substitute] {row_id}: a polymer row needs chem_prop formulas and none were "
@@ -481,12 +433,6 @@ def _gate_polymer(mnxm: str, terms: list, models: dict, formulas: dict | None,
 
 
 def _gate_couple(rows: pd.DataFrame, models: dict) -> None:
-    """Both states of a carrier couple present, and differing by what they declare.
-
-    A single-sided carrier row is the failure this catches: substituting the oxidised
-    partner and leaving the reduced one structureless leaves the member abstaining anyway,
-    while the table reads as covering the reaction.
-    """
     carriers = rows[rows["kind"] == "carrier"]
     for couple_id, g in carriers.groupby("couple_id"):
         states = sorted(str(s) for s in g["state"])
@@ -516,18 +462,6 @@ def _gate_couple(rows: pd.DataFrame, models: dict) -> None:
 
 
 def _gate_potential(rows: pd.DataFrame) -> dict:
-    """The MODEL compound's potential, against the REAL carrier's, within one decade.
-
-    THE TWO NUMBERS ARE THE REAL ONE AND THE STAND-IN'S, not the two states of one couple.
-    A couple has ONE E0', carried by both its rows, so comparing the ox row's declaration
-    to the red row's compares a value to itself and can never refuse anything. What has to
-    be small is the gap between the carrier MetaNetX would not let the member read and the
-    compound substituted for it -- that is the entire claim a carrier row makes.
-
-    A generic with no defined potential fails by having no number to declare, which refuses
-    `Acceptor`, `A` and `AH2` by the same rule that admits NAD for NAD(P) -- no
-    special-casing, and no name list to keep in step with anything.
-    """
     out = {}
     for r in rows[rows["kind"] == "carrier"].itertuples(index=False):
         for col, val in (("e0_V", r.e0_V), ("e0_model_V", r.e0_model_V)):
@@ -592,15 +526,6 @@ NONFATAL_PREDICATES = ("member_drift",)
 
 def _check_row(r, props: dict, names: dict, seen: dict, models: dict,
                formulas: dict | None = None, member: str = "eq"):
-    """`(predicate, detail)` for the first predicate this row fails, or `(None, rec)`.
-
-    `seen` maps an already-admitted mnxm to its terms string. A REPEAT IS LEGAL AND
-    NECESSARY: MetaNetX carries one reduced thioredoxin (`MNXM741334`) as the partner of
-    three separately-accessioned disulfides, so the couple rows must share it. What has to
-    hold is that `_by_mnxm` stays single-valued -- one compound, one rewrite -- so a repeat
-    is admitted when it asks for the same terms and refused when it asks for different
-    ones, which is a conflict no later stage could detect.
-    """
     row_id = f"{r.kind}/{r.mnxm}"
     if str(r.kind) not in KINDS:
         return "kind_known", f"[substitute] {row_id}: kind must be one of {KINDS}"
@@ -657,12 +582,6 @@ def _check_row(r, props: dict, names: dict, seen: dict, models: dict,
 
 
 def _check_couples(frame: pd.DataFrame, models: dict):
-    """`(predicate, detail)` for the first couple-level failure, or `(None, None)`.
-
-    Two gates, four named outcomes: each gate can fail for the structural reason or the
-    chemical one, and a curator needs those apart -- "you forgot the reduced row" and
-    "this couple carries atoms through" are different work.
-    """
     for default, run in (("couple_complete", lambda: _gate_couple(frame, models)),
                          ("potential_declared", lambda: _gate_potential(frame))):
         try:
@@ -680,24 +599,6 @@ def _check_couples(frame: pd.DataFrame, models: dict):
 def load(directory: Path | None, props: dict, names: dict,
          *, formulas: dict | None = None, collect: bool = False,
          member: str | None = None) -> Substitutions:
-    """Read and admit the tables FOR ONE MEMBER, or return the empty configuration.
-
-    `props`, `names` and `formulas` are MetaNetX's own, and each answers one gate: props
-    the replaceable-only gate, names the stale-id tripwire, formulas the polymer scope. A
-    caller with no polymer rows may omit `formulas`; one with polymer rows that omits it is
-    refused rather than quietly given a table whose rows can never fire.
-
-    `member` IS REQUIRED AND HAS NO DEFAULT, because the admitted set differs between
-    members and the whole point of this argument is that the difference cannot be reached
-    by accident. A caller that wants the union -- `resolve`, which is asking which
-    compounds eQuilibrator can look up and does not care who will use them -- asks for it
-    by name with `member="any"`.
-
-    `collect=True` is the `check` verb's mode: run every predicate on every row and record
-    the verdicts instead of aborting on the first. The pipeline never uses it -- a table
-    that half-loads is worse than one that refuses -- but a curator authoring twenty rows
-    needs all twenty verdicts, not the first.
-    """
     if directory is None:
         return Substitutions()
     if member is None:
@@ -764,20 +665,19 @@ def load(directory: Path | None, props: dict, names: dict,
 
 
 def _congener_spread(r, models: dict, row_id: str, member: str) -> float:
-    """How much THIS MEMBER's answer moves across the declared alternatives, as a sigma.
-
-    Carried as `sigma_sub` rather than discarded, because the choice of model compound is
-    an assertion with a width and reporting it as zero would make an asserted structure
-    look like a measurement. Filled by `substitute anchor --member`, which scores each and
-    writes the spread back; an unscored row declares 0.0 and the anchor verb says so.
-
-    THE REFUSAL LIVES IN `_gate_member_drift`, NOT HERE. This column mixes two things --
-    how far apart the alternative stand-ins are (a property of the curation) and how far
-    this member sits from the potentials the row cites (a property of the member). Refusing
-    on the mixture is what let eQuilibrator's 0.45 speak for dGbyG's 9.60: the conflated
-    number passed a gate the member-specific one fails. Width is reported here; admission
-    is decided there.
-    """
+    # How much THIS MEMBER's answer moves across the declared alternatives, as a sigma.
+    #
+    # Carried as `sigma_sub` rather than discarded, because the choice of model compound is
+    # an assertion with a width and reporting it as zero would make an asserted structure
+    # look like a measurement. Filled by `substitute anchor --member`, which scores each and
+    # writes the spread back; an unscored row declares 0.0 and the anchor verb says so.
+    #
+    # THE REFUSAL LIVES IN `_gate_member_drift`, NOT HERE. This column mixes two things --
+    # how far apart the alternative stand-ins are (a property of the curation) and how far
+    # this member sits from the potentials the row cites (a property of the member). Refusing
+    # on the mixture is what let eQuilibrator's 0.45 speak for dGbyG's 9.60: the conflated
+    # number passed a gate the member-specific one fails. Width is reported here; admission
+    # is decided there.
     if member == "any":
         return 0.0
     raw = getattr(r, f"congeners_{member}", None)
@@ -799,20 +699,6 @@ def _congener_spread(r, models: dict, row_id: str, member: str) -> float:
 
 
 def _gate_member_drift(r, row_id: str, member: str):
-    """Can this member place this stand-in at all?
-
-    `gap` is the member's own disagreement with the potentials the row declares: it scores
-    the anchor under the model couple and compares the result to the offset those
-    potentials predict. Small means the member and the tabulation agree about where the
-    stand-in sits. Past a decade means they do not, and every reaction the row unblocks for
-    this member inherits that displacement as a systematic error -- not a wider answer, a
-    WRONG one, which is worse than the silence the substitution was added to remove.
-
-    So the refusal is per member and it is one-sided: a row refused here is refused FOR
-    THIS MEMBER ONLY. The other member keeps it, the ensemble loses one vote rather than
-    the reaction, and that is precisely what an ensemble of independently-abstaining
-    members is for.
-    """
     # `any` is the union: which compounds exist at all, for a caller that is not asking
     # anyone to score them. `resolve` uses it -- eQuilibrator's cache does not care which
     # member will eventually read the structure it looks up.
@@ -853,14 +739,13 @@ def _tables(args):
 
 
 def cmd_check(args):
-    """Every predicate on every row, and what the admitted rows would reach.
-
-    Reports two numbers a curator cannot get from the table itself: how many reactions the
-    admitted rows actually unblock, and -- the answer to "this is just the ones somebody
-    happened to look at" -- which accessions carry a name already admitted under some other
-    id and are NOT in the table. Under-coverage becomes a printed number instead of an
-    absence, the way `twins.alias_index` answers the same objection.
-    """
+    # Every predicate on every row, and what the admitted rows would reach.
+    #
+    # Reports two numbers a curator cannot get from the table itself: how many reactions the
+    # admitted rows actually unblock, and -- the answer to "this is just the ones somebody
+    # happened to look at" -- which accessions carry a name already admitted under some other
+    # id and are NOT in the table. Under-coverage becomes a printed number instead of an
+    # absence, the way `twins.alias_index` answers the same objection.
     from .refdata import load_mnxr_stoich
     props, names, formulas = _tables(args)
     # ONE PASS PER MEMBER. The admitted set differs between them, so a single verdict
@@ -933,46 +818,32 @@ def _norm(name) -> str:
 
 def predicted_offset(n_e: float, c_red: float, e0_model_V: float,
                      e0_sibling_V: float) -> float:
-    """kJ/mol the substituted anchor should sit from its sibling, from the two potentials.
-
-    Anchor and sibling are the SAME transformation written with two different carriers, so
-    their standard free energies differ only by the carriers' half-cells. For a reaction
-    written `A_ox + carrier_red = A_red + carrier_ox`, dG'0 = -nF(E_A - E_carrier), and the
-    acceptor term cancels in the difference:
-
-        dG(anchor) - dG(sibling) = -c_red * n_e * F * (E_model - E_sibling)
-
-    `c_red` is the reduced carrier's signed coefficient in the MNXR equation, which is what
-    carries the orientation -- MetaNetX's left/right is arbitrary, and reading the sign off
-    the equation is the only way the prediction tracks it.
-    """
     return -float(c_red) * float(n_e) * FARADAY * (float(e0_model_V) - float(e0_sibling_V))
 
 
 def cmd_anchor(args):
-    """Score each row's anchor under the model couple and check it against a sibling.
-
-    THE ANSWER TO "how do you refuse a substitution that balances but is thermodynamically
-    unjustified". Balance is necessary and worthless as evidence here: `[Fe+3]`/`[Fe+2]`
-    balances ferredoxin perfectly and returns a confident wrong number.
-
-    THE TEST IS A DIFFERENCE AGAINST A PREDICTED NUMBER, not a drift toward zero, and it
-    has to be: MetaNetX writes almost no generic-carrier reaction a second time with the
-    same family of carrier concretely. It writes it with a DIFFERENT one -- the flavin
-    monooxygenases appear again as their overall NADPH reactions -- so an anchor and its
-    sibling differ by a real quantity rather than by nothing. `predicted_offset` computes
-    that quantity from the two declared potentials, and the row survives only if the member,
-    running on the substituted equation, lands within one decade of it.
-
-    That makes `e0_V` falsifiable instead of decorative: a carrier row asserting the wrong
-    potential predicts the wrong offset and is refused here rather than shipping a
-    confident number nothing checked.
-
-    BOTH ARMS ARE RUNNABLE HERE. The dGbyG arm needs the IMAGE, not a conda env -- build it
-    with `TAGS=dgbyg docker/ecspr_bake/dev.sh --build` and run this verb inside it. The
-    long-standing note that it could not be run here named the wrong obstacle and outlived
-    its own justification.
-    """
+    # Score each row's anchor under the model couple and check it against a sibling.
+    #
+    # THE ANSWER TO "how do you refuse a substitution that balances but is thermodynamically
+    # unjustified". Balance is necessary and worthless as evidence here: `[Fe+3]`/`[Fe+2]`
+    # balances ferredoxin perfectly and returns a confident wrong number.
+    #
+    # THE TEST IS A DIFFERENCE AGAINST A PREDICTED NUMBER, not a drift toward zero, and it
+    # has to be: MetaNetX writes almost no generic-carrier reaction a second time with the
+    # same family of carrier concretely. It writes it with a DIFFERENT one -- the flavin
+    # monooxygenases appear again as their overall NADPH reactions -- so an anchor and its
+    # sibling differ by a real quantity rather than by nothing. `predicted_offset` computes
+    # that quantity from the two declared potentials, and the row survives only if the member,
+    # running on the substituted equation, lands within one decade of it.
+    #
+    # That makes `e0_V` falsifiable instead of decorative: a carrier row asserting the wrong
+    # potential predicts the wrong offset and is refused here rather than shipping a
+    # confident number nothing checked.
+    #
+    # BOTH ARMS ARE RUNNABLE HERE. The dGbyG arm needs the IMAGE, not a conda env -- build it
+    # with `TAGS=dgbyg docker/ecspr_bake/dev.sh --build` and run this verb inside it. The
+    # long-standing note that it could not be run here named the wrong obstacle and outlived
+    # its own justification.
     from .refdata import load_mnxr_stoich
     props, names, formulas = _tables(args)
     # `any`, NOT `args.member`. This verb EXISTS to produce `gap_<member>`, so loading for

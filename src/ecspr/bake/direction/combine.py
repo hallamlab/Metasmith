@@ -1,27 +1,26 @@
-"""T4: fuse the three members into one directional ratio per base-graph reaction.
-
-The combiner is a weighted vote in dG' space (the functional-lane belief pattern,
-continuous analogue): each member votes weighted by its own precision, and the
-result is damped toward zero by total evidence -- so a reaction no member speaks
-to lands at ratio 1.0 (reversible) as a LIMIT of the single rule, not an if-branch.
-
-Two fusions, because the correlation structure differs:
-  * eQuilibrator and dGbyG are both TECRDB-fitted -> correlated. They are fused
-    into ONE thermo vote whose uncertainty is floored by TAU_SHARED (the common-
-    mode TECRDB bias their spread is blind to) and by their own disagreement, so
-    two correlated instruments cannot vote as two independent ones.
-  * The curated member is TECRDB-independent physiology -> genuinely independent,
-    so it fuses with the thermo vote by ordinary inverse-variance precision.
-
-The category vote uses the T3 calibration (category -> empirical dG' on the
-measured arm), never a direction classifier. Shrinkage is a decision rule, not a
-third prior: lambda = SIGMA_0^2 / (SIGMA_0^2 + s_post^2) damps mu toward 0 in
-proportion to how little evidence there is. The ratio is the median transform
-exp(mu_eff/RT) (transform-equivariant; never E[ratio], which inflates).
-
-Pure pandas -- runs in p312. Reads the two per-member parquets (eval_members.py),
-the curated per-MNXR table (T2), and the calibration (T3).
-"""
+# T4: fuse the three members into one directional ratio per base-graph reaction.
+#
+# The combiner is a weighted vote in dG' space (the functional-lane belief pattern,
+# continuous analogue): each member votes weighted by its own precision, and the
+# result is damped toward zero by total evidence -- so a reaction no member speaks
+# to lands at ratio 1.0 (reversible) as a LIMIT of the single rule, not an if-branch.
+#
+# Two fusions, because the correlation structure differs:
+#   * eQuilibrator and dGbyG are both TECRDB-fitted -> correlated. They are fused
+#     into ONE thermo vote whose uncertainty is floored by TAU_SHARED (the common-
+#     mode TECRDB bias their spread is blind to) and by their own disagreement, so
+#     two correlated instruments cannot vote as two independent ones.
+#   * The curated member is TECRDB-independent physiology -> genuinely independent,
+#     so it fuses with the thermo vote by ordinary inverse-variance precision.
+#
+# The category vote uses the T3 calibration (category -> empirical dG' on the
+# measured arm), never a direction classifier. Shrinkage is a decision rule, not a
+# third prior: lambda = SIGMA_0^2 / (SIGMA_0^2 + s_post^2) damps mu toward 0 in
+# proportion to how little evidence there is. The ratio is the median transform
+# exp(mu_eff/RT) (transform-equivariant; never E[ratio], which inflates).
+#
+# Pure pandas -- runs in p312. Reads the two per-member parquets (eval_members.py),
+# the curated per-MNXR table (T2), and the calibration (T3).
 from __future__ import annotations
 
 import argparse
@@ -50,45 +49,43 @@ def _num(x):
 
 
 def _zero(x) -> float:
-    """A missing width is zero width. r8's member tables predate `sigma_sub`, so its
-    column arrives absent or NaN there and must read as 'nothing was asserted'."""
+    # A missing width is zero width. r8's member tables predate `sigma_sub`, so its
+    # column arrives absent or NaN there and must read as 'nothing was asserted'.
     return float(x) if _num(x) else 0.0
 
 
 def eq_vote(eq_dg, eq_sig, eq_gc):
-    """The eQuilibrator row as evidence, or (None, None, None) if it is none.
-
-    A reactant-contribution row whose sigma sits at SIGMA_FLOOR is a group
-    cancellation: eQuilibrator has returned dG'=0 with no uncertainty because the
-    equation's groups cancel identically, which says the two sides are built from the
-    same pieces, not that anyone measured them. The calibration arm already rejects
-    exactly these rows; without this the combiner promoted them to authoritative
-    MEASUREMENTS, and they were 69% of tier 1.
-
-    dGbyG almost always agrees on such a row (|dG'| < 1 kJ/mol) and that agreement is
-    not corroboration -- it is the same group cancellation seen through the second
-    TECRDB-fitted model. So the row is dropped rather than demoted to a prediction.
-
-    Called ONCE per row, above both the vote and the dir_method label: normalising in
-    `thermo_vote` alone would leave the provenance ladder reading the raw column and
-    naming an estimator that no longer votes.
-    """
+    # The eQuilibrator row as evidence, or (None, None, None) if it is none.
+    #
+    # A reactant-contribution row whose sigma sits at SIGMA_FLOOR is a group
+    # cancellation: eQuilibrator has returned dG'=0 with no uncertainty because the
+    # equation's groups cancel identically, which says the two sides are built from the
+    # same pieces, not that anyone measured them. The calibration arm already rejects
+    # exactly these rows; without this the combiner promoted them to authoritative
+    # MEASUREMENTS, and they were 69% of tier 1.
+    #
+    # dGbyG almost always agrees on such a row (|dG'| < 1 kJ/mol) and that agreement is
+    # not corroboration -- it is the same group cancellation seen through the second
+    # TECRDB-fitted model. So the row is dropped rather than demoted to a prediction.
+    #
+    # Called ONCE per row, above both the vote and the dir_method label: normalising in
+    # `thermo_vote` alone would leave the provenance ladder reading the raw column and
+    # naming an estimator that no longer votes.
     if _num(eq_dg) and eq_gc is False and _num(eq_sig) and eq_sig <= SIGMA_FLOOR:
         return None, None, None
     return eq_dg, eq_sig, eq_gc
 
 
 def thermo_vote(eq_dg, eq_sig, eq_gc, db_dg, db_sig):
-    """One thermo vote (mu, s, is_measured) from the correlated eQ/dGbyG pair.
-
-    Measurement precedence (A1): when eQ has MEASURED a reaction (reactant-
-    contribution arm), dGbyG's number is a lossy readback of that same TECRDB
-    value, so averaging it in only adds noise -- the measurement is used at its
-    own sigma. Only when both members are PREDICTIONS (eQ group-contribution arm
-    and/or dGbyG) do they genuinely compete, and then the vote is floored by
-    TAU_SHARED (the common-mode TECRDB error their spread cannot see) and by their
-    own disagreement, so two correlated predictors cannot vote as two independent.
-    """
+    # One thermo vote (mu, s, is_measured) from the correlated eQ/dGbyG pair.
+    #
+    # Measurement precedence (A1): when eQ has MEASURED a reaction (reactant-
+    # contribution arm), dGbyG's number is a lossy readback of that same TECRDB
+    # value, so averaging it in only adds noise -- the measurement is used at its
+    # own sigma. Only when both members are PREDICTIONS (eQ group-contribution arm
+    # and/or dGbyG) do they genuinely compete, and then the vote is floored by
+    # TAU_SHARED (the common-mode TECRDB error their spread cannot see) and by their
+    # own disagreement, so two correlated predictors cannot vote as two independent.
     have_eq, have_db = _num(eq_dg), _num(db_dg)
     if have_eq and eq_gc is False:                 # measurement dominates
         return eq_dg, max(eq_sig, S_MEAS_FLOOR), True

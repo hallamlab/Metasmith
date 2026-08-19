@@ -47,9 +47,6 @@ OUT = HERE / "baselines"
 SOURCE_MNXM = "MNXM1364061"          # D-glucose, as the atom-pair table carries it
 GLYCOGEN_MNXM = "MNXM738130"         # the BiGG species iML1515 uses
 
-# The glycogen module, reported row by row whatever the solve does with it. MNXR145021 is
-# the near-neighbour control: a transferase with no chain-length change, so the polymer
-# fix must not touch it.
 MODULE = {
     "MNXR145036": "glgP/malP, glycogen phosphorylase (written G1P -> glycogen)",
     "MNXR145038": "glgP/malP, phosphorylase (second accession)",
@@ -60,11 +57,10 @@ MODULE = {
 
 
 def route_usage(graph, sink: str) -> pd.Series:
-    """Net current into `sink` per reaction, from the base solve. Sums to the injected 1.0.
-
-    A degradative enzyme carrying most of the arriving carbon means the model is running it
-    backwards to synthesise, which is the whole finding this baseline exists to track.
-    """
+    # Net current into `sink` per reaction, from the base solve. Sums to the injected 1.0.
+    #
+    # A degradative enzyme carrying most of the arriving carbon means the model is running it
+    # backwards to synthesise, which is the whole finding this baseline exists to track.
     sol = solve(graph, Terminal.metabolite(graph, SOURCE_MNXM),
                 Terminal.metabolite(graph, sink))
     if not sol.total > 0:

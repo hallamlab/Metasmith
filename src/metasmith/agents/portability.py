@@ -47,9 +47,7 @@ def _check_env_portability(manifest: dict[str, dict], env: Environment) -> None:
             offenders.append(f"{who}: declares no {ARM} arm (has {arms or ['no arms']})")
             continue
         for name, fields in sorted((v.get("envs") or {}).items()):
-            if fields is None: continue  # resource unreadable at stage time
-            # A list of keys (schema 1) or a mapping of key to what it resolves to
-            # (schema 2). Membership is all this asks, and reads the same on both.
+            if fields is None: continue
             if FIELD not in fields:
                 offenders.append(f"{who}: env resource [{name}] has no '{FIELD}:' entry (has {sorted(fields) or ['nothing']})")
     if offenders:

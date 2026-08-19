@@ -1,5 +1,3 @@
-"""The other direction: one MNXR carrying EC numbers from unrelated classes.
-The EC lane joins ec == ec, so every EC on a row makes that whole reaction reachable."""
 import re
 from collections import Counter, defaultdict
 import pandas as pd
@@ -44,8 +42,6 @@ for label, s in [("subclass", set(multi_sub)), ("top class", set(multi_cls))]:
           f"{int(hit.sum()):,} / {len(df):,} ({100*hit.mean():.1f}%) | "
           f"{df[hit].mnxr.nunique():,} reactions | {df[hit].orf.nunique():,} ORFs")
 
-# the sharpest statement: ORF -> reaction credited through an EC that disagrees
-# with every other EC on that same reaction
 rows = []
 for r, v in multi_cls.items():
     for e in v:

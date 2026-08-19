@@ -1,11 +1,3 @@
-"""Collapse every level-4 EC to its MNXR set and measure how chemically far apart
-those reactions are.
-
-Two reactions of one EC are "connected" if they share at least one non-currency
-metabolite. An EC whose reactions fall into >= 2 connected components is one where
-an ORF carrying that EC is credited with chemistry that shares no substrate or
-product -- the Green & Karp failure mode, but at level 4 rather than via a partial.
-"""
 import re, sys, json
 from collections import defaultdict
 from pathlib import Path
@@ -15,7 +7,6 @@ REAC_PROP = Path("data/fabfos/originals/metanetx/4.5/reac_prop.tsv")
 E4 = re.compile(r"^\d+\.\d+\.\d+\.\d+$")
 MNXM = re.compile(r"\b(MNXM\d+|WATER|BIOMASS|MNXM\w+)\b")
 
-# ---- parse reac_prop -------------------------------------------------------
 rows = []
 with open(REAC_PROP) as fh:
     for line in fh:
@@ -30,10 +21,7 @@ with open(REAC_PROP) as fh:
         rows.append((mnxr, eq, classifs, balanced))
 print(f"[audit] reac_prop rows: {len(rows):,}", file=sys.stderr)
 
-# ---- participants ----------------------------------------------------------
 def participants(eq: str):
-    """Set of compound ids, compartment stripped. Both sides pooled: we are asking
-    'is this the same chemistry', not 'is this the same direction'."""
     out = set()
     for tok in eq.replace("=", " ").split():
         if "@" in tok:
@@ -42,7 +30,6 @@ def participants(eq: str):
 
 parts = {mnxr: participants(eq) for mnxr, eq, _, _ in rows}
 
-# ---- currency metabolites, derived from the data ---------------------------
 freq = defaultdict(int)
 for s in parts.values():
     for m in s:
@@ -56,7 +43,6 @@ print(f"[audit] currency set: {sorted(currency, key=lambda m: -freq[m])}", file=
 
 core = {r: (s - currency) for r, s in parts.items()}
 
-# ---- ec -> mnxr ------------------------------------------------------------
 ec_to_mnxr = defaultdict(set)
 partial_only = 0
 for mnxr, _eq, classifs, _b in rows:
@@ -75,9 +61,7 @@ print(f"[audit] ECs in classifs: {len(ec_to_mnxr):,} "
 print(f"[audit] reactions whose ONLY classifs are partial: {partial_only:,} "
       f"(unreachable by any lane)", file=sys.stderr)
 
-# ---- connected components within each EC -----------------------------------
 def components(mnxrs):
-    """Union-find over 'shares >=1 non-currency metabolite'."""
     mnxrs = sorted(mnxrs)
     parent = {r: r for r in mnxrs}
     def find(x):
@@ -89,7 +73,6 @@ def components(mnxrs):
         ra, rb = find(a), find(b)
         if ra != rb:
             parent[ra] = rb
-    # invert: metabolite -> reactions carrying it; union along each metabolite
     by_met = defaultdict(list)
     for r in mnxrs:
         for m in core[r]:
@@ -100,8 +83,6 @@ def components(mnxrs):
     groups = defaultdict(list)
     for r in mnxrs:
         groups[find(r)].append(r)
-    # a reaction with an EMPTY core (all-currency, e.g. a transport of water) is
-    # its own singleton and would inflate the split count -- flag separately
     return list(groups.values())
 
 report = []

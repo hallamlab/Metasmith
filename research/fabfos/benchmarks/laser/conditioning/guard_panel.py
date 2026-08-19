@@ -60,11 +60,10 @@ WIDTHS = (0.0, 1.0, 2.0, 3.0, 4.0, 6.0, None)
 
 
 def library(base_w: dict) -> pd.DataFrame:
-    """One row per ASKA clone gene: its reactions, and the Eydallin label.
-
-    Reactions absent from the background are KEPT and counted. Dropping them would silently
-    change `n_rxn`, which is the size control every AUC below is scored against.
-    """
+    # One row per ASKA clone gene: its reactions, and the Eydallin label.
+    #
+    # Reactions absent from the background are KEPT and counted. Dropping them would silently
+    # change `n_rxn`, which is the size control every AUC below is scored against.
     clone = pd.read_parquet(ASKA_GPR / "gpr_gem.parquet")
     clone = clone[clone.in_atom_universe.fillna(False)]
     by_gene = (clone.assign(g=clone.condition_id.str.replace("aska:", "", regex=False))
@@ -87,11 +86,6 @@ def scored(lib: pd.DataFrame, eps: pd.Series) -> pd.DataFrame:
 
 
 def validate(pairs, base_w, ratios, lib, n=40, fold=2.0, seed=0) -> pd.DataFrame:
-    """First-order score against an exact re-solve, on a sample weighted to the responders.
-
-    Sampled from the top of the elasticity ranking plus a random tail, because agreement on
-    clones that move nothing is not evidence about clones that move something.
-    """
     rng = np.random.default_rng(seed)
     live = lib[lib.n_rxn > 0].sort_values("score", ascending=False)
     pick = pd.concat([live.head(n // 2),

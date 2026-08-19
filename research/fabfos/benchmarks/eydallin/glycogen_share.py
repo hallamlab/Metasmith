@@ -61,11 +61,6 @@ _COMP = re.compile(r"_([a-z]{1,2})$")
 
 
 def biomass_precursors(universe) -> list:
-    """Carbon-bearing substrates of the AG1 model's biomass reaction, as MNXM.
-
-    Bridged through `chem_xref`'s `biggM:` rows rather than the model's own
-    `metanetx.chemical` annotation, which is MetaNetX 3.x and maps a third of the model.
-    """
     cache = CACHE / "biggM_bridge.parquet"
     if cache.exists():
         br = pd.read_parquet(cache)
@@ -93,7 +88,6 @@ def biomass_precursors(universe) -> list:
 
 
 def make_probe(graph, mode, precursors):
-    """``weights -> draw[glycogen]`` for one grounding mode."""
     prec = {"leak": None, "glycogen": [GLYCOGEN_MNXM],
             "biomass": sorted(set(precursors) | {GLYCOGEN_MNXM})}[mode]
     return prec
@@ -112,7 +106,6 @@ _S: dict = {}
 
 
 def _spectrum_one(mnxr) -> dict:
-    """One reaction's signed elasticity of the glycogen share, by a small fold."""
     w = dict(_S["base_w"], **{mnxr: _S["base_w"][mnxr] * _S["fold"]})
     v = draw(_S["pairs"], _S["element"], w, _S["ratios"], _S["prec"], leak=_S["leak"])
     b = _S["base"]
@@ -184,8 +177,6 @@ def main():
         return b, v
 
     if a.diagnose:
-        # glgC/glgA are the two biggest EXCESS hits; glgP/malP/glgB are DEFICIENT hits;
-        # agp is the model's own top non-hit; pfkA is the external negative control.
         probes = ["glgC", "glgA", "glgP", "malP", "glgB", "agp", "pfkA"]
         rows = []
         for mode in ("leak", "glycogen", "biomass"):
@@ -225,8 +216,6 @@ def main():
         rng = np.random.default_rng(0)
 
         rows = []
-        # tau scales the supplied polymer directions together: 1 is the bake's own
-        # abstention, larger is a firmer commitment. A plateau across it is the claim.
         for tau in (1.0, 10.0, 1e2, 1e3, 1e6):
             rat = ratios if tau == 1.0 else dict(
                 ratios, **{"MNXR145046": 1.0 / tau, "MNXR145036": tau, "MNXR145038": tau})

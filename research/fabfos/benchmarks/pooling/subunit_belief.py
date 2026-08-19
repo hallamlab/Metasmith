@@ -1,4 +1,3 @@
-"""Does belief conservation over-credit multi-subunit enzymes? K-12, both lanes."""
 import ast
 import sys
 from pathlib import Path
@@ -12,7 +11,6 @@ from ecspr.model.gpr import weights_from_rows
 
 ROOT = _R / "data/fabfos/runs/e_coli_k12/gpr"
 
-# ---- GPR rule -> DNF (list of AND-groups = candidate enzymes/complexes) ----
 def dnf(node):
     if isinstance(node, ast.Name):
         return [frozenset([node.id])]
@@ -43,14 +41,12 @@ def parse_rule(rule):
     except Exception:
         return []
 
-# =====================================================================
 gem = pd.read_parquet(ROOT / "gpr_gem.parquet")
 w_gem = weights_from_rows(gem, "belief")
 E = pd.Series(w_gem, name="E_full")
 
 n_orf = gem.groupby("mnxr")["feature_id"].nunique().rename("n_orf")
 
-# per mnxr: union of DNF groups over all GEM reactions mapping to it
 rows = []
 for mnxr, g in gem.groupby("mnxr"):
     groups = set()
@@ -59,7 +55,7 @@ for mnxr, g in gem.groupby("mnxr"):
             if grp: groups.add(grp)
     if not groups:
         rows.append((mnxr, 0, 0, 0.0)); continue
-    n_enz = len(groups)                       # OR-arity: distinct enzymes/isozymes
+    n_enz = len(groups)
     sizes = [len(x) for x in groups]
     rows.append((mnxr, n_enz, max(sizes), float(np.mean(sizes))))
 st = pd.DataFrame(rows, columns=["mnxr", "n_enzymes", "max_subunits", "mean_subunits"]).set_index("mnxr")
@@ -99,7 +95,6 @@ print("\ncorr(E_full, n_orf) =", u.E_full.corr(u.n_orf).round(3),
       " corr(E_full, max_subunits) =", u.E_full.corr(u.max_subunits).round(3),
       " corr(E_full, n_enzymes) =", u.E_full.corr(u.n_enzymes).round(3))
 
-# =====================================================================
 dn = pd.read_parquet(ROOT / "gpr_denovo.parquet")
 w_dn = weights_from_rows(dn, "belief")
 Ed = pd.Series(w_dn, name="E_full")
@@ -115,7 +110,6 @@ print("corr(E_full, n_orf) =", du.E_full.corr(du.n_orf).round(3))
 print("\n-- top 15 E_full --")
 print(du.sort_values("E_full", ascending=False).head(15).to_string())
 
-# how much of E's spread is n_orf vs per-ORF dilution?
 du = du.copy()
 du["E_per_orf"] = du.E_full / du.n_orf
 print("\nE_full spread (p99/p50): %.2f ; E_per_orf spread: %.2f"

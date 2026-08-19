@@ -1,42 +1,40 @@
-"""Rebuild `ref::label_transfer_landmarks` from the scrambled pool, with no re-embedding.
-
-    PYTHONPATH="$PWD/src" mamba run -n msm python \
-        research/fabfos/annotation_lanes/pbert/rebuild_landmarks.py [--esmc]
-
-THE PERMUTATION IS COMPUTED, NOT SEARCHED FOR. `pbert` writes fixed 1,024-sequence
-chunks in FASTA order named `<stem>.1`, `<stem>.2`, ... with no zero padding, and the
-old assemble step stacked `sorted(glob("*.npy"))` while its index stayed in FASTA order.
-Both halves are deterministic, so the map from index position to stack row follows from
-the record count alone -- `fir/pbert_permutation.fasta_to_legacy_row`, measured against
-re-embedded assemblies on 2026-08-05. 222,019 accessions is 217 chunks, and
-`sorted(range(1, 218), key=str)` is not the identity.
-
-THIS SUPERSEDES `repair_pool_index.py`, which recovered the same permutation by matching
-duplicate-item signatures block by block. That reached 214,016 of 222,019 accessions and
-left 8 blocks it could not separate. The two agree on 100.00% of what the signature
-method covered, so the analytic map is the signature result plus the blocks it could not
-resolve -- and neither had to trust the other to get there.
-
-Three gates, all of which must pass before anything is written. Two are the checks that
-identified the defect, run in reverse; the third is held out from both derivations:
-
-  * every sampled group of accessions with an identical sequence lands on an identical
-    embedding (39/400 as shipped, 400/400 permuted)
-  * the permutation agrees with `repair_pool_index.py`'s independent recovery wherever
-    that one spoke
-  * every DH10B ORF byte-identical to a Swiss-Prot entry unique in the set sits at
-    cosine > 0.999 to that entry's row (3/554 as shipped, 554/554 permuted)
-
-`--esmc` does the same collapse for the ESM-C set, whose stack and index WERE written
-from the same arrays in one pass and so need no permutation. It runs the duplicate-
-sequence gate anyway, because "was never scrambled" is a claim about a transform rather
-than about the bytes on disk, and this artifact predates anyone checking.
-
-INPUT   data/fabfos/processed/reference_label_pool{,_esmc}/pool{,_esmc}/
-        data/fabfos/originals/swissprot/2026_02/uniprot_sprot.fasta.gz
-        data/fabfos/runs/e_coli_dh10b/  -- the held-out anchors
-OUT     data/fabfos/processed/label_transfer_landmarks{,_esmc}/landmarks{,_esmc}/
-"""
+# Rebuild `ref::label_transfer_landmarks` from the scrambled pool, with no re-embedding.
+#
+#     PYTHONPATH="$PWD/src" mamba run -n msm python         research/fabfos/annotation_lanes/pbert/rebuild_landmarks.py [--esmc]
+#
+# THE PERMUTATION IS COMPUTED, NOT SEARCHED FOR. `pbert` writes fixed 1,024-sequence
+# chunks in FASTA order named `<stem>.1`, `<stem>.2`, ... with no zero padding, and the
+# old assemble step stacked `sorted(glob("*.npy"))` while its index stayed in FASTA order.
+# Both halves are deterministic, so the map from index position to stack row follows from
+# the record count alone -- `fir/pbert_permutation.fasta_to_legacy_row`, measured against
+# re-embedded assemblies on 2026-08-05. 222,019 accessions is 217 chunks, and
+# `sorted(range(1, 218), key=str)` is not the identity.
+#
+# THIS SUPERSEDES `repair_pool_index.py`, which recovered the same permutation by matching
+# duplicate-item signatures block by block. That reached 214,016 of 222,019 accessions and
+# left 8 blocks it could not separate. The two agree on 100.00% of what the signature
+# method covered, so the analytic map is the signature result plus the blocks it could not
+# resolve -- and neither had to trust the other to get there.
+#
+# Three gates, all of which must pass before anything is written. Two are the checks that
+# identified the defect, run in reverse; the third is held out from both derivations:
+#
+#   * every sampled group of accessions with an identical sequence lands on an identical
+#     embedding (39/400 as shipped, 400/400 permuted)
+#   * the permutation agrees with `repair_pool_index.py`'s independent recovery wherever
+#     that one spoke
+#   * every DH10B ORF byte-identical to a Swiss-Prot entry unique in the set sits at
+#     cosine > 0.999 to that entry's row (3/554 as shipped, 554/554 permuted)
+#
+# `--esmc` does the same collapse for the ESM-C set, whose stack and index WERE written
+# from the same arrays in one pass and so need no permutation. It runs the duplicate-
+# sequence gate anyway, because "was never scrambled" is a claim about a transform rather
+# than about the bytes on disk, and this artifact predates anyone checking.
+#
+# INPUT   data/fabfos/processed/reference_label_pool{,_esmc}/pool{,_esmc}/
+#         data/fabfos/originals/swissprot/2026_02/uniprot_sprot.fasta.gz
+#         data/fabfos/runs/e_coli_dh10b/  -- the held-out anchors
+# OUT     data/fabfos/processed/label_transfer_landmarks{,_esmc}/landmarks{,_esmc}/
 from __future__ import annotations
 
 import collections
@@ -119,8 +117,6 @@ def main() -> int:
     if emb.shape[0] != n:
         print(f"index {n} rows, stack {emb.shape[0]}", file=sys.stderr)
         return 2
-    # The ESM-C transform wrote its stack and its ids from the same arrays, so the only
-    # candidate is the identity -- and it still has to pass the gates below.
     perm = np.arange(n) if esmc else fasta_to_legacy_row(n)
     print(f"{n:,} accessions, {(n + 1023) // 1024} chunks, "
           f"permutation is {'the identity' if (perm == np.arange(n)).all() else 'non-trivial'}")
@@ -135,7 +131,6 @@ def main() -> int:
     for a, s in seqs.items():
         by_seq[md5(s)].append(pos[a])
 
-    # gate 1 -- identical sequences, identical embeddings
     groups = [g for g in by_seq.values() if len(g) > 1]
     rng = np.random.default_rng(0)
     sample = [groups[i] for i in rng.choice(len(groups), min(400, len(groups)),
@@ -152,8 +147,6 @@ def main() -> int:
     print(f"duplicate-sequence groups: {before}/{len(sample)} agree as shipped, "
           f"{after}/{len(sample)} permuted")
 
-    # gate 2 -- against the independent signature recovery. It ran on the ProteinBERT
-    # stack only; there is nothing for it to say about ESM-C.
     if REPAIRED.exists() and not esmc:
         rep = pd.read_parquet(REPAIRED)
         m = dict(zip(rep["orf"], rep["row"]))
@@ -167,7 +160,6 @@ def main() -> int:
         print("the signature cross-check does not apply here")
         gate2 = True
 
-    # gate 3 -- held out from both derivations
     unique_row = {k: v[0] for k, v in by_seq.items() if len(v) == 1}
     qids = pd.read_csv(DH10B / ("annotation_alts/esmc/dh10b.esmc.index.csv" if esmc
                                 else "annotations/proteinbert/dh10b.pbert.index.csv"))["sequence_id"].to_numpy()

@@ -72,21 +72,6 @@ REPO = Path(__file__).resolve().parents[4]
 MNX = REPO / "data" / "fabfos" / "originals" / "metanetx" / "4.5"
 PROCESSED = REPO / "data" / "fabfos" / "processed"
 
-# The generic-carrier vocabulary, as a COVERAGE predicate over chem_prop's own names.
-#
-# MetaNetX underspecifies these two ways -- a `*`-bearing SMILES or no SMILES at all --
-# and the two rescue rows below share this one predicate because both underspecify the
-# same KIND of compound. They are largely not the same accessions: of the top 200
-# blockers on each side, four normalise to a shared name. A name rule rather than a
-# curated accession list because MetaNetX files the same carrier under many accessions
-# (`AH2` is at least MNXM1102421 and MNXM1105763), so an accession list would be a list
-# of the ones somebody happened to look at.
-#
-# IT IS DELIBERATELY LOOSER THAN A SUBSTITUTION PREDICATE. It matches `Acceptor`, `A`,
-# `AH2`, `Unknown` -- generics with no tabulated potential, which a thermodynamic
-# substitution must decline because there is no number to declare. `--couples` measures
-# that admissible subpopulation separately rather than by tightening this regex, so the
-# ceiling and the reachable set stay two readable numbers instead of one.
 CARRIER = re.compile(
     r"(acceptor|donor|\[|^ACP$|carrier|ferredoxin|cytochrome|flavodoxin|thioredoxin"
     r"|glutaredoxin|^AH2$|^A$|^Unknown$|^R$|^RH$|protein|oxidized|reduced|electron)",
@@ -106,7 +91,6 @@ def load_names():
 
 
 def load_mapped(bake: Path):
-    """Reactions carrying at least one atom pair -- the in-graph denominator."""
     from ecspr.bake import encoding as refs
     V = refs.load_vocab(bake / "vocab.parquet")
     rxn = V.df[V.df["kind"] == "rxn"]
@@ -116,12 +100,11 @@ def load_mapped(bake: Path):
 
 
 def bake_stamp(bake: Path) -> str:
-    """`<vocab_sha256>:<src_direction_sha256>` -- which bake this reading describes.
-
-    The shared identity block alone cannot say it: it is a fact about the node space, so
-    a direction-only re-bake inherits it byte for byte. `benchmarks/bake_identity.py`
-    carries the same pairing for the decode caches.
-    """
+    # `<vocab_sha256>:<src_direction_sha256>` -- which bake this reading describes.
+    #
+    # The shared identity block alone cannot say it: it is a fact about the node space, so
+    # a direction-only re-bake inherits it byte for byte. `benchmarks/bake_identity.py`
+    # carries the same pairing for the decode caches.
     import json
     import pyarrow.parquet as pq
     md = pq.read_schema(bake / "direction.parquet").metadata or {}
@@ -130,26 +113,11 @@ def bake_stamp(bake: Path) -> str:
 
 
 def spoke(fc, member=None):
-    """Reactions the forecast expects at least one member (or `member`) to answer."""
     d = fc if member is None else fc[fc["member"] == member]
     return set(d.loc[d["mechanism"] == "expected_ok", "mnxr"])
 
 
 def agrees_with_forecast(ann: pd.DataFrame, post: pd.DataFrame) -> int:
-    """Does the annotation's record of who spoke agree with the forecast's prediction?
-
-    Every row below is `still` intersected with something, and `still` is the annotation
-    and the forecast agreeing about silence. If the two describe different bakes the rows
-    are arithmetic over a contradiction, and they will look entirely ordinary -- which is
-    how a stale seam has failed here before.
-
-    So check the two independently. The forecast's error is ONE-SIDED by construction: it
-    never predicts silence where the member spoke. That direction is an assertion. The
-    other direction is a residue, reported rather than bounded, because it is exactly the
-    two mechanisms the forecast declines to predict from tables -- dGbyG's heavy-atom
-    boundary and eQuilibrator's degenerate sigma. This is `forecast backtest` reduced to
-    what a rescue table depends on, so a re-measure needs no member table to be checked.
-    """
     bad = 0
     for member, col in (("dgbyg", "dgbyg_dg"), ("eq", "eq_dg")):
         actually = set(ann.loc[ann[col].notna(), "mnxr"])
@@ -192,14 +160,6 @@ def main(argv=None):
     ap.add_argument("--out", type=Path, default=None, help="write the table as TSV")
     a = ap.parse_args(argv)
 
-    # `substitute` HAS landed, so the refusal it was waiting on is retired. What the
-    # argument records is still only a LABEL -- nothing here applies a substitution. The
-    # chemistry enters through `forecast_postfix.parquet`, which must have been built
-    # with the same `--substitutions` the members were given, and `agrees_with_forecast`
-    # below is what actually catches a mismatch: a forecast built for the wrong
-    # configuration disagrees with the annotation about which members spoke, whichever
-    # string was passed here. The path is checked so the header cannot name a table that
-    # was never read.
     if a.substitutions != "none" and not Path(a.substitutions).is_dir():
         raise SystemExit(f"[rescue] --substitutions {a.substitutions!r} is neither "
                          f"'none' nor a substitution table directory")
@@ -225,7 +185,7 @@ def main(argv=None):
 
     tier = {t: set(ann.loc[ann["dir_tier"] == t, "mnxr"]) for t in (0, 1, 2, 3)}
     post_silent = set(ann["mnxr"]) - spoke(post)
-    still = tier[0] & post_silent          # tier 0 that the water fix does NOT move
+    still = tier[0] & post_silent
     print(f"universe {len(ann):,} · tier 0 {len(tier[0]):,} "
           f"(in-graph {len(tier[0] & mapped):,}) · tier 3 {len(tier[3]):,}")
     print(f"tier 0 both members STILL silent after the water fix: {len(still):,} "
@@ -256,11 +216,6 @@ def main(argv=None):
         "curated-only rows forecast to gain a thermo vote and still without one; "
         "r8 delivered 3,800 of 3,806")
 
-    # ---- 3/5: the carriers, which are ONE population wearing two hats -----
-    # A reaction whose every unreadable participant is a generic carrier is one a
-    # carrier table would complete. Splitting it by whether the REST of the equation
-    # balances is what separates "a lookup finishes this" from "a lookup plus a
-    # rebalance might".
     def unreadable(s):
         return [m for m in s if (props.get(m) or {}).get("smiles") is None]
 
@@ -290,12 +245,6 @@ def main(argv=None):
         return heavy_cache[m]
 
     def remainder_balances(s, drop):
-        """Do the heavy atoms balance once `drop`'s participants are removed?
-
-        The claim a carrier table makes: the carrier pair contributes a tabulated
-        dE'0 and everything else is ordinary chemistry. It is only a lookup if the
-        rest of the equation is already closed.
-        """
         tot = collections.Counter()
         for m, coeff in s.items():
             if m in drop:
@@ -335,12 +284,6 @@ def main(argv=None):
     row("wildcard.ceiling", wildcard_only, "low",
         "R-group residues are the only blocker, remainder not necessarily closed")
 
-    # ---- 5b: what a SUBSTITUTION can reach, which is not the ceiling ------
-    # The rows above are priced on a name regex, and a name regex has no opinion about
-    # whether a compound has a potential to look up. `Acceptor` matches it and cannot be
-    # substituted; `Reduced flavin` matches it and can. Given the couples table, the
-    # honest number is the reactions whose every blocker is an accession that table
-    # names -- which is smaller than the ceiling and is what T3 is actually buying.
     if a.couples is not None:
         named = set(pd.read_csv(a.couples, sep="\t", comment="#")["mnxm"].astype(str))
         adm, adm_closed = set(), set()
@@ -357,7 +300,6 @@ def main(argv=None):
         row("carrier.couple_admissible.closed", adm_closed, "medium-high",
             "and the remainder already balances, so the direction is a dE'0 lookup")
 
-    # ---- 6: unbalanced, with nothing else in the way ---------------------
     unb = set(post.loc[(post["member"] == "dgbyg")
                        & (post["mechanism"] == "unbalanced"), "mnxr"]) & still
     row("unbalanced.only_blocker", unb, "very low",
@@ -410,11 +352,6 @@ def main(argv=None):
           f"{len(still - carrier_only - wildcard_only - unb - neutral_rescue):,} "
           f"tier-0 reactions no named mechanism reaches")
 
-    # ---- who is doing the blocking, and how concentrated is it -----------
-    # The number that decides whether a carrier table is a week or a year. It is
-    # taken per MECHANISM because the two underspecifications are largely different
-    # accessions of the same kind of compound -- a table built from one list will
-    # miss most of the other, which is not visible in a combined ranking.
     print("\nblockers among the still-silent tier-0 population")
     blocked = post[(post["member"] == "dgbyg") & post["mnxr"].isin(still)]
     for mech in ("no_smiles", "wildcard"):
@@ -463,12 +400,6 @@ def _sha(path: Path) -> str:
 
 
 def _compare(want: pd.DataFrame, got: pd.DataFrame, source: Path) -> int:
-    """Row for row against a previous reading. A disagreement is an exit code.
-
-    Two independent computations of the same partition -- one now, one committed -- so a
-    stale annotation or a half-swapped seam surfaces here rather than as a plausible
-    number nobody re-derived.
-    """
     w = want.set_index("mechanism")[["reactions", "in_graph"]]
     g = got.set_index("mechanism")[["reactions", "in_graph"]]
     bad = []

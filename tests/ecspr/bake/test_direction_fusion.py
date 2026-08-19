@@ -85,15 +85,14 @@ def test_the_provenance_ladder_records_who_spoke_rather_than_selecting():
 
 
 def test_a_silent_member_arrives_as_nan_and_must_not_read_as_a_vote():
-    """`build` left-merges, so an absent member is NaN -- and NaN is not None.
-
-    The ladder used to test `is not None`, which every NaN passes: 13,479 rows of
-    the deployed bake carry a `dir_method` naming a member that never spoke, of
-    which 12,405 are dGbyG-only rows labelled as an eQ/dGbyG agreement. The RATIO
-    was never affected (the vote itself goes through `_num`), so this is
-    provenance alone -- which is exactly why it could sit there unnoticed, and
-    exactly why a before/after member accounting cannot be read until it is fixed.
-    """
+    # `build` left-merges, so an absent member is NaN -- and NaN is not None.
+    #
+    # The ladder used to test `is not None`, which every NaN passes: 13,479 rows of
+    # the deployed bake carry a `dir_method` naming a member that never spoke, of
+    # which 12,405 are dGbyG-only rows labelled as an eQ/dGbyG agreement. The RATIO
+    # was never affected (the vote itself goes through `_num`), so this is
+    # provenance alone -- which is exactly why it could sit there unnoticed, and
+    # exactly why a before/after member accounting cannot be read until it is fixed.
     nan = float("nan")
 
     db_only = C.combine_row({"mnxr": "R", "eq_dg": nan, "eq_sigma": nan,
@@ -118,18 +117,17 @@ def test_a_silent_member_arrives_as_nan_and_must_not_read_as_a_vote():
 
 
 def test_a_group_cancellation_is_not_a_measurement():
-    """eQuilibrator returns dG'=0 at the sigma floor when the groups cancel exactly.
-
-    That is a statement about the equation -- both sides built from the same pieces --
-    not a measurement of it, and `calibrate` already drops exactly these rows from the
-    arm it fits sigma_0 on. The combiner used to promote them to tier 1 at
-    S_MEAS_FLOOR: 4,841 of r8's 7,012 tier-1 rows, so the tier a consumer reads as
-    MEASURED was 69% no-information.
-
-    The normalisation has to happen above BOTH the vote and the ladder. Patching only
-    `thermo_vote` leaves `dir_method` reading the raw column, which trades one
-    provenance defect for another.
-    """
+    # eQuilibrator returns dG'=0 at the sigma floor when the groups cancel exactly.
+    #
+    # That is a statement about the equation -- both sides built from the same pieces --
+    # not a measurement of it, and `calibrate` already drops exactly these rows from the
+    # arm it fits sigma_0 on. The combiner used to promote them to tier 1 at
+    # S_MEAS_FLOOR: 4,841 of r8's 7,012 tier-1 rows, so the tier a consumer reads as
+    # MEASURED was 69% no-information.
+    #
+    # The normalisation has to happen above BOTH the vote and the ladder. Patching only
+    # `thermo_vote` leaves `dir_method` reading the raw column, which trades one
+    # provenance defect for another.
     floor = canon.DIR_SIGMA_FLOOR
     row = {"mnxr": "R", "eq_dg": 0.0, "eq_sigma": floor, "eq_uses_gc": False,
            "dgbyg_dg": -18.0, "dgbyg_sigma": 3.0}
@@ -140,26 +138,22 @@ def test_a_group_cancellation_is_not_a_measurement():
     assert got["dir_method"] == "dgbyg", (
         "the ladder named eQuilibrator after eq_vote refused to let it vote")
 
-    # the raw columns stay verbatim, so which rows were dropped is recoverable
     assert got["eq_dg"] == 0.0 and got["eq_sigma"] == floor
 
-    # a real measurement at the same dG' is untouched -- sigma is the discriminator
     real = C.combine_row(dict(row, eq_sigma=2.0), calib={}, sigma_0=canon.DIR_SIGMA_0)
     assert real["dir_tier"] == 1 and real["dir_method"] == "eq_rc+dgbyg"
 
-    # and the group-contribution arm is not in scope: it is already a prediction
     gc = C.combine_row(dict(row, eq_uses_gc=True), calib={}, sigma_0=canon.DIR_SIGMA_0)
     assert gc["dir_method"] == "eq_gc_x_dgbyg"
 
 
 def test_an_absent_dgbyg_table_does_not_relabel_silence_as_refusal():
-    """`refused` is dGbyG declining on a wildcard. NaN is dGbyG not being there.
-
-    dGbyG cannot coexist with the eQ stack, so `drive eval` writes an EMPTY member
-    table when the env lacks it -- every `dgbyg_wildcard` then arrives as a float
-    NaN, which is truthy. Under the old test that turned all 47,266 no-evidence
-    reactions into deliberate abstentions by a member that never ran.
-    """
+    # `refused` is dGbyG declining on a wildcard. NaN is dGbyG not being there.
+    #
+    # dGbyG cannot coexist with the eQ stack, so `drive eval` writes an EMPTY member
+    # table when the env lacks it -- every `dgbyg_wildcard` then arrives as a float
+    # NaN, which is truthy. Under the old test that turned all 47,266 no-evidence
+    # reactions into deliberate abstentions by a member that never ran.
     absent = C.combine_row({"mnxr": "R", "dgbyg_wildcard": float("nan")},
                            calib={}, sigma_0=canon.DIR_SIGMA_0)
     assert absent["dir_method"] == "no_evidence"
@@ -178,7 +172,7 @@ def test_an_absent_dgbyg_table_does_not_relabel_silence_as_refusal():
 # cancelling zero over that floor and hand it back the tier r8 was baked to take away.
 
 def test_a_group_cancellation_stays_refused_however_wide_the_substitution():
-    """The re-promotion r8 removed, attempted through the new column."""
+    # The re-promotion r8 removed, attempted through the new column.
     r = {"mnxr": "R", "eq_dg": 0.0, "eq_sigma": C.SIGMA_FLOOR, "eq_uses_gc": False,
          "eq_sigma_sub": 5.0}
     row = C.combine_row(r, calib={}, sigma_0=canon.DIR_SIGMA_0)
@@ -187,8 +181,8 @@ def test_a_group_cancellation_stays_refused_however_wide_the_substitution():
 
 
 def test_a_substituted_measurement_is_not_reported_as_measured():
-    """Tier 1 is the tier a consumer reads as MEASURED, and eQuilibrator measured the
-    MODEL equation. The anchor gate justifies the number, not the provenance."""
+    # Tier 1 is the tier a consumer reads as MEASURED, and eQuilibrator measured the
+    # MODEL equation. The anchor gate justifies the number, not the provenance.
     base = {"mnxr": "R", "eq_dg": -20.0, "eq_sigma": 1.0, "eq_uses_gc": False}
     plain = C.combine_row(base, calib={}, sigma_0=canon.DIR_SIGMA_0)
     subbed = C.combine_row({**base, "eq_sigma_sub": 2.0}, calib={},
@@ -199,8 +193,6 @@ def test_a_substituted_measurement_is_not_reported_as_measured():
 
 
 def test_the_substitution_width_widens_the_posterior_and_shrinks_the_ratio():
-    """An asserted structure that changed nothing about the answer's confidence would be
-    a number nobody could audit."""
     base = {"mnxr": "R", "eq_dg": -20.0, "eq_sigma": 1.0, "eq_uses_gc": True}
     plain = C.combine_row(base, calib={}, sigma_0=canon.DIR_SIGMA_0)
     subbed = C.combine_row({**base, "dgbyg_sigma_sub": 8.0}, calib={},
@@ -211,7 +203,7 @@ def test_the_substitution_width_widens_the_posterior_and_shrinks_the_ratio():
 
 
 def test_an_absent_sigma_sub_column_reads_as_no_assertion():
-    """r8's member tables predate the column; it must arrive as zero width, not NaN."""
+    # r8's member tables predate the column; it must arrive as zero width, not NaN.
     r = {"mnxr": "R", "eq_dg": -20.0, "eq_sigma": 1.0, "eq_uses_gc": False}
     row = C.combine_row(r, calib={}, sigma_0=canon.DIR_SIGMA_0)
     assert row["sigma_sub"] == 0.0 and row["dir_tier"] == 1

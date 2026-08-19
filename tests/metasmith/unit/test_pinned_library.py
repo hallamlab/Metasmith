@@ -1,14 +1,13 @@
-"""A pinned library serves its recorded ids and refuses to change.
-
-What these cover is the *mechanism*: the refusals, the round trip, and that a
-pinned `Get()` never opens a file. What they cannot cover is whether the pin
-protects anything -- every failure mode listed at the top of
-`models/libraries/pinned.py` is outside what a test can reach (a same-mtime
-edit, a caller going around the API, a stamp taken on another host). That is
-precisely why they are documented rather than asserted, and a green run here is
-not evidence the data is untouched. `metasmith data verify --deep` is the only
-thing that answers that question.
-"""
+# A pinned library serves its recorded ids and refuses to change.
+#
+# What these cover is the *mechanism*: the refusals, the round trip, and that a
+# pinned `Get()` never opens a file. What they cannot cover is whether the pin
+# protects anything -- every failure mode listed at the top of
+# `models/libraries/pinned.py` is outside what a test can reach (a same-mtime
+# edit, a caller going around the API, a stamp taken on another host). That is
+# precisely why they are documented rather than asserted, and a green run here is
+# not evidence the data is untouched. `metasmith data verify --deep` is the only
+# thing that answers that question.
 
 from __future__ import annotations
 
@@ -74,13 +73,12 @@ def test_a_pinned_library_refuses_every_mutation(tmp_path, verb):
 
 
 def test_a_view_of_a_pinned_library_refuses_too(tmp_path):
-    """The view delegates, and the delegation IS the enforcement.
-
-    `DataInstanceLibraryView.__getattr__` forwards anything it does not override
-    to the wrapped library, so the refusal is inherited for free. Adding an
-    overriding wrapper on the view would reopen the bypass, which is what this
-    guards.
-    """
+    # The view delegates, and the delegation IS the enforcement.
+    #
+    # `DataInstanceLibraryView.__getattr__` forwards anything it does not override
+    # to the wrapped library, so the refusal is inherited for free. Adding an
+    # overriding wrapper on the view would reopen the bypass, which is what this
+    # guards.
     lib = _library(tmp_path)
     lib.Pin()
     view = lib.AsView({Path("item_0.txt")})
@@ -100,11 +98,10 @@ def test_the_copy_constructor_does_not_launder_a_pin(tmp_path):
 
 
 def test_a_pinned_get_reads_no_file(tmp_path, monkeypatch):
-    """The whole point: 24 GB of references cost one stat, not one blake3.
-
-    Monkeypatching the digest to raise is a deterministic stand-in for the
-    10 seconds this removes, which is not something a test can assert on.
-    """
+    # The whole point: 24 GB of references cost one stat, not one blake3.
+    #
+    # Monkeypatching the digest to raise is a deterministic stand-in for the
+    # 10 seconds this removes, which is not something a test can assert on.
     lib = _library(tmp_path)
     lib.Pin()
     before = {p: lib.Get(p).instance_id for p in lib.manifest}
@@ -121,12 +118,11 @@ def test_a_pinned_get_reads_no_file(tmp_path, monkeypatch):
 
 
 def test_a_pinned_directory_entry_keeps_one_identity(tmp_path):
-    """Directories were the worst case, not merely an unhandled one.
-
-    `_mint_leaf_id` gates content addressing on `is_file()`, so a directory fell
-    through to `uuid4 + time_ns` and got a fresh id on every build -- which made
-    the plan key non-deterministic on one machine, before any question of two.
-    """
+    # Directories were the worst case, not merely an unhandled one.
+    #
+    # `_mint_leaf_id` gates content addressing on `is_file()`, so a directory fell
+    # through to `uuid4 + time_ns` and got a fresh id on every build -- which made
+    # the plan key non-deterministic on one machine, before any question of two.
     types_yml = tmp_path / "t.yml"
     types_yml.write_text(yaml.safe_dump(TYPES))
     lib = DataInstanceLibrary(tmp_path / "lib.xgdb")
@@ -167,7 +163,7 @@ def test_a_moved_entry_makes_load_raise_and_restamp_clears_it(tmp_path):
 
 
 def test_a_missing_entry_is_skipped_not_raised(tmp_path):
-    """A pinned library staged to an agent names paths that host does not have."""
+    # A pinned library staged to an agent names paths that host does not have.
     lib = _library(tmp_path)
     lib.Pin()
     (lib.location / "item_0.txt").unlink()
@@ -186,11 +182,10 @@ def test_a_stamp_from_another_host_warns_instead_of_raising(tmp_path):
 
 
 def test_pinning_does_not_move_the_library_key(tmp_path):
-    """The key must not see the stamp.
-
-    The library key flows into the task key, so a legitimate re-stamp that moved
-    it would re-break the plan stability pinning exists to buy.
-    """
+    # The key must not see the stamp.
+    #
+    # The library key flows into the task key, so a legitimate re-stamp that moved
+    # it would re-break the plan stability pinning exists to buy.
     lib = _library(tmp_path)
     before = lib.GetKey()
     lib.Pin()
@@ -208,13 +203,12 @@ def test_unpinning_allows_mutation_again(tmp_path):
 
 
 def test_a_legacy_frozen_block_still_loads_and_keys_the_same(tmp_path):
-    """`pinned:` was called `frozen:` before the rename.
-
-    An index written under the old spelling is read, not migrated -- a staged
-    copy on a host nobody can re-pin from would otherwise load unpinned and pay
-    the per-plan re-hash the block exists to remove. Both spellings stay out of
-    the library key, or the rename alone moves every task key built on one.
-    """
+    # `pinned:` was called `frozen:` before the rename.
+    #
+    # An index written under the old spelling is read, not migrated -- a staged
+    # copy on a host nobody can re-pin from would otherwise load unpinned and pay
+    # the per-plan re-hash the block exists to remove. Both spellings stay out of
+    # the library key, or the rename alone moves every task key built on one.
     lib = _library(tmp_path)
     before = lib.GetKey()
     lib.Pin()
@@ -229,11 +223,10 @@ def test_a_legacy_frozen_block_still_loads_and_keys_the_same(tmp_path):
 
 
 def test_a_staged_pinned_library_does_not_need_to_write(tmp_path):
-    """`PrepTransfer` saves as a side effect, and a pinned library still stages.
-
-    Its index is authoritative by definition, so there is nothing to write --
-    but a hard refusal there would have broken every workflow that stages one.
-    """
+    # `PrepTransfer` saves as a side effect, and a pinned library still stages.
+    #
+    # Its index is authoritative by definition, so there is nothing to write --
+    # but a hard refusal there would have broken every workflow that stages one.
     from metasmith.models.remote import Source
 
     lib = _library(tmp_path)
@@ -242,15 +235,14 @@ def test_a_staged_pinned_library_does_not_need_to_write(tmp_path):
 
 
 def test_restamp_cannot_launder_a_deep_baseline(tmp_path):
-    """A restamp clears the cheap check and must NOT clear the expensive one.
-
-    `Restamp` exists for the false positive -- the stamp moved, the bytes did
-    not -- and a caller reaching for it is asserting exactly that. If it
-    re-derived the content digest it would bless whatever is on disk; if it
-    dropped it, a real DRIFTED verdict would become UNVERIFIABLE. Both turn "we
-    did not check" into "it is fine", which is the failure this whole mechanism
-    is documented not to commit.
-    """
+    # A restamp clears the cheap check and must NOT clear the expensive one.
+    #
+    # `Restamp` exists for the false positive -- the stamp moved, the bytes did
+    # not -- and a caller reaching for it is asserting exactly that. If it
+    # re-derived the content digest it would bless whatever is on disk; if it
+    # dropped it, a real DRIFTED verdict would become UNVERIFIABLE. Both turn "we
+    # did not check" into "it is fine", which is the failure this whole mechanism
+    # is documented not to commit.
     lib = _library(tmp_path)
     lib.Pin(deep=True)
     target = lib.location / "item_0.txt"
@@ -268,11 +260,10 @@ def test_restamp_cannot_launder_a_deep_baseline(tmp_path):
 
 
 def test_verify_and_restamp_are_reachable_on_a_drifted_library(tmp_path):
-    """The remedy must not be gated behind the check it exists to clear.
-
-    `Load` raises on drift, which is right for a planner and fatal for the two
-    verbs whose job is to adjudicate one -- they would die before reporting.
-    """
+    # The remedy must not be gated behind the check it exists to clear.
+    #
+    # `Load` raises on drift, which is right for a planner and fatal for the two
+    # verbs whose job is to adjudicate one -- they would die before reporting.
     lib = _library(tmp_path)
     lib.Pin()
     (lib.location / "item_0.txt").write_text("changed\n")

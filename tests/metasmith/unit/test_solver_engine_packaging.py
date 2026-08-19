@@ -55,15 +55,6 @@ def test_every_shipping_build_checks_the_engine_stage(verb):
 
 @pytest.mark.parametrize("verb", ["-ud", "-bs"])
 def test_every_publishing_step_checks_the_engine_inside_the_image(verb):
-    """The staging guard runs before pip, and the damage happens during pip.
-
-    A file staged mode 444 passes `_assert_solver_engine` -- it did not, until
-    that guard learned the exec bit, and it still would if the mode were lost
-    anywhere downstream: an sdist carries 444 through unchanged and a wheel
-    normalises it to 644. Neither runs. So the last gate before something
-    leaves this machine asks the *installed* package which backend it will use,
-    which is the only check downstream of every step that can mangle a mode.
-    """
     text = DEV_SH.read_text(encoding="utf-8")
     arm = re.search(rf"^    \{verb}\).*?(?=^    -|\A\Z)", text, re.S | re.M)
     assert arm is not None, f"dev.sh has no [{verb}] arm any more"
@@ -75,11 +66,6 @@ def test_every_publishing_step_checks_the_engine_inside_the_image(verb):
 
 
 def test_the_stage_guard_checks_the_executable_bit():
-    """Size and magic bytes say nothing about whether the file can run.
-
-    This is the assertion the 444 checkout walked straight past: four valid
-    ELF/Mach-O binaries of the right size, none of them executable.
-    """
     text = DEV_SH.read_text(encoding="utf-8")
     arm = re.search(r"^_assert_solver_engine\(\).*?^\}", text, re.S | re.M)
     assert arm is not None, "dev.sh has no _assert_solver_engine any more"
@@ -90,12 +76,6 @@ def test_the_stage_guard_checks_the_executable_bit():
 
 
 def test_an_engine_is_staged_for_this_platform():
-    """`engine/` is generated, not committed, and nothing else notices its absence.
-
-    Every other engine test in the suite skips when there is no binary, by
-    design -- they are about behaviour, and there is none to test. This one is
-    about the build, so it fails.
-    """
     found = packaged_engine_path()
     assert found is not None, (
         f"no {ENGINE_NAME} staged for this platform in {ENGINE_DIR}."
@@ -107,12 +87,6 @@ def test_an_engine_is_staged_for_this_platform():
 
 
 def test_the_staged_engine_is_executable():
-    """The mode, on the file that is actually there.
-
-    Separate from the test above so the failure names which of the two
-    happened: nothing staged is a build that was not run, a staged file that
-    cannot run is a mode lost between the build and here.
-    """
     import os
 
     found = packaged_engine_path()

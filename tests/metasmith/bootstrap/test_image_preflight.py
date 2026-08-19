@@ -1,23 +1,22 @@
-"""Filling the image store before a run, and saying so before a launch.
-
-Tool images materialise lazily -- inside the first task that needs each one.
-On a cluster whose compute nodes have no route to a registry that is exactly
-where it fails, and Antonio pre-pulled all eight of W1's containers by hand on
-the login node. The store directory in the agent home was already wired up at
-both deploy and execution time; what was missing was any way to *fill* it ahead
-of a run, and any warning at submit time that it was incomplete.
-
-Two halves, deliberately split:
-
-  * the pre-flight fetches, and is asked for explicitly (a verb);
-  * the launch path only reports, because on a connected cluster lazy
-    materialisation is right and moving pulls onto every launch's critical path
-    would be a regression.
-
-Both read the stage-time env manifest rather than a transform library, since the
-launching host may hold neither the library nor the images. Nothing here opens a
-connection: the free functions take a shell, and these drive them with a stub.
-"""
+# Filling the image store before a run, and saying so before a launch.
+#
+# Tool images materialise lazily -- inside the first task that needs each one.
+# On a cluster whose compute nodes have no route to a registry that is exactly
+# where it fails, and Antonio pre-pulled all eight of W1's containers by hand on
+# the login node. The store directory in the agent home was already wired up at
+# both deploy and execution time; what was missing was any way to *fill* it ahead
+# of a run, and any warning at submit time that it was incomplete.
+#
+# Two halves, deliberately split:
+#
+#   * the pre-flight fetches, and is asked for explicitly (a verb);
+#   * the launch path only reports, because on a connected cluster lazy
+#     materialisation is right and moving pulls onto every launch's critical path
+#     would be a regression.
+#
+# Both read the stage-time env manifest rather than a transform library, since the
+# launching host may hold neither the library nor the images. Nothing here opens a
+# connection: the free functions take a shell, and these drive them with a stub.
 
 from pathlib import Path
 
@@ -59,13 +58,6 @@ def _mamba() -> Environment:
 
 
 class _StubShell:
-    """Records what it was asked to run, and answers the tests it is given.
-
-    `present` is the set of images the store already holds; every other
-    materialised test answers no. `fails` names images whose materialise
-    command reports failure.
-    """
-
     def __init__(self, present=(), fails=()):
         self.present = set(present)
         self.fails = set(fails)
@@ -98,12 +90,8 @@ class _StubShell:
         return [c for c in self.commands if "apptainer pull" in c or "apptainer build" in c]
 
 
-# ----------------------------------------------------------- reading the manifest
-
-
 class TestWhichImages:
     def test_distinct_images_across_steps(self):
-        # A library where eight steps share three images must materialise three.
         steps = {
             f"P{i}": _step(f"P{i}", "t", {"a.env": {"container": img}})
             for i, img in enumerate([KRAKEN, SYLPH, KRAKEN, METAPHLAN, SYLPH, KRAKEN, KRAKEN, SYLPH])
@@ -139,12 +127,11 @@ class TestWhichImages:
 
 class TestArtifactChoice:
     def test_the_staged_rootfs_override_is_honoured(self):
-        """The pre-flight must produce the artifact the steps will look for.
-
-        A workspace staged `rootfs=sandbox` whose store was filled with SIFs is
-        a pre-flight that did nothing: the first task finds no sandbox and
-        unpacks one itself, on the node that cannot reach a registry.
-        """
+        # The pre-flight must produce the artifact the steps will look for.
+        #
+        # A workspace staged `rootfs=sandbox` whose store was filled with SIFs is
+        # a pre-flight that did nothing: the first task finds no sandbox and
+        # unpacks one itself, on the node that cannot reach a registry.
         env = _tool_environment_for(KRAKEN, _apptainer(), HOME, rootfs="sandbox")
         assert env.rootfs is Rootfs.SANDBOX
 
@@ -159,9 +146,6 @@ class TestArtifactChoice:
         assert str(env.GetLocalPath()).startswith("${APPTAINER_CACHEDIR:-/msm_home/container_images}")
 
 
-# ------------------------------------------------------------------ materialising
-
-
 class TestMaterialise:
     def test_each_image_is_fetched_once_and_reported(self):
         sh = _StubShell()
@@ -171,12 +155,11 @@ class TestMaterialise:
         assert len(sh.materialise_commands()) == 2
 
     def test_it_emits_the_same_command_the_execution_path_emits(self):
-        """Not a second implementation of the fallback chain.
-
-        The whole value of reusing it is that a pre-flight and a task cannot
-        disagree about what a materialised image is -- including the T1 mount
-        test and its stamp.
-        """
+        # Not a second implementation of the fallback chain.
+        #
+        # The whole value of reusing it is that a pre-flight and a task cannot
+        # disagree about what a materialised image is -- including the T1 mount
+        # test and its stamp.
         sh = _StubShell()
         _materialise_images(sh, [KRAKEN], _apptainer(), HOME, rootfs=None)
         env = _tool_environment_for(KRAKEN, _apptainer(), HOME, rootfs=None)
@@ -208,9 +191,6 @@ class TestMaterialise:
         assert sh.commands == []
 
 
-# ------------------------------------------------------------ the launch-path report
-
-
 class TestLaunchReport:
     def test_it_names_what_is_missing_without_fetching(self):
         sh = _StubShell(present=[KRAKEN])
@@ -223,9 +203,6 @@ class TestLaunchReport:
         assert _check_image_store(sh, [KRAKEN, SYLPH], _apptainer(), HOME, rootfs=None) == []
 
     def test_no_images_to_check_is_not_a_failure(self):
-        # A workspace staged by an older metasmith records no images. That is
-        # indistinguishable from "no images needed" here, and must not turn an
-        # already-staged run into a failure.
         sh = _StubShell()
         assert _check_image_store(sh, [], _apptainer(), HOME, rootfs=None) == []
         assert sh.commands == []

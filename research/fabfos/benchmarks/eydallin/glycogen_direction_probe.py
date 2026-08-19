@@ -76,19 +76,14 @@ GENES = {
     "malP": (["MNXR145036", "MNXR145038", "MNXR145632", "MNXR145636", "MNXR145639"], 60.8),
 }
 
-# The physiological direction of each module reaction, spelled as a ratio the builder
-# reads: >1 means "the MetaNetX equation is written backwards, flip the edge", <1 means
-# "as written is the direction the enzyme runs". This is a HAND CURATION standing in for
-# evidence the bake does not have -- it is the counterfactual the third section needs,
-# not a proposal to ship.
 HARD = 1e6
 CURATED = {
-    "MNXR145036": HARD,        # G1P = Glycogen + Pi          -- phosphorylase, written anabolic
-    "MNXR145038": HARD,        # G1P = BranchGlycogen + Pi    -- same
-    "MNXR145639": HARD,        # maltohex + G1P = maltohept   -- written as elongation
-    "MNXR145632": 1 / HARD,    # maltopent + Pi = maltotet + G1P -- written catabolic, keep
-    "MNXR145636": 1 / HARD,    # maltohex + Pi = maltopent + G1P -- written catabolic, keep
-    "MNXR145046": 1 / HARD,    # ADP-glucose = ADP + Glycogen -- synthase, written anabolic, keep
+    "MNXR145036": HARD,
+    "MNXR145038": HARD,
+    "MNXR145639": HARD,
+    "MNXR145632": 1 / HARD,
+    "MNXR145636": 1 / HARD,
+    "MNXR145046": 1 / HARD,
 }
 
 
@@ -150,11 +145,6 @@ def main():
         return float(solve(g, src, snk).total)
 
     def throughput(weights, ratios, mnxms=(GLYCOGEN_MNXM,)) -> float:
-        """Gross carbon current the glycogen node handles under a glucose injection.
-
-        The net is the node's own leak draw and is zero by KCL up to that leak, so it
-        carries no signal; max(inflow, outflow) does.
-        """
         g = graph(weights, ratios)
         src = Terminal.metabolite(g, SOURCE_MNXM, label="glucose")
         g2, _ = attach_leak(g, None, leak=args.leak)

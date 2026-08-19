@@ -57,7 +57,6 @@ GLYCOGEN_MNXM = "MNXM738130"
 
 
 def arms(baked: dict, cap: float):
-    """The three direction treatments, as ``(name, {mnxr: ratio})``."""
     return [("baked", baked),
             ("capped", cap_direction_ratios(baked, cap)),
             ("symmetric", {k: 1.0 for k in baked})]

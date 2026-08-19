@@ -1,5 +1,5 @@
-"""Simulate per-member admission: where dgbyg's substitution is now REFUSED, dgbyg sees the
-unsubstituted equation -- which is exactly what r8's member table already holds."""
+# Simulate per-member admission: where dgbyg's substitution is now REFUSED, dgbyg sees the
+# unsubstituted equation -- which is exactly what r8's member table already holds.
 import sys; sys.path.insert(0, "src")
 import pandas as pd
 from pathlib import Path

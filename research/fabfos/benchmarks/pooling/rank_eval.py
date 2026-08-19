@@ -1,20 +1,19 @@
 #!/usr/bin/env python3
-"""How the belief allocation ranks de novo nominations, and what carries the top of it.
-
-Scores the E. coli K-12 de novo GPR table against iML1515's own reactome. AUROC is
-REPORTED, NOT GATED: the truth set is confounded against any change that discounts
-repeated evidence, because the reactions with the most repeated annotations are the
-well-studied ones and those are exactly the ones curated into iML1515. The
-unconfounded number here is `single-assertion fraction of the top 100` -- what share
-of the highest-conductance reactions rest on one (unit, channel, evidence_id) with no
-corroboration at all.
-
-With `--sweep`, jointly sweeps the pooling constants (lam0, lam1, tau) and prints the
-same panel per point. tau and lam1 interact -- tau sets where saturation begins, lam1
-the ceiling -- so they are swept together, never one at a time. A point where lam1 is
-large and tau tiny is a hard count of distinct assertions wearing a sigmoid; recognise
-it rather than shipping it.
-"""
+# How the belief allocation ranks de novo nominations, and what carries the top of it.
+#
+# Scores the E. coli K-12 de novo GPR table against iML1515's own reactome. AUROC is
+# REPORTED, NOT GATED: the truth set is confounded against any change that discounts
+# repeated evidence, because the reactions with the most repeated annotations are the
+# well-studied ones and those are exactly the ones curated into iML1515. The
+# unconfounded number here is `single-assertion fraction of the top 100` -- what share
+# of the highest-conductance reactions rest on one (unit, channel, evidence_id) with no
+# corroboration at all.
+#
+# With `--sweep`, jointly sweeps the pooling constants (lam0, lam1, tau) and prints the
+# same panel per point. tau and lam1 interact -- tau sets where saturation begins, lam1
+# the ceiling -- so they are swept together, never one at a time. A point where lam1 is
+# large and tau tiny is a hard count of distinct assertions wearing a sigmoid; recognise
+# it rather than shipping it.
 from __future__ import annotations
 
 import argparse

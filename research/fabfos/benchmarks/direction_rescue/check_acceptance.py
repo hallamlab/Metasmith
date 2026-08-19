@@ -37,7 +37,6 @@ SILENT = {"eq": {"no_stoich", "no_props", "unresolved"},
 
 
 def forecast_silent_both(forecast: pd.DataFrame) -> set[str]:
-    """MNXRs the forecast predicts no thermo vote for, on either member."""
     spoke = set()
     for member, silent in SILENT.items():
         m = forecast[forecast["member"] == member]
@@ -46,7 +45,6 @@ def forecast_silent_both(forecast: pd.DataFrame) -> set[str]:
 
 
 def crosswalk_reached(curated_per_reaction: pd.DataFrame) -> set[str]:
-    """MNXRs reached by a source other than the primary MetaCyc join."""
     df = curated_per_reaction
     return set(df.loc[df["source"] != "metacyc", "mnxr"].dropna())
 
@@ -75,7 +73,6 @@ def main(argv=None) -> int:
 
     ok = True
 
-    # --- the control set ---------------------------------------------------
     silent = forecast_silent_both(fc)
     reached = crosswalk_reached(cur)
     control = sorted((silent & set(base.index[base["dir_tier"] == 0])) - reached)
@@ -122,13 +119,11 @@ def main(argv=None) -> int:
     ok &= report(f"C14 no sign flip among {len(both1):,} tier-1-in-both", len(flips) == 0,
                  f"{len(flips)} flipped: {list(flips[:5])}")
 
-    # --- the prior width is the committed one, everywhere it applies -------
     t0 = cand[cand["dir_tier"] == 0]
     off = t0.index[t0["sigma"] != canon.DIR_SIGMA_0]
     ok &= report(f"C18 all {len(t0):,} tier-0 rows at DIR_SIGMA_0={canon.DIR_SIGMA_0}",
                  len(off) == 0, f"{len(off)} off: {list(off[:5])}")
 
-    # --- what moved, so the deltas are attributable rather than asserted ---
     print("\ntier histogram")
     hb, hc = base["dir_tier"].value_counts(), cand["dir_tier"].value_counts()
     for t in sorted(set(hb.index) | set(hc.index)):

@@ -19,7 +19,7 @@ EXEMPT_DIRS = {
 }
 EXEMPT_SUFFIXES = {".pyc", ".pyi"}
 EXEMPT_FILES = {
-    ".gitignore",     # ignores the built engine/ so the binaries stay untracked
+    ".gitignore",
 }
 
 

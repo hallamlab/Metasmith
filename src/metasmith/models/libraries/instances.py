@@ -154,9 +154,6 @@ class DataInstanceLibrary(_LeafIdentity, _StoreTransfer, _PinnedLibrary, _Teleme
             self.instance_meta = other.instance_meta
             self.fork_id = other.fork_id
             self._type_sources = other._type_sources
-            # ...including the pin, or the copy constructor is a laundering
-            # route: `DataInstanceLibrary(pinned_lib)` would hand back a
-            # writable library over the same location and the same meta dict.
             self._pinned = other._pinned
         else:
             location = Path(location).resolve()
@@ -361,19 +358,13 @@ class DataInstanceLibrary(_LeafIdentity, _StoreTransfer, _PinnedLibrary, _Teleme
                     yield (from_inst, to_inst)
 
     def _register(self, path, dtype: str, parents, set_identity):
-        """Manifest bookkeeping shared by AddItem and RegisterItem.
-
-        The two differ only in where the `instance_id` comes from, and that
-        difference is the whole point of having both -- so it is the only thing
-        the caller supplies, as `set_identity(path)`.
-        """
         if parents is None:
             parents = []
         for p in parents:
             assert p in self.manifest
         path = mint_deferred_path() if path is DEFERRED else Path(path)
         assert path not in self.manifest, f"[{path}] already added"
-        self.GetType(dtype) # check if datatype exists
+        self.GetType(dtype)
         self.manifest[path] = dtype
         set_identity(path)
         self.AddParentsTo(path, [self.Get(p) for p in parents])
@@ -394,12 +385,6 @@ class DataInstanceLibrary(_LeafIdentity, _StoreTransfer, _PinnedLibrary, _Teleme
         lineage_payload: bytes|None = None,
         parents: Iterable[Path]|None = None,
     ):
-        """Add an item whose identity the caller already knows -- a DVC pin's digest, or
-        the lineage id of the transform that produced it.
-
-        The id is taken verbatim, so whatever it was derived from must be something two
-        hosts agree on, or cross-host cache reuse quietly stops.
-        """
         def _set(p: Path):
             self.instance_meta[p] = {
                 "instance_id": instance_id,
@@ -498,7 +483,6 @@ class DataInstanceLibrary(_LeafIdentity, _StoreTransfer, _PinnedLibrary, _Teleme
 
     def RenameByParent(self, parent_type: str):
         self._refuse_if_pinned("RenameByParent")
-        # Phase A -- plan, read-only; the moves and the manifest commit follow.
         rename_plan: list[tuple[Path, Path]] = []
 
         for item_path, item_type in self.manifest.items():

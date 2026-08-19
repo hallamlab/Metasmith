@@ -54,7 +54,6 @@ K_MAXES = [5, 10, 30]
 FLOORS = [0.00, 0.05, 0.10, 0.20, 0.30, 0.50]
 CONDITIONS = [("pool", None, None), ("self", "drop", None), ("twin", "drop", 0.99)]
 PRECISION_TARGET = 0.88
-# The pre-quota rule, as a row in its own panel.
 INCUMBENT = (0.00, 0.00, 30, 0.20)
 
 

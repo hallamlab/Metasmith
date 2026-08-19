@@ -445,13 +445,6 @@ BRANCHES = {
 
 
 def assert_seams_are_outputs() -> None:
-    """Every import must be some other part's output, at the same path.
-
-    Cheap, and it closes the one gap the plan gate cannot see. The gate proves an import
-    RESOLVED; it cannot prove the file it resolved against is the one the producing part
-    actually writes. A path typo would sail through planning -- the item is declared, the
-    type is satisfied -- and surface as a direction table encoded against nothing.
-    """
     produced = {d: p for b in BRANCHES.values() for d, p in b["outputs"].items()}
     for name, spec in BRANCHES.items():
         for dtype, rel in spec["imports"].items():
@@ -469,12 +462,11 @@ ACQUIRE_LIB = BREF / "transforms" / "acquire"
 
 
 def cached_image_name(image: str) -> str:
-    """The filename metasmith looks for in the image store.
-
-    Mirrors `Environment._cached_name` in the pinned engine. A copy rather than an import
-    because the driver must PLACE the file before any engine code runs on the remote --
-    but it is a mirror, so if that method changes, this must too.
-    """
+    # The filename metasmith looks for in the image store.
+    #
+    # Mirrors `Environment._cached_name` in the pinned engine. A copy rather than an import
+    # because the driver must PLACE the file before any engine code runs on the remote --
+    # but it is a mirror, so if that method changes, this must too.
     return image.replace("://", "..").replace(":", "..").replace("/", "_") + ".sif"
 
 
@@ -483,19 +475,18 @@ def cached_image_name(image: str) -> str:
 # ---------------------------------------------------------------------------
 
 def build_inputs(work: Path, branch: str, remote_root: str | None):
-    """Stage the given, this part's sources, and its imports from the parts before it.
-
-    RE-ROOTING IS NOT AN OPTIMISATION. metasmith binds an item's OWN path into the task
-    container -- the same string on both sides -- so an input declared at a workstation
-    path is bind-mounted at that path on the cluster node, where it does not exist, and
-    apptainer refuses with "mount source does not exist", naming neither the item nor the
-    path.
-
-    Existence is always checked against the LOCAL copy even when the declared path is
-    remote: the planner resolves on types and lineage and never on existence, so a missing
-    tree plans perfectly and fails hours later inside a container. The local copy is what
-    rsync just pushed, so checking it is checking the far side.
-    """
+    # Stage the given, this part's sources, and its imports from the parts before it.
+    #
+    # RE-ROOTING IS NOT AN OPTIMISATION. metasmith binds an item's OWN path into the task
+    # container -- the same string on both sides -- so an input declared at a workstation
+    # path is bind-mounted at that path on the cluster node, where it does not exist, and
+    # apptainer refuses with "mount source does not exist", naming neither the item nor the
+    # path.
+    #
+    # Existence is always checked against the LOCAL copy even when the declared path is
+    # remote: the planner resolves on types and lineage and never on existence, so a missing
+    # tree plans perfectly and fails hours later inside a container. The local copy is what
+    # rsync just pushed, so checking it is checking the far side.
     spec = BRANCHES[branch]
     inputs = DataInstanceLibrary(work / "inputs.xgdb")
     for tl in TYPE_LIBRARIES:
@@ -585,14 +576,13 @@ def plan(work: Path, branch: str, remote_root: str | None, agent):
 
 
 def check_plan(task, branch: str) -> tuple[set[str], list[str]]:
-    """The split's correctness proof: exactly this part's lanes, and nothing else.
-
-    EQUALITY, not containment, and the extra-lane case is the one that matters. A declared
-    import that does not satisfy its type is not an error anywhere in metasmith -- the
-    planner finds the type unmet and schedules its PRODUCER. For the direction part that
-    means quietly re-running the entire mapping part: three lanes and most of a day, charged
-    to an allocation, on nodes that have neither the image nor the inputs for them.
-    """
+    # The split's correctness proof: exactly this part's lanes, and nothing else.
+    #
+    # EQUALITY, not containment, and the extra-lane case is the one that matters. A declared
+    # import that does not satisfy its type is not an error anywhere in metasmith -- the
+    # planner finds the type unmet and schedules its PRODUCER. For the direction part that
+    # means quietly re-running the entire mapping part: three lanes and most of a day, charged
+    # to an allocation, on nodes that have neither the image nor the inputs for them.
     spec = BRANCHES[branch]
     used, pinned_local = set(), set()
     for step in task.plan.steps:
@@ -638,12 +628,11 @@ def check_plan(task, branch: str) -> tuple[set[str], list[str]]:
 
 
 def plan_resources(task) -> dict:
-    """The declared Resources of each planned step, keyed by transform stem.
-
-    Read off the RESOLVED plan rather than kept by hand. `check_walltimes` and
-    `check_schedulable` both need the longest ask, and a hand-kept table drifts in the
-    direction that matters -- omitting the one step whose duration is unschedulable.
-    """
+    # The declared Resources of each planned step, keyed by transform stem.
+    #
+    # Read off the RESOLVED plan rather than kept by hand. `check_walltimes` and
+    # `check_schedulable` both need the longest ask, and a hand-kept table drifts in the
+    # direction that matters -- omitting the one step whose duration is unschedulable.
     out = {}
     for step in task.plan.steps:
         r = getattr(step.transform, "resources", None)
@@ -657,22 +646,21 @@ def plan_resources(task) -> dict:
 # ---------------------------------------------------------------------------
 
 def push_data(host: str, branch: str, remote_root: str) -> None:
-    """rsync this part's inputs to the host, at the paths the declarations use.
-
-    Converges: the sources are release-pinned directories and the lookups are rebuilt only
-    when MetaNetX moves, so a second run transfers nothing.
-
-    --size-only, and NEITHER the default (size+mtime) NOR --checksum. mtime is out because
-    hardlink placement and DVC checkout give a re-staged file a fresh one with identical
-    bytes. --checksum is out because of WHERE the reading happens: it makes the remote side
-    read and digest every byte it already has, and the remote side here is a LOGIN NODE.
-    Three consecutive runs died as `connection unexpectedly closed`, always on eQuilibrator
-    or MetaNetX, never on the small directories -- the scheduler killing a process that
-    spent minutes at full CPU on a shared host. It reads as a flaky link and is not one.
-
-    NO --delete: the remote root also holds a previous run's work directory and the caches
-    that make a lane resumable.
-    """
+    # rsync this part's inputs to the host, at the paths the declarations use.
+    #
+    # Converges: the sources are release-pinned directories and the lookups are rebuilt only
+    # when MetaNetX moves, so a second run transfers nothing.
+    #
+    # --size-only, and NEITHER the default (size+mtime) NOR --checksum. mtime is out because
+    # hardlink placement and DVC checkout give a re-staged file a fresh one with identical
+    # bytes. --checksum is out because of WHERE the reading happens: it makes the remote side
+    # read and digest every byte it already has, and the remote side here is a LOGIN NODE.
+    # Three consecutive runs died as `connection unexpectedly closed`, always on eQuilibrator
+    # or MetaNetX, never on the small directories -- the scheduler killing a process that
+    # spent minutes at full CPU on a shared host. It reads as a flaky link and is not one.
+    #
+    # NO --delete: the remote root also holds a previous run's work directory and the caches
+    # that make a lane resumable.
     spec = BRANCHES[branch]
     rels = [ALL_INPUTS[t] for t in spec["inputs"]] + list(spec["imports"].values())
     if spec["needs_metacyc"]:
@@ -699,17 +687,16 @@ def push_data(host: str, branch: str, remote_root: str) -> None:
 
 
 def place_images(host: str, branch: str, cache_dir: str, container: str) -> None:
-    """Put the agent image and this part's task images in the persistent store.
-
-    Runs on the LOGIN node, because a compute node has no outbound route: an image absent
-    when a task starts cannot be pulled, and the slurm preset's `errorStrategy='ignore'`
-    turns that into a SILENT green run with empty outputs.
-
-    ALL PUSHED, none pulled. `hallamlab/ecspr_bake` is private -- an anonymous-token
-    manifest request returns 401 for all three tags -- so a pull is not a fallback for a
-    missing local build, it is a different way to fail. Everything already in the store is
-    left alone, which is the normal case here: /arc outlives every run.
-    """
+    # Put the agent image and this part's task images in the persistent store.
+    #
+    # Runs on the LOGIN node, because a compute node has no outbound route: an image absent
+    # when a task starts cannot be pulled, and the slurm preset's `errorStrategy='ignore'`
+    # turns that into a SILENT green run with empty outputs.
+    #
+    # ALL PUSHED, none pulled. `hallamlab/ecspr_bake` is private -- an anonymous-token
+    # manifest request returns 401 for all three tags -- so a pull is not a fallback for a
+    # missing local build, it is a different way to fail. Everything already in the store is
+    # left alone, which is the normal case here: /arc outlives every run.
     ssh_once(host, f"mkdir -p {cache_dir}")
     wanted = [(container, None)]
     wanted += [(i, BAKE_SIF_DIR / cached_image_name(i)) for i in BRANCHES[branch]["images"]]
@@ -747,36 +734,35 @@ MIN_POLL_S = 90.0
 
 
 def wait_for_run(agent, task, timeout_s: int, poll_s: float) -> dict:
-    """Wait, and do not believe an `errored` that has not survived a real grace period.
-
-    `WaitForWorkflow` calls a run errored when `PID.lock` is absent AND the sentinel
-    `run completed at` is not yet in agent.log. Neither of those is a statement about the
-    run; they are two files written by different things at different times, and the gap
-    is open at BOTH ends of a run:
-
-      * At the END -- nextflow's process exits, and only then does the agent compile
-        results, resolve manifests and write the sentinel. On `direction` that gap was
-        48 s, so a successful three-minute run reported errored and its results sat on
-        the cluster unretrieved.
-      * At the START, which is the worse one, because it does not need a short run to
-        bite. `PID.lock` is written by the launcher ~50 s after the trigger returns, and
-        anything asking before that sees exactly the same absent-lock/absent-sentinel
-        pair. Observed 2026-07-27: the trigger returned at 22:30:39, the lock landed at
-        22:31:28, and a driver that asked in between declared a run errored that then ran
-        to completion with nobody watching it. See MIN_POLL_S for why the poll interval
-        is what decided whether that question got asked at all.
-
-    THE RE-CHECK MUST SLEEP, and the previous one did not. `WaitForWorkflow` RETURNS on an
-    errored verdict rather than continuing to poll, so a second call with `timeout_s=180`
-    asked once, got the same answer microseconds later, and reported a 3-minute grace
-    period it had never waited out. The loop below is the grace period: it is the sleeps
-    that distinguish a dead run from an unborn one, not the number of questions.
-
-    The probe's `timeout_s=8` is likewise not arbitrary. `errored` is only reachable after
-    5 s inside one call, so a shorter probe can only ever come back `timeout` -- which
-    here means the lock EXISTS and the run is alive, since that is the one state the call
-    cannot name.
-    """
+    # Wait, and do not believe an `errored` that has not survived a real grace period.
+    #
+    # `WaitForWorkflow` calls a run errored when `PID.lock` is absent AND the sentinel
+    # `run completed at` is not yet in agent.log. Neither of those is a statement about the
+    # run; they are two files written by different things at different times, and the gap
+    # is open at BOTH ends of a run:
+    #
+    #   * At the END -- nextflow's process exits, and only then does the agent compile
+    #     results, resolve manifests and write the sentinel. On `direction` that gap was
+    #     48 s, so a successful three-minute run reported errored and its results sat on
+    #     the cluster unretrieved.
+    #   * At the START, which is the worse one, because it does not need a short run to
+    #     bite. `PID.lock` is written by the launcher ~50 s after the trigger returns, and
+    #     anything asking before that sees exactly the same absent-lock/absent-sentinel
+    #     pair. Observed 2026-07-27: the trigger returned at 22:30:39, the lock landed at
+    #     22:31:28, and a driver that asked in between declared a run errored that then ran
+    #     to completion with nobody watching it. See MIN_POLL_S for why the poll interval
+    #     is what decided whether that question got asked at all.
+    #
+    # THE RE-CHECK MUST SLEEP, and the previous one did not. `WaitForWorkflow` RETURNS on an
+    # errored verdict rather than continuing to poll, so a second call with `timeout_s=180`
+    # asked once, got the same answer microseconds later, and reported a 3-minute grace
+    # period it had never waited out. The loop below is the grace period: it is the sleeps
+    # that distinguish a dead run from an unborn one, not the number of questions.
+    #
+    # The probe's `timeout_s=8` is likewise not arbitrary. `errored` is only reachable after
+    # 5 s inside one call, so a shorter probe can only ever come back `timeout` -- which
+    # here means the lock EXISTS and the run is alive, since that is the one state the call
+    # cannot name.
     if poll_s < MIN_POLL_S:
         print(f"=== poll {poll_s:.0f}s raised to {MIN_POLL_S:.0f}s -- see MIN_POLL_S ===",
               flush=True)
@@ -810,20 +796,19 @@ def wait_for_run(agent, task, timeout_s: int, poll_s: float) -> dict:
 
 
 def recover_evidence(run_dir: str, host: str, missing: list[str], staging: Path) -> dict:
-    """Pull an evidence directory out of the task work dir when publishing lost it.
-
-    TWO LANES WITH THE SAME REQUIREMENT SET GET THE SAME EVIDENCE ARTIFACT ID, and the
-    engine publishes by artifact id, so the second one to finish lands on a path the first
-    already holds and is silently dropped. `rxnmapper` and `indigo` are exactly that pair
-    -- same universe, same cache, same image, different transform -- and in the `map` run
-    both wrote `<run>/results/2_evidence-tool_output/<one id>/`, of which only `indigo/`
-    survived. Every other part is safe by accident: its lanes read different inputs.
-
-    Nothing is lost when it happens. The step's own evidence root is intact in its task
-    work directory, which is where the transform's success check read it -- so the run was
-    green and correct and only the copy to `results/` collapsed. This reaches past the
-    collision to the original rather than re-running a member to re-derive it.
-    """
+    # Pull an evidence directory out of the task work dir when publishing lost it.
+    #
+    # TWO LANES WITH THE SAME REQUIREMENT SET GET THE SAME EVIDENCE ARTIFACT ID, and the
+    # engine publishes by artifact id, so the second one to finish lands on a path the first
+    # already holds and is silently dropped. `rxnmapper` and `indigo` are exactly that pair
+    # -- same universe, same cache, same image, different transform -- and in the `map` run
+    # both wrote `<run>/results/2_evidence-tool_output/<one id>/`, of which only `indigo/`
+    # survived. Every other part is safe by accident: its lanes read different inputs.
+    #
+    # Nothing is lost when it happens. The step's own evidence root is intact in its task
+    # work directory, which is where the transform's success check read it -- so the run was
+    # green and correct and only the copy to `results/` collapsed. This reaches past the
+    # collision to the original rather than re-running a member to re-derive it.
     if not (missing and host and run_dir):
         return {}
     names = " -o ".join(f"-name {t}" for t in missing if t.replace("_", "").isalnum())
@@ -851,22 +836,6 @@ def recover_evidence(run_dir: str, host: str, missing: list[str], staging: Path)
 
 
 def retrieve(src_path: str, branch: str, host: str, staging: Path) -> int:
-    """Bring this part home, per lane, into data/temp -- where the other parts also land.
-
-    ROUTED BY THE `<tool>/` DIRECTORY INSIDE EACH ARTIFACT, not by filename and not by
-    type. An output is named `{batch}-{i}-{branch}.{hash}-{type key}` and every evidence
-    artifact has the SAME type, so neither names the lane that wrote it. The tool
-    directory is the only attribution left, which is why the lanes copy their evidence
-    ROOT rather than the directory under it.
-
-    The parts write disjoint tool directories and disjoint output paths, so running this
-    once per part composes into one complete data/temp rather than one overwriting the
-    next -- and the outputs land exactly where the next part's imports declare them, which
-    is what makes the seams work.
-
-    Nothing is published here. data/reference/ is written deliberately, because it
-    rewrites DVC directory hashes.
-    """
     spec = BRANCHES[branch]
     staging.mkdir(parents=True, exist_ok=True)
     print(f"\n=== retrieving {branch} into {TEMP.relative_to(REPO)} ===", flush=True)
@@ -1053,22 +1022,20 @@ FULL_REMAP_FRACTION = 0.95
 
 
 def read_staged_cache(host: str, remote_cache: str) -> tuple[bool, dict, dict]:
-    """`(present, {member: {id: smiles_hash}}, {member: {attempted ids}})` from the REMOTE.
-
-    THE REMOTE COPY AND NOT THE LOCAL ONE, which is the whole point of the check. The
-    cache is staged at a path the task container binds by its own name, so a directory
-    that exists on this workstation and not on the cluster stages an EMPTY given and the
-    run silently re-maps everything -- and that is indistinguishable from a first run
-    unless somebody reads the far side. `present` is False when the path is not there at
-    all, which is the ordinary state before the first run and is reported rather than
-    refused.
-    """
+    # `(present, {member: {id: smiles_hash}}, {member: {attempted ids}})` from the REMOTE.
+    #
+    # THE REMOTE COPY AND NOT THE LOCAL ONE, which is the whole point of the check. The
+    # cache is staged at a path the task container binds by its own name, so a directory
+    # that exists on this workstation and not on the cluster stages an EMPTY given and the
+    # run silently re-maps everything -- and that is indistinguishable from a first run
+    # unless somebody reads the far side. `present` is False when the path is not there at
+    # all, which is the ordinary state before the first run and is reported rather than
+    # refused.
     return parse_cache_digest(
         ssh_once(host, f"python3 - {remote_cache} <<'PYEOF'\n{CACHE_DIGEST_PY}\nPYEOF\n"))
 
 
 def parse_cache_digest(out: str) -> tuple[bool, dict, dict]:
-    """The digest above, as `(present, finished, attempted)`. Pure, so it is testable."""
     finished: dict[str, dict[str, str]] = {}
     attempted: dict[str, set[str]] = {}
     present = False
@@ -1086,13 +1053,6 @@ def parse_cache_digest(out: str) -> tuple[bool, dict, dict]:
 
 
 def deployed_reactions() -> set[str]:
-    """The MNXRs the deployed bake carries at least one correspondence for.
-
-    Decoded rather than read: `ref::atom_pairs` is ENCODED against its vocabulary, so the
-    `rxn` column is an int code and the symbol table beside it is the only way back to an
-    MNXR. Returns an empty set when the deployed bake is not on disk -- that makes the
-    audit's last column absent, never zero, because zero is a claim.
-    """
     import pandas as pd
 
     pairs, vocab = DEPLOYED_BAKE / "atom_pairs.parquet", DEPLOYED_BAKE / "vocab.parquet"
@@ -1106,24 +1066,6 @@ def deployed_reactions() -> set[str]:
 
 def decompose_member(keys: set, want: dict, have: dict, tried_all: set,
                      covered: set, base_of: dict):
-    """`(reusable, stale, tried, todo, todo_new)` for one member. Set arithmetic, no I/O.
-
-    A cached row counts as FINISHED only where the string it was produced from is the
-    string this run would send. One reaction has up to four submissions in this graph --
-    whole, collapsed, rescue-completed, element-reduced -- so a row keyed on the id alone
-    would serve whichever ran last, which is not staleness but a map of a different
-    molecule filed under this one's name. `stale` counts what that drops, and a large
-    `stale` after a method change is the key doing its job rather than a fault.
-
-    ATTEMPTED COUNTS AS DONE for this arithmetic, and that is deliberate: Indigo resumes
-    off what it STARTED, because a reaction it hung inside writes no row and re-offering
-    it hangs the lane again. So the todo is what neither finished nor was reached, which
-    is exactly what the next run will spend its hours on.
-
-    `todo_new` is at REACTION grain where the rest is at submission grain -- an element
-    reduction and its whole reaction are two submissions of one reaction, and the deployed
-    table knows only the reaction. `None` where the deployed bake is not on disk.
-    """
     reusable = {k for k in keys if k in have and want.get(k) == have[k]}
     stale = sum(1 for k, h in have.items() if want.get(k) != h)
     tried = tried_all & keys
@@ -1133,15 +1075,14 @@ def decompose_member(keys: set, want: dict, have: dict, tried_all: set,
 
 
 def audit(host: str, remote_root: str) -> list[str]:
-    """Decompose each member's work before a single job is placed. Returns problems.
-
-    THE DECOMPOSITION IS THE REPORT AND THE REFUSAL IS ONE LINE OF IT. Reuse in this graph
-    happens at two grains and only one of them is visible in a plan: a declared import
-    keeps a whole transform out of the plan and `check_plan` proves it, while the durable
-    cache keeps individual REACTIONS out of a lane and nothing in the plan mentions it.
-    This is the second gate, and its numbers are what says whether a twelve-hour lane is
-    about to do twelve hours of work or twenty minutes of it.
-    """
+    # Decompose each member's work before a single job is placed. Returns problems.
+    #
+    # THE DECOMPOSITION IS THE REPORT AND THE REFUSAL IS ONE LINE OF IT. Reuse in this graph
+    # happens at two grains and only one of them is visible in a plan: a declared import
+    # keeps a whole transform out of the plan and `check_plan` proves it, while the durable
+    # cache keeps individual REACTIONS out of a lane and nothing in the plan mentions it.
+    # This is the second gate, and its numbers are what says whether a twelve-hour lane is
+    # about to do twelve hours of work or twenty minutes of it.
     import pandas as pd
 
     problems: list[str] = []
@@ -1228,13 +1169,6 @@ def audit(host: str, remote_root: str) -> list[str]:
 
 
 def audit_plan(used: set[str], branch: str) -> list[str]:
-    """The two named absences, on top of check_plan's lane-set equality.
-
-    Equality already catches both. They are named anyway because the equality failure says
-    "a lane this part does not own is scheduled" and lists it, while these say what it
-    MEANS -- the lookups were not staged, or a driver is still pointed at a graph that no
-    longer exists. The `lookups` part is exempt from the first: producing them is its job.
-    """
     problems = []
     if "mnx_lookups" in used and "mnx_lookups" not in BRANCHES[branch]["lanes"]:
         problems.append(
@@ -1254,18 +1188,6 @@ def audit_plan(used: set[str], branch: str) -> list[str]:
 
 
 def promote_cache(found: dict) -> None:
-    """Fold this run's member output back into the durable cache.
-
-    Cache-in is a staged directory and cache-out is the evidence, which is the only shape
-    available: the staged copy is an input and a lane cannot write to it. So the merged
-    per-member table and the attempted-ids sidecars come home with the evidence and land
-    here, where the next run stages them from.
-
-    The merged table is CUMULATIVE -- a member carries its reusable prior rows into its own
-    output -- so this overwrites rather than accumulates. The displaced copy is kept for
-    one generation under a name `shard.cache_files` still reads, because a run that died
-    before merging is the case where the old file is the only one with the rows.
-    """
     for member in sorted(MEMBER_ADMITS):
         src = found.get(member)
         if src is None:
@@ -1288,29 +1210,6 @@ def promote_cache(found: dict) -> None:
 
 
 def promote_logs() -> None:
-    """Write the finished bake's own run logs, from this run's evidence and its cache.
-
-    `prior_bake_logs` is staged FROM the bake a run is superseding, so a bake that does
-    not write its own leaves the next one reading its grandparent -- which is how the
-    logs beside the deployed table came to describe a run two generations back. This is
-    that loop closed: the last part of the route writes the logs the next route stages.
-
-    The step logs come from the run sandboxes rather than from the retrieved evidence,
-    because they are the engine's record of the invocation and not a tool's output.
-
-    IT REFUSES ON A ROUTE THAT DID NOT MAP, and that guard is the whole reason this is
-    not a bare call. Every table `runlogs build` writes is derived from the mapper caches
-    -- indigo's status and sidecars, the two neural lanes' derived status -- and it
-    `rmtree`s its output before writing. A DIRECTION-ONLY RE-BAKE stages no aam_cache
-    (`direction_bake` declares no inputs), so the rebuild would succeed, write a `logs/`
-    describing zero mapped reactions, and the promote would fold that over the record the
-    last full run wrote. That record is ground truth for the recall benchmark, and it is
-    not reproducible without re-running the mapping.
-
-    So: the mapper caches are a PRECONDITION, checked here rather than trusted from the
-    branch name. `reference` and a full `direction_bake` stage them and pass; a direction
-    -only route does not and is told what it would have had to stage.
-    """
     from ecspr.bake.aam import runlogs                                  # noqa: PLC0415
 
     missing = [m for m in sorted(MEMBER_ADMITS)

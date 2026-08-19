@@ -48,26 +48,13 @@ from measure_rescue import MNX, load_names                                    # 
 from ecspr.bake.direction.refdata import (load_mnxm_props,                    # noqa: E402
                                           load_mnxr_stoich)
 
-# Outcomes a rewrite could in principle reach. The three excluded ones -- no_transfer,
-# non_molecule, unparseable_equation -- are not hard reactions but non-reactions.
 RESIDUAL_OUTCOMES = ("rescue_declined", "mapped_nothing",
                      "partial_declined", "rescued_nothing")
 
-# A control has to have enough of an equation to be wrecked. An empty or two-term
-# equation balances trivially and would inflate the control pass rate for free.
 CONTROL_MIN_TERMS = 4
 
 
 def balances(rec: dict, res) -> bool:
-    """Does the equation, exactly as MetaNetX writes it, balance on heavy atoms?
-
-    Controls are screened on this and it is not a formality. Banking a reaction does not
-    require it to balance -- the AAM lane banks the elements that mapped -- so a third of
-    the fully-structured banked population does not, and a control that never balanced
-    cannot be "left balanced" by anything the model does. Without this screen the gate
-    reports regressions that are properties of MetaNetX rather than of the lane, which is
-    exactly what the first run of it did.
-    """
     from arbiter import as_terms
     left, lerr = res.side(as_terms(rec["left"]))
     right, rerr = res.side(as_terms(rec["right"]))
@@ -78,7 +65,6 @@ def balances(rec: dict, res) -> bool:
 
 
 def term(mnxm: str, coef: float, names: dict, props: dict) -> dict:
-    """One participant, with the fact the pilot's prompt was missing."""
     smiles = (props.get(mnxm) or {}).get("smiles")
     return {
         "id": mnxm,
@@ -91,13 +77,6 @@ def term(mnxm: str, coef: float, names: dict, props: dict) -> dict:
 
 def record(mnxr: str, st: dict, names: dict, props: dict,
            led: pd.DataFrame, wl: pd.DataFrame, tier: dict) -> dict | None:
-    """One panel record, or None if MetaNetX has no stoichiometry for the reaction at all.
-
-    A reaction whose participants all sit on one side gets a record too, tagged
-    `one_sided`. No rewrite balances an equation with an empty side, so it is a ceiling
-    on coverage rather than a failure of the prompt -- and a ceiling that is dropped
-    rather than counted is a ceiling nobody sees.
-    """
     stoich = st.get(mnxr)
     if not stoich:
         return None
@@ -170,9 +149,6 @@ def main() -> None:
     rows = [r for r in (record(m, st, names, props, led, wl, tier) for m in picked) if r]
     dev, heldout = rows[:a.dev], rows[a.dev:]
 
-    # Controls are screened before sampling, not after, so the requested count is the
-    # delivered count. The balance screen needs a structure recount per candidate, so the
-    # pool is walked in shuffled order and stopped at the target rather than scored whole.
     from arbiter import Resolver
     res = Resolver(props)
     cand = [m for m in banked

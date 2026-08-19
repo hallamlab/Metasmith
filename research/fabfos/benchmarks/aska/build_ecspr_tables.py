@@ -269,9 +269,6 @@ def main():
           f"strata {sorted(set(like['n_units']))}; "
           f"{len(like)} drawable in --like")
 
-    # The direction reference: the bake's integer-coded table decoded onto MNXR,
-    # which is the shape `ecspr.model.build.load_direction_ratios` reads. Stamped, so
-    # `run_panel.py` can refuse it after a repin rather than serving the old ratios.
     dpath = bake_identity.build_direction_ratios(
         args.out / "direction_ratios.parquet", BAKE)
     print(f"[direction] {dpath} <- bake {bake_identity.identity(BAKE)}")

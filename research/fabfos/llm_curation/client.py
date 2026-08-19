@@ -1,38 +1,37 @@
-"""A local-LLM chat client that cannot return malformed JSON, and that bills every call.
-
-Vendored from `index_scrape.llm` on capella (which is now offline; the rescued copy
-lives at ~/capella-rescue/index-scrape). Two things changed, and one deliberately
-did not.
-
-**The constraint moved dialects.** capella served vLLM and used its `guided_json`
-extension; fir serves llama.cpp, which spells the same capability
-`response_format: {"type": "json_schema", ...}`. Both are supported here because the
-choice is a property of the server, not of the caller — `LLMConfig.dialect` picks
-one and nothing else in the package knows which is in use. The capability is the
-point: under constrained decoding a response cannot be malformed or wrongly shaped,
-so a parse failure is a harness bug rather than a scored chemistry outcome.
-
-**Qwen3 thinks out loud by default**, and the preamble is billed. `enable_thinking`
-is off by default for that reason, and `_extract_json` still tolerates a preamble
-if some server ignores the flag — a response that cost tokens should not also cost
-the reaction.
-
-**Usage is returned, not logged.** Every call hands back `prompt_tokens`,
-`completion_tokens` and wall-clock alongside the parsed object, so cost per reaction
-is measured from the first run rather than reconstructed afterwards. A caller that
-drops it is choosing to; a client that never reported it would leave no choice.
-
-`RetryableHTTP` is redefined here rather than imported, and the tenacity backoff is
-hand-rolled: capella's `http` module drags in a SQLite response cache this package
-has no use for, and tenacity is in none of this workspace's environments — an
-exponential sleep is ten lines and not worth a shared-env install. A 400 is
-`SchemaRejected` and is NOT retried, since a server refusing to compile a schema
-will refuse it again; 429/5xx and transport errors back off.
-
-httpx lives in `ecspr` and `msm` but not in `rdkit-scratch`, and rdkit lives only in
-`rdkit-scratch`. So this client and `arbiter.py` cannot share a process, which is
-why the runner writes JSONL and the arbiter reads it rather than calling it.
-"""
+# A local-LLM chat client that cannot return malformed JSON, and that bills every call.
+#
+# Vendored from `index_scrape.llm` on capella (which is now offline; the rescued copy
+# lives at ~/capella-rescue/index-scrape). Two things changed, and one deliberately
+# did not.
+#
+# **The constraint moved dialects.** capella served vLLM and used its `guided_json`
+# extension; fir serves llama.cpp, which spells the same capability
+# `response_format: {"type": "json_schema", ...}`. Both are supported here because the
+# choice is a property of the server, not of the caller — `LLMConfig.dialect` picks
+# one and nothing else in the package knows which is in use. The capability is the
+# point: under constrained decoding a response cannot be malformed or wrongly shaped,
+# so a parse failure is a harness bug rather than a scored chemistry outcome.
+#
+# **Qwen3 thinks out loud by default**, and the preamble is billed. `enable_thinking`
+# is off by default for that reason, and `_extract_json` still tolerates a preamble
+# if some server ignores the flag — a response that cost tokens should not also cost
+# the reaction.
+#
+# **Usage is returned, not logged.** Every call hands back `prompt_tokens`,
+# `completion_tokens` and wall-clock alongside the parsed object, so cost per reaction
+# is measured from the first run rather than reconstructed afterwards. A caller that
+# drops it is choosing to; a client that never reported it would leave no choice.
+#
+# `RetryableHTTP` is redefined here rather than imported, and the tenacity backoff is
+# hand-rolled: capella's `http` module drags in a SQLite response cache this package
+# has no use for, and tenacity is in none of this workspace's environments — an
+# exponential sleep is ten lines and not worth a shared-env install. A 400 is
+# `SchemaRejected` and is NOT retried, since a server refusing to compile a schema
+# will refuse it again; 429/5xx and transport errors back off.
+#
+# httpx lives in `ecspr` and `msm` but not in `rdkit-scratch`, and rdkit lives only in
+# `rdkit-scratch`. So this client and `arbiter.py` cannot share a process, which is
+# why the runner writes JSONL and the arbiter reads it rather than calling it.
 
 from __future__ import annotations
 
@@ -45,15 +44,18 @@ import httpx
 
 
 class RetryableHTTP(Exception):
-    """429/5xx — transient, so tenacity backs off rather than giving up."""
+    # 429/5xx — transient, so tenacity backs off rather than giving up.
+    pass
 
 
 class SchemaRejected(Exception):
-    """400 — the server will not compile this request. Retrying repeats it."""
+    # 400 — the server will not compile this request. Retrying repeats it.
+    pass
 
 
 class BadJSON(Exception):
-    """Content did not parse despite constrained decoding: a harness bug, not a result."""
+    # Content did not parse despite constrained decoding: a harness bug, not a result.
+    pass
 
 
 @dataclass
@@ -87,13 +89,12 @@ _FENCE = re.compile(r"```(?:json)?\s*(.*?)```", re.S)
 
 
 def _extract_json(text: str) -> str:
-    """The JSON in `text`, whether or not the model wrapped it in prose or a fence.
-
-    Constrained decoding should make this the identity function. It exists because
-    a server that silently ignores the constraint would otherwise cost every
-    reaction in the batch, and because Qwen3's reasoning preamble is emitted before
-    the object rather than in a separate field on some builds.
-    """
+    # The JSON in `text`, whether or not the model wrapped it in prose or a fence.
+    #
+    # Constrained decoding should make this the identity function. It exists because
+    # a server that silently ignores the constraint would otherwise cost every
+    # reaction in the batch, and because Qwen3's reasoning preamble is emitted before
+    # the object rather than in a separate field on some builds.
     s = text.strip()
     if s.startswith("{") or s.startswith("["):
         return s
@@ -149,7 +150,7 @@ class LLMClient:
             return False
 
     def wait_for_server(self, *, attempts: int = 240, delay: float = 5.0) -> bool:
-        """Poll `/models` until it answers — a 23 GB model takes minutes to load."""
+        # Poll `/models` until it answers — a 23 GB model takes minutes to load.
         for _ in range(attempts):
             if self.health():
                 return True
@@ -166,7 +167,7 @@ class LLMClient:
         return resp.json()
 
     def _post_chat(self, payload: dict, *, attempts: int = 5) -> dict:
-        """`_post_once` with exponential backoff on the transient failures only."""
+        # `_post_once` with exponential backoff on the transient failures only.
         for i in range(attempts):
             try:
                 return self._post_once(payload)
@@ -187,7 +188,7 @@ class LLMClient:
 
     def complete_json(self, *, system: str, user: str, schema: dict,
                       name: str = "response") -> tuple[dict, Usage]:
-        """One chat completion constrained to `schema`, with its cost."""
+        # One chat completion constrained to `schema`, with its cost.
         payload = {
             "model": self.cfg.model,
             "temperature": self.cfg.temperature,

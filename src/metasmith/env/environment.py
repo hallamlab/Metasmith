@@ -89,10 +89,6 @@ class Environment:
                 return self._store_root()/f"{self._cached_name()}.sandbox"
 
     def _stamp_path(self, artifact: "Path|None"):
-        # Sibling of the artifact, never inside it: the sandbox artifact is a
-        # directory, and a stamp within it would be taken by the `rm -rf` that
-        # replaces the tree -- which reads as "never verified" and costs a
-        # re-fetch every time.
         if artifact is None: return None
         return Path(f"{artifact}.verified")
 
@@ -103,25 +99,24 @@ class Environment:
         return self._stamp_path(self.GetSandboxPath())
 
     def MakeVerifyCommand(self, *, sandbox: bool = False):
-        """Prove the materialised artifact actually mounts, and record that it did.
-
-        `apptainer exec <artifact> true` is the probe because mounting the
-        rootfs is the exact thing that failed: a SIF that downloaded with a bad
-        squashfs superblock satisfies the `[ -e ]` every arm of the chain used
-        to gate on, and only fails when a tool tries to read its own
-        filesystem — hops away from the pull that produced it, reported as
-        something else entirely. A header-only inspection (`sif list`) passes on
-        exactly those images, and `apptainer verify` answers a different
-        question: cryptographic signatures, which biocontainers do not carry.
-
-        `--no-home --cleanenv` keep the probe answering about the image rather
-        than about host state. A false negative here is expensive — it deletes
-        a sound artifact of several hundred megabytes and fetches it again.
-
-        Success writes a sibling stamp; failure removes the artifact *and* any
-        stamp and reports failure, so the caller's fallback chain advances to
-        its next rung instead of trusting what it just produced.
-        """
+        # Prove the materialised artifact actually mounts, and record that it did.
+        #
+        # `apptainer exec <artifact> true` is the probe because mounting the
+        # rootfs is the exact thing that failed: a SIF that downloaded with a bad
+        # squashfs superblock satisfies the `[ -e ]` every arm of the chain used
+        # to gate on, and only fails when a tool tries to read its own
+        # filesystem — hops away from the pull that produced it, reported as
+        # something else entirely. A header-only inspection (`sif list`) passes on
+        # exactly those images, and `apptainer verify` answers a different
+        # question: cryptographic signatures, which biocontainers do not carry.
+        #
+        # `--no-home --cleanenv` keep the probe answering about the image rather
+        # than about host state. A false negative here is expensive — it deletes
+        # a sound artifact of several hundred megabytes and fetches it again.
+        #
+        # Success writes a sibling stamp; failure removes the artifact *and* any
+        # stamp and reports failure, so the caller's fallback chain advances to
+        # its next rung instead of trusting what it just produced.
         artifact = self.GetSandboxPath() if sandbox else self.GetLocalPath()
         stamp = self.GetSandboxStampPath() if sandbox else self.GetLocalStampPath()
         if artifact is None or stamp is None: return ""
@@ -275,9 +270,6 @@ class Environment:
         adopt_sif = f'{{ [ -e {sif} ] && {verify_sif}; }}'
         adopt_sandbox = f'{{ [ -d {sandbox} ] && {verify_sandbox}; }}'
         prefix = f'mkdir -p "{sif.parent}"; ' + (
-            # The stamp goes wherever the artifact goes, or an assertive deploy
-            # re-pulls into a stale "verified" claim -- worse than the state it
-            # was clearing, because nothing will ever look again.
             f'rm -rf {sandbox} {sif} {sandbox_stamp} {sif_stamp}; ' if force else ''
         )
         match self.rootfs:
@@ -295,8 +287,6 @@ class Environment:
                     + f'rm -rf {sandbox} {sandbox_stamp}; '
                     + f'{done_sif} '
                     f'|| {adopt_sif} '
-                    # `pull` refuses to write over an existing file, so the
-                    # rejected artifact has to go before the fetch, not after.
                     f'|| {{ rm -f {sif} {sif_stamp}; {self.MakePullCommand()} && {verify_sif}; }} '
                     f'|| {{ rm -f {sif}; {self.MakeBuildSifCommand(no_fragments=True)} && {verify_sif}; }}'
                 )

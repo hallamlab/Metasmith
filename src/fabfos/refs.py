@@ -75,15 +75,7 @@ from metasmith.python_api import DataInstanceLibrary
 from metasmith.caching.keys import multihash_key
 
 
-#: type -> path relative to a `processed/` root. THE table: the pipelines, the
-#: pin step and the research drivers all read this one rather than restating
-#: it, because a drift between two copies mis-keys an entry rather than failing.
-#: A tuple means alternates, first existing wins -- the ESM-C pool is published
-#: as `pool_esmc` on the fir mirror and `pool` locally.
 REF_LAYOUT: dict[str, "str | tuple[str, ...]"] = {
-    # `ref::label_transfer_landmarks` is a DIRECTORY -- one parquet plus the
-    # provenance file naming the embedder and the Swiss-Prot release, neither of
-    # which is recoverable from the table.
     "ref::kofamscan_profiles": "kofam_ref/profiles",
     "ref::kofamscan_ko_list": "kofam_ref/ko_list.tsv",
     "ref::uniref50_diamond_db": "uniref50_dmnd/uniref50.dmnd",
@@ -96,8 +88,6 @@ REF_LAYOUT: dict[str, "str | tuple[str, ...]"] = {
     "ref::ezpred_model": "ezpred_model/EZpred",
 }
 
-#: What each lane registers. Kept as explicit tuples rather than derived from a
-#: namespace prefix: `ecspr::` and `ref::` do not line up with the lanes.
 ANNOTATION_REFS = (
     "ref::kofamscan_profiles",
     "ref::kofamscan_ko_list",
@@ -110,18 +100,15 @@ ECSPR_REFS = (
     "ecspr::direction_ratios",
 )
 
-#: The type namespaces a pinned refs library has to carry so its rows resolve.
 _TYPE_NAMESPACES = ("ref", "ecspr", "annotation", "sequences")
 
 
 def relpaths_for(dtype: str) -> tuple[str, ...]:
-    """The candidate relative paths for a type, in preference order."""
     rel = REF_LAYOUT[dtype]
     return (rel,) if isinstance(rel, str) else tuple(rel)
 
 
 def resolve_ref(refs_root: Path, dtype: str) -> Path | None:
-    """The first candidate that exists under `refs_root`, or None."""
     for rel in relpaths_for(dtype):
         p = Path(refs_root) / rel
         if p.exists():
@@ -130,7 +117,6 @@ def resolve_ref(refs_root: Path, dtype: str) -> Path | None:
 
 
 def dvc_pin_for(refs_root: Path, rel: str) -> tuple[Path, str] | None:
-    """`(pin_path, md5)` for the chunk `rel` belongs to, or None if unpinned."""
     chunk = str(rel).split("/", 1)[0]
     pin = Path(refs_root) / f"{chunk}.dvc"
     if not pin.is_file():
@@ -147,11 +133,6 @@ def dvc_pin_for(refs_root: Path, rel: str) -> tuple[Path, str] | None:
 
 
 def dvc_leaf_id(md5: str, rel: str) -> str:
-    """The identity a DVC-pinned reference gets.
-
-    Pinned by a test against a literal: changing this construction silently
-    re-keys every cached run that touched a reference.
-    """
     return multihash_key(b"dvc\x00" + md5.encode("utf-8") + rel.encode("utf-8")).hex()
 
 
@@ -188,12 +169,6 @@ def read_published_provenance(refs_root: Path) -> dict[str, dict]:
 
 def record_published_provenance(refs_root: Path, rel: str, *, instance_id: str,
                                 origin: str = "lineage", run: str | None = None) -> None:
-    """Note that the file at `rel` is the product with this identity.
-
-    Called by a publish step, keyed by the path relative to `processed/` so it
-    survives the copy that loses the run directory. Additive and idempotent:
-    re-publishing the same product rewrites its own row and touches no other.
-    """
     fp = provenance_path(refs_root)
     data = read_published_provenance(refs_root)
     data[str(rel)] = {"instance_id": instance_id, "origin": origin, "run": run}
@@ -202,12 +177,11 @@ def record_published_provenance(refs_root: Path, rel: str, *, instance_id: str,
 
 
 def refs_library_path(refs_root: Path) -> Path:
-    """Where the pinned library for `refs_root` lives.
-
-    Beside the data rather than inside it: the manifest holds absolute paths, so
-    putting the library *at* `processed/` with relative entries would look
-    tidier and would stage 24 GB on every run.
-    """
+    # Where the pinned library for `refs_root` lives.
+    #
+    # Beside the data rather than inside it: the manifest holds absolute paths, so
+    # putting the library *at* `processed/` with relative entries would look
+    # tidier and would stage 24 GB on every run.
     override = os.environ.get("FABFOS_REFS_XGDB")
     if override:
         return Path(override).expanduser().resolve()
@@ -225,15 +199,12 @@ def pin_refs(
     *,
     types: Iterable[str] | None = None,
 ) -> dict:
-    """Build the pinned reference library. Reads no reference bytes."""
     refs_root = Path(refs_root).expanduser().resolve()
     out = Path(out).expanduser().resolve() if out else refs_library_path(refs_root)
     wanted = tuple(types) if types is not None else tuple(REF_LAYOUT)
 
     lib_root = _library_root()
     if out.exists():
-        # An existing pinned library refuses Purge, correctly. Rebuilding one is
-        # a legitimate act, so lift the pin first rather than working around it.
         try:
             existing = DataInstanceLibrary.Load(out)
             if existing.is_pinned:
@@ -261,17 +232,9 @@ def pin_refs(
         rel = str(target.relative_to(refs_root))
         pin = dvc_pin_for(refs_root, rel)
         if pin is None:
-            # Deliberately not falling back to a content hash or a path-derived
-            # id: an id nobody can re-derive on another host is worse than no
-            # entry, because the entry would look authoritative.
             skipped[dtype] = f"no .dvc pin covers [{rel}]"
             continue
         pin_path, md5 = pin
-        # A recorded provenance id is strictly better than one derived from the
-        # pin: it is the identity the product actually had when it was made, so
-        # it moves when the build moves rather than when the bytes are
-        # re-materialised. The pin stays recorded either way -- `load_pinned_refs`
-        # uses it to tell a re-materialisation from a real change.
         published = recorded.get(rel)
         instance_id = published["instance_id"] if published else dvc_leaf_id(md5, rel)
         origin = published.get("origin", "lineage") if published else "leaf"
@@ -296,19 +259,12 @@ def pin_refs(
 
 
 def unpin_refs(refs_root: Path, out: Path | None = None) -> dict:
-    """Lift the pin, so the library can be rebuilt."""
     out = Path(out).expanduser().resolve() if out else refs_library_path(Path(refs_root))
     lib = DataInstanceLibrary.Load(out)
     return lib.Unpin()
 
 
 def load_pinned_refs(refs_root: Path, out: Path | None = None) -> DataInstanceLibrary | None:
-    """Load the pinned library, self-healing a re-materialised pin.
-
-    Returns None when there is no pinned library, which is the un-migrated
-    checkout: the caller warns once and falls back to staging references the
-    slow way, so nothing hard-breaks on an upgrade.
-    """
     out = Path(out).expanduser().resolve() if out else refs_library_path(Path(refs_root))
     if not (out / "_metadata" / "index.yml").is_file():
         return None
@@ -339,13 +295,6 @@ def load_pinned_refs(refs_root: Path, out: Path | None = None) -> DataInstanceLi
 
 
 def _load_without_stamp_check(out: Path) -> DataInstanceLibrary | None:
-    """`Load` with the stamp check suppressed, to adjudicate one failure.
-
-    The same door `metasmith data verify` uses, and for the same reason: the
-    result is immediately checked against the pin md5, which is strictly
-    stronger. This is not the env kill switch -- that is a human's emergency
-    exit and stays one.
-    """
     try:
         return DataInstanceLibrary.Load(out, check_pinned_stamps=False)
     except Exception:
@@ -367,16 +316,6 @@ def _pins_that_moved(refs_root: Path, lib: DataInstanceLibrary) -> dict[str, str
 
 
 def refs_view(lib: DataInstanceLibrary, keep_types: Iterable[str]):
-    """The library narrowed to exactly the rows a lane should see.
-
-    Two reasons this is a whitelist rather than "everything minus the
-    overrides". A reference the caller overrode must be masked or the solver
-    sees two candidates of that type -- the pinned default and the override --
-    and picks between them arbitrarily. And the library holds every reference
-    this checkout has, not just this lane's: handing the annotation lane an
-    ESM-C weights row it would not otherwise have makes a transform reachable
-    that was not, which changes the plan. A lane gets what it asked for.
-    """
     keep = set(keep_types)
     hide = {p for p, dtype in lib.manifest.items() if dtype not in keep}
     if not hide:

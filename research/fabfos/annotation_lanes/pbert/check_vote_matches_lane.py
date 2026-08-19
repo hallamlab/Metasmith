@@ -1,19 +1,17 @@
-"""THE CHECK -- `_knn.vote` must BE the deployed lane's vote, not resemble it.
-
-Every threshold this directory recommends is chosen on `_knn.vote`, and shipped into
-`gpr_4lane.py::lane_embed`. If the two rules drift, the sweeps tune one lane and the
-pipeline runs another, and nothing anywhere raises -- the tables would simply carry
-the wrong calls at the recommended settings.
-
-So the lane is LIFTED OUT OF THE LIVE TRANSFORM and run beside the harness on the
-same random pools, at settings chosen to exercise each branch: the pre-quota no-op,
-an absolute floor that refuses ORFs, a relative band that admits a handful, a k_max
-below the retrieval width, and a zero vote floor. The emitted (query, label, score)
-triples must match exactly.
-
-ENV     PYTHONPATH="$PWD/src" mamba run -n msm python \
-            research/fabfos/annotation_lanes/pbert/check_vote_matches_lane.py
-"""
+# THE CHECK -- `_knn.vote` must BE the deployed lane's vote, not resemble it.
+#
+# Every threshold this directory recommends is chosen on `_knn.vote`, and shipped into
+# `gpr_4lane.py::lane_embed`. If the two rules drift, the sweeps tune one lane and the
+# pipeline runs another, and nothing anywhere raises -- the tables would simply carry
+# the wrong calls at the recommended settings.
+#
+# So the lane is LIFTED OUT OF THE LIVE TRANSFORM and run beside the harness on the
+# same random pools, at settings chosen to exercise each branch: the pre-quota no-op,
+# an absolute floor that refuses ORFs, a relative band that admits a handful, a k_max
+# below the retrieval width, and a zero vote floor. The emitted (query, label, score)
+# triples must match exactly.
+#
+# ENV     PYTHONPATH="$PWD/src" mamba run -n msm python             research/fabfos/annotation_lanes/pbert/check_vote_matches_lane.py
 from __future__ import annotations
 
 import re
@@ -35,14 +33,13 @@ import fabfos_evidence as fe  # noqa: E402
 TRANSFORM = REPO / "src/metasmith_libraries/transforms/fabfos/gpr_4lane.py"
 EV_LIB = REPO / "src/metasmith_libraries/resources/lib/fabfos_evidence.py"
 
-# (nn_min, tau, k_max, floor)
 SETTINGS = [
     (0.00, 0.00, 30, 0.20),     # the pre-quota rule
     (0.60, 0.00, 30, 0.20),     # absolute floor only -- refuses ORFs
     (0.00, 0.98, 30, 0.20),     # relative band only  -- admits a handful
     (0.60, 0.95, 8, 0.20),      # both, and k_max below the retrieval width
     (0.60, 0.95, 30, 0.00),     # zero vote floor: every label an admitted neighbour has
-    (fe.PBERT_NN_MIN, fe.PBERT_TAU, fe.PBERT_K_MAX, fe.PBERT_FLOOR),   # WHAT SHIPS
+    (fe.PBERT_NN_MIN, fe.PBERT_TAU, fe.PBERT_K_MAX, fe.PBERT_FLOOR),
 ]
 
 # Landmark counts to run every setting against. The small one is not decoration: with
@@ -55,7 +52,6 @@ N_REFS = [300, 6]
 
 
 def lane_ns():
-    """`lane_embed` and its readers, out of the transform's own DRIVER string."""
     body = re.search(r"^DRIVER = r'''\n(.*?)^'''", TRANSFORM.read_text(),
                      re.S | re.M).group(1)
     keys = {k for _, k, _, _ in string.Formatter().parse(body) if k}
@@ -68,14 +64,13 @@ def lane_ns():
 
 
 def fixture(seed, n_ref=300, n_q=120, dim=24, vocab_n=40):
-    """A pool with real structure: half the queries sit inside a cluster, half do not,
-    so both the abstain and the admission branch see traffic.
-
-    Some landmarks carry a REPEATED label and some a trailing `;`. The lane collapses
-    both (`sorted(set(m for m in ... if m))`); anything that accumulates instead would
-    count a repeat twice and KeyError on the empty token. A fixture whose label lists
-    are deduplicated by construction cannot see either.
-    """
+    # A pool with real structure: half the queries sit inside a cluster, half do not,
+    # so both the abstain and the admission branch see traffic.
+    #
+    # Some landmarks carry a REPEATED label and some a trailing `;`. The lane collapses
+    # both (`sorted(set(m for m in ... if m))`); anything that accumulates instead would
+    # count a repeat twice and KeyError on the empty token. A fixture whose label lists
+    # are deduplicated by construction cannot see either.
     rng = np.random.default_rng(seed)
     centres = rng.normal(size=(6, dim)).astype(np.float32)
     ref = np.concatenate([c + 0.15 * rng.normal(size=(n_ref // 6 or 1, dim))
@@ -85,7 +80,7 @@ def fixture(seed, n_ref=300, n_q=120, dim=24, vocab_n=40):
     for r in range(len(ref)):
         picks = list(rng.choice(vocab, size=int(rng.integers(0, 4)), replace=False))
         if picks and r % 7 == 0:
-            picks = picks + [picks[0]]          # a repeated label
+            picks = picks + [picks[0]]
         t = ";".join(picks)
         if picks and r % 11 == 0:
             t += ";"                            # a trailing empty token
@@ -117,7 +112,6 @@ def main() -> int:
                        pd.DataFrame(q, columns=dims)], axis=1).to_parquet(
                 td / "q.parquet", index=False)
 
-            # the harness side: one wide retrieval, reused for every setting
             m = _knn.build_metrics(ref, q, names=["cosine"])["cosine"]
             idx, val = _knn.topk(m, k=min(_knn.KWIDE, len(ref)))
             cos = np.einsum("nd,nkd->nk", _knn._norm(q), _knn._norm(ref)[idx])

@@ -1,6 +1,3 @@
-"""Why do the share-nothing ECs split? Test the hypothesis that the odd component is
-a non-small-molecule pseudo-species (protein, complex, polymer) rather than real
-chemical disagreement."""
 import json, sys
 from pathlib import Path
 from collections import Counter
@@ -10,7 +7,6 @@ TMP = Path(sys.argv[1])
 CP = Path("data/fabfos/originals/metanetx/4.5/chem_prop.tsv")
 RP = Path("data/fabfos/originals/metanetx/4.5/reac_prop.tsv")
 
-# chem_prop: id, name, reference, formula, charge, mass, InChI, InChIKey, SMILES
 smiles, cname, formula = {}, {}, {}
 for line in open(CP):
     if line.startswith("#"): continue
@@ -30,8 +26,6 @@ def parts(r):
     return {t.split("@")[0] for t in eq.get(r, "").replace("=", " ").split() if "@" in t}
 
 def is_pseudo(m):
-    """No SMILES and no formula -> MetaNetX has no chemical structure for it:
-    a protein, a complex, a generic polymer, an abstract entity."""
     return not smiles.get(m, "") and not formula.get(m, "")
 
 hard = [json.loads(l) for l in open(TMP / "ec_split_none.jsonl")]
@@ -41,7 +35,7 @@ cause = Counter()
 genuine = []
 for r in hard:
     comps = sorted(r["components"], key=len)
-    minor = comps[:-1]                      # everything but the largest group
+    minor = comps[:-1]
     minor_mets = {m for c in minor for rx in c for m in parts(rx)}
     if minor_mets and all(is_pseudo(m) for m in minor_mets):
         cause["pseudo-species only (protein/complex/polymer)"] += 1
@@ -59,7 +53,6 @@ def pretty(r):
     return " ".join(cname.get(t.split("@")[0], t.split("@")[0]) if "@" in t else t
                     for t in eq.get(r, "").split())
 
-# rank the genuine ones by evidence volume in the metagenome
 df = pd.read_parquet("data/fabfos/runs/scadc_metagenome/gpr/gpr_4lane.parquet",
                      columns=["projection_via", "intermediate_id", "orf"])
 df = df[df.projection_via == "ec"]

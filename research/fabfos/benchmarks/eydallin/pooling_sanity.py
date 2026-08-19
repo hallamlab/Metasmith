@@ -1,19 +1,18 @@
 #!/usr/bin/env python3
-"""End-to-end sanity check for the belief path: ag1 alone vs ag1 + one clone.
-
-Every other script in this directory hands `graph_from_pairs` a flat `{mnxr: 1.0}`
-over the curated k12 GEM, so none of them ever reaches
-`ecspr.model.gpr.weights_from_rows(..., "belief")`. This one does: weights come from
-the de novo `e_coli_ag1` proteome through `condition_weights`, and the perturbation is
-a clone's rows being selected alongside the host's -- the mask, two units, the belief
-allocation, the bake and the solve, in one run.
-
-Run it before and after any change to the evidence allocation and diff the output.
-Node/edge counts must be IDENTICAL across such a change: an allocation change moves
-the value attached to a reaction, never which reactions are in the graph.
-
-  --cohort   measure every eydallin condition, not just glgC, and rank them
-"""
+# End-to-end sanity check for the belief path: ag1 alone vs ag1 + one clone.
+#
+# Every other script in this directory hands `graph_from_pairs` a flat `{mnxr: 1.0}`
+# over the curated k12 GEM, so none of them ever reaches
+# `ecspr.model.gpr.weights_from_rows(..., "belief")`. This one does: weights come from
+# the de novo `e_coli_ag1` proteome through `condition_weights`, and the perturbation is
+# a clone's rows being selected alongside the host's -- the mask, two units, the belief
+# allocation, the bake and the solve, in one run.
+#
+# Run it before and after any change to the evidence allocation and diff the output.
+# Node/edge counts must be IDENTICAL across such a change: an allocation change moves
+# the value attached to a reaction, never which reactions are in the graph.
+#
+#   --cohort   measure every eydallin condition, not just glgC, and rank them
 from __future__ import annotations
 
 import argparse

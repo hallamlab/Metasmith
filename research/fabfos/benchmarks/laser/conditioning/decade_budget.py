@@ -42,9 +42,6 @@ BAKE = ROOT / "data/fabfos/processed/metabolism_bake"
 ANNOT = BAKE / "seams/direction_annotation.parquet"
 HOSTS = ROOT / "data/fabfos/benchmarks/hosts"
 OUT_DIR = Path(__file__).resolve().parent / "cache"
-# The ASKA library as the gene sweep ran it -- gene name and the reactions its clone adds.
-# Read for the gene->reaction map only; its own delta column is a fold measurement under a
-# different bake and is not used here.
 ASKA = ROOT / "data/fabfos/runs/eydallin_clones/ecspr/aska_sweep_gem_e_coli_ag1_fold2.0_C.tsv"
 
 GLUCOSE = "MNXM1364061"
@@ -68,7 +65,6 @@ COVERAGE = (0.90, 0.99)
 
 
 def decades(a, lo=5, hi=95) -> tuple:
-    """``(full span, hi-lo span)`` in decades over the strictly positive values."""
     v = np.abs(np.asarray(a, float))
     v = v[np.isfinite(v) & (v > POWER_FLOOR)]
     if v.size < 2:
@@ -100,13 +96,6 @@ def load_bake() -> tuple:
 
 
 def capped(ann: pd.DataFrame, width: float) -> dict:
-    """``{mnxr: ratio}`` with |log10 ratio| bounded at ``width`` decades.
-
-    Applied at the MODEL seam, on the ratio rather than on dG'. That is the same clamp
-    `reclamp_direction.py` replays through the annotation, expressed where a caller can
-    change it without a re-bake -- and it is exact, because ratio and dG' are related by a
-    monotone exponential, so bounding one bounds the other.
-    """
     r = ann.ratio.to_numpy(float)
     if np.isfinite(width):
         lg = np.clip(np.log10(np.maximum(r, np.finfo(float).tiny)), -width, width)
@@ -115,14 +104,13 @@ def capped(ann: pd.DataFrame, width: float) -> dict:
 
 
 def gene_responses(eps: pd.Series) -> np.ndarray:
-    """Per-gene |dlog C_eff| under a fold, first order, for the whole ASKA library.
-
-    A fold ``f`` on a clone's reactions moves the readout by ``(sum eps_r) * log f`` to first
-    order, so the library's whole response distribution falls out of the ONE solve that
-    produced ``eps`` -- 4,102 genes for free, where the committed sweep spent 0.65 s each.
-    First order is the right order: the sweep's fold is 2.0 and its own finding is that
-    almost every response is microscopic, which is exactly where a linearisation is tight.
-    """
+    # Per-gene |dlog C_eff| under a fold, first order, for the whole ASKA library.
+    #
+    # A fold ``f`` on a clone's reactions moves the readout by ``(sum eps_r) * log f`` to first
+    # order, so the library's whole response distribution falls out of the ONE solve that
+    # produced ``eps`` -- 4,102 genes for free, where the committed sweep spent 0.65 s each.
+    # First order is the right order: the sweep's fold is 2.0 and its own finding is that
+    # almost every response is microscopic, which is exactly where a linearisation is tight.
     if not ASKA.exists():
         return np.zeros(0)
     a = pd.read_csv(ASKA, sep="\t", usecols=["gene", "rxns"]).drop_duplicates("gene")
@@ -148,7 +136,6 @@ def input_census(rows, host, pairs, ann, weights):
 
 
 def gene_stats(g: np.ndarray) -> dict:
-    """The statistic criterion 6 is stated on: the gene sweep's own spread and floor."""
     if g.size == 0:
         return {}
     a = np.abs(g)
@@ -176,7 +163,7 @@ def sweep(rows, host, pairs, ann, weights):
             try:
                 sol = solve(g, Terminal.metabolite(g, GLUCOSE),
                             Terminal.metabolite(g, mnxm))
-            except Exception as exc:                       # absent terminal is a coverage fact
+            except Exception as exc:
                 print(f"  {host} {sink} w={width}: {type(exc).__name__} {exc}",
                       file=sys.stderr)
                 continue

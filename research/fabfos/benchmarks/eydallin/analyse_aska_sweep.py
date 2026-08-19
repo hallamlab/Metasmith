@@ -58,7 +58,7 @@ GLYCOGEN_MODULE = ("glgA", "glgB", "glgC", "glgP", "glgS", "glgX", "malP", "malQ
 
 
 def auc(score: np.ndarray, pos: np.ndarray) -> tuple[float, float]:
-    """``(AUC, p)`` -- mid-rank Mann-Whitney, positives ranked above the rest."""
+    # ``(AUC, p)`` -- mid-rank Mann-Whitney, positives ranked above the rest.
     a, b = score[pos], score[~pos]
     if a.size == 0 or b.size == 0:
         return float("nan"), float("nan")
@@ -67,7 +67,6 @@ def auc(score: np.ndarray, pos: np.ndarray) -> tuple[float, float]:
 
 
 def precision_at_k(df: pd.DataFrame, k: int) -> dict:
-    """How many of the top ``k`` the screen actually found, against chance."""
     top = df.nlargest(k, "score", keep="all").head(k)
     hit = int(top.is_positive.sum())
     N, K = len(df), int(df.is_positive.sum())
@@ -76,11 +75,9 @@ def precision_at_k(df: pd.DataFrame, k: int) -> dict:
 
 
 def analyse(df: pd.DataFrame, label: str, log) -> dict:
-    """Every statistic for one channel and one positive set."""
     out = {"label": label, "n": len(df), "n_positive": int(df.is_positive.sum())}
     mapped = df.n_rxn > 0
 
-    # -- the precondition -----------------------------------------------------
     tab = [[int((df.is_positive & mapped).sum()), int((df.is_positive & ~mapped).sum())],
            [int((~df.is_positive & mapped).sum()), int((~df.is_positive & ~mapped).sum())]]
     orr, pf = fisher_exact(tab)
@@ -91,7 +88,6 @@ def analyse(df: pd.DataFrame, label: str, log) -> dict:
         f"({out['reach']['pos_mapped_frac']:.1%}) vs {tab[1][0]}/{sum(tab[1])} of the rest "
         f"({out['reach']['neg_mapped_frac']:.1%})  OR={orr:.2f} p={pf:.3g}")
 
-    # -- the AUCs and their controls ------------------------------------------
     pos = df.is_positive.to_numpy()
     for scope, sub in (("library", df), ("atom-mapped", df[mapped])):
         p = sub.is_positive.to_numpy()
@@ -102,13 +98,11 @@ def analyse(df: pd.DataFrame, label: str, log) -> dict:
         log(f"  AUC over the {scope:11s} (n={len(sub):,}, {int(p.sum())} positive): "
             f"ECSPr {a_e:.4f} (p={p_e:.3g})   |   size control {a_n:.4f} (p={p_n:.3g})")
 
-    # -- precision at the top -------------------------------------------------
     out["precision_at_k"] = [precision_at_k(df, k) for k in (10, 25, 50, 100)]
     for r in out["precision_at_k"]:
         log(f"  top {r['k']:3d}: {r['hits']:2d} positives "
             f"(expected {r['expected']:.1f}, p={r['p']:.3g})")
 
-    # -- per-positive standing against the library null -----------------------
     null = df.loc[~pos, "score"].to_numpy()
     st = _stats(df.loc[pos, "score"].to_numpy(), null)
     ranked = (df[pos].assign(pct_rank=st["pct_rank"], z=st["z"], p_emp=st["p_emp"])
@@ -133,7 +127,6 @@ def analyse(df: pd.DataFrame, label: str, log) -> dict:
 
 
 def resample(df: pd.DataFrame, *, n_neg: int, reps: int, seed: int, log) -> dict:
-    """The literal experiment asked for: 100 random clones as the null, many times."""
     rng = np.random.default_rng(seed)
     neg = df.loc[~df.is_positive, "score"].to_numpy()
     pos = df.loc[df.is_positive, "score"].to_numpy()
@@ -154,14 +147,6 @@ MEASURED = ROOT / "data/fabfos/benchmarks/eydallin/Y/measured_glycogen.tsv"
 
 
 def _direction(df: pd.DataFrame, log) -> dict:
-    """Does the SIGN of the modelled response match the sign of the phenotype?
-
-    Only askable of a probe that can go down. Reported two ways because they fail
-    differently: a 2x2 on sign alone over the labelled positives, and a SIGNED rank
-    correlation against the digitised Fig. 1 percentages. Clones whose response is exact
-    zero carry no sign and are excluded, with the count shown -- silently calling them
-    positive would be scoring a non-answer.
-    """
     out = {}
     pos = df[df.is_positive & (df.n_rxn > 0)].copy()
     pos = pos[pos.delta.abs() > 1e-12]

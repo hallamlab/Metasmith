@@ -93,8 +93,6 @@ def main():
     out.mkdir(parents=True, exist_ok=True)
     log = out / "run.log"
 
-    # Refuse a direction table decoded from a bake that is no longer deployed: the panel
-    # would otherwise run to completion on the previous generation's ratios.
     basis = ["--atom-pairs", PAIRS, "--direction", bake_identity.require_fresh(DIRECTION),
              "--element", "C", "--weighting", args.weighting]
 

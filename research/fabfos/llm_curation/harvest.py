@@ -58,8 +58,6 @@ from ecspr.bake.aam.curation import CROSSWALK_COLS, count_struct             # n
 from ecspr.bake.direction.refdata import load_mnxm_props                     # noqa: E402
 from measure_rescue import MNX                                               # noqa: E402
 
-# The four elements the crosswalk carries, matching `Refs.counts_of` and the existing
-# curated rows. A stand-in contributes a row per element it actually contains.
 ELEMENTS = ("C", "N", "S", "P")
 
 
@@ -87,8 +85,7 @@ def main() -> None:
         panel.update({r["mnxr"]: r for r in load_jsonl(p)})
     runs = [r for p in a.run for r in load_jsonl(p)]
 
-    # A substitution is only as good as the equation it was proposed inside.
-    proposals = collections.defaultdict(list)   # (mnxm, smiles) -> [(mnxr, why)]
+    proposals = collections.defaultdict(list)
     verdicts = collections.Counter()
     reactions_balanced, blockers_seen, blockers_fixed = set(), set(), set()
 
@@ -124,18 +121,18 @@ def main() -> None:
         if n_vouch < a.min_vouches:
             dropped["too few vouches"] += 1
             continue
-        if mnxm in has_struct:                                      # gate 1
+        if mnxm in has_struct:
             dropped["already has a structure"] += 1
             continue
-        if mnxm not in name_of:                                     # gate 2, missing id
+        if mnxm not in name_of:
             dropped["not in the metabolite table"] += 1
             continue
         why = next((w for _, w in vouches if w), "")
-        if not why:                                                 # gate 4
+        if not why:
             dropped["no citation from the model"] += 1
             continue
         counts = {X: count_struct(smi, X) for X in ELEMENTS}
-        if any(c is None for c in counts.values()):                 # gate 3, unparseable
+        if any(c is None for c in counts.values()):
             dropped["SMILES does not parse"] += 1
             continue
         if not any(counts.values()):
@@ -164,7 +161,6 @@ def main() -> None:
         print(f"    dropped, {k:<34} {n}")
     print(f"\n  ADMITTED: {len(blockers_fixed)} metabolites, {len(df)} element rows")
 
-    # The two numbers that must never substitute for each other.
     print(f"\n  per-metabolite coverage : {len(blockers_fixed)}/{len(blockers_seen)} "
           f"blockers in this panel = "
           f"{len(blockers_fixed) / max(len(blockers_seen), 1):.1%}")

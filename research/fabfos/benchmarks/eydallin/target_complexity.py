@@ -42,9 +42,6 @@ OUT_DIR = ROOT / "data/fabfos/runs/eydallin_clones/ecspr"
 SOURCE_MNXM = "MNXM1364061"    # D-glucose
 GLYCOGEN_MNXM = "MNXM738130"
 
-# The glycogen module as reactions, so a target's dependence on it is a number rather than
-# a gene-name grep: synthase, phosphorylase (x2), debranching, glgC, and malP's maltodextrin
-# arm. Taken from the reactions incident to glycogen plus the two that make ADP-glucose.
 GLG_RXNS = {"MNXR145046", "MNXR145036", "MNXR145038", "MNXR145021", "MNXR145050"}
 
 _G = {}
@@ -78,12 +75,6 @@ def _profile(mnxm) -> dict:
 
 
 def _reaction_degree(graph) -> dict:
-    """``{metabolite: how many reactions transfer carbon in or out of it}``.
-
-    An upper bound on the minimum reaction cut to that metabolite from anywhere, so a
-    target with a degree of three cannot have four independent routes into it however large
-    the surrounding network is.
-    """
     prov = graph.meta["edge_reactions"]
     nodes = graph.nodes
     e2r = prov.groupby("edge").mnxr.apply(set)
@@ -99,7 +90,6 @@ def _reaction_degree(graph) -> dict:
 
 
 def _hops(graph) -> dict:
-    """Metabolite-level hop distance from the source over the undirected atom graph."""
     adj = {}
     nodes = graph.nodes
     for a, b in graph.edges:

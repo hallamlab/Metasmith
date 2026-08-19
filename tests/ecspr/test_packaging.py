@@ -27,9 +27,6 @@ def _compile(out_dir: Path):
                           capture_output=True, text=True)
 
 
-# The stamp is a build product (`dev/ecspr.sh -be` writes it), so a checkout may or
-# may not carry one -- and what these tests assert depends on which. Set it, then
-# put the tree back as it was.
 @pytest.fixture
 def stamp():
     was = BUILD_HASH_FILE.read_text() if BUILD_HASH_FILE.exists() else None
@@ -68,8 +65,6 @@ def test_an_unstamped_tree_will_not_compile_a_recipe(stamp, tmp_path):
 
 def test_an_unstamped_tree_does_not_answer_like_a_release(stamp):
     stamp(None)
-    # A fresh interpreter, because FULL_VERSION is read once at import; pinned at
-    # the tree these tests came from, which need not be the installed one.
     env = {**os.environ, "PYTHONPATH": str(REPO / "src")}
     out = subprocess.run([sys.executable, "-c",
                           "import ecspr; print(ecspr.FULL_VERSION, ecspr.CONTAINER_TAG)"],

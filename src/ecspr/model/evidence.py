@@ -1,34 +1,33 @@
-"""ECSPr evidence weights: belief conservation, then log-odds pooling.
-
-Turns an annotation evidence table (one row per ORF/channel/nominated MNXR, as
-`annotation::gpr_table` produces) into per-reaction conductances `E_r`, and into
-per-unit (fosmid contig / metaG ORF) addition maps for the same allocation.
-
-TWO STAGES, AND WHY THE SECOND ONE EXISTS
------------------------------------------
-`nomination_contributions` is the DILUTION: each ORF's total nomination is exactly 1.0,
-spread across the reactions it nominates, so a promiscuous annotation cannot out-vote a
-specific one and leave-one-out stays an exact subtraction.
-
-That dilution is one-sided. A gene is diluted across the reactions it nominates, but
-nothing dilutes a reaction across the genes nominating it, so summing the mass makes a
-paralog family read as strength of evidence: on the K-12 de novo table MNXR172198 came
-top-6 at E = 12.3 purely because 65 ORFs assert the same single EC number through the
-same single channel, out-ranking reactions confirmed independently by three different
-methods. `pool_logodds` is the fix -- independent assertions add in log-odds, repeated
-ones saturate, and the result is a probability rather than an unbounded sum.
-
-The unit is inside the assertion key deliberately. The GPR module's whole account of an
-overexpression is that the host's row and the clone's row are both selected and their
-conductances sum; collapsing the two units into one assertion would make every
-overexpression arm a no-op. A physically separate copy is separate evidence; a paralog
-within one copy is not.
-
-`belief_mass` keeps the pre-pooling sum available, because that is the quantity per-ORF
-conservation is a statement about and the one a gene-count ledger has to read.
-
-Env: numpy + pandas (CPU).
-"""
+# ECSPr evidence weights: belief conservation, then log-odds pooling.
+#
+# Turns an annotation evidence table (one row per ORF/channel/nominated MNXR, as
+# `annotation::gpr_table` produces) into per-reaction conductances `E_r`, and into
+# per-unit (fosmid contig / metaG ORF) addition maps for the same allocation.
+#
+# TWO STAGES, AND WHY THE SECOND ONE EXISTS
+# -----------------------------------------
+# `nomination_contributions` is the DILUTION: each ORF's total nomination is exactly 1.0,
+# spread across the reactions it nominates, so a promiscuous annotation cannot out-vote a
+# specific one and leave-one-out stays an exact subtraction.
+#
+# That dilution is one-sided. A gene is diluted across the reactions it nominates, but
+# nothing dilutes a reaction across the genes nominating it, so summing the mass makes a
+# paralog family read as strength of evidence: on the K-12 de novo table MNXR172198 came
+# top-6 at E = 12.3 purely because 65 ORFs assert the same single EC number through the
+# same single channel, out-ranking reactions confirmed independently by three different
+# methods. `pool_logodds` is the fix -- independent assertions add in log-odds, repeated
+# ones saturate, and the result is a probability rather than an unbounded sum.
+#
+# The unit is inside the assertion key deliberately. The GPR module's whole account of an
+# overexpression is that the host's row and the clone's row are both selected and their
+# conductances sum; collapsing the two units into one assertion would make every
+# overexpression arm a no-op. A physically separate copy is separate evidence; a paralog
+# within one copy is not.
+#
+# `belief_mass` keeps the pre-pooling sum available, because that is the quantity per-ORF
+# conservation is a statement about and the one a gene-count ledger has to read.
+#
+# Env: numpy + pandas (CPU).
 from __future__ import annotations
 
 from collections import defaultdict
@@ -67,11 +66,11 @@ ASSERTION_KEY = ("unit_id", "channel", "intermediate_id")
 
 
 def nomination_contributions(df: pd.DataFrame) -> pd.DataFrame:
-    """Per-row contribution = (w_n / F_n) / L_orf, where the nomination unit is
-    (orf, channel, intermediate_id), w_n splits raw_score within (orf, channel),
-    F_n = distinct-mnxr fanout, and L_orf = distinct channels for the ORF. Each
-    ORF's contributions sum to 1.0 (belief conservation), making leave-one-out an
-    exact subtraction downstream."""
+    # Per-row contribution = (w_n / F_n) / L_orf, where the nomination unit is
+    # (orf, channel, intermediate_id), w_n splits raw_score within (orf, channel),
+    # F_n = distinct-mnxr fanout, and L_orf = distinct channels for the ORF. Each
+    # ORF's contributions sum to 1.0 (belief conservation), making leave-one-out an
+    # exact subtraction downstream.
     d = df.drop_duplicates(["orf", "channel", "intermediate_id", "mnxr"]).copy()
     nom = (d.groupby(["orf", "channel", "intermediate_id"], sort=False)
            .agg(s_n=("raw_score", "max"), F_n=("mnxr", "nunique"))
@@ -97,20 +96,19 @@ def _assert_conservation(rows: pd.DataFrame, label: str) -> None:
 
 def pool_logodds(rows: pd.DataFrame, *, lam0: float = POOL_LAM0,
                  lam1: float = POOL_LAM1, tau: float = POOL_TAU) -> pd.Series:
-    """`{mnxr: E}` -- a probability, pooling `nomination_contributions`' output over
-    assertions. Bounded to (0, 1), with the float64 caveat noted at `POOL_LAM1`.
-
-    For each assertion `i` in `ASSERTION_KEY`, `s[r,i]` is the belief mass it puts on
-    `r`; it buys `lam1 * (1 - exp(-s/tau))` log-odds, so N genes repeating one assertion
-    approach `lam1` instead of summing to N. Reactions add up over DISTINCT assertions,
-    which is where cross-method agreement earns more than one method repeated.
-
-    `lam0` is added only to reactions that have at least one row here -- the returned index
-    is exactly the nominated set. Applied to all of MNXref it would give every unnominated
-    reaction a positive conductance and pull the whole universe into the network. Within
-    the nominated set every `E` is strictly positive, so a nomination that carries
-    negligible belief mass sits at the prior rather than dropping out of the graph.
-    """
+    # `{mnxr: E}` -- a probability, pooling `nomination_contributions`' output over
+    # assertions. Bounded to (0, 1), with the float64 caveat noted at `POOL_LAM1`.
+    #
+    # For each assertion `i` in `ASSERTION_KEY`, `s[r,i]` is the belief mass it puts on
+    # `r`; it buys `lam1 * (1 - exp(-s/tau))` log-odds, so N genes repeating one assertion
+    # approach `lam1` instead of summing to N. Reactions add up over DISTINCT assertions,
+    # which is where cross-method agreement earns more than one method repeated.
+    #
+    # `lam0` is added only to reactions that have at least one row here -- the returned index
+    # is exactly the nominated set. Applied to all of MNXref it would give every unnominated
+    # reaction a positive conductance and pull the whole universe into the network. Within
+    # the nominated set every `E` is strictly positive, so a nomination that carries
+    # negligible belief mass sits at the prior rather than dropping out of the graph.
     key = [c for c in ASSERTION_KEY if c in rows.columns] + ["mnxr"]
     s = rows.groupby(key, sort=False)["contrib"].sum()
     lam = pd.Series(lam1 * -np.expm1(-s.to_numpy() / tau),
@@ -120,41 +118,38 @@ def pool_logodds(rows: pd.DataFrame, *, lam0: float = POOL_LAM0,
 
 def pooled_E_of_mass(mass: float, *, lam0: float = POOL_LAM0, lam1: float = POOL_LAM1,
                      tau: float = POOL_TAU) -> float:
-    """`E` for a reaction carried by exactly ONE assertion holding `mass` belief.
-
-    `compose` needs this: every bridge reaction is one synthetic ORF spending its whole
-    1.0 on one pseudo-reaction, so all bridges land on `pooled_E_of_mass(1.0)` and the
-    conductance they were built to carry has to be divided back out of `pair_w`.
-    """
+    # `E` for a reaction carried by exactly ONE assertion holding `mass` belief.
+    #
+    # `compose` needs this: every bridge reaction is one synthetic ORF spending its whole
+    # 1.0 on one pseudo-reaction, so all bridges land on `pooled_E_of_mass(1.0)` and the
+    # conductance they were built to carry has to be divided back out of `pair_w`.
     lam = lam1 * -np.expm1(-mass / tau)
     return float(1.0 / (1.0 + np.exp(-(lam0 + lam))))
 
 
 def belief_mass(df_src: pd.DataFrame, label: str = "") -> pd.Series:
-    """`{mnxr: SUM_g e_g(r)}` -- the PRE-pooling ledger, in units of ORFs.
-
-    This, not `compute_E`, is what per-ORF conservation is a statement about, and what a
-    diluted gene count has to read. It sums to the number of ORFs in `df_src`.
-    """
+    # `{mnxr: SUM_g e_g(r)}` -- the PRE-pooling ledger, in units of ORFs.
+    #
+    # This, not `compute_E`, is what per-ORF conservation is a statement about, and what a
+    # diluted gene count has to read. It sums to the number of ORFs in `df_src`.
     rows = nomination_contributions(df_src)
     _assert_conservation(rows, label or "E")
     return rows.groupby("mnxr")["contrib"].sum()
 
 
 def compute_E(df_src: pd.DataFrame, label: str = "", **pool) -> pd.Series:
-    """`{mnxr: E}` -- diluted, then pooled. The conductances `graph_from_pairs` reads."""
+    # `{mnxr: E}` -- diluted, then pooled. The conductances `graph_from_pairs` reads.
     rows = nomination_contributions(df_src)
     _assert_conservation(rows, label or "E")
     return pool_logodds(rows, **pool)
 
 
 def compute_weights(ev: pd.DataFrame) -> pd.DataFrame:
-    """evidence_weights.parquet: per (source, mnxr) E_full/E_dlec/belief_mass/n_orf.
-
-    `E_full` is the pooled conductance and is bounded by 1; `belief_mass` is the raw
-    per-ORF allocation behind it, which is what stays exactly additive under
-    leave-one-out and what the conservation ledger asserts on.
-    """
+    # evidence_weights.parquet: per (source, mnxr) E_full/E_dlec/belief_mass/n_orf.
+    #
+    # `E_full` is the pooled conductance and is bounded by 1; `belief_mass` is the raw
+    # per-ORF allocation behind it, which is what stays exactly additive under
+    # leave-one-out and what the conservation ledger asserts on.
     parts = []
     for source, g in ev.groupby("source"):
         rows = nomination_contributions(g)
@@ -179,13 +174,12 @@ def compute_weights(ev: pd.DataFrame) -> pd.DataFrame:
 
 
 def per_unit_weights(df_src: pd.DataFrame, unit_col: str) -> dict:
-    """{unit: {mnxr: E}} with per-ORF-normalized belief, re-aggregated by
-    'contig' (per fosmid) or 'orf' (per metaG ORF).
-
-    This is the PRE-pooling ledger (`belief_mass` at unit grain), not a conductance:
-    the unit is part of the assertion key, so summing these maps over units is not
-    `compute_E`. Null-draw research wants exactly this additive form.
-    """
+    # {unit: {mnxr: E}} with per-ORF-normalized belief, re-aggregated by
+    # 'contig' (per fosmid) or 'orf' (per metaG ORF).
+    #
+    # This is the PRE-pooling ledger (`belief_mass` at unit grain), not a conductance:
+    # the unit is part of the assertion key, so summing these maps over units is not
+    # `compute_E`. Null-draw research wants exactly this additive form.
     rows = nomination_contributions(df_src)
     if unit_col == "contig":
         rows = rows.copy()

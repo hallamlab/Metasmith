@@ -1,9 +1,3 @@
-"""Is high E just "many ORFs hit it"? And what expected-ORF reference do we have?
-
-Observed (de novo K-12) vs two expectations for the same MNXR:
-  * iML1515's own gene count -- same organism, curated: the per-genome expectation
-  * distinct UniProt proteins carrying the MNXR -- the family-size prior, all life
-"""
 import sys
 from pathlib import Path
 

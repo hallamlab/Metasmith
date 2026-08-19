@@ -44,12 +44,6 @@ INF = float("inf")
 
 
 def _triples(graph):
-    """``{(metabolite_a, metabolite_b, mnxr)}`` -- one per carbon transfer, undirected.
-
-    Undirected on purpose: the solve is a resistor network, so it will push carbon through
-    a reaction either way, and a cut that assumed the written direction would understate
-    what the probe can actually reach.
-    """
     nodes = graph.nodes
     e2r = graph.meta["edge_reactions"].groupby("edge").mnxr.apply(set)
     out = set()
@@ -63,12 +57,11 @@ def _triples(graph):
 
 
 def _route_usage(graph, sink) -> pd.Series:
-    """Net current into ``sink`` per reaction, from the base solve. Sums to the injected 1.0.
-
-    Which of the routes the cut names the probe actually USES -- and in which direction it
-    uses them, since a degradative enzyme carrying most of the arriving carbon means the
-    model is running it backwards to synthesise.
-    """
+    # Net current into ``sink`` per reaction, from the base solve. Sums to the injected 1.0.
+    #
+    # Which of the routes the cut names the probe actually USES -- and in which direction it
+    # uses them, since a degradative enzyme carrying most of the arriving carbon means the
+    # model is running it backwards to synthesise.
     sol = solve(graph, Terminal.metabolite(graph, SOURCE_MNXM),
                 Terminal.metabolite(graph, sink))
     if not sol.total > 0:

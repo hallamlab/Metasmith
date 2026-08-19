@@ -44,13 +44,11 @@ OUT_DIR = ROOT / "data/fabfos/runs/eydallin_clones/ecspr"
 
 
 def circuit(edges) -> AtomGraph:
-    """``{(a, b): g}`` over metabolite names, one atom each, symmetric."""
     return AtomGraph.from_edge_records(
         [((a, 0), (b, 0), g, g) for (a, b), g in edges.items()], dict(kind="ladder"))
 
 
 def _with(edges, key, value) -> dict:
-    """``edges`` with one edge's conductance replaced. Tuple keys, so not ``dict(**...)``."""
     out = dict(edges)
     out[key] = value
     return out
@@ -64,14 +62,12 @@ def ceff(edges, src, snk) -> float:
 
 
 def delivered(edges, src, drains, at) -> float:
-    """Current arriving at ``at`` when every metabolite in ``drains`` is grounded."""
     g = circuit(edges)
     sol = solve(g, Terminal.metabolite(g, src), Terminal.merge(g, drains))
     return float(sol.delivered(at))
 
 
 def elasticity(fn, edges, key, fold=1.0001) -> float:
-    """``dlog(readout) / dlog(g_key)`` by a small central-ish fold."""
     base = fn(edges)
     up = fn(_with(edges, key, edges[key] * fold))
     if base <= 0 or up <= 0:
@@ -84,7 +80,6 @@ def _banner(title):
 
 
 def rung_a(rows):
-    """A fork whose diversion is a dead end. The two-point probe cannot see it at all."""
     _banner("A -- fork with a dead-end diversion: the shunt is INVISIBLE to C_eff")
     base = {("S", "M"): 1.0, ("M", "T"): 1.0, ("M", "D"): 1.0}
     for d in (0.01, 1.0, 100.0):
@@ -100,7 +95,6 @@ def rung_a(rows):
 
 
 def rung_b(rows):
-    """The diversion rejoins the sink. Rayleigh: monotone up, never down."""
     _banner("B -- diversion that REJOINS the sink: monotone up (Rayleigh)")
     base = {("S", "M"): 1.0, ("M", "T"): 1.0, ("M", "N"): 1.0, ("N", "T"): 1.0}
     prev = -1.0
@@ -113,7 +107,6 @@ def rung_b(rows):
 
 
 def rung_c(rows):
-    """The minimal alternative ground. The SHARE is signed; the conductance still is not."""
     _banner("C -- competing ground: C_eff still rises, the share falls")
     base = {("S", "M"): 1.0, ("M", "T"): 1.0, ("M", "D"): 1.0}
     print("  drains = {T, D}; readout = current arriving at T", file=sys.stderr)
@@ -122,7 +115,6 @@ def rung_c(rows):
         e = _with(base, ("M", "D"), d)
         c = ceff(e, "S", ["T", "D"])
         i = delivered(e, "S", ["T", "D"], "T")
-        # series 1 -> parallel(t, d): the divider is exact and worth checking against
         exact = 1.0 / (1.0 + d)
         print(f"  g(M-D)={d:<8g}  C_eff = {c:.6f}  I_T = {i:.9f}  "
               f"(divider says {exact:.9f})", file=sys.stderr)
@@ -141,7 +133,6 @@ def rung_c(rows):
              (("eps_ceff_shunt", eps_c), ("eps_IT_shunt", eps_i), ("eps_IT_probe", eps_t))]
     assert eps_i < -0.4 and eps_t > 0.4, "the share must respond in both directions"
 
-    # The identity: a share is homogeneous of degree ZERO, so its elasticities sum to 0.
     tot_i = sum(elasticity(lambda e: delivered(e, "S", ["T", "D"], "T"), base, k)
                 for k in base)
     tot_c = sum(elasticity(lambda e: ceff(e, "S", ["T", "D"]), base, k) for k in base)
@@ -153,7 +144,6 @@ def rung_c(rows):
 
 
 def rung_d(rows):
-    """The control. An alternative PATH is not an alternative GROUND."""
     _banner("D -- control: one sink, so KCL pins the delivered current at 1 whatever "
             "the topology")
     base = {("S", "M"): 1.0, ("M", "T"): 1.0, ("M", "N"): 1.0, ("N", "T"): 1.0}
@@ -169,7 +159,6 @@ def rung_d(rows):
 
 
 def rung_e(rows):
-    """The same circuit through the probe ECSPr ships: `attach_leak` / `measure_leak`."""
     _banner("E -- through attach_leak: T as a port, everything else leaking")
     base = {("S", "M"): 1.0, ("M", "T"): 1.0, ("M", "D"): 1.0}
     prev = 1e9
@@ -187,7 +176,6 @@ def rung_e(rows):
 
 
 def rung_f(rows):
-    """How far up a chain a shunt is still felt. Chain S=M0 -> ... -> Mk=T, shunt at Mj."""
     _banner("F -- a shunt walked along a 6-step chain: does distance mute the sign?")
     k = 6
     for j in range(1, k):
@@ -207,7 +195,6 @@ def rung_f(rows):
 
 
 def rung_g(rows):
-    """Where in leak-space the signed response lives, on the C circuit with a real leak."""
     _banner("G -- leak sweep: the shunt's elasticity against the background leak")
     base = {("S", "M"): 1.0, ("M", "T"): 1.0, ("M", "D"): 1.0}
 
@@ -234,13 +221,6 @@ def rung_g(rows):
 
 
 def _net(edges, target, drains, *, ratios=None, source="S") -> float:
-    """Net current arriving at ``target`` with ``drains`` merged into one ground.
-
-    ``ratios`` rectifies named edges (``gm = ratio * gp``), which is how an edge stops
-    being both a filler and a drain. The target is itself a drain -- it has to be, since
-    the net current at an interior node is zero by KCL -- so an edge LEAVING it must land
-    on an interior node, never straight onto another drain, or contraction shorts it away.
-    """
     g = circuit(edges)
     if ratios:
         keys = list(edges)
@@ -253,14 +233,6 @@ def _net(edges, target, drains, *, ratios=None, source="S") -> float:
 
 
 def _draw(edges, target, ports, *, ratios=None, leak=1e-6, port=1.0, source="S") -> float:
-    """``measure_leak`` draw at one metabolite. ``ratios`` rectifies named edges.
-
-    Not the merged-terminal form. Merging every drain into one ground puts them all at the
-    same potential, so an edge BETWEEN two drains carries nothing and an exit from the
-    target is invisible. The leak model gives each drain a finite resistor to ground
-    instead, which is what lets carbon leave the target at all -- and it is the probe
-    ECSPr ships.
-    """
     g = circuit(edges)
     if ratios:
         keys = list(edges)
@@ -273,11 +245,6 @@ def _draw(edges, target, ports, *, ratios=None, leak=1e-6, port=1.0, source="S")
 
 
 def rung_h(rows):
-    """All three lever kinds at once, and the one whose sign the direction ratio decides.
-
-    The minimal analogue of the glycogen case: a target fed by a route, competed for by a
-    shunt, and losing carbon through an exit.
-    """
     _banner("H -- one circuit, three lever kinds: feed (+), shunt (-), exit (-)")
     base = {("S", "M"): 1.0, ("M", "T"): 1.0, ("M", "D"): 1.0, ("T", "X"): 1.0}
     ports = ["T", "D", "X"]
@@ -294,8 +261,6 @@ def rung_h(rows):
         else:
             assert e < 0
 
-    # Homogeneity of degree zero, checked where it actually lives: the leak and the ports
-    # are conductances too, so the identity is over EVERY edge, not just the named ones.
     scaled = _draw({k: v * 7.0 for k, v in base.items()}, "T", ports,
                    leak=7e-6, port=7.0)
     print(f"\n  draw[T] = {b:.9f}; every conductance x7 gives {scaled:.9f} "
@@ -306,9 +271,6 @@ def rung_h(rows):
     assert abs(scaled - b) < 1e-9
 
     _banner("H2 -- the SAME edge is a feed or an exit, and orientation gates which")
-    # One edge between T and a partner U, in two placements. Where U sits decides the sign
-    # the edge CAN carry; the orientation decides whether it may carry it at all. This is
-    # glgP -- G1P <-> glycogen -- whose ratio the ensemble abstained on.
     up = {("S", "M"): 1.0, ("M", "T"): 1.0, ("M", "D"): 1.0, ("T", "X"): 0.2,
           ("S", "U"): 1.0}                       # U fed from the source: a second feed
     down = {("S", "M"): 1.0, ("M", "T"): 1.0, ("M", "D"): 1.0, ("T", "X"): 0.2,
