@@ -70,17 +70,32 @@ the channel name precisely so the two numbers cannot land in one column:
 |---|---|---|
 | reference pool | metag + epi300 + fosmid | Swiss-Prot `ref::reference_label_pool` (222k refs, ~13k MNXR) |
 | which ORFs | **dark only** — zero evidence from the other three lanes | **every ORF** |
-| P / R on record | 0.682 / 0.650 (c30); 0.84 on curated genomes | never measured |
+| P / R on record | 0.682 / 0.650 (c30); 0.84 on curated genomes | 0.973 / 0.826 on DH10B, once the pool is repaired and the lane is gated |
 
-So the P = 0.84 figure was never a claim about our channel. What we measured — 0.3%
-concordance on the ASKA library, 4.0% at 3-digit EC, against kofam 89% and uniref50 88% —
-is the first measurement this configuration has had.
+So the P = 0.84 figure was never a claim about our channel.
 
-The `glgC` case shows the mechanism: the retrieved neighbour is Q8DA54, *speA*, arginine
-decarboxylase (EC 4.1.1.19), *Vibrio vulnificus*, yielding arginine decarboxylase and
-generic ATP hydrolysis for a glucose-1-phosphate adenylyltransferase. `glgC` carries a
-0.996 BSR uniref50 hit and a 527 kofam bitscore, so under scadc's dark-only gate the lane
-would never have been consulted about it at all.
+## The pool index does not describe the pool stack
+
+The 0.3% ASKA concordance, and the `glgC` case where the donor came back as *speA* from
+*Vibrio vulnificus*, are one defect rather than a lane that transfers badly. `ref::reference_label_pool`'s
+`orf_index.parquet` and `emb_pbert.npy` are not the same ordering: the embedder writes the
+stack in shards of 1,024 and ASSEMBLE reads the `.npy` and `.csv` shards back through two
+independent `sorted(glob(...))` calls that do not agree. Every row is then labelled with
+some other protein's reactions, and nothing raises — the length check passes and the label
+merge passes. It is the failure that transform's docstring warns about, arriving through
+the one door it does not guard. **The ESM-C twin pool is unaffected**, so this is
+ProteinBERT's shard layout rather than the builder's design.
+
+Three checks pin it, none of which needs the embedder: 328 of 400 groups of pool
+accessions carrying identical sequences have different embeddings; a DH10B ORF
+byte-identical to a Swiss-Prot entry sits at cosine 0.26 from that entry's row and 1.000
+from a row elsewhere; and those displacements are constant in blocks of 1,024.
+
+`repair_pool_index.py` recovers the permutation with no re-embedding, by matching each
+index block to the stack block with the same duplicate-item signature, and validates
+442/443 on anchors the matching never saw. That is a research-side repair — it writes
+beside the pinned artifact. **The transform still needs the real fix**: read the shards
+once, in one order, rather than trusting two globs to agree.
 
 ## The distance measure, and where precision is lost
 
@@ -108,18 +123,29 @@ Note what that makes it, relative to its neighbours: uniref50 gates on BSR and k
 bitscore-vs-family-threshold, both absolute measures of match quality. **`pbert` is the
 only lane with no absolute-quality gate at all.**
 
-## Tuning for precision
+## Tuning for precision — measured on DH10B
 
-In rough order of leverage:
+The sweeps in this directory settle the ranking that used to be a guess. Numbers are the
+1,288-ORF DH10B curated cohort, rebuilt by the source study's own md5 method; see
+`before_after_dh10b.tsv` and the `threshold_*` and `metrics_*` tables beside it.
 
-1. **Keep and threshold `nn_similarity`.** The strongest knob and a ~2-line change plus a
-   schema column. The study already brackets the curve at two points: precision ~0.95 when
-   neighbours are sequence twins, 0.682 once every ≥30%-identity cluster relative is
-   removed. That gap *is* precision as a function of neighbour distance — it just was
-   never swept as such, and that is the experiment to run.
-2. **Restore the dark-only gate.** Costs nothing where the lane earns its keep and removes
-   the entire class of error found here.
-3. **Require corroboration.** `sweep_aska.py --min-lanes 2` already exists downstream.
-4. **Raise `PBERT_FLOOR`** (currently 0.20) — the knob that exists, and the weakest one:
-   it thresholds a scale-free vote share, so it cannot reject a confidently-wrong call.
-   scadc's coverage tiers show the cost: 98.9% of dark ORFs covered at 0.1, 50.9% at 0.7.
+1. **`nn_similarity` is the knob.** Gating on the top-1 cosine at 0.7716 — the 15th
+   percentile, so it refuses the worst sixth of ORFs — takes the lane from P 0.701 / R
+   0.667 to **P 0.973 / R 0.826**, coverage 0.951 → 0.849. It is one line plus a schema
+   column, and it is the whole result.
+2. **The distance metric is inert.** Cosine, correlation, per-dimension standardised
+   cosine, PCA-whitened cosine and euclidean sit within 0.001 of each other once gated,
+   and L1 ties them on a matched subsample. Only unnormalised dot is materially worse
+   (F1 0.858 vs 0.893) — magnitude carries no signal here. Keep cosine.
+3. **`PBERT_FLOOR` is the weakest knob, as suspected — it is worse than weak.** With the
+   distance gate in place, best F1 sits at floor **0.00**: the floor only removes labels
+   the gate has already decided to trust. At the shipped 0.20 the same gate gives P 0.811
+   / R 0.662.
+4. **The dark-only gate and corroboration** (`sweep_aska.py --min-lanes 2`) remain
+   untested here; both narrow where the lane speaks rather than how well it speaks.
+
+The leakage question the numbers depend on: the cohort's truth accessions are themselves
+Swiss-Prot pool members, as they are for kofam and uniref50, which is what makes these
+figures comparable to the seven-lane table. Hiding the ORF's own accession costs ~0.03 F1;
+hiding every neighbour at cosine ≥ 0.99 — the cheap stand-in for the source study's
+DIAMOND cluster removal — costs ~0.06, landing at P 0.906 / R 0.769.
