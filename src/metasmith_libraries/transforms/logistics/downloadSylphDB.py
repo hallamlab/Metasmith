@@ -1,7 +1,3 @@
-# REVIEW: URL points at the Sylph GTDB-r220 prebuilt sketch
-# (c200, dbv1 = standard pre-cluster + ANI param set). The
-# ref::sylph_db dtype expects a single .syldb file, so we save the
-# download directly as that file rather than into a subdirectory.
 from metasmith.python_api import *
 
 lib   = TransformInstanceLibrary.ResolveParentLibrary(__file__)

@@ -103,8 +103,6 @@ def generate_workflow(work: Path, *, experiment: str, reads: list[Path], parity:
     targets = TargetBuilder()
     ins = targets.Add("fabfos::putative_inserts")
     targets.Add("fabfos::insert_metadata")
-    # Coverage of the RECOVERED inserts (pinned to `ins`), not the raw assembly --
-    # standalone target, since nothing downstream consumes it.
     targets.Add("sequences::assembly_stats", parents={ins})
 
     agent = common.make_agent(work, runtime, container=agent_env)

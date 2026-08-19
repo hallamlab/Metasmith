@@ -52,40 +52,21 @@ from metasmith.python_api import (  # noqa: E402
 
 LIB = resolve_library_root()
 
-# The lanes. Both members of each pair produce the same types; loading both
-# would make the planner choose by tiebreak rather than by intent.
 DOMAINS = ["fabfos", "functionalAnnotation", "ecspr", "ecsprAtomB", "ecsprGround"]
 
-# Staged inputs that the data library carries, addressed through canon so that
-# no absolute path appears here.
 FROM_LIBRARY: dict[str, str] = {
     "ecspr::metanetx_reac_prop": "REAC_PROP",
-    # The atom-transfer universe. `ecspr::reaction_roles` used to sit beside this
-    # -- the star needed it, parsed out of reac_prop.tsv, to know which side of a
-    # reaction a metabolite sat on. The atom-pair table already names substrate and
-    # product per transfer, so the question disappeared with the topology.
     "ecspr::atom_pairs": "REFERENCE_ATOM_PAIRS",
     "ecspr::direction_ratios": "REFERENCE_DIRECTION",
 }
 
-# Staged inputs the data library does NOT yet declare, so they are still
-# addressed by absolute path in the incumbent tree. Every entry here is a
-# reason this method is not yet portable -- see the report this script prints.
 INCUMBENT = Path("/home/tony/agentic_workspace/data/scadc")
 MM = Path("/home/tony/agentic_workspace/projects/scadc/metabolic-modelling/main/metabolic-modelling")
 RN_CACHE = MM / "04_reaction_network" / "cache"
 
 FROM_INCUMBENT: dict[str, Path] = {
     "ecspr::metanetx_chem_prop": INCUMBENT / "references/metanetx/chem_prop.tsv",
-    # canon.AXES_JSON, NOT a hand-written filename. This used to name a retired
-    # axis set directly -- one that canon.RETIRED_AXIS_SETS lists and
-    # canon.assert_canonical_axes() rejects. The cache dir holds the canonical
-    # set and the retired ones side by side, so the wrong one is one typo away
-    # and nothing downstream would have complained.
     "ecspr::biomass_axes": Path(canon.AXES_JSON),
-    # NOT `ecspr::direction_ratios` -- the benchmark-v3 side added it here as an
-    # incumbent absolute path, but it is already staged through the library above
-    # as REFERENCE_DIRECTION, which is the copy canon pins by sha256.
     "functional_annotation::ko_to_mnxr": MM / "_reference_try1/betweenness/cache/ko_to_mnxr.tsv",
     "functional_annotation::metanetx_reac_xref": INCUMBENT / "references/metanetx/reac_xref.tsv",
     "functional_annotation::rhea2uniprot": INCUMBENT / "references/rhea/rhea2uniprot.tsv",
@@ -99,13 +80,6 @@ FROM_INCUMBENT: dict[str, Path] = {
 
 
 def curated_dir(staging: Path, name: str, files: list[Path]) -> Path:
-    """A DIRECTORY-typed input, built from an EXPLICIT file list.
-
-    Never point these at a raw cache. The significance scorer discovers its
-    draw sizes by listing this directory and regex-matching filenames, so a
-    cache carrying retired sizes would silently widen the null basis and
-    change every answer without any error.
-    """
     d = staging / "refs" / name
     d.mkdir(parents=True, exist_ok=True)
     for f in files:
@@ -127,9 +101,6 @@ def build_inputs(staging: Path) -> tuple[DataInstanceLibrary, list[str], list[st
     for ns in ("sequences", "fabfos", "functional_annotation", "ecspr"):
         inputs.AddTypeLibrary(namespace=ns, lib=DataTypeLibrary.Load(LIB / f"data_types/{ns}.yml"))
 
-    # The sample root. Nothing produces fabfos::experiment -- 24
-    # transforms require it as their grouping key, so it is staged, and it is
-    # what AsSamples() roots on.
     exp = inputs.AddValue("experiment.txt", "fabfos_ecspr_canonical",
                           "fabfos::experiment")
 
@@ -137,12 +108,6 @@ def build_inputs(staging: Path) -> tuple[DataInstanceLibrary, list[str], list[st
     seen: dict[Path, str] = {}
     for type_name, symbol in FROM_LIBRARY.items():
         p = Path(getattr(canon, symbol))
-        # ecspr::reaction_roles and ecspr::metanetx_reac_prop are the SAME
-        # bytes under two types, and a DataInstanceLibrary keys its manifest by
-        # path -- `AddItem` asserts on a repeat. So the second type gets a
-        # curated alias rather than the original path. The alias is a symlink,
-        # so it is still the same bytes and still the same sha256; only the
-        # manifest key differs.
         if p in seen:
             alias = staging / "refs" / "aliases" / type_name.replace("::", "__")
             alias.parent.mkdir(parents=True, exist_ok=True)
@@ -155,10 +120,6 @@ def build_inputs(staging: Path) -> tuple[DataInstanceLibrary, list[str], list[st
         inputs.AddItem(p, type_name)
         via_library.append(type_name)
 
-    # Per-experiment inputs must be PARENTED to the experiment root. A
-    # transform that asks for one with parents={exp} will not match an
-    # unparented instance, and the symptom is an unsatisfiable plan rather than
-    # a type error -- compile_evidence fails this way on evidence_source.
     PER_EXPERIMENT = {
         "fabfos::reference_inserts",
         "functional_annotation::evidence_source",
@@ -170,25 +131,10 @@ def build_inputs(staging: Path) -> tuple[DataInstanceLibrary, list[str], list[st
             inputs.AddItem(path, type_name)
         via_incumbent.append(type_name)
 
-    # The ground null, curated by canon's EXPLICIT file list -- never a glob. The
-    # scorer derives its draw sizes by listing this directory, so the list IS the
-    # basis. Unlike the retired ecspr::frozen_null, this type HAS a producer
-    # (ecsprGround/null.py) -- that missing producer was a named Known gap.
-    #
-    # NOT existence-checked here, unlike the frozen null this replaces: the ground
-    # null has a producer but has not been produced, so a check would hard-fail the
-    # example for everyone. The experiment spec's preflight is where a RUN refuses,
-    # naming the missing draw size rather than interpolating across it.
     nulls = curated_dir(staging, "ground_null", canon.ground_null_paths())
     inputs.AddItem(nulls, "ecspr::ground_null")
     via_library.append("ecspr::ground_null")
 
-    # ecspr::frozen_null was staged here until the star-lane retirement. Its
-    # lesson carries over and is why ground_null_paths() returns JOINED paths:
-    # canon.FROZEN_NULL_FILES were bare filenames, and passing them to
-    # symlink_to() unjoined produced ten links pointing at nothing. The planner
-    # resolves on TYPES rather than existence, so the plan rendered perfectly and
-    # the breakage only surfaced inside a scoring container.
 
     inputs.Save()
     return inputs, via_library, via_incumbent
@@ -215,12 +161,6 @@ def main() -> int:
 
     print("=== planning ===")
     targets = TargetBuilder()
-    # Both artifacts, because they are different questions and only one of them
-    # needs the built graph. `ground_significance` runs off atom_pairs +
-    # evidence_weights directly -- it must REBUILD per unit, so it needs the
-    # ingredients, not the built object -- and would therefore never select the
-    # atom_graph builder on its own. `ground_probe_report` is what describes the
-    # base network, and it is the step that exercises `ecsprAtomB`.
     targets.Add("ecspr::ground_probe_report")
     targets.Add("ecspr::ground_significance")
     task = agent.GenerateWorkflow(

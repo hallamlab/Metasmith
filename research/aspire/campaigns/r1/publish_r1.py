@@ -63,16 +63,6 @@ DEST = os.environ.get(
 )
 GTDB_RELEASE = "r232"
 
-# dtype -> (destination subdirectory, file extension, mode)
-#
-# mode:
-#   "sample"  one file per sample, named <sample>.<ext>
-#   "bins"    per-bin fan-out -> one <sample>.tar per sample
-#   "single"  exactly one file for the whole run
-#
-# `taxonomy::checkm_stats` and `binning_local::quality_bin_fasta` are absent on
-# purpose -- neither can be labelled from the graph; `_route_catalogue` publishes
-# the same information, attributed, from the gap-fill catalogue.
 ROUTES = {
     "sequences::short_reads":                 ("reads/interleaved",             "fq.gz",  "sample"),
     "sequences::clean_short_reads":           ("reads/filtered",                "fq.gz",  "sample"),
@@ -110,28 +100,8 @@ ROUTES = {
     "sequences::comebin_bin_fasta":           ("binning/fna_comebin",  "fa", "bins"),
 }
 
-# `binning_local::cluster_table` is deliberately absent. It is the aggregator's
-# per-assembly skani clustering, computed over the gated subset (an assembly
-# contributes nothing unless all three binners produced bins), and it was
-# recomputed over the complete post-gap-fill bin set -- see `_route_catalogue`.
-# Publishing both would put two disagreeing cluster tables in one tree with
-# nothing on disk saying which is current. There were also 8 of them, all under
-# one dtype declared `single`, so they all claimed `binning/cluster_table.tsv`;
-# `render_script`'s clash check catches that, but the fix is the supersession,
-# not a rename.
-
 
 def resolve(task_key=None, refresh=True):
-    """Return (run_dir, key, attrib, products).
-
-    *** THIS NO LONGER READS METASMITH'S LINEAGE GRAPH. *** On 0.19.1 that graph
-    disagrees with what nextflow actually ran -- 0 of 13 interleave steps agreed
-    on the run it was measured against, and one product resolved to exactly one
-    sample and the wrong one. Every published filename here is derived from an
-    attribution, so publishing off that graph would have named files for the
-    wrong libraries with nothing about the output looking wrong. The evidence and
-    the replacement are in nxf_attribution.py; both drivers now share it.
-    """
     run_dir, key = C.find_run_dir(task_key)
     attrib = C.attribution(run_dir, refresh=refresh)
     products = C.published_products(run_dir)
@@ -139,16 +109,12 @@ def resolve(task_key=None, refresh=True):
 
 
 def _sample_of(attrib, product):
-    """The one sample a product descends from, or None if not exactly one."""
     row = attrib.get(product)
     if not row:
         return None
     return row["sample"] if row["sample"] not in ("?", "*") else None
 
 
-# Products the DAG published short, rebuilt by gapfill/pbert_remerge.py. Keyed
-# by dtype -> (rebuilt file extension, ) since the rebuilt files are named
-# <sample>.<ext> under GAPFILL/pbert.
 REBUILT = {
     "annotation::proteinbert_embeddings": "parquet",
     "annotation::proteinbert_index":      "csv",
@@ -157,18 +123,6 @@ _rebuilt_cache = {}
 
 
 def _rebuilt(dtype, sample):
-    """A rebuilt replacement for this product, or None to use the DAG's own.
-
-    `merge_proteinbert` is grouped by the sample's ORFs and inherits metasmith's
-    group() drop race, but drops chunks *within* a group rather than whole
-    samples: the merge runs, exits 0, and publishes fewer rows than the sample
-    has ORFs. Four samples were short and one (S19) lost its group entirely, so
-    no merge task existed for it at all. Nothing about the run said so -- it was
-    found by counting merged index rows against ORFs in the published .faa.
-
-    Substituting here rather than adding a second item keeps one source per
-    destination, which is what `render_script`'s clash check requires.
-    """
     ext = REBUILT.get(dtype)
     if not ext:
         return None
@@ -176,7 +130,6 @@ def _rebuilt(dtype, sample):
 
 
 def _rebuilt_index():
-    """(ext, sample) -> path, for whatever pbert_remerge.py has produced."""
     if not _rebuilt_cache:
         listing = C.ssh_out(f"ls {GAPFILL}/pbert/*.parquet {GAPFILL}/pbert/*.csv "
                             f"2>/dev/null || true")
@@ -191,16 +144,8 @@ def _rebuilt_samples(ext):
 
 
 def build_manifest(attrib, products, run_dir, catalogue=True):
-    """[(remote_src, dest_relpath, mode, sample)], plus a list of problems.
-
-    `catalogue` covers the whole run rather than one run dir, so the second
-    publish pass -- the scoped S13/S22 run, which lands in its own run dir --
-    passes False. Emitting it twice would put both passes' items on the same
-    destinations and trip `render_script`'s clash check.
-    """
     items, problems = [], []
 
-    # counters give every per-bin product a stable ordinal within its sample
     ordinal = defaultdict(int)
 
     for dtype, (subdir, ext, mode) in ROUTES.items():
@@ -215,17 +160,13 @@ def build_manifest(attrib, products, run_dir, catalogue=True):
             if mode == "sample":
                 src = _rebuilt(dtype, sample) or remote_path
                 items.append((src, f"{subdir}/{sample}.{ext}", "file", sample))
-            else:  # bins -> staged into a per-sample tar
+            else:
                 ordinal[(subdir, sample)] += 1
                 n = ordinal[(subdir, sample)]
                 binner = subdir.rsplit("_", 1)[-1]
                 member = f"{sample}.{binner}.{n:04d}.{ext}"
                 items.append((remote_path, f"{subdir}/{sample}/{member}", "tar", sample))
 
-    # A rebuilt product usually *replaces* one the DAG published short, and the
-    # substitution above covers that. S19 is different: group() lost its whole
-    # group, so no merge task ran and there is no product to substitute for.
-    # Nothing would publish it unless it is added outright.
     claimed = {d for _, d, _, _ in items}
     for dtype, ext in REBUILT.items():
         subdir = ROUTES[dtype][0]
@@ -234,7 +175,6 @@ def build_manifest(attrib, products, run_dir, catalogue=True):
             if dest not in claimed:
                 items.append((f"{GAPFILL}/pbert/{sample}.{ext}", dest, "file", sample))
 
-    # bin quality, the census, the clustering and the MAGs
     if catalogue:
         items_c, problems_c = _route_catalogue()
         items += items_c
@@ -246,11 +186,8 @@ def build_manifest(attrib, products, run_dir, catalogue=True):
     return items, problems
 
 
-# Where the campaign driver's outputs land on fir before assembly. They are the
-# only products that do not already live there.
 ARBUTUS_STAGE = "/scratch/phyberos/gmcf3495/.publish_arbutus"
 
-# campaign -> (local subdir under STAGING/<campaign>, destination subdir)
 ARBUTUS_ROUTES = {
     "metabuli": ("per_sample", "taxonomy_contigs/metabuli"),
     "gtdbtk":   ("merged",     "taxonomy_binning/gtdbtk"),
@@ -258,19 +195,6 @@ ARBUTUS_ROUTES = {
 
 
 def _route_arbutus():
-    """Route the two off-cluster campaigns' products.
-
-    Everything else in the manifest comes out of the metasmith lineage graph and
-    already sits on fir under `<run_dir>/results/`. These do not: metabuli and
-    GTDB-Tk ran on Arbutus, and their tables came back to *this* machine. So
-    they need a real source path on fir before `render_script` -- which runs
-    remotely and only copies -- can place them.
-
-    `upload` is that: a mode `render_script` turns into an rsync from here to
-    ARBUTUS_STAGE. Adding a mode rather than pre-uploading behind the manifest's
-    back keeps every published file visible to `plan`, which is the one place a
-    missing product is supposed to be catchable.
-    """
     items, problems = [], []
     for campaign, (sub, dest) in ARBUTUS_ROUTES.items():
         src_dir = C.STAGING / campaign / sub
@@ -288,50 +212,18 @@ def _route_arbutus():
     return items, problems
 
 
-# The gap-fill working tree on fir: the unified bin catalogue, the 34x3 binner
-# census, the recomputed skani clustering, and the bins themselves.
 GAPFILL = "/scratch/phyberos/gmcf3495/gapfill"
 
-# Everything `_route_catalogue` writes, for `run --replace` to clear first. This
-# layer is the only part of the tree that is recomputed rather than copied, so
-# it is the only part a second publish has to be allowed to overwrite.
 CATALOGUE_DEST = (
     "binning/bin_catalogue.tsv",
     "binning/binner_census.tsv",
     "binning/cluster_tables",
     "binning/quality_bins",
-    # Superseded, and actively misleading if left behind: an earlier pass routed
-    # `taxonomy::checkm_stats` by binner and published the one batch that
-    # happened to attribute. It reads as "CheckM2 statistics for semibin2 on
-    # S25" when what actually happened is that checkm ran on every bin and only
-    # that batch resolved to a single sample. bin_catalogue.tsv has all of it.
     "binning/qc_stats_semibin2",
 )
 
 
 def _route_catalogue():
-    """Route the bin catalogue, the binner census, the clustering, and the MAGs.
-
-    These stand in for the two DAG products whose dtype cannot be labelled, and
-    the substitution is not a workaround -- it is the only correct source.
-
-      - `taxonomy::checkm_stats` is one CSV per bin, but checkm ran batched
-        across assemblies: 716 of 781 products resolve to several samples and
-        exactly 65 to one. Nothing about a batch boundary makes that fixable by
-        walking the graph harder.
-      - `binning_local::quality_bin_fasta` has all three binners upstream of
-        every bin by construction, so its binner is not recoverable at all --
-        see `C.binner_of`, which says so and returns None rather than guessing.
-
-    The catalogue has both by construction. Each bin is attributed through the
-    work-dir join *before* checkm sees it, and carries its own completeness and
-    contamination on its own row. It also covers what the DAG's own numbers
-    cannot: the bins the aggregator's all-three-binners gate discarded, and the
-    gap-filled bins that never entered the DAG at all.
-
-    Quality bins ship as one tar per sample for the same inode reason as every
-    other per-bin fan-out here.
-    """
     items, problems = [], []
 
     cat = C.ssh_out(f"cat {GAPFILL}/catalogue.tsv 2>/dev/null || true").splitlines()
@@ -371,9 +263,6 @@ def _route_catalogue():
         member = f"{sample}.{binner}.{ordinal[sample]:04d}.fa"
         items.append((path, f"binning/quality_bins/{sample}/{member}", "tar", sample))
 
-    # A bin with no checkm row is not a quality bin and not a non-quality bin --
-    # it is unmeasured, and a catalogue that silently treats it as failing would
-    # under-report the MAG count with nothing to notice. Surface it.
     if n_unscored:
         problems.append(("catalogue", "completeness", f"{n_unscored} bin(s) not yet scored"))
 
@@ -388,31 +277,11 @@ def _route_catalogue():
 
 
 def render_script(items, replace=()):
-    """A shell script that assembles the tree on fir.
-
-    Per-sample tar directories are staged then tarred and removed, so the
-    published tree never holds the fan-out as loose files -- the inode cost is
-    paid in scratch, which has 1M inodes and 270K used, not in the project
-    allocation, which has 139K left.
-    """
-    # Anything this loop does not recognise would be dropped from the tree with
-    # no error at all -- a product silently missing from a published deliverable
-    # is the worst failure this script has, because it looks exactly like
-    # success. Refuse up front instead.
     unknown = sorted({m for _, _, m, _ in items} - {"file", "tar", "upload"})
     if unknown:
         raise SystemExit(f"render_script: unhandled item mode(s) {unknown}; "
                          f"build_manifest and render_script have drifted apart")
 
-    # Same failure, different cause: two products routed to one destination.
-    # Every copy below is `cpn`, which skips an existing destination, so the
-    # second product would vanish without a line of output anywhere -- not in
-    # `plan`, which counts items rather than destinations, and not in the
-    # run, which would report success. Two sources on one path is always a
-    # routing bug (a "single" dtype that produced two nodes, or a dtype with
-    # more than one product per sample routed as `sample`), so refuse and name
-    # both sources rather than let the tree be quietly short. An exact repeat of
-    # the same source is merely redundant and collapses.
     dests = defaultdict(set)
     for src, dst, _, _ in items:
         dests[dst].add(src)
@@ -430,19 +299,8 @@ def render_script(items, replace=()):
              'STAGE=$(mktemp -d /scratch/phyberos/.publish.XXXXXX)',
              'trap "rm -rf $STAGE" EXIT',
              "",
-             # Not `cp -n`: coreutils 9.3 (fir's) exits 1 when -n skips, which
-             # under `set -e` aborts the whole publish at the first destination
-             # that already exists. The first publish only worked because the
-             # tree was empty; every re-publish died on reads/filtered/S24.fq.gz.
-             # Skip-if-present has to be the test, not the copy's exit status.
              'cpn() { [ -e "$2" ] || cp "$1" "$2"; }',
              ""]
-    # Every copy below is `cpn`, so a second publish over an existing tree is a
-    # no-op -- which is right for a product that is content-addressed and cannot
-    # change, and wrong for the catalogue layer, which is recomputed every time a
-    # binner finishes. Without this the tree would keep the first catalogue while
-    # reporting success. Named paths only: a blanket refresh would delete
-    # products this pass cannot rebuild.
     for path in replace:
         lines.append(f'rm -rf "$DEST"/{shlex.quote(path)}')
     if replace:
@@ -456,10 +314,6 @@ def render_script(items, replace=()):
         if mode == "file":
             lines.append(f'cpn {shlex.quote(src)} "$DEST"/{shlex.quote(dst)}')
         elif mode == "upload":
-            # Source is local, so cmd_run has already rsynced it to $ARB under
-            # its destination relpath -- which is unique by construction, where
-            # basenames alone would collide between the two campaigns. Assert it
-            # arrived: a silently missing product is this script's worst failure.
             staged = f'"$ARB"/{shlex.quote(dst)}'
             lines.append(f'test -f {staged} || {{ echo "missing upload: {dst}" >&2; exit 1; }}')
             lines.append(f'cpn {staged} "$DEST"/{shlex.quote(dst)}')
@@ -496,9 +350,6 @@ def cmd_plan(args):
     for d, n in sorted(by_dir.items()):
         print(f"  {n:>6}  {d}")
     n_tar = len({(str(Path(d).parent.parent), s) for _, d, m, s in items if m == "tar"})
-    # uploads become ordinary files in the tree, so they cost inodes exactly as
-    # `file` items do -- counting only `file` would under-report the allocation
-    # cost by one per sample per campaign.
     n_file = sum(1 for _, _, m, _ in items if m in ("file", "upload"))
     print(f"\ninodes into the project allocation: ~{n_file + n_tar} "
           f"({n_file} files + {n_tar} tarballs)")
@@ -536,12 +387,6 @@ def cmd_run(args):
 
 
 def _upload_arbutus(items):
-    """Push the off-cluster campaign tables to fir, keyed by destination relpath.
-
-    Staging under the destination relpath rather than the basename is what keeps
-    the two campaigns from colliding -- both emit plain `.tsv` -- and it makes
-    the remote script's `test -f` a real check rather than a coincidence.
-    """
     ups = [(src, dst) for src, dst, mode, _ in items if mode == "upload"]
     if not ups:
         return
@@ -699,18 +544,6 @@ published.
 
 
 def agent_version(run_dir):
-    """The metasmith version that ACTUALLY ran, read off the deployed agent.
-
-    Not `import metasmith`: that reports whichever tree the caller's PYTHONPATH
-    happens to resolve, which is the editable 0.18.7 install unless the driver
-    env is set. Running `readme` from a plain shell therefore stamped the
-    published README "metasmith 0.18.7" for a run executed by 0.19.1 -- a wrong
-    provenance number, silently, in the one file whose job is provenance.
-
-    The agent deployed on the cluster is the code that ran, and the run lives at
-    <agent_home>/runs/<key>, so its version.txt sits two levels up. No fallback:
-    a version we cannot read is not a version worth guessing.
-    """
     home = Path(run_dir).parent.parent
     try:
         v = C.ssh_out(f"cat {home}/dev/metasmith/version.txt").strip()
@@ -726,11 +559,6 @@ def agent_version(run_dir):
 def cmd_readme(args):
     run_dir, key, attrib, products = resolve(args.task_key)
 
-    # Count the published tree, not this pass's manifest. The tree is assembled
-    # by two passes -- the main run and the scoped S13/S22 run -- so a manifest
-    # describes at most half of it, and the README claimed 32 files in eight
-    # directories that hold 34. What is on disk is also the only thing a reader
-    # can check the README against.
     listing = C.ssh_out(
         f"cd {shlex.quote(DEST)} && for d in $(find . -mindepth 1 -type d | sort); do "
         f"n=$(find \"$d\" -maxdepth 1 -type f | wc -l); "
@@ -741,15 +569,11 @@ def cmd_readme(args):
         if len(parts) == 2:
             counts[parts[0]] = int(parts[1])
 
-    # A tar directory's member total has to be read out of the tarballs; it is
-    # the number a reader most wants and the one they cannot see with `ls`.
     tar_dirs = sorted(d for d in counts if d.startswith("binning/")
                       and d.rsplit("/", 1)[-1] != "cluster_tables"
                       and ("fna_" in d or d.endswith("quality_bins")))
     members = {}
     if tar_dirs:
-        # One `tar -tf` per archive. Concatenating them and listing the stream
-        # once counts only the first: tar stops at the end-of-archive marker.
         cmd = "; ".join(
             f'echo "{d} $(for t in {shlex.quote(DEST)}/{d}/*.tar; do '
             f'tar -tf "$t" 2>/dev/null; done | grep -c "[^/]$")"' for d in tar_dirs)
@@ -784,8 +608,6 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--task-key", default=None)
-    # The catalogue layer describes the whole run, not one run dir. The scoped
-    # S13/S22 pass must turn it off or both passes claim the same destinations.
     ap.add_argument("--no-catalogue", dest="catalogue", action="store_false",
                     help="skip the bin catalogue/census/clustering layer "
                          "(use on the second, scoped publish pass)")

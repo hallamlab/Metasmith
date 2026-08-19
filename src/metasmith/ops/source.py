@@ -1,4 +1,3 @@
-"""Source URI parsing, reachability probing, transfer."""
 from __future__ import annotations
 
 import subprocess

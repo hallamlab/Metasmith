@@ -1,4 +1,3 @@
-"""``ecspr draw`` -- the null pool, written once, as a conditions table."""
 from __future__ import annotations
 
 from ..model import conditions as cond_mod

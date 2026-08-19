@@ -1,42 +1,4 @@
 #!/usr/bin/env python3
-"""Turn the 994 shard GPR tables into the 2,844 per-assembly tables asked for.
-
-    SLURM_ARRAY_TASK_ID=<i> SHARD_N=<n> python split_by_assembly.py partition <gpr> <results...>
-    SLURM_ARRAY_TASK_ID=<i> SHARD_N=<n> python split_by_assembly.py compact   <gpr>
-    python split_by_assembly.py finish <gpr>
-
-Two phases, because the two directions of the transpose want different memory.
-`partition` is per shard and reads one shard table; `compact` is per sample and
-reads that sample's parts. Both are arrayable and both skip completed work, so a
-wall-clock kill costs one unit rather than the pass.
-
-WHY A SPLITTER AND NOT PARTITIONED OUTPUT FROM THE JOINER. A shard holds ~35
-assemblies, so hive-partitioning inside `gpr_4lane` would have changed what the
-transform declares as its product and broken `validate_gpr`'s single-source
-assumption -- a run-identity change, mid-campaign, for a saving a post-hoc pass
-gets for free. The sample is already in the `{sample}::{orf}` id prefix, so no
-join is needed to recover it.
-
-WHAT GETS REWRITTEN, AND WHY IT IS NOT COSMETIC. `source` NAMES THE ORF SET
-(fabfos_evidence.py:34), and the joiner sets it to the shard's stem. Shipping
-that would give 2,844 tables whose own `source` column names ~35 assemblies the
-reader did not ask for. So `source` becomes the sample and the `{sample}::`
-prefix comes off `orf`, restoring the ids the sample's own fasta carries -- which
-is also what makes the re-validation below a real check rather than a tautology.
-
-TWO POPULATIONS THIS PASS MUST NOT CONFUSE, because they look identical on disk
-and only one is a defect:
-
-  * An assembly with NO EVIDENCE AT ALL. The corpus minimum is 1 ORF; one ORF
-    that no lane calls is biology, and it has no group in any shard table, hence
-    no part file. Refusing that as a lost partition would block delivery on the
-    smallest assemblies -- so `partition` records which samples it emitted, and
-    `compact` treats an absent part as legitimate ONLY when that shard's marker
-    proves the shard was processed and did not emit the sample.
-  * A LOST PART -- a partition task killed mid-shard, a truncated write. This
-    must still refuse, and does: the marker is written last, so an absent part
-    with no marker, or with a marker that lists the sample, is a real failure.
-"""
 from __future__ import annotations
 
 import hashlib
@@ -60,19 +22,11 @@ LANE_SET = "chosen_4"
 TASK_I = int(os.environ.get("SLURM_ARRAY_TASK_ID", "0"))
 TASK_N = int(os.environ.get("SHARD_N", "1"))
 
-# The corpus as it was BEFORE sharding. Compaction validates each delivered
-# table against the assembly's own fasta, which is what makes the stray-id check
-# a real test of the split rather than a restatement of it.
 ORFS_DIR = Path(os.environ.get(
     "CYANOVERSE_ORFS",
     "/project/rpp-shallam/phyberos/cyanoverse/data/orfs_and_metabuli"
     "/sequences-open_reading_frames"))
 
-# The contract this pass re-validates against is a COPY on the cluster, not the
-# `src/metasmith_libraries` file `gpr_4lane` ran under. A drift that reorders
-# SCHEMA_COLS refuses loudly; a drift that WIDENS a score range or adds a lane
-# set would pass silently and make the re-validation a decoration. Pinned by
-# digest, recorded next to the delivered tables.
 EXPECT_LIB_SHA = os.environ.get("FABFOS_LIB_SHA256", "")
 
 
@@ -93,7 +47,6 @@ def check_lib() -> str:
 
 
 def read_parts(gpr: Path) -> dict[str, list[str]]:
-    """sample -> [shard, ...]; the resharder's own record of where it put things."""
     out: dict[str, set[str]] = defaultdict(set)
     with (gpr / "parts.tsv").open() as fh:
         next(fh)
@@ -104,14 +57,6 @@ def read_parts(gpr: Path) -> dict[str, list[str]]:
 
 
 def all_shards(gpr: Path) -> list[str]:
-    """Every shard the resharder wrote, from `parts.tsv`.
-
-    The stride is taken over THIS list and never over what happens to be on
-    disk. An array task that computed its slice from the live results would get
-    a different slice depending on when it started -- a batch landing mid-array
-    changes the list -- and two tasks would then process one shard concurrently
-    onto the same paths. `reshard.py` paid for that lesson once already.
-    """
     seen = set()
     with (gpr / "parts.tsv").open() as fh:
         next(fh)
@@ -121,44 +66,18 @@ def all_shards(gpr: Path) -> list[str]:
 
 
 def shard_tables(roots: list[Path]) -> dict[str, Path]:
-    """shard stem -> its gpr_table parquet, keyed by the table's OWN `source`.
-
-    Not by filename: products land under content-addressed names, so the file a
-    shard produced is identified by what it says it is, never by where it sits.
-    Only ONE row is read to get there -- `validate_gpr` has already proved the
-    column single-valued, and reading it whole 994 times is a corpus-sized scan
-    to learn 994 strings.
-
-    Two files claiming one shard is a REFUSAL and not a merge -- but not because
-    it would double-count. It cannot: parts are written keyed by shard stem, so
-    a second collection overwrites. It refuses because the two runs may have
-    been produced under different library commits, and picking either silently
-    would make the delivered corpus a mixture. Pass only the run directories
-    that belong to the campaign.
-    """
     found: dict[str, Path] = {}
     for root in roots:
         if not root.is_dir():
             continue
         for p in sorted(root.rglob("*.parquet")):
-            rp = p.resolve()      # a symlinked run dir is not two collections
-            # Decide what this file IS from its schema, never from whether
-            # reading it happened to raise. `iter_batches(columns=["source"])`
-            # does NOT fail on a parquet without that column -- it returns a
-            # batch that simply lacks it, and the KeyError then lands on the
-            # `.column()` call OUTSIDE any guard. The results directory holds
-            # the ProteinBERT embeddings parquet, which is exactly that case,
-            # so an exception-shaped guard passes the unit tests and dies on
-            # the first real run.
+            rp = p.resolve()
             try:
                 names = set(pq.ParquetFile(rp).schema_arrow.names)
             except Exception:
-                continue                       # not readable as parquet at all
+                continue
             if not set(fe.SCHEMA_COLS) <= names:
-                continue                       # not a gpr_table
-            # A zero-row table yields NO batch at all, so `next` without a default
-            # raises StopIteration and the num_rows guard below never runs. An
-            # assembly that annotated nothing is exactly that file.
+                continue
             batch = next(pq.ParquetFile(rp).iter_batches(
                 batch_size=1, columns=["source"]), None)
             if batch is None or batch.num_rows == 0:
@@ -177,15 +96,11 @@ def shard_tables(roots: list[Path]) -> dict[str, Path]:
     return found
 
 
-# ---------------------------------------------------------------------------
-
-
 def _marker(parts_dir: Path, shard: str) -> Path:
     return parts_dir / f"_{shard}.done"
 
 
 def _read_marker(parts_dir: Path, shard: str) -> tuple[int, set[str]] | None:
-    """(rows, samples emitted) for a completed shard, or None if not done."""
     m = _marker(parts_dir, shard)
     if not m.exists():
         return None
@@ -205,11 +120,6 @@ def partition(gpr: Path, roots: list[Path]) -> int:
             f"would otherwise make every array task exit 0 having done nothing, "
             f"turning up one phase later as a missing part.")
 
-    # A collected table whose shard is not in `parts.tsv` is dropped -- correctly,
-    # since the control shard (`shard_9000`) lives in the same agent home and its
-    # kofam lane was computed fresh rather than reused, so it must NEVER reach a
-    # delivered table. But dropping it in silence is how a REAL shard missing
-    # from `parts.tsv` would also disappear, so say which ones and why.
     known = set(all_shards(gpr))
     for stem in sorted(set(tables) - known):
         print(f"[{TASK_I}] ignoring {stem}: collected, but not in parts.tsv "
@@ -222,7 +132,7 @@ def partition(gpr: Path, roots: list[Path]) -> int:
         if _read_marker(parts_dir, shard) is not None:
             continue
         if shard not in tables:
-            skipped += 1        # not collected yet; `finish` refuses on the gap
+            skipped += 1
             continue
         df = pq.read_table(tables[shard]).to_pandas()
         if list(df.columns) != fe.SCHEMA_COLS:
@@ -238,18 +148,12 @@ def partition(gpr: Path, roots: list[Path]) -> int:
         for smp, grp in df.groupby(sample, sort=False):
             d = parts_dir / smp
             d.mkdir(parents=True, exist_ok=True)
-            # PID-unique, so two tasks that somehow collide cannot rename over
-            # each other's half-written file and leave a truncated part behind
-            # a marker that says the shard is done.
             tmp = d / f"{shard}.parquet.part.{os.getpid()}"
             grp.to_parquet(tmp, index=False)
             tmp.rename(d / f"{shard}.parquet")
             emitted.append(smp)
         m = _marker(parts_dir, shard)
         m.parent.mkdir(parents=True, exist_ok=True)
-        # Written LAST and listing what was emitted: that is what lets `compact`
-        # tell "this sample had no evidence in this shard" from "this part was
-        # lost". Without the list the two are indistinguishable.
         tmp = m.with_suffix(f".done.{os.getpid()}")
         tmp.write_text(f"{len(df)}\t{len(emitted)}\n" + "\n".join(sorted(emitted)) + "\n")
         tmp.rename(m)
@@ -297,17 +201,9 @@ def compact(gpr: Path) -> int:
                     f"sample, but {p} is absent. The part was lost after the "
                     f"marker was written -- delete {_marker(parts_dir, shard)} "
                     f"and re-partition that shard.")
-            # else: the shard was processed and this sample contributed no
-            # evidence row there. Legitimate; nothing to collect.
 
         ids = _fasta_ids(ORFS_DIR / f"{sample}.faa")
         if not have:
-            # No evidence anywhere in the corpus for this assembly. Deliver an
-            # empty table with the right schema rather than no table: the
-            # delivery contract is one file per assembly, and a silently absent
-            # file is indistinguishable from a lost one. `validate_gpr` refuses
-            # a zero-row table by design, so it is not called; `finish` counts
-            # these and reports them.
             df = pd.DataFrame({c: pd.Series(dtype="object")
                                for c in fe.SCHEMA_COLS})
             with empty.open("a") as fh:
@@ -316,9 +212,6 @@ def compact(gpr: Path) -> int:
                   f"lane -- empty table delivered", flush=True)
         else:
             df = pd.concat([pd.read_parquet(p) for p in have], ignore_index=True)
-            # The rewrite. `orf` loses the prefix this splitter used to route
-            # it, and `source` stops naming the shard and starts naming the file
-            # it is in.
             pre = f"{sample}{DELIM}"
             df["orf"] = df["orf"].str.slice(len(pre))
             df["source"] = sample
@@ -349,23 +242,10 @@ def _fasta_ids(faa: Path) -> set[str]:
 
 
 def _validate(df, ids: set[str], sample: str) -> None:
-    """`validate_gpr` as the transform runs it -- schema, nulls, score kinds,
-    ranges, MNXR pattern, evidence quality, the grain key, the stray-id check
-    against the sample's OWN fasta, and the completeness check over the declared
-    lane set.
-
-    A delivered table carries every channel `LANE_SET` names. Its `lane_set`
-    column is a claim about which lanes ran, and belief mass downstream is split
-    by each ORF's observed channel count, so a table one lane short is not a
-    smaller table -- it is a different denominator wearing the same label.
-    """
     fe.validate_gpr(df, LANE_SET, ids, sample)
 
 
 def finish(gpr: Path) -> int:
-    """The delivery gate: the recovered sample set IS the manifest's, no row was
-    lost between the shard tables and the delivered ones, and all four channels
-    are non-zero across the corpus."""
     digest = check_lib()
     expected = set(read_parts(gpr))
     parts_dir = gpr / "split" / "parts"
@@ -387,8 +267,6 @@ def finish(gpr: Path) -> int:
             f"{len(expected):,} manifest samples. missing="
             f"{sorted(expected - got)[:5]} extra={sorted(got - expected)[:5]}")
 
-    # The ledger. Rows in == rows out, summed over the whole corpus. Without it
-    # a lane silently dropped for hundreds of assemblies still delivers green.
     rows_in = sum(_read_marker(parts_dir, s)[0] for s in all_shards(gpr))
 
     rows = 0

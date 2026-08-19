@@ -212,46 +212,26 @@ import subprocess
 import sys
 from pathlib import Path
 
-# blastn/makeblastdb are looked up on PATH; the transform supplies them from the
-# blast container, a direct run from an env that has them.
 BLAST_HSP_FMT = "6 qseqid sseqid sstart send pident length nident qlen slen"
-# The all-vs-all carries the QUERY coordinates too, because its similarity sums
-# HSPs and cannot tell a second alignment of the same region from a second region
-# without them. It is deliberately a SECOND format: `junctions.tsv` is a shipped
-# product written from the one above, pinned by checksum and declared in the type
-# library, so widening that constant would silently widen the product.
 AVA_HSP_FMT = "6 qseqid sseqid qstart qend sstart send pident length nident qlen slen"
 
 
-# =====================================================================
-# identifiers
-# =====================================================================
-
 def contig_key(pool, assembler, contig_id):
-    """`pool:assembler:contig` -- the only globally meaningful name for a contig."""
     return f"{pool}:{assembler}:{contig_id}"
 
 
 def piece_key(cid, start, end):
-    """`pool:assembler:contig:start-end`. `start > end` wraps a circular origin."""
     return f"{cid}:{start}-{end}"
 
 
 def split_contig_key(cid):
-    """-> (pool, assembler, contig_id). Split from the LEFT twice: a contig id may
-    contain anything, a pool name and an assembler name may not contain ':'."""
     parts = cid.split(":", 2)
     if len(parts) != 3:
         raise ValueError(f"not a qualified contig id: {cid!r}")
     return parts[0], parts[1], parts[2]
 
 
-# =====================================================================
-# fasta / intervals
-# =====================================================================
-
 def read_fasta(path):
-    """-> [(id, description, sequence)], in file order."""
     out, name, desc, buf = [], None, "", []
     with open(path) as fh:
         for line in fh:
@@ -281,7 +261,6 @@ def revcomp(seq):
 
 
 def merge_intervals(iv):
-    """Merge 1-based inclusive intervals. Adjacency counts as overlap."""
     iv = sorted((min(a, b), max(a, b)) for a, b in iv)
     m = []
     for a, b in iv:
@@ -293,7 +272,6 @@ def merge_intervals(iv):
 
 
 def complement_intervals(merged, length):
-    """The 1-based inclusive gaps of `merged` over [1, length]. LINEAR, not circular."""
     gaps, prev = [], 1
     for a, b in merged:
         if a > prev:
@@ -305,12 +283,6 @@ def complement_intervals(merged, length):
 
 
 def complement_intervals_circular(merged, length):
-    """The gaps of `merged` over a CIRCLE of circumference `length`.
-
-    Returns (start, end) pairs where `start > end` means the arc wraps through the
-    origin. Only ever applied to a contig the assembler's own GRAPH reported
-    circular -- on a genuinely linear contig this fuses its two ends.
-    """
     if not merged:
         return [(1, length)]
     n = len(merged)
@@ -340,24 +312,14 @@ def complement_intervals_circular(merged, length):
 
 
 def arc_length(start, end, length):
-    """Length of the 1-based inclusive arc start..end on a circle of circumference
-    `length`; `start > end` wraps."""
     return (end - start + 1) if start <= end else (length - start + 1) + end
 
 
 def arc_seq(seq, start, end):
-    """Extract the arc start..end (1-based inclusive), wrapping if start > end."""
     return seq[start - 1:end] if start <= end else seq[start - 1:] + seq[:end]
 
 
 def terminal_self_repeat(seq, lo=10, hi=400):
-    """Longest W in [lo, hi] with seq[:W] == seq[-W:], else 0.
-
-    Only a FALLBACK trim, for a contig the graph calls circular without stating an
-    overlap. It is never the circularity gate: a 15-30 bp terminal self-repeat is
-    common in linear sequence, and gating on one called 945 spades contigs
-    circular where the graph calls far fewer.
-    """
     for w in range(min(hi, len(seq) // 2), lo - 1, -1):
         if seq[:w] == seq[-w:]:
             return w
@@ -365,12 +327,6 @@ def terminal_self_repeat(seq, lo=10, hi=400):
 
 
 def megahit_flag(description):
-    """megahit's `flag` field, or None if the header does not carry one.
-
-    Bit 0x1 is `standalone` and 0x2 is `loop`, so a closed isolated contig reads
-    flag=3 and the LOOP bit is the circularity claim. Getting these the wrong way
-    round is not cosmetic -- see the module docstring.
-    """
     fields = dict(t.split("=", 1) for t in description.split() if "=" in t)
     if "flag" not in fields:
         return None
@@ -379,10 +335,6 @@ def megahit_flag(description):
     except ValueError:
         return None
 
-
-# =====================================================================
-# blast
-# =====================================================================
 
 def _run(cmd, cwd):
     p = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True)
@@ -393,10 +345,6 @@ def _run(cmd, cwd):
 
 def blast_hsps(query_fa, subject_fa, work, threads=None, evalue="1e-5",
                perc_identity=None, task=None, outfmt=BLAST_HSP_FMT):
-    """blastn query vs a db built from subject. -> list of dicts, one per HSP."""
-    # blast runs with cwd=work, so every path it is handed must be absolute --
-    # otherwise a relative --out-split resolves against the wrong directory and
-    # makeblastdb reports a missing file that is sitting right there.
     work = Path(work).resolve()
     work.mkdir(parents=True, exist_ok=True)
     query_fa, subject_fa = Path(query_fa).resolve(), Path(subject_fa).resolve()
@@ -420,14 +368,6 @@ def blast_hsps(query_fa, subject_fa, work, threads=None, evalue="1e-5",
 
 
 def read_blast_tsv(path, outfmt=BLAST_HSP_FMT):
-    """Read a blast -outfmt 6 table written by a separate step.
-
-    A table written under a DIFFERENT `-outfmt` than the one asked for here reads
-    as zero rows, not as an error, which is how a format change becomes an empty
-    matrix downstream instead of a traceback. So a file with content but no
-    parseable row raises: there are two formats in this module now and the wrong
-    one has to fail loudly.
-    """
     keys = outfmt.split()[1:]
     rows, seen = [], 0
     with open(path) as fh:
@@ -446,13 +386,6 @@ def read_blast_tsv(path, outfmt=BLAST_HSP_FMT):
 
 
 def check_backbone(backbone):
-    """The vector reference must be ONE record.
-
-    `vector/pcc1.fna` is 4.7 MB and carries the 7,930 bp backbone AND a 4.69 Mb
-    EPI300 chromosome -- a host+vector depletion reference filed under the wrong
-    name. BLASTing that as the backbone calls a junction on every host-derived
-    contig, so this refuses rather than proceeding.
-    """
     bb = read_fasta(backbone)
     if len(bb) != 1:
         raise ValueError(
@@ -463,21 +396,11 @@ def check_backbone(backbone):
     return bb[0][2]
 
 
-# =====================================================================
-# assembly graphs
-# =====================================================================
-
 def _flip(orient):
     return "-" if orient == "+" else "+"
 
 
 def read_gfa(path):
-    """spades GFA -> (nodes {id: seq}, adj {(id, orient): {(id, orient, overlap_bp)}}).
-
-    `L a ao b bo <cigar>` joins a's ao-end to b's bo-start, and the same link read
-    backwards joins b's flipped end to a's flipped one -- both directions are
-    stored, so a walk can be extended from either of its ends.
-    """
     nodes, adj = {}, {}
     with open(path) as fh:
         for line in fh:
@@ -496,13 +419,6 @@ def read_gfa(path):
 
 
 def read_spades_paths(path):
-    """spades `contigs.paths` -> {contig_name: [(node_id, orient), ...]}.
-
-    Forward strand only; the `NAME'` records are the reverse complement of the
-    record above them and carry no extra information. A path spread over several
-    lines is a scaffold spanning a gap -- the contig FASTA carries it as one
-    record, so the subpaths are concatenated to match.
-    """
     walks, name = {}, None
     with open(path) as fh:
         for raw in fh:
@@ -522,12 +438,6 @@ def read_spades_paths(path):
 
 
 def read_fastg(path):
-    """megahit FASTG -> (nodes {name: seq}, adj {name: {name}}).
-
-    Header shape is `>NODE:SUCC1,SUCC2;` or `>NODE;`. A name ending in `'` is the
-    reverse-complement strand, and successors of `X` are what X's 3' end joins;
-    successors of `X'` are therefore what X's 5' end joins.
-    """
     nodes, adj, cur = {}, {}, None
     buf = []
     with open(path) as fh:
@@ -547,12 +457,6 @@ def read_fastg(path):
 
 
 def write_graph_nodes(nodes, work):
-    """Write a graph's nodes out as the blast subject. -> the FASTA path.
-
-    Separate from the call below so the blast between them can run in an image
-    that has blastn while everything either side runs in one that has pandas --
-    the same split `map-prep`/`map-write` exists for.
-    """
     work = Path(work)
     work.mkdir(parents=True, exist_ok=True)
     node_fa = work / "graph_nodes.fna"
@@ -562,17 +466,6 @@ def write_graph_nodes(nodes, work):
 
 def backbone_graph_nodes(nodes, backbone, work, min_cover=0.9, min_pident=95.0,
                          threads=None, hits_path=None):
-    """Which graph nodes ARE the backbone.
-
-    A node qualifies only when the backbone covers at least `min_cover` of it: the
-    node has to BE vector, not merely contain some. On a real pool the strict rule
-    returns one 6,679 bp node out of 891; "carries any backbone HSP" returns 356,
-    most of them incidental sub-200 bp similarity, and adjacency to those would
-    call closure everywhere.
-
-    `hits_path` is a blast table a separate step already produced; without one
-    this blasts for itself, which is what a direct run wants.
-    """
     work = Path(work)
     if hits_path is not None:
         hits = read_blast_tsv(hits_path)
@@ -596,20 +489,12 @@ def backbone_graph_nodes(nodes, backbone, work, min_cover=0.9, min_pident=95.0,
 
 
 class GraphView:
-    """What the assembler's graph says about one assembly's contigs.
-
-    Answers two questions per contig -- is it a circle, and is either of its ends
-    adjacent to the backbone -- over both assemblers, because the questions are
-    the same and only the contig->node join differs. `unmatched` names the contigs
-    the join could not place, so a silent miss is impossible.
-    """
-
     def __init__(self, assembler, contigs, graph_path, paths_path=None,
                  backbone=None, work=None, threads=None, hits_path=None):
         self.assembler = assembler
         self.unmatched = []
-        self._circ = {}     # contig -> (bool, overlap_bp, evidence)
-        self._ends = {}     # contig -> (set 5' neighbours, set 3' neighbours)
+        self._circ = {}
+        self._ends = {}
         self._hits_path = hits_path
         if assembler == "spades":
             self._init_spades(contigs, graph_path, paths_path, backbone, work, threads)
@@ -624,7 +509,6 @@ class GraphView:
         return backbone_graph_nodes(nodes, backbone, work, threads=threads,
                                     hits_path=self._hits_path)
 
-    # -- spades: the walk is stated, so the join is exact -------------------
     def _init_spades(self, contigs, gfa, paths, backbone, work, threads):
         nodes, adj = read_gfa(gfa)
         walks = read_spades_paths(paths)
@@ -646,7 +530,6 @@ class GraphView:
                 self._circ[name] = (False, 0, "gfa_open")
             self._ends[name] = ({n for n, _o, _ov in back}, {n for n, _o, _ov in fwd})
 
-    # -- megahit: no stated join, so match on sequence ----------------------
     def _init_megahit(self, contigs, fastg, backbone, work, threads):
         nodes, adj = read_fastg(fastg)
         self.backbone_nodes = self._backbone_nodes(nodes, backbone, work, threads)
@@ -662,8 +545,6 @@ class GraphView:
             flag = megahit_flag(desc)
             if node is None or node not in adj:
                 self.unmatched.append(name)
-                # The flag is still an assembler claim even with no node to stand
-                # on, so it is not thrown away just because the join missed.
                 loop = bool(flag & 0x2) if flag is not None else False
                 self._circ[name] = (loop, 0, "flag_only" if loop else "no_node")
                 self._ends[name] = (set(), set())
@@ -685,22 +566,15 @@ class GraphView:
         return self._circ.get(contig, (False, 0, "no_graph"))
 
     def end_touches_backbone(self, contig):
-        """-> (5' end adjacent to a backbone node, 3' end adjacent)."""
         back, fwd = self._ends.get(contig, (set(), set()))
         bb = {b.rstrip("'") for b in self.backbone_nodes}
         return (bool(back & bb), bool(fwd & bb))
 
 
-# =====================================================================
-# stage 1 -- map
-# =====================================================================
-
-JUNCTION_COLS = BLAST_HSP_FMT.split()[1:]   # blast's own columns, in blast's order
+JUNCTION_COLS = BLAST_HSP_FMT.split()[1:]
 
 
 def parse_assembly_arg(spec):
-    """`PATH:ASSEMBLER:POOL` -> (Path, assembler, pool). Split from the right so a
-    path containing ':' is still readable."""
     parts = spec.rsplit(":", 2)
     if len(parts) != 3 or not all(parts):
         raise ValueError(f"--assembly expects PATH:ASSEMBLER:POOL, got {spec!r}")
@@ -709,13 +583,6 @@ def parse_assembly_arg(spec):
 
 
 def pool_contigs(assemblies, work):
-    """Rekey one pool's contigs from every assembler into one FASTA.
-
-    Ids collide across assemblers, so records are rekeyed `S000001`... and the
-    stated assembler/pool plus the original id are carried in `contig_meta.json`.
-    Nothing about the sequence is changed here -- the circular join is stripped in
-    `rectify`, once the graph has said there is one.
-    """
     work = Path(work)
     work.mkdir(parents=True, exist_ok=True)
     meta, pooled = {}, []
@@ -736,15 +603,6 @@ def pool_contigs(assemblies, work):
 
 
 def write_junctions(work, out_junctions):
-    """Re-key `backbone_hits.tsv` onto qualified contig ids. Nothing else.
-
-    Written headerless and column-for-column as blast emitted it, because the
-    file's contract is that it IS the blast output -- a header would be the first
-    thing in it blast did not write. The pooled subject was rekeyed `S000001`...
-    to keep ids unique across assemblers, so mapping `sseqid` back is the one
-    substitution that has to happen for the table to mean anything outside the
-    work directory it was produced in.
-    """
     work = Path(work)
     meta = json.loads((work / "contig_meta.json").read_text())
     hsps = read_blast_tsv(work / "backbone_hits.tsv")
@@ -762,11 +620,6 @@ def write_junctions(work, out_junctions):
 
 
 def read_junctions(path, min_hsp=50):
-    """`junctions.tsv` -> {qualified contig id: [(start, end), ...]}, filtered.
-
-    This is where `--min-hsp` is applied: the file holds every HSP blast reported
-    and the floor is a property of the cut, not of the evidence.
-    """
     foot, kept, total = {}, 0, 0
     for h in read_blast_tsv(path):
         total += 1
@@ -781,7 +634,6 @@ def read_junctions(path, min_hsp=50):
 
 
 def call_map(assemblies, backbone, out_junctions, threads=None, work=None):
-    """prep + blast + rekey in one process -- the direct-run entry point."""
     work = Path(work or "map_work")
     pooled = pool_contigs(assemblies, work)
     check_backbone(backbone)
@@ -792,10 +644,6 @@ def call_map(assemblies, backbone, out_junctions, threads=None, work=None):
     return write_junctions(work, out_junctions)
 
 
-# =====================================================================
-# stage 2 -- rectify + closure
-# =====================================================================
-
 ACCT_COLS = ["contig", "raw_length", "join_overlap_bp",
              "contig_length", "circular", "circ_evidence", "graph_bb_5p", "graph_bb_3p",
              "vector_bp", "emitted_bp", "dropped_short_bp", "n_pieces", "n_dropped",
@@ -805,17 +653,10 @@ CLOSURE_COLS = ["piece", "contig", "start", "end",
 
 
 def graph_work(work, assembler):
-    """Where one assembler's graph-node blast lives. One name, agreed by the prep
-    step, the blast between them and the rectify that reads the result."""
     return Path(work) / f"graph_{assembler}"
 
 
 def rectify_prep(graphs, work):
-    """Write each assembler's graph nodes out for the backbone blast.
-
-    The other half of the env split: this and `rectify` want pandas, the blast
-    between them wants blastn. -> [(assembler, node FASTA path)].
-    """
     out = []
     for assembler, (gpath, _ppath) in graphs.items():
         if assembler == "spades":
@@ -834,20 +675,6 @@ def rectify_prep(graphs, work):
 def rectify(assemblies, junctions, out_split, out_closure=None, out_accounting=None,
             backbone=None, graphs=None, graph_hits=None, min_piece=1000, min_hsp=50,
             threads=None, work=None):
-    """Merge the mapped footprints, cut, and state how many ends each piece closes.
-
-    `graphs` is {assembler: (graph_path, paths_path_or_None)}. It is not optional:
-    circularity and graph closure both come from it, and a rectify without it is
-    the fragile FASTA-only inference this redesign removed.
-
-    `graph_hits` is {assembler: blast table} from a separate blast step; without
-    it each GraphView blasts the backbone against its own nodes.
-
-    `out_closure` and `out_accounting` are debugging tables, not products. The
-    accounting CHECK runs either way -- it raises below if the cut lost or
-    duplicated a base -- so the file is only worth writing when something has
-    already gone wrong and needs reading per contig.
-    """
     import pandas as pd
 
     work = Path(work or "rectify_work")
@@ -882,11 +709,6 @@ def rectify(assemblies, junctions, out_split, out_closure=None, out_accounting=N
             raw_len = len(seq)
             circ, ov, circ_ev = view.circular(name)
             bb5, bb3 = view.end_touches_backbone(name)
-            # The join overlap the graph states is stripped so footprints, the cut
-            # and the accounting all run against the true circumference. Where the
-            # graph calls a circle but states no overlap (megahit's fastg has no
-            # overlap field), the terminal repeat is the fallback trim -- a trim,
-            # never the gate.
             if circ and not ov:
                 ov = terminal_self_repeat(seq)
             # A join overlap at or above half the contig is not a circumference,
@@ -908,10 +730,6 @@ def rectify(assemblies, junctions, out_split, out_closure=None, out_accounting=N
             if merged:
                 gaps = (complement_intervals_circular(merged, L) if circ
                         else complement_intervals(merged, L))
-                # `min_piece` guards against slivers the CUT created. It is
-                # deliberately not a length filter on the assembly: this step cuts,
-                # it does not select, and the dedup's own `--min-contig-length` is
-                # where length policy lives.
                 keep = [g for g in gaps if arc_length(g[0], g[1], L) >= min_piece]
                 short = [g for g in gaps if arc_length(g[0], g[1], L) < min_piece]
                 if any(a > b for a, b in keep):
@@ -923,11 +741,6 @@ def rectify(assemblies, junctions, out_split, out_closure=None, out_accounting=N
                 else:
                     action = "dropped"
             else:
-                # No footprint, so there is nothing to cut AT and nothing to
-                # rotate to. `circularised` is reserved for a piece whose arc
-                # actually wraps the origin; calling it that merely because the
-                # graph says circle labelled 498 contigs circularised when 4 were,
-                # 475 of them sub-200 bp graph loops that were never touched.
                 keep, short = ([(1, L)] if L else []), []
                 action = "kept"
 
@@ -982,26 +795,10 @@ def rectify(assemblies, junctions, out_split, out_closure=None, out_accounting=N
 
 
 def _piece_closure(a, b, L, merged, circ, bb5, bb3):
-    """Why each end of one emitted piece is closed, or `open`.
-
-    Four values, no others: `vector`, `graph`, `circular`, `open`. A circle has no
-    ends to leave open. Otherwise an end is closed when the assembly ran into the
-    backbone there -- `vector` if a mapped footprint was cut off it, `graph` if it
-    is an original contig end the graph puts next to a backbone node. A boundary
-    the cut invented mid-contig is open, and so is a contig end the graph leaves
-    dangling.
-
-    There is deliberately no "near the end" category. A footprint within some
-    tolerance of a contig end either got cut off that end -- in which case it is
-    `vector` on its own evidence -- or it did not, in which case its proximity is
-    a coincidence of coordinates. Tolerance-based closeness is exactly the
-    reasoning the per-HSP terminal/internal call got wrong.
-    """
     if circ and a > b:
         return "circular", "circular"
 
     def side(pos, is_5p):
-        # a footprint immediately abutting this boundary is what created it
         if any((b_ + 1 == pos) if is_5p else (a_ - 1 == pos) for a_, b_ in merged):
             return "vector"
         at_contig_end = (pos <= 1) if is_5p else (pos >= L)
@@ -1012,22 +809,11 @@ def _piece_closure(a, b, L, merged, circ, bb5, bb3):
     return side(a, True), side(b, False)
 
 
-# =====================================================================
-# stage 3 -- dedup
-# =====================================================================
-
 INSERT_COLS = ["centroid", "length", "ends", "absorbed"]
 MEMBER_COLS = ["contig", "centroid", "mi"]
 
 
 def dedup_prep(split_fa, work, min_contig_len=10000):
-    """Pool the long pieces under blast-safe keys, provenance off the piece id.
-
-    The pieces are rekeyed `C00001`... for the all-vs-all only. Every table
-    written at the end names them by their qualified piece id again -- the rekey
-    exists because a blast subject id is a poor place to discover you have a
-    length limit, not because the short name means anything.
-    """
     work = Path(work)
     work.mkdir(parents=True, exist_ok=True)
     meta, pooled = {}, []
@@ -1038,9 +824,6 @@ def dedup_prep(split_fa, work, min_contig_len=10000):
         f = dict(tok.split("=", 1) for tok in desc.split() if "=" in tok)
         i += 1
         key = f"C{i:05d}"
-        # Not defaulted. Closure decides absorption now, and zero is the
-        # absorb-ELIGIBLE value, so a missing token would quietly make every piece
-        # a candidate fragment. `rectify` states it on every piece it emits.
         if "closed_ends" not in f:
             raise ValueError(
                 f"{name}: no closed_ends= in the description -- pieces must come "
@@ -1058,24 +841,6 @@ def dedup_prep(split_fa, work, min_contig_len=10000):
 
 
 def _accepted_nident(hsps):
-    """Identical bases per pair, summed over NON-OVERLAPPING query intervals.
-
-    -> {(qseqid, sseqid): (nident, qlen, slen)}.
-
-    The best single HSP is not enough. blast will not extend one alignment across
-    a long gap, so two renderings of the same molecule that differ by a single
-    indel come back as two HSPs and score as the larger fragment alone: the two
-    assemblies of picked clone 1 differ by a 168 bp expansion of a G-rich tract
-    and scored 0.900 against a 0.99 cut while being 99.98% identical over 31 kb.
-    Summed they score 0.994 and merge, which is the whole fix.
-
-    Non-overlapping and not simply summed, because a repeat aligns to the same
-    query bases many times and summing those counts one region several times --
-    that inflates identity above 1.0 and merges genuinely different molecules.
-    Greedy from the largest HSP down rather than an optimal interval selection:
-    the ordering only matters where alignments conflict, and taking the most
-    identical bases first is the conservative resolution of a conflict.
-    """
     by_pair = {}
     for h in hsps:
         by_pair.setdefault((h["qseqid"], h["sseqid"]), []).append(h)
@@ -1094,19 +859,6 @@ def _accepted_nident(hsps):
 
 
 def _similarity(hsps, index, mode):
-    """Summed-HSP identity per pair, normalised two different ways.
-
-    `mode="symmetric"` divides by max(qlen, slen): the clustering metric. It is
-    symmetric and it penalises length disagreement, so a fragment does not read as
-    identical to the thing that contains it.
-
-    `mode="containment"` divides by qlen: how much OF THE QUERY the subject holds.
-    Asymmetric on purpose -- it is the right question for the absorb pass and the
-    wrong one for clustering.
-
-    Both read the same accepted HSP set -- see `_accepted_nident`, which is where
-    "how much of this pair actually aligns" is decided, once.
-    """
     import numpy as np
 
     n = len(index)
@@ -1116,8 +868,6 @@ def _similarity(hsps, index, mode):
         if q not in index or s not in index:
             continue
         denom = max(qlen, slen) if mode == "symmetric" else qlen
-        # A summed count can exceed the denominator when the subject holds the
-        # query twice over; identity is a fraction, so it is capped there.
         pair[(q, s)] = min(1.0, nident / denom) if denom else 0.0
     for (q, s), v in pair.items():
         i, j = index[q], index[s]
@@ -1131,27 +881,6 @@ def _similarity(hsps, index, mode):
 
 
 def _cluster_by_silhouette(sim):
-    """Sweep the clustering's own threshold and keep whichever cut scores best.
-
-    -> (labels, N, between_cluster_identity, silhouette).
-
-    N is not chosen and then imposed -- the THRESHOLD is swept and N falls out of
-    it, which is the only way to be sure every partition scored is one the
-    clustering actually produces. Asking for k clusters instead (`maxclust`) is
-    not the same sweep: the distance matrix is full of exact ties, every
-    non-aligning pair sitting at 1.0, so many k are unrealisable and the ones that
-    are get scored against a threshold that has to be recovered afterwards, off by
-    a merge. Sweeping the distinct merge heights enumerates each distinct
-    partition exactly once (291 of them here, against 554 nominally-reachable k)
-    and gives its identity exactly, as `1 - height`.
-
-    The tree is built ONCE, so this costs one linkage and one silhouette per
-    partition rather than one clustering per candidate.
-
-    The maximum is checked to be INTERIOR. An optimum sitting against either end
-    of the range is an artifact of the range, not a choice, and the caller is told
-    so rather than handed the edge value.
-    """
     import numpy as np
     from scipy.cluster.hierarchy import fcluster, linkage
     from scipy.spatial.distance import squareform
@@ -1187,28 +916,6 @@ def _cluster_by_silhouette(sim):
 def _representatives(groups, meta, sim, cont, index, closure_margin=0.95,
                      containment=0.99, fragment_containment=0.90,
                      absorb=True, verbose=True):
-    """One representative per cluster, then absorb the contained ones.
-
-    -> (member2centroid, reps, absorbed_into). Split out of `dedup_cluster` so
-    that a sweep over candidate partitions can score the representatives the
-    pipeline would actually ship, rather than a restatement of these rules that
-    is free to drift from them.
-
-    Longest member wins, but only among members that are still essentially
-    full length -- and within that band a CLOSED piece beats a longer open one.
-
-    Length alone is the wrong rule and the data says so loudly: it handed 53 of
-    the 101 clusters that contained a both-ends-closed fosmid an open
-    representative instead, and the median length it bought by doing so was 103
-    bp. Trading a closure claim for a hundred bases is not a trade worth making,
-    and two of those clusters gained literally zero -- the closed and open pieces
-    were the same length and the tie-break picked the open one.
-
-    It is a band and not a plain closure-first rule because closure is not
-    unconditionally worth more than length: one cluster's closed member is 38 kb
-    shorter than its longest, which is a partial clone rather than a better
-    rendering of the same one. `closure_margin` is where that line sits.
-    """
     member2centroid, reps = {}, []
     for members in groups.values():
         longest = max(meta[x]["length"] for x in members)
@@ -1222,18 +929,6 @@ def _representatives(groups, meta, sim, cont, index, closure_margin=0.95,
     if verbose:
         print(f"[dedup] {len(reps):,} clusters from {len(meta):,} pieces", flush=True)
 
-    # Absorption rewrites the centroid of every member of the absorbed cluster,
-    # not just of its representative -- so a member can end up under a centroid
-    # complete linkage never merged it with. `inserts.csv`'s `absorbed` column and
-    # `membership.csv`'s `mi` are both readings of exactly that rewrite.
-    # Two rules, because containment alone leaves assembly fragments standing.
-    # A piece closed at NEITHER end has both its boundaries where the assembly
-    # stopped rather than where the vector was, so it cannot be a clone -- and
-    # when it sits mostly inside a piece closed at BOTH ends, it is a shorter
-    # rendering of that clone. Six copies of picked clone 1 survived the strict
-    # rule: three of them open at both ends, contained at 0.980-0.989 against a
-    # 0.99 cut. The strict rule is probed first so a fully-contained host still
-    # wins where both apply.
     absorbed_into, by_rule = {}, {"contained": 0, "fragment": 0}
     if absorb and len(reps) > 1:
         order = sorted(reps, key=lambda x: -meta[x]["length"])
@@ -1269,13 +964,6 @@ def _representatives(groups, meta, sim, cont, index, closure_margin=0.95,
 def dedup_cluster(work, out_inserts, out_metadata, identity=0.99,
                   containment=0.99, fragment_containment=0.90, absorb=True,
                   closure_margin=0.95, select_k="identity"):
-    """Cluster the pieces, take the longest of each, then absorb the contained.
-
-    Two passes with two different normalisations, each used for the one job it is
-    right for -- see `_similarity`. The representative is the LONGEST member, not
-    the most central: with a symmetric metric centrality no longer implies
-    completeness, and completeness is what an insert is judged on.
-    """
     import numpy as np
     import pandas as pd
     from sklearn.cluster import AgglomerativeClustering
@@ -1312,9 +1000,6 @@ def dedup_cluster(work, out_inserts, out_metadata, identity=0.99,
         containment=containment, fragment_containment=fragment_containment,
         absorb=absorb)
 
-    # Every absorbed representative, resolved through any chain of absorptions to
-    # the representative that actually survives. `absorbed_into` can point at a
-    # rep that was itself absorbed later in the same pass.
     def _final_host(r):
         while r in absorbed_into:
             r = absorbed_into[r]
@@ -1345,10 +1030,6 @@ def dedup_cluster(work, out_inserts, out_metadata, identity=0.99,
          for c in reps],
         columns=INSERT_COLS).to_csv(out_metadata / "inserts.csv", index=False)
 
-    # `mi` is the member's similarity TO ITS CENTROID under the clustering
-    # metric, reported for absorbed members too even though they reached that
-    # centroid by containment -- a low value is the visible trace of the absorb
-    # pass, not a defect.
     pd.DataFrame(
         [dict(contig=key(mem), centroid=key(cen),
               mi=round(float(sim[index[mem], index[cen]]), 6))
@@ -1370,12 +1051,8 @@ AVA_COLS = AVA_HSP_FMT.split()[1:]
 def dedup(split_fa, out_inserts, out_metadata, min_contig_len=10000,
           identity=0.99, containment=0.99, fragment_containment=0.90, absorb=True,
           closure_margin=0.95, select_k="identity", threads=None, work=None):
-    """prep + all-vs-all blast + cluster in one process -- the direct-run entry point."""
     work = Path(work or "dedup_work")
     pooled = dedup_prep(split_fa, work, min_contig_len=min_contig_len)
-    # scadc settings: evalue 1000, perc_identity 50 -- deliberately permissive,
-    # since the similarity that matters is a long contiguous match and a strict
-    # evalue would drop the HSPs that make it up.
     hsps = blast_hsps(pooled, pooled, work / "ava", threads=threads,
                       evalue=1000, perc_identity=50, outfmt=AVA_HSP_FMT)
     with open(work / "ava_hits.tsv", "w") as fh:
@@ -1388,12 +1065,7 @@ def dedup(split_fa, out_inserts, out_metadata, min_contig_len=10000,
                          closure_margin=closure_margin, select_k=select_k)
 
 
-# =====================================================================
-# CLI
-# =====================================================================
-
 def _graph_arg(spec):
-    """`ASSEMBLER:GRAPH[:PATHS]` -> (assembler, graph, paths|None)."""
     parts = spec.split(":")
     if len(parts) == 2:
         return parts[0], Path(parts[1]), None
@@ -1459,9 +1131,6 @@ def main(argv=None):
     d.add_argument("--threads", type=int, default=None)
     d.add_argument("--work", type=Path, default=None)
 
-    # The three-step forms. A transform uses these because the blast in the middle
-    # needs a container with blastn and the two around it need one with pandas,
-    # and no env in the library has both.
     mp = sub.add_parser("map-prep", help="pool one pool's contigs from every assembler")
     mp.add_argument("--assembly", action="append", required=True, metavar="PATH:ASSEMBLER:POOL")
     mp.add_argument("--backbone", type=Path, required=True)

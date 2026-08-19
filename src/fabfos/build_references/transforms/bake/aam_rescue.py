@@ -1,39 +1,3 @@
-"""The rescue: propose a structure for every blocker, then complete the reaction.
-
-BETWEEN THE TWO MAPPER PASSES, and that position is the whole change. This work used to
-run inside `aam_ensemble`, after every member had finished, with Indigo mapping the
-completed reactions on the spot. The consequence is visible in the deployed table: all
-9,089 of its rescue-derived reactions are `mcs_only` -- Indigo alone, at half weight --
-because the crosswalk did not exist when the neural members ran and nothing ever showed
-them a completed reaction. 14.5% of the table, uncorroborated, because of an ordering.
-
-Here the completion is its own step and produces a UNIVERSE: `rescued.parquet`, in the
-same schema the mapper lanes read. Pass 2 runs all three members over it, and what they
-agree on becomes full-weight consensus instead of a single member's assertion. This is
-the one place the build is meant to BEAT the table it reproduces rather than match it.
-
-NO MAPPER RUNS HERE. Everything this step decides is arithmetic:
-
-  * WHICH STRUCTURE each blocker gets, from eleven proposer lanes, merged by a fixed
-    priority so one metabolite is claimed by exactly one argument. Nine run here; the
-    two twin searches are transforms of their own and arrive as crosswalks, which is
-    what keeps each of their deltas a number rather than a contribution to a total.
-  * WHETHER THE `*` BODIES CANCEL across the equation. A curated carrier draws its body
-    as `*` and counts it as zero for every element; that is only safe when the same body
-    stands on both sides.
-  * WHETHER THE CONCRETE ATOMS BALANCE, per element. This is where the conservation claim
-    is actually tested, and it needs no atom map -- only formulas and the curated
-    structures. A reaction where no element balances is not passed on at all, because the
-    extractor would drop every pair it produced.
-
-`propose` DRY-RUNS THE ADMISSION CHECK before `complete` starts, because `admit` aborts
-on the first bad row and the previous generation learned that by losing a mapping pass to
-a stale id in row 4,000.
-
-WHAT IT REFUSES TO PRODUCE. A rescue that completes zero reactions exits non-zero rather
-than writing an empty universe. Pass 2 over nothing is a green build that has silently
-lost layer 3.
-"""
 from metasmith.python_api import *
 
 lib   = TransformInstanceLibrary.ResolveParentLibrary(__file__)
@@ -50,11 +14,6 @@ atom_ranks  = model.AddRequirement(lib.GetType("lookup::atom_ranks"))
 xrefs       = model.AddRequirement(lib.GetType("lookup::xrefs"))
 synonyms    = model.AddRequirement(lib.GetType("lookup::synonyms"))
 
-# THREE INPUTS THAT CHANGE WHAT THE ARBITER CAN JUDGE, not what it judges by. The two
-# twin searches arrive as crosswalks and are merged like any other proposer lane, so
-# their rows face `admit`, the body-cancel gate and the balance test unchanged. The
-# recount is the one that moves the gate itself: a species whose formula states no count
-# used to make the balance abstain, and abstention is a refusal.
 counts      = model.AddRequirement(lib.GetType("lookup::element_counts"))
 blockers    = model.AddRequirement(lib.GetType("interm::aam_blockers"))
 nametwin    = model.AddRequirement(lib.GetType("interm::aam_nametwin"))
@@ -84,9 +43,6 @@ def protocol(context: ExecutionContext):
 
     py = f"PYTHONPATH={libdir} OMP_NUM_THREADS=1 python3"
 
-    # The lanes read the five lookups as a DIRECTORY. Their content-addressed staging
-    # paths are not siblings, so they are re-presented under one name here; five separate
-    # arguments would be five chances for one of them to come from a different build.
     stage_lookups = f"""
         mkdir -p _lookups
         ln -sfn {irx.container} _lookups/reactions.parquet
@@ -141,9 +97,6 @@ def protocol(context: ExecutionContext):
     want = ["crosswalk.tsv", "placeholders.tsv", "balance.tsv", "rescued.parquet"]
     return ExecutionResult(
         manifest=[{out_rescue: iout.local}, {ev: iev.local}],
-        # ALL FOUR BY NAME. "The directory is non-empty" would pass a rescue that wrote a
-        # crosswalk and no balance table, which is the case that silently un-gates every
-        # rescued element downstream.
         success=(all((iout.local / f).exists() and (iout.local / f).stat().st_size > 0
                      for f in want)
                  and (iev.local / "rescue").is_dir()
@@ -155,17 +108,5 @@ TransformInstance(
     protocol=protocol,
     model=model,
     group_by=image,
-    # The synonym index and the ChEBI/ModelSeed structure tables are the memory here;
-    # the lanes themselves are name parsing and arithmetic. No mapper, so no long tail.
-    # MEASURED over the full 24,098-reaction blocked set: propose 52 s at 3.4 GB, complete
-    # 33 s at 2.5 GB.
-    #
-    # FOUR HOURS RATHER THAN TWO, and the extra is a margin rather than a measurement.
-    # `complete` once ran two hours and was killed at the wall having written nothing --
-    # it counted atoms before consulting the character cap, so an 80.7 MB stoichiometric
-    # expansion went to RDKit, which does not return from it. The ordering is fixed and
-    # tested (tests/ecspr/bake/test_worklist_gates.py) and the loop prints its rate now,
-    # so a repeat is legible rather than silent; the margin is what makes it legible
-    # rather than dead.
     resources=Resources(cpus=2, memory=Size.GB(24), duration=Duration(hours=4)),
 )

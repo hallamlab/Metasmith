@@ -1,36 +1,4 @@
 #!/usr/bin/env python3
-"""Decode the SCALEs ethanol-tolerance supplement into a benchmark extraction table.
-
-Source
-------
-`data/fabfos/originals/benchmarks/scales/1-s2.0-S109671761200119X-mmc1.xlsx`,
-sheet ``Gene_fitnesses`` (the first worksheet): one row per E. coli gene with a
-b-number, a symbol, and the SCALEs gene fitness Wgene under 15 g/L and 30 g/L
-exogenous ethanol.
-
-  Woodruff LBA, Pandhal J, Ow SY, Karimpour-Fard A, Weiss SJ, Wright PC, Gill RT.
-  "Genome-scale identification and characterization of ethanol tolerance genes in
-  Escherichia coli." Metab Eng 15 (2013) 124-133.
-  Host E. coli BW25113 delta-recA::FRT; MOPS minimal medium + 2 g/L dextrose, 37 C.
-
-The clone table is transcribed from Table 1 of the main PDF, cross-checked against
-Table S1 (primer list) of `...-mmc2.docx`; b-numbers for the clone genes are looked
-up in the same workbook, with a small explicit synonym map for the two symbols the
-2012 workbook still carries under their y-gene names.
-
-Decoding note: this reads the .xlsx with stdlib zipfile + ElementTree so it has no
-environment dependency. Cells carrying ``t="s"`` hold an INTEGER INDEX into
-``xl/sharedStrings.xml``, not a string -- reading ``<v>`` naively yields integers
-where gene symbols belong. ``t="inlineStr"`` is handled too (absent in this file).
-
-Refusal check
--------------
-The paper states (Section 3.2): "only 158 or 487 of the ~4300 genes in E. coli
-[were] enriched (Wgene > 1) in the 15 g/L and 30 g/L selection, respectively."
-This script recomputes both counts from the workbook and exits non-zero unless
-both reproduce exactly. The threshold is strict ``> 1`` and is not tunable.
-"""
-
 from __future__ import annotations
 
 import sys
@@ -41,16 +9,12 @@ from pathlib import Path
 NS = "{http://schemas.openxmlformats.org/spreadsheetml/2006/main}"
 
 DATASET = "scales_tol"
-SHEET = "xl/worksheets/sheet1.xml"  # workbook.xml: sheetId 1, name "Gene_fitnesses"
+SHEET = "xl/worksheets/sheet1.xml"
 SOURCE_TABLE = "mmc1.xlsx!Gene_fitnesses"
 
-# The paper's own arithmetic. Not a tuning knob.
 EXPECT_15 = 158
 EXPECT_30 = 487
 
-# Table 1 of the main PDF, verified line-for-line against Table S1 of mmc2.docx.
-# The nine confirmed clones are rows 1-9 and the five unconfirmed are rows 10-14;
-# see `_CONFIRMED_EVIDENCE` for how that partition is pinned by the text.
 CLONE_TABLE = [
     (1, ["lpcA"], "D-sedoheptulose 7-phosphate isomerase"),
     (2, ["tilS"], "tRNA(Ile)-lysidine synthetase"),
@@ -87,14 +51,10 @@ _CONFIRMED_EVIDENCE = {
     14: "not among the nine; one of the two distinct non-neighbour clones that failed",
 }
 
-# Symbols Table 1 uses that the 2012 workbook still lists under y-gene names.
-# arnB = yfbE = b2253, arnC = yfbF = b2254; both sit inside clone 7's stated
-# genomic window 2,363,701-2,366,090.
 SYMBOL_SYNONYMS = {"arnB": "yfbE", "arnC": "yfbF"}
 
 
 def find_repo_root(start: Path) -> Path:
-    """Walk up from `start` until a directory containing `data/fabfos` is found."""
     for candidate in [start, *start.parents]:
         if (candidate / "data" / "fabfos").is_dir():
             return candidate
@@ -115,7 +75,6 @@ def _cell_text(cell, shared: list[str]) -> str:
 
 
 def read_sheet(xlsx: Path, sheet: str) -> list[dict[str, str]]:
-    """Return one dict per sheet row, keyed by column letter, shared strings resolved."""
     with zipfile.ZipFile(xlsx) as z:
         shared: list[str] = []
         if "xl/sharedStrings.xml" in z.namelist():
@@ -191,7 +150,6 @@ def main() -> None:
             "  Investigate which sheet, column or rows are being read -- do not move the threshold."
         )
 
-    # b-numbers that two symbols share; worth flagging rather than silently deduplicating.
     seen: dict[str, list[str]] = {}
     for symbol, bnum, _, _ in records:
         if bnum:

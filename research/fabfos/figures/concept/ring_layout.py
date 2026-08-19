@@ -1,36 +1,3 @@
-"""Lay the reaction network out on a circle instead of the plane, host outside, clone inside.
-
-The plane figure was drawn to show a fosmid insert *expanding* its host, and it answers the
-wrong question: an insert whose reactions are threaded through the host network has no island
-to point at, so "expansion" reads as scatter. On a circle the reading changes. The angle is
-the whole layout -- one periodic coordinate fitted to the same exact pairwise I_eff distance --
-and the radius is free to carry provenance instead. Host reactions occupy an outer band, the
-insert's an inner one, and the question becomes visible as an arc: an insert that plugs into
-one region of host metabolism is one inner segment, an insert that is spread through the host
-is inner points all the way round.
-
-**The circle is fitted, not projected from a 2D layout.** The embedding is one-dimensional
-with a periodic output metric -- ``d(x,y) = |x-y|`` wrapped to the circumference -- handed to
-UMAP's own generic optimiser, so the coordinate is what UMAP would choose *if the manifold
-were a circle*. Taking the angle of a finished 2D layout would instead be a projection, and
-would inherit whichever radial structure that layout happened to have. Initialisation is the
-graph's own 2D spectral embedding read as an angle, which is the right start for a circle:
-on a ring-like graph the first two nontrivial Laplacian eigenvectors *are* cos and sin of the
-circular coordinate.
-
-**Radius is provenance plus anti-overlap, and carries no measurement.** Within its band a
-point is nudged outward only to stop it landing on a neighbour it is already at the same angle
-as -- a circular beeswarm. Nothing is legible from radius except which layer a point is in.
-
-Metabolites keep the rule the plane figures use: the mean of the positions of the reactions
-they move an atom through. On a ring that rule earns something extra for free -- a metabolite
-shared right around the circle averages to near the centre, so the promiscuous cofactors fall
-into the middle and the local ones sit on their own arc.
-
-    python ring_layout.py --sparse cache/pairwise_Ieff_epi300_clone2.npz \
-        --origin-table .../gpr_epi300_clone2.parquet --highlight pool33_... \
-        --gpr-table .../gpr_epi300_clone2.parquet --out cache/ring
-"""
 import argparse
 import json
 import sys
@@ -52,9 +19,6 @@ from ieff_layout import (draw_network, incidence, knn_from_store,    # noqa: E40
 
 TAU = 2.0 * np.pi
 
-# Radial bands, outermost first. A band is (inner, outer) radius; the beeswarm packs within
-# it. The gap between host and clone is what makes the two layers read as separate rings
-# without either being drawn.
 BAND = {"host": (0.88, 1.00),
         "other": (0.88, 1.00),
         "clone_shared": (0.52, 0.64),
@@ -64,12 +28,6 @@ BAND = {"host": (0.88, 1.00),
 
 @numba.njit(fastmath=True)
 def circular_grad(x, y):
-    """Distance on a circle of circumference TAU, and its gradient.
-
-    The 1-D euclidean metric with the difference wrapped into [-TAU/2, TAU/2), which is what
-    makes the coordinate periodic: a point near 0 and a point near TAU are neighbours, and the
-    optimiser can carry a cluster across the seam instead of tearing it.
-    """
     d = x[0] - y[0]
     d = d - 6.283185307179586 * np.floor(d / 6.283185307179586 + 0.5)
     grad = np.empty(1, dtype=x.dtype)
@@ -83,13 +41,11 @@ def circular_grad(x, y):
 
 
 def circ_dist(a, b):
-    """Pairwise angular distance, wrapped. Broadcasts."""
     d = np.abs(a - b) % TAU
     return np.minimum(d, TAU - d)
 
 
 def fit_circle(ki, kd, min_dist, spread, seed, n_epochs):
-    """UMAP on a circle: the same fuzzy graph and the same optimiser, one periodic dimension."""
     from umap.umap_ import fuzzy_simplicial_set, find_ab_params, make_epochs_per_sample
     from umap.layouts import optimize_layout_generic
     from umap.spectral import spectral_layout
@@ -104,8 +60,6 @@ def fit_circle(ki, kd, min_dist, spread, seed, n_epochs):
     keep = (G.data > 0) & (G.row != G.col)
     head, tail, w = G.row[keep], G.col[keep], G.data[keep]
 
-    # Spectral init read as an angle. The two eigenvectors are only defined up to rotation and
-    # sign, which is exactly the symmetry a circular coordinate has, so nothing is lost.
     init2 = np.asarray(spectral_layout(None, G.tocsr(), 2,
                                        np.random.RandomState(seed)), dtype=np.float64)
     theta = np.arctan2(init2[:, 1], init2[:, 0])
@@ -130,15 +84,6 @@ def fit_circle(ki, kd, min_dist, spread, seed, n_epochs):
 
 
 def equalise(theta):
-    """Respace the angles uniformly, keeping the cyclic order.
-
-    UMAP clumps, so the fitted circle is dense arcs separated by empty ones and the host reads
-    as a broken ring rather than a ring. This is the monotone reparameterisation that closes
-    the gaps: the *only* thing a 1-D circular embedding carries beyond distances is the cyclic
-    order of the points, and that survives exactly. What does not survive is the gaps -- after
-    this, two adjacent clusters and two adjacent reactions look alike. All reported statistics
-    are computed on the fitted angles for that reason; this affects presentation only.
-    """
     order = np.argsort(theta)
     out = np.empty_like(theta)
     out[order] = np.arange(len(theta)) * (TAU / len(theta))
@@ -146,12 +91,6 @@ def equalise(theta):
 
 
 def beeswarm(theta, band, arc):
-    """Radii within ``band``: the innermost slot free of a point already within ``arc``.
-
-    Purely anti-overlap. Points are visited in angle order and each takes the lowest radial
-    slot whose last occupant is more than ``arc`` radians behind it, so a sparse stretch of the
-    circle stays a clean single ring and only a crowded one thickens.
-    """
     lo, hi = band
     slots = max(int(np.ceil((hi - lo) / 0.010)), 1)
     radii = np.linspace(lo, hi, slots)
@@ -167,12 +106,6 @@ def beeswarm(theta, band, arc):
 
 
 def circular_scatter(theta, ii, rng, reps=60):
-    """Mean pairwise angular distance within a group / among random equal-size sets.
-
-    1.0 = the group is spread like a random selection of the same size; below 1.0 = it holds
-    together on an arc. The same quantity ``ieff_layout.scatter_index`` reports in the plane,
-    in the only coordinate this layout has.
-    """
     def mpd(jj):
         t = theta[jj]
         d = circ_dist(t[:, None], t[None, :])
@@ -182,12 +115,6 @@ def circular_scatter(theta, ii, rng, reps=60):
 
 
 def arc_structure(theta, ii, all_theta):
-    """How the group sits on the circle: resultant length, arc count, angular coverage.
-
-    An arc break is a gap wider than 20x the mean spacing of *all* reactions, so "one segment"
-    means the group is contiguous relative to the density of the layout it sits in rather than
-    to an absolute angle.
-    """
     t = np.sort(theta[ii])
     gap_cut = 20.0 * (TAU / len(all_theta))
     gaps = np.diff(np.concatenate([t, [t[0] + TAU]]))
@@ -195,8 +122,6 @@ def arc_structure(theta, ii, all_theta):
     breaks = int(cut.sum())
     R = float(np.hypot(np.cos(t).mean(), np.sin(t).mean()))
     covered = float(gaps[~cut].sum() / TAU)
-    # Members per arc, walking the circle from the first break so the wrap-around arc is one
-    # arc rather than two.
     if breaks:
         start = int(np.flatnonzero(cut)[0]) + 1
         sizes, run = [], 0
@@ -234,8 +159,6 @@ def render(theta, radius, labels, names, palette, title, out, net=None, size=9, 
                    edgecolors="black", linewidths=0.2, zorder=3,
                    label=f"{names[pid][:44]} (n={int(m.sum())})")
     ax.set_aspect("equal")
-    # Wrapped, not shrunk: matplotlib clips a long title at the axes edge without warning, so
-    # a caption that reads fine in the shell silently loses its ends in the figure.
     import textwrap
     ax.set_title("\n".join(textwrap.fill(ln, 96) for ln in title.split("\n")), fontsize=10)
     ax.legend(loc="upper right", fontsize=7.5, markerscale=1.6, framealpha=0.92)
@@ -325,8 +248,6 @@ def main():
                   f"(largest holds {m['largest_arc']}, {m['largest_arc_frac']:.0%}) "
                   f"covers {m['circle_covered']:.1%} of the circle", flush=True)
 
-    # The KEGG panel is always measured, whatever the figure is coloured by: it is the check
-    # that the circle kept the biology the plane layout holds, not an overlay.
     members, pn = pathway_members()
     kegg = {}
     for pid in PANEL:

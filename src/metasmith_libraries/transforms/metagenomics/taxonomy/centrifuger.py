@@ -30,9 +30,6 @@ def protocol(context: ExecutionContext):
         """
     )
 
-    # centrifuger writes per-read classifications as a TSV (one row per read);
-    # kreport + quant downstream tools both consume the TSV. Stage it locally
-    # then convert to parquet for the {iclass} product at the end.
     context.ExecWithEnv().ifContainerDo(
         env=image,
         cmd=f"""
@@ -50,14 +47,6 @@ def protocol(context: ExecutionContext):
         """
     )
 
-    # TSV -> parquet (zstd, polars). Schema-explicit so we get dictionary-encoded
-    # categoricals on seqID + narrow integer widths — ~7-8x smaller than the TSV
-    # for typical short-read metagenomes (benchmarked SG10E12: 3.42 GiB -> 0.45 GiB).
-    # NOTE on indentation: metasmith's RemoveLeadingIndent (coms/ipc.py)
-    # strips chars equal to the FIRST non-empty line's leading indent from
-    # EVERY line. So the heredoc body must share that same 12-space indent;
-    # otherwise the body and the `PY` terminator get chopped, leaving an
-    # unterminated heredoc and a syntax-corrupted Python script.
     context.ExecWithEnv().ifContainerDo(
         env=img_pq,
         cmd=f"""
@@ -103,12 +92,7 @@ TransformInstance(
     group_by=reads,
     resources=Resources(
         cpus=8,
-        memory=Size.GB(288),  # r226 SLURM peak RSS 172-194 GB (last 20 array steps
-                              # retained from Wp5jjOW2 sweep). r232 hvfpc hybrid
-                              # documents ~230 GB classifier RAM in README;
-                              # 288 GB leaves ~50 GB headroom. Parquet conversion
-                              # step needs ~15 GB peak (single sample) — fits.
-        duration=Duration(hours=3),  # r226 max elapsed 75 min; r232 projected ~90 min;
-                                     # parquet step adds ~10s (negligible).
+        memory=Size.GB(288),
+        duration=Duration(hours=3),
     )
 )

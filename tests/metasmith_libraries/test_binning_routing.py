@@ -1,15 +1,3 @@
-"""
-Planning-only tests for lineage-constraint routing of CheckM / GTDB-Tk
-across pseudo-bin sources (matrix Group D, rows 32-40).
-
-These exercise the rework's load-bearing claim: with `putative_genome` as
-checkm/gtdbtk's input requirement and `parents={...}` constraints on the
-target, the solver picks among:
-  - chromosomal_contig (via select_chromosomal_contigs on hifiasm_meta_assembly)
-  - metabat2_bin_fasta (via metabat2 on assembly+bam)
-  - semibin2_bin_fasta (via semibin2)
-  - comebin_bin_fasta (via comebin)
-"""
 import pytest
 from pathlib import Path
 
@@ -24,7 +12,6 @@ from conftest import MLIB
 
 @pytest.fixture(scope="module")
 def all_transforms():
-    """Load every transform domain so the planner can fan out across them."""
     return [
         TransformInstanceLibrary.Load(MLIB / f"transforms/{d}")
         for d in (
@@ -36,7 +23,6 @@ def all_transforms():
 
 @pytest.fixture
 def meta_assembly_with_bam(tmp_inputs):
-    """An hifiasm-meta assembly + a BAM aligned to it (no reads)."""
     inputs = tmp_inputs(["sequences.yml", "alignment.yml", "binning.yml", "taxonomy.yml"])
     fake_asm = MLIB / "tests" / "test_data" / "fake_hifiasm_meta.fna"
     fake_bam = MLIB / "tests" / "test_data" / "fake.bam"
@@ -48,7 +34,6 @@ def meta_assembly_with_bam(tmp_inputs):
 
 @pytest.fixture
 def bin_only_input(tmp_inputs):
-    """A single pre-existing metabat2 bin FASTA (no reads, no assembly)."""
     inputs = tmp_inputs(["sequences.yml", "taxonomy.yml"])
     fake_bin = MLIB / "tests" / "test_data" / "fake_bin.fna"
     inputs.AddItem(fake_bin, "sequences::metabat2_bin_fasta")
@@ -83,11 +68,7 @@ def chromosomal_contig_input(tmp_inputs):
     return inputs
 
 
-# --- Group D: direct putative_genome consumers ----------------------------
-
 class TestCheckMOnEachGenomeShape:
-    """Rows 18-21: CheckM accepts isolate/bin/chrcontig and refuses raw asm."""
-
     def test_row18_checkm_on_isolate(self, agent, base_resources, all_transforms, isolate_input):
         targets = TargetBuilder()
         targets.Add("taxonomy::checkm_stats")
@@ -135,11 +116,7 @@ class TestCheckMOnEachGenomeShape:
         )
 
 
-# --- Group D: lineage-routed comparison harness ---------------------------
-
 class TestCheckMLineageRouting:
-    """Rows 32-37: parents={...} steers CheckM through a specific pseudo-bin source."""
-
     def test_row32_select_chromosomal_contigs_plans(self, agent, base_resources, all_transforms, meta_assembly_with_bam):
         targets = TargetBuilder()
         targets.Add("sequences::chromosomal_contig")
@@ -203,32 +180,16 @@ class TestCheckMLineageRouting:
 
 
 class TestCheckMParallelFork:
-    """Row 37 contract: the same target type may be asked for more than once
-    when its parents differ -- that is what makes rows 33-36 four distinct
-    requests rather than four collisions. `Add` refuses only a request
-    identical in *both* type and parents, which is one request asked for twice.
-
-    The comparison harness still drives four separate workflows, one per
-    lineage. Whether it must, now that same-type-different-parents plans in a
-    single call, is an open library-design question and deliberately not
-    settled here."""
-
     def test_row37_target_builder_refuses_duplicate(self):
         targets = TargetBuilder()
         metabat2 = targets.Add("sequences::metabat2_bin_fasta")
         semibin2 = targets.Add("sequences::semibin2_bin_fasta")
         targets.Add("taxonomy::checkm_stats", parents={metabat2})
-        # Same type, different parent: a genuinely distinct request, accepted.
         targets.Add("taxonomy::checkm_stats", parents={semibin2})
-        # Same type and the same parent: the duplicate, refused.
         with pytest.raises(AssertionError, match="already added"):
             targets.Add("taxonomy::checkm_stats", parents={metabat2})
 
     def test_row37_a_type_name_is_not_a_handle(self):
-        """The defect this file carried: `parents={"ns::type"}` builds a spec
-        that equals nothing already added, so the duplicate the test means to
-        construct never exists and the assertion never fires. Guarded now, so
-        the mistake fails loudly at the call instead of silently passing."""
         targets = TargetBuilder()
         targets.Add("sequences::semibin2_bin_fasta")
         with pytest.raises(AssertionError, match="rather than a handle"):

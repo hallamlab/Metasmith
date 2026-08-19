@@ -1,10 +1,3 @@
-"""Slice a :mod:`gpr_union` table down to a chosen set of origins.
-
-The community network is measured once over the host plus every insert; a named figure is a
-mask applied afterwards. This writes the masked table so the same ``--gpr-table`` argument
-works unchanged, whether it is being handed to the sweep (to re-measure the slice standalone)
-or to the layout (to draw the slice's incidence).
-"""
 import argparse
 from pathlib import Path
 

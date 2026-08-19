@@ -1,20 +1,3 @@
-"""Parallel-then-group fixture: 3 parallel A_i -> grouped B -> C.
-
-Exercises the synthetic-channel-through-o.post -> o.group reduction path
-that is the load-bearing topology pin for Critic E#1 / G4. When step A is
-cached and emits a synthetic Channel.of(...), each per-sample tuple must
-still re-enter o.post() so index_history populates and the downstream
-grouping completes.
-
-Topology:
-  * one shared `root` instance is the declared lineage parent of every
-    per-sample seed, so a `group_by=root` reduction collapses all three
-    parallel branches into one invocation.
-  * trA: seed -> step_a (3 parallel invocations, one per seed)
-  * trB: root + step_a (parents={root}) -> step_b, group_by=root (1 inv.)
-  * trC: step_b -> step_c (1 invocation)
-"""
-
 from __future__ import annotations
 
 from pathlib import Path

@@ -64,18 +64,8 @@ BAKE = ROOT / "data" / "fabfos" / "processed" / "metabolism_bake"
 OUT_DIR = Path(__file__).resolve().parent / "cache"
 OUT_DIR.mkdir(parents=True, exist_ok=True)
 
-# Glycogen is not one MetaNetX id. MNXM738130 is the BiGG species iML1515 uses;
-# MNXM738131 is the KEGG-keyed one. They carry DIFFERENT reaction sets in the atom-pair
-# table, so both are probed and reported separately -- silently picking one would hide
-# whichever half of the evidence disagrees.
 GLYCOGEN = {"MNXM738130": "Glycogen (BiGG, iML1515 species)",
             "MNXM738131": "Glycogen (KEGG C00182)"}
-# Waypoints along glucose -> glycogen, reported beside the target so a zero at the target
-# can be localised to the step where carbon actually stops. These are the ids the
-# atom-pair table itself uses for the glycogen route -- NOT the ones `chem_prop` returns
-# for the obvious names. `alpha-D-glucose 1-phosphate` (MNXM1364214) is a different
-# MetaNetX entry from the `D-glucopyranose 1-phosphate` (MNXM1364212) that PGMT and GLGC
-# actually carry, and probing the first reads as "G1P is absent from the graph".
 WAYPOINTS = {"MNXM1364111": "D-glucose 6-phosphate (HEX1 product)",
              "MNXM1364212": "D-glucopyranose 1-phosphate (PGMT product, GLGC substrate)",
              "MNXM1105977": "ADP-alpha-D-glucose (GLGC substrate as written)",
@@ -116,8 +106,6 @@ def gene_reactions(gene: str) -> list:
 
 
 def incident_report(graph, mnxm: str) -> dict:
-    """What the built graph knows about a metabolite. `n_nodes` 0 means it never became a
-    node at all, which is the case a missing draw key must be distinguished from."""
     nodes = [i for i, nd in enumerate(graph.nodes)
              if isinstance(nd, tuple) and nd[0] == mnxm]
     inc = [(graph.nodes[a], graph.nodes[b]) for (a, b) in graph.edges
@@ -167,9 +155,6 @@ def main():
                 pert_w.pop(r, None)
             else:
                 pert_w[r] = base_w.get(r, 0.0) * args.fold
-    # A reaction the host does not carry has base weight 0, so a fold-change leaves the
-    # perturbed network identical to the base one. Say so rather than reporting the
-    # resulting zero delta as a measurement.
     absent = [r for r in rxns if r not in base_w]
     if absent and args.weight is None:
         raise SystemExit(f"[pilot] {absent} carry no weight in the host GEM, so --fold "

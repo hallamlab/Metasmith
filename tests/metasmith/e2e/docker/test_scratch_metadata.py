@@ -1,25 +1,3 @@
-"""The task metadata file has to survive `scratch`.
-
-Every task echoes its on-channel lineage index into `.command.metadata` in
-its current directory, and `promote._collect_output_indexes` reads it back
-out of the work tree afterwards. Under Nextflow's `scratch` directive the
-current directory is node-local and thrown away at task exit: Nextflow
-copies back the declared outputs and `.command.{out,err,trace}`, and nothing
-else. `.command.metadata` is neither, so it dies with the scratch dir and
-every shard the run promotes is written without an index.
-
-That is not a hypothetical — the reporting agent home holds 88 tasks across
-12 runs and zero metadata files. `scratch` is on for every SLURM profile
-(`nextflow_config/slurm.nf`), so the whole cluster path is the broken one.
-
-The tests below splice the *shipped* generated script into a minimal
-process. The metadata lines and the stub's output-naming expression are
-lifted verbatim out of a `workflow.nf` produced by the real compiler, so
-the fix is exercised where it lives rather than in a hand-written mimic;
-what the tests own is only the surrounding process and the `scratch`
-directive the cluster config would have set.
-"""
-
 from __future__ import annotations
 
 import os
@@ -34,26 +12,13 @@ from tests.metasmith.e2e.docker.test_orchestrator_exec import NxfTestRunner
 
 pytestmark = [pytest.mark.docker, pytest.mark.nextflow, pytest.mark.slow]
 
-# The step whose generated script is spliced below. Any step would do; the
-# metadata section is identical for all of them.
 _STEP_ORDER = 1
 _STEP_META = f"workflow.step_{_STEP_ORDER}.meta"
 
-# One index entry, so the payload's `entries[0]` lines up with the `1-...`
-# batch member the stub writes.
 _INDEX = '[["seed": ["1e20aaaa"]]]'
 
 
 class _Generated:
-    """The pieces of one compiler-generated process, ready to re-host.
-
-    `script` stops at the last line that touches `.command.metadata`: what
-    follows it in the real process is the bootstrap call that runs the
-    transform, which needs an agent home this test does not have. Stopping
-    there keeps every line that is about the metadata file — including,
-    once the fix lands, the copy that puts it back in the work directory.
-    """
-
     def __init__(self, workflow_nf: str):
         block = re.search(
             r"^process (\w+) \{\n(.*?)\n\}\n", workflow_nf, re.S | re.M
@@ -72,9 +37,6 @@ class _Generated:
         lines = script.group(1).splitlines()
         last = max(i for i, l in enumerate(lines) if ".command.metadata" in l)
         self.script = lines[: last + 1]
-        # The stub names its outputs from the index it was handed; reusing
-        # the expression keeps the filename this test produces the one the
-        # rest of the cache would expect.
         self.hash_def = next(
             l for l in stub.group(1).splitlines() if l.startswith("def hash")
         )
@@ -84,12 +46,6 @@ class _Generated:
 
 
 def _stage(root: Path):
-    """Compile `linear_3step` into `root/staged` and return (task, workspace).
-
-    `root` is what gets mounted into the container, so everything the run
-    touches — the staged workspace, the Nextflow work tree, the cache —
-    lives under it.
-    """
     from metasmith.constants import AgentPaths
     from metasmith.env import Runtime
     from metasmith.models.workflow import NextflowGenContext
@@ -115,7 +71,6 @@ def _stage(root: Path):
 
 
 def _nf(gen: _Generated, *, scratch: bool, publish_to: str | None) -> str:
-    """A one-process workflow around the generated metadata section."""
     directives = []
     if scratch:
         directives.append("\tscratch true")
@@ -150,12 +105,6 @@ def _nf(gen: _Generated, *, scratch: bool, publish_to: str | None) -> str:
 
 
 def _run(runner: NxfTestRunner, nf: str, work_dir: str) -> Path:
-    """Run `nf` and return the single task's work directory on the host.
-
-    Nextflow runs as root in the container, so everything it writes into the
-    bind mount comes back root-owned and the host-side promote cannot touch
-    it. Hand it back before returning.
-    """
     (runner.work_dir / "seed.txt").write_text("seed")
     result = runner.run(nf, extra_args=["-work-dir", work_dir])
     subprocess.run(
@@ -178,7 +127,6 @@ def _run(runner: NxfTestRunner, nf: str, work_dir: str) -> Path:
 
 @pytest.fixture
 def staged(tmp_path, docker_image):
-    """A compiled workspace, its generated process, and a runner over both."""
     root = tmp_path / "run"
     task, workspace = _stage(root)
     gen = _Generated((workspace / "workflow.nf").read_text())
@@ -187,12 +135,6 @@ def staged(tmp_path, docker_image):
 
 
 def test_the_metadata_reaches_the_work_dir_under_scratch(staged):
-    """F4a: with `scratch true`, `.command.metadata` is in the work dir.
-
-    Pre-fix it is simply absent — the task wrote it into the scratch
-    directory and Nextflow copied back only the declared output. This arm
-    has never once passed on a cluster.
-    """
     _task, _ws, gen, runner = staged
     task_dir = _run(
         runner, _nf(gen, scratch=True, publish_to=None), "/ws/staged/nxf_work"
@@ -215,12 +157,6 @@ def test_the_metadata_reaches_the_work_dir_under_scratch(staged):
 
 
 def test_scratch_off_is_unchanged_and_silent(staged):
-    """F4b: without `scratch`, the file is there and nothing complains.
-
-    This passes before and after. It exists to catch the one way the fix
-    can break a working configuration: copying the metadata onto itself
-    when the work directory already *is* the current directory.
-    """
     _task, _ws, gen, runner = staged
     task_dir = _run(
         runner, _nf(gen, scratch=False, publish_to=None), "/ws/staged/nxf_work"
@@ -234,15 +170,6 @@ def test_scratch_off_is_unchanged_and_silent(staged):
 
 
 def test_a_second_run_hits_instead_of_demoting(staged):
-    """F4c: the reported symptom — a restart that re-runs everything.
-
-    Run one executes under `scratch` and is promoted; run two probes the
-    cache. Pre-fix the promote finds no metadata, writes the shard without
-    an index, and the probe demotes it to a miss (`cache_decisions`
-    requires every cached output to carry ancestry, since replaying an
-    empty index stops the run). So the step recomputes every time, which is
-    what priced a restart at days.
-    """
     from metasmith.caching.promote import promote_run
     from metasmith.models.workflow.cache_decisions import compute_cache_decisions
 

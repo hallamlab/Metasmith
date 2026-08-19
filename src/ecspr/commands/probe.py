@@ -1,5 +1,3 @@
-"""``ecspr two-point`` and ``ecspr ground`` -- one probe, two ways to say what to
-measure. The shape is inferred from the inputs; see :mod:`ecspr.cli`."""
 from __future__ import annotations
 
 from pathlib import Path
@@ -9,7 +7,6 @@ from ..model import probes
 
 
 def _conditions(args, probe):
-    """Either the table, or the one explicit condition. Never both."""
     if args.conditions and args.source:
         raise SystemExit("--conditions and --source are two ways to say the same "
                          "thing; pass one. A conditions table carries its own "

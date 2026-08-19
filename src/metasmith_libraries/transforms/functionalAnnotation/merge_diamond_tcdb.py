@@ -1,7 +1,3 @@
-"""merge_diamond_tcdb — gather per-chunk DIAMOND TCDB BLAST hits.
-
-DIAMOND outfmt 6 is plain tabular with NO header line; concat is a raw cat.
-"""
 from metasmith.python_api import *
 
 lib = TransformInstanceLibrary.ResolveParentLibrary(__file__)

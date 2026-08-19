@@ -1,16 +1,3 @@
-"""The Environment abstraction — the one place that knows how a runtime is
-provisioned, wrapped, invoked, and bridged.
-
-`Environment` (formerly `Container`) owns all per-runtime routing: nothing
-outside the `env` package should branch on a runtime. Today it covers the
-two container runtimes (Docker, Apptainer); the mamba/native runtimes join
-here without any caller learning a new name.
-
-`Runtime` is the runtime discriminator (formerly `ContainerRuntime`). The
-enum member *names* are the serialized form in `agent.yml`, so they are
-stable wire identifiers — do not rename members without a migration.
-"""
-
 from dataclasses import dataclass, field
 from pathlib import Path
 from enum import Enum
@@ -26,26 +13,12 @@ class Runtime(Enum):
 
 
 class Rootfs(Enum):
-    """How an apptainer image's rootfs is materialised on a host.
-
-    `AUTO` is the answer in every ordinary case: try the cheap artifact and
-    fall back only on a real failure (see MakeMaterialiseCommand). The two
-    forced modes exist for the operator who knows something the fallback
-    chain cannot observe — a host whose mksquashfs is broken in a way that
-    only shows up later, or one where the unpacked tree is a liability.
-
-    Member *names* are the serialized form in `agent.yml`; the values are
-    the user-facing spelling accepted by the `rootfs=` kwargs.
-    """
     AUTO = "auto"
     SIF = "sif"
     SANDBOX = "sandbox"
 
     @classmethod
     def Parse(cls, value: "str|Rootfs|None") -> "Rootfs":
-        # One spelling for the CLI, the RPC body and python callers. An
-        # unknown value is a typo in a manual override, so it fails loudly
-        # rather than falling back to AUTO and looking like it worked.
         if value is None: return cls.AUTO
         if isinstance(value, cls): return value
         try:
@@ -57,22 +30,11 @@ class Rootfs(Enum):
             )
 
 
-# Runtimes that launch a tool across a container boundary, and therefore need
-# the relay to bounce launches back to the host daemon. MAMBA does not — it
-# runs tools in-process on the host filesystem.
 _CONTAINER_RUNTIMES = (Runtime.DOCKER, Runtime.APPTAINER)
 
 
 @dataclass
 class ContainerDef:
-    """The container-only half of an Environment.
-
-    Every field here presupposes a container boundary: an image store to pull
-    into, a working directory inside the image, and mounts across the boundary.
-    None of it means anything for mamba/native, which run the tool on the host
-    filesystem in the real cwd -- so it is nested rather than sitting beside
-    `runtime` where a mamba caller would be invited to fill it in.
-    """
     cache: Path = Path("./")
     workdir: Path|str|None = None
     binds: list[tuple[Path|str, Path|str]] = field(default_factory=list)
@@ -80,9 +42,6 @@ class ContainerDef:
 
 @dataclass
 class Environment:
-    # For container runtimes this is the image URI; for MAMBA it is the conda
-    # environment name. Both name "the thing the tool runs in", which is why
-    # they share a field rather than the runtime branch reaching for two.
     image: str
     extra_args: list[str] = field(default_factory=list)
     runtime: Runtime = Runtime.DOCKER
@@ -92,11 +51,6 @@ class Environment:
     # describe its tools as mamba/docker for portability metadata).
     native: bool = False
     container: ContainerDef = field(default_factory=ContainerDef)
-    # Which rootfs artifact this environment's image should end up as. It sits
-    # here rather than in ContainerDef because it describes how metasmith
-    # treats the *image*, not a property of one container invocation. Set from
-    # `Agent.Deploy(rootfs=…)` for a whole agent and from
-    # `Agent.StageWorkflow(task, rootfs=…)` for one workflow task's steps.
     rootfs: Rootfs = Rootfs.AUTO
     # Site override for the GPU flags below. Some hosts need more than the
     # runtime's own switch to actually expose a device -- WSL2 is the live
@@ -122,40 +76,19 @@ class Environment:
         return self.image.replace("://", "..").replace(":", "..").replace("/", "_")
 
     def _store_root(self):
-        # Single point of control for the apptainer image-store location.
-        # Prefer APPTAINER_CACHEDIR when set, else the agent-home default the
-        # caller passed in `container.cache`. The value is a shell expression
-        # expanded on the *execution host* (the same way `$AGENT_HOME` is in
-        # these strings), so an HPC deploy picks up the cluster's setting and
-        # the write side (pull/build) and read side (exec) can never diverge.
-        # Both GetLocalPath and GetSandboxPath build off this so the .sif and
-        # .sandbox always stay siblings under one root.
         return Path(f"${{APPTAINER_CACHEDIR:-{self.container.cache}}}")
 
     def GetLocalPath(self):
-        # todo: docker-daemon local?
         match self.runtime:
             case Runtime.APPTAINER:
                 return self._store_root()/f"{self._cached_name()}.sif"
 
     def GetSandboxPath(self):
-        # Sibling of GetLocalPath for the APPTAINER `build --sandbox` artifact:
-        # the image unpacked to a directory tree (2.4 GB and 68k inodes against
-        # 843 MB for the same image), reached when no SIF can be produced at all
-        # or when `rootfs=sandbox` forces it. The bare directory is what
-        # `apptainer exec` consumes; no extension.
         match self.runtime:
             case Runtime.APPTAINER:
                 return self._store_root()/f"{self._cached_name()}.sandbox"
 
     def MakeBuildSandboxCommand(self, from_image: bool = False):
-        # Build the unpacked sandbox dir. By default this unpacks a
-        # previously-pulled SIF; with from_image=True it builds the sandbox
-        # straight from the OCI registry, which skips SIF creation — and so
-        # skips mksquashfs, which aborts on large images on some hosts
-        # ("malloc(): corrupted top size" on micb0, e.g. external_checkm2,
-        # gtdbtk). When the sandbox is the artifact the SIF is a throwaway
-        # intermediate, so never invoke mksquashfs to produce one.
         sandbox = self.GetSandboxPath()
         if sandbox is None: return ""
         if from_image:
@@ -165,15 +98,6 @@ class Environment:
         return f"apptainer build --force --sandbox {sandbox} {sif}"
 
     def MakeBuildSifCommand(self, no_fragments: bool = False):
-        # `apptainer build` of the same SIF `pull` would produce. It exists for
-        # one reason: `pull` takes no mksquashfs arguments and `build` does, and
-        # some hosts ship an mksquashfs that segfaults without `-no-fragments`
-        # (micb0: apptainer's bundled 4.7.5 dies with exit 139 on the metasmith
-        # image, while `-no-fragments` builds it in 79s; the working 4.5 sitting
-        # at system level is unreachable because apptainer always prepends its
-        # own libexec to the binary search path). Costs ~2% in image size —
-        # 900,493,312 bytes against 919,404,544 for the same image — so it is
-        # only worth reaching for after a plain pull has actually failed.
         sif = self.GetLocalPath()
         if sif is None: return ""
         args = ' --mksquashfs-args "-no-fragments"' if no_fragments else ""
@@ -187,15 +111,11 @@ class Environment:
             case Runtime.DOCKER:
                 return f"{self.runtime.value} pull --platform=linux/amd64 {image}"
             case Runtime.MAMBA:
-                # No remote image to fetch; provisioning is env creation,
-                # handled in ProvisionSteps. Nothing to pull.
                 return ""
             case _:
                 return f"{self.runtime.value} pull {image}"
 
     def MakeBindsParam(self):
-        # mamba/native run on the host filesystem — there is no boundary to
-        # bind across, so binds collapse to nothing.
         if self.runtime == Runtime.MAMBA or self.native:
             return ""
         binds = {str(d):str(s) for s, d in self.container.binds}
@@ -208,17 +128,11 @@ class Environment:
             case Runtime.APPTAINER:
                 binds = [f'{src}:{dst}' for src, dst in binds]
                 binds = f'--bind {",".join(binds)}'
-            case _: # default
+            case _:
                 raise TypeError(f"unsupported runtime [{self.runtime}]")
         return binds
 
     def MakeGpuArgs(self) -> list[str]:
-        # The per-runtime flags that expose the host's GPUs inside the tool
-        # environment. This is exactly the branch the env package exists to own
-        # -- before this, every GPU transform hand-wrote it and had to read the
-        # runtime off the ExecutionContext to know which dialect to use.
-        # mamba/native inherit the host's devices, so they need nothing beyond
-        # whatever the site configured.
         if self.native: return list(self.gpu_args)
         match self.runtime:
             case Runtime.DOCKER:
@@ -230,33 +144,19 @@ class Environment:
         return base + list(self.gpu_args)
 
     def MakeRunCommand(self, local: bool|str = False, custom_bind_param: str|None=None):
-        # native: already inside the target environment — no wrapper, just
-        # whatever extra args the caller asked for (usually none).
         if self.native:
             return " ".join(str(x) for x in self.extra_args if x != "")
         image = self._get_image()
         if self.runtime == Runtime.MAMBA:
-            # `mamba run -n <env>` activates the conda env for the wrapped
-            # command. No binds/workdir/cache — the host filesystem is shared.
             toks = ["mamba", "run", "-n", image, *self.extra_args]
             return " ".join(str(x) for x in toks if x != "")
         binds = custom_bind_param if custom_bind_param is not None else self.MakeBindsParam()
         match self.runtime:
             case Runtime.DOCKER:
-                # todo: detect if image for matching platform exists first before forcing amd64
                 others = ['--platform=linux/amd64', '--rm', '-u $(id -u):$(id -g)', '--network=host', '-e TMPDIR=${TMPDIR-"/tmp"}', '--entrypoint=""']
                 workdir = f'--workdir="{self.container.workdir}"' if self.container.workdir is not None else ''
                 run = 'run'
             case Runtime.APPTAINER:
-                # Thread caps track the allocation, not a hardcoded 1. `--cleanenv` wipes the
-                # container env, so whatever is set here IS the whole story for OpenMP tools.
-                # Pinning 1 silently capped every containerized tool to a single core no matter
-                # what it was told: metaSPAdes launched as `spades.py -t 32` on a 32-core SLURM
-                # allocation wrote `max_threads 32` into its own config and then ran with
-                # `Threads: 1`, leaving 31 cores idle for hours. SLURM_CPUS_PER_TASK is expanded
-                # by the shell on the compute node (same idiom as TMPDIR above), so each task
-                # gets exactly the cpus its transform reserved; off-SLURM runs keep the old
-                # single-threaded default.
                 nthreads = '${SLURM_CPUS_PER_TASK:-1}'
                 others = ['--no-home', '--cleanenv', '--env TMPDIR=${TMPDIR-"/tmp"}', f'--env OPENBLAS_NUM_THREADS={nthreads}', f'--env OMP_NUM_THREADS={nthreads}']
                 workdir = f'--pwd "{self.container.workdir}"' if self.container.workdir is not None else ''
@@ -264,14 +164,6 @@ class Environment:
                 if not isinstance(local, bool):
                     image = local
                 elif local:
-                    # Which artifact to hand apptainer. Under AUTO nobody
-                    # declared one, so read what materialising actually left on
-                    # disk: a sandbox is only ever there because no SIF could be
-                    # built, so it wins. A forced mode names its artifact
-                    # outright -- otherwise the ternary would quietly resolve a
-                    # `rootfs=sif` run to a sandbox left over from some earlier
-                    # experiment in a shared image store, which is exactly the
-                    # way the old host-level override was inert.
                     sif = self.GetLocalPath()
                     sandbox = self.GetSandboxPath()
                     match self.rootfs:
@@ -282,7 +174,7 @@ class Environment:
                         case _:
                             image = f'"$(if [ -d "{sandbox}" ]; then echo "{sandbox}"; else echo "{sif}"; fi)"'
                 run = 'exec'
-            case _: # default
+            case _:
                 raise TypeError(f'unsupported runtime [{self.runtime}]')
         toks = [
             f"{self.runtime.value}",
@@ -301,28 +193,13 @@ class Environment:
                 f"{self.MakeRunCommand()} {command}",
             )
 
-    # ------------------------------------------------------------------
-    # Deploy-facing surface — the runtime-specific provisioning and the
-    # shell that crosses (or doesn't cross) the runtime boundary. These
-    # are the methods Agent.Deploy drives so that Deploy itself never
-    # branches on a runtime. Container runtimes need the relay to launch
-    # tools from inside the metasmith container; mamba/native do not.
-    # ------------------------------------------------------------------
 
     @property
     def needs_relay(self) -> bool:
-        # The relay exists solely to bounce tool launches across the
-        # container boundary. Only the container runtimes have that
-        # boundary; mamba/native run tools in-process on the host. A
-        # native environment never crosses a boundary regardless of the
-        # runtime it nominally carries.
         return not self.native and self.runtime in _CONTAINER_RUNTIMES
 
     @staticmethod
     def Detect() -> "Runtime":
-        # Host-local default when no runtime was chosen at Deploy. Folded
-        # in from direct_run._detect_runtime so the detection heuristic
-        # lives with the rest of the runtime routing.
         import shutil
         if shutil.which("docker"):
             return Runtime.DOCKER
@@ -331,33 +208,7 @@ class Environment:
         return Runtime.DOCKER
 
     def MakeMaterialiseCommand(self, *, force: bool=False):
-        # The one place that decides what artifact a host ends up holding, so
-        # deploy (agent image) and execute (tool images) cannot disagree.
-        #
-        # The ordering is try-then-fall-back, never guess: a plain pull, then a
-        # build with the mksquashfs workaround, then — only if no SIF can be
-        # produced at all — the unpacked sandbox. Nothing here inspects the host
-        # first. Guessing was the old shape and it was wrong in both directions:
-        # it unpacked on hosts that did not need it (chamois runs a real
-        # multi-container workflow on SIFs alone), and on micb0 nothing static
-        # can predict that mksquashfs will segfault. Each arm removes its own
-        # partial output first, because a half-written SIF still satisfies the
-        # `[ -e ]` the run command checks.
-        #
-        # `self.rootfs` short-circuits the chain when someone has declared the
-        # answer; see Rootfs.
         if self.runtime == Runtime.DOCKER:
-            # Docker owns its own image cache, keyed by tag -- but `docker run`
-            # only pulls when the tag is entirely absent locally (pull policy
-            # `missing`), so a stale or broken image already sitting under a
-            # tag (an old `./dev.sh -bd` build, or a pull from before a fix
-            # landed) is trusted forever with no freshness check. Refresh is
-            # therefore unconditional here, not gated on `force`: a `docker
-            # pull` on an already-current tag is a cheap manifest check, not a
-            # re-download. If the pull itself fails -- unreachable registry, or
-            # a tag that only ever existed as a local dev build and was never
-            # pushed -- fall back to whatever is already cached locally rather
-            # than hard failing; only error if neither is available.
             image = self._get_image()
             return (
                 f'{self.MakePullCommand()} || '
@@ -369,14 +220,8 @@ class Environment:
         prefix = f'mkdir -p "{sif.parent}"; ' + (f'rm -rf {sandbox} {sif}; ' if force else '')
         match self.rootfs:
             case Rootfs.SANDBOX:
-                # Straight from the registry: mksquashfs is never invoked, which
-                # is the whole point on a host whose copy is broken.
                 return prefix + f'[ -d {sandbox} ] || {self.MakeBuildSandboxCommand(from_image=True)}'
             case Rootfs.SIF:
-                # No unpack rung — the mode says a directory rootfs is not
-                # acceptable, so failing to build the SIF must fail, not
-                # silently produce the artifact that was ruled out. A stale
-                # sandbox goes: it is 2.4 GB of tree that nothing will read.
                 return (
                     prefix
                     + f'rm -rf {sandbox}; '
@@ -386,10 +231,6 @@ class Environment:
                     f'fi'
                 )
             case _:
-                # A sandbox present under AUTO is not a leftover to clean up: it
-                # is the record that a past pull *and* build genuinely failed on
-                # this host, and rebuilding would re-run an mksquashfs already
-                # known to segfault here. So either artifact counts as done.
                 return (
                     prefix
                     + f'if [ ! -e {sif} ] && [ ! -d {sandbox} ]; then '
@@ -400,10 +241,6 @@ class Environment:
                 )
 
     def ProvisionSteps(self, *, agent_home: Path, assertive: bool=False) -> list[tuple[str, str|None]]:
-        # Deploy-time steps that make the image runnable on the host. Returns
-        # (cmd, display_cmd) pairs; empty for runtimes with nothing to fetch
-        # (mamba/native). The fallback chain lives in MakeMaterialiseCommand,
-        # which execute-time provisioning calls too.
         steps: list[tuple[str, str|None]] = []
         if self.runtime == Runtime.DOCKER and not self.native:
             steps.append((
@@ -421,12 +258,6 @@ class Environment:
         return steps
 
     def RenderMsmWrapper(self, *, agent_home: Path, run_command: str, main_binds: str, dev_binds: str, dev_src: str) -> str:
-        # Body of the `msm` convenience wrapper deployed into the agent
-        # home: invoke `metasmith` inside the runtime. For container
-        # runtimes this is the run-command (computed by the caller from the
-        # role-specific binds, since the `msm` wrapper carries no --workdir)
-        # with accumulated $BINDS; for mamba/native there is no container,
-        # so metasmith runs directly under an optional wrapper prefix.
         if self.needs_relay:
             return f"""
                 #!/bin/bash
@@ -441,10 +272,6 @@ class Environment:
                 """
         wrapper = self.MakeWrapperPrefix()
         prefix = f"{wrapper} " if wrapper else ""
-        # No container means nothing is mounted at the container roots, so
-        # hand metasmith the real ones. Both point at the agent home, which
-        # is what the container case sees too: the `msm` wrapper carries no
-        # workdir, and deploy dual-binds the home at /msm_home and /ws.
         return f"""
             #!/bin/bash
             export AGENT_HOME={agent_home}
@@ -454,18 +281,7 @@ class Environment:
             """
 
     def RenderBootstrap(self, *, agent_home: Path, run_command: str, run_binds: str, dev_src: str, dev_target: str, bind_file: str) -> str:
-        # Body of `msm_bootstrap`, the per-step launcher Nextflow calls.
-        # For container runtimes it (a) bounces back to the host via the
-        # relay when invoked from inside the container, then (b) runs each
-        # metasmith step inside a fresh container with the relay daemon
-        # bridging tool launches. For mamba/native there is no boundary to
-        # cross: the step runs in-process with no bounce and no relay.
-        # `run_command` is computed by the caller from the bootstrap's
-        # /ws-workdir sub-environment.
         if self.needs_relay:
-            # The bootstrap may stage the dev overlay to node-local scratch
-            # before binding it (SLURM array fan-out), so it binds whatever
-            # $DEV_BIND_SRC resolves to at run time rather than dev_src.
             dev_binds = Environment(
                 image=self.image,
                 runtime=self.runtime,
@@ -541,15 +357,10 @@ class Environment:
                         # archive fails `tar -x` LOUDLY instead of silently; (2)
                         # collapse the N per-node reads to ONE with an flock. The cache
                         # is keyed by the tarball's own stat (mtime+size) -- a single
-                        # metadata op, scheduler-agnostic, content-fresh (a reused node
-                        # never serves a stale overlay; an identical tarball is reused
-                        # for free) -- so there is NO dependence on SLURM_ARRAY_JOB_ID.
-                        # The winner copies the tarball to node-local scratch, extracts,
-                        # verifies completeness (key submodule + non-trivial file count)
-                        # before stamping, and retries transient errno-108 with backoff.
-                        # All paths fail-open to the shared Lustre tree bind, so staging
-                        # is never worse than the old behaviour.
-                        # See plans/03-tarball-dev-overlay.md.
+                        # Every path fails open to the shared-tree bind, so staging is
+                        # never worse than not doing this at all. The stamp is content
+                        # keyed rather than job keyed, so a reused node never serves a
+                        # stale overlay and there is no dependence on the array job id.
                         DEV_BIND_SRC="{dev_src}"
                         DEV_TARBALL="{dev_src}.tar"
                         if [ -e "$DEV_TARBALL" ] && [ -n "$SLURM_TMPDIR" ] && command -v flock >/dev/null 2>&1; then
@@ -660,9 +471,6 @@ class Environment:
                 """
         wrapper = self.MakeWrapperPrefix()
         prefix = f"{wrapper} " if wrapper else ""
-        # No container means nothing is mounted at the container roots. The
-        # home root is the agent home; the work root is this step's own cwd,
-        # which is exactly what /ws is bound to in the per-step container.
         return f"""
             #!/bin/bash
 
@@ -683,10 +491,6 @@ class Environment:
             """
 
     def MakeWrapperPrefix(self) -> str:
-        # The command prefix that places a bare `metasmith ...` call into
-        # this environment without a container. Empty for container
-        # runtimes (they wrap via MakeRunCommand) and for native (already
-        # inside); mamba activates its env via `mamba run -n <env>`.
         if self.native:
             return ""
         if self.runtime == Runtime.MAMBA:
@@ -694,11 +498,6 @@ class Environment:
         return ""
 
     def ConnectShell(self, server_path: Path|None=None, setup_commands: list[str]|None=None):
-        # The shell a caller should run tool commands on. Container runtimes
-        # cross the boundary via the relay (RemoteShell bounces launches back
-        # to the host daemon at `server_path`); mamba/native run in-process,
-        # so a plain local shell suffices. The relay client is constructed
-        # only here — no caller outside the env module builds a RemoteShell.
         if self.needs_relay:
             from ..coms.via_file_watcher import RemoteShell
             assert server_path is not None, "relay runtimes require a server path"

@@ -1,4 +1,3 @@
-"""`metasmith cache ...` and `metasmith status` subcommands (S8)."""
 from __future__ import annotations
 
 from ...ops import cache as _ops

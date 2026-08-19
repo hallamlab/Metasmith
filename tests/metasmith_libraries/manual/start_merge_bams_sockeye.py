@@ -1,8 +1,4 @@
 #!/usr/bin/env python
-"""Submit merge_bams-only workflow on Sockeye and exit after submission.
-
-This isolates batching/merge behavior from downstream BRaKER3 steps.
-"""
 from pathlib import Path
 from metasmith.python_api import (
     Agent,
@@ -16,7 +12,6 @@ from metasmith.python_api import (
 MLIB = Path(__file__).resolve().parent.parent.parent
 ARC_STAR_BAMS = Path("/arc/project/st-shallam-1/pwy_group/data/porphyridium_purpureum/star_bams")
 
-# 9 STAR BAMs staged on arc (same set used in run 62Tq8B53)
 PREV_BAMS = [
     ARC_STAR_BAMS / "1-1-1.g3ah0QAiGjmgmOQv-9mrjFffM.bam",
     ARC_STAR_BAMS / "1-1-1.iCaeK0EUwqlMC7ZR-9mrjFffM.bam",

@@ -1,14 +1,4 @@
 #!/usr/bin/env python3
-"""One row per (sample, binner) for all 34 x 3 -- bins, or an explicit zero with
-its cause.
-
-The point of this file is the difference between "produced no bins" and "was
-never run". S29 and S19 sat unnoticed for days because no failure count could
-see them: a task that is never created cannot fail, so only a per-(sample,binner)
-census catches it. A silent absence is not auditable; a recorded zero is.
-
-Causes are read from the tool's own output, not inferred.
-"""
 import os, re, glob, sys, collections
 
 R    = "/scratch/phyberos/gmcf3495/metasmith/runs/QkqCNJOo"
@@ -18,7 +8,6 @@ BINNERS = ("metabat2", "semibin2", "comebin")
 
 rd = lambda p: [l.rstrip("\n").split("\t") for l in open(p) if l.strip()]
 
-# ---- sample <-> assembly, via the work-dir join (products are content-addressed) ----
 s2b   = {os.path.basename(w): s for s, w in rd(f"{INV}/sample2bbduk.tsv")}
 asm2s = {a: s2b.get(os.path.basename(r.rstrip("/")), "?") for a, r, _ in rd(f"{INV}/megahit.tsv")}
 samples = sorted({s for s in s2b.values()},
@@ -26,19 +15,14 @@ samples = sorted({s for s in s2b.values()},
 
 usable = {s: (int(t), int(u)) for s, t, u in rd(f"{INV}/usable_contigs.tsv")}
 
-# ---- metasmith bins per (sample, binner) ----
 ms = collections.Counter()
 for stem, b, asm in rd(f"{INV}/bin_registry_raw.tsv"):
     ms[(asm2s.get(asm, "?"), b)] += 1
 
-# The scoped S13/S22 run lands in its own run dir with its own content-addressed
-# products; inv/extra_bins.tsv (sample, binner) is emitted by the same work-dir
-# join run against that root, and is simply absent until it finishes.
 if os.path.exists(f"{INV}/extra_bins.tsv"):
     for s, b in rd(f"{INV}/extra_bins.tsv"):
         ms[(s, b)] += 1
 
-# ---- task states from the pipeline ----
 state = collections.defaultdict(set)
 for asm, b, st, _wd in rd(f"{INV}/binners_all.tsv"):
     state[(asm2s.get(asm, "?"), b)].add(st)
@@ -48,9 +32,7 @@ for asm, cls in rd(f"{INV}/comebin_class.tsv"):
         continue
     cbclass[asm2s.get(asm, "?")] = cls
 
-# ---- gap-fill: bins on disk + the cause the tool actually printed ----
 CAUSE_PATTERNS = [
-    # SemiBin2's own floor is 2500 bp, not the 1000 bp COMEBin uses.
     (r"but all are shorter than (\d+) basepairs",  "ALL_CONTIGS_UNDER_{0}BP"),
     (r"but only (\d+) contain\(s\) at least (\d+) basepairs",
                                                    "ONLY_{0}_CONTIGS_OVER_{1}BP"),
@@ -58,13 +40,6 @@ CAUSE_PATTERNS = [
     (r"0 bins \(0 bases in total\) formed",        "METABAT2_NO_BINS_FORMED"),
     (r"Negative coverage depth is not allowed",    "DEPTH_GARBAGE_UNSANITISED"),
     (r"local variable 'logits'",                   "COMEBIN_LOGITS_BATCH_TOO_LARGE"),
-    # COMEBin's marker-gene seeding found no complete single-copy marker set, so
-    # its clustering had nothing to seed and UniteM's bundled CheckM then crashed
-    # on a directory that was never created. Established on S5 with preserved
-    # intermediates (Seed_num: 0, cluster_res/ holding only an empty
-    # unitem_profile/) and controlled against S31, which runs through the same
-    # wrapper to Seed_num: 3 and 12 bins. The crash is downstream of a real zero;
-    # it is not discarding bins.
     (r"Missing quality table|unitem_profile",      "COMEBIN_NO_MARKER_SEEDS"),
     (r"DUE TO TIME LIMIT|CANCELLED AT",            "TIMEOUT"),
     (r"Illegal option --",                         "WRAPPER_WHICH_FUNCTION_LEAK"),
@@ -75,12 +50,6 @@ INFLIGHT = set(os.popen("squeue -u phyberos -h -o '%j'").read().split())
 
 
 def gapfill(sample, binner):
-    """(n_bins, cause) for a gap-fill run, or (None, None) if never attempted."""
-    # `bins/` is the collected, durable copy -- and the one catalogue.tsv stores
-    # paths into. `out/` is a scratch work dir that submit_bin.sh destroys on
-    # every submission, so counting it alone makes this census contradict the
-    # catalogue the moment a work dir is cleared: S29's comebin read as ZERO here
-    # while five of its bins, one of them 94.5% complete, sat in the catalogue.
     collected = len(glob.glob(f"{G}/bins/{sample}/{binner}/*.fna"))
     if collected:
         return collected, ""
@@ -102,8 +71,6 @@ def gapfill(sample, binner):
     if best[0] > 0:
         return best[0], ""
     variant = best[1]
-    # An in-flight job has an empty output dir that is indistinguishable from a
-    # genuine zero. Say so rather than inventing a cause for it.
     for v in {variant, binner}:
         if f"gf_{v}_{sample}" in INFLIGHT:
             return 0, "IN_FLIGHT"

@@ -22,8 +22,6 @@ def protocol(context: ExecutionContext):
     annot_dir = "dramv_annot"
     distill_dir = "dramv_distill"
 
-    # Use --config_loc to point at the exported DRAM config in the DB directory
-    # This avoids needing to write to the read-only container filesystem
     context.ExecWithEnv().ifContainerDo(
         env=image,
         binds=[(idb.external, "/db")],
@@ -45,10 +43,8 @@ def protocol(context: ExecutionContext):
         """,
     )
 
-    # Copy annotations TSV
     context.LocalShell(f"cp {annot_dir}/annotations.tsv {iannot.local}")
 
-    # Copy distill directory
     context.LocalShell(f"cp -r {distill_dir} {idistill.local}")
 
     return ExecutionResult(

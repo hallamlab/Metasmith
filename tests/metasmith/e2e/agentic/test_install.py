@@ -1,4 +1,3 @@
-"""Live: agent installs metasmith from the spoofed `hallamlab` channel."""
 from __future__ import annotations
 
 import pytest

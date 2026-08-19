@@ -1,22 +1,4 @@
 #!/usr/bin/env python3
-"""First real ECSPr measurement for SCADC (plan T2/T3): epi300 host baseline vs
-epi300 + each recovered fosmid insert, glucose -> {acetyl-CoA, malonyl-CoA,
-oxaloacetate, AMP} under the universal leakage ground.
-
-    python examples/scadc_ecspr.py
-
-Writes `data/fabfos/runs/scadc_ecspr/results.parquet` (`ecspr::results` schema, p/q/survives
-left null -- no significance test this pass) directly, via
-plain pandas/numpy/scipy over the `ecspr` package. Does NOT go through the
-metasmith `TransformInstance`/container machinery -- it predates
-`ecspr_measure.py` having a protocol at all, and is kept as the worked record of
-the call sequence the CLI now offers as `ecspr ground`.
-
-NOT the deployed reference basis: atom_pairs is tier4 (validated, but not the
-canonical `.awm/data/ref/derived/mnxref-4_5/` release, unmaterialized here),
-direction_ratios' dG_prime/sigma/dir_confidence are null (the bake only carries
-ratio + dir_tier). Both substitutions are made in this file, above.
-"""
 from __future__ import annotations
 
 from pathlib import Path
@@ -41,8 +23,6 @@ MEDIA = "glucose_minimal"
 
 
 def clr(shares: np.ndarray) -> np.ndarray:
-    """Centred log-ratio, zero-padded (delivered currents can be exactly zero for an
-    unreached sink -- a pseudocount avoids -inf without hiding the zero elsewhere)."""
     eps = 1e-12
     x = np.log(shares + eps)
     return x - x.mean()

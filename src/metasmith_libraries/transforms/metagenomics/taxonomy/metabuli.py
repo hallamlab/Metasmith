@@ -21,7 +21,6 @@ def protocol(context: ExecutionContext):
     mem = context.params.get('memory')
     mem = "" if mem is None else f"--max-ram {int(float(mem))-6}"
     job_name = "metabuli_out"
-    # Same command either way: this tool is a plain CLI in both worlds.
     _cmd = f"""\
             metabuli classify \
                 {iasm.container} \

@@ -1,26 +1,3 @@
-"""Rhea -- the reaction/UniProt cross-reference distribution.
-
-The whole served set, mirroring the FTP layout into `rhea/<release>/`:
-`tsv/` (7 tables), `ctfiles/rhea-rxn.tar.gz`, plus `rhea-release.properties` and
-`LICENSE.txt` at the release root.
-
-THE RELEASE NUMBER IS READ FROM THE SERVER, NOT ASSUMED. Rhea's top-level path is a
-ROLLING release -- the same URL serves different bytes over time and only
-`old_releases/<n>.tar.bz2` is stable. A snapshot taken without recording the number
-is unidentifiable afterwards: the files carry no version header, so the only way
-back is matching sizes against 40-odd 400 MB tarballs. That is not hypothetical --
-the previous snapshot here had to be dated by comparing file mtimes against release
-dates to establish it was 140.
-
-Fetching `rhea-release.properties` FIRST and naming the directory after it makes
-the product self-describing, and `old_releases/<n>.tar.bz2` becomes a permanent
-re-fetch path for exactly these bytes.
-
-ALL EIGHT DATA FILES, not just the two the bridge reads. `mnxr_lookup` consumes
-rhea2uniprot{,_trembl} and nothing else, but the other six are part of what Rhea
-published and this tier's contract is fidelity to the source. Under the old
-per-file typing they sat on disk untyped, with nothing asserting they belonged.
-"""
 from metasmith.python_api import *
 
 lib   = TransformInstanceLibrary.ResolveParentLibrary(__file__)

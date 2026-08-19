@@ -8,12 +8,11 @@ REF_HIFI    = "std::hifi_reads"
 REF_NP      = "std::nanopore_reads"
 REF_SR      = "std::short_reads"
 for t in [REF_HIFI, REF_NP, REF_SR]:
-    lib.GetType(t) # fail now if types are wrong, not during job
+    lib.GetType(t)
 
 reads           = model.AddRequirement(lib.GetType("std::long_reads"))
 image_minimap2  = model.AddRequirement(lib.GetType("std::oci_image_minimap2"))
 image_samtools  = model.AddRequirement(lib.GetType("std::oci_image_samtools"))
-# out_sam         = model.AddProduct(lib.GetType("std::sequence_alignment_map"))
 out_bam         = model.AddProduct(lib.GetType("std::self_mappings"))
 out_bam_csi     = model.AddProduct(lib.GetType("std::self_mappings_csi"))
 
@@ -22,31 +21,13 @@ def protocol(context: ExecutionContext):
     temp_sam_path = Path("./alignments.sam")
     out_bam_path   = context.Output(out_bam)
 
-    # https://lh3.github.io/minimap2/minimap2.html
-    # minimap2 options:
-    # -x sr                 short read preset
-    # -x map-hifi           pacbio hifi (type of read that is more accurate) long read preset
-    # -x map-ont            oxford nanopore long read preset
-    # --sr                  Enable short-read alignment heuristics, more sensitivity
-    # -2                    use two io threads, more peak memory
-    # -a                    SAM format
-    # --secondary=no        Whether to output secondary alignments [no]
-    # --sam-hit-only        In SAM, don’t output unmapped reads. !this results in report saying 100% reads mapped!
-    # --heap-sort=no|yes    Heap merge is faster for short reads, but slower for long reads. [no]
-    #   Preset:
-    #     -x STR       preset (always applied before other options; see minimap2.1 for details) []
-    #                 - map-pb/map-ont: PacBio/Nanopore vs reference mapping
-    #                 - ava-pb/ava-ont: PacBio/Nanopore read overlap
-    #                 - asm5/asm10/asm20: asm-to-ref mapping, for ~0.1/1/5% sequence divergence
-    #                 - splice: long-read spliced alignment
-    #                 - sr: genomic short-read mapping
     reads_meta = context.GetMeta(reads)
     reads_type = reads_meta.endpoint
-    presets = [ # order matters, first match is chosen
-        (REF_HIFI,  "-x asm10"), # https://github.com/lh3/minimap2/issues/739, but shouldn't we use the more stringent divergence? (using 1% here)
+    presets = [
+        (REF_HIFI,  "-x asm10"),
         (REF_NP,    "-x map-ont"),
    ] 
-    preset = "" # default
+    preset = ""
     for tname, p in presets:
         t = lib.GetType(tname)
         if not reads_type.IsA(t): continue
@@ -87,7 +68,6 @@ TransformInstance(
     group_by=reads,
     model = model,
     output_signature = {
-        # out_sam:      "alignments.sam",
         out_bam:      "alignments.bam",
         out_bam_csi:  "alignments.bam.csi"
     },

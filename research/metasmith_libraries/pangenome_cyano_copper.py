@@ -1,19 +1,4 @@
 #!/usr/bin/env python3
-"""Plan + run a PPanGGOLiN cyanobacterial pangenome heatmap via Metasmith.
-
-Six-strain copper-study cyano panel (five PCC strains + AB48), all fetched from
-NCBI as assembly accessions. getNcbiAssembly pulls each RefSeq .gbff (NCBI-PGAP
-annotated), ppanggolin builds the pangenome, heatmap renders it.
-
-AB48 = Phormidium/Sodalinema yuhuli strain AB48 = GCF_023983615.1 (complete
-genome, UBC deposit, NCBI-PGAP v6.10) -- same fetch path and annotation
-provenance as the five PCC strains, so all six are apples-to-apples.
-
-Run with the `msm` env python:
-    PY=/home/tony/lib/miniforge3/envs/msm/bin/python
-    $PY main/pangenome_cyano_copper.py        # plan-only: generate + render DAG
-    $PY main/pangenome_cyano_copper.py run     # also stage + run locally (Docker)
-"""
 import sys
 import time
 from pathlib import Path
@@ -27,16 +12,15 @@ from metasmith.python_api import (
 MLIB = Path(__file__).resolve().parent.parent
 BASE = MLIB / "main" / "cache" / "pangenome_cyano_copper"
 RUN = len(sys.argv) > 1 and sys.argv[1] == "run"
-TIMEOUT = 2400  # seconds to wait for the async run (6 NCBI fetches + ppanggolin)
+TIMEOUT = 2400
 
-# Six-strain cyano copper panel: name -> NCBI assembly accession
 PANEL = {
-    "PCC_7002": "GCF_000019485.1",  # Picosynechococcus sp. PCC 7002
-    "PCC_7418": "GCF_000317635.1",  # Halothece sp. PCC 7418
-    "PCC_7376": "GCF_000316605.1",  # [Leptolyngbya] sp. PCC 7376
-    "PCC_7116": "GCF_000316665.1",  # Rivularia sp. PCC 7116
-    "PCC_7420": "GCF_000155555.1",  # Coleofasciculus chthonoplastes PCC 7420 (draft scaffold)
-    "AB48":     "GCF_023983615.1",  # Phormidium/Sodalinema yuhuli AB48 (complete, NCBI-PGAP)
+    "PCC_7002": "GCF_000019485.1",
+    "PCC_7418": "GCF_000317635.1",
+    "PCC_7376": "GCF_000316605.1",
+    "PCC_7116": "GCF_000316665.1",
+    "PCC_7420": "GCF_000155555.1",
+    "AB48":     "GCF_023983615.1",
 }
 
 agent_home = Source.FromLocal((BASE / "msm_home").absolute())
@@ -55,10 +39,6 @@ except Exception:
 
     group = inputs.AddValue("pangenome", "cyano_copper_panel", "pangenome::pangenome")
     for name, acc in PANEL.items():
-        # The name is a declared input now, not just the library path it used to
-        # be thrown away into. It sits between the pangenome and the accession,
-        # so everything downloaded inherits it and ppanggolin labels each genome
-        # with it rather than guessing from the GenBank header.
         nm = inputs.AddValue(f"{name}.name", name, "ncbi::genome_name", parents={group})
         inputs.AddValue(name, acc, "ncbi::assembly_accession", parents={nm})
     inputs.Save()
@@ -113,7 +93,6 @@ smith.RunWorkflow(
     resource_overrides={"*": Resources(memory=Size.GB(4), cpus=8)},
 )
 
-# RunWorkflow is fire-and-forget; poll for the results _metadata sentinel.
 results_path = smith.GetResultSource(task).GetPath()
 start = time.time()
 while not (results_path / "_metadata").exists():

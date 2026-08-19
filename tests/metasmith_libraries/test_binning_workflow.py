@@ -1,12 +1,3 @@
-"""
-End-to-end tests for binning transforms (metabat2, semibin2, comebin)
-
-These tests verify that binning workflows can be:
-1. Generated (workflow planning)
-2. Staged to the agent
-3. Executed via local Docker
-4. Produce valid bin FASTA files and contig-to-bin tables
-"""
 import pytest
 import time
 from pathlib import Path
@@ -30,7 +21,6 @@ from conftest import (
 
 @pytest.fixture(scope="module")
 def binning_transforms(mlib):
-    """Load metagenomics transforms (includes binning)."""
     return [
         TransformInstanceLibrary.Load(mlib / "transforms/metagenomics"),
     ]
@@ -38,16 +28,11 @@ def binning_transforms(mlib):
 
 @pytest.fixture
 def binning_input(tmp_inputs, test_data_dir, ab48_bam):
-    """Create input library with AB48 assembly and BAM for binning."""
     inputs = tmp_inputs(["sequences.yml", "alignment.yml", "binning.yml"])
 
     assembly_path = test_data_dir / "ab48_community" / "ABC-240403_KD.fna"
     bam_path = ab48_bam
 
-    # NOTE: Don't use parents={sample} for assembly - it causes an infinite loop
-    # in PrepareNextflow() because metagenome_sample endpoint isn't in plan.given
-    # but is referenced as a parent endpoint.
-    # Also don't use LocalizeContents() - it causes KeyError during staging.
     asm = inputs.AddItem(assembly_path, "sequences::assembly")
     inputs.AddItem(bam_path, "alignment::bam", parents={asm})
 
@@ -57,12 +42,9 @@ def binning_input(tmp_inputs, test_data_dir, ab48_bam):
 
 
 class TestBinningWorkflowGeneration:
-    """Tests for workflow generation (planning only)."""
-
     def test_can_plan_metabat2_workflow(
         self, agent, base_resources, binning_transforms, binning_input
     ):
-        """Verify workflow generation for MetaBAT2 binning."""
         targets = TargetBuilder()
         targets.Add("sequences::metabat2_bin_fasta")
 
@@ -79,7 +61,6 @@ class TestBinningWorkflowGeneration:
     def test_can_plan_semibin2_workflow(
         self, agent, base_resources, binning_transforms, binning_input
     ):
-        """Verify workflow generation for SemiBin2 binning."""
         targets = TargetBuilder()
         targets.Add("sequences::semibin2_bin_fasta")
 
@@ -95,7 +76,6 @@ class TestBinningWorkflowGeneration:
     def test_can_plan_comebin_workflow(
         self, agent, base_resources, binning_transforms, binning_input
     ):
-        """Verify workflow generation for COMEBin binning."""
         targets = TargetBuilder()
         targets.Add("sequences::comebin_bin_fasta")
 
@@ -111,12 +91,9 @@ class TestBinningWorkflowGeneration:
 
 @pytest.mark.slow
 class TestBinningWorkflowExecution:
-    """Full E2E tests that execute workflows via Docker."""
-
     def test_metabat2_e2e(
         self, agent, base_resources, binning_transforms, binning_input
     ):
-        """Full E2E test: stage, run MetaBAT2, verify bin outputs."""
         targets = TargetBuilder()
         targets.Add("sequences::metabat2_bin_fasta")
         targets.Add("binning::metabat2_contig_to_bin_table")
@@ -129,10 +106,8 @@ class TestBinningWorkflowExecution:
         )
         assert task.ok, f"Workflow generation failed: {task}"
 
-        # Stage workflow
         agent.StageWorkflow(task, on_exist="clear")
 
-        # Run workflow
         agent.RunWorkflow(
             task,
             config_file=agent.GetNxfConfigPresets()["local"],
@@ -145,7 +120,6 @@ class TestBinningWorkflowExecution:
             },
         )
 
-        # Wait and verify
         results = wait_for_workflow(agent, task, timeout=600)
         results_path = agent.GetResultSource(task).GetPath()
 
@@ -171,7 +145,6 @@ class TestBinningWorkflowExecution:
     def test_semibin2_e2e(
         self, agent, base_resources, binning_transforms, binning_input
     ):
-        """Full E2E test: stage, run SemiBin2, verify bin outputs."""
         targets = TargetBuilder()
         targets.Add("sequences::semibin2_bin_fasta")
 
@@ -212,7 +185,6 @@ class TestBinningWorkflowExecution:
     def test_comebin_e2e(
         self, agent, base_resources, binning_transforms, binning_input
     ):
-        """Full E2E test: stage, run COMEBin, verify bin outputs."""
         targets = TargetBuilder()
         targets.Add("sequences::comebin_bin_fasta")
         targets.Add("binning::comebin_contig_to_bin_table")

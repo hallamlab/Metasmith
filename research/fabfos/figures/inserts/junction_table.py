@@ -1,22 +1,3 @@
-"""How many inserts closed on 2, 1 and 0 vector junctions.
-
-SPEC
-  The count the length figure's barcode encodes, as a table. One row per
-  junction count, plus a total: how many inserts, what fraction of the set, and
-  the median length of that group -- the last because the junction count is a
-  statement about closure and the reader's first question is whether the
-  unclosed ones are the short ones.
-
-  `inserts.csv`'s `ends` column is taken verbatim, exactly as `insert_lengths.py`
-  takes it; closure is not recomputed here (see `pieces.py`, NO BACKBONE BLAST).
-  Nothing else is derived, so this table costs one file read and needs neither
-  the pieces rebuild nor blastn.
-
-INPUT   data/fabfos/runs/scadc_fosmids/sequences/inserts/insert_metadata/inserts.csv
-ENV     mamba run -n figure-net python main/figures/inserts/junction_table.py
-OUT     cache/junction_table.{png,svg}
-        cache/junction_table.tsv
-"""
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt      # noqa: E402
@@ -25,14 +6,13 @@ import pandas as pd                  # noqa: E402
 from _common import CACHE, FAINT, INK, INSERT_META, REPO, save
 
 INSERT_TABLE = INSERT_META / "inserts.csv"
-ENDS = [2, 1, 0]                # both ends closed, one, neither
+ENDS = [2, 1, 0]
 COLS = ["N junctions", "Inserts", "% of set", "Median (kb)"]
 COL_X = [0.02, 0.46, 0.70, 1.00]
 COL_HA = ["left", "right", "right", "right"]
 
 
 def tabulate():
-    """-> a frame of one row per junction count, most closed first, plus a total."""
     ins = pd.read_csv(INSERT_TABLE)
     ins["ends"] = ins["ends"].astype(int)
     if not set(ins["ends"]) <= set(ENDS):

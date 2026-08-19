@@ -11,9 +11,6 @@ LINEAGE = "eukaryota_odb10"
 def protocol(context: ExecutionContext):
     iout = context.Output(out)
 
-    # busco --download ignores --download_path and always writes to
-    # ./busco_downloads/ relative to cwd. Download there then move.
-    # Same command either way: this tool is a plain CLI in both worlds.
     _cmd = f"""
             busco \
                 --download {LINEAGE} \

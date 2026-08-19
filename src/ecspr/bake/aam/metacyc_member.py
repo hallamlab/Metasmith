@@ -81,9 +81,6 @@ JOIN_FLOOR = 0.9
 # parse, with zero residual parse failures.
 # ---------------------------------------------------------------------------
 _BRACKET = re.compile(r"\[([^\]]*)\]")
-# `<iso><symbol><chirality><H count><charge><:map>` -- the symbol is whatever sits
-# before the first of `:`, `@`, `+`, `-`, which is why a name like `L-cysteine` does
-# not match and lands in the "unrecognised body" branch rather than being mangled.
 _BODY = re.compile(r"^(\d*)([A-Za-z][^:@+\-]*?)((?:@{1,2})?(?:H\d*)?(?:[+-]\d*)?(?::\d+)?)$")
 _RGROUP = re.compile(r"^(R\d*|X)$")
 _MAPNUM = re.compile(r":(\d+)$")
@@ -98,14 +95,12 @@ def _is_element(sym: str) -> bool:
 
 
 def _classify_body(body: str):
-    """('element' | 'rgroup' | 'named', symbol) for one bracket-atom body."""
     m = _BODY.match(body)
     if not m:
         return "named", body
     sym = m.group(2).strip()
     if _is_element(sym):
         return "element", sym
-    # `[NaH]`-shaped bodies where the H count fused into the symbol capture
     m2 = re.match(r"^([A-Za-z][a-z]?)H\d*$", sym)
     if m2 and _is_element(m2.group(1)):
         return "element", m2.group(1)
@@ -115,14 +110,6 @@ def _classify_body(body: str):
 
 
 def normalize_mapped_smiles(smi: str):
-    """(smiles, None) with R-groups dummied, or (None, residue_name) to refuse.
-
-    Refuse-not-coerce on a named residue. The rule is not "which names look
-    dangerous" -- it is that a NAME is a claim about atoms and `*` is a claim that
-    there are none, so turning one into the other is a silent deletion whatever the
-    name happens to be. Returning the name rather than a bare failure is what lets
-    the report say which residues cost how many reactions.
-    """
     named = None
     for body in _BRACKET.findall(smi):
         kind, sym = _classify_body(body)
@@ -143,11 +130,6 @@ def normalize_mapped_smiles(smi: str):
 
 
 def load_id2mnxr(reac_xref: Path) -> dict:
-    """MetaCyc reaction id -> MNXR, from the ``metacyc.reaction:`` rows of reac_xref.
-
-    Only real ``MNXR<digits>`` targets are kept; MetaNetX's ``EMPTY`` sentinel (a
-    reaction with no reconciled content) is not a reaction and is dropped.
-    """
     out = {}
     with open(reac_xref) as fh:
         for line in fh:
@@ -163,12 +145,6 @@ def load_id2mnxr(reac_xref: Path) -> dict:
 
 
 def load_rows(smiles_dat: Path, id2mnxr: dict) -> pd.DataFrame:
-    """Every ``metacyc_id <TAB> mapped_reaction_SMILES`` line that joins to an MNXR.
-
-    Returns a per-reaction frame ``[metacyc_id, mnxr, mapped_rxn_smiles]`` BEFORE the
-    per-MNXR collapse, plus is the basis for the join report. Non-joining ids are simply
-    absent (logged as a count by the caller, never special-cased).
-    """
     rows = []
     n_lines = 0
     with open(smiles_dat) as fh:
@@ -188,27 +164,16 @@ def load_rows(smiles_dat: Path, id2mnxr: dict) -> pd.DataFrame:
 
 
 def collapse_to_mnxr(df: pd.DataFrame) -> pd.DataFrame:
-    """One row per MNXR. Several MetaCyc reactions can share one MNXR (stereo/direction
-    frame variants reconciled to a single MetaNetX reaction); dedupe DETERMINISTICALLY
-    -- sort by (mnxr, metacyc_id), keep first -- mirroring ``load_mapper``'s
-    ``drop_duplicates(keep="first")``, so two MetaCyc SMILES never fight over one row.
-    """
     return (df.sort_values(["mnxr", "metacyc_id"])
               .drop_duplicates(subset="mnxr", keep="first")
               .reset_index(drop=True))
 
 
 def build(smiles_dat: Path, reac_xref: Path):
-    """Return (per_mnxr_frame, report). The frame has columns
-    ``mnxr, mapped_rxn_smiles, confidence`` -- the cached-member TSV schema.
-    """
     id2mnxr = load_id2mnxr(reac_xref)
     per_rxn = load_rows(smiles_dat, id2mnxr)
     n_lines = per_rxn.attrs.get("n_lines", len(per_rxn))
 
-    # Normalise BEFORE the per-MNXR collapse, so that when two MetaCyc frames map to
-    # one MNXR and only one of them names a residue, the usable frame is the one kept
-    # rather than whichever sorted first.
     residues = Counter()
     keep, kept_smi = [], []
     for r in per_rxn.itertuples(index=False):
@@ -227,8 +192,6 @@ def build(smiles_dat: Path, reac_xref: Path):
     per_mnxr["confidence"] = CURATED_CONFIDENCE
 
     join_frac = (len(per_rxn) / n_lines) if n_lines else 0.0
-    # Loud floor: a curated member that joins almost nothing is a broken crosswalk, not
-    # a data property -- the direction lane's ``curated.py`` guards the same way.
     assert join_frac >= JOIN_FLOOR, (
         f"metacyc: only {join_frac:.1%} of atom-mapping lines joined to an MNXR "
         f"(floor {JOIN_FLOOR:.0%}) -- the reac_xref crosswalk is likely broken, not "
@@ -247,16 +210,12 @@ def build(smiles_dat: Path, reac_xref: Path):
 
 
 def load_member(smiles_dat: Path, reac_xref: Path) -> dict:
-    """``{mnxr -> (mapped_rxn_smiles, confidence)}`` -- drop-in for ``load_mapper``'s
-    output shape, so the combiner treats MetaCyc as just another member."""
     per_mnxr, _ = build(Path(smiles_dat), Path(reac_xref))
     return {r.mnxr: (r.mapped_rxn_smiles, float(r.confidence))
             for r in per_mnxr.itertuples(index=False)}
 
 
 def main(argv=None):
-    # No default paths. The originals pointed into the sibling project's data tree; here
-    # the inputs are staged by the planner and named on the command line.
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--smiles-dat", type=Path, required=True)

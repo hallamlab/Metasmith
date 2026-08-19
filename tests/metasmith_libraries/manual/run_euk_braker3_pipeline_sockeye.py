@@ -1,13 +1,4 @@
 #!/usr/bin/env python
-"""Run braker3 + count tables pipeline on Sockeye.
-
-Provides merged BAM, STAR BAMs, and assembly from previous runs. Pipeline (6 steps):
-  stringtie_assemble (parallel with braker3)
-  braker3 → stringtie_merge → stringtie_quant → pydeseq2 + stringtie_count_matrix
-
-Targets: braker3_gff, braker3_proteins, stringtie_gtf, merged_gtf,
-         stringtie_quant_gtf, gene_count_table, diff_count_table
-"""
 import sys
 import time
 sys.stdout.reconfigure(line_buffering=True)
@@ -22,19 +13,14 @@ from metasmith.python_api import (
 
 MLIB = Path(__file__).resolve().parent.parent.parent
 
-# Archived data on Sockeye (persistent arc storage)
 ARC_DATA = Path("/arc/project/st-shallam-1/pwy_group/data/porphyridium_purpureum")
 ARC_INTER = ARC_DATA / "eguEpdhP-intermediates"
-# Assembly
 PREV_ASSEMBLY = ARC_INTER / "assembly/1-1-1.f1CMorcneUoLGMna-O4PhHAkd.fna"
 
-# Merged BAM cache on Sockeye scratch (single all-sample BAM).
-# Populated from merge-only run msrLr7rq to avoid the 6+3 split inputs.
 PREV_MERGED_BAMS = [
     Path("/scratch/st-shallam-1/pwy_group/metasmith/cache/merged_bams/porphyridium_all9_iNlpm1XR.bam"),
 ]
 
-# 9 STAR BAMs (needed for stringtie_quant → count tables)
 PREV_BAMS = [
     ARC_DATA / "star_bams/1-1-1.g3ah0QAiGjmgmOQv-9mrjFffM.bam",
     ARC_DATA / "star_bams/1-1-1.SZV4oNiEOp2dIAHQ-9mrjFffM.bam",
@@ -46,7 +32,6 @@ PREV_BAMS = [
     ARC_DATA / "star_bams/1-1-1.ZjUpCov8SiawjbWC-9mrjFffM.bam",
     ARC_DATA / "star_bams/1-1-1.Grq6HkY9LZzPhIwC-9mrjFffM.bam",
 ]
-
 
 
 def main():
@@ -79,21 +64,17 @@ def main():
     for tl in ["sequences.yml", "transcriptomics.yml"]:
         inputs.AddTypeLibrary(MLIB / "data_types" / tl)
 
-    # Experiment grouping node
     experiment = inputs.AddValue(
         "porphyridium_experiment.txt",
         "porphyridium_transcriptomics",
         "transcriptomics::experiment",
     )
 
-    # Assembly (skips NCBI download)
     inputs.AddItem(PREV_ASSEMBLY, "sequences::assembly", parents={experiment})
 
-    # Merged BAMs (cached; skips merge_bams → braker3 uses these)
     for bam in PREV_MERGED_BAMS:
         inputs.AddItem(bam, "transcriptomics::merged_bam", parents={experiment})
 
-    # Individual STAR BAMs (needed for stringtie_assemble + stringtie_quant)
     for bam in PREV_BAMS:
         inputs.AddItem(bam, "transcriptomics::star_bam", parents={experiment})
 
@@ -141,7 +122,7 @@ def main():
     print("\n=== Waiting for completion ===")
     results_path = smith.GetResultSource(task).GetPath()
     t0 = time.time()
-    timeout = 259200  # 72h (Braker3 can be slow)
+    timeout = 259200
     last_print = 0
     while not (results_path / "_metadata").exists():
         elapsed = time.time() - t0

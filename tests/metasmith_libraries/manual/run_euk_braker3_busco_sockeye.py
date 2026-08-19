@@ -1,9 +1,4 @@
 #!/usr/bin/env python
-"""Run Braker3 gene prediction + BUSCO completeness on Sockeye via SLURM.
-
-Uses STAR BAMs + assembly from previous transcriptomics run (eguEpdhP)
-and pprodigal ORFs from annotation run (l16XOO97).
-"""
 import sys
 import time
 sys.stdout.reconfigure(line_buffering=True)
@@ -18,14 +13,11 @@ from metasmith.python_api import (
 
 MLIB = Path(__file__).resolve().parent.parent.parent
 
-# Previous runs on Sockeye
 PREV_RUN = Path("/scratch/st-shallam-1/pwy_group/metasmith/runs/eguEpdhP")
 ANNOT_RUN = Path("/scratch/st-shallam-1/pwy_group/metasmith/runs/l16XOO97")
 
-# Assembly from eguEpdhP
 PREV_ASSEMBLY = PREV_RUN / "nxf_work/66/3de2dd0280f3835edc3892d31c4a03/1-1-1.f1CMorcneUoLGMna-O4PhHAkd.fna"
 
-# 9 STAR BAMs from eguEpdhP (one per sample)
 PREV_BAMS = [
     PREV_RUN / "nxf_work/c7/27b072e68fe94432f4bd5aeff7853a/1-1-1.g3ah0QAiGjmgmOQv-9mrjFffM.bam",
     PREV_RUN / "nxf_work/96/bdea4f2c6ee0a1f9cdd87aab997b6a/1-1-1.SZV4oNiEOp2dIAHQ-9mrjFffM.bam",
@@ -38,7 +30,6 @@ PREV_BAMS = [
     PREV_RUN / "nxf_work/08/ccf1ede8ced5db4d626104e6a32976/1-1-1.Grq6HkY9LZzPhIwC-9mrjFffM.bam",
 ]
 
-# ORFs from pprodigal (l16XOO97)
 PREV_ORFS = ANNOT_RUN / "nxf_work/96/db239ab848b9bd6158e47a822a4cd6/1-1-1.SS41y8j3VqT9mmpP-28NRtNMg.faa"
 
 
@@ -74,24 +65,19 @@ def main():
     for tl in ["sequences.yml", "transcriptomics.yml", "annotation.yml"]:
         inputs.AddTypeLibrary(MLIB / "data_types" / tl)
 
-    # Experiment grouping node
     experiment = inputs.AddValue(
         "porphyridium_experiment.txt",
         "porphyridium_transcriptomics",
         "transcriptomics::experiment",
     )
 
-    # Assembly
     inputs.AddItem(PREV_ASSEMBLY, "sequences::assembly", parents={experiment})
 
-    # STAR BAMs (for merge_bams → braker3)
     for bam in PREV_BAMS:
         inputs.AddItem(bam, "transcriptomics::star_bam", parents={experiment})
 
-    # ORFs (for BUSCO protein mode)
     inputs.AddItem(PREV_ORFS, "sequences::orfs", parents={experiment})
 
-    # BUSCO lineage download trigger
     inputs.AddValue(
         "busco_source.txt",
         "eukaryota_odb10",
@@ -135,7 +121,7 @@ def main():
     print("\n=== Waiting for completion ===")
     results_path = smith.GetResultSource(task).GetPath()
     t0 = time.time()
-    timeout = 259200  # 72h (Braker3 can be slow)
+    timeout = 259200
     last_print = 0
     while not (results_path / "_metadata").exists():
         elapsed = time.time() - t0

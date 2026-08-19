@@ -10,23 +10,10 @@ base_dir = Path("./cache")
 agent_home = Source.FromLocal((base_dir/"local_home").resolve())
 smith = Agent(
     home = agent_home,
-    # runtime=Runtime.APPTAINER,
     runtime=Runtime.DOCKER,
 )
 
-# agent_home = SshSource(host="sockeye", path=Path("/scratch/st-shallam-1/pwy_group/metasmith")).AsSource()
-# smith = Agent(
-#     home = agent_home,
-#     runtime=Runtime.APPTAINER,
-#     setup_commands=[
-#         'module load gcc/9.4.0',
-#         'module load apptainer/1.3.1',
-#     ]
-# )
-# smith.Deploy(assertive=True)
 
-# import ipynbname
-# notebook_name = ipynbname.name()
 notebook_name = Path(__file__).stem
 test="prodigal"
 local = Path("./cache/example_assemblies").absolute()
@@ -42,13 +29,11 @@ except:
     inputs.AddItem(local/"Ana_PS.fna", "sequences::assembly")
     inputs.Save()
 
-# inputs = DataInstanceLibrary.Load(in_dir)
 
 resources = [
     DataInstanceLibrary.Load(f"../resources/{n}")
     for n in [
         "env",
-        # "lib",
     ]
 ]
 
@@ -56,7 +41,6 @@ transforms = [
     TransformInstanceLibrary.Load(f"../transforms/{n}")
     for n in [
         "logistics",
-        # "assembly",
         "metagenomics",
     ]
 ]
@@ -71,17 +55,13 @@ task = smith.GenerateWorkflow(
     transforms=transforms,
     targets=targets,
 )
-# task.SaveAs(Source.FromLocal(Path("./cache/test.task").absolute()))
-# p = task.plan._solver_result.RenderDAG(base_dir/f"{notebook_name}/dag_raw")
 p = task.plan.RenderDAG(base_dir/f"{notebook_name}/dag")
 print(task.ok, len(task.plan.steps))
 print(p)
 print(f"task: {task.GetKey()}, input {in_dir}")
 
-# smith.StageWorkflow(task, on_exist="update", verify_external_paths=True)
 smith.StageWorkflow(task, on_exist="clear", verify_external_paths=False)
 
-# with open("../secrets/slurm_account_fir") as f:
 with open("../secrets/slurm_account_sockeye") as f:
     SLURM_ACCOUNT = f.readline()
 params = dict(
@@ -94,18 +74,12 @@ params = dict(
 )
 smith.RunWorkflow(
     task=task,
-    # config_file=smith.GetNxfConfigPresets()["slurm"],
     config_file=smith.GetNxfConfigPresets()["local"],
     params=params,
-    # stub_delay=1,
     resource_overrides={
         "all": Resources(
             memory=Size.MB(1),
             cpus=15,
         ),
-        # transforms[0]["getNcbiSra.py"]: Resources(
-        #     memory=Size.GB(2),
-        #     cpus=5,
-        # ),
     }
 )

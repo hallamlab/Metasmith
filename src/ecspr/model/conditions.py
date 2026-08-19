@@ -1,37 +1,3 @@
-"""The conditions table: one row per thing to measure.
-
-A condition is TERMINALS plus a MASK. The terminals say where current is injected
-and where it is read; the mask says which GPR rows are in the network while that
-happens. Nothing else. That is why ``ecspr draw`` can emit its null pool as a
-conditions table indistinguishable from a study's own -- the null arm is then the
-identical probe command with a different ``--conditions`` file, and "one pool
-shared across every arm" is file identity rather than a convention someone has to
-keep.
-
-COLUMNS
--------
-Required: ``condition_id``.
-Terminals: ``element``, ``source_hub``, ``sink_hub`` (``|``-joined for several),
-``media``. Missing ones fall back to the command line's defaults, so a table that
-measures one substrate against one precursor set need not repeat it per row.
-``readout_hub`` is a FILTER, not a terminal: under the universal ground every
-metabolite has a draw, and which ones are written out changes no physics. It is
-separate from ``sink_hub`` because naming a metabolite as a sink gives it a PORT
-to ground instead of a leak, which does change the answer -- reading a metabolite
-and porting it are two different asks and one column cannot mean both.
-Mask, three ``(column, values)`` pairs with the values ``|``-joined:
-``background_column`` / ``background_values`` is what is always in (the host),
-``mask_column`` / ``mask_values`` is what this condition adds, and
-``drop_column`` / ``drop_values`` withholds rows the other two let through.
-See :mod:`ecspr.model.gpr` for the semantics and why the background is stated.
-Study metadata, carried through and never interpreted here: ``arm``, ``cohort``,
-``is_control``, ``stratum``, ``n_units``, ``draw_id``.
-
-``is_control`` is the one field scoring reads. A control is a unit the study
-asserts is a no-op; its mask reaches no atom-mapped reaction, so it must return
-the baseline exactly, and the spread over the controls is therefore the numerical
-floor every z-score has to clear. See :mod:`ecspr.model.scoring`.
-"""
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -92,12 +58,6 @@ class Condition:
 
 def read(path, *, element=None, source=None, sinks=(), readouts=(),
          media="") -> list:
-    """A conditions file (parquet or TSV) -> ``[Condition, ...]``.
-
-    The command line's ``--element`` / ``--source`` / ``--sinks`` are DEFAULTS for
-    rows that do not carry their own; a row that names its own terminals always
-    wins, because the table is the experiment's claim about what it is testing.
-    """
     p = Path(path)
     df = (pd.read_parquet(p) if p.suffix == ".parquet"
           else pd.read_csv(p, sep="\t" if p.suffix in (".tsv", ".txt") else ","))
@@ -130,7 +90,6 @@ def read(path, *, element=None, source=None, sinks=(), readouts=(),
 
 
 def write(conditions, path):
-    """``[Condition, ...]`` -> a conditions file. What ``ecspr draw`` emits."""
     rows = []
     for c in conditions:
         r = dict(condition_id=c.condition_id, element=c.element,
@@ -162,9 +121,5 @@ def write(conditions, path):
 
 def single(condition_id, *, element, source, sinks, readouts=(),
            media="") -> Condition:
-    """The explicit ``--source`` / ``--sinks`` form: the whole GPR table as one
-    unit, with NO mask. A one-shot probe does not accept a mask on purpose --
-    masking is what a conditions table is for, and two ways to say it is exactly
-    the drift this package exists to end."""
     return Condition(condition_id=condition_id, element=element, source_hub=source,
                      sinks=tuple(sinks), readouts=tuple(readouts), media=media)

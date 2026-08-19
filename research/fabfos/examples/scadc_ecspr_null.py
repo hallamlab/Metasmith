@@ -105,11 +105,7 @@ echo "SBATCH_DONE rc=$?"
 
 
 def write_observed_n() -> Path:
-    """N buckets are read off THIS run's own results.parquet, never a prior
-    run's fixed set -- see the module docstring."""
     import struct
-    # pandas isn't guaranteed local; read the parquet's n_orfs column with
-    # pyarrow if available, else refuse rather than guess.
     try:
         import pyarrow.parquet as pq
     except ImportError:
@@ -134,9 +130,6 @@ def stage(host: str) -> None:
     for src in (REFS / "atom_pairs.parquet", REFS / "direction_ratios.parquet",
                 CONDITIONS, HOST_GEM, observed_n):
         subprocess.run(["scp", "-q", str(src), f"{host}:{REMOTE_REFS}/"], check=True)
-    # The whole package, not a handful of modules: `ecspr` imports itself by
-    # package path now, so a partial copy is an ImportError rather than a
-    # half-working engine. Pure python, so scp -r is the whole of "install".
     subprocess.run(["ssh", host, f"rm -rf {REMOTE_LIB}/ecspr"], check=True)
     subprocess.run(["scp", "-qr", str(ECSPR_PKG), f"{host}:{REMOTE_LIB}/"], check=True)
     subprocess.run(["scp", "-q", str(LOCAL_SCRIPT), f"{host}:{REMOTE_WORK}/"],
@@ -164,7 +157,6 @@ def run(host: str, pilot: bool) -> int:
         return 1
     remote_sbatch = f"{REMOTE_WORK}/scadc_ecspr_null_{'pilot' if pilot else 'full'}.sbatch"
     script = sbatch_script(pilot)
-    # heredoc over ssh_once -- one round trip, writes then submits.
     submit = ssh_once(
         host,
         f"cat > {remote_sbatch} <<'EOF'\n{script}EOF\n"

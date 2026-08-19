@@ -1,29 +1,4 @@
 #!/usr/bin/env python3
-"""Prove the legacy ProteinBERT rows are in FASTA ORDER, by content.
-
-    python verify_pbert_order.py <orfs_dir> <annot1> <fresh_dir> <samples...>
-
-THE ROW-COUNT AUDIT CANNOT SETTLE THIS. Row count is invariant under every
-permutation, so `rows(parquet) == records(faa)` passes on a stack whose rows
-belong to different ORFs than the repack will assign them. And the producer
-never promised fasta order in the first place: `proteinbert.py`'s combiner
-concatenates the embedder's chunk `.npy` and `.csv` files in LEXICOGRAPHIC
-filename order and guarantees only stack-row i == index-row i -- with
-`chunk_10` sorting before `chunk_2`. The index that would have recorded the
-order was not retained for these files.
-
-If the order is wrong, every downstream artifact is a full, non-empty,
-schema-valid, four-channel GPR table in which the embedding lane's ORF
-attributions are silently wrong. Nothing later catches it.
-
-So: re-embed a sample through the SAME pinned image the legacy pass used, and
-for each fresh row find its nearest legacy row by cosine. Order is preserved
-exactly when that argmax is the identity permutation. A near-miss is not a pass
--- a permuted stack still matches perfectly, just at the wrong index.
-
-`<fresh_dir>` holds `<sample>.parquet` written by the pinned embedder; the
-sbatch beside this file produces them.
-"""
 from __future__ import annotations
 
 import sys

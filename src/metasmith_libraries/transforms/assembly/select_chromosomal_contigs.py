@@ -1,14 +1,3 @@
-"""
-Length-filter "binner" for long-read metagenome assemblies.
-
-Streams a hifiasm-meta assembly and emits one FASTA per surviving contig as
-`sequences::chromosomal_contig`. Each emitted contig is treated downstream as
-a putative_genome (single-organism) so CheckM and GTDB-Tk can run on it
-without going through an actual binner.
-
-Threshold is a parameter (`min_length`, default 500_000 bp). No quality
-filtering beyond length.
-"""
 from pathlib import Path
 from metasmith.python_api import *
 

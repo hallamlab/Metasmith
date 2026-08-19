@@ -17,7 +17,6 @@ def protocol(context: ExecutionContext):
     icentroids = context.Output(centroids_out)
     itable     = context.Output(table_out)
 
-    # Read identity threshold from the typed input file
     min_id = open(iidentity.local).readline().strip()
 
     threads = context.params.get('cpus')
@@ -26,8 +25,6 @@ def protocol(context: ExecutionContext):
     memory = context.params.get('memory')
     memory = "" if memory is None else f"--memory-limit {int(float(memory))-8}G"
 
-    # Build diamond database and run linclust inside container
-    # Same command either way: this tool is a plain CLI in both worlds.
     _cmd = f"""\
             diamond makedb --in {iorfs.container} -d orfs_db \
             && diamond linclust \
@@ -41,7 +38,6 @@ def protocol(context: ExecutionContext):
         .ifContainerDo(env=image, cmd=_cmd) \
         .ifVirtualEnvDo(env=image, cmd=_cmd)
 
-    # Parse cluster table to extract unique centroid IDs (column 1)
     centroid_ids = set()
     with open(Path(CLUSTERS_TSV)) as f:
         for line in f:
@@ -49,7 +45,6 @@ def protocol(context: ExecutionContext):
             if fields:
                 centroid_ids.add(fields[0])
 
-    # Read input FASTA and write only centroid sequences to output
     with open(iorfs.local) as fin, open(icentroids.local, "w") as fout:
         writing = False
         for line in fin:
@@ -59,7 +54,6 @@ def protocol(context: ExecutionContext):
             if writing:
                 fout.write(line)
 
-    # Copy cluster table to output path
     import shutil
     shutil.copy2(Path(CLUSTERS_TSV), itable.local)
 

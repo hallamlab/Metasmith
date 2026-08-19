@@ -1,15 +1,3 @@
-"""
-End-to-end tests for functional annotation transforms.
-
-Tests for: interproscan, kofamscan, proteinbert, deepec, diamond_uniref50,
-           bakta_noncoding, deeptfactor, predictf
-
-These tests verify that annotation workflows can be:
-1. Generated (workflow planning)
-2. Staged to the agent
-3. Executed via local Docker
-4. Produce valid annotation outputs
-"""
 import pytest
 import time
 from pathlib import Path
@@ -31,9 +19,8 @@ from conftest import (
     uniref50_db_input,
     MLIB,
     TEST_DATA_DIR,
-)  # bakta_db_input, predictf_db_input loaded via conftest autouse
+)
 
-# NIES_102 reference paths for validation
 NIES_102_ORFS = Path("/home/tony/agentic_workspace/main/cyanoverse/tasks/search-transcription-factors/results/prodigal/NIES_102.faa")
 NIES_102_ASSEMBLY = Path("/home/tony/agentic_workspace/data/cyanoverse/raw/culture_collections/NIES_102.fasta")
 PHASE3_DEEPTFACTOR_REF = Path("/home/tony/agentic_workspace/main/cyanoverse/tasks/search-transcription-factors/results/phase3_tool_evaluation/deeptfactor/prediction_result.txt")
@@ -45,7 +32,6 @@ CYANOVERSE_PILER_CRASH = TEST_DATA_DIR / "DRR287286.fna"  # piler crashes with S
 
 @pytest.fixture(scope="module")
 def annotation_transforms(mlib):
-    """Load functional annotation transforms."""
     return [
         TransformInstanceLibrary.Load(mlib / "transforms/functionalAnnotation"),
     ]
@@ -53,7 +39,6 @@ def annotation_transforms(mlib):
 
 @pytest.fixture
 def orfs_input(tmp_inputs, test_data_dir):
-    """Create input library with ORFs (protein sequences)."""
     inputs = tmp_inputs(["sequences.yml", "annotation.yml"])
 
     orfs_path = test_data_dir / "small_orfs.faa"
@@ -69,7 +54,6 @@ def orfs_input(tmp_inputs, test_data_dir):
 
 @pytest.fixture
 def annotation_resources(mlib, base_resources):
-    """Load annotation-specific resources."""
     resources = list(base_resources)
 
     lib_path = mlib / "resources/lib"
@@ -84,12 +68,9 @@ def annotation_resources(mlib, base_resources):
 
 
 class TestAnnotationWorkflowGeneration:
-    """Tests for workflow generation (planning only)."""
-
     def test_can_plan_interproscan_workflow(
         self, agent, annotation_resources, annotation_transforms, orfs_input
     ):
-        """Verify workflow generation for InterProScan."""
         targets = TargetBuilder()
         targets.Add("annotation::interproscan_json")
 
@@ -106,7 +87,6 @@ class TestAnnotationWorkflowGeneration:
     def test_can_plan_kofamscan_workflow(
         self, agent, annotation_resources, annotation_transforms, orfs_input
     ):
-        """Verify workflow generation for KofamScan."""
         targets = TargetBuilder()
         targets.Add("annotation::kofamscan_results")
 
@@ -122,7 +102,6 @@ class TestAnnotationWorkflowGeneration:
     def test_can_plan_proteinbert_workflow(
         self, agent, annotation_resources, annotation_transforms, orfs_input
     ):
-        """Verify workflow generation for ProteinBERT."""
         targets = TargetBuilder()
         targets.Add("annotation::proteinbert_embeddings")
 
@@ -138,7 +117,6 @@ class TestAnnotationWorkflowGeneration:
     def test_can_plan_deepec_workflow(
         self, agent, annotation_resources, annotation_transforms, orfs_input
     ):
-        """Verify workflow generation for DeepEC."""
         targets = TargetBuilder()
         targets.Add("annotation::deepec_predictions")
 
@@ -154,7 +132,6 @@ class TestAnnotationWorkflowGeneration:
     def test_can_plan_diamond_uniref50_workflow(
         self, agent, annotation_resources, annotation_transforms, orfs_input
     ):
-        """Verify workflow generation for DIAMOND UniRef50."""
         targets = TargetBuilder()
         targets.Add("annotation::diamond_uniref50_results")
 
@@ -165,14 +142,12 @@ class TestAnnotationWorkflowGeneration:
             targets=targets,
         )
 
-        # Skip if UniRef50 database isn't available
         if not task.ok:
             pytest.skip("DIAMOND UniRef50 workflow requires database")
 
     def test_can_plan_deeptfactor_workflow(
         self, agent, annotation_resources, annotation_transforms, orfs_input
     ):
-        """Verify workflow generation for DeepTFactor."""
         targets = TargetBuilder()
         targets.Add("annotation::deeptfactor_results")
 
@@ -188,7 +163,6 @@ class TestAnnotationWorkflowGeneration:
     def test_can_plan_predictf_workflow(
         self, agent, annotation_resources, annotation_transforms, orfs_input
     ):
-        """Verify workflow generation for PredicTF."""
         targets = TargetBuilder()
         targets.Add("annotation::predictf_results")
 
@@ -199,14 +173,12 @@ class TestAnnotationWorkflowGeneration:
             targets=targets,
         )
 
-        # Skip if PredicTF database isn't available
         if not task.ok:
             pytest.skip("PredicTF workflow requires database")
 
     def test_can_plan_ptools_annotation_gather_workflow(
         self, agent, annotation_resources, annotation_transforms, orfs_input
     ):
-        """Verify the combiner can be planned: orfs -> {deepec, kofamscan, diamond_uniref50} -> ptools_annotation_table."""
         targets = TargetBuilder()
         targets.Add("annotation::ptools_annotation_table")
 
@@ -229,7 +201,6 @@ class TestAnnotationWorkflowGeneration:
     def test_can_plan_pathologic_workflow(
         self, agent, annotation_resources, annotation_transforms, orfs_input
     ):
-        """Verify the full pathologic chain plans through to pgdb_archive."""
         targets = TargetBuilder()
         targets.Add("annotation::pgdb_archive")
         targets.Add("annotation::pgdb_csv_tables")
@@ -250,8 +221,6 @@ class TestAnnotationWorkflowGeneration:
     def test_can_plan_bakta_noncoding_workflow(
         self, agent, annotation_resources, annotation_transforms, orfs_input, tmp_inputs, test_data_dir
     ):
-        """Verify workflow generation for Bakta non-coding annotation."""
-        # Bakta takes assembly input, not orfs
         assembly_inputs = tmp_inputs(["sequences.yml", "annotation.yml"])
 
         assembly_path = test_data_dir / "small_assembly.fna"
@@ -272,19 +241,15 @@ class TestAnnotationWorkflowGeneration:
             targets=targets,
         )
 
-        # Skip if Bakta database isn't available
         if not task.ok:
             pytest.skip("Bakta workflow requires database")
 
 
 @pytest.mark.slow
 class TestAnnotationWorkflowExecution:
-    """Full E2E tests that execute workflows via Docker."""
-
     def test_interproscan_e2e(
         self, agent, annotation_resources, annotation_transforms, orfs_input, interproscan_data_input
     ):
-        """Full E2E test: stage, run InterProScan, verify JSON/GFF outputs."""
         targets = TargetBuilder()
         targets.Add("annotation::interproscan_json")
         targets.Add("annotation::interproscan_gff")
@@ -332,7 +297,6 @@ class TestAnnotationWorkflowExecution:
     def test_kofamscan_e2e(
         self, agent, annotation_resources, annotation_transforms, orfs_input, kofam_db_input
     ):
-        """Full E2E test: stage, run KofamScan, verify results."""
         targets = TargetBuilder()
         targets.Add("annotation::kofamscan_results")
 
@@ -370,7 +334,6 @@ class TestAnnotationWorkflowExecution:
     def test_deepec_e2e(
         self, agent, annotation_resources, annotation_transforms, orfs_input
     ):
-        """Full E2E test: stage, run DeepEC, verify predictions."""
         targets = TargetBuilder()
         targets.Add("annotation::deepec_predictions")
 
@@ -408,7 +371,6 @@ class TestAnnotationWorkflowExecution:
     def test_proteinbert_e2e(
         self, agent, annotation_resources, annotation_transforms, orfs_input
     ):
-        """Full E2E test: stage, run ProteinBERT, verify embeddings."""
         targets = TargetBuilder()
         targets.Add("annotation::proteinbert_embeddings")
         targets.Add("annotation::proteinbert_index")
@@ -452,7 +414,6 @@ class TestAnnotationWorkflowExecution:
     def test_diamond_uniref50_e2e(
         self, agent, annotation_resources, annotation_transforms, orfs_input, uniref50_db_input
     ):
-        """Full E2E test: stage, run DIAMOND UniRef50, verify BLAST6 results."""
         targets = TargetBuilder()
         targets.Add("annotation::diamond_uniref50_results")
 
@@ -489,7 +450,6 @@ class TestAnnotationWorkflowExecution:
     def test_deeptfactor_e2e(
         self, agent, annotation_resources, annotation_transforms, tmp_inputs
     ):
-        """Full E2E test: run DeepTFactor on NIES_102, compare against Phase 3 reference."""
         if not NIES_102_ORFS.exists():
             pytest.skip("NIES_102 ORFs not available")
 
@@ -535,14 +495,11 @@ class TestAnnotationWorkflowExecution:
                 content = full_path.read_text()
                 lines = content.strip().split("\n")
 
-                # Check TSV format: 3 columns (sequence_ID, prediction, score)
                 header = lines[0].split("\t")
                 assert len(header) == 3, f"Expected 3 columns, got {len(header)}: {header}"
 
-                # Check line count matches Phase 3 (~5678 = header + 5677 predictions)
                 assert abs(len(lines) - 5678) < 100, f"Expected ~5678 lines, got {len(lines)}"
 
-                # Check TF count (~309)
                 tf_count = sum(1 for l in lines[1:] if l.split("\t")[1] == "True")
                 assert 200 < tf_count < 500, f"Expected ~309 TFs, got {tf_count}"
 
@@ -551,7 +508,6 @@ class TestAnnotationWorkflowExecution:
     def test_bakta_noncoding_e2e(
         self, agent, annotation_resources, annotation_transforms, tmp_inputs, bakta_db_input
     ):
-        """Full E2E test: run Bakta non-coding on NIES_102 assembly."""
         if not NIES_102_ASSEMBLY.exists():
             pytest.skip("NIES_102 assembly not available")
 
@@ -597,7 +553,6 @@ class TestAnnotationWorkflowExecution:
                 found_gff = True
                 assert full_path.exists(), f"GFF output missing: {full_path}"
                 content = full_path.read_text()
-                # Should contain non-coding features but zero CDS
                 assert "##gff-version" in content, "Not valid GFF3"
                 assert "CDS" not in content, "Bakta non-coding output should not contain CDS"
 
@@ -611,10 +566,6 @@ class TestAnnotationWorkflowExecution:
     def test_bakta_noncoding_piler_success(
         self, agent, annotation_resources, annotation_transforms, tmp_inputs, bakta_db_input
     ):
-        """E2E: bakta with isolated PILER-CR on a sample where piler succeeds.
-
-        Uses NIES_102 (complete cyanobacterial genome) which has CRISPR arrays.
-        """
         if not NIES_102_ASSEMBLY.exists():
             pytest.skip(f"Test assembly not available: {NIES_102_ASSEMBLY}")
 
@@ -660,7 +611,6 @@ class TestAnnotationWorkflowExecution:
                 content = full_path.read_text()
                 assert "##gff-version" in content, "Not valid GFF3"
                 assert "CDS" not in content, "Non-coding output should not contain CDS"
-                # PILER-CR ran in isolation and should have contributed CRISPR entries
                 assert "PILER-CR" in content, "PILER-CR CRISPR entries missing from GFF3"
 
         assert found_gff, "No Bakta GFF output found"
@@ -668,10 +618,6 @@ class TestAnnotationWorkflowExecution:
     def test_bakta_noncoding_piler_crash(
         self, agent, annotation_resources, annotation_transforms, tmp_inputs, bakta_db_input
     ):
-        """E2E: bakta with isolated PILER-CR on a sample where piler crashes (SIGABRT).
-
-        The transform should complete successfully — bakta output intact, no CRISPR entries.
-        """
         if not CYANOVERSE_PILER_CRASH.exists():
             pytest.skip(f"Test assembly not available: {CYANOVERSE_PILER_CRASH}")
 
@@ -731,7 +677,6 @@ class TestAnnotationWorkflowExecution:
     def test_predictf_e2e(
         self, agent, annotation_resources, annotation_transforms, tmp_inputs, predictf_db_input
     ):
-        """Full E2E test: run PredicTF on NIES_102, compare against Phase 3 reference."""
         if not NIES_102_ORFS.exists():
             pytest.skip("NIES_102 ORFs not available")
 
@@ -778,7 +723,6 @@ class TestAnnotationWorkflowExecution:
                 assert full_path.exists(), f"TF results missing: {full_path}"
                 content = full_path.read_text()
                 lines = content.strip().split("\n")
-                # Phase 3 had 20 high-confidence TFs + header
                 data_lines = [l for l in lines if not l.startswith("#")]
                 assert 10 < len(data_lines) < 50, f"Expected ~20 TFs, got {len(data_lines)}"
 

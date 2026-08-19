@@ -89,8 +89,8 @@ from scadc_ecspr_null_draw import (  # noqa: E402  -- the rule, not a copy of it
 METAG = ROOT / "data" / "fabfos" / "runs" / "scadc_metagenome"
 GPR4 = METAG / "gpr" / "gpr_4lane.parquet"
 ORFS_CSV = METAG / "sequences" / "metag.orfs.csv"
-NULLS = METAG / "nulls"          # the draws
-SCORED = METAG / "ecspr"         # the observed run scored against them
+NULLS = METAG / "nulls"
+SCORED = METAG / "ecspr"
 HOST_GEM = ROOT / "data" / "fabfos" / "benchmarks" / "hosts" / "e_coli_epi300" / "gpr_gem.parquet"
 
 FULL_K = 1000
@@ -101,14 +101,6 @@ CSV_COLS = ["style", "n_rep", "iter", "n_drawn", "condition_id", "metric", "delt
 
 
 def ecspr_dir() -> Path:
-    """The observed run's own directory.
-
-    Two paths are live: `data/scadc/ecspr/` is where the measurement was
-    written, `data/fabfos/runs/scadc_ecspr/` is where the `data/fabfos/` reorg put
-    the run collection and where the older drivers still point. Neither is
-    DVC-pinned. Resolved rather than assumed, so this script does not silently
-    score against an empty directory.
-    """
     for c in (ROOT / "data" / "fabfos" / "runs" / "scadc_ecspr", ROOT / "data" / "scadc" / "ecspr"):
         if (c / "results.parquet").exists():
             return c
@@ -117,7 +109,6 @@ def ecspr_dir() -> Path:
         "data/scadc/ecspr/ -- this null has nothing to be the null FOR")
 
 
-# ------------------------------------------------------------------- workers
 _W: dict = {}
 
 
@@ -164,7 +155,6 @@ def _solve_draw(task):
     return rows
 
 
-# --------------------------------------------------------------------- draws
 def already_done(path: Path) -> set:
     done = set()
     if not path.exists():
@@ -187,8 +177,6 @@ def run_draws(k: int, workers: int) -> int:
     NULLS.mkdir(parents=True, exist_ok=True)
     out = NULLS / "draws.csv"
 
-    # The host baseline, in the parent, before any fork: it is subtracted from
-    # every draw, so it must be ONE number rather than one per worker.
     from ecspr.model.build import load_direction_ratios, load_pairs  # noqa: F401
     host_mnxr = sorted(pd.read_parquet(HOST_GEM).mnxr.dropna().unique().tolist())
     _init(conditions, ratios_path, pairs_path, host_mnxr, (0.0, [0.0]))
@@ -198,14 +186,13 @@ def run_draws(k: int, workers: int) -> int:
     host_clr = clr(np.array([host_delivered[m] / hs if hs > 0 else 0.0
                              for m in _W["sink_hubs"]]))
     print(f"[null] host baseline total={host_total:.6g} ({time.time()-t0:.1f}s)", flush=True)
-    _W.clear()          # drop the pair table before forking; workers load their own
+    _W.clear()
 
     ctx = mp.get_context("spawn")
     pool = ctx.Pool(workers, initializer=_init,
                     initargs=(conditions, ratios_path, pairs_path, host_mnxr,
                               (host_total, host_clr.tolist())))
 
-    # Only now the large structures, so nothing above is inherited.
     print(f"[null] loading {GPR4.relative_to(ROOT)}", flush=True)
     gpr = pd.read_parquet(GPR4)
     lanes = sorted(gpr["channel"].unique().tolist())
@@ -241,10 +228,6 @@ def run_draws(k: int, workers: int) -> int:
                             print(f"[null] SKIP D n={n_rep} iter={it}: no contig has "
                                   f">= {n_rep} ORFs", flush=True)
                             continue
-                    # `resolve_weights` with an EMPTY host baseline: what the draw
-                    # ADDS is what crosses to the worker. Adding it to the host
-                    # dict here instead would ship 2,290 identical entries 26,000
-                    # times, which is the pickling cost, not the solve.
                     yield (style, n_rep, it, len(drawn),
                            resolve_weights(drawn, per_orf, {}))
 
@@ -275,10 +258,6 @@ def run_draws(k: int, workers: int) -> int:
     return 0
 
 
-# ----------------------------------------------------------------------- fir
-# The same 26,000 draws as a SLURM ARRAY over the 13 N buckets. The July run
-# went to fir as ONE serial job and took ~6 h wall; the work is independent per
-# draw, so an array of 13 finishes in the time of its slowest bucket.
 REMOTE_WORK = "/scratch/phyberos/fabfos_metagenome"
 REMOTE_GPR4 = f"{REMOTE_WORK}/results/metag_gpr_4lane.parquet"
 REMOTE_ORFS = f"{REMOTE_WORK}/raw/metag.orfs.csv"
@@ -328,16 +307,11 @@ def fir_run(k: int, host: str) -> int:
     draw_script = Path(__file__).resolve().parent / "scadc_ecspr_null_draw.py"
 
     print(f"=== staging the 4-lane table + draw script on {host} ===")
-    # REMOTE_LIB itself is removed, not made: `scp -r` of the package into the
-    # parent would otherwise nest it one level deeper on every re-stage.
     ssh_once(host, f"mkdir -p {REMOTE_WORK}/logs {REMOTE_WORK}/results "
                    f"{Path(REMOTE_LIB).parent}; rm -rf {REMOTE_LIB}")
     for src, dst in ((GPR4, REMOTE_GPR4), (draw_script, f"{REMOTE_WORK}/")):
         print(f"  {Path(src).name} -> {dst}")
         subprocess.run(["scp", "-q", str(src), f"{host}:{dst}"], check=True)
-    # The lib is what the solve IS -- re-sent every run so a shard can never
-    # run an older engine than this table. `--lib-dir` names the package
-    # directory itself; the draw script puts its PARENT on sys.path.
     subprocess.run(["scp", "-qr", str(ROOT / "src" / "ecspr"),
                     f"{host}:{Path(REMOTE_LIB).parent}/"], check=True)
 
@@ -361,9 +335,6 @@ def fir_run(k: int, host: str) -> int:
 
 def fir_status(host: str) -> int:
     from _driver import ssh_once
-    # `-n scadc_null4`, not `-u phyberos`: this account routinely has a few
-    # hundred array tasks from other pipelines queued, and an unfiltered squeue
-    # buries the 13 rows this is about.
     print(ssh_once(host, f"squeue -u phyberos -n {JOB_NAME} -o '%.14i %.9T %.10M %.20R'; "
                          f"echo '--- shard rows (16,001 = complete) ---'; "
                          f"wc -l {REMOTE_WORK}/results/null4_draws_b*.csv 2>/dev/null "
@@ -397,7 +368,6 @@ def fir_retrieve(host: str) -> int:
     return 0
 
 
-# --------------------------------------------------------------------- score
 def nearest_bucket(n_orfs: int, buckets: list) -> int:
     return min(buckets, key=lambda b: abs(b - n_orfs))
 
@@ -435,9 +405,6 @@ def score() -> int:
     results.loc[~host, "n_bucket"] = results.loc[~host, "n_orfs"].apply(
         lambda n: nearest_bucket(n, buckets))
 
-    # Both sampler styles pooled per (bucket, condition, metric), as the first
-    # scoring did; `style` survives in draws.parquet, so a D-only re-score stays
-    # a one-line change rather than a re-run.
     groups = {key: g["delta_null"].to_numpy()
               for key, g in null.groupby(["n_rep", "condition_id", "metric"])}
 

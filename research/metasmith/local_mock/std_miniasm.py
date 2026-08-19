@@ -25,6 +25,5 @@ task = smith.GenerateWorkflow(
     transforms = [transforms],
     targets    = [dtypes["long_reads_assembly"].WithLineage([dtypes["miniasm_estimate"]])]
 )
-# task.RenderDAG(path_base="dag")
 smith.StageWorkflow(task, "clear")
 smith.RunWorkflow(task)

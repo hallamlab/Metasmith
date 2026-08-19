@@ -39,17 +39,11 @@ def protocol(context: ExecutionContext):
     minlen = max((seq_len//3)+1, 20)
     minlen = min(51, minlen)
     Log.Info(f"N50 read length [{seq_len}], using min length of [{minlen}]")
-    # https://doi.org/10.1128/msystems.00804-20 "Sequence data preprocessing" section
     setting = f"ktrim=r k=23 mink=11 hdist=1 tpe tbo maxns=4 qtrim=r trimq=0 usejni=t minlen={minlen} maq=3"
-    # note the qin and qout settings, bbduk defaults to older illumina phred64
     threads = context.params.get('cpus')
     threads = "" if threads is None else f"threads={threads}"
-    # bbduk's bundled JVM defaults to ~85% of the *node's* RAM, which blows
-    # past the SLURM cgroup limit on shared nodes. Pin -Xmx to the allocation
-    # we were actually given (85% of it — matches bbtools' own headroom budget).
     mem_gb = context.params.get('memory')
     xmx = f"-Xmx{int(mem_gb*0.85)}g" if mem_gb else ""
-    # Same command either way: this tool is a plain CLI in both worlds.
     _cmd = f"""\
             bbduk.sh {xmx} {threads} \
             unbgzip=f \

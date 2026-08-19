@@ -1,16 +1,3 @@
-"""instrain — inStrain profile of a sample against the shared derep-MAG reference.
-
-Option (b) for cross-lake strain sharing: instead of profiling each sample against
-its OWN assembly (which makes profiles incomparable), every sample's clean short
-reads are mapped to ONE project-level dereplicated representative-MAG reference
-(binning::derep_mag_ref — the is_centroid_95==1 bins, scaffolds namespaced by
-bin_id) and profiled against it. The cross-sample `inStrain compare` step
-(instrain_compare.py) then computes popANI / strain sharing over the common ref.
-
-This transform folds the mapping in: minimap2 (-x sr) -> samtools sort/index ->
-inStrain profile, so no intermediate BAM type is published. The reference's
-scaffold->genome table (mag_ref.stb) partitions scaffolds into MAGs.
-"""
 import re
 from pathlib import Path
 from metasmith.python_api import *
@@ -35,20 +22,9 @@ def protocol(context: ExecutionContext):
 
     threads = context.params.get("cpus", 8)
 
-    # inStrain `compare` names each profile by os.path.basename(bam_loc)
-    # (compare_controller.py: `name = os.path.basename(ISP.get('bam_loc'))`), so a
-    # bam named identically across samples makes every profile collide on the same
-    # name and `inStrain compare` aborts with the issue-#79 duplicate-name assert.
-    # Name the bam per-sample (from the reads filename, which carries SG<id>) so the
-    # downstream compare gets a unique, meaningful label for each sample.
     sample_slug = re.sub(r"[^A-Za-z0-9]+", "_", Path(ireads.container).name).strip("_") or "sample"
     bam = f"{sample_slug}.bam"
 
-    # 1) map the sample's reads to the shared derep-MAG reference (short-read
-    #    preset, prebuilt single-part .mmi index). The clean reads are
-    #    INTERLEAVED paired-end (R1,R2,R1,R2,...) and minimap2 has no interleaved
-    #    mode, so deinterleave into R1/R2 first (one awk pass, streamed to gzip —
-    #    no big temp file) and map paired so inStrain's read-pair filter applies.
     context.ExecWithEnv().ifContainerDo(
         env=img_mm2,
         binds=[(imagref.external, "/magref")],
@@ -60,7 +36,6 @@ def protocol(context: ExecutionContext):
         """,
     )
 
-    # 2) SAM -> sorted+indexed BAM.
     context.ExecWithEnv().ifContainerDo(
         env=img_sam,
         cmd=f"""
@@ -71,7 +46,6 @@ def protocol(context: ExecutionContext):
         """,
     )
 
-    # 3) inStrain profile vs the reference, partitioned into MAGs by the stb.
     context.ExecWithEnv().ifContainerDo(
         env=img_is,
         binds=[(imagref.external, "/magref")],

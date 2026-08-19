@@ -12,7 +12,6 @@ def protocol(context: ExecutionContext):
     iout = context.Output(out)
 
     temp_prefix = "converted"
-    # Same command either way: this tool is a plain CLI in both worlds.
     _cmd = f"""
         ln -sf {ibam.container} /ws/input.bam
         pbindex /ws/input.bam

@@ -1,8 +1,4 @@
 #!/usr/bin/env python3
-"""T5 -- the figures. Seven, each citing a row of T1_panel_coverage.tsv.
-
-Written to out/fig_*.png and out/fig_*.svg.
-"""
 from __future__ import annotations
 
 import sys
@@ -50,8 +46,6 @@ def label(u: str) -> str:
     host = {"e_coli_k12": "iML1515", "e_coli_dh10b": "iECDH10B"}.get(parts[0], parts[0])
     return f"{parts[1]} · {host} · {parts[3] if len(parts) > 3 else ''}"
 
-
-# ---------------------------------------------------------------------------
 
 def fig_pdist(nulls, head):
     units = list(head.sort_values("frac_sig", ascending=False).unit)
@@ -266,8 +260,6 @@ def main():
 
     print("figures:")
     fig_pdist(nulls, head)
-    # Forests for the two ECSPr arms with the largest denominators -- the trivial
-    # baseline and FBA are in the tables; the point of this figure is the method.
     ec = head[head.arm.astype(str).str.startswith(("gem", "denovo"))]
     for u in ec.sort_values("n_conditions", ascending=False).unit.head(2):
         fig_forest(nulls, u)

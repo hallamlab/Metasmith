@@ -67,15 +67,11 @@ import json
 from pathlib import Path
 
 READ_RE = re.compile(r"^(.+?)(?:_R[12]\.fastq\.gz|\.interleaved\.fq\.gz)$")
-# The FILES list is the tail of the `lin` block; every entry is bracketed and
-# absolute. Matching paths directly is more robust than parsing that JSON, whose
-# quoting survives two layers of shell escaping.
 PATH_RE = re.compile(r"/[^\s\[\],\"\\]+")
 SKIP = ("/lib/", "/_metasmith/task/transforms/", "/workflow.step_")
 
 
 def read_task(d):
-    """(transform, [input paths], [output basenames]) for one work dir."""
     cmd = d / ".command.sh"
     if not cmd.exists():
         return None
@@ -86,17 +82,12 @@ def read_task(d):
     if len(head) < 3:
         return None
 
-    # Line 0 is the shebang, line 1 the `step N, sample [[...]]` banner, line 2
-    # the transform name. The banner is enormous -- it inlines the whole binding
-    # -- so taking line 1 for the name yields a page of JSON, not "kraken2".
     m = re.match(r'\s*echo\s+"(.+?)"\s*$', head[2])
     transform = m.group(1) if m else "?"
 
     lin = next((l for l in head if l.lstrip().startswith('echo "lin ')), head[1])
     files = [p for p in PATH_RE.findall(lin) if not any(s in p for s in SKIP)]
 
-    # Dotfiles are nextflow's and slurm's bookkeeping (.command.*, .exitcode,
-    # .sbatch.log), never products.
     outs = [p.name for p in d.iterdir()
             if p.is_file() and not p.name.startswith(".")]
     return transform, files, outs
@@ -109,7 +100,7 @@ def build(run_dir):
         sys.exit(f"no nxf_work under {run_dir}")
 
     tasks = []
-    produced_by = {}                 # output basename -> task index
+    produced_by = {}
     for d in sorted(work.glob("*/*")):
         if not d.is_dir():
             continue
@@ -119,12 +110,7 @@ def build(run_dir):
         i = len(tasks)
         tasks.append((d,) + t)
         for o in t[2]:
-            # A retried or resumed task can leave two directories holding the
-            # same output name. Either is a correct answer -- they are the same
-            # content -- so first wins rather than warning about a non-problem.
             produced_by.setdefault(o, i)
-        # Reads staged into a work dir under their own name would otherwise look
-        # like products of the task that consumed them.
         for o in t[2]:
             if READ_RE.match(o):
                 del produced_by[o]
@@ -132,18 +118,10 @@ def build(run_dir):
     memo = {}
 
     def walk(idx, seen):
-        """(samples, upstream transforms) reachable from task `idx`.
-
-        The transform closure is what recovers the binner. `taxonomy::checkm_stats`
-        is produced by three separate steps under one dtype, one per binner, and
-        they all run the same transform -- but each consumes exactly one binner's
-        bins, so the binner is unique in its closure even though it is not in its
-        own transform name.
-        """
         if idx in memo:
             return memo[idx]
-        if idx in seen:                      # cycles are impossible in a DAG,
-            return frozenset(), frozenset()  # but a malformed run is not worth crashing on
+        if idx in seen:
+            return frozenset(), frozenset()
         seen = seen | {idx}
         _d, _t, files, _o = tasks[idx]
         samples, trans = set(), set()
@@ -166,11 +144,6 @@ def build(run_dir):
     rows = []
     for i, (d, transform, _files, outs) in enumerate(tasks):
         s, upstream = walk(i, frozenset())
-        # NOT s.pop(): samples_of hands back the memoized object, and popping it
-        # emptied the producer's cached answer, so every consumer processed
-        # after its producer resolved to nothing. That surfaced as 132 of 297
-        # products unattributed with no error -- an aliasing bug wearing the
-        # costume of a missing-lineage bug. frozenset above makes it impossible.
         label = next(iter(s)) if len(s) == 1 else ("?" if not s else "*")
         up = ",".join(sorted(upstream))
         for o in outs:

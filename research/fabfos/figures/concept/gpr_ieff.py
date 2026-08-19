@@ -1,30 +1,3 @@
-"""Pairwise ECSPr I_eff over one host's GPR reaction network, and the single-source probe
-that says how sparse the answer is.
-
-The concept figure measures the MetaNetX universe (or a KEGG-annotated slice of it), which
-is deliberately not a claim about any organism. This script points the same universal-ground
-instrument at a *host*: the medium is the reaction set of a GPR table, so the network is the
-one that host's called genes can actually run.
-
-Two commands, and they answer different questions.
-
-``probe`` injects one ampere at a single metabolite's carbon atoms -- glucose, for the
-growth-substrate reading -- drains it at the OMEGA universal leak, and reports how
-concentrated the resulting field is: how few metabolites, reactions and atom-transfer edges
-carry 99% of the current. That is the measurement that justifies storing the pairwise table
-sparse, and it is worth reading against the universe-scale cone measurement in the README,
-where 99.9% of a source's flow still needed 92% of *edges*. Concentration in the metabolites
-a current visits and concentration in the edges it uses are not the same statement.
-
-``pack`` turns an :mod:`ieff_sweep` store into a sparse matrix by keeping, per row, the
-fewest partners whose current sums to ``--cover`` of that row's total. Rows are dense as
-computed (the smallest attributed current at universe scale was 7e-15) so the cutoff is what
-makes the deliverable sparse; nothing cheaper than the exact solve produces those partners,
-which the README's min_K section measured.
-
-    python gpr_ieff.py probe --gpr-table .../gpr_gem.parquet --met MNXM1364061 --out p.json
-    python gpr_ieff.py pack  --store cache/gpr_epi300_gem --cover 0.99 --out .../ieff_gem.npz
-"""
 import argparse
 import json
 import sys
@@ -41,13 +14,10 @@ from atom_graph import build_atom_graph, restrict_to_giant             # noqa: E
 from ieff_ground import GroundSystem, edge_current, newton_rhs         # noqa: E402
 from ieff_sweep import gpr_medium                                      # noqa: E402
 
-# Reported cumulative-current levels. 0.99 is the one the store cutoff uses; the others are
-# there so the curve's shape is visible rather than a single number being taken on faith.
 LEVELS = (0.5, 0.9, 0.99, 0.999, 0.9999)
 
 
 def frac_at(sorted_desc, levels=LEVELS):
-    """How many entries, and what fraction of them, reach each cumulative level."""
     total = float(sorted_desc.sum())
     if total <= 0:
         return {str(l): dict(n=0, frac=0.0) for l in levels}
@@ -56,8 +26,6 @@ def frac_at(sorted_desc, levels=LEVELS):
     return {str(l): dict(n=int(np.searchsorted(c, l) + 1),
                          frac=float((np.searchsorted(c, l) + 1) / n)) for l in levels}
 
-
-# ---------------------------------------------------------------- probe
 
 def cmd_probe(args):
     T0 = time.time()
@@ -86,17 +54,12 @@ def cmd_probe(args):
     print(f"[{time.time()-T0:.1f}s] solved: {nit} Newton iterations ({why}), "
           f"{reuse.stats()}", flush=True)
 
-    # Conservation. The net injection the solution actually realises at OMEGA must be the
-    # ampere that went in; a sweep whose rows do not close here is not measuring current.
     into_ground = float(-(S.B.T @ ie)[S.ground])
     kcl = float(np.abs((S.B.T @ ie) - I)[S.keep].max())
     print(f"conservation: {into_ground:.12f} A into ground, KCL residual {kcl:.2e}",
           flush=True)
 
     thr = S.node_throughput(ie_abs)
-    # Node keys on the leaky graph are ``(met code, atom rank)`` except OMEGA, which is a
-    # bare sentinel; read them off the leaky graph rather than assuming the leak was
-    # appended after the originals.
     met_codes = np.full(S.n, -1, np.int64)
     for i, nd in enumerate(S.gl.nodes):
         if i != S.ground:
@@ -107,20 +70,13 @@ def cmd_probe(args):
     uc, met_cur = uc[keep], met_cur[keep]
     met_names = np.array([met_sym[c] for c in uc], dtype=object)
 
-    # Two different readings of "what fraction of metabolites carries the current", and they
-    # are not interchangeable. *Transit* counts a metabolite once for every ampere that
-    # passes through it, so it sums to far more than the ampere injected -- it says which
-    # metabolites the carbon travels through. *Drain* is what each metabolite dumps to
-    # OMEGA, so the shares sum to exactly the injected ampere -- it says where the carbon
-    # ends up. A universal-ground probe answers the second exactly; the first is the one
-    # that governs how dense a pairwise row is.
     leak_tail = S.E[S.m_rxn:, 0]
     drain = np.bincount(met_codes[leak_tail], ie_abs[S.m_rxn:],
                         minlength=int(met_codes.max()) + 1)
     met_drain = drain[uc]
 
     rxn_cur = S.attribute(ie_abs)
-    edge_cur = ie_abs[:S.m_rxn]                 # atom-transfer edges only, not the leaks
+    edge_cur = ie_abs[:S.m_rxn]
 
     out = dict(
         host_table=str(args.gpr_table), element=args.element, source=args.met,
@@ -167,8 +123,6 @@ def cmd_probe(args):
         print(f"wrote {args.tsv}", flush=True)
 
 
-# ---------------------------------------------------------------- pack
-
 def cmd_pack(args):
     meta = json.load(open(args.store / "meta.json"))
     src, rxn, K = meta["src"], meta["rxn"], meta["K"]
@@ -180,10 +134,6 @@ def cmd_pack(args):
     if not done.all():
         raise SystemExit(f"store is incomplete: {int(done.sum())}/{n} rows")
 
-    # Sort here rather than trusting the store's order. ``Store.put`` sorts descending only
-    # on the branch that truncates (K < row length); when K covers every target it writes the
-    # row in natural reaction order, and a cumulative-sum prefix over an unsorted row is not
-    # the strongest partners -- it is an arbitrary half of them.
     rows, cols, vals, kept = [], [], [], np.zeros(n, np.int32)
     covered = np.zeros(n)
     for i in range(n):
@@ -195,8 +145,6 @@ def cmd_pack(args):
         if tot <= 0:
             continue
         k = int(np.searchsorted(c, args.cover * tot) + 1)
-        # A truncated store may not reach ``cover`` at all; keep what there is and let
-        # ``covered`` report the shortfall rather than silently claiming the level.
         k = min(k, K)
         kept[i] = k
         covered[i] = c[k - 1] / tot
@@ -218,9 +166,6 @@ def cmd_pack(args):
 
     args.out.parent.mkdir(parents=True, exist_ok=True)
     if args.dense_out:
-        # Free at host-network scale (1,489 squared float32 is 8.9 MB) and it is what the
-        # min_K validation needs -- the truncation has to be checked against the untruncated
-        # matrix on *this* network, not against the medium-scale number.
         D = np.zeros((n, len(rxn)), np.float32)
         for i in range(n):
             D[i, idx[i]] = val[i]
@@ -230,8 +175,6 @@ def cmd_pack(args):
     np.savez_compressed(args.out, data=A.data.astype(np.float32), indices=A.indices,
                         indptr=A.indptr, shape=np.array(A.shape),
                         rowsum=rowsum, src=np.array(src), rxn=np.array(rxn))
-    # Provenance recorded by the sweep, carried through. ``--gpr-table`` fills it in for a
-    # store written before the sweep recorded it.
     prov = {k: meta[k] for k in ("scale", "element", "leak", "mode", "warm", "gpr_table")
             if k in meta}
     if args.gpr_table:

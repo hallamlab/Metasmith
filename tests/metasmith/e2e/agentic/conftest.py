@@ -1,4 +1,3 @@
-"""Pytest wiring for the e2e_agentic suite."""
 from __future__ import annotations
 
 import datetime as _dt
@@ -26,7 +25,6 @@ def pytest_addoption(parser):
     g.addoption("--agent-effort", default=None,
                 help="effort level (claude only)")
     g.addoption("--max-iters", type=int, default=20)
-    # None → the scenario's own max_tokens quota, else the global fallback.
     g.addoption("--max-tokens", type=int, default=None)
     g.addoption("--max-tokens-per-iter", type=int, default=200_000)
     g.addoption("--max-usd-per-iter", type=float, default=None,
@@ -54,13 +52,6 @@ def pytest_configure(config):
 
 
 def pytest_collection_modifyitems(config, items):
-    """Skip e2e_agentic tests up-front if MetasmithLibraries is unobtainable.
-
-    The fixture path resolves a MetasmithLibraries checkout via env var,
-    sibling dir, or auto-clone. If all three fail (e.g. CI without git or
-    network), there's no way the scenarios can run — surface a clear skip
-    reason at collection time rather than letting setup_fixtures explode.
-    """
     from tests.metasmith.e2e.agentic.scenarios._fixture_utils import _metasmith_libraries_root
     try:
         _metasmith_libraries_root()
@@ -69,11 +60,6 @@ def pytest_collection_modifyitems(config, items):
         for item in items:
             if "e2e_agentic" in item.keywords:
                 item.add_marker(skip)
-
-
-# ---------------------------------------------------------------------------
-# session-scoped: install context + runs dir
-# ---------------------------------------------------------------------------
 
 
 @pytest.fixture(scope="session")
@@ -94,7 +80,6 @@ def runs_dir(project_root, pytestconfig) -> Path:
 
 @pytest.fixture(scope="session")
 def install_context_factory(project_root, pytestconfig):
-    """Returns a callable that produces an InstallContext for a runtime."""
     def _make(runtime: str):
         agent = pytestconfig.getoption("--agent")
         try:
@@ -104,11 +89,6 @@ def install_context_factory(project_root, pytestconfig):
         except PreflightError as exc:
             pytest.skip(f"preflight failed: {exc}")
     return _make
-
-
-# ---------------------------------------------------------------------------
-# per-test fixtures
-# ---------------------------------------------------------------------------
 
 
 @pytest.fixture
@@ -127,8 +107,6 @@ def agent_driver(pytestconfig):
 def loop_budgets(pytestconfig):
     from tests.metasmith.e2e.agentic.harness.loop import LoopBudgets
     from tests.metasmith.e2e.agentic.run_cell import _GLOBAL_MAX_TOKENS_FALLBACK
-    # max_tokens stays a placeholder here (the scenario isn't known yet); the
-    # per-scenario quota is resolved in run_scenario._run before ralph_loop.
     cli_max = pytestconfig.getoption("--max-tokens")
     return LoopBudgets(
         max_iters=pytestconfig.getoption("--max-iters"),
@@ -138,24 +116,9 @@ def loop_budgets(pytestconfig):
     )
 
 
-# ---------------------------------------------------------------------------
-# helper: run a scenario end-to-end
-# ---------------------------------------------------------------------------
-
-
 @pytest.fixture
 def run_scenario(install_context_factory, agent_driver, tmp_path,
                  loop_budgets, runs_dir, pytestconfig):
-    """High-level scenario runner.
-
-    1. Resolve InstallContext for the runtime.
-    2. Build the spoofed sandbox (copies docs/data_types/transforms,
-       materializes .condarc, hardlinks the conda channel, pre-places the
-       metasmith sif for APPTAINER, ensures bootstrap env).
-    3. Optionally pre-install metasmith into the sandbox env
-       (scenarios with ``pre_install_metasmith = True``).
-    4. Render prompt, dispatch ralph_loop, run scenario.verify().
-    """
     from tests.metasmith.e2e.agentic.harness.cell import prepare_sandbox
     from tests.metasmith.e2e.agentic.harness.loop import ralph_loop
     from tests.metasmith.e2e.agentic.scenarios.arms import ARM_BY_ID
@@ -166,8 +129,6 @@ def run_scenario(install_context_factory, agent_driver, tmp_path,
     def _run(scenario, runtime: str):
         ctx = install_context_factory(runtime)
         sb_root = tmp_path / "sandbox"
-        # Build the sandbox + provision the arm via the shared helper (the same
-        # path run_cell.py uses), so the fixture and the CLI never drift.
         layout, agent_env = prepare_sandbox(
             sb_root, ctx,
             runtime=runtime, scenario=scenario, arm=arm,
@@ -192,9 +153,6 @@ def run_scenario(install_context_factory, agent_driver, tmp_path,
             (log_dir / "PROMPT.md").write_text(prompt)
             pytest.skip(f"--dry-run: prompt rendered to {log_dir / 'PROMPT.md'}")
 
-        # Re-resolve the token quota now that the scenario is known: explicit
-        # --max-tokens wins, else the scenario's own quota, else the fallback
-        # already baked into loop_budgets.
         from dataclasses import replace
         from tests.metasmith.e2e.agentic.run_cell import (
             _GLOBAL_MAX_TOKENS_FALLBACK, _effective_max_tokens,

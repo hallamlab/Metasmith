@@ -1,16 +1,3 @@
-"""Test harness for cache-related integration tests.
-
-Provides a RunSnapshot dataclass that captures three observables per virtual
-workflow run: which transform steps actually executed, deterministic
-fingerprints of every produced output file, and the contents of the cache
-root (relpath + size). Two snapshots are comparable via `==`, which is how
-the baseline tests pin "no caching" and the new tests will pin cache hits.
-
-Also exposes a few small builders shared by the cache fixtures so that the
-fixture modules under fixtures/cache_fixtures/ stay focused on the shape of
-the workflow rather than on Library/Type plumbing.
-"""
-
 from __future__ import annotations
 
 import hashlib
@@ -40,47 +27,15 @@ from metasmith.models.workflow import (
 )
 
 
-
-# ---------------------------------------------------------------------------
-# Snapshot model
-# ---------------------------------------------------------------------------
-
-
 @dataclass(frozen=True)
 class RunSnapshot:
-    """Observable state captured from a single workflow run.
-
-    Fields are chosen so that two snapshots can be compared with `==`:
-
-    - executed_steps: transform names that actually ran, in execution order.
-      Sourced from bootstrap_call trace events (one per process invocation).
-      Today every run on `main` re-executes everything; under caching, hits
-      will drop from this tuple.
-    - result_fingerprints: blake2b digest of every published target file,
-      keyed by relpath under the results root. Deterministic-fixture runs
-      should match across reruns.
-    - cache_state: sorted (relpath, size_bytes) pairs under <agent_home>/task_cache/.
-      Empty tuple on `main` (cache root absent → no entries to report).
-    - target_manifests: target_name → number of manifest rows produced.
-    """
-
     executed_steps: tuple[str, ...]
     result_fingerprints: tuple[tuple[str, str], ...]
     cache_state: tuple[tuple[str, int], ...]
     target_manifests: tuple[tuple[str, int], ...]
 
 
-# ---------------------------------------------------------------------------
-# Library + workflow builders shared by fixtures
-# ---------------------------------------------------------------------------
-
-
 def build_types_library(tmp_path: Path, type_names: Iterable[str]) -> Path:
-    """Write a DataTypeLibrary YAML containing each name as a distinct type.
-
-    Each type is given a single property of its own name so endpoint matching
-    routes the planner unambiguously.
-    """
     types = DataTypeLibrary()
     for n in type_names:
         types[n] = Endpoint(properties={n})
@@ -99,20 +54,6 @@ def build_samples_library(
     namespace: str = "cf",
     shared_root_type: str | None = None,
 ) -> DataInstanceLibrary:
-    """Construct N samples each carrying a single instance of <input_type>.
-
-    The instance path is deterministic (`sample_NN/data.txt` with sample
-    index baked into the bytes) so that two builds produce identical
-    instance content. The library namespace defaults to `cf`
-    (cache-fixture) to keep its types isolated from the
-    `tests/integration/conftest.py` mock samples.
-
-    If `shared_root_type` is set, a single instance of that type is added
-    and registered as the lineage parent of every per-sample instance.
-    This enables a downstream transform to declare `group_by=root` and
-    reduce all per-sample outputs into one invocation — the topology that
-    `parallel_then_group` exercises.
-    """
     lib = DataInstanceLibrary(tmp_path / "samples.xgdb")
     lib.AddTypeLibrary(types_path, namespace=namespace)
 
@@ -147,7 +88,6 @@ def build_transform_library(
     types_path: Path,
     transforms: dict[str, str],
 ) -> TransformInstanceLibrary:
-    """Write a `transforms.xgdb` with the given name→code entries."""
     tr_path = base_dir / "transforms.xgdb"
     tr_path.mkdir(parents=True, exist_ok=True)
     meta = tr_path / "_metadata"
@@ -194,15 +134,6 @@ def identity_transform_code(
     *,
     cacheable: bool = True,
 ) -> str:
-    """A toy transform that copies input bytes to a stable output path.
-
-    Determinism is critical here: two runs on the same inputs must produce
-    byte-identical outputs so the result_fingerprints of two RunSnapshots
-    match. We copy the input bytes verbatim and append a stable header
-    keyed only on transform name + output type. Pass `cacheable=False` to
-    exercise the S4 opt-out path; the generated transform definition then
-    sets `TransformInstance(..., cacheable=False)`.
-    """
     return textwrap.dedent(
         f"""
         from pathlib import Path
@@ -240,16 +171,6 @@ def grouping_transform_code(
     input_type: str,
     output_type: str,
 ) -> str:
-    """A reduction transform: collects every input_type instance into one out.
-
-    The transform model declares `root` as a requirement that is the
-    declared parent of `input_type`; setting `group_by=root` then produces
-    one invocation per distinct root instance, which (with a single shared
-    root across all samples) is exactly one invocation reducing all
-    upstream `input_type` instances. Used in parallel_then_group to
-    exercise o.group() across the synthetic channels the cache will
-    eventually emit.
-    """
     return textwrap.dedent(
         f"""
         from pathlib import Path
@@ -287,12 +208,6 @@ def build_workflow_task(
     target_specs: list[tuple[str, set[str]]],
     namespace: str = "cf",
 ) -> WorkflowTask:
-    """Generate a WorkflowPlan and wrap it in a WorkflowTask.
-
-    target_specs is a list of (target_name, target_property_set) — the
-    property set drives the planner's solver, the target_name labels
-    the resulting manifest file.
-    """
     given = [[sv] for sv in samples.AsSamples(f"{namespace}::{sample_type}")]
 
     target_model = Transform()
@@ -315,17 +230,7 @@ def build_workflow_task(
     )
 
 
-# ---------------------------------------------------------------------------
-# Stage + run + capture
-# ---------------------------------------------------------------------------
-
-
 def _stage_task(task: WorkflowTask) -> tuple[str, Path, WorkflowTask]:
-    """Persist + compile the task into the virtual agent home layout.
-
-    Mirrors tests/e2e_virtual/conftest.py::stage_task — duplicated here so
-    integration tests don't reach across test directories.
-    """
     key = task.GetKey()
     task_path = AgentPaths.to_task(key)
     task_path.parent.mkdir(parents=True, exist_ok=True)
@@ -362,16 +267,6 @@ def _fingerprint_file(p: Path) -> str:
 
 
 def _collect_result_fingerprints(workspace: Path) -> tuple[tuple[str, str], ...]:
-    """Per-target sorted digest set of output PAYLOADS.
-
-    Hashes file *content* and groups by target directory, deliberately
-    discarding individual filenames and the `_manifests/` sidecars. This
-    matches the cache's contract: "byte-equal outputs across runs" — the
-    manifest filenames embed instance_ids and the manifest contents embed
-    workspace-absolute paths, so neither belongs in the determinism check.
-    A cache hit must reproduce the per-target output payload multiset
-    verbatim; that is what this captures.
-    """
     results = workspace / "results"
     if not results.exists():
         return ()
@@ -380,13 +275,6 @@ def _collect_result_fingerprints(workspace: Path) -> tuple[tuple[str, str], ...]
         if not fp.is_file():
             continue
         rel = fp.relative_to(results)
-        # Exclude:
-        #  - `_metadata/` (results-library YAML embedding instance_ids
-        #    + per-path lineage metadata)
-        #  - `given.csv` (top-level, post-S6 — embeds workspace-absolute
-        #    paths of given inputs which vary per build)
-        # These embed workspace-absolute paths / minted ids, so neither
-        # belongs in the "output payload" determinism check.
         if rel.parts and rel.parts[0] in {"_metadata"}:
             continue
         if str(rel) == "given.csv":
@@ -414,12 +302,6 @@ def _collect_cache_state(agent_home: Path) -> tuple[tuple[str, int], ...]:
 
 
 def _collect_executed_steps(events: list[dict]) -> tuple[str, ...]:
-    """Pull transform step names from bootstrap_call trace events.
-
-    Each bootstrap_call corresponds to one process invocation that actually
-    fired in the virtual nextflow. A run with synthetic cache channels (post
-    S3) will skip cached steps and so produce fewer bootstrap_call events.
-    """
     out: list[str] = []
     for e in events:
         if e.get("type") == "bootstrap_call":
@@ -428,15 +310,6 @@ def _collect_executed_steps(events: list[dict]) -> tuple[str, ...]:
 
 
 def _collect_target_manifests(workspace: Path) -> tuple[tuple[str, int], ...]:
-    """Per-target produced-file count, sourced from trace.jsonl (post-S6).
-
-    Pre-S6 this read `_manifests/*.json` sidecars; those are gone. The
-    per-target produced-file count is now derived from non-sentinel
-    InvocationEvents — group `produces` by dtype_key and report
-    `(dtype_key, total_produced_count)`. The snapshot is used for
-    cross-run determinism only, so the exact label shape doesn't matter
-    as long as it's stable.
-    """
     trace_path = workspace / "_metasmith" / "trace.jsonl"
     if not trace_path.exists():
         return ()
@@ -455,13 +328,6 @@ def _collect_target_manifests(workspace: Path) -> tuple[tuple[str, int], ...]:
 
 
 def capture_run(virtual_runtime, task: WorkflowTask) -> RunSnapshot:
-    """Stage + run a task through VirtualE2ERuntime and snapshot observables.
-
-    Returns a RunSnapshot. Side effect: the task is staged and executed in
-    AgentPaths.HOME_ROOT (which the virtual_runtime fixture has redirected
-    to a tmp dir via monkeypatching), so the caller can inspect the workspace
-    afterwards via virtual_runtime.home.
-    """
     key, workspace, _staged = _stage_task(task)
     RunWorkflow(
         key=key,
@@ -480,6 +346,5 @@ def capture_run(virtual_runtime, task: WorkflowTask) -> RunSnapshot:
 
 
 def clear_trace(virtual_runtime) -> None:
-    """Truncate the virtual runtime trace file to isolate per-run captures."""
     if virtual_runtime.trace_file.exists():
         virtual_runtime.trace_file.unlink()

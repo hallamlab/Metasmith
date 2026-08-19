@@ -1,34 +1,4 @@
 #!/usr/bin/env python3
-"""Is the REUSED KOfam evidence the same evidence a fresh run would produce?
-
-    python compare_kofam.py <fresh.csv> <repacked.csv>
-
-The campaign does not recompute KOfam. It repacks an earlier pass's per-assembly
-hits into the shards and hands them to the planner as already-computed products,
-which is where roughly half the compute saving comes from. Everything checked so
-far only establishes that those hits are WELL FORMED and land in the right
-shard: the header was verified across all 2,844 assemblies, the ids join to each
-shard's own id set, and the repack is exactly conservative (82,116,616 rows in,
-82,116,616 out).
-
-None of that would notice if the earlier pass had used a different KOfam release
-or a different score threshold. A wrong-but-well-formed hit table joins,
-validates and delivers exactly like a right one -- so the only thing that
-settles it is running KOfam from the same ORFs and comparing the rows.
-
-What is compared, in descending order of what a difference would mean:
-
-  1. The (gene, KO) call set. A call present in one and not the other is a
-     different answer about that gene, whatever the scores say.
-  2. `best` -- KOfam's own mark for the top assignment per gene. Two runs can
-     agree on every call and disagree on which is the gene's primary one.
-  3. The bitscore, for calls both made. Identical profiles and thresholds give
-     identical scores; a systematic offset means a different profile release,
-     and scattered differences mean a different hmmsearch build.
-
-Exit 0 only when the call sets are identical. Anything else is a method change
-and has to be reported as one, not averaged away.
-"""
 from __future__ import annotations
 
 import sys
@@ -68,7 +38,6 @@ def main() -> int:
         if s:
             print(f"  e.g. {label}: {sorted(s)[:3]}")
 
-    # Scores, for the calls both runs made.
     m = fresh.merge(old, on=["gene_name", "KO"], suffixes=("_f", "_o"))
     if len(m):
         d = (m["score_f"] - m["score_o"]).abs()

@@ -114,7 +114,7 @@ class RemoteShell:
             err_log=script_path.with_suffix(".err"),
             done_path=script_path.with_suffix(".done"),
         )
-        script_path.rename(script_path.with_suffix(".start")) # atomic action
+        script_path.rename(script_path.with_suffix(".start"))
         return k
 
     def AwaitDone(self, timeout: int|float|None=15, _key: str|None=None):

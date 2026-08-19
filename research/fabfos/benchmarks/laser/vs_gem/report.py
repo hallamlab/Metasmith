@@ -1,9 +1,4 @@
 #!/usr/bin/env python3
-"""T5 -- assemble out/*.tsv and out/fig_*.png into one self-contained HTML report.
-
-Figures are inlined as data URIs because the artifact host blocks every external
-request. Numbers are read from the tables, never retyped.
-"""
 from __future__ import annotations
 
 import base64
@@ -172,8 +167,6 @@ def main():
     triv = h[h.arm == "trivial"]
     fba = h[h.arm.astype(str).str.startswith("fba")]
 
-    # "Strongest" must mean strongest on a denominator worth reporting: a 6-condition
-    # unit can post 67% and mean nothing. Rank only units with >= MIN_N conditions.
     MIN_N = 30
     big = ecspr[ecspr.n_conditions >= MIN_N]
     best = (big.sort_values("frac_sig", ascending=False).iloc[0]
@@ -200,7 +193,6 @@ def main():
  <div class="stat"><div class="n">{len(head)}</div><div class="l">scored method units</div></div>
 </div>""")
 
-    # ---- the question -------------------------------------------------
     parts.append("<h2>What is being tested, and why not the obvious thing</h2>")
     parts.append(
         "<p>The obvious ground-truth metric — rank the measured target among a panel "
@@ -226,7 +218,6 @@ def main():
         'null is affordable — a naive per-condition null would have cost about 100× '
         'this run.</p></div>')
 
-    # ---- headline -----------------------------------------------------
     parts.append("<h2>Headline: is the built design better than the unbuilt ones?</h2>")
     mh = read("T14_matched_vs_trivial.tsv")
     if not mh.empty:
@@ -327,7 +318,6 @@ def main():
                             "figure that shows <em>which</em> designs the method gets "
                             "right, not how many."))
 
-    # ---- strata -------------------------------------------------------
     parts.append("<h2>Where the signal lives</h2>")
     parts.append(
         "<p>All 235 conditions are pooled in the headline, as instructed. The strata "
@@ -369,7 +359,6 @@ def main():
                 "targets the design itself creates; <code>panel_R</code> is targets "
                 "already present in the baseline graph."))
 
-    # ---- coverage -----------------------------------------------------
     parts.append("<h2>How much of LASER any method can speak to</h2>")
     parts.append(
         "<p>This is a first-class result, not a footnote on a score. The methods are "
@@ -384,7 +373,6 @@ def main():
                        "fails on any override whose target has left the extraction, so "
                        "the table cannot rot."))
 
-    # ---- corroborating -------------------------------------------------
     parts.append("<h2>Corroboration, free from the same matrix</h2>")
     if not od.empty:
         s = (od.groupby("unit").auroc.agg(["count", "median"]).reset_index()
@@ -419,7 +407,6 @@ def main():
             caption="T9 — two permutation nulls that need no solves: does the target's "
                     "identity matter given the deltas, and is the panel ranking real?"))
 
-    # ---- secondary ----------------------------------------------------
     parts.append("<h2>Secondary metrics, each with its baseline</h2>")
     parts.append(
         "<p>LASER's labels are 184 up against 2 down, so sign agreement is reported "
@@ -443,7 +430,6 @@ def main():
                     "PROPERTY. The metabolite axis has no negatives, so this scores "
                     "nothing; it is here because its absence would read as concealment."))
 
-    # ---- method vs method ---------------------------------------------
     parts.append("<h2>Conductance against flux</h2>")
     parts.append(
         "<p>The same design × target matrix read two ways, which are different "
@@ -493,7 +479,6 @@ def main():
     parts.append(img(C.OUT / "fig_4_biomass.png",
                      "Delta precursor share against delta growth."))
 
-    # ---- case study ---------------------------------------------------
     parts.append("<h2>Within-paper design series — a case study, not a metric</h2>")
     parts.append(
         "<p>Same lab, same assay, several designs: the cleanest comparison the dataset "
@@ -522,7 +507,6 @@ def main():
                                    "fermentation confounding, so it can corroborate a "
                                    "positive and cannot exonerate a null."))
 
-    # ---- numerics -----------------------------------------------------
     parts.append("<h2>Numerics, and what would falsify this</h2>")
     parts.append(
         f"<p>The v1/v2 bake mix passes its orientation gate: of "

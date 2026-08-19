@@ -1,30 +1,3 @@
-"""Close the ledger, then mint the bake -- the last step of the AAM branch.
-
-IT CLOSES THE LEDGER. `aam_worklist close` joins the adjudication to the corrected table
-so every MNXR ends with an outcome from a closed set -- banked, banked from a partial map,
-offered to the partial lane and declined, mapped and produced nothing, rescued and produced
-nothing, emptied by the redox repair, or the verdict that refused it before any lane ran.
-That is what makes a miss against the deployed table a result rather than a mystery.
-
-WHAT WAS OFFERED IS READ FROM THE FORECAST, not from the partial lane's built universe.
-The two differ by exactly the reactions the lane could not build a submission for -- the
-reduction did not balance, or it held a structureless participant -- and those are the
-reactions `partial_declined` is defined for. Reading the built universe made them
-`mapped_nothing`, which says nothing was offered when something was and it was declined for
-a reason the lane wrote down.
-
-IT MINTS THE BAKE, which used to be a third step reading both assemblies' outputs. Two of
-the trio are written here -- the vocabulary and the encoded pairs -- and the direction
-assembly writes the third against THIS vocabulary. What made the trio one step was that
-all three files must carry a byte-identical identity block; what makes two steps safe is
-that the block is minted once, here, and inherited rather than recomputed. Which is also
-why the split of `aam_ensemble` put the minting and the ledger close in the SAME step:
-`refs.assert_same_bake` refuses a mismatched trio, so whichever transform mints the
-identity block has to be the one that mints the vocabulary.
-
-The reaction space is `lookup::reactions`, already an input for the ledger, so nothing new
-is read to get it.
-"""
 from metasmith.python_api import *
 
 lib   = TransformInstanceLibrary.ResolveParentLibrary(__file__)
@@ -115,7 +88,5 @@ TransformInstance(
     protocol=protocol,
     model=model,
     group_by=image,
-    # A join over the worklist and one encoding pass. Minutes, and the memory is the
-    # corrected pair table.
     resources=Resources(cpus=2, memory=Size.GB(48), duration=Duration(hours=1)),
 )

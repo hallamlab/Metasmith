@@ -40,12 +40,11 @@ from sklearn.metrics import silhouette_score            # noqa: E402
 import identity
 from _common import C_A, C_B, INK, save
 
-CUT_ID = 0.99        # the identity cut the pipeline applies (`--select-k identity`)
-K_MARGIN = 60        # how far either side of the cut the sweep runs
+CUT_ID = 0.99
+K_MARGIN = 60
 
 
 def tree():
-    """-> (labels, distance matrix, complete-linkage tree)."""
     labels, sym, _cont = identity.matrices()
     dist = 1.0 - sym
     np.fill_diagonal(dist, 0.0)
@@ -53,30 +52,18 @@ def tree():
 
 
 def sweep():
-    """-> (ks, silhouettes, identity thresholds, k at the pipeline's cut)."""
     labels, dist, Z = tree()
     n = len(labels)
     k_cut = len(set(fcluster(Z, 1.0 - CUT_ID, criterion="distance")))
 
-    # Swept from the coarsest cut up, not from a window centred on the pipeline's
-    # cut: the silhouette optimum has to be INTERIOR to be a choice rather than a
-    # property of the range, and on this piece set it sits well below 0.99's k.
     ks, sils = [], []
     for k in range(2, min(n - 1, k_cut + K_MARGIN) + 1):
         assignment = fcluster(Z, k, criterion="maxclust")
-        # The distance matrix is full of exact ties -- every non-aligning pair
-        # sits at 1.0 -- so not every k is realisable. A request that comes back
-        # as a different partition is dropped rather than plotted at the k that
-        # was asked for.
         if len(set(assignment)) != k:
             continue
         ks.append(k)
         sils.append(silhouette_score(dist, assignment, metric="precomputed"))
     ks = np.array(ks)
-    # The identity that produces k clusters is 1 minus the height of the merge
-    # that FORMED them -- merge n-k-1, since merge m leaves n-m-1 clusters. This
-    # is the convention `_cluster_by_silhouette` reports, so a k read off this
-    # curve is the k `--select-k identity` gives for that threshold.
     thr = 1.0 - Z[n - ks - 1, 2]
     return ks, np.array(sils), thr, k_cut, n
 
@@ -84,9 +71,6 @@ def sweep():
 def generate():
     ks, sils, thr, k_cut, n = sweep()
 
-    # The drawn window holds both features that matter -- the silhouette optimum
-    # and the pipeline's cut -- with room either side, so neither reads as an
-    # edge effect.
     peak = int(ks[int(np.argmax(sils))])
     x_lo = max(int(ks[0]), min(peak, k_cut) - 40)
     x_hi = int(ks[-1])
@@ -101,8 +85,6 @@ def generate():
     ax.spines["left"].set_color(C_A)
     ax.set_xlim(x_lo, x_hi)
 
-    # y window from the curve inside the drawn x range, rounded out to a
-    # twentieth, never clipping it
     lo = np.floor(sils[win].min() * 20) / 20
     hi = min(1.0, np.ceil(sils[win].max() * 20) / 20)
     ax.set_ylim(lo, hi)
@@ -114,7 +96,7 @@ def generate():
     ax2.set_ylabel("Between cluster identity", color=C_B, fontsize=12)
     ax2.tick_params(axis="y", labelsize=10, labelcolor=C_B, color=C_B)
     ax2.spines["right"].set_color(C_B)
-    ax2.spines["left"].set_color(C_A)     # ax2 draws over ax's left spine
+    ax2.spines["left"].set_color(C_A)
     ax2.set_ylim(0.0, 1.0)
 
     ax.axvline(k_cut, color=INK, ls="--", lw=1.2)

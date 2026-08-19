@@ -1,19 +1,6 @@
-"""
-Verify all transform libraries load, type references resolve, and
-cross-domain workflow generation succeeds for representative targets.
-
-A SCRIPT, not a pytest module -- it defines no test functions, does all its
-work at import time and calls `sys.exit(1)` on failure. Named `test_*` it was
-collected, and that exit surfaced as an INTERNALERROR that aborted the whole
-session before any real test ran. Run it directly:
-
-    PYTHONPATH=src python tests/metasmith_libraries/check_transform_compatibility.py
-"""
 import sys, shutil, tempfile
 from pathlib import Path
 
-# The library root: tests and the library sit on opposite sides of the
-# monorepo, so this is an explicit path rather than a walk up out of tests/.
 ROOT = Path(__file__).resolve().parents[2] / "src" / "metasmith_libraries"
 sys.path.insert(0, str(ROOT))
 
@@ -50,7 +37,6 @@ def check(name, fn):
         failed += 1
 
 
-# ── 1. Type libraries ──────────────────────────────────────────────
 print("\n[1] Loading data_types/")
 for yml in sorted((ROOT / "data_types").glob("*.yml")):
     ns = yml.stem
@@ -61,7 +47,6 @@ for yml in sorted((ROOT / "data_types").glob("*.yml")):
     check(f"data_types/{ns} ({yml.name})", _load)
 
 
-# ── 2. Resource libraries ──────────────────────────────────────────
 print("\n[2] Loading resources/")
 for res in ["env", "lib"]:
     def _load(r=res):
@@ -69,7 +54,6 @@ for res in ["env", "lib"]:
     check(f"resources/{res}", _load)
 
 
-# ── 3. Transform libraries (load + iterate) ───────────────────────
 print("\n[3] Loading and iterating transform libraries")
 for domain in DOMAINS:
     def _load_iter(d=domain):
@@ -84,7 +68,6 @@ for domain in DOMAINS:
     check(f"transforms/{domain}", _load_iter)
 
 
-# ── 4. Cross-domain workflow generation ────────────────────────────
 print("\n[4] Cross-domain workflow generation")
 
 tmpdir = Path(tempfile.mkdtemp(prefix="msm_test_"))
@@ -110,16 +93,6 @@ def make_inputs(type_ns, type_file, item_type, item_path="/dev/null", label="tes
     return inputs
 
 def make_params():
-    """A library holding the caller-supplied parameters a chain may require.
-
-    `clustering::min_identity` has no producer anywhere in the library and is
-    not meant to: it is a threshold the caller chooses, the same shape of thing
-    as an env or a reference database. So it arrives the way those do -- as a
-    resource library offered to every sample -- rather than as an input derived
-    from the assembly. Supplying it is what the two clustering cases below were
-    missing; without it `diamond_linclust` has an unsatisfiable requirement and
-    the whole chain is correctly reported as unplannable.
-    """
     p_dir = tmpdir / "params"
     if p_dir.exists():
         shutil.rmtree(p_dir)
@@ -132,16 +105,13 @@ def make_params():
 
 agent_home = Source.FromLocal(tmpdir / "agent_home")
 
-# Test cases: (name, input_setup, target_type, sample_type[, extra_resources])
 test_cases = [
-    # assembly -> ORF prediction (assembly + functionalAnnotation)
     (
         "assembly -> open_reading_frames",
         lambda: make_inputs("sequences", "sequences.yml", "sequences::assembly"),
         "sequences::orfs",
         "sequences::assembly",
     ),
-    # assembly -> ORF prediction -> diamond linclust -> augmented centroids
     (
         "assembly -> augmented_centroids (multi-step chain)",
         lambda: make_inputs("sequences", "sequences.yml", "sequences::assembly"),
@@ -149,7 +119,6 @@ test_cases = [
         "sequences::assembly",
         make_params,
     ),
-    # assembly -> clustering (diamond linclust chain)
     (
         "assembly -> centroids (clustering)",
         lambda: make_inputs("sequences", "sequences.yml", "sequences::assembly"),
@@ -157,14 +126,12 @@ test_cases = [
         "sequences::assembly",
         make_params,
     ),
-    # assembly -> antismash (functional annotation)
     (
         "assembly -> antismash_json",
         lambda: make_inputs("sequences", "sequences.yml", "sequences::assembly"),
         "annotation::antismash_json",
         "sequences::assembly",
     ),
-    # assembly -> genomad (metagenomics taxonomy)
     (
         "assembly -> genomad_virus_summary",
         lambda: make_inputs("sequences", "sequences.yml", "sequences::assembly"),
@@ -193,14 +160,11 @@ for case in test_cases:
     check(name, _gen)
 
 
-# ── 5. Type cross-reference validation ─────────────────────────────
 print("\n[5] Type cross-reference validation")
 
-# Verify every GetType reference in transforms resolves to a defined type
 import re
 
 def _check_type_refs():
-    # Collect all defined type names from data_types/
     defined_types = set()
     for yml in (ROOT / "data_types").glob("*.yml"):
         ns = yml.stem
@@ -208,7 +172,6 @@ def _check_type_refs():
         for name, _ in tl:
             defined_types.add(f"{ns}::{name}")
 
-    # Scan all .py files in transforms/ for GetType references
     missing = []
     for py_file in ROOT.glob("transforms/**/*.py"):
         if py_file.name.startswith("_"):
@@ -228,7 +191,6 @@ def _check_type_refs():
 check("all GetType() references resolve to defined types", _check_type_refs)
 
 
-# ── cleanup & summary ─────────────────────────────────────────────
 shutil.rmtree(tmpdir, ignore_errors=True)
 
 print(f"\n{'='*50}")

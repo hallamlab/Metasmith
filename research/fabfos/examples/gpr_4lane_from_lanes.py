@@ -39,7 +39,6 @@ from _driver import SOCKEYE_ACCOUNT, SOCKEYE_AGENT_HOME, SOCKEYE_HOST  # noqa: E
 IMAGE_STORE = "/arc/project/st-shallam-1/metasmith/container_images"
 PROCESSED = "/arc/project/st-shallam-1/fabfos_refs/processed"
 
-# published-product directory prefix -> the DRIVER key it satisfies.
 WANT = {
     "7_annotation-kofamscan_results": "kofam",
     "2_annotation-clean_predictions": "clean",
@@ -58,7 +57,6 @@ def ssh(cmd: str) -> str:
 
 
 def render(paths: dict, out: str, source: str, threads: int) -> str:
-    """Substitute the mapper's DRIVER exactly as its protocol() does."""
     src = (MLIB / "transforms" / "fabfos" / "gpr_4lane.py").read_text()
     marker = "DRIVER = r'''"
     start = src.index(marker) + len(marker)
@@ -73,7 +71,6 @@ def render(paths: dict, out: str, source: str, threads: int) -> str:
 
 
 def discover(run_key: str) -> tuple[dict, str, str]:
-    """The run's published lane outputs, its staged ORF FASTA, and its source stem."""
     results = f"{SOCKEYE_AGENT_HOME}/runs/{run_key}/results"
     listing = ssh(f"ls -d {results}/*/ 2>/dev/null; echo ---; "
                   f"find {SOCKEYE_AGENT_HOME}/runs/{run_key}/_metasmith/task/data "

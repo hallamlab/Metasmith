@@ -1,9 +1,3 @@
-"""Tests for the post-exec promote step + S6 FS detection.
-
-Coverage: S5 (lockfile + orphan recovery + tmp promote/discard), S8
-(gc tombstone delay), S6 (network FS detection + straddle-mount refusal).
-"""
-
 from __future__ import annotations
 
 import shutil
@@ -14,18 +8,11 @@ import pytest
 
 
 def test_promote_lockfile_orphan_recovery(tmp_path):
-    """S5: a dead-PID lockfile gets cleaned then promote proceeds.
-
-    Pre-place a lockfile whose PID does not exist on this host; the
-    promote routine must recognize it as stale, remove it, acquire the
-    lock, and complete.
-    """
     from metasmith.caching.promote import _acquire_lock
 
     cache_root = tmp_path / "task_cache"
     cache_root.mkdir()
     key_hex = "abc123"
-    # PID 99999999 is reliably non-existent under Linux's default pid_max.
     lock = cache_root / f"{key_hex}.lock"
     lock.write_text(
         f"99999999 {__import__('socket').gethostname()} {time.time():.6f}\n"
@@ -36,12 +23,6 @@ def test_promote_lockfile_orphan_recovery(tmp_path):
 
 
 def test_promote_picks_up_orphan_tmp(tmp_path):
-    """S5: orphan <key>.tmp/ with a sentinel manifest gets promoted.
-
-    Captures mid-run-kill recovery: a previous interrupted run left a
-    complete <key>.tmp/ on disk; the next run's promote pass detects
-    it via manifest.cbor and finishes the rename.
-    """
     from metasmith.caching.promote import recover_orphan_tmp_dirs
 
     cache_root = tmp_path / "task_cache"
@@ -60,12 +41,6 @@ def test_promote_picks_up_orphan_tmp(tmp_path):
 
 
 def test_promote_discards_incomplete_tmp(tmp_path):
-    """S5: orphan <key>.tmp/ WITHOUT a manifest.cbor is deleted.
-
-    A .tmp dir that doesn't have the sentinel cbor file represents a
-    truly-interrupted write; the next pass should remove it rather than
-    promote it.
-    """
     from metasmith.caching.promote import recover_orphan_tmp_dirs
 
     cache_root = tmp_path / "task_cache"
@@ -82,12 +57,6 @@ def test_promote_discards_incomplete_tmp(tmp_path):
 
 
 def test_reclaim_leaves_another_runs_staging_alone(tmp_path):
-    """A reclaim sweep must not touch `.tmp` dirs it does not own.
-
-    The cache root is shared by every run on the agent, and an unsealed
-    `<key>.tmp/` is indistinguishable from one still being written. Run A
-    reclaiming its own keys must leave run B's mid-flight staging on disk.
-    """
     from metasmith.caching.promote import recover_orphan_tmp_dirs
 
     cache_root = tmp_path / "task_cache"
@@ -109,12 +78,6 @@ def test_reclaim_leaves_another_runs_staging_alone(tmp_path):
 
 
 def test_promote_run_reclaims_only_its_own_keys(tmp_path, monkeypatch):
-    """End to end: `promote_run` scopes its reclaim to this workspace's steps.
-
-    Guards the wiring, not just the helper -- the hazard was that the sweep
-    was called with the whole cache root regardless of which run was being
-    promoted.
-    """
     from metasmith.caching import promote as promote_mod
 
     workspace = tmp_path / "ws"
@@ -152,11 +115,6 @@ def test_promote_run_reclaims_only_its_own_keys(tmp_path, monkeypatch):
 
 
 def test_network_fs_uses_copy_strategy(tmp_path, monkeypatch):
-    """S6: a Lustre mount detected -> 'copy' strategy returned.
-
-    Mock /proc/self/mountinfo to claim the cache_root is on lustre and
-    assert detect_strategy returns 'copy'.
-    """
     from metasmith.caching import fs as fs_module
 
     fake_mp = str(tmp_path)
@@ -179,12 +137,6 @@ def test_network_fs_uses_copy_strategy(tmp_path, monkeypatch):
 
 
 def test_straddle_mount_init_fails(tmp_path, monkeypatch):
-    """S6: cache_root and workDir on different mounts -> compile refuses.
-
-    The rename in promote is only atomic on the same FS. Compiling a
-    workflow where the two roots straddle mount boundaries must surface
-    a structured error.
-    """
     from metasmith.caching import fs as fs_module
 
     cache_dir = tmp_path / "a"
@@ -213,14 +165,6 @@ _orig_read_text = Path.read_text
 
 
 def test_gc_tombstone_delay(tmp_path):
-    """S8: tombstoning an entry K leaves output_root on disk during grace.
-
-    Two-phase semantics: `gc_cache` first tombstones, then a follow-up
-    pass with `delete=True` only unlinks entries whose `tombstoned_at`
-    is past the grace window. While inside the grace window any
-    in-flight materialization (which read the output_root path before
-    the tombstone) can still complete because the directory is intact.
-    """
     from metasmith.caching.store import CacheStore
     from metasmith.ops.cache import gc_cache
 
@@ -228,9 +172,6 @@ def test_gc_tombstone_delay(tmp_path):
     cache_root.mkdir()
     store = CacheStore.open(cache_root)
     try:
-        # Stand up a cached entry with a real output_root on disk so
-        # that the delete path can observably leave it alone (or remove
-        # it). Shard layout mirrors `_shard_dir`: <key[:2]>/<key[2:]>.
         key_hex = "1e20" + "ab" * 32
         key = bytes.fromhex(key_hex)
         output_root = cache_root / key_hex[:2] / key_hex[2:]
@@ -244,8 +185,6 @@ def test_gc_tombstone_delay(tmp_path):
             size_bytes=7,
             origin="lineage",
         )
-        # Push last_hit_at into the past so the older-than filter picks
-        # the entry. Then tombstone via gc_cache.
         store.conn.execute(
             "UPDATE entries SET last_hit_at = ? WHERE key = ?",
             (1, key),
@@ -263,8 +202,6 @@ def test_gc_tombstone_delay(tmp_path):
     assert summary["deleted"] == []
     assert (cache_root / key_hex[:2] / key_hex[2:] / "out" / "f.txt").exists()
 
-    # Grace not elapsed: even with delete=True the file stays. The
-    # tombstone was just written so (now - tombstoned_at) << grace.
     summary = gc_cache(
         cache_root=str(cache_root),
         delete=True,
@@ -274,7 +211,6 @@ def test_gc_tombstone_delay(tmp_path):
     )
     assert (cache_root / key_hex[:2] / key_hex[2:] / "out" / "f.txt").exists()
 
-    # Force the tombstone older than the grace window and re-run.
     store = CacheStore.open(cache_root)
     try:
         store.conn.execute(

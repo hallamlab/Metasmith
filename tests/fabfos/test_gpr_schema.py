@@ -1,22 +1,3 @@
-"""Execute both GPR mappers' drivers against synthetic lane outputs.
-
-`test_gpr_workflow.py` proves the stage *plans*; this proves the code inside it
-*runs* and that what it writes satisfies the schema contract. Neither needs a
-container, a reference, or a GPU: the drivers are plain pandas/numpy, and the
-inputs here are a dozen hand-written rows in each lane's real on-disk format.
-
-That distinction is the point. The first real GPR table has never been written,
-so every defect in these drivers -- a `.format()` placeholder that no longer
-exists, a header the CLEAN parser no longer recognises, an ORF-id space that does
-not match between two lanes -- would otherwise surface hours into a run that
-staged an 8 GB DIAMOND database first.
-
-The negative cases matter as much as the positive one: each asserts the mapper
-*refuses* rather than writing a zero-row parquet and reporting success, which is
-what it used to do for all of them.
-
-    PATH="/home/tony/lib/miniforge3/envs/msm/bin:$PATH" python -m pytest tests/test_gpr_schema.py -v
-"""
 from __future__ import annotations
 
 import subprocess
@@ -34,8 +15,6 @@ EV_LIB = MLIB / "resources" / "lib" / "fabfos_evidence.py"
 sys.path.insert(0, str(EV_LIB.parent))
 import fabfos_evidence as fe  # noqa: E402
 
-# Two ORFs, two KOs, two ECs, two UniProt accessions -- enough that every lane has
-# rows and every dedup/merge has something to do.
 ORFS = ["pool1:megahit:k141_1:0-1200_1", "pool1:megahit:k141_1:1300-2400_2"]
 KOS = ["K00001", "K00002"]
 ECS = ["1.1.1.1", "2.7.1.1"]
@@ -67,7 +46,7 @@ def _write_kofam(p: Path):
         "gene_name": ORFS,
         "KO": KOS,
         "thrshld": [100.0, 100.0],
-        "score": [250.5, 130.0],       # both above threshold
+        "score": [250.5, 130.0],
         "E-value": [1e-70, 1e-40],
         "best": ["*", "*"],
     }).to_csv(p, index=False)
@@ -76,7 +55,6 @@ def _write_kofam(p: Path):
 def _write_clean(p: Path, header=("Query ID", "Predicted EC number", "clean_score")):
     with open(p, "w") as fh:
         fh.write("\t".join(header) + "\n")
-        # maxsep DISTANCES, in CLEAN's own scale -- its parser's worked example is 8.06
         fh.write(f"{ORFS[0]}\t{ECS[0]}\t8.06\n")
         fh.write(f"{ORFS[1]}\t{ECS[1]}\t3.41\n")
 
@@ -93,9 +71,6 @@ def _write_uniref(p: Path):
 def _write_deepec(p: Path):
     with open(p, "w") as fh:
         fh.write("Query ID\tPredicted EC number\n")
-        # PREFIXED, as DeepEC actually writes them -- `EC:1.1.1.1`, not `1.1.1.1`.
-        # The fixture used to write them bare, which is why the gate passed while the
-        # real lane matched nothing and contributed zero rows.
         for orf, ec in zip(ORFS, ECS):
             fh.write(f"{orf}\tEC:{ec}\n")
 
@@ -115,16 +90,12 @@ def _write_query_embeddings(emb: Path, idx: Path, rng):
 
 
 def _write_pool(pool_dir: Path, rng, stacks=("emb_pbert.npy",)):
-    """A reference pool of 40 labelled members. K=30 in the mappers, so the pool must
-    hold at least that many or the top-K partition indexes past the end."""
     n = 40
     pool_dir.mkdir(parents=True, exist_ok=True)
     pd.DataFrame({
         "role": ["reference"] * n,
         "row": np.arange(n, dtype=np.int64),
         "orf": [f"REF{i:04d}" for i in range(n)],
-        # every member carries the same two labels, so the kNN vote is 1.0 for both
-        # and clears any floor -- this test is about plumbing, not about recall
         "mnxr_list": [";".join(MNXRS[:2])] * n,
     }).to_parquet(pool_dir / "orf_index.parquet", index=False)
     for s in stacks:
@@ -133,7 +104,6 @@ def _write_pool(pool_dir: Path, rng, stacks=("emb_pbert.npy",)):
 
 def _lanes(work: Path, rng, seven: bool, pool_stacks=("emb_pbert.npy",),
            esmc_pool_stacks=("emb_esmc.npy",)):
-    """Write every input both mappers read; return the format kwargs."""
     _write_orfs(work / "orfs.faa")
     _write_kofam(work / "kofam.csv")
     _write_clean(work / "clean.tsv")
@@ -147,20 +117,12 @@ def _lanes(work: Path, rng, seven: bool, pool_stacks=("emb_pbert.npy",),
         uniref=str(work / "uniref.tsv"), bridge=str(work / "bridge.parquet"),
         pbert_emb=str(work / "pbert.parquet"), pbert_idx=str(work / "pbert_index.csv"),
         pool=str(work / "pool"), out=str(work / "gpr.parquet"),
-        # The BLAS thread floor the 4-lane driver bakes in; only that mapper has
-        # the slot, and `format` ignores a key the 7-lane template does not use.
-        # One, because these fixtures are a few rows and the driver would
-        # otherwise oversubscribe every core in the suite.
         threads=1,
     )
     if seven:
         _write_deepec(work / "deepec.tsv")
         _write_ezpred(work / "ezpred.csv")
         _write_query_embeddings(work / "esmc.parquet", work / "esmc_index.csv", rng)
-        # A SECOND pool, in its own directory. The ESM-C lane votes against ESM-C
-        # embeddings -- cosine distance between two embedding spaces is a number with
-        # no referent -- and the leaf name differs from `pool` because nextflow stages
-        # a process's inputs by basename and the mapper takes both.
         _write_pool(work / "pool_esmc", rng, stacks=esmc_pool_stacks)
         kw.update(
             lane_set="full_7", source="orfs",
@@ -174,11 +136,6 @@ def _lanes(work: Path, rng, seven: bool, pool_stacks=("emb_pbert.npy",),
 
 
 def _render(mapper: str, kw: dict) -> str:
-    """Substitute the mapper's DRIVER exactly as its protocol() does.
-
-    Imported by exec rather than by `import` because the transform module calls
-    metasmith's python_api at import time.
-    """
     src = (MLIB / "transforms" / "fabfos" / f"{mapper}.py").read_text()
     ns: dict = {}
     start = src.index("DRIVER = r'''")
@@ -216,10 +173,6 @@ def _check_table(out: Path, lane_set: str):
     return df
 
 
-# =====================================================================
-# the happy paths
-# =====================================================================
-
 def test_gpr_4lane_driver_writes_a_valid_table(tmp_path):
     rng = np.random.default_rng(0)
     kw = _lanes(tmp_path, rng, seven=False)
@@ -227,17 +180,11 @@ def test_gpr_4lane_driver_writes_a_valid_table(tmp_path):
     assert r.returncode == 0, f"driver failed:\n{r.stdout}\n{r.stderr}"
     df = _check_table(tmp_path / "gpr.parquet", "chosen_4")
 
-    # CLEAN's distance survives losslessly through the monotone re-expression:
-    # the 8.06 the parser's own example shows comes back out of 1/s - 1.
     clean = df[df["channel"] == "clean"]
     assert np.isclose(sorted(1.0 / clean["raw_score"] - 1.0), [3.41, 8.06]).all()
-    # and the LARGER distance is now the WEAKER score, which is the whole point
     assert clean["raw_score"].min() < clean["raw_score"].max()
 
-    # evidence_quality is carried from the bridge, not defaulted: one of the two
-    # UniProt accessions is unreviewed there.
     assert set(df[df["channel"] == "uniref50"]["evidence_quality"]) == {"reviewed", "unreviewed"}
-    # ... while the embedding lane inherits the pool's reviewed cut
     assert set(df[df["channel"] == "pbert"]["evidence_quality"]) == {"reviewed"}
 
 
@@ -248,24 +195,12 @@ def test_gpr_7lane_driver_writes_a_valid_table(tmp_path):
     assert r.returncode == 0, f"driver failed:\n{r.stdout}\n{r.stderr}"
     df = _check_table(tmp_path / "gpr.parquet", "full_7")
 
-    # DeepEC is score-less: presence is 1.0, never NaN. A NaN here makes the
-    # downstream share-of-sum read the lane's total as zero and fall back to a
-    # uniform split with nothing raised.
     deepec = df[df["channel"] == "deepec"]
     assert (deepec["raw_score"] == 1.0).all()
     assert set(deepec["score_kind"]) == {"presence"}
 
 
-# =====================================================================
-# the refusals
-# =====================================================================
-
 def test_esmc_lane_refuses_a_pool_without_its_stack(tmp_path):
-    """Point the ESM-C lane at a pool holding no emb_esmc.npy and it must refuse BY NAME.
-
-    There is no degraded mode: voting a query against a pool embedded by a different
-    model is not a weaker answer, it is a meaningless one.
-    """
     rng = np.random.default_rng(2)
     kw = _lanes(tmp_path, rng, seven=True, esmc_pool_stacks=("emb_pbert.npy",))
     r = _run(_render("gpr_7lane", kw), tmp_path)
@@ -275,10 +210,8 @@ def test_esmc_lane_refuses_a_pool_without_its_stack(tmp_path):
 
 
 def test_mapper_refuses_when_a_lane_contributes_no_rows(tmp_path):
-    """An unstaged reference or a broken join empties one lane. Name which."""
     rng = np.random.default_rng(3)
     kw = _lanes(tmp_path, rng, seven=False)
-    # a bridge with no `ko` rows: the kofam lane joins to nothing
     b = pd.read_parquet(tmp_path / "bridge.parquet")
     b[b["id_source"] != "ko"].to_parquet(tmp_path / "bridge.parquet", index=False)
     r = _run(_render("gpr_4lane", kw), tmp_path)
@@ -288,25 +221,17 @@ def test_mapper_refuses_when_a_lane_contributes_no_rows(tmp_path):
 
 
 def test_mapper_refuses_an_orf_id_mismatch(tmp_path):
-    """CLEAN splits headers on whitespace and DIAMOND does not; if the lanes ever
-    disagree about the id space, every cross-lane join is meaningless."""
     rng = np.random.default_rng(4)
     kw = _lanes(tmp_path, rng, seven=False)
-    # the ORF FASTA no longer contains what the lanes annotated
     with open(tmp_path / "orfs.faa", "w") as fh:
         fh.write(">something_else_1\nMKV\n")
     r = _run(_render("gpr_4lane", kw), tmp_path)
     assert r.returncode != 0
-    # The mapper catches this at the lane rather than downstream at the empty
-    # table, and says which lane and which id, because the id space is the thing
-    # actually wrong and "the table is empty" named only the symptom.
     assert "ORF ids that are not in this shard's FASTA" in r.stderr
     assert not (tmp_path / "gpr.parquet").exists()
 
 
 def test_clean_lane_refuses_a_header_drift(tmp_path):
-    """The old parser renamed columns positionally, so a header change silently
-    emptied the lane instead of raising."""
     rng = np.random.default_rng(5)
     kw = _lanes(tmp_path, rng, seven=False)
     _write_clean(tmp_path / "clean.tsv", header=("query", "ec", "score"))
@@ -317,7 +242,6 @@ def test_clean_lane_refuses_a_header_drift(tmp_path):
 
 
 def test_validator_rejects_an_out_of_range_score():
-    """The direction/range contract is enforced, not merely documented."""
     df = pd.DataFrame([{
         "source": "orfs", "orf": ORFS[0], "channel": "pbert", "mnxr": MNXRS[0],
         "intermediate_id": "REF0001", "intermediate_name": "",
@@ -342,7 +266,6 @@ def test_validator_rejects_a_nan_score():
 
 
 def test_the_channel_vocabulary_has_exactly_one_spelling():
-    """Two vocabularies existed in this tree at once. One now, declared once."""
     assert set(fe.CHANNEL_SCORE_KIND) == set(fe.CHANNELS)
     assert set(fe.CHANNEL_SCORE_KIND.values()) <= set(fe.SCORE_KINDS)
     assert set(fe.LANE_SETS["chosen_4"]) < set(fe.LANE_SETS["full_7"])
@@ -351,11 +274,6 @@ def test_the_channel_vocabulary_has_exactly_one_spelling():
         for dead in ("dl_ec", "uniref50_dr", "pbert_transfer"):
             assert f'"{dead}"' not in src, f"{mapper} still spells a channel {dead!r}"
 
-    # Every re-emitter of a mapper table, too. These carry the lane forward into the
-    # benchmark schema, so a retired spelling here is a join that silently returns
-    # nothing against a table the mapper wrote. `pbert_transfer` is NOT checked for
-    # them: `lib::fabfos_embed_transfer.py` owns that name for a different
-    # measurement, and `fabfos_evidence.read_embed_transfer` reads it on purpose.
     reemitters = {
         "host_gpr_denovo": REPO_ROOT / "src" / "fabfos" / "build_references" / "transforms"
                            / "benchmark" / "host_gpr_denovo.py",
@@ -369,18 +287,6 @@ def test_the_channel_vocabulary_has_exactly_one_spelling():
 
 
 def test_the_schema_covers_every_gpr_table_in_the_tree():
-    """One schema, one validator, for hosts, clones, cohorts, runs and communities.
-
-    Four incompatible layouts existed here, and `validate_gpr` could check only one of
-    them -- so the tables that most needed a contract were the ones outside it. This
-    walks the actual tree and asserts the standing property: every GPR table carries the
-    core plus whole declared blocks, and one validator passes on it.
-
-    A table that needs converting on the way through is reported by name and fails.
-    `to_unified` exists for reading an old file, not for letting a PRODUCER keep writing
-    one: the layouts drifted apart in the first place because nothing said, at the point
-    a table was written, which schema it was supposed to be on.
-    """
     import glob
     import io
     import contextlib
@@ -396,9 +302,6 @@ def test_the_schema_covers_every_gpr_table_in_the_tree():
     refused, legacy_layout, checked = [], [], 0
     for f in tables:
         df = pd.read_parquet(f)
-        # A GPR table is (nominator -> reaction, with a strength). The two epi300 union
-        # files are derived aggregates over one -- reaction sets with an origin, no
-        # score -- so the schema is not theirs to carry.
         if not {"channel", "mnxr", "raw_score"} <= set(df.columns):
             continue
         ext = fe.extensions_of(df)

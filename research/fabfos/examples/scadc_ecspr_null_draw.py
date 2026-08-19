@@ -85,7 +85,7 @@ def load_orf_pool(metag_orfs_path):
     order = np.lexsort((ordinal, contig))
     ids, contig, ordinal = ids[order], contig[order], ordinal[order]
     boundaries = np.flatnonzero(np.r_[True, contig[1:] != contig[:-1], True])
-    contig_spans = {}  # contig -> (start_idx, end_idx) into the sorted `ids` array
+    contig_spans = {}
     names = contig[boundaries[:-1]]
     for name, s, e in zip(names, boundaries[:-1], boundaries[1:]):
         contig_spans[name] = (s, e)
@@ -93,15 +93,6 @@ def load_orf_pool(metag_orfs_path):
 
 
 def draw_seed(seed, style, n_rep, it) -> int:
-    """A per-draw seed that survives leaving the process.
-
-    This was `abs(hash((seed, style, n_rep, it))) % 2**32`, and Python salts
-    `hash()` of a *str* per interpreter unless PYTHONHASHSEED is set -- so the
-    "resuming reproduces the identical draws" contract in this module's
-    docstring held only within one process. A resumed job silently drew a
-    different null than the one it was continuing, and re-running the same call
-    reproduced nothing. blake2b of the same four values has no such salt.
-    """
     h = hashlib.blake2b(f"{seed}|{style}|{n_rep}|{it}".encode(), digest_size=4)
     return int.from_bytes(h.digest(), "big")
 
@@ -170,10 +161,6 @@ def main():
     a = ap.parse_args()
 
     if a.lib_dir:
-        # The SIF this runs under carries numpy/scipy/pandas but not `ecspr`, so the
-        # package directory is staged beside the driver and put on the path. Its
-        # PARENT is what goes on sys.path -- `ecspr` is a package now, not four
-        # loose modules.
         sys.path.insert(0, str(Path(a.lib_dir).resolve().parent))
     from ecspr.model.build import load_pairs, load_direction_ratios, graph_from_pairs
     from ecspr.model.evidence import per_unit_weights
@@ -217,10 +204,6 @@ def main():
     print(f"[null] host total={host_total:.6g}", flush=True)
 
     reps = n_buckets(a.observed_n)
-    # The bucket list is computed from the WHOLE observed distribution and only
-    # then narrowed, so shard i means the same N in every array task and in a
-    # serial re-run. Bucketing the shard's own slice instead would make the
-    # bucket identity depend on how the work was divided.
     if a.bucket_index is not None:
         if not 0 <= a.bucket_index < len(reps):
             raise SystemExit(f"[null] --bucket-index {a.bucket_index} is outside "

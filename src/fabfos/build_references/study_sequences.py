@@ -56,37 +56,21 @@ REPO = Path(__file__).resolve().parents[3]
 BENCH = REPO / "data" / "fabfos" / "benchmarks"
 GENOMES = REPO / "data" / "fabfos" / "originals" / "genomes"
 OUT_ROOT = REPO / "data" / "fabfos" / "scratch" / "study_sequences"
-# The heterologous curation, shared with the conditions layer -- see load_het_curation.
 HET_TABLE = (REPO / "data" / "fabfos" / "originals" / "benchmarks" / "het_screen"
              / "heterologous_uniprot.tsv")
 
 STUDIES = ("laser", "keio", "eydallin", "aromatic", "fa_supply", "forsberg",
            "pg_anionic", "aska_ffa")
 
-# E. coli, for a taxon-restricted UniProt query. The studies that are not LASER are all
-# K-12 derivatives, and LASER's `lineage` column says K12/B/C/W throughout -- so a
-# host-native token that missed the local index is an E. coli gene under an older name,
-# not some other organism's.
 ECOLI_TAXON = "562"
 
 UNIPROT = "https://rest.uniprot.org/uniprotkb/search"
 
-# A conversion, not a gene. The gain-of-function studies write their targets and
-# controls this way; the pattern is deliberately narrow (an explicit `_to_` join)
-# because a real gene symbol never carries one.
 _SHORTHAND = re.compile(r"_to_", re.IGNORECASE)
-# A gene symbol: 3-5 lowercase letters then an optional capital and digits (`lysC`,
-# `pcaGH`, `yjcQ`), or a b-number. Anything with a space, a digit-led word or an HTML
-# entity is a description.
 _SYMBOL = re.compile(r"^(b\d{4}|[a-z]{2,5}[A-Z]{0,2}\d{0,2})$")
 
 
 def index_proteomes() -> tuple[dict[str, tuple[str, str]], dict[str, str]]:
-    """gene/locus-tag -> (accession, host), plus accession -> sequence.
-
-    Case-folded on the way in: the extractions write `pcaGH` and NCBI writes `pcaG`,
-    and a lookup that respects case reports a miss on a gene that is right there.
-    """
     index: dict[str, tuple[str, str]] = {}
     seqs: dict[str, str] = {}
     for faa in sorted(GENOMES.glob("*/genome/*.faa")):
@@ -109,8 +93,6 @@ def classify(token: str, role: str) -> str:
     t = token.strip()
     if not t:
         return "empty"
-    # The gain-of-function studies mark their non-gene rows in `role`; the pattern is
-    # the backstop for the studies that carry no role column.
     if role in ("target", "control") or _SHORTHAND.search(t):
         return "pathway_shorthand"
     if _SYMBOL.match(t):
@@ -119,25 +101,10 @@ def classify(token: str, role: str) -> str:
 
 
 def tokens_for(study: str) -> list[dict]:
-    """Every gene token a study names, with the action or role it carries.
-
-    Each study writes them differently and none is reshaped into the others: LASER packs
-    `gene:action` pairs into one field, Keio names one gene per row plus its b-number,
-    Eydallin carries a normalised symbol beside the paper's original, and the four
-    gain-of-function tables carry a `role`. Reshaping them to a common column first is
-    how a b-number stops being distinguishable from a symbol.
-    """
     import pandas as pd
     d = pd.read_csv(BENCH / study / "extraction.tsv", sep="\t", dtype=str)
     out: list[dict] = []
     if study == "laser":
-        # `gene_set` stays the token source -- it is the column the extraction guarantees
-        # is populated, and switching to `genes_json` loses ~21 tokens on rows that carry
-        # one and not the other. But `gene_set` is `label:action` and NOTHING ELSE, which
-        # is why the free-text names looked organism-less: `genes_json` carries the source
-        # organism for every one of them, and it was simply never read. Enriched here per
-        # ROW rather than globally, so a label used by two papers from two organisms keeps
-        # both -- that pair is the key the het curation is written on.
         src_for = {}
         for i, gj in d["genes_json"].fillna("").items():
             if not gj.strip():
@@ -162,8 +129,6 @@ def tokens_for(study: str) -> list[dict]:
     elif study == "keio":
         for i, gs in d["gene_set"].fillna("").items():
             tok = gs.split(":")[0].strip()
-            # The b-number is the unambiguous one and is preferred; the symbol is kept
-            # as the fallback because a handful of Keio rows carry no b_number.
             b = str(d.at[i, "b_number"] or "").strip()
             out.append(dict(token=b or tok, alt=tok, role="del",
                             obs=d.at[i, "obs_id"]))
@@ -181,10 +146,6 @@ def tokens_for(study: str) -> list[dict]:
     return out
 
 
-# ---------------------------------------------------------------------------
-# UniProt
-# ---------------------------------------------------------------------------
-
 def _uniprot(query: str, *, size: int = 1) -> list[dict]:
     url = (f"{UNIPROT}?query={urllib.parse.quote(query)}"
            f"&format=json&size={size}&fields=accession,id,gene_names,protein_name,"
@@ -195,27 +156,6 @@ def _uniprot(query: str, *, size: int = 1) -> list[dict]:
 
 
 def uniprot_by_gene(symbol: str, *, organisms=()) -> tuple[dict | None, str]:
-    """An entry for a gene symbol, ALWAYS restricted to an organism the token names.
-
-    `gene:<symbol>` searches UniProt's synonym list rather than only the primary name,
-    which is the whole point for a HOST gene: Eydallin's misses are E. coli genes renamed
-    since 2010 (`pfs` -> `mtnN`, `yncC` -> `mlrA`), and a lookup against a current
-    proteome cannot find them while UniProt still carries both names.
-
-    THE UNRESTRICTED ESCALATION IS GONE, and it was the most dangerous line in this file.
-    It read as a graceful widening -- "an unrestricted pick is a weaker claim, and the
-    table records which organism it came from" -- but nothing downstream reads that column
-    as a warning, so the weak claim and the strong one are the same row. Simulated over
-    the 76 unresolved gene tokens it "resolved" 66, including a rat, two humans, a mouse,
-    a nematode, a fruit fly, barley and potato. A wrong protein is worse than no protein,
-    because nothing downstream can tell.
-
-    A heterologous token with no organism therefore RESOLVES TO NOTHING here, by design.
-    Its organism lives in LASER's `genes_json` and its identity is decided once, in
-    `curate_het_screen.py`; a token that reaches this function without one is a curation
-    miss, and where it belongs is that script's `unresolved.tsv` -- the same refusal the
-    free-text half of this file already makes.
-    """
     orgs = [str(o).strip() for o in organisms if str(o).strip()] or ["Escherichia coli"]
     attempts = []
     for reviewed, method in ((" AND reviewed:true", "uniprot_gene_organism_reviewed"),
@@ -231,18 +171,6 @@ def uniprot_by_gene(symbol: str, *, organisms=()) -> tuple[dict | None, str]:
 
 
 def load_het_curation(path: Path) -> dict:
-    """`(label, source organism) -> (accession, organism, sequence, how)`.
-
-    The curated table `curate_het_screen.py` writes, and the ONE place a heterologous
-    label's identity is decided. Reading it here rather than re-querying UniProt is the
-    point of the table existing: the conditions layer joins it through
-    `bench_cohorts.load_het`, and if this file re-derived the same answers the two halves
-    of the benchmark could disagree about which protein a label names.
-
-    Also keyed on the label ALONE as a fallback, but only where that label has exactly one
-    organism in the table -- an ambiguous label resolved by dropping the organism is the
-    error the pair key exists to prevent.
-    """
     if not path.exists():
         return {}
     out, by_label = {}, {}
@@ -262,18 +190,6 @@ def load_het_curation(path: Path) -> dict:
 
 
 def uniprot_by_ec(ec: str, name: str) -> tuple[dict | None, str]:
-    """An entry for an EC number -- for a heterologous addition, not a host gene.
-
-    The gain-of-function studies name genes their host does not have (`pcaB` and its
-    neighbours are Pseudomonas, `xfpk` is Bifidobacterium, `padC` is Bacillus) and give
-    the EC alongside. The EC is the identifier here and the symbol is a label: searching
-    the symbol against E. coli would return nothing, and against all of UniProt would
-    return whichever organism sorts first.
-
-    Escalates past `reviewed:true` for the same reason the gene path does, and reports
-    which tier answered: an EC that only has TrEMBL members is still a resolution, but
-    a weaker one, and the difference belongs in the table rather than in this function.
-    """
     for q, method in ((f"ec:{ec} AND reviewed:true", "uniprot_ec"),
                       (f"ec:{ec}", "uniprot_ec_trembl")):
         hits = _uniprot(q, size=5)
@@ -330,8 +246,6 @@ def main() -> int:
             rec["roles"].add(r.get("role", ""))
             rec["sources"].update(r.get("sources", {}))
             rec["n"] += 1
-            # A token classed shorthand by role in one row and a gene in another is a
-            # gene: `role` is per observation and the strictest reading wins.
             if rec["cls"] == "pathway_shorthand" and \
                     classify(tok, r.get("role", "")) != "pathway_shorthand":
                 rec["cls"] = classify(tok, r.get("role", ""))
@@ -341,11 +255,6 @@ def main() -> int:
                 rec["method"] = "not_a_gene"
                 rec["note"] = "a lumped conversion the readout is measured over"
                 continue
-            # THE CURATION FIRST, for a heterologous label. It carries the sequence, so
-            # this needs no network at all, and it is what makes this file and the
-            # conditions layer name the same protein for the same label -- two lookups
-            # of one label is how they come to disagree. Only the `(label, organism)`
-            # key or an unambiguous label matches; see load_het_curation.
             for src in sorted(rec["sources"]) + [""]:
                 hit = het.get((rec["token"], src))
                 if hit:
@@ -371,28 +280,13 @@ def main() -> int:
             for rec in todo:
                 hit = None
                 if rec["cls"] == "gene" and rec["ec"]:
-                    # A symbol WITH an EC in a gain-of-function table is a heterologous
-                    # addition: the host does not have it, so the EC is the identifier.
                     hit, rec["method"] = uniprot_by_ec(rec["ec"], rec["token"])
                 elif rec["cls"] == "gene":
-                    # RESTRICTED TO THE ORGANISMS THE TOKEN ITSELF NAMES, with E. coli as
-                    # the fallback for a token that names none -- a native gene's organism
-                    # is the host's and does not need saying. The local name here used to
-                    # be `het`, which SHADOWED the het curation dict bound above it, so
-                    # the second study in a run looked its labels up in a boolean.
                     hit, rec["method"] = uniprot_by_gene(
                         rec["token"], organisms=sorted(rec["sources"]))
                 elif rec["ec"]:
-                    # A free-text name WITH an EC -- the gain-of-function tables carry
-                    # one, and the EC is the identifier exactly as it is for a symbol.
                     hit, rec["method"] = uniprot_by_ec(rec["ec"], rec["token"])
                 else:
-                    # A free-text name the curation did not cover. NOT guessed here: the
-                    # curation is the one place a heterologous label's identity is
-                    # decided, and resolving it a second way in this file is how the two
-                    # halves of the benchmark come to name different proteins. The miss
-                    # belongs in curate_het_screen.py's unresolved.tsv, which is where a
-                    # curator picks it up.
                     rec["method"] = "unresolved"
                     rec["note"] = ("free-text label absent from the het curation; add it "
                                    "there, not here -- see curate_het_screen.py")
@@ -402,11 +296,6 @@ def main() -> int:
                     rec["organism"] = hit.get("organism", {}).get("scientificName", "")
                     seqs[rec["accession"]] = hit.get("sequence", {}).get("value", "")
                 elif rec["method"] != "unresolved":
-                    # UniProt is a PROTEIN database, so a non-coding gene misses every
-                    # tier by construction rather than by absence -- LASER's `glyV`,
-                    # `glyY` (tRNA-Gly) and `csrB` (sRNA) are real genes with no protein
-                    # to fetch, and calling that "not found" invites someone to go
-                    # looking for one.
                     rec["note"] = (f"no protein entry at any tier, reviewed or not "
                                    f"(from {rec['method']}); either absent from UniProt "
                                    f"or a non-coding gene, which has no protein at all")
@@ -415,11 +304,6 @@ def main() -> int:
         for rec in seen.values():
             if not rec["accession"] and rec["method"] not in ("not_a_gene", "unresolved"):
                 rec["method"] = "unresolved"
-                # A FREE-TEXT MISS IS NOT A MISSING NETWORK. Every enzyme_name token is
-                # looked up in the curation, which needs no network, so reporting one as
-                # "--network was not run" sends a curator to rerun this file when the
-                # thing to fix is one directory over. The two misses have different
-                # remedies and have to read differently.
                 if rec["note"]:
                     pass
                 elif rec["cls"] == "enzyme_name":
@@ -441,10 +325,6 @@ def main() -> int:
                     rec["method"], rec["accession"], rec["organism"], rec["ec"],
                     rec["note"]]) + "\n")
 
-        # The ORF set, named for the study so the mapper's `source` column names it --
-        # the same rule the host half runs on. One record per RESOLVED gene; a token
-        # that did not resolve is absent from the FASTA and present in the table, which
-        # is the only shape in which "76 of 86" survives to the reader.
         wrote = 0
         with (d / f"{study}.faa").open("w") as f:
             for rec in sorted(seen.values(), key=lambda r: r["token"]):
@@ -468,8 +348,6 @@ def main() -> int:
 
     (out_root / "COVERAGE.json").write_text(json.dumps(grand, indent=2))
     print(f"\n-> {out_root}")
-    # Every unresolved GENE, by name. An enzyme_name miss is expected and reported in
-    # the per-study table; a `gene` miss is a real gap and belongs where it is read.
     for study, g in grand.items():
         gene = g["by_class"].get("gene", dict(n=0, ok=0))
         if gene["ok"] < gene["n"]:

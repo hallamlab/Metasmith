@@ -12,8 +12,6 @@ def protocol(context: ExecutionContext):
 
     cpus = context.params.get("cpus", 4)
 
-    # `virsorter setup` downloads the DB (~10 GB) into the target dir; that dir
-    # is what virsorter2.py binds at /db.
     context.ExecWithEnv().ifContainerDo(
         env=image,
         cmd=f"""

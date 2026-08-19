@@ -1,4 +1,3 @@
-"""Transform library inspection and authoring."""
 from __future__ import annotations
 
 from pathlib import Path
@@ -147,9 +146,6 @@ def scaffold_transform(
 
     group_var = var_names[group_by]
     if env_type:
-        # Both arms scaffolded: which worlds this tool supports is the author's
-        # call, and deleting the arm that does not apply is a smaller ask than
-        # remembering the one that does exist.
         protocol_body = (
             'context.ExecWithEnv() \\\n'
             '        .ifContainerDo(env=image, cmd="TODO") \\\n'
@@ -192,21 +188,8 @@ def scaffold_transform(
 
 
 class TransformContractError(Exception):
-    """A transform's source violates the ExecWithEnv contract."""
-
-
+    pass
 def check_env_declarations(source: str, filename: str = "<transform>") -> dict:
-    """Static half of `validate`: how this transform declares its tool runs.
-
-    Errors are contract violations (a chain with no arm can only no-op; a
-    retired or private launch entry point runs a tool outside the arms
-    entirely). Warnings are shape observations that do not make the transform
-    wrong.
-
-    Syntactic only -- a protocol that dispatches through a helper function is
-    invisible here, so a clean result is the absence of a detected violation,
-    not a proof of portability.
-    """
     scan = ScanSource(source, filename=filename)
     errors: list[str] = []
     warnings: list[str] = []
@@ -246,13 +229,10 @@ def check_env_declarations(source: str, filename: str = "<transform>") -> dict:
 
 
 def validate_contract(library_path: str, transform_path: str) -> dict:
-    """Reload the transform and check its contract resolves."""
     lib = load_transform_lib(library_path)
     p = Path(transform_path)
     if p.is_absolute():
         p = p.relative_to(lib.location)
-    # GetTransform accepts a bare name and adds the suffix itself; the static
-    # scan reads the file directly, so normalize here rather than twice.
     if p.suffix != ".py":
         p = p.with_suffix(".py")
     tr = lib.GetTransform(p, reload=True)
@@ -282,7 +262,6 @@ def validate_contract(library_path: str, transform_path: str) -> dict:
 
 
 def propagate_types(transform_library: str, type_paths: list[str]) -> dict:
-    """Copy type libraries into the transform library's _metadata/types/."""
     tlib = load_transform_lib(transform_library)
     copied: list[str] = []
     for tp in type_paths:

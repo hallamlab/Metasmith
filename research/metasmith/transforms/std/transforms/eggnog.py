@@ -18,9 +18,6 @@ def protocol(context: ExecutionContext):
     if cpus is not None:
         cpus_string = f"--cpu {cpus}"
 
-    # bakta writes amino-acid CDS to <prefix>.faa (prefix "bakta") inside its
-    # output directory; eggNOG-mapper annotates those proteins and writes
-    # <out_dir>/eggnog.emapper.annotations, which we expose as the product.
     context.ExecWithContainer(
         image = image,
         cmd = f"""

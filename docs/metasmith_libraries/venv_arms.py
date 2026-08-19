@@ -1,22 +1,4 @@
 #!/usr/bin/env python3
-"""Report (and optionally add) `ifVirtualEnvDo` arms.
-
-An arm is added only where BOTH hold:
-
-  1. the tool's `resources/env/<tool>.env` declares `conda:` -- an independently
-     authored assertion (env-migration ships a generator and per-tool recipes),
-     not an inference of ours; and
-  2. the container arm passes neither `binds=` nor `args=` -- those exist only
-     because there is a mount namespace, so a transform that needs them is not
-     mechanically portable to a bare environment and must be looked at by hand.
-
-Anything else stays container-only, which is the honest answer: this run
-executes under Apptainer and never exercises the mamba path, so a declared arm
-we cannot run would turn "can this run without containers?" from a question
-into a wrong answer.
-
-Usage:  venv_arms.py report|apply <lib> [<lib> ...]
-"""
 from __future__ import annotations
 
 import ast
@@ -39,7 +21,6 @@ def conda_tools() -> set[str]:
 
 
 def env_var_to_tool(tree: ast.Module) -> dict[str, str]:
-    """Map `img = model.AddRequirement(lib.GetType("env::<tool>.env"))` -> tool."""
     out: dict[str, str] = {}
     for node in ast.walk(tree):
         if not isinstance(node, ast.Assign) or len(node.targets) != 1:
@@ -56,7 +37,6 @@ def env_var_to_tool(tree: ast.Module) -> dict[str, str]:
 
 
 def chains(tree: ast.Module):
-    """Yield each ifContainerDo call node."""
     for node in ast.walk(tree):
         if (
             isinstance(node, ast.Call)
@@ -91,7 +71,6 @@ def analyse(path: Path, tools: set[str]):
 
 
 def add_arms(src: str, rows: list[dict]) -> tuple[str, int]:
-    """Append `.ifVirtualEnvDo(...)` to eligible chains, editing bottom-up."""
     lines = src.split("\n")
     added = 0
     for row in sorted(rows, key=lambda r: r["lineno"], reverse=True):
@@ -101,8 +80,6 @@ def add_arms(src: str, rows: list[dict]) -> tuple[str, int]:
         if HEAD not in lines[i]:
             continue
         indent = " " * (len(lines[i]) - len(lines[i].lstrip()))
-        # find the close of this call: first line whose stripped text is ')'
-        # at the call's own indent
         j = i
         while j < len(lines) and lines[j].rstrip() != indent + ")":
             j += 1

@@ -14,14 +14,7 @@ def protocol(context: ExecutionContext):
     iout=context.Output(out)
     threads = context.params.get('cpus')
     threads = "" if threads is None else f"-p {threads}"
-    # out=stdout.fq
-    # ^ this actually tells reformat.sh to output to stdout
-    # the suffix indicates format and compression
     
-    # the suffix of the input is used to indicate compression
-    # which is set using the "ext" property of the type
-    # so both of these are needed, dispite having identical protocols.
-    # The input types differ!
 
     # unbgzip=f is load-bearing, not tidying. By default bbmap sends EVERY .gz
     # through its BGZF reader (ReadWrite.getGZipInputStream), which then splits
@@ -39,7 +32,6 @@ def protocol(context: ExecutionContext):
     # sylph, ganon2 and phyloflash. They are untouched because the run that
     # found this did not exercise them, and an untested edit is not a fix.
 
-    # Same command either way: this tool is a plain CLI in both worlds.
     _cmd = f'''
         reformat.sh \
             unbgzip=f \

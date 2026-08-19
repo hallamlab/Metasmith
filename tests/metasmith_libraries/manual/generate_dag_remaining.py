@@ -1,14 +1,4 @@
 #!/usr/bin/env python
-"""Generate DAG for remaining steps: stringtie_merge → quant → count tables.
-
-Inputs (all pre-computed):
-  - braker3_gff (from mHAnaWSi)
-  - 9 stringtie_gtfs (from mHAnaWSi)
-  - 9 star_bams (from arc)
-  - experiment
-
-Targets: merged_gtf, stringtie_quant_gtf, gene_count_table, diff_count_table
-"""
 import sys
 import tempfile
 from pathlib import Path
@@ -48,14 +38,11 @@ def mock(name):
 
 experiment = inputs.AddValue("experiment.txt", "porphyridium", "transcriptomics::experiment")
 
-# braker3 GFF (pre-computed)
 inputs.AddItem(mock("braker3.gff3"), "transcriptomics::braker3_gff", parents={experiment})
 
-# 9 stringtie GTFs (pre-computed)
 for i in range(9):
     inputs.AddItem(mock(f"stringtie_{i}.gtf"), "transcriptomics::stringtie_gtf", parents={experiment})
 
-# 9 STAR BAMs (pre-computed, needed for stringtie_quant)
 for i in range(9):
     inputs.AddItem(mock(f"star_{i}.bam"), "transcriptomics::star_bam", parents={experiment})
 

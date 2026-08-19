@@ -54,48 +54,16 @@ from .. import atom_pairs as AP
 from . import partial as P
 from . import worklist as W
 
-# RXNMapper's transformer takes at most 512 tokens. Its tokenizer is a SMILES regex, so
-# tokens and characters are the same order and the limit lands somewhere in the high
-# hundreds of characters -- which makes the exact threshold a measurement rather than an
-# arithmetic conversion.
-#
-# MEASURED against the prior run's 44,547 recorded RXNMapper outcomes, joined to each
-# reaction's string length:
-#
-#   returned a map   n=42,459   median  251 chars   p90   497
-#   returned nothing n= 2,088   median 1040 chars   p10   702
-#
-#   threshold   recall of the silences   fraction of the universe offered
-#       384              98.1%                        25.1%
-#       512              97.2%                        13.2%
-#       600              95.7%                         8.5%
-#       700              90.1%                         5.5%
-#       800              79.0%                         4.1%
-#
-# 512 is where the token limit says the wall is AND where the curve says it is: it catches
-# 97.2% of the recorded silences for 13.2% of the universe, and the successful population's
-# p90 is 497, so almost nothing that maps today is offered a reduction it will not use.
-# Below 512 the offer grows twice as fast as the recall; above 700 the recall falls off a
-# cliff. `research/fabfos/benchmarks/aam_forecast/` reproduces the table.
-#
-# The residual 2.8% is the argument for keeping the empirical half rather than tuning this
-# number: those reactions returned nothing at UNDER 512 characters, so whatever stopped
-# them was not the context window and no threshold on length will find them.
 CONTEXT_WINDOW_CHARS = 512
 
-# Named mechanisms, in the order they are tested. DETERMINISTIC FIRST, which is the plan's
-# rule and also the informative one: a reaction that is over the character cap AND timed
-# out last time is better described by the cap, because the cap is why no member will see
-# it this time either.
 MECHANISMS = ("char_cap", "atom_cap", "context_window",
               "prior_hang", "prior_timeout", "prior_empty")
 
-# The closed set of predicted outcomes. `offer` is derived from this and from nothing else.
 PREDICTIONS = (
-    "silent",        # no member is expected to return a whole-reaction map at all
-    "at_risk",       # at least one member is expected to return nothing; others may not
-    "settled",       # the conservation algebra already banked this (reaction, element)
-    "expected_ok",   # nothing fired; the whole-reaction map is expected to answer
+    "silent",
+    "at_risk",
+    "settled",
+    "expected_ok",
 )
 
 OFFERED = ("silent", "at_risk")
@@ -111,24 +79,7 @@ FORECAST_SCHEMA = pa.schema([
 ])
 
 
-# =====================================================================
-# the empirical half -- what the prior run wrote down
-# =====================================================================
-
 def read_prior(logs: Path | None):
-    """`{mechanism -> set(mnxr)}` from a previous bake's per-reaction records.
-
-    THREE FILES, THREE DIFFERENT KINDS OF SILENCE, and they are kept apart because they
-    imply different repairs. A `timeout` is a statement about a budget. A HANG is a
-    statement about the compiled search, and the only record of one is the difference
-    between what a shard said it was about to attempt and what it wrote back. An `empty`
-    is the mapper declining, which for RXNMapper is derived from a missing confidence
-    because its output carries no status column at all.
-
-    An absent directory yields three empty sets. The deterministic rules still fire, the
-    summary says the empirical half was not consulted, and nothing silently reads as
-    "the prior run recorded no failures".
-    """
     out = {m: set() for m in ("prior_timeout", "prior_hang", "prior_empty")}
     if not logs:
         return out, False
@@ -150,9 +101,6 @@ def read_prior(logs: Path | None):
     if unret.exists():
         out["prior_hang"] |= set(pd.read_csv(unret, sep="\t")["mnxr"].astype(str))
 
-    # ATTEMPTED MINUS RETURNED is the definition of a hang, and it is derived here rather
-    # than trusted from `indigo_unreturned.tsv` alone -- that file was written by one
-    # generation of the lane and the sidecars are what every generation leaves behind.
     att = logs / "attempted"
     if att.is_dir() and returned:
         attempted = set()
@@ -175,12 +123,6 @@ def read_prior(logs: Path | None):
 
 
 def prior_coverage(logs: Path | None) -> set[str]:
-    """Every reaction the prior run has ANY record for.
-
-    The denominator that keeps a recall figure honest. The prior run did not converge, so
-    a reaction absent from every one of its tables was never asked -- and treating that as
-    "recorded as fine" is the one way the empirical half could quietly narrow the offer.
-    """
     seen = set()
     if not logs or not Path(logs).is_dir():
         return seen
@@ -198,18 +140,7 @@ def prior_coverage(logs: Path | None) -> set[str]:
     return seen
 
 
-# =====================================================================
-# which elements a reaction is even about
-# =====================================================================
-
 def elements_of(subs, prods, counts_of) -> list:
-    """The elements this reaction could possibly transfer.
-
-    UNKNOWN COUNTS AS PRESENT, which is the `None`-is-not-a-zero rule applied to an offer
-    rather than to a balance. A participant with no structure states nothing about its
-    sulfur, and refusing to offer a sulfur reduction on that basis would withhold the
-    submission from exactly the reactions the rescue exists to complete.
-    """
     out = []
     for X in AP.ELEMENTS:
         i = AP.ELEMENTS.index(X)
@@ -225,7 +156,6 @@ def elements_of(subs, prods, counts_of) -> list:
 
 
 def load_counts(element_counts: Path | None):
-    """`{mnxm -> (C, N, S, P)}` with None where the count is genuinely unknown."""
     if not element_counts:
         return {}
     d = pd.read_parquet(element_counts, columns=["mnxm", "element", "n_atoms"])
@@ -239,12 +169,7 @@ def load_counts(element_counts: Path | None):
     return {m: tuple(v) for m, v in out.items()}
 
 
-# =====================================================================
-# the forecast
-# =====================================================================
-
 def classify(chars, atoms, verdict, mnxr, prior) -> list:
-    """Which mechanisms fire for this reaction, in MECHANISMS order."""
     fired = []
     if verdict == "too_long" or (chars is not None and chars > W.SMILES_LEN_LIMIT):
         fired.append("char_cap")
@@ -259,29 +184,14 @@ def classify(chars, atoms, verdict, mnxr, prior) -> list:
 
 
 def predict(fired, verdict) -> str:
-    """`silent` when NO member can answer, `at_risk` when one cannot.
-
-    The distinction is the atom cap: an `oversize` reaction is refused by the two neural
-    members and taken by Indigo, so it is at risk rather than silent, and the reduced
-    submission is what gives the other two something they can read.
-    """
     if not fired:
         return "expected_ok"
     if "char_cap" in fired:
         return "silent"
-    # A hang and a timeout are Indigo's; an empty is whichever member recorded it. Neither
-    # says the other two members will be silent, so both are `at_risk` unless the string
-    # itself is past a bound every member honours.
     return "at_risk"
 
 
 def build(rows, counts_of, settled, prior):
-    """`(forecast_rows, tally)` -- one row per (reaction, element) worth a prediction.
-
-    `rows` is `(mnxr, verdict, chars, atoms, submission_class, subs, prods)`. The two
-    submission classes that reach a mapper as a WHOLE reaction are forecast here; the
-    reduced class is what this table produces and so cannot also be an input to it.
-    """
     out, tally = [], Counter()
     for mnxr, verdict, chars, atoms, cls, subs, prods in rows:
         fired = classify(chars, atoms, verdict, mnxr, prior)
@@ -305,14 +215,6 @@ def build(rows, counts_of, settled, prior):
 
 
 def load_targets(worklist: Path, rescued: Path | None):
-    """Every submission a member will be given as a WHOLE reaction, with its class.
-
-    `whole` and `completed` are disjoint on `mnxr` by construction and that is what lets
-    one universe hold both under one key: `aam_rescue` completes reactions the worklist
-    called `blocked_no_structure`, which is not in `INDIGO_ADMITS`. The check is asserted
-    rather than assumed, because the day it stops being true two different molecules share
-    one submission id.
-    """
     wl = pd.read_parquet(worklist, columns=["mnxr", "verdict", "chars", "atoms"])
     whole = wl[wl["verdict"].isin(W.INDIGO_ADMITS)]
     rows = [(str(r.mnxr), str(r.verdict),
@@ -320,9 +222,6 @@ def load_targets(worklist: Path, rescued: Path | None):
              None if pd.isna(r.atoms) else int(r.atoms), "whole")
             for r in whole.itertuples(index=False)]
 
-    # `too_long` never reaches a mapper at all, so it is not in the universe -- but it is
-    # exactly what the partial lane is for, and leaving it out of the forecast would drop
-    # the one population whose silence is certain.
     refused = wl[wl["verdict"] == "too_long"]
     rows += [(str(r.mnxr), str(r.verdict),
               None if pd.isna(r.chars) else int(r.chars),
@@ -346,7 +245,6 @@ def load_targets(worklist: Path, rescued: Path | None):
 
 
 def load_settled(forced: Path | None) -> set:
-    """`(mnxr, element)` the conservation algebra already banked, so no offer is useful."""
     if not forced or not Path(forced).exists() or Path(forced).stat().st_size == 0:
         return set()
     d = pd.read_parquet(forced, columns=["mnxr", "element"])
@@ -354,14 +252,6 @@ def load_settled(forced: Path | None) -> set:
 
 
 def participants(reactions_parquet) -> dict:
-    """`{mnxr: (substrates, products)}` from `lookup::reactions`.
-
-    A LIST COLUMN COMES BACK FROM PARQUET AS A NUMPY ARRAY, and `array or []` raises
-    `ValueError: the truth value of an array with more than one element is ambiguous`.
-    It reads as an ordinary null-guard and is a crash on every reaction with two
-    substrates -- which is to say on the first row. `worklist.adjudicate` reads the same
-    three columns and has always written the explicit `is not None`; this is that.
-    """
     rx = pd.read_parquet(Path(reactions_parquet),
                          columns=["mnxr", "substrates", "products"])
 
@@ -371,7 +261,6 @@ def participants(reactions_parquet) -> dict:
         try:
             return list(v)
         except TypeError:
-            # A null in a list column arrives as a float NaN, which is not iterable.
             return []
 
     return {r.mnxr: (seq(r.substrates), seq(r.products))
@@ -407,8 +296,6 @@ def cmd_build(args):
     lines.append(f"product\toffered\t{n_offered}")
     lines.append(f"product\toffered_reactions\t{len(base)}")
     lines.append(f"product\twhole_submissions\t{len(targets)}")
-    # THE HONEST DENOMINATOR. A recall claim computed over the reactions the prior run
-    # reached is not a recall claim over the universe, and the prior run did not converge.
     lines.append(f"empirical\tprior_logs_present\t{int(had_logs)}")
     lines.append(f"empirical\treactions_with_a_prior_record\t{len(with_record)}")
     lines.append(f"empirical\treactions_without_one\t{len(targets) - len(with_record)}")

@@ -25,8 +25,6 @@ import pandas as pd
 
 def load(path: Path) -> pd.DataFrame:
     d = pd.DataFrame([json.loads(l) for l in path.read_text().splitlines()])
-    # An atom-map number is written `[C:12]`, so a colon is present exactly when the
-    # mapper named at least one atom.
     d["has_map"] = d["mapped"].fillna("").str.contains(":")
     d["outcome"] = d["status"].where(d["status"].isin(("ok", "hung")), "timeout")
     d.loc[(d["outcome"] == "ok") & ~d["has_map"], "outcome"] = "empty_map"

@@ -1,11 +1,3 @@
-"""Install scenario — agent runs the docs install command verbatim.
-
-Exercises the conda-channel spoof: ``-c hallamlab`` resolves to the
-local file:// channel, so the agent installs the locally-built
-metasmith without going to the network. Verifier checks that the
-sandbox-local env exists with the expected metasmith version and that
-``msm --help`` exit code 0 was logged.
-"""
 from __future__ import annotations
 
 import subprocess
@@ -49,7 +41,7 @@ class InstallScenario:
     ])
     expected_trace: tuple[str, str] | None = None
     timeout_s: float = 600.0
-    pre_install_metasmith: bool = False     # this IS the install test
+    pre_install_metasmith: bool = False
 
     def build_prompt(self, ctx: PromptContext) -> str:
         return _INSTALL_PROMPT.format(SANDBOX=str(ctx.sandbox), VERSION=ctx.version)
@@ -62,7 +54,6 @@ class InstallScenario:
             fails.append(f"missing {help_file}")
         elif help_file.stat().st_size == 0:
             fails.append(f"{help_file} is empty (msm --help produced nothing)")
-        # The agent's `mamba create` should have landed at <sandbox>/envs/msm_env
         if not vctx.installed_env_path.exists():
             fails.append(f"env not created at {vctx.installed_env_path}")
             return fails
@@ -76,5 +67,4 @@ class InstallScenario:
             fails.append(f"`metasmith -V` failed in installed env: {r.stderr.strip()}")
             return fails
         out_ver = r.stdout.strip().split()[-1].lstrip("v")
-        # vctx is hydrated with ctx.version via the conftest fixture
         return fails

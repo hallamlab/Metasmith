@@ -36,7 +36,6 @@ from pathlib import Path
 import pandas as pd
 
 def _repo_root(start: Path) -> Path:
-    """Walk up until a directory holding `data/fabfos` is found."""
     for d in (start, *start.parents):
         if (d / "data" / "fabfos").is_dir():
             return d
@@ -56,14 +55,6 @@ AG1 = "e_coli_ag1"
 
 
 def proteins_for(host: str, symbols: set[str]) -> dict[str, list[str]]:
-    """symbol -> the ORF ids that host's proteome gives it.
-
-    Keyed on the record id the lanes key on -- the first token of the header -- because
-    that is what the mapper's `orf` column carries. A symbol with no record is reported
-    by the caller rather than skipped: a marker that names nothing is a fact, and a
-    marker that names nothing *because the lookup was wrong* looks identical until
-    someone checks.
-    """
     faa = sorted((GENOMES / host / "genome").glob("*.faa"))
     if len(faa) != 1:
         raise SystemExit(f"expected one proteome under {host}/genome, found {faa}")
@@ -92,9 +83,6 @@ def main() -> int:
             f"data/fabfos/originals/genomes/{DH1}/genome/NC_017638.1.faa --into "
             f"data/fabfos/runs/{DH1} --site sockeye --run`, then --publish")
     d = pd.read_parquet(a.src)
-    # THE PARENT IS CHECKED BEFORE ANYTHING IS BORROWED FROM IT. A borrow inherits
-    # whatever the parent got wrong, so a short-lane parent would have produced a
-    # short-lane derivative with no sign that anything was missing.
     fe.validate_gpr(d, "chosen_4", None, str(d["source"].iat[0]), fe.extensions_of(d))
     symbols = {sym for sym, kind in MARKERS.values() if sym and kind == "loss"}
     found = proteins_for(DH1, symbols)

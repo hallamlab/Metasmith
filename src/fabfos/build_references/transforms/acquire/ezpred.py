@@ -1,32 +1,3 @@
-"""EZpred's published artifacts -- the two Zenodo archives, as served, into
-`ezpred/<models-record>+<data-record>/`.
-
-WHAT IS DATA HERE AND WHAT IS NOT. EZpred (kad-ecoli/EZpred, Zhang et al. 2025,
-MIT) is a source repository plus two Zenodo drops. Only the drops are acquired:
-
-    models.zip   the enzyme / non-enzyme MLP ensembles (~585 MB)
-    Data2.zip    the label IA tables predict.py reads
-
-The source tree is CODE, and code in the originals tier is a category error -- the
-tier's contract is "byte-for-byte what a URL returned", and our copy is *patched*
-(the DL-only fork: no MMseqs2 homolog augmentation, no Foldseek template fusion).
-A patched tree is not what any URL returns. It is vendored under
-`build_references/resources/buildlib/ezpred_src/` with its patch notes, pinned to
-an upstream revision, and `compile/ezpred_model.py` assembles the two halves into
-`ref::ezpred_model`.
-
-THE RECORD IDS ARE THE RELEASE. Zenodo records are immutable, so their ids pin the
-artifacts exactly -- there is no version string to read from a server and none to
-guess. Both ids are in the directory name because the two are used together and a
-mismatched pair is a silent wrong answer: the heads' output columns are indexed by
-the IA tables' label order.
-
-UNZIP EXITS 0 ON A MEMBER THAT IS NOT THERE. `unzip -j archive 'some/path'` prints
-"caution: filename not matched" and returns 0, so a selective extract that missed
-everything looks like a success. The members are checked for AFTER the extract, by
-name, never by exit code -- a partial unpack yields a bundle that imports cleanly
-and then predicts from three of five ensemble members.
-"""
 from metasmith.python_api import *
 
 lib   = TransformInstanceLibrary.ResolveParentLibrary(__file__)
@@ -35,14 +6,12 @@ model = Transform()
 image = model.AddRequirement(lib.GetType("env::python_for_data_science.env"))
 out   = model.AddProduct(lib.GetType("fabfos_data::ezpred"))
 
-# Immutable Zenodo records. These ARE the version; see the header.
 MODELS_RECORD = "15792215"
 DATA_RECORD = "15812849"
 MODELS_URL = f"https://zenodo.org/records/{MODELS_RECORD}/files/models.zip?download=1"
 DATA_URL = f"https://zenodo.org/records/{DATA_RECORD}/files/Data2.zip?download=1"
 
 FILES = (("models.zip", MODELS_URL), ("Data2.zip", DATA_URL))
-# Below this a "download" is an error page. models.zip is ~585 MB.
 MIN_BYTES = {"models.zip": 100_000_000, "Data2.zip": 1_000_000}
 
 STAGE = "_incoming"

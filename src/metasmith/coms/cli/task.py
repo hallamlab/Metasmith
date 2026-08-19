@@ -1,4 +1,3 @@
-"""`metasmith task ...` subcommands — inspect cached workflow plans."""
 from __future__ import annotations
 
 from ...models.dag_colour import SCHEMES

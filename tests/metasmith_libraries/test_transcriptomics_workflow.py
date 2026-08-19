@@ -1,12 +1,3 @@
-"""
-End-to-end tests for transcriptomics transforms (salmon index, quant, count table).
-
-These tests verify that transcriptomics workflows can be:
-1. Generated (workflow planning)
-2. Staged to the agent
-3. Executed via local Docker
-4. Produce valid output files
-"""
 import pytest
 from pathlib import Path
 from metasmith.python_api import (
@@ -34,7 +25,6 @@ SAMPLES = [
     "POR-8-1", "POR-8-2", "POR-8-3",
 ]
 
-# Map sample name prefix to R1/R2 file patterns
 SAMPLE_FILES = {
     "POR-0-1": ("POR-0-1-090325_S59_L001_R1_001.fastq.gz", "POR-0-1-090325_S59_L001_R2_001.fastq.gz"),
     "POR-0-2": ("POR-0-2-090325_S60_L001_R1_001.fastq.gz", "POR-0-2-090325_S60_L001_R2_001.fastq.gz"),
@@ -50,7 +40,6 @@ SAMPLE_FILES = {
 
 @pytest.fixture(scope="module")
 def transcriptomics_transforms(mlib):
-    """Load transcriptomics and logistics transforms."""
     return [
         TransformInstanceLibrary.Load(mlib / "transforms/transcriptomics"),
         TransformInstanceLibrary.Load(mlib / "transforms/logistics"),
@@ -59,20 +48,17 @@ def transcriptomics_transforms(mlib):
 
 @pytest.fixture
 def porphyridium_input(tmp_inputs, test_data_dir):
-    """Create input library with Porphyridium paired-end reads and reference accession."""
     if not PORPHYRIDIUM_READS_DIR.exists():
         pytest.skip("Porphyridium test data not available")
 
     inputs = tmp_inputs(["sequences.yml", "ncbi.yml", "transcriptomics.yml"])
 
-    # Add the experiment grouping marker
     experiment = inputs.AddValue(
         "porphyridium_experiment.txt",
         "porphyridium_transcriptomics",
         "transcriptomics::experiment",
     )
 
-    # Add reference assembly accession
     accession = inputs.AddValue(
         "porphyridium_accession.txt",
         PORPHYRIDIUM_ACCESSION,
@@ -80,7 +66,6 @@ def porphyridium_input(tmp_inputs, test_data_dir):
         parents={experiment},
     )
 
-    # Add paired-end reads for each sample
     for sample_name in SAMPLES:
         r1_file, r2_file = SAMPLE_FILES[sample_name]
         r1_path = PORPHYRIDIUM_READS_DIR / r1_file
@@ -105,12 +90,9 @@ def porphyridium_input(tmp_inputs, test_data_dir):
 
 
 class TestWorkflowGeneration:
-    """Tests for workflow generation (planning only, no execution)."""
-
     def test_can_plan_salmon_quant(
         self, agent, base_resources, transcriptomics_transforms, porphyridium_input
     ):
-        """Verify workflow generation for salmon quantification."""
         targets = TargetBuilder()
         targets.Add("transcriptomics::salmon_quant")
 
@@ -127,7 +109,6 @@ class TestWorkflowGeneration:
     def test_can_plan_count_table(
         self, agent, base_resources, transcriptomics_transforms, porphyridium_input
     ):
-        """Verify workflow generation for count table."""
         targets = TargetBuilder()
         targets.Add("transcriptomics::count_table")
 
@@ -144,12 +125,9 @@ class TestWorkflowGeneration:
 
 @pytest.mark.slow
 class TestWorkflowExecution:
-    """Full E2E tests that execute workflows via Docker."""
-
     def test_salmon_quant_e2e(
         self, agent, base_resources, transcriptomics_transforms, porphyridium_input, tmp_path
     ):
-        """Full E2E test: generate, stage, run salmon quant, verify outputs."""
         targets = TargetBuilder()
         targets.Add("transcriptomics::salmon_quant")
 
@@ -186,7 +164,6 @@ class TestWorkflowExecution:
     def test_count_table_e2e(
         self, agent, base_resources, transcriptomics_transforms, porphyridium_input, tmp_path
     ):
-        """Full E2E test: generate, stage, run full pipeline, verify count table."""
         targets = TargetBuilder()
         targets.Add("transcriptomics::count_table")
 

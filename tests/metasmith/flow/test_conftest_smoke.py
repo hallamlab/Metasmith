@@ -1,12 +1,3 @@
-"""Smoke gate for tests/flow/conftest.py.
-
-One tiny test per builder family: each builder must return either a
-non-None BuiltPlan or raise pytest.skip cleanly (the skip path is
-intentional — downstream tests get to collect even when a stimulus
-shape is not yet wired). One end-to-end assertion confirms
-`run_and_load` works on the simplest linear plan.
-"""
-
 from __future__ import annotations
 
 import pytest
@@ -27,11 +18,6 @@ from .conftest import (
     build_multi_input_plan,
     run_and_load,
 )
-
-
-# ---------------------------------------------------------------------------
-# Builder smoke checks — every builder either returns BuiltPlan or skips.
-# ---------------------------------------------------------------------------
 
 
 def test_build_linear_plan_returns_plan(tmp_path):
@@ -84,7 +70,6 @@ def test_build_group_then_split_plan_returns_plan(tmp_path):
 
 
 def test_build_lineage_fork_plan_skips_cleanly(tmp_path):
-    # Expected to skip until a parents= producer shape lands in mock_transforms.
     with pytest.raises(pytest.skip.Exception):
         build_lineage_fork_plan(tmp_path, parent_count=2)
 
@@ -112,16 +97,10 @@ def test_build_5hop_dag_plan_returns_plan(tmp_path):
     assert len(bp.plan.steps) == 5
 
 
-# ---------------------------------------------------------------------------
-# End-to-end gate: run_and_load on the simplest linear plan.
-# ---------------------------------------------------------------------------
-
-
 def test_run_and_load_on_linear_plan(tmp_path, virtual_runtime):
     bp = build_linear_plan(tmp_path, n_steps=2)
     task, lib = run_and_load(virtual_runtime, bp)
     assert task is not None
     assert lib is not None
-    # Telemetry surface is reachable.
     summary = lib.summary()
     assert "counts" in summary

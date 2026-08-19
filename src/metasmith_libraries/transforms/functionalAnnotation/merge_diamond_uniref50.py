@@ -1,10 +1,3 @@
-"""merge_diamond_uniref50 — gather per-chunk DIAMOND UniRef50 BLAST hits.
-
-DIAMOND outfmt 6 is plain tabular with NO header line; concat is a raw cat.
-
-This transform runs no container, so the ExecWithEnv port swept past it. Finding
-it on the old call shape is expected, not an oversight.
-"""
 from metasmith.python_api import *
 
 lib = TransformInstanceLibrary.ResolveParentLibrary(__file__)

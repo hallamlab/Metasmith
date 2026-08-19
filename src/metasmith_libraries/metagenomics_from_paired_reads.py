@@ -1,25 +1,4 @@
 #!/usr/bin/env python3
-"""Author the `metagenomics_from_paired_reads` template.
-
-The full metagenomics workflow from paired short reads:
-
-  reads --> seqkit_reads --> read_qc_stats
-  reads + read_qc_stats --> bbduk --> clean_short_reads
-  clean_short_reads --> megahit --> assembly
-  assembly --> prodigal --> orfs --> diamond_uniref50 + kofamscan
-  assembly --> metabuli                                      (per-contig taxonomy)
-  reads + assembly --> assembly_stats --> bam + per-contig/per-bp coverage
-       --> metabat2 / semibin2 / comebin --> bin_fasta + contig_to_bin_table
-            --> checkm2 --> aggregator --> quality_bin_fasta
-                                          --> skani_dedup --> cluster_table
-       (one binner's bin_fasta) --> gtdbtk                   (per-bin taxonomy)
-  reads --> phyloFlash                                       (SSU rRNA taxonomy)
-
-Every intermediate is targeted so it all appears in the graph. The external DBs
-(UniRef50, KOFAM, metabuli, GTDB, phyloFlash) resolve through transforms/logistics.
-
-    python main/metagenomics_from_paired_reads.py [--rebuild] [--dag]
-"""
 import sys
 
 import _authoring as A
@@ -47,8 +26,8 @@ and contig-, bin- and SSU-level taxonomy.
 # solve and blocked every other job behind the GUI's plan lock; pinned, ~3s.
 _MB, _SB, _CB = 11, 12, 13
 TARGETS = [
-    "sequences::megahit_assembly",                  # 0
-    "sequences::read_qc_stats",                     # 1
+    "sequences::megahit_assembly",
+    "sequences::read_qc_stats",
     {"type": "sequences::orfs", "parents": [0]},
     {"type": "sequences::assembly_stats", "parents": [0]},
     {"type": "sequences::assembly_per_contig_coverage", "parents": [0]},
@@ -56,11 +35,11 @@ TARGETS = [
     {"type": "annotation::diamond_uniref50_results", "parents": [0]},
     {"type": "annotation::kofamscan_results", "parents": [0]},
     {"type": "taxonomy::metabuli", "parents": [0]},
-    "taxonomy::phyloflash_summary",                 # from reads, not the assembly
+    "taxonomy::phyloflash_summary",
     {"type": "binning_local::cluster_table", "parents": [0]},
-    {"type": "sequences::metabat2_bin_fasta", "parents": [0]},   # 11
-    {"type": "sequences::semibin2_bin_fasta", "parents": [0]},   # 12
-    {"type": "sequences::comebin_bin_fasta", "parents": [0]},    # 13
+    {"type": "sequences::metabat2_bin_fasta", "parents": [0]},
+    {"type": "sequences::semibin2_bin_fasta", "parents": [0]},
+    {"type": "sequences::comebin_bin_fasta", "parents": [0]},
 ] + [
     {"type": t, "parents": [b]}
     for b in (_MB, _SB, _CB)
@@ -77,8 +56,6 @@ def build_spec(rebuild: bool = False) -> Spec:
         for tl in ("sequences.yml", "alignment.yml", "ref.yml", "annotation.yml",
                    "taxonomy.yml", "binning.yml", "binning_local.yml"):
             lib.AddTypeLibrary(A.TYPES / tl)
-        # The metadata and the pair label are values, not files: they are what
-        # the workflow is told about the reads, and they are known now.
         meta = lib.AddValue("reads_metadata.json",
                             {"parity": "paired", "length_class": "short"},
                             "sequences::read_metadata")

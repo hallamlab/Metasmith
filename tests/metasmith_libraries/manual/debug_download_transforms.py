@@ -1,8 +1,4 @@
 #!/usr/bin/env python
-"""Debug download transforms on Sockeye using local executor.
-
-Runs downloadBuscoLineage and downloadEggnogDB one at a time with verbose output.
-"""
 import sys
 import time
 sys.stdout.reconfigure(line_buffering=True)
@@ -72,7 +68,6 @@ def run_single_target(target_name, target_type):
     smith.StageWorkflow(task, on_exist="update", verify_external_paths=False)
     print("Staged")
 
-    # Use local executor (no SLURM) for debugging
     with open(MLIB / "secrets/slurm_account_sockeye") as f:
         SLURM_ACCOUNT = f.readline().strip()
 
@@ -85,7 +80,7 @@ def run_single_target(target_name, target_type):
 
     results_path = smith.GetResultSource(task).GetPath()
     t0 = time.time()
-    timeout = 7200  # 2h
+    timeout = 7200
     last_print = 0
     while not (results_path / "_metadata").exists():
         elapsed = time.time() - t0
@@ -115,7 +110,6 @@ def run_single_target(target_name, target_type):
 
 
 def main():
-    # Test eggnog (BUSCO already confirmed working)
     ok_eggnog = run_single_target("downloadEggnogDB", "annotation::eggnog_data")
 
     if not ok_eggnog:

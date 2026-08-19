@@ -1,8 +1,3 @@
-"""Unit tests for the ralph loop + CONTROL.json + budget plumbing.
-
-Runs in the default pytest collection — no e2e_agentic marker, no real
-model calls, no containers, no opencode/claude binaries required.
-"""
 from __future__ import annotations
 
 import json
@@ -29,18 +24,11 @@ from tests.metasmith.e2e.agentic.harness.loop import (
 )
 
 
-# ---------------------------------------------------------------------------
-# Stub driver: scripted per-iteration behavior
-# ---------------------------------------------------------------------------
-
-
 @dataclass
 class ScriptedStep:
     tokens_in: int = 100
     tokens_out: int = 50
     final_text: str = ""
-    # callback receives the sandbox path so the step can simulate the agent
-    # writing CONTROL.json this iteration
     side_effect: Callable[[Path], None] | None = None
 
 
@@ -78,11 +66,6 @@ class StubDriver:
             transcript_path=None,
             duration_s=0.0,
         )
-
-
-# ---------------------------------------------------------------------------
-# control.py
-# ---------------------------------------------------------------------------
 
 
 def test_control_round_trip_done(tmp_path: Path) -> None:
@@ -130,7 +113,7 @@ def test_control_non_dict_returns_none(tmp_path: Path) -> None:
 
 
 def test_clear_control_is_idempotent(tmp_path: Path) -> None:
-    clear_control(tmp_path)  # no file yet
+    clear_control(tmp_path)
     write_control(tmp_path, "continue")
     clear_control(tmp_path)
     assert not control_path(tmp_path).exists()
@@ -139,11 +122,6 @@ def test_clear_control_is_idempotent(tmp_path: Path) -> None:
 def test_write_control_rejects_bad_action(tmp_path: Path) -> None:
     with pytest.raises(ValueError):
         write_control(tmp_path, "explode")
-
-
-# ---------------------------------------------------------------------------
-# budget.py
-# ---------------------------------------------------------------------------
 
 
 def test_budget_consume_and_exhaust() -> None:
@@ -160,11 +138,6 @@ def test_budget_rejects_negative() -> None:
     b = TokenBudget(limit=100)
     with pytest.raises(ValueError):
         b.consume(-1)
-
-
-# ---------------------------------------------------------------------------
-# loop.py — one test per stop condition
-# ---------------------------------------------------------------------------
 
 
 def _writes_control(action: str, **fields) -> Callable[[Path], None]:
@@ -212,7 +185,7 @@ def test_loop_done_on_first_iteration(tmp_path: Path) -> None:
 
 def test_loop_done_after_several_continues(tmp_path: Path) -> None:
     steps = [
-        ScriptedStep(),  # no control written -> implicit continue
+        ScriptedStep(),
         ScriptedStep(),
         ScriptedStep(side_effect=_writes_control("done", task_key="t2")),
     ]
@@ -240,7 +213,6 @@ def test_loop_report_issue_terminates_on_first_iter(tmp_path: Path) -> None:
     steps = [
         ScriptedStep(side_effect=_writes_control(
             "report_issue", reason="docker rejects '+' in tag")),
-        # Extra step that would crash the StubDriver if the loop kept going.
     ]
     result, driver = _loop(tmp_path, steps)
     assert result.outcome is LoopOutcome.REPORTED_ISSUE
@@ -269,7 +241,6 @@ def test_loop_over_budget(tmp_path: Path) -> None:
     result, driver = _loop(tmp_path, steps, max_iters=10, max_tokens=1_000)
     assert result.outcome is LoopOutcome.OVER_BUDGET
     assert not result.succeeded
-    # 500 + 500 = 1000 reaches the limit; loop must stop at iteration 2
     assert result.iterations == 2
     assert result.tokens_used == 1_000
     assert len(driver.invocations) == 2
@@ -288,11 +259,9 @@ def test_loop_malformed_control_is_treated_as_continue(tmp_path: Path) -> None:
 
 
 def test_loop_clears_control_between_iterations(tmp_path: Path) -> None:
-    """A previous iteration's CONTROL.json must not bleed into the next."""
     written_paths: list[Path] = []
 
     def _check_then_write(sandbox: Path) -> None:
-        # the file should NOT exist at the start of any iteration
         assert not control_path(sandbox).exists()
         written_paths.append(control_path(sandbox))
         write_control(sandbox, "continue")
@@ -318,18 +287,10 @@ def test_loop_writes_prompt_md(tmp_path: Path) -> None:
 
 
 def test_loop_session_lifecycle(tmp_path: Path) -> None:
-    """start_session and stop_session are called exactly once even on early exit."""
     steps = [ScriptedStep(side_effect=_writes_control("done", task_key="t"))]
     _, driver = _loop(tmp_path, steps)
     assert driver.started == 1
     assert driver.stopped == 1
-
-
-# ---------------------------------------------------------------------------
-# CLI round-trip — confirms `metasmith e2e checkpoint` writes a payload that
-# read_control accepts. Uses the in-process main() entry point so we don't
-# depend on the installed console_scripts shim.
-# ---------------------------------------------------------------------------
 
 
 def test_cli_checkpoint_done_round_trip(tmp_path: Path) -> None:

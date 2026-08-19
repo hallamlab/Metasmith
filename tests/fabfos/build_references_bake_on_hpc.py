@@ -94,10 +94,6 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
 
-# The PINNED engine, ahead of whatever is installed. The `msm` env resolves metasmith
-# through a global symlink into a different worktree; the agent container tag is derived
-# from the engine's own version, so importing the wrong one asks quay for a manifest that
-# does not exist and the run dies ~40s in with "manifest unknown".
 _ENGINE = REPO / "src"
 if (_ENGINE / "metasmith").is_dir():
     sys.path.insert(0, str(_ENGINE))
@@ -127,15 +123,9 @@ TYPE_LIBRARIES = (
         "lookup.yml", "evidence.yml")]
 )
 
-# THE ONE GIVEN. Licensed, not redistributable, and the independent member of BOTH
-# ensembles -- the gate over this graph asserts the count rather than the name, because
-# everything else in it is fetchable.
 GIVEN_TYPE = "fabfos_data::metacyc"
 GIVEN_AT = DATA / "originals" / "metacyc"
 
-# Acquired sources, staged so no acquisition is scheduled. The value is the path under
-# data/ -- ONE map, so the re-rooting onto the cluster and the local existence check
-# cannot drift apart.
 SOURCES = {
     "fabfos_data::metanetx":     "originals/metanetx",
     "fabfos_data::chebi":        "originals/chebi",
@@ -143,10 +133,6 @@ SOURCES = {
     "fabfos_data::equilibrator": "originals/equilibrator",
 }
 
-# The five lookups, staged so `mnx_lookups` is not scheduled. All five or none: the
-# planner reasons about TYPES, so staging four of them satisfies four types and leaves
-# `mnx_lookups` in the plan to produce the fifth -- which would re-derive all five and
-# hand the run two generations of the same table.
 LOOKUPS = {
     "lookup::reactions":   "processed/lookups/reactions.parquet",
     "lookup::metabolites": "processed/lookups/metabolites.parquet",
@@ -155,18 +141,8 @@ LOOKUPS = {
     "lookup::synonyms":    "processed/lookups/synonyms.parquet",
 }
 
-# The MetaCyc files any transform in this graph actually opens. THE WHOLE DISTRIBUTION IS
-# NOT PUSHED, and that is a licence decision rather than a transfer-size one: the drop-in
-# is 1.6 GB of which 60 MB is read, it is not redistributable, and a shared cluster
-# filesystem is not a place to put more of it than the method needs. The layout is
-# preserved (`<release>/data/`) because that is one of the two shapes the transforms
-# accept.
 METACYC_FILES = ("atom-mappings-smiles.dat", "reactions.dat", "compounds.dat")
 
-# RUN STATE, staged like the sources and unlike them in one way that matters: neither can
-# ever have a producer. `prior_bake_logs` is a record of a run that happened, and the thing
-# that would write `aam_cache` is the lane that reads it. Both may be empty; the mapper
-# lanes simply have nothing to resume from.
 RUN_GIVENS = {
     "fabfos_data::prior_bake_logs": "processed/metabolism_bake/logs",
     "fabfos_data::aam_cache":       "temp/aam_cache",
@@ -174,53 +150,21 @@ RUN_GIVENS = {
 
 TARGETS = ["ref::atom_pairs", "ref::metabolism_vocab", "ref::direction_ratios"]
 
-# Every lane and assembly that must appear. A plan that quietly drops one renders a
-# smaller graph and produces a trio that looks complete.
 EXPECTED = {
-    # STAGE A -- everything that can be settled without a mapper. The two twin searches and
-    # the recount restore structures MNXref already holds; the algebra pairs what
-    # conservation forces; the forecast names where a member is expected to return nothing
-    # and the partial lane builds the element reductions from that rather than from a
-    # finished run, which is what puts it upstream of the mappers.
     "aam_recount", "aam_worklist", "aam_blockers", "aam_nametwin",
     "aam_rescue",
     "aam_algebra", "aam_forecast", "aam_partial", "aam_universe",
-    # STAGE B -- THREE member lanes, not nine. All three submission classes exist before
-    # a mapper starts, so `interm::aam_universe` is the one table every member reads and
-    # each runs once over it.
     "rxnmapper", "localmapper", "indigo",
-    # STAGE C -- fuse and stack, correct, then mint. Three steps where there used to be
-    # one, because a correction needs a finished stack to run over and `aam_ensemble` never
-    # produced one.
     "aam_stack", "aam_redox", "aam_reference",
     "equilibrator", "dgbyg", "direction_ensemble", "direction_bake",
 }
 
-# Producers of things that are already on disk. Any of these in the plan means a staging
-# assumption did not hold -- named individually, because "which one" is the whole
-# diagnostic value of the check.
-#
-# The eQuilibrator ACQUISITION is absent from this set and not by oversight:
-# `acquire/equilibrator.py` and `bake/equilibrator.py` share a stem, so a name-keyed
-# check cannot tell the fetch from the member. Acquisitions are detected by their
-# LIBRARY instead, which is the property that actually matters.
 SKIPPED = {"metanetx", "chebi", "modelseed", "mnx_lookups"}
 ACQUIRE_LIB = BREF / "transforms" / "acquire"
 
-# Where a finished run lands. `data/.gitignore` is `/*/*` with a `.dvc` negation, so this
-# is already ignored and must NOT get a .gitignore of its own -- that file is the only one
-# under data/ and the tier rule depends on it staying that way.
 TEMP = DATA / "temp"
-# The raw run, exactly as the cluster wrote it, kept beside the routed copy. Routing reads
-# it rather than consuming it: it also holds the nextflow logs and the step manifests,
-# which are the only record of what a step was handed.
 STAGING = TEMP / "_run"
 
-# Every `<tool>/` directory a complete run must produce, and which step writes it. This is
-# the check that survives collapsing the nine evidence types into one: with a single type
-# the artifact filenames and the run manifest no longer name a lane, so attribution lives
-# in these directory names and nowhere else. A lane whose raw output never arrived has to
-# be a loud absence, not six entries where seven were expected.
 EVIDENCE_TOOLS = {
     "recount":               "aam_recount",
     "worklist":              "aam_worklist",
@@ -234,8 +178,6 @@ EVIDENCE_TOOLS = {
     "rxnmapper":             "rxnmapper",
     "localmapper":           "localmapper",
     "indigo":                "indigo",
-    # The curated extraction and the fusion are two tools in one lane, which is why the
-    # map is keyed by TOOL and not by transform.
     "metacyc":               "aam_stack",
     "stack":                 "aam_stack",
     "redox":                 "aam_redox",
@@ -246,30 +188,14 @@ EVIDENCE_TOOLS = {
     "direction_calibration": "direction_ensemble",
 }
 
-# The trio, under the names every reader expects rather than under a content-addressed
-# product filename.
 TRIO = {
     "ref::metabolism_vocab": "vocab.parquet",
     "ref::atom_pairs":       "atom_pairs.parquet",
     "ref::direction_ratios": "direction.parquet",
 }
 
-# Sockeye's Lmod hides apptainer behind a gcc dependency, and the two loads must be
-# SEPARATE commands: `module load gcc/9.4.0 apptainer/1.3.1` in one call resolves the
-# second name against the module tree as it stood BEFORE gcc loaded, silently finds
-# nothing, and the shell later reports `apptainer: command not found` with no hint that a
-# module was skipped.
 SETUP_COMMANDS = ["module load gcc/9.4.0", "module load apptainer/1.3.1"]
 
-# The task images, and where a locally-built .sif for each one lives. All three are
-# SYNCED rather than pulled: quay defaults new repos to private, the compute nodes have no
-# outbound route anyway, and `Environment._cached_name()` derives the store filename from
-# the URI deterministically -- so a file placed under that name IS the image as far as
-# metasmith is concerned.
-#
-# THREE, not four. `python_for_data_science` was here for the trailing bake step, which no
-# longer exists: the two assemblies encode their own output in the images they already
-# run. Nothing in this graph is pulled from the network now.
 BAKE_SIF_DIR = REPO / "docker" / "ecspr_bake"
 REQUIRED_IMAGES = {
     "docker://quay.io/hallamlab/ecspr_bake:aam":       BAKE_SIF_DIR,
@@ -279,33 +205,10 @@ REQUIRED_IMAGES = {
 
 
 def cached_image_name(image: str) -> str:
-    """The filename metasmith looks for in the image store.
-
-    Mirrors `Environment._cached_name` in the pinned engine. Kept as a copy rather than
-    an import because the driver must be able to PLACE the file before any engine code
-    runs on the remote -- but it is a mirror, so if that method changes, this must too.
-    """
     return image.replace("://", "..").replace(":", "..").replace("/", "_") + ".sif"
 
 
-# ---------------------------------------------------------------------------
-# planning
-# ---------------------------------------------------------------------------
-
 def build_inputs(work: Path, remote_root: str | None):
-    """Stage the given, the sources and the lookups; re-root them if this is remote.
-
-    RE-ROOTING IS NOT AN OPTIMISATION. metasmith binds an item's OWN path into the task
-    container -- the same string on both sides -- so an input declared at a workstation
-    path is bind-mounted at that path on the cluster node, where it does not exist.
-    Apptainer then refuses with "mount source does not exist" and the run dies as a
-    missing launcher, naming neither the item nor the path.
-
-    Existence is always checked against the LOCAL copy, even when the declared path is
-    remote: the planner resolves on types and lineage and never on existence, so a
-    missing tree plans perfectly and fails hours later inside a container. The local copy
-    is what rsync just pushed, so checking it is checking the far side.
-    """
     inputs = DataInstanceLibrary(work / "inputs.xgdb")
     for tl in TYPE_LIBRARIES:
         inputs.AddTypeLibrary(tl)
@@ -314,10 +217,6 @@ def build_inputs(work: Path, remote_root: str | None):
     wanted.update(LOOKUPS)
     wanted.update(RUN_GIVENS)
     for rel in RUN_GIVENS.values():
-        # Both may legitimately be empty, and the cache usually is on a first run. They
-        # have no producer -- one is a record of a previous run and the other is written by
-        # the lane that reads it -- so an absent directory does not schedule anything, it
-        # leaves a type unmet and the whole graph unplannable.
         (DATA / rel).mkdir(parents=True, exist_ok=True)
 
     def declared(rel: str) -> Path:
@@ -335,9 +234,6 @@ def build_inputs(work: Path, remote_root: str | None):
 
     given = GIVEN_AT
     if not given.exists():
-        # Planning is type-driven and never opens an input, so an empty directory
-        # resolves the type exactly as the licensed distribution does. That is what lets
-        # the plan be checked on a machine that has not licensed MetaCyc. A RUN refuses.
         given = work / "metacyc_standin"
         given.mkdir(parents=True, exist_ok=True)
         print(f"NOTE: no MetaCyc drop-in at {GIVEN_AT}; standing in an empty directory "
@@ -362,9 +258,6 @@ def plan(work: Path, remote_root: str | None, agent):
         DataInstanceLibrary.Load(BREF / "resources" / "buildlib"),
         inputs,
     ]
-    # acquire/ and compile/ are LOADED, not hidden. Loading them is what turns "the
-    # lookups were staged" into a checkable assertion instead of an assumption -- see
-    # the module docstring.
     transforms = [
         TransformInstanceLibrary.Load(ACQUIRE_LIB),
         TransformInstanceLibrary.Load(BREF / "transforms" / "compile"),
@@ -430,38 +323,8 @@ def check_plan(task) -> tuple[set[str], list[str]]:
     return used, problems
 
 
-# ---------------------------------------------------------------------------
-# execution
-# ---------------------------------------------------------------------------
-
 def push_data(host: str, remote_root: str) -> None:
-    """rsync the inputs to the execution host, at the paths the declarations use.
-
-    Converges: the sources are release-pinned directories and the lookups are rebuilt
-    only when MetaNetX moves, so a second run transfers nothing. ~3.4 GB the first time,
-    of which the eQuilibrator compound cache is 1.3 GB.
-
-    --size-only, and NEITHER the default (size+mtime) NOR --checksum. mtime is out
-    because hardlink placement and DVC checkout give a re-staged file a fresh one with
-    identical bytes, and re-sending an 810 MB TSV for that is waste. --checksum is out
-    because of where the reading happens: it makes the REMOTE side read and digest every
-    byte it already has, and the remote side here is a LOGIN NODE. Three consecutive runs
-    died the same way -- `connection unexpectedly closed (0 bytes received so far)`, always
-    on eQuilibrator or MetaNetX, never on the small directories -- which is the scheduler
-    killing a process that spent minutes at full CPU on a shared login host. It reads as a
-    flaky link and is not one; retrying cannot fix it.
-
-    Size alone is the right test for these inputs rather than a concession. Every source
-    is a release-pinned upstream directory held immutable by DVC, and the lookups are
-    regenerated wholesale when MetaNetX moves. Nothing here is edited in place, so a
-    changed file that keeps its exact byte count is not a case that arises.
-
-    NO --delete. The remote root also holds a previous generation's work directory and
-    the caches that make a lane resumable; deleting to match a local tree that never had
-    them would throw away exactly what a resume needs.
-    """
     rels = list(SOURCES.values()) + list(LOOKUPS.values()) + list(RUN_GIVENS.values())
-    # The drop-in, file by file rather than as a directory -- see METACYC_FILES.
     for release in sorted(p for p in (DATA / "originals/metacyc").glob("*") if p.is_dir()):
         for name in METACYC_FILES:
             for cand in (release / "data" / name, release / name):
@@ -476,27 +339,11 @@ def push_data(host: str, remote_root: str) -> None:
         print(f"  {rel}", flush=True)
         subprocess.run(["ssh", "-o", "BatchMode=yes", host,
                         f"mkdir -p {remote_root}/{Path(rel).parent}"], check=True)
-        # A trailing slash on a directory source, none on a file. rsync treats the two
-        # differently and getting it wrong nests the tree one level deeper every run.
         subprocess.run(["rsync", "-a", "--size-only", "--partial", "--info=stats1",
                         f"{src}/" if src.is_dir() else str(src), dest], check=True)
 
 
 def assert_agent_image(host: str, cache_dir: str, container: str) -> None:
-    """The AGENT image must be in the store before anything is deployed.
-
-    A fourth image, and the one nothing else checks. `REQUIRED_IMAGES` covers the images
-    the TASKS run in; this is the one metasmith itself runs in, and its tag is derived
-    from the engine source's build hash -- so it changes every time the pinned submodule
-    moves, whether or not anyone built and synced a matching .sif.
-
-    Without this the failure lands mid-`Deploy()`: apptainer reports `manifest unknown`
-    against quay (new repos default to private, and the compute nodes have no route out
-    regardless), then a second FATAL about the missing .sif, and finally an assertion
-    about a missing relay binary. Three errors, none of which says "nobody built this
-    image". `assert_pinned_engine` does not catch it either -- it checks that the engine
-    on the path IS the pin, not that the pin was ever released.
-    """
     dest = f"{cache_dir}/{cached_image_name(container)}"
     probe = subprocess.run(["ssh", "-o", "BatchMode=yes", host,
                             f"[ -s {dest} ] && echo CACHED"],
@@ -521,18 +368,6 @@ def assert_agent_image(host: str, cache_dir: str, container: str) -> None:
 
 
 def place_images(host: str, cache_dir: str) -> None:
-    """Put every task image in the persistent store, on the LOGIN node.
-
-    The compute nodes have no outbound route, so an image pulled as part of a task dies
-    with "no route to host" -- and slurm.nf sets errorStrategy='ignore' once a process
-    exhausts its retries, which turns that into a SILENT green run with empty outputs. A
-    green run with an empty result is worse than a red one, which is why this happens up
-    front and why the caller checks the products rather than the status.
-
-    APPTAINER_CACHEDIR governs the .sif destination only. APPTAINER_TMPDIR and the blob
-    cache default to $HOME/.apptainer and silently accreted ~23 GB on a quota'd home
-    during a run whose .sif was correctly written to scratch -- so both are pinned here.
-    """
     subprocess.run(["ssh", "-o", "BatchMode=yes", host,
                     f"mkdir -p {cache_dir} {cache_dir}/tmp"], check=True)
     setup = "; ".join(SETUP_COMMANDS + [
@@ -572,14 +407,6 @@ def place_images(host: str, cache_dir: str) -> None:
 
 
 def assert_pinned_engine() -> str:
-    """Refuse an engine version whose agent container was never published.
-
-    `Deploy()` derives the agent image tag from the engine's OWN version, so an
-    unreleased checkout asks quay for a manifest that does not exist. The failure
-    surfaces as a registry error followed by an assertion about a missing relay binary --
-    neither of which names the cause. Checked on the version actually imported, before a
-    remote directory is created.
-    """
     import metasmith
     got = (Path(metasmith.__file__).parent / "version.txt").read_text().strip()
     want = (_ENGINE / "metasmith" / "version.txt").read_text().strip()
@@ -593,40 +420,17 @@ def assert_pinned_engine() -> str:
 
 
 def agent_container() -> str:
-    """The published agent image for the engine we actually imported.
-
-    `Agent.container` defaults to `metasmith:{CONTAINER_TAG}` where CONTAINER_TAG is
-    `{VERSION}-{BUILD_HASH}`, and BUILD_HASH is written AT BUILD TIME. A source checkout
-    -- which is what the submodule pin is -- has no build_hash.txt, so the tag silently
-    degrades to the bare version, and bare versions were never pushed. Computing the hash
-    here is the difference between "this tag happens to work today" and "this image is
-    provably built from the source on our PYTHONPATH".
-    """
     from metasmith._build_hash import compute_build_hash
     from metasmith.constants import VERSION
     return f"docker://quay.io/hallamlab/metasmith:{VERSION}-{compute_build_hash()}"
 
 
 def retrieve(agent, task, host: str) -> int:
-    """Bring a finished run home, per lane, into data/temp.
-
-    ROUTED BY THE `<tool>/` DIRECTORY INSIDE EACH ARTIFACT, not by filename and not by
-    type. An output is named `{batch}-{i}-{branch}.{hash}-{type key}` and the run manifest
-    records only the type -- and every evidence artifact now has the SAME type -- so
-    neither names the lane that wrote it. The tool directory is the only attribution left,
-    which is why the lanes copy their evidence ROOT rather than the directory under it.
-
-    Nothing is published here. `data/reference/` is written deliberately, because it
-    rewrites DVC directory hashes.
-    """
     import shutil
 
     src = agent.GetResultSource(task)
     STAGING.mkdir(parents=True, exist_ok=True)
     print(f"\n=== retrieving into {TEMP.relative_to(REPO)} ===", flush=True)
-    # --delete, so staging MIRRORS the run rather than accumulating across runs. Without
-    # it a lane that produced evidence once and failed the next time still has a directory
-    # here, and the completeness check below passes on last week's output.
     subprocess.run(["rsync", "-a", "--delete", "--partial", "--info=stats1",
                     f"{host}:{src.GetPath()}/", f"{STAGING}/"], check=True)
 
@@ -639,7 +443,6 @@ def retrieve(agent, task, host: str) -> int:
             print(f"  MISSING on disk: {rel} ({dtype_name})", file=sys.stderr)
             continue
         if dtype_name == "evidence::tool_output":
-            # One artifact, one or more `<tool>/` directories inside it.
             for tool_dir in sorted(p for p in path.iterdir() if p.is_dir()):
                 found[tool_dir.name] = tool_dir
         elif dtype_name in TRIO:
@@ -664,9 +467,6 @@ def retrieve(agent, task, host: str) -> int:
               f"{(metabolism / name).relative_to(REPO)}  "
               f"({(metabolism / name).stat().st_size / 1e6:.2f} MB)")
 
-    # A workflow can report `completed` with nothing in it, because slurm.nf sets
-    # errorStrategy='ignore' for a task that exhausted its retries. An empty retrieval is
-    # therefore a real outcome to refuse, not an impossible one.
     rc = 0
     missing_tools = sorted(set(EVIDENCE_TOOLS) - set(found))
     if missing_tools:
@@ -745,12 +545,7 @@ def main() -> int:
     if a.run:
         remote_root = a.remote_data or f"{a.scratch_root}/{a.user}/fabfos_r6/data"
 
-    # ---- the agent -------------------------------------------------------------
     if not a.run:
-        # A local agent for planning only. The runtime still has to be APPTAINER: it is
-        # what decides whether an env declaration resolves its `container:` or its
-        # `conda:` key, and the plan is only a claim about the real run if it resolved
-        # the same side of that fork.
         agent = Agent(home=Source.FromLocal(a.work / "agent_home"),
                       runtime=Runtime.APPTAINER)
     else:
@@ -767,22 +562,15 @@ def main() -> int:
             print(f"=== pushing inputs -> {a.host}:{remote_root} ===", flush=True)
             push_data(a.host, remote_root)
         print("=== placing images on the login node ===", flush=True)
-        # The agent image FIRST: it is the one thing that must exist before Deploy() can
-        # do anything, and it is the one whose tag moves with the engine pin.
         assert_agent_image(a.host, cache_dir, container)
         place_images(a.host, cache_dir)
 
         agent = Agent(home=SshSource(host=a.host, path=agent_path).AsSource(),
                       runtime=Runtime.APPTAINER,
                       container=container,
-                      # Exported for BOTH sides: the login node writes the store here and
-                      # the compute node reads it here. One side missing the variable
-                      # resolves to a different directory, finds nothing, and attempts a
-                      # pull on a node with no route out.
                       setup_commands=SETUP_COMMANDS +
                                      [f"export APPTAINER_CACHEDIR={cache_dir}"])
 
-    # ---- plan ------------------------------------------------------------------
     print("=== planning ===", flush=True)
     inputs, task = plan(a.work, remote_root, agent)
     if not task.ok:
@@ -794,9 +582,6 @@ def main() -> int:
 
     staged = [(p, n) for p, n, _ in inputs.Iterate()]
     print(f"\nstaged: {len(staged)} item(s) -- {sorted({n for _, n in staged})}")
-    # Named rather than counted. "5 transforms were skipped" is not checkable by a
-    # reader; "mnx_lookups was skipped" is, and it is the sentence that would be missing
-    # if a staging assumption quietly stopped holding.
     print(f"not scheduled, because it is already on disk: "
           f"{sorted(set(SKIPPED) - used)}")
 
@@ -815,34 +600,21 @@ def main() -> int:
         print("\n(plan only -- pass --run --user <name> to execute on the host)")
         return 0
 
-    # ---- execute ---------------------------------------------------------------
     print("=== Deploy() ===", flush=True)
     try:
         agent.Deploy()
     except subprocess.CalledProcessError as e:
-        # ONE session, one failure, one message. Never a retry loop: each attempt is a
-        # Duo push, and a prior run in this project was halted by an account lockout
-        # caused exactly that way.
         print(f"\ndeploy failed ({e}). The connection is multiplexed: open ONE session "
               f"by hand (`ssh {a.host}`), leave it open, and re-run. Do NOT delete the "
               f"ControlMaster socket and do NOT retry in a loop.", file=sys.stderr)
         return 4
 
     print(f"=== task key: {task.GetKey()} ===", flush=True)
-    # on_exist="clear" is safe HERE and only here: agent_path carries a timestamp, so it
-    # is a fresh directory every run and there is no prior intermediate to destroy. Never
-    # carry this flag onto a resubmission.
     agent.StageWorkflow(task, on_exist="clear")
 
-    # RunWorkflow's config_file DEFAULTS to the `local` preset, which would run every
-    # step on whatever node the agent sits on -- the login node. Selected explicitly so a
-    # future reader sees the choice rather than a default.
     nxf_config = agent.GetNxfConfigPresets()["slurm"]
     params = {
         "slurmAccount": a.slurm_account,
-        # Job arrays are the condition under which overlay filesystems throw bus errors,
-        # and this graph is a dozen steps -- there is nothing to batch that is worth the
-        # exposure.
         "process_array": 0,
     }
     print(f"=== executor: slurm, account {a.slurm_account}, arrays disabled ===",
@@ -860,11 +632,6 @@ def main() -> int:
     if result["status"] != "completed":
         return 2
 
-    # "COMPLETED" IS NOT "SUCCEEDED". slurm.nf sets errorStrategy='ignore' once a process
-    # exhausts its retries, so a step that died every attempt leaves the workflow green,
-    # everything downstream running on nothing, and a results directory that exists and
-    # is empty. A previous Sockeye run failed exactly this way -- a missing container
-    # read as a 3.6-minute success.
     swallowed = [ln for ln in result["tail"]
                  if "Error is ignored" in ln or "terminated with an error" in ln]
     if swallowed:

@@ -114,85 +114,49 @@ BRIDGE_COLS = ["element", "org_a", "org_b", "metabolite", "name",
 
 
 def tag(org: str, mid: str) -> str:
-    """`NOS` + `MNXM3` -> `NOS:MNXM3`. The whole per-organism copy mechanism."""
     return f"{org}{SEP}{mid}"
 
 
 def untag(tagged: str) -> tuple:
-    """`NOS:MNXM3` -> `('NOS', 'MNXM3')`; an untagged id comes back as `('', id)`."""
     org, sep, mid = str(tagged).partition(SEP)
     return (org, mid) if sep else ("", str(tagged))
 
 
-# =====================================================================
-# The carrier blacklist
-# =====================================================================
-#
-# Authored as rules, materialised as ids. Each entry is (class, kind, pattern) where kind
-# is `exact` (case-insensitive full name) or `sub` (case-insensitive substring). Substring
-# rules are what cover MetaNetX's many synonym rows for one carrier -- thioredoxin alone
-# has nine -- which an exact list silently misses, leaving a degree-450 hub bridged.
 CARRIER_RULES = [
-    # Phosphoryl / energy. Exact, because a substring on "ATP" also catches dATP, which is
-    # a biomass precursor and cargo.
     *[("phosphoryl", "exact", n) for n in (
         "ATP", "ADP", "AMP", "GTP", "GDP", "GMP", "UTP", "UDP", "UMP",
         "CTP", "CDP", "CMP", "ITP", "IDP", "IMP",
         "phosphate", "diphosphate", "triphosphate")],
-    # Nicotinamide.
     *[("nicotinamide", "exact", n) for n in (
         "NAD(+)", "NADH", "NADP(+)", "NADPH", "NAD(P)", "NAD(P)H", "NAD(P)(+)")],
-    # Flavin. FAD/FMN carry no "flavin" in the name, so both forms are needed.
     *[("flavin", "exact", n) for n in ("FAD", "FADH2", "FMN", "FMNH2")],
     ("flavin", "sub", "flavin"),
-    # Quinone pool. NOT a bare "quinone" substring -- that catches anthraquinone and the
-    # asterriquinones, which are metabolites in their own right.
     *[("quinone", "sub", n) for n in (
         "ubiquinone", "ubiquinol", "menaquinone", "menaquinol",
         "plastoquinone", "plastoquinol", "demethylmenaquin")],
     *[("quinone", "exact", n) for n in ("a quinone", "a quinol")],
-    # Protein and thiol redox carriers.
     *[("redox_protein", "sub", n) for n in (
         "ferredoxin", "thioredoxin", "glutaredoxin", "rubredoxin",
         "lipoamide", "dihydrolipoamide")],
     *[("redox_protein", "exact", n) for n in ("glutathione", "glutathione disulfide")],
-    # Acyl carriers. The [ACP] series entire; on the CoA side only free CoA and acetyl-CoA
-    # -- a narrower cut than strict consistency would give, taken deliberately, because
-    # the longer acyl-CoAs are cargo more than carrier.
     ("acyl", "sub", "acyl-carrier protein"),
     *[("acyl", "exact", n) for n in ("CoA", "acetyl-CoA")],
-    # One-carbon carriers.
     *[("one_carbon", "sub", n) for n in ("tetrahydrofolate", "cobalamin", "tetrahydromethanopterin")],
     *[("one_carbon", "exact", n) for n in (
         "S-adenosyl-L-methionine", "S-adenosyl-L-homocysteine")],
-    # Sulfuryl.
     ("sulfuryl", "sub", "adenylyl sulfate"),
-    # Aldehyde (thiamine diphosphate and its adducts).
     ("aldehyde", "sub", "thiamine diphosphate"),
-    # Glycosyl donors. Exact: UDP-N-acetyl-alpha-D-glucosamine is a cell-wall PRECURSOR
-    # this experiment reads as an endpoint, so a "UDP-" substring would blacklist a sink.
     *[("glycosyl", "exact", n) for n in (
         "UDP-alpha-D-glucose", "ADP-alpha-D-glucose", "GDP-alpha-D-mannose",
         "UDP-alpha-D-galactose", "dTDP-alpha-D-glucose",
         "a CDP-diacylglycerol", "di-trans,poly-cis-Undecaprenyl phosphate")],
 ]
 
-# Kept bridgeable on the *does it cross a membrane* test, regardless of degree. CO2 is
-# degree-2,803 and the single most important exchange in a phototroph community; free
-# biotin is the one independent check this experiment has (the ad-hoc annotation found
-# Allorhizobium cannot complete its biosynthesis alone), and its carrier role is
-# protein-bound, not free.
 CARRIER_KEEP = ("CO2", "acetate", "biotin", "thiamine", "L-glutamate", "L-glutamine",
                 "ammonium", "NH4(+)", "sulfate", "H2S", "hydrogen sulfide")
 
 
 def carrier_blacklist(names: pd.DataFrame, *, extra=(), keep=CARRIER_KEEP) -> pd.DataFrame:
-    """Materialise `CARRIER_RULES` against a metabolite name table.
-
-    Returns one row per blacklisted (mnxm, name, carrier_class). `keep` names are removed
-    afterwards and win over any rule, so the exceptions are visible in one place instead of
-    being encoded as the absence of a pattern.
-    """
     uniq = names.drop_duplicates("mnxm")[["mnxm", "name"]].copy()
     uniq["_lc"] = uniq["name"].astype(str).str.lower()
     keep_lc = {str(k).lower() for k in keep}
@@ -215,30 +179,11 @@ def carrier_blacklist(names: pd.DataFrame, *, extra=(), keep=CARRIER_KEEP) -> pd
             .sort_values(["carrier_class", "name"], ignore_index=True))
 
 
-# =====================================================================
-# The gene-level mismatch
-# =====================================================================
-
 def reaction_beliefs(gpr: pd.DataFrame) -> pd.Series:
-    """`{mnxr: SUM_g e_g(r)}` -- the belief-conserving allocation, one genome's worth.
-
-    This is `ecspr.model.evidence.compute_E`, named here because the bridge math reads the same
-    quantity the conductances do and must not drift from it.
-    """
     return _net.compute_E(gpr, "compose")
 
 
 def diluted_gene_counts(beliefs: pd.Series, pairs: pd.DataFrame) -> pd.Series:
-    """`M_o(m)` -- the SECOND dilution, spreading each reaction's belief across the
-    metabolites it touches in this element's atom-pair table.
-
-    Per-gene and per-reaction forms agree exactly (the sum over genes commutes with the
-    split over metabolites), so this takes the reaction aggregate and is O(pair rows).
-
-    A reaction with no atom-pair row in this element contributes nothing, which is the AAM
-    gap leaking out where it should: for carbon on Nostoc the metabolite-level mass comes
-    to 4,162 against 5,921 ORFs, and the shortfall is coverage, not a bug.
-    """
     df = pairs[pairs.mnxr.isin(beliefs.index)]
     if not len(df):
         return pd.Series(dtype=float)
@@ -251,9 +196,6 @@ def diluted_gene_counts(beliefs: pd.Series, pairs: pd.DataFrame) -> pd.Series:
 
 
 def incident_conductance(beliefs: pd.Series, pairs: pd.DataFrame) -> pd.Series:
-    """`G_o(m)` -- total conductance incident on a metabolite, `SUM E_r * pair_w` over
-    every pair row that names it. The scale the dimensionless asymmetry is multiplied by.
-    """
     df = pairs[pairs.mnxr.isin(beliefs.index)]
     if not len(df):
         return pd.Series(dtype=float)
@@ -265,11 +207,6 @@ def incident_conductance(beliefs: pd.Series, pairs: pd.DataFrame) -> pd.Series:
 
 
 def atom_ranks(beliefs: pd.Series, pairs: pd.DataFrame) -> dict:
-    """`{metabolite: frozenset(atom ranks)}` -- the NODES this organism's copy will have.
-
-    Taken from the copy's own pair rows rather than from the chemical formula, because the
-    bridge can only span an atom both copies actually carry.
-    """
     df = pairs[pairs.mnxr.isin(beliefs.index)]
     out = {}
     for met, idx in (list(zip(df["substrate"].to_numpy(), df["sub_idx"].to_numpy()))
@@ -280,16 +217,6 @@ def atom_ranks(beliefs: pd.Series, pairs: pd.DataFrame) -> dict:
 
 def bridge_table(members: dict, pairs: pd.DataFrame, element: str, *,
                  g0=1.0, blacklist=frozenset(), names=None, ranks=None) -> pd.DataFrame:
-    """One row per (organism pair, metabolite) candidate bridge, for one element.
-
-    Every candidate is reported, including the ones that get no edge -- blacklisted, or
-    present in only one copy. A skipped bridge that leaves no trace would make a coverage
-    hole read as a modelling choice.
-
-    `ranks` is the `{org: {met: ranks}}` map from `atom_ranks`; it is passed in rather than
-    recomputed because the caller needs the same map to emit one edge per shared rank, and
-    the two must agree exactly or `k` divides by an atom count no edge was built for.
-    """
     orgs = sorted(members)
     el = pairs[pairs.element == element] if "element" in pairs.columns else pairs
     name_of = ({} if names is None else
@@ -321,13 +248,7 @@ def bridge_table(members: dict, pairs: pd.DataFrame, element: str, *,
     return pd.DataFrame(rows, columns=BRIDGE_COLS)
 
 
-# =====================================================================
-# Composition
-# =====================================================================
-
 def _synthetic_orf_rows(mnxr: str, source: str) -> dict:
-    """One ORF whose entire belief goes to one pseudo-reaction, so `compute_weights` gives
-    it `E_full == 1.0` through the ordinary path and `sum(E_full) == n_orfs` still holds."""
     return dict(source=source, orf=f"__bridge__{SEP}{mnxr}", channel=BRIDGE_CHANNEL,
                 mnxr=mnxr, intermediate_id=mnxr, intermediate_name=mnxr,
                 raw_score=1.0, score_kind="bridge", projection_via="compose",
@@ -337,12 +258,6 @@ def _synthetic_orf_rows(mnxr: str, source: str) -> dict:
 def compose(members: dict, pairs: pd.DataFrame, direction: pd.DataFrame | None = None, *,
             elements=ELEMENTS, g0=1.0, blacklist=frozenset(), names=None,
             network_id=None) -> dict:
-    """Build one composed network from `{org: gpr_table}`.
-
-    Returns `{pairs, gpr, direction, bridges, report}`. A single member is passed through
-    with its ids prefixed and no bridges at all, so a singleton composition is the same
-    measurement as the uncomposed organism -- which is what makes it a usable control.
-    """
     orgs = sorted(members)
     network_id = network_id or "-".join(orgs)
     beliefs = {o: reaction_beliefs(members[o]) for o in orgs}
@@ -360,7 +275,6 @@ def compose(members: dict, pairs: pd.DataFrame, direction: pd.DataFrame | None =
             f"Belief conservation is per-ORF, so a shared id would silently merge two "
             f"organisms' genes into one.")
 
-    # --- the private copies -------------------------------------------------
     keep_el = pairs[pairs.element.isin(elements)] if "element" in pairs.columns else pairs
     pair_parts, gpr_parts = [], []
     for o in orgs:
@@ -373,7 +287,6 @@ def compose(members: dict, pairs: pd.DataFrame, direction: pd.DataFrame | None =
         g["mnxr"] = o + SEP + g["mnxr"].astype(str)
         gpr_parts.append(g)
 
-    # --- the bridges --------------------------------------------------------
     bridge_parts, bridge_pairs, bridge_gpr, bridge_dir = [], [], [], []
     for el in elements:
         el_pairs = keep_el[keep_el.element == el] if "element" in keep_el.columns else keep_el
@@ -442,35 +355,8 @@ def compose(members: dict, pairs: pd.DataFrame, direction: pd.DataFrame | None =
                 bridges=bridges, report=report)
 
 
-# =====================================================================
-# Conditions
-# =====================================================================
-
 def make_conditions(*, network_id, source_org, sink_orgs, substrates, precursors,
                     media, elements=ELEMENTS, two_terminal_precursors=None) -> tuple:
-    """The condition sets for ONE directed measurement of one composed network,
-    returned as `(ground, two_terminal)` lists of `ecspr.model.conditions.Condition`.
-
-    `a -> b` means glucose injected into copy `a` with the biomass endpoints read in copy
-    `b`. Under the leakage ground there is no endpoint to place -- the precursors carry the
-    port conductance in every receiving copy and the probe stays agnostic about which
-    member consumes -- so what distinguishes the directed measurements there is the
-    injecting copy, and one condition names every endpoint at once. Under the two-terminal
-    probe each (source, one endpoint) pair is its own condition, so the endpoint set is
-    deliberately smaller; the full precursor list would multiply into hundreds of
-    independent solves per network without anyone deciding that it should.
-
-    TWO LISTS RATHER THAN ONE TABLE WITH A `mode` COLUMN. The probe is chosen on the
-    command line (`ecspr ground` / `ecspr two-point`) and a conditions table carries no
-    mode, so a single table would have to be filtered by whoever staged it -- and a set
-    built for one probe staged against the other measures something nobody asked for.
-    Write each list to its own file with `ecspr.model.conditions.write`.
-
-    `condition_id` carries the network and direction and `media` carries the composition
-    parameters, because those two strings are the only columns both measurements carry --
-    so a row of either says which network, which arm and which `g0` produced it without a
-    join against anything.
-    """
     tt_prec = two_terminal_precursors or {}
     ground, two_terminal = [], []
     for el in elements:
@@ -496,13 +382,7 @@ def make_conditions(*, network_id, source_org, sink_orgs, substrates, precursors
     return ground, two_terminal
 
 
-# =====================================================================
-# Self-tests
-# =====================================================================
-
 def _toy_gpr(source, rxns):
-    """One ORF per reaction, one lane -- so every reaction's belief is exactly 1.0 and the
-    arithmetic under test is the composition's, not the allocation's."""
     return pd.DataFrame([dict(source=source, orf=f"{source}_g{i}", channel="clean",
                               mnxr=r, intermediate_id=f"i{i}", intermediate_name="x",
                               raw_score=1.0, score_kind="p", projection_via="t",
@@ -511,7 +391,6 @@ def _toy_gpr(source, rxns):
 
 
 def _toy_pairs():
-    #  R1: S -> X    R2: X -> P1    R3: X -> P2    R4: P1 -> Y
     rows = [("R1", "S", "X"), ("R2", "X", "P1"), ("R3", "X", "P2"), ("R4", "P1", "Y")]
     return pd.DataFrame([dict(mnxr=r, element="C", substrate=s, product=p,
                               sub_idx=0, prod_idx=0, pair_w=1.0) for r, s, p in rows])
@@ -526,7 +405,6 @@ def _selftest_copies():
     print(f"  metabolites: {sorted(mets)}")
     assert "A:X" in mets and "B:X" in mets, "each member must get its own copy of X"
     assert "X" not in mets, "an untagged metabolite means the prefixing did not take"
-    # R2 is in both members and must appear as two separate reactions, never one summed.
     r2 = set(out["pairs"][out["pairs"].mnxr.str.endswith("R2")].mnxr)
     print(f"  R2 -> {sorted(r2)}")
     assert r2 == {"A:R2", "B:R2"}, r2
@@ -543,9 +421,6 @@ def _selftest_singleton():
     assert len(out["bridges"]) == 0 or (out["bridges"].bridged == 0).all()
     assert out["report"]["n_bridge_rows"] == 0
     assert out["report"]["n_orfs"] == 3, out["report"]
-    # R4 is in the reference but not in this organism, so it must NOT be in the copy: the
-    # composed table is cut to the member's own reactions, which is what keeps a
-    # three-member composition from being three times the whole reference universe.
     base = set(zip(*[pairs[pairs.mnxr != "R4"][c] for c in ("substrate", "product")]))
     got = {(untag(s)[1], untag(p)[1])
            for s, p in zip(out["pairs"].substrate, out["pairs"]["product"])}
@@ -559,18 +434,14 @@ def _selftest_singleton():
 def _selftest_mismatch():
     print("[compose] the mismatch is relative, gene-unit, and doubly diluted")
     pairs = _toy_pairs()
-    # A carries R2 only; B carries R2 and R3. X is touched by both, P2 only by B.
     a, b = _toy_gpr("A", ["R2"]), _toy_gpr("B", ["R2", "R3"])
     bt = bridge_table({"A": reaction_beliefs(a), "B": reaction_beliefs(b)},
                       pairs, "C", g0=1.0)
     row = bt[bt.metabolite == "X"].iloc[0]
-    # Second dilution: R2 touches {X, P1} so contributes 1/2 to each; R3 touches {X, P2}.
-    # M_A(X) = 0.5, M_B(X) = 0.5 + 0.5 = 1.0  ->  D = 0.5/1.5 = 1/3.
     print(f"  X: M_A={row.M_a:.4f} M_B={row.M_b:.4f} D={row.asymmetry:.6f}")
     assert abs(row.M_a - 0.5) < 1e-12, row.M_a
     assert abs(row.M_b - 1.0) < 1e-12, row.M_b
     assert abs(row.asymmetry - 1 / 3) < 1e-12, row.asymmetry
-    # Relative asymmetry must not move when one member's genome is scaled up wholesale.
     b2 = pd.concat([b, _toy_gpr("B2", ["R2", "R3"]).assign(source="B")], ignore_index=True)
     bt2 = bridge_table({"A": reaction_beliefs(a), "B": reaction_beliefs(b2)},
                        pairs, "C", g0=1.0)
@@ -578,7 +449,6 @@ def _selftest_mismatch():
     print(f"  X after doubling B's genes: M_B={r2.M_b:.4f} D={r2.asymmetry:.6f}")
     assert r2.M_b > row.M_b, "the raw count must grow"
     assert r2.asymmetry > row.asymmetry, "and so must the asymmetry -- B really is bigger"
-    # P2 exists only in B: no bridge, and it is REPORTED rather than dropped.
     p2 = bt[bt.metabolite == "P2"].iloc[0]
     print(f"  P2: M_A={p2.M_a} M_B={p2.M_b} bridged={p2.bridged}")
     assert p2.bridged == 0 and p2.M_a == 0.0, p2
@@ -589,9 +459,6 @@ def _selftest_mismatch():
 def _selftest_bridge_conductance():
     print("[compose] a bridge is symmetric, split across atoms, and scaled by g0")
     pairs = _toy_pairs()
-    # B additionally carries R4 (P1 -> Y), so P1 is the one metabolite the two use
-    # DIFFERENTLY. X is used identically by both and gets no bridge at all: zero mismatch
-    # is zero exchange, which is the scheme's strongest claim and is pinned here.
     a, b = _toy_gpr("A", ["R1", "R2"]), _toy_gpr("B", ["R2", "R3", "R4"])
     out = compose({"A": a, "B": b}, pairs, elements=("C",), g0=1.0)
     assert not len(out["pairs"][out["pairs"].substrate == "A:X"].query("mnxr.str.startswith('BRIDGE')")), \
@@ -600,8 +467,6 @@ def _selftest_bridge_conductance():
     print(f"  {len(br)} bridge rows: {sorted(set(zip(br.substrate, br['product'])))}")
     assert len(br) > 0
     assert (br.substrate.str.startswith("A:") & br["product"].str.startswith("B:")).all()
-    # Every bridge reaction must be present in the composed GPR with belief EXACTLY 1.0,
-    # or the driver's conservation assert is measuring something other than what it says.
     w = _net.compute_weights(out["gpr"])
     n_orf = out["gpr"]["orf"].nunique()
     print(f"  sum(E_full)={w.E_full.sum():.9f} over {n_orf} ORFs")
@@ -609,13 +474,10 @@ def _selftest_bridge_conductance():
     for r in br.mnxr.unique():
         e = float(w.loc[w.mnxr == r, "E_full"].iloc[0])
         assert abs(e - 1.0) < 1e-12, (r, e)
-    # g0 scales the conductance linearly and nothing else -- the sweep that must converge
-    # to the isolated members as g0 -> 0 is only meaningful if this holds.
     out2 = compose({"A": a, "B": b}, pairs, elements=("C",), g0=2.5)
     b2 = out2["pairs"][out2["pairs"].mnxr.str.startswith("BRIDGE")]
     print(f"  g0=1 -> {br.pair_w.sum():.6f}   g0=2.5 -> {b2.pair_w.sum():.6f}")
     assert abs(b2.pair_w.sum() - 2.5 * br.pair_w.sum()) < 1e-12
-    # And the direction table must say symmetric, not inherit a ratio.
     assert out["direction"] is None
     print("  PASS\n")
     return 0
@@ -632,7 +494,6 @@ def _selftest_blacklist():
     print(f"  P1: blacklisted={row.blacklisted} bridged={row.bridged} g={row.g_bridge}")
     assert row.blacklisted == 1 and row.bridged == 0 and row.g_bridge == 0.0
     assert out["report"]["n_blocked_blacklist"] >= 1
-    # The rules must resolve carriers by SYNONYM, not just by the one canonical name.
     names = pd.DataFrame([("m1", "ATP"), ("m2", "an oxidized thioredoxin"),
                           ("m3", "a reduced ferredoxin [iron-sulfur] cluster"),
                           ("m4", "CO2"), ("m5", "dATP"), ("m6", "biotin"),
@@ -677,10 +538,6 @@ def _selftest() -> int:
     print("ALL PASS")
     return 0
 
-
-# =====================================================================
-# CLI
-# =====================================================================
 
 def cmd_blacklist(a):
     names = pd.read_parquet(a.names)

@@ -73,24 +73,14 @@ OUT = REPO / "data/fabfos/runs/aska/gpr"
 
 HOST = "e_coli_ag1"
 COHORT = "aska"
-# The ASKA ORFs were amplified from W3110; the host they are expressed in is AG1.
 SOURCE_ORGANISM = "e_coli_w3110"
 
-# Both channels are the host's own rows re-attributed to a clone, so both carry the
-# host layer's blocks plus the condition. The lane set differs because the evidence
-# does: one is a curated model, the other four annotation lanes.
 EXTENSIONS = ("attribution", "feature", "universe", "cohort")
 GEM_LANE_SET = "curated"
 DENOVO_LANE_SET = "chosen_4"
 
 
 def faa_index(faa: Path) -> tuple[dict[str, str], dict[str, str], dict[str, str]]:
-    """``(id -> gene, id -> locus_tag, locus_tag -> id)`` from a RefSeq protein FASTA.
-
-    The header's first token is the id the de-novo GPR keys its ``orf`` on, so this is the
-    only join the de-novo side needs; that table's own ``feature_name`` is blank for all
-    but 73 of its 4,363 ORFs and cannot be used.
-    """
     gene, tag, by_tag = {}, {}, {}
     for line in faa.open():
         if not line.startswith(">"):
@@ -107,7 +97,6 @@ def faa_index(faa: Path) -> tuple[dict[str, str], dict[str, str], dict[str, str]
 
 
 def symbol_for_bnumber(faa: Path) -> dict[str, str]:
-    """b-number -> the symbol MG1655's CURRENT annotation uses -- the hinge of the chain."""
     out = {}
     for line in faa.open():
         if not line.startswith(">"):
@@ -120,7 +109,6 @@ def symbol_for_bnumber(faa: Path) -> dict[str, str]:
 
 
 def read_roster(path: Path) -> pd.DataFrame:
-    """The GFP-minus roster. Its header cells carry stray whitespace."""
     df = pd.read_csv(path, sep="\t", dtype=str).fillna("")
     df.columns = [c.strip() for c in df.columns]
     df["gene"] = df["Gene Name"].str.strip()
@@ -139,10 +127,9 @@ def main() -> int:
     genes = sorted(roster.gene.unique())
     print(f"roster {ROSTER.name}: {len(roster):,} clones, {len(genes):,} distinct gene names")
 
-    # ---- the resolution chain -------------------------------------------------
     to_bnum = gene_to_bnumber(MG1655_GBK)
     sym_for_b = symbol_for_bnumber(MG1655_FAA)
-    dh1_to_tag = gene_to_bnumber(DH1_GBK)          # same shape: name/synonym -> locus_tag
+    dh1_to_tag = gene_to_bnumber(DH1_GBK)
     dn_gene, _dn_tag, dn_by_tag = faa_index(DH1_FAA)
     print(f"MG1655: {len(to_bnum):,} names/synonyms -> b-number, "
           f"{len(sym_for_b):,} b-numbers -> current symbol")
@@ -162,8 +149,6 @@ def main() -> int:
         dn_by_symbol.setdefault(g, set()).add(fid)
 
     def resolve(gene: str, current: str, by_symbol: dict, by_tag=None, to_tag=None):
-        """``(orfs, how)`` -- current symbol first, then the roster's own name,
-        then the target genome's synonym table."""
         for key, how in ((current, "current_symbol"), (gene, "roster_symbol")):
             if key and key in by_symbol:
                 return by_symbol[key], how
@@ -173,7 +158,6 @@ def main() -> int:
                 return {by_tag[tag]}, "genome_synonym"
         return set(), "unresolved"
 
-    # ---- de-novo universe (the host table leaves the column null) --------------
     universe, ustats = bu.atom_universe(
         BAKE / "vocab.parquet", BAKE / "atom_pairs.parquet",
         exclude=bu.transport_mnxrs(bu.reac_prop_path(METANETX)))
@@ -183,7 +167,6 @@ def main() -> int:
     dn = dn.assign(in_atom_universe=dn["mnxr"].isin(universe))
     dn_lanes = sorted(dn["channel"].astype(str).unique())
 
-    # ---- per gene, both channels ---------------------------------------------
     gem_parts, dn_parts, census = [], [], []
     gem_idx = {f: g for f, g in gem.groupby("orf")}
     dn_idx = {f: g for f, g in dn.groupby("orf")}
@@ -209,14 +192,9 @@ def main() -> int:
                 cohort=COHORT, action="add", source_organism=SOURCE_ORGANISM))
         if len(d_hit):
             dn_parts.append(d_hit.assign(
-                # `source` names the ORF set these rows describe. They were READ from the
-                # host proteome's table, but as a cohort row each one is a claim about a
-                # clone, so the library is the artifact and the host is in `host`.
                 source="aska_orfs",
                 build_id=f"denovo_{COHORT}_" + "+".join(dn_lanes), host=HOST,
                 unit_id="aska_orfs", feature_kind="clone_gene",
-                # The de-novo table's own feature_name is blank; the roster's gene name is
-                # the only symbol this row can honestly carry.
                 feature_name=gene, condition_id=cond, cohort=COHORT, action="add",
                 source_organism=SOURCE_ORGANISM))
 
@@ -229,7 +207,6 @@ def main() -> int:
             denovo_n_mnxr=int(d_hit["mnxr"].nunique()),
             denovo_n_in_universe=int(d_hit[d_hit["in_atom_universe"]]["mnxr"].nunique()))
 
-    # One census row per CLONE, so a gene the library carries twice is visible as two.
     for r in roster.itertuples(index=False):
         census.append(dict(jw_id=r.jw_id, **per_gene[r.gene]))
     cen = pd.DataFrame(census)
@@ -237,7 +214,6 @@ def main() -> int:
     cols = fe.schema_for(EXTENSIONS)
 
     def assemble(parts, like):
-        """The cohort table, on the schema. `like` gives the columns when nothing hit."""
         df = (pd.concat(parts, ignore_index=True) if parts
               else like.reindex(columns=cols))
         return (df[cols].sort_values(fe.grain_key(EXTENSIONS), kind="mergesort")
@@ -246,8 +222,6 @@ def main() -> int:
     gem_df = assemble(gem_parts, gem)
     dn_df = assemble(dn_parts, dn)
     dn_df["raw_score"] = dn_df["raw_score"].astype(np.float32)
-    # No `orf_ids`: the nominators are the HOST's ORFs, and which of them a clone reaches
-    # is what the census above reports rather than something to refuse on.
     fe.validate_gpr(gem_df, GEM_LANE_SET, None, gem_id, EXTENSIONS)
     fe.validate_gpr(dn_df, DENOVO_LANE_SET, None, "aska_orfs", EXTENSIONS)
 
@@ -256,7 +230,6 @@ def main() -> int:
     dn_df.to_parquet(out_dir / "gpr_denovo.parquet", index=False, compression="zstd")
     cen.to_csv(out_dir / "clone_census.tsv", sep="\t", index=False)
 
-    # ---- what did and did not resolve ----------------------------------------
     g1 = cen.drop_duplicates("gene")
     manifest = dict(
         roster=str(ROSTER.relative_to(REPO)), roster_clones=int(len(roster)),
@@ -277,12 +250,6 @@ def main() -> int:
                            denovo=g1.denovo_resolved_via.value_counts().to_dict()).items()},
     )
 
-    # ---- the labels ship with the population ---------------------------------
-    # Eydallin's 86 are the positives, and six of them do not appear on the roster under
-    # the name the paper prints -- five because the roster still uses the 2005 symbol
-    # (aspP/nudF, csrD/yhdA, mlc/dgsA, rutF/ycdH, yifJ/wzxE) and one on case alone (ppK).
-    # A positive left unlabelled is a positive scored as a negative, so the b-number is
-    # the key and the printed name only the first thing tried.
     ey = pd.read_csv(EXTRACTION, sep="\t", dtype=str).fillna("")
     roster_by_b, roster_lower = {}, {}
     for g, b in zip(g1.gene, g1.b_number.fillna("")):

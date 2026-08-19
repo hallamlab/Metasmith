@@ -1,7 +1,6 @@
 from pathlib import Path
 from metasmith.python_api import *
 
-# todo: url for more consistency
 lib = DataTypeLibrary.Load("/home/tony/workspace/tools/Metasmith/main/local_mock/prototypes/metagenomics.dev3.yml")
 
 def protocol(context: ExecutionContext):

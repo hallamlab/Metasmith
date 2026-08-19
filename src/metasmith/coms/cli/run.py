@@ -1,4 +1,3 @@
-"""`metasmith run ...` — direct-run a single transform without Nextflow."""
 from __future__ import annotations
 
 import sys

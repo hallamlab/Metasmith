@@ -1,31 +1,4 @@
 #!/usr/bin/env python3
-"""T15 -- does the method answer at all? Two histograms, one per method.
-
-The design-axis benchmark (score.py) asks whether a prediction is RIGHT and
-answers no. This asks the cheaper question underneath it: on the designs LASER
-actually built, at the target each paper actually measured, does the method
-return anything a reader could act on?
-
-Both readouts are the same cell of the same matrix -- (design, target) -- so the
-comparison is like-for-like even though the units are not:
-
-    ECSPr   I_draw[target]_pert - I_draw[target]_base      (current)
-    FBA     v_max[DM_target]_pert - v_max[DM_target]_base  (mmol/gDW/h)
-
-Each method is judged against ITS OWN measured resolution, never an assumed
-tolerance. ECSPr's is the jitter floor `run_arms` already cached per solve. FBA
-has none, so one is measured here from the designs whose edits leave the cobra
-model byte-identical -- no reaction inserted, no knockout that hit anything --
-where every nonzero delta is solver noise by definition.
-
-This measures RESOLUTION, not accuracy. ECSPr responds to nearly every design
-because perturbing any weight perturbs a linear solve; that is true by
-construction and is not evidence the direction is correct.
-
-    mamba run -n figure-net python response_hist.py
-
-Reads only cache/ and refs/; no solver, no container, seconds.
-"""
 from __future__ import annotations
 
 import sys
@@ -46,18 +19,10 @@ ECSPR_UNIT = "{host}__gem__C__dir"
 FBA_UNIT = "{host}__fba_a0.1__C__dir"
 HOSTS = ("e_coli_k12", "e_coli_dh10b")
 
-# The status an ECSPr arm uses when the target is not a node of its graph before
-# OR after the edits. That is an abstention -- it leaves the denominator rather
-# than scoring zero, exactly as it does in score.counterfactual_null.
 ABSTAIN = "not_in_base"
 
 
-# ---------------------------------------------------------------------------
-# The matched cells
-# ---------------------------------------------------------------------------
-
 def own_targets(idx: pd.DataFrame) -> pd.DataFrame:
-    """(design_id, mnxm) for the target each paper measured -- the diagonal."""
     return pd.DataFrame(
         [(r.design_id, m) for r in idx.itertuples(index=False)
          for m in str(r.target_mnxms).split(";") if m],
@@ -65,7 +30,6 @@ def own_targets(idx: pd.DataFrame) -> pd.DataFrame:
 
 
 def matched(pred: pd.DataFrame, own: pd.DataFrame) -> pd.DataFrame:
-    """Real designs, at their own target, scored by BOTH arms, pooled over hosts."""
     cols = ["design_id", "mnxm", "host", "value", "status", "noise_floor"]
     out = []
     for host in HOSTS:
@@ -84,18 +48,7 @@ def matched(pred: pd.DataFrame, own: pd.DataFrame) -> pd.DataFrame:
     return pd.concat(out, ignore_index=True)
 
 
-# ---------------------------------------------------------------------------
-# Resolution floors -- measured, both of them
-# ---------------------------------------------------------------------------
-
 def fba_noop_floor(pred: pd.DataFrame, scal: pd.DataFrame) -> dict:
-    """The FBA resolution band, from designs the solver saw as unchanged.
-
-    A design whose adds are all native and whose deletions all missed hands cobra
-    a model identical to the base one, so every delta it produces is noise. The
-    census columns are the only honest source for that: `n_add`/`n_del` count what
-    the design INTENDED, and a native add is intent that never reached the model.
-    """
     units = [FBA_UNIT.format(host=h) for h in HOSTS]
     s = scal[scal.unit.isin(units) & (scal.status == "ok")]
     noop = s[(s.inserted_add.fillna(0) == 0) & (s.knockout.fillna(0) == 0)]
@@ -112,8 +65,6 @@ def fba_noop_floor(pred: pd.DataFrame, scal: pd.DataFrame) -> dict:
 
 
 def ecspr_floor(cells: pd.DataFrame) -> dict:
-    """The ECSPr band: 10x the jittered-baseline floor `run_arms` measured per
-    solve, which is the same gate the harness already applies as `below_floor`."""
     f = cells.floor_ecspr.dropna()
     return dict(kind="measured: baseline re-solved with weights jittered by 1e-10",
                 band=float(10 * f.median()) if len(f) else np.nan,
@@ -123,13 +74,8 @@ def ecspr_floor(cells: pd.DataFrame) -> dict:
 
 
 def split(v: np.ndarray, band: np.ndarray | float) -> np.ndarray:
-    """True where the response is resolvable -- outside the method's own band."""
     return np.isfinite(v) & (np.abs(v) > np.asarray(band))
 
-
-# ---------------------------------------------------------------------------
-# Table
-# ---------------------------------------------------------------------------
 
 def table(cells: pd.DataFrame, ans: dict, floors: dict, n_abstain: int) -> pd.DataFrame:
     rows = []
@@ -158,27 +104,13 @@ def table(cells: pd.DataFrame, ans: dict, floors: dict, n_abstain: int) -> pd.Da
     return out
 
 
-# ---------------------------------------------------------------------------
-# The figure
-# ---------------------------------------------------------------------------
-
 def symlog_bins(v: np.ndarray, lin: float, n: int = 13) -> np.ndarray:
-    """Log-spaced either side of a single central bin [-lin, +lin].
-
-    `bins=N` on a symlog axis gives uniform LINEAR bins, which puts fifteen orders
-    of magnitude into one spike. The central bin is the resolution band itself.
-    """
     top = max(np.nanmax(np.abs(v)) * 1.2, lin * 10)
     pos = np.geomspace(lin, top, n + 1)
     return np.concatenate([-pos[::-1], pos])
 
 
 def decade_ticks(v: np.ndarray, lin: float, want: int = 5) -> list:
-    """Ticks at whole decades OUTSIDE the linear region, plus zero.
-
-    symlog's own locator puts ticks at 0 and at +/-linthresh, which on this axis
-    are a few pixels apart and overprint into a blob.
-    """
     lo = int(np.ceil(np.log10(lin * 10)))
     hi = int(np.floor(np.log10(max(np.nanmax(np.abs(v)) * 1.2, lin * 100))))
     exps = list(range(lo, hi + 1))
@@ -227,8 +159,6 @@ def figure(cells: pd.DataFrame, ans: dict, floors: dict, n_abstain: int,
     plt.close(fig)
     return dest / "fig_response_histograms.png"
 
-
-# ---------------------------------------------------------------------------
 
 def main():
     pred = S.load_predictions()

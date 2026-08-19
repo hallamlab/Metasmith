@@ -1,11 +1,9 @@
 //! Applications, and the pieces both search phases are built from.
 //!
 //! An `Application` in Python is a transform plus the endpoints bound to its
-//! requirements, and it is the object the whole solver is keyed on --
-//! `Application.Signature()` is called 18.1 million times on the metagenomics
-//! template alone, each call rebuilding and re-hashing a string. Here it is an
-//! arena entry with an interned signature, and the two are different things on
-//! purpose.
+//! requirements, and it is the object the whole solver is keyed on, by a string
+//! signature rebuilt and re-hashed on every use. Here it is an arena entry with
+//! an interned signature, and the two are different things on purpose.
 //!
 //! **`ApplId` is identity; `ApplSig` is structure.** Python conflates them
 //! behind one string, and that conflation is a live defect: `expand_node`
@@ -18,8 +16,8 @@
 //! deliberately: this is a port, and a port that fixes things cannot be checked
 //! against what it replaced.
 //!
-//! One thing Python does that this does not: `SolverState.have` is built and
-//! copied on every expansion and never read. It is not carried here.
+//! `SolverState.have` is built and copied on every expansion in Python and never
+//! read. It is not carried here.
 
 use crate::det::{self, Map, Set};
 use crate::model::{DepId, EpId, EpSig, Endpoints, TransformId, TransformSig};

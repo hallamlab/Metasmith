@@ -91,8 +91,6 @@ def plan(work: Path, agent, orfs: Path, remote_processed: str):
     shutil.copy(orfs, xgdb / orfs.name)
     inputs.AddItem(orfs.name, "sequences::orfs")
 
-    # Absolute, so they are bound where they already are. The DIAMOND database alone is
-    # 17 GB and this ORF set is 45 KB.
     for dtype, rel in B2.REFS_4.items():
         remote = f"{remote_processed}/{rel}"
         print(f"    {dtype:32s} {remote}")
@@ -131,8 +129,6 @@ def check_plan(task) -> int:
         print(f"\nexpected exactly {sorted(EXPECTED)}, got {sorted(used)}",
               file=sys.stderr)
         bad = 1
-    # An ORF caller here would predict genes over an amino-acid FASTA -- not a smaller
-    # run, a wrong one. The ORF set is given; nothing may produce it.
     if "prodigal" in used:
         print("\nprodigal is in the plan: the clones are already protein.",
               file=sys.stderr)
@@ -162,8 +158,6 @@ def main() -> int:
     a = ap.parse_args()
 
     site = B2.SITES[a.site]
-    # PER ORF SET, not per site: two ORF sets share a site and would otherwise share a
-    # results tree, and --publish would then land one set's table under the other's name.
     work = (Path(a.work).resolve() if a.work
             else SCRATCH / f"clone_gpr_{a.site}_{a.orfs.stem}")
     work.mkdir(parents=True, exist_ok=True)

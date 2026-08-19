@@ -1,9 +1,3 @@
-"""Orchestrator.groovy edge case tests via real Nextflow execution.
-
-These tests run minimal Nextflow scripts that exercise the Orchestrator
-class's group, batch, debatch, post, and mix methods inside Docker.
-"""
-
 import json
 import subprocess
 import shutil
@@ -19,14 +13,11 @@ ORCHESTRATOR_SRC = MODULE_PATH / "nextflow_config/Orchestrator.groovy"
 
 
 class NxfTestRunner:
-    """Helper to run minimal Nextflow scripts testing Orchestrator.groovy."""
-
     def __init__(self, work_dir: Path, docker_image: str):
         self.work_dir = work_dir
         self.docker_image = docker_image
         self.work_dir.mkdir(parents=True, exist_ok=True)
 
-        # Set up lib/ with Orchestrator.groovy
         lib_dir = self.work_dir / "lib"
         lib_dir.mkdir(exist_ok=True)
         shutil.copy(ORCHESTRATOR_SRC, lib_dir / "Orchestrator.groovy")
@@ -38,21 +29,6 @@ class NxfTestRunner:
         extra_lib: dict = None,
         extra_args: list = None,
     ) -> subprocess.CompletedProcess:
-        """Run a Nextflow script inside Docker.
-
-        Args:
-            nxf_script: Nextflow script content.
-            timeout: Timeout in seconds.
-            extra_lib: Filename -> Groovy source, dropped beside
-                Orchestrator.groovy in lib/. Nextflow 26's parser rejects loops
-                and closures in a workflow body, so a test that needs either
-                puts them in a class here and calls it from the body.
-            extra_args: Extra `nextflow run` arguments, in container
-                coordinates (the runner's work dir is mounted at /ws).
-
-        Returns:
-            CompletedProcess with stdout/stderr/returncode.
-        """
         for name, source in (extra_lib or {}).items():
             (self.work_dir / "lib" / name).write_text(source)
         script_path = self.work_dir / "test.nf"
@@ -77,13 +53,6 @@ class NxfTestRunner:
 
     @staticmethod
     def assert_nxf_ok(result: subprocess.CompletedProcess):
-        """Assert Nextflow succeeded, tolerating upstream bug nextflow-io/nextflow#6757.
-
-        Under wall-clock skew (WSL2, NTP step), Nextflow's `WorkflowMetadata.invokeOnComplete`
-        asserts `Duration >= 0` and throws even after the workflow body has completed
-        successfully and all `publish` manifests have been written. The exit code is
-        non-zero but the on-disk results are intact and parseable.
-        """
         nxf_duration_bug = (
             "Duration unit cannot be a negative number" in result.stdout
             or "Duration unit cannot be a negative number" in (result.stderr or "")
@@ -101,15 +70,11 @@ class NxfTestRunner:
 
 @pytest.fixture
 def nxf_runner(tmp_path, docker_image):
-    """Create an NxfTestRunner for the test."""
     return NxfTestRunner(tmp_path / "nxf_test", docker_image)
 
 
 class TestOrchestratorPost:
-    """Test post/postIn hash and index behavior."""
-
     def test_post_produces_output(self, nxf_runner):
-        """post() processes items and produces indexed output."""
         result = nxf_runner.run('''
 
 
@@ -130,8 +95,6 @@ workflow {
         assert "POST:" in result.stdout
 
     def test_postin_processes_inputs(self, nxf_runner):
-        """postIn() uses full path hash (not just filename hash)."""
-        # Write test input files
         for i in range(3):
             (nxf_runner.work_dir / f"input_{i}.txt").write_text(f"data {i}")
 
@@ -156,19 +119,12 @@ workflow {
         lines = [l for l in result.stdout.split("\n") if l.startswith("POSTIN:")]
         assert len(lines) == 3
 
-        # Each should have an "inp" key in the index
         for line in lines:
             idx_str = line.split(" ", 1)[1].split(" ")[0]
             idx = json.loads(idx_str)
             assert "inp" in idx
 
     def test_post_id_is_md5_composite(self, nxf_runner):
-        """post() id is the md5 of "<slot_id>::<filename>" (a hex String).
-
-        This is the on-channel form of the canonical file_instance_id
-        (LinPayload.mint_file_id). With no slot_ids supplied the channel
-        name stands in for the slot_id, so the id is md5("x::test.nf").
-        """
         import hashlib
 
         result = nxf_runner.run('''
@@ -192,14 +148,11 @@ workflow {
         NxfTestRunner.assert_nxf_ok(result)
         lines = [l for l in result.stdout.split("\n") if l.startswith("HASH:")]
         assert len(lines) == 1
-        # It is a String, not a Long, now.
         assert "String" in lines[0]
-        # And it is exactly md5("x::test.nf") — the mint_file_id composite.
         expected = hashlib.md5(b"x::test.nf").hexdigest()
         assert expected in lines[0], f"expected {expected} in {lines[0]}"
 
     def test_post_id_uses_slot_id_when_supplied(self, nxf_runner):
-        """When slot_ids is passed, the id is md5("<slot_id>::<filename>")."""
         import hashlib
 
         result = nxf_runner.run('''
@@ -225,16 +178,10 @@ workflow {
 
 
 class TestOrchestratorGroup:
-    """Test group behavior for combining streams."""
-
     def test_group_single_stream(self, nxf_runner):
-        """Items grouped by key via postIn -> group flow."""
-        # Write test files
         for i in range(4):
             (nxf_runner.work_dir / f"item_{i}.txt").write_text(f"item {i}")
 
-        # Use postIn to register index history (the public API),
-        # then group the resulting streams
         result = nxf_runner.run('''
 
 
@@ -263,7 +210,6 @@ workflow {
         assert len(lines) >= 1
 
     def test_group_does_not_split_single_key_across_mixed_streams(self, nxf_runner):
-        """Mixed emissions for one key should form one complete group, not partials."""
         (nxf_runner.work_dir / "a.txt").write_text("a")
         for i in range(9):
             (nxf_runner.work_dir / f"b_{i}.txt").write_text(f"b {i}")
@@ -313,36 +259,6 @@ workflow {
         assert "b=9" in lines[0]
 
 
-    # --- group_by collection contract -------------------------------------
-    #
-    # `group_by` partitions the incoming streams by the grouping dependency's
-    # instances. Each key yields ONE task member holding ALL the items matched
-    # to it; `batch_size` folds N whole keys into one task and never shards
-    # within a key. Four other parts of the system already encode this —
-    # `checkm`/`gtdbtk` pairing `group_by=asm` with `batch_size=25`/`100`,
-    # `plan_oracle` predicting `ceil(len(group_by_instances) / batch_size)`
-    # tasks, and `cache_decisions` + `virtual_runtime` both chunking
-    # `group_by_instances` by `batch_size`.
-    #
-    # `bbbb599` (2026-05-30) replaced the accumulating branch with per-relation
-    # streaming dispatch that emits one result per *descendant item*, then
-    # re-collected with `groupTuple(by: 0, size: batch_size, remainder: true)`.
-    # Because `batch_size` is the group-COUNT axis, the bag closes after one
-    # item on the default — so a collecting transform receives a fraction of
-    # its input and no error is raised. Bisected against the same scripts:
-    #
-    #   one key / 3 descendants / bs=1   release + bbbb599^ -> 1 task x 3 files
-    #                                    bbbb599 + HEAD     -> 3 tasks x 1 file
-    #   two keys / 2 each   / bs=1       release            -> 2 tasks x 2 files
-    #                                    HEAD               -> 4 tasks x 1 file
-    #   two keys / 2 each   / bs=2       release            -> 1 task, 2 members
-    #                                                          x 2 files each
-    #                                    HEAD               -> 2 tasks, 2 members
-    #                                                          x 1 file each
-    #
-    # Fixed by aggregating per by-key inside the dispatch branches, upstream of
-    # the cartesian fold, so `_batch` only ever collates whole groups.
-
     @staticmethod
     def _collection_case(
         nxf_runner: "NxfTestRunner",
@@ -350,26 +266,12 @@ workflow {
         n_outs: int,
         batch_size: int,
     ) -> list[list[list[str]]]:
-        """Run the fan-out-then-collect topology and report what each task got.
-
-        `step1` runs once per seed (the fan-out) and emits `n_outs` files.
-        The second `o.group` collects those outputs back by the SAME seed key,
-        which is the ppanggolin shape: one pangenome entry parenting N
-        accessions.
-
-        Returns one entry per emitted task: the list of per-batch-member
-        out1 basenames. So `[[["a", "b"]]]` is one task, one member, two
-        files.
-        """
         for i in range(n_keys):
             (nxf_runner.work_dir / f"seed_{i}.txt").write_text(f"seed {i}\n")
 
         seeds = ",\n        ".join(
             f'[[:], file("${{projectDir}}/seed_{i}.txt")]' for i in range(n_keys)
         )
-        # metasmith output names are `<batch>-<i>-<branch>.<hash>-<key><ext>`;
-        # `_debatch` routes on the leading batch index, so every file emitted
-        # by one (unbatched) task must share the `1-` prefix.
         touches = " ".join(f"1-${{stem}}{chr(ord('a') + j)}-out1.txt" for j in range(n_outs))
 
         result = nxf_runner.run(f'''
@@ -419,13 +321,6 @@ workflow {{
         ]
 
     def test_one_key_collects_all_its_descendants(self, nxf_runner):
-        """One grouping instance + 3 descendants + batch_size=1 -> ONE task.
-
-        The ppanggolin regression: the run handed each of two accessions to
-        its own task, so ppanggolin clustered a single genome and died in
-        scipy with "empty distance matrix". `release` and `bbbb599^` emit one
-        task holding both; `bbbb599` onward shatters it.
-        """
         tasks = self._collection_case(nxf_runner, n_keys=1, n_outs=3, batch_size=1)
         assert len(tasks) == 1, (
             f"expected the whole group in one task, got {len(tasks)} tasks: {tasks}"
@@ -436,11 +331,6 @@ workflow {{
         )
 
     def test_each_key_collects_only_its_own_descendants(self, nxf_runner):
-        """Two grouping instances -> two tasks, each complete and disjoint.
-
-        Guards the other half of the contract: collecting must not merge
-        across keys either.
-        """
         tasks = self._collection_case(nxf_runner, n_keys=2, n_outs=2, batch_size=1)
         assert len(tasks) == 2, f"expected one task per key, got {len(tasks)}: {tasks}"
         groups = []
@@ -454,12 +344,6 @@ workflow {{
 
     @staticmethod
     def _provenance_case(nxf_runner: "NxfTestRunner", n_keys: int, n_outs: int):
-        """Same fan-out-then-collect topology, reporting PROV instead of FILES.
-
-        Returns one entry per task: `{"seed": [...], "out1": [...]}` where each
-        list holds the per-item `seed` hashes of that slot's items, in the same
-        order as that slot's files.
-        """
         for i in range(n_keys):
             (nxf_runner.work_dir / f"seed_{i}.txt").write_text(f"seed {i}\n")
         seeds = ",\n        ".join(
@@ -512,34 +396,18 @@ workflow {{
         ]
 
     def test_collected_items_carry_their_own_provenance(self, nxf_runner):
-        """<LP7> Each collected item arrives with the ancestry it came in with.
-
-        This is the whole point of keeping the per-item indexes: `group()` used
-        to union them into one map, so a task holding three outputs could not
-        say which ancestor any of them had. A protocol pairing two grouped slots
-        -- N genomes against the N names they were fetched under -- has nothing
-        else to go on, since the two lists arrive in independent orders.
-        """
         tasks = self._provenance_case(nxf_runner, n_keys=1, n_outs=3)
         assert len(tasks) == 1, tasks
         t = tasks[0]
         assert t["n_out1_files"] == 3 and t["n_seed_files"] == 1
-        # aligned 1:1 with the files they describe
         assert len(t["out1"]) == 3, f"PROV was flattened or unioned: {t}"
         assert len(t["seed"]) == 1, t
-        # every output names the one seed it descends from
         (seed_id,) = t["seed"]
         assert all(ix == seed_id for ix in t["out1"]), (
             f"an output carries an ancestry that is not its seed's: {t}"
         )
 
     def test_provenance_does_not_merge_across_keys(self, nxf_runner):
-        """<LP7> Two keys -> two tasks, each item pointing only at its own key.
-
-        The other half: a union across keys would make every item look like it
-        descended from both, which is precisely the wrong answer a positional
-        or unioned pairing gives.
-        """
         tasks = self._provenance_case(nxf_runner, n_keys=2, n_outs=2)
         assert len(tasks) == 2, tasks
         seen = []
@@ -551,13 +419,6 @@ workflow {{
         assert seen[0] != seen[1], f"both tasks claim one seed: {seen}"
 
     def test_batch_size_folds_whole_keys_never_shards_one(self, nxf_runner):
-        """batch_size counts GROUPS, not members within a group.
-
-        Two keys of two descendants at batch_size=2 is one task with two
-        members, each holding its own pair — the shape `checkm` relies on
-        (`group_by=asm, batch_size=25` iterating `context.AsBatch()`), and the
-        shape `plan_oracle` predicts with `ceil(n_keys / batch_size)`.
-        """
         tasks = self._collection_case(nxf_runner, n_keys=2, n_outs=2, batch_size=2)
         assert len(tasks) == 1, (
             f"ceil(2 keys / batch_size 2) == 1 task, got {len(tasks)}: {tasks}"
@@ -567,12 +428,6 @@ workflow {{
             assert len(member) == 2, f"each member keeps its whole group: {tasks[0]}"
 
     def test_channel_reuse_across_group_calls(self, nxf_runner):
-        """Two group() calls sharing a posted stream — second gets empty channel.
-
-        Reproduces the core deadlock mechanism: Nextflow channels are
-        single-consumer, so the first group() drains the stream and the
-        second group() receives nothing.
-        """
         (nxf_runner.work_dir / "a.txt").write_text("a")
 
         result = nxf_runner.run('''
@@ -600,23 +455,6 @@ workflow {
         assert len(g2_lines) >= 1, "G2 should have output (fails if channel was consumed by G1)"
 
     def test_stream_reuse_works_in_orchestrator(self, nxf_runner):
-        """Shared streams passed to multiple group() calls produce correct output.
-
-        Reproduces the mHAnaWSi deadlock topology. Without explicit multiMap forking
-        in the generated workflow, passing the same posted stream to multiple group()
-        calls causes a ConcurrentModificationException because the Orchestrator's
-        internal channel tracking structures are mutated concurrently.
-
-        This test validates that the workflow generator's multiMap machinery correctly
-        forks shared streams so each group() call receives an independent copy.
-
-        Three stub processes:
-        - p01: per-sample (9 items), groups by "sample"; also needs exp + container
-        - p02: per-experiment (1 item), groups by "exp"; needs container
-        - p03: groups by "exp"; needs p01 + p02 outputs + exp + container
-
-        posted_exp and posted_container are referenced by all three group() calls.
-        """
         for i in range(9):
             (nxf_runner.work_dir / f"sample_{i}.txt").write_text(f"sample {i}")
         (nxf_runner.work_dir / "exp.txt").write_text("experiment")
@@ -701,7 +539,6 @@ workflow {
     p03_result.view { "P03: ${it[1].name}" }
 }
 ''', timeout=120)
-        # DSL2 auto-forks shared channels so all three processes receive data correctly.
         p03_lines = [l for l in result.stdout.split("\n") if l.startswith("P03:")]
         nxf_ok = result.returncode == 0 or (
             "Duration unit cannot be a negative number" in result.stdout
@@ -714,10 +551,7 @@ workflow {
 
 
 class TestOrchestratorBatch:
-    """Test batch/debatch operations."""
-
     def test_batch_collates_correctly(self, nxf_runner):
-        """_batch(3, channel) groups into batches of 3."""
         for i in range(6):
             (nxf_runner.work_dir / f"b_{i}.txt").write_text(f"batch {i}")
 
@@ -740,10 +574,9 @@ workflow {
 ''')
         NxfTestRunner.assert_nxf_ok(result)
         lines = [l for l in result.stdout.split("\n") if l.startswith("BATCH:")]
-        assert len(lines) == 2  # 6 items / 3 per batch = 2 batches
+        assert len(lines) == 2
 
     def test_batch_adds_files_key(self, nxf_runner):
-        """Batch adds 'FILES' key to index."""
         for i in range(3):
             (nxf_runner.work_dir / f"f_{i}.txt").write_text(f"file {i}")
 
@@ -766,24 +599,10 @@ workflow {
         NxfTestRunner.assert_nxf_ok(result)
         lines = [l for l in result.stdout.split("\n") if l.startswith("FILES:")]
         assert len(lines) >= 1
-        # All indexes should have FILES key
         assert "true" in lines[0].lower()
 
     @staticmethod
     def _run_two_step_files_check(nxf_runner: "NxfTestRunner", batch_size: int) -> list[str]:
-        """Inbox #139 reproduction helper.
-
-        Runs a two-process pipeline (step1 produces a path() output; step2
-        consumes it via `o.group(..., batch_size)`). step2 echoes the index
-        it received as JSON, so the test can inspect the FILES paths that
-        `_batch()` wrote.
-
-        Returns the deduplicated list of distinct path strings observed in
-        every step2 invocation's `index['FILES']`. With the consumer-side
-        fix in place, these still contain `/ws/...` strings (the producer
-        is unchanged); callers should route them through
-        `bootstrap._parse_path` to verify resolution.
-        """
         for i in range(3):
             (nxf_runner.work_dir / f"seed_{i}.txt").write_text(f"seed {i}\n")
 
@@ -838,7 +657,6 @@ workflow {{
         observed: list[str] = []
         for ip in index_files:
             raw = ip.read_text().strip()
-            # Bash echo wraps Groovy's escaped quotes (\") in the JSON; unescape.
             parsed = json.loads(raw.replace('\\"', '"'))
             if not isinstance(parsed, list):
                 parsed = [parsed]
@@ -850,15 +668,6 @@ workflow {{
 
     @staticmethod
     def _assert_files_resolve(files: list[str]) -> None:
-        """Inbox #139 fix verification.
-
-        For each FILES path captured from a step's index, run it through
-        `bootstrap._parse_path` and assert the resulting `local` view is
-        the container-canonical form rooted at `AgentPaths.HOME_ROOT`
-        with the supplied task key embedded. This is the assertion shape
-        for a consumer-side fix: raw FILES still contain `/ws/...`
-        strings; `_parse_path` rewrites them on read.
-        """
         from pathlib import Path
 
         from metasmith.bootstrap import _parse_path
@@ -884,41 +693,14 @@ workflow {{
             )
 
     def test_batched_files_resolve_through_parse_path(self, nxf_runner):
-        """Regression for inbox #139 — batched case.
-
-        When step2 consumes step1's `path()` output through `_batch(N>1, …)`,
-        `Orchestrator.groovy:274` renders each Path via `*.toString()`.
-        Inside the producer container the workdir is bound at `/ws`, so
-        the rendered string is `/ws/work/<hash>/<file>` — a path that
-        doesn't resolve inside the downstream consumer's own container
-        (its `/ws` is its own task dir). On HPC this trips
-        `bootstrap.py:279` with "detected missing inputs, stopping".
-
-        The fix in `bootstrap._parse_path` rewrites `/ws/<tail>` →
-        `<AgentPaths.HOME_ROOT>/runs/<task_key>/<tail>` at parse time
-        (mirroring `bin/sbatch:54-80`'s inverse rewrite). The raw FILES
-        strings still contain `/ws/...`; this test confirms they
-        resolve correctly when read.
-        """
         files = self._run_two_step_files_check(nxf_runner, batch_size=2)
         self._assert_files_resolve(files)
 
     def test_unbatched_files_resolve_through_parse_path(self, nxf_runner):
-        """Regression for inbox #139 — non-batched case.
-
-        `o.group` always routes through `_batch` regardless of batch_size,
-        so the `/ws`-prefix in FILES is *not* batched-only. The reporter's
-        claim that non-batched works (msg #139, `p03__assembly_stats`)
-        cannot be due to batch size alone; their non-batched comparison
-        case must have been a given input (CSV-staged via `o.postIn` +
-        `in()`), not a process output. The fix in `bootstrap._parse_path`
-        covers both.
-        """
         files = self._run_two_step_files_check(nxf_runner, batch_size=1)
         self._assert_files_resolve(files)
 
     def test_batch_debatch_roundtrip(self, nxf_runner):
-        """Items survive batch -> process -> debatch cycle."""
         for i in range(4):
             (nxf_runner.work_dir / f"r_{i}.txt").write_text(f"roundtrip {i}")
 
@@ -953,7 +735,6 @@ workflow {
 ''')
         NxfTestRunner.assert_nxf_ok(result)
         lines = [l for l in result.stdout.split("\n") if l.startswith("ROUNDTRIP:")]
-        # After debatch, FILES key should be removed
         for line in lines:
             idx_str = line.split(": ", 1)[1]
             idx = json.loads(idx_str)
@@ -961,25 +742,7 @@ workflow {
 
 
 class TestLinWire:
-    """The `lin` envelope a batched task actually puts on the wire.
-
-    This is the one seam the fast suite structurally cannot cover: its
-    harnesses synthesize payloads with `json.dumps` and never go through the
-    Groovy emitter, which is how R5's version desync failed every
-    containerized task with a green fast run. The script below emits the
-    exact expression `nextflow_codegen` compiles into every process.
-    """
-
     def test_batched_task_puts_every_member_on_the_wire(self, nxf_runner):
-        """A 3-member batch emits 3 lineage maps with 3 distinct FILES groups.
-
-        Reproduced on real Nextflow: the task's `index` has size 3 (three
-        `_collateBatch` members) while the envelope carries one FILES group
-        holding one file. `bootstrap` then wraps that single map — the
-        `for batch, batch_lineage in enumerate(lineages)` loop runs once —
-        so a `checkm`-shaped transform at `batch_size=25` processes one
-        assembly and stages twenty-four it never opens.
-        """
         from metasmith.models.lineage import LinPayload
         from metasmith.models.workflow.nextflow_codegen import LIN_ECHO_EXPR
 
@@ -1034,8 +797,6 @@ workflow {{
             f"expected {n} keys at batch_size={n} to fold into one task, "
             f"got {len(lin_files)}"
         )
-        # `echo` renders Groovy's bash-escaped quotes; undo them the same way
-        # `bootstrap` does when it reads the `lin` line back.
         raw = lin_files[0].read_text().strip().replace('\\"', '"')
         payload = LinPayload.from_json(raw)
         assert isinstance(payload.entries, list), (
@@ -1054,10 +815,7 @@ workflow {{
 
 
 class TestOrchestratorMix:
-    """Test stream mixing."""
-
     def test_mix_merges_streams(self, nxf_runner):
-        """mix() combines preserving all items."""
         result = nxf_runner.run('''
 workflow {
     o = new Orchestrator(Channel.fromList([null]))
@@ -1079,7 +837,6 @@ workflow {
         assert len(lines) == 2
 
     def test_mix_preserves_name(self, nxf_runner):
-        """mix() keeps name from streams[0]."""
         result = nxf_runner.run('''
 workflow {
     o = new Orchestrator(Channel.fromList([null]))
@@ -1101,10 +858,7 @@ workflow {
 
 
 class TestOrchestratorPublish:
-    """Test publish behavior."""
-
     def test_publish_outputs_json_index(self, nxf_runner):
-        """publish() converts index to JSON string."""
         result = nxf_runner.run('''
 workflow {
     o = new Orchestrator(Channel.fromList([null]))
@@ -1120,7 +874,6 @@ workflow {
         NxfTestRunner.assert_nxf_ok(result)
         lines = [l for l in result.stdout.split("\n") if l.startswith("PUB:")]
         assert len(lines) == 1
-        # Should be valid JSON
         json_str = lines[0].split("PUB: ")[1]
         parsed = json.loads(json_str)
         assert "a" in parsed
@@ -1128,27 +881,7 @@ workflow {
 
 
 class TestPathStringification:
-    """Capture the empirical shape of `Path.toString()` inside a Nextflow
-    process when the container workdir is bound at `/ws`.
-
-    Background: `Orchestrator.groovy:274` (`_batch`) renders upstream
-    process outputs via `values*.toString()`. The downstream consumer
-    receives the rendered strings in `index['FILES']` and routes them
-    through `bootstrap._parse_path`. The shape that `toString()`
-    actually emits is runtime-dependent — Docker emits absolute
-    `/ws/<tail>` (this test), while apptainer-local has been observed
-    to emit relative `../ws/<tail>` (the bug deferred to the path
-    overhaul; not exercised here because apptainer is not available
-    in CI — see `tests/path_overhaul/test_parse_path_apptainer_relative.py`
-    for the unit-level reproduction).
-    """
-
     def test_docker_emits_absolute_ws_prefix(self, nxf_runner):
-        """Inside a Docker-bound container with workdir `/ws`,
-        `Path.toString()` on a workflow-generated path starts with
-        `/ws/`. This is the shape `Orchestrator.groovy:274`'s
-        `*.toString()` produces for upstream outputs.
-        """
         result = nxf_runner.run('''
 process produce {
     output:
@@ -1168,35 +901,17 @@ workflow {
         lines = [l for l in result.stdout.split("\n") if l.startswith("STRSHAPE:")]
         assert len(lines) == 1, f"expected exactly one STRSHAPE line, got: {lines}"
         rendered = lines[0].split("STRSHAPE: ", 1)[1]
-        # Docker stringification is absolute and `/ws/`-rooted.
         assert rendered.startswith("/ws/"), (
             f"Docker emitted unexpected toString shape: {rendered!r}. "
             f"If this changes, `bootstrap._parse_path` case-1 (the inbox "
             f"#139 fix) needs to be re-validated."
         )
-        # No `..` segments — pre-condition for `_parse_path` case-1's
-        # `relative_to(WORK_ROOT)` to succeed.
         assert ".." not in rendered.split("/"), (
             f"Docker emitted `..` segment unexpectedly: {rendered!r}."
         )
 
 
 class TestCacheHitLineage:
-    """What a cache-hit step puts on the channel, and what group() does with it.
-
-    `nextflow_codegen` replaces a hit step's process call with
-    `Channel.of([[:], file(...)])` — an EMPTY index — posted straight into
-    `o.post`. `_post` stamps the produced key onto that empty map, so the
-    tuple reaches a downstream `o.group` carrying nothing about where it
-    came from. These two tests are the same workflow twice, differing only
-    in whether the synthetic tuple carries its ancestry: without it the run
-    stops, with it the hit is indistinguishable from the cold run.
-    """
-
-    # Mirrors tests/cache/fixtures/cache_fixtures/parallel_then_group.py:
-    # a shared `root` leaf is the declared parent of each per-sample `seed`,
-    # `step_a` is produced per seed, and the next step groups by `root`.
-    # classify("step_a", "root") therefore returns DESCENDANT_OF_BY.
     _SCRIPT = '''
 workflow {{
     o = new Orchestrator(Channel.fromList([null]))
@@ -1236,20 +951,6 @@ workflow {{
         return emits, "".join(dispatch), result
 
     def test_empty_index_stops_the_run(self, nxf_runner):
-        """The bug, now loud: a hit with no ancestry halts instead of vanishing.
-
-        `[[:], file(...)]` is what `nextflow_codegen` emits for a hit whose
-        shard carries no index. The DESCENDANT_OF_BY branch looks for
-        `index["root"]`, finds nothing, and used to log LINEAGE_VIOLATION and
-        drop — leaving the grouped channel empty, the downstream step never
-        submitted, and the run exiting 0 having silently lost what a cold run
-        computes. It now raises.
-
-        Halting is the right answer here but not the whole answer: a warm run
-        should re-compute such a shard, not die on it. That is the read-side
-        demotion in `cache_decisions`, which keeps this abort from ever firing
-        on a shard the cache could simply have missed.
-        """
         emits, dispatch, result = self._run(nxf_runner, "[:]", expect_ok=False)
         assert result.returncode != 0, (
             "an empty replayed index must stop the run, not drop the item; "
@@ -1259,20 +960,12 @@ workflow {{
             f"expected the lineage-violation message; stdout tail: "
             f"{(result.stdout or '')[-1500:]}"
         )
-        # The log is still what says which stream did it; the exception is
-        # only what stops the run.
         assert "LINEAGE_VIOLATION" in dispatch, (
             f"expected the violation to still be logged; dispatch log: {dispatch}"
         )
         assert emits == [], f"nothing should have been grouped; emissions: {emits}"
 
     def test_ancestor_bearing_index_reaches_the_group(self, nxf_runner):
-        """The contract: carry the ancestry and the hit is indistinguishable.
-
-        Same workflow, same synthetic channel, with the index the executed
-        task would have produced. Both files land in root's group, which is
-        what the cold run gives.
-        """
         emits, dispatch, result = self._run(nxf_runner, '["root": ["ROOT1"]]')
         assert "LINEAGE_VIOLATION" not in dispatch, dispatch
         assert emits == ["G:root.txt|a0.txt+a1.txt"], (
@@ -1280,9 +973,6 @@ workflow {{
         )
 
 
-# Nextflow 26's parser rejects loops and closures in a workflow body, so the
-# probe logic for the tests below lives in a class dropped beside
-# Orchestrator.groovy in lib/, and the workflow body only calls it and prints.
 STRIP_RESERVED_PROBE = '''
 class Probe {
 
@@ -1345,16 +1035,6 @@ class Probe {
 
 
 class TestSharedIndexIsNeverWritten:
-    """The bench-scales root cause, as two properties of the shipped strip.
-
-    A process declaring more than one output tuple binds one index object to
-    every output channel, and each channel is a separate dataflow operator on
-    its own thread. Anything that writes to that object is therefore N threads
-    writing to one unsynchronized LinkedHashMap, and a lost race there does not
-    fail loudly -- it yields an empty copy, whose product is dropped by the next
-    grouping step and takes the branch of the DAG below it with it.
-    """
-
     def _probe(self, nxf_runner, call, timeout=120):
         result = nxf_runner.run(
             "workflow {\n    println %s\n}\n" % call,
@@ -1365,7 +1045,6 @@ class TestSharedIndexIsNeverWritten:
         return result.stdout
 
     def test_strip_does_not_write_to_its_argument(self, nxf_runner):
-        """F1a -- the whole defect as one property, no threads, no timing."""
         out = self._probe(nxf_runner, "Probe.f1a()")
         assert "F1A caller_unchanged=true" in out, (
             "stripReserved wrote to the map it was handed; that map is shared "
@@ -1376,12 +1055,6 @@ class TestSharedIndexIsNeverWritten:
 
     @pytest.mark.parametrize("streams", [2, 3])
     def test_concurrent_strips_lose_no_lineage(self, nxf_runner, streams):
-        """F1b -- race the shipped strip at the widths transforms actually use.
-
-        20,000 rounds puts a false green from luck near one in a million: the
-        mutating version loses on the order of 26 copies in 40,000 at two
-        streams and 60 in 60,000 at three.
-        """
         out = self._probe(
             nxf_runner, f"Probe.f1b({streams}, 20000)", timeout=600
         )
@@ -1395,10 +1068,6 @@ class TestSharedIndexIsNeverWritten:
         )
 
 
-# `val(index)` arrives as `_collateBatch` built it — a list holding one map per
-# batch member — so identity is a property of the map inside, not of the list.
-# The unwrap needs a conditional, and Nextflow 26's parser will not take one in
-# a workflow body, so it lives here and the body only calls and prints.
 OWNERSHIP_PROBE = '''
 class Ownership {
     static String tag(String label, def idx) {
@@ -1411,24 +1080,6 @@ class Ownership {
 
 
 class TestMultiOutputProcess:
-    """A process declaring N output tuples in ONE product group.
-
-    The shipped library's ordinary shape: of its 77 multi-product transforms
-    exactly one calls `NewProductGroup`, so the emitter writes N mandatory
-    output tuples sharing one branch and the process call returns a
-    multi-output `ChannelOut` that goes through `asStreams` -> `post` ->
-    `_debatch`. Every other case in this file, and `multi_slot_producer` in
-    the flow suite, declares one output tuple per branch and so takes the
-    single-channel path instead — which is why a defect living only on the
-    multi-output path went unseen.
-
-    Three cases: each output keeps the index its task arrived with; a
-    downstream group joins on both at once, which is the merge shape and the
-    only step in the truncated production run with two descendant streams; and
-    the ownership pin, which records who owns the index map on either side of
-    `post`.
-    """
-
     _PROCESSES = '''
 process two_out {
     input:
@@ -1479,8 +1130,6 @@ workflow {
 }
 '''
 
-    # One input, so one task, so exactly one item per stream and the raw and
-    # posted tags line up without having to be joined.
     _PIN_SCRIPT = _PROCESSES + '''
 workflow {
     o = new Orchestrator(Channel.fromList([null]))
@@ -1507,13 +1156,6 @@ workflow {
         return result
 
     def test_each_output_keeps_its_task_index(self, nxf_runner):
-        """Both outputs carry the whole incoming index, not just their own key.
-
-        An output whose index holds one key — its own — is a task whose
-        `val(index)` binding lost the ancestry `_post` copies forward. Nothing
-        at the producer shows it; it surfaces only as a downstream group that
-        drops everything it is handed.
-        """
         result = self._run(nxf_runner)
         for stream in ("A", "B"):
             lines = [
@@ -1534,12 +1176,6 @@ workflow {
                 )
 
     def test_both_outputs_join_one_downstream_group(self, nxf_runner):
-        """A group keyed on the shared ancestor of BOTH outputs still fires.
-
-        Two `DESCENDANT_OF_BY` streams from one producer is the shape that
-        truncated a production run after seven of nine steps: the merge was
-        never submitted and Nextflow reported success.
-        """
         result = self._run(nxf_runner)
         emits = [l for l in result.stdout.splitlines() if l.startswith("OUT_M:")]
         assert len(emits) == 2, (
@@ -1548,20 +1184,6 @@ workflow {
         )
 
     def test_the_streams_own_their_index_only_after_post(self, nxf_runner):
-        """The ownership pin: who owns the index map on each side of `post`.
-
-        Everything in this plan rests on one fact about Nextflow — a process
-        declaring N output tuples binds the SAME index object to all N output
-        channels — and on the consequence that each stream gets a map of its
-        own once `_post` copies it. Both halves are asserted here on
-        `identityHashCode`, so a future Nextflow that stops sharing announces
-        itself in this test rather than leaving `stripReserved`'s comment and
-        `asStreams`'s warning quietly false.
-
-        Top-level maps only. The value lists inside stay shared by reference
-        across descendant indexes by design, so asserting on those would pin a
-        property the code does not have.
-        """
         result = self._run(
             nxf_runner,
             script=self._PIN_SCRIPT,

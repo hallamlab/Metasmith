@@ -54,10 +54,6 @@ def main():
     n_mapped = (add[add["in_atom_universe"].astype("boolean").fillna(False)]
                 .groupby("condition_id")["mnxr"].nunique())
 
-    # ...and the same count against the basis ECSPr actually solves on, which keeps
-    # transport. The two differ by most of the ASKA winners, so a "matched on
-    # reaction count" comparison has to use this one or it is matching on a number
-    # the solver never saw.
     carriable = set(pd.read_parquet(PAIRS, columns=["mnxr", "element"])
                     .query("element == 'C'")["mnxr"].unique())
     n_ecspr = (add[add["mnxr"].isin(carriable)]
@@ -92,8 +88,6 @@ def main():
     subsets = {
         "all_primary": df,
         "single_clone": df[df["n_clones"] == 1],
-        # One background, one control bar, one clone each: the cleanest comparison
-        # the study offers, and the one the null is size-matched to.
         "single_clone_F": df[(df["n_clones"] == 1) & (df["figure"].isin(
             ["fig1c", "fig3b", "figS5"]))],
     }

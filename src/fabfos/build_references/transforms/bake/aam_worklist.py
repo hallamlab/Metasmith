@@ -1,35 +1,3 @@
-"""Adjudicate the reaction universe, then hand every mapper lane the same todo list.
-
-THE FIRST STEP OF THE AAM SIDE, and the only one that looks at reactions no mapper will
-ever see. Its product is one row per MNXR -- verdict, size, blockers and their families
--- which is three things at once:
-
-  * THE LANES' TODO LIST. Each member used to derive its own universe from
-    `lookup::reactions`; now they all read `verdict == mappable` from here, so "the three
-    members saw the same reactions" is a fact about the graph rather than three filters
-    that happen to agree today.
-  * THE SIZE CUT, WHICH ROUTES RATHER THAN REFUSES. Reactions over the atom threshold
-    are recorded as `oversize`, and that verdict now means "the neural members will not
-    see this" -- Indigo does. The threshold bounds a 512-token transformer and the lane
-    that was OOM-killed twice; Indigo is a compiled substructure search with a recorded
-    timeout and neither limit applies to it. The yield curve that once justified refusing
-    outright turns out to be censored -- every mapper method in the deployed table stops
-    dead at 600 because the same cut was applied upstream of all three, and the only
-    thing banked above it is `curated`, which never sees a mapper. See
-    `ecspr.bake.aam.worklist.ATOM_LIMIT` and `research/fabfos/benchmarks/aam_cap/`.
-  * THE LEDGER SPINE. Every reaction ends the build with a reason, so the tier-4 gate can
-    say WHY each reaction it expected is missing. A miss with a named reason is a result;
-    a miss with no reason is a bug, and before this step they looked the same.
-
-IT DOES NOT READ MetaCyc, deliberately. The curated layer answers a quarter of the
-universe and it would be natural to record that here -- but taking the licensed drop-in
-as a requirement would put it upstream of every member lane, which is the coupling
-`aam_ensemble` was restructured to remove. `aam_layers.stack` restricts each layer to
-what nothing below it claimed anyway, so knowing here would change no row.
-
-CHEAP, and that matters because everything downstream waits on it: one rdkit parse per
-buildable reaction to count atoms, no mapping, single-threaded, minutes.
-"""
 from metasmith.python_api import *
 
 lib   = TransformInstanceLibrary.ResolveParentLibrary(__file__)

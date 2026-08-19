@@ -1,5 +1,3 @@
-"""Fixtures for virtual (no Docker/Nextflow) E2E tests."""
-
 from __future__ import annotations
 
 import shutil
@@ -19,7 +17,6 @@ from metasmith.models.remote import Source
 from metasmith.models.solver import Endpoint
 from metasmith.models.workflow import NextflowGenContext, WorkflowTask
 from metasmith.testing.virtual_runtime import VirtualE2ERuntime
-
 
 
 def configure_agent_paths(monkeypatch, home: Path) -> None:
@@ -82,7 +79,6 @@ def mock_samples(tmp_path, mock_types) -> DataInstanceLibrary:
     return lib
 
 
-
 def create_transform_library(
     base_dir: Path,
     mock_types: Path,
@@ -122,9 +118,7 @@ types:
     return TransformInstanceLibrary.Load(tr_path)
 
 
-
 def stage_task(task: WorkflowTask) -> tuple[str, Path, WorkflowTask]:
-    """Persist task to agent layout and compile Nextflow artifacts."""
     key = task.GetKey()
     task_path = AgentPaths.to_task(key)
     task_path.parent.mkdir(parents=True, exist_ok=True)

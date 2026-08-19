@@ -1,13 +1,3 @@
-"""The host de-novo collectors refuse a table short of the declared lane set.
-
-Two routes write the benchmark's de-novo GPR from a mapper table -- the in-graph
-`benchmark/host_gpr_denovo.py` and the by-hand `host_denovo_from_mapper.py` -- and they
-are two copies of one claim. Both are covered here, because a gate on one is not a gate.
-
-The lane set matters downstream rather than cosmetically: `nomination_contributions`
-divides each ORF's belief by its own distinct-channel count, so a table one lane short
-carries a different denominator under the same `lane_set` label.
-"""
 from __future__ import annotations
 
 import os
@@ -39,8 +29,6 @@ def _genomes(tmp: Path) -> Path:
 
 
 def _score(channel: str, i: int) -> float:
-    """Inside the channel's own declared range -- the collector validates now, and a
-    fixture that ignores the score contract would fail for the wrong reason."""
     lo, hi = fe.SCORE_KINDS[fe.CHANNEL_SCORE_KIND[channel]]
     if hi is None:
         return float(lo + 40.0 + i)
@@ -64,7 +52,6 @@ def _mapper_table(path: Path, channels) -> pd.DataFrame:
 
 
 def _render_driver(**kw) -> str:
-    """Substitute the collector's DRIVER exactly as its protocol() does."""
     src = (BREF / "transforms" / "benchmark" / "host_gpr_denovo.py").read_text()
     start = src.index("DRIVER = r'''")
     end = src.index("'''", start + len("DRIVER = r'''"))
@@ -92,7 +79,6 @@ def _run_driver(tmp: Path, channels) -> subprocess.CompletedProcess:
 
 @pytest.mark.parametrize("missing", ["pbert", "kofam", "clean", "uniref50"])
 def test_the_collector_refuses_a_short_lane_set(tmp_path, missing):
-    """Whichever lane is absent, the refusal says which one."""
     channels = [c for c in fe.LANE_SETS["chosen_4"] if c != missing]
     r = _run_driver(tmp_path, channels)
     assert r.returncode != 0, f"a table missing {missing} was collected"
@@ -101,8 +87,6 @@ def test_the_collector_refuses_a_short_lane_set(tmp_path, missing):
 
 
 def test_the_collector_accepts_the_declared_lane_set(tmp_path):
-    """The gate must pass the case it exists to protect -- otherwise the refusal
-    above is indistinguishable from a collector that never works."""
     r = _run_driver(tmp_path, list(fe.LANE_SETS["chosen_4"]))
     assert r.returncode == 0, r.stderr
     made = tmp_path / "out" / "hosts" / HOST / "gpr_denovo.parquet"
@@ -114,19 +98,15 @@ def test_the_collector_accepts_the_declared_lane_set(tmp_path):
 
 
 def _run_by_hand(tmp: Path, channels) -> subprocess.CompletedProcess:
-    """The by-hand collector, pointed at a fixture repo through its own walk-up."""
     genomes = tmp / "data" / "fabfos" / "originals" / "genomes" / HOST / "genome"
     genomes.mkdir(parents=True)
     (genomes / f"{ACC}.faa").write_text("".join(f">{o}\nMKRIS\n" for o in ORFS))
-    # The results tree the retrieve step writes: one product directory per type.
     mapper = tmp / "results"
     (mapper / "annotation-gpr_table").mkdir(parents=True)
     _mapper_table(mapper / "annotation-gpr_table" / "1-1-1.test.parquet", channels)
 
     script = tmp / "host_denovo_from_mapper.py"
     src = (BREF / "host_denovo_from_mapper.py").read_text()
-    # The walk-up looks for a `data/fabfos` ancestor; running the copy from the
-    # fixture root is what points it at the fixture rather than the real tree.
     script.write_text(src.replace(
         'sys.path.insert(0, str(REPO / "src" / "metasmith_libraries" / "resources" / "lib"))',
         f'sys.path.insert(0, {str(LIB)!r})'))

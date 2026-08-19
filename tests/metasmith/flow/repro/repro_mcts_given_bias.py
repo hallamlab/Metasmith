@@ -1,13 +1,3 @@
-"""Variant 4: full real-shape topology.
-- ORFs (sequences::orfs) -> shardFasta -> orfs_shard
-- 3 encoders consume orfs_shard + their weights
-- esmfold(orfs_shard + esmfold_weights) -> predicted_structures
-- foldseek_3di(predicted_structures) -> structure_3di_tokens
-- saprot(orfs_shard + 3di_tokens[parents=orfs_shard] + saprot_weights) -> saprot_emb
-- Five downloader transforms (container -> weights), one per model
-- All weights share 'protein_model_weights' property
-- Container image given
-"""
 import sys
 from pathlib import Path
 
@@ -24,15 +14,13 @@ def build_problem():
     transforms: list[Transform] = []
     names: dict[Transform, str] = {}
 
-    # shardFasta: orfs -> orfs_shard
     t = Transform()
     t.AddRequirement(properties={"container_image"})
     t.AddRequirement(properties={"orfs"})
-    t.AddProduct(properties={"orfs", "orfs_shard"})  # subtype: orfs_shard IsA orfs
+    t.AddProduct(properties={"orfs", "orfs_shard"})
     transforms.append(t)
     names[t] = "shardFasta"
 
-    # encoders
     def encoder(weight_prop: str, out_prop: str, name: str):
         t = Transform()
         t.AddRequirement(properties={"container_image"})
@@ -46,7 +34,6 @@ def build_problem():
     encoder("ankh_weights",   "ankh_emb",   "ankh")
     encoder("prott5_weights", "prott5_emb", "prott5")
 
-    # esmfold
     t = Transform()
     t.AddRequirement(properties={"container_image"})
     t.AddRequirement(properties={PMW, "esmfold_weights"})
@@ -55,7 +42,6 @@ def build_problem():
     transforms.append(t)
     names[t] = "esmfold"
 
-    # foldseek_3di
     t = Transform()
     t.AddRequirement(properties={"container_image"})
     t.AddRequirement(properties={"predicted_structures"})
@@ -63,7 +49,6 @@ def build_problem():
     transforms.append(t)
     names[t] = "foldseek_3di"
 
-    # saprot: lineage parents={orfs_shard}
     t = Transform()
     t.AddRequirement(properties={"container_image"})
     t.AddRequirement(properties={PMW, "saprot_weights"})
@@ -73,7 +58,6 @@ def build_problem():
     transforms.append(t)
     names[t] = "saprot"
 
-    # 5 downloaders
     download_trs: dict[str, Transform] = {}
     for w in ["esmc_weights", "ankh_weights", "prott5_weights",
               "esmfold_weights", "saprot_weights"]:

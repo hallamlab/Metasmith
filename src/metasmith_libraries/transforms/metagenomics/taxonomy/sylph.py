@@ -17,7 +17,6 @@ def protocol(context: ExecutionContext):
     threads  = context.params.get('cpus')
     threads_arg = "" if threads is None else f"-t {threads}"
 
-    # Same command either way: this tool is a plain CLI in both worlds.
     _cmd = f"""
             reformat.sh in={ireads.container} \
                 out1=split_r1.fq.gz out2=split_r2.fq.gz
@@ -26,7 +25,6 @@ def protocol(context: ExecutionContext):
         .ifContainerDo(env=img_bb, cmd=_cmd) \
         .ifVirtualEnvDo(env=img_bb, cmd=_cmd)
 
-    # Same command either way: this tool is a plain CLI in both worlds.
     _cmd = f"""
             sylph profile {idb.container} \
                 -1 split_r1.fq.gz -2 split_r2.fq.gz \
@@ -50,10 +48,7 @@ TransformInstance(
     group_by=reads,
     resources=Resources(
         cpus=4,
-        memory=Size.GB(64),  # r220 c200 (Wp5jjOW2) SLURM peak RSS 22-26 GB; r232
-                             # c200 sketch is ~1.8x bigger (24 GB on disk vs
-                             # 13 GB for r220) -> projected peak ~44 GB.
-                             # 64 GB keeps ~20 GB headroom.
+        memory=Size.GB(64),
         duration=Duration(hours=1),
     )
 )

@@ -2,10 +2,9 @@ from metasmith.python_api import *
 
 lib   = TransformInstanceLibrary.ResolveParentLibrary(__file__)
 model = Transform()
-image = model.AddRequirement(lib.GetType("env::diamond.env"))  # has wget
+image = model.AddRequirement(lib.GetType("env::diamond.env"))
 ref   = model.AddProduct(lib.GetType("annotation::crassphage_ref"))
 
-# crAssphage reference genome (NCBI nuccore NC_024711.1) as a single FASTA.
 EFETCH_URL = (
     "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi"
     "?db=nuccore&id=NC_024711.1&rettype=fasta&retmode=text"

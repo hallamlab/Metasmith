@@ -1,18 +1,3 @@
-"""A library view walks its mask in a fixed order, not set order.
-
-`DataInstanceLibraryView._mask` is a `set[Path]`, and `Path.__hash__` is the
-string hash — which python randomizes per process. Walking it unsorted handed
-the planner its transforms in a different order every run, and where two
-transforms are interchangeable (same input and output types, different tool)
-the planner then chose a different one each time. Solving one shipped template
-in two processes produced two different plans, with two different tools, from
-identical inputs.
-
-Nothing downstream announced it: both plans are valid, both compile, and the
-fast suite never solves a real library twice. It surfaced only once a
-topological fingerprint was taken across two runs of unchanged code.
-"""
-
 from __future__ import annotations
 
 from pathlib import Path

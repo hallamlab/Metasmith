@@ -1,14 +1,3 @@
-"""Does masking the community solve down to a slice agree with solving the slice on its own?
-
-A row of the community table is the current a reaction draws *in the presence of every other
-clone*, so a figure restricted to the host and one insert is positioned by current that partly
-routed through inserts it does not draw. Whether that matters is a measurement, not an
-argument: solve the slice standalone, mask the community table to the same reaction set on
-both axes, and compare each row's top-k neighbours.
-
-High overlap means the community store is the reusable artifact -- measure once, mask
-afterwards. Low overlap means a named figure has to be drawn from its own solve.
-"""
 import argparse
 from pathlib import Path
 
@@ -17,7 +6,6 @@ import pandas as pd
 
 
 def rows(path, keep=None):
-    """{reaction: ranked neighbour list}, restricted to ``keep`` on both axes."""
     z = np.load(path, allow_pickle=False)
     indptr, indices, data = z["indptr"], z["indices"], z["data"]
     src = [str(s) for s in z["src"]]
@@ -30,8 +18,6 @@ def rows(path, keep=None):
         nb = [rxn[j] for j in indices[a:b]]
         d = data[a:b]
         o = np.argsort(d)[::-1]
-        # Masking has to drop a reaction from the target axis too, or the row appears to
-        # leak current to partners the figure does not contain.
         r = [nb[j] for j in o if (keep is None or nb[j] in keep) and nb[j] != s]
         out[s] = r
     return out

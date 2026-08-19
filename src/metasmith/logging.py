@@ -93,7 +93,6 @@ class Log:
         if rotate is None:
             _file_handler = logging.FileHandler(file_path)
         else:
-            # 10 MB
             rotate = int(rotate)
             _file_handler = logging.handlers.RotatingFileHandler(file_path, maxBytes=10 * 1024 * 1024, backupCount=rotate)
             

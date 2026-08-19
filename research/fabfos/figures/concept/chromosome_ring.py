@@ -1,44 +1,3 @@
-"""Lay the figure out on the *genome* instead of on a fitted embedding.
-
-The ring in ``ring_layout`` is a UMAP coordinate: an angle fitted to the pairwise I_eff
-distance, which makes the circle a layout and nothing else. Here the circle is the **host
-chromosome** -- angle is genomic position, read off the DH10B annotation -- and metabolism is
-carried entirely by the edges. Nothing about the drawing is fitted, so two figures drawn from
-different networks are directly comparable point for point.
-
-Four concentric rings, outermost first::
-
-    host genes           angle = CDS midpoint / chromosome length
-    host reactions       angle = circular mean of the genes that encode it (subunits collapse)
-    insert reactions     angle = circular mean of the insert ORFs that encode it
-    insert genes         angle = ORF midpoint / insert length
-
-The two gene rings are two different coordinates sharing one circle: 4.69 Mb of chromosome
-outside, 44.5 kb of cloned DNA inside, each wrapped once. That is the point of the figure --
-an insert gene's chemistry reaches into the host at whatever host angle its metabolites live,
-so a radial-looking bundle of edges is an insert region plugging into one region of host
-metabolism and a fan is one plugging in everywhere.
-
-A reaction the host and the insert both encode is drawn **twice**, once in each reaction ring,
-because it has two genomic positions and the figure's coordinate is genomic position.
-
-Metabolites keep the rule the other figures use: the mean of the positions of the reactions
-they move an atom through, so a cofactor shared right around the circle averages to the centre.
-
-**Edges are arcs, not chords.** Every edge is a circular arc subtending the same angle at its
-own centre (60 degrees by default), bowed so that travelling from source to target runs
-*clockwise* along the curve. Direction is the chemistry's: substrate -> reaction -> product.
-A constant subtended angle means the bow is proportional to the chord, so the arcs stay a
-consistent visual family from the shortest edge to the one crossing the circle.
-
-    python chromosome_ring.py --sparse cache/_old3/pairwise_Ieff_epi300_clone2.npz \
-        --gpr-table ../../../data/fabfos/runs/e_coli_epi300/gpr/gpr_epi300_clone2.parquet \
-        --gem-table ../../../data/fabfos/runs/e_coli_epi300/gpr/gpr_gem.parquet \
-        --gbk ../../../data/originals/genomes/e_coli_dh10b/genome/NC_010473.1.gbk \
-        --fosmid-gff ../../../data/fabfos/runs/scadc_fosmids/annotations/fosmids.gff \
-        --fosmid-table ../../../data/fabfos/runs/scadc_fosmids/gpr/gpr_4lane.parquet \
-        --insert pool33_TTGTCGGT:... --out cache/chrom/clone2
-"""
 import argparse
 import json
 import re
@@ -58,22 +17,14 @@ sys.path.insert(0, str(HERE))
 from ieff_layout import (EDGE_ALPHA, EDGE_BUCKETS, EDGE_COLOR,       # noqa: E402
                          EDGE_WIDTH, MET_SIZE, load_sparse)
 
-# The alpha an edge gets at the cutoff degree and at degree 1. The floor is not zero: an edge
-# that survives the cutoff is one the drawing is asserting exists, and a fade to invisible
-# would assert it and hide it at once.
 ALPHA_LO, ALPHA_HI = 0.05, 0.75
 
 TAU = 2.0 * np.pi
 
-# Radial bands, outermost first. Each is (inner, outer) and the beeswarm packs within it; the
-# gaps are what make the four rings read as four rings without any of them being drawn.
 BAND = {"host_gene": (1.02, 1.10),
         "host_rxn": (0.84, 0.96),
         "clone_rxn": (0.44, 0.62),
         "clone_gene": (0.30, 0.36)}
-# Radial spacing of the beeswarm's slots. A band holds (width / SLOT) of them, and the ring
-# only needs to be as thick as its worst pile-up: one insert ORF can encode dozens of
-# reactions, which all land at exactly the same angle and can only be separated radially.
 SLOT = 0.006
 LAYER_COLOR = {"host_gene": "#6f6f6f",
                "host_rxn": "#909090",
@@ -83,19 +34,10 @@ LAYER_COLOR = {"host_gene": "#6f6f6f",
 GUIDE = "#d8d8d8"
 
 
-# ---------------------------------------------------------------- genomic coordinates
-
 def gbk_genes(path):
-    """``old_locus_tag`` -> CDS midpoint, plus the replicon length.
-
-    The GEM's gene ids are DH10B's *old* locus tags (``ECDH10B_0002``); RefSeq's current ones
-    (``ECDH10B_RS00005``) are a different series, so the old tag is the join key and reading
-    ``/locus_tag`` instead silently matches nothing.
-    """
     txt = Path(path).read_text()
     length = int(re.search(r"^LOCUS\s+\S+\s+(\d+) bp", txt, re.M).group(1))
     mid = {}
-    # One CDS block at a time: its location line, then its qualifiers up to the next feature.
     for m in re.finditer(r"^     CDS             (\S[^\n]*(?:\n {21}[^ /][^\n]*)*)\n"
                          r"((?: {21}/[^\n]*\n(?: {22,}[^/\n][^\n]*\n)*)*)", txt, re.M):
         loc, quals = m.group(1).replace("\n", "").replace(" ", ""), m.group(2)
@@ -105,14 +47,11 @@ def gbk_genes(path):
         pos = [int(x) for x in re.findall(r"\d+", loc)]
         if not pos:
             continue
-        # join(...) wraps the origin for a handful of genes; the mean of its ends is then
-        # wrong by half a genome, so take the first and last coordinate of the span given.
         mid[tag.group(1)] = 0.5 * (pos[0] + pos[-1])
     return mid, length
 
 
 def gff_orfs(path, insert):
-    """Prodigal GFF -> ORF name (``<insert>_<n>``) -> midpoint, plus the insert length."""
     mid, length = {}, None
     for line in open(path):
         if line.startswith("# Sequence Data:") and f'seqhdr="{insert} ' in line:
@@ -129,12 +68,6 @@ def gff_orfs(path, insert):
 
 
 def beeswarm(theta, band, arc, slot=SLOT):
-    """Radii within ``band``: the innermost slot free of a point already within ``arc``.
-
-    ``ring_layout.beeswarm`` with the slot pitch exposed, because the pile-ups here are not
-    the layout's mild crowding but exact ties -- every reaction one gene encodes shares that
-    gene's angle exactly, so the ring has to be thick enough to stack them.
-    """
     lo, hi = band
     slots = max(int(np.ceil((hi - lo) / slot)), 1)
     radii = np.linspace(lo, hi, slots)
@@ -153,13 +86,6 @@ def circmean(angles):
 
 
 def reaction_angles(gene_angle, pairs):
-    """Reaction -> circular mean of the angles of the genes that encode it.
-
-    ``pairs`` is (reaction, gene). The mean is circular because the coordinate is: two
-    subunits either side of the origin average to the origin, not to the far side. A multi-
-    subunit complex spread right round the chromosome has no meaningful mean angle, and the
-    resultant length is returned alongside so that can be seen rather than assumed.
-    """
     by = {}
     for r, g in pairs:
         a = gene_angle.get(g)
@@ -173,15 +99,7 @@ def reaction_angles(gene_angle, pairs):
     return ang, R
 
 
-# ---------------------------------------------------------------- incidence, with direction
-
 def directed_incidence(gpr_table, src, element="C"):
-    """(reaction row, metabolite, is_product) for every atom-carrying incidence.
-
-    The same two calls the sweep made, so the drawn network is the solved one -- but keeping
-    the substrate/product split ``ieff_layout.incidence`` collapses, because an arc that is
-    drawn with a direction needs one. A metabolite on both sides yields both edges.
-    """
     from atom_graph import build_atom_graph, restrict_to_giant
     from ieff_sweep import gpr_medium
 
@@ -202,23 +120,12 @@ def directed_incidence(gpr_table, src, element="C"):
     return list(mets), trip, missing
 
 
-# ---------------------------------------------------------------- arcs
-
 def arc_segments(p0, p1, degrees, steps=16):
-    """Polylines from ``p0`` to ``p1`` along a circular arc subtending ``degrees``.
-
-    The arc is bowed so that travel from ``p0`` to ``p1`` is **clockwise** about the arc's own
-    centre, which puts the centre 90 degrees clockwise of the direction of travel. A constant
-    subtended angle fixes the radius at ``chord / (2 sin(a/2))``, so every edge in the figure
-    is a segment of the same shape scaled to its own chord -- the bow reads as one visual
-    family rather than as a quantity.
-    """
     a = np.radians(degrees)
     d = p1 - p0
     c = np.hypot(d[:, 0], d[:, 1])
     c = np.where(c < 1e-12, 1e-12, c)
     R = c / (2.0 * np.sin(a / 2.0))
-    # Perpendicular to travel, rotated -90 degrees: the side the centre of a clockwise arc is on.
     n = np.stack([d[:, 1], -d[:, 0]], axis=1) / c[:, None]
     centre = 0.5 * (p0 + p1) + n * (R * np.cos(a / 2.0))[:, None]
     t0 = np.arctan2(p0[:, 1] - centre[:, 1], p0[:, 0] - centre[:, 0])
@@ -228,19 +135,6 @@ def arc_segments(p0, p1, degrees, steps=16):
 
 
 def edge_alpha(deg, tone, cut, gamma):
-    """Per-edge alpha from its metabolite's degree, and which edges are drawn at all.
-
-    Two tones, because they answer differently and the ring figures already chose:
-
-    ``bucket`` is ``ieff_layout.draw_network``'s exactly -- ``1/degree`` split into five
-    quantile buckets, the densest undrawn and the rest at 0.85 / 0.2 / 0.05 / 0.01. It is a
-    step, not a ramp: the degree<=2 bucket carries the drawing and everything above it is
-    barely-there ink. That is what `ring_clone2` is drawn with and why it reads sparse.
-
-    ``log`` is a continuous ``(log(cut/degree)/log(cut))**gamma`` with a hard cutoff. It shows
-    more of the mid-degree structure, at the cost of the thousand faint curves the step tone
-    suppresses.
-    """
     if tone == "bucket":
         w = 1.0 / deg
         cuts = np.quantile(w, np.linspace(0, 1, EDGE_BUCKETS + 1)[1:-1])
@@ -254,13 +148,7 @@ def edge_alpha(deg, tone, cut, gamma):
 
 def draw_arcs(ax, xy, mxy, trip, degrees, tone="bucket", cut=15, gamma=1.6, hot=None,
               host=True):
-    """The reaction-metabolite drawing as arcs, toned by metabolite degree.
-
-    Whichever tone, the reason is one: a currency metabolite incident to hundreds of reactions
-    draws hundreds of curves, and their *sum* is what makes a drawing like this a hairball.
-    """
     deg = np.bincount(trip[:, 1], minlength=len(mxy))[trip[:, 1]]
-    # Source and target: substrate -> reaction, reaction -> product.
     prod = trip[:, 2] == 1
     src_xy = np.where(prod[:, None], xy[trip[:, 0]], mxy[trip[:, 1]])
     dst_xy = np.where(prod[:, None], mxy[trip[:, 1]], xy[trip[:, 0]])
@@ -276,26 +164,18 @@ def draw_arcs(ax, xy, mxy, trip, degrees, tone="bucket", cut=15, gamma=1.6, hot=
         rgba[:, 3] = t[m]
         ax.add_collection(LineCollection(arc_segments(src_xy[m], dst_xy[m], degrees),
                                          colors=rgba, linewidths=EDGE_WIDTH, zorder=0))
-    # The insert's own incidences, on top and on the same tone rule -- they are the subject,
-    # and they are 4% of the edges, so they are worth their own colour but not their own scale.
     m = keep & hot
     if m.any():
         print(f"{int(m.sum())} of those touch an insert reaction and are drawn coloured, "
               f"above the host's ({int((hot & ~keep).sum())} more were left undrawn)",
               flush=True)
-        # Lifted off the host's tone rather than given their own: a hub edge stays faint when
-        # it is the insert's too, because it is still saying nothing about where the insert is.
         rgba = np.tile(matplotlib.colors.to_rgba("#d62728"), (int(m.sum()), 1))
         rgba[:, 3] = np.clip(0.15 + 0.85 * t[m], 0.0, 1.0)
         ax.add_collection(LineCollection(arc_segments(src_xy[m], dst_xy[m], degrees),
                                          colors=rgba, linewidths=0.6, zorder=1))
 
 
-# ---------------------------------------------------------------- main
-
 def to_xy(theta, radius):
-    """Genomic angle -> canvas. Position zero is at the top and coordinate runs clockwise,
-    which is how a circular genome map is conventionally read."""
     a = np.pi / 2.0 - theta
     return np.stack([radius * np.cos(a), radius * np.sin(a)], axis=1)
 
@@ -351,7 +231,7 @@ def main():
     gmid, glen = gbk_genes(args.gbk)
     gene_angle = {g: TAU * p / glen for g, p in gmid.items()}
     gem = pd.read_parquet(args.gem_table)
-    if "orf" not in gem.columns:          # a table written before the schema
+    if "orf" not in gem.columns:
         gem = gem.rename(columns={"feature_id": "orf"})
     gem = gem[["orf", "feature_kind", "mnxr"]]
     gem = gem[(gem.feature_kind == "gem_gene") & gem.mnxr.isin(host_rxn)]
@@ -376,9 +256,6 @@ def main():
     print(f"{len(shared)} of the insert's placed reactions are also encoded by the host "
           f"chromosome and so appear in both reaction rings", flush=True)
 
-    # One record per drawn point: which ring, which angle, and which network row it is (genes
-    # have none). A reaction encoded by both genomes is two records, which is the whole reason
-    # this is a list rather than a per-reaction array.
     rows, layer, theta, net_row = [], [], [], []
     for g in host_genes:
         rows.append(g); layer.append("host_gene"); theta.append(gene_angle[g]); net_row.append(-1)
@@ -392,8 +269,6 @@ def main():
         rows.append(o); layer.append("clone_gene"); theta.append(orf_angle[o]); net_row.append(-1)
     layer = np.array(layer); theta = np.array(theta); net_row = np.array(net_row)
 
-    # The two clone_rxn classes are one ring: they are packed together, or a shared reaction
-    # and a new one at the same angle would sit on top of each other.
     ring = np.array(["clone_rxn" if l.startswith("clone_rxn") else l for l in layer])
     radius = np.empty(len(theta))
     for k in set(ring):
@@ -406,16 +281,11 @@ def main():
         mets, tri, missing = directed_incidence(args.gpr_table, src)
         print(f"incidence: {len(src)} reactions, {len(mets)} metabolites, {len(tri)} directed "
               f"edges; {missing} graph reactions with no row in the table", flush=True)
-        # Re-key onto drawn points: a reaction in both rings carries its edges twice, once
-        # from each of its genomic positions, which is what "the host also encodes this" looks
-        # like when the coordinate is genomic.
         pt = {}
         for i, (l, nr) in enumerate(zip(layer, net_row)):
             if nr >= 0:
                 pt.setdefault(nr, []).append(i)
         trip = np.array([(i, m, s) for r, m, s in tri for i in pt.get(r, ())], np.int64)
-        # A metabolite whose only reactions were dropped for want of a gene has no position;
-        # it is removed rather than drawn at the centre, where it would read as a cofactor.
         cnt = np.bincount(trip[:, 1], minlength=len(mets)).astype(float)
         keep = np.flatnonzero(cnt > 0)
         remap = np.full(len(mets), -1, np.int64)
@@ -428,7 +298,6 @@ def main():
             print(f"{len(mets) - len(keep)} metabolites dropped: every reaction they touch "
                   f"was dropped for want of a gene", flush=True)
 
-    # ---- render
     fig, ax = plt.subplots(figsize=(12, 12))
     for k, band in BAND.items():
         t = np.linspace(0, TAU, 721)
@@ -451,15 +320,11 @@ def main():
         if not m.any():
             continue
         n = int(m.sum())
-        # The insert's points are the subject and sit in the busiest part of the drawing, so
-        # they get a white keyline: without it a red marker on a bundle of arcs is not a point.
         ins = k.startswith("clone")
         ax.scatter(xy[m, 0], xy[m, 1], s=11 if "rxn" in k else 6, c=LAYER_COLOR[k],
                    edgecolors="white" if ins else "black",
                    linewidths=0.45 if ins else (0.15 if "rxn" in k else 0.0), zorder=3,
                    label=lab if lab.endswith(")") else f"{lab} (n={n})")
-    # The origin of each coordinate, marked once: without it the two rings are two circles of
-    # points and nothing says where either genome starts.
     for k in ("host_gene", "clone_gene"):
         lo, hi = BAND[k]
         ax.plot([0, 0], [lo - 0.03, hi + 0.03], color="#333333", lw=0.9, zorder=4)

@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-"""Submit BRaKER3-only workflow using cached all-9 merged BAM on Sockeye."""
 import sys
 from pathlib import Path
 

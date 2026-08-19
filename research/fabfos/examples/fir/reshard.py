@@ -63,7 +63,6 @@ def count_records(path: Path) -> int:
 
 
 def survey(orfs_dir: Path, cache: Path) -> list[tuple[str, Path, int]]:
-    """(sample, path, n_orfs) per input fasta, cached -- it is a 29 GB read."""
     if cache.exists():
         out = []
         with cache.open() as fh:
@@ -101,12 +100,6 @@ def survey(orfs_dir: Path, cache: Path) -> list[tuple[str, Path, int]]:
 
 
 def plan_parts(items: list[tuple[str, Path, int]], per_shard: int):
-    """Sequential fill. Yields shards as lists of (sample, path, start, n).
-
-    `start` is the 0-based record offset WITHIN that sample -- the repack slices
-    the sample's legacy artifacts by exactly this, so it is the load-bearing
-    number in the whole file.
-    """
     shards: list[list[tuple[str, Path, int, int]]] = []
     cur: list[tuple[str, Path, int, int]] = []
     load = 0
@@ -121,8 +114,6 @@ def plan_parts(items: list[tuple[str, Path, int]], per_shard: int):
                 shards.append(cur)
                 cur, load = [], 0
         if n == 0:
-            # Carried, not dropped: a zero-record assembly still has to appear
-            # in the delivered set, as an empty table rather than as a silence.
             cur.append((sample, path, 0, 0))
     if cur:
         shards.append(cur)
@@ -130,11 +121,6 @@ def plan_parts(items: list[tuple[str, Path, int]], per_shard: int):
 
 
 def write_shard(parts, out_fasta: Path) -> int:
-    """Concatenate a shard's slices, prefixing every header. Returns records written.
-
-    Written to a `.part` and renamed, so an interrupted shard is never mistaken
-    for a finished one by the resume check.
-    """
     tmp = out_fasta.with_suffix(".faa.part")
     written = 0
     with tmp.open("w") as out:
@@ -156,14 +142,6 @@ def write_shard(parts, out_fasta: Path) -> int:
                             got += 1
                             written += 1
                     elif emitting:
-                        # A source file with no final newline would otherwise
-                        # concatenate the next sample's header onto this
-                        # sequence: one ORF lost, one sequence corrupted, and
-                        # invisible -- the record counts are taken from the
-                        # SOURCE files, where `>` is still at line start, so
-                        # they agree. Measured zero such files in this corpus;
-                        # the guard is here because the check is one branch and
-                        # the failure is silent.
                         out.write(line if line.endswith("\n") else line + "\n")
             if got != take:
                 raise SystemExit(
@@ -205,10 +183,6 @@ def main(argv=None) -> int:
 
     parts_tsv = output / "parts.tsv"
     if not a.dry_run and not parts_tsv.exists():
-        # PID-unique scratch name. Every array task derives the same parts table
-        # (it is a pure function of the survey), and sixteen of them racing on
-        # one `parts.tmp` had the loser die in `rename` with ENOENT after the
-        # winner moved it away -- taking that task's whole shard range with it.
         tmp = parts_tsv.with_suffix(f".tmp.{os.getpid()}")
         with tmp.open("w") as fh:
             fh.write("shard\torder\tsample\tstart\tn\n")

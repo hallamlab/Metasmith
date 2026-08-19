@@ -1,21 +1,3 @@
-"""
-Concept figure: draw a reaction/metabolite network using UMAP purely as a
-force-projection layout engine (not a validated embedding).
-
-Loads a facet graph pickle (bipartite networkx graph, nodes keyed
-('rxn', MNXR...) / ('met', MNXM...), edges carrying ``w_C`` = ECSPr's
-atom-mapped carbon-conductance weight: an edge only exists, and is only
-heavy, where carbon atoms actually transit that reaction<->metabolite step).
-Distance in this figure is meant to reflect that conductance, not raw
-shared-metabolite jaccard (which a ubiquitous cofactor like ATP or water can
-dominate regardless of whether any carbon actually moves through it).
-
-Getting there without an O(n^2)/O(n) pairwise effective-conductance solve:
-a Laplacian eigenembedding of the conductance-weighted graph is the standard
-low-rank approximation of pairwise effective-resistance distance (one sparse
-eigensolve, not billions of pairwise probes). That embedding is handed to
-UMAP (euclidean metric) purely for a 2D force-projection layout to render.
-"""
 import argparse
 import pickle
 from pathlib import Path
@@ -56,18 +38,6 @@ def load_graph(facet_dir: Path, weight_attr: str = "w_C", min_edge_weight: float
 
 
 def conductance_spectral_embedding(g: nx.Graph, weight_attr: str, k: int):
-    """Low-rank Euclidean stand-in for pairwise effective-resistance distance.
-
-    Effective resistance R(i,j) = L+_ii + L+_jj - 2 L+_ij (L+ = Laplacian
-    pseudoinverse) is what "pairwise conductance" means precisely, but
-    computing it exactly is O(n) sparse solves (or O(n^2) if materialized) --
-    fine at facet-graph scale, needlessly slow at universe scale. Truncating
-    to the k smallest-nonzero-eigenvalue Laplacian eigenvectors, each scaled
-    by 1/sqrt(eigenvalue), gives coordinates whose Euclidean distance
-    approximates that same resistance distance (this is the standard
-    commute-time / diffusion-map embedding), computed with a single sparse
-    ARPACK shift-invert eigensolve instead of n solves.
-    """
     nodes = list(g.nodes())
     idx = {n: i for i, n in enumerate(nodes)}
     n = len(nodes)
@@ -93,16 +63,6 @@ def conductance_spectral_embedding(g: nx.Graph, weight_attr: str, k: int):
 
 
 def shortest_path_distance_matrix(g: nx.Graph, weight_attr: str):
-    """All-pairs min-path distance through the conductance-weighted graph.
-
-    Edge length = 1/w (heavy conductance = short hop, per the facet graphs'
-    own convention). Unlike effective resistance/commute-time, this doesn't
-    account for parallel paths -- it's the simpler, cheaper "min path"
-    metric, and it doesn't exhibit the horseshoe/arch degeneracy that the
-    spectral commute-time embedding does for this graph topology. Computed
-    with scipy's compiled Dijkstra (not networkx's pure-Python one) so it
-    stays fast (seconds, not forever) even at universe scale.
-    """
     nodes = list(g.nodes())
     idx = {n: i for i, n in enumerate(nodes)}
     n = len(nodes)
@@ -122,17 +82,6 @@ def shortest_path_distance_matrix(g: nx.Graph, weight_attr: str):
 
 
 def compress_radial_outliers(xy: np.ndarray, gamma: float) -> np.ndarray:
-    """Pull far-out points back toward the layout's median radius.
-
-    UMAP's own repulsion has no notion of a global scale, so a single
-    weakly-attached cluster can end up many times farther from the bulk than
-    any other inter-cluster gap, stretching the whole canvas around it. This
-    rescales radius (measured from the centroid) as r' = pivot * (r/pivot)^gamma
-    with pivot = median radius: at gamma=1 it's a no-op, at gamma<1 distances
-    far past the pivot shrink proportionally more than distances near it, so
-    the outlier's excess distance shrinks while nearby clusters stay
-    distinguishable (they don't collapse into each other).
-    """
     if gamma >= 1.0:
         return xy
     centroid = xy.mean(axis=0)
@@ -181,15 +130,6 @@ def layout(
 
 
 def load_pathway_membership(reac_prop_path: Path, pathways_path: Path, pathway_ids: list):
-    """MNXR -> KEGG pathway id, via MetaNetX's own keggR: cross-reference.
-
-    reac_prop.tsv's ``reference`` column carries ``keggR:R#####`` for
-    KEGG-sourced reactions; the ModelSEED KEGG.pathways table carries
-    pathway id -> pipe-separated R##### membership. Chaining the two gives
-    MNXR -> pathway without needing a KEGG API call. A reaction in more than
-    one requested pathway gets whichever was listed first in ``pathway_ids``
-    (fine for a sanity-check overlay, not a claim of primary pathway).
-    """
     pathway_reactions = {}
     pathway_names = {}
     with open(pathways_path) as fh:
@@ -315,8 +255,6 @@ def main():
     g = load_graph(args.facet_dir, args.weight_attr, args.min_edge_weight)
     rxn_nodes = sorted(n for n in g.nodes if n[0] == "rxn")
     met_nodes = sorted(n for n in g.nodes if n[0] == "met")
-    # Keyword-only: these arguments are all scalars of compatible types, so passing them
-    # positionally shifts silently rather than raising if the signature ever changes.
     pos = layout(
         g,
         distance_method=args.distance_method,

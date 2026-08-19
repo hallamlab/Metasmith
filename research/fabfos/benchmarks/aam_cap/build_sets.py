@@ -60,8 +60,6 @@ def main(argv=None):
     for r in refused.itertuples(index=False):
         smi = W.collapse(r.rxn_smiles) if isinstance(r.rxn_smiles, str) else None
         if not smi or len(smi) > W.SMILES_LEN_LIMIT:
-            # Over the CHARACTER cap even collapsed. That bound is universal -- it is
-            # what stops anything parsing an 80.7 MB string -- so these are out of scope.
             continue
         pe = AP.parse_equation(eq.get(r.mnxr, "")) or ([], [])
         rows.append(dict(pop="refused_whole", key=r.mnxr, mnxr=r.mnxr, element=None,
@@ -83,8 +81,6 @@ def main(argv=None):
             ks, kp = red
             if any(m not in smiles_of for m in ks + kp):
                 continue
-            # The same second reading `partial.build` gives a submission, and on the same
-            # guard: collapse only where the element still balances per copy.
             cks, ckp = P._uniq(ks), P._uniq(kp)
             use = (cks, ckp) if P._still_balances(cks, ckp, formulas, X) else (ks, kp)
             smi = P._write(use[0], use[1], smiles_of)
@@ -92,7 +88,7 @@ def main(argv=None):
                 continue
             n = W.count_atoms(smi)
             if n is None or n <= W.ATOM_LIMIT:
-                continue                     # already admitted; not the question here
+                continue
             rows.append(dict(pop="refused_reduced", key=P.make_key(r.mnxr, X),
                              mnxr=r.mnxr, element=X, atoms=n, chars=len(smi),
                              smiles=smi, sub=list(use[0]), prod=list(use[1])))

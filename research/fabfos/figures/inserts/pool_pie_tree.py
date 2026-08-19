@@ -60,16 +60,15 @@ LINEAGE = POOLS / "pool_lineage.csv"
 SUMMARY = COVERAGE / "pool_summary.tsv"
 
 MIN_PCT, MID_PCT = 1.0, 3.0
-COL_OTH = "#cdcdcd"        # the "< 1%" aggregate
-COL_MID = "#8f9294"        # the "1-3%" aggregate
-COL_UNMAPPED = "#000000"   # reads matching neither an insert nor the backbone
+COL_OTH = "#cdcdcd"
+COL_MID = "#8f9294"
+COL_UNMAPPED = "#000000"
 COL_OUTLINE = "#333333"
 COL_EDGE = "#d1d3d4"
 COL_TEXT = "#212121"
 
 
 def load_tree():
-    """-> ({(pool, day, vit): parent key or None}, {pool: key})."""
     raw = {}
     if not LINEAGE.exists():
         raise SystemExit(
@@ -89,11 +88,6 @@ def load_tree():
 
 
 def load_composition():
-    """-> ({pool number: [(insert, share)]}, {insert: peak share}).
-
-    The 35 libraries are folded onto the 33 lineage pools by the number in their
-    name, summing bases before the share is taken.
-    """
     m = read_coverage_matrix()
     libs = [c for c in m.columns if c not in ("insert_id", "length")]
     bases = m[libs].to_numpy(float) * m["length"].to_numpy(float)[:, None]
@@ -110,12 +104,6 @@ def load_composition():
 
 
 def load_unmapped():
-    """-> {pool number: fraction of reads that mapped to nothing}.
-
-    The 35 libraries fold onto the 33 pools the same way composition does, but
-    the fraction is re-taken from summed READS rather than averaged: pool 01's
-    three barcodes are three unequal samplings of one library.
-    """
     s = pd.read_csv(SUMMARY, sep="\t")
     s["pool_no"] = [int(p.split("_")[0].removeprefix("pool")) for p in s["pool"]]
     g = s.groupby("pool_no")[["reads", "mapped"]].sum()
@@ -124,7 +112,6 @@ def load_unmapped():
 
 
 def build_palette(peak):
-    """Order by peak share, number NRC 001.., fade past the base cycle."""
     order = sorted(peak, key=lambda c: peak[c], reverse=True)
     colours, labels = {}, {}
     for i, c in enumerate(order):
@@ -132,7 +119,7 @@ def build_palette(peak):
         base = PLOTLY[i % len(PLOTLY)]
         r, g, b = (int(base[j:j + 2], 16) / 255 for j in (1, 3, 5))
         h, s, v = colorsys.rgb_to_hsv(r, g, b)
-        for _ in range(loop):              # each cycle: desaturate and brighten
+        for _ in range(loop):
             s += (0.0 - s) * 0.4
             v += (1.0 - v) * 0.6
         h = (h - 0.02 * loop) % 1.0
@@ -143,7 +130,6 @@ def build_palette(peak):
 
 
 def layout(nodes):
-    """Leaf-packed tree: width of a node is the width of its descendants."""
     children = defaultdict(list)
     for k, par in nodes.items():
         if par is not None:
@@ -176,8 +162,6 @@ def layout(nodes):
         wmap[k] /= total
     place(root, 0.0)
 
-    # two cosmetic placements: centre the founder over its two day-11 arms, and
-    # slide the pool-02 dead end above pool 09's column so it does not sit alone
     def _find(pool):
         return next((k for k in pos if k[0] == pool), None)
     r, a, b = _find(1), _find(4), _find(17)
@@ -190,7 +174,7 @@ def layout(nodes):
 
 
 def draw(nodes, pos, days, ymap, comp, pool_map, colours, peak, unmapped):
-    XW = 13.0                      # widen the x span to about 2:1
+    XW = 13.0
     pos = {k: (x * XW, y) for k, (x, y) in pos.items()}
     xs = [x for x, _ in pos.values()]
     R, INNER = 0.34, 0.42
@@ -217,7 +201,6 @@ def draw(nodes, pos, days, ymap, comp, pool_map, colours, peak, unmapped):
 
         ax.add_patch(Circle((x, y), R, facecolor="white",
                             edgecolor=COL_OUTLINE, lw=1.1, zorder=2))
-        # the composition shares sum to one; make room for the unrecovered wedge
         lost = unmapped.get(rpool[k], 0.0)
         keep = 1.0 - lost
         wedges = [(f * keep, colours[c]) for c, f in big]
@@ -227,7 +210,7 @@ def draw(nodes, pos, days, ymap, comp, pool_map, colours, peak, unmapped):
             wedges.append((small * keep, COL_OTH))
         if lost > 0:
             wedges.append((lost, COL_UNMAPPED))
-        ang = 90.0                                  # from 12 o'clock, clockwise
+        ang = 90.0
         for frac, col in wedges:
             if frac <= 0:
                 continue

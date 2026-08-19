@@ -1,12 +1,3 @@
-"""
-End-to-end tests for the response surface media optimization transform.
-
-These tests verify that the response surface workflow can be:
-1. Generated (workflow planning)
-2. Staged to the agent
-3. Executed via local Docker
-4. Produce valid CSV and SVG outputs
-"""
 import pytest
 from pathlib import Path
 from metasmith.python_api import (
@@ -24,8 +15,6 @@ from conftest import (
     TEST_DATA_DIR,
 )
 
-
-# ── Test data file lists ─────────────────────────────────────────────────────
 
 DSE_FILES = [
     "R2-2_ReDecoded_Data_444.csv",
@@ -51,7 +40,6 @@ ALL_FILE_IDS = [
     f"{fmt}-{Path(f).stem}" for fmt, f in ALL_FILES
 ]
 
-# All expected output types
 OUTPUT_TYPES = [
     "media_optimization::response_surface_coefficients",
     "media_optimization::model_suggestions",
@@ -64,11 +52,8 @@ OUTPUT_TYPES = [
 ]
 
 
-# ── Fixtures ─────────────────────────────────────────────────────────────────
-
 @pytest.fixture(scope="module")
 def response_surface_transforms(mlib):
-    """Load response surface transforms."""
     return [
         TransformInstanceLibrary.Load(mlib / "transforms/responseSurface"),
     ]
@@ -76,10 +61,6 @@ def response_surface_transforms(mlib):
 
 @pytest.fixture
 def media_opt_input(tmp_inputs, test_data_dir, request):
-    """Create input library for a media optimization CSV file.
-
-    Parametrized via indirect with (format_type, filename) tuples.
-    """
     format_type, filename = request.param
     csv_path = test_data_dir / "media_opt" / "data" / format_type / filename
 
@@ -93,16 +74,11 @@ def media_opt_input(tmp_inputs, test_data_dir, request):
     return inputs
 
 
-# ── Planning tests ───────────────────────────────────────────────────────────
-
 class TestResponseSurfaceWorkflowGeneration:
-    """Tests for workflow generation (planning only)."""
-
     @pytest.mark.parametrize("media_opt_input", ALL_FILES, ids=ALL_FILE_IDS, indirect=True)
     def test_can_plan_response_surface_workflow(
         self, agent, base_resources, lib_resources, response_surface_transforms, media_opt_input
     ):
-        """Verify workflow generation for response surface analysis."""
         targets = TargetBuilder()
         targets.Add("media_optimization::response_surface_coefficients")
 
@@ -120,17 +96,12 @@ class TestResponseSurfaceWorkflowGeneration:
         assert task.ok, f"Workflow generation failed: {task}"
 
 
-# ── Execution tests ──────────────────────────────────────────────────────────
-
 @pytest.mark.slow
 class TestResponseSurfaceWorkflowExecution:
-    """Full E2E tests that execute workflows via Docker."""
-
     @pytest.mark.parametrize("media_opt_input", ALL_FILES, ids=ALL_FILE_IDS, indirect=True)
     def test_response_surface_e2e(
         self, agent, base_resources, lib_resources, response_surface_transforms, media_opt_input
     ):
-        """Full E2E test: stage, run response surface analysis, verify outputs."""
         targets = TargetBuilder()
         for output_type in OUTPUT_TYPES:
             targets.Add(output_type)
@@ -147,10 +118,8 @@ class TestResponseSurfaceWorkflowExecution:
         )
         assert task.ok, f"Workflow generation failed: {task}"
 
-        # Stage workflow
         agent.StageWorkflow(task, on_exist="clear")
 
-        # Run workflow
         agent.RunWorkflow(
             task,
             config_file=agent.GetNxfConfigPresets()["local"],
@@ -163,7 +132,6 @@ class TestResponseSurfaceWorkflowExecution:
             },
         )
 
-        # Wait and verify
         results = wait_for_workflow(agent, task, timeout=600)
         results_path = agent.GetResultSource(task).GetPath()
 
@@ -182,12 +150,10 @@ class TestResponseSurfaceWorkflowExecution:
                     assert full_path.exists(), f"Output file missing: {full_path}"
                     assert full_path.stat().st_size > 0, f"Output file empty: {full_path}"
 
-                    # Verify CSV files have headers
                     if full_path.suffix == ".csv":
                         content = full_path.read_text()
                         lines = content.strip().split("\n")
                         assert len(lines) >= 2, f"CSV should have header + data: {full_path}"
 
-        # Check all expected output types were produced
         missing = set(OUTPUT_TYPES) - found_types
         assert not missing, f"Missing output types: {missing}"

@@ -4,10 +4,6 @@ from metasmith.python_api import *
 lib     = TransformInstanceLibrary.ResolveParentLibrary(__file__)
 model   = Transform()
 pan     = model.AddRequirement(lib.GetType("pangenome::pangenome"))
-# Every name in this pangenome, and every genome descending from one of them.
-# Stating the genome as a descendant of the name (rather than of the pangenome)
-# is what makes the pairing below answerable: the two slots arrive as two
-# independently-ordered groups, so the only thing relating them is lineage.
 name    = model.AddRequirement(lib.GetType("ncbi::genome_name"), parents={pan})
 gbk     = model.AddRequirement(lib.GetType("sequences::gbk"), parents={name})
 image   = model.AddRequirement(lib.GetType("env::ppanggolin.env"))
@@ -17,15 +13,6 @@ pg      = model.AddProduct(lib.GetType("pangenome::ppanggolin_raw"))
 def protocol(context: ExecutionContext):
     dep_paths=context.InputGroup(gbk)
 
-    # PPanGGOLiN keys its whole run on these names and refuses a duplicate, and
-    # they become the matrix columns the heatmap labels its axes with. They come
-    # from the user, via the name each genome descends from -- reading them out
-    # of the GenBank header instead is what made two Caulobacter vibrioides
-    # strains collide on `Caulobacter-vibrioides` and abort the job. No header
-    # field is both unique and readable.
-    #
-    # The manifest is whitespace-delimited and the heatmap turns hyphens back
-    # into spaces for display, so a name is hyphen-joined on the way in.
     gb_list = Path("genbank_manifest.list")
     seen = {}
     with open(gb_list, "w") as f:
@@ -49,7 +36,6 @@ def protocol(context: ExecutionContext):
     ipg = context.Output(pg)
     threads = context.params.get('cpus')
     threads = "" if threads is None else f"--cpu {threads}"
-    # Same command either way: this tool is a plain CLI in both worlds.
     _cmd = f"ppanggolin all --anno {gb_list} --identity 0.3 --coverage 0.8 {threads} --output {ipg.container}"
     context.ExecWithEnv() \
         .ifContainerDo(env=image, cmd=_cmd) \

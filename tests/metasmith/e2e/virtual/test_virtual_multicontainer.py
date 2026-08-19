@@ -1,13 +1,3 @@
-"""Virtual E2E: multi-container prefetch fans out to N pulled outputs.
-
-Companion to tests/integration/test_multicontainer_groupby.py. That test asserts
-the *emitted* workflow.nf keys o.group correctly (the precise condition that
-NPE'd at runtime). This one drives the plan through the virtual runtime — a
-Python simulation of the Nextflow execution — to confirm the multi-container
-group_by actually *executes* to N produced outputs (one pulled container per
-input), not just one. Host-independent: no Docker / real Nextflow.
-"""
-
 from __future__ import annotations
 
 from pathlib import Path

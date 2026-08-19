@@ -60,66 +60,43 @@ from . import curation as C
 
 ELEMENTS = C.ELEMENTS
 
-# An alias carried by more than this many structured records is vocabulary, not
-# evidence. "water" and "an alcohol" reach hundreds of ids; `Acceptor||A||Hydrogen-
-# acceptor||Oxidized donor` reaches two. The cut is deliberately tight because the
-# lane's whole claim is that the twin is THE record for this role, and the refusal
-# it produces (`no_structured_twin`) is cheap while a wrong twin is not.
 ALIAS_FANOUT = 8
 
-# A one-character key matches everything; `a` is itself a metabolite name here, which
-# is precisely why it needs the fanout gate rather than a length gate alone.
 MIN_KEY_LEN = 1
 
 DECISION_COLS = ("mnxm", "mnx_name", "twin", "twin_name", "twin_smiles",
                  "decision", "n_candidates", "n_reactions", "evidence")
 
-# The refusal predicates, IN THE ORDER THEY ARE TESTED. The order is the interface:
-# a candidate that trips several is reported under the first, so the reason a reader
-# gets is the informative one rather than the incidental one.
 BLOCKER_PREDICATES = (
-    "no_name",                  # nothing to search with, and nothing to key `admit` on
-    "no_alias",                 # a name, but no alias survives the fanout gate
-    "no_structured_twin",       # no structured record shares any alias
-    "name_contradicts_twin",    # X3: the name asserts a size the twin does not have
-    "uncountable_twin",         # the twin's own counts are unknown, so neutrality is not established
-    "not_element_neutral",      # the twin carries tracked atoms -- this is A2, held by code
-    "ambiguous_twins",          # several neutral twins, disagreeing structures
-    "twin_smiles_unusable",     # the twin's SMILES does not survive sanitisation
+    "no_name",
+    "no_alias",
+    "no_structured_twin",
+    "name_contradicts_twin",
+    "uncountable_twin",
+    "not_element_neutral",
+    "ambiguous_twins",
+    "twin_smiles_unusable",
 )
 NAMETWIN_PREDICATES = (
     "no_name",
     "no_same_name_twin",
-    "twin_has_no_tracked_atoms",   # element-neutral: that is `blockers`' claim, not this one
+    "twin_has_no_tracked_atoms",
     "name_contradicts_twin",
     "uncountable_twin",
-    "formula_disagrees",           # the stub HAS a formula and the twin's structure contradicts it
-    "inchikey_skeleton_differs",   # both carry a connectivity block and they are different compounds
-    "no_evidence",                 # neither a shared accession nor a balance that needs the twin
+    "formula_disagrees",
+    "inchikey_skeleton_differs",
+    "no_evidence",
     "ambiguous_twins",
     "twin_smiles_unusable",
 )
 
 
 def _acc_key(mnxm):
-    """Sort key for a MetaNetX accession: numeric, so MNXM35 precedes MNXM1102421.
-
-    String order would put MNXM1102421 first, which is not wrong so much as arbitrary
-    -- and an arbitrary tie-break is the thing this exists to stop being arbitrary.
-    """
     mo = re.match(r"^([A-Za-z]+)(\d+)$", str(mnxm))
     return (mo.group(1), int(mo.group(2))) if mo else (str(mnxm), 0)
 
 
 def _clean(v):
-    """A parquet string column, read as a value that is either a string or absent.
-
-    NaN IS TRUTHY, and that is the whole reason this exists. A structureless record has
-    no name, no formula and no InChIKey, and pandas hands all three back as `nan` -- so
-    `if ikcc:` runs the skeleton comparison on a missing block, `nan != nan` is True,
-    and every structureless blocker is refused for having a different skeleton from a
-    skeleton it does not have. Measured: that refused both canaries at once.
-    """
     if v is None or (isinstance(v, float) and v != v):
         return None
     s = str(v).strip()
@@ -127,25 +104,12 @@ def _clean(v):
 
 
 def _norm_unique(series: pd.Series) -> pd.Series:
-    """`curation.norm` over a column, paying for each DISTINCT string once.
-
-    ONE NORMALISER IN THIS LANE. `lookup::synonyms` ships its own `key_c`/`key_a`
-    columns, and joining a key made by one normaliser against a key made by another
-    is a miss that looks like an absence -- so the raw names are re-normalised here
-    with the same function the proposer lanes use, and the shipped keys are not read.
-    """
     vals = pd.Index(series.dropna().unique())
     lut = {v: C.norm(v) for v in vals}
     return series.map(lut)
 
 
-# =====================================================================
-# the tables, indexed the one way both verbs need them
-# =====================================================================
-
 class Tables:
-    """Metabolites, reactions, the recount, and the target set."""
-
     def __init__(self, lookups: Path, element_counts: Path, worklist=None):
         lookups = Path(lookups)
         self.mets = pd.read_parquet(
@@ -174,8 +138,6 @@ class Tables:
             rx = rx[rx["n_blockers"] > 0]
         self.targets = rx
 
-        # blocker -> the target reactions it gates. Sorted, so every downstream
-        # iteration over it is in one order.
         self.rxns_of = defaultdict(list)
         for r in rx.itertuples(index=False):
             for m in r.blockers:
@@ -187,17 +149,10 @@ class Tables:
               f"{len(self.counts):,} metabolites with a complete recount", flush=True)
 
     def counts_of(self, m):
-        """(C, N, S, P) or None. None is UNKNOWN and is never a zero."""
         return self.counts.get(m)
 
 
 def read_element_counts(path):
-    """`lookup::element_counts` -> (counts, residue, source), keyed on mnxm.
-
-    A metabolite reaches `counts` only when all four elements are known. A partial
-    recount cannot support either verb: neutrality is a claim about all four, and a
-    balance needs every participant's count for the element being balanced.
-    """
     d = pd.read_parquet(path, columns=["mnxm", "element", "n_atoms",
                                        "n_residue", "source"])
     counts, residue, source = {}, {}, {}
@@ -213,10 +168,6 @@ def read_element_counts(path):
     return counts, residue, source
 
 
-# =====================================================================
-# the alias index -- what MNXref calls a thing, in MNXref's own vocabulary
-# =====================================================================
-
 def _chem_xrefs(lookups: Path):
     x = pd.read_parquet(Path(lookups) / "xrefs.parquet",
                         columns=["kind", "namespace", "foreign_id", "mnx_id",
@@ -225,32 +176,11 @@ def _chem_xrefs(lookups: Path):
 
 
 def alias_index(lookups: Path, tab: Tables, use_synonyms=True):
-    """(blocker -> alias keys, alias key -> structured mnxms carrying it).
-
-    THREE VOCABULARIES, ONE NORMALISER. The metabolite's own name; the `||`-separated
-    descriptions each source database attached to its cross-reference; and, when a
-    synonym index is given, what ChEBI / ModelSEED / MetaCyc call the same accession.
-    The twin is always an MNXM -- widening the vocabulary widens how the twin is
-    FOUND, never what may be admitted as one.
-
-    Built in two passes so the memory is bounded by the blocker set rather than by
-    the 1.5 M-row compound table: collect the blockers' aliases first, then look for
-    structured records carrying exactly those.
-    """
     blk = set(tab.blockers)
     struct = set(tab.smiles_of)
 
     xr = _chem_xrefs(lookups)
-    # A description is a `||`-joined list of the source's names for the compound.
-    # MNXM8975 and MNXM35 share `Acceptor||A||Hydrogen-acceptor||Oxidized donor`
-    # under DIFFERENT accessions across kegg, seed and sabiork -- which is why the
-    # description is evidence here where the accession is not.
     desc = xr[["mnx_id", "description"]].dropna()
-    # `regex=False` IS LOAD-BEARING. Pandas reads a multi-character `pat` as a regular
-    # expression, and `||` as a regex is an alternation of two empty patterns -- which
-    # matches between every pair of characters. Measured: `Acceptor` came back as the
-    # alias set {a, c, e, o, p, r, t}, single letters that then matched half the
-    # compound table. The separator is a literal.
     desc = desc.assign(tok=desc["description"].str.split("||", regex=False)) \
                .explode("tok")
     desc["key"] = _norm_unique(desc["tok"])
@@ -266,8 +196,6 @@ def alias_index(lookups: Path, tab: Tables, use_synonyms=True):
     if use_synonyms:
         syn = pd.read_parquet(Path(lookups) / "synonyms.parquet",
                               columns=["source", "source_id", "raw_name"])
-        # `n_mnx_for_source` is 1 on every row of MNXref 4.5, so a foreign id names
-        # exactly one MNXM and this map is a function rather than a choice.
         fid2mnx = dict(zip(xr["foreign_id"], xr["mnx_id"]))
         direct = syn["source"] == "metanetx"
         syn["mnxm"] = syn["source_id"].where(direct,
@@ -290,9 +218,6 @@ def alias_index(lookups: Path, tab: Tables, use_synonyms=True):
         if k in wanted and m in struct:
             carriers[k].add(m)
 
-    # THE FANOUT GATE. A key on many structured records is the vocabulary of a class,
-    # not the identity of a record, and admitting a twin off one is how a lane starts
-    # borrowing an arbitrary member of a family.
     dropped = {k for k, v in carriers.items() if len(v) > ALIAS_FANOUT}
     for k in dropped:
         del carriers[k]
@@ -303,7 +228,6 @@ def alias_index(lookups: Path, tab: Tables, use_synonyms=True):
 
 
 def accessions_of(lookups: Path, mnxms: set):
-    """mnxm -> {(namespace, foreign_id)} -- the hard identity evidence `nametwin` wants."""
     xr = _chem_xrefs(lookups)
     xr = xr[xr["mnx_id"].isin(mnxms)]
     out = defaultdict(set)
@@ -312,18 +236,7 @@ def accessions_of(lookups: Path, mnxms: set):
     return out
 
 
-# =====================================================================
-# the guards
-# =====================================================================
-
 def name_budget(name):
-    """The C/N/S/P a NAME asserts on its own, or None when it asserts nothing.
-
-    Only the two routes that read a count straight out of nomenclature: an acyl chain
-    length (`hexadecenoate` -> 16 carbons) and a spelled-out peptide. Anything vaguer
-    is not a contradiction, and a guard that fires on a guess would refuse more than
-    it protects.
-    """
     n = C.norm(name)
     if not n:
         return None
@@ -338,12 +251,6 @@ def name_budget(name):
 
 
 def name_contradicts(name, twin_counts):
-    """Does the name's own claim disagree with what the twin actually holds?
-
-    Runs BEFORE any balance or neutrality test. `MNXM900` 'hexadecenoate' against a
-    `CO2*` twin balances perfectly -- one carbon each side -- and only the name says
-    the substitution turned a C16 fatty acid into a formate.
-    """
     b = name_budget(name)
     if b is None or twin_counts is None:
         return None
@@ -354,12 +261,6 @@ def name_contradicts(name, twin_counts):
 
 
 def formula_disagrees(formula, twin_counts):
-    """The stub's own formula against the twin's structure, where the stub has one.
-
-    Structureless does not always mean formula-less; when a formula IS readable it is
-    an independent statement about the same compound, so a twin that contradicts it
-    is a different compound whatever it is called.
-    """
     if twin_counts is None:
         return None
     for X, got in zip(ELEMENTS, twin_counts):
@@ -370,13 +271,6 @@ def formula_disagrees(formula, twin_counts):
 
 
 def substituted_balance(tab: Tables, blocker, twin):
-    """The first (mnxr, element) that balances ONLY because the twin was substituted.
-
-    Balance is not evidence of identity in general -- one unknown always back-fills
-    the residual. It is evidence HERE because the substitution is not free: every
-    other participant's count is fixed, so a wrong twin has to hit an exact number to
-    balance, and the residue slots have to cancel on top of it.
-    """
     from . import recount as RC
 
     tc = tab.counts_of(twin)
@@ -412,18 +306,6 @@ def substituted_balance(tab: Tables, blocker, twin):
 
 
 def _crosswalk_rows(mnxm, name, smiles, counts, basis, lane):
-    """The proposal, in `curation.CROSSWALK_COLS` shape, self-checked against rdkit.
-
-    Returns None when the twin's SMILES does not survive the sanitising parse `admit`
-    performs. `admit` ABORTS THE RUN on the first row it cannot verify, so a row that
-    would fail there has to be refused here -- otherwise one unsanitisable structure
-    in MNXref takes down a mapping pass.
-
-    A twin with no tracked atoms still emits ONE row, element C with zero atoms. It
-    contributes no atom pair and is not meant to: it exists so the metabolite is
-    recorded as RESOLVED, which is what unblocks the reaction for its concrete
-    partners.
-    """
     for X, n in zip(ELEMENTS, counts):
         got = C.count_struct(smiles, X)
         if got is None or got != n:
@@ -434,10 +316,6 @@ def _crosswalk_rows(mnxm, name, smiles, counts, basis, lane):
                      n_atoms=0, basis=basis, lane=lane)]
     return rows
 
-
-# =====================================================================
-# verb 1 -- blockers: an element-neutral twin, and nothing else
-# =====================================================================
 
 def resolve_blockers(tab: Tables, of_blocker, carriers):
     decisions, cross = [], []
@@ -466,9 +344,6 @@ def resolve_blockers(tab: Tables, of_blocker, carriers):
                    evidence=f"{len(keys)} alias keys, none on a structured record")
             continue
 
-        # THE NAME GUARD, over every candidate, before any chemistry. A name that
-        # contradicts one twin contradicts the claim being made, so it refuses the
-        # blocker rather than merely dropping that candidate.
         contra = None
         for t in cands:
             why = name_contradicts(name, tab.counts_of(t))
@@ -502,7 +377,7 @@ def resolve_blockers(tab: Tables, of_blocker, carriers):
                             f"{len(smis)} distinct structures")
             continue
 
-        t = neutral[0]                      # sorted on the accession, never on a set
+        t = neutral[0]
         smi = tab.smiles_of[t]
         basis = (f"element-neutral twin: MNXref's own record {t} "
                  f"'{tab.name_of.get(t)}' carries the same alias as {m} '{name}' "
@@ -521,16 +396,9 @@ def resolve_blockers(tab: Tables, of_blocker, carriers):
     return decisions, cross
 
 
-# =====================================================================
-# verb 2 -- nametwin: the same compound, entered twice
-# =====================================================================
-
 def resolve_nametwins(tab: Tables, accs):
     decisions, cross = [], []
 
-    # name key -> structured records carrying it. SAME-NAME means the metabolite's own
-    # name, not its cross-reference vocabulary: a duplicate record is a duplicate ENTRY,
-    # and the description tokens that find a role twin would find a family here.
     by_name = defaultdict(set)
     struct = set(tab.smiles_of)
     nm = tab.mets[["mnxm", "name"]].dropna().copy()
@@ -596,9 +464,6 @@ def resolve_nametwins(tab: Tables, accs):
                    evidence=bad[1])
             continue
 
-        # THE CONNECTIVITY BLOCK, where both records carry one. Two compounds with the
-        # same name and different skeletons are two compounds; `UDP` the glycan and
-        # `UDP` the nucleotide is exactly that case.
         mine = tab.ikcc_of.get(m)
         if mine:
             skew = [t for t in real
@@ -611,9 +476,6 @@ def resolve_nametwins(tab: Tables, accs):
                                 f"{tab.ikcc_of.get(skew[0])}")
                 continue
 
-        # EVIDENCE, and the order is the strength order. A shared accession is two
-        # source databases saying these are one compound; a balance is chemistry that
-        # only closes after the substitution.
         chosen, kind, ev = None, None, ""
         for t in real:
             shared = accs.get(m, set()) & accs.get(t, set())
@@ -660,18 +522,7 @@ def resolve_nametwins(tab: Tables, accs):
     return decisions, cross
 
 
-# =====================================================================
-# reporting
-# =====================================================================
-
 def summarise(tab: Tables, decisions, lane, overlap_with_acceptor=False):
-    """The tally, plus -- for `blockers` -- the number this lane exists to report.
-
-    `curation.lane_acceptor` already draws six spellings of a generic acceptor as a
-    bare `*`, which is the same claim an element-neutral twin makes. The fraction of
-    accepts that lane would also have made is the honest measure of what the twin
-    search adds, and it belongs beside the yield rather than in a footnote.
-    """
     rows, tally = [], Counter()
     acc = [d for d in decisions if d["decision"] == "accept"]
     for d in decisions:

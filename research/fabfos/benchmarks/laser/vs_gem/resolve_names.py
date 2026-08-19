@@ -1,22 +1,3 @@
-"""Name -> MNXM resolution for LASER targets and carbon sources.
-
-The user's ask was that mapping must not be a source of error, so this is a
-cascade of *exact* matches only -- override, then conservative-normalised, then
-aggressive-normalised -- against a name index built from MetaNetX `chem_prop`
-names plus every `chem_xref` description. There is deliberately no fuzzy tier:
-`mnx_lookups.trigrams` justifies its generosity by an arbiter that does not exist
-here, so a trigram hit would be an unaudited guess underneath every other result.
-
-Ambiguity is disposed of mechanically rather than by hand:
-
-* **Rule A** drops candidates with null formula *and* null InChIKey. Those are
-  MetaNetX secondary/structureless entries; this is what separates real
-  all-trans-lycopene from the `Lycopene` stub.
-* **Rule B** groups survivors on the InChIKey connectivity block. When they
-  collapse to one block they are the same compound differing in stereochemistry
-  or protonation, and the answer is to MERGE them into one terminal. Picking one
-  and dropping its twin silently loses current.
-"""
 from __future__ import annotations
 
 import sys
@@ -32,9 +13,6 @@ PROP_CACHE = C.CACHE / "chem_prop_slim.parquet"
 
 
 def build_name_index(force: bool = False) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """(index, prop). index is long-format name/mnxm; prop is the slim property
-    table Rules A and B read. Both cached -- chem_prop is 810MB and chem_xref
-    679MB, so this is streamed with vectorised string ops once."""
     if INDEX_CACHE.exists() and PROP_CACHE.exists() and not force:
         return pd.read_parquet(INDEX_CACHE), pd.read_parquet(PROP_CACHE)
 
@@ -75,9 +53,7 @@ class Resolver:
         self.inchikey = {k: ("" if pd.isna(v) else str(v))
                          for k, v in p.inchikey.to_dict().items()}
 
-    # -- ambiguity -----------------------------------------------------
     def disambiguate(self, cands: set) -> tuple[list, str]:
-        """Returns (mnxms, note). A list longer than 1 is a deliberate MERGE."""
         cands = sorted(cands)
         if len(cands) <= 1:
             return cands, "unique"
@@ -94,7 +70,6 @@ class Resolver:
             return keep, "ambiguous_no_structure"
         return keep, "ambiguous"
 
-    # -- the cascade ---------------------------------------------------
     def resolve(self, token: str) -> dict:
         cons = C.norm_conservative(token)
         aggr = C._NONALNUM.sub("", cons)

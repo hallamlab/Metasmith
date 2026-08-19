@@ -15,7 +15,6 @@ def protocol(context: ExecutionContext):
 
     threads = context.params.get("cpus", 8)
 
-    # Run DeepEC
     context.ExecWithEnv().ifContainerDo(
         env=image,
         cmd=f"""
@@ -26,17 +25,14 @@ def protocol(context: ExecutionContext):
         """,
     )
 
-    # Copy output - DeepEC produces results in the output directory
     output_files = list(Path("deepec_output").glob("*.tsv"))
     if output_files:
         context.LocalShell(f"cp {output_files[0]} {iout.local}")
     else:
-        # Check for other common output patterns
         result_files = list(Path("deepec_output").glob("*result*"))
         if result_files:
             context.LocalShell(f"cp {result_files[0]} {iout.local}")
         else:
-            # Fallback: copy the entire directory content as tsv
             context.LocalShell(f"find deepec_output -type f -exec cat {{}} \\; > {iout.local}")
 
     return ExecutionResult(

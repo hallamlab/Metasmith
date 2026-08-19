@@ -1,43 +1,3 @@
-"""Place a clone's reactions onto an existing layout without re-running UMAP.
-
-The host layout is a fixed artifact: 1,489 GEM reactions at positions UMAP chose from the
-exact pairwise I_eff distance. A clone adds reactions that were not in it. Re-fitting UMAP on
-the union would move every host point, so the two figures could no longer be compared and the
-host layout would stop being the thing the reader already knows. Instead the new reactions are
-*interpolated* into the frozen layout from their own measured distances to the host reactions.
-
-**Where the distances come from.** The clone's own 1,615-reaction solve, not a mask of a
-larger one -- a row of the community store is the current a reaction draws in the presence of
-all 183 inserts, which is a different measurement (see this directory's README). Every one of
-the 1,489 host reactions appears in that solve, so every new reaction has a measured distance
-to every anchor and nothing is extrapolated.
-
-**How a point is placed.** Two stages, and the second is what makes this a layout rather than
-an interpolation.
-
-*Initialise* with the kernel UMAP itself uses for unseen points: take the k nearest anchors,
-fit the per-point bandwidth sigma by binary search so the fuzzy memberships sum to log2(k),
-and put the point at the membership-weighted mean of those anchors' positions. Deliberately
-not a barycentric triangulation -- three anchors chosen in a space of fourteen orders of
-magnitude of current do not bound the target in 2D, so barycentric coordinates there are
-extrapolation wearing a confident-looking formula.
-
-*Then optimise* the real UMAP objective on the joint 1,615-reaction fuzzy graph, with the host
-coordinates pinned. This is the whole point. A weighted mean of anchor positions can only ever
-land inside the anchors' convex hull, and it is blind to the new reactions' relationships to
-*each other*: two clone reactions strongly coupled to one another but weakly to the host get
-placed independently and never attract. Running the actual cross-entropy with clone-clone
-edges present fixes both -- points can leave the hull, and a clone-only module condenses on
-its own terms. Only the clone points carry gradient, so the host layout is bit-identical.
-
-The pinning is done through ``optimize_layout_euclidean``'s own ``move_other=False``: every
-edge is oriented with a clone reaction as ``head``, clone-clone edges are supplied in both
-directions so both ends move, and host-host edges are omitted entirely. Nothing here
-reimplements UMAP's optimiser; it is the same numba kernel the fit used.
-
-**What it still cannot do.** ``--validate`` leaves each anchor out and re-places it from its
-own row, giving the error in the units the figure is drawn in.
-"""
 import argparse
 import json
 import sys
@@ -58,18 +18,11 @@ from ieff_layout import (draw_network, incidence, load_sparse,       # noqa: E40
                          depth_scale, EDGE_BUCKETS, EDGE_ALPHA, EDGE_WIDTH)
 
 FLOOR = 1e-16
-FOSMID = "#EF553B"          # plotly's qualitative red
-CONNECTOR_ALPHA = (0.10, 0.95)      # palest and darkest vertical connector
+FOSMID = "#EF553B"
+CONNECTOR_ALPHA = (0.10, 0.95)
 
 
 def symmetric_current(z):
-    """The packed table as a symmetric CSR of currents, the pairwise convention max(I, I^T).
-
-    A row's stored indices are columns of ``rxn``, the target order, which is NOT the source
-    order ``src`` -- they are the same 1,615 reactions listed differently. Mapping through is
-    the whole of the correspondence; skipping it silently pairs each reaction with an
-    unrelated one and every downstream number then looks like noise rather than like a bug.
-    """
     import scipy.sparse as sp
     st = load_sparse(z)
     src = [str(s) for s in st["meta"]["src"]]
@@ -82,21 +35,10 @@ def symmetric_current(z):
     vals = st["val"].ravel().astype(np.float64)
     ok = (vals > 0) & (cols >= 0) & (cols != rows)
     A = sp.csr_matrix((vals[ok], (rows[ok], cols[ok])), shape=(n, n))
-    # ``rowsum`` is the *untruncated* total: the current the whole network carries when 1 A is
-    # injected at that reaction's product atoms and drained at OMEGA. It is stored separately
-    # precisely because the table keeps only 50% row-current cover, so unlike a sum over the
-    # kept entries it does not shrink with the truncation.
     return A.maximum(A.T), src, np.asarray(st["rowsum"], float)
 
 
 def memberships(d, k, iters=64):
-    """UMAP's smooth_knn_dist on one point's k nearest distances, ascending.
-
-    Returns weights summing to log2(k): rho is the distance to the nearest anchor, and sigma
-    is solved so that sum(exp(-(d - rho) / sigma)) hits that target. Anchoring on rho is what
-    makes the kernel scale-free -- a reaction whose whole neighbourhood is far away is still
-    placed by the *shape* of its neighbourhood rather than being washed out to a flat average.
-    """
     target = np.log2(k)
     rho = d[0]
     lo, hi, sigma = 0.0, np.inf, 1.0
@@ -114,7 +56,6 @@ def memberships(d, k, iters=64):
 
 
 def place(A, names, anchor_ix, target_ix, xy_anchor, k, imax, exclude_self=False):
-    """Interpolate each target's 2D position from its k nearest anchors."""
     out = np.zeros((len(target_ix), 2))
     used = np.zeros(len(target_ix), int)
     for t, i in enumerate(target_ix):
@@ -123,7 +64,6 @@ def place(A, names, anchor_ix, target_ix, xy_anchor, k, imax, exclude_self=False
         cur[row.indices] = row.data
         v = cur[anchor_ix]
         if exclude_self:
-            # Leave-one-out: an anchor must not be placed by its own position.
             v = v.copy()
             v[anchor_ix == i] = 0.0
         live = np.flatnonzero(v > 0)
@@ -140,11 +80,6 @@ def place(A, names, anchor_ix, target_ix, xy_anchor, k, imax, exclude_self=False
 
 
 def joint_knn(A, order, k, imax):
-    """A joint kNN graph over every reaction in the clone solve, in ``order``.
-
-    Same distance as the host layout used -- log10(I_max / I) on the symmetrised current --
-    so the clone's edges and the host's are measured on one scale.
-    """
     n = len(order)
     ki = np.zeros((n, k), np.int32)
     kd = np.zeros((n, k), np.float32)
@@ -162,18 +97,12 @@ def joint_knn(A, order, k, imax):
             ki[r, :c] = sel
             kd[r, :c] = np.log10(imax / v[sel])
         if c < k:
-            ki[r, c:] = r          # self-edges carry no membership and are dropped below
+            ki[r, c:] = r
             kd[r, c:] = far
     return ki, kd
 
 
 def optimise_pinned(xy_all, ki, kd, free, n_epochs, min_dist, spread, seed):
-    """Run UMAP's own optimiser on the joint graph with the non-``free`` rows pinned.
-
-    Pinning is structural, not a masked gradient: an edge is only supplied with a free vertex
-    as ``head``, and ``move_other=False`` means only heads are updated. A clone-clone edge is
-    supplied twice, once per direction, so both ends move.
-    """
     from umap.umap_ import fuzzy_simplicial_set, find_ab_params, make_epochs_per_sample
     from umap.layouts import optimize_layout_euclidean
     import scipy.sparse as sp
@@ -201,13 +130,6 @@ def optimise_pinned(xy_all, ki, kd, free, n_epochs, min_dist, spread, seed):
 
 
 def fosmid_reactions(clone_gpr_table):
-    """The reactions the insert contributes, from the clone GPR table's ``origin`` column.
-
-    Not the same set as "reactions the host lacks": the insert carries genes for reactions the
-    host genome already encodes, and those are the interesting ones -- the fosmid is not only
-    adding chemistry, it is duplicating some. Keeping the two apart is what lets the figure
-    draw a duplicated reaction as a ring on the host layer and a new one as absent from it.
-    """
     import pandas as pd
     d = pd.read_parquet(clone_gpr_table)
     if "origin" not in d.columns:
@@ -216,12 +138,6 @@ def fosmid_reactions(clone_gpr_table):
 
 
 def bucket_by_degree(pairs, sel, n_met):
-    """1/degree edge buckets, on cut points taken from the *whole* incidence, not ``sel``.
-
-    Sharing the cut points is what puts this layer's edges on the same tonal scale as the host
-    network's: a line to a currency metabolite has to read as uninformative in both, and a
-    subset quantile would silently re-darken exactly the edges the host figure suppressed.
-    """
     deg_all = np.bincount(pairs[:, 1], minlength=n_met)[pairs[:, 1]]
     cuts = np.quantile(1.0 / deg_all, np.linspace(0, 1, EDGE_BUCKETS + 1)[1:-1])
     w = 1.0 / np.bincount(pairs[:, 1], minlength=n_met)[sel[:, 1]]
@@ -276,15 +192,10 @@ def main():
     metrics = {"anchors": len(anchor_ix), "new": len(target_ix), "k": args.k}
 
     if args.validate:
-        # The honest question is not "did it place them" but "how far off would it be on a
-        # reaction whose true position we already know".
         vxy, vused = place(A, names, anchor_ix, anchor_ix, xy, args.k, imax,
                            exclude_self=True)
         err = np.linalg.norm(vxy - xy, axis=1)
         ok = np.isfinite(err)
-        # Scale bar: the median nearest-neighbour spacing of the layout, and the median
-        # distance between two random points. An error near the first is a good placement;
-        # an error near the second means the position carries no information.
         from scipy.spatial import cKDTree
         nn = cKDTree(xy).query(xy, k=2)[0][:, 1]
         rng = np.random.default_rng(0)
@@ -315,8 +226,6 @@ def main():
     nxy[~live] = xy.mean(0)
 
     if args.epochs:
-        # The joint layout: host first so its rows keep the frozen coordinates, then the
-        # clone. Only the clone rows are free, so xy_all[:len(host)] is unchanged on return.
         order = np.concatenate([anchor_ix, target_ix])
         xy_all = np.ascontiguousarray(np.vstack([xy, nxy]), dtype=np.float32)
         free = np.zeros(len(order), bool)
@@ -336,19 +245,11 @@ def main():
                                "host_drift_max": host_drift}
         nxy = np.asarray(xy_all[len(anchor_ix):], float)
 
-    # --- drawing transform -------------------------------------------------------------
-    # Everything below is presentation. The squash is anisotropic and so destroys the metric
-    # the layout encodes; it is applied here, after every placement and every distance, so no
-    # number in this run is computed from a squashed coordinate.
     S = np.array([1.0, args.y_scale])
     dxy, dnxy = xy * S, nxy * S
     lo, hi = np.percentile(dxy, [args.clip, 100 - args.clip], axis=0) if args.clip else (
         dxy.min(0), dxy.max(0))
     off = np.array([0.0, (hi[1] - lo[1]) * (1.0 + args.offset)])
-    # The depth ramp is per-layer, on each layer's own y. The offset copy is a rigid
-    # translation of the same plane seen from the same angle, so it gets the same ramp -- a
-    # single global ramp would instead draw the whole upper layer small and read as "the
-    # fosmid is far away" rather than as a second plane.
     dep = (lo[1], hi[1])
 
     span = (hi - lo) + np.array([0.0, off[1]])
@@ -362,17 +263,11 @@ def main():
         draw_network(ax, dxy, metabolite_positions(dxy, pairs, len(met)), pairs, bare=True,
                      depth=dep)
 
-    # --- the fosmid layer --------------------------------------------------------------
-    # The insert's reactions drawn twice: once in place, as rings on the host network, and
-    # once as a copy lifted clear of it. The copy is a rigid translation -- it is the same
-    # layout, so a reader can read the upper panel's shape against the lower one directly --
-    # and the vertical connectors are what make the lift legible rather than a second figure.
-    # A reaction the host does not have has nothing to be a ring of, so it appears only above.
     ins = fosmid_reactions(args.clone_gpr_table)
     all_names = host + new
     all_xy = np.vstack([dxy, dnxy])
     fos = np.array([i for i, r in enumerate(all_names) if r in ins])
-    dup = fos[fos < len(host)]                      # insert reactions the host already has
+    dup = fos[fos < len(host)]
     print(f"fosmid: {len(ins)} insert reactions, {len(fos)} of them in the clone solve "
           f"({len(dup)} duplicating a host reaction, {len(fos) - len(dup)} new)", flush=True)
     metrics["fosmid"] = {"in_table": len(ins), "drawn": int(len(fos)),
@@ -386,8 +281,6 @@ def main():
     for d in (0, 1):
         s = np.bincount(hostside[:, 1], dxy[hostside[:, 0], d], minlength=len(cmet))
         mpos[okm, d] = s[okm] / cnt[okm]
-    # Only metabolites the host itself places. A clone-only metabolite would have to take its
-    # position from the placed reactions, putting an estimate in the same ink as the geometry.
     isfos = np.zeros(len(all_names), bool)
     isfos[fos] = True
     ce = cpairs[isfos[cpairs[:, 0]] & okm[cpairs[:, 1]]]
@@ -409,11 +302,6 @@ def main():
     ax.scatter(dxy[:, 0], dxy[:, 1], s=3 * MET_SIZE * depth_scale(dxy[:, 1], *dep),
                c=BARE_NODE, alpha=1.0, linewidths=0, zorder=2)
     if len(dup):
-        # Connector opacity carries the reaction's conductance -- rowsum, the total current the
-        # network carries at unit injection from that reaction. Width stays constant, so this
-        # is tone alone and cannot be read as distance. The ramp is stretched over the 47 drawn
-        # reactions rather than over all 1,615: they occupy a narrow band of the global range,
-        # and normalising globally would spend most of the alpha channel on nothing.
         g = rowsum[np.array([pos[all_names[i]] for i in dup])]
         t = (g - g.min()) / max(g.max() - g.min(), 1e-12)
         rgba = np.tile(matplotlib.colors.to_rgba(FOSMID), (len(dup), 1))

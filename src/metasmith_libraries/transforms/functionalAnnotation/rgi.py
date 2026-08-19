@@ -1,12 +1,3 @@
-"""rgi — RGI/CARD main ARG detection on Prodigal proteins.
-
-Runs on a per-sample protein CHUNK (sequences::orf_chunk, sample-prefixed by
-w4_rebatch.py) so RGI, like every other AMR tool, consumes batched ORFs and
-never a whole-sample file. RGI's ORF_ID column carries the input protein header
-(SG<id>~k141_XXXXXX_N), so the sample + original contig ID are preserved for the
-downstream merge_rgi + w4_recompile de-prefix. CARD is provided pre-loaded as the
-./localDB directory (annotation::card_db, built by downloadCardDB.py).
-"""
 from metasmith.python_api import *
 
 lib = TransformInstanceLibrary.ResolveParentLibrary(__file__)
@@ -25,8 +16,6 @@ def protocol(context: ExecutionContext):
 
     threads = context.params.get("cpus", 8)
 
-    # rgi main --local consumes ./localDB in the work dir; stage the prepared
-    # CARD localDB there. RGI appends .txt to --output_file.
     context.LocalShell(f"cp -r {icard.external} ./localDB")
     context.ExecWithEnv().ifContainerDo(
         env=image,

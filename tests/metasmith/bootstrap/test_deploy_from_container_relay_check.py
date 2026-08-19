@@ -1,14 +1,3 @@
-"""`DeployFromContainer`'s relay-binary content check.
-
-Client-side counterpart to dev.sh's `_assert_real_relays`: that check only
-ever runs against the maintainer's own build at publish time, so it can't see
-a stale or corrupt image on someone else's machine. `_assert_real_relay`
-verifies the binary actually materialised inside the running container
-(magic bytes + size) before it gets copied into the agent home, so a stub or
-corrupted relay fails loudly and precisely instead of surfacing later as a
-bare "missing" assertion.
-"""
-
 from pathlib import Path
 
 import pytest
@@ -30,22 +19,22 @@ class TestAssertRealRelay:
     def test_real_linux_binary_passes(self, tmp_path):
         p = tmp_path/"msm_relay.x86_64-linux"
         _write(p, ELF_MAGIC, 200_000)
-        _assert_real_relay(p, "x86_64", "linux")  # does not raise
+        _assert_real_relay(p, "x86_64", "linux")
 
     def test_real_darwin_binary_passes(self, tmp_path):
         p = tmp_path/"msm_relay.arm64-darwin"
         _write(p, MACHO_MAGIC, 200_000)
-        _assert_real_relay(p, "arm64", "darwin")  # does not raise
+        _assert_real_relay(p, "arm64", "darwin")
 
     def test_undersized_stub_raises(self, tmp_path):
         p = tmp_path/"msm_relay.arm64-darwin"
-        _write(p, MACHO_MAGIC, 28)  # the historical 28-byte stub
+        _write(p, MACHO_MAGIC, 28)
         with pytest.raises(AssertionError, match="stub or is corrupted"):
             _assert_real_relay(p, "arm64", "darwin")
 
     def test_wrong_magic_raises(self, tmp_path):
         p = tmp_path/"msm_relay.arm64-darwin"
-        _write(p, ELF_MAGIC, 200_000)  # ELF where Mach-O was expected
+        _write(p, ELF_MAGIC, 200_000)
         with pytest.raises(AssertionError, match="stub or is corrupted"):
             _assert_real_relay(p, "arm64", "darwin")
 
@@ -57,15 +46,9 @@ class TestAssertRealRelay:
 
 class TestDeployFromContainerRelayCheck:
     def test_stub_relay_is_rejected_before_copy(self, tmp_path, monkeypatch):
-        # Simulate the container's /app by pointing the source lookup at a
-        # tmp dir instead of the real /app -- DeployFromContainer hardcodes
-        # /app, so this test exercises _assert_real_relay's wiring via a
-        # direct call shaped like DeployFromContainer's, rather than
-        # patching Path itself (which would be fragile against unrelated
-        # Path usage in the same function).
         dest = tmp_path/"ws"/"relay"/"msm_relay"
         src = tmp_path/"msm_relay.x86_64-linux"
-        _write(src, ELF_MAGIC, 28)  # stub
+        _write(src, ELF_MAGIC, 28)
         with pytest.raises(AssertionError, match="stub or is corrupted"):
             if not dest.exists():
                 _assert_real_relay(src, "x86_64", "linux")

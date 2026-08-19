@@ -1,4 +1,3 @@
-"""`metasmith plan ...` and `metasmith workflow ...` subcommands."""
 from __future__ import annotations
 
 import json
@@ -8,7 +7,6 @@ from ...ops import runtime as _rt
 
 
 def register(subs):
-    # Planning is its own top-level verb.
     p = subs.add_parser("plan", help="plan a workflow from samples to target types")
     p.add_argument("--data-library", required=True)
     p.add_argument("--sample-type", default=None,
@@ -20,7 +18,6 @@ def register(subs):
     p.add_argument("--resource-library", action="append", default=[], dest="resource_libraries")
     p.set_defaults(func=_cmd_plan)
 
-    # Lifecycle commands under `workflow`.
     w = subs.add_parser("workflow", help="stage/run/observe planned workflows on an agent")
     sp = w.add_subparsers(dest="sub", metavar="ACTION")
 

@@ -1,16 +1,3 @@
-"""The marker vocabulary and the directory map must describe one suite.
-
-Two halves of the tree arrived with different taxonomies: one keyed by
-axis directory with markers applied automatically, one hand-decorated. The
-merge that joined them could have kept either marker list, and the wrong
-choice loses a whole gate silently -- a marker nobody applies selects
-nothing, and a directory nobody maps stamps nothing.
-
-So: every marker `pyproject.toml` declares is either reachable from
-`_DIR_MARKERS` or explicitly listed here as applied by hand, and every
-axis directory that exists is mapped.
-"""
-
 from __future__ import annotations
 
 import re
@@ -24,25 +11,17 @@ from tests.metasmith.conftest import _DIR_MARKERS
 REPO_ROOT = Path(__file__).resolve().parents[3]
 TESTS_ROOT = REPO_ROOT / "tests" / "metasmith"
 
-# Markers no directory grants, with the reason each is applied by hand.
 MANUAL_ONLY = {
-    # capability gates -- a test asks for these itself, per test, because the
-    # capability is a property of the host, not of the axis
     "requires_ssh_localhost",
     "requires_docker",
     "requires_apptainer",
     "requires_docker_dev_image",
     "network",
-    # legacy selectors kept for `-m "not docker"` style invocations
     "docker",
     "nextflow",
-    # opt-in: names the tests that need the python solver specifically, so the
-    # axis cannot grant it -- `tests/solver` runs against whichever
-    # implementation `--solver` selected, and only a few files pin the old one
     "python_solver",
 }
 
-# Directories under tests/ that hold no tests and so need no axis row.
 NON_AXIS_DIRS = {"fixtures", "__pycache__", "repro"}
 
 
@@ -91,12 +70,6 @@ def test_every_axis_directory_is_mapped():
 
 
 def test_no_test_files_at_the_tests_root():
-    """The root is not an axis, so a file there would carry no marker.
-
-    `tests/conftest.py` already fails collection on one; this says the same
-    thing at the file level so the message names the layout rule rather than
-    the symptom.
-    """
     strays = sorted(p.name for p in TESTS_ROOT.glob("test_*.py"))
     assert not strays, (
         f"test files at tests/ root belong under an axis directory: {strays}"

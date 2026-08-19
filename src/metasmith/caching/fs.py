@@ -1,17 +1,3 @@
-"""Filesystem validation + materialization strategy selection (S6).
-
-Reads `/proc/self/mountinfo` once per process, then resolves the longest-
-prefix mount for a given absolute path. Maps each mount to a coarse
-"local" / "network" class via the fs_type column. The compile-time pass
-in workflow.py uses this to:
-
-- Refuse to emit a workflow if cache_root and work_dir straddle two
-  separate mounts — rename across mounts is non-atomic and would break
-  promote's loser-of-race contract.
-- Pick the `publishDir` mode for cacheable miss steps: hardlink on local,
-  full copy on network (Lustre, NFS, GPFS, BeeGFS, etc).
-"""
-
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -32,9 +18,6 @@ class MountEntry:
 
     @property
     def kind(self) -> str:
-        # `fuse.<name>` style entries — match either the prefix or the
-        # full type. Most network FUSE filesystems should be treated as
-        # network so promote falls back to copy mode.
         if self.fs_type in NETWORK_FS_TYPES:
             return "network"
         if self.fs_type.startswith("fuse.") and self.fs_type in NETWORK_FS_TYPES:
@@ -44,12 +27,6 @@ class MountEntry:
 
 @lru_cache(maxsize=1)
 def _read_mountinfo() -> tuple[MountEntry, ...]:
-    """Parse `/proc/self/mountinfo` into MountEntry rows.
-
-    See proc(5) — mountinfo format:
-      mount_id parent_id major:minor root mount_point opts - fs_type src super_opts
-    The fs_type column is the first token after the " - " separator.
-    """
     entries: list[MountEntry] = []
     try:
         text = Path("/proc/self/mountinfo").read_text()
@@ -75,7 +52,6 @@ def _longest_prefix_mount(
     path: Path,
     entries: tuple[MountEntry, ...],
 ) -> MountEntry | None:
-    """Return the MountEntry whose mount_point is the deepest prefix of path."""
     abs_path = str(path.resolve())
     best: MountEntry | None = None
     best_len = -1
@@ -89,12 +65,10 @@ def _longest_prefix_mount(
 
 
 def resolve_mount(path: Path) -> MountEntry | None:
-    """Public: resolve `path` to its containing mount entry, or None."""
     return _longest_prefix_mount(path, _read_mountinfo())
 
 
 def detect_strategy(path: Path, *, default: str = "link") -> str:
-    """'link' on local FS, 'copy' on network FS, `default` if unknown."""
     entry = resolve_mount(path)
     if entry is None:
         return default
@@ -102,17 +76,8 @@ def detect_strategy(path: Path, *, default: str = "link") -> str:
 
 
 class StraddleMountError(RuntimeError):
-    """Raised when cache_root and work_dir live on different mounts."""
-
-
+    pass
 def assert_same_mount(cache_root: Path, work_dir: Path) -> MountEntry | None:
-    """Refuse to compile if the two paths straddle distinct mounts.
-
-    Returns the shared MountEntry for callers that want to inspect it.
-    Returns None on systems without `/proc/self/mountinfo` (e.g. macOS in
-    a dev container) — caller should treat that as "skip strategy
-    selection" and use the default.
-    """
     entries = _read_mountinfo()
     if not entries:
         return None

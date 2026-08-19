@@ -1,15 +1,3 @@
-"""A plan plus the libraries it needs, and the bundle that gets staged.
-
-`WorkflowTask` is what a run is launched from: identity (its key is the plan's),
-the input folders that have to be bound, and Pack/SaveAs/Load for the bundle.
-
-The three heaviest things it used to do live next door now -- compiling the
-Nextflow (`nextflow_codegen`), deciding which steps are already cached
-(`cache_decisions`), and picking the publishDir strategy. They stay reachable as
-methods because that is how every caller spells them; the methods below are
-delegation, not logic.
-"""
-
 from __future__ import annotations
 
 import os
@@ -39,7 +27,6 @@ class WorkflowTask:
         self._update_hash()
 
     def _update_hash(self):
-        # self._hash, self._key = KeyGenerator.FromStr("".join(p._key for g in self.plans for p in g), l=8)
         self._hash, self._key = self.plan._hash, self.plan._key
 
     def GetKey(self):
@@ -78,9 +65,6 @@ class WorkflowTask:
         return [Path(p) for p in roots]
 
     def GetCommonInputFolders(self, method="external"):
-        """
-        @method is: external | internal | all
-        """
         assert method in {"external", "internal", "all"}
         def should_keep(inst: DataInstance):
             match(method):
@@ -94,23 +78,9 @@ class WorkflowTask:
         return self._get_common_folders(given)
 
     def DeferredInputs(self) -> list[DataInstance]:
-        """The inputs whose path is still DEFERRED.
-
-        A plan over these is legitimate -- solving needs types and lineage, not
-        files -- so this is not asked during planning. It is asked once, at the
-        boundary where a real file starts to matter.
-        """
         return [inst for inst in self.plan.given if is_deferred(inst.path)]
 
     def RefuseIfDeferred(self) -> None:
-        """Raise unless every input has a real path.
-
-        Called at the *top* of both staging entry points, ahead of anything that
-        walks instance paths: `_get_mock_container` -> `GetCommonInputFolders`
-        reads `is_absolute()` on every instance and would happily bind
-        `/msm_deferred/...` into the remote container, turning a message into a
-        mount failure on the far host.
-        """
         deferred = self.DeferredInputs()
         if not deferred:
             return
@@ -166,7 +136,7 @@ class WorkflowTask:
         raw_plan = d["plan"]
 
         _data_lib_paths = [Path(p) for p in alt_data_paths] if alt_data_paths else []
-        _data_lib_paths += [path/"data"] # prefer alts first
+        _data_lib_paths += [path/"data"]
         def load_lib(lib_key: str):
             for d in _data_lib_paths:
                 p = d/lib_key

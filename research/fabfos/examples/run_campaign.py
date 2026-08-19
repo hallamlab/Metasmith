@@ -1,32 +1,4 @@
 #!/usr/bin/env python3
-"""Drive the 994 shards through `cyanoverse_gpr.py` in batches, resumably.
-
-    python examples/run_campaign.py --batch-size 50 [--start 0] [--end 994]
-                                    [--max-batches N] [--dry-run]
-
-WHY BATCHES AT ALL. One workflow of 994 shards would submit ~994 GPU tasks in a
-single ask, and -- worse -- one poisoned shard would put the whole corpus's
-cache in question. A batch is the unit of blast radius: each has its own task
-key, caches independently, and is retried on its own.
-
-WHY THIS IS A SCRIPT AND NOT A LOOP IN A SHELL. The campaign runs for well over
-a day, so the thing that matters is that losing the process costs nothing. State
-lives in `campaign_state.tsv`, one line per batch, appended and flushed as each
-finishes; a rerun skips what is recorded done and picks up mid-corpus. Nothing
-is held in memory that a crash would lose.
-
-CONSECUTIVE FAILURES STOP THE CAMPAIGN. A single batch failing is ordinary --
-a node dies, a walltime is clipped -- and gets retried on the next pass. Three
-in a row is not ordinary: it means something systemic changed (a reference
-vanished, the queue is rejecting the account, the engine overlay went stale) and
-every further batch would burn queue time reproducing the same failure.
-
-`--batch-size` AND `--start` ARE PINS, NOT TUNING KNOBS. The task key is derived
-from the shard set, so a batch's identity IS its `A:B` spec: changing either
-after the campaign has begun re-runs everything from scratch AND leaves two runs
-covering the same shards, which the per-assembly split then refuses to merge
-because it cannot tell which library commit each came from. Pick them once.
-"""
 from __future__ import annotations
 
 import argparse
@@ -45,7 +17,6 @@ MAX_CONSECUTIVE_FAILURES = 3
 
 
 def read_state() -> dict[str, str]:
-    """batch spec -> status, last write wins so a retry supersedes a failure."""
     out: dict[str, str] = {}
     if not STATE.exists():
         return out
@@ -54,9 +25,6 @@ def read_state() -> dict[str, str]:
             continue
         parts = line.split("\t")
         if len(parts) < 2:
-            # A crash mid-append leaves a partial line. Skipping it costs one
-            # batch a re-run; raising here would brick every later invocation
-            # of the campaign on a file that is otherwise entirely good.
             print(f"skipping malformed state line: {line!r}", file=sys.stderr)
             continue
         out[parts[0]] = parts[1]
@@ -74,18 +42,11 @@ def record(spec: str, status: str, seconds: float, key: str = "") -> None:
 def run_batch(spec: str, env: dict) -> tuple[int, str]:
     LOGS.mkdir(parents=True, exist_ok=True)
     started = time.time()
-    # Append, never truncate: the STOPPING message tells the operator to read
-    # these logs, and opening "w" on a retry destroys the failure that was the
-    # reason to look.
     log = LOGS / f"batch_{spec.replace(':', '_')}.log"
     with log.open("a") as fh:
         proc = subprocess.run(
             [sys.executable, str(DRIVER), "--shards", spec, "--run"],
             cwd=REPO, env=env, stdout=fh, stderr=subprocess.STDOUT)
-    # RUN_KEY is written by the driver AFTER the plan resolves. If this attempt
-    # died before that, the file on disk belongs to a PREVIOUS attempt, and
-    # recording it would attribute this failure to the wrong run directory --
-    # so it is only read when the file is newer than the attempt's start.
     key = ""
     work = REPO / "data" / "fabfos" / "scratch" / f"cyanoverse_gpr_{spec.replace(':', '_')}"
     rk = work / "RUN_KEY"
@@ -133,15 +94,6 @@ def main() -> int:
         print(f"\n=== batch {n}/{len(todo)}: shards {spec} ===", flush=True)
         t0 = time.time()
         rc, key = run_batch(spec, env)
-        # ONE automatic retry, because the failures this campaign actually sees
-        # are per-attempt rather than per-batch: a GPU task that landed on a bad
-        # node, and a join that dropped a single shard's group (batch 102:152
-        # produced 49 gpr tables from 50 complete lane sets). Nextflow runs with
-        # `-resume`, so the second attempt recomputes only what is missing --
-        # minutes against the ~2 h a first pass costs -- and without it a run
-        # that is 49/50 done burns the same queue time on the next invocation
-        # AND spends one of the three consecutive failures that stop the
-        # campaign outright.
         if rc != 0:
             print(f"    {spec} returned rc{rc}; retrying once (-resume "
                   f"recomputes only what is missing)", flush=True)
@@ -171,8 +123,6 @@ def main() -> int:
     print(f"\n{done}/{len(specs)} batches ok")
     if done == len(specs):
         return 0
-    # 3 distinguishes "I stopped because you told me to" from "batches failed",
-    # which the caller otherwise cannot tell apart from the exit code.
     return 3 if stopped_early else 2
 
 

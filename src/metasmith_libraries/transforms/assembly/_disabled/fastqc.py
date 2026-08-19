@@ -20,7 +20,6 @@ def protocol(context: ExecutionContext):
     threads = "" if threads is None else f"-t {threads}"
                 
     rname = ireads.container.name.replace(".fq.gz", "")
-                # --noextract \
     context.ExecWithEnv().ifContainerDo(
         env = image,
         cmd = f"""
@@ -63,10 +62,10 @@ def protocol(context: ExecutionContext):
                 blocks[_block] = dict(header=_header, rows=_entry)
                 _entry = []
                 continue
-            l = l[:-1] # \n
+            l = l[:-1]
             row = l.split("\t")
             if l[0] == "#":
-                row[0] = row[0][1:] # remove the "#"
+                row[0] = row[0][1:]
                 _header = row
             else:
                 row = [_as_number(x) for x in row]

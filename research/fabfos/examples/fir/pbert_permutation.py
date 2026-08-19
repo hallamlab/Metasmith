@@ -1,37 +1,4 @@
 #!/usr/bin/env python3
-"""The legacy ProteinBERT rows are NOT in fasta order, and the reason is exact.
-
-    python pbert_permutation.py <orfs_dir> <annot1> <fresh_dir> <samples...>
-
-MEASURED, 2026-08-05. Re-embedding four assemblies through the pinned
-`external_proteinbert:2024.03.28` image and nearest-neighbour matching each
-fresh row against the legacy stack:
-
-    SRR1029109     203 ORFs   203/203 identity        cos 0.99877   OK
-    SRR16201313    223 ORFs   223/223 identity        cos 0.99894   OK
-    DRR106440    5,006 ORFs  4,955/5,006 identity     cos(diag) == cos(best)
-    DRR315842   49,522 ORFs  2,032/49,522 identity    cos(diag) 0.480 vs 0.998
-
-The last one is a real permutation, not a tie: the diagonal is not the best
-match. And the embedder's own output names it -- the chunk files come back as
-
-    _t.1, _t.10, _t.11, ... _t.19, _t.2, _t.20, ... _t.9
-
-and `proteinbert.py`'s combiner stacks `sorted(in_dir.glob("*.npy"))`. That is
-LEXICOGRAPHIC, so chunk 10 is stacked before chunk 2. A sample small enough for
-one chunk is unaffected, which is why the 203- and 223-ORF assemblies pass and
-why nothing ever noticed.
-
-THE PERMUTATION IS THEREFORE KNOWN, not merely present. The embedder writes
-fixed 1,024-sequence chunks in fasta order; the combiner concatenates them in
-lexicographic chunk-name order. Both halves are deterministic, so the mapping
-from fasta record to legacy row can be computed from the record count alone --
-no index, no re-embedding.
-
-This module computes that mapping and, given fresh embeddings, PROVES it. It is
-a gate, not a report: the repack applies the mapping, so a mapping that is
-merely plausible produces a full, confident, wrong table.
-"""
 from __future__ import annotations
 
 import sys
@@ -40,15 +7,10 @@ from pathlib import Path
 import numpy as np
 import pyarrow.parquet as pq
 
-CHUNK = 1024          # `pbert run --model_batch 1024`, echoed as "sequences to load"
+CHUNK = 1024
 
 
 def fasta_to_legacy_row(n: int, chunk: int = CHUNK) -> np.ndarray:
-    """`out[i]` = the legacy stack row holding fasta record `i`.
-
-    Chunk k (1-based) holds records [(k-1)*chunk, min(k*chunk, n)) and is stacked
-    at the offset its position in LEXICOGRAPHIC chunk order implies.
-    """
     if n <= 0:
         return np.zeros(0, dtype=np.int64)
     n_chunks = (n + chunk - 1) // chunk
@@ -94,9 +56,6 @@ def main() -> int:
             bad += 1
             continue
         perm = fasta_to_legacy_row(len(a))
-        # Compare fresh record i against legacy row perm[i]. Under the
-        # hypothesis this is the same protein, so the cosine is ~1 and the
-        # nearest legacy row IS perm[i].
         aligned = b[perm]
         diag = np.einsum("ij,ij->i", a, aligned)
         sim = a @ b.T

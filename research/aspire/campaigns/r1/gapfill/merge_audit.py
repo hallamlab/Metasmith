@@ -1,13 +1,4 @@
 #!/usr/bin/env python3
-"""Did any merge transform consume fewer chunks than exist?
-
-Every `merge_*` transform is `group_by` the sample's ORFs, so every one of them
-inherits metasmith's group() drop race. On proteinbert it dropped chunks inside
-a group: the merge ran, exited 0, and published short, and nothing downstream
-said so. This asks the same question of the other three annotation families.
-
-A chunk that no merge names in its recorded input list was silently discarded.
-"""
 import os, re, csv, glob, collections
 
 MSM = "/scratch/phyberos/gmcf3495/metasmith/runs"

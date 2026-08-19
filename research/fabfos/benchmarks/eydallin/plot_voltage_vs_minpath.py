@@ -54,7 +54,6 @@ def main():
         ax.annotate("glycogen", xy=(gly.hop_dist, gly.voltage), xytext=(10, -14),
                    textcoords="offset points", color=RED, fontsize=10, fontweight="bold")
 
-    # Per-distance median, to show the trend the point cloud alone doesn't make legible.
     med = df.groupby("hop_dist")["voltage"].median()
     ax.plot(med.index, med.values, color=TEXT_PRIMARY, linewidth=1.5, marker="o",
            markersize=5, zorder=3, label="median per hop distance")

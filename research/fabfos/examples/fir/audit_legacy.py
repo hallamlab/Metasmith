@@ -1,23 +1,4 @@
 #!/usr/bin/env python3
-"""Prove the legacy annot1 artifacts are what the repack will assume they are.
-
-The whole reuse rests on ONE unrecorded assumption: the ProteinBERT parquets are
-row-for-row images of their ORF fastas, IN FASTA ORDER, because the index naming
-their rows was not retained. The transform that writes
-``annotation::proteinbert_embeddings`` guarantees that order (it refuses on an
-index/stack length mismatch); whether *these* files came from that transform is
-what has to be checked. Equal record counts plus 512 named ``dim_*`` columns is
-the strongest statement available without the index, and it is a GATE: a sample
-that fails is re-embedded, never skipped, because proceeding produces a table
-that is confidently wrong rather than visibly broken.
-
-The kofam and diamond columns are checked at the same time for free -- one pass,
-one queue slot.
-
-Arrayable and resumable. Each array task owns a contiguous slice and appends to
-its own TSV with a flush per row, so a wall-clock kill loses one row, not a pass,
-and a resubmission skips what already landed.
-"""
 from __future__ import annotations
 
 import os
@@ -36,12 +17,9 @@ KOFAM = ANNOT1 / "annotation-kofamscan_results"
 UNIREF = ANNOT1 / "annotation-diamond_uniref50_results"
 PBERT = ANNOT1 / "annotation-proteinbert_embeddings"
 
-# What the current type contract says these files are. Restated here rather than
-# imported because this runs on the cluster inside a bare data-science image with
-# no metasmith and no library on the path.
 KOFAM_HEADER = "gene_name,KO,thrshld,score,E-value,best"
-UNIREF_NCOL_LEGACY = 12          # BLAST6 only -- what annot1 holds
-UNIREF_NCOL_CURRENT = 14         # BLAST6 + stitle + bsr -- what the lane now emits
+UNIREF_NCOL_LEGACY = 12
+UNIREF_NCOL_CURRENT = 14
 PBERT_DIMS = 512
 
 COLS = ["sample", "faa_records", "pbert_rows", "pbert_dims", "kofam_header_ok",
@@ -110,9 +88,6 @@ def audit(sample: str) -> dict:
         head = first_line(un)
         ncol = len(head.split("\t")) if head else 0
         r["uniref_ncol"] = ncol
-        # Not a failure: the legacy 12-col output is exactly WHY this lane is
-        # being re-run. Recorded so the re-run has evidence behind it rather
-        # than an assertion.
         if ncol not in (0, UNIREF_NCOL_LEGACY, UNIREF_NCOL_CURRENT):
             problems.append(f"uniref_ncol={ncol}")
 

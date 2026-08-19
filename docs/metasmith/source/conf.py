@@ -1,7 +1,3 @@
-# Configuration file for the Sphinx documentation builder.
-
-# -- Project information
-
 from pathlib import Path
 WORKSPACE_ROOT = Path(__file__).resolve().parents[3]
 with open(WORKSPACE_ROOT/'src/metasmith/version.txt') as f:
@@ -18,7 +14,6 @@ copyright = '2025, Hallam Lab'
 release = version_string
 version = version_string
 
-# -- General configuration
 
 extensions = [
     'sphinx.ext.duration',
@@ -38,27 +33,22 @@ intersphinx_mapping = {
 intersphinx_disabled_domains = ['std']
 templates_path = ['_templates']
 
-# -- Options for HTML output
-# html_theme = 'sphinx_rtd_theme'
-html_theme = 'pydata_sphinx_theme' # https://pydata-sphinx-theme.readthedocs.io/en/stable/user_guide/index.html
+html_theme = 'pydata_sphinx_theme'
 html_static_path = ['_static']
 html_title = f"{project} {version}"
 html_css_files = [
     'theme_overrides.css',
 ]
-# the left panel
-# page: what to show
 html_sidebars = {
-    '**': ['sidebar-nav-bs.html'], # index pages are just ignored...
+    '**': ['sidebar-nav-bs.html'],
 }
 
 html_theme_options = {
-    # the right panel
     "secondary_sidebar_items": {
         "**": ["page-toc"],
         "index": [],
     },
-    "navbar_align": "left", # the sections across the header
+    "navbar_align": "left",
     "show_prev_next": False,
     "icon_links": [
         {
@@ -83,12 +73,9 @@ html_theme_options = {
    
 }
 
-# -- Options for EPUB output
 epub_show_urls = 'footnote'
 
-# -- Options for myst-nb
-nb_execution_mode = "off" # myst uses the docs env to build, so we can't execute notebooks 
+nb_execution_mode = "off"
 nb_remove_code_outputs = True
 
-# -- sphinx_copybutton
-copybutton_prompt_text = "$ " # prevents this from being copied
+copybutton_prompt_text = "$ "

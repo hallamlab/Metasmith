@@ -66,35 +66,20 @@ GENOME = ROOT / "data/fabfos/originals/genomes/e_coli_k12/genome/NC_000913.3.gbk
 HOST_UNIT = "iML1515"
 TESA_UNIT = "tesA_prime"
 
-# Glycerol: the paper's carbon source, 30 g/L in an optimised M9.
 SOURCE = "MNXM89612"
 
-# The measured quantity is the sum of C12-C18 saturated and monounsaturated free
-# fatty acids. All six are nodes of the carbon graph. C16:0 and C16:1 are reached
-# only through the lysophospholipase route -- the atom-pair table carries no
-# palmitoyl-ACP thioesterase at all -- which is why they are kept as separate
-# readouts rather than folded away.
 SINKS = ("MNXM402", "MNXM314", "MNXM108", "MNXM1107900", "MNXM236", "MNXM1364393")
 SINK_NAMES = {"MNXM402": "C12:0", "MNXM314": "C14:0", "MNXM108": "C16:0",
               "MNXM1107900": "C16:1", "MNXM236": "C18:0", "MNXM1364393": "C18:1"}
 
-# The acyl-ACP <-> free fatty acid step, one reaction per chain length iML1515
-# covers. Chosen because each is ALREADY a host reaction sharing the host's own
-# acyl-ACP node -- the other nine candidates in the atom-pair table hang off
-# acyl-ACP metabolites nothing in iML1515 touches, so duplicating one of those
-# would add an edge with no path to it.
 TESA_REACTIONS = ("MNXR95146", "MNXR95138", "MNXR95145", "MNXR95144")
 
-# Every strain is MG1655(DE3) dfadE. Sole-gene reactions, so the drop is exact.
 FADE_EVIDENCE = ("ACOAD1f", "ACOAD2f", "ACOAD3f", "ACOAD4f", "ACOAD5f",
                  "ACOAD6f", "ACOAD7f", "ACOAD8f")
 WAAY_EVIDENCE = ("HEPK2",)
 DELETION_EVIDENCE = {"rfaY": WAAY_EVIDENCE}
 
 SEP = "|"
-# The plasmid and the pool describe units of a background, not conditions of a cohort,
-# so they carry the host layer's blocks and no `cohort` block. The clone table inherits
-# whatever the study tier wrote, cohort block included.
 EXTENSIONS = ("attribution", "feature", "universe")
 GPR_COLS = tuple(fe.schema_for(EXTENSIONS))
 COND_COLS = ("condition_id", "element", "source_hub", "sink_hub", "readout_hub",
@@ -119,11 +104,6 @@ def gene_to_bnumber(gbk: Path) -> dict:
 
 
 def carbon_pairs(bake: Path) -> pd.DataFrame:
-    """The bake's carbon atom pairs, decoded onto MNXR and MNXM.
-
-    `atom_pairs.parquet` is integer-coded against `vocab.parquet`; the tier-4 table this
-    once read was plain strings and no longer exists.
-    """
     v = pd.read_parquet(bake / "vocab.parquet")
     rxn = v[v["kind"] == "rxn"].set_index("code")["symbol"]
     met = v[v["kind"] == "met"].set_index("code")["symbol"]
@@ -139,7 +119,6 @@ def carbon_pairs(bake: Path) -> pd.DataFrame:
 
 
 def _blank_row(**kw):
-    """One asserted row. Everything a human put there rather than measured."""
     row = {c: None for c in GPR_COLS}
     row.update(channel="manual_gpr", raw_score=np.float32(1.0), score_kind="presence",
                projection_via="curated", evidence_quality="unknown", lane_set="curated",
@@ -182,7 +161,6 @@ def build_pool(host: pd.DataFrame, lookup: dict) -> tuple:
                       orf=tag or clone, feature_kind="aska_clone", feature_name=gene,
                       intermediate_id=clone, intermediate_name=f"pCA24N-{gene}")
         if got is None or got.empty:
-            # In the pool with a null reaction: drawable, and a genuine zero.
             rows.append(_blank_row(mnxr=None, in_atom_universe=None, **common))
             continue
         seen += 1
@@ -192,14 +170,9 @@ def build_pool(host: pd.DataFrame, lookup: dict) -> tuple:
                                    **common))
     pool = pd.DataFrame(rows, columns=list(GPR_COLS))
     pool["in_atom_universe"] = pool["in_atom_universe"].astype("boolean")
-    # The host table keeps one row per MODEL reaction, so two of them projecting to the
-    # same MNXR are two host rows. The pool's claim is "this clone adds this reaction",
-    # and the model reaction that carried it is the host's business, not the clone's.
     pool = (pool.drop_duplicates(fe.grain_key(EXTENSIONS))
                 .sort_values(fe.grain_key(EXTENSIONS), kind="mergesort",
                              na_position="last").reset_index(drop=True))
-    # A clone that resolves to nothing keeps its row with a null `mnxr` -- see the module
-    # docstring -- which only an assertion channel may do.
     fe.validate_gpr(pool, "curated", None, "aska_minus", EXTENSIONS)
     return pool, dict(clones=int(pool["unit_id"].nunique()), with_reactions=seen,
                       unresolved=unresolved,
@@ -208,22 +181,6 @@ def build_pool(host: pd.DataFrame, lookup: dict) -> tuple:
 
 def condition_rows(study_conds: pd.DataFrame, ext: pd.DataFrame,
                    carriable: set) -> pd.DataFrame:
-    """One row per measured strain, plus the unperturbed baseline.
-
-    `is_control` IS RECOMPUTED HERE AND NOT TAKEN FROM THE STUDY TIER. The tier
-    calls a condition structural when none of its reactions is in the tier's atom
-    universe, and that universe EXCLUDES TRANSPORT -- for a good reason of its own,
-    since a transporter's only atom pairs are the ATP hydrolysis every transporter
-    shares. But ECSPr builds its graph straight from the atom-pair table, which
-    keeps those pairs, so a transporter clone does add edges. Trusting the tier's
-    flag put msbA -- thirty-two transport reactions -- in the control set, where it
-    moved the readout by 5% and inflated the controls' spread past the null's,
-    which reads exactly like a failed gate.
-
-    A control here is therefore a condition none of whose added reactions appears
-    in the element's atom-pair table at all. Those return the baseline bit-for-bit,
-    which is the property the floor is measured from.
-    """
     add = ext[ext["role"] == "add"]
     n_units = add.groupby("obs_id")["gene"].nunique()
     reaches = add[add["mnxr"] != ""].groupby("obs_id")["mnxr"].apply(
@@ -268,13 +225,7 @@ def main():
     host = pd.read_parquet(HOST_GEM)
     lookup = gene_to_bnumber(GENOME)
 
-    # The terminals have to be NODES, and a source that never became one makes the
-    # probe abstain on every condition at once -- checked here, where it is one
-    # message, rather than discovered as 92 abstentions.
     pairs = carbon_pairs(BAKE)
-    # Every reaction the basis can carry an edge for. This, not the study tier's
-    # atom universe, is what decides whether a condition is a no-op -- see
-    # `condition_rows`.
     carriable = set(pairs["mnxr"].unique())
     pairs = pairs[pairs["mnxr"].isin(set(host["mnxr"]))]
     nodes = set(pairs["substrate"]) | set(pairs["product"])
@@ -292,7 +243,6 @@ def main():
 
     clones = pd.read_parquet(STUDY / "gpr_manual.parquet")
     clones = clones[fe.schema_for(fe.extensions_of(clones))].copy()
-    # The clone is the unit. See the module docstring.
     clones["unit_id"] = ("aska:" + clones["feature_name"].fillna("none").astype(str))
     clones.to_parquet(args.out / "gpr_clones.parquet", index=False)
     print(f"[clones] {len(clones)} rows, {clones['unit_id'].nunique()} units, "
@@ -316,8 +266,6 @@ def main():
           f"strata {sorted(set(like['n_units']))}; "
           f"{len(like)} drawable in --like")
 
-    # The direction reference: the bake's integer-coded table decoded onto MNXR,
-    # which is the shape `ecspr.model.build.load_direction_ratios` reads.
     dpath = args.out / "direction_ratios.parquet"
     d = pd.read_parquet(BAKE / "direction.parquet")
     v = pd.read_parquet(BAKE / "vocab.parquet")

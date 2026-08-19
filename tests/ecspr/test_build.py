@@ -1,8 +1,3 @@
-"""The builders: atom pairs x weights x direction ratios -> a network.
-
-Lifted out of ``ecspr_build.py``'s ``_selftest_*`` block, plus the orientation flag
-that arrived with the package.
-"""
 import numpy as np
 import pandas as pd
 import pytest
@@ -13,7 +8,6 @@ from ecspr.model.graph import Terminal, solve
 
 
 def toy_pairs() -> pd.DataFrame:
-    """Two reactions over a shared metabolite, one with two carbon transfers."""
     return pd.DataFrame([
         dict(mnxr="R1", element="C", substrate="A", product="B", sub_idx=0, prod_idx=0,
              pair_w=1.0, confidence=0.9),
@@ -24,7 +18,7 @@ def toy_pairs() -> pd.DataFrame:
         dict(mnxr="R2", element="N", substrate="B", product="Q", sub_idx=0, prod_idx=0,
              pair_w=1.0, confidence=1.0),
         dict(mnxr="R3", element="C", substrate="A", product="B", sub_idx=0, prod_idx=0,
-             pair_w=1.0, confidence=1.0),          # parallel with R1's first transfer
+             pair_w=1.0, confidence=1.0),
     ])
 
 
@@ -51,8 +45,6 @@ def test_the_aam_gap_is_counted_not_silent():
 
 
 def test_both_atom_pair_schemas_agree():
-    """The frozen reference is at pair granularity; the incumbent extract and the
-    fixtures pack an atom list into one row as comma-joined strings."""
     ints = pd.DataFrame([
         dict(mnxr="R1", element="C", substrate="A", product="B", sub_idx=0, prod_idx=2,
              pair_w=1.0),
@@ -81,7 +73,6 @@ def test_graph_dir_round_trips(tmp_path):
 
 
 def test_build_then_solve_then_caller_side_lof():
-    """A built graph must measure, and dropping a reaction must move the share."""
     p = pd.DataFrame([
         dict(mnxr="R1", element="C", substrate="S", product="M", sub_idx=0, prod_idx=0,
              pair_w=1.0),
@@ -101,9 +92,6 @@ def test_build_then_solve_then_caller_side_lof():
 
 
 def test_gpr_polarity():
-    """cobra's ``GPR.eval`` takes KNOCKOUTS, not active genes. Handing it the active
-    set inverts the question and the symptom is not a crash: a first run reported
-    532 of 2742 reactions live for the WILD TYPE and MORE live after a knockout."""
     cobra = pytest.importorskip("cobra")
     m = cobra.Model("toy")
     a, b, c = (cobra.Metabolite(x) for x in ("A", "B", "C"))
@@ -111,9 +99,9 @@ def test_gpr_polarity():
     r2 = cobra.Reaction("R2"); r2.add_metabolites({b: -1, c: 1})
     r3 = cobra.Reaction("R3"); r3.add_metabolites({a: -1, c: 1})
     m.add_reactions([r1, r2, r3])
-    r1.gene_reaction_rule = "g1 or g2"      # isozymes: one knockout is not enough
-    r2.gene_reaction_rule = "g3 and g4"     # a complex: either knockout kills it
-    r3.gene_reaction_rule = ""              # ruleless: no gene to knock out
+    r1.gene_reaction_rule = "g1 or g2"
+    r2.gene_reaction_rule = "g3 and g4"
+    r3.gene_reaction_rule = ""
     genes = sorted(g.id for g in m.genes)
 
     def live(active):
@@ -130,13 +118,7 @@ def test_gpr_polarity():
         assert s <= wt, "a knockout may only ever REMOVE reactions"
 
 
-# ---------------------------------------------------------------------------
-# orientation
-# ---------------------------------------------------------------------------
-
 def test_reversed_orientation_is_a_no_op_on_a_symmetric_reference():
-    """THE test that ``--orientation`` flips the reference and touches nothing else:
-    a reference whose ratios are all 1.0 is its own reverse."""
     p, w = toy_pairs(), {"R1": 2.0, "R2": 1.0, "R3": 3.0}
     ratios = {"R1": 1.0, "R2": 1.0, "R3": 1.0}
     fwd = graph_from_pairs(p, "C", w, ratios, orientation="as_written")
@@ -146,9 +128,6 @@ def test_reversed_orientation_is_a_no_op_on_a_symmetric_reference():
 
 
 def test_reversed_orientation_inverts_the_ratio():
-    """A throttled edge as written is a favoured one reversed. The ratio-above-1
-    rule then flips the edge, so the reversed graph carries the same conductance in
-    the opposite direction rather than a manufactured 1/ratio amplification."""
     p = pd.DataFrame([dict(mnxr="R1", element="C", substrate="A", product="B",
                            sub_idx=0, prod_idx=0, pair_w=1.0)])
     fwd = graph_from_pairs(p, "C", {"R1": 1.0}, {"R1": 0.01})

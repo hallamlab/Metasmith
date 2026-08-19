@@ -1,20 +1,3 @@
-"""LASER -- the metabolic-engineering database, as an upstream checkout.
-
-A DATABASE OF PUBLICATIONS, not a publication: 232 primary papers under one folder,
-which is why it is one study folder here and not 232. Whether it should decompose one
-folder per DOI is an open question recorded in the originals tier's PROVENANCE.md; it
-buys provenance and costs navigability, and nothing in this build depends on the
-answer.
-
-PINNED BY COMMIT, and the commit is the version. The repository publishes no releases
-and its default branch rolls, so a snapshot taken without recording the sha is
-unidentifiable afterwards -- the same failure mode Rhea's rolling path had here.
-
-The checkout is stripped of its `.git` after the clone. That is not tidiness: this
-directory is annexed data downstream, and a tree containing a `.git` is excluded from
-annexing wholesale, which silently drops it from every scope's data clone. The URL plus
-the sha below is the recovery path and is the only thing that needs to survive.
-"""
 from metasmith.python_api import *
 
 lib   = TransformInstanceLibrary.ResolveParentLibrary(__file__)
@@ -26,8 +9,6 @@ out   = model.AddProduct(lib.GetType("fabfos_data::bench_laser"))
 URL    = "https://bitbucket.org/jdwinkler/laser_release.git"
 COMMIT = "f6ce080a8993ee259c4914ce92f83b1f966bab2d"
 
-# What must be present for the checkout to be the one this pin describes. Checked by
-# name rather than by file count, because a partial clone still produces a directory.
 EXPECTED = ("README.md", "database_store", "inputs", "metabolic_models")
 
 

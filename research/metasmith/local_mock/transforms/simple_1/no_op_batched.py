@@ -16,7 +16,7 @@ def protocol(context: ExecutionContext):
             dt = f.readline()
             if dt.endswith("\t"): dt = dt[:-1]
             print(dt)
-        if b==0: time.sleep(int(dt)) # work
+        if b==0: time.sleep(int(dt))
         g = []
         for i, p in enumerate(in_paths):
             out_path = item_context.Output(out, i=i, batch=b)

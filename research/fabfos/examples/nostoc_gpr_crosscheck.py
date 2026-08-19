@@ -32,13 +32,6 @@ REPO = Path(__file__).resolve().parents[3]
 NOSTOC = REPO / "data" / "fabfos" / "nostoc"
 ORGANISMS = ["NOS", "ERY", "RHI"]
 
-# THE PRIOR IS NOT IN THIS REPOSITORY and was never versioned. It is the ad-hoc
-# 2026-07-09 pass, which lived in the old fabfos project's shared unversioned
-# `data/` directory -- a workspace-level path that survives that repository being
-# archived, because it was never repository content in the first place. It is not
-# migrated here on purpose: nothing downstream consumes it, and the comparison it
-# supports is already recorded in `data/fabfos/nostoc/annotation/PROVENANCE.md`.
-# Pass `--prior` if it has moved; this is a re-runnable check, not a gate.
 DEFAULT_PRIOR = Path("/home/tony/agentic_workspace/data/fabfos/community_ecspr/annotation")
 PRIOR_TABLES = ["reaction_evidence_ko.parquet", "reaction_evidence_dl.parquet"]
 
@@ -83,7 +76,6 @@ def main() -> int:
               f"{len(new_mnxr):,} MNXR   channels {sorted(new['channel'].unique())}")
         print(f"  ad hoc:    {len(old):,} rows, {len(old_orfs):,} ORFs, "
               f"{len(old_mnxr):,} MNXR")
-        # The ORF id sets are the part that must agree: both read one FASTA.
         print(f"  ORF ids:   {len(new_orfs & old_orfs):,} shared, "
               f"{len(only_new):,} canonical-only, {len(only_old):,} ad-hoc-only"
               + ("  <-- both annotations should key on the same headers"

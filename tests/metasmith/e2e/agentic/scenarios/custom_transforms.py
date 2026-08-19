@@ -1,4 +1,3 @@
-"""Tutorial 2: add a fastani transform that produces sequences::ani_matrix."""
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -16,8 +15,6 @@ class CustomTransformsScenario:
     name: str = "custom_transforms"
     tutorial_path: str = "tutorials/custom_transforms.rst"
     expected_artifact_globs: list[str] = field(default_factory=lambda: [
-        # fastani produces an ani::table (TSV) under
-        # <workspace>/<msm_home|agent_home>/runs/<task_key>/results/<step>/
         "workspace/**/runs/*/results/**/*.tsv",
     ])
     expected_trace: tuple[str, str] | None = (
@@ -28,11 +25,6 @@ class CustomTransformsScenario:
     pre_install_metasmith: bool = True
 
     def setup_fixtures(self, layout: SandboxLayout, ctx: InstallContext) -> None:
-        # Tutorial 2 walks the user through ADDING the fastani transform
-        # (sequences::gbk -> sequences::ani_matrix) and the new ani_matrix
-        # type, so we pre-stage only the prerequisite chain (same as
-        # tutorial 1). The agent's first steps mutate sequences.yml and
-        # write transforms/pangenome/fastani.py themselves.
         _stage_pangenome_fixtures(layout)
 
     def build_prompt(self, ctx: PromptContext) -> str:

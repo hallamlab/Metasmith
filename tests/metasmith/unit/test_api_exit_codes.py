@@ -1,14 +1,3 @@
-"""The api layer's exit status is the nextflow task's exit status.
-
-`Api.execute_transform` used to end in `exit(res.success)`, and `exit(True)` is
-status 1 -- so a successful step reported failure and a failed step reported
-success. A container runtime never saw it: there the call sits mid-script in
-`msm_bootstrap` and the relay teardown supplies the script's status. On the
-relay-free path it is the last command, so the inversion turned every green
-mamba step into a failed nextflow task with `.command.success` sitting right
-there in the work dir.
-"""
-
 import pytest
 
 import metasmith.coms.api as api_mod
@@ -33,8 +22,6 @@ def test_execute_transform_exit_status_follows_the_result(monkeypatch, _body, su
 
 
 def test_a_successful_step_does_not_exit_truthy(monkeypatch, _body):
-    # The specific regression: `exit(True)` is a *nonzero* status, which bash
-    # reads as failure. Guard the shape, not just the number.
     monkeypatch.setattr(api_mod, "StageAndRunTransform", lambda *a, **k: ExecutionResult(True))
     with pytest.raises(SystemExit) as e:
         Api().execute_transform(_body)

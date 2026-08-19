@@ -1,22 +1,3 @@
-"""COMEBin binning — GPU-only.
-
-CPU comebin is wasteful (7-19h per Spanish-Lakes sample). The container
-referenced by `env::comebin.env` is now the CUDA-built variant
-(`quay.io/hallamlab/external_comebin:gpu-1.0.4`); apptainer `--nv` exposes
-the host driver/libcuda so COMEBin's Phase-2 contrastive training step
-auto-detects `torch.cuda.is_available()` and runs on GPU.
-
-Slurm wiring: the launching runner is responsible for setting per-process
-clusterOptions that allocate a GPU MIG slice and the GPU SLURM account
-(e.g. `--account=def-shallam_gpu --gpus=nvidia_h100_80gb_hbm3_3g.40gb:1`).
-`research/metasmith_libraries/launch_dl_embeddings.py` is the in-repo example
-of that override; the spanish-lakes W3 binning runner that first used it lives
-in its own project and is not here.
-
-If a SLURM job lands without a GPU allocation, apptainer `--nv` emits a
-warning and the CUDA-pytorch falls back to CPU — functional but slow;
-don't do that intentionally.
-"""
 import os
 import glob
 from pathlib import Path
@@ -39,27 +20,15 @@ def protocol(context: ExecutionContext):
     workdir = "comebin_out"
     bam_dir = "bam_input"
 
-    # Size the training batch from contigs COMEBin will actually keep, not from
-    # the total. COMEBin drops contigs under 1000 bp before building its
-    # dataloader and that dataloader has drop_last set, so a batch larger than
-    # the usable contig count yields zero batches and COMEBin dies on an unbound
-    # `logits` deep in its training loop. Ten of 32 r1 assemblies failed exactly
-    # this way, every one of them under 1024 usable contigs and every success
-    # over 2000 -- no overlap.
     context.LocalShell(
         "awk '/^>/{if(l>=1000)n++; l=0; next}{l+=length($0)}"
         f"END{{if(l>=1000)n++; print n+0}}' {iasm.local} > usable_contig_count.txt"
     )
     usable_contigs = int(Path("usable_contig_count.txt").read_text().strip())
     if usable_contigs < 2:
-        # Nothing to contrast against. Fail here rather than burning a job to
-        # reach the same conclusion inside the training loop.
         return ExecutionResult(manifest=[], success=False)
     batch_size = min(usable_contigs, 1024)
 
-    # Same command either way: this tool is a plain CLI in both worlds. The GPU
-    # passthrough is not — it is a container-runtime flag with no venv analogue,
-    # so it rides on that arm alone.
     _cmd = f"""
             mkdir -p {bam_dir}
             cp -L {ibam.container} {bam_dir}/
@@ -94,9 +63,6 @@ def protocol(context: ExecutionContext):
     )
 
 
-# Wall time: COMEBin's Phase-2 contrastive training drops ~10-20× on a
-# 3g.40gb MIG slice vs CPU — 4h cushion. Memory pinned modestly (host RSS
-# was ~3 GB on CPU per nxf_trace.peak_vmem); VRAM lives off-RAM.
 TransformInstance(
     protocol=protocol,
     model=model,

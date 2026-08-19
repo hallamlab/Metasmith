@@ -7,19 +7,6 @@ db    = model.AddProduct(lib.GetType("annotation::predictf_db"))
 
 PREDICTF_REPO = "https://github.com/mdsufz/PredicTF.git"
 
-# PredicTF's git repo ships BacTFDB as a deepARG-format `database/v2/`
-# (features.fasta / .dmnd / .gene.length) but NOT the trained deep-learning model:
-# that is distributed separately on the MUN/UFZ nextcloud share linked from the
-# PredicTF README. predictf.py mounts this dir at /predictf_db and hands it to
-# deepARG.py via `--folder`; deepARG then loads model/v2/model_LS.pkl (gene mode,
-# `--genes` -> LS) and aligns against database/v2/features. So the db is only
-# complete once (a) the model is fetched and (b) features.dmnd is usable.
-#
-# Two things the repo does NOT give us and that we must produce here:
-#   1. model/v2/{metadata,model}_LS.pkl  -> fetched from the nextcloud share.
-#   2. a features.dmnd built with THIS container's diamond. The repo's prebuilt
-#      features.dmnd was made with a different diamond version and 0.9.24 rejects it
-#      ("Database was built with a different version of Diamond"), so we rebuild it.
 PREDICTF_MODEL_WEBDAV = "https://nc.ufz.de/public.php/webdav"
 PREDICTF_MODEL_SHARE  = "e9geJ4FKJk8cWLs"
 PREDICTF_MODEL_PASS   = "6oHaiWQQY9"

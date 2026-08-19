@@ -1,17 +1,12 @@
-"""A plan's nodes: one use of one transform, and a named output of one.
-
-`WorkflowStep.dependency_map` is bound as a property *below* the class body on
-purpose. The field is an `InitVar`, and letting `@dataclass` see a
-class-attribute default of the same name would shadow that declaration; binding
-the property afterwards is what keeps both. The setter refreshes `uses` and
-`produces`, and treats an empty dict as "not resolved yet" so an `Unpack` that
-has not yet run `_resolve_dependency_map` does not wipe explicitly-passed views.
-
-`_resolve_dependency_map` indexes each instance under all three of
-`instance_id`, `_key` and `legacy_key`, which is what lets a plan written by an
-older version still resolve against a library that has since re-minted ids.
-"""
-
+# `WorkflowStep.dependency_map` is bound as a property *below* the class body on
+# purpose: the field is an `InitVar`, and letting `@dataclass` see a
+# class-attribute default of the same name would shadow that declaration. The
+# setter treats an empty dict as "not resolved yet", so an `Unpack` that has not
+# yet run `_resolve_dependency_map` does not wipe explicitly-passed views.
+#
+# `_resolve_dependency_map` indexes each instance under all of `instance_id`,
+# `_key` and `legacy_key`, which is what lets a plan written by an older version
+# resolve against a library that has since re-minted ids.
 from __future__ import annotations
 
 import itertools
@@ -34,18 +29,9 @@ class WorkflowStep:
     _raw_instances: dict[str, DataInstance]|None = None
 
     def __post_init__(self, dependency_map: dict[Dependency, list[DataInstance]]):
-        # Backing storage for the dependency_map property. Initialized
-        # before assignment so the setter's `self._dependency_map = …`
-        # never runs against an undefined attribute.
         self._dependency_map: dict[Dependency, list[DataInstance]] = {}
         self.dependency_map = dependency_map
 
-    # `dependency_map` is bound as a property below the class body so that
-    # the @dataclass decorator doesn't see a class-attribute default
-    # shadowing the InitVar declaration above. The setter auto-refreshes
-    # `uses` and `produces`; an empty dict is treated as 'not resolved
-    # yet' (Unpack pre-`_resolve_dependency_map`) and skips the refresh
-    # so explicitly-passed views survive.
     def _get_dependency_map(self) -> dict[Dependency, list[DataInstance]]:
         return self._dependency_map
 
@@ -59,12 +45,6 @@ class WorkflowStep:
         return self.dependency_map.get(self.transform.group_by, [])
 
     def RefreshViews(self):
-        """Recompute `uses`/`produces` from the current `dependency_map`.
-
-        Called automatically by the `dependency_map` setter; you only
-        need to call it manually if you reach into `_dependency_map`
-        directly (which you shouldn't — go through the property).
-        """
         self.uses = [
             inst
             for dep in self.transform.model.requires
@@ -109,7 +89,7 @@ class WorkflowStep:
             produces = [[DataInstance.Unpack(inst, libraries) for inst in g] for g in raw.get("produces", [])]
         return cls(
             order=raw["order"],
-            dependency_map={}, # needs workflow plan to sort out
+            dependency_map={},
             uses=uses,
             produces=produces,
             _raw_dependency_map = raw["dependency_map"],
@@ -143,9 +123,6 @@ class WorkflowStep:
             dep_map[deps[dep_key]] = [data[v] for v in ids if v in data]
         self.dependency_map = dep_map
 
-# Bind dependency_map as a property here (post-class-body) so the
-# @dataclass decorator above does not see a class-attribute default
-# shadowing the InitVar declaration in WorkflowStep.
 WorkflowStep.dependency_map = property(  # type: ignore[assignment]
     WorkflowStep._get_dependency_map,
     WorkflowStep._set_dependency_map,

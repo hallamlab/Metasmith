@@ -1,13 +1,3 @@
-"""``fabfos.pipelines.DOMAINS`` must be the union of what the drivers load.
-
-That list is a component of the method id, and it is a literal rather than a
-derived value so that `--describe-method` never has to import metasmith (see
-``fabfos/pipelines/__init__.py``). A literal that nothing checks is a literal
-that drifts, and the drift is invisible: adding a domain to a driver would widen
-the planner's candidate space -- a different method -- without moving the id.
-
-    PATH="/home/tony/lib/miniforge3/envs/msm/bin:$PATH" python -m pytest tests/test_domains.py -v
-"""
 from __future__ import annotations
 
 from fabfos.pipelines import DOMAINS
@@ -23,8 +13,6 @@ def test_domains_is_the_union_the_drivers_load():
 
 
 def test_domains_is_sorted_and_unique():
-    # The method id hashes `sorted(DOMAINS)`, so order here is cosmetic -- but a
-    # duplicate is not: it would read as two domains in the document.
     assert DOMAINS == sorted(set(DOMAINS))
 
 

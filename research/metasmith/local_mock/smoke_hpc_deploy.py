@@ -28,9 +28,6 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 EXAMPLES = REPO_ROOT / "examples"
 
 HOST_PROFILES = {
-    # sockeye's apptainer/1.3.1 module is built against gcc/9.4.0 and must be
-    # loaded after it; a bare `module load apptainer` silently no-ops. /scratch
-    # is allocation-coded and refuses mkdir, so deploy to $HOME (=/arc/home/$USER).
     "sockeye": dict(scratch_root=None, setup_commands=["module load gcc/9.4.0", "module load apptainer"]),
     "fir":     dict(scratch_root="/scratch", setup_commands=["module load apptainer"]),
     "mira":    dict(scratch_root=None,       setup_commands=[]),
@@ -46,8 +43,6 @@ def resolve_remote_user(host: str) -> str:
 
 
 def resolve_remote_home(host: str) -> str:
-    # $HOME is not always /home/$USER (sockeye: /arc/home/$USER). Resolve it so
-    # the fallback agent path is real and writable.
     res = subprocess.run(
         ["ssh", host, "echo $HOME"],
         capture_output=True, text=True, check=True,

@@ -1,11 +1,3 @@
-"""Pure-ANI clustering of pre-filtered quality bins.
-
-Input: `quality_bin_fasta` (emitted by aggregator). Runs skani triangle, builds
-clusters at 95% (species) and 99% (strain) ANI, picks medoid per cluster as
-centroid (the bin with the highest mean ANI to other members — most central).
-
-No checkm/gtdbtk consulted here; quality decisions live in the aggregator.
-"""
 import shutil
 from pathlib import Path
 from metasmith.python_api import *
@@ -49,7 +41,6 @@ def protocol(context: ExecutionContext):
             f.write("bin_id\tcluster_95\tis_centroid_95\tcluster_99\tis_centroid_99\tmean_intra_ani_95\n")
         return ExecutionResult(manifest=[{table: itable.local}], success=True)
 
-    # Stage bins for skani
     staged = Path("staged_bins")
     staged.mkdir()
     bins_list = Path("bins.list")
@@ -61,13 +52,11 @@ def protocol(context: ExecutionContext):
 
     threads = context.params.get("cpus", 8)
     ani_tsv = "skani_ani.tsv"
-    # Same command either way: this tool is a plain CLI in both worlds.
     _cmd = f"skani triangle -l {bins_list} --sparse -o {ani_tsv} -t {threads}"
     context.ExecWithEnv() \
         .ifContainerDo(env=image, cmd=_cmd) \
         .ifVirtualEnvDo(env=image, cmd=_cmd)
 
-    # Parse skani edges; build symmetric ANI map for medoid scoring.
     ani_map: dict[tuple[str, str], float] = {}
     with open(ani_tsv) as f:
         header = f.readline().rstrip("\n").split("\t")
@@ -107,8 +96,6 @@ def protocol(context: ExecutionContext):
 
         for ci, (root, members) in enumerate(sorted(clusters.items()), start=1):
             cid = f"c{int(t)}_{ci:05d}"
-            # Medoid: member with highest mean ANI to other cluster members.
-            # Singletons trivially pass.
             if len(members) == 1:
                 medoid = members[0]
                 medoid_score = 100.0
@@ -127,7 +114,6 @@ def protocol(context: ExecutionContext):
                 mean_ani_95[medoid] = medoid_score
                 for m in members:
                     if m != medoid:
-                        # Mean ANI of this member to other members of its cluster
                         if len(members) > 1:
                             vals = [ani_map.get((m, o), 0.0) for o in members if o != m]
                             mean_ani_95[m] = sum(vals) / len(vals)

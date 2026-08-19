@@ -5,8 +5,6 @@ model = Transform()
 image = model.AddRequirement(lib.GetType("env::diamond.env"))
 db    = model.AddProduct(lib.GetType("annotation::vfdb_diamond_db"))
 
-# VFDB full dataset (setB) protein sequences. Use VFDB_setA_pro.fas.gz for the
-# curated "core" subset instead.
 VFDB_URL = "http://www.mgc.ac.cn/VFs/Down/VFDB_setB_pro.fas.gz"
 
 

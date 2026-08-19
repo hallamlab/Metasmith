@@ -1,12 +1,3 @@
-"""yaml_safe_load must survive the transport-shutdown reads seen under fan-out.
-
-Under SLURM array fan-out the shared /msm_home bind can shed reads with
-errno 108 (ESHUTDOWN). yaml_safe_load retries that transient OSError with its
-existing backoff instead of letting the task die (and get silently dropped by
-errorStrategy=ignore). A genuinely missing/broken file still fails fast after
-the bounded retry budget.
-"""
-
 import builtins
 from pathlib import Path
 
@@ -37,7 +28,7 @@ def test_retries_transient_oserror_then_succeeds(tmp_path, monkeypatch):
     monkeypatch.setattr(builtins, "open", flaky_open)
 
     assert yaml_safe_load(p) == {"a": 1}
-    assert calls["n"] == 3  # failed 3 times, succeeded on the 4th
+    assert calls["n"] == 3
 
 
 def test_persistent_oserror_eventually_raises(tmp_path, monkeypatch):
@@ -61,7 +52,6 @@ def test_still_retries_empty_parse(tmp_path, monkeypatch):
     reads = {"n": 0}
 
     def empty_then_full(file, *args, **kwargs):
-        # First read returns an empty file (None parse), later reads return content.
         if Path(file) == p and reads["n"] < 2:
             reads["n"] += 1
             empty = tmp_path / "_empty.yml"

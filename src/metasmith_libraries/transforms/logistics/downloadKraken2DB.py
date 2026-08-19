@@ -1,7 +1,3 @@
-# REVIEW: URL points at the Kraken2 "Standard-16 GB" prebuilt index from
-# the genome-idx S3 (curated by Langmead lab). Prebuilt tarballs already
-# bundle the Bracken kmer_distrib files for r50/100/150/200, so no
-# bracken-build step is needed. Bump the date in the URL to refresh.
 from metasmith.python_api import *
 
 lib   = TransformInstanceLibrary.ResolveParentLibrary(__file__)

@@ -1,67 +1,3 @@
-"""The curated layer, the arithmetic over the members, and the stack they make.
-
-WHAT IS HERE AND WHAT IS NOT. Every member that runs a MODEL is its own lane, and there
-are three of them -- rxnmapper, localmapper and indigo, each over `interm::aam_universe`
-ONCE. What is left of the old `aam_ensemble` is split three ways: this step builds the
-stack, `aam_redox` corrects it, and `aam_reference` closes the ledger and mints the bake.
-The split exists because the correction has to run over a FINISHED stack, and under one
-protocol there was no point at which one existed.
-
-FIVE LAYERS FROM THREE FILES, NOT FROM NINE. The members used to run three times over
-three universes and the layer a row belonged to was "which pass wrote this file" -- an
-identity that depended on scheduling and cost three sequential mapper passes to
-establish. Each pair row now carries the SUBMISSION CLASS it answers, so the same three
-files partition into the mapped layers by what a row CLAIMS rather than by when it was
-produced. See `layers.explode`'s `only_class`. `interm::aam_universe` is not required
-here for exactly that reason: the class travels on the row.
-
-THE CURATED MEMBER IS READ HERE, FROM THE DROP-IN, rather than arriving as a product.
-It briefly had its own transform, and the argument for that was real -- one read of the
-licensed release, feeding both ensembles, so the two could not disagree about which
-MetaCyc they were built from. The argument against it won: it put a node between the
-drop-in and every member lane, because the members took its output as their `--exclude`
-list, so nothing could start until the curated extraction finished. Reading the .dat
-here costs ~5 minutes and is the same code either way; `direction_ensemble` reads the
-other .dat for itself, and the two agree because the drop-in asserts a single release
-directory and there is only one to read.
-
-THE ARCHITECTURE IS THE ORDER, and the order is additive:
-
-  L1  metacyc     the curated map, expert-assigned, balancing per element at 99.8%+.
-                  Extracted here from the drop-in, and laid down FIRST -- which is what
-                  makes the members' overlap with it free rather than contested: stack
-                  restricts each layer to what nothing below it claimed.
-  L2  ensemble    RXNMapper + LocalMapper + Indigo on the WHOLE submissions, fused where
-                  they agree. The neural increment balances carbon in 12.5% of the
-                  candidates it proposes, which is the whole argument for it being second
-                  rather than first.
-  L3  curation    the same three members' rows for the COMPLETED submissions: reactions
-                  no mapper could see until `aam_rescue` supplied a structure for their
-                  structureless participants. Their bodies had to cancel and an element
-                  had to balance before the reaction was completed at all.
-  L4  algebra     what conservation forces for the reactions no member was ever given --
-                  the complement of the widest admission any member makes. Exact, and the
-                  only route to those reactions at all.
-  L5  partial     the conservation-forced arm of the reduction, then the same three
-                  members' rows for the REDUCED submissions -- one element of a reaction
-                  nothing mapped whole. Laid down LAST, so it can only claim what nothing
-                  above it claimed.
-
-ADDITIVE MEANS ADDITIVE, AND THE CLAIM IS TESTED. `aam_layers.additive_gates` refuses
-rather than warns at every boundary: the added (mnxr, element) is absent from everything
-below, zero collisions on the 6-tuple pair key, no element loses reactions, no negative
-ranks. A gate that warns is a gate that gets read once.
-
-WHERE MEMBERS DISAGREE the correspondence is not decided by majority or by confidence --
-it is spread across the disputed products by member weight, so a contested atom dilutes
-its transfer instead of committing. That spread is also what the redox repair rescales:
-refusing an impossible arm concentrates the atom's claim on what survives rather than
-deleting it.
-
-A MEMBER THAT DID NOT RUN IS A MISSING NODE, not a missing column. Each member is a
-required input: the planner cannot schedule this step without all three, and dropping one
-is an edit to the graph that someone has to make on purpose.
-"""
 from metasmith.python_api import *
 
 lib   = TransformInstanceLibrary.ResolveParentLibrary(__file__)
@@ -226,11 +162,6 @@ def protocol(context: ExecutionContext):
         .ifContainerDo(env=image, cmd=cmd) \
         .ifVirtualEnvDo(env=image, cmd=cmd)
 
-    # Evidence is a HARD condition, not a diagnostic nicety. The copy runs seconds after
-    # the tools finished, in the same command, so a missing directory does not mean the
-    # step was busy -- it means something went wrong that a green step would hide. Both
-    # tools by name, not "the directory is non-empty": this step runs two, and one of them
-    # silently failing to collect is exactly the case a count would pass.
     kept = [iev.local / t for t in ("metacyc", "stack")]
     return ExecutionResult(
         manifest=[{stacked: iout.local}, {ev: iev.local}],
@@ -243,6 +174,5 @@ TransformInstance(
     protocol=protocol,
     model=model,
     group_by=image,
-    # The MetaCyc read, three fusions and a stack: large tables in memory, no search.
     resources=Resources(cpus=4, memory=Size.GB(64), duration=Duration(hours=3)),
 )

@@ -47,15 +47,14 @@ from _common import C_A, CACHE, INK, INSERT_META, INSERTS, save
 MEMBERSHIP = INSERT_META / "membership.csv"
 INSERT_TABLE = INSERT_META / "inserts.csv"
 
-WIN_LO, WIN_HI = 29.0, 44.0     # lambda packaging window (kb)
-C_IN, C_OUT = C_A, INK          # lollipop head inside / outside the window
+WIN_LO, WIN_HI = 29.0, 44.0
+C_IN, C_OUT = C_A, INK
 C_STEM = "#999999"
 HEAD_ALPHA = 0.7
-UMAP_SEED = 0                   # the layout is fixed; a re-run must not re-order
+UMAP_SEED = 0
 
 
 def load():
-    """-> (labels, symmetric identity, cluster per piece, {cluster: length kb})."""
     meta, _seqs = pieces.load()
     labels, sym, _cont = identity.matrices()
 
@@ -67,7 +66,6 @@ def load():
 
 
 def order_rows(sym, clust, force=False):
-    """1D UMAP of the identity distance, then cluster-contiguous. -> row order."""
     cache = CACHE / "identity_order.npy"
     if cache.exists() and not force:
         order = np.load(cache)
@@ -88,7 +86,6 @@ def order_rows(sym, clust, force=False):
 
 
 def maxpool(M, cap=600):
-    """Reduce to at most `cap` cells a side by MAX pooling. No-op below `cap`."""
     n = M.shape[0]
     if n <= cap:
         return M
@@ -106,7 +103,7 @@ def generate(force_order=False):
     clust_ord = clust[order]
 
     centers, lens, spans = [], [], []
-    for c in dict.fromkeys(clust_ord):          # blocks in display order
+    for c in dict.fromkeys(clust_ord):
         pos = np.where(clust_ord == c)[0]
         centers.append(pos.mean())
         lens.append(rep_kb[c])
@@ -126,7 +123,7 @@ def generate(force_order=False):
     axm.set_xticks([]); axm.set_yticks([])
     axm.set_xlabel("Pieces", fontsize=11)
     pad = n * 0.01
-    axm.set_xlim(n - 0.5 + pad, -0.5 - pad)     # diagonal top-right -> bottom-left
+    axm.set_xlim(n - 0.5 + pad, -0.5 - pad)
     axm.set_ylim(n - 0.5 + pad, -0.5 - pad)
 
     for xv in (WIN_LO, WIN_HI):
@@ -139,15 +136,13 @@ def generate(force_order=False):
     zlw, znudge = 3.5, 2.0
     zebra = axb.vlines([0] * len(ev), [lo for lo, _hi in ev], [hi for _lo, hi in ev],
                        color=C_OUT, lw=zlw, zorder=3, clip_on=False)
-    # shifted left by half its own stroke plus a hair, so the ruler sits clear of
-    # the stems rather than overprinting the zero end of every one
     zebra.set_transform(offset_copy(axb.transData, fig=fig, x=-zlw / 2 - znudge,
                                     y=0, units="points"))
     axb.set_ylim(n - 0.5 + pad, -0.5 - pad)
     axb.set_box_aspect(2)
     axb.set_xlim(0, 80)
     axb.set_xticks([0, 20, 40, 60, 80])
-    axb.set_xticklabels(["", "20", "40", "60", "80"])   # x=0 belongs to the ruler
+    axb.set_xticklabels(["", "20", "40", "60", "80"])
     axb.tick_params(labelleft=False, labelsize=9)
     axb.set_xlabel("Length (kb)", fontsize=11)
     for sp in ("top", "right", "left"):
@@ -178,8 +173,6 @@ def generate(force_order=False):
     save(fig, "identity_matrix")
     plt.close(fig)
 
-    # colorbar and lollipop legend as their own figures, so the main panel keeps
-    # its full width in a layout
     figc, axc = plt.subplots(figsize=(0.585, 4.4), dpi=300)
     cb = figc.colorbar(plt.cm.ScalarMappable(cmap="gray_r",
                                              norm=plt.Normalize(vmin=0, vmax=1)),

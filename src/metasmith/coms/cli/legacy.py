@@ -1,7 +1,3 @@
-"""Preserved subcommands from the original cli.py: get, lab, api.
-
-These don't return structured data; they print logs / run subprocesses directly.
-"""
 from __future__ import annotations
 
 import argparse
@@ -22,8 +18,6 @@ def register(subs):
     _register_api(subs)
 
 
-# -- get --------------------------------------------------------------------
-
 def _register_get(subs):
     p = subs.add_parser("get", help="copy a bundled example resource into cwd")
     p.add_argument("name", type=Path)
@@ -43,8 +37,6 @@ def _cmd_get(args):
     Log.Info(f"copied [{path.name}] from [{path}]")
     return None
 
-
-# -- lab --------------------------------------------------------------------
 
 def _ip_type(val: str) -> str:
     try:
@@ -76,7 +68,6 @@ def _cmd_lab(args):
             f"{MODULE_PATH}/jupyter_lab/settings/",
             f"{settings_path}",
         ], text=True)
-    # shared with `msm gui`: both front ends open the same working directory
     bootstrap_project(Path("."))
 
     try:
@@ -101,8 +92,6 @@ def _cmd_lab(args):
         pass
     return None
 
-
-# -- gui --------------------------------------------------------------------
 
 def _register_gui(subs):
     p = subs.add_parser("gui", help="run the web GUI over the current directory")
@@ -146,8 +135,6 @@ def _cmd_gui(args):
     )
     return None
 
-
-# -- api --------------------------------------------------------------------
 
 def _register_api(subs):
     p = subs.add_parser(

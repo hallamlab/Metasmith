@@ -6,52 +6,15 @@ from metasmith.python_api import Runtime
 
 base_dir = Path("./cache")
 
-# agent_home = Source.FromLocal((base_dir/"local_home").resolve())
 agent_home = Source.FromLocal((base_dir/"local_home").absolute())
 smith = Agent(
     home = agent_home,
-    # runtime=Runtime.APPTAINER,
     runtime=Runtime.DOCKER,
 )
 
-# agent_home = SshSource(host="chamois", path=Path("/home/tliu/metasmith")).AsSource()
-# smith = Agent(
-#     home = agent_home,
-#     runtime=Runtime.APPTAINER,
-#     setup_commands=[
-#         'PATH=/home/tliu/miniforge3/envs/def/bin/:$PATH',
-#         'export TMPDIR="/home/$USER/tmp"',
-#         'mkdir -p $TMPDIR',
-#         'export APPTAINER_CACHEDIR="$TMPDIR"',
-#         'export APPTAINER_TMPDIR="$TMPDIR"',
-#     ]
-# )
-
-# agent_home = SshSource(host="sockeye", path=Path("/scratch/st-shallam-1/pwy_group/metasmith")).AsSource()
-# smith = Agent(
-#     home = agent_home,
-#     runtime=Runtime.APPTAINER,
-#     setup_commands=[
-#         'module load gcc/9.4.0',
-#         'module load apptainer/1.3.1',
-#         'export APPTAINER_CACHEDIR="/scratch/st-shallam-1/pwy_group/apptainer_cache"',
-#     ]
-# )
-
-# agent_home = SshSource(host="fir", path=Path("/scratch/phyberos/metasmith")).AsSource()
-# smith = Agent(
-#     home = agent_home,
-#     runtime=Runtime.APPTAINER,
-#     setup_commands=[
-#         "module load StdEnv/2023",
-#         "module load apptainer/1.3.5",
-#     ]
-# )
 
 smith.Deploy()
 
-# import ipynbname
-# notebook_name = ipynbname.name()
 notebook_name = Path(__file__).stem
 in_dir = base_dir/f"{notebook_name}/inputs.xgdb"
 
@@ -71,11 +34,8 @@ except:
     inputs.AddValue("K12", "GCF_000005845.2", "ncbi::assembly_accession", parents={_K12_name})
     _EPI300_name = inputs.AddValue("EPI300.name", "EPI300", "ncbi::genome_name", parents={group})
     inputs.AddValue("EPI300", "GCA_052692645.1", "ncbi::assembly_accession", parents={_EPI300_name})
-    # inputs.AddItem((base_dir/f"{notebook_name}/epi300.gbk").resolve(), "sequences::gbk", parents={group})
-    # inputs.LocalizeContents()
     inputs.Save()
 
-# inputs = DataInstanceLibrary.Load(in_dir)
 
 resources = [
     DataInstanceLibrary.Load(f"../resources/{n}")
@@ -89,7 +49,6 @@ transforms = [
 
 targets = TargetBuilder()
 targets.Add("pangenome::heatmap")
-# targets.Add("sequences::orfs")
 
 task = smith.GenerateWorkflow(
     samples=inputs.AsSamples("ncbi::assembly_accession"),
@@ -100,7 +59,6 @@ task = smith.GenerateWorkflow(
 task.plan.RenderDAG(base_dir/f"{notebook_name}/dag")
 print(task.ok, len(task.plan.steps))
 
-# # smith.StageWorkflow(task, on_exist="clear")
 smith.StageWorkflow(task, on_exist="update")
 params = dict(
     executor=dict(
@@ -126,13 +84,3 @@ smith.RunWorkflow(
         )
     },
 )
-
-# with open("../secrets/slurm_account_fir") as f:
-#     SLURM_ACCOUNT = f.readline()
-# smith.RunWorkflow(
-#     task,
-#     config_file=smith.GetNxfConfigPresets()["slurm"],
-#     params=dict(
-#         slurmAccount=SLURM_ACCOUNT,
-#     )
-# )

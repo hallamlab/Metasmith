@@ -1,16 +1,3 @@
-"""The in-process arm of a local transfer, against the rsync it stands in for.
-
-`Logistics` copies local→local without spawning rsync when the shape is one it
-is sure of. That is a latency fix -- an rsync is ~45ms of process spawn wherever
-it runs, and staging a plan moves three small metadata trees -- so the contract
-that matters is not "it is fast" but "it is the same": same bytes, same links,
-same `-u` skip, same extraneous files left alone, and a hand-off to rsync for
-everything it does not claim.
-
-Each case is asserted twice, once through the fast path and once with it
-disabled, so a divergence shows up as a disagreement rather than as a test that
-merely encodes today's behaviour.
-"""
 from __future__ import annotations
 
 import os
@@ -32,16 +19,12 @@ def _transfer(src: Path, dest: Path, **kwargs):
 
 @pytest.fixture(params=["in process", "rsync"])
 def transfer(request, monkeypatch):
-    """Both arms of the same operation, so every case pins the pair."""
     if request.param == "rsync":
-        # the limit is the only knob that turns the whole fast path off for a
-        # directory without pretending the tree is a shape it is not
         monkeypatch.setattr("metasmith.models.remote._LOCAL_TREE_LIMIT", -1)
     return _transfer
 
 
 def _tree(root: Path) -> dict[str, str]:
-    """Everything under `root`, as {relative path: what it is}."""
     found = {}
     for here, dirs, files in os.walk(root, followlinks=False):
         for name in sorted(dirs + files):
@@ -85,8 +68,6 @@ class TestDirectories:
         assert os.readlink(link) == "real.txt"
 
     def test_resolving_symlinks_follows_them(self, tmp_path, transfer):
-        # -L is rsync's job: following a link can walk clean out of the tree,
-        # so the in-process arm declines the whole tree rather than guess
         src = tmp_path/"src"
         src.mkdir()
         outside = tmp_path/"outside.txt"
@@ -99,7 +80,6 @@ class TestDirectories:
         assert copied.read_text() == "outside"
 
     def test_a_newer_destination_is_left_alone(self, tmp_path, transfer):
-        # -u
         src = tmp_path/"src"
         src.mkdir()
         (src/"f.txt").write_text("old")
@@ -126,7 +106,6 @@ class TestDirectories:
         assert (dest/"f.txt").read_text() == "new"
 
     def test_extraneous_destination_files_survive(self, tmp_path, transfer):
-        # no --delete: a transfer adds and updates, it does not mirror
         src = tmp_path/"src"
         src.mkdir()
         (src/"kept.txt").write_text("kept")
@@ -140,7 +119,6 @@ class TestDirectories:
         assert (dest/"kept.txt").read_text() == "kept"
 
     def test_nothing_is_left_behind(self, tmp_path, transfer):
-        """The staging file a copy writes aside must not survive it."""
         src = tmp_path/"src"
         src.mkdir()
         (src/"f.txt").write_text("body")
@@ -149,13 +127,6 @@ class TestDirectories:
         assert sorted(p.name for p in (tmp_path/"dest").iterdir()) == ["f.txt"]
 
     def test_an_entry_that_changed_kind_is_refused_the_same_way(self, tmp_path, transfer):
-        """rsync will not put a file where a populated directory is, and the
-        in-process arm does not get to be braver than the thing it stands in
-        for -- it declines the tree and rsync reports the refusal.
-
-        Only the *root* of a transfer is made way for, by the `rm -r` the
-        caller prepends when the two ends disagree about what they are.
-        """
         src = tmp_path/"src"
         src.mkdir()
         (src/"thing").write_text("now a file")
@@ -173,8 +144,6 @@ class TestDirectories:
 
 
 class TestExclusions:
-    """A path named here is not transferred; everything else still is."""
-
     def test_an_excluded_path_is_left_behind(self, tmp_path, transfer):
         src = tmp_path/"src"
         (src/"_metadata").mkdir(parents=True)
@@ -189,8 +158,6 @@ class TestExclusions:
         assert not (dest/"_metadata"/"skip.txt").exists()
 
     def test_a_pattern_is_anchored_at_the_transfer_root(self, tmp_path, transfer):
-        # the slash is what makes it the library's own path rather than any file
-        # a workflow happened to name the same thing further down
         src = tmp_path/"src"
         (src/"_metadata").mkdir(parents=True)
         (src/"_metadata"/"logs.latest").write_text("alias")
@@ -203,9 +170,6 @@ class TestExclusions:
         assert (dest/"deep"/"_metadata"/"logs.latest").read_text() == "someone else's"
 
     def test_the_in_process_arm_declines_rather_than_half_copying(self, tmp_path):
-        # It has no notion of patterns, so it must hand the tree over whole --
-        # a partial copy followed by rsync would be correct but is a much harder
-        # contract to reason about, and the survey exists to avoid it.
         src = tmp_path/"src"
         src.mkdir()
         (src/"a.txt").write_text("a")
@@ -245,8 +209,6 @@ class TestFiles:
 
 
 class TestFallback:
-    """What the in-process arm declines, and that declining is invisible."""
-
     def test_a_fifo_sends_the_tree_to_rsync(self, tmp_path):
         src = tmp_path/"src"
         src.mkdir()
@@ -254,7 +216,6 @@ class TestFallback:
         os.mkfifo(src/"pipe")
 
         _transfer(src, tmp_path/"dest")
-        # rsync without --specials skips the fifo and copies the rest
         assert (tmp_path/"dest"/"f.txt").read_text() == "body"
 
     def test_a_tree_over_the_limit_sends_it_to_rsync(self, tmp_path, monkeypatch):

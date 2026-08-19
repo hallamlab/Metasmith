@@ -1,19 +1,3 @@
-"""User-story smoke: browse pre-staged libraries.
-
-Probes whether a user (acting via the agent) can discover what types and
-transforms are available in a freshly-installed library set, using the CLI
-alone — no documentation hand-off, no hints which subcommands to invoke.
-
-Pre-staged:
-  workspace/types/myproj.yml      with 2 named types
-  workspace/transforms/           with 2 scaffolded transforms
-
-Pass criteria:
-  - agent writes workspace/ANSWER.txt with two lines:
-      line 1: a type name present in the staged type lib
-      line 2: a transform name present in the staged transform lib
-  - both lines validate against the staged fixtures
-"""
 from __future__ import annotations
 
 from dataclasses import dataclass, field

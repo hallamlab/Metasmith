@@ -47,7 +47,6 @@ def spearman(a: pd.Series, b: pd.Series) -> tuple:
 
 
 def auc(pos: np.ndarray, neg: np.ndarray) -> tuple:
-    """P(a positive outranks a negative), ties counted as half. Mann-Whitney."""
     if not len(pos) or not len(neg):
         return float("nan"), len(pos), len(neg)
     gt = (pos[:, None] > neg[None, :]).sum()
@@ -77,25 +76,10 @@ def main():
         print(gate[cols].to_string(index=False))
 
     s = scored[(scored["probe"] == args.probe) & (scored["readout"] == args.readout)]
-    # The tier's own is_control/control_kind would collide with the scored table's,
-    # and the scored one is the operative flag -- it comes from the conditions table
-    # ECSPr was actually run with, where a control is defined against ECSPr's basis.
     reach = reach.drop(columns=["is_control", "control_kind"], errors="ignore")
     df = s.merge(reach, on="condition_id", how="left")
-    # Every condition carrying a measured direction, INCLUDING the ones the tier
-    # marks structural. Those are controls for the gate -- their masks reach no
-    # atom-mapped reaction, so they measure the floor -- but they are also real
-    # strains with real titers, and several of them are the paper's own hits. They
-    # are the "moved the phenotype, invisible to the model" cases, so dropping them
-    # from the correlation would quietly delete the finding.
     df["measured_dir"] = df["measured_dir"].fillna("")
     real = df[df["measured_dir"] != ""].copy()
-    # "Can the method see this clone" is answered by the basis ECSPr SOLVES ON, and
-    # `is_control` is exactly that flag: a condition is a control here precisely
-    # when none of its reactions appears in the atom-pair table, so it returns the
-    # baseline bit-for-bit. The tier's `mappable` answers a stricter question --
-    # it drops transport too -- and is reported separately because the difference
-    # is most of the ASKA winners.
     seen = real[~real["is_control"].astype(bool)]
     strict = real[real["mappable"].astype(str).str.lower().isin(["true", "1"])]
 
@@ -131,11 +115,6 @@ def main():
             r, n = spearman(sub[zcol], sub["n_ecspr_reactions"])
             print(f"  {label:18s} {zcol:10s} rho={r:+.3f}  n={n}")
 
-    # The sharpest form of the question. z tracks how many edges a clone adds, so
-    # the way to ask whether it tracks anything ELSE is to hold that constant:
-    # among clones adding exactly one atom-mapped reaction, the added conductance
-    # is the same by construction and only WHICH reaction differs. If the score
-    # carried information about the phenotype, it would show up here.
     one = seen[seen["n_ecspr_reactions"] == 1]
     print(f"\n=== matched: clones adding exactly one atom-mapped reaction "
           f"(n={len(one)}) ===")

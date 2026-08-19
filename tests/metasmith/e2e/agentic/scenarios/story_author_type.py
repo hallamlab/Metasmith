@@ -1,18 +1,3 @@
-"""User-story smoke: author a new data type from scratch.
-
-The tutorials in docs/source/tutorials/ all use pre-existing types under
-``lib/data_types/``. They never exercise the *create-a-new-type-library*
-path. This scenario probes whether a user can author a fresh type library
-using the metasmith CLI alone, then verify it loaded correctly.
-
-Pre-staged: nothing — the workspace starts empty.
-
-Pass criteria:
-  - workspace/myproj.yml exists after the agent runs
-  - independent `metasmith type show myproj::sample_id` against the new
-    lib succeeds
-  - agent wrote workspace/ANSWER.txt containing exactly ``myproj::sample_id``
-"""
 from __future__ import annotations
 
 import subprocess
@@ -75,7 +60,7 @@ class StoryAuthorTypeScenario:
     pre_install_metasmith: bool = True
 
     def setup_fixtures(self, layout: SandboxLayout, ctx: InstallContext) -> None:
-        return  # author from a clean slate
+        return
 
     def build_prompt(self, ctx: PromptContext) -> str:
         return _PROMPT.format(SANDBOX=str(ctx.sandbox), VERSION=ctx.version)

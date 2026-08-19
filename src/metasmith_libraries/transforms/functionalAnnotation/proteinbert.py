@@ -1,24 +1,3 @@
-"""ProteinBERT embeddings for the ORFs -> proteinbert_embeddings + proteinbert_index.
-
-Two products, and they are ONE artifact: the index names the sequences in the order
-the embedding stack's rows appear, so the consumer addresses the stack BY ROW. An
-index from one run against a stack from another misindexes every row and emits a
-full, confident, wrong table with nothing raised.
-
-THE ALPHABET IS NARROWED BEFORE THE EMBEDDER SEES IT. ProteinBERT tokenises exactly
-ACDEFGHIKLMNPQRSTUVWXY, and the image's encoder sizes its lookup array to the
-largest of those ordinals ('Y', 89) while guarding it with `c > len(arrayed_map)` --
-off by one, so a residue at ordinal exactly 90 indexes past the end and the run dies
-with `IndexError: getitem out of range` after the model has loaded. 'Z' is 90.
-Prodigal does not emit it, but this transform also runs on proteomes that are not
-prodigal's, and the same recoding is what makes the pool
-(build_references/compile/reference_label_pool.py) comparable to this query in the
-first place -- two different alphabets are two different embedding spaces.
-
-THE INDEX COLUMN IS RENAMED HERE, ONCE. `pbert` writes `id,batch`; every consumer
-reads `sequence_id`. Normalising at the producer means the type has one schema
-rather than each consumer guessing.
-"""
 from metasmith.python_api import *
 from pathlib import Path
 
@@ -31,7 +10,6 @@ orfs = model.AddRequirement(lib.GetType("sequences::orf_chunk"))
 out_embeddings = model.AddProduct(lib.GetType("annotation::proteinbert_embeddings_chunk"))
 out_index = model.AddProduct(lib.GetType("annotation::proteinbert_index_chunk"))
 
-# Shared with reference_label_pool.py -- see the header on why they must agree.
 POOL_ALPHABET = "ACDEFGHIKLMNPQRSTUVWXY"
 
 SANITIZE = f'''
@@ -55,7 +33,6 @@ print(f"[pbert] {{n:,}} sequences, {{recoded:,}} lines recoded to the embedder's
       flush=True)
 '''
 
-# `pbert` writes `id,batch`; the type's contract is `sequence_id`.
 COMBINE = '''
 import sys
 from pathlib import Path
@@ -130,8 +107,6 @@ def protocol(context: ExecutionContext):
                 out_index: iidx.local,
             },
         ],
-        # Non-empty, not merely present: the combiner refuses an index/stack
-        # mismatch, so a zero-byte file here means it died before writing.
         success=(iemb.local.exists() and iemb.local.stat().st_size > 0
                  and iidx.local.exists() and iidx.local.stat().st_size > 0),
     )

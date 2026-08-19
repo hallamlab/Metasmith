@@ -1,4 +1,3 @@
-"""Unit test for stage_real_libraries: full MetasmithLibraries clone in sandbox."""
 from __future__ import annotations
 
 from pathlib import Path

@@ -1,22 +1,4 @@
 #!/usr/bin/env python3
-"""T2 -- the ECSPr arms, over the real LASER designs and the counterfactual pool.
-
-One in-process driver rather than the CLI: shelling out per design re-reads a
-2.4M-row parquet every call, and there are ~735 designs per unit.
-
-A *unit* is (host, arm, element, direction). Within a unit the baseline graph is
-built and solved once per carbon source and cached; each design then rebuilds only
-its own graph. `measure_leak(..., precursors=None)` returns a draw for EVERY
-metabolite from a single solve, which is why the counterfactual null is affordable
-at all -- one solve scores every target column at once, so the pool is N designs
-per unit rather than K per condition.
-
-Output is the arm-agnostic long contract T4 reads. Sharded per unit, flushed every
-`--flush` designs through a tmp sibling + os.replace, so a kill never leaves a half
-shard and a rerun resumes from the design ids already on disk.
-
-    python run_arms.py --arm gem --host e_coli_k12 --directed 1 --n-cf 500
-"""
 from __future__ import annotations
 
 import argparse
@@ -43,15 +25,7 @@ LOG = logging.getLogger("run_arms")
 ARMS = ("gem", "denovo_ev", "denovo_uni")
 
 
-# ---------------------------------------------------------------------------
-# Weights
-# ---------------------------------------------------------------------------
-
 def base_weights(arm: str, host_dir: str) -> tuple[dict, float]:
-    """(weights, unit). `unit` is the arm's own conductance quantum -- the amount
-    one added gene copy is worth. A bare +1.0 is 1x the GEM background but 24x the
-    de-novo median, so the CLI's scale-blind `weights[mnxr] += 1.0` is replaced by
-    each arm's own median weight."""
     if arm == "gem":
         g = C.read_gpr(C.HOSTS / host_dir / "gpr_gem.parquet")
         w = {r: 1.0 for r in g.mnxr.astype(str).unique()}
@@ -61,11 +35,6 @@ def base_weights(arm: str, host_dir: str) -> tuple[dict, float]:
     if arm == "denovo_uni":
         w = {r: 1.0 for r in d.mnxr.astype(str).unique()}
         return w, 1.0
-    # compute_E's column contract, and the float32 conservation failure: the
-    # library gates at 1e-9 and float32 raw_score lands at 8.9e-08. Cast in the
-    # driver -- never loosen the library tolerance.
-    # float32 -> float64 is not cosmetic: `_assert_conservation` gates at 1e-9 and
-    # float32 lands at 8.9e-08. Cast here; never loosen the library tolerance.
     d["raw_score"] = d["raw_score"].astype("float64")
     e = EV.compute_E(d[["orf", "channel", "intermediate_id", "mnxr", "raw_score"]],
                      label=f"{host_dir}/denovo")
@@ -77,14 +46,6 @@ EDIT_KINDS = ("heterologous_add", "overexpression", "knockout", "del_noop")
 
 
 def apply_edits(weights: dict, add: list, dele: list, unit: float) -> tuple[dict, dict]:
-    """Explicit edit policy, replacing the CLI's `weights[mnxr] += 1.0`.
-
-    An add on a reaction the host already has is an OVEREXPRESSION, not a new
-    reaction, and it is applied as one more copy's worth of conductance (`unit`),
-    not as an undeclared doubling. A `del` on a reaction the host does not have is
-    a NO-OP and is counted as one -- silently dropping it is how a design with no
-    effective edit comes to look like a design.
-    """
     w = dict(weights)
     census = {k: 0 for k in EDIT_KINDS}
     for r in add:
@@ -103,10 +64,6 @@ def apply_edits(weights: dict, add: list, dele: list, unit: float) -> tuple[dict
     return w, census
 
 
-# ---------------------------------------------------------------------------
-# Designs
-# ---------------------------------------------------------------------------
-
 def load_designs(host_dir: str, n_cf: int) -> pd.DataFrame:
     idx = pd.read_csv(C.REFS / "design_index.tsv", sep="\t")
     real = idx[idx.host_dir == host_dir].copy()
@@ -115,9 +72,6 @@ def load_designs(host_dir: str, n_cf: int) -> pd.DataFrame:
 
     pool = pd.read_parquet(C.REFS / "counterfactual_pool.parquet").head(n_cf).copy()
     donor = real.set_index("design_id")
-    # A counterfactual inherits its donor's carbon so the medium is not itself a
-    # source of contrast. Donors from the other host are remapped to a design of
-    # this host with the same size bin, keeping the pool byte-identical across arms.
     fallback = real.iloc[0] if len(real) else None
     rows = []
     for _, p in pool.iterrows():
@@ -142,7 +96,6 @@ def load_designs(host_dir: str, n_cf: int) -> pd.DataFrame:
 
 
 def carbon_terminals() -> dict:
-    """LASER carbon string -> list of MNXM. Mixtures merge into ONE terminal."""
     car = pd.read_csv(C.REFS / "carbon_resolved.tsv", sep="\t").fillna("")
     tok = {r.token: [m for m in str(r.mnxms).split(";") if m] for _, r in car.iterrows()}
     return tok
@@ -160,10 +113,6 @@ def source_for(carbon: str, tok: dict) -> tuple[str, list]:
             labels.append(p)
     return "|".join(sorted(labels)), sorted(set(mnxms))
 
-
-# ---------------------------------------------------------------------------
-# The unit
-# ---------------------------------------------------------------------------
 
 def run_unit(arm: str, host_dir: str, element: str, directed: bool, n_cf: int,
              leak: float, flush: int, run_id: str, do_biomass: bool):
@@ -209,7 +158,6 @@ def run_unit(arm: str, host_dir: str, element: str, directed: bool, n_cf: int,
         src = Terminal.merge(g, src_mnxms, label=src_key)
         t0 = time.time()
         res = measure_leak(g, src, None, leak=leak) if src else None
-        # Noise floor: jitter every baseline weight by relative 1e-10 and re-solve.
         floor = float("nan")
         if res is not None:
             rng = np.random.default_rng(7)
@@ -290,9 +238,6 @@ def run_unit(arm: str, host_dir: str, element: str, directed: bool, n_cf: int,
             elif b is None:
                 status, val = "created", float(p)
             elif p is None:
-                # A knockout can delete the last reaction that made this a node.
-                # That is a real, signed prediction (the draw goes to zero), not a
-                # coverage gap, so it is scored -- with its own state.
                 status, val = "destroyed", -float(b)
             else:
                 val = float(p) - float(b)

@@ -1,34 +1,10 @@
 #!/usr/bin/env python3
-"""Reaction distance from the Eydallin carbohydrate hits to glycogen, on the carbon graph.
-
-Three bases, reported side by side, because the hub policy and the host restriction each
-decide the answer more than the chemistry does:
-  bake/full      -- every reaction with a carbon atom-pair row in data/fabfos/processed/metabolism_bake
-  bake/host      -- the same table restricted to the reactions iML1515 gives K-12
-  bake/host+glc  -- host, cofactors barred but D-glucose left in, to show what that
-                    single hub does to every distance in the table
-
-The retired tier4 reference is deliberately absent: on that basis this whole column came
-back empty except glgB, because glgA and glgP carried no carbon rows there at all.
-
-Distance counts REACTIONS: 0 = the reaction touches a glycogen node itself, 1 = it
-shares a carbon-carrying metabolite with such a reaction, and so on. Named cofactor
-hubs are barred as intermediates -- without that, everything is two steps from
-everything through the ATP->ADP adenosine carbons. PEP, pyruvate and the sugar
-phosphates are deliberately NOT barred: they are the actual chemistry here.
-
-Gene -> b-number resolution goes through NC_000913.3, never through names: nagD is
-umpH/b0675 and aspP is nudF/b3034 in the annotation, and both read as "absent from
-the model" if you match iML1515's gene column by name.
-"""
 import collections
 import re
 from pathlib import Path
 
 import pandas as pd
 
-# Everything this reads is pinned in this repository. It used to be read out of
-# the fabfos bench-aska worktree, which is archived and read-only now.
 R = str(Path(__file__).resolve().parents[4])
 BAKE = f"{R}/data/fabfos/processed/metabolism_bake"
 
@@ -36,13 +12,6 @@ GENES = ["ptsI", "ptsN", "nagB", "nagD", "malP", "gntT", "xylG", "rpiB", "talA",
          "glgA", "glgC", "glgB", "glgP", "aspP"]
 GLYCOGEN = ["MNXM738130", "MNXM738131", "MNXM8348"]
 
-# Hub policies. Ids resolved by exact chem_prop name below, and printed, because a
-# guessed MNXM is how you silently fail to bar a hub (MNXM26 is acetate, not glutamate).
-#   cofactor -- the carriers whose carbon skeleton rides through unchanged. Without
-#               these barred, every reaction is 2 hops from every other via ATP->ADP.
-#   central  -- adds the free-metabolite hubs above ~300 reactions. D-glucose is the
-#               one that matters here: it is one hop from glycogen via a hydrolase, so
-#               leaving it in makes every sugar transporter look adjacent.
 COFACTOR_NAMES = [
     "ATP", "ADP", "AMP", "CoA", "acetyl-CoA", "malonyl-CoA",
     "NAD(+)", "NADH", "NADP(+)", "NADPH", "FAD", "FADH2", "Flavin", "Reduced flavin",
@@ -55,7 +24,6 @@ CENTRAL_NAMES = [
     "L-alanine", "formate", "L-methionine", "2-oxoglutarate",
 ]
 
-# ---------------------------------------------------------------- reference tables
 v = pd.read_parquet(f"{BAKE}/vocab.parquet")
 sym = v[v.kind == "met"].set_index("code").symbol.to_dict()
 rsym = v[v.kind == "rxn"].set_index("code").symbol.to_dict()
@@ -84,10 +52,6 @@ print()
 
 gbk = open(f"{R}/data/fabfos/originals/genomes/e_coli_k12/genome/NC_000913.3.gbk",
            errors="ignore").read()
-# PRIMARY /gene= NAMES WIN OVER SYNONYMS, and the two maps are kept apart. nagE
-# (b0679) carries `ptsN` as an obsolete synonym while the real ptsN is b3204, so a
-# synonym-first map hands the nitrogen-PTS regulator NagE's transport reactions and
-# a plausible-looking distance. Same class of trap as rfaY/waaY, opposite direction.
 PRIMARY, SYN = {}, {}
 for blk in re.findall(r"\n     gene {12}.*?(?=\n     \w)", gbk, re.S):
     lt = re.search(r'/locus_tag="(b\d+)"', blk)
@@ -103,7 +67,6 @@ for blk in re.findall(r"\n     gene {12}.*?(?=\n     \w)", gbk, re.S):
 BNUM = {**SYN, **PRIMARY}
 
 
-# ---------------------------------------------------------------- graph + BFS
 def basis(sub, hubs):
     m2r, r2m = collections.defaultdict(set), collections.defaultdict(set)
     for rx, t, h in sub.itertuples(index=False):
@@ -135,7 +98,6 @@ def basis(sub, hubs):
 
 
 def route(rx, dist, prev):
-    """rendered shortest path: rxn -> met -> rxn -> ... -> glycogen"""
     out = []
     cur = rx
     while cur is not None:
@@ -190,9 +152,6 @@ for g in GLYCOGEN:
         print(f"   {rx:12} host={'Y' if rx in host_rxn else '.'} "
               f"{gene_of.get(rx, '-'):12} -> {partners}")
 
-# Carbon coverage of the glycogen machinery itself. A reaction with zero carbon rows
-# contributes no edge, so this table is what decides whether the polymer is reachable
-# at all -- it is the quantity the retired tier4 basis got wrong.
 print("\n=== the glg machinery: carbon rows on the bake ===")
 print(f"{'reaction':12} {'gene':10} {'in_host':8} {'bake_C':8}")
 rc_of = {s: c for c, s in rsym.items()}

@@ -18,7 +18,6 @@ MIN_CONTIG_LENGTH = 1000
 
 
 def _has_long_enough_contigs(fasta_path: Path, min_len: int = MIN_CONTIG_LENGTH) -> bool:
-    """Check if at least one contig meets the minimum length."""
     length = 0
     with open(fasta_path) as f:
         for line in f:
@@ -32,7 +31,6 @@ def _has_long_enough_contigs(fasta_path: Path, min_len: int = MIN_CONTIG_LENGTH)
 
 
 def _write_mock_outputs(ojson_path: Path, ogbk_path: Path, assembly_name: str):
-    """Write empty/mock outputs for assemblies with no qualifying contigs."""
     import json as _json
     mock = {
         "records": [],
@@ -52,7 +50,6 @@ def protocol(context: ExecutionContext):
     ojson = context.Output(out_json)
     ogbk  = context.Output(out_gbk)
 
-    # Pre-check: skip assemblies where all contigs are below antiSMASH minimum
     if not _has_long_enough_contigs(iasm.local):
         print(f"NOTICE: All contigs in {iasm.local.name} are < {MIN_CONTIG_LENGTH} bp. "
               f"Producing mock output (antiSMASH requires >= {MIN_CONTIG_LENGTH} bp contigs).")
@@ -83,19 +80,16 @@ def protocol(context: ExecutionContext):
 
     outdir = Path("antismash_out")
 
-    # Collect the main JSON result (one per assembly)
     json_files = list(outdir.glob("*.json"))
     if json_files:
         shutil.copy2(json_files[0], ojson.local)
 
-    # Tar up all region GenBank files
     gbk_files = list(outdir.glob("*.region*.gbk"))
     if gbk_files:
         with tarfile.open(ogbk.local, "w:gz") as tar:
             for gbk in gbk_files:
                 tar.add(gbk, arcname=gbk.name)
     else:
-        # No BGC regions found — create empty tar
         with tarfile.open(ogbk.local, "w:gz") as tar:
             pass
 

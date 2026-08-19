@@ -1,17 +1,4 @@
 #!/usr/bin/env python3
-"""T1 -- the shared mapping layer every arm reads.
-
-Emits, into vs_gem/refs/ and vs_gem/out/:
-
-  refs/targets_resolved.tsv        every distinct target string -> status + MNXM(s)
-  refs/carbon_resolved.tsv         every distinct carbon string -> MNXM(s)
-  refs/edit_universe.tsv           the pooled add/del reaction universe
-  refs/counterfactual_pool.parquet POOL_N seeded synthetic designs
-  refs/design_index.tsv            one row per real design, with its strata
-  out/panel_coverage.tsv           the coverage waterfall, arms as columns
-
-Run:  python build_refs.py
-"""
 from __future__ import annotations
 
 import json
@@ -57,7 +44,6 @@ def load_overrides(path: Path, tokens: set) -> tuple[dict, dict]:
 
 def resolve_column(r: RN.Resolver, tokens: dict, override_path: Path,
                    sep: str = ";") -> pd.DataFrame:
-    """tokens: {token -> n_obs}. Returns the long resolution table."""
     status_ov, name_ov = load_overrides(override_path, set(tokens))
     rows = []
     for tok in sorted(tokens):
@@ -90,8 +76,6 @@ def token_counts(series: pd.Series, sep: str) -> dict:
                 out[t] = out.get(t, 0) + 1
     return out
 
-
-# ---------------------------------------------------------------------------
 
 def build_edit_universe(s: pd.DataFrame, native: dict) -> pd.DataFrame:
     rows = {}
@@ -132,10 +116,6 @@ def composition(n_add: int, n_del: int) -> str:
 
 def build_pool(s: pd.DataFrame, add_universe: list, del_universe: list,
                n: int = C.POOL_N, seed: int = C.POOL_SEED) -> pd.DataFrame:
-    """Counterfactual designs: sizes drawn from the empirical joint (n_add, n_del)
-    of the real designs, reactions drawn uniformly without replacement from the
-    pooled LASER universe. Seeded once and shared by every arm and by FBA -- if
-    two arms see different designs their p-values are not comparable."""
     rng = np.random.default_rng(seed)
     sizes = list(zip(s.add_rxns.apply(len), s.del_rxns.apply(len)))
     picks = rng.integers(0, len(sizes), size=n)
@@ -193,8 +173,6 @@ def build_design_index(s: pd.DataFrame, native: dict, tgt: pd.DataFrame) -> pd.D
     return pd.DataFrame(rows)
 
 
-# ---------------------------------------------------------------------------
-
 def main():
     df = C.load_extraction()
     native = {h: C.host_native_reactions(h) for h in ("e_coli_k12", "e_coli_dh10b")}
@@ -236,7 +214,6 @@ def main():
         raise AssertionError(
             f"topology_unchanged drifted: {int(idx.topology_unchanged.sum())} want 30")
 
-    # -- coverage waterfall ------------------------------------------------
     universe = r.universe
     rows = []
 

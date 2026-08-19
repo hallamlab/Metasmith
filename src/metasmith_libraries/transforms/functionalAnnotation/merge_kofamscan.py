@@ -1,11 +1,3 @@
-"""merge_kofamscan — gather per-chunk KofamScan CSVs.
-
-kofamscan.py emits `gene_name,KO,thrshld,score,E-value,best` as the single
-header line.
-
-This transform runs no container, so the ExecWithEnv port swept past it. Finding
-it on the old call shape is expected, not an oversight.
-"""
 from metasmith.python_api import *
 
 lib = TransformInstanceLibrary.ResolveParentLibrary(__file__)

@@ -1,4 +1,3 @@
-"""Tests for the metasmith.ops package. Ops are sync, path-driven, and stateless."""
 from __future__ import annotations
 
 from pathlib import Path
@@ -26,11 +25,6 @@ from metasmith.ops import (
 )
 
 from tests.metasmith.e2e.docker.conftest import create_transform_library
-
-
-# ---------------------------------------------------------------------------
-# Fixtures
-# ---------------------------------------------------------------------------
 
 
 @pytest.fixture
@@ -83,11 +77,6 @@ def workspace(tmp_path) -> Path:
     return ws
 
 
-# ---------------------------------------------------------------------------
-# Type ops
-# ---------------------------------------------------------------------------
-
-
 class TestTypeOps:
     def test_list_types(self, mock_types):
         result = op_types.list_types(type_paths=[str(mock_types)])
@@ -138,11 +127,6 @@ class TestTypeOps:
             op_types.create_type_library(str(mock_types))
 
 
-# ---------------------------------------------------------------------------
-# Data ops
-# ---------------------------------------------------------------------------
-
-
 class TestDataOps:
     def test_inspect_library(self, mock_samples):
         r = op_data.inspect_library(str(mock_samples.location))
@@ -158,12 +142,6 @@ class TestDataOps:
         items = op_data.list_items(str(mock_samples.location), type_filter="mock::assembly")
         r = op_data.show_item_lineage(str(mock_samples.location), items[0]["path"])
         assert r["type_name"] == "mock::assembly"
-        # S7: show_item_lineage renders a TRACE-derived lineage tree (json or
-        # mermaid) in `rendered`. AddItem-created items appear as a leaf
-        # (`produced_by.kind == "leaf"`, empty `inputs`) — the AddItem
-        # parents= chain is a manifest-level relationship, not a trace event,
-        # so it is not walked here. Workflow-produced instances have non-empty
-        # `inputs` (covered by tests/flow/test_telemetry.py via the trace API).
         import json
         assert r["format"] == "json"
         assert r["rendered"] is not None
@@ -172,15 +150,6 @@ class TestDataOps:
         assert tree["produced_by"]["kind"] == "leaf"
 
     def test_show_item_lineage_keeps_manifest_parents_and_properties(self, mock_samples):
-        """The declared half of the answer survives alongside the trace half.
-
-        `parents` here is the manifest relationship the user declares and
-        edits -- distinct from the trace-derived ancestor graph in
-        `rendered`, and the only one an input library that has never run
-        can answer. The GUI's orphan detection and parent picker read it,
-        and they fail silently -- an empty list, not an error -- if it
-        goes missing.
-        """
         items = op_data.list_items(str(mock_samples.location), type_filter="mock::assembly")
         r = op_data.show_item_lineage(str(mock_samples.location), items[0]["path"])
 
@@ -191,11 +160,6 @@ class TestDataOps:
         }
 
     def test_show_item_lineage_render_false_skips_the_trace_walk(self, mock_samples):
-        """`render=False` still answers identity and parents, and does not walk.
-
-        List endpoints map this over every item in a library; paying for a
-        trace walk per item is the reason the option exists.
-        """
         items = op_data.list_items(str(mock_samples.location), type_filter="mock::assembly")
         path = items[0]["path"]
 
@@ -221,13 +185,6 @@ class TestDataOps:
         assert rec["dtype"] == "mock_types::assembly"
 
     def test_resync_picks_up_a_type_added_to_an_existing_namespace(self, tmp_path, mock_types):
-        """A namespace the library already knows must still be refreshed.
-
-        `create_library` (and `attach_type_library`'s own default) skip a
-        namespace that already exists, which is exactly what leaves an older
-        workflow unable to see a type added later to a file it already read
-        once. `resync_type_libraries` exists to not do that.
-        """
         lib_path = tmp_path / "new.xgdb"
         op_data.create_library(str(lib_path), type_library_paths=[str(mock_types)])
         lib = DataInstanceLibrary.Load(lib_path)
@@ -241,12 +198,7 @@ class TestDataOps:
         r = op_data.resync_type_libraries(str(lib_path), [str(mock_types)])
         assert "mock_types" in r["type_namespaces"]
         lib = DataInstanceLibrary.Load(lib_path)
-        lib.GetType("mock_types::genome_name")  # no longer raises
-
-
-# ---------------------------------------------------------------------------
-# Transform ops
-# ---------------------------------------------------------------------------
+        lib.GetType("mock_types::genome_name")
 
 
 class TestTransformOps:
@@ -286,11 +238,6 @@ class TestTransformOps:
         assert "echo done" in again["source"]
 
 
-# ---------------------------------------------------------------------------
-# Workflow ops
-# ---------------------------------------------------------------------------
-
-
 class TestWorkflowOps:
     def test_plan_success_persists_task(self, mock_samples, transform_lib, workspace):
         r = op_workflow.plan_workflow(
@@ -314,7 +261,7 @@ class TestWorkflowOps:
         with pytest.raises(AssertionError, match="no samples"):
             op_workflow.plan_workflow(
                 data_library=str(mock_samples.location),
-                sample_type="mock::bam",  # nothing of this type
+                sample_type="mock::bam",
                 target_types=["mock::assembly"],
                 transform_libraries=[str(transform_lib.location)],
                 workspace=str(workspace),
@@ -341,11 +288,6 @@ class TestWorkflowOps:
         key = r["task_key"]
         op_workflow.delete_task(key, workspace=str(workspace))
         assert not (workspace / key).exists()
-
-
-# ---------------------------------------------------------------------------
-# Agent + runtime ops (mocked)
-# ---------------------------------------------------------------------------
 
 
 class TestAgentOps:
@@ -378,8 +320,6 @@ class TestAgentOps:
 
 
 class TestDefaultPreset:
-    """Which nextflow config a run uses when nobody names one."""
-
     def test_the_shipped_presets_are_listed(self):
         assert "local" in op_agent.config_presets()
 
@@ -390,7 +330,6 @@ class TestDefaultPreset:
         assert op_agent.info(str(p))["default_preset"] == "slurm"
 
     def test_saving_without_one_clears_it(self, tmp_path):
-        """A whole-object save means what it does not say, same as globus_uuid."""
         p = tmp_path / "alice.yml"
         op_agent.save_agent(str(p), home_uri=str(tmp_path / "home"),
                             default_preset="slurm")
@@ -398,12 +337,6 @@ class TestDefaultPreset:
         assert op_agent.info(str(p))["default_preset"] is None
 
     def test_a_preset_that_no_longer_exists_says_which(self, tmp_path):
-        """Resolved in one place, so this reaches the CLI, the page and the API.
-
-        Checked before anything is staged or shelled: an agent naming a preset
-        that was removed is a line in someone's yaml, not a metasmith bug, and
-        a bare KeyError several minutes into a launch reads as the latter.
-        """
         from metasmith.agents import Agent
         from metasmith.models.remote import Source
         agent = Agent(home=Source(address=str(tmp_path / "home")),
@@ -460,12 +393,6 @@ class TestRuntimeOps:
         return mload.return_value.RunWorkflow.call_args
 
     def test_the_dry_run_delay_reaches_the_delay_argument(self, planned):
-        """It used to land in `gpus`: the call was one positional short.
-
-        Harmless on a workflow with no GPU step, which is why it went unnoticed
-        -- and a type error from inside the GPU preflight on one that has one.
-        Dry run was simply dead through the CLI, the notebook and the page.
-        """
         agent_path, key, _ = planned
         call = self._run_kwargs(agent_path, key, stub_delay=2.5)
         assert call.kwargs["stub_delay"] == 2.5
@@ -473,7 +400,6 @@ class TestRuntimeOps:
         assert call.args == (key,)
 
     def test_a_numeric_override_key_addresses_one_step(self, planned):
-        """Keys arrive from JSON as strings, and only an int selects a step."""
         agent_path, key, _ = planned
         call = self._run_kwargs(
             agent_path, key,
@@ -486,14 +412,7 @@ class TestRuntimeOps:
 
 
 class TestAgentDefaultParams:
-    """Params an agent carries, and how a run's own layer over them."""
-
     def test_they_round_trip_as_a_mapping(self, tmp_path):
-        """Not through the optional block, which stringifies what it writes.
-
-        A mapping written that way reloads as a quoted Python literal and
-        produces no params at all -- silently, since it is still truthy.
-        """
         p = tmp_path / "alice.yml"
         op_agent.save_agent(
             str(p), home_uri=str(tmp_path / "home"),
@@ -530,23 +449,13 @@ class TestAgentDefaultParams:
         assert agent._resolve_params({"a": 1}) == {"a": 1}
 
     def test_a_params_file_wins_whole(self, tmp_path):
-        """There is nothing to merge into a path, so it is taken verbatim."""
         agent = self._agent(tmp_path, default_params={"acct": "st-you-1"})
         given = Path("/somewhere/params.yml")
         assert agent._resolve_params(given) is given
 
 
 class TestCollect:
-    """The first test of collect that is not a mock.
-
-    A results library publishes its outputs as links into nextflow's work
-    directory, so a verbatim copy is a folder of pointers at a disk the caller
-    does not have.
-    """
-
     def _library(self, tmp_path):
-        """A results-shaped directory: outputs that are links out of the tree,
-        a log directory that is also a link out, and the `latest` alias."""
         work = tmp_path / "work"
         (work / "aa").mkdir(parents=True)
         (work / "aa" / "out.bam").write_text("bam bytes")
@@ -582,34 +491,20 @@ class TestCollect:
         dest = tmp_path / "collected"
         self._collect(tmp_path, results, dest)
         meta = dest / "_metadata"
-        # the log tree crosses once, as real files
         dirs = sorted(p.name for p in meta.glob("logs.*") if p.is_dir() and not p.is_symlink())
         assert dirs == ["logs.20260726"]
         assert (meta / "logs.20260726" / "agent.log").read_text() == "a log line"
-        # and the alias stays an alias, pointing inside the copy rather than at
-        # a path on the agent
         alias = meta / "logs.latest"
         assert alias.is_symlink()
         assert alias.resolve() == (meta / "logs.20260726").resolve()
 
     def test_a_broken_source_link_is_reported(self, tmp_path):
-        """Asked to follow a link with no target, rsync skips the entry.
-
-        So nothing lands and nothing is broken at the destination -- the whole
-        evidence is one stderr line, which is why it has to be picked up rather
-        than left for a walk of the result to notice.
-        """
         results = self._library(tmp_path)
         (tmp_path / "work" / "aa" / "out.bam").unlink()
         dest = tmp_path / "collected"
         out = self._collect(tmp_path, results, dest)
         assert any("out.bam" in d for d in out["dangling"]), out
         assert not (dest / "out.bam").exists()
-
-
-# ---------------------------------------------------------------------------
-# Source ops
-# ---------------------------------------------------------------------------
 
 
 class TestSourceOps:
@@ -635,11 +530,6 @@ class TestSourceOps:
         assert r["exists"] is True
         miss = op_source.exists(str(tmp_path / "missing"))
         assert miss["exists"] is False
-
-
-# ---------------------------------------------------------------------------
-# Workspace resolution
-# ---------------------------------------------------------------------------
 
 
 class TestWorkspace:

@@ -1,5 +1,3 @@
-"""Live: agent runs `metasmith agent save` + `agent deploy` against the
-locally-built container."""
 from __future__ import annotations
 
 import pytest

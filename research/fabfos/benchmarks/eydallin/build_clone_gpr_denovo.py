@@ -40,9 +40,6 @@ import pandas as pd
 
 REPO = Path(__file__).resolve().parents[4]
 HERE = Path(__file__).resolve().parent
-# `src/fabfos/`, not the repo root: the monorepo nested the package one level
-# deeper than the standalone fabfos repo this driver was written in, and the path
-# it kept pointing at does not exist -- so this import has not resolved since.
 sys.path.insert(0, str(REPO / "src" / "fabfos" / "build_references" / "resources" / "buildlib"))
 import bench_universe as bu                                            # noqa: E402
 sys.path.insert(0, str(REPO / "src" / "metasmith_libraries" / "resources" / "lib"))
@@ -58,7 +55,6 @@ HOST = "e_coli_ag1"
 COHORT = "eydallin"
 SOURCE_ORGANISM = "e_coli_w3110"
 LANE_SET = "chosen_4"
-# A cohort table is the host layer's blocks plus the condition each row belongs to.
 EXTENSIONS = ("attribution", "feature", "universe", "cohort")
 
 
@@ -80,7 +76,6 @@ def main() -> int:
     print(f"{hits[0].name}: {len(g):,} rows, {g['orf'].nunique()} ORFs, "
           f"{g['mnxr'].nunique():,} MNXR, lanes {lanes} ({lane_set})")
 
-    # The same universe B1 marked its rows against: the bake's coverage less transport.
     reac_prop = bu.reac_prop_path(METANETX)
     universe, stats = bu.atom_universe(BAKE / "vocab.parquet",
                                        BAKE / "atom_pairs.parquet",
@@ -95,18 +90,12 @@ def main() -> int:
                          f"of this cohort: {unknown[:8]} -- the table was built from a "
                          f"different ORF set")
 
-    # The mapper's own columns ARE the core; this step adds attribution and the
-    # condition each row belongs to, and nothing else.
     df = g.copy()
     df["build_id"] = f"denovo_{COHORT}_" + "+".join(lanes)
     df["host"] = HOST
-    # Not a model: this table's claim is "the lanes infer these reactions from the
-    # clone's sequence", and naming a GEM here would imply one was consulted.
     df["unit_id"] = "clones"
     df["feature_kind"] = "clone_gene"
     df["feature_name"] = df["intermediate_name"]
-    # No boolean rule: a de-novo call is per ORF, and inventing a one-gene rule would
-    # make the two tables look like the same kind of claim.
     df["gpr_rule"] = None
     df["in_atom_universe"] = df["mnxr"].isin(universe)
     df["condition_id"] = COHORT + ":" + df["orf"].astype(str)

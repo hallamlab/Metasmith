@@ -69,20 +69,12 @@ def cmd_eval(args):
         i, n = shard
         mnxrs = [m for m in mnxrs if shard_of(m, n) == i]
         print(f"[eval:{args.member}] shard {i}/{n}: {len(mnxrs):,} reactions", flush=True)
-    # SyntaxError, not only ImportError. dGbyG installs cleanly under python 3.11 and
-    # then fails to PARSE (a same-quote nested f-string, legal from 3.12), so the
-    # unavailable-member path was never reached and the step died instead of degrading.
-    # "The member is not usable in this environment" is one fact however it presents.
     try:
         if args.member == "eq":
             from .thermo_eq import EquilibratorMember as M
         else:
             from .thermo_dgbyg import DgbygMember as M
     except (ImportError, SyntaxError) as e:
-        # --require is for a DEDICATED LANE, whose only product is this table. There, an
-        # unusable member is a failed step; writing an empty table would publish silence
-        # as if it were an answer. Without the flag the tolerant behaviour stands, which
-        # is what a combined step wants: the combiner is defined over whoever spoke.
         if args.require:
             print(f"[eval:{args.member}] UNAVAILABLE in this environment: "
                   f"{type(e).__name__}: {e}", file=sys.stderr, flush=True)
@@ -123,13 +115,6 @@ def cmd_eval(args):
 
 
 def cmd_merge(args):
-    """Concatenate shard tables and REFUSE unless they are exactly the universe.
-
-    This is the shards' completeness proof, and it is why this lane needs no sidecar. The
-    two ways a fan-out goes wrong are a shard that died and a shard count that changed
-    under a resume, and both present the same way here: the union of what came back is
-    not the set that was asked about. Naming the difference is the whole job.
-    """
     files = sorted(args.shard_file)
     if len(files) != args.expect:
         print(f"[merge:{args.member}] expected {args.expect} shard tables, found "

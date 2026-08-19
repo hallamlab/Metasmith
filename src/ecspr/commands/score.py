@@ -1,4 +1,3 @@
-"""``ecspr score`` -- delta, z, percentile rank, and the null-vs-control gate."""
 from __future__ import annotations
 
 from pathlib import Path

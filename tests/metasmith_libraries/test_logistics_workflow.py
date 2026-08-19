@@ -1,14 +1,3 @@
-"""
-End-to-end tests for logistics transforms.
-
-Tests for: getNcbiAssembly, getNcbiSra
-
-These tests verify that data retrieval workflows can be:
-1. Generated (workflow planning)
-2. Staged to the agent
-3. Executed via local Docker
-4. Successfully download data from NCBI
-"""
 import pytest
 import time
 from pathlib import Path
@@ -30,7 +19,6 @@ from conftest import (
 
 @pytest.fixture(scope="module")
 def logistics_transforms(mlib):
-    """Load logistics transforms."""
     return [
         TransformInstanceLibrary.Load(mlib / "transforms/logistics"),
     ]
@@ -38,11 +26,8 @@ def logistics_transforms(mlib):
 
 @pytest.fixture
 def sra_input(tmp_inputs):
-    """Create input library with SRA accession."""
     inputs = tmp_inputs(["ncbi.yml", "sequences.yml"])
 
-    # Use a small SRA accession for testing
-    # SRR5585544 is a small dataset
     meta = inputs.AddValue(
         "reads_metadata.json",
         {"parity": "single", "length_class": "short"},
@@ -61,7 +46,6 @@ def sra_input(tmp_inputs):
 
 @pytest.fixture
 def assembly_accession_input(tmp_inputs):
-    """Create input library with NCBI assembly accession."""
     inputs = tmp_inputs(["ncbi.yml", "sequences.yml"])
 
     # Use a small bacterial assembly for testing. The accession descends from
@@ -74,7 +58,7 @@ def assembly_accession_input(tmp_inputs):
     )
     inputs.AddValue(
         "GCF_000005845.acc",
-        "GCF_000005845.2",  # E. coli K-12 reference
+        "GCF_000005845.2",
         "ncbi::assembly_accession",
         parents={name},
     )
@@ -84,12 +68,9 @@ def assembly_accession_input(tmp_inputs):
 
 
 class TestLogisticsWorkflowGeneration:
-    """Tests for workflow generation (planning only)."""
-
     def test_can_plan_sra_download_workflow(
         self, agent, base_resources, logistics_transforms, sra_input
     ):
-        """Verify workflow generation for SRA download."""
         targets = TargetBuilder()
         targets.Add("sequences::reads")
 
@@ -106,7 +87,6 @@ class TestLogisticsWorkflowGeneration:
     def test_can_plan_assembly_download_workflow(
         self, agent, base_resources, logistics_transforms, assembly_accession_input
     ):
-        """Verify workflow generation for NCBI assembly download."""
         targets = TargetBuilder()
         targets.Add("sequences::assembly")
 
@@ -123,16 +103,9 @@ class TestLogisticsWorkflowGeneration:
 @pytest.mark.slow
 @pytest.mark.network
 class TestLogisticsWorkflowExecution:
-    """
-    Full E2E tests that execute workflows via Docker.
-
-    These tests require network access to NCBI.
-    """
-
     def test_sra_download_e2e(
         self, agent, base_resources, logistics_transforms, sra_input
     ):
-        """Full E2E test: stage, run SRA download, verify reads."""
         targets = TargetBuilder()
         targets.Add("sequences::reads")
 
@@ -171,7 +144,6 @@ class TestLogisticsWorkflowExecution:
     def test_assembly_download_e2e(
         self, agent, base_resources, logistics_transforms, assembly_accession_input
     ):
-        """Full E2E test: stage, run assembly download, verify FASTA."""
         targets = TargetBuilder()
         targets.Add("sequences::assembly")
 

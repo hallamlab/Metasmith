@@ -52,5 +52,4 @@ def test_resolve_preserves_insertion_order():
     b = tb.Add("ns::b", parents={a})
     c = tb.Add("ns::c", parents={a, b})
     specs = tb.resolve()
-    # parents always precede their dependents (guaranteed by handle-based API)
     assert specs.index(a) < specs.index(b) < specs.index(c)

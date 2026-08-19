@@ -68,7 +68,6 @@ def _int(v):
 
 
 def from_worklist(worklist: Path) -> list:
-    """The whole-reaction class: every row the adjudication admits to a member."""
     wl = pd.read_parquet(worklist, columns=["mnxr", "verdict", "rxn_smiles",
                                             "atoms", "chars", "atoms_collapsed",
                                             "chars_collapsed", "collapsed"])
@@ -88,7 +87,6 @@ def from_worklist(worklist: Path) -> list:
 
 
 def from_rescue(rescued: Path | None) -> list:
-    """The completed class: reactions a curated structure made mappable at all."""
     if rescued is None or not Path(rescued).exists():
         return []
     rs = pd.read_parquet(rescued)
@@ -100,14 +98,6 @@ def from_rescue(rescued: Path | None) -> list:
 
 
 def from_partial(partial: Path | None) -> list:
-    """The reduced class: one submission per (reaction, element) the forecast offered.
-
-    ITS PARTICIPANT LISTS TRAVEL WITH IT and the two whole classes' do not. That is not an
-    inconsistency: the extractor re-derives a whole reaction's participants from the
-    equation and gets the right answer, while a reduction's participants are deliberately
-    fewer than the equation's, so re-deriving them would compare a reduced map against a
-    full template and refuse every one as `stripped`.
-    """
     if partial is None or not Path(partial).exists():
         return []
     pu = pd.read_parquet(partial)
@@ -120,7 +110,6 @@ def from_partial(partial: Path | None) -> list:
 
 
 def assemble(worklist: Path, rescued: Path | None, partial: Path | None):
-    """`(rows, tally)` -- the three classes concatenated, keys asserted unique."""
     rows = from_worklist(worklist) + from_rescue(rescued) + from_partial(partial)
     tally = Counter(r[-1] for r in rows)
 

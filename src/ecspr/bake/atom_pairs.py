@@ -88,16 +88,6 @@ RDLogger.DisableLog("rdApp.*")
 
 ELEMENTS = ("C", "N", "S", "P")
 
-# MUST BE THE REGEX THAT BUILT THE MAPPED SMILES, CHARACTER FOR CHARACTER.
-# `19b_rxnmapper_universe.py:33` reads the equation with exactly this pattern and
-# emits one SMILES fragment per match. If this regex matches a token that one did
-# not, the template count and the metabolite count disagree for every reaction
-# carrying that token, and the reaction is refused as `stripped` -- not because its
-# chemistry is unbalanced, but because two regexes disagreed. That is precisely what
-# happened: this pattern used to read `MNXM\d+|MNXM\w+|WATER|BIOMASS` without the
-# `@compartment` suffix, and `WATER`/`BIOMASS` are not MNXM tokens, so the builder
-# never wrote a fragment for them. 19,930 reactions -- 34.6% of the universe -- were
-# discarded on that mismatch alone.
 EQ_TERM = re.compile(r"(\d+(?:\.\d+)?)\s+(MNXM\w+)@\w+")
 
 PAIR_COLS = ("mnxr", "element", "substrate", "product", "n_atoms",
@@ -105,12 +95,7 @@ PAIR_COLS = ("mnxr", "element", "substrate", "product", "n_atoms",
 STATUS_COLS = ("mnxr", "status", "n_sub", "n_prod", "n_mapped_sub", "n_mapped_prod")
 
 
-# =====================================================================
-# MetaNetX side (same derivation the unifier uses)
-# =====================================================================
-
 def canon_smiles(smi: str):
-    """Canonical SMILES with atom-map numbers stripped."""
     if not smi:
         return None
     try:
@@ -142,8 +127,6 @@ def load_mnxm_smiles(chem_prop: Path, want: set) -> dict:
 
 
 def load_mnxm_formulas(chem_prop: Path, want: set) -> dict:
-    """mnxm -> curated formula. Formulas exist for metabolites that have no SMILES, and
-    they are what makes a conservation argument possible without a structure."""
     out = {}
     with open(chem_prop) as fh:
         for line in fh:
@@ -170,7 +153,6 @@ def load_equations(reac_prop: Path, want: set) -> dict:
 
 
 def parse_equation(eq: str):
-    """(substrates, products), each with multiplicity, in equation order."""
     if "=" not in eq:
         return None
     lhs, rhs = eq.split("=", 1)
@@ -187,14 +169,6 @@ def parse_equation(eq: str):
 
 
 def frag_keys(mol):
-    """(canonical SMILES, InChIKey connectivity block) for one template fragment.
-
-    Both keys are computed HERE, from the fragment, by the same code path the
-    metabolite side uses -- never read off MetaNetX's own InChIKey column. MetaNetX's
-    InChIKey and its SMILES are two independent records of the same compound and they
-    do not always agree about protonation; comparing a computed key against a
-    published one turns that disagreement into a failed match.
-    """
     m2 = Chem.Mol(mol)
     for a in m2.GetAtoms():
         a.SetAtomMapNum(0)
@@ -217,43 +191,6 @@ def frag_keys(mol):
 
 
 def match_mols(mols: list, mnxms: list, canon: dict, conn: dict = None):
-    """Canonical-SMILES match, aligned with `mols`, returning WEIGHTED name candidates.
-
-    Each template position gets the list of DISTINCT MNXMs whose canonical SMILES it
-    matches, each at weight 1/k (k = number of distinct candidates). k == 1 is the
-    ordinary confident case, weight 1.0. Also returns whether any position was diluted
-    (k > 1). Unmatched positions get an empty list.
-
-    WHY WEIGHTS RATHER THAN A GREEDY PICK, AND WHY NOT A REFUSAL. When two DISTINCT MNXMs
-    share a canonical SMILES the naming is genuinely ambiguous -- a greedy `pop(0)` picked
-    arbitrarily between different metabolites, and the previous version REFUSED the whole
-    reaction (`ambiguous_duplicate`) rather than choose. Both are wrong for the same
-    reason forced n > 1 was: a pick fabricates an identity, a refusal is a gap, and the
-    contract is dilute-not-gap. Emitting each candidate at 1/k is the doubly-stochastic
-    marginal of the uniform distribution over valid namings -- the honest "it is one of
-    these k, we cannot say which," spread as weight instead of collapsed to a guess or a
-    hole.
-
-    THE SAME MNXM TWICE IS NOT AMBIGUOUS. `parse_equation` expands stoichiometry, so
-    `2 H2O` arrives as `[M, M]`; the pool is `[M, M]` but the distinct-candidate set is
-    `{M}`, k == 1, weight 1.0 -- no dilution. Only `len(set(v)) > 1` is a real ambiguity.
-    Measured: 3,212 of 3,255 old `ambiguous_duplicate` refusals (98.7%) were this
-    self-inflicted case; the remaining 43 are the ones now diluted rather than dropped.
-
-    THE CONNECTIVITY FALLBACK, AND WHY IT IS NOT A LOOSENING. A canonical-SMILES match
-    is an identity test that also tests protonation and tautomer, and MetaCyc and
-    MetaNetX routinely disagree about both while agreeing completely about which
-    molecule they mean. `TIER4_FREEZE` named the fix -- match on the InChIKey
-    CONNECTIVITY layer -- and recorded it as never attempted; this is that. It is tried
-    only where the exact match already missed, so nothing that matched before matches
-    differently now.
-
-    It is genuinely weaker in one way and the dilution machinery already covers it: two
-    DISTINCT MetaNetX ids can share a connectivity block (a protonation pair, or the two
-    epimers an epimerase interconverts). Then the position has k > 1 candidates and is
-    emitted at 1/k -- the same honest spread a shared canonical SMILES gets, for the
-    same reason.
-    """
     pool = defaultdict(list)
     kpool = defaultdict(list)
     for m in mnxms:
@@ -264,7 +201,6 @@ def match_mols(mols: list, mnxms: list, canon: dict, conn: dict = None):
             k = conn.get(m)
             if k:
                 kpool[k].append(m)
-    # distinct candidates per key -- the same metabolite twice is one candidate
     cand = {cs: sorted(set(v)) for cs, v in pool.items()}
     kcand = {k: sorted(set(v)) for k, v in kpool.items()}
     diluted = any(len(v) > 1 for v in cand.values())
@@ -273,12 +209,6 @@ def match_mols(mols: list, mnxms: list, canon: dict, conn: dict = None):
         if mol is None:
             out.append([])
             continue
-        # Sanitize for the same reason `canonical_ranks` does, plus one specific to
-        # here: `canon` was built by `canon_smiles` via `MolFromSmiles`, which
-        # sanitizes. Canonicalising an UNSANITIZED template produces a string that can
-        # differ from the sanitized one for the very same molecule, so the lookup misses
-        # and the metabolite goes unnamed -- silently dropping its pairs. Both sides of
-        # this comparison must be perceived the same way.
         cs, k = frag_keys(mol)
         c = cand.get(cs) if cs else None
         if not c and conn and k:
@@ -294,17 +224,6 @@ def match_mols(mols: list, mnxms: list, canon: dict, conn: dict = None):
 
 
 def multiplicity_dilution(named: list, mnxms: list):
-    """Scale each position's weights so no metabolite is claimed more often than the
-    equation says it appears.
-
-    Only reachable once template count is allowed to differ from participant count.
-    Two templates can then both name metabolite M -- correct when M has stoichiometry
-    2, and an over-claim when M appears once and the second template is a protonation
-    variant that is not a MetaNetX participant at all. Neither case is distinguishable
-    from here, so neither is chosen: M's total claim is capped at its multiplicity and
-    spread over the claimants, which is a confident pairing when the counts agree and a
-    dilution when they do not.
-    """
     mult = Counter(mnxms)
     claims = Counter()
     for cands in named:
@@ -317,41 +236,10 @@ def multiplicity_dilution(named: list, mnxms: list):
             True)
 
 
-# =====================================================================
-# The pairing itself -- the two lines the unifier throws away
-# =====================================================================
-
 def canonical_ranks(mol):
-    """Atom -> canonical rank, invariant to how this reaction happened to write it.
-
-    THIS IS LOAD-BEARING, AND THE OBVIOUS THING IS WRONG. `a.GetIdx()` is the index
-    within THIS reaction's template molecule, and the same metabolite is not written
-    the same way in every reaction. Measured over the mapper universe: 248 of 847
-    carbon-bearing metabolites that appear in more than one reaction have
-    INCONSISTENT idx -> canonical-rank mappings. Pyruvate (MNXM23) alone shows up
-    with 3 distinct atom orderings across 63 reactions.
-
-    So `(metabolite, GetIdx())` is not an atom -- it is a different atom depending on
-    which reaction you read it from, and a graph keyed on it silently welds unrelated
-    atoms together and splits identical ones apart. `CanonicalRankAtoms` is invariant
-    to input ordering by construction, so `(metabolite, rank)` IS an atom.
-
-    SANITIZE FIRST, ALWAYS. Templates come off `ReactionFromSmarts` unsanitized, so
-    ring info and implicit valence are unset and `CanonicalRankAtoms` raises
-    "Pre-condition Violation". That refusal was reported as `unrankable` and cost
-    10,576 reactions (18.4% of the universe); sanitizing rescues 300/300 sampled.
-
-    It must be unconditional, not a fallback. Sanitization perceives aromaticity, and
-    canonical ranks depend on it -- so ranking some molecules sanitized and others raw
-    would give one metabolite two rank systems and break `(met, rank)` exactly the way
-    `GetIdx()` did. Doing it always also NORMALISES the kekulized-vs-aromatic spellings
-    the mapper emits for the same molecule, which makes ranks agree across reactions
-    that would otherwise disagree. If sanitization fails the molecule is genuinely
-    unrankable and is refused.
-    """
     m2 = Chem.Mol(mol)
     for a in m2.GetAtoms():
-        a.SetAtomMapNum(0)          # map numbers are per-reaction; they'd poison the rank
+        a.SetAtomMapNum(0)
     try:
         Chem.SanitizeMol(m2)
         return list(Chem.CanonicalRankAtoms(m2, breakTies=True))
@@ -359,19 +247,10 @@ def canonical_ranks(mol):
         return None
 
 
-# PUBLIC because `aam.recount` needs the same tokenisation to read the countable core of
-# a `*` formula. There is one of these in the tree; a second one drifting is how the
-# balance test and the count it tests stopped meaning the same thing.
 FORMULA_TERM = re.compile(r"([A-Z][a-z]?)(\d*)")
 
 
 def count_element(formula: str, X: str):
-    """Atoms of element X in a MetaNetX formula; None when it cannot be trusted.
-
-    Untrustworthy means absent, a `*` polymer/R-group, or nested groups -- an unknown
-    count can never license a forced pairing, so None must propagate to a refusal
-    rather than to a zero.
-    """
     if not formula or not isinstance(formula, str) or formula.strip() in ("", "*"):
         return None
     if "*" in formula or "(" in formula or ")" in formula:
@@ -387,46 +266,6 @@ def count_element(formula: str, X: str):
 
 
 def forced_pairs(sub_mnxms: list, prod_mnxms: list, formulas: dict, ranks_of: dict):
-    """Pairs that CONSERVATION forces, for reactions the mapper could not read.
-
-    WHY THIS EXISTS. `no_mapping` was reported as a mapper outcome. It is not: every one
-    of those 2,515 reactions has a buildable reaction SMILES and an EMPTY mapping,
-    because RXNMapper's transformer accepts at most 512 tokens and these are the long
-    ones -- median SMILES length 983 against the universe's 268, 97.5% over 400 chars.
-    It is a context-window limit on a neural model, and it eats a BIASED sample: the
-    reactions with the most and largest cofactors. `3 NADPH + 3 NADP+` blows the limit
-    while contributing no sulfur at all.
-
-    That bias is what makes this fallback sound. For a single element X most of a long
-    reaction is irrelevant, and when exactly one substrate and one product carry X, with
-    equal counts, conservation leaves exactly one possibility. This does not GUESS the
-    pairing; it is the only pairing that exists.
-
-    WHEN n == 1, one X atom on each side, there is a unique bijection and nothing is
-    chosen: the pair is emitted at weight 1.0.
-
-    WHEN n > 1 the metabolite pairing is still forced but the ATOM correspondence is not
-    -- which of a substrate's 5 carbons becomes which of a product's 5. This used to be
-    REFUSED, on the reasoning that picking one pairing (by rank order, say) would
-    fabricate the very atom identity this graph is built to respect. That reasoning is
-    right about PICKING and wrong about REFUSING: a refusal is a gap, and the model's
-    stated contract is dilute-not-gap. So instead of picking one and instead of dropping
-    the reaction, every candidate source->product pairing is emitted DILUTED by the
-    fanout n -- each source atom spreads a total weight of 1.0 over its n candidate
-    destinations (weight 1/n each). This is the doubly-stochastic completion, the
-    maximum-entropy statement of "we know the metabolites transfer n atoms but not which
-    maps to which": rows and columns of the n x n candidate matrix each sum to 1.0, so
-    the per-atom margin is exactly a confident pairing's and O(n^2) edges are added, not
-    the O(n!) of enumerating bijections. Nothing is fabricated because nothing is chosen;
-    the uncertainty is represented as spread weight, which is what the graph then dilutes.
-
-    The single case where MNXR104650 (sulfite reductase, `H2S + 3 NADP+ + 3 H2O = 4 H+ +
-    sulfite + 3 NADPH`) severs sulfate from cysteine is exactly the n == 1 shape: one S
-    in, one S out, three NADPH carrying none.
-
-    Each emitted correspondence is a triple `(sub_rank, prod_rank, weight)`; the weight is
-    the fanout dilution the atom graph multiplies onto the reaction's evidence E_r.
-    """
     out = {}
     for X in ELEMENTS:
         sx, px = [], []
@@ -449,26 +288,12 @@ def forced_pairs(sub_mnxms: list, prod_mnxms: list, formulas: dict, ranks_of: di
         sr, pr = ranks_of.get((sm, X)), ranks_of.get((pm, X))
         if not sr or not pr or len(sr) != sn or len(pr) != pn:
             continue
-        w = 1.0 / sn                      # fanout dilution; n == 1 -> 1.0 (unique pairing)
+        w = 1.0 / sn
         out[(X, sm, pm)] = [(a, b, w) for a in sr for b in pr]
     return out
 
 
 def distinct_structures(mnxms: list, smiles_of: dict) -> int:
-    """How many components a side has once each distinct structure is written once.
-
-    The count `aam.worklist.collapse` produces, arrived at from the participant list
-    rather than from the string -- so the extractor can recognise a collapsed reaction
-    without the worklist having to hand it a flag, and the threshold logic stays in one
-    file. Keyed on the RAW SMILES, the same strings the reaction string was built from:
-    re-canonicalising here would merge tautomer pairs the builder wrote separately and
-    make this count too small.
-
-    A participant with no SMILES counts as its own component. It cannot appear in a
-    reaction string at all -- the lookup builder refuses to build one and the reaction
-    is blocked -- so this is defensive, and it errs toward the expanded count, which
-    means a refusal rather than an admission.
-    """
     seen, n = set(), 0
     for m in mnxms:
         s = smiles_of.get(m)
@@ -480,35 +305,6 @@ def distinct_structures(mnxms: list, smiles_of: dict) -> int:
 
 
 def reduce_for_element(sub_mnxms: list, prod_mnxms: list, formulas: dict, X: str):
-    """The same reaction with only the participants that carry element X.
-
-    WHY A REDUCTION IS SOUND AND A STRIP IS NOT. `pairs_from_mapped`'s `stripped` guard
-    exists because dropping a molecule makes the mapper re-route ITS atoms onto whatever
-    remains. That cannot happen here: an atom of X cannot come from a participant
-    carrying no X, so removing the X-free participants removes no possible source and no
-    possible destination for an X atom. Only X's pairs are read out of the result; the
-    other elements' maps in a reduced submission are discarded unread, because for them
-    the reduction IS a strip.
-
-    WHY IT IS WORTH DOING. RXNMapper's transformer takes 512 tokens and the reactions it
-    returns nothing for are the long ones -- median SMILES length 983 against the
-    universe's 268. That is a context-window limit eating a BIASED sample: the reactions
-    with the most and largest cofactors. `3 NADPH + 3 NADP+` blows the limit while
-    contributing no sulfur at all, so for a single element most of a long reaction is
-    irrelevant and the reduced submission is small.
-
-    THE BALANCE IS THE ADMISSION TEST, and it is arithmetic over MetaNetX formulas. X
-    must balance across the KEPT set -- if it does not, some X is entering or leaving
-    through a participant this reduction dropped, which is exactly the re-routing the
-    guard above refuses. `count_element` returns None for anything it cannot trust (a
-    `*` polymer, a nested group, an absent formula) and None propagates to a REFUSAL
-    here, never to a zero: a formula read as "carries no X" would let the reduction
-    certify a balance it never checked.
-
-    Returns `(kept_subs, kept_prods)` with stoichiometry preserved, or None. Both sides
-    must be non-empty: a reduction with nothing on one side is not a reaction, and a
-    reaction where X only appears on one side is unbalanced by definition.
-    """
     keep_s, keep_p, n_s, n_p = [], [], 0, 0
     for side, keep, ms in ((0, keep_s, sub_mnxms), (1, keep_p, prod_mnxms)):
         for m in ms:
@@ -529,39 +325,6 @@ def reduce_for_element(sub_mnxms: list, prod_mnxms: list, formulas: dict, X: str
 def pairs_from_mapped(mapped_smi: str, sub_mnxms: list, prod_mnxms: list,
                       canon: dict, conn: dict = None, align: str = "strict",
                       collapsed_counts: tuple | None = None):
-    """(pairs, status). pairs: {(element, sm, pm) -> [(sub_rank, prod_rank)]}.
-
-    The atom identifiers are CANONICAL RANKS within each metabolite's own molecule,
-    not RDKit template indices -- see `canonical_ranks`. That is what makes
-    `(metabolite, rank)` a well-defined node across reactions, which is the whole
-    premise of the atom graph.
-
-    `align` DECIDES WHO WROTE THE SMILES, and that is the only thing it decides.
-
-      "strict"      -- WE built this reaction SMILES, from the equation, one fragment
-                       per participant. The template count therefore MUST equal the
-                       participant count, and a mismatch means a molecule went missing
-                       before mapping and the mapper re-routed its atoms onto whatever
-                       was left. The counts survive that; the pairs do not. Refuse.
-    `collapsed_counts` is the per-side count of DISTINCT structures, and it is the
-    second template count strict mode will accept -- see the guard below. It is the
-    caller's to compute because only the caller holds the metabolite-to-SMILES map the
-    reaction string was built from, and computing it here from `canon` would compare a
-    re-canonicalised structure against a raw one and disagree on the tautomer cases.
-
-      "structural"  -- a FOREIGN database wrote it, over its OWN participant set. The
-                       counts are then expected to differ and carry no information:
-                       MetaCyc writes the water that MetaNetX leaves implicit and omits
-                       the proton MetaNetX lists. Naming is by structure, unmatched
-                       templates contribute nothing, and over-claims are diluted by
-                       `multiplicity_dilution`.
-
-    Applying "strict" to MetaCyc is what made 9,173 of 16,526 curated records (55.5%)
-    refuse as `stripped` -- the single largest loss in the whole lane, and not a
-    chemistry verdict at all. Applying "structural" to a member whose SMILES we built
-    would throw away a real guard, which is why this is a parameter and not a default
-    change.
-    """
     if not mapped_smi or pd.isna(mapped_smi):
         return {}, "no_mapping"
     try:
@@ -576,19 +339,6 @@ def pairs_from_mapped(mapped_smi: str, sub_mnxms: list, prod_mnxms: list,
     sub_mols = [rxn.GetReactantTemplate(i) for i in range(n_sub_t)]
     prod_mols = [rxn.GetProductTemplate(j) for j in range(n_prod_t)]
 
-    # ATOM-UNBALANCED: a molecule was dropped before mapping (no SMILES for a
-    # generic), so the mapper re-routed orphan atoms onto whatever remained. The
-    # counts survive that; the pairs do not. Only meaningful when WE built the SMILES
-    # -- see `align` in the docstring.
-    #
-    # TWO ACCEPTABLE COUNTS, and the guard is not weakened by having both. A reaction
-    # the worklist collapsed carries one component per DISTINCT structure per side, so
-    # its template count is the collapsed count rather than the expanded one -- and a
-    # count check that knew only the expanded number would refuse every reaction the
-    # collapse rescued, which is the whole population this exists to admit.
-    # `collapsed_counts` is the caller's per-side distinct count, computed from the
-    # SAME metabolite-to-SMILES map the reaction string was built from. Neither
-    # matching is still a refusal: a genuinely stripped reaction matches nothing.
     if align == "strict":
         exact = (n_sub_t == len(sub_mnxms) and n_prod_t == len(prod_mnxms))
         as_collapsed = (collapsed_counts is not None
@@ -596,19 +346,6 @@ def pairs_from_mapped(mapped_smi: str, sub_mnxms: list, prod_mnxms: list,
         if not (exact or as_collapsed):
             return {}, "stripped"
 
-    # WEIGHTED name candidates per template. A shared-canonical-SMILES ambiguity is
-    # DILUTED across its candidates (weight 1/k), not refused -- see `match_mols`.
-    #
-    # ORIENTATION IS A CONVENTION, NOT A FACT, and the two databases do not share it.
-    # MetaNetX writes MNXR100060 as `NAD+ + 2 H+ + glycolate = glycolaldehyde + NADH`;
-    # MetaCyc writes the same reaction as `glycolaldehyde + H2O >> glycolate`. Named in
-    # the given orientation, EVERY template misses -- which is what "nothing named on
-    # either side" was, in 2,451 of 2,500 sampled `no_pairs` reactions. So in structural
-    # mode both orientations are named and the one that names more templates wins.
-    #
-    # The emitted pair is always in METANETX orientation, because that is what
-    # `direction.parquet` is keyed against: reading a MetaCyc-oriented pair against a
-    # MetaNetX-oriented ratio would reverse the edge silently.
     if align == "structural":
         fwd_s, a_s = match_mols(sub_mols, sub_mnxms, canon, conn)
         fwd_p, a_p = match_mols(prod_mols, prod_mnxms, canon, conn)
@@ -618,9 +355,6 @@ def pairs_from_mapped(mapped_smi: str, sub_mnxms: list, prod_mnxms: list,
         n_rev = sum(1 for x in rev_s if x) + sum(1 for x in rev_p if x)
         flipped = n_rev > n_fwd
         if flipped:
-            # MetaCyc's product molecules ARE MetaNetX's substrates. Swap the roles
-            # rather than the names: the atom map still says which atom went where, so
-            # reading the reaction from the other end is all that is needed.
             sub_mols, prod_mols = prod_mols, sub_mols
             sub_named, prod_named = rev_s, rev_p
             amb_s, amb_p = b_s, b_p
@@ -639,7 +373,6 @@ def pairs_from_mapped(mapped_smi: str, sub_mnxms: list, prod_mnxms: list,
     if any(r is None for r in sub_ranks) or any(r is None for r in prod_ranks):
         return {}, "unrankable"
 
-    # atom-map number -> (which substrate template, CANONICAL RANK, element)
     sub_index = {}
     for i, mol in enumerate(sub_mols):
         for a in mol.GetAtoms():
@@ -667,10 +400,6 @@ def pairs_from_mapped(mapped_smi: str, sub_mnxms: list, prod_mnxms: list,
             if not sub_cands or not prod_cands:
                 continue
             p_rank = prod_ranks[j][a.GetIdx()]
-            # THE LINE THE UNIFIER DOES NOT WRITE: keep the pair, not two counts. When
-            # a side is name-ambiguous the pair is emitted once per candidate naming at
-            # the product of the two sides' dilution weights, so the atom's transfer is
-            # spread over the candidates rather than picked or dropped.
             for sm, ws in sub_cands:
                 for pm, wp in prod_cands:
                     pairs[(el, sm, pm)].append((s_rank, p_rank, ws * wp))
@@ -679,43 +408,12 @@ def pairs_from_mapped(mapped_smi: str, sub_mnxms: list, prod_mnxms: list,
     return dict(pairs), ("ambiguous_diluted" if (amb_s or amb_p) else "ok")
 
 
-# =====================================================================
-# Driver
-# =====================================================================
-
 def load_placeholders(path: Path):
-    """mnxm -> smiles for generics that were stood in for (see ecspr_aam_rescue).
-
-    These exist so the mapper could see a sane reaction. They are NOT metabolites: their
-    atoms must never become graph nodes, or `(met, rank)` would name an atom of a
-    molecule that does not exist. The SMILES are needed anyway, because `match_mols`
-    names fragments by canonical SMILES -- without them the placeholder fragment goes
-    unnamed, the template count stops matching the equation's, and the reaction is
-    refused as `stripped`.
-    """
     d = pd.read_csv(path, sep="\t")
     return dict(zip(d.mnxm, d.smiles))
 
 
 def load_resolved(path: Path):
-    """mnxm -> curated smiles for metabolites whose structure `ecspr_aam_rescue` supplied.
-
-    THE OPPOSITE OF A PLACEHOLDER, and they must not be confused. A placeholder is named
-    here so its fragment matches, and then SUPPRESSED so its invented atoms never reach the
-    graph. A resolved metabolite is the metabolite: its structure was missing from
-    MetaNetX and a curated row asserted it, so its atoms are real and MUST become nodes --
-    suppressing a sulfur carrier's S would kill precisely the edge the curation exists to
-    license.
-
-    Hence there is no filter to go with this. These simply join the SMILES map and take the
-    ordinary path, which is the whole point: a metabolite with a structure is what this
-    module already knows how to handle.
-    """
-    # `#` is a comment ONLY at line start. An inline `comment="#"` truncates any curated
-    # SMILES that contains a `#` triple bond (nitrile C#N, alkyne C#C) -- silently dropping
-    # exactly the rows a curator most needs to supply. Filter full-line comments and parse
-    # the remainder, so a `#` inside a field survives. Mirrors `ecspr_aam_rescue`, which
-    # reads the same crosswalk: the two must not disagree about what a row says.
     from io import StringIO
     _kept = [ln for ln in Path(path).read_text().splitlines() if not ln.lstrip().startswith("#")]
     d = pd.read_csv(StringIO("\n".join(_kept)), sep="\t")
@@ -723,12 +421,6 @@ def load_resolved(path: Path):
 
 
 def load_balance(path: Path):
-    """(mnxr, element) -> whether the CONCRETE atoms balance.
-
-    A placeholder asserts its carrier is conserved for an element. `ecspr_aam_rescue`
-    tests that per reaction and per element rather than trusting it; this applies the
-    verdict. Absent from the table (an ordinary universe reaction) means no filter.
-    """
     d = pd.read_csv(path, sep="\t")
     return {(r.mnxr, r.element): bool(r.balanced) for r in d.itertuples(index=False)}
 
@@ -751,9 +443,6 @@ def cmd_extract(args):
     if res:
         print(f"[atom-pairs] {len(res):,} curated structures (atoms KEPT -- they are the "
               f"metabolite's own)", flush=True)
-        # A metabolite cannot be both scaffolding and real. If one were in both maps the
-        # suppression filter would silently delete the very pairs the curation licensed,
-        # and the payoff would read as zero with nothing to show why.
         both = set(ph) & set(res)
         if both:
             raise SystemExit(f"[atom-pairs] {sorted(both)} are both placeheld and "
@@ -764,23 +453,7 @@ def cmd_extract(args):
         print(f"[atom-pairs] {len(bal):,} (rxn, element) balance verdicts; "
               f"{nbad:,} refused as unbalanced", flush=True)
 
-    # THE PARTIAL LANE BRINGS ITS OWN PARTICIPANT LISTS, and that is the whole coupling.
-    # Its submissions are ELEMENT REDUCTIONS -- the X-free participants are gone on
-    # purpose -- so re-deriving the lists from `reac_prop` would hand every one of them
-    # the full equation, and the strict guard would call every one `stripped`. Reading
-    # the lists the reduction actually made is also what keeps the reduction logic in
-    # one file: this side never has to know how a submission was chosen.
-    # PER ROW, NOT PER RUN, and that is the change one universe forced. The submission
-    # table now carries all three classes at once, so the same extraction must give a
-    # whole reaction its equation-derived template and a reduced one the shorter list the
-    # reduction actually made. `element` is the discriminator: it is null for the two
-    # whole classes and names the one element a reduced submission is read for.
     partial_of = {}
-    # WHICH CLASS OF SUBMISSION EACH PAIR ROW ANSWERS, carried out of here on the row
-    # itself. With three classes in one member's table it is not recoverable afterwards:
-    # a reaction can be submitted whole AND as a carbon reduction, and both produce
-    # (mnxr, C) rows. The layer stack partitions on this, and a partial map claiming a
-    # layer a full map should have held is the one thing the stack exists to prevent.
     class_of = {}
     if args.universe:
         pu = pd.read_parquet(args.universe)
@@ -815,9 +488,6 @@ def cmd_extract(args):
 
     raw = load_mnxm_smiles(Path(args.chem_prop), want)
     raw.update({m: s for m, s in ph.items() if m in want})
-    # Curated structures join the SAME map chem_prop's do -- they ARE structures, supplied
-    # where MetaNetX had none. Everything downstream (canon, match_mols, canonical_ranks,
-    # the pairs) then treats them as the ordinary metabolites they are.
     raw.update({m: s for m, s in res.items() if m in want})
     canon, conn = {}, {}
     for m, smi in raw.items():
@@ -835,10 +505,6 @@ def cmd_extract(args):
     formulas, ranks_of = {}, {}
     if args.fallback_forced:
         formulas = load_mnxm_formulas(Path(args.chem_prop), want)
-        # The rank of a metabolite's sole X atom, taken from ITS OWN canonical molecule
-        # -- never from a reaction template, which is per-reaction and unstable (see
-        # `canonical_ranks`). This is the same rank system the mapped path emits, so a
-        # forced pair and a mapped pair name the same node.
         for m, smi in raw.items():
             mol = Chem.MolFromSmiles(smi)
             if mol is None:
@@ -874,12 +540,6 @@ def cmd_extract(args):
             if fp:
                 pairs, status = fp, "forced"
         if pairs and (ph or bal):
-            # A placeholder is scaffolding for the mapper, not a metabolite: drop every
-            # pair that touches one, so no fabricated atom reaches the graph. Then drop
-            # the elements whose concrete atoms did not balance -- that is where the
-            # conservation claim is actually tested, and it is per element: ferredoxin
-            # is inert to carbon in IspH and is the sulfur DONOR in biotin synthase, so
-            # the same stand-in is admissible for one element and refused for the other.
             pairs = {(el, sm, pm): v for (el, sm, pm), v in pairs.items()
                      if sm not in ph and pm not in ph
                      and bal.get((r, el), True)}
@@ -887,10 +547,6 @@ def cmd_extract(args):
                 status = "placeholder_only"
         out_mnxr = r
         if r in partial_of:
-            # ONE ELEMENT IS READ OUT, and the rest are discarded UNREAD. For any other
-            # element the reduction really is a strip -- the participants carrying it
-            # were dropped and the mapper re-routed their atoms -- so a map that happens
-            # to be present for them is not evidence, it is the failure mode.
             out_mnxr, only = partial_of[r][0], partial_of[r][1]
             dropped = {el for el, _s, _p in pairs} - {only}
             if dropped:
@@ -913,10 +569,6 @@ def cmd_extract(args):
         if (k + 1) % 10000 == 0:
             print(f"[atom-pairs]   {k+1:,}/{len(aam):,}", flush=True)
 
-    # `submission_class` is written BESIDE `PAIR_COLS` rather than into it: the compact
-    # pair shape is what `layers.explode` and the two forced arms all emit, and adding a
-    # column to it would oblige every producer of a pair row to know about submission
-    # classes it has no submission for.
     df = pd.DataFrame(rows, columns=list(PAIR_COLS) + ["submission_class"])
     sdf = pd.DataFrame(status_rows, columns=list(STATUS_COLS))
     df.to_parquet(args.out, index=False)
@@ -936,12 +588,6 @@ def cmd_extract(args):
 
 
 def cmd_selftest(args):
-    """Does the pairing say what chemistry says? One reaction, checked by hand.
-
-    MNXR106432: acetyl-CoA + CO2 + NADPH = pyruvate + NADP+ + CoA. The acetyl
-    group's 2 carbons must land in pyruvate and the CoA moiety's 21 must land in
-    CoA -- and pyruvate must receive nothing at all from NADPH.
-    """
     smi = ("CC(=O)[S:1][CH2:2][CH2:3][NH:4][C:5](=[O:6])[CH2:7][CH2:8]"
            ">>[CH3:9][C:10](=[O:11])[C:12](=[O:13])[OH:14]")
     rxn = AllChem.ReactionFromSmarts(smi, useSmiles=True)

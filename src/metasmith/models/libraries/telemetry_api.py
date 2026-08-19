@@ -1,21 +1,3 @@
-"""Reading a library's trace: the query half of `DataInstanceLibrary`.
-
-Mixed into `DataInstanceLibrary` rather than living on it, because these are
-questions *about* a store rather than operations on one, and because they were
-already fenced off in the monolith with their own banner.
-
-Every method here reads a `TraceIndex` attached by `attach_trace` or by
-`Load(attach_trace=True)`. With no trace attached they fall back to an empty
-index, so every query stays well-defined -- `find_invocations()` returns `[]`,
-`summary()` reports zero events. There is deliberately no "trace not attached"
-error path.
-
-Each of these used to import `..telemetry` at function scope. Nothing about
-that was load-bearing: `telemetry` imports `models.lineage` and `logging` and
-neither reaches back here, so the imports are top-level now and a cycle would
-fail loudly at import rather than on the first query.
-"""
-
 from __future__ import annotations
 
 from pathlib import Path
@@ -29,8 +11,6 @@ from ..lineage import (
 
 
 class _TelemetryQueries:
-    """Mixed into `DataInstanceLibrary`; see the module docstring."""
-
     @property
     def _trace(self) -> "TraceIndex":
         idx = getattr(self, "_trace_index", None)
@@ -40,21 +20,6 @@ class _TelemetryQueries:
         return idx
 
     def attach_trace(self, trace_path: Path | str, *, across_sessions: bool = False) -> None:
-        """Load a trace.jsonl file into the in-memory telemetry index.
-
-        Idempotent on the same `(trace_path, across_sessions)`. Calling
-        again with a different value raises `TraceAlreadyAttached`;
-        use `refresh_trace()` to re-read the current file.
-
-        Raises
-        ------
-        TraceCorruptError
-            A trace.jsonl line is not valid JSON; the byte offset is
-            reported.
-        TraceAlreadyAttached
-            A different `trace_path` is already attached.
-        """
-
         trace_path = Path(trace_path)
         existing = getattr(self, "_trace_index", None)
         if existing is not None and existing.trace_path is not None:
@@ -73,7 +38,6 @@ class _TelemetryQueries:
         )
 
     def refresh_trace(self) -> None:
-        """Re-read the currently attached trace.jsonl. No-op if none attached."""
         idx = getattr(self, "_trace_index", None)
         if idx is None or idx.trace_path is None:
             return
@@ -82,15 +46,6 @@ class _TelemetryQueries:
         )
 
     def _resolve_target(self, thing) -> tuple[str, Path | None]:
-        """Normalize a query target. Dispatch order:
-
-          (a) `DataInstance` → its `.instance_id`
-          (b) hex string `^[0-9a-f]{8,}$` → instance_id (no manifest lookup)
-          (c) absolute `Path|str` → manifest entry
-          (d) relative `Path|str` → resolved against `self.location`
-
-        Raises `InstanceNotFound` when (c)/(d) miss.
-        """
         return normalize_query_target(
             thing,
             manifest=self.manifest,
@@ -99,29 +54,12 @@ class _TelemetryQueries:
         )
 
     def get_lineage_of(self, thing) -> "LineageNode":
-        """Return a frozen `LineageNode` for `thing`.
-
-        Walks back through `event.consumes` building a `LineageNode`
-        tree. Cycles are tolerated (revisited nodes appear as leaves);
-        the walk caps at depth 16 as a safety net.
-
-        Raises
-        ------
-        InstanceNotFound
-            `thing` is a path or instance_id not known to the library.
-        """
         instance_id, _ = self._resolve_target(thing)
         return build_lineage_node(
             instance_id, index=self._trace, library=self
         )
 
     def get_logs_of(self, thing) -> "LogBundle":
-        """Resolve the `.command.*` logs for the event that produced `thing`.
-
-        Returns a `LogBundle` with `status` ∈ {available, missing, pruned,
-        legacy_shard_no_logs, remote_cache_no_logs, not_applicable}. Bare
-        paths are never returned for "logs unavailable" cases.
-        """
         try:
             instance_id, _ = self._resolve_target(thing)
         except KeyError:
@@ -132,16 +70,9 @@ class _TelemetryQueries:
         )
 
     def set_cache_root(self, cache_root: Path | str | None) -> None:
-        """Register the cache_root used by `get_logs_of` for shard lookup.
-
-        The library doesn't know the cache_root on its own — the workflow
-        compile or `msm` CLI sets it post-Load. None means the library
-        cannot resolve logs (returns `LogBundle(status="remote_cache_no_logs")`).
-        """
         self._cache_root = Path(cache_root) if cache_root is not None else None
 
     def get_transform_of(self, thing):
-        """Return the `InvocationEvent` or `LeafRecord` that produced `thing`."""
         instance_id, _ = self._resolve_target(thing)
         event = self._trace.find_event_for_instance(instance_id)
         if event is not None:
@@ -149,14 +80,6 @@ class _TelemetryQueries:
         return LeafRecord(source="user_added")
 
     def get_siblings_of(self, thing, scope: str = "slot") -> "list[LineageNode]":
-        """Return other instances produced by the same `(slot|task)` frame.
-
-        scope="slot" → other files emitted into the same `slot_id` by the
-        same event (e.g., all bins from one binner run).
-        scope="task" → all files produced by the same `task_hash` across
-        all slots.
-        Excludes `thing` itself.
-        """
         assert scope in {"slot", "task"}, f"scope must be slot|task, got {scope!r}"
         instance_id, _ = self._resolve_target(thing)
         event = self._trace.find_event_for_instance(instance_id)
@@ -184,16 +107,6 @@ class _TelemetryQueries:
         ]
 
     def walk_ancestors(self, thing, *, order: str = "bfs", strict: bool = False):
-        """Yield `LineageNode`s for every ancestor of `thing`.
-
-        order ∈ {"bfs","dfs"}. strict=True raises on cycle revisit;
-        strict=False (default) silently de-dups, matching the lenient
-        traversal lineage_robustness needs for group-fanin DAGs.
-
-        Yields
-        ------
-        LineageNode
-        """
         assert order in {"bfs", "dfs"}, f"order must be bfs|dfs, got {order!r}"
         instance_id, _ = self._resolve_target(thing)
         seen: set[str] = {instance_id}
@@ -227,13 +140,6 @@ class _TelemetryQueries:
                     queue.append(pid)
 
     def find_by(self, *, dtype=None, transform_key=None, status=None, group_key=None):
-        """Filter library instances. AND across kwargs, OR within iterables.
-
-        Returns `LineageNode`s for matching instances (or plain dtype-only
-        matches when no trace is attached). An empty filter returns
-        every instance in the manifest.
-        """
-
         def _as_set(v):
             if v is None:
                 return None
@@ -270,26 +176,12 @@ class _TelemetryQueries:
         return results
 
     def list_dtypes(self) -> list[str]:
-        """All distinct dtype names present in the manifest, sorted."""
         return sorted(set(self.manifest.values()))
 
     def list_transforms(self) -> list[str]:
-        """All distinct transform_keys observed in the attached trace, sorted."""
         return self._trace.list_transforms()
 
     def summary(self) -> dict:
-        """Telemetry summary of the library + attached trace.
-
-        Shape:
-          {
-            "schema_version": 2,
-            "counts": {"instances": int, "events": int, "sessions": int},
-            "by_dtype": {dtype: count, ...},
-            "by_transform": {transform_key: count, ...},
-            "by_status": {status: count, ...},
-            "time": {"first_session": int|None, "last_session": int|None},
-          }
-        """
         idx = self._trace
         by_dtype: dict[str, int] = {}
         for dtype in self.manifest.values():
@@ -316,17 +208,12 @@ class _TelemetryQueries:
         }
 
     def get_invocation(self, task_hash: str):
-        """Return the `InvocationEvent` with the given `task_hash`.
-
-        Raises `InvocationNotFound` when not present.
-        """
         ev = self._trace.by_task.get(task_hash)
         if ev is None:
             raise InvocationNotFound(f"no invocation with task_hash={task_hash!r}")
         return ev
 
     def try_get_invocation(self, task_hash: str):
-        """Return the `InvocationEvent` or None when missing (no-raise form)."""
         return self._trace.by_task.get(task_hash)
 
     def find_invocations(
@@ -339,13 +226,6 @@ class _TelemetryQueries:
         started_before: str | None = None,
         exit_code: int | None = None,
     ) -> list:
-        """Filter trace events. AND across kwargs, OR within iterables.
-
-        Time filters compare on `started_at` ISO-8601 strings (lexicographic
-        order on ISO-8601 matches chronological order). Events with no
-        timestamp are excluded from time-bounded queries.
-        """
-
         def _as_set(v):
             if v is None:
                 return None
@@ -378,7 +258,6 @@ class _TelemetryQueries:
         return out
 
     def get_outputs_of(self, task_hash: str) -> list:
-        """Return `LineageNode`s for every output file the named task produced."""
         ev = self._trace.by_task.get(task_hash)
         if ev is None:
             return []
@@ -388,11 +267,6 @@ class _TelemetryQueries:
         ]
 
     def find_failures(self) -> list:
-        """Return every `InvocationEvent` representing a failed task.
-
-        Predicate: `status == "fail"` OR (`status == "miss"` AND
-        `exit_code not in (0, None)`).
-        """
         out = []
         for e in self._trace.events:
             if e.status == "fail":

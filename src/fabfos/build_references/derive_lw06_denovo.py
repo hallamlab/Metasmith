@@ -44,7 +44,6 @@ import pandas as pd
 
 
 def _repo_root(start: Path) -> Path:
-    """Walk up until a directory holding `data/fabfos` is found."""
     for d in (start, *start.parents):
         if (d / "data" / "fabfos").is_dir():
             return d
@@ -62,20 +61,10 @@ GENOMES = REPO / "data" / "fabfos" / "originals" / "genomes"
 PARENT = "e_coli_bw25113"
 LW06 = "e_coli_lw06"
 
-# BW25113 markers whose gene should NOT be in its own proteome, because the strain's own
-# sequence already reflects the deletion. Asserted, so a genome swap that quietly reverts
-# to MG1655 is caught here rather than downstream.
 EXPECT_ABSENT_IN_PARENT = {"lacZ", "araB", "rhaB"}
 
 
 def proteins_for(host: str, symbols: set[str]) -> dict[str, list[str]]:
-    """symbol -> the ORF ids that host's proteome gives it.
-
-    Keyed on the record id the lanes key on -- the first token of the header -- because
-    that is what the mapper's `orf` column carries. A symbol with no record is reported by
-    the caller rather than skipped: a marker naming nothing is a fact, and a marker naming
-    nothing *because the lookup was wrong* looks identical until someone checks.
-    """
     faa = sorted((GENOMES / host / "genome").glob("*.faa"))
     if len(faa) != 1:
         raise SystemExit(f"expected one proteome under {host}/genome, found {faa}")
@@ -105,12 +94,9 @@ def main() -> int:
             f"data/fabfos/runs/{PARENT} --site sockeye --run`, then --publish, then "
             f"rename gpr_denovo_mapper.parquet to gpr_denovo.parquet")
     d = pd.read_parquet(a.src)
-    # THE PARENT IS CHECKED BEFORE ANYTHING IS BORROWED FROM IT -- see
-    # `derive_ag1_denovo.py`, which does the same for the other pair.
     fe.validate_gpr(d, "chosen_4", None, str(d["source"].iat[0]), fe.extensions_of(d))
     print(f"{a.src.name}: {len(d):,} rows, {d['orf'].nunique():,} ORFs")
 
-    # The parent's own deletions must already be absent from its own proteome.
     parent_losses = {sym for sym, kind in BW25113_MARKERS.values()
                      if sym and kind == "loss"}
     present = proteins_for(PARENT, parent_losses)

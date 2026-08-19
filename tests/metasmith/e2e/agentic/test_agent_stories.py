@@ -1,18 +1,3 @@
-"""Parametrized agent-driven story scenarios.
-
-Every entry in `_SCENARIO_CASES` is one live agent run. The shared driver
-plumbing (CONTROL.json budget, agent type, max-iters, sandbox build,
-ralph loop) lives in `run_scenario` (see ``conftest.py``); this file is
-just the test-id catalog.
-
-Scenario classes themselves carry the per-case assertions in their
-``verify(vctx, result)`` methods — see ``scenarios/base.py`` for the
-``Scenario`` protocol and ``standard_verify`` helper.
-
-Runtimes are parametrized per-case so scenarios that only need DOCKER
-(the user-story probes) don't pay the APPTAINER cost, while the two
-tutorial runs (``my_first_agent``, ``custom_transforms``) sweep both.
-"""
 from __future__ import annotations
 
 import pytest
@@ -29,7 +14,6 @@ from tests.metasmith.e2e.agentic.scenarios.story_plan_and_inspect import (
 from tests.metasmith.e2e.agentic.scenarios.story_run_direct import StoryRunDirectScenario
 
 
-# (scenario_factory, runtime) — one row per pytest node.
 _SCENARIO_CASES: list[tuple[str, callable, str]] = [
     # User-story probes — single runtime; the assertions don't depend on
     # the container backend, just on the CLI surface.

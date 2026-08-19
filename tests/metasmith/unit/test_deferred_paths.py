@@ -1,18 +1,3 @@
-"""DEFERRED: an input whose path is not known yet.
-
-The path half. What a deferred row does to a *solve* is in
-`tests/flow/test_deferred_inputs.py`, because that needs transforms.
-
-Two properties here are load-bearing and neither is obvious from reading the
-constant:
-
-* the minted value is distinct per row, because the manifest is keyed by path;
-* the minted value survives its own render/parse round trip unchanged. `Source`
-  did not, once, and a remote agent home grew a colon per save until nothing
-  could reach it. A spec is rewritten on nearly every recipe edit, so the same
-  bug here would compound faster.
-"""
-
 from __future__ import annotations
 
 from pathlib import Path
@@ -43,18 +28,12 @@ def _library(tmp_path: Path) -> DataInstanceLibrary:
     return lib
 
 
-# -- the constant and the minted value ---------------------------------------
-
-
 def test_the_constant_is_recognised_as_deferred():
     assert is_deferred(DEFERRED)
 
 
 def test_a_minted_path_is_absolute_under_the_reserved_root():
     p = mint_deferred_path()
-    # absolute is not cosmetic: `ops.data.repoint_item` routes a *relative*
-    # entry through `Rename`, a real file move, and refuses a re-point whose
-    # old and new paths disagree on absoluteness.
     assert p.is_absolute()
     assert p.is_relative_to(DEFERRED_ROOT)
     assert is_deferred(p)
@@ -78,9 +57,6 @@ def test_render_parse_is_a_fixed_point():
     assert is_deferred(str(p))
 
 
-# -- what the library does with it -------------------------------------------
-
-
 def test_add_item_takes_the_bare_constant(tmp_path: Path):
     lib = _library(tmp_path)
     path = lib.AddItem(DEFERRED, "mock::reads")
@@ -98,11 +74,6 @@ def test_two_deferred_rows_stay_distinct(tmp_path: Path):
 
 
 def test_the_id_is_derived_from_the_path_not_randomly(tmp_path: Path):
-    """Two libraries that mint the same path arrive at the same id.
-
-    This is what lets a spec rebuild its library from scratch and get the same
-    task key back -- the property a template's DAG is pinned on.
-    """
     lib = _library(tmp_path)
     path = lib.AddItem(DEFERRED, "mock::reads")
     first = lib.Get(path).instance_id
@@ -123,16 +94,7 @@ def test_the_row_survives_save_and_load(tmp_path: Path):
     assert reloaded.Get(path).instance_id == before
 
 
-# -- the guard ---------------------------------------------------------------
-
-
 def test_filling_one_in_moves_no_file(tmp_path: Path):
-    """The re-point route registers the real path and touches the filesystem not at all.
-
-    This is the whole reason a minted path is absolute: `repoint_item` reads a
-    *relative* entry as library-owned and delegates to `Rename`, a real move, and
-    refuses a re-point whose old and new paths disagree on absoluteness.
-    """
     from metasmith.ops.data import repoint_item
 
     lib = _library(tmp_path)

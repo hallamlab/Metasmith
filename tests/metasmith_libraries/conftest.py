@@ -1,19 +1,6 @@
-"""
-Shared pytest fixtures for MetasmithLibraries end-to-end tests.
-
-These fixtures provide a common agent and resource setup for all tests,
-enabling consistent testing against local Docker deployment.
-"""
 import pytest
 from pathlib import Path
 
-# `manual/` holds hand-run drivers, not tests. Two are named `test_*` and do
-# their work at IMPORT time -- `test_asv_analysis.py` resolves its workspace to
-# `Path(".")` and deploys an agent there, which is how an `msm_home/` keeps
-# appearing at the repo root. `pytest.ini` already excludes the directory, but
-# that file is only read when pytest is rooted HERE; run from the repo root it
-# loses to `pyproject.toml` and the exclusion silently stops applying.
-# `collect_ignore` is per-directory and does not care which config won.
 collect_ignore = ["manual"]
 from metasmith.python_api import (
     Agent,
@@ -28,13 +15,7 @@ from metasmith.python_api import (
     Duration,
 )
 
-# Paths relative to this file
 WORKSPACE = Path(__file__).parent.resolve()
-# The library root. In the standalone repo this was `tests/..`; in the monorepo the
-# tests and the library moved to opposite sides of the tree, so it is an explicit
-# path from the repo root. Getting it wrong is quiet rather than loud: `tmp_inputs`
-# skips a type library whose file does not exist, so a test that should resolve a
-# dozen types resolves none and asserts nothing.
 MLIB = WORKSPACE.parent.parent / "src" / "metasmith_libraries"
 assert (MLIB / "data_types").is_dir(), f"library root does not look like one: {MLIB}"
 TEST_DATA_DIR = WORKSPACE / "test_data"
@@ -43,38 +24,28 @@ TEST_MSM_HOME = WORKSPACE / "test_msm_home"
 
 @pytest.fixture(scope="session")
 def workspace():
-    """Return the tests workspace directory."""
     return WORKSPACE
 
 
 @pytest.fixture(scope="session")
 def mlib():
-    """Return the MetasmithLibraries root directory."""
     return MLIB
 
 
 @pytest.fixture(scope="session")
 def test_data_dir():
-    """Return the test data directory."""
     TEST_DATA_DIR.mkdir(exist_ok=True)
     return TEST_DATA_DIR
 
 
 @pytest.fixture(scope="session")
 def agent():
-    """
-    Deploy and return a metasmith agent using local Docker runtime.
-
-    The agent is deployed to tests/test_msm_home/ and reused across all tests
-    in the session.
-    """
     agent_home = Source.FromLocal(TEST_MSM_HOME)
     smith = Agent(
         home=agent_home,
         runtime=Runtime.DOCKER,
     )
 
-    # Deploy if not already deployed
     if not (TEST_MSM_HOME / "msm").exists():
         smith.Deploy()
 
@@ -83,11 +54,6 @@ def agent():
 
 @pytest.fixture(scope="session")
 def base_resources(mlib):
-    """
-    Load and return the base resource libraries (containers, lib).
-
-    These are common resources needed by most transforms.
-    """
     return [
         DataInstanceLibrary.Load(mlib / "resources/env"),
     ]
@@ -95,9 +61,6 @@ def base_resources(mlib):
 
 @pytest.fixture(scope="session")
 def lib_resources(mlib):
-    """
-    Load additional library resources (databases, references).
-    """
     lib_path = mlib / "resources/lib"
     if lib_path.exists():
         return DataInstanceLibrary.Load(lib_path)
@@ -106,16 +69,10 @@ def lib_resources(mlib):
 
 @pytest.fixture
 def tmp_inputs(tmp_path, mlib):
-    """
-    Create a temporary DataInstanceLibrary for test inputs.
-
-    Returns a factory function that creates the library with specified type libraries.
-    """
     def _create_inputs(type_libs=None):
         inputs_dir = tmp_path / "inputs.xgdb"
         inputs = DataInstanceLibrary(inputs_dir)
 
-        # Add default type libraries
         default_types = [
             "sequences.yml",
             "alignment.yml",
@@ -142,22 +99,6 @@ def tmp_inputs(tmp_path, mlib):
 
 
 def wait_for_workflow(agent, task, timeout=600, poll_interval=5):
-    """
-    Wait for a workflow to complete.
-
-    Args:
-        agent: The metasmith Agent instance
-        task: The workflow task
-        timeout: Maximum time to wait in seconds
-        poll_interval: Time between status checks in seconds
-
-    Returns:
-        DataInstanceLibrary: The results library
-
-    Raises:
-        TimeoutError: If workflow doesn't complete within timeout
-        RuntimeError: If workflow fails
-    """
     import time
 
     results_path = agent.GetResultSource(task).GetPath()
@@ -168,14 +109,12 @@ def wait_for_workflow(agent, task, timeout=600, poll_interval=5):
             raise TimeoutError(f"Workflow did not complete within {timeout} seconds")
         time.sleep(poll_interval)
 
-    # Check workflow status
     agent.CheckWorkflow(task)
 
     return DataInstanceLibrary.Load(results_path)
 
 
 def verify_fasta_output(filepath):
-    """Verify a file is valid FASTA format."""
     if not filepath.exists():
         return False
     content = filepath.read_text()
@@ -183,7 +122,6 @@ def verify_fasta_output(filepath):
 
 
 def verify_tsv_output(filepath, expected_headers=None):
-    """Verify a file is valid TSV format with optional header check."""
     if not filepath.exists():
         return False
     content = filepath.read_text()
@@ -194,7 +132,6 @@ def verify_tsv_output(filepath, expected_headers=None):
     if not lines:
         return False
 
-    # Check that each line has consistent columns
     first_cols = len(lines[0].split("\t"))
 
     if expected_headers:
@@ -207,7 +144,6 @@ def verify_tsv_output(filepath, expected_headers=None):
 
 
 def verify_json_output(filepath):
-    """Verify a file is valid JSON."""
     import json
     if not filepath.exists():
         return False
@@ -221,18 +157,11 @@ def verify_json_output(filepath):
 
 @pytest.fixture(scope="session")
 def ab48_bam(agent, base_resources, mlib, test_data_dir):
-    """
-    Generate (or return cached) BAM for AB48 community data.
-
-    Runs the assembly_stats workflow via Docker to align reads to assembly,
-    producing a sorted BAM. The result is cached to disk for reuse.
-    """
     import shutil
 
     ab48_dir = test_data_dir / "ab48_community"
     cached_bam = ab48_dir / "ABC-240403_KD.bam"
 
-    # Return cached BAM if it exists
     if cached_bam.exists():
         return cached_bam
 
@@ -244,7 +173,6 @@ def ab48_bam(agent, base_resources, mlib, test_data_dir):
     if not reads_path.exists():
         pytest.skip("AB48 reads not available: ABC-240403_KD.fastq.gz")
 
-    # Build input library
     inputs_dir = ab48_dir / "_bam_gen_inputs.xgdb"
     inputs = DataInstanceLibrary(inputs_dir)
     for tl in ["sequences.yml", "alignment.yml"]:
@@ -259,12 +187,10 @@ def ab48_bam(agent, base_resources, mlib, test_data_dir):
     inputs.AddItem(assembly_path, "sequences::assembly", parents={reads})
     inputs.Save()
 
-    # Load assembly transforms
     assembly_transforms = [
         TransformInstanceLibrary.Load(mlib / "transforms/assembly"),
     ]
 
-    # Target the BAM output
     targets = TargetBuilder()
     targets.Add("alignment::bam")
 
@@ -292,7 +218,6 @@ def ab48_bam(agent, base_resources, mlib, test_data_dir):
     results = wait_for_workflow(agent, task, timeout=3600)
     results_path = agent.GetResultSource(task).GetPath()
 
-    # Find and copy the BAM from results
     for path, type_name, endpoint in results.Iterate():
         if "bam" in type_name:
             bam_source = path if path.is_absolute() else results_path / path
@@ -304,12 +229,10 @@ def ab48_bam(agent, base_resources, mlib, test_data_dir):
 
 @pytest.fixture
 def kofam_db_input(mlib, test_data_dir):
-    """Create input library with KofamScan databases using absolute paths."""
     kofam_dir = test_data_dir / "kofam"
     if not (kofam_dir / "profiles").exists():
         pytest.skip("KofamScan databases not available")
 
-    # Create library IN the kofam directory to use absolute paths
     lib_dir = kofam_dir / "_kofam.xgdb"
     inputs = DataInstanceLibrary(lib_dir)
     inputs.AddTypeLibrary(mlib / "data_types" / "ref.yml")
@@ -321,12 +244,10 @@ def kofam_db_input(mlib, test_data_dir):
 
 @pytest.fixture
 def interproscan_data_input(mlib, test_data_dir):
-    """Create input library with InterProScan data using absolute path."""
     iprscan_dir = test_data_dir / "interproscan_data"
     if not iprscan_dir.exists():
         pytest.skip("InterProScan data not available")
 
-    # Create library IN the interproscan_data directory to use absolute paths
     lib_dir = iprscan_dir / "_interproscan.xgdb"
     inputs = DataInstanceLibrary(lib_dir)
     inputs.AddTypeLibrary(mlib / "data_types" / "ref.yml")
@@ -337,7 +258,6 @@ def interproscan_data_input(mlib, test_data_dir):
 
 @pytest.fixture
 def bakta_db_input(mlib):
-    """Create input library with Bakta database using absolute path."""
     bakta_dir = Path("/home/tony/agentic_workspace/data/cyanoverse/databases/bakta")
     if not (bakta_dir / "db-light").exists():
         pytest.skip("Bakta database not available")
@@ -352,7 +272,6 @@ def bakta_db_input(mlib):
 
 @pytest.fixture
 def predictf_db_input(mlib):
-    """Create input library with PredicTF BacTFDB database using absolute path."""
     bactfdb_dir = Path("/home/tony/agentic_workspace/main/cyanoverse/tasks/search-transcription-factors/tools/predictf/BacTFDB")
     if not (bactfdb_dir / "database/v2/features.dmnd").exists():
         pytest.skip("PredicTF BacTFDB not available")
@@ -367,13 +286,11 @@ def predictf_db_input(mlib):
 
 @pytest.fixture
 def uniref50_db_input(mlib, test_data_dir):
-    """Create input library with UniRef50 DIAMOND database using absolute path."""
     uniref50_dir = test_data_dir / "uniref50"
     dmnd_file = uniref50_dir / "uniref50.dmnd"
     if not dmnd_file.exists():
         pytest.skip("UniRef50 DIAMOND database not available")
 
-    # Create library IN the uniref50 directory to use absolute paths
     lib_dir = uniref50_dir / "_uniref50.xgdb"
     inputs = DataInstanceLibrary(lib_dir)
     inputs.AddTypeLibrary(mlib / "data_types" / "ref.yml")

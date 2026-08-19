@@ -1,12 +1,3 @@
-"""Deploy scenario — agent runs `metasmith agent save` + `agent deploy`.
-
-Exercises the container spoof. metasmith is pre-installed (so this isolates
-the deploy path from install regressions). For DOCKER: the host daemon
-already carries the locally-built tag. For APPTAINER: the harness pre-
-placed the sif at the path Agent.Deploy computes inside
-`<SANDBOX>/agent_home/container_images/`, so the `[ -e ... ] || pull` gate
-skips pulling.
-"""
 from __future__ import annotations
 
 import os
@@ -70,7 +61,6 @@ class DeployScenario:
         if not agent_home.exists():
             fails.append(f"missing agent home: {agent_home}")
             return fails
-        # Runtime-specific container artifact check
         runtime = vctx.agent_env.get("MSM_E2E_RUNTIME", "").upper()
         image_tag = vctx.agent_env.get("MSM_E2E_IMAGE_TAG", "")
         if runtime == "DOCKER":
@@ -81,8 +71,6 @@ class DeployScenario:
             if r.returncode != 0:
                 fails.append(f"docker image {image_tag!r} not present after deploy")
         elif runtime == "APPTAINER":
-            # The store honors APPTAINER_CACHEDIR (set in the agent env), so
-            # resolve the sif path the same way Agent.Deploy does.
             sif = expected_sif_path(
                 agent_home, f"docker://{image_tag}",
                 apptainer_cachedir=vctx.agent_env.get("APPTAINER_CACHEDIR"),

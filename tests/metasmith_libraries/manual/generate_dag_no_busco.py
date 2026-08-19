@@ -1,8 +1,4 @@
 #!/usr/bin/env python
-"""Generate DAG without BUSCO (BUSCO failed in this run).
-
-Renders SVG and PNG to results/report_package01/.
-"""
 import sys
 import os
 import tempfile
@@ -27,7 +23,6 @@ transforms = [
     TransformInstanceLibrary.Load(MLIB / "transforms/logistics"),
 ]
 
-# Eukaryotic containers — BUSCO excluded
 EUKARYOTIC_CONTAINERS = [
     "star.env",
     "samtools.env",
@@ -68,7 +63,6 @@ for i in range(3):
 inputs.AddValue("eggnog_source.txt", "eggnog", "annotation::eggnog_source")
 inputs.Save()
 
-# Targets — no busco_results
 targets = TargetBuilder()
 targets.Add("transcriptomics::gene_count_table")
 targets.Add("transcriptomics::diff_count_table")
@@ -95,7 +89,6 @@ for step in steps:
     prods = [i.dtype_name for g in step.produces for i in g]
     print(f"  Step {step.order}: {name} -> {prods}")
 
-# Render
 _env_bin = Path(sys.executable).parent
 os.environ["PATH"] = f"{_env_bin}:{os.environ.get('PATH', '')}"
 

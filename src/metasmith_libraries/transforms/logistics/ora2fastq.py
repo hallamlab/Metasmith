@@ -16,10 +16,6 @@ def protocol(context: ExecutionContext):
     threads = context.params.get('cpus')
     threads = "" if threads is None else f"-p {threads}"
 
-    # Decompress ORA files to gzipped FASTQ using orad (one file at a time)
-    # Note: on Apptainer (HPC), /app/oradata needs a bind mount from outside.
-    # The runner script or Nextflow config should add:
-    #   containerOptions = '--bind /path/to/oradata:/app/oradata'
     context.ExecWithEnv().ifContainerDo(
         env=orad,
         cmd=f'''
@@ -28,7 +24,6 @@ def protocol(context: ExecutionContext):
         '''
     )
 
-    # Interleave R1+R2 with reformat.sh and compress with pigz
     context.ExecWithEnv().ifContainerDo(
         env=bbtools,
         cmd=f'''

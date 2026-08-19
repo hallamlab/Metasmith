@@ -89,7 +89,6 @@ class VirtualE2ERuntime:
         monkeypatch.setenv(HOST_ENV, self.host)
         monkeypatch.setenv(FORCE_BOUNCE_ENV, "1" if self.force_bounce else "0")
 
-        # Prefer this checkout's source tree for child CLI processes.
         repo_root = Path(__file__).resolve().parents[3]
         src = repo_root / "src"
         old_pp = os.environ.get("PYTHONPATH", "")
@@ -101,10 +100,6 @@ class VirtualE2ERuntime:
         return self
 
     def _write_wrapper(self, name: str, tool: str) -> None:
-        # Pin the python interpreter to the one driving the test, not
-        # whatever `python3` resolves to on PATH — otherwise the wrapper
-        # picks up /usr/bin/python3 which lacks numpy + the metasmith
-        # editable install.
         path = self.bin_dir / name
         py = sys.executable
         path.write_text(
@@ -173,11 +168,6 @@ class VirtualE2ERuntime:
         return read_trace(self.trace_file)
 
 
-# ---------------------------------------------------------------------------
-# Fake CLI implementations
-# ---------------------------------------------------------------------------
-
-
 def _parse_option_map(argv: list[str]) -> tuple[list[str], dict[str, str | bool]]:
     positional: list[str] = []
     opts: dict[str, str | bool] = {}
@@ -217,11 +207,6 @@ def cli_hostname(argv: list[str]) -> int:
 
 
 def cli_metasmith(argv: list[str]) -> int:
-    # The virtual runtime mocks transform execution via the nextflow stub
-    # and `virtual_output_synthesized`; the real `metasmith api` call would
-    # try to load /msm_home/lib/agent.yml and fail. We just record the
-    # invocation in the trace and return 0 so the bootstrap script's
-    # downstream steps (e.g. `msm_relay stop`) keep running.
     write_trace({"type": "metasmith_call", "argv": argv})
     return 0
 
@@ -325,8 +310,6 @@ def _seed_lineage(inst) -> dict[str, list[int]]:
     return {k: sorted(set(v)) for k, v in lineage.items()}
 
 
-# Single-sourced in models/workflow/grouping.py — the Nextflow codegen reads
-# the same answer to decide when a key is whole, and the two must not drift.
 from ..models.workflow.grouping import select_for_key as _select_for_key
 
 
@@ -368,11 +351,6 @@ def _write_metadata_file(step, invocation_dir: Path, lineages: list[dict[str, An
         + [d for group in step.transform.model.produces for d in group]
     }
 
-    # Slot -> on-channel name. The real compiler takes this from the archetype
-    # `get_archetype` picked; here the dependency_map's own first instance is
-    # that archetype, since this runtime does no endpoint merging. Omitting a
-    # slot with no instances matches the real emitter, which zips against
-    # `used_archetypes`.
     slot_channels = {
         dep.key: insts[0].dtype.key
         for dep in step.transform.model.requires
@@ -384,9 +362,6 @@ def _write_metadata_file(step, invocation_dir: Path, lineages: list[dict[str, An
 
     with open(invocation_dir / METADATA_FILE, "w", encoding="utf-8") as f:
         f.write("res 1/1.GB/1\n")
-        # Same envelope the Groovy emitter puts on the wire — bootstrap parses
-        # both through `LinPayload.from_json`, so a bare list here would be a
-        # silent divergence between the two runtimes.
         f.write(f"lin {LinPayload(v=LinPayload.VERSION, entries=lineages).to_json()}\n")
         f.write("fmt 2\n")
         f.write(f"din {json.dumps(dep_in, separators=(',', ':'))}\n")
@@ -404,15 +379,6 @@ def _manifest_name_for_target(target) -> str:
 
 
 def _read_hit_decisions(workspace: Path) -> dict[int, dict]:
-    """Probe cache.sqlite for each step's cache_key from workflow.step_*.meta.
-
-    Mirrors the codegen path's compile-time probe: a step is "hit" when
-    its meta file declares ``cacheable true`` AND the cache_key resolves
-    to an entry whose output_root is still on disk. The virtual nextflow
-    runtime uses this to skip the bootstrap call entirely and emit the
-    cached files as if they had just been produced — the symmetric pin
-    of the synthetic ``Channel.of(...)`` path that real Nextflow uses.
-    """
     from ..caching.layout import default_cache_root, out_dir
 
     home = Path(os.environ.get(HOME_ENV, str(AgentPaths.HOME_ROOT)))
@@ -471,13 +437,6 @@ def _populate_hit_outputs(
     lineage_by_instance: dict[str, dict[str, list[int]]],
     produced_by_dep: dict[str, list],
 ) -> None:
-    """Build produced_by_dep + lineage_by_instance from a cached step's outputs.
-
-    The cached output directory holds per-branch files matching the
-    ``1-1-{branch+1}.*-{dtype_key}{ext}`` shape that virtual nextflow
-    emits at miss time. Group them by (branch, dep) and route each into
-    the corresponding produced DataInstance just as the miss path would.
-    """
     output_dir: Path = hit["output_dir"]
     cached_files = sorted(p for p in output_dir.glob("*") if p.is_file())
 
@@ -519,7 +478,6 @@ def _populate_hit_outputs(
 def cli_nextflow(argv: list[str]) -> int:
     write_trace({"type": "nextflow_call", "argv": argv})
 
-    # Split global options from `run ...` options.
     run_idx = None
     for i, tok in enumerate(argv):
         if tok == "run":
@@ -552,13 +510,6 @@ def cli_nextflow(argv: list[str]) -> int:
     nxf_work = workspace / "nxf_work"
     nxf_work.mkdir(exist_ok=True)
 
-    # S3 — probe cache before walking steps. On hit, the step's outputs
-    # are sourced from <cache_root>/<key>/out/ and the executor never
-    # fires. Misses fall through to the existing bootstrap path and the
-    # post-exec promote (S5) deposits their outputs into the cache.
-    # The `_metasmith/trace.jsonl` rows for hits are written at compile
-    # time by `_compute_cache_decisions`; the executor only emits its
-    # own virtual-runtime trace event for diagnostics here.
     hit_decisions = _read_hit_decisions(workspace)
 
     for step in task.plan.steps:
@@ -586,12 +537,6 @@ def cli_nextflow(argv: list[str]) -> int:
             invocation_dir = nxf_work / f"step_{step.order:02}" / f"batch_{start:04}_{end:04}"
             invocation_dir.mkdir(parents=True, exist_ok=True)
 
-            # One lineage member per group key in the window — the same arity
-            # the real runtime puts on the wire (`Orchestrator._collateBatch`
-            # builds one index per member, `LinPayload.entries` carries them
-            # all). Writing one member for the whole window would make
-            # `context.AsBatch()` yield once here and `batch_size` times under
-            # Nextflow, and this runtime is what pins the contract cheaply.
             members: list[dict[str, Any]] = []
             input_maps: list[dict[str, list[int]]] = []
             group_insts = step.group_by_instances
@@ -616,10 +561,6 @@ def cli_nextflow(argv: list[str]) -> int:
                         for inst in selected
                     ]
                     input_maps.append(_merge_lineage(lineages))
-                    # The per-item maps the real Orchestrator keeps un-flattened
-                    # in `group()`. Emitted here so a protocol correlating two
-                    # grouped slots has a fast test at all -- without it the
-                    # only proof is a containerized run.
                     prov.append([
                         lineage_by_instance.get(inst.instance_id)
                         or _seed_lineage(inst)
@@ -678,11 +619,6 @@ def cli_nextflow(argv: list[str]) -> int:
                     insts = list(step.dependency_map.get(dep, []))
                     if not insts:
                         continue
-                    # The instance whose dtype/extension names this batch's
-                    # output files. Same question as the input side, so same
-                    # answer: lineage first, position after. Produced
-                    # instances usually carry no registered parents, in which
-                    # case this is the positional slice it always was.
                     _first_key = (
                         group_insts[start] if start < len(group_insts) else None
                     )
@@ -691,9 +627,6 @@ def cli_nextflow(argv: list[str]) -> int:
                     pattern = f"*-*-{branch_idx + 1}.*-{out_inst.dtype.key}{ext}"
                     files = sorted(invocation_dir.glob(pattern))
                     if len(files) == 0:
-                        # Some transforms emit custom names instead of context.Output().
-                        # Synthesize the canonical Nextflow-shaped output so publish/collect
-                        # logic can still be validated end-to-end.
                         from ..hashing import KeyGenerator
 
                         base_lin = {k: sorted(v) for k, v in merged_inputs.items()}
@@ -726,7 +659,6 @@ def cli_nextflow(argv: list[str]) -> int:
                             (fpath.resolve(), curr, out_inst.instance_id)
                         )
 
-    # Publish target outputs (lineage now rides on trace.jsonl).
     for target in task.plan.targets:
         dep_key = target.instance.dtype.key
         entries = produced_by_dep.get(dep_key, [])
@@ -739,7 +671,6 @@ def cli_nextflow(argv: list[str]) -> int:
             dest = out_dir / f"{i + 1:04}_{src.name}"
             shutil.copy2(src, dest)
 
-    # Produce optional report files if requested.
     for k in ["-with-report", "-with-dag", "-with-timeline", "-with-trace"]:
         v = opts.get(k)
         if isinstance(v, str):
@@ -750,7 +681,6 @@ def cli_nextflow(argv: list[str]) -> int:
             else:
                 p.write_text("virtual\n", encoding="utf-8")
 
-    # If -log is provided in global args, create it.
     if "-log" in _global_args:
         idx = _global_args.index("-log")
         if idx + 1 < len(_global_args):

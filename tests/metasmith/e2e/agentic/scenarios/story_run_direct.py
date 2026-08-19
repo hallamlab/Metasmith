@@ -1,21 +1,3 @@
-"""User-story smoke: execute one transform directly via ``metasmith run``.
-
-``metasmith run`` is the Nextflow-bypass path for debugging individual
-transforms. No tutorial uses it; this scenario probes whether the user can
-drive it directly from CLI help.
-
-Pre-staged:
-  workspace/types/myproj.yml         input_text + output_text types
-  workspace/transforms/              one transform `copy.py`
-  workspace/input.txt                concrete input file
-
-Pass criteria:
-  - workspace/run_output/ exists and contains a file produced by the
-    transform (the no-op protocol ``touch``es a target file)
-  - workspace/ANSWER.txt has two lines:
-      line 1: a path under workspace/ (the work_dir)
-      line 2: the output filename
-"""
 from __future__ import annotations
 
 from dataclasses import dataclass, field

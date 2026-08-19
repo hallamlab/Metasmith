@@ -1,11 +1,3 @@
-"""merge_dram_annotate_genes — gather per-chunk DRAM annotations.tsv into a
-per-sample annotations.tsv.
-
-DRAM 1.5.0 emits annotations.tsv with a single TSV header line. Some columns
-may differ between chunks if DRAM dynamically drops empty columns (rare for
-the full reference set, but worth guarding): we reindex to the union of
-columns observed across chunks, filling missing cells with ''.
-"""
 from metasmith.python_api import *
 
 lib = TransformInstanceLibrary.ResolveParentLibrary(__file__)

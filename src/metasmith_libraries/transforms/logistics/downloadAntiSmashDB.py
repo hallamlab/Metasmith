@@ -9,9 +9,6 @@ out   = model.AddProduct(lib.GetType("ref::antismash"))
 def protocol(context: ExecutionContext):
     iout = context.Output(out)
 
-    # antiSMASH bundles a download command that fetches Pfam, ClusterBlast,
-    # MIBiG, Resfams, NRPS/PKS substrate prediction models, etc.
-    # Same command either way: this tool is a plain CLI in both worlds.
     _cmd = f"""
             mkdir -p {iout.container}
             download-antismash-databases --database-dir {iout.container}

@@ -1,15 +1,3 @@
-"""Static reading of a transform's `ExecWithEnv()` declarations.
-
-Which worlds a transform can run in is a property of its source, not of a run,
-so it is answerable without executing anything. That answer feeds three places:
-`metasmith transform validate` (author-time), the stage-time portability
-manifest (what a workspace needs), and `RunWorkflow`'s preflight (whether this
-agent can supply it).
-
-The scan is syntactic. A protocol that dispatches its tool launch through a
-helper function is invisible to it -- callers must say so rather than present a
-clean scan as a guarantee.
-"""
 from __future__ import annotations
 
 import ast
@@ -21,24 +9,18 @@ VIRTUAL_ENV_ARM = "ifVirtualEnvDo"
 ARMS = (CONTAINER_ARM, VIRTUAL_ENV_ARM)
 ENTRY = "ExecWithEnv"
 
-# Retired or private entry points. A transform reaching one of these is running
-# a tool outside the arms, which is exactly what the arms exist to prevent.
 _FORBIDDEN_CALLS = ("ExecWithContainer", "_ExecInEnv")
 
 
 @dataclass
 class EnvChain:
-    """One `ExecWithEnv()` chain as written."""
     lineno: int
     arms: list[str] = field(default_factory=list)
-    # Per-arm: the identifier passed as `env=`, and the source of `cmd=`.
     envs: list[str|None] = field(default_factory=list)
     cmds: list[str|None] = field(default_factory=list)
 
     @property
     def duplicate_command(self) -> bool:
-        # Two arms whose commands are byte-identical: the tool runs the same way
-        # in both worlds, so the split is carrying no information.
         real = [c for c in self.cmds if c is not None]
         return len(self.arms) > 1 and len(real) == len(self.arms) and len(set(real)) == 1
 
@@ -46,16 +28,11 @@ class EnvChain:
 @dataclass
 class EnvScan:
     chains: list[EnvChain] = field(default_factory=list)
-    # Calls to retired/private tool-launch entry points, as (name, lineno).
     forbidden: list[tuple[str, int]] = field(default_factory=list)
-    # `context.external_shell.Exec(...)` inside the module. Legitimate (it is
-    # how a protocol reaches the *host* shell) but worth naming, since it is
-    # not a tool launch and does not go through the arms.
     host_shell_calls: list[int] = field(default_factory=list)
 
     @property
     def arms(self) -> list[str]:
-        """Every arm declared anywhere in the transform, deduplicated."""
         return sorted({a for c in self.chains for a in c.arms})
 
     @property
@@ -78,7 +55,6 @@ def _positional(call: ast.Call, index: int) -> ast.expr | None:
 
 
 def ScanSource(source: str, filename: str = "<transform>") -> EnvScan:
-    """Read every `ExecWithEnv()` chain out of a transform's source."""
     tree = ast.parse(source, filename=filename)
     scan = EnvScan()
 
@@ -95,8 +71,6 @@ def ScanSource(source: str, filename: str = "<transform>") -> EnvScan:
                 and n.func.value.attr == "external_shell":
             scan.host_shell_calls.append(n.lineno)
 
-    # An arm call that is itself the receiver of another arm is mid-chain; the
-    # ones that are not are the chain tails, and each walks back to its entry.
     receivers = {id(n.func.value) for n in calls if _attr(n) in ARMS}
     entries_seen: set[int] = set()
 
@@ -125,7 +99,6 @@ def ScanSource(source: str, filename: str = "<transform>") -> EnvScan:
         )
         scan.chains.append(chain)
 
-    # Chains that declared no arm at all -- `context.ExecWithEnv()` on its own.
     for n in calls:
         if _attr(n) == ENTRY and id(n) not in entries_seen:
             scan.chains.append(EnvChain(lineno=n.lineno))

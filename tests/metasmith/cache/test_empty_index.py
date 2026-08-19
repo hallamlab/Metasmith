@@ -1,22 +1,3 @@
-"""An index that is present but empty is not an index.
-
-`test_hit_lineage.py` pins that promote captures the on-channel index and a
-hit replays it. This file pins the degenerate case on both sides of the same
-contract: an index recorded as `{}`.
-
-An empty index is indistinguishable from an absent one everywhere it
-matters. It renders to Groovy's `[:]`, `_post` stamps the produced key onto
-it, and the replayed tuple reaches a downstream `o.group` carrying exactly
-one key -- its own -- where the DESCENDANT_OF_BY branch stops the run
-(`tests/metasmith/e2e/docker/test_orchestrator_exec.py::TestCacheHitLineage`).
-So the warm path must never store one (F3b) and must never trust a stored
-one (F3a); a re-run is the cheap, correct answer at both ends.
-
-Both tests sit below `_cache_harness`: no virtual run, no Nextflow. F3a
-hand-builds the shard manifest and drives the real probe; F3b hand-builds a
-task work tree and drives the real promote.
-"""
-
 from __future__ import annotations
 
 import json
@@ -49,12 +30,6 @@ def _context(workspace: Path, cache_root: Path) -> NextflowGenContext:
 
 
 def _seed_shard(cache_root: Path, cache_key: bytes, index: dict) -> None:
-    """Put one shard in the cache whose single output carries `index`.
-
-    The manifest is written by hand rather than by promoting a real run: the
-    whole point is to present the probe with an index row it would never
-    produce itself.
-    """
     key_hex = cache_key.hex()
     final = shard_dir(cache_root, key_hex)
     (final / "out").mkdir(parents=True)
@@ -91,11 +66,6 @@ def _seed_shard(cache_root: Path, cache_key: bytes, index: dict) -> None:
 
 
 def _probe_first_step(tmp_path: Path, index: dict) -> dict:
-    """Decide the cache for a 3-step chain whose first shard carries `index`.
-
-    Runs the probe twice against one cache root: once cold to learn the
-    step's cache key, then again after seeding a shard under that key.
-    """
     task = linear_3step.build_task(tmp_path)
     workspace = tmp_path / "ws"
     workspace.mkdir(exist_ok=True)
@@ -112,12 +82,6 @@ def _probe_first_step(tmp_path: Path, index: dict) -> dict:
 
 
 def test_a_shard_whose_index_row_is_empty_is_demoted(tmp_path):
-    """F3a: a recorded `{}` index does not satisfy the output it names.
-
-    Pre-fix the row is *present*, so the file counts as indexed, nothing is
-    missing and the shard replays -- putting `[:]` on the channel, which is
-    the abort T2 added waiting to happen on a warm run.
-    """
     decision = _probe_first_step(tmp_path, {})
 
     assert not decision["hit"], (
@@ -132,11 +96,6 @@ def test_a_shard_whose_index_row_is_empty_is_demoted(tmp_path):
 
 
 def test_a_shard_with_a_real_index_row_still_hits(tmp_path):
-    """The control: the same rig, one lineage key, and the shard replays.
-
-    Without this a broken rig would pass the test above for the wrong
-    reason -- an empty cache demotes everything.
-    """
     decision = _probe_first_step(tmp_path, {"seed": ["1e20aaaa"]})
 
     assert decision["hit"], (
@@ -147,11 +106,6 @@ def test_a_shard_with_a_real_index_row_still_hits(tmp_path):
 
 
 def _work_tree(workspace: Path, entry: dict) -> None:
-    """One completed task: an output file and the metadata beside it.
-
-    `entry` is the lineage map the task recorded for batch member 0 -- `{}`
-    is what a truncated or empty `.command.metadata` yields.
-    """
     from metasmith.caching.keys import LIN_PAYLOAD_VERSION
     from metasmith.models.workflow import METADATA_FILE
 
@@ -208,12 +162,6 @@ def _promote_one_output(tmp_path, monkeypatch, entry: dict) -> tuple[dict, list]
 def test_an_empty_collected_index_is_never_written_to_a_manifest(
     tmp_path, monkeypatch
 ):
-    """F3b: `{}` goes to `no_index`, not into the shard.
-
-    Pre-fix the `is None` guard lets it through and the manifest gains an
-    `index: {}` row -- a shard that looks indexed to every later reader and
-    replays ancestry it does not have.
-    """
     manifest, log = _promote_one_output(tmp_path, monkeypatch, {})
 
     assert manifest["index"] == [], (
@@ -232,7 +180,6 @@ def test_an_empty_collected_index_is_never_written_to_a_manifest(
 def test_a_real_collected_index_is_written_to_the_manifest(
     tmp_path, monkeypatch
 ):
-    """The control: the same rig with ancestry, and the row is written."""
     manifest, log = _promote_one_output(
         tmp_path, monkeypatch, {"seed": ["1e20aaaa"], "FILES": [["/w/in.txt"]]}
     )

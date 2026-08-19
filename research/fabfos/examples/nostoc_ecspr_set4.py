@@ -85,25 +85,8 @@ import pandas as pd
 REPO = Path(__file__).resolve().parents[3]
 CHUNK = REPO / "data/fabfos/nostoc/ecspr"
 RESULTS = CHUNK / "results"
-# THIS WRITES INSIDE A PINNED CHUNK, which is where the artifact belongs -- the table
-# and the panels are products of the measurement and travel with it. The cost is that a
-# re-run dirties the chunk: materialised DVC files are read-only hardlinks into the
-# shared cache, so `to_parquet` here unlinks one and writes a fresh file in its place.
-# That does not corrupt the cache object (the write does not go through the link), but
-# it does leave `dvc status` dirty. Re-pin with `dvc add` when the numbers are meant to
-# move, and `dvc checkout --force` when they are not.
 FIGS = CHUNK / "figures"
 
-# set4: 79 curated (source -> sink) biomass axes. Vendored into the figures dir so
-# the artifact does not depend on a sibling worktree staying where it is; the sha
-# matches the `axes.set4` provenance record.
-#
-# AXES_SRC IS A PROVENANCE RECORD, NOT A LIVE PATH. It names the worktree the axes
-# were vendored FROM, in a repository that is now archived, so the re-vendor branch
-# below cannot run there again -- which costs nothing, because the vendored copy is
-# inside the pinned `nostoc/ecspr` chunk and `AXES_SHA` is what actually holds the
-# two to being the same file. Re-vendoring from anywhere else means checking that
-# sha, not this path.
 AXES_SRC = Path("/home/tony/agentic_workspace/projects/fabfos/anaerobic-digester"
                 "/data/reference/ECSPr_axes/biomass.json")
 AXES_SHA = "f63c6c8c7636b099aa872634f0a2a327222df6165057407e01fbf9c283d8c44c"
@@ -115,35 +98,21 @@ ELEMENTS = ("C", "N", "P", "S")
 TABLE = FIGS / "delta_ieff_set4"
 AXES_VENDORED = FIGS / "set4_axes.json"
 
-# The table carries both centrings of the same floored log-ratio; the panel picks one.
 VALUE_COL = {"clr": "clr", "median": "log2fc_med"}
 
 
-# ---------------------------------------------------------------------------
-# ported layout constants -- see module docstring for the origin
-# ---------------------------------------------------------------------------
 ARCS = ("input", "central", "biomass")
 ARC_TITLE = {"input": "Media", "central": "Central", "biomass": "Biomass"}
 
-# Element palette, LOCAL to this panel (plotly qualitative, carbon left as ink).
 ELEMENT_COLORS = {"C": "#2a2a2a", "N": "#636efa", "P": "#ef553b", "S": "#ffa15a"}
 
-# Only `central` collapses across element: L-glutamate carries a carbon ledger and
-# a nitrogen ledger, and collapsing puts both chords on one node.
 COLLAPSE = {"input": False, "central": True, "biomass": False}
 
 CATEGORY_ORDER = ("protein", "nucleotide", "phospholipid", "lps", "murein",
                   "cofactor", "met_salvage", "catabolic")
 
-# set4 declares no catabolic P axis -- phosphate enters directly at a biomass edge --
-# so inorganic phosphate would land in `biomass` as a labelling accident. Promoting
-# it makes all four elements enter the ring the same way.
 INPUT_EXTRA = {("P", "MNXM9")}
 
-# Standard biochemical short forms, for the PANEL only -- the table keeps MetaNetX's
-# full names, since it is the reviewable record. Without this the peptidoglycan
-# terminal's 99-character name appears in four element sectors and drives the tight
-# bounding box, shrinking the ring to a third of the canvas.
 LABEL_ABBREV = {
     "UDP-N-acetyl-alpha-D-muramoyl-L-alanyl-gamma-D-glutamyl-meso-2,6-"
     "diaminopimeloyl-D-alanyl-D-alanine": "UDP-MurNAc-pentapeptide",
@@ -162,9 +131,6 @@ LABEL_ABBREV = {
 
 INK, INK_SOFT, INK_FAINT = "#1c1c1c", "#6b7280", "#c2c7ce"
 ALPHA_MAX, LIN_THRESH, LW = 0.95, 1e-4, 1.4
-# Two ramp floors. On the symlog ramp a zero-change chord must stay *visible but
-# negligible* among seventy others; on the linear ramp there are eight chords and
-# the weakest is a real measurement, so it may not vanish.
 ALPHA_MIN_SYMLOG, ALPHA_MIN_LINEAR = 0.05, 0.16
 DPI_REVIEW = 220
 
@@ -173,9 +139,6 @@ def _cat_rank(c):
     return CATEGORY_ORDER.index(c) if c in CATEGORY_ORDER else len(CATEGORY_ORDER)
 
 
-# ---------------------------------------------------------------------------
-# inputs
-# ---------------------------------------------------------------------------
 def _sha256(p: Path) -> str:
     h = hashlib.sha256()
     h.update(p.read_bytes())
@@ -183,15 +146,11 @@ def _sha256(p: Path) -> str:
 
 
 def _unlink(p: Path) -> None:
-    """Every published file under the chunk is a 0444 hardlink into a DVC cache
-    several worktrees share. Writing THROUGH one rewrites that cache object for all
-    of them; matplotlib's savefig opens "wb" and truncates. Always break the link."""
     if p.exists() or p.is_symlink():
         p.unlink()
 
 
 def load_axes(vendored: Path = AXES_VENDORED) -> pd.DataFrame:
-    """The 79 set4 axes as a frame. Vendors the canonical JSON on first use."""
     if not vendored.exists():
         assert AXES_SRC.exists(), f"missing set4 source {AXES_SRC}"
         got = _sha256(AXES_SRC)
@@ -216,14 +175,6 @@ def load_axes(vendored: Path = AXES_VENDORED) -> pd.DataFrame:
 
 
 def gene_coverage() -> pd.DataFrame:
-    """Per-organism gene coverage M for every bridged metabolite, indexed by
-    (element, mnxm). Assembled from the three pairwise bl-on bridge tables, in
-    which each organism appears twice and must agree.
-
-    This is what tells a RISE at X's node apart from X CONTRIBUTING. `throughput`
-    is current handled, so X's node also rises when current merely passes through
-    it from a neighbour -- and a metabolite X can barely make is precisely where
-    that happens. Ranking X's coverage against the other two separates the cases."""
     M: dict[str, pd.Series] = {}
     for pair in ("NOS-ERY_bl-on", "NOS-RHI_bl-on", "ERY-RHI_bl-on"):
         b = pd.read_parquet(CHUNK / "networks" / pair / "bridges.parquet")
@@ -236,18 +187,11 @@ def gene_coverage() -> pd.DataFrame:
                 s = M[org].combine_first(s)
             M[org] = s
     df = pd.DataFrame(M)
-    # rank 1 = best-covered of the three; ties share the better rank.
     return df.join(df.rank(axis=1, ascending=False, method="min")
                      .add_suffix("_rank"))
 
 
 def _read_ground(network: str) -> dict[str, pd.DataFrame]:
-    """condition_id -> frame. Filenames are content hashes and carry no label, so
-    the condition_id column is the only file->unit map.
-
-    `results/NOS/` holds the same unit twice (measured local and on fir, agreeing to
-    4e-16). Concatenating would silently double the control, so duplicates are
-    asserted equal and one is kept."""
     d = RESULTS / network / "ecspr-ground_results"
     assert d.is_dir(), f"missing {d}"
     seen: dict[str, pd.DataFrame] = {}
@@ -273,22 +217,13 @@ def _direction(cid: str) -> str:
 
 
 def _own_copy(g: pd.DataFrame, member: str) -> pd.DataFrame:
-    """Restrict to the member's OWN metabolite copy and strip the prefix.
-
-    Metabolite ids are prefixed in singletons as well as composed networks
-    (`NOS:MNXM10`), and the two directions of a pair never name the same tagged
-    endpoint, so alignment has to strip rather than match strings."""
     pref = f"{member}:"
     own = g[g.metabolite.astype(str).str.startswith(pref)].copy()
     own["mnxm"] = own.metabolite.astype(str).str.slice(len(pref))
     return own
 
 
-# ---------------------------------------------------------------------------
-# step 1 -- the table
-# ---------------------------------------------------------------------------
 def _member_nodes(member: str, triple: str, floor: float) -> pd.DataFrame:
-    """Per-node alone-vs-community frame for one member, over all four elements."""
     alone = _read_ground(member)
     comm = _read_ground(triple)
 
@@ -311,26 +246,6 @@ def _member_nodes(member: str, triple: str, floor: float) -> pd.DataFrame:
         co.columns = ["th_co", "role_co", "in_graph_co"]
         j = al.join(co, how="inner")
 
-        # Floored log-ratio, then centred on this element graph's own live nodes:
-        # most of the injected current leaves across bridges, and that shift is a
-        # property of the composition, not of any metabolite.
-        #
-        # `clr` subtracts the MEAN of the logs, which is Aitchison's centred log
-        # ratio: clr_co(i) - clr_al(i) = l2(i) - (mean log2 th_co - mean log2 th_al),
-        # and the bracket is just mean(l2) because both sides are read over the same
-        # node set. `log2fc_med` subtracts the median instead -- more robust, and
-        # what v1 shipped -- and is kept because the two disagree by 0.25-0.45 log2
-        # here, the live-node distribution being right-skewed in every cell.
-        #
-        # The centring population is the LIVE nodes -- above the floor on at least
-        # one side -- and that choice is load-bearing twice over. 75-90% of a
-        # 100k-node element graph is floored dust on both sides and contributes a
-        # manufactured exactly-zero, so a MEDIAN over all nodes is 0.000 by
-        # construction and the correction silently does nothing, while a MEAN over
-        # all nodes is the real correction scaled down by the live fraction -- an
-        # arbitrary number, since how much dust a graph carries is not a property of
-        # the comparison. Dust carries no information about dilution; excluding it
-        # is the defensible closure.
         l2 = np.log2(np.maximum(j.th_co, floor) / np.maximum(j.th_al, floor))
         live = (j.th_al >= floor) | (j.th_co >= floor)
         j["log2fc_raw"] = l2
@@ -383,7 +298,6 @@ def build_table(floor: float, triple: str) -> pd.DataFrame:
                    "src_arc": arc_of(a.element, a.src_mnxm),
                    "dst_arc": arc_of(a.element, a.dst_mnxm)}
 
-            # who is best placed to MAKE the sink -- see gene_coverage()
             if (a.element, a.dst_mnxm) in cov.index:
                 c = cov.loc[(a.element, a.dst_mnxm)]
                 rec.update(dst_bridged=True,
@@ -488,13 +402,7 @@ def table(args) -> int:
     return 0
 
 
-# ---------------------------------------------------------------------------
-# step 2 -- arcs and layout (ported)
-# ---------------------------------------------------------------------------
 def assign_arcs(axes: pd.DataFrame):
-    """-> (node_arc, arc_members, central_mets, input_nodes). Node identity is
-    `mnxm` inside a collapsed arc and `(element, mnxm)` inside a split one, so the
-    two addressing schemes never collide."""
     cat = axes[axes["category"] == "catabolic"]
     central_mets = set(cat["dst_mnxm"])
     input_nodes = {(r.element, r.src_mnxm) for r in cat.itertuples()} | INPUT_EXTRA
@@ -512,8 +420,6 @@ def assign_arcs(axes: pd.DataFrame):
         if k not in node_arc:
             node_arc[k] = arc
             members[arc].append((k, element, mnxm, lab))
-        # A node reached by axes of several categories keeps the earliest in
-        # CATEGORY_ORDER, so its placement does not depend on set4's row order.
         prev = node_cat.get(k)
         if prev is None or _cat_rank(category) < _cat_rank(prev):
             node_cat[k] = category
@@ -537,11 +443,7 @@ def node_key_for(arc, element, mnxm):
 
 
 def layout(members):
-    """Place nodes on the circle: three arcs in flow order, each split by element
-    unless it collapses."""
     ARC_GAP = np.deg2rad(11)
-    # biomass is one continuous band, so element gaps there would read as arc
-    # breaks rather than as element boundaries.
     ELEM_GAP = {arc: np.deg2rad(0.0 if arc == "biomass" else 3.5) for arc in ARCS}
 
     grouped = {}
@@ -560,7 +462,7 @@ def layout(members):
     usable = 2 * np.pi - len(ARCS) * ARC_GAP - elem_gap_total
 
     angle, arc_span, elem_span = {}, {}, {}
-    cursor = np.pi / 2                      # start at top, sweep clockwise
+    cursor = np.pi / 2
     for arc in ARCS:
         arc_start = cursor
         for gi, (e, ms) in enumerate(grouped[arc]):
@@ -577,18 +479,6 @@ def layout(members):
 
 
 def alpha_for(lfc, vmax, ramp="linear"):
-    """|value| -> alpha, on one of two ramps.
-
-    `linear` is opacity proportional to the clr, and is what the shipped
-    positive-only panels use: a doubling of current is the same step in opacity
-    wherever it happens, which is the whole point of working in log space.
-
-    `symlog` is the reference panel's ramp, kept for `--sign both`. Note that with
-    LIN_THRESH at 1e-4 it is a log scale over four decades with nothing measured
-    below 0.1, so it compresses hard at the top -- the median positive response here
-    lands at alpha 0.81 on it and at 0.30 on the linear ramp. That is the right
-    tradeoff when seventy chords must all stay legible and the wrong one when eight
-    chords are the entire claim."""
     if not np.isfinite(lfc):
         return ALPHA_MAX
     a = abs(lfc)
@@ -615,19 +505,14 @@ def _apply_rc(plt):
         "text.color": INK, "axes.labelcolor": INK,
         "figure.facecolor": "white", "axes.facecolor": "white",
         "savefig.facecolor": "white",
-        "svg.fonttype": "none",       # keep text as text in the SVG master
+        "svg.fonttype": "none",
     })
 
 
-# ---------------------------------------------------------------------------
-# step 3 -- the panels
-# ---------------------------------------------------------------------------
 DRAWN_STATES = ("ok", "port-confounded")
 
 
 def _axes_with_labels(df: pd.DataFrame) -> pd.DataFrame:
-    """One row per axis with display labels, taken off the table so the arcs and
-    the ribbons cannot disagree about what a node is called."""
     a = (df.drop_duplicates("axis_id")
            [["axis_id", "element", "src_mnxm", "dst_mnxm", "category",
              "src_name", "dst_name"]]
@@ -657,8 +542,6 @@ def draw_member(df_all: pd.DataFrame, member: str, vmax: float, args) -> dict:
         return node_key_for(arc, element, mnxm)
 
     df = df_all[df_all.member == member].assign(value=df_all[VALUE_COL[args.centre]])
-    # Everything the panel will draw, resolved BEFORE any of it is drawn, so the
-    # node emphasis and the ribbons cannot disagree about what made the cut.
     measurable = df[df.state.isin(DRAWN_STATES) & np.isfinite(df.value)]
     shown = measurable
     if args.sign == "pos":
@@ -668,15 +551,9 @@ def draw_member(df_all: pd.DataFrame, member: str, vmax: float, args) -> dict:
     if args.rank != "all":
         shown = shown[shown.dst_M_rank == int(args.rank)]
 
-    # Bold the sinks of the strongest responses -- the panel's own answer to "where
-    # do I look first", rather than a hand-curated list. Keyed on NODE, not on the
-    # label: quinolinate is a node in the C sector and another in the N sector, and
-    # matching by name bolds a sector no chord reaches.
     hot = {key_of(r.element, r.dst_mnxm) for r in
            shown.reindex(shown.value.abs().sort_values(ascending=False).index)
                 .head(args.bold).itertuples()}
-    # A node no shown chord touches is context, not content. With the sign filter on
-    # it is most of the ring, and at full contrast it drowns the eight that matter.
     touched = ({key_of(r.element, r.src_mnxm) for r in shown.itertuples()}
                | {key_of(r.element, r.dst_mnxm) for r in shown.itertuples()})
 
@@ -704,9 +581,6 @@ def draw_member(df_all: pd.DataFrame, member: str, vmax: float, args) -> dict:
             x, y = R * np.cos(th), R * np.sin(th)
             live = k in touched
             if COLLAPSE[arc]:
-                # central nodes carry no element, so they are drawn OPEN -- the
-                # ring's one unfilled marker, which is also what "collapsed across
-                # element" looks like.
                 ax.scatter([x], [y], s=88 if live else 40, facecolors="white",
                            edgecolors=INK if live else INK_FAINT,
                            linewidths=1.1 if live else 0.8, zorder=7)
@@ -724,8 +598,6 @@ def draw_member(df_all: pd.DataFrame, member: str, vmax: float, args) -> dict:
                     color=(INK if bold else INK_SOFT) if live else INK_FAINT,
                     zorder=6)
 
-    # Faintest first, and the ambiguous rank-3 rises under the rest: the chord that
-    # supports the claim should be the one drawn on top of the one that muddies it.
     d = shown.assign(_clear=(shown.dst_M_rank != 3).astype(int),
                      _ord=shown.value.abs())
     n_shown = n_pos = n_neg = n_r3 = 0
@@ -744,10 +616,6 @@ def draw_member(df_all: pd.DataFrame, member: str, vmax: float, args) -> dict:
         n_shown += 1
         n_pos, n_neg = n_pos + int(pos), n_neg + int(not pos)
         al = alpha_for(r.value, vmax, ramp=args.ramp)
-        # With one sign drawn the linestyle is free, so it carries the direction
-        # ambiguity instead: rank 3 means the member is the WORST of the three at
-        # making that sink, so a rise there is current ARRIVING, not contributed.
-        # With both signs drawn it has to go back to carrying the sign.
         if args.sign == "both":
             dashed = not pos
         else:
@@ -760,9 +628,6 @@ def draw_member(df_all: pd.DataFrame, member: str, vmax: float, args) -> dict:
             zorder=(3 if dashed else 4) + al, capstyle="round"))
 
     if not args.bare:
-        # Title in the corner, not the middle: long chords are drawn with control
-        # points scaled toward the origin, so the centre of the ring is the one
-        # place text is guaranteed to be crossed.
         ax.text(-1.47, 1.40, member, ha="left", va="top", fontsize=28,
                 fontweight="bold", color=INK, zorder=8)
         subtitle = {"pos": "set4 axes carrying MORE current in community than alone",
@@ -830,10 +695,6 @@ def chord(args) -> int:
     df = pd.read_parquet(p)
     val = df[VALUE_COL[args.centre]]
 
-    # ONE ramp maximum across all three members, so the panels are comparable to
-    # each other rather than each self-scaled. It is taken over what is actually
-    # drawn: with one sign shown, scaling to the other sign's extreme would spend
-    # the channel on chords that are not on the page.
     m = df.state.isin(DRAWN_STATES)
     if args.sign == "pos":
         vmax = float(val[m & (val > 0)].max())

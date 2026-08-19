@@ -1,29 +1,3 @@
-"""oom_probe — worst-case GPU-memory probe for each embedding transform.
-
-Generates a synthesized FASTA per model containing `BATCH_SIZE` copies of a
-single `MAX_LEN`-length ORF, drops it (plus the transform's exact INFERENCE
-script + an sbatch wrapper + nvidia-smi monitor) under
-/scratch/phyberos/dl_testing_claude/oom_probe/<model>/, then prints the
-sbatch command(s) for the user to inspect and submit.
-
-Why this is the tighter bound than any real shard: shardFasta now striped
-+ length-sorted means each shard's *max single seq length* is bounded by
-the global longest sequence; the *worst per-batch* memory is bounded by
-batch_size * cap (cap = each transform's MAX_LEN). A FASTA of
-BATCH_SIZE × MAX_LEN repeated is therefore a strict upper bound on any
-batch any production shard will produce.
-
-Usage:
-    python tests/manual/oom_probe.py            # generates everything
-    python tests/manual/oom_probe.py --model esm_c
-    python tests/manual/oom_probe.py --upload   # also rsyncs to fir
-
-Then on fir:
-    sbatch /scratch/phyberos/dl_testing_claude/oom_probe/<model>/probe.sbatch
-
-The probe is **never auto-submitted** — user must approve each salloc per
-safety rules.
-"""
 import argparse
 import importlib.util
 import re
@@ -36,12 +10,6 @@ TRANSFORMS = REPO / "transforms" / "functionalAnnotation"
 REMOTE_ROOT = "/scratch/phyberos/dl_testing_claude/oom_probe"
 LOCAL_ROOT  = Path("/tmp/oom_probe_stage")
 
-# Per-model probe spec. (model_id, transform_file, slice, slurm_mem,
-# weights_subdir-on-fir, extra_runner_args).
-# slice values map to gpubase_bygpu_b1 MIG selectors via #SBATCH --gres.
-# Transform-name → container-name + weights-dir mappings.
-# Container names are bare (no underscore between word parts) per the .env
-# files: external_esmc, external_ankh, etc.
 PROBES = [
     dict(
         name="esm_c_1g10gb",
@@ -86,9 +54,6 @@ PROBES = [
         weights_tgz="prott5_xl.tgz",
     ),
     dict(
-        # ProtT5-XL OOM'd on 1g.10gb with batch=4 cap=4096 (~7.96 GiB before
-        # attention forward) — re-probe at batch=1 to bound the per-sequence
-        # footprint.
         name="prott5_1g10gb_b1",
         transform="prott5.py",
         container="prott5",
@@ -100,8 +65,6 @@ PROBES = [
         batch_override=1,
     ),
     dict(
-        # ProtT5-XL on 3g.40gb at the production batch (4) — confirms a slice
-        # tier that comfortably fits the full design point.
         name="prott5_3g40gb",
         transform="prott5.py",
         container="prott5",
@@ -135,9 +98,6 @@ PROBES = [
 
 
 def _read_module_constants(path: Path) -> dict:
-    """Parse BATCH_SIZE / MAX_LEN / CHUNK_OVERLAP / CHUNK_SIZE / INFERENCE
-    out of a transform .py without importing it (avoids the metasmith
-    dependency chain). Returns whichever of the constants exist."""
     text = path.read_text()
     out = {}
     for key in ("BATCH_SIZE", "MAX_LEN", "CHUNK_OVERLAP", "CHUNK_SIZE"):
@@ -152,8 +112,6 @@ def _read_module_constants(path: Path) -> dict:
 
 def _synth_fasta(n_seqs: int, length: int, fp: Path):
     fp.parent.mkdir(parents=True, exist_ok=True)
-    # Glycine has the smallest aromatic / steric footprint; identity is
-    # irrelevant to memory consumption but keeps the seq parseable.
     seq = "G" * length
     with open(fp, "w") as f:
         for i in range(n_seqs):
@@ -163,7 +121,6 @@ def _synth_fasta(n_seqs: int, length: int, fp: Path):
 def _synth_3di_parquet(n_seqs: int, length: int, fp: Path):
     import pandas as pd
     fp.parent.mkdir(parents=True, exist_ok=True)
-    # Any 3Di letter works for OOM — memory depends on length, not identity.
     di3 = "A" * length
     df = pd.DataFrame({
         "sequence_id": [f"probe_{i:03d}" for i in range(n_seqs)],
@@ -173,7 +130,6 @@ def _synth_3di_parquet(n_seqs: int, length: int, fp: Path):
 
 
 def _sbatch_text(spec: dict, consts: dict) -> str:
-    """Generate the sbatch script that runs the inference + memory monitor."""
     batch = spec.get("batch_override", consts["BATCH_SIZE"])
     cap   = spec.get("cap_override", consts["MAX_LEN"])
     overlap = consts.get("CHUNK_OVERLAP", 128)
@@ -181,7 +137,6 @@ def _sbatch_text(spec: dict, consts: dict) -> str:
     container = spec["container"]
     sif_name = f"docker..quay.io_hallamlab_external_{container}..2026.05.19.sif"
 
-    # Per-model inference args (esmfold/saprot need their own arg sets)
     if container == "esmfold":
         infer_args = (
             f"--weights /weights "
@@ -203,7 +158,7 @@ def _sbatch_text(spec: dict, consts: dict) -> str:
             f"--max-len {cap} "
             f"--chunk-overlap {overlap}"
         )
-    else:  # esm_c, ankh, prott5
+    else:
         extra = spec.get("runner_args", "")
         infer_args = (
             f"--weights /weights "
@@ -217,9 +172,6 @@ def _sbatch_text(spec: dict, consts: dict) -> str:
             f"{extra}"
         )
 
-    # Prefer the metasmith-installed SIF; fall back to the local validation
-    # build that lives under dl_testing_claude. Both are bytewise-compatible
-    # model code (the only diff is the manifest's tag).
     return f"""#!/bin/bash
 # OOM probe: {name}
 # Worst-case batch = {batch} × {cap}-AA seqs (= {batch * cap} AA / batch)
@@ -298,7 +250,6 @@ def stage(spec: dict, upload: bool):
     transform = TRANSFORMS / spec["transform"]
     consts = _read_module_constants(transform)
     if "INFERENCE" not in consts or "BATCH_SIZE" not in consts or "MAX_LEN" not in consts:
-        # esmfold has no BATCH_SIZE (sequential)
         if spec["transform"] == "esmfold.py" and "MAX_LEN" in consts:
             consts.setdefault("BATCH_SIZE", 1)
         else:

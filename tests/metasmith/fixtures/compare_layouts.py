@@ -1,33 +1,4 @@
 #!/usr/bin/env python3
-"""Render the stress fixture every way and print the sizes side by side.
-
-    python tests/fixtures/compare_layouts.py [OUT_DIR]
-    python tests/fixtures/compare_layouts.py --corpus [N]
-
-Writes an SVG (and a PNG where `neato` is on PATH) per label placement, one SVG
-per colour scheme, a table of their dimensions, and the layout's cost — so both
-the choice between placements and any change to the placement itself are a
-number rather than an impression. Run by hand; nothing in the suite depends on
-it.
-
-`--corpus` is the other half of the argument. Symmetry now leads the layout's
-objective, so the question it has to answer is what that costs on graphs where
-there is no symmetry worth finding: the same measurements, summed over N random
-DAGs, with the repeat-motif pass on and off.
-
-The costs on the committed 73-node fixture, oldest first:
-
-    before supply was emitted beside its consumer
-        rail=545 lanes=14 longest=56 crossings=127 modules=13/15 spread=44
-    with that, before repeated blocks were drawn alike
-        rail=527 lanes=13 longest=35 crossings=123 modules=8/15  spread=106
-    now
-        rail=536 lanes=13 longest=35 crossings=123 modules=7/15  spread=104
-                 repeats=4/6
-
-Over 300 random DAGs of 12-60 nodes, 93 of which contain a repeat class at
-all, turning the pass on costs rail +0.4%, lanes +0.4%, crossings +1.1%.
-"""
 import random
 import re
 import sys
@@ -83,8 +54,6 @@ def main() -> int:
     narrow = min(rows, key=lambda r: r[1])
     wide = max(rows, key=lambda r: r[1])
     print(f"\n{narrow[0]} is {wide[1] / narrow[1]:.1f}x narrower than {wide[0]}")
-    # neither label placement nor colour touches the layout, so one measurement
-    # covers all of them
     print(f"cost: {measure(load_dag().layout())}")
     print(f"wrote {out}/ (+{len(SCHEMES)} colour schemes)")
     return 0
@@ -100,7 +69,6 @@ def _random_dag(rng: random.Random, n: int):
 
 
 def corpus(count: int) -> int:
-    """What leading the objective with symmetry costs where there is none."""
     real = dag_layout._motifs
     print(f"{'motifs':<8} {'rail':>8} {'lanes':>7} {'crossings':>10}"
           f" {'congruent':>11} {'graphs w/ a class':>18} {'secs':>7}")

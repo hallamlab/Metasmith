@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-"""Run eukaryotic transcriptomics pipeline (STAR + StringTie) on sockeye via SLURM."""
 import sys
 import time
 sys.stdout.reconfigure(line_buffering=True)
@@ -116,7 +115,7 @@ def main():
     print("\n=== Waiting for completion ===")
     results_path = smith.GetResultSource(task).GetPath()
     t0 = time.time()
-    timeout = 86400  # 24h
+    timeout = 86400
     last_print = 0
     while not (results_path / "_metadata").exists():
         elapsed = time.time() - t0

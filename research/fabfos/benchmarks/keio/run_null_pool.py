@@ -40,8 +40,7 @@ from run_ko_panel import (  # noqa: E402
     SOURCE_NAME, build_direction_ratios, run, score_field, rank_of,
 )
 
-SEED = 20260809  # one seed for both pools and every arm -- see the LASER README's
-                 # POOL_SEED note: re-drawing per arm voids every head-to-head p.
+SEED = 20260809
 
 
 def in_graph_reactions(element):
@@ -52,9 +51,6 @@ def in_graph_reactions(element):
 
 
 def keio_reactions(element, exclude):
-    """Every reaction some Keio gene deletes, minus the panel's own, restricted to the
-    ones that are actually in the built graph -- a deletion of a reaction the graph
-    never had is a no-op and would pad the null with exact zeros."""
     edits = pd.read_parquet(EDITS)
     cand = set(edits[edits.action == "del"].mnxr.dropna().astype(str))
     return sorted((cand & set(in_graph_reactions(element))) - set(exclude))
@@ -131,7 +127,6 @@ def main():
     null = pd.DataFrame(rows)
     null.to_csv(OUT / "null_pool.tsv", sep="\t", index=False)
 
-    # one-sided p on frac_beaten, against each pool, for every observed cell
     ps = []
     for o in observed.itertuples(index=False):
         for name in pools:

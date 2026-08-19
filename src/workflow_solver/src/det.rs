@@ -10,16 +10,13 @@
 //! is seeded per process, so a map iterated anywhere would give a different
 //! answer on every *run* rather than merely on every interpreter. The port's
 //! rule is that no iteration order is ever taken from a hash map -- ranks and
-//! declaration order are the only orders -- but a rule that is only in a comment
-//! is one refactor from being broken. A fixed seed makes the failure
-//! reproducible instead of intermittent, which is the difference between a bug
-//! that is found and a bug that is filed as flaky.
+//! declaration order are the only orders -- but a rule that lives only in a
+//! comment is one refactor from being broken. A fixed seed makes that failure
+//! reproducible rather than intermittent.
 //!
-//! The hash itself is the FxHash mixing step: one multiply and one rotate per
-//! word. It is not a strong hash and does not need to be -- these keys are
-//! arena indices and interned bit patterns, not adversarial input -- and it is
-//! several times cheaper than SipHash, which matters on maps rebuilt once per
-//! expanded node.
+//! The hash is the FxHash mixing step. It is not a strong hash and does not need
+//! to be: these keys are arena indices and interned bit patterns, not
+//! adversarial input.
 
 use std::collections::{HashMap, HashSet};
 use std::hash::{BuildHasherDefault, Hasher};

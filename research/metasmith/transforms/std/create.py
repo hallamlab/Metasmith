@@ -30,14 +30,10 @@ def verify_and_sync(src: Path, dest: Path, items: list[tuple]):
             print(f"cleaning [{x}]")
             os.system(f"rm -r {dest/x}")
 
-# -----------------------
-# std data types
 print(f"data types")
 dtypes = DataTypeLibrary.Load(HERE/"dtypes.yml")
 os.system(f"rsync -acP {HERE/'dtypes.yml'} {OUTPUT}")
 
-# -----------------------
-# containers
 print(f"containers")
 with open(HERE/"index_containers.yml") as f:
     d = yaml.safe_load("".join(f.readlines()))
@@ -51,8 +47,6 @@ for s, d, t in items: containers.AddItem(d, t)
 containers.Save()
 verify_and_sync(HERE/"containers", containers.location, items)
 
-# -----------------------
-# transforms
 print(f"transforms")
 transforms = TransformInstanceLibrary(OUTPUT/"transforms.xgdb")
 transforms.AddTypeLibrary("std", dtypes)
@@ -67,5 +61,4 @@ for s, d, t in procedures: transforms.AddItem(d, t)
 transforms.Save()
 verify_and_sync(HERE/"transforms", transforms.location, procedures)
 
-# -----------------------
 print("completed compilation of std library")

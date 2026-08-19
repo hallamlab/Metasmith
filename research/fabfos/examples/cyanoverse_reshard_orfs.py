@@ -61,7 +61,6 @@ ORFS_GLOB = "*.faa"
 
 
 def count_records(path: Path) -> int:
-    """Number of fasta records, counted by '>' at line start, streaming."""
     n = 0
     with path.open("rb") as fh:
         for line in fh:
@@ -71,7 +70,6 @@ def count_records(path: Path) -> int:
 
 
 def survey(orfs_dir: Path) -> list[tuple[str, Path, int]]:
-    """(sample, path, n_orfs) per input fasta, refusing anything unusable."""
     files = sorted(orfs_dir.glob(ORFS_GLOB))
     if not files:
         raise SystemExit(f"no {ORFS_GLOB} under {orfs_dir}")
@@ -93,12 +91,6 @@ def survey(orfs_dir: Path) -> list[tuple[str, Path, int]]:
 
 
 def pack_by_size(items: list[tuple[str, Path, int]], per_shard: int) -> list[list[tuple[str, Path, int]]]:
-    """Largest-first bin-packing into shards of AT MOST per_shard ORFs.
-
-    The shard count falls out of the cap and is not chosen. An assembly larger
-    than per_shard gets a shard to itself rather than being split; see the
-    module docstring on why splitting is not a rearrangement.
-    """
     shards: list[list[tuple[str, Path, int]]] = []
     loads: list[int] = []
     for item in sorted(items, key=lambda t: t[2], reverse=True):
@@ -117,15 +109,6 @@ def pack_by_size(items: list[tuple[str, Path, int]], per_shard: int) -> list[lis
 
 
 def pack_into_n(items: list[tuple[str, Path, int]], n: int) -> list[list[tuple[str, Path, int]]]:
-    """Longest-processing-time packing into EXACTLY n shards.
-
-    Separate from `pack_by_size` because a cap and a count are different asks
-    and one cannot serve both: capping at ceil(total/n) overflows to n+1 bins
-    the moment two large assemblies will not share one (measured -- 3 E. coli
-    proteomes, --shards 2, gave 3). Assigning each assembly largest-first to
-    the currently emptiest shard honours n exactly and balances as a side
-    effect.
-    """
     if n < 1:
         raise SystemExit("--shards must be >= 1")
     if n > len(items):
@@ -140,7 +123,6 @@ def pack_into_n(items: list[tuple[str, Path, int]], n: int) -> list[list[tuple[s
 
 
 def write_shard(shard: list[tuple[str, Path, int]], out_fasta: Path, manifest_rows: list[str]) -> int:
-    """Concatenate a shard's fastas, prefixing every header. Returns records written."""
     written = 0
     with out_fasta.open("w") as out:
         for sample, path, _ in shard:
@@ -207,10 +189,6 @@ def main(argv=None) -> int:
         fh.write("prefixed_id\tsample\torf_id\tshard\n")
         fh.write("\n".join(manifest_rows) + "\n")
 
-    # the survey counted headers; the writer re-counted them as it copied. If
-    # those disagree, a file changed underneath us mid-run and the manifest no
-    # longer describes the shards -- which is exactly the silent-wrong-table
-    # failure this script exists to prevent.
     if written_total != total:
         raise SystemExit(
             f"REFUSING: surveyed {total:,} ORFs but wrote {written_total:,}. "

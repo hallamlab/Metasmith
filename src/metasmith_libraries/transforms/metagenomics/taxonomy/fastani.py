@@ -19,7 +19,6 @@ def protocol(context: ExecutionContext):
 
     threads = context.params.get('cpus')
     threads = "" if threads is None else f"--threads {threads}"
-    # Same command either way: this tool is a plain CLI in both worlds.
     _cmd = f"""
             fastANI {threads} --queryList {genomes} --refList {genomes} --output {iout.container} 
         """
@@ -38,7 +37,7 @@ def protocol(context: ExecutionContext):
 
 TransformInstance(
     protocol=protocol,
-    model=model, # the contract
+    model=model,
     group_by=pan,
     resources=Resources(
         cpus=4,

@@ -48,16 +48,6 @@ TYPES_YML = MLIB / "data_types" / "aspire.yml"
 FILE, DIR, VALUE = "file", "dir", "value"
 
 
-# --------------------------------------------------------------------------
-# types
-#
-# One entry per `aspire::` type: (kind, description, extra properties).
-# The description lands in `_:` and *participates in matching*, so two types
-# with different descriptions can never subsume one another -- which is what
-# keeps a transform from chaining into itself when its product and one of its
-# requirements are both "a counts table".
-# --------------------------------------------------------------------------
-
 def t(kind, desc, **props):
     return kind, desc, props
 
@@ -214,21 +204,6 @@ TYPE_SECTIONS: list[tuple[str, dict]] = [
 ]
 
 
-# --------------------------------------------------------------------------
-# policy tokens
-#
-# One `<name>_policy` supertype with two `extends:` children. These use the
-# *list* form of `properties:` rather than the mapping form used everywhere
-# else, and that is load-bearing: mapping-form `extends:` merges key by key with
-# the child winning, so a child that restates any key the parent set -- the `_:`
-# description included -- stops satisfying the parent, silently. The list form
-# is a plain set union, so subsumption is guaranteed. `--lint` checks it anyway.
-#
-# The supertype itself is never required by anything. It exists so the two arms
-# are visibly siblings and so `IsA` relates them, and it is what a future
-# "which switches does this pipeline have" query would enumerate.
-# --------------------------------------------------------------------------
-
 POLICIES: list[tuple[str, str]] = [
     ("augmentation", "apply soft group labels to the metadata before analysis"),
     ("batch_correction", "run ConQuR batch correction over the ASV counts"),
@@ -241,20 +216,16 @@ POLICIES: list[tuple[str, str]] = [
 ]
 
 
-# --------------------------------------------------------------------------
-# the topology
-# --------------------------------------------------------------------------
-
 class T:
     def __init__(self, name, source, line, requires, products, group_by,
                  folds=(), note=None, cpus=1, memory_gb=4, hours=1):
         self.name = name
-        self.source = source          # the .nf process, or None for a port artifact
+        self.source = source
         self.line = line
-        self.requires = requires      # [(var, "ns::type", (parent_vars,))]
-        self.products = products      # [(var, "ns::type")]
+        self.requires = requires
+        self.products = products
         self.group_by = group_by
-        self.folds = folds            # .nf processes merged into this one
+        self.folds = folds
         self.note = note
         self.cpus, self.memory_gb, self.hours = cpus, memory_gb, hours
 
@@ -267,7 +238,6 @@ def _r(var, dtype, *parents):
 
 
 TABLE: list[T] = [
-    # -- per-sample read processing ----------------------------------------
     T("fastp_qc", "FASTP_QC", 3121,
       [RUN,
        _r("sid", "aspire::sample_id", "run"),
@@ -288,7 +258,6 @@ TABLE: list[T] = [
        _r("merged", "aspire::merged_reads", "sid")],
       [("filtered", "aspire::filtered_fasta")], "sid", cpus=2),
 
-    # -- the fan-in --------------------------------------------------------
     T("concat_fastas", "CONCAT_FASTAS", 3274,
       [RUN, _r("sid", "aspire::sample_id", "run"),
        _r("filtered", "aspire::filtered_fasta", "sid")],
@@ -331,7 +300,6 @@ TABLE: list[T] = [
       [("fcounts", "aspire::asv_filtered_counts"), ("fseqs", "aspire::asv_filtered_seqs")],
       "run"),
 
-    # -- alignment and taxonomy -------------------------------------------
     T("sina_trim", "SINA_TRIM", 3322,
       [RUN, _r("fseqs", "aspire::asv_filtered_seqs", "run"),
        _r("ref", "aspire::sina_arb_reference")],
@@ -355,7 +323,6 @@ TABLE: list[T] = [
            "for transforms/logistics/downloadSilvaDB.",
       cpus=8, memory_gb=16, hours=6),
 
-    # -- mitochondrial screen ---------------------------------------------
     T("prepare_blast_databases", "PREPARE_BLAST_DATABASES", 3511,
       [RUN, _r("mito_src", "aspire::mito_reference_source"),
        _r("cont_src", "aspire::contaminant_reference_source")],
@@ -391,7 +358,6 @@ TABLE: list[T] = [
        ("mito", "aspire::counts_mito"), ("decon", "aspire::counts_decon")],
       "run"),
 
-    # -- accounting --------------------------------------------------------
     T("general_stats", "GENERAL_STATS", 3755,
       [RUN, _r("counts_fa", "aspire::concat_counts_fasta", "run")],
       [("fastq", "aspire::fastq_stats"), ("fastp", "aspire::fastp_stats"),
@@ -420,7 +386,6 @@ TABLE: list[T] = [
            "asv_pipeline.nf:2790; here the placeholder gets a producer, so the "
            "consumer's requirement stays unconditional either way."),
 
-    # -- metadata ----------------------------------------------------------
     T("plot_metadata", "PLOT_METADATA", 3793,
       [RUN, _r("fastq", "aspire::fastq_stats", "run"),
        _r("micro", "aspire::counts_micro", "run"),
@@ -447,7 +412,6 @@ TABLE: list[T] = [
            "counts input to the corrected matrix at asv_pipeline.nf:2915, after "
            "the call site, so that rebinding is dead and is not ported."),
 
-    # -- switch 1: soft-label augmentation ---------------------------------
     T("group_label_augmentation", "GROUP_LABEL_AUGMENTATION", 4986,
       [RUN, _r("policy", "aspire::augmentation_on", "run"),
        _r("md", "aspire::metadata_micro", "run"),
@@ -471,7 +435,6 @@ TABLE: list[T] = [
       "run",
       note="the `off` arm: the metadata tables reach the analyses unchanged."),
 
-    # -- switch 2: batch correction ---------------------------------------
     T("asv_batch_correction", "ASV_BATCH_CORRECTION", 4101,
       [RUN, _r("policy", "aspire::batch_correction_on", "run"),
        _r("md", "aspire::analysis_metadata", "run"),
@@ -504,7 +467,6 @@ TABLE: list[T] = [
       note="the `off` arm: the uncorrected counts and ASV metadata reach the "
            "analyses unchanged."),
 
-    # -- terminal analyses -------------------------------------------------
     T("plot_upset", "PLOT_UPSET", 3927,
       [RUN, _r("md", "aspire::analysis_metadata", "run")],
       [("out", "aspire::upset_plots")], "run"),
@@ -535,7 +497,6 @@ TABLE: list[T] = [
        _r("counts", "aspire::analysis_counts", "run")],
       [("out", "aspire::diversity_outputs")], "run", cpus=4, memory_gb=16, hours=3),
 
-    # -- switch 3: indicator species ---------------------------------------
     T("indicspecies", "INDICSPECIES", 4518,
       [RUN, _r("policy", "aspire::indicspecies_on", "run"),
        _r("md", "aspire::analysis_metadata", "run"),
@@ -602,7 +563,6 @@ TABLE: list[T] = [
            "then globs the tables out of a shared directory. The directory is "
            "the real edge, so it is what is declared."),
 
-    # -- switch 4: network inference ---------------------------------------
     T("spieceasi", "SPIECEASI", 5452,
       [RUN, _r("policy", "aspire::spieceasi_on", "run"),
        _r("counts", "aspire::analysis_counts", "run"),
@@ -639,7 +599,6 @@ TABLE: list[T] = [
       note="the `off` arm; asv_pipeline.nf:2726-2729 falls back to files on "
            "disk if they exist and a zero-row placeholder if not."),
 
-    # -- switch 5: ASV to MAG linking --------------------------------------
     T("asv_mag_link", "ASV_MAG_LINK", 5821,
       [RUN, _r("policy", "aspire::asv_mag_link_on", "run"),
        _r("fseqs", "aspire::asv_filtered_seqs", "run")],
@@ -654,7 +613,6 @@ TABLE: list[T] = [
       [("pairing", "aspire::asv_mag_pairing"), ("out", "aspire::asv_mag_outputs")],
       "run"),
 
-    # -- switch 6: network rendering ---------------------------------------
     T("graph_network", "GRAPH_NETWORK", 5579,
       [RUN, _r("policy", "aspire::graph_network_on", "run"),
        _r("all", "aspire::network_graph_all", "run"),
@@ -701,7 +659,6 @@ TABLE: list[T] = [
        ("heatmaps", "aspire::sample_module_heatmaps")],
       "run", cpus=4, memory_gb=16, hours=4),
 
-    # -- the summary -------------------------------------------------------
     T("master_summary", "MASTER_SUMMARY", 5763,
       [RUN, _r("am", "aspire::analysis_asv_meta", "run"),
        _r("counts", "aspire::analysis_counts", "run"),
@@ -730,10 +687,6 @@ TABLE: list[T] = [
            "assignment."),
 ]
 
-
-# --------------------------------------------------------------------------
-# emission
-# --------------------------------------------------------------------------
 
 BANNER = "# generated by transforms/aspire/_generate.py -- do not hand-edit\n"
 
@@ -848,12 +801,7 @@ def write_stubs() -> int:
     return len(TABLE)
 
 
-# --------------------------------------------------------------------------
-# checks
-# --------------------------------------------------------------------------
-
 def check_table() -> None:
-    """Every aspire:: type is declared, and every declared type is used."""
     declared = set(TYPE_KIND) | {
         f"{base}_{suffix}" for base, _ in POLICIES
         for suffix in ("policy", "off", "on")
@@ -877,19 +825,11 @@ def check_table() -> None:
                 used.add(dtype.split("::")[1])
     missing = sorted(used - declared)
     assert not missing, f"types used by the table but not declared: {missing}"
-    # The bare `*_policy` supertypes are never required by anything -- that is
-    # the whole point of them; a transform requiring one would match both arms.
     unused = sorted(declared - used - {f"{b}_policy" for b, _ in POLICIES})
     assert not unused, f"types declared but never used: {unused}"
 
 
 def lint_extends() -> None:
-    """Assert every `extends:` edge in aspire.yml actually subsumes.
-
-    `extends:` resolves by property union at parse time with the child winning
-    every key it restates, so a subtype can silently stop satisfying its
-    supertype without any error. This is the only thing that catches it.
-    """
     sys.path.insert(0, str(MLIB))
     from metasmith.python_api import DataTypeLibrary  # noqa: E402
     import yaml  # noqa: E402

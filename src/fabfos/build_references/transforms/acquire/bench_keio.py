@@ -1,21 +1,3 @@
-"""Keio -- Baba et al. 2006, doi:10.1038/msb4100050.
-
-The single-gene knockout collection. Every LOF condition in the benchmark comes from
-here, and the arm carries a uniform `dir=-`: a knockout removes a route. That is a
-conductance claim, not a growth claim, and the 32 isozyme controls are included in it
-for exactly that reason.
-
-The publisher's supplementary distribution is 26 files -- ten tables (`-s*`), eight
-figures and three tables as images, plus the article full text from PMC. All of it is
-kept: the tier's contract is fidelity to what was served, and s7/s8/s9 are the growth
-tables the extraction reads while the figures are how a reader checks it.
-
-EVERY FILE IS CHECKED AGAINST ITS MAGIC BYTES. Not defensive boilerplate -- the
-previous snapshot here carried four files named `baba2006-s{3,4,5,8}.{pdf,xls}` that
-were all the same 48,676 bytes and all an HTML error page. The fetch 200'd on a
-landing page and nothing looked. A `.xls` that is HTML is a failure that survives
-every subsequent step until something tries to parse it.
-"""
 from metasmith.python_api import *
 
 lib   = TransformInstanceLibrary.ResolveParentLibrary(__file__)
@@ -29,8 +11,6 @@ DOI       = "10.1038/msb4100050"
 PMC       = "PMC1681482"
 PMC_OA    = "https://www.ncbi.nlm.nih.gov/pmc/oai/oai.cgi"
 
-# The ten supplementary TABLES, which is what the extraction reads. The figures are
-# fetched too but are not named here -- a missing figure is not a failed acquisition.
 TABLES = tuple(f"msb4100050-s{i}" for i in range(1, 11))
 
 DRIVER = r'''

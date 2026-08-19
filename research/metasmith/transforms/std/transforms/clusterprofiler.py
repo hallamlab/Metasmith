@@ -15,8 +15,6 @@ def protocol(context: ExecutionContext):
     table_path       = context.Output(table)
     plot_path        = context.Output(plot)
 
-    # KEGG/GO over-representation from the eggNOG annotations, run inside the
-    # bioconductor-clusterprofiler container.
     context.ExecWithContainer(
         image = image,
         cmd = f"""

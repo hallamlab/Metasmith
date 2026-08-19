@@ -1,15 +1,3 @@
-"""Eydallin -- Eydallin et al. 2010, the glycogen-metabolism knockout screen.
-
-The whole cohort is a HAND EXTRACTION FROM A PDF SUPPLEMENT. This transform fetches
-the PDF and the article full text; it does not turn either into rows, and there is no
-transform that does. The 87 ground-truth rows are a human reading, and where they are
-read (`data/benchmarks/eydallin/`) is where that is stated.
-
-The split matters because the two halves fail differently. A publisher moving the
-supplement breaks this step and says so; a re-extraction disagreeing with the deployed
-one moves the answer key without failing anything, which is why the extraction is
-copied as bytes rather than regenerated.
-"""
 from metasmith.python_api import *
 
 lib   = TransformInstanceLibrary.ResolveParentLibrary(__file__)

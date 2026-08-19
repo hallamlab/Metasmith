@@ -55,13 +55,6 @@ DOMAINS = ["functionalAnnotation", "fabfos", "logistics"]
 
 ORFS_DIR_GLOB = "*.faa"
 
-# type -> its path RELATIVE to a `processed/` root. One declaration, so the
-# local default root and a remote agent's mirror derive from the same table
-# instead of drifting as two lists.
-#
-# `ref::reference_label_pool` is a DIRECTORY (index + embedding stack), which is
-# why it is one product: the consumer addresses the stack by row, so an index
-# from one build against a stack from another misindexes every row silently.
 REF_LAYOUT = {
     "ref::kofamscan_profiles": "kofam_ref/profiles",
     "ref::kofamscan_ko_list": "kofam_ref/ko_list.tsv",
@@ -78,12 +71,6 @@ DEFAULT_LABEL_POOL = common.DATA_PROCESSED / REF_LAYOUT["ref::reference_label_po
 
 
 def _as_orf_list(orfs) -> list[Path]:
-    """One path or several -- normalised here rather than demanded of callers.
-
-    Requiring a sequence would break every existing caller at whatever assertion
-    happens to fire downstream instead of at the argument, which is a worse
-    error than the one it prevents.
-    """
     if isinstance(orfs, (str, Path)):
         orfs = [orfs]
     return [Path(o).expanduser().resolve() for o in orfs]
@@ -104,29 +91,14 @@ def build_inputs(work: Path, *, orfs, kofam_profiles: Path | None, kofam_ko_list
     paths = _as_orf_list(orfs) if stage_orfs != "remote" else [
         Path(o) for o in ([orfs] if isinstance(orfs, (str, Path)) else orfs)
     ]
-    # The stem is the organism key every downstream table joins on, AND nextflow
-    # stages a process's inputs by basename -- two ORF sets ending in the same
-    # component collide at the mapper, which has already cost this project a run
-    # after every one of its lanes had succeeded.
     stems = [p.name for p in paths]
     if len(set(stems)) != len(stems):
         raise ValueError(f"ORF file names must be distinct; got {stems}")
     for p in paths:
         if stage_orfs == "copy":
-            # Copied in, so it is a RELATIVE member of the library and travels
-            # with the task. An absolute LOCAL path is one a remote agent will
-            # try to bind and fail on; these files are megabytes.
             shutil.copy(p, inputs.location / p.name)
             inputs.AddItem(p.name, "sequences::orfs")
         elif stage_orfs == "remote":
-            # The path names a file on the AGENT's filesystem, not this one.
-            # Copying is not an option at corpus scale -- the shards were built
-            # on the cluster from a corpus that lives there, and pulling 30 GB
-            # down only to push it back would be the whole transfer budget spent
-            # on a round trip. Added verbatim, and never `.resolve()`d: an
-            # absolute path on another host is not this machine's to normalise.
-            # `_fir.pin_external_leaf_ids` then gives it a stable identity,
-            # which it otherwise would NOT have -- see that function.
             inputs.AddItem(str(p), "sequences::orfs")
         else:
             inputs.AddItem(p, "sequences::orfs")
@@ -143,8 +115,6 @@ def build_inputs(work: Path, *, orfs, kofam_profiles: Path | None, kofam_ko_list
         if refs_root is None:
             default = common.DATA_PROCESSED / rel
         else:
-            # String-joined, not Path-joined: an absolute path on another host
-            # is not this machine's to normalise.
             default = f"{str(refs_root).rstrip('/')}/{rel}"
         path, real = common.stage_ref(inputs, work, dtype, given=given[dtype],
                                       default=default, verify=verify_refs)
@@ -161,12 +131,6 @@ def generate_workflow(work: Path, *, orfs, kofam_profiles: Path | None, kofam_ko
                        refs_root: "str | Path | None" = None,
                        verify_refs: bool = True, stage_orfs: str = "copy",
                        agent: "Agent | None" = None, on_inputs=None):
-    """``on_inputs(inputs)`` runs after the library is built and before planning.
-
-    The one seam a site needs: instance identities are settled at this point and
-    the plan key is derived from them, so anything that must hold about them has
-    to happen here or not at all.
-    """
     lib = common.resolve_library_root()
     inputs, stubs = build_inputs(
         work, orfs=orfs, kofam_profiles=kofam_profiles, kofam_ko_list=kofam_ko_list,
@@ -186,9 +150,6 @@ def generate_workflow(work: Path, *, orfs, kofam_profiles: Path | None, kofam_ko
     targets = TargetBuilder()
     targets.Add("annotation::gpr_table")
 
-    # Injected, so a cluster driver and the shipped gate resolve the SAME stage
-    # through the same code path -- the site's hostnames and accounts stay with
-    # the caller, which is why they are not parameters here.
     if agent is None:
         agent = common.make_agent(work, runtime, container=agent_env)
     task = agent.GenerateWorkflow(
@@ -240,22 +201,10 @@ def _build_parser() -> argparse.ArgumentParser:
 
 
 def _gpus(a) -> "Gpu | None":
-    """The run-side GPU declaration, or None.
-
-    Only the annotation driver has one: CLEAN is the single lane in the three
-    pipelines whose tool wants a card. The transform declares *whether* it needs
-    one; this declares what a device is here.
-    """
     return Gpu(memory=Size.GB(a.gpu_memory)) if a.gpu else None
 
 
 def _collect_orfs(a) -> list[Path]:
-    """The ORF fastas named by ``--orfs`` and/or ``--orfs-dir``.
-
-    Sorted, because a directory listing is not: an unstable sample order makes
-    two plans over the same inputs compare as different, and at shard scale the
-    plan key is what a resubmission has to reproduce to reuse a cached lane.
-    """
     orfs = [Path(o) for o in (a.orfs or [])]
     if a.orfs_dir:
         d = Path(a.orfs_dir).expanduser().resolve()
@@ -284,9 +233,6 @@ def main(argv=None) -> int:
     common.require_method(a.require_method)
 
     print("=== annotation: staging inputs + planning ===")
-    # An overridden reference is passed through as given: a Path when it is
-    # local, the raw string when references are unverified, because that is the
-    # one case where the path is not this machine's to normalise.
     def _given(v):
         if not v:
             return None

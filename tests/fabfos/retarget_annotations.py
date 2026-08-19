@@ -55,21 +55,10 @@ RUN = REPO / "data/fabfos/runs/scadc_fosmids"
 NEW_INSERTS = RUN / "sequences/inserts/inserts.fna"
 DVC_CACHE = Path("/home/tony/agentic_workspace/data/.dvc_cache/files/md5")
 
-# The classification this retarget was designed against. A different split means
-# a different insert set and a driver nobody has checked against it.
 EXPECTED = (166, 3, 1)
 
 COMPLEMENT = str.maketrans("ACGTNacgtnRYKMBVDHrykmbvdh", "TGCANtgcanYRMKVBHDyrmkvbhd")
 
-# Flat tables keyed by an ORF id in the first field. The rest of each line is
-# carried through verbatim -- split once, never parsed -- so a surviving row is
-# byte-identical to the row that was published.
-#
-# `header` is None (no header), "" (one header line), or the literal prefix of a
-# header line for a file that is SEVERAL tables concatenated. deepec is the
-# third case: its transform ends in `find deepec_output -type f -exec cat`, so
-# the shipped file is five DeepEC outputs with five different headers, and
-# flattening them into one sorted table would silently reshape it.
 FLAT_TABLES = [
     ("annotations/uniref50/fosmids.uniref50.blast6.tsv", "\t", None),
     ("annotations/kofam/fosmids.kofam.csv", ",", ""),
@@ -78,15 +67,10 @@ FLAT_TABLES = [
     ("annotation_alts/deepec/fosmids.deepec.tsv", "\t", "Query ID"),
 ]
 
-# DeepEC windows a long protein and keys each window `<orf>_SEPARATED_SEQUENCE_
-# (start_end)`. The window is on the protein, which reverse complement does not
-# touch, so the suffix rides along unchanged.
 SEPARATED = "_SEPARATED_SEQUENCE_"
 
 GPR_TABLES = ["gpr/gpr_4lane.parquet", "gpr/gpr_7lane.parquet"]
 
-# (index csv, [row-aligned matrices]). The index is the only id these carry; the
-# matrices are positional, so they are permuted by the index's own row mask.
 EMBEDDINGS = [
     ("annotations/proteinbert/fosmids.pbert.index.csv",
      ["annotations/proteinbert/fosmids.pbert.parquet"]),
@@ -96,10 +80,7 @@ EMBEDDINGS = [
 ]
 
 
-# ---------------------------------------------------------------- fasta / ids
-
 def read_fasta(path: Path) -> dict[str, tuple[str, str]]:
-    """-> {id: (description after the id, sequence)} preserving file order."""
     out, ident, desc, seq = {}, None, "", []
     for line in Path(path).read_text().splitlines():
         if line.startswith(">"):
@@ -120,19 +101,16 @@ def revcomp(seq: str) -> str:
 
 
 def peel(field: str) -> tuple[str, str]:
-    """-> (ORF id, whatever a lane appended to it)."""
     i = field.find(SEPARATED)
     return (field, "") if i < 0 else (field[:i], field[i:])
 
 
 def split_orf(orf: str) -> tuple[str, int]:
-    """Insert ids contain both '_' and ':'; only the LAST '_' is the ordinal."""
     i = orf.rindex("_")
     return orf[:i], int(orf[i + 1:])
 
 
 def resolve_old_inserts() -> Path:
-    """The superseded inserts.fna, via HEAD's sequences.dvc into the shared cache."""
     pin = subprocess.run(
         ["git", "-C", str(REPO), "show", "HEAD:data/fabfos/runs/scadc_fosmids/sequences.dvc"],
         capture_output=True, text=True, check=True).stdout
@@ -142,11 +120,7 @@ def resolve_old_inserts() -> Path:
     return DVC_CACHE / entry["md5"][:2] / entry["md5"][2:]
 
 
-# ------------------------------------------------------------- classification
-
 class Mapping:
-    """Old insert ids -> new, and old ORF ids -> new, with the rekey rules."""
-
     def __init__(self, old_fna: Path, new_fna: Path, orf_counts: dict[str, int],
                  expected: tuple[int, int, int]):
         old, new = read_fasta(old_fna), read_fasta(new_fna)
@@ -160,7 +134,7 @@ class Mapping:
         for i in dropped:
             by_seq.setdefault(hashlib.md5(old[i][1].upper().encode()).hexdigest(), []).append(i)
 
-        self.revcomp: dict[str, str] = {}   # new id -> old id it is the revcomp of
+        self.revcomp: dict[str, str] = {}
         novel = []
         for i in new:
             if i in set(survivors):
@@ -181,8 +155,6 @@ class Mapping:
                      f"{got[2]} new, expected {expected}. This driver has not been checked "
                      f"against that set; look at it before retargeting onto it.")
 
-        # Insert ids, then ORF ids. Survivor -> itself. Reverse complement ->
-        # new insert, ordinal counted from the other end. Anything else -> gone.
         self.insert: dict[str, str] = {i: i for i in self.survivors}
         self.insert.update({old: new for new, old in self.revcomp.items()})
         self.orf: dict[str, str] = {}
@@ -205,27 +177,23 @@ class Mapping:
         print(f"[i] {len(self.dropped)} old inserts dropped")
 
 
-# ------------------------------------------------------------------ rewriting
-
 def mirror(a: int, b: int, length: int) -> tuple[int, int]:
     return length - b + 1, length - a + 1
 
 
 def flip_attrs(attrs: str, ordinal: int) -> str:
-    """Rewrite the two attributes that are relative to the strand we just flipped."""
     out = []
     for field in attrs.split(";"):
         if field.startswith("ID="):
             seqnum = field[3:].split("_")[0]
             field = f"ID={seqnum}_{ordinal}"
         elif field.startswith("partial=") and len(field) == 10:
-            field = f"partial={field[9]}{field[8]}"   # left/right ends swap
+            field = f"partial={field[9]}{field[8]}"
         out.append(field)
     return ";".join(out)
 
 
 def _faa_records(path: Path, join: bool = False) -> dict:
-    """-> {ORF id: (header without '>', sequence lines or joined string)}."""
     recs, ident, head, seq = {}, None, None, []
     for line in Path(path).read_text().splitlines():
         if line.startswith(">"):
@@ -242,7 +210,6 @@ def _faa_records(path: Path, join: bool = False) -> dict:
 
 
 def rewrite_faa(src: Path, dst: Path, m: Mapping, rank: dict[str, int]) -> list[str]:
-    """>ORF # start # end # strand # attrs, protein unchanged. -> kept ORF ids."""
     recs = _faa_records(src)
     out = {}
     for old_orf, (head, seq) in recs.items():
@@ -266,14 +233,11 @@ def rewrite_faa(src: Path, dst: Path, m: Mapping, rank: dict[str, int]) -> list[
 
 
 def rewrite_gff(src: Path, dst: Path, m: Mapping, rank: dict[str, int]):
-    """One block per insert: two comment lines then its CDS lines, start-ascending."""
     version, blocks, cur = None, {}, None
     for line in src.read_text().splitlines():
         if line.startswith("##"):
             version = line
         elif line.startswith("# Sequence Data:"):
-            # Keyed off seqhdr, not off a CDS line, so a gene-less block is a
-            # block and not a silent omission.
             cur = {"seqdata": line, "model": None, "cds": []}
             blocks[line.split('seqhdr="')[1].split(" ", 1)[0]] = cur
         elif line.startswith("# Model Data:"):
@@ -287,12 +251,8 @@ def rewrite_gff(src: Path, dst: Path, m: Mapping, rank: dict[str, int]):
         if new_ins is None:
             continue
         seqdata = blk["seqdata"]
-        # seqhdr is the insert fasta's description line and must come from the
-        # NEW fasta -- length/ends/members are properties of the elected insert.
         pre, _, rest = seqdata.partition('seqhdr="')
         seqdata = f'{pre}seqhdr="{new_ins} {m.new_desc[new_ins]}"' + rest[rest.index('"') + 1:]
-        # seqnum is prodigal's per-file counter and is left as published, so a
-        # surviving block is byte-identical; it is therefore no longer dense.
         cds = []
         for cols in blk["cds"]:
             cols = list(cols)
@@ -309,7 +269,7 @@ def rewrite_gff(src: Path, dst: Path, m: Mapping, rank: dict[str, int]):
     dst.parent.mkdir(parents=True, exist_ok=True)
     with dst.open("w") as fh:
         fh.write(version + "\n")
-        for ins in sorted(out):     # rank orders by insert id first, so this agrees
+        for ins in sorted(out):
             seqdata, model, cds = out[ins]
             fh.write(seqdata + "\n" + model + "\n")
             for cols in cds:
@@ -317,7 +277,6 @@ def rewrite_gff(src: Path, dst: Path, m: Mapping, rank: dict[str, int]):
 
 
 def _gff_ordinal(cols: list[str]) -> int:
-    """Prodigal's gene index within its sequence, off the ID=<seqnum>_<n> attr."""
     for field in cols[8].split(";"):
         if field.startswith("ID="):
             return int(field.split("_")[1])
@@ -325,7 +284,6 @@ def _gff_ordinal(cols: list[str]) -> int:
 
 
 def split_blocks(lines: list[str], header: str | None) -> list[tuple[str | None, list[str]]]:
-    """-> [(header line or None, data lines)], one entry per concatenated table."""
     if header is None:
         return [(None, [l for l in lines if l])]
     if header == "":
@@ -344,15 +302,6 @@ def split_blocks(lines: list[str], header: str | None) -> list[tuple[str | None,
 
 def rewrite_flat(src: Path, dst: Path, m: Mapping,
                  delim: str, header: str | None, known: set[str]) -> tuple[int, int]:
-    """Filter and rekey IN SOURCE ORDER.
-
-    None of these tables is ORF-sorted as published -- ezpred and the deepec
-    windows come out in whatever order their lane emitted, and the GPR tables
-    interleave channels -- so imposing an ORF sort here would make the
-    retargeted file structurally unlike anything the pipeline produces, and turn
-    a future full re-run into an all-lines diff. Order is only load-bearing for
-    the embeddings, and those are sorted.
-    """
     out, before, after = [], 0, 0
     for head, rows in split_blocks(src.read_text().splitlines(), header):
         kept = []
@@ -394,7 +343,7 @@ def rewrite_embedding(src_root: Path, dst_root: Path, index_rel: str, matrix_rel
 
     out = pd.DataFrame({"sequence_id": [o for _, o in order]})
     if "index" in idx.columns:
-        out["index"] = range(len(order))    # a row pointer, so it is renumbered
+        out["index"] = range(len(order))
     (dst_root / index_rel).parent.mkdir(parents=True, exist_ok=True)
     out.to_csv(dst_root / index_rel, index=False)
 
@@ -416,32 +365,14 @@ def rewrite_gpr(src: Path, dst: Path, m: Mapping, known: set[str]) -> tuple[int,
     if stray:
         sys.exit(f"[x] {src.name}: {len(stray)} orf values are not ORFs of this "
                  f"annotation, e.g. {sorted(stray)[:2]}")
-    df = df[df["orf"].isin(m.orf)].copy()          # source order, as above
+    df = df[df["orf"].isin(m.orf)].copy()
     df["orf"] = df["orf"].map(m.orf)
     dst.parent.mkdir(parents=True, exist_ok=True)
     df.reset_index(drop=True).to_parquet(dst, index=False)
     return before, len(df)
 
 
-# ---------------------------------------------------------------------- merge
-
 def merge_from(out: Path, extra: Path, source_key: str | None):
-    """Fold the genuinely-new inserts of a top-up publish into the retargeted tree.
-
-    Every lane is per-query and every kNN vote is against the same pinned
-    reference pool, so rows from a second run of the same transform library are
-    the same measurement -- which is why this is a concatenation and not a
-    re-run of the mappers over the union.
-
-    THE TOP-UP RUN CARRIES CONTROLS. A run of one insert is not a run any of
-    these tools was built for: `kofam` hit nothing across its ~25 ORFs, which
-    made both mappers refuse, and DeepEC crashed inside its own predictor. The
-    top-up therefore also carries already-annotated inserts, chosen so every
-    channel is populated. Their rows are NOT merged -- they are already here --
-    they are compared against the published ones, which is the only direct
-    evidence that the two runs are one method rather than an assertion that they
-    are. See `compare_controls`.
-    """
     import numpy as np
     import pandas as pd
 
@@ -459,14 +390,9 @@ def merge_from(out: Path, extra: Path, source_key: str | None):
 
     compare_controls(out, extra, controls, base_orfs, inc_orfs)
 
-    # One canonical order over the union, applied to every artifact.
     rank = {o: i for i, o in enumerate(
         sorted(list(base_orfs) + sorted(keep), key=lambda o: (split_orf(o)[0], split_orf(o)[1])))}
 
-    # prodigal numbers sequences per FILE, so the top-up's blocks start at 1 and
-    # collide with this tree's. Planned ONCE and applied to the fasta and the gff
-    # together -- renumbering only the gff is how the two come to disagree about
-    # the ID of the same ORF.
     seqmap = plan_seqnums(out / "annotations/fosmids.gff",
                           extra / "annotations/fosmids.gff", fresh)
     _merge_fasta(out / "annotations/fosmids.faa",
@@ -488,8 +414,6 @@ def merge_from(out: Path, extra: Path, source_key: str | None):
         for (head, rows), (_, more) in zip(base, inc):
             more = [l for l in more if peel(l.partition(delim)[0])[0] in keep]
             added += len(more)
-            # Appended, not merged in sorted position: these tables are not
-            # ORF-sorted to begin with (see rewrite_flat).
             lines += ([head] if head is not None else []) + rows + more
         a.write_text("\n".join(lines) + "\n")
         print(f"[i] {rel}: +{added} rows")
@@ -516,18 +440,12 @@ def merge_from(out: Path, extra: Path, source_key: str | None):
     for rel in GPR_TABLES:
         a = pd.read_parquet(out / rel)
         if not (extra / rel).exists():
-            # A mapper refuses a table with an empty channel, so the top-up can
-            # die on a run whose lanes all succeeded. Say so; do not quietly ship
-            # a table covering one insert fewer than its sibling.
             print(f"[!] {rel}: THE NEW RUN PRODUCED NO SUCH TABLE. This table still "
                   f"covers one insert fewer than fosmids.faa does.")
             continue
         b = pd.read_parquet(extra / rel)
         b = b[b["orf"].isin(keep)]
         if source_key:
-            # validate_gpr refuses a table carrying more than one source; the
-            # top-up's own task key is rewritten to the published one and both
-            # are recorded in the provenance instead.
             b = b.assign(source=source_key)
         d = pd.concat([a, b], ignore_index=True)
         d.to_parquet(out / rel, index=False)
@@ -536,16 +454,6 @@ def merge_from(out: Path, extra: Path, source_key: str | None):
 
 def compare_controls(out: Path, extra: Path, controls: set[str],
                      base_orfs: dict, inc_orfs: dict) -> None:
-    """Re-annotate inserts this tree already holds, and say how far the two agree.
-
-    The merged table mixes two runs months apart. That is sound only if the same
-    input gives the same answer, and this is where that is measured rather than
-    argued. ORF calling and the deterministic lanes must agree EXACTLY -- a
-    disagreement there means the two runs are not one method and the merge is
-    invalid, so it raises. The kNN channels are allowed to differ: the published
-    provenance already records that `pbert` voting is not bit-reproducible, so
-    those are reported as key overlap, not enforced.
-    """
     import pandas as pd
     if not controls:
         print("[!] the top-up run carries no control insert; nothing to compare")
@@ -584,7 +492,6 @@ def compare_controls(out: Path, extra: Path, controls: set[str],
 
 
 def _gff_blocks(path: Path):
-    """-> (##gff-version line, {insert id: {seqdata, model, cds}}), keyed off seqhdr."""
     version, out, cur = None, {}, None
     for line in Path(path).read_text().splitlines():
         if line.startswith("##"):
@@ -604,7 +511,6 @@ def _seqnum(blk) -> int:
 
 
 def plan_seqnums(base_gff: Path, extra_gff: Path, fresh: set[str]) -> dict[str, int]:
-    """-> {new insert: a seqnum this tree is not already using}."""
     _, base = _gff_blocks(base_gff)
     _, inc = _gff_blocks(extra_gff)
     nxt = max(_seqnum(b) for b in base.values()) + 1
@@ -639,7 +545,7 @@ def _merge_gff(base: Path, extra: Path, fresh: set[str], seqmap: dict[str, int])
     _, incoming = _gff_blocks(extra)
 
     for ins, blk in incoming.items():
-        if ins not in fresh:            # a control: this tree already has its block
+        if ins not in fresh:
             continue
         n = seqmap[ins]
         blk["seqdata"] = blk["seqdata"].replace(f"seqnum={_seqnum(blk)};", f"seqnum={n};")
@@ -671,14 +577,6 @@ CODONS = {_BASES[n // 16] + _BASES[n // 4 % 4] + _BASES[n % 4]: a
 
 
 def check_rekey(out: Path, m: Mapping) -> None:
-    """Translate every rekeyed ORF out of the NEW insert at its NEW coordinates.
-
-    This is the licence for the reverse-complement rekey and the reason it can be
-    trusted without re-running prodigal. If the mirror or the strand flip were
-    wrong, those nucleotides would not read as the protein prodigal published --
-    and a table of plausible-looking coordinates is exactly the failure that
-    survives every other check here.
-    """
     targets = set(m.revcomp)
     bad, n = [], 0
     for head, prot in _faa_records(out / "annotations/fosmids.faa", join=True).values():
@@ -692,7 +590,6 @@ def check_rekey(out: Path, m: Mapping) -> None:
         if strand == "-1":
             dna = revcomp(dna)
         got = "".join(CODONS.get(dna[i:i + 3], "?") for i in range(0, len(dna) - 2, 3))
-        # prodigal keeps the trailing '*' and writes an alternative start as M.
         if got[1:] != prot[1:] or (prot[0] != "M" and got[0] != prot[0]):
             bad.append(orf)
     if bad:
@@ -703,14 +600,6 @@ def check_rekey(out: Path, m: Mapping) -> None:
 
 
 def validate(out: Path):
-    """Run the mappers' OWN gate over the rebuilt tables.
-
-    `validate_gpr` is what stands between a reshaped table and a silently wrong
-    one: it refuses a stray ORF id, a channel that emptied, a duplicated grain
-    key, more than one `source` or `lane_set`, and a score outside its declared
-    range. Importing the shipped copy rather than restating the checks is the
-    point -- a second implementation of the contract would agree until it didn't.
-    """
     import importlib.util
     import pandas as pd
 
@@ -726,8 +615,6 @@ def validate(out: Path):
         fe.validate_gpr(df, df["lane_set"].iat[0], orf_ids, df["source"].iat[0])
     print("[+] both tables pass validate_gpr")
 
-
-# ----------------------------------------------------------------------- main
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__,

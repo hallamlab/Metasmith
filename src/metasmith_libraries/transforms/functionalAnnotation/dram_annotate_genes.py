@@ -17,11 +17,6 @@ def protocol(context: ExecutionContext):
     threads = context.params.get("cpus", 8)
     annot_dir = "dram_annot"
 
-    # DRAM 1.5.0 bug: annotate_called_genes_cmd() doesn't accept config_loc
-    # but argparse always passes it (even as None), crashing annotate_genes.
-    # Workaround: write a wrapper script and call annotate_called_genes()
-    # directly, which DOES accept config_loc. Using a script file avoids
-    # shell quoting issues with inline python -c inside the container arm.
     context.LocalShell(f"""cat > _run_dram.py << 'DRAMPY'
 import os, sys
 os.environ["HOME"] = "/tmp"

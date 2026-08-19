@@ -16,8 +16,6 @@ def protocol(context: ExecutionContext):
     if cpus is not None:
         cpus_string = f"--threads {cpus}"
 
-    # AMR/virulence screen; ABRicate ships its reference DBs (resfinder, card,
-    # vfdb, ...) bundled in the container.
     context.ExecWithContainer(
         image = image,
         cmd = f"""

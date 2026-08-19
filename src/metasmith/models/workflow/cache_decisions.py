@@ -1,21 +1,3 @@
-"""Deciding, before anything runs, which steps are already done.
-
-A step's `cache_key` is the transform key plus its sorted input `instance_id`s,
-canonical-CBOR encoded and blake3-32 multihashed. Nothing about the output
-participates -- cache identity is provenance, not bytes.
-
-This runs at compile time and its output rewrites codegen: a hit turns that
-step's emission into a synthetic channel instead of a process. That is why it
-must compute output instance ids for hit steps too, since the *next* step's key
-is a function of them -- a chain of hits has to keep resolving.
-
-Two version constants stay deliberately separate. `CACHE_KEY_VERSION` is the
-cache-key epoch; `LIN_PAYLOAD_VERSION` is the on-wire envelope the Groovy side
-parses. They were one constant once, and bumping it for a key-epoch reason
-desynced the emitter and failed every containerized step with a masked exit 1
-that no fast test could see.
-"""
-
 from __future__ import annotations
 
 import json
@@ -28,17 +10,6 @@ from .nextflow_codegen import NextflowGenContext
 def compute_cache_decisions(
     task, context: NextflowGenContext
 ) -> dict[int, dict]:
-    """Compute per-step cache keys + probe results.
-
-    Returns a dict[step.order, {cache_key, hit, entry?, transform_key,
-    signature, sorted_input_ids, out_instance_ids}]. The OUTPUT
-    instance_ids are needed by downstream steps as their input
-    identities, so the walk runs in topological (step.order) order.
-
-    Cache integration is skipped (returns {} effectively) when:
-    - context.cache_root is None
-    - env METASMITH_CACHE is set to "0" / "false" / "off"
-    """
     if context.cache_root is None:
         return {}
     if os.environ.get("METASMITH_CACHE", "1").lower() in {
@@ -54,11 +25,6 @@ def compute_cache_decisions(
     )
     from ...caching.store import CacheStore
 
-    # Cache STORE is optional — probe-only flow doesn't require the
-    # SQLite db to exist. Only open if the cache_root already exists
-    # on disk (this matches "fresh workspace -> nothing to probe"
-    # and avoids materializing an empty task_cache/ dir during the
-    # first ever run).
     store = None
     if context.cache_root.exists():
         try:
@@ -67,32 +33,11 @@ def compute_cache_decisions(
             store = None
 
     decisions: dict[int, dict] = {}
-    # Per-(step.order, slot_key, branch_idx) → output instance_id (hex).
-    # Downstream steps use this to look up their inputs' ids when the
-    # input came from an upstream step's output (not a given leaf).
     out_id_by_producer: dict[tuple[int, str, int], str] = {}
 
-    # S4a (Bug A fix): use inst.instance_id directly. The old code
-    # called `inst.instance_id.encode("utf-8").hex()` which produces
-    # hex-of-ASCII-hex (double-encoded). The audit
-    # (plans/lineage-quadrant-audit.md, I1) confirmed this leaked
-    # into InvocationEvent.consumes as e.g.
-    # "3165323035396234..." (decodes to the actual hex
-    # "1e2059b4..."). The fix is to just keep the hex string. Cache
-    # sharding changes — existing dev caches need rebuild — but the
-    # consumes dict now carries plain 32-byte hex slot_ids that
-    # TraceIndex.by_slot can actually look up.
 
     for step in task.plan.steps:
         transform_key = step.transform.GetKey() or step.transform.name or ""
-        # R5 (F1 fix): the lineage signature captures BOTH the I/O type
-        # topology (_hash = model.hash) AND the transform's protocol-body
-        # identity (_protocol_source_hash = digest of the definition-file
-        # bytes). Topology alone let a protocol edit — or a different tool
-        # with the same in/out types — false-hit the cache with stale
-        # output. Folding the body digest in makes such an edit bust the
-        # cache. Computed once here; promote reads the resulting cache_key
-        # back from workflow.step_N.meta, so probe/promote stay symmetric.
         protocol_sig = getattr(step.transform, "_protocol_source_hash", "") or ""
         signature = f"{step.transform._hash}:{protocol_sig}"
 
@@ -101,9 +46,6 @@ def compute_cache_decisions(
             insts = step.dependency_map.get(dep, [])
             if not insts:
                 continue
-            # Aggregate every instance feeding this slot. Sort the
-            # ids to remove ordering noise from the input set.
-            # S4a (Bug A): store inst.instance_id directly (hex string).
             slot_ids = sorted(i.instance_id for i in insts)
             sorted_inputs.append((dep.key, slot_ids))
         sorted_inputs.sort(key=lambda kv: kv[0])
@@ -114,21 +56,6 @@ def compute_cache_decisions(
             [(k, "+".join(ids).encode()) for k, ids in sorted_inputs],
         )
 
-        # Compute per-output slot_ids (cache_key + dep.key + branch_idx).
-        # G1 (C4): these `derived_hex` values ARE the slot_ids — the
-        # production-channel identity for the (transform, slot, branch)
-        # triple. They're stored on each produced DataInstance's
-        # `instance_id` field so downstream steps see slot-identity on
-        # their input sides. File-level identity (file_instance_id) is
-        # minted post-facto by CollectResults (C6) over (slot_id, path)
-        # and never travels on the Nextflow channel.
-        #
-        # dependency_map shares the same DataInstance object reference
-        # between the producing step's produced dep and the consuming
-        # step's required dep (via canonical get_or_create in
-        # WorkflowPlan.Generate), so a single mutation propagates. We
-        # run topologically, so each consumer iteration above sees ids
-        # already rewritten.
         out_slot_ids: dict[tuple[str, int], str] = {}
         for branch_idx, dep_group in enumerate(step.transform.model.produces):
             for dep in dep_group:
@@ -154,22 +81,6 @@ def compute_cache_decisions(
             if entry is not None and store.files_exist(entry):
                 hit = True
 
-        # A hit replays the shard's files onto the channel without running
-        # the step, so it has to replay the on-channel lineage index they
-        # travelled with (captured at promote time, manifest `index`).
-        # Without it the synthetic tuple carries no ancestry and a downstream
-        # `o.group` keyed on an ancestor drops it — the warm run loses what
-        # the cold run computes. A shard that cannot supply an index for
-        # every matched file is DEMOTED to a miss: re-running is slower, a
-        # silent drop is wrong.
-        #
-        # An EMPTY index counts as absent, not as an index. It renders to the
-        # Groovy `[:]` literal, which `_post` then stamps the produced key
-        # onto — so the replayed file reaches a downstream `o.group` carrying
-        # exactly one key, its own, and gets dropped by the same
-        # DESCENDANT_OF_BY branch this whole path exists to satisfy. A step
-        # with inputs always has ancestry to capture, so empty means "not
-        # captured"; a step with none has nothing to lose by re-running.
         if hit:
             from ...caching.store import decode_manifest
 
@@ -210,19 +121,6 @@ def compute_cache_decisions(
                 hit = False
                 out_indexes = {}
 
-        # S3: per-batch decomposition. The compile-time `sorted_inputs`
-        # above is the *aggregate* (step-level) view used for cache_key
-        # byte-identity; `batches` is emission-only metadata naming each
-        # task's specific inputs. Cache sharding stays one-shard-per-step.
-        #
-        # `batch_size` folds whole group_by KEYS into one task, so a batch is
-        # the union of its keys' slices — and which instances belong to a key
-        # is a lineage question (`grouping.select_for_key`), the same one the
-        # Nextflow runtime and virtual_runtime now answer. It used to be a
-        # positional `insts[start:end]` here, which lines up only for a
-        # dependency that fans out ALONGSIDE the key; for one that COLLECTS
-        # into it, N instances descend from a single key and the slice named
-        # one of them.
         group_total = max(1, len(step.group_by_instances))
         batch_size = max(1, int(getattr(step.transform, "batch_size", 1) or 1))
         key_insts = list(step.group_by_instances)
@@ -245,7 +143,6 @@ def compute_cache_decisions(
                             continue
                         seen_ids.add(id(inst))
                         selected.append(inst)
-                # S4a (Bug A): use inst.instance_id directly.
                 slot_ids = sorted(i.instance_id for i in selected)
                 batch_sorted.append((dep.key, slot_ids))
             batch_sorted.sort(key=lambda kv: kv[0])
@@ -264,22 +161,11 @@ def compute_cache_decisions(
             "out_instance_ids": out_slot_ids,
             "hit": hit,
             "entry": entry,
-            # basename -> the on-channel index that file rode in on; empty
-            # unless `hit`.
             "out_indexes": out_indexes,
             "cacheable": getattr(step.transform, "cacheable", True),
             "batches": batches,
         }
 
-    # C7 — emit the per-run trace.jsonl at compile time as v2
-    # InvocationEvent rows. On each compile: if a prior trace.jsonl
-    # exists, rotate it to `trace.<prev_session_id>.jsonl` (the
-    # session_id read from its SessionStart sentinel, or 0 fallback);
-    # then allocate a fresh session_id via the cache sqlite counter
-    # and open a clean file headed by a SessionStart sentinel. All
-    # subsequent emits in this compile carry the new session_id.
-    # Post-exec promote (promote.py) appends miss/promoted/fail rows
-    # carrying the same session_id, rediscovered from the sentinel.
     from ..lineage import (
         INVOCATION_EVENT_SCHEMA_VERSION,
         InvocationEvent,
@@ -311,8 +197,6 @@ def compute_cache_decisions(
         try:
             trace_path.rename(rotated)
         except OSError:
-            # Falling back to truncate-overwrite is non-fatal: the
-            # archived rows are lost but the fresh session proceeds.
             pass
 
     if store is not None:
@@ -322,7 +206,7 @@ def compute_cache_decisions(
 
     sentinel = SessionStart(
         session_id=session_id,
-        compile_started_at="",  # Date.now() omitted — set at writer
+        compile_started_at="",
         metasmith_version=VERSION,
         schema_version=INVOCATION_EVENT_SCHEMA_VERSION,
     )
@@ -337,12 +221,6 @@ def compute_cache_decisions(
             if step.order == order:
                 step_name = step.transform.name or ""
                 break
-        # C0.5: read per-file (slot_id, dtype_key, relpath) from the
-        # cache entry's manifest.cbor and emit one ProducedFile per
-        # file. Pre-C0.5 manifests carry only {"relpath"} per file —
-        # detected by missing "slot_id" — and we fall back to the
-        # legacy per-slot degenerate emission with a Log.Warn. The
-        # legacy path also covers the (defensive) empty-files case.
         from ...caching.store import decode_manifest
         entry = decision["entry"]
         files: list[dict] = []
@@ -355,13 +233,6 @@ def compute_cache_decisions(
                     f"cache-hit decode_manifest failed for "
                     f"{decision['cache_key'].hex()[:8]}: {e}"
                 )
-        # S4a (Bug B/C/D fix): ignore `unmatched` files when deciding
-        # legacy fallback. Unmatched files (e.g. virt-host.log,
-        # virt-host.stop) are copied into the cache shard without
-        # slot_id annotation; their presence shouldn't force the
-        # whole event into the legacy degenerate emission (which
-        # collapses slot_id == file_instance_id, drops path, and
-        # uses the consumer's dep_key as dtype_key).
         matched_files = [f for f in files if not f.get("unmatched")]
         legacy = (not matched_files) or any(
             "slot_id" not in f for f in matched_files
@@ -404,10 +275,6 @@ def compute_cache_decisions(
                         dtype_key=dk,
                     )
                 )
-        # C0-amend: decision["sorted_inputs"] is now
-        # list[tuple[str, list[str]]] — the slot_ids are already
-        # hex strings, no byte-encoding gymnastics. This is the
-        # shape `walk_ancestors` expects to look up `by_slot`.
         consumes = {
             slot_key: list(ids)
             for slot_key, ids in decision["sorted_inputs"]

@@ -1,6 +1,4 @@
 #!/usr/bin/env python3
-"""Cluster quality MAGs per sample at 95%/99% ANI -- the skani_dedup transform's
-logic, run standalone over the unified catalogue."""
 import sys, glob, os
 from pathlib import Path
 G="/scratch/phyberos/gmcf3495/gapfill"

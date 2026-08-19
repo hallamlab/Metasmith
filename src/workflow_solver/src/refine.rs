@@ -1,29 +1,25 @@
 //! The refiner: single-edge swaps against a found plan, looking for a better one.
 //!
-//! It is 70% of the solve on the shipped templates and it never changes the plan
-//! it was given on any of them -- on `metagenomics_from_paired_reads` it spends
-//! 23 of 33 seconds proving that. It is not inert in general; two branching tests
-//! do produce a plan-changing refinement. But on lineage-dense workflows every
-//! single-edge swap breaks a lineage constraint, so single-swap refinement
-//! structurally cannot improve them.
+//! It dominates the solve on the shipped templates and changes the plan it was
+//! given on none of them: on a lineage-dense workflow every single-edge swap
+//! breaks a lineage constraint, so single-swap refinement structurally cannot
+//! improve one. It is not inert in general -- two branching tests do produce a
+//! plan-changing refinement.
 //!
 //! **The AND in `validate` is ordered, and the order is the optimisation.** Its
 //! terms are independent and side-effect-free, and the lineage term is both the
-//! cheapest and the one that rejects nearly everything: on the metagenomics
-//! template *all* 19,683 validations fail on lineage, and on `sink-24` only
-//! 1,578 states in 174,804 survive it to reach the schedulability check. So
-//! lineage runs first. A `KeyError` from the prefilter means "cannot answer
-//! here", not "invalid", and falls through to the full check.
+//! cheapest and the one that rejects nearly everything, so it runs first. A
+//! `KeyError` from the prefilter means "cannot answer here", not "invalid", and
+//! falls through to the full check.
 //!
 //! **One defect is reproduced here rather than fixed, knowingly.** `expand_node`
 //! removes the step it is swapping by *signature*, which drops both members of a
 //! colliding pair. This is a port, and a port that fixes things cannot be checked
 //! against what it replaced.
 //!
-//! `score` runs once per expanded state and is very nearly the whole cost of a
-//! solve, so every table it needs comes out of `scratch.rs` rather than being
-//! allocated and hashed per state -- a factor of three on the cases where the
-//! refiner is under load. That module carries the argument for why swapping a
+//! `score` runs once per expanded state and is nearly the whole cost of a solve,
+//! so every table it needs comes out of `scratch.rs` rather than being allocated
+//! and hashed per state. That module carries the argument for why swapping a
 //! hash map for a flat array cannot move a plan.
 
 use crate::det::{self, Map, Set};
@@ -93,10 +89,8 @@ fn has_ancestor(
 /// explored"; `Ok(false)` says the map is partial and the caller must re-walk
 /// with `stop_at: None` before it may read a miss as an answer.
 ///
-/// Half of every pop the refiner performs lies past the destination that was
-/// asked for -- 49.4M of 95.9M on `sink-24`, 129.2M of 260.3M on `sink-178` --
-/// and only 10.3% and 2.1% of queries respectively ever ask a second question
-/// of a source they have already walked.
+/// Most of what a walk to exhaustion would pop lies past the destination that
+/// was asked for, and a second question of an already-walked source is rare.
 ///
 /// One difference this does make, on inputs nothing in the corpus or the
 /// templates reaches: a node with no producer raises here, and a walk that
@@ -159,12 +153,10 @@ impl<'a> Refiner<'a> {
     /// input nothing produces -- and it subsumes the old separate test that the
     /// target's inputs were produced, since the target is one of `steps`.
     ///
-    /// This replaced a forward walk over *consumers* that rejected a repeated
-    /// `ApplSig` along a path. That walk reached a step as soon as **one** of
-    /// its inputs was available and never asked about the others, so a cycle
-    /// hanging off the side of it was invisible; `rectify` then rewrote those
-    /// states into plans with unproduced inputs and no trace of a cycle. Both
-    /// implementations carried it, and both are fixed together.
+    /// A forward walk over consumers cannot replace it: such a walk reaches a
+    /// step as soon as **one** of its inputs is available and never asks about
+    /// the others, so a cycle hanging off the side is invisible and `rectify`
+    /// rewrites the state into a plan with unproduced inputs and no trace of one.
     ///
     /// Endpoints are held by `EpSig` (structure, matching Python's
     /// `set[Endpoint]` and what `get_order` uses, so a `true` here is the
@@ -205,8 +197,7 @@ impl<'a> Refiner<'a> {
         &self, ar: &Arena, steps: &[ApplId], sc: &mut Scratch, n_sigs: usize,
     ) -> Option<bool> {
         // `produced_from`, as one flat buffer of every step's inputs plus a
-        // range per product. The map this replaces cloned the producing step's
-        // whole input list once for each thing it produced.
+        // range per product.
         sc.pf.clear(n_sigs);
         sc.pf_flat.clear();
         for &s in steps {
@@ -233,12 +224,10 @@ impl<'a> Refiner<'a> {
         let n_sigs = ar.eps.n_sigs();
         sc.begin(n_sigs);
 
-        // One deliberate difference from Python, and it is a difference in
-        // *failure*, not in answer. The prefilter's `KeyError` is caught there
-        // and falls through, but the same lookup inside `_is_valid` is not, so a
+        // One deliberate difference from Python, in *failure* rather than in
+        // answer: the same lookup inside `_is_valid` is unguarded there, so a
         // state using an endpoint no step produces crashes the Python solve.
-        // Here it is simply invalid. Reproducing a crash has no value, and no
-        // state in the corpus or the four templates reaches it.
+        // Here it is simply invalid.
         state.valid = self.validate(ar, &state.steps, sc, n_sigs).unwrap_or(false);
         let steps = &state.steps;
 
@@ -277,9 +266,7 @@ impl<'a> Refiner<'a> {
         //
         // The per-source depth tables come out of a pool indexed by arrival
         // order rather than being allocated per source, which is what makes
-        // caching them across the loop cheap enough to be worth doing: a state
-        // reaches 46 distinct sources at the corpus's worst, so the pool stops
-        // growing almost immediately and every later state reuses it.
+        // caching them across the loop worth doing.
         let n_steps = steps.len() as f64;
         let mut n_sources = 0usize;
         for &s in steps {
@@ -293,11 +280,9 @@ impl<'a> Refiner<'a> {
                     // `produced_from`, which `validate` has already built, is
                     // this walk's adjacency: for a produced signature it holds
                     // the producing step's input signatures, contiguously.
-                    // Going through `product2producer` instead meant a second
-                    // lookup, an arena hop and a per-edge `sig()` to rebuild the
-                    // same list. The two maps are filled by one loop over
-                    // `steps` with last-write-wins, so they name the same
-                    // producer for every signature.
+                    // The two maps are filled by one loop over `steps` with
+                    // last-write-wins, so they name the same producer for every
+                    // signature.
                     let slot = match sc.depth_slot.get(es) {
                         Some(i) => i as usize,
                         None => {
@@ -389,8 +374,7 @@ pub fn refine(
         if states[k].valid { valids.push(k); }
 
         // `expand_node`. Neither the current signatures nor the production map
-        // depends on which step is being swapped, and about 90% of candidates are
-        // discarded as duplicates, so both are built once.
+        // depends on which step is being swapped, so both are built once.
         let steps = states[k].steps.clone();
         let current: Set<ApplSig> = steps.iter().map(|&s| ar.appl(s).sig).collect();
         let mut production: Map<u32, Vec<u32>> = det::map();

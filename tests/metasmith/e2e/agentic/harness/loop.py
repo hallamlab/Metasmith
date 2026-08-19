@@ -1,21 +1,3 @@
-"""Ralph-style outer loop.
-
-Re-invokes the agent with a fixed prompt each iteration. State lives on
-disk inside the sandbox (PROMPT.md / PROGRESS.md / CONTROL.json), not in
-conversation history. Stops on one of:
-
-    1. CONTROL.json declares ``submit``         → LoopResult.submitted
-    2. CONTROL.json declares ``done``           → LoopResult.done
-    3. CONTROL.json declares ``give_up``        → LoopResult.gave_up
-    4. CONTROL.json declares ``report_issue``   → LoopResult.reported_issue
-    5. cumulative tokens reach budget           → LoopResult.over_budget
-    6. iteration count reaches max_iters        → LoopResult.max_iters
-
-``submit`` is the terminal action under the submit/checker model: the agent
-declares its implementation ready and the caller (run_cell) hands it to a
-non-agentic checker to execute + verify. ``done`` remains a distinct terminal
-state for legacy prompts that produce the artifact in-loop (no checker).
-"""
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -42,9 +24,6 @@ class LoopBudgets:
     max_iters: int = 20
     max_tokens: int = 2_000_000
     max_tokens_per_iter: int = 200_000
-    # Per-invocation dollar runaway valve (claude `--max-budget-usd`). None →
-    # the driver derives one from max_tokens_per_iter. The exact stop stays the
-    # cumulative token quota (max_tokens); this only bounds a single invocation.
     max_usd_per_iter: float | None = None
 
 
@@ -56,8 +35,6 @@ class LoopResult:
     last_iter: IterResult | None
     terminal_control: Control | None
     iter_results: list[IterResult] = field(default_factory=list)
-    # Four-way roll-up of the run's token cost (from TokenBudget). Defaults
-    # keep older direct constructions working; ralph_loop fills them in.
     tokens_in: int = 0
     tokens_out: int = 0
     tokens_cached: int = 0
@@ -69,7 +46,6 @@ class LoopResult:
 
 
 def _token_rollup(budget: TokenBudget) -> dict:
-    """The budget's four-way split, as kwargs for LoopResult."""
     return dict(
         tokens_in=budget.tokens_in,
         tokens_out=budget.tokens_out,

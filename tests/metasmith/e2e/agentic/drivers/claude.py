@@ -1,27 +1,3 @@
-"""ClaudeDriver — invokes the Claude Code CLI in non-interactive mode.
-
-Argv pattern follows the verified production pattern in
-``/home/tony/agentic_workspace/awm/services/agent_instances.py:136-152``.
-
-Two harness-specific quirks the production pattern doesn't have to worry
-about:
-
-1. ``--add-dir`` is variadic (``<directories...>``). When the harness
-   redirects HOME, the sandbox path is the only ``--add-dir`` we pass.
-   The argv must place ``--add-dir`` BEFORE a non-variadic named flag
-   (e.g. ``--model``) so the trailing positional ``prompt`` argument is
-   NOT swallowed as another directory. The original ordering put
-   ``--add-dir`` immediately before ``prompt`` and silently lost the
-   prompt every iteration with a generic ``Input must be provided``
-   error.
-
-2. The harness sets ``HOME=<sandbox>/home`` so the agent's tool calls run
-   inside the sandbox. Claude Code's OAuth credentials live at
-   ``~/.claude/.credentials.json`` — under the redirected HOME that
-   path is empty and the CLI exits with ``authentication_failed``.
-   ``start_session`` symlinks the host credentials into the sandbox
-   HOME, mirroring the opencode driver's auth-bridging pattern.
-"""
 from __future__ import annotations
 
 import os
@@ -56,12 +32,6 @@ _USD_SAFETY_FACTOR = 2.0
 
 
 def _derive_usd_cap(max_tokens_per_iter: int, model: str) -> float | None:
-    """Approximate per-invocation dollar cap from a per-iteration token budget.
-
-    Returns None for an unknown model (guard disabled — rely on an explicit
-    --max-usd-per-iter instead) so a haiku-derived constant is never silently
-    applied to a different model tier.
-    """
     rate = _OUTPUT_USD_PER_MTOK.get(model)
     if rate is None or max_tokens_per_iter <= 0:
         return None
@@ -69,8 +39,6 @@ def _derive_usd_cap(max_tokens_per_iter: int, model: str) -> float | None:
 
 
 def _bridge_claude_auth(sandbox_home: Path) -> None:
-    """Symlink the real ``~/.claude/.credentials.json`` into a redirected
-    HOME so the Claude CLI keeps its OAuth session. Idempotent."""
     real = Path.home() / _CLAUDE_CRED_REL
     if not real.exists():
         return
@@ -90,12 +58,7 @@ class ClaudeDriver:
     add_dirs: list[Path] = field(default_factory=list)
     extra_argv: list[str] = field(default_factory=list)
     timeout_s: float | None = None
-    # Filesystem-jail toggle. None → auto (jail iff bwrap present AND the run is
-    # APPTAINER, or MSM_E2E_JAIL forces it — see harness/jail.jail_enabled).
-    # True/False force the decision for tests / docker dev.
     jail: bool | None = None
-    # Unshare the user namespace inside the jail. Off by default so a nested
-    # apptainer owns the userns; the micb0 spike flips this to measure nesting.
     jail_unshare_user: bool = False
 
     def _should_jail(self, env: dict[str, str] | None) -> bool:

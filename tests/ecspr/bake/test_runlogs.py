@@ -1,16 +1,3 @@
-"""The run-log harvester: what a reaction's row says when its submissions disagree.
-
-The three claims worth a test are the ones a reader of the output cannot check:
-
-  * a reaction collapses to ONE row, and the whole submission's outcome is the one that
-    survives -- taking the best of the reductions would report a reaction as answered
-    because a repair of it was;
-  * a shard row with a BLANK status is a row re-emitted from the cache, and it means `ok`
-    or `empty` by whether it carries a map. Reading blank as a missing value would empty
-    the table of exactly the rows a gapfill carried forward;
-  * `attempted/` holds indigo's sidecars and no others, because `read_prior` subtracts
-    that union from one returned set.
-"""
 from __future__ import annotations
 
 import pytest
@@ -27,14 +14,9 @@ def write(path, header, rows):
 
 @pytest.fixture
 def bake(tmp_path):
-    """A cache and an evidence tree with one reaction of each interesting shape."""
     cache = tmp_path / "aam_cache"
     ev = tmp_path / "evidence"
 
-    # MNXR1  whole ok
-    # MNXR2  whole carried from the cache with a map, plus a reduction that timed out
-    # MNXR3  no whole submission at all, two reductions disagreeing
-    # MNXR4  attempted and never written back
     write(cache / "indigo" / "cache.tsv",
           ("mnxr", "rxn_smiles", "mapped_rxn_smiles", "confidence"),
           [("MNXR1", "A>>B", "[A:1]>>[B:1]", "1.0"),
@@ -60,7 +42,6 @@ def bake(tmp_path):
            ("MNXR2#N", "C>>D", "", "", "timeout"),
            ("MNXR3#C", "E>>F", "[E:1]>>[F:1]", "1.0", ""),
            ("MNXR3#N", "G>>H", "", "", "")])
-    # The merged table beside the shards is the one the status column was dropped from.
     write(ev / "indigo" / "1.45.0" / "indigo.tsv",
           ("mnxr", "rxn_smiles", "mapped_rxn_smiles", "confidence"),
           [("MNXR1", "A>>B", "[A:1]>>[B:1]", "1.0")])
@@ -87,11 +68,7 @@ def test_one_row_per_reaction_and_the_whole_submission_wins(tmp_path, bake):
     st = read(build(tmp_path, cache, ev) / "indigo_status.tsv")
 
     assert st["MNXR1"]["status"] == "ok"
-    # Its reduction timed out; the whole submission answered, and that is the reaction's
-    # outcome. A worst-wins fold that ignored wholeness would say `timeout` here.
     assert st["MNXR2"]["status"] == "ok"
-    # No whole submission, so the reductions decide and the worse one carries: one of the
-    # two came back empty and the reaction is not fully answered.
     assert st["MNXR3"]["status"] == "empty"
     assert len(st) == 3
 
@@ -99,8 +76,6 @@ def test_one_row_per_reaction_and_the_whole_submission_wins(tmp_path, bake):
 def test_a_blank_status_is_read_from_the_map_not_dropped(tmp_path, bake):
     cache, ev = bake
     st = read(build(tmp_path, cache, ev) / "indigo_status.tsv")
-    # MNXR2 and MNXR3 carry no status in the shard table -- they were re-emitted from the
-    # cache -- and both still appear, one ok and one empty.
     assert {"MNXR2", "MNXR3"} <= set(st)
 
 
@@ -116,8 +91,6 @@ def test_a_kill_is_carried_as_unreturned(tmp_path, bake):
     p.write_text(p.read_text() + "MNXR5\tI>>J\t\t\tkilled\n")
     out = build(tmp_path, cache, ev)
     assert read(out / "indigo_status.tsv")["MNXR5"]["status"] == "killed"
-    # `read_prior` sorts `timeout` and `error` and has no bucket for a kill, so the only
-    # way it reaches the forecast at all is this file.
     assert "MNXR5" in read(out / "indigo_unreturned.tsv")
 
 
@@ -126,8 +99,6 @@ def test_derived_status_is_the_missing_confidence(tmp_path, bake):
     out = build(tmp_path, cache, ev)
     rx = read(out / "rxnmapper_derived_status.tsv")
     assert rx["MNXR1"]["derived_status"] == "ok"
-    # The whole submission had no confidence; that its carbon reduction did is not the
-    # reaction answering.
     assert rx["MNXR2"]["derived_status"] == "no_confidence"
     assert read(out / "localmapper_derived_status.tsv")["MNXR1"]["derived_status"] == "ok"
 

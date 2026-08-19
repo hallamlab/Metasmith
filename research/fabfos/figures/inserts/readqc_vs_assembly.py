@@ -43,12 +43,6 @@ READ_QC = ASSEMBLY / "assembly_stats" / "read_qc_stats"
 
 
 def build():
-    """Join per-library read QC to per-(library, assembler) assembly stats.
-
-    `assembly_summary.tsv` already carries the read count and depth on every row;
-    only mean Phred has to come from the per-library QC json, which is written
-    once per library and shared by its two assembler jobs.
-    """
     df = pd.read_csv(SUMMARY, sep="\t")
     qual = {}
     for p in sorted(READ_QC.glob("*.json")):
@@ -65,7 +59,6 @@ def build():
 
 
 def _kb_label(v, _pos=None):
-    """Carry the unit on the tick text, so no axis label has to."""
     if v <= 0:
         return ""
     return f"{v / 1000:g}Mb" if v >= 1000 else f"{v:g}kb"
@@ -118,7 +111,6 @@ def generate():
             LogLocator(base=10, subs=(3.0, 4.0, 6.0, 7.0, 8.0, 9.0)))
         ax.xaxis.set_minor_formatter(NullFormatter())
 
-    # only the outer edges of the 2x2 block are labelled
     for ax in (a00, a01):
         ax.tick_params(axis="x", which="both", labelbottom=False, length=0)
     for ax in (a01, a11):

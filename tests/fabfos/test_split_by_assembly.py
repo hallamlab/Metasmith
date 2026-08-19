@@ -1,18 +1,3 @@
-"""The per-assembly split must not lose, duplicate, or misattribute a row.
-
-The splitter is the last thing between 994 shard tables and the 2,844 tables
-that get delivered, and every one of its failure modes is quiet: a row routed to
-the wrong assembly still validates, a dropped shard part still writes a
-plausible table, and a `source` column left naming the shard still opens fine in
-pandas. So the tests here are about attribution and conservation, not about
-whether it runs.
-
-Fixtures are synthetic but schema-real: they go through the same
-`fabfos_evidence.validate_gpr` the transform calls, so a table this splitter
-writes is checked by the same contract that guarded the one it read.
-
-Run: python tests/test_split_by_assembly.py
-"""
 from __future__ import annotations
 
 import os
@@ -31,7 +16,6 @@ import pytest                                                        # noqa: E40
 import fabfos_evidence as fe                                         # noqa: E402
 import split_by_assembly as sp                                       # noqa: E402
 
-# (channel, intermediate_id, score, score_kind) tuples that satisfy the contract.
 LANES = [
     ("kofam", "K00001", 120.0, "hmm_bitscore"),
     ("clean", "1.1.1.1", 0.25, "clean_maxsep_inv"),
@@ -68,8 +52,6 @@ def _shard_table(path: Path, shard: str, members: dict[str, list[str]],
 
 
 def _corpus(tmp: Path, layout: dict[str, dict[str, list[str]]], channels=None):
-    """Build shard tables, the parts.tsv the resharder would have written, and
-    the per-sample ORF fastas the compaction validates against."""
     gpr = tmp / "gpr"
     results = tmp / "results"
     orfs = tmp / "orfs"
@@ -108,12 +90,6 @@ def _expect_refusal(fn, needle: str, what: str):
 
 
 def test_split_conserves_rows_and_reattributes_them(tmp_path):
-    """The load-bearing case: an assembly split across two shards.
-
-    Sequential fill means 993 of 994 shards end mid-assembly, so this is the
-    common case, not the corner one. Both slices must land in one table, the
-    `{sample}::` prefix must come off, and `source` must stop naming the shard.
-    """
     layout = {
         "shard_0000": {"SAMP_A": ["o1", "o2"], "SAMP_B": ["o1"]},
         "shard_0001": {"SAMP_B": ["o2", "o3"], "SAMP_C": ["o1"]},
@@ -137,22 +113,12 @@ def test_split_conserves_rows_and_reattributes_them(tmp_path):
             f"{sample}: ids are {sorted(set(df['orf']))[:3]}, not the fasta's")
         assert not df["orf"].str.contains("::").any()
 
-    # 6 ORFs x 4 lanes, and SAMP_B's two shard slices arrived as 3 ORFs in one
-    # table rather than as two tables or one truncated one.
     assert total == 6 * len(LANES)
     assert len(pd.read_parquet(gpr / "split" / "tables" / "SAMP_B.gpr.parquet")) \
         == 3 * len(LANES)
 
 
 def test_a_lost_shard_part_is_refused(tmp_path):
-    """Delete one slice of a split assembly AFTER its marker was written.
-
-    Without this the table for a split sample silently ships the ORFs of
-    whichever shards happened to finish -- a table that is complete-looking,
-    validates cleanly, and is missing a third of its assembly. The marker lists
-    the samples the shard emitted, so a part absent from a shard that CLAIMS to
-    have emitted it is a loss, not an assembly with nothing to contribute.
-    """
     layout = {
         "shard_0000": {"SAMP_A": ["o1", "o2"]},
         "shard_0001": {"SAMP_A": ["o3"]},
@@ -165,7 +131,6 @@ def test_a_lost_shard_part_is_refused(tmp_path):
 
 
 def test_an_unpartitioned_shard_is_refused(tmp_path):
-    """A part absent with NO marker means the shard was never partitioned."""
     layout = {
         "shard_0000": {"SAMP_A": ["o1", "o2"]},
         "shard_0001": {"SAMP_A": ["o3"]},
@@ -179,17 +144,8 @@ def test_an_unpartitioned_shard_is_refused(tmp_path):
 
 
 def test_an_assembly_with_no_evidence_still_delivers(tmp_path):
-    """The population the first version could not deliver at all.
-
-    An assembly whose ORFs produce no row in any lane has no group in the shard
-    table, so no part file -- indistinguishable on disk from a lost part unless
-    the marker says what the shard emitted. The corpus minimum is 1 ORF, so
-    this is near-certain, not a corner case, and refusing it would block the
-    whole delivery on the smallest assemblies.
-    """
     layout = {"shard_0000": {"QUIET": ["o1"], "LOUD": ["o1", "o2"]}}
     gpr, results, _ = _corpus(tmp_path, layout)
-    # Rewrite the shard table with QUIET contributing nothing at all.
     _shard_table(results / "shard_0000.parquet", "shard_0000", {"LOUD": ["o1", "o2"]})
     _run(gpr, results)
 
@@ -203,16 +159,6 @@ def test_an_assembly_with_no_evidence_still_delivers(tmp_path):
 
 @pytest.mark.parametrize("n_orfs", [1, 12])
 def test_an_assembly_missing_a_channel_is_refused(tmp_path, n_orfs):
-    """A short lane set is a failure at every size.
-
-    A header-only legacy kofam file for one sample is invisible to every
-    shard-level check -- the shard's other ~34 members keep its own kofam count
-    non-zero -- so nothing but this refusal stands between it and a delivered
-    table whose `lane_set` column claims four lanes it does not have. Size does
-    not enter into it: belief mass is split by each ORF's observed channel
-    count, so a one-ORF table short a lane is the same wrong denominator as a
-    hundred-thousand-ORF one.
-    """
     layout = {"shard_0000": {"SAMP": [f"o{i}" for i in range(n_orfs)]}}
     gpr, results, _ = _corpus(tmp_path, layout,
                               channels={"clean", "uniref50", "pbert"})
@@ -222,13 +168,10 @@ def test_an_assembly_missing_a_channel_is_refused(tmp_path, n_orfs):
 
 
 def test_the_row_ledger_catches_a_dropped_table(tmp_path):
-    """Rows in must equal rows out. Delete a delivered table's contents and the
-    sample-set check still passes -- only the ledger notices."""
     layout = {"shard_0000": {"SAMP_A": ["o1"], "SAMP_B": ["o1"]}}
     gpr, results, _ = _corpus(tmp_path, layout)
     assert sp.partition(gpr, [results]) == 0
     assert sp.compact(gpr) == 0
-    # Same filename, same sample set, fewer rows: everything but the ledger passes.
     p = gpr / "split" / "tables" / "SAMP_B.gpr.parquet"
     pd.read_parquet(p).iloc[:1].to_parquet(p, index=False)
     _expect_refusal(lambda: sp.finish(gpr), "across the delivered tables",
@@ -236,13 +179,6 @@ def test_the_row_ledger_catches_a_dropped_table(tmp_path):
 
 
 def test_one_short_assembly_refuses_the_whole_delivery(tmp_path):
-    """A healthy corpus does not launder one short table through.
-
-    The busy shard keeps every channel's corpus-wide count non-zero, so the
-    delivery-level check at the end cannot see TINY at all. The per-sample
-    refusal is what catches it, and it must fire even when everything around it
-    is well-formed.
-    """
     layout = {
         "shard_0000": {"TINY": ["o1"]},
         "shard_0001": {"BIG": ["o1", "o2"]},
@@ -258,14 +194,6 @@ def test_one_short_assembly_refuses_the_whole_delivery(tmp_path):
 
 
 def test_a_corpus_with_no_evidence_at_all_is_refused(tmp_path):
-    """Once every delivered table must carry four channels, the only way a
-    channel can be empty corpus-wide is for nothing to have been annotated at
-    all -- and that is caught at discovery, not at delivery.
-
-    A zero-row shard table is indistinguishable on disk from a lane that never
-    ran, so `partition` refuses before any table is written. Reaching for the
-    corpus-wide count in `finish` would be reaching one phase too late.
-    """
     layout = {"shard_0000": {"SAMP_A": ["o1"]}, "shard_0001": {"SAMP_B": ["o1"]}}
     gpr, results, _ = _corpus(tmp_path, layout)
     for shard in ("shard_0000", "shard_0001"):
@@ -277,7 +205,6 @@ def test_a_corpus_with_no_evidence_at_all_is_refused(tmp_path):
 
 
 def test_a_shard_collected_twice_is_refused(tmp_path):
-    """Two batches both collecting one shard would double every row it holds."""
     layout = {"shard_0000": {"SAMP_A": ["o1"]}}
     gpr, results, _ = _corpus(tmp_path, layout)
     other = tmp_path / "results_b"
@@ -287,7 +214,6 @@ def test_a_shard_collected_twice_is_refused(tmp_path):
 
 
 def test_an_empty_results_root_is_refused(tmp_path):
-    """An unmatched glob must not make every array task exit 0 doing nothing."""
     layout = {"shard_0000": {"SAMP_A": ["o1"]}}
     gpr, _results, _ = _corpus(tmp_path, layout)
     _expect_refusal(
@@ -297,15 +223,6 @@ def test_an_empty_results_root_is_refused(tmp_path):
 
 
 def test_a_non_gpr_parquet_in_the_results_root_is_ignored(tmp_path):
-    """The results directory holds the other lanes' products too.
-
-    `partition` is pointed at whole run-results directories, which carry the
-    ProteinBERT embeddings parquet alongside the gpr tables. Identifying a
-    gpr_table by "reading its `source` column didn't raise" does NOT work:
-    pyarrow's `iter_batches(columns=["source"])` returns a batch that merely
-    lacks the column, so the failure surfaces on the `.column()` call after the
-    guard. This is the real-data case that a fixture of only-gpr-tables misses.
-    """
     layout = {"shard_0000": {"SAMP_A": ["o1", "o2"]}}
     gpr, results, orfs = _corpus(tmp_path, layout)
     pd.DataFrame({"id": ["SAMP_A::o1"], "dim_0": [0.5]}).to_parquet(
@@ -317,12 +234,6 @@ def test_a_non_gpr_parquet_in_the_results_root_is_ignored(tmp_path):
 
 
 def test_a_drifted_contract_copy_is_refused(tmp_path):
-    """The split re-validates against a COPY of the contract on the cluster.
-
-    A drift that reorders SCHEMA_COLS refuses loudly anyway; one that WIDENS a
-    score range or adds a lane set would pass in silence and make the
-    re-validation a decoration. The digest pin is what closes that.
-    """
     layout = {"shard_0000": {"SAMP_A": ["o1"]}}
     gpr, results, _ = _corpus(tmp_path, layout)
     saved = sp.EXPECT_LIB_SHA
@@ -337,9 +248,6 @@ def test_a_drifted_contract_copy_is_refused(tmp_path):
 if __name__ == "__main__":
     import tempfile
 
-    # Collected from the module, NOT from a hand-kept list: a list silently
-    # drops any test added below it, so the one test written for the bug you
-    # just found is the one that never runs. Definition order is preserved.
     tests = [v for k, v in list(globals().items())
              if k.startswith("test_") and callable(v)]
     for fn in tests:

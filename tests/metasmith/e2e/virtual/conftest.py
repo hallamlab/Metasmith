@@ -1,5 +1,3 @@
-"""Fixtures for virtual (no Docker/Nextflow) E2E tests."""
-
 from __future__ import annotations
 
 import shutil
@@ -18,11 +16,6 @@ from metasmith.models.libraries import (
 from metasmith.models.remote import Source
 from metasmith.models.solver import Endpoint
 from metasmith.models.workflow import NextflowGenContext, WorkflowTask
-
-
-# `virtual_runtime` and `virtual_runtime_bounce` fixtures are project-wide;
-# defined in tests/conftest.py so cache/, flow/, audit/ can request them
-# without cross-tree fixture imports.
 
 
 @pytest.fixture
@@ -64,7 +57,6 @@ def mock_samples(tmp_path, mock_types) -> DataInstanceLibrary:
     return lib
 
 
-
 def create_transform_library(
     base_dir: Path,
     mock_types: Path,
@@ -104,13 +96,7 @@ types:
     return TransformInstanceLibrary.Load(tr_path)
 
 
-
 def stage_task(task: WorkflowTask, rootfs=None) -> tuple[str, Path, WorkflowTask]:
-    """Persist task to agent layout and compile Nextflow artifacts.
-
-    `rootfs` mirrors `Agent.StageWorkflow(task, rootfs=...)`: the per-task
-    override that rides in the compiled workspace. None means none was given.
-    """
     key = task.GetKey()
     task_path = AgentPaths.to_task(key)
     task_path.parent.mkdir(parents=True, exist_ok=True)

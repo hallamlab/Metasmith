@@ -1,22 +1,3 @@
-"""LineageJoin Case Matrix — regression suite for `Orchestrator.groovy::group()`.
-
-Background (inbox #16): the non-parent branch of `group()` at
-`src/metasmith/nextflow_config/Orchestrator.groovy:218-241` buffers items into
-`pending_groups` and only flushes them when the upstream channel emits its
-terminal `null` sentinel (via `.concat(this.one_null)`). This stalls downstream
-combine() until upstream closes, surfacing as latency, deadlock, dedup loss,
-or partial-emit pinning depending on the lineage shape / index multiplicity /
-batch size / termination shape.
-
-Each test below corresponds to one row of the 20-case matrix documented in
-the inbox #16 design note. Tests intentionally encode the *current* failure
-mode (latency, deadlock, dedup, partial-emit) so a downstream fix can be
-diff-verified against this suite.
-
-Naming convention: `test_cNN_<lineage>_<idx>_<bs>_<term>` where NN is the
-case ID. Each function's docstring carries the matrix row.
-"""
-
 import re
 import subprocess
 import pytest
@@ -27,18 +8,12 @@ from tests.metasmith.e2e.docker.test_orchestrator_exec import NxfTestRunner
 pytestmark = [pytest.mark.docker, pytest.mark.nextflow, pytest.mark.slow]
 
 
-# Nextflow 26.04.1's script parser V2 has an intermittent NullPointerException
-# in `printErrors` (`ScriptLoaderV2.groovy:140`) — when the parser hits a
-# transient JIT/classloader race, it raises an NPE *while trying to format a
-# different error*, masking the real result. Standalone re-runs of the same
-# script succeed, so we treat the NPE as a retryable transient.
 NXF_PARSER_NPE_MARKER = (
     'Cannot invoke "org.codehaus.groovy.control.SourceUnit.getSource()"'
 )
 
 
 def _run_with_retry(nxf_runner, script: str, timeout: int = 60, retries: int = 2):
-    """Run a script, retrying on the Nextflow parser NPE."""
     last = None
     for attempt in range(retries + 1):
         result = nxf_runner.run(script, timeout=timeout)
@@ -54,19 +29,10 @@ def nxf_runner(tmp_path, docker_image):
     return NxfTestRunner(tmp_path / "nxf_test", docker_image)
 
 
-# --- shared constants ------------------------------------------------------
-
-# Used by C4/C12/C13 — tail latency that must be exceeded if the bug is live.
 SLOW_TAIL_SECONDS = 5
 INCREMENTAL_EMIT_THRESHOLD_MS = 2000
 
-# C13 deadlock guard: if `group()` truly never emits, the docker run will hit
-# this wall-clock timeout. We catch the TimeoutExpired and turn it into a
-# specific assertion failure that future fix work can target.
 C13_DEADLOCK_TIMEOUT_S = 30
-
-
-# --- helpers ---------------------------------------------------------------
 
 
 def _emit_lines(stdout: str, prefix: str = "G:") -> list[str]:
@@ -74,14 +40,6 @@ def _emit_lines(stdout: str, prefix: str = "G:") -> list[str]:
 
 
 def _member_shapes(stdout: str) -> list[list[list[int]]]:
-    """Parse `M:<json>` lines emitted by the batch-axis cases.
-
-    Each line is one task; the JSON is that task's per-batch-member
-    `[n_stream0_files, n_stream1_files]`, read out of the `FILES` entry
-    `_collateBatch` writes into every member's index. Assertions on the
-    flattened `a_vals`/`b_vals` sizes cannot tell a 3-member batch from a
-    3-item group, which is exactly the axis these cases pin.
-    """
     import json
 
     return [
@@ -91,8 +49,6 @@ def _member_shapes(stdout: str) -> list[list[list[int]]]:
     ]
 
 
-# The view closure that produces those lines. `FILES` is positional per
-# stream, in the order the streams were passed to `group()`.
 MEMBER_SHAPE_VIEW = (
     'grouped.view { indexes, s0, s1 -> '
     '"M:" + groovy.json.JsonOutput.toJson('
@@ -107,18 +63,7 @@ def _earliest_ms(stdout: str, prefix: str = "G:") -> int | None:
     return min(int(re.match(rf"{prefix}(\d+):", l).group(1)) for l in lines)
 
 
-# ===========================================================================
-# C1 — PARENT_OF_BY, S single, batch_size=1, normal close.
-# Predicted: PASS (parent branch uses .combine(by:0); streams in pairs)
-# ===========================================================================
-
-
 def test_c01_parent_single_bs1_streaming(nxf_runner):
-    """Parent stream paired with by-stream via combine(by:0). Stream-as-pair.
-
-    For combine(by:0) to match, both pa and pb must carry the same a-hash.
-    We synthesize pa first, then derive pb's index from pa's hash directly.
-    """
     (nxf_runner.work_dir / "a0.txt").write_text("a0")
     (nxf_runner.work_dir / "b0.txt").write_text("b0")
 
@@ -151,14 +96,7 @@ workflow {
     assert "a0.txt:b0.txt" in lines[0]
 
 
-# ===========================================================================
-# C2 — PARENT_OF_BY, S single, batch_size=3, normal close.
-# Predicted: PASS (per-S-hash bag of 3)
-# ===========================================================================
-
-
 def test_c02_parent_single_bs3_bagged(nxf_runner):
-    """3 parent-paired emissions get collated into 1 batch of 3."""
     for i in range(3):
         (nxf_runner.work_dir / f"a{i}.txt").write_text(f"a{i}")
         (nxf_runner.work_dir / f"b{i}.txt").write_text(f"b{i}")
@@ -191,20 +129,11 @@ workflow {
     result = _run_with_retry(nxf_runner, script, timeout=60)
     NxfTestRunner.assert_nxf_ok(result)
     lines = _emit_lines(result.stdout)
-    # 3 paired emissions collated into 1 batch of 3.
     assert len(lines) == 1, f"Expected 1 batch of 3, got {len(lines)}: {lines}"
     assert "a=3:b=3" in lines[0]
 
 
-# ===========================================================================
-# C3 — PARENT_OF_BY, B aggregated (B.idx[S] = multi-hash), bs=1.
-# Predicted today: WARN — combine(by:0) requires equality on the key, but
-# B's idx[a] is now a *set*. Behavior is ambiguous.
-# ===========================================================================
-
-
 def test_c03_parent_multi_bs1_aggregated_b(nxf_runner):
-    """B is an aggregate carrying multiple a-hashes. Each parent S should pair."""
     for i in range(2):
         (nxf_runner.work_dir / f"a{i}.txt").write_text(f"a{i}")
     (nxf_runner.work_dir / "b_agg.txt").write_text("b_aggregate")
@@ -238,42 +167,14 @@ workflow {
 }
 '''
     result = _run_with_retry(nxf_runner, script, timeout=60)
-    # Behavior-pin: capture what happens today.
-    # The parent branch's combine(by:0) requires exact list equality on the
-    # key — a-hash [h0] != [h0,h1] — so no pair forms, the channel is empty.
-    # PINNED CURRENT BEHAVIOR
     NxfTestRunner.assert_nxf_ok(result)
     lines = _emit_lines(result.stdout)
-    # We expect zero emissions today (combine(by:0) won't match aggregated key).
-    # If a future fix enables set-overlap matching, this would change.
     assert len(lines) <= 2, (
         f"PINNED behavior change: expected 0-2 emits today, got {len(lines)}: {lines}"
     )
 
 
-# ===========================================================================
-# C4 — DESCENDANT_OF_BY, S single, bs=1, normal close.
-# Predicted today: FAIL — buffer-until-close (the bug).
-# (Already covered by test_orchestrator_group_incremental.py; we re-encode
-# the timing assertion here for matrix completeness.)
-# ===========================================================================
-
-
 def test_c04_descendant_key_emits_before_another_keys_tail(nxf_runner):
-    """A whole key emits at t~0 while a DIFFERENT key's tail is still out.
-
-    Reshaped. This case (and `test_group_buffering`) used to give ONE by-key
-    two distinct b items, one of them 5s late, and require an emission inside
-    2s — which is a demand for a PARTIAL group, the split `0088d24` removed
-    early emission to prevent and the failure that handed ppanggolin one
-    genome. Under the group_by contract, that key's answer genuinely is not
-    known until its second item lands.
-
-    What IS achievable, and is what a fan-out actually needs, is cross-key: 2
-    keys of 2 items each, key 11's pair immediate and key 12's pair 5s out.
-    Key 11 is whole at t~0 and must not wait on key 12. `group()` gets the
-    per-key count so it can tell "whole" from "so far".
-    """
     (nxf_runner.work_dir / "a0.txt").write_text("a0")
     (nxf_runner.work_dir / "a1.txt").write_text("a1")
     for n in ("b_fast_0", "b_fast_1", "b_slow_0", "b_slow_1"):
@@ -324,28 +225,7 @@ workflow {{
     )
 
 
-# ===========================================================================
-# C5 — DESCENDANT_OF_BY, S single, bs=3, normal close.
-# Predicted today: FAIL — same buffer-until-close, just with bagging.
-# Required: per-by-key bag of 3.
-# ===========================================================================
-
-
 def test_c05_descendant_single_bs3_folds_three_keys(nxf_runner):
-    """3 by-keys at batch_size=3 fold into ONE task of 3 members.
-
-    b is declared descendant of a (seedParents). Each b carries
-    idx["a"] = [11L, 12L, 13L] (all 3 a-hashes) — i.e., every b descends
-    from every a, so each of the 3 a-keys collects all 3 b's.
-
-    `batch_size` is the GROUP-COUNT axis: ceil(3 keys / 3) == 1 task, and
-    that task carries 3 members of `a=1, b=3`. This case previously asserted
-    3 tasks of `a=1:b=3`, i.e. `batch_size` as the within-key member count —
-    the reading `bbbb599` implemented and the one that shattered collecting
-    transforms. `plan_oracle`, `cache_decisions` and `virtual_runtime` all
-    predict `ceil(len(group_by_instances) / batch_size)`; the runtime now
-    agrees with them.
-    """
     for i in range(3):
         (nxf_runner.work_dir / f"a{i}.txt").write_text(f"a{i}")
         (nxf_runner.work_dir / f"b{i}.txt").write_text(f"b{i}")
@@ -381,16 +261,7 @@ workflow {
     )
 
 
-# ===========================================================================
-# C6 — DESCENDANT_OF_BY, S aggregated (S.idx[by] multi-hash), bs=1.
-# Predicted today: FAIL — one S should contribute to all listed by-keys via
-# set-intersection filter (the filter is present at lines 255-263, but the
-# upstream buffering prevents incremental emission).
-# ===========================================================================
-
-
 def test_c06_descendant_multi_bs1_aggregated_s(nxf_runner):
-    """One aggregated S carrying 2 by-hashes should pair with both by-items."""
     for i in range(2):
         (nxf_runner.work_dir / f"a{i}.txt").write_text(f"a{i}")
     (nxf_runner.work_dir / "s_agg.txt").write_text("s_aggregate")
@@ -423,21 +294,12 @@ workflow {
     result = _run_with_retry(nxf_runner, script, timeout=60)
     NxfTestRunner.assert_nxf_ok(result)
     lines = _emit_lines(result.stdout)
-    # Required: 2 emissions (one per a-key; aggregated S overlaps via
-    # set-intersection filter at lines 255-263).
     assert len(lines) == 2, (
         f"C6: expected 2 emits (one per a-key), got {len(lines)}: {lines}"
     )
 
 
-# ===========================================================================
-# C7 — SIBLING via shared ancestor A, both idx[A]=single, bs=1.
-# Predicted today: FAIL — pair on hA equality.
-# ===========================================================================
-
-
 def test_c07_sibling_single_bs1_pair_on_ancestor(nxf_runner):
-    """B and C are siblings of A. Should pair on shared a-hash (set-overlap)."""
     (nxf_runner.work_dir / "b0.txt").write_text("b0")
     (nxf_runner.work_dir / "c0.txt").write_text("c0")
 
@@ -463,23 +325,13 @@ workflow {
     result = _run_with_retry(nxf_runner, script, timeout=60)
     NxfTestRunner.assert_nxf_ok(result)
     lines = _emit_lines(result.stdout)
-    # Required: 1 pair (b0, c0) — they share a's hash.
-    # Today: buffer-until-close means c is held; with paStream cloned twice
-    # this may also deadlock. PINNED behavior recorded.
     assert len(lines) >= 1, (
         f"C7: sibling pair did not form. Got {len(lines)}: {lines}\n"
         f"stdout tail: {result.stdout[-800:]}"
     )
 
 
-# ===========================================================================
-# C8 — SIBLING with multi-hash idx[A] on either side, bs=1.
-# Predicted today: FAIL — pair on set-overlap; dedup needed.
-# ===========================================================================
-
-
 def test_c08_sibling_multi_bs1_set_overlap(nxf_runner):
-    """B carries a-hashes {h0,h1}, C carries {h1,h2}. Overlap on h1 → pair."""
     (nxf_runner.work_dir / "b.txt").write_text("b")
     (nxf_runner.work_dir / "c.txt").write_text("c")
 
@@ -512,20 +364,12 @@ workflow {
     result = _run_with_retry(nxf_runner, script, timeout=60)
     NxfTestRunner.assert_nxf_ok(result)
     lines = _emit_lines(result.stdout)
-    # Required: 1 emission via set-overlap filter at lines 255-263.
     assert len(lines) >= 1, (
         f"C8: set-overlap pair did not form. Got {len(lines)}: {lines}"
     )
 
 
-# ===========================================================================
-# C9 — SIBLING ×2 with DIFFERENT ancestors, bs=1.
-# Predicted today: FAIL — independent slot joins.
-# ===========================================================================
-
-
 def test_c09_sibling_two_independent_ancestors(nxf_runner):
-    """B descends from A, C descends from D. Both group by B → cartesian."""
     (nxf_runner.work_dir / "b.txt").write_text("b")
     (nxf_runner.work_dir / "c.txt").write_text("c")
 
@@ -555,14 +399,7 @@ workflow {
     )
 
 
-# ===========================================================================
-# C10 — WILDCARD, 1 S item, bs=1.
-# Predicted: PASS — every B paired with the one S.
-# ===========================================================================
-
-
 def test_c10_wildcard_single_s_pass(nxf_runner):
-    """One non-parent S, multiple by-items. Each by-item gets the S."""
     (nxf_runner.work_dir / "s.txt").write_text("s")
     for i in range(3):
         (nxf_runner.work_dir / f"b{i}.txt").write_text(f"b{i}")
@@ -592,13 +429,7 @@ workflow {
     assert len(lines) == 3, f"Expected 3 wildcard emissions, got {len(lines)}: {lines}"
 
 
-# ===========================================================================
-# C11 — WILDCARD, multi-S, bs=1. PASS — cartesian B×S; close-required is correct.
-# ===========================================================================
-
-
 def test_c11_wildcard_multi_s_cartesian(nxf_runner):
-    """2 S items × 2 B items → 4 cartesian emits."""
     for i in range(2):
         (nxf_runner.work_dir / f"s{i}.txt").write_text(f"s{i}")
         (nxf_runner.work_dir / f"b{i}.txt").write_text(f"b{i}")
@@ -627,21 +458,12 @@ workflow {
     result = _run_with_retry(nxf_runner, script, timeout=60)
     NxfTestRunner.assert_nxf_ok(result)
     lines = _emit_lines(result.stdout)
-    # group(by="b"): each B emission triggers; S buffered until close emits as
-    # a 2-item list. Result: 2 emits (one per B), each carrying [s0, s1].
     assert len(lines) == 2, f"Expected 2 emits (per-B with [s0,s1]), got {len(lines)}: {lines}"
     for line in lines:
         assert "b=1:s=2" in line, f"Expected b=1:s=2, got: {line}"
 
 
-# ===========================================================================
-# C12 — DESCENDANT_OF_BY (C4 shape), bs=1, errorStrategy='ignore' drops 1/3.
-# Predicted today: FAIL late — should emit 2 of 3 incrementally.
-# ===========================================================================
-
-
 def test_c12_descendant_errorstrategy_ignore_emits_late(nxf_runner):
-    """1 of 3 upstream tasks fails (ignored). 2 successes should emit early."""
     for i in range(3):
         (nxf_runner.work_dir / f"a{i}.txt").write_text(f"a{i}")
         (nxf_runner.work_dir / f"b{i}.txt").write_text(f"b{i}")
@@ -695,47 +517,18 @@ workflow {
     result = _run_with_retry(nxf_runner, script, timeout=90)
     NxfTestRunner.assert_nxf_ok(result)
     lines = _emit_lines(result.stdout)
-    # Required: 2 of 3 succeed → cartesian × 3 a-keys = 3 emits where each
-    # carries b=2 (or 3 emits per-by-key with the 2 b's). Today: buffered.
-    # The bug-revealing assertion: timing. If buffered, first emit lands
-    # after the process pool drains (well after the first successful task).
     assert len(lines) >= 1, (
         f"C12: no emissions despite errorStrategy=ignore. Got: {lines}\n"
         f"stdout tail: {result.stdout[-800:]}"
     )
-    # Latency check: first emit should land < INCREMENTAL_EMIT_THRESHOLD_MS
-    # if incremental; today buffers, so this fails. With small tasks this
-    # may pass by accident — kept as a soft signal.
     earliest = _earliest_ms(result.stdout)
     assert earliest is not None
-    # PIN: record current behavior; the bug-relevant assertion is that the
-    # 2 successful tasks DO emit (even if late).
     assert "b=2" in " ".join(lines) or "b=3" in " ".join(lines), (
         f"C12: expected b=2 or b=3 in some emit, got: {lines}"
     )
 
 
-# ===========================================================================
-# C13 — DESCENDANT_OF_BY (C4 shape), bs=1, upstream NEVER closes.
-# Predicted today: DEADLOCK — buffer never flushes, group() never emits, so
-# a downstream process consuming group() output never runs.
-#
-# C13 (sharpened): chain a real downstream `process sentinel` that depends on
-# the group output and emits a SENTINEL line to stdout. If the buffer never
-# flushes, the process never runs, nothing prints, and the docker run hits
-# its wall-clock timeout. This is the canonical W1 reproduction: a downstream
-# task awaiting an upstream aggregation that never fires.
-# ===========================================================================
-
-
 def test_c13_descendant_never_closes_deadlock(nxf_runner):
-    """Non-parent upstream never closes; downstream sentinel never runs.
-
-    Lineage declared (b descends from a). b items carry idx["a"]=[11L]
-    matching a's hash. Incremental DESCENDANT lets the early (a, b_early)
-    pair emit at t≈0; the sentinel runs even though the late b never
-    arrives within the test window.
-    """
     (nxf_runner.work_dir / "a.txt").write_text("a")
     (nxf_runner.work_dir / "b_early.txt").write_text("be")
 
@@ -792,11 +585,6 @@ workflow {{
     }}
 }}
 '''
-    # Bug manifests as: no SENTINEL emission at all within the window.
-    # Even after the fix, the workflow won't naturally complete because
-    # the slow tail is still pending — docker times out. So the success
-    # signal is: SENTINEL in stdout, regardless of whether docker exited
-    # cleanly or hit timeout.
     try:
         result = nxf_runner.run(script, timeout=C13_DEADLOCK_TIMEOUT_S)
         stdout = result.stdout
@@ -815,13 +603,7 @@ workflow {{
     )
 
 
-# ===========================================================================
-# C14 — Any, by-channel empty, bs=1. PASS — no emit.
-# ===========================================================================
-
-
 def test_c14_empty_by_channel_no_emit(nxf_runner):
-    """Empty by-channel → no emissions, no errors."""
     (nxf_runner.work_dir / "s.txt").write_text("s")
 
     script = '''
@@ -846,14 +628,7 @@ workflow {
     assert "DONE" in result.stdout
 
 
-# ===========================================================================
-# C15 — DESCENDANT_OF_BY, bag underfull (2 items, bs=3), normal close.
-# Predicted today: FAIL — flushes partial. PIN this as ground truth.
-# ===========================================================================
-
-
 def test_c15_underfull_bag_partial_emit_pinned(nxf_runner):
-    """Only 2 items emitted but batch_size=3. Today emits partial bag of 2."""
     (nxf_runner.work_dir / "a0.txt").write_text("a0")
     (nxf_runner.work_dir / "b0.txt").write_text("b0")
     (nxf_runner.work_dir / "b1.txt").write_text("b1")
@@ -879,29 +654,12 @@ workflow {
     result = _run_with_retry(nxf_runner, script, timeout=60)
     NxfTestRunner.assert_nxf_ok(result)
     lines = _emit_lines(result.stdout)
-    # PINNED CURRENT BEHAVIOR — today emits a partial bag at channel close.
-    # collate(3) on 2 items emits 1 partial batch.
     assert len(lines) == 1, (
         f"C15 PINNED behavior change: expected 1 partial emit, got {len(lines)}: {lines}"
     )
 
 
-# ===========================================================================
-# C16 — Any, duplicate item delivery (replay same payload), bs=1.
-# Predicted today: FAIL — double-counts. Required: hash-dedup at bag insertion.
-#
-# C16 (sharpened): two SEPARATE channels each carrying the SAME file path,
-# mixed before postIn. The two arrivals are reference-distinct items in the
-# merged channel — Nextflow's upstream coalescing does not dedup them —
-# but their on-channel id (postIn's seedless fallback → md5("$item"), used
-# when no SELF_ID_KEY rides the item map) collides because the file path
-# string is identical. The orchestrator's bag-insertion is the only thing
-# that can deduplicate them.
-# ===========================================================================
-
-
 def test_c16_duplicate_item_double_counts_bug(nxf_runner):
-    """Two channels emit the same file path → bag should be 1, today is 2."""
     (nxf_runner.work_dir / "a.txt").write_text("a")
     (nxf_runner.work_dir / "b.txt").write_text("b")
 
@@ -929,11 +687,7 @@ workflow {
     result = _run_with_retry(nxf_runner, script, timeout=60)
     NxfTestRunner.assert_nxf_ok(result)
     lines = _emit_lines(result.stdout)
-    # If dedup were in place, we'd see b=1. Today we expect b=2 (bug).
-    # The test ASSERTS the fixed behavior (b=1) so it FAILS today and PASSES
-    # after the fix.
     assert len(lines) >= 1, "no emits"
-    # Parse the b= field from the first line.
     m = re.search(r"b=(\d+)", lines[0])
     assert m, f"unexpected emit format: {lines[0]}"
     b_count = int(m.group(1))
@@ -944,15 +698,7 @@ workflow {
     )
 
 
-# ===========================================================================
-# C17 — DESCENDANT_OF_BY, late S after by-close, bs=1. WARN.
-# Predicted today: drop and tombstone is REQUIRED. Today: behavior undefined.
-# PINNED CURRENT BEHAVIOR.
-# ===========================================================================
-
-
 def test_c17_late_s_after_by_close_pinned(nxf_runner):
-    """B (by) closes early; S (non-parent) emits after. Behavior pinning."""
     (nxf_runner.work_dir / "a.txt").write_text("a")
     (nxf_runner.work_dir / "b.txt").write_text("b")
 
@@ -978,28 +724,12 @@ workflow {{
     result = _run_with_retry(nxf_runner, script, timeout=60)
     NxfTestRunner.assert_nxf_ok(result)
     lines = _emit_lines(result.stdout)
-    # PINNED CURRENT BEHAVIOR — today the late B is still buffered into
-    # pending_groups and emitted at upstream close. Cartesian wildcard pairs
-    # the late B with the early A. So 1 emit today.
     assert len(lines) == 1, (
         f"C17 PINNED behavior change: expected 1 late-S emit, got {len(lines)}: {lines}"
     )
 
 
-# ===========================================================================
-# C18 — DESCENDANT_OF_BY declared, idx[by] null on S, bs=1.
-# Required: stop the run. See the F2 section at the end of this file.
-# ===========================================================================
-
-
 def test_c18_idx_by_null_on_s_pinned(nxf_runner):
-    """B is a declared descendant of A but carries no `a` key: the run stops.
-
-    Three contracts have held this case. Cartesian fallback paired them (wrong
-    answer, silently); then the DESCENDANT branch dropped the item and logged
-    (no answer, silently, which is how a nine-step run finished seven steps and
-    exited 0); now it raises.
-    """
     (nxf_runner.work_dir / "a.txt").write_text("a")
     (nxf_runner.work_dir / "b.txt").write_text("b")
 
@@ -1037,14 +767,7 @@ workflow {
     assert _emit_lines(result.stdout) == [], "nothing should have been grouped"
 
 
-# ===========================================================================
-# C19 — Stream classifiable two ways (PARENT and SIBLING), bs=1.
-# Predicted: declaration wins (today's first-match isParent semantics). PIN.
-# ===========================================================================
-
-
 def test_c19_dual_classification_declaration_wins_pinned(nxf_runner):
-    """B declared as both parent AND sibling of a. isParent() match wins."""
     (nxf_runner.work_dir / "a.txt").write_text("a")
     (nxf_runner.work_dir / "b.txt").write_text("b")
 
@@ -1072,19 +795,10 @@ workflow {
     result = _run_with_retry(nxf_runner, script, timeout=60)
     NxfTestRunner.assert_nxf_ok(result)
     lines = _emit_lines(result.stdout)
-    # PINNED CURRENT BEHAVIOR — isParent(b, a)=true → parent branch.
-    # Whether or not the b-hash actually matches is a separate concern; we
-    # just record the count.
     assert len(lines) >= 0, f"C19 unexpected error: {result.stderr[-500:]}"
 
 
-# ===========================================================================
-# C20 — DESCENDANT_OF_BY, S = output of earlier group, multi-hash. Same as C6.
-# ===========================================================================
-
-
 def test_c20_descendant_chained_group_multi(nxf_runner):
-    """S is the output of a previous group (so multi-hash). Same shape as C6."""
     for i in range(2):
         (nxf_runner.work_dir / f"a{i}.txt").write_text(f"a{i}")
     (nxf_runner.work_dir / "s_seed.txt").write_text("s")
@@ -1122,29 +836,13 @@ workflow {
     result = _run_with_retry(nxf_runner, script, timeout=60)
     NxfTestRunner.assert_nxf_ok(result)
     lines = _emit_lines(result.stdout)
-    # Required: 2 pairs (one per a-hash; aggregated S overlaps with each).
-    # Today: pinned to whatever the non-parent buffering produces.
     assert len(lines) >= 1, (
         f"C20: no emits from chained group multi-hash S. Got: {lines}\n"
         f"stdout tail: {result.stdout[-800:]}"
     )
 
 
-# ===========================================================================
-# C21 — PARENT_OF_BY, B aggregated (B.idx[S] = multi-hash), bs=3.
-# Predicted today: PIN — combine(by:0) requires exact-list equality on the
-# joining key, so a multi-hash B does not pair with single-hash parents.
-# Same shape as C3, exercised at bs=3 to verify bag-fill on the parent
-# branch. Today the bag fills with whatever joins survive (0-2 today).
-# ===========================================================================
-
-
 def test_c21_parent_multi_bs3_aggregated_b(nxf_runner):
-    """Aggregated B (multi a-hash) paired against single-hash A parents.
-
-    PINNED CURRENT BEHAVIOR: combine(by:0) won't match the aggregated key
-    against any individual parent. Asserts <=2 emissions to pin today.
-    """
     for i in range(3):
         (nxf_runner.work_dir / f"a{i}.txt").write_text(f"a{i}")
     (nxf_runner.work_dir / "b_agg.txt").write_text("b_aggregate")
@@ -1180,26 +878,13 @@ workflow {
     result = _run_with_retry(nxf_runner, script, timeout=60)
     NxfTestRunner.assert_nxf_ok(result)
     lines = _emit_lines(result.stdout)
-    # PINNED — combine(by:0) won't form pairs across the multi-hash key.
     assert len(lines) <= 2, (
         f"C21 PINNED behavior change: expected 0-2 emits today, "
         f"got {len(lines)}: {lines}"
     )
 
 
-# ===========================================================================
-# C22 — DESCENDANT_OF_BY, S aggregated (multi-hash idx[by]), bs=3.
-# Predicted today: FAIL — buffer-until-close emits 1 aggregated batch
-# instead of per-by-key bags of 3.
-# ===========================================================================
-
-
 def test_c22_descendant_multi_bs3_folds_three_keys(nxf_runner):
-    """3 multi-hash S items, each carrying all 3 a-hashes; group by a, bs=3.
-
-    Same axis correction as C5, on the multi-hash S shape: 3 by-keys at
-    batch_size=3 is one task of 3 members, each `a=1, s=3`.
-    """
     for i in range(3):
         (nxf_runner.work_dir / f"a{i}.txt").write_text(f"a{i}")
         (nxf_runner.work_dir / f"s{i}.txt").write_text(f"s{i}")
@@ -1235,21 +920,7 @@ workflow {
     )
 
 
-# ===========================================================================
-# C23 — SIBLING (B sibling of C via shared A), both single-hash, bs=3.
-# Predicted today: FAIL — sibling pairs do form (C7/C8 pass), but the
-# bag-fill behavior on the sibling branch at bs>1 is unverified. Required:
-# per-by-key bag of 3 sibling items.
-# ===========================================================================
-
-
 def test_c23_sibling_single_bs3_folds_three_keys(nxf_runner):
-    """3 B items and 3 C items all sharing a-hash 5; group by b, bs=3.
-
-    Same axis correction as C5/C22, on the SIBLING branch: every B pairs with
-    every C via shared-ancestor overlap, so each of the 3 b-keys collects all
-    3 c's, and batch_size=3 folds those 3 keys into one task of 3 members.
-    """
     for i in range(3):
         (nxf_runner.work_dir / f"b{i}.txt").write_text(f"b{i}")
         (nxf_runner.work_dir / f"c{i}.txt").write_text(f"c{i}")
@@ -1280,27 +951,12 @@ workflow {
     NxfTestRunner.assert_nxf_ok(result)
     tasks = _member_shapes(result.stdout)
     assert len(tasks) == 1, f"C23: ceil(3 keys / 3) == 1 task, got {tasks}"
-    # streams are [pc, pb], so FILES is positionally (c, b).
     assert tasks[0] == [[3, 1], [3, 1], [3, 1]], (
         f"C23: expected 3 members of (c=3, b=1), got {tasks[0]}"
     )
 
 
-# ===========================================================================
-# C24 — WILDCARD, multi-S, bs=3.
-# Predicted today: PIN — WILDCARD is the canonical buffer-until-close path;
-# bag-fill at bs>1 exercises it. Today: each B carries the buffered list of
-# S items; _batch(3) collates result-tuples across by-keys.
-# ===========================================================================
-
-
 def test_c24_wildcard_multi_bs3_per_key_bags(nxf_runner):
-    """3 S items, 2 B items, WILDCARD lineage; group by b, bs=3.
-
-    Required: per-by-key bags → 2 emits with `b=1:s=3` each. Today: WILDCARD
-    branch produces this naturally (each B pairs with the closed-and-flushed
-    S buffer of size 3), so this should PASS today.
-    """
     for i in range(3):
         (nxf_runner.work_dir / f"s{i}.txt").write_text(f"s{i}")
     for i in range(2):
@@ -1331,12 +987,7 @@ workflow {
     result = _run_with_retry(nxf_runner, script, timeout=60)
     NxfTestRunner.assert_nxf_ok(result)
     lines = _emit_lines(result.stdout)
-    # 2 result tuples (one per B); _batch(3) collates 2 into 1 partial batch.
-    # Per-by-key shape pre-batch is `b=1:s=3`; post-batch is `b=2:s=3` (deduped).
     assert len(lines) >= 1, f"C24 no emits: {lines}"
-    # Pin to today's shape: b values aggregated across batch.
-    # After fix this may shift to 2 emits of `b=1:s=3`. Both shapes are valid
-    # WILDCARD behaviors; assert s=3 to verify bag-fill from multi-S.
     joined = " ".join(lines)
     assert "s=3" in joined, (
         f"C24 expected at least one emit with s=3 (bag-fill from 3 S items), "
@@ -1344,16 +995,7 @@ workflow {
     )
 
 
-# ===========================================================================
-# C25 — SIBLING × never-closes (deadlock surface).
-# Predicted today: FAIL — same buffer-until-close deadlock as C13, but the
-# slow side is a SIBLING stream rather than DESCENDANT. Sentinel-process
-# pattern (same as C13′).
-# ===========================================================================
-
-
 def test_c25_sibling_never_closes_deadlock(nxf_runner):
-    """Sibling C stream never closes; downstream sentinel never runs."""
     (nxf_runner.work_dir / "b0.txt").write_text("b0")
     (nxf_runner.work_dir / "c_early.txt").write_text("ce")
 
@@ -1428,19 +1070,7 @@ workflow {{
     )
 
 
-# ===========================================================================
-# Meta-test: dispatch-log coverage.
-# Asserts the union of lineage classifications observed covers every
-# classifier outcome
-# {PARENT_OF_BY, DESCENDANT_OF_BY, SIBLING, WILDCARD, LINEAGE_VIOLATION}.
-#
-# Two scripts rather than one, because LINEAGE_VIOLATION now stops the run and
-# would take the other four classifications' groups down with it.
-# ===========================================================================
-
-
 def test_dispatch_log_coverage(nxf_runner):
-    """Every lineage class is exercised at least once across the matrix."""
     for i in range(2):
         (nxf_runner.work_dir / f"a{i}.txt").write_text(f"a{i}")
         (nxf_runner.work_dir / f"b{i}.txt").write_text(f"b{i}")
@@ -1520,8 +1150,6 @@ workflow {
     assert violated.returncode != 0, (
         f"a lineage violation must stop the run; exit was {violated.returncode}"
     )
-    # The dispatch log still has to record it: the exception is what stops the
-    # run, the log is what says which stream did it.
     relations |= _relations(violated)
 
     expected = {
@@ -1538,24 +1166,7 @@ workflow {
     )
 
 
-# ===========================================================================
-# F2 — a declared descendant arriving without the by-key must stop the run.
-#
-# `classify()` has already proved the stream descends from the by-stream, so
-# an item on it whose index does not carry the by-key is data loss by
-# construction: the join has nothing to match on, the item is dropped, and
-# every task downstream of it is never created. A task that is never created
-# cannot fail, so no error strategy sees it — the run ends early, submits
-# every task it did create at exit 0, and reports success. That is how a
-# nine-step benchmark finished seven steps and how a 34-member group lost two.
-#
-# Two arms because a guard written only against a null key passes the first
-# and still misses the second, which is the one seen in the field.
-# ===========================================================================
-
-
 def _f2_script(b_index: str) -> str:
-    """A one-item descendant stream carrying `b_index` as its lineage index."""
     return '''
 workflow {
     o = new Orchestrator(Channel.fromList([null]))
@@ -1586,9 +1197,6 @@ def _assert_f2_aborts(result, arm: str):
         f"emits: {_emit_lines(result.stdout)}\n"
         f"stdout tail: {(result.stdout or '')[-1500:]}"
     )
-    # The message has to name all three, or the operator cannot act on it: the
-    # stream says which edge, the key says which ancestor went missing, and the
-    # file says which item to trace back to its producer.
     for needle, what in (("[b]", "the stream"), ("[a]", "the by-key"), ("b.txt", "the file")):
         assert needle in combined, (
             f"{arm}: the abort message does not name {what} ({needle!r}).\n"
@@ -1597,7 +1205,6 @@ def _assert_f2_aborts(result, arm: str):
 
 
 def test_f2a_absent_by_key_stops_the_run(nxf_runner):
-    """The by-key is absent from the descendant's index."""
     (nxf_runner.work_dir / "a.txt").write_text("a")
     (nxf_runner.work_dir / "b.txt").write_text("b")
 
@@ -1606,14 +1213,6 @@ def test_f2a_absent_by_key_stops_the_run(nxf_runner):
 
 
 def test_f2b_empty_by_key_list_stops_the_run(nxf_runner):
-    """The by-key is present but holds an empty list.
-
-    The worse of the two and the variant `lung-microbiome` hit: the loop over
-    the hash list iterates zero times, so the item vanishes without even
-    reaching the dispatch log. A run that lost items this way had nothing at
-    all to show for it — which is why that scope reported "no violations
-    logged" while items were disappearing.
-    """
     (nxf_runner.work_dir / "a.txt").write_text("a")
     (nxf_runner.work_dir / "b.txt").write_text("b")
 

@@ -1,8 +1,3 @@
-"""merge_interproscan — gather per-chunk InterProScan CSVs into a per-sample CSV.
-
-interproscan.py parses GFF3 into a CSV with one header line; concat works
-the same as merge_deepec.
-"""
 from metasmith.python_api import *
 
 lib = TransformInstanceLibrary.ResolveParentLibrary(__file__)

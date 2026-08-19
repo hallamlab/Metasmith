@@ -16,9 +16,6 @@ def protocol(context: ExecutionContext):
     if cpus is not None:
         cpus_string = f"--threads {cpus}"
 
-    # isolate short-read assembly; --12 = interleaved paired-end reads.
-    # SPAdes writes contigs.fasta into its output dir; expose that file as the
-    # assembly product so downstream tools (prodigal/bakta) get a FASTA.
     context.ExecWithContainer(
         image = image,
         cmd = f"""

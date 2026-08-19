@@ -10,10 +10,6 @@ out = model.AddProduct(lib.GetType("examples::greeting"))
 def protocol(context: ExecutionContext):
     name_path = context.Input(name)
     out_path = context.Output(out)
-    # `echo`/`cat` are on PATH in both worlds and every ContextPath view is the
-    # right path for the arm that runs, so the two commands coincide here. That
-    # is a property of this tool, not of tools in general -- most of the library
-    # needs genuinely different commands, which is why the arms are separate.
     cmd = f'echo "hello $(cat {name_path.container})" > {out_path.container}'
     context.ExecWithEnv() \
         .ifContainerDo(env=image, cmd=cmd) \

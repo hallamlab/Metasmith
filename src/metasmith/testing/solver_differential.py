@@ -83,9 +83,6 @@ __all__ = [
 ]
 
 
-#: The generated corpus, by pressure. Wider than `solver_bench.CORPUS`, which is
-#: eight fixed instances pinned to a fingerprint -- this one varies the problem
-#: seed to sweep a *population* of each shape.
 SWEEP_PROFILES: list[tuple[str, GeneratorDials]] = [
     ("plain", GeneratorDials(n_types=6, n_extra_transforms=3)),
     ("cyclic", GeneratorDials(n_types=7, n_extra_transforms=5, cycle_density=0.8)),
@@ -118,27 +115,17 @@ SWEEP_PROFILES: list[tuple[str, GeneratorDials]] = [
     ),
 ]
 
-#: The streams every problem is solved under. Deliberately spread: the default,
-#: two small values, and one at the top of the 32-bit range, since a port that
-#: truncates or sign-extends a seed agrees on small numbers and nothing else.
 SOLVE_SEEDS: tuple[int, ...] = (42, 7, 1234, 2**31 - 1)
 
-#: Seconds each side gets. Both are capped, and for different reasons: the
-#: reference because its tail is unbounded, the engine because an uncapped
-#: subprocess turns a hang in the port into a sweep that never returns. A cap
-#: hit on either side is an unadjudicated case, never a verdict.
 CASE_TIMEOUT = 20.0
 
 
 @dataclass
 class CaseResult:
-    """One (problem, stream) comparison."""
-
     case: str
     profile: str
     problem_seed: int
     solve_seed: int
-    #: `identical` or the first thing the two disagreed about.
     outcome: str
     engine_seconds: float = 0.0
     reference_seconds: float = 0.0
@@ -154,12 +141,6 @@ class _Timeout(Exception):
 
 
 class _Alarm:
-    """SIGALRM, when this is the main thread of the main interpreter.
-
-    A no-op elsewhere rather than an error: the sweep is still worth running
-    from a worker thread, it just cannot bound the reference there.
-    """
-
     def __init__(self, seconds: float):
         self.seconds = seconds
         self.armed = False
@@ -172,7 +153,7 @@ class _Alarm:
             signal.setitimer(signal.ITIMER_REAL, self.seconds)
             self.armed = True
         except ValueError:
-            pass  # not the main thread
+            pass
         return self
 
     def __exit__(self, *exc):
@@ -182,25 +163,12 @@ class _Alarm:
         return False
 
     def _fire(self, signum, frame):
-        # Cancelling the timer does not un-deliver a signal already queued, and
-        # Python runs the handler at the next bytecode boundary -- which can be
-        # *after* the `with` block. Without this guard that stray `_Timeout`
-        # escapes into the sweep loop and ends a two-hour run over a case that
-        # actually finished.
         if not self.armed:
             return
         raise _Timeout()
 
 
 def _sequence(plan) -> list:
-    """The plan as an ordered list of (transform, sorted input slots).
-
-    Coarser than a fingerprint and about a different property: the fingerprint's
-    canonical form deliberately forgets step order, so two plans can be
-    topologically equivalent and still be different sequences. Equivalence is
-    what was promised; identical sequences are what the port has actually been
-    delivering, and a regression from one to the other is worth seeing.
-    """
     return [
         (s.transform.key, sorted((d.key, e.key) for d, e in s.used.items()))
         for s in plan.dependency_plan
@@ -208,12 +176,6 @@ def _sequence(plan) -> list:
 
 
 def _reference(problem: SolverProblem, **kwargs):
-    """Solve on the Python path, having checked that it is the Python path.
-
-    The assertion is the whole point. Without it this function silently returns
-    the engine's answer the moment the engine advertises `solve`, every
-    comparison below passes, and the sweep proves nothing while reporting 100%.
-    """
     with UsePythonSolver():
         assert Backend("solve") == "python", "the reference side must be python"
         return problem.solve(**kwargs)
@@ -229,11 +191,6 @@ def compare(
     timeout: float = CASE_TIMEOUT,
     check: bool = True,
 ) -> tuple[str, str, float, float]:
-    """`(outcome, detail, engine_seconds, reference_seconds)` for one comparison.
-
-    Reports the *first* disagreement, most structural first, so a case that
-    differs in topology is not also counted as differing in order.
-    """
     encoded = encode_problem(
         problem.given,
         problem.transforms,
@@ -291,11 +248,6 @@ def compare(
     if _sequence(mine) != _sequence(theirs):
         return done("order_differs", "same topology, different step order")
     if check and mine.complete:
-        # The checker shares no code with either implementation, so this asks a
-        # question neither side can answer about itself: not "do they agree" but
-        # "are they both wrong in the same way". Parity of verdict is the claim
-        # -- some generated instances are unsound under both, which is the
-        # pinned laundering defect, not a divergence.
         a, b = check_plan(problem, mine), check_plan(problem, theirs)
         if a.ok != b.ok:
             return done("verdict_differs", f"python ok={a.ok} engine ok={b.ok}")
@@ -309,11 +261,6 @@ def cases(
     profiles: list[tuple[str, GeneratorDials]] | None = None,
     first_seed: int = 0,
 ) -> Iterator[tuple[str, str, int, int, GeneratorDials]]:
-    """`(case, profile, problem_seed, solve_seed, dials)`, deterministically.
-
-    `problems` is the total number of *comparisons*, split evenly across
-    profiles and streams, so the caller sizes the sweep in the unit it pays for.
-    """
     profiles = profiles if profiles is not None else SWEEP_PROFILES
     per = max(1, problems // (len(profiles) * len(solve_seeds)))
     for name, dials in profiles:
@@ -328,9 +275,6 @@ def cases(
                 )
 
 
-#: Outcomes that mean "this case was never judged", as against "the two
-#: disagreed". Keeping them apart is the point: a sweep that folded them in
-#: either direction would be reporting a number it did not measure.
 UNADJUDICATED = frozenset({"engine_timeout", "reference_timeout"})
 
 
@@ -340,16 +284,11 @@ class SweepReport:
     disagreements: list[CaseResult] = field(default_factory=list)
     unadjudicated: list[CaseResult] = field(default_factory=list)
     total: int = 0
-    #: Summed over *adjudicated* cases only. A capped side contributes the cap
-    #: rather than what it would have taken, so including those would report a
-    #: speedup floored by the cap -- an understatement dressed as a measurement.
     engine_seconds: float = 0.0
     reference_seconds: float = 0.0
 
     @property
     def clean(self) -> bool:
-        """Nothing disagreed. Says nothing about the unadjudicated cases -- read
-        `unadjudicated` for those, and run them off the clock."""
         return not self.disagreements
 
     @property
@@ -400,9 +339,6 @@ def run_sweep(
                 engine, problem, seed=solve_seed, timeout=timeout, check=check
             )
         except Exception as e:  # noqa: BLE001
-            # Generation, encoding and the fingerprint sit outside `compare`'s
-            # own guards. One bad case must not end a sweep that takes hours --
-            # it becomes a reported outcome like any other.
             outcome, detail, es, rs = "harness_error", repr(e)[:300], 0.0, 0.0
         result = CaseResult(
             case=case,

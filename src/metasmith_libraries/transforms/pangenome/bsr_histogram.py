@@ -1,4 +1,3 @@
-"""Render the cross-genome BSR-distance histogram from a pooled all-vs-all blast."""
 from pathlib import Path
 from metasmith.python_api import *
 
@@ -13,7 +12,6 @@ def protocol(context: ExecutionContext):
     iblast  = context.Input(blast)
     iscript = context.Input(script)
     iout    = context.Output(out)
-    # fake home dirs so kaleido's headless browser works under --no-home
     context.LocalShell("""
         mkdir -p ./fake_home/.cache
         mkdir -p ./fake_home/.local

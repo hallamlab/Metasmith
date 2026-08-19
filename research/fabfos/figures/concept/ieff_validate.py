@@ -1,25 +1,3 @@
-"""Does the exact pairwise sweep say what it claims, and would the cheap shortcut have done?
-
-Three checks, in order of what they protect:
-
-**Conservation.** Re-solves a sample of sources and confirms the current leaving through
-OMEGA is the ampere that was injected, and that this module's ``bincount`` attribution
-reproduces ``ecspr.model.build.reaction_currents`` -- the library function the earlier probe
-figures used. An attribution bug would not show up as a wrong-looking figure; it would show
-up as a plausible one.
-
-**Exact versus landmark.** The question that motivated the whole exercise. The landmark
-embedding describes each reaction by the vector of currents it draws from a fixed set of
-probe sources and compares those vectors by cosine, so two reactions that merely *behave*
-alike land together. Rebuilding that embedding from the exact matrix -- same numbers, just
-read as a profile instead of a distance -- isolates the effect of the shortcut from every
-other difference. Reported as top-K neighbour overlap and per-pathway scatter index.
-
-**min_K.** How much of the exact answer survives truncation: neighbour overlap against the
-exact distance as a function of how many landmark sources are kept, and as a function of
-how much of each row's current mass is kept. If the second is flat over a wide range, "only
-the main routes matter" is a fact about metabolic networks rather than a hope.
-"""
 import argparse
 import json
 import sys
@@ -29,8 +7,6 @@ import numpy as np
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
-# Staged for the sibling modules imported inside the check functions below -- this module
-# imports no ECSPr symbol of its own. See `atom_graph.py` for ECSPR_SRC.
 import os                                                            # noqa: E402
 SRC = os.environ.get("ECSPR_SRC", str(HERE.parents[3] / "src"))
 if SRC not in sys.path:
@@ -38,7 +14,6 @@ if SRC not in sys.path:
 
 
 def overlap(A, B, k):
-    """Mean top-k neighbour overlap between two square similarity matrices."""
     out = []
     for i in range(len(A)):
         a = np.argsort(A[i])[::-1][:k]
@@ -48,12 +23,6 @@ def overlap(A, B, k):
 
 
 def conservation(scale, n=6, leak=1e-6, gpr_table=None):
-    """Per source: current out through OMEGA against the ampere injected, the KCL residual
-    at every interior node, and this module's ``bincount`` attribution against the exact
-    expression ``ecspr.model.build.reaction_currents`` evaluates (a pandas groupby over the same
-    provenance rows). The library function itself takes a ``Solution``, whose edge currents
-    come through terminal contraction; the universal-ground sweep never contracts, so the
-    comparison is against the formula rather than a hand-built Solution object."""
     import pandas as pd
     from ieff_ground import GroundSystem, edge_current, newton_rhs
     from ieff_sweep import build
@@ -86,16 +55,6 @@ def conservation(scale, n=6, leak=1e-6, gpr_table=None):
 
 
 def audit_store(store):
-    """Integrity of a top-K store, without needing the dense matrix.
-
-    ``rowsum`` is the total attributed current over *all* targets, recorded before the row
-    was truncated. It is **not** conserved to the injected ampere and must not be read as a
-    conservation check: attribution credits the same ampere to every reaction it passes
-    through, so the row total is roughly the mean number of reactions a unit of current
-    traverses before reaching ground. Conservation is the OMEGA/KCL test above. What rowsum
-    is good for is the denominator here -- the fraction of a row's mass the stored K entries
-    carry, which is the min_K claim measured on the delivered data rather than on the
-    medium-scale reference."""
     from ieff_layout import load_store
     st = load_store(store)
     done = np.asarray(st["done"]).astype(bool)
@@ -160,7 +119,6 @@ def main():
     np.fill_diagonal(Esym, 0.0)
     print(f"\nexact matrix {E.shape}; symmetrised", flush=True)
 
-    # ---- exact vs landmark, at equal information ----
     rng = np.random.default_rng(0)
     members, names = pathway_members()
     lab = {}
@@ -180,7 +138,6 @@ def main():
         return umap.UMAP(n_components=2, metric="cosine", n_neighbors=k,
                          min_dist=0.05, init="random", random_state=seed).fit_transform(F)
 
-    # landmark similarity, as the landmark figure computes it, for a neighbour comparison
     def landmark_sim(cols):
         F = np.log10(E[cols].T + 1e-12)
         F = F - F.mean(1, keepdims=True)
@@ -201,7 +158,6 @@ def main():
               f"top10={row['top10']:.3f} top30={row['top30']:.3f}", flush=True)
     res["min_k_landmarks"] = curves
 
-    # ---- min_K as retained current mass per row ----
     mass = []
     order = np.argsort(Esym, axis=1)[:, ::-1]
     tot = Esym.sum(1, keepdims=True)
@@ -220,7 +176,6 @@ def main():
               f"top30={mass[-1]['top30']:.3f}", flush=True)
     res["min_k_mass"] = mass
 
-    # ---- layouts and scatter index ----
     xy_e = embed_exact()
     xy_l = embed_landmark(np.sort(rng.choice(n, min(296, n), replace=False)))
     rng2 = np.random.default_rng(7)

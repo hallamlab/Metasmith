@@ -1,18 +1,4 @@
 #!/usr/bin/env python3
-"""T4 -- scoring. One arm-agnostic contract in, six tables out.
-
-The headline is the **counterfactual-design null**, because the metabolite axis
-has no negatives: LASER records what the authors chose to assay, so "they measured
-lycopene" is evidence about the assay, not about what else moved. Holding the
-target fixed and varying the design gives real negatives -- the designs nobody
-built -- and controls Rayleigh monotonicity by construction, since a size-matched
-counterfactual adds as many edges as the real design does.
-
-Everything else here is a read of the same design x target matrix: the off-diagonal
-AUROC is a column read, the conductance-vs-flux scatter is the same matrix read
-column-wise and row-wise, and the trivial baseline runs through the identical
-harness so the arms' margin over "did you read the input" is visible.
-"""
 from __future__ import annotations
 
 import json
@@ -31,10 +17,6 @@ SCORED_STATES = ("ok", "below_floor", "created", "destroyed", "not_in_base",
                  "target_zero_both", "hit_bound")
 
 
-# ---------------------------------------------------------------------------
-# Load
-# ---------------------------------------------------------------------------
-
 def load_predictions() -> pd.DataFrame:
     frames = []
     for p in sorted(C.CACHE.glob("pred_*.parquet")):
@@ -44,10 +26,6 @@ def load_predictions() -> pd.DataFrame:
     if not frames:
         raise SystemExit("no prediction shards in cache/")
     df = pd.concat(frames, ignore_index=True)
-    # A metabolite absent from both solves did not change: that is a prediction of
-    # zero, not a missing value. Keeping it NaN would silently drop every
-    # counterfactual that failed to create the target and leave the null made only
-    # of designs that did -- which is the comparison the panel is supposed to make.
     df["value"] = df.prediction.where(df.status != "not_in_base", 0.0)
     df.loc[~df.status.isin(SCORED_STATES), "value"] = np.nan
     return df
@@ -62,10 +40,6 @@ def load_scalars() -> pd.DataFrame:
     if not frames:
         return pd.DataFrame()
     d = pd.concat(frames, ignore_index=True)
-    # A design skipped before it produced any prediction row (unresolved medium,
-    # source absent from the graph) is not in the resume set, so a restart writes
-    # its scalar row again. Predictions are unaffected; dedupe here so the
-    # numerics table counts designs and not restarts.
     return d.drop_duplicates(["unit", "design_id"], keep="last")
 
 
@@ -73,16 +47,7 @@ def design_index() -> pd.DataFrame:
     return pd.read_csv(C.REFS / "design_index.tsv", sep="\t")
 
 
-# ---------------------------------------------------------------------------
-# The trivial baseline, run through the identical harness
-# ---------------------------------------------------------------------------
-
 def trivial_arm(units: list) -> pd.DataFrame:
-    """"The target is a product of one of this design's added reactions."
-
-    Without this in the same table with the same null, the benchmark measures
-    whether a method read its input.
-    """
     pairs = pd.read_parquet(C.ATOM_PAIRS, columns=["mnxr", "element", "product"])
     pairs = pairs[pairs.element == "C"]
     prod = pairs.groupby("mnxr")["product"].apply(set).to_dict()
@@ -120,17 +85,8 @@ def trivial_arm(units: list) -> pd.DataFrame:
     return df
 
 
-# ---------------------------------------------------------------------------
-# The counterfactual null
-# ---------------------------------------------------------------------------
-
 def studentised(obs: float, null: np.ndarray, na, nd, null_na, null_nd,
                 tail: str = "greater"):
-    """Size-regressed variant: regress the null on (n_add, n_del) and score the
-    real design by its residual against the null residual distribution. Uses all
-    N counterfactuals for every condition, so it is far better powered wherever a
-    size bin is thin -- and 8 of the 35 occupied (n_add, n_del) cells are
-    singletons, so exact matching was never affordable."""
     ok = np.isfinite(null)
     if ok.sum() < 20:
         return np.nan, np.nan
@@ -146,7 +102,6 @@ def studentised(obs: float, null: np.ndarray, na, nd, null_na, null_nd,
 
 
 def counterfactual_null(pred: pd.DataFrame, idx: pd.DataFrame) -> pd.DataFrame:
-    """One row per (unit, real design, resolved target)."""
     tmap = {r.design_id: [m for m in str(r.target_mnxms).split(";") if m]
             for r in idx.itertuples(index=False)}
     meta = idx.set_index("design_id")
@@ -177,11 +132,6 @@ def counterfactual_null(pred: pd.DataFrame, idx: pd.DataFrame) -> pd.DataFrame:
                 if not np.isfinite(obs):
                     continue
                 if st0 == "not_in_base":
-                    # The target is not a node of this arm's graph, before or
-                    # after the edits: the arm ABSTAINS. Folding that in as a
-                    # zero prediction would let the arm with the smaller graph
-                    # win by abstention, so it leaves the denominator and is
-                    # reported as coverage instead.
                     abstained.append(dict(unit=unit, arm=u.arm.iloc[0],
                                           design_id=did, mnxm=t,
                                           target=row_meta.target))
@@ -264,16 +214,10 @@ def headline(nulls: pd.DataFrame, abst: pd.DataFrame) -> pd.DataFrame:
             n_conditions=g.design_id.nunique(), n_cells=len(g),
             n_abstained_cells=int(nabs.get(unit, 0)),
             n_papers=g.source_record.nunique(),
-            # Primary: the size-regressed residual, which uses all N
-            # counterfactuals and so resolves p to 1/(N+1).
             frac_sig=float(np.mean(sigr)), ci_lo=lo, ci_hi=hi,
             median_p=float(np.nanmedian(g.p_resid)),
             median_p_ci_lo=lo_m, median_p_ci_hi=hi_m,
             frac_p_lt_05=float(np.nanmean(g.p_resid < 0.05)),
-            # Secondary: the binned null. Its resolution floor is 1/(n_bin+1);
-            # when that floor exceeds the BH threshold alpha/m the binned variant
-            # CANNOT reject at q<0.05 however strong the effect, which is a
-            # property of the pool size and not of the method under test.
             frac_sig_binned=float(np.mean(sig)),
             median_p_binned=float(np.nanmedian(g.p_bin)),
             frac_p_lt_05_binned=float(np.nanmean(g.p_bin < 0.05)),
@@ -285,14 +229,6 @@ def headline(nulls: pd.DataFrame, abst: pd.DataFrame) -> pd.DataFrame:
 
 
 def matched_head_to_head(nulls: pd.DataFrame) -> pd.DataFrame:
-    """Every arm against the trivial baseline on the conditions BOTH scored.
-
-    The pooled headline is not like-for-like: the ECSPr arms abstain wherever the
-    target is not a node of their graph, while the trivial baseline scores every
-    condition. Restricting to the intersection is the only comparison that answers
-    "is this method better than reading the input" without either side being
-    helped or hurt by its own coverage.
-    """
     rows = []
     for host, hg in nulls.groupby("host"):
         triv = hg[hg.arm == "trivial"]
@@ -315,7 +251,6 @@ def matched_head_to_head(nulls: pd.DataFrame) -> pd.DataFrame:
                 margin=float(np.mean(sa) - np.mean(sb)),
                 arm_median_p=float(np.nanmedian(a.p_resid)),
                 trivial_median_p=float(np.nanmedian(b)),
-                # paired: does the arm beat the baseline on the same condition?
                 frac_arm_better=float(np.nanmean(
                     a.p_resid.to_numpy(float) < b.to_numpy(float))),
                 frac_tied=float(np.nanmean(
@@ -338,9 +273,6 @@ def strata_table(nulls: pd.DataFrame) -> pd.DataFrame:
             sub = g[mask]
             if sub.empty:
                 continue
-            # p_resid, not p_bin: the strata must be read on the SAME statistic
-            # as the headline, and the binned variant's resolution floor makes it
-            # all-zero here regardless of effect.
             _, sig = C.bh_fdr(sub.p_resid.to_numpy(float))
             rows.append(dict(unit=unit, arm=arm, stratum=name, n=len(sub),
                              frac_sig=float(np.mean(sig)),
@@ -348,10 +280,6 @@ def strata_table(nulls: pd.DataFrame) -> pd.DataFrame:
                              frac_p_lt_05=float(np.nanmean(sub.p_resid < 0.05))))
     return pd.DataFrame(rows)
 
-
-# ---------------------------------------------------------------------------
-# Off-diagonal AUROC
-# ---------------------------------------------------------------------------
 
 def auroc(pos: np.ndarray, neg: np.ndarray) -> float:
     pos, neg = pos[np.isfinite(pos)], neg[np.isfinite(neg)]
@@ -378,10 +306,6 @@ def off_diagonal(pred: pd.DataFrame, idx: pd.DataFrame) -> pd.DataFrame:
                              auroc=auroc(v[is_pos], v[~is_pos])))
     return pd.DataFrame(rows)
 
-
-# ---------------------------------------------------------------------------
-# Secondary metrics
-# ---------------------------------------------------------------------------
 
 def spearman(x, y) -> tuple:
     x, y = np.asarray(x, float), np.asarray(y, float)
@@ -415,10 +339,6 @@ def secondary(nulls: pd.DataFrame) -> pd.DataFrame:
                          spearman_fold=rho, n_fold=n))
     return pd.DataFrame(rows)
 
-
-# ---------------------------------------------------------------------------
-# Method vs method
-# ---------------------------------------------------------------------------
 
 def ecspr_vs_fba(pred: pd.DataFrame) -> pd.DataFrame:
     fba_units = [u for u in pred.unit.unique() if "__fba_a0.1__" in u]
@@ -471,8 +391,6 @@ def biomass_panel(scal: pd.DataFrame) -> pd.DataFrame:
         j.to_csv(C.OUT / f"biomass_scatter_{unit}.tsv", sep="\t", index=False)
     return pd.DataFrame(rows)
 
-
-# ---------------------------------------------------------------------------
 
 def main():
     pred = load_predictions()

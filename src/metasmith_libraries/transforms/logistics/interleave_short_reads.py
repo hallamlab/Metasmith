@@ -14,10 +14,6 @@ def protocol(context: ExecutionContext):
     iout=context.Output(out)
     threads = context.params.get('cpus')
     threads = "" if threads is None else f"-p {threads}"
-    # out=stdout.fq
-    # ^ this actually tells reformat.sh to output to stdout
-    # the suffix indicates format and compression
-    # Same command either way: this tool is a plain CLI in both worlds.
     _cmd = f'''
         reformat.sh \
             in1="{ir1.container}" \

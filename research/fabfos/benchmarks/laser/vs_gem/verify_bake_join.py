@@ -1,19 +1,4 @@
 #!/usr/bin/env python3
-"""Orientation gate for the v1/v2 bake mix, plus the run manifest's identity block.
-
-`vocab` / `atom_pairs` / `direction` are ONE artifact. This benchmark is forced to
-mix versions: the answer key was built on bake **v1**
-(`data/benchmark/reference_tier4/atom_pairs_tier4.parquet`), and the only
-`direction` table on disk is bake **v2** (`data/processed/metabolism_bake/`).
-
-The hazard is not vocabulary drift, which would be loud -- it is **orientation**.
-A direction ratio above 1 reverses an edge, so if v1 and v2 disagree about which
-side of a reaction is the substrate, the directed model inverts silently and
-nothing downstream can tell. This gate decodes both tables to molecule-level
-triples and counts v1 pairs whose reverse, not whose forward form, appears in v2.
-
-Writes vs_gem/out/bake_manifest.json. Non-zero exit if the gate fails.
-"""
 from __future__ import annotations
 
 import hashlib
@@ -27,7 +12,7 @@ import pandas as pd
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import common as C  # noqa: E402
 
-MAX_REVERSED_FRACTION = 0.01   # 1% of the shared-reaction v1-only pairs
+MAX_REVERSED_FRACTION = 0.01
 
 
 def sha256(path: Path, chunk: int = 1 << 22) -> str:
@@ -68,8 +53,6 @@ def decode_v1() -> pd.DataFrame:
 
 
 def direction_ratios() -> dict:
-    """metabolism_bake direction.parquet joined through vocab onto MNXR -- the
-    same shape examples/scadc_ecspr_t1_refs.py builds it in."""
     vocab = pd.read_parquet(C.BAKE / "vocab.parquet")
     rxn = vocab[vocab.kind == "rxn"][["code", "symbol"]].rename(
         columns={"code": "rxn", "symbol": "mnxr"})

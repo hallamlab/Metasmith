@@ -1,9 +1,3 @@
-"""Unit tests for driver argv assembly + event-stream parsing.
-
-These tests do NOT spawn `claude` or `opencode`; they exercise the
-parsing logic against canned event logs and the factory routing. Real
-subprocess invocation is exercised by the live smoke scenario.
-"""
 from __future__ import annotations
 
 import json
@@ -33,7 +27,7 @@ def test_iter_jsonl_skips_blank_and_garbage(tmp_path: Path) -> None:
         "\n"
         "this is not json\n"
         + json.dumps({"b": 2}) + "\n"
-        + json.dumps([1, 2, 3]) + "\n"   # array, not dict -> filtered
+        + json.dumps([1, 2, 3]) + "\n"
     )
     out = list(iter_jsonl(p))
     assert out == [{"a": 1}, {"b": 2}]
@@ -41,11 +35,6 @@ def test_iter_jsonl_skips_blank_and_garbage(tmp_path: Path) -> None:
 
 def test_iter_jsonl_missing_file(tmp_path: Path) -> None:
     assert list(iter_jsonl(tmp_path / "absent.jsonl")) == []
-
-
-# ---------------------------------------------------------------------------
-# opencode parser
-# ---------------------------------------------------------------------------
 
 
 def test_parse_opencode_usage_and_final_text(tmp_path: Path) -> None:
@@ -85,11 +74,6 @@ def test_parse_opencode_ignores_unknown_events(tmp_path: Path) -> None:
     assert s.final_text == ""
 
 
-# ---------------------------------------------------------------------------
-# claude parser
-# ---------------------------------------------------------------------------
-
-
 def test_parse_claude_stream_typical(tmp_path: Path) -> None:
     p = _write_jsonl(tmp_path / "claude.jsonl", [
         {"type": "system", "subtype": "init"},
@@ -119,12 +103,6 @@ def test_parse_claude_result_text_fallback(tmp_path: Path) -> None:
 
 
 def test_parse_claude_stream_result_is_authoritative_for_cache(tmp_path: Path) -> None:
-    """Representative real-shaped stream: usage nested under ``message`` on
-    each assistant event, and a cumulative usage on the terminal ``result``
-    event. The result event is authoritative — the four counts must equal
-    the result's usage, NOT the sum of result + per-message usage (which
-    would double-count, badly so for cache_read).
-    """
     p = _write_jsonl(tmp_path / "claude.jsonl", [
         {"type": "system", "subtype": "init"},
         {"type": "assistant",
@@ -146,7 +124,6 @@ def test_parse_claude_stream_result_is_authoritative_for_cache(tmp_path: Path) -
     ])
     s = parse_claude_stream(p)
     assert s.final_text == "done"
-    # authoritative == the result event's usage, not the per-message sum
     assert s.tokens_in == 110
     assert s.tokens_out == 60
     assert s.tokens_cached == 11_000
@@ -154,9 +131,6 @@ def test_parse_claude_stream_result_is_authoritative_for_cache(tmp_path: Path) -
 
 
 def test_parse_claude_stream_falls_back_to_message_sum(tmp_path: Path) -> None:
-    """When the result event carries no usage (older CLI / truncated stream),
-    accounting falls back to summing the per-assistant-message usage — still
-    four-way, still each event counted once."""
     p = _write_jsonl(tmp_path / "claude.jsonl", [
         {"type": "assistant",
          "message": {"content": [{"type": "text", "text": "a"}],
@@ -168,7 +142,7 @@ def test_parse_claude_stream_falls_back_to_message_sum(tmp_path: Path) -> None:
                      "usage": {"input_tokens": 10, "output_tokens": 40,
                                "cache_read_input_tokens": 6_000,
                                "cache_creation_input_tokens": 0}}},
-        {"type": "result", "result": "b"},  # no usage
+        {"type": "result", "result": "b"},
     ])
     s = parse_claude_stream(p)
     assert s.tokens_in == 110
@@ -178,8 +152,6 @@ def test_parse_claude_stream_falls_back_to_message_sum(tmp_path: Path) -> None:
 
 
 def test_iterresult_tokens_total_includes_cache() -> None:
-    """The loop stop-condition total is the full billable footprint:
-    input + output + cache_read + cache_creation."""
     from tests.metasmith.e2e.agentic.drivers.base import IterResult
 
     r = IterResult(
@@ -191,8 +163,6 @@ def test_iterresult_tokens_total_includes_cache() -> None:
 
 
 def test_budget_record_tracks_split_and_charges_total() -> None:
-    """TokenBudget.record folds the four-way split for reporting and charges
-    the billable total against the limit (stop semantics unchanged)."""
     from tests.metasmith.e2e.agentic.drivers.base import IterResult
     from tests.metasmith.e2e.agentic.harness.budget import TokenBudget
 
@@ -206,12 +176,7 @@ def test_budget_record_tracks_split_and_charges_total() -> None:
     assert b.tokens_out == 50
     assert b.tokens_cached == 2_000
     assert b.tokens_cache_creation == 300
-    assert b.used == 2_450  # billable total drives the stop condition
-
-
-# ---------------------------------------------------------------------------
-# factory
-# ---------------------------------------------------------------------------
+    assert b.used == 2_450
 
 
 def test_factory_defaults_to_deepseek_for_opencode() -> None:
@@ -236,18 +201,12 @@ def test_factory_rejects_unknown_driver() -> None:
         make_driver("aider")
 
 
-# ---------------------------------------------------------------------------
-# per-iteration dollar runaway valve (--max-budget-usd)
-# ---------------------------------------------------------------------------
-
-
 def _capture_argv(monkeypatch, module) -> list:
-    """Stub the driver's run_streaming to record argv and return a clean exit."""
     captured: list = []
 
     def fake_run_streaming(argv, **kwargs):
         captured.append(argv)
-        return (0, 0.0)  # exit_code, duration; no transcript written -> zeros
+        return (0, 0.0)
 
     monkeypatch.setattr(module, "run_streaming", fake_run_streaming)
     return captured
@@ -270,7 +229,6 @@ def test_claude_emits_explicit_max_budget_usd(monkeypatch, tmp_path) -> None:
     argv = captured[0]
     assert "--max-budget-usd" in argv
     assert argv[argv.index("--max-budget-usd") + 1] == "1.2500"
-    # single-value flag sits before the trailing positional prompt
     assert argv[-1] == "do the thing"
 
 
@@ -278,7 +236,6 @@ def test_claude_derives_max_budget_usd_when_unset(monkeypatch, tmp_path) -> None
     from tests.metasmith.e2e.agentic.drivers import claude as claude_mod
     captured = _capture_argv(monkeypatch, claude_mod)
 
-    # haiku output rate $5/MTok * 2 safety factor: 200k -> $2.0000
     _invoke_claude(ClaudeDriver(model="haiku"), tmp_path,
                    max_tokens_per_iter=200_000, max_usd_per_iter=None)
 
@@ -291,19 +248,17 @@ def test_claude_omits_max_budget_usd_for_unknown_model(monkeypatch, tmp_path) ->
     from tests.metasmith.e2e.agentic.drivers import claude as claude_mod
     captured = _capture_argv(monkeypatch, claude_mod)
 
-    # unknown model + no explicit override -> guard disabled, no flag emitted
     _invoke_claude(ClaudeDriver(model="sonnet"), tmp_path, max_usd_per_iter=None)
 
     assert "--max-budget-usd" not in captured[0]
 
 
 def test_opencode_ignores_max_usd_per_iter(monkeypatch, tmp_path) -> None:
-    """opencode accepts the arg (protocol) but never emits a dollar flag."""
     from tests.metasmith.e2e.agentic.drivers import opencode as opencode_mod
     captured = _capture_argv(monkeypatch, opencode_mod)
 
     d = OpencodeDriver()
-    d.serve_port = 12345  # skip start_session; invoke only needs the port
+    d.serve_port = 12345
     d.invoke(prompt="go", sandbox=tmp_path, env={},
              max_tokens_per_iter=200_000, log_dir=tmp_path, max_usd_per_iter=1.0)
 

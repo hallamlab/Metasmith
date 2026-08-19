@@ -1,58 +1,3 @@
-"""KOfam -- the HMM profile database, as shipped, into `kofam/<build-date>/`.
-
-Three files, none of them opened: `profiles.tar.gz`, `ko_list.gz`, `README`.
-
-THE ARCHIVE IS NOT UNTARRED AND THE LIST IS NOT GUNZIPPED. Both used to happen
-here, and the gunzip in particular is why this file changed: the acquire step
-fetched `ko_list.gz` and wrote out the DECOMPRESSED `ko_list`, so what sat in the
-acquisition tier was not a thing upstream ever served. The unpacking belongs to
-compile/kofam_ref.py, which already untars the profiles with `--strip-components=1`
-because kofamscan wants a profile DIRECTORY.
-
-Keeping both compressed is also what lets the unpack be re-run -- for a new
-kofamscan, a new directory layout -- without re-fetching 1.5 GB.
-
-WHAT ko_list ACTUALLY IS, because the name misleads: not a KEGG KO registry, but
-the per-profile scoring table. Ten of its twelve columns are properties of the HMMs
-(`threshold`, `score_type`, `profile_type`, `F-measure`, and the build statistics
-`nseq`/`nseq_used`/`alen`/`mlen`/`eff_nseq`/`re/pos`); only `knum` and `definition`
-are KEGG-ish. It is generated when the profiles are built and released with them,
-which is why it lives HERE and not under kegg/ -- pairing a ko_list with profiles
-from a different release applies the wrong threshold to every hit, silently.
-
-THE VERSION IS THE GZIP HEADER'S MTIME, NOT THE HTTP `Last-Modified`. KOfam
-publishes no release number, no checksums, and a README unchanged since 2019, so
-the only identifying facts are timestamps -- and there are three, which are not
-interchangeable:
-
-    tar member mtimes   2026-06-28 18:32   when the .hmm files were built
-    gzip header mtime   2026-06-30 01:09   when the tarball was compressed
-    HTTP Last-Modified  2026-06-30 01:15   when the web server's copy was written
-
-`Last-Modified` is the weakest: it is the server's filesystem mtime, so a re-sync,
-a mirror or a restore from backup moves it without a rebuild, and it is visible
-only at fetch time -- a file already on disk cannot be re-identified from itself.
-The gzip MTIME field is written into the first ten bytes of the stream by gzip(1)
-at compression time, so it travels WITH the artifact: the directory name stays
-re-derivable offline, by anyone, from the file it names.
-
-    od -An -tu4 -j4 -N4 --endian=little profiles.tar.gz    # -> unix time
-
-The tar member mtimes are the truest build date but cost a decompression pass to
-read, and they disagree with each other (`profiles/` is stamped four hours after
-the .hmm files it holds), so there is no single one to name a directory after.
-
-`ko_list.gz` is stamped a day earlier than the profiles (2026-06-29 against
-2026-06-30) because the two are compressed in sequence, so the profiles' stamp
-names the pair.
-
-WHY NOT `archives/<date>/`, WHICH LOOKS LIKE THE OBVIOUS PIN. Those directories are
-named by publication, not by build: `archives/2026-05-01/` holds a tarball whose
-gzip header says 2026-05-29. So their names identify the same thing this does, less
-accurately. They also lag -- the newest archive is 2026-05-01 while the live tree is
-a 2026-06-30 build -- so pinning there ships a KO set two releases stale to gain
-nothing. They remain the way to re-fetch an OLD build, which a timestamp cannot do.
-"""
 from metasmith.python_api import *
 
 lib   = TransformInstanceLibrary.ResolveParentLibrary(__file__)
@@ -64,12 +9,8 @@ out   = model.AddProduct(lib.GetType("fabfos_data::kofam"))
 BASE_URL = "https://www.genome.jp/ftp/db/kofam"
 FILES = ("profiles.tar.gz", "ko_list.gz", "README")
 
-# The file whose gzip stamp names the release. See the note above on why it is the
-# profiles and not the list.
 STAMP_FILE = "profiles.tar.gz"
 
-# Staged INSIDE the product directory so the promotion below is a rename on the same
-# filesystem rather than a 1.5 GB copy.
 STAGE = "_incoming"
 
 
@@ -120,8 +61,6 @@ def protocol(context: ExecutionContext):
         .ifContainerDo(env=image, cmd=_cmd) \
         .ifVirtualEnvDo(env=image, cmd=_cmd)
 
-    # The version directory is discovered rather than declared: only the shell above
-    # knows what the artifact said, so this reads back what it created.
     vers = sorted(p for p in iout.local.glob("*") if p.is_dir() and p.name != STAGE)
     got = [f for v in vers for f in FILES
            if (v / f).exists() and (v / f).stat().st_size > 0]

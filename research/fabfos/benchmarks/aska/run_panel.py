@@ -64,18 +64,6 @@ def ecspr(*args, log: Path):
 
 
 def carry_the_drop(null_conditions: Path):
-    """Write the observed arm's constant drop onto the drawn conditions.
-
-    `ecspr draw` copies a prototype's terminals and its BACKGROUND, but not its
-    drop -- reasonably, since a drop is usually the perturbation itself. Here part
-    of it is not: every strain in the paper is MG1655(DE3) dfadE, so the observed
-    arm withholds the host's fadE rows in every row including the baseline. Leaving
-    the null arm without it would have the two arms measuring different networks,
-    and since a z is (observed delta - null mean) / null sd, a constant offset
-    between the arms lands directly on every z rather than cancelling.
-
-    Only the constant part is carried. A condition's own deletions stay its own.
-    """
     df = pd.read_csv(null_conditions, sep="\t", dtype=str, keep_default_na=False)
     obs = pd.read_csv(OBSERVED, sep="\t", dtype=str, keep_default_na=False)
     base = obs.loc[obs["condition_id"] == BASELINE, "drop_values"].iloc[0]

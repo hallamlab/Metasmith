@@ -1,31 +1,3 @@
-"""Pairs conservation forces, for the reactions no member will ever be given.
-
-NO MAPPER RUNS AND NONE COULD. Its target set is the complement of the widest admission
-any member makes -- what is left after `INDIGO_ADMITS` and after the rescue's completions
--- so this is not a cheaper route to an answer a mapper would also reach. It is the only
-route to those reactions at all.
-
-TWO GRAINS, TWO FILES, AND THE SPLIT IS THE DELIVERABLE. The conjugate arm is exact: a
-participant standing on both sides with equal multiplicity contributes the same unknown
-amount to each, so it cancels on IDENTITY, and what remains may leave conservation exactly
-one possibility. Those are atom-grain pairs and they are banked. The single-unknown arm
-and the generic-carrier class settle a number about a MOLECULE -- which is not an atom
-correspondence, and a structureless species has no canonical rank to hang one on. They go
-in their own table, are reported in the ledger as claims, and are never banked. The
-measured 99.7% agreement between this algebra and a mapper is an argument for the first
-half and no argument at all for the second.
-
-IT NEEDS THE RECOUNT TO REACH ANYTHING. `count_element` refuses a `*` formula, correctly,
-and every arm here is arithmetic over counts -- so without `lookup::element_counts` the
-lane abstains on precisely the residue species that make these reactions unreadable in the
-first place. The price rides along: the unspecified residue slots have to cancel across
-the reaction before any count is treated as a conservation claim.
-
-AND IT NEEDS `lookup::atom_ranks`, because a forced pair is an index into the rank list of
-a (metabolite, element). A count that disagrees with the length of that list is refused
-rather than emitted -- it would index a real pair row into a list of the wrong length,
-silently, for exactly the metabolites where it matters.
-"""
 from metasmith.python_api import *
 
 lib   = TransformInstanceLibrary.ResolveParentLibrary(__file__)
@@ -88,9 +60,6 @@ def protocol(context: ExecutionContext):
     want = ["forced_pairs.parquet", "claims.tsv", "summary.tsv"]
     return ExecutionResult(
         manifest=[{out_alg: iout.local}, {ev: iev.local}],
-        # ALL THREE BY NAME. A run that wrote the pairs and lost the claims table would
-        # publish the banked half of a two-grain product with nothing to read it against,
-        # which is the one way this lane can mislead.
         success=(all((iout.local / f).exists() and (iout.local / f).stat().st_size > 0
                      for f in want)
                  and (iev.local / "algebra").is_dir()
@@ -102,7 +71,5 @@ TransformInstance(
     protocol=protocol,
     model=model,
     group_by=image,
-    # Arithmetic over the reaction table plus the rank index in memory. No mapper, no
-    # rdkit parse per reaction -- the counts are read, not derived.
     resources=Resources(cpus=2, memory=Size.GB(24), duration=Duration(hours=1)),
 )

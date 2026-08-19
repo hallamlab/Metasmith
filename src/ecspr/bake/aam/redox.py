@@ -76,9 +76,6 @@ import pandas as pd
 from .. import atom_pairs as AP
 from . import layers as L
 
-# The four families, and the (C, N, P) signature each one's records must carry. The
-# signature is the cross-check on the name: a `*`-formula or a truncated record fails it
-# and is refused rather than silently widening the scope of every repair below.
 FAMILY_SIGNATURE = {
     "nad":  (21, 7, 2),
     "nadp": (21, 7, 3),
@@ -86,9 +83,6 @@ FAMILY_SIGNATURE = {
     "fmn":  (17, 4, 1),
 }
 
-# Exact normalised names, so `nadp` can never be read as `nad` plus a suffix. MNXref 4.5
-# spells all four families with `(+)`; the bare and `+` spellings are here because a
-# release that changes punctuation must not silently empty this lane.
 STATE_BY_NAME = {
     "nad": ("nad", "ox"), "nad(+)": ("nad", "ox"), "nad+": ("nad", "ox"),
     "nadh": ("nad", "red"),
@@ -98,15 +92,10 @@ STATE_BY_NAME = {
     "fmn": ("fmn", "ox"), "fmnh2": ("fmn", "red"),
 }
 
-# Sulfur is absent on purpose; see the module docstring.
 REPAIR_ELEMENTS = ("C", "N", "P")
 
-# The named predicate. One string, because the refusals table and the summary both quote
-# it and two spellings of one predicate is how a refusal stops being countable.
 PREDICATE = "cofactor_skeleton_crossing"
 
-# What a re-derived pair is stamped with. It is NOT the member's provenance any more --
-# the members' answer for that key was the artifact -- so it carries conservation's.
 REDERIVED_METHOD = "redox_forced"
 REDOX_SOURCE = "redox"
 
@@ -116,23 +105,11 @@ REFUSAL_COLS = ("mnxr", "element", "substrate", "product", "sub_idx", "prod_idx"
 COFACTOR_COLS = ("mnxm", "name", "formula", "family", "state", "decision", "evidence")
 
 
-# =====================================================================
-# resolving the cofactor set
-# =====================================================================
-
 def _norm(name) -> str:
     return str(name).strip().lower() if isinstance(name, str) else ""
 
 
 def resolve_cofactors(mets: pd.DataFrame, want: set | None = None):
-    """`(family_of, state_of, rows)` -- which ids are which cofactor, and why.
-
-    `rows` is the shipped decision table: one row per candidate, accepted or refused with
-    a named reason, plus the signature matches whose name the map did not recognise. Those
-    last are neither accepted nor ignored -- they are the check that tells a future reader
-    the name map has gone stale against a new MNXref release rather than that the chemistry
-    changed.
-    """
     family_of, state_of, rows = {}, {}, []
     for r in mets.itertuples(index=False):
         if want is not None and r.mnxm not in want:
@@ -140,9 +117,6 @@ def resolve_cofactors(mets: pd.DataFrame, want: set | None = None):
         sig = tuple(AP.count_element(r.formula, X) for X in ("C", "N", "P"))
         named = STATE_BY_NAME.get(_norm(r.name))
         if named is None:
-            # A record carrying a family's exact signature under an unknown name. Reported
-            # so the map's staleness is visible; never admitted, because the state -- which
-            # is the half that makes a couple a couple -- is exactly what the name carries.
             for fam, want_sig in FAMILY_SIGNATURE.items():
                 if sig == want_sig:
                     rows.append((r.mnxm, r.name, r.formula, fam, "",
@@ -164,11 +138,6 @@ def resolve_cofactors(mets: pd.DataFrame, want: set | None = None):
 
 
 def couples_of(subs, prods, family_of: dict, state_of: dict) -> frozenset:
-    """The families appearing OXIDISED on one side and REDUCED on the other.
-
-    The scope guard in one function: a family present on only one side, or present twice
-    in the same state, is not a couple and this reaction's rows for it are not touched.
-    """
     side = (defaultdict(set), defaultdict(set))
     for i, ms in enumerate((subs, prods)):
         for m in ms:
@@ -184,7 +153,6 @@ def couples_of(subs, prods, family_of: dict, state_of: dict) -> frozenset:
 
 
 def scope(equations: dict, family_of: dict, state_of: dict, mnxrs) -> dict:
-    """`{mnxr -> frozenset(families)}` for the reactions a repair applies to."""
     out = {}
     for r in mnxrs:
         eq = equations.get(r)
@@ -199,25 +167,10 @@ def scope(equations: dict, family_of: dict, state_of: dict, mnxrs) -> dict:
     return out
 
 
-# =====================================================================
-# the repair
-# =====================================================================
-
 SRC_KEY = ("mnxr", "element", "substrate", "sub_idx")
 
 
 def repair(pairs: pd.DataFrame, in_scope: dict, family_of: dict):
-    """`(kept, refused, tally)` -- refuse the crossing arms and rescale what is left.
-
-    THE RESCALE PRESERVES THE ATOM'S TOTAL rather than forcing 1.0 unconditionally, and
-    the two agree exactly where it matters. `layers.fuse_members` gives a source atom
-    several arms only in the `disagree_diluted` branch, whose weights sum to 1.0 by
-    construction -- so a multi-armed atom that loses one arm has its survivors rescaled to
-    1.0, which is what the verification asserts. A single-armed atom either survives
-    untouched or loses everything; rescaling THAT to 1.0 would promote an uncorroborated
-    `<member>_only` correspondence from its half credit to full weight, which is a claim
-    about reliability that no refusal warrants making.
-    """
     tally = Counter()
     if not len(pairs):
         return pairs, pd.DataFrame(columns=list(REFUSAL_COLS)), tally
@@ -249,9 +202,6 @@ def repair(pairs: pd.DataFrame, in_scope: dict, family_of: dict):
     tally["reactions in scope"] = len(in_scope)
     tally["reactions with a refusal"] = int(refused["mnxr"].nunique()) if len(refused) else 0
 
-    # The rescale, over the source atoms a refusal actually touched. The total is taken
-    # BEFORE the refusal, from every arm the atom had, which is what makes this a
-    # concentration of the claim rather than a new one.
     if len(refused) and len(kept):
         hit = set(map(tuple, refused[list(SRC_KEY)].itertuples(index=False, name=None)))
         before = work.groupby(list(SRC_KEY))["pair_w"].sum()
@@ -280,7 +230,6 @@ def repair(pairs: pd.DataFrame, in_scope: dict, family_of: dict):
 
 
 def emptied_keys(before: pd.DataFrame, after: pd.DataFrame) -> list:
-    """The `(mnxr, element)` keys that held pairs and now hold none."""
     had = set(zip(before["mnxr"], before["element"]))
     have = set(zip(after["mnxr"], after["element"]))
     return sorted(had - have)
@@ -288,14 +237,6 @@ def emptied_keys(before: pd.DataFrame, after: pd.DataFrame) -> list:
 
 def rederive(keys, in_scope: dict, equations: dict, formulas: dict, ranks_of: dict,
              family_of: dict):
-    """Conservation's answer for an emptied key, with the couple taken out.
-
-    The surgery `atom_pairs.reduce_for_element` performs, here reached from the other
-    side: drop the couple's participants -- they carried the artifact -- and ask
-    `forced_pairs` whether what remains leaves exactly one possibility. Where it does the
-    key is re-derived at full weight; where it does not the key is lost, and the caller
-    records that rather than letting it read as a reaction nothing mapped.
-    """
     rows, tally = [], Counter()
     for mnxr, X in keys:
         here = in_scope.get(mnxr)
@@ -324,10 +265,6 @@ def rederive(keys, in_scope: dict, equations: dict, formulas: dict, ranks_of: di
     return pd.DataFrame(rows, columns=list(L.ATOM_COLS)), tally
 
 
-# =====================================================================
-# driver
-# =====================================================================
-
 def cmd_repair(args):
     pairs = pd.read_parquet(args.pairs)
     missing = [c for c in L.ATOM_COLS if c not in pairs.columns]
@@ -340,9 +277,6 @@ def cmd_repair(args):
                          columns=["mnxr", "equation"])
     equations = dict(zip(rx["mnxr"], rx["equation"]))
 
-    # Only the participants of the reactions actually in the table need resolving; the
-    # metabolite table is 1.5 M rows and every one of them would otherwise be re-counted
-    # three times to answer a question about 47 k.
     have = set(pairs["mnxr"])
     want = set()
     for r in have:
@@ -373,12 +307,8 @@ def cmd_repair(args):
     red, rtally = rederive(empt, in_scope, equations, formulas, ranks_of, family_of)
     if len(red):
         kept = pd.concat([kept, red], ignore_index=True)
-    # What is still empty after the re-derivation -- the honest loss, and the reason the
-    # ledger needs an outcome of its own for it.
     lost = emptied_keys(pairs, kept)
     lost_rxn = sorted({m for m, _X in lost})
-    # A reaction is EMPTIED only when it holds nothing at all now; a reaction that lost
-    # one element and kept another is repaired, not emptied.
     still = set(kept["mnxr"]) if len(kept) else set()
     emptied_rxn = [m for m in lost_rxn if m not in still]
 
@@ -420,8 +350,6 @@ def cmd_repair(args):
           f"{len(set(zip(pairs['mnxr'], pairs['element']))):>9,} -> "
           f"{len(set(zip(kept['mnxr'], kept['element']))):,}")
     print(f"  {'reactions emptied':<44} {len(emptied_rxn):>9,}")
-    # SULFUR IS THE CANARY. NAD, NADP, FAD and FMN carry no sulfur, so an S row changing
-    # here means the scope predicate reached something it has no invariant for.
     s_b = int((pairs["element"] == "S").sum())
     s_a = int((kept["element"] == "S").sum())
     if s_b != s_a:

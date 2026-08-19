@@ -73,26 +73,23 @@ from _common import INK, INSERT_META, save
 
 INSERT_TABLE = INSERT_META / "inserts.csv"
 
-WIN = (29.0, 44.0)              # lambda packaging window (kb)
-WIN_GREY = "#8a8a8a"            # the window, hue removed at about its luminance
-KEYED = pool_pie_tree.MID_PCT / 100.0   # the pie tree's own wedge threshold
-KDE_BW_KB = 1.00                # Gaussian kernel bandwidth
+WIN = (29.0, 44.0)
+WIN_GREY = "#8a8a8a"
+KEYED = pool_pie_tree.MID_PCT / 100.0
+KDE_BW_KB = 1.00
 GRID_STEP_KB = 0.20
 KDE_HEIGHT = 0.275
-FLOOR = 0.01                    # 1%: the log axis floor
-TRI_Y = 0.0068                  # down triangles park just under it
-BAR_LW = 0.3                    # ONE barcode tick width, legend included
-STEM_LW = 0.6                   # the abundance stems are not barcode ticks
+FLOOR = 0.01
+TRI_Y = 0.0068
+BAR_LW = 0.3
+STEM_LW = 0.6
 RUG_ALPHA = 0.85
 
-# A barcode tick is the insert; a missing junction cuts that end off it. Three
-# extents, in the rug axis' own 0-1 coordinates -- and nothing else varies.
 ENDS = [2, 1, 0]
 SPAN = {2: (0.00, 1.00), 1: (0.30, 1.00), 0: (0.30, 0.70)}
 
 
 def load():
-    """-> a frame of one row per insert: length_kb, action, ends, max_share, colour."""
     ins = pd.read_csv(INSERT_TABLE)
     _seqs, actions = pieces.by_piece_id()
     missing = set(ins["centroid"]) - set(actions)
@@ -118,19 +115,12 @@ def load():
 
 
 def kde(data, grid, h):
-    """One-sided Gaussian KDE at an absolute bandwidth, in the data's own units."""
     d = np.asarray(data, float)
     u = (grid[:, None] - d[None, :]) / h
     return np.exp(-0.5 * u * u).sum(1) / (len(d) * h * np.sqrt(2 * np.pi))
 
 
 def junction_key(ax_rug):
-    """The barcode's own legend: the three tick shapes, in the rug's y units.
-
-    An inset in the left margin rather than a `legend`, because the thing being
-    keyed is the tick's EXTENT -- a proxy handle would have to redraw it at some
-    other height and would then be keying nothing.
-    """
     kax = ax_rug.inset_axes([-0.100, 0.0, 0.085, 2.6], zorder=5)
     kax.set_xlim(0, 3)
     kax.set_ylim(0, 2.6)
@@ -159,9 +149,6 @@ def generate():
         3, 1, figsize=(6.6, 3.2), dpi=300, sharex=True,
         gridspec_kw=dict(height_ratios=[1.6, 0.5, 1.15], hspace=0.06))
 
-    # The window is the KDE panel's claim, so it is drawn there and nowhere else
-    # -- carried down the barcode and the abundance panel it reads as a band the
-    # ticks and dots belong to, which is a claim about them that is not made.
     ax.axvspan(*WIN, color=WIN_GREY, alpha=0.16, zorder=0)
     for x in WIN:
         ax.axvline(x, color=WIN_GREY, lw=0.8, ls="--", zorder=1)
@@ -181,9 +168,6 @@ def generate():
     for sp in ("top", "right", "left", "bottom"):
         ax.spines[sp].set_visible(False)
 
-    # ONE collection, ordered by abundance, so the most abundant insert is drawn
-    # last and no tick is ever hidden by a less abundant one. A pass per bucket
-    # could only order the buckets; this orders every tick.
     bar = ins.sort_values("max_share")
     ax_rug.vlines(bar["length_kb"],
                   [SPAN[e][0] for e in bar["ends"]],

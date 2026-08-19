@@ -1,21 +1,3 @@
-"""Shared scaffolding for tests/flow.
-
-Three layers:
-
-1. **Fixtures** — `virtual_runtime` (reused from project conftest),
-   `attached_library`, `oracle`.
-2. **Plan builders** — small factories that hand a runnable `WorkflowPlan`
-   (often plus the backing libraries) to a test. Reuse `mock_transforms`
-   for stimulus; never write inline transform code.
-3. **Assertion helpers** — telemetry-only checks against
-   `DataInstanceLibrary.Load(attach_trace=True)`. No `.nf` text reads, no
-   workdir filename inspection.
-
-Builders that depend on missing telemetry surface or stimulus shapes
-mark themselves with `pytest.skip(reason)` so downstream tests still
-collect cleanly.
-"""
-
 from __future__ import annotations
 
 import shutil
@@ -47,23 +29,8 @@ from metasmith.testing.plan_oracle import PlanExecutionOracle
 from metasmith.testing.virtual_runtime import VirtualE2ERuntime
 
 
-# ---------------------------------------------------------------------------
-# Section 1: Fixtures
-# ---------------------------------------------------------------------------
-
-
-# The project-wide `virtual_runtime` fixture is defined in tests/conftest.py
-# and is therefore visible here without re-declaration.
-
-
-# `metasmith_libraries_root` is defined in tests/conftest.py -- three axes want
-# the real standard library, so it lives above all of them.
-
-
 @pytest.fixture
 def attached_library() -> Callable[[Path], DataInstanceLibrary]:
-    """Factory: load a results library with trace.jsonl attached."""
-
     def _load(path: Path) -> DataInstanceLibrary:
         return DataInstanceLibrary.Load(path, attach_trace=True)
 
@@ -72,22 +39,12 @@ def attached_library() -> Callable[[Path], DataInstanceLibrary]:
 
 @pytest.fixture
 def oracle() -> Callable[[WorkflowTask], PlanExecutionOracle]:
-    """Factory: build a `PlanExecutionOracle` for a staged `WorkflowTask`."""
-
     def _oracle(task: WorkflowTask) -> PlanExecutionOracle:
         return PlanExecutionOracle(task=task)
 
     return _oracle
 
 
-# ---------------------------------------------------------------------------
-# Internal: type catalogue + library builders
-# ---------------------------------------------------------------------------
-
-
-# Master type list — extend here when a builder needs a new dtype name.
-# Keep names aligned with `mock_transforms` so the stimulus library imports
-# them by `lib.GetType("mock::<name>")` cleanly.
 _MOCK_TYPE_PROPERTIES: dict[str, set[str]] = {
     "sample_metadata": {"sample_metadata"},
     "reads": {"reads"},
@@ -109,26 +66,19 @@ _MOCK_TYPE_PROPERTIES: dict[str, set[str]] = {
     "annotated": {"annotated"},
     "grouped": {"grouped"},
     "unfolded": {"unfolded"},
-    # A user-supplied name sitting between the root and the thing it names —
-    # the shape LP6-LP8 pair by ancestry rather than by position.
     "label": {"label"},
-    # 5-hop chain dtypes for build_5hop_dag_plan / build_linear_plan(n>=5).
     "h1": {"h1"},
     "h2": {"h2"},
     "h3": {"h3"},
     "h4": {"h4"},
     "h5": {"h5"},
-    # generic dtype "data" for empty/dead-output builders.
     "data": {"data"},
 }
 
 
 def _build_type_lib(out_path: Path, names: Iterable[str] | None = None) -> Path:
-    """Write a mock DataTypeLibrary YAML containing the named endpoints."""
     types = DataTypeLibrary()
     selected = list(names) if names is not None else list(_MOCK_TYPE_PROPERTIES)
-    # Always include slot_0..slot_N up to a small upper bound so
-    # multi_slot_producer / failing_at_slot_k can resolve their types.
     for n in selected:
         props = _MOCK_TYPE_PROPERTIES.get(n, {n})
         types[n] = Endpoint(properties=props)
@@ -148,7 +98,6 @@ def _build_samples_lib(
     namespace: str = "mock",
     shared_root: bool = False,
 ) -> DataInstanceLibrary:
-    """Build an N-sample DataInstanceLibrary with one instance of `dtype` each."""
     lib = DataInstanceLibrary(tmp_path / "samples.xgdb")
     lib.AddTypeLibrary(types_path, namespace=namespace)
     parents: list = []
@@ -178,12 +127,6 @@ def _build_transform_lib(
     namespace: str = "mock",
     library_name: str = "transforms.xgdb",
 ) -> TransformInstanceLibrary:
-    """Build a transforms.xgdb that uses the given types_path under `namespace`.
-
-    `library_name` is the directory the library *is* -- a library repository
-    lays these out as `transforms/<name>` with nothing between, which is what
-    a template's stored library name is matched against (`library_index`).
-    """
     tr_path = base_dir / library_name
     tr_path.mkdir(parents=True, exist_ok=True)
     meta = tr_path / "_metadata"
@@ -219,7 +162,6 @@ def _build_transform_lib(
 
 
 def _make_target_model(target_props: list[set[str]]) -> Transform:
-    """Build a Transform with one requirement per `set` of properties."""
     target = Transform()
     for props in target_props:
         target.AddRequirement(properties=props)
@@ -235,7 +177,6 @@ def _generate_plan(
     target_names: list[str],
     namespace: str = "mock",
 ) -> WorkflowPlan:
-    """Wrap WorkflowPlan.Generate with the canonical mock-fixture arguments."""
     given = [[sv] for sv in samples.AsSamples(f"{namespace}::{sample_dtype}")]
     target_model = _make_target_model(target_props)
     plan = WorkflowPlan.Generate(
@@ -250,8 +191,6 @@ def _generate_plan(
 
 @dataclass
 class BuiltPlan:
-    """Bundle returned by plan-builder helpers."""
-
     plan: WorkflowPlan
     data_library: DataInstanceLibrary
     transform_libraries: list[TransformInstanceLibrary]
@@ -265,20 +204,13 @@ class BuiltPlan:
         )
 
 
-# ---------------------------------------------------------------------------
-# Section 2: Plan-builder helpers
-# ---------------------------------------------------------------------------
-
-
 def build_linear_plan(
     tmp_path: Path,
     n_steps: int = 2,
     dtype_chain: list[str] | None = None,
 ) -> BuiltPlan:
-    """N-step identity chain: assembly → bam → ... — drives L1-L3."""
     assert n_steps >= 1, "linear plan needs at least 1 step"
     if dtype_chain is None:
-        # Default chain uses assembly → bam → branch_a → branch_b → merged.
         defaults = ["assembly", "bam", "branch_a", "branch_b", "merged", "annotated"]
         if n_steps + 1 > len(defaults):
             pytest.skip(
@@ -308,17 +240,11 @@ def build_linear_plan(
 
 
 def build_multi_input_plan(tmp_path: Path, slots: int = 2) -> BuiltPlan:
-    """Single transform that consumes `slots` inputs — drives L4.
-
-    Uses alignment_transform (reads + assembly → bam) for slots=2; for
-    other slot counts it skips (no out-of-the-box multi-input mock).
-    """
     if slots != 2:
         pytest.skip(
             f"build_multi_input_plan: only slots=2 wired (alignment_transform)"
         )
     types_path = _build_type_lib(tmp_path / "types.yml")
-    # Build samples with both reads and assembly per sample.
     lib = DataInstanceLibrary(tmp_path / "samples.xgdb")
     lib.AddTypeLibrary(types_path, namespace="mock")
     for i in range(1):
@@ -344,10 +270,6 @@ def build_multi_input_plan(tmp_path: Path, slots: int = 2) -> BuiltPlan:
 
 
 def build_branching_plan(tmp_path: Path, fanout: int = 2) -> BuiltPlan:
-    """N-way branching plan: assembly → {branch_a, ..., branch_<n-1>} → merged.
-
-    fanout must be in [2, 8] — driven by `mock_transforms.branching_transforms(n)`.
-    """
     types_path = _build_type_lib(tmp_path / "types.yml")
     samples = _build_samples_lib(tmp_path, types_path, dtype="assembly")
     tr_lib = _build_transform_lib(
@@ -364,7 +286,6 @@ def build_branching_plan(tmp_path: Path, fanout: int = 2) -> BuiltPlan:
 
 
 def build_branching_with_failure_plan(tmp_path: Path) -> BuiltPlan:
-    """Branch where one slot fails — drives B3 sibling-branch independence."""
     types_path = _build_type_lib(tmp_path / "types.yml")
     samples = _build_samples_lib(tmp_path, types_path, dtype="assembly")
     tr_lib = _build_transform_lib(
@@ -383,7 +304,6 @@ def build_branching_with_failure_plan(tmp_path: Path) -> BuiltPlan:
 
 
 def build_fan_out_plan(tmp_path: Path, n_slots: int = 2) -> BuiltPlan:
-    """Single transform producing N distinct slots — drives F1-F4."""
     if n_slots > 8:
         pytest.skip(f"build_fan_out_plan: type catalogue caps n_slots at 8")
     types_path = _build_type_lib(tmp_path / "types.yml")
@@ -402,7 +322,6 @@ def build_fan_out_plan(tmp_path: Path, n_slots: int = 2) -> BuiltPlan:
 
 
 def build_one_group_fan_out_plan(tmp_path: Path, n_products: int = 2) -> BuiltPlan:
-    """N products in ONE product group — drives F6."""
     if n_products > 8:
         pytest.skip("build_one_group_fan_out_plan: type catalogue caps at 8")
     types_path = _build_type_lib(tmp_path / "types.yml")
@@ -428,8 +347,7 @@ def build_batched_plan(
     batch_size: int = 2,
     group_key_fn: Callable[[int], str] | None = None,
 ) -> BuiltPlan:
-    """N inputs through a batched transform — drives G1-G6, G8."""
-    _ = group_key_fn  # reserved; batched_transform groups by the input dep
+    _ = group_key_fn
     types_path = _build_type_lib(tmp_path / "types.yml")
     samples = _build_samples_lib(
         tmp_path, types_path, n_samples=n_inputs, dtype="assembly"
@@ -450,7 +368,6 @@ def build_batched_plan(
 
 
 def build_group_then_split_plan(tmp_path: Path) -> BuiltPlan:
-    """Group-then-unfold pair — drives GS1-GS3."""
     types_path = _build_type_lib(tmp_path / "types.yml")
     samples = _build_samples_lib(
         tmp_path,
@@ -475,13 +392,6 @@ def build_group_then_split_plan(tmp_path: Path) -> BuiltPlan:
 def build_labelled_collection_plan(
     tmp_path: Path, n_samples: int = 3, shuffle: bool = False
 ) -> BuiltPlan:
-    """root → label → assembly → [per-sample] → bam, collected at `group_by=root`.
-
-    Drives LP6-LP8. `shuffle` reverses the order the labels are registered in
-    relative to the assemblies, so that anything pairing the two groups by
-    position gets it wrong — the labels' arrival order and the bams' are then
-    deliberately unrelated.
-    """
     types_path = _build_type_lib(tmp_path / "types.yml")
     lib = DataInstanceLibrary(tmp_path / "labelled.xgdb")
     lib.AddTypeLibrary(types_path, namespace="mock")
@@ -513,16 +423,8 @@ def build_labelled_collection_plan(
 
 
 def build_lineage_fork_plan(tmp_path: Path, parent_count: int = 2) -> BuiltPlan:
-    """Two TargetBuilder.Add() calls with distinct parents — LP1/LP2 shape.
-
-    Marked skip until a stimulus shape exists in mock_transforms that
-    naturally produces two distinct subtypes of the same dtype (the
-    inbox #135 duplicate-producer trap). Downstream tests covering
-    LP1-LP3 can reuse the repro file directly.
-    """
     _ = parent_count
     # TODO: depends on a mock_transforms shape emitting two parent-distinct
-    # subtypes of the same dtype.
     pytest.skip(
         "build_lineage_fork_plan: needs a mock_transforms shape with "
         "two parent-distinct producers (relocate from repro_135)"
@@ -530,13 +432,6 @@ def build_lineage_fork_plan(tmp_path: Path, parent_count: int = 2) -> BuiltPlan:
 
 
 def build_mixed_cacheability_plan(tmp_path: Path) -> BuiltPlan:
-    """Three-step chain with the middle step `cacheable=False` — drives C1.
-
-    Generates three identity transforms via the _cache_harness pattern,
-    flipping cacheable=False on the middle hop. Reuses the local helper
-    rather than mock_transforms because mock_transforms does not expose
-    a cacheable=False knob.
-    """
     types_path = _build_type_lib(tmp_path / "types.yml")
     samples = _build_samples_lib(tmp_path, types_path, dtype="assembly")
     transforms: dict[str, str] = {}
@@ -565,7 +460,6 @@ def build_mixed_cacheability_plan(tmp_path: Path) -> BuiltPlan:
 def _make_identity_with_cacheable(
     *, name: str, input_type: str, output_type: str, cacheable: bool
 ) -> dict[str, str]:
-    """Local identity-transform builder with an explicit cacheable flag."""
     return {
         name: textwrap.dedent(
             f"""
@@ -597,15 +491,7 @@ def _make_identity_with_cacheable(
 
 
 def build_empty_plan(tmp_path: Path) -> BuiltPlan:
-    """Empty input library — drives E1/G4.
-
-    The planner raises when no targets are reachable; this builder catches
-    that and skips so downstream E1 tests still collect. A future change
-    that makes Generate return PlanHint instead of raising will let this
-    return a real (failed) plan for assertion.
-    """
     # TODO: depends on WorkflowPlan.Generate returning a PlanHint object for
-    # unreachable targets rather than raising.
     pytest.skip(
         "build_empty_plan: WorkflowPlan.Generate currently raises on empty "
         "input; needs a PlanHint return shape to assert against"
@@ -613,15 +499,7 @@ def build_empty_plan(tmp_path: Path) -> BuiltPlan:
 
 
 def build_dead_output_plan(tmp_path: Path) -> BuiltPlan:
-    """Plan with a transform whose output is never consumed — drives E4.
-
-    Currently mocked by a two-step plan where the target is satisfied at
-    step 1 and step 2 is reachable but irrelevant. Real dead-output
-    semantics need a multi-product transform with one consumed and one
-    dangling slot — skip until that shape exists.
-    """
     # TODO: depends on a mock_transforms shape with a dangling product slot
-    # (multi-slot producer where only some slots are demanded).
     pytest.skip(
         "build_dead_output_plan: needs a multi-slot transform with one "
         "intentionally-unconsumed product slot"
@@ -629,20 +507,13 @@ def build_dead_output_plan(tmp_path: Path) -> BuiltPlan:
 
 
 def build_5hop_dag_plan(tmp_path: Path) -> BuiltPlan:
-    """5-hop linear DAG (assembly → h1 → ... → h5) — drives S4 walk_ancestors."""
     chain = ["assembly", "h1", "h2", "h3", "h4", "h5"]
     return build_linear_plan(tmp_path, n_steps=5, dtype_chain=chain)
-
-
-# ---------------------------------------------------------------------------
-# Section 3: Assertion helpers (telemetry-only)
-# ---------------------------------------------------------------------------
 
 
 def _stage_and_run(
     rt: VirtualE2ERuntime, plan: WorkflowPlan | BuiltPlan
 ) -> tuple[Path, WorkflowTask]:
-    """Stage a task, run RunWorkflow against the virtual runtime, return paths."""
     if isinstance(plan, BuiltPlan):
         task = plan.as_task()
     else:
@@ -687,7 +558,6 @@ def _stage_and_run(
 def run_and_load(
     rt: VirtualE2ERuntime, plan: BuiltPlan
 ) -> tuple[WorkflowTask, DataInstanceLibrary]:
-    """Stage + run `plan`, return `(staged_task, results_library)`."""
     workspace, staged = _stage_and_run(rt, plan)
     results_dir = workspace / "results"
     assert results_dir.exists(), (
@@ -702,7 +572,6 @@ def assert_lineage_chain(
     target_id: str,
     expected_dtype_ancestors: list[str],
 ) -> None:
-    """Assert `walk_ancestors(target_id)` yields the named dtype chain in order."""
     nodes = list(lib.walk_ancestors(target_id))
     got = [getattr(n, "dtype_name", None) for n in nodes]
     assert got == expected_dtype_ancestors, (
@@ -715,7 +584,6 @@ def assert_walks_to_roots(
     target_id: str,
     expected_root_dtypes: set[str],
 ) -> None:
-    """Assert ancestors reachable from `target_id` cover `expected_root_dtypes`."""
     seen: set[str] = set()
     for node in lib.walk_ancestors(target_id):
         dt = getattr(node, "dtype_name", None)
@@ -733,7 +601,6 @@ def assert_invocation_status(
     status: str,
     count: int = 1,
 ) -> None:
-    """Assert N events with `(transform_key, status)` appear in the trace."""
     events = lib.find_invocations(transform_key=transform_key, status=status)
     assert len(events) == count, (
         f"expected {count} events for transform_key={transform_key} "
@@ -742,7 +609,6 @@ def assert_invocation_status(
 
 
 def assert_no_failures(lib: DataInstanceLibrary) -> None:
-    """Assert `find_failures()` is empty."""
     failures = lib.find_failures()
     assert not failures, f"unexpected failures in trace: {failures}"
 
@@ -750,7 +616,6 @@ def assert_no_failures(lib: DataInstanceLibrary) -> None:
 def assert_failure_count(
     lib: DataInstanceLibrary, n: int, transform_key: str | None = None
 ) -> None:
-    """Assert exactly `n` failures (optionally filtered by transform_key)."""
     failures = lib.find_failures()
     if transform_key is not None:
         failures = [f for f in failures if f.transform_key == transform_key]
@@ -762,7 +627,6 @@ def assert_failure_count(
 def assert_arity_via_oracle(
     events: list[dict[str, Any]], task: WorkflowTask
 ) -> None:
-    """Run `PlanExecutionOracle(task).validate_trace(events)`."""
     oracle = PlanExecutionOracle(task=task)
     oracle.validate_trace(events)
 

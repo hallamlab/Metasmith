@@ -77,11 +77,6 @@ FIELDS = ("host", "background", "channel", "role", "axis", "src_mnxm", "sink_mnx
 
 
 def check_bake_cache() -> None:
-    """Refuse a decoded cache older than the bake it claims to describe.
-
-    `bake_pairs` memoises its decode and will otherwise serve the previous pin's basis
-    without complaint.
-    """
     cache = Path(bake_pairs.CACHE)
     if not cache.is_dir():
         return
@@ -94,12 +89,6 @@ def check_bake_cache() -> None:
 
 
 def read_panel(path: Path) -> list[dict]:
-    """The declared axes: `target` rows first, then `control` rows.
-
-    Controls are kept in the same file and run in the same pass so they cannot be quietly
-    omitted from a report, but they carry `role` into the output so a reader can tell a
-    claim from a check on the claim.
-    """
     df = pd.read_csv(path, sep="\t", dtype=str).fillna("")
     keep = df[df.role.isin(("target", "control"))]
     if keep.empty:
@@ -109,13 +98,6 @@ def read_panel(path: Path) -> list[dict]:
 
 
 def host_weights(host: str, channel: str = "gem", universe: set | None = None) -> dict:
-    """Uniform-weight dict of the host's atom-universe reactions. This IS the organism.
-
-    The de-novo host table's `in_atom_universe` arrives entirely null from upstream and is
-    recomputed here off the same bake the curated flag came from. The two channels' weight
-    dicts differ by an order of magnitude (1,412 against 10,938), so their conductances are
-    NOT comparable to each other -- only within a channel.
-    """
     if channel == "gem":
         p = ROOT / f"data/fabfos/benchmarks/hosts/{host}/gpr_gem.parquet"
         df = pd.read_parquet(p, columns=["mnxr", "in_atom_universe"])
@@ -132,24 +114,12 @@ def host_weights(host: str, channel: str = "gem", universe: set | None = None) -
 
 
 def insertion_weights(path: Path) -> dict:
-    """The engineered Tn7 edges, as a weight dict to union onto a host's.
-
-    `host_gpr_gem.py` only ever subtracts, so LW06's attTn7::PLlacO-1 pdcZm adhBZm cannot
-    be expressed as a host edit; it is carried as study GPR rows and concatenated with the
-    host's here, at solve time. Only atom-universe rows enter -- a reaction with no atom
-    pairs contributes no edge and claiming it as one would inflate `n_rxn` for free.
-    """
     df = pd.read_parquet(path, columns=["mnxr", "in_atom_universe", "feature_name"])
     df = df[df.in_atom_universe.fillna(False).astype(bool)]
     return {m: 1.0 for m in sorted(df.mnxr.dropna().astype(str).unique())}
 
 
 def host_metabolite_nodes(pairs: pd.DataFrame, weights: dict) -> set:
-    """Ids appearing in an atom-pair row of a reaction this host carries.
-
-    Computed straight off the pair table rather than off the built graph, so it is an
-    independent statement about the basis and not a restatement of `Terminal.missing`.
-    """
     sub = pairs[pairs.mnxr.isin(weights)]
     return set(sub.substrate.astype(str)) | set(sub["product"].astype(str))
 
@@ -175,9 +145,6 @@ def main() -> int:
     print(f"[sink_panel] basis {bake_pairs.BAKE} | {len(pairs):,} {a.element} pair rows | "
           f"{len(panel)} declared axes", file=sys.stderr)
 
-    # (host, background label, weight dict). The engineered background is LW06's only:
-    # BW25113 is the parent that carries no insertion, so adding the edges there would
-    # measure a strain that does not exist.
     universe = None
     if a.channel == "denovo":
         sys.path.insert(0, str(ROOT / "src/fabfos/build_references/resources/buildlib"))
@@ -216,8 +183,6 @@ def main() -> int:
             src_node, sink_node = src_id in nodes, sink_id in nodes
             src = Terminal.metabolite(g, src_id, label="source")
             snk = Terminal.metabolite(g, sink_id, label=r["sink_name"])
-            # The pair-table check and the graph's own atom lookup must agree; a
-            # disagreement means the builder dropped rows the check counted.
             assert src_node == (not src.missing), (host, src_id)
             assert sink_node == (not snk.missing), (host, sink_id)
             if src.missing or snk.missing:
@@ -225,9 +190,6 @@ def main() -> int:
             else:
                 sol = solve(g, src, snk)
                 val, note = float(sol.total), getattr(sol, "note", "") or ""
-                # `solve` reports its own convergence and nothing here used to read it,
-                # so every number was taken on trust. A non-converged solve is reported
-                # rather than silently ranked.
                 conv = getattr(sol, "converged", None)
                 conv = "" if conv is None else bool(conv)
                 if conv is False:

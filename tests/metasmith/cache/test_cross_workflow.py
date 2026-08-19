@@ -1,33 +1,3 @@
-"""Cross-workflow cache reuse.
-
-Two distinct WorkflowPlans, two distinct agent homes (different
-`--workspace` paths). P1 runs, promotes outputs into its task_cache;
-P2 is then expected to hit the cache via one of two channels:
-
-  (a) **lineage**: the cache shard is shared at the agent_home level
-      (`<agent_home>/task_cache/` is shared / copied between homes).
-      Entries promoted by `promote_run` carry `origin="lineage"`.
-
-  (b) **imported**: a serialized library that recorded lineage-origin
-      DataInstances in workspace_a is brought into workspace_b via
-      `metasmith data import-library`, which upserts cache rows as
-      `origin="imported"`.
-
-For both sub-cases the contract is the same: the cache.sqlite row for
-the relevant key carries the correct `origin`, and (where the planner
-can express the demand) P2's trace.jsonl records a `status="hit"` row.
-
-Since R1, leaf ids are content-addressed, so "exact same plan ran in two
-workspaces" now hits automatically whenever the input *bytes* match —
-even with independently built library objects at different locations.
-That auto-resume path is proven directly in `test_cross_run.py`. The two
-sub-cases here cover the complementary plumbing: (a) reuses the source
-library so the lineage key is byte-stable regardless of input presence,
-and (b) asserts the `import-library` bridge that carries already-computed
-lineage rows across workspaces (still needed for absent/remote inputs
-whose leaves fall back to random ids).
-"""
-
 from __future__ import annotations
 
 import shutil
@@ -51,7 +21,6 @@ def _trace_path(virtual_runtime, task) -> Path:
 
 
 def _cache_origins(cache_root: Path) -> dict[str, int]:
-    """Return {origin: count} for non-tombstoned cache.sqlite rows."""
     db = cache_root / "cache.sqlite"
     if not db.exists():
         return {}
@@ -66,44 +35,13 @@ def _cache_origins(cache_root: Path) -> dict[str, int]:
     return dict(rows)
 
 
-# ---------------------------------------------------------------------------
-# Sub-case (a): shared task_cache via direct copy (origin="lineage")
-# ---------------------------------------------------------------------------
-
-
 def test_shared_task_cache_origin_lineage(tmp_path):
-    """P1 promotes cache rows with origin="lineage"; P2 against the same
-    task on a freshly built agent home hits every step at compile time.
-
-    Implementation: stand up two independent VirtualE2ERuntime homes
-    sequentially. Run P1 against runtime_a and capture the populated
-    cache shard. Stand up runtime_b in a fresh tmpdir, copy P1's
-    `task_cache/` wholesale into runtime_b's home BEFORE its first
-    run. Reuse the SAME WorkflowTask (same samples library, same leaf
-    instance_ids) so the lineage_key chain is byte-stable across the
-    two homes and the compile-time probe in runtime_b hits every step.
-
-    The canonical assertion is via the per-run `_metasmith/trace.jsonl`
-    — the compile-time probe emits `status="hit"` rows there for every
-    matched step. The virtual_runtime executor still rebuilds meta
-    files and may emit bootstrap_calls for hits (cached steps don't
-    write `workflow.step_*.meta` files in this codegen path, so the
-    runtime-side probe sees nothing to skip), so we do NOT assert on
-    `snap.executed_steps` here — that gap is virtual-only, not a real
-    Nextflow regression.
-
-    Assertions:
-      * P1's cache.sqlite contains only origin="lineage" rows.
-      * Runtime_b's per-run trace.jsonl carries `status="hit"`
-        InvocationEvent rows for every cacheable step.
-    """
     from metasmith.constants import AgentPaths
     from metasmith.telemetry import TraceIndex
     from metasmith.testing.virtual_runtime import VirtualE2ERuntime
 
     task = linear_3step.build_task(tmp_path)
 
-    # ---- P1 ----
     runtime_a_root = tmp_path / "runtime_a"
     monkey_a = pytest.MonkeyPatch()
     try:
@@ -124,13 +62,11 @@ def test_shared_task_cache_origin_lineage(tmp_path):
             f"P1 should have only lineage-origin rows: {p1_origins}"
         )
 
-        # Stage a seed copy of P1's task_cache for runtime_b.
         p2_seed_dir = tmp_path / "_p2_seed_cache"
         shutil.copytree(p1_cache, p2_seed_dir)
     finally:
         monkey_a.undo()
 
-    # ---- P2 ----
     monkey_b = pytest.MonkeyPatch()
     try:
         runtime_b = VirtualE2ERuntime(
@@ -140,9 +76,6 @@ def test_shared_task_cache_origin_lineage(tmp_path):
         monkey_b.setattr(AgentPaths, "HOME_ROOT", runtime_b.home)
         monkey_b.setattr(AgentPaths, "WORK_ROOT", runtime_b.home / "_ws")
 
-        # Seed runtime_b's task_cache from runtime_a's promote output
-        # BEFORE its run — this is what "shared task_cache" means at
-        # the agent-home level.
         b_cache = runtime_b.home / "task_cache"
         shutil.copytree(p2_seed_dir, b_cache)
 
@@ -160,10 +93,6 @@ def test_shared_task_cache_origin_lineage(tmp_path):
             f"lineage-origin cache was not addressable across workspaces. "
             f"events: {[(e.status, e.step_name) for e in idx.events]}"
         )
-        # Specifically, every plan step should appear as a hit (3 in
-        # linear_3step). Allow for mixed promoted rows (the virtual
-        # runtime re-executes hits because its runtime-side probe
-        # doesn't see meta files for the cached path; see docstring).
         hit_steps = {e.step_name for e in hit_events}
         assert hit_steps == {"trA", "trB", "trC"}, (
             f"P2 hit rows did not cover every step: {hit_steps}"
@@ -172,14 +101,7 @@ def test_shared_task_cache_origin_lineage(tmp_path):
         monkey_b.undo()
 
 
-# ---------------------------------------------------------------------------
-# Sub-case (b): cross-workflow import via `metasmith data import-library`
-# ---------------------------------------------------------------------------
-
-
 def _build_export_lib(workspace: Path, *, lineage_id_hex: str) -> Path:
-    """Build a small library in `workspace` containing one leaf + one
-    lineage-origin DataInstance, and serialize it for transport."""
     from metasmith.models.libraries import DataInstanceLibrary, DataTypeLibrary
     from metasmith.models.solver import Endpoint
 
@@ -209,19 +131,6 @@ def _build_export_lib(workspace: Path, *, lineage_id_hex: str) -> Path:
 
 
 def test_import_library_origin_imported(tmp_path):
-    """`metasmith data import-library` upserts cache rows as origin="imported".
-
-    Build a library with one origin="lineage" DataInstance in
-    workspace_a, then import it into workspace_b's library + cache via
-    the public ops API. The destination cache.sqlite must contain
-    exactly one entry, and that entry must carry origin="imported".
-
-    The "imported entries are addressable on cross-workflow probe"
-    half of the contract is covered structurally: identity is
-    preserved across the import (pinned by
-    `test_identity.test_import_library_preserves_identity`), and the
-    `origin` column is the probe's discriminator at lookup time.
-    """
     from metasmith.ops.data import import_library
 
     lineage_id = "1e20" + "ef" * 32
@@ -246,13 +155,6 @@ def test_import_library_origin_imported(tmp_path):
 
 
 def test_import_library_then_probe_hits_imported_key(tmp_path):
-    """An imported cache row is probe-addressable by its instance_id key.
-
-    After import_library completes, `CacheStore.probe(<imported_key>)`
-    must return an entry whose `origin == "imported"`. This is the
-    probe-side half that lets a downstream workflow read the imported
-    row as a hit without re-executing the producer transform.
-    """
     from metasmith.caching.store import CacheStore
     from metasmith.ops.data import import_library
 

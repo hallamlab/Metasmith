@@ -1,10 +1,3 @@
-"""The experiment layer: the mask, the probes, the null, and the score.
-
-These are the properties the whole design rests on -- a condition IS a mask, an
-overexpression is a sum rather than a policy, the null arm is the same command
-with a different conditions file, and a no-op control returns the baseline
-exactly. Each is cheap to state and expensive to lose.
-"""
 import numpy as np
 import pandas as pd
 import pytest
@@ -17,8 +10,6 @@ HOST = "iML1515"
 
 
 def _gpr_rows(unit, feature, mnxrs, *, condition=None, channel="gem_gpr"):
-    """A GPR table on the declared schema: `orf` names the nominator (a gene here),
-    `intermediate_id` the thing it was called through."""
     return [dict(source=unit, orf=feature, channel=channel, mnxr=r,
                  intermediate_id=r, intermediate_name=r, raw_score=1.0,
                  score_kind="presence", projection_via="x",
@@ -31,12 +22,6 @@ def _gpr_rows(unit, feature, mnxrs, *, condition=None, channel="gem_gpr"):
 
 @pytest.fixture
 def gpr_path(tmp_path):
-    """Host background (three reactions) plus two clone conditions and a control.
-
-    ``C_over`` duplicates a reaction the host already has -- the overexpression --
-    and ``C_ctrl`` nominates a reaction that is in no atom-pairs row at all, which
-    is what a no-op control looks like in a table.
-    """
     rows = []
     rows += _gpr_rows(HOST, "b1", ["R1"])
     rows += _gpr_rows(HOST, "b2", ["R2"])
@@ -51,7 +36,6 @@ def gpr_path(tmp_path):
 
 @pytest.fixture
 def pairs_path(tmp_path):
-    """S -> M -> {P1, P2}, with R4 an extra route into P2."""
     rows = [("R1", "S", "M"), ("R2", "M", "P1"), ("R3", "M", "P2"), ("R4", "M", "P2")]
     df = pd.DataFrame([dict(mnxr=r, element="C", substrate=s, product=p_, sub_idx=0,
                             prod_idx=0, pair_w=1.0) for r, s, p_ in rows])
@@ -72,10 +56,6 @@ BASELINE = cond_mod.Condition(
     background_column="unit_id", background_values=(HOST,), meta=dict(n_units=1))
 
 
-# ---------------------------------------------------------------------------
-# the mask
-# ---------------------------------------------------------------------------
-
 def test_background_alone_is_the_host(gpr_path):
     w, cov = condition_weights(load_gpr(gpr_path), weighting="uniform",
                                **BASELINE.mask_kwargs())
@@ -84,8 +64,6 @@ def test_background_alone_is_the_host(gpr_path):
 
 
 def test_an_overexpression_is_a_sum_not_a_policy(gpr_path):
-    """The host row and the clone row are both selected and their conductances add.
-    Nothing in the engine was told what an overexpression is."""
     w, _ = condition_weights(load_gpr(gpr_path), weighting="uniform",
                              **_cond("C_over", ("C_over",)).mask_kwargs())
     assert w == {"R1": 1.0, "R2": 2.0, "R3": 1.0}
@@ -100,15 +78,13 @@ def test_a_deletion_is_the_drop_mask(gpr_path):
 
 
 def test_belief_weighting_conserves_per_feature(gpr_path):
-    """Each feature's nominations sum to 1.0, so a promiscuous annotation cannot
-    out-vote a specific one."""
     df = load_gpr(gpr_path)
     extra = pd.DataFrame(_gpr_rows(HOST, "b4", ["R1", "R2"]))
     w, _ = condition_weights(pd.concat([df, extra], ignore_index=True),
                              weighting="belief", background_column="unit_id",
                              background_values=(HOST,))
     assert w["R3"] == pytest.approx(1.0)
-    assert w["R1"] == pytest.approx(1.5)   # b1's whole 1.0, plus half of b4's
+    assert w["R1"] == pytest.approx(1.5)
     assert w["R2"] == pytest.approx(1.5)
 
 
@@ -116,10 +92,6 @@ def test_an_unknown_mask_column_is_refused(gpr_path):
     with pytest.raises(ValueError):
         condition_weights(load_gpr(gpr_path), mask_column="nope", mask_values=("x",))
 
-
-# ---------------------------------------------------------------------------
-# the conditions table
-# ---------------------------------------------------------------------------
 
 @pytest.mark.parametrize("ext", [".parquet", ".tsv"])
 def test_conditions_round_trip(tmp_path, ext):
@@ -137,10 +109,6 @@ def test_the_explicit_form_takes_no_mask():
     assert c.mask_column is None and c.mask_values == ()
     assert c.background_column is None and c.drop_column is None
 
-
-# ---------------------------------------------------------------------------
-# the probes
-# ---------------------------------------------------------------------------
 
 def _run(pairs_path, gpr_path, conds, probe, tmp_path, **kw):
     basis = probes.Basis(pairs_path, None, element="C")
@@ -161,8 +129,6 @@ def test_both_probes_emit_one_schema(pairs_path, gpr_path, tmp_path, probe):
 
 
 def test_an_added_route_raises_the_total(pairs_path, gpr_path, tmp_path):
-    """R4 is a second route into P2, so the new-reaction condition must conduct
-    better than the baseline and the control must not move at all."""
     conds = [BASELINE, _cond("C_new", ("C_new",)), _cond("C_ctrl", ("C_ctrl",))]
     df = _run(pairs_path, gpr_path, conds, "two-point", tmp_path)
     base = _value(df, "baseline", "total")
@@ -171,9 +137,6 @@ def test_an_added_route_raises_the_total(pairs_path, gpr_path, tmp_path):
 
 
 def test_a_control_returns_the_baseline_exactly(pairs_path, gpr_path, tmp_path):
-    """RX is in no atom-pairs row, so the control's mask reaches nothing and its
-    value must be bit-identical to the baseline. That equality is what makes the
-    control spread a usable noise floor."""
     conds = [BASELINE, _cond("C_ctrl", ("C_ctrl",), is_control=True)]
     df = _run(pairs_path, gpr_path, conds, "ground", tmp_path)
     for readout in ("total", "P1", "P2"):
@@ -202,8 +165,6 @@ def test_a_missing_source_abstains_rather_than_scoring_zero(pairs_path, gpr_path
 
 
 def test_orientation_is_inert_on_a_symmetric_reference(pairs_path, gpr_path, tmp_path):
-    """The end-to-end form of the build-level test: same command, both orientations,
-    a reference whose ratios are all 1.0."""
     d = pd.DataFrame([dict(mnxr=r, ratio=1.0) for r in ("R1", "R2", "R3", "R4")])
     dp = tmp_path / "direction.parquet"
     d.to_parquet(dp, index=False)
@@ -217,10 +178,6 @@ def test_orientation_is_inert_on_a_symmetric_reference(pairs_path, gpr_path, tmp
     assert np.allclose(a[keep].value.to_numpy(float), b[keep].value.to_numpy(float))
 
 
-# ---------------------------------------------------------------------------
-# the null, and the score
-# ---------------------------------------------------------------------------
-
 def test_draw_is_deterministic_and_emits_a_conditions_table(gpr_path, tmp_path):
     like = [_cond("C_new", ("C_new",), n_units=1)]
     a = nulls.draw(gpr_path, like, n=8, seed=7, draw_column="orf",
@@ -231,7 +188,6 @@ def test_draw_is_deterministic_and_emits_a_conditions_table(gpr_path, tmp_path):
     pa = cond_mod.write(a, tmp_path / "n1.parquet")
     pb = cond_mod.write(b, tmp_path / "n2.parquet")
     assert pa.read_bytes() == pb.read_bytes(), "the same seed must write one pool"
-    # ...and what it wrote is a conditions table the probes read like any other.
     back = cond_mod.read(pa)
     assert len(back) == 8
     assert all(c.mask_column == "orf" for c in back)
@@ -246,8 +202,6 @@ def test_draw_refuses_an_unmatched_null(gpr_path):
 
 
 def test_the_null_arm_is_the_same_command(pairs_path, gpr_path, tmp_path):
-    """The point of emitting the pool as a conditions table: nothing but
-    --conditions changes between the observed arm and the null arm."""
     like = [_cond("C_new", ("C_new",), n_units=1)]
     pool = nulls.draw(gpr_path, like, n=6, seed=3, log=lambda m: None)
     obs = _run(pairs_path, gpr_path, [BASELINE] + like, "two-point", tmp_path)
@@ -280,9 +234,6 @@ def test_the_gate_reports_both_spreads(pairs_path, gpr_path, tmp_path):
 
 @pytest.mark.parametrize("ext", [".parquet", ".tsv"])
 def test_results_round_trip_exactly(pairs_path, gpr_path, tmp_path, ext):
-    """A results table that does not round-trip is not a record. pandas' default CSV
-    float converter is lossy in the last few digits, which stays invisible until a
-    benchmark compares a written value against the one that produced it."""
     df = _run(pairs_path, gpr_path, [BASELINE], "ground", tmp_path)
     p = probes.write_results(df, tmp_path / f"r{ext}")
     back = probes.read_results(p)

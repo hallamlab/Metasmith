@@ -1,19 +1,3 @@
-"""feast — FEAST microbial source tracking (single aggregate run).
-
-Estimates the contribution of external source environments (human gut, oral,
-skin) to each lake sample's community. Antonio provided the COMPLETE FEAST input
-as a frozen table (annotation::feast_sources): a MetaPhlAn SGB species matrix
-whose rows are the 101 lake sinks + 81 external source profiles, plus the
-matching metadata (SourceSink / Env / id). FEAST is therefore run ONCE over the
-whole table with `different_sources_flag=0` (all sinks share the source pool) —
-exactly Antonio's invocation — rather than per-sample. This reproduces his
-published analysis; it does not re-derive the sink rows from our own MetaPhlAn
-outputs (the frozen sinks already ARE these 101 samples). No contig_id dependency.
-
-feast_sources is a directory holding `FEAST_otus.csv` + `FEAST_metadata_final.csv`
-(staged from raw/originals_from_antonio_2_resistome/feast_sources; provided to the
-driver as a pre-staged input, see w4_resistome.py DB_INPUTS).
-"""
 from pathlib import Path
 from metasmith.python_api import *
 
@@ -29,9 +13,6 @@ def protocol(context: ExecutionContext):
     isources = context.Input(sources)
     iout = context.Output(out_props)
 
-    # Wrapper `FEAST` (container build) reads the OTU + metadata CSVs, applies
-    # Antonio's ceiling(otus*1000) integerisation, and runs FEAST once, writing
-    # FEAST_results_source_contributions_matrix.txt into --outdir.
     context.ExecWithEnv().ifContainerDo(
         env=image,
         binds=[(isources.external, "/feast_sources")],

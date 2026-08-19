@@ -1,20 +1,4 @@
 #!/usr/bin/env python3
-"""Author the `annotation_palette_from_assembly` template.
-
-  assembly --> prodigal --> orfs --> kofamscan
-                                  --> diamond_uniref50
-                                  --> eggnog_mapper
-                                  --> proteinbert
-  assembly --> metabuli                            (contig-level taxonomy)
-
-`virsorter2` is deliberately not included: it consumes `sequences::contig_batch`
-rather than the whole assembly, so adding it would pull the splitContigsForAmr
-fan-out and the viral legs downstream of it into what is otherwise a per-ORF
-annotation sweep. Those legs are their own template,
-`viromics_survey_from_assembly`.
-
-    python main/annotation_palette_from_assembly.py [--rebuild] [--dag]
-"""
 import sys
 
 import _authoring as A
@@ -35,10 +19,6 @@ def build_spec(rebuild: bool = False) -> Spec:
         lib.AddTypeLibrary(A.TYPES / "annotation.yml")
         lib.AddTypeLibrary(A.TYPES / "taxonomy.yml")
         lib.AddItem(DEFERRED, "sequences::assembly")
-        # A marker, never read -- downloadEggnogDB.py takes it only to trigger
-        # the download once, and it has no ancestry connecting it to any one
-        # sample's assembly, so it needs shared_input_paths to be visible at
-        # solve time (same as pangenome::pangenome elsewhere).
         lib.AddValue("eggnog_source.marker", "trigger", "annotation::eggnog_source")
 
     return Spec(

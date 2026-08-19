@@ -18,12 +18,6 @@ def protocol(context: ExecutionContext):
     threads = "" if threads is None else f"--threads {threads}"
     seqkit_stats_file = "seqkit_stats.tsv"
     seqkit_guess_enc_file = "guess_encoding.txt"
-    # example output of convert
-    # [INFO] possible quality encodings: [Sanger Illumina-1.8+]
-    # [INFO] guessed quality encoding: Sanger
-    # [INFO] converting Sanger -> Sanger
-    # [WARN] source and target quality encoding match.
-    # Same command either way: this tool is a plain CLI in both worlds.
     _cmd = f"""
             seqkit convert --dry-run {ireads.container} 2>&1 | tee {seqkit_guess_enc_file}
             seqkit stat {threads} --all --tabular {ireads.container} | tee {seqkit_stats_file}
@@ -52,7 +46,7 @@ def protocol(context: ExecutionContext):
         except ValueError:
             return x
     def _from_np(x):
-        if pd.isna(x): # includes nan, but isnan excludes None
+        if pd.isna(x):
             return None
         if isinstance(x, str):
             if x.endswith("%"):

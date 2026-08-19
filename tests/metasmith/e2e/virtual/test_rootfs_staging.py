@@ -1,14 +1,3 @@
-"""The per-task rootfs override, from staging through to the tool environment.
-
-`Agent.StageWorkflow(task, rootfs=...)` forces how this task's step images are
-materialised. It has no run-time transport of its own: it rides in the staged
-step meta, the same channel the static GPU declaration uses, which is what
-"from staging onwards" means. Precedence then falls out of absence -- meta line
-present is the task's answer, meta line absent leaves the agent's own tendency
-in charge -- and that is also what keeps an un-overridden workspace
-byte-identical to one compiled before the knob existed.
-"""
-
 from __future__ import annotations
 
 from pathlib import Path
@@ -64,13 +53,6 @@ def test_override_reaches_every_step(virtual_runtime, tmp_path, mock_samples, mo
     (Rootfs.SANDBOX, ".sandbox"),
 ])
 def test_a_forced_mode_ignores_the_other_artifact_on_disk(mode, expected):
-    """The half that makes the override more than advisory.
-
-    `_ExecInEnv` skips materialising when the image is already there. Accepting
-    either artifact is how the old host-level override managed to be inert: a
-    `.sandbox` left in a shared store satisfied the test, materialising was
-    skipped, and the run command's ternary then preferred the directory.
-    """
     env = Environment(
         image="docker://quay.io/example/tool:1.0", runtime=Runtime.APPTAINER,
         rootfs=mode, container=ContainerDef(cache=Path("/cache")),

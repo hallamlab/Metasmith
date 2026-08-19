@@ -36,8 +36,8 @@ CLONE_GPR = ROOT / "data/fabfos/runs/eydallin_clones/gpr/gpr_gem.parquet"
 MEASURED = ROOT / "data/fabfos/benchmarks/eydallin/Y/measured_glycogen.tsv"
 OUT_DIR = ROOT / "data/fabfos/runs/eydallin_clones/ecspr"
 
-SOURCE_MNXM = "MNXM1364061"    # D-glucose
-GLYCOGEN_MNXM = "MNXM738130"   # the BiGG species this host's model carries
+SOURCE_MNXM = "MNXM1364061"
+GLYCOGEN_MNXM = "MNXM738130"
 
 GENES = ["glgC", "glgA", "ddg"]
 
@@ -66,8 +66,6 @@ def main():
     print(f"[ag1] host {args.host} / {host.build_id.iloc[0]}: "
           f"{len(base_w):,} reactions", file=sys.stderr)
 
-    # Reactions come from the clone GPR -- the curated statement of what each ASKA clone
-    # puts into the host -- and must already be host edges for a fold to mean anything.
     clone = pd.read_parquet(CLONE_GPR)
     clone = clone[clone.in_atom_universe & (clone.channel == "gem_gpr")]
     targets = {}

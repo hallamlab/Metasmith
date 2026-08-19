@@ -1,8 +1,3 @@
-"""megares — DIAMOND blastp of ORF chunks against MEGARes (ARG detection).
-
-Clone of diamond_tcdb.py. qseqid stays the Prodigal ORF header (k141_XXXXXX_N),
-so the original contig ID is preserved for Antonio's downstream merge.
-"""
 from metasmith.python_api import *
 
 lib = TransformInstanceLibrary.ResolveParentLibrary(__file__)

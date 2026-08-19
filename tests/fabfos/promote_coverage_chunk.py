@@ -35,7 +35,6 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-# `product directory substring` -> (chunk subdirectory, file extension)
 LAYOUT = {
     "assembly_stats": ("stats", ".json"),
     "per_contig_coverage": ("per_contig_coverage", ".tsv"),
@@ -43,7 +42,6 @@ LAYOUT = {
     "read_qc_stats": ("read_qc_stats", ".json"),
 }
 
-# Summary tables the driver wrote beside the results directory, copied in as-is.
 SUMMARIES = {
     "inserts": ["pool_summary.tsv", "insert_coverage_matrix.tsv",
                 "insert_set.json", "pool_map.tsv"],
@@ -52,12 +50,6 @@ SUMMARIES = {
 
 
 def _which(path: Path) -> tuple[str, str] | None:
-    """Which chunk subdirectory a retrieved product belongs in.
-
-    Longest match first: `per_contig_coverage` and `per_bp_coverage` are distinct,
-    but `assembly_stats` is a substring of nothing and `read_qc_stats` must not be
-    caught by it. Checked explicitly rather than by ordering luck.
-    """
     s = str(path)
     hits = [v for k, v in LAYOUT.items() if k in s]
     if len(hits) != 1:
@@ -74,8 +66,6 @@ def promote(kind: str, results: Path, chunk: Path) -> int:
     label_of = drv.attribute(results)
 
     if chunk.exists():
-        # Never edit in place: a checked-out chunk is a read-only hardlink shared
-        # with the DVC cache and every other worktree holding the same pin.
         raise SystemExit(f"{chunk} already exists; remove it first "
                          f"(`rm -rf {chunk}`) rather than writing into it")
     chunk.mkdir(parents=True)
@@ -84,7 +74,7 @@ def promote(kind: str, results: Path, chunk: Path) -> int:
     skipped: list[Path] = []
     for rel, lab in sorted(label_of.items()):
         src = results / rel
-        if not src.exists():          # left on fir (the BAMs)
+        if not src.exists():
             skipped.append(rel)
             continue
         dest = _which(rel)
@@ -92,9 +82,6 @@ def promote(kind: str, results: Path, chunk: Path) -> int:
             skipped.append(rel)
             continue
         sub, ext = dest
-        # read_qc_stats is one per POOL even in the 70-job lane, and attribution
-        # labels it with the pool alone -- so the name it lands under is already
-        # the right one in both lanes.
         out = chunk / sub / f"{lab}{ext}"
         out.parent.mkdir(parents=True, exist_ok=True)
         if out.exists():

@@ -1,24 +1,4 @@
 #!/usr/bin/env python3
-"""Can glycogen BE the endpoint? A two-point solve glucose -> glycogen on the bake.
-
-`run_pilot_glycogen.py` never grounded at glycogen. It ran `measure_leak` with a
-universal ground and read glycogen's DRAW, so the polymer had to compete with every
-other sink in the network for a 1e-6 leak -- which is why its number came back at 7e-10
-of the solve total and negative. That is a statement about the probe, not about whether
-glycogen can terminate one.
-
-`ecspr two-point --sinks` takes any metabolite list, and the conditions schema carries
-sink_hub per row, so naming glycogen as the ground needs no new machinery. This script
-does exactly that.
-
-The pilot's conclusion -- "nothing maps carbon into the polymer" -- was true of the
-retired tier4 reference, where glgA (`MNXR145046`) and glgP (`MNXR145036`) carried zero
-carbon rows and this solve returned a hard `terminals disconnected`. On the bake those
-reactions are mapped and the solve returns a finite conductance, so the target is live.
-
-Both glycogen ids are probed separately: MNXM738130 is the BiGG species iML1515 carries,
-MNXM738131 the KEGG-keyed one, and they hold different reaction sets.
-"""
 import sys
 from pathlib import Path
 
@@ -34,7 +14,7 @@ from ecspr.model.graph import Terminal, solve  # noqa: E402
 
 HOST_GEM = ROOT / "data/fabfos/benchmarks/hosts/e_coli_k12/gpr_gem.parquet"
 
-SOURCE = "MNXM1364061"                       # D-glucose, as the pilot resolved it
+SOURCE = "MNXM1364061"
 TARGETS = {
     "MNXM738130": "glycogen (BiGG, the iML1515 species)",
     "MNXM738131": "glycogen (KEGG C00182)",

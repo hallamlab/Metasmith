@@ -1,4 +1,3 @@
-"""Pull transcriptomics-related containers on sockeye (login node, local executor)."""
 import sys
 from pathlib import Path
 

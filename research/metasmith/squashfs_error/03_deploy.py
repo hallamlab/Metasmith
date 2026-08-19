@@ -25,8 +25,6 @@ from metasmith.logging import Log
 
 
 def _ssh(host: str, cmd: str) -> str:
-    # "local" is not a host — the probe has to run in a plain shell here, or the
-    # verdict line reads "could not resolve hostname" and says nothing.
     argv = ["bash", "-c", cmd] if host == "local" else ["ssh", host, cmd]
     res = subprocess.run(argv, capture_output=True, text=True)
     return (res.stdout + res.stderr).strip()
@@ -44,7 +42,7 @@ def main(argv=None):
     smith = Agent(
         home=home,
         runtime=Runtime.APPTAINER,
-        setup_commands=[],  # neither chamois nor WSL2 has a module system
+        setup_commands=[],
     )
     print(f"container: {smith.container}")
 

@@ -1,26 +1,3 @@
-"""No new import cycles between metasmith modules.
-
-The god-file split turned three modules into 26, each importing the siblings it
-needs. That is the shape that lets a cycle hide: an import order that happens to
-work because the suite always reaches `agents` through `python_api` can fail
-from `bootstrap`, which runs inside the container on the agent and imports
-almost nothing else.
-
-This reads the graph rather than exercising it -- every module-scope
-`import`/`from` that resolves inside `metasmith`, resolved to absolute names,
-then Tarjan for strongly-connected components. A top-level import cycle is a
-static property, so a static check is exact for it, and it costs milliseconds
-instead of the ~50s that importing 107 modules in 107 cold subprocesses does.
-
-`if TYPE_CHECKING:` blocks are skipped: they never execute, which is the whole
-reason `agents/shell.py` uses one for the `Agent` it only needs in an
-annotation.
-
-Two cycles predate the split, both the benign package-imports-its-own-submodule
-pattern, and both outside the three packages. They are allowlisted by exact
-membership rather than waived, so gaining or losing a member is still a failure.
-"""
-
 from __future__ import annotations
 
 import ast
@@ -31,16 +8,11 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 SRC = REPO_ROOT / "src"
 PKG = SRC / "metasmith"
 
-# Package `__init__` imports a submodule, the submodule imports a name back out
-# of the package. Works, because by the time the submodule runs, the `__init__`
-# has already bound what it needs -- but it is order-dependent, so it is
-# recorded here rather than treated as fine. Neither is a god-file split.
 KNOWN_CYCLES = {
     ("metasmith.coms.cli", "metasmith.coms.cli._main"),
     ("metasmith.gui", "metasmith.gui.api", "metasmith.gui.app"),
 }
 
-# The packages this refactor created. They must be acyclic outright.
 SPLIT_PACKAGES = (
     "metasmith.models.libraries",
     "metasmith.models.workflow",
@@ -49,14 +21,6 @@ SPLIT_PACKAGES = (
 
 
 def _modules() -> dict[str, tuple[Path, bool]]:
-    """Importable modules, mapped to (path, is_package).
-
-    Only paths whose every ancestor holds an `__init__.py`. That rule is what
-    keeps `std/` and `example_resources/` out -- they ship transform
-    definitions the runtime executes by path, and `std/transforms.xgdb/` is one
-    directory with a dot in its name, so reading it as a module path invents a
-    package that never existed. `bin/` holds SLURM shims, which are scripts.
-    """
     found: dict[str, tuple[Path, bool]] = {}
     for path in sorted(PKG.rglob("*.py")):
         parts = list(path.relative_to(SRC).parts)
@@ -74,7 +38,6 @@ def _modules() -> dict[str, tuple[Path, bool]]:
 
 
 def _absolute(module: str, level: int, name: str, is_package: bool) -> str:
-    """Resolve a relative `from ... import` to an absolute module name."""
     if level == 0:
         return name
     base = module.split(".") if is_package else module.split(".")[:-1]
@@ -96,14 +59,12 @@ def _import_graph() -> dict[str, set[str]]:
                 if not target.startswith("metasmith"):
                     continue
                 targets.add(target)
-                # `from .pkg import submodule` is an edge to the submodule too.
                 targets |= {f"{target}.{a.name}" for a in node.names}
         graph[name] = {t for t in targets if t in modules and t != name}
     return graph
 
 
 def _cycles(graph: dict[str, set[str]]) -> set[tuple[str, ...]]:
-    """Strongly-connected components of size > 1, as sorted tuples."""
     index: dict[str, int] = {}
     low: dict[str, int] = {}
     stack: list[str] = []
@@ -152,7 +113,6 @@ def _cycles(graph: dict[str, set[str]]) -> set[tuple[str, ...]]:
 
 
 def test_graph_is_not_empty():
-    """A glob or parse that stops matching would make the tests below vacuous."""
     graph = _import_graph()
     assert len(graph) > 50, f"only found {len(graph)} modules under {PKG}"
     assert sum(len(v) for v in graph.values()) > 100, "no intra-package edges found"
@@ -176,7 +136,6 @@ def test_no_unexpected_import_cycles():
 
 
 def test_split_packages_are_acyclic():
-    """The three packages this refactor created carry no cycles at all."""
     found = _cycles(_import_graph())
     offenders = sorted(
         c for c in found

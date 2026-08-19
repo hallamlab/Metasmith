@@ -12,10 +12,6 @@ def protocol(context: ExecutionContext):
     iorfs = context.Input(orfs)
     iout  = context.Output(out_results)
 
-    # DeepTFactor can't handle '*' stop codons or proteins > 1000 aa.
-    # Strip stop codons before running prediction.
-    # Subshell cd to /opt/deeptfactor so tf_running.py finds ./trained_model/
-    # without changing CWD (metasmith's exit-code trap needs /ws writable)
     context.ExecWithEnv().ifContainerDo(
         env=image,
         cmd=f"""

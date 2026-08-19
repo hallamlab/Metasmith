@@ -75,7 +75,6 @@ import sys
 from collections import defaultdict
 from pathlib import Path
 
-# type name -> (assembler, kind, extension we expect)
 PRODUCTS = {
     "sequences::spades_assembly":        ("spades",  "contigs", "fna"),
     "sequences::spades_assembly_graph":  ("spades",  "graph",   "gfa"),
@@ -88,7 +87,6 @@ READS_SUFFIX = ".host_filtered.fq.gz"
 
 
 def load_given(results: Path) -> tuple[str, dict[int, str]]:
-    """(reads instance_key, {instance_index: pool_barcode}) from given.csv."""
     path = results / "_manifests" / "given.csv"
     if not path.exists():
         raise SystemExit(f"not a metasmith results tree: no {path}")
@@ -110,14 +108,6 @@ _META_POOL = re.compile(r"read_metadata_(\S+?)\.json")
 
 
 def pools_from_work(work: Path) -> dict[str, str]:
-    """output basename -> pool, read out of each nextflow task directory.
-
-    The task's `.command.sh` echoes the absolute path of every input it was
-    handed, and the read_metadata file is named for its pool. Only tasks that
-    actually succeeded are read: a retried task leaves a failed directory whose
-    outputs are absent or truncated, and attributing those would be worse than
-    not attributing them.
-    """
     mapping: dict[str, str] = {}
     for cmd in sorted(work.glob("*/*/.command.sh")):
         d = cmd.parent
@@ -135,10 +125,8 @@ def pools_from_work(work: Path) -> dict[str, str]:
 
 def load_products(results: Path, reads_key: str, pool_of_index: dict[int, str],
                   by_basename: dict[str, str]) -> dict[str, dict[str, Path]]:
-    """{pool: {"spades.contigs": path, "spades.graph": path, ...}}."""
     out: dict[str, dict[str, Path]] = defaultdict(dict)
     for manifest in sorted((results / "_manifests").glob("*.json")):
-        # `sequences-spades_assembly.<key>.<id>.json` -> the type name
         type_name = manifest.name.split(".")[0].replace("-", "::", 1)
         if type_name not in PRODUCTS:
             continue
@@ -159,22 +147,11 @@ def load_products(results: Path, reads_key: str, pool_of_index: dict[int, str],
     return dict(out)
 
 
-# ---------------------------------------------------------------- spades ----
-
 def read_fasta_headers(path: Path) -> list[str]:
     return [ln[1:].strip() for ln in path.read_text().splitlines() if ln.startswith(">")]
 
 
 def parse_contig_paths(paths_file: Path) -> dict[str, list[str]]:
-    """contig name -> the edge ids of its walk, from spades' `contigs.paths`.
-
-    The file alternates a name line with one or more edge-list lines; a name
-    ending in `'` is the reverse-complement walk of the contig above it and is
-    the same walk, so it is folded onto the same entry. Edge lists end in `;`
-    when the walk is broken by a gap, which contigs (as opposed to scaffolds)
-    should not have -- but the parser tolerates it rather than dropping the
-    remainder silently.
-    """
     walks: dict[str, list[str]] = defaultdict(list)
     current: str | None = None
     for raw in paths_file.read_text().splitlines():
@@ -182,9 +159,6 @@ def parse_contig_paths(paths_file: Path) -> dict[str, list[str]]:
         if not line:
             continue
         if line.startswith("NODE_"):
-            # The primed entry is the same walk read the other way; keeping it
-            # would append the reverse to the forward walk and make every
-            # contig look like it ends where it started.
             if line.endswith("'"):
                 current = None
                 continue
@@ -201,14 +175,7 @@ def parse_contig_paths(paths_file: Path) -> dict[str, list[str]]:
 
 
 def check_spades(contigs: Path, gfa: Path, paths_file: Path | None) -> dict:
-    """Whether every contig has a walk, and which walks close on themselves.
-
-    The graph's own `P` lines are NOT used to locate contigs: they name
-    scaffolds. `contigs.paths` is the mapping that actually applies to the
-    FASTA the pipeline ships.
-    """
     names = {h.split()[0] for h in read_fasta_headers(contigs)}
-    # (oriented from, oriented to) -> the overlap the link states
     links: dict[tuple[str, str], str] = {}
     n_selfloop_edges = 0
     n_paths = n_segs = 0
@@ -220,7 +187,6 @@ def check_spades(contigs: Path, gfa: Path, paths_file: Path | None) -> dict:
                 n_segs += 1
             elif line.startswith("L\t"):
                 parts = line.rstrip("\n").split("\t")
-                # L <from> <from_orient> <to> <to_orient> <overlap>
                 if len(parts) < 6:
                     continue
                 links[(parts[1] + parts[2], parts[3] + parts[4])] = parts[5]
@@ -229,13 +195,6 @@ def check_spades(contigs: Path, gfa: Path, paths_file: Path | None) -> dict:
 
     walks = parse_contig_paths(paths_file) if paths_file else {}
     missing = sorted(names - set(walks))
-    # A contig is circular when its walk CLOSES: the graph carries a link from
-    # the walk's last oriented edge back to its first. For a one-edge walk that
-    # is a self-loop; for a longer one it is the join that would fuse the two
-    # ends. Merely TOUCHING a self-looping edge is not enough and was the first
-    # rule tried -- it called a 1,952 bp contig circular because its walk
-    # crossed a repeat edge that loops on itself, and that contig has no
-    # terminal self-repeat at all.
     circular = {}
     for contig, edges in walks.items():
         if contig not in names or not edges:
@@ -254,14 +213,11 @@ def check_spades(contigs: Path, gfa: Path, paths_file: Path | None) -> dict:
     )
 
 
-# --------------------------------------------------------------- megahit ----
-
 _NODE = re.compile(r"NODE_\d+_length_(\d+)_cov_([0-9.]+)_ID_\d+(')?")
 _CONTIG = re.compile(r"^(\S+)\s+flag=(\d+)\s+multi=([0-9.]+)\s+len=(\d+)")
 
 
 def check_megahit(contigs: Path, fastg: Path) -> dict:
-    """Match contigs to FASTG nodes on (length, cov); find self-looping nodes."""
     by_shape: dict[tuple[int, str], list[str]] = defaultdict(list)
     for h in read_fasta_headers(contigs):
         m = _CONTIG.match(h)
@@ -282,12 +238,10 @@ def check_megahit(contigs: Path, fastg: Path) -> dict:
             m = _NODE.match(src)
             if not m:
                 continue
-            # The primed name is the reverse complement of the same node; both
-            # strands describe one edge, so they collapse onto one shape.
             shape = (int(m.group(1)), m.group(2))
             node_shapes.add(shape)
             src_base = src.rstrip("'")
-            degree[shape]  # touch, so a successor-less node registers as degree 0
+            degree[shape]
             for succ in (s for s in rest.split(",") if s):
                 degree[shape].add(succ)
                 if succ.rstrip("'") == src_base:
@@ -295,10 +249,6 @@ def check_megahit(contigs: Path, fastg: Path) -> dict:
 
     matched, unmatched, looped_flags = 0, [], defaultdict(int)
     flags = defaultdict(int)
-    # flag -> {isolated: n, connected: n}. This is the check that matters most:
-    # downstream code reads megahit's flag=1 as "circular", and if the flag
-    # were circularity it would track self-loops. It tracks DEGREE ZERO
-    # instead -- an isolated unitig, which is a different claim entirely.
     flag_vs_isolated: dict[int, dict[str, int]] = defaultdict(lambda: defaultdict(int))
     for shape, entries in by_shape.items():
         for e in entries:
@@ -324,8 +274,6 @@ def check_megahit(contigs: Path, fastg: Path) -> dict:
         flag_vs_isolated={k: dict(v) for k, v in flag_vs_isolated.items()},
     )
 
-
-# ------------------------------------------------------------------ main ----
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__,

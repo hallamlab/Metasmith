@@ -56,25 +56,13 @@ OUT = REPO / "data/fabfos/runs/eydallin_clones/gpr"
 
 HOST = "e_coli_ag1"
 COHORT = "eydallin"
-# An ASKA clone is a W3110 ORF on a high-copy plasmid in an AG1 host, so the edges are
-# the host lineage's own -- but the sequence that was cloned is W3110's, and the column
-# exists to say which organism an edge's gene came from.
 SOURCE_ORGANISM = "e_coli_w3110"
 
-# The host layer's blocks plus the condition each row belongs to -- the same shape
-# `build_clone_gpr_denovo.py` writes, because the comparison between the two channels is
-# the point and two shapes would not be one comparison.
 EXTENSIONS = ("attribution", "feature", "universe", "cohort")
 LANE_SET = "curated"
 
 
 def mg1655_symbol_for_bnumber(faa: Path) -> dict[str, str]:
-    """b-number -> the symbol MG1655's CURRENT annotation uses.
-
-    The hinge of the whole resolution: the paper's name and the model's name are both
-    symbols, from fifteen years apart, and the b-number is the only thing that survived
-    unchanged between them.
-    """
     import re
     out = {}
     for line in faa.open():
@@ -101,8 +89,6 @@ def main() -> int:
     host = pd.read_parquet(HOST_GPR)
     gem_id = host["unit_id"].iloc[0]
     genes = host[host["feature_kind"] == "gem_gene"]
-    # symbol -> the model's gene id. The model's own `feature_name` is its symbol; a
-    # symbol shared by two model genes would make this ambiguous, so it is counted.
     by_symbol: dict[str, set[str]] = {}
     for name, fid in zip(genes["feature_name"], genes["orf"]):
         if name:
@@ -134,9 +120,6 @@ def main() -> int:
             parts.append(hit.assign(
                 source=gem_id, build_id=f"direct_{COHORT}_{gem_id}", host=HOST,
                 unit_id=gem_id, feature_kind="clone_gene",
-                # The paper measured overexpression, so a clone ADDS its reactions. The
-                # study tier currently labels this cohort `del`, which is the opposite
-                # perturbation; see the cohort README.
                 condition_id=cond, cohort=COHORT, action="add",
                 source_organism=SOURCE_ORGANISM))
 

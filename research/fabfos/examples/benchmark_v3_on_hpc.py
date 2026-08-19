@@ -102,12 +102,8 @@ from metasmith.python_api import (  # noqa: E402
 
 LIB = resolve_library_root()
 
-# The benchmark lane. `domains_for` drops ecsprNetA/ecsprNetB, which is not
-# tidiness: on the benchmark, the annotation chain that feeds ecspr::base_graphs
-# is upstream of the freeze and must not appear in the plan at all.
 DOMAINS = domains_for(network="benchmark")
 
-# type name -> canon symbol. All five live in the v3 tree.
 STAGED: dict[str, str] = {
     "ecspr::benchmark_answer_key":  "BENCH_V3_Y",
     "ecspr::benchmark_base_graphs": "BENCH_V3_BASE_GRAPHS",
@@ -116,75 +112,19 @@ STAGED: dict[str, str] = {
     "ecspr::benchmark_inputs":      "BENCH_V3_X",
 }
 
-# Sockeye's Lmod hides apptainer/1.3.1 behind a gcc dependency, and the two
-# loads must be SEPARATE commands: `module load gcc/9.4.0 apptainer/1.3.1` in
-# one call resolves the second name against the module tree as it stood BEFORE
-# gcc was loaded, so it silently finds nothing and the shell later reports
-# `apptainer: command not found` with no hint that a module was skipped.
-#
-# 1.3.1 also sits just under the >=1.4 threshold at which the engine builds a
-# sandbox instead of running the .sif, so that branch stays dormant here -- good,
-# because the plan explicitly forbids sandbox mode as an overlay workaround.
 SETUP_COMMANDS = ["module load gcc/9.4.0", "module load apptainer/1.3.1"]
 
-# Every image the workflow's transforms ask for, as they appear in the
-# containers resource library. Both benchmark transforms use only this one.
-# The PUBLIC reference, deliberately. `quay.io/hallamlab/ecspr:2026.07.14` is the
-# name the 2026-07-20 rename moved to, but quay defaults new repos to PRIVATE and
-# that one was never opened up -- an anonymous manifest GET returns 401, so the
-# pre-pull cannot resolve it and the run refuses before it starts.
-#
-# `external_ecspr:2026.07.14` is public (is_public: true) and resolves to
-# sha256:97f7afad99f55fe66a213851f48f6293f6b328ce7db4fe035a93de6f24f582db --
-# byte-identical to the digest provenance/containers/ecspr.yml pins, verified
-# against the registry rather than assumed. So this is a reachability fix, not a
-# change of image: the bits the solve runs on are the same bits.
-#
-# Pinned by TAG rather than by digest on purpose: the persistent .sif store keys
-# its filenames off the reference string, and the tag form already has a 4.4 GB
-# cached sif on sockeye from the previous run. A digest reference would miss that
-# cache and force a fresh pull for no gain, since the digest is verified anyway.
 REQUIRED_IMAGES = ["docker://quay.io/hallamlab/external_ecspr:2026.07.14"]
 
 
 def cached_image_name(image: str) -> str:
-    """The filename metasmith looks for in the image store.
-
-    Mirrors `Container._cached_name` in the pinned engine
-    (coms/containers.py). Kept as a copy rather than an import because the
-    driver must be able to place the file BEFORE any engine code runs on the
-    remote -- but it is a mirror, so if that method changes, this must too.
-    """
     return image.replace("://", "..").replace(":", "..").replace("/", "_") + ".sif"
 
 
 def prepull_images(host: str, cache_dir: str, images: list[str],
                    local_sifs: dict[str, Path] | None = None) -> None:
-    """Pull task images on the LOGIN node, because compute nodes have no network.
-
-    This is the failure this function exists to prevent, in full, because it
-    does not look like a network problem from the outside: the run reported
-    `status: completed` in 3.6 minutes and produced a results directory. What
-    actually happened is that `solve_benchmark` died pulling its image with
-    "no route to host", and slurm.nf sets `errorStrategy = 'ignore'` after the
-    retry budget -- so Nextflow logged "Error is ignored", the merge step ran
-    on nothing, and the workflow exited zero with `[0] outputs`.
-
-    A green run with an empty result is worse than a red one. The driver now
-    checks the output is non-empty rather than trusting the status.
-
-    Apptainer resolves its store as ${APPTAINER_CACHEDIR:-<agent home>}, and
-    agent home carries a per-run timestamp -- so pointing APPTAINER_CACHEDIR at
-    a stable path is what makes this pull survive to the next run instead of
-    being re-fetched into a directory that is about to be abandoned.
-    """
     subprocess.run(["ssh", "-o", "BatchMode=yes", host, f"mkdir -p {cache_dir}"],
                    check=True)
-    # APPTAINER_CACHEDIR governs the .sif destination; APPTAINER_TMPDIR and the
-    # blob cache are separate and default to $HOME/.apptainer. On a cluster with
-    # a quota'd home that silently accreted ~23 GB of layer blobs during a run
-    # whose .sif was correctly written to scratch -- the destination being an
-    # absolute path masked it. Pin the staging dirs to scratch alongside it.
     setup = "; ".join(SETUP_COMMANDS + [
         f"export APPTAINER_CACHEDIR={cache_dir}",
         f"export APPTAINER_TMPDIR={cache_dir}/tmp",
@@ -195,23 +135,6 @@ def prepull_images(host: str, cache_dir: str, images: list[str],
         dest = f"{cache_dir}/{cached_image_name(image)}"
         print(f"  {image}", flush=True)
 
-        # We upload a locally-built .sif instead of pulling on the cluster.
-        #
-        # The reason is the compute nodes have NO outbound internet, so a pull
-        # scheduled as part of the task dies with "no route to host" -- and
-        # slurm.nf's errorStrategy='ignore' turns that into a silent green run
-        # with empty outputs. Pre-placing the .sif in the persistent store is
-        # what makes the failure impossible rather than invisible.
-        #
-        # Registry privacy was never the reason for this branch, and the two
-        # readings of it that were written here are both wrong. Measured
-        # anonymously (`/v2/<repo>/tags/list`): `hallamlab/ecspr` answers 200,
-        # `hallamlab/external_ecspr` and `hallamlab/ecspr_bake` answer 401. So
-        # the canonical image IS anonymously pullable and the branch is still
-        # needed -- the compute nodes have no route to the registry at all.
-        # Either way we do not put registry credentials on a shared cluster:
-        # the login is a personal Docker Desktop credential, and a secret
-        # copied onto a multi-user filesystem cannot be un-copied.
         local = local_sifs.get(image)
         if local is not None:
             if not local.exists():
@@ -229,9 +152,6 @@ def prepull_images(host: str, cache_dir: str, images: list[str],
             print(f"    uploaded -> {dest}", flush=True)
             continue
 
-        # `[ -e ] || pull` rather than an unconditional pull: the tag is
-        # pinned, so a present file is the right file, and re-pulling costs
-        # several minutes of login-node network per run.
         r = subprocess.run(
             ["ssh", "-o", "BatchMode=yes", host,
              f"{setup}; [ -e {dest} ] && echo CACHED || apptainer pull {dest} {image}"],
@@ -249,17 +169,6 @@ def prepull_images(host: str, cache_dir: str, images: list[str],
 
 
 def assert_pinned_engine() -> str:
-    """Refuse to deploy an engine version that has no published container.
-
-    `Deploy()` derives the agent image tag from the engine's own version, so an
-    unreleased local checkout asks quay for a manifest that does not exist. The
-    failure surfaces as a registry error and then an assertion about a missing
-    relay binary -- neither of which names the actual cause. Checked here, on
-    the version the interpreter actually imported, so the message arrives before
-    a remote directory is created rather than after.
-
-    Only enforced for a real deploy; --plan-only touches no registry.
-    """
     import metasmith
     got = (Path(metasmith.__file__).parent / "version.txt").read_text().strip()
     # noqa: E501 -- see agent_container() for why the version alone is not the tag
@@ -278,48 +187,15 @@ def assert_pinned_engine() -> str:
 
 
 def agent_container() -> str:
-    """The published agent image for the engine we actually imported.
-
-    `Agent.container` defaults to `metasmith:{CONTAINER_TAG}`, and CONTAINER_TAG
-    is `{VERSION}-{BUILD_HASH}` where BUILD_HASH is a content hash of the engine
-    source tree written by `_build_hash.py` AT BUILD TIME. A source checkout --
-    which is what the submodule pin is -- has no `build_hash.txt`, so the tag
-    silently degrades to the bare version, and bare `0.18.8` was never pushed:
-    quay carries `0.18.8-60556ca`. The run then dies on "manifest unknown".
-
-    So the hash is COMPUTED here from the same function the build uses, rather
-    than the tag being hardcoded. That is the difference between "this tag
-    happens to work today" and "this image is provably built from the source on
-    our PYTHONPATH" -- if the pin moves, this follows it, and if the resulting
-    image was never published the pull fails loudly instead of running an engine
-    that does not match the planner that produced the workflow.
-    """
     from metasmith._build_hash import compute_build_hash
     from metasmith.constants import VERSION
     return f"docker://quay.io/hallamlab/metasmith:{VERSION}-{compute_build_hash()}"
 
 
 def push_data(host: str, local_root: Path, remote_root: str) -> None:
-    """Copy the frozen benchmark tree to the execution host, once.
-
-    REQUIRED, and not an optimisation. metasmith binds an item's OWN path into
-    the task container -- the same string on both sides -- so an input declared
-    at a workstation path is bind-mounted at that path on the cluster node,
-    where it does not exist. Apptainer then refuses with "mount source ... does
-    not exist" and the run dies as a missing launcher, which names neither the
-    item nor the path. The tree has to BE on the far side, at the path the
-    declaration uses.
-
-    Safe to repeat: the tree is frozen and hash-pinned, so rsync converges and
-    a second run re-transfers nothing. 81 MB over 84 files.
-    """
     print(f"=== pushing {local_root.name} -> {host}:{remote_root} ===", flush=True)
     subprocess.run(["ssh", "-o", "BatchMode=yes", host,
                     f"mkdir -p {remote_root}"], check=True)
-    # --checksum, not the default size+mtime: hardlink placement and rsync can
-    # give a re-staged file a fresh mtime with identical bytes, and re-sending
-    # the 55 MB universe every run for that is waste. Frozen data justifies
-    # paying the read to be sure.
     subprocess.run(["rsync", "-a", "--checksum", "--delete", "--info=stats1",
                     f"{local_root}/", f"{host}:{remote_root}/"], check=True)
 
@@ -335,17 +211,10 @@ def build_inputs(staging: Path, data_root: Path, remote_root: str | None) -> Dat
     missing = []
     for type_name, symbol in STAGED.items():
         p = Path(getattr(canon, symbol))
-        # Existence is checked against the LOCAL tree even when the declared
-        # path is remote: the planner resolves on types and lineage, never on
-        # existence, so a missing tree plans perfectly and fails hours later
-        # inside a container. The local copy is what was just pushed, so
-        # checking it is checking the far side.
         if not p.exists():
             missing.append(f"{type_name} -> canon.{symbol} -> {p}")
             continue
         if remote_root is not None:
-            # Re-root onto the execution host. The item keeps its identity and
-            # type; only where it lives changes.
             p = Path(remote_root) / p.relative_to(data_root)
         inputs.AddItem(p, type_name)
     if missing:
@@ -361,10 +230,6 @@ def main() -> int:
     ap.add_argument("--user", required=True,
                     help="remote username. REQUIRED and never auto-resolved -- "
                          "see this module's docstring on the lockout.")
-    # Sockeye has no /scratch/<user>: scratch is allocation-scoped, so the
-    # working root is /scratch/st-shallam-1/<user>. The default below is that
-    # allocation, NOT a bare /scratch -- with /scratch the driver would build a
-    # path that mkdir cannot create and the failure would arrive mid-deploy.
     ap.add_argument("--scratch-root", default="/scratch/st-shallam-1")
     ap.add_argument("--image-sif", default=None,
                     help="locally-built .sif for the ecspr image, uploaded to "
@@ -425,11 +290,6 @@ def main() -> int:
         print(f"=== remote: {a.host}:{agent_path} ===", flush=True)
         container = agent_container()
         print(f"=== agent image: {container} ===", flush=True)
-        # The image store, and it must be exported for BOTH sides: the login
-        # node writes it here (prepull_images) and the compute node reads it
-        # here. If only one side saw the variable they would silently resolve
-        # to different directories -- the read side would find nothing, and the
-        # symptom would be an attempted pull on a node with no route out.
         cache_dir = a.apptainer_cache or f"{a.scratch_root}/{a.user}/apptainer_cache"
         print(f"=== image store: {cache_dir} ===", flush=True)
         print("=== pre-pulling task images on the login node ===", flush=True)
@@ -444,8 +304,6 @@ def main() -> int:
 
     print("=== planning ===", flush=True)
     targets = TargetBuilder()
-    # The MERGED table only. Targeting the shards as well would let the planner
-    # satisfy the merge from a separately-planned solve; one target, one chain.
     targets.Add("ecspr::benchmark_result")
     task = agent.GenerateWorkflow(
         samples=[inputs],
@@ -476,8 +334,6 @@ def main() -> int:
     try:
         agent.Deploy()
     except subprocess.CalledProcessError as e:
-        # One session, one failure, one message. NOT a retry loop -- each
-        # attempt is a Duo push and a prior run here was halted by a lockout.
         print(f"\ndeploy failed ({e}). The connection is multiplexed: open ONE "
               f"session by hand (`ssh {a.host}`), leave it open, and re-run. "
               f"Do NOT delete the ControlMaster socket and do NOT retry in a "
@@ -485,30 +341,10 @@ def main() -> int:
         return 4
 
     print(f"=== task key: {task.GetKey()} ===", flush=True)
-    # on_exist="clear" is safe HERE and only here: agent_path carries a
-    # timestamp, so it is a fresh directory every run and there is no prior
-    # intermediate to destroy. Never carry this flag onto a resubmission.
     agent.StageWorkflow(task, on_exist="clear")
 
-    # RunWorkflow's config_file DEFAULTS TO THE `local` PRESET, which runs every
-    # process on whatever node the agent is sitting on -- here, the login node.
-    # That is not a slow path, it is the wrong one twice over: it breaks the
-    # "no local compute beyond sub-minute tests" constraint, and it would put a
-    # 32-worker multi-hour solve on a shared interactive host. Selected
-    # explicitly, so a future reader sees the choice rather than a default.
     nxf_config = agent.GetNxfConfigPresets()["slurm"]
 
-    # slurm.nf ships slurmAccount as the literal placeholder '<slurm_account>',
-    # which sbatch rejects; every submission would fail identically and the
-    # cause would be one line deep in a per-task .command.err. Sockeye needs
-    # --account on every job (st-shallam-1 for CPU; the -gpu sibling is a
-    # different account and is not what this runs on).
-    #
-    # process_array=0 disables Nextflow's job-array batching, per the plan.
-    # Array contention is the condition under which overlay filesystems throw
-    # bus errors. With a 2-step workflow this is belt-and-braces rather than
-    # load-bearing -- but the intent should not quietly depend on the step
-    # count staying at 2.
     params = {
         "slurmAccount": a.slurm_account,
         "process_array": 0,
@@ -528,14 +364,6 @@ def main() -> int:
     if result["status"] != "completed":
         return 2
 
-    # "completed" IS NOT "succeeded". slurm.nf sets errorStrategy to 'ignore'
-    # once a process exhausts its retries, so a task that died every attempt
-    # leaves the workflow green, the merge step running on nothing, and a
-    # results directory that exists and is empty. The first sockeye run failed
-    # exactly this way -- a missing container read as a 3.6-minute success.
-    #
-    # So the status is not trusted on its own: the log is checked for the
-    # swallow, and the retrieved table is checked for rows.
     swallowed = [ln for ln in result["tail"]
                  if "Error is ignored" in ln or "terminated with an error" in ln]
     if swallowed:
@@ -554,10 +382,6 @@ def main() -> int:
     subprocess.run(["rsync", "-a", "--info=stats1",
                     f"{a.host}:{src.GetPath()}/", f"{out}/"], check=True)
 
-    # The merge transform's output is keyed by content hash, not by a stable
-    # name -- `results/ecspr-benchmark_result/<key>.tsv`. Globbing the result
-    # directory and normalising to observations.tsv is what makes the scorer
-    # invocation below reproducible across runs.
     result_dir = out / "ecspr-benchmark_result"
     hits = sorted(result_dir.glob("*.tsv")) if result_dir.is_dir() else []
     if len(hits) != 1:

@@ -1,26 +1,4 @@
 #!/usr/bin/env python3
-"""Generate the generic env resources + conda recipes from container URIs.
-
-Reproducible source for the containers->env migration. For each
-`resources/env/<tool>.oci` (legacy bare docker:// URI) or `<tool>.env` (already
-migrated) it (re)writes a `<tool>.env` YAML carrying:
-
-    container: <the docker:// URI>
-    conda: <tool>            # only when a conda env is feasible
-
-and, for the conda-feasible tools, a conda env recipe at
-`envs/tools/<tool>.yml` pinned to the derived bioconda package spec.
-
-Conda feasibility:
-  * biocontainers images (quay.io/biocontainers/<pkg>:<ver>--<build>) -> the
-    bioconda spec `<pkg>=<ver>` is derived automatically.
-  * a curated table maps common bioconda tools shipped from other registries
-    (staphb/, old biocontainers/ dockerhub tags, a few hallamlab images).
-  * everything else stays container-only (custom / ML / proprietary images).
-
-Idempotent: re-running reads the container URI back out of an existing .env.
-Run:  python envs/gen_tool_envs.py            (from the repo root)
-"""
 from __future__ import annotations
 import re, sys
 from pathlib import Path
@@ -29,7 +7,6 @@ REPO = Path(__file__).resolve().parent.parent
 ENV_DIR = REPO / "resources" / "env"
 RECIPE_DIR = REPO / "envs" / "tools"
 
-# tools on bioconda whose image is NOT a quay.io/biocontainers one -> pin by hand
 CURATED = {
     "bbtools": "bbmap=39.49",
     "fastani": "fastani=1.34",
@@ -53,10 +30,6 @@ CURATED = {
 
 BIOCONTAINERS = re.compile(r"quay\.io/biocontainers/([^:/]+):([^-\s]+)")
 
-# Tools whose conda env is a real multi-package spec rather than a derivable
-# one-liner, so `envs/tools/<tool>.yml` is written by something else and must
-# survive a regeneration. They still get a `conda:` key -- what is hands-off is
-# the recipe, not the declaration.
 HAND_WRITTEN = {"ecspr"}
 
 
@@ -69,13 +42,12 @@ def derive_spec(stem: str, uri: str) -> str | None:
 
 
 def read_uri(p: Path) -> str:
-    """URI from a legacy .oci (whole content) or a migrated .env (container:)."""
     text = p.read_text().strip()
     for line in text.splitlines():
         line = line.strip()
         if line.startswith("container:"):
             return line.split(":", 1)[1].strip()
-    return text  # legacy bare-URI .oci
+    return text
 
 
 def main() -> int:
@@ -103,7 +75,7 @@ def main() -> int:
             container_only.append(stem)
         env_path.write_text("\n".join(lines) + "\n")
         if src.suffix == ".oci":
-            src.unlink()  # drop the legacy file (git add -A picks up the rename)
+            src.unlink()
 
     print(f"portable ({len(portable)}): conda env + recipe written")
     for stem, spec in sorted(portable):

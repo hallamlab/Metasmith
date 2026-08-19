@@ -1,22 +1,4 @@
 #!/usr/bin/env python3
-"""T3 -- the flux balance arm. The first FBA in this repo.
-
-Same long contract as the ECSPr arms, so `score.py` reads it with no branching,
-and the same seeded counterfactual pool, because a head-to-head on p-values is
-only meaningful if both methods faced the same alternatives.
-
-Production is maximised **growth-coupled at an absolute biomass floor derived from
-the BASE model** -- `biomass.lower_bound = alpha * mu_base`, with `mu_base` from
-the unperturbed model in both solves. Pure max-yield is a chemistry bound, not a
-phenotype: with biomass free, every growth-lethal knockout looks maximally
-productive, and with 184 of 186 labels "up" the arm would score well for exactly
-the wrong reason. Taking the reference from the *base* model in both solves is
-what keeps the delta interpretable -- a floor scaled to the perturbed model's own
-maximum would let a growth-impairing perturbation relax its own constraint.
-
-    python run_fba.py --host e_coli_k12 --alpha 0.1 --n-cf 500
-    python run_fba.py --host e_coli_k12 --dry-run
-"""
 from __future__ import annotations
 
 import argparse
@@ -38,7 +20,7 @@ import resolve_names as RN  # noqa: E402
 import run_arms as RA  # noqa: E402
 
 LOG = logging.getLogger("run_fba")
-CARBON_BUDGET = 60.0     # mmol C / gDW / h, split across resolvable components
+CARBON_BUDGET = 60.0
 
 FAILURES = ("medium_unresolved", "target_unresolved", "infeasible_base",
             "no_growth_pert", "edits_noop", "adds_all_dead",
@@ -46,12 +28,7 @@ FAILURES = ("medium_unresolved", "target_unresolved", "infeasible_base",
             "hit_bound", "ok")
 
 
-# ---------------------------------------------------------------------------
-
 def native_map(host_dir: str) -> dict:
-    """MNXR -> [model reaction id]. From gpr_gem.parquet, which covers 2710 of
-    2712 iML1515 reactions and is MNXref-4.5-current -- unlike the model's own
-    embedded annotations, which are MetaNetX 3.x."""
     g = C.read_gpr(C.HOSTS / host_dir / "gpr_gem.parquet")
     out = {}
     for mnxr, ev in zip(g.mnxr.astype(str), g.intermediate_id.astype(str)):
@@ -70,11 +47,6 @@ def build_scaffold(host_dir: str, panel: list, add_universe: list, prop: pd.Data
 
     new = []
 
-    # -- heterologous reactions FIRST, all gated -------------------------
-    # Order matters: a target such as lycopene exists in no E. coli GEM and only
-    # becomes a species when a grafted reaction creates it. Building the demands
-    # first would leave every de-novo target permanently unscoreable and would
-    # read as an FBA coverage failure that is really a scaffold ordering bug.
     need = [r for r in add_universe if r not in nat]
     rp = FS.load_reac_prop(set(need))
     het, het_state, orphan = {}, {}, {}
@@ -104,7 +76,6 @@ def build_scaffold(host_dir: str, panel: list, add_universe: list, prop: pd.Data
         if created:
             orphan[mnxr] = created
 
-    # -- demand reactions, all gated -------------------------------------
     demand, target_state = {}, {}
     for m in panel:
         met, tier = mb.get(m, create=False)
@@ -137,10 +108,6 @@ def build_scaffold(host_dir: str, panel: list, add_universe: list, prop: pd.Data
     return model, mb, nat, demand, het, target_state, het_state, diag
 
 
-# ---------------------------------------------------------------------------
-# Media
-# ---------------------------------------------------------------------------
-
 AA_BIGG = ["ala__L", "arg__L", "asn__L", "asp__L", "cys__L", "glu__L", "gln__L",
            "gly", "his__L", "ile__L", "leu__L", "lys__L", "met__L", "phe__L",
            "pro__L", "ser__L", "thr__L", "trp__L", "tyr__L", "val__L"]
@@ -149,8 +116,6 @@ BASE_BIGG = ["ade", "adn", "cytd", "csn", "gua", "gsn", "hxan", "ins", "thym",
 
 
 def media_sets(model) -> tuple[dict, dict]:
-    """(m9, lb) as {exchange_id: uptake}. M9 is the model's OWN default medium
-    with the carbon exchange removed -- an exact anchor, not a guess."""
     ex = {r.id for r in model.reactions}
     m9 = {k: v for k, v in model.medium.items() if not k.startswith("EX_glc")}
     lb = dict(m9)
@@ -165,10 +130,6 @@ def media_sets(model) -> tuple[dict, dict]:
 
 
 def carbon_exchanges(model, mnxms: list, prop_formula: dict) -> tuple[dict, list]:
-    """{exchange_id: uptake} for a carbon source, normalised to a fixed
-    60 mmol C/gDW/h budget split across the resolvable components. Without the
-    normalisation, rankings are not comparable across the 63 distinct
-    (host, medium, carbon) combinations."""
     br = bridge.bigg_bridge()
     bigg_by_mnxm = br.groupby("mnxm").bigg.apply(list).to_dict()
     ex = {r.id for r in model.reactions}
@@ -194,8 +155,6 @@ def carbon_exchanges(model, mnxms: list, prop_formula: dict) -> tuple[dict, list
     per = CARBON_BUDGET / len(found)
     return {rid: per / nc for rid, nc in found}, missing
 
-
-# ---------------------------------------------------------------------------
 
 def run_host(host_dir: str, alpha: float, n_cf: int, run_id: str, flush: int,
              dry_run: bool):
@@ -224,7 +183,6 @@ def run_host(host_dir: str, alpha: float, n_cf: int, run_id: str, flush: int,
     designs = RA.load_designs(host_dir, n_cf)
     tok = RA.carbon_terminals()
 
-    # -- the dry-run census, computable before a single LP ---------------
     real = idx[idx.host_dir == host_dir]
     diag["n_designs"] = len(designs)
     diag["n_real"] = len(real)
@@ -237,7 +195,6 @@ def run_host(host_dir: str, alpha: float, n_cf: int, run_id: str, flush: int,
     if dry_run:
         return
 
-    # -- gate: the scaffold must not change the base phenotype -----------
     with model:
         model.medium = dict(m9, EX_glc__D_e=10.0)
         mu_gate = model.slim_optimize()
@@ -326,7 +283,7 @@ def run_host(host_dir: str, alpha: float, n_cf: int, run_id: str, flush: int,
             model.medium = exs
             for r in d.add_list:
                 if r in nat:
-                    census["native_add"] += 1          # never a second insertion
+                    census["native_add"] += 1
                 elif r in het:
                     rr = model.reactions.get_by_id(het[r])
                     rr.lower_bound, rr.upper_bound = -FS.BIG, FS.BIG

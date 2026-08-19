@@ -62,8 +62,6 @@ COFACTOR_NAMES = [
 
 
 def hop_distances(seed_rxns, element_pairs_C: pd.DataFrame, host_rxn: set, barred: set) -> dict:
-    """Reaction-hop distance from `seed_rxns`, restricted to host reactions, barred hubs
-    excluded as bridging metabolites. Returns {mnxr: hop}."""
     sub = element_pairs_C[element_pairs_C.rxn.isin(host_rxn)]
     m2r, r2m = collections.defaultdict(set), collections.defaultdict(set)
     for rx, t, h in sub.itertuples(index=False):
@@ -109,7 +107,6 @@ def main():
     for r in rxns:
         pert_w[r] = base_w[r] * args.fold
 
-    # ---- hop distances, seeded at the perturbed reaction(s) ----
     v = pd.read_parquet(BAKE / "vocab.parquet")
     sym = v[v.kind == "met"].set_index("code").symbol.to_dict()
     rsym = v[v.kind == "rxn"].set_index("code").symbol.to_dict()
@@ -131,7 +128,6 @@ def main():
     print(f"[{args.gene}-dist] hop distances resolved for {len(met_dist)} metabolites "
           f"(seed {rxns})", file=sys.stderr)
 
-    # ---- two solves, pulling the raw Solution (not just measure_leak's aggregated draw) ----
     def solve_(weights, tag):
         g = graph_from_pairs(pairs, args.element, weights, ratios)
         g2, leak_edges = attach_leak(g, None, leak=args.leak)
@@ -152,7 +148,7 @@ def main():
     for m in mets:
         vb = sol_base.voltage_metabolite(m)["weighted_mean"]
         vp = sol_pert.voltage_metabolite(m)["weighted_mean"]
-        if vb != vb or vp != vp:  # nan -- outside the shared source/sink component
+        if vb != vb or vp != vp:
             continue
         rows.append((m, vb, vp, vp - vb, met_dist.get(m)))
     df = pd.DataFrame(rows, columns=["mnxm", "v_base", "v_pert", "delta_v", "hop_dist"])

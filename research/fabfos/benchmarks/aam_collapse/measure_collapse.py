@@ -48,8 +48,6 @@ sys.path.insert(0, str(REPO / "src"))
 from ecspr.bake.aam import worklist as W          # noqa: E402
 from ecspr.bake import encoding as refs           # noqa: E402
 
-# Bins for the yield curve. The lower edges are the ones the original threshold was
-# argued over; the tail is kept coarse because it holds few reactions and no decision.
 BINS = [(0, 100), (100, 200), (200, 300), (300, 400), (400, 500), (500, 600),
         (600, 800), (800, 1200), (1200, 1600), (1600, 10 ** 9)]
 
@@ -62,12 +60,6 @@ def bin_of(n):
 
 
 def banked_reactions(bake: Path) -> set[str]:
-    """MNXR ids the deployed bake actually holds atom pairs for.
-
-    THE JOIN GOES THROUGH THE VOCABULARY. `atom_pairs.parquet` is keyed by vocabulary
-    CODE, not by MNXR string -- reading the code as an id produces an empty join and a
-    yield curve of zeros, which looks like a finding rather than a bug.
-    """
     V = refs.load_vocab(bake / "vocab.parquet")
     pairs = refs.load_atom_pairs(bake / "atom_pairs.parquet")
     sym = V.symbols("rxn")
@@ -94,14 +86,8 @@ def main(argv=None):
     name_of = dict(zip(mets_full["mnxm"], mets_full["name"]))
     print(f"[measure] {len(rx):,} reactions, {len(name_of):,} metabolite names", flush=True)
 
-    # ONE adjudication, not two. `atoms_collapsed` is recorded whenever a collapse was
-    # attempted regardless of whether it was accepted, so the before-state is recoverable
-    # from the same table -- and a second full pass would be twenty minutes of rdkit to
-    # re-derive a column that is already there.
     cache = a.outdir / "worklist_both_measures.parquet"
     if cache.exists() and not a.rebuild:
-        # Eight minutes of rdkit; everything after it is seconds. Cached so the
-        # reporting half can be iterated on without re-adjudicating the universe.
         print(f"[measure] reusing {cache} (pass --rebuild to re-adjudicate)", flush=True)
         wl = pd.read_parquet(cache)
     else:
@@ -114,7 +100,6 @@ def main(argv=None):
                    else r["verdict"]), axis=1))
     wl["verdict_before"] = before["verdict_before"]
 
-    # ---- the stop line, first -------------------------------------------------
     was = set(wl.loc[wl["verdict_before"] == "mappable", "mnxr"])
     now = set(wl.loc[wl["verdict"] == "mappable", "mnxr"])
     lost = was - now
@@ -126,35 +111,21 @@ def main(argv=None):
     print(f"[measure] superset holds: {len(was):,} mappable before, {len(now):,} after, "
           f"{len(now - was):,} added, 0 lost", flush=True)
 
-    # ---- verdict movement -----------------------------------------------------
     mv = Counter(zip(wl["verdict_before"], wl["verdict"]))
     rows = [dict(verdict_before=b, verdict_after=a_, n=n) for (b, a_), n in
             sorted(mv.items(), key=lambda kv: -kv[1])]
     pd.DataFrame(rows).to_csv(a.outdir / "verdict_movement.tsv", sep="\t", index=False)
 
-    # ---- the recovered set ----------------------------------------------------
     rec = wl[wl["collapsed"]][["mnxr", "atoms", "chars", "atoms_collapsed",
                                "chars_collapsed", "verdict_before"]]
     rec = rec.sort_values("atoms", ascending=False)
     rec.to_csv(a.outdir / "recovered.tsv", sep="\t", index=False)
 
-    # ---- the yield curve ------------------------------------------------------
     banked = banked_reactions(a.bake)
     print(f"[measure] the deployed bake banked {len(banked):,} reactions", flush=True)
 
-    # SUPPORT IS EVERY BUILDABLE REACTION, not just the ones the current cap admits.
-    # The deployed bake predates the 600-atom cut -- it holds 14 reactions the cut now
-    # refuses -- so it can speak about the bins above the threshold, which is exactly
-    # where a threshold has to be argued. Restricting the support to reactions under
-    # the cap would produce a flat 98% curve that says nothing about where to cut.
-    #
-    # Reactions with no buildable SMILES are excluded, and that is not the same
-    # restriction: they were never a mapper's to attempt, so their banking rate is a
-    # fact about the CURATION lanes and would read here as a fact about size.
     sup = wl[wl["rxn_smiles"].notna()].copy()
     sup["banked"] = sup["mnxr"].isin(banked)
-    # The collapsed count for EVERY buildable reaction, not only the refused ones the
-    # adjudication needed it for -- the curve needs both measures over one population.
     cols = [W.collapse(s) for s in sup["rxn_smiles"]]
     sup["chars_c_all"] = [len(c) if c else None for c in cols]
     sup["atoms_c_all"] = [W.count_atoms(c) if (c and len(c) <= W.SMILES_LEN_LIMIT) else None
@@ -175,11 +146,6 @@ def main(argv=None):
     pd.DataFrame(curve).to_csv(a.outdir / "yield_curve.tsv", sep="\t", index=False)
     sup.to_parquet(a.outdir / "support.parquet", index=False)
 
-    # ---- what the EXPANDED cap already costs, which collapse only partly repays ----
-    # A finding rather than a by-product: the deployed bake holds reactions the current
-    # 600-atom cut refuses, so the chain regressed against its own predecessor BEFORE
-    # this change. Collapse repays the part of that debt caused by repeats; the rest is
-    # genuinely large distinct chemistry and is a question about ATOM_LIMIT itself.
     refused = sup[(sup["atoms"].isna()) | (sup["atoms"] > W.ATOM_LIMIT)]
     debt = refused[refused["banked"]].copy()
     debt["repaid_by_collapse"] = debt["mnxr"].isin(set(wl.loc[wl["collapsed"], "mnxr"]))
@@ -190,19 +156,9 @@ def main(argv=None):
           f"banked; the collapse repays {int(debt['repaid_by_collapse'].sum()):,} of them",
           flush=True)
 
-    # ---- the multiplicity question, quantified -------------------------------
-    # THE ONE THING COLLAPSE CHANGES ABOUT A ROW'S SHAPE, and it is a real question
-    # about edge weights rather than a formatting detail. `n_atoms` counts atom-index
-    # triples, so a collapsed reaction emits ONE triple per pair where an expanded one
-    # emits sixteen. No EXISTING row moves -- collapse only touches reactions that were
-    # refused -- but the new rows sit on a different footing from a comparable expanded
-    # reaction's, and that is the user's call, not this script's.
     rec2 = wl[wl["collapsed"]].copy()
     rec2["multiplicity"] = rec2["atoms"] / rec2["atoms_collapsed"]
     mult = rec2["multiplicity"].describe(percentiles=[0.25, 0.5, 0.75, 0.9])
-    # How large the new rows would be as a share of the table, at the deployed bake's
-    # observed rows-per-reaction. An ESTIMATE and labelled as one: whether these
-    # reactions bank at all is what the rebake answers.
     pairs_per_rxn = len(refs.load_atom_pairs(a.bake / "atom_pairs.parquet")) / max(
         1, len(banked))
     mrows = [dict(statistic=k, value=round(float(v), 4)) for k, v in mult.items()]
@@ -221,8 +177,6 @@ def main(argv=None):
           f"{pairs_per_rxn:.0f} rows/reaction the recovered set is an estimated "
           f"{len(rec2) * pairs_per_rxn:,.0f} new rows", flush=True)
 
-    # ---- the nitrogen case, by name ------------------------------------------
-    # A count of recovered reactions does not answer the question this scope exists for.
     n2 = set(mets_full.loc[mets_full["formula"] == "N2", "mnxm"])
     eqs = dict(zip(rx["mnxr"], rx["equation"]))
     fix = [r for r, e in eqs.items() if isinstance(e, str) and any(m + "@" in e for m in n2)]
@@ -238,7 +192,6 @@ def main(argv=None):
           f"{', '.join(f'{r.mnxr} (EC {r.classifs})' for r in moved.itertuples())}",
           flush=True)
 
-    # ---- what is still refused ------------------------------------------------
     pops = Counter(wl.loc[wl["verdict"] != "mappable", "verdict"])
     prows = [dict(population=k, n=v) for k, v in sorted(pops.items(), key=lambda kv: -kv[1])]
     prows.append(dict(population="recovered_by_collapse", n=int(wl["collapsed"].sum())))

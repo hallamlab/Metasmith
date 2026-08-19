@@ -54,19 +54,10 @@ DEFAULT_TIER4 = REPO / "data" / "fabfos" / "benchmark" / "reference_tier4" / "at
 MOL_KEY = ["mnxr", "element", "substrate", "product"]
 ATOM_KEY = MOL_KEY + ["sub_idx", "prod_idx"]
 
-# The deployed per-element reaction counts, from TIER4_FREEZE.md. Reported alongside ours
-# rather than gated: an element can move for the same structural reason the atom-level
-# metric can, and a second gate on a derived quantity adds noise, not safety.
 TIER4_ELEMENT_RXN = {"C": 61989, "N": 47532, "S": 15624, "P": 34922}
 
 
 def _norm(d: pd.DataFrame) -> pd.DataFrame:
-    """Both tables in one dtype space.
-
-    The index columns are ints in one table and can arrive as ints or numpy ints in the
-    other depending on which writer produced it; a silent dtype mismatch turns an exact
-    match into a total miss and reports 0% with no error.
-    """
     d = d.copy()
     for c in ("sub_idx", "prod_idx"):
         d[c] = pd.to_numeric(d[c], errors="coerce").astype("Int64")
@@ -111,9 +102,6 @@ def main():
     extra = our_rxn - t4_rxn
     rxn_recall = len(shared) / len(t4_rxn)
 
-    # Restricted to shared reactions: a molecule pair we could not possibly have is
-    # already counted in the reaction recall, and counting it twice would make the two
-    # numbers measure the same failure.
     t4s = t4[t4["mnxr"].isin(shared)]
     os_ = ours[ours["mnxr"].isin(shared)]
     t4_mol, our_mol = _keyset(t4s, MOL_KEY), _keyset(os_, MOL_KEY)
@@ -149,7 +137,6 @@ def main():
     for k in sorted(set(om.index) | set(tm.index)):
         print(f"    {k:<20} {int(om.get(k, 0)):>10,}   tier4 {int(tm.get(k, 0)):>10,}")
 
-    # ---- the part that makes a failure actionable ---------------------------------
     unexplained = 0
     if a.ledger:
         led = pd.read_parquet(a.ledger, columns=["mnxr", "outcome", "verdict"])
@@ -164,9 +151,6 @@ def main():
         print(f"\n  the {len(missing):,} tier-4 reactions we do not have, by our reason:")
         for k, n in vc.items():
             print(f"    {k:<24} {int(n):>8,}")
-        # `banked` means the ledger says we produced pairs for a reaction that is not in
-        # our table, and `NOT IN THE LEDGER` means the adjudication never saw a reaction
-        # that exists. Either is an internal contradiction, not a coverage shortfall.
         unexplained = int(vc.get("banked", 0)) + int(vc.get("NOT IN THE LEDGER", 0))
         if unexplained:
             print(f"\n  {unexplained:,} of those have NO valid reason -- the ledger and "

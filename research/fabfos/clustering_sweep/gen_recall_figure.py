@@ -1,24 +1,3 @@
-"""The silhouette-against-recall trade-off, drawn from `cache/recall_sweep.tsv`.
-
-Separate from `gen_recall_sweep.py` so the picture can be redrawn without redoing the
-sweep -- and because the sweep is the measurement while this is only a rendering of it.
-
-SPEC
-  x is the NUMBER OF CLUSTERS k, as in `gen_clustering_sweep.py`, with the
-  between-cluster identity that produces each k carried on a secondary axis along the
-  top: the complete-linkage tree fixes that map, so both readings of the same cut stay
-  visible without a second panel.
-
-  left y   silhouette -- what the shipped `--select-k silhouette` maximises
-  right y  recall -- clone recall as the primary curve, read recall overlaid
-
-  Three cuts are marked, because the argument is entirely about which of them to take:
-  the silhouette peak (what ships today), the coarsest cut still holding recall >= 99%,
-  and the library's own `--select-k identity` default of 0.99.
-
-ENV   mamba run -n figure-net python main/clustering_sweep/gen_recall_figure.py
-OUT   main/clustering_sweep/cache/recall_sweep.png  (+ .svg vector master)
-"""
 import csv
 import sys
 from pathlib import Path
@@ -33,13 +12,13 @@ REPO = HERE.parent.parent
 CACHE = HERE / "cache"
 TSV = CACHE / "recall_sweep.tsv"
 
-C_SIL = "#636EFA"        # silhouette          (Plotly qualitative [0])
-C_CLONE = "#00CC96"      # clone recall        (Plotly qualitative [2])
-C_READ = "#AB63FA"       # read recall         (Plotly qualitative [3])
+C_SIL = "#636EFA"
+C_CLONE = "#00CC96"
+C_READ = "#AB63FA"
 C_MARK = "#212121"
 C_FAINT = "#9E9E9E"
 
-REF = "recall_0.99"      # the clone-recall column the marks are read off
+REF = "recall_0.99"
 TARGET = 0.99
 LIB_DEFAULT = 0.99
 
@@ -67,8 +46,6 @@ def main():
     front = max(ok, key=lambda r: r["silhouette"]) if ok else None
     lib = min(rows, key=lambda r: abs(r["identity"] - LIB_DEFAULT))
 
-    # The window holds the three marks and a margin; drawing the whole sweep would
-    # spend most of the axis on cuts far below any threshold anyone would take.
     marks = [m["k"] for m in (peak, front, lib) if m]
     lo, hi = max(2, min(marks) - 45), max(marks) + 45
     win = (k >= lo) & (k <= hi)
@@ -101,8 +78,6 @@ def main():
     r_lo = min(0.98 if has_read else 1.0, float(clone[win].min()))
     ax2.set_ylim(np.floor((r_lo - 0.02) * 20) / 20, 1.005)
 
-    # The identity that produces each k, carried along the top: the tree fixes the
-    # map, so the same cut can be read either way without a second panel.
     axt = ax.twiny()
     axt.set_xlim(lo, hi)
     ticks = [t for t in ax.get_xticks() if lo <= t <= hi]
@@ -112,9 +87,6 @@ def main():
     axt.spines["left"].set_color(C_SIL)
     axt.spines["right"].set_color(C_CLONE)
 
-    # The three cuts are marked on the axis with a one-word tag and spelled out once
-    # in a corner box -- crowding each vline with its own three-line caption put text
-    # straight through both curves.
     cuts = [(peak, "--", C_MARK, "silhouette peak\n(ships today)"),
             (front, "-", C_CLONE, f"recall >= {TARGET:g}"),
             (lib, ":", C_FAINT, f"library default\nidentity {LIB_DEFAULT:g}")]
@@ -132,9 +104,6 @@ def main():
     ax.set_title("Day-6 pool: clustering quality against clone and read recall",
                  fontsize=12, pad=32)
 
-    # The three cuts are spelled out UNDER the axes rather than beside their own
-    # vlines: in-plot captions put text straight through both curves, and the
-    # colour of each caption is enough to say which line it names.
     fig.tight_layout(rect=(0, 0.13, 1, 1))
     for i, (m, _s, colour, tag) in enumerate(cuts):
         if m is None:

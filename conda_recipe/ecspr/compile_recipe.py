@@ -1,15 +1,3 @@
-"""Render ECSPr's conda recipe from `src/ecspr/env.yml`.
-
-Same shape as the fabfos recipe compiler beside it under conda_recipe/, and for
-the same reason: the dependency list has exactly one home. Here that home is
-`env.yml`, which stays at `src/ecspr/env.yml` rather than moving beside this
-recipe -- it's read by the dev conda env and the container image too, so a pin
-can only be changed in one place. The test-only entries (pytest, networkx, pip)
-are dropped from `requirements/run` -- they are what the suite and the image's
-verify step need, not what an installed package needs.
-
-Run:  python conda_recipe/ecspr/compile_recipe.py
-"""
 import os
 import stat
 import sys
@@ -23,14 +11,8 @@ sys.path.insert(0, str(PKG.parent))
 
 from ecspr.model import NAME, SHORT_SUMMARY, USER, ENTRY_POINTS, VERSION, BUILD_HASH  # noqa: E402
 
-# The conda package's VERSION is the bare release segment -- metasmith does the
-# same, and a `+local` there would be a version nobody can type into a spec. The
-# source state goes in the BUILD STRING instead, which is what build strings are
-# for: two builds of different source can then coexist under one version rather
-# than silently overwriting each other in the channel.
 BUILD_STRING = f"py_{BUILD_HASH}" if BUILD_HASH else "py_0"
 
-# The suite's and the image verify step's dependencies, not the package's.
 TEST_ONLY = {"pytest", "networkx", "pip"}
 
 
@@ -43,9 +25,6 @@ def _name(dep: str) -> str:
 raw = yaml.safe_load((PKG / "env.yml").read_text())
 deps = [d for d in raw["dependencies"]
         if isinstance(d, str) and _name(d) not in TEST_ONLY]
-# python stays in BOTH: host is what builds the noarch package, run is what an
-# install has to satisfy, and a noarch:python package that names it only in host
-# installs against any interpreter.
 reqs = "\n".join(f"    - {d}" for d in deps)
 python_ver = "\n".join(f"    - {d}" for d in deps if d.startswith("python=")) \
     or "    - python=3.12"

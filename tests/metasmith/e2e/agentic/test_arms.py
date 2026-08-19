@@ -1,10 +1,3 @@
-"""Unit tests for the Arm abstraction + prompt-composition seam.
-
-No agent, no sandbox — pure data/logic. Verifies the exact 10-arm
-enumeration from the condition matrix (§ B), the metasmith discriminator,
-the shared+preamble prompt seam, and that ``standard_verify`` runs the
-metasmith-only trace check only for the metasmith arm.
-"""
 from __future__ import annotations
 
 from pathlib import Path
@@ -21,11 +14,6 @@ from tests.metasmith.e2e.agentic.scenarios.base import (
     standard_verify,
 )
 from tests.metasmith.e2e.agentic.harness.loop import LoopOutcome, LoopResult
-
-
-# ---------------------------------------------------------------------------
-# enumeration
-# ---------------------------------------------------------------------------
 
 
 def test_exactly_ten_arms() -> None:
@@ -59,7 +47,6 @@ def test_only_a10_is_metasmith() -> None:
 
 
 def test_matrix_arm_labels() -> None:
-    """Spot-check ids against the condition matrix § B table."""
     expected = {
         "A1": ("ad-hoc", "ad-hoc"),
         "A2": ("ad-hoc", "snakemake"),
@@ -71,11 +58,6 @@ def test_matrix_arm_labels() -> None:
     }
     for aid, (env, orch) in expected.items():
         assert (ARM_BY_ID[aid].env, ARM_BY_ID[aid].orchestrator) == (env, orch)
-
-
-# ---------------------------------------------------------------------------
-# compose_prompt seam
-# ---------------------------------------------------------------------------
 
 
 def test_compose_prompt_metasmith_is_byte_identical() -> None:
@@ -90,13 +72,7 @@ def test_compose_prompt_prepends_non_empty_preamble() -> None:
     out = compose_prompt(shared, arm)
     assert out.endswith(shared)
     assert out.startswith("Your env: mamba. Orchestrator: nextflow.")
-    # shared block is preserved verbatim inside the composed prompt
     assert shared in out
-
-
-# ---------------------------------------------------------------------------
-# standard_verify gates the metasmith-only trace check by arm
-# ---------------------------------------------------------------------------
 
 
 def _done_result() -> LoopResult:
@@ -113,7 +89,7 @@ def test_standard_verify_skips_trace_for_non_metasmith_arm(tmp_path: Path) -> No
     sandbox = tmp_path / "sb"
     (sandbox / "out").mkdir(parents=True)
     (sandbox / "out" / "artifact.txt").write_text("x")
-    non_ms = ARM_BY_ID["A7"]  # container / ad-hoc
+    non_ms = ARM_BY_ID["A7"]
     vctx = VerifyContext(
         sandbox=sandbox,
         agent_env={},
@@ -140,7 +116,7 @@ def test_standard_verify_runs_trace_for_metasmith_arm(tmp_path: Path) -> None:
         agent_env={},
         metasmith_env_name="msm_env",
         installed_env_path=sandbox / "envs" / "msm_env",
-        arm=DEFAULT_ARM,  # metasmith
+        arm=DEFAULT_ARM,
     )
     fails = standard_verify(
         vctx, _done_result(),

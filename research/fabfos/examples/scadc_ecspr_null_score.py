@@ -1,25 +1,4 @@
 #!/usr/bin/env python3
-"""Score `data/fabfos/runs/scadc_ecspr/results.parquet` against the frozen null draws in
-`data/fabfos/runs/scadc_ecspr/null/draws.parquet` (plan T3). Pure local join + stats pass
--- no fir job, no --preflight/--run/--retrieve/--publish shape (see plan's T3
-approach note: "this step runs locally").
-
-    python examples/scadc_ecspr_null_score.py
-
-For each non-host `(unit, condition_id, metric)` row: match `n_orfs` to the
-nearest null N-bucket actually drawn (never interpolate -- the bucket used is
-recorded as a new `n_bucket` column), compute an empirical p-value against
-that bucket's null draws -- POOLING both sampler styles A (uniform) and D
-(contiguous window) together, since draws.parquet keeps the `style` column
-and can be re-split/re-scored separately later if that combination turns out
-to be the wrong default.
-`delta_total` (direction='up') is up-tail only; `delta_clr`
-(direction='two_sided') is two-sided. BH-FDR is applied separately within
-each metric's family (732 non-host tests per metric) for `q`; `survives` is
-`q < 0.05` -- also an open/reversible default, documented rather than
-user-confirmed (autopilot stance: results.parquet can be trivially re-scored
-with a different threshold later, this is not a one-way door).
-"""
 from __future__ import annotations
 
 from pathlib import Path
@@ -71,7 +50,6 @@ def main() -> int:
         results.loc[~host_mask, "n_orfs"].apply(lambda n: nearest_bucket(n, buckets))
     )
 
-    # pool both styles together per (n_bucket, condition_id, metric)
     null_groups = {
         key: g["delta_null"].to_numpy()
         for key, g in null.groupby(["n_rep", "condition_id", "metric"])

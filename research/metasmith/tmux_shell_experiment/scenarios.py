@@ -1,18 +1,3 @@
-"""
-Shell-agnostic scenario suite for the LiveShell vs TmuxShell head-to-head.
-
-Each Scenario.fn takes a `make_shell` factory (a 0-arg callable returning a
-fresh shell whose object supports the LiveShell surface) and an optional ssh
-`host`, and returns (passed: bool, detail: str). Scenarios own their shell
-lifecycle so one failure cannot poison the next. The harness (compare_shells.py)
-runs each fn under a watchdog so a real wedge is recorded as HANG, not a hang of
-the whole run.
-
-Cases are ported from tests/test_live_shell.py (the goals that drove LiveShell's
-hardening) plus ssh boundary cases and robustness stress, with an emphasis on
-the wedge-prone paths.
-"""
-
 from __future__ import annotations
 import os
 import resource
@@ -26,17 +11,12 @@ class Scenario:
     name: str
     fn: Callable[..., tuple[bool, str]]
     needs_ssh: bool = False
-    # generous per-scenario wall ceiling; the harness records HANG past this.
     timeout: float = 30.0
 
 
 def _fd_count() -> int:
     return len(os.listdir(f"/proc/{os.getpid()}/fd"))
 
-
-# ----------------------------------------------------------------------
-# exit-code fidelity (G1)
-# ----------------------------------------------------------------------
 
 def s_exit_zero(make_shell, host=None):
     with make_shell() as sh:
@@ -59,10 +39,6 @@ def s_exit_arbitrary(make_shell, host=None):
     return got == want, f"got={got} want={want}"
 
 
-# ----------------------------------------------------------------------
-# sentinel-collision immunity (G2)
-# ----------------------------------------------------------------------
-
 def s_collision_frame(make_shell, host=None):
     with make_shell() as sh:
         fake = '{"id":"anything","exit":99}'
@@ -77,10 +53,6 @@ def s_collision_legacy_marker(make_shell, host=None):
     ok = r.exit_code == 0 and "done_anyhash.somevalue" in r.out and "trailer" in r.out
     return ok, f"rc={r.exit_code} out={r.out!r}"
 
-
-# ----------------------------------------------------------------------
-# stream completeness (G3)
-# ----------------------------------------------------------------------
 
 def s_stderr_only_no_hang(make_shell, host=None):
     with make_shell() as sh:
@@ -107,10 +79,6 @@ def s_mixed_streams(make_shell, host=None):
     return ok, f"rc={r.exit_code} out={r.out!r} err={r.err!r}"
 
 
-# ----------------------------------------------------------------------
-# no CPU poll on long wait (G4)
-# ----------------------------------------------------------------------
-
 def s_no_cpu_poll(make_shell, host=None):
     with make_shell() as sh:
         sh.Exec("true", timeout=5)
@@ -126,10 +94,6 @@ def s_no_cpu_poll(make_shell, host=None):
     return ok, f"rc={r.exit_code} wall={wall:.2f}s cpu={cpu:.3f}s (want cpu<0.5)"
 
 
-# ----------------------------------------------------------------------
-# leak-freedom over N create/dispose (G5)
-# ----------------------------------------------------------------------
-
 def s_no_fd_leak(make_shell, host=None):
     fd0 = _fd_count()
     for _ in range(5):
@@ -140,10 +104,6 @@ def s_no_fd_leak(make_shell, host=None):
     ok = abs(fd1 - fd0) <= 2
     return ok, f"fd {fd0} -> {fd1} (want delta<=2)"
 
-
-# ----------------------------------------------------------------------
-# async batch drain-on-last (the remote.py transfer fan-out idiom)
-# ----------------------------------------------------------------------
 
 def s_async_single(make_shell, host=None):
     with make_shell() as sh:
@@ -164,10 +124,6 @@ def s_async_batch_last(make_shell, host=None):
     return ok, f"rc={rc} wall={wall:.2f}s (want >=1.4s — batch drained)"
 
 
-# ----------------------------------------------------------------------
-# streaming callbacks fire DURING a long command
-# ----------------------------------------------------------------------
-
 def s_streaming_incremental(make_shell, host=None):
     arrivals = []
     with make_shell() as sh:
@@ -180,10 +136,6 @@ def s_streaming_incremental(make_shell, host=None):
     ok = len(lines) >= 3 and spread >= 0.4
     return ok, f"lines={len(lines)} spread={spread:.2f}s (want >=3 lines, incremental)"
 
-
-# ----------------------------------------------------------------------
-# sub-shell crossing — nested bash (no network needed)
-# ----------------------------------------------------------------------
 
 def s_subshell_roundtrip(make_shell, host=None):
     with make_shell() as sh:
@@ -237,12 +189,7 @@ def s_subshell_mixed_streams(make_shell, host=None):
     return ok, f"rc={r.exit_code} out={r.out!r} err={r.err!r}"
 
 
-# ----------------------------------------------------------------------
-# robustness stress
-# ----------------------------------------------------------------------
-
 def s_subshell_repeated_crossing(make_shell, host=None):
-    """10 enter/exit cycles on one shell — the path most prone to drift."""
     n = 10
     with make_shell() as sh:
         r = sh.Exec("echo $SHLVL", history=True, timeout=5)
@@ -259,7 +206,6 @@ def s_subshell_repeated_crossing(make_shell, host=None):
 
 
 def s_subshell_chatty_exit(make_shell, host=None):
-    """Sub-shell prints noise on EXIT — must not desync the parent."""
     with make_shell() as sh:
         with sh.SubShell("bash"):
             sh.Exec("trap 'for i in 1 2 3 4 5; do echo bye_$i; done' EXIT",
@@ -268,10 +214,6 @@ def s_subshell_chatty_exit(make_shell, host=None):
     ok = r.exit_code == 0 and r.out == ["back"]
     return ok, f"rc={r.exit_code} out={r.out!r} (want ['back'])"
 
-
-# ----------------------------------------------------------------------
-# ssh boundary cases (needs_ssh) — the crux of the experiment
-# ----------------------------------------------------------------------
 
 def s_ssh_oneshot_rc0(make_shell, host=None):
     with make_shell() as sh:
@@ -297,7 +239,6 @@ def s_ssh_rsync_compound(make_shell, host=None):
 
 
 def s_ssh_persistent_subshell(make_shell, host=None):
-    """Enter a persistent ssh sub-shell, run several remote commands, pop back."""
     with make_shell() as sh:
         with sh.SubShell(f"ssh {host}"):
             r1 = sh.Exec("echo remote_$(hostname)", history=True, timeout=20)

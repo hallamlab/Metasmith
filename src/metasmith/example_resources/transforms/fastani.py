@@ -37,7 +37,7 @@ def protocol(context: ExecutionContext):
 
 TransformInstance(
     protocol=protocol,
-    model=model, # the contract
+    model=model,
     group_by=pan,
     resources=Resources(
         cpus=4,

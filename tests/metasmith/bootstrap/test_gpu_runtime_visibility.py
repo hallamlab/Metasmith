@@ -1,20 +1,3 @@
-"""What a protocol can see about GPUs while it runs.
-
-Two questions a transform needs answered, and they are different questions:
-
-- *What did I ask for?* — `DeclaredGpus()`, static, from the step meta staged by
-  the generator and read back into `context.params["gpus"]` by the bootstrap.
-- *What did I get?* — `DetectGpus()`, probed on the execution host through
-  `external_shell`. That shell is the relay under a container runtime and the
-  local shell under mamba/native, which is what makes one implementation correct
-  everywhere. Under a partial allocation or a MIG slice the two answers differ,
-  and the second is the one a tool sizing its own offload needs.
-
-Plus the seam that removes the last documented reason to branch on the runtime:
-a step that declared a GPU gets `--nv` / `--gpus all` on its tool container for
-free, in the right dialect, without duplicating a flag the caller already passed.
-"""
-
 from __future__ import annotations
 
 from pathlib import Path
@@ -34,8 +17,6 @@ from metasmith.models.solver import Dependency, Endpoint
 
 
 class ScriptedShell:
-    """Returns canned stdout lines and records what it was asked."""
-
     def __init__(self, out: list[str] | None = None, raises: Exception | None = None):
         self.out = out or []
         self.raises = raises
@@ -70,13 +51,8 @@ def _context(tmp_path: Path, runtime: Runtime, params: dict, shell=None, image_d
     )
 
 
-# --------------------------------------------------------------------------
-# what did I ask for
-# --------------------------------------------------------------------------
-
 class TestDeclaredGpus:
     def test_absent_reads_as_none(self, tmp_path):
-        # every non-GPU step, and every workspace staged before GPU support
         ctx = _context(tmp_path, Runtime.DOCKER, {"cpus": 4})
         assert ctx.DeclaredGpus() == (Gpus.NONE, None)
 
@@ -95,10 +71,6 @@ class TestDeclaredGpus:
         assert ctx.DeclaredGpus()[0] is Gpus.NONE
 
 
-# --------------------------------------------------------------------------
-# what did I get
-# --------------------------------------------------------------------------
-
 class TestDetectGpus:
     def test_reports_per_device_memory(self, tmp_path):
         shell = ScriptedShell(["msm_gpu 8192", "msm_gpu 8192"])
@@ -112,7 +84,6 @@ class TestDetectGpus:
         assert ctx.DetectGpus() == []
 
     def test_unrelated_shell_noise_is_ignored(self, tmp_path):
-        # the relay shell interleaves its own chatter; only tagged lines count
         shell = ScriptedShell(["connecting...", "msm_gpu 24576", "done"])
         ctx = _context(tmp_path, Runtime.APPTAINER, {}, shell=shell)
         found = ctx.DetectGpus()
@@ -129,10 +100,6 @@ class TestDetectGpus:
         ctx = _context(tmp_path, Runtime.DOCKER, {}, shell=ScriptedShell(raises=RuntimeError("relay down")))
         assert ctx.DetectGpus() == []
 
-
-# --------------------------------------------------------------------------
-# automatic per-runtime GPU flags
-# --------------------------------------------------------------------------
 
 DECLARED = {"gpus": {"gpus": "required", "gpu_memory_gb": 8.0}}
 OPTIONAL = {"gpus": {"gpus": "optional", "gpu_memory_gb": 8.0}}
@@ -156,17 +123,11 @@ class TestAutomaticGpuArgs:
 
     @pytest.mark.parametrize("runtime", [Runtime.DOCKER, Runtime.APPTAINER])
     def test_no_device_present_means_no_flags(self, tmp_path, runtime):
-        # The reason this is gated on detection rather than on the declaration:
-        # a Gpus.OPTIONAL step is *expected* to land on CPU-only hosts, and
-        # `docker run --gpus all` fails outright there ("could not select
-        # device driver") -- turning a graceful fallback into a dead task.
         dep = _dep("image")
         ctx = _context(tmp_path, runtime, OPTIONAL, shell=ScriptedShell([]), image_dep=dep)
         assert ctx.GetContainerModel(dep).extra_args == []
 
     def test_detection_is_probed_once_per_context(self, tmp_path):
-        # GetContainerModel consults it on every ExecWithEnv call, and the
-        # answer cannot change within a task
         dep = _dep("image")
         shell = ScriptedShell(HAS_GPU)
         ctx = _context(tmp_path, Runtime.DOCKER, DECLARED, shell=shell, image_dep=dep)
@@ -175,7 +136,6 @@ class TestAutomaticGpuArgs:
         assert sum("nvidia-smi" in c for c in shell.calls) == 1
 
     def test_caller_supplied_flag_is_not_duplicated(self, tmp_path):
-        # transforms that hardcoded --nv before this existed must keep working
         dep = _dep("image")
         ctx = _context(tmp_path, Runtime.APPTAINER, DECLARED, shell=ScriptedShell(HAS_GPU), image_dep=dep)
         container = ctx.GetContainerModel(dep, args=["--nv", "--env", "FOO=bar"])

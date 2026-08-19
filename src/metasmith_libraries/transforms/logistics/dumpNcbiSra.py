@@ -63,31 +63,13 @@ def protocol(context: ExecutionContext):
             reads = short_se
             Log.Info(f"dumping as short single reads")
     ireads = context.Output(reads)
-    # sed cleans redundant headers from the 3rd line to be just a "+":
-    # @SRR3926590.1/1 1 length=36
-    # NGAATTGGTGGAAACAGCTCAAGGCTAACCCCCTGG
-    # +SRR3926590.1/1 1 length=36               <--
-    # $I)'>@II<BI7I*?.IIGI1+II>655I<:6>76+
-    # @SRR3926590.2/1 2 length=36
-    # NAAACATCCTCCGGTCTGCGCCCCTGTGCCGCTAGG
-    # +SRR3926590.2/1 2 length=36               <--
-    # $5I8IAIII3IIII7A8HID=?<:;3/@>8D430I7
-    # @SRR3926590.3/1 3 length=36
-    # NAGCCCTGGAGAAGATTCCCGATATTGTGGCGGATC
-    # +SRR3926590.3/1 3 length=36               <--
-    # $IIIIII?III*H9IIIA;II>;IBIF+<2@94+.&
     cpus = context.params.get('cpus')
     if cpus is None:
         threads_param = ""
     else:
         threads_param = f"-p {cpus}"
 
-    # with open(icache.local) as f:
-    #     acc_value = f.readline().strip()
-    #     print("<debug>", acc_value, acc)
-    # echo "{acc_value}" >{ireads.container}
 
-    # @$si/$ri spot_index/read_index to minimize headers
     context.ExecWithEnv().ifContainerDo(
         env = image,
         cmd = f"""

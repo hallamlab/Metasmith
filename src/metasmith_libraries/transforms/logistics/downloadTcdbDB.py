@@ -5,16 +5,12 @@ model = Transform()
 image = model.AddRequirement(lib.GetType("env::diamond.env"))
 db    = model.AddProduct(lib.GetType("annotation::tcdb_diamond_db"))
 
-# TCDB publishes every transporter protein as one FASTA at this endpoint.
 TCDB_URL = "https://tcdb.org/public/tcdb"
 
 
 def protocol(context: ExecutionContext):
     idb = context.Output(db)
 
-    # diamond_tcdb.py mounts the .dmnd's *parent* at /db and references the
-    # file by name, so the product is a single `.dmnd` file (ext: dmnd).
-    # tcdb.org's TLS chain trips wget's verification, hence --no-check-certificate.
     context.ExecWithEnv().ifContainerDo(
         env=image,
         cmd=f"""

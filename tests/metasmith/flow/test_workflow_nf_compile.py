@@ -1,18 +1,3 @@
-"""Regression test for Bug D — Nextflow 26.04.1 strict parser rejects
-`import` declarations inside .nf scripts.
-
-The emitter in `metasmith.models.workflow` used to inject
-``import groovy.json.JsonSlurper`` at the top of every generated
-workflow.nf and then call ``new JsonSlurper()`` later in the script.
-Under Nextflow 26 strict parsing this fails with::
-
-    workflow.nf:18:1: Groovy `import` declarations are not supported
-                      -- use fully-qualified name inline instead
-
-The fix removes the import and uses the fully-qualified class name
-inline. This test pins the absence of the import and the presence of
-the fully-qualified instantiation in the emitter source.
-"""
 from __future__ import annotations
 
 from pathlib import Path
@@ -21,10 +6,6 @@ from metasmith.models import workflow as _wf
 
 
 def _emitter_source() -> str:
-    # The whole package, not one module. `inspect.getsource` on a package
-    # returns its __init__ -- pure re-exports since the split -- so both
-    # assertions below would have passed on an empty string, which is the
-    # worst outcome available to a test that pins an absence.
     pkg = Path(_wf.__file__).parent
     return "\n".join(
         p.read_text(encoding="utf-8") for p in sorted(pkg.rglob("*.py"))

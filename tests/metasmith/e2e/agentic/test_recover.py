@@ -1,13 +1,3 @@
-"""Parametrized agent-driven recovery scenarios.
-
-Both cases probe the same recovery loop: ``metasmith plan`` fails with a
-structured ``PlanHint``, the agent reads the hint and runs the matching
-``metasmith data ...`` command to fix the input library, then re-plans.
-The two hint kinds differ in the fix action (``add-value`` vs
-``set-parents``), but the harness wiring and assertion shape are
-identical — agent writes the new ``task_key`` to ANSWER.txt, the
-verifier confirms the task is cached under the agent's workspace.
-"""
 from __future__ import annotations
 
 import pytest

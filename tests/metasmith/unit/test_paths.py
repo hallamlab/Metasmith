@@ -1,12 +1,3 @@
-"""Unit tests for `metasmith.models.paths` — the centralised path
-translation module that replaces the ad-hoc rewrites catalogued in the
-path-overhaul audit.
-
-These tests pin the behavioural contract of :class:`PathMap` and
-:class:`ContextPath`. The four `tests/path_overhaul/` tests pin the
-buggy behaviours that this module replaces; this file pins the new
-correct behaviours.
-"""
 from __future__ import annotations
 
 from pathlib import Path
@@ -15,10 +6,6 @@ import pytest
 
 from metasmith.constants import AgentPaths
 from metasmith.models.paths import ContextPath, PathMap
-
-
-# -----------------------------------------------------------------------
-# ContextPath invariants
 
 
 class TestContextPathInvariants:
@@ -88,12 +75,8 @@ class TestContextPathInvariants:
             external=Path("/scratch/agent/out.fa"),
             container=Path("/ws/out.fa"),
         )
-        with pytest.raises(Exception):  # FrozenInstanceError
+        with pytest.raises(Exception):
             cp.local = Path("/elsewhere")  # type: ignore
-
-
-# -----------------------------------------------------------------------
-# PathMap construction
 
 
 class TestPathMapConstruction:
@@ -111,10 +94,6 @@ class TestPathMapConstruction:
         assert pm.extern_work == Path("/scratch/agent/runs/TESTKEY")
 
     def test_from_external_cwd_picks_correct_run_key(self) -> None:
-        """The cwd has the run key as the segment directly under
-        ``<extern_home>/runs/``, regardless of any deeper structure
-        (including segments literally named ``ws``).
-        """
         class _StubSource:
             def GetPath(self) -> Path:
                 return Path("/scratch/agent")
@@ -122,8 +101,6 @@ class TestPathMapConstruction:
         class _StubAgent:
             home = _StubSource()
 
-        # Pathological case: a sub-workdir named "ws" between the
-        # run key and `nxf_work/` would have broken the old regex.
         pm = PathMap.FromExternalCwd(
             cwd=Path("/scratch/agent/runs/REALKEY/ws/nxf_work/aa/bb"),
             agent=_StubAgent(),
@@ -132,10 +109,6 @@ class TestPathMapConstruction:
         assert pm.extern_work == Path("/scratch/agent/runs/REALKEY")
 
     def test_from_external_cwd_extra_subdir(self) -> None:
-        """Any extra segment between the run key and `nxf_work/` is
-        irrelevant to identifying the run key — only the first segment
-        under ``<extern_home>/runs/`` is the task key.
-        """
         class _StubSource:
             def GetPath(self) -> Path:
                 return Path("/scratch/agent")
@@ -174,10 +147,6 @@ class TestPathMapConstruction:
             PathMap(extern_home=Path("/scratch/agent"), task_key="")
 
 
-# -----------------------------------------------------------------------
-# Conversion matrix
-
-
 class TestPathMapConversionMatrix:
     @pytest.fixture
     def pm(self) -> PathMap:
@@ -214,31 +183,22 @@ class TestPathMapConversionMatrix:
             pm.LocalToExternal(Path("relative/x"))
 
 
-# -----------------------------------------------------------------------
-# Parse — the consolidator
-
-
 class TestPathMapParse:
     @pytest.fixture
     def pm(self) -> PathMap:
         return PathMap(extern_home=Path("/scratch/agent"), task_key="K")
 
     def test_parses_absolute_ws_prefix(self, pm: PathMap) -> None:
-        """Inbox #139 fix — Docker stringification of upstream output."""
         cp = pm.Parse(Path("/ws/work/aa/bb/file"))
         assert cp.local == AgentPaths.HOME_ROOT / "runs/K/work/aa/bb/file"
         assert cp.external == pm.extern_work / "work/aa/bb/file"
         assert cp.container == cp.local
 
     def test_parses_relative_ws_prefix(self, pm: PathMap) -> None:
-        """Apptainer-local stringification — same logical file as
-        absolute ``/ws/<tail>``, just a different transcription.
-        """
         cp = pm.Parse(Path("../ws/work/aa/bb/file"))
         assert cp.local == AgentPaths.HOME_ROOT / "runs/K/work/aa/bb/file"
         assert cp.external == pm.extern_work / "work/aa/bb/file"
         assert cp.container == cp.local
-        # Critical invariant: no `..` segments slipped through.
         assert ".." not in cp.local.parts
         assert ".." not in cp.external.parts
         assert ".." not in cp.container.parts
@@ -263,11 +223,6 @@ class TestPathMapParse:
         assert cp.container == foreign
 
     def test_rejects_naked_relative_path(self, pm: PathMap) -> None:
-        """The ad-hoc-concat case the overhaul forbids: a bare relative
-        path with no ``..`` prefix is meaningless without an anchor; the
-        overhaul replaces the silent ``external_cwd/p`` join with an
-        explicit rejection.
-        """
         with pytest.raises(ValueError, match="non-absolute, non-symlink"):
             pm.Parse(Path("just/some/relative/path.fa"))
 
@@ -276,28 +231,12 @@ class TestPathMapParse:
         assert cp.container == AgentPaths.WORK_ROOT / "out.fa"
 
     def test_home_rooted_absolute_resolves_all_three_views(self, pm: PathMap) -> None:
-        """The container arm: HOME_ROOT in, host path out, no bind needed.
-
-        This is the shape a producer must emit for anything the bootstrap
-        container will read back. Nothing new in `Parse` handles it — case
-        (5) already did — which is the reason the cache-hit fix belongs at
-        the producer rather than here.
-        """
         cp = pm.Parse(AgentPaths.HOME_ROOT / "task_cache/1e/20ab/out/f.gbk")
         assert cp.local == AgentPaths.HOME_ROOT / "task_cache/1e/20ab/out/f.gbk"
         assert cp.external == pm.extern_home / "task_cache/1e/20ab/out/f.gbk"
         assert cp.container == cp.local
 
     def test_host_rooted_absolute_stays_foreign(self, pm: PathMap) -> None:
-        """The host spelling of a file inside the agent home is NOT rerouted.
-
-        Deliberate. `Parse` cannot know whether such a path is a producer's
-        coordinate mistake or a legitimate identity bind declared in
-        `.command.binds`, and this module's law is that invariants raise
-        rather than silently normalise. Rerouting here would also rewrite a
-        `metasmith run` user's own input, since that arm's agent home can
-        simply be their cwd.
-        """
         host_path = pm.extern_home / "task_cache/1e/20ab/out/f.gbk"
         cp = pm.Parse(host_path)
         assert cp.local == host_path
@@ -305,15 +244,6 @@ class TestPathMapParse:
         assert cp.container == host_path
 
     def test_direct_run_input_under_cwd_is_untouched(self, tmp_path: Path) -> None:
-        """`metasmith run` binds the agent home to the user's cwd.
-
-        So an input the user names under their own working directory is
-        host-absolute *and* under the agent home — the shape any future
-        "reroute host paths to HOME_ROOT" idea has to survive, since on this
-        arm there is no container and no `/msm_home` to reroute to. The flag
-        that makes it distinguishable is `host_local`; this pins that the
-        distinction is honoured.
-        """
         real_input = tmp_path / "my_reads.fq"
         real_input.write_text("ACGT\n")
         pm = PathMap(
@@ -324,21 +254,12 @@ class TestPathMapParse:
         assert cp.local.exists()
 
     def test_relay_free_arm_is_the_identity(self) -> None:
-        """When the agent home IS HOME_ROOT, both spellings are one path.
-
-        The mamba/native configuration: no container, no boundary, and the
-        conversion a producer applies must be a no-op rather than a rewrite.
-        """
         pm = PathMap(extern_home=AgentPaths.HOME_ROOT, task_key="K")
         p = AgentPaths.HOME_ROOT / "task_cache/1e/20ab/out/f.gbk"
         assert pm.ExternalToLocal(p) == p
         cp = pm.Parse(p)
         assert cp.local == p
         assert cp.external == p
-
-
-# -----------------------------------------------------------------------
-# Render — token substitution
 
 
 class TestPathMapRender:
@@ -360,16 +281,9 @@ class TestPathMapRender:
         assert rendered == f"{expected_prefix}/runs/K/inputs/x.fa"
 
     def test_render_only_replaces_prefix(self, pm: PathMap) -> None:
-        """Inner occurrences of the extern_home substring are left
-        alone — the bug shape pinned in
-        ``tests/path_overhaul/test_str_replace_path_overlap.py``.
-        """
-        # A library archived under a directory whose name happens to
-        # contain the extern_home prefix as a substring.
         p = pm.extern_home / "data/scratch_agent_backup/lib.xgdb"
         rendered = pm.Render(p, dialect="groovy")
         assert rendered == "${params.home}/data/scratch_agent_backup/lib.xgdb"
-        # The inner "scratch_agent_backup" is preserved (no naive replace).
         assert "scratch_agent_backup" in rendered
 
     def test_render_foreign_path_unchanged(self, pm: PathMap) -> None:
@@ -377,12 +291,7 @@ class TestPathMapRender:
         assert pm.Render(p, dialect="groovy") == "/project/refdb/tax.tsv"
 
     def test_render_root_only(self, pm: PathMap) -> None:
-        """A path equal to extern_home itself renders to the bare token."""
         assert pm.Render(pm.extern_home, dialect="brace") == "{agent_home}"
-
-
-# -----------------------------------------------------------------------
-# ContextPath classmethods
 
 
 class TestContextPathClassmethods:
@@ -397,18 +306,11 @@ class TestContextPathClassmethods:
 
     def test_for_output(self, pm: PathMap) -> None:
         cp = ContextPath.ForOutput("1-1-1.hash-namespace--type.txt", pm)
-        # Both the bootstrap and the inner task containers see the
-        # output through their per-step `/ws` workdir bind, so local
-        # and container are identical.
         assert cp.container == AgentPaths.WORK_ROOT / "1-1-1.hash-namespace--type.txt"
         assert cp.local == cp.container
-        # External falls back to extern_work when extern_cwd is unset.
         assert cp.external == pm.extern_work / "1-1-1.hash-namespace--type.txt"
 
     def test_for_output_with_extern_cwd(self) -> None:
-        """When extern_cwd is set, ForOutput uses it (the per-step
-        nxf_work dir) as the external prefix rather than extern_work.
-        """
         pm = PathMap(
             extern_home=Path("/scratch/agent"),
             task_key="K",
@@ -424,9 +326,6 @@ class TestContextPathClassmethods:
             ContextPath.ForOutput("subdir/file.fa", pm)
 
     def test_for_output_collapses_all_three_views_host_local(self) -> None:
-        """With no container boundary nothing is bound at /ws, so every view
-        must be the host path -- `container` included, or a protocol writing
-        to `out.container` targets a directory that does not exist."""
         pm = PathMap(
             extern_home=Path("/scratch/agent"),
             task_key="K",

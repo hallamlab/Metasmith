@@ -1,16 +1,3 @@
-"""Data types as they are declared and stored: the `{name: Endpoint}` side.
-
-A `DataTypeLibrary` is a name-to-Endpoint map and nothing more -- the Endpoint
-holds no back-reference, so a name is a label for humans and for the index, not
-part of the type. `Unpack` is where `extends:` is resolved, by union at parse
-time rather than as a kept link, which is why a type may only extend one
-defined earlier in the same file.
-
-`yaml_safe_load` retries rather than raising: under SLURM array fan-out the
-shared /msm_home bind sheds reads with errno 108, and a dropped task is a worse
-answer than a second attempt.
-"""
-
 from __future__ import annotations
 
 import tempfile
@@ -32,12 +19,8 @@ def yaml_safe_load(p: Path):
         try:
             with open(p) as f:
                 s = f.read()
-            # assert len(s) > 0, f"DataTypeLibrary at [{path}] is empty"
             d = yaml.safe_load(s)
         except OSError as e:
-            # Under SLURM array fan-out the shared /msm_home bind can shed reads
-            # with errno 108 (ESHUTDOWN, "transport endpoint shutdown"); retry the
-            # same backoff we use for empty parses instead of dropping the task.
             Log.Warn(f"{i+1} of {MAX}, error reading yaml [{p}]: {e}")
             time.sleep(1)
             continue
@@ -72,9 +55,6 @@ class DataTypeOntologies:
         strict = False,
     )
 
-# caches by absolute path
-# _dataTypeLibrary_cache: dict[Path, DataTypeLibrary] = {}
-# _dataTypeLibrary_history: list[str] = []
 
 @dataclass
 class DataTypeLibrary:
@@ -82,9 +62,6 @@ class DataTypeLibrary:
     ontology: DataTypeOntology = field(default_factory=lambda: DataTypeOntologies.EDAM)
     types: dict[str, Endpoint] = field(default_factory=dict)
 
-    # def __post_init__(self):
-    #     if self.source is None: return
-    #     _dataTypeLibrary_cache[self.source] = self
 
     def __getitem__(self, key: str) -> Endpoint:
         return self.types[key]

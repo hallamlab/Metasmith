@@ -1,19 +1,3 @@
-"""shardFasta — length-balanced fan-out of a protein FASTA into N shards.
-
-Each shard targets ~SHARD_SIZE sequences. Sequences are length-sorted then
-distributed in a round-robin stripe across N shards. The longest seq goes
-to shard 0, the second-longest to shard 1, … so every shard ends up with
-the same length-mix instead of one shard owning the long tail (which was
-the qKsXpL4y OOM failure mode).
-
-Per-sequence OOM (a single seq too long for the slice) is *not* solved by
-striping — it's bounded downstream by each embedding transform's
---max-len + sliding-window chunking.
-
-Output: N instances of `sequences::orfs_shard`. Embedding transforms that
-consume `sequences::orfs_shard` (instead of `sequences::orfs`) will fan
-out across these N instances automatically.
-"""
 from metasmith.python_api import *
 
 lib   = TransformInstanceLibrary.ResolveParentLibrary(__file__)
@@ -22,12 +6,6 @@ image = model.AddRequirement(lib.GetType("env::polars.env"))
 orfs  = model.AddRequirement(lib.GetType("sequences::orfs"))
 shard = model.AddProduct(lib.GetType("sequences::orfs_shard"))
 
-# Per-shard target. Sized so esmfold (~28 ORFs/min on gpu_med) finishes one
-# shard within the 5h SLURM walltime: 6000 ORFs / 28 ≈ 3.6h, leaves headroom
-# for model load + tar stage-back. 1.44M metag ORFs → ~241 shards.
-# Per metasmith/dev guidance (msg #153): edit this constant per-run instead
-# of routing values through context.params (the user_params channel was
-# reverted on dev).
 SHARD_SIZE = 6000
 
 SHARDER = r'''
@@ -93,10 +71,6 @@ def protocol(context: ExecutionContext):
     iorfs = context.Input(orfs)
     shard_size = SHARD_SIZE
 
-    # Run the sharder locally first so we can discover how many shards we'll
-    # produce (the count depends on the input FASTA length and shard_size).
-    # We write to a staging dir, then materialize each shard at the
-    # `context.Output(shard, i)` path the planner generated.
     import os, shutil
     staging = "_shard_staging"
     os.makedirs(staging, exist_ok=True)

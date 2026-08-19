@@ -1,8 +1,3 @@
-"""Deterministic content hash of the metasmith source tree.
-
-Written to build_hash.txt at build time; read by constants.BUILD_HASH at
-runtime. Kept dependency-free so dev.sh can invoke it before any pip install.
-"""
 from __future__ import annotations
 
 import hashlib

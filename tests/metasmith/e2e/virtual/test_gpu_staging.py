@@ -1,14 +1,3 @@
-"""Stage time is the half of the GPU contract that a transform author controls.
-
-Compiling a plan whose transforms declare GPUs must do exactly two things: put
-`label 'xgpux'` on those processes (the same channel `xlocalx` already uses in
-slurm.nf) and record what each step asked for into the staged workspace, so the
-run-time preflight has something to reconcile against. It must *not* emit any
-GPU directive into `workflow.resources.nf`, because a device count cannot be
-known until run time -- and because that file's stability across runs is what
-keeps nextflow's per-task hashing unaffected by GPU differences.
-"""
-
 from __future__ import annotations
 
 import json
@@ -71,7 +60,6 @@ TransformInstance(
 
 
 def _stage_mixed(tmp_path, mock_samples, mock_types):
-    """One REQUIRED-GPU step, one OPTIONAL-GPU step, one plain CPU step."""
     transforms = {
         "gpu_required": _gpu_transform("gpu_required", "metabat2_bins", "REQUIRED", "Size.GB(40)"),
         "gpu_optional": _gpu_transform("gpu_optional", "maxbin2_bins", "OPTIONAL", "Size.GB(8)"),
@@ -100,8 +88,6 @@ def test_gpu_label_only_on_declaring_processes(virtual_runtime, tmp_path, mock_s
     _, workspace, _ = _stage_mixed(tmp_path, mock_samples, mock_types)
     nf = (workspace / AgentPaths.NXF_WORKFLOW).read_text()
 
-    # split the emitted file into per-process blocks so the label can be
-    # attributed to the right process rather than merely "present somewhere"
     blocks: dict[str, str] = {}
     current = None
     for line in nf.splitlines():
@@ -118,10 +104,6 @@ def test_gpu_label_only_on_declaring_processes(virtual_runtime, tmp_path, mock_s
 
 
 def test_gpu_manifest_survives_a_line_reader(virtual_runtime, tmp_path, mock_samples, mock_types):
-    # RunWorkflow reads this back by `cat`-ing it over the agent shell, and a
-    # line reader drops a final line that has no newline. Pretty-printed JSON
-    # without one silently truncated to invalid JSON and no-op'd the preflight
-    # -- caught on real hardware, pinned here.
     _, workspace, _ = _stage_mixed(tmp_path, mock_samples, mock_types)
     raw = (workspace / AgentPaths.GPU_MANIFEST).read_text()
     assert raw.endswith("\n")
@@ -141,21 +123,14 @@ def test_gpu_manifest_records_each_declaring_step(virtual_runtime, tmp_path, moc
     assert by_transform["gpu_required"]["gpu_memory_gb"] == 40.0
     assert by_transform["gpu_optional"]["gpus"] == "optional"
     assert by_transform["gpu_optional"]["gpu_memory_gb"] == 8.0
-    # keyed by the emitted process name, which is what the run-time withName
-    # selector has to match
     for process, v in steps.items():
         assert v["process"] == process
         assert process.endswith(f"__{v['transform']}")
 
 
 def test_resources_file_carries_no_gpu_directive(virtual_runtime, tmp_path, mock_samples, mock_types):
-    # workflow.resources.nf must stay stable across runs (the caching note at
-    # workflow.py's resources emitter); a device count is a run-time fact and
-    # belongs in workflow.config.nf instead.
     _, workspace, _ = _stage_mixed(tmp_path, mock_samples, mock_types)
     res = (workspace / AgentPaths.NXF_RES).read_text()
-    # (the transform names themselves contain "gpu"; what must be absent is any
-    # GPU *directive*)
     for forbidden in ["clusterOptions", "accelerator", "--gpus", "gres", "beforeScript"]:
         assert forbidden not in res, f"unexpected [{forbidden}] in {AgentPaths.NXF_RES}:\n{res}"
 
@@ -170,8 +145,6 @@ def test_step_meta_carries_the_declaration_for_the_protocol(virtual_runtime, tmp
             found[str(step.transform.name)] = json.loads(line[0][4:])
     assert set(found) == {"gpu_required", "gpu_optional"}
     assert found["gpu_required"] == {"gpus": "required", "gpu_memory_gb": 40.0}
-    # non-declaring steps write no gpu line at all, so previously staged
-    # workspaces and every CPU step keep byte-identical metadata
     cpu_steps = [s for s in staged.plan.steps if str(s.transform.name) == "cpu_only"]
     assert cpu_steps
     for s in cpu_steps:

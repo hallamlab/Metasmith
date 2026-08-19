@@ -1,43 +1,9 @@
 #!/usr/bin/env python3
-"""Run a DIAMOND UniRef50 annotation workflow for a nucleotide assembly FASTA on
-an HPC cluster.
-
-Cluster port of the DIAMOND UniRef50 annotation spec (see
-annotation_palette_from_assembly.py for the current local template covering
-the same annotator). Written against a Sockeye-style
-cluster (module system + apptainer + allocation-coded /scratch). Minimal
-differences vs. the local driver:
-  - Agent retargeted to the cluster over SSH with the APPTAINER runtime. Note the
-    Sockeye module quirk (`module load gcc/9.4.0` BEFORE `module load apptainer`;
-    a bare `module load apptainer` silently no-ops there).
-  - The input FASTA is uploaded to the cluster and referenced by its REMOTE path —
-    metasmith does not auto-transfer non-resident inputs (it fails fast instead),
-    so the .xgdb item must point at a path that already exists on the agent host.
-  - Deploys to allocation-coded /scratch (many clusters forbid SLURM jobs from
-    $HOME, and Nextflow's work dir must live under scratch).
-  - Runs end-to-end (Deploy -> Generate -> Stage -> Run -> Wait -> Result) rather
-    than stopping at DAG generation.
-
-Configuration — set via environment (or edit the defaults):
-  MSM_HPC_HOST       ssh host alias for the cluster        (default: sockeye)
-  MSM_SLURM_ACCOUNT  SLURM allocation to submit under      (REQUIRED)
-  MSM_REF_DB_DIR     cluster dir holding the reference DBs (REQUIRED)
-  MSM_ASSEMBLY       local nucleotide assembly FASTA       (REQUIRED)
-  MSM_SRC            metasmith source checkout to import    (optional; else use
-                                                             an installed metasmith)
-
-The pre-built UniRef50 DIAMOND DB is expected at
-$MSM_REF_DB_DIR/diamond/uniref50.dmnd. Supplying it as a
-ref::uniref50_diamond_db resource lets the planner SKIP downloadUniRef50DB
-(hard-labeled `local` → pinned to the login node, where its 64GB ask + 60GB wget
-+ `diamond makedb` cannot run). Pattern mirrors launch_dl_embeddings.
-"""
 import os
 import sys
 import subprocess
 from pathlib import Path
 
-# metasmith must be importable; set MSM_SRC to a source checkout if not installed.
 if os.environ.get("MSM_SRC"):
     sys.path.insert(0, os.environ["MSM_SRC"])
 from metasmith.python_api import (
@@ -46,21 +12,16 @@ from metasmith.python_api import (
     TargetBuilder,
 )
 
-# ── site config — set via env vars or edit the defaults ──────────────────────
-HPC_HOST      = os.environ.get("MSM_HPC_HOST", "sockeye")            # ssh host alias
+HPC_HOST      = os.environ.get("MSM_HPC_HOST", "sockeye")
 SLURM_ACCOUNT = os.environ.get("MSM_SLURM_ACCOUNT", "<slurm-allocation>")
-SETUP_COMMANDS = ["module load gcc/9.4.0", "module load apptainer"]  # Sockeye module order
+SETUP_COMMANDS = ["module load gcc/9.4.0", "module load apptainer"]
 
-# Pre-built UniRef50 DIAMOND DB already on the cluster → skip downloadUniRef50DB.
 REF = Path(os.environ.get("MSM_REF_DB_DIR", "<ref-db-dir-on-cluster>"))
 REMOTE_UNIREF50_DMND = REF / "diamond" / "uniref50.dmnd"
 
-LOCAL_ASSEMBLY = Path(os.environ.get("MSM_ASSEMBLY", "<assembly.fna>"))  # nucleotide assembly FASTA
+LOCAL_ASSEMBLY = Path(os.environ.get("MSM_ASSEMBLY", "<assembly.fna>"))
 OUT_DIR = Path("results/diamond_uniref50_sockeye")
 
-# The transform library. `parents[3]` is the repo root (examples/ ->
-# metasmith_libraries/ -> research/ -> root); the library itself lives under
-# src/. Pointing at the root instead resolves no types and asserts nothing.
 MLIB = Path(__file__).resolve().parents[3] / "src" / "metasmith_libraries"
 
 
@@ -85,7 +46,6 @@ def ssh_capture(cmd: str) -> str:
 
 
 def stage_input_to_cluster(base_dir: str) -> str:
-    """Upload the assembly under base_dir on the cluster, return its remote path (idempotent)."""
     remote_dir = f"{base_dir}/diamond_uniref50/inputs"
     remote_path = f"{remote_dir}/{LOCAL_ASSEMBLY.name}"
     ssh_capture(f"mkdir -p {remote_dir}")
@@ -102,14 +62,6 @@ def stage_input_to_cluster(base_dir: str) -> str:
 
 
 def prefetch_tool_containers(agent_home: str, task_key: str):
-    """Pre-pull the plan's tool containers into the agent cache on the LOGIN node.
-
-    Compute nodes typically have NO outbound network, so a step's lazy
-    `apptainer exec docker://...` dies with 'no route to host'. metasmith's
-    Deploy pulls only its own image, not per-transform tools. We warm the cache
-    here: parse the staged workflow.nf for the `env::<x>.oci` it actually
-    uses, read each .oci's docker URL, and pull it as a .sif (use-sif).
-    """
     run = f"{agent_home}/runs/{task_key}"
     setup = " && ".join(SETUP_COMMANDS)
     remote = f"""
@@ -144,8 +96,6 @@ def prefetch_tool_containers(agent_home: str, task_key: str):
 def main():
     require_configured()
     user = ssh_capture("echo $USER")
-    # Many clusters forbid running SLURM jobs from $HOME — the agent home (and thus
-    # Nextflow's work dir) must live on allocation-coded scratch. Sockeye convention:
     scratch = f"/scratch/{SLURM_ACCOUNT}/{user}"
     agent_home = f"{scratch}/metasmith"
     remote_assembly = stage_input_to_cluster(scratch)
@@ -153,12 +103,10 @@ def main():
     out = OUT_DIR.resolve()
     out.mkdir(parents=True, exist_ok=True)
 
-    # inputs.xgdb references REMOTE (cluster) paths; not validated locally
     inputs = DataInstanceLibrary(out / "inputs.xgdb")
     inputs.AddTypeLibrary(MLIB / "data_types" / "sequences.yml")
     inputs.AddTypeLibrary(MLIB / "data_types" / "ref.yml")
     inputs.AddItem(Path(remote_assembly), "sequences::assembly")
-    # pre-staged DB → planner skips the (login-node-impossible) download step
     inputs.AddItem(REMOTE_UNIREF50_DMND, "ref::uniref50_diamond_db")
     inputs.Save()
 
@@ -194,7 +142,6 @@ def main():
     print("==> StageWorkflow(on_exist=clear)", flush=True)
     smith.StageWorkflow(task, on_exist="clear")
 
-    # compute nodes have no internet → warm the tool-container cache now
     prefetch_tool_containers(agent_home, task.GetKey())
 
     print(f"==> RunWorkflow (SLURM, account={SLURM_ACCOUNT})", flush=True)

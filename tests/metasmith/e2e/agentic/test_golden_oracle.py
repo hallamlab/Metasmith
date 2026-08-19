@@ -1,9 +1,3 @@
-"""Unit tests for the golden content oracle (plan T3).
-
-The oracle checks the produced final artifacts are REAL + correctly-shaped
-(non-empty PNG, enrichment TSV with the expected columns + >=1 data row) — a
-tolerant content bound, not bit-identity to golden. No agent, no sandbox run.
-"""
 from __future__ import annotations
 
 from pathlib import Path
@@ -44,17 +38,11 @@ def _results(tmp_path: Path) -> Path:
 
 
 def _write_png(path: Path, nbytes: int) -> None:
-    # PNG magic + padding so it is a plausible non-empty image of a given size.
     path.write_bytes(b"\x89PNG\r\n\x1a\n" + b"\x00" * max(0, nbytes - 8))
 
 
 def _write_enrichment_tsv(path: Path, rows: int = 3) -> None:
     path.write_text(_HEADER + "\n" + "\n".join([_ROW] * rows) + "\n")
-
-
-# ---------------------------------------------------------------------------
-# _golden_content_failures — direct
-# ---------------------------------------------------------------------------
 
 
 def test_golden_passes_on_valid_artifacts(tmp_path: Path) -> None:
@@ -66,7 +54,7 @@ def test_golden_passes_on_valid_artifacts(tmp_path: Path) -> None:
 
 def test_golden_fails_on_stub_png(tmp_path: Path) -> None:
     res = _results(tmp_path)
-    _write_png(res / "enrichment.png", 100)          # below the 1 KB floor
+    _write_png(res / "enrichment.png", 100)
     _write_enrichment_tsv(res / "enrichment.tsv")
     fails = _golden_content_failures(tmp_path, _CHECK)
     assert any("PNG" in f and "min" in f for f in fails)
@@ -74,7 +62,7 @@ def test_golden_fails_on_stub_png(tmp_path: Path) -> None:
 
 def test_golden_fails_on_missing_tsv(tmp_path: Path) -> None:
     res = _results(tmp_path)
-    _write_png(res / "enrichment.png", 50_000)       # PNG present, no TSV
+    _write_png(res / "enrichment.png", 50_000)
     fails = _golden_content_failures(tmp_path, _CHECK)
     assert any("no results table matched" in f for f in fails)
 
@@ -82,7 +70,7 @@ def test_golden_fails_on_missing_tsv(tmp_path: Path) -> None:
 def test_golden_fails_on_empty_tsv(tmp_path: Path) -> None:
     res = _results(tmp_path)
     _write_png(res / "enrichment.png", 50_000)
-    (res / "enrichment.tsv").write_text(_HEADER + "\n")   # header only, 0 rows
+    (res / "enrichment.tsv").write_text(_HEADER + "\n")
     fails = _golden_content_failures(tmp_path, _CHECK)
     assert any("data rows" in f for f in fails)
 
@@ -96,21 +84,13 @@ def test_golden_fails_on_wrong_columns(tmp_path: Path) -> None:
 
 
 def test_golden_ignores_extra_tool_tsv(tmp_path: Path) -> None:
-    """t6 emits abricate.tsv alongside the enrichment table — the check must find
-    the enrichment TSV by schema, not be shadowed by the extra report."""
     res = _results(tmp_path)
     _write_png(res / "enrichment.png", 50_000)
-    # abricate.tsv: different schema, and larger than the enrichment table.
     (res / "abricate.tsv").write_text(
         "FILE\tSEQUENCE\tGENE\tPRODUCT\n" + ("c\ts\tg\tp\n" * 1000)
     )
     _write_enrichment_tsv(res / "enrichment.tsv", rows=5)
     assert _golden_content_failures(tmp_path, _CHECK) == []
-
-
-# ---------------------------------------------------------------------------
-# standard_verify — integration (golden check gated by golden_check arg)
-# ---------------------------------------------------------------------------
 
 
 def _vctx(tmp_path: Path, arm_id: str = "A7") -> VerifyContext:
@@ -142,8 +122,6 @@ def test_standard_verify_runs_golden_when_configured(tmp_path: Path) -> None:
 
 
 def test_standard_verify_skips_golden_when_none(tmp_path: Path) -> None:
-    """t2 (dry-validate) passes golden_check=None: only the marker glob is checked,
-    a missing TSV is NOT a failure."""
     (tmp_path / "workspace" / "results").mkdir(parents=True, exist_ok=True)
     (tmp_path / "workspace" / "results" / "DRYRUN_OK.txt").write_text("ok\n")
     fails = standard_verify(
@@ -157,7 +135,7 @@ def test_standard_verify_skips_golden_when_none(tmp_path: Path) -> None:
 
 def test_standard_verify_golden_catches_stub(tmp_path: Path) -> None:
     res = _results(tmp_path)
-    _write_png(res / "enrichment.png", 10)           # stub
+    _write_png(res / "enrichment.png", 10)
     _write_enrichment_tsv(res / "enrichment.tsv")
     fails = standard_verify(
         _vctx(tmp_path), _done(tmp_path),
@@ -165,4 +143,4 @@ def test_standard_verify_golden_catches_stub(tmp_path: Path) -> None:
         expected_trace=None,
         golden_check=_CHECK,
     )
-    assert fails  # stub PNG is caught
+    assert fails

@@ -1,4 +1,3 @@
-"""merge_vfdb — gather per-chunk DIAMOND VFDB BLAST6 hits (raw cat)."""
 from metasmith.python_api import *
 
 lib = TransformInstanceLibrary.ResolveParentLibrary(__file__)

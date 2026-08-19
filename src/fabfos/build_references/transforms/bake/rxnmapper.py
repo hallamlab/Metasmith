@@ -1,48 +1,3 @@
-"""AAM member lane: RXNMapper -- the BERT attention mapper. ONE pass, over one universe.
-
-One tool, one step, one product. The lane maps and then EXTRACTS, so what leaves it is
-the shared pairs shape rather than the tool's private cache; the cache goes to
-evidence::, where the claim `source=rxnmapper+indigo` on a fused row can be checked
-against what the member actually said.
-
-IT READS `interm::aam_universe`, NOT `lookup::reactions` AND NOT THE WORKLIST. The
-universe is one submission table carrying all three classes at once -- the adjudicated
-whole reaction, the rescue's completion of a blocked one, and the forecast-driven element
-reduction -- so this member runs ONCE where the graph used to run it three times over
-three universes built one after another. Two things follow. The reaction SMILES is one
-string built once, so the disagreement this ensemble measures is between mappers and not
-between two SMILES builders. And a submission this member does NOT attempt has a row
-saying why, which is the difference between a member that abstained and one that never
-looked.
-
-THE CACHE IS STAGED IN AND IS KEYED ON THE SUBMISSION STRING. `fabfos_data::aam_cache` is
-a given -- empty on a first run, the previous run's caches and sidecars on a resubmission
--- and it exists because the in-task cache lives in node-local scratch and is discarded on
-retry, so this lane's per-reaction resume protected it against nothing that actually
-happens. The string is half the key on purpose: one MNXR now has up to four possible
-submissions, and serving a cached map for the wrong one is not a stale row, it is a map of
-a different molecule filed under this one's name.
-
-IT MAPS THE WHOLE MAPPABLE UNIVERSE, including the ~13k the curated map already answers.
-That looks wasteful and is a deliberate trade. The member used to be handed an
-`--exclude` list built from layer 1, which meant every member lane depended on the
-curated lane and could not start until it finished. `aam_layers.stack` restricts each
-layer to what nothing below it claimed ANYWAY, so the exclude never changed a single row
-of the result -- it only saved ~22.6% of the mapping. Paying that back buys a graph where
-the members depend on nothing but the worklist.
-
-SHARDED, for cost rather than for hangs. With LocalMapper demoted to the gap it was built
-for, this is the longest mapper lane, and four concurrent single-threaded processes turn
-most of a shift into a couple of hours. The sidecar discipline comes along with the
-shards and earns its keep for a different failure than Indigo's: RXNMapper does not hang,
-it gets OOM-killed, and a resume cannot tell the difference -- either way the run died
-inside a reaction having written nothing about it, and without the attempted-ids log the
-next run picks the same reaction and dies again.
-
-`--align strict` at extraction, unlike layer 1: we built these reaction SMILES from the
-equation, one fragment per participant, so a template-count mismatch really does mean a
-molecule went missing and the mapper re-routed its atoms onto what remained.
-"""
 from metasmith.python_api import *
 
 lib   = TransformInstanceLibrary.ResolveParentLibrary(__file__)
@@ -59,9 +14,6 @@ pairs     = model.AddProduct(lib.GetType("interm::aam_member_rxnmapper"))
 ev        = model.AddProduct(lib.GetType("evidence::tool_output"))
 
 MEMBER = "rxnmapper"
-# One core each, transformer inference. Four is the point where the lane stops being the
-# build's long pole; more would need the memory of another model copy per shard for
-# less and less.
 SHARDS = 4
 
 RESOLVE = """
@@ -87,10 +39,6 @@ def protocol(context: ExecutionContext):
     R = irs.container
 
     resolve = RESOLVE.format(metanetx=imnx.container, member=MEMBER)
-    # OMP pinned to 1 and re-exported HERE rather than inherited: the mapper forks, and
-    # an unpinned BLAS inside each fork oversubscribes the node into swap. With four
-    # shards on four cores that is the difference between four processes and four times
-    # the node's cores.
     py = f"PYTHONPATH={libdir} OMP_NUM_THREADS=1 python3"
 
     cmd = f"""
@@ -156,12 +104,6 @@ def protocol(context: ExecutionContext):
 
     return ExecutionResult(
         manifest=[{pairs: iout.local}, {ev: iev.local}],
-        # THE RAW OUTPUT IS PART OF THE RESULT, not a diagnostic nicety. This used to
-        # pass on the table alone, arguing that an evidence directory lost after a
-        # twelve-hour run was not worth failing over. It is: the copy happens seconds
-        # after the tool finished, in the same command, so an absence is not the lane
-        # being busy -- it is something going wrong that a green lane would hide, and the
-        # tool's own output is the only record of what it actually said.
         success=(iout.local.exists() and iout.local.stat().st_size > 0
                  and (iev.local / "rxnmapper").is_dir()
                  and any((iev.local / "rxnmapper").iterdir())),
@@ -172,7 +114,5 @@ TransformInstance(
     protocol=protocol,
     model=model,
     group_by=image,
-    # cpus == SHARDS: each shard is one single-threaded inference process. Memory covers
-    # four model copies with room for the largest reaction the worklist admits.
     resources=Resources(cpus=SHARDS, memory=Size.GB(32), duration=Duration(hours=12)),
 )

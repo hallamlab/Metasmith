@@ -1,21 +1,3 @@
-"""User-story smoke: plan a workflow, then inspect the cached plan.
-
-The whole ``metasmith task`` subcommand tree (``list / show / dag /
-hints``) is currently untouched by other scenarios. This scenario stages
-a solvable data lib + transform lib and asks the agent to plan + inspect
-end-to-end.
-
-Pre-staged:
-  workspace/types/myproj.yml         3 types: raw -> mid -> final
-  workspace/transforms/              2 transforms forming a complete chain
-  workspace/data.xgdb                one item of type raw_data
-
-Pass criteria:
-  - workspace/ANSWER.txt has two lines: <task_key> and <step_count>
-  - the task_key resolves under the agent's workspace dir
-  - step_count parses to a positive int
-  - the agent produced a DAG file under workspace/
-"""
 from __future__ import annotations
 
 import glob
@@ -128,9 +110,6 @@ class StoryPlanAndInspectScenario:
                 )
             else:
                 task_key, count_str = lines[0], lines[1]
-                # task_key should be findable in the agent's workspace dir;
-                # the agent's HOME is <sandbox>/home, so default workspace
-                # is <sandbox>/home/.metasmith/workspace/<task_key>
                 ws_candidates = glob.glob(
                     str(vctx.sandbox / "home" / ".metasmith" / "workspace" / task_key)
                 )

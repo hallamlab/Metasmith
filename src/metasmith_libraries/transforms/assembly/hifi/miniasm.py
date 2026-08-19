@@ -20,26 +20,6 @@ def protocol(context: ExecutionContext):
     irstats = context.Input(rstats)
     iout_asm = context.Output(out_asm)
 
-    # https://lh3.github.io/minimap2/minimap2.html
-    # minimap2 options:
-    # -x sr                 short read preset
-    # -x map-hifi           pacbio hifi (type of read that is more accurate) long read preset
-    # -x map-ont            oxford nanopore long read preset
-    # --sr                  Enable short-read alignment heuristics, more sensitivity
-    # -2                    use two io threads, more peak memory
-    # -a                    SAM format
-    # --secondary=no        Whether to output secondary alignments [no]
-    # --sam-hit-only        In SAM, don’t output unmapped reads. !this results in report saying 100% reads mapped!
-    # --heap-sort=no|yes    Heap merge is faster for short reads, but slower for long reads. [no]
-    #   Preset:
-    #     -x STR       preset (always applied before other options; see minimap2.1 for details) []
-    #                 - map-pb/map-ont: PacBio/Nanopore vs reference mapping
-    #                 - ava-pb/ava-ont: PacBio/Nanopore read overlap
-    #                 - asm5/asm10/asm20: asm-to-ref mapping, for ~0.1/1/5% sequence divergence
-    #                 - splice: long-read spliced alignment
-    #                 - sr: genomic short-read mapping
-    # https://www.nature.com/articles/s41587-023-01983-6
-    # minimap2 -x asm20     this is for hifi
 
     with open(irmeta.local) as j:
         read_meta = json.load(j)
@@ -59,7 +39,6 @@ def protocol(context: ExecutionContext):
     cpus = context.params.get("cpus")
     cpus_string = "" if cpus is None else f"-t {cpus}"
     temp_mapping_path = Path("./temp.paf.gz")
-    # Same command either way: this tool is a plain CLI in both worlds.
     _cmd = f"""
             minimap2 {preset} {cpus_string} \
                 {ireads.container} {ireads.container} | gzip -1 >{temp_mapping_path}
@@ -69,7 +48,6 @@ def protocol(context: ExecutionContext):
         .ifVirtualEnvDo(env=img_mm2, cmd=_cmd)
 
     Log.Info("miniasm")
-    # Same command either way: this tool is a plain CLI in both worlds.
     _cmd = f"""
             miniasm \
                 -f {ireads.container} {temp_mapping_path} \
