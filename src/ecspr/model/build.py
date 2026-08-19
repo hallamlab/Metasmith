@@ -64,12 +64,49 @@ def load_pairs(path, element=None) -> pd.DataFrame:
     return df if element is None else df[df.element == element]
 
 
-def load_direction_ratios(path) -> dict:
+# How many decades of forward/backward asymmetry a reaction may carry into the graph.
+#
+# THE TABLE'S RANGE IS NOT THE MODEL'S RANGE, and most of it is inert. Measured on the k12
+# and ag1 curated carbon graphs across three terminals: bounding at 6 decades, at 9, and not
+# bounding at all give the same graph to four significant figures, because past that the
+# reverse branch is already below ``directed.DIODE_BACKWARD_FLOOR``. The effective
+# conductance saturates earlier still, by 3 -- 1.9682 against 1.9630 unbounded on the
+# glycogen axis, 0.27% -- while the shipped table spans 28.7 decades over a host's
+# reactions. So the top ~26 decades change no answer and only widen the response's tail.
+#
+# Three decades is where the level stops moving, and it is also where the evidence stops:
+# ``bake.direction.canon.DIR_DG_CLAMP`` bounds |dG'| at the same three decades. The two
+# constants are the same statement at the two seams, and they must agree.
+DIRECTION_DECADE_CAP = 3.0
+
+
+def cap_direction_ratios(ratios: dict, decades: float = DIRECTION_DECADE_CAP) -> dict:
+    """``ratios`` with |log10 ratio| bounded at ``decades``. ``None`` or a non-finite bound
+    returns them untouched.
+
+    Applied to the ratio rather than to ``dG'`` because this is the model seam, where dG' is
+    no longer present -- and the two are equivalent, since ``ratio = exp(dG'/RT)`` is
+    monotone, so bounding either bounds the other. Bounding here rather than in the bake is
+    what makes the choice reviewable without a re-bake; ``reclamp_direction.py`` is the
+    replay that moves the same bound through the annotation when it is time to commit one.
+    """
+    if decades is None or not np.isfinite(decades):
+        return dict(ratios)
+    lo, hi = 10.0 ** -decades, 10.0 ** decades
+    return {r: min(max(v, lo), hi) for r, v in ratios.items()}
+
+
+def load_direction_ratios(path, *, cap: float | None = None) -> dict:
     """``{mnxr: g_rev/g_fwd}`` from the direction ensemble. A reaction absent from the table
     has ratio 1.0 -- the symmetric limit, i.e. "no directional evidence" degrades exactly to
-    the undirected model rather than to a guess."""
+    the undirected model rather than to a guess.
+
+    ``cap`` bounds the asymmetry in decades; it is OFF by default so that loading a table
+    reports what the table says, and a caller that narrows it has said so.
+    """
     df = pd.read_parquet(path) if str(path).endswith(".parquet") else pd.read_csv(path, sep="\t")
-    return {str(r): float(v) for r, v in zip(df.mnxr, df.ratio) if str(r) != "EMPTY"}
+    out = {str(r): float(v) for r, v in zip(df.mnxr, df.ratio) if str(r) != "EMPTY"}
+    return cap_direction_ratios(out, cap) if cap is not None else out
 
 
 def load_evidence_weights(path, source="epi300", column="E_full") -> dict:

@@ -142,6 +142,13 @@ finished bake and is what the reference gate checks against `ecspr.model.build.g
 on the string tables, so its `..model.graph` import lives inside the function body, and a test
 spawns one interpreter per lane to keep it there.
 
+**One quantity is bounded on both sides of the seam, and the two bounds must agree.** The bake
+clamps |ΔG'°| (`direction.canon.DIR_DG_CLAMP`), the model clamps |log10 ratio|
+(`build.DIRECTION_DECADE_CAP`), and `ratio = exp(ΔG'°/RT)` is what relates them — so a table
+baked under one bound and read under another yields a graph that does not describe its own
+annotation, with nothing to raise. Both are stated in decades of conductance, and a test asserts
+the ratio of the two.
+
 The bake reaches a job as **one staged input**: `build_references/build.sh` vendors `src/ecspr`
 into the transform library as `buildlib::ecspr`, whose `instance_id` is the tree digest — that
 digest is what carries provenance from source to baked table, so the vendored copy is
