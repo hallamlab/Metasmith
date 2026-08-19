@@ -82,20 +82,20 @@ def test_annotation_driver_accepts_a_bare_path(tmp_path):
 def test_the_references_are_not_re_identified_on_every_plan(tmp_path):
     """Two plans in one process must agree on every reference id, and read none.
 
-    This is the assertion the whole frozen-library change exists for. It failed
+    This is the assertion the whole pinned-library change exists for. It failed
     before it, and not marginally: `ref::kofamscan_profiles` and
-    `ref::reference_label_pool` are DIRECTORIES, which `_mint_leaf_id` cannot
+    `ref::label_transfer_landmarks` are DIRECTORIES, which `_mint_leaf_id` cannot
     content-address at all, so each build minted a fresh `uuid4` for them and
     the task key below differed run to run on ONE machine. Skips where the
-    references are not materialised, since there is then nothing to freeze.
+    references are not materialised, since there is then nothing to pin.
     """
     import pytest
 
     from fabfos import refs
 
-    frozen = refs.load_frozen_refs(common.DATA_PROCESSED)
-    if frozen is None:
-        pytest.skip("no frozen reference library here; run `python -m fabfos.refs freeze`")
+    pinned = refs.load_pinned_refs(common.DATA_PROCESSED)
+    if pinned is None:
+        pytest.skip("no pinned reference library here; run `python -m fabfos.refs pin`")
 
     reads = {"n": 0}
     import metasmith.models.libraries.identity as identity
@@ -119,7 +119,7 @@ def test_the_references_are_not_re_identified_on_every_plan(tmp_path):
             orfs.touch()
             _, task, stubs = annotation.generate_workflow(
                 work, orfs=orfs, kofam_profiles=None, kofam_ko_list=None,
-                uniref50_db=None, mnxr_lookup=None, label_pool=None,
+                uniref50_db=None, mnxr_lookup=None, landmarks=None,
                 runtime=Runtime.APPTAINER,
             )
             assert task.ok, task.plan

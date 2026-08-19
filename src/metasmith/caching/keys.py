@@ -69,7 +69,7 @@ def content_multihash_key(path, *, chunk_size: int = 1 << 20) -> bytes:
     return KEY_PREFIX + hasher.digest(length=BLAKE3_DIGEST_LEN)
 
 
-def tree_multihash_key(path, *, chunk_size: int = 1 << 20) -> bytes:
+def tree_multihash_key(path, *, chunk_size: int = 1 << 20, force: bool = False) -> bytes:
     root = Path(path)
     hasher = blake3()
     hasher.update(b"tree\x00")
@@ -80,17 +80,21 @@ def tree_multihash_key(path, *, chunk_size: int = 1 << 20) -> bytes:
             continue
         if not p.is_file():
             continue
-        hasher.update(b"f\x00" + rel + b"\x00" + _file_digest(p, chunk_size) + b"\x00")
+        hasher.update(b"f\x00" + rel + b"\x00" + _file_digest(p, chunk_size, force) + b"\x00")
     return KEY_PREFIX + hasher.digest(length=BLAKE3_DIGEST_LEN)
 
 
 _FILE_DIGEST_CACHE: dict[tuple[str, int, int], bytes] = {}
 
 
-def _file_digest(path, chunk_size: int) -> bytes:
+def _file_digest(path, chunk_size: int, force: bool = False) -> bytes:
     st = path.stat()
     ck = (str(path), st.st_size, st.st_mtime_ns)
-    hit = _FILE_DIGEST_CACHE.get(ck)
+    # `force` is for the deep verify, which asks whether these bytes are still the
+    # ones an id was derived from. The memo is keyed on the same `(size, mtime_ns)`
+    # a same-size in-place edit preserves, so serving it would answer with the
+    # digest of the bytes that were there when the memo was filled.
+    hit = None if force else _FILE_DIGEST_CACHE.get(ck)
     if hit is not None:
         return hit
     hasher = blake3()

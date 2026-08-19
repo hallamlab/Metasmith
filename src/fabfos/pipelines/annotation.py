@@ -78,14 +78,14 @@ def _as_orf_list(orfs) -> list[Path]:
 def build_inputs(work: Path, *, orfs, kofam_profiles: Path | None, kofam_ko_list: Path | None,
                   uniref50_db: Path | None, mnxr_lookup: Path | None, landmarks: Path | None,
                   refs_root: "str | Path | None" = None, verify_refs: bool = True,
-                  stage_orfs: str = "copy", use_frozen_refs: bool = True,
+                  stage_orfs: str = "copy", use_pinned_refs: bool = True,
                   ) -> tuple[DataInstanceLibrary, dict[str, Path], "DataInstanceLibrary | None"]:
-    """Build the run's input library. Third return value is the frozen refs.
+    """Build the run's input library. Third return value is the pinned refs.
 
-    The references are not staged into `inputs` when a frozen reference library
+    The references are not staged into `inputs` when a pinned reference library
     covers them: registering one costs a content hash of up to 17 GB, on every
     plan, to re-derive an id that was already settled. See `fabfos.refs`. The
-    frozen library is returned rather than re-loaded by the caller so there is
+    pinned library is returned rather than re-loaded by the caller so there is
     one resolution site, and it is None whenever the references went through
     `stage_ref` after all -- an un-migrated checkout, `verify_refs=False`, or an
     override.
@@ -120,20 +120,20 @@ def build_inputs(work: Path, *, orfs, kofam_profiles: Path | None, kofam_ko_list
         "ref::label_transfer_landmarks": landmarks,
     }
     stubs: dict[str, Path] = {}
-    # Only a LOCAL root can be frozen: `verify_refs=False` names paths on another
+    # Only a LOCAL root can be pinned: `verify_refs=False` names paths on another
     # host, where there is nothing to stat, mark or hash in the first place.
-    frozen = None
-    if use_frozen_refs and verify_refs and refs_root is None:
-        frozen = refs.load_frozen_refs(common.DATA_PROCESSED)
-        if frozen is None:
-            print("fabfos: no frozen reference library; staging references the slow"
-                  " way. Build one with `python -m fabfos.refs freeze`.")
-    covered = set(frozen.manifest.values()) if frozen is not None else set()
+    pinned = None
+    if use_pinned_refs and verify_refs and refs_root is None:
+        pinned = refs.load_pinned_refs(common.DATA_PROCESSED)
+        if pinned is None:
+            print("fabfos: no pinned reference library; staging references the slow"
+                  " way. Build one with `python -m fabfos.refs pin`.")
+    covered = set(pinned.manifest.values()) if pinned is not None else set()
 
     overridden = set()
     for dtype, rel in REF_LAYOUT.items():
-        # An override is a different file, so its identity is not the frozen
-        # one and it has to be staged. The frozen row is then masked out below,
+        # An override is a different file, so its identity is not the pinned
+        # one and it has to be staged. The pinned row is then masked out below,
         # or the solver sees two candidates of one type and picks arbitrarily.
         if dtype in covered and given[dtype] is None:
             continue
@@ -149,9 +149,9 @@ def build_inputs(work: Path, *, orfs, kofam_profiles: Path | None, kofam_ko_list
             stubs[dtype] = path
 
     inputs.Save()
-    if frozen is not None:
-        frozen = refs.refs_view(frozen, set(REF_LAYOUT) & covered - overridden)
-    return inputs, stubs, frozen
+    if pinned is not None:
+        pinned = refs.refs_view(pinned, set(REF_LAYOUT) & covered - overridden)
+    return inputs, stubs, pinned
 
 
 def generate_workflow(work: Path, *, orfs, kofam_profiles: Path | None, kofam_ko_list: Path | None,
@@ -161,7 +161,7 @@ def generate_workflow(work: Path, *, orfs, kofam_profiles: Path | None, kofam_ko
                        verify_refs: bool = True, stage_orfs: str = "copy",
                        agent: "Agent | None" = None, on_inputs=None):
     lib = common.resolve_library_root()
-    inputs, stubs, frozen_refs = build_inputs(
+    inputs, stubs, pinned_refs = build_inputs(
         work, orfs=orfs, kofam_profiles=kofam_profiles, kofam_ko_list=kofam_ko_list,
         uniref50_db=uniref50_db, mnxr_lookup=mnxr_lookup, landmarks=landmarks,
         refs_root=refs_root, verify_refs=verify_refs, stage_orfs=stage_orfs,
@@ -172,7 +172,7 @@ def generate_workflow(work: Path, *, orfs, kofam_profiles: Path | None, kofam_ko
     resources = [
         DataInstanceLibrary.Load(lib / "resources" / "env"),
         DataInstanceLibrary.Load(lib / "resources" / "lib"),
-        *([frozen_refs] if frozen_refs is not None else []),
+        *([pinned_refs] if pinned_refs is not None else []),
         inputs,
     ]
     transforms = [TransformInstanceLibrary.Load(lib / f"transforms/{d}") for d in DOMAINS]

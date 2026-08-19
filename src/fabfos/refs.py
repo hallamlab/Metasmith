@@ -27,7 +27,7 @@ That is a spurious cache *miss*, never a false hit, which is the safe direction;
 a per-file md5 is recoverable from the `.dir` object in the DVC cache if the
 over-invalidation ever costs more than it saves.
 
-**An entry with no pin is not frozen.** It stays on `common.stage_ref`'s path
+**An entry with no pin is not pinned.** It stays on `common.stage_ref`'s path
 and pays the hash, correctly. Substituting a weaker id for one that cannot be
 derived honestly is how a false cache hit gets built.
 
@@ -41,13 +41,12 @@ absolute paths are this checkout's and would be wrong anywhere else -- but the
 is the payoff worth stating plainly: two hosts with different roots and
 different index files still agree on every cache key.
 
-## What freezing does and does not protect
+## What pinning does and does not protect
 
-`metasmith.models.libraries.frozen` owns that answer, and it is required reading
-before trusting either the read-only mark or the stat stamp. The DVC-specific
-part lives here:
+`metasmith.models.libraries.pinned` owns that answer, and it is required reading
+before trusting the stat stamp. The DVC-specific part lives here:
 
-- `load_frozen_refs` compares each entry's recorded pin md5 against the current
+- `load_pinned_refs` compares each entry's recorded pin md5 against the current
   `.dvc` file before handing the library over. That is strictly stronger than
   the stat stamp, because it is the value the ids were minted from -- equality
   means the ids are still correct by construction.
@@ -56,10 +55,9 @@ part lives here:
   and continue, silently and without re-hashing. That is what keeps the stat
   stamp from being a nuisance nobody would leave switched on.
 - A *changed* md5 means the ids are wrong. That raises, naming the entry and
-  both md5s, and the fix is `fabfos refs freeze` (instant, reads no data).
-- **Freezing marks the entries read-only, which can make a later `dvc
-  checkout`/`dvc pull` fail with EACCES.** Run `fabfos refs unfreeze` first. The
-  failure is loud, which is the acceptable half of that trade.
+  both md5s, and the fix is `fabfos refs pin` (instant, reads no data).
+- **Nothing here changes a file mode.** DVC owns what is writable under
+  `processed/`, so a `dvc checkout` or `dvc pull` needs no step from this side.
 """
 
 from __future__ import annotations
@@ -72,13 +70,13 @@ from typing import Iterable
 
 import yaml
 
-from metasmith.models.libraries.frozen import FrozenLibraryError
+from metasmith.models.libraries.pinned import PinnedLibraryError
 from metasmith.python_api import DataInstanceLibrary
 from metasmith.caching.keys import multihash_key
 
 
 #: type -> path relative to a `processed/` root. THE table: the pipelines, the
-#: freeze step and the research drivers all read this one rather than restating
+#: pin step and the research drivers all read this one rather than restating
 #: it, because a drift between two copies mis-keys an entry rather than failing.
 #: A tuple means alternates, first existing wins -- the ESM-C pool is published
 #: as `pool_esmc` on the fir mirror and `pool` locally.
@@ -112,7 +110,7 @@ ECSPR_REFS = (
     "ecspr::direction_ratios",
 )
 
-#: The type namespaces a frozen refs library has to carry so its rows resolve.
+#: The type namespaces a pinned refs library has to carry so its rows resolve.
 _TYPE_NAMESPACES = ("ref", "ecspr", "annotation", "sequences")
 
 
@@ -165,7 +163,7 @@ def dvc_leaf_id(md5: str, rel: str) -> str:
 #: `_metadata/index.yml` behind. What lands in `processed/` is an intermediate
 #: that lost its lineage at the copy and got demoted to a leaf.
 #:
-#: This sidecar is the recording half. Where it has an entry, `freeze_refs`
+#: This sidecar is the recording half. Where it has an entry, `pin_refs`
 #: prefers it over the pin-derived id, and the reference's identity then moves
 #: exactly when the build that produced it moves -- the rule every intermediate
 #: already follows. The DVC-derived id is the backfill for everything published
@@ -204,7 +202,7 @@ def record_published_provenance(refs_root: Path, rel: str, *, instance_id: str,
 
 
 def refs_library_path(refs_root: Path) -> Path:
-    """Where the frozen library for `refs_root` lives.
+    """Where the pinned library for `refs_root` lives.
 
     Beside the data rather than inside it: the manifest holds absolute paths, so
     putting the library *at* `processed/` with relative entries would look
@@ -221,28 +219,26 @@ def _library_root() -> Path:
     return common.resolve_library_root()
 
 
-def freeze_refs(
+def pin_refs(
     refs_root: Path,
     out: Path | None = None,
     *,
     types: Iterable[str] | None = None,
-    permissions: bool = True,
 ) -> dict:
-    """Build the frozen reference library. Reads no reference bytes."""
+    """Build the pinned reference library. Reads no reference bytes."""
     refs_root = Path(refs_root).expanduser().resolve()
     out = Path(out).expanduser().resolve() if out else refs_library_path(refs_root)
     wanted = tuple(types) if types is not None else tuple(REF_LAYOUT)
 
     lib_root = _library_root()
     if out.exists():
-        # An existing frozen library refuses Purge, correctly. Rebuilding one is
-        # a legitimate act, so lift the freeze first rather than working around
-        # it -- which also restores write on the entries it marked.
+        # An existing pinned library refuses Purge, correctly. Rebuilding one is
+        # a legitimate act, so lift the pin first rather than working around it.
         try:
             existing = DataInstanceLibrary.Load(out)
-            if existing.is_frozen:
-                existing.Unfreeze()
-        except (AssertionError, FrozenLibraryError, ValueError):
+            if existing.is_pinned:
+                existing.Unpin()
+        except (AssertionError, PinnedLibraryError, ValueError):
             pass
     lib = DataInstanceLibrary(out)
     lib.Purge()
@@ -274,7 +270,7 @@ def freeze_refs(
         # A recorded provenance id is strictly better than one derived from the
         # pin: it is the identity the product actually had when it was made, so
         # it moves when the build moves rather than when the bytes are
-        # re-materialised. The pin stays recorded either way -- `load_frozen_refs`
+        # re-materialised. The pin stays recorded either way -- `load_pinned_refs`
         # uses it to tell a re-materialisation from a real change.
         published = recorded.get(rel)
         instance_id = published["instance_id"] if published else dvc_leaf_id(md5, rel)
@@ -294,22 +290,22 @@ def freeze_refs(
             provenance[target]["run"] = published["run"]
         added[dtype] = str(target)
 
-    report = lib.Freeze(apply_permissions=permissions, provenance=provenance)
+    report = lib.Pin(provenance=provenance)
     report.update(added=added, skipped=skipped, refs_root=str(refs_root))
     return report
 
 
-def unfreeze_refs(refs_root: Path, out: Path | None = None) -> dict:
-    """Lift the freeze so `dvc checkout`/`dvc pull` can write again."""
+def unpin_refs(refs_root: Path, out: Path | None = None) -> dict:
+    """Lift the pin, so the library can be rebuilt."""
     out = Path(out).expanduser().resolve() if out else refs_library_path(Path(refs_root))
     lib = DataInstanceLibrary.Load(out)
-    return lib.Unfreeze()
+    return lib.Unpin()
 
 
-def load_frozen_refs(refs_root: Path, out: Path | None = None) -> DataInstanceLibrary | None:
-    """Load the frozen library, self-healing a re-materialised pin.
+def load_pinned_refs(refs_root: Path, out: Path | None = None) -> DataInstanceLibrary | None:
+    """Load the pinned library, self-healing a re-materialised pin.
 
-    Returns None when there is no frozen library, which is the un-migrated
+    Returns None when there is no pinned library, which is the un-migrated
     checkout: the caller warns once and falls back to staging references the
     slow way, so nothing hard-breaks on an upgrade.
     """
@@ -318,7 +314,7 @@ def load_frozen_refs(refs_root: Path, out: Path | None = None) -> DataInstanceLi
         return None
     try:
         return DataInstanceLibrary.Load(out)
-    except FrozenLibraryError as first:
+    except PinnedLibraryError as first:
         # A stamp moved. The pin md5 is the authority, so ask it before
         # bothering anyone: if the pins agree, the bytes the ids describe are
         # the bytes on disk and only mtime moved.
@@ -327,11 +323,11 @@ def load_frozen_refs(refs_root: Path, out: Path | None = None) -> DataInstanceLi
             raise
         bad = _pins_that_moved(Path(refs_root), lib)
         if bad:
-            raise FrozenLibraryError(
+            raise PinnedLibraryError(
                 f"{first}\n\n  The DVC pins for these entries also changed, so the"
                 " recorded ids are genuinely wrong:\n"
                 + "\n".join(f"    [{k}] {v}" for k, v in bad.items())
-                + "\n  Rebuild the reference library:  fabfos refs freeze"
+                + "\n  Rebuild the reference library:  fabfos refs pin"
             ) from first
         lib.Restamp()
         print(
@@ -351,14 +347,14 @@ def _load_without_stamp_check(out: Path) -> DataInstanceLibrary | None:
     exit and stays one.
     """
     try:
-        return DataInstanceLibrary.Load(out, check_frozen_stamps=False)
+        return DataInstanceLibrary.Load(out, check_pinned_stamps=False)
     except Exception:
         return None
 
 
 def _pins_that_moved(refs_root: Path, lib: DataInstanceLibrary) -> dict[str, str]:
     moved: dict[str, str] = {}
-    for name, entry in (lib._frozen or {}).get("entries", {}).items():
+    for name, entry in (lib._pinned or {}).get("entries", {}).items():
         prov = entry.get("provenance")
         if not prov or prov.get("source") != "dvc":
             continue
@@ -375,7 +371,7 @@ def refs_view(lib: DataInstanceLibrary, keep_types: Iterable[str]):
 
     Two reasons this is a whitelist rather than "everything minus the
     overrides". A reference the caller overrode must be masked or the solver
-    sees two candidates of that type -- the frozen default and the override --
+    sees two candidates of that type -- the pinned default and the override --
     and picks between them arbitrarily. And the library holds every reference
     this checkout has, not just this lane's: handing the annotation lane an
     ESM-C weights row it would not otherwise have makes a transform reachable
@@ -395,37 +391,33 @@ def _main(argv: list[str] | None = None) -> int:
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="verb", required=True)
     for verb, helptext in (
-        ("freeze", "build the frozen reference library (reads no data)"),
-        ("unfreeze", "lift the freeze so dvc can write again"),
-        ("inspect", "show what the frozen library records"),
+        ("pin", "build the pinned reference library (reads no data)"),
+        ("unpin", "lift the pin so the library can be rebuilt"),
+        ("inspect", "show what the pinned library records"),
     ):
         s = sub.add_parser(verb, help=helptext)
-        s.add_argument("--refs-root", default=str(common.DATA_PROCESSED))
+        s.add_argument("--refs-root", default=str(common.DATA_PROCESSED),
+                       help="the `processed/` root to pin"
+                            f" (default: $FABFOS_REFS_ROOT, else {common.DATA_PROCESSED})")
         s.add_argument("--out", default=None)
-        if verb == "freeze":
-            s.add_argument("--no-permissions", action="store_true",
-                           help="skip the read-only mark; the stamps are still recorded")
     args = ap.parse_args(argv)
 
     root = Path(args.refs_root)
-    if args.verb == "freeze":
-        report = freeze_refs(root, args.out, permissions=not args.no_permissions)
+    if args.verb == "pin":
+        report = pin_refs(root, args.out)
         for dtype, path in sorted(report["added"].items()):
-            print(f"  frozen  {dtype:34s} {path}")
+            print(f"  pinned  {dtype:34s} {path}")
         for dtype, why in sorted(report["skipped"].items()):
             print(f"  skipped {dtype:34s} {why}")
-        for line in report.get("chmod_failed", []):
-            print(f"  chmod   {line}")
-        print(f"\n{report['frozen']} entries at {report['location']}")
-        print("Run `fabfos refs unfreeze` before any dvc checkout/pull of these chunks.")
+        print(f"\n{report['pinned']} entries at {report['location']}")
         return 0
-    if args.verb == "unfreeze":
-        report = unfreeze_refs(root, args.out)
-        print(f"unfroze {report['unfrozen']} entries at {report['location']}")
+    if args.verb == "unpin":
+        report = unpin_refs(root, args.out)
+        print(f"unpinned {report['unpinned']} entries at {report['location']}")
         return 0
-    lib = load_frozen_refs(root, args.out)
+    lib = load_pinned_refs(root, args.out)
     if lib is None:
-        print("no frozen reference library; run `fabfos refs freeze`")
+        print("no pinned reference library; run `fabfos refs pin`")
         return 1
     for path, dtype in sorted(lib.manifest.items(), key=lambda t: str(t[0])):
         print(f"  {dtype:34s} {lib.instance_meta[path]['instance_id'][:24]}…  {path}")

@@ -72,7 +72,7 @@ from . import common
 
 DOMAINS = ["fabfos"]
 
-# Relative paths come from the one table in `fabfos.refs`, which the freeze
+# Relative paths come from the one table in `fabfos.refs`, which the pin
 # step reads too -- a second copy here would mis-key an entry rather than fail.
 DEFAULT_ATOM_PAIRS = common.DATA_PROCESSED / refs.relpaths_for("ecspr::atom_pairs")[0]
 DEFAULT_DIRECTION_RATIOS = common.DATA_PROCESSED / refs.relpaths_for("ecspr::direction_ratios")[0]
@@ -97,7 +97,7 @@ def parse_unit(spec: str) -> Unit:
 
 def build_inputs(work: Path, *, units: list[Unit], atom_pairs: Path | None,
                   direction_ratios: Path | None, stage: str = "reference",
-                  use_frozen_refs: bool = True,
+                  use_pinned_refs: bool = True,
                   ) -> tuple[DataInstanceLibrary, dict[str, Path], "DataInstanceLibrary | None"]:
     lib = common.resolve_library_root()
 
@@ -122,8 +122,8 @@ def build_inputs(work: Path, *, units: list[Unit], atom_pairs: Path | None,
              name=f"{unit.name}.conditions.parquet", parents={exp})
 
     stubs: dict[str, Path] = {}
-    frozen = refs.load_frozen_refs(common.DATA_PROCESSED) if use_frozen_refs else None
-    covered = set(frozen.manifest.values()) if frozen is not None else set()
+    pinned = refs.load_pinned_refs(common.DATA_PROCESSED) if use_pinned_refs else None
+    covered = set(pinned.manifest.values()) if pinned is not None else set()
     overridden = set()
     for dtype, given, default, stem in (
         ("ecspr::atom_pairs", atom_pairs, DEFAULT_ATOM_PAIRS, "atom_pairs"),
@@ -145,9 +145,9 @@ def build_inputs(work: Path, *, units: list[Unit], atom_pairs: Path | None,
             stubs[dtype] = path
 
     inputs.Save()
-    if frozen is not None:
-        frozen = refs.refs_view(frozen, set(refs.ECSPR_REFS) & covered - overridden)
-    return inputs, stubs, frozen
+    if pinned is not None:
+        pinned = refs.refs_view(pinned, set(refs.ECSPR_REFS) & covered - overridden)
+    return inputs, stubs, pinned
 
 
 def generate_workflow(work: Path, *, units: list[Unit], atom_pairs: Path | None,
@@ -155,7 +155,7 @@ def generate_workflow(work: Path, *, units: list[Unit], atom_pairs: Path | None,
                        agent_env: str | None = None, stage: str = "reference",
                        agent=None, on_inputs=None):
     lib = common.resolve_library_root()
-    inputs, stubs, frozen_refs = build_inputs(
+    inputs, stubs, pinned_refs = build_inputs(
         work, units=units, atom_pairs=atom_pairs,
         direction_ratios=direction_ratios, stage=stage,
     )
@@ -165,7 +165,7 @@ def generate_workflow(work: Path, *, units: list[Unit], atom_pairs: Path | None,
     resources = [
         DataInstanceLibrary.Load(lib / "resources" / "env"),
         DataInstanceLibrary.Load(lib / "resources" / "lib"),
-        *([frozen_refs] if frozen_refs is not None else []),
+        *([pinned_refs] if pinned_refs is not None else []),
         inputs,
     ]
     transforms = [TransformInstanceLibrary.Load(lib / f"transforms/{d}") for d in DOMAINS]
