@@ -133,8 +133,9 @@ def test_the_engine_reads_the_shipped_templates(engine):
         pytest.skip("the standard library is not compiled — run `dev/libraries.sh -bm`")
     from metasmith.agents import Template
 
-    seen = 0
+    seen = shipped = 0
     for template in Template.Discover(root):
+        shipped += 1
         task = template.spec.Solve()
         problem = problem_of_plan(task.plan, name=template.name)
         if problem is None: continue
@@ -149,4 +150,10 @@ def test_the_engine_reads_the_shipped_templates(engine):
         for key in mine:
             assert theirs[key] == mine[key], f"{template.name}: {key} disagrees"
         seen += 1
-    assert seen == 4, f"expected the four shipped templates, adjudicated {seen}"
+    # Every shipped template, not a count. The count was 4 when this was written and
+    # is 10 since the scopes converged, and a template landing is not a reason for
+    # this to fail. What it guards is a vacuous pass: an uncompiled library
+    # discovers nothing, and a template that stops yielding a problem stops being
+    # adjudicated without failing anything else.
+    assert shipped >= 4, f"only {shipped} templates discovered; the library looks uncompiled"
+    assert seen == shipped, f"adjudicated {seen} of {shipped} shipped templates"
