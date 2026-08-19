@@ -8,13 +8,10 @@ from .coordinates import rectify_angle, to_cart, rad2deg
 
 class TextPlotter:
     def __init__(self, fig: go.Figure, font_family: str="default") -> None:
-        # self.font_widths = GetFontWidths(font_family)
         self.font_widths = dict()
         self.fig = fig
 
     def _rotate_text(self, r:float, mode=0):
-        # if mode == 0: # inline with spoke
-        #     r = np.pi-r if r < np.pi*3/2 and r > np.pi/2 else -r
         if r >= np.pi: r += np.pi
         r -= np.pi/2
         r = rectify_angle(r)
@@ -37,15 +34,6 @@ class TextPlotter:
         rot = rectify_angle(rot)
         x, y = to_cart(rot, radius)
         x, y = x+dx, y+dy
-        # buf_len = sum([self.font_widths.get(c, 22) for c in text])
-        # print(text, radius, font_size, buf_len)
-        # buf_len = int(round(buf_len / 22.5))
-        # buf = "".join(" " for _ in range(buf_len))
-        # text = text.strip()
-        # if rot >= np.pi:
-        #     text = text + buf
-        # else:
-        #     text = buf + text
         self.fig.add_annotation(
             x=x, y=y,
             text=text,
@@ -95,7 +83,6 @@ def GetFontWidths(font_family: str = "default"):
     def _get():
         fig = go.Figure()
 
-        # ascii codes
         start = 33
         end = 130
         _max = end-start
@@ -110,7 +97,6 @@ def GetFontWidths(font_family: str = "default"):
             fig.add_annotation(
                 x=0, y=5 + (i-start)*10,
                 text=chr(i),
-                # text=f"{text}",
                 font=font,
                 showarrow=False,
                 xanchor="left",
@@ -152,7 +138,7 @@ def GetFontWidths(font_family: str = "default"):
             if r is None or l is None:
                 continue 
             widths[char] = abs(r-l)
-        widths[" "] = widths["I"] # guess
+        widths[" "] = widths["I"]
         return widths
 
     SAVE_NAME = f"{font_family}_widths"

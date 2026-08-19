@@ -8,7 +8,6 @@ from io import BytesIO
 from typing import Callable, TypeVar
 from .constants import EXECUTION_DIR, WORKSPACE_ROOT
 
-############################## pickling ##############################
 
 CACHE = f'{EXECUTION_DIR}/cache'
 
@@ -27,7 +26,7 @@ def _ext_to_fpaths(fpath: str, compression=False):
     EXT = '.pkl.gz' if compression else '.pkl'
     fpath = fpath.replace(EXT, '')
     fpath += EXT
-    fpath_str = fpath.replace(str(WORKSPACE_ROOT), "{WORKSPACE}") # for logging
+    fpath_str = fpath.replace(str(WORKSPACE_ROOT), "{WORKSPACE}")
     return fpath, fpath_str
 
 def save_exists(name: str, alt_workspace=None):
@@ -80,7 +79,6 @@ def cache(fname, regenerate, force_regenerate=None, compression_level=1):
         save(fname, x, compression_level=compression_level)
         return x
 
-############################## fn decorator ##############################
 
 T = TypeVar('T')
 def cache_fn_result(loader: Callable[..., T]) -> Callable[[], T]:
@@ -92,7 +90,6 @@ def cache_fn_result(loader: Callable[..., T]) -> Callable[[], T]:
         return data
     return getter
 
-# #####################################################################################
 
 class DictCache:
     EXT = ".db"
@@ -101,17 +98,14 @@ class DictCache:
             save_folder = WORKSPACE_ROOT.joinpath(f"data/cache")
             if not save_folder.exists(): os.makedirs(save_folder, exist_ok=True)
         if not name.endswith(self.EXT): name += self.EXT
-        # Connect to the SQLite database (or create it if it doesn't exist)
         self.conn = sqlite3.connect(save_folder.joinpath(name))
 
-        # Create a table to store the compressed, cached JSON data
         self.conn.execute('''CREATE TABLE IF NOT EXISTS json_cache
                         (id TEXT PRIMARY KEY, data BLOB)''')
         
         self.compression = compression
 
     def save(self):
-        # Commit the changes to the database
         self.conn.commit()
 
     def close(self):
@@ -144,18 +138,14 @@ class DictCache:
     def __contains__(self, key: str):
         return self.get(key) is not None
 
-    # Define a function to cache JSON data (compressed with gzip)
     def __setitem__(self, key: str, data: dict):
-        # Serialize the JSON data to a string
         json_data = json.dumps(data)
         
-        # Compress the JSON data using gzip
         gzip_buffer = BytesIO()
         with gzip.GzipFile(mode='wb', fileobj=gzip_buffer, compresslevel=self.compression) as f:
             f.write(json_data.encode('utf-8'))
         compressed_data = gzip_buffer.getvalue()
         
-        # Insert or replace the compressed data in the database
         self.conn.execute("INSERT OR REPLACE INTO json_cache (id, data) VALUES (?, ?)", (key, compressed_data))
 
     def _decompress(self, compressed_data):
@@ -164,21 +154,16 @@ class DictCache:
             return json.loads(f.read().decode('utf-8'))
 
     def get(self, key: str, default: dict|None=None) -> dict|None:
-        # Query the database for the compressed JSON data
         cursor = self.conn.execute("SELECT data FROM json_cache WHERE id=?", (key,))
         
-        # Get the first row of the result (or None if no rows are returned)
         row = cursor.fetchone()
         
         if row is not None:
-            # Decompress the compressed JSON data
             compressed_data = row[0]
-            # Deserialize the JSON data and return it
             return self._decompress(compressed_data)
         else:
             return default
 
-    # Define a function to retrieve cached JSON data
     def __getitem__(self, key: str) -> dict:
         v = self.get(key)
         if v is None: raise KeyError(f"[{key}] not found")

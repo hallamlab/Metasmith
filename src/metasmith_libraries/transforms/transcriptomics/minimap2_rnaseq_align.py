@@ -1,5 +1,3 @@
-"""Align RNA-seq reads to an organellar reference genome using minimap2 (prokaryotic, no splice awareness)."""
-
 from metasmith.python_api import *
 
 lib      = TransformInstanceLibrary.ResolveParentLibrary(__file__)
@@ -21,13 +19,9 @@ def protocol(context: ExecutionContext):
     threads = context.params.get("cpus")
     threads = 4 if threads is None else threads
 
-    # Read sample name from the read_pair file
     with open(ipair.local) as f:
         sample_name = f.read().strip()
 
-    # minimap2: short-read mode (-x sr), no splice awareness = prokaryotic
-    # Add read group with sample name so downstream tools can identify the sample
-    # Same command either way: this tool is a plain CLI in both worlds.
     _cmd = f"""\
             minimap2 -a -x sr -t {threads} \
                 -R '@RG\\tID:{sample_name}\\tSM:{sample_name}' \
@@ -38,8 +32,6 @@ def protocol(context: ExecutionContext):
         .ifContainerDo(env=mm2_img, cmd=_cmd) \
         .ifVirtualEnvDo(env=mm2_img, cmd=_cmd)
 
-    # samtools: sort and index
-    # Same command either way: this tool is a plain CLI in both worlds.
     _cmd = f"""\
             samtools sort -@ {threads} -o {iout.container} aligned.sam && \
             samtools index {iout.container}

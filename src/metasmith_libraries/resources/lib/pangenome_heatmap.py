@@ -5,7 +5,6 @@ import numpy as np
 import sys
 from umap import UMAP
 from sklearn.metrics.pairwise import pairwise_distances
-# ----------------------------------------------------------------------------
 
 from local.figures.base.layout import Canvas, Panel, Transform
 from local.figures.base.geometry import Brush
@@ -14,7 +13,6 @@ from local.figures.template import BaseFigure, ApplyTemplate, go, SubplotSize
 from local.figures.categorical_bars import CategoricalBar
 from local.figures.colors import Color, Palettes, COLORS
 from hierarchical_clustering import HierarchicalCluster, Deduplicate
-# ----------------------------------------------------------------------------
 
 path_matrix, path_out = sys.argv[1:]
 df = pd.read_csv(path_matrix)
@@ -27,14 +25,12 @@ for c in xlabels:
 mat = df.iloc[:, _left:].to_numpy()
 print("mat.shape, len(stability), len(xlabels)")
 print(mat.shape, len(stability), len(xlabels))
-# ----------------------------------------------------------------------------
 
 bmat = mat.astype("bool")
 ylabels = list(df["Gene"])
 gmat, gylabels = Deduplicate(bmat, ylabels)
 print("gmat.shape")
 print(gmat.shape)
-# ----------------------------------------------------------------------------
 
 metric="cosine"
 seed = 42
@@ -42,20 +38,16 @@ model = UMAP(n_components=1, n_neighbors= min(15, len(gmat)-1), metric=metric, t
 _emb = model.fit_transform(gmat)
 print("_emb.shape")
 print(_emb.shape)
-# ----------------------------------------------------------------------------
 
 gclust = HierarchicalCluster(gmat, gylabels, method="complete", sort_order=_emb[:, 0])
 print("len(gclust.labels), gclust.mat.shape")
 print(len(gclust.labels), gclust.mat.shape)
-# ----------------------------------------------------------------------------
 
 pdist = pairwise_distances(bmat.T, metric="jaccard")
-# display names: `genus species PCC NNNN` (manifest kept them hyphen-joined)
 dlabels = [x.replace('-', ' ') for x in xlabels]
 clust = HierarchicalCluster(pdist, labels=dlabels, method="complete", metric="precomputed", distance_sort=False)
 print("clust.labels")
 print(clust.labels)
-# ----------------------------------------------------------------------------
 
 _gorder = np.array([i for g in gylabels for i in g.groupi])
 _gstability = stability[_gorder]
@@ -65,7 +57,6 @@ for i, c in enumerate(["cloud", "shell", "persistent"][::-1]):
     _new.append(_gorder[_f])
 gi = np.hstack(_new)
 gstability = stability[gi]
-# ----------------------------------------------------------------------------
 
 row_heights=[1, 3]
 column_widths=[2*len(xlabels), 1, 5]
@@ -90,7 +81,6 @@ _colorscale = [
     [1, COLORS.RED],
 ]
 
-# anti aliasing
 z = mat.clip(0, 2)[gi][:, clust.order]
 seg = 10
 n_seg = len(z)//seg
@@ -147,7 +137,7 @@ CategoricalBar(
 
 relh = row_heights[0]/sum(row_heights)
 relw = column_widths[0]/sum(column_widths)
-relw, relh = SubplotSize(fig, 1, 1, 2) # must be called after drawn (set_layout()?)
+relw, relh = SubplotSize(fig, 1, 1, 2)
 sx = relw/relh * (len(xlabels)/(len(xlabels)+1))
 ptree = cvs.NewPanel(transform=Transform(dx=-0.5, dy=-0.5, sx=(len(xlabels)/(len(xlabels)+1)), sy=0.95))
 btree = Brush(_black)
@@ -162,11 +152,9 @@ for n in clust.tree.Traverse():
 
 fig = cvs.Render(
     fig=fig,
-    # debug=True
 )
 fig = cvsb.Render(
     fig=fig,
-    # debug=True
 )
 
 _legend = []

@@ -13,7 +13,6 @@ def protocol(context: ExecutionContext):
     iasm = context.Input(asm)
     iout = context.Output(out)
 
-    # Same command either way: this tool is a plain CLI in both worlds.
     _cmd = f"gffread {igtf.container} -g {iasm.container} -y {iout.container}"
     context.ExecWithEnv() \
         .ifContainerDo(env=image, cmd=_cmd) \

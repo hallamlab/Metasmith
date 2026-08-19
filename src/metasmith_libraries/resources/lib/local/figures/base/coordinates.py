@@ -19,10 +19,10 @@ def rectify_angle(x: T) -> T:
     if isinstance(x, np.ndarray):
         return np.where(x<0 , 2*np.pi+x, x)
     elif type(x) is float:
-        _x: float = x # to deal with typing
+        _x: float = x
         while _x<0:
             _x+=2*np.pi
-        ret: Any = _x # to deal with typing
+        ret: Any = _x
         return ret
     else:
         return x
@@ -69,7 +69,6 @@ class Transform:
 
     def Apply(self, points: np.ndarray) -> np.ndarray:
         assert points.shape[1] == 2, f"expected array of shape [n, 2], got {points.shape}"
-        # https://en.wikipedia.org/wiki/Transformation_matrix#Affine_transformations
         homo = np.hstack((points, np.ones(shape=(len(points), 1))))
         return (homo @ self._mat).T[:-1].T
 

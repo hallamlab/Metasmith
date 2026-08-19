@@ -1,20 +1,4 @@
 #!/usr/bin/env python3
-"""
-Clustering analysis of metabolomics differential expression data.
-
-Combines all 3 nutrient conditions (Selenium/8, Phosphorus/P, Sulfur/S) into a
-single 18-feature vector per metabolite (log2FC + -log10p at 3 timepoints × 3
-conditions), applies GMM clustering (BIC-selected, k=2..9), then visualizes
-with a 4-panel UMAP (clusters + nutrient overlays) and a cluster-colored
-volcano plot grid.
-
-Merges cluster assignments into compound_metadata.csv and slims
-differential_results.csv by removing redundant columns.
-
-Usage:
-    python clustering_analysis.py <output_dir>
-"""
-
 import sys
 import numpy as np
 import pandas as pd
@@ -29,7 +13,6 @@ from pathlib import Path
 import warnings
 warnings.filterwarnings("ignore")
 
-# ── Paths ──────────────────────────────────────────────────────────────
 if len(sys.argv) < 2:
     print("Usage: python clustering_analysis.py <output_dir>", file=sys.stderr)
     sys.exit(1)
@@ -52,18 +35,17 @@ CONDITION_FULL = {
 }
 TIMEPOINTS = [24, 72, 144]
 
-# Plotly default qualitative palette (D3 / category10)
 PLOTLY_COLORS = [
-    "#636EFA",  # muted blue
-    "#EF553B",  # red
-    "#00CC96",  # green
-    "#AB63FA",  # purple
-    "#FFA15A",  # orange
-    "#19D3F3",  # cyan
-    "#FF6692",  # pink
-    "#B6E880",  # lime
-    "#FF97FF",  # magenta
-    "#FECB52",  # yellow
+    "#636EFA",
+    "#EF553B",
+    "#00CC96",
+    "#AB63FA",
+    "#FFA15A",
+    "#19D3F3",
+    "#FF6692",
+    "#B6E880",
+    "#FF97FF",
+    "#FECB52",
 ]
 
 CLUSTER_COLORS = {
@@ -78,9 +60,7 @@ CLUSTER_ALPHAS = {
 }
 
 
-# ── 1. Data Loading & Combined Feature Construction ────────────────────
 def build_combined_feature_matrix(df_diff):
-    """Build 18-feature matrix: 6 features (log2FC + -log10p x 3 timepoints) x 3 conditions."""
     df_diff = df_diff.copy()
     df_diff["neg_log10p"] = -np.log10(df_diff["pval"].clip(lower=1e-300))
 
@@ -109,9 +89,7 @@ def build_combined_feature_matrix(df_diff):
     return feat_df, feature_cols
 
 
-# ── 2. GMM Clustering with BIC Selection ──────────────────────────────
 def fit_gmm(X_scaled, k_range=range(2, 10), random_state=42):
-    """Fit GMM for k range, select best k via BIC elbow (first k where improvement < 5%)."""
     bics = {}
     models = {}
     for k in k_range:
@@ -125,7 +103,6 @@ def fit_gmm(X_scaled, k_range=range(2, 10), random_state=42):
 
     print(f"  BIC: {', '.join(f'k={k}:{v:.0f}' for k, v in sorted(bics.items()))}")
 
-    # Elbow: pick first k where marginal BIC improvement drops below 5%
     ks = sorted(bics.keys())
     best_k = ks[0]
     for i in range(1, len(ks)):
@@ -141,7 +118,6 @@ def fit_gmm(X_scaled, k_range=range(2, 10), random_state=42):
 
 
 def label_gmm_clusters(gmm, X_scaled, scaler, feature_cols):
-    """Assign semantic labels based on mean log2FC of each GMM component centroid."""
     cluster_ids = gmm.predict(X_scaled)
     centroids_orig = scaler.inverse_transform(gmm.means_)
     fc_idx = [i for i, c in enumerate(feature_cols) if c.startswith("log2FC")]
@@ -160,9 +136,7 @@ def label_gmm_clusters(gmm, X_scaled, scaler, feature_cols):
     return named_labels, cluster_ids, semantic_map
 
 
-# ── 3. UMAP 4-panel (clusters + 3 nutrient overlays) ─────────────────
 def _fc_to_rgba(fc_mean, neg_log10p_mean, fc_max, p_max):
-    """Map fold-change -> red/blue hue+saturation, -log10p -> alpha."""
     sat = min(abs(fc_mean) / max(fc_max, 1e-6), 1.0)
     alpha = 0.08 + 0.82 * min(neg_log10p_mean / max(p_max, 1e-6), 1.0)
     if fc_mean >= 0:
@@ -173,7 +147,6 @@ def _fc_to_rgba(fc_mean, neg_log10p_mean, fc_max, p_max):
 
 
 def plot_umap_panels(X_scaled, cluster_ids, n_clusters, feat_df, out_dir):
-    """4-panel UMAP: supervised by GMM cluster labels."""
     reducer = umap.UMAP(n_neighbors=10, min_dist=0.8, spread=2.0,
                         repulsion_strength=1.5, random_state=42,
                         target_metric="categorical")
@@ -181,7 +154,6 @@ def plot_umap_panels(X_scaled, cluster_ids, n_clusters, feat_df, out_dir):
 
     fig, axes = plt.subplots(2, 2, figsize=(14, 12))
 
-    # ── Panel 0: GMM clusters (top-left) ──
     ax = axes[0, 0]
     for ci in range(n_clusters):
         mask = cluster_ids == ci
@@ -191,7 +163,6 @@ def plot_umap_panels(X_scaled, cluster_ids, n_clusters, feat_df, out_dir):
                    label=f"C{ci} (n={mask.sum()})", edgecolors="none")
     ax.set_title(f"GMM clusters (k={n_clusters})", fontsize=11, fontweight="bold")
     ax.legend(loc="best", fontsize=6, ncol=2, markerscale=1.5)
-    # ── Panels 1-3: per-nutrient FC/significance overlays ──
     for panel_i, cond in enumerate(CONDITIONS):
         row, col = divmod(panel_i + 1, 2)
         ax = axes[row, col]
@@ -224,7 +195,6 @@ def plot_umap_panels(X_scaled, cluster_ids, n_clusters, feat_df, out_dir):
         ]
         ax.legend(handles=legend_elements, loc="best", fontsize=6)
 
-    # ── Remove all axes (UMAP coordinates are meaningless) ──
     for ax_row in axes:
         for ax in ax_row:
             ax.set_xticks([])
@@ -234,7 +204,6 @@ def plot_umap_panels(X_scaled, cluster_ids, n_clusters, feat_df, out_dir):
             for spine in ax.spines.values():
                 spine.set_visible(False)
 
-    # Share axis limits
     xlim = [X_umap[:, 0].min() - 1, X_umap[:, 0].max() + 1]
     ylim = [X_umap[:, 1].min() - 1, X_umap[:, 1].max() + 1]
     for ax_row in axes:
@@ -250,9 +219,7 @@ def plot_umap_panels(X_scaled, cluster_ids, n_clusters, feat_df, out_dir):
     return X_umap
 
 
-# ── 4. Volcano plot grid colored by cluster ───────────────────────────
 def plot_volcano_clusters(df_diff, feat_df, cluster_ids, n_clusters, out_dir):
-    """3x3 volcano grid (conditions x timepoints) with points colored by GMM cluster."""
     cid_to_cluster = dict(zip(feat_df["compound_id"], cluster_ids))
 
     nrows, ncols = len(CONDITIONS), len(TIMEPOINTS)
@@ -291,7 +258,6 @@ def plot_volcano_clusters(df_diff, feat_df, cluster_ids, n_clusters, out_dir):
                     rotation=-90, va="center", ha="left",
                 )
 
-    # Hide inner spines and ticks (matching generate_report.py volcano style)
     for i in range(nrows):
         for j in range(ncols):
             ax = axes[i][j]
@@ -325,14 +291,12 @@ def plot_volcano_clusters(df_diff, feat_df, cluster_ids, n_clusters, out_dir):
     print(f"  Saved {path.name}")
 
 
-# ── Main ───────────────────────────────────────────────────────────────
 def main():
     out_dir = OUT_DIR
     df_diff = pd.read_csv(DIFF_CSV)
     compound_meta = pd.read_csv(COMPOUND_CSV)
     print(f"Loaded {len(df_diff)} differential rows, {len(compound_meta)} compounds")
 
-    # Build combined 18-feature matrix
     print("\nBuilding combined feature matrix (3 conditions x 3 timepoints x 2 measures = 18 features)...")
     feat_df, feature_cols = build_combined_feature_matrix(df_diff)
     X = feat_df[feature_cols].values
@@ -340,31 +304,26 @@ def main():
     X_scaled = scaler.fit_transform(X)
     print(f"  {len(feat_df)} metabolites, {len(feature_cols)} features")
 
-    # GMM clustering with BIC selection (k=2..9)
     print("\nFitting GMM (k=2..9)...")
     gmm, best_k = fit_gmm(X_scaled)
     named_labels, cluster_ids, semantic_map = label_gmm_clusters(gmm, X_scaled, scaler, feature_cols)
 
-    # Print cluster distribution
     print(f"\nCluster breakdown (k={best_k}):")
     for ci in range(best_k):
         n = (cluster_ids == ci).sum()
         print(f"  Cluster {ci} ({semantic_map[ci]}): {n} metabolites")
 
-    # Plots
     print("\nGenerating UMAP (4-panel, supervised by clusters)...")
     plot_umap_panels(X_scaled, cluster_ids, best_k, feat_df, out_dir)
     print("Generating volcano plot (cluster-colored)...")
     plot_volcano_clusters(df_diff, feat_df, cluster_ids, best_k, out_dir)
 
-    # ── Merge cluster assignments into compound_metadata.csv ──
     print("\nMerging cluster assignments into compound_metadata.csv...")
     cluster_df = pd.DataFrame({
         "compound_id": feat_df["compound_id"],
         "cluster_id": cluster_ids,
         "cluster_label": named_labels,
     })
-    # Drop existing cluster columns if re-running
     for col in ["cluster_id", "cluster_label"]:
         if col in compound_meta.columns:
             compound_meta = compound_meta.drop(columns=[col])
@@ -373,7 +332,6 @@ def main():
     n_clustered = compound_meta["cluster_id"].notna().sum()
     print(f"  {n_clustered}/{len(compound_meta)} compounds have cluster assignments")
 
-    # ── Slim differential_results.csv ──
     print("\nSlimming differential_results.csv (dropping compound_name, kegg_id, inchi_key)...")
     drop_cols = [c for c in ["compound_name", "kegg_id", "inchi_key"] if c in df_diff.columns]
     if drop_cols:
@@ -383,7 +341,6 @@ def main():
     else:
         print("  No redundant columns found (already slimmed)")
 
-    # ── Clean up old files ──
     for old_file in ["clustering_all_conditions.csv", "pca_combined.png"]:
         p = out_dir / old_file
         if p.exists():

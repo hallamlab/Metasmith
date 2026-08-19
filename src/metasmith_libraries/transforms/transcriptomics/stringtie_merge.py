@@ -16,13 +16,11 @@ def protocol(context: ExecutionContext):
     threads = context.params.get('cpus')
     threads = 2 if threads is None else threads
 
-    # Write a file listing all per-sample GTF paths
     gtf_list = Path("gtf_list.txt")
     with open(gtf_list, "w") as f:
         for p in gtf_paths:
             f.write(f"{p.container}\n")
 
-    # Same command either way: this tool is a plain CLI in both worlds.
     _cmd = f"""\
             stringtie --merge \
                 -G {igff.container} \

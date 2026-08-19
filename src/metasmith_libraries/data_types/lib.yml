@@ -7,6 +7,18 @@ types:
     properties:
       src: local
       usage: library
+  transcriptomics:
+    properties:
+      src: transcriptomics
+      usage: command line
+  metabolomics:
+    properties:
+      src: metabolomics
+      usage: command line
+  plm:
+    properties:
+      src: plm
+      usage: command line
   response_surface.py:
     properties:
       src: response_surface
@@ -23,11 +35,27 @@ types:
     properties:
       src: merge_promotech_results
       usage: command line
+  clean_wrapper.py:
+    properties:
+      src: clean_wrapper
+      usage: command line
+  ezpred_wrapper.py:
+    properties:
+      src: ezpred_wrapper
+      usage: command line
   bsr_histogram.py:
     properties:
       src: bsr_histogram
       usage: command line
+  piler_cr_to_gff3.py:
+    properties:
+      src: piler_cr_to_gff3
+      usage: command line
  
+  fabfos_gpr:
+    properties:
+      src: fabfos_gpr
+      usage: command line
   fabfos_evidence.py:
     properties:
       src: fabfos_evidence

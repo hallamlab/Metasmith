@@ -22,9 +22,6 @@ class Brush(Element):
         self._line_col = ColorValue(col)
 
     def _render(self, fig: go.Figure, parent: Panel, kwargs:dict=dict()):
-        # SHAPES = "shapes"
-        # lay: Any = fig.layout
-        # shapes = list(lay[SHAPES]) if hasattr(lay, SHAPES) else []
         def _draw_path(cmds: str, pts:np.ndarray):
             _path = []
             for c, (x, y) in zip(cmds, pts):
@@ -44,13 +41,11 @@ class Brush(Element):
             "fillrule": "nonzero" if self._union_fill else "evenodd"
         }
         data.update(kwargs)
-        # shapes.append(data)
         return data
-        # fig.update_layout(shapes=shapes)
 
     def Line(self, sx, sy, ex, ey, w=0.01):
         dy, dx = ey-sy, ex-sx
-        epsilon = 1e-6 # used for zero
+        epsilon = 1e-6
         if abs(dx) > epsilon and abs(dy) > epsilon:
             slope = dy/dx
             perp = -1/slope
@@ -89,7 +84,7 @@ class Brush(Element):
         xri, xro, yri, yro = x_rad-width/2, x_rad+width/2, y_rad-width/2, y_rad+width/2
         xi, yi = x_center + xri*np.cos(t), y_center + yri*np.sin(t)
         xo, yo = x_center + xro*np.cos(t), y_center + yro*np.sin(t)
-        xo, yo = xo[::-1], yo[::-1] # reverse arrays
+        xo, yo = xo[::-1], yo[::-1]
 
         if pie:
             points = np.hstack((

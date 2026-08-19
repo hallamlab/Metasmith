@@ -13,7 +13,6 @@ def protocol(context: ExecutionContext):
     iout=context.Output(out)
     threads = context.params.get('cpus')
     threads = 4 if threads is None else threads
-    # Same command either way: this tool is a plain CLI in both worlds.
     _cmd = f"""\
             stringtie -e -B -p {threads} \
                 -G {imgtf.container} \

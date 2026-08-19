@@ -60,7 +60,33 @@ types:
       src: ecspr
       _: the ecspr package -- `ecspr.bake` is the whole bake method (both lanes, the extractor, the encoding, the tool-output ledger), reached as `python3 -m ecspr.bake.<lane>.<module>`
 
+  # The reference-label-pool builders: select, embed and assemble, for both the diamond
+  # and the ESM-C pool. One directory rather than six declarations, and staged whole so
+  # the two pools' variants sit side by side where their divergence is visible.
+  pool:
+    extends: [build_module]
+    properties:
+      src: pool
+      _: the label-pool drivers -- selection from the bridge, the ESM-C embedding pass, and the final index/stack assembly
+
+  # The MNXR bridge builder. One subject with `mnx_lookups.py` beside it, two programs:
+  # that one is the five lookups a bake layer imports, this one is the transform driver
+  # that writes the bridge a run reads.
+  mnxr_lookup.py:
+    extends: [build_module]
+    properties:
+      src: mnxr_lookup
+      _: builds ref::mnxr_lookup -- the reaction bridge, from MetaNetX, KEGG and Rhea
+
   # -- the benchmark side ------------------------------------------------------
+  # The five benchmark drivers, as files rather than as strings inside the transforms
+  # that run them. One directory because they are staged together and read the same
+  # `bench_*` modules beside them; each is invoked by name with its inputs as argv.
+  benchmark:
+    extends: [build_module]
+    properties:
+      src: benchmark
+      _: the benchmark drivers -- the study tier, the condition table, the two host GPR builders and the condition GPR
   bench_cohorts.py:
     extends: [build_module]
     properties:
