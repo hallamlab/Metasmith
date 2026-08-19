@@ -1,9 +1,10 @@
-"""The ecspr command line -- four verbs, and nothing that edits a network.
+"""The ecspr command line -- four measuring verbs, and nothing that edits a network.
 
     ecspr two-point --gpr ... --conditions ...            two terminals, merged sink
     ecspr ground    --gpr ... --conditions ...            universal leakage ground
     ecspr draw      --gpr <pool> --like <conditions>      the null pool, as a table
     ecspr score     --results ... --null ... --baseline   delta, z, rank, the gate
+    ecspr selftest                                        can this env measure at all
 
 ECSPr MEASURES; IT DOES NOT EDIT. There is no weight builder, no metabolite
 resolver, no add/delete policy and no background flag, because each of those is an
@@ -127,6 +128,10 @@ def build_parser() -> argparse.ArgumentParser:
                     help="write the null-vs-control spread table here as well")
     sc.add_argument("--log", default=None)
     sc.set_defaults(_run="score")
+
+    st = sub.add_parser("selftest",
+                        help="assert this install can measure, and exit nonzero if not")
+    st.set_defaults(_run="selftest")
     return p
 
 
@@ -151,6 +156,9 @@ def main(argv=None):
     if not getattr(args, "verb", None):
         parser.print_help()
         return 2
+    if args._run == "selftest":
+        from .selftest import run
+        return run()
     # Imported here, not at module scope: `--where` and `--help` must work even when
     # scipy or pyarrow is missing, because "which ecspr am I running" is the first
     # question asked when they are.

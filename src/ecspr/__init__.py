@@ -18,7 +18,13 @@ with open(_MODULE / "version.txt") as _f:
 _bh = _MODULE / "build_hash.txt"
 BUILD_HASH = _bh.read_text().strip() if _bh.exists() else ""
 
-FULL_VERSION = f"{VERSION}+{BUILD_HASH}" if BUILD_HASH else VERSION
+# An unstamped tree says so rather than answering with the bare release segment:
+# a package that claims `0.1.0` when nothing pinned which `0.1.0` it was built
+# from makes a result untraceable, and the two are indistinguishable in a log.
+# `dev/ecspr.sh -be` and `docker/ecspr/dev.sh --build` stamp before they read
+# this, so the marker only appears on a route that skipped it -- or on the tree
+# vendored as `buildlib::ecspr`, which is imported rather than installed.
+FULL_VERSION = f"{VERSION}+{BUILD_HASH}" if BUILD_HASH else f"{VERSION}+unstamped"
 __version__ = FULL_VERSION
 
 CONTAINER_TAG = FULL_VERSION.replace("+", "-")
