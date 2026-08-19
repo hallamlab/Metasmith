@@ -1,9 +1,3 @@
-"""Classify ASV taxonomy using hybrid QIIME2 approach: NB + VSEARCH consensus.
-
-Uses naive Bayes classifier as primary, falls back to VSEARCH consensus
-for ASVs that NB cannot classify. This improves recall for short/divergent sequences.
-"""
-
 from pathlib import Path
 from metasmith.python_api import *
 
@@ -14,7 +8,6 @@ asvs       = model.AddRequirement(lib.GetType("amplicon::asv_seqs"))
 classifier = model.AddRequirement(lib.GetType("amplicon::silva_nb_classifier"))
 tax        = model.AddProduct(lib.GetType("amplicon::asv_taxonomy"))
 
-# SILVA reference URLs for VSEARCH fallback
 SILVA_SEQS_URL = "https://data.qiime2.org/2024.10/common/silva-138-99-seqs.qza"
 SILVA_TAX_URL = "https://data.qiime2.org/2024.10/common/silva-138-99-tax.qza"
 

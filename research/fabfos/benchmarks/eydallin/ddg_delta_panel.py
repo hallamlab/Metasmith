@@ -47,9 +47,9 @@ HOST_GEM = ROOT / "data/fabfos/benchmarks/hosts/e_coli_k12/gpr_gem.parquet"
 OUT_DIR = Path(__file__).resolve().parent / "cache"
 OUT_DIR.mkdir(parents=True, exist_ok=True)
 
-DDG_RXN = "MNXR97903"          # lpxP == ddg's synonym; already a host reaction
-SOURCE_MNXM = "MNXM1364061"    # D-glucose, as run_pilot_glycogen.py resolves it
-GLYCOGEN_MNXM = "MNXM738130"   # BiGG species -- the one iML1515 (and this host GEM) carries
+DDG_RXN = "MNXR97903"
+SOURCE_MNXM = "MNXM1364061"
+GLYCOGEN_MNXM = "MNXM738130"
 
 
 def main():
@@ -92,8 +92,6 @@ def main():
     base_keys, pert_keys = set(r_base["draw"]), set(r_pert["draw"])
     only_base, only_pert = base_keys - pert_keys, pert_keys - base_keys
     if only_base or only_pert:
-        # Base/pert share the same reaction set (fold-change, not addition), so the node
-        # sets should be identical. Report rather than silently dropping if they are not.
         print(f"[ddg-panel] WARNING: node sets differ -- {len(only_base)} only in base, "
               f"{len(only_pert)} only in pert", file=sys.stderr)
 

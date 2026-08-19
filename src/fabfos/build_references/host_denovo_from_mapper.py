@@ -36,7 +36,6 @@ import numpy as np
 import pandas as pd
 
 def _repo_root(start: Path) -> Path:
-    """Walk up until a directory holding `data/fabfos` is found."""
     for d in (start, *start.parents):
         if (d / "data" / "fabfos").is_dir():
             return d
@@ -46,12 +45,10 @@ def _repo_root(start: Path) -> Path:
 REPO = _repo_root(Path(__file__).resolve())
 GENOMES = REPO / "data" / "fabfos" / "originals" / "genomes"
 
-# The declared lane set is read from the library that declares it, never restated here.
 sys.path.insert(0, str(REPO / "src" / "metasmith_libraries" / "resources" / "lib"))
 import fabfos_evidence as fe                                          # noqa: E402
 
 LANE_SET = "chosen_4"
-# The host de-novo layer's blocks. `cohort` is a study's, not a host's.
 EXTENSIONS = ("attribution", "feature", "universe")
 
 
@@ -71,10 +68,6 @@ def main() -> int:
         src = Path(hits[0])
     g = pd.read_parquet(src)
 
-    # THE ORFS MUST BE THIS HOST'S, checked rather than trusted. The whole reason this
-    # file exists is a run whose bookkeeping paired tables with the wrong proteome, so
-    # the one check worth having is that every ORF in the table is a record of the
-    # proteome being claimed.
     faa = sorted((GENOMES / a.host / "genome").glob("*.faa"))
     if len(faa) != 1:
         raise SystemExit(f"expected one proteome under {a.host}/genome, found {faa}")
@@ -88,9 +81,6 @@ def main() -> int:
     print(f"{src.name}: {len(g):,} rows, {g['orf'].nunique():,} ORFs, "
           f"{g['mnxr'].nunique():,} MNXR, lanes {lanes}")
 
-    # The same gate the in-graph collector applies, because this is the same claim by
-    # another route. A lane short of the declared set rescales every belief weight
-    # downstream, so it is refused here rather than recorded and shipped.
     expected = sorted(fe.LANE_SETS[LANE_SET])
     if lanes != expected:
         raise SystemExit(
@@ -99,24 +89,13 @@ def main() -> int:
             f"{sorted(set(lanes) - set(expected))}. A lane that contributed no rows is a "
             f"broken join or an unstaged reference.")
 
-    # The mapper's own columns are the core, carried through unchanged -- the channel
-    # keeps the frozen spelling, and `lane_set` is what says these rows are de-novo
-    # evidence rather than a curated assertion. Attribution is what this step adds.
     df = g.copy()
     df["build_id"] = f"denovo_{a.host}_" + "+".join(lanes)
     df["host"] = a.host
-    # The unit is the proteome the lanes were keyed on, not a model: naming a GEM here
-    # would imply a curated model was consulted, which is the whole thing the de-novo
-    # line is not.
     df["unit_id"] = df["source"]
     df["feature_kind"] = "orf"
     df["feature_name"] = df["intermediate_name"]
-    # There is no boolean rule: a de-novo call is per ORF, and inventing "orf" as a
-    # one-gene rule would make this look like the same kind of claim as a GEM's.
     df["gpr_rule"] = None
-    # Null, exactly as the in-graph collector leaves it: the bake is not staged here,
-    # and a guessed `in_atom_universe` is worse than an absent one because the consumer
-    # trusts it.
     df["in_atom_universe"] = pd.Series([None] * len(df), dtype="object")
     df = df[fe.schema_for(EXTENSIONS)]
     df = df.sort_values(fe.grain_key(EXTENSIONS), kind="mergesort",

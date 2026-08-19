@@ -19,7 +19,6 @@ def protocol(context: ExecutionContext):
     bin_dir = "metabat_bins"
     bin_prefix = f"{bin_dir}/bin"
 
-    # Same command either way: this tool is a plain CLI in both worlds.
     _cmd = f"""
             mkdir -p {bin_dir}
             jgi_summarize_bam_contig_depths --outputDepth {depth_file} {ibam.container}
@@ -29,7 +28,6 @@ def protocol(context: ExecutionContext):
         .ifContainerDo(env=image, cmd=_cmd) \
         .ifVirtualEnvDo(env=image, cmd=_cmd)
 
-    # Find all bin files and output each one separately
     outputs = []
     bin_files = sorted(glob.glob(f"{bin_dir}/*.fa"))
 
@@ -38,7 +36,6 @@ def protocol(context: ExecutionContext):
         context.LocalShell(f"cp {bin_path} {out_bin.local}")
         outputs.append({bin_fasta: out_bin.local})
 
-    # Generate contig-to-bin table from bin files
     otable = context.Output(table)
     with open(otable.local, "w") as f:
         f.write("contig\tbin\n")

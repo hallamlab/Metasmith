@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-"""Run the transcriptomics pipeline end-to-end."""
 import sys
 import time
 sys.stdout.reconfigure(line_buffering=True)
@@ -137,7 +136,6 @@ def main():
         full_path = path if path.is_absolute() else results_path / path
         print(f"  {type_name}: {full_path} (exists={full_path.exists()})")
 
-    # Check count table
     for path, type_name, endpoint in results.Iterate():
         if "count_table" in type_name:
             full_path = path if path.is_absolute() else results_path / path

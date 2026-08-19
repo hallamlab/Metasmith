@@ -1,25 +1,3 @@
-"""Recovery probe: ``plan`` fails because the chain dead-ends on a missing
-input; agent must read the hint and add the required input via
-``metasmith data add-value``, then re-plan.
-
-This is the documented happy-path recovery from
-``docs/source/agentic/diagnosing_failures.rst:35-39``.
-
-Pre-staged:
-  workspace/types/myproj.yml      types: raw_data, mid_data, final_data
-  workspace/transforms/           transforms: step1 (raw->mid), step2 (mid->final)
-  workspace/data.xgdb             EMPTY of myproj types (contains one
-                                  unrelated item just so the lib loads)
-
-Initial ``metasmith plan --sample-type myproj::raw_data --target-type
-myproj::final_data ...`` fails. The hint chain references the missing
-``raw_data`` input. Recovery: ``metasmith data add-value`` to add a
-raw_data item, then re-plan.
-
-Pass criteria:
-  - workspace/ANSWER.txt contains a task_key that exists under the agent's
-    workspace dir (i.e. the SECOND plan succeeded and was cached)
-"""
 from __future__ import annotations
 
 import glob
@@ -118,9 +96,6 @@ class RecoverUnreachableTargetScenario:
                           inputs=["myproj::mid_data"],
                           outputs=["myproj::final_data"]),
         ])
-        # Data lib has one unrelated item so the lib is non-empty (forces
-        # solver into chain-search rather than refusing on empty data).
-        # Crucially: no raw_data item — that's what the agent has to add.
         build_data_lib(layout, ws / "data.xgdb", types_yml, [
             DataItemSpec(
                 name="placeholder",

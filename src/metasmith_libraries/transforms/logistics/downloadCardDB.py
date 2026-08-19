@@ -6,16 +6,12 @@ model = Transform()
 image = model.AddRequirement(lib.GetType("env::rgi.env"))
 db    = model.AddProduct(lib.GetType("annotation::card_db"))
 
-# CARD canonical "latest" bundle (card.json + annotations).
 CARD_URL = "https://card.mcmaster.ca/latest/data"
 
 
 def protocol(context: ExecutionContext):
     idb = context.Output(db)
 
-    # `rgi load --local` materialises a ./localDB directory in the CWD (bound to
-    # the host work dir), which `rgi main --local` consumes. That directory IS
-    # the product.
     context.ExecWithEnv().ifContainerDo(
         env=image,
         cmd=f"""

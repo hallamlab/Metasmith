@@ -6,7 +6,6 @@ image   = model.AddRequirement(lib.GetType("env::python_for_data_science.env"))
 img_ipr = model.AddRequirement(lib.GetType("env::interproscan.env"))
 data    = model.AddProduct(lib.GetType("ref::interproscan_data"))
 
-# InterProScan 5.67-99.0 data bundle
 IPRSCAN_DATA_URL = "https://ftp.ebi.ac.uk/pub/databases/interpro/iprscan/5/5.67-99.0/interproscan-5.67-99.0-64-bit.tar.gz"
 
 def protocol(context: ExecutionContext):
@@ -21,7 +20,6 @@ def protocol(context: ExecutionContext):
         """,
     )
 
-    # compile hmmer indexes
     context.ExecWithEnv().ifContainerDo(
         env=img_ipr,
         binds=[(context.external_cwd/"ipr_data/data", "/opt/interproscan/data")],

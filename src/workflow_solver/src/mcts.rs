@@ -363,8 +363,7 @@ pub fn mcts(
         // The frontier, per iteration, when `MSM_SOLVER_TRACE` is set. Together
         // with `rng`'s decision trace this is how a differential failure gets
         // localised: the decisions say *when* the two sides parted, and this
-        // says *what they were choosing between*. Finding the generator/batching
-        // bug in `children_of` took one run of each. stderr, so it can never be
+        // says *what they were choosing between*. stderr, so it can never be
         // mistaken for the reply.
         if std::env::var_os("MSM_SOLVER_TRACE").is_some() {
             let f: Vec<String> = frontier

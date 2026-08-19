@@ -1,12 +1,3 @@
-"""Render FabFos's conda recipe from `envs/fabfos/base.yml`.
-
-Same shape as the metasmith_libraries and ecspr recipe compilers beside it
-under conda_recipe/. Reads the dependency list from envs/fabfos/base.yml and
-the package constants (NAME, VERSION, entry points) from the fabfos package
-itself, so neither has a second copy to drift out of sync.
-
-Run:  python conda_recipe/fabfos/compile_recipe.py
-"""
 import os
 import stat
 import sys

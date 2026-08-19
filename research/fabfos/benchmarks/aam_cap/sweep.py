@@ -31,10 +31,6 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 
-# How long past its own budget a reaction is given before the parent kills it. Indigo's
-# `aam-timeout` either fires or does not; a run still alive well past it is not going to
-# finish, and waiting longer only makes the sweep cost what the tail costs rather than
-# measuring it.
 KILL_MARGIN_S = 20
 
 

@@ -1,47 +1,4 @@
 #!/usr/bin/env python3
-"""Re-run the host-genome acquisition, here, under MAMBA.
-
-    PATH="/home/tony/lib/miniforge3/envs/msm-fabfos/bin:$PATH" \\
-        python examples/genomes_acquire.py                 # plan only
-    PATH="..." python examples/genomes_acquire.py --run --publish
-
-`fabfos_data::genomes` is a GIVEN to every other driver in this directory -- B1 stages
-it, B2 stages it, and both say in as many words that re-acquiring would build the
-reference off a fresh pull rather than off the pin. That is right for them and it left
-the acquisition itself with no way to be run: the folder on disk was produced once,
-before this tree, and the transform that produces it had no driver at all.
-
-It needs one whenever the HOST SET changes, which is a change to `acquire/genomes.py`
-and nothing else -- adding DH1 and W3110 for the ASKA cohorts is what asked for this.
-So this is deliberately the smallest driver that exists: one target, one transform
-directory, no staged inputs, and a publish step that replaces the pinned folder.
-
-MAMBA, not a container, for the same reason `benchmark_hosts_build.py` is: the two envs
-this graph needs (`ncbi-datasets`, `python_for_data_science`) both carry a `conda:` key,
-`Agent.runtime` is one global setting, and `envs/setup_agent_env.sh` already creates
-both by name. Nothing here is heavy -- five `datasets download` calls and three wgets.
-
-PUBLISHING IS ADDITIVE, AND THAT IS THE WHOLE CARE THIS DRIVER TAKES. Upstream has
-re-released every one of the three original hosts since they were pinned -- measured
-2026-08-14, all nine of their files differ from the pin, k12's translated CDS set by 18
-records -- under unchanged assembly accessions. Overwriting them would move the
-reference that B1, B2 and every benchmark table were measured against, silently and
-without any of those tables changing. So a host already in the chunk keeps its pinned
-bytes and only a NEW host is copied in; `--replace-existing` is there for the day
-someone decides to take the newer snapshot deliberately, which is a re-run of
-everything downstream and not a publish step.
-
-The consequence is worth stating rather than hiding: after this, the chunk holds two
-snapshots -- the older one for k12/dh10b/epi300 and today's for whatever was added.
-They are the same three files per host from the same FTP paths, so nothing is
-heterogeneous in FORM; what differs is when it was fetched.
-
-WRITING REPLACES A FILE, NEVER OPENS ONE. `data/fabfos/originals/genomes/` is a materialised
-DVC chunk whose files are read-only hardlinks into a cache several worktrees share, so
-an in-place write is both a PermissionError and, if the mode allowed it, a way to
-corrupt that chunk for every worktree at once. `dvc add data/fabfos/originals/genomes`
-afterwards is what makes the change a pin rather than a local edit.
-"""
 from __future__ import annotations
 
 import argparse
@@ -50,8 +7,6 @@ import sys
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
-# The pinned engine, ahead of whatever this machine has installed: only it resolves a
-# `conda:` env declaration by runtime. See AGENTS.md.
 sys.path.insert(0, str(REPO / "src" / "metasmith" / "src"))
 
 from metasmith.python_api import (                                    # noqa: E402
@@ -95,9 +50,6 @@ def plan(work: Path):
     agent = Agent(home=Source.FromLocal(work / "agent_home"),
                   runtime=Runtime.MAMBA,
                   container=AGENT_ENV)
-    # The solver roots its search in samples and refuses an empty set, so the EMPTY
-    # inputs library is the one sample -- it registers the type libraries and hands over
-    # no data. An acquisition has no samples in the sense the fosmid pipeline does.
     return agent, agent.GenerateWorkflow(
         samples=[inputs],
         resources=resources,
@@ -151,7 +103,6 @@ def main() -> int:
     if result["status"] != "completed":
         return 2
 
-    # A COMPLETED RUN IS NOT A SUCCEEDED ONE -- the verdict comes from the products.
     results = Path(agent.GetResultSource(task).GetPath())
     made = sorted(results.glob("fabfos_data-genomes/*/*/genome"))
     hosts = sorted({p.parent.name for p in made})

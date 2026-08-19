@@ -14,7 +14,6 @@ def protocol(context: ExecutionContext):
     imatrix=context.Input(matrix)
     iscript=context.Input(script)
     iout=context.Output(out)
-    # these are so the browser works correctly (with --no-home), which is used by kaleido, which is used by plotly
     context.LocalShell("""
         mkdir -p ./fake_home/.cache
         mkdir -p ./fake_home/.local

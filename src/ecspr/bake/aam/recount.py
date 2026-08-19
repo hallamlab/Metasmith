@@ -63,8 +63,6 @@ SCHEMA = pa.schema([
     ("n_atoms", pa.int32()),
     ("n_residue", pa.int32()),
     ("source", pa.string()),
-    # The species whose structure and whose declared formula disagree on this element.
-    # Not diagnostics: an upstream defect list, and the reason to trust the structure.
     ("disagrees_with_formula", pa.bool_()),
 ])
 
@@ -73,25 +71,10 @@ COLS = tuple(f.name for f in SCHEMA)
 # `*<n>` -- the residue marker and its multiplicity. `*` alone means one.
 _STAR = re.compile(r"\*(\d*)")
 _INCHI_FORMULA = re.compile(r"^InChI=1S?/([^/]+)")
-# A bare `n` that is not the tail of a two-letter symbol (Mn, Zn, Sn, ...) is a polymer
-# subscript, which is exactly the thing that cannot be counted.
 _POLYMER_N = re.compile(r"(?<![A-Z])n")
 
 
-# =====================================================================
-# counting routes
-# =====================================================================
-
 def counts_from_smiles(smiles):
-    """(Counter of element symbols, n_residue) from a SMILES, or (None, None).
-
-    `sanitize=False` deliberately: this counts atoms, and sanitisation is what
-    `atom_pairs.canonical_ranks` needs rather than what a census needs. A structure
-    rdkit will not sanitise still has an unambiguous atom list, and refusing it here
-    would put the species back in the unknown bucket for no gain.
-
-    A `*` atom (atomic number 0) contributes to NO element and is returned separately.
-    """
     if not isinstance(smiles, str) or not smiles.strip():
         return None, None
     from rdkit import Chem, RDLogger
@@ -109,12 +92,6 @@ def counts_from_smiles(smiles):
 
 
 def counts_from_star_formula(formula):
-    """(Counter, n_residue) from a `*` formula, or (None, n_residue).
-
-    `C28H47N3O10PS*2` -> (C=28 N=3 O=10 P=1 S=1, 2). The core is refused if it still
-    carries nesting or a polymer `n` once the marker is gone -- stripping `*` does not
-    make `(C2H4)n` countable.
-    """
     if not isinstance(formula, str) or "*" not in formula:
         return None, 0
     m = _STAR.search(formula)
@@ -130,11 +107,6 @@ def counts_from_star_formula(formula):
 
 
 def counts_from_inchi(inchi):
-    """Counter from an InChI formula layer, or None.
-
-    Refuses a multi-component layer: `C6H12O6.H2O` reports the sum over components and
-    the MetaNetX record may mean only one of them.
-    """
     if not isinstance(inchi, str) or not inchi.startswith("InChI="):
         return None
     m = _INCHI_FORMULA.match(inchi)
@@ -151,13 +123,6 @@ def counts_from_inchi(inchi):
 
 
 def recount(formula, smiles, inchi):
-    """(per-element counts, n_residue, source) for one metabolite.
-
-    `counts` maps every element of `ELEMENTS` to an int or to None. The routes are tried
-    in the order the module docstring states and the FIRST that answers decides -- for the
-    whole species, not per element, so one row cannot mix a structure count with a formula
-    count and lose the ability to say where the number came from.
-    """
     counts, residue = counts_from_smiles(smiles)
     if counts is not None:
         return {X: int(counts.get(X, 0)) for X in ELEMENTS}, residue, "smiles"
@@ -178,25 +143,17 @@ def recount(formula, smiles, inchi):
 
 
 def residue_slots_cancel(sub_residues, prod_residues):
-    """Do the two sides carry the same number of unspecified residues?
-
-    THE GUARD THAT KEEPS A RECOUNT FROM BECOMING A BALANCE CLAIM. An exact count of the
-    explicit atoms says nothing about what is inside a `*`, so the only reactions whose
-    element balance this table can settle are the ones where the residues cancel -- the
-    same discipline `curation.gate_bodies_cancel` applies to a curated stand-in. A None
-    on either side is unknown, which is a refusal rather than a zero.
-    """
+    # The guard that keeps a recount from becoming a balance claim: an exact count
+    # of the explicit atoms says nothing about what is inside a `*`, so the only
+    # reactions whose element balance this table can settle are the ones where the
+    # residues cancel. A None on either side is unknown, and so a refusal rather
+    # than a zero.
     if any(r is None for r in sub_residues) or any(r is None for r in prod_residues):
         return None
     return sum(sub_residues) == sum(prod_residues)
 
 
-# =====================================================================
-# the table
-# =====================================================================
-
 def build(metabolites: Path):
-    """One row per (metabolite, element), plus the tally a human reads."""
     mt = pd.read_parquet(metabolites,
                          columns=["mnxm", "formula", "smiles", "inchi"])
     rows, tally = [], Counter()
@@ -219,9 +176,6 @@ def build(metabolites: Path):
 def cmd_build(args):
     rows, tally = build(args.metabolites)
     df = pd.DataFrame(rows, columns=list(COLS))
-    # Int32 with pd.NA rather than float-with-NaN: the null has to survive the write as
-    # a real null, because every consumer of this table treats None as a refusal and a
-    # NaN silently participates in arithmetic.
     df["n_atoms"] = df["n_atoms"].astype("Int32")
     df["n_residue"] = df["n_residue"].astype("Int32")
     pq.write_table(pa.Table.from_pandas(df, schema=SCHEMA, preserve_index=False),
@@ -250,13 +204,6 @@ def cmd_build(args):
 
 
 def cmd_check(args):
-    """Assert the recount agrees with the node identity contract.
-
-    `atom_ranks` holds one rank per atom of element X for the structured participants,
-    so `len(ranks)` IS this count for every row the two share. A disagreement means one
-    of the two parsed a structure the other did not, and every pair row keyed on the
-    disagreeing metabolite would index into a rank list of the wrong length.
-    """
     ec = pd.read_parquet(args.counts, columns=["mnxm", "element", "n_atoms", "source"])
     ar = pd.read_parquet(args.atom_ranks, columns=["mnxm", "element", "n_atoms"])
     j = ar.merge(ec, on=["mnxm", "element"], how="left", suffixes=("_rank", "_count"))

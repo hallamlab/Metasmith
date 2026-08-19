@@ -1,26 +1,4 @@
 #!/usr/bin/env python3
-"""Render the Spanish Lakes viromics DAG locally (planning only).
-
-Nothing here is runnable and nothing is opened: inputs are empty placeholder
-files, and the point is to see which transforms the solver reaches for and how
-they wire together.
-
-  <script dir>/cache/viromics_dag.{svg,png} — assembly + clean short reads -> the four
-  viral legs:
-    * splitContigsForAmr -> contig_batch, feeding the two contig-level viral
-      callers, VirSorter2 and geNomad (virus + plasmid summaries);
-    * DRAM-v on the VirSorter2 viral contigs + affi-contigs (AMG distillation);
-    * BBMap crAssphage coverage off the clean reads (human faecal marker);
-    plus every reference-DB downloader leg (VirSorter2 DB, DRAM DB, geNomad DB,
-    crAssphage reference).
-
-Reads are seeded as `sequences::clean_short_reads` rather than raw reads so the
-graph stops at the viromics boundary — seeding raw reads instead would pull
-bbduk and the whole assembly leg back in, which is a different picture.
-
-Run with the msm env on PATH (has metasmith + graphviz `dot`):
-  mamba run -n msm python main/render_viromics_dag.py
-"""
 import os
 import sys
 import tempfile
@@ -33,8 +11,6 @@ from metasmith.python_api import (
 )
 
 def _find_mlib() -> Path:
-    """Walk up to the library root — the dir holding data_types/ + transforms/ —
-    so this script keeps working wherever under the repo it is filed."""
     for d in Path(__file__).resolve().parents:
         if (d / "data_types").is_dir() and (d / "transforms").is_dir():
             return d
@@ -51,7 +27,7 @@ smith = Agent(home=Source.FromLocal(tmp), runtime=Runtime.APPTAINER)
 containers = DataInstanceLibrary.Load(MLIB / "resources/env")
 transforms = [
     TransformInstanceLibrary.Load(MLIB / "transforms/functionalAnnotation"),
-    TransformInstanceLibrary.Load(MLIB / "transforms/metagenomics"),  # incl. taxonomy/
+    TransformInstanceLibrary.Load(MLIB / "transforms/metagenomics"),
     TransformInstanceLibrary.Load(MLIB / "transforms/logistics"),
 ]
 
@@ -72,8 +48,6 @@ def mock(name: str) -> Path:
 
 
 def plan_with_sweep(label, inputs, sample_type, target_list, configs, seeds):
-    """Sweep (budget, seed) until a COMPLETE plan (0 dropped). Never print
-    task.plan raw — its repr embeds the whole MCTS tree (hundreds of MB)."""
     tb = TargetBuilder()
     for t in target_list:
         tb.Add(t)
@@ -111,7 +85,6 @@ def render(task, stem):
         print(f"DAG written to: {out.resolve()}")
 
 
-# Ensure graphviz `dot` (in the env bin) is on PATH for the renderer.
 os.environ["PATH"] = f"{Path(sys.executable).parent}:{os.environ.get('PATH', '')}"
 
 viromics = new_inputs("viromics")
@@ -119,8 +92,6 @@ asm = viromics.AddItem(mock("sample.fna"), "sequences::assembly")
 viromics.AddItem(mock("sample.clean.fq.gz"), "sequences::clean_short_reads", parents={asm})
 viromics.Save()
 
-# One target per terminal viromics transform. geNomad's two summaries are listed
-# separately so the plasmid leg is visible even though one step produces both.
 TARGETS = [
     "annotation::virsorter2_viral_sequences",
     "taxonomy::genomad_virus_summary",

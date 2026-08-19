@@ -1,11 +1,3 @@
-"""Harness smoke scenario — proves the sandbox + driver wiring works.
-
-metasmith is pre-installed into the sandbox-local env BEFORE the agent
-runs, so this test exercises only the harness (sandbox materialization,
-.condarc spoof, env handover, opencode driver, CONTROL.json round-trip).
-The agent's job: verify ``msm --help`` exits 0 and emit a `done`
-checkpoint. ~5–10K tokens.
-"""
 from __future__ import annotations
 
 from dataclasses import dataclass, field

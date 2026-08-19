@@ -1,26 +1,3 @@
-"""Post-execution promote pass (S5).
-
-After Nextflow finishes, walk every step's `workflow.step_N.meta` to
-locate its cache_key and out_identities, find the actual output files
-in `<workspace>/nxf_work/step_NN/...` (or already-published files in
-`<cache_root>/<key>.tmp/` if Nextflow's publishDir directive ran), and
-deposit them into the cache atomically.
-
-Per the plan:
-- A lock file at `<cache_root>/<key>.lock` (PID + hostname + monotonic
-  ts) is acquired with O_EXCL|O_CREAT before any write.
-- The on-disk layout is `<cache_root>/<key_prefix>/<key>/out/<files>`
-  with a sidecar `<cache_root>/<key_prefix>/<key>/manifest.cbor`.
-- The promote writes to `<key_prefix>/<key>.tmp/` first, then atomic
-  rename. Loser-of-race deletes its own .tmp.
-- A SQLite row is inserted into `CacheStore.entries` referencing the
-  output_root directory.
-
-Orphan recovery: stale `<key>.tmp/` from a prior interrupted run are
-detected by the absence of manifest.cbor; they're deleted. Stale dirs
-that DO have a manifest.cbor are promoted on the next pass.
-"""
-
 from __future__ import annotations
 
 import json
@@ -52,45 +29,16 @@ class StepPromoteSpec:
     cacheable: bool
     transform_key: str
     signature: str
-    out_identities: dict[str, str]  # "{slot}::{branch}" -> instance_id hex
-    dep_out: list[dict]  # parsed `dot` line; per-branch dep_key -> [ids]
-    # S4a (Bug E): persisted from compile-time `step.transform.name` so
-    # the promote route can populate InvocationEvent.step_name to match
-    # the cache-hit route's emission schema.
+    out_identities: dict[str, str]
+    dep_out: list[dict]
     step_name: str = ""
-    # C0: per-slot input ids in the same shape the cache-hit route uses
-    # (workflow.py:1419-1422). Each tuple is (slot_key, list[slot_id_hex]).
-    # Built at compile time (workflow.py:1279-1290), persisted via the
-    # `sorted_inputs` line in step_N.meta, and consumed by
-    # `_emit_promote_event` to populate InvocationEvent.consumes.
     sorted_inputs: list = field(default_factory=list)
-    # C0.5: per-output-slot file naming info. Each entry is
-    #   {"dtype_key", "ext", "branch_idx", "slot_id"}
-    # where dtype_key is the DataInstance.dtype.key embedded in the
-    # canonical filename (bootstrap.py:196), ext is the preferred
-    # extension (e.g. ".bam", ".tar.gz"), branch_idx is the produces-
-    # branch index, and slot_id is the channel-level identity. Used to
-    # match output files in promote_run unambiguously. Empty list
-    # signals a legacy step_N.meta — the promote path falls back to
-    # per-slot degenerate emission with a Log.Warn.
     slot_files: list = field(default_factory=list)
-    # S3: per-batch decomposition mirroring the compile-time batching
-    # algorithm (models/workflow/grouping.select_for_key). Each entry is
-    #   {"batch_idx", "start", "end",
-    #    "sorted_inputs": [[slot_key, [iid_hex, ...]], ...]}
-    # Used by S4 emission to produce one InvocationEvent per batch
-    # (= per task) instead of one per step. Empty list signals legacy
-    # step_N.meta; emission falls back to step-aggregated path.
     batches: list = field(default_factory=list)
 
 
 def _read_step_meta(meta_path: Path) -> StepPromoteSpec | None:
-    """Parse a workflow.step_N.meta file into a promote spec.
-
-    Returns None when the file lacks cache fields (e.g. legacy or pre-S3
-    runs, kill-switch active). Order is taken from the filename.
-    """
-    name = meta_path.stem  # workflow.step_N
+    name = meta_path.stem
     try:
         order = int(name.rsplit("_", 1)[1])
     except (IndexError, ValueError):
@@ -134,12 +82,6 @@ def _read_step_meta(meta_path: Path) -> StepPromoteSpec | None:
                 raw = json.loads(rest)
             except json.JSONDecodeError:
                 raw = []
-            # C0-amend: tolerate two shapes:
-            #   - new: [[slot_key, [iid_hex, ...]], ...]
-            #   - legacy (C0 f0725e6): [[slot_key, "iid_hex+iid_hex+..."], ...]
-            # The legacy form was a +-joined ASCII string of hexes; splitting
-            # on "+" recovers the list (hex chars never contain +). Empty
-            # string → empty list, not [""].
             sorted_inputs = []
             for entry in raw:
                 if not isinstance(entry, list) or len(entry) != 2:
@@ -157,15 +99,11 @@ def _read_step_meta(meta_path: Path) -> StepPromoteSpec | None:
             except json.JSONDecodeError:
                 slot_files = []
         elif head == "batches":
-            # S3: list of per-batch dicts with sorted_inputs slice.
             try:
                 raw = json.loads(rest)
             except json.JSONDecodeError:
                 raw = []
             if isinstance(raw, list):
-                # Normalize sorted_inputs entries to (slot_key, [hex,...])
-                # tuples so downstream code matches the StepPromoteSpec
-                # field shape.
                 batches = []
                 for b in raw:
                     if not isinstance(b, dict):
@@ -202,11 +140,6 @@ def _read_step_meta(meta_path: Path) -> StepPromoteSpec | None:
 
 
 def _acquire_lock(cache_root: Path, key_hex: str) -> Path | None:
-    """O_EXCL acquire of `<cache_root>/<key>.lock`. Returns path on success.
-
-    Stale lock detection: same host + dead PID → reclaim; different
-    host + ts > 1 hour → reclaim.
-    """
     lock = lock_file(cache_root, key_hex)
     pid = os.getpid()
     host = socket.gethostname()
@@ -218,7 +151,6 @@ def _acquire_lock(cache_root: Path, key_hex: str) -> Path | None:
         return lock
     except FileExistsError:
         pass
-    # Maybe stale — inspect.
     try:
         existing = lock.read_text().strip().split()
         if len(existing) >= 3:
@@ -250,16 +182,6 @@ def _release_lock(lock: Path) -> None:
 
 
 def _find_step_outputs(workspace: Path, step_order: int) -> list[Path]:
-    """Locate output files produced by step <step_order> in nxf_work.
-
-    The virtual_runtime synthesizes files under
-        nxf_work/step_NN/batch_XXXX_YYYY/1-1-{branch}.{lin_hash}-{dtype_key}{ext}
-    Real Nextflow writes them under task work dirs but publishDir already
-    deposits them into the cache.tmp path; this function is the fallback
-    for runtimes that didn't run publishDir. We scan only nxf_work and
-    return absolute paths to files matching the canonical name shape
-    (excluding command/log files starting with `.command`).
-    """
     out: list[Path] = []
     step_dir = workspace / "nxf_work" / f"step_{step_order:02}"
     if not step_dir.exists():
@@ -275,36 +197,10 @@ def _find_step_outputs(workspace: Path, step_order: int) -> list[Path]:
     return out
 
 
-# "{batch+1}-{i+1}-{branch+1}." — the canonical output-name prefix minted by
-# bootstrap._get_output_paths and mirrored by virtual_runtime.
 _CANONICAL_OUTPUT_PREFIX = re.compile(r"^(\d+)-(\d+)-(\d+)\.")
 
 
 def _collect_output_indexes(workspace: Path) -> dict[str, dict]:
-    """basename -> the on-channel lineage index the file travelled with.
-
-    A cache hit replays a step's outputs onto the channel without running
-    the step, so it must replay the index those files carried. Without it
-    the synthetic tuple reaches a downstream `o.group` with no ancestry and
-    the DESCENDANT_OF_BY branch drops it as a LINEAGE_VIOLATION — the warm
-    run loses what the cold run computes.
-
-    Compile time cannot reconstruct this. The index is per output FILE, and
-    which specific inputs a given output descends from is decided inside the
-    task; the shard's own filenames carry only a hash of the index, and that
-    hash folds in `FILES` (absolute task-workdir paths), so it is neither
-    invertible nor reproducible off-host. So it is read here and persisted
-    into the shard manifest, which is what `index_payload` was reserved for.
-
-    Both runtimes write METADATA_FILE beside their outputs — real Nextflow in
-    `nxf_work/<xx>/<hash>/`, the virtual runtime in
-    `nxf_work/step_NN/batch_*/` — so one scan covers both.
-
-    A basename claimed by two tasks with different indexes is dropped rather
-    than guessed: staged inputs share the naming shape with real outputs, and
-    a wrong index is worse than a missing one (a missing one demotes the hit
-    and the step simply re-runs).
-    """
     from ..models.lineage import LinPayload
     from ..models.workflow import METADATA_FILE
 
@@ -329,8 +225,6 @@ def _collect_output_indexes(workspace: Path) -> dict[str, dict]:
         except OSError:
             continue
         for fp in siblings:
-            # Nextflow stages inputs as symlinks; only real files here are
-            # this task's own outputs.
             if fp.is_symlink() or not fp.is_file():
                 continue
             m = _CANONICAL_OUTPUT_PREFIX.match(fp.name)
@@ -349,13 +243,6 @@ def _collect_output_indexes(workspace: Path) -> dict[str, dict]:
 
 
 def _find_step_logs(workspace: Path, step_order: int) -> list[Path]:
-    """Locate `.command.{sh,out,err,log}` files for a completed step.
-
-    C8 / G6 — promote captures these into `<shard>/logs/` so
-    `DataInstanceLibrary.get_logs_of(any_output).stdout` resolves after
-    `rm -rf work/` + resume. Same scan root as `_find_step_outputs`;
-    different filter.
-    """
     out: list[Path] = []
     step_dir = workspace / "nxf_work" / f"step_{step_order:02}"
     if not step_dir.exists():
@@ -370,22 +257,6 @@ def _find_step_logs(workspace: Path, step_order: int) -> list[Path]:
 def recover_orphan_tmp_dirs(
     cache_root: Path, owned_keys: Iterable[str]
 ) -> dict[str, str]:
-    """Reclaim `<key>.tmp/` staging for `owned_keys`: promote if sealed, else rm.
-
-    `owned_keys` is mandatory and must name only the keys of the run doing
-    the reclaiming. A cache root is shared by every run on the agent, and a
-    `<key>.tmp/` without `manifest.cbor` is indistinguishable from a
-    still-being-written one -- so sweeping the whole root deletes whatever
-    a concurrent promote has staged and not yet sealed. That can be hundreds
-    of GB of finished work, destroyed by a call that reads as housekeeping.
-    Deliberately holding a step back therefore means moving its `.tmp` aside,
-    not merely omitting it from `owned_keys`.
-
-    Returns {key_hex: 'promoted'|'raced'|'deleted'|'delete-failed: <err>'}
-    for telemetry. Removal failures are reported rather than swallowed;
-    a `.tmp` that cannot be removed is a disk or permissions problem worth
-    seeing, not a no-op.
-    """
     actions: dict[str, str] = {}
     if not cache_root.exists():
         return actions
@@ -412,14 +283,6 @@ def recover_orphan_tmp_dirs(
 
 
 def _read_session_id(workspace: Path) -> int:
-    """Recover the active session_id from the SessionStart sentinel.
-
-    Workflow.py:_compute_cache_decisions writes the sentinel as the
-    first line of every fresh trace.jsonl (C7); promote_run reads it
-    so its emitted InvocationEvents carry the same session_id. Returns
-    0 if the file or sentinel is missing — every InvocationEvent still
-    parses, just with an uncorrelated session_id.
-    """
     trace_path = workspace / "_metasmith" / "trace.jsonl"
     if not trace_path.exists():
         return 0
@@ -437,13 +300,6 @@ def _read_session_id(workspace: Path) -> int:
 
 
 def _parse_batch_idx_from_relpath(relpath: str) -> int:
-    """Extract `batch_idx` (0-indexed) from a canonical output filename.
-
-    Filename shape (bootstrap.py:196, virtual_runtime.py:651/665):
-      `{batch+1}-{i+1}-{branch+1}.{_hash}-{dtype.key}{ext}`
-    The file may live under `out/` so we strip path components first.
-    Returns -1 when the filename doesn't match (e.g. host log files).
-    """
     name = Path(relpath).name
     prefix = name.partition(".")[0]
     tokens = prefix.split("-")
@@ -464,28 +320,6 @@ def _append_invocation_event_v2(
     cache_key_hex: str,
     files_meta: list[dict] | None = None,
 ) -> None:
-    """Append v2 InvocationEvent row(s) to <workspace>/_metasmith/trace.jsonl.
-
-    S4b: emit ONE event per batch (= per task) instead of one per step.
-    Filename `batch_idx` parsed from each matched file's relpath; events
-    grouped by batch_idx. For multi-batch steps, task_hash is suffixed
-    with `:{batch_idx}` so events are distinct in TraceIndex.by_task_hash.
-
-    Per-batch consumes is read from `spec.batches` when available with
-    > 1 entries (compile-time per-batch decomp from S3, accurate for
-    step 1 where dependency_map carries the full N-sample arity). For
-    intermediate steps (compile-time archetype arity = 1, runtime arity
-    = N), `spec.batches` has a single entry; we fall back to the
-    aggregate `spec.sorted_inputs` for all runtime batches. That's
-    still step-aggregated for intermediate steps — full per-batch
-    consumes on intermediates requires runtime parent capture (a
-    follow-up for parallel_then_group / group_by topologies).
-
-    C0.5 / S4a: per-file emission with mint_file_id(slot_id, relpath)
-    + populated path / dtype_key remains. Legacy fallback (no
-    files_meta) emits a single per-slot degenerate event with
-    `path=""`.
-    """
     from ..models.lineage import (
         InvocationEvent,
         LinPayload,
@@ -497,8 +331,6 @@ def _append_invocation_event_v2(
     trace_dir.mkdir(parents=True, exist_ok=True)
     trace_path = trace_dir / "trace.jsonl"
 
-    # Group matched files by parsed batch_idx; unmatched files are
-    # carried under batch_idx=-1 and dropped from emission below.
     batched: dict[int, list[dict]] = {}
     have_per_file = files_meta is not None and any(
         f.get("slot_id") and not f.get("unmatched")
@@ -508,25 +340,11 @@ def _append_invocation_event_v2(
         for f in (files_meta or []):
             if f.get("unmatched") or not f.get("slot_id"):
                 continue
-            # S4b: prefer the explicit `batch_idx` field set by
-            # promote_run from the source `batch_XXXX_YYYY` parent dir.
-            # Fall back to filename prefix parse for legacy callers.
             bi = f.get("batch_idx", None)
             if bi is None or bi < 0:
                 bi = _parse_batch_idx_from_relpath(f.get("relpath", ""))
             batched.setdefault(int(bi), []).append(f)
 
-    # Per-batch consumes: spec.batches[i].sorted_inputs when len > 1,
-    # else aggregate. `consumes_for_batch` is keyed by batch_idx.
-    # For first-step events (compile-time arity = N), spec.batches has
-    # N entries and per-batch consumes is exact. For intermediate steps
-    # (compile-time archetype arity = 1, runtime arity = N), spec.batches
-    # has 1 entry and every runtime batch falls back to aggregate
-    # consumes — step-aggregated, not per-batch. The C1 BFS over trace
-    # still walks direct parents correctly for first-step events;
-    # multi-hop parent walks through aggregated intermediates inflate
-    # reachability without misrouting direct parents. Deferred to a
-    # future runtime-capture step (see audit doc I11).
     aggregate_consumes = {slot_key: list(ids) for slot_key, ids in spec.sorted_inputs}
     consumes_for_batch: dict[int, dict[str, list[str]]] = {}
     if len(spec.batches) > 1:
@@ -579,7 +397,6 @@ def _append_invocation_event_v2(
             if produces:
                 _emit(batch_idx, produces)
     else:
-        # Legacy fallback (miss-without-promote, or pre-C0.5 caller).
         produces = []
         for slot_branch, instance_id_hex in sorted(spec.out_identities.items()):
             dtype_key = slot_branch.split("::", 1)[0]
@@ -600,25 +417,13 @@ def promote_run(
     cache_root: Path,
     log: list | None = None,
 ) -> dict:
-    """Promote every step's outputs from a completed run into the cache.
-
-    Returns a summary dict with counts for telemetry; the same data
-    feeds `<run_dir>/_metasmith/trace.jsonl` post-exec source: run rows.
-    """
     log = log if log is not None else []
     cache_root.mkdir(parents=True, exist_ok=True)
-    # One scan for the whole run: the on-channel index each output file
-    # travelled with, so a later hit can replay it instead of emitting an
-    # empty index that `o.group` drops.
     output_indexes = _collect_output_indexes(workspace)
     store = CacheStore.open(cache_root)
     try:
         promoted: list[str] = []
         skipped: list[str] = []
-        # The keys this run owns, collected up front so the reclaim sweep at
-        # the end is scoped to them regardless of how the loop below exits
-        # for any given step. Anything else under cache_root belongs to
-        # another run and must not be touched.
         owned_keys: list[str] = [
             spec.cache_key.hex()
             for spec in (
@@ -634,7 +439,6 @@ def promote_run(
             key_hex = spec.cache_key.hex()
             final_dir = _shard_dir(cache_root, key_hex)
             if final_dir.exists():
-                # Already in cache (cross-workspace import or prior promote).
                 store.touch(spec.cache_key)
                 skipped.append(key_hex)
                 continue
@@ -643,17 +447,9 @@ def promote_run(
                 skipped.append(key_hex)
                 continue
             try:
-                # S5: when real-Nextflow publishDir has already staged
-                # outputs at `<cache_root>/<key>.tmp/<file>` (files-at-root,
-                # see workflow.py:1665-1683), pick those up directly. The
-                # virtual_runtime path keeps using `_find_step_outputs`
-                # (nxf_work/step_NN/batch_*/file layout). cache_tmp can
-                # also have a pre-existing `out/` from a re-run we should
-                # not double-process.
                 tmp = staging_dir(cache_root, key_hex)
                 outputs = _find_step_outputs(workspace, spec.order)
                 if not outputs and tmp.exists():
-                    # files-at-root in cache_tmp (real Nextflow publishDir)
                     skip_names = {
                         _out_dir(tmp).name, _logs_dir(tmp).name, MANIFEST_NAME,
                     }
@@ -669,45 +465,16 @@ def promote_run(
                 tmp.mkdir(parents=True, exist_ok=True)
                 out_dir = _out_dir(tmp)
                 out_dir.mkdir(parents=True, exist_ok=True)
-                # C0.5: enriched files_meta with (slot_id, dtype_key, branch_idx)
-                # per file so cache-hit emission can read paths back without
-                # rescanning the filesystem, and so per-file `file_instance_id`
-                # mints deterministically via LinPayload.mint_file_id.
-                #
-                # spec.slot_files holds the compile-time-known declaration:
-                # one entry per produced slot with the DataInstance's
-                # `dtype.key` (which is what the filename embeds, NOT the
-                # Dependency.key), preferred extension, branch_idx, and
-                # slot_id. Empty list = legacy step_N.meta; matcher emits
-                # nothing matched and `_append_invocation_event_v2` falls
-                # back to per-slot degenerate emission.
-                #
-                # Canonical filename (bootstrap.py:196, virtual_runtime.py:651/665):
-                #   "{batch+1}-{i+1}-{branch+1}.{_hash}-{dtype.key}{ext}"
-                # We parse branch_idx from the leading prefix and match the
-                # filename tail against each declared (dtype_key, ext, branch_idx)
-                # triple via endswith — robust to multi-segment extensions.
                 files_meta: list[dict] = []
                 index_payload: list[dict] = []
                 total_bytes = 0
                 unmatched: list[str] = []
                 no_index: list[str] = []
-                # S5: files-at-root in cache_tmp (real-Nextflow publishDir
-                # path) loses the per-batch parent-dir signal. Each file
-                # there came from a separate Nextflow task invocation,
-                # so assign a sequential batch_idx per (slot_id,
-                # filename-order) so per-batch event emission produces
-                # one event per file.
                 files_have_batch_dir = any(
                     p.parent.name.startswith("batch_") for p in outputs
                 )
                 fallback_batch_counter = 0
                 for src in outputs:
-                    # S4b: resolve batch_idx from `batch_XXXX_YYYY` parent
-                    # directory. For files-at-root in cache_tmp,
-                    # synthesize a sequential batch_idx per file so
-                    # downstream per-batch event emission distinguishes
-                    # them.
                     parent = src.parent
                     batch_dir_idx = -1
                     if parent.name.startswith("batch_"):
@@ -719,9 +486,6 @@ def promote_run(
                         batch_dir_idx = fallback_batch_counter
                         fallback_batch_counter += 1
                     dest = out_dir / src.name
-                    # S5: when src is inside cache_tmp (real-Nextflow
-                    # publishDir already staged here), move instead of
-                    # copy to avoid duplicating files.
                     try:
                         src_in_tmp = src.parent.resolve() == tmp.resolve()
                     except (OSError, RuntimeError):
@@ -744,8 +508,6 @@ def promote_run(
                             branch_idx = -1
                     matched: dict | None = None
                     if branch_idx >= 0:
-                        # Prefer longest dtype_key first to avoid prefix
-                        # collisions (e.g. "step_a" vs "step_a_legacy").
                         candidates = sorted(
                             spec.slot_files,
                             key=lambda d: len(str(d.get("dtype_key", ""))),
@@ -762,13 +524,6 @@ def promote_run(
                                 matched = sf
                                 break
                     if matched is not None:
-                        # The lineage index this file rode in on. Absent
-                        # means the hit route cannot reproduce the channel
-                        # faithfully, which cache_decisions turns into a
-                        # demotion rather than a silent drop downstream.
-                        # Empty is absent: an index with no keys replays as
-                        # `[:]`, which carries no ancestry and is dropped by
-                        # the consumer exactly as a missing one would be.
                         ix = output_indexes.get(name)
                         if not ix:
                             no_index.append(name)
@@ -781,15 +536,9 @@ def promote_run(
                             "slot_id": matched.get("slot_id", ""),
                             "dtype_key": matched.get("dtype_key", ""),
                             "branch_idx": matched.get("branch_idx", 0),
-                            # S4b: persist resolved batch_idx for per-batch
-                            # event emission. -1 when src wasn't under
-                            # batch_XXXX_YYYY (treated as single-batch).
                             "batch_idx": batch_dir_idx,
                         })
                     else:
-                        # G6: still copy to cache so the file isn't lost,
-                        # but mark as unmatched so cache-hit emission skips
-                        # it (no synthetic ProducedFile with empty slot_id).
                         files_meta.append({
                             "relpath": relpath,
                             "unmatched": True,
@@ -803,18 +552,11 @@ def promote_run(
                         "this shard will be demoted to a re-run",
                     ))
                 if unmatched and spec.slot_files:
-                    # Only warn when we DID have a slot declaration to match
-                    # against — legacy step_N.meta files have empty slot_files
-                    # and degrade gracefully via _append_invocation_event_v2.
                     log.append((
                         "warn",
                         f"promote {key_hex[:8]}: "
                         f"{len(unmatched)} unmatched output(s): {unmatched}",
                     ))
-                # C8 / G6 — capture .command.{sh,out,err,log} into
-                # `<shard>/logs/` so get_logs_of resolves after `rm -rf
-                # work/` + resume. Best-effort: logs are nice-to-have,
-                # never fail the promote on a missing/unreadable .command.*.
                 log_srcs = _find_step_logs(workspace, spec.order)
                 if log_srcs:
                     logs_dir = _logs_dir(tmp)
@@ -845,7 +587,6 @@ def promote_run(
                 try:
                     tmp.rename(final_dir)
                 except OSError:
-                    # Race lost: another writer claimed the final dir.
                     shutil.rmtree(tmp, ignore_errors=True)
                     skipped.append(key_hex)
                     continue

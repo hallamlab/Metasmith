@@ -1,9 +1,3 @@
-"""merge_rgi — gather per-chunk RGI hit tables into one per-sample result.
-
-rgi.py emits a TSV with a single header line (ORF_ID, Contig, ...). Concatenate
-the chunks, keeping one header. Ids stay SG<id>~k141_XXXXXX_N (sample-prefixed);
-w4_recompile strips the prefix + regroups per sample.
-"""
 from metasmith.python_api import *
 
 lib = TransformInstanceLibrary.ResolveParentLibrary(__file__)

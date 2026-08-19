@@ -1,26 +1,4 @@
 #!/usr/bin/env python3
-"""Does the forecast's offer rule catch the silences the last run actually recorded?
-
-    PYTHONPATH=src mamba run -n rdkit-scratch python \
-        research/fabfos/benchmarks/aam_forecast/measure_recall.py
-
-WHY THIS NUMBER AND NOT AN ACCURACY. The forecast decides which (reaction, element) gets
-an element-reduced submission built for it. Its errors are not symmetric: a submission
-built for a reaction that maps fine is never claimed by anything, because the layer stack
-is additive and its gates refuse rather than warn -- so a false positive costs mapper time
-and a false negative costs exactly the coverage the partial lane exists to add. RECALL of
-the recorded silences is therefore the number that matters, and precision is reported only
-to price it.
-
-WHAT THE GROUND TRUTH IS, AND WHAT IT IS NOT. `data/fabfos/processed/metabolism_bake/logs/`
-holds the previous bake's per-reaction records. That run did not converge -- Indigo was
-OOM-killed at ~20k of ~44.6k attempts and the worklist stopped at 20,000 of 83,795 -- so
-roughly half the universe has NO record, and a reaction absent from every table was never
-asked rather than answered successfully. Every rate below is reported against the half
-that WAS asked, and the size of the other half is printed beside it.
-
-Reads two parquets and four TSVs. No mapper, no rdkit, seconds.
-"""
 from __future__ import annotations
 
 import sys
@@ -68,9 +46,6 @@ def main() -> int:
     print("\n" + "=" * 74)
     print("THE OFFER RULE against every silence the run recorded")
     print("=" * 74)
-    # The offer rule as the module applies it, restricted to what is measurable from a
-    # string: the two size caps are not predictions at all -- a reaction the adjudication
-    # refuses is offered with certainty -- so only the context window is on trial here.
     offered = {m for m, c in chars.items() if c is not None and c > CONTEXT_WINDOW_CHARS}
     empirical = prior["prior_timeout"] | prior["prior_hang"] | prior["prior_empty"]
     both = offered | empirical
@@ -82,12 +57,6 @@ def main() -> int:
         "Indigo errored": set(ind.loc[ind["status"] == "error", "mnxr"]),
         "Indigo hung (attempted, never returned)": prior["prior_hang"],
     }
-    # THE `records` COLUMN IS 100% BY CONSTRUCTION and is printed anyway, because
-    # leaving it out would let the `both` column read as a result. The empirical half IS
-    # these sets; what it actually CONTRIBUTES is the count printed at the bottom -- the
-    # reactions it offers that the string rule does not -- and its real value is for the
-    # 22.6% of the universe the prior run never reached, where a future run's records
-    # will speak and no threshold on length can.
     print(f"  {'recorded silence':<42} {'n':>6}  {'string':>7} {'recorded':>8} {'both':>7}")
     for name, s in truth.items():
         if not s:

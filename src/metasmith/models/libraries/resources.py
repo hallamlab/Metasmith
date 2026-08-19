@@ -1,17 +1,3 @@
-"""Declarative resource asks: what a step wants, in units a scheduler understands.
-
-`Size` and `Duration` render themselves as Nextflow directives; `Resources`
-collects them. The GPU pair is deliberately split across two declarations that
-never meet in one file: `Gpus` (plus `Resources.gpu_memory`) is what a
-*transform* may say -- a toggle and a total VRAM figure, the only units a tool
-honestly knows -- while `Gpu` is what a *run* says about the host's devices.
-Device count and device type are facts about a cluster, so they live on the run
-side and a transform cannot name them.
-
-Nothing here imports from elsewhere in metasmith, which is why it is the floor
-of this package.
-"""
-
 from __future__ import annotations
 
 import math
@@ -63,12 +49,6 @@ class Duration:
 
     @classmethod
     def Unlimited(cls):
-        """No time limit at all -- which is not the same as saying nothing.
-
-        A step with no `Duration` gets whatever its transform declared; this is
-        the other thing, and it needs a value of its own because the absence of
-        one already means something. Renders as Nextflow's unset directive.
-        """
         d = cls()
         d.unlimited = True
         return d
@@ -77,16 +57,11 @@ class Duration:
         return self.AsNextflowFormat()
 
     def SetStrict(self):
-        # Strictness is what makes the compiler emit `errorStrategy 'ignore'`
-        # for the step -- which is how a run whose every step died once
-        # reported `completed`. A duration that cannot time out buys nothing
-        # from it but that suppression, so this is refused rather than ignored.
         assert not self.unlimited, "an unlimited duration cannot be strict: it can never time out"
         self.strict=True
         return self
 
     def AsNextflowFormat(self):
-        # bare `null`, unquoted: it is the absence of a directive, not a value
         if self.unlimited: return "null"
         delta = self._delta
         total_seconds = delta.total_seconds()
@@ -103,46 +78,21 @@ class Duration:
         return f"'{' '.join(s)}'"
 
 class Gpus(Enum):
-    # A pure toggle: whether the transform's tool needs a GPU, and how badly.
-    # Deliberately carries no count and no device type -- how many devices a
-    # given VRAM ask resolves to, and what a device is called, are facts about
-    # the *host*, not the tool. Those live on `Gpu` (the run-side declaration).
     NONE = "none"
     OPTIONAL = "optional"
     REQUIRED = "required"
 
-# Label attached at stage time to every process whose transform declared a GPU.
-# Follows the existing `label 'x<name>x'` convention (see `xlocalx` in slurm.nf).
 GPU_LABEL = "gpu"
 
 @dataclass
 class Gpu:
-    """What a GPU *is* on the target host — the run-side half of the contract.
-
-    Declared once per run via `Agent.RunWorkflow(gpus=...)`. This is the only
-    place device vocabulary appears: per-device VRAM, the site's device/gres
-    type token, how many devices a node has, and the scheduler flag shape used
-    to ask for them. A transform never names any of these.
-
-    `flag` is the request syntax including its separator, so the count appends
-    directly: `--gpus-per-node=` -> `--gpus-per-node=2`, `--gres=gpu:` ->
-    `--gres=gpu:2` (or `--gres=gpu:a100:2` when `type` is set).
-    """
     memory: Size|None = None
     type: str|None = None
     count: int|None = None
     flag: str = "--gpus-per-node="
-    # Scheduler flags a GPU step needs beyond the device count -- typically the
-    # GPU partition, since a site's default partition has no cards. These go on
-    # GPU steps only, which is what distinguishes them from
-    # `params.process.clusterOptionsExtra` (every step). Sockeye needs
-    # ["--partition=gpu"].
     extra: list[str] = field(default_factory=list)
 
     def DevicesFor(self, required: Size|None) -> int:
-        # How many of *this* device it takes to total `required` VRAM. No ask
-        # (or no declared per-device memory to divide by) means one device --
-        # the transform said it wants a GPU without saying how much.
         if required is None or self.memory is None: return 1
         if self.memory.value_gb <= 0: return 1
         return max(1, math.ceil(required.value_gb / self.memory.value_gb))
@@ -156,11 +106,6 @@ class Resources:
     cpus: int|None = None
     memory: Size|None = None
     duration: Duration|None = None
-    # GPU need. `gpus` is the toggle; `gpu_memory` is the TOTAL VRAM the tool
-    # needs, which is the unit a tool actually cares about. Unlike the three
-    # fields above, `gpu_memory` is NOT a Nextflow directive -- Nextflow has no
-    # VRAM concept -- so AsNextflowFormat never renders it. It is metasmith-side
-    # input to the run-time device-count computation and to the protocol.
     gpus: Gpus = Gpus.NONE
     gpu_memory: Size|None = None
 
@@ -180,21 +125,8 @@ class Resources:
                 val = strict.replace(var, rval)
             else:
                 val = norm.replace(var, rval)
-            joiner = " = " if is_config else " " # why is nextflow inconsistent like this??
+            joiner = " = " if is_config else " "
             return f"{field}{joiner}{val}"
-        # return [x for x in [
-        #     _parse_res(self.cpus, "<x>", "cpus", "<x>"),
-        #     _parse_res(
-        #         self.memory, "<x>", "memory",
-        #         "{"+f" task.attempt==1? <x> : 2*(<x> as MemoryUnit) "+"}",
-        #         "<x>",
-        #     ),
-        #     _parse_res(
-        #         self.duration, "<x>", "time",
-        #         "{"+f" task.attempt==1? <x> : 2*(<x> as Duration) "+"}",
-        #         "<x>",
-        #     ),
-        # ] if x is not None]
         return [x for x in [
             _parse_res(self.cpus, "<x>", "cpus", "<x>"),
             _parse_res(
@@ -204,8 +136,6 @@ class Resources:
             ),
             _parse_res(
                 self.duration, "<x>", "time",
-                # an unlimited duration is emitted as it stands: the retry
-                # expression would otherwise double `null` on the second attempt
                 "<x>" if (self.duration is not None and self.duration.unlimited)
                 else "{"+f" (2**(task.attempt-1)) * (<x> as Duration) "+"}",
                 "<x>",

@@ -1,30 +1,3 @@
-"""The engine finds the same plan the solver finds.
-
-The gate the port exists to pass. Both sides read the same problem, draw from the
-same stream, and must land on the same plan -- not an equally good one, *the*
-same one. Anything weaker would leave a whole class of divergence invisible: a
-port that reproduces the search's *distribution* while making different decisions
-is a port nobody can debug.
-
-Two comparisons, and they answer different questions.
-
-`plan_fingerprint` is the shipped criterion -- topological equivalence, which is
-what the plan file promised and what actually matters to a caller. But it is a
-canonical form, so it can hide a real disagreement behind a symmetry.
-`plan_shape` is compared alongside it, and the step order is compared
-separately, because two plans can be topologically equivalent and still be
-different sequences.
-
-The `describe` gate in `test_engine_problem.py` runs first for a reason: if the
-problem was read differently, everything here fails and none of it says why.
-
-**Opt-in** (`--python-solver`). Every test here goes through `_both`, which
-forces a python solve to have something to compare against, and the python
-solver is on its way out. What still holds the engine to account without it is
-`check_plan`, which shares no code with either implementation -- see
-`test_known_unsound.py` and the corpus pin.
-"""
-
 from __future__ import annotations
 
 import pytest
@@ -92,9 +65,6 @@ def _both(engine, problem, *, seed=42, max_iter=256, max_refine=256):
         wire_version=SOLVER_WIRE_VERSION,
     )
     theirs = decode_plan(encoded, CallEngine(engine, "solve", encoded.payload))
-    # The reference is forced onto the python path. Without this the engine
-    # would be compared against itself the moment it advertises `solve`, and
-    # every assertion below would pass for the wrong reason.
     with UsePythonSolver():
         assert Backend("solve") == "python", "the reference side must be python"
         mine = problem.solve(seed=seed, max_iter=max_iter, max_refine=max_refine)
@@ -102,11 +72,6 @@ def _both(engine, problem, *, seed=42, max_iter=256, max_refine=256):
 
 
 def _sequence(plan):
-    """The plan as an ordered list of (transform, sorted input slots).
-
-    Coarser than a fingerprint on purpose -- it is about *order*, which the
-    fingerprint's canonical form deliberately forgets.
-    """
     return [
         (s.transform.key, sorted((d.key, e.key) for d, e in s.used.items()))
         for s in plan.dependency_plan
@@ -125,20 +90,11 @@ def test_the_engine_finds_the_same_plan(engine, name, seed, dials, label):
 
 @pytest.mark.parametrize("name,seed,dials,label", list(_cases())[:16], ids=lambda x: x if isinstance(x, str) else "")
 def test_the_engines_plan_is_sound_on_its_own_terms(engine, name, seed, dials, label):
-    """The checker adjudicates the engine's plan directly.
-
-    Agreeing with the Python solver is the point of the test above, and it is
-    also its blind spot: two implementations can agree on a plan that is wrong.
-    The semantic checker shares no code with either of them.
-    """
     problem = generate_problem(seed, dials, name=label)
     _, theirs = _both(engine, problem)
     if not theirs.complete:
         pytest.skip(f"{name} has no solution for either side to be judged on")
     verdict = check_plan(problem, theirs)
-    # Some generated problems are unsound under *both* implementations -- the
-    # refiner/rectify laundering, pinned in `test_known_unsound.py`. The claim
-    # here is parity of verdict, not soundness the Python solver does not have.
     with UsePythonSolver():
         mine = problem.solve()
     assert verdict.ok == check_plan(problem, mine).ok, f"{name}: {verdict}"
@@ -146,12 +102,6 @@ def test_the_engines_plan_is_sound_on_its_own_terms(engine, name, seed, dials, l
 
 @pytest.mark.parametrize("seed", [1, 7, 99, 2**31])
 def test_the_two_agree_across_seeds_not_just_the_default(engine, seed):
-    """A single seed proves the two implementations agree once.
-
-    The stream is where a port diverges quietly -- a rule that consumes one word
-    too many is right until it is not -- so the same problem is re-solved under
-    seeds that send the search down entirely different paths.
-    """
     problem = generate_problem(3, GeneratorDials(
         n_types=8, n_extra_transforms=6, lineage_density=0.5, n_duplicate_transforms=2))
     mine, theirs = _both(engine, problem, seed=seed)
@@ -160,23 +110,14 @@ def test_the_two_agree_across_seeds_not_just_the_default(engine, seed):
 
 
 def test_a_problem_with_no_route_is_refused_the_same_way(engine):
-    """The bail-out path, which returns before the search starts."""
     problem = generate_problem(0, GeneratorDials(n_types=5, n_extra_transforms=0))
-    problem.transforms = []  # nothing can produce the target's inputs
+    problem.transforms = []
     mine, theirs = _both(engine, problem)
     assert mine.complete is False and theirs.complete is False
     assert theirs.dependency_plan == [] and mine.dependency_plan == []
 
 
 def test_the_engine_solves_the_shipped_templates(engine):
-    """The four real libraries, which is what the port is for.
-
-    Generated problems are small and their refiners barely run. A template is
-    where the search is actually expensive -- `metagenomics_from_paired_reads` is
-    29 steps and puts 19,683 states through the refiner's validity check -- and
-    it is also where the property table is large enough for the type bitsets to
-    stride.
-    """
     from metasmith.testing.solver_bench import _libraries_root
     from metasmith.testing.solver_verification import problem_of_plan
 

@@ -1,24 +1,3 @@
-"""The generated corpus, pinned to a recorded fingerprint.
-
-This is the gate every performance change to the solver has to walk past. The
-fingerprint is topological, so a change that reorders steps or reshuffles which
-`Endpoint` object carries a value passes untouched; a change that alters *which
-plan* comes back does not.
-
-Updating `fingerprints.json` is therefore a deliberate act, not housekeeping.
-Three kinds of change are expected to move these legitimately, and all three are
-changes to *how the solver decides* rather than to what it decides: swapping the
-PRNG, stating an iteration order the solver was previously taking from CPython's
-hash tables, and changing the heuristic the search is guided by — the last of
-those replaced the backward distance walk and moved three of these eight. Each
-finds a different, equally valid plan, and parity across one is argued over
-distributions rather than digests.
-
-Regenerate with::
-
-    python -m metasmith.testing.solver_bench --no-templates --pin tests/solver/fingerprints.json
-"""
-
 from __future__ import annotations
 
 import json
@@ -57,14 +36,6 @@ def test_corpus_case_still_yields_the_recorded_plan(name, seed, dials):
 
 
 def test_the_corpus_spans_both_sides_of_rng_sensitivity():
-    """Some cases must move with the seed, and some must not.
-
-    A case whose plan is the same under every seed is the stronger parity pin:
-    a fingerprint change there cannot be blamed on random-stream noise. A case
-    that *does* move with the seed is what makes the corpus able to notice a
-    PRNG swap at all. The corpus is only useful if it holds both, so this
-    asserts the spread rather than any particular case's behaviour.
-    """
     stable, sensitive = [], []
     for name, seed, dials in CORPUS:
         prints = {
@@ -77,5 +48,4 @@ def test_the_corpus_spans_both_sides_of_rng_sensitivity():
 
 
 def test_the_pin_covers_the_whole_corpus():
-    """A case quietly dropped from the pin is a gate that stopped gating."""
     assert set(_pinned()) == {f"gen/{name}" for name, _, _ in CORPUS}

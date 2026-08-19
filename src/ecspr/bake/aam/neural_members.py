@@ -47,24 +47,12 @@ import pandas as pd
 from . import shard as aam_shard
 from . import worklist
 
-# The equation term grammar, verbatim from the deployed builder. NOTE it matches only
-# `MNXM...@compartment` terms -- specials like `WATER@MNXD1` and `BIOMASS@MNXD1` do NOT
-# match, which is deliberate here (they have no chem_prop SMILES) and is also the exact
-# mismatch that made the extractor refuse every water-bearing reaction when the same
-# regex was reused downstream. See ecspr_atom_pairs.EQ_TERM for that side of it.
 EQ_TERM = re.compile(r"(\d+(?:\.\d+)?)\s+(MNXM\w+)@\w+")
 
-# A reaction SMILES past this length is a polymer/macromolecule the transformers cannot
-# usefully attend over, and attempting it costs minutes for a map nothing will trust.
 SMILES_LEN_LIMIT = 8000
 
 COLUMNS = ("mnxr", "rxn_smiles", "mapped_rxn_smiles", "confidence")
 
-# Seconds per reaction before LocalMapper's map is recorded as a timeout rather than
-# waited on. Sized from the run this bound exists because of: the bulk of the gap set
-# went through at 1-17 s per reaction, and the ones that did not took tens of minutes
-# each with no ceiling in sight. 240 s is an order of magnitude above the slow end of
-# normal and still bounds a shard's worst case to something a declared duration covers.
 DEFAULT_LM_TIMEOUT_S = 240
 
 
@@ -135,8 +123,6 @@ def build_rxn_smiles(eq: str, smi_map: dict[str, str]):
         for coef, m in side_list:
             s = smi_map.get(m)
             if not s:
-                # One unknown structure poisons the whole reaction: mapping the rest
-                # would hand the missing participant's atoms to whatever is left.
                 return None, f"no_smiles:{m}"
             n = max(1, int(round(coef)))
             for _ in range(n):
@@ -153,7 +139,6 @@ def build_rxn_smiles(eq: str, smi_map: dict[str, str]):
 
 
 def build_universe(reac_prop: Path, chem_prop: Path) -> dict[str, str]:
-    """``{mnxr -> reaction SMILES}`` for every reaction both members will be asked to map."""
     equations = load_all_equations(reac_prop)
     needed = set()
     for eq in equations.values():
@@ -177,34 +162,6 @@ def build_universe(reac_prop: Path, chem_prop: Path) -> dict[str, str]:
 
 
 def load_universe(universe_parquet: Path, exclude=None):
-    """``({key -> SMILES}, {key -> (base_mnxr, element)})`` for what these members admit.
-
-    THE SMILES MUST BE THE SAME STRING FOR EVERY MEMBER, and that is the whole reason
-    this path exists. When each member rebuilds the universe from reac_prop + chem_prop
-    it re-runs a builder that could drift; then two members "disagree" partly because
-    they were shown two different strings, and the ensemble's disagreement rate stops
-    measuring what it claims to. One table, built once, read by all.
-
-    THE `verdict` COLUMN IS REQUIRED, and the refusal is the point. This used to read
-    `lookup::reactions` and apply its own filter -- not null, under the length limit --
-    which is a universe each member derived for itself and, worse, a universe with no
-    row for anything it excluded. Pointing a member at the raw lookup now fails loudly
-    rather than quietly mapping the oversized tail that OOM-killed this lane twice.
-
-    THAT TAIL IS WHY THE FILTER IS `NEURAL_ADMITS` AND NOT `mappable` SPELLED OUT HERE.
-    The atom cap exists for these two members specifically -- a 512-token transformer and
-    the lane that was OOM-killed -- and Indigo takes the reactions above it. Naming the
-    set in `worklist` is what keeps "which member sees what" a single statement rather
-    than a literal in three files.
-
-    THE SECOND RETURN IS WHAT MAKES THE GAP COMPUTABLE. A submission key is a bare MNXR
-    for a whole reaction and `MNXR#X` for an element reduction, and the pairs table is
-    keyed on the REAL reaction -- so "has this submission been answered" is a question
-    about (reaction, element) for one class and about the reaction for the other. See
-    `gap_of`.
-
-    `exclude` restricts to what a lower layer has NOT already claimed.
-    """
     d = pd.read_parquet(universe_parquet)
     if "verdict" not in d.columns:
         raise SystemExit(
@@ -223,11 +180,6 @@ def load_universe(universe_parquet: Path, exclude=None):
         meta[r.mnxr] = (base, None if el is None or pd.isna(el) else str(el))
     over = [m for m, s in out.items() if len(s) > SMILES_LEN_LIMIT]
     if over:
-        # Belt and braces: the universe applies this same cap, so a hit here means the
-        # two limits have drifted apart rather than that a long reaction slipped
-        # through. It is checked against whichever string was written -- for a collapsed
-        # reaction that is the collapsed one, which is what the member will actually be
-        # handed and therefore what the cap is about.
         raise SystemExit(
             f"[aam] {len(over):,} admitted submissions exceed SMILES_LEN_LIMIT "
             f"({SMILES_LEN_LIMIT}), e.g. {over[0]}. The universe and this module "
@@ -247,21 +199,6 @@ def load_universe(universe_parquet: Path, exclude=None):
 
 
 def covered_by(pairs_parquets) -> set:
-    """`(mnxr, element)` some other member already produced a pair for.
-
-    THE GAP-FILLER'S INPUT. In the deployed chain LocalMapper never swept the universe:
-    it ran over 487 reactions that the rest of the pipeline could reach but had no
-    mapping for, and all 401 of its contributions to the deployed table come from that
-    set -- zero outside it. Absence from every other member's pairs table is that same
-    "reach AND no rxn" gap, expressed as something the graph can compute instead of
-    something a person assembled by hand.
-
-    AT (reaction, element) GRAIN, NOT REACTION GRAIN, and with one universe that stops
-    being a nicety. A reduced submission answers ONE element; when the three passes were
-    separate the gap set was per pass and the conflation could not bite. In one pass a
-    reaction whose carbon mapped would mark its own nitrogen reduction as covered, and
-    the gap-filler would skip exactly the submission the forecast built for it.
-    """
     done = set()
     for p in pairs_parquets:
         p = Path(p)
@@ -278,11 +215,6 @@ def covered_by(pairs_parquets) -> set:
 
 
 def gap_of(universe: dict, meta: dict, covered: set) -> dict:
-    """The submissions no other member answered.
-
-    A REDUCED submission is answered only when its OWN element was; a whole one when any
-    element was, because a whole map that produced any pair is a map the reaction has.
-    """
     reached = {m for m, _el in covered}
     out = {}
     for key, smi in universe.items():
@@ -303,15 +235,15 @@ def _resume(out_tsv: Path) -> set[str]:
         done = set(prev["mnxr"].astype(str))
         print(f"[aam] resume: {len(done):,} reactions already cached", flush=True)
         return done
-    except Exception as e:                                   # a truncated final line
+    except Exception as e:
         print(f"[aam] resume failed ({e}); starting over", file=sys.stderr, flush=True)
         return set()
 
 
 def _writer(out_tsv: Path):
     write_header = not out_tsv.exists() or out_tsv.stat().st_size == 0
-    fh = open(out_tsv, "a", buffering=1)                     # line-buffered: a kill -9
-    if write_header:                                          # loses at most one row
+    fh = open(out_tsv, "a", buffering=1)
+    if write_header:
         fh.write("\t".join(COLUMNS) + "\n")
 
     def emit(mnxr, smi, mapped, conf):
@@ -325,21 +257,6 @@ def _writer(out_tsv: Path):
 
 
 def _address_space_guard(budget_gb: float):
-    """Cap this process's address space at `budget_gb` ABOVE what the loaded model
-    already reserved, and return the peak-RSS reader.
-
-    THE CAP GOES ON AFTER THE MODEL LOADS, and that ordering is not incidental: torch and
-    DGL reserve a large virtual arena at import, so a cap applied before the import
-    refuses the import itself and the lane dies having mapped nothing.
-
-    What this buys is a per-reaction cost bound. A reaction that would have taken the
-    node instead raises MemoryError inside the mapper call, which the caller's
-    `except Exception` already records as an abstention -- the same outcome as any other
-    reaction the mapper declines, and one the ensemble can read. Measured on the real
-    image: ~0.65 GB at 100 atoms, 3.3 GB at 1,000, 8.1 GB at 2,751. With the worklist
-    cutting at 600 atoms nothing should come near the budget; this is what happens when
-    something does.
-    """
     import resource
 
     def vmsize_gb():
@@ -380,16 +297,11 @@ def run_rxnmapper(todo: list[tuple[str, str]], emit, chunk_size: int = 4,
         chunk = todo[i:j]
         smis = [s for _, s in chunk]
         if sidecar is not None:
-            # The WHOLE chunk before the whole chunk: a kill lands inside one reaction
-            # but the batch call gives no way to know which, so all of them are recorded
-            # as attempted. The cost of that pessimism is at most chunk_size - 1
-            # reactions never retried; the cost of optimism is a resume loop.
             for mnxr, _ in chunk:
                 sidecar.mark(mnxr)
         try:
             res = m.get_attention_guided_atom_maps(smis)
         except Exception:
-            # Per-reaction fallback so one bad reaction does not kill a whole chunk.
             res = []
             for one in smis:
                 try:
@@ -411,14 +323,11 @@ def run_rxnmapper(todo: list[tuple[str, str]], emit, chunk_size: int = 4,
 
 
 def _lm_map_one(mapper, smi: str, timeout_s: int):
-    """(mapped, confidence, status). `status` is one of ok / empty / timeout / error."""
     old = signal.signal(signal.SIGALRM, _alarm)
     signal.alarm(timeout_s)
     try:
         r = mapper.get_atom_map(smi, return_dict=True)
         mapped = r.get("mapped_rxn", "") if isinstance(r, dict) else (r or "")
-        # LocalMapper reports a template-match confidence under one of two names
-        # depending on version; absent means it did not score, not that it scored 0.
         conf = float(r.get("confident", r.get("confidence", float("nan")))) \
             if isinstance(r, dict) else float("nan")
         return (mapped, conf, "ok") if mapped else ("", conf, "empty")
@@ -432,15 +341,6 @@ def _lm_map_one(mapper, smi: str, timeout_s: int):
 
 
 def _lm_serve_with(budget_gb):
-    """Build the child entry point: one LocalMapper, then map until the pipe closes.
-
-    THE MODEL LOADS IN THE CHILD, not in the parent, and that is what keeps the
-    containment free. A fork from a parent already holding the 13 GB model would share
-    those pages copy-on-write and cost nothing either -- but the parent would then hold
-    them for the whole shard, and six shards on one node have no room for a second copy
-    if anything did write. So the parent stays small and a respawn pays one model load,
-    which is affordable precisely because a respawn is rare.
-    """
     def _serve(conn, timeout_s: int):
         from localmapper import localmapper
         mapper = localmapper(device="cpu")
@@ -460,54 +360,8 @@ def _lm_serve_with(budget_gb):
 def run_localmapper(todo: list[tuple[str, str]], emit, sidecar=None, budget_gb=None,
                     timeout_s: int = DEFAULT_LM_TIMEOUT_S, timeout_log=None,
                     mapper=None):
-    """Map the gap set, bounding EVERY reaction in time as well as in memory.
-
-    THE MEMORY GUARD WAS ONLY HALF THE BOUND. `--mem-budget-gb` catches a reaction that
-    grows; nothing caught one that simply does not finish. On 2026-07-28 this lane spent
-    81 minutes on THREE reactions after clearing 818, at 99.9% CPU and a flat 13 GB, with
-    323 to go -- upward of fifty hours, so the run was killed.
-
-    THE CAUSE IS THE PROCESS, NOT THE REACTION, which is the opposite of what it looked
-    like. Sharded six ways over the same universe, every reaction finished inside the
-    budget and NONE hit it -- including MNXR198828, one of the two the single process was
-    grinding on when it died. The single run's rate fell monotonically as it went (0.19,
-    0.86, 0.094, 0.061 rxn/s); something accumulates in-process, and the fix that matters
-    is capping how many reactions one process handles. See `bake/localmapper.py`.
-
-    AN ALARM IN THIS PROCESS WAS NOT A BOUND, and the run that proved it is the reason
-    the mapper now lives in a child. `signal.alarm` plus a `_Timeout` raised in the
-    handler only bounds a call that lets the exception out; `localmapper.get_atom_map`
-    catches broadly, so the exception was swallowed, the one-shot alarm was spent, and
-    the reaction ran on unbounded. On 2026-08-16 shard 3 spent 86 minutes on one
-    reaction -- a nitrogen reduction of a 1,201-character chlorophyll -- at 99% CPU with
-    `timeout_log` EMPTY and `n_timeout` at zero. The evidence said the budget was never
-    reached while the budget was being exceeded twenty-one times over.
-    That is worse than a slow lane: a bound nobody can see failing is not a bound.
-    Sending the process a second SIGALRM by hand freed it in seconds, so it was never
-    blocked in a C call -- the signal always arrived, and the library simply ate it.
-
-    SO THE PARENT OWNS THE BUDGET, exactly as `indigo_member` already had to learn it.
-    `Mapper` sends one submission to a forked child and waits; silence past the budget is
-    answered with SIGKILL, which no `except` can swallow. The two lanes share that class
-    rather than growing two containments to keep in step.
-
-    WHAT THE ALARM IS STILL FOR. It runs INSIDE the child, where it is a cheap fast path:
-    when the library does let it out, the child answers `timeout` at the budget and the
-    parent never has to kill anything. `timeout` and `killed` are counted apart because
-    the difference measures how often the swallow happens.
-
-    A TIMEOUT IS A RECORDED OUTCOME. The row is written with an empty map, which every
-    consumer already reads as an abstention, and the mnxr is additionally appended to
-    `timeout_log` with which of the two it was -- so the evidence distinguishes
-    "LocalMapper could not" from "LocalMapper never finished". That distinction is
-    invisible in the cache alone: a hang writes no row at all and shows up as
-    sidecar-minus-cache, but a timeout writes one, so without this file it would be
-    indistinguishable from an ordinary template failure.
-    """
     from .indigo_member import Mapper
 
-    # Injectable ONLY so the containment is testable without a 13 GB model, which is the
-    # same reason `Mapper` takes its server injectable.
     m = mapper if mapper is not None else Mapper(timeout_s,
                                                  serve=_lm_serve_with(budget_gb))
     t0 = time.time()
@@ -517,8 +371,6 @@ def run_localmapper(todo: list[tuple[str, str]], emit, sidecar=None, budget_gb=N
             if sidecar is not None:
                 sidecar.mark(mnxr)
             r = m.map_one(smi)
-            # The child answers in three fields; `Mapper`'s own kill and error paths
-            # answer in two, because they never got a confidence to report.
             mapped, conf, status = r if len(r) == 3 else (r[0], float("nan"), r[1])
             if status in ("timeout", "killed"):
                 n_timeout += 1
@@ -637,11 +489,6 @@ def main(argv=None):
     universe = aam_shard.select(universe, shard)
 
     a.out.parent.mkdir(parents=True, exist_ok=True)
-    # THE DURABLE CACHE. The in-task cache is node-local scratch and is discarded on
-    # retry, so its per-reaction resume protected this lane against nothing that actually
-    # happens on the cluster; the staged copy is the same file, handed in. A row is
-    # reused only when the SUBMISSION STRING it was produced from is the one this run
-    # would send -- a reaction has one id and up to four strings.
     prior_caches, prior_sides = aam_shard.cache_files(a.cache_dir)
     carried, _stale, _foreign = aam_shard.read_cache(prior_caches, universe,
                                                      who=f"aam:{a.member}")
@@ -655,9 +502,6 @@ def main(argv=None):
                   row[3] if len(row) > 3 else "")
         fh0.close()
 
-    # RESUME OFF BOTH: the cache holds what FINISHED, the sidecars hold what was STARTED,
-    # and the difference is precisely the reaction a kill landed in. Resuming off the
-    # cache alone re-attempts it, dies again, and never makes progress.
     done = _resume(a.out)
     done |= aam_shard.read_sidecars(prior_sides + ([a.sidecar] if a.sidecar else []),
                                     shard, who=f"aam:{a.member}")
@@ -667,16 +511,12 @@ def main(argv=None):
     print(f"[aam:{a.member}] todo: {len(todo):,}", flush=True)
     if not todo:
         print(f"[aam:{a.member}] nothing to do", flush=True)
-        # An empty cache is still a cache: the header has to exist or the extractor's
-        # read of a lane that had nothing to do fails on a zero-byte file.
         if not a.out.exists() or a.out.stat().st_size == 0:
             _writer(a.out)[0].close()
         return 0
 
     side = aam_shard.Sidecar(a.sidecar, shard) if a.sidecar else None
     fh, emit = _writer(a.out)
-    # Append, line-buffered, for the same reason the cache is: this lane gets killed, and
-    # a timeout record that only lands at the end is a record that does not survive.
     tlog = open(a.timeout_log, "a", buffering=1) if a.timeout_log else None
     try:
         if a.member == "rxnmapper":

@@ -1,16 +1,3 @@
-"""`RunWorkflow` is fire-and-forget, so the GPU check has to happen up front.
-
-The agent shell launches nextflow under `nohup ... &` and returns as soon as the
-launch script exits. Anything that goes wrong after that point is invisible to
-the caller — it surfaces hours later as a CUDA error inside a tool. So a
-workflow that requires a GPU against a run that declares none must fail *before*
-the launcher is invoked, and must name the transforms responsible.
-
-These drive the real `RunWorkflow` with a scripted shell and a recording mover,
-so what is pinned is the observable order of operations and the config text that
-actually reaches the agent — not just the helper functions in isolation.
-"""
-
 from __future__ import annotations
 
 import json
@@ -18,10 +5,6 @@ from pathlib import Path
 
 import pytest
 
-# Patched on the module that *runs* the verb, not the package that re-exports
-# it: `Agent.RunWorkflow` lives in workflow_ops and resolves `Logistics` and
-# `AgentShell` through that module's globals, so patching the package would
-# leave the real ones in place and this test would drive a live transfer.
 import metasmith.agents.workflow_ops as _agents
 from metasmith.agents import Agent, GpuRequirementError
 from metasmith.constants import AgentPaths
@@ -37,12 +20,9 @@ class FakeShell:
     def __init__(self, manifest: dict, gpu_present: str = "", manifest_text: str | None = None):
         self.manifest = manifest
         self.gpu_present = gpu_present
-        # raw override, for the truncated-read case
         self.manifest_text = manifest_text
         self.calls: list[str] = []
 
-    # **_ so that a new keyword on LiveShell.Exec -- the idle bound, say -- does
-    # not fail every test here for a reason that has nothing to do with GPUs
     def Exec(self, cmd, timeout=None, history=False, quiet=False, **_) -> ShellResult:
         self.calls.append(cmd)
         if "workspace exists" in cmd:
@@ -63,8 +43,6 @@ class FakeShell:
 
 
 class RecordingMover:
-    """Stands in for Logistics; snapshots each queued file at execute time."""
-
     sent: dict[str, str] = {}
 
     def __init__(self, *a, **kw):
@@ -119,7 +97,6 @@ class TestPreflightBlocksTheLaunch:
         with pytest.raises(GpuRequirementError) as e:
             _run(monkeypatch, agent, manifest)
         assert "prott5" in str(e.value)
-        # nothing was even sent to the agent, let alone launched
         assert RecordingMover.sent == {}
 
     def test_error_names_a_device_it_can_see(self, monkeypatch, agent):
@@ -144,11 +121,6 @@ class TestPreflightBlocksTheLaunch:
 
 class TestUnreadableManifest:
     def test_truncated_manifest_refuses_rather_than_skipping_the_check(self, monkeypatch, agent):
-        # A file that exists but does not parse means we cannot tell whether a
-        # step requires a GPU. Proceeding would silently skip the very check
-        # this feature exists to perform. (Seen for real: the manifest was
-        # written pretty-printed with no trailing newline, and the agent
-        # shell's line reader dropped the closing brace.)
         truncated = '{"schema":1,"steps":{"p01__x":{"gpus":"required"'
         with pytest.raises(GpuRequirementError) as e:
             _run(monkeypatch, agent, {}, manifest_text=truncated)
@@ -166,8 +138,6 @@ class TestDeclaredRunRendersRequests:
         assert "withName: 'p01__prott5'" in cfg
         assert "withName: 'p02__bwa'" in cfg
         assert '" --gpus-per-node=1"' in cfg
-        # base flags restated -- clusterOptions is scalar, so omitting them
-        # would drop --account and SLURM would reject every job
         assert "--nodes=1 --ntasks=1" in cfg
 
     def test_spanning_request_renders_the_larger_count(self, monkeypatch, agent):
@@ -186,8 +156,6 @@ class TestDeclaredRunRendersRequests:
 
 class TestGenericSchedulerInjection:
     def test_nested_params_do_not_clobber_each_other(self, monkeypatch, agent):
-        # process_tries and process_clusterOptionsExtra share a prefix; both
-        # must survive into the params file
         monkeypatch.setattr(_agents, "AgentShell", None)
         shell = FakeShell({})
 

@@ -72,14 +72,10 @@ def test_lin_payload_roundtrip():
     assert decoded.v == LIN_PAYLOAD_VERSION
     assert decoded.entries[0]["slot_a"] == [123456789, 987654321]
     assert decoded.entries[0]["slot_b"] == [42]
-    # Wire shape matches what Orchestrator.JsonforEcho(index) emits: `index`
-    # is the list of per-batch-member maps, so a batch_size=1 step is a
-    # length-1 list rather than a bare map.
     assert json.loads(encoded) == {
         "v": LIN_PAYLOAD_VERSION,
         "entries": [{"slot_a": [123456789, 987654321], "slot_b": [42]}],
     }
-    # mint_file_id is deterministic.
     fid1 = LinPayload.mint_file_id("slot_A", "out/x.gbk")
     fid2 = LinPayload.mint_file_id("slot_A", "out/x.gbk")
     fid3 = LinPayload.mint_file_id("slot_A", Path("out/x.gbk"))
@@ -89,21 +85,6 @@ def test_lin_payload_roundtrip():
 
 
 def test_lin_payload_carries_one_entry_map_per_batch_member():
-    """The wire is a LIST of per-member maps, not one map.
-
-    `_collateBatch` builds one index per batch member and the process
-    receives them as a list, so a `batch_size=3` task has three lineage maps
-    — three FILES groups, three sets of slot hashes. Bootstrap turns each
-    into one `context.AsBatch()` member.
-
-    Observed on real Nextflow (3 seeds, batch_size=3): the task's `index`
-    has size 3 while the emitted envelope carries member 0 only — one FILES
-    group holding one file. The other two members' files are staged in the
-    task directory and never reach the protocol, silently.
-
-    `release` is the reference: it emits `JsonforEcho(index)` (the whole
-    list) and parses it with `json.loads` + a list check.
-    """
     members = [
         {"slot_a": ["h1"], LinPayload.FILES_KEY: [["/w/a1.fq"]]},
         {"slot_a": ["h2"], LinPayload.FILES_KEY: [["/w/a2.fq"]]},
@@ -125,7 +106,6 @@ def test_lin_payload_rejects_unknown_version():
 
 
 def test_lin_payload_rejects_non_list_entries():
-    """A bare map is the v2 shape — the one that dropped batch members."""
     with pytest.raises(ValueError):
         LinPayload.from_json(json.dumps({"v": LIN_PAYLOAD_VERSION, "entries": {}}))
 
@@ -138,12 +118,6 @@ def test_lin_payload_rejects_non_map_member():
 
 
 def test_lin_payload_file_groups_and_lineage_index():
-    """Wire-shape: Orchestrator injects FILES alongside lineage_index hashes.
-
-    `file_groups(member)` extracts the special FILES key; `lineage_index(member)`
-    returns everything else. Both take a member index because a batched task's
-    wire carries one map per batch member.
-    """
     raw = {
         "v": LIN_PAYLOAD_VERSION,
         "entries": [
@@ -170,7 +144,6 @@ def test_lin_payload_file_groups_and_lineage_index():
         "slot_db": [42],
     }
     assert payload.lineage_index(1) == {"slot_reads": [111], "slot_db": [42]}
-    # Missing FILES key returns empty list (e.g., direct-run path).
     bare = LinPayload(v=LIN_PAYLOAD_VERSION, entries=[{"slot_x": [1]}])
     assert bare.file_groups(0) == []
     assert bare.lineage_index(0) == {"slot_x": [1]}
@@ -193,7 +166,7 @@ def test_legacy_row_tolerance():
         {"source": "hit", "step": 2, "cache_key": "deadbeef", "transform_key": "lib::x"}
     )
     parsed = InvocationEvent.from_jsonl(legacy_row)
-    assert parsed is None  # legacy v1 rows skip, do not raise
+    assert parsed is None
 
     session_row = SessionStart(
         session_id=12,
@@ -201,7 +174,7 @@ def test_legacy_row_tolerance():
         metasmith_version="0.20.0",
     ).to_jsonl()
     parsed = InvocationEvent.from_jsonl(session_row)
-    assert parsed is None  # SessionStart sentinel skipped by event parser
+    assert parsed is None
 
 
 def test_lineage_node_to_json():
@@ -250,7 +223,6 @@ def test_lineage_node_to_mermaid():
     assert "n_leaf12345a" in diagram
     assert "-->|reads [groupTuple]|" in diagram
 
-    # depth=0 emits just the root node, no edges
     shallow = root.to_mermaid(depth=0)
     assert "-->" not in shallow
     assert "n_root998877" in shallow
@@ -282,7 +254,6 @@ def test_log_bundle_status_closure():
 
 def test_append_invocation_event_writer(tmp_path):
     trace = tmp_path / "trace.jsonl"
-    # SessionStart sentinel
     trace.write_text(
         SessionStart(session_id=1, compile_started_at="2026-05-30T12:00:00Z").to_jsonl() + "\n",
         encoding="utf-8",

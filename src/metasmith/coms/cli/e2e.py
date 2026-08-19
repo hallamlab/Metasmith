@@ -1,14 +1,3 @@
-"""`metasmith e2e ...` subcommands.
-
-These commands exist to support end-to-end agentic test harnesses where
-a coding agent drives the CLI in a Ralph-style outer loop. Each loop
-iteration ends when the agent writes ``CONTROL.json`` in the sandbox
-cwd; this command provides a small, well-named verb that the agent can
-call instead of hand-crafting JSON.
-
-The schema is the contract consumed by
-``tests/e2e/agentic/harness/control.py``.
-"""
 from __future__ import annotations
 
 import json
@@ -49,11 +38,6 @@ def _checkpoint(args) -> dict:
 
 
 def _submit(args) -> dict:
-    """Declare the implementation ready for the non-agentic checker to execute.
-
-    metasmith arm: ``--key <task_key> --agent <agent>`` (a staged workflow).
-    baseline arm:  ``--entrypoint <path>`` (a runnable run.sh / Snakefile / main.nf).
-    """
     cwd = Path(getattr(args, "cwd", None) or Path.cwd())
     payload: dict = {"action": "submit"}
     if args.notes is not None:
@@ -61,8 +45,6 @@ def _submit(args) -> dict:
     if args.key:
         payload["task_key"] = args.key
     if args.agent:
-        # Resolve a filesystem agent reference to an absolute path so the checker
-        # finds it regardless of its own cwd; leave a bare name untouched.
         ap = Path(args.agent)
         payload["agent"] = str(ap.resolve()) if ap.exists() else args.agent
     if args.entrypoint:

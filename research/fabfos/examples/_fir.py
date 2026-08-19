@@ -1,29 +1,3 @@
-"""What an EXECUTING driver needs to run on fir, and nothing about what it runs.
-
-Lifted from `dev2/examples/_driver.py`, which is where every comment below was
-paid for. Two things are deliberately NOT lifted, and both would have been
-silently wrong at this repo's engine pin:
-
-  * `landed_products` read `results/_manifests/*.json`. That sidecar route is
-    **fully removed** at `src/metasmith` @ 2204002 -- `agents/collect.py` says so
-    in four places and instead calls `output.Save()`, writing a typed index to
-    `results/_metadata/index.yml`. Lifting it verbatim gives a driver that
-    announces failure on a perfectly good run. `landed_from_index` below reads
-    the index, which is strictly better anyway: it carries each product's
-    parentage, so a product can be attributed to the input it came from.
-  * `publish_by_type` maps one type to one destination. A three-organism run
-    produces three `annotation::gpr_table` products in ONE directory under
-    content-addressed names, so that publisher hits its `len(entries) > 1`
-    branch and copies all three under hash names -- a publish that succeeds and
-    is useless. `publish_gpr_by_source` attributes by the table's own `source`
-    column instead, which `validate_gpr` has already proved single-valued before
-    the table was written.
-
-One thing is also tightened: `check_walltimes` now doubles the ask by default.
-`slurm.nf` gives attempt >= 2 twice the time, so it is the DOUBLED walltime that
-has to clear the next maintenance window -- the operations log proves it and the
-code never enforced it.
-"""
 from __future__ import annotations
 
 import re
@@ -43,68 +17,21 @@ from metasmith.python_api import (                                      # noqa: 
     Agent, DataInstanceLibrary, Gpu, Runtime, Size, SshSource,
 )
 
-# ---------------------------------------------------------------------------
-# fir
-# ---------------------------------------------------------------------------
 
 FIR_HOST = "fir"
 FIR_AGENT_HOME = "/scratch/phyberos/fabfos_refs/agent_home"
 FIR_PROCESSED = "/scratch/phyberos/fabfos_refs/processed"
 
-# NOT the published `metasmith:{CONTAINER_TAG}` default. That tag is derived from
-# the engine's own version string, so it resolves to a build nobody necessarily
-# pushed; a tag that resolves to nothing fails as an apptainer `manifest unknown`
-# against quay, then a FATAL about a missing .sif, then an AssertionError about a
-# missing msm_relay binary -- none of which says "nobody built this image". So
-# the tag names something that is actually in fir's store.
-#
-# THE OVERLAY DOES NOT MAKE THE BASE IRRELEVANT. It replaces the container's
-# `metasmith` package, not the conda environment underneath it, so the base must
-# already carry every third-party dependency the PINNED engine imports. The
-# `0.19.0-fabfos` image the previous drivers used has no `cbor2`, which
-# `caching/keys.py` imports at 0.20.1 -- staging died inside the container with
-# `ModuleNotFoundError: No module named 'cbor2'` and surfaced here only as
-# "launcher missing". A base from the same minor line as the pin is the rule.
-#
-# THE TAG THIS NAMED BEFORE IS GONE. `0.20.1-bf54d6f` was deleted upstream and
-# quay answers `Tag ... was deleted or has expired`, so it cannot be pulled on
-# any host that does not already hold the .sif -- which fir no longer does. Its
-# successor on the same minor line is what fir has, and a base image swap does
-# not move any lane's numbers: every lane runs in its own `*.env` container and
-# this one only carries the engine.
 FIR_CONTAINER = "docker://quay.io/hallamlab/metasmith:0.20.4"
 FIR_SETUP_COMMANDS = ["module load apptainer"]
 
-# Charged on every sbatch. slurm.nf ships the literal placeholder
-# '<slurm_account>', which sbatch rejects outright.
-#
-# THE `_cpu` / `_gpu` SUFFIX IS PART OF THE NAME, not a partition hint. fir's
-# associations are `def-shallam_cpu`, `def-shallam_gpu`, `rpp-shallam_cpu`,
-# `rrg-shallam-ab_cpu` -- there is no bare `rrg-shallam-ab`, and sbatch rejects
-# one at submission with an "Invalid account" that reads like an expired
-# allocation rather than a typo.
 FIR_ACCOUNT = "rrg-shallam-ab_cpu"
-# There is no `rrg-shallam-ab_gpu` association at all, so a GPU step charged to
-# the CPU allocation is rejected outright. `def-shallam_gpu` is the only GPU
-# association here, and it is also the healthier share: `def-shallam_cpu` has
-# exhausted its fairshare (EffectvUsage 0.999 / FairShare 0.028) and would queue
-# behind everything, while `def-shallam_gpu` sits at 0.409.
 FIR_GPU_ACCOUNT = "def-shallam_gpu"
 
-# What a device IS on fir: `sinfo` reports gpu:h100:4 on 48-core / 1152 GB nodes.
-# Naming the type matters -- the interactive partition also advertises MIG slices
-# (`nvidia_h100_80gb_hbm3_3g.4`), and a 20 GB slice is not what an embedding pass
-# asked for.
 FIR_GPU = Gpu(memory=Size.GB(80), type="h100", count=4, flag="--gpus-per-node=")
 
 
 def ssh_once(host: str, command: str) -> str:
-    """Run one non-interactive command on the host. NEVER call this in a loop.
-
-    A retry loop against a failed connection is what causes an account lockout;
-    a run in this project was halted by exactly that. When this raises, connect
-    once by hand and re-run the driver.
-    """
     r = subprocess.run(["ssh", "-o", "BatchMode=yes", host, command],
                        capture_output=True, text=True)
     if r.returncode != 0:
@@ -123,21 +50,6 @@ def fir_agent(*, host: str = FIR_HOST, agent_home: str = FIR_AGENT_HOME,
 
 
 def pin_external_leaf_ids(inputs) -> None:
-    """Give every input with no local bytes a DETERMINISTIC instance_id.
-
-    `_mint_leaf_id` content-addresses a leaf when it can read the file and falls
-    back to `uuid4 + time_ns` when it cannot -- which is every reference living
-    on the agent's filesystem. The plan key is a hash over the given instances'
-    ids, so a random id makes the task key change on every invocation: `--run`
-    and a later `--retrieve` name different run directories, and a resubmission
-    stages a fresh key that shares no cache with the hours of lanes that already
-    succeeded.
-
-    Deriving the id from the path string keeps the identity content-free, which
-    is exactly what the library's own model already is for anything it cannot
-    read -- it only lacked a stable way to say so. Local inputs are left alone:
-    theirs are content-addressed, which is strictly better.
-    """
     from metasmith.models.libraries.identity import multihash_key
 
     pinned = 0
@@ -160,19 +72,6 @@ def pin_external_leaf_ids(inputs) -> None:
 
 
 def provision_dev_overlay_remote(host: str, agent_home: str, *, repo: Path = REPO) -> None:
-    """The dev overlay on a remote agent is TWO artifacts, and only one is obvious.
-
-    `<agent_home>/dev/metasmith/` is what the LOGIN node binds over the
-    container's site-packages. `<agent_home>/dev/metasmith.tar` is what every
-    SLURM task actually uses: `RenderBootstrap` stages the tarball to node-local
-    `/tmp/msm_devstage_$USER/`, keyed on the tarball's own `stat -c %Y-%s`. Ship
-    the directory and forget the tarball and the login node runs the pinned
-    engine while every compute node runs the container's -- a split that shows up
-    as an inexplicable engine-version error in a task log and nowhere else.
-
-    The tarball is rebuilt unconditionally: its mtime+size IS the stage key, so a
-    stale one is indistinguishable from a current one until a task fails.
-    """
     src = repo / "src" / "metasmith"
     if not (src / "__init__.py").exists():
         raise SystemExit(f"the pinned engine is not at {src}; "
@@ -190,12 +89,6 @@ def provision_dev_overlay_remote(host: str, agent_home: str, *, repo: Path = REP
 
 
 def envs_from_plan(task) -> list[str]:
-    """The `env::*` requirements of the RESOLVED plan, not a list kept by hand.
-
-    A hand-kept list drifts in the direction that matters: naming an env that
-    does not exist crashes the driver, and *omitting* one silently skips the
-    check that stops a task dying on a compute node with no network.
-    """
     names = set()
     for step in task.plan.steps:
         for inst in step.uses:
@@ -207,17 +100,7 @@ def envs_from_plan(task) -> list[str]:
 
 def preflight(host: str, agent_home: str, container: str, tool_envs, *,
               mlib: Path, image_store: str | None = None) -> int:
-    """Everything that must already exist on the host, in ONE ssh round trip.
-
-    A compute node has no outbound network. An image absent from the store when a
-    task starts cannot be pulled, so the task dies after queueing -- possibly
-    hours in, with everything upstream of it already computed.
-    """
     def sif_name(uri: str) -> str:
-        # Exactly `Environment._cached_name()`, in that order: the scheme
-        # separator collapses first, so `docker://quay.io/x:1` becomes
-        # `docker..quay.io_x..1`. Re-deriving it differently here would report
-        # every image missing on a host that holds all of them.
         return uri.replace("://", "..").replace(":", "..").replace("/", "_") + ".sif"
 
     wanted = {"agent": container}
@@ -256,17 +139,6 @@ def preflight(host: str, agent_home: str, container: str, tool_envs, *,
 
 
 def check_staged_executor(host: str, agent_home: str, task_key: str) -> int:
-    """After staging, before running: refuse a workflow pinned to the login node.
-
-    A transform carrying `labels=["local"]` renders `label 'xlocalx'`, and the
-    slurm preset's `withLabel: 'xlocalx'` block sets `executor = 'local'` against
-    a pool it declares as 8 cores / 8 GB. Nextflow's local executor REFUSES a
-    process asking for more rather than queueing it, and the same block sets
-    `errorStrategy='ignore'` with no retry -- so a 48 GB step is dropped silently
-    and the workflow finishes green with its output absent.
-
-    Reads the STAGED workflow, not the transform sources it was rendered from.
-    """
     nf = f"{agent_home}/runs/{task_key}/workflow.nf"
     out = ssh_once(host, f"grep -n \"label 'xlocalx'\" -B 3 {nf} 2>/dev/null || true")
     procs = [ln.split("process ")[1].split()[0]
@@ -282,25 +154,6 @@ def check_staged_executor(host: str, agent_home: str, task_key: str) -> int:
 
 
 def check_walltimes(host: str, overrides: dict, *, retry_factor: float = 2.0) -> int:
-    """Refuse a walltime that reaches past the next whole-cluster maintenance window.
-
-    SLURM will not start a job that cannot finish before a reservation covering
-    the nodes it needs, and when that reservation is flagged ALL_NODES there is
-    no node it could run on instead. The job sits PENDING with
-    `ReqNodeNotAvail, Reserved for maintenance` -- indistinguishable at a glance
-    from ordinary queueing, and it never starts. Observed with hundreds of nodes
-    idle: fir drains into a window at 08:00 and a 12 h ask had nowhere to go.
-
-    RETRY DOUBLING IS THE DEFAULT, not an option. `slurm.nf` gives attempt >= 2
-    twice the time and twice the memory, so a 4 h declaration is an 8 h second
-    attempt; checking only the first attempt passes a job whose retry can never
-    be scheduled, which is the shape that has actually gone wrong here.
-
-    A *report*, not a cap. Silently shrinking the ask would trade a job that
-    never starts for one that dies at the wall hours in, which is worse.
-    """
-    # One round trip: the host resolves every StartTime to epoch seconds itself,
-    # so there is no per-reservation ssh and no date-format guessing on this end.
     out = ssh_once(host, r'''now=$(date +%s); echo "NOW $now"
 scontrol show reservation -o 2>/dev/null | grep ALL_NODES | while read -r line; do
   for tok in $line; do case "$tok" in StartTime=*)
@@ -341,20 +194,6 @@ done''')
 
 def check_schedulable(host: str, account: str, overrides: dict, *,
                       workdir: str | None = None, retry_factor: float = 2.0) -> int:
-    """Ask the scheduler whether it would accept the longest job. Refuse if not.
-
-    THE CHECK `check_walltimes` CANNOT MAKE, and the gap cost a wrong verdict on
-    2026-07-27. That one reads reservations starting in the FUTURE, so it is
-    blind to a window already open: fir went into a 31-hour cooling maintenance
-    at 09:00, `scontrol show reservation` listed nothing ahead, and the check
-    reported "no whole-cluster maintenance window ahead" on a cluster refusing
-    every job. Login nodes and storage stay up, so ssh answers normally.
-
-    Maintenance need not appear as a reservation at all -- fir's showed up as
-    every node draining to `down$` -- so no reservation query covers both shapes.
-    `sbatch --test-only` sidesteps it: the real submission path, validated
-    against the real partitions, creating nothing.
-    """
     def _hours(d) -> float:
         return d._delta.total_seconds() / 3600.0
 
@@ -384,31 +223,6 @@ def check_schedulable(host: str, account: str, overrides: dict, *,
 
 
 def check_tasks(host: str, agent_home: str, task_key: str) -> int:
-    """Count FAILED rows in THIS ATTEMPT's task table. Returns that count.
-
-    `slurm.nf` sets `errorStrategy='ignore'` once a process exhausts its retries,
-    so the workflow goes green with the output simply absent. The log tail says
-    "run completed" either way; this table is where the truth is. Asked BEFORE
-    the retrieve, which is the expensive half.
-
-    READ ONE ATTEMPT, NOT THE UNION OF ALL OF THEM. Each launch writes its own
-    `logs.<timestamp>/` under the run key, and `-resume` means a run key
-    accumulates them. Globbing `logs.*` therefore reports failures the campaign
-    has already repaired: batch `2:52` kept refusing on 12 FAILED CLEAN tasks
-    that were, every one of them, the pre-exclusion fc10512 losses from the first
-    attempt -- un-reproducible since, and irrelevant to a run that had just
-    completed all 50 shards. A repaired failure is what `-resume` is FOR, so the
-    question this gate asks is "did anything die THIS time", and the answer lives
-    in `logs.latest`. Matching by task name cannot substitute: nextflow's
-    `name (N)` index is assigned in task-creation order, so `clean (2)` in one
-    attempt is a different shard than `clean (2)` in the next.
-
-    AN ABSENT TABLE IS A REFUSAL, NOT A PASS. `nxf_tasks.csv` is written by
-    `agents/runner.py` in the post-run summary, so it does not exist while the
-    run is in flight or if nextflow died mid-run -- and `cat` of a missing file
-    is empty, which counts zero FAILED rows and returns 0. That is the exact
-    silent green this gate exists to prevent, arriving through the gate itself.
-    """
     log_dir = f"{agent_home}/runs/{task_key}/_metasmith/logs.latest"
     out = ssh_once(host, f"cat {log_dir}/nxf_tasks.csv 2>/dev/null | sort -u")
     rows = [ln for ln in out.splitlines() if ln and not ln.startswith("task_id,")]
@@ -428,20 +242,6 @@ def check_tasks(host: str, agent_home: str, task_key: str) -> int:
 
 def await_collection(host: str, remote_results: str, timeout_s: float = 1800,
                      poll_s: float = 15) -> bool:
-    """Block until the host has finished writing `_metadata/index.yml`.
-
-    THE WAIT RETURNS BEFORE COLLECTION FINISHES. `WaitForWorkflow` decides a run
-    is over from a sentinel in `agent.log`; on batch `102:152` the last task
-    completed at 21:16:32, the wait returned at 21:16:41, and the index was
-    written at 21:17:19 -- after collection had copied 249 outputs. rsync builds
-    its file list once, at the start, so a transfer launched inside that window
-    brings down every product and no index, and the run then reads exactly like
-    a collection that never ran. The cost of waiting is seconds; the cost of not
-    waiting is repeating a 6 GB transfer to fetch one 400 KB file.
-
-    Returns False on timeout rather than raising: the caller still retrieves,
-    and `results_index` remains the gate that refuses.
-    """
     probe = f"test -f {remote_results}/_metadata/index.yml"
     deadline = time.monotonic() + timeout_s
     announced = False
@@ -461,7 +261,6 @@ def await_collection(host: str, remote_results: str, timeout_s: float = 1800,
 
 
 def retrieve(host: str, remote_results: str, out: Path, *, includes=None) -> Path:
-    """rsync a run's results down. `includes` selects; None takes everything."""
     out.mkdir(parents=True, exist_ok=True)
     if includes is None:
         await_collection(host, remote_results)
@@ -473,9 +272,6 @@ def retrieve(host: str, remote_results: str, out: Path, *, includes=None) -> Pat
     cmd += [f"{host}:{remote_results}/", f"{out}/"]
     print(f"=== retrieving {host}:{remote_results} -> {out} ===", flush=True)
     subprocess.run(cmd, check=True)
-    # Belt as well as braces: the wait above closes the window this rsync could
-    # start in, but the file list is still a snapshot, so re-sync the (tiny)
-    # metadata tree when the index is the one thing that did not land.
     if includes is None and not (out / "_metadata" / "index.yml").exists():
         print("    index absent after transfer -- re-syncing _metadata",
               flush=True)
@@ -484,18 +280,7 @@ def retrieve(host: str, remote_results: str, out: Path, *, includes=None) -> Pat
     return out
 
 
-# ---------------------------------------------------------------------------
-# results, read the way THIS engine writes them
-# ---------------------------------------------------------------------------
-
 def results_index(results: Path) -> DataInstanceLibrary:
-    """A finished run's results, as the typed library `CollectResults` saved.
-
-    `results/_metadata/index.yml`, written by `output.Save()` at the end of
-    collection. The legacy `_manifests/*.json` sidecar this replaced is gone at
-    this engine pin, so a driver that still globs it reports every product
-    absent on a run that produced all of them.
-    """
     if not (results / "_metadata" / "index.yml").exists():
         raise SystemExit(
             f"no results index at {results}/_metadata/index.yml -- either nothing "
@@ -505,16 +290,6 @@ def results_index(results: Path) -> DataInstanceLibrary:
 
 
 def landed_from_index(results: Path, dtypes) -> dict[str, list[Path]]:
-    """Which of `dtypes` a finished run produced, and where each product is.
-
-    "run completed" IS NOT "every step succeeded": the slurm preset sets
-    `errorStrategy='ignore'` once a process exhausts its retries, so a step that
-    died on every attempt leaves the workflow green with its output absent -- and
-    a zero-output run prints exactly like a successful one.
-
-    Returns {dtype: [resolved paths]}; a dtype with no products is simply absent
-    from the mapping, which is the tell.
-    """
     lib = results_index(results)
     wanted = set(dtypes)
     landed: dict[str, list[Path]] = {}
@@ -531,23 +306,6 @@ def landed_from_index(results: Path, dtypes) -> dict[str, list[Path]]:
 
 
 def _products_on_disk(results: Path, dtype: str) -> list[Path]:
-    """A type's products read from the results tree, when the manifest lost them.
-
-    A FULLY CACHED RESUME PUBLISHES EVERY FILE AND RECORDS NONE OF THEM. The
-    collection step's manifest is built from what came down the output channel,
-    and on a resume where every task is CACHED that channel is empty -- so
-    `index.yml` is written as literally `manifest: {}` while all 250 products sit
-    in the results directories beside it, freshly copied. Batch `2:52` reached
-    exactly that state: 50 tables per type on disk, an empty index, and a driver
-    that reported the run had produced nothing.
-
-    The directory name carries the type (`annotation::gpr_table` ->
-    `annotation-gpr_table`, optionally behind the step-order prefix collection
-    adds), so the mapping the manifest would have supplied is recoverable. This
-    loses no rigour: the manifest never established a product's identity anyway,
-    and the callers go on to read each table's `source` column and refuse on a
-    missing shard, a duplicate, or an unexpected organism.
-    """
     suffix = dtype.replace("::", "-")
     dirs = [d for d in results.iterdir()
             if d.is_dir() and (d.name == suffix or
@@ -563,29 +321,6 @@ def _products_on_disk(results: Path, dtype: str) -> list[Path]:
 
 def publish_by_type(results: Path, mapping: dict[str, str], dest_root: Path,
                     *, dry_run: bool, repo: Path = REPO) -> int:
-    """Copy a run's results to the paths `data/` declares, keyed by produced type.
-
-    THE SINGLE-SOURCE PUBLISHER. Use it when the run has one sample and the
-    interesting thing is the *breadth* of what landed -- the tables plus the ORFs
-    plus every lane output, which are only jointly meaningful. Use
-    `publish_gpr_by_source` instead when one type has N products because the run
-    fanned out over N organisms: this one hits its `len(entries) > 1` branch there
-    and lands all N under content-addressed names, a publish that succeeds and is
-    useless.
-
-    Metasmith lays results out as one DIRECTORY per produced type, named
-    `<namespace>-<type>`, holding the product under a content-addressed file name.
-    So the type name is in the directory and never in the file: matching on the
-    file name finds nothing, which looks exactly like a run that produced nothing.
-    An INTERMEDIATE product's directory also carries its step order as a prefix
-    (`1_sequences-orfs`) while a terminal one does not (`annotation-gpr_table`),
-    so the prefix is stripped before matching -- otherwise only the last product
-    in the graph matches and every lane output reads as a deliberate skip.
-
-    Under `mode='rellink'` the entries are relative symlinks into the work tree,
-    so the copy follows them; the work tree is transient and a published symlink
-    into it dangles the moment the run directory is cleaned.
-    """
     if not results.exists():
         raise SystemExit(f"no results at {results}; run with --run first")
     by_dir = {dtype.replace("::", "-"): (dtype, target)
@@ -607,7 +342,7 @@ def publish_by_type(results: Path, mapping: dict[str, str], dest_root: Path,
             print(f"  {d.name}: {len(entries)} entries, expected 1 -- publishing all "
                   f"under {target}/")
         for src in entries:
-            real = src.resolve()          # rellink into the transient work tree
+            real = src.resolve()
             dest = (dest_root / target if len(entries) == 1
                     else dest_root / target / src.name)
             print(f"  {d.name}/{src.name}  ->  {dest.relative_to(repo)}")
@@ -618,7 +353,6 @@ def publish_by_type(results: Path, mapping: dict[str, str], dest_root: Path,
                         shutil.rmtree(dest)
                     shutil.copytree(real, dest)
                 else:
-                    # UNLINK, do not overwrite -- see publish_gpr_by_source.
                     if dest.exists() or dest.is_symlink():
                         dest.unlink()
                     shutil.copyfile(real, dest)
@@ -635,19 +369,6 @@ def publish_gpr_by_source(results: Path, dest_root: Path, *, expect: set[str],
                           dtype: str = "annotation::gpr_table",
                           filename: str = "gpr_4lane.parquet",
                           dry_run: bool = False, repo: Path = REPO) -> int:
-    """Land one GPR table per organism, attributed by the table's `source` column.
-
-    A fan-out run writes N products of ONE type into ONE results directory under
-    content-addressed names, so neither the file name nor the directory says
-    which organism a table describes. The `source` column does, and
-    `lib::fabfos_evidence.validate_gpr` has already refused to write a table
-    whose source is not single-valued -- so reading it here is a lookup, not an
-    inference.
-
-    Refuses on the wrong count, a duplicate source, or a source outside `expect`.
-    A publish that lands three tables under hash names would succeed and be
-    useless, which is the failure this exists to prevent.
-    """
     import pandas as pd
 
     found = landed_from_index(results, [dtype]).get(dtype, [])
@@ -683,12 +404,6 @@ def publish_gpr_by_source(results: Path, dest_root: Path, *, expect: set[str],
         if dry_run:
             continue
         dest.parent.mkdir(parents=True, exist_ok=True)
-        # UNLINK, do not overwrite. Once `dvc add` has run, a published path
-        # under `data/` is a read-only HARDLINK into a cache several worktrees
-        # share (`cache.type = hardlink,symlink`), so copying *through* it would
-        # rewrite that cache object for every one of them. Unlinking leaves the
-        # object intact and drops only this name. Do not rely on the read-only
-        # bit to catch it: a chunk published but not yet pinned is writable.
         if dest.exists() or dest.is_symlink():
             dest.unlink()
         shutil.copyfile(p, dest)

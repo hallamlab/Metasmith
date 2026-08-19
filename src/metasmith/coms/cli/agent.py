@@ -1,4 +1,3 @@
-"""`metasmith agent ...` subcommands."""
 from __future__ import annotations
 
 import json
@@ -7,12 +6,6 @@ from ...ops import agent as _ops
 
 
 def _parse_params(entries: list[str]) -> dict | None:
-    """`NAME=VALUE` pairs, with VALUE given the type it looks like.
-
-    The same rule the web form uses: a value that reads as a JSON scalar
-    becomes that scalar and anything else stays a string, so `tries=3` is a
-    number and `partition=gpu` is not.
-    """
     if not entries: return None
     out = {}
     for e in entries:

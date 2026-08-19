@@ -1,8 +1,4 @@
 #!/usr/bin/env python3
-"""
-Run the downloadUniRef50DB transform via the metasmith agent,
-then copy the resulting .dmnd file to tests/test_data/uniref50/.
-"""
 import json
 import shutil
 import sys
@@ -31,20 +27,17 @@ OUTPUT_DIR = TEST_DATA_DIR / "uniref50"
 
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
-# Set up agent
 agent_home = Source.FromLocal(TEST_MSM_HOME)
 smith = Agent(home=agent_home, runtime=Runtime.DOCKER)
 if not (TEST_MSM_HOME / "msm").exists():
     smith.Deploy()
 
-# Load logistics transforms
 logistics_transforms = [
     TransformInstanceLibrary.Load(MLIB / "transforms/logistics"),
 ]
 
 base_resources = [DataInstanceLibrary.Load(MLIB / "resources/env")]
 
-# Generate workflow
 import tempfile
 tmp_dir = Path(tempfile.mkdtemp())
 targets = TargetBuilder()
@@ -87,7 +80,6 @@ smith.CheckWorkflow(task)
 results = DataInstanceLibrary.Load(results_path)
 print(f"Workflow complete. Results at: {results_path}")
 
-# Copy dmnd to test_data/uniref50/
 for path, type_name, endpoint in results.Iterate():
     if "uniref50_diamond_db" in type_name:
         if not path.is_absolute():

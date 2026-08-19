@@ -1,13 +1,3 @@
-"""`Spec`: the one pre-solve representation.
-
-Two things worth pinning. That the spec is *only* the ask -- a workflow record
-carries a name and a creation time and a spec must not, or every shared copy
-arrives with the sender's workflow name on it. And that the notebook's door and
-the veneers' door now reach the same solver, which they did not before: the
-bodies behind them had drifted, and nothing failed when they disagreed -- the
-plan was merely different.
-"""
-
 from __future__ import annotations
 
 from pathlib import Path
@@ -31,9 +21,6 @@ def _setup(tmp_path: Path):
     return samples, tr_lib
 
 
-# -- serialization -----------------------------------------------------------
-
-
 def test_pack_unpack_round_trips(tmp_path: Path):
     spec = Spec(
         input_library="/data/input.xgdb",
@@ -47,12 +34,6 @@ def test_pack_unpack_round_trips(tmp_path: Path):
 
 
 def test_a_spec_carries_no_store_bookkeeping(tmp_path: Path):
-    """A workflow record is an envelope around a spec, not a spec.
-
-    `name`, `created_at` and `forked_from` belong to whoever is storing the
-    workflow: a spec that carried them would hand every exported copy the
-    sender's workflow name, to collide with on import.
-    """
     record = {
         "schema": "v1", "name": "brave-otter", "created_at": "2026-01-01",
         "forked_from": "shy-otter",
@@ -74,16 +55,7 @@ def test_pack_writes_a_location_for_a_library_given_as_an_object(tmp_path: Path)
     assert packed["transform_libraries"] == [str(tr_lib.location)]
 
 
-# -- solving -----------------------------------------------------------------
-
-
 def test_both_doors_reach_the_same_plan(tmp_path: Path):
-    """`Spec.Solve` from references == `SolveViews` from objects in hand.
-
-    The notebook calls the second through `Agent.GenerateWorkflow`, the GUI and
-    the CLI call the first. Before this they were two copies of the same twenty
-    lines, and only one of them knew about shared inputs.
-    """
     samples, tr_lib = _setup(tmp_path)
 
     from_refs = Spec(
@@ -123,10 +95,6 @@ def test_an_empty_target_list_is_refused(tmp_path: Path):
 
 
 def test_the_input_library_is_listed_once_when_it_is_also_shared(tmp_path: Path):
-    """A shared-input mask is a view of the input library, not another library.
-
-    Listed twice it would be staged twice.
-    """
     types_path = _build_type_lib(tmp_path / "types.yml")
     samples = _build_samples_lib(tmp_path, types_path, n_samples=2, dtype="assembly")
     shared = Path("shared.fa")

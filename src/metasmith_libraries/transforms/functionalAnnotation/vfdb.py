@@ -1,8 +1,3 @@
-"""vfdb — DIAMOND blastp of ORF chunks against VFDB (virulence factors).
-
-Clone of diamond_tcdb.py; "just swap the database" per Antonio's table. qseqid
-stays the Prodigal ORF header (k141_XXXXXX_N), preserving the contig ID.
-"""
 from metasmith.python_api import *
 
 lib = TransformInstanceLibrary.ResolveParentLibrary(__file__)

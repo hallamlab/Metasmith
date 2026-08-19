@@ -1,20 +1,3 @@
-"""Golden (exact-string) characterization of the container command surface.
-
-These pin the *byte-for-byte* shell emitted by `Environment.MakePullCommand`,
-`MakeBindsParam`, and `MakeRunCommand` for Docker and Apptainer — the surfaces
-the `Container` -> `Environment` carve moved into the sealed `env` package.
-They exist because that carve silently dropped `_store_root()` (and with it
-`APPTAINER_CACHEDIR` support) with no test catching it. Per-runtime coverage
-of the whole emitted string is what makes the next reshape fail loudly instead
-of shipping.
-
-Intentionally brittle by design: the golden strings encode shell that contains
-`$(id -u)`, `${TMPDIR-"/tmp"}`, and the `"$(if [ -d … ])"` sandbox/sif ternary.
-They are asserted literally and NOT normalized. Any of these going red is the
-review surface — either the change altered behavior (investigate) or it is
-intentional (update the golden + note why).
-"""
-
 from pathlib import Path
 
 import pytest
@@ -24,10 +7,7 @@ from metasmith.env import ContainerDef, Environment, Runtime
 
 IMAGE = "docker://quay.io/example/tool:1.0"
 CACHE = Path("/cache")
-# `_cached_name()` sanitization of IMAGE: "://"->".." , ":"->".." , "/"->"_"
 CACHED = "docker..quay.io_example_tool..1.0"
-# The image store root is a shell expression expanded on the execution host:
-# APPTAINER_CACHEDIR when the cluster sets one, else the caller's cache dir.
 STORE = "${APPTAINER_CACHEDIR:-/cache}"
 SIF = f"{STORE}/{CACHED}.sif"
 SANDBOX = f"{STORE}/{CACHED}.sandbox"
@@ -47,10 +27,6 @@ def _container(runtime: Runtime, *, workdir=Path("/ws"), binds=None) -> Environm
     )
 
 
-# --------------------------------------------------------------------------
-# MakePullCommand
-# --------------------------------------------------------------------------
-
 class TestPullGolden:
     def test_docker(self):
         cmd = _container(Runtime.DOCKER).MakePullCommand()
@@ -62,10 +38,6 @@ class TestPullGolden:
             f"apptainer pull {SIF} docker://quay.io/example/tool:1.0"
         )
 
-
-# --------------------------------------------------------------------------
-# MakeBindsParam
-# --------------------------------------------------------------------------
 
 class TestBindsGolden:
     def test_docker(self):
@@ -83,10 +55,6 @@ class TestBindsGolden:
     def test_empty_binds_is_empty_string(self, runtime):
         assert _container(runtime, binds=[]).MakeBindsParam() == ""
 
-
-# --------------------------------------------------------------------------
-# MakeRunCommand
-# --------------------------------------------------------------------------
 
 class TestRunCommandGolden:
     def test_docker(self):
@@ -127,10 +95,6 @@ class TestRunCommandGolden:
         )
 
     def test_apptainer_local_sandbox_sif_ternary(self):
-        # local=True swaps the image arg for a shell conditional that prefers
-        # the unpacked sandbox dir (deploy built one) else the SIF. This whole
-        # expression must be one double-quoted token so it lands as a single
-        # argument to `apptainer exec`.
         cmd = _container(Runtime.APPTAINER).MakeRunCommand(local=True)
         assert cmd == (
             'apptainer exec --no-home --cleanenv --env TMPDIR=${TMPDIR-"/tmp"} '
@@ -140,17 +104,6 @@ class TestRunCommandGolden:
             f'"$(if [ -d "{SANDBOX}" ]; then echo "{SANDBOX}"; else echo "{SIF}"; fi)"'
         )
 
-
-# --------------------------------------------------------------------------
-# the runtimes that are NOT containers
-#
-# These are the arm the original carve was least covered on, and the reason a
-# dropped behaviour could ship unnoticed. mamba runs the tool on the host
-# filesystem under an activated env; native means we are already inside the
-# target environment and emit no wrapper at all. Both must collapse the
-# container-shaped inputs (cache, workdir, binds) to nothing rather than
-# rendering them in some third dialect.
-# --------------------------------------------------------------------------
 
 MAMBA_ENV = "toolenv"
 
@@ -175,7 +128,6 @@ class TestMambaGolden:
         )
 
     def test_binds_collapse_to_nothing(self):
-        # there is no boundary to bind across
         assert _mamba().MakeBindsParam() == ""
 
     def test_nothing_to_pull_and_no_image_store(self):
@@ -205,10 +157,6 @@ class TestNativeGolden:
         assert env.MakeRunCommand() == "--flag v"
 
 
-# --------------------------------------------------------------------------
-# GPU args
-# --------------------------------------------------------------------------
-
 class TestGpuArgsGolden:
     def test_docker(self):
         assert _container(Runtime.DOCKER).MakeGpuArgs() == ["--gpus", "all"]
@@ -221,22 +169,11 @@ class TestGpuArgsGolden:
         assert _mamba(native=True).MakeGpuArgs() == []
 
 
-# --------------------------------------------------------------------------
-# ProvisionSteps — the deploy-time shell
-# --------------------------------------------------------------------------
-
 AGENT_HOME = Path("/arc/home/u/msm_home")
 
 
 class TestProvisionGolden:
     def test_docker_refreshes_via_pull_with_local_fallback(self):
-        # Docker's own image cache is keyed by tag, and `docker run` only
-        # pulls when the tag is entirely absent (pull policy `missing`) -- so
-        # without an explicit pull a stale/broken local image under a tag is
-        # trusted forever. The provisioning step is an unconditional pull
-        # (cheap manifest check when already current) that falls back to
-        # whatever's cached locally only if the pull itself can't reach the
-        # registry (offline host, or a tag that only ever existed locally).
         steps = _container(Runtime.DOCKER).ProvisionSteps(agent_home=AGENT_HOME)
         assert len(steps) == 1
         cmd = steps[0][0]
@@ -247,7 +184,6 @@ class TestProvisionGolden:
         )
 
     def test_docker_native_has_nothing_to_provision(self):
-        # native=True means no container boundary exists -- nothing to pull.
         env = Environment(
             image=IMAGE, runtime=Runtime.DOCKER, native=True,
             container=ContainerDef(cache=CACHE, workdir=Path("/ws"), binds=list(BINDS)),
@@ -255,13 +191,6 @@ class TestProvisionGolden:
         assert env.ProvisionSteps(agent_home=AGENT_HOME) == []
 
     def test_apptainer_materialises_one_artifact_without_asking_the_host(self):
-        """One artifact, no probe -- and the sandbox rung never packs a squashfs.
-
-        The sandbox is built straight from the registry so mksquashfs is never
-        invoked on that rung, which is what makes it usable as the last-resort
-        fallback on a host whose mksquashfs segfaults (micb0: exit 139 on a
-        plain `apptainer pull` of the metasmith image).
-        """
         steps = _container(Runtime.APPTAINER).ProvisionSteps(agent_home=AGENT_HOME)
         assert len(steps) == 1
         cmd = steps[0][0]
@@ -271,8 +200,6 @@ class TestProvisionGolden:
             "sandbox rung is not building from the registry"
         )
         assert f'apptainer pull {SIF} {IMAGE}' in cmd
-        # cheapest first: the pull, then the mksquashfs workaround, then the
-        # unpack. Nothing inspects the host ahead of any of it.
         assert cmd.index("apptainer pull") < cmd.index("mksquashfs")
         assert cmd.index("mksquashfs") < cmd.index("--sandbox")
 
@@ -281,10 +208,6 @@ class TestProvisionGolden:
         assert steps[0][0].startswith(f'mkdir -p "{STORE}"; rm -rf {SANDBOX} {SIF}; if [ ! -e {SIF} ]')
 
     def test_docker_assertive_is_a_no_op(self):
-        # Docker has no sidecar artifact to `rm -rf` first -- a pull already
-        # refreshes every time, so `assertive` (whose only other meaning is
-        # "redo the relay extraction step" in Agent.Deploy) doesn't change
-        # the emitted command here.
         default_cmd = _container(Runtime.DOCKER).ProvisionSteps(agent_home=AGENT_HOME)[0][0]
         assertive_cmd = _container(Runtime.DOCKER).ProvisionSteps(agent_home=AGENT_HOME, assertive=True)[0][0]
         assert default_cmd == assertive_cmd

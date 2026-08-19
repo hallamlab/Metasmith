@@ -1,8 +1,3 @@
-"""`metasmith build ...` — decomposed library compilation.
-
-Bare `metasmith build -t ... -r ...` is an alias for `metasmith build all` for
-backwards compatibility with `dev.sh` and existing user habits.
-"""
 from __future__ import annotations
 
 import argparse
@@ -11,8 +6,6 @@ from ...ops import build as _ops
 
 
 def _add_flags(parser: argparse.ArgumentParser, suppress_defaults: bool = False) -> None:
-    """Attach -t/-r/-u to a parser. Sub-step parsers use SUPPRESS so they don't
-    clobber values the top-level parser already collected."""
     default = argparse.SUPPRESS if suppress_defaults else []
     parser.add_argument("-t", "--types", action="append", default=default, dest="type_dirs",
                         help="data type definition directory (repeatable)")

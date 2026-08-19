@@ -1,17 +1,4 @@
 #!/usr/bin/env python3
-"""Assemble the SCADC ECSPr reference basis + conditions table (plan T1).
-
-Adapts what already exists locally, under different names/tiers, into the
-schema `data_types/ecspr.yml` declares:
-
-    atom_pairs         <- data/benchmark/reference_tier4/atom_pairs_tier4.parquet  (copied as-is)
-    direction_ratios   <- data/processed/metabolism_bake/{direction,vocab}.parquet (joined)
-    metabolite_names   <- data/originals/metanetx/4.5/chem_prop.tsv               (parsed formula)
-    conditions         <- hand-picked source/sink hubs, resolved by exact name match
-
-NOT the deployed reference basis (no `.awm/data/ref/derived/mnxref-4_5/` locally):
-the tier-4 atom_pairs stand in for it, resolved above.
-"""
 from __future__ import annotations
 
 import re
@@ -31,7 +18,6 @@ FORMULA_RE = re.compile(r"([A-Z][a-z]?)(\d*)")
 
 
 def parse_formula(formula: str) -> dict:
-    """`"C6H12O6"` -> `{"C": 6, "H": 12, "O": 6}`. Skips malformed/blank formulas."""
     if not isinstance(formula, str) or not formula or "*" in formula:
         return {}
     counts = {}
@@ -94,8 +80,6 @@ def resolve_hub(chem_names: pd.DataFrame, universe: set, exact_names: list[str],
     hits = chem_names[chem_names.name.isin(exact_names) & chem_names.id.isin(universe)]
     if hits.empty:
         raise SystemExit(f"no candidate for {label} among {exact_names} in the atom_pairs universe")
-    # Pick the most-connected candidate -- the one actually load-bearing in the
-    # atom-transfer graph, not just the first alphabetical match.
     counts = hits.id.value_counts()
     chosen = counts.idxmax()
     row = hits[hits.id == chosen].iloc[0]

@@ -10,19 +10,6 @@ def protocol(context: ExecutionContext):
     idb = context.Output(db)
     threads = context.params.get("cpus", 8)
 
-    # DRAM gene annotation (dram_annotate_genes.py) only needs the KOfam, Pfam
-    # and dbCAN databases, so we whitelist those and skip the ~100s-of-GB
-    # UniRef build. Mirrors the build documented in cyanoverse/ab48 DRAM_JOURNAL:
-    #   - `--select_db` uses action='append' -> one flag per DB, not space-sep.
-    #   - PYTHONHTTPSVERIFY=0 works around the bcb.unl.edu (dbCAN) SSL cert.
-    #     If dbCAN still 404s/HTMLs (server flaky), pre-stage dbCAN-HMMdb from
-    #     the AWS S3 mirror + `hmmpress` and re-run with that file in place.
-    #   - HOME=/tmp keeps DRAM's config/cache writes off the read-only image.
-    #
-    # DRAM.config records *absolute* DB paths from build time; the consumer
-    # bind-mounts this dir at /db, so we rewrite the build prefix -> /db after
-    # setup. DRAM_CONFIG_LOCATION (resolved bug #7) directs the config write
-    # into the output dir so it travels with the database.
     context.ExecWithEnv().ifContainerDo(
         env=image,
         cmd=f"""

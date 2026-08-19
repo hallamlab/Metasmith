@@ -1,4 +1,3 @@
-"""`metasmith transform ...` subcommands."""
 from __future__ import annotations
 
 from ...ops import transforms as _ops

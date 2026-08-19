@@ -1,12 +1,3 @@
-"""
-End-to-end tests for assembly transforms (bbduk, megahit, flye, etc.)
-
-These tests verify that assembly workflows can be:
-1. Generated (workflow planning)
-2. Staged to the agent
-3. Executed via local Docker
-4. Produce valid output files
-"""
 import pytest
 import time
 from pathlib import Path
@@ -29,7 +20,6 @@ from conftest import (
 
 @pytest.fixture(scope="module")
 def assembly_transforms(mlib):
-    """Load assembly transforms."""
     return [
         TransformInstanceLibrary.Load(mlib / "transforms/assembly"),
     ]
@@ -37,15 +27,12 @@ def assembly_transforms(mlib):
 
 @pytest.fixture
 def short_reads_input(tmp_inputs, test_data_dir):
-    """Create input library with short reads."""
     inputs = tmp_inputs(["sequences.yml"])
 
-    # Check if test data exists, create minimal if not
     reads_path = test_data_dir / "small_reads.fq.gz"
     if not reads_path.exists():
         pytest.skip("Test data not available: small_reads.fq.gz")
 
-    # Add read metadata and reads
     meta = inputs.AddValue(
         "reads_metadata.json",
         {"parity": "single", "length_class": "short"},
@@ -60,7 +47,6 @@ def short_reads_input(tmp_inputs, test_data_dir):
 
 @pytest.fixture
 def long_reads_input(tmp_inputs, test_data_dir):
-    """Create input library with long reads."""
     inputs = tmp_inputs(["sequences.yml"])
 
     reads_path = test_data_dir / "small_long_reads.fq.gz"
@@ -80,12 +66,9 @@ def long_reads_input(tmp_inputs, test_data_dir):
 
 
 class TestAssemblyWorkflowGeneration:
-    """Tests for workflow generation (planning only, no execution)."""
-
     def test_can_plan_read_qc_workflow(
         self, agent, base_resources, assembly_transforms, short_reads_input
     ):
-        """Verify workflow generation for read QC stats."""
         targets = TargetBuilder()
         targets.Add("sequences::read_qc_stats")
 
@@ -102,7 +85,6 @@ class TestAssemblyWorkflowGeneration:
     def test_can_plan_megahit_assembly_workflow(
         self, agent, base_resources, assembly_transforms, short_reads_input
     ):
-        """Verify workflow generation for MEGAHIT assembly."""
         targets = TargetBuilder()
         targets.Add("sequences::assembly")
 
@@ -118,7 +100,6 @@ class TestAssemblyWorkflowGeneration:
     def test_can_plan_assembly_stats_workflow(
         self, agent, base_resources, assembly_transforms, short_reads_input
     ):
-        """Verify workflow generation for assembly with stats."""
         targets = TargetBuilder()
         targets.Add("sequences::assembly_stats")
 
@@ -134,12 +115,9 @@ class TestAssemblyWorkflowGeneration:
 
 @pytest.mark.slow
 class TestAssemblyWorkflowExecution:
-    """Full E2E tests that execute workflows via Docker."""
-
     def test_read_qc_e2e(
         self, agent, base_resources, assembly_transforms, short_reads_input, tmp_path
     ):
-        """Full E2E test: generate, stage, run read QC, verify outputs."""
         targets = TargetBuilder()
         targets.Add("sequences::read_qc_stats")
 
@@ -151,10 +129,8 @@ class TestAssemblyWorkflowExecution:
         )
         assert task.ok, f"Workflow generation failed: {task}"
 
-        # Stage workflow
         agent.StageWorkflow(task, on_exist="clear")
 
-        # Run workflow
         agent.RunWorkflow(
             task,
             config_file=agent.GetNxfConfigPresets()["local"],
@@ -164,10 +140,8 @@ class TestAssemblyWorkflowExecution:
             ),
         )
 
-        # Wait for completion and verify
         results = wait_for_workflow(agent, task, timeout=300)
 
-        # Check outputs
         found_stats = False
         for path, type_name, endpoint in results.Iterate():
             if "read_qc_stats" in type_name:
@@ -181,7 +155,6 @@ class TestAssemblyWorkflowExecution:
     def test_assembly_e2e(
         self, agent, base_resources, assembly_transforms, short_reads_input, tmp_path
     ):
-        """Full E2E test: generate, stage, run assembly, verify FASTA output."""
         targets = TargetBuilder()
         targets.Add("sequences::assembly")
 

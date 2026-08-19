@@ -84,19 +84,10 @@ from metasmith.python_api import (  # noqa: E402
 
 LIB = resolve_library_root()
 
-# Only the assembly domain is offered. The reads are given as
-# `sequences::host_filtered_short_reads`, so megahit and spades are the entire
-# plan; handing the planner the full FabFos domain list would offer it dozens of
-# transforms it cannot use and a few it could chain past the intended stop.
 DOMAINS = ["assembly"]
 
-# fir's Lmod name for apptainer, matching the deployed agent's setup_commands.
 SETUP_COMMANDS = ["module load apptainer"]
 
-# The agent image is a fabfos-branch build of engine 0.19.0. It is NOT derived
-# from a build hash the way the published releases are, so it cannot be computed
-# from the source tree -- it is named explicitly, and the .sif is already in
-# fir's apptainer cache.
 AGENT_CONTAINER = "docker://quay.io/hallamlab/metasmith:0.19.0-fabfos"
 
 READS_TYPE = "sequences::host_filtered_short_reads"
@@ -104,7 +95,6 @@ READS_SUFFIX = ".host_filtered.fq.gz"
 
 
 def ssh_once(host: str, command: str) -> str:
-    """Run one non-interactive command on the host. Never called in a loop."""
     r = subprocess.run(["ssh", "-o", "BatchMode=yes", host, command],
                        capture_output=True, text=True)
     if r.returncode != 0:
@@ -117,12 +107,6 @@ def ssh_once(host: str, command: str) -> str:
 
 
 def discover_pools(host: str, reads_dir: str) -> dict[str, str]:
-    """pool_barcode -> absolute path of its interleaved reads, from the host.
-
-    Listed on the far side rather than assumed from a local manifest: the reads
-    ARE the far side, and a pool named here but absent there would plan
-    perfectly and fail hours later inside a container.
-    """
     out = ssh_once(host, f"ls -1 {reads_dir}/*{READS_SUFFIX}")
     pools: dict[str, str] = {}
     for line in out.splitlines():
@@ -137,15 +121,6 @@ def discover_pools(host: str, reads_dir: str) -> dict[str, str]:
 
 
 def build_inputs(staging: Path, pools: dict[str, str]) -> DataInstanceLibrary:
-    """One library holding every pool: read_metadata + its reads, per pool.
-
-    The reads are parented to their own pool's metadata. That parent link is
-    what the Orchestrator pairs on at runtime -- both input manifests list all
-    35 entries and the lineage file says, positionally, which metadata each read
-    file belongs to. A read file parented to the wrong metadata would assemble
-    the wrong pool and nothing would complain, so the pairing is verified in
-    main() before anything is staged.
-    """
     xgdb = staging / "inputs.xgdb"
     if xgdb.exists():
         shutil.rmtree(xgdb)
@@ -154,15 +129,11 @@ def build_inputs(staging: Path, pools: dict[str, str]) -> DataInstanceLibrary:
                           lib=DataTypeLibrary.Load(LIB / "data_types/sequences.yml"))
 
     for pool in sorted(pools):
-        # Interleaved throughout: the previous run's background_filter emitted
-        # pair-aware interleaved FASTQ, which is what "paired" selects here
-        # (megahit --12, metaSPAdes --12).
         meta = inputs.AddValue(
             name=f"read_metadata_{pool}.json",
             value={"parity": "paired", "length_class": "short"},
             dtype="sequences::read_metadata",
         )
-        # Absolute -> referenced in place on fir. Relative (above) -> staged.
         inputs.AddItem(pools[pool], "sequences::host_filtered_short_reads",
                        parents={meta})
     inputs.Save()
@@ -231,25 +202,9 @@ def main() -> int:
 
     print("=== planning ===", flush=True)
     targets = TargetBuilder()
-    # Both assemblers, side by side. The graphs are co-products of these two
-    # steps and are published as intermediates -- see the docstring.
     targets.Add("sequences::spades_assembly")
     targets.Add("sequences::megahit_assembly")
 
-    # The WHOLE library, deliberately -- NOT `inputs.AsSamples(...)`.
-    #
-    # AsSamples on this topology is silently wrong on the pinned engine. It
-    # caches each sample's descendant set keyed on that sample's ANCESTOR set,
-    # and a read_metadata item has no ancestors, so all 35 share the empty key
-    # and every sample view is handed the FIRST pool's reads. The plan still
-    # resolves, still says "[35] samples", and still runs -- it just assembles
-    # pool01 thirty-five times. Caught by checking the staged input manifest:
-    # 35 read_metadata paths against 1 read path.
-    #
-    # Handing over the library whole uses the runtime fan-out instead: both
-    # manifests carry all 35 entries and the Orchestrator pairs them by the
-    # positional lineage in workflow.lineage_of_given.json (verified: 0 of 35
-    # mispaired). This is also the shape the previous fir run used.
     task = agent.GenerateWorkflow(
         samples=[inputs],
         resources=resources,
@@ -261,9 +216,6 @@ def main() -> int:
         print(getattr(task.plan, "hints", task), file=sys.stderr)
         return 3
 
-    # A collapse of the sample fan-out does not fail, it just plans a smaller
-    # run that looks identical from the outside -- so it is checked here rather
-    # than discovered from a results directory with one file in it.
     given = Counter(g.dtype_name for g in task.plan.given)
     for t in (READS_TYPE, "sequences::read_metadata"):
         if given.get(t, 0) != len(pools):
@@ -297,20 +249,11 @@ def main() -> int:
             return 4
 
     print(f"=== task key: {task.GetKey()} ===", flush=True)
-    # "update" rather than "clear": the agent home is SHARED with the previous
-    # run's results, and a task key is content-derived, so a changed workflow
-    # gets a fresh directory anyway. "clear" here would be a loaded gun pointed
-    # at whichever run happened to collide.
     agent.StageWorkflow(task, on_exist="update")
 
-    # The slurm preset, explicitly. The default is `local`, which would run a
-    # 96-core assembler on fir's login node.
     nxf_config = agent.GetNxfConfigPresets()["slurm"]
     params = {"slurmAccount": a.slurm_account}
     print(f"=== executor: slurm, account {a.slurm_account} ===", flush=True)
-    # No resource_overrides: spades asks for 96 cores / 128 GB and megahit for
-    # 32 in the transforms themselves, which is where the measurement that
-    # justifies those numbers is recorded.
     agent.RunWorkflow(task, config_file=nxf_config, params=params)
 
     print(f"=== waiting (timeout {a.timeout_s / 3600:.1f}h, poll {a.poll_s:.0f}s) ===",
@@ -323,10 +266,6 @@ def main() -> int:
     if result["status"] != "completed":
         return 2
 
-    # "completed" IS NOT "succeeded". slurm.nf sets errorStrategy='ignore' once
-    # a process exhausts its retries, so a task that died every attempt leaves
-    # the workflow green and its outputs simply absent. The previous run lost 2
-    # of 35 spades assemblies exactly this way and still reported completion.
     swallowed = [ln for ln in result["tail"]
                  if "Error is ignored" in ln or "terminated with an error" in ln]
     if swallowed:
@@ -341,8 +280,6 @@ def main() -> int:
     subprocess.run(["rsync", "-a", "--info=stats1",
                     f"{a.host}:{src.GetPath()}/", f"{out}/"], check=True)
 
-    # Completeness is checked, not assumed. Four files per pool: two contig
-    # FASTAs and two graphs.
     counts = {d.name: len([p for p in d.iterdir() if p.is_file()])
               for d in sorted(out.iterdir()) if d.is_dir() and not d.name.startswith("_")}
     print("=== results ===", flush=True)

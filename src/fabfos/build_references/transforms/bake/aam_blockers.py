@@ -1,31 +1,3 @@
-"""Copy MNXref's own curated twin onto its structureless role twin, where it is neutral.
-
-WHAT THE ARGUMENT IS. `Acceptor` (MNXM8975) has no structure and blocks 607 reactions.
-MNXref itself holds `A` (MNXM35) with the SMILES `[H][*]([H])([H])[H]` and files both
-under the same cross-reference description across kegg, seed and sabiork. Supplying the
-record MetaNetX already wrote is a smaller claim than inventing a stand-in, and this
-step makes exactly that claim and no other.
-
-WHAT KEEPS IT SAFE IS ONE PREDICATE. The twin must be ELEMENT-NEUTRAL -- zero C, N, S
-and P, all four known from `lookup::element_counts`. Such a body can neither absorb nor
-emit a mapped atom, so admitting it unblocks the reaction for its concrete partners
-while asserting nothing about them. The acyl-carrier family fails that predicate on its
-own numbers (the ACP twin carries C14 N3 S1 P1 through a thioester), so the refusal that
-`curation.REFUSE` spells out by name is here enforced by arithmetic, and a new carrier
-nobody has heard of is refused on the same terms.
-
-WHY IT NEEDS THE RECOUNT. `H4*` has no countable FORMULA -- `count_element` refuses a
-`*` -- so without the recount every element-neutral twin in MNXref reads as unknown and
-this lane refuses all of them. The one input that makes the lane possible is the one
-`aam_recount` produces.
-
-IT DOES NOT BYPASS THE ARBITER. The output is a crosswalk in the rescue's own shape;
-`admit` checks it like any other row, the `*` bodies still have to cancel across the
-equation, and the per-element balance still decides. The overlap with the existing
-`lane_acceptor` is reported rather than assumed away: that lane already draws six
-spellings of the same claim, so what this one buys is generality, and the number is in
-`summary.tsv`.
-"""
 from metasmith.python_api import *
 
 lib   = TransformInstanceLibrary.ResolveParentLibrary(__file__)
@@ -58,11 +30,6 @@ def protocol(context: ExecutionContext):
 
     py = f"PYTHONPATH={libdir} OMP_NUM_THREADS=1 python3"
 
-    # The lookups are read as a DIRECTORY, the same re-presentation the rescue makes:
-    # content-addressed staging leaves them in unrelated places, and four separate path
-    # arguments are four chances for one to come from a different build. `atom_ranks` is
-    # absent because this lane never indexes an atom -- it decides which structure a
-    # metabolite gets, and the ranks are minted downstream from that decision.
     cmd = f"""
         set -e
         mkdir -p _lookups
@@ -96,9 +63,6 @@ def protocol(context: ExecutionContext):
     want = ["crosswalk.tsv", "decisions.tsv", "summary.tsv"]
     return ExecutionResult(
         manifest=[{out_blk: iout.local}, {ev: iev.local}],
-        # `decisions.tsv` by name, not "the directory is non-empty": a lane that
-        # resolved nothing writes a legitimately EMPTY crosswalk, and the file that
-        # distinguishes that from a crash is the one listing what it refused.
         success=(all((iout.local / f).exists() and (iout.local / f).stat().st_size > 0
                      for f in want)
                  and (iev.local / "blockers").is_dir()
@@ -110,9 +74,5 @@ TransformInstance(
     protocol=protocol,
     model=model,
     group_by=image,
-    # The alias index over 3.9 M xref rows and 4.0 M synonym rows is the whole cost;
-    # everything after it is dictionary lookups over a few thousand blockers. The
-    # explode-and-normalise pass is the peak, and it is sized for that rather than for
-    # the steady state.
     resources=Resources(cpus=2, memory=Size.GB(32), duration=Duration(hours=2)),
 )

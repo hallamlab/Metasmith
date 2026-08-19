@@ -1,17 +1,3 @@
-"""
-Head-to-head harness: run the shared scenario suite against LiveShell and
-TmuxShell, recording PASS / FAIL / HANG / ERROR per scenario per shell, and
-write a verdict table to RESULTS.md.
-
-Run:
-    mamba run -n msm python main/tmux_shell_experiment/compare_shells.py
-    LIVESHELL_REMOTE_HOST=<host> mamba run -n msm python .../compare_shells.py
-
-A real wedge in either shell is contained: each scenario runs in a daemon
-thread joined with a hard timeout, so a hang is recorded as HANG and the run
-continues instead of stalling.
-"""
-
 from __future__ import annotations
 import os
 import sys
@@ -20,7 +6,7 @@ import time
 from pathlib import Path
 
 _HERE = Path(__file__).resolve().parent
-_ROOT = _HERE.parent.parent  # repo root
+_ROOT = _HERE.parent.parent
 sys.path.insert(0, str(_ROOT / "src"))
 sys.path.insert(0, str(_HERE))
 
@@ -33,7 +19,6 @@ PASS, FAIL, HANG, ERROR, SKIP = "PASS", "FAIL", "HANG", "ERROR", "SKIP"
 
 
 def run_one(fn, make_shell, host, timeout):
-    """Run a scenario fn under a watchdog. Returns (status, detail, seconds)."""
     result = {}
 
     def worker():

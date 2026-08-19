@@ -1,18 +1,3 @@
-"""Getting a library on and off disk, and between hosts.
-
-Mixed into `DataInstanceLibrary`. The pairs here are the ones audit row S14
-wants unified one day -- `Pack`/`Unpack`, `Save`/`Load`, `SaveAs`/`LoadFrom` --
-and collecting them in one file is the precondition for that, not the change
-itself.
-
-`Pack` writes `_key`/`legacy_key` alongside `instance_id` and all three are
-load-bearing: since content-addressing landed, `instance_id` *is* the cache
-identity, `_key` tracks it for modern callers, and `legacy_key` preserves the
-pre-content-addressing derivation so v0.18 serializations still resolve.
-Dropping either of the latter two changes cache keys, which silently
-invalidates or false-hits every cached run. They are not redundant copies.
-"""
-
 from __future__ import annotations
 
 import shutil
@@ -44,8 +29,6 @@ class _StoreTransfer:
             )
             if len(d_parents) > 0:
                 d["parents"] = dict(sorted(d_parents.items(), key=lambda t:t[0]))
-            # S2 — embed instance_meta if present. Read directly to avoid
-            # recursing through GetKey -> Pack -> _resolve_instance_meta.
             meta = self.instance_meta.get(path)
             if meta is not None:
                 d["instance_id"] = meta["instance_id"]
@@ -54,10 +37,6 @@ class _StoreTransfer:
                 if payload is not None:
                     d["lineage_payload"] = payload.hex()
             return d
-        # A fork id set after the entries were minted leaves every leaf id
-        # stale. Re-derive here so what gets serialized is what Get() reports;
-        # _resolve_instance_meta only reaches GetKey (and so back into Pack)
-        # for paths with no entry at all, which this loop skips.
         for _path, _dtype in self.manifest.items():
             _meta = self.instance_meta.get(_path)
             if _meta is not None and _meta.get("fork_id") != self.fork_id:
@@ -86,11 +65,8 @@ class _StoreTransfer:
             type_name = v["type"]
             if check_integrity:
                 assert (location/k).exists(), f"[{k}], does not exist"
-            cls._get_type(type_name, dtypes) # check if datatype exists
+            cls._get_type(type_name, dtypes)
             manifest[Path(k)] = type_name
-            # S2 — pull instance metadata from manifest entry if present.
-            # Legacy entries (no instance_id field) get fresh ids minted
-            # lazily on first Get() via _resolve_instance_meta.
             if "instance_id" in v:
                 payload = v.get("lineage_payload")
                 if isinstance(payload, str):
@@ -109,7 +85,6 @@ class _StoreTransfer:
         lib.fork_id = raw.get("fork_id")
         remote_src = raw.get("remote_src")
         lib.remote_src = Source.Unpack(remote_src) if remote_src is not None else None
-        # First pass: Build immediate parents for all items
         for k, v in raw["manifest"].items():
             parents: dict[Path, cls.ParentMetadata] = {}
             for p_key, p_name in v.get("parents", {}).items():
@@ -127,7 +102,6 @@ class _StoreTransfer:
             if len(parents) > 0:
                 lib.parents[Path(k)] = list(parents.values())
 
-        # Second pass: Memoized transitive closure for full ancestor aggregation
         ancestor_cache: dict[Path, dict[Path, cls.ParentMetadata]] = {}
 
         def _get_all_ancestors(k_path: Path) -> dict[Path, cls.ParentMetadata]:
@@ -175,12 +149,6 @@ class _StoreTransfer:
         index_path = meta_path/(cls._index_name+ext)
         assert path.exists(), f"path [{path}] does not exist"
         if not index_path.exists():
-            # A directory holding sources but no `_metadata/` has not been
-            # compiled — the ordinary state of a fresh checkout, since the
-            # compiled form is a build product and is not tracked. Say so,
-            # because the bare "index file does not exist" reads as a
-            # corrupted library and sends the reader looking at the wrong
-            # thing entirely.
             uncompiled = any(path.glob("*.yml")) or any(path.glob("*.py"))
             hint = (
                 " -- this looks like an uncompiled library: it holds sources but"
@@ -200,9 +168,6 @@ class _StoreTransfer:
         self = cls.Unpack(location=path, raw=d, dtypes=dtypes, check_integrity=check_integrity)
         self.types = dtypes
         self._calculate_key(_raw_override=d)
-        # C8 / S7 — auto-attach trace.jsonl if present. Tries the in-dir
-        # path first (library == workspace), then the sibling `_metasmith`
-        # form (library == results/, trace lives in workspace/_metasmith).
         if attach_trace:
             for candidate in (
                 path / "_metasmith" / "trace.jsonl",
@@ -217,15 +182,6 @@ class _StoreTransfer:
         return self
 
     def PackInline(self, root: Path) -> dict:
-        """A small library as data, instead of a directory shipped beside it.
-
-        Only meant for a library small enough to embed: type namespaces are
-        referenced by path into `root` rather than copied in, and any file
-        this library actually wrote (a literal `AddValue` -- a `DEFERRED`
-        placeholder has no file) is embedded as text. That is what makes a
-        template's input library disappear into `spec.yml` rather than
-        needing a committed `inputs.xgdb` beside it.
-        """
         root = Path(root).resolve()
         def relpath(p: Path) -> str:
             try:
@@ -250,16 +206,6 @@ class _StoreTransfer:
 
     @classmethod
     def FromInline(cls, raw: dict, location: Path):
-        """The other half of `PackInline` -- rebuilds a working library.
-
-        `location` backs the manifest's relative paths and receives any
-        embedded literal content, so it need not exist yet: a fresh temp
-        directory for a solve that never ships anywhere, or a workflow's
-        real input-library directory when a template is the start of one.
-        Every id and path comes back exactly as packed -- nothing here mints
-        a new one -- which is what lets a workflow started from a template
-        share its task key rather than being re-added row by row.
-        """
         dtypes = {ns: DataTypeLibrary.Load(Path(p)) for ns, p in raw.get("types", {}).items()}
         lib = cls.Unpack(location=Path(location), raw=raw, dtypes=dtypes)
         lib.types = dtypes
@@ -337,7 +283,6 @@ class _StoreTransfer:
             lp = self.location/local_link
             if lp.exists(): continue
             lp.symlink_to(p, p.is_dir())
-        # self.manifest = {new_paths.get(k, k):v for k, v in self.manifest.items()}
         return new_paths
 
     def ActualizeRemote(self, extern_dest: Source|None=None, label: str|None=None):
@@ -349,7 +294,7 @@ class _StoreTransfer:
             return _lib
         except AssertionError:
             pass
-        if _lib is None: # so that errors don't stack
+        if _lib is None:
             mover = Logistics()
             if extern_dest is None:
                 extern_dest = Source.FromLocal(self.location)

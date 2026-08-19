@@ -1,27 +1,3 @@
-"""Colour schemes for a drawn `dag_layout.Layout`.
-
-Off by default. A scheme is a pure function from a finished layout to a
-node-id -> hex map and an edge -> hex map; the backends in `dag_draw` take one
-as an optional argument and fall back to the caller's `Style` where it says
-nothing. Nothing here knows what a transform or a datum is, and nothing in the
-layout knows colour exists.
-
-Two opposite jobs go under the one word, and they want opposite palettes:
-
-- **Tracing one thing** — following a single rail down the page. This wants
-  *adjacent things in different colours*, which is graph colouring, and is what
-  GitHub's commit graph does with its lanes. `lane` and `module` are these.
-- **Seeing a repetition** — recognising that the plan does one thing three
-  times. This wants the reverse: *every instance of a motif in the same
-  colour*, so three teal blocks read as three copies of one block. `repeat` is
-  this one, and it is the only scheme that helps with what the drawing is
-  actually bad at.
-
-Palette is the categorical set from the `dataviz` reference: eight hues in a
-fixed order, validated for colour-vision deficiency on adjacent pairs, and
-readable on the white plate the SVG draws. Slots are assigned in order and
-wrap; a ninth lane gets slot 1 again rather than a generated hue.
-"""
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -30,26 +6,23 @@ from .dag_layout import Layout, dominators, natural_key, repeat_motifs
 
 __all__ = ["Colouring", "SCHEMES", "PALETTE", "UNMATCHED", "colour_layout"]
 
-# Plotly's default qualitative colorway (`plotly.colors.qualitative.Plotly`),
-# first eight entries.
 PALETTE: tuple[str, ...] = (
-    "#636EFA",  # blue
-    "#EF553B",  # vermillion
-    "#00CC96",  # teal green
-    "#AB63FA",  # violet
-    "#FFA15A",  # orange
-    "#19D3F3",  # cyan
-    "#FF6692",  # pink
-    "#B6E880",  # light green
+    "#636EFA",
+    "#EF553B",
+    "#00CC96",
+    "#AB63FA",
+    "#FFA15A",
+    "#19D3F3",
+    "#FF6692",
+    "#B6E880",
 )
-UNMATCHED = "#8A8A8A"  # everything a scheme has nothing to say about
+UNMATCHED = "#8A8A8A"
 
 SCHEMES = ("none", "lane", "repeat", "module", "namespace")
 
 
 @dataclass(frozen=True)
 class Colouring:
-    """What a scheme decided. Empty means "leave the styles alone"."""
     nodes: dict[str, str] = field(default_factory=dict)
     edges: dict[tuple[str, str], str] = field(default_factory=dict)
 
@@ -64,7 +37,6 @@ class Colouring:
 
 
 def colour_layout(lay: Layout, scheme: str = "none") -> Colouring:
-    """A scheme by name. Unknown names raise rather than silently drawing grey."""
     if scheme in (None, "", "none"):
         return Colouring()
     try:
@@ -74,11 +46,6 @@ def colour_layout(lay: Layout, scheme: str = "none") -> Colouring:
             f"unknown colour scheme {scheme!r}; expected one of {', '.join(SCHEMES)}"
         ) from None
     nodes = build(lay)
-    # an edge belongs to a source and a target that may not agree, and the
-    # source is the one the reader's eye is already on when the rail starts.
-    # A fan-in therefore arrives in as many colours as it has inputs, which is
-    # the honest picture of a join and reads as one under `repeat`, where every
-    # instance of a motif is the same hue anyway.
     edges = {
         (e.src, e.dst): nodes[e.src]
         for e in lay.edges
@@ -88,16 +55,10 @@ def colour_layout(lay: Layout, scheme: str = "none") -> Colouring:
 
 
 def _by_lane(lay: Layout) -> dict[str, str]:
-    """GitHub's: hue by lane index. Traces one rail; says nothing about repeats."""
     return {n.name: PALETTE[n.lane % len(PALETTE)] for n in lay.nodes}
 
 
 def _by_repeat(lay: Layout) -> dict[str, str]:
-    """One hue per repeat class — every instance of a motif the same colour.
-
-    The opposite of graph colouring on purpose: sameness is the signal. Nodes
-    in no class stay grey so the classes are the only thing carrying hue.
-    """
     out = {n.name: UNMATCHED for n in lay.nodes}
     for i, m in enumerate(repeat_motifs(lay)):
         hue = PALETTE[i % len(PALETTE)]
@@ -107,15 +68,7 @@ def _by_repeat(lay: Layout) -> dict[str, str]:
 
 
 def _module_owner(lay: Layout) -> dict[str, str | None]:
-    """The innermost dominator module each node is in, or None for neither.
-
-    Modules are the same thing `measure` counts: everything a node dominates,
-    which is reachable only through it, and only where that is three nodes or
-    more — a step and its one product is a module by construction, so counting
-    those would make every node its own block. Innermost, so a nested block is
-    its own thing and not its parent's.
-    """
-    names = [n.name for n in lay.nodes]  # row order is a topological order
+    names = [n.name for n in lay.nodes]
     parents: dict[str, list[str]] = {n: [] for n in names}
     for e in lay.edges:
         if not e.back:
@@ -123,7 +76,7 @@ def _module_owner(lay: Layout) -> dict[str, str | None]:
     idom = dominators(names, parents)
 
     size: dict[str, int] = dict.fromkeys(names, 1)
-    for n in reversed(names):  # a dominator always precedes what it dominates
+    for n in reversed(names):
         d = idom.get(n)
         if d is not None:
             size[d] += size[n]
@@ -139,11 +92,6 @@ def _module_owner(lay: Layout) -> dict[str, str | None]:
 
 
 def _by_module(lay: Layout) -> dict[str, str]:
-    """One hue per dominator module, touching modules given different hues.
-
-    The graph-colouring reading, and the one that answers "where does this
-    block start and end" rather than "is this the same block as that one".
-    """
     names = [n.name for n in lay.nodes]
     owner = _module_owner(lay)
     depth = {n: i for i, n in enumerate(names)}
@@ -169,7 +117,6 @@ def _by_module(lay: Layout) -> dict[str, str]:
 
 
 def _by_namespace(lay: Layout) -> dict[str, str]:
-    """Hue by the `namespace::` prefix of a node's id; unprefixed stays grey."""
     spaces = sorted(
         {n.name.split("::", 1)[0] for n in lay.nodes if "::" in n.name}
     )

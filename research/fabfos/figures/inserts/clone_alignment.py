@@ -46,17 +46,15 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt      # noqa: E402
 import numpy as np                   # noqa: E402
 
-import identity                      # for the blast binary resolution
+import identity
 from _common import CACHE, INK, INSERTS, PLASMIDSAURUS, VECTOR, save
 from pieces import fr
 
 WORK = CACHE / "clone_alignment"
-DOT = 500          # HSPs shorter than this are drawn as a dot, not a line
-VEC_MIN = 100      # shortest vector HSP counted as a backbone footprint
+DOT = 500
+VEC_MIN = 100
 OUTFMT = "6 qstart qend sstart send length"
 
-# Panel order and labels. The well is the identity that survives; the clone
-# number is the one the archived figure used, kept so the two can be compared.
 CLONES = [
     ("Clone 1", "well A1", "L9PH9L_2_SCADC_C2_D19_2_wellA1.polished-assembly.fasta"),
     ("Clone 2", "well D4", "L9PH9L_1_SCADC_C1_D19_3_wellD4.polished-assembly.fasta"),
@@ -64,7 +62,6 @@ CLONES = [
 
 
 def blast(qseq, sseq, tag):
-    """query (y) vs subject (x). -> [(qstart, qend, sstart, send, length)]."""
     ws = WORK / tag
     ws.mkdir(parents=True, exist_ok=True)
     (ws / "q.fna").write_text(f">q\n{qseq}\n")
@@ -76,13 +73,11 @@ def blast(qseq, sseq, tag):
 
 
 def fosmid_record(path):
-    """The fosmid, not the host chromosome: the shorter of the two records."""
     recs = fr.read_fasta(path)
     return min(recs, key=lambda r: len(r[2]))[2]
 
 
 def collapse_tandem(seq, tag):
-    """A circular molecule assembled as a 2x repeat -> one unit."""
     hsps = blast(seq, seq, f"self_{tag}")
     L = len(seq)
     for qs, qe, ss, se, ln in hsps:
@@ -97,7 +92,6 @@ def collapse_tandem(seq, tag):
 
 
 def strip_vector(seq, vecseq, tag):
-    """Excise pCC1FOS: the insert is the largest circular gap between footprints."""
     L = len(seq)
     foot = fr.merge_intervals([(ss, se) for _q1, _q2, ss, se, ln
                                in blast(vecseq, seq, f"vec_{tag}") if ln >= VEC_MIN])
@@ -108,7 +102,7 @@ def strip_vector(seq, vecseq, tag):
         if i + 1 < len(foot):
             start, stop = end_i + 1, foot[i + 1][0] - 1
             gaps.append((start, stop, stop - start + 1))
-        else:                                   # the piece that wraps the origin
+        else:
             start, stop = end_i + 1, foot[0][0] - 1
             gaps.append((start, stop, (L - end_i) + (foot[0][0] - 1)))
     start, stop, n = max(gaps, key=lambda g: g[2])
@@ -118,11 +112,6 @@ def strip_vector(seq, vecseq, tag):
 
 
 def match_insert(sseq, inserts, tag):
-    """The recovered insert that covers the most of this clone. -> (id, sequence).
-
-    One blast of the clone against the whole insert set, so the comparison every
-    candidate is judged on is the same one.
-    """
     ws = WORK / f"match_{tag}"
     ws.mkdir(parents=True, exist_ok=True)
     (ws / "clone.fna").write_text(f">clone\n{sseq}\n")
@@ -145,10 +134,9 @@ def match_insert(sseq, inserts, tag):
 
 
 def orient(qseq, sseq, tag):
-    """Flip and roll the reference so the dominant diagonal starts at the origin."""
     hsps = blast(qseq, sseq, f"{tag}_o1")
     dom = max(hsps, key=lambda h: h[4])
-    if dom[3] < dom[2]:                          # dominant HSP is reversed
+    if dom[3] < dom[2]:
         sseq = fr.revcomp(sseq)
         hsps = blast(qseq, sseq, f"{tag}_o2")
         dom = max(hsps, key=lambda h: h[4])
@@ -158,7 +146,6 @@ def orient(qseq, sseq, tag):
 
 
 def missing_intervals(hsps, L):
-    """Reference intervals no HSP covers."""
     merged = fr.merge_intervals([(ss, se) for _q1, _q2, ss, se, _l in hsps])
     gaps, prev = [], 1
     for a, b in merged:
@@ -173,7 +160,7 @@ def missing_intervals(hsps, L):
 def generate():
     identity._with_blast_on_path()
     inserts = fr.read_fasta(INSERTS / "inserts.fna")
-    vecseq = fr.read_fasta(VECTOR)[0][2]        # record 1: the pCC1FOS backbone
+    vecseq = fr.read_fasta(VECTOR)[0][2]
     print(f"vector: {len(vecseq):,} bp; {len(inserts)} recovered inserts")
 
     fig, axes = plt.subplots(1, 2, figsize=(8.6, 4.4), dpi=300)

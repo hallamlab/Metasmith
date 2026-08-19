@@ -44,13 +44,9 @@ from metasmith.python_api import (  # noqa: E402
     DEFERRED, DataInstanceLibrary, Spec, TransformInstanceLibrary,
 )
 
-# Solver scratch. `/cache` is already git-ignored at the repo root.
 CACHE = REPO / "cache" / "aspire"
 TRANSFORMS = [MLIB / "transforms" / n for n in ("aspire", "logistics")]
 
-# The topology table is the one place the port lives; reading the switch list
-# and the leaf types out of it rather than restating them here is what keeps
-# `all` honest when a row is added or two nodes are collapsed.
 _spec = importlib.util.spec_from_file_location(
     "_aspire_topology", MLIB / "transforms" / "aspire" / "_generate.py")
 TOPOLOGY = importlib.util.module_from_spec(_spec)
@@ -58,8 +54,6 @@ _spec.loader.exec_module(TOPOLOGY)
 
 SWITCHES: dict[str, str] = {base: desc for base, desc in TOPOLOGY.POLICIES}
 
-# What the pipeline is normally run with: every stage on except the two that
-# rewrite the analysis tables underneath their consumers.
 DEFAULT_ON = {
     "augmentation": False,
     "batch_correction": False,
@@ -74,9 +68,6 @@ DEFAULT_ON = {
 
 ALL_TOKENS = {f"aspire::{b}_{arm}" for b in SWITCHES for arm in ("on", "off")}
 
-# References the .nf read out of its config -- two of them synchronously, during
-# Groovy parsing, before any process ran. Here they are ordinary inputs, which is
-# what lets `--download-silva` withhold one and get a download step in the DAG.
 REFERENCES = [
     "aspire::sample_metadata",
     "aspire::sina_arb_reference",
@@ -85,8 +76,6 @@ REFERENCES = [
     "aspire::contaminant_reference_source",
     "amplicon::silva_db",
 ]
-# The one off-arm that is not a null producer: with SpiecEasi off the .nf reads
-# pre-computed graphs off disk (asv_pipeline.nf:2708-2715).
 EXTERNAL_GRAPH = [
     "aspire::external_graph_all",
     "aspire::external_graph_thr",
@@ -95,8 +84,6 @@ EXTERNAL_GRAPH = [
 
 
 def given_types(on: dict[str, bool]) -> set[str]:
-    """What `build_inputs` registers. `amplicon::silva_db` counts either way --
-    withheld, transforms/logistics/downloadSilvaDB produces it."""
     given = {
         "aspire::run", "aspire::sample_id", "sequences::read_pair",
         "sequences::zipped_forward_short_reads", "sequences::zipped_reverse_short_reads",
@@ -109,18 +96,6 @@ def given_types(on: dict[str, bool]) -> set[str]:
 
 
 def reachable_leaves(on: dict[str, bool]) -> list[str]:
-    """One target per terminal transform, dropping the ones this switch
-    setting makes unbuildable.
-
-    `all` asks for the end of every chain rather than for every leaf *type*:
-    the 45-process port has 59 unconsumed products, and the MCTS planner is not
-    the tool for a 59-way ask when fifteen of them pull in all the rest.
-
-    The drop is not cosmetic. `outlier_checker` reads the CLR matrix, which only
-    the batch-correction arm produces -- exactly as in the .nf, where turning
-    correction off leaves that channel null. Asking for it anyway would make
-    `all` fail by default rather than show the pipeline you configured.
-    """
     enabled = [r for r in TOPOLOGY.TABLE
                if not any(d in ALL_TOKENS and d not in given_types(on)
                           for _v, d, _p in r.requires)]
@@ -145,13 +120,6 @@ def reachable_leaves(on: dict[str, bool]) -> list[str]:
     return leaves
 
 
-# Named asks, smallest first. Each is a slice of the pipeline someone would
-# actually want to look at; `all` is the stress case.
-#
-# Target counts are kept small on purpose. The MCTS planner degrades once a
-# solve carries more than a handful of *divergent* chains, and these all share
-# one spine, so a case asks for the few leaves that pull the rest in rather
-# than naming everything it wants built.
 CASES: dict[str, list[str]] = {
     "core": [
         "amplicon::asv_taxonomy",
@@ -183,7 +151,6 @@ CASES: dict[str, list[str]] = {
     "summary": [
         "aspire::master_long",
     ],
-    # "all" is computed from the switches; see reachable_leaves.
     "all": [],
 }
 
@@ -194,18 +161,12 @@ def targets_for(case: str, on: dict[str, bool]) -> list[str]:
 
 def build_inputs(location: Path, samples: int, on: dict[str, bool],
                  download_silva: bool) -> DataInstanceLibrary:
-    """The study, its samples, its references, and one token per switch."""
     if location.exists(): shutil.rmtree(location)
     inputs = DataInstanceLibrary(location)
     inputs.Purge()
     for ns in ("aspire.yml", "amplicon.yml", "sequences.yml"):
         inputs.AddTypeLibrary(MLIB / "data_types" / ns)
 
-    # ASPIRE is one study over N samples with a hard fan-in at CONCAT_FASTAS,
-    # and everything past it is a singleton. `run` is what makes that
-    # expressible: per-sample stages group by `sample_id`, the collector groups
-    # by `run`, and the collector recovers each sequence's label from the
-    # `sample_id` its fasta descends from.
     run = inputs.AddValue("run.txt", "aspire_study", "aspire::run")
     for i in range(1, samples + 1):
         sid = inputs.AddValue(f"sample_{i}.txt", f"sample_{i}",
@@ -219,12 +180,6 @@ def build_inputs(location: Path, samples: int, on: dict[str, bool],
         if dtype == "amplicon::silva_db" and download_silva: continue
         inputs.AddItem(DEFERRED, dtype)
 
-    # Exactly one token per switch. The losing arm's transform has zero
-    # candidates for its token slot, so the solver never instantiates it --
-    # that, and not a search preference, is what makes the choice stick.
-    #
-    # They hang off `run` so a driver that does split the library by sample
-    # cannot mask them out from underneath the stages that need them.
     for base, enabled in on.items():
         arm = "on" if enabled else "off"
         inputs.AddValue(f"policy_{base}.txt", arm, f"aspire::{base}_{arm}", parents={run})
@@ -291,25 +246,14 @@ def main() -> int:
         input_library=inputs,
         target_types=targets,
         transform_libraries=TRANSFORMS,
-        # The env declarations. No aspire transform requires one yet -- ASPIRE
-        # is 31 conda environments and zero containers, and that is a separate
-        # port -- but transforms/logistics does, so without this `--download-silva`
-        # dead-ends on `env::python_for_data_science.env`.
         resource_libraries=[MLIB / "resources" / "env"],
-        # No sample_type: ASPIRE is one study, and the whole library is the one
-        # view the planner needs. Splitting by sample would hand the collecting
-        # transform one sample at a time and hide the references from all of
-        # them.
         sample_type=None,
     )
     task = spec.Solve(max_iter=args.max_iter, max_refine=args.max_refine, seed=args.seed)
 
     if not task.ok:
-        # Never print `task.plan` -- its repr embeds the whole search tree.
         print(f"  PLAN FAILED steps={len(task.plan.steps)}")
         print(f"  dropped: {sorted(task.plan.dropped_targets)}")
-        # A PlanHint's repr carries its whole chain and every near miss; the
-        # message and the dead end are the two lines you actually read.
         for hint in getattr(task.plan, "hints", []) or []:
             print(f"  {getattr(hint, 'message', hint)}")
             for link in (getattr(hint, "chain", None) or [])[-2:]:

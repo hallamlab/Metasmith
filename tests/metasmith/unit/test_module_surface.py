@@ -1,34 +1,3 @@
-"""Names importable from the three largest modules must stay importable.
-
-`models/libraries.py`, `models/workflow.py` and `agents.py` are being split
-into packages. `metasmith/__init__.py` is entirely commented out, so those
-dotted paths *are* the public API: `python_api.py` imports `Endpoint` and
-`Transform` from `models.libraries` rather than from `models.solver`, and
-`coms/api.py` imports the agent-side free functions by bare name from
-`agents`. Every transform file in the standard library -- a separate repo --
-reaches the same paths through `python_api`.
-
-A re-exporting `__init__.py` is supposed to make the split invisible. With
-2600 lines moving there is no reviewing your way to "the re-export is
-complete", so this pins the answer instead: a snapshot of every name the
-modules exported before the split, checked as a **subset** of what they
-export now.
-
-Subset, not equality, because the split legitimately *adds* names -- a
-package exposes its submodules as attributes. What it must never do is drop
-one.
-
-The snapshot is deliberately generous. It holds incidental imports (`shlex`,
-`Callable`, `md5`) alongside the real API, because deciding which names are
-"real" is exactly the judgment call that loses `ContextPath` -- or
-`ResourceOverrides`, a type alias whose `__module__` is `builtins`, so every
-"defined in this module" heuristic misses it.
-
-Regenerate deliberately, never to make a red test green:
-
-    PYTHONPATH=src python tests/metasmith/unit/test_module_surface.py
-"""
-
 from __future__ import annotations
 
 import importlib
@@ -41,8 +10,6 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parents[3]
 SNAPSHOT = REPO_ROOT / "tests" / "metasmith" / "fixtures" / "module_surface.json"
 
-# The modules being split. Recorded here rather than derived, because the
-# point is to freeze these three specifically.
 MODULES = (
     "metasmith.models.libraries",
     "metasmith.models.workflow",
@@ -51,7 +18,6 @@ MODULES = (
 
 
 def _surface(module_name: str) -> set[str]:
-    """Every non-dunder attribute -- see the module docstring on generosity."""
     module = importlib.import_module(module_name)
     return {n for n in dir(module) if not n.startswith("__")}
 
@@ -63,7 +29,6 @@ def _load_snapshot() -> dict[str, list[str]]:
 
 
 def test_snapshot_covers_every_split_module():
-    """A module dropped from the snapshot is a gate that stopped gating."""
     assert set(_load_snapshot()) == set(MODULES)
 
 

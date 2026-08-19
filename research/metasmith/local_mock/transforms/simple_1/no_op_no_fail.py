@@ -14,7 +14,7 @@ def protocol(context: ExecutionContext):
         dt = f.readline()
         if dt.endswith("\t"): dt = dt[:-1]
         print(dt)
-    time.sleep(int(dt)) # work
+    time.sleep(int(dt))
     context.external_shell.Exec(f"touch {out_path}")
     return ExecutionResult(
         manifest=[

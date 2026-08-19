@@ -1,11 +1,3 @@
-"""Telemetry API unit tests (C8 / G5).
-
-Covers the attach_trace + summary() shape on `DataInstanceLibrary` plus
-the fundamental query dispatch (instance_id lookup, get_invocation,
-find_failures predicate). Heavier scenarios (groupTuple lineage walk,
-log resume) live in `tests/integration/test_telemetry_e2e.py`.
-"""
-
 from __future__ import annotations
 import json
 from pathlib import Path
@@ -62,7 +54,6 @@ def _mk_event(
 
 
 def test_trace_index_read_indexes_sentinel_and_events(tmp_path):
-    """TraceIndex parses the sentinel + events; lookup by file_instance_id works."""
     trace = tmp_path / "_metasmith" / "trace.jsonl"
     pf = ProducedFile(
         file_instance_id="aa" * 10,
@@ -84,7 +75,6 @@ def test_trace_index_read_indexes_sentinel_and_events(tmp_path):
 
 
 def test_trace_index_legacy_row_tolerated(tmp_path):
-    """A row missing schema_version is skipped, not raised."""
     trace = tmp_path / "_metasmith" / "trace.jsonl"
     trace.parent.mkdir(parents=True)
     legacy = json.dumps({"source": "hit", "step": "1", "cache_key": "deadbeef"})
@@ -94,7 +84,6 @@ def test_trace_index_legacy_row_tolerated(tmp_path):
 
 
 def test_attach_trace_idempotent_and_raises_on_switch(tmp_path):
-    """Same (path, across_sessions) → no-op. Different path → TraceAlreadyAttached."""
     from metasmith.models.libraries import DataInstanceLibrary
     from metasmith.models.lineage import TraceAlreadyAttached
 
@@ -102,7 +91,7 @@ def test_attach_trace_idempotent_and_raises_on_switch(tmp_path):
     trace = tmp_path / "_metasmith" / "trace.jsonl"
     _write_trace(trace, [_mk_event("ffff")])
     lib.attach_trace(trace)
-    lib.attach_trace(trace)  # idempotent
+    lib.attach_trace(trace)
     other = tmp_path / "_metasmith" / "trace.99.jsonl"
     _write_trace(other, [_mk_event("eeee")])
     with pytest.raises(TraceAlreadyAttached):
@@ -110,7 +99,6 @@ def test_attach_trace_idempotent_and_raises_on_switch(tmp_path):
 
 
 def test_summary_shape(tmp_path):
-    """summary() returns the documented dict shape with schema_version=2."""
     from metasmith.models.libraries import DataInstanceLibrary
 
     lib = DataInstanceLibrary(tmp_path / "lib")
@@ -144,7 +132,6 @@ def test_summary_shape(tmp_path):
 
 
 def test_get_invocation_raises_when_missing(tmp_path):
-    """get_invocation(unknown) raises InvocationNotFound; try_get returns None."""
     from metasmith.models.libraries import DataInstanceLibrary
 
     lib = DataInstanceLibrary(tmp_path / "lib")
@@ -158,7 +145,6 @@ def test_get_invocation_raises_when_missing(tmp_path):
 
 
 def test_find_failures_predicate(tmp_path):
-    """find_failures picks status=='fail' OR (status=='miss' AND exit_code!=0)."""
     from metasmith.models.libraries import DataInstanceLibrary
 
     lib = DataInstanceLibrary(tmp_path / "lib")
@@ -170,7 +156,7 @@ def test_find_failures_predicate(tmp_path):
             _mk_event("p1", status="promoted"),
             _mk_event("f1", status="fail", exit_code=1),
             _mk_event("m1", status="miss", exit_code=42),
-            _mk_event("m2", status="miss", exit_code=0),  # successful miss → not a failure
+            _mk_event("m2", status="miss", exit_code=0),
         ],
     )
     lib.attach_trace(trace)
@@ -180,7 +166,6 @@ def test_find_failures_predicate(tmp_path):
 
 
 def test_find_invocations_filters_and_or_semantics(tmp_path):
-    """AND across kwargs; OR within iterables."""
     from metasmith.models.libraries import DataInstanceLibrary
 
     lib = DataInstanceLibrary(tmp_path / "lib")
@@ -203,7 +188,6 @@ def test_find_invocations_filters_and_or_semantics(tmp_path):
 
 
 def test_empty_trace_index_safe_queries(tmp_path):
-    """A library with no trace attached returns empty results, not errors."""
     from metasmith.models.libraries import DataInstanceLibrary
 
     lib = DataInstanceLibrary(tmp_path / "lib")
@@ -215,26 +199,13 @@ def test_empty_trace_index_safe_queries(tmp_path):
     assert s["counts"]["sessions"] == 0
 
 
-# ---------------------------------------------------------------------------
-# Virtual-runtime-driven cases: T1, T2, T5, T6
-# ---------------------------------------------------------------------------
-#
-# These cases exercise the same telemetry API but against a real end-to-end
-# run staged by `run_and_load`. They live alongside the pure-trace unit
-# tests so a future reader sees both the synthetic and the integration
-# coverage in one place.
-
-
 def test_t1_find_invocations_positive_and_negative(tmp_path, virtual_runtime):
-    """<T1> `find_invocations(transform_key=<known>)` returns >=1 row;
-    `find_invocations(transform_key=<unknown>)` returns []."""
     from tests.metasmith.flow.conftest import build_linear_plan, run_and_load
 
     bp = build_linear_plan(tmp_path, n_steps=2)
     transform_keys = [s.transform.GetKey() for s in bp.plan.steps]
     _task, lib = run_and_load(virtual_runtime, bp)
 
-    # Positive: any of the plan's transform_keys should produce >=1 event.
     matched_any = False
     for tk in transform_keys:
         hits = lib.find_invocations(transform_key=tk)
@@ -245,24 +216,18 @@ def test_t1_find_invocations_positive_and_negative(tmp_path, virtual_runtime):
         f"no events found for any plan transform_key={transform_keys!r}; "
         f"summary={lib.summary()['by_transform']!r}"
     )
-    # Negative: a fabricated key returns [].
     assert lib.find_invocations(transform_key="no_such_transform_xyz") == []
 
 
 def test_t2_find_invocations_status_hit(tmp_path, virtual_runtime):
-    """<T2> A second run of an unchanged cacheable plan yields >=1 row
-    with status='hit'; a fresh (cold-cache) run yields zero hit rows.
-    """
     from tests.metasmith.flow.conftest import build_linear_plan, run_and_load
 
     bp = build_linear_plan(tmp_path, n_steps=2)
     _task, lib_cold = run_and_load(virtual_runtime, bp)
-    # Cold-cache run: no hits.
     assert lib_cold.find_invocations(status="hit") == [], (
         f"unexpected hit rows on cold cache: {lib_cold.find_invocations(status='hit')!r}"
     )
 
-    # Re-run the same plan against the same workspace — cacheable steps hit.
     bp2 = build_linear_plan(tmp_path, n_steps=2)
     _task2, lib_hot = run_and_load(virtual_runtime, bp2)
     hits = lib_hot.find_invocations(status="hit")
@@ -273,19 +238,11 @@ def test_t2_find_invocations_status_hit(tmp_path, virtual_runtime):
 
 
 def test_t5_get_siblings_of_task_scope(tmp_path, virtual_runtime):
-    """<T5> `get_siblings_of(target, scope='task')` returns the other
-    files produced by the same task. A branching plan emits a per-step
-    fan-in/merge whose final step bundles multiple parents; we walk the
-    library and probe whichever produced instance the trace surfaces
-    siblings for.
-    """
     from tests.metasmith.flow.conftest import build_branching_plan, run_and_load
 
     bp = build_branching_plan(tmp_path, fanout=2)
     _task, lib = run_and_load(virtual_runtime, bp)
 
-    # Walk the manifest looking for any instance whose producer event
-    # emitted multiple files (task-scope siblings).
     found_target = None
     for path in lib.manifest:
         meta = lib.instance_meta.get(path)
@@ -299,12 +256,8 @@ def test_t5_get_siblings_of_task_scope(tmp_path, virtual_runtime):
         if siblings:
             found_target = (inst_id, siblings)
             break
-        # Also confirm the negative case for an isolated (single-output) task.
-        # We just need either an isolated or a sibling-rich event to exist.
 
     if found_target is None:
-        # No event with task-scope siblings is in this trace shape — confirm
-        # the negative semantics on whichever instance the library tracks.
         any_id = None
         for path in lib.manifest:
             meta = lib.instance_meta.get(path)
@@ -327,16 +280,11 @@ def test_t5_get_siblings_of_task_scope(tmp_path, virtual_runtime):
 
 
 def test_t6_get_logs_of_xfail_or_skip(tmp_path, virtual_runtime):
-    """<T6> The virtual runtime does not emit `.command.*` shards, so
-    `get_logs_of()` returns a LogBundle whose status is not 'available'.
-    The real-command-log case is covered by `tests/e2e/docker/T6`.
-    """
     from tests.metasmith.flow.conftest import build_linear_plan, run_and_load
 
     bp = build_linear_plan(tmp_path, n_steps=2)
     _task, lib = run_and_load(virtual_runtime, bp)
 
-    # Grab any tracked instance and probe its logs.
     sample_inst_id: str | None = None
     for path in lib.manifest:
         meta = lib.instance_meta.get(path)
@@ -348,8 +296,6 @@ def test_t6_get_logs_of_xfail_or_skip(tmp_path, virtual_runtime):
 
     bundle = lib.get_logs_of(sample_inst_id)
     if getattr(bundle, "status", None) == "available":
-        # Virtual_runtime grew log emission — that's a feature change,
-        # not a regression; the positive case is verified.
         return
     pytest.skip(
         reason=(

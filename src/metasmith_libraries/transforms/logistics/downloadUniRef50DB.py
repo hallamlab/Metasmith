@@ -10,7 +10,6 @@ UNIREF50_URL = "https://ftp.uniprot.org/pub/databases/uniprot/uniref/uniref50/un
 def protocol(context: ExecutionContext):
     idb = context.Output(db)
 
-    # Same command either way: this tool is a plain CLI in both worlds.
     _cmd = f"""
             wget -q {UNIREF50_URL} -O uniref50.fasta.gz
             diamond makedb --in uniref50.fasta.gz -d uniref50

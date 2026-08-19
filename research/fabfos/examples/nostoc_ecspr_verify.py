@@ -40,10 +40,6 @@ import ecspr.model.compose as ec  # noqa: E402
 import ecspr.model.evidence as en  # noqa: E402
 from ecspr.model.graph import Terminal, measure_leak  # noqa: E402
 
-# The bake is stored CODED and the graph builder reads the string schema, so it is
-# decoded before use -- see `benchmarks/eydallin/bake_pairs.py`, which owns that decode
-# for the whole tree. Handed the coded table, `element == "C"` compares against integers,
-# matches nothing, and an empty graph is measured without anything raising.
 sys.path.insert(0, str(REPO / "research/fabfos/benchmarks/eydallin"))
 import bake_pairs  # noqa: E402
 
@@ -53,7 +49,6 @@ NETS = OUT / "networks"
 
 
 def load_bake():
-    """The decoded reference basis as `(pairs, direction)` frames."""
     return (pd.read_parquet(bake_pairs.atom_pairs()),
             pd.read_parquet(bake_pairs.direction_ratios()))
 
@@ -61,11 +56,6 @@ FERREDOXIN = ("MNXM178", "MNXM169", "MNXM20146", "MNXM21524",
               "MNXM588581", "MNXM681091")
 BIOTIN = "MNXM304"
 
-# The default suite is ~20 s, but `--g0-sweep` solves three 110k-node graphs and takes ~50
-# minutes, so redirected output must not sit in a block buffer that long. A silent log is
-# indistinguishable from a hung run -- which is exactly how a 2 h 41 m local run was lost.
-# Under slurm, prefer `python3 -u` as well: fixing it at the invocation does not depend on
-# whoever edits this file next preserving the wrapper below.
 _print = print
 
 
@@ -83,15 +73,7 @@ def _pass(msg):
     return 0
 
 
-# =====================================================================
-# Structural
-# =====================================================================
-
 def check_singleton_identity(pairs, direction, element="C"):
-    """A singleton composition must be the uncomposed organism with its ids prefixed --
-    same edges, same conductances, same solve. If it is not, the composition is changing a
-    network it was asked to leave alone, and every community number is measured against a
-    control that moved."""
     print("[1] a singleton is the uncomposed organism, exactly")
     raw = pd.read_parquet(GPR / "NOS" / "gpr_4lane.parquet")
     w_raw = dict(zip(*[en.compute_weights(raw)[c] for c in ("mnxr", "E_full")]))
@@ -113,7 +95,6 @@ def check_singleton_identity(pairs, direction, element="C"):
         bad += _fail(f"shape moved: {(g_raw.n, g_raw.m)} -> {(g_c.n, g_c.m)}")
     else:
         bad += _pass("same node and edge count")
-    # Conductance multisets must agree to floating point; the node ORDER need not.
     for name, a, b in (("gp", np.sort(g_raw.gp), np.sort(g_c.gp)),
                        ("gm", np.sort(g_raw.gm), np.sort(g_c.gm))):
         if len(a) == len(b) and np.allclose(a, b, rtol=0, atol=1e-12):
@@ -130,9 +111,6 @@ def check_singleton_identity(pairs, direction, element="C"):
 
 
 def check_copies_are_private(element="C"):
-    """No edge in a composed network may join two members except through a bridge. This is
-    what "add, not unique union" buys, and if it fails the measurement is of one
-    well-mixed pot with a bigger gene set -- the null the experiment exists to reject."""
     print("\n[2] copies are private: only bridges cross between members")
     bad = 0
     for nid in ("NOS-ERY_bl-on", "NOS-ERY-RHI_bl-on"):
@@ -146,7 +124,6 @@ def check_copies_are_private(element="C"):
               f"{len(non_bridge):,} of those NOT bridges")
         bad += (_fail(f"{nid}: {len(non_bridge):,} non-bridge cross edges")
                 if len(non_bridge) else _pass(f"{nid}: every cross edge is a bridge"))
-        # And a bridge must join the SAME metabolite in two copies, never two different ones.
         br = cross[cross.mnxr.str.startswith("BRIDGE")]
         mism = br[br.substrate.str.split(ec.SEP).str[1] != br["product"].str.split(ec.SEP).str[1]]
         bad += (_fail(f"{nid}: {len(mism):,} bridges join DIFFERENT metabolites")
@@ -155,9 +132,6 @@ def check_copies_are_private(element="C"):
 
 
 def check_belief_conservation():
-    """Each ORF allocates exactly 1.0, synthetic bridge ORFs included. The measurement
-    transforms assert this at run time; checking it here says whether a failure there is
-    the composition's fault or the annotation's."""
     print("\n[3] belief conservation survives the synthetic bridge ORFs")
     bad = 0
     for d in sorted(NETS.iterdir()):
@@ -174,28 +148,6 @@ def check_belief_conservation():
 
 
 def check_g0_limit(pairs, direction, element="C", *, sweep=False):
-    """Only the bridges may couple the copies, and `g0` is the only dial on them.
-
-    The g0 == 0 case is asserted STRUCTURALLY, not by solving, and the reason is the whole
-    lesson here. `bridge_table` marks a row `bridged = int(ok and gbr > 0)`, so at g0 == 0
-    NO bridge is emitted and the composed graph is two genuinely disconnected components.
-    That is precisely what makes solving it the wrong instrument: a Laplacian with two
-    components is singular, its null space has one dimension per component, and an iterative
-    solve returns noise in the component carrying no current. Measured, that noise was
-    +1.19e-07 at one sink and **-1.24e-07** at the other -- and a current share cannot be
-    negative, which is the proof it was never a coupling.
-
-    An earlier version solved it and demanded < 1e-12. The library's own self-test for the
-    same quantity (a dead end that must draw nothing) bounds it at 1e-6 and explains why
-    machine epsilon is the wrong bar -- see the Newton gradient tolerance note in
-    `ecspr_graph.py`. 1e-12 sat four orders below anything the solver can deliver, so the
-    check could not have passed however correct the composition was. It also compared
-    `max(shares)` rather than `max(|shares|)`, so a large negative would have gone unseen.
-
-    Asserting the emitted edges directly is exact, free, and strictly stronger than the
-    singular solve it replaces: no bridge exists at g0 == 0 (here) and no non-bridge edge
-    ever crosses between copies (check [2]).
-    """
     print("\n[4] g0 scales the bridges, and only the bridges couple the copies")
     names = pd.read_parquet(OUT / "metabolite_names.parquet")
     bl = set(pd.read_parquet(OUT / "carrier_blacklist.parquet").mnxm)
@@ -211,11 +163,6 @@ def check_g0_limit(pairs, direction, element="C", *, sweep=False):
         p = out["pairs"][out["pairs"].element == element]
         return out, p
 
-    # The SWEEP is opt-in and the ASSERTION is not. Three composes and three ~110k-node
-    # solves cost as much as a real measurement -- ~50 min on fir, and 4 h on a downclocked
-    # node -- while the other five checks finish in about 70 s together. Defaulting to the
-    # sweep meant the fast pre-flight this file exists to be could not be run at all.
-    # Nothing is lost by the split: the sweep asserts nothing, it reports a trend.
     if sweep:
         for g0 in (1.0, 1e-3, 1e-6):
             out, p = _compose(g0)
@@ -223,8 +170,6 @@ def check_g0_limit(pairs, direction, element="C", *, sweep=False):
             d2 = (dict(zip(out["direction"].mnxr, out["direction"].ratio))
                   if out["direction"] is not None else ratios)
             g = eb.graph_from_pairs(p, element, w, d2)
-            # `measure_leak` reports an absolute per-metabolite draw; the share this
-            # trend is read on is that draw over the injected total.
             r = measure_leak(g, Terminal.metabolite(g, src, label="source"), sinks,
                              leak=1e-6)
             tot = r["total"] or float("nan")
@@ -234,10 +179,6 @@ def check_g0_limit(pairs, direction, element="C", *, sweep=False):
         print("  (g0 sweep skipped; --g0-sweep to run it. Measured previously: "
               "1.0 -> 0.5062/0.4882, 1e-3 -> 0.5166/0.4768, 1e-6 -> 0.3441/0.3180)")
 
-    # No monotonicity assertion: the measured trend is 0.506 -> 0.517 -> 0.344, which rises
-    # before it falls. Three decades of g0 barely move the receiving copy, so the bridges
-    # are not rate-limiting at any g0 anyone would use -- worth knowing about a free
-    # parameter, and not a failure.
     _, p0 = _compose(0.0)
     br = p0[p0.mnxr.astype(str).str.startswith("BRIDGE")]
     print(f"  g0=0        {len(br)} bridge edges emitted")
@@ -247,9 +188,6 @@ def check_g0_limit(pairs, direction, element="C", *, sweep=False):
     else:
         bad += _pass("g0=0 -> no bridge edges at all; the copies are disconnected")
 
-    # `bridged = ok and gbr > 0` is what severs them, so a zero-weight bridge row reaching a
-    # production pair table would mean that guard had been loosened -- and would put a
-    # singular block in a network that is actually measured.
     for nid in ("NOS-ERY_bl-on", "NOS-ERY-RHI_bl-on"):
         ap = pd.read_parquet(NETS / nid / "atom_pairs.parquet")
         b = ap[ap.mnxr.astype(str).str.startswith("BRIDGE")]
@@ -263,9 +201,6 @@ def check_g0_limit(pairs, direction, element="C", *, sweep=False):
 
 
 def check_sulfur_survival(pairs, element="S"):
-    """Blacklisting ferredoxin removes a degree-450 pair from the already-sparse sulfur
-    graph. How much S bridging survives is a finding either way; a collapse means the
-    sulfur axis cannot carry this measurement."""
     print("\n[5] sulfur bridge survival after the blacklist")
     bad = 0
     for pair in ("NOS-ERY", "NOS-RHI", "ERY-RHI"):
@@ -284,9 +219,6 @@ def check_sulfur_survival(pairs, element="S"):
 
 
 def check_biotin(pairs):
-    """The one independent check available. The ad-hoc annotation found Allorhizobium
-    cannot complete biotin biosynthesis alone; a composition blind to the difference
-    between `c` and `c` in a community is not measuring what it claims."""
     print("\n[6] biotin: the independent check")
     bad = 0
     for pair in ("NOS-RHI", "ERY-RHI"):
@@ -317,18 +249,7 @@ def structural(sweep=False):
     return 1 if bad else 0
 
 
-# =====================================================================
-# Over the products
-# =====================================================================
-
 def _collect(root: Path, kind: str):
-    """Every product of one kind, concatenated. `condition_id` carries the network and
-    direction and `media` the arm and g0, so the rows are self-identifying and no join
-    against the staging layout is needed."""
-    # The product type names the DIRECTORY (`ecspr-ground_results/`), not the file -- the
-    # file is a content hash. Matching on the filename alone silently finds nothing.
-    # `/results/` excludes the agent's promoted cache, which holds the same bytes again
-    # and would double every paired comparison below.
     parts = []
     for p in sorted(q for q in root.rglob("*.parquet")
                     if kind in str(q) and "/results/" in str(q)):
@@ -348,21 +269,11 @@ EXPECTED_UNITS = 21
 
 
 def _unit_keys(df):
-    """`network|injecting-copy` -- the only unit label the two transforms agree on.
-
-    A ground condition names the whole receiving side (`NOS->ERY+RHI`) because leakage has
-    no endpoint to place, while two-terminal splits the same unit into one condition per
-    receiver (`NOS->ERY`, `NOS->RHI`). Keying on the raw direction therefore counts a
-    triple's 3 units as 9, which does not merely mis-report: it pushes the total past
-    EXPECTED_UNITS so the `< EXPECTED_UNITS` test can never fire, and the coverage guard
-    silently stops guarding. The injecting copy is what actually indexes a unit.
-    """
     return set(df.condition_id.str.split("|").str[0] + "|"
                + df.condition_id.str.split("|").str[1].str.split("->").str[0])
 
 
 def _expected_units():
-    """One unit per member per network: 3 singletons + 6 pairs x 2 + 2 triples x 3 = 21."""
     out = {}
     for net in ("NOS", "ERY", "RHI"):
         out[net] = 1
@@ -382,13 +293,6 @@ def products(root: Path):
     if not len(g) and not len(t):
         return _fail("no products found -- nothing to check")
 
-    # COVERAGE FIRST. Every check below is vacuous on a partial run -- a network with only
-    # one direction present has no pair to compare, an arm with no partner has nothing to
-    # differ from -- and each would report a silent pass. Say what is actually here before
-    # claiming anything about it.
-    # A unit is only covered if BOTH transforms measured it -- an intersection, not a
-    # union. A union counts a network whose ground landed and whose two-terminal died as
-    # present, which is exactly the half-finished state this guard exists to catch.
     seen = _unit_keys(g) & _unit_keys(t) if len(g) and len(t) else set()
     expect = _expected_units()
     print(f"units present (both transforms): {len(seen)} of {EXPECTED_UNITS}")
@@ -403,11 +307,6 @@ def products(root: Path):
     if len(t):
         t = _split_cid(t)
         print("\n[A] a->b differs from b->a on the identical network")
-        # Pair on the UNTAGGED metabolite. `a->b` reads its endpoint in copy b and `b->a`
-        # in copy a, so the two directions never name the same tagged sink_hub -- pivoting
-        # on the tag puts each direction on its own row with a NaN opposite, and
-        # `nunique(axis=1)` skips NaN, so every row reports one unique value and the check
-        # declares the copies collapsed on a perfectly good measurement.
         t = t.assign(met=t.sink_hub.map(lambda s: ec.untag(s)[1]))
         for net in sorted(set(t.network)):
             sub = t[t.network == net]
@@ -457,9 +356,6 @@ def products(root: Path):
                 bad += _fail(f"{net}: hard-ground measurement wearing the leak schema")
 
         print("\n[D] a receiving copy actually receives")
-        # PER CONDITION. Summing shares over a network's conditions adds four independent
-        # solves together and reports a "share" above 1, which reads as a bug in the
-        # measurement rather than in the summing.
         for net, sub in g.groupby("network"):
             if "-" not in net.split("_")[0]:
                 continue
@@ -484,9 +380,6 @@ def main(argv=None):
     p.add_argument("--g0-sweep", action="store_true",
                    help="also run the g0 sensitivity sweep: 3 composes and 3 "
                         "~110k-node solves, ~50 min. Asserts nothing; reports a trend.")
-    # nargs="?" so `--products` with no argument means the promoted chunk. That is the
-    # measurement of record and the only tree where all 21 units are present at once;
-    # a local run directory holds whichever networks that invocation covered.
     p.add_argument("--products", nargs="?", const=str(OUT / "results"), default=None,
                    metavar="DIR",
                    help=f"results tree to check (default: {OUT.name}/results, the "

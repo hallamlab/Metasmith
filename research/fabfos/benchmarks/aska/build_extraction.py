@@ -70,12 +70,6 @@ EXTRACTION_COLS = (
 
 
 def gene_to_bnumber(gbk: Path) -> dict[str, str]:
-    """Every name and synonym on the chromosome, mapped to its locus tag.
-
-    A primary `/gene` wins over a synonym, because a synonym of one gene is
-    occasionally the primary name of another and the primary is what the model
-    is keyed on.
-    """
     text = gbk.read_text()
     block = re.compile(
         r'/gene="([^"]+)"\s*\n\s*/locus_tag="([^"]+)"'
@@ -92,7 +86,6 @@ def gene_to_bnumber(gbk: Path) -> dict[str, str]:
 
 
 def direction(fold: float, mark: str, colour: str) -> str:
-    """up / down / flat -- the paper's call where it made one, else the band."""
     if colour == "pink" or (mark and mark != "ns"):
         return "up" if fold >= 1.0 else "down"
     if mark == "ns":
@@ -118,9 +111,6 @@ def main():
     for tag, grp in gem.groupby("orf"):
         rxns[tag] = sorted(set(grp["mnxr"]))
 
-    # Every panel's control titer, so a strain's fold change is against the bar
-    # it was actually drawn beside. The round-two panel is read against RF, not
-    # against F0, and a titer is only comparable inside its own panel.
     control = {}
     for _, r in resp.iterrows():
         if r["strain_id"] == r["control_strain"]:
@@ -131,7 +121,7 @@ def main():
         strain, fig = r["strain_id"], r["figure"]
         ctrl_id = r["control_strain"]
         ctrl = control.get((fig, ctrl_id))
-        if ctrl is None:                       # Fig. 5a reads against its own parent
+        if ctrl is None:
             hit = resp[(resp["figure"] == fig) & (resp["strain_id"] == ctrl_id)]
             ctrl = float(hit["ffa"].iloc[0]) if len(hit) else float("nan")
         fold = r["ffa"] / ctrl
@@ -157,10 +147,6 @@ def main():
                         ffa_mg_L=f"{r['ffa']:.1f}", control_mg_L=f"{ctrl:.1f}",
                         fold_change=f"{fold:.3f}", citation=CITATION, note=note))
         if not genes and not dels:
-            # The panel's own control bar: the strain every other bar in that
-            # figure is a difference from, carrying no clone at all. Declared as
-            # a control rather than emitted as an edge-less condition, so the
-            # gate has something whose spread IS the solver's floor.
             rows.append(dict(
                 obs_id=obs, strain_id=strain, figure=fig,
                 background=r["background"], gene="", b_number="", mnxr="",
@@ -176,10 +162,6 @@ def main():
     print(f"wrote {args.out} ({len(rows)} rows, "
           f"{len({r['obs_id'] for r in rows})} conditions)")
 
-    # Resolution only -- did the name resolve, and does iML1515 give it reactions.
-    # Whether those reactions can carry an edge the benchmark counts is a question
-    # about the BAKE, which this script does not open; `triage.py` answers it from
-    # the built tier, where the atom universe is the one the tier actually used.
     cen = (pd.DataFrame(census)
            .groupby(["gene", "b_number"], as_index=False)
            .agg(n_reactions=("n_reactions", "max"),
@@ -197,11 +179,6 @@ def main():
         print("  unresolved:", ", ".join(unresolved["gene"]))
     print(f"wrote {args.census}")
 
-    # A reaction nominated twice by the SAME side of one condition would be a
-    # doubling the uniform weighting cannot express, since it counts distinct
-    # units and both clones of a two-clone strain share one. Grouped by role, so
-    # that the complementation strain -- which deletes rfaY and adds it back on a
-    # plasmid, and means exactly that -- is not counted as a collision.
     df = pd.DataFrame(rows)
     dupes = (df[df["mnxr"] != ""]
              .groupby(["obs_id", "role", "mnxr"]).size().rename("n").reset_index())

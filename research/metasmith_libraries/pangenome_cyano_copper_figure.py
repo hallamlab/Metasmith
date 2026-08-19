@@ -1,16 +1,4 @@
 #!/usr/bin/env python3
-"""Regenerate the cyano copper-panel PPanGGOLiN heatmap from existing .gbk.
-
-Resumes from the six RefSeq .gbk already fetched by the original run (run key
-uOJnvxQz) -- no NCBI refetch -- and re-clusters with data-driven thresholds
-(--identity 0.3 --coverage 0.8, read off the BSR + identity/coverage
-histograms) plus the ORGANISM-line genome naming fix. Targets the heatmap.
-
-Run with the `msm` env python:
-    PY=/home/tony/lib/miniforge3/envs/msm/bin/python
-    $PY main/pangenome_cyano_copper_figure.py        # plan-only: render DAG
-    $PY main/pangenome_cyano_copper_figure.py run     # stage + run locally (Docker)
-"""
 import sys
 import time
 from pathlib import Path
@@ -31,7 +19,7 @@ TIMEOUT = 2400
 agent_home = Source.FromLocal((BASE / "msm_home").absolute())
 smith = Agent(home=agent_home, runtime=Runtime.DOCKER)
 if RUN:
-    smith.Deploy()  # deploys the relay binary via a container; needs Docker
+    smith.Deploy()
 else:
     print("[plan-only] skipping Deploy() (no container needed to plan + render DAG)")
 
@@ -47,9 +35,6 @@ except Exception:
 
     group = inputs.AddValue("pangenome", "cyano_copper_panel", "pangenome::pangenome")
     for gbk in sorted(GBK_DIR.glob("*.gbk")):
-        # Resuming from files on disk rather than from accessions, so the name
-        # comes from the filename -- but it is still declared, because that is
-        # what ppanggolin reads. Its stem is the strain here (PCC_7002.gbk).
         label = gbk.stem
         nm = inputs.AddValue(f"{label}.name", label, "ncbi::genome_name", parents={group})
         inputs.AddItem(gbk.resolve(), "sequences::gbk", parents={nm})

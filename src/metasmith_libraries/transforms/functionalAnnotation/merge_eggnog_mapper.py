@@ -1,15 +1,3 @@
-"""merge_eggnog_mapper — gather per-chunk eggNOG-mapper .annotations files.
-
-eggNOG-mapper emits `results.emapper.annotations` with a banner of `##`-prefix
-comment lines at the top, then the `#query	...` column-header line, then
-data rows, then a final `##`-prefix footer. Strategy: from the first chunk,
-keep everything up through the column-header line; from subsequent chunks,
-strip ALL leading `#`-prefix lines; drop trailing `##` footer lines from
-intermediate chunks (keep only from the last chunk).
-
-This transform runs no container, so the ExecWithEnv port swept past it. Finding
-it on the old call shape is expected, not an oversight.
-"""
 from metasmith.python_api import *
 
 lib = TransformInstanceLibrary.ResolveParentLibrary(__file__)
@@ -30,7 +18,6 @@ def protocol(context: ExecutionContext):
         for i, cf in enumerate(chunks):
             with open(cf.local) as fin:
                 lines = fin.readlines()
-            # Split header (#-prefix lines at top), body, footer (trailing ##)
             head_end = 0
             while head_end < len(lines) and lines[head_end].startswith("#"):
                 head_end += 1

@@ -74,19 +74,10 @@ from . import worklist
 
 COLUMNS = ("mnxr", "rxn_smiles", "mapped_rxn_smiles", "confidence", "status")
 
-# Indigo does not score a mapping. A structural map is asserted the same way a curated
-# one is, so it carries the same constant -- and the combiner's disagreement branch
-# divides by a sum of confidences, which a NaN would poison.
 INDIGO_CONFIDENCE = 1.0
 
-# Soft budget per reaction, enforced from PYTHON around the call inside the child. It
-# bounds the merely-slow searches cleanly; the parent's kill is what bounds the ones that
-# never check for a signal at all.
 DEFAULT_TIMEOUT_S = 20
 
-# How long past the child's own budget the parent waits before killing it. Small on
-# purpose: a child that has not answered by now is in the compiled search, not in the
-# Python layer, and waiting longer only makes the hang more expensive.
 KILL_GRACE_S = 5
 
 
@@ -99,14 +90,10 @@ def _alarm(_sig, _frm):
 
 
 def map_one(ind, smi: str, timeout_s: int):
-    """(mapped_smiles, status). `status` is one of ok / empty / timeout / error."""
     old = signal.signal(signal.SIGALRM, _alarm)
     signal.alarm(timeout_s)
     try:
         rxn = ind.loadReaction(smi)
-        # "discard" throws away whatever map the input carried and computes a fresh one,
-        # which is what we want: the universe SMILES are unmapped, and any map that did
-        # survive would be the previous member's opinion rather than Indigo's.
         rxn.automap("discard")
         out = rxn.smiles()
         return (out, "ok") if out else ("", "empty")
@@ -120,12 +107,6 @@ def map_one(ind, smi: str, timeout_s: int):
 
 
 def _serve(conn, timeout_s: int):
-    """The child: one Indigo, then map whatever arrives until the pipe closes.
-
-    PERSISTENT RATHER THAN ONE PROCESS PER REACTION, because the import and the `Indigo()`
-    construction cost more than the fork does and a respawn is the rare case -- 2.3% of
-    the prior run's attempts. What the parent gets either way is a pid it can kill.
-    """
     from indigo import Indigo
     ind = Indigo()
     ind.setOption("aam-timeout", timeout_s * 1000)
@@ -140,17 +121,8 @@ def _serve(conn, timeout_s: int):
 
 
 class Mapper:
-    """Indigo in a killable child. `map_one(smi)` never blocks past the budget.
-
-    The child is respawned on a kill and on an unexpected death, so one runaway search
-    costs its budget and a fork rather than the lane.
-    """
-
     def __init__(self, timeout_s: int, serve=None):
         self.timeout_s = timeout_s
-        # Injectable ONLY so the containment itself is testable: the claim is that a
-        # child which never returns is killed at the budget, and that cannot be checked
-        # against a mapper that always answers.
         self._serve = serve or _serve
         self.n_killed = 0
         self.n_respawned = 0
@@ -159,8 +131,6 @@ class Mapper:
         self._spawn()
 
     def _spawn(self):
-        # `fork` rather than `spawn`: the child needs nothing from this process's state
-        # but re-executing the interpreter would re-import pandas and pyarrow per respawn.
         ctx = mp.get_context("fork")
         parent, child = ctx.Pipe(duplex=True)
         self.proc = ctx.Process(target=self._serve, args=(child, self.timeout_s),
@@ -188,9 +158,6 @@ class Mapper:
             self._kill()
             return "", "error"
         if not self.conn.poll(self.timeout_s + KILL_GRACE_S):
-            # NOT a slow reaction: the child's own alarm would have fired by now and sent
-            # a `timeout` back. Silence past that is the compiled search, and SIGKILL is
-            # the only thing that reaches it.
             self.n_killed += 1
             self._kill()
             return "", "killed"
@@ -213,25 +180,6 @@ class Mapper:
 
 
 def load_universe(universe_parquet: Path, exclude=None, shard=None):
-    """The submissions `aam_universe` admits to THIS member, for this shard.
-
-    THE `verdict` COLUMN IS REQUIRED. Every member reads the SAME table, so that "the
-    three saw the same submissions" is a property of the graph rather than three filters
-    that happen to agree; pointing this at `lookup::reactions` fails loudly instead of
-    quietly restoring the per-member universe.
-
-    AND THIS MEMBER SEES MORE OF IT, which is the one place the three legitimately
-    differ. The atom cap bounds the neural members' cost -- a 512-token transformer and
-    a lane that was OOM-killed twice. Indigo is a compiled substructure search behind a
-    killable child process, so it takes the oversized tail as well and
-    `worklist.ATOM_LIMIT` says why. A reaction only Indigo reaches lands as `indigo_only`
-    at half weight through the ordinary fusion; nothing here needs a special case for it.
-
-    THE KEY IS THE SUBMISSION, NOT THE REACTION. `mnxr` holds the submission key -- a bare
-    MNXR for the whole and completed classes, `MNXR#X` for an element reduction -- and the
-    real reaction is in `base_mnxr`. This member never needs the distinction; the
-    extractor does.
-    """
     d = pd.read_parquet(universe_parquet)
     if "verdict" not in d.columns:
         raise SystemExit(
@@ -267,19 +215,10 @@ def cmd_map(args):
     side = Path(args.sidecar) if args.sidecar else out.with_suffix(".attempted")
     out.parent.mkdir(parents=True, exist_ok=True)
 
-    # THE DURABLE CACHE, and it is what makes a killed lane resume rather than restart.
-    # The in-task cache lives in node-local scratch and is discarded on retry, so its
-    # per-reaction resume protected this lane against nothing that actually happens; the
-    # staged copy is the same file, handed in.
     prior_caches, prior_sides = aam_shard.cache_files(args.cache_dir)
     carried, _stale, _foreign = aam_shard.read_cache(prior_caches + [out], universe,
                                                      who="indigo")
 
-    # RESUME OFF THE SIDECARS AS WELL AS THE CACHE. The cache holds submissions that
-    # FINISHED; a sidecar holds every one that was STARTED. The difference is precisely
-    # the reaction a kill landed inside, and resuming off the cache alone attempts it
-    # again. `read_sidecars` re-partitions the prior run's files onto this run's spec
-    # rather than refusing across the change.
     attempted = aam_shard.read_sidecars(prior_sides + [side], shard, who="indigo")
 
     done = {r[0] for r in carried} | attempted
@@ -293,8 +232,6 @@ def cmd_map(args):
     fo = open(out, "a", buffering=1)
     if write_header:
         fo.write("\t".join(COLUMNS) + "\n")
-    # Carried rows are re-emitted into THIS run's cache, so the merge sees one complete
-    # member rather than one that is short by whatever a previous run already did.
     seen_here = set()
     if out.exists() and out.stat().st_size > 0:
         with open(out) as fh:
@@ -316,8 +253,6 @@ def cmd_map(args):
     tally = {}
     try:
         for i, (mnxr, smi) in enumerate(todo, 1):
-            # BEFORE the attempt, and flushed. The child process bounds a hang; this is
-            # what bounds an OOM kill or a cancelled job, which it does not.
             fs.mark(mnxr)
             mapped, status = mapper.map_one(smi)
             tally[status] = tally.get(status, 0) + 1
@@ -336,9 +271,6 @@ def cmd_map(args):
         mapper.close()
     print(f"[indigo] {tally} -> {out}", flush=True)
     if mapper.n_killed:
-        # THE NUMBER THE CONTAINMENT EXISTS TO PRODUCE. Under the old lane these were
-        # invisible -- a hang wrote no row and took the shard with it -- so this count is
-        # the first direct measurement of how often the compiled search runs away.
         print(f"[indigo] {mapper.n_killed:,} submission(s) had to be KILLED: the "
               f"compiled search did not return and no signal reaches it. Each cost "
               f"{args.timeout + KILL_GRACE_S}s and a respawn, not the lane.", flush=True)
@@ -346,12 +278,6 @@ def cmd_map(args):
 
 
 def cmd_retry(args):
-    """Second pass at a longer budget over the reactions the first pass timed out on.
-
-    Not a rerun: it reads the cache, takes only `status == timeout`, and rewrites those
-    rows. A timeout is a statement about a budget, not about the chemistry, so retrying
-    it is the honest move and dropping it silently is not.
-    """
     from indigo import Indigo
     ind = Indigo()
     ind.setOption("aam-timeout", args.timeout * 1000)
@@ -370,11 +296,6 @@ def cmd_retry(args):
 
 
 def cmd_merge(args):
-    """Shards -> one member cache, in the schema the extractor reads."""
-    # A GLOB THAT MATCHED FEWER FILES IS A SHORT MEMBER, and a short member is
-    # indistinguishable from a member the chemistry defeated once it reaches the fusion.
-    # The lane already fails on a shard that exits non-zero; this catches the shard that
-    # never started.
     if args.expect and len(args.shard_file) != args.expect:
         raise SystemExit(
             f"[indigo] merging {len(args.shard_file)} shard caches, expected "

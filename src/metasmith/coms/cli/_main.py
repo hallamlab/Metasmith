@@ -1,4 +1,3 @@
-"""Top-level CLI dispatch."""
 from __future__ import annotations
 
 import argparse
@@ -62,7 +61,6 @@ def main(argv: list[str] | None = None) -> int:
     parser = _build_parser()
     args = parser.parse_args(argv)
     if args.json:
-        # Keep stdout clean for structured output; route progress logs to stderr.
         _log_handler.stream = sys.stderr
     if not getattr(args, "func", None):
         parser.print_help()

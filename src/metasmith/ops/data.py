@@ -1,4 +1,3 @@
-"""Data instance library operations: CRUD on libraries and their items."""
 from __future__ import annotations
 
 import os
@@ -51,7 +50,6 @@ def create_library(
 
 
 def _link_or_copy(src, dst, *, follow_symlinks=True):
-    """Hardlink a library-internal file, falling back to a copy across filesystems."""
     try:
         os.link(src, dst)
     except OSError:
@@ -63,21 +61,6 @@ def fork_library(
     dest_path: str,
     fork_id: str | None = None,
 ) -> dict:
-    """Copy a library's manifest to a new location under a fresh fork id.
-
-    A fork is the explicit way to say "treat these inputs as new", and its
-    whole point is to discard cache reuse. It is the expensive path.
-
-    Instance ids are content+path addressed, so they do not change just
-    because the manifest moved. Setting `fork_id` is what makes every leaf
-    id stale, and `DataInstanceLibrary` re-derives them with the fork id
-    folded in. Lineage-derived ids are left alone: those are the hash of
-    how an output was produced, not of where it sits.
-
-    Data is not duplicated: items recorded as absolute paths are only manifest
-    entries, symlinks are preserved as symlinks, and library-internal regular files
-    are hardlinked where the filesystem allows.
-    """
     src = Path(library_path).resolve()
     dest = Path(dest_path).resolve()
     assert src.is_dir(), f"library [{src}] does not exist"
@@ -85,7 +68,7 @@ def fork_library(
     assert not dest.exists() or not any(dest.iterdir()), (
         f"fork destination [{dest}] already exists and is not empty"
     )
-    load_data_lib(src)  # fail before copying if the source is not a valid library
+    load_data_lib(src)
     shutil.copytree(src, dest, symlinks=True, copy_function=_link_or_copy, dirs_exist_ok=True)
 
     lib = DataInstanceLibrary.Load(dest)
@@ -105,19 +88,6 @@ def copy_library(
     dest_path: str,
     type_library_paths: list[str] | None = None,
 ) -> dict:
-    """Copy a library verbatim: same paths, same ids, same key.
-
-    The counterpart to `fork_library`, which exists to *break* identity. This
-    one keeps it, and that is the whole point of the operation: a deferred path
-    is minted once and identity follows the path, so a workflow started from a
-    template inherits its rows rather than re-adding them -- re-adding would
-    mint new paths and plan to a different task key than the one the template's
-    own build asserted.
-
-    `type_library_paths` are attached on top, skipping namespaces the copy
-    already has. A template ships only the type libraries it used; whoever
-    edits the copy needs the rest offered to them.
-    """
     src = Path(library_path).resolve()
     dest = Path(dest_path).resolve()
     assert src.is_dir(), f"library [{src}] does not exist"
@@ -125,7 +95,7 @@ def copy_library(
     assert not dest.exists() or not any(dest.iterdir()), (
         f"copy destination [{dest}] already exists and is not empty"
     )
-    load_data_lib(src)  # fail before copying if the source is not a valid library
+    load_data_lib(src)
     shutil.copytree(src, dest, symlinks=True, copy_function=_link_or_copy, dirs_exist_ok=True)
 
     lib = DataInstanceLibrary.Load(dest)
@@ -145,16 +115,6 @@ def materialize_template(
     dest_path: str,
     type_library_paths: list[str] | None = None,
 ) -> dict:
-    """Build a real library from a template's inline input library.
-
-    The counterpart to `copy_library` for a template stored the new way: there
-    is no directory to `shutil.copytree`, only the data `Spec.Pack` embedded in
-    `spec.yml` (see `DataInstanceLibrary.PackInline`). Every id and path in it
-    is exactly what the template's own build asserted a solve against -- this
-    rebuilds rather than copies, but nothing here mints a new one, so a
-    workflow started from a template still shares its task key rather than
-    being re-added row by row.
-    """
     dest = Path(dest_path).resolve()
     assert not dest.exists() or not any(dest.iterdir()), (
         f"copy destination [{dest}] already exists and is not empty"
@@ -174,24 +134,6 @@ def derive_template_library(
     library_path: str,
     type_library_paths: list[str] | None = None,
 ) -> DataInstanceLibrary:
-    """A deferred copy of a live library: same types and item graph, no paths.
-
-    The counterpart to `materialize_template`, which turns a template's
-    deferred library into a real one. This turns a real one back into a
-    deferred one -- what "save as template" strips is exactly the paths and
-    file content, not the shape: each item keeps its type and its parents, and
-    each parent link is re-pointed at that parent's own freshly minted
-    deferred path, so the derived library solves to the same DAG the source
-    workflow's recipe did.
-
-    A parent recorded against a *different* library than `library_path` itself
-    (rare -- e.g. a resource library entry) is dropped rather than chased: it
-    is out of scope for a first cut of this and a template missing one such
-    edge still solves, just without that one piece of shared lineage. Found by
-    whether the parent's own path is one of this library's items -- not by
-    comparing library keys, which are content-addressed and so are not stable
-    across a save/load round trip the way a path is.
-    """
     src = load_data_lib(library_path)
     dest = Path(tempfile.mkdtemp(prefix="msm-save-template-"))
     lib = DataInstanceLibrary(dest)
@@ -236,16 +178,6 @@ def attach_type_library(
 
 
 def resync_type_libraries(library_path: str, type_library_paths: list[str]) -> dict:
-    """Bring an existing library's type namespaces up to date with the files on disk.
-
-    `create_library`/`materialize_template` add every namespace with
-    `on_exist="skip"`, which is right for a brand-new library -- nothing is
-    there yet to collide with. A library that has been living for a while has
-    the opposite problem: a namespace it already knows (say `ncbi`) may have
-    gained a new type in the standard library since, and `skip` would leave
-    it exactly as stale as it found it. This overwrites instead, one load and
-    one save for every namespace rather than one round trip per namespace.
-    """
     lib = load_data_lib(library_path)
     for tp in type_library_paths:
         lib.AddTypeLibrary(Path(tp).resolve(), on_exist="overwrite")
@@ -254,14 +186,6 @@ def resync_type_libraries(library_path: str, type_library_paths: list[str]) -> d
 
 
 def _lib_for(library_path, lib: DataInstanceLibrary | None):
-    """The library to work on: one handed in, or one loaded for this call.
-
-    Every mutation below loads and saves for itself, which is right for a CLI
-    verb and wrong for a caller making a hundred of them in a row -- both slow
-    and a window in which a failure leaves the library half built. `lib=` is how
-    such a caller (`ops.inputs.sync`) keeps one load and one save while the
-    rules those functions encode stay in one place.
-    """
     return load_data_lib(library_path) if lib is None else lib
 
 
@@ -273,12 +197,6 @@ def add_item(
     save: bool = True,
     lib: DataInstanceLibrary | None = None,
 ) -> dict:
-    """Register a path, or `DEFERRED` for one that is not known yet.
-
-    The constant is accepted by its rendered spelling as well as by identity, so
-    a caller on the far side of yaml or a url can say the same thing this one's
-    caller says without a second vocabulary for it.
-    """
     lib = _lib_for(library_path, lib)
     parent_paths = [Path(p) for p in (parents or [])]
     path = DEFERRED if host_path is DEFERRED or host_path == str(DEFERRED) else Path(host_path)
@@ -306,12 +224,6 @@ def add_value(
 
 
 def _ancestors_of(lib, start: Path) -> set[Path]:
-    """Every path `start` descends from, walked rather than read off one record.
-
-    `Load` expands the chain, so `lib.parents[p]` is usually already the closure
-    -- but a library built up in memory has only the links that were stated, and
-    the check below has to be right in both cases.
-    """
     seen: set[Path] = set()
     queue = [start]
     while queue:
@@ -324,14 +236,6 @@ def _ancestors_of(lib, start: Path) -> set[Path]:
 
 
 def _assert_acyclic(lib, item: Path, parent_paths: list[str]):
-    """Refuse a lineage that would close a loop.
-
-    The browser filters these out of the menu, but this route is reachable
-    without it, and a cycle is not something the library notices: `AsSamples`
-    walks ancestors *and* their descendants, so a loop makes every mask the
-    whole library, and the expand-on-load / collapse-on-save pair is not
-    defined over one.
-    """
     for raw in parent_paths:
         p = Path(raw)
         assert p != item, f"[{item}] cannot descend from itself"
@@ -362,12 +266,6 @@ def replace_item_parents(
     save: bool = True,
     lib: DataInstanceLibrary | None = None,
 ) -> dict:
-    """The same, but as a replacement: what is not listed is unlinked.
-
-    `set_item_parents` can only ever add, so it cannot express "this no longer
-    descends from that" -- and an editable lineage has to. An empty list clears
-    an item's parents outright.
-    """
     lib = _lib_for(library_path, lib)
     item = Path(item_path)
     assert item in lib.manifest, f"not found [{item_path}]"
@@ -404,18 +302,10 @@ def retype_item(
     save: bool = True,
     lib: DataInstanceLibrary | None = None,
 ) -> dict:
-    """Say the item is a different type, without moving anything.
-
-    Nothing about the row's identity on disk changes: a type is a label on a
-    manifest entry, so this is a manifest edit and the filesystem is never
-    touched. The children keep their lineage -- but the parent *record* each one
-    carries names its parent's type, so those are rebuilt through the one place
-    that knows how to build them, or the old name would be written back out.
-    """
     lib = _lib_for(library_path, lib)
     item = Path(item_path)
     assert item in lib.manifest, f"not found [{item_path}]"
-    lib.GetType(dtype)  # refuse an unknown type before the manifest is touched
+    lib.GetType(dtype)
     was = lib.manifest[item]
     lib.manifest[item] = dtype
     lib._invalidate_endpoint_cache()
@@ -432,15 +322,6 @@ def retype_item(
 
 
 def _relink_children(lib: DataInstanceLibrary, old: Path, new: Path) -> int:
-    """Rebuild the parent record of everything that descends from `old`.
-
-    A parent is stored as metadata carrying the parent's path *and* type, so a
-    re-keyed or retyped parent leaves its children describing something the
-    manifest no longer holds. `Rename` does not chase those down either, which
-    is a latent bug rather than a licence to repeat it. Rebuilding through
-    `SetParentsOf` keeps the record built in one place instead of reaching into
-    the metadata objects.
-    """
     affected = [
         (child, [pm.path for pm in plist])
         for child, plist in lib.parents.items()
@@ -458,25 +339,12 @@ def repoint_item(
     save: bool = True,
     lib: DataInstanceLibrary | None = None,
 ) -> dict:
-    """Point the row at a different path, and be honest about the difference.
-
-    An absolute entry is a *pointer* to the user's own file: re-pointing it is a
-    manifest edit and must not go near the filesystem -- neither the file at the
-    old path nor the one at the new path is ours to move. A relative entry is
-    library-owned (that is what `AddValue` writes), so there the file genuinely
-    is the library's and moving it is the correct behaviour: that case delegates
-    to `Rename`, which is written for it.
-
-    Identity is derived from path and type, so either way the row's instance_id
-    changes and anything downstream of it loses cache reuse.
-    """
     lib = _lib_for(library_path, lib)
     old, new = Path(item_path), Path(new_path)
     assert old in lib.manifest, f"not found [{item_path}]"
     if old == new:
         return {"library": str(library_path), "old": item_path, "new": new_path,
                 "moved": False, "relinked": 0}
-    # a collision is a refusal with a message, not an assertion out of AddItem
     assert new not in lib.manifest, f"[{new}] is already registered here"
     assert old.is_absolute() == new.is_absolute(), (
         f"[{old}] is {'an absolute' if old.is_absolute() else 'a library-relative'} path, "
@@ -485,7 +353,6 @@ def repoint_item(
 
     moved = not old.is_absolute()
     if moved:
-        # library-owned: the file is the library's and the rename is a real move
         lib.Rename(old, new, _save=False)
     else:
         lib.manifest[new] = lib.manifest[old]
@@ -493,13 +360,6 @@ def repoint_item(
         if old in lib.parents:
             lib.parents[new] = lib.parents[old]
             del lib.parents[old]
-        # ...and the identity entry with it. Left behind, the new path has none
-        # at all and `_resolve_instance_meta` falls through to the legacy
-        # `(path, dtype, library key)` derivation -- and the library key is a
-        # hash of the whole packed manifest, so that one row's id would then
-        # move every time any *other* row changed. `Rename` (the branch above)
-        # does this through `_migrate_instance_meta`; this branch has to as
-        # well. Filling in a deferred path is exactly this branch.
         lib._migrate_instance_meta(old, new)
         lib._invalidate_endpoint_cache()
     relinked = _relink_children(lib, old, new)
@@ -581,18 +441,6 @@ def import_library(
     on_exist: str = "skip",
     as_image: bool = True,
 ) -> dict:
-    """S7 — Import a library across workspaces, preserving cache identity.
-
-    Transfers the library at `src_uri` into `dest_path` via LoadFrom, then
-    upserts every imported `origin in {"lineage", "imported"}` DataInstance
-    into the destination `task_cache/` as `origin="imported"` rows. Leaf
-    instances are NOT upserted — their identity is unique-per-AddItem and
-    not cache-meaningful. The upserted rows point at the library's files
-    on disk so downstream workflows resolve them as cache hits.
-
-    `cache_root` defaults to `<dest_path>/../task_cache/` to match the
-    agent-home convention; pass an explicit path to override.
-    """
     src = Source.Parse(src_uri)
     dest = Path(dest_path).resolve()
     lib = DataInstanceLibrary.LoadFrom(src, dest, as_image, on_exist)
@@ -629,8 +477,6 @@ def import_library(
             try:
                 key = bytes.fromhex(instance_id_hex)
             except ValueError:
-                # Legacy (non-multihash) id; keep the library entry but
-                # skip the cache row since the key shape doesn't match.
                 continue
             lineage_payload = meta.get("lineage_payload") or b""
             output_dir = imported_shard_dir(cache_root_path, instance_id_hex)
@@ -684,31 +530,6 @@ def show_item_lineage(
     render: bool = True,
     lib: DataInstanceLibrary | None = None,
 ) -> dict:
-    """Describe an item: declared identity, manifest parents, and lineage tree.
-
-    Two different notions of ancestry meet here and they are not
-    interchangeable. `parents` is the *manifest* relationship a user
-    declares and edits -- it is what the GUI's parent picker writes and
-    what its orphan detection reads, and it exists for an input library
-    that has never been run. `rendered` is the *trace-derived* ancestor
-    graph, which only exists for workflow-produced instances and needs a
-    trace index the input library does not have. Returning only the
-    second empties every consumer of the first with no error to notice,
-    which is exactly what happened once.
-
-    S7: the trace walk goes through `get_lineage_of` and renders as JSON
-    or mermaid. `of=PATH` writes to disk; otherwise the rendered text
-    comes back in the dict so the CLI can print it. `include_logs`
-    attaches per-invocation `.command.*` paths via `get_logs_of`.
-
-    `render=False` returns the cheap half only. List endpoints map this
-    over every item in a library and must not pay for a trace walk per
-    item.
-
-    `lib`, when given, is used instead of reloading `library_path` from
-    disk -- a caller mapping this over every item in a library already
-    has it loaded once and must not pay for a reload per item.
-    """
     lib = _lib_for(library_path, lib)
     p = Path(item_path)
     inst = lib.Get(p)

@@ -1,8 +1,3 @@
-"""Structural properties of the rails layout.
-
-These assert on the layout core rather than on rendered output, so they stay
-meaningful if the glyphs or the pixel grid change.
-"""
 import random
 
 import pytest
@@ -20,9 +15,6 @@ def _rows(lay):
 
 def _lane(lay, name):
     return lay[name].lane
-
-
-# --- shape ------------------------------------------------------------------
 
 
 def test_empty_graph():
@@ -56,14 +48,12 @@ def test_join_is_below_every_parent():
 
 
 def test_lane_is_reused_after_a_branch_closes():
-    # two branches that never overlap in time should share one lane
     lay = _lay([("root", "x"), ("x", "mid"), ("mid", "y"), ("y", "end"),
                 ("root", "mid"), ("mid", "end")])
     assert lay.width == 2
 
 
 def test_leaf_child_is_emitted_directly_under_its_parent():
-    # a product nobody consumes must not trail a rail down the whole drawing
     lay = _lay([("t", "dead_end"), ("t", "used"), ("used", "next"), ("next", "last")])
     rows = _rows(lay)
     assert rows.index("dead_end") == rows.index("t") + 1
@@ -85,9 +75,6 @@ def test_spine_is_the_heaviest_path_and_sits_in_lane_zero():
 def test_depth_is_longest_path_not_shortest():
     lay = _lay([("a", "b"), ("b", "c"), ("a", "c")])
     assert lay["c"].depth == 2
-
-
-# --- invariants the backends rely on ----------------------------------------
 
 
 def test_no_node_sits_in_a_lane_an_edge_is_spanning():
@@ -116,8 +103,6 @@ def test_edges_run_downward():
         assert lay[e.src].row < lay[e.dst].row
 
 
-# --- determinism ------------------------------------------------------------
-
 _SHUFFLE_EDGES = [
     ("reads", "qc"), ("reads", "stats"), ("qc", "assembly"),
     ("assembly", "bin_a"), ("assembly", "bin_b"), ("assembly", "genes"),
@@ -145,17 +130,9 @@ def test_layout_ignores_the_order_nodes_were_declared():
 
 
 def test_step_numbers_sort_numerically():
-    # "10 x" must not tie-break ahead of "2 x"
     lay = _lay([("r", "2 b"), ("r", "10 a")])
     assert _rows(lay) == ["r", "2 b", "10 a"]
 
-
-# --- repeating motifs -------------------------------------------------------
-#
-# The graph below is the shape the metagenomics plan has and the reason this
-# pass exists: one input fanning out into three identical blocks, each block
-# taking a shared database and writing into a shared output. The products are
-# named per instance, so nothing here matches by name.
 
 _TAGS = ("a", "b", "c")
 _REPEATS = (
@@ -179,7 +156,6 @@ def test_a_repeated_block_is_found_by_shape_not_by_name():
     lay = _lay(_REPEATS, _KINDS)
     heads = {m.heads for m in repeat_motifs(lay)}
     assert ("0 run", "1 run", "2 run") in heads
-    # ... and the class is the whole block, not each of its parts
     block = next(m for m in repeat_motifs(lay) if m.heads[0] == "0 run").blocks[0]
     assert block == frozenset(
         {"0 run", "out::a_bins", "out::a_table", "3 score", "6 classify"}
@@ -235,22 +211,15 @@ def test_a_graph_with_nothing_repeated_is_congruent_by_definition():
 
 
 def test_two_nodes_of_a_kind_are_not_a_class_on_their_own():
-    # every leaf of a kind has the same shape; a class that owns nothing
-    # arranges nothing, and treating those as motifs would colour the page
     lay = _lay([("r", "x"), ("r", "y")])
     assert repeat_motifs(lay) == ()
 
 
 def test_an_ancestor_and_its_descendant_are_never_two_instances():
-    # a chain of identical steps has one shape at every node, but the blocks
-    # nest, so no two of them can be placed independently
     lay = _lay([("a", "b"), ("b", "c"), ("c", "d"), ("d", "e")])
     assert all(
         not (set(m.blocks[0]) & set(m.blocks[1])) for m in repeat_motifs(lay)
     )
-
-
-# --- degenerate input -------------------------------------------------------
 
 
 def test_cycle_is_broken_and_flagged():
@@ -295,11 +264,7 @@ def test_wide_fan_out_stays_consistent(size):
     assert lay.width <= size + 1
 
 
-# --- rails that leave their corridor -----------------------------------------
-
-
 def _detours(lay):
-    """Edges given a lane outside the span between their endpoints' lanes."""
     return [
         (e.src, e.dst)
         for e in lay.edges
@@ -313,15 +278,6 @@ def _detours(lay):
 
 
 def test_a_rail_between_neighbouring_rows_does_not_take_a_lane_of_its_own():
-    """The amplicon library, which is two tools sharing one input.
-
-    Its `asv_seqs -> classify` edge joins two rows one apart, in lanes 1 and 0 —
-    and was drawn out to lane 2 and straight back, which reads as the drawing
-    having lost the line. The repack already knew better (a rail spanning no row
-    takes its target's lane); it lost to the greedy pass, which tied it on
-    congruence, width *and* crossings, because a rail that leaves and returns
-    crosses nothing. `detours` is the tie-break that separates them.
-    """
     edges = [
         ("asv_seqs", "map_contigs"),
         ("assembly", "map_contigs"),
@@ -336,10 +292,6 @@ def test_a_rail_between_neighbouring_rows_does_not_take_a_lane_of_its_own():
 
 
 def test_a_fan_out_is_allowed_every_lane_it_needs():
-    """The other side of it: seven children off one parent are seven parallel
-    rails, and six of them have to be outside the corridor by construction.
-    `detours` is a tie-break precisely so it never bids against that.
-    """
     edges = [("root", f"leaf_{i}") for i in range(7)]
     edges += [(f"leaf_{i}", "sink") for i in range(7)]
     lay = _lay(edges)
@@ -347,21 +299,13 @@ def test_a_fan_out_is_allowed_every_lane_it_needs():
     assert measure(lay).detours == len(_detours(lay))
 
 
-# --- rows the caller brought -------------------------------------------------
-
-
 def test_a_caller_may_fix_the_rows():
-    """A form whose fields are the nodes lays them out itself; the engine
-    choosing its own order would draw rails across the markers."""
     mine = ["c", "b", "a", "d"]
     lay = layout({n: None for n in mine}, [("a", "d"), ("b", "d")], order=mine)
     assert _rows(lay) == mine
 
 
 def test_an_order_that_would_reverse_an_edge_is_declined():
-    """Ignored rather than raised on -- the caller is a wire payload and may be
-    one edit stale -- but never honoured: every backend is written against
-    every edge pointing downward."""
     edges = [("a", "b")]
     assert _rows(layout({}, edges, order=["b", "a"])) == ["a", "b"]
     assert _rows(layout({}, edges, order=["a"])) == ["a", "b"]
@@ -369,11 +313,6 @@ def test_an_order_that_would_reverse_an_edge_is_declined():
 
 
 def test_given_rows_still_keep_the_rails_off_the_markers():
-    """Fixing the rows changes only which row a node is in. Every invariant the
-    backends are written against still has to hold, and the one that a caller's
-    order could plausibly break is the one that says a vertical rail never runs
-    through a node cell.
-    """
     order = ["a", "b", "c", "d", "e"]
     edges = [("a", "b"), ("a", "c"), ("b", "c"), ("a", "d"), ("a", "e"), ("d", "e")]
     lay = layout({n: None for n in order}, edges, order)

@@ -1,8 +1,4 @@
 #!/usr/bin/env python3
-"""
-Run the downloadInterProScanDB transform via the metasmith agent,
-then copy the resulting data to tests/test_data/interproscan_data/.
-"""
 import json
 import shutil
 import sys
@@ -29,20 +25,17 @@ TEST_DATA_DIR = TESTS_DIR / "test_data"
 TEST_MSM_HOME = TESTS_DIR / "test_msm_home"
 OUTPUT_DIR = TEST_DATA_DIR / "interproscan_data"
 
-# Set up agent
 agent_home = Source.FromLocal(TEST_MSM_HOME)
 smith = Agent(home=agent_home, runtime=Runtime.DOCKER)
 if not (TEST_MSM_HOME / "msm").exists():
     smith.Deploy()
 
-# Load logistics transforms
 logistics_transforms = [
     TransformInstanceLibrary.Load(MLIB / "transforms/logistics"),
 ]
 
 base_resources = [DataInstanceLibrary.Load(MLIB / "resources/env")]
 
-# Generate workflow
 import tempfile
 tmp_dir = Path(tempfile.mkdtemp())
 targets = TargetBuilder()
@@ -85,7 +78,6 @@ smith.CheckWorkflow(task)
 results = DataInstanceLibrary.Load(results_path)
 print(f"Workflow complete. Results at: {results_path}")
 
-# Copy interproscan_data to test_data/
 for path, type_name, endpoint in results.Iterate():
     if "interproscan_data" in type_name:
         if not path.is_absolute():
@@ -93,7 +85,6 @@ for path, type_name, endpoint in results.Iterate():
         else:
             full_path = path
         if full_path.exists():
-            # Remove old data and copy new
             if OUTPUT_DIR.exists():
                 shutil.rmtree(OUTPUT_DIR)
             shutil.copytree(full_path, OUTPUT_DIR)

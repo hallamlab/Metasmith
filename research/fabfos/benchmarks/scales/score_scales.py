@@ -56,8 +56,6 @@ sys.path.insert(0, str(ROOT / "research/fabfos/benchmarks/eydallin"))
 
 import bake_pairs                                                      # noqa: E402
 from ecspr.model.build import load_pairs                               # noqa: E402
-# The statistical kernel is shared with the eydallin analysis on purpose: two benchmarks
-# scoring the same kind of sweep must not be able to drift into two definitions of AUC.
 from analyse_aska_sweep import auc, precision_at_k, resample           # noqa: E402
 
 SWEEPS = ROOT / "data/fabfos/runs/scales/ecspr"
@@ -69,12 +67,6 @@ KS = (10, 25, 50, 100)
 
 
 def positive_sets(df: pd.DataFrame, census: pd.DataFrame) -> dict[str, set[str]]:
-    """The three nested definitions, keyed on `gene_norm`.
-
-    The confirmed set is matched on b-number: Table 1 prints current symbols and the 2012
-    sheet prints 2005 ones, so a name match loses arnB/arnC, which is the pair clone 7 was
-    actually selected on.
-    """
     ph = dict(zip(df.gene_norm, df.phenotype))
     tol15 = {g for g, p in ph.items() if p in ("tolerant_both", "tolerant_15")}
     tol30 = {g for g, p in ph.items() if p in ("tolerant_both", "tolerant_30")}
@@ -90,11 +82,6 @@ def positive_sets(df: pd.DataFrame, census: pd.DataFrame) -> dict[str, set[str]]
                       | census.gene_norm.isin(nm)].gene_norm)
     if len(conf) != len(bn):
         raise SystemExit(f"confirmed set: {len(bn)} b-numbers matched {len(conf)} genes")
-    # THE TWO THRESHOLDS ARE NOT NESTED, and the plan's "three nested definitions" was
-    # wrong about this data. 79 genes clear fitness 1 at BOTH concentrations, 79 at 15 g/L
-    # only and 408 at 30 g/L only, so neither set contains the other -- a gene can enrich
-    # under mild ethanol and not under severe, which is a real property of the screen and
-    # not a bookkeeping slip. The paper's own counts are what gets asserted instead.
     if (len(tol15), len(tol30)) != (158, 487):
         raise SystemExit(f"positive counts {len(tol15)}/{len(tol30)} do not reproduce the "
                          f"paper's 158/487; the phenotype column has changed")
@@ -102,11 +89,6 @@ def positive_sets(df: pd.DataFrame, census: pd.DataFrame) -> dict[str, set[str]]
 
 
 def module_genes(sub: pd.DataFrame, sink: str, incident: dict[str, set[str]]) -> set[str]:
-    """Genes carrying a reaction incident to this axis's sink -- the tautology set.
-
-    Mechanical by construction: read off the atom-pair table, never hand-listed, so it
-    cannot be widened for an axis whose control comes out badly.
-    """
     rx = incident.get(sink, set())
     out = set()
     for g, r in zip(sub.gene_norm, sub.rxns):
@@ -116,7 +98,6 @@ def module_genes(sub: pd.DataFrame, sink: str, incident: dict[str, set[str]]) ->
 
 
 def analyse(df: pd.DataFrame, label: str, log) -> dict:
-    """Reach, then AUCs beside their size control, then precision at the top."""
     out = {"label": label, "n": len(df), "n_positive": int(df.is_positive.sum())}
     mapped = df.n_rxn > 0
 
@@ -165,9 +146,6 @@ def main() -> int:
     sweep = SWEEPS / f"{tag}.tsv"
     if not sweep.exists():
         raise SystemExit(f"{sweep.relative_to(ROOT)} does not exist -- run sweep_scales.py")
-    # round_trip, not the default parser: see the note in sweep_scales.py -- pandas' fast
-    # float reader is off by an ULP, which cannot move a rank but makes a reproducibility
-    # claim false by accident.
     df = pd.read_csv(sweep, sep="\t", float_precision="round_trip")
     census = pd.read_csv(GPR / "gene_census.tsv", sep="\t", dtype=str).fillna("")
     base = json.loads((SWEEPS / f"{tag}.BUILD.json").read_text())

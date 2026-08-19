@@ -1,14 +1,3 @@
-"""
-End-to-end tests for pangenome analysis transforms.
-
-Tests for: ppanggolin
-
-These tests verify that pangenome workflows can be:
-1. Generated (workflow planning)
-2. Staged to the agent
-3. Executed via local Docker
-4. Produce valid pangenome analysis outputs
-"""
 import pytest
 import time
 from pathlib import Path
@@ -30,7 +19,6 @@ from conftest import (
 
 @pytest.fixture(scope="module")
 def pangenome_transforms(mlib):
-    """Load pangenome transforms."""
     return [
         TransformInstanceLibrary.Load(mlib / "transforms/pangenome"),
     ]
@@ -38,10 +26,8 @@ def pangenome_transforms(mlib):
 
 @pytest.fixture
 def pangenome_input(tmp_inputs, test_data_dir):
-    """Create input library with GBK files for pangenome analysis."""
     inputs = tmp_inputs(["sequences.yml", "pangenome.yml"])
 
-    # Pangenome analysis requires multiple genome annotations (GBK files)
     gbk_files = list(test_data_dir.glob("*.gbk"))
     if len(gbk_files) < 2:
         pytest.skip("Pangenome test requires at least 2 GBK files in test_data")
@@ -57,17 +43,13 @@ def pangenome_input(tmp_inputs, test_data_dir):
 
 @pytest.fixture
 def pangenome_resources(mlib, base_resources):
-    """Load pangenome-specific resources."""
     return list(base_resources)
 
 
 class TestPangenomeWorkflowGeneration:
-    """Tests for workflow generation (planning only)."""
-
     def test_can_plan_ppanggolin_workflow(
         self, agent, pangenome_resources, pangenome_transforms, pangenome_input
     ):
-        """Verify workflow generation for PPanGGOLiN."""
         targets = TargetBuilder()
         targets.Add("pangenome::gene_presence_absence")
 
@@ -84,7 +66,6 @@ class TestPangenomeWorkflowGeneration:
     def test_can_plan_pangenome_stats_workflow(
         self, agent, pangenome_resources, pangenome_transforms, pangenome_input
     ):
-        """Verify workflow generation for pangenome statistics."""
         targets = TargetBuilder()
         targets.Add("pangenome::pangenome_stats")
 
@@ -95,19 +76,15 @@ class TestPangenomeWorkflowGeneration:
             targets=targets,
         )
 
-        # Skip if target not found
         if not task.ok:
             pytest.skip("Pangenome stats target may not be available")
 
 
 @pytest.mark.slow
 class TestPangenomeWorkflowExecution:
-    """Full E2E tests that execute workflows via Docker."""
-
     def test_ppanggolin_e2e(
         self, agent, pangenome_resources, pangenome_transforms, pangenome_input
     ):
-        """Full E2E test: stage, run PPanGGOLiN, verify outputs."""
         targets = TargetBuilder()
         targets.Add("pangenome::gene_presence_absence")
 
@@ -138,7 +115,6 @@ class TestPangenomeWorkflowExecution:
                 found_matrix = True
                 if not path.is_absolute():
                     full_path = results_path / path
-                    # Gene presence/absence is typically a TSV matrix
                     assert verify_tsv_output(full_path), f"Invalid matrix: {full_path}"
 
         assert found_matrix, "No gene presence/absence matrix found"

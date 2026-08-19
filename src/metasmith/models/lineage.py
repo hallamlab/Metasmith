@@ -1,48 +1,3 @@
-"""Lineage schema — canonical event log + telemetry value types.
-
-This module owns the single shape every trace.jsonl row takes
-(`InvocationEvent`) and the value types the telemetry API hands to
-users (`LineageNode`, `LogBundle`). Reading it tells you exactly what
-the on-disk event log promises and what the public API returns.
-
-Wire vs. post-facto identity
-----------------------------
-- `slot_id` — minted at Generate, identifies a production *channel*
-  (per `(transform, slot, branch_idx)`). Travels on the Nextflow
-  channel via `LinPayload`. Routes inter-task data flow.
-- `file_instance_id` — minted post-facto in `CollectResults`, identifies
-  one emitted *file* (deterministic over `slot_id || relative_path`).
-  Does NOT travel on the wire. Surfaced via the user-facing library.
-
-`LinPayload` (slot-level) is the wire format. `InvocationEvent.produces`
-carries both ids per file (event-stream view of the same fact).
-
-Per-output ancestry
--------------------
-`InvocationEvent.consumes` records the invocation's inputs as a single
-`dep_key -> [instance_id]` map — shared by *every* output of that
-invocation, so it cannot say which output descends from which input.
-`ProducedFile.parents` refines this to the per-file truth: the input
-`instance_id`s *that* file descends from. This is the single point of
-provenance the telemetry walk and (next session) the cache-walk read.
-When `parents` is empty the fact wasn't captured (legacy row, or an
-emission route that hasn't recorded runtime ancestry) and consumers
-fall back to the event-level `consumes`.
-
-trace.jsonl layout
-------------------
-A trace.jsonl is a sequence of newline-delimited JSON objects. The
-first line of every fresh file is a `SessionStart` sentinel; every
-subsequent line is an `InvocationEvent`. On compile, the old file is
-rotated to `trace.<session_id>.jsonl` (session_id from the cache sqlite
-counter), never truncated. The telemetry API unions across rotated
-siblings on demand.
-
-Legacy (pre-v2) rows lacking `schema_version` are tolerated:
-`InvocationEvent.from_jsonl` returns None and logs a one-line warn so
-old `msm status <run_dir>` invocations don't blow up.
-"""
-
 from __future__ import annotations
 
 from dataclasses import dataclass, field, asdict
@@ -57,7 +12,6 @@ from ..logging import Log
 INVOCATION_EVENT_SCHEMA_VERSION = 2
 
 
-# Closed Literal aliases — used by docstrings + dataclass fields.
 InvocationStatus = Literal["hit", "miss", "promoted", "fail"]
 TimeSource = Literal["orchestrator", "worker"]
 GroupStrategy = Literal["groupTuple", "collect", "flat"]
@@ -72,14 +26,7 @@ LogStatus = Literal[
 ]
 
 
-# ---------------------------------------------------------------------------
-# Exceptions
-# ---------------------------------------------------------------------------
-
-
 class TraceCorruptError(Exception):
-    """Trace file has a malformed JSON line. Reports the byte offset."""
-
     def __init__(self, byte_offset: int, reason: str = ""):
         self.byte_offset = byte_offset
         self.reason = reason
@@ -87,20 +34,12 @@ class TraceCorruptError(Exception):
 
 
 class TraceAlreadyAttached(Exception):
-    """attach_trace called twice with different paths."""
-
-
+    pass
 class InstanceNotFound(KeyError):
-    """A `get_lineage_of(...)` lookup didn't resolve to a known instance."""
-
-
+    pass
 class InvocationNotFound(KeyError):
-    """A `get_invocation(...)` lookup didn't find the named task_hash."""
-
-
+    pass
 class MissingInstanceError(KeyError):
-    """Bootstrap couldn't resolve a required input instance_id."""
-
     def __init__(self, instance_id: Optional[str], dep_key: str):
         self.instance_id = instance_id
         self.dep_key = dep_key
@@ -110,8 +49,6 @@ class MissingInstanceError(KeyError):
 
 
 class ArityMismatchError(ValueError):
-    """Bootstrap saw a different number of resolved files than `sar` expected."""
-
     def __init__(self, expected: int, actual: int, dep_key: str):
         self.expected = expected
         self.actual = actual
@@ -121,36 +58,8 @@ class ArityMismatchError(ValueError):
         )
 
 
-# ---------------------------------------------------------------------------
-# Lin payload — wire format on the Nextflow channel
-# ---------------------------------------------------------------------------
-
-
 @dataclass(frozen=True)
 class LinPayload:
-    """Slot-level lineage tag carried on Nextflow channel values.
-
-    The on-wire shape is `{"v": LIN_PAYLOAD_VERSION, "entries": [<map>, ...]}`
-    — ONE map per batch member, mirroring the list of indexes
-    `Orchestrator._collateBatch` builds. A `batch_size=1` step carries a
-    length-1 list; a `batch_size=N` step carries N, and bootstrap turns each
-    into one `context.AsBatch()` member. Carrying a single map (wire v2)
-    silently discarded every member after the first, so a batched transform
-    processed one item and staged the rest unread.
-
-    Each map is `slot_name -> <value>`, where the value is either a list of
-    lineage-index hashes (for normal slots) or a `list[list[str]]` of file
-    groups for the special "FILES" key Orchestrator injects at task entry.
-    `slot_name` keys are the channel-label hashes (`prod_name`) emitted by
-    `Orchestrator.groovy`'s namespace — bootstrap looks up actual
-    `DataInstance` objects via the `din` line of `workflow.step_N.meta`, not
-    via the `lin` payload directly. The payload is the lineage *trace*
-    through the DAG, not the input-id list.
-
-    File-level identity (`file_instance_id`) is *not* on the wire — it
-    is minted post-facto by `CollectResults` via `mint_file_id`.
-    """
-
     v: int
     entries: list[dict[str, Any]] = field(default_factory=list)
 
@@ -158,12 +67,6 @@ class LinPayload:
     FILES_KEY: ClassVar[str] = "FILES"
     PROV_KEY: ClassVar[str] = "PROV"
 
-    # Keys the Orchestrator injects at task entry and strips at task exit.
-    # Neither is lineage: their values are not ancestry-hash lists, so anything
-    # that treats an entry as `{slot: [hash, ...]}` has to exclude them. That
-    # includes the cache -- `promote` captures `lineage_index` into a shard
-    # manifest and the cache-hit path renders it back into a generated `.nf`,
-    # where a nested value would stringify into silent garbage.
     RESERVED_KEYS: ClassVar[frozenset[str]] = frozenset({"FILES", "PROV"})
 
     def Pack(self) -> dict:
@@ -175,9 +78,6 @@ class LinPayload:
     @classmethod
     def Unpack(cls, raw: dict) -> "LinPayload":
         if not isinstance(raw, dict):
-            # A bare list is the pre-envelope shape. Report it as a wire
-            # error rather than an AttributeError three frames deep, so the
-            # caller's `except ValueError` actually catches it.
             raise ValueError(
                 f"lin payload must be a {{v, entries}} envelope, got "
                 f"{type(raw).__name__}"
@@ -205,25 +105,12 @@ class LinPayload:
         return cls.Unpack(json.loads(raw))
 
     def file_groups(self, member: int) -> list[list[str]]:
-        """Pull the Orchestrator-injected `FILES` value for one batch member."""
         return self.entries[member].get(self.FILES_KEY, [])
 
     def provenance_groups(self, member: int) -> list[list[dict]]:
-        """Per-item index maps for one batch member, aligned 1:1 with `file_groups`.
-
-        `group()` builds this and `FILES` from one value in one closure, so
-        `provenance_groups(m)[s][i]` describes `file_groups(m)[s][i]` by
-        construction rather than by an ordering anyone has to maintain.
-
-        Empty when the producing runtime did not emit it -- the virtual runtime,
-        a direct run, the transform harness, or any step with no inputs. Absence
-        means "not captured", never "this file has no ancestors", and every
-        consumer has to treat the two differently.
-        """
         return self.entries[member].get(self.PROV_KEY, [])
 
     def lineage_index(self, member: int) -> dict[str, list[int]]:
-        """Return one batch member's entries minus the Orchestrator's own keys."""
         return {
             k: v for k, v in self.entries[member].items()
             if k not in self.RESERVED_KEYS
@@ -233,30 +120,6 @@ class LinPayload:
 
     @staticmethod
     def mint_file_id(slot_id: str, relative_path: Union[str, Path]) -> str:
-        """Deterministic `file_instance_id` per (slot, file basename).
-
-        Single point of provenance: the file identity is the md5 of the
-        composite `"{slot_id}::{basename}"`. md5 is chosen deliberately —
-        it is the one strong-ish digest the Nextflow `Orchestrator.groovy`
-        runtime can compute (`"${slot_id}::${item.name}".md5()`) to
-        reproduce the *exact same* id on the channel, collapsing the
-        on-channel and off-channel identity to one value (G1). This
-        codebase already relies on Groovy/Python md5 agreement (the
-        given-lineage seed mirrors `Long.parseLong(md5(...)[0..14],16)`),
-        so the match is proven. The result is 32 lowercase hex chars, so
-        it stays a valid instance-id token everywhere a hex id is expected
-        (e.g. `telemetry._HEX_RE`, cache-shard prefixing).
-
-        The path is normalised to its basename: promote stages outputs
-        under `<shard>/out/<name>` while the channel only ever sees the
-        basename, so basename is the one representation both sides share.
-        Basenames are unique within a slot (the canonical filename embeds
-        batch/branch/hash/dtype), so this stays collision-free per slot.
-
-        Called from `CollectResults`, `promote_run`, and mirrored by
-        `Orchestrator._post`. Re-run with a cache hit produces the same
-        id, satisfying G1's deterministic identity postcondition.
-        """
         from hashlib import md5
 
         name = Path(str(relative_path)).name
@@ -264,28 +127,8 @@ class LinPayload:
         return md5(composite.encode("utf-8")).hexdigest()
 
 
-# ---------------------------------------------------------------------------
-# InvocationEvent — canonical trace.jsonl row
-# ---------------------------------------------------------------------------
-
-
 @dataclass(frozen=True)
 class ProducedFile:
-    """One file emitted by a transform invocation.
-
-    Carries both ids: `slot_id` (wire identity) and `file_instance_id`
-    (post-facto, the id `DataInstanceLibrary` queries route through).
-
-    `parents` is this file's **per-output ancestry**: the concrete input
-    `instance_id`s *this* file descends from. It is the single-point-of-
-    provenance refinement of the event-level `InvocationEvent.consumes`
-    map (which is shared across every output of the invocation and so
-    cannot distinguish which output came from which input — the root of
-    the cartesian sibling-walk bug). An empty `parents` means "not
-    recorded" (legacy rows, or a producer that hasn't captured runtime
-    ancestry yet); consumers fall back to the event-level `consumes`.
-    """
-
     file_instance_id: str
     slot_id: str
     path: str
@@ -299,8 +142,6 @@ class ProducedFile:
             "path": self.path,
             "dtype_key": self.dtype_key,
         }
-        # additive-with-default: only emit when populated so byte-identical
-        # to pre-refactor rows whenever ancestry wasn't captured.
         if self.parents:
             d["parents"] = list(self.parents)
         return d
@@ -318,8 +159,6 @@ class ProducedFile:
 
 @dataclass(frozen=True)
 class GroupingFrame:
-    """Group-fanin context for a task whose inputs were aggregated."""
-
     strategy: GroupStrategy
     group_key: str
     sibling_instance_ids: list[str] = field(default_factory=list)
@@ -342,12 +181,6 @@ class GroupingFrame:
 
 @dataclass(frozen=True)
 class SessionStart:
-    """Sentinel row at the head of every fresh trace.jsonl.
-
-    Distinguishes session boundaries when the telemetry API unions
-    across rotated `trace.<session_id>.jsonl` siblings.
-    """
-
     session_id: int
     compile_started_at: str
     metasmith_version: str = ""
@@ -379,21 +212,6 @@ class SessionStart:
 
 @dataclass(frozen=True)
 class InvocationEvent:
-    """One transform-invocation row in trace.jsonl.
-
-    `status` covers every transition the runtime emits:
-      - "hit"      — compile-time cache probe matched; no execution.
-      - "miss"     — executed (no prior shard).
-      - "promoted" — executed AND outputs promoted to the cache shard.
-      - "fail"     — executed AND non-zero exit / partial failure.
-
-    Raises
-    ------
-    nothing on construction. `from_jsonl` returns `None` on a legacy
-    (pre-v2) row missing `schema_version`, with a one-line warn — so
-    `msm status <old_run_dir>` keeps working.
-    """
-
     task_hash: str
     transform_key: str
     status: InvocationStatus
@@ -489,26 +307,13 @@ class InvocationEvent:
 
 
 def append_invocation_event(trace_path: Path, event: InvocationEvent) -> None:
-    """Single writer for trace.jsonl. Append-only, one JSON object per line."""
     with open(trace_path, "a", encoding="utf-8") as f:
         f.write(event.to_jsonl())
         f.write("\n")
 
 
-# ---------------------------------------------------------------------------
-# User-facing value types
-# ---------------------------------------------------------------------------
-
-
 @dataclass(frozen=True)
 class LeafRecord:
-    """Provenance record for an instance with no producing transform.
-
-    Sits where `LineageNode.produced_by` would normally hold an
-    `InvocationEvent`. Distinguishes user-added leaves from leaves
-    pulled in via `metasmith data import-library`.
-    """
-
     source: LeafSource
     added_at: str = ""
     origin_workspace: Optional[str] = None
@@ -522,14 +327,6 @@ class LeafRecord:
 
 @dataclass(frozen=True)
 class LineageNode:
-    """Frozen snapshot of one node in the lineage graph.
-
-    `inputs` is always present (empty dict for leaves), keyed by the
-    transform-side dep_key. Holding a stale node is safe — the snapshot
-    is taken at attach-time; `DataInstanceLibrary.refresh()` produces a
-    new tree.
-    """
-
     instance_id: str
     dtype_key: str
     path: str
@@ -538,12 +335,6 @@ class LineageNode:
     group: Optional[GroupingFrame] = None
 
     def to_json(self, *, indent: Optional[int] = None, depth: Optional[int] = None) -> str:
-        """Serialize to JSON.
-
-        `depth` (S7): cap the walk distance from the root. None = no cap
-        (every reachable ancestor). 0 = root only with `inputs={}`. Matches
-        `to_mermaid`'s depth semantics.
-        """
         def encode(node: "LineageNode", remaining: Optional[int]) -> dict:
             pb = node.produced_by
             if isinstance(pb, InvocationEvent):
@@ -583,12 +374,6 @@ class LineageNode:
         depth: int = 2,
         include_groups: bool = True,
     ) -> str:
-        """Render the snapshot as a `graph TD` mermaid diagram.
-
-        `depth` caps the walk distance from the root; `include_groups`
-        toggles annotation of group-fanin frames on edges.
-        """
-
         lines = ["graph TD"]
         seen: set[str] = set()
 
@@ -623,13 +408,6 @@ class LineageNode:
 
 @dataclass(frozen=True)
 class LogBundle:
-    """Canonical handle to a task's `.command.*` logs.
-
-    `status` is the discriminator — callers branch on it, not on whether
-    individual path fields are None. Bare paths are never returned for
-    "logs unavailable" cases.
-    """
-
     status: LogStatus
     stdout: Optional[Path] = None
     stderr: Optional[Path] = None

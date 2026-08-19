@@ -1,4 +1,3 @@
-"""merge_bacmet — gather per-chunk DIAMOND BacMet2 BLAST6 hits (raw cat)."""
 from metasmith.python_api import *
 
 lib = TransformInstanceLibrary.ResolveParentLibrary(__file__)

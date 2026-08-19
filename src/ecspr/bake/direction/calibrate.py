@@ -1,28 +1,3 @@
-"""T3: category -> dG' calibration on the eQuilibrator MEASURED arm.
-
-For every MNXR that carries an orientation-aligned curated category (T2) and is
-eQ-routable, compute eQ dGr'0 in MNXR orientation, then bin by category and read
-off a robust location and spread. Only the measured (reactant-contribution) arm
-feeds the bins: the group-contribution arm returns identically zero for
-group-conserving chemistry (isomerases/transferases -- the algebra cancels),
-which is exactly the chemistry that dominates the REVERSIBLE bin, so a
-GC-populated calibration manufactures a fictitiously tight zero-centred bin.
-
-That restriction is necessary and not sufficient, because the cancellation can
-take the GC LABEL with it: an isomerase whose two sides share a decomposition
-comes back as a fully-measured zero with sigma at the floor. Anchors with no
-uncertainty are therefore dropped as well -- see `calibrate`.
-
-The bins are a property of the category, so calibration uses ALL MetaCyc-cap-eQ,
-not just the base-graph overlap (more data, and it rescues the small
-right-to-left bins). Per-bin n is recorded; a bin with few measured members is
-noise and must widen, not sharpen.
-
-Emits a calibration table (one row per category) and a per-reaction table (the
-measured points, for LOO at combine time and for the antisymmetry check).
-
-Runs under the `equilibrator` env.
-"""
 from __future__ import annotations
 
 import argparse
@@ -34,11 +9,8 @@ import pandas as pd
 from .refdata import load_mnxr_stoich, load_mnxm_props
 from .thermo_eq import EquilibratorMember
 
-MAD_K = 1.4826  # MAD -> robust sigma for a normal
+MAD_K = 1.4826
 
-# Below this, eQuilibrator's reported uncertainty is a floor rather than a measurement,
-# and the estimate it accompanies carries no information. See `calibrate` for why the
-# arm restriction does not already exclude these.
 SIGMA_FLOOR_KJ = 1e-4
 
 
@@ -49,19 +21,6 @@ def robust(x: np.ndarray):
 
 
 def points_from_member(curated_per_mnxr, reac_prop, eq_member):
-    """The same table as `compute_points`, READ rather than recomputed.
-
-    WHY THIS EXISTS. `compute_points` instantiates `EquilibratorMember()` and re-scores
-    every curated reaction -- recomputing, minutes later in the SAME transform, exactly
-    what the member step already wrote to `_member_eq.parquet`. Loading
-    component-contribution's 1.3 GB cache and re-running its linear algebra to reproduce
-    numbers already on disk is about half this lane's wall clock, and it adds no
-    artifact and no check: if the two disagreed, nothing here would notice.
-
-    The cheap half is kept: `load_mnxr_stoich` is a reac_prop parse, and the transport
-    and unbalanced exclusions have to come from somewhere -- a standard dGr'0 omits the
-    membrane term, and the dGr'0 of an unbalanced equation is meaningless.
-    """
     cur = pd.read_parquet(curated_per_mnxr)
     cur = cur[cur["aligned"].notna()][["mnxr", "aligned"]]
     mem = pd.read_parquet(eq_member).set_index("mnxr")
@@ -84,14 +43,10 @@ def points_from_member(curated_per_mnxr, reac_prop, eq_member):
                              uses_gc=None, reason="unbalanced", is_transport=False))
             continue
         if mnxr not in mem.index:
-            # The member ran over the universe; a curated reaction outside it is a
-            # coverage gap, and saying so is the point of recording a reason at all.
             rows.append(dict(mnxr=mnxr, category=cat, dg=None, sigma=None,
                              uses_gc=None, reason="not_in_member", is_transport=False))
             continue
         r = mem.loc[mnxr]
-        # The member writes the arm indicator as `flag`; calibration knows it as
-        # `uses_gc`. One rename, in one place, rather than two schemas.
         rows.append(dict(mnxr=mnxr, category=cat, dg=r["dg"], sigma=r["sigma"],
                          uses_gc=r["flag"], reason=r["reason"], is_transport=False))
     return pd.DataFrame(rows)
@@ -112,11 +67,11 @@ def compute_points(curated_per_mnxr, reac_prop, chem_prop, limit=None):
                              uses_gc=None, reason="no_stoich", is_transport=None))
             continue
         st, is_bal, is_tr = s
-        if is_tr:                              # membrane term standard dGr'0 omits
+        if is_tr:
             rows.append(dict(mnxr=mnxr, category=cat, dg=None, sigma=None,
                              uses_gc=None, reason="transport", is_transport=True))
             continue
-        if not is_bal:                         # dGr'0 of an unbalanced eqn is meaningless
+        if not is_bal:
             rows.append(dict(mnxr=mnxr, category=cat, dg=None, sigma=None,
                              uses_gc=None, reason="unbalanced", is_transport=False))
             continue
@@ -132,35 +87,11 @@ def compute_points(curated_per_mnxr, reac_prop, chem_prop, limit=None):
 
 
 def calibrate(points: pd.DataFrame) -> pd.DataFrame:
-    """One row per category from the MEASURED arm. tau deconvolves the eQ
-    measurement noise out of the observed spread (v = tau^2 + mean(sigma^2)).
-
-    THE ARM RESTRICTION IS NECESSARY AND WAS NOT SUFFICIENT. Excluding `uses_gc` keeps
-    out the reactions whose group-contribution estimate is a structural zero -- but it
-    only catches the ones eQuilibrator still LABELS as group-contribution. For an
-    isomerase written `1 A = 1 B`, the two sides decompose into the same groups, so the
-    GC term cancels along with its uncertainty and what comes back is dG exactly 0 with
-    sigma at the floor, flagged as fully measured. The cancellation that makes it
-    meaningless is the same cancellation that makes it look clean.
-
-    Measured on the first full run: 116 of 471 measured-arm anchors, concentrated in the
-    two STRICT bins -- 41% of LEFT-TO-RIGHT and 27% of RIGHT-TO-LEFT. They dragged both
-    medians to zero, and since these medians ARE the prior, 2,331 reactions carrying
-    MetaCyc's strictest directional call came out fully reversible while the weaker
-    PHYSIOL bins gave correct signs. Backwards, and in the flattering direction.
-
-    THE DISCRIMINATOR IS SIGMA, NOT dG. 22 of the 116 have |dG| up to 6.3 kJ/mol, so a
-    near-zero-value test misses them; and one genuine measurement reads 0 +/- 2.9, which
-    a value test would wrongly discard. An estimate with no uncertainty is the thing
-    that carries no information, whatever value it happens to take.
-    """
     ok = points[(points["reason"] == "ok") & points["dg"].notna()]
     measured = ok[ok["uses_gc"] == False]     # noqa: E712  (arm restriction)
     n_arm = len(measured)
     measured = measured[measured["sigma"] > SIGMA_FLOOR_KJ]
     if n_arm != len(measured):
-        # Named, not silent: this drops anchors, and a calibration that quietly shrinks
-        # its own evidence base is indistinguishable from one that never had it.
         print(f"[calib] dropped {n_arm - len(measured)} of {n_arm} measured-arm anchors "
               f"with sigma at the {SIGMA_FLOOR_KJ} floor (no-information estimates)",
               flush=True)

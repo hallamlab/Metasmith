@@ -61,32 +61,18 @@ from pathlib import Path
 
 import pandas as pd
 
-# The extractor is deliberately shared rather than reimplemented per member: every
-# member's correspondence has to be expressed in ONE identity, (metabolite,
-# CanonicalRankAtoms(breakTies=True)), or two mappers stop naming the same physical atom
-# the same node while every table still looks well-formed.
 from ..atom_pairs import (ELEMENTS, load_equations, parse_equation,           # noqa: F401
                           load_mnxm_smiles, canon_smiles, pairs_from_mapped,
                           load_placeholders, load_resolved, load_balance)
 from .metacyc_member import load_member as load_metacyc
 
-# --- ensemble tunables (committed before the run; would graduate to canon.py the way
-#     DIR_TAU_SHARED did once the ensemble is canonical -- provisional, so kept local). ---
-# Two transformer mappers agreeing is partly shared architectural bias, not independent
-# confirmation, so a neural-neural consensus is worth less than two independent votes. We
-# credit it at this fraction of "fully corroborated". 1.0 would treat them as independent
-# (wrong); 0.5 treats their agreement as ~one member's worth.
 NEURAL_SHARED_FLOOR = 0.5
-# A correspondence carried by a single member (the other silent on that atom) is credited
-# at this fraction -- present, but not corroborated.
 SINGLE_MEMBER_CREDIT = 0.5
 
-# The neural family: members whose mutual agreement is correlated and must be discounted.
 NEURAL_MEMBERS = {"rxnmapper", "localmapper"}
 
 
 def load_mapper(path: Path) -> dict:
-    """mnxr -> (mapped_rxn_smiles, confidence) from a cached mapper tsv."""
     df = pd.read_csv(path, sep="\t").drop_duplicates(subset="mnxr", keep="first")
     out = {}
     for r in df.itertuples(index=False):
@@ -96,8 +82,6 @@ def load_mapper(path: Path) -> dict:
 
 
 def correspondence(pairs: dict) -> dict:
-    """{(element, sm, pm, sub_rank) -> {prod_rank: weight}} from a pairs_from_mapped dict.
-    A member may spread an atom over several product ranks (its own dilution); kept as-is."""
     corr = defaultdict(lambda: defaultdict(float))
     for (el, sm, pm), idxs in pairs.items():
         for s_rank, p_rank, w in idxs:
@@ -110,19 +94,6 @@ def _argmax(d: dict):
 
 
 def fuse_reaction(mnxr, subs, prods, canon, members: dict):
-    """Fuse members' correspondences for one reaction into provenance-carrying rows, plus
-    a PAIRWISE agreement tally and each member's re-extraction status.
-
-    ``members`` is an ORDERED ``{name: (mapped_smiles, confidence)}``. Returns
-    ``(rows, pair_tally, statuses)`` where:
-      * each row is a fused atom-pair with method/source/confidence;
-      * ``pair_tally`` is ``{(name_a, name_b) -> [shared, agree]}`` over atoms BOTH members
-        address (every key here is already a C/N/S/P atom -- ``pairs_from_mapped`` emits
-        only ``ELEMENTS`` -- so agreement is C/N/S/P by construction);
-      * ``statuses`` is ``{name -> status}`` from ``pairs_from_mapped`` (ok / stripped /
-        no_pairs / ...), so coverage loss is measured, never mistaken for agreement.
-    """
-    # per-member correspondence in the shared canonical-rank space
     corr = {}
     conf = {}
     statuses = {}
@@ -139,9 +110,6 @@ def fuse_reaction(mnxr, subs, prods, canon, members: dict):
 
     for key in keys:
         el, sm, pm, s_rank = key
-        # pairwise agreement bookkeeping over members that BOTH address this atom. Neural-
-        # neural (rxnmapper,localmapper) and curated-vs-neural (metacyc,*) fall out of the
-        # same loop -- the "does the curated source argue" number is one of these pairs.
         addressing = [n for n in names if key in corr[n]]
         for i in range(len(addressing)):
             for j in range(i + 1, len(addressing)):
@@ -156,23 +124,22 @@ def fuse_reaction(mnxr, subs, prods, canon, members: dict):
         distinct = set(picks.values())
         srcs = "+".join(sorted(present))
 
-        if len(present) == 1:                              # single member speaks
+        if len(present) == 1:
             name = next(iter(present))
             rows.append(dict(mnxr=mnxr, element=el, substrate=sm, product=pm,
                              sub_idx=s_rank, prod_idx=picks[name],
                              pair_w=SINGLE_MEMBER_CREDIT,
                              method=f"{name}_only", source=name,
                              confidence=conf[name] * SINGLE_MEMBER_CREDIT))
-        elif len(distinct) == 1:                           # members AGREE
+        elif len(distinct) == 1:
             p_rank = distinct.pop()
-            # discount ONLY a purely-neural consensus; a curated-inclusive one is undiscounted
             corr_disc = NEURAL_SHARED_FLOOR if set(present) <= NEURAL_MEMBERS else 1.0
             cbar = sum(conf[n] for n in present) / len(present)
             rows.append(dict(mnxr=mnxr, element=el, substrate=sm, product=pm,
                              sub_idx=s_rank, prod_idx=p_rank, pair_w=1.0,
                              method="consensus", source=srcs,
                              confidence=cbar * corr_disc))
-        else:                                              # members DISAGREE -> dilute
+        else:
             wsum = sum(conf[n] for n in present) or float(len(present))
             for name, p_rank in picks.items():
                 rows.append(dict(mnxr=mnxr, element=el, substrate=sm, product=pm,
@@ -184,15 +151,10 @@ def fuse_reaction(mnxr, subs, prods, canon, members: dict):
 
 
 def build(members_src: dict, parsed: dict, canon: dict):
-    """Fuse over the reactions covered by at least one member.
-
-    ``members_src`` is an ORDERED ``{name: {mnxr:(mapped,conf)}}``. Reports pairwise
-    agreement per member pair and per-member re-extraction status counts.
-    """
     all_mnxr = set().union(*[set(m) for m in members_src.values()]) if members_src else set()
     rows = []
-    agree = defaultdict(lambda: [0, 0])                    # (a,b) -> [shared, agree]
-    status_counts = defaultdict(lambda: defaultdict(int))  # name -> {status: n}
+    agree = defaultdict(lambda: [0, 0])
+    status_counts = defaultdict(lambda: defaultdict(int))
     n_overlap = n_rxn = 0
     for mnxr in sorted(all_mnxr):
         pe = parsed.get(mnxr)
@@ -224,8 +186,6 @@ def build(members_src: dict, parsed: dict, canon: dict):
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
-    # No default paths. The originals pointed at a sibling project's scratch cache and at
-    # its data tree; here every input is staged by the planner and named explicitly.
     ap.add_argument("--rxnmapper", type=Path, required=True,
                     help="the RXNMapper member's cached tsv (neural_members --out)")
     ap.add_argument("--localmapper", type=Path, required=True,
@@ -262,8 +222,6 @@ def main(argv=None):
                     help="restrict to reactions BOTH neural members cover (the demonstration set)")
     a = ap.parse_args(argv)
 
-    # Ordered member map: neural pair first, curated last (order only affects report layout
-    # and the deterministic source string, never the fusion result).
     rxnm = load_mapper(a.rxnmapper)
     lm = load_mapper(a.localmapper)
     members_src = {"rxnmapper": rxnm, "localmapper": lm}
@@ -289,10 +247,6 @@ def main(argv=None):
             parsed[r] = pe
             want |= set(pe[0]) | set(pe[1])
     raw = load_mnxm_smiles(a.chem_prop, want)
-    # A placeholder carrier and a curated structure are BOTH named here so their fragments
-    # match the template count (an unnamed fragment makes the reaction come back `stripped`).
-    # The difference is downstream: placeholder atoms are SUPPRESSED after fusion (scaffolding),
-    # resolved atoms are KEPT (the metabolite's own). This mirrors ecspr_atom_pairs.cmd_extract.
     ph = load_placeholders(a.placeholders) if a.placeholders else {}
     res = load_resolved(a.resolved) if a.resolved else {}
     bal = load_balance(a.balance) if a.balance else {}
@@ -311,17 +265,10 @@ def main(argv=None):
                        for name, src in members_src.items()}
     df, rep = build(members_src, parsed, canon)
 
-    # Suppress placeholder atoms and drop unbalanced elements -- the same filter the
-    # single-source extractor applies, so the fused reference obeys the identical
-    # conservation discipline: a fabricated carrier atom never reaches the graph, and an
-    # element a carrier actually perturbed is refused for that reaction alone.
     if (ph or bal) and len(df):
         n0 = len(df)
-        # NB bracket-index "product": df.product is the DataFrame.product METHOD, not the column.
         keep = ~(df["substrate"].isin(ph) | df["product"].isin(ph))
         if bal:
-            # vectorised: an (mnxr, element) is dropped only if explicitly unbalanced;
-            # absent from the table means no filter (an ordinary concrete reaction).
             unbal = {k for k, v in bal.items() if not v}
             if unbal:
                 bad = [(m, e) in unbal for m, e in zip(df["mnxr"], df["element"])]

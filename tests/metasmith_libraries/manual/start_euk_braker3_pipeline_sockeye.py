@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-"""Submit BRaKER3+downstream pipeline on Sockeye and exit after submission."""
 import sys
 import time
 sys.stdout.reconfigure(line_buffering=True)
@@ -14,7 +13,6 @@ from metasmith.python_api import (
 
 MLIB = Path(__file__).resolve().parent.parent.parent
 
-# Archived data on Sockeye/arc
 ARC_DATA = Path("/arc/project/st-shallam-1/pwy_group/data/porphyridium_purpureum")
 ARC_INTER = ARC_DATA / "eguEpdhP-intermediates"
 ARC_LIB = Path("/arc/project/st-shallam-1/pwy_group/lib/annotation-dbs")
@@ -22,12 +20,10 @@ ARC_LIB = Path("/arc/project/st-shallam-1/pwy_group/lib/annotation-dbs")
 EGGNOG_DB = ARC_LIB / "eggnog"
 PREV_ASSEMBLY = ARC_INTER / "assembly/1-1-1.f1CMorcneUoLGMna-O4PhHAkd.fna"
 
-# Single all-9 BAM cached on Sockeye scratch
 PREV_MERGED_BAMS = [
     Path("/scratch/st-shallam-1/pwy_group/metasmith/cache/merged_bams/porphyridium_all9_iNlpm1XR.bam"),
 ]
 
-# 9 StringTie GTFs
 PREV_GTFS = [
     ARC_INTER / "stringtie_gtfs/1-1-1.mIUVIDA5mZok47aj-pivRePzg.gtf",
     ARC_INTER / "stringtie_gtfs/1-1-1.BRMMpolIq2S9C2Pi-pivRePzg.gtf",

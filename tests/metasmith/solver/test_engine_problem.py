@@ -1,21 +1,3 @@
-"""The engine reads a problem the same way the solver does.
-
-Before the port can be trusted to *search*, it has to be trusted to have read
-the same problem, and that is separable: everything `solve_by_mcts` derives
-before its first decision is a pure function of the inputs. So the two sides are
-compared on those derived maps directly, over a corpus, with no randomness
-involved at all.
-
-Doing it here rather than inferring it from a differing plan is the whole point.
-`demand2product` disagreeing by one entry and a plan disagreeing by one step look
-identical from the outside; only one of them says where to look.
-
-What is compared is what Python exposes on `Solution._heuristics` -- the three
-demand/production maps, plus the distance and opportunity scores that steer the
-search. The maps are compared *after* pruning, because that is the state the
-search actually reads.
-"""
-
 from __future__ import annotations
 
 import pytest
@@ -35,9 +17,6 @@ from metasmith.testing.solver_verification import GeneratorDials, generate_probl
 
 @pytest.fixture(scope="module")
 def engine():
-    # Through `GetEngine`, not `probe_engine(packaged_engine_path())` -- see the
-    # `rust_engine` fixture in test_solver_engine.py for why those differ in a
-    # source checkout, and what it cost to learn.
     path = packaged_engine_path()
     if path is None:
         pytest.skip("no msm_solver staged for this platform (./dev.sh -be)")
@@ -48,11 +27,6 @@ def engine():
     return info
 
 
-#: A slice wide enough to cross the dials that matter here: cycles (which the
-#: distance walk's path guard has to survive), duplicate transforms (which share
-#: a structural key and so block each other in that walk), lineage (which makes
-#: dependencies with the same properties into *different* nodes), and product
-#: groups and multi-given (which change the shape of the synthesized transform).
 _PROFILES = [
     ("plain", GeneratorDials(n_types=6, n_extra_transforms=3)),
     ("cyclic", GeneratorDials(n_types=7, n_extra_transforms=5, cycle_density=0.8)),
@@ -77,13 +51,6 @@ def _cases():
 
 
 def _describe_python(problem, encoded):
-    """Python's derived maps, re-keyed to the indices the payload used.
-
-    Forced onto the python path, and not as a formality: once the engine
-    advertises `solve`, `problem.solve()` *is* the engine, and this file would
-    quietly start comparing the engine against itself. A green run that proves
-    nothing is the worst outcome available here.
-    """
     with UsePythonSolver():
         assert Backend("solve") == "python", "the reference side must be python"
         solution = problem.solve()
@@ -93,12 +60,6 @@ def _describe_python(problem, encoded):
     tr_index = {id(t): i for i, t in enumerate(encoded.transforms)}
     given_index = encoded.payload["given_index"]
 
-    # `solve_by_mcts` synthesizes its own `given` transform, so the object in
-    # these maps is not the one the encoder built. It is the only object that
-    # can be unknown, and it is asserted to be the only one rather than assumed:
-    # a second unknown transform would mean the encoder and the solver disagree
-    # about what the problem contains, which is exactly what this file exists to
-    # find.
     unknown: set[int] = set()
     def _tr(t) -> int:
         i = tr_index.get(id(t))
@@ -109,11 +70,6 @@ def _describe_python(problem, encoded):
     def _pairs(m, value):
         return sorted((node_index[k], value(v)) for k, v in m.items())
 
-    # The two demand maps are compared *as sequences*: Python freezes them into
-    # rank order at construction and `_find_endpoints` appends candidates in the
-    # order it walks them, so a map with the right members in the wrong order is
-    # a different plan. `product2consumer`'s values are a `set` in Python and are
-    # only ever unioned into another set, so those are compared as sets.
     out = {
         "demand2product": _pairs(
             h["demand2product"], lambda v: [node_index[x] for x in v]),
@@ -139,7 +95,7 @@ def _describe_engine(engine, encoded):
     }
 
 
-@pytest.mark.python_solver  # the reference side is a python solve
+@pytest.mark.python_solver
 @pytest.mark.parametrize("name,problem", list(_cases()), ids=lambda x: x if isinstance(x, str) else "")
 def test_the_engine_derives_what_the_solver_derives(engine, name, problem):
     encoded = encode_problem(
@@ -148,24 +104,11 @@ def test_the_engine_derives_what_the_solver_derives(engine, name, problem):
     )
     mine = _describe_python(problem, encoded)
     theirs = _describe_engine(engine, encoded)
-    # Compared key by key so a failure names the map rather than dumping all six.
     for key in mine:
         assert theirs[key] == mine[key], f"{name}: {key} disagrees"
 
 
 def test_a_demand_with_several_producers_lists_them_in_rank_order(engine):
-    """The arena index really is the T5a rank, checked where it can be seen.
-
-    Python freezes `demand2producer` into `_transform_rank` order at
-    construction. If the engine's arena were built in any other order -- the
-    loader's convenience, say -- the members would still all be there and only
-    the sequence would differ, which is the failure this asserts against: the
-    lists must be *ascending*, since the engine's index is supposed to be that
-    same rank.
-
-    The corpus is checked for this property rather than trusted to have it. A
-    single-producer problem would satisfy an ordering assertion vacuously.
-    """
     problem = generate_problem(2, GeneratorDials(
         n_types=9, n_extra_transforms=7, n_duplicate_transforms=3, lineage_density=0.6))
     encoded = encode_problem(
@@ -182,16 +125,6 @@ def test_a_demand_with_several_producers_lists_them_in_rank_order(engine):
 
 
 def test_the_engine_reads_the_shipped_templates(engine):
-    """The four real libraries, which is where the property table gets big.
-
-    Generated problems have a handful of properties, so their bitsets are one
-    word and the striding is never exercised. A shipped template carries
-    hundreds, which is the first time a property index above 63 exists at all --
-    and an off-by-one in the word/bit split would pass every test above.
-
-    Skipped rather than failed without the sibling checkout, as elsewhere: the
-    generated corpus above still runs, and it is the part that runs in CI.
-    """
     from metasmith.testing.solver_bench import _libraries_root
     from metasmith.testing.solver_verification import problem_of_plan
 

@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-"""Generate DAG for braker3 + stringtie_gtf from merged BAM + star BAMs."""
 import sys
 import tempfile
 from pathlib import Path
@@ -23,7 +22,6 @@ transforms = [
     TransformInstanceLibrary.Load(MLIB / "transforms/logistics"),
 ]
 
-# Only the containers needed for this subset
 CONTAINERS = [
     "braker3.env",
     "stringtie.env",
@@ -41,7 +39,6 @@ for name in CONTAINERS:
     containers.AddItem(MLIB / "resources/env" / name, f"env::{name}")
 containers.Save()
 
-# Inputs: merged BAM + assembly + experiment
 inputs_dir = tmp / "inputs.xgdb"
 inputs = DataInstanceLibrary(inputs_dir)
 for tl in ["sequences.yml", "transcriptomics.yml", "annotation.yml", "env.yml"]:
@@ -59,13 +56,11 @@ experiment = inputs.AddValue("experiment.txt", "porphyridium", "transcriptomics:
 inputs.AddItem(mock("genome.fna"), "sequences::assembly", parents={experiment})
 inputs.AddItem(mock("merged.bam"), "transcriptomics::merged_bam", parents={experiment})
 
-# 9 individual STAR BAMs (needed for stringtie_assemble → stringtie_gtf)
 for i in range(9):
     inputs.AddItem(mock(f"star_{i}.bam"), "transcriptomics::star_bam", parents={experiment})
 
 inputs.Save()
 
-# Targets
 targets = TargetBuilder()
 targets.Add("transcriptomics::braker3_gff")
 targets.Add("transcriptomics::braker3_proteins")

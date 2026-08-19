@@ -136,7 +136,6 @@ def main():
         report(f"|log2FC| vs log2FC Ieff -- {d} only",
                sub.abs_log2fc_meas, sub.log2fc_ieff)
 
-    # Reaction count is the confound the ASKA arm already failed on.
     report("n_rxn  vs  log2FC Ieff", df.n_rxn.astype(float), df.log2fc_ieff)
     report("n_rxn  vs  |log2FC| measured", df.n_rxn.astype(float), df.abs_log2fc_meas)
 

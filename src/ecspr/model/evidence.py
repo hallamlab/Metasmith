@@ -1,16 +1,3 @@
-"""ECSPr belief-conservation evidence weights.
-
-Turns an annotation evidence table (one row per ORF/channel/nominated MNXR, as
-`annotation::gpr_table` produces) into per-reaction conductances `E_r`, and into
-per-unit (fosmid contig / metaG ORF) addition maps for the same allocation.
-
-Ported from the archived `metasmith_libraries/resources/lib/ecspr_network.py`
-(pre-atom-graph star lane) -- the belief-conservation math is topology-agnostic,
-only the consumer changed (`ecspr.model.build.graph_from_pairs` takes `E_r` as `weights`
-directly, in place of the retired reaction-hub star graph).
-
-Env: numpy + pandas (CPU).
-"""
 from __future__ import annotations
 
 from collections import defaultdict
@@ -20,11 +7,6 @@ import pandas as pd
 
 
 def nomination_contributions(df: pd.DataFrame) -> pd.DataFrame:
-    """Per-row contribution = (w_n / F_n) / L_orf, where the nomination unit is
-    (orf, channel, intermediate_id), w_n splits raw_score within (orf, channel),
-    F_n = distinct-mnxr fanout, and L_orf = distinct channels for the ORF. Each
-    ORF's contributions sum to 1.0 (belief conservation), making leave-one-out an
-    exact subtraction downstream."""
     d = df.drop_duplicates(["orf", "channel", "intermediate_id", "mnxr"]).copy()
     nom = (d.groupby(["orf", "channel", "intermediate_id"], sort=False)
            .agg(s_n=("raw_score", "max"), F_n=("mnxr", "nunique"))
@@ -55,7 +37,6 @@ def compute_E(df_src: pd.DataFrame, label: str = "") -> pd.Series:
 
 
 def compute_weights(ev: pd.DataFrame) -> pd.DataFrame:
-    """evidence_weights.parquet: per (source, mnxr) E_full/E_dlec/n_orf."""
     parts = []
     for source, g in ev.groupby("source"):
         e_full = compute_E(g, f"{source}/full")
@@ -76,8 +57,6 @@ def compute_weights(ev: pd.DataFrame) -> pd.DataFrame:
 
 
 def per_unit_weights(df_src: pd.DataFrame, unit_col: str) -> dict:
-    """{unit: {mnxr: E}} with per-ORF-normalized belief, re-aggregated by
-    'contig' (per fosmid) or 'orf' (per metaG ORF)."""
     rows = nomination_contributions(df_src)
     if unit_col == "contig":
         rows = rows.copy()

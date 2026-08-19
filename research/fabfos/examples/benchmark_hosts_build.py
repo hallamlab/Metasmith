@@ -1,41 +1,3 @@
-"""Build the curated-GEM half of the host benchmark (B1), here, under MAMBA.
-
-    PATH="/home/tony/lib/miniforge3/envs/msm/bin:$PATH" \\
-        python examples/benchmark_hosts_build.py            # plan only
-    PATH="..." python examples/benchmark_hosts_build.py --run
-
-Two steps: the three host tables, and the seven per-study folders that read them.
-`hosts/<host>/gpr_gem.parquet` and `<study>/{extraction.tsv, gpr_manual.parquet,
-conditions.tsv, README.md}`. It is small -- two model JSONs,
-a crosswalk and a join -- which is why it runs here rather than on a cluster; the
-de-novo half is the one that needs a GPU allocation, and that is
-`examples/benchmark_hosts_denovo_on_hpc.py`.
-
-MAMBA, not a container. `cobra.env` carries a `conda:` key and no image, and
-`Agent.runtime` is one global setting, so this graph has exactly one runtime it can
-satisfy. `build-refs-cobra` must already exist; `bash envs/setup_agent_env.sh` builds
-it along with the agent env.
-
-TWO GIVENS, and both are declared rather than tolerated:
-
-  * `fabfos_data::genomes`      -- DVC-pinned; the acquisition exists, and re-fetching
-                                   would build the reference off a fresh pull rather
-                                   than off the pins this build describes
-  * the metabolism bake         -- R6's product, DVC-pinned at
-                                   data/fabfos/processed/metabolism_bake/ for the same reason as
-                                   the genomes: this build reads the pin the benchmark was
-                                   measured against, not whatever a fresh R6 run would
-                                   mint. R6 makes it -- see REFERENCES.md § R6 for
-                                   what makes it differ from the tier-4 agreement
-                                   target
-
-`ref::mnxr_lookup` is likewise staged rather than recompiled, for the first reason.
-
-THE BAKE IS PART OF THE RESULT, not scaffolding around it. `in_atom_universe` is only
-meaningful relative to one bake, so the transform writes the identity block into its own
-BUILD.json; when R6 lands, rebuilding is a visible diff rather than a silent change of
-meaning.
-"""
 from __future__ import annotations
 
 import argparse
@@ -45,8 +7,6 @@ import sys
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[3]
-# The pinned engine, ahead of whatever this machine has installed: only it resolves a
-# `conda:` env declaration by runtime. See AGENTS.md.
 sys.path.insert(0, str(REPO / "src"))
 
 from metasmith.python_api import (                                    # noqa: E402
@@ -63,15 +23,10 @@ BREF = REPO / "src" / "fabfos" / "build_references"
 DATA = REPO / "data" / "fabfos"
 ARTIFACTS = REPO / "tests" / "fabfos" / "artifacts"
 SCRATCH = DATA / "scratch"
-# Where the benchmark's host half lives. Hosts are not studies, so they sit beside the
-# per-study folders rather than inside one.
 PUBLISH_AT = DATA / "benchmarks" / "hosts"
 
 AGENT_ENV = "msm-fabfos"
 
-# type -> where it is staged from. Everything here is a GIVEN: pinned bytes handed in,
-# not fetched. A run that re-acquired would not be building the reference these pins
-# describe.
 STAGED = {
     "fabfos_data::genomes":  DATA / "originals" / "genomes",
     "fabfos_data::metanetx": DATA / "originals" / "metanetx",
@@ -79,15 +34,9 @@ STAGED = {
     "ref::metabolism_vocab": DATA / "processed" / "metabolism_bake" / "vocab.parquet",
     "ref::atom_pairs":       DATA / "processed" / "metabolism_bake" / "atom_pairs.parquet",
     "ref::direction_ratios": DATA / "processed" / "metabolism_bake" / "direction.parquet",
-    # The per-paper extractions. A GIVEN: there is no transform that turns a PDF
-    # supplement into rows, and one that only copied a file would dress a judgement
-    # call up as a computation.
     "bench::study_extractions": DATA / "benchmarks" / "_extractions",
 }
 
-# The producers of the staged types, asserted ABSENT from the plan by name. Loading
-# `bake/` would let the planner decide to rebuild R6 as a side effect of asking for a
-# host GPR table -- a 40-hour graph reached by a tiebreak.
 FORBIDDEN = ("aam_reference", "direction_bake", "mnx_lookups", "genomes", "metanetx")
 
 
@@ -102,9 +51,6 @@ def plan(work: Path, *, hosts_only: bool = False):
     missing = []
     for dtype, at in STAGED.items():
         if not at.exists():
-            # Planning never opens an input, so a stand-in resolves the type exactly as
-            # the real bytes do -- which is what lets this render on a machine holding
-            # none of them. A RUN is what needs the real one.
             missing.append((dtype, at))
             at = work / dtype.replace("::", "_")
             if Path(STAGED[dtype]).suffix:
@@ -125,11 +71,6 @@ def plan(work: Path, *, hosts_only: bool = False):
 
     targets = TargetBuilder()
     targets.Add("ref::gpr_table_gem")
-    # THE STUDY TIER IS SEPARABLE ON PURPOSE. Publishing it rewrites every study folder,
-    # and eydallin's `Y/` then comes back without `measured_glycogen.tsv` -- the one file
-    # in a study folder this tier does not write. A host-set change (a strain added, an
-    # edit list moved) has no business dragging that along, so `--hosts-only` asks for
-    # the half that changed.
     if not hosts_only:
         targets.Add("bench::study_benchmark")
 
@@ -218,9 +159,6 @@ def main() -> int:
     if result["status"] != "completed":
         return 2
 
-    # A COMPLETED RUN IS NOT A SUCCEEDED ONE. The verdict comes from the products, and
-    # the products are behind a published symlink whose name is a content hash -- so
-    # this resolves the link rather than globbing for a path the run does not use.
     results = Path(agent.GetResultSource(task).GetPath())
     made = sorted(results.glob("ref-gpr_table_gem/*/hosts/*/gpr_gem.parquet"))
     studies = sorted(results.glob("bench-study_benchmark/*/*/gpr_manual.parquet"))
@@ -229,10 +167,6 @@ def main() -> int:
         print(f"    study {st.parent.name}")
     for m in made:
         print(f"    {m.parent.name:<16} {m.stat().st_size:,} B")
-    # ONE TABLE PER HOST THE TRANSFORM SAYS IT BUILT, rather than a number written here.
-    # The host set moved twice already -- DH1 and AG1 arrived for the ASKA cohorts -- and
-    # a hardcoded count turns "a host was silently dropped" and "a host was deliberately
-    # added" into the same failure.
     if not made:
         print("FAIL: the run completed and produced no host table at all")
         return 3
@@ -243,13 +177,8 @@ def main() -> int:
               f"BUILD.json declares {want_hosts}")
         return 3
 
-    src = made[0].parent.parent          # .../hosts
+    src = made[0].parent.parent
     if a.publish:
-        # UNLINK BEFORE COPYING, ALWAYS. Anything already published under data/ is a
-        # read-only HARDLINK into a DVC cache that several worktrees share, so opening
-        # one for writing is both a PermissionError and -- if the mode ever allowed it --
-        # a way to mutate every other worktree's copy of that file through the shared
-        # inode. Replacing the link is the only safe write.
         def replace(src_file: Path, dst_file: Path) -> None:
             dst_file.parent.mkdir(parents=True, exist_ok=True)
             if dst_file.exists() or dst_file.is_symlink():

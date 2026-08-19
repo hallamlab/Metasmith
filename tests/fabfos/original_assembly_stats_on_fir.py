@@ -102,9 +102,6 @@ LIB = ins.LIB
 ARTIFACTS = ins.ARTIFACTS
 ASSEMBLIES = REPO / "data" / "fabfos" / "runs" / "scadc_fosmids" / "assembly"
 
-# The two contig FASTA suffixes under the assemblies chunk. Both are declared as
-# the GENERIC assembly type -- see the module docstring for what declaring them as
-# the assembler's own subtype costs.
 ASSEMBLERS = ("megahit", "spades")
 ASSEMBLY_TYPE = "sequences::assembly"
 
@@ -115,10 +112,6 @@ EXPECTED_TRANSFORMS = ins.EXPECTED_TRANSFORMS
 SETUP_COMMANDS = ins.SETUP_COMMANDS
 AGENT_CONTAINER = ins.AGENT_CONTAINER
 
-# `assembly_stats` declares 4 cpus / 64 GB / 12 h. The references here are real
-# metagenome assemblies rather than 5.9 MB of inserts -- 60 kb to 2.2 Mb each, and
-# minimap2 indexes the reference, not the reads -- so this is a smaller trim than
-# the sibling's but still far under the queue-hostile stock figures.
 TRIMMED_RESOURCES = {
     "assembly_stats": ins.Resources(
         cpus=4, memory=ins.Size.GB(24), duration=ins.Duration(hours=4)),
@@ -128,12 +121,6 @@ TRIMMED_RESOURCES = {
 
 
 def pools_from_assemblies() -> dict[str, dict[str, Path]]:
-    """pool -> {assembler: contig FASTA}, from the pinned assemblies chunk.
-
-    A pool is kept only if BOTH assemblers are present. A half-present pool would
-    otherwise plan, run and produce a table whose megahit and spades halves cover
-    different pool sets, which is exactly the comparison this measurement is for.
-    """
     found: dict[str, dict[str, Path]] = {}
     for asm in sorted(ASSEMBLERS):
         for p in sorted(ASSEMBLIES.glob(f"*.{asm}.fna")):
@@ -157,13 +144,6 @@ def label(pool: str, assembler: str) -> str:
 
 def build_inputs(staging: Path, pools: dict[str, str],
                  assemblies: dict[str, dict[str, Path]]) -> DataInstanceLibrary:
-    """One metadata per (pool, assembler); reads once per pool, parented to both.
-
-    The metadata FILENAME is the durable link from an output back to its job --
-    staged names are content hashes and a transform cannot learn what it was
-    handed -- so it names both facets, and `--resolve-orphans` reads it straight
-    out of a task's `.command.sh`.
-    """
     xgdb = staging / "inputs.xgdb"
     if xgdb.exists():
         shutil.rmtree(xgdb)
@@ -183,18 +163,13 @@ def build_inputs(staging: Path, pools: dict[str, str],
             pool_metas.append(meta)
             src = assemblies[pool][asm]
             shutil.copy(src, xgdb / src.name)
-            # One parent: this assembly belongs to exactly one job.
             inputs.AddItem(src.name, ASSEMBLY_TYPE, parents={meta})
-        # Added ONCE, with both parents. Adding it twice under two names would
-        # duplicate a 32 GB file's declaration for no gain, and AddItem refuses
-        # the same path twice anyway.
         inputs.AddItem(pools[pool], READS_TYPE, parents=set(pool_metas))
     inputs.Save()
     return inputs
 
 
 def check_plan(task, n_pools: int) -> list[str]:
-    """Everything that must hold before a single sbatch is issued."""
     problems: list[str] = []
     n_jobs = n_pools * len(ASSEMBLERS)
 
@@ -206,8 +181,6 @@ def check_plan(task, n_pools: int) -> list[str]:
             f"planner would BUILD an assembly and report coverage of that.")
 
     given = Counter(g.dtype_name for g in task.plan.given)
-    # 70 assemblies under ONE type. A count of 35 here is the planner having bound
-    # `asm` to a single assembler's subtype -- see the module docstring.
     for dtype, want in ((READS_TYPE, n_pools),
                         ("sequences::read_metadata", n_jobs),
                         (ASSEMBLY_TYPE, n_jobs)):
@@ -215,11 +188,6 @@ def check_plan(task, n_pools: int) -> list[str]:
             problems.append(
                 f"plan carries {given.get(dtype, 0)} x [{dtype}], expected {want}")
 
-    # The decisive check, and the one the two-sided fan-out is riding on: the QC
-    # step groups on the reads and must stay at one task per pool, while the
-    # stats step groups on the metadata and must reach one per (pool, assembler).
-    # If the shared QC product failed to satisfy `rstats parents={meta}` for both
-    # of a pool's metadata items, this is where it shows.
     per_step = {"seqkit_reads": n_pools, "assembly_stats": n_jobs}
     for step in task.plan.steps:
         stem = Path(step.transform._path).stem
@@ -236,26 +204,6 @@ ATTRIBUTION_KEYS = ("asm", "meta", "reads")
 
 
 def attribute(results: Path) -> dict[Path, str]:
-    """retrieved product file -> `pool__assembler`, or `pool` for the QC products.
-
-    Three keys, most specific first, because lineage UNIONS ancestry and only one
-    of the three is one-to-one with a job.
-
-    The ASSEMBLY is that one: each is parented to a single metadata item and each
-    stats job consumes exactly one, so its filename -- `<pool>.<assembler>.fna` --
-    names both facets outright.
-
-    `read_metadata` looks like it should work and does not. The reads are parented
-    to BOTH of a pool's metadata items so the stats job can share one QC run, and
-    a product's lineage is the union of what it descends from, so every stats
-    output inherits both. It is kept as a second tier because it IS decisive for
-    anything that does not descend from the reads.
-
-    The QC products carry no metadata lineage at all -- `seqkit_reads` never
-    requires one -- and land on the reads key, where one per pool is exactly
-    right. Never guessed positionally: an output nobody can name is a result
-    nobody can use.
-    """
     manifests = results / "_manifests"
     keys: dict[str, str] = {}
     index_to_label: dict[str, dict[int, str]] = {}
@@ -315,15 +263,6 @@ def attribute(results: Path) -> dict[Path, str]:
 
 
 def summarize(results: Path, out_dir: Path) -> int:
-    """Write the flat (pool, assembler) statistics table.
-
-    Deliberately NOT the sibling's shape. That one asserts every job measured the
-    same reference and builds an insert x pool matrix; here every job measures a
-    DIFFERENT reference, so the same-reference assertion is false by construction
-    and the matrix has no shared row space. One row per job instead, with the full
-    flagstat and the full seqkit row kept in the retained per-job JSONs for
-    anything this table drops.
-    """
     label_of = attribute(results)
     out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -338,13 +277,13 @@ def summarize(results: Path, out_dir: Path) -> int:
             if not pred(p):
                 continue
             local = results / p
-            if not local.exists():       # not retrieved (BAM)
+            if not local.exists():
                 continue
             got[lab] = local
         return got
 
     stats = _load(lambda p: "assembly_stats" in str(p))
-    qc = _load(lambda p: "read_qc_stats" in str(p))   # keyed by pool, not by job
+    qc = _load(lambda p: "read_qc_stats" in str(p))
 
     rows = []
     for lab in sorted(stats):
@@ -359,7 +298,6 @@ def summarize(results: Path, out_dir: Path) -> int:
             number_of_contigs=s["number_of_contigs"],
             length=s["length"],
             N50=s["N50"],
-            # seqkit's N50_num is the count of contigs reaching N50 -- L50.
             L50=sk.get("N50_num"),
             max_length=sk.get("max_len"),
             GC=s["GC"],

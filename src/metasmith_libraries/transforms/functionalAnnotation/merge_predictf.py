@@ -1,8 +1,3 @@
-"""merge_predictf — gather per-chunk PredicTF outputs (two products: TF + potential).
-
-Both `*.mapping.TF` and `*.mapping.potential.TF` are TSV-like tables. We
-treat them as one-line-header tables and concat.
-"""
 from metasmith.python_api import *
 
 lib = TransformInstanceLibrary.ResolveParentLibrary(__file__)

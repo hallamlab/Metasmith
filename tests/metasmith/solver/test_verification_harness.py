@@ -1,12 +1,3 @@
-"""The harness that judges the solver, judged.
-
-Everything downstream of here — the coverage tests, the A/B gates on each
-performance change, the Rust differential — reads a verdict out of
-`solver_verification`. If the fingerprint is insensitive, or the checker
-accepts a plan it should refuse, every one of those gates goes quietly green on
-a broken solver. So the harness gets its own adversarial pass first.
-"""
-
 from __future__ import annotations
 
 import inspect
@@ -30,18 +21,7 @@ from metasmith.testing.solver_verification import (
 )
 
 
-# ---------------------------------------------------------------------------
-# hand-built plans -- small enough to reason about without running the solver
-# ---------------------------------------------------------------------------
-
-
 def _micro_plan(*, anchor_props: set[str]):
-    """`root,side → leaf`, with the target's lineage anchor parameterized.
-
-    With ``anchor_props={"root"}`` the anchor is a genuine ancestor of the leaf.
-    With ``{"side"}`` it is a sibling — conformant, produced, and *not* an
-    ancestor, which is precisely the plan a lineage check has to refuse.
-    """
     given_tr = Transform()
     d_root = given_tr.AddProduct(properties={"root"})
     d_side = given_tr.AddProduct(properties={"side"})
@@ -83,27 +63,12 @@ def _micro_plan(*, anchor_props: set[str]):
 
 
 class _FakeSolution:
-    """Just enough of `Solution` for the checker and the fingerprint."""
-
     def __init__(self, steps):
         self.dependency_plan = list(steps)
 
 
-# ---------------------------------------------------------------------------
-# fingerprint
-# ---------------------------------------------------------------------------
-
-
 class TestFingerprint:
     def test_the_harness_never_reads_instance_id(self):
-        """The one guard worth spending a test on.
-
-        Leaf ids fall back to a random per-call value for absent inputs, so a
-        fingerprint that touches `instance_id` differs between two runs of
-        unchanged code. That failure mode has already produced one false "the
-        plans changed" verdict, and it is invisible unless you happen to run
-        the baseline twice.
-        """
         source = inspect.getsource(sv)
         names = {
             tok.string
@@ -118,7 +83,6 @@ class TestFingerprint:
         assert plan_fingerprint(a.solve()) == plan_fingerprint(b.solve())
 
     def test_ignores_step_order(self):
-        """Topological equivalence is the parity standard, not list order."""
         solution = generate_problem(
             12, GeneratorDials(n_types=6, n_extra_transforms=4)
         ).solve()
@@ -127,7 +91,6 @@ class TestFingerprint:
         assert forward == backward
 
     def test_separates_a_swapped_binding(self):
-        """Two inputs that both satisfy both slots, filled the two ways."""
         tr = Transform()
         slot_a = tr.AddRequirement(properties={"a"})
         slot_b = tr.AddRequirement(properties={"b"})
@@ -148,11 +111,6 @@ class TestFingerprint:
         assert plan_fingerprint([])
 
 
-# ---------------------------------------------------------------------------
-# checker
-# ---------------------------------------------------------------------------
-
-
 class TestChecker:
     def test_accepts_a_sound_plan(self):
         problem, steps = _micro_plan(anchor_props={"root"})
@@ -166,7 +124,6 @@ class TestChecker:
             assert verdict.ok, f"[{name}] {verdict.violations}"
 
     def test_refuses_a_lineage_constraint_that_is_not_an_ancestor(self):
-        """The anchor is produced, conformant, and a sibling — not a parent."""
         problem, steps = _micro_plan(anchor_props={"side"})
         verdict = check_plan(problem, _FakeSolution(steps))
         assert not verdict.ok
@@ -191,7 +148,6 @@ class TestChecker:
         assert any("slot requiring" in v for v in verdict.violations), verdict.violations
 
     def test_refuses_a_cycle_between_two_steps(self):
-        """The property the solver's path-dependent walk exists to protect."""
         up = Transform()
         up_in = up.AddRequirement(properties={"b"})
         up_out = up.AddProduct(properties={"a"})
@@ -231,20 +187,7 @@ class TestChecker:
         assert not check_plan(problem, _FakeSolution([])).ok
 
 
-# ---------------------------------------------------------------------------
-# adjudicating a plan the solver was not asked for directly
-# ---------------------------------------------------------------------------
-
-
 class TestProblemOfPlan:
-    """`WorkflowPlan` stashes the triple it handed the solver; this reads it.
-
-    Grading a shipped template means grading it against the *same* problem the
-    solver saw. Re-deriving that from the libraries would drift -- the masking
-    and dedup rules in `CollectSolverInputs` are exactly where -- so the plan
-    carries it instead.
-    """
-
     def test_a_plan_without_its_problem_declines_rather_than_guesses(self):
         class _Bare:
             pass
@@ -265,17 +208,11 @@ class TestProblemOfPlan:
         assert check_plan(rebuilt, rebuilt.solve()).ok
 
     def test_generate_attaches_the_triple(self):
-        """A rename that broke this would make the template gate silently pass."""
         from dataclasses import fields
 
         from metasmith.models.workflow.plan import WorkflowPlan
 
         assert "_solver_inputs" in {f.name for f in fields(WorkflowPlan)}
-
-
-# ---------------------------------------------------------------------------
-# oracles
-# ---------------------------------------------------------------------------
 
 
 class TestOracles:
@@ -308,11 +245,6 @@ class TestOracles:
             assert verdict == forward_closure_solvable(problem), f"seed {seed}"
 
     def test_exhaustive_handles_a_lineage_constraint_the_closure_cannot(self):
-        """`w1` cannot descend from `w0` — they are siblings off one root.
-
-        Forward closure ignores lineage and says yes; the exhaustive oracle
-        enforces it and says no. That gap is the reason both exist.
-        """
         transforms = []
         for w in ("w0", "w1"):
             tr = Transform()
@@ -331,16 +263,10 @@ class TestOracles:
         assert exhaustive_solvable(problem, max_applications=4) is False
 
     def test_exhaustive_says_unknown_rather_than_guessing(self):
-        """An honest `None` at the cap. Reading it as `False` is the trap."""
         problem = generate_problem(
             3, GeneratorDials(n_types=14, n_extra_transforms=14)
         )
         assert exhaustive_solvable(problem, max_applications=3) is None
-
-
-# ---------------------------------------------------------------------------
-# generator
-# ---------------------------------------------------------------------------
 
 
 _DIAL_MATRIX: list[tuple[str, int, GeneratorDials]] = [
@@ -389,13 +315,6 @@ class TestGenerator:
         assert len(shapes) > 1
 
     def test_duplicate_transforms_really_share_a_key(self):
-        """Distinct `Transform` objects, one key — the collision driver.
-
-        `Application.Signature()` opens with `transform.key`, so two clones
-        applied to the same inputs are indistinguishable by signature while
-        remaining distinct objects. That is the state the solver's dedup and
-        step-removal logic has to survive.
-        """
         problem = generate_problem(
             31, GeneratorDials(n_types=6, n_extra_transforms=2, n_duplicate_transforms=3)
         )
@@ -418,12 +337,6 @@ class TestGenerator:
 
     @pytest.mark.parametrize("seed", range(24))
     def test_a_generated_corpus_solves_soundly(self, seed):
-        """Breadth, not depth: the dials rotate through every pressure.
-
-        The spine of every generated problem is a guaranteed chain, so a
-        solve that fails to reach the target here is a real finding rather
-        than an unlucky draw.
-        """
         name, _, dials = _DIAL_MATRIX[seed % len(_DIAL_MATRIX)]
         problem = generate_problem(seed, dials, name=f"{name}-{seed}")
         verdict = check_plan(problem, problem.solve())

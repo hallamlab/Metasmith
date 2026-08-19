@@ -10,9 +10,6 @@ db    = model.AddProduct(lib.GetType("annotation::amrfinderplus_db"))
 def protocol(context: ExecutionContext):
     idb = context.Output(db)
 
-    # amrfinder_update fetches the latest DB compatible with this binary into
-    # the given dir; `amrfinder -d <dir>` consumes it. The DB version is pinned
-    # by whatever the bundled binary supports, so keep the image tag fixed.
     context.ExecWithEnv().ifContainerDo(
         env=image,
         cmd="""

@@ -1,17 +1,4 @@
 #!/usr/bin/env python3
-"""The design x target matrix itself, plus the two gates that license the null.
-
-* `out/matrix_<unit>.parquet` -- the matrix as a first-class artifact, with the
-  per-column z-score (so a target's baseline reachability cancels) and the
-  per-condition empirical p joined on.
-* `out/T11_size_matching.tsv` -- the gate the counterfactual null depends on. If a
-  bin's real conditions sit at the top of its size range against counterfactuals
-  clustered at the bottom, the null manufactures significance. This reports the
-  per-bin size distributions for real against counterfactual designs, as a gate
-  rather than an appendix.
-* `out/T12_numerics.tsv` -- convergence, CHOLMOD warnings, and signal against the
-  measured noise floor per unit.
-"""
 from __future__ import annotations
 
 import sys
@@ -30,8 +17,6 @@ def matrices(pred: pd.DataFrame, nulls: pd.DataFrame):
     for unit, u in pred.groupby("unit"):
         m = u[["design_id", "condition_id", "is_counterfactual", "n_add", "n_del",
                "size_bin", "composition", "mnxm", "value", "status"]].copy()
-        # z-score WITHIN column: the target's own baseline reachability cancels,
-        # which is what makes columns comparable at all.
         g = m.groupby("mnxm").value
         mu, sd = g.transform("mean"), g.transform("std")
         m["z"] = (m.value - mu) / sd.replace(0, np.nan)
@@ -106,7 +91,6 @@ def main():
     if len(scal):
         print("\n== T12 numerics ==")
         print(numerics(scal).to_string(index=False))
-    # the name the plan's acceptance criterion asks for
     pd.read_csv(C.OUT / "T1_panel_coverage.tsv", sep="\t").to_csv(
         C.OUT / "panel_coverage.tsv", sep="\t", index=False)
 

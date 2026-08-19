@@ -8,19 +8,17 @@ image       = model.AddRequirement(lib.GetType("env::gtdbtk.env"))
 ref         = model.AddRequirement(lib.GetType("ref::gtdb"))
 asm         = model.AddRequirement(lib.GetType("sequences::putative_genome"))
 tax         = model.AddProduct(lib.GetType("taxonomy::gtdbtk"))
-# raw         = model.AddProduct(lib.GetType("taxonomy::gtdbtk_raw"))
 
 def protocol(context: ExecutionContext):
     iref    = context.Input(ref)
-    # iraw    = context.Output(raw)
 
     genome_dir = Path("./assemblies")
     genome_dir.mkdir()
-    in2out = {}  # asm_stem -> (tax_output_name, tax_output_handle)
+    in2out = {}
     for item in context.AsBatch():
         iasm    = item.Input(asm)
         itax    = item.Output(tax)
-        in2out[iasm.local.stem] = (itax.local.name, itax)  # gtdb removes the file extension, so .stem
+        in2out[iasm.local.stem] = (itax.local.name, itax)
         src = iasm.local
         dest = genome_dir/iasm.local.name
         Log.Info(f"registering genome [{src}] -> [{dest}]")
@@ -31,30 +29,13 @@ def protocol(context: ExecutionContext):
     mem = context.params.get('memory')
     if mem:
         _mem_gb = int(float(mem))
-        # pplacer keeps a FULL copy of the reference tree (~128 GB for r232's
-        # scaled bac120 tree) IN MEMORY PER THREAD, so peak RAM ~= pplacer_cpus
-        # * ~130 GB. The old (mem-8)//40 heuristic assumed ~40 GB/thread and
-        # yielded 5 threads at 240 GB -> ~640 GB peak -> SIGKILL right at
-        # "Step 8: Placing genomes" (silently swallowed by errorStrategy=ignore,
-        # producing empty taxonomy). Budget ~140 GB/thread over a ~40 GB base so
-        # 240 GB -> 1 thread (peak ~128 GB, fits). --skip_ani_screen is set, so
-        # the sketch DB is not loaded and pplacer is the sole memory driver.
         pplacer_cpus = f"--pplacer_cpus {max(1, (_mem_gb-40)//140)}"
     else:
         pplacer_cpus = ""
 
     ext = iasm.container.suffix.replace(".", "")
     TEMP_PREFIX = "temp"
-    # temp_scratch = Path(f"{TEMP_PREFIX}.scratch") # replaces RAM
     temp_ws = Path(f"{TEMP_PREFIX}.ws")
-    # reduce pplacer memory usage by writing to disk (slower).
-    # --scratch_dir {temp_scratch} \
-    # Skip the skani ANI screening step to classify genomes.
-    # --skip_ani_screen
-    # todo:
-    # - use prodigal genes
-    # - separate the skani screen? is this needed for small runs? 
-    # - batchify
     out_raw = Path("./gtdb_raw")
     context.ExecWithEnv().ifContainerDo(
         binds=[
@@ -74,7 +55,6 @@ def protocol(context: ExecutionContext):
         """
     )
     
-    # collect rows from summary tables (per-domain classification results)
     file_candidates = [p for p in out_raw.glob("classify/*summary.tsv")]
     rows = {}
     last_header = None
@@ -87,9 +67,6 @@ def protocol(context: ExecutionContext):
                 k = toks[0]
                 rows[k] = l, header
 
-    # genomes that gtdbtk placed but couldn't classify end up in
-    # tree.unclassified.tsv / failed_genomes.tsv rather than *summary.tsv —
-    # accept them with empty taxonomy so downstream consumers still see the bin
     aux_candidates = (
         list(out_raw.glob("classify/*.tree.unclassified.tsv"))
         + list(out_raw.glob("classify/*failed_genomes*.tsv"))
@@ -108,13 +85,11 @@ def protocol(context: ExecutionContext):
     fallback_header = last_header or "user_genome\tclassification\n"
     n_cols = len(fallback_header.rstrip("\n").split("\t"))
 
-    # have output file creation order match input order, since paranoid
     manifest = []
     for _asm, (_tax_name, _tax_handle) in in2out.items():
         if _asm in rows:
             row, header = rows[_asm]
         else:
-            # genome missing from summary.tsv — emit a row with N/A taxonomy
             Log.Warn(f"genome [{_asm}] absent from summary.tsv (aux={_asm in aux_keys}); emitting N/A row")
             empty_fields = [_asm] + ["N/A"] * max(0, n_cols - 1)
             row = "\t".join(empty_fields) + "\n"
@@ -138,7 +113,7 @@ TransformInstance(
     batch_size=200,
     resources=Resources(
         cpus=8,
-        memory=Size.GB(240), # r232 sketches.db needs >120GB; r226 used 107 GB
+        memory=Size.GB(240),
         duration=Duration(hours=24),
     )
 )

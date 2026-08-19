@@ -1,17 +1,3 @@
-"""Shared helpers for new scenario `setup_fixtures` hooks.
-
-Each helper invokes the sandbox-local metasmith binary (installed at
-``<sandbox>/envs/msm_env/bin/metasmith`` by ``install_metasmith_into_sandbox``)
-via subprocess with ``env_for_agent``. Using metasmith's own CLI to build
-fixtures guarantees they are valid metasmith artifacts (no hand-rolled YAML
-that can drift from the schema).
-
-Transforms specifically are written as full ``.py`` source files (not via
-``transform scaffold``) because scaffold requires an already-initialized
-library, which is the operation we are trying to bootstrap. The
-``metasmith build`` command compiles the lib's ``_metadata/`` once
-everything is in place.
-"""
 from __future__ import annotations
 
 import json
@@ -27,10 +13,6 @@ from ..harness.sandbox import SandboxLayout, env_for_agent
 
 
 _ENV_NAME = "msm_env"
-#: What makes a directory a library root. Deliberately a SOURCE directory and
-#: not a compiled `_metadata/` path: metadata is a build product and is no
-#: longer tracked, so keying the check on it would make an uncompiled checkout
-#: look like "not a library" instead of "a library nobody has built".
 _MLIB_LAYOUT_MARKER = Path("data_types")
 
 
@@ -38,13 +20,7 @@ def _msm_bin(layout: SandboxLayout) -> Path:
     return layout.root / "envs" / _ENV_NAME / "bin" / "metasmith"
 
 
-# ---------------------------------------------------------------------------
-# MetasmithLibraries discovery + staging
-# ---------------------------------------------------------------------------
-
-
 def _project_root() -> Path:
-    """Walk up from this file to the metasmith dev tree root."""
     p = Path(__file__).resolve()
     for parent in p.parents:
         if (parent / "setup.py").exists() or (parent / "pyproject.toml").exists():
@@ -53,22 +29,10 @@ def _project_root() -> Path:
 
 
 def _validate_mlib(root: Path) -> bool:
-    """Return True if ``root`` is the canonical MetasmithLibraries lib root.
-
-    The canonical layout has ``data_types/``, ``resources/``, ``transforms/``
-    directly at the top level (matching the ``main`` branch of the
-    upstream repo).
-    """
     return (root / _MLIB_LAYOUT_MARKER).exists()
 
 
 def _resolve_lib_root(candidate: Path) -> Path | None:
-    """Given a path that might be a MetasmithLibraries checkout or the
-    parent of one, return the canonical lib root or None.
-
-    Handles multi-worktree layouts where ``<candidate>/main`` is the
-    actual working tree of the ``main`` branch.
-    """
     if _validate_mlib(candidate):
         return candidate
     nested = candidate / "main"
@@ -78,19 +42,6 @@ def _resolve_lib_root(candidate: Path) -> Path | None:
 
 
 def _metasmith_libraries_root() -> Path:
-    """The standard library these scenarios stage into their sandbox.
-
-    It lives in this repo now, at ``src/metasmith_libraries``. This used to
-    hunt for a sibling ``metasmith-libraries`` checkout and, failing that,
-    ``git clone`` hallamlab/MetasmithLibraries from GitHub into a cache — at
-    COLLECTION time, since the axis conftest calls this to decide whether to
-    skip. Both halves had gone wrong: the sibling is archived, and the public
-    mirror is old enough to still carry the pre-env-migration
-    ``resources/containers/`` layout, so the fallback did not fail, it
-    silently supplied a DIFFERENT standard library than the one under test.
-
-    ``METASMITH_LIBRARIES_ROOT`` still overrides.
-    """
     explicit = os.environ.get("METASMITH_LIBRARIES_ROOT")
     if explicit:
         root = _resolve_lib_root(Path(explicit).expanduser().resolve())
@@ -109,17 +60,6 @@ def _metasmith_libraries_root() -> Path:
 
 
 def stage_real_libraries(layout: SandboxLayout) -> Path:
-    """Copy the standard library into ``<sandbox>/MetasmithLibraries``.
-
-    A copy rather than a ``git clone``: the library is a directory inside this
-    repo, not a repository, so cloning it would fetch the whole monorepo and
-    land the library three levels down from where the tutorials expect it.
-    Provenance is this repo's HEAD, recorded beside the copy — the sandbox no
-    longer carries a .git dir of its own.
-
-    The tutorials expect ``MLIB = <sandbox>/MetasmithLibraries``, matching the
-    layout the docs reference at ``docs/source/setup/tutorials.rst``.
-    """
     source = _metasmith_libraries_root()
     dest = layout.root / "MetasmithLibraries"
     if dest.exists():
@@ -147,7 +87,6 @@ def run_msm(
     check: bool = True,
     capture: bool = True,
 ) -> subprocess.CompletedProcess:
-    """Run ``metasmith <args>`` inside the sandbox env."""
     bin_path = _msm_bin(layout)
     if not bin_path.exists():
         raise RuntimeError(
@@ -167,11 +106,6 @@ def run_msm(
     return r
 
 
-# ---------------------------------------------------------------------------
-# Type library
-# ---------------------------------------------------------------------------
-
-
 @dataclass(frozen=True)
 class TypeSpec:
     name: str
@@ -185,11 +119,6 @@ def build_type_lib_dir(
     namespace: str,
     types: list[TypeSpec],
 ) -> Path:
-    """Create ``types_dir/<namespace>.yml`` with the given types.
-
-    Returns the YAML file path. The directory form is what ``metasmith
-    build -t`` expects (LoadTypeLibraries scans for ``*.yml``).
-    """
     types_dir.mkdir(parents=True, exist_ok=True)
     yml = types_dir / f"{namespace}.yml"
     types_json = {
@@ -204,11 +133,6 @@ def build_type_lib_dir(
     if not yml.exists():
         raise RuntimeError(f"type create did not produce {yml}")
     return yml
-
-
-# ---------------------------------------------------------------------------
-# Transform library — hand-written .py files compiled via `metasmith build`
-# ---------------------------------------------------------------------------
 
 
 _NOOP_TRANSFORM_TEMPLATE = '''\
@@ -238,10 +162,10 @@ TransformInstance(
 
 @dataclass(frozen=True)
 class TransformSpec:
-    name: str                    # filename stem
-    inputs: list[str]            # type names like "myns::foo"
+    name: str
+    inputs: list[str]
     outputs: list[str]
-    group_by: str | None = None  # which input to group by (default: first input)
+    group_by: str | None = None
 
 
 def _render_noop_transform(spec: TransformSpec) -> str:
@@ -294,17 +218,6 @@ def build_transform_lib(
     *,
     compile_now: bool = True,
 ) -> Path:
-    """Materialize a transform library and (optionally) compile its metadata.
-
-    Each TransformSpec becomes ``<lib_dir>/<name>.py`` with a no-op protocol.
-    With ``compile_now=True`` (default), ``metasmith build -t <types_dir>
-    -r <lib_dir>`` runs to produce ``_metadata/index.yml`` and the embedded
-    type copies — the lib is then loadable by ``plan``, ``transform list``,
-    ``transform show``, etc.
-
-    Pass ``compile_now=False`` for the recovery scenarios that deliberately
-    leave the lib in a broken state.
-    """
     lib_dir.mkdir(parents=True, exist_ok=True)
     for tr in transforms:
         (lib_dir / f"{tr.name}.py").write_text(_render_noop_transform(tr))
@@ -317,18 +230,8 @@ def build_transform_lib(
     return lib_dir
 
 
-# ---------------------------------------------------------------------------
-# Data instance library
-# ---------------------------------------------------------------------------
-
-
 @dataclass(frozen=True)
 class DataItemSpec:
-    """A single item in a data instance library.
-
-    Exactly one of ``host_path`` (file-backed) or ``value`` (scalar/dict)
-    must be set. ``parents`` lists previous-item ``name``s.
-    """
     name: str
     dtype: str
     host_path: Path | None = None
@@ -343,7 +246,6 @@ def build_data_lib(
     type_lib_yaml: Path,
     items: list[DataItemSpec],
 ) -> Path:
-    """Create a data instance library and populate it."""
     lib_path.parent.mkdir(parents=True, exist_ok=True)
     run_msm(layout, [
         "data", "create", str(lib_path),
@@ -377,7 +279,6 @@ def build_data_lib(
 
 
 def write_text_file(path: Path, text: str) -> Path:
-    """Drop a small textual fixture file (e.g. a sample input)."""
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(textwrap.dedent(text))
     return path
@@ -389,14 +290,6 @@ def write_raw_transform_lib(
     types_dir: Path,
     transform_sources: dict[str, str],
 ) -> Path:
-    """Materialize a transform library from already-written .py sources.
-
-    For cases where the no-op template doesn't fit (e.g. parent-aware
-    contracts that ``TransformSpec`` doesn't expose). Each entry in
-    ``transform_sources`` is ``{stem: source_text}`` — the source is
-    written to ``<lib_dir>/<stem>.py`` verbatim. ``metasmith build``
-    is then run to compile the lib's ``_metadata``.
-    """
     lib_dir.mkdir(parents=True, exist_ok=True)
     for stem, src in transform_sources.items():
         (lib_dir / f"{stem}.py").write_text(src)

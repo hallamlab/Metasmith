@@ -1,11 +1,3 @@
-"""MNXM <-> BiGG metabolite bridge, and the biomass precursor set.
-
-The GEMs carry embedded `metanetx.chemical` annotations, but they are MetaNetX 3.x
-and map only 751 of iML1515's 1877 metabolites (and 20 of its 66 biomass
-precursors). Routing through `chem_xref` on the `biggM:` prefix instead maps
-1877/1877 and 49/66 -- so nothing in this benchmark reads the model's own
-annotation.
-"""
 from __future__ import annotations
 
 import json
@@ -26,7 +18,6 @@ MODELS = {
 
 
 def bigg_bridge(force: bool = False) -> pd.DataFrame:
-    """(bigg, mnxm) from chem_xref rows whose source is `biggM:<id>`."""
     if BIGG_CACHE.exists() and not force:
         return pd.read_parquet(BIGG_CACHE)
     x = pd.read_csv(C.CHEM_XREF, sep="\t", comment="#", header=None,
@@ -51,7 +42,6 @@ def load_model_json(host_dir: str) -> dict:
 
 
 def biomass_reaction(model: dict) -> dict:
-    """The model's own objective-carrying biomass reaction."""
     cands = [r for r in model["reactions"]
              if r.get("objective_coefficient", 0) or "BIOMASS" in r["id"].upper()]
     obj = [r for r in cands if r.get("objective_coefficient", 0)]
@@ -62,9 +52,6 @@ def biomass_reaction(model: dict) -> dict:
 
 
 def biomass_precursors(host_dir: str) -> tuple[list, dict]:
-    """(mnxms, diagnostics). Substrates of the biomass reaction, bridged to MNXM
-    through `biggM:` and intersected with the carbon atom universe -- a precursor
-    with no carbon atom map is not a node any solve can report on."""
     model = load_model_json(host_dir)
     rxn = biomass_reaction(model)
     subs = [m for m, coef in rxn["metabolites"].items() if coef < 0]

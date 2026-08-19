@@ -24,21 +24,15 @@ def trivial():
     print(sol.complete, sol._iterations)
     assert sol.complete
 
-    # for i, plan in enumerate(sol.dependency_plans):
-    #     print(f">>> {i+1}")
-    #     for appl in plan:
-    #         print(f"    {appl.transform}")
-    #         for d, e in appl.used.items():
-    #             print(f"        {e}")
 
 def simple():
     transforms = []
-    t = Transform() # assembly <-> bins
+    t = Transform()
     t.AddRequirement(properties={"assembly"})
     t.AddProduct(properties={"bins"})
     transforms.append(t)
 
-    t = Transform() # bins <-> tax
+    t = Transform()
     t.AddRequirement(properties={"bins"})
     t.AddProduct(properties={"tax"})
     transforms.append(t)
@@ -61,7 +55,7 @@ def simple_2():
     t.AddProduct(properties={"x"})
     transforms.append(t)
 
-    t = Transform() # bins <-> tax
+    t = Transform()
     t.AddRequirement(properties={"b"})
     t.AddProduct(properties={"x"})
     transforms.append(t)
@@ -174,35 +168,12 @@ def branching_1():
     )
     print(sol.complete, len(sol.dependency_plan), sol._iterations)
     assert sol.complete
-    # for i, states in enumerate(sol._history):
-    #     print(f">>> {i} | states: {len(states)}")
-    #     for j, state in enumerate(states):
-    #         print(f"  {j} | steps: {len(state.steps)}")
-    #         for appl in state.steps:
-    #             print(f"    {appl.transform}")
-    #             for d, e in appl.used.items():
-    #                 print(f"      {d} {e}")
-    #                 # print(f"        ---")
-    #                 for pgroup in appl.produced:
-    #                     print(f"      .")
-    #                     for d, e in pgroup.items():
-    #                         print(f"      {d} {e}")
-    #     print()
 
-
-    # for i, states in enumerate(sol._refiner_histories):
-    #     print(f">>> {i} | iterations: {len(states)}")
-    #     for j, state in enumerate(states):
-    #         print(f"  {j} | valid: {state.valid}")
-    #         for s in state.steps:
-    #             print(f"        {s.transform}")
-    #     print()
 
     for appl in sol.dependency_plan:
         print(f"    {appl.transform}")
         for d, e in appl.used.items():
             print(f"        {d} {e}")
-        # print(f"        ---")
         for pgroup in appl.produced:
             print(f"        .")
             for d, e in pgroup.items():
@@ -276,39 +247,7 @@ def branching_2():
     print(sol.complete, len(sol.dependency_plan), sol._iterations)
     sol.RenderDAG("./cache/br2")
     assert sol.complete
-    # for i, states in enumerate(sol._history):
-    #     print(f">>> {i} | states: {len(states)}")
-    #     for j, state in enumerate(states):
-    #         print(f"  {j} | steps: {len(state.steps)}")
-    #         for appl in state.steps:
-    #             print(f"    {appl.transform}")
-    #             for d, e in appl.used.items():
-    #                 print(f"      {d} {e}")
-    #                 # print(f"        ---")
-    #                 for pgroup in appl.produced:
-    #                     print(f"      .")
-    #                     for d, e in pgroup.items():
-    #                         print(f"      {d} {e}")
-    #     print()
 
-
-    # for i, states in enumerate(sol._refiner_histories):
-    #     print(f">>> {i} | iterations: {len(states)}")
-    #     for j, state in enumerate(states):
-    #         print(f"  {j} | valid: {state.valid}")
-    #         for s in state.steps:
-    #             print(f"        {s.transform}")
-    #     print()
-
-    # for appl in sol.dependency_plan:
-    #     print(f"    [{appl.initial_timeline}] {appl.transform}")
-    #     for d, e in appl.used.items():
-    #         print(f"        {d} {e}")
-    #     # print(f"        ---")
-    #     for pgroup in appl.produced:
-    #         print(f"        .")
-    #         for d, e in pgroup.items():
-    #             print(f"        {d} {e}")
 
 def branching_3():
     transforms = []
@@ -330,14 +269,11 @@ def branching_3():
     tr.AddProduct(properties={"z"})
     transforms.append(tr)
 
-    # used by both branches, identical signatures,
-    # but can't merge due to lineage
     tr = Transform()
     tr.AddRequirement(properties={"z"})
     tr.AddProduct(properties={"z2"})
     transforms.append(tr)
 
-    # lineage constraint contained within branch
     tr = Transform()
     dep = tr.AddRequirement(properties={"z"})
     tr.AddRequirement(properties={"z2"}, parents={dep})
@@ -361,8 +297,6 @@ def branching_3():
     tr.AddProduct(properties={"y2"})
     transforms.append(tr)
 
-    # used by both branches, identical signatures,
-    # but CAN merge despite to lineage
     tr = Transform()
     dep = tr.AddRequirement(properties={"y"})
     tr.AddRequirement(properties={"y2"}, parents={dep})
@@ -380,39 +314,7 @@ def branching_3():
     print(sol.complete, len(sol.dependency_plan), sol._iterations)
     sol.RenderDAG("./cache/br3", format="svg")
     assert sol.complete
-    # for i, states in enumerate(sol._history):
-    #     print(f">>> {i} | states: {len(states)}")
-    #     for j, state in enumerate(states):
-    #         print(f"  {j} | steps: {len(state.steps)}")
-    #         for appl in state.steps:
-    #             print(f"    {appl.transform}")
-    #             for d, e in appl.used.items():
-    #                 print(f"      {d} {e}")
-    #                 # print(f"        ---")
-    #                 for pgroup in appl.produced:
-    #                     print(f"      .")
-    #                     for d, e in pgroup.items():
-    #                         print(f"      {d} {e}")
-    #     print()
 
-
-    # for i, states in enumerate(sol._refiner_histories):
-    #     print(f">>> {i} | iterations: {len(states)}")
-    #     for j, state in enumerate(states):
-    #         print(f"  {j} | valid: {state.valid}")
-    #         for s in state.steps:
-    #             print(f"        {s.transform}")
-    #     print()
-
-    # for appl in sol.dependency_plan:
-    #     print(f"    {appl.transform}")
-    #     for d, e in appl.used.items():
-    #         print(f"        {d} {e}")
-    #     # print(f"        ---")
-    #     for pgroup in appl.produced:
-    #         print(f"        .")
-    #         for d, e in pgroup.items():
-    #             print(f"        {d} {e}")
 
 def branching_4():
     transforms = []
@@ -431,7 +333,6 @@ def branching_4():
 
     tr = Transform()
     tr.AddRequirement(properties={"b"})
-    # tr.AddRequirement(properties={"x"})
     tr.AddProduct(properties={"target"})
     transforms.append(tr)
 
@@ -443,9 +344,6 @@ def branching_4():
             {Endpoint(properties={"a"})},
             {Endpoint(properties={"b"})},
         ],
-        # given = [
-        #     {estart}
-        # ],
         target=target,
         transforms=transforms,
     )
@@ -460,7 +358,7 @@ def branching_5():
     tr.AddRequirement(properties={"start"})
     tr.AddProduct(properties={"x", "a"})
     tr.NewProductGroup()
-    tr.AddProduct(properties={"x", "a", "b"}) # what if groupings go both ways?
+    tr.AddProduct(properties={"x", "a", "b"})
     transforms.append(tr)
     tr.NewProductGroup()
     tr.AddProduct(properties={"x", "b"})
@@ -483,9 +381,6 @@ def branching_5():
         given=[
             {Endpoint(properties={"start"})},
         ],
-        # given = [
-        #     {estart}
-        # ],
         target=target,
         transforms=transforms,
     )
@@ -566,19 +461,11 @@ def branching_6():
     transforms.append(tr)
 
     target = Transform()
-    # target.AddRequirement(properties={"reads"})
-    # target.AddRequirement(properties={"read_qc"})
-    # target.AddRequirement(properties={"clean_reads"})
-    # target.AddRequirement(properties={"assembly"})
     target.AddRequirement(properties={"assembly_stats"})
-    # target.AddRequirement(properties={"target"})
     sol = solve_by_mcts(
         given=[
             {Endpoint(properties={"start"})},
         ],
-        # given = [
-        #     {estart}
-        # ],
         target=target,
         transforms=transforms,
     )
@@ -587,67 +474,4 @@ def branching_6():
     assert sol.complete
 
 
-# trivial()
-# simple()
-# simple_2()
-# loop_1()
-# branching_1()
-# branching_2()
-# branching_3()
-# branching_4()
-# branching_5()
 branching_6()
-
-# test when branching is not needed
-# add joining during mcts
-#   when used appl in solved branch,
-#   check if remaining transforms in branch can be used to FF to solution
-
-
-# for s in plan.state[0].steps:
-#     print(s.transform)
-
-
-# t = Transform()
-# t.AddRequirement(properties={"bins"})
-# t.AddProduct(properties={"assembly"})
-# transforms.append(t)
-
-# t = Transform() # bins <-> tax
-# t.AddRequirement(properties={"bins"})
-# t.AddProduct(properties={"tax"})
-# transforms.append(t)
-
-# t = Transform()
-# t.AddRequirement(properties={"tax"})
-# t.AddProduct(properties={"bins"})
-# transforms.append(t)
-
-# t = Transform() # bins <-> contigs
-# t.AddRequirement(properties={"bins"})
-# t.AddProduct(properties={"contigs"})
-# transforms.append(t)
-
-# t = Transform()
-# t.AddRequirement(properties={"contigs"})
-# t.AddProduct(properties={"bins"})
-# transforms.append(t)
-
-# t = Transform() # contigs <-> ORFs
-# t.AddRequirement(properties={"contigs"})
-# t.AddProduct(properties={"ORFs"})
-# transforms.append(t)
-
-# t = Transform()
-# t.AddRequirement(properties={"ORFs"})
-# t.AddProduct(properties={"contigs"})
-# transforms.append(t)
-
-# t = Transform() # ORFs <-> annotation
-# t.AddRequirement(properties={"ORFs"})
-# t.AddProduct(properties={"annotation"})
-# transforms.append(t)
-# t = Transform() 
-# t.AddRequirement(properties={"annotation"})
-# t.AddProduct(properties={"ORFs"})
-# transforms.append(t)

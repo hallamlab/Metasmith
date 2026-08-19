@@ -4,7 +4,7 @@ import setuptools
 
 HERE = Path(os.path.realpath(__file__)).parent
 NAME = HERE.name
-USER = "hallamlab"  # github id
+USER = "hallamlab"
 GIT_URL = f"https://github.com/{USER}/{NAME}"
 SHORT_SUMMARY = "A pipeline for the analysis of pooled fosmid data, run on metasmith"
 ENTRY_POINTS = [f"{e}={NAME}.cli:main" for e in (NAME, "ffs")]
@@ -33,20 +33,12 @@ if __name__ == "__main__":
         package_data={
             "fabfos": [
                 "version.txt",
-                # the bundled metasmith library shipped with conda installs
                 "_library/**/*",
-                # FabFos's own algorithm library. Neither directory is a python
-                # package, so find_packages does not see them and they only ship
-                # because of these globs. `algorithm/_metadata/**` is the part
-                # that matters: without it the directory loads as a resource
-                # library and then resolves nothing.
                 "algorithm/*.py",
                 "algorithm/_metadata/**/*",
             ],
         },
         entry_points={"console_scripts": ENTRY_POINTS},
         python_requires=">=3.12",
-        # metasmith provides the planner/executor; it is a conda dependency
-        # (see conda_recipe), not a pip one.
         install_requires=[],
     )

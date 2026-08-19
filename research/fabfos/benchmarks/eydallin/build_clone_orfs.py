@@ -60,7 +60,6 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[4]
 HERE = Path(__file__).resolve().parent
 
-# The synonym table, from the sibling cohort. See leg 1 above.
 sys.path.insert(0, str(REPO / "main" / "benchmarks" / "aska"))
 from build_extraction import gene_to_bnumber                          # noqa: E402
 
@@ -78,7 +77,6 @@ RESOLUTION_COLS = (
 
 
 def read_faa(path: Path) -> list[dict]:
-    """Every record, with the header fields NCBI puts in brackets kept as they are."""
     out, cur, seq = [], None, []
     for line in path.open():
         if line.startswith(">"):
@@ -93,9 +91,6 @@ def read_faa(path: Path) -> list[dict]:
                              ("partial", r"\[partial=([^\]]+)\]")):
                 m = re.search(pat, head)
                 cur[key] = m.group(1).strip() if m else ""
-            # A pseudogene still gets a translated-CDS record; what it does not get is a
-            # `[protein_id=]`. Both tells are read, because the tag is what NCBI writes
-            # and the missing accession is what a join would have tripped over.
             cur["pseudo"] = ("[pseudo=true]" in head) or not cur["protein_id"]
             seq = []
         elif cur is not None:
@@ -132,9 +127,6 @@ def main() -> int:
           f"({one_faa(W3110).stem})")
 
     mg_by_locus = {r["locus_tag"]: r for r in mg if r["locus_tag"]}
-    # Sequence -> the W3110 record. A duplicated sequence (identical paralogs) would
-    # make the strong leg ambiguous, so the first is kept and the collision is counted
-    # rather than being resolved by whichever hashed first.
     w3_by_seq: dict[str, dict] = {}
     dup_seqs = 0
     for r in w3:
@@ -142,8 +134,6 @@ def main() -> int:
             dup_seqs += 1
             continue
         w3_by_seq[r["seq"]] = r
-    # Real proteins first, so a symbol shared by a live gene and a pseudo one resolves to
-    # the live gene rather than to whichever the file lists first.
     w3_by_gene = {}
     for r in sorted(w3, key=lambda x: x["pseudo"]):
         if r["gene"]:
@@ -180,18 +170,12 @@ def main() -> int:
         hit = w3_by_seq.get(src["seq"])
         method = "w3110_exact_protein"
         if hit is None:
-            # The symbol fallback tries the paper's name, the normalised one, and
-            # MG1655's own primary name for that locus -- W3110's annotation uses the
-            # current name, which is the one the first two may predate.
             for key in (src["gene"], norm, gene):
                 if key and key.lower() in w3_by_gene:
                     hit = w3_by_gene[key.lower()]
                     method = "w3110_symbol"
                     break
         if hit is not None and hit["pseudo"]:
-            # A symbol match onto a pseudogene is the trap this guard exists for -- see
-            # the header note on tnaA. The exact-sequence leg cannot hit one for a live
-            # MG1655 protein, so in practice this is the symbol leg being refused.
             rec["note"] = (f"W3110's {hit['gene'] or hit['locus_tag']} is a pseudogene"
                            + (f" ({hit['partial']} partial)" if hit["partial"] else "")
                            + "; took MG1655's protein instead")
@@ -221,13 +205,6 @@ def main() -> int:
                    method=method, identical_to_mg1655="yes" if identical else "no",
                    aa_len=str(len(hit["seq"])))
         if from_w3110 and not identical:
-            # HOW it differs, not just that it does. Aligned at the C terminus, because
-            # every difference in this cohort that is not a point substitution is a
-            # different START call -- `erfK`/`ldtA` gains one residue and `ynbD` eight,
-            # and comparing those position-by-position from the N terminus reports 6%
-            # identity for what is the same protein. A real mis-match would still show
-            # as a low number here, which is the point of reporting it rather than
-            # asserting the symbol was enough.
             n = min(len(hit["seq"]), len(src["seq"]))
             same = sum(1 for x, y in zip(hit["seq"][-n:], src["seq"][-n:]) if x == y)
             rec["note"] = (f"differs from MG1655 ({len(src['seq'])} aa there); "

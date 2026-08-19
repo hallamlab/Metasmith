@@ -1,15 +1,3 @@
-"""Watching, tailing, and cancelling a run that is already detached.
-
-The block the monolith had already fenced off with its own banner. These are the
-only agent methods that deliberately avoid holding an `AgentShell` open: a wait
-that lasts hours must not pin a connection for the duration, so each one is a
-one-shot exec that reconnects, asks, and drops.
-
-A mixin for the same reason as `workflow_ops` -- they read the agent's home and
-shell -- and separate from it because the lifecycle is different: these run
-against a workflow the client already launched and may have stopped watching.
-"""
-
 from __future__ import annotations
 
 from pathlib import Path
@@ -22,15 +10,8 @@ from .shell import AgentShell
 
 
 class _RunControl:
-    # -- lightweight detached-run helpers -----------------------------------
 
     def _remote_oneshot(self, cmd: str, timeout: int = 30) -> "ShellResult":
-        """One-shot exec on the agent host without holding AgentShell open.
-
-        Local home → transient LiveShell with quiet=True.
-        SSH home   → direct subprocess `ssh host '<cmd>'`.
-        Returns ShellResult with .out and .err populated.
-        """
         if self._is_ssh():
             import subprocess
             ssh_src = SshSource.Parse(self.home.address)
@@ -51,11 +32,9 @@ class _RunControl:
             return res
 
     def _task_workspace(self, task_key: str) -> Path:
-        """workspace = runs/<key>/ (parent of _metasmith)"""
         return AgentPaths.to_task(task_key, root=self.home.GetPath()).parent.parent
 
     def _resolve_run_dir(self, task_key: str, run: int | None) -> Path:
-        """Resolve runs/<key>/_metasmith/logs.<ts>/ once at call time."""
         workspace = self._task_workspace(task_key)
         internals = workspace / AgentPaths.INTERNALS
         if run is None:
@@ -65,7 +44,7 @@ class _RunControl:
                 line = line.strip()
                 if line.startswith(str(internals)) or "/logs." in line:
                     return Path(line)
-            return latest  # fall back to symlink path
+            return latest
         else:
             res = self._remote_oneshot(
                 f"ls -1d {internals}/logs.* 2>/dev/null | grep -v latest | sort",
@@ -85,19 +64,6 @@ class _RunControl:
         since_mtime: float | None = None,
         grace_s: float = 5.0,
     ) -> dict:
-        """Block until `sentinel` appears in agent.log of the selected run.
-
-        Returns: {task_key, status, run_dir, elapsed_s, last_log_mtime, tail}
-        status ∈ {"completed", "timeout", "missing", "errored"}.
-
-        `grace_s` is how long "the driver is gone and nothing said it finished"
-        has to hold before it is believed. It exists for the caller that waits
-        from the moment of launch: a nextflow that has not written its PID lock
-        yet looks exactly like one that died. A caller *polling* an already-old
-        run has no such window to protect and should pass 0 -- otherwise, with
-        `timeout_s` also 0, the timeout branch fires first and `errored` is
-        unreachable, which is how a crashed run stayed `running` forever.
-        """
         import time
         task_key = task._key if isinstance(task, WorkflowTask) else str(task)
         run_dir = self._resolve_run_dir(task_key, run)
@@ -179,7 +145,6 @@ class _RunControl:
         lines: int = 50,
         run: int | None = None,
     ) -> dict:
-        """Read the last N lines from agent.log or main.log of the selected run."""
         assert source in ("agent", "main"), f"source must be 'agent' or 'main', got [{source}]"
         task_key = task._key if isinstance(task, WorkflowTask) else str(task)
         run_dir = self._resolve_run_dir(task_key, run)
@@ -208,13 +173,6 @@ class _RunControl:
         task: WorkflowTask | str,
         run: int | None = None,
     ) -> dict:
-        """Read nextflow's per-task trace for the selected run.
-
-        The whole file, not a tail: it is one line per task and the caller wants
-        every one of them. A run big enough for that to be expensive is a run
-        whose trace the caller wanted paginated anyway, which nothing asks for
-        yet.
-        """
         task_key = task._key if isinstance(task, WorkflowTask) else str(task)
         run_dir = self._resolve_run_dir(task_key, run)
         trace = run_dir / AgentPaths.NXF_TRACE_FILE
@@ -234,12 +192,6 @@ class _RunControl:
         }
 
     def CancelWorkflow(self, task: WorkflowTask | str, timeout_s: float = 30.0) -> dict:
-        """Best-effort cancel an active run by removing workspace/PID.lock.
-
-        The launcher (see RunWorkflow) watches PID.lock and gracefully kills
-        nextflow when it disappears. Falls back to pkill if the lock is gone
-        but the driver is still alive.
-        """
         import time
         task_key = task._key if isinstance(task, WorkflowTask) else str(task)
         workspace = self._task_workspace(task_key)
@@ -278,7 +230,6 @@ class _RunControl:
                 }
             time.sleep(1.0)
 
-        # fallback
         self._remote_oneshot(f"pkill -f 'run_workflow.*key={task_key}' || true", timeout=15)
         return {
             "task_key": task_key,
@@ -289,7 +240,6 @@ class _RunControl:
         }
 
     def ListWorkflowRuns(self, task: WorkflowTask | str) -> list[dict]:
-        """List all runs (logs.<ts> directories) for a task."""
         task_key = task._key if isinstance(task, WorkflowTask) else str(task)
         internals = self._task_workspace(task_key) / AgentPaths.INTERNALS
         res = self._remote_oneshot(

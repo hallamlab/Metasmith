@@ -1,37 +1,3 @@
-"""The redox invariance repair -- the one correction the old graph could not express.
-
-NOTHING IN THE PREVIOUS GRAPH RAN OVER A FINISHED STACK. `aam_ensemble` fused, stacked,
-closed the ledger and minted the bake in one protocol, so there was no artifact between
-"the layers agree" and "this is the reference" for a correction to be applied to. This step
-is that seam, and the seam is why the split was worth doing.
-
-WHAT IT CORRECTS. NADH and NAD(+) differ by one hydrogen, and hydrogen is not in this
-graph's element vocabulary -- so to a maximum-common-substructure mapper the two 21-carbon
-skeletons are indistinguishable and it will route a substrate's carbon into the cofactor.
-A hydride transfer does no such thing. Every C/N/P correspondence running between a
-NAD(P)/FAD/FMN couple and a substrate is therefore impossible, and the measured population
-is 5,457 reactions -- concentrated in `disagree_diluted` and `<member>_only`, with
-`curated` and `consensus` clean.
-
-IT IS A REPAIR AND NOT A FILTER, which is the plan's own correction to the proposal it
-comes from and the reason coverage may not fall here. A refused arm's weight is not
-deleted: the source atom's surviving arms are rescaled back to the total it started with,
-so the refusal CONCENTRATES the atom's claim on the destination that survives the
-invariant. Where no arm survives, the couple is removed and `atom_pairs.forced_pairs` is
-asked whether conservation settles the remainder on its own. What is left after that is a
-real loss, and it gets its own ledger outcome rather than being folded into
-`mapped_nothing`.
-
-SULFUR IS THE CANARY AND THE RUN ASSERTS IT. NAD, NADP, FAD and FMN carry no sulfur, so an
-S row cannot be a crossing arm; the module exits non-zero if the S count moves, because
-that would mean the scope predicate reached something it has no invariant for.
-
-THE REFUSALS SHIP. One row per refused correspondence under a named predicate, beside the
-table of which ids were treated as which cofactor family and state -- and which carry a
-family's exact C/N/P signature under a name the map does not recognise, which is the check
-that says the name map has gone stale against a new MNXref rather than that the chemistry
-changed.
-"""
 from metasmith.python_api import *
 
 lib   = TransformInstanceLibrary.ResolveParentLibrary(__file__)
@@ -92,8 +58,6 @@ def protocol(context: ExecutionContext):
         .ifContainerDo(env=image, cmd=cmd) \
         .ifVirtualEnvDo(env=image, cmd=cmd)
 
-    # `emptied.txt` is checked for EXISTENCE and not for content: an empty one is the good
-    # outcome, and the whole design goal is that it stays short.
     want = ["aam_pairs.parquet", "refusals.parquet", "cofactors.tsv", "emptied.txt",
             "summary.tsv"]
     return ExecutionResult(
@@ -109,7 +73,5 @@ TransformInstance(
     protocol=protocol,
     model=model,
     group_by=image,
-    # The stacked table plus the metabolite table in memory, one equation parse per
-    # reaction that has pairs, and no mapper. The re-derivation touches a handful of keys.
     resources=Resources(cpus=2, memory=Size.GB(48), duration=Duration(hours=2)),
 )

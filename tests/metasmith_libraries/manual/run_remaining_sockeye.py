@@ -1,8 +1,4 @@
 #!/usr/bin/env python
-"""Run remaining pipeline steps on Sockeye: stringtie_merge → quant → count tables.
-
-All inputs pre-computed from run mHAnaWSi (braker3_gff, stringtie_gtfs, star_bams).
-"""
 import sys
 import time
 sys.stdout.reconfigure(line_buffering=True)
@@ -20,10 +16,8 @@ MLIB = Path(__file__).resolve().parent.parent.parent
 ARC_DATA = Path("/arc/project/st-shallam-1/pwy_group/data/porphyridium_purpureum")
 ARC_INTER = ARC_DATA / "eguEpdhP-intermediates"
 
-# braker3 GFF from run mHAnaWSi
 PREV_BRAKER3_GFF = ARC_INTER / "braker3/1-1-1.05qUvHv1D0jnr9XG-mR9ozKye.gff3"
 
-# 9 stringtie GTFs from run mHAnaWSi
 PREV_GTFS = [
     ARC_INTER / "stringtie_gtfs_v2/1-1-1.AKWnx9EKmNnrS5y7-vyhx3Bb8.gtf",
     ARC_INTER / "stringtie_gtfs_v2/1-1-1.5wPghjz43yfSGsyq-vyhx3Bb8.gtf",
@@ -36,7 +30,6 @@ PREV_GTFS = [
     ARC_INTER / "stringtie_gtfs_v2/1-1-1.yUxZDLc6UVKjEAxK-vyhx3Bb8.gtf",
 ]
 
-# 9 STAR BAMs (needed for stringtie_quant)
 PREV_BAMS = [
     ARC_DATA / "star_bams/1-1-1.g3ah0QAiGjmgmOQv-9mrjFffM.bam",
     ARC_DATA / "star_bams/1-1-1.SZV4oNiEOp2dIAHQ-9mrjFffM.bam",
@@ -86,14 +79,11 @@ def main():
         "transcriptomics::experiment",
     )
 
-    # braker3 GFF
     inputs.AddItem(PREV_BRAKER3_GFF, "transcriptomics::braker3_gff", parents={experiment})
 
-    # 9 stringtie GTFs
     for gtf in PREV_GTFS:
         inputs.AddItem(gtf, "transcriptomics::stringtie_gtf", parents={experiment})
 
-    # 9 STAR BAMs
     for bam in PREV_BAMS:
         inputs.AddItem(bam, "transcriptomics::star_bam", parents={experiment})
 
@@ -138,7 +128,7 @@ def main():
     print("\n=== Waiting for completion ===")
     results_path = smith.GetResultSource(task).GetPath()
     t0 = time.time()
-    timeout = 14400  # 4h should be plenty
+    timeout = 14400
     last_print = 0
     while not (results_path / "_metadata").exists():
         elapsed = time.time() - t0

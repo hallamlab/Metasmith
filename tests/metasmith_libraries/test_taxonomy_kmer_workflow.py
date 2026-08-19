@@ -1,16 +1,3 @@
-"""
-Planning + bridge tests for the 5 new taxonomic profilers
-(kraken2+bracken, centrifuger, sylph, ganon2, metaphlan).
-
-Verified flags + output formats live in tests/manual/taxprofile_probe/PROBE.md.
-Cached example outputs (used by harness tests) live in
-tests/test_data/taxprofile_examples/<tool>/.
-
-The "bridge" test is the deliverable for the Kraken2 -> Centrifuger migration:
-both tools must plan from the same paired-end input and both must produce
-kraken-style reports (taxonomy::kraken2_report, taxonomy::centrifuger_kreport)
-in the same execution.
-"""
 import pytest
 from pathlib import Path
 from metasmith.python_api import (
@@ -24,19 +11,11 @@ from conftest import MLIB, TEST_DATA_DIR
 
 @pytest.fixture(scope="module")
 def taxprofile_transforms(mlib):
-    """Load metagenomics transforms (the 5 new profilers live under taxonomy/)."""
     return [TransformInstanceLibrary.Load(mlib / "transforms/metagenomics")]
 
 
 @pytest.fixture
 def paired_reads_input(tmp_inputs, test_data_dir):
-    """Create input library with a paired-end FASTQ pair + tool-specific DB stubs.
-
-    The DB stub paths point at /scratch/st-shallam-1/k2_standard_16_GB_20251015
-    (sockeye-staged Kraken2 standard DB) and other slots that don't exist on
-    this machine - the test only requires the type/structure to plan, not the
-    files. If you run the workflow E2E you'll need real DBs in those slots.
-    """
     inputs = tmp_inputs(["sequences.yml", "taxonomy.yml", "ref.yml"])
 
     r1 = test_data_dir / "small_reads_R1.fq.gz"
@@ -59,7 +38,6 @@ def paired_reads_input(tmp_inputs, test_data_dir):
 
 @pytest.fixture
 def taxprofile_resources(mlib, base_resources):
-    """Augment base resources with any local DB stubs in resources/lib (none required)."""
     resources = list(base_resources)
     lib_path = mlib / "resources/lib"
     if lib_path.exists():
@@ -70,13 +48,7 @@ def taxprofile_resources(mlib, base_resources):
     return resources
 
 
-# ---------------------------------------------------------------------------
-# Per-tool planning tests
-# ---------------------------------------------------------------------------
-
 class TestTaxprofilePlanning:
-    """All five profilers must plan a non-empty workflow from PE reads + DB."""
-
     def _plan(self, agent, taxprofile_resources, taxprofile_transforms,
               paired_reads_input, target_type):
         targets = TargetBuilder()
@@ -137,17 +109,7 @@ class TestTaxprofilePlanning:
             pytest.skip("phyloflash workflow requires a phyloflash_db resource")
 
 
-# ---------------------------------------------------------------------------
-# Bridge: Kraken2 vs Centrifuger over the same input
-# ---------------------------------------------------------------------------
-
 class TestKmerBridge:
-    """The deliverable artifact: one workflow plan that emits both
-    taxonomy::kraken2_report and taxonomy::centrifuger_kreport from the same
-    paired-end input - the kreport format is identical across the two tools
-    (verified empirically in PROBE.md), so downstream tools can diff them.
-    """
-
     def test_kmer_bridge_kraken2_vs_centrifuger(
         self, agent, taxprofile_resources, taxprofile_transforms, paired_reads_input
     ):
@@ -175,24 +137,8 @@ class TestKmerBridge:
             f"centrifuger transform missing from bridge plan; got: {step_modules}"
 
 
-# ---------------------------------------------------------------------------
-# TransformHarness: directly execute the sylph protocol with a tiny DB.
-# Lighter than a full StageWorkflow+RunWorkflow round trip; bypasses Nextflow.
-# ---------------------------------------------------------------------------
-
 @pytest.mark.slow
 class TestSylphHarness:
-    """Run the sylph transform protocol in isolation via TransformHarness.
-
-    Sylph was picked for the harness path because:
-      - sketch + profile both finish in <1 s on a 5-genome mini-DB,
-      - DB is a single .syldb file (no nested layout to fake),
-      - empirically (PROBE.md), <500 MB RAM is enough.
-
-    Skipped unless tests/test_data/sylph_tiny.syldb + the paired FASTQ fixtures
-    are present, and the sylph container can be pulled by the local Docker.
-    """
-
     def test_sylph_protocol_runs_on_tiny_db(
         self, agent, taxprofile_resources, taxprofile_transforms,
         paired_reads_input, tmp_path, test_data_dir
@@ -206,7 +152,6 @@ class TestSylphHarness:
                 "`sylph sketch -i refs/*.fna -o tests/test_data/sylph_tiny`"
             )
 
-        # Add the tiny DB as a ref::sylph_db resource so the planner can resolve it.
         paired_reads_input.AddItem(tiny_db, "ref::sylph_db")
         paired_reads_input.Save()
 
@@ -229,9 +174,6 @@ class TestSylphHarness:
                 break
         assert sylph_idx is not None, "sylph step not found in plan"
 
-        # Harness needs a deployed agent home (for the _metasmith/.bounce path
-        # used by container exec). Reuse the session's agent home, so the
-        # work_dir lives inside it and the bounce dir is reachable.
         from metasmith.python_api import Source
         agent_home = Path(agent.home.GetPath()) if hasattr(agent, "home") else None
         if agent_home is None or not (agent_home / "_metasmith").exists():
@@ -246,8 +188,6 @@ class TestSylphHarness:
         result = harness.run()
         assert result.success, f"sylph protocol returned failure: {result}"
 
-        # The product is a single TSV; verify it's non-empty and has the header.
         produced = [p for entry in result.manifest for _, p in entry.items() if p]
         assert any(p.exists() and p.stat().st_size > 0 for p in produced), \
             f"sylph produced no non-empty outputs: {produced}"
-

@@ -1,14 +1,3 @@
-"""Regression test: dev.sh refuses to build the image / conda package from a
-stale dist/.
-
-`-bd` re-tags the image from the *live* source tree but installs whatever sdist
-sits in dist/ (`COPY ./dist/*.tar.gz`); `-bc` packages that same sdist. If the
-source is edited after `-bp` without rebuilding, the artifact's embedded build
-hash no longer matches the tag the image is given (and the conda build). The
-`_assert_dist_matches_source` guard recomputes the live source hash and requires
-a matching `dist/<name>-<ver>+<hash>.tar.gz`, blocking the build otherwise.
-"""
-
 import shutil
 import subprocess
 import textwrap
@@ -21,16 +10,12 @@ DEV_SH = REPO_ROOT / "dev" / "metasmith.sh"
 
 
 def _run_guard(tmp_path: Path, *, stub_hash: str, dist_files: list[str]):
-    """Source dev.sh, point HERE at a fake repo whose source hash is `stub_hash`
-    (via a `python` stub on PATH), populate dist/ with `dist_files`, and call
-    `_assert_dist_matches_source`. Returns the CompletedProcess."""
     fake_here = tmp_path / "repo"
     (fake_here / "dist").mkdir(parents=True)
     (fake_here / "src").mkdir()
     for f in dist_files:
         (fake_here / "dist" / f).write_text("x")
 
-    # stub `python` so `python -m metasmith._build_hash` prints a fixed hash
     stub_dir = tmp_path / "bin"
     stub_dir.mkdir()
     py_stub = stub_dir / "python"
@@ -67,7 +52,6 @@ def test_guard_passes_when_dist_matches(tmp_path):
 @pytest.mark.skipif(not DEV_SH.exists(), reason="dev.sh missing")
 @pytest.mark.skipif(shutil.which("bash") is None, reason="bash required")
 def test_guard_blocks_on_stale_dist(tmp_path):
-    # dist holds an sdist from a *different* (old) source hash
     proc = _run_guard(
         tmp_path,
         stub_hash="abc1234",

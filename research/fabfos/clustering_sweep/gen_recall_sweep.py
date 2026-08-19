@@ -74,16 +74,15 @@ sys.path.insert(0, str(REPO / "main" / "figures" / "inserts"))
 import identity as identity_lib   # noqa: E402  -- the shared all-vs-all
 import pieces as piece_lib        # noqa: E402  -- the shared piece rebuild
 
-SUBSET = "pool01"        # the day-6 root pool; three barcodes, one library
+SUBSET = "pool01"
 REF_IDS = (0.98, 0.99, 0.995)
 CONTAINMENT = 0.99
-FRAGMENT_CONTAINMENT = 0.90   # the closure-aware absorb rule; see `_representatives`
+FRAGMENT_CONTAINMENT = 0.90
 CLOSURE_MARGIN = 0.95
-LIB_DEFAULT = 0.99         # what `--select-k identity` ships
+LIB_DEFAULT = 0.99
 
 
 def load_work(work):
-    """-> (meta, seqs, hsps) from a dedup work directory."""
     meta = json.loads((Path(work) / "piece_meta.json").read_text())
     seqs = {n: s for n, _d, s in read_fasta(Path(work) / "pooled.fna")}
     hsps = read_blast_tsv(Path(work) / "ava_hits.tsv", outfmt=AVA_HSP_FMT)
@@ -91,12 +90,6 @@ def load_work(work):
 
 
 def canonical_work(force=False):
-    """The dedup work directory for the whole 669-piece run, rebuilt from ./data.
-
-    Both halves come from the shared modules -- the pieces from the pipeline's own
-    `rectify` over the shipped junction blast, the all-vs-all from its own blast
-    settings -- so this sweep and the figures it informs cluster on one matrix.
-    """
     work = piece_lib.build(force=force)
     identity_lib.hits(force=force)
     return work
@@ -110,23 +103,11 @@ def groups_from(assignment, labels):
 
 
 def resolve(member2centroid, reps):
-    """Piece -> surviving centroid, for pieces whose centroid survived absorb."""
     alive = set(reps)
     return {m: c for m, c in member2centroid.items() if c in alive}
 
 
 def read_recall_tables(labels):
-    """-> ({pool: [(hitset_bitmask, pairs)]}, {pool: {stat: value}}) or (None, None).
-
-    The hit-sets come from `tests/recall_map_on_fir.sh`, which maps each day-6
-    barcode's reads against these same 409 pieces ON FIR and returns, per read PAIR,
-    the set of pieces it aligned to. Pair-level and not read-level: interleaved mates
-    share a name and PAF carries no flag, so a mate cannot be told from its partner
-    and the pair is the smallest honest unit.
-
-    Bitmasks rather than sets because the sweep tests every hit-set against every
-    partition's retained centroids -- 182 partitions x a few thousand rows.
-    """
     d = CACHE / "fir_hitsets"
     if not d.is_dir():
         return None, None
@@ -163,8 +144,6 @@ def main():
     work = canonical_work(force=a.rebuild)
     meta, seqs, hsps = load_work(work)
 
-    # The subset is taken on the QUALIFIED piece id, never on a filename: `rectify`
-    # numbers its pieces from P000001 per pool, so the bare id collides across pools.
     labels = sorted(k for k, v in meta.items() if v["piece"].startswith(a.subset + "_"))
     if not labels:
         raise SystemExit(f"no pieces with id prefix {a.subset!r} in {work}")
@@ -183,7 +162,6 @@ def main():
                                 fragment_containment=FRAGMENT_CONTAINMENT,
                                 absorb=True, verbose=False)
 
-    # ---- reference clone sets, one per R -------------------------------------
     refs = {}
     for R in REF_IDS:
         m = AgglomerativeClustering(metric="precomputed", linkage="complete",
@@ -194,7 +172,6 @@ def main():
         print(f"  reference R={R}: {len(reps)} clones "
               f"({sum(meta[c]['length'] for c in reps)/1e6:.2f} Mbp)")
 
-    # ---- the sweep -----------------------------------------------------------
     dist = 1.0 - sim
     np.fill_diagonal(dist, 0.0)
     Z = linkage(squareform(dist, checks=False), method="complete")
@@ -231,9 +208,6 @@ def main():
             hit = {m2c[c] for c in refs[R] if c in m2c and m2c[c] in survivors}
             row[f"recall_{R:g}"] = len(hit) / len(refs[R])
         if reads:
-            # A pair is recalled if any piece it hit survived as a centroid. Whether
-            # it was the pair's BEST hit is beside the point -- the read is still
-            # represented in the insert set.
             mask = 0
             for c in reps:
                 mask |= bit[c]
@@ -254,7 +228,6 @@ def main():
                 f"{r[c]:.6f}" if isinstance(r[c], float) else str(r[c]) for c in cols) + "\n")
     print(f"  {len(rows)} partitions -> {tsv.relative_to(REPO)}")
 
-    # ---- the piece set T2 maps against, and the centroid sets it scores ------
     write_fasta(CACHE / "day6_pieces.fna",
                 [(c, f"piece={meta[c]['piece']} length={meta[c]['length']}", seqs[c])
                  for c in labels])
@@ -268,7 +241,6 @@ def main():
              partitions=partitions)))
     print(f"  wrote day6_pieces.fna ({n} pieces), day6_pieces.tsv, day6_partitions.json")
 
-    # ---- read it back out ----------------------------------------------------
     peak = max(rows, key=lambda r: r["silhouette"])
     print(f"\n  silhouette peak: N={peak['k']} identity {peak['identity']:.4f} "
           f"silhouette {peak['silhouette']:.4f} -> {peak['n_inserts']} inserts")

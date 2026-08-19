@@ -10,8 +10,6 @@ structs   = model.AddRequirement(lib.GetType("sequences::predicted_structures"))
 out_3di   = model.AddProduct(lib.GetType("sequences::structure_3di_tokens"))
 
 
-# Converts each predicted structure into its Foldseek 3Di token string and
-# collects {sequence_id, aa_sequence, di3_sequence} into a single parquet.
 COLLECT = r'''
 import sys
 from pathlib import Path
@@ -52,9 +50,6 @@ def protocol(context: ExecutionContext):
     with open(collect, "w") as f:
         f.write(COLLECT)
 
-    # foldseek structureto3didescriptor takes PDB/mmCIF files as positional
-    # args (not a list file) and writes a TSV. Shell-glob expansion handles
-    # arbitrary file counts; the absent-extension globs are silenced if empty.
     context.ExecWithEnv().ifContainerDo(
         env=image,
         binds=[
@@ -68,7 +63,6 @@ def protocol(context: ExecutionContext):
         """,
     )
 
-    # Collect descriptor TSV into the output parquet using a generic python env
     context.ExecWithEnv().ifContainerDo(
         env=image_py,
         cmd=f"""

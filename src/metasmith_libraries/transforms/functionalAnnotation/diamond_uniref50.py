@@ -1,12 +1,3 @@
-"""DIAMOND blastp of the ORFs vs UniRef50 -> diamond_uniref50_results.
-
-Emits BLAST6 + stitle + an appended BSR column (hit_bitscore / self_bitscore) --
-the 14-col shape the GPR mapper's uniref reader consumes. The self bitscore is the
-BLOSUM62 query self-diagonal converted to bits via the DIAMOND Karlin-Altschul
-params (lambda=0.267, K=0.041) -- computed analytically, with NO query-vs-query
-alignment. BSR is the mapper's per-hit confidence (raw_score) for this lane.
-The _self_bitscores helper is ported from cyanoverse functionalAnnotation/uniref_lane.py.
-"""
 import math
 from metasmith.python_api import *
 from pathlib import Path
@@ -19,8 +10,6 @@ orfs = model.AddRequirement(lib.GetType("sequences::orf_chunk"))
 db = model.AddRequirement(lib.GetType("ref::uniref50_diamond_db"))
 out_results = model.AddProduct(lib.GetType("annotation::diamond_uniref50_results_chunk"))
 
-# BLOSUM62 self-diagonal (score of each residue aligned to itself). Summed over a
-# query gives its raw self-score; the KA transform below turns that into bits.
 _BLOSUM62_DIAG = {
     "A": 4, "R": 5, "N": 6, "D": 6, "C": 9, "Q": 5, "E": 5, "G": 6, "H": 8, "I": 4,
     "L": 4, "K": 5, "M": 5, "F": 6, "P": 7, "S": 4, "T": 5, "W": 11, "Y": 7, "V": 4,
@@ -32,7 +21,6 @@ _RAW = "diamond_raw.tsv"
 
 
 def _self_bitscores(fasta_path):
-    """Per-query self-bitscore: BLOSUM62 diagonal sum -> bits (KA), no alignment."""
     scores, seq_id, raw = {}, None, 0
 
     def finalize(sid, r):
@@ -59,13 +47,11 @@ def protocol(context: ExecutionContext):
 
     threads = context.params.get("cpus", 8)
     mem = context.params.get("memory")
-    block_size = 2.0  # default
+    block_size = 2.0
     if mem:
         mem_gb = int(float(mem))
-        # DIAMOND uses ~6GB per block, adjust based on available memory
         block_size = max(1.0, min(12.0, (mem_gb - 4) / 6))
 
-    # Run DIAMOND blastp against UniRef50; BLAST6 + stitle written to _RAW.
     context.ExecWithEnv().ifContainerDo(
         binds=[(idb.external.parent, "/db")],
         env=image,
@@ -83,8 +69,6 @@ def protocol(context: ExecutionContext):
         """,
     )
 
-    # Append the analytic BSR column (hit_bitscore / self_bitscore). stitle is the
-    # last emitted field, so BSR becomes column 14. No second alignment.
     self_bs = _self_bitscores(iorfs.local)
     n = 0
     with open(_RAW) as fin, open(iout.local, "w") as fout:
@@ -102,10 +86,6 @@ def protocol(context: ExecutionContext):
             n += 1
     print(f"[diamond_uniref50] {n:,} best hits", flush=True)
 
-    # `iout.local` is created by the open() above, so its existence says nothing.
-    # An empty table means the database staged wrong or the ORF ids are not what
-    # the mapper joins on -- either way the uniref50 channel would be silently
-    # absent from the GPR table.
     return ExecutionResult(
         manifest=[
             {

@@ -1,11 +1,4 @@
 #!/usr/bin/env python
-"""Generate DAG for functional annotation: busco + eggnog_mapper.
-
-Mirrors the running pipeline (run_euk_annotation_sockeye.py):
-  - braker3 proteins as ORFs (pre-computed)
-  - eggnog_data pre-downloaded (skips downloadEggnogDB)
-  - busco_source download trigger (downloadBuscoLineage runs)
-"""
 import sys
 import tempfile
 from pathlib import Path
@@ -28,7 +21,6 @@ transforms = [
     TransformInstanceLibrary.Load(MLIB / "transforms/logistics"),
 ]
 
-# Load containers from the resource library (matches running pipeline)
 base_res = [DataInstanceLibrary.Load(MLIB / "resources/env")]
 
 inputs_dir = tmp / "inputs.xgdb"
@@ -50,13 +42,10 @@ experiment = inputs.AddValue(
     "transcriptomics::experiment",
 )
 
-# braker3 proteins as ORFs (pre-computed)
 inputs.AddItem(mock("braker3.faa"), "sequences::orfs", parents={experiment})
 
-# EggNOG database pre-downloaded (skips downloadEggnogDB)
 inputs.AddItem(mock("eggnog", is_dir=True), "annotation::eggnog_data")
 
-# BUSCO lineage download trigger
 inputs.AddValue("busco_source.txt", "eukaryota_odb10", "annotation::busco_source")
 
 inputs.Save()

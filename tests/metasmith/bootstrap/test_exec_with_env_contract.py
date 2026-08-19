@@ -1,23 +1,3 @@
-"""Contract characterization of `ExecutionContext.ExecWithEnv`.
-
-A container is a filesystem layout with an entrypoint; a conda env is a package
-set on PATH. `ExecWithEnv()` makes a transform declare each world it supports
-and lets metasmith pick, replacing the single `ExecWithContainer` that silently
-dropped its binds under a runtime with no mount namespace.
-
-Two contracts are pinned here:
-
-  1. The shell contract, inherited from `ExecWithContainer`: the command run on
-     the shell is `<MakeRunCommand(local=...)> bash <bounce>`, and the embedded
-     run-command matches the Environment the context builds. DOCKER is used so
-     `GetLocalPath()` is None and the cache-probe `Exec` is skipped, keeping the
-     recorded call sequence to exactly one (the run).
-
-  2. The dispatch contract: exactly the arm matching the agent's runtime runs,
-     the other is recorded and skipped, and a chain with no matching arm is
-     reported so the framework can fail the step rather than let it no-op.
-"""
-
 from pathlib import Path
 
 import pytest
@@ -30,10 +10,6 @@ from metasmith.models.libraries import (
     ExecutionContext,
 )
 from metasmith.models.solver import Dependency, Endpoint
-# The bounce id is patched on the module that *runs* the arm, not on the
-# package that re-exports it: `_ExecInEnv` resolves `GenerateId` through its
-# own module globals, so patching the package leaves the real one in place and
-# the exit-code file lands under an id nothing looks for.
 import metasmith.models.libraries.execution as libraries_mod
 
 
@@ -41,15 +17,11 @@ FIXED_ID = "TESTID000000"
 
 
 class RecordingShell:
-    """Captures every Exec command. Writes the exit-code file the bounce
-    protocol expects so the arm doesn't sys.exit on a missing code."""
-
     def __init__(self):
         self.calls: list[str] = []
 
     def Exec(self, cmd: str, timeout=None, history: bool = False) -> ShellResult:
         self.calls.append(cmd)
-        # The container trap would write exitcode.<id>; emulate success.
         Path(f"exitcode.{FIXED_ID}").write_text("0\n")
         return ShellResult(out=[], err=[])
 
@@ -65,7 +37,6 @@ def _dep(name: str) -> Dependency:
 
 
 def _build_context(tmp_path: Path, runtime: Runtime, image_dep: Dependency):
-    # Binary image file so IsText(path.local) is False -> uses path.external as uri.
     sif = tmp_path / "tool.sif"
     sif.write_bytes(b"\x00\x01\x02\x03")
     image_uri = "/hpc/home/containers/tool.sif"
@@ -86,8 +57,6 @@ def _build_context(tmp_path: Path, runtime: Runtime, image_dep: Dependency):
 
 
 def _mamba_context(tmp_path: Path, env_dep: Dependency, env_name: str = "toolenv"):
-    """A text resource resolves through ResolveEnvImage; a mapping with a
-    `conda:` key is what the migrated env declarations look like."""
     decl = tmp_path / "tool.env"
     decl.write_text(f"container: docker://example/tool:1\nconda: {env_name}\n")
     cp = ContextPath(local=decl, external=decl, container=decl)
@@ -119,9 +88,6 @@ def _bounce_text(tmp_path: Path) -> str:
     return scripts[0].read_text()
 
 
-# ---------------------------------------------------------------- shell contract
-
-
 def test_container_arm_issues_run_command(tmp_path, _bounce_ready):
     image_dep = _dep("image")
     ctx = _build_context(tmp_path, Runtime.DOCKER, image_dep)
@@ -129,26 +95,18 @@ def test_container_arm_issues_run_command(tmp_path, _bounce_ready):
 
     ctx.ExecWithEnv().ifContainerDo(env=image_dep, cmd="echo hello")
 
-    # DOCKER has no local cache path -> no cache probe -> exactly one Exec (the run).
     assert len(shell.calls) == 1
     run_cmd = shell.calls[0]
 
-    # The run-command prefix is exactly what the context's Environment would emit
-    # (local=False, since DOCKER cache path is None).
     expected_container = ctx.GetContainerModel(image_dep)
     expected_run = expected_container.MakeRunCommand(local=False)
     assert run_cmd.startswith(expected_run + " bash ")
 
-    # And it ends by invoking the bounce script under the container workdir.
     assert "/ws/_metasmith/.bounce." in run_cmd
-    assert run_cmd.endswith(run_cmd.split(" bash ")[-1])  # tail is the bounce path
+    assert run_cmd.endswith(run_cmd.split(" bash ")[-1])
 
-    # The assembled run-command names the image uri and the docker runtime.
     assert "/hpc/home/containers/tool.sif" in run_cmd
     assert run_cmd.startswith("docker run ")
-
-
-# ------------------------------------------------------------- dispatch contract
 
 
 def test_container_runtime_runs_only_the_container_arm(tmp_path, _bounce_ready):
@@ -163,7 +121,6 @@ def test_container_runtime_runs_only_the_container_arm(tmp_path, _bounce_ready):
     assert chain.matched == "ifContainerDo"
     assert chain.declared == ["ifContainerDo", "ifVirtualEnvDo"]
     assert len(shell.calls) == 1
-    # The skipped arm's command was never even written out.
     assert "echo venv" not in _bounce_text(tmp_path)
     assert ctx.UnmatchedEnvDispatches() == []
 
@@ -178,7 +135,6 @@ def test_mamba_runtime_runs_only_the_virtual_env_arm(tmp_path, _bounce_ready):
         .ifVirtualEnvDo(env=env_dep, cmd="echo venv")
 
     assert chain.matched == "ifVirtualEnvDo"
-    # mamba has no image to cache-probe, so the venv arm is the single call.
     assert len(shell.calls) == 1
     assert shell.calls[0].startswith("mamba run -n toolenv bash ")
     assert "echo venv" in _bounce_text(tmp_path)
@@ -202,7 +158,6 @@ def test_container_only_chain_on_mamba_is_reported_unmatched(tmp_path, _bounce_r
 
     chain = ctx.ExecWithEnv().ifContainerDo(env=env_dep, cmd="echo container")
 
-    # Nothing ran, and the framework can see that it didn't.
     assert chain.matched is None
     assert shell.calls == []
     unmatched = ctx.UnmatchedEnvDispatches()
@@ -235,9 +190,6 @@ def test_virtual_env_arm_rejects_binds(tmp_path, _bounce_ready):
         )
 
 
-# ---------------------------------------------------------------------- exports
-
-
 def test_exports_are_prepended_to_the_bounce_script(tmp_path, _bounce_ready):
     env_dep = _dep("env")
     ctx = _mamba_context(tmp_path, env_dep)
@@ -247,7 +199,6 @@ def test_exports_are_prepended_to_the_bounce_script(tmp_path, _bounce_ready):
     )
     body = _bounce_text(tmp_path)
     assert "export GTDBTK_DATA_PATH=/ref/gtdb" in body
-    # ...before the command, or the tool never sees it.
     assert body.index("export GTDBTK_DATA_PATH") < body.index("gtdbtk classify_wf")
 
 

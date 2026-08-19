@@ -1,37 +1,8 @@
-"""Observed results + null results -> delta, z, percentile rank, and the gate.
-
-WHAT SCORING DOES AND DOES NOT DECIDE
--------------------------------------
-It subtracts, it ranks, and it reports two spreads. It does not decide what a
-baseline is (``--baseline`` names a condition already in the results), what a
-control is (the conditions table's ``is_control`` says so), or what a stratum is
-(the conditions table's ``n_units`` says so). Every one of those is the study's
-claim, and burying any of them here would make a benchmark's answer depend on a
-default nobody stated.
-
-THE GATE ARRIVES AS TWO COLUMNS, NOT AS A SEPARATE STEP
---------------------------------------------------------
-A z-score is only meaningful if the null's spread is bigger than the solver's own
-noise floor. The floor is measurable from the run itself: the study's control
-conditions are no-ops -- their masks reach no atom-mapped reaction -- so they must
-return the baseline exactly, and their spread IS the floor. :func:`gate` reports it
-beside the null's spread per readout. If the null does not clear the controls,
-every z below it is noise over noise, and that sentence plus the coverage table is
-the honest deliverable. It is answerable from a 32-draw pool, before the thousand.
-
-BH-q IS REPORTED WITH ITS FLOOR
--------------------------------
-An empirical p over ``m`` draws cannot go below ``1/(m+1)``, so over 1,000 draws it
-floors near 1e-3. The correction is a stated limit, not a result; ``p_floor`` is
-carried in the output so nobody has to remember the pool size.
-"""
 from __future__ import annotations
 
 import numpy as np
 import pandas as pd
 
-# Diagnostics ride in the results table under a leading underscore; scoring is
-# about measurements and steps over them. See :mod:`ecspr.model.probes`.
 DIAG_PREFIX = "_"
 KEY = ("probe", "orientation", "element", "readout")
 
@@ -53,7 +24,6 @@ def _bh(p: np.ndarray) -> np.ndarray:
 
 
 def _stats(obs: np.ndarray, null: np.ndarray) -> dict:
-    """z, two-sided empirical p and percentile rank of each ``obs`` against ``null``."""
     m = null.size
     if m == 0:
         nan = np.full(obs.shape, np.nan)
@@ -74,12 +44,6 @@ def _stats(obs: np.ndarray, null: np.ndarray) -> dict:
 
 def score(observed: pd.DataFrame, null: pd.DataFrame, *, baseline: str,
           conditions=None) -> pd.DataFrame:
-    """One row per observed measurement, scored against the null pool.
-
-    ``conditions`` (a list of :class:`ecspr.model.conditions.Condition`) supplies
-    ``is_control`` and the ``n_units`` stratum. Without it, scoring is global only
-    and says so by leaving the stratum columns empty.
-    """
     obs = _measurements(observed)
     nul = _measurements(null)
     if baseline not in set(obs.condition_id):
@@ -145,8 +109,6 @@ def score(observed: pd.DataFrame, null: pd.DataFrame, *, baseline: str,
 
 
 def gate(scored: pd.DataFrame) -> pd.DataFrame:
-    """The null's spread beside the controls' spread, per readout. See the module
-    docstring: this IS the preflight, arriving as two columns of an ordinary run."""
     rows = []
     for key, g in scored.groupby(list(KEY), sort=False):
         ctl = g[g.is_control].delta.dropna().to_numpy(float)
@@ -160,6 +122,4 @@ def gate(scored: pd.DataFrame) -> pd.DataFrame:
     if df.empty:
         return df
     df["null_over_control"] = df.null_sd / df.control_sd.replace(0.0, np.nan)
-    # No verdict column. Whether a ratio of 3 is enough is the study's call, and a
-    # boolean here would be this module deciding it.
     return df

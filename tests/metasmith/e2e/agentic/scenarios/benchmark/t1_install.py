@@ -1,18 +1,3 @@
-"""t1 — install (one-shot): a single tool runs on a probe input.
-
-Standalone (does NOT use the pipeline goal/oracle): the install test collapses
-orchestration — a lone tool has none — so its "arms" are the 4 ENV CHANNELS
-{ad-hoc, mamba, container, metasmith} (table C of the condition matrix), applied
-to each of the 6 tools {fastp, spades, bakta, eggnog-mapper, clusterprofiler,
-abricate}. Instantiate one scenario per ``(env_channel, tool)`` cell.
-
-``Done`` = the tool runs on a probe input and emits its expected output under
-``<sandbox>/workspace/probe_out/``. For env_channel == 'metasmith', "install" =
-author + register a metasmith transform for the tool and run it via the CLI.
-
-Modeled on :mod:`..install` — verbatim-command shape, self-report + artifact
-oracle.
-"""
 from __future__ import annotations
 
 import textwrap
@@ -44,20 +29,11 @@ from ._pipeline import (
 
 _PROBE_OUT_REL = "workspace/probe_out"
 
-# Which probe input each tool consumes.
-_READS_TOOLS = {"fastp", "spades"}          # consume the raw paired reads
-_CONTIG_TOOLS = {"bakta", "abricate"}       # consume assembled contigs
-# eggnog-mapper / clusterprofiler consume derived inputs the agent produces from
-# the probe; the probe still bottoms out at the staged contigs.
+_READS_TOOLS = {"fastp", "spades"}
+_CONTIG_TOOLS = {"bakta", "abricate"}
 
 
 def _t1_shared_block(tool: ToolSpec, env_channel: str, sandbox: Path) -> str:
-    """The GOAL/DATA/DONE block for one install cell — byte-identical across arms.
-
-    Depends only on (tool, env_channel, sandbox), never on the runtime ``Arm``'s
-    orchestrator — the arm's native tooling/reference material is the additive
-    preamble prepended by ``compose_prompt``.
-    """
     sb = str(sandbox)
     if env_channel == "metasmith":
         install_line = (
@@ -102,16 +78,15 @@ def _t1_shared_block(tool: ToolSpec, env_channel: str, sandbox: Path) -> str:
 
 @dataclass
 class InstallToolScenario:
-    env_channel: str = "container"   # one of INSTALL_ENV_CHANNELS
-    tool: str = "fastp"              # one of TOOLS
+    env_channel: str = "container"
+    tool: str = "fastp"
     tutorial_path: str = ""
     expected_trace: tuple[str, str] | None = None
-    timeout_s: float = 900.0   # per-tool install probe; tiny inputs
-    pre_install_metasmith: bool = True   # metasmith is the harness control plane
+    timeout_s: float = 900.0
+    pre_install_metasmith: bool = True
     expected_artifact_globs: list[str] = field(
         default_factory=lambda: [f"{_PROBE_OUT_REL}/**/*"]
     )
-    # Per-test token quota; None → run_cell's global fallback. See _base.py.
     max_tokens: int | None = None
 
     def __post_init__(self) -> None:
@@ -136,17 +111,14 @@ class InstallToolScenario:
     def setup_fixtures(self, layout: SandboxLayout, ctx: InstallContext,
                        arm: Arm = DEFAULT_ARM) -> None:
         (layout.workspace / "probe_out").mkdir(parents=True, exist_ok=True)
-        # Stage the probe input(s) the tool consumes.
         if self.tool in _READS_TOOLS and _reads_present():
             stage_reads(layout)
         if self.tool in _CONTIG_TOOLS or self.tool not in _READS_TOOLS:
             build_intermediate_contigs(layout)
-        # Env-channel start-state.
         if self.env_channel == "metasmith":
             provision_metasmith(layout, ctx)
         elif self.env_channel in ("mamba", "container"):
             build_env_spec(layout, self.env_channel)
-        # 'ad-hoc' needs no env spec.
 
     def verify(self, vctx: VerifyContext, result: LoopResult) -> list[str]:
         fails: list[str] = []

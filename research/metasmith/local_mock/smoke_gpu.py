@@ -33,9 +33,6 @@ from metasmith.python_api import (
 REPO_ROOT = Path(__file__).resolve().parents[3]
 EXAMPLES = REPO_ROOT / "examples"
 
-# apptainer's `--nv` finds and injects nvidia-smi on WSL2, but its library
-# discovery misses the driver stack under /usr/lib/wsl, so NVML answers
-# "GPU access blocked by the operating system". A host fact, hence a flag.
 WSL_GPU_ARGS = [
     "--bind", "/usr/lib/wsl:/usr/lib/wsl",
     "--env", "LD_LIBRARY_PATH=/usr/lib/wsl/lib",
@@ -48,15 +45,6 @@ def _remote_user(host: str) -> str:
 
 
 def inject_dev_overlay(host: str, agent_path: str):
-    """Bind this worktree's metasmith over the deployed container's copy.
-
-    The published image predates whatever is being tested, so without this the
-    task runs the *released* metasmith and a new field on `Agent` reads as an
-    unexpected keyword. Same mechanism as `dev.sh -td`, targeted at this
-    smoke's agent home rather than the registered ones. The tarball is what a
-    SLURM compute node stages per-node-once; the tree is the fail-open bind
-    target and the gate that switches the dev binds on at all.
-    """
     src = REPO_ROOT / "src"
     if host == "local":
         run = lambda c: subprocess.run(c, shell=True, check=True)
@@ -81,9 +69,6 @@ def build_agent(args, agent_path: str) -> Agent:
         home = SshSource(host=args.host, path=agent_path).AsSource()
     gpu_args = list(WSL_GPU_ARGS) if args.wsl else []
     kw = {}
-    # A dev checkout's build hash names an image nobody published, so apptainer
-    # cannot pull it; point at a published tag and let the dev overlay supply
-    # the code under test.
     if getattr(args, "container", None): kw["container"] = args.container
     return Agent(
         home=home,
@@ -104,15 +89,9 @@ def build_task(smith: Agent, workdir: Path, tag: str, mamba_env: str | None = No
 
     containers = DataInstanceLibrary(workdir / f"{tag}-containers.xgdb")
     containers.AddTypeLibrary(EXAMPLES / "data_types" / "containers.yml")
-    # Written INSIDE the library dir so its manifest entry is relative: an
-    # absolute path outside the library would have to exist on the execution
-    # host too, which for a remote agent it does not.
     oci = containers.location / "metasmith.env"
     declaration = (EXAMPLES / "metasmith.env").read_text()
     if mamba_env:
-        # Same slot, same declaration shape -- only the conda side is pointed at
-        # the env this host actually has. The transform is unchanged and never
-        # learns which arm it got.
         declaration = re.sub(r"^conda:.*$", f"conda: {mamba_env}", declaration, flags=re.M)
     oci.write_text(declaration)
     containers.AddItem(Path("metasmith.env"), "containers::metasmith.env")
@@ -121,10 +100,6 @@ def build_task(smith: Agent, workdir: Path, tag: str, mamba_env: str | None = No
     transforms = TransformInstanceLibrary.Load(EXAMPLES)
 
     if remote is not None:
-        # A remote agent cannot read this machine's filesystem. Push each
-        # library to the target and record that address on the local object;
-        # StageWorkflow then pulls them into the agent's own data dir, so every
-        # input path the workflow references exists on the execution host.
         host, root = remote
         subprocess.run(f'ssh {host} mkdir -p "{root}"', shell=True, check=True)
         for lib in (inputs, containers, transforms):
@@ -139,9 +114,6 @@ def build_task(smith: Agent, workdir: Path, tag: str, mamba_env: str | None = No
     targets = TargetBuilder()
     targets.Add("examples::gpu_report")
     if also_cpu:
-        # echo_greeting declares no GPU, so it must be submitted WITHOUT a GPU
-        # request and against the ordinary account -- the half of the claim that
-        # a GPU-only workflow cannot check.
         targets.Add("examples::greeting")
     return smith.GenerateWorkflow(
         samples=[inputs], resources=[containers],
@@ -150,13 +122,6 @@ def build_task(smith: Agent, workdir: Path, tag: str, mamba_env: str | None = No
 
 
 def read_report(smith: Agent, task, host: str) -> str | None:
-    """The transform's own report. None when it could not be read at all.
-
-    Distinguishing "no report" from "a report saying no GPU" matters: the
-    verdict below treats the first as a failure, not a pass. A remote agent's
-    results live on the target, so they are read over ssh rather than by
-    globbing a path that does not exist on this machine.
-    """
     root = Path(str(smith.GetResultSource(task).GetPath()))
     if host == "local":
         hits = sorted(root.rglob("*.txt"))
@@ -267,8 +232,6 @@ def main(argv=None):
         negative = run_once(args, smith, workdir, f"{args.runtime}-nogpu-{ts}", None, params or None)
 
     print("\n=== verdict", flush=True)
-    # For a scheduler run the report is only half the evidence; the other half
-    # is the scheduler's own record. Print the sacct query to run.
     if args.host != "local":
         print(f"    scheduler check: ssh {args.host} \"sacct -X --format=JobID,JobName%24,State,"
               f"Account%20,Partition,ReqTRES%40,AllocTRES%40,NodeList\"", flush=True)
@@ -282,8 +245,6 @@ def main(argv=None):
     else:
         print("PASS: the tool container saw a device, and DetectGpus() agrees")
     if negative is not None and "no gpu visible" not in negative and "detected_devices=0" not in negative:
-        # not fatal on a host where the runtime exposes devices unconditionally
-        # (mamba/native inherit everything), but worth saying out loud
         print("NOTE: the no-declaration run still saw a device (expected for mamba/native)")
     return 0 if ok else 2
 

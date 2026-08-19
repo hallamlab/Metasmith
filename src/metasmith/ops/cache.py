@@ -1,4 +1,3 @@
-"""S8 — Cache and status ops backing `msm cache ...` and `msm status`."""
 from __future__ import annotations
 
 import json
@@ -13,8 +12,6 @@ from ..caching.store import CacheStore, decode_manifest
 def _resolve_cache_root(cache_root: str | None) -> Path:
     if cache_root is not None:
         return Path(cache_root).resolve()
-    # Default to <CWD>/task_cache for now; agent-home resolution is the
-    # caller's job (CLI passes --cache-root explicitly in agent contexts).
     return default_cache_root(Path.cwd())
 
 
@@ -53,13 +50,6 @@ def gc_cache(
     grace_seconds: int = 24 * 60 * 60,
     delete: bool = False,
 ) -> dict:
-    """Tombstone candidate entries; delete those past the grace period.
-
-    Two-phase: tombstone marks entries for delayed removal so in-flight
-    materializations can complete. A subsequent pass (or this same call
-    when `delete=True`) physically unlinks entries whose `tombstoned_at`
-    is older than `grace_seconds`.
-    """
     root = _resolve_cache_root(cache_root)
     if not (root / "cache.sqlite").exists():
         return {"cache_root": str(root), "tombstoned": [], "deleted": []}
@@ -143,20 +133,10 @@ def explain_cache_entry(
 
 
 def status_run(run_dir: str) -> dict:
-    """Alias kept for the documented `msm status` entry point."""
     return status_for_run(run_dir)
 
 
 def status_for_run(run_dir: str) -> dict:
-    """Join _metasmith/trace.jsonl with workflow.step_N.meta files.
-
-    Tolerates both v2 InvocationEvent rows (schema_version=2) and the
-    SessionStart sentinel that leads every fresh trace. The returned
-    `trace` key carries the InvocationEvent rows; `session_starts`
-    surfaces SessionStart rows separately so callers can correlate
-    `session_id` without re-parsing. Legacy v1 rows (no schema_version)
-    pass through as-is for backwards compatibility with older run dirs.
-    """
     run = Path(run_dir).resolve()
     trace = run / "_metasmith" / "trace.jsonl"
     rows: list[dict] = []

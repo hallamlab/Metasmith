@@ -1,13 +1,3 @@
-"""Tests for the WorkflowPlan.publish_intermediates flag.
-
-Covers:
-- Default (True): every produced channel is published; intermediates are named
-  `<step.order>_<spec_name>` in the generated Nextflow output {} block.
-- Disabled (False): only WorkflowTarget dtypes appear (legacy behavior).
-- Pack/Unpack: flag round-trips; missing field defaults to True for
-  backward-compat with older serializations.
-"""
-
 from pathlib import Path
 
 import pytest
@@ -29,10 +19,6 @@ from .conftest import create_transform_library
 
 
 def _binning_task(mock_samples, mock_types, temp_dir, publish_intermediates: bool):
-    """Build a multi-step (4-step) task: alignment + 3 binners.
-
-    Intermediates: mock::bam. Targets: per-method bins.
-    """
     transforms = alignment_transform() | binner_transforms()
     tr_lib = create_transform_library(temp_dir / "tr_publish", mock_types, transforms)
 
@@ -77,9 +63,7 @@ def _stage(task: WorkflowTask, work_dir: Path) -> str:
 
 class TestPublishIntermediates:
     def test_default_publishes_all(self, mock_samples, mock_types, temp_dir):
-        """Default True: targets keep WorkflowTarget.name; intermediates use <order>_<spec>."""
         task = _binning_task(mock_samples, mock_types, temp_dir, publish_intermediates=True)
-        # find the producing step's order for the bam intermediate
         bam_order = None
         for step in task.plan.steps:
             for group in step.produces:
@@ -91,27 +75,22 @@ class TestPublishIntermediates:
 
         nxf = _stage(task, temp_dir / "ws_default")
 
-        # targets keep their WorkflowTarget.name
         for tname in ("metabat2_bins", "maxbin2_bins", "concoct_bins"):
             assert f"path '{tname}'" in nxf, f"target {tname} should be published"
 
-        # intermediate uses <step_order>_<sanitized_dtype_name>
         assert f"path '{bam_order}_mock-bam'" in nxf
 
     def test_disabled_only_targets(self, mock_samples, mock_types, temp_dir):
-        """publish_intermediates=False: only final-target dtypes appear."""
         task = _binning_task(mock_samples, mock_types, temp_dir, publish_intermediates=False)
         nxf = _stage(task, temp_dir / "ws_targets_only")
 
         for tname in ("metabat2_bins", "maxbin2_bins", "concoct_bins"):
             assert f"path '{tname}'" in nxf
 
-        # bam is an intermediate, not a target — must NOT be published under any naming scheme
         assert "_mock-bam" not in nxf
         assert "path 'mock-bam'" not in nxf
 
     def test_pack_unpack_roundtrip_preserves_flag(self, mock_samples, mock_types, temp_dir):
-        """Pack/Unpack preserves publish_intermediates."""
         task = _binning_task(mock_samples, mock_types, temp_dir, publish_intermediates=False)
         packed = task.plan.Pack()
         assert packed["publish_intermediates"] is False
@@ -122,10 +101,8 @@ class TestPublishIntermediates:
         assert restored.publish_intermediates is False
 
     def test_unpack_legacy_defaults_true(self, mock_samples, mock_types, temp_dir):
-        """A packed dict without the field unpacks with the default (True)."""
         task = _binning_task(mock_samples, mock_types, temp_dir, publish_intermediates=False)
         packed = task.plan.Pack()
-        # simulate an older serialization that predates the field
         packed.pop("publish_intermediates", None)
 
         libraries = {task.transform_libraries[0].GetKey(): task.transform_libraries[0]}

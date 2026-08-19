@@ -1,50 +1,3 @@
-"""Finding a solver binary and deciding whether to trust it.
-
-This module answers *is this binary trustworthy*. Which implementation actually
-runs is `solver_backend`'s question, and that is the module everything outside
-the solver should import.
-
-`msm_solver` is not `msm_relay`. The relay runs on the *agent host* and is baked
-into the docker image, so `bootstrap.py` can copy the right one out at deploy
-time. The solver runs *locally, at plan time*, in whatever process is doing the
-planning -- the CLI, the GUI, a notebook -- and that process may never have seen
-an agent. So the binaries ship inside the pip wheel and conda package as package
-data, and this module is what picks one out. There is exactly one place a binary
-comes from: `<metasmith package>/engine/`, which `PYTHONPATH=src` makes the same
-directory `./dev.sh -be` stages into, so a source checkout, the container image
-and an installed conda package all resolve identically. PATH is deliberately not
-consulted -- a second source of binaries is the thing this design is avoiding.
-
-Three things have to be true before a binary is used, and each has its own way
-of failing quietly:
-
-1. **It exists for this platform, and can be executed.** Absence is recoverable
-   but no longer silent: the Python solver takes over and `solver_backend` says
-   so once, because a correct-and-fifteen-times-slower planner is not something
-   anyone notices. *Present but not executable* is the same outcome by a much
-   quieter route, and it is not hypothetical -- in a source checkout the staged
-   binary arrives as a mode-444 hardlink out of a shared DVC cache, and a whole
-   tree of solves ran on the Python search with nothing in the log but one
-   `Permission denied` nobody read. `_runnable_engine_path` is the answer, and
-   it copies out rather than repairing in place: the file is shared with every
-   other worktree, so `chmod` would mutate their cache object and `dvc
-   unprotect` would dirty the pin over a permission bit that is not content.
-2. **It answers `version` with versions this build agrees with.** The repo has
-   scar tissue here: `LIN_PAYLOAD_VERSION` drifted from its Groovy emitter and
-   failed every containerized task while the fast suite stayed green. A version
-   is only worth having if it is exchanged and checked, so a mismatch here is a
-   *refusal plus a warning*, never a shrug.
-3. **It advertises the capability being asked for.** The port lands one piece at
-   a time; a build that implements the decision contract but not the search says
-   so, and the search falls back -- saying so, per (1) -- without anyone having
-   to remember to.
-
-No environment variable selects an implementation or a binary -- that is pinned
-in code, via `solver_backend._set_solver_class`. The environment is read only to
-locate a scratch directory for the staged copy above (`TMPDIR`, via
-`tempfile.gettempdir`), which cannot change *which* engine is chosen.
-"""
-
 from __future__ import annotations
 
 import json
@@ -60,68 +13,29 @@ from ..caching.keys import content_multihash_key
 from ..logging import Log
 from .solver_rng import SOLVER_RNG_VERSION
 
-# The envelope: field names, framing, the shape of a request and a reply. It is
-# deliberately *not* the same constant as SOLVER_RNG_VERSION, which covers the
-# decision contract -- the two move for different reasons, and a single constant
-# covering two independently-moving things is how the last desync went unseen.
 SOLVER_WIRE_VERSION = 2
 
 ENGINE_NAME = "msm_solver"
-#: Where `src/workflow_solver/dev.sh --stage` puts the binaries, and what
-#: `setup.py`'s `engine/**` package-data entry ships.
 ENGINE_DIR = Path(__file__).parent.parent/"engine"
-#: Written by the staging step; the packaging guard reads it. Not used here --
-#: a host-linked build is perfectly good to *run*, it is only wrong to ship.
 BUILD_KIND_FILE = "BUILD_KIND"
 
-#: How long `version` gets to answer. It reads no input and writes one line; a
-#: binary that cannot manage that is broken, and hanging the planner while it
-#: fails to is worse than falling back.
 HANDSHAKE_TIMEOUT = 10.0
 
 def platform_slot(machine: str|None=None, system: str|None=None) -> str:
-    """The `{architecture}-{system}` suffix for this host.
-
-    Same naming as `bootstrap.py`'s relay slots, so there is one convention in
-    the repo rather than two. `aarch64` is folded to `arm64` because that is the
-    name the relay already uses and what `uname -m` reports on Apple silicon,
-    while Linux reports `aarch64` for the same thing.
-    """
     machine = (machine or platform.machine()).lower()
     system = (system or platform.system()).lower()
     machine = {"aarch64": "arm64", "amd64": "x86_64"}.get(machine, machine)
     return f"{machine}-{system}"
 
 def packaged_engine_path(engine_dir: Path|None=None) -> Path|None:
-    """The binary shipped for this platform, if one was."""
     p = (engine_dir or ENGINE_DIR)/f"{ENGINE_NAME}.{platform_slot()}"
     return p if p.is_file() else None
 
 def _stage_dir() -> Path:
-    """Where a non-executable packaged binary gets copied so it can be run.
-
-    Under the system temp directory rather than a config-driven location, and
-    per-uid so two users on one host never contend: this is a *cache*, safe to
-    delete at any moment, and a reboot clearing it costs one 1 MB copy.
-    """
     uid = getattr(os, "geteuid", lambda: "shared")()
     return Path(tempfile.gettempdir())/f"metasmith-engine-{uid}"
 
 def _runnable_engine_path(path: Path) -> Path|None:
-    """`path` if it can be executed, else an executable copy of it.
-
-    An installed wheel or conda package lands its binaries 755 and this returns
-    immediately, paying one `os.access` call. The copy is for the source
-    checkout, where the file is a read-only hardlink into a DVC cache shared
-    with every other worktree -- see the module docstring for why fixing it in
-    place is not available to us.
-
-    The copy is named by its *content* digest, so a rebuilt engine is never
-    shadowed by the stale copy of an older one, and it is published by
-    `os.replace` from a temporary name in the same directory, so a second
-    process reading it concurrently sees either nothing or a complete file --
-    never a half-written one it would then try to execute.
-    """
     if os.access(path, os.X_OK):
         return path
     try:
@@ -151,8 +65,6 @@ def _runnable_engine_path(path: Path) -> Path|None:
 
 @dataclass(frozen=True)
 class EngineInfo:
-    """What a binary said about itself, once it was believed."""
-
     path: Path
     engine: str
     engine_version: str
@@ -164,21 +76,11 @@ class EngineInfo:
         return capability in self.capabilities
 
 def probe_engine(path: Path) -> EngineInfo|None:
-    """Run `version` and decide whether to trust what came back.
-
-    Returns `None` for every way this can go wrong, having said which one on the
-    way out. The caller's job is to fall back, not to distinguish a missing
-    binary from a mismatched one.
-    """
     try:
         proc = subprocess.run(
             [str(path), "version"],
             capture_output=True, text=True, timeout=HANDSHAKE_TIMEOUT,
         )
-    # Split out rather than folded into the OSError arm below: these two have a
-    # fix the reader can act on, and saying "could not be run" for all three
-    # buried the actionable ones. A permission failure here means staging was
-    # skipped or lost a race, and is worth naming with the mode.
     except PermissionError as e:
         mode = "?"
         try:
@@ -215,9 +117,6 @@ def probe_engine(path: Path) -> EngineInfo|None:
     if info.engine != ENGINE_NAME:
         Log.Warn(f"[{path}] is [{info.engine}], not [{ENGINE_NAME}]")
         return None
-    # The loud half. Two independent implementations that disagree about the
-    # contract do not produce a crash -- they produce different plans, which is
-    # the failure mode this repo has already paid for once.
     if info.wire_version != SOLVER_WIRE_VERSION or info.rng_version != SOLVER_RNG_VERSION:
         Log.Warn(
             f"solver engine at [{path}] speaks wire v{info.wire_version}/rng"
@@ -231,23 +130,16 @@ def probe_engine(path: Path) -> EngineInfo|None:
 _cache: tuple[EngineInfo|None]|None = None
 
 def ResetEngineCache():
-    """Forget the probe. For tests, and for anything that moves the binary."""
     global _cache
     _cache = None
 
 def GetEngine() -> EngineInfo|None:
-    """The engine this build ships for this platform, probed once."""
     global _cache
     if _cache is not None: return _cache[0]
     path = packaged_engine_path()
     if path is None:
-        # Not a warning here. Absence is a resolution outcome, not a decision;
-        # `solver_backend` is what knows whether anyone asked for this.
         _cache = (None,)
         return None
-    # Probe what we will actually call, not what we found: in a source checkout
-    # those differ, and probing the unrunnable original would refuse an engine
-    # that works perfectly well once copied out.
     runnable = _runnable_engine_path(path)
     if runnable is None:
         _cache = (None,)
@@ -256,20 +148,12 @@ def GetEngine() -> EngineInfo|None:
     return _cache[0]
 
 def EngineFor(capability: str) -> EngineInfo|None:
-    """The engine, but only if it can do the thing being asked of it."""
     info = GetEngine()
     return info if info is not None and info.Supports(capability) else None
 
 class EngineError(RuntimeError):
-    """The engine was believed, asked to work, and failed anyway."""
-
+    pass
 def CallEngine(info: EngineInfo, subcommand: str, payload: dict|None=None, timeout: float|None=None) -> dict:
-    """One request, one JSON reply. Raises rather than falling back.
-
-    Falling back *here* would hide a real defect: the handshake already decided
-    this binary is the right version and can do this job, so a failure now is a
-    bug in one of the two implementations and should be seen.
-    """
     body = json.dumps(payload) if payload is not None else ""
     try:
         proc = subprocess.run(

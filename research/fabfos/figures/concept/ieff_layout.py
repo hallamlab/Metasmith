@@ -1,24 +1,3 @@
-"""Lay the reaction network out from the true pairwise I_eff distance.
-
-Reads an :mod:`ieff_sweep` store, symmetrises it, turns current into distance, builds a
-k-nearest-neighbour graph and hands that to UMAP. The KEGG overlay is the same one the
-landmark figure uses, so the two are directly comparable.
-
-**Distance.** ``I`` is asymmetric -- injecting at A and reading B is not injecting at B and
-reading A -- and the pairwise convention is the larger of the two currents (the shorter
-resistance): ``R = 1/max(I, I^T)``. Currents span fourteen orders of magnitude, so the
-distance handed to UMAP is ``log10(I_max / I)``. A linear ``1/I`` is numerically dominated
-by the handful of near-adjacent pairs and flattens everything else into one blob.
-
-**Metabolites are drawn, not placed.** ``--gpr-table`` rebuilds the host's carbon incidence
-and draws each metabolite at the mean position of the reactions it moves an atom through,
-with its edges. Nothing about a metabolite enters the layout, which stays reaction-to-reaction.
-
-**Neighbours, not a matrix.** UMAP only ever reads a kNN graph, so the store's top-K rows
-are enough and no N x N array is built. Symmetrisation with top-K rows is a transposing
-pass: reaction b may appear in a's row without a appearing in b's, and that entry is a real
-measurement that would be lost by intersecting instead of merging.
-"""
 import argparse
 import json
 import sys
@@ -36,52 +15,29 @@ sys.path.insert(0, str(HERE))
 
 XREF = (Path(__file__).resolve().parents[4]
         / "data/fabfos/originals/metanetx/4.5/reac_xref.tsv")
-# ModelSEED's copy of the KEGG pathway -> reaction table (Source ID / Name / Reactions),
-# vendored here because the promoted scripts must not depend on gitignored scratch.
 PATHWAYS = HERE / "KEGG.pathways"
 
-# The panel the landmark figure overlays: central carbon, then four peripheral pathways.
 PANEL = ["map00010", "map00020", "map00030", "map00230",
          "map00061", "map00260", "map00860", "map00280"]
 PALETTE = ["#d62728", "#2ca02c", "#9467bd", "#17becf",
            "#e377c2", "#bcbd22", "#ff7f0e", "#1f77b4"]
-# Origin colouring: the clone's new reactions are the figure's subject and take the loud
-# colour; everything the host already had recedes.
-# Greys for the two classes that are context rather than subject, and the other inserts get
-# the paler one: at community scale they are 82% of the points, so if they are the darker grey
-# the figure is a grey mass with the host lost inside it.
 ORIGIN_PALETTE = ["#d62728", "#ff9d3f", "#909090", "#e3e3e3"]
 
-# The reaction-metabolite drawing. Reactions are the layout's own points and metabolites are
-# derived from them, so reactions are drawn three times the size. Edge weights are bucketed
-# by quantile and the lightest bucket is dropped, which leaves EDGE_BUCKETS - 1 collections.
 MET_SIZE = 4
 EDGE_BUCKETS = 5
-# Bucket k gets width and alpha from (k/(EDGE_BUCKETS-1)) ** EDGE_GAMMA. Above 1 the ramp is
-# convex, so the light buckets drop away sharply and the heavy ones carry the drawing --
-# 1/degree already spans two orders of magnitude and a linear ramp flattens that back out.
-# Width is constant across buckets, so weight reads as tone alone and a heavy edge cannot be
-# mistaken for a near one. Alphas are given per bucket, heaviest first, rather than as a ramp:
-# the useful separation here is not smooth and a formula only obscured where it was put.
-EDGE_ALPHA = [0.85, 0.2, 0.05, 0.01]        # heaviest bucket first; len == EDGE_BUCKETS - 1
+EDGE_ALPHA = [0.85, 0.2, 0.05, 0.01]
 EDGE_WIDTH = 0.45
 EDGE_COLOR = "#8a8a8a"
 BARE_NODE = "#555555"
-# Pseudo-depth. A point's drawn *area* is scaled by where it sits on y, so the bottom of a
-# layer reads as near and the top as far. This is redundant encoding, not a second channel:
-# y already carries the coordinate and the size only restates it, which is what makes it safe
-# -- nothing is legible from size that was not already legible from position.
-DEPTH = (2.2, 0.35)          # area multiplier at the near (low y) and far (high y) edge
+DEPTH = (2.2, 0.35)
 
 
 def depth_scale(y, lo, hi):
-    """Area multiplier for a point at height ``y`` within a layer spanning ``lo``..``hi``."""
     t = np.clip((y - lo) / max(hi - lo, 1e-12), 0.0, 1.0)
     return DEPTH[0] + t * (DEPTH[1] - DEPTH[0])
 
 
 def pathway_members(pids=PANEL):
-    """MNXR -> KEGG pathway id, via MetaNetX's own ``kegg.reaction:`` cross-reference."""
     pr, pn = {}, {}
     for line in open(PATHWAYS).readlines()[1:]:
         p = line.rstrip("\n").split("\t")
@@ -99,14 +55,6 @@ def pathway_members(pids=PANEL):
 
 
 def origin_labels(table, src, highlight):
-    """Label each laid-out reaction by where it came from, using a :mod:`gpr_union` table.
-
-    An alternative to the KEGG overlay, for the figures whose subject is the clone rather
-    than the pathway: the two cannot share the palette. A reaction is claimed by the
-    highlighted insert first, then by the host, then by the remaining inserts -- and the
-    highlighted insert's reactions are split by whether the host already had them, which is
-    the whole question the figure is asked to answer.
-    """
     import pandas as pd
     d = pd.read_parquet(table, columns=["mnxr", "origin"])
     host = set(d.loc[d.origin == "host", "mnxr"])
@@ -146,14 +94,6 @@ def load_store(path):
 
 
 def load_sparse(path):
-    """A packed :mod:`gpr_ieff` table, presented as :func:`load_store` presents a store.
-
-    Rows are ragged after the current-cover truncation, so they are padded out to the widest
-    row. The padding is zero-valued and :func:`knn_from_store` already drops non-positive
-    entries, so nothing downstream needs to know the difference -- which is the point:
-    laying out from the delivered table rather than from the store is what demonstrates the
-    table is sufficient on its own.
-    """
     z = np.load(path, allow_pickle=False)
     indptr, indices, data = z["indptr"], z["indices"], z["data"]
     n = len(indptr) - 1
@@ -162,7 +102,6 @@ def load_sparse(path):
     val = np.zeros((n, K), np.float32)
     for i in range(n):
         a, b = indptr[i], indptr[i + 1]
-        # Descending, so a row truncated to fewer than k neighbours loses only its weakest.
         o = np.argsort(data[a:b])[::-1]
         idx[i, :b - a] = indices[a:b][o]
         val[i, :b - a] = data[a:b][o]
@@ -172,16 +111,9 @@ def load_sparse(path):
 
 
 def knn_from_store(st, k=30):
-    """Merge the stored rows into a symmetric top-k neighbour graph over the source set.
-
-    Only reactions that were themselves sources can be laid out (a reaction that appears as
-    a target but never as a source has no row of its own, so its neighbourhood is only
-    half-measured). At full-sweep scale that set is everything.
-    """
     src = st["meta"]["src"]
     rxn = st["meta"]["rxn"]
     spos = {r: i for i, r in enumerate(src)}
-    # target column -> row position, -1 for targets that are not sources
     col2row = np.array([spos.get(r, -1) for r in rxn], dtype=np.int64)
 
     import scipy.sparse as sp
@@ -193,7 +125,7 @@ def knn_from_store(st, k=30):
     live = np.repeat(np.asarray(st["done"]).astype(bool), st["K"])
     ok = live & (cols >= 0) & (cols != rows) & (vals > 0)
     A = sp.csr_matrix((vals[ok], (rows[ok], cols[ok])), shape=(n, n))
-    A = A.maximum(A.T)                 # max(I, I^T), the pairwise convention
+    A = A.maximum(A.T)
     del rows, cols, vals, live, ok
 
     imax = float(A.data.max()) if A.nnz else 1.0
@@ -215,11 +147,6 @@ def knn_from_store(st, k=30):
             ki[i, :c] = indices[a:b][sel]
             kd[i, :c] = np.log10(imax / d[sel])
         if c < k:
-            # A row with fewer than k measured partners only happens on a partial sweep.
-            # Pad with RANDOM vertices at the far distance, never with self: a self-loop is
-            # dropped as a non-edge, which leaves the vertex disconnected and UMAP returns
-            # NaN coordinates for it. Random far edges keep it in the graph while
-            # contributing essentially no membership at short range.
             short += 1
             ki[i, c:] = rng.integers(0, n, k - c)
             kd[i, c:] = far
@@ -227,13 +154,6 @@ def knn_from_store(st, k=30):
 
 
 def _scatter_dense(st, values):
-    """Store rows -> a dense (n_src, n_src) matrix over the source set, NaN where unmeasured.
-
-    Only honest when K covers every target, which is the case for an organism-scale sweep
-    (1,489 reactions, K=1,489) and is asserted by the caller. NaN, not zero: for the
-    similarity channels zero is "no current", but for ``dv`` zero means *coincident*, which
-    is the one wrong answer an unmeasured entry could give.
-    """
     src, rxn = st["meta"]["src"], st["meta"]["rxn"]
     spos = {r: i for i, r in enumerate(src)}
     col2row = np.array([spos.get(r, -1) for r in rxn], dtype=np.int64)
@@ -251,15 +171,6 @@ def _scatter_dense(st, values):
 
 
 def channel_distance(st, channel, beta=1.0):
-    """Dense pairwise distance for one channel.
-
-    ``current`` and ``power`` are *similarities*: the pairwise convention is the larger of
-    the two directions (the stronger connection wins, as ``max(I, I^T)`` does today), then
-    ``log10(max/x)``. ``dv`` is already a distance, so it symmetrises by the *smaller* of the
-    two directions and takes no log. ``combo`` adds the dv and power distances after
-    normalising each to unit median, so ``beta`` is a dimensionless mixing weight -- the raw
-    scales differ by about three orders and a literal sum would be whichever leg is bigger.
-    """
     def sim(vals):
         M = _scatter_dense(st, vals)
         M = np.fmax(M, M.T)
@@ -271,7 +182,7 @@ def channel_distance(st, channel, beta=1.0):
 
     def drop():
         M = _scatter_dense(st, st["ch"]["dv"])
-        M = np.maximum(M, 0.0)          # a solver-noise negative is "no separation", not -d
+        M = np.maximum(M, 0.0)
         return np.fmin(M, M.T)
 
     if channel == "current":
@@ -287,9 +198,6 @@ def channel_distance(st, channel, beta=1.0):
 
 
 def knn_from_dense(D, k):
-    """Top-k nearest per row of a dense distance matrix, NaN pushed to the farthest measured
-    distance -- never dropped, because a dropped row is a disconnected vertex and UMAP
-    returns NaN coordinates for it."""
     far = float(np.nanmax(D))
     D = np.where(np.isfinite(D), D, far)
     np.fill_diagonal(D, np.inf)
@@ -301,13 +209,6 @@ def knn_from_dense(D, k):
 
 
 def incidence(gpr_table, src, element="C"):
-    """Reaction -> the metabolites it moves an atom of ``element`` through.
-
-    Rebuilt with the two calls the sweep itself made, so the drawn network is the one that
-    was solved rather than a re-derivation that could disagree with it. Returns the
-    metabolite names, the ``(row, metabolite)`` pairs, and how many reactions of the graph
-    have no row in the table -- which should be none.
-    """
     from atom_graph import build_atom_graph, restrict_to_giant
     from ieff_sweep import gpr_medium
 
@@ -323,18 +224,11 @@ def incidence(gpr_table, src, element="C"):
         for a in subs | prods:
             m = met_sym[g.nodes[a][0]]
             pairs.append((i, mets.setdefault(m, len(mets))))
-    # A reaction touches a metabolite through several atoms; the drawn edge is the incidence,
-    # not the atom, so collapse them.
     pairs = np.unique(np.asarray(pairs, np.int64), axis=0)
     return list(mets), pairs, missing
 
 
 def metabolite_positions(xy, pairs, n_met):
-    """The mean of the positions of the reactions a metabolite is incident to.
-
-    Derived from the layout and contributing nothing back to it: a metabolite carries no
-    information its reactions did not already carry.
-    """
     cnt = np.bincount(pairs[:, 1], minlength=n_met).astype(float)
     s = np.stack([np.bincount(pairs[:, 1], xy[pairs[:, 0], d], minlength=n_met)
                   for d in (0, 1)], axis=1)
@@ -342,8 +236,6 @@ def metabolite_positions(xy, pairs, n_met):
 
 
 def scatter_index(xy, ii, rng, reps=40):
-    """Mean pairwise 2D distance within a group / among random equal-size sets.
-    1.0 = randomly placed; below 1.0 = the group holds together."""
     def mpd(jj):
         p = xy[jj]
         d = np.linalg.norm(p[:, None] - p[None, :], axis=-1)
@@ -353,17 +245,6 @@ def scatter_index(xy, ii, rng, reps=40):
 
 
 def draw_network(ax, xy, mxy, pairs, bare=False, depth=None):
-    """The reaction-metabolite drawing, laid over an existing layout.
-
-    An edge's weight is 1/(its metabolite's degree). Currency metabolites are incident to
-    hundreds of reactions and would otherwise draw hundreds of equally dark lines each, which
-    is the whole of what makes this drawing a hairball; 1/degree cancels exactly that. Weight
-    sets tone only -- it is a drawing decision, and nothing here feeds back into the layout.
-    """
-    # Quantile buckets, so the split adapts to the degree distribution instead of to an
-    # absolute weight that means something different at every scale. Bucket 0 is the hub
-    # edges and is not drawn at all: it is the densest bucket and the least informative, so
-    # dropping it is most of the speed-up and most of the legibility.
     deg = np.bincount(pairs[:, 1], minlength=len(mxy))[pairs[:, 1]]
     w = 1.0 / deg
     cuts = np.quantile(w, np.linspace(0, 1, EDGE_BUCKETS + 1)[1:-1])
@@ -393,18 +274,12 @@ def render(xy, labels, names, title, out, size=14, clip=1.5, net=None, palette=P
            bare=False):
     fig, ax = plt.subplots(figsize=(9, 9))
     if bare:
-        # The figure as pure structure: no title, no legend, and every reaction the same
-        # grey. The pathway overlay is an annotation of the layout, not part of it, so
-        # dropping it removes nothing the positions encode.
         labels = np.full(len(xy), "", dtype=object)
         names = {}
     if net is not None:
         draw_network(ax, xy, *net, bare=bare)
     base = labels == ""
     if base.any():
-        # The defaults are sized for the 57k-point universe figure, where the unassigned
-        # mass is background. On an organism-scale panel it is 89% of the points and has to
-        # be legible, so both are overridable rather than tuned to one scale.
         ax.scatter(xy[base, 0], xy[base, 1],
                    s=(2 if net is None else 3 * MET_SIZE) if base_size is None else base_size,
                    c=BARE_NODE if bare else ("#cccccc" if net is None else "#9a9a9a"),
@@ -420,9 +295,6 @@ def render(xy, labels, names, title, out, size=14, clip=1.5, net=None, palette=P
                    edgecolors="black", linewidths=0.25, zorder=3,
                    label=f"{names[pid][:34]} ({pid}, n={int(m.sum())})")
     if clip:
-        # UMAP flings a handful of weakly-connected reactions far out, and on a square
-        # canvas those few points cost most of the frame. Clip the view (not the data) to a
-        # symmetric quantile band and say how many points fall outside it.
         lo, hi = np.percentile(xy, [clip, 100 - clip], axis=0)
         pad = 0.03 * (hi - lo)
         out_of_view = int((~((xy >= lo) & (xy <= hi)).all(1)).sum())
@@ -438,9 +310,6 @@ def render(xy, labels, names, title, out, size=14, clip=1.5, net=None, palette=P
         s.set_visible(False)
     fig.tight_layout()
     out.parent.mkdir(parents=True, exist_ok=True)
-    # Append, do not with_suffix: an --out whose name contains a dot (a beta, a leak) has
-    # everything from that dot read as an extension and replaced, and two runs silently
-    # render to the same file.
     png, svg = out.with_name(out.name + ".png"), out.with_name(out.name + ".svg")
     fig.savefig(png, dpi=250)
     fig.savefig(svg)
@@ -513,7 +382,6 @@ def main():
         print(f"reusing {xypath}", flush=True)
     else:
         if args.channel:
-            # The dense path is only honest when every target has a column.
             if st["K"] < len(st["meta"]["rxn"]):
                 raise SystemExit(f"--channel needs a dense store: K={st['K']} < "
                                  f"{len(st['meta']['rxn'])} targets")
@@ -545,8 +413,6 @@ def main():
             raise RuntimeError(f"{int(bad.sum())} points have non-finite coordinates -- "
                                "UMAP disconnected them; the neighbour graph is incomplete")
         if args.radial_gamma < 1.0:
-            # The retired network_concept.py is the definition of what a gamma means, so
-            # import it rather than restating it here.
             from network_concept import compress_radial_outliers
             xy = compress_radial_outliers(xy, args.radial_gamma)
             print(f"radial compression at gamma={args.radial_gamma}", flush=True)

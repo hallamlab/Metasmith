@@ -78,36 +78,17 @@ ARTIFACTS = REPO / "tests" / "fabfos" / "artifacts"
 ORGANISMS = ["NOS", "ERY", "RHI"]
 TARGET = "annotation::gpr_table"
 
-# The four run tools plus the canonical mapper -- imported from the shipped gate
-# rather than restated, so the gate and the run cannot drift about what this
-# stage IS. No ORF producer: these proteomes are staged.
 def expected_transforms() -> set[str]:
     sys.path.insert(0, str(REPO / "tests" / "fabfos"))
     from test_annotation_driver import EXPECTED_TRANSFORMS  # noqa: E402
     return set(EXPECTED_TRANSFORMS)
 
 
-# Per-organism sizes, from the measured 5,892-ORF run that 3,192-5,930 brackets.
-# KOfam over ~26k profiles is the CPU pole; CLEAN wants the GPU for minutes.
-#
-# Nothing is declared above 3 h, and that is the point: `slurm.nf` DOUBLES the
-# walltime on retry, so a 4 h declaration is an 8 h second attempt that SLURM
-# will not start ahead of an ALL_NODES maintenance window -- a retry that can
-# never run. `check_walltimes` enforces the doubled ask.
 RESOURCE_OVERRIDES = {
     "kofamscan": Resources(cpus=16, memory=Size.GB(32), duration=Duration(hours=3)),
     "diamond_uniref50": Resources(cpus=16, memory=Size.GB(64), duration=Duration(hours=3)),
     "proteinbert": Resources(cpus=8, memory=Size.GB(32), duration=Duration(hours=2)),
     "clean": Resources(cpus=4, memory=Size.GB(32), duration=Duration(hours=2)),
-    # The mapper declares 8 GB, which is what a mapper reading five tables looks
-    # like it needs -- and is not. `lane_embed` materialises a DENSE
-    # (reference x MNXR) one-hot label matrix to do the kNN vote as a matmul, and
-    # this pool is 222,019 references over 13,112 distinct MNXR: 10.84 GiB of
-    # float32 that is 99.97% zeros, before the embeddings or the bridge.
-    # Measured off the pinned pool. 48 GB is the cheap fix and the wrong one --
-    # the vote wants a gather over each neighbour's label list -- but a transform
-    # change is a new task key, which discards every cached lane; an override is
-    # not.
     "gpr_4lane": Resources(cpus=4, memory=Size.GB(48), duration=Duration(hours=1)),
 }
 
@@ -124,14 +105,6 @@ def orf_paths() -> list[Path]:
 
 
 def check_refs(host: str, remote_processed: str) -> None:
-    """Every reference present AND non-empty on the host, in ONE ssh round trip.
-
-    Existence is not enough for two of them. An empty `profiles/` directory
-    passes `[ -e ]` and makes kofamscan emit an empty table that the step reports
-    as success; and the label pool is only meaningful as index + embedding stack
-    together -- a half-copied pool is detected at the mapper, after all four
-    lanes have burned their allocations.
-    """
     probes = [f'[ -e "{remote_processed}/{rel}" ] || echo "MISSING {d} {rel}"'
               for d, rel in annotation.REF_LAYOUT.items()]
     prof = f'{remote_processed}/{annotation.REF_LAYOUT["ref::kofamscan_profiles"]}'
@@ -186,7 +159,6 @@ def check_plan(task, n_orfs: int) -> int:
         print(f"\ntransform set is {sorted(used)}, expected {sorted(expected)}",
               file=sys.stderr)
         bad = 1
-    # FIVE steps of THREE instances, not fifteen steps. See the module docstring.
     off = [s for s in task.plan.steps if len(s.group_by_instances) != n_orfs]
     if off:
         for s in off:
@@ -213,12 +185,6 @@ def check_plan(task, n_orfs: int) -> int:
 
 
 def write_provenance(dest_root: Path, run_key: str) -> None:
-    """What a reader cannot recover from the parquet, beside the tables.
-
-    Not a log: which reference pins produced these numbers, what fraction of each
-    proteome each lane reached, and the ways this reference set is NOT the
-    previously deployed method.
-    """
     import pandas as pd
 
     per_org = []
@@ -254,7 +220,7 @@ def write_provenance(dest_root: Path, run_key: str) -> None:
                  else "**unpinned**") + " |")
 
     out = dest_root / "PROVENANCE.md"
-    out.unlink(missing_ok=True)   # see publish_gpr_by_source on hardlinked chunks
+    out.unlink(missing_ok=True)
     out.write_text(f"""# `data/fabfos/nostoc/annotation/` — the canonical four-lane GPR tables
 
 Produced by `research/fabfos/examples/nostoc_gpr.py --run` on fir, task `{run_key}`, from
@@ -369,8 +335,6 @@ def publish(results: Path, *, dry_run: bool, run_key: str) -> int:
                                dry_run=dry_run, repo=REPO)
     if rc or dry_run:
         return rc
-    # The proteome beside the table it describes: a GPR table read against
-    # another run's ORFs joins on ids that merely look alike.
     for p in orf_paths():
         d = dest / p.stem / p.name
         d.parent.mkdir(parents=True, exist_ok=True)
@@ -468,8 +432,6 @@ def main() -> int:
         return preflight(a.host, a.agent_home, a.container, envs_from_plan(task),
                          mlib=MLIB)
 
-    # Not recoverable from a retrieved results tree, and --publish names it in
-    # PROVENANCE.md -- so it is written at plan time.
     (work / "RUN_KEY").write_text(task.GetKey())
 
     if a.retrieve:
@@ -494,8 +456,6 @@ def main() -> int:
               file=sys.stderr)
         return 4
 
-    # `update`, not `clear`: clearing destroys every cached lane, which on a
-    # resubmission is hours of recomputing work that already succeeded.
     agent.StageWorkflow(task, on_exist="update")
     if check_staged_executor(a.host, a.agent_home, task.GetKey()):
         return 4
@@ -521,14 +481,6 @@ def main() -> int:
 
 
 def _watch(agent, task, a, local_results: Path) -> int:
-    """Wait on a run already executing, then check, retrieve and verify it.
-
-    Reached both by `--run` (which launches and then watches) and by `--wait`
-    (which only watches). They are the same code because the run is DETACHED:
-    `RunWorkflow` launches nextflow with nohup and returns, so the local process
-    is a spectator and losing it loses nothing. Re-attaching only works because
-    the task key is stable -- see `_fir.pin_external_leaf_ids`.
-    """
     print(f"=== waiting (timeout {a.timeout_hours:.1f}h, poll {a.poll_s:.0f}s) ===",
           flush=True)
     result = agent.WaitForWorkflow(task, timeout_s=a.timeout_hours * 3600,
@@ -538,12 +490,6 @@ def _watch(agent, task, a, local_results: Path) -> int:
     for line in result["tail"]:
         print(f"    {line}")
 
-    # THE WAIT'S VERDICT IS NOT AUTHORITATIVE; the task table is. `WaitForWorkflow`
-    # decides on a sentinel string in `agent.log` plus the PID lock, and it called
-    # this run `errored` when every one of its 15 tasks had COMPLETED with exit 0
-    # and the results index was written -- the sentinel simply never landed in the
-    # log it watches. Refusing there would have thrown away a good run, so the
-    # table is consulted either way and the disagreement is said out loud.
     n_failed = check_tasks(a.host, a.agent_home, task.GetKey())
     if n_failed:
         print(f"\nrefusing to retrieve: nextflow recorded {n_failed} FAILED task(s). "

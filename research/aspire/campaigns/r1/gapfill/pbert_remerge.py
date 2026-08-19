@@ -1,25 +1,4 @@
 #!/usr/bin/env python3
-"""Rebuild the four proteinbert merges that group() truncated.
-
-`merge_proteinbert` is grouped by the sample's ORFs. metasmith's group() has a
-drop race -- the one that lost S13/S22 from the DAG outright -- and here it
-dropped chunks *inside* a group instead: the merge still ran, still succeeded,
-and still published, over fewer chunks than existed. Nothing downstream said so.
-
-Eight chunk pairs were consumed by no merge at all. Each one's ORF ids are fully
-contained in exactly one sample's ORFs, and the row counts close the published
-shortfalls exactly:
-
-    S19  1683                    (no merge task ran at all -- whole group lost)
-    S12  4979 + 4979 =  9958
-    S25  4999
-    S13  4999+4998+4999+4998 = 19994
-
-This re-runs the library's own merge logic over the complete chunk list. Order
-and `global_row` are recomputed from scratch, so the rebuilt products differ
-from the published ones for every row, not just the restored tail -- they are
-replacements, not patches.
-"""
 import os, re, sys, csv, json, glob, subprocess
 
 MSM  = "/scratch/phyberos/gmcf3495/metasmith/runs"
@@ -28,8 +7,6 @@ OUT  = "/scratch/phyberos/gmcf3495/gapfill/pbert"
 SIF  = "/scratch/phyberos/cache/apptainer/docker..quay.io_hallamlab_polars..1.38.1.sif"
 EMB, IDX = "jnwshMUg", "spk7Jvqs"
 
-# Established by ORF-id containment against every published .faa: each of these
-# is a subset of exactly one sample and of no other.
 ORPHAN_OWNER = {
     "1-1-1.P98wZ9iESa7lA4K3": "S19",
     "1-1-1.VQ9KctJvVVCIbbCj": "S12",
@@ -41,8 +18,6 @@ ORPHAN_OWNER = {
     "1-1-1.pM1lOM0HfsPcPSjA": "S13",
 }
 
-# Same body as transforms/functionalAnnotation/merge_proteinbert.py, so the
-# rebuilt products are produced by the pipeline's logic and not a lookalike.
 MERGER = r'''
 import sys, json
 import polars as pl
@@ -65,7 +40,6 @@ print(f"merged {len(manifest)} chunk pair(s) -> {row_offset} rows", flush=True)
 '''
 
 def chunk_paths(key):
-    """basename -> absolute path, over both chunk product directories."""
     m = {}
     for p in glob.glob(f"{MSM}/{key}/results/*proteinbert_*_chunk/*"):
         m[os.path.basename(p)] = p
@@ -73,7 +47,6 @@ def chunk_paths(key):
 
 
 def merges(key):
-    """(sample, task_dir) for every merge_proteinbert task in this run."""
     out = []
     with open(f"{INV}/attrib_{key}.tsv") as fh:
         for r in csv.DictReader(fh, delimiter="\t"):
@@ -83,21 +56,6 @@ def merges(key):
 
 
 def work_paths(key):
-    """basename -> the path the transform would have sorted on.
-
-    The transform sorts each chunk list by `str(p.local)` -- the work dir its
-    producing task wrote it in, one per chunk -- not by a copy staged into the
-    merge's directory. Work-dir hashes have nothing to do with the content hash
-    in the basename, so sorting by basename gives the same rows in a different
-    order; the S33 control is what caught that.
-
-    Those work dirs are mostly gone: the merge protocol unlinks each chunk after
-    consuming it, so only the orphans survive on disk. The consumed ones are
-    recoverable only from the input list each merge recorded in its own
-    `.command.sh`. Paths are normalised to the part from `nxf_work/` on, because
-    that record is in container paths (/msm_home/...) while `find` returns host
-    paths -- the prefix is constant either way, so the order is the same.
-    """
     m = {}
     for _, td in merges(key):
         sh = open(f"{td}/.command.sh", errors="replace").read()
@@ -133,10 +91,6 @@ def main(targets):
         for sample in sorted(by_sample):
             if targets and sample not in targets:
                 continue
-            # The transform sorts each product list by path and zips them; both
-            # lists live in one directory apiece, so sorting by basename gives
-            # the same content-hash order and the pairing is the same one the
-            # pipeline used.
             missing = sorted(b for b in by_sample[sample] if b not in order)
             if missing:
                 raise SystemExit(f"{sample}: no work dir recorded for {missing}")

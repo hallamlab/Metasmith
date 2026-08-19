@@ -1,21 +1,3 @@
-"""Atom-resolved ECSPr graph for the concept figure, built from the metabolism bake.
-
-A node is ``(metabolite, canonical atom rank)`` and an edge IS an atom transfer, so a path
-cannot enter and leave a reaction through two substrates -- the defect that retired the
-bipartite "star" topology (a zero-carbon channel scored 21x a real one on MNXR106432).
-Reactions are what gets laid out; metabolites are the medium the current flows through.
-
-Direction evidence may only *throttle*: a reaction whose ``ratio = g_rev/g_fwd`` exceeds 1
-runs against the way its equation is written, so its edge is FLIPPED and the ratio inverted
-rather than the reverse branch being handed conductance it has no evidence for. That is the
-rule stated in ``ecspr.model.build.graph_from_pairs`` and it is applied at build time here, which
-is why per-reaction terminals below are read off the graph's own post-flip orientation
-instead of being re-derived from the pair table.
-
-Bake inputs (``data/fabfos/processed/metabolism_bake``) were produced on ``capellaz`` from
-MetaNetX 4.5; ``vocab.parquet`` maps integer codes to MNX symbols, ``atom_pairs.parquet``
-carries one row per transferred atom, ``direction.parquet`` the directionality ensemble.
-"""
 import sys
 from pathlib import Path
 
@@ -23,9 +5,6 @@ import numpy as np
 import pandas as pd
 import scipy.sparse as sp
 
-# ECSPr is imported from this repo's own `src/` rather than installed, so the figures track
-# the package with no rebuild. ECSPR_SRC / ECSPR_BAKE override the defaults so the same
-# scripts run unmodified off-box (fir), where the two trees are staged side by side.
 import os                                                            # noqa: E402
 SRC = os.environ.get("ECSPR_SRC", str(Path(__file__).resolve().parents[4] / "src"))
 if SRC not in sys.path:
@@ -47,15 +26,6 @@ def load_vocab():
 
 
 def build_atom_graph(element="C", medium_rxn_symbols=None, weights=None):
-    """AtomGraph for one element over a chosen reaction medium.
-
-    ``weights`` is ``{mnxr: E_r}``; ``None`` means unweighted (every reaction present at
-    conductance 1), which is what a universe-scale concept figure wants -- an evidence lane
-    would make this a claim about one organism.
-
-    Returns ``(graph, terminals, met_symbols)`` where ``terminals[mnxr]`` is
-    ``(substrate_atom_nodes, product_atom_nodes)`` as frozensets of node indices.
-    """
     vocab = load_vocab()
     el_code = vocab["element"][1][element]
     met_sym = vocab["met"][0]
@@ -107,9 +77,6 @@ def build_atom_graph(element="C", medium_rxn_symbols=None, weights=None):
     for a, b, c, e in uniq:
         edges.append((_i((int(a), int(b))), _i((int(c), int(e)))))
 
-    # edge -> reaction provenance. Two consumers: reaction terminals below, and
-    # ``ecspr.model.build.reaction_currents``, which needs it under this exact key to attribute a
-    # solution's edge currents back to reactions.
     mnxr_of_row = np.array([rxn_sym[c] for c in rxn_of_row], dtype=object)
     prov = pd.DataFrame(dict(edge=codes, mnxr=mnxr_of_row, gp=gp, rxn=rxn_of_row))
 
@@ -129,11 +96,6 @@ def build_atom_graph(element="C", medium_rxn_symbols=None, weights=None):
 
 
 def restrict_to_giant(g, terminals):
-    """Keep the largest weakly-connected component.
-
-    The universe carbon graph has ~44k tiny components that cannot carry current anywhere
-    and only inflate the system the factorization has to carry.
-    """
     from scipy.sparse.csgraph import connected_components
     e = np.asarray(g.edges, dtype=np.int64)
     A = sp.coo_matrix((np.ones(len(e)), (e[:, 0], e[:, 1])), shape=(g.n, g.n))
@@ -167,11 +129,6 @@ def restrict_to_giant(g, terminals):
 
 
 def incidence(edges, n):
-    """Signed incidence (+1 tail, -1 head), vectorized.
-
-    ``ecspr.model.directed.build_incidence`` builds the same matrix with a Python loop over m,
-    which is minutes at 1.6M edges.
-    """
     e = np.asarray(edges, dtype=np.int64)
     m = len(e)
     rows = np.repeat(np.arange(m), 2)

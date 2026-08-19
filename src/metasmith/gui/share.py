@@ -1,36 +1,3 @@
-"""Handing an ssh host, an agent or a workflow to somebody else.
-
-The unit of sharing is a string: `msm1:<checksum>:<base64 of gzipped yaml>`.
-A string is the one thing that travels through every channel a colleague
-actually uses -- chat, mail, a ticket -- without anyone having to agree on file
-transport first.
-
-Three properties are load-bearing.
-
-**Versioned and checksummed.** The prefix says which format this is, so a later
-one is *refused* rather than mis-read, and the digest says the string arrived
-whole -- pasted payloads get truncated by line wrapping, and the failure of the
-unchecked version is a half-built object rather than a message.
-
-**Resolution is by name, best effort.** A shared object names libraries, hosts
-and types rather than carrying them: the recipient has their own copies, and a
-path from the sender's disk means nothing here. What does not resolve is
-*reported*, not refused -- the object is created with the unresolved parts named
-so they can be seen and fixed. That is the stance the rest of the GUI already
-takes: an agent carries `problems`, a recipe row with an unknown type draws red,
-and both are enforced at launch rather than at edit.
-
-**Nothing secret travels.** A host's identity file is a path to a private key on
-the sender's machine and is dropped; an agent's `real_path` is where it was
-deployed on the sender's host and is dropped too. What remains is still worth
-looking at before it is sent -- a home directory, setup commands, a cluster
-account in the params -- which is why export hands back the decoded body beside
-the payload, for the page to show before anything is copied.
-
-This module knows about projects and ssh configs but nothing about HTTP: the
-routes in `api.py` are three thin calls (export, preview, commit), one set for
-all three kinds.
-"""
 from __future__ import annotations
 
 import base64
@@ -44,9 +11,6 @@ from ..models.paths import DEFERRED, is_deferred
 from ..ops import agent as op_agent
 from ..ops import data as op_data
 from ..ops import samples as op_samples
-# by name rather than `from . import stdlib`: importing the *package* from a
-# module the package's own api imports would put this file inside the
-# gui/api/app cycle, which `test_no_import_cycles` pins by exact membership
 from .names import slugify
 from .recipe import rows_of
 from .stdlib import available_types, discover
@@ -63,10 +27,7 @@ DEFERRED_WIRE = str(DEFERRED)
 
 
 class ShareError(Exception):
-    """A payload that cannot be read, said in the user's words."""
-
-
-# -- the envelope ------------------------------------------------------------
+    pass
 
 
 def encode(kind: str, body: dict) -> str:
@@ -78,7 +39,6 @@ def encode(kind: str, body: dict) -> str:
 
 
 def decode(payload: str, expect: str | None = None) -> tuple[str, dict]:
-    """The kind and body a payload carries, or a refusal a person can act on."""
     text = "".join((payload or "").split())
     parts = text.split(":", 2)
     if len(parts) != 3 or not parts[0]:
@@ -109,14 +69,6 @@ def decode(payload: str, expect: str | None = None) -> tuple[str, dict]:
     return kind, body
 
 
-# -- library references ------------------------------------------------------
-#
-# A library travels as its name inside the standard library -- `transforms/x`
-# -- because that is the only spelling both ends share. Anything outside the
-# clone keeps its absolute path, which will usually not resolve on the other
-# side; that is what the unresolved list is for.
-
-
 def _lib_name(path: str, lib_root: Path | None) -> str:
     p = Path(path)
     if lib_root is None:
@@ -141,11 +93,7 @@ def _stdlib_root(p: Project) -> Path | None:
     return Path(found["path"]) if found["present"] else None
 
 
-# -- export ------------------------------------------------------------------
-
-
 def export_host(cfg: SshConfig, alias: str) -> dict:
-    """A host as its connection details. The identity file stays here."""
     entry = cfg.find(alias)
     if entry is None:
         raise SshConfigError(f"no host named [{alias}]")
@@ -159,8 +107,6 @@ def export_agent(p: Project, name: str) -> dict:
     if not p.agent_exists(name):
         raise ProjectError(f"no agent named [{name}]")
     info = op_agent.info(str(p.agent_path(name)))
-    # `real_path` is deliberately absent: it is where this agent was deployed on
-    # the sender's host, and a copy that claimed it would skip its own deploy.
     return {
         "name": name,
         "home": info.get("home"),
@@ -176,25 +122,10 @@ def export_agent(p: Project, name: str) -> dict:
 
 
 def _has_no_path(path) -> bool:
-    """Whether a row arrives without one -- the constant, or one minted from it."""
     return not path or path == DEFERRED_WIRE or is_deferred(path)
 
 
 def export_workflow(p: Project, name: str, bound: bool = False) -> dict:
-    """A workflow as its spec and its recipe -- never the store's bookkeeping.
-
-    The recipe is the rows, and the rows are the whole of it: the input library
-    is built from them at solve time, so there is nothing else to carry.
-
-    `bound` keeps the paths, which is "run exactly this" and only means anything
-    to someone with the same files. Unbound is the recipe: every row that
-    *points* at a file arrives blank, which is precisely what a template is, and
-    the recipient fills them in. A row that *holds* its value travels whole
-    either way -- deferring one would throw the recipe away and leave a nameless
-    blank where a read-pair descriptor was. So does every field's *column*: a
-    binding is a rule about a sheet rather than a path on this machine, and it
-    is the entire substance of a sample-array recipe.
-    """
     wf = p.read_workflow(name)
     root = _stdlib_root(p)
     req = wf.request
@@ -218,27 +149,14 @@ def export_workflow(p: Project, name: str, bound: bool = False) -> dict:
             "resource_libraries": [
                 _lib_name(x, root) for x in req.get("resource_libraries") or []
             ],
-            # already stated in row ids -- see `_rows_from`
             "shared_input_paths": list(req.get("shared_input_paths") or []),
         },
-        # Kept, and empty: a reader from before rows were the recipe expects the
-        # key, and a payload that omits it reads as a workflow with no inputs
-        # rather than one it cannot understand.
         "inputs": [],
         "drafts": rows,
     }
 
 
 def _rows_from(body: dict) -> tuple[list[dict], dict[str, str]]:
-    """The payload's recipe as rows, whichever shape it arrived in.
-
-    Older senders describe the input library instead: one entry per registered
-    item, with lineage and shared inputs stated in the sender's own paths. Those
-    become rows too -- which is strictly better than what used to happen to
-    them, since a row keeps its type even when this project has never heard of
-    it. The returned map is from what that sender called a row to what it is
-    called here, for the references stated elsewhere in the payload.
-    """
     rows = [dict(d) for d in body.get("drafts") or []]
     ids: dict[str, str] = {}
     made: list[dict] = []
@@ -277,17 +195,7 @@ def export(p: Project, cfg: SshConfig, kind: str, name: str, bound: bool = False
     return {"kind": kind, "name": name, "body": body, "payload": encode(kind, body)}
 
 
-# -- import ------------------------------------------------------------------
-#
-# Every import is two calls with the same body: a preview that reads what would
-# happen, and a commit that does it. The preview exists because a payload
-# carries paths -- a home directory, a cluster account, someone's absolute input
-# files -- and pasting a string from a colleague should not be the moment you
-# find out what was in it.
-
-
 def _free_name(taken, wanted: str) -> str:
-    """`wanted`, or the first `-2`, `-3` after it that nobody has."""
     if wanted not in taken:
         return wanted
     i = 2
@@ -372,15 +280,10 @@ def import_agent(p: Project, cfg: SshConfig, body: dict) -> dict:
         setup_commands=list(body.get("setup_commands") or []),
         globus_uuid=body.get("globus_uuid") or None,
         default_preset=body.get("default_preset") or None,
-        # Passed as a mapping, which is exactly what `Agent.Pack` handles
-        # outside its stringifying optional block -- a shared agent whose params
-        # arrived as `"{'account': 'x'}"` would be truthy, wrong, and silent.
         default_params=dict(body.get("default_params") or {}),
         native=bool(body.get("native")),
         gpu_args=list(body.get("gpu_args") or []),
     )
-    # named by hand from the sender's side: no naming record, so it is never
-    # renamed out from under whoever imported it
     return {"kind": "agent", "name": name, "notes": prev["notes"]}
 
 
@@ -413,7 +316,6 @@ def preview_workflow(p: Project, body: dict) -> dict:
         notes.append(f"library [{n}] is not in your standard library, so it will not be enabled")
     for t in unknown_types:
         notes.append(f"type [{t}] is not in your standard library; rows of it arrive red until you retype them")
-    # a value row carries its own contents, so it is not one of the blanks
     blank = [
         r for r in rows
         if r.get("mode") != "value" and _has_no_path(r.get("path")) and r.get("dtype")
@@ -436,18 +338,6 @@ def preview_workflow(p: Project, body: dict) -> dict:
 
 
 def import_workflow(p: Project, body: dict) -> dict:
-    """Create the workflow and its recipe. Nothing is registered here.
-
-    The rows are the recipe and the library is built from them at solve time, so
-    an import is a request to write and an empty library to build into. That is
-    what removes the old parents-first registration wave and the special case
-    for a type this project does not have: every row carries its own type, an
-    unknown one is already drawn in red, and it is retyped in place.
-
-    The library is marked adopted even though it is empty -- it *is* the whole
-    of what these rows say, and a later read must not invent rows for what the
-    first solve puts in it.
-    """
     prev = preview_workflow(p, body)
     name = prev["name"]
     root = _stdlib_root(p)
@@ -461,9 +351,6 @@ def import_workflow(p: Project, body: dict) -> dict:
         "target_types": list(spec.get("target_types") or []),
         "transform_libraries": tr_libs,
         "resource_libraries": res_libs,
-        # stated in row ids, so an older payload's paths are translated the same
-        # way the lineage in `_rows_from` is; one naming a row that did not
-        # arrive is dropped rather than left pointing at nothing
         "shared_input_paths": [
             str(x) if str(x).startswith("#") else f"#{ids[str(x)]}"
             for x in (spec.get("shared_input_paths") or [])
@@ -475,9 +362,6 @@ def import_workflow(p: Project, body: dict) -> dict:
     op_data.create_library(lib_path, type_library_paths=discover(p.root)["data_types"])
     op_samples.write_record(lib_path, {"adopted": True, "rows": {}})
     return {"kind": "workflow", "name": name, "notes": list(prev["notes"])}
-
-
-# -- the one door ------------------------------------------------------------
 
 
 def preview(p: Project, cfg: SshConfig, payload: str) -> dict:

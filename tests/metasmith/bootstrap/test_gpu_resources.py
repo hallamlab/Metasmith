@@ -1,23 +1,3 @@
-"""GPU as a declared resource: the transform half, the run half, and the seam.
-
-Three surfaces are pinned here.
-
-**Transform side** — `Resources(gpus=..., gpu_memory=...)` is a toggle plus a
-total-VRAM ask. It is deliberately *not* a Nextflow directive (Nextflow has no
-VRAM concept), so `AsNextflowFormat` must stay byte-identical to what it emitted
-before GPUs existed. Every already-staged workflow's task hashes depend on that.
-
-**Run side** — `Gpu` describes one device on the target host, and only there does
-device vocabulary (per-device VRAM, gres type, request-flag syntax) appear. The
-count each step needs is derived at run time because that is the first moment
-both halves are known.
-
-**The seam** — `_plan_gpu_requests` reconciles them and is the fail-fast gate;
-`_render_gpu_config` turns the result into config text. `clusterOptions` is a
-*scalar* directive, so the emitted per-step block must restate the base flags or
-SLURM rejects every job for a missing account — that is asserted literally.
-"""
-
 from __future__ import annotations
 
 import json
@@ -35,17 +15,12 @@ from metasmith.env import Environment, Runtime
 from metasmith.models.libraries import GPU_LABEL, Gpu, Gpus, Resources, Size
 
 
-# --------------------------------------------------------------------------
-# transform side
-# --------------------------------------------------------------------------
-
 class TestResourcesDeclaration:
     def test_default_is_none_and_renders_nothing_extra(self):
         r = Resources(cpus=4, memory=Size.GB(8))
         assert r.gpus is Gpus.NONE
         assert r.gpu_memory is None
         assert not r.wants_gpu
-        # byte-identical to pre-GPU output; task hashes depend on it
         assert r.AsNextflowFormat(is_config=True) == [
             "cpus = 4",
             "memory = { (2**(task.attempt-1)) * ('8.00 GB' as MemoryUnit) }",
@@ -56,17 +31,11 @@ class TestResourcesDeclaration:
         plain = Resources(cpus=8, memory=Size.GB(32))
         gpu = Resources(cpus=8, memory=Size.GB(32), gpus=toggle, gpu_memory=Size.GB(40))
         assert gpu.wants_gpu
-        # gpu_memory is NOT a nextflow directive; the two must render the same
         assert gpu.AsNextflowFormat(is_config=True) == plain.AsNextflowFormat(is_config=True)
 
     def test_toggle_values_are_the_serialized_form(self):
-        # these strings cross into the manifest and the step meta file
         assert [g.value for g in Gpus] == ["none", "optional", "required"]
 
-
-# --------------------------------------------------------------------------
-# run side: what a device is on this host
-# --------------------------------------------------------------------------
 
 class TestGpuDevice:
     def test_devices_for_rounds_up(self):
@@ -77,7 +46,6 @@ class TestGpuDevice:
         assert d.DevicesFor(Size.GB(49)) == 3
 
     def test_no_ask_or_no_device_memory_means_one_device(self):
-        # "I want a GPU" without saying how much is a valid, common ask
         assert Gpu(memory=Size.GB(24)).DevicesFor(None) == 1
         assert Gpu().DevicesFor(Size.GB(40)) == 1
 
@@ -88,25 +56,15 @@ class TestGpuDevice:
         assert Gpu(flag="--gres=gpu:", type="h100").MakeRequestFlag(2) == "--gres=gpu:h100:2"
 
     def test_site_flags_ride_with_the_request(self):
-        # sockeye's default partition has no cards, and only GPU steps should
-        # be sent to the gpu partition -- so this lives on the device, not on
-        # the every-step clusterOptionsExtra
         assert Gpu(extra=["--partition=gpu"]).MakeRequestFlag(1) == (
             "--gpus-per-node=1 --partition=gpu"
         )
 
     def test_sockeye_dialect(self):
-        # verified against the live scheduler: sockeye's job_submit plugin
-        # accepts `--gpus-per-node=N` and rejects both `--gres=gpu:v100:N` and
-        # the typed `--gpus-per-node=v100:N` ("requested_gpus 0")
         assert Gpu(memory=Size.GB(32), extra=["--partition=gpu"]).MakeRequestFlag(1) == (
             "--gpus-per-node=1 --partition=gpu"
         )
 
-
-# --------------------------------------------------------------------------
-# the seam: preflight
-# --------------------------------------------------------------------------
 
 def _manifest(*entries):
     out = {}
@@ -148,8 +106,6 @@ class TestPreflight:
         assert _plan_gpu_requests(m, Gpu(memory=Size.GB(80))) == {"p01__prott5": 1}
 
     def test_device_half_the_size_plans_two_and_warns(self, monkeypatch):
-        # metasmith's Log binds its stream at import, so intercept Log.Warn
-        # directly rather than trying to capture the fd.
         warnings = []
         monkeypatch.setattr(_agents.Log, "Warn", lambda msg: warnings.append(msg))
         m = _manifest(("prott5", Gpus.REQUIRED, 40.0))
@@ -178,10 +134,6 @@ class TestPreflight:
         }
 
 
-# --------------------------------------------------------------------------
-# the seam: config rendering
-# --------------------------------------------------------------------------
-
 class TestRenderGpuConfig:
     def test_nothing_planned_emits_nothing(self):
         assert _render_gpu_config({}, Gpu(memory=Size.GB(40)), scheduler=True) == []
@@ -195,8 +147,6 @@ class TestRenderGpuConfig:
     def test_label_block_reexports_cuda_visible_devices(self):
         lines = _render_gpu_config({"p01__x": 1}, Gpu(memory=Size.GB(8)), scheduler=False)
         text = "\n".join(lines)
-        # single-quoted in groovy so `$` survives to the shell rather than being
-        # interpolated at config-parse time
         assert f"beforeScript = '{_GPU_BEFORE_SCRIPT}'" in text
         assert "APPTAINERENV_CUDA_VISIBLE_DEVICES" in text
 
@@ -204,18 +154,12 @@ class TestRenderGpuConfig:
         lines = _render_gpu_config({"p01__prott5": 2}, Gpu(memory=Size.GB(20)), scheduler=True)
         text = "\n".join(lines)
         assert "withName: 'p01__prott5'" in text
-        # clusterOptions is a SCALAR directive: setting it here replaces the
-        # global string, so the base flags must be restated or SLURM rejects the
-        # job for a missing account.
         assert "--nodes=1 --ntasks=1" in text
         assert "--account=${params.slurmGpuAccount ?: params.slurmAccount}" in text
         assert '" --gpus-per-node=2"' in text
         assert "params.process.clusterOptionsExtra" in text
 
     def test_gpu_account_falls_back_to_the_default_account(self):
-        # sockeye charges GPU work to a separate allocation, so the account has
-        # to be REPLACED, not appended -- the elvis keeps single-account sites
-        # working with no configuration at all
         text = "\n".join(_render_gpu_config({"p01__x": 1}, Gpu(memory=Size.GB(8)), scheduler=True))
         assert "params.slurmGpuAccount ?: params.slurmAccount" in text
 
@@ -225,10 +169,6 @@ class TestRenderGpuConfig:
         assert '" --gres=gpu:a100:3"' in text
 
 
-# --------------------------------------------------------------------------
-# the scheduler preset
-# --------------------------------------------------------------------------
-
 class TestSlurmPreset:
     @staticmethod
     def _slurm() -> str:
@@ -236,8 +176,6 @@ class TestSlurmPreset:
         return (MODULE_PATH / "nextflow_config/slurm.nf").read_text()
 
     def test_generic_injection_points_exist(self):
-        # this is the "already exists" mechanism the GPU work rides on: nested
-        # params via the underscore convention, delivered by -params-file
         src = self._slurm()
         assert "clusterOptions = null" in src
         assert "clusterOptionsExtra = ''" in src
@@ -248,15 +186,9 @@ class TestSlurmPreset:
         line = [l for l in src.splitlines() if l.strip().startswith("clusterOptions = (")]
         assert len(line) == 1, src
         line = line[0]
-        # the built-in base is the fallback, not a hardcode -- and the extra is
-        # appended, never replacing the account/node flags
         assert '?: "--nodes=1 --ntasks=1 --account=${params.slurmAccount}"' in line
         assert "params.process.clusterOptionsExtra" in line
 
-
-# --------------------------------------------------------------------------
-# per-runtime GPU flags
-# --------------------------------------------------------------------------
 
 class TestEnvironmentGpuArgs:
     def test_docker(self):
@@ -282,15 +214,6 @@ class TestEnvironmentGpuArgs:
 
 
 class TestSiteGpuArgs:
-    """Some hosts need more than the runtime switch to expose a device.
-
-    WSL2 is the live case: apptainer's `--nv` finds and injects `nvidia-smi`
-    but its library discovery misses the driver stack under /usr/lib/wsl, so
-    NVML reports "GPU access blocked by the operating system". Which extra
-    flags a host needs is a host fact, so it is declared on the Agent rather
-    than sniffed at run time.
-    """
-
     WSL = ["--bind", "/usr/lib/wsl:/usr/lib/wsl", "--env", "LD_LIBRARY_PATH=/usr/lib/wsl/lib"]
 
     def test_site_args_follow_the_runtime_switch(self):

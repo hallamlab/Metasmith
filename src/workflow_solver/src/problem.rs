@@ -1,13 +1,9 @@
 //! Reading a problem, and deriving the maps the search steers by.
 //!
-//! Everything here happens once per solve, before a single node is expanded, and
-//! all of it is a transcription of `solve_by_mcts`'s preamble. It is worth
-//! porting first and on its own because it is verifiable on its own: the maps
-//! are pure functions of the problem, so the two implementations can be made to
-//! agree here before either of them makes a decision.
+//! The maps are pure functions of the problem, so the two implementations can be
+//! made to agree here before either makes a decision.
 //!
-//! The thing to keep in view while reading is which notion of *sameness* each
-//! map uses, because Python's are not all the same and they are not all obvious:
+//! Which notion of *sameness* each map uses is not uniform and not obvious:
 //!
 //! - Transforms compare by **identity**. `Transform` defines `__hash__` and not
 //!   `__eq__`, so `parent == child` is `is`, and two duplicate transforms are
@@ -20,10 +16,8 @@
 //!   constraint -- memoizing on it drops the second one reached out of the
 //!   distance table, and out of the search with it.
 //!
-//! The payload's node table serves both roles. Every entry becomes a `DepId`,
-//! because transforms refer to them as dependencies, and *also* an `EpId`,
-//! because the given endpoints and their ancestors are drawn from the same
-//! table. The two are separate arenas on purpose: see `model`.
+//! The payload's node table serves both roles: every entry becomes a `DepId`
+//! and *also* an `EpId`. The two are separate arenas on purpose -- see `model`.
 
 use serde::Deserialize;
 
@@ -51,10 +45,9 @@ pub struct EncodedProblem {
     pub n_properties: usize,
     pub nodes: Vec<EncodedNode>,
     pub transforms: Vec<EncodedTransform>,
-    /// The synthesized `given` transform's index; 0 in practice, named anyway.
+    /// The synthesized `given` transform's index.
     pub given_index: TransformId,
-    /// The caller's own `transforms` sequence, as indices. May repeat: the
-    /// caller's list is not deduplicated, and `relavent_transforms` walks it.
+    /// The caller's own `transforms` sequence, as indices. May repeat.
     pub caller_transforms: Vec<TransformId>,
     pub target_index: TransformId,
     /// Endpoint ids per given group, positionally matched to
@@ -64,9 +57,9 @@ pub struct EncodedProblem {
 
 /// Everything derived from the payload, and immutable from then on.
 ///
-/// The endpoint arena is deliberately *not* in here: it grows throughout a
-/// solve, and keeping it separate is what lets the search borrow the problem and
-/// mint endpoints at the same time.
+/// The endpoint arena is deliberately *not* in here: it grows throughout a solve,
+/// and keeping it separate lets the search borrow the problem and mint endpoints
+/// at the same time.
 pub struct Problem {
     pub types: Types,
     pub deps: Deps,
@@ -80,19 +73,16 @@ pub struct Problem {
     pub max_iter: u32,
     pub max_refine: u32,
 
-    /// `_iter_transforms()`: given, then the caller's sequence, then target.
+    /// Given, then the caller's sequence, then target.
     pub iter_order: Vec<TransformId>,
     /// First appearance walking `iter_order`, requires before produces.
     pub dep_rank: Map<DepId, u32>,
     /// Each dependency's lineage parents in *rank* order, not intern order.
-    ///
-    /// Only one read of them needs an order, and it is easy to miss: the
-    /// refiner sums a distance per lineage constraint, and floating-point
-    /// addition is not associative. The other two reads are an AND and a set
-    /// union, which do not care. See `score_node` in `solver.py`.
+    /// One read needs it: the refiner sums a distance per lineage constraint,
+    /// and floating-point addition is not associative.
     pub dep_parents_ranked: Vec<Vec<DepId>>,
-    /// Ancestors of every given endpoint, transitively. Compared by equality
-    /// because Python's `e.parents & inherent_parents` is a set intersection.
+    /// Ancestors of every given endpoint, transitively. Compared by equality,
+    /// matching Python's `e.parents & inherent_parents` set intersection.
     pub inherent_parents: Set<EpSig>,
     pub given_endpoints: Set<EpSig>,
 
@@ -113,11 +103,11 @@ impl Problem {
         let mut types = Types::new(enc.n_properties);
         let mut deps = Deps::default();
         let mut endpoints = Endpoints::default();
-        // One forward pass: the encoder lists every node after its parents, so
-        // a parent's index is always already resolved. That the dependency index
-        // we get back is the index we were handed is asserted rather than
-        // assumed -- if it ever is not, every id in the payload means something
-        // else, and the failure would be a wrong plan rather than a crash.
+        // The encoder lists every node after its parents, so a parent's index is
+        // always resolved. That the dependency index we get back is the one we
+        // were handed is asserted rather than assumed: if it is not, every id in
+        // the payload means something else, and the failure is a wrong plan
+        // rather than a crash.
         let mut node_ep: Vec<EpId> = Vec::with_capacity(enc.nodes.len());
         for (i, n) in enc.nodes.iter().enumerate() {
             for &p in &n.props {
@@ -137,8 +127,8 @@ impl Problem {
             node_ep.push(endpoints.new_endpoint(ty, &ep_parents));
         }
 
-        // Structural transform identity, from properties only -- `str(Transform)`
-        // prints `requires` and `produces` and never a dependency's parents.
+        // Structural identity from properties only, as `str(Transform)` prints
+        // `requires` and `produces` and never a dependency's parents.
         let mut tr_sigs: Map<Vec<u32>, u32> = det::map();
         let mut transforms = Vec::with_capacity(enc.transforms.len());
         for t in &enc.transforms {
@@ -258,10 +248,9 @@ impl Problem {
 
     fn derive(&mut self) {
         let n = self.transforms.len();
-        // Pairwise, exactly as Python does it. The problem sizes here are tens
-        // of transforms, so the quadratic loop is not worth outsmarting -- and
-        // an index built to avoid it would still have to reproduce this answer
-        // for the pathological cases, which is more surface than the loop costs.
+        // Pairwise, as Python does it: an index built to avoid the quadratic
+        // loop would still have to reproduce this answer for the pathological
+        // cases.
         for parent in 0..n {
             for child in 0..n {
                 if parent == child { continue; } // identity, as in Python
@@ -303,34 +292,28 @@ impl Problem {
             }
         }
 
-        // Frozen into rank order once, here. Python learned this the expensive
-        // way: sorting at the point of use put a sort inside the distance walk,
-        // which is the hottest loop in the search, and cost 35%.
+        // Frozen into rank order once, here: sorting at the point of use puts a
+        // sort inside the distance walk, the hottest loop in the search.
         let dep_rank = &self.dep_rank;
         for v in self.demand2product.values_mut() { v.sort_unstable_by_key(|d| dep_rank[d]); }
         for v in self.demand2producer.values_mut() { v.sort_unstable(); }
         for v in self.product2consumer.values_mut() { v.sort_unstable(); }
 
-        // Distance to target, by a single-pass backward BFS, memoized on the
-        // transform rather than on the path it was reached by: a transform
-        // expands once, on first reach, so total work is O(V+E) no matter how
-        // many distinct paths reach it. The predecessor walked every simple
-        // path, which is combinatorial once cycles overlap and does not
-        // terminate on e.g. a pre-expanded STRIPS state graph, where every
-        // reversible action is its own inverse edge.
+        // Distance to target by a single-pass backward BFS, memoized on the
+        // transform rather than the path it was reached by, so a transform
+        // expands once and the walk is O(V+E). Walking every simple path instead
+        // is combinatorial once cycles overlap, and does not terminate at all on
+        // a graph where every action has an inverse edge.
         //
-        // `distance` is the memo, which makes the arena index the notion of
-        // sameness. That is deliberate and it is *not* the guard the walk used
-        // to carry: `sig` is shared by duplicate transforms and by two
-        // transforms differing only in a lineage constraint, and those have
-        // different producer edges. Memoizing on it would leave the second one
-        // reached with no distance entry at all -- and membership here is not
-        // decoration, it is what `relevant_transforms` and the no-path bail
-        // below read, so the transform would silently leave the search.
+        // The memo is keyed by arena index, not by `sig`: `sig` is shared by
+        // duplicate transforms and by two transforms differing only in a lineage
+        // constraint, which have different producer edges. Memoizing on it leaves
+        // the second one reached with no distance entry, and membership here is
+        // what `relevant_transforms` and the no-path bail read -- so that
+        // transform would silently leave the search.
         //
-        // `distance` is now shortest-path rather than longest-simple-path, and
-        // `opportunity` still accumulates once per incoming edge. Both feed the
-        // mcts guiding score only.
+        // `distance` is shortest-path, `opportunity` accumulates once per
+        // incoming edge, and both feed the mcts guiding score only.
         let mut todo: std::collections::VecDeque<(TransformId, i64)> =
             std::collections::VecDeque::from([(self.target_index, -1)]);
         while let Some((step, consumer_dist)) = todo.pop_front() {
@@ -349,8 +332,8 @@ impl Problem {
         }
 
         // The caller's own sequence, filtered -- not the arena, and not sorted.
-        // Duplicates in the caller's list stay duplicated, because Python's
-        // membership test is identity and both copies pass it.
+        // Duplicates stay duplicated: Python's membership test is identity and
+        // both copies pass it.
         self.relevant_transforms = self
             .caller_transforms
             .iter()

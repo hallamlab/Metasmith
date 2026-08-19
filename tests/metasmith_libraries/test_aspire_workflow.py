@@ -1,16 +1,3 @@
-"""Planning tests for the ported ASPIRE amplicon pipeline.
-
-Solve only -- these assert that the topology in `transforms/aspire/` closes and
-that the policy switches select what they say they select. No staging, no
-execution, no Docker: the stub transforms have no bodies worth running yet, and
-a solve is the whole of what this pass produced.
-
-The switch tests are the point. Eight of ASPIRE's config toggles rebind a
-channel that a dozen consumers read, which Metasmith cannot express, so each is
-a pair of mutually exclusive input tokens instead. "Deterministic" is a claim
-about that mechanism, and these are what make it a checked one: the chosen arm's
-transform is in the plan and the other's is not, every time.
-"""
 import pytest
 
 from metasmith.python_api import DEFERRED, Spec, TransformInstanceLibrary
@@ -33,13 +20,6 @@ def aspire_transforms(mlib):
 
 @pytest.fixture
 def aspire_inputs(tmp_inputs):
-    """A study, its samples, its references, and one token per switch.
-
-    Returns a factory so a test can flip switches; `on` names the switches that
-    should be on, and every switch not named gets its `off` token. Registering
-    both arms of one switch would give the solver two producers of the same
-    consumer-facing type and it would build the pipeline twice.
-    """
     def _build(on=DEFAULT_ON, samples=2):
         inputs = tmp_inputs(["aspire.yml", "amplicon.yml", "sequences.yml"])
         run = inputs.AddValue("run.txt", "test_study", "aspire::run")
@@ -94,7 +74,6 @@ def picked(task, transforms):
 
 class TestAspireTopology:
     def test_core_spine_solves(self, aspire_transforms, aspire_inputs):
-        """Reads to taxonomy and filtered counts: the chain the whole port hangs off."""
         task = solve(aspire_inputs(), aspire_transforms,
                      ["amplicon::asv_taxonomy", "aspire::counts_filtered"])
         assert task.ok, f"core spine did not solve: dropped {sorted(task.plan.dropped_targets)}"
@@ -103,7 +82,6 @@ class TestAspireTopology:
                 "filter_counts"} <= steps, steps
 
     def test_master_summary_solves(self, aspire_transforms, aspire_inputs):
-        """The far end: every `.done` barrier the .nf used is now a real edge."""
         task = solve(aspire_inputs(), aspire_transforms, ["aspire::master_long"])
         assert task.ok, f"master summary did not solve: dropped {sorted(task.plan.dropped_targets)}"
         assert "master_summary" in picked(task, aspire_transforms)
@@ -137,14 +115,6 @@ class TestAspireTopology:
      ["aspire::master_long"]),
 ])
 class TestPolicySwitches:
-    """Each switch selects its arm by which token the driver registers.
-
-    Both arms produce the same consumer-facing type, so nothing downstream can
-    tell them apart -- which is the whole point, and also why the losing arm
-    must be *absent* rather than merely unpreferred. It is absent because its
-    token has zero candidates.
-    """
-
     def _arms(self, aspire_transforms, aspire_inputs, base, targets, enabled):
         on = (DEFAULT_ON | {base}) if enabled else (DEFAULT_ON - {base})
         task = solve(aspire_inputs(on=on), aspire_transforms, targets)

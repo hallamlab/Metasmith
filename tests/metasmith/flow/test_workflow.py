@@ -1,15 +1,3 @@
-"""Phase 0 baseline + property/setter contract tests (C3 + C8a).
-
-12 unit tests across DataInstance identity, WorkflowStep consistency,
-roundtrip, Generate, group-by, and bootstrap reconstruction. The
-archetype closure determinism test (C3) is kept as an extra alongside.
-
-Test categories enumerated in
-plans/harmonize-data-instance-arity.md:89-123; the verifier-triaged
-drops are documented in the plan G7 section of the active
-lineage-robustness plan.
-"""
-
 from __future__ import annotations
 from pathlib import Path
 
@@ -44,7 +32,6 @@ def _make_lib(tmp_path: Path, *, name="samples.xgdb") -> DataInstanceLibrary:
 
 
 def _build_step(tmp_path: Path) -> WorkflowStep:
-    """Minimal WorkflowStep with a 2-required, 1-produced transform."""
     lib = _make_lib(tmp_path)
 
     model = Transform()
@@ -87,13 +74,7 @@ def _build_step(tmp_path: Path) -> WorkflowStep:
     return step
 
 
-# ---------------------------------------------------------------------------
-# DataInstance identity (3 tests)
-# ---------------------------------------------------------------------------
-
-
 def test_data_instance_hash_deterministic(tmp_path):
-    """Same instance_id → identical _hash + __hash__."""
     lib = _make_lib(tmp_path, name="hash_det.xgdb")
     (lib.location / "x.fa").write_text("x")
     lib.AddItem(Path("x.fa"), "mock::asm")
@@ -105,7 +86,6 @@ def test_data_instance_hash_deterministic(tmp_path):
 
 
 def test_data_instance_hash_differs_by_path(tmp_path):
-    """Different paths → distinct instance_id + distinct hash."""
     lib = _make_lib(tmp_path, name="hash_path.xgdb")
     (lib.location / "x.fa").write_text("x")
     (lib.location / "y.fa").write_text("y")
@@ -118,12 +98,6 @@ def test_data_instance_hash_differs_by_path(tmp_path):
 
 
 def test_data_instance_hash_differs_by_dtype(tmp_path):
-    """Same path, different dtype via WithDType → distinct legacy_key.
-
-    instance_id stays stable across dtype retyping by design (see
-    test_data_instance_identity.py); legacy_key, which embeds the
-    dtype, must change.
-    """
     lib = _make_lib(tmp_path, name="hash_dtype.xgdb")
     (lib.location / "x.fa").write_text("x")
     lib.AddItem(Path("x.fa"), "mock::asm")
@@ -135,13 +109,7 @@ def test_data_instance_hash_differs_by_dtype(tmp_path):
     assert a.dtype.key != b.dtype.key
 
 
-# ---------------------------------------------------------------------------
-# WorkflowStep consistency (3 tests: setter from C3 + uses + produces)
-# ---------------------------------------------------------------------------
-
-
 def test_uses_matches_dependency_map_requires(tmp_path):
-    """`step.uses` == concat over `model.requires` of dependency_map[d]."""
     step = _build_step(tmp_path)
     dep_in_a, dep_in_b, _ = step._test_deps
     inst_a, inst_b, _ = step._test_insts
@@ -154,7 +122,6 @@ def test_uses_matches_dependency_map_requires(tmp_path):
 
 
 def test_produces_matches_dependency_map_produces(tmp_path):
-    """`step.produces[i]` == flat concat of dependency_map[d] for d in dep_group_i."""
     step = _build_step(tmp_path)
     _, _, dep_out = step._test_deps
     _, _, inst_out = step._test_insts
@@ -171,12 +138,6 @@ def test_produces_matches_dependency_map_produces(tmp_path):
 
 
 def test_dependency_map_setter_auto_refreshes_views(tmp_path):
-    """C3 / A2 falsifier: reassigning dependency_map auto-refreshes uses/produces.
-
-    A test attempting to bypass the setter (writing to a backing
-    `dependency_map` field) is structurally impossible — the field
-    exists only as `_dependency_map`, exposed through the property.
-    """
     step = _build_step(tmp_path)
     dep_in_a, dep_in_b, dep_out = step._test_deps
     inst_a, inst_b, inst_out = step._test_insts
@@ -196,13 +157,7 @@ def test_dependency_map_setter_auto_refreshes_views(tmp_path):
     assert "dependency_map" not in step.__dict__
 
 
-# ---------------------------------------------------------------------------
-# WorkflowStep roundtrip (1 test)
-# ---------------------------------------------------------------------------
-
-
 def test_workflow_step_pack_unpack_roundtrip(tmp_path):
-    """Pack a step's instances + dep-key map; verify keys round-trip."""
     step = _build_step(tmp_path)
     packed = step.Pack()
     assert packed["order"] == 1
@@ -210,57 +165,32 @@ def test_workflow_step_pack_unpack_roundtrip(tmp_path):
     assert set(packed["instances"].keys()) == {
         inst.instance_id for inst in step._test_insts
     }
-    # dependency_map serialized by dep.key -> [instance_id, ...].
     for dep_key, ids in packed["dependency_map"].items():
-        # every referenced instance_id appears in packed instances.
         for iid in ids:
             assert iid in packed["instances"], (
                 f"dependency_map id {iid} ({dep_key}) absent from instances"
             )
-    # Transform reference is `<lib_key>::<transform_path>`.
     assert "::" in packed["transform"]
 
 
-# ---------------------------------------------------------------------------
-# Group-by extraction (1 test)
-# ---------------------------------------------------------------------------
-
-
 def test_group_by_single_dtype(tmp_path):
-    """`step.group_by_instances` returns the list bound to transform.group_by."""
     step = _build_step(tmp_path)
     dep_in_a, _, _ = step._test_deps
     inst_a, _, _ = step._test_insts
-    # The fixture sets group_by=dep_in_a.
     assert step.transform.group_by is dep_in_a
     assert step.group_by_instances == [inst_a]
-    # Bound dtype is the single read_a endpoint.
     dtypes = {x.dtype.key for x in step.group_by_instances}
     assert len(dtypes) == 1
 
 
-# ---------------------------------------------------------------------------
-# Bootstrap reconstruction (2 tests)
-# ---------------------------------------------------------------------------
-
-
 def test_input_map_reconstruction_round_trips_through_dep_key(tmp_path):
-    """Routing-by-dep_key (the C5 bootstrap shape) round-trips the input map.
-
-    Falsifier: bootstrap derives `{dep_key: [instance_id]}` from
-    `step.dependency_map` for the input side; reading those ids back
-    and rebuilding the map must produce the same uses-side view.
-    """
     step = _build_step(tmp_path)
     inst_a, inst_b, _ = step._test_insts
 
-    # din shape: dep.key -> list of instance_id (this is what
-    # workflow.py:1546-1548 writes to workflow.step_N.meta).
     din = {
         d.key: [inst.instance_id for inst in step.dependency_map.get(d, [])]
         for d in step.transform.model.requires
     }
-    # Build an inst_lookup analogous to bootstrap.py:353.
     inst_lookup = {}
     for insts in step.dependency_map.values():
         for inst in insts:
@@ -283,12 +213,6 @@ def test_input_map_reconstruction_round_trips_through_dep_key(tmp_path):
 
 
 def test_output_map_reconstruction_round_trips_through_dep_key(tmp_path):
-    """Same as input but for the produces side.
-
-    `dot` is the per-branch dep_key→[instance_id] list. Bootstrap rebuilds
-    `dep2output` from this and emits empty branches when a slot has zero
-    bound instances (optional-branch tolerance per C5).
-    """
     step = _build_step(tmp_path)
     _, _, inst_out = step._test_insts
     _, _, dep_out = step._test_deps
@@ -321,13 +245,7 @@ def test_output_map_reconstruction_round_trips_through_dep_key(tmp_path):
     assert reconstructed_groups == [[inst_out]]
 
 
-# ---------------------------------------------------------------------------
-# Archetype closure determinism — kept from C3
-# ---------------------------------------------------------------------------
-
-
 def test_archetype_closure_determinism():
-    """C3 / A3 falsifier: get_archetype's choice is order-deterministic."""
     _archetypes: dict = {}
 
     def get_archetype(candidates):

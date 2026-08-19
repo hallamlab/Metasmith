@@ -1,26 +1,3 @@
-"""Canonical encoding + multihash-prefixed cache keys (S1).
-
-Two pieces of borrowed wheel:
-
-* `canonical_cbor(payload)` wraps `cbor2.dumps(..., canonical=True)`.
-  RFC 8949 §4.2.2 deterministic encoding: map keys are sorted by their
-  encoded bytes (length-first, then lexicographic), integers use the
-  shortest representation, and floats use the shortest representation
-  that round-trips. The result is byte-stable across Python versions
-  and dict insertion orders, which is what makes lineage_key
-  reproducible across workspaces.
-
-* The multihash prefix convention (`<algo-code><length><digest>`):
-  blake3-32 = `0x1e 0x20`. Adopting the prefix means a future hash
-  migration is a prefix swap and a cache walk, not a wholesale re-key.
-  We use only the prefix convention — no IPFS / IPLD machinery.
-
-The single load-bearing function is `lineage_key(transform_key,
-signature, sorted_inputs)`. Inputs are `(slot_key, instance_id_bytes)`
-pairs; sorting the input list is the caller's job (a sort by slot_key
-produces a stable order regardless of declaration order in the model).
-"""
-
 from __future__ import annotations
 
 import os
@@ -30,9 +7,8 @@ import cbor2
 from blake3 import blake3
 
 
-# Multihash codes: <https://github.com/multiformats/multicodec/blob/master/table.csv>
 BLAKE3_MULTIHASH_CODE = 0x1E
-BLAKE3_DIGEST_LEN = 32  # 256-bit
+BLAKE3_DIGEST_LEN = 32
 KEY_PREFIX = bytes([BLAKE3_MULTIHASH_CODE, BLAKE3_DIGEST_LEN])
 
 # Cache-key epoch. Baked into every lineage_key so a bump renders pre-epoch
@@ -71,12 +47,6 @@ LIN_PAYLOAD_VERSION = 4
 
 
 def canonical_cbor(payload) -> bytes:
-    """Canonical CBOR encoding per RFC 8949 §4.2.2 (deterministic).
-
-    Wraps cbor2.dumps with canonical=True so map-key order and integer
-    representation are uniquely determined by the value, not by the
-    caller's dict insertion order.
-    """
     return cbor2.dumps(payload, canonical=True)
 
 
@@ -85,26 +55,10 @@ def _digest(payload: bytes) -> bytes:
 
 
 def multihash_key(payload: bytes) -> bytes:
-    """Return `<algo-code><length><blake3-digest(payload)>`.
-
-    Intended for opaque blobs (used by tests + internal callers). Most
-    cache-key callers should use `lineage_key` which builds the payload
-    via canonical CBOR.
-    """
     return KEY_PREFIX + _digest(payload)
 
 
 def content_multihash_key(path, *, chunk_size: int = 1 << 20) -> bytes:
-    """Return the multihash key over a file's raw bytes, streamed.
-
-    Same encoding as `multihash_key(open(path,'rb').read())` but reads in
-    `chunk_size` chunks so large inputs never fully materialize in memory.
-    Used for content-addressed *leaf* identity: two independent runs that
-    see byte-identical input files mint the same leaf instance_id, so their
-    downstream cache_keys match and the second run resumes from the cache
-    (cross-run reentrancy). The caller is responsible for confirming the
-    path is a readable regular file; OSError propagates.
-    """
     hasher = blake3()
     with open(path, "rb") as f:
         while True:
@@ -116,33 +70,6 @@ def content_multihash_key(path, *, chunk_size: int = 1 << 20) -> bytes:
 
 
 def tree_multihash_key(path, *, chunk_size: int = 1 << 20) -> bytes:
-    """Return the multihash key over a DIRECTORY's contents, recursively.
-
-    The file analogue of `content_multihash_key`, and it exists for the same
-    reason: a leaf that is a directory -- a vendored python package, a profile
-    database -- otherwise falls through to a random per-call id, so an unchanged
-    tree gets a new identity on every library recompile and invalidates every
-    downstream cache entry that ever read it. That is a silent miss, not a
-    silent hit, but for a multi-day bake it is expensive enough to be a bug.
-
-    Every entry contributes its LIBRARY-RELATIVE path and its bytes, so a rename
-    with no content change and a content change with no rename both move the
-    digest. Directories are not hashed as entries themselves: an empty directory
-    carries nothing a consumer can read, and git cannot represent one anyway, so
-    counting it would make a tree's identity depend on whether it survived a
-    checkout. A symlink contributes its TARGET STRING rather than the bytes it
-    points at -- following it would make the digest depend on something outside
-    the tree, and `Logistics` copies symlinks as symlinks.
-
-    Per-file digests are memoized on `(path, size, mtime_ns)`, so re-staging an
-    untouched tree costs one stat per file rather than a full read. The cache is
-    keyed on mtime and can therefore be fooled by a write that preserves both
-    size and mtime -- which is why it is a within-process cache over a tree the
-    build step just wrote, and never a substitute for the digest itself.
-
-    OSError propagates: an unreadable entry in a tree being addressed is not
-    something to paper over with a partial digest.
-    """
     root = Path(path)
     hasher = blake3()
     hasher.update(b"tree\x00")
@@ -183,36 +110,6 @@ def lineage_key(
     signature: str,
     sorted_inputs: list[tuple[str, bytes]],
 ) -> bytes:
-    """Compute the lineage-addressed cache key for one transform invocation.
-
-    Parameters
-    ----------
-    transform_key:
-        The transform's stable identifier (e.g. `TransformInstance._key`).
-        Embedded verbatim into the payload.
-    signature:
-        Static signature of the transform's contract. As of
-        CACHE_KEY_VERSION 3 the caller builds this as
-        `f"{model._hash}:{_protocol_source_hash}"` (see
-        `workflow.py`) so it captures BOTH the input/output type
-        topology AND the transform's protocol-body identity (a digest
-        of the definition-file bytes). Two transforms that share an
-        in/out type topology but differ in body — or two entirely
-        different tools with the same declared types — therefore key
-        differently, and editing a transform's protocol busts the
-        cross-run cache instead of serving stale output. (Pre-v3 this
-        was topology-only, which false-hit on protocol edits.)
-    sorted_inputs:
-        Sequence of `(slot_key, instance_id_bytes)` pairs. The caller
-        must sort by `slot_key` so the encoding is order-independent.
-        `instance_id_bytes` should already be the multihash-prefixed
-        form for downstream entries (S2's `origin="lineage"`/`"imported"`)
-        or the synthesized leaf-identity bytes for `origin="leaf"`.
-
-    Returns
-    -------
-    The multihash-prefixed digest (length 2 + BLAKE3_DIGEST_LEN).
-    """
     payload = canonical_cbor(
         {
             "v": CACHE_KEY_VERSION,

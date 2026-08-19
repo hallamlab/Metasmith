@@ -8,9 +8,6 @@ log     = model.AddProduct(lib.GetType("env::pulled_container"))
 
 def protocol(context: ExecutionContext):
     ilog=context.Output(log)
-    # Generic env: prefetch only applies to a container image. An env with no
-    # container: for the active runtime (conda-only), or a runtime with no image
-    # cache (mamba/native), has nothing to pull -> no-op success.
     try:
         container = context.GetContainerModel(image)
     except AssertionError as e:

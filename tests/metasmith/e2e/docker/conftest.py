@@ -1,5 +1,3 @@
-"""Shared fixtures for E2E workflow tests."""
-
 import pytest
 import subprocess
 import shutil
@@ -18,7 +16,6 @@ from metasmith.env import Runtime
 
 @pytest.fixture(scope="session")
 def container_runtime():
-    """Detect Docker or Apptainer, return None for dry-run mode."""
     for cmd, runtime in [
         (["docker", "info"], Runtime.DOCKER),
         (["apptainer", "--version"], Runtime.APPTAINER),
@@ -34,36 +31,28 @@ def container_runtime():
 
 @pytest.fixture
 def temp_dir(tmp_path):
-    """Create a temporary directory for tests."""
     yield tmp_path
-    # tmp_path is automatically cleaned up by pytest
 
 
 @pytest.fixture
 def mock_types(temp_dir) -> Path:
-    """Create DataTypeLibrary with all required types."""
     types = DataTypeLibrary()
 
-    # Input types
     types["sample_metadata"] = Endpoint(properties={"sample_metadata"})
     types["reads"] = Endpoint(properties={"reads"})
     types["assembly"] = Endpoint(properties={"assembly"})
 
-    # Intermediate types
     types["bam"] = Endpoint(properties={"bam"})
     types["scattered"] = Endpoint(properties={"scattered"})
     types["gathered"] = Endpoint(properties={"gathered"})
 
-    # Output types for binning
     types["metabat2_bins"] = Endpoint(properties={"bins", "method:metabat2"})
     types["maxbin2_bins"] = Endpoint(properties={"bins", "method:maxbin2"})
     types["concoct_bins"] = Endpoint(properties={"bins", "method:concoct"})
 
-    # Shared-input types
     types["container"] = Endpoint(properties={"container"})
     types["annotated"] = Endpoint(properties={"annotated"})
 
-    # Branching outputs
     types["branch_a"] = Endpoint(properties={"branch_a"})
     types["branch_b"] = Endpoint(properties={"branch_b"})
     types["merged"] = Endpoint(properties={"merged"})
@@ -75,7 +64,6 @@ def mock_types(temp_dir) -> Path:
 
 @pytest.fixture
 def mock_samples(temp_dir, mock_types) -> DataInstanceLibrary:
-    """Create 3 samples with lineage: metadata -> reads -> assembly."""
     lib_path = temp_dir / "samples.xgdb"
     lib = DataInstanceLibrary(lib_path)
     lib.AddTypeLibrary(mock_types, namespace="mock")
@@ -85,12 +73,10 @@ def mock_samples(temp_dir, mock_types) -> DataInstanceLibrary:
         sample_dir = lib.location / sample_id
         sample_dir.mkdir(parents=True, exist_ok=True)
 
-        # Create mock files
         (sample_dir / "metadata.json").write_text(f'{{"id": "{sample_id}"}}')
         (sample_dir / "reads.fq").write_text(f">read_{i}\nACGT\n")
         (sample_dir / "assembly.fa").write_text(f">contig_{i}\nACGTACGT\n")
 
-        # Add with lineage
         meta = lib.AddItem(
             Path(f"{sample_id}/metadata.json"), "mock::sample_metadata"
         )
@@ -108,28 +94,15 @@ def mock_samples(temp_dir, mock_types) -> DataInstanceLibrary:
 def create_transform_library(
     temp_dir: Path, mock_types: Path, transforms: dict[str, str]
 ) -> TransformInstanceLibrary:
-    """Create a TransformInstanceLibrary with given transform code.
-
-    Args:
-        temp_dir: Directory to create library in
-        mock_types: Path to mock types YAML file
-        transforms: Dict mapping transform names to Python code
-
-    Returns:
-        TransformInstanceLibrary with loaded transforms
-    """
     tr_path = temp_dir / "transforms.xgdb"
     tr_path.mkdir(parents=True, exist_ok=True)
 
-    # Create _metadata structure
     meta_dir = tr_path / "_metadata"
     types_dir = meta_dir / "types"
     types_dir.mkdir(parents=True)
 
-    # Copy mock types
     shutil.copy(mock_types, types_dir / "mock.yml")
 
-    # Create transforms.yml
     (types_dir / "transforms.yml").write_text(
         """schema: v1
 ontology:
@@ -145,14 +118,12 @@ types:
 """
     )
 
-    # Create transform files
     manifest = {}
     for name, code in transforms.items():
         transform_file = tr_path / f"{name}.py"
         transform_file.write_text(code)
         manifest[f"{name}.py"] = {"type": "transforms::transform"}
 
-    # Create index.yml
     (meta_dir / "index.yml").write_text(
         yaml.dump(
             {
@@ -165,14 +136,8 @@ types:
     return TransformInstanceLibrary.Load(tr_path)
 
 
-# -----------------------------------------------------------------------
-# Docker / Agent fixtures
-# -----------------------------------------------------------------------
-
-
 @pytest.fixture(scope="session")
 def docker_available():
-    """Check Docker daemon is available, skip if not."""
     try:
         result = subprocess.run(
             ["docker", "info"], capture_output=True, timeout=10
@@ -185,7 +150,6 @@ def docker_available():
 
 @pytest.fixture(scope="session")
 def docker_image(docker_available):
-    """Build or reuse test Docker image. Session-scoped for speed."""
     from metasmith.testing.docker_builder import (
         build_docker_image,
         get_git_version,
@@ -204,7 +168,6 @@ def docker_image(docker_available):
 
 @pytest.fixture
 def local_agent_home(tmp_path):
-    """Temp agent home with standard directory structure."""
     home = tmp_path / "agent_home"
     for subdir in ["runs", "data", "lib", "relay"]:
         (home / subdir).mkdir(parents=True)
@@ -213,7 +176,6 @@ def local_agent_home(tmp_path):
 
 @pytest.fixture
 def local_agent(local_agent_home, docker_image):
-    """Agent configured for local Docker execution."""
     from metasmith.agents import Agent
     from metasmith.models.remote import Source
 
@@ -227,7 +189,6 @@ def local_agent(local_agent_home, docker_image):
 
 @pytest.fixture
 def simple_workflow_task(mock_samples, mock_types, temp_dir):
-    """Pre-generated WorkflowTask (assembly -> bam) for staging tests."""
     from metasmith.models.workflow import WorkflowPlan, WorkflowTask
     from metasmith.testing.mock_transforms import identity_transform
 
@@ -255,17 +216,8 @@ def simple_workflow_task(mock_samples, mock_types, temp_dir):
     )
 
 
-# -----------------------------------------------------------------------
-# Legacy transform code fixtures (kept for backward compatibility)
-# -----------------------------------------------------------------------
-
-
 @pytest.fixture
 def alignment_transform_code() -> str:
-    """Transform code for alignment: reads + assembly -> bam.
-
-    Note: Assembly has reads as parent in lineage (reads -> assembly).
-    """
     return '''
 from pathlib import Path
 from metasmith.models.libraries import (
@@ -297,7 +249,6 @@ TransformInstance(
 
 @pytest.fixture
 def binner_transform_code() -> dict[str, str]:
-    """Transform code for binners: assembly + bam -> bins."""
     binners = {}
     for method in ["metabat2", "maxbin2", "concoct"]:
         binners[method] = f'''
@@ -332,7 +283,6 @@ TransformInstance(
 
 @pytest.fixture
 def batched_transform_code() -> str:
-    """Transform code with batch_size > 1."""
     return '''
 from pathlib import Path
 from metasmith.models.libraries import (
@@ -367,7 +317,6 @@ TransformInstance(
 
 @pytest.fixture
 def branching_transform_code() -> str:
-    """Transform code that produces multiple outputs (branching)."""
     return '''
 from pathlib import Path
 from metasmith.models.libraries import (
@@ -405,7 +354,6 @@ TransformInstance(
 
 @pytest.fixture
 def merge_transform_code() -> str:
-    """Transform code that merges branches."""
     return '''
 from pathlib import Path
 from metasmith.models.libraries import (

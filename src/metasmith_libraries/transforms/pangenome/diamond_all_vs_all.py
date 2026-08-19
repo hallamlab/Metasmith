@@ -1,10 +1,3 @@
-"""Pooled all-vs-all DIAMOND blastp across a pangenome's proteomes.
-
-Concatenates every genome's ORFs into one FASTA, rewriting each header to
-`<genome>__<protein_id>` (genome = the .faa filename stem), then runs a single
-sensitive all-vs-all blastp against the pooled DB. The output blast6 table holds
-both self-hits (the BSR denominator) and all cross-genome hits.
-"""
 from pathlib import Path
 from metasmith.python_api import *
 

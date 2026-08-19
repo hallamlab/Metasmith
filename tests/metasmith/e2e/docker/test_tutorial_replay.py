@@ -1,9 +1,3 @@
-"""Tutorial replay tests — drive both tutorials end-to-end via the ops package.
-
-Replaces test_mcp_tutorial_replay.py. The replays use a virtual mock chain
-(`mock::reads -> mock::assembly -> mock::bam`) parallel to the real
-NCBI/pangenome tutorials, so the test runs in CI without containers.
-"""
 from __future__ import annotations
 
 from pathlib import Path
@@ -28,11 +22,6 @@ from metasmith.ops import (
     types as op_types,
     workflow as op_workflow,
 )
-
-
-# ---------------------------------------------------------------------------
-# Fixtures
-# ---------------------------------------------------------------------------
 
 
 @pytest.fixture
@@ -76,14 +65,7 @@ def samples_lib(tmp_path, tutorial_types) -> Path:
     return lib_path
 
 
-# ---------------------------------------------------------------------------
-# Tutorial 1 — my_first_agent
-# ---------------------------------------------------------------------------
-
-
 class TestMyFirstAgentReplay:
-    """Replay docs/source/tutorials/my_first_agent.rst purely via ops."""
-
     def test_build_input_library_from_scratch(self, tutorial_types, tmp_path):
         lib_path = tmp_path / "tutorial_inputs.xgdb"
         r = op_data.create_library(str(lib_path), type_library_paths=[str(tutorial_types)], purge=True)
@@ -184,11 +166,6 @@ class TestMyFirstAgentReplay:
         assert r["address"] == "/results/foo"
 
 
-# ---------------------------------------------------------------------------
-# Tutorial 2 — custom_transforms
-# ---------------------------------------------------------------------------
-
-
 class TestCustomTransformsReplay:
     def test_add_new_output_type(self, tutorial_types):
         r = op_types.add_type(
@@ -226,11 +203,6 @@ class TestCustomTransformsReplay:
     def test_propagate_types(self, transform_lib, tutorial_types):
         r = op_transforms.propagate_types(str(transform_lib.location), [str(tutorial_types)])
         assert r["library"] == str(transform_lib.location)
-
-
-# ---------------------------------------------------------------------------
-# Source parsing
-# ---------------------------------------------------------------------------
 
 
 class TestSourceParsing:

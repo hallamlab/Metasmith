@@ -46,8 +46,8 @@ MEASURED = ROOT / "data/fabfos/benchmarks/eydallin/Y/measured_glycogen.tsv"
 OUT_DIR = Path(__file__).resolve().parent / "cache"
 OUT_DIR.mkdir(parents=True, exist_ok=True)
 
-SOURCE_MNXM = "MNXM1364061"    # D-glucose
-GLYCOGEN_MNXM = "MNXM738130"   # BiGG species -- the one iML1515 (and this host GEM) carries
+SOURCE_MNXM = "MNXM1364061"
+GLYCOGEN_MNXM = "MNXM738130"
 
 
 def main():

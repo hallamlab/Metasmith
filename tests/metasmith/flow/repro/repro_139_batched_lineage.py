@@ -1,36 +1,3 @@
-"""Minimal local reproduction of inbox #139.
-
-Symptom (from the bug report):
-  In workflows with `batch_size>1`, the `FILES` entry written into
-  `.command.metadata` for upstream-step outputs uses paths that begin with
-  `/ws/nxf_work/...` (the container task workdir). Non-batched steps in the
-  same run write fully-qualified host paths under
-  `<agent_home>/runs/<KEY>/nxf_work/...`. Inside the bootstrap container the
-  `/ws/...` form does not resolve, so `bootstrap.py:279` trips with
-  `detected missing inputs, stopping`.
-
-This repro skips all of metasmith's bootstrap, container, and SLURM
-machinery and just exercises the orchestration that *writes* the FILES
-list — `Orchestrator.groovy` `_batch()` at line 274.
-
-We build a tiny two-step Nextflow workflow:
-
-  step1 (non-batched, group_by + batch_size=1): produces N files.
-  step2 (batched,     group_by + batch_size=B): consumes step1 outputs.
-
-Each process echoes the JSON-encoded `index` it received into a side file
-(`step{i}.index.json`) the same way `workflow.py:1313` does for real runs.
-After the pipeline finishes we parse those files and print FILES paths for
-each step so divergence between batched and non-batched is visible at a
-glance.
-
-The whole thing runs on the host via the `nextflow` binary in `msm`
-(no Docker, no SLURM). Total runtime ~10s.
-
-Run:
-    PYTHONPATH=$PWD/src mamba run -n msm python tests/flow/repro/repro_139_batched_lineage.py
-"""
-
 from __future__ import annotations
 
 import json
@@ -46,7 +13,7 @@ REPO_ROOT = Path(__file__).resolve().parents[4]
 ORCHESTRATOR_SRC = REPO_ROOT / "src/metasmith/nextflow_config/Orchestrator.groovy"
 
 N_SAMPLES = 4
-BATCH_SIZE = int(os.environ.get("REPRO_BATCH_SIZE", "1"))  # 1 = non-batched control case
+BATCH_SIZE = int(os.environ.get("REPRO_BATCH_SIZE", "1"))
 
 
 WORKFLOW_NF = r'''
@@ -115,9 +82,6 @@ def _build_workdir() -> Path:
                    .replace("__BATCH_SIZE__", str(BATCH_SIZE))
     )
 
-    # Each step needs a dummy input file (the `path(_01)` slot). These are
-    # not the inputs the FILES rendering depends on — they just satisfy
-    # Nextflow's staging contract.
     for i in range(N_SAMPLES):
         (tmp / f"dummy_{i}.txt").write_text(f"dummy {i}\n")
 
@@ -142,10 +106,6 @@ def _run_nextflow(work: Path) -> None:
 
 
 def _harvest(work: Path) -> list[tuple[str, list[dict]]]:
-    """Walk nxf_work/*/*/.command.metadata files and parse the `lin` line.
-
-    Returns: list of (task_name, parsed_lin_list).
-    """
     rows: list[tuple[str, list[dict]]] = []
     for meta in sorted((work / "nxf_work").rglob(".command.metadata")):
         text = meta.read_text()
@@ -164,15 +124,12 @@ def _harvest(work: Path) -> list[tuple[str, list[dict]]]:
             continue
         if isinstance(parsed, dict):
             parsed = [parsed]
-        # Identify the producing process from .command.run (contains process name).
         run_file = meta.parent / ".command.run"
         task_name = meta.parent.name
         if run_file.exists():
             for ln in run_file.read_text().splitlines():
                 if "NXF_TASK_WORKDIR" in ln or "nxf.process" in ln:
-                    # best-effort
                     pass
-            # Process name appears in the executor block; cheap heuristic:
             text = run_file.read_text()
             if "step1_unbatched" in text:
                 task_name = "step1_unbatched"
@@ -249,19 +206,10 @@ def main() -> int:
         )
         return 0
     finally:
-        # Leave the workdir on disk for inspection. Comment to autoclean.
         print(f"\n(left workdir intact: {work})")
 
 
 def test_parse_path_rewrites_ws_prefix() -> None:
-    """Unit-level verification of the inbox #139 fix at `bootstrap._parse_path`.
-
-    A `/ws/...` input (the shape that `Orchestrator.groovy:274` writes
-    into FILES for upstream process outputs) is rewritten to the
-    container-portable canonical form rooted at `AgentPaths.HOME_ROOT`
-    with the run key embedded. Mirrors the inverse rewrite in
-    `bin/sbatch:54-80`.
-    """
     from metasmith.bootstrap import _parse_path
     from metasmith.constants import AgentPaths
 
@@ -277,9 +225,6 @@ def test_parse_path_rewrites_ws_prefix() -> None:
 
 
 def test_parse_path_passes_through_non_ws_paths() -> None:
-    """Negative case: a path *not* under `/ws/` is unaffected by the
-    rewrite branch; it falls through to the existing logic.
-    """
     from metasmith.bootstrap import _parse_path
 
     parsed = _parse_path(

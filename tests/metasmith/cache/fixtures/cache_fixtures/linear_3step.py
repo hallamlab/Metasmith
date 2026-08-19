@@ -1,10 +1,3 @@
-"""Linear 3-step fixture: A -> B -> C, single sample, all cacheable.
-
-Exercises the basic per-step hit/miss flow under the caching plan. Each step
-is the trivial identity transform from `_cache_harness.identity_transform_code`
-so two runs on the same inputs produce byte-identical outputs.
-"""
-
 from __future__ import annotations
 
 from pathlib import Path

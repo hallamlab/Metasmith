@@ -41,8 +41,6 @@ from __future__ import annotations
 
 import os
 
-# Before numpy: the parallelism here is one process per clone, so a BLAS that also
-# threads oversubscribes every core it is given.
 for _v in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS"):
     os.environ.setdefault(_v, "1")
 
@@ -69,12 +67,12 @@ HOST_GEM = ROOT / "data/fabfos/benchmarks/hosts/e_coli_ag1/gpr_gem.parquet"
 HOST_DENOVO = ROOT / "data/fabfos/runs/e_coli_ag1/gpr/gpr_denovo.parquet"
 OUT_DIR = ROOT / "data/fabfos/runs/eydallin_clones/ecspr"
 
-SOURCE_MNXM = "MNXM1364061"     # D-glucose
-GLYCOGEN_MNXM = "MNXM738130"    # glycogen
+SOURCE_MNXM = "MNXM1364061"
+GLYCOGEN_MNXM = "MNXM738130"
 
 FIELDS = ("condition_id", "gene", "n_rxn", "ieff_pert", "delta", "rxns")
 
-_S: dict = {}                   # worker state, populated by fork
+_S: dict = {}
 
 
 def _ieff(weights: dict) -> float:
@@ -176,7 +174,6 @@ def main() -> int:
                     print(f"  {i:5}/{len(todo)}  {el / i:.2f}s/clone  "
                           f"eta {(len(todo) - i) * el / i / 60:.1f} min", file=sys.stderr)
 
-    # Every clone gets a row: the ones with no atom-mapped reaction are exact zeros.
     solved = pd.read_csv(part, sep="\t")
     df = census[["gene", "condition_id", "b_number", "eydallin_gene",
                  "eydallin_phenotype"]].copy()

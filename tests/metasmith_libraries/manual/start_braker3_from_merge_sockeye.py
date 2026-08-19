@@ -1,10 +1,4 @@
 #!/usr/bin/env python
-"""Wait for merge_bams output, then submit BRaKER3-only workflow on Sockeye.
-
-Uses:
-- merged BAM from run msrLr7rq (single experiment-level BAM)
-- cached assembly from arc
-"""
 from __future__ import annotations
 
 import subprocess

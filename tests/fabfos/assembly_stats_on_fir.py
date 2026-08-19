@@ -127,56 +127,20 @@ LIB = resolve_library_root()
 ARTIFACTS = Path(__file__).resolve().parent / "artifacts"
 
 INSERT_DIR = REPO / "data" / "fabfos" / "runs" / "scadc_fosmids" / "sequences" / "inserts"
-# The shipped set, and the reference actually mapped against, are allowed to
-# differ: the reference may carry the pCC1fos backbone as an extra record so the
-# ~15% of every pool that lands on the vector is counted rather than lost. Both
-# are rebound from `--reference` / `--membership` in main(), together -- the
-# membership table is where the expected pool set comes from, so a reference from
-# one insert set checked against another's pools measures the wrong thing.
 INSERTS = INSERT_DIR / "inserts.fna"
 MEMBERSHIP = INSERT_DIR / "insert_metadata" / "membership.csv"
 
-# The plan must contain these and nothing else. An assembler in the resolved
-# plan means coverage of a phantom assembly rather than of the inserts -- see
-# this module's docstring.
 EXPECTED_TRANSFORMS = {"assembly_stats", "seqkit_reads"}
 
 SETUP_COMMANDS = ["module load apptainer"]
 AGENT_CONTAINER = "docker://quay.io/hallamlab/metasmith:0.19.0-fabfos"
 
-# NOT `host_filtered_short_reads`, which is what these files actually are.
-#
-# `assembly_stats` and `seqkit_reads` both require the generic `sequences::reads`,
-# and `reads` pins `qc: none` as a PROPERTY. Every clean_* type overrides that
-# with `qc: filtered`, and metasmith matches by property superset -- so a
-# differing value is a mismatch, not a refinement. The consequence is that
-# `sequences::reads` is satisfiable only by raw reads: no host-filtered or
-# otherwise cleaned read set can reach either transform. `test_fosmids_workflow`
-# does not hit this because it supplies raw `short_reads_pe` and lets
-# `background_filter` run inside the plan.
-#
-# Declaring these as `short_reads_pe` is therefore a deliberate, driver-local
-# understatement: interleaved short reads, which they are, with the type silent
-# about the host depletion, which it cannot express here. Nothing in this two-
-# transform plan branches on `qc`. What it costs is stated in the results:
-# `fraction_reads_mapped` is over host-DEPLETED reads and is not comparable to a
-# fraction over raw reads. The alternative -- relaxing `reads` or the two
-# requirements in the shared library -- changes types every other plan resolves
-# against, for a run that needs no such change.
 READS_TYPE = "sequences::short_reads_pe"
 READS_SUFFIX = ".host_filtered.fq.gz"
 INSERTS_TYPE = "fabfos::putative_inserts"
 
-# Tool images assembly_stats + seqkit_reads reach for. --preflight checks each
-# one is already in fir's image store: a compute node has no outbound network,
-# so an image that is not there when the task starts cannot be pulled and the
-# task dies hours into a queue rather than seconds into a check.
 TOOL_ENVS = ["minimap2.env", "samtools.env", "bedtools.env", "seqkit.env"]
 
-# `assembly_stats` declares 4 cpus / 64 GB / 12 h, sized for mapping a read set
-# onto a metagenome assembly. The reference here is 5.9 MB of fosmid inserts, so
-# those numbers are queue-hostile for no gain. --stock-resources falls back to
-# what the library declares.
 TRIMMED_RESOURCES = {
     "assembly_stats": Resources(cpus=4, memory=Size.GB(16), duration=Duration(hours=3)),
     "seqkit_reads": Resources(cpus=4, memory=Size.GB(8), duration=Duration(hours=1)),
@@ -184,7 +148,6 @@ TRIMMED_RESOURCES = {
 
 
 def ssh_once(host: str, command: str) -> str:
-    """Run one non-interactive command on the host. Never called in a loop."""
     r = subprocess.run(["ssh", "-o", "BatchMode=yes", host, command],
                        capture_output=True, text=True)
     if r.returncode != 0:
@@ -197,12 +160,6 @@ def ssh_once(host: str, command: str) -> str:
 
 
 def pools_from_inserts() -> set[str]:
-    """The pools the insert set was actually built from, per the data.
-
-    Every id in membership.csv is `pool:assembler:contig[:start-end]`, so the
-    pool set is stated by the recovery output rather than inferred from whatever
-    happens to be sitting in a directory on fir.
-    """
     pools: set[str] = set()
     with open(MEMBERSHIP) as f:
         for row in csv.DictReader(f):
@@ -214,7 +171,6 @@ def pools_from_inserts() -> set[str]:
 
 
 def discover_pools(host: str, reads_dir: str) -> dict[str, str]:
-    """pool_barcode -> absolute path of its interleaved reads, from the host."""
     out = ssh_once(host, f"ls -1 {reads_dir}/*{READS_SUFFIX}")
     pools: dict[str, str] = {}
     for line in out.splitlines():
@@ -229,13 +185,6 @@ def discover_pools(host: str, reads_dir: str) -> dict[str, str]:
 
 
 def build_inputs(staging: Path, pools: dict[str, str]) -> DataInstanceLibrary:
-    """read_metadata + reads per pool, and the insert FASTA once, parented to all.
-
-    The insert item's parent set is every pool's metadata. That is what makes one
-    file fan out to N jobs; see the docstring on the orchestrator's intersection
-    filter. Parenting it to a single pool would run one job; parenting it to none
-    would leave `assembly_stats`' `asm` requirement (pinned to `meta`) unmatched.
-    """
     xgdb = staging / "inputs.xgdb"
     if xgdb.exists():
         shutil.rmtree(xgdb)
@@ -246,19 +195,14 @@ def build_inputs(staging: Path, pools: dict[str, str]) -> DataInstanceLibrary:
 
     metas = []
     for pool in sorted(pools):
-        # Interleaved throughout: background_filter emitted pair-aware
-        # interleaved FASTQ, which is what "paired" selects downstream.
         meta = inputs.AddValue(
             name=f"read_metadata_{pool}.json",
             value={"parity": "paired", "length_class": "short"},
             dtype="sequences::read_metadata",
         )
         metas.append(meta)
-        # Absolute -> referenced in place on fir. Relative -> staged.
         inputs.AddItem(pools[pool], READS_TYPE, parents={meta})
 
-    # Copied in, so it is a RELATIVE member of the library and travels with the
-    # task. 5.4 MB; the reads it is mapped against stay where they are.
     shutil.copy(INSERTS, xgdb / INSERTS.name)
     inputs.AddItem(INSERTS.name, INSERTS_TYPE, parents=set(metas))
     inputs.Save()
@@ -266,7 +210,6 @@ def build_inputs(staging: Path, pools: dict[str, str]) -> DataInstanceLibrary:
 
 
 def check_plan(task, n_pools: int) -> list[str]:
-    """Everything that must hold before a single sbatch is issued."""
     problems: list[str] = []
 
     names = {Path(s.transform._path).stem for s in task.plan.steps}
@@ -285,9 +228,6 @@ def check_plan(task, n_pools: int) -> list[str]:
             problems.append(
                 f"plan carries {given.get(dtype, 0)} x [{dtype}], expected {want}")
 
-    # The decisive check: task count per step, read off the resolved plan. The
-    # plan has two steps whether it runs 1 pool or 35, so step count says
-    # nothing -- this does.
     for step in task.plan.steps:
         stem = Path(step.transform._path).stem
         n = len(step.group_by_instances)
@@ -299,21 +239,12 @@ def check_plan(task, n_pools: int) -> list[str]:
 
 
 def _sif_name(uri: str) -> str:
-    """docker://staphb/samtools:1.23 -> docker..staphb_samtools..1.23.sif"""
     body = uri.split("://", 1)[1]
     repo, _, tag = body.rpartition(":")
     return f"docker..{repo.replace('/', '_')}..{tag}.sif"
 
 
 def preflight(host: str, agent_home: str, container: str) -> int:
-    """One ssh round-trip checking the three things this run needs and no
-    previous run on fir has exercised.
-
-    Every one of these is a mid-run failure otherwise: a compute node has no
-    outbound network, so a tool image that is not already in the store cannot be
-    pulled when the task reaches for it, and `pigz` runs inside the AGENT
-    container rather than a tool container, so no env declaration covers it.
-    """
     sif_dir = "${APPTAINER_CACHEDIR:-$HOME/.apptainer/cache}"
     uris = {}
     for e in TOOL_ENVS:
@@ -349,13 +280,6 @@ def preflight(host: str, agent_home: str, container: str) -> int:
 
 
 def render_dag(dest: Path, task) -> None:
-    """Draw the resolved plan, and never let that stop the run.
-
-    `RenderDAG` needs the `graphviz` python package AND a `dot` binary; neither
-    is in this repo's envs. The DAG is a picture of a plan that `check_plan` has
-    already accepted, so a missing renderer is a note, not a failure -- a
-    35-job run should not be blocked on a diagram.
-    """
     try:
         task.plan.RenderDAG(dest, blacklist_namespaces={"lib", "env"})
         print(f"DAG -> {dest.with_suffix('.svg')}", flush=True)
@@ -365,15 +289,6 @@ def render_dag(dest: Path, task) -> None:
 
 
 def check_tasks(host: str, agent_home: str, task_key: str) -> int:
-    """Count FAILED rows in the run's nxf_tasks.csv. Returns that count.
-
-    This, not the log tail, is the reliable "completed is not succeeded" check.
-    `slurm.nf` sets errorStrategy='ignore' once a process exhausts its retries,
-    so a task that died on every attempt leaves the workflow green with its
-    outputs simply absent -- and the phrase that says so may be well above the
-    tail the waiter returns. The smoke run for this driver failed exactly that
-    way: two instant seqkit_reads failures, a "completed" status, zero outputs.
-    """
     csv_glob = f"{agent_home}/runs/{task_key}/_metasmith/logs.*/nxf_tasks.csv"
     out = ssh_once(host, f"cat {csv_glob} 2>/dev/null | sort -u")
     rows = [ln for ln in out.splitlines() if ln and not ln.startswith("task_id,")]
@@ -388,41 +303,16 @@ POOL_MAP = "pool_map_from_run.tsv"
 
 
 def _output_token(path: str | Path) -> str:
-    """`2_alignment-bam/1-1-1.hkZW85eMnzy8a8bR-c47DY4W4.bam` -> the middle token.
-
-    Names are `<indices>.<lineage token>-<instance key>.<ext>`; the token is what
-    the producing task's work directory carries, and so is the join key back to it.
-    """
     return Path(path).name.split(".")[1].split("-")[0]
 
 
 def attribute_from_run(results: Path, host: str, run_dir: str) -> int:
-    """Write `pool_map_from_run.tsv`: output token -> pool, from the work directory.
-
-    THE RUN INDEX CANNOT DO THIS, and the reason is the fan-out itself. Every
-    step-2 output's recorded parents are the flattened union of its ancestry, and
-    the reference FASTA is parented to all 35 read sets so that one file reaches
-    all 35 jobs -- so every output names all 35 read sets as parents and none of
-    them singly. It is unambiguous only in a one-pool run, which is exactly the
-    case that hides the problem.
-
-    What IS one-to-one is the task that produced the output. Each task's
-    `.command.sh` stages `read_metadata_<pool>.json`, named for its pool precisely
-    so this join exists. One ssh call looks each token up in `nxf_work` and reads
-    the name back. It has to happen while the run directory still exists; after
-    that the map is part of the results and `--summarize` needs no host.
-    """
     tokens = sorted({_output_token(p) for p in results.rglob("*")
                      if p.is_file() and "." in p.name and p.name.count(".") > 1
                      and p.name.startswith("1-")})
     if not tokens:
         raise SystemExit(f"no attributable product filenames under {results}")
 
-    # The pool barcode is grepped out of `.command.sh` rather than a specific
-    # filename, because the two steps name it differently: `assembly_stats`
-    # stages `read_metadata_<pool>.json`, `seqkit_reads` never sees that item and
-    # stages only the reads, whose own name carries the barcode. One pattern
-    # covers both, and nothing else staged into either task carries a pool token.
     probe = "; ".join(
         f'for d in {run_dir}/nxf_work/*/*/; do ls "$d" 2>/dev/null | grep -q {t} '
         f'&& echo -e "{t}\\t$(grep -hoE \'pool[0-9]+_[A-Z]+\' '
@@ -451,15 +341,6 @@ def attribute_from_run(results: Path, host: str, run_dir: str) -> int:
 
 
 def attribute(results: Path) -> dict[Path, str]:
-    """retrieved product file -> pool, from `pool_map_from_run.tsv`.
-
-    metasmith names an output by its lineage hash, so a retrieved file says
-    nothing about its pool on its own. `attribute_from_run` above is where the
-    name comes from, and why it cannot come from the run index.
-
-    It REFUSES rather than guessing when an output is not in the map. A mis-named
-    coverage track is worse than a missing one.
-    """
     m = results / POOL_MAP
     if not m.exists():
         raise SystemExit(
@@ -486,7 +367,6 @@ def attribute(results: Path) -> dict[Path, str]:
 
 
 def summarize(results: Path, out_dir: Path) -> int:
-    """Write the per-pool summary and the insert x pool coverage matrix."""
     pool_of = attribute(results)
     out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -501,7 +381,7 @@ def summarize(results: Path, out_dir: Path) -> int:
             if not pred(p):
                 continue
             local = results / p
-            if not local.exists():       # not retrieved (BAM, per-bp coverage)
+            if not local.exists():
                 continue
             got[pool] = local
         return got
@@ -510,17 +390,12 @@ def summarize(results: Path, out_dir: Path) -> int:
     qc = _load(lambda p: "read_qc_stats" in str(p))
     cov = _load(lambda p: "per_contig_coverage" in str(p))
 
-    # Set-level numbers are the INSERT SET's and identical in all 35 JSONs, so
-    # they are stated once rather than repeated down a column.
     shared = {}
     rows = []
     for pool in sorted(stats):
         s = json.loads(stats[pool].read_text())
         q = json.loads(qc[pool].read_text()) if pool in qc else {}
         here = {k: s[k] for k in ("length", "N50", "GC", "number_of_contigs")}
-        # Every job measured the SAME insert FASTA, so these four must agree
-        # across all 35 JSONs. If they do not, some job was handed a different
-        # assembly and the whole comparison is between different references.
         if shared and here != shared:
             raise SystemExit(
                 f"insert set differs between pools: {shared} vs {here} ({pool})")
@@ -547,9 +422,6 @@ def summarize(results: Path, out_dir: Path) -> int:
     with open(out_dir / "insert_set.json", "w") as f:
         json.dump(shared, f, indent=2)
 
-    # insert x pool fold coverage. The per-contig TSV lists EVERY insert, with a
-    # zero row for the ones this pool does not cover, so an absent insert is a
-    # real zero here and not missing data.
     matrix: dict[str, dict[str, float]] = {}
     lengths: dict[str, int] = {}
     for pool in sorted(cov):
@@ -645,8 +517,6 @@ def main() -> int:
 
     plan_only = not a.run or a.offline
 
-    # Rebound before anything reads them. They travel together on purpose: see
-    # where they are defined.
     global INSERTS, MEMBERSHIP
     if a.reference:
         INSERTS = a.reference.resolve()
@@ -672,9 +542,6 @@ def main() -> int:
     else:
         print(f"=== listing {a.host}:{a.reads_dir} ===", flush=True)
         available = discover_pools(a.host, a.reads_dir)
-        # A difference either way is an error, not a silent subset: a pool the
-        # inserts came from but whose reads are gone would leave that pool
-        # unmeasured with nothing in the output saying so.
         only_inserts = expected - set(available)
         only_host = set(available) - expected
         if only_inserts or only_host:
@@ -710,16 +577,8 @@ def main() -> int:
 
     print("=== planning ===", flush=True)
     targets = TargetBuilder()
-    # Unpinned -- a given cannot be a target's parent. check_plan() below is
-    # what guarantees the assembly being measured is the given insert FASTA and
-    # not one the planner decided to build.
     targets.Add("sequences::assembly_stats")
 
-    # The WHOLE library, NOT `inputs.AsSamples(...)`. AsSamples caches each
-    # sample's descendant set keyed on that sample's ANCESTOR set; a
-    # read_metadata item has no ancestors, so all 35 share the empty key and
-    # every sample view gets the first pool's reads. The plan still resolves and
-    # still runs -- it just measures pool01 thirty-five times.
     task = agent.GenerateWorkflow(
         samples=[inputs],
         resources=resources,
@@ -761,13 +620,8 @@ def main() -> int:
             return 4
 
     print(f"=== task key: {task.GetKey()} ===", flush=True)
-    # "update", never "clear": the agent home is shared with the assembly run's
-    # results, and a task key is content-derived so a changed workflow gets its
-    # own directory anyway.
     agent.StageWorkflow(task, on_exist="update")
 
-    # The slurm preset, explicitly. The default is `local`, which would run all
-    # 35 alignments on fir's login node.
     nxf_config = agent.GetNxfConfigPresets()["slurm"]
     params = {"slurmAccount": a.slurm_account}
     overrides = None if a.stock_resources else TRIMMED_RESOURCES
@@ -779,17 +633,6 @@ def main() -> int:
     print(f"=== waiting (timeout {a.timeout_s / 3600:.1f}h, poll {a.poll_s:.0f}s) ===",
           flush=True)
     result = agent.WaitForWorkflow(task, timeout_s=a.timeout_s, poll_s=a.poll_s)
-    # `errored` means the pid lock is gone and the completion sentinel has not
-    # appeared -- and on this run neither implication holds. The one-pool smoke
-    # reported `errored` two seconds before writing the sentinel, and the 35-pool
-    # run reported it while the agent was demonstrably alive and had been in
-    # "compiling results" for a quarter of an hour: the final step hashes ~20 GB
-    # of BAM on a login node and takes far longer than the fan-out did.
-    #
-    # So the verdict is not believed on its own. The LOG is the evidence: keep
-    # polling for the sentinel, and give up only when the log has also stopped
-    # growing. A genuinely dead run goes quiet and is still reported as errored,
-    # which is the case this is meant to keep catching.
     if result["status"] == "errored":
         print("=== engine reports errored; checking whether the log is still "
               "moving before believing it ===", flush=True)
@@ -805,7 +648,7 @@ def main() -> int:
             stalled = stalled + 1 if len(lines) == last_len and marker == _last_marker \
                 else 0
             _last_marker, last_len = marker, len(lines)
-            if stalled >= 3:      # three quiet polls in a row: it really is gone
+            if stalled >= 3:
                 result = {**result, "tail": lines}
                 break
             time.sleep(a.poll_s)
@@ -816,7 +659,6 @@ def main() -> int:
     if result["status"] != "completed":
         return 2
 
-    # "completed" IS NOT "succeeded" -- read the task table, not the log tail.
     n_failed = check_tasks(a.host, a.agent_home, task.GetKey())
     if n_failed:
         print(f"\n{n_failed} TASK(S) FAILED AND NEXTFLOW IGNORED IT. The results "
@@ -825,11 +667,6 @@ def main() -> int:
     src = agent.GetResultSource(task)
     out = Path(a.out).resolve() if a.out else (staging / "results")
     out.mkdir(parents=True, exist_ok=True)
-    # Everything except the BAMs. Measured on the 35-pool insert run rather than
-    # guessed: the whole per-bp coverage tree is 60 MB (bedGraph run-length
-    # intervals, pigz'd) against 20 GB of BAM, because minimap2 is not run with
-    # --sam-hit-only and every unmapped read is in there too. So the per-bp
-    # tracks come back and the BAMs stay on fir for as long as the run does.
     print(f"=== retrieving (all products except BAM): {src.GetPath()} -> {out} ===",
           flush=True)
     subprocess.run([
@@ -849,8 +686,6 @@ def main() -> int:
           f"{len(list(out.rglob('*.gz')))} gz under {out}")
     print(f"BAMs remain at {a.host}:{src.GetPath()}")
 
-    # While the run directory still exists: name every output from the task that
-    # produced it. After this the results are self-describing.
     attribute_from_run(out, a.host, str(Path(src.GetPath()).parent))
     summarize(out, out.parent)
     return 2 if n_failed else 0

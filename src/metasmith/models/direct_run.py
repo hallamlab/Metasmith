@@ -1,10 +1,3 @@
-"""Direct-run API: invoke a single transform against concrete inputs.
-
-Skips the Nextflow workflow-generation path. Wires the transform's
-declared inputs to user-supplied paths, then hands off to
-`bootstrap.ExecuteStep` — the same code that the Nextflow path runs.
-"""
-
 from __future__ import annotations
 
 import os
@@ -34,9 +27,6 @@ def _load_or_make_agent(agent_home: Path | None) -> Agent:
         agent_yml = agent_home / "lib" / "agent.yml"
         if agent_yml.exists():
             return Agent.Load(agent_yml)
-    # Synthesize a minimal agent rooted at cwd; sufficient for path translation
-    # and container invocation when no deployed agent is reachable. Runtime
-    # detection lives with the rest of the routing in the env module.
     home = agent_home if agent_home is not None else Path.cwd()
     return Agent(
         home=Source.FromLocal(home),
@@ -49,12 +39,6 @@ def _bind_inputs(
     inst: TransformInstance,
     inputs: list[tuple[str, Path]],
 ) -> dict[Dependency, list[DataInstance]]:
-    """Match user-supplied (type_name, path) tuples to the transform's requires.
-
-    A type_name binds to a dep iff its resolved Endpoint satisfies the dep
-    (endpoint.IsA(dep) — endpoint.properties ⊇ dep.properties). Multiple
-    entries with the same type_name fill a multi-file dep in order.
-    """
     by_type: dict[str, list[Path]] = {}
     type_order: list[str] = []
     endpoints: dict[str, Endpoint] = {}
@@ -97,9 +81,6 @@ def _bind_inputs(
 
 
 def _build_lineage(dep_map: dict[Dependency, list[DataInstance]], requires: list[Dependency]) -> dict:
-    """Synthesise a single-batch lineage entry matching what
-    Orchestrator.groovy would emit. Format mirrors TransformHarness._build_lineages.
-    """
     index: dict[str, list[int]] = {}
     file_groups: list[list[str]] = []
     for dep in requires:
@@ -117,11 +98,6 @@ def _build_lineage(dep_map: dict[Dependency, list[DataInstance]], requires: list
 
 
 def _build_dep2output(inst: TransformInstance) -> list[dict[Dependency, Endpoint]]:
-    """For each product group, synthesise an Endpoint per dep from the dep's
-    own properties. The synthesised Endpoint shares the dep's key (signature
-    is property-derived) and preserves any embedded `ext=...` marker that
-    GetPreferredFileExtension reads.
-    """
     out: list[dict[Dependency, Endpoint]] = []
     for group in inst.model.produces:
         g: dict[Dependency, Endpoint] = {}
@@ -139,27 +115,7 @@ def RunTransform(
     host: str | None = None,
     agent_home: Path | None = None,
 ) -> ExecutionResult:
-    """Run a single transform against concrete input files.
-
-    Mirrors `bootstrap.StageAndRunTransform`'s execution model: connects a
-    shell, hands off to ExecuteStep which builds the ExecutionContext, runs
-    the protocol, and reports results. Skips the workflow-solver and
-    metadata-file plumbing.
-
-    Args:
-        transform_lib: Path to the TransformInstanceLibrary directory.
-        transform: Relative path of the transform .py within the library.
-        inputs: list of (data type name, path) pairs, e.g.
-            [("ncbi::assembly_accession", Path("acc.txt"))].
-            Repeat the same type to fill a multi-file dep.
-        work_dir: Output directory. Defaults to cwd.
-        host: Hostname for the relay (unused in host-local mode but retained
-            for future relay-bounce wiring).
-        agent_home: Path to a deployed agent home (containing lib/agent.yml).
-            If omitted, falls back to env AGENT_HOME, or a synthesised
-            host-local agent rooted at cwd.
-    """
-    _ = host  # reserved for relay-bounce wiring
+    _ = host
     work_dir = (work_dir or Path.cwd()).resolve()
     work_dir.mkdir(parents=True, exist_ok=True)
 
@@ -173,9 +129,6 @@ def RunTransform(
     assert inst is not None, f"transform [{transform}] not found in [{transform_lib}]"
 
     dep_map = _bind_inputs(lib, inst, inputs)
-    # Seed empty lists for output deps so bootstrap's on_exit reporter can
-    # look them up without KeyError. Direct-run has no pre-bound output
-    # DataInstances (outputs are produced fresh by the protocol).
     for group in inst.model.produces:
         for dep in group:
             dep_map.setdefault(dep, [])
@@ -195,9 +148,6 @@ def RunTransform(
 
     original_cwd = Path.cwd()
     Log.Info(f"direct-run [{inst.name}] in [{work_dir}]")
-    # The internals dir the bounce script lives in. ExecWithEnv makes it too, but
-    # a plain host work dir should have it either way -- transforms and the step
-    # log both assume it exists.
     (work_dir / "_metasmith").mkdir(parents=True, exist_ok=True)
     os.chdir(work_dir)
     try:

@@ -1,10 +1,3 @@
-"""Sqlite metadata + session counter for the cache store (C2).
-
-Focused unit tests covering the new schema_meta rows and the
-`allocate_session_id()` atomic counter. End-to-end behavior is covered
-by the existing cache integration suite.
-"""
-
 from __future__ import annotations
 
 import sqlite3
@@ -58,7 +51,6 @@ def test_allocate_session_id_monotonic_across_opens(tmp_path):
         store.close()
     assert (a, b, c) == (1, 2, 3)
 
-    # counter persists across re-open
     store2 = CacheStore.open(cache_root)
     try:
         d = store2.allocate_session_id()
@@ -69,7 +61,6 @@ def test_allocate_session_id_monotonic_across_opens(tmp_path):
 
 def test_open_upgrades_stale_lineage_version(tmp_path, caplog):
     cache_root = tmp_path / "cache"
-    # Pre-populate as if a pre-v2 cache existed.
     cache_root.mkdir()
     conn = sqlite3.connect(cache_root / "cache.sqlite")
     conn.execute(
@@ -92,12 +83,6 @@ def test_open_upgrades_stale_lineage_version(tmp_path, caplog):
 
 
 def test_lineage_key_version_baked_in(tmp_path):
-    """A bump of CACHE_KEY_VERSION must alter the cache key bytes.
-
-    The cache-key epoch — not the on-wire LIN_PAYLOAD_VERSION — is what is
-    folded into the lineage payload, so it is the constant whose bump must
-    invalidate old shards.
-    """
     from metasmith.caching import keys as keys_mod
     from metasmith.caching.keys import lineage_key
 

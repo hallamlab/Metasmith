@@ -52,8 +52,6 @@ def main():
     gly_delta = float(df.loc[df.mnxm == GLYCOGEN_MNXM, "delta"].iloc[0])
     delta = df["delta"].to_numpy()
 
-    # Linear threshold for the arcsinh fold: the median nonzero |delta|, so the bulk of
-    # the noise floor still resolves as roughly-linear and only the tail compresses.
     nonzero = np.abs(delta[delta != 0])
     lin_thresh = float(np.median(nonzero)) if nonzero.size else 1e-12
     x = _arcsinh_scale(delta, lin_thresh)
@@ -73,8 +71,6 @@ def main():
         ha="center", va="bottom", color=RED, fontsize=10, fontweight="bold",
     )
 
-    # Tick labels back in real delta units at round arcsinh positions, so the axis reads
-    # as "delta draw", not as an opaque transformed coordinate.
     finite = x[np.isfinite(x)]
     lo, hi = (finite.min(), finite.max()) if finite.size else (-1, 1)
     span = max(abs(lo), abs(hi), abs(gly_x))

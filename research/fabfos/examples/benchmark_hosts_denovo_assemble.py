@@ -84,30 +84,18 @@ GENOMES = B2.GENOMES
 TARGET_4 = B2.TARGET_4
 TARGET_DENOVO = B2.TARGET_DENOVO
 
-# The five lane outputs `gpr_4lane` requires, as dtype -> the file name expected under
-# `<lanes-dir>/<accession>/`. IMPORTED from the scatter driver rather than restated:
-# these names are the contract between the two halves of the split, and a second copy
-# of a filename map is a rename away from an assembly that reports every lane missing.
 LANES = {d: n for lane in ("kofam", "clean", "diamond", "proteinbert")
          for d, n in LN.LANES[lane]["products"].items()}
 
-# What the mapper reads besides the lanes. Both are local single artifacts; neither is
-# large enough for the absolute-path treatment the cluster drivers give the 17.5 GB set.
 REFS = {
     "ref::mnxr_lookup": "mnxr_lookup/mnxr_lookup.parquet",
     "ref::reference_label_pool": "reference_label_pool/pool",
 }
 
-# Anything in this set appearing in the plan means a staged lane did not satisfy its
-# requirement and the planner scheduled the work again -- on THIS machine, which is the
-# one that was supposed to do none of it.
 RECOMPUTED = {"kofamscan", "clean", "diamond_uniref50", "proteinbert", "host_proteomes",
               "prodigal"}
 
 RESOURCE_OVERRIDES = {
-    # The 48 GB is not padding: `lane_embed` materialises a dense (reference x MNXR)
-    # one-hot label matrix, 10.84 GiB of float32 that is 99.97% zeros on this pool.
-    # See the same note in benchmark_hosts_denovo_on_hpc.py.
     "gpr_4lane": Resources(cpus=4, memory=Size.GB(48), duration=Duration(hours=1)),
     "host_gpr_denovo": Resources(cpus=1, memory=Size.GB(8),
                                  duration=Duration(minutes=30)),
@@ -115,12 +103,6 @@ RESOURCE_OVERRIDES = {
 
 
 def host_proteomes() -> list[Path]:
-    """The host set's proteomes, in the order everything downstream keys on.
-
-    NOT parsed and NOT renamed -- `gpr_4lane` names its `source` column after the staged
-    ORF file's stem and `host_gpr_denovo` joins on that stem, so the accession NCBI gave
-    the file is load-bearing all the way to the published table.
-    """
     if not GENOMES.exists():
         raise SystemExit(
             f"the host set is not at {GENOMES.relative_to(REPO)}.\n"
@@ -155,9 +137,6 @@ def build_inputs(work: Path, lanes_dir: Path, *, placeholder: bool
     (xgdb / "orfs").mkdir(exist_ok=True)
     for faa in proteomes:
         acc = faa.stem
-        # The ORF set the lanes were run against, staged as a CHILD of the host set.
-        # This is the link `host_gpr_denovo`'s parents={genomes} pin walks, one hop
-        # further than the lanes' own pin.
         rel = Path("orfs") / faa.name
         (xgdb / rel).write_bytes(faa.read_bytes())
         orfs_key = inputs.AddItem(rel, "sequences::orfs", parents=[genomes_key])
@@ -167,9 +146,6 @@ def build_inputs(work: Path, lanes_dir: Path, *, placeholder: bool
         src = lanes_dir / acc
         (xgdb / "lanes" / acc).mkdir(parents=True, exist_ok=True)
         for dtype, name in LANES.items():
-            # Basenames are made unique per host on the way in. Nextflow stages by
-            # BASENAME, so two hosts' `clean.tsv` collide at the first step that takes
-            # both -- and `host_gpr_denovo` is exactly such a step, one level down.
             lrel = Path("lanes") / acc / f"{acc}.{name}"
             if placeholder:
                 (xgdb / lrel).write_bytes(b"")
@@ -224,12 +200,6 @@ def plan(work: Path, agent, lanes_dir: Path, *, placeholder: bool):
 
 
 def check_plan(task, n_hosts: int) -> int:
-    """The plan IS the claim this driver makes -- counted in INSTANCES, not steps.
-
-    `step.group_by_instances` is what the executor turns into jobs, so it is the number
-    that says whether the fan-out survived being staged rather than produced. See the
-    module docstring for why counting steps cannot tell the two answers apart.
-    """
     steps = sorted(task.plan.steps, key=lambda s: s.order)
     used = [Path(s.transform._path).stem for s in steps]
     print(f"\nPlan OK -- {len(steps)} steps, {len(set(used))} distinct transforms\n")
@@ -286,16 +256,6 @@ def check_plan(task, n_hosts: int) -> int:
 
 
 def check_given_lineage(agent, task, n_hosts: int) -> int:
-    """The staged lineage index, read back -- the plan's claim made concrete.
-
-    Staging writes `workflow.lineage_of_given.json`: for each input channel, one entry
-    per staged file naming the hash of each parent's resolved path. THAT file is what
-    the generated Nextflow joins the lane channels against, so it is where "the lanes
-    were staged with parents" stops being an assertion about this driver and becomes a
-    fact about what will run. An empty `lineage` map means every parent declaration was
-    dropped and the mapper will pair lanes arbitrarily -- with a green run and a table
-    that reads as if it worked.
-    """
     staged = Path(agent.GetResultSource(task).GetPath()).parent
     lf = staged / "workflow.lineage_of_given.json"
     if not lf.exists():
@@ -323,9 +283,6 @@ def check_given_lineage(agent, task, n_hosts: int) -> int:
                   file=sys.stderr)
             bad = 1
             continue
-        # ONE parent per parent-channel, and the three DISTINCT. Two entries naming the
-        # same ORF file is the collapse this whole check exists for: it joins two hosts'
-        # lanes onto one ORF set, and the mapper cannot tell.
         for pchannel in {p for e in entries for p in e}:
             got = [e.get(pchannel, []) for e in entries]
             if any(len(g) != 1 for g in got):
@@ -345,12 +302,6 @@ def check_given_lineage(agent, task, n_hosts: int) -> int:
 
 
 def _root(lineage: dict) -> str:
-    """The channel every other channel descends from -- the host set.
-
-    It is the one legitimate exception to "distinct parents": all three ORF sets come
-    from the SAME genomes folder, which is exactly what makes `host_gpr_denovo`'s
-    `parents={genomes}` pin collect them into one table.
-    """
     parents = {p for entries in lineage.values() for e in entries for p in e}
     return next(iter(parents - {Path(c).name for c in lineage}), "")
 
@@ -435,13 +386,6 @@ def main() -> int:
     if a.stage_only:
         print("\nstaged only: the lineage index is what was checked; nothing launched.")
         return 0
-    # The SAME literal-pool block the scatter driver needs, for the same reason:
-    # `local.nf` declares an 8-core / 8 GB pool, Nextflow's local executor REFUSES a
-    # process asking for more rather than queueing it, and errorStrategy='ignore' then
-    # reports the whole run green with nothing produced. gpr_4lane asks for 48 GB, so
-    # against the shipped default every one of the three mapper jobs is rejected before
-    # it starts. Raising it through `params` does not work -- config scopes resolve
-    # before -params-file merges -- which is why this is a literal block.
     agent.RunWorkflow(
         task,
         config_file=LN.pool_config(
@@ -462,9 +406,6 @@ def main() -> int:
     src = agent.GetResultSource(task).GetPath()
     if local_results.exists():
         shutil.rmtree(local_results)
-    # symlinks=False: metasmith writes products under mode='rellink', so preserving the
-    # links copies paths that resolve two levels short of the work tree and only fail
-    # later, at --publish. Same fix as the scatter driver's local retrieve.
     shutil.copytree(src, local_results, symlinks=False)
     return verify(local_results)
 

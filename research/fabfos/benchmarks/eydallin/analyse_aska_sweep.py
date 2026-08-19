@@ -52,13 +52,10 @@ from ecspr.model.scoring import _stats                                  # noqa: 
 SWEEPS = ROOT / "data/fabfos/runs/eydallin_clones/ecspr"
 OUT = SWEEPS
 
-# The glycogen module itself. A probe that grounds at glycogen ranking these first is
-# close to a tautology, so the interesting AUC is the one computed without them.
 GLYCOGEN_MODULE = ("glgA", "glgB", "glgC", "glgP", "glgS", "glgX", "malP", "malQ")
 
 
 def auc(score: np.ndarray, pos: np.ndarray) -> tuple[float, float]:
-    """``(AUC, p)`` -- mid-rank Mann-Whitney, positives ranked above the rest."""
     a, b = score[pos], score[~pos]
     if a.size == 0 or b.size == 0:
         return float("nan"), float("nan")
@@ -67,7 +64,6 @@ def auc(score: np.ndarray, pos: np.ndarray) -> tuple[float, float]:
 
 
 def precision_at_k(df: pd.DataFrame, k: int) -> dict:
-    """How many of the top ``k`` the screen actually found, against chance."""
     top = df.nlargest(k, "score", keep="all").head(k)
     hit = int(top.is_positive.sum())
     N, K = len(df), int(df.is_positive.sum())
@@ -76,11 +72,9 @@ def precision_at_k(df: pd.DataFrame, k: int) -> dict:
 
 
 def analyse(df: pd.DataFrame, label: str, log) -> dict:
-    """Every statistic for one channel and one positive set."""
     out = {"label": label, "n": len(df), "n_positive": int(df.is_positive.sum())}
     mapped = df.n_rxn > 0
 
-    # -- the precondition -----------------------------------------------------
     tab = [[int((df.is_positive & mapped).sum()), int((df.is_positive & ~mapped).sum())],
            [int((~df.is_positive & mapped).sum()), int((~df.is_positive & ~mapped).sum())]]
     orr, pf = fisher_exact(tab)
@@ -91,7 +85,6 @@ def analyse(df: pd.DataFrame, label: str, log) -> dict:
         f"({out['reach']['pos_mapped_frac']:.1%}) vs {tab[1][0]}/{sum(tab[1])} of the rest "
         f"({out['reach']['neg_mapped_frac']:.1%})  OR={orr:.2f} p={pf:.3g}")
 
-    # -- the AUCs and their controls ------------------------------------------
     pos = df.is_positive.to_numpy()
     for scope, sub in (("library", df), ("atom-mapped", df[mapped])):
         p = sub.is_positive.to_numpy()
@@ -102,13 +95,11 @@ def analyse(df: pd.DataFrame, label: str, log) -> dict:
         log(f"  AUC over the {scope:11s} (n={len(sub):,}, {int(p.sum())} positive): "
             f"ECSPr {a_e:.4f} (p={p_e:.3g})   |   size control {a_n:.4f} (p={p_n:.3g})")
 
-    # -- precision at the top -------------------------------------------------
     out["precision_at_k"] = [precision_at_k(df, k) for k in (10, 25, 50, 100)]
     for r in out["precision_at_k"]:
         log(f"  top {r['k']:3d}: {r['hits']:2d} positives "
             f"(expected {r['expected']:.1f}, p={r['p']:.3g})")
 
-    # -- per-positive standing against the library null -----------------------
     null = df.loc[~pos, "score"].to_numpy()
     st = _stats(df.loc[pos, "score"].to_numpy(), null)
     ranked = (df[pos].assign(pct_rank=st["pct_rank"], z=st["z"], p_emp=st["p_emp"])
@@ -117,8 +108,6 @@ def analyse(df: pd.DataFrame, label: str, log) -> dict:
     out["p_floor"] = st["p_floor"]
     out["positives"] = ranked[["gene", "eydallin_phenotype", "n_rxn", "score",
                                "pct_rank", "z", "p_emp"]].to_dict("records")
-    # `_stats` ranks by strict inequality, and most of this library ties at exactly zero,
-    # so its pct_rank is a lower bound. The mid-rank form is the one that matches the AUC.
     obs = df.loc[pos, "score"].to_numpy()
     mid = ((null[None, :] < obs[:, None]).sum(1)
            + 0.5 * (null[None, :] == obs[:, None]).sum(1)) / max(null.size, 1)
@@ -133,7 +122,6 @@ def analyse(df: pd.DataFrame, label: str, log) -> dict:
 
 
 def resample(df: pd.DataFrame, *, n_neg: int, reps: int, seed: int, log) -> dict:
-    """The literal experiment asked for: 100 random clones as the null, many times."""
     rng = np.random.default_rng(seed)
     neg = df.loc[~df.is_positive, "score"].to_numpy()
     pos = df.loc[df.is_positive, "score"].to_numpy()
@@ -174,9 +162,6 @@ def main() -> int:
             continue
         df = pd.read_csv(f, sep="\t")
         df["is_positive"] = df.is_positive.astype(bool)
-        # The ranking statistic. delta and log2FC are monotone in each other here (one
-        # shared baseline), so which one is ranked on cannot change any AUC; delta is
-        # used because a clone that reaches nothing is an exact 0 rather than a log of 1.
         df["score"] = df.delta.astype(float)
         log(f"\n{'=' * 78}\n### channel {ch}  --  {len(df):,} clone genes, "
             f"{int((df.n_rxn > 0).sum()):,} atom-mapped, "

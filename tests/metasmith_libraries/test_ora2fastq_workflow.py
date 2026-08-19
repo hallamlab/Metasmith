@@ -1,13 +1,3 @@
-"""
-End-to-end tests for ORA to FASTQ logistics transform.
-
-Tests for: ora2fastq (ORA decompression + interleaving)
-
-These tests verify that ORA workflows can be:
-1. Generated (workflow planning)
-2. Executed via local Docker
-3. Successfully produce interleaved gzipped FASTQ
-"""
 import pytest
 from pathlib import Path
 from metasmith.python_api import (
@@ -27,7 +17,6 @@ from conftest import (
 
 @pytest.fixture(scope="module")
 def logistics_transforms(mlib):
-    """Load logistics transforms."""
     return [
         TransformInstanceLibrary.Load(mlib / "transforms/logistics"),
     ]
@@ -35,7 +24,6 @@ def logistics_transforms(mlib):
 
 @pytest.fixture
 def ora_input(tmp_inputs):
-    """Create input library with paired ORA reads."""
     inputs = tmp_inputs(["sequences.yml"])
 
     ora_dir = TEST_DATA_DIR / "ora2fastq"
@@ -64,12 +52,9 @@ def ora_input(tmp_inputs):
 
 
 class TestOra2FastqWorkflowGeneration:
-    """Tests for workflow generation (planning only)."""
-
     def test_can_plan_ora2fastq_workflow(
         self, agent, base_resources, logistics_transforms, ora_input
     ):
-        """Verify workflow generation for ORA to FASTQ conversion."""
         targets = TargetBuilder()
         targets.Add("sequences::short_reads")
 
@@ -86,16 +71,9 @@ class TestOra2FastqWorkflowGeneration:
 
 @pytest.mark.slow
 class TestOra2FastqWorkflowExecution:
-    """
-    Full E2E tests that execute workflows via Docker.
-
-    These tests require the orad and bbtools containers.
-    """
-
     def test_ora2fastq_e2e(
         self, agent, base_resources, logistics_transforms, ora_input
     ):
-        """Full E2E test: decompress ORA, interleave, verify FASTQ output."""
         targets = TargetBuilder()
         targets.Add("sequences::short_reads")
 

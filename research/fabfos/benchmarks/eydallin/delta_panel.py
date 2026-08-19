@@ -36,8 +36,8 @@ HOST_GEM = ROOT / "data/fabfos/benchmarks/hosts/e_coli_k12/gpr_gem.parquet"
 OUT_DIR = Path(__file__).resolve().parent / "cache"
 OUT_DIR.mkdir(parents=True, exist_ok=True)
 
-SOURCE_MNXM = "MNXM1364061"    # D-glucose, as run_pilot_glycogen.py resolves it
-GLYCOGEN_MNXM = "MNXM738130"   # BiGG species -- the one iML1515 (and this host GEM) carries
+SOURCE_MNXM = "MNXM1364061"
+GLYCOGEN_MNXM = "MNXM738130"
 
 
 def main():

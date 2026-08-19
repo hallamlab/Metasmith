@@ -1,15 +1,3 @@
-"""chunkOrfsForAnnotation — length-balanced fan-out of a per-sample ORF FASTA
-into ~CHUNK_SIZE-ORF chunks for CPU/IO-bound annotators (deepec, interproscan,
-proteinbert, dram, kofamscan, eggnog, diamond_*, busco, predictf, deeptfactor).
-
-Sibling of `shardFasta`: same length-balanced round-robin logic, but emits
-`sequences::orf_chunk` (a distinct sibling of `sequences::orfs`, NOT a subtype)
-so the solver routes chunks to annotators without entangling them with the
-ML-embedder `orfs_shard` path (saprot/esmfold/ankh, 6000/shard).
-
-CHUNK_SIZE=5000 ≈ E. coli proteome; bounds each annotator task at ~1.3 MB raw
-FASTA and ~134-268 MB worst-case intermediate state.
-"""
 from metasmith.python_api import *
 
 lib   = TransformInstanceLibrary.ResolveParentLibrary(__file__)

@@ -1,9 +1,3 @@
-"""
-Run ora2fastq workflow on sockeye HPC cluster via Metasmith.
-
-Usage:
-    conda run -n msm_env python tests/run_ora2fastq_sockeye.py
-"""
 import subprocess
 from pathlib import Path
 from metasmith.python_api import (
@@ -22,9 +16,7 @@ import time
 MLIB = Path(__file__).parent.parent
 SOCKEYE_AGENT_PATH = "/scratch/st-shallam-1/pwy_group/metasmith"
 SOCKEYE_DATA_PATH = "/scratch/st-shallam-1/pwy_group/metasmith/data/ora2fastq_test"
-# oradata extracted from orad container (needed for Apptainer — Docker has it internally)
 SOCKEYE_ORADATA_PATH = "/scratch/st-shallam-1/pwy_group/metasmith/data/orad_data/oradata"
-# Input library lives locally; item paths point to sockeye (already transferred)
 LOCAL_INPUTS_PATH = Path(__file__).parent / "test_msm_home" / "ora2fastq_inputs.xgdb"
 SLURM_ACCOUNT = "st-shallam-1"
 
@@ -37,8 +29,6 @@ agent = Agent(
     ],
 )
 
-# Build input library locally; item paths are absolute paths on sockeye
-# (ORA files already rsync'd there — StageWorkflow won't re-copy absolute paths)
 LOCAL_INPUTS_PATH.parent.mkdir(parents=True, exist_ok=True)
 inputs = DataInstanceLibrary(LOCAL_INPUTS_PATH)
 inputs.AddTypeLibrary(MLIB / "data_types/sequences.yml")
@@ -91,8 +81,6 @@ print(f"Plan: {len(task.plan.steps)} step(s), key={task.GetKey()}")
 print("Staging workflow...")
 agent.StageWorkflow(task, on_exist="clear")
 
-# Apptainer on HPC can't read /app/oradata inside the container (root-owned).
-# Patch the Nextflow config after staging to bind mount the pre-extracted oradata.
 run_key = task.GetKey()
 nxf_config_path = f"/scratch/st-shallam-1/pwy_group/metasmith/runs/{run_key}/workflow.config.nf"
 patch = (
@@ -121,12 +109,11 @@ agent.RunWorkflow(
     ),
 )
 
-# Poll for completion
 print("Waiting for workflow to complete...")
 results_source = agent.GetResultSource(task)
 results_path = results_source.GetPath()
 start = time.time()
-timeout = 7200  # 2 hours
+timeout = 7200
 
 while not (results_path / "_metadata").exists():
     elapsed = int(time.time() - start)

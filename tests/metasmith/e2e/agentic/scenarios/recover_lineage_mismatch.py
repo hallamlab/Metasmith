@@ -1,29 +1,3 @@
-"""Recovery probe: ``plan`` emits a ``lineage_mismatch`` hint.
-
-A transform requires its input to descend from a particular parent
-type. The data library contains an item that matches the input's
-properties but is NOT registered as a descendant of any item of the
-parent type. The solver emits a ``lineage_mismatch`` hint that names
-the missing parent and points at ``metasmith data set-parents`` as
-the recovery action.
-
-Pre-staged:
-  workspace/types/myns.yml        types: group, child, child_with_group
-  workspace/transforms/           one custom transform `attach.py` with
-                                  ``parents={group}`` on the child input
-  workspace/data.xgdb             two items:
-                                    - ``g1`` of type ``myns::group``
-                                    - ``c1`` of type ``myns::child``
-                                      (no parent linkage!)
-
-Initial plan fails with ``lineage_mismatch``. The hint near_misses
-field reads "add parents=[<g1>] when registering <c1> ...". Recovery:
-``metasmith data set-parents workspace/data.xgdb c1 --parent g1``,
-then re-plan.
-
-Pass criteria:
-  - workspace/ANSWER.txt contains a task_key for the (now-succeeding) plan
-"""
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -39,7 +13,6 @@ from ._fixture_utils import (
 )
 
 
-# Hand-written: scaffold doesn't expose parent constraints on requirements.
 _ATTACH_TRANSFORM = '''\
 from metasmith.python_api import *
 
@@ -149,7 +122,6 @@ class RecoverLineageMismatchScenario:
             types_dir,
             {"attach": _ATTACH_TRANSFORM},
         )
-        # Intentional: c1 has NO parent linkage. The agent must fix this.
         build_data_lib(layout, ws / "data.xgdb", types_yml, [
             DataItemSpec(name="g1", dtype="myns::group", value="group_one"),
             DataItemSpec(name="c1", dtype="myns::child", value="child_one"),

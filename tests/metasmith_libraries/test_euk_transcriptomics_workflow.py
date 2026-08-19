@@ -1,11 +1,3 @@
-"""
-End-to-end tests for eukaryotic transcriptomics transforms
-(STAR index, STAR align, StringTie assemble/merge/quant, gene count matrix).
-
-These tests verify that the eukaryotic transcriptomics pipeline can be:
-1. Generated (workflow planning)
-2. Executed via local Docker to produce a gene-level count matrix
-"""
 import pytest
 from pathlib import Path
 from metasmith.python_api import (
@@ -47,7 +39,6 @@ SAMPLE_FILES = {
 
 @pytest.fixture(scope="module")
 def euk_transcriptomics_transforms(mlib):
-    """Load transcriptomics and logistics transforms."""
     return [
         TransformInstanceLibrary.Load(mlib / "transforms/transcriptomics"),
         TransformInstanceLibrary.Load(mlib / "transforms/logistics"),
@@ -56,20 +47,17 @@ def euk_transcriptomics_transforms(mlib):
 
 @pytest.fixture
 def porphyridium_input(tmp_inputs, test_data_dir):
-    """Create input library with Porphyridium paired-end reads and reference accession."""
     if not PORPHYRIDIUM_READS_DIR.exists():
         pytest.skip("Porphyridium test data not available")
 
     inputs = tmp_inputs(["sequences.yml", "ncbi.yml", "transcriptomics.yml"])
 
-    # Add the experiment grouping marker
     experiment = inputs.AddValue(
         "porphyridium_experiment.txt",
         "porphyridium_transcriptomics",
         "transcriptomics::experiment",
     )
 
-    # Add reference assembly accession, under the name it is fetched as.
     reference_name = inputs.AddValue(
         "porphyridium_name.txt",
         "porphyridium",
@@ -83,7 +71,6 @@ def porphyridium_input(tmp_inputs, test_data_dir):
         parents={reference_name},
     )
 
-    # Add paired-end reads for each sample
     for sample_name in SAMPLES:
         r1_file, r2_file = SAMPLE_FILES[sample_name]
         r1_path = PORPHYRIDIUM_READS_DIR / r1_file
@@ -108,12 +95,9 @@ def porphyridium_input(tmp_inputs, test_data_dir):
 
 
 class TestWorkflowGeneration:
-    """Tests for workflow generation (planning only, no execution)."""
-
     def test_can_plan_gene_count_table(
         self, agent, base_resources, euk_transcriptomics_transforms, porphyridium_input
     ):
-        """Verify workflow generation for eukaryotic gene count table includes all pipeline steps."""
         targets = TargetBuilder()
         targets.Add("transcriptomics::gene_count_table")
 
@@ -127,16 +111,12 @@ class TestWorkflowGeneration:
         assert task.ok, f"Workflow generation failed: {task}"
         assert len(task.plan.steps) > 0, "Workflow should have at least one step"
 
-        # The pipeline should have at least 7 steps:
-        # getNcbiAssembly, star_genome_index, star_align, stringtie_assemble,
-        # stringtie_merge, stringtie_quant, gene_count_matrix
         assert len(task.plan.steps) >= 7, \
             f"Expected at least 7 steps, got {len(task.plan.steps)}"
 
     def test_can_plan_diff_count_table(
         self, agent, base_resources, euk_transcriptomics_transforms, porphyridium_input
     ):
-        """Verify workflow generation for PyDESeq2 normalized count table."""
         targets = TargetBuilder()
         targets.Add("transcriptomics::diff_count_table")
 
@@ -150,21 +130,15 @@ class TestWorkflowGeneration:
         assert task.ok, f"Workflow generation failed: {task}"
         assert len(task.plan.steps) > 0, "Workflow should have at least one step"
 
-        # The pipeline should have at least 7 steps:
-        # getNcbiAssembly, star_genome_index, star_align, stringtie_assemble,
-        # stringtie_merge, stringtie_quant, pydeseq2
         assert len(task.plan.steps) >= 7, \
             f"Expected at least 7 steps, got {len(task.plan.steps)}"
 
 
 @pytest.mark.slow
 class TestWorkflowExecution:
-    """Full E2E tests that execute workflows via Docker."""
-
     def test_gene_count_table_e2e(
         self, agent, base_resources, euk_transcriptomics_transforms, porphyridium_input, tmp_path
     ):
-        """Full E2E test: run eukaryotic pipeline, verify gene-level count CSV."""
         targets = TargetBuilder()
         targets.Add("transcriptomics::gene_count_table")
 
@@ -196,7 +170,6 @@ class TestWorkflowExecution:
                 full_path = path if path.is_absolute() else results_path / path
                 assert full_path.exists(), f"Gene count table missing: {full_path}"
 
-                # Verify CSV structure
                 content = full_path.read_text()
                 lines = content.strip().split("\n")
                 assert len(lines) > 1, "Gene count table should have header + data rows"

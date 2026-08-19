@@ -1,26 +1,3 @@
-"""Supplying the finished kofam lane must REMOVE its producer from the plan.
-
-This is the gate the reuse rests on. An earlier pass computed kofamscan for all
-2,844 assemblies; the driver hands those products to the planner as givens,
-parented per shard, and the planner is supposed to prefer them over producing
-(`solver.py:534-554`).
-
-(That pass also produced ProteinBERT embeddings. They are NOT reused -- their row
-order was measured not to be the fasta's and the index was lost -- so
-`proteinbert` is an EXPECTED transform here, not a forbidden one.)
-
-The failure is silent. If a given's lineage does not satisfy the mapper's
-`parents={orfs}` pin, `solver.py:603-605` re-solves with `include_produced=True`
-and puts the producer back -- no error, no warning, just a plan that quietly
-recomputes 82 million profile hits it already has. So the test is not "does it
-plan" but "is `kofamscan` ABSENT", and the negative controls prove the test could
-tell the difference.
-
-Planning is type-level, so none of the paths need to exist; that is also what
-lets this run on a machine holding none of the 30 GB.
-
-Run: python tests/test_cyanoverse_gpr_reuse.py   (or under pytest)
-"""
 from __future__ import annotations
 
 import sys
@@ -59,15 +36,8 @@ def test_reuse_removes_the_producer(tmp_path):
     assert used == cv.EXPECTED_TRANSFORMS, (
         f"plan is {sorted(used)}, expected {sorted(cv.EXPECTED_TRANSFORMS)}")
 
-    # N shards fan out INSIDE each step; one step per transform, not N.
     assert len(task.plan.steps) == len(cv.EXPECTED_TRANSFORMS)
 
-    # A step groups over the shard only if it is keyed on `sequences::orfs`. The
-    # sharded annotators are keyed on `sequences::orf_chunk`, which nothing has
-    # produced yet at compile time, so their slot holds ONE archetype standing
-    # for however many chunks the chunker emits per shard at run time -- not a
-    # collapsed fan-out. Both halves are named, so a step moving between them
-    # fails here rather than passing under a looser rule.
     PER_CHUNK = {"diamond_uniref50", "proteinbert"}
     for s in task.plan.steps:
         name = Path(s.transform._path).stem
@@ -77,32 +47,16 @@ def test_reuse_removes_the_producer(tmp_path):
 
 
 def test_without_the_given_the_producer_comes_back(tmp_path):
-    """The negative control: the same call, minus the supplied product.
-
-    Without this the positive test above could pass because the plan resolved to
-    four steps for some entirely unrelated reason.
-    """
     _agent, task, _ = _plan(tmp_path, None)
     assert task.ok
     used = common.step_transform_names(task)
     assert cv.FORBIDDEN_TRANSFORMS <= used, (
         f"expected the producer to be planned when nothing supplies it; "
         f"got {sorted(used)}")
-    # Stated as the relationship rather than a count: what the reuse buys is
-    # exactly the forbidden set, so the unreused plan is the expected plan plus
-    # those steps. A literal here goes stale every time the lane changes shape.
     assert len(task.plan.steps) == len(cv.EXPECTED_TRANSFORMS | cv.FORBIDDEN_TRANSFORMS)
 
 
 def test_an_unparented_given_does_not_satisfy_the_mapper(tmp_path):
-    """Supply kofam with NO parentage -- the producer must come back.
-
-    `gpr_4lane` pins every lane to `parents={orfs}`, so a product that does not
-    descend from this shard's ORFs cannot satisfy it. If the planner accepted it
-    anyway, the campaign could pair each shard with somebody else's annotations
-    and still plan cleanly -- so this is the check that the pin is load-bearing
-    rather than decorative.
-    """
     def unparented(inputs):
         shards_seen = [Path(p).stem for p, d in inputs.manifest.items()
                        if d == "sequences::orfs"]
@@ -120,13 +74,6 @@ def test_an_unparented_given_does_not_satisfy_the_mapper(tmp_path):
 
 
 def test_basename_collision_is_refused(tmp_path):
-    """Two supplied inputs sharing a basename must fail HERE, not on the cluster.
-
-    Nextflow stages a process's inputs by basename with no `stageAs`, so a
-    collision silently hands a lane the wrong file -- and it has already killed a
-    run in this project after every one of its lanes had succeeded, reporting
-    `run completed` with 0 FAILED.
-    """
     saved = dict(cv.REUSED)
     try:
         cv.REUSED["annotation::kofamscan_results"] = "{shard}.faa"

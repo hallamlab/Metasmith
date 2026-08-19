@@ -1,11 +1,4 @@
 #!/usr/bin/env python
-"""Generate and visualize the Metasmith eukaryotic workflow DAG locally.
-
-Starting inputs: genome assembly + paired RNA-seq reads
-Targets: gene_count_table, diff_count_table, eggnog_results, busco_results, braker3_gff
-
-Run without staging or executing — planning only.
-"""
 import sys
 import tempfile
 from pathlib import Path
@@ -19,12 +12,10 @@ from metasmith.python_api import (
     TargetBuilder,
 )
 
-# ── Local agent (GenerateWorkflow does not require SSH) ───────────────────────
 tmp = Path(tempfile.mkdtemp())
 agent_home = Source.FromLocal(tmp)
 smith = Agent(home=agent_home, runtime=Runtime.APPTAINER)
 
-# ── Transform libraries ───────────────────────────────────────────────────────
 transforms = [
     TransformInstanceLibrary.Load(MLIB / "transforms/transcriptomics"),
     TransformInstanceLibrary.Load(MLIB / "transforms/functionalAnnotation"),
@@ -52,7 +43,6 @@ for name in EUKARYOTIC_CONTAINERS:
     euk_containers.AddItem(MLIB / "resources/env" / name, f"env::{name}")
 euk_containers.Save()
 
-# ── Input library ─────────────────────────────────────────────────────────────
 inputs_dir = tmp / "inputs.xgdb"
 inputs = DataInstanceLibrary(inputs_dir)
 for tl in ["sequences.yml", "transcriptomics.yml", "annotation.yml", "env.yml"]:
@@ -68,22 +58,18 @@ def mock(name, is_dir=False):
 
 experiment = inputs.AddValue("experiment.txt", "porphyridium", "transcriptomics::experiment")
 
-# Genome assembly (starting input)
 inputs.AddItem(mock("genome.fna"), "sequences::assembly", parents={experiment})
 
-# Paired RNA-seq reads (3 samples sufficient for planning)
 for i in range(3):
     pair = inputs.AddValue(f"pair_{i}.txt", f"pair_{i}", "sequences::read_pair")
     inputs.AddItem(mock(f"r1_{i}.fastq.gz"), "sequences::zipped_forward_short_reads", parents={pair, experiment})
     inputs.AddItem(mock(f"r2_{i}.fastq.gz"), "sequences::zipped_reverse_short_reads", parents={pair, experiment})
 
-# Download triggers — let planner derive eggnog_data and busco_lineage
 inputs.AddValue("eggnog_source.txt", "eggnog", "annotation::eggnog_source")
 inputs.AddValue("busco_source.txt", "eukaryota_odb10", "annotation::busco_source")
 
 inputs.Save()
 
-# ── Generate workflow plan ────────────────────────────────────────────────────
 targets = TargetBuilder()
 targets.Add("transcriptomics::gene_count_table")
 targets.Add("transcriptomics::diff_count_table")
@@ -110,9 +96,7 @@ for step in steps:
     prods = [i.dtype_name for g in step.produces for i in g]
     print(f"  Step {step.order}: {name} -> {prods}")
 
-# ── Render via Metasmith's built-in DAG renderer ──────────────────────────────
 import os
-# Ensure the conda env bin (graphviz dot) is on PATH for the renderer
 _env_bin = Path(sys.executable).parent
 os.environ["PATH"] = f"{_env_bin}:{os.environ.get('PATH', '')}"
 

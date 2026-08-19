@@ -109,24 +109,7 @@ def carrier_role(name):
     return None
 
 
-# =====================================================================
-# cancellation
-# =====================================================================
-
 def cancel_conjugates(subs, prods):
-    """Drop every participant standing on BOTH sides with equal multiplicity.
-
-    EQUAL MULTIPLICITY, NOT MERE PRESENCE. `2 A + B >> A + C` does not cancel A: one copy
-    of an unknown amount is left over, and treating the species as absent would silently
-    subtract it from one side only. That is the same trap that makes a naive
-    stoichiometric collapse unfaithful, and the rule here is the strict reading of it --
-    a species whose coefficients differ is left in place, where the count gates below can
-    refuse it honestly.
-
-    ON IDENTITY, so no formula is consulted and the arm is exact rather than inferred.
-    Returns `(kept_subs, kept_prods, cancelled)`, or None when the cancellation would
-    empty a side -- which is not a settled reaction but an empty one.
-    """
     cs, cp = Counter(subs), Counter(prods)
     cancelled = sorted(m for m in cs if cs[m] == cp.get(m, 0))
     if not cancelled:
@@ -140,12 +123,6 @@ def cancel_conjugates(subs, prods):
 
 
 def counts_for(m, X, counts_of, formulas):
-    """Atoms of X in one molecule of `m`: the recount first, the formula second.
-
-    None is UNKNOWN and never a zero. The order matters and is not a preference: a `*`
-    formula states no count while the structure beside it states one exactly, and
-    `atom_ranks` -- which every pair row indexes into -- is keyed on that structure.
-    """
     c = counts_of.get(m)
     if c is not None:
         return c[ELEMENTS.index(X)]
@@ -153,31 +130,12 @@ def counts_for(m, X, counts_of, formulas):
 
 
 def _residues_cancel(ks, kp, counts_of, residue_of):
-    """Do the unspecified residue slots cancel across the kept participants?
-
-    An exact count of the EXPLICIT atoms is not a statement about the whole molecule, so
-    a reaction whose two sides carry different amounts of unspecified remainder has not
-    been shown to conserve anything. Only recount-sourced participants have slots; a
-    formula-sourced count came from a formula `count_element` was willing to read, which
-    by construction had no residue in it.
-    """
     def slots(ms):
         return [residue_of.get(m) for m in ms if m in counts_of]
     return RC.residue_slots_cancel(slots(ks), slots(kp))
 
 
-# =====================================================================
-# the three arms
-# =====================================================================
-
 def settle(mnxr, subs, prods, counts_of, residue_of, formulas, ranks_of, names):
-    """`(forced_rows, claim_rows, tally)` for one reaction.
-
-    Per element, in strength order: the exact arm if the cancellation leaves conservation
-    no choice, otherwise the single-unknown arm as a claim. The carrier class is counted
-    once per reaction, independently, because it is a statement about the reaction's
-    shape rather than about one element.
-    """
     forced, claims, tally = [], [], Counter()
 
     got = cancel_conjugates(subs, prods)
@@ -283,10 +241,6 @@ def settle(mnxr, subs, prods, counts_of, residue_of, formulas, ranks_of, names):
     return forced, claims, tally
 
 
-# =====================================================================
-# inputs
-# =====================================================================
-
 def load_context(lookups: Path, element_counts: Path):
     mets = pd.read_parquet(lookups / "metabolites.parquet",
                            columns=["mnxm", "name", "formula"])
@@ -302,18 +256,6 @@ def load_context(lookups: Path, element_counts: Path):
 
 
 def targets_from(worklist: Path, rescued: Path | None, everything=False):
-    """The reactions no member will be given -- which is what this lane is FOR.
-
-    `INDIGO_ADMITS` is the widest admission any member makes, so its complement is the
-    set the ensemble cannot reach however it runs; the rescue's completions are removed
-    because those become mappable and DO get a member. Stated by subtracting from the
-    admit sets rather than by listing verdicts, so a new verdict does not have to be
-    added here to be handled.
-
-    `--targets all` widens it to the whole universe. The layer stack is additive and
-    refuses rather than warns, so an algebra row for a reaction a mapper also reached is
-    never used -- it is a cross-check, and it costs arithmetic rather than mapper time.
-    """
     wl = pd.read_parquet(worklist, columns=["mnxr", "verdict"])
     if everything:
         return list(wl["mnxr"].astype(str))

@@ -1,10 +1,3 @@
-"""Deterministic content hash of the ecspr source tree.
-
-Written to build_hash.txt at build time; read by ``ecspr.BUILD_HASH`` at
-runtime. Kept dependency-free so dev.sh and the container build can invoke it
-before any install -- ported from metasmith's module of the same name, and it
-must keep that shape: the two are compared by eye when a tag looks wrong.
-"""
 from __future__ import annotations
 
 import hashlib
@@ -14,9 +7,6 @@ MODULE_PATH = Path(__file__).resolve().parent
 BUILD_HASH_FILE = MODULE_PATH / "build_hash.txt"
 
 EXCLUDE_NAMES = frozenset({"build_hash.txt"})
-# `conda_recipe` is inert here -- the monorepo keeps every module's recipe at
-# conda_recipe/<module>/, outside the hashed tree. Kept so the exclusion set
-# still matches metasmith's, which is what makes the two comparable by eye.
 EXCLUDE_PARTS = frozenset({"__pycache__", "conda_recipe", "build", "dist"})
 
 

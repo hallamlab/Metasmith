@@ -1,4 +1,3 @@
-"""Tests for the decomposed Build pipeline in models/build_libraries.py."""
 from __future__ import annotations
 
 from pathlib import Path
@@ -96,7 +95,6 @@ class TestCompileTransformLibrary:
         types = LoadTypeLibraries([type_dir])
         r = CompileTransformLibrary(d, types)
         assert r["count"] == 0
-        # nothing should have been written
         assert not (d / "_metadata").exists()
 
 

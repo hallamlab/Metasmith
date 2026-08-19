@@ -1,33 +1,4 @@
 #!/usr/bin/env python3
-"""V3 — is N2 a node in the Nostoc network, and what does it deliver.
-
-    python research/fabfos/benchmarks/aam_v3_nostoc.py [chunk ...]
-
-One two-point solve per bake chunk: N2 into the `NOS` GPR, the biomass endpoints out,
-element N, no mask. The campaign's own success indicator, so it is a committed driver
-rather than a session's scratch file — the r6 reading was taken by hand and had to be
-rebuilt from the numbers it left behind before r7 could be compared to it.
-
-IT TAKES CHUNK NAMES BECAUSE IT USED TO COMPARE GENERATIONS, and only one is on disk
-now: r7 is `metabolism_bake` and the two it was measured against are reachable from the
-commits that pinned them, not from a second live copy. The readings all three gave are
-in `aam_r6_verification.md`; check one out here if a comparison needs re-running.
-
-Composition is not needed. `nostoc_ecspr.py` stages the singleton through
-`ecspr.model.compose`, but a singleton has no bridges and the carrier blacklist only
-blocks bridges, so the composed graph and this bare bake slice measure identically —
-checked, not assumed.
-
-THE ORF IS ALSO THE UNIT. `gpr_4lane` writes the schema's bare core, which carries no
-`attribution` block, so nothing in it names the background a row belongs to; the shim
-below supplies `unit_id` from `orf`. That is the only mapping under which belief
-conservation means what `compose.py` asserts it means (`sum(E_full) == n_orfs`); the
-alternatives are off by a factor, not by a rounding. It reproduces the r6 reading's
-network exactly — 7,978 reactions used against 5,149 in the AAM gap, 31 endpoints, the
-same four N2<->NH4 reactions, and the deployed bake abstaining on a missing source — and
-lands 0.16% high on the conductance scalar, which is unexplained and does not move any
-verdict here.
-"""
 from __future__ import annotations
 
 import sys
@@ -48,8 +19,6 @@ NH4 = "MNXM729302"
 GPR = REPO / "data/fabfos/nostoc/annotation/NOS/gpr_4lane.parquet"
 CACHE = Path(__file__).resolve().parent / "eydallin" / "cache"
 
-# Verbatim from `research/fabfos/examples/nostoc_ecspr.py` — the biomass endpoints, in
-# the same order, filtered here the same way: by presence in this element's pair table.
 PRECURSORS = {
     "L-alanine": "MNXM1105732", "L-arginine": "MNXM739527",
     "L-asparagine": "MNXM1107821", "L-aspartate": "MNXM1364497",
@@ -69,7 +38,6 @@ BY_ID = {v: k for k, v in PRECURSORS.items()}
 
 
 def decoded(chunk: str):
-    """`(atom_pairs, direction)` paths, decoded out of one bake chunk and cached."""
     bake_pairs.BAKE = REPO / "data/fabfos/processed" / chunk
     bake_pairs.CACHE = CACHE / chunk
     bake_pairs.CACHE.mkdir(parents=True, exist_ok=True)

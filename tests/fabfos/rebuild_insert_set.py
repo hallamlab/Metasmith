@@ -46,13 +46,11 @@ from fabfos.algorithm import fabfos_recovery as fr   # noqa: E402
 
 ASSEMBLIES = REPO / "data/fabfos/runs/scadc_fosmids/assembly/assemblies"
 VECTOR = REPO / "data/fabfos/originals/vector/pcc1.fna"
-# blastn is looked up on PATH; nothing else on this machine carries it.
 BLAST_BIN = Path(os.environ.get("FABFOS_BLAST_BIN",
                                 "/home/tony/lib/miniforge3/envs/fabfos-bio/bin"))
 
 
 def pools():
-    """-> {pool: {suffix: path}} for every pool with all five files present."""
     found = {}
     for f in sorted(ASSEMBLIES.iterdir()):
         if f.suffix in (".md", "") or f.name == "MD5SUMS":
@@ -67,7 +65,6 @@ def pools():
 
 
 def backbone(work):
-    """Record 1 of the vector file, written out on its own."""
     out = work / "backbone.fna"
     if not out.exists():
         name, desc, seq = next(iter(fr.read_fasta(VECTOR)))
@@ -117,7 +114,6 @@ def main():
         splits.append((junctions, split))
         print(f"[{i}/{len(selected)}] {pool}", flush=True)
 
-    # One dedup over every pool's pieces -- there is one insert set for the run.
     allsplit = work / "all_split.fna"
     with open(allsplit, "w") as fh:
         for _j, s in splits:
@@ -130,12 +126,6 @@ def main():
         for j, _s in splits:
             fh.write(j.read_text())
 
-    # The reference reads are mapped against is NOT the insert set. Recovery
-    # excises the backbone from every insert by design, so a read off the vector
-    # has nowhere to go and the mapped fraction reads as lost recovery -- 79-85%
-    # here against the 90-99% an archived run reported over vector-depleted
-    # reads. One extra record makes the number account for the whole library and
-    # turns the gap into a direct per-pool measurement of the vector share.
     ref = out / "mapping_reference.fna"
     recs = list(fr.read_fasta(out / "inserts.fna"))
     name, desc, seq = next(iter(fr.read_fasta(bb)))

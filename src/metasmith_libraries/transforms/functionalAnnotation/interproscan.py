@@ -53,13 +53,8 @@ def protocol(context: ExecutionContext):
     cpus = context.params.get("cpus")
     cpus_string = "" if cpus is None else f"--cpu {cpus}"
 
-    # Extract InterProScan data archive locally
     context.LocalShell(f"pigz -dc {idata.local} | tar xf -")
 
-    # sed to remove stop codon asterisks from protein sequences
-    # Run InterProScan with extracted data directory. I5OPTS bumps the
-    # JVM heap so the Java side can address most of the container RAM
-    # (default Xmx is too small and OOMs on full-sample protein FASTAs).
     context.ExecWithEnv().ifContainerDo(
         env=image,
         binds=[(context.external_cwd/"data", "/opt/interproscan/data")],
@@ -78,7 +73,6 @@ def protocol(context: ExecutionContext):
         """,
     )
 
-    # Parse GFF3 output into CSV
     gff_files = list(Path("output").glob("*.gff3"))
     if gff_files:
         parse_interpro_gff(str(gff_files[0]), str(igff.local))

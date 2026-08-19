@@ -22,8 +22,6 @@ def ResetGenerator():
 def CurrentTimeMillis():
     return StdTime.CurrentTimeMillis()
 
-# removes: colors, escape, control sequences
-# https://stackoverflow.com/questions/14693701/how-can-i-remove-the-ansi-escape-sequences-from-a-string-in-python 
 def StripANSI(s: str):
     return re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])').sub('', s)
 
@@ -33,24 +31,6 @@ def RemoveTrailingNewline(s):
     return s
 
 def RemoveLeadingIndent(s: str):
-    """Dedent by the COMMON indent, not by the first non-empty line's.
-
-    Measuring off the first line and slicing that many characters off every line
-    destroys any line that is deliberately less indented -- and a heredoc body is
-    exactly that. An embedded
-
-        python3 - <<'PY'
-    lines of script at column 0
-    PY
-
-    lost 8 characters from every line of the script and the terminator lost its
-    own line, so the shell never saw `PY` and the command died on an unterminated
-    heredoc. Taking the minimum leaves such a block untouched.
-
-    Whitespace-only lines carry no indent information (a blank line inside an
-    otherwise indented block is usually truly empty), so they do not drag the
-    minimum to zero.
-    """
     lines = s.split("\n")
     if len(lines) == 0: return s
     def _indent_of(line: str):
@@ -58,7 +38,7 @@ def RemoveLeadingIndent(s: str):
         for c in line:
             if c not in {" ", "\t"}: return n
             n += 1
-        return None  # whitespace-only
+        return None
     indents = [i for i in (_indent_of(l) for l in lines) if i is not None]
     indent = min(indents) if indents else 0
     cleaned = "\n".join([l[indent:] for l in lines])
@@ -67,9 +47,6 @@ def RemoveLeadingIndent(s: str):
     return cleaned
 
 def AwaitCheck(check: Callable[[], bool], timeout: float):
-    """
-    returns when @check succeeds or raises TimeoutError after @timeout seconds
-    """
     timeout*=1000
     start = CurrentTimeMillis()
     dt = 0.02
@@ -82,26 +59,18 @@ def AwaitCheck(check: Callable[[], bool], timeout: float):
         dt *= 2
 
 MAX_READERS = 256
-# Pathological-input guard: cap how much we'll buffer for an incomplete
-# line. Hitting this cap emits one Log.Warning and drops the head of the
-# buffer; the stream stays alive (G8).
-MAX_LINE_BYTES = 1 << 20  # 1 MiB
+MAX_LINE_BYTES = 1 << 20
 _readers = set()
 class NonBlockingReader:
     def __init__(self, io_handle: int, on_close: Callable[[NonBlockingReader], None] = None, sep: bytes = b"\n") -> None:
         self._callbacks = []
         self._lock = Condition()
-        self._notify_out, self._notify_in = os.pipe() # https://stackoverflow.com/a/57341500/13690762
+        self._notify_out, self._notify_in = os.pipe()
         self._on_close = on_close
         self._sep = sep
         self._worker = None
         self._is_closed = False
         self._io_handle = io_handle
-        # Marked on every non-empty read, *before* the line split. A caller
-        # bounding an operation by silence needs to know the far end is still
-        # emitting bytes -- rsync's progress redraws a line with carriage
-        # returns and may not complete one for minutes on a large file, so a
-        # mark taken per line would call a healthy transfer dead.
         self._last_read_at = monotonic()
         self._start(io_handle)
 
@@ -119,28 +88,22 @@ class NonBlockingReader:
                 nonlocal _buffer, _buffer_bytes
                 changed = False
                 while True:
-                    # https://stackoverflow.com/a/21429655/13690762
-                    r, _, _ = select([ fd, self._notify_out ], [], [], 60) # allows unblock with notify_out
+                    r, _, _ = select([ fd, self._notify_out ], [], [], 60)
                     if self.IsClosed():
                         return []
                     if fd not in r:
-                        # select woke for notify_out (dispose) or timed out; loop and re-check
                         continue
                     try:
                         chunk = os.read(fd, 4096)
                     except OSError:
-                        # fd closed underneath us
                         _eof[0] = True
                         break
                     if len(chunk) == 0:
-                        # Real EOF on the fd. Flush any remainder and stop.
                         _eof[0] = True
                         break
                     self._last_read_at = monotonic()
                     _buffer.append(chunk)
                     _buffer_bytes += len(chunk)
-                    # Bound the buffer: if a single line exceeds MAX_LINE_BYTES,
-                    # drop from the head, warn once, and keep going.
                     if _buffer_bytes > MAX_LINE_BYTES:
                         joined = b''.join(_buffer)
                         joined = joined[-MAX_LINE_BYTES:]
@@ -150,7 +113,7 @@ class NonBlockingReader:
                             Log.Warn(f"NonBlockingReader: truncating oversized incomplete line on fd {fd}")
                             _truncation_warned[0] = True
                     changed = True
-                    if self._sep in chunk: break # line complete
+                    if self._sep in chunk: break
                 if not changed and not _eof[0]: return []
 
                 joined = b''.join(_buffer)
@@ -165,7 +128,6 @@ class NonBlockingReader:
                 _buffer.clear()
                 _buffer_bytes = 0
                 if _eof[0]:
-                    # On EOF, emit whatever's left as a final segment
                     if len(remainder) > 0:
                         complete_segments.append(remainder)
                 else:
@@ -201,14 +163,13 @@ class NonBlockingReader:
                                 Log.Error(f"NonBlockingReader callback raised: [{cb_err}]")
                     reset_wait()
                     if _eof[0]:
-                        # EOF reached on fd. Stop the reader cleanly.
                         with self._lock:
                             self._is_closed = True
                         break
-                except OSError as e: # fd closed
-                    if e.errno == 9: # Bad file descriptor
+                except OSError as e:
+                    if e.errno == 9:
                         break
-                    else: # likely a race condition
+                    else:
                         scaling_wait()
                 except KeyboardInterrupt:
                     with self._lock:
@@ -217,7 +178,6 @@ class NonBlockingReader:
             if callable(self._on_close): self._on_close(self)
 
         self._worker = Thread(target=reader, args=[io_handle, self._callbacks])
-        # self._worker = Greenlet(reader, io_handle, self._callbacks)
         self._worker.start()
 
     def RegisterCallback(self, callback: Callable[[bytes], None]):
@@ -231,7 +191,6 @@ class NonBlockingReader:
             return self._is_closed
 
     def SecondsSinceRead(self) -> float:
-        """How long this stream has been silent, in seconds."""
         return monotonic() - self._last_read_at
 
     def Dispose(self):
@@ -242,9 +201,8 @@ class NonBlockingReader:
 
                 if self._worker is None: break
                 if not self._worker.is_alive(): break
-                # if self._worker.dead: break
                 try:
-                    os.write(self._notify_in, b"dispose") # unblock reader
+                    os.write(self._notify_in, b"dispose")
                 except OSError:
                     pass
                 
@@ -255,14 +213,13 @@ class NonBlockingReader:
                     Log.Error(f"NonBlockingReader.Dispose() [{e}]")
                     break
                 except TimeoutError:
-                    continue # try again
+                    continue
 
             for fd in [self._notify_in, self._notify_out]:
                 try:
                     os.close(fd)
                 except OSError as e:
                     pass
-                #     Log.Error(f"NonBlockingReader.Dispose() fd:{fd} [{e}]")
         finally:
             if self in _readers:
                 _readers.remove(self)

@@ -1,33 +1,3 @@
-"""Both probes, run over one condition or over a whole conditions table.
-
-ONE OUTPUT SCHEMA, WHATEVER THE PROBE
--------------------------------------
-Every measurement is a row of ``(condition_id, probe, orientation, element,
-readout, value)``. ``readout`` is a sink metabolite, any metabolite from the
-universal ground's draw vector, or ``total``. That is what lets
-:mod:`ecspr.model.scoring` be probe-blind, and it is why a baseline is named at SCORING
-time rather than flagged at measurement time: a delta is a subtraction over rows,
-never something a probe was told to compute.
-
-Readouts whose name starts with ``_`` are per-condition DIAGNOSTICS carried in the
-same table -- coverage, convergence, the AAM gap. Scoring ignores them; a coverage
-audit filters for them. They are here rather than in a sidecar file because a
-result whose coverage lives in another artifact is a result someone will read
-without it.
-
-A METABOLITE ABSENT FROM THE DRAW IS A COVERAGE GAP, NOT A ZERO
----------------------------------------------------------------
-``measure_leak``'s draw covers metabolites that are actual NODES of the built
-graph. A sink that never became a node emits no row at all, and ``_missing_sinks``
-records it: reading a missing key as zero is how an arm with the smaller graph
-wins by abstaining.
-
-RESUME IS PER CONDITION
------------------------
-Each condition writes its own shard as soon as it is solved, and a rerun skips
-shards already on disk. This workstation kills long local jobs, and a thousand-draw
-null is exactly the shape of run that gets killed at draw 900.
-"""
 from __future__ import annotations
 
 import hashlib
@@ -48,11 +18,6 @@ RESULT_COLUMNS = ("condition_id", "probe", "orientation", "element", "readout", 
 
 
 class Basis:
-    """The reference basis every condition in a run is measured against: the atom
-    pairs, the direction ratios, the element and the orientation. Loaded once --
-    the carbon slice alone is ~2M rows -- and shared across every condition, which
-    is also the only way the observed and null arms can be the same measurement."""
-
     def __init__(self, atom_pairs, direction=None, *, element="C",
                  orientation="as_written"):
         if orientation not in ORIENTATIONS:
@@ -77,7 +42,6 @@ def _rows(cid, probe, orientation, element, pairs):
 
 def measure(basis: Basis, gpr: pd.DataFrame, c: cond_mod.Condition, *, probe: str,
             weighting="belief", leak=1e-6, port=1.0, readouts="sinks") -> list:
-    """One condition -> result rows. The whole of what a probe does."""
     if probe not in PROBES:
         raise ValueError(f"probe must be one of {PROBES}, got {probe!r}")
     element = c.element or basis.element
@@ -93,9 +57,6 @@ def measure(basis: Basis, gpr: pd.DataFrame, c: cond_mod.Condition, *, probe: st
     src = Terminal.metabolite(g, c.source_hub, label="source")
     diag.append(("_missing_source", len(src.missing)))
     if g.m == 0 or not src.nodes:
-        # A definite abstention, not a zero: no edge survived the mask, or the
-        # injection point never became a node. Emitting a 0.0 total here would put
-        # a number in the denominator that means "unmeasurable".
         diag.append(("_abstained", 1))
         return _rows(c.condition_id, probe, basis.orientation, element, diag)
     diag.append(("_abstained", 0))
@@ -134,7 +95,6 @@ def _shard_name(c: cond_mod.Condition, probe, orientation) -> str:
 
 def run(basis: Basis, gpr_paths, conditions, *, probe, weighting="belief", leak=1e-6,
         port=1.0, readouts="sinks", shard_dir=None, log=print) -> pd.DataFrame:
-    """Measure every condition, sharding to disk and resuming from what is there."""
     gpr = load_gpr(gpr_paths)
     shard_dir = Path(shard_dir) if shard_dir else None
     if shard_dir:
@@ -175,9 +135,5 @@ def write_results(df: pd.DataFrame, path):
 
 def read_results(path) -> pd.DataFrame:
     p = Path(path)
-    # `float_precision="round_trip"`, not pandas' default. The default C converter is
-    # fast and lossy in the last few digits, which is invisible until a benchmark
-    # compares a written result against the value that produced it and finds them
-    # unequal at 1e-16. A results table that does not round-trip is not a record.
     return (pd.read_parquet(p) if p.suffix == ".parquet"
             else pd.read_csv(p, sep="\t", float_precision="round_trip"))

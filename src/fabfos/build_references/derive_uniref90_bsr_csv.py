@@ -74,13 +74,6 @@ _UNIREF_PREFIX = re.compile(r"^UniRef\d+_")
 
 
 def clean_stitle(stitle: str) -> str:
-    """Drop the leading `UniRefNN_ID` token, keep everything after it.
-
-    Not a regex on the accession: `stitle` is `<sseqid> <description>` verbatim out
-    of DIAMOND, so the token to remove is exactly the first whitespace-delimited
-    field. Matching on `UniRef\\d+_\\S+` instead would also eat a description that
-    happens to start with one.
-    """
     _, _, rest = stitle.partition(" ")
     return rest
 
@@ -102,9 +95,6 @@ def derive(src: Path, sep: str, id_column: str) -> tuple[list[str], list[list[st
             r = dict(zip(BLAST6_BSR_COLS, line))
             ident, found, orf = r["qseqid"].rpartition(sep)
             if not found:
-                # Not fatal on its own -- report the count and let the caller judge,
-                # because a wholly unsplit column is a wrong `--split`, while one or
-                # two is a genuinely odd id.
                 unsplit += 1
                 ident, orf = r["qseqid"], ""
             rows.append([
@@ -128,7 +118,6 @@ def write(dest: Path, header: list[str], rows: list[list[str]]) -> None:
 
 
 def selftest(src: Path, shipped: Path, sep: str, id_column: str) -> int:
-    """Re-derive a shipped table from its own source and diff. The whole warrant."""
     header, rows = derive(src, sep, id_column)
     import io
     buf = io.StringIO()

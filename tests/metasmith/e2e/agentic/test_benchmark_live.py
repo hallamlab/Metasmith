@@ -1,15 +1,3 @@
-"""Live (opt-in) benchmark runs, driven through the real harness.
-
-Marked ``e2e_agentic`` so they are deselected from the default unit suite. Use
-these to drive a real (or ``--dry-run``) benchmark cell:
-
-    pytest tests/e2e/agentic/test_benchmark_live.py --dry-run --arm A7 -q
-    pytest tests/e2e/agentic/test_benchmark_live.py::test_t3_run --arm A10
-
-The arm is chosen via the ``--arm`` option (default A10); ``run_scenario`` builds
-the sandbox, provisions the arm's start-state, renders the prompt, runs the ralph
-loop, and verifies. ``--dry-run`` stops after rendering the prompt.
-"""
 from __future__ import annotations
 
 import pytest
@@ -35,7 +23,6 @@ def _assert_ok(scenario, run_scenario, runtime="DOCKER"):
 
 @pytest.mark.e2e_agentic
 def test_t3_run(run_scenario):
-    # The reference cell — fully real for A10 (metasmith) and A7 (container/ad-hoc).
     _assert_ok(RunScenario(), run_scenario)
 
 

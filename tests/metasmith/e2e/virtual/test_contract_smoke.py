@@ -1,5 +1,3 @@
-"""Smoke tests for `ContractRuntime` and the new `mock_transforms` shapes."""
-
 from __future__ import annotations
 
 from pathlib import Path
@@ -26,18 +24,12 @@ from metasmith.testing.plan_oracle import PlanExecutionOracle
 from .conftest import create_transform_library
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-
 def _configure_paths(monkeypatch, home: Path) -> None:
     monkeypatch.setattr(AgentPaths, "HOME_ROOT", home)
     monkeypatch.setattr(AgentPaths, "WORK_ROOT", home / "_ws")
 
 
 def _make_types_file(tmp_path: Path, names: dict[str, set[str]]) -> Path:
-    """Write a DataTypeLibrary file with each name mapped to its property set."""
     types = DataTypeLibrary()
     for name, props in names.items():
         types[name] = Endpoint(properties=props or {name})
@@ -67,13 +59,7 @@ def _make_samples(
     return lib
 
 
-# ---------------------------------------------------------------------------
-# A. ContractRuntime: 2-step linear identity plan
-# ---------------------------------------------------------------------------
-
-
 def test_contract_runtime_two_step_linear_identity(tmp_path, monkeypatch):
-    """2-step linear plan stages cleanly and the report passes core checks."""
     home = tmp_path / "contract_home"
     home.mkdir(parents=True, exist_ok=True)
     _configure_paths(monkeypatch, home)
@@ -126,7 +112,6 @@ def test_contract_runtime_two_step_linear_identity(tmp_path, monkeypatch):
     assert report.cacheable_flags_propagated is True, (
         f"cacheable propagation failed: {report.errors}"
     )
-    # Every step's inputs should be reachable from upstream channels.
     for step in compiled.task.plan.steps:
         key = f"step_{step.order}"
         assert key in report.step_inputs_reachable
@@ -135,15 +120,11 @@ def test_contract_runtime_two_step_linear_identity(tmp_path, monkeypatch):
         f"emitted unmountable addresses: {report.address_violations}"
     )
 
-    # Oracle bridge: same result via PlanExecutionOracle.
     oracle = PlanExecutionOracle(compiled.task)
     report2 = oracle.validate_contract_only(compiled.task.plan, compiled)
     assert report2.nf_compiles is True
     assert report2.produces_match_plan is True
 
-    # And again with the host and container views of the agent home held
-    # apart — the containerized-agent shape, where a producer that reaches
-    # for the host spelling emits something no per-step container mounts.
     split = runtime.stage(task, external_home=tmp_path / "host_agent_home")
     split_report = runtime.validate(split)
     assert split_report.nf_compiles is True, (
@@ -155,13 +136,7 @@ def test_contract_runtime_two_step_linear_identity(tmp_path, monkeypatch):
     )
 
 
-# ---------------------------------------------------------------------------
-# B. multi_slot_producer: 3 distinct dtypes in the produced library
-# ---------------------------------------------------------------------------
-
-
 def test_multi_slot_producer_emits_three_distinct_dtypes(tmp_path):
-    """`multi_slot_producer(slots=3)` declares 3 slots, each its own dtype."""
     types_path = _make_types_file(
         tmp_path,
         {
@@ -176,8 +151,6 @@ def test_multi_slot_producer_emits_three_distinct_dtypes(tmp_path):
     transforms = multi_slot_producer(slots=3)
     tr_lib = create_transform_library(tmp_path / "tr_multi", types_path, transforms)
 
-    # Walk all transforms in the library; there should be exactly one,
-    # producing three branches each with one distinct dtype.
     found = list(tr_lib.IterateTransforms())
     assert len(found) == 1, f"expected one transform, got {len(found)}"
     _, inst = found[0]
@@ -192,13 +165,7 @@ def test_multi_slot_producer_emits_three_distinct_dtypes(tmp_path):
     )
 
 
-# ---------------------------------------------------------------------------
-# C. group_then_unfold: the two transforms compose
-# ---------------------------------------------------------------------------
-
-
 def test_group_then_unfold_pair_composes(tmp_path):
-    """`group_then_unfold()` returns two transforms wired through `mock::grouped`."""
     types_path = _make_types_file(
         tmp_path,
         {
@@ -220,9 +187,7 @@ def test_group_then_unfold_pair_composes(tmp_path):
     agg = by_name["group_aggregate"]
     uf = by_name["unfold_batch"]
 
-    # group_aggregate produces mock::grouped
     agg_outs = {dep.key for g in agg.model.produces for dep in g}
-    # unfold_batch consumes mock::grouped
     uf_ins = {dep.key for dep in uf.model.requires}
     assert agg_outs & uf_ins, (
         f"group_aggregate outputs {agg_outs} must intersect "

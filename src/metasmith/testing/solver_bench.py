@@ -37,7 +37,6 @@ from .solver_verification import (
 __all__ = ["CORPUS", "run_generated", "run_templates", "run_all", "diff"]
 
 
-#: (name, seed, dials) — fixed so a fingerprint means the same thing tomorrow.
 CORPUS: list[tuple[str, int, GeneratorDials]] = [
     ("chain-6", 1, GeneratorDials(n_types=6, n_extra_transforms=3)),
     ("chain-10", 2, GeneratorDials(n_types=10, n_extra_transforms=6)),
@@ -86,18 +85,6 @@ CORPUS: list[tuple[str, int, GeneratorDials]] = [
 ]
 
 
-#: Deliberately expensive instances, kept out of `CORPUS` so the pinned fast
-#: gate stays fast. These are *mcts*-bound — the search itself, not the
-#: refiner. The shipped templates are the opposite (metagenomics spends >99% of
-#: its solve inside `refine_mcts`), which is why the perf corpus needs both:
-#: a change that only helps one phase looks free on the other's cases.
-#:
-#: The genuinely refiner-bound instances are deliberately *not* here. They are
-#: `sink-178` under solve seed 7 and `sink-24` under 2³¹−1, and both need a
-#: pinned `max_refine` to terminate at all — a corpus entry that only carries a
-#: problem seed cannot express them, and one of them does not finish at the
-#: default budget in either implementation. They live in
-#: `tests/perf/test_solver_differential.py`, which can say what budget it means.
 STRESS_CORPUS: list[tuple[str, int, GeneratorDials]] = [
     (
         "wide-search",
@@ -139,18 +126,10 @@ STRESS_CORPUS: list[tuple[str, int, GeneratorDials]] = [
 
 
 def _libraries_root() -> Path | None:
-    """The standard library to benchmark against, or None to skip.
-
-    It is in this repo: `src/metasmith_libraries`, a sibling package of this
-    one. The archived `metasmith-libraries` checkout this used to look for is
-    gone, and `_metadata/` is compiled rather than tracked — so `None` here
-    means "nobody has run `dev/libraries.sh -bm`", not "no library".
-    """
     env = os.environ.get("METASMITH_LIBRARIES_ROOT")
     if env:
         p = Path(env).expanduser().resolve()
         return p if p.exists() else None
-    # .../src/metasmith/testing/solver_bench.py -> .../src/metasmith_libraries
     root = Path(__file__).resolve().parents[2] / "metasmith_libraries"
     compiled = root / "transforms" / "logistics" / "_metadata" / "index.yml"
     return root if compiled.exists() else None
@@ -191,8 +170,6 @@ def run_templates(root: Path | None = None) -> dict[str, Any]:
         result = getattr(task.plan, "_solver_result", None)
         problem = problem_of_plan(task.plan, name=template.name)
         if problem is None or result is None:
-            # Not "nothing to check" -- an unadjudicable template is a hole in
-            # the gate, and a silent skip here is how it would stay one.
             verdict_ok, violations = False, [
                 "plan carries no solver inputs, so the checker cannot see it"
             ]
@@ -226,8 +203,6 @@ def run_all(*, templates: bool = True, root: Path | None = None) -> dict[str, An
 
 
 def diff(baseline: dict[str, Any], current: dict[str, Any]) -> list[str]:
-    """Human-readable report; fingerprint changes come first because they are
-    the only line that can veto a change."""
     lines: list[str] = []
     b, c = baseline["cases"], current["cases"]
     changed = [k for k in sorted(set(b) & set(c)) if b[k]["fingerprint"] != c[k]["fingerprint"]]
@@ -278,7 +253,6 @@ def main(argv: list[str] | None = None) -> int:
     if args.out:
         args.out.write_text(json.dumps(current, indent=2), encoding="utf-8")
     if args.pin:
-        # timings are machine noise and would churn the diff on every run
         pin = {
             "cases": {
                 k: {f: v[f] for f in ("fingerprint", "steps", "ok")}

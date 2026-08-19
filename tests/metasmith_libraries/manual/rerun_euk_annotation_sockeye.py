@@ -1,10 +1,4 @@
 #!/usr/bin/env python
-"""Re-run eggNOG annotation using previously downloaded DB + pprodigal ORFs.
-
-The downloadEggnogDB step exited with code 1 despite the DB being fully
-downloaded/decompressed. This script provides the DB and ORFs directly
-as inputs so we only need to run eggnog_mapper.
-"""
 import sys
 import time
 sys.stdout.reconfigure(line_buffering=True)
@@ -19,13 +13,10 @@ from metasmith.python_api import (
 
 MLIB = Path(__file__).resolve().parent.parent.parent
 
-# Pre-existing data on Sockeye from previous runs
 PREV_RUN = Path("/scratch/st-shallam-1/pwy_group/metasmith/runs/eguEpdhP")
 ANNOT_RUN = Path("/scratch/st-shallam-1/pwy_group/metasmith/runs/l16XOO97")
 
-# eggNOG DB (downloaded in l16XOO97, all files present despite exit code 1)
 EGGNOG_DB = ANNOT_RUN / "nxf_work/da/524b2239d32eb1515de4c2ed2f01a2/1-1-1.nO6YGyJx7w2CFYPZ-KIapn0ju"
-# ORFs from pprodigal (completed in l16XOO97)
 ORFS = ANNOT_RUN / "nxf_work/96/db239ab848b9bd6158e47a822a4cd6/1-1-1.SS41y8j3VqT9mmpP-28NRtNMg.faa"
 
 
@@ -59,7 +50,6 @@ def main():
     for tl in ["sequences.yml", "annotation.yml"]:
         inputs.AddTypeLibrary(MLIB / "data_types" / tl)
 
-    # Provide pre-computed inputs directly
     inputs.AddItem(ORFS, "sequences::orfs")
     inputs.AddItem(EGGNOG_DB, "annotation::eggnog_data")
 
@@ -97,7 +87,7 @@ def main():
     print("\n=== Waiting for completion ===")
     results_path = smith.GetResultSource(task).GetPath()
     t0 = time.time()
-    timeout = 172800  # 48h
+    timeout = 172800
     last_print = 0
     while not (results_path / "_metadata").exists():
         elapsed = time.time() - t0

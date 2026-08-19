@@ -69,10 +69,6 @@ from metasmith.python_api import (
 
 from . import common
 
-# `ecspr_measure` lives in the `fabfos` transform domain, beside the GPR builders
-# whose product it consumes. It is a fabfos step -- the only one whose protocol is
-# an algorithm rather than a dispatch into somebody else's tool -- and it had a
-# domain of its own only while it was a contract with no protocol.
 DOMAINS = ["fabfos"]
 
 DEFAULT_ATOM_PAIRS = common.DATA_PROCESSED / "metabolism_bake" / "atom_pairs.parquet"
@@ -99,16 +95,6 @@ def parse_unit(spec: str) -> Unit:
 def build_inputs(work: Path, *, units: list[Unit], atom_pairs: Path | None,
                   direction_ratios: Path | None, stage: str = "reference"
                   ) -> tuple[DataInstanceLibrary, dict[str, Path]]:
-    """``stage="copy"`` copies every input into the library instead of naming it.
-
-    An input given as an absolute LOCAL path is an EXTERNAL input: metasmith binds it
-    verbatim into the remote container and does not transfer it, so a remote agent
-    refuses to stage a workflow whose inputs live only on this machine. Copying makes
-    each one a relative member of the library, which travels with the task. That is
-    affordable here and nowhere near affordable for the annotation lane's references --
-    a composed network is tens of megabytes, the DIAMOND database is tens of gigabytes,
-    which is why those stay external and are proved resident by the caller instead.
-    """
     lib = common.resolve_library_root()
 
     inputs = DataInstanceLibrary(work / "inputs.xgdb")
@@ -119,10 +105,6 @@ def build_inputs(work: Path, *, units: list[Unit], atom_pairs: Path | None,
     def _add(path: Path, dtype: str, *, name: str, parents=None):
         p = Path(path).expanduser().resolve()
         if stage == "copy":
-            # Named for the UNIT, not for the file. Every composed network calls its
-            # tables `gpr.parquet` / `atom_pairs.parquet`, and nextflow stages a
-            # process's inputs by basename -- two of them in one library would collide
-            # on a name and silently hand a step the wrong network.
             shutil.copy(p, inputs.location / name)
             inputs.AddItem(name, dtype, parents=parents or set())
         else:
@@ -156,15 +138,6 @@ def generate_workflow(work: Path, *, units: list[Unit], atom_pairs: Path | None,
                        direction_ratios: Path | None, runtime: Runtime,
                        agent_env: str | None = None, stage: str = "reference",
                        agent=None, on_inputs=None):
-    """``on_inputs(inputs)`` runs after the library is built and before planning.
-
-    The one seam a site needs, and the same one ``annotation.generate_workflow``
-    exposes: instance identities are settled at this point and the plan key is derived
-    from them, so anything that must hold about them has to happen here or not at all.
-    ``agent`` is injected for the same reason -- a cluster driver and the shipped gate
-    must resolve this stage through one code path, with the site's hostnames and
-    accounts staying with the caller.
-    """
     lib = common.resolve_library_root()
     inputs, stubs = build_inputs(
         work, units=units, atom_pairs=atom_pairs,

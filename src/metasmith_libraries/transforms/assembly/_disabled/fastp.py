@@ -14,7 +14,6 @@ def protocol(context: ExecutionContext):
     ijson=context.Output(report_json)
     ihtml=context.Output(report_html)
 
-    # todo: custom container with pigz
     threads = context.params.get('cpus')
     threads = "" if threads is None else f"--thread {threads}"
     context.ExecWithEnv().ifContainerDo(

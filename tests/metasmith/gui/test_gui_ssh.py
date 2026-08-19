@@ -1,4 +1,3 @@
-"""The SSH config manager: what metasmith owns, and what it refuses to touch."""
 from __future__ import annotations
 
 import stat
@@ -13,9 +12,6 @@ from metasmith.gui.sshconfig import (
     SshConfigError,
 )
 
-# tests/gui/ IS the GUI's own suite -- conftest stamps `gui` (and `fast`) on
-# everything under it, and `dev.sh -tg` runs the directory. This line is kept
-# as a local reminder of what the file is for; it is no longer what selects it.
 pytestmark = pytest.mark.gui
 
 @pytest.fixture
@@ -57,7 +53,6 @@ Host beta
         assert all(h["user"] == "shared" for h in cfg.hosts())
 
     def test_wildcards_are_not_destinations(self, cfg, cfg_path):
-        """A pattern block sets defaults for other hosts; you cannot connect to it."""
         _write(cfg_path, """
 Host *
     ServerAliveInterval 30
@@ -75,7 +70,6 @@ Host real
         assert cfg.hosts()[0]["hostname"] == "alpha.example.org"
 
     def test_match_block_keywords_are_not_the_hosts(self, cfg, cfg_path):
-        """A Match block is conditional; its settings do not belong to the host above."""
         _write(cfg_path, """
 Host alpha
     HostName alpha.example.org
@@ -86,21 +80,11 @@ Match host beta
         assert cfg.hosts()[0]["user"] is None
 
     def test_first_value_wins(self, cfg, cfg_path):
-        """ssh takes the first value it finds for a keyword; so does this."""
         _write(cfg_path, "Host alpha\n    User first\n    User second\n")
         assert cfg.hosts()[0]["user"] == "first"
 
 
 class TestDuplicateAliases:
-    """An alias declared more than once is one host, not several.
-
-    Real configs do this constantly -- a `Host a b c` line that overlaps another,
-    or the same alias in two included files. ssh merges them first-value-wins; a
-    host list that repeated the alias instead used to reach the GUI as two rail
-    rows carrying the same key, which Svelte rejects outright (each_key_duplicate),
-    taking the whole page down with it.
-    """
-
     def test_repeated_alias_is_one_host(self, cfg, cfg_path):
         _write(cfg_path, """
 Host alpha
@@ -112,7 +96,6 @@ Host alpha
         assert [h["alias"] for h in cfg.hosts()] == ["alpha"]
 
     def test_repeated_alias_merges_first_wins(self, cfg, cfg_path):
-        """Each keyword resolves independently, to its earliest occurrence."""
         _write(cfg_path, """
 Host alpha
     HostName alpha.example.org
@@ -123,8 +106,8 @@ Host alpha
     Port 2222
 """)
         h = cfg.hosts()[0]
-        assert h["hostname"] == "alpha.example.org"  # earlier block wins
-        assert h["user"] == "tony"                   # only the later block has it
+        assert h["hostname"] == "alpha.example.org"
+        assert h["user"] == "tony"
         assert h["port"] == "2222"
 
     def test_overlapping_host_lines_collapse(self, cfg, cfg_path):
@@ -138,11 +121,10 @@ Host alpha
         _write(cfg_path, "Include extra\n\nHost alpha\n    HostName a\n")
         hosts = cfg.hosts()
         assert [h["alias"] for h in hosts] == ["alpha"]
-        assert hosts[0]["user"] == "from-include"  # the Include is read first
+        assert hosts[0]["user"] == "from-include"
         assert hosts[0]["hostname"] == "a"
 
     def test_aliases_are_unique(self, cfg, cfg_path):
-        """The invariant the rail depends on: one row per alias, always."""
         _write(cfg_path, """
 Host alpha beta
 Host beta gamma
@@ -158,7 +140,6 @@ Include missing-on-purpose
         assert [p["alias"] for p in patterns] == ["*"]
 
     def test_definition_site_is_the_first_occurrence(self, cfg, cfg_path):
-        """Ownership questions ask about the block ssh would actually honour."""
         _write(cfg_path, "Host alpha\n    HostName first\n\nHost alpha\n    User u\n")
         assert cfg.find("alpha").line == 1
 
@@ -197,7 +178,6 @@ class TestCollisions:
         assert "already defined" in str(exc.value)
 
     def test_refusal_names_the_included_file(self, cfg, cfg_path):
-        """A host may live in a file the main config merely pulls in."""
         included = cfg_path.parent / "work.conf"
         _write(included, "Host sockeye\n    HostName s\n")
         _write(cfg_path, "Include work.conf\n")
@@ -210,7 +190,6 @@ class TestCollisions:
             cfg.add_host("*.example.org", "x")
 
     def test_a_wildcard_block_does_not_block_a_new_alias(self, cfg, cfg_path):
-        """`Host *` matches everything; refusing on that basis would refuse everything."""
         _write(cfg_path, "Host *\n    ServerAliveInterval 30\n")
         host = cfg.add_host("brand-new", "new.example.org")
         assert host["alias"] == "brand-new"
@@ -218,12 +197,6 @@ class TestCollisions:
 
 class TestManagedBlock:
     def test_block_is_written_first(self, cfg, cfg_path):
-        """Load-bearing placement.
-
-        ssh uses the first value it finds for each keyword, so a wildcard block
-        above the managed one would set User or IdentityFile for a brand-new
-        alias -- an entry that parses cleanly and connects as the wrong user.
-        """
         _write(cfg_path, "Host *\n    User wrong-user\n\nHost old\n    HostName o\n")
         cfg.add_host("fresh", "fresh.example.org", user="right-user")
 
@@ -264,7 +237,6 @@ class TestManagedBlock:
         assert "Host old" in after
 
     def test_round_tripping_the_editor_does_not_stack_preambles(self, cfg):
-        """split() hands back the preamble too; writing it straight back must not double it."""
         cfg.add_host("one", "one.example.org")
         for _ in range(3):
             _before, body, _after = cfg.split()
@@ -317,8 +289,6 @@ class TestOwnership:
 
 
 class TestRenamingAHost:
-    """The alias is the host's identity, and an update carries it like any field."""
-
     def test_rename_keeps_the_keywords(self, cfg):
         cfg.add_host("one", "one.example.org", user="a", port="2222")
         renamed = cfg.update_host("one", alias="uno")
@@ -393,7 +363,6 @@ class TestIdentityKeys:
         assert stat.S_IMODE(Path(out["path"]).stat().st_mode) == 0o600
 
     def test_generate_never_overwrites(self, cfg):
-        """A key already at that path may be the only way into a machine."""
         first = cfg.generate_identity("one")
         original = Path(first["path"]).read_bytes()
         again = cfg.generate_identity("one")
@@ -402,7 +371,6 @@ class TestIdentityKeys:
         assert Path(first["path"]).read_bytes() == original
 
     def test_generated_path_is_written_home_relative(self, cfg, monkeypatch, tmp_path):
-        """The config should read `~/.ssh/...`, not someone's absolute home."""
         monkeypatch.setattr(Path, "home", classmethod(lambda _cls: tmp_path))
         out = cfg.generate_identity("one")
         assert out["value"].startswith("~/")
@@ -435,7 +403,6 @@ class TestIdentityKeys:
             cfg.delete_identity("one")
 
     def test_delete_never_touches_a_key_we_did_not_generate(self, cfg, cfg_path):
-        """The user's own key is not ours to remove, whatever it is called."""
         theirs = cfg_path.parent / "id_ed25519"
         _write(theirs, "PRIVATE KEY")
         with pytest.raises(SshConfigError, match="no generated key"):
@@ -451,8 +418,6 @@ class TestIdentityKeys:
 
 
 class TestEditingBothHalves:
-    """The editor shows the whole file, so it can save the whole file."""
-
     def test_native_half_is_editable(self, cfg, cfg_path):
         _write(cfg_path, "Host theirs\n    HostName t\n")
         cfg.add_host("ours", "o")
@@ -462,7 +427,6 @@ class TestEditingBothHalves:
         assert by_alias["ours"]["hostname"] == "o"
 
     def test_managed_block_stays_first(self, cfg, cfg_path):
-        """The one thing a save may not do is reorder the file."""
         cfg.add_host("ours", "o")
         cfg.write_all(cfg.split()[1], "Host *\n    User wrong\n")
         lines = [ln for ln in cfg.read().splitlines() if ln.strip()]

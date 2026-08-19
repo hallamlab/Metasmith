@@ -1,17 +1,3 @@
-"""Identity entries must survive the library's own edit operations.
-
-`Rename`, `Remove` and `RenameByParent` migrate `manifest` and `parents`.
-`instance_meta` arrived later and was not added to any of them, which was
-harmless while it was only bookkeeping and stopped being harmless once
-instance ids became what cache keys are made of. The GUI's retype and
-repoint controls promote the latent bug to a one-click action.
-
-Two rules, and they differ because the two id kinds mean different things.
-A leaf id folds the library-relative path, so it re-derives on a rename.
-A lineage or imported id hashes how the output was produced and follows
-the file wherever it goes.
-"""
-
 from __future__ import annotations
 
 from pathlib import Path
@@ -43,12 +29,6 @@ def _lib(location: Path, types_path: Path) -> DataInstanceLibrary:
 
 
 def test_rename_re_mints_a_leaf_id_to_match_a_fresh_build(tmp_path, types_path):
-    """After a rename the id is what a library built at the new path holds.
-
-    Anything else leaves one library state with two possible ids depending
-    on how it got there, and two runs that should share a cache key stop
-    sharing one.
-    """
     lib = _lib(tmp_path / "a.xgdb", types_path)
     old_id = lib.Get(Path("s0/reads.fq")).instance_id
 
@@ -70,7 +50,6 @@ def test_rename_re_mints_a_leaf_id_to_match_a_fresh_build(tmp_path, types_path):
 
 
 def test_rename_carries_a_lineage_id_verbatim(tmp_path, types_path):
-    """A produced output's id hashes its provenance, not its location."""
     lib = _lib(tmp_path / "a.xgdb", types_path)
     (lib.location / "s0" / "out.fa").write_text(">c\nACGTACGT\n")
     lib.AddItem(Path("s0/out.fa"), "mock::assembly")
@@ -89,12 +68,6 @@ def test_rename_carries_a_lineage_id_verbatim(tmp_path, types_path):
 
 
 def test_remove_drops_the_identity_entry(tmp_path, types_path):
-    """A removed path must not hand its id to whatever is added there next.
-
-    Without this, remove-then-re-add at the same path with different bytes
-    resurrects the old id -- and a cache key built from it hits a shard
-    produced from content that is no longer there.
-    """
     lib = _lib(tmp_path / "a.xgdb", types_path)
     p = Path("s0/reads.fq")
     old_id = lib.Get(p).instance_id
@@ -110,7 +83,6 @@ def test_remove_drops_the_identity_entry(tmp_path, types_path):
 
 
 def test_rename_by_parent_migrates_identity(tmp_path, types_path):
-    """The bulk rename path gets the same treatment as the single one."""
     lib = DataInstanceLibrary(tmp_path / "a.xgdb")
     lib.AddTypeLibrary(types_path, namespace="mock")
     (lib.location / "s0").mkdir(parents=True, exist_ok=True)

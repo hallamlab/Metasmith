@@ -1,43 +1,3 @@
-"""ESM-C 600M -- the HuggingFace snapshot, as served, into `esm_c/<revision>/`.
-
-**The repository is not gated, and the weights need no token.** This file used to say
-the opposite, and acted on it by refusing without `HF_TOKEN`. Measured 2026-07-27 from
-a machine with no token at all: `biohub/esmc-600m-2024-12` answers
-`/api/models/...` with 200 and `"private": false`, a ranged GET of the checkpoint
-returns 206, and `EvolutionaryScale/esmc-600m-2024-12` -- the name the model is
-published under -- now answers **307, redirecting to `biohub/...`**. The weights are
-the same bytes either way: the blob under both names hashes to
-`8ef856e1a237ee3f995442df997a962e70057faadecf38fc0c8561bd3c2f4324`. So the ownership
-moved and the gate went with it, and the old refusal was blocking a lane over a
-condition that no longer holds. A token is still USED when present, because a
-rate-limited anonymous fetch is a real failure mode; it is simply not required.
-
-The size and member checks stay, and are the part that was always load-bearing. A
-truncated multi-gigabyte transfer leaves a file that exists, and so does an error body
-written by a naive `wget -O` -- neither is caught by anything except checking what
-landed.
-
-WHY THE REVISION IS READ FROM THE SERVER FIRST. `main` moves. The snapshot is
-resolved to a commit sha before any bytes are fetched, and that sha names the
-release directory -- so a directory in the originals tier always says exactly which
-revision it holds, and re-fetching that revision later is possible.
-
-WHAT LANDS. The repository as `huggingface_hub` returns it, tarred into
-`esmc_600m.tgz` with the layout the consumer expects:
-
-    data/weights/esmc_600m_2024_12_v0.pth     the 600M checkpoint
-    config.json  README.md  .gitattributes    the rest of the repo, verbatim
-
-The tar rather than a directory is not a carve: `functionalAnnotation/esm_c.py`
-untars it into a working directory and `chdir`s there, because the ESM SDK's
-`ESMC.from_pretrained` only accepts registered model NAMES and resolves
-`data/weights/<file>.pth` relative to the process's cwd. The archive IS the unit
-that layout belongs to.
-
-The checkpoint is 2,300,275,866 bytes and fir already holds it in a HuggingFace cache
-from the deployed method's run, so a rebuild there costs nothing; the fetch path is
-what makes a clean machine work.
-"""
 from metasmith.python_api import *
 
 lib   = TransformInstanceLibrary.ResolveParentLibrary(__file__)
@@ -46,12 +6,8 @@ model = Transform()
 image = model.AddRequirement(lib.GetType("env::python_for_data_science.env"))
 out   = model.AddProduct(lib.GetType("fabfos_data::esm_c"))
 
-# The canonical name 307-redirects here; fetching the target directly means the
-# recorded revision is the one actually served rather than one hop upstream of it.
 REPO_ID = "biohub/esmc-600m-2024-12"
 ARCHIVE = "esmc_600m.tgz"
-# The one file everything else is for. Checked by name and by size, because a gated
-# 401 body and a truncated transfer both produce a file that exists.
 WEIGHT_MEMBER = "data/weights/esmc_600m_2024_12_v0.pth"
 MIN_WEIGHT_BYTES = 2_000_000_000
 

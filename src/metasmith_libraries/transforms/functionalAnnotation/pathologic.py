@@ -16,7 +16,6 @@ def protocol(context: ExecutionContext):
     iarchive = context.Output(archive)
     itables  = context.Output(tables)
 
-    # Build 0.pf from the generic annotation table.
     build_pf = f"""
 import pandas as pd
 
@@ -56,7 +55,6 @@ with open("/ws/0.pf", "w") as f:
     context.LocalShell("mkdir -p ws")
     context.LocalShell("cat > _build_pf.py << 'PYEOF'\n" + build_pf + "\nPYEOF\n")
 
-    # Single container invocation: build .pf, run pathologic, dump CSVs, tar both.
     context.ExecWithEnv().ifContainerDo(
         env=image,
         binds=[(context.external_cwd / "ws", "/ws")],

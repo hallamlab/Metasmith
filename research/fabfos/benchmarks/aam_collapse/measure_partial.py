@@ -40,7 +40,6 @@ sys.path.insert(0, str(REPO / "src"))
 
 from ecspr.bake.aam import partial as P, worklist as W    # noqa: E402
 
-# Sweep rather than pick. The recorded no-mapping set has median length 983.
 PROXY_LENGTHS = (1600, 1200, 900, 600, 400)
 
 
@@ -51,9 +50,6 @@ def measure(label, targets, eq, formulas, smiles_of, ranks_of):
     verdicts = [r[1] for r in uni]
     return dict(population=label, n_reactions=len(targets),
                 forced_reaction_elements=fre, reduced_submissions=len(uni),
-                # A submission over the atom cap is not refused; it is routed to Indigo
-                # alone. Split out because it is the half whose yield is uncertain --
-                # see `research/fabfos/benchmarks/aam_cap/` for what Indigo does up there.
                 to_all_members=verdicts.count("mappable"),
                 to_indigo_only=verdicts.count("oversize"),
                 collapsed=sum(1 for r in uni if r[9]),
@@ -81,12 +77,9 @@ def main(argv=None):
     print(f"[partial] {len(wl):,} adjudicated reactions", flush=True)
 
     rows = []
-    # EXACT: the population the worklist itself refuses, after the collapse has had its
-    # second reading. No proxy involved -- this set is known.
     refused = list(wl.loc[wl["verdict"].isin(("oversize", "too_long")), "mnxr"])
     rows.append(measure("size-refused (exact)", refused, eq, formulas, smiles_of, ranks_of))
 
-    # PROXY: the mapper-returned-nothing population, approached by reaction length.
     for lo in PROXY_LENGTHS:
         tgt = list(wl.loc[(wl["verdict"] == "mappable")
                           & (wl["rxn_smiles"].str.len() >= lo), "mnxr"])

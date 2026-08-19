@@ -1,8 +1,3 @@
-# REVIEW: Uses `ganon build` against RefSeq archaea+bacteria (top genome
-# per species), which downloads taxonomy + sequences and builds the HIBF in
-# one step. Index files share the "ganon_db" prefix inside the output dir
-# per the ref::ganon2_db dtype declaration. Adjust --source / --top /
-# --taxonomy for a different scope.
 from metasmith.python_api import *
 
 lib   = TransformInstanceLibrary.ResolveParentLibrary(__file__)
@@ -12,13 +7,10 @@ out   = model.AddProduct(lib.GetType("ref::ganon2_db"))
 
 
 def protocol(context: ExecutionContext):
-    # ref::ganon2_db is a PREFIX: ganon writes <prefix>.hibf, <prefix>.tax
-    # and the classifier reads via `--db-prefix <prefix>`.
     iout = context.Output(out)
     threads = context.params.get('cpus')
     threads_arg = "" if threads is None else f"--threads {threads}"
 
-    # Same command either way: this tool is a plain CLI in both worlds.
     _cmd = f"""
             mkdir -p $(dirname {iout.container})
             ganon build --db-prefix {iout.container} \

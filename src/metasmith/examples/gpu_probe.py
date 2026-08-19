@@ -1,15 +1,7 @@
-"""Minimal GPU transform — the smallest thing that proves a device arrived.
-
-Emitting `--nv` or `--gpus all` proves nothing; a scheduler allocating a card
-proves nothing either if the flag never reaches the tool. So this asks the
-question from inside the tool container, with the tool's own `nvidia-smi`, and
-writes the answer to its output. It also records what the step *declared* and
-what the framework's own detection *found*, so the three can be compared.
-
-Declared `Gpus.OPTIONAL` on purpose: it must succeed on a CPU-only host too,
-which is what makes the fallback path honest rather than decorative.
-"""
-
+# Declared `Gpus.OPTIONAL` on purpose: this must succeed on a CPU-only host too,
+# which is what makes the fallback path honest rather than decorative. The probe
+# asks from inside the tool container with the tool's own `nvidia-smi`, because a
+# `--nv` flag on the command line proves nothing about what arrived.
 from metasmith.python_api import *
 
 lib = TransformInstanceLibrary.ResolveParentLibrary(__file__)
@@ -22,8 +14,6 @@ out = model.AddProduct(lib.GetType("examples::gpu_report"))
 def protocol(context: ExecutionContext):
     out_path = context.Output(out)
     declared, requested = context.DeclaredGpus()
-    # What the framework thinks is on the execution host, probed through the
-    # relay (container runtimes) or the local shell (mamba/native).
     detected = context.DetectGpus()
 
     header = [
@@ -41,8 +31,6 @@ def protocol(context: ExecutionContext):
         f'nvidia-smi -L 2>&1 || echo "no gpu visible in tool environment"; '
         f'}} > {out_path.container} 2>&1'
     )
-    # The whole point is asking from inside whichever environment the agent
-    # chose, so both arms are declared and the question is asked either way.
     context.ExecWithEnv() \
         .ifContainerDo(env=image, cmd=cmd) \
         .ifVirtualEnvDo(env=image, cmd=cmd)

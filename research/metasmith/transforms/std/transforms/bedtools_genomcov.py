@@ -19,7 +19,7 @@ def protocol(context: ExecutionContext):
     cpus         = context.params.get("cpus")
 
     Log.Info("calculating coverage")
-    cov_tsv = cov_bp_path.local.stem # stem to remove .gz
+    cov_tsv = cov_bp_path.local.stem
     _header = "\t".join(["contig", "start", "end", "fold_coverage"])
     context.ExecWithContainer(
         image = image_samtools,
@@ -49,7 +49,7 @@ def protocol(context: ExecutionContext):
                     current = l[1:-1].split(" ")[0]
                     length = 0
                 else:
-                    length += len(l)-1 # minus 1 for "\n"
+                    length += len(l)-1
             _submita()
     with open(cov_tsv) as f:
         with open(cov_path.local, "w") as of:
@@ -65,11 +65,10 @@ def protocol(context: ExecutionContext):
                 c = 0.0
                 for span, val in entry:
                     c += (span/total)*val
-                # assume no overlap, so total == total span of contig
                 of.write("\t".join(str(x) for x in [last_k, c, total])+"\n")
                 entry = []
 
-            f.readline() # header
+            f.readline()
             for l in f:
                 k, s, e, val = l[:-1].split("\t")
                 s, e, val = [int(x) for x in [s, e, val]]
@@ -79,7 +78,6 @@ def protocol(context: ExecutionContext):
                 entry.append((e-s, val))
             _submit()
 
-            # write no coverage contigs
             for k, l in contig2length.items():
                 if k in seen: continue
                 of.write("\t".join(str(x) for x in [k, 0, l])+"\n")

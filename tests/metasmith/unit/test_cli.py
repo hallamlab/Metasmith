@@ -1,4 +1,3 @@
-"""Smoke tests for the CLI dispatch layer (argparse, output formatting, error exit)."""
 from __future__ import annotations
 
 import json
@@ -44,7 +43,6 @@ class TestCLISmoke:
         ty = tmp_path / "ty.yml"
         _run("type", "create", str(ty),
              "--types", '{"foo": {"properties": ["bar"]}}', check=True)
-        # Both invocation orders should work.
         r1 = _run("--json", "build", "types", "-t", str(tmp_path))
         r2 = _run("--json", "build", "-t", str(tmp_path), "types")
         assert r1.returncode == 0 and r2.returncode == 0

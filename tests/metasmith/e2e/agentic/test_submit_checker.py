@@ -1,10 +1,3 @@
-"""Unit tests for the submit/checker path (plan T2).
-
-Covers: the ``submit`` control action + Control properties, the loop's
-``SUBMITTED`` outcome, the non-agentic checker (metasmith + baseline + validate),
-and the ``metasmith e2e submit`` CLI verb. No ``claude`` / real pipeline spawned
-— the checker's subprocess is faked via the ``runner`` seam.
-"""
 from __future__ import annotations
 
 from argparse import Namespace
@@ -29,11 +22,6 @@ from tests.metasmith.e2e.agentic.harness.loop import (
 )
 from tests.metasmith.e2e.agentic.scenarios.arms import ARM_BY_ID
 from tests.metasmith.e2e.agentic.scenarios.base import VerifyContext
-
-
-# ---------------------------------------------------------------------------
-# control contract
-# ---------------------------------------------------------------------------
 
 
 def test_submit_is_valid_action() -> None:
@@ -62,11 +50,6 @@ def test_control_done_still_submission(tmp_path: Path) -> None:
     write_control(tmp_path, "done", task_key="k")
     c = read_control(tmp_path)
     assert c.is_submission is True
-
-
-# ---------------------------------------------------------------------------
-# loop → SUBMITTED
-# ---------------------------------------------------------------------------
 
 
 @dataclass
@@ -102,11 +85,6 @@ def test_loop_stops_on_submit(tmp_path: Path) -> None:
     assert result.terminal_control.task_key == "tk"
 
 
-# ---------------------------------------------------------------------------
-# checker — fakeable runner
-# ---------------------------------------------------------------------------
-
-
 @dataclass
 class _FakeProc:
     returncode: int
@@ -115,7 +93,6 @@ class _FakeProc:
 
 
 class _Runner:
-    """Records argv; returns a scripted rc per (label inferred from argv)."""
     def __init__(self, rc_by_key=None, stdout_by_key=None):
         self.calls: list[list[str]] = []
         self.rc_by_key = rc_by_key or {}
@@ -131,7 +108,7 @@ class _Runner:
     def _key(argv) -> str:
         if "workflow" in argv:
             i = argv.index("workflow")
-            return argv[i + 1]           # run | wait | collect | result-source
+            return argv[i + 1]
         if "data" in argv and "load-remote" in argv:
             return "load-remote"
         return argv[0]
@@ -170,7 +147,7 @@ def test_checker_validate_is_noop(tmp_path: Path) -> None:
     r = _Runner()
     out = C.run_checker(vctx, res, action="validate", runner=r)
     assert out.ok and out.kind == "validate"
-    assert r.calls == []                 # nothing executed
+    assert r.calls == []
 
 
 def test_checker_metasmith_happy_path(tmp_path: Path) -> None:
@@ -183,14 +160,13 @@ def test_checker_metasmith_happy_path(tmp_path: Path) -> None:
     # run → wait → collect → result-source → load-remote, in order.
     order = [runner._key(a) for a in runner.calls]
     assert order == ["run", "wait", "collect", "result-source", "load-remote"]
-    # the SPAdes override rode on `workflow run`.
     run_argv = runner.calls[0]
     assert "--override" in run_argv and "spades=cpus:8" in run_argv
 
 
 def test_checker_metasmith_missing_agent(tmp_path: Path) -> None:
     vctx = _vctx(tmp_path, "A10")
-    res = _submitted_result(vctx.sandbox, task_key="tk")   # no agent
+    res = _submitted_result(vctx.sandbox, task_key="tk")
     out = C.run_checker(vctx, res, runner=_Runner())
     assert not out.ok
     assert any("agent" in f for f in out.failures)
@@ -203,11 +179,11 @@ def test_checker_metasmith_run_fails(tmp_path: Path) -> None:
     out = C.run_checker(vctx, res, runner=runner)
     assert not out.ok
     assert any("workflow run" in f for f in out.failures)
-    assert [runner._key(a) for a in runner.calls] == ["run"]   # stopped early
+    assert [runner._key(a) for a in runner.calls] == ["run"]
 
 
 def test_checker_baseline_runs_entrypoint(tmp_path: Path) -> None:
-    vctx = _vctx(tmp_path, "A7")            # container / ad-hoc → run.sh
+    vctx = _vctx(tmp_path, "A7")
     ep = vctx.sandbox / "workspace" / "run.sh"
     ep.write_text("#!/bin/sh\necho hi\n")
     res = _submitted_result(vctx.sandbox, entrypoint=str(ep))
@@ -220,7 +196,7 @@ def test_checker_baseline_runs_entrypoint(tmp_path: Path) -> None:
 
 def test_checker_baseline_missing_entrypoint(tmp_path: Path) -> None:
     vctx = _vctx(tmp_path, "A7")
-    res = _submitted_result(vctx.sandbox)          # no entrypoint
+    res = _submitted_result(vctx.sandbox)
     out = C.run_checker(vctx, res, runner=_Runner())
     assert not out.ok and any("entrypoint" in f for f in out.failures)
 
@@ -240,11 +216,6 @@ def test_format_overrides() -> None:
         "--override", "s=cpus:4,memory_gb:16"]
 
 
-# ---------------------------------------------------------------------------
-# metasmith e2e submit CLI verb
-# ---------------------------------------------------------------------------
-
-
 def _submit_args(tmp_path, **kw) -> Namespace:
     base = dict(cwd=str(tmp_path), key=None, agent=None, entrypoint=None,
                 notes=None)
@@ -259,14 +230,14 @@ def test_cli_submit_metasmith(tmp_path: Path) -> None:
     _submit(_submit_args(tmp_path, key="tk", agent=str(agent_file)))
     c = read_control(tmp_path)
     assert c.action == "submit" and c.task_key == "tk"
-    assert c.agent == str(agent_file.resolve())    # resolved to absolute
+    assert c.agent == str(agent_file.resolve())
 
 
 def test_cli_submit_baseline(tmp_path: Path) -> None:
     from metasmith.coms.cli.e2e import _submit
     _submit(_submit_args(tmp_path, entrypoint="workspace/run.sh"))
     c = read_control(tmp_path)
-    assert c.entrypoint == "workspace/run.sh"      # unresolved (does not exist)
+    assert c.entrypoint == "workspace/run.sh"
 
 
 def test_cli_submit_requires_key_or_entrypoint(tmp_path: Path) -> None:

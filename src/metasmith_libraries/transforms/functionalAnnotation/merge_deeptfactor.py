@@ -1,8 +1,3 @@
-"""merge_deeptfactor — gather per-chunk DeepTFactor prediction_result.txt files.
-
-DeepTFactor's prediction_result.txt is a tab-separated table with a single
-header line.
-"""
 from metasmith.python_api import *
 
 lib = TransformInstanceLibrary.ResolveParentLibrary(__file__)

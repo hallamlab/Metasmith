@@ -18,8 +18,6 @@ def protocol(context: ExecutionContext):
     if cpus is not None:
         cpus_string = f"--thread {cpus}"
 
-    # adapter/quality trim + QC; emit a single interleaved, gzipped stream so the
-    # downstream assembler can take one --12 input
     context.ExecWithContainer(
         image = image,
         cmd = f"""

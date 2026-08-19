@@ -69,10 +69,6 @@ def main() -> int:
     print("=" * 78)
     print("ENTRY COVERAGE -- entries carrying at least one MNXR")
     print("=" * 78)
-    # "Before" is the SHIPPED LANE ON TODAY'S INPUTS, which isolates the code change: the
-    # het curation has since resolved more accessions, so this is a few points above the
-    # 203 the shipped lane produced on the shipped curation. Both numbers are true and
-    # they answer different questions -- this one answers "what did the routes buy".
     print(f"  before (bridge_uniprot only): {len(ok_before):5,} / {len(entries):,}")
     print(f"  after  (all routes):          {len(ok_after):5,} / {len(entries):,}")
     for c, g in entries.groupby("cohort"):
@@ -118,10 +114,6 @@ def main() -> int:
     print("\n" + "=" * 78)
     print("CURATED vs DERIVED -- where a curator's set and an inference disagree")
     print("=" * 78)
-    # READ OFF `agreed_by`, NOT off a set intersection of the table. Layering means a
-    # reaction the curated route supplied is ABSENT from every derived route's rows for
-    # that entry -- by construction, which is the point -- so intersecting the emitted
-    # sets measures the layering and says nothing about whether the routes agree.
     DERIVED = {"metacyc_rxn", "bridge_uniprot", "bridge_ec", "host_gem", "web"}
     cur = edges[edges["route"] == "curated"].copy()
     cur["_by"] = cur["agreed_by"].str.split("+")

@@ -1,11 +1,3 @@
-"""amrfinderplus — NCBI AMRFinderPlus protein search (second-layer ARG validation).
-
-Runs on a per-sample protein CHUNK (sequences::orf_chunk, sample-prefixed by
-w4_rebatch.py) so AMRFinderPlus, like every other AMR tool, consumes batched ORFs
-and never a whole-sample file. The "Protein id" column echoes the input header
-(SG<id>~k141_XXXXXX_N), preserving the sample + contig ID for the downstream
-merge_amrfinderplus + w4_recompile de-prefix.
-"""
 from metasmith.python_api import *
 
 lib = TransformInstanceLibrary.ResolveParentLibrary(__file__)

@@ -59,18 +59,10 @@ PDF = REPO / "data/fabfos/originals/benchmarks/eydallin/eydallin2010_fulltext.pd
 STUDY = REPO / "data/fabfos/benchmarks/eydallin"
 OUT = STUDY / "Y" / "measured_glycogen.tsv"
 
-# Fig. 1's caption: "Averaged glycogen content in WT cells was 45 nmol glucose mg
-# protein-1". The bars are percentages OF THAT, so the absolute column is derived here
-# rather than left for a reader to remember the constant.
 WT_NMOL_GLUCOSE_PER_MG_PROTEIN = 45.0
 
-# The figure is on page 4 as a Form XObject wrapping one image. Named rather than
-# discovered: pages 6 and 7 hold Figs. 2 and 3 the same way, and "the first image in the
-# file" would silently become one of those if the publisher re-laid the article out.
 FIG1_PAGE, FIG1_FORM, FIG1_IMAGE = 3, "/Fm1", "/Im1"
 
-# Read off the rotated axis labels, left to right -- the bars are sorted ascending, so
-# this is the whole of the human input to the table. Validated on every run; see above.
 LABEL_ORDER = """
 recQ ylcG ptsN clpA glgB gltI xylG nagD cpdB hokA thrB yjcQ rpiB yeaP spoT
 pstC galS smg gspD cysI prfB yfdN gntT nagB yfjR metH phr yabI talA serB
@@ -81,7 +73,6 @@ mdtG ppx yncG glgS ymgC yncC rpoS tdcA erfK glgA glgC
 """.split()
 
 
-# --------------------------------------------------------------------- the image
 def figure_image() -> np.ndarray:
     page = PdfReader(str(PDF)).pages[FIG1_PAGE]
     form = page["/Resources"]["/XObject"][FIG1_FORM].get_object()
@@ -92,20 +83,12 @@ def figure_image() -> np.ndarray:
     return np.asarray(Image.open(io.BytesIO(im._data)).convert("L")).astype(float)
 
 
-# --------------------------------------------------------------------- edge model
 def edge(u, t, w, S, sig, W, F):
-    """A stroke of width w and level S centred on t, between levels W and F.
-
-    W is the level on the low-u side. One Gaussian sigma absorbs the pixel box and the
-    JPEG blur together. The whole physical content of the picture is here: an outline is
-    stroked ON the path, and the path is the datum.
-    """
     return (W + (S - W) * norm.cdf((u - (t - w / 2)) / sig)
               + (F - S) * norm.cdf((u - (t + w / 2)) / sig))
 
 
 def fit_edges(profiles, t0s):
-    """Per-edge position, with stroke width / level / blur shared across the set."""
     t0s = np.asarray(t0s, float)
 
     def resid(p):
@@ -121,7 +104,6 @@ def fit_edges(profiles, t0s):
                          rms=float(np.sqrt(np.mean(r.fun ** 2))))
 
 
-# --------------------------------------------------------------------- geometry
 def find_bars(a: np.ndarray, base: int, spine: int):
     ink = a < 200
     top = np.full(a.shape[1], float(base))
@@ -142,11 +124,6 @@ def find_bars(a: np.ndarray, base: int, spine: int):
 
 
 def tick_centres(a: np.ndarray, spine: int):
-    """The 1-px marks left of the spine, by background-subtracted centroid.
-
-    A symmetric feature, so a centroid is unbiased -- which the fitted model is not
-    obviously, and this is the anchor everything else is measured against.
-    """
     cols = slice(spine - 6, spine - 1)
     rows = [r for r in range(2, 335) if a[r, cols].mean() < 235]
     groups = []
@@ -164,12 +141,6 @@ def tick_centres(a: np.ndarray, spine: int):
 
 
 def lattice(x: np.ndarray, lo=0.3, hi=2.0, step=2e-5):
-    """The period on which x is quantised, and how concentrated it is.
-
-    |R| is the length of the mean unit phasor: 1 is a perfect lattice and ~0.11 is what
-    86 unquantised values give. Scanned rather than assumed, so a future re-render at a
-    different scale is measured instead of being forced onto this one's grid.
-    """
     ps = np.arange(lo, hi, step)
     R = np.array([abs(np.exp(2j * np.pi * x / p).sum()) / len(x) for p in ps])
     p = float(ps[R.argmax()])
@@ -188,8 +159,8 @@ def main() -> int:
 
     a = figure_image()
     dark = a < 128
-    base = int(np.argmax(dark.sum(1)))          # the one long horizontal run of ink
-    spine = int(np.argmax(dark.sum(0)))         # the one long vertical run
+    base = int(np.argmax(dark.sum(1)))
+    spine = int(np.argmax(dark.sum(0)))
     runs, top = find_bars(a, base, spine)
     if len(runs) != len(LABEL_ORDER):
         raise SystemExit(f"[fig1] measured {len(runs)} bars but read {len(LABEL_ORDER)} "
@@ -197,10 +168,6 @@ def main() -> int:
     fill = float(np.median([np.median(a[int(top[lo + 2]) + 4:int(top[lo + 2]) + 9, lo + 2:hi - 1])
                             for lo, hi in runs if int(top[lo + 2]) + 9 < base - 2]))
 
-    # THE ZERO LINE, from 86 bar bottoms rather than from the baseline's inked rows. Each
-    # bottom edge is the axis line seen through the same stroke model as a top edge, and
-    # its position is known independently -- it is the datum 0. Measuring it is therefore
-    # a test of the model as much as a calibration point.
     bots, bpar = fit_edges(
         [(np.arange(base - 4, base + 6, dtype=float),
           np.median(a[np.ix_(np.arange(base - 4, base + 6), list(range(lo + 2, hi - 1)))], axis=1),
@@ -208,8 +175,6 @@ def main() -> int:
         [base + 0.5] * len(runs))
     zero = float(bots.mean())
 
-    # CALIBRATION: the tick ladder plus that zero. The ticks alone are the noisy anchors --
-    # each is one inked row -- so the zero anchor, measured 86 times, carries the low end.
     ticks = tick_centres(a, spine)
     tvals = np.array([500 - 50 * round((t - ticks[0]) / np.median(np.diff(ticks)))
                       for t in ticks])
@@ -218,7 +183,6 @@ def main() -> int:
     slope, icept = np.polyfit(anchors, avals, 1)
     cal_resid = np.polyval([slope, icept], anchors) - avals
 
-    # THE BAR TOPS.
     profs, t0s = [], []
     for lo, hi in runs:
         r0 = int(top[lo + 2])
@@ -231,7 +195,7 @@ def main() -> int:
         t0s.append(r0 + 0.5)
     tops, tpar = fit_edges(profs, t0s)
 
-    heights = zero - tops                                    # current px
+    heights = zero - tops
     q, conc, phase = lattice(heights)
     snapped = np.round((heights - phase) / q) * q + phase
     lat_resid = heights - snapped
@@ -253,7 +217,6 @@ def main() -> int:
         source_px=np.round(use / q, 0).astype(int) if not args.no_snap else np.round(use / q, 2),
     ))
 
-    # ---- the two checks the docstring promises -------------------------------------
     ex = pd.read_csv(STUDY / "extraction.tsv", sep="\t")
     curated = dict(zip(ex["gene_norm"], ex["phenotype"]))
     if set(df["gene"]) != set(curated):
@@ -267,8 +230,6 @@ def main() -> int:
                          f"the curated phenotype, so the label order is wrong:\n"
                          f"{bad.to_string(index=False)}")
 
-    # Never write THROUGH a materialised DVC file: it is a hardlink into a cache every
-    # worktree shares. Unlink, then create.
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.unlink(missing_ok=True)
     df.sort_values("gene").to_csv(args.out, sep="\t", index=False)

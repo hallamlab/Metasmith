@@ -1,21 +1,16 @@
 //! Dense, reusable scratch space for the refiner's per-state score.
 //!
-//! `Refiner::score` runs once per expanded state -- 174,804 times in sixteen
-//! refiner iterations of `sink-24`, 81,486 times in *one* iteration of
-//! `sink-178` -- and every lookup table it needs is built from nothing at the
-//! start of the call and dropped at the end of it. A callgrind profile of the
-//! first of those put roughly half the engine's instructions inside
-//! `malloc`/`free` and `hashbrown`'s rehash, and almost none of them in the
-//! graph work those tables exist to do.
+//! `Refiner::score` runs once per expanded state, and rebuilding its lookup
+//! tables per call put most of the engine's instructions in allocation and
+//! rehashing rather than in the graph work those tables exist to do.
 //!
-//! Two facts make that avoidable, and the second is the one that makes it safe.
-//! `EpSig` is an index interned densely from zero, and the whole universe of
-//! them is 221 signatures on `sink-24` and 284 on `sink-178` -- small enough
-//! that a flat array indexed by signature is cheaper than a hash of it. And not
-//! one of these tables is ever *iterated*: they are insert-and-look-up only. A
-//! hash map that is never iterated cannot leak its layout into the plan, and
-//! neither can the array that replaces it, so this is invisible to the
-//! iteration-order contract in `tests/solver/test_iteration_order.py`.
+//! Two facts make that avoidable, and the second is what makes it safe. `EpSig`
+//! is an index interned densely from zero and the universe of them is small, so
+//! a flat array indexed by signature is cheaper than a hash of it. And not one
+//! of these tables is ever *iterated*: they are insert-and-look-up only. A hash
+//! map that is never iterated cannot leak its layout into the plan, and neither
+//! can the array replacing it, so this is invisible to the iteration-order
+//! contract in `tests/solver/test_iteration_order.py`.
 //!
 //! Emptying is the part that has to stay O(1) -- clearing an array sized to the
 //! whole signature universe once per state would give back what the map cost.
@@ -43,8 +38,7 @@ impl SigSet {
             self.stamp.resize(n, 0);
         }
         // Wrapping past zero would make every stale slot look live, so the
-        // overflow case rewrites the array. That is one pass every four billion
-        // clears, against a branch on each.
+        // overflow case rewrites the array.
         match self.epoch.checked_add(1) {
             Some(g) => self.epoch = g,
             None => {
@@ -75,10 +69,8 @@ impl SigSet {
 /// A `Map<EpSig, V>` as a stamp array beside a value array. Same contract as
 /// `SigSet`, including that `clear` comes first.
 pub struct SigMap<V> {
-    /// Stamp beside value in one slot rather than in two parallel arrays. Every
-    /// `get` and `insert` in the depth walk reads or writes both halves, so
-    /// splitting them costs two bounds checks and two cache lines for one
-    /// logical access.
+    /// Stamp beside value in one slot: every `get` and `insert` in the depth
+    /// walk touches both halves.
     slot: Vec<(u32, V)>,
     epoch: u32,
 }
@@ -132,8 +124,7 @@ impl<V: Copy + Default> SigMap<V> {
 #[derive(Default)]
 pub struct Scratch {
     /// `produced_from` -- for a produced signature, the inputs of the step that
-    /// produced it, as a range into `pf_flat`. The map this replaces stored one
-    /// *clone* of the producing step's input list per product.
+    /// produced it, as a range into `pf_flat`.
     pub pf: SigMap<(u32, u32)>,
     pub pf_flat: Vec<EpSig>,
     /// `have` -- what is schedulable so far, in `is_valid`.
@@ -144,10 +135,7 @@ pub struct Scratch {
     /// `used_as_lineage`.
     pub lin_used: SigSet,
     /// `depth_maps` -- one depth table per distinct walk source, pooled by
-    /// arrival order. Sources per state peak at 23 on `sink-24` and 46 on
-    /// `sink-178`, so the pool stops growing within the first few states and
-    /// costs a few hundred kilobytes at the signature counts these problems
-    /// reach.
+    /// arrival order. The pool stops growing within the first few states.
     pub depth_slot: SigMap<u32>,
     pub depth_pool: Vec<SigMap<i32>>,
     /// Whether the pooled map beside it was walked to exhaustion.

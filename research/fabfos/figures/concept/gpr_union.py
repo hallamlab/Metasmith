@@ -1,19 +1,3 @@
-"""Fuse the EPI300 GEM lane and the fosmid insert lanes into one GPR table.
-
-The sweep and the layout both take a single GPR parquet and read ``mnxr`` as the reaction
-set, so "the host plus its clones" is expressed as one union table rather than as a second
-code path. Every downstream mask -- a single clone, a lane subset, host-only -- is applied
-to the ``origin`` column of this table, so the community network is measured once and
-sliced afterwards.
-
-``origin`` is ``host`` for GEM-lane rows and the insert id for fosmid rows, where the
-insert id is the fosmid ORF name with its trailing ``_<n>`` stripped. ``host`` and
-``build_id`` are carried because :mod:`gpr_ieff`'s packing step reads them for provenance.
-
-The union is over reactions, not rows: the four fosmid lanes overlap heavily, so a reaction
-kept once per (origin, lane) is what makes the origin mask meaningful without inflating the
-table with duplicate evidence rows.
-"""
 import argparse
 import re
 from pathlib import Path
@@ -49,8 +33,6 @@ def main():
 
     cols = ["mnxr", "host", "build_id", "channel", "origin", "insert"]
     u = pd.concat([h[cols], f[cols]], ignore_index=True)
-    # One row per reaction per origin per lane: the lanes overlap heavily and a duplicate
-    # evidence row says nothing the mask can use.
     u = u.drop_duplicates(subset=["mnxr", "origin", "channel"]).reset_index(drop=True)
 
     args.out.parent.mkdir(parents=True, exist_ok=True)

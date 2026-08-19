@@ -1,9 +1,3 @@
-"""Unit tests for the bwrap jail argv builder — no bwrap binary required.
-
-The argv builder is a pure function; these tests pin the namespace flags, the
-bind ordering (shared-auth on top of the sandbox), the no-net / no-userns
-defaults, and the enablement decision logic.
-"""
 from __future__ import annotations
 
 from pathlib import Path
@@ -13,22 +7,12 @@ import pytest
 from tests.metasmith.e2e.agentic.harness import jail as J
 
 
-# ---------------------------------------------------------------------------
-# BindSpec
-# ---------------------------------------------------------------------------
-
-
 def test_bindspec_modes() -> None:
     assert J.BindSpec("/a", "/b", "ro").to_argv() == ["--ro-bind", "/a", "/b"]
     assert J.BindSpec("/a", "/b", "rw").to_argv() == ["--bind", "/a", "/b"]
     assert J.BindSpec("/a", "/b", "dev").to_argv() == ["--dev-bind", "/a", "/b"]
     assert J.BindSpec("/a", "/b", "ro", optional=True).to_argv() == [
         "--ro-bind-try", "/a", "/b"]
-
-
-# ---------------------------------------------------------------------------
-# build_bwrap_argv (pure)
-# ---------------------------------------------------------------------------
 
 
 def test_build_argv_namespaces_and_defaults() -> None:
@@ -75,11 +59,6 @@ def test_build_argv_chdir_and_bind_order() -> None:
     assert usr < sb < claude
 
 
-# ---------------------------------------------------------------------------
-# default_binds — layout → bind set
-# ---------------------------------------------------------------------------
-
-
 def test_default_binds_sandbox_rw_and_system_ro(tmp_path: Path) -> None:
     sb = tmp_path / "sb"
     home = sb / "home"
@@ -101,8 +80,6 @@ def test_default_binds_shares_claude_auth_on_top(tmp_path: Path, monkeypatch) ->
     sb = tmp_path / "sb"
     home = sb / "home"
     binds = J.default_binds(sb, home, share_claude_auth=True)
-    # the shared-auth bind targets the in-jail HOME/.claude, rw, and is LAST
-    # (after the sandbox-root bind) so it lands on top.
     claude_binds = [b for b in binds if b.dst == str(home / ".claude")]
     assert len(claude_binds) == 1
     cb = claude_binds[0]
@@ -118,11 +95,6 @@ def test_default_binds_extra_ro_dedup(tmp_path: Path) -> None:
                             extra_ro=[d, d], share_claude_auth=False)
     hits = [b for b in binds if b.src == str(d)]
     assert len(hits) == 1 and hits[0].mode == "ro" and hits[0].optional
-
-
-# ---------------------------------------------------------------------------
-# enablement
-# ---------------------------------------------------------------------------
 
 
 def test_jail_enabled_force_off(monkeypatch) -> None:

@@ -25,7 +25,6 @@ def protocol(context: ExecutionContext):
     threads = context.params.get('cpus')
     threads_arg = "" if threads is None else f"--threads {threads}"
 
-    # kraken2 has no --interleaved mode: split via bbtools first.
     context.ExecWithEnv().ifContainerDo(
         env=img_bb,
         cmd=f"""
@@ -34,9 +33,6 @@ def protocol(context: ExecutionContext):
         """
     )
 
-    # kraken2 writes per-read classifications as TSV. Stage locally; the parquet
-    # conversion happens at the end so bracken (which reads ikrep, not iclass)
-    # is unaffected.
     context.ExecWithEnv().ifContainerDo(
         env=img_k2,
         cmd=f"""
@@ -58,10 +54,6 @@ def protocol(context: ExecutionContext):
         """
     )
 
-    # TSV -> parquet (zstd, polars). Schema-explicit: status as 2-value categorical,
-    # length as ~5-value categorical, narrow integer widths. ~7x smaller than TSV
-    # while keeping the kmer-hit column (benchmarked SG10E12: 4.54 GiB -> 0.68 GiB).
-    # See centrifuger.py for the RemoveLeadingIndent indent-matching note.
     context.ExecWithEnv().ifContainerDo(
         env=img_pq,
         cmd=f"""
@@ -108,13 +100,7 @@ TransformInstance(
     group_by=reads,
     resources=Resources(
         cpus=8,
-        memory=Size.GB(128),  # Wp5jjOW2 ran against standard_16gb (hash.k2d
-                              # capped at 16 GB via minimizer downsampling).
-                              # Bumping to full k2_standard 2026-02-26 (hash.k2d
-                              # ~70 GB unpacked); kraken2 memory-maps the hash,
-                              # so peak RSS ~= hash size + working margin.
-                              # 128 GB gives ~50 GB headroom. Parquet step needs
-                              # ~15 GB peak (single sample) — fits.
-        duration=Duration(hours=2),  # parquet step adds ~25s (negligible).
+        memory=Size.GB(128),
+        duration=Duration(hours=2),
     )
 )

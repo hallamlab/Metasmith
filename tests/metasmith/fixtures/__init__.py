@@ -1,4 +1,3 @@
-"""Committed graph fixtures, and the loader that turns one into a renderer."""
 from __future__ import annotations
 
 import json
@@ -10,12 +9,6 @@ HERE = Path(__file__).resolve().parent
 
 
 def load_dag(name: str = "stress_dag", **kwargs) -> DagRenderer:
-    """Rebuild a renderer from a dumped node/edge list.
-
-    Regenerate with `generate_stress_dag.py`; nothing here plans a workflow or
-    reads a transform library, so the drawing code can be exercised on a real
-    110-node plan without the solver on the test path.
-    """
     data = json.loads((HERE / f"{name}.json").read_text())
     r = DagRenderer(**kwargs)
     for n in data["nodes"]:

@@ -14,7 +14,6 @@ def protocol(context: ExecutionContext):
 
     threads = context.params.get('cpus')
     threads = "" if threads is None else f"-t {threads}"
-    # Assemble inbred/homozygous genomes (-l0 disables duplication purging)
     assembly_prefix = "the_assembly"
     context.ExecWithEnv().ifContainerDo(
         env = img_hfa,

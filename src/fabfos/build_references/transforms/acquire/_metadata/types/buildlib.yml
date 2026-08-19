@@ -34,6 +34,13 @@ types:
         transport, with the count both builders report
       src: bench_universe
       usage: library
+  benchmark:
+    properties:
+      _:
+      - the benchmark drivers -- the study tier, the condition table, the two host
+        GPR builders and the condition GPR
+      src: benchmark
+      usage: library
   build_module:
     properties:
       _:
@@ -53,4 +60,17 @@ types:
         synonyms -- and owns the canonical-rank and formula-count definitions every
         consumer used to re-implement
       src: mnx_lookups
+      usage: library
+  mnxr_lookup.py:
+    properties:
+      _:
+      - builds ref::mnxr_lookup -- the reaction bridge, from MetaNetX, KEGG and Rhea
+      src: mnxr_lookup
+      usage: library
+  pool:
+    properties:
+      _:
+      - the label-pool drivers -- selection from the bridge, the ESM-C embedding pass,
+        and the final index/stack assembly
+      src: pool
       usage: library

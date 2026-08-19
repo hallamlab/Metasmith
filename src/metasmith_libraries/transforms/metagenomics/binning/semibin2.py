@@ -17,10 +17,8 @@ def protocol(context: ExecutionContext):
     threads = context.params.get('cpus', 8)
     workdir = "semibin_out"
 
-    # Use global environment model (works for most samples)
     environment = "global"
 
-    # Same command either way: this tool is a plain CLI in both worlds.
     _cmd = f"""
             export PATH=/opt/conda/bin:$PATH
             SemiBin2 single_easy_bin \
@@ -34,20 +32,17 @@ def protocol(context: ExecutionContext):
         .ifContainerDo(env=image, cmd=_cmd) \
         .ifVirtualEnvDo(env=image, cmd=_cmd)
 
-    # Find all bin files and output each one separately
     outputs = []
     bin_files = sorted(glob.glob(f"{workdir}/output_bins/*.fa.gz") + glob.glob(f"{workdir}/output_bins/*.fa"))
 
     for i, bin_path in enumerate(bin_files):
         out_bin = context.Output(bin_fasta, i=i)
-        # Decompress if gzipped, otherwise just copy
         if bin_path.endswith('.gz'):
             context.LocalShell(f"gunzip -c {bin_path} > {out_bin.local}")
         else:
             context.LocalShell(f"cp {bin_path} {out_bin.local}")
         outputs.append({bin_fasta: out_bin.local})
 
-    # Copy contig-to-bin table
     otable = context.Output(table)
     context.LocalShell(f"cp {workdir}/contig_bins.tsv {otable.local}")
 

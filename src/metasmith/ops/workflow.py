@@ -1,4 +1,3 @@
-"""Workflow planning + task introspection."""
 from __future__ import annotations
 
 from ..models.dag_draw import DEFAULT_LABEL_CHARS, default_label
@@ -8,22 +7,6 @@ from . import workspace as _ws
 
 
 def plan_spec(spec: Spec, workspace: str | None = None, return_task: bool = False) -> dict:
-    """Solve a spec, and report it the way an ops caller needs.
-
-    Two things a notebook does not want and every veneer does: a failure
-    reported as a value with the planner's hints attached rather than as a
-    half-built task, and the bundle persisted under <workspace>/<task_key>/ so
-    that directory becomes a task reference the CLI can stage.
-
-    What the plan *means* -- what a sample type does, what a shared input is --
-    is documented once, on `Spec.Solve`.
-
-    `return_task=True` hands back `(result, task)` instead of just `result` --
-    for a caller that needs the live, already-imported `WorkflowTask` for
-    something more (the GUI draws the diagram from it) and would otherwise
-    have to reload the bundle from disk, re-importing every transform in it a
-    second time.
-    """
     task = spec.Solve()
     plan = task.plan
 
@@ -67,10 +50,6 @@ def plan_workflow(
     workspace: str | None = None,
     shared_input_paths: list[str] | None = None,
 ) -> dict:
-    """`plan_spec` for a caller holding loose arguments rather than a spec.
-
-    The CLI's door, and the shape every existing caller was written against.
-    """
     return plan_spec(
         Spec(
             input_library=data_library,
@@ -124,8 +103,6 @@ def render_dag(
     theme: str = "light",
 ) -> dict:
     task = _ws.load_task(workspace, task_key)
-    # name the file with its real extension: `plan.dag` alone reads back as a
-    # `.dag` suffix, which RenderDAG would take for the requested format
     out = _ws.task_path(workspace, task_key) / f"plan.dag.{format}"
     bl = set(blacklist_namespaces) if blacklist_namespaces else {"lib", "containers", "env"}
     rendered = task.plan.RenderDAG(
@@ -139,10 +116,6 @@ def render_dag(
     return {"task_key": task_key, "format": format, "path": str(rendered)}
 
 
-# bumped whenever `serialize_geometry`'s payload changes shape. A stored plan
-# graph is a drawing frozen at write time, and the only way a reader can tell a
-# stale one from a current one is to be told: testing for a key that happens to
-# be new works exactly once, and then the next change has to find another key.
 GEOMETRY_VERSION = 2
 
 _WIRE_KINDS = {
@@ -163,35 +136,6 @@ def dag_geometry(
     row_y: dict[str, float] | None = None,
     min_lanes: int = 0,
 ) -> dict:
-    """Place an arbitrary graph, in pixels, for a caller that draws it itself.
-
-    Same engine as `render_dag` -- the rails layout and the routed, jogged,
-    corner-rounded edge paths -- but stopping one step short of ink. A caller
-    that wants its nodes to be clickable (the GUI's info panel) cannot use the
-    SVG, and laying the graph out a second way in the browser is how the two
-    drawings came to disagree about what the same plan looks like.
-
-    An edge crosses the wire as a path and nothing else. A caller whose rows
-    are already on a page of its own -- the recipe's, one per form row, at
-    whatever heights the browser gave them -- says so with `order` and `row_y`
-    and gets paths baked against those, rather than re-baking a published grid
-    itself in a second implementation nothing holds honest.
-
-    `nodes` are `{"id", "kind", "label"?}`; `kind` is `transform`, `target` or
-    `data`, which decides the marker drawn and the trim taken off each edge end.
-    `edges` are `{"from", "to"}`. Ids are the caller's and are echoed untouched.
-
-    `order` is a node id per row, top to bottom; it is honoured only when it is
-    a topological permutation of the nodes (see `dag_layout.layout`). `row_y` is
-    a node id -> pixel y map, resolved against whatever rows the layout came
-    back with, so the caller never has to know what row a node landed in; it is
-    ignored unless every node has one. `min_lanes` is a floor on the grid width,
-    so a rail's gutter does not move sideways when its first branch appears.
-
-    `colour` names a `dag_colour` scheme; the default says nothing and each
-    record's `hue` is absent. Only the plan asks for one -- skipping it is how
-    the panel and the recipe's rails stay monochrome.
-    """
     renderer = DagRenderer(label_mode=LabelMode(label_mode), colour=colour)
     ids = set()
     for n in nodes:
@@ -219,20 +163,10 @@ def serialize_geometry(
     row_y: dict[str, float] | None = None,
     min_lanes: int = 0,
 ) -> dict:
-    """A built graph's placement as plain data, for a client that draws it.
-
-    Split out from `dag_geometry` so the plan -- whose graph is built from the
-    solved steps, not from a wire payload -- reaches the same serialization
-    rather than a second one that agrees only by coincidence.
-    """
-    # one layout, shared by the geometry and the colouring: `colouring()` runs
-    # its own when passed none, and that is the whole expensive half of this
     lay = renderer.layout(order)
     rows_y: list[float] = []
     if row_y:
         ys = [row_y.get(n.name) for n in lay.nodes]
-        # all or nothing: one missing row would silently draw the whole rail at
-        # the nominal pitch from that row down
         if all(y is not None for y in ys):
             rows_y = [float(y) for y in ys]  # type: ignore[arg-type]
     geo = renderer.geometry(
@@ -257,8 +191,6 @@ def serialize_geometry(
             }
             for n in geo.nodes
         ],
-        # a back edge is reported so a caller can say the cycle exists; it has
-        # no path because the rails engine does not route one
         "edges": [
             {
                 "from": e.src, "to": e.dst, "back": e.back, "d": e.d,

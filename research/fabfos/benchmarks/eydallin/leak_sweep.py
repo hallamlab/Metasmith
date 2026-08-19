@@ -50,10 +50,10 @@ BAKE = ROOT / "data/fabfos/processed/metabolism_bake"
 OUT_DIR = Path(__file__).resolve().parent / "cache"
 OUT_DIR.mkdir(parents=True, exist_ok=True)
 
-SOURCE_MNXM = "MNXM1364061"    # D-glucose
+SOURCE_MNXM = "MNXM1364061"
 GLYCOGEN_MNXM = "MNXM738130"
 ELEMENT = "C"
-LEAK_VALUES = [10.0 ** k for k in range(-8, 5)]   # 1e-8 .. 1e4
+LEAK_VALUES = [10.0 ** k for k in range(-8, 5)]
 
 COFACTOR_NAMES = [
     "ATP", "ADP", "AMP", "CoA", "acetyl-CoA", "malonyl-CoA",

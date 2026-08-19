@@ -1,18 +1,4 @@
 #!/usr/bin/env python3
-"""Base-GEM solve: per-metabolite voltage vs. reaction-hop minpath from the source.
-
-One solve only (base host GEM, no perturbation) -- source D-glucose, universal ground,
-leak 1e-6. `Solution.voltage_metabolite` gives each metabolite's current-weighted mean
-potential (0 at the OMEGA ground, rising toward the source). `hop_dist` is the reaction-hop
-minpath from glucose on the SAME basis `reach_to_glycogen.py` uses for its BFS: bake atom
-pairs, restricted to host (this IS the AAM-compiled network, gated to what iML1515 gives
-K-12), cofactor hubs barred as bridging metabolites (else everything is 2 hops from
-everything via ATP/ADP, etc.) -- seeded at the reactions directly touching glucose
-(distance 0), not at glucose itself, so "distance" means "reaction steps away", matching
-what `reach_to_glycogen.py` reports for glycogen.
-
-    mamba run -n ecspr python main/benchmarks/eydallin/voltage_vs_minpath.py
-"""
 from __future__ import annotations
 
 import collections
@@ -37,7 +23,7 @@ BAKE = ROOT / "data/fabfos/processed/metabolism_bake"
 OUT_DIR = Path(__file__).resolve().parent / "cache"
 OUT_DIR.mkdir(parents=True, exist_ok=True)
 
-SOURCE_MNXM = "MNXM1364061"    # D-glucose
+SOURCE_MNXM = "MNXM1364061"
 GLYCOGEN_MNXM = "MNXM738130"
 LEAK = 1e-6
 ELEMENT = "C"
@@ -57,7 +43,6 @@ def main():
     host = pd.read_parquet(HOST_GEM)
     base_w = {m: 1.0 for m in host["mnxr"].dropna().astype(str).unique()}
 
-    # ---- minpath: reaction-hop distance from glucose, bake/host, cofactors barred ----
     v = pd.read_parquet(BAKE / "vocab.parquet")
     sym = v[v.kind == "met"].set_index("code").symbol.to_dict()
     rsym = v[v.kind == "rxn"].set_index("code").symbol.to_dict()
@@ -99,7 +84,6 @@ def main():
     print(f"[minpath] hop distance resolved for {len(met_dist)} metabolites from "
           f"{SOURCE_MNXM} ({len(dist)} reactions reached)", file=sys.stderr)
 
-    # ---- base solve ----
     g = graph_from_pairs(pairs, ELEMENT, base_w, ratios)
     g2, _ = attach_leak(g, None, leak=LEAK)
     src = Terminal.metabolite(g2, SOURCE_MNXM, label="source")
@@ -114,7 +98,7 @@ def main():
     for m in g.metabolites():
         vinfo = sol.voltage_metabolite(m)
         vm = vinfo["weighted_mean"]
-        if vm != vm:  # nan -- outside the source/sink shared component
+        if vm != vm:
             continue
         rows.append((m, vm, vinfo["n_atoms"], met_dist.get(m)))
     df = pd.DataFrame(rows, columns=["mnxm", "voltage", "n_atoms", "hop_dist"])

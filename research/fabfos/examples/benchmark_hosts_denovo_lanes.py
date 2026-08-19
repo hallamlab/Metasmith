@@ -73,35 +73,12 @@ ORIGINALS = DATA / "originals"
 SCRATCH = DATA / "scratch"
 
 GENOMES = B2.GENOMES
-# Where every site's collected lane outputs meet, and what the assemble driver reads.
 LANES_OUT = SCRATCH / "hosts_denovo_split" / "lanes"
 
-# One entry per lane: the transform's file stem, the products it must land, and the
-# references it needs staged. A lane with no reference entry needs none -- CLEAN and
-# ProteinBERT carry their weights baked into their images, which is why neither has a
-# weights acquisition anywhere in this tree.
 LANES = {
     "kofam": dict(
         transform="kofamscan",
         products={"annotation::kofamscan_results": "kofamscan.csv"},
-        # The EXPANDED profiles, addressed in place -- not the packed source compiled by
-        # a `kofam_ref` step inside the workflow. Moving 1.5 GB instead of 7.2 GB is
-        # still the rule, and still what happened: the tarball crossed the wire once and
-        # was expanded on micb0. What cannot happen is expanding it as a workflow STEP.
-        #
-        # A step's output lives in nxf_work, and on a site whose driver runs inside the
-        # metasmith container, metasmith knows that path only as `/msm_home/...`. The
-        # tool container is launched by an apptainer on the HOST, where `/msm_home` does
-        # not exist, so the bind fails and every kofamscan task dies with "mount source
-        # doesn't exist". Staged givens do not have this problem -- they are bound
-        # through the data mount, which is translated. So the expansion is a one-time
-        # setup on the machine, and the workflow only ever reads a given.
-        # TAKEN FROM B2's REFS_4, not written out again. This copy said `kofam/profiles`
-        # and `kofam/ko_list`; the reference tier publishes `kofam_ref/profiles` and
-        # `kofam_ref/ko_list.tsv`, and the two have not agreed for as long as anyone has
-        # run the split route. The symptom is not a missing file -- apptainer refuses to
-        # create a container whose bind source does not exist, so every kofamscan task
-        # dies at exit 127, which reads as "kofamscan is not installed".
         refs={k: B2.REFS_4[k] for k in
               ("ref::kofamscan_profiles", "ref::kofamscan_ko_list")},
     ),
@@ -121,18 +98,12 @@ LANES = {
     ),
 }
 
-# micb0: a lab workstation, no scheduler. 16 cores / 176 GB, outbound network (so it
-# pulls its own images rather than needing a store staged), and an agent home that has
-# run metasmith before.
 MICB0_HOST = "micb0"
 MICB0_AGENT_HOME = "/home/tliu/fabfos_b2/agent_home"
-# The staged source folders live beside the agent home rather than inside it: they are
-# reference data with a lifetime longer than any one run's key.
 MICB0_DATA = "/home/tliu/fabfos_b2"
 
 
 def micb0_agent(*, host: str = MICB0_HOST, agent_home: str = MICB0_AGENT_HOME) -> Agent:
-    """No setup commands: apptainer is on the default PATH here, not behind Lmod."""
     return Agent(home=SshSource(host=host, path=agent_home).AsSource(),
                  runtime=Runtime.APPTAINER)
 
@@ -141,10 +112,6 @@ SITES = {
     "local": dict(executor="local", remote=False),
     "micb0": dict(executor="local", remote=True, host=MICB0_HOST,
                   agent_home=MICB0_AGENT_HOME, data=MICB0_DATA, agent=micb0_agent),
-    # `data` IS DERIVED FROM B2's, not written out again. The references moved to /arc
-    # -- kofam's 27,757 small files are a metadata workload sockeye's scratch tier
-    # cannot serve -- and this copy still named /scratch, so every lane needing a
-    # reference looked for it where it has not been for some time.
     "sockeye": dict(executor="slurm", remote=True, host=SOCKEYE_HOST,
                     agent_home=B2.SITES["sockeye"]["agent_home"],
                     data=str(Path(B2.SITES["sockeye"]["processed"]).parent),
@@ -153,16 +120,6 @@ SITES = {
                     gpu=SOCKEYE_GPU),
 }
 
-# The local executor's pool, raised from `local.nf`'s 8-core / 8 GB default. NOT
-# optional: Nextflow's local executor REFUSES a process asking for more than the pool
-# ("Process requirement exceeds available CPUs -- req: 12; avail: 8") rather than
-# queueing it, so a 12-thread DIAMOND against the shipped default is a run that fails
-# every task and still prints "run completed" with an empty results tree.
-#
-# queueSize is 1 on the workstation deliberately: 12 of its 16 threads to one lane at a
-# time is the ask, and two concurrent lanes would each get half of it. 56 GB leaves the
-# desktop 12 of its 68. micb0 is a lab box with nothing else on it, so it gets its
-# whole 16 cores and can overlap the ProteinBERT lane with kofamscan.
 POOLS = {
     "local": dict(cpus=14, memory="56 GB", queueSize=1),
     "micb0": dict(cpus=16, memory="160 GB", queueSize=2),
@@ -170,21 +127,6 @@ POOLS = {
 
 
 def pool_config(preset: Path, pool: dict, out: Path) -> Path:
-    """`local.nf` plus a LITERAL executor block -- passing the pool as params does not work.
-
-    The preset writes `executor { cpus = params.executor.cpus }` with a default of 8 in
-    its own `params` block, and the obvious move is to hand `RunWorkflow` a
-    `params={'executor': {'cpus': 14}}`. It lands in `workflow.params.yml` correctly and
-    changes nothing: Nextflow resolves config scopes while parsing the config, before
-    `-params-file` is merged, so `params.executor.cpus` is still the config's own 8. The
-    symptom is the pool refusing the process it was raised for -- "Process requirement
-    exceeds available CPUs -- req: 12; avail: 8" -- with a params file on disk that
-    plainly says 14.
-
-    A trailing literal block is evaluated last and wins outright, with nothing to
-    resolve. Written per run rather than kept as a second preset, because the numbers
-    are properties of the machine this is pointed at.
-    """
     out.write_text(
         preset.read_text()
         + f"\n\n// pool for this site, set literally -- see pool_config()\n"
@@ -196,12 +138,6 @@ def pool_config(preset: Path, pool: dict, out: Path) -> Path:
     return out
 
 RESOURCE_OVERRIDES = {
-    # 12 threads, and the number is the user's: it leaves this workstation four cores
-    # to stay usable on. DIAMOND declares 16 cpus / 64 GB, which is above BOTH the local
-    # executor's declared pool and this machine's 68 GB -- and Nextflow's local executor
-    # REFUSES an over-sized process rather than queueing it, in a block that also sets
-    # errorStrategy='ignore', so the lane would be dropped and the run would finish
-    # green with the output absent.
     "diamond_uniref50": Resources(cpus=12, memory=Size.GB(48), duration=Duration(hours=3)),
     "kofamscan": Resources(cpus=16, memory=Size.GB(32), duration=Duration(hours=4)),
     "proteinbert": Resources(cpus=8, memory=Size.GB(32), duration=Duration(hours=2)),
@@ -247,9 +183,6 @@ def build_inputs(work: Path, lanes: list[str], site: dict) -> DataInstanceLibrar
 
     for lane in lanes:
         spec = LANES[lane]
-        # Compiled references, addressed where they already are. Absolute means bound in
-        # place rather than copied into the library and staged through every task -- the
-        # DIAMOND database is 17 GB and it never moves.
         for dtype, rel in spec.get("refs", {}).items():
             at = (PROCESSED / rel) if not site["remote"] else \
                 f"{site['data']}/processed/{rel}"
@@ -259,7 +192,6 @@ def build_inputs(work: Path, lanes: list[str], site: dict) -> DataInstanceLibrar
                     f"data/fabfos/processed/{rel.split('/')[0]}.dvc`")
             print(f"    {dtype:32s} {at}")
             inputs.AddItem(at, dtype)
-        # Source folders, compiled on the machine that reads them.
         for dtype, rel in spec.get("source_refs", {}).items():
             at = (ORIGINALS / rel) if not site["remote"] else \
                 f"{site['data']}/originals/{rel}"
@@ -281,10 +213,6 @@ def plan(work: Path, agent, lanes: list[str], site: dict):
     ]
     transforms = [
         TransformInstanceLibrary.Load(MLIB / "transforms" / "functionalAnnotation"),
-        # compile/ is deliberately NOT loaded. It would let the planner satisfy a
-        # missing kofam reference by adding a `kofam_ref` step, which plans clean and
-        # then fails every downstream task on the bind described in LANES["kofam"].
-        # Withholding the transform turns that silent detour into a planning error.
     ]
     tb = TargetBuilder()
     for lane in lanes:
@@ -317,8 +245,6 @@ def check_plan(task, lanes: list[str], n_hosts: int) -> int:
                   f"`group_by=orfs`, so one job per host is the only shape that keeps "
                   f"each output attributable.", file=sys.stderr)
             bad = 1
-    # A lane transform this site was NOT asked for means another machine's work is
-    # about to be done twice, on the wrong machine, at whatever this one costs.
     unasked = ({LANES[k]["transform"] for k in LANES}
                - {LANES[k]["transform"] for k in lanes}) & set(used)
     if unasked:
@@ -336,28 +262,11 @@ def check_plan(task, lanes: list[str], n_hosts: int) -> int:
     return bad
 
 
-# ---------------------------------------------------------------------------
-# collection -- results back to per-host lane files
-# ---------------------------------------------------------------------------
-
 def _path_hash(p: str) -> int:
-    """The engine's own path hash: md5, first 15 hex digits, as an int.
-
-    Fifteen and not sixteen, because the Nextflow side reads it as a signed Java long
-    and the sign bit would make the two ends disagree. Re-derived here rather than
-    imported because it is the join between two files the engine writes, and a
-    reimplementation that drifts would mis-attribute silently.
-    """
     return int(md5(str(p).encode()).hexdigest()[:15], 16)
 
 
 def orf_by_hash(staged: Path) -> dict[int, str]:
-    """hash(staged path) -> accession, for every ORF file this run staged.
-
-    `inputs/<channel>` is the listing the workflow reads; the ORF channel is the one
-    whose entries are the proteome file names. Identified by suffix rather than by
-    channel key, because the key is a content hash that changes with the run.
-    """
     out = {}
     for listing in sorted((staged / "inputs").iterdir()):
         lines = [ln for ln in listing.read_text().splitlines() if ln.strip()]
@@ -369,12 +278,6 @@ def orf_by_hash(staged: Path) -> dict[int, str]:
 
 
 def _accession_from_content(src: Path, candidates: list[str]) -> str | None:
-    """The one candidate accession that appears in the file's first records, or None.
-
-    Every lane's per-record id is NCBI's -- `lcl|<accession>_prot_<protein>_<n>` -- so a
-    text output names the proteome it was computed from. Read a few lines rather than the
-    file: these run to tens of MB and the answer is on line two.
-    """
     if src.suffix not in (".csv", ".tsv", ".txt"):
         return None
     head = []
@@ -390,13 +293,6 @@ def _accession_from_content(src: Path, candidates: list[str]) -> str | None:
 
 
 def _accession_from_sibling(rel: str, resolved: dict[str, str]) -> str | None:
-    """The accession of another product from the SAME TASK.
-
-    A task's products share the `{batch}-{i}-{branch}.{hash}` prefix the engine gives
-    them, so ProteinBERT's embeddings parquet -- which carries no readable ids -- takes
-    the accession its index CSV resolved by content. Nothing else in the tree pairs the
-    two, and pairing them by position would be a guess.
-    """
     stem = Path(rel).name.rsplit("-", 1)[0]
     for other, acc in resolved.items():
         if Path(other).name.rsplit("-", 1)[0] == stem:
@@ -406,20 +302,6 @@ def _accession_from_sibling(rel: str, resolved: dict[str, str]) -> str | None:
 
 def collect(results: Path, staged: Path, lanes: list[str], dest: Path,
             *, dry_run: bool = False) -> int:
-    """Lane products -> `<dest>/<accession>/<name>`, attributed from the results index.
-
-    ATTRIBUTION COMES FROM THE RUN'S OWN LINEAGE, never from a file name -- product file
-    names are content hashes and the directory names are types, so a results tree holding
-    five `clean_predictions` says nothing about which host each belongs to.
-
-    WHERE that lineage lives changed under this driver. It used to be a
-    `_manifests/<ns>-<name>.*.json` sidecar; at this engine pin `CollectResults` writes
-    one `_metadata/index.yml` instead and the sidecar is gone, so the old reader found no
-    manifests and reported that a run producing every output had produced nothing. The
-    index is the better source anyway: each product entry lists its PARENTS by type, so
-    the `sequences::orfs` parent names the proteome directly and no hash-matching stands
-    between the two.
-    """
     idx = results / "_metadata" / "index.yml"
     if not idx.is_file():
         raise SystemExit(
@@ -428,16 +310,9 @@ def collect(results: Path, staged: Path, lanes: list[str], dest: Path,
     import yaml
     manifest = (yaml.safe_load(idx.read_text()) or {}).get("manifest", {})
     wanted = {d: n for lane in lanes for d, n in LANES[lane]["products"].items()}
-    # Every proteome in the host set, which is what a lane output may name. Read from the
-    # host set rather than from this run's parents, so a product whose lineage is wrong
-    # can still be placed.
     all_accessions = [p.stem for p in sorted(GENOMES.glob("*/genome/*.faa"))]
 
     n_ok, seen, resolved = 0, {d: 0 for d in wanted}, {}
-    # TEXT PRODUCTS FIRST, so a binary one can borrow its task-mate's answer: the
-    # ProteinBERT parquet has no readable ids and takes the accession its index CSV
-    # resolved by content. Alphabetical order puts `_embeddings` before `_index`, which
-    # is exactly backwards.
     for rel, entry in sorted(manifest.items(),
                              key=lambda kv: (Path(kv[0]).suffix
                                              not in (".csv", ".tsv", ".txt"), kv[0])):
@@ -447,20 +322,8 @@ def collect(results: Path, staged: Path, lanes: list[str], dest: Path,
         orfs = [k.split("@", 1)[-1] for k, t in (entry.get("parents") or {}).items()
                 if t == "sequences::orfs"]
         src = results / rel
-        # CONTENT FIRST, LINEAGE SECOND, and that order is not a preference. Measured on
-        # this run: the ProteinBERT lane's recorded lineage does not describe what it
-        # read -- its embeddings entry lists all five proteomes as parents, and its index
-        # entries list one apiece that is the WRONG one for three of the five. A lane
-        # output's record ids are NCBI's and carry the contig accession, so the file
-        # states which proteome it describes and cannot be wrong about it. Lineage is
-        # kept as the fallback for a product that carries no readable id, and a
-        # DISAGREEMENT between the two is printed rather than resolved silently.
         by_content = _accession_from_content(src, all_accessions)
         by_lineage = Path(orfs[0]).stem if len(orfs) == 1 else None
-        # Sibling BEFORE lineage for a product that carries no readable id. A single ORF
-        # parent looks authoritative and is not: several entries in this run carry
-        # exactly one, and it is the wrong one. Its task-mate's content is a fact about
-        # the same task.
         acc = by_content or _accession_from_sibling(rel, resolved) or by_lineage
         if by_content and by_lineage and by_content != by_lineage:
             print(f"  ! {rel}: the run's lineage says {by_lineage}, the file's own "
@@ -487,10 +350,6 @@ def collect(results: Path, staged: Path, lanes: list[str], dest: Path,
                 shutil.copyfile(real, out)
         n_ok += 1
         seen[dtype] += 1
-    # ONE OUTPUT PER HOST PER TYPE, checked rather than assumed. Two products landing on
-    # one accession means two hosts' tables were written to one path and a third host has
-    # none -- which is the exact silent mis-pairing this whole attribution exists to
-    # prevent, and it is invisible in the copy log unless someone counts.
     for dtype in wanted:
         got = [a for r, a in resolved.items() if manifest[r].get("type") == dtype]
         if len(set(got)) != len(got):
@@ -511,12 +370,6 @@ def collect(results: Path, staged: Path, lanes: list[str], dest: Path,
 
 
 def push_sources(site: dict, lanes: list[str]) -> None:
-    """Move only what this site's lanes actually read, and only if it is not there.
-
-    Sized to the packed form on purpose: kofam's profiles are 1.5 GB as `profiles.tar.gz`
-    and 7.2 GB in 27,757 files unpacked, and the unpack is one `tar` on the far end. The
-    same rule that makes a globus transfer one tarball rather than a directory.
-    """
     host = site["host"]
     for lane in lanes:
         for _, rel in LANES[lane].get("source_refs", {}).items():
@@ -532,9 +385,6 @@ def push_sources(site: dict, lanes: list[str]) -> None:
         for _, rel in LANES[lane].get("refs", {}).items():
             src = PROCESSED / rel
             dest = f"{site['data']}/processed/{rel}"
-            # Already there wins over materialised here. kofam's profiles are expanded
-            # ON micb0 and have no local counterpart, so demanding a local copy first
-            # would fail a push that has nothing left to do.
             if ssh_once(host, f"test -e {dest} && echo yes || true").strip() == "yes":
                 print(f"  {rel}: already at {host}:{dest}")
                 continue
@@ -621,9 +471,6 @@ def main() -> int:
                      str(Path(agent.GetResultSource(task).GetPath()).parent / "inputs"),
                      staged_dir / "inputs")
         else:
-            # A local retrieve still has to REFRESH the copy, dereferencing as the run
-            # path does. Collecting from whatever is already there re-collects the last
-            # attempt, which is exactly wrong after a run that failed partway.
             src = agent.GetResultSource(task).GetPath()
             if local_results.exists():
                 shutil.rmtree(local_results)
@@ -641,7 +488,6 @@ def main() -> int:
         if preflight(site["host"], site["agent_home"], agent.container,
                      envs_from_plan(task), mlib=MLIB,
                      image_store=site.get("image_store")):
-            # micb0 has an outbound route and can pull; sockeye's compute nodes do not.
             if site["executor"] == "slurm":
                 print("\nrefusing to run: a compute node has no outbound network, so "
                       "an image absent from the store cannot be pulled once a task "
@@ -685,10 +531,6 @@ def main() -> int:
         return 2
 
     src = agent.GetResultSource(task).GetPath()
-    # BEFORE retrieving, not after. Both presets set errorStrategy='ignore', so a run
-    # whose every task failed still reports "completed" -- and the retrieve that follows
-    # is the expensive part. The first kofam attempt lost all three tasks and then began
-    # dragging 27,756 profile files back over ssh to prove it.
     if failed := failed_tasks(Path(src).parent, site):
         print(f"\nTHE RUN IS GREEN BUT {len(failed)} TASK(S) FAILED: "
               f"{', '.join(failed)}.\n  Nothing retrieved -- fix the failure and re-run. "
@@ -701,12 +543,6 @@ def main() -> int:
     else:
         if local_results.exists():
             shutil.rmtree(local_results)
-        # symlinks=False DEREFERENCES, and it has to. Metasmith lays results out under
-        # `mode='rellink'`, so each product is a RELATIVE symlink into the work tree --
-        # correct where it was written, dangling the moment the tree is copied to a
-        # different depth. Preserving the links here produced a results directory that
-        # passed every manifest check and then raised FileNotFoundError on the first
-        # file collected, naming a path two levels short of the real one.
         shutil.copytree(src, local_results, symlinks=False)
 
     dtypes = [d for lane in lanes for d in LANES[lane]["products"]]

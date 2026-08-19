@@ -18,11 +18,6 @@ def protocol(context: ExecutionContext):
     threads  = context.params.get('cpus')
     threads_arg = "" if threads is None else f"--nproc {threads}"
 
-    # v4.2 quirks: --offline avoids compute-node firewall hits; interleaved
-    # input is just a single fastq stream to metaphlan (bowtie2 underneath),
-    # which doesn't enforce pair semantics on the input; --db_dir replaces the
-    # v4.1 --bowtie2db flag.
-    # Same command either way: this tool is a plain CLI in both worlds.
     _cmd = f"""
             metaphlan {ireads.container} \
                 --input_type fastq --offline \
@@ -48,7 +43,7 @@ TransformInstance(
     group_by=reads,
     resources=Resources(
         cpus=8,
-        memory=Size.GB(64),  # bowtie2 indexes are ~33 GB; 32 GB OOMs
+        memory=Size.GB(64),
         duration=Duration(hours=2),
     )
 )

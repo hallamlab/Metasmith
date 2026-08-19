@@ -1,74 +1,8 @@
 #!/usr/bin/env python3
-"""Run the full metagenomics workflow from short reads on an HPC cluster (W1).
-
-Cluster port of the metagenomics-from-reads spec (see
-metagenomics_from_paired_reads.py for the current local template). Same DAG
-(seqkit_reads -> bbduk ->
-megahit -> prodigal -> {diamond_uniref50, kofamscan}; metabuli; assembly_stats ->
-3 binners -> checkm2 -> aggregator -> skani_dedup; gtdbtk; phyloFlash), retargeted
-to run end-to-end over SSH on a SLURM cluster. Written against a Sockeye-style
-cluster (module system + apptainer + allocation-coded /scratch); adjust the
-SETUP_COMMANDS / scratch convention for a different site.
-
-Run metag_setup_sockeye.py --run FIRST. That setup (W0) step:
-  - prefetches every tool container into the shared apptainer store (compute
-    nodes typically have no internet, so nothing can be pulled at run time),
-  - uploads the R1/R2 reads to cluster scratch (metasmith does not auto-transfer
-    non-resident inputs — it fails fast instead), and
-  - verifies the reference DBs are present.
-This script (W1) then references exactly what W0 staged.
-
-Differences vs. the local driver:
-  - Agent retargeted to the cluster over SSH with the APPTAINER runtime. Note the
-    Sockeye module quirk (`module load gcc/9.4.0` BEFORE `module load apptainer`;
-    a bare `module load apptainer` silently no-ops there).
-  - R1/R2 and the DBs are referenced by their REMOTE (cluster) paths.
-  - The five external DBs are supplied as pre-staged resources so the planner
-    SKIPS the download* transforms — each is hard-labeled `local` (except
-    downloadPhyloflashDB) → pinned to the login node where its 64GB+ ask + tens
-    of GB of wget cannot run. Pattern mirrors launch_dl_embeddings.
-  - Runs from allocation-coded /scratch (many clusters forbid SLURM jobs from
-    $HOME, and Nextflow's work dir must live under scratch).
-
-Configuration — set via environment (or edit the defaults):
-  MSM_HPC_HOST       ssh host alias for the cluster        (default: sockeye)
-  MSM_SLURM_ACCOUNT  SLURM allocation to submit under      (REQUIRED)
-  MSM_REF_DB_DIR     cluster dir holding the reference DBs  (REQUIRED)
-  MSM_READS_R1/R2    paired reads to run                    (REQUIRED)
-  MSM_SRC            metasmith source checkout to import    (optional; else use
-                                                             an installed metasmith)
-
-Usage:
-  python main/metag_workflow_from_reads_sockeye.py          # render DAG only
-  python main/metag_workflow_from_reads_sockeye.py --run    # submit to SLURM
-
-Expected reference-DB layout under $MSM_REF_DB_DIR:
-  ref::uniref50_diamond_db  -> diamond/uniref50.dmnd
-  ref::kofamscan_profiles   -> kofamscan/profiles.tgz   (the tar.gz itself)
-  ref::kofamscan_ko_list    -> kofamscan/ko_list.tsv
-  ref::metabuli_ref         -> metabuli/gtdb
-  ref::gtdb                 -> gtdb/<release>            (GTDBTK_DATA_PATH root)*
-  ref::phyloflash_db        -> phyloflash/138.2          **
-
-  *  Point ref::gtdb at the GTDB release dir your gtdbtk container expects (the
-     container binds GTDBTK_DATA_PATH directly to this dir); an older release
-     works as long as the container version matches it.
-  ** phyloFlash needs a bbmap-indexed dbhome (.udb + tree) built by
-     phyloFlash_makedb.pl, not just raw SILVA. Build it once on the login node
-     (has internet), e.g.:
-         module load gcc/9.4.0 apptainer
-         mkdir -p "$MSM_REF_DB_DIR/phyloflash/138.2"
-         cd       "$MSM_REF_DB_DIR/phyloflash/138.2"
-         apptainer exec <phyloflash.sif> phyloFlash_makedb.pl --remote_dbsource=138.2
-     (if your cluster already mirrors SILVA 138.2, point makedb at it to skip the
-     download). Until it exists the phyloFlash branch of the run fails at its
-     step; the rest of the DAG is wired correctly and completes independently.
-"""
 import os
 import sys
 from pathlib import Path
 
-# metasmith must be importable; set MSM_SRC to a source checkout if not installed.
 if os.environ.get("MSM_SRC"):
     sys.path.insert(0, os.environ["MSM_SRC"])
 from metasmith.python_api import (
@@ -77,30 +11,22 @@ from metasmith.python_api import (
     TargetBuilder,
 )
 
-# ── site config — set via env vars or edit the defaults (must match W0) ───────
-HPC_HOST      = os.environ.get("MSM_HPC_HOST", "sockeye")            # ssh host alias
+HPC_HOST      = os.environ.get("MSM_HPC_HOST", "sockeye")
 SLURM_ACCOUNT = os.environ.get("MSM_SLURM_ACCOUNT", "<slurm-allocation>")
-SETUP_COMMANDS = ["module load gcc/9.4.0", "module load apptainer"]  # Sockeye module order
+SETUP_COMMANDS = ["module load gcc/9.4.0", "module load apptainer"]
 
-# ── pre-staged reference DBs on the cluster (skip the download* transforms) ───
 REF = Path(os.environ.get("MSM_REF_DB_DIR", "<ref-db-dir-on-cluster>"))
 REMOTE_UNIREF50_DMND   = REF / "diamond"    / "uniref50.dmnd"
-REMOTE_KOFAM_PROFILES  = REF / "kofamscan"  / "profiles.tgz"   # ref::kofamscan_profiles IS the tarball
+REMOTE_KOFAM_PROFILES  = REF / "kofamscan"  / "profiles.tgz"
 REMOTE_KOFAM_KO_LIST   = REF / "kofamscan"  / "ko_list.tsv"
 REMOTE_METABULI_REF    = REF / "metabuli"   / "gtdb"
-REMOTE_GTDB            = REF / "gtdb"        / "release226"    # GTDBTK_DATA_PATH root (set to your release)
-REMOTE_PHYLOFLASH_DB   = REF / "phyloflash" / "138.2"          # see ** in the module docstring
+REMOTE_GTDB            = REF / "gtdb"        / "release226"
+REMOTE_PHYLOFLASH_DB   = REF / "phyloflash" / "138.2"
 
-# ── read inputs (uploaded to the cluster by metag_setup_sockeye.py) ──────────
-# The local names are used only to derive the remote filenames; the reads
-# themselves are referenced by their cluster paths under the shared inputs dir.
 R1 = Path(os.environ.get("MSM_READS_R1", "<reads-R1.fq.gz>"))
 R2 = Path(os.environ.get("MSM_READS_R2", "<reads-R2.fq.gz>"))
 OUT_DIR = Path("results/metag_workflow_sockeye")
 
-# The transform library. `parents[3]` is the repo root (examples/ ->
-# metasmith_libraries/ -> research/ -> root); the library itself lives under
-# src/. Pointing at the root instead resolves no types and asserts nothing.
 MLIB = Path(__file__).resolve().parents[3] / "src" / "metasmith_libraries"
 
 SUBMIT = "--run" in sys.argv
@@ -131,30 +57,25 @@ def ssh_capture(cmd: str) -> str:
 def main():
     require_configured()
     user = ssh_capture("echo $USER")
-    # Many clusters forbid running SLURM jobs from $HOME — the agent home (and thus
-    # Nextflow's work dir) must live on allocation-coded scratch. Sockeye convention:
     scratch = f"/scratch/{SLURM_ACCOUNT}/{user}"
     agent_home = f"{scratch}/metasmith"
-    remote_dir = f"{scratch}/metag_workflow/inputs"          # shared scheme with W0
+    remote_dir = f"{scratch}/metag_workflow/inputs"
     remote_r1 = f"{remote_dir}/{R1.name}"
     remote_r2 = f"{remote_dir}/{R2.name}"
 
     out = OUT_DIR.resolve()
     out.mkdir(parents=True, exist_ok=True)
 
-    # inputs.xgdb references REMOTE (cluster) paths; not validated locally
     inputs = DataInstanceLibrary(out / "inputs.xgdb")
     for tl in ["sequences.yml", "alignment.yml", "ref.yml", "annotation.yml",
                "taxonomy.yml", "binning.yml", "binning_local.yml"]:
         inputs.AddTypeLibrary(MLIB / "data_types" / tl)
 
-    # meta -> reads lineage (same as the local driver), but R1/R2 are remote paths
     meta = inputs.AddValue("reads_metadata.json", {"parity": "paired", "length_class": "short"}, "sequences::read_metadata")
     pair = inputs.AddValue("read_pair.txt", "sample_1", "sequences::read_pair", parents={meta})
     inputs.AddItem(Path(remote_r1), "sequences::zipped_forward_short_reads", parents={pair})
     inputs.AddItem(Path(remote_r2), "sequences::zipped_reverse_short_reads", parents={pair})
 
-    # pre-staged DBs → planner skips the (login-node-impossible) download steps
     inputs.AddItem(REMOTE_UNIREF50_DMND,  "ref::uniref50_diamond_db")
     inputs.AddItem(REMOTE_KOFAM_PROFILES, "ref::kofamscan_profiles")
     inputs.AddItem(REMOTE_KOFAM_KO_LIST,  "ref::kofamscan_ko_list")
@@ -181,9 +102,6 @@ def main():
     targets.Add("taxonomy::phyloflash_summary")
     targets.Add("binning_local::cluster_table")
 
-    # Per-binner fan-out: distinct TargetSpec parents force a separate
-    # checkm + gtdbtk instance for each binner's bins (without parent
-    # constraints the planner would pick one binner to satisfy each).
     mb_bin = targets.Add("sequences::metabat2_bin_fasta")
     sb_bin = targets.Add("sequences::semibin2_bin_fasta")
     cb_bin = targets.Add("sequences::comebin_bin_fasta")

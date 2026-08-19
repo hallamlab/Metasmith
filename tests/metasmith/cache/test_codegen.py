@@ -1,27 +1,3 @@
-"""Codegen regression guards: workflow.nf / nextflow.config invariants.
-
-These are the "and don't break this" half of the cache-codegen contract:
-the cache implementation MUST NOT introduce a Nextflow plugin block, a
-`task.ext.*` cache-correlation closure, or a `process.cache` directive.
-Cache identity is owned by metasmith — Nextflow sees every run as fresh.
-
-It also owns the *coordinate system* of what codegen writes into the
-graph. Every other test in the repo builds its `NextflowGenContext` with
-`external_home == AgentPaths.HOME_ROOT`, which collapses the host and
-container views onto one string and makes a coordinate bug
-unrepresentable. `_stage_split_home` deliberately keeps them apart; the
-identity arm is the relay-free (mamba/native) configuration and stays
-covered by `_stage`.
-
-The cache-hit-rerun behavior previously verified by
-`test_synthetic_channel_registers_index_history` now lives in
-`test_hit_miss.py` (it's a hit/miss axis assertion that just happened to
-exercise the codegen path).
-
-Coverage: G5 (no plugin), G7 (no process.cache directive), and the
-cache-hit channel's coordinate system.
-"""
-
 from __future__ import annotations
 
 import json
@@ -47,7 +23,6 @@ def _make_context(workspace: Path, external_home: Path, external_work: Path):
 
 
 def _stage(task, tmp_path: Path) -> Path:
-    """Compile the task's Nextflow workspace and return the workspace path."""
     from metasmith.constants import AgentPaths
 
     workspace = tmp_path / "ws"
@@ -59,14 +34,6 @@ def _stage(task, tmp_path: Path) -> Path:
 
 
 def _stage_split_home(task, agent_home: Path, run_dir: str = "run") -> Path:
-    """Stage with the host home and the container home held apart.
-
-    The containerized agent's real shape: the agent home exists on the host
-    at `agent_home` and is bound into the bootstrap container at
-    `AgentPaths.HOME_ROOT`. Filesystem work at compile time must use the
-    former; anything written into the graph for a later reader must use the
-    latter.
-    """
     from metasmith.constants import AgentPaths
 
     external_work = agent_home / AgentPaths.STAGED / run_dir
@@ -78,14 +45,6 @@ def _stage_split_home(task, agent_home: Path, run_dir: str = "run") -> Path:
 
 
 def _seed_cache_from_meta(agent_home: Path, workspace: Path, step_name: str):
-    """Promote a fake shard for one step, as a prior run's promote would.
-
-    Reads the step's own `workflow.step_N.meta` so the seeded filenames and
-    slot ids match what the probe will look for — the alternative is
-    hand-rolling the canonical output-name shape a second time.
-
-    Returns (cache_root, [seeded file paths], cache_key_hex).
-    """
     from metasmith.caching.layout import default_cache_root, out_dir, shard_dir
     from metasmith.caching.store import CacheStore, encode_manifest
 
@@ -128,12 +87,6 @@ def _seed_cache_from_meta(agent_home: Path, workspace: Path, step_name: str):
             "dtype_key": sf["dtype_key"],
             "branch_idx": sf["branch_idx"],
         })
-        # Every seeded file needs the on-channel index it "travelled with",
-        # because a shard that cannot supply one for every matched file is
-        # demoted to a miss (cache_decisions) — which would make these
-        # codegen tests assert against a step that never became a hit.
-        # The contents are arbitrary here; only presence and round-tripping
-        # are under test.
         index_meta.append({
             "relpath": relpath,
             "index": {sf["dtype_key"]: ["cachedseed"]},
@@ -165,13 +118,6 @@ def _seed_cache_from_meta(agent_home: Path, workspace: Path, step_name: str):
 
 
 def test_no_plugin_in_generated_nf(tmp_path):
-    """G5 regression guard: generated workflow.nf has no plugin block / task.ext.
-
-    The cache implementation MUST NOT add a Nextflow plugin or a
-    `task.ext.cacheBranchKey`-style correlation closure to satisfy the
-    Critic E#1 invariant. Cache rewrites live in synthetic channels that
-    re-enter `o.post(...)`, not in plugin metadata.
-    """
     task = linear_3step.build_task(tmp_path)
     workspace = _stage(task, tmp_path)
 
@@ -182,11 +128,6 @@ def test_no_plugin_in_generated_nf(tmp_path):
 
 
 def test_generated_config_has_no_process_cache_directive(tmp_path):
-    """G7 regression guard: generated nextflow.config has no process.cache.
-
-    From Nextflow's POV every run is fresh; resume semantics are owned
-    by metasmith's lineage-addressed cache.
-    """
     from metasmith.constants import AgentPaths
 
     task = linear_3step.build_task(tmp_path)
@@ -201,30 +142,12 @@ def test_generated_config_has_no_process_cache_directive(tmp_path):
             )
 
 
-# ---------------------------------------------------------------------------
-# Which coordinate system reaches the graph
-# ---------------------------------------------------------------------------
-
-
 def test_cache_hit_channel_is_home_rooted(tmp_path):
-    """A cache hit's synthetic channel must carry the container spelling.
-
-    Everything on the FILES manifest is read back inside the bootstrap
-    container, which mounts the agent home only at `AgentPaths.HOME_ROOT`
-    — the host spelling is deliberately not mounted there. A hit that
-    emits the host path stages a symlink the head process can follow and
-    the consumer cannot, and the step dies reporting present files as
-    missing.
-
-    Fails before the fix: the emitted literal was the raw host path.
-    """
     from metasmith.constants import AgentPaths
 
     agent_home = tmp_path / "agent_home"
     agent_home.mkdir()
 
-    # Run 1 primes the layout; we seed the shard by hand rather than
-    # executing, since codegen is the only surface under test here.
     task = mixed_cacheability.build_task(tmp_path / "src")
     ws1 = _stage_split_home(task, agent_home, run_dir="run1")
     cache_root, seeded, _ = _seed_cache_from_meta(agent_home, ws1, "trA")
@@ -247,8 +170,6 @@ def test_cache_hit_channel_is_home_rooted(tmp_path):
             f"cache-hit channel is not rooted at HOME_ROOT:\n  {line.strip()}"
         )
 
-    # And it is the same file, not merely a home-rooted path: the exact
-    # container spelling of each seeded shard file.
     from metasmith.models.paths import PathMap
 
     path_map = PathMap(extern_home=agent_home, task_key=ws2.name)
@@ -258,10 +179,6 @@ def test_cache_hit_channel_is_home_rooted(tmp_path):
             f"expected cached file literal {expected} not in workflow.nf"
         )
 
-    # This is the only place in the suite where a real `file(...)` literal
-    # reaches the graph, so it is the only place the compile-time checker's
-    # literal arm can be exercised against generated rather than hand-written
-    # Groovy. Without this the checker could rot unnoticed.
     from metasmith.testing.contract_runtime import (
         CompiledTask,
         check_emitted_addresses,
@@ -280,17 +197,6 @@ def test_cache_hit_channel_is_home_rooted(tmp_path):
 
 
 def test_cache_hit_follows_the_store_row_not_the_key(tmp_path):
-    """The shard comes from the entry the probe returned, not from the key.
-
-    `CacheStore.files_exist` gates a hit on `entry.output_root`, so the store
-    row is what "this hit is real" was decided against. Re-deriving the shard
-    from the key afterwards can name a directory that does not exist — the hit
-    is then reported, the glob finds nothing, and the step silently emits
-    `Channel.empty()` instead of its cached outputs.
-
-    Seeds a row whose `output_root` deliberately differs from
-    `shard_dir(cache_key)` and asserts the emitted literal follows the row.
-    """
     from metasmith.caching.layout import default_cache_root, out_dir, shard_dir
     from metasmith.caching.store import CacheStore
     from metasmith.constants import AgentPaths
@@ -301,8 +207,6 @@ def test_cache_hit_follows_the_store_row_not_the_key(tmp_path):
     ws1 = _stage_split_home(task, agent_home, run_dir="run1")
     cache_root, seeded, key_hex = _seed_cache_from_meta(agent_home, ws1, "trA")
 
-    # Relocate the shard on disk and repoint the row at its new home. The
-    # key-derived path no longer exists.
     derived = shard_dir(cache_root, key_hex)
     relocated = cache_root / "relocated" / key_hex
     relocated.parent.mkdir(parents=True, exist_ok=True)
@@ -342,13 +246,6 @@ def test_cache_hit_follows_the_store_row_not_the_key(tmp_path):
 
 
 def test_publish_dir_stays_external(tmp_path):
-    """`publishDir` is the one cache path that must stay host-rooted.
-
-    Nextflow's publish step runs in the head process against the real
-    filesystem, and the post-run promote re-derives the same root on the
-    host. Pinned alongside the channel assertion above so a future
-    "unify the cache paths" edit trips here rather than in a run.
-    """
     from metasmith.constants import AgentPaths
 
     agent_home = tmp_path / "agent_home"

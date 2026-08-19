@@ -1,4 +1,3 @@
-"""`metasmith data ...` subcommands."""
 from __future__ import annotations
 
 import json

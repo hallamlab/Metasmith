@@ -1,11 +1,3 @@
-"""Token-benchmark scenarios (the 7 tests × 10 arms study).
-
-The seven benchmark tests (t1..t7) drive one *E. coli* functional-genomics
-pipeline (``fastp -> SPAdes -> bakta -> eggNOG-mapper -> clusterProfiler``)
-across the 10 arms defined in :mod:`..arms`. Pipeline-specific constants and
-all start-state builders live in :mod:`._pipeline`; each ``tN_*`` module is a
-thin :class:`..base.Scenario` binding a goal + start-state + oracle.
-"""
 from __future__ import annotations
 
 from .t1_install import InstallToolScenario
@@ -16,7 +8,6 @@ from .t5_adapt_hpc import AdaptHpcScenario
 from .t6_adapt_add_tool import AddToolScenario
 from .t7_adapt_from_middle import FromMiddleScenario
 
-#: All benchmark scenario classes, keyed by their canonical test name.
 BENCHMARK_SCENARIOS = {
     "t1_install": InstallToolScenario,
     "t2_pipeline": PipelineScenario,

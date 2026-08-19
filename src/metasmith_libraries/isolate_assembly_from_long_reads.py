@@ -1,14 +1,4 @@
 #!/usr/bin/env python3
-"""Author the `isolate_assembly_from_long_reads` template.
-
-  long_reads --> hifiasm_meta --> hifiasm_meta_assembly
-  hifiasm_meta_assembly --> prodigal --> orfs --> diamond_uniref50 + kofamscan
-
-`hifiasm_meta` consumes raw long reads directly -- no pre-chain like
-filtlong/miniasm needed, unlike plain `hifiasm`.
-
-    python main/isolate_assembly_from_long_reads.py [--rebuild] [--dag]
-"""
 import sys
 
 import _authoring as A

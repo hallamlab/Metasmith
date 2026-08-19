@@ -59,11 +59,6 @@ ASKA = ROOT / "data" / "fabfos" / "originals" / "benchmarks" / "aska"
 PDF = ASKA / "ffa" / "1-s2.0-S1096717625000989-main.pdf"
 DOCX = ASKA / "ffa" / "1-s2.0-S1096717625000989-mmc1.docx"
 
-# ---------------------------------------------------------------- the anchors
-#
-# Every number the paper states in prose, and the control each percentage is
-# against. These are the truth the digitiser is scored on, and the published
-# value wherever one exists.
 F0 = 799.6
 STATED = {
     ("fig1c", "F0"): (F0, "prose: baseline FFAs production of 799.6 mg/L"),
@@ -86,11 +81,6 @@ STATED = {
     ("figS5", "F0"): (F0, "prose"),
 }
 
-# ------------------------------------------------------------------ the bands
-#
-# Bar fills. Pink is the authors' own significance colour -- they fill a bar
-# pink when it is a significant increase over that panel's control -- so it is
-# read as its own column rather than inferred from height.
 def _bands(im):
     r, g, b = im[..., 0], im[..., 1], im[..., 2]
     return {
@@ -100,14 +90,13 @@ def _bands(im):
     }
 
 
-SUPPORT = 3      # columns that must independently reach a height for it to count
-MIN_RUN = 6      # a run thinner than this is an edge, not bar
-MAX_GAP = 26     # the tallest occlusion a walk will hop across
-JOINT = 12       # x-gap below which two column groups are one bar
+SUPPORT = 3
+MIN_RUN = 6
+MAX_GAP = 26
+JOINT = 12
 
 
 def _column_top(mask, x, base, ymin):
-    """Top row of the bar in column x, hopping over anything drawn on it."""
     col = mask[ymin:base + 1, x]
     if not col[-1]:
         return None
@@ -146,9 +135,7 @@ def _groups(mask, base, xlo, xhi, minw=10):
     return out
 
 
-# ------------------------------------------------------------------ the axes
 def find_axes(im, box):
-    """(x-axis row, y-axis column) as the longest dark run in each direction."""
     y0, y1, x0, x1 = box
     dark = im.max(axis=2) < 120
     xaxis = max(range(y0, y1), key=lambda y: dark[y, x0:x1].sum())
@@ -174,11 +161,6 @@ def find_yticks(im, xaxis, yaxis, ytop, span=14, frac=0.5):
 
 
 def calibrate(im, box, ytop, vmax):
-    """Value-per-pixel from the panel's own ticks, plus the row that means zero.
-
-    The ticks are evenly spaced by construction, so a bad detection shows up as
-    an uneven gap rather than as a plausible wrong answer.
-    """
     xaxis, yaxis = find_axes(im, box)
     ticks = find_yticks(im, xaxis, yaxis, ytop)
     if len(ticks) < 3:
@@ -202,7 +184,7 @@ def digitise(im, xaxis, y_zero, y_top, scale, xlo, xhi, labels, drop=6):
     for (x0, x1), label in zip(found, labels):
         mid = (x0 + x1) // 2
         kind = next((k for k in ("pink", "mint", "grey") if bands[k][base, mid]), "mint")
-        ceiling = int(y_top) - 4      # the panel's own top tick, not a guess
+        ceiling = int(y_top) - 4
         tops = sorted(t for t in (_column_top(bands[kind], x, base, ceiling)
                                   for x in range(x0 + 4, x1 - 3)) if t is not None)
         if len(tops) < SUPPORT:
@@ -213,14 +195,6 @@ def digitise(im, xaxis, y_zero, y_top, scale, xlo, xhi, labels, drop=6):
     return rows
 
 
-# ------------------------------------------------------------------- the panels
-#
-# A strain is (background, the ORFs overexpressed, anything deleted beyond the
-# host's own dfadE). `pRF` co-expresses tesA' and rfaY from one plasmid, so a
-# round-two strain overexpresses two ORFs even though only one is a pASKA clone.
-#
-# `marks` is what the panel prints above a bar. Blank means the authors printed
-# nothing, which is not the same claim as `ns` and is not recorded as one.
 PANELS = {
     "fig1c": dict(
         source="pdf", page=4, box=(560, 1010, 60, 1340), ytop=555, vmax=3000.0,
@@ -275,15 +249,11 @@ PANELS = {
              "rfaY, so their effect is epistatic"),
 }
 
-# Bars whose height was never digitised: Fig. 1d's axis is broken between 1000
-# and 1500, so a linear read of it would be wrong. All three of its values are
-# stated in prose, so nothing is lost.
 FIG1D = [("F0", "", ""), ("dRfaY", "", "rfaY"), ("dRfaY-comp", "rfaY", "rfaY")]
 FIG1D_MARKS = {"dRfaY": "***", "dRfaY-comp": "****"}
 
 
 def clones_of(panel, label):
-    """The ORFs a strain overexpresses, and anything it deletes."""
     if label in ("F0", "RF"):
         return ("rfaY", "") if label == "RF" else ("", "")
     parts = label.split("-")
@@ -296,7 +266,6 @@ def clones_of(panel, label):
     return (label, "")
 
 
-# --------------------------------------------------------------------- images
 def panel_image(spec, cache):
     if spec["source"] == "pdf":
         from pypdf import PdfReader
@@ -338,10 +307,6 @@ def main():
             clones, dels = clones_of(panel, label)
             background = spec["background"]
             if panel == "figS4" and not label.startswith("rfaY"):
-                # only the rfaY-led combinations are RF plus one pASKA clone --
-                # rfaY+-ydeA+ reads 799.7 here and 812.9 in Fig. 4c, which is
-                # the same strain twice. The ygdD- and norR-led pairs are two
-                # clones on plain F and are shown against RF only as a yardstick.
                 background = "F"
             control = spec["control"]
             if panel == "fig5a":

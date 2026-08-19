@@ -59,7 +59,6 @@ import pandas as pd
 
 
 def _repo_root(start: Path) -> Path:
-    """Nearest ancestor holding `data/fabfos`."""
     for d in (start, *start.parents):
         if (d / "data" / "fabfos").is_dir():
             return d
@@ -93,17 +92,12 @@ OUT = REPO / "data/fabfos/runs/scales/gpr"
 
 HOST = "e_coli_bw25113"
 COHORT = "scales_tol"
-# The library was built from BW25113's own chromosome and expressed in BW25113 delta-recA.
 SOURCE_ORGANISM = "e_coli_bw25113"
 
 PROD_HOST = "e_coli_lw06"
 PROD_COHORT = "scales_prod"
-# pdcZm and adhBZm are Zymomonas mobilis genes on a chromosomal Tn7 insertion.
 INSERT_SOURCE_ORGANISM = "z_mobilis"
 
-# All three tables here are a cohort table: the host layer's blocks plus the condition
-# each row belongs to. The insertion table is one too -- it names a condition of the
-# production arm -- which is why it is not a shape of its own.
 EXTENSIONS = ("attribution", "feature", "universe", "cohort")
 COLS = fe.schema_for(EXTENSIONS)
 CURATED_LANE_SET = "curated"
@@ -111,7 +105,6 @@ DENOVO_LANE_SET = "chosen_4"
 
 
 def assemble(parts, like) -> pd.DataFrame:
-    """The cohort table, on the schema. `like` supplies the columns when nothing hit."""
     df = (pd.concat(parts, ignore_index=True) if parts else like.reindex(columns=COLS))
     df = df[COLS]
     if len(df):
@@ -121,12 +114,6 @@ def assemble(parts, like) -> pd.DataFrame:
 
 
 def faa_index(faa: Path) -> tuple[dict[str, str], dict[str, str]]:
-    """``(orf id -> gene symbol, locus_tag -> orf id)`` from a RefSeq protein FASTA.
-
-    The de-novo GPR keys `orf` on the header's first token, which is the only join the
-    de-novo side has: that table's own `feature_name` is blank for all but a handful of
-    ORFs, so joining on the name looks like it works and drops almost everything.
-    """
     gene, by_tag = {}, {}
     for line in faa.open():
         if not line.startswith(">"):
@@ -142,7 +129,6 @@ def faa_index(faa: Path) -> tuple[dict[str, str], dict[str, str]]:
 
 
 def symbol_for_bnumber(faa: Path) -> dict[str, str]:
-    """b-number -> the symbol MG1655's CURRENT annotation uses."""
     out = {}
     for line in faa.open():
         if not line.startswith(">"):
@@ -155,7 +141,6 @@ def symbol_for_bnumber(faa: Path) -> dict[str, str]:
 
 
 def build_curated(ext: pd.DataFrame, gem: pd.DataFrame, universe: set) -> tuple:
-    """Curated rows and the per-gene resolution record, keyed on `gene_norm`."""
     gem_id = str(gem["unit_id"].iloc[0])
     genes = gem[gem.feature_kind == "gem_gene"]
     by_fid = {f: g for f, g in genes.groupby("orf")}
@@ -177,12 +162,6 @@ def build_curated(ext: pd.DataFrame, gem: pd.DataFrame, universe: set) -> tuple:
             disagree.append(dict(gene=gene, sheet=sheet_b, from_name=name_b))
         current = sym_for_b.get(name_b) or sym_for_b.get(sheet_b) or ""
 
-        # The sheet's own b-number is tried ONLY when the name resolves to none, never as a
-        # fallback for a name whose b-number the model does not carry. Nine rows take that
-        # second path if it is allowed, and every one of them is wrong: the sheet's column
-        # is off by a neighbouring locus, so hlpA (= skp, b0178, absent from iML1515) would
-        # be attached to b0179 = lpxD. A gene the model does not carry is unresolved; a
-        # disagreeing column is not licence to attach it to whatever sits next door.
         fids, how = set(), "unresolved"
         if name_b and name_b in by_fid:
             fids, how = {name_b}, "name_bnumber"
@@ -218,7 +197,6 @@ def build_curated(ext: pd.DataFrame, gem: pd.DataFrame, universe: set) -> tuple:
 
 
 def build_denovo(ext: pd.DataFrame, rec: pd.DataFrame, universe: set) -> tuple:
-    """De-novo rows, keyed ORF id -> symbol through BW25113's own GenBank synonyms."""
     dn = pd.read_parquet(HOST_DENOVO)
     dn = dn.assign(in_atom_universe=dn["mnxr"].isin(universe))
     lanes = sorted(dn["channel"].astype(str).unique())
@@ -253,13 +231,9 @@ def build_denovo(ext: pd.DataFrame, rec: pd.DataFrame, universe: set) -> tuple:
         cond = f"{COHORT}:{norm}"
         if len(hit):
             parts.append(hit.assign(
-                # `source` names the ORF set these rows describe. They were read out of
-                # the host's table, but each one is now a claim about a cloned fragment.
                 source="bw25113_orfs",
                 build_id="denovo_" + COHORT + "_" + "+".join(lanes), host=HOST,
                 unit_id="bw25113_orfs", feature_kind="clone_gene",
-                # The de-novo table's own feature_name is blank; the screen's symbol is the
-                # only name this row can honestly carry.
                 feature_name=gene, condition_id=cond, cohort=COHORT, action="add",
                 source_organism=SOURCE_ORGANISM))
         cols.append(dict(
@@ -273,7 +247,6 @@ def build_denovo(ext: pd.DataFrame, rec: pd.DataFrame, universe: set) -> tuple:
 
 
 def build_insertion(universe: set) -> tuple:
-    """LW06's Tn7 insertion as study GPR rows, and what it could not resolve."""
     gof = pd.read_csv(GOF, sep="\t", dtype=str).fillna("")
     add = gof[gof.role == "add"]
     rows, unresolved = [], []
@@ -285,8 +258,6 @@ def build_insertion(universe: set) -> tuple:
             continue
         rows.append(dict(
             source="attTn7_pdc_adhB", orf=gene, channel="curated_insertion", mnxr=mnxr,
-            # The insertion is asserted, not projected: the EC is the only intermediate
-            # between the gene and the reaction, and a human put it there.
             intermediate_id=gene, intermediate_name=str(r.ec),
             raw_score=np.float32(1.0), score_kind="presence", projection_via="manual",
             evidence_quality="unknown", lane_set="curated",
@@ -342,13 +313,6 @@ def main() -> int:
     ins_df.to_parquet(out_dir / "gpr_insertion.parquet", index=False, compression="zstd")
     rec.to_csv(out_dir / "gene_census.tsv", sep="\t", index=False)
 
-    # The confirmed clones are the one positive set that was individually rebuilt and
-    # retested, so how much of it the method can see at all is reported on its own.
-    #
-    # MATCHED ON B-NUMBER, NOT ON NAME. Table 1 prints current symbols and the 2012 sheet
-    # prints 2005 ones, so arnB/arnC -- the genes clone 7 was selected on -- are `yfbE`
-    # and `yfbF` in the census and a name match silently loses them. Getting this wrong
-    # undercounts the one positive set that is not a screen artefact.
     clones = pd.read_csv(CLONES, sep="\t", dtype=str).fillna("")
     conf_genes, conf_bnums = set(), set()
     for r in clones.itertuples(index=False):

@@ -1,18 +1,3 @@
-"""The agent side: what runs on the remote host, launched by the staged agent.
-
-`StageWorkflow`, `RunWorkflow` and `CheckWorkflow` are invoked over the
-agent-to-agent RPC surface in `coms/api.py`, from inside the container, against
-an agent loaded off disk. They share their names with `Agent` methods of the
-same name, which are the client half that asks for them.
-
-That shadow used to be an accident of one 2153-line namespace. Naming this
-module is the fix: `agents.runner.RunWorkflow` versus `Agent.RunWorkflow` says
-which side you are on, and neither gets renamed -- both are public.
-
-The package `__init__` re-exports these three so the bare-name imports in
-`coms/api.py` keep resolving to the free functions, not the methods.
-"""
-
 from __future__ import annotations
 
 import json
@@ -106,7 +91,6 @@ def StageWorkflow(task_key: str, verify: bool, host: str, rootfs: Rootfs|None = 
     Log.Info(f"external work [{extern_work}]")
     Log.Info(f"external data [{extern_data}]")
 
-    # data libraries
     def move_remote_libs(libs: list[DataInstanceLibrary], dest: Path):
         processed_libs: list[DataInstanceLibrary] = []
         mover = Logistics()
@@ -130,7 +114,6 @@ def StageWorkflow(task_key: str, verify: bool, host: str, rootfs: Rootfs|None = 
         return processed_libs
     task.data_libraries = move_remote_libs(task.data_libraries, data_dir)
 
-    # nextflow
     Log.Info(f"compiling nextflow script")
     task.PrepareNextflow(NextflowGenContext(
         workflow_file=AgentPaths.NXF_WORKFLOW,
@@ -147,7 +130,6 @@ def StageWorkflow(task_key: str, verify: bool, host: str, rootfs: Rootfs|None = 
     orchestrator_lib = MODULE_PATH/"nextflow_config/Orchestrator.groovy"
     shutil.copy(orchestrator_lib, nxflib_dir/orchestrator_lib.name)
 
-    # launcher
     launcher_path = work_dir/AgentPaths.LAUNCHER_FILE
     Log.Info(f"creating launcher script at [{launcher_path}]")
     mock = agent._get_mock_container(task)
@@ -182,13 +164,6 @@ def StageWorkflow(task_key: str, verify: bool, host: str, rootfs: Rootfs|None = 
         
 
 def _extract_nxf_task_metadata(log_dir_abs: Path) -> "pd.DataFrame | None":
-    """Return the per-task Nextflow trace table, or None if unavailable.
-
-    Prefers `nxf_trace.tsv` (produced via `-with-trace`): a clean TSV
-    with no escape ambiguity. Falls back to scraping `nxf_report.html`
-    if the TSV is missing, sanitizing JS-only escapes (`\\'`) that
-    strict JSON rejects -- see inbox #162.
-    """
     tsv = log_dir_abs/AgentPaths.NXF_TRACE_FILE
     if tsv.exists():
         try:
@@ -242,7 +217,7 @@ def RunWorkflow(key: str, log_dir: Path, host: str, stub_delay: float):
     path_map = PathMap(extern_home=Path(str(extern_home)), task_key=key)
     extern_workspace = path_map.extern_work
     (workspace/log_dir).mkdir(parents=True, exist_ok=True)
-    MAIN_LOG = workspace/log_dir/AgentPaths.MAIN_LOG_FILE # this is the stdout captured by launcher
+    MAIN_LOG = workspace/log_dir/AgentPaths.MAIN_LOG_FILE
     Log.AddLogFile(MAIN_LOG)
 
     Log.Info(f"workspace [{workspace}]")
@@ -267,13 +242,6 @@ def RunWorkflow(key: str, log_dir: Path, host: str, stub_delay: float):
             dest = dest_base/str(_extern_location)
             lib.ActualizeRemote(extern_dest=dest, label=f"msm_staging.{_name}")
 
-    # need to call nf inside container
-    # nf needs java and is not a standalone executable
-    #
-    # https://github.com/nextflow-io/nextflow/discussions/4711
-    # export NXF_ENABLE_VIRTUAL_THREADS=false
-    # https://seqera.io/blog/optimizing-nextflow-for-hpc-and-cloud-at-scale/
-    # export NXF_JVM_ARGS="-Xms2g -Xmx64g"
     results_folder = "results"
     nxf_report = log_dir/"nxf_report.html"
     nxf_dag = log_dir/"workflow.dag_nxf.dot"
@@ -284,8 +252,6 @@ def RunWorkflow(key: str, log_dir: Path, host: str, stub_delay: float):
         shell.RegisterOnOut(Log.Info)
         shell.RegisterOnErr(Log.Error)
         Log.Info(f"calling nextflow from container")
-        # export NXF_JVM_ARGS="-Xms16g -Xmx64g"
-        # -dump-hashes \
         stub_param = f"-stub --testSpread={stub_delay:0.3f}" if stub_delay>0 else ""
         shell.Exec(
             f"""
@@ -356,9 +322,6 @@ def RunWorkflow(key: str, log_dir: Path, host: str, stub_delay: float):
     else:
         Log.Warn(f"no task metadata extracted from [{workspace/log_dir}]")
 
-    # S5 — post-execution promote. Walks workflow.step_*.meta, locates
-    # each step's outputs, deposits them in the cache, and inserts into
-    # CacheStore. Skipped when METASMITH_CACHE is falsy (kill-switch).
     if os.environ.get("METASMITH_CACHE", "1").lower() not in {
         "0", "false", "off", "no"
     }:
@@ -391,15 +354,13 @@ def RunWorkflow(key: str, log_dir: Path, host: str, stub_delay: float):
 
     Log.Info(f"gathering log files")
     nxf_ids = set()
-    nxf_id_len = 9 # 2 + "/" + 6
-    # careful, we are also logging to here, so printing may cause infinite loop
-    # as new lines are generated
+    nxf_id_len = 9
     with open(MAIN_LOG, "r") as f:
         for l in f:
             candidates = re.findall(r"\[[\dabcdef]{2}/[\dabcdef]{6}\]", l)
             if len(candidates) == 0: continue
             hit = candidates[0]
-            nxf_id = hit[1:-1] # remove the brackets
+            nxf_id = hit[1:-1]
             nxf_ids.add(nxf_id)
     NXF_WORK = workspace/"nxf_work"
     PROCESS_DEST = workspace/log_dir/"steps"
@@ -421,7 +382,7 @@ def RunWorkflow(key: str, log_dir: Path, host: str, stub_delay: float):
             src = log_path
             dest.symlink_to(f"../../../{src.relative_to(workspace)}")
         except:
-            continue # if anything happens, abandon hope
+            continue
 
     Log.Info(f"linking logs [{log_dir}] to results folder [{output_path}]")
     output_metadata_path = output_path/f"{output._path_to_meta}"

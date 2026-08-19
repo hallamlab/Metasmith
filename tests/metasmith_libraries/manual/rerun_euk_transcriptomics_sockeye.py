@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-"""Re-run the euk transcriptomics pipeline on sockeye (skip generate/stage, just RunWorkflow)."""
 import sys
 import time
 sys.stdout.reconfigure(line_buffering=True)
@@ -98,8 +97,6 @@ def main():
         sys.exit(1)
     print(f"Plan has {len(task.plan.steps)} steps")
 
-    # Skip staging - already staged, just need to run with the patched Orchestrator
-    # The Orchestrator.groovy was already updated via scp directly
 
     print("\n=== Running workflow (SLURM, resume) ===")
     with open(MLIB / "secrets/slurm_account_sockeye") as f:
@@ -115,9 +112,8 @@ def main():
     print("\n=== Waiting for completion ===")
     results_path = smith.GetResultSource(task).GetPath()
     t0 = time.time()
-    timeout = 86400  # 24h
+    timeout = 86400
     last_print = 0
-    # Clear previous _metadata if it exists from the failed run
     import shutil
     old_meta = results_path / "_metadata"
     if old_meta.exists():

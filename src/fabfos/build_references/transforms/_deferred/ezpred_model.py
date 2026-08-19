@@ -1,35 +1,3 @@
-"""R9 -- the EZpred DL-only bundle the EC-head lane runs.
-
-**Requires:** `originals/ezpred/` (the whole source folder) + `buildlib::ezpred_src`.
-
-TWO HALVES FROM TWO PLACES, and the split is the tier rule rather than convenience:
-
-    the CODE     `buildlib::ezpred_src` -- the vendored EZpred tree with our DL-only
-                 patch. Patched code is not what any URL returns, so it cannot sit
-                 in the originals tier; it is a build-side resource, pinned to an
-                 upstream revision, with its patch notes beside it.
-    the WEIGHTS  `originals/ezpred/<records>/{models.zip, Data2.zip}` -- Zenodo
-                 artifacts, byte-for-byte as served.
-
-`ref::ezpred_model` is the two assembled: the tree with `models/{enzyme,nonenzyme}/`
-and the label IA tables in place, which is the directory `functionalAnnotation/
-ezpred.py` bind-mounts at /work/EZpred so `settings.py`'s root_dir resolves.
-
-UNZIP EXITS 0 ON A MEMBER THAT IS NOT THERE. `unzip -j archive 'some/path'` prints
-"caution: filename not matched" and returns 0. Every extract here is checked by
-looking for the files afterwards, never by the exit code -- a partial unpack yields
-a bundle that imports cleanly and then predicts from three of five ensemble members,
-which is a quieter wrong answer than a crash.
-
-THE ENSEMBLE COUNT IS ASSERTED. Five members per head is what the DL-only path
-averages over; four is a different model with the same name.
-
-THE ESM-C WEIGHTS ARE NOT IN HERE. Upstream's `predict.py` re-embeds each FASTA with
-its own `fasta2plm.py`; ours consumes the embeddings `functionalAnnotation/esm_c.py`
-already produced, so the 600M pass runs once for both the ESM-C GPR lane and this
-one. That is also why R8 exists as its own reference rather than as a file inside
-this bundle.
-"""
 from metasmith.python_api import *
 
 lib   = TransformInstanceLibrary.ResolveParentLibrary(__file__)
@@ -40,10 +8,8 @@ source = model.AddRequirement(lib.GetType("fabfos_data::ezpred"))
 src    = model.AddRequirement(lib.GetType("buildlib::ezpred_src"))
 bundle = model.AddProduct(lib.GetType("ref::ezpred_model"))
 
-# Five per head is what the DL-only path averages over.
 ENSEMBLE_MEMBERS = 5
 HEADS = ("enzyme", "nonenzyme")
-# The label IA tables predict.py reads out of Data2.zip.
 IA_TABLES = ("Data/network_training_data1/IA.txt", "Data/network_training_data2/IA.txt")
 
 DRIVER = r'''

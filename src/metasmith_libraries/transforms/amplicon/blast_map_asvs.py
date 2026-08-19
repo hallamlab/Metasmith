@@ -1,5 +1,3 @@
-"""Map ASV sequences to contigs using BLASTn with configurable identity threshold."""
-
 from metasmith.python_api import *
 
 lib       = TransformInstanceLibrary.ResolveParentLibrary(__file__)
@@ -16,10 +14,8 @@ def protocol(context: ExecutionContext):
     ithreshold = context.Input(threshold)
     ihits      = context.Output(hits)
 
-    # Read threshold value from the input file
     pct_identity = ithreshold.local.read_text().strip()
 
-    # Same command either way: this tool is a plain CLI in both worlds.
     _cmd = f"""\
             makeblastdb \
                 -in {icontigs.container} \

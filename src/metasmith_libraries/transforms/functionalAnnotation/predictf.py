@@ -16,10 +16,6 @@ def protocol(context: ExecutionContext):
     otf   = context.Output(out_tf)
     opot  = context.Output(out_potential)
 
-    # PredicTF uses DIAMOND alignment against BacTFDB then DL classification.
-    # The deepARG.py --folder flag points to BacTFDB (database + model files).
-    # Must use conda run -n predictf for Python 2.7 environment.
-    # Subshell to avoid changing CWD (metasmith needs /ws writable for exit code).
     context.ExecWithEnv().ifContainerDo(
         env=image,
         binds=[(idb.external, "/predictf_db")],

@@ -5,8 +5,6 @@ model = Transform()
 image = model.AddRequirement(lib.GetType("env::diamond.env"))
 db    = model.AddProduct(lib.GetType("annotation::bacmet_diamond_db"))
 
-# BacMet2 "predicted" protein DB (~40k genes; metal + biocide resistance).
-# Swap to BacMet2_EXP_database.fasta for the experimentally-confirmed subset.
 BACMET_URL = "http://bacmet.biomedicine.gu.se/download/BacMet2_predicted_database.fasta.gz"
 
 

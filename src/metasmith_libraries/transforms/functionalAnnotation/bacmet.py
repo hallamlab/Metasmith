@@ -1,8 +1,3 @@
-"""bacmet — DIAMOND blastp of ORF chunks against BacMet2 (metal/biocide resistance).
-
-Clone of diamond_tcdb.py. qseqid stays the Prodigal ORF header (k141_XXXXXX_N),
-preserving the contig ID. Key for co-selection analysis alongside MEGARes.
-"""
 from metasmith.python_api import *
 
 lib = TransformInstanceLibrary.ResolveParentLibrary(__file__)

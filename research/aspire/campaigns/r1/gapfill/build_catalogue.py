@@ -1,24 +1,4 @@
 #!/usr/bin/env python3
-"""Unified bin catalogue over every metasmith run plus the gap-filled bins.
-
-Deliberately does NOT reproduce the metasmith aggregator's requirement that all
-three binners have produced bins for an assembly before any of them count. That
-gate is why `results/*-quality_bin_fasta` holds 45 MAGs while more bins than that
-pass the same completeness/contamination thresholds. Here each bin is judged on
-its own.
-
-Attribution comes from `nxf_attribution.py`, which reconstructs sample and
-transform from the input list each nextflow task recorded in its own
-`.command.sh`. That replaces the hand-built `inv/*.tsv` work-dir join this used
-to read: the two were cross-checked over all 781 QkqCNJOo bins and agreed on
-every one, and the attribution route generalises to any run dir, which the join
-did not -- it was written against one run key.
-
-Gap-filled bins carry their sample and binner in the filename by construction.
-
-  python3 build_catalogue.py [run_key ...]      # default: QkqCNJOo + hEYVT7HY
-  REFRESH=1 python3 build_catalogue.py ...      # re-walk nxf_work rather than cache
-"""
 import os, csv, sys, glob, collections, subprocess
 
 MSM  = "/scratch/phyberos/gmcf3495/metasmith/runs"
@@ -27,17 +7,10 @@ G    = "/scratch/phyberos/gmcf3495/gapfill"
 ATTR = "/scratch/phyberos/gmcf3495/pw/nxf_attribution.py"
 BINNERS = ("metabat2", "semibin2", "comebin")
 MIN_COMP, MAX_CONT = 50.0, 10.0
-# The two runs that produced r1 bins: the main DAG, and the scoped run that
-# carried S13 and S22 after the library-drop race lost them.
 RUNS = sys.argv[1:] or ["QkqCNJOo", "hEYVT7HY"]
 
 
 def attribution(key):
-    """product basename -> (sample, transform), cached per run key.
-
-    Walking nxf_work is thousands of small reads, so it is cached; set REFRESH=1
-    when a run has produced tasks since the cache was written.
-    """
     cache = f"{INV}/attrib_{key}.tsv"
     if os.environ.get("REFRESH") or not os.path.exists(cache):
         with open(cache, "w") as fh:
@@ -54,7 +27,6 @@ def attribution(key):
 
 
 def checkm_index(paths):
-    """bin stem -> (completeness, contamination) from CheckM2 quality reports."""
     ck = {}
     for f in paths:
         try:
@@ -89,7 +61,7 @@ for key in RUNS:
         if transform not in BINNERS or not product.endswith((".fna", ".fa")):
             continue
         stem = product.rsplit(".", 1)[0]
-        if stem not in path:      # produced in a work dir but never published
+        if stem not in path:
             continue
         m = ck.get(stem)
         rows.append(dict(uid=stem, sample=sample, binner=transform, src="metasmith",
@@ -99,7 +71,6 @@ for key in RUNS:
         n += 1
     print(f"{key}: {n} published bin(s)", file=sys.stderr)
 
-# --- gap-filled bins ---
 ck_gf = checkm_index(glob.glob(f"{G}/checkm/*/*/checkm2_out/quality_report.tsv"))
 dupes = collections.Counter()
 for f in sorted(glob.glob(f"{G}/bins/*/*/*.fna")):
@@ -108,9 +79,6 @@ for f in sorted(glob.glob(f"{G}/bins/*/*/*.fna")):
     if len(parts) < 3:
         continue
     s, b = parts[0], parts[1]
-    # A gap-fill run over a pair the pipeline already binned would count that
-    # sample twice -- which is what the comebin S31 control did before it was
-    # deleted. Refuse and say so rather than inflate the MAG count.
     if (s, b) in seen:
         dupes[(s, b)] += 1
         continue
@@ -129,8 +97,6 @@ with open(f"{G}/catalogue.tsv", "w") as out:
                   f"{'' if r['comp'] is None else r['comp']}\t"
                   f"{'' if r['cont'] is None else r['cont']}\t{q}\t{r['path']}\n")
 
-# `extra_bins.tsv` is the hook binner_status.py reads to see bins produced by a
-# run other than QkqCNJOo, which its work-dir join was built against.
 with open(f"{INV}/extra_bins.tsv", "w") as out:
     for r in rows:
         if r["src"] == "metasmith" and r["run"] != "QkqCNJOo":

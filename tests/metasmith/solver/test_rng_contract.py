@@ -1,8 +1,3 @@
-"""The RNG contract is an interface with a second implementation on the other
-side of it, so these tests read like an interface's tests: known-answer vectors,
-pinned streams, and the exact word-consumption rules -- not "it looks random".
-"""
-
 import math
 import numpy as np
 import pytest
@@ -86,7 +81,7 @@ class TestBoundedInt:
         for _ in range(trials): counts[rng.bounded_int(n)] += 1
         expected = trials/n
         chi2 = sum((c-expected)**2/expected for c in counts)
-        assert chi2 < 22.5, counts # ~0.001 tail for 6 dof
+        assert chi2 < 22.5, counts
 
     def test_deterministic_for_a_seed(self):
         a = DecisionStream(5); b = DecisionStream(5)
@@ -132,13 +127,10 @@ class TestOrderingRules:
     def test_nan_ranks_last_everywhere(self):
         nan = math.nan
         assert argmax_index([nan, 1.0]) == 1
-        assert argmin_index([nan, 1.0]) == 1 # NaN is not a minimum either
+        assert argmin_index([nan, 1.0]) == 1
         assert top_k_indices([nan, 1.0, 2.0], 3) == [2, 1, 0]
 
     def test_ordering_rules_are_not_numpy_argpartition(self):
-        # The rule this replaces. `np.argpartition` returns the right *set* but
-        # an arbitrary index within it; the ties here are exactly where the two
-        # disagree, which is why the contract has to state a rule at all.
         scores = np.array([5.0, 5.0, 5.0, 1.0])
         assert top_k_indices(list(scores), 1) == [0]
         assert argmax_index(list(scores)) == 0

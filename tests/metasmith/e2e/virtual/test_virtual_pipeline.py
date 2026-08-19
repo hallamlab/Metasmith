@@ -14,7 +14,6 @@ from metasmith.testing.plan_oracle import PlanExecutionOracle
 from .conftest import create_transform_library, stage_task
 
 
-
 def _build_binning_task(tmp_path, mock_samples, mock_types) -> WorkflowTask:
     transforms = alignment_transform() | binner_transforms()
     tr_lib = create_transform_library(tmp_path / "tr", mock_types, transforms)
@@ -41,12 +40,10 @@ def _build_binning_task(tmp_path, mock_samples, mock_types) -> WorkflowTask:
     )
 
 
-
 def _run(task: WorkflowTask, host: str) -> tuple[Path, WorkflowTask]:
     key, workspace, staged = stage_task(task)
     RunWorkflow(key=key, log_dir=Path("_metasmith/logs.virtual"), host=host, stub_delay=0.0)
     return workspace, staged
-
 
 
 def test_virtual_full_pipeline_and_oracle(virtual_runtime, tmp_path, mock_samples, mock_types):
@@ -65,7 +62,6 @@ def test_virtual_full_pipeline_and_oracle(virtual_runtime, tmp_path, mock_sample
     oracle.validate_trace(events)
 
 
-
 def test_virtual_bounce_path_is_exercised(virtual_runtime_bounce, tmp_path, mock_samples, mock_types):
     task = _build_binning_task(tmp_path, mock_samples, mock_types)
     _, staged = _run(task, virtual_runtime_bounce.host)
@@ -75,7 +71,6 @@ def test_virtual_bounce_path_is_exercised(virtual_runtime_bounce, tmp_path, mock
 
     oracle = PlanExecutionOracle(staged)
     oracle.validate_trace(events)
-
 
 
 def test_oracle_detects_missing_bootstrap_event(virtual_runtime, tmp_path, mock_samples, mock_types):

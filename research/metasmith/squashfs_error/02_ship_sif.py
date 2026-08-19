@@ -38,8 +38,6 @@ def main(argv=None):
     ap.add_argument("--image", default=None, help="image uri; default = this source tree's")
     args = ap.parse_args(argv)
 
-    # the default `container` this source tree would deploy with, without
-    # constructing an Agent (which needs a home)
     image = args.image or Agent.__dataclass_fields__["container"].default
     local = Path(args.sif)
     assert local.exists(), f"no local sif at [{local}] — run 01_build_container.sh"
@@ -50,8 +48,6 @@ def main(argv=None):
     print(f"local sif  : {local} ({local.stat().st_size/1e6:.0f} MB)")
     print(f"remote dest: {args.host}:{dest}")
 
-    # APPTAINER_CACHEDIR on the far side would move the store out from under us,
-    # so refuse rather than ship into a path nothing reads.
     res = subprocess.run(
         ["ssh", args.host, f'echo "CACHEDIR=[${{APPTAINER_CACHEDIR:-}}]"; mkdir -p "{cache}" && echo mkdir-ok'],
         capture_output=True, text=True, check=True,

@@ -1,23 +1,3 @@
-"""One rectified universal-ground solve per reaction, over every reaction in the medium.
-
-Entry (a, b) of the result is the current reaction b draws when one ampere is injected at
-reaction a's product atoms and drained at the OMEGA universal leak. That is a true pairwise
-quantity -- current actually flowing from a to b -- not a landmark profile, which would
-place two reactions together merely because they respond alike to a shared set of probes.
-
-**The result is stored sparse on purpose.** Rows are fully dense (the smallest attributed
-current measured at universe scale was 7e-15), so an N x N table would be 13 GB at 57,637
-reactions. UMAP consumes a k-nearest-neighbour graph, so only each row's top-K strongest
-partners are kept, plus the row sum for the conservation check. At medium scale K defaults
-above the reaction count, which makes the store dense and the validation exact.
-
-Output is a directory of memmaps so the run is resumable -- an eight-hour sweep on a shared
-box gets interrupted -- with a ``done`` byte per row checked on start.
-
-    python ieff_sweep.py --scale medium  --mode full --out .../medium_full
-    python ieff_sweep.py --scale universe --mode cone --cover 0.999 --workers 6 --out ...
-    python ieff_sweep.py --scale gpr --gpr-table .../gpr_gem.parquet --out .../gpr_gem
-"""
 import argparse
 import json
 import os
@@ -34,15 +14,6 @@ from atom_graph import build_atom_graph, restrict_to_giant           # noqa: E40
 from ieff_ground import (GroundSystem, SymmetricField, cone_solve,   # noqa: E402
                          SolveRefused)
 
-# The medium every concept figure so far has used: the reactions in the giant component of
-# the MetaNetX-universe carbon star graph. Kept as a pickle because that graph is what the
-# earlier (retired) star-topology figures were built on, so the reaction set is comparable.
-# Vendored beside the scripts, like KEGG.pathways and for the same reason: it
-# lived in gitignored scratch in a repository that is now archived and read-only,
-# so this 578 KB was the only copy. It is a pickle, so it is version-fragile --
-# if it ever stops loading, rebuild the giant component rather than chasing the
-# pickle protocol, and accept that the reaction set will no longer be comparable
-# to the retired star-topology figures.
 STAR_PICKLE = Path(__file__).resolve().parent / "mnx_universe_base_C.pkl"
 XREF = (Path(__file__).resolve().parents[4]
         / "data/fabfos/originals/metanetx/4.5/reac_xref.tsv")
@@ -62,23 +33,10 @@ def kegg_annotated():
 
 
 def gpr_medium(table):
-    """The reaction set of one host's GPR table -- an organism network, not a universe slice.
-
-    Unweighted: every reaction the host is called to have is present at conductance 1. The
-    organism claim is carried by *which reactions exist*, which is what a GPR table asserts;
-    folding the per-call ``raw_score`` in as a conductance would additionally encode
-    annotation confidence, and the two lanes do not even score on one scale (``gpr_gem`` is
-    all 1.0 by construction, ``gpr_denovo`` spans 0.01 to 2293).
-    """
     return set(pd.read_parquet(table).mnxr.dropna().unique())
 
 
 def build(scale, gpr_table=None):
-    """``medium`` is the reaction set every concept figure so far has used. ``kegg`` adds
-    every MetaNetX reaction carrying a KEGG cross-reference, which is the set the pathway
-    overlay can actually speak about and the largest scale an exact rectified sweep fits
-    into a working day. ``universe`` is all of MetaNetX carbon. ``gpr`` is one host's
-    reaction set, read from a GPR parquet."""
     if scale == "medium":
         g, term, _ = build_atom_graph("C", star_medium())
     elif scale == "kegg":
@@ -93,12 +51,6 @@ def build(scale, gpr_table=None):
 
 
 def proximity_order(S, names):
-    """Breadth-first over reaction adjacency (two reactions are adjacent when they share an
-    atom node), so consecutive sources have similar solutions.
-
-    Warm starting and factor reuse only pay when neighbours follow neighbours; MNXR string
-    order is effectively random.
-    """
     import scipy.sparse as sp
     idx = {r: i for i, r in enumerate(names)}
     rows, cols = [], []
@@ -123,13 +75,6 @@ def proximity_order(S, names):
 
 
 class Store:
-    """Top-K per row, on disk, resumable.
-
-    Optional ``channels`` add one f32 memmap each, column-aligned to ``idx`` -- the same
-    selection that picked the top-K currents picks the channel values, so a channel column
-    always describes the target named in the same column of ``idx``.
-    """
-
     def __init__(self, path, src_names, rxn_names, K, mode="r+", provenance=None,
                  channels=()):
         self.path = Path(path)
@@ -141,8 +86,6 @@ class Store:
             json.dump(dict(src=list(src_names), rxn=list(map(str, rxn_names)), K=K,
                            **(provenance or {})), open(meta, "w"))
 
-        # Per *file* existence, not one check for all of them: a store gaining a channel it
-        # did not have keeps its finished columns and creates only the new file.
         def mm(name, dtype, shape):
             p = self.path / name
             return np.memmap(p, dtype, "w+" if not p.exists() else mode, shape=shape)
@@ -167,7 +110,7 @@ class Store:
             a[i, :len(sel)] = np.asarray(aux[c], float)[sel].astype(np.float32)
         self.rowsum[i] = float(row.sum())
         self.nit[i] = nit
-        self.done[i] = 1                                   # last: a done row is a whole row
+        self.done[i] = 1
 
     def flush(self):
         for a in (self.idx, self.val, self.rowsum, self.done, self.nit,
@@ -178,8 +121,6 @@ class Store:
 def run_block(args, S, F, order, store, lo, hi, tag=""):
     t0 = time.time()
     times, phi_prev, nrefuse = [], None, 0
-    # One symbolic analysis per block, not per source, and never shared across a fork --
-    # a CHOLMOD factor is a handle into C-allocated workspace and each worker owns its own.
     reuse = S.full_reuse() if args.mode == "full" else None
     nchecked = 0
     for i in range(lo, hi):
@@ -257,7 +198,6 @@ def main():
     if bad:
         raise SystemExit(f"unknown channels: {sorted(bad)}")
     if channels and args.mode == "cone":
-        # cone_solve never returns potentials; writing zeros would look like a measurement.
         raise SystemExit("--channels needs --mode full")
 
     T0 = time.time()
@@ -284,19 +224,14 @@ def main():
               f"{F.reuse.stats()}", flush=True)
 
     K = min(args.topk, S.n_rxn)
-    # What was measured, recorded where the answer lives. A consumer of the packed table
-    # should not have to infer the host and lane from a cache directory name.
     prov = dict(scale=args.scale, element="C", leak=args.leak, mode=args.mode,
                 warm=bool(args.warm), channels=list(channels),
                 gpr_table=str(args.gpr_table) if args.gpr_table else None)
     fresh = [c for c in channels if not (args.out / f"{c}.f32").exists()]
     store = Store(args.out, order, S.rxn_names, K, provenance=prov, channels=channels)
     todo = int((store.done[:len(order)] == 0).sum())
-    # meta.json is only written when absent, so provenance of a *re-run* goes beside it.
     json.dump(dict(prov, argv=sys.argv, K=K, n_src=len(order)),
               open(args.out / "run.json", "w"), indent=1)
-    # A channel added to a store whose rows are already done would leave those rows zero
-    # forever: run_block skips a done row, so nothing would ever fill them.
     if fresh and todo < len(order):
         raise SystemExit(f"channels {fresh} are new but {len(order)-todo} rows are already "
                          f"done in {args.out}; sweep to a fresh --out")

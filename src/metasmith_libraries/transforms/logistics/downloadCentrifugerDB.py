@@ -1,9 +1,3 @@
-# REVIEW: Mirrors what `centrifuger-download cfr_gtdb_r226` does — pulls 4
-# split .cfr files from the Liu lab's Dropbox. Centrifuger has no
-# `--install` flag, and there is no Zenodo mirror of the GTDB-r226 index.
-# The four .cfr files (.1.cfr .. .4.cfr) share the "cfr_gtdb_r226" prefix
-# per the ref::centrifuger_db dtype declaration; classifier `-x` arg uses
-# the same prefix (no trailing index number / suffix).
 from metasmith.python_api import *
 
 lib   = TransformInstanceLibrary.ResolveParentLibrary(__file__)
@@ -20,8 +14,6 @@ CENTRIFUGER_DB_URLS = [
 
 
 def protocol(context: ExecutionContext):
-    # ref::centrifuger_db is a PREFIX (not a dir): files written as
-    # <prefix>.1.cfr .. <prefix>.4.cfr so the classifier can use `-x <prefix>`.
     iout = context.Output(out)
     wget_lines = "\n            ".join(
         f'wget -q "{url}" -O {iout.container}{suffix}'

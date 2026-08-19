@@ -41,8 +41,6 @@ from __future__ import annotations
 
 import os
 
-# Before numpy: parallelism here is one process per gene, so a threading BLAS would
-# oversubscribe every core it is given.
 for _v in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS",
            "NUMEXPR_NUM_THREADS"):
     os.environ.setdefault(_v, "1")
@@ -58,12 +56,6 @@ from pathlib import Path                                               # noqa: E
 import numpy as np                                                     # noqa: E402
 import pandas as pd                                                    # noqa: E402
 
-# PANDAS' DEFAULT CSV FLOAT PARSER IS NOT ROUND-TRIP EXACT, and this is a reader bug, not
-# a writer one: a shard file correctly containing `1.9233290440672492` is read back by
-# `pd.read_csv` as `1.9233290440672488`. One ULP, ~2e-16 relative -- far below anything
-# that could move a rank, but it makes "a shard reproduces its slice bit for bit" false by
-# accident rather than by measurement, and a merged table that has been read-then-rewritten
-# then diverges from one that was read once. Every read of a solved value goes through this.
 READ_EXACT = dict(sep="\t", float_precision="round_trip")
 
 
@@ -95,19 +87,10 @@ COHORT = "scales_tol"
 
 FIELDS = ("gene", "gene_norm", "n_rxn", "axis", "sink_mnxm", "ieff_pert", "delta", "rxns")
 
-_S: dict = {}                   # worker state, populated by fork
+_S: dict = {}
 
 
 def host_weights(host: str, channel: str, universe: set | None = None) -> dict:
-    """Uniform-weight dict of the host's atom-universe reactions. This IS the organism.
-
-    EACH CHANNEL FOLDS AGAINST ITS OWN BACKGROUND and the two are never mixed: the curated
-    background is 1,412 reactions and the de-novo one 10,938, so a curated gene's edges
-    against a de-novo background would be a different perturbation than the screen performs.
-    The de-novo host table arrives with `in_atom_universe` entirely null -- not defaulted to
-    True, because a row wrongly marked in-universe claims an edge for a reaction with no
-    atom pairs -- so it is recomputed here from the same bake the curated flag came from.
-    """
     if channel == "gem":
         p = ROOT / f"data/fabfos/benchmarks/hosts/{host}/gpr_gem.parquet"
         df = pd.read_parquet(p, columns=["mnxr", "in_atom_universe"])
@@ -138,7 +121,6 @@ def read_axes(path: Path) -> list[dict]:
 
 
 def _solve_all(weights: dict) -> dict[str, float]:
-    """One graph build, one solve per declared axis."""
     g = graph_from_pairs(_S["pairs"], _S["element"], weights, _S["ratios"])
     src = Terminal.metabolite(g, _S["src_mnxm"], label="source")
     if src.missing:
@@ -146,9 +128,6 @@ def _solve_all(weights: dict) -> dict[str, float]:
     out = {}
     for ax in _S["axes"]:
         snk = Terminal.metabolite(g, ax["sink_mnxm"], label=ax["sink_name"])
-        # A sink that is not a node returns the same 0.0 as a disconnected one. The panel
-        # driver proved every declared sink IS a node of this host's graph, and perturbing
-        # a weight cannot remove a node, so a missing terminal here is a basis change.
         if snk.missing:
             raise SystemExit(f"[sweep] sink {ax['sink_mnxm']} ({ax['gene']}) is not a node")
         out[ax["gene"]] = float(solve(g, src, snk).total)
@@ -166,7 +145,6 @@ def _one(task):
 
 
 def shard_slice(items: list, shard: int, nshards: int) -> list:
-    """Contiguous slice `shard` of `nshards`, 0-based. Slices partition `items` exactly."""
     if not 0 <= shard < nshards:
         raise SystemExit(f"--shard {shard} outside 0..{nshards - 1}")
     lo = (len(items) * shard) // nshards
@@ -175,7 +153,6 @@ def shard_slice(items: list, shard: int, nshards: int) -> list:
 
 
 def merge(out_dir: Path, tag: str, nshards: int, expect: list[str]) -> Path:
-    """Union the shards, refusing anything short of exact coverage."""
     found, missing = [], []
     for k in range(nshards):
         p = out_dir / f"{tag}.shard{k:04d}of{nshards:04d}.tsv"
@@ -315,7 +292,6 @@ def main() -> int:
         print(f"[sweep] shard {a.shard} done -> {part}", file=sys.stderr)
         return 0
 
-    # ---- every measured gene gets a row on every axis -------------------------
     solved = pd.read_csv(part, **READ_EXACT)
     keep = ["gene", "gene_norm", "bnum_from_name", "phenotype", "fitness_15", "fitness_30",
             "gem_resolved_via", "gem_n_in_universe", "denovo_resolved_via",
@@ -333,8 +309,6 @@ def main() -> int:
         d["ieff_base"] = _S["base"][name]
         d["ieff_pert"] = d.ieff_pert.fillna(_S["base"][name])
         d["delta"] = d.delta.fillna(0.0)
-        # A base of exactly zero is a disconnected axis; log2 of 0/0 is not a ranking
-        # statistic and is left null rather than filled with a number.
         d["log2fc_ieff"] = (np.log2(d.ieff_pert / d.ieff_base)
                             if _S["base"][name] > 0 else np.nan)
         d["rxns"] = d.rxns.fillna("")

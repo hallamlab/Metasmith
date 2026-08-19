@@ -30,18 +30,16 @@ ROOT = HERE.parents[3]
 DEFAULT_IN = (ROOT / "data/fabfos/runs/eydallin_clones/ecspr"
               / "twopoint_cohort_e_coli_ag1_fold2.0_C.tsv")
 
-# dataviz reference palette, light mode. Diverging pair (warm/cool poles) because the
-# split IS polarity about wild-type. Validated all-pairs: CVD dE 21.6, normal 32.6.
-BLUE = "#2a78d6"        # excess  -- above WT
-RED = "#e34948"         # deficient -- below WT
+BLUE = "#2a78d6"
+RED = "#e34948"
 SURFACE = "#fcfcfb"
 TEXT_PRIMARY = "#0b0b0b"
 TEXT_SECONDARY = "#52514e"
 TEXT_MUTED = "#8a8981"
 GRID = "#e3e2dc"
 
-FLOOR = 1e-6            # below this the solve returns numerical zero (down to 1e-15)
-ON_PATH = 1e-4          # the cut that separates the seven responders
+FLOOR = 1e-6
+ON_PATH = 1e-4
 
 
 def _style(ax):
@@ -77,7 +75,6 @@ def main():
     for ax in (axL, axR):
         _style(ax)
 
-    # ---- left: every condition, log y, floor drawn ----
     axL.set_yscale("log")
     axL.axhspan(FLOOR / 2.4, FLOOR, color=GRID, alpha=0.55, zorder=1, linewidth=0)
     axL.axhline(ON_PATH, color=TEXT_MUTED, linewidth=1.0, zorder=2)
@@ -108,10 +105,8 @@ def main():
     axL.set_title(f"All 25 in-universe conditions      ρ = {rho_all:+.3f}  (p = {p_all:.2f})",
                   fontsize=11.5, color=TEXT_PRIMARY, loc="left", pad=12)
 
-    # ---- right: the responders, linear ----
     axR.scatter(on.abs_log2fc_meas, on.log2fc_ieff, s=96, c=on.color, zorder=4,
                 edgecolors=SURFACE, linewidths=1.8, alpha=0.9)
-    # glgB sits on the fit line between glgA and glgC; park its label off to the left.
     OFFSETS = {"glgB": (-12, -6, "right"), "glgC": (10, -6, "left")}
     for _, r in on.iterrows():
         dx, dy, ha = OFFSETS.get(r.gene, (0, 11, "center"))
@@ -138,7 +133,6 @@ def main():
                plt.Line2D([], [], marker="o", linestyle="", markersize=9, color=RED,
                           markeredgecolor=SURFACE, markeredgewidth=1.6,
                           label="glycogen deficient (<WT)")]
-    # Figure-level so it cannot land on a mark in either panel.
     leg = fig.legend(handles=handles, loc="upper right", ncol=2, frameon=False,
                      fontsize=9.5, handletextpad=0.5,
                      bbox_to_anchor=(0.988, 0.998), columnspacing=1.6)

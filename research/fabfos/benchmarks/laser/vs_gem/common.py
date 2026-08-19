@@ -1,9 +1,3 @@
-"""Shared paths, filters and census gates for the LASER vs GEM benchmark.
-
-Every arm imports this so that "which 235 conditions" and "which target is which
-MNXM" are answered in exactly one place. Anything that differs between arms is
-explicitly a parameter, never a re-derivation.
-"""
 from __future__ import annotations
 
 import json
@@ -39,26 +33,17 @@ HOSTS = ROOT / "data" / "fabfos" / "benchmarks" / "hosts"
 DENOVO = ROOT / "data" / "fabfos" / "runs"
 LIB = ROOT / "src" / "metasmith_libraries" / "resources" / "lib"
 
-# The pool of counterfactual designs is seeded once here and nowhere else. If two
-# arms disagree on this number every head-to-head p-value comparison is void.
 POOL_SEED = 20260809
 POOL_N = 500
 
 HOST_GEM_DIR = {"iML1515": "e_coli_k12", "iECDH10B": "e_coli_dh10b"}
 
-# Sequence-level mutation tokens. Union with action `mut` is the filter the user
-# chose ("either signal"); measured to drop 147 of 382 and keep 235. The set is
-# stable -- adding `duplication` or `protein_fusion` changes neither count.
 MUTATION_TOKENS = frozenset(
     {"aa_snps", "nuc_snps", "indel", "frameshift", "mutated", "truncated",
      "is_insertion"})
 
 ELEMENTS = ("C", "N", "P", "S")
 
-
-# ---------------------------------------------------------------------------
-# The scored set
-# ---------------------------------------------------------------------------
 
 def _genes(row) -> list:
     if not isinstance(row, str) or not row.strip():
@@ -80,9 +65,6 @@ def has_mutation(genes_json: str) -> bool:
 
 
 def split_mnxr(cell) -> list:
-    """`add_mnxr` / `del_mnxr` are COMMA delimited. Splitting on `;` silently
-    collapses every multi-reaction design to one token and halves the
-    no-heterologous-add stratum; it has already happened once."""
     if not isinstance(cell, str) or not cell.strip() or cell.strip().lower() == "nan":
         return []
     return [t.strip() for t in cell.split(",") if t.strip()]
@@ -99,15 +81,10 @@ def load_extraction() -> pd.DataFrame:
 
 
 def scored_set(df: pd.DataFrame) -> pd.DataFrame:
-    """The 235 conditions after the mutation filter. Probes are kept here -- they
-    are excluded from labelled panels downstream, not from the design axis."""
     return df[~df.has_mutation].copy()
 
 
 def assert_census(df: pd.DataFrame, native: dict | None = None) -> dict:
-    """Re-derive the numbers the whole plan is scoped against, and fail if any
-    moved. `native` maps host_dir -> set of host-native MNXR; when given, the
-    all-native-add and no-heterologous-add strata are checked too."""
     raw = pd.read_csv(EXTRACTION, sep="\t", nrows=5, dtype=str)
     cell = pd.read_csv(EXTRACTION, sep="\t", dtype=str).add_mnxr.dropna()
     n_comma = cell.str.count(",").sum()
@@ -148,10 +125,6 @@ def assert_census(df: pd.DataFrame, native: dict | None = None) -> dict:
     return got
 
 
-# ---------------------------------------------------------------------------
-# Name normalisation
-# ---------------------------------------------------------------------------
-
 _WS = re.compile(r"\s+")
 _NONALNUM = re.compile(r"[^a-z0-9]+")
 
@@ -166,10 +139,6 @@ def norm_aggressive(s: str) -> str:
     return _NONALNUM.sub("", norm_conservative(s))
 
 
-# ---------------------------------------------------------------------------
-# Atom universe
-# ---------------------------------------------------------------------------
-
 def atom_universe(element: str = "C") -> set:
     p = pd.read_parquet(ATOM_PAIRS, columns=["element", "substrate", "product"])
     p = p[p.element == element]
@@ -177,13 +146,6 @@ def atom_universe(element: str = "C") -> set:
 
 
 def read_gpr(path):
-    """Every GPR read in this benchmark goes through here.
-
-    `fabfos_evidence.read_gpr` returns the declared schema whatever layout the file is
-    on, so a table written before the schema and one written after are the same frame
-    to a caller. The columns below are the schema's own: `orf` names the nominator,
-    `intermediate_id` the EC/KO/accession it was called through.
-    """
     return FE.read_gpr(path)
 
 
@@ -191,10 +153,6 @@ def host_native_reactions(host_dir: str) -> set:
     g = read_gpr(HOSTS / host_dir / "gpr_gem.parquet")
     return set(g.mnxr.astype(str).unique())
 
-
-# ---------------------------------------------------------------------------
-# Nulls -- verbatim from examples/scadc_ecspr_null_score.py
-# ---------------------------------------------------------------------------
 
 def empirical_p(observed: float, null: np.ndarray, tail: str = "greater") -> float:
     null = np.asarray(null, float)

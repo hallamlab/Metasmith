@@ -31,7 +31,6 @@ def toLetters(i: int):
 
 class SecondaryIndex:
     def __init__(self, table: str, key: str, target: str, key_in_index: str='') -> None:
-        """specifying a unique @key_in_index will make tracing much faster"""
         if key_in_index == '': key_in_index = key
         self.key_in_secondary_index = key_in_index
         self.table_name = table
@@ -93,7 +92,7 @@ class Dat(Enum):
         def makesi(t):
             k, targ = t[:2]
             si = SecondaryIndex(self.table_name, k, str(targ))
-            if len(t) == 3: si.key_in_secondary_index = t[2] # added alt_key
+            if len(t) == 3: si.key_in_secondary_index = t[2]
             return si
 
         self.secondary_indexes = list()
@@ -137,7 +136,6 @@ class Field:
 
 class Table:
     def __init__(self, db, name, fields, type='') -> None:
-        """use Database.MakeTable() instead of initializer"""
         assert any([f.is_pk for f in fields]), "primary key not specified"
         self.name: str = name
         self.fields: dict[str, Field] = dict((f.name, f) for f in fields)
@@ -146,7 +144,6 @@ class Table:
         self.type: str = type
         self.is_new: bool = False
 
-        # foreign_keys = [f for f in self.fields if isinstance(f, ForeignKey)]
         self.sql = f'''
         CREATE TABLE {self.name} (
             {','.join([f.sql for f in self.fields.values()])},
@@ -231,7 +228,7 @@ class Database:
     DATA_TYPE = 'json'
     SI_NAME = 'si_name'
     SI_KEY = 'si_key'
-    SI_TARGET = 'parent_key' # value should match DATA_KEY
+    SI_TARGET = 'parent_key'
     def __init__(self, db_path: str|Path, ext:str='db') -> None:
         db_path = str(db_path)
         toks = db_path.split('.')
@@ -281,7 +278,7 @@ class Database:
         return info
 
     def _addTable(self, table: Table):
-        with self._con as con: # transaction
+        with self._con as con:
             con.execute(table.sql)
             self.registry._register(table)
 
@@ -308,11 +305,9 @@ class Database:
             Field(self.SI_KEY, is_pk=True),
             Field(self.SI_TARGET, is_pk=True),
         ], self.DATA_TYPE)
-        # for si where reference is tuple (DBLINKS, for ex)
         def parse(v):
             return '_'.join(v) if isinstance(v, list) else str(v)
 
-        # just using a dict because not enough useful links between tables to justify
         entries: list[tuple] = []
         json_keys = set()
         sis: list[tuple] = []
@@ -353,7 +348,7 @@ class Database:
             where = f"{self.SI_KEY} LIKE '{si_key}'"
         else:
             where = f"{self.SI_KEY}='{si_key}'"
-        if si_name is not None: where += f" AND {self.SI_NAME}='{si_name}'" # need check for si_name in table, omitted for performance
+        if si_name is not None: where += f" AND {self.SI_NAME}='{si_name}'"
         entry_keys = [e[0] for e in list(si_table.Select(self.SI_TARGET, where=where))]
         res = [(key, jloads(e[0])) for key, group in [
             (key, list(table.Select(self.DATA_TYPE, where=f"{self.DATA_KEY}='{key}'"))) for key in entry_keys
@@ -387,7 +382,6 @@ class Database:
             def recurse(m, i):
                 fwd, key, table = m[0]
                 x = toLetters(i)
-                # print(fwd, key, table, i)
                 if len(m) == 1:
                     j = f"{self._si_of_table(table)} AS {x}"
                     w = f"{x}.{self.SI_NAME}='{key}'"
@@ -398,7 +392,7 @@ class Database:
                 y = toLetters(i+1)
                 link = f"{x}.{sk if fwd else pk}={y}.{pk if f2 else sk}"
                 ka = pk if fwd else sk
-                kb = sk if fwd else pk # kc = ka
+                kb = sk if fwd else pk
                 if len(m) == 2:
                     names = f"{x}.{ka}, {x}.{kb}, {y}.{ka}"
                     joins = f"{self._si_of_table(table)} AS {x} INNER JOIN {self._si_of_table(t2)} AS {y} ON {link}"
@@ -414,19 +408,12 @@ class Database:
             n, j, w = recurse([ts.tuple for ts in steps], 1)
             if intermediates:
                 return f"SELECT DISTINCT {n} FROM ({j}) WHERE {w}"
-                # return f"SELECT DISTINCT {n} FROM ({j})"
             else:
                 ka = pk if steps[0].forward else sk
                 kb = pk if not steps[-1].forward else sk
                 return f"SELECT DISTINCT {toLetters(1)}.{ka}, {toLetters(len(steps))}.{kb} FROM ({j}) WHERE {w}"
-                # return f"SELECT DISTINCT {toLetters(1)}.{ka}, {toLetters(len(steps))}.{kb} FROM ({j})"
         
-        # use_table_names = len(set([ts.index_name for ts in steps])) != len(steps) # if indexes are not sufficiently unique
         sql = makeSql()
-        # print('x')
-        # # return sql
-        # return self._cur.execute(sql)
-        # results: list[tuple[str, str]] = list(self._cur.execute(sql))
         return TraceResult(self._cur.execute(sql), steps, sql)
 
     def _calc_trace(self, source: Traceable, target: Traceable):
@@ -450,7 +437,6 @@ class Database:
         trace = []
         for i, (p, d) in enumerate(zip(path, dirs)):
             dat = Dat.FromTableName(p if d else path[i+1])
-            # gets the matching set of p, p+1 in dat.si
             si = dict((str(sorted((s.table_name, s.target_name))), s) for s in dat.secondary_indexes)
             k = str(sorted((p, path[i+1])))
             if k not in si:

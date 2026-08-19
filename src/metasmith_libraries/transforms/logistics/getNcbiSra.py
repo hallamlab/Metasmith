@@ -17,7 +17,6 @@ def protocol(context: ExecutionContext):
         acc_value = f.readline()
     Log.Info(f"recieved SRA accession was [{acc_value}]")
 
-    # echo "{acc_value}" >{acc_value}
     context.ExecWithEnv().ifContainerDo(
         env = image,
         cmd = f"""

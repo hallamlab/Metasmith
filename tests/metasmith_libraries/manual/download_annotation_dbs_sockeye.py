@@ -1,8 +1,4 @@
 #!/usr/bin/env python
-"""Download BUSCO lineage and EggNOG databases on Sockeye.
-
-Runs downloadBuscoLineage and downloadEggnogDB as a standalone workflow.
-"""
 import sys
 import time
 sys.stdout.reconfigure(line_buffering=True)
@@ -47,7 +43,6 @@ def main():
     inputs = DataInstanceLibrary(inputs_dir)
     inputs.AddTypeLibrary(MLIB / "data_types" / "annotation.yml")
 
-    # Download triggers
     eggnog_src = inputs.AddValue("eggnog_source.txt", "eggnog", "annotation::eggnog_source")
     busco_src = inputs.AddValue("busco_source.txt", "eukaryota_odb10", "annotation::busco_source")
 
@@ -90,7 +85,7 @@ def main():
     print("\n=== Waiting for completion ===")
     results_path = smith.GetResultSource(task).GetPath()
     t0 = time.time()
-    timeout = 86400  # 24h
+    timeout = 86400
     last_print = 0
     while not (results_path / "_metadata").exists():
         elapsed = time.time() - t0

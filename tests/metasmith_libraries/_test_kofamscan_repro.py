@@ -1,9 +1,3 @@
-"""
-Temporary test to reproduce the KofamScan result compilation bug
-using Ana_PS.ss5.faa as input.
-
-See report.md for full bug analysis.
-"""
 import pytest
 import time
 from pathlib import Path
@@ -52,7 +46,6 @@ def annotation_transforms():
 
 @pytest.fixture
 def orfs_input(tmp_path):
-    """Create input library using Ana_PS.ss5.faa as ORFs input."""
     inputs_dir = tmp_path / "inputs.xgdb"
     inputs = DataInstanceLibrary(inputs_dir)
     inputs.AddTypeLibrary(MLIB / "data_types" / "sequences.yml")
@@ -69,7 +62,6 @@ def orfs_input(tmp_path):
 
 @pytest.fixture
 def kofam_db_input(tmp_path):
-    """Create input library with KofamScan databases."""
     kofam_dir = TEST_DATA_DIR / "kofam"
     assert (kofam_dir / "profiles").exists(), "KofamScan databases not available"
 
@@ -84,14 +76,6 @@ def kofam_db_input(tmp_path):
 
 
 def test_kofamscan_repro(agent, base_resources, annotation_transforms, orfs_input, kofam_db_input):
-    """Reproduce KofamScan result compilation assertion error.
-
-    This test uses Ana_PS.ss5.faa (5 small ORFs) to trigger the bug
-    described in report.md where RunWorkflow() fails at:
-        assert len(to_del) > 0
-    because small_orfs.faa (the ORFs input) is not registered in the
-    library manifest, so path2inst lookup fails for output parent deps.
-    """
     targets = TargetBuilder()
     targets.Add("annotation::kofamscan_results")
 
@@ -116,10 +100,8 @@ def test_kofamscan_repro(agent, base_resources, annotation_transforms, orfs_inpu
         },
     )
 
-    # This is where the bug should trigger - during result compilation
     results = wait_for_workflow(agent, task, timeout=600)
 
-    # If we get here, the bug didn't reproduce
     found_results = False
     for path, type_name, endpoint in results.Iterate():
         if "kofamscan_results" in type_name:

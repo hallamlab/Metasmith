@@ -1,8 +1,3 @@
-"""merge_megares — gather per-chunk DIAMOND MEGARes BLAST6 hits.
-
-DIAMOND outfmt 6 has no header line; concat is a raw cat (clone of
-merge_diamond_tcdb.py).
-"""
 from metasmith.python_api import *
 
 lib = TransformInstanceLibrary.ResolveParentLibrary(__file__)

@@ -1,6 +1,3 @@
-"""Tests for PlanHint diagnostics emitted by WorkflowPlan.Generate when the
-solver can't reach the target."""
-
 from __future__ import annotations
 
 import shutil
@@ -16,11 +13,6 @@ from metasmith.models.libraries import (
 )
 from metasmith.models.solver import Endpoint, Transform
 from metasmith.models.workflow import PlanHint, WorkflowPlan
-
-
-# ---------------------------------------------------------------------------
-# fixtures / helpers
-# ---------------------------------------------------------------------------
 
 
 @pytest.fixture
@@ -88,18 +80,12 @@ def _generate(inputs: DataInstanceLibrary, transforms: TransformInstanceLibrary,
     )
 
 
-# ---------------------------------------------------------------------------
-# tests
-# ---------------------------------------------------------------------------
-
-
 def test_unreachable_target(temp_dir):
-    """Target type has no producer at all → 'unreachable_target' hint."""
     types_path = temp_dir / "mock.yml"
     _write_types_yml(types_path, {
         "a": {"properties": {"_": "type a", "ext": "a"}},
         "b": {"properties": {"_": "type b", "ext": "b"}},
-        "c": {"properties": {"_": "type c", "ext": "c"}},  # no transform produces c
+        "c": {"properties": {"_": "type c", "ext": "c"}},
     })
 
     transforms = {
@@ -139,8 +125,6 @@ TransformInstance(protocol=protocol, model=model, group_by=dep)
 
 
 def test_missing_input_with_near_miss(temp_dir):
-    """Producer exists but its input is unsatisfied → 'missing_input' hint
-    with a near-miss naming the closest given."""
     types_path = temp_dir / "mock.yml"
     _write_types_yml(types_path, {
         "raw_reads": {"properties": {"_": "reads", "ext": "fq", "qc": "none"}},
@@ -170,7 +154,7 @@ TransformInstance(protocol=protocol, model=model, group_by=dep)
     lib_path = temp_dir / "inputs.xgdb"
     inputs = DataInstanceLibrary(lib_path)
     inputs.AddTypeLibrary(types_path, namespace="mock")
-    inputs.AddValue("dirty.fq", "x", "mock::raw_reads")  # raw, not clean
+    inputs.AddValue("dirty.fq", "x", "mock::raw_reads")
     inputs.Save()
 
     plan = _generate(inputs, tr_lib, "mock::raw_reads", "mock::assembly")
@@ -180,17 +164,13 @@ TransformInstance(protocol=protocol, model=model, group_by=dep)
     assert missing, f"expected at least one missing_input hint, got: {plan.hints}"
     h = missing[0]
     assert "mock::assembly" in h.target
-    # the dead-end should reference clean_reads since assembler needs it
     chain_text = " ".join(h.chain)
     assert "clean_reads" in chain_text
-    # a near-miss should point at our raw_reads input (overlap on _ and ext)
     nm_text = " ".join(h.near_misses)
     assert "dirty.fq" in nm_text, f"near misses: {h.near_misses}"
 
 
 def test_multi_hop_chain(temp_dir):
-    """Chain a→b→c→target with given that doesn't match the first step.
-    The hint chain should mention multiple transforms along the back-walk."""
     types_path = temp_dir / "mock.yml"
     _write_types_yml(types_path, {
         "a": {"properties": {"_": "type a", "stage": "input"}},
@@ -239,7 +219,6 @@ TransformInstance(protocol=protocol, model=model, group_by=dep)
     }
     tr_lib = _make_transform_lib(temp_dir, types_path, transforms)
 
-    # provide a totally unrelated type — no 'a' available
     types_path2 = temp_dir / "extra.yml"
     _write_types_yml(types_path2, {
         "totally_other": {"properties": {"_": "unrelated"}},
@@ -254,16 +233,12 @@ TransformInstance(protocol=protocol, model=model, group_by=dep)
     assert plan.steps == []
     missing = [h for h in plan.hints if h.kind == "missing_input"]
     assert missing, plan.hints
-    # the chain should record multiple producer hops back from target
     full_text = " ".join(" ".join(h.chain) for h in missing)
-    # we expect to see step_ct AND at least one of step_bc / step_ab in the chain
     assert "step_ct" in full_text
     assert ("step_bc" in full_text) or ("step_ab" in full_text), full_text
 
 
 def test_lineage_mismatch(temp_dir):
-    """Transform requires child whose parent must descend from another given;
-    when registered as siblings, a 'lineage_mismatch' hint fires."""
     types_path = temp_dir / "mock.yml"
     _write_types_yml(types_path, {
         "meta": {"properties": {"_": "sample metadata"}},
@@ -291,30 +266,22 @@ TransformInstance(protocol=protocol, model=model, group_by=reads)
     lib_path = temp_dir / "inputs.xgdb"
     inputs = DataInstanceLibrary(lib_path)
     inputs.AddTypeLibrary(types_path, namespace="mock")
-    # register meta and reads as siblings — NO parents= argument
     inputs.AddValue("sample.meta", "id=1", "mock::meta")
     inputs.AddValue("sample.fq", "reads", "mock::reads")
     inputs.Save()
 
     plan = _generate(inputs, tr_lib, "mock::reads", "mock::assembly")
-    # this might or might not produce a complete plan depending on the
-    # solver's tolerance — what matters is whether a lineage hint appears
-    # when there is a property-only match but no lineage link
     lineage = [h for h in plan.hints if h.kind == "lineage_mismatch"]
     if plan.steps and not lineage:
         pytest.skip("solver tolerated missing lineage in this configuration")
     assert lineage, f"expected lineage_mismatch hint, got: {plan.hints}"
     h = lineage[0]
     assert "mock::reads" in h.message or "mock::meta" in h.message
-    # near-miss should suggest adding parents=
     nm_text = " ".join(h.near_misses)
     assert "parents=" in nm_text
 
 
 def test_missing_input_dedup_by_data(temp_dir):
-    """Two producers of target both require the same missing type via
-    different lineage expressions → only one missing_input hint should
-    surface (collapsed by demand shape, not by Dependency identity)."""
     types_path = temp_dir / "mock.yml"
     _write_types_yml(types_path, {
         "context": {"properties": {"_": "context"}},
@@ -323,7 +290,6 @@ def test_missing_input_dedup_by_data(temp_dir):
     })
 
     transforms = {
-        # plain producer: requires missing directly
         "plain_producer": """
 from pathlib import Path
 from metasmith.models.libraries import TransformInstanceLibrary, TransformInstance, ExecutionContext, ExecutionResult
@@ -336,7 +302,6 @@ out = model.AddProduct(lib.GetType("mock::target"))
 def protocol(ctx): return ExecutionResult(manifest=[{out: Path('t')}], success=True)
 TransformInstance(protocol=protocol, model=model, group_by=dep)
 """,
-        # lineage producer: requires missing with a parent dependency
         "lineage_producer": """
 from pathlib import Path
 from metasmith.models.libraries import TransformInstanceLibrary, TransformInstance, ExecutionContext, ExecutionResult
@@ -353,8 +318,6 @@ TransformInstance(protocol=protocol, model=model, group_by=dep)
     }
     tr_lib = _make_transform_lib(temp_dir, types_path, transforms)
 
-    # give nothing that satisfies mock::missing — just an unrelated input so
-    # the solver runs but fails
     extra_path = temp_dir / "extra.yml"
     _write_types_yml(extra_path, {"unrelated": {"properties": {"_": "other"}}})
     lib_path = temp_dir / "inputs.xgdb"
@@ -376,13 +339,9 @@ TransformInstance(protocol=protocol, model=model, group_by=dep)
 
 
 def test_missing_input_sorted_by_similarity(temp_dir):
-    """Two dead-end demands with different similarity to a given → the more
-    similar one should appear first in the hints list."""
     types_path = temp_dir / "mock.yml"
     _write_types_yml(types_path, {
-        # near_to_given shares two of three properties with the given (_, ext)
         "near_to_given": {"properties": {"_": "shared-marker", "ext": "fq", "qc": "clean"}},
-        # far_from_given shares nothing with the given
         "far_from_given": {"properties": {"_": "totally-different", "fmt": "xyz"}},
         "target": {"properties": {"_": "target"}},
     })
@@ -404,9 +363,6 @@ TransformInstance(protocol=protocol, model=model, group_by=near)
     }
     tr_lib = _make_transform_lib(temp_dir, types_path, transforms)
 
-    # define a given type that shares _=shared-marker and ext=fq with
-    # near_to_given but lacks qc=clean (so IsA fails and it's a near-miss
-    # rather than a satisfying input)
     inputs_types = temp_dir / "inputs.yml"
     _write_types_yml(inputs_types, {
         "given_input": {"properties": {"_": "shared-marker", "ext": "fq"}},
@@ -421,25 +377,12 @@ TransformInstance(protocol=protocol, model=model, group_by=near)
     assert plan.steps == []
     missing = [h for h in plan.hints if h.kind == "missing_input"]
     assert len(missing) >= 2, f"need at least two missing_input hints, got: {[h.message for h in missing]}"
-    # the first missing_input hint should be the one with higher similarity
     assert "mock::near_to_given" in missing[0].message, (
         f"expected near_to_given first, got order: {[h.message for h in missing]}"
     )
 
 
 def test_too_general_input_names_the_retyping_and_the_missing_parent(temp_dir):
-    """A supertype registered where a subtype is wanted, and a parent nothing has.
-
-    This is the shape of nearly every real "why did it not solve": someone
-    registers `reads` and asks for an `assembly`, every assembler wants
-    `long_reads` or `short_reads`, and a supertype satisfies neither. The old
-    diagnosis followed the chain past that point and reported a dead end five
-    hops away at an accession nobody had heard of.
-
-    The transform here also declares per-slot lineage, which is the second half
-    of the same failure: even retyped, the reads have to descend from metadata
-    that is not registered at all.
-    """
     types_path = temp_dir / "mock.yml"
     _write_types_yml(types_path, {
         "metadata": {"properties": {"_": "read metadata", "ext": "json"}},
@@ -481,9 +424,6 @@ TransformInstance(protocol=protocol, model=model, group_by=dep)
     assert general, f"expected a too_general hint, got: {[h.kind for h in plan.hints]}"
     hit = general[0]
     assert "mock::reads" in hit.message and "mock::long_reads" in hit.message
-    # the retyping that would actually work, by name
     assert any(m.startswith("mock::long_reads") for m in hit.near_misses), hit.near_misses
-    # ...and the lineage the slot declares, which no retyping can supply
     assert any(m.startswith("mock::metadata") for m in hit.near_misses), hit.near_misses
-    # it leads: the dead ends below it are symptoms of this one
     assert plan.hints[0].kind == "too_general"

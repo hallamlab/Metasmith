@@ -1,27 +1,3 @@
-"""Protocol-body identity in the lineage cache key (F1 regression).
-
-Pre-R5 the cache signature was the transform's I/O type topology only
-(`signature = str(model._hash)`), so editing a transform's protocol — or
-swapping in a different tool with the same declared in/out types — did NOT
-change the cache_key. A cross-run rerun then short-circuited and served the
-*old* protocol's cached output (a silent false hit).
-
-R5 folds a digest of the transform definition-file bytes
-(`_protocol_source_hash`) into the lineage signature. These tests pin both
-directions:
-
-  * identical protocol bytes across two independent runs still HIT
-    (cross-run reuse must survive the fix), and
-  * a changed protocol body with unchanged I/O types MISSES (re-executes)
-    rather than false-hitting.
-
-The reliable observable is `executed_steps`: a full cache hit drops it to
-(); a miss re-runs the step. (The virtual runtime stubs protocol output, so
-output *content* is not a reliable discriminator here — that is covered by
-the docker e2e. The short-circuit vs re-execution is the false-hit
-mechanism, and it is what these assert.)
-"""
-
 from __future__ import annotations
 
 import textwrap
@@ -40,13 +16,6 @@ TYPE_NAMES = ("seed", "out")
 
 
 def _variant_transform_code(body_marker: str) -> str:
-    """A seed->out transform whose PROTOCOL BODY varies by `body_marker`.
-
-    The I/O type topology (seed -> out) is identical across markers; only
-    the protocol's runtime behaviour differs. This is the shape that a
-    bugfix to a transform's command — or a different tool with the same
-    declared types — takes.
-    """
     return textwrap.dedent(
         f"""
         from pathlib import Path
@@ -76,11 +45,6 @@ def _variant_transform_code(body_marker: str) -> str:
 
 
 def _build_task(root: Path, body_marker: str, tr_name: str):
-    # `tr_name` is unique per scenario so the transform's module stem does not
-    # alias across tests via sys.modules (TransformInstance.Load imports by
-    # bare stem + reload()). The transform *file name* does not enter the
-    # cache key (identity = model topology + definition-BYTES digest), so a
-    # rename with identical bytes still collides — cross-run reuse is intact.
     types_path = build_types_library(root, TYPE_NAMES)
     samples = build_samples_library(root, types_path, count=1, input_type="seed")
     tr_lib = build_transform_library(
@@ -92,7 +56,6 @@ def _build_task(root: Path, body_marker: str, tr_name: str):
 
 
 def test_identical_protocol_still_hits_cross_run(tmp_path, virtual_runtime):
-    """Cross-run reuse survives the F1 fix: same bytes + same protocol -> hit."""
     task_a = _build_task(tmp_path / "a", "SAME", tr_name="tr_hit")
     snap_a = capture_run(virtual_runtime, task_a)
     assert snap_a.executed_steps, "run A executed zero steps (bad fixture)"
@@ -107,17 +70,10 @@ def test_identical_protocol_still_hits_cross_run(tmp_path, virtual_runtime):
 
 
 def test_changed_protocol_body_misses(tmp_path, virtual_runtime):
-    """The F1 fix: a protocol-body edit (same I/O types) busts the cache.
-
-    Pre-R5 this re-executed 0 steps (false hit on run A's cached output);
-    post-R5 the differing definition-file bytes change the lineage
-    signature, so run B is a MISS and re-runs the (fixed) protocol.
-    """
     task_a = _build_task(tmp_path / "a", "ONE", tr_name="tr_one")
     snap_a = capture_run(virtual_runtime, task_a)
     assert snap_a.executed_steps, "run A executed zero steps (bad fixture)"
 
-    # same types, different body AND distinct module stem (avoid import alias)
     task_b = _build_task(tmp_path / "b", "TWO", tr_name="tr_two")
     clear_trace(virtual_runtime)
     snap_b = capture_run(virtual_runtime, task_b)

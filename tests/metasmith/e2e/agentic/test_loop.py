@@ -1,9 +1,3 @@
-"""Unit tests for the ralph loop's budget stop — no `claude`/`opencode` spawned.
-
-The key guarantee: the cumulative TOKEN quota is the exact DNF trigger, and a
-single over-quota iteration stops the loop after that one iteration (the
-overshoot is bounded to one now-dollar-capped invocation, not runaway).
-"""
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -15,10 +9,9 @@ from tests.metasmith.e2e.agentic.harness.loop import LoopBudgets, LoopOutcome, r
 
 @dataclass
 class _FakeDriver:
-    """Returns a fixed IterResult each invoke; writes no CONTROL.json."""
     name: str = "fake"
     model: str = "haiku"
-    per_iter: IterResult = field(default=None)  # set in test
+    per_iter: IterResult = field(default=None)
     calls: int = 0
 
     def start_session(self, env=None) -> None:
@@ -42,7 +35,6 @@ def _iter(total_tokens: int) -> IterResult:
 
 
 def test_over_quota_stops_after_one_iteration(tmp_path: Path) -> None:
-    # One invocation burns 4M tokens against a 3M quota -> stop at iter 1.
     driver = _FakeDriver(per_iter=_iter(4_000_000))
     result = ralph_loop(
         driver=driver,
@@ -52,8 +44,8 @@ def test_over_quota_stops_after_one_iteration(tmp_path: Path) -> None:
         log_dir=tmp_path / "logs",
     )
     assert result.outcome is LoopOutcome.OVER_BUDGET
-    assert result.iterations == 1          # bounded overshoot: one iteration
-    assert driver.calls == 1               # loop did not re-invoke past the quota
+    assert result.iterations == 1
+    assert driver.calls == 1
     assert result.tokens_used == 4_000_000
 
 

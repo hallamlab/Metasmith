@@ -19,14 +19,11 @@ def protocol(context: ExecutionContext):
     iaug       = context.Output(aug_out)
     iassign    = context.Output(assign_out)
 
-    # Read identity threshold from the typed input file
     min_id = open(iidentity.local).readline().strip()
 
     threads = context.params.get('cpus')
     threads = "" if threads is None else f"-p {threads}"
 
-    # Build diamond database from existing centroids and search new ORFs
-    # Same command either way: this tool is a plain CLI in both worlds.
     _cmd = f"""\
             diamond makedb --in {icentroids.container} -d centroid_db \
             && diamond blastp \
@@ -42,9 +39,7 @@ def protocol(context: ExecutionContext):
         .ifContainerDo(env=image, cmd=_cmd) \
         .ifVirtualEnvDo(env=image, cmd=_cmd)
 
-    # Parse hits to find which new ORFs matched existing centroids
-    # hits.tsv is BLAST tabular: query, subject, pident, ...
-    matched = {}  # new_orf_id -> centroid_id
+    matched = {}
     with open(Path(HITS_TSV)) as f:
         for line in f:
             fields = line.strip().split("\t")
@@ -54,9 +49,8 @@ def protocol(context: ExecutionContext):
                 if query_id not in matched:
                     matched[query_id] = subject_id
 
-    # Read new ORFs FASTA, separate matched from unmatched (new centroids)
-    unmatched_seqs = []  # list of (header, seq_lines)
-    all_new_orfs = []    # (orf_id, centroid_id, status)
+    unmatched_seqs = []
+    all_new_orfs = []
     current_id = None
     current_lines = []
     is_unmatched = False
@@ -64,7 +58,6 @@ def protocol(context: ExecutionContext):
     with open(iorfs.local) as f:
         for line in f:
             if line.startswith(">"):
-                # Flush previous sequence
                 if current_id is not None:
                     if is_unmatched:
                         unmatched_seqs.append(current_lines)
@@ -76,7 +69,6 @@ def protocol(context: ExecutionContext):
                 is_unmatched = current_id not in matched
             else:
                 current_lines.append(line)
-        # Flush last sequence
         if current_id is not None:
             if is_unmatched:
                 unmatched_seqs.append(current_lines)
@@ -84,7 +76,6 @@ def protocol(context: ExecutionContext):
             else:
                 all_new_orfs.append((current_id, matched[current_id], "matched"))
 
-    # Write augmented centroids = existing centroids + unmatched new ORFs
     import shutil
     shutil.copy2(icentroids.local, iaug.local)
     with open(iaug.local, "a") as fout:
@@ -92,7 +83,6 @@ def protocol(context: ExecutionContext):
             for line in seq_lines:
                 fout.write(line)
 
-    # Write assignment table
     with open(iassign.local, "w") as fout:
         fout.write("orf_id\tcentroid_id\tstatus\n")
         for orf_id, centroid_id, status in all_new_orfs:

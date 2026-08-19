@@ -1,4 +1,3 @@
-"""Type library inspection and authoring."""
 from __future__ import annotations
 
 from pathlib import Path
@@ -13,7 +12,6 @@ def list_types(
     transform_paths: list[str] | None = None,
     namespace: str | None = None,
 ) -> list[dict]:
-    """List all data types across the given libraries, optionally namespace-filtered."""
     all_types = collect_types(type_paths, transform_paths)
     results = []
     for ns, types in all_types.items():
@@ -29,7 +27,6 @@ def get_type(
     type_paths: list[str] | None = None,
     transform_paths: list[str] | None = None,
 ) -> dict:
-    """Get details (properties + parents) for one 'namespace::name' type."""
     ns, name, ep = resolve_type(type_name, type_paths, transform_paths)
     packed = ep.Pack(parents=True)
     return {
@@ -47,7 +44,6 @@ def check_compatibility(
     type_paths: list[str] | None = None,
     transform_paths: list[str] | None = None,
 ) -> dict:
-    """Check if source can satisfy target via structural subtyping."""
     _, _, src_ep = resolve_type(source_type, type_paths, transform_paths)
     _, _, tgt_ep = resolve_type(target_type, type_paths, transform_paths)
     compatible = src_ep.IsA(tgt_ep)
@@ -64,7 +60,6 @@ def create_type_library(
     ontology: dict | None = None,
     types: dict | None = None,
 ) -> dict:
-    """Create a new type library YAML at the given path."""
     p = Path(path).resolve()
     p.parent.mkdir(parents=True, exist_ok=True)
     assert not p.exists(), f"file [{p}] already exists"
@@ -87,7 +82,6 @@ def add_type(
     extends: list[str] | None = None,
     overwrite: bool = False,
 ) -> dict:
-    """Append a type definition to an existing type library YAML."""
     p = Path(library_path).resolve()
     assert p.exists(), f"library [{p}] does not exist"
     with open(p) as f:

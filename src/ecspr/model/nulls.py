@@ -1,29 +1,3 @@
-"""The null: draw units from a pool, and emit them AS a conditions table.
-
-WHY A CONDITIONS TABLE AND NOT A SECOND CODE PATH
---------------------------------------------------
-A null arm that goes through its own solver call is a second thing to keep true,
-and the whole claim a z-score rests on is that the observed and null values came
-out of the identical operation. Emitting the pool as a conditions table makes that
-structural: the null arm is the same probe command with a different
-``--conditions`` file. It also gives "seed the pool once and share it across every
-arm" its literal meaning -- the arms share a file.
-
-SIZE MATCHING IS THE POINT
---------------------------
-A unit contributing thirty-two reactions receives more added conductance than one
-contributing a single reaction, so an unmatched null ranks big units high by
-construction. Draws are therefore made per SIZE STRATUM, taken from the observed
-conditions' own ``n_units`` column, and the same drawn sets are reused across every
-observed condition in that stratum -- one pool, not one per arm.
-
-DRAWS THAT REACH NOTHING STAY IN THE POOL
------------------------------------------
-A drawn unit whose reactions are all outside the atom-mapped universe contributes a
-genuine zero. Dropping it leaves a null made only of draws that COULD move, which
-is the opposite of the comparison being made, and it is also what makes the control
-spread measurable at all.
-"""
 from __future__ import annotations
 
 import numpy as np
@@ -47,9 +21,6 @@ def _terminal_key(c: cond_mod.Condition) -> tuple:
 
 def draw(pool_paths, like, *, n: int, seed: int, draw_column="orf",
          size=None, log=print) -> list:
-    """``[Condition, ...]`` -- ``n`` draws per size stratum, per distinct terminal
-    spec in ``like``. Deterministic in ``seed``: the same seed writes the same file,
-    which is the only reason two arms can be said to share a pool."""
     pool = load_gpr(pool_paths)
     values = _pool_values(pool, draw_column)
     if values.size == 0:

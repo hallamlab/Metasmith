@@ -1,15 +1,3 @@
-"""t5 — adapt → HPC (SLURM): run = confirm.
-
-The pipeline already runs locally; the agent adapts it to run under the HPC
-scheduler (apptainer + SLURM) and runs it there. A successful scheduler run to
-the final clusterProfiler artifact IS the oracle, so the verifier is the
-standard final-artifact + trace check.
-
-HPC prep — agent originates on micb0, deploys over SSH, compute nodes have no
-internet so images + DBs must be pre-staged on the login node — is the team-fill
-hook ``prefetch_images_remote`` in ``_pipeline``. Locally the scenario renders
-and provisions its start-state exactly like t3.
-"""
 from __future__ import annotations
 
 from dataclasses import dataclass

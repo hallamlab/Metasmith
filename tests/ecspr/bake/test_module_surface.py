@@ -1,20 +1,3 @@
-"""The package's shape: what imports, what it drags in, and what its verbs are.
-
-Three claims that the migration made and that nothing else would catch:
-
-  * every module resolves at its new path, and the whole package imports;
-  * `ecspr.bake` pulls in NO `ecspr.model`, and therefore no scipy, networkx or
-    cobra. The bake images carry rdkit or a torch stack and nothing else, so an
-    import across that seam does not degrade, it fails at load -- six hours into
-    a queued job, in the one env nothing local reproduces;
-  * every command line still carries exactly the verbs and flags it carried as a
-    flat file. The transforms invoke these by string, so a renamed flag is a
-    runtime failure with no compile-time trace.
-
-The CLI surface is frozen as a literal below rather than compared against the
-pre-move files. A frozen literal is checkable by reading; a comparison against
-git history stops working the moment the history is squashed.
-"""
 from __future__ import annotations
 
 import subprocess
@@ -22,7 +5,6 @@ import sys
 
 import pytest
 
-# Every module in the package, so a new one has to be added here deliberately.
 MODULES = [
     "ecspr.bake",
     "ecspr.bake.atom_pairs", "ecspr.bake.encoding",
@@ -44,39 +26,25 @@ MODULES = [
     "ecspr.bake.direction.thermo_eq",
 ]
 
-# Modules whose import needs a tool that is not in every env. The two thermo
-# members each live in one bake image; the extractor needs rdkit, which the
-# measurement env deliberately does not carry. Everything else must import
-# anywhere, and that is the point of listing these three by name.
 NEEDS_A_TOOL = {
     "ecspr.bake.direction.thermo_eq": "equilibrator_api",
     "ecspr.bake.direction.thermo_dgbyg": "dGbyG",
     "ecspr.bake.atom_pairs": "rdkit",
-    "ecspr.bake.aam.algebra": "rdkit",          # via ..atom_pairs
-    "ecspr.bake.aam.combine": "rdkit",          # via ..atom_pairs
-    "ecspr.bake.aam.curation": "rdkit",         # via ..atom_pairs
-    "ecspr.bake.aam.forecast": "rdkit",         # via ..atom_pairs
-    "ecspr.bake.aam.universe": "rdkit",         # via .partial -> ..atom_pairs
-    "ecspr.bake.aam.partial": "rdkit",          # via ..atom_pairs
-    "ecspr.bake.aam.recount": "rdkit",          # via ..atom_pairs
-    "ecspr.bake.aam.redox": "rdkit",            # via ..atom_pairs
-    "ecspr.bake.aam.twins": "rdkit",            # via .curation -> ..atom_pairs
+    "ecspr.bake.aam.algebra": "rdkit",
+    "ecspr.bake.aam.combine": "rdkit",
+    "ecspr.bake.aam.curation": "rdkit",
+    "ecspr.bake.aam.forecast": "rdkit",
+    "ecspr.bake.aam.universe": "rdkit",
+    "ecspr.bake.aam.partial": "rdkit",
+    "ecspr.bake.aam.recount": "rdkit",
+    "ecspr.bake.aam.redox": "rdkit",
+    "ecspr.bake.aam.twins": "rdkit",
 }
 
-# {module: {verb: {flags}}} -- "" is the verb-less case (one flat parser).
-# Frozen from the pre-move flat modules; every entry was byte-identical across the
-# migration. The additions since are the AAM change and are meant to show up here:
-# `--collapsed-atom-limit` on the two steps that apply the size cut, `--partial` where
-# the partial lane's products are read, and `ecspr.bake.aam.partial` itself.
 CLI = {
     "ecspr.bake.aam.worklist": {
         "build": {"--reactions", "--metabolites", "--atom-limit", "--char-limit",
                   "--collapsed-atom-limit", "--out", "--out-summary"},
-        # `--forecast` REPLACES `--partial`: what was OFFERED to the partial lane is the
-        # forecast's offer, and the lane's own universe holds only what it managed to
-        # build -- so a declined reduction read as `mapped_nothing`. `--redox-emptied` is
-        # the other half of the same discipline: a reaction the repair took must not read
-        # as one no mapper answered.
         "close": {"--worklist", "--pairs", "--rescued", "--forecast",
                   "--redox-emptied", "--out", "--out-summary"},
     },
@@ -89,26 +57,15 @@ CLI = {
                      "--out", "--out-balance", "--out-placeholders"},
     },
     "ecspr.bake.aam.twins": {
-        # Two verbs over one alias scan. `--no-synonyms` is on `blockers` alone: the
-        # nametwin claim is about MetaNetX's OWN filing, so there is no wider
-        # vocabulary for it to decline.
         "blockers": {"--lookups", "--element-counts", "--worklist", "--out",
                      "--no-synonyms"},
         "nametwin": {"--lookups", "--element-counts", "--worklist", "--out"},
     },
     "ecspr.bake.aam.algebra": {
-        # `--out-forced` and `--out-claims` are two flags because they are two grains.
-        # One `--out` writing both would be one product a reader could join.
         "build": {"--lookups", "--element-counts", "--worklist", "--rescued",
                   "--targets", "--out-forced", "--out-claims", "--out-summary"},
     },
     "ecspr.bake.aam.partial": {
-        # `--forecast` REPLACES `--worklist`/`--rescued`/`--covered`, and the swap is the
-        # whole of T5 at this surface: the lane's targets used to be computed by
-        # subtracting finished member products, which is what forced it downstream of
-        # every mapper.
-        # `--rescue` is what lets the lane reach a rescue-completed reaction at all: it
-        # reduces from the raw equation and refuses a structureless participant.
         "build": {"--lookups", "--forecast", "--rescue",
                   "--atom-limit", "--char-limit",
                   "--out", "--out-forced", "--out-summary"},
@@ -121,30 +78,18 @@ CLI = {
         "build": {"--worklist", "--rescued", "--partial", "--out", "--out-summary"},
     },
     "ecspr.bake.aam.redox": {
-        # Four outputs because four things have to be readable side by side: the corrected
-        # table, what was refused under the named predicate, which ids were treated as
-        # which cofactor, and the reactions the repair left holding nothing.
         "repair": {"--pairs", "--lookups", "--out", "--out-refusals",
                    "--out-cofactors", "--out-emptied", "--out-summary"},
     },
     "ecspr.bake.aam.runlogs": {
-        # `--evidence` is separate from `--cache` because the two hold different halves of
-        # one record: the cache says who answered, the retrieved shard tables say who
-        # timed out. Either alone writes a table; only both write the one the forecast
-        # reads for anything but coverage.
         "build": {"--cache", "--evidence", "--curated-status", "--runs", "--out",
                   "--step-max-bytes"},
     },
     "ecspr.bake.aam.recount": {
         "build": {"--metabolites", "--out", "--out-summary"},
-        # `check` is part of the step rather than a test: it asserts the recount and
-        # atom_ranks agree about how many atoms of an element a structure has.
         "check": {"--counts", "--atom-ranks"},
     },
     "ecspr.bake.aam.layers": {
-        # `--submission-class` is what a layer IS now that the members run once: the
-        # three files feed L2/L3/L4 by what each row CLAIMS rather than by which pass
-        # wrote which file.
         "fuse": {"--member", "--submission-class", "--out"},
         "stack": {"--layer", "--out"},
     },
@@ -214,12 +159,6 @@ def test_every_module_imports_at_its_new_path(mod):
 
 @pytest.mark.parametrize("mod", sorted(CLI))
 def test_the_command_line_still_carries_exactly_its_old_flags(mod):
-    """Verbs and flags, frozen. The transforms invoke these by string.
-
-    `argv` was threaded onto each entry point precisely so this can be checked
-    in-process: reaching the parser costs a function call rather than a
-    subprocess per module.
-    """
     import argparse
 
     m = _import(mod)
@@ -254,14 +193,6 @@ def test_the_command_line_still_carries_exactly_its_old_flags(mod):
 
 
 def test_importing_the_bake_does_not_drag_in_the_measurement_stack():
-    """A fresh interpreter per lane, because a leak is only visible at load.
-
-    scipy, networkx and cobra are absent from every bake image by design. The
-    one module that reaches across -- `encoding.compile_atom_graph`, which READS
-    a finished bake for the reference gate -- keeps its import inside the
-    function for exactly this reason, and this is what stops it drifting back
-    out to module scope.
-    """
     pytest.importorskip("rdkit", reason="the aam lane's extractor needs it")
     probe = (
         "import sys, importlib;"

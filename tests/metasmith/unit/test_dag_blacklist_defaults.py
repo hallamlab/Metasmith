@@ -1,16 +1,3 @@
-"""Every DAG entry point must hide the same plumbing namespaces.
-
-`env` joined `lib` and `containers` on the blacklist when environments
-became declared dependencies -- an environment is a dependency like any
-other, so without it every plan DAG grows an `env::*` node per step. The
-new layout engine arrived from a branch that predated `env` and replaced
-all three defaults with its own two-element set, which merges perfectly
-cleanly and starts rendering plumbing into every diagram.
-
-Three defaults have to agree and nothing else makes them: `BuildDAG`,
-`RenderDAG`, and `ops.workflow.render_dag`.
-"""
-
 from __future__ import annotations
 
 import inspect
@@ -31,11 +18,6 @@ def test_plan_entry_points_blacklist_the_plumbing(fn):
 
 
 def test_ops_render_dag_falls_back_to_the_same_set():
-    """The ops layer re-states the default rather than deferring to the model.
-
-    That is the whole reason this test exists: a caller passing
-    `blacklist_namespaces=None` gets the ops copy, not the signature's.
-    """
     src = inspect.getsource(op_workflow.render_dag)
     for ns in EXPECTED:
         assert f'"{ns}"' in src, (
@@ -44,11 +26,6 @@ def test_ops_render_dag_falls_back_to_the_same_set():
 
 
 def test_a_real_plan_renders_no_env_nodes(tmp_path):
-    """End to end: no `env::` token survives a default render of a real plan.
-
-    The signature checks above catch the common regression; this catches a
-    default that is right but no longer consulted.
-    """
     from tests.metasmith.cache._cache_harness import (
         build_samples_library,
         build_transform_library,

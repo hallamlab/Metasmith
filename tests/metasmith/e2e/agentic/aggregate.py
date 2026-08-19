@@ -1,26 +1,3 @@
-"""Aggregate token-benchmark ``results.csv`` rows into a summary + life-cycle plot.
-
-Reads one or more ``results.csv`` files (written by ``run_cell.py``), merges
-them into a tidy dataframe, and emits:
-
-  (a) a per-(arm, test) summary CSV — for each of the 4 token counts
-      (``tokens_in`` / ``tokens_cached`` / ``tokens_out`` /
-      ``tokens_cache_creation``) the median **among successful runs** plus the
-      raw success points, and the cell's success rate (successes / executed).
-      Token cost is measured only over successes; failures are kept in the
-      denominator (success rate) but never in the token medians.
-
-  (b) the CUMULATIVE life-cycle plot — cumulative total tokens across the tests
-      (t1 → t7, in order) per arm, one line per arm, rendered to PNG.
-
-    python -m tests.metasmith.e2e.agentic.aggregate \
-        --results <data>/token-benchmark/results.csv \
-        --out-dir <data>/token-benchmark/aggregate
-
-Matplotlib is optional: if it (or another plotting dep) is unavailable, the
-summary CSV is still written and a clear note is printed / recorded — the plot
-is simply skipped rather than aborting the whole aggregation.
-"""
 from __future__ import annotations
 
 import argparse
@@ -35,7 +12,6 @@ _DEFAULT_RESULTS = Path(
     "/home/tony/agentic_workspace/data/metasmith/token-benchmark/results.csv"
 )
 
-#: Canonical test ordering for the life-cycle x-axis.
 _TEST_ORDER = ("install", "pipeline", "run", "adapt_new_host", "adapt_hpc",
                "adapt_add_tool", "adapt_from_middle")
 
@@ -45,7 +21,6 @@ def _truthy(v) -> bool:
 
 
 def load_results(paths: list[Path]) -> pd.DataFrame:
-    """Concatenate result CSVs into one tidy dataframe with numeric tokens."""
     frames = []
     for p in paths:
         if p.exists() and p.stat().st_size > 0:
@@ -57,9 +32,6 @@ def load_results(paths: list[Path]) -> pd.DataFrame:
         if c in df.columns:
             df[c] = pd.to_numeric(df[c], errors="coerce")
     df["_total_tokens"] = df[list(_TOKEN_COLS)].sum(axis=1, skipna=True)
-    # "Executed" = the loop ran (outcome stamped) OR the harness crashed before
-    # the loop (status=error, blank outcome). Both are attempts and belong in the
-    # DNF denominator.
     _outcome = df["outcome"].astype(str).str.strip() if "outcome" in df else ""
     _status = df["status"].astype(str).str.strip() if "status" in df else ""
     df["_executed"] = (
@@ -71,9 +43,6 @@ def load_results(paths: list[Path]) -> pd.DataFrame:
         & df.get("outcome", "").astype(str).str.strip().eq("done")
         & df.get("artifact_ok", "").map(_truthy)
     )
-    # DNF = attempted but did not succeed. `over_budget` is the "quota reached"
-    # subset the study surfaces explicitly. Derived here (not a CSV column) so
-    # the master experiments.csv schema is untouched.
     df["_dnf"] = df["_executed"] & ~df["_success"]
     df["_over_budget"] = df["_executed"] & (
         _outcome.eq("over_budget") if "outcome" in df else False
@@ -82,7 +51,6 @@ def load_results(paths: list[Path]) -> pd.DataFrame:
 
 
 def summarize(df: pd.DataFrame) -> pd.DataFrame:
-    """Per-(arm, test) summary: token medians over successes + success rate."""
     if df.empty:
         return pd.DataFrame()
     rows = []
@@ -120,11 +88,6 @@ def _test_sort_key(test: str) -> int:
 
 
 def render_cumulative_plot(summary: pd.DataFrame, out_png: Path) -> tuple[bool, str]:
-    """Render cumulative total tokens across tests per arm to ``out_png``.
-
-    Returns ``(ok, note)``. ``ok=False`` with an explanatory note when a plotting
-    dep is missing or there is nothing plottable — the caller keeps the summary.
-    """
     try:
         import matplotlib
         matplotlib.use("Agg")
@@ -137,8 +100,6 @@ def render_cumulative_plot(summary: pd.DataFrame, out_png: Path) -> tuple[bool, 
         return False, "plot skipped: no rows to plot"
 
     plot_df = summary.copy()
-    # Per-cell representative cost = median total among successes (blank → 0 so
-    # the cumulative line stays continuous across tests with no success yet).
     plot_df["_cell_total"] = pd.to_numeric(
         plot_df["median_total_tokens"], errors="coerce"
     ).fillna(0.0)
@@ -172,7 +133,6 @@ def aggregate(
     results_paths: list[Path], out_dir: Path,
     *, summary_path: Path | None = None, plot_path: Path | None = None,
 ) -> dict:
-    """Load → summarize → write CSV → render plot. Returns a small report dict."""
     out_dir.mkdir(parents=True, exist_ok=True)
     summary_path = summary_path or (out_dir / "summary.csv")
     plot_path = plot_path or (out_dir / "cumulative_lifecycle.png")

@@ -1,13 +1,3 @@
-"""merge_proteinbert — gather per-chunk ProteinBERT outputs (parquet + index CSV).
-
-proteinbert.py emits two products per chunk:
-  - annotation::proteinbert_embeddings (parquet, 512-dim float matrix)
-  - annotation::proteinbert_index (CSV mapping sequence_id -> index)
-
-Strategy: polars vertical concat for the parquet; rewrite the `index` column
-in the merged index so it is globally monotonic across chunks (chunk-local
-indices would otherwise collide).
-"""
 from metasmith.python_api import *
 
 lib = TransformInstanceLibrary.ResolveParentLibrary(__file__)
@@ -71,9 +61,6 @@ def protocol(context: ExecutionContext):
     oemb = context.Output(merged_emb)
     oidx = context.Output(merged_idx)
 
-    # Pair embeddings with their corresponding index by sort order. The
-    # splitter assigns chunks monotonic indices, and both products are
-    # emitted side-by-side per chunk, so sorted-by-name pairs align.
     pairs = list(zip(emb_chunks, idx_chunks))
 
     script = Path("_merge_pbert.py")

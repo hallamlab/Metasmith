@@ -33,32 +33,18 @@ BREF = Path(__file__).resolve().parent
 TRANSFORMS = BREF / "transforms" / "benchmark"
 BUILDLIB = BREF / "resources" / "buildlib"
 
-# Every path a driver is formatted with, resolved in this worktree. Named here rather
-# than threaded through argparse so a run of this script cannot quietly point at a
-# different tree's extractions than the one it reports on.
 GIVENS = {
     "extracts": REPO / "data" / "fabfos" / "benchmarks" / "_extractions",
     "het":      REPO / "data" / "fabfos" / "originals" / "benchmarks" / "het_screen",
     "bridge":   REPO / "data" / "fabfos" / "processed" / "mnxr_lookup" / "mnxr_lookup.parquet",
     "metanetx": REPO / "data" / "fabfos" / "originals" / "metanetx",
-    # `raw::laser_records` -- the upstream checkout, for `inputs/Gene-Reaction
-    # Pairings.txt`. NOT the extraction: this is the repository LASER publishes.
     "laser":    REPO / "data" / "fabfos" / "originals" / "benchmarks" / "laser",
     "hosts_gem": REPO / "data" / "fabfos" / "benchmarks",
-    # The bake -- ONE artifact in three files, which is why they are named as one
-    # given rather than three. `study_tier` reads all three and refuses if their
-    # identity blocks disagree.
     "bake":     REPO / "data" / "fabfos" / "processed" / "metabolism_bake",
 }
 
 
 def module_literals(path: Path) -> dict:
-    """Module-level literal assignments, read WITHOUT importing.
-
-    The transform modules open with `from metasmith.python_api import *` and build a
-    `Transform()` at import time; neither is needed to read a string constant, and
-    importing them would drag the engine in for no reason.
-    """
     tree = ast.parse(path.read_text())
     out = {}
     for node in tree.body:
@@ -106,8 +92,6 @@ def main() -> int:
     cond_gpr_out = work / "condition_gpr.parquet"
     conditions_out = work / "conditions.tsv"
 
-    # `lib` is the driver's sys.path anchor: every driver does
-    # `sys.path.insert(0, os.path.dirname("{lib}"))`, so it must be a FILE inside buildlib.
     lib_anchor = BUILDLIB / "bench_cohorts.py"
 
     steps = [

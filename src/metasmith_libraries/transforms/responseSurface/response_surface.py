@@ -30,7 +30,6 @@ def protocol(context: ExecutionContext):
     ors1d   = context.Output(out_rs1d_plot)
     ors2d   = context.Output(out_rs2d_plot)
 
-    # Create fake home for kaleido/plotly browser deps
     context.LocalShell("""
         mkdir -p ./fake_home/.cache
         mkdir -p ./fake_home/.local
@@ -54,7 +53,6 @@ def protocol(context: ExecutionContext):
         """,
     )
 
-    # Copy outputs from rs_output/ to typed output locations
     context.LocalShell(f"cp rs_output/response_surface_coefficients.csv {ocoef.local}")
     context.LocalShell(f"cp rs_output/model_suggestions.csv {osugg.local}")
     context.LocalShell(f"cp rs_output/crashed_cultures.csv {ocrash.local}")

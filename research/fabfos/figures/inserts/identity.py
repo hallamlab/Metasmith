@@ -53,18 +53,8 @@ def _with_blast_on_path():
 
 
 def hits(threads=12, force=False):
-    """-> the blast table path. Runs the all-vs-all once and caches it.
-
-    Written as `ava_hits.tsv` inside the piece work directory, under the name and
-    beside the two files the pipeline's own `dedup` puts there -- so that
-    directory IS a dedup work directory and anything that reads one can be
-    pointed straight at it.
-    """
     work = pieces.build()
     out = work / "ava_hits.tsv"
-    # A table cached before the format widened has the right name and the wrong
-    # columns, and the reader raises on it rather than reducing it to an empty
-    # matrix. Re-blast instead of asking the user to delete a scratch file.
     if out.exists() and not force:
         first = out.read_text().split("\n", 1)[0]
         if len(first.split("\t")) == len(fr.AVA_COLS):
@@ -86,15 +76,7 @@ def hits(threads=12, force=False):
 
 
 def matrices(threads=12, force=False):
-    """-> (labels, symmetric, containment).
-
-    `labels` are the pipeline's `C#####` keys in `piece_meta.json` order, which is
-    the order every other table here is built against.
-    """
     meta, _seqs = pieces.load()
-    # `sum` names the reduction, not a version: the matrices changed when
-    # `_similarity` started summing non-overlapping HSPs, and a cache keyed only
-    # on piece count would have served the old ones under the new metric.
     cache = WORK / f"sim_n{len(meta)}_min{pieces.MIN_LEN}_sum.npz"
     if cache.exists() and not force:
         z = np.load(cache, allow_pickle=False)

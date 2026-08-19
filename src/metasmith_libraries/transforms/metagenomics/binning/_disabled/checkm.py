@@ -4,7 +4,7 @@ from metasmith.python_api import *
 
 lib         = TransformInstanceLibrary.ResolveParentLibrary(__file__)
 model       = Transform()
-image       = model.AddRequirement(lib.GetType("env::checkm.env")) # database included at /checkm_database
+image       = model.AddRequirement(lib.GetType("env::checkm.env"))
 asm         = model.AddRequirement(lib.GetType("sequences::putative_genome"))
 out         = model.AddProduct(lib.GetType("taxonomy::checkm_stats"))
 
@@ -12,7 +12,7 @@ def protocol(context: ExecutionContext):
     input_dir = Path("input")
     input_dir.mkdir()
 
-    in2out = {}  # asm_stem -> iout
+    in2out = {}
     for item in context.AsBatch():
         iasm = item.Input(asm)
         iout = item.Output(out)
@@ -36,7 +36,6 @@ def protocol(context: ExecutionContext):
         """
     )
 
-    # Parse the combined QA table and split per-genome
     with open(qa_file) as f:
         header = f.readline()
         rows = {}
@@ -47,7 +46,6 @@ def protocol(context: ExecutionContext):
 
     manifest = []
     for asm_stem, iout in in2out.items():
-        # Write per-genome checkm stats
         with open(iout.local, "w") as f:
             f.write(header)
             if asm_stem in rows:
@@ -66,7 +64,7 @@ TransformInstance(
     batch_size=25,
     resources=Resources(
         cpus=2,
-        memory=Size.GB(44), # checkm needs 40
+        memory=Size.GB(44),
         duration=Duration(hours=1),
     )
 )

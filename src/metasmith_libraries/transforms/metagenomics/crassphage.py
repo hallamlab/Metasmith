@@ -1,9 +1,3 @@
-"""crassphage — BBMap mapping of filtered reads to crAssphage NC_024711.
-
-Human faecal contamination marker for source tracking. Maps the per-sample
-filtered reads (sequences::clean_short_reads) to the crAssphage reference and
-emits per-contig coverage stats. No contig_id dependency.
-"""
 from metasmith.python_api import *
 
 lib = TransformInstanceLibrary.ResolveParentLibrary(__file__)
@@ -22,10 +16,6 @@ def protocol(context: ExecutionContext):
 
     threads = context.params.get("cpus", 4)
 
-    # nodisk=t keeps the (tiny) crAssphage index in memory; interleaved input is
-    # auto-detected. covstats gives per-contig mapped depth/breadth.
-    # -Xmx6g caps the JVM heap: bbmap.sh otherwise auto-sizes -Xmx to NODE RAM
-    # (~237G), which the SLURM cgroup (--mem=8G) OOM-kills instantly.
     context.ExecWithEnv().ifContainerDo(
         env=image,
         cmd=f"""

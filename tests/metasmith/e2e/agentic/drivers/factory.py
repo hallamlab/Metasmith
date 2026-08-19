@@ -1,4 +1,3 @@
-"""Driver factory — single entry for `make_driver(name, **opts)`."""
 from __future__ import annotations
 
 from .base import AgentDriver

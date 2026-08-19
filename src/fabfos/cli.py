@@ -1,24 +1,11 @@
-"""FabFos command line — three subcommands, one per pipeline driver.
-
-    fabfos assemble    reads -> putative inserts + ORFs
-    fabfos annotate    ORFs + references -> GPR table
-    fabfos ecspr       GPR table + references -> ECSPr results
-
-Each subcommand is the corresponding ``fabfos.pipelines`` module, which stays
-runnable on its own (``python -m fabfos.pipelines.annotation --help``). This
-dispatches to it rather than redeclaring its flags: a driver's parser is the
-only description of what that driver accepts, and two copies of an interface
-diverge the first time one of them gains an option.
-
-Consequences worth knowing: ``--help`` on a subcommand is the driver's own, and
-argparse never sees the subcommand's arguments here, so anything that looks like
-a top-level flag after the subcommand name belongs to the driver.
-"""
+# Each subcommand dispatches to its `fabfos.pipelines` module rather than
+# redeclaring its flags, so `--help` on a subcommand is the driver's own and
+# argparse never sees the subcommand's arguments: anything that looks like a
+# top-level flag after the subcommand name belongs to the driver.
 import sys
 
 from . import __version__, NAME, SHORT_SUMMARY
 
-# subcommand -> the module that implements it
 DRIVERS = {
     "assemble": "assembly",
     "annotate": "annotation",

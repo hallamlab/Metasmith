@@ -1,54 +1,26 @@
-"""MetaNetX crosswalk loaders for the direction annotator.
-
-Three reference files under references/metanetx/ (paths pinned in canon.py):
-  reac_xref.tsv  -- source-reaction-id -> MNXR, plus the source's own equation in
-                    the last '||'-field of col 3 (used only as an independent
-                    orientation cross-check, never as the primary anchor).
-  reac_prop.tsv  -- MNXR -> the MNXR equation in MNXM ids; this is the orientation
-                    the whole annotator is expressed relative to.
-  chem_xref.tsv  -- source-compound-id -> MNXM.
-
-Loader shapes copied from main/annotations/lane_benchmarks/_bridges.py, with one
-deliberate departure: many-to-one maps are kept as sets and asserted, never
-silently collapsed with setdefault (that idiom would pick an arbitrary direction
-from up to ~167 candidates).
-"""
 from __future__ import annotations
 
 from collections import defaultdict
 from pathlib import Path
 
 
-ARROWS = ("<=>", "-->", "<--", "=")   # order matters: match '<=>' before '='
+ARROWS = ("<=>", "-->", "<--", "=")
 
 
 def _split_terms(side: str) -> set[str]:
-    """'1 MNXM1@MNXD1 + 1 WATER@MNXD1' -> {'MNXM1', 'WATER'}.
-
-    Keeps the compound id verbatim (MNXM or a special like WATER/BIOMASS) and
-    strips only the coefficient and the @compartment suffix. Namespace is NOT
-    forced to MNXM: forcing it would silently drop water from both sides and
-    corrupt the overlap score.
-    """
     out = set()
     for term in side.split(" + "):
         term = term.strip()
         if not term:
             continue
-        tok = term.split()[-1]          # drop the leading coefficient
-        cid = tok.split("@", 1)[0]      # drop @MNXD1 / @cco:... compartment
+        tok = term.split()[-1]
+        cid = tok.split("@", 1)[0]
         if cid:
             out.add(cid)
     return out
 
 
 def load_mnxr_sides(reac_prop: Path) -> dict[str, tuple[frozenset, frozenset]]:
-    """MNXR -> (substrate_set, product_set), from the ' = '-joined MNXR equation.
-
-    reac_prop columns: #ID, mnx_equation, reference, classifs, is_balanced,
-    is_transport. The arrow is always ' = '; sides are the MNXR's canonical
-    left/right after MetaNetX re-canonicalisation.
-    """
     out: dict[str, tuple[frozenset, frozenset]] = {}
     with open(reac_prop) as fh:
         for line in fh:
@@ -66,13 +38,6 @@ def load_mnxr_sides(reac_prop: Path) -> dict[str, tuple[frozenset, frozenset]]:
 
 
 def load_mnxr_stoich(reac_prop: Path):
-    """MNXR -> (stoich, is_balanced, is_transport).
-
-    stoich is {mnxm: signed_coeff} with substrates negative / products positive,
-    compartment stripped (compound identity only). The thermo members need the
-    coefficients the side-set loader discards. is_transport reactions carry a
-    membrane term standard dGr'0 does not model -- calibration must skip them.
-    """
     out = {}
     with open(reac_prop) as fh:
         for line in fh:
@@ -100,12 +65,6 @@ def load_mnxr_stoich(reac_prop: Path):
 
 
 def load_mnxm_props(chem_prop: Path):
-    """MNXM -> {'inchikey','inchi','smiles'}, empties dropped.
-
-    chem_prop columns: ID, name, reference, formula, charge, mass, InChI,
-    InChIKey, SMILES. eQuilibrator is routed by InChIKey (its cache is frozen at
-    an older MetaNetX, so MNXM accessions silently miss); dGbyG takes SMILES.
-    """
     out = {}
     with open(chem_prop) as fh:
         for line in fh:
@@ -127,11 +86,6 @@ def load_mnxm_props(chem_prop: Path):
 
 
 def load_source_to_mnxr(reac_xref: Path, prefix: str) -> dict[str, str]:
-    """'<prefix>:<id>' -> MNXR, asserted 1:1 (no silent first-wins collapse).
-
-    e.g. prefix='metacyc.reaction'. reac_xref col 2 is an MNXR id or the literal
-    'EMPTY'; EMPTY rows are skipped.
-    """
     multi: dict[str, set[str]] = defaultdict(set)
     tag = prefix + ":"
     with open(reac_xref) as fh:
@@ -150,12 +104,6 @@ def load_source_to_mnxr(reac_xref: Path, prefix: str) -> dict[str, str]:
 
 
 def load_metacyc_compound_to_mnxm(chem_xref: Path) -> dict[str, str]:
-    """Bare MetaCyc compound id -> MNXM.
-
-    chem_xref carries the same compound under both 'metacycM:' and
-    'metacyc.compound:' (verified identical); either resolves. Keyed by the bare
-    id because the pgdb LEFT/RIGHT slots hold bare ids ('GLT', 'PROTON').
-    """
     out: dict[str, str] = {}
     tag = "metacyc.compound:"
     with open(chem_xref) as fh:
@@ -174,13 +122,6 @@ def load_metacyc_compound_to_mnxm(chem_xref: Path) -> dict[str, str]:
 
 
 def parse_col3_sides(reac_xref: Path) -> dict[str, tuple[str, frozenset, frozenset]]:
-    """metacyc.reaction id -> (arrow, left_ids, right_ids) from reac_xref col 3.
-
-    The equation is ALWAYS the last '||'-field (the name is usually absent, so a
-    fixed index is wrong). Compound ids are bare MetaCyc ids parsed from
-    'metacycM:<id>@cco:...'. This is MetaCyc's own orientation, from a newer
-    MetaCyc than the pgdb -- an independent cross-check anchor, not the primary.
-    """
     out: dict[str, tuple[str, frozenset, frozenset]] = {}
     tag = "metacyc.reaction:"
     with open(reac_xref) as fh:
@@ -201,7 +142,6 @@ def parse_col3_sides(reac_xref: Path) -> dict[str, tuple[str, frozenset, frozens
 
 
 def _metacyc_ids(side: str) -> set[str]:
-    """'1 metacycM:GLT@cco:CCO-IN + ...' -> {'GLT', ...}."""
     out = set()
     for term in side.split(" + "):
         term = term.strip()

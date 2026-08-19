@@ -1,16 +1,4 @@
 #!/usr/bin/env python3
-"""Resume the cyano copper panel into a DIAMOND all-vs-all BSR-distance histogram.
-
-Reuses the six proteomes already fetched by the prior PPanGGOLiN run (run key
-uOJnvxQz) -- no NCBI refetch. Each .faa is copied to `<genus-species-PCC>.faa`
-(name parsed from the matching .gbk ORGANISM line), so the planner skips
-getNcbiAssembly and goes straight to diamond_all_vs_all -> bsr_histogram.
-
-Run with the `msm` env python:
-    PY=/home/tony/lib/miniforge3/envs/msm/bin/python
-    $PY main/pangenome_cyano_copper_bsr.py        # plan-only: render DAG
-    $PY main/pangenome_cyano_copper_bsr.py run     # stage + run locally (Docker)
-"""
 import sys
 import time
 import shutil
@@ -32,8 +20,6 @@ TIMEOUT = 1800
 
 
 def lineage_token(p: Path) -> str:
-    # filenames look like 1-1-1.<HASH>-<endpoint>.<ext>; <HASH> is shared between
-    # a genome's orfs and gbk products.
     parts = p.name.split(".")
     if len(parts) >= 2 and "-" in parts[1]:
         return parts[1].split("-")[0]
@@ -61,7 +47,6 @@ agent_home = Source.FromLocal((BASE / "msm_home").absolute())
 smith = Agent(home=agent_home, runtime=Runtime.DOCKER)
 smith.Deploy()
 
-# genome name per lineage token, from the gbk ORGANISM lines
 name_by_token = {lineage_token(g): organism_name(g) for g in GBK_DIR.glob("*.gbk")}
 
 in_dir = BASE / "resume_inputs.xgdb"

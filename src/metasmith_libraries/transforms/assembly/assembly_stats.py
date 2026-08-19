@@ -30,26 +30,6 @@ def protocol(context: ExecutionContext):
     ibp_cov = context.Output(bpcov)
     obam = context.Output(bam)
 
-    # https://lh3.github.io/minimap2/minimap2.html
-    # minimap2 options:
-    # -x sr                 short read preset
-    # -x map-hifi           pacbio hifi (type of read that is more accurate) long read preset
-    # -x map-ont            oxford nanopore long read preset
-    # --sr                  Enable short-read alignment heuristics, more sensitivity
-    # -2                    use two io threads, more peak memory
-    # -a                    SAM format
-    # --secondary=no        Whether to output secondary alignments [no]
-    # --sam-hit-only        In SAM, don’t output unmapped reads. !this results in report saying 100% reads mapped!
-    # --heap-sort=no|yes    Heap merge is faster for short reads, but slower for long reads. [no]
-    #   Preset:
-    #     -x STR       preset (always applied before other options; see minimap2.1 for details) []
-    #                 - map-pb/map-ont: PacBio/Nanopore vs reference mapping
-    #                 - ava-pb/ava-ont: PacBio/Nanopore read overlap
-    #                 - asm5/asm10/asm20: asm-to-ref mapping, for ~0.1/1/5% sequence divergence
-    #                 - splice: long-read spliced alignment
-    #                 - sr: genomic short-read mapping
-    # https://www.nature.com/articles/s41587-023-01983-6
-    # minimap2 -x asm20     this is for hifi
 
     with open(irmeta.local) as j:
         read_meta = json.load(j)
@@ -63,11 +43,11 @@ def protocol(context: ExecutionContext):
 
     if is_long:
         if q>=30:
-            preset = "-x asm5"  # divergence <0.1%
+            preset = "-x asm5"
         elif q>=20:
-            preset = "-x asm10" # divergence <1%
+            preset = "-x asm10"
         else:
-            preset = "-x asm20" # divergence "severaal" %
+            preset = "-x asm20"
     else:
         preset = "-x sr"
 
@@ -75,7 +55,6 @@ def protocol(context: ExecutionContext):
     cpus = context.params.get("cpus")
     cpus_string = "" if cpus is None else f"-t {cpus}"
     temp_sam_path = Path("./temp.sam")
-    # Same command either way: this tool is a plain CLI in both worlds.
     _cmd = f"""
             minimap2 {preset} -a -2 {cpus_string} \
                 {iasm.container} {ireads.container} > {temp_sam_path}
@@ -88,7 +67,6 @@ def protocol(context: ExecutionContext):
     cpus_string = "" if cpus is None else f"-@ {cpus}"
     bam_file = "temp.bam"
     alignment_stats_file = "alignment_stats.tsv"
-    # Same command either way: this tool is a plain CLI in both worlds.
     _cmd = f"""
             samtools view {cpus_string} -b {temp_sam_path} \
                 | samtools sort {cpus_string} -o {bam_file} -O bam
@@ -102,7 +80,6 @@ def protocol(context: ExecutionContext):
     Log.Info("calculating per bp coverage")
     cov_tsv = "bp_cov.tsv"
     _header = "\t".join(["contig", "start", "end", "fold_coverage"])
-    # Same command either way: this tool is a plain CLI in both worlds.
     _cmd = f"""
             echo "{_header}" >{cov_tsv}
             bedtools genomecov -ibam {bam_file} -bg >>{cov_tsv}
@@ -130,7 +107,7 @@ def protocol(context: ExecutionContext):
                     current = l[1:-1].split(" ")[0]
                     length = 0
                 else:
-                    length += len(l)-1 # minus 1 for "\n"
+                    length += len(l)-1
             _submita()
     with open(cov_tsv) as f:
         with open(icontig_cov.local, "w") as of:
@@ -146,24 +123,12 @@ def protocol(context: ExecutionContext):
                 c = 0.0
                 for span, val in entry:
                     c += (span/total)*val
-                # assume no overlap, so total == total span of contig
                 of.write("\t".join(str(x) for x in [last_k, c, total])+"\n")
                 entry = []
 
-            f.readline() # header
+            f.readline()
             for l in f:
                 k, s, e, val = l[:-1].split("\t")
-                # Depth is a float, not an int. bedtools carries genomecov's
-                # depth as a double (it is divided by -scale, default 1.0) and
-                # prints it through a C++ ostream at the default 6 significant
-                # digits -- so the moment a pileup reaches a million-fold the
-                # column reads `1.24488e+06` and int() rejects it. Every library
-                # that peaked below 1e6 parsed fine, which is why this surfaced
-                # only on the deepest ones, after the alignment was already paid
-                # for. Coordinates stay int(): bedtools prints those from an
-                # integer type, and if they ever did arrive in that form the
-                # value would already have lost digits, so parsing them more
-                # leniently would corrupt `e-s` instead of reporting it.
                 s, e = int(s), int(e)
                 val = float(val)
                 if k != last_k:
@@ -172,7 +137,6 @@ def protocol(context: ExecutionContext):
                 entry.append((e-s, val))
             _submit()
 
-            # write no coverage contigs
             for k, l in contig2length.items():
                 if k in seen: continue
                 of.write("\t".join(str(x) for x in [k, 0, l])+"\n")
@@ -192,7 +156,7 @@ def protocol(context: ExecutionContext):
         except ValueError:
             return x
     def _from_np(x):
-        if pd.isna(x): # includes nan, but isnan excludes None
+        if pd.isna(x):
             return None
         if isinstance(x, str):
             if x.endswith("%"):
@@ -208,7 +172,6 @@ def protocol(context: ExecutionContext):
 
     Log.Info("running seqkit")
     seqkit_stats_file = "seqkit_stats.tsv"
-    # Same command either way: this tool is a plain CLI in both worlds.
     _cmd = f"""
             seqkit stat --all --tabular {iasm.container} >{seqkit_stats_file}
         """
@@ -230,11 +193,9 @@ def protocol(context: ExecutionContext):
     with open(istats.local, "w") as j:
         json.dump(assembly_stats, j)
 
-    # copy BAM to output
     Log.Info("copying BAM to output")
     context.LocalShell(f"cp {bam_file} {obam.local}")
 
-    # just a bit of cleanup
     if temp_sam_path.exists(): temp_sam_path.unlink()
 
     return ExecutionResult(

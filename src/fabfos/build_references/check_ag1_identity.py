@@ -1,57 +1,3 @@
-"""What does AG1 borrowing DH1's model cost? Measure it, marker by marker.
-
-    PATH="/home/tony/lib/miniforge3/envs/msm-fabfos/bin:$PATH" \\
-        python build_references/check_ag1_identity.py [--gpr <dir>]
-
-The ASKA library lives in E. coli AG1, and the eydallin cohort is read against it. AG1
-has no assembly at NCBI and no published model, so it borrows DH1's -- the sibling
-situation to EPI300 borrowing DH10B's, with one difference that changes the whole
-method: there is no AG1 GENOME to compare. `check_epi300_identity.py` measures a borrow
-by joining two annotations; here there is only one, plus a sentence.
-
-THE SENTENCE IS THE INPUT. Qimron et al. PNAS 2006 (`data/fabfos/originals/aska/`, Materials
-and Methods) state it exactly: "The ASKA collection was constructed by using E. coli
-K-12 AG1 (Stratagene), which is a derivative of DH1: recA1, endA1, gyrA96, thi-1,
-hsdR17 (rK-mK+), supE44, and relA1." Seven markers, and the question this script
-answers is which of them the MODEL can see -- because a marker naming no gene in
-iECDH1ME8569_1439 cannot change the reaction space however important it is to the
-strain.
-
-WHAT AN ALLELE DOES IS PART OF THE INPUT, not a detail. A genotype string lists markers,
-not knockouts: `relA1` is a null, `gyrA96` is a resistance allele whose gyrase still
-works, and `supE44` is a gained suppressor tRNA. Treating the list as seven deletions is
-the easy mistake, and for gyrA it would assert a strain with no DNA gyrase -- which is
-not viable, and which nothing downstream could catch. MARKERS carries the kind.
-
-WHAT IT FINDS, and each of the three outcomes means something different:
-
-  recA1, endA1, gyrA96, hsdR17, supE44   name no gene in the model at all. Homologous
-                                         recombination, endonuclease I, gyrase,
-                                         restriction and a tRNA suppressor are not
-                                         metabolism; five of the seven markers are
-                                         therefore free, and that is measured here
-                                         rather than assumed from what they sound like.
-  relA1                                  names `relA`, which carries two reactions.
-                                         GDPDPK is `relA or spoT` and survives; GTPDPK
-                                         is relA alone and goes dark. So the marker
-                                         costs exactly one reaction -- and unlike
-                                         EPI300's seven, it is INSIDE the atom
-                                         universe, so this borrow does move the network.
-  thi-1                                  is a classical allele, not a locus. It is a
-                                         thiamine auxotrophy whose molecular lesion the
-                                         genotype string does not name, and the
-                                         thiamine module in this model is nine
-                                         reactions over eight genes. Guessing one would
-                                         put a fabricated deletion in the background of
-                                         every eydallin condition. It is therefore NOT
-                                         in the edit list, and the consequence is stated
-                                         instead: AG1 needs thiamine in the medium,
-                                         which is a claim about the MEDIUM and belongs
-                                         wherever the medium is declared.
-
-A marker that is real and invisible to the model, and a marker that is real and
-unresolved, are different kinds of absence from the edit list. Both are printed.
-"""
 from __future__ import annotations
 
 import argparse
@@ -68,22 +14,6 @@ from check_epi300_identity import model_rules, rule_holds                 # noqa
 GEM_HOST = "e_coli_dh1"
 BORROWER = "e_coli_ag1"
 
-# The genotype, as the paper writes it -> the gene each marker names and WHAT THE ALLELE
-# DOES. The symbol mapping is standard (`supE44` is the historical name for `glnV`, the
-# rest drop their allele number); the second field is the interpretive step, and leaving
-# it out is what makes "apply the genotype" mean "delete seven genes".
-#
-#   loss       the product is non-functional. recA1, endA1 and relA1 are the classical
-#              null-phenotype alleles a cloning strain is built for, and hsdR17 removes
-#              restriction.
-#   variant    the product is ALTERED AND STILL WORKS. gyrA96 is a nalidixic-acid
-#              resistance allele -- DNA gyrase is essential, so a strain carrying it as a
-#              deletion would not be alive. Withholding its rows would claim AG1 has no
-#              gyrase, which is both false and the kind of false a downstream solver
-#              cannot notice.
-#   gain       supE44/glnV is an amber-suppressor tRNA: a gained function, and not a
-#              protein at all, so no protein table can express it either way.
-#   unresolved thi-1 names no locus -- see the header.
 MARKERS = {
     "recA1":  ("recA", "loss"),
     "endA1":  ("endA", "loss"),
@@ -94,15 +24,10 @@ MARKERS = {
     "relA1":  ("relA", "loss"),
 }
 
-# What the measurement below currently says. Declared so a CHANGE is a failure rather
-# than a quietly different number -- the same contract check_epi300_identity.py has with
-# host_gpr_gem.py, which drops a FIXED list on the strength of this.
 EXPECTED_INVISIBLE = {"recA1", "endA1", "gyrA96", "hsdR17", "supE44"}
 EXPECTED_UNRESOLVED = {"thi-1"}
 EXPECTED_LOST_REACTIONS = {"GTPDPK"}
 
-# The module thi-1 breaks somewhere, printed with its cost so the size of what is being
-# left alone is on the record rather than implied.
 THIAMINE = ("thiB", "thiC", "thiD", "thiE", "thiF", "thiG", "thiH", "thiI", "thiK",
             "thiL", "thiM", "thiP", "thiQ")
 
@@ -142,9 +67,6 @@ def main() -> int:
                   f"-- costs nothing")
             continue
         if kind != "loss":
-            # An altered-but-working product removes nothing. Reported rather than
-            # skipped: "this marker names a model gene and edits none of it" is a
-            # different fact from "this marker names no model gene".
             invisible.add(marker)
             print(f"  {marker:<7} -> {symbol:<5} [{kind}] {hits} -- still functional, "
                   f"not edited")
@@ -152,11 +74,6 @@ def main() -> int:
         resolved[marker] = hits
         print(f"  {marker:<7} -> {symbol:<5} [{kind}] {hits}")
 
-    # WHAT THE EDIT COSTS THE NETWORK, measured by evaluating every rule twice -- once
-    # over the model's own gene set, once with the marked genes removed -- and diffing
-    # the live reactions. A gene ORed with an isozyme takes nothing with it; one alone on
-    # a reaction takes it out. Which of the two `relA` is differs per reaction, and that
-    # is the entire finding here.
     broken = {gid for hits in resolved.values() for gid in hits}
     full = set(genes)
     lost = [(rid, rule) for rid, rule in rules
@@ -169,8 +86,6 @@ def main() -> int:
     for rid, rule in kept:
         print(f"     kept {rid:<10} {rule}   (an isozyme carries it)")
 
-    # The module the unresolved marker breaks, so that "left out of the edit list" is a
-    # readable size rather than a shrug.
     thi_genes = {gid for sym in THIAMINE for gid in by_symbol.get(sym, [])}
     thi_rxns = [rid for rid, rule in rules if any(g in rule.split() for g in thi_genes)]
     print(f"\n  thi-1 is unresolved; the thiamine module it lies in is "

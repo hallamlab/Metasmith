@@ -53,12 +53,6 @@ class Node:
 
 
 def parse_report(path: Path):
-    """Return (header, roots, nodes_in_file_order, unclassified_node|None).
-
-    Depth comes from the indentation of the name column, which is how Metabuli
-    encodes the tree -- there is no parent column. A node's parent is the
-    nearest preceding node one level shallower.
-    """
     header = None
     nodes, stack, roots = [], {}, []
     unclassified = None
@@ -76,9 +70,6 @@ def parse_report(path: Path):
         depth = (len(name_field) - len(name_field.lstrip(" "))) // len(INDENT)
         node = Node(depth, rank, taxid.strip(), name_field.strip(), line_no)
         nodes.append(node)
-        # Metabuli emits unclassified, when there is any, as a top-level row.
-        # Mirror whatever shape it used rather than inventing one: this branch
-        # is reached only when the batch itself contained unclassified contigs.
         if node.name.lower() == "unclassified" or node.taxid == "0":
             unclassified = node
             continue
@@ -98,7 +89,6 @@ def parse_report(path: Path):
 
 
 def parse_classifications(path: Path):
-    """Return (header, list[(sample, cols)]). Rows keep their columns verbatim."""
     header, rows = None, []
     for line_no, raw in enumerate(path.read_text().splitlines()):
         if not raw.strip():
@@ -122,11 +112,6 @@ def parse_classifications(path: Path):
 
 
 def recompute_report(sample_rows, header, roots, nodes, unclassified):
-    """Rebuild one sample's report from its classification rows.
-
-    `taxon_count` is the number of contigs assigned exactly at a node;
-    `clade_count` is that summed over the node and everything beneath it.
-    """
     taxon = defaultdict(int)
     n_unclassified = 0
     for cols in sample_rows:
@@ -147,9 +132,6 @@ def recompute_report(sample_rows, header, roots, nodes, unclassified):
     for root in roots:
         accumulate(root)
 
-    # Denominator: mirror the batch report's own convention rather than assume
-    # one. If it carried an unclassified row, percentages are over classified +
-    # unclassified; if it did not, root IS the total.
     total = sum(clade.get(r.taxid, 0) for r in roots)
     if unclassified is not None:
         total += n_unclassified
@@ -195,9 +177,6 @@ def split(classifications: Path, report: Path, outdir: Path) -> dict:
         lines = [c_header] if c_header else []
         for cols in sample_rows:
             cols = list(cols)
-            # Strip the prefix: it exists to make the batch's id namespace
-            # unique, and a consumer of one sample's table should see the
-            # assembler's own contig names.
             cols[1] = cols[1].split(SEP, 1)[1]
             lines.append("\t".join(cols))
         cdst.write_text("\n".join(lines) + "\n")
@@ -211,12 +190,6 @@ def split(classifications: Path, report: Path, outdir: Path) -> dict:
 
 
 def verify_roundtrip(report: Path, outdir: Path) -> list[str]:
-    """Per-sample clade counts must sum back to the batch report's.
-
-    A recomputation that is merely plausible is the failure mode worth guarding
-    against here, and this catches it: every count in the batch report is a sum
-    over samples, so the split is only correct if the parts add up.
-    """
     _h, _roots, nodes, _u = parse_report(report)
     batch = {n.taxid: n for n in nodes}
     got = defaultdict(int)

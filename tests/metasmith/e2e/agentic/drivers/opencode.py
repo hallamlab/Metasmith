@@ -1,11 +1,3 @@
-"""OpencodeDriver — invokes the opencode CLI in non-interactive mode.
-
-A long-running ``opencode serve`` is started in ``start_session`` so that
-each per-iteration ``opencode run --attach`` reuses MCP wiring (avoids
-the cold-boot cost per Ralph iteration).
-
-Reference: opencode.ai/docs/cli/, deepwiki.com/sst/opencode CLI page.
-"""
 from __future__ import annotations
 
 import os
@@ -42,8 +34,6 @@ _OPENCODE_DATA_REL = Path(".local") / "share" / "opencode"
 
 
 def _bridge_opencode_auth(sandbox_home: Path) -> None:
-    """Make the real ~/.local/share/opencode visible inside a redirected
-    HOME by symlinking the directory across. Idempotent."""
     real = Path.home() / _OPENCODE_DATA_REL
     if not real.exists():
         return
@@ -89,10 +79,6 @@ class OpencodeDriver:
                 f"`{self.bin}` not found on PATH; install via "
                 f"`curl -fsSL https://opencode.ai/install | bash`"
             )
-        # opencode resolves credentials from either OPENCODE_API_KEY,
-        # a provider-native env var (OPENROUTER_API_KEY, ANTHROPIC_API_KEY,
-        # ...), or its own keyring at ~/.local/share/opencode/auth.json
-        # (populated by `opencode auth login`). Only fail if none exist.
         if not _opencode_has_credentials():
             raise RuntimeError(
                 "opencode has no credentials configured; run `opencode auth login` "
@@ -109,10 +95,6 @@ class OpencodeDriver:
         # therefore has to be wired in here, at serve-launch time.
         serve_env = dict(env) if env is not None else None
         if serve_env is not None and "HOME" in serve_env:
-            # opencode resolves auth from Path.home()/.local/share/opencode/
-            # auth.json — so when HOME is redirected to the sandbox the
-            # daemon loses its credentials and serves "UnknownError" to
-            # every request. Bridge the real auth file in.
             sandbox_home = Path(serve_env["HOME"])
             _bridge_opencode_auth(sandbox_home)
         self._serve_proc = subprocess.Popen(
@@ -157,9 +139,6 @@ class OpencodeDriver:
         log_dir: Path,
         max_usd_per_iter: float | None = None,
     ) -> IterResult:
-        # max_usd_per_iter is a documented no-op here: opencode has no
-        # per-invocation dollar cap, and this study drives the `claude` CLI.
-        # Accepted only to satisfy the AgentDriver protocol.
         argv = [
             self.bin, "run",
             "--attach", f"http://127.0.0.1:{self.serve_port}",

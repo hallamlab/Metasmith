@@ -40,9 +40,6 @@ AUTHORS = (
     "ecspr_survey_from_pooled_reads",
 )
 
-# Authors that exist but cannot ship, and why. Kept visible rather than deleted:
-# each is one line away from building again, and a build that silently omitted
-# them would read as "these are all the templates there are".
 BLOCKED = {
     "dl_embeddings_from_orfs":
         "every embedding transform consumes sequences::orfs_shard, whose only "

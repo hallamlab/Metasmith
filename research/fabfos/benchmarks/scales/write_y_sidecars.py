@@ -1,36 +1,3 @@
-"""Put the continuous readouts back under `<study>/Y/`, after the tier has published.
-
-    python research/fabfos/benchmarks/scales/write_y_sidecars.py [--check]
-
-THE TIER PUBLISHES BY `rmtree` THEN `copytree`, so every study folder is replaced
-wholesale on a study-tier build and anything in `Y/` that the tier did not write is
-gone. `Y/expectations.tsv` and `Y/DEFAULT.md` come back; a sidecar does not. This script
-is the other half of that arrangement -- run it after `--publish` -- and it is also why
-`data/fabfos/benchmarks/eydallin/Y/measured_glycogen.tsv` has to be backed up before any
-full build rather than merely noticed afterwards.
-
-WHY A SIDECAR AT ALL. `expectations.tsv` is categorical by construction: the tier's
-answer key is a direction per (condition, element, metabolite), because that is what a
-conductance readout can be scored against. Both SCALEs arms publish a CONTINUOUS fitness,
-and the classifier arm's whole value is that its ~4,000 non-enriching genes are measured
-negatives rather than absences -- a fact that a `flat` label preserves the existence of
-but not the magnitude of. The sidecar carries the magnitude, in the shape the eydallin
-phenotype sidecar established, and the folder-shape check tolerates it because that check
-inspects the top level of a study folder only.
-
-The two arms carry different quantities and the files say so in their own headers:
-
-  scales_tol   fitness at 15 and 30 g/L exogenous ethanol, BW25113 delta-recA in MOPS
-               minimal + 2 g/L glucose. 4,225 genes, of which 158 clear fitness 1 at
-               15 g/L and 487 at 30 g/L -- the paper's own counts, which the extraction
-               reproduces as a refusal.
-  scales_prod  batch-8 production gene fitness, LW06 in AMX minimal. 4,103 ranks, of
-               which 3 are nameable.
-
-NEVER JOIN THE TWO BY VALUE. The later paper recalculated the earlier selections; the
-ranges differ sixfold and a trial join matched 337 of 4,103. The two files sit in
-different directories for that reason.
-"""
 from __future__ import annotations
 
 import argparse
@@ -40,7 +7,6 @@ from pathlib import Path
 
 
 def repo_root() -> Path:
-    """Nearest ancestor of this file that contains `data/fabfos`."""
     for d in Path(__file__).resolve().parents:
         if (d / "data" / "fabfos").is_dir():
             return d
@@ -51,7 +17,6 @@ ROOT = repo_root()
 BENCH = ROOT / "data" / "fabfos" / "benchmarks"
 EXTRACT = BENCH / "_extractions"
 
-# study -> (sidecar name, source extraction, columns to carry, what it is)
 SIDECARS = {
     "scales_tol": (
         "measured_fitness.tsv",
@@ -73,8 +38,6 @@ SIDECARS = {
     ),
 }
 
-# The sidecar that predates this work and that no transform can regenerate. Listed so a
-# full build's blast radius is named in code rather than remembered.
 PRIOR = {("eydallin", "measured_glycogen.tsv")}
 
 
@@ -124,8 +87,6 @@ def main() -> int:
         if not src.exists():
             problems.append(f"{study}: no extraction at {src}")
             continue
-        # A published sidecar may be a read-only DVC hardlink into a cache several
-        # worktrees share; replacing the link is the only safe write.
         if dst.exists():
             dst.unlink()
         n = carry(src, cols, dst, note)

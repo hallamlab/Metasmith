@@ -31,8 +31,6 @@ def protocol(context: ExecutionContext):
     parity = read_meta["parity"]
     assert parity in {"single", "paired"}, f"unknown parity: [{parity}]"
     if parity == "paired":
-        # metaSPAdes (--meta) is pooled-clone/metagenome-appropriate, but only
-        # accepts paired input; single-end falls back to plain spades.py.
         mode = "--meta"
         reads_arg = f"--12 {ireads.container}"
     else:
@@ -70,7 +68,6 @@ def protocol(context: ExecutionContext):
     # last writer and therefore wins over the runtime's --env.
     omp_arg = "" if threads is None else f"export OMP_NUM_THREADS={threads}\n"
 
-    # Same command either way: this tool is a plain CLI in both worlds.
     _cmd = f"""\
             {omp_arg}\
             spades.py {mode} {threads_arg} {mem_arg} \

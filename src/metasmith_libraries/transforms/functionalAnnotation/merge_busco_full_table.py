@@ -1,10 +1,3 @@
-"""merge_busco_full_table — gather per-chunk BUSCO full_table.tsv files.
-
-BUSCO full_table.tsv starts with several `#`-prefix metadata lines (BUSCO
-version, lineage dataset, etc.) ending with the `# Busco id	Status	...`
-column header. From chunk 0 we keep the full `#` block; from later chunks
-we strip all leading `#` lines.
-"""
 from metasmith.python_api import *
 
 lib = TransformInstanceLibrary.ResolveParentLibrary(__file__)

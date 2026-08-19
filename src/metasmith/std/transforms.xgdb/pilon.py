@@ -4,7 +4,6 @@ lib = TransformInstanceLibrary.ResolveParentLibrary(__file__)
 model = Transform()
 
 assembly    = model.AddRequirement(lib.GetType("std::long_reads_assembly"))
-# short_reads = model.AddRequirement(lib.GetType("std::short_reads"))
 short_reads = model.AddRequirement(lib.GetType("std::short_reads_trimmed"))
 bam         = model.AddRequirement(lib.GetType("std::binary_alignment_map"), parents={assembly, short_reads})
 csi         = model.AddRequirement(lib.GetType("std::binary_alignment_map_csi"), parents={assembly, short_reads})

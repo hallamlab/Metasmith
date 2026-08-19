@@ -1,13 +1,3 @@
-"""merge_deepec — gather per-chunk DeepEC TSVs back into a per-sample artifact.
-
-Uses sequences::orfs as the sample-identity anchor; metasmith's lineage tracker
-gathers every annotation::deepec_predictions chunk that descends from this orfs
-instance via the splitter (chunkOrfsForAnnotation → orf_chunk → deepec).
-
-Header is one TSV line on the first chunk; subsequent chunks contribute data
-only. Chunk files are unlinked post-merge to reclaim /scratch inodes
-(fir_scratch_inode_quota cap is 1M).
-"""
 from metasmith.python_api import *
 
 lib = TransformInstanceLibrary.ResolveParentLibrary(__file__)
@@ -23,11 +13,6 @@ def protocol(context: ExecutionContext):
     chunks = sorted(context.InputGroup(chunk_out), key=lambda p: str(p.local))
     iout = context.Output(merged)
 
-    # DeepEC's TSV emits one `Query ID\tPredicted EC number` header per
-    # internal inference batch — so even a single chunk may contain
-    # multiple header lines. Strategy: detect the header from chunk 0,
-    # emit it once, then strip every occurrence (including chunk 0's own
-    # repeats) from the data.
     header = None
     with open(chunks[0].local) as fin:
         header = fin.readline()

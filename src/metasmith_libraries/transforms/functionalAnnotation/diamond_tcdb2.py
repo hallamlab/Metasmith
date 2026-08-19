@@ -17,12 +17,11 @@ def protocol(context: ExecutionContext):
 
     threads = context.params.get("cpus", 8)
     mem = context.params.get("memory")
-    block_size = 2.0  # default
+    block_size = 2.0
     if mem:
         mem_gb = int(float(mem))
         block_size = max(1.0, min(12.0, (mem_gb - 4) / 6))
 
-    # Run DIAMOND blastp against TCDB
     context.ExecWithEnv().ifContainerDo(
         binds=[(idb.external.parent, "/db")],
         env=image,

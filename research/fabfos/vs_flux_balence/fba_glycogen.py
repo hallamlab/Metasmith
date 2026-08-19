@@ -1,21 +1,3 @@
-"""Does FBA answer the question ECSPr cannot -- does overexpressing a gene LOWER glycogen?
-
-Background: the eydallin/directionality work established that ECSPr's readout is monotone
-in enzyme abundance (Rayleigh), so a fold-increase can never produce a decrease.  This
-asks whether a flux-balance model escapes that, on the same three genes:
-glgC (Eydallin 2010: 453% of WT glycogen), glgP (60%), malP (61%).
-
-Readout: a demand flux on glycogen_c, maximised with growth pinned -- the closest a
-steady-state model gets to an accumulating pool.
-
-THE GROWTH FLOOR IS PINNED TO THE UNPERTURBED OPTIMUM.  Re-deriving max growth inside
-each perturbed model lowers the floor whenever the perturbation is costly, which frees
-carbon and manufactures a spurious *increase* in glycogen.  That is not a subtlety --
-it flips glgC's sign.
-
-Run:  /home/tony/lib/miniforge3/envs/ecspr/bin/python research/fabfos/vs_flux_balence/fba_glycogen.py
-"""
-
 import cobra
 from cobra.util.solver import linear_reaction_coefficients
 from cobra.flux_analysis import pfba
@@ -23,12 +5,8 @@ from cobra.flux_analysis import pfba
 MODEL = "data/fabfos/originals/genomes/e_coli_k12/GEM/iML1515.json"
 GROWTH_FRAC = 0.9
 
-# Eydallin 2010 (DNA Res 17:61-71) ASKA overexpression -> glycogen content, % of wild type.
 PHENOTYPE = {"glgC": 453.3, "glgA": 327.9, "glgB": 26.4, "glgP": 59.8, "malP": 60.8}
 
-# Reactions each ASKA clone's product catalyses in iML1515.  GLCP/GLCP2 carry the GPR
-# "b3428 or b3417", so glgP and malP are indistinguishable on the glycogen arm itself;
-# malP's private reactions are the maltodextrin phosphorylases MLTP1/2/3.
 GENE_RXNS = {
     "glgC": ["GLGC"], "glgA": ["GLCS1"], "glgB": ["GLBRAN2"],
     "glgP": ["GLCP", "GLCP2"],
@@ -45,7 +23,6 @@ def prepared_model():
 
 
 def make_probe(m):
-    """Return gly(edits) -> max glycogen deposition, growth pinned at the WT optimum."""
     bio = list(linear_reaction_coefficients(m))[0]
     gmax = m.slim_optimize()
 

@@ -1,13 +1,4 @@
 #!/usr/bin/env python3
-"""T4, part two -- the tests that are cheap because they need no solves.
-
-* the coverage waterfall completed with per-arm panel membership (T1)
-* the within-paper design series, reported as a CASE STUDY and not a metric
-* two permutation nulls: target identity, and metabolite identity
-* the metabolite percentile rank, reported as a described property
-
-Run after score.py.
-"""
 from __future__ import annotations
 
 import sys
@@ -23,11 +14,7 @@ import score as S  # noqa: E402
 RNG = np.random.default_rng(23)
 
 
-# ---------------------------------------------------------------------------
-
 def coverage_table(pred: pd.DataFrame, idx: pd.DataFrame) -> pd.DataFrame:
-    """T1 -- the arms and FBA as COLUMNS of one table, so the two failure modes
-    read side by side. Every figure caption cites a row of this."""
     stage1 = pd.read_csv(C.OUT / "panel_coverage_stage1.tsv", sep="\t")
     rows = [dict(gate=r.gate, arm="(all)", n_obs=r.n_obs, n_targets=r.n_targets,
                  example_lost=r.example_lost) for r in stage1.itertuples(index=False)]
@@ -60,14 +47,7 @@ def coverage_table(pred: pd.DataFrame, idx: pd.DataFrame) -> pd.DataFrame:
     return out
 
 
-# ---------------------------------------------------------------------------
-
 def within_paper_series(pred: pd.DataFrame, idx: pd.DataFrame) -> pd.DataFrame:
-    """The cleanest possible comparison -- same lab, same assay, several designs
-    -- and the dataset has almost none of it. 175 papers, 23 multi-arm, and after
-    requiring a shared target, a comparable measurement type and distinct gene
-    sets, only a handful of series survive. Kendall tau per named series; n this
-    small cannot support an aggregate and none is reported."""
     rows = []
     idx = idx.copy()
     idx["mag"] = pd.to_numeric(idx.magnitude, errors="coerce")
@@ -76,7 +56,7 @@ def within_paper_series(pred: pd.DataFrame, idx: pd.DataFrame) -> pd.DataFrame:
         if len(g) < 2 or g.mag.notna().sum() < 2:
             continue
         if g.add_mnxr.fillna("").nunique() + g.del_mnxr.fillna("").nunique() < 3:
-            continue        # not actually distinct gene sets
+            continue
         for unit, u in pred[~pred.is_counterfactual].groupby("unit"):
             sub = u[u.design_id.isin(g.design_id)]
             tm = [m for m in str(g.target_mnxms.iloc[0]).split(";") if m]
@@ -98,10 +78,6 @@ def within_paper_series(pred: pd.DataFrame, idx: pd.DataFrame) -> pd.DataFrame:
 
 
 def cross_paper_series(pred: pd.DataFrame, idx: pd.DataFrame) -> pd.DataFrame:
-    """The relaxation of the within-paper test: same target, same host, same
-    measurement type, but ACROSS papers. It buys far more pairs and pays for them
-    with strain and fermentation confounding, so it can corroborate a positive and
-    cannot exonerate a null. The caption says exactly that."""
     rows = []
     idx = idx.copy()
     idx["mag"] = pd.to_numeric(idx.magnitude, errors="coerce")
@@ -144,24 +120,14 @@ def kendall(x, y) -> tuple:
     return ((conc - disc) / tot if tot else np.nan), tot
 
 
-# ---------------------------------------------------------------------------
-
 def permutation_nulls(nulls: pd.DataFrame, pred: pd.DataFrame,
                       idx: pd.DataFrame, n_perm: int = 500) -> pd.DataFrame:
-    """Two nulls the counterfactual pool does not subsume.
-
-    * **target permutation** shuffles which condition owns which target, within
-      host and size bin: does the target's IDENTITY matter given the deltas?
-    * **panel permutation** shuffles which metabolite gets which delta inside a
-      design: is the ranking of the panel real, or a marginal artefact?
-    """
     rows = []
     for unit, g in nulls.groupby("unit"):
         obs = float(np.nanmedian(g.observed))
         u = pred[(pred.unit == unit) & (~pred.is_counterfactual)]
         wide = u.pivot_table(index="design_id", columns="mnxm", values="value")
 
-        # target permutation
         tgt_stats = []
         keys = g[["design_id", "mnxm", "size_bin"]].dropna()
         for _ in range(n_perm):
@@ -176,7 +142,6 @@ def permutation_nulls(nulls: pd.DataFrame, pred: pd.DataFrame,
             if vals:
                 tgt_stats.append(float(np.median(vals)))
 
-        # panel permutation
         pan_stats = []
         arr = wide.to_numpy(float)
         cols = list(wide.columns)
@@ -205,15 +170,7 @@ def permutation_nulls(nulls: pd.DataFrame, pred: pd.DataFrame,
     return out
 
 
-# ---------------------------------------------------------------------------
-
 def percentile_rank_panel(pred: pd.DataFrame, idx: pd.DataFrame) -> pd.DataFrame:
-    """The metric a reader expects to see, reported as a DESCRIBED PROPERTY.
-
-    The metabolite axis has no negatives -- "they measured lycopene" says what was
-    assayed, not that nothing else moved -- so this number scores nothing. It is
-    here because its absence would be read as concealment.
-    """
     tmap = {r.design_id: [m for m in str(r.target_mnxms).split(";") if m]
             for r in idx.itertuples(index=False)}
     rows = []

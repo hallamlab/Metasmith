@@ -40,12 +40,9 @@ HOSTS = ROOT / "data/fabfos/benchmarks/hosts"
 MEASURED = ROOT / "data/fabfos/benchmarks/eydallin/Y/measured_glycogen.tsv"
 OUT_DIR = ROOT / "data/fabfos/runs/eydallin_clones/ecspr"
 
-SOURCE_MNXM = "MNXM1364061"    # D-glucose
-GLYCOGEN_MNXM = "MNXM738130"   # glycogen (BiGG)
+SOURCE_MNXM = "MNXM1364061"
+GLYCOGEN_MNXM = "MNXM738130"
 
-# glgC/glgA/ddg reproduce the earlier panel; the three reduced-glycogen entries span
-# directly-incident-catabolic (glgP), the anabolic-but-deficient paradox (glgB) and an
-# upstream carbon step (nagB). pfkA/pfkB are outside the cohort entirely.
 DEFAULT_GENES = ["glgC", "glgA", "ddg", "glgB", "glgP", "nagB", "pfkA", "pfkB"]
 
 

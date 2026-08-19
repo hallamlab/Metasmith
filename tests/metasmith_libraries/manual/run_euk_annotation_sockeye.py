@@ -1,8 +1,4 @@
 #!/usr/bin/env python
-"""Run functional annotation on Sockeye: busco + eggnog_mapper.
-
-Inputs: braker3 proteins as ORFs, pre-downloaded EggNOG DB, BUSCO lineage download trigger.
-"""
 import sys
 import time
 sys.stdout.reconfigure(line_buffering=True)
@@ -65,10 +61,8 @@ def main():
         "transcriptomics::experiment",
     )
 
-    # braker3 proteins as ORFs
     inputs.AddItem(PREV_ORFS, "sequences::orfs", parents={experiment})
 
-    # EggNOG database (pre-downloaded, skip downloadEggnogDB)
     inputs.AddItem(EGGNOG_DB, "annotation::eggnog_data")
 
     # BUSCO lineage download trigger
@@ -113,7 +107,7 @@ def main():
     print("\n=== Waiting for completion ===")
     results_path = smith.GetResultSource(task).GetPath()
     t0 = time.time()
-    timeout = 14400  # 4h
+    timeout = 14400
     last_print = 0
     while not (results_path / "_metadata").exists():
         elapsed = time.time() - t0

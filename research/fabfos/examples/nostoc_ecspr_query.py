@@ -37,14 +37,9 @@ OUT = REPO / "data/fabfos/nostoc/ecspr"
 NETS = OUT / "networks"
 CHEM_PROP = REPO / "data/fabfos/originals/metanetx/4.5/chem_prop.tsv"
 
-# Each organism appears in two of the three pairwise tables; M must agree between them.
 PAIRS = ("NOS-ERY_bl-on", "NOS-RHI_bl-on", "ERY-RHI_bl-on")
 ORFS = {"NOS": 5921, "ERY": 3184, "RHI": 4396}
 
-# The corrin ring, split from the trunk it shares with siroheme. Everything upstream of
-# precorrin-3 is also sirohaem/coenzyme-F430 chemistry, so an organism can carry the whole
-# trunk with no capacity to build a corrin ring at all -- which is exactly what
-# Erythrobacter does. Counting the trunk as B12 evidence turns an auxotroph into a producer.
 RING = re.compile(r"precorrin-4|precorrin-5|precorrin-6|precorrin-7|precorrin-8|"
                   r"Co-precorrin|Cobalt-precorrin|Cobalt-factor|cobalt-dihydrosiro|"
                   r"Cobalt-siro|cobyrinate|cobyrate|cobinamide|cobalamin|cobamide", re.I)
@@ -57,7 +52,6 @@ def _bridges(pair: str) -> pd.DataFrame:
 
 
 def _per_organism(element: str = "C") -> pd.DataFrame:
-    """M for every organism on one index, cross-checked across the tables that carry it."""
     M: dict[str, pd.Series] = {}
     for p in PAIRS:
         b = _bridges(p)
@@ -85,7 +79,6 @@ def corrinoid(_args) -> int:
               f"   per-1k-ORF={1000 * cob[o].sum() / ORFS[o]:.3f}"
               f"   | trunk {int((trunk[o] > 0).sum())}/{len(trunk)}")
 
-    # The control that decides whether a gap is a pathway or just a smaller genome.
     both = df[(df.NOS > 0) & (df.RHI > 0)]
     base = (both.ERY == 0).mean()
     cob_both = cob[(cob.NOS > 0) & (cob.RHI > 0)]
@@ -149,10 +142,6 @@ def polarity(args) -> int:
     m = pd.concat(parts).merge(cp[["mnxm", "SMILES", "charge"]],
                                left_on="metabolite", right_on="mnxm", how="left")
 
-    # A third of the bridges are not discrete small molecules -- protein-bound residues,
-    # polymers, MetaNetX generic classes. They are legitimate NODES (two organisms really do
-    # use them differently) and impossible MS TARGETS, so they get their own bucket rather
-    # than being silently averaged into the polar one.
     notmol = re.compile(r"protein|\[.*subunit|residue|polysialic|starch|amylose|glycogen|"
                         r"cellulose|peptidoglycan|lipopolysaccharide|tRNA|mRNA|DNA|RNA|"
                         r"^a |^an |^fragments", re.I)
@@ -193,8 +182,6 @@ def polarity(args) -> int:
         print(f"  conductance with logP < {cut}: "
               f"{100 * mm.loc[mm.logP < cut, 'g'].sum() / mm.g.sum():.1f}%")
 
-    # Charge at pH 7 picks the ESI mode, which in practice constrains the assay more than
-    # the column does.
     chg = pd.to_numeric(mm.charge, errors="coerce")
     b = pd.cut(chg, [-99, -2.5, -1.5, -0.5, 0.5, 99],
                labels=["<= -3", "-2", "-1", "0 (neutral)", "positive"])

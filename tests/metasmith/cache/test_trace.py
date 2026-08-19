@@ -1,9 +1,3 @@
-"""Forward-looking xfail tests for the resume-trace UX (inbox #14).
-
-Coverage: G11 — `_metasmith/trace.jsonl` records hit/run per task;
-`msm status <key>` renders it.
-"""
-
 from __future__ import annotations
 
 import json
@@ -16,15 +10,6 @@ from tests.metasmith.cache.fixtures.cache_fixtures import linear_3step
 
 
 def test_trace_jsonl_records_v2_invocation_events(tmp_path, virtual_runtime):
-    """C7: trace.jsonl carries v2 InvocationEvent rows + SessionStart sentinel.
-
-    Run once (all promoted), run again (all hit). The second run's
-    trace.jsonl must lead with a SessionStart sentinel and then carry
-    exactly N InvocationEvent rows for an N-step plan, each with
-    `status: hit` and `schema_version: 2`. Compile-time emits the hit
-    rows; post-exec promote.py appends miss/promoted/fail rows carrying
-    the same `session_id` recovered from the sentinel.
-    """
     task = linear_3step.build_task(tmp_path)
     capture_run(virtual_runtime, task)
     capture_run(virtual_runtime, task)
@@ -58,13 +43,6 @@ def test_trace_jsonl_records_v2_invocation_events(tmp_path, virtual_runtime):
 
 
 def test_msm_status_joins_meta(tmp_path, virtual_runtime, capsys):
-    """G11: `msm status <run_dir>` joins trace + workflow.step_N.meta.
-
-    Pinned to S8. After a run, status_run reads any trace.jsonl rows
-    that already exist AND parses every `workflow.step_N.meta` file
-    deposited by the compile pass — the join gives one entry per task
-    keyed by step order with the stable cache_key + cacheable fields.
-    """
     from metasmith.ops.cache import status_run
 
     task = linear_3step.build_task(tmp_path)
@@ -75,9 +53,6 @@ def test_msm_status_joins_meta(tmp_path, virtual_runtime, capsys):
 
     result = status_run(str(run_dir))
     assert result["run_dir"] == str(run_dir)
-    # Every cacheable step deposits a `workflow.step_N.meta` file with
-    # cache_key + cacheable lines; status_run must surface them keyed
-    # by step order.
     assert result["meta"], "no workflow.step_*.meta files were joined"
     for order, body in result["meta"].items():
         assert "cache_key" in body, f"step {order} meta missing cache_key"

@@ -70,20 +70,13 @@ POOL = ROOT / "data" / "fabfos" / "processed" / "reference_label_pool" / "pool"
 
 SLABS = ROOT / "data" / "fabfos" / "scratch" / "metag_pbert_lane"
 
-SOURCE = "metag"          # the `source` column gpr_3lane.parquet already carries
+SOURCE = "metag"
 LANE_SET = "chosen_4"
 SLAB = 50_000
 THREADS = int(os.environ.get("GPR_THREADS", "16"))
 
 
-# ---------------------------------------------------------------- the live lane
 def load_lane_ns():
-    """Execute the transform's DRIVER prelude and hand back its namespace.
-
-    Everything before `def main():` -- the schema stamping, the pool loader, the
-    sparse vote. `main()` itself is the container entry point and reads the three
-    other lanes' files, which this script does not have and does not need.
-    """
     src = TRANSFORM.read_text()
     body = re.search(r"DRIVER = r'''\n(.*?)\n'''", src, re.S).group(1)
     prelude = body[: body.index("def main():")]
@@ -100,13 +93,6 @@ def query_ids(pd):
 
 
 def install_loader(ns, np, pd, lo, hi):
-    """Point `lane_embed`'s query loader at one slab of the .npy stack.
-
-    The transform reads a parquet and an index whose id column is `sequence_id`;
-    the metagenome stack is float16 `.npy` and its index is `contig,orf`. The
-    producer's row-count check is kept, because it is the one that catches an
-    index and a stack that were not written together.
-    """
     ids = query_ids(pd)
     stack = np.load(EMB, mmap_mode="r")
     if len(ids) != len(stack):
@@ -140,12 +126,11 @@ def run_lane():
         df = ns["lane_embed"](None, None, str(POOL), "emb_pbert.npy", "pbert", ns["PBERT_FLOOR"])
         tmp = out.with_suffix(".partial")
         df.to_parquet(tmp, index=False)
-        tmp.rename(out)                     # atomic: a killed slab is absent, never half
+        tmp.rename(out)
         print(f"[metag-pbert] slab {i:03d} rows[{lo:,}:{hi:,}] -> {len(df):,} rows "
               f"in {time.time()-t0:.0f}s", flush=True)
 
 
-# ------------------------------------------------------------------- assembly
 def assemble():
     import numpy as np
     import pandas as pd
@@ -190,9 +175,7 @@ def assemble():
     print(f"[metag-pbert] wrote {len(df):,} rows -> {GPR4}", flush=True)
 
 
-# ------------------------------------------------------------ alignment check
 def check_alignment():
-    """Re-run the stack/index pairing evidence quoted in this module's docstring."""
     import numpy as np
     import pandas as pd
     ids = query_ids(pd)

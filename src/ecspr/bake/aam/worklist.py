@@ -63,79 +63,26 @@ import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
 
-# The character cap the neural members have always applied. It is stated in both places
-# rather than imported, because importing it here from a member would make the
-# adjudication depend on a mapper module it is meant to precede. The two are kept honest
-# at RUNTIME instead: `aam.neural_members.load_universe` re-checks every
-# reaction it is handed and refuses if any exceeds its own constant, so a drift is a
-# loud failure at the top of the lane rather than a quiet difference in coverage.
 SMILES_LEN_LIMIT = 8000
 
-# The atom cap on the EXPANDED string.
-#
-# IT IS A MEMBER BOUNDARY, NOT A REFUSAL, and that is a correction rather than a
-# loosening. The cap was warranted by a yield curve joined to the deployed bake -- 98-99%
-# banking up to 600, 12.8% at 600-800, 1.3% above -- and that curve is CENSORED. Every
-# mapper method in the deployed table stops dead at the cap (`localmapper_only` max 600,
-# `indigo_only` 598, `rxnmapper_only` 563, `consensus` 581) because the same cut was
-# applied upstream of all three; the only thing banked above it is `curated`, which comes
-# from MetaCyc and never sees a mapper. So the curve above 600 measures the cap, not the
-# mappers, and the threshold has never been tested from the other side.
-#
-# Testing it says the cap belongs to the NEURAL members. RXNMapper's transformer takes
-# 512 tokens and LocalMapper is the lane that was OOM-killed twice -- both are real, both
-# scale with the string. Indigo is a compiled maximum-common-substructure search with a
-# recorded timeout, and over the refused population it maps a 1,666-atom reaction in
-# under two seconds. `research/fabfos/benchmarks/aam_cap/` is the sweep.
-#
-# So a reaction over this cap is `oversize`, which now means "the neural members will not
-# see it" rather than "nothing will". Indigo's universe admits it, its own timeout bounds
-# the cost, and a pair it finds alone lands as `indigo_only` -- the ordinary single-member
-# path, at half weight, which is what it is worth. Nothing under the cap moves.
 ATOM_LIMIT = 600
 
-# Which verdicts each member's universe admits. Stated once, here, because the two
-# readers live in different modules and a drift between them is a member silently seeing
-# a different universe from its siblings -- the exact failure the worklist exists to stop.
 NEURAL_ADMITS = ("mappable",)
 INDIGO_ADMITS = ("mappable", "oversize")
 
-# The atom cap on the COLLAPSED string -- the second chance a reaction gets when the
-# expanded measure would refuse it.
-#
-# RE-DERIVED, not carried across, and it lands on the same number -- which is a result
-# rather than a coincidence, and is why the derivation is written down. 600's warrant is
-# a yield curve over the EXPANDED count, and a curve stops describing a measure the
-# moment you change what is being counted. So the collapsed number was taken the same
-# way the original was: bin all 57,593 buildable reactions by COLLAPSED atom count, join
-# to the reactions the deployed bake actually banked, and cut where the yield falls off.
-#
-#   collapsed atoms   400-500  500-550  550-600 | 600-650  650-700  700-800  800-1000
-#   banking rate        0.821    0.935    0.812 |   0.269    0.167    0.100     0.056
-#
-# The knee is sharp and it is at 600 under both measures. Cutting there admits 454 of
-# the 532 reactions the expanded measure refuses. `research/fabfos/benchmarks/
-# aam_collapse/` reproduces the curve.
 COLLAPSED_ATOM_LIMIT = 600
 
 VERDICTS = (
-    "mappable",              # goes to every mapper lane
-    "oversize",              # over the atom cap: Indigo only. See ATOM_LIMIT.
-    "too_long",              # buildable, but over SMILES_LEN_LIMIT characters
-    "blocked_no_structure",  # >=1 participant has no structure; the rescue lanes' target
-    "non_molecule",          # >=1 participant is not a molecule; nothing can stand in
-    "no_transfer",           # blocked AND the two sides are the same multiset
-    "pseudo_reaction",       # a side is empty -- an exchange/sink, not chemistry
-    "unparseable_equation",  # reac_prop's equation did not parse
+    "mappable",
+    "oversize",
+    "too_long",
+    "blocked_no_structure",
+    "non_molecule",
+    "no_transfer",
+    "pseudo_reaction",
+    "unparseable_equation",
 )
 
-# Blocker families. Assigned per structureless participant, first match wins, and the
-# order is the specificity order rather than an alphabet. These are what the rescue
-# lanes aim at, so the names match the lanes: `carrier` takes acyl_carrier, the acceptor
-# lane takes generic_rgroup, the ladder takes polymer, and `lane_carrier`'s widened arm
-# takes trna_holo. `electron_carrier` is what the deterministic placeholder library
-# already covers; `other_structureless` is the ordinary case the twin/transform/
-# fragment/supplier lanes work on.
 FAMILIES = ("non_molecule", "electron_carrier", "acyl_carrier", "trna_holo",
             "polymer", "generic_rgroup", "other_structureless")
 
@@ -144,8 +91,6 @@ _FAMILY_RX = [
     ("non_molecule", _F(
         r"^(unknown|carbon|e\(-\)|e-|hnu|hn|h\N{GREEK SMALL LETTER NU}|photon|light"
         r"|biomass|.*\bbiomass\b.*)$", re.I)),
-    # The deterministic placeholder library's subjects: redox carriers whose body is
-    # conserved and whose atoms never transit.
     ("electron_carrier", _F(
         r"ferredoxin|flavodoxin|cytochrome|rubredoxin|adrenodoxin|thioredoxin"
         r"|glutaredoxin|electron[- ]transfer flavoprotein|hemoprotein reductase"
@@ -173,13 +118,6 @@ def family_of(name) -> str:
 
 
 def count_atoms(rxn_smiles: str):
-    """Heavy-plus-explicit atoms across the WHOLE reaction, both sides.
-
-    `sanitize=False`: this is a size measurement, not a chemistry check, and refusing to
-    count an unsanitizable reaction would silently hand it to the mapper as if it were
-    small. `>>` becomes `.` so one parse covers both sides -- the mappers attend over the
-    whole string, so the whole string is what costs.
-    """
     from rdkit import Chem, RDLogger
     RDLogger.DisableLog("rdApp.*")
     m = Chem.MolFromSmiles(rxn_smiles.replace(">>", "."), sanitize=False)
@@ -187,32 +125,6 @@ def count_atoms(rxn_smiles: str):
 
 
 def collapse(rxn_smiles: str):
-    """The same reaction with each distinct molecule written once per side.
-
-    THE POINT. `rxn_smiles` is a stoichiometric EXPANSION: a coefficient of 16 writes
-    the metabolite sixteen times, so `count_atoms` measures how many times a molecule
-    APPEARS rather than how much distinct chemistry the mapper must attend to.
-    Nitrogenase hydrolyses 16 ATP; its expanded string counts over a thousand atoms and
-    is refused, while the acetylene-reduction proxy for exactly that chemistry sails
-    through. Counting each distinct molecule once is an exact reduction rather than an
-    approximation -- a repeated component contributes no structure the mapper has not
-    already attended to.
-
-    DEDUPE PER SIDE, NOT ACROSS THE REACTION. Water on the left and water on the right
-    are two occurrences that both have to exist for the equation to read; the same
-    molecule twice on ONE side is the copy the cap should never have counted.
-
-    SPLIT AS TEXT, PARSE NOTHING. This is not an optimisation, it is the whole reason
-    the function is safe to call on anything: MNXR144749's expanded string is 80.7 MB
-    and RDKit does not return from parsing it, so a collapse that parsed first would
-    reintroduce the hour-inside-one-call failure the gate ordering exists to avoid. A
-    text split of 80 MB is nothing. Component boundaries are `.` at depth zero -- inside
-    no bracket and no parenthesis -- which is exactly SMILES's own component separator.
-
-    Returns the collapsed string, or None when there is nothing to split (no `>>`).
-    Order is preserved within each side, so the result is a deterministic function of
-    the input rather than of a set's iteration order.
-    """
     if not rxn_smiles or ">>" not in rxn_smiles:
         return None
     lhs, _, rhs = rxn_smiles.partition(">>")
@@ -220,12 +132,6 @@ def collapse(rxn_smiles: str):
 
 
 def _components(side: str):
-    """Split a SMILES side on the `.` that separate components, and only those.
-
-    A `.` inside brackets or parentheses is part of a token, not a boundary. Tracking
-    the two depths is cheaper than any parse and is the only correctness requirement:
-    splitting on every `.` would cut molecules in half and dedupe fragments of them.
-    """
     out, start, depth = [], 0, 0
     for i, ch in enumerate(side):
         if ch in "[(":
@@ -261,30 +167,10 @@ def adjudicate(reactions: pd.DataFrame, name_of: dict, atom_limit: int,
         fams = sorted({family_of(name_of.get(m)) for m in blockers})
         smi = r.rxn_smiles if isinstance(r.rxn_smiles, str) and r.rxn_smiles else None
 
-        # ATOMS ARE COUNTED ONLY UNDER THE CHARACTER CAP, and that ordering is not an
-        # optimisation. `rxn_smiles` is a stoichiometric EXPANSION -- a coefficient of
-        # 1,000 writes the metabolite a thousand times -- so while no metabolite's SMILES
-        # exceeds 3,199 characters, MNXR144749's reaction string is 80.7 MB. RDKit does
-        # not return from parsing that in any useful time, and a run died on it: the lane
-        # walked 20,000 reactions in three seconds and then spent an hour inside one call.
-        # The char gate refuses those reactions anyway, so the parse was never needed;
-        # counting first merely put the unbounded work ahead of the bound that excludes it.
         atoms, chars = None, (len(smi) if smi else None)
         if smi and chars <= char_limit:
             atoms = count_atoms(smi)
 
-        # THE COLLAPSED MEASURE, and the rule that makes coverage monotone.
-        #
-        # A reaction that passes on the EXPANDED measure keeps its expanded string, byte
-        # for byte -- same universe, same map, same pairs, same weights. The collapse is
-        # attempted only for a reaction that would otherwise be REFUSED, so no existing
-        # row can move and "coverage may only go up" is a property of the construction
-        # rather than something to check afterwards. It is also why a 1,236-atom string
-        # is still never handed to a mapper, which is what the cap was protecting.
-        #
-        # Both counts are recorded either way. Keeping them side by side is what lets the
-        # yield curve be recomputed under either measure from one table, and what makes
-        # the change a diff rather than a claim.
         smi_c = atoms_c = chars_c = None
         collapsed = False
         would_refuse = smi is not None and (
@@ -293,9 +179,6 @@ def adjudicate(reactions: pd.DataFrame, name_of: dict, atom_limit: int,
             smi_c = collapse(smi)
             if smi_c is not None:
                 chars_c = len(smi_c)
-                # The character cap applies to the COLLAPSED string because that is the
-                # string the mapper would see -- and it still gates the parse, for the
-                # same 80.7 MB reason as above.
                 if chars_c <= char_limit:
                     atoms_c = count_atoms(smi_c)
 
@@ -304,8 +187,6 @@ def adjudicate(reactions: pd.DataFrame, name_of: dict, atom_limit: int,
         elif not subs or not prods:
             verdict = "pseudo_reaction"
         elif blockers:
-            # A non-molecule participant is terminal: there is nothing to stand in FOR,
-            # so no lane and no threshold change the answer. It outranks the rest.
             if "non_molecule" in fams:
                 verdict = "non_molecule"
             elif Counter(subs) == Counter(prods):
@@ -313,28 +194,17 @@ def adjudicate(reactions: pd.DataFrame, name_of: dict, atom_limit: int,
             else:
                 verdict = "blocked_no_structure"
         elif smi is None:
-            # blockers empty but no SMILES: the lookup builder declined for some other
-            # reason. Recorded rather than folded into a neighbouring class.
             verdict = "blocked_no_structure"
         elif chars <= char_limit and atoms is not None and atoms <= atom_limit:
             verdict = "mappable"
         elif (chars_c is not None and chars_c <= char_limit
                 and atoms_c is not None and atoms_c <= collapsed_atom_limit):
-            # Recovered by collapse. `mappable` and not a verdict of its own: the
-            # members treat it exactly as they treat any other mappable reaction, and a
-            # separate verdict would mean adding a branch to every reader of the
-            # worklist to say "and also this one". WHICH string was mapped is what
-            # readers actually need, and that is the `collapsed` column.
             verdict, collapsed = "mappable", True
         elif chars > char_limit:
             verdict = "too_long"
         else:
             verdict = "oversize"
 
-        # AN `oversize` ROW IS STILL HANDED TO A MAPPER -- Indigo -- so it too carries
-        # the smaller of the two readings. Nothing was ever mapped from these strings, so
-        # rewriting them moves nothing; what it does is make `rxn_smiles` mean one thing
-        # on every row: the string a member would be given.
         if (verdict == "oversize" and not collapsed and smi_c is not None
                 and chars_c is not None and chars_c <= char_limit):
             collapsed = True
@@ -345,8 +215,6 @@ def adjudicate(reactions: pd.DataFrame, name_of: dict, atom_limit: int,
             n_blockers=int(r.n_blockers), blockers=blockers, blocker_families=fams,
             is_transport=str(r.is_transport), is_balanced=str(r.is_balanced),
             classifs=str(r.classifs),
-            # THE STRING THE MEMBERS MAP, and `collapsed` says which one it is, so no
-            # consumer has to infer it from a length.
             rxn_smiles=(smi_c if collapsed else smi),
         ))
         if (i + 1) % 20000 == 0:
@@ -356,10 +224,6 @@ def adjudicate(reactions: pd.DataFrame, name_of: dict, atom_limit: int,
 
 SCHEMA = pa.schema([
     ("mnxr", pa.string()), ("verdict", pa.string()),
-    # `atoms`/`chars` always describe the EXPANDED string, so the pre-collapse yield
-    # curve stays recomputable from a post-collapse table. The `_collapsed` pair is
-    # populated only where a collapse was attempted -- i.e. where the expanded measure
-    # would have refused -- so a null there means "did not need it", not "unknown".
     ("atoms", pa.int32()), ("chars", pa.int32()),
     ("atoms_collapsed", pa.int32()), ("chars_collapsed", pa.int32()),
     ("collapsed", pa.bool_()),
@@ -375,16 +239,6 @@ def load(path) -> pd.DataFrame:
 
 
 def mappable(path, admits=NEURAL_ADMITS) -> dict:
-    """`{mnxr -> rxn_smiles}` for the reactions a lane is allowed to attempt.
-
-    THE ONE READER EVERY MEMBER USES. A member that derived its own universe could drift
-    from its siblings by one filter and the ensemble's disagreement rate would stop
-    measuring disagreement between mappers.
-
-    `admits` is the only thing a member may vary, and it varies for one reason: the atom
-    cap is a statement about the neural members' cost, not about the chemistry. Pass
-    `INDIGO_ADMITS` for the lane that can take the oversized tail.
-    """
     d = pd.read_parquet(path, columns=["mnxr", "verdict", "rxn_smiles"])
     d = d[d["verdict"].isin(admits) & d["rxn_smiles"].notna()]
     return dict(zip(d["mnxr"], d["rxn_smiles"]))
@@ -413,15 +267,10 @@ def cmd_build(args):
     for lo, hi in ((0, 300), (300, 600), (600, 1200), (1200, 100000)):
         n = int(((built["atoms"] >= lo) & (built["atoms"] < hi)).sum())
         lines.append(f"atom_bin\t{lo}-{hi}\t{n}")
-    # The collapsed count for the same bins, over the reactions a collapse was
-    # attempted on. Side by side with the expanded bins above, this IS the movement --
-    # a reader can see where the recovered reactions came from without a second table.
     coll = wl[wl["atoms_collapsed"].notna()]
     for lo, hi in ((0, 300), (300, 600), (600, 1200), (1200, 100000)):
         n = int(((coll["atoms_collapsed"] >= lo) & (coll["atoms_collapsed"] < hi)).sum())
         lines.append(f"collapsed_atom_bin\t{lo}-{hi}\t{n}")
-    # RECOVERED is not the same as WRITTEN COLLAPSED, now that an `oversize` row carries
-    # the collapsed string too. Recovered means the second reading changed the verdict.
     recovered = int(((wl["verdict"] == "mappable") & wl["collapsed"]).sum())
     lines.append(f"collapse\trecovered\t{recovered}")
     lines.append(f"collapse\twritten_collapsed\t{int(wl['collapsed'].sum())}")
@@ -451,41 +300,18 @@ def cmd_build(args):
     return 0
 
 
-# =====================================================================
-# closing the ledger
-# =====================================================================
-# The spine says what each reaction was ALLOWED to do. The close says what it DID. Every
-# MNXR keeps its row, so the three answers that used to look identical -- produced
-# nothing, was never attempted, was refused for a named reason -- stay distinguishable
-# after the build as well as before it.
-
 OUTCOMES = (
-    "banked",                  # the reaction contributed pairs, at least one from a full map
-    # A PARTIAL MAP IS ITS OWN OUTCOME, and this is the half the goal names explicitly.
-    # Every pair this reaction contributed came from the partial lane -- one element,
-    # from a reduced submission or from conservation. It is neither `banked` (nothing
-    # ever mapped the whole reaction) nor `mapped_nothing` (it did produce pairs), and
-    # collapsing it into either is the stop line: a partially-mapped reaction that reads
-    # as banked overstates coverage, and one that reads as dropped hides it.
+    "banked",
     "banked_partial",
-    "partial_declined",        # offered to the partial lane, still no pair survived
-    # THE REDOX REPAIR'S OWN OUTCOME. This reaction DID map -- it reached the stack with
-    # pairs -- and every one of them ran between a NAD(P)/FAD/FMN couple and a substrate,
-    # which a hydride transfer cannot do. The repair refused them and conservation did not
-    # settle the remainder once the couple was removed. It is not `mapped_nothing`: a
-    # mapper answered and the answer was an artifact, which is a different fact about the
-    # reaction and the only one that points at where to look next.
+    "partial_declined",
     "redox_emptied",
-    "mapped_nothing",          # mappable, went to the lanes, no pair survived
-    "rescued_nothing",         # completed by the rescue, still no pair survived
-    "rescue_declined",         # blocked, and no lane could complete it
+    "mapped_nothing",
+    "rescued_nothing",
+    "rescue_declined",
     "oversize", "too_long", "non_molecule", "no_transfer", "pseudo_reaction",
     "unparseable_equation",
 )
 
-# What `aam.partial` stamps on every pair row it produces. Named here because `close`
-# reads it to tell a partial bank from a full one, and two spellings of one string is
-# how an outcome silently stops being assigned.
 PARTIAL_SOURCE = "partial"
 
 
@@ -497,20 +323,11 @@ def cmd_close(args):
     if args.rescued:
         rescued = set(pd.read_parquet(args.rescued, columns=["mnxr"])["mnxr"])
 
-    # OFFERED TO THE PARTIAL LANE, WHICH IS THE FORECAST'S OFFER AND NOT THE LANE'S OWN
-    # UNIVERSE. The two differ by exactly the reactions the lane could not build a
-    # submission for -- the reduction did not balance, or it held a structureless
-    # participant -- and those are the reactions `partial_declined` is defined for. Reading
-    # the built universe instead made them `mapped_nothing`, which says nothing was
-    # offered when something was and it was declined for a reason the lane recorded.
     offered = set()
     if args.forecast:
         f = pd.read_parquet(args.forecast, columns=["base_mnxr", "offer"])
         offered = set(f.loc[f["offer"].astype(bool), "base_mnxr"])
 
-    # Reactions the redox repair left holding nothing at all. Read as a plain id list
-    # because that is what the repair emits and because an empty file is a legitimate
-    # answer -- the expected residue is a handful of reactions.
     redox_emptied = set()
     if args.redox_emptied and Path(args.redox_emptied).exists():
         redox_emptied = {l.strip() for l in Path(args.redox_emptied).read_text().splitlines()
@@ -528,12 +345,7 @@ def cmd_close(args):
 
     def outcome(mnxr, verdict):
         if mnxr in banked:
-            # A reaction with even one pair from a full map is `banked`; the partial
-            # provenance of its other elements survives in the per-row method/source and
-            # in the `sources` column, which is where a per-element question belongs.
             return "banked" if mnxr in banked_full else "banked_partial"
-        # Ahead of both the partial and the mapped answers, because it is a statement
-        # about what happened LAST: this reaction had pairs and the repair took them.
         if mnxr in redox_emptied:
             return "redox_emptied"
         if mnxr in offered:
@@ -556,10 +368,6 @@ def cmd_close(args):
     if unknown:
         raise SystemExit(f"[worklist] outcome outside the closed set: {sorted(unknown)}")
 
-    # THE NUMBER THIS BUILD EXISTS TO MOVE. In the deployed table every rescue-derived
-    # reaction is `<member>_only` at half weight, because only one mapper ever saw the
-    # completed reaction. Here three do, so the ones they agree on are consensus -- and
-    # that count is the improvement, stated rather than assumed.
     resc = wl[wl["rescue_completed"] & (wl["outcome"] == "banked")]
     n_consensus = int(resc["methods"].str.contains("consensus").sum())
 

@@ -47,21 +47,12 @@ with LiveShell() as shell:
         shell.Exec(f"rsync -ac --progress {relay_src} {home}/relay/msm_relay")
     else:
         print(f"W: skipping msm_relay rsync — source missing [{relay_src}]")
-    if ":" in home: # is remote
+    if ":" in home:
         host, path = home.split(":")
         pre = f'ssh {host} mkdir -p "{path}/dev" && '
     else:
         pre = f'mkdir -p "{home}/dev" && '
     shell.Exec(f"{pre}rsync -ac --progress --exclude=__pycache__ {WORKSPACE_ROOT}/src/metasmith/ {home}/dev/metasmith")
-    # Also ship the overlay as a single tarball. Under SLURM array fan-out a
-    # compute node stages it with one streaming read (native cp) + `tar -x` to
-    # node-local disk, instead of an rsync tree-walk of ~70 files whose metadata
-    # storm evicts the Lustre client (errno 108 / ESHUTDOWN) and returns a
-    # silently-incomplete copy -> ModuleNotFoundError -> exit 127. The archive
-    # carries a `metasmith/` prefix so a node extracts to <stage>/metasmith; the
-    # tree above is kept as the fail-open bind target and the dev-run gate.
-    # Built in a throwaway tempdir so nothing lands in the source tree.
-    # See plans/03-tarball-dev-overlay.md.
     shell.Exec(
         f'MSMTAR=$(mktemp -d)/metasmith.tar'
         f' && tar -c --exclude=__pycache__ -C {WORKSPACE_ROOT}/src -f "$MSMTAR" metasmith'
@@ -69,50 +60,3 @@ with LiveShell() as shell:
         f' && rm -rf "$(dirname "$MSMTAR")"'
     )
     shell.Exec(f"rsync -ac --progress --exclude=__pycache__ {WORKSPACE_ROOT}/src/metasmith/nextflow_config {home}/lib/")
-
-
-# In[2]:
-
-
-# import logging
-
-# logger = logging.getLogger()
-# logger.setLevel(logging.DEBUG)
-# logger.handlers.clear()
-# logger.addHandler(logging.StreamHandler())
-# logger.addHandler(logging.FileHandler(f"./x.log"))
-
-# logger.info("asdf")
-# # logger.handlers[0].flush()
-
-
-# In[3]:
-
-
-# with LiveShell() as shell:
-#     shell.RegisterOnOut(lambda x: print(x))
-#     shell.RegisterOnErr(lambda x: print(f"E: {x}"))
-#     shell.Exec(f"sleep 300 && echo asdf")
-
-
-# In[4]:
-
-
-# with LiveShell() as shell:
-#     shell.RegisterOnOut(lambda x: print(x))
-#     shell.RegisterOnErr(lambda x: print(f"E: {x}"))
-#     shell.Exec(
-#         f"""
-#         cd /home/tony/workspace/tools/Metasmith/main/local_mock/cache/ws1/run_container
-#         apptainer run --no-home --workdir /ws \
-#             --bind ./:/ws,.msm:/msm_home \
-#             --bind ./:/agent_home \
-#             --bind /home/tony/workspace/tools/Metasmith/src/metasmith:/opt/conda/envs/metasmith_env/lib/python3.12/site-packages/metasmith \
-#             /home/tony/workspace/tools/Metasmith/metasmith.sif nextflow
-
-#         apptainer run -B ./:/ws
-#         cd ~/downloads
-#         mkdir x && cd x
-#         /home/tony/workspace/metasmith/lib/msm_bootstrap
-#         """
-#     )

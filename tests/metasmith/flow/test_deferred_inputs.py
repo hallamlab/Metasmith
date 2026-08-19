@@ -1,14 +1,3 @@
-"""A workflow whose inputs have no paths yet still plans, and still refuses to stage.
-
-The two halves of DEFERRED that only show up once a solver is involved. The path
-value type itself is pinned in `tests/unit/test_deferred_paths.py`.
-
-Planning needs types and lineage; it never opens a file. That is what makes a
-template possible at all -- a stored workflow with nothing filled in solves to
-exactly the DAG it will solve to once someone fills it in. Staging is the first
-point where a real file matters, so it is the point that refuses.
-"""
-
 from __future__ import annotations
 
 from pathlib import Path
@@ -24,7 +13,6 @@ from .conftest import _build_transform_lib, _build_type_lib, _generate_plan
 
 
 def _deferred_task(tmp_path: Path, n_samples: int = 2) -> WorkflowTask:
-    """A two-step chain whose sample inputs are all DEFERRED."""
     tmp_path.mkdir(parents=True, exist_ok=True)
     types_path = _build_type_lib(tmp_path / "types.yml")
 
@@ -57,11 +45,6 @@ def test_a_workflow_of_deferred_inputs_solves(tmp_path: Path):
 
 
 def test_the_same_spec_solves_to_the_same_key(tmp_path: Path):
-    """Rebuilding the library at the same minted paths reproduces the task key.
-
-    Identity derives from path, and a deferred row's id derives from its minted
-    path rather than from a random -- so a template is pinned to one DAG.
-    """
     first = _deferred_task(tmp_path / "a")
     paths = [inst.path for inst in first.plan.given]
 
@@ -104,4 +87,4 @@ def test_a_bound_workflow_is_not_refused(tmp_path: Path):
     from .conftest import build_linear_plan
 
     built = build_linear_plan(tmp_path, n_steps=1)
-    built.as_task().RefuseIfDeferred()  # does not raise
+    built.as_task().RefuseIfDeferred()

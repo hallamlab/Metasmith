@@ -1,46 +1,3 @@
-"""Verified rectified universal-ground solves, and the per-source flow cone that makes
-them affordable at universe scale.
-
-**What is measured.** With ``attach_leak`` every metabolite leaks into a virtual node
-OMEGA, which is grounded. Injecting one ampere spread over reaction A's product atoms and
-solving the rectified network reports, in a single solve, the current every *other*
-reaction draws -- so an N x N pairwise table costs N solves rather than N^2. Entry (a, b)
-is that attributed current; the layout consumes ``R = 1/max(I, I^T)``.
-
-**Why this file exists rather than calling the library.** ``ecspr.model.directed._SPDReuse``
-tries CHOLMOD, accepts the result when ``|Hx - rhs|_inf <= 1e-6 (|rhs|_inf + 1)``, and
-otherwise drops to a Tikhonov-ridged ``splu``. Three things about that shape are wrong and
-all three bite at 589k unknowns:
-
-* the acceptance test is scale-blind. It ignores ``|H| |x|``, so on a diode Hessian with
-  kappa ~ 1e9 a perfectly backward-stable factorization gets discarded over arithmetic no
-  other solver improves on. :class:`VerifiedSPD` tests the *relative* residual.
-* the fallback's residual is never checked at all, so the "safe" path is the unverified
-  one. Here both paths are checked and a solve that passes neither raises.
-* ``used_cholmod`` is a sticky boolean, so the library docstring's claim that ``splu`` is
-  "the sole hot path once CHOLMOD punts (50-80% of directed solves)" is unmeasurable.
-  Here they are integer counters.
-
-All three are inherited verbatim by ``src/ecspr/directed.py``; they are filed against it in
-the README rather than fixed here, because this wrapper is what the figure is validated on.
-
-**Cost.** The rectified conductance depends on the sign of each edge's own potential drop,
-so the matrix changes between Newton iterates and every iterate pays a fresh numeric
-factorization: ~30 s at universe scale against a 0.11 s triangular solve. That ratio is the
-whole problem. What helps, measured: proximity source ordering with warm starts,
-:class:`LaplacianAssembler` (the assembly is a fixed sparse matvec, not a triple product),
-and one thread per worker. What does not help, also measured, is listed in the README --
-fill-reducing ordering, the flow cone below, stale-factor PCG, and a frozen consensus
-active set.
-
-:func:`flow_cone` and :func:`cone_solve` implement goal-directed search per source: rank
-edges by the current *this* source drives through them (one cheap symmetric solve, constant
-matrix, one factorization for the whole run) and hand the rectified Newton only the
-subgraph carrying all but a negligible tail. They are kept because they are how that idea
-gets re-measured, not because they pay: at universe scale 99.9% of a source's flow needs
-92% of edges, so the cone is the network. Raising the leak does not localize it either --
-the field is identical from leak 1e-6 to 1e-4.
-"""
 import sys
 import time
 
@@ -57,25 +14,12 @@ from ecspr.model.graph import attach_leak, OMEGA                           # noq
 
 from atom_graph import incidence                                     # noqa: E402
 
-# Relative-residual acceptance for one reduced Newton solve. float64 backward stability on
-# a Laplacian this size lands near 1e-12; 1e-8 leaves four orders of headroom for the
-# conditioning the 1e-9 diode floor introduces while still refusing a genuinely bad solve.
 SPD_RTOL = 1e-8
 
 
 class SolveRefused(RuntimeError):
-    """Neither CHOLMOD nor the ridged fallback met the relative residual bound."""
-
-
+    pass
 class LaplacianAssembler:
-    """``d -> H.data`` as one fixed sparse matvec.
-
-    ``Bk^T diag(d) Bk`` has a sparsity pattern fixed by the topology, so recomputing it as a
-    sparse triple product on every Newton iterate re-derives structure that never changes.
-    Each edge contributes ``+d`` to two diagonals and ``-d`` to two off-diagonals, so the map
-    from the edge vector to ``H.data`` is a constant matrix, built once here.
-    """
-
     def __init__(self, edges, keep):
         e = np.asarray(edges, dtype=np.int64)
         nk = int(keep.sum())
@@ -91,8 +35,6 @@ class LaplacianAssembler:
                              -np.ones(both.sum()), -np.ones(both.sum())])
         ee = np.concatenate([ei[iu], ei[iv], ei[both], ei[both]])
 
-        # CSR order is lexicographic in (row, col), so a lexicographic sort of the
-        # contributions puts them in data order and the run boundaries are the entries.
         key = ri * nk + ci
         order = np.argsort(key, kind="stable")
         skey = key[order]
@@ -114,22 +56,6 @@ class LaplacianAssembler:
 
 
 class VerifiedSPD:
-    """Reduced Newton system ``H = Bk^T diag(d) Bk`` with symbolic reuse and a verified
-    answer. ``Bk`` is the incidence with the ground column already dropped.
-
-    **Amortizing the factorization.** The rectified conductance depends on the sign of each
-    edge's own potential drop, so ``H`` changes between Newton iterates and, at 589k
-    unknowns, each numeric refactorization costs ~30 s against a 0.11 s triangular solve --
-    that ratio, not the solver, is why a universe sweep looks like months. With
-    ``stale_ok``, a factorization built at a nearby ``d`` is kept as a *preconditioner* and
-    the true Newton system is solved by preconditioned conjugate gradients instead. The
-    outer Newton iteration is still driven to a vanishing gradient on the true residual, so
-    this changes the path taken, never the fixed point; and the same relative-residual test
-    gates the PCG answer as gates a direct one. When PCG cannot reach the tolerance in
-    ``pcg_maxit`` the factor is refreshed and the solve redone, so a stale factor costs time
-    at worst, never accuracy.
-    """
-
     def __init__(self, Bk, rtol=SPD_RTOL, order="default", assembler=None, pcg_maxit=40):
         self.Bk = Bk.tocsc() if sp.issparse(Bk) else sp.csr_matrix(Bk).tocsc()
         self.rtol = float(rtol)
@@ -156,16 +82,11 @@ class VerifiedSPD:
         if not np.all(np.isfinite(x)):
             return np.inf
         r = np.abs(H @ x - rhs).max()
-        # Scale by the size of the terms that were cancelled to form the residual, not by
-        # the right-hand side alone -- that is the difference between a backward-stability
-        # test and a coincidence about how big ``rhs`` happens to be.
         scale = float(np.abs(H).sum(axis=1).max()) * float(np.abs(x).max()) \
             + float(np.abs(rhs).max())
         return float(r / (scale + np.finfo(float).tiny))
 
     def _pcg(self, H, rhs, hnorm):
-        """PCG on ``H x = rhs`` preconditioned by the stale factor. Returns
-        ``(x, iterations, relative_residual)``."""
         x = np.zeros_like(rhs)
         r = rhs.copy()
         rmax = float(np.abs(rhs).max())
@@ -207,8 +128,6 @@ class VerifiedSPD:
                 self.n_pcg += 1
                 self.worst_rel = max(self.worst_rel, rel)
                 return x
-            # Stale beyond use. Fall through to a numeric refactorization, which reuses the
-            # symbolic analysis -- the pattern is topology-fixed, only the values moved.
             self.n_pcg_fail += 1
         if ed._HAVE_CHOLMOD:
             try:
@@ -248,20 +167,6 @@ class VerifiedSPD:
 def newton_rhs(B, gp, gm, I, keep, reuse, phi0=None,
                tol=ed.DIRECTED_TOL, maxit=ed.DIRECTED_MAXIT,
                delta=ed.DIODE_SMOOTH_DELTA, etol=1e-13, stale_ok=False):
-    """``ecspr.model.directed.directed_ceff``'s smoothed-diode Newton, generalized from
-    ``I = e_s - e_t`` to an arbitrary injection vector.
-
-    That generalization is what fixes the sparsity pattern across sources: contracting a
-    source terminal into a supernode (which is what ``ecspr.model.graph.solve`` does) changes the
-    topology, so CHOLMOD must re-analyse per source. Injecting distributed current instead
-    leaves the pattern identical, and is the more physical reading for a probe that reads
-    downstream current anyway.
-
-    Convergence is declared on the reduced-gradient tolerance OR on line-search stagnation
-    -- the second is not a failure. Backflow axes floor the reduced gradient near 1e-8 in
-    float64 and never reach ``tol``; a wrapper that accepts only the first spuriously
-    refuses them.
-    """
     n = B.shape[1]
     phi = np.zeros(n) if phi0 is None else np.array(phi0, float)
     phi[~keep] = 0.0
@@ -315,11 +220,8 @@ def edge_current(B, gp, gm, phi, delta=ed.DIODE_SMOOTH_DELTA):
 
 
 class GroundSystem:
-    """The leaky atom graph plus everything a sweep needs: incidence, conductances, the
-    OMEGA ground, per-reaction terminals and the edge->reaction attribution map."""
-
     def __init__(self, g, terminals, leak=1e-6, port=1.0):
-        self.m_rxn = g.m                       # reaction edges come first; leaks are appended
+        self.m_rxn = g.m
         gl, self.leak_edges = attach_leak(g, None, leak=leak, port=port)
         self.gl = gl
         self.n = gl.n
@@ -333,9 +235,6 @@ class GroundSystem:
         self.terminals = terminals
         self.leak = float(leak)
 
-        # Attribution: one provenance row per (edge, contributing reaction). A shared edge
-        # splits by conductance share. Integer codes + bincount, not a pandas groupby --
-        # at 1.8M rows the groupby costs ~31 ms per source of pure overhead.
         prov = gl.meta["edge_reactions"]
         self.pe = prov.edge.to_numpy().astype(np.int64)
         names, self.pcode = np.unique(prov.mnxr.to_numpy().astype(str), return_inverse=True)
@@ -346,7 +245,6 @@ class GroundSystem:
         self.n_rxn = len(names)
 
     def injection_at(self, src):
-        """Unit current spread evenly over ``src`` atom nodes, out at OMEGA."""
         src = sorted(src)
         I = np.zeros(self.n)
         I[src] = 1.0 / len(src)
@@ -354,24 +252,15 @@ class GroundSystem:
         return I, src
 
     def injection(self, mnxr):
-        """Unit current in at the reaction's product atoms, out at OMEGA."""
         return self.injection_at(self.terminals[mnxr][1])
 
     def node_throughput(self, ie_abs):
-        """Current passing *through* each atom node.
-
-        KCL makes in and out equal at every non-terminal node, so half the absolute current
-        on the incident edges is the throughput. Leak edges are included: a node that drains
-        to OMEGA really did carry that current. The ground node's own entry is meaningless
-        (every leak lands there) and is zeroed.
-        """
         w = np.repeat(ie_abs, 2)
         thr = 0.5 * np.bincount(self.E.ravel(), w, minlength=self.n)
         thr[self.ground] = 0.0
         return thr
 
     def attribute(self, ie_abs):
-        """Edge currents (absolute, full-length) -> current per reaction."""
         return np.bincount(self.pcode, ie_abs[self.pe] * self.pfrac, minlength=self.n_rxn)
 
     def full_reuse(self, rtol=SPD_RTOL, order="default", fast_assembly=True):
@@ -379,7 +268,6 @@ class GroundSystem:
         return VerifiedSPD(self.B[:, self.keep], rtol=rtol, order=order, assembler=asm)
 
     def solve_full(self, mnxr, reuse, phi0=None, **kw):
-        """Exact rectified solve on the whole network. The reference."""
         I, _src = self.injection(mnxr)
         phi, nit, why = newton_rhs(self.B, self.gp, self.gm, I, self.keep, reuse,
                                    phi0=phi0, **kw)
@@ -387,38 +275,10 @@ class GroundSystem:
         return self.attribute(ie), phi, nit, why
 
     def solve_full_channels(self, mnxr, reuse, phi0=None, check=False, **kw):
-        """One solve, three per-reaction channels.
-
-        ``attribute`` reduces *any* per-edge vector to per-reaction (splitting a shared edge
-        by conductance share), so the two extra channels are the same reducer over different
-        edge quantities and cost nothing beyond the solve that already happened:
-
-        * ``current`` -- the incumbent metric, unchanged.
-        * ``power`` -- ``|I_e| * |dV_e|`` dissipated in the reaction's own atom transfers.
-          Conductance spans four decades here, so a promiscuous cofactor edge (g up to 2666)
-          dissipates ~1/g of the power a dedicated pathway edge does at the same current.
-          That is the cofactor-leakage protection stated as physics.
-        * ``dv`` -- the potential the source injects at, minus this reaction's own. A
-          reaction's potential is the current-weighted mean of its edges' mid-edge
-          potentials, which is two calls to the same reducer. The reference is the network's
-          peak potential, which is an injection node -- the only current source -- so the
-          drop is non-negative by construction: every reaction potential is a convex
-          combination of node potentials and cannot exceed the maximum. Referencing the
-          source reaction's own attributed potential instead makes it the mean over its own
-          substrate-side edges, which sat *below* a close downstream neighbour on the very
-          first source tried and handed back a negative "distance".
-
-          The *difference* is what is returned, not phi: phi sits on a 1/(N*leak) pedestal
-          of order 1e2-1e3 while the signal is 1e-2-1e1, and a float32 cast of the raw
-          potential would quantize the signal away.
-
-        With ``check``, also returns Tellegen closure -- total dissipation over every edge
-        against the power the source delivers, and reaction+leak power against that total.
-        """
         I, src = self.injection(mnxr)
         phi, nit, why = newton_rhs(self.B, self.gp, self.gm, I, self.keep, reuse,
                                    phi0=phi0, **kw)
-        x = self.B @ phi                                   # per-edge potential drop
+        x = self.B @ phi
         ie = np.abs(edge_current(self.B, self.gp, self.gm, phi))
         row = self.attribute(ie)
 
@@ -430,7 +290,7 @@ class GroundSystem:
         phi_rxn = np.divide(self.attribute(ie * phi_mid), wsum,
                             out=np.zeros(self.n_rxn), where=wsum > 0)
         dv = float(phi.max()) - phi_rxn
-        dv[wsum <= 0] = np.nan                             # unreached: not "coincident"
+        dv[wsum <= 0] = np.nan
 
         aux = dict(power=power, dv=dv)
         if check:
@@ -446,16 +306,6 @@ class GroundSystem:
 
 
 class SymmetricField:
-    """One constant-matrix factorization, reused by every source, giving the flow field the
-    cone is cut from.
-
-    Uses ``d = gp``: the rectifier can only throttle an edge below its forward conductance,
-    so the symmetric field over-estimates where current can go and the cone it selects is a
-    superset of where the rectified solution actually flows. That direction of error is the
-    one that matters -- a cone that is too generous costs time, a cone that is too tight
-    silently truncates the answer.
-    """
-
     def __init__(self, sys_: GroundSystem, rtol=SPD_RTOL, order="default"):
         self.s = sys_
         self.reuse = VerifiedSPD(sys_.B[:, sys_.keep], rtol=rtol, order=order)
@@ -471,12 +321,6 @@ class SymmetricField:
 
 
 def flow_cone(sys_: GroundSystem, i_abs, src, cover=0.999, min_edges=2000):
-    """Edges carrying all but ``1 - cover`` of the symmetric flow, closed under leaks.
-
-    Returns ``(cone_edges, cone_nodes, local_of_node)``. Every kept node keeps its leak to
-    OMEGA, so the discarded remainder of the network is replaced by ground rather than by
-    an open circuit, and the cone is connected through OMEGA whatever the selection does.
-    """
     m_rxn = sys_.m_rxn
     w = i_abs[:m_rxn]
     order = np.argsort(w)[::-1]
@@ -492,7 +336,6 @@ def flow_cone(sys_: GroundSystem, i_abs, src, cover=0.999, min_edges=2000):
     innode[src] = True
     innode[sys_.ground] = True
 
-    # Leak edges are (atom -> OMEGA) and were appended after the reaction edges.
     leak_tail = sys_.E[m_rxn:, 0]
     keep_leak = m_rxn + np.flatnonzero(innode[leak_tail])
 
@@ -505,9 +348,6 @@ def flow_cone(sys_: GroundSystem, i_abs, src, cover=0.999, min_edges=2000):
 
 def cone_solve(sys_: GroundSystem, mnxr, field: SymmetricField, cover=0.999,
                rtol=SPD_RTOL, order="default", **kw):
-    """Rectified solve restricted to this source's flow cone. Returns per-reaction current
-    over the *full* reaction vocabulary (reactions outside the cone read zero, which is the
-    approximation the cone makes explicit)."""
     I, src = sys_.injection(mnxr)
     i_abs = field.edge_abs(I)
     ce, cn, loc = flow_cone(sys_, i_abs, src, cover=cover)

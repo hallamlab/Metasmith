@@ -1,29 +1,10 @@
 #!/usr/bin/env python3
-"""Plan-only probe over the deep-learning embedding workflow.
-
-Runs the solver against a chosen target set and reports which transforms it
-picked. No agent, no staging, no remote work — the point is to see the plan.
-
-It exists because `--only all` used to add a `downloadESMFoldWeights` step that
-`--only esmc` did not, despite both having the weight tarball pre-staged; the
-seed sweep below is how that was pinned to an MCTS local optimum rather than a
-missing input.
-
-    python research/metasmith_libraries/probe_planner.py [case]     # see CASES
-    python research/metasmith_libraries/probe_planner.py all_seeds  # the sweep
-
-Input paths are irrelevant to a plan, so they are deferred: what is being probed
-is which transforms the solver reaches for, and nothing here opens a file.
-"""
-
 from __future__ import annotations
 
 import shutil
 import sys
 from pathlib import Path
 
-# _authoring/_dl_embeddings live with the template-authoring gate at
-# src/metasmith_libraries/, a sibling of this research driver post-monorepo-move.
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src" / "metasmith_libraries"))
 
 import _authoring as A

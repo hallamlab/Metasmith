@@ -1,12 +1,3 @@
-"""Pool quality MAGs across the three binners.
-
-Inputs: per-binner bin_fasta sets + their checkm_stats.
-Filter each binner's bins by completeness/contamination thresholds, union the
-survivors, emit each as a `binning_local::quality_bin_fasta` product.
-
-Output type is standalone (does NOT extend bin_fasta) so gtdbtk/checkm cannot
-re-run on the pooled set; per-binner checkm/gtdbtk happen upstream.
-"""
 import shutil
 from pathlib import Path
 from metasmith.python_api import *
@@ -32,13 +23,6 @@ MAX_CONTAMINATION = 10.0
 
 
 def _parse_checkm(path):
-    """Return (bin_id, completeness, contamination) or None.
-
-    Bin Id is column 0 of the first data row. We need it because nextflow's
-    output naming gives the checkm file a different stem than the bin file
-    (each metasmith data instance gets its own hash); the in-file Bin Id is
-    the only stable join key.
-    """
     with open(path) as f:
         header = f.readline().rstrip("\n").split("\t")
         line = f.readline().rstrip("\n")
@@ -54,7 +38,7 @@ def _parse_checkm(path):
 
 
 def protocol(context: ExecutionContext):
-    kept = []  # list of (stem, source bin path)
+    kept = []
 
     for bin_dep, ck_dep, label in [
         (mb_bin, mb_ck, "metabat2"),
@@ -62,9 +46,6 @@ def protocol(context: ExecutionContext):
         (cb_bin, cb_ck, "comebin"),
     ]:
         bins = {p.local.stem: p for p in context.InputGroup(bin_dep)}
-        # Build {bin_id -> (completeness, contamination)} by reading the checkm
-        # file's first data row (Bin Id column) rather than matching by file
-        # stem — see _parse_checkm.
         checks_by_bin_id: dict[str, tuple[float, float]] = {}
         for ck_path in context.InputGroup(ck_dep):
             parsed = _parse_checkm(ck_path.local)
@@ -87,9 +68,6 @@ def protocol(context: ExecutionContext):
     manifest = []
     for k, (stem, src) in enumerate(kept):
         iout = context.Output(out, i=k)
-        # Keep iout.local verbatim — metasmith publishes outputs by glob and
-        # any custom rename breaks the match. Binner attribution survives via
-        # skani_dedup's cluster_table (bin_id column carries through).
         shutil.copy(src.local, iout.local, follow_symlinks=True)
         manifest.append({out: iout.local})
 

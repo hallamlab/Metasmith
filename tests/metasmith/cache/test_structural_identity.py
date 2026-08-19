@@ -1,26 +1,3 @@
-"""Structural transform parameters must enter the lineage cache key (R5 round-2).
-
-The F1 fix folds a digest of the transform *definition-file bytes*
-(`_protocol_source_hash`) into the lineage signature. That digest is what
-makes non-topology transform attributes participate in the cache key even
-though `workflow._compute_cache_decisions` reads some of them (notably
-`batch_size`) out separately for per-batch emission and does NOT feed them
-into `lineage_key` directly.
-
-This is a real hazard: a future refactor could reasonably decide to compute
-`_protocol_source_hash` over just the `def protocol(...)` body, or to drop it,
-and thereby silently stop keying on `batch_size` / `cacheable` / `group_by`.
-That would be a false-hit — e.g. a transform re-batched from `batch_size=1`
-to `batch_size=3` reduces a different number of inputs per invocation and can
-produce structurally different output, yet would resume from the old shard.
-
-These tests pin the guarantee at the level that matters — a change to a
-structural parameter, with the protocol body and I/O topology held fixed,
-must MISS on a cross-run rerun (re-execute) rather than serve the prior
-run's cached output. `executed_steps == ()` is a full hit; non-empty is a
-miss (see test_protocol_identity for the observable's rationale).
-"""
-
 from __future__ import annotations
 
 import textwrap
@@ -39,13 +16,6 @@ TYPE_NAMES = ("seed", "out")
 
 
 def _batched_transform_code(tr_name: str, *, batch_size: int) -> str:
-    """A seed->out transform whose only varying attribute is `batch_size`.
-
-    The protocol body and I/O type topology are byte-identical across values
-    of `batch_size`; only the `TransformInstance(..., batch_size=N)` literal
-    differs. That literal lives in the definition file, so a correct key must
-    reflect it.
-    """
     return textwrap.dedent(
         f"""
         from pathlib import Path
@@ -91,7 +61,6 @@ def _build_task(root: Path, *, batch_size: int, tr_name: str):
 
 
 def test_same_batch_size_hits_cross_run(tmp_path, virtual_runtime):
-    """Control: identical structural params + bytes -> cross-run hit survives."""
     task_a = _build_task(tmp_path / "a", batch_size=1, tr_name="tr_bs_ctl")
     snap_a = capture_run(virtual_runtime, task_a)
     assert snap_a.executed_steps, "run A executed zero steps (bad fixture)"
@@ -106,13 +75,6 @@ def test_same_batch_size_hits_cross_run(tmp_path, virtual_runtime):
 
 
 def test_changed_batch_size_misses(tmp_path, virtual_runtime):
-    """A batch_size change (body + topology fixed) must bust the cache.
-
-    `batch_size` is read separately by the compiler for per-batch emission and
-    is NOT passed into `lineage_key` directly — its only path into the cache
-    key is the definition-file source digest. If that path regresses, this
-    turns into a false hit (executed 0 steps).
-    """
     task_a = _build_task(tmp_path / "a", batch_size=1, tr_name="tr_bs_one")
     snap_a = capture_run(virtual_runtime, task_a)
     assert snap_a.executed_steps, "run A executed zero steps (bad fixture)"

@@ -1,9 +1,3 @@
-"""Colour schemes over a drawn layout.
-
-Colour is off by default and every scheme is a pure function of the finished
-layout, so these read the maps directly and then check that each backend
-actually carries one.
-"""
 import pytest
 
 from metasmith.models.dag_colour import (
@@ -18,7 +12,6 @@ T, D = NodeKind.TRANSFORM, NodeKind.DATA
 
 
 def _repeats() -> DagRenderer:
-    """Two copies of one three-step block hanging off one input."""
     r = DagRenderer()
     r.add_node(D, "src")
     for tag in ("a", "b"):
@@ -30,9 +23,6 @@ def _repeats() -> DagRenderer:
         r.add_edge(f"out::{tag}_part", f"2{tag} merge")
         r.add_edge(f"2{tag} merge", f"out::{tag}_final")
     return r
-
-
-# --- the default ------------------------------------------------------------
 
 
 def test_no_scheme_is_the_default_and_leaves_the_styles_alone():
@@ -63,13 +53,7 @@ def test_every_named_scheme_colours_every_node():
         assert all(v.startswith("#") for v in c.nodes.values()), scheme
 
 
-# --- what each scheme means -------------------------------------------------
-
-
 def test_lane_gives_neighbouring_lanes_different_hues():
-    # GitHub's reading: colour is for tracing one rail, so adjacent lanes must
-    # not agree. It says nothing at all about repeats, which is the point of
-    # having the other scheme beside it.
     lay = load_dag().layout()
     c = colour_layout(lay, "lane")
     by_lane = {n.lane: c.nodes[n.name] for n in lay.nodes}
@@ -80,8 +64,6 @@ def test_lane_gives_neighbouring_lanes_different_hues():
 
 
 def test_repeat_paints_every_instance_of_a_motif_the_same():
-    # the opposite of graph colouring, and the only scheme that helps with the
-    # thing the drawing is bad at
     lay = _repeats().layout()
     motifs = repeat_motifs(lay)
     assert motifs, "the fixture should repeat"
@@ -102,8 +84,6 @@ def test_repeat_leaves_a_graph_with_no_repeats_entirely_grey():
 
 
 def test_module_gives_touching_modules_different_hues():
-    # the graph-colouring reading: it answers "where does this block end",
-    # which is the opposite question to the one `repeat` answers
     from metasmith.models.dag_colour import _by_module, _module_owner
 
     lay = load_dag().layout()
@@ -132,8 +112,6 @@ def test_namespace_follows_the_prefix_and_greys_what_has_none():
 
 
 def test_an_edge_takes_its_source_colour():
-    # the rail is shared property; the source is the end the reader's eye is
-    # already on, so a fan-in arrives in as many colours as it has inputs
     lay = load_dag().layout()
     c = colour_layout(lay, "lane")
     for e in lay.edges:
@@ -142,16 +120,12 @@ def test_an_edge_takes_its_source_colour():
         assert c.edges[(e.src, e.dst)] == c.nodes[e.src]
 
 
-# --- the backends carry it --------------------------------------------------
-
-
 def test_svg_puts_the_hue_on_the_marker_and_the_rail():
     r = load_dag(colour="lane")
     svg = r.to_svg()
     hues = set(r.colouring().nodes.values())
     assert hues <= set(PALETTE)
     for hue in hues:
-        # a target carries the hue on its fill, not its outline
         assert f'stroke="{hue}"' in svg or f'fill="{hue}"' in svg
     assert any(f'<path d=' in l and 'stroke="#' in l for l in svg.splitlines())
 
@@ -163,13 +137,11 @@ def test_a_colour_scheme_tints_the_outline_of_a_hollow_marker_and_the_fill_of_a_
     r.mark(NodeKind.TARGET, "ns::wanted")
     hue = r.colouring().nodes["ns::thing"]
     svg = r.to_svg()
-    # both are circles, so they are told apart by which one is filled -- which
-    # is exactly the distinction `Style.solid` names and `tint` reads
     circles = [l for l in svg.splitlines() if l.startswith("<circle")]
     hollow = [l for l in circles if f'fill="{STYLES[NodeKind.DATA].fill}"' in l][0]
     solid = [l for l in circles if f'fill="{hue}"' in l][0]
-    assert f'stroke="{hue}"' in hollow  # hollow: hue on the outline
-    assert f'stroke="{STYLES[NodeKind.TARGET].stroke}"' in solid  # solid: on the fill
+    assert f'stroke="{hue}"' in hollow
+    assert f'stroke="{STYLES[NodeKind.TARGET].stroke}"' in solid
 
 
 def test_raster_dot_carries_the_hue_on_nodes_and_edges():
@@ -184,11 +156,10 @@ def test_raster_dot_carries_the_hue_on_nodes_and_edges():
 def test_text_only_colours_when_asked_and_stays_plain_otherwise():
     r = load_dag(colour="lane")
     assert "\033[" not in r.to_text()
-    assert "\033[38;2;" in r.to_text(color=True)  # 24-bit, from the scheme
+    assert "\033[38;2;" in r.to_text(color=True)
 
 
 def test_a_scheme_does_not_move_anything():
-    # colour is applied to a finished layout; it must not be able to change one
     plain, painted = load_dag(), load_dag(colour="repeat")
     assert plain.layout() == painted.layout()
 
@@ -202,9 +173,6 @@ def test_the_colouring_is_deterministic():
 def test_an_empty_colouring_is_falsey():
     assert not Colouring()
     assert Colouring(nodes={"a": "#000000"})
-
-
-# -- one palette, either ground ----------------------------------------------
 
 
 def _luminance(hexcolour: str) -> float:
@@ -223,12 +191,6 @@ def _contrast(a: str, b: str) -> float:
 
 
 def test_one_palette_reads_on_either_ground():
-    # `PALETTE` is deliberately not themed: these are mid-saturation hues chosen
-    # to sit on white *and* stay distinguishable, and a second set would be two
-    # things to keep in agreement. What justifies the one set is that a hue
-    # already accepted on white is *strictly safer* on the dark ground -- so
-    # this asserts the relation, not an absolute floor the light plate itself
-    # does not meet.
     for hue in list(PALETTE) + [UNMATCHED]:
         light = _contrast(hue, LIGHT.plate.background)
         dark = _contrast(hue, DARK.plate.background)
@@ -237,8 +199,6 @@ def test_one_palette_reads_on_either_ground():
 
 
 def test_the_colouring_does_not_depend_on_the_theme():
-    # colour is a pure function of the finished layout and a theme is a property
-    # of the ground; neither may learn about the other
     assert (
         load_dag(colour="module").colouring().nodes
         == load_dag(colour="module", theme="dark").colouring().nodes

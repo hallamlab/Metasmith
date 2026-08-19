@@ -1,15 +1,3 @@
-"""Non-Python files under the package must be named in `package_data`.
-
-`find_packages` finds modules; it does not find data. A directory of pure
-data -- a compiled transform library, artwork, a nextflow config -- ships
-only because a glob in `setup.py` names it, and when one does not, nothing
-fails: the wheel builds, the tests pass, and the feature is simply absent
-at runtime for anyone who installed rather than checked out.
-
-That is how `src/metasmith/std/` (67 files) and `gui/icon/` (4) came to be
-in neither the wheel nor the conda package.
-"""
-
 from __future__ import annotations
 
 import ast
@@ -23,24 +11,16 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parents[3]
 PKG_REL = Path("src/metasmith")
 
-# Data that legitimately does not ship inside the package.
 EXEMPT_DIRS = {
     "example_resources/tutorials/.ipynb_checkpoints",
-    # GUI source (compiles into gui/static/, which ships via its own glob),
-    # the standalone regression-test library, and the dev scratch workspace --
-    # all nested under src/metasmith/ by the monorepo reshape because they're
-    # small helpers tightly bound to the engine, not because they ship.
     "frontend",
     "examples",
     "scratch",
 }
 EXEMPT_SUFFIXES = {".pyc", ".pyi"}
-# Repo bookkeeping that happens to live inside the package directory. Both
-# describe how `engine/` is produced and stored, not anything a user needs:
-# the binaries themselves ship via the `engine/**` glob.
 EXEMPT_FILES = {
-    ".gitignore",     # ignores the built engine/ so the binaries stay untracked
-    "engine.dvc",     # DVC pointer to those binaries in the shared cache
+    ".gitignore",
+    "engine.dvc",
 }
 
 
@@ -65,10 +45,6 @@ def _tracked_data_files() -> list[Path]:
 
 
 def _declared_patterns() -> list[str]:
-    """Read the `""` (all-packages) entry of package_data out of setup.py.
-
-    Parsed from the AST rather than imported: setup.py runs setuptools.
-    """
     tree = ast.parse((REPO_ROOT / "setup.py").read_text())
     for node in ast.walk(tree):
         if not isinstance(node, ast.keyword) or node.arg != "package_data":
@@ -84,8 +60,6 @@ def _covered(rel: Path, patterns: list[str]) -> bool:
     for pat in patterns:
         if fnmatch.fnmatch(s, pat):
             return True
-        # `dir/**` is setuptools' recursive form; fnmatch's `*` does not cross
-        # separators, so match the prefix directly.
         if pat.endswith("/**") and s.startswith(pat[:-2]):
             return True
     return False

@@ -1,16 +1,3 @@
-"""The verbs a client calls on an agent: generate, stage, run, check.
-
-A mixin rather than a module of functions, because unlike the workflow package's
-codegen these read heavily off the agent -- its home, its environment, its shell
--- and rewriting them as free functions taking `agent` would be a rename, not a
-move. `Agent` inherits it; nothing else should.
-
-Three of these share a name with a free function in `runner`. That is not an
-accident of one namespace: `Agent.RunWorkflow` is the client side asking, and
-`runner.RunWorkflow` is the agent side doing. Both are public entry points, so
-neither gets renamed -- the split is what makes the pair legible.
-"""
-
 from __future__ import annotations
 
 import re
@@ -40,13 +27,6 @@ from .targets import ResourceOverrides, TargetBuilder, TargetSpec
 
 
 def GetNxfConfigPresets(folder: Path = MODULE_PATH/"nextflow_config") -> dict[str, Path]:
-    """The nextflow configs that ship with metasmith, by name.
-
-    A package folder, so the list is the same for every agent: which one an
-    agent uses is a per-agent choice, but the options are not. Module-level so
-    that a caller who only wants to know the names -- validating a
-    `default_preset` before it is written -- does not need an Agent to ask.
-    """
     if not folder.exists(): raise FileNotFoundError(folder)
     presets: dict[str, Path] = {}
     for f in folder.iterdir():
@@ -65,13 +45,6 @@ class _WorkflowOps:
         targets: TargetBuilder | list[str],
         max_iter: int=256, max_refine: int=256, seed: int=42,
     ):
-        """Solve, from libraries already in hand.
-
-        A method on `Agent` because that is how every notebook spells it, but it
-        reads nothing off the agent -- planning happens here, and only the
-        result is ever sent anywhere. The body is `Spec.SolveViews`, which the
-        web GUI and the CLI reach through `Spec.Solve`.
-        """
         return Spec.SolveViews(
             samples=samples, resources=resources, transforms=transforms,
             targets=targets, max_iter=max_iter, max_refine=max_refine, seed=seed,
@@ -95,15 +68,6 @@ class _WorkflowOps:
         verify_external_paths: bool=False, idle_timeout: float|None = IDLE_TIMEOUT,
         rootfs: Rootfs|str|None = None,
     ):
-        """`idle_timeout` bounds each agent-side step by how long it may say
-        nothing; None restores the old unbounded wait. The file transfers inside
-        SaveAs are bounded too, but by the module default rather than by this
-        argument -- override METASMITH_IDLE_TIMEOUT to move both together.
-
-        `rootfs` forces how this task's step images are materialised (`auto`,
-        `sif` or `sandbox`), overriding the agent's own tendency for these steps
-        only. It rides in the staged workspace, so it takes effect from staging
-        onwards -- a task already staged has to be re-staged to change it."""
         task.RefuseIfDeferred()
         rootfs = Rootfs.Parse(rootfs) if rootfs is not None else None
         VALID_ON_EXIST = {"skip", "error", "clear", "update", "update_workflow", "update_data"}
@@ -149,12 +113,6 @@ class _WorkflowOps:
             task.SaveAs(self.home.ReplacePathWith(remote_path), partial=task_stage_partial)
             Log.Info(f"staging")
             mock = self._get_mock_container(task)
-            # Pre-flight: external (absolute-path) input folders are bound
-            # verbatim into the remote container -- metasmith does NOT transfer
-            # them. If a bound source is absent on the remote, the runtime
-            # aborts container creation and the launcher is never written, which
-            # surfaces much later as an opaque "launcher missing" assertion.
-            # Catch it here and name the input that caused it. [#240]
             if len(mock.container.binds) > 0:
                 _srcs = [str(src) for src, _dst in mock.container.binds]
                 _check = "\n".join(f'[ -e "{s}" ] || echo "MISSING::{s}"' for s in _srcs)
@@ -191,8 +149,6 @@ class _WorkflowOps:
                     )
                 Log.Info(f"external binds {_srcs}")
             binds = mock.MakeBindsParam()
-            # Only sent when overridden, so a default stage compiles a workspace
-            # byte-identical to the one it produced before this knob existed.
             _rootfs_arg = f" rootfs={rootfs.value}" if rootfs is not None else ""
             sh_remote.Exec(f"""\
                 export BINDS="{binds}"
@@ -209,14 +165,6 @@ class _WorkflowOps:
         return GetNxfConfigPresets(folder)
 
     def _resolve_params(self, params: dict|Path|str|None):
-        """This agent's declared params, with a run's own layered over them.
-
-        Same reasoning and the same one place as the preset: the caller who most
-        often names nothing is a person clicking launch, who has no way to know
-        their cluster needs an account. A params *file* has nothing to merge
-        into, so it wins whole -- said out loud rather than silently dropping
-        what the agent declared.
-        """
         if not self.default_params: return params
         if isinstance(params, (Path, str)):
             Log.Warn(
@@ -238,11 +186,6 @@ class _WorkflowOps:
         is_dry_run = stub_delay>0
         if is_dry_run:
             Log.Info(f"starting dry run")
-        # The one place a preset is resolved, so the CLI, the notebook and the
-        # web page all get the agent's declared default without any of them
-        # knowing about it. A named preset that no longer exists is worth saying
-        # out loud: a KeyError here reads as a metasmith bug rather than as a
-        # line in someone's agent.yml.
         if config_file is None:
             presets = self.GetNxfConfigPresets()
             wanted = self.default_preset or "local"
@@ -264,10 +207,6 @@ class _WorkflowOps:
             )
             assert FLAG in res.out, f"task not staged, expected [{workspace}] to exist"
 
-            # GPU preflight, deliberately BEFORE anything is transferred and
-            # long before the detached `nohup nextflow ... &` launch -- the run
-            # is fire-and-forget, so a failure raised any later is invisible to
-            # this caller.
             def _detect_gpu_on_target() -> str:
                 probe = sh_remote.Exec(
                     "command -v nvidia-smi >/dev/null 2>&1 && nvidia-smi -L 2>/dev/null | head -4",
@@ -279,10 +218,6 @@ class _WorkflowOps:
             if gpu_planned:
                 Log.Info(f"GPU requests planned for [{len(gpu_planned)}] of [{len(gpu_manifest)}] declaring steps")
 
-            # Tool-environment preflight, same placement and same reasoning: a
-            # step whose tool has no form this agent can run must be caught here
-            # rather than mid-run, after everything upstream has already been
-            # computed.
             env_manifest = _read_env_manifest(sh_remote, workspace)
             _check_env_portability(env_manifest, Environment(
                 image=self.container, runtime=self.runtime, native=self.native,
@@ -294,13 +229,10 @@ class _WorkflowOps:
             ws_dest = self.home/rel_ws
             with tempfile.TemporaryDirectory() as temp_dir:
                 temp_dir = Path(temp_dir)
-                # params
                 if params is None:
                     params = dict(nothing=None)
                 if isinstance(params, dict):
                     params_local = temp_dir/AgentPaths.NXF_PARAMS
-                    # lets underscores signify nested dictionaries
-                    # so "{process_tries=3}" becomes { process={ tries=3 } } 
                     def _parse(d: dict):
                         parsed = {}
                         for k, v in d.items():
@@ -309,10 +241,6 @@ class _WorkflowOps:
                                 v = _parse(v)
                             stacks = [x for x in k.split("_") if x != ""] if "_" in k else [k]
                             if len(stacks)>1:
-                                # setdefault, not assignment: two keys sharing a
-                                # prefix (process_tries + process_clusterOptionsExtra)
-                                # must merge into one nested dict rather than the
-                                # later one wiping the earlier.
                                 _d_curr = parsed
                                 for _k in stacks[:-1]:
                                     _nxt = _d_curr.get(_k)
@@ -321,9 +249,6 @@ class _WorkflowOps:
                                     _d_curr = _nxt
                                 _d_curr[stacks[-1]] = v
                             else:
-                                # stacks[0] rather than k so a leading/trailing
-                                # underscore ("_foo") lands as "foo" instead of
-                                # being silently dropped as it used to be.
                                 parsed[stacks[0]] = v
                         return parsed
 
@@ -333,27 +258,15 @@ class _WorkflowOps:
                 elif isinstance(params, Path):
                     params_source = Source.FromLocal(params)
                 mover.QueueTransfer(src=params_source, dest=ws_dest/AgentPaths.NXF_PARAMS)
-                # resource overrides
                 local_config = temp_dir/config_file.name
                 shutil.copy(config_file, local_config)
                 mover.QueueTransfer(src=Source.FromLocal(local_config), dest=ws_dest/AgentPaths.NXF_CONFIG)
-                # GPU blocks first, so an explicit resource_overrides entry for
-                # the same step is still last-defined and wins per-directive.
                 if gpu_planned:
-                    # Only a grid executor has a scheduler to ask; the local
-                    # executor inherits whatever devices the host has, so the
-                    # declaration there exists purely to pass the preflight and
-                    # switch on the runtime's GPU flags.
                     is_scheduler = "slurmAccount" in local_config.read_text()
                     gpu_lines = _render_gpu_config(gpu_planned, gpus, is_scheduler)
                     if gpu_lines:
                         with open(local_config, "a") as f:
                             f.write("\n".join(gpu_lines))
-                # lines = [
-                #     # "",
-                #     # "lineage.enabled = true",
-                #     # "lineage.store.location = 'nxf_lineage'",
-                # ]
                 if resource_overrides is not None:
                     with open(local_config, "a") as f:
                         TAB="\t"
@@ -398,7 +311,6 @@ class _WorkflowOps:
                 idle_timeout=PROBE_TIMEOUT, what="checking the launcher",
             )
             assert "launcher-present" in res.out, f"launcher missing at [{launcher}]; re-stage the task"
-            # the launcher detaches; the bound covers reaching that point, not the run
             sh_remote.Exec(
                 f"{launcher} {stub_delay:0.3f}",
                 idle_timeout=IDLE_TIMEOUT, what="launching the run",
@@ -407,7 +319,7 @@ class _WorkflowOps:
     def CheckWorkflow(self, task: WorkflowTask|str, run: int|None=None):
         key = task._key if isinstance(task, WorkflowTask) else str(task)
         with AgentShell(self) as sh_remote:
-            index_param = "" # 1 indexed
+            index_param = ""
             if run is not None:
                 index_param = f"-a index={run}"
             sh_remote.Exec(f"./msm api check_workflow -a key={key} {index_param}")

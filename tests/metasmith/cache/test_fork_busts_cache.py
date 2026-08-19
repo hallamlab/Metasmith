@@ -1,17 +1,3 @@
-"""A fork must miss the cache its unforked twin would hit.
-
-`fork_id` is the user saying "treat these inputs as new". Under the
-content-free identity model that worked for free: instance ids folded in
-the library key, and the library key moved when the fork id did.
-Content+path addressing severed that link, and cache keys are a pure
-function of instance ids — so a fork whose ids survive verbatim replays
-the original run's cached output, which is the exact opposite of what
-forking is for, and it fails silently.
-
-This is the inverse of `test_cross_run.py::test_fresh_library_same_inputs_hits_cache`:
-same fixture, same bytes, one field set, opposite verdict.
-"""
-
 from __future__ import annotations
 
 from pathlib import Path
@@ -54,8 +40,6 @@ def test_forked_library_misses_a_cache_its_twin_would_hit(tmp_path, virtual_runt
     snap_a = capture_run(virtual_runtime, task_a)
     assert snap_a.executed_steps, "run A executed zero steps (bad fixture)"
 
-    # Control: identical bytes, no fork -> full hit. If this stops holding the
-    # fork assertion below proves nothing.
     task_control = _build_pipeline_task(tmp_path / "control")
     assert task_control.GetKey() == task_a.GetKey()
     clear_trace(virtual_runtime)

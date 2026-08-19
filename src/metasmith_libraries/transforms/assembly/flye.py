@@ -24,9 +24,6 @@ def protocol(context: ExecutionContext):
     assert q >= 0, f"invalid q score [{q}]"
     q = min(33, q)
     p = 10**(-q/10)
-    # try to guess at the right parameters here
-    # default to --nano-raw, which tells flye be conservative in OLC matches
-    # only use hifi if reads look good
     if q >= 20:
         preset = "--pacbio-hifi"
         err = f"--read-error {p:0.6f}"
@@ -36,8 +33,6 @@ def protocol(context: ExecutionContext):
 
     threads = context.params.get('cpus')
     threads = "" if threads is None else f"--threads {threads}"
-    # memory defaults to 0.9 of available [--memory 0.9]
-    # Same command either way: this tool is a plain CLI in both worlds.
     _cmd = f"""
             flye --meta {err} {threads} \
                 {preset} {ireads.container} \

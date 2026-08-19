@@ -1,23 +1,3 @@
-"""Regression: heterogeneous-subtype inputs to a single group_by requirement.
-
-Reproduces the multi-container-prefetch bug (filed against 0.18.6): prefetching
-more than one container in one workflow crashed the generated Nextflow at runtime
-with a NullPointerException in Orchestrator.group, and nothing pulled. Single
-container worked.
-
-Root cause: several distinct container subtypes (provides:bbtools / megahit /
-seqkit) each structurally satisfy (Node.IsA) one generic `container` group_by
-requirement. The solver correctly merges them (merged_endpoints), but the
-generator's merged-endpoint collapse joined their instances WITHOUT normalizing
-dtype. Codegen keys the group_by channel by instance dtype, so a mixed-dtype
-list emitted `o.group('<A>', [<B>], ...)` where the by-key named a channel that
-wasn't wired in -> runtime NPE, and only 1 of N inputs flowed.
-
-These are stage-time assertions (no Docker / Nextflow runtime needed): the bug
-is fully observable in the emitted workflow.nf and in the planned group_by
-dtypes, so the regression is fast and host-independent.
-"""
-
 import re
 from pathlib import Path
 
@@ -40,7 +20,6 @@ from metasmith.testing.mock_transforms import pull_container_transform
 from .conftest import create_transform_library
 
 
-# distinct subtypes, each IsA the generic container, plus the produced type
 _CONTAINER_SUBTYPES = {
     "c_bbtools": {"container", "provides:bbtools"},
     "c_megahit": {"container", "provides:megahit"},
@@ -50,8 +29,6 @@ _CONTAINER_SUBTYPES = {
 
 @pytest.fixture
 def container_types(temp_dir) -> Path:
-    """A type library with a generic container, 3 distinct container subtypes,
-    and the pulled output type."""
     types = DataTypeLibrary()
     types["container"] = Endpoint(properties={"container"})
     for name, props in _CONTAINER_SUBTYPES.items():
@@ -64,7 +41,6 @@ def container_types(temp_dir) -> Path:
 
 @pytest.fixture
 def container_inputs(temp_dir, container_types) -> DataInstanceLibrary:
-    """3 .oci instances, each a distinct container subtype."""
     lib = DataInstanceLibrary(temp_dir / "containers.xgdb")
     lib.AddTypeLibrary(container_types, namespace="mock")
     for name in _CONTAINER_SUBTYPES:
@@ -77,7 +53,6 @@ def container_inputs(temp_dir, container_types) -> DataInstanceLibrary:
 
 
 def _make_plan(container_types, container_inputs, temp_dir, n: int) -> WorkflowPlan:
-    """Plan a pullContainer workflow over the first `n` distinct subtypes."""
     tr_lib = create_transform_library(
         temp_dir / "pull_tr", container_types, pull_container_transform()
     )
@@ -113,7 +88,6 @@ def _stage(task: WorkflowTask, work_dir: Path) -> str:
 
 
 def _group_calls(nxf: str) -> list[tuple[str, list[str]]]:
-    """Extract (by_key, [using_symbols]) for every o.group(...) in the workflow."""
     calls = []
     for line in nxf.splitlines():
         m = re.search(r"o\.group\('([^']+)',\s*\[([^\]]*)\]", line)
@@ -129,7 +103,6 @@ def _group_calls(nxf: str) -> list[tuple[str, list[str]]]:
 def test_multicontainer_group_by_collapses_to_one_dtype(
     container_types, container_inputs, temp_dir, n
 ):
-    """The merged group_by requirement collapses to a single dtype.key."""
     plan, _ = _make_plan(container_types, container_inputs, temp_dir, n)
 
     assert len(plan.steps) == 1
@@ -149,7 +122,6 @@ def test_multicontainer_group_by_collapses_to_one_dtype(
 def test_multicontainer_emits_valid_o_group(
     container_types, container_inputs, temp_dir, n
 ):
-    """Every emitted o.group by-key is among its wired using symbols (no NPE)."""
     plan, tr_lib = _make_plan(container_types, container_inputs, temp_dir, n)
     task = WorkflowTask(
         ok=True,
@@ -171,8 +143,6 @@ def test_multicontainer_emits_valid_o_group(
 def test_multicontainer_single_input_channel(
     container_types, container_inputs, temp_dir
 ):
-    """The N merged containers flow through ONE input channel (homogeneous
-    fan-out), not N orphaned per-subtype channels."""
     plan, tr_lib = _make_plan(container_types, container_inputs, temp_dir, 3)
     task = WorkflowTask(
         ok=True,
@@ -188,11 +158,9 @@ def test_multicontainer_single_input_channel(
         + "\n".join(postin_lines)
     )
 
-    # the single channel must reference the same key the o.group keys by
     (by, using), = _group_calls(nxf)
     assert by in using
 
-    # all 3 source .oci paths land in the one channel's input file
     inputs_dir = temp_dir / "stage_channel" / "inputs"
     pooled = "\n".join(p.read_text() for p in inputs_dir.iterdir())
     for tool in ("bbtools", "megahit", "seqkit"):

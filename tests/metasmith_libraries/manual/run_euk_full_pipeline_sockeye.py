@@ -1,14 +1,4 @@
 #!/usr/bin/env python
-"""Run the full eukaryotic pipeline on Sockeye via SLURM.
-
-New pipeline (no reference GFF required):
-  NCBI download → STAR index (no GFF) → STAR align → stringtie_assemble (no GFF)
-  → merge_bams → braker3 (genome + BAMs) → stringtie_merge (braker3_gff as guide)
-  → stringtie_quant → pydeseq2 + stringtie_count_matrix (parallel)
-  → gffread_proteins → busco + eggnog_mapper
-
-Targets: gene_count_table, diff_count_table, eggnog_results, busco_results, braker3_gff
-"""
 import sys
 import time
 sys.stdout.reconfigure(line_buffering=True)
@@ -92,7 +82,6 @@ def main():
         inputs.AddItem(r1_path, "sequences::zipped_forward_short_reads", parents={pair})
         inputs.AddItem(r2_path, "sequences::zipped_reverse_short_reads", parents={pair})
 
-    # Download triggers for functional annotation
     inputs.AddValue("eggnog_source.txt", "eggnog", "annotation::eggnog_source")
     inputs.AddValue("busco_source.txt", "eukaryota_odb10", "annotation::busco_source")
 
@@ -138,7 +127,7 @@ def main():
     print("\n=== Waiting for completion ===")
     results_path = smith.GetResultSource(task).GetPath()
     t0 = time.time()
-    timeout = 259200  # 72h (Braker3 can be slow)
+    timeout = 259200
     last_print = 0
     while not (results_path / "_metadata").exists():
         elapsed = time.time() - t0

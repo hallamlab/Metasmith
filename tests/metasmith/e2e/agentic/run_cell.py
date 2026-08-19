@@ -1,33 +1,3 @@
-"""Run ONE token-benchmark cell — a single (arm, test, replicate) — end to end.
-
-A cell is one point in the study grid: a benchmark scenario (``t1``..``t7``) run
-in one arm (``A1``..``A10``, see ``scenarios/arms.py``) for one replicate. This
-CLI resolves the scenario, builds + provisions the sandbox (via the shared
-``harness.cell.prepare_sandbox`` plumbing — the same path the pytest
-``run_scenario`` fixture uses), drives the ralph loop, verifies the oracle, and
-records exactly ONE result row.
-
-    python -m tests.metasmith.e2e.agentic.run_cell --arm A10 --test t3_run --rep 1 \
-        --agent claude --agent-model haiku --agent-effort medium --host micb0
-
-    # validate wiring without a model call (no live claude CLI, no mamba install):
-    python -m tests.metasmith.e2e.agentic.run_cell --arm A7 --test t3_run --rep 1 --dry-run
-
-Result recording (never mutates the master ``experiments.csv``):
-
-  * appends one row to a sibling ``results.csv`` (default: next to
-    ``experiments.csv``), keyed by ``run_id`` / ``condition_id`` looked up from
-    ``experiments.csv`` for this (test, arm, replicate[, host]). The row carries
-    every ``experiments.csv`` key column plus the result columns
-    (``tokens_in/tokens_cached/tokens_out/tokens_cache_creation``, ``iterations``,
-    ``wall_s``, ``outcome``, ``artifact_ok``, ``loc_authored``) and the stamps
-    ``model`` / ``effort`` / ``commit`` (git short HEAD) / ``host``.
-  * drops a ``result.json`` next to the transcript under ``.runs/<ts>/…``.
-
-Censored failures (over-budget, gave-up, reported-issue, max-iters, harness
-error) are ALWAYS written — never dropped — with ``artifact_ok=false`` and the
-outcome recorded, so the aggregation sees the full denominator.
-"""
 from __future__ import annotations
 
 import argparse
@@ -63,27 +33,18 @@ from tests.metasmith.e2e.agentic.scenarios.base import PromptContext, VerifyCont
 from tests.metasmith.e2e.agentic.scenarios.benchmark import BENCHMARK_SCENARIOS
 
 
-# Stamps appended after the experiments.csv columns (host is already a column).
 _STAMP_COLS = ("model", "effort", "commit")
 
 
-# ---------------------------------------------------------------------------
-# resolution helpers
-# ---------------------------------------------------------------------------
-
-
 def _project_root() -> Path:
-    # tests/metasmith/e2e/agentic/run_cell.py -> repo root is parents[4].
     return Path(__file__).resolve().parents[4]
 
 
 def _test_id(test_name: str) -> int:
-    """`t3_run` -> 3."""
     return int(test_name.split("_", 1)[0][1:])
 
 
 def _test_label(test_name: str) -> str:
-    """`t3_run` -> `run`; matches the experiments.csv `test` column."""
     return test_name.split("_", 1)[1]
 
 
@@ -103,20 +64,12 @@ def _git_commit(project_root: Path) -> str:
 def _resolve_install_context(
     project_root: Path, runtime: str, agent: str, *, allow_missing: bool,
 ) -> InstallContext:
-    """Preflight-verify the local artifacts, or (dry) synthesize a context.
-
-    A live run demands the real preflight (docker image + conda channel + agent
-    binary). ``allow_missing`` (the ``--dry-run`` path) degrades a PreflightError
-    into a best-effort context built from ``version.txt`` + the in-repo dirs, so
-    the sandbox can still be built + provisioned for wiring validation without
-    the full artifact set staged.
-    """
     try:
         return verify_install(project_root, runtime=runtime, agent=agent)
     except PreflightError:
         if not allow_missing:
             raise
-        full = _read_version(project_root)          # semver[+build_hash]
+        full = _read_version(project_root)
         semver = full.split("+", 1)[0]
         image_tag = f"quay.io/hallamlab/metasmith:{full.replace('+', '-')}"
         sif_path: Path | None = None
@@ -141,15 +94,8 @@ def _make_scenario(test_name: str, arm, tool: str | None):
                 "t1_install requires --tool (fastp|spades|bakta|"
                 "eggnog-mapper|clusterprofiler|abricate)"
             )
-        # arm.env is one of ad-hoc|mamba|container|metasmith — the install
-        # env-channel axis. A10 -> metasmith, A7 -> container, etc.
         return cls(env_channel=arm.env, tool=tool)
     return cls()
-
-
-# ---------------------------------------------------------------------------
-# experiments.csv lookup (read-only) + results.csv append
-# ---------------------------------------------------------------------------
 
 
 def _read_header(csv_path: Path) -> list[str]:
@@ -161,12 +107,6 @@ def lookup_experiment_row(
     experiments_csv: Path, *, test_id: int, arm_id: str, rep: int,
     host: str | None = None,
 ) -> dict[str, str] | None:
-    """Find the enumerated experiments.csv row for this cell (or None).
-
-    Matches on (test_id, arm, replicate); ``host`` disambiguates when a test is
-    enumerated on more than one host. Read-only — the master CSV is never
-    written.
-    """
     if not experiments_csv.exists():
         return None
     with experiments_csv.open(newline="") as fh:
@@ -198,11 +138,6 @@ def append_result_row(
         w.writerow({k: row.get(k, "") for k in fieldnames})
 
 
-# ---------------------------------------------------------------------------
-# result record assembly
-# ---------------------------------------------------------------------------
-
-
 def _bool_str(v: bool | None) -> str:
     if v is None:
         return ""
@@ -225,13 +160,10 @@ def build_result_row(
     result: LoopResult | None,
     artifact_ok: bool | None,
 ) -> dict[str, str]:
-    """Assemble one results.csv row: key columns + result columns + stamps."""
     row: dict[str, str] = {k: "" for k in experiment_fields}
     if matched is not None:
         row.update({k: matched.get(k, "") for k in experiment_fields})
     else:
-        # Synthesize the key columns from the arm + test when the cell is not
-        # (yet) enumerated in experiments.csv.
         row["run_id"] = ""
         row["condition_id"] = f"T{test_id}-{arm.id}"
         row["test_id"] = str(test_id)
@@ -240,14 +172,12 @@ def build_result_row(
         row["env"] = arm.env
         row["orchestrator"] = arm.orchestrator
 
-    # Key columns we always pin from the invocation.
     row["replicate"] = str(rep)
     if host is not None:
         row["host"] = host
 
-    # Result columns.
     row["status"] = status
-    row["loc_authored"] = ""   # not auto-measured; left for manual/aggregate fill
+    row["loc_authored"] = ""
     if result is not None:
         row["tokens_in"] = str(result.tokens_in)
         row["tokens_cached"] = str(result.tokens_cached)
@@ -256,24 +186,15 @@ def build_result_row(
         row["iterations"] = str(result.iterations)
         row["outcome"] = result.outcome.value
     else:
-        # No run (dry / pre-flight error before the loop): leave the token /
-        # iteration / outcome columns blank (already "" from the base dict, or
-        # the matched pending row's empty values).
         for c in ("tokens_in", "tokens_cached", "tokens_out",
                   "tokens_cache_creation", "iterations", "outcome", "wall_s"):
             row[c] = ""
     row["artifact_ok"] = _bool_str(artifact_ok)
 
-    # Stamps.
     row["model"] = model or ""
     row["effort"] = effort or ""
     row["commit"] = commit
     return row
-
-
-# ---------------------------------------------------------------------------
-# CLI
-# ---------------------------------------------------------------------------
 
 
 def build_arg_parser() -> argparse.ArgumentParser:
@@ -290,7 +211,6 @@ def build_arg_parser() -> argparse.ArgumentParser:
                     help="tool for t1_install (fastp|spades|bakta|"
                          "eggnog-mapper|clusterprofiler|abricate).")
 
-    # passthrough agent/driver knobs
     ap.add_argument("--agent", default="claude", choices=("opencode", "claude"))
     ap.add_argument("--agent-model", default=None)
     ap.add_argument("--agent-effort", default=None)
@@ -302,19 +222,12 @@ def build_arg_parser() -> argparse.ArgumentParser:
                     help="render prompt + build/provision sandbox WITHOUT a "
                          "model call; writes a status=dry result row.")
 
-    # loop budgets
     ap.add_argument("--max-iters", type=int, default=20)
-    # Default None so "explicitly passed" is detectable: the effective quota is
-    # the CLI value if given, else the scenario's own max_tokens, else the
-    # global fallback. See _effective_max_tokens.
     ap.add_argument("--max-tokens", type=int, default=None)
     ap.add_argument("--max-tokens-per-iter", type=int, default=200_000)
-    # Per-invocation dollar runaway valve (claude --max-budget-usd). None → the
-    # driver derives one from --max-tokens-per-iter.
     ap.add_argument("--max-usd-per-iter", type=float, default=None)
     ap.add_argument("--iter-timeout-s", type=float, default=300.0)
 
-    # paths
     ap.add_argument("--project-root", type=Path, default=None)
     ap.add_argument("--experiments-csv", type=Path, default=None,
                     help="master run list (read-only). Default: "
@@ -333,14 +246,10 @@ _DEFAULT_EXPERIMENTS = Path(
     "/home/tony/agentic_workspace/data/metasmith/token-benchmark/experiments.csv"
 )
 
-# Fallback per-test token quota when neither --max-tokens nor the scenario
-# declares one. Each scenario should carry a pilot-discovered max_tokens; this
-# is only the backstop for an un-piloted test.
 _GLOBAL_MAX_TOKENS_FALLBACK = 2_000_000
 
 
 def _effective_max_tokens(cli_value: int | None, scenario, fallback: int) -> int:
-    """Resolve a cell's token quota: explicit CLI > scenario.max_tokens > fallback."""
     if cli_value is not None:
         return cli_value
     scenario_quota = getattr(scenario, "max_tokens", None)
@@ -360,8 +269,6 @@ def run(argv: list[str] | None = None) -> int:
     results_csv = (args.results_csv
                    or experiments_csv.with_name("results.csv")).resolve()
 
-    # experiments.csv gives us run_id / condition_id + the key columns. It is
-    # read-only; if it is missing we synthesize the key columns.
     if experiments_csv.exists():
         experiment_fields = _read_header(experiments_csv)
     else:
@@ -384,7 +291,6 @@ def run(argv: list[str] | None = None) -> int:
     )
     commit = _git_commit(project_root)
 
-    # runs dir: <root>/<ts>/<test>/<arm>/rep<rep>
     ts = _dt.datetime.now().strftime("%Y%m%d-%H%M%S")
     runs_root = (args.runs_dir
                  or project_root / "tests" / "metasmith" / "e2e" / "agentic" / ".runs" / ts)
@@ -408,7 +314,6 @@ def run(argv: list[str] | None = None) -> int:
         ctx = _resolve_install_context(
             project_root, args.runtime, agent, allow_missing=args.dry_run,
         )
-        # Build + provision. Dry runs skip the (slow) metasmith pre-install.
         sb_root = log_dir / "sandbox"
         layout, agent_env = prepare_sandbox(
             sb_root, ctx,
@@ -460,11 +365,6 @@ def run(argv: list[str] | None = None) -> int:
                 arm=arm,
             )
 
-            # Submit/checker: if the agent SUBMITTED an implementation, a
-            # non-agentic checker executes it (no driver, no token capture) to
-            # materialize the final artifact BEFORE the oracle runs. A checker
-            # failure is a legitimate artifact_ok=false cell (a bad submission),
-            # not a harness error — its notes are recorded alongside verify's.
             checker_failures: list[str] = []
             if result.outcome is LoopOutcome.SUBMITTED:
                 co = run_checker(
@@ -483,7 +383,6 @@ def run(argv: list[str] | None = None) -> int:
             failures = checker_failures + scenario.verify(vctx, result)
             artifact_ok = not failures
     except Exception as exc:  # noqa: BLE001 — a harness failure is a censored
-        # result, NOT a dropped run. Record it and continue.
         err = f"{type(exc).__name__}: {exc}"
         status = "error"
         artifact_ok = False
@@ -497,7 +396,6 @@ def run(argv: list[str] | None = None) -> int:
         model=model, effort=effort, commit=commit,
         status=status, result=result, artifact_ok=artifact_ok,
     )
-    # wall_s is measured only on a live run.
     if not args.dry_run and result is not None:
         row["wall_s"] = f"{wall_s:.1f}"  # type: ignore[possibly-undefined]
 
@@ -524,8 +422,6 @@ def run(argv: list[str] | None = None) -> int:
           f"artifact_ok={row.get('artifact_ok')}")
     print(f"  result.json -> {log_dir / 'result.json'}")
 
-    # Exit code: 0 for a clean success or a dry render; 1 for a censored/failed
-    # run (row IS written either way).
     if args.dry_run:
         return 0
     return 0 if (result is not None and not failures and err is None) else 1

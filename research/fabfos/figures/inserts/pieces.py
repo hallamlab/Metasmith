@@ -48,19 +48,15 @@ JUNCTIONS = INSERT_META / "junctions.tsv"
 MEMBERSHIP = INSERT_META / "membership.csv"
 INSERTS_FNA = INSERTS / "inserts.fna"
 
-MIN_LEN = 10_000        # the dedup's own `--min-contig-length`
-MIN_PIECE = 1_000       # the dedup's own `--min-piece`
-MIN_HSP = 50            # the dedup's own `--min-hsp`
+MIN_LEN = 10_000
+MIN_PIECE = 1_000
+MIN_HSP = 50
 
 sys.path.insert(0, str(REPO / "src"))
 from fabfos.algorithm import fabfos_recovery as fr        # noqa: E402
 
 
 def pools():
-    """-> {pool: {assembler: (contigs, graph, paths|None)}}, from the file names.
-
-    `pool<NN>_<BARCODE>.<assembler>.<ext>`. 35 libraries, two assemblers each.
-    """
     out = {}
     for fna in sorted(ASSEMBLIES.glob("*.fna")):
         pool, assembler = fna.name[:-len(".fna")].rsplit(".", 1)
@@ -78,11 +74,6 @@ def pools():
 
 
 def build(work=None, force=False):
-    """Cut every pool and pool the long pieces. -> the work dir.
-
-    Leaves `pooled.fna` + `piece_meta.json` in the pipeline's own layout, which is
-    what `dedup_cluster` and `identity.py` both read.
-    """
     work = Path(work or CACHE / "pieces")
     if not force and (work / "piece_meta.json").exists():
         return work
@@ -109,11 +100,6 @@ def build(work=None, force=False):
 
 
 def load(work=None):
-    """-> (meta, seqs) keyed by the pipeline's blast-safe `C#####` ids.
-
-    `meta[key]` is `{piece, action, closed_ends, length}`; `piece` is the
-    qualified piece id every shipped table names.
-    """
     work = build(work)
     meta = json.loads((work / "piece_meta.json").read_text())
     seqs = {n: s for n, _d, s in fr.read_fasta(work / "pooled.fna")}
@@ -121,15 +107,12 @@ def load(work=None):
 
 
 def by_piece_id(work=None):
-    """-> ({piece id: sequence}, {piece id: action}). The same set, named the way
-    `membership.csv` and `inserts.csv` name it."""
     meta, seqs = load(work)
     return ({m["piece"]: seqs[k] for k, m in meta.items()},
             {m["piece"]: m["action"] for k, m in meta.items()})
 
 
 def verify(work=None):
-    """Diff the rebuilt pieces against what the run shipped. -> exit status."""
     import pandas as pd
 
     seqs, actions = by_piece_id(work)

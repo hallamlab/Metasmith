@@ -44,13 +44,8 @@ import pandas as pd
 
 REPO = Path(__file__).resolve().parents[2]
 
-# The band within which a group-contribution number is treated as the arm cancelling
-# rather than as an estimate that happens to be small. 1 kJ/mol is well under the arm's
-# own quoted uncertainty, so nothing outside a true cancellation lands here by accident.
 NEAR_ZERO_KJ = 1.0
 
-# Mirrors dir_combine. Imported rather than re-declared where possible, but this script
-# must run against member tables alone, without the direction image.
 TAU_SHARED = 10.0
 
 
@@ -89,9 +84,6 @@ def main() -> int:
               "built from the same reac_prop, so a mismatch is a bug worth chasing before "
               "reading anything below.")
 
-    # `reason == "ok"` is the members' shared contract for "this is a number", and the
-    # notna is not redundant: an abstention writes a reason AND a null, but a member that
-    # returned a NaN with reason ok would otherwise be counted as an answer.
     eq_ok = eq[(eq["reason"] == "ok") & eq["dg"].notna()]
     db_ok = db[(db["reason"] == "ok") & db["dg"].notna()]
     print(f"answered            eq={pct(len(eq_ok), len(eq))}   "
@@ -102,7 +94,6 @@ def main() -> int:
         counts = df["reason"].value_counts()
         print(f"  {name}: " + "  ".join(f"{k}={v:,}" for k, v in counts.items()))
 
-    # ---- 1. coverage dGbyG adds -------------------------------------------------------
     eq_set, db_set = set(eq_ok["mnxr"]), set(db_ok["mnxr"])
     both = eq_set & db_set
     only_db = db_set - eq_set
@@ -114,9 +105,6 @@ def main() -> int:
     print(f"  eQuilibrator only       {pct(len(only_eq), len(union))}")
     print(f"  union answered          {len(union):,} reactions")
 
-    # ---- 2. the contested regime ------------------------------------------------------
-    # `flag` carries uses_gc for the eQ member -- dir_calibrate renames it on the way in,
-    # this reads it in place. Cast because parquet may hand it back as object.
     j = eq_ok.merge(db_ok, on="mnxr", suffixes=("_eq", "_db"))
     uses_gc = j["flag_eq"].astype("boolean")
     measured = j[uses_gc == False]  # noqa: E712
@@ -141,7 +129,6 @@ def main() -> int:
     print(f"  of the GC arm, |dg| <= {a.near_zero} kJ/mol: "
           f"{pct(len(near_zero), len(contested))}   <- structural cancellation")
 
-    # ---- 3. what averaging costs ------------------------------------------------------
     print("\n=== 3. WHAT AVERAGING COSTS ON THE STRUCTURAL ZEROS ===")
     if near_zero.empty:
         print("  none -- the GC arm is not returning cancelled numbers on this universe, "
@@ -163,13 +150,10 @@ def main() -> int:
         infl = (s_fused / s_alone)
         print(f"  inflation factor        median {infl.median():.2f}x, "
               f"p90 {infl.quantile(0.90):.2f}x")
-        # A drag past the clamp is the case that actually changes a direction call rather
-        # than only a confidence, so it is separated out.
         big = int((drag > 5.0).sum())
         print(f"  rows dragged > 5 kJ/mol {pct(big, len(near_zero))}  "
               f"-- these are direction calls, not just widened error bars")
 
-    # ---- the rest of the GC arm, for contrast -----------------------------------------
     real_gc = contested[contested["dg_eq"].abs() > a.near_zero]
     if not real_gc.empty:
         d = (real_gc["dg_eq"] - real_gc["dg_db"]).abs()

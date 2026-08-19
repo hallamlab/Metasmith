@@ -11,7 +11,6 @@ assembly, cds, busco, cazy, output_file = parse_args(
 )
 
 
-# Read files
 with open(assembly) as ass:
     assembly_content = ass.read()
 with open(cds) as f:
@@ -23,7 +22,6 @@ with open(cazy) as f:
     cazy_content = f.read()
 
 
-# Calculate % of genome that is genes
 def compute_fasta_len(fasta: str) -> int:
     return sum(
         len(line.strip())
@@ -37,18 +35,15 @@ cds_len = compute_fasta_len(cds_content)
 percent_genes = cds_len / assembly_len
 
 
-# Compute the number of open reading frames
 num_orfs = cds_content.count(">")
 
 
-# Compute the % annotated per method
 busco_annotation_entries = sum(1 for line in busco_content.splitlines() if line.strip())
 busco_hitrate = busco_annotation_entries / num_orfs
 cazy_annotation_entries = sum(1 for line in cazy_content.splitlines() if line.strip())
 cazy_hitrate = cazy_annotation_entries / num_orfs
 
 
-# Generate TSV output
 output_header = "assembly_length\tcds_length\tpercent_genes\tnum_orfs\tbusco_hits\tbusco_hitrate\tcazy_hits\tcazy_hitrate\n"
 output_content = f"{assembly_len}\t{cds_len}\t{percent_genes}\t{num_orfs}\t{busco_annotation_entries}\t{busco_hitrate}\t{cazy_annotation_entries}\t{cazy_hitrate}"
 with open(output_file, 'w') as out:
