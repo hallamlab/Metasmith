@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pandas as pd
 
-from .evidence import per_unit_weights
+from .evidence import nomination_contributions, pool_logodds
 
 WEIGHTINGS = ("belief", "uniform")
 
@@ -86,12 +86,8 @@ def weights_from_rows(rows: pd.DataFrame, weighting: str = "belief") -> dict:
         n = (rows.dropna(subset=["mnxr"])
                  .groupby(rows["mnxr"].astype(str))[UNIT_COL].nunique())
         return {str(r): float(v) for r, v in n.items() if v > 0}
-    per_unit = per_unit_weights(_normalise(rows), UNIT_COL)
-    out: dict = {}
-    for unit_map in per_unit.values():
-        for mnxr, e in unit_map.items():
-            out[mnxr] = out.get(mnxr, 0.0) + float(e)
-    return {k: v for k, v in out.items() if v > 0}
+    E = pool_logodds(nomination_contributions(_normalise(rows)))
+    return {str(r): float(e) for r, e in E.items()}
 
 
 def condition_weights(df: pd.DataFrame, *, weighting="belief", **mask) -> tuple:

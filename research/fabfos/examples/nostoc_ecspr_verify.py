@@ -134,17 +134,22 @@ def check_copies_are_private(element="C"):
 def check_belief_conservation():
     print("\n[3] belief conservation survives the synthetic bridge ORFs")
     bad = 0
+    e_bridge = en.pooled_E_of_mass(1.0)
     for d in sorted(NETS.iterdir()):
         g = pd.read_parquet(d / "gpr.parquet")
         w = en.compute_weights(g)
-        n, s = g.orf.nunique(), float(w.E_full.sum())
+        n, s = g.orf.nunique(), float(w.belief_mass.sum())
         ok = abs(s - n) < 1e-6 * max(1.0, n)
+        # Conservation is a statement about the PRE-pooling mass; the bridges' pooled
+        # E_full is not 1.0 and cannot be, but every bridge spends one whole ORF on one
+        # pseudo-reaction so they all land on the same constant.
         bridge = w[w.mnxr.str.startswith("BRIDGE")]
-        e_ok = bool(len(bridge) == 0 or np.allclose(bridge.E_full, 1.0, atol=1e-12))
-        print(f"  {d.name:22s} sum(E)={s:12.6f}  orfs={n:6,}  "
-              f"bridges={len(bridge):2d} at E={'1.0' if e_ok else 'DRIFTED'}")
-        bad += 0 if (ok and e_ok) else _fail(f"{d.name}: sum(E)={s} vs {n} orfs")
-    return bad or _pass("every network conserves belief, bridges at E=1.0 exactly")
+        e_ok = bool(len(bridge) == 0
+                    or np.allclose(bridge.E_full, e_bridge, atol=1e-12))
+        print(f"  {d.name:22s} sum(belief_mass)={s:12.6f}  orfs={n:6,}  "
+              f"bridges={len(bridge):2d} at E={'the constant' if e_ok else 'DRIFTED'}")
+        bad += 0 if (ok and e_ok) else _fail(f"{d.name}: sum(belief_mass)={s} vs {n} orfs")
+    return bad or _pass(f"every network conserves belief, bridges at E={e_bridge:.6f}")
 
 
 def check_g0_limit(pairs, direction, element="C", *, sweep=False):
