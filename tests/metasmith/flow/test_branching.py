@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from .conftest import (
@@ -34,6 +36,44 @@ def test_b1_two_way_branch_shared_parent(tmp_path, virtual_runtime):
 def test_b2_three_way_fanout_shared_ancestor(tmp_path, virtual_runtime):
     bp = build_branching_plan(tmp_path, fanout=3)
     assert bp is not None  # pragma: no cover
+
+
+def test_b5_merged_names_the_branches_that_fed_it(tmp_path, virtual_runtime):
+    # The fast-lane copy of the docker trace tests' claim: a result's parents are
+    # the files its task read, not everything of that type the run produced.
+    bp = build_branching_plan(tmp_path, fanout=2)
+    task, lib = run_and_load(virtual_runtime, bp)
+
+    merged = [p for p, n in lib.manifest.items() if n == "mock::merged"]
+    assert len(merged) == 1, f"expected one merged output, got {merged}"
+    parents = {pm.name for pm in lib.parents[merged[0]]}
+    assert {"mock::branch_a", "mock::branch_b"} <= parents, (
+        f"merged should name both branches; got {sorted(parents)}"
+    )
+
+    for branch in ("mock::branch_a", "mock::branch_b"):
+        pairs = list(lib.Trace(branch, "mock::assembly"))
+        assert len(pairs) == 1, f"{branch}->assembly: got {pairs}"
+
+
+def test_b6_each_sample_merges_only_its_own_branches(tmp_path, virtual_runtime):
+    # Counting pairs cannot see a mis-attribution that hands every merged output
+    # the same producer -- the count is right and the answer is wrong. Distinct
+    # samples must claim distinct ancestors.
+    n = 3
+    bp = build_branching_plan(tmp_path, fanout=2, n_samples=n)
+    task, lib = run_and_load(virtual_runtime, bp)
+
+    claimed: dict[str, set[str]] = {}
+    for merged, asm in lib.Trace("mock::merged", "mock::assembly"):
+        claimed.setdefault(str(merged.path), set()).add(Path(asm.path).parent.name)
+
+    assert len(claimed) == n, f"expected {n} merged outputs, got {sorted(claimed)}"
+    spread = {k: v for k, v in claimed.items() if len(v) != 1}
+    assert not spread, f"merged outputs drawing on several samples: {spread}"
+    assert len({next(iter(v)) for v in claimed.values()}) == n, (
+        f"{n} merged outputs claim only {sorted(v for s in claimed.values() for v in s)}"
+    )
 
 
 def test_b3_sibling_failure_isolated(tmp_path, virtual_runtime):

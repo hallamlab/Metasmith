@@ -17,6 +17,9 @@ from ..models.libraries import (
 )
 from ..models.solver import Dependency, Endpoint
 from ..models.workflow import WorkflowStep, WorkflowTask, METADATA_FILE
+from ..models.workflow.payload import (
+    build_entry, given_index, output_file_name, render_lin_line,
+)
 
 
 class MockShell:
@@ -120,7 +123,7 @@ class TransformHarness:
         meta_path = work_dir / METADATA_FILE
         with open(meta_path, "w") as f:
             f.write(f"res 1/1.GB/1\n")
-            f.write(f"lin {json.dumps(lineages)}\n")
+            f.write(f"lin {render_lin_line(lineages)}\n")
             f.write(f"fmt 2\n")
             f.write(f"din {json.dumps(dep_in, separators=(',', ':'))}\n")
             f.write(f"dot {json.dumps(dep_out, separators=(',', ':'))}\n")
@@ -136,12 +139,16 @@ class TransformHarness:
         batch_size = step.transform.batch_size
 
         group_by_insts = step.dependency_map[step.transform.group_by]
+        given_by_path = {
+            inst.ResolvePath(): inst
+            for insts in step.dependency_map.values()
+            for inst in insts
+        }
 
         lineages = []
         batch_count = max(1, len(group_by_insts) // max(1, batch_size))
         for batch_idx in range(batch_count):
-            index = {}
-            file_groups = []
+            slots = []
             for inst in used_archetypes:
                 e = inst.dtype
                 dep_insts = [x for x in step.uses if x.dtype.key == e.key]
@@ -150,19 +157,14 @@ class TransformHarness:
                 batch_insts = dep_insts[start:end] if batch_size > 1 else dep_insts[batch_idx:batch_idx + 1]
                 if not batch_insts:
                     batch_insts = dep_insts
-
-                files = []
-                for di in batch_insts:
-                    p = di.ResolvePath()
-                    files.append(str(p))
-                    from hashlib import md5
-                    h = md5(str(p).encode()).hexdigest()
-                    h_val = int(h[:15], 16)
-                    index[e.key] = index.get(e.key, []) + [h_val]
-                file_groups.append(files)
-
-            index["FILES"] = file_groups
-            lineages.append(index)
+                slots.append((
+                    e.key,
+                    [
+                        (di.ResolvePath(), given_index(di, given_by_path))
+                        for di in batch_insts
+                    ],
+                ))
+            lineages.append(build_entry(slots))
 
         return lineages
 
@@ -238,8 +240,6 @@ class TransformHarness:
                 )
             inputs.append(g)
 
-        _hashes: dict[int, str] = {}
-
         def _get_output_paths(key: Dependency, i: int, batch: int) -> ContextPath:
             found = False
             branch = 0
@@ -252,14 +252,10 @@ class TransformHarness:
                     break
             assert found, f"[{key}] not found in [{dep2output}]"
 
-            if batch not in _hashes:
-                lin = lineages[batch]
-                slin = {k: sorted(lin[k]) for k in sorted(lin.keys())}
-                _, _hash = KeyGenerator.FromStr(json.dumps(slin), l=8)
-                _hashes[batch] = _hash
-            _hash = _hashes[batch]
-            ext = dtype.GetPreferredFileExtension()
-            dest = (work_dir / f"{batch + 1}-{i + 1}-{branch + 1}.{_hash}-{dtype.key}{ext}").resolve()
+            name = output_file_name(
+                lineages[batch], dtype, batch=batch, item=i, branch=branch
+            )
+            dest = (work_dir / name).resolve()
             return ContextPath(local=dest, external=dest, container=dest)
 
         mock_shell = MockShell()

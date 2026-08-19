@@ -49,12 +49,18 @@ def test_parser_classvar_tracks_module_constant():
 
 
 def test_cache_epoch_and_wire_version_are_independent():
-    assert CACHE_KEY_VERSION == 3
+    # Pinned so a bump has to be deliberate. They happen to be equal again: the
+    # cache epoch moved to 4 when a step's inputs began naming their producer's
+    # slot id, and the wire envelope did not move with it. Equality is allowed;
+    # defining one in terms of the other is what R5 did, and it desynced the
+    # Groovy emitter from its parser with a green fast suite.
+    assert CACHE_KEY_VERSION == 4
     assert LIN_PAYLOAD_VERSION == 4
-    assert CACHE_KEY_VERSION != LIN_PAYLOAD_VERSION, (
-        "the two constants having drifted apart is the point; if a change ever "
-        "makes them equal again, it must be a coincidence and not a re-merge"
-    )
+    import metasmith.caching.keys as keys_mod
+
+    keys_src = Path(keys_mod.__file__).read_text()
+    _, _, after = keys_src.partition("LIN_PAYLOAD_VERSION =")
+    assert "CACHE_KEY_VERSION" not in after.splitlines()[0]
 
 
 _GROOVY_KEY_RE = re.compile(

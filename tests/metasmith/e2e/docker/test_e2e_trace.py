@@ -134,6 +134,31 @@ def run_stub_workflow(
     return loaded
 
 
+def _sample_of(inst) -> str:
+    """The sample a given belongs to: `_make_samples` puts one directory per sample."""
+    return Path(inst.path).parent.name
+
+
+def assert_one_given_each(pairs, n_samples: int, label: str) -> None:
+    """Each produced file traces to exactly one sample, and no two share one.
+
+    A mis-attribution that hands every output the same producer still yields the
+    right pair COUNT, so counting cannot see it. Distinctness can.
+    """
+    by_output: dict[str, set[str]] = {}
+    for produced, given in pairs:
+        by_output.setdefault(str(produced.path), set()).add(_sample_of(given))
+    assert len(by_output) == n_samples, (
+        f"{label}: expected {n_samples} produced files, got {sorted(by_output)}"
+    )
+    ambiguous = {k: v for k, v in by_output.items() if len(v) != 1}
+    assert not ambiguous, f"{label}: outputs tracing to several samples: {ambiguous}"
+    claimed = [next(iter(v)) for v in by_output.values()]
+    assert len(set(claimed)) == n_samples, (
+        f"{label}: {n_samples} outputs claim only {sorted(set(claimed))}"
+    )
+
+
 def _make_samples(
     temp_dir, mock_types, n_samples=3,
     types: list[tuple[str, str]] | None = None,
@@ -228,27 +253,11 @@ class TestTraceLinearChain:
         assert len(pairs) == 3
 
     def test_no_cross_sample_contamination(self, result_lib):
-        for bam_inst, asm_inst in result_lib.Trace("mock::bam", "mock::assembly"):
-            bam_sample = str(bam_inst.path).split("/")[0] if "/" in str(bam_inst.path) else None
-            asm_sample = str(asm_inst.path).split("/")[0] if "/" in str(asm_inst.path) else None
-            if bam_sample and asm_sample:
-                assert bam_sample == asm_sample, (
-                    f"Cross-sample contamination: bam={bam_inst.path} traces to asm={asm_inst.path}"
-                )
+        assert_one_given_each(
+            result_lib.Trace("mock::bam", "mock::assembly"), 3, "bam->assembly"
+        )
 
 
-_COLLECT_PARENT_LOOKUP = pytest.mark.skip(
-    reason="CollectResults cannot resolve a parent that is another step's output:"
-    " kv2path is keyed on the pre-publish staging path and path2inst on the"
-    " published one, so the resolution loop stalls and the bare"
-    " `assert len(to_del)>0` at collect.py:312 fires with no message. Every"
-    " other class here produces files whose parents are all given inputs."
-    " Restore both classes when it is fixed -- they are CollectResults' only"
-    " coverage in the tree."
-)
-
-
-@_COLLECT_PARENT_LOOKUP
 class TestTraceFanOutMerge:
     @pytest.fixture
     def result_lib(self, tmp_path, mock_types, docker_image):
@@ -287,8 +296,30 @@ class TestTraceFanOutMerge:
         assert "mock::branch_a" in type_names
         assert "mock::branch_b" in type_names
 
+    def test_each_merged_traces_to_one_sample(self, result_lib):
+        assert_one_given_each(
+            result_lib.Trace("mock::merged", "mock::assembly"),
+            3, "merged->assembly",
+        )
 
-@_COLLECT_PARENT_LOOKUP
+    def test_each_merged_takes_both_branches_of_its_sample(self, result_lib):
+        branch_sample = {
+            str(b.path): _sample_of(a)
+            for branch in ("mock::branch_a", "mock::branch_b")
+            for b, a in result_lib.Trace(branch, "mock::assembly")
+        }
+        for merged, _ in result_lib.Trace("mock::merged", "mock::assembly"):
+            feeding = {
+                branch_sample[str(b.path)]
+                for branch in ("mock::branch_a", "mock::branch_b")
+                for m, b in result_lib.Trace("mock::merged", branch)
+                if str(m.path) == str(merged.path)
+            }
+            assert len(feeding) == 1, (
+                f"{merged.path} merges branches from samples {sorted(feeding)}"
+            )
+
+
 class TestTraceMultiStepDiamond:
     @pytest.fixture
     def result_lib(self, tmp_path, mock_types, docker_image):
@@ -327,13 +358,10 @@ class TestTraceMultiStepDiamond:
 
     def test_no_cross_sample_contamination_multi_output(self, result_lib):
         for bin_type in ["mock::metabat2_bins", "mock::maxbin2_bins", "mock::concoct_bins"]:
-            for bin_inst, asm_inst in result_lib.Trace(bin_type, "mock::assembly"):
-                bin_sample = str(bin_inst.path).split("/")[0] if "/" in str(bin_inst.path) else None
-                asm_sample = str(asm_inst.path).split("/")[0] if "/" in str(asm_inst.path) else None
-                if bin_sample and asm_sample:
-                    assert bin_sample == asm_sample, (
-                        f"Cross-sample: {bin_type} {bin_inst.path} -> asm {asm_inst.path}"
-                    )
+            assert_one_given_each(
+                result_lib.Trace(bin_type, "mock::assembly"),
+                3, f"{bin_type}->assembly",
+            )
 
 
 class TestTraceScaling:
@@ -358,11 +386,10 @@ class TestTraceScaling:
         assert len(pairs) == self.N_SAMPLES
 
     def test_many_samples_correct_pairing(self, result_lib):
-        for bam_inst, asm_inst in result_lib.Trace("mock::bam", "mock::assembly"):
-            bam_sample = str(bam_inst.path).split("/")[0] if "/" in str(bam_inst.path) else None
-            asm_sample = str(asm_inst.path).split("/")[0] if "/" in str(asm_inst.path) else None
-            if bam_sample and asm_sample:
-                assert bam_sample == asm_sample
+        assert_one_given_each(
+            result_lib.Trace("mock::bam", "mock::assembly"),
+            self.N_SAMPLES, "bam->assembly",
+        )
 
 
 class TestTracePersistence:
@@ -567,14 +594,10 @@ class TestTraceSharedInputs:
         )
 
     def test_no_cross_sample_contamination(self, result_lib):
-        for ann_inst, asm_inst in result_lib.Trace("mock::annotated", "mock::assembly"):
-            ann_sample = str(ann_inst.path).split("/")[0] if "/" in str(ann_inst.path) else None
-            asm_sample = str(asm_inst.path).split("/")[0] if "/" in str(asm_inst.path) else None
-            if ann_sample and asm_sample:
-                assert ann_sample == asm_sample, (
-                    f"Cross-sample contamination: annotated={ann_inst.path} "
-                    f"traces to assembly={asm_inst.path}"
-                )
+        assert_one_given_each(
+            result_lib.Trace("mock::annotated", "mock::assembly"),
+            self.N_SAMPLES, "annotated->assembly",
+        )
 
 
 class TestStubTraceHasInvocationEvents:

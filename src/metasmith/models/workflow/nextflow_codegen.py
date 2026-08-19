@@ -451,6 +451,15 @@ def prepare_nextflow(task, context: NextflowGenContext):
             '.sort().collectEntries { k, v -> [k, v.sort()] }}".md5()[0..11]',
             f'"""',
             f'sleep $dt',
+            # The stub lane is the only lane the trace tests run in. Without the
+            # same metadata the script lane writes, a stub run records no
+            # provenance and every shard it promotes is demoted on the next hit.
+            f'echo "res 1/1.GB/1" >>{METADATA_FILE}',
+            f'echo "lin {LIN_ECHO_EXPR}" >>{METADATA_FILE}',
+            f'echo "fmt 2" >>{METADATA_FILE}',
+            f'cat ${{params.workspace}}/{step_meta_file} >>{METADATA_FILE}',
+            f'echo "inp {",".join(x.dtype.key for x in used_archetypes)}" >>{METADATA_FILE}',
+            f'echo "out {";".join(",".join(x.dtype.key for x in g) for g in produced_archetypes)}" >>{METADATA_FILE}',
             f'touch {" ".join(mock_outputs)}',
             f'"""',
             "}",
