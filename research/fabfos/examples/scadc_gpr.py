@@ -109,7 +109,7 @@ ALTS_DEST = FOSMIDS / "annotation_alts"
 GPR_DEST = FOSMIDS / "gpr"
 
 # The compiled references, by type -> the file or directory under data/processed/.
-# `ref::reference_label_pool` is a DIRECTORY (index + embedding stack), which is the
+# `ref::label_transfer_landmarks` is a DIRECTORY (index + embedding stack), which is the
 # whole reason it is one product: the consumer addresses the stack by row, so an index
 # from one build against a stack from another misindexes every row silently.
 REFS_4 = {
@@ -117,7 +117,7 @@ REFS_4 = {
     "ref::kofamscan_ko_list": "kofam_ref/ko_list.tsv",
     "ref::uniref50_diamond_db": "uniref50_dmnd/uniref50.dmnd",
     "ref::mnxr_lookup": "mnxr_lookup/mnxr_lookup.parquet",
-    "ref::reference_label_pool": "reference_label_pool/pool",
+    "ref::label_transfer_landmarks": "label_transfer_landmarks/landmarks",
 }
 # The three extra lanes need three more. Two are built by the reference driver
 # alongside the canonical five; `ref::ezpred_model` is staged as a given, because its
@@ -133,8 +133,8 @@ REFS_4 = {
 # "reference absent" and sends the reader off to rebuild 1 GB that is already there.
 REFS_7 = dict(REFS_4, **{
     "ref::esm_c_600m_weights": "esm_c_weights/esmc_600m.tgz",
-    "ref::reference_label_pool_esmc": ("reference_label_pool_esmc/pool_esmc",
-                                       "reference_label_pool_esmc/pool"),
+    "ref::label_transfer_landmarks_esmc": ("label_transfer_landmarks_esmc/landmarks_esmc",
+                                       "label_transfer_landmarks_esmc/landmarks"),
     "ref::ezpred_model": "ezpred_model/EZpred",
 })
 
@@ -172,7 +172,6 @@ PUBLISH_AT = {
     "annotation::clean_predictions": "clean/fosmids.clean.tsv",
     "annotation::diamond_uniref50_results": "uniref50/fosmids.uniref50.blast6.tsv",
     "annotation::proteinbert_embeddings": "proteinbert/fosmids.pbert.parquet",
-    "annotation::proteinbert_index": "proteinbert/fosmids.pbert.index.csv",
 }
 
 # The three lanes that only the 7-lane mapper reads, into the sibling

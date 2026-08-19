@@ -8,7 +8,7 @@ chosen-4 run tools plus ``gpr_4lane``.
 
 Planning only: an empty ORF FASTA is enough. All FIVE DVC-pinned references in
 ``data/processed/`` -- KOfam profiles + KO list, the UniRef50 DIAMOND db, the
-MNXR lookup, and ``ref::reference_label_pool`` -- are expected to resolve as
+MNXR lookup, and ``ref::label_transfer_landmarks`` -- are expected to resolve as
 REAL defaults on a machine that has run ``dvc checkout``, so no stub should be
 staged. (The pool was a standing gap when this test was written; it is now
 built from Swiss-Prot 2026_02 -- see ``build_references/REFERENCES.md`` R7.)
@@ -64,7 +64,7 @@ def _plan(work: Path):
     orfs.touch()
     return annotation.generate_workflow(
         work, orfs=orfs, kofam_profiles=None, kofam_ko_list=None,
-        uniref50_db=None, mnxr_lookup=None, label_pool=None, runtime=Runtime.APPTAINER,
+        uniref50_db=None, mnxr_lookup=None, landmarks=None, runtime=Runtime.APPTAINER,
     )
 
 
@@ -104,7 +104,7 @@ def test_annotation_driver_plans_many_samples(tmp_path):
 
     agent, task, stubs = annotation.generate_workflow(
         tmp_path, orfs=orfs, kofam_profiles=None, kofam_ko_list=None,
-        uniref50_db=None, mnxr_lookup=None, label_pool=None, runtime=Runtime.APPTAINER,
+        uniref50_db=None, mnxr_lookup=None, landmarks=None, runtime=Runtime.APPTAINER,
     )
 
     assert task.ok, f"annotation driver failed to plan {len(orfs)} samples: {task.plan}"
@@ -123,7 +123,7 @@ def test_annotation_driver_accepts_a_bare_path(tmp_path):
     orfs.touch()
     _, task, _ = annotation.generate_workflow(
         tmp_path, orfs=orfs, kofam_profiles=None, kofam_ko_list=None,
-        uniref50_db=None, mnxr_lookup=None, label_pool=None, runtime=Runtime.APPTAINER,
+        uniref50_db=None, mnxr_lookup=None, landmarks=None, runtime=Runtime.APPTAINER,
     )
     assert task.ok
     assert _given_orf_count(task) == 1

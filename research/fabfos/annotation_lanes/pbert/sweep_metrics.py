@@ -9,7 +9,7 @@ SCOPE   DH10B, the 1,288 adjudicable ORFs from build_cohort.py. Three leakage
         conditions per metric: `pool` (as deployed), `self` (the ORF's own
         Swiss-Prot accession hidden), `twin` (every neighbour at cosine >= 0.99
         hidden -- the cheap stand-in for the source study's DIAMOND cluster removal).
-INPUT   data/fabfos/processed/reference_label_pool/pool/{emb_pbert.npy,orf_index.parquet}
+INPUT   data/fabfos/processed/label_transfer_landmarks/landmarks/landmarks.parquet
         data/fabfos/benchmarks/lane_dh10b/annotations/dh10b.pbert.{parquet,index.csv}
         research/fabfos/annotation_lanes/pbert/cohort_dh10b.tsv
 METHOD  see _knn.py -- the panel varies retrieval only; the vote weighting stays cosine.

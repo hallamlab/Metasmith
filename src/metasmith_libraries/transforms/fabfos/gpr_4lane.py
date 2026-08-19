@@ -55,9 +55,8 @@ kofam     = model.AddRequirement(lib.GetType("annotation::kofamscan_results"), p
 clean     = model.AddRequirement(lib.GetType("annotation::clean_predictions"), parents={orfs})
 uniref    = model.AddRequirement(lib.GetType("annotation::diamond_uniref50_results"), parents={orfs})
 pbert_emb = model.AddRequirement(lib.GetType("annotation::proteinbert_embeddings"), parents={orfs})
-pbert_idx = model.AddRequirement(lib.GetType("annotation::proteinbert_index"), parents={orfs})
 bridge    = model.AddRequirement(lib.GetType("ref::mnxr_lookup"))
-pool      = model.AddRequirement(lib.GetType("ref::reference_label_pool"))
+landmarks = model.AddRequirement(lib.GetType("ref::label_transfer_landmarks"))
 ev_lib    = model.AddRequirement(lib.GetType("lib::fabfos_evidence.py"))
 out_gpr   = model.AddProduct(lib.GetType("annotation::gpr_table"))
 
@@ -71,13 +70,13 @@ THREADS = 8
 
 # The inline driver reads the dev2-format lane outputs, projects identifiers to
 # MNXR via the staged bridge, runs the embedding kNN transfer against the
-# reference pool, and writes the GPR parquet. `{...}` placeholders are filled from
+# labelled landmarks, and writes the GPR parquet. `{...}` placeholders are filled from
 # the container paths; `{{`/`}}` are literal braces.
 DRIVER = r'''
 import sys, os
 
 # BEFORE numpy. Its BLAS reads these once, at import, and the dominant arithmetic
-# in this transform is the query-vs-pool similarity matmul -- on the order of
+# in this transform is the query-vs-landmark similarity matmul -- on the order of
 # 2.3e13 operations for a 100,000-ORF shard, which is a couple of minutes across
 # 16 cores and closer to forty single-threaded. The workflow config sets these to
 # 1 and its own comment doubts they reach inside the container, so the number was
@@ -198,47 +197,48 @@ def lane_uniref(df, uniprot_to_mnxr):
     joined["projection_via"] = joined["dr_source"]
     return finish(joined, "uniref50")
 
-# ---- embedding lane: numpy kNN label transfer vs the reference pool ----
+# ---- embedding lane: numpy kNN label transfer vs the labelled landmarks ----
 # lightweight port of fabfos_embed_transfer.apply_one (cosine top-K distance vote).
-def _query_ids(index_csv):
-    """The embedding index's id column.
-
-    The transform that writes `annotation::proteinbert_index` normalises it to
-    `sequence_id`; the embedder itself writes `id`, so an artifact predating that
-    normalisation carries the other name. Both are read, neither is guessed at.
-    """
-    idx = pd.read_csv(index_csv)
-    for cand in ("sequence_id", "id"):
-        if cand in idx.columns:
-            return idx[cand].to_numpy()
-    raise SystemExit(
-        "[gpr] the embedding index " + index_csv + " has no id column (it holds "
-        + repr(list(idx.columns)) + "); the kNN lane keys its ORFs off it")
-
-def _load_query(parquet, index_csv):
-    q = pd.read_parquet(parquet).to_numpy(dtype=np.float32)
-    ids = _query_ids(index_csv)
-    # THE PRODUCER CHECKS THIS AND THE CONSUMER DID NOT. `proteinbert.py`'s
-    # combiner refuses an index/stack length mismatch because "pairing them
-    # would misindex every row silently" -- but this transform then read the two
-    # back separately and never re-checked. An index LONGER than the stack does
-    # not raise here, it just labels every vote with the wrong ORF, and the
-    # result is a full, schema-valid, confidently wrong table. That matters more
-    # now than it did: the embeddings can arrive as a repack of an earlier pass
-    # rather than from the producer in the same run.
-    if len(ids) != len(q):
+# An embedding table's ids and its vectors, taken from the SAME rows. Both the query
+# and the landmark tables carry their id beside their vector, so there is no ordering
+# here to get wrong -- which is the whole reason they were collapsed into one file
+# each. What is checked is that the dim columns run contiguously from 0, because a
+# table missing `dim_7` still stacks into a matrix of the wrong width rather than
+# failing.
+def _read_embeddings(path, id_col):
+    df = pd.read_parquet(path)
+    if id_col not in df.columns:
         raise SystemExit(
-            "[gpr] the embedding index has " + str(len(ids)) + " rows and the "
-            "stack has " + str(len(q)) + ". The lane addresses the stack BY ROW, "
-            "so these cannot be paired -- every kNN vote would be attributed to "
-            "the wrong ORF, with nothing raised")
-    return ids, q
+            "[gpr] " + path + " has no " + id_col + " column (it holds "
+            + repr(list(df.columns)[:8]) + "...); the kNN lane keys its rows off it")
+    dims = [c for c in df.columns if c.startswith("dim_")]
+    want = ["dim_" + str(i) for i in range(len(dims))]
+    if sorted(dims, key=lambda c: int(c[4:])) != want:
+        raise SystemExit(
+            "[gpr] " + path + " does not carry dim_0..dim_" + str(len(dims) - 1)
+            + " contiguously; a gap would stack into a matrix of the wrong width "
+            "rather than failing")
+    return df[id_col].to_numpy(), df[want].to_numpy(dtype=np.float32), df
+
+
+# Two names over one reader, because the query side is the half a driver replaces --
+# see research/fabfos/examples/scadc_metag_gpr_4lane.py, which feeds `lane_embed` one
+# slab of a legacy stack at a time. Overriding a shared reader would swap the
+# landmarks out from under it too.
+def _read_landmarks(path):
+    return _read_embeddings(path, "accession")
+
+
+def _read_query(path):
+    return _read_embeddings(path, "sequence_id")
+
 
 def _norm(x):
     n = np.linalg.norm(x, axis=1, keepdims=True)
     return x / np.clip(n, 1e-9, None)
 
-def lane_embed(parquet, index_csv, pool_dir, emb_name, channel, floor):
+
+def lane_embed(parquet, landmark_dir, channel, floor):
     # The sparse vote skips a query whose whole neighbourhood is unlabelled,
     # where the dense form computed an all-zero vote vector. Those agree for any
     # positive floor and diverge at floor <= 0, where the dense form would emit
@@ -246,19 +246,16 @@ def lane_embed(parquet, index_csv, pool_dir, emb_name, channel, floor):
     # silently reinterpreted.
     if floor <= 0:
         raise SystemExit("[gpr] the " + channel + " floor must be > 0")
-    stack = os.path.join(pool_dir, emb_name)
-    if not os.path.exists(stack):
+    table = os.path.join(landmark_dir, "landmarks.parquet")
+    if not os.path.exists(table):
         raise SystemExit(
-            "[gpr] the reference label pool carries no " + emb_name + " (it holds "
-            + repr(sorted(os.listdir(pool_dir))) + "). The " + channel + " lane votes "
-            "against embeddings from its own model -- cosine distance between two "
-            "embedding spaces is a number with no referent -- so there is no "
-            "degraded mode here; the pool must be rebuilt with this embedder")
-    pool_idx = pd.read_parquet(os.path.join(pool_dir, "orf_index.parquet"))
-    ref = pool_idx[pool_idx["role"] == "reference"].reset_index(drop=True)
-    emb = np.load(stack, mmap_mode="r")
-    ref_emb = _norm(np.asarray(emb[ref["row"].to_numpy()], dtype=np.float32))
-    ref_orf = ref["orf"].to_numpy()
+            "[gpr] the landmark set carries no landmarks.parquet (it holds "
+            + repr(sorted(os.listdir(landmark_dir))) + "). The " + channel + " lane "
+            "votes against embeddings from its own model -- cosine distance between "
+            "two embedding spaces is a number with no referent -- so there is no "
+            "degraded mode here; the landmarks must be rebuilt with this embedder")
+    ref_orf, ref_raw, ref = _read_landmarks(table)
+    ref_emb = _norm(ref_raw)
 
     # THE LABEL MATRIX IS SPARSE AND IS STORED THAT WAY. This used to be a dense
     # (reference x MNXR) float32 indicator -- 222,019 x ~13,112 = 10.84 GiB that
@@ -274,7 +271,7 @@ def lane_embed(parquet, index_csv, pool_dir, emb_name, channel, floor):
     # label twice -- the one place the two forms could disagree.
     label_lists = [
         sorted(set(m for m in (s.split(";") if s else []) if m))
-        for s in ref["mnxr_list"]
+        for s in ref["mnxr_list"].fillna("")
     ]
     vocab = sorted({{m for ls in label_lists for m in ls}})
     vidx = {{m: i for i, m in enumerate(vocab)}}
@@ -285,13 +282,18 @@ def lane_embed(parquet, index_csv, pool_dir, emb_name, channel, floor):
     np.cumsum(counts, out=lab_ptr[1:])
     lab_idx = np.fromiter((vidx[m] for ls in label_lists for m in ls),
                           dtype=np.int32, count=int(lab_ptr[-1]))
-    print("[gpr] label pool: " + str(len(ref)) + " references, " + str(len(vocab))
+    print("[gpr] landmarks: " + str(len(ref)) + " references, " + str(len(vocab))
           + " MNXR, " + str(int(lab_ptr[-1])) + " label edges ("
           + "%.1f" % (lab_idx.nbytes / 2**20) + " MiB sparse vs "
           + "%.2f" % (len(ref) * len(vocab) * 4 / 2**30) + " GiB dense)", flush=True)
 
-    q_orf, q_emb = _load_query(parquet, index_csv)
-    q_emb = _norm(q_emb)
+    q_orf, q_raw, _ = _read_query(parquet)
+    if q_raw.shape[1] != ref_emb.shape[1]:
+        raise SystemExit(
+            "[gpr] the query embeddings are " + str(q_raw.shape[1]) + " dims and the "
+            "landmarks are " + str(ref_emb.shape[1]) + ". A cosine between two "
+            "embedding spaces is a number with no referent")
+    q_emb = _norm(q_raw)
     rows = []
     for s in range(0, len(q_emb), 256):
         sim = q_emb[s:s+256] @ ref_emb.T
@@ -329,8 +331,8 @@ def lane_embed(parquet, index_csv, pool_dir, emb_name, channel, floor):
                 rows.append((qid, vocab_arr[uniq[j]], donor,
                              float(min(votes[j], 1.0))))
     df = pd.DataFrame(rows, columns=["orf", "mnxr", "intermediate_id", "raw_score"])
-    # The pool is the bridge's `reviewed` cut by construction (see
-    # compile/reference_label_pool.py), so every transferred label inherits it.
+    # The landmarks are the bridge's `reviewed` cut by construction (see
+    # compile/label_transfer_landmarks.py), so every transferred label inherits it.
     df["evidence_quality"] = "reviewed"
     return finish(df, channel, "embedding_knn")
 
@@ -370,7 +372,7 @@ def main():
         lane_uniref(uni, bridge_slice("{bridge}", "uniprot", "uniprot_accession",
                                       uni["uniprot_accession"].unique())
                          .assign(dr_source="rhea")),
-        lane_embed("{pbert_emb}", "{pbert_idx}", "{pool}", "emb_pbert.npy", "pbert", PBERT_FLOOR),
+        lane_embed("{pbert_emb}", "{landmarks}", "pbert", PBERT_FLOOR),
     ]
     del kof, cln, uni
     gpr = pd.concat(frames, ignore_index=True)
@@ -413,18 +415,17 @@ def protocol(context: ExecutionContext):
     icln  = context.Input(clean)
     iuni  = context.Input(uniref)
     ipe   = context.Input(pbert_emb)
-    ipi   = context.Input(pbert_idx)
     ibr   = context.Input(bridge)
-    ipool = context.Input(pool)
+    ilm   = context.Input(landmarks)
     iev   = context.Input(ev_lib)
     iout  = context.Output(out_gpr)
 
     driver = DRIVER.format(
         ev_lib=iev.container,
         orfs=iorfs.container, kofam=ikof.container, clean=icln.container,
-        uniref=iuni.container, pbert_emb=ipe.container, pbert_idx=ipi.container,
+        uniref=iuni.container, pbert_emb=ipe.container,
         bridge=ibr.container,
-        pool=ipool.container, out=iout.container,
+        landmarks=ilm.container, out=iout.container,
         lane_set=LANE_SET, source=iorfs.local.stem, threads=THREADS,
     )
     context.LocalShell("cat > _gpr_4lane.py << 'PYEOF'\n" + driver + "\nPYEOF\n")
@@ -444,10 +445,10 @@ TransformInstance(
     protocol=protocol,
     model=model,
     group_by=orfs,
-    # cpus=THREADS because the query-vs-pool matmul is the step, and it threads.
+    # cpus=THREADS because the query-vs-landmark matmul is the step, and it threads.
     # Memory is no longer set by the reference: the dense label matrix that made
-    # this a 48 GB step is gone (see `lane_embed`), so what is left is the pool's
-    # embeddings (~455 MB), one similarity block (~227 MB), the shard's own
+    # this a 48 GB step is gone (see `lane_embed`), so what is left is the
+    # landmarks (~455 MB), one similarity block (~227 MB), the shard's own
     # embeddings and its lane frames. 24 GB is headroom over that, not a
     # measurement -- the pilot replaces this number with one.
     resources=Resources(

@@ -7,7 +7,7 @@ that adds the three lanes the chosen-4 subset omits:
 
   DeepEC  (EC->MNXR, score-less -> raw_score = 1.0, score_kind "presence")
   EZpred  (enzyme-head level-4 EC->MNXR, softmax score)
-  ESM-C   (embedding kNN transfer, like ProteinBERT but against the pool's ESM-C stack)
+  ESM-C   (embedding kNN transfer, like ProteinBERT but against the ESM-C landmarks)
 
 All seven channels land in one long-format parquet; no cross-lane dedup.
 
@@ -17,12 +17,17 @@ tool asserts is presence. NaN made the downstream share-of-sum
 back to a uniform split with nothing raised -- i.e. it silently discarded the
 lane's ranking rather than declaring it absent.
 
-THE ESM-C LANE VOTES AGAINST ITS OWN POOL. `compile/reference_label_pool.py` writes
-the ProteinBERT stack; `compile/reference_label_pool_esmc.py` writes the ESM-C one
-over the same accessions. They are two references because they are two embedders in
-two images, one of which needs a GPU -- and each carries the index that addresses its
-own stack. `lane_embed` still refuses by name if the stack it was pointed at is
-absent, because a kNN vote across two embedding spaces is a number with no referent.
+THE ESM-C LANE VOTES AGAINST ITS OWN LANDMARKS. `compile/label_transfer_landmarks.py`
+writes the ProteinBERT table; `compile/label_transfer_landmarks_esmc.py` writes the
+ESM-C one over the same accessions. They are two references because they are two
+embedders in two images, one of which needs a GPU. `lane_embed` refuses a query and a
+landmark table of different widths, because a kNN vote across two embedding spaces is
+a number with no referent.
+
+THE ESM-C QUERY IS STILL AN INDEX BESIDE A STACK. Only the ProteinBERT query side was
+collapsed into one self-addressing table; `annotation::esm_c_index` still names the
+rows of `annotation::esm_c_embeddings` by position, so that pairing is length-checked
+here rather than assumed.
 """
 from metasmith.python_api import *
 
@@ -40,15 +45,13 @@ deepec    = model.AddRequirement(lib.GetType("annotation::deepec_predictions"), 
 ezpred    = model.AddRequirement(lib.GetType("annotation::ezpred_predictions"), parents={orfs})
 uniref    = model.AddRequirement(lib.GetType("annotation::diamond_uniref50_results"), parents={orfs})
 pbert_emb = model.AddRequirement(lib.GetType("annotation::proteinbert_embeddings"), parents={orfs})
-pbert_idx = model.AddRequirement(lib.GetType("annotation::proteinbert_index"), parents={orfs})
 esmc_emb  = model.AddRequirement(lib.GetType("annotation::esm_c_embeddings"), parents={orfs})
 esmc_idx  = model.AddRequirement(lib.GetType("annotation::esm_c_index"), parents={orfs})
 bridge    = model.AddRequirement(lib.GetType("ref::mnxr_lookup"))
-pool      = model.AddRequirement(lib.GetType("ref::reference_label_pool"))
-# The ESM-C stack is its own reference, not a second file in the pool above: two
-# embedders, two images, one of them needing a GPU. Each directory carries the
-# orf_index.parquet that addresses its own stack -- see ref::reference_label_pool_esmc.
-pool_esmc = model.AddRequirement(lib.GetType("ref::reference_label_pool_esmc"))
+landmarks = model.AddRequirement(lib.GetType("ref::label_transfer_landmarks"))
+# The ESM-C landmarks are their own reference, not a second file in the table above:
+# two embedders, two images, one of them needing a GPU.
+lm_esmc   = model.AddRequirement(lib.GetType("ref::label_transfer_landmarks_esmc"))
 ev_lib    = model.AddRequirement(lib.GetType("lib::fabfos_evidence.py"))
 out_gpr   = model.AddProduct(lib.GetType("annotation::gpr_table_7lane"))
 
@@ -177,44 +180,91 @@ def lane_uniref(path, uniprot_to_mnxr):
     joined["projection_via"] = joined["dr_source"]
     return finish(joined, "uniref50")
 
-def _query_ids(index_csv):
-    """The embedding index's id column -- `sequence_id` after the producer
-    normalises it, `id` as the embedder itself writes it. Both read, neither guessed."""
+# An embedding table's ids and its vectors, taken from the SAME rows. The dim columns
+# must run contiguously from 0: a table missing `dim_7` still stacks into a matrix of
+# the wrong width rather than failing.
+def _dims(df, path):
+    dims = [c for c in df.columns if c.startswith("dim_")]
+    want = ["dim_" + str(i) for i in range(len(dims))]
+    if sorted(dims, key=lambda c: int(c[4:])) != want:
+        raise SystemExit(
+            "[gpr] " + path + " does not carry dim_0..dim_" + str(len(dims) - 1)
+            + " contiguously")
+    return df[want].to_numpy(dtype=np.float32)
+
+def _read_query(parquet, index_csv):
+    df = pd.read_parquet(parquet)
+    emb = _dims(df, parquet)
+    if index_csv is None:
+        if "sequence_id" not in df.columns:
+            raise SystemExit(
+                "[gpr] " + parquet + " has no sequence_id column; this embedding type "
+                "carries its ids beside its vectors")
+        return df["sequence_id"].to_numpy(), emb
+    # THE PRODUCER CHECKS THIS AND THE CONSUMER DID NOT. An index LONGER or shorter
+    # than the stack does not raise on its own -- it attributes every vote to the
+    # wrong ORF and yields a full, schema-valid, confidently wrong table.
     idx = pd.read_csv(index_csv)
     for cand in ("sequence_id", "id"):
         if cand in idx.columns:
-            return idx[cand].to_numpy()
-    raise SystemExit(
-        "[gpr] the embedding index " + index_csv + " has no id column (it holds "
-        + repr(list(idx.columns)) + "); the kNN lane keys its ORFs off it")
+            ids = idx[cand].to_numpy()
+            break
+    else:
+        raise SystemExit(
+            "[gpr] the embedding index " + index_csv + " has no id column (it holds "
+            + repr(list(idx.columns)) + "); the kNN lane keys its ORFs off it")
+    if len(ids) != len(emb):
+        raise SystemExit(
+            "[gpr] the embedding index has " + str(len(ids)) + " rows and the stack "
+            "has " + str(len(emb)) + "; the lane addresses the stack BY ROW, so these "
+            "cannot be paired")
+    return ids, emb
 
 def _norm(x):
     n = np.linalg.norm(x, axis=1, keepdims=True)
     return x / np.clip(n, 1e-9, None)
 
-def lane_embed(parquet, index_csv, pool_dir, emb_name, channel, floor):
-    stack = os.path.join(pool_dir, emb_name)
-    if not os.path.exists(stack):
+def lane_embed(parquet, index_csv, landmark_dir, channel, floor):
+    if floor <= 0:
+        raise SystemExit("[gpr] the " + channel + " floor must be > 0")
+    table = os.path.join(landmark_dir, "landmarks.parquet")
+    if not os.path.exists(table):
         raise SystemExit(
-            "[gpr] the reference label pool carries no " + emb_name + " (it holds "
-            + repr(sorted(os.listdir(pool_dir))) + "). The " + channel + " lane votes "
-            "against embeddings from its own model -- cosine distance between two "
-            "embedding spaces is a number with no referent -- so there is no "
-            "degraded mode here; the pool must be rebuilt with this embedder")
-    pool_idx = pd.read_parquet(os.path.join(pool_dir, "orf_index.parquet"))
-    ref = pool_idx[pool_idx["role"] == "reference"].reset_index(drop=True)
-    emb = np.load(stack, mmap_mode="r")
-    ref_emb = _norm(np.asarray(emb[ref["row"].to_numpy()], dtype=np.float32))
-    ref_orf = ref["orf"].to_numpy()
-    label_lists = [s.split(";") if s else [] for s in ref["mnxr_list"]]
+            "[gpr] the landmark set carries no landmarks.parquet (it holds "
+            + repr(sorted(os.listdir(landmark_dir))) + "). The " + channel + " lane "
+            "votes against embeddings from its own model -- cosine distance between "
+            "two embedding spaces is a number with no referent -- so there is no "
+            "degraded mode here; the landmarks must be rebuilt with this embedder")
+    ref = pd.read_parquet(table)
+    ref_emb = _norm(_dims(ref, table))
+    ref_orf = ref["accession"].to_numpy()
+
+    # CSR-shaped label lists rather than a dense (reference x MNXR) indicator: at
+    # 222,019 x ~13,112 float32 that matrix is 10.84 GiB of 99.97% zeros, and the
+    # vote only ever touches at most K neighbours' short lists. Each list is
+    # DEDUPLICATED -- the dense form wrote 1.0 idempotently, so an accumulation over
+    # a repeated label is the one place the two forms could disagree.
+    label_lists = [
+        sorted(set(m for m in (s.split(";") if s else []) if m))
+        for s in ref["mnxr_list"].fillna("")
+    ]
     vocab = sorted({{m for ls in label_lists for m in ls}})
     vidx = {{m: i for i, m in enumerate(vocab)}}
-    L = np.zeros((len(ref), len(vocab)), dtype=np.float32)
-    for r, ls in enumerate(label_lists):
-        for m in ls:
-            L[r, vidx[m]] = 1.0
-    q_orf = _query_ids(index_csv)
-    q_emb = _norm(pd.read_parquet(parquet).to_numpy(dtype=np.float32))
+    vocab_arr = np.asarray(vocab, dtype=object)
+    counts = np.fromiter((len(ls) for ls in label_lists), dtype=np.int64,
+                         count=len(label_lists))
+    lab_ptr = np.zeros(len(label_lists) + 1, dtype=np.int64)
+    np.cumsum(counts, out=lab_ptr[1:])
+    lab_idx = np.fromiter((vidx[m] for ls in label_lists for m in ls),
+                          dtype=np.int32, count=int(lab_ptr[-1]))
+
+    q_orf, q_raw = _read_query(parquet, index_csv)
+    if q_raw.shape[1] != ref_emb.shape[1]:
+        raise SystemExit(
+            "[gpr] the " + channel + " query embeddings are " + str(q_raw.shape[1])
+            + " dims and its landmarks are " + str(ref_emb.shape[1]) + ". A cosine "
+            "between two embedding spaces is a number with no referent")
+    q_emb = _norm(q_raw)
     rows = []
     for s in range(0, len(q_emb), 256):
         sim = q_emb[s:s+256] @ ref_emb.T
@@ -226,15 +276,23 @@ def lane_embed(parquet, index_csv, pool_dir, emb_name, channel, floor):
             if tot <= 0:
                 continue
             w = vals / tot
-            votes = w @ L[nn]
+            cnt = lab_ptr[nn + 1] - lab_ptr[nn]
+            total = int(cnt.sum())
+            if total == 0:
+                continue
+            base = np.repeat(lab_ptr[nn], cnt)
+            within = np.arange(total, dtype=np.int64) - np.repeat(
+                np.cumsum(cnt) - cnt, cnt)
+            uniq, inv = np.unique(lab_idx[base + within], return_inverse=True)
+            votes = np.bincount(inv, weights=np.repeat(w, cnt), minlength=len(uniq))
             best = int(np.argmax(sim[bi, nn]))
             for j in np.nonzero(votes >= floor)[0]:
                 # intermediate_id names the DONOR neighbour: label transfer IS the
                 # projection, so there is no KO or EC in between.
-                rows.append((q_orf[s+bi], vocab[j], ref_orf[nn[best]],
+                rows.append((q_orf[s+bi], vocab_arr[uniq[j]], ref_orf[nn[best]],
                              float(min(votes[j], 1.0))))
     df = pd.DataFrame(rows, columns=["orf", "mnxr", "intermediate_id", "raw_score"])
-    df["evidence_quality"] = "reviewed"   # the pool IS the bridge's reviewed cut
+    df["evidence_quality"] = "reviewed"   # the landmarks ARE the bridge's reviewed cut
     return finish(df, channel, "embedding_knn")
 
 def load_bridge(path):
@@ -259,8 +317,8 @@ def main():
         lane_deepec("{deepec}", ec_to_mnxr),
         lane_ezpred("{ezpred}", ec_to_mnxr),
         lane_uniref("{uniref}", up_to_mnxr),
-        lane_embed("{pbert_emb}", "{pbert_idx}", "{pool}", "emb_pbert.npy", "pbert", PBERT_FLOOR),
-        lane_embed("{esmc_emb}", "{esmc_idx}", "{pool_esmc}", "emb_esmc.npy", "esmc", ESMC_FLOOR),
+        lane_embed("{pbert_emb}", None, "{landmarks}", "pbert", PBERT_FLOOR),
+        lane_embed("{esmc_emb}", "{esmc_idx}", "{lm_esmc}", "esmc", ESMC_FLOOR),
     ]
     gpr = pd.concat(frames, ignore_index=True)
     gpr = gpr[gpr["orf"].isin(set(ids))]
@@ -282,12 +340,11 @@ def protocol(context: ExecutionContext):
     iez   = context.Input(ezpred)
     iuni  = context.Input(uniref)
     ipe   = context.Input(pbert_emb)
-    ipi   = context.Input(pbert_idx)
     iee   = context.Input(esmc_emb)
     iei   = context.Input(esmc_idx)
     ibr   = context.Input(bridge)
-    ipool = context.Input(pool)
-    ipesm = context.Input(pool_esmc)
+    ilm   = context.Input(landmarks)
+    ilme  = context.Input(lm_esmc)
     iev   = context.Input(ev_lib)
     iout  = context.Output(out_gpr)
 
@@ -295,10 +352,10 @@ def protocol(context: ExecutionContext):
         ev_lib=iev.container,
         orfs=iorfs.container, kofam=ikof.container, clean=icln.container,
         deepec=idec.container, ezpred=iez.container, uniref=iuni.container,
-        pbert_emb=ipe.container, pbert_idx=ipi.container,
+        pbert_emb=ipe.container,
         esmc_emb=iee.container, esmc_idx=iei.container,
         bridge=ibr.container,
-        pool=ipool.container, pool_esmc=ipesm.container, out=iout.container,
+        landmarks=ilm.container, lm_esmc=ilme.container, out=iout.container,
         lane_set=LANE_SET, source=iorfs.local.stem,
     )
     context.LocalShell("cat > _gpr_7lane.py << 'PYEOF'\n" + driver + "\nPYEOF\n")

@@ -128,19 +128,19 @@ def check_refs(host: str, remote_processed: str) -> None:
 
     Existence is not enough for two of them. An empty `profiles/` directory
     passes `[ -e ]` and makes kofamscan emit an empty table that the step reports
-    as success; and the label pool is only meaningful as index + embedding stack
-    together -- a half-copied pool is detected at the mapper, after all four
+    as success; and the landmark table is one file, so a half-copied reference is
+    an unreadable parquet detected at the mapper, after all four
     lanes have burned their allocations.
     """
     probes = [f'[ -e "{remote_processed}/{rel}" ] || echo "MISSING {d} {rel}"'
               for d, rel in annotation.REF_LAYOUT.items()]
     prof = f'{remote_processed}/{annotation.REF_LAYOUT["ref::kofamscan_profiles"]}'
-    pool = f'{remote_processed}/{annotation.REF_LAYOUT["ref::reference_label_pool"]}'
+    lm = f'{remote_processed}/{annotation.REF_LAYOUT["ref::label_transfer_landmarks"]}'
     probes += [
         f'[ "$(ls -1 "{prof}" 2>/dev/null | head -1)" ] || '
         f'echo "EMPTY ref::kofamscan_profiles -- the directory holds no profiles"',
-        f'for f in orf_index.parquet emb_pbert.npy; do '
-        f'[ -s "{pool}/$f" ] || echo "MISSING ref::reference_label_pool {pool}/$f"; done',
+        f'[ -s "{lm}/landmarks.parquet" ] || '
+        f'echo "MISSING ref::label_transfer_landmarks {lm}/landmarks.parquet"',
     ]
     out = ssh_once(host, "; ".join(probes)).strip()
     if out:
@@ -163,7 +163,7 @@ def plan(work: Path, agent, remote_processed: str):
     _agent, task, stubs = annotation.generate_workflow(
         work, orfs=paths,
         kofam_profiles=None, kofam_ko_list=None, uniref50_db=None,
-        mnxr_lookup=None, label_pool=None,
+        mnxr_lookup=None, landmarks=None,
         runtime=Runtime.APPTAINER,
         refs_root=remote_processed, verify_refs=False, agent=agent,
         on_inputs=pin_external_leaf_ids,

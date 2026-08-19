@@ -545,7 +545,6 @@ def build_targets(with_gtdbtk=False, with_dedup=True):
     t.Add("annotation::kofamscan_results")
     t.Add("annotation::eggnog_results")
     t.Add("annotation::proteinbert_embeddings")
-    t.Add("annotation::proteinbert_index")
 
     # taxonomy — READS ONLY. The two read classifiers are deliberate: they emit
     # the same 6-column kraken-style report, so centrifuger (GTDB r232+hvfpc) is

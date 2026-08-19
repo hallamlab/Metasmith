@@ -18,7 +18,7 @@ WHICH REFERENCES, AND WHY EXACTLY THESE FIVE
     kofamscan_profiles + kofamscan_ko_list   the HMM lane          (one chunk)
     uniref50_diamond_db                      the homology lane
     mnxr_lookup                              EVERY lane's terminus
-    reference_label_pool                     the ProteinBERT kNN lane
+    label_transfer_landmarks                     the ProteinBERT kNN lane
 
 CLEAN and ProteinBERT get no artifact each, and the asymmetry is not an oversight:
 their weights are baked into their images, so under a container runtime there is
@@ -117,17 +117,17 @@ TARGETS = [
     "ref::kofamscan_ko_list",
     "ref::uniref50_diamond_db",
     "ref::mnxr_lookup",
-    "ref::reference_label_pool",
+    "ref::label_transfer_landmarks",
     # The three decided-against lanes need these two. `ref::ezpred_model` is NOT here:
     # its compile is still in transforms/_deferred/, blocked on how a *patched* source
     # tree enters the graph (see that directory's README), so the bundle is staged as a
     # given for now and the open decision is recorded rather than silently resolved.
     "ref::esm_c_600m_weights",
-    "ref::reference_label_pool_esmc",
+    "ref::label_transfer_landmarks_esmc",
 ]
 
-EXPECTED = {"kofam_ref", "uniref50_dmnd", "mnxr_lookup", "reference_label_pool",
-            "esm_c_weights", "reference_label_pool_esmc"}
+EXPECTED = {"kofam_ref", "uniref50_dmnd", "mnxr_lookup", "label_transfer_landmarks",
+            "esm_c_weights", "label_transfer_landmarks_esmc"}
 
 # The processed tier. The KEY is the full path under data/processed/, because two
 # products share the kofam chunk: `<chunk>` is the DVC pin's granularity, and a
@@ -139,17 +139,17 @@ PUBLISH_AT = {
     "ref::kofamscan_ko_list": "kofam_ref/ko_list.tsv",
     "ref::uniref50_diamond_db": "uniref50_dmnd/uniref50.dmnd",
     "ref::mnxr_lookup": "mnxr_lookup/mnxr_lookup.parquet",
-    "ref::reference_label_pool": "reference_label_pool/pool",
+    "ref::label_transfer_landmarks": "label_transfer_landmarks/landmarks",
     # `.tgz` is not decoration here: the ESM SDK resolves `data/weights/<file>.pth`
     # from the process cwd, so the archive IS the unit that layout belongs to and both
     # consumers untar it before use.
     "ref::esm_c_600m_weights": "esm_c_weights/esmc_600m.tgz",
-    "ref::reference_label_pool_esmc": "reference_label_pool_esmc/pool_esmc",
+    "ref::label_transfer_landmarks_esmc": "label_transfer_landmarks_esmc/landmarks_esmc",
 }
 
 # The DVC chunks those paths land in -- one pin each, two levels deep.
-CHUNKS = ("kofam_ref", "uniref50_dmnd", "mnxr_lookup", "reference_label_pool",
-          "esm_c_weights", "reference_label_pool_esmc")
+CHUNKS = ("kofam_ref", "uniref50_dmnd", "mnxr_lookup", "label_transfer_landmarks",
+          "esm_c_weights", "label_transfer_landmarks_esmc")
 
 TYPE_LIBRARIES = (
     [MLIB / "data_types" / f for f in
@@ -175,7 +175,7 @@ TYPE_LIBRARIES = (
 # that case now; these numbers are what actually fits.
 RESOURCE_OVERRIDES = {
     "uniref50_dmnd": Resources(cpus=32, memory=Size.GB(128), duration=Duration(hours=4)),
-    "reference_label_pool": Resources(cpus=16, memory=Size.GB(128), duration=Duration(hours=4)),
+    "label_transfer_landmarks": Resources(cpus=16, memory=Size.GB(128), duration=Duration(hours=4)),
     "mnxr_lookup": Resources(cpus=4, memory=Size.GB(64), duration=Duration(hours=4)),
     "kofam_ref": Resources(cpus=2, memory=Size.GB(16), duration=Duration(hours=2)),
     "esm_c_weights": Resources(cpus=2, memory=Size.GB(8), duration=Duration(hours=1)),
@@ -187,7 +187,7 @@ RESOURCE_OVERRIDES = {
     # 2 h, not 3: `slurm.nf` doubles the walltime on retry, and a retry has to stay
     # schedulable too. 3 h became a 6 h second attempt, which SLURM would not start
     # before the maintenance window and so left PENDING forever.
-    "reference_label_pool_esmc": Resources(
+    "label_transfer_landmarks_esmc": Resources(
         cpus=8, memory=Size.GB(64), duration=Duration(hours=2),
         gpus=Gpus.REQUIRED, gpu_memory=Size.GB(24)),
 }

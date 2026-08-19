@@ -99,7 +99,6 @@ ROUTES = {
     "annotation::kofamscan_results":          ("annotation_orfs/kofamscan",        "csv",     "sample"),
     "annotation::eggnog_results":             ("annotation_orfs/eggnog_mapper",    "tsv",     "sample"),
     "annotation::proteinbert_embeddings":     ("annotation_orfs/proteinbert",      "parquet", "sample"),
-    "annotation::proteinbert_index":          ("annotation_orfs/proteinbert_index","csv",     "sample"),
 
     "binning::metabat2_contig_to_bin_table":  ("binning/contig_to_bin_metabat2", "tsv", "sample"),
     "binning::semibin2_contig_to_bin_table":  ("binning/contig_to_bin_semibin2", "tsv", "sample"),
@@ -151,7 +150,6 @@ def _sample_of(attrib, product):
 # <sample>.<ext> under GAPFILL/pbert.
 REBUILT = {
     "annotation::proteinbert_embeddings": "parquet",
-    "annotation::proteinbert_index":      "csv",
 }
 _rebuilt_cache = {}
 

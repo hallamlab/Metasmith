@@ -126,7 +126,7 @@ STAGED_REFS = [
     # mnxr_lookup replaced the ko/ec/uniprot bridge trio -- one table, one
     # stand-in; both GPR mappers slice it by id_source.
     "ref::mnxr_lookup",
-    "ref::reference_label_pool",
+    "ref::label_transfer_landmarks",
 ]
 
 ORFS = "sequences::orfs"

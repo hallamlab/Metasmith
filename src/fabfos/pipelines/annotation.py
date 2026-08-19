@@ -12,8 +12,9 @@ but is not this driver's target). See ``transforms/fabfos/gpr_4lane.py``.
 REFERENCE DEFAULTS. All five staged references this stage needs have real
 pinned copies in this repo's DVC-tracked ``data/processed/`` and are used as
 defaults when not overridden: KOfam profiles + KO list, the UniRef50 DIAMOND db,
-the MNXR lookup bridge, and ``ref::reference_label_pool`` -- the ProteinBERT
-label stack the fourth lane votes against, built by ``compile/reference_label_pool.py``
+the MNXR lookup bridge, and ``ref::label_transfer_landmarks`` -- the labelled
+ProteinBERT references the fourth lane votes against, built by
+``compile/label_transfer_landmarks.py``
 over Swiss-Prot. Every default can be overridden with the matching flag; omit
 both and a stub is staged so planning still succeeds.
 
@@ -59,22 +60,22 @@ ORFS_DIR_GLOB = "*.faa"
 # local default root and a remote agent's mirror derive from the same table
 # instead of drifting as two lists.
 #
-# `ref::reference_label_pool` is a DIRECTORY (index + embedding stack), which is
-# why it is one product: the consumer addresses the stack by row, so an index
-# from one build against a stack from another misindexes every row silently.
+# `ref::label_transfer_landmarks` is a DIRECTORY -- one parquet plus the provenance
+# file naming the embedder and the Swiss-Prot release, neither of which is
+# recoverable from the table.
 REF_LAYOUT = {
     "ref::kofamscan_profiles": "kofam_ref/profiles",
     "ref::kofamscan_ko_list": "kofam_ref/ko_list.tsv",
     "ref::uniref50_diamond_db": "uniref50_dmnd/uniref50.dmnd",
     "ref::mnxr_lookup": "mnxr_lookup/mnxr_lookup.parquet",
-    "ref::reference_label_pool": "reference_label_pool/pool",
+    "ref::label_transfer_landmarks": "label_transfer_landmarks/landmarks",
 }
 
 DEFAULT_KOFAM_PROFILES = common.DATA_PROCESSED / REF_LAYOUT["ref::kofamscan_profiles"]
 DEFAULT_KOFAM_KO_LIST = common.DATA_PROCESSED / REF_LAYOUT["ref::kofamscan_ko_list"]
 DEFAULT_UNIREF50_DB = common.DATA_PROCESSED / REF_LAYOUT["ref::uniref50_diamond_db"]
 DEFAULT_MNXR_LOOKUP = common.DATA_PROCESSED / REF_LAYOUT["ref::mnxr_lookup"]
-DEFAULT_LABEL_POOL = common.DATA_PROCESSED / REF_LAYOUT["ref::reference_label_pool"]
+DEFAULT_LANDMARKS = common.DATA_PROCESSED / REF_LAYOUT["ref::label_transfer_landmarks"]
 
 
 def _as_orf_list(orfs) -> list[Path]:
@@ -90,7 +91,7 @@ def _as_orf_list(orfs) -> list[Path]:
 
 
 def build_inputs(work: Path, *, orfs, kofam_profiles: Path | None, kofam_ko_list: Path | None,
-                  uniref50_db: Path | None, mnxr_lookup: Path | None, label_pool: Path | None,
+                  uniref50_db: Path | None, mnxr_lookup: Path | None, landmarks: Path | None,
                   refs_root: "str | Path | None" = None, verify_refs: bool = True,
                   stage_orfs: str = "copy",
                   ) -> tuple[DataInstanceLibrary, dict[str, Path]]:
@@ -136,7 +137,7 @@ def build_inputs(work: Path, *, orfs, kofam_profiles: Path | None, kofam_ko_list
         "ref::kofamscan_ko_list": kofam_ko_list,
         "ref::uniref50_diamond_db": uniref50_db,
         "ref::mnxr_lookup": mnxr_lookup,
-        "ref::reference_label_pool": label_pool,
+        "ref::label_transfer_landmarks": landmarks,
     }
     stubs: dict[str, Path] = {}
     for dtype, rel in REF_LAYOUT.items():
@@ -156,7 +157,7 @@ def build_inputs(work: Path, *, orfs, kofam_profiles: Path | None, kofam_ko_list
 
 
 def generate_workflow(work: Path, *, orfs, kofam_profiles: Path | None, kofam_ko_list: Path | None,
-                       uniref50_db: Path | None, mnxr_lookup: Path | None, label_pool: Path | None,
+                       uniref50_db: Path | None, mnxr_lookup: Path | None, landmarks: Path | None,
                        runtime: Runtime, agent_env: str | None = None,
                        refs_root: "str | Path | None" = None,
                        verify_refs: bool = True, stage_orfs: str = "copy",
@@ -170,7 +171,7 @@ def generate_workflow(work: Path, *, orfs, kofam_profiles: Path | None, kofam_ko
     lib = common.resolve_library_root()
     inputs, stubs = build_inputs(
         work, orfs=orfs, kofam_profiles=kofam_profiles, kofam_ko_list=kofam_ko_list,
-        uniref50_db=uniref50_db, mnxr_lookup=mnxr_lookup, label_pool=label_pool,
+        uniref50_db=uniref50_db, mnxr_lookup=mnxr_lookup, landmarks=landmarks,
         refs_root=refs_root, verify_refs=verify_refs, stage_orfs=stage_orfs,
     )
     if on_inputs is not None:
@@ -222,7 +223,7 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--kofam-ko-list", default=None, metavar="FILE")
     p.add_argument("--uniref50-db", default=None, metavar="FILE")
     p.add_argument("--mnxr-lookup", default=None, metavar="FILE")
-    p.add_argument("--label-pool", default=None, metavar="DIR")
+    p.add_argument("--landmarks", default=None, metavar="DIR")
     p.add_argument("--staging", default=None, help="working dir (default: <output>/_fabfos)")
     p.add_argument("--output", default="./fabfos_annotation_out", help="output directory")
     p.add_argument("--dag", default="research/fabfos/reports/dag/annotation", help="path base for the rendered SVG")
@@ -298,7 +299,7 @@ def main(argv=None) -> int:
         kofam_ko_list=_given(a.kofam_ko_list),
         uniref50_db=_given(a.uniref50_db),
         mnxr_lookup=_given(a.mnxr_lookup),
-        label_pool=_given(a.label_pool),
+        landmarks=_given(a.landmarks),
         runtime=runtime, agent_env=a.agent_env, refs_root=a.refs_root, verify_refs=a.verify_refs,
     )
 

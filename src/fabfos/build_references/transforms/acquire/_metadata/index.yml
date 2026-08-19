@@ -52,7 +52,7 @@ manifest:
     origin: leaf
     type: transforms::transform
   swissprot.py:
-    instance_id: 1e204472cf0d51eb677614ad871bc3b821348aee1aa57d2b312766bd4ce2bc0720b4
+    instance_id: 1e20d720539821dc3cc5acc77a4b6888f6ebc9a5ec7e3c9ede01aa3549f7a7643abe
     origin: leaf
     type: transforms::transform
   uniref.py:

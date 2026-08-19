@@ -1,6 +1,6 @@
-"""R10 -- the ESM-C half of the labelled embedding pool.
+"""R10 -- the ESM-C half of the labelled landmarks.
 
-The same pool as `reference_label_pool.py` -- the same bridge cut, the same
+The same landmarks as `label_transfer_landmarks.py` -- the same bridge cut, the same
 Swiss-Prot release, the same accessions -- embedded with ESM-C 600M instead of
 ProteinBERT, so `gpr_7lane`'s ESM-C kNN lane has something to vote against.
 
@@ -9,9 +9,8 @@ live in two images (`env::proteinbert.env` carries no ESM-C SDK, and `env::esmc.
 carries no ProteinBERT), and the ESM-C pass needs a GPU while the ProteinBERT one
 does not. Folding both into one transform would make every ProteinBERT rebuild
 queue for a device and would put the two stacks' fate in one exit code. They are
-written separately, and each directory carries the `orf_index.parquet` that
-addresses ITS OWN stack -- pairing one run's index with another run's embeddings
-misindexes every row and emits a full, confident, wrong table with nothing raised.
+written separately, and each carries its accessions in the same rows as its own
+embeddings -- so neither can be paired with the other's vectors by accident.
 
 SAME MODEL AS THE QUERY, and this is the whole point of the file. Cosine distance
 between two embedding spaces is a number with no referent, so the pool is only
@@ -39,9 +38,9 @@ image   = model.AddRequirement(lib.GetType("env::esmc.env"))
 source  = model.AddRequirement(lib.GetType("fabfos_data::swissprot"))
 bridge  = model.AddRequirement(lib.GetType("ref::mnxr_lookup"))
 weights = model.AddRequirement(lib.GetType("ref::esm_c_600m_weights"))
-pool    = model.AddProduct(lib.GetType("ref::reference_label_pool_esmc"))
+pool    = model.AddProduct(lib.GetType("ref::label_transfer_landmarks_esmc"))
 
-# The cut that defines the pool. Identical to reference_label_pool.py by necessity:
+# The cut that defines the set. Identical to label_transfer_landmarks.py by necessity:
 # the two stacks must describe the same accessions or the lanes are not comparable.
 POOL_ID_SOURCE = "uniprot"
 POOL_EVIDENCE = "reviewed"
@@ -49,9 +48,8 @@ POOL_EVIDENCE = "reviewed"
 FASTA_FILE = "uniprot_sprot.fasta.gz"
 RELDATE_FILE = "reldate.txt"
 
-INDEX_NAME = "orf_index.parquet"
-STACK_NAME = "emb_esmc.npy"
-SOURCE_NAME = "pool_source.txt"
+TABLE_NAME = "landmarks.parquet"
+SOURCE_NAME = "source.txt"
 
 # functionalAnnotation/esm_c.py's constants. Copied, and the copy is the contract --
 # a pool embedded at a different max_len is a pool of different vectors.
@@ -261,9 +259,10 @@ pd.DataFrame({"sequence_id": ids, "index": list(range(len(ids)))}).to_csv(
 print(f"[pool-esmc] {emb.shape} -> {out_npy} in {time.time()-t0:.1f}s", flush=True)
 '''
 
-# Index and stack are written from the same arrays in one pass, for the reason in the
-# header: the consumer addresses the stack BY ROW.
-ASSEMBLE = r'''
+# One table, one row per accession: the embed step above wrote the stack and the ids
+# from the same arrays, and they are put in the same rows here before anything else
+# reads either.
+ASSEMBLE = r"""
 import shutil
 import numpy as np
 import pandas as pd
@@ -275,32 +274,29 @@ POOL.mkdir(parents=True, exist_ok=True)
 stack = np.load("_esmc_emb.npy")
 idx = pd.read_csv("_esmc_index.csv")
 if len(idx) != len(stack):
-    raise SystemExit(f"index has {{len(idx)}} rows but the stack has {{len(stack)}} -- "
-                     f"pairing them would misindex every row silently")
+    raise SystemExit(f"[pool-esmc] the index has {{len(idx)}} rows and the stack has "
+                     f"{{len(stack)}}")
 
 labels = pd.read_parquet("_pool_labels.parquet")
-idx = idx.rename(columns={{"sequence_id": "orf"}})
-idx["row"] = np.arange(len(idx), dtype=np.int64)
-idx["role"] = "reference"
-merged = idx.merge(labels.rename(columns={{"accession": "orf"}}), on="orf", how="left")
-n_unlabelled = int(merged["mnxr_list"].isna().sum())
-merged["mnxr_list"] = merged["mnxr_list"].fillna("")
-
-np.save(POOL / "{stack_name}", stack)
-merged[["role", "row", "orf", "mnxr_list"]].to_parquet(POOL / "{index_name}", index=False)
-shutil.copy("_pool_source.txt", POOL / "{source_name}")
-print(f"[pool-esmc] {{len(merged):,}} reference embeddings, {{n_unlabelled:,}} "
-      f"unlabelled, "
-      f"{{merged['mnxr_list'].str.split(';').explode().replace('', None).nunique():,}} "
-      f"distinct MNXR", flush=True)
-# Every sequence written was selected BECAUSE it had labels, so an unlabelled row here
-# is the embedder having dropped or renamed an id between the FASTA and its index --
-# which misaligns the merge rather than merely thinning the pool.
+table = (idx.rename(columns={{"sequence_id": "accession"}})[["accession"]]
+            .merge(labels, on="accession", how="left"))
+n_unlabelled = int(table["mnxr_list"].isna().sum())
+# Every sequence embedded was selected BECAUSE it had labels, so an unlabelled row here
+# is the embedder having dropped or renamed an id, which misaligns the merge rather than
+# merely thinning the set.
 if n_unlabelled:
-    raise SystemExit(f"{{n_unlabelled:,}} embedded sequences carry no label, but the "
-                     f"pool was selected on having one -- the embedder's index ids do "
-                     f"not match the FASTA headers this transform wrote")
-'''
+    raise SystemExit(f"[pool-esmc] {{n_unlabelled:,}} embedded sequences carry no label, "
+                     f"but the landmarks were selected on having one")
+
+table = pd.concat([table, pd.DataFrame(
+    stack.astype(np.float32),
+    columns=[f"dim_{{i}}" for i in range(stack.shape[1])])], axis=1)
+table.to_parquet(POOL / "{table_name}", index=False)
+shutil.copy("_pool_source.txt", POOL / "{source_name}")
+print(f"[pool-esmc] {{len(table):,}} landmarks, "
+      f"{{table['mnxr_list'].str.split(';').explode().nunique():,}} distinct MNXR, "
+      f"{{stack.shape[1]}} dims", flush=True)
+"""
 
 
 def protocol(context: ExecutionContext):
@@ -343,14 +339,14 @@ def protocol(context: ExecutionContext):
         """,
     )
 
-    assemble = ASSEMBLE.format(pool=ipool.container, index_name=INDEX_NAME,
-                               stack_name=STACK_NAME, source_name=SOURCE_NAME)
+    assemble = ASSEMBLE.format(pool=ipool.container, table_name=TABLE_NAME,
+                               source_name=SOURCE_NAME)
     context.LocalShell("cat > _pool_assemble.py << 'PYEOF'\n" + assemble + "\nPYEOF\n")
     context.ExecWithEnv() \
         .ifContainerDo(env=image, cmd="python3 _pool_assemble.py") \
         .ifVirtualEnvDo(env=image, cmd="python3 _pool_assemble.py")
 
-    ok = all((ipool.local / n).exists() for n in (INDEX_NAME, STACK_NAME, SOURCE_NAME))
+    ok = all((ipool.local / n).exists() for n in (TABLE_NAME, SOURCE_NAME))
     return ExecutionResult(
         manifest=[{pool: ipool.local}],
         success=ok,

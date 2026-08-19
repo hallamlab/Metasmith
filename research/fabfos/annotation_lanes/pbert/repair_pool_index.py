@@ -34,9 +34,11 @@ unique in the pool and byte-identical to a Swiss-Prot entry, so the row holding 
 embedding is known independently. 442 of 443 land exactly where the recovered map
 says. The seven blocks the signature cannot separate are dropped rather than guessed.
 
-SCOPE   A research-side repair: it writes a corrected index beside the pool and does
-        not touch the DVC-pinned artifact. The real fix is in the transform -- read
-        the shards in one order, or stop trusting two globs to agree.
+SUPERSEDED by rebuild_landmarks.py, which computes the same permutation from the record
+count instead of searching for it -- the two agree on 100.00% of the 214,016 accessions
+this one resolved, and the analytic map also covers the 8 blocks the signature could not
+separate. Kept because it is the independent derivation that gate, and because the
+signature argument is what identified the defect in the first place.
 INPUT   data/fabfos/processed/reference_label_pool/pool/{orf_index.parquet,emb_pbert.npy}
         data/fabfos/originals/swissprot/2026_02/uniprot_sprot.fasta.gz
 ENV     PYTHONPATH="$PWD/src" mamba run -n msm python \
@@ -57,7 +59,7 @@ import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import _knn  # noqa: E402
-from _common import ANN, CACHE, HERE, POOL, iter_fasta, load_cohort, load_query, md5, orf_to_accession  # noqa: E402
+from _common import ANN, CACHE, HERE, SHIPPED_POOL as POOL, iter_fasta, load_cohort, load_query, md5, orf_to_accession  # noqa: E402
 
 SWISSPROT = POOL.parents[2] / "originals/swissprot/2026_02/uniprot_sprot.fasta.gz"
 BLOCK = 1024
