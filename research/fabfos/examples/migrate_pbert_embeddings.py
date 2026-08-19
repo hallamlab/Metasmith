@@ -4,19 +4,26 @@
 
 `annotation::proteinbert_embeddings` now carries `sequence_id` beside its 512 floats;
 the pairs this replaces named the rows in a separate file and were paired by position.
-That pairing was WRONG for anything the embedder split into more than one chunk -- it
-writes fixed 1,024-sequence chunks named `<stem>.1`, `<stem>.2`, ... and the old
-combiner stacked `sorted(glob("*.npy"))`, so chunk 10 landed before chunk 2.
 
-SO THIS DOES NOT MERELY ZIP THE TWO FILES. It proves the pairing first, and it can do
-that without re-embedding: a deterministic embedder gives byte-identical sequences
-byte-identical vectors, so every group of ORFs sharing a sequence md5 must share a
-row. Two candidate pairings are scored against that -- the file's own order, and the
-lexicographic-chunk permutation `fir/pbert_permutation.fasta_to_legacy_row` recovers
-from the record count alone -- and the two coincide below ten chunks, which is why a
-small artifact has only one candidate. Exactly one may pass. An artifact with no
-duplicated sequence decides nothing either way and is refused rather than guessed at,
-because a guess here produces a complete, schema-valid, confidently wrong table.
+TWO INDEX CONVENTIONS ARE IN THE WILD AND NEITHER FILE SAYS WHICH IT IS. Some indexes
+list the ORFs in the FASTA's order, as the embedder wrote them. Others were rewritten
+into the STACK's order by an earlier repair -- one such even carries a redundant
+`global_row` column that is only its own row number. The two are indistinguishable by
+inspection, and reading one as the other attributes every embedding to another
+protein while producing a full, schema-valid table. So the index's id ORDER is never
+trusted here, only its id SET; the pairing is decided by evidence.
+
+THE EVIDENCE NEEDS NO RE-EMBEDDING: a deterministic embedder gives byte-identical
+sequences byte-identical vectors, so every group of ORFs sharing a sequence md5 must
+share a row. Two candidate pairings are scored against that -- the index already being
+in stack order, and the index being in FASTA order with the stack assembled by
+`sorted(glob("*.npy"))`, which puts chunk 10 before chunk 2 (`fasta_to_legacy_row`).
+Exactly one may pass.
+
+Below TEN chunks the two candidates can collapse into one, and then no evidence is
+needed because there is nothing to choose between. An artifact that IS ambiguous and
+has no duplicated sequence is refused rather than guessed at, because a guess here
+produces a complete, schema-valid, confidently wrong table.
 """
 from __future__ import annotations
 
@@ -81,9 +88,11 @@ def main() -> int:
     if id_col is None:
         print(f"{idx_p} has no id column: {list(idx.columns)}", file=sys.stderr)
         return 2
-    if list(idx[id_col]) != ids:
-        print(f"{idx_p} does not name the same sequences, in order, as {faa}",
-              file=sys.stderr)
+    index_ids = list(idx[id_col])
+    if set(index_ids) != set(ids) or len(index_ids) != len(ids):
+        print(f"{idx_p} does not name the same {len(ids)} sequences as {faa} "
+              f"({len(index_ids)} rows, {len(set(index_ids) & set(ids))} shared). This "
+              f"is a different ORF set, not a different order.", file=sys.stderr)
         return 2
     if len(emb) != len(ids):
         print(f"{emb_p} has {len(emb)} rows and {faa} has {len(ids)} records",
@@ -94,55 +103,63 @@ def main() -> int:
     lex = fasta_to_legacy_row(len(ids))
     n_chunks = (len(ids) + CHUNK - 1) // CHUNK
 
-    # WHEN THERE IS ONLY ONE CANDIDATE, THERE IS NOTHING TO CHOOSE BETWEEN. The bug is
-    # that the embedder's chunk files sort lexicographically rather than numerically,
-    # so the only rival to the file's own order is `fasta_to_legacy_row`. Below TEN
-    # chunks -- `.1` through `.9` -- the two orders coincide and that rival IS the
-    # identity, which is why a small artifact is safe by arithmetic rather than by
-    # evidence. Demanding duplicate sequences here would refuse a migration that
-    # cannot be wrong, and this is the common case: an assembly's ORF set clears ten
-    # chunks only above 9,216 sequences.
-    if np.array_equal(lex, identity):
-        out = pd.concat([
-            pd.DataFrame({"sequence_id": ids}),
-            pd.DataFrame(emb, columns=[f"dim_{i}" for i in range(len(dims))]),
-        ], axis=1)
-        out_p.parent.mkdir(parents=True, exist_ok=True)
-        out.to_parquet(out_p, index=False)
-        print(f"wrote {out_p} -- {len(out):,} x {len(dims)}; {n_chunks} embedder "
-              f"chunk(s), so lexicographic and numeric chunk order coincide and the "
-              f"file's own order is the only candidate pairing")
-        return 0
+    # TWO INDEX CONVENTIONS ARE IN THE WILD AND THE FILE DOES NOT SAY WHICH IT IS.
+    # Some indexes list the ORFs in the FASTA's order, which is what the embedder's
+    # own output gives; others were rewritten into the STACK's order by an earlier
+    # repair, and one of those even carries a redundant `global_row` column that is
+    # just its own row number. Both look identical to a reader. So the id ORDER of the
+    # index is not trusted here -- only its id SET, checked above -- and the pairing
+    # is settled by evidence below.
+    #
+    #   "index position"       row i of the stack belongs to index row i, i.e. the
+    #                          index is already in stack order
+    #   "lexicographic-chunk"  the index is in FASTA order and the stack was assembled
+    #                          by `sorted(glob("*.npy"))`, so chunk 10 landed before
+    #                          chunk 2 -- `fasta_to_legacy_row` is that permutation
+    #
+    # `row_of[i]` is the stack row holding the protein named at index row i.
+    by_index = identity
+    by_lex = lex[[{n: i for i, n in enumerate(ids)}[n] for n in index_ids]]
 
-    groups = duplicate_groups(records)
-    if not groups:
-        print(f"{faa} spans {n_chunks} embedder chunks, so the chunk order is "
-              f"genuinely ambiguous, and it has no two records sharing a sequence to "
-              f"settle it. Re-embed rather than migrate.", file=sys.stderr)
-        return 2
+    # WHEN THERE IS ONLY ONE CANDIDATE, THERE IS NOTHING TO CHOOSE BETWEEN. Below TEN
+    # chunks -- `.1` through `.9` -- lexicographic and numeric chunk order coincide, so
+    # the permutation is the identity and both candidates collapse to the same map.
+    # Demanding duplicate sequences there would refuse a migration that cannot be
+    # wrong, and that is the common case: an ORF set clears ten chunks only above
+    # 9,216 sequences.
+    if np.array_equal(by_index, by_lex):
+        chosen, why = by_index, (
+            f"{n_chunks} embedder chunk(s), so lexicographic and numeric chunk order "
+            f"coincide and there is only one candidate pairing")
+    else:
+        groups = duplicate_groups(records)
+        if not groups:
+            print(f"{faa} spans {n_chunks} embedder chunks, so the chunk order is "
+                  f"genuinely ambiguous, and it has no two records sharing a sequence "
+                  f"to settle it. Re-embed rather than migrate.", file=sys.stderr)
+            return 2
+        # score against the FASTA's duplicate groups, expressed as index positions
+        at = {n: i for i, n in enumerate(index_ids)}
+        gi = [[at[ids[j]] for j in g] for g in groups]
+        candidates = {"index position": by_index, "lexicographic-chunk": by_lex}
+        scores = {k: agreement(emb, v, gi) for k, v in candidates.items()}
+        for k, v in scores.items():
+            print(f"{k:22s} {v:6.1%} of {len(groups)} duplicate-sequence groups agree")
+        passing = [k for k, v in scores.items() if v > 0.99]
+        if len(passing) != 1:
+            print(f"{len(passing)} candidate pairings pass; exactly one must. "
+                  f"Migrating on a tie or on none would attribute embeddings to the "
+                  f"wrong ORFs.", file=sys.stderr)
+            return 1
+        chosen, why = candidates[passing[0]], f"via the '{passing[0]}' pairing"
 
-    # Two genuine candidates, because the early return above already handled the case
-    # where the lexicographic permutation collapses to the identity.
-    candidates = {"as written": identity, "lexicographic-chunk": lex}
-    scores = {k: agreement(emb, v, groups) for k, v in candidates.items()}
-    for k, v in scores.items():
-        print(f"{k:22s} {v:6.1%} of {len(groups)} duplicate-sequence groups agree")
-
-    passing = [k for k, v in scores.items() if v > 0.99]
-    if len(passing) != 1:
-        print(f"{len(passing)} candidate pairings pass; exactly one must. Migrating "
-              f"on a tie or on none would attribute embeddings to the wrong ORFs.",
-              file=sys.stderr)
-        return 1
-
-    rows = candidates[passing[0]]
     out = pd.concat([
-        pd.DataFrame({"sequence_id": ids}),
-        pd.DataFrame(emb[rows], columns=[f"dim_{i}" for i in range(len(dims))]),
+        pd.DataFrame({"sequence_id": index_ids}),
+        pd.DataFrame(emb[chosen], columns=[f"dim_{i}" for i in range(len(dims))]),
     ], axis=1)
     out_p.parent.mkdir(parents=True, exist_ok=True)
     out.to_parquet(out_p, index=False)
-    print(f"wrote {out_p} -- {len(out):,} x {len(dims)} via the '{passing[0]}' pairing")
+    print(f"wrote {out_p} -- {len(out):,} x {len(dims)}; {why}")
     return 0
 
 
