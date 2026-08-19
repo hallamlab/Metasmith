@@ -196,7 +196,13 @@ def load_pool(repaired: bool = True):
         emb = np.asarray(stack[idx["row"].to_numpy()], dtype=np.float32)
         acc = idx["orf"].to_numpy()
         mnxr = idx["mnxr_list"]
-    return emb, acc, [s.split(";") if s else [] for s in mnxr]
+    # DEDUPLICATED AND EMPTY-STRIPPED, exactly as `gpr_4lane.py::lane_embed` does it
+    # (`sorted(set(m for m in ... if m))`). A landmark whose mnxr_list repeats a label
+    # would otherwise be counted twice here and once by the lane, so the sweep would
+    # tune a rule the pipeline does not run. No shipped landmark carries a duplicate
+    # today; this is what keeps that from mattering if one ever does.
+    return emb, acc, [sorted({m for m in (s.split(";") if s else []) if m})
+                      for s in mnxr]
 
 
 def load_query():

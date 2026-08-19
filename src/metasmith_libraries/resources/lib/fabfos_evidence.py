@@ -268,12 +268,18 @@ CLEAN_MIN_SCORE = 0.02
 # --- ProteinBERT kNN label transfer ----------------------------------------
 # Tuned on the 1,288-ORF DH10B cohort against the 222,019-landmark set, choosing the
 # cell that maximises label-level (MNXR macro set-overlap) F1 under the `twin`
-# leakage condition -- every landmark at cosine >= 0.99 hidden. That pairing is
-# deliberate: label-level is the axis that PENALISES over-prediction, which is the
-# failure being fixed, and `twin` is the honest read for an ORF with no close
-# relative, which is the case that motivated the work. The chosen cell sits on a
-# broad plateau (0.4018-0.4036 across nn_min 0.65-0.75 and tau 0.90-0.98), not on a
-# spike. See research/fabfos/annotation_lanes/pbert/threshold_cosine_dh10b.tsv.
+# leakage condition -- every landmark at cosine >= 0.99 hidden. Label-level is the
+# axis that PENALISES over-prediction, which is the failure being fixed; the ORF-level
+# axis cannot see flooding at all, because more labels per ORF make an intersection
+# with the truth set EASIER. The cell sits on a broad plateau (0.4018-0.4036 across
+# nn_min 0.65-0.75 and tau 0.90-0.98), not a spike.
+#
+# `twin` IS A COSINE STAND-IN, NOT HOMOLOGY REMOVAL. It hides exact-ish duplicates,
+# not paralogs, isozymes, or a related E. coli protein sitting at cosine 0.95 -- and
+# Swiss-Prot contains E. coli's own proteome. The source study removed homologs by
+# DIAMOND clustering, so these numbers are an UPPER BOUND against lanes measured that
+# way, not a like-for-like comparison. See
+# research/fabfos/annotation_lanes/pbert/threshold_cosine_dh10b.tsv.
 #
 #                      ORF-level (EC)              label-level (MNXR)
 #   twin       P 0.6555 -> 0.8985   F1 0.6374 -> 0.8254   P 0.5655 -> 0.8050
@@ -306,6 +312,13 @@ PBERT_K_MAX = 30
 # floor, because zero means "every label an admitted neighbour carries" and that is
 # a real setting, not a disabled one.
 PBERT_FLOOR = 0.00
+
+# THE ARCHIVE'S FLOOR IS NOT THE LANE'S. `read_embed_transfer` reads the retired
+# `embed_transfer_candidates.parquet`, which a different producer wrote against a
+# different reference pool with its own frozen 0.20 baked in. Sharing PBERT_FLOOR
+# with it meant retuning the live lane silently retuned how an archived table is
+# read -- and at 0.00 that filter became a no-op nobody asked for.
+EMBED_ARCHIVE_FLOOR = 0.20
 
 # --- ESM-C kNN label transfer ----------------------------------------------
 # The same lane against a different backbone, and cosine is not comparable between two
@@ -560,14 +573,23 @@ def validate_gpr(df, lane_set: str, orf_ids, source: str, extensions=(),
         raise SystemExit(f"[gpr] unknown score_kind(s) {sorted(bad_kind)}; known: {sorted(SCORE_KINDS)}")
     for ch, kind in df.groupby("channel")["score_kind"].agg(lambda s: sorted(set(s))).items():
         want = ASSERTION_CHANNELS.get(ch) or CHANNEL_SCORE_KIND[ch]
+        # A retired kind is accepted ONLY when it is the whole channel. A table
+        # concatenated from a pre-fix and a post-fix run carries both kinds on one
+        # channel, and that is the one case that must not pass: both declare the
+        # range (0, 1) so no bound catches it, no consumer branches on score_kind,
+        # and nothing marks which rows are which -- half the column would be
+        # 1/(1+d) and half the raw confidence, unrecoverably.
         retired = sorted(k for k in kind if RETIRED_SCORE_KINDS.get(k) == want)
-        if retired:
+        if kind == retired:
             print(f"[gpr] WARNING: channel {ch!r} carries the retired score_kind "
                   f"{retired}, now {want!r}. The table is readable and its raw_score "
                   f"is not -- see SCORE_KINDS for what that number actually is. "
                   f"Re-run the mapper rather than rescaling it.", flush=True)
-        if [k for k in kind if k != want and k not in retired]:
-            raise SystemExit(f"[gpr] channel {ch!r} carries score_kind {kind}, expected ['{want}']")
+        elif kind != [want]:
+            extra = f" -- it mixes the retired {retired} with {want!r}, so the column " \
+                    f"is half one scale and half the other" if retired else ""
+            raise SystemExit(f"[gpr] channel {ch!r} carries score_kind {kind}, "
+                             f"expected ['{want}']{extra}")
     s = df["raw_score"].astype(float)
     if not np.isfinite(s).all():
         n = int((~np.isfinite(s)).sum())
@@ -851,7 +873,7 @@ def read_embed_transfer(path, source: str, _bridge=None,
         return pd.DataFrame(columns=SCHEMA_COLS)
     df = pd.read_parquet(path)
     df = df[df["channel"].isin(("pbert", "pbert_transfer"))
-            & (df["raw_score"] >= PBERT_FLOOR)].copy()
+            & (df["raw_score"] >= EMBED_ARCHIVE_FLOOR)].copy()
     # The pool is the bridge's `reviewed` cut by construction, so every transferred
     # label inherits that quality -- see compile/label_transfer_landmarks.py.
     df["evidence_quality"] = "reviewed"
