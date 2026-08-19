@@ -10,6 +10,13 @@ editing a transform picks it up by proximity rather than by being sent to find i
 what the module *is* and how it relates to its neighbours; the engine's type system, solver and
 execution model are in `docs/metasmith/architecture.md`.
 
+## What goes in this file
+
+What the module is and how it relates to its neighbours. Authoring — how to add an environment,
+write a transform, author a template — is `src/metasmith_libraries/AGENTS.md`, beside the code.
+The engine's type system, solver and execution model are `docs/metasmith/architecture.md`.
+Nothing enumerable belongs here: not the transforms, not the types, not the environments.
+
 ## Its place among the modules
 
 The library is consumed three ways and must not assume any of them. The engine plans against it;

@@ -5,12 +5,17 @@ annotation,ecspr}.py`). Each test calls the driver's own `generate_workflow`
 directly -- the same function its CLI entry point uses -- so the plan under test
 is exactly what a real invocation produces, not a hand-rolled duplicate. These
 are **planning-only**: nothing is staged, containerised, or executed, so they
-run in seconds and need no test data beyond empty stand-in files.
+need no test data beyond empty stand-in files.
 
 `conftest.py` puts `src/` on `sys.path` (appended, not prepended -- `fabfos`
 has no installed copy in the test envs, but `src/metasmith` and
 `src/metasmith_libraries` are sibling packages under the same `src/` that must
-NOT shadow the installed `metasmith` package; see the module docstring).
+NOT shadow the installed `metasmith` package).
+
+## What goes in this file
+
+Why these tests are shaped the way they are, and the import-path trap that makes them fragile.
+Not a list of what they cover — the files are that.
 
 ## `test_assembly_driver.py`
 
@@ -162,7 +167,7 @@ None of this shows up in the DAG, which is the point: the planner still sees one
 
 Unrelated to the three drivers above -- a data-driven audit of the algorithms
 in `chimera_split.py`/`coverage_trim.py` against real scadc ground truth, not
-a planning compile-check. See its module docstring. Skips cleanly if the
+a planning compile-check. Skips cleanly if the
 scadc profile pickle isn't reachable. Not picked up by the default `pytest
 tests/fabfos/` collection (its filename doesn't match `test_*.py`); run it
 explicitly:

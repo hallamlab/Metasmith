@@ -1,5 +1,7 @@
 # metasmith — the engine
 
+## What goes in this file
+
 The architectural brief for someone about to *change* metasmith: the concepts the code is
 organised around, the invariants spanning more than one file, and the traps whose evidence
 lives somewhere unreadable from here — a cluster, a scheduler, an upstream bug.
@@ -145,6 +147,11 @@ onto the other reading it did not fail — it silently handed a collecting trans
 and ppanggolin clustered a single genome. Both axes reach the protocol through
 `context.AsBatch()`.
 
+**The Dependency is the stable key, and every lookup that spans a stage uses it.** An Endpoint
+mutates while the solver merges timelines and a DataInstance's hash changes when its dtype is
+remapped, so either one keys a map that is correct when written and wrong when read; a
+Dependency is created once with its Transform and never changes.
+
 **A plan slot holds an archetype, not the runtime multiplicity.** A collecting step's
 `step.dependency_map[dep]` carries *one* instance standing for however many the fan-out above
 produces; only `group_by_instances` counts keys. Anything reading a slot's length as "how many
@@ -261,12 +268,12 @@ one import's correctness no longer depends on every caller remembering. Two fail
 that: the loud one is `spec not found for the module`, and the quiet one is a
 snapshot-and-restore putting a concurrent load's entry back **permanently** — nothing fails,
 every later import scans more directories, and a day-old server plans an order of magnitude
-slower (0.4s → 9s per solve, measured). Pinned by
+slower. Pinned by
 `tests/metasmith/unit/test_transform_load_is_serialised.py`.
 
 Every transform file opens with `ResolveParentLibrary(__file__)`, so a library's load re-enters
 it once per transform. Without the per-root cache behind that call, loading the standard library
-re-read the manifest 115 times — ~8.5s of yaml against ~1s of planning. The cache is keyed on a
+re-read the manifest once per transform, which cost several times what planning did. The cache is keyed on a
 `scandir` signature, so a transform edited between two plans in one process is not served stale.
 
 ## Execution
@@ -289,8 +296,8 @@ in `envs/metasmith/base.yml` means the site's base tag has to move too.
 
 **Local transfers.** `Logistics` copies local→local in process — plain files, symlinks and trees
 of those — and hands everything else to `rsync -auP`. The split is about **latency, not
-throughput**: an rsync is ~45ms of process spawn and ~0.1ms of work on the metadata trees staging
-actually moves, so a plan copying three such trees spent 145ms of its 170ms waiting. Two rules
+throughput**: rsync's process spawn dwarfs the work itself on the metadata trees staging actually
+moves, so a plan copying three of them spent most of its time waiting. Two rules
 keep the fast path honest: it **surveys before it writes**, so a tree it will not claim is handed
 over untouched rather than half-copied; and every file is written aside and `os.replace`d into
 position, because an interrupted plain copy leaves a truncated file whose mtime is *newer* than
@@ -338,11 +345,10 @@ used by both the agent image and tool images, so the two cannot disagree — att
 sandbox. **micb0 is why there is a third rung:** apptainer ships mksquashfs 4.7.5 in its private
 libexec, which segfaults (exit 139) on a plain pull of the metasmith image, while the working 4.5
 at system level is unreachable because apptainer always prepends its own libexec to the search
-path. `-no-fragments` builds the same image in 79s for about 2% more bytes, but only `build`
-accepts mksquashfs arguments, so the retry is a different command rather than the same one with a
-flag. Each arm clears its own partial output first: a half-written SIF still satisfies the
-existence test the run command checks. The unpacked sandbox is the genuinely FUSE-free option and
-by far the most expensive — 843 MB compressed against 2.4 GB and 68k inodes.
+path. `-no-fragments` builds the same image for slightly more bytes, but only `build` accepts
+mksquashfs arguments, so the retry is a different command rather than the same one with a flag. Each arm clears its own partial output first: a half-written SIF still satisfies the
+existence test the run command checks. The unpacked sandbox is the genuinely FUSE-free option and by far
+the most expensive, in both bytes and inodes.
 
 `Rootfs` (`auto` | `sif` | `sandbox`) is the manual override, declared at `Agent.Deploy` for the
 host's standing tendency and at `StageWorkflow` for one task's steps; precedence falls out of
@@ -363,7 +369,7 @@ registry is unreachable, so a never-pushed dev image still works. This is not ga
 verifies the extracted relay binary's magic bytes and size, so a stub or corrupted relay fails
 precisely instead of as a bare missing-file assertion later.
 
-**Nextflow is pinned to `26.04.1`**, whose strict syntax parser is on by default: generated `.nf`
+**Nextflow is pinned**, and the pinned line's strict syntax parser is on by default: generated `.nf`
 and `Orchestrator.groovy` must avoid single-element parenthesized assignment and range-based for
 loops. Multi-element destructures and `for (x : collection)` are fine. **Upstream
 `nextflow-io/nextflow#6757` is open**: `Duration(long)` asserts non-negative, so under wall-clock
@@ -442,8 +448,21 @@ must agree and disagreeing reads as a cache miss rather than an error.
 **`trace.jsonl` is the canonical event log, and it records banked work, not run work.** It
 rotates on compile and is never truncated; a `SessionStart` sentinel leads every fresh file. Rows
 are appended from inside the promote loop, so a lone sentinel after a hundred completed tasks
-means promotion has not run yet — not that a buffer was lost. The dataclass docstring in
+means promotion has not run yet — not that a buffer was lost. The dataclass in
 `models/lineage.py` is the row spec.
+
+**The cache-hit route and the promote route must emit the same event shape.** They are two
+independent emitters of one record, and every field that diverged between them — an empty
+output path, a slot id standing in for a file id, the consumer's dtype key instead of the
+producer's — was invisible to a warm run and broke a lineage walk downstream.
+`tests/audit/test_quadrant_probe.py` is what compares them field by field.
+
+**Nextflow shares one lineage-index object across a multi-product process's outputs.** The
+sharing is decided by its output binding, before any code here runs, so the rule is that
+nothing may mutate a rendered index in place — corruption needs both a shared object and a
+writer, and the writer is the half this repo controls. Deep-copying instead is not the fix: it
+changes the rendered index, which feeds `file_instance_id`, which would orphan every existing
+cache shard.
 
 **Two version constants, deliberately separate.** `CACHE_KEY_VERSION` is the cache-key epoch;
 `LIN_PAYLOAD_VERSION` is the on-wire envelope the Groovy side parses. They were one constant
@@ -456,9 +475,9 @@ run's staging — are tracked in `plans/consolidation-followups.md`.
 
 ## Re-exported packages
 
-`models/libraries`, `models/workflow` and `agents` are packages whose `__init__.py` is a
-docstring and re-exports. They were single files until they reached 2100–2600 lines; the dotted
-paths did not change and are **not allowed to**, because `metasmith/__init__.py` is entirely
+`models/libraries`, `models/workflow` and `agents` are packages whose `__init__.py` is nothing
+but re-exports. They were single files until they grew past readable size; the dotted paths did
+not change and are **not allowed to**, because `metasmith/__init__.py` is entirely
 commented out, making those paths the public API. None declares `__all__`, since research
 notebooks star-import them. `tests/metasmith/unit/test_module_surface.py` holds a snapshot of the
 pre-split namespace and fails on any name that stops being reachable.
@@ -509,9 +528,6 @@ one app can be re-pointed) and anything that shells out per item.
 The invariants below are the ones that fail *silently*; the routes, components and their
 behaviour are readable in `src/metasmith/gui/` and `src/metasmith/frontend/`.
 
-- **Deleting is archiving.** The first `DELETE` writes a tombstone; the second removes it.
-  Nothing the GUI holds is recoverable from elsewhere, and the same gesture is one double-click
-  away on a list of near-identical names.
 - **Every editable object is saved by `PUT /<collection>/<id>` carrying the whole object**,
   identity included, so an id differing from the url is a rename applied as part of the save.
 - **Incompleteness is reported, never refused, until launch** — you make an agent days before its
@@ -540,12 +556,6 @@ behaviour are readable in `src/metasmith/gui/` and `src/metasmith/frontend/`.
 - **A value row states no path at all: the library mints a uuid**, once and recorded. A
   user-typed name only ever named a file nothing opens, and renaming it would re-mint identity
   and silently lose the cache.
-- **The presence of a sample table is the only thing that decides how a field behaves.** With no
-  sheet, every path and value is free text; with one, every recipe row is a sample array and every
-  field is a strict choice from that sheet's columns. Each field stores **both** answers, so
-  attaching a sheet, binding a column, detaching and editing text moves between two remembered
-  states rather than overwriting one. There is deliberately **no constant under a sheet**: a field
-  bound to nothing is a blank, not a value that stands as it is.
 - **What an array row expands into is keyed on identity, not on sheet position.** A file row
   registers its bound cell as the path; a value row, having none, keys its mint on the union of
   the cells its fields bind. Two sheet rows naming one pangenome are two samples of *one*
@@ -608,8 +618,8 @@ for raster formats and only as `neato -n2`, which honours our positions and lays
 congruence, rail rows, lanes, crossings, detours and module contiguity, and `layout` picks
 symmetry ahead of length. Congruence is *modal* — the largest set of instances arranged alike —
 because mean agreement is too coarse to separate row orders. Prefer adding a candidate to tuning a
-constant. Ceilings are pinned in `tests/metasmith/unit/test_dag_stress.py` with the pre-change
-numbers in the docstring; making one worse has to be said out loud.
+constant. Ceilings are pinned in `tests/metasmith/unit/test_dag_stress.py`; a tuning change is free to
+improve one and has to say so out loud to make one worse.
 
 Four things were measured and **rejected**, and the numbers are why they stay rejected: optimal
 Sugiyama layer assignment as a row sort (ranks are right, but many nodes share one, so the branch

@@ -131,8 +131,19 @@ migration's own history rather than for anything you would branch from today.
 | `bash_relay` | `msm_relay` — the Rust binary metasmith drives a remote host through. Cross-built to four targets and baked into the agent container image. | [docs/bash_relay](docs/bash_relay/architecture.md) |
 | `workflow_solver` | `msm_solver` — the Rust plan-search engine. Runs locally, so it is staged into `src/metasmith/engine/` and ships as package data rather than in the image. | [docs/workflow_solver](docs/workflow_solver/architecture.md) |
 
-Test directories carry their own `AGENTS.md` per axis under `tests/metasmith/`; test selection is
-by directory rather than by hand-written marks.
+Test selection is by directory rather than by hand-written marks; `tests/metasmith/AGENTS.md`
+is that contract and the traps around it.
+
+## Comments and docstrings
+
+The code carries its own meaning. Do not add a comment whose information is derivable from what it
+sits above, and delete one you find. A comment earns its place only by naming something invisible
+from the file: a numerical or ordering subtlety, a workaround with an external cause, an invariant
+a distant file must also honour. The solver and the Groovy are where that is common; everywhere
+else, bare is correct.
+
+Do not write docstrings. The one exception is a module whose `__doc__` an argparse parser
+displays.
 
 ## Releasing
 

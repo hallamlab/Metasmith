@@ -1,5 +1,10 @@
 # Deferred — written, not in the library
 
+## What goes in this file
+
+One entry per transform parked here, naming what it is blocked on. An entry leaves when its
+transform does, in either direction.
+
 A transform here is complete enough to read and wrong to load: it references
 something that does not exist yet, so `build.sh` would fail on it and every gate
 with it. `_deferred/` is not passed to `--transforms`, so nothing here is planned

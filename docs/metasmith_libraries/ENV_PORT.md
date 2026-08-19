@@ -10,6 +10,12 @@ statically rather than failing at run time. Every chain in `logistics`,
 110 chains across 87 files. `dispatch_scan` reports zero violations and zero
 chains whose `env=` could not be resolved to a module-level `Dependency`.
 
+## What goes in this file
+
+Why the environment dispatch is shaped the way it is, and the standing eligibility analysis for
+the arms that have not been built. The rules survive the port; the counts are the state of an
+open question.
+
 ## Why the commands were not touched
 
 The port rewrites the call head and its own `image=` keyword. Nothing else.

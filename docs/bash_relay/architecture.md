@@ -4,6 +4,12 @@
 `src/bash_relay/`; the built binaries are **baked into the agent container image**, which is what
 distinguishes it from `workflow_solver` — that one runs locally and ships as package data.
 
+## What goes in this file
+
+What the relay is for and the protocol the calling side depends on: how a command is handed
+over, how completion is observed, and what fails silently when the two halves stop agreeing.
+Not an inventory of its subcommands — `--help` is that.
+
 ## What it is for
 
 Everything metasmith does on an agent goes through one long-lived bash subprocess and returns
