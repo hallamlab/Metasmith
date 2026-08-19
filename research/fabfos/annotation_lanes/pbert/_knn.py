@@ -143,24 +143,50 @@ def refine(idx, cos, k=K, drop_col=None, twin_cut=None):
     return I, C
 
 
-def vote(idx, cos_of_neighbours, label_lists, floor):
-    """The shipped vote: clip cosine at 0, normalise within top-K, keep labels >= floor.
+def vote(idx, cos_of_neighbours, label_lists, floor,
+         nn_min=0.0, tau=0.0, k_max=K, admitted=None):
+    """The deployed vote, line for line with `gpr_4lane.py::lane_embed`.
 
-    `cos_of_neighbours` is the cosine similarity of each retrieved neighbour -- the
-    weighting stays cosine whatever metric did the retrieving.
+    Retrieve `k_max` candidates; refuse the ORF outright if its best neighbour is
+    below `nn_min`; admit the rest only above `max(nn_min, tau * best)`; weight the
+    admitted set by cosine normalised within itself; keep labels >= `floor`.
+
+    TWO THRESHOLDS, TWO QUESTIONS. `floor` is a share of a vote normalised within
+    whatever was admitted, so it measures neighbour AGREEMENT and cannot say "no good
+    neighbour" -- thirty neighbours at cosine 0.15 that agree score 1.0. `nn_min`
+    measures PROXIMITY and is the refusal the lane did not have.
+
+    `nn_min = tau = 0` and `k_max = K` reproduce the pre-quota rule exactly, which is
+    what makes the incumbent a row in this panel rather than a separate code path.
+
+    `cos_of_neighbours` is the cosine of each retrieved neighbour -- the weighting
+    stays cosine whatever metric did the retrieving. `admitted`, if given, is filled
+    with the number of neighbours each query voted with (0 where it abstained).
     Returns a list of {label: vote} dicts, one per query.
     """
     out = []
     for i in range(len(idx)):
-        live = idx[i] >= 0
-        vals = np.clip(np.where(live, cos_of_neighbours[i], 0.0), 0, None)
+        ii = idx[i][:k_max]
+        cs = np.clip(np.where(ii >= 0, cos_of_neighbours[i][:k_max], 0.0), 0, None)
+        top = cs.max() if cs.size else 0.0
+        if top <= 0 or top < nn_min:
+            if admitted is not None:
+                admitted[i] = 0
+            out.append({})
+            continue
+        keep = cs >= max(nn_min, tau * top)
+        vals, rows = cs[keep], ii[keep]
         tot = vals.sum()
         if tot <= 0:
+            if admitted is not None:
+                admitted[i] = 0
             out.append({})
             continue
         w = vals / tot
+        if admitted is not None:
+            admitted[i] = int((rows >= 0).sum())
         acc: dict[str, float] = {}
-        for wi, ri in zip(w, idx[i]):
+        for wi, ri in zip(w, rows):
             if wi <= 0 or ri < 0:
                 continue
             for lab in label_lists[ri]:

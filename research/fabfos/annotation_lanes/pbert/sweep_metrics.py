@@ -32,9 +32,13 @@ import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import _knn  # noqa: E402
-from _common import (CACHE, HERE, PBERT_FLOOR, load_cohort, load_pool,  # noqa: E402
-                     load_query, mnxr_to_ec, orf_to_accession,
-                     score_label_level, score_orf_level)
+from _common import (CACHE, HERE, K, PBERT_FLOOR, PBERT_NN_MIN,  # noqa: E402
+                     PBERT_TAU, load_cohort, load_pool, load_query, mnxr_to_ec,
+                     orf_to_accession, score_label_level, score_orf_level)
+
+SHIPPED = dict(nn_min=PBERT_NN_MIN, tau=PBERT_TAU, k_max=K)
+PRE_QUOTA = dict(nn_min=0.0, tau=0.0, k_max=30)
+PRE_QUOTA_FLOOR = 0.20
 
 CONDITIONS = [("pool", None, None), ("self", "drop", None), ("twin", "drop", 0.99)]
 PANEL = ["cosine", "dot", "euclidean", "correlation", "zscore", "whiten"]
@@ -47,8 +51,18 @@ def main():
     ap.add_argument("--l1-queries", type=int, default=200)
     ap.add_argument("--shipped-pool", action="store_true",
                     help="use the pool index as shipped (misaligned) -- the 'before' row")
+    ap.add_argument("--vote", choices=("shipped", "pre-quota"), default="shipped",
+                    help="'shipped' reads the quota and floor from fabfos_evidence; "
+                         "'pre-quota' is the rule the lane ran before this work -- "
+                         "top-30, no quota, floor 0.20. The 'before' rows need it, "
+                         "because a before/after that changed the vote AND the pool "
+                         "at once attributes the whole difference to whichever one "
+                         "the reader already believed in.")
     a = ap.parse_args()
     CACHE.mkdir(exist_ok=True)
+    quota = PRE_QUOTA if a.vote == "pre-quota" else SHIPPED
+    floor = PRE_QUOTA_FLOOR if a.vote == "pre-quota" else PBERT_FLOOR
+    print(f"[metrics] vote: {a.vote} {quota} floor={floor}", flush=True)
 
     coh = load_cohort()
     truth_ec = dict(zip(coh["orf"], coh["ec"]))
@@ -83,15 +97,21 @@ def main():
                             orf=qid[sub], own=own[sub])
         for cond, drop, twin in CONDITIONS:
             I, Cc = _knn.refine(idx, cos, drop_col=(own[sub] if drop else None), twin_cut=twin)
-            votes = _knn.vote(I, Cc, labels, PBERT_FLOOR)
+            admitted = np.zeros(len(I), np.int32)
+            votes = _knn.vote(I, Cc, labels, floor, admitted=admitted, **quota)
             pred_mnxr = {o: set(v) for o, v in zip(qid[sub], votes)}
+            n_calls = sum(len(v) for v in pred_mnxr.values())
+            speaking = sum(1 for v in pred_mnxr.values() if v)
             pred_ec = {o: {e for m in v for e in m2e.get(m, ())} for o, v in pred_mnxr.items()}
             t_ec = {o: truth_ec[o] for o in qid[sub]}
             t_mx = {o: truth_mnxr[o] for o in qid[sub]}
             top1 = float(np.mean([bool(pred_mnxr[o] & t_mx[o]) for o in qid[sub]]))
-            rows.append(dict(metric=name, condition=cond,
+            rows.append(dict(metric=name, condition=cond, vote=a.vote,
                              pool="shipped" if a.shipped_pool else "repaired",
-                             n_query=len(I),
+                             n_query=len(I), n_calls=n_calls,
+                             calls_per_speaking_orf=round(n_calls / speaking, 3)
+                             if speaking else 0.0,
+                             n_abstained=int((admitted == 0).sum()),
                              median_nn=round(float(np.median(np.where(np.isfinite(val[:, 0]), val[:, 0], np.nan))), 4),
                              **score_orf_level(pred_ec, t_ec),
                              **{f"mnxr_{k}": v for k, v in score_label_level(pred_mnxr, t_mx).items()},
@@ -114,7 +134,7 @@ def main():
             for cond, drop, twin in CONDITIONS:
                 I, Cc = _knn.refine(z["idx"][:n_], z["cos"][:n_],
                                     drop_col=(z["own"][:n_] if drop else None), twin_cut=twin)
-                votes = _knn.vote(I, Cc, labels, PBERT_FLOOR)
+                votes = _knn.vote(I, Cc, labels, PBERT_FLOOR, **SHIPPED)
                 o_ = z["orf"][:n_]
                 pm = {o: set(v) for o, v in zip(o_, votes)}
                 pe = {o: {e for m in v for e in m2e.get(m, ())} for o, v in pm.items()}
