@@ -124,6 +124,7 @@ def _lanes(work: Path, rng, seven: bool, pool_stacks=("emb_pbert.npy",),
         _write_ezpred(work / "ezpred.csv")
         _write_query_embeddings(work / "esmc.parquet", work / "esmc_index.csv", rng)
         _write_pool(work / "pool_esmc", rng, stacks=esmc_pool_stacks)
+        kw.pop("threads")
         kw.update(
             lane_set="full_7", source="orfs",
             deepec=str(work / "deepec.tsv"), ezpred=str(work / "ezpred.csv"),
@@ -135,21 +136,16 @@ def _lanes(work: Path, rng, seven: bool, pool_stacks=("emb_pbert.npy",),
     return kw
 
 
-def _render(mapper: str, kw: dict) -> str:
-    src = (MLIB / "transforms" / "fabfos" / f"{mapper}.py").read_text()
-    ns: dict = {}
-    start = src.index("DRIVER = r'''")
-    end = src.index("'''", start + len("DRIVER = r'''"))
-    template = src[start + len("DRIVER = r'''"):end]
-    exec(f"DRIVER = {template!r}", ns)
-    return ns["DRIVER"].format(**kw)
+def _argv(mapper: str, kw: dict) -> list[str]:
+    driver = MLIB / "resources" / "lib" / "fabfos_gpr" / f"{mapper}.py"
+    argv = [sys.executable, str(driver)]
+    for flag, value in kw.items():
+        argv += [f"--{flag.replace('_', '-')}", str(value)]
+    return argv
 
 
-def _run(driver: str, work: Path) -> subprocess.CompletedProcess:
-    script = work / "_driver.py"
-    script.write_text(driver)
-    return subprocess.run([sys.executable, str(script)], cwd=work,
-                          capture_output=True, text=True)
+def _run(argv: list[str], work: Path) -> subprocess.CompletedProcess:
+    return subprocess.run(argv, cwd=work, capture_output=True, text=True)
 
 
 def _check_table(out: Path, lane_set: str):
@@ -176,7 +172,7 @@ def _check_table(out: Path, lane_set: str):
 def test_gpr_4lane_driver_writes_a_valid_table(tmp_path):
     rng = np.random.default_rng(0)
     kw = _lanes(tmp_path, rng, seven=False)
-    r = _run(_render("gpr_4lane", kw), tmp_path)
+    r = _run(_argv("gpr_4lane", kw), tmp_path)
     assert r.returncode == 0, f"driver failed:\n{r.stdout}\n{r.stderr}"
     df = _check_table(tmp_path / "gpr.parquet", "chosen_4")
 
@@ -191,7 +187,7 @@ def test_gpr_4lane_driver_writes_a_valid_table(tmp_path):
 def test_gpr_7lane_driver_writes_a_valid_table(tmp_path):
     rng = np.random.default_rng(1)
     kw = _lanes(tmp_path, rng, seven=True, pool_stacks=("emb_pbert.npy", "emb_esmc.npy"))
-    r = _run(_render("gpr_7lane", kw), tmp_path)
+    r = _run(_argv("gpr_7lane", kw), tmp_path)
     assert r.returncode == 0, f"driver failed:\n{r.stdout}\n{r.stderr}"
     df = _check_table(tmp_path / "gpr.parquet", "full_7")
 
@@ -203,7 +199,7 @@ def test_gpr_7lane_driver_writes_a_valid_table(tmp_path):
 def test_esmc_lane_refuses_a_pool_without_its_stack(tmp_path):
     rng = np.random.default_rng(2)
     kw = _lanes(tmp_path, rng, seven=True, esmc_pool_stacks=("emb_pbert.npy",))
-    r = _run(_render("gpr_7lane", kw), tmp_path)
+    r = _run(_argv("gpr_7lane", kw), tmp_path)
     assert r.returncode != 0
     assert "emb_esmc.npy" in r.stderr and "esmc" in r.stderr
     assert not (tmp_path / "gpr.parquet").exists()
@@ -214,7 +210,7 @@ def test_mapper_refuses_when_a_lane_contributes_no_rows(tmp_path):
     kw = _lanes(tmp_path, rng, seven=False)
     b = pd.read_parquet(tmp_path / "bridge.parquet")
     b[b["id_source"] != "ko"].to_parquet(tmp_path / "bridge.parquet", index=False)
-    r = _run(_render("gpr_4lane", kw), tmp_path)
+    r = _run(_argv("gpr_4lane", kw), tmp_path)
     assert r.returncode != 0
     assert "kofam" in r.stderr and "0 rows" in r.stderr
     assert not (tmp_path / "gpr.parquet").exists()
@@ -225,7 +221,7 @@ def test_mapper_refuses_an_orf_id_mismatch(tmp_path):
     kw = _lanes(tmp_path, rng, seven=False)
     with open(tmp_path / "orfs.faa", "w") as fh:
         fh.write(">something_else_1\nMKV\n")
-    r = _run(_render("gpr_4lane", kw), tmp_path)
+    r = _run(_argv("gpr_4lane", kw), tmp_path)
     assert r.returncode != 0
     assert "ORF ids that are not in this shard's FASTA" in r.stderr
     assert not (tmp_path / "gpr.parquet").exists()
@@ -235,7 +231,7 @@ def test_clean_lane_refuses_a_header_drift(tmp_path):
     rng = np.random.default_rng(5)
     kw = _lanes(tmp_path, rng, seven=False)
     _write_clean(tmp_path / "clean.tsv", header=("query", "ec", "score"))
-    r = _run(_render("gpr_4lane", kw), tmp_path)
+    r = _run(_argv("gpr_4lane", kw), tmp_path)
     assert r.returncode != 0
     assert "clean_predictions header" in r.stderr
     assert not (tmp_path / "gpr.parquet").exists()

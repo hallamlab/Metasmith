@@ -51,14 +51,7 @@ def _mapper_table(path: Path, channels) -> pd.DataFrame:
     return df
 
 
-def _render_driver(**kw) -> str:
-    src = (BREF / "transforms" / "benchmark" / "host_gpr_denovo.py").read_text()
-    start = src.index("DRIVER = r'''")
-    end = src.index("'''", start + len("DRIVER = r'''"))
-    template = src[start + len("DRIVER = r'''"):end]
-    ns: dict = {}
-    exec(f"DRIVER = {template!r}", ns)
-    return ns["DRIVER"].format(**kw)
+DRIVER = BREF / "resources" / "buildlib" / "benchmark" / "host_gpr_denovo.py"
 
 
 def _run_driver(tmp: Path, channels) -> subprocess.CompletedProcess:
@@ -66,15 +59,16 @@ def _run_driver(tmp: Path, channels) -> subprocess.CompletedProcess:
     _mapper_table(tmp / "mapper.parquet", channels)
     out = tmp / "out"
     out.mkdir()
-    driver = _render_driver(
-        genomes=str(genomes), out=str(out),
-        gpr_paths=repr([str(tmp / "mapper.parquet")]),
-        ev_lib=str(LIB / "fabfos_evidence.py"), lane_set="chosen_4",
-        extensions=repr(["attribution", "feature", "universe"]))
-    script = tmp / "_driver.py"
-    script.write_text(driver)
-    return subprocess.run([sys.executable, str(script)], cwd=tmp,
-                          capture_output=True, text=True)
+    argv = [
+        sys.executable, str(DRIVER),
+        "--genomes", str(genomes),
+        "--out", str(out),
+        "--gpr-paths", repr([str(tmp / "mapper.parquet")]),
+        "--ev-lib", str(LIB / "fabfos_evidence.py"),
+        "--lane-set", "chosen_4",
+        "--extensions", repr(["attribution", "feature", "universe"]),
+    ]
+    return subprocess.run(argv, cwd=tmp, capture_output=True, text=True)
 
 
 @pytest.mark.parametrize("missing", ["pbert", "kofam", "clean", "uniref50"])
