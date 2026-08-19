@@ -25,34 +25,30 @@ Run: python tests/test_gpr_4lane_sparse_transfer.py   (or under pytest)
 from __future__ import annotations
 
 import re
-import string
 from pathlib import Path
 
 import numpy as np
 
 REPO = Path(__file__).resolve().parents[2]
-TRANSFORM = REPO / "src" / "metasmith_libraries" / "transforms" / "fabfos" / "gpr_4lane.py"
+MAPPER = (REPO / "src" / "metasmith_libraries" / "resources" / "lib"
+          / "fabfos_gpr" / "gpr_4lane.py")
 
 K = 30
 FLOOR = 0.20
 
 
 def _sparse_impl():
-    """The live implementation, lifted out of the transform's DRIVER string.
+    """The live implementation, lifted out of the mapper module.
 
-    Extracted rather than copied: a copy would keep passing after the transform
+    Extracted rather than copied: a copy would keep passing after the mapper
     changed, which is the one thing this test exists to prevent.
     """
-    src = TRANSFORM.read_text()
-    body = re.search(r"DRIVER = r'''\n(.*?)\n'''", src, re.S).group(1)
-    keys = {k for _, k, _, _ in string.Formatter().parse(body) if k}
-    filled = body.format(**{k: {"lane_set": "chosen_4", "source": "s",
-                                "threads": 1}.get(k, "") for k in keys})
+    src = MAPPER.read_text()
     # The vote is the middle of `lane_embed`; run it here against arrays rather
     # than files by re-executing just the arithmetic, which is the block below.
-    start = filled.index("    # THE LABEL MATRIX IS SPARSE")
-    end = filled.index('    print("[gpr] " + channel + ": "')
-    block = filled[start:end]
+    start = src.index("    # THE LABEL MATRIX IS SPARSE")
+    end = src.index('    print("[gpr] " + channel + ": "')
+    block = src[start:end]
     # The reads and the width check want files and a `_read_query`; the harness
     # supplies q_orf/q_emb directly.
     block = re.sub(r"    q_orf, q_raw, _ = _read_query\(parquet\)\n"

@@ -11,12 +11,13 @@ deepec    = model.AddRequirement(lib.GetType("annotation::deepec_predictions"), 
 ezpred    = model.AddRequirement(lib.GetType("annotation::ezpred_predictions"), parents={orfs})
 uniref    = model.AddRequirement(lib.GetType("annotation::diamond_uniref50_results"), parents={orfs})
 pbert_emb = model.AddRequirement(lib.GetType("annotation::proteinbert_embeddings"), parents={orfs})
-pbert_idx = model.AddRequirement(lib.GetType("annotation::proteinbert_index"), parents={orfs})
 esmc_emb  = model.AddRequirement(lib.GetType("annotation::esm_c_embeddings"), parents={orfs})
+# The ESM-C query is still an index beside a stack: only the ProteinBERT side was
+# collapsed into one self-addressing table.
 esmc_idx  = model.AddRequirement(lib.GetType("annotation::esm_c_index"), parents={orfs})
 bridge    = model.AddRequirement(lib.GetType("ref::mnxr_lookup"))
-pool      = model.AddRequirement(lib.GetType("ref::label_transfer_landmarks"))
-pool_esmc = model.AddRequirement(lib.GetType("ref::label_transfer_landmarks_esmc"))
+landmarks = model.AddRequirement(lib.GetType("ref::label_transfer_landmarks"))
+lm_esmc   = model.AddRequirement(lib.GetType("ref::label_transfer_landmarks_esmc"))
 ev_lib    = model.AddRequirement(lib.GetType("lib::fabfos_evidence.py"))
 gpr_lib   = model.AddRequirement(lib.GetType("lib::fabfos_gpr"))
 out_gpr   = model.AddProduct(lib.GetType("annotation::gpr_table_7lane"))
@@ -32,12 +33,11 @@ def protocol(context: ExecutionContext):
     iez   = context.Input(ezpred)
     iuni  = context.Input(uniref)
     ipe   = context.Input(pbert_emb)
-    ipi   = context.Input(pbert_idx)
     iee   = context.Input(esmc_emb)
     iei   = context.Input(esmc_idx)
     ibr   = context.Input(bridge)
-    ipool = context.Input(pool)
-    ipesm = context.Input(pool_esmc)
+    ilm   = context.Input(landmarks)
+    ilme  = context.Input(lm_esmc)
     iev   = context.Input(ev_lib)
     igpr  = context.Input(gpr_lib)
     iout  = context.Output(out_gpr)
@@ -52,12 +52,11 @@ def protocol(context: ExecutionContext):
             --ezpred {iez.container} \
             --uniref {iuni.container} \
             --pbert-emb {ipe.container} \
-            --pbert-idx {ipi.container} \
             --esmc-emb {iee.container} \
             --esmc-idx {iei.container} \
             --bridge {ibr.container} \
-            --pool {ipool.container} \
-            --pool-esmc {ipesm.container} \
+            --landmarks {ilm.container} \
+            --lm-esmc {ilme.container} \
             --out {iout.container} \
             --lane-set {LANE_SET} \
             --source {iorfs.local.stem}

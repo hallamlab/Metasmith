@@ -1,38 +1,53 @@
-import argparse as _argparse
-_p = _argparse.ArgumentParser()
-_p.add_argument("--bridge", required=True)
-_p.add_argument("--clean", required=True)
-_p.add_argument("--deepec", required=True)
-_p.add_argument("--esmc-emb", required=True)
-_p.add_argument("--esmc-idx", required=True)
-_p.add_argument("--ev-lib", required=True)
-_p.add_argument("--ezpred", required=True)
-_p.add_argument("--kofam", required=True)
-_p.add_argument("--lane-set", required=True)
-_p.add_argument("--orfs", required=True)
-_p.add_argument("--out", required=True)
-_p.add_argument("--pbert-emb", required=True)
-_p.add_argument("--pbert-idx", required=True)
-_p.add_argument("--pool", required=True)
-_p.add_argument("--pool-esmc", required=True)
-_p.add_argument("--source", required=True)
-_p.add_argument("--uniref", required=True)
-A = _p.parse_args()
+"""GPR mapper (full 7 lanes): every annotation lane folded into one
+gene-attributed GPR table.
 
-import sys, os
+Same shape and contract as gpr_4lane (see that module, and
+`lib::fabfos_evidence.py` for the schema itself); this is the full-coverage
+variant that adds DeepEC, EZpred and the ESM-C embedding lane.
+
+The ESM-C lane votes against its OWN landmarks: two embedders in two images, one
+of which needs a GPU, so they are two references. `lane_embed` refuses a query and
+a landmark table of different widths, because a kNN vote across two embedding
+spaces is a number with no referent.
+"""
+import os
+import sys
+
+
+def _args():
+    import argparse
+    p = argparse.ArgumentParser(description="full-7 GPR mapper")
+    p.add_argument("--bridge", required=True)
+    p.add_argument("--clean", required=True)
+    p.add_argument("--deepec", required=True)
+    p.add_argument("--esmc-emb", required=True)
+    p.add_argument("--esmc-idx", required=True)
+    p.add_argument("--ev-lib", required=True)
+    p.add_argument("--ezpred", required=True)
+    p.add_argument("--kofam", required=True)
+    p.add_argument("--landmarks", required=True)
+    p.add_argument("--lane-set", required=True)
+    p.add_argument("--lm-esmc", required=True)
+    p.add_argument("--orfs", required=True)
+    p.add_argument("--out", required=True)
+    p.add_argument("--pbert-emb", required=True)
+    p.add_argument("--source", required=True)
+    p.add_argument("--uniref", required=True)
+    return p.parse_args()
+
+
+if __name__ == "__main__":
+    A = _args()
+
 import numpy as np
 import pandas as pd
 
-sys.path.insert(0, os.path.dirname(str(A.ev_lib)))
-import fabfos_evidence as fe
 
-SCHEMA = fe.SCHEMA_COLS
-LANE_SET = str(A.lane_set)
-SOURCE = str(A.source)
-K = 30
-PBERT_FLOOR = 0.20
-ESMC_FLOOR = 0.10
-DL_EC_FLOOR = fe.DL_EC_SCORE_FLOOR
+def load_evidence(ev_lib):
+    """The staged `lib::fabfos_evidence.py`, imported from wherever it landed."""
+    sys.path.insert(0, os.path.dirname(str(ev_lib)))
+    import fabfos_evidence
+    return fabfos_evidence
 
 
 def finish(df, channel, projection_via=None):
@@ -68,25 +83,28 @@ def lane_kofam(path, ko_to_mnxr):
     df["intermediate_id"] = df["ko"]
     return finish(df, "kofam", "kegg.reaction")
 
-# `clean_score` is CLEAN's maxsep DISTANCE (lower is better); stored through
-# fe.clean_distance_to_score so higher-is-stronger holds. See gpr_4lane.py.
+# `clean_score` is CLEAN's GMM-calibrated CONFIDENCE (higher is better), stored
+# unchanged, and the lane abstains below fe.CLEAN_MIN_SCORE at parse time the way
+# kofam drops a hit below its family threshold. See gpr_4lane.py.
 def lane_clean(path, ec_to_mnxr):
     df = pd.read_csv(path, sep="\t")
     if list(df.columns) != ["Query ID", "Predicted EC number", "clean_score"]:
         raise SystemExit(
             "[gpr] clean_predictions header is not the 3 columns this lane parses: "
             "got " + repr(list(df.columns)))
-    df.columns = ["orf", "ec", "clean_dist"]
-    df["clean_dist"] = pd.to_numeric(df["clean_dist"], errors="coerce")
-    df = df[df["clean_dist"].notna() & (df["clean_dist"] >= 0)].copy()
-    df["raw_score"] = fe.clean_distance_to_score(df["clean_dist"])
+    df.columns = ["orf", "ec", "clean_score"]
+    df["clean_score"] = pd.to_numeric(df["clean_score"], errors="coerce")
+    n_in = len(df)
+    df = df[df["clean_score"].notna() & (df["clean_score"] >= CLEAN_MIN_SCORE)].copy()
+    print("[gpr] clean: " + str(n_in) + " calls, " + str(n_in - len(df))
+          + " below the abstain at " + str(CLEAN_MIN_SCORE), flush=True)
+    df["raw_score"] = df["clean_score"]
     df = df[df["ec"].astype(str).str.match(r"^\d+\.\d+\.\d+\.\d+$", na=False)]
     df = df.merge(ec_to_mnxr, on="ec", how="inner")
     df["intermediate_id"] = df["ec"]
     return finish(df, "clean", "ec")
 
 # DeepEC: dev2 deepec_predictions is a TSV; col0 = gene id, col1 = predicted EC.
-# score-less -> raw_score = NaN (accepted).
 def lane_deepec(path, ec_to_mnxr):
     rows = []
     with open(path) as fh:
@@ -108,7 +126,9 @@ def lane_deepec(path, ec_to_mnxr):
     df = df[df["ec"].str.match(r"^\d+\.\d+\.\d+\.\d+$", na=False)]
     df = df.merge(ec_to_mnxr, on="ec", how="inner")
     df["intermediate_id"] = df["ec"]
-    # Presence, not NaN -- see the header.
+    # A score-less tool asserts PRESENCE, and 1.0 is how that is spelled. NaN made
+    # the downstream share-of-sum read the whole lane's total as zero and fall back
+    # to a uniform split with nothing raised.
     df["raw_score"] = 1.0
     return finish(df, "deepec", "ec")
 
@@ -140,64 +160,153 @@ def lane_uniref(path, uniprot_to_mnxr):
     joined["projection_via"] = joined["dr_source"]
     return finish(joined, "uniref50")
 
-def _query_ids(index_csv):
-    """The embedding index's id column -- `sequence_id` after the producer
-    normalises it, `id` as the embedder itself writes it. Both read, neither guessed."""
+# An embedding table's ids and its vectors, taken from the SAME rows. The dim columns
+# must run contiguously from 0: a table missing `dim_7` still stacks into a matrix of
+# the wrong width rather than failing.
+def _dims(df, path):
+    dims = [c for c in df.columns if c.startswith("dim_")]
+    want = ["dim_" + str(i) for i in range(len(dims))]
+    if sorted(dims, key=lambda c: int(c[4:])) != want:
+        raise SystemExit(
+            "[gpr] " + path + " does not carry dim_0..dim_" + str(len(dims) - 1)
+            + " contiguously")
+    return df[want].to_numpy(dtype=np.float32)
+
+def _read_query(parquet, index_csv):
+    df = pd.read_parquet(parquet)
+    emb = _dims(df, parquet)
+    if index_csv is None:
+        if "sequence_id" not in df.columns:
+            raise SystemExit(
+                "[gpr] " + parquet + " has no sequence_id column; this embedding type "
+                "carries its ids beside its vectors")
+        return df["sequence_id"].to_numpy(), emb
+    # THE PRODUCER CHECKS THIS AND THE CONSUMER DID NOT. An index LONGER or shorter
+    # than the stack does not raise on its own -- it attributes every vote to the
+    # wrong ORF and yields a full, schema-valid, confidently wrong table.
     idx = pd.read_csv(index_csv)
     for cand in ("sequence_id", "id"):
         if cand in idx.columns:
-            return idx[cand].to_numpy()
-    raise SystemExit(
-        "[gpr] the embedding index " + index_csv + " has no id column (it holds "
-        + repr(list(idx.columns)) + "); the kNN lane keys its ORFs off it")
+            ids = idx[cand].to_numpy()
+            break
+    else:
+        raise SystemExit(
+            "[gpr] the embedding index " + index_csv + " has no id column (it holds "
+            + repr(list(idx.columns)) + "); the kNN lane keys its ORFs off it")
+    if len(ids) != len(emb):
+        raise SystemExit(
+            "[gpr] the embedding index has " + str(len(ids)) + " rows and the stack "
+            "has " + str(len(emb)) + "; the lane addresses the stack BY ROW, so these "
+            "cannot be paired")
+    return ids, emb
 
 def _norm(x):
     n = np.linalg.norm(x, axis=1, keepdims=True)
     return x / np.clip(n, 1e-9, None)
 
-def lane_embed(parquet, index_csv, pool_dir, emb_name, channel, floor):
-    stack = os.path.join(pool_dir, emb_name)
-    if not os.path.exists(stack):
+def lane_embed(parquet, index_csv, landmark_dir, channel, floor,
+               nn_min, tau, k_max):
+    # Zero is a meaningful vote floor -- "every label an admitted neighbour carries" --
+    # now that `nn_min` decides which neighbours are admitted. Only a negative one is
+    # refused. See gpr_4lane.py for the dense vote form this used to guard against.
+    if floor < 0:
+        raise SystemExit("[gpr] the " + channel + " vote floor must be >= 0")
+    if not 0.0 <= tau <= 1.0:
+        raise SystemExit("[gpr] the " + channel + " tau is a fraction of this ORF's "
+                         "own best cosine and must lie in [0, 1]")
+    if k_max < 1:
+        raise SystemExit("[gpr] the " + channel + " k_max must be at least 1")
+    table = os.path.join(landmark_dir, "landmarks.parquet")
+    if not os.path.exists(table):
         raise SystemExit(
-            "[gpr] the reference label pool carries no " + emb_name + " (it holds "
-            + repr(sorted(os.listdir(pool_dir))) + "). The " + channel + " lane votes "
-            "against embeddings from its own model -- cosine distance between two "
-            "embedding spaces is a number with no referent -- so there is no "
-            "degraded mode here; the pool must be rebuilt with this embedder")
-    pool_idx = pd.read_parquet(os.path.join(pool_dir, "orf_index.parquet"))
-    ref = pool_idx[pool_idx["role"] == "reference"].reset_index(drop=True)
-    emb = np.load(stack, mmap_mode="r")
-    ref_emb = _norm(np.asarray(emb[ref["row"].to_numpy()], dtype=np.float32))
-    ref_orf = ref["orf"].to_numpy()
-    label_lists = [s.split(";") if s else [] for s in ref["mnxr_list"]]
+            "[gpr] the landmark set carries no landmarks.parquet (it holds "
+            + repr(sorted(os.listdir(landmark_dir))) + "). The " + channel + " lane "
+            "votes against embeddings from its own model -- cosine distance between "
+            "two embedding spaces is a number with no referent -- so there is no "
+            "degraded mode here; the landmarks must be rebuilt with this embedder")
+    ref = pd.read_parquet(table)
+    ref_emb = _norm(_dims(ref, table))
+    ref_orf = ref["accession"].to_numpy()
+
+    # CSR-shaped label lists rather than a dense (reference x MNXR) indicator: at
+    # 222,019 x ~13,112 float32 that matrix is 10.84 GiB of 99.97% zeros, and the
+    # vote only ever touches at most K neighbours' short lists. Each list is
+    # DEDUPLICATED -- the dense form wrote 1.0 idempotently, so an accumulation over
+    # a repeated label is the one place the two forms could disagree.
+    label_lists = [
+        sorted(set(m for m in (s.split(";") if s else []) if m))
+        for s in ref["mnxr_list"].fillna("")
+    ]
     vocab = sorted({m for ls in label_lists for m in ls})
     vidx = {m: i for i, m in enumerate(vocab)}
-    L = np.zeros((len(ref), len(vocab)), dtype=np.float32)
-    for r, ls in enumerate(label_lists):
-        for m in ls:
-            L[r, vidx[m]] = 1.0
-    q_orf = _query_ids(index_csv)
-    q_emb = _norm(pd.read_parquet(parquet).to_numpy(dtype=np.float32))
+    vocab_arr = np.asarray(vocab, dtype=object)
+    counts = np.fromiter((len(ls) for ls in label_lists), dtype=np.int64,
+                         count=len(label_lists))
+    lab_ptr = np.zeros(len(label_lists) + 1, dtype=np.int64)
+    np.cumsum(counts, out=lab_ptr[1:])
+    lab_idx = np.fromiter((vidx[m] for ls in label_lists for m in ls),
+                          dtype=np.int32, count=int(lab_ptr[-1]))
+
+    q_orf, q_raw = _read_query(parquet, index_csv)
+    if q_raw.shape[1] != ref_emb.shape[1]:
+        raise SystemExit(
+            "[gpr] the " + channel + " query embeddings are " + str(q_raw.shape[1])
+            + " dims and its landmarks are " + str(ref_emb.shape[1]) + ". A cosine "
+            "between two embedding spaces is a number with no referent")
+    q_emb = _norm(q_raw)
+    kk = min(k_max, ref_emb.shape[0])
     rows = []
+    n_refused = 0
+    n_admitted = 0
+    n_voting = 0
     for s in range(0, len(q_emb), 256):
         sim = q_emb[s:s+256] @ ref_emb.T
-        top = np.argpartition(-sim, min(K, sim.shape[1]-1), axis=1)[:, :K]
+        top = np.argpartition(-sim, min(kk, sim.shape[1]-1), axis=1)[:, :kk]
         for bi in range(sim.shape[0]):
-            nn = top[bi]
-            vals = np.clip(sim[bi, nn], 0, None)
+            cand = top[bi]
+            cs = np.clip(sim[bi, cand], 0, None)
+            order = np.argsort(-cs, kind="stable")
+            cand, cs = cand[order], cs[order]
+            # The ORF-level abstain: `floor` gates the vote, which is normalised
+            # within the admitted set and so measures AGREEMENT; this measures
+            # PROXIMITY. See gpr_4lane.py.
+            if cs[0] <= 0 or cs[0] < nn_min:
+                n_refused += 1
+                continue
+            # The quota: absolute floor and a band relative to this ORF's own best
+            # match, so a dense neighbourhood votes with many neighbours and a thin
+            # one with a few or with exactly one.
+            keep = cs >= max(nn_min, tau * cs[0])
+            nn, vals = cand[keep], cs[keep]
+            n_admitted += len(nn)
+            n_voting += 1
             tot = vals.sum()
             if tot <= 0:
                 continue
             w = vals / tot
-            votes = w @ L[nn]
-            best = int(np.argmax(sim[bi, nn]))
+            cnt = lab_ptr[nn + 1] - lab_ptr[nn]
+            total = int(cnt.sum())
+            if total == 0:
+                continue
+            base = np.repeat(lab_ptr[nn], cnt)
+            within = np.arange(total, dtype=np.int64) - np.repeat(
+                np.cumsum(cnt) - cnt, cnt)
+            uniq, inv = np.unique(lab_idx[base + within], return_inverse=True)
+            votes = np.bincount(inv, weights=np.repeat(w, cnt), minlength=len(uniq))
             for j in np.nonzero(votes >= floor)[0]:
                 # intermediate_id names the DONOR neighbour: label transfer IS the
-                # projection, so there is no KO or EC in between.
-                rows.append((q_orf[s+bi], vocab[j], ref_orf[nn[best]],
+                # projection, so there is no KO or EC in between. `cs` is sorted
+                # descending, so the donor is the first admitted neighbour.
+                rows.append((q_orf[s+bi], vocab_arr[uniq[j]], ref_orf[nn[0]],
                              float(min(votes[j], 1.0))))
+    print("[gpr] " + channel + ": " + str(len(q_emb)) + " ORFs, " + str(n_refused)
+          + " with no landmark at cosine " + ("%.4f" % nn_min) + " or better (abstain), "
+          + str(n_voting) + " voting on "
+          + ("%.1f" % (n_admitted / n_voting) if n_voting else "0")
+          + " admitted neighbours on average, " + str(len(rows)) + " calls",
+          flush=True)
     df = pd.DataFrame(rows, columns=["orf", "mnxr", "intermediate_id", "raw_score"])
-    df["evidence_quality"] = "reviewed"   # the pool IS the bridge's reviewed cut
+    df["evidence_quality"] = "reviewed"   # the landmarks ARE the bridge's reviewed cut
     return finish(df, channel, "embedding_knn")
 
 def load_bridge(path):
@@ -222,8 +331,10 @@ def main():
         lane_deepec(str(A.deepec), ec_to_mnxr),
         lane_ezpred(str(A.ezpred), ec_to_mnxr),
         lane_uniref(str(A.uniref), up_to_mnxr),
-        lane_embed(str(A.pbert_emb), str(A.pbert_idx), str(A.pool), "emb_pbert.npy", "pbert", PBERT_FLOOR),
-        lane_embed(str(A.esmc_emb), str(A.esmc_idx), str(A.pool_esmc), "emb_esmc.npy", "esmc", ESMC_FLOOR),
+        lane_embed(str(A.pbert_emb), None, str(A.landmarks), "pbert", PBERT_FLOOR,
+                   PBERT_NN_MIN, PBERT_TAU, PBERT_K_MAX),
+        lane_embed(str(A.esmc_emb), str(A.esmc_idx), str(A.lm_esmc), "esmc", ESMC_FLOOR,
+                   ESMC_NN_MIN, ESMC_TAU, ESMC_K_MAX),
     ]
     gpr = pd.concat(frames, ignore_index=True)
     gpr = gpr[gpr["orf"].isin(set(ids))]
@@ -233,4 +344,22 @@ def main():
     gpr.to_parquet(str(A.out), index=False)
     print("[gpr_7lane] wrote " + str(len(gpr)) + " rows -> " + str(A.out), flush=True)
 
-main()
+
+if __name__ == "__main__":
+    fe = load_evidence(A.ev_lib)
+    SCHEMA = fe.SCHEMA_COLS
+    LANE_SET = str(A.lane_set)
+    SOURCE = str(A.source)
+    # Every lane cut-off is fe's. See the block there for what each one gates and why
+    # the ESM-C quota knobs are the pre-quota no-ops rather than pbert's tuned numbers.
+    PBERT_NN_MIN = fe.PBERT_NN_MIN
+    PBERT_TAU = fe.PBERT_TAU
+    PBERT_K_MAX = fe.PBERT_K_MAX
+    PBERT_FLOOR = fe.PBERT_FLOOR
+    ESMC_NN_MIN = fe.ESMC_NN_MIN
+    ESMC_TAU = fe.ESMC_TAU
+    ESMC_K_MAX = fe.ESMC_K_MAX
+    ESMC_FLOOR = fe.ESMC_FLOOR
+    CLEAN_MIN_SCORE = fe.CLEAN_MIN_SCORE
+    DL_EC_FLOOR = fe.DL_EC_SCORE_FLOOR
+    main()
