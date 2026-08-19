@@ -20,8 +20,8 @@ still be joined wrongly at compile time, and the resulting graph is plausible ra
 broken.
 
 The constants check exists for a subtler reason. ``ecspr.bake.direction.canon`` is a copy of
-``src/fabfos/canon.py``'s ``DIR_*`` block, because the direction ensemble runs in a conda
-env that has no import path to the fabfos package. Two copies of a constant drift, and
+``src/fabfos/_deprecated_canon.py``'s ``DIR_*`` block, because the direction ensemble runs in a
+conda env that has no import path to the fabfos package. Two copies of a constant drift, and
 this pair drifts silently: one COMPUTES a ratio and the other VALIDATES a table carrying
 one, so a divergence produces a table that passes its own validator while meaning
 something else.
@@ -29,6 +29,7 @@ something else.
 from __future__ import annotations
 
 import argparse
+import importlib
 import sys
 import time
 from pathlib import Path
@@ -39,6 +40,10 @@ import pandas as pd
 REPO = Path(__file__).resolve().parents[3]
 MLIB = REPO / "src" / "metasmith_libraries"
 BREF = Path(__file__).resolve().parent
+# Both halves of what this gate compares now come from one package: `ecspr.bake` is
+# the build method and `ecspr.model` is the run-side consumer it is checked against.
+# Nothing is added to sys.path -- an ImportError below means the env lacks `ecspr`
+# rather than that a path was wrong.
 
 from ecspr.bake import encoding as refs  # noqa: E402
 
@@ -57,9 +62,15 @@ def note(msg: str) -> None:
 
 
 def find(results: Path, name: str) -> Path | None:
+    """The first FILE matching `name`. Directories are skipped rather than returned:
+    a bake chunk names its seam directory `aam_pairs/`, so `*aam_pairs*` matched the
+    directory, and `read_parquet` died on the zero-byte `emptied.txt` inside it.
+    """
     hits = sorted(p for p in results.rglob(name) if p.is_file())
     return hits[0] if hits else None
 
+
+# =====================================================================
 
 def check_bake(vocab_p: Path, pairs_p: Path, dir_p: Path) -> dict | None:
     print("\nbake -- the trio is one artifact")
@@ -78,6 +89,10 @@ def check_bake(vocab_p: Path, pairs_p: Path, dir_p: Path) -> dict | None:
           f"{ident['n_met']:,} <= {1 << ident['met_bits']:,}")
     check("edge key fits in int64",
           2 * (ident["met_bits"] + ident["rank_bits"]) <= refs.NODE_KEY_BUDGET)
+    # n_rxn is the size of the reaction UNIVERSE, not of the set the pairs cover -- the
+    # vocabulary is coded against lookup::reactions so that `ratio_by_code` is fully
+    # addressed. Reporting it as "atom pairs over N reactions" read as coverage and was
+    # wrong by ~20k.
     note(f"{ident['atom_pairs_rows']:,} atom pairs, {ident['n_met']:,} metabolites, "
          f"coded against a {ident['n_rxn']:,}-reaction universe")
     fmeta = refs.read_file_meta(dir_p)
@@ -88,6 +103,13 @@ def check_bake(vocab_p: Path, pairs_p: Path, dir_p: Path) -> dict | None:
 
 def check_equivalence(ident: dict, vocab_p: Path, pairs_p: Path, dir_p: Path,
                       src_pairs: Path, src_dir: Path) -> None:
+    """The compiled tables must build the same graph as the reference builder.
+
+    ``ecspr.model.build.graph_from_pairs`` works on the STRING tables and is the definition;
+    ``ecspr.bake.encoding.compile_atom_graph`` works on the compiled ones and is the thing being
+    checked. Node ORDER differs -- the baked table is sorted, so first-seen order differs
+    -- which is why nodes are compared as sets and conductances sorted before comparison.
+    """
     print("\nequivalence -- the compiled tables build the same graph as the builder")
     try:
         from ecspr.model.build import graph_from_pairs
@@ -104,6 +126,10 @@ def check_equivalence(ident: dict, vocab_p: Path, pairs_p: Path, dir_p: Path,
     dsrc = pd.read_parquet(src_dir, columns=["mnxr", "ratio"])
     ratios = {str(r): float(v) for r, v in zip(dsrc["mnxr"], dsrc["ratio"])
               if str(r) != "EMPTY"}
+    # Uniform weights over every reaction the pairs cover. The deployed gate used a
+    # staged evidence-weight fixture; uniform E is the same test with one fewer input --
+    # what is being compared is the join, the flip and the edge factorisation, none of
+    # which depends on the weights being interesting.
     weights = {str(r): 1.0 for r in src["mnxr"].unique()}
 
     V = refs.load_vocab(vocab_p)
@@ -132,20 +158,35 @@ def check_equivalence(ident: dict, vocab_p: Path, pairs_p: Path, dir_p: Path,
          f"reference builder's {t_ref*1000:.0f} ms")
 
 
+MIRROR = "fabfos._deprecated_canon"
+
+
 def check_direction_constants() -> None:
+    """The build-side copy of the DIR_* block must equal the run-side one.
+
+    See the module docstring: these are the same numbers used at two different times, and
+    a divergence is invisible from either side alone.
+
+    A FAILURE TO IMPORT IS A FAILURE, not a note. This check spent a generation passing
+    because it named `fabfos.canon`, which had been renamed to `fabfos._deprecated_canon`
+    -- the ImportError was caught, reported as a note, and the mirror it exists to guard
+    went unchecked through every run since. An unimportable mirror and a diverged one are
+    the same outcome for the reader, so they get the same verdict.
+    """
     print("\nconstants -- the direction ensemble's two copies agree")
+    sys.path.insert(0, str(REPO / "src"))
     try:
         from ecspr.bake.direction import canon as dir_canon
-        sys.path.insert(0, str(REPO / "src"))
-        from fabfos import canon
+        canon = importlib.import_module(MIRROR)
     except Exception as e:                                       # pragma: no cover
-        note(f"could not import both copies ({e}); constants not checked")
+        check(f"both copies of the DIR_* block import", False,
+              f"{type(e).__name__}: {e}")
         return
     names = [n for n in dir(dir_canon) if n.startswith("DIR_")]
     bad = [n for n in names
            if not hasattr(canon, n) or getattr(canon, n) != getattr(dir_canon, n)]
-    check(f"all {len(names)} DIR_* constants match src/fabfos/canon.py", not bad,
-          f"diverged: {bad}" if bad else "")
+    check(f"all {len(names)} DIR_* constants match {MIRROR}", not bad,
+          f"diverged: {bad}" if bad else f"{len(names)} names")
 
 
 def check_bridge(bridge_p: Path) -> None:
@@ -156,6 +197,8 @@ def check_bridge(bridge_p: Path) -> None:
     b = pd.read_parquet(bridge_p, columns=["id", "id_source", "mnxr", "evidence_quality"])
     per_id = b.groupby("id")["id_source"].nunique()
     clashes = int((per_id > 1).sum())
+    # `id_source` is a LABEL, not a disambiguator -- the consumer slices on it and joins on
+    # `id` alone, so a collision would mix two namespaces' claims into one lane.
     check("no id appears in more than one id_source", clashes == 0,
           f"{clashes:,} colliding ids" if clashes else f"{b['id'].nunique():,} distinct ids")
     dupes = int(b.duplicated(subset=["id", "mnxr"]).sum())
@@ -178,6 +221,8 @@ def check_gem_tables(results: Path) -> None:
         host = d["host"].iat[0] if len(d) else t.stem
         frames[host] = d
         n_ruleless = int((d["feature_kind"] == "ruleless").sum())
+        # Dropping ruleless reactions makes every gene set look like starvation, because
+        # exchanges and spontaneous chemistry are live in every condition.
         check(f"{host}: ruleless reactions have rows", n_ruleless > 0,
               f"{n_ruleless:,} of {len(d):,}")
         uniform = bool((d["raw_score"] == 1.0).all())
@@ -188,11 +233,27 @@ def check_gem_tables(results: Path) -> None:
         cols = [c for c in frames["e_coli_epi300"].columns if c != "host"]
         same = frames["e_coli_epi300"][cols].reset_index(drop=True).equals(
             frames["e_coli_dh10b"][cols].reset_index(drop=True))
+        # They share iECDH10B_1368 and the measured edit list is EMPTY, so identical is
+        # the correct outcome; a divergence means one of them silently used another model.
         check("EPI300 and DH10B tables are identical apart from the host tag", same)
 
 
+
+# =====================================================================
+# The annotation references, checked where they are PINNED rather than where a run
+# happened to leave them. Each of the five the four canonical lanes need gets a
+# named assertion, because "the file exists" is what every one of these failed on
+# in a way that only showed up hours downstream.
+# =====================================================================
+
+# The query lane emits 512 dims (functionalAnnotation/proteinbert.py takes the last
+# 512 of ProteinBERT's 3,072-wide global representation). A pool of any other width
+# does not produce a worse kNN vote -- it produces a shape error, or worse, a
+# silently valid dot product against a different space.
 POOL_EMBED_DIM = 512
+# ESM-C 600M is 1152-dim; the ESM-C pool and the query lane must agree on it.
 ESMC_EMBED_DIM = 1152
+# Five per head is what EZpred's DL-only path averages over.
 EZPRED_ENSEMBLE = 5
 
 
@@ -202,6 +263,7 @@ def check_annotation_refs(processed: Path) -> None:
         note(f"{processed} does not exist; the annotation half has not been published")
         return
 
+    # --- R3: the KOfam pair. They are ONE artifact in two files.
     profiles = processed / "kofam_ref" / "profiles"
     ko_list = processed / "kofam_ref" / "ko_list.tsv"
     if profiles.is_dir() and ko_list.exists():
@@ -211,6 +273,16 @@ def check_annotation_refs(processed: Path) -> None:
         check("kofam: ko_list carries thresholds",
               {"knum", "threshold"} <= set(kl.columns),
               f"columns {list(kl.columns)[:6]}")
+        # A ko_list paired with profiles from another build applies the wrong cut to
+        # every hit and raises nothing, so the pairing is the assertion -- but only in
+        # ONE direction, and it was written in the other.
+        #
+        # A profile with no threshold is the failure: hmmsearch finds it and nothing
+        # says where to cut, so every hit on that family is unscored. A ko_list entry
+        # with no profile is not: hmmsearch simply cannot produce a hit for it. KOfam
+        # ships exactly that gap upstream -- 28,277 listed against 27,754 profiled in
+        # release 2026-06-30, verified against `profiles.tar.gz` itself -- so asserting
+        # it away would fail every faithful build of this reference forever.
         have = {p.stem for p in hmms}
         want = set(kl["knum"].dropna())
         unscored = have - want
@@ -224,6 +296,8 @@ def check_annotation_refs(processed: Path) -> None:
     else:
         note("kofam_ref/{profiles,ko_list.tsv} not published; not checked")
 
+    # --- R4: the DIAMOND database. Its sequence count is readable only by diamond
+    # itself, so absent the binary this is a size floor and says so.
     dmnd = processed / "uniref50_dmnd" / "uniref50.dmnd"
     if dmnd.exists():
         gb = dmnd.stat().st_size / 1e9
@@ -240,6 +314,8 @@ def check_annotation_refs(processed: Path) -> None:
     else:
         note("uniref50_dmnd/uniref50.dmnd not published; not checked")
 
+    # --- R7: the label pool. Index and stack are ONE artifact: the consumer
+    # addresses the stack BY ROW.
     pool = processed / "reference_label_pool" / "pool"
     if pool.is_dir():
         idx_p = pool / "orf_index.parquet"
@@ -266,6 +342,8 @@ def check_annotation_refs(processed: Path) -> None:
                 for line in src.read_text().strip().splitlines():
                     note("pool: " + line.replace("\t", " = "))
             else:
+                # Without it, which model and which sequence release produced the pool
+                # is not recoverable from the two files that matter.
                 check("pool: pool_source.txt records model and release", False)
         else:
             check("pool: index and stack are both present", False,
@@ -273,6 +351,7 @@ def check_annotation_refs(processed: Path) -> None:
     else:
         note("reference_label_pool/pool not published; not checked")
 
+    # --- R8: the ESM-C weights, for the decided-against ESM-C and EZpred lanes.
     esmc = processed / "esm_c_weights" / "esmc_600m.tgz"
     if esmc.exists():
         import tarfile
@@ -290,6 +369,12 @@ def check_annotation_refs(processed: Path) -> None:
         note("esm_c_weights/esmc_600m.tgz not published; the ESM-C and EZpred lanes "
              "are not runnable")
 
+    # --- R10: the ESM-C half of the label pool. Everything R7 is checked for, plus the
+    # one thing that only makes sense across the two: they must describe the SAME
+    # accessions in the SAME row order. A kNN lane compares its query against whichever
+    # pool it was pointed at, so two pools that disagree about row i do not fail -- they
+    # answer, from the wrong reference, and the two lanes stop being comparable, which
+    # is the entire reason the ESM-C lane exists.
     pool_e = processed / "reference_label_pool_esmc" / "pool_esmc"
     if pool_e.is_dir():
         idx_p = pool_e / "orf_index.parquet"
@@ -327,6 +412,11 @@ def check_annotation_refs(processed: Path) -> None:
         note("reference_label_pool_esmc/pool_esmc not published; the ESM-C kNN lane is not "
              "runnable")
 
+    # --- R9: the EZpred bundle. It has NO producer in the graph -- its compile is
+    # parked in transforms/_deferred/ -- so the pin plus these assertions are the whole
+    # of what makes it reproducible. Five members per head is what the DL-only path
+    # averages over; four is a different model wearing the same name, and unzip returns
+    # 0 on a member it never matched.
     ez = processed / "ezpred_model" / "EZpred"
     if ez.is_dir():
         check("ezpred: predict.py is present", (ez / "predict.py").exists())

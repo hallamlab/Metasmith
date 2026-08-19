@@ -1,0 +1,401 @@
+mnxr	stratum	verdict	detail	prompt_tokens	completion_tokens
+MNXR100800	movable	unusable	["id MNXM10942 has no structure in MetaNetX", "id MNXM8399 has no structure in MetaNetX"]	1485	162
+MNXR195341	movable	unusable	["id MNXM1137629 has no structure in MetaNetX"]	1485	169
+MNXR96187	movable	unusable	["id MNXM8628 has no structure in MetaNetX", "id MNXM11615 has no structure in MetaNetX"]	1480	173
+MNXR164297	no_lever	unbalanced	{"C": 12.0, "O": 2.0, "N": 6.0}	1587	221
+MNXR132219	movable	unusable	["id MNXM167577 has no structure in MetaNetX", "id MNXM167578 has no structure in MetaNetX"]	1458	136
+MNXR160017	movable	unbalanced	{"P": 4.0, "C": 25.0, "O": 16.0}	1495	378
+MNXR148975	movable	unusable	["id MNXM730259 has no structure in MetaNetX"]	1444	115
+MNXR102768	movable	unbalanced	{"O": 3.0, "P": 1.0}	1468	547
+MNXR157602	movable	unusable	["id MNXM1092845 has no structure in MetaNetX", "id MNXM1093378 has no structure in MetaNetX", "id MNXM146470 has no structure in MetaNetX"]	1575	176
+MNXR133086	movable	unusable	["id MNXM164088 has no structure in MetaNetX"]	1462	127
+MNXR168237	movable	unbalanced	{"C": 4.0, "N": 1.0}	1500	399
+MNXR160065	movable	unusable	["id MNXM1092180 has no structure in MetaNetX", "id MNXM1092388 has no structure in MetaNetX"]	1508	189
+MNXR102365	movable	unbalanced	{"O": 1.0}	1489	386
+MNXR129891	movable	unusable	["id MNXM162280 has no structure in MetaNetX", "id MNXM165796 has no structure in MetaNetX", "id MNXM165797 has no structure in MetaNetX"]	1494	189
+MNXR136562	movable	unusable	["id MNXM18041 has no structure in MetaNetX"]	1431	113
+MNXR135755	movable	unbalanced	{"P": -1.0, "C": -16.0, "O": -2.0}	1462	481
+MNXR175815	movable	unusable	["smiles 'CC(C)(COP(=O)(O)OP(=O)(O)OC[C@H]2O[C@H]([C@H](O)[C@@H]2O)N1C=NC2=C1N=C(N)N=C2N' unparseable"]	1463	449
+MNXR144386	movable	unusable	["id MNXM168655 has no structure in MetaNetX"]	1473	150
+MNXR183004	movable	unusable	["id MNXM174059 has no structure in MetaNetX", "id MNXM174058 has no structure in MetaNetX"]	1508	415
+MNXR165779	movable	balanced	{}	1508	644
+MNXR199047	movable	unbalanced	{"C": -6.0, "O": -3.0, "N": -2.0}	1480	464
+MNXR195285	movable	unusable	["id MNXM1099741 has no structure in MetaNetX", "id MNXM1137560 has no structure in MetaNetX", "id MNXM1137561 has no structure in MetaNetX"]	1484	143
+MNXR97376	movable	unusable	["id MNXM145882 has no structure in MetaNetX", "id MNXM147716 has no structure in MetaNetX"]	1481	200
+MNXR178543	movable	unbalanced	{"C": 2.0}	1481	397
+MNXR172289	movable	refused	["The reaction as written involves only the recombination of complement components C3a and C3b into C3, with no chemical t"]	1446	100
+MNXR168297	movable	unbalanced	{"C": -1.0, "O": 1.0}	1502	393
+MNXR137588	movable	unbalanced	{"C": 20.0, "O": 8.0}	1450	543
+MNXR182858	movable	unusable	["id MNXM496895 has no structure in MetaNetX"]	1462	283
+MNXR159892	movable	unusable	["id MNXM1092108 has no structure in MetaNetX", "id MNXM1092316 has no structure in MetaNetX"]	1503	186
+MNXR135018	movable	unusable	["id MNXM6281 has no structure in MetaNetX"]	1450	295
+MNXR138265	movable	unusable	["a side of the rewrite is empty"]	1457	90
+MNXR182432	movable	unusable	["id MNXM728126 has no structure in MetaNetX"]	1467	386
+MNXR123195	movable	refused	["The reaction describes a DNA segment changing orientation, which is a topological or positional change, not a chemical t"]	1421	94
+MNXR109980	movable	unusable	["id MNXM1102130 has no structure in MetaNetX", "id MNXM9272 has no structure in MetaNetX", "id MNXM741191 has no structure in MetaNetX", "id MNXM9279 has no structure in MetaNetX"]	1454	152
+MNXR202061	movable	unbalanced	{"S": 1.0, "O": -1.0}	1452	420
+MNXR162888	movable	unusable	["id MNXM1092776 has no structure in MetaNetX", "id MNXM1094241 has no structure in MetaNetX"]	1508	155
+MNXR130870	movable	unusable	["id MNXM166192 has no structure in MetaNetX"]	1452	117
+MNXR121147	no_lever	balanced	{}	1514	180
+MNXR135856	movable	unusable	["id MNXM147677 has no structure in MetaNetX"]	1483	131
+MNXR180043	movable	refused	["The reaction contains amorphous masses (biomass) and no concrete chemistry is defined. Biotin is a cofactor, but the rig"]	1423	90
+MNXR146891	movable	unbalanced	{"P": -2.0, "O": -6.0}	1434	387
+MNXR206480	no_lever	balanced	{}	1437	138
+MNXR179151	movable	unusable	["id MNXM728517 has no structure in MetaNetX"]	1458	141
+MNXR165636	movable	unbalanced	{"S": -1.0, "C": 10.0, "O": 1.0, "N": -1.0}	1501	368
+MNXR133114	movable	unbalanced	{"P": 4.0, "N": 14.0, "C": 36.0, "O": 26.0}	1443	233
+MNXR156084	movable	unbalanced	{"O": -1.0}	1465	451
+MNXR191145	movable	unusable	["id MNXM1105098 has no structure in MetaNetX", "id MNXM7577 has no structure in MetaNetX"]	1479	134
+MNXR176641	movable	unbalanced	{"C": 16.0, "O": 1.0}	1503	1294
+MNXR194746	movable	unusable	["id MNXM1137179 has no structure in MetaNetX", "id MNXM1137180 has no structure in MetaNetX"]	1453	153
+MNXR116707	movable	unbalanced	{"C": 1.0, "O": 2.0, "N": 1.0}	1457	359
+MNXR148047	movable	unbalanced	{"*": 1.0, "C": 5.0, "O": 3.0}	1452	454
+MNXR176554	movable	unbalanced	{"C": 11.0, "O": 7.0, "P": 1.0, "*": 2.0, "N": 3.0}	1480	251
+MNXR116665	movable	unusable	["id MNXM15794 has no structure in MetaNetX"]	1471	173
+MNXR131982	movable	unusable	["id MNXM168553 has no structure in MetaNetX", "id MNXM168702 has no structure in MetaNetX"]	1450	134
+MNXR162766	movable	unbalanced	{"C": -1.0}	1501	414
+MNXR172417	movable	unusable	["id MNXM1099894 has no structure in MetaNetX", "id MNXM1099895 has no structure in MetaNetX"]	1437	132
+MNXR155730	movable	unusable	["id MNXM1094327 has no structure in MetaNetX"]	1488	529
+MNXR158948	movable	unusable	["id MNXM1092968 has no structure in MetaNetX", "id MNXM146401 has no structure in MetaNetX", "id MNXM147129 has no structure in MetaNetX", "id MNXM1092969 has no structure in MetaNetX", "id MNXM146402 has no structure in MetaNetX", "id MNXM147128 has no structure in MetaNetX"]	1547	296
+MNXR171178	movable	unbalanced	{"C": 1.0, "O": 1.0}	1482	383
+MNXR136233	movable	unusable	["id MNXM11395 has no structure in MetaNetX", "id MNXM7306 has no structure in MetaNetX"]	1454	171
+MNXR172413	movable	refused	["The reaction involves protein complexes with no defined chemical structures. These are not concrete molecules and cannot"]	1456	77
+MNXR130372	movable	unusable	["id MNXM168522 has no structure in MetaNetX"]	1456	126
+MNXR119061	movable	unusable	["id MNXM11152 has no structure in MetaNetX", "id MNXM148782 has no structure in MetaNetX"]	1454	174
+MNXR184274	movable	unbalanced	{"C": 11.0, "O": 10.0}	1438	266
+MNXR194707	movable	unusable	["smiles 'N[C@@H](CCC(=O)NCC(=O)NCC(=O)NCC(=O)NCC(=O)NCC(=O)NCC(=O)NCC(=O)NCC(=O)NCC(=O)NCC(=O)NCC(=O)NCC(=O)NCC(=O)NCC(=O)NCC(=O)NCC(=O)NCC(=O)NCC(=O)NCC(=O)NCC(=O)NCC(=O)NCC(=O)NCC(=O)NCC(=O)NCC(=O)NCC(=O)NCC(=O)NCC(=O)NCC(=O)NCC(=O)NCC(=O)NCC(=O)NCC(=O)NCC(=O)NCC(=O)NCC(=O)NCC(=O)NCC(=O)NCC(=O)NCC(=O)NCC(=O)NCC(=O)NCC(=O)NCC(=O)NCC(=O)NCC(=O)NCC(=O)NCC(=O)NCC(=O)NCC(=O)NCC(=O)NCC(=O)NCC(=O)NCC(=O)NCC(=O)' unparseable", "smiles 'N[C@@H](CCC(=O)NCC(=O)NCC(=O)NCC(=O)NCC(=O)NCC(=O)NCC(=O)NCC(=O)NCC(=O)NCC(=O)NCC(=O)NCC(=O)NCC(=O)NCC(=O)NCC(=O)NCC(=O)NCC(=O)NCC(=O)NCC(=O)NCC(=O)NCC(=O)NCC(=O)NCC(=O)NCC(=O)NCC(=O)NCC(=O)NCC(=O)NCC(=O)NCC(=O)NCC(=O)NCC(=O)NCC(=O)NCC(=O)NCC(=O)NCC(=O)NCC(=O)NCC(=O)NCC(=O)NCC(=O)NCC(=O)NCC(=O)NCC(=O)NCC(=O)NCC(=O)NCC(=O)NCC(=O)NCC(=O)NCC(=O)NCC(=O)NCC(=O)NCC(=O)NCC(=O)NCC(=O)NCC(=O)NCC(=O)NCC(=O)' unparseable"]	1516	1667
+MNXR129946	movable	unusable	["id MNXM162280 has no structure in MetaNetX", "id MNXM165839 has no structure in MetaNetX", "id MNXM165840 has no structure in MetaNetX"]	1495	161
+MNXR185852	movable	unbalanced	{"C": 11.0, "O": 7.0, "P": 1.0, "*": 2.0, "N": 3.0}	1462	257
+MNXR174509	movable	unbalanced	{"N": -2.0, "C": -8.0, "O": -3.0}	1447	1634
+MNXR155301	movable	unusable	["id MNXM1092058 has no structure in MetaNetX", "id MNXM1093947 has no structure in MetaNetX", "id MNXM1092717 has no structure in MetaNetX"]	1472	254
+MNXR144736	movable	unbalanced	{"C": -150.0, "O": -300.0, "P": -50.0, "N": -50.0}	1469	535
+MNXR133337	movable	unbalanced	{"S": -2.0, "N": -2.0, "C": -9.0, "O": -1.0}	1432	263
+MNXR143111	movable	unusable	["id MNXM147646 has no structure in MetaNetX", "id MNXM147645 has no structure in MetaNetX"]	1519	195
+MNXR165537	movable	unusable	["id MNXM1091267 has no structure in MetaNetX"]	1478	173
+MNXR102663	movable	balanced	{}	1463	453
+MNXR202471	movable	unbalanced	{"S": -2.0, "C": -10.0, "O": -1.0}	1478	346
+MNXR133906	movable	unusable	["id MNXM168843 has no structure in MetaNetX"]	1454	141
+MNXR157703	movable	unusable	["id MNXM1091543 has no structure in MetaNetX", "id MNXM146384 has no structure in MetaNetX", "id MNXM1093375 has no structure in MetaNetX", "id MNXM147159 has no structure in MetaNetX"]	1626	171
+MNXR142642	movable	unusable	["smiles 'CC(=O)SCCNC(=O)CCNC(=O)[C@H](C)NC(=O)[C@H](CC(=O)N)NC(=O)[C@H](C)NC(=O)[C@H](CC(=O)N)NC(=O)[C@H](C)NC(=O)[C@H](CC(=O)N)NC(=O)[C@H](C)NC(=O)[C@H](CC(=O)N)NC(=O)[C@H](C)NC(=O)[C@H](CC(=O)N)NC(=O)[C@H](C)NC(=O)[C@H](CC(=O)N)NC(=O)[C@H](C)NC(=O)[C@H](CC(=O)N)NC(=O)[C@H](C)NC(=O)[C@H](CC(=O)N)NC(=O)[C@H](C)NC(=O)[C@H](CC(=O)N)NC(=O)[C@H](C)NC(=O)[C@H](CC(=O)N)NC(=O)[C@H](C)NC(=O)[C@H](CC(=O)N)NC(=O)[C@' unparseable"]	1541	1321
+MNXR100502	movable	unusable	["id MNXM162267 has no structure in MetaNetX", "id MNXM163885 has no structure in MetaNetX", "id MNXM163909 has no structure in MetaNetX"]	1503	201
+MNXR136250	movable	unbalanced	{"O": -3.0, "P": -1.0}	1473	401
+MNXR143183	movable	unusable	["id MNXM149085 has no structure in MetaNetX", "id MNXM149086 has no structure in MetaNetX"]	1489	178
+MNXR143219	movable	unusable	["id MNXM1012 has no structure in MetaNetX", "id MNXM19191 has no structure in MetaNetX", "id MNXM12208 has no structure in MetaNetX", "id MNXM2273 has no structure in MetaNetX"]	1508	177
+MNXR174346	movable	unbalanced	{"C": -6.0, "O": -3.0}	1456	426
+MNXR155516	movable	unusable	["id MNXM1093335 has no structure in MetaNetX", "id MNXM147347 has no structure in MetaNetX"]	1503	149
+MNXR130563	movable	unusable	["id MNXM164258 has no structure in MetaNetX"]	1458	136
+MNXR136428	movable	unusable	["id MNXM11749 has no structure in MetaNetX"]	1506	192
+MNXR99254	movable	unusable	["id MNXM1768 has no structure in MetaNetX"]	1549	255
+MNXR137690	movable	balanced	{}	2373	180
+MNXR145380	movable	unusable	["id MNXM729885 has no structure in MetaNetX"]	1468	170
+MNXR129599	movable	unusable	["id MNXM163867 has no structure in MetaNetX"]	1448	134
+MNXR137691	movable	unbalanced	{"C": -945.0, "O": -690.0, "P": -98.0, "N": -372.0}	1533	372
+MNXR169490	movable	unbalanced	{"S": -1.0, "C": 405.0, "O": -2.0}	1540	555
+MNXR132659	movable	unusable	["id MNXM41043 has no structure in MetaNetX"]	1471	168
+MNXR183476	movable	unbalanced	{"S": 1.0, "C": 6.0, "O": 3.0, "N": 1.0}	1552	551
+MNXR127242	movable	unusable	["id MNXM728563 has no structure in MetaNetX"]	1472	346
+MNXR179616	movable	unbalanced	{"C": 2.0, "O": 3.0, "N": 1.0}	1433	1607
+MNXR156061	movable	unusable	["id MNXM1091840 has no structure in MetaNetX", "id MNXM1094253 has no structure in MetaNetX"]	1475	120
+MNXR154373	movable	unbalanced	{"S": -1.0, "C": -10.0, "O": -2.0, "N": -2.0}	1456	335
+MNXR159961	movable	unusable	["smiles 'O[CH2+]([O-])C1OC(CO)C(O)C1O' unparseable"]	1506	910
+MNXR96170	movable	unusable	["id MNXM729632 has no structure in MetaNetX"]	1465	185
+MNXR167266	movable	unusable	["id MNXM1090605 has no structure in MetaNetX", "id MNXM1090781 has no structure in MetaNetX"]	1497	193
+MNXR129908	movable	unusable	["id MNXM162274 has no structure in MetaNetX", "id MNXM168235 has no structure in MetaNetX", "id MNXM165766 has no structure in MetaNetX"]	1493	142
+MNXR137198	movable	unusable	["id MNXM10046 has no structure in MetaNetX", "id MNXM10850 has no structure in MetaNetX"]	1467	176
+MNXR172730	movable	unusable	["id MNXM1100133 has no structure in MetaNetX", "id MNXM168294 has no structure in MetaNetX"]	1478	139
+MNXR130672	movable	unusable	["id MNXM166891 has no structure in MetaNetX"]	1451	143
+MNXR169516	movable	unbalanced	{"C": -2.0, "O": -1.0}	1468	418
+MNXR130871	movable	unusable	["id MNXM166399 has no structure in MetaNetX"]	1452	116
+MNXR194791	movable	unusable	["id MNXM1137197 has no structure in MetaNetX", "id MNXM1137204 has no structure in MetaNetX"]	1445	120
+MNXR137303	movable	balanced	{}	1440	491
+MNXR143159	movable	unusable	["id MNXM145597 has no structure in MetaNetX", "id MNXM6024 has no structure in MetaNetX", "id MNXM145684 has no structure in MetaNetX", "id MNXM5386 has no structure in MetaNetX"]	1559	172
+MNXR131854	movable	unusable	["id MNXM166946 has no structure in MetaNetX", "id MNXM166966 has no structure in MetaNetX"]	1527	199
+MNXR172494	movable	balanced	{}	1449	123
+MNXR103091	movable	unusable	["id MNXM162267 has no structure in MetaNetX", "id MNXM162299 has no structure in MetaNetX"]	1441	134
+MNXR173896	movable	unbalanced	{"C": -5.0, "O": -5.0}	1431	231
+MNXR148266	movable	unusable	["id MNXM11588 has no structure in MetaNetX", "id MNXM728443 has no structure in MetaNetX"]	1482	172
+MNXR146029	movable	unusable	["id MNXM979 has no structure in MetaNetX"]	1462	414
+MNXR142682	movable	refused	["The reaction includes 'BIOMASS [BIOMASS]' as a product, which is an amorphous mass with no defined chemical structure. T"]	2534	98
+MNXR102118	movable	balanced	{}	1505	682
+MNXR183106	movable	unusable	["id MNXM163980 has no structure in MetaNetX"]	1476	169
+MNXR170526	movable	unbalanced	{"C": 1.0}	1490	336
+MNXR183421	movable	unusable	["id MNXM744124 has no structure in MetaNetX"]	1494	307
+MNXR145154	movable	unusable	["id MNXM7299 has no structure in MetaNetX", "id MNXM6962 has no structure in MetaNetX"]	1511	130
+MNXR159956	movable	unbalanced	{"P": 2.0, "N": 2.0, "C": 127.0, "O": 98.0}	1509	524
+MNXR159703	movable	unusable	["id MNXM147310 has no structure in MetaNetX", "id MNXM148352 has no structure in MetaNetX", "id MNXM147309 has no structure in MetaNetX", "id MNXM148354 has no structure in MetaNetX"]	1504	500
+MNXR95970	movable	unusable	["smiles 'CC(C)(C)C(=O)SCCCNC(=O)CNC(=O)[C@H](NC(=O)CNC(=O)[C@H](NC(=O)CNC(=O)[C@H](NC(=O)CNC(=O)[C@H](NC(=O)CNC(=O)[C@H](NC(=O)CNC(=O)[C@H](NC(=O)CNC(=O)[C@H](NC(=O)CNC(=O)[C@H](NC(=O)CNC(=O)[C@H](NC(=O)CNC(=O)[C@H](NC(=O)CNC(=O)[C@H](NC(=O)CNC(=O)[C@H](NC(=O)CNC(=O)[C@H](NC(=O)CNC(=O)[C@H](NC(=O)CNC(=O)[C@H](NC(=O)CNC(=O)[C@H](NC(=O)CNC(=O)[C@H](NC(=O)CNC(=O)[C@H](NC(=O)CNC(=O)[C@H](NC(=O)CNC(=O)[C@H](NC(' unparseable"]	1429	830
+MNXR100525	movable	unusable	["id MNXM9024 has no structure in MetaNetX", "id MNXM5386 has no structure in MetaNetX"]	1525	176
+MNXR203365	movable	unusable	["smiles 'NC1C(COP(=O)(O)OP(=O)(O)O)COP(=O)(O)O' unparseable", "smiles 'NC1C(COP(=O)(O)OP(=O)(O)O)COP(=O)(O)C(=O)O' unparseable"]	1483	444
+MNXR159197	movable	unusable	["id MNXM1093288 has no structure in MetaNetX", "smiles 'CC(=O)SCCNC(=O)CCNC(=O)C(CS)NC(=O)CCNC(=O)C(CS)NC(=O)CCNC(=O)C(CS)NC(=O)CCNC(=O)C(CS)NC(=O)CCNC(=O)C(CS)NC(=O)CCNC(=O)C(CS)NC(=O)CCNC(=O)C(CS)NC(=O)CCNC(=O)C(CS)NC(=O)CCNC(=O)C(CS)NC(=O)CCNC(=O)C(CS)NC(=O)CCNC(=O)C(CS)NC(=O)CCNC(=O)C(CS)NC(=O)CCNC(=O)C(CS)NC(=O)CCNC(=O)C(CS)NC(=O)CCNC(=O)C(CS)NC(=O)CCNC(=O)C(CS)NC(=O)CCNC(=O)C(CS)NC(=O)CCNC(=O)C(CS)NC(=O)CCNC(=O)C(CS)NC(=O)CCNC(=O)C(CS)NC(=O)CCNC(' unparseable"]	1443	831
+MNXR171685	movable	unbalanced	{"C": -1.0}	1479	481
+MNXR157728	movable	unusable	["id MNXM1092842 has no structure in MetaNetX", "id MNXM1093375 has no structure in MetaNetX", "id MNXM146469 has no structure in MetaNetX"]	1576	203
+MNXR177666	no_lever	unbalanced	{"C": 2.0}	1427	235
+MNXR136415	movable	unusable	["smiles 'CCCCCCCCC(CCC)=C(C)C(=O)SC(CCCOP(=O)(O)OCC1OC(N2C3C(NC(=O)C(NC(=O)C(NC(=O)C(NC(=O)C(NC(=O)C(NC(=O)C(NC(=O)C(NC(=O)C(NC(=O)C(NC(=O)C(NC(=O)C(NC(=O)C(NC(=O)C(NC(=O)C(NC(=O)C(NC(=O)C(NC(=O)C(NC(=O)C(NC(=O)C(NC(=O)C(NC(=O)C(NC(=O)C(NC(=O)C(NC(=O)C(NC(=O)C(NC(=O)C(NC(=O)C(NC(=O)C(NC(=O)C(NC(=O)C(NC(=O)C(NC(=O)C(NC(=O)C(NC(=O)C(NC(=O)C(NC(=O)C(NC(=O)C(NC(=O)C(NC(=O)C(NC(=O)C(NC(=O)C(NC(=O)C(NC(=O)C(NC(=' unparseable", "smiles 'CCCCCCCCC(CCC)=C(C)C(=O)SC(CCCOP(=O)(O)OCC1OC(N2C3C(NC(=O)C(NC(=O)C(NC(=O)C(NC(=O)C(NC(=O)C(NC(=O)C(NC(=O)C(NC(=O)C(NC(=O)C(NC(=O)C(NC(=O)C(NC(=O)C(NC(=O)C(NC(=O)C(NC(=O)C(NC(=O)C(NC(=O)C(NC(=O)C(NC(=O)C(NC(=O)C(NC(=O)C(NC(=O)C(NC(=O)C(NC(=O)C(NC(=O)C(NC(=O)C(NC(=O)C(NC(=O)C(NC(=O)C(NC(=O)C(NC(=O)C(NC(=O)C(NC(=O)C(NC(=O)C(NC(=O)C(NC(=O)C(NC(=O)C(NC(=O)C(NC(=O)C(NC(=O)C(NC(=O)C(NC(=O)C(NC(=O)C(NC(=' unparseable"]	1481	1703
+MNXR178248	movable	refused	["The reaction involves two isomeric carbocation intermediates (MNXM489188 and MNXM489189) but no actual bond-making or bo"]	1461	106
+MNXR99083	movable	unbalanced	{"C": 6.0, "O": 4.0}	1492	1286
+MNXR109263	movable	unusable	["id MNXM12311 has no structure in MetaNetX", "id MNXM90829 has no structure in MetaNetX"]	1428	112
+MNXR130209	movable	unusable	["id MNXM167086 has no structure in MetaNetX"]	1452	130
+MNXR135709	movable	unusable	["id MNXM737494 has no structure in MetaNetX", "id MNXM146501 has no structure in MetaNetX"]	1498	230
+MNXR97513	movable	unusable	["id MNXM6808 has no structure in MetaNetX", "id MNXM7529 has no structure in MetaNetX"]	1459	132
+MNXR174255	no_lever	unbalanced	{"C": -3.0, "O": -1.0, "P": -1.0, "*": -4.0}	1463	279
+MNXR145940	movable	unbalanced	{"N": 1.0}	1454	386
+MNXR102342	movable	unusable	["id MNXM147491 has no structure in MetaNetX", "id MNXM148296 has no structure in MetaNetX"]	1495	265
+MNXR179667	movable	unusable	["id MNXM527785 has no structure in MetaNetX", "id MNXM741244 has no structure in MetaNetX"]	1443	948
+MNXR137787	movable	unusable	["id MNXM12804 has no structure in MetaNetX", "id MNXM12798 has no structure in MetaNetX", "id MNXM9203 has no structure in MetaNetX"]	1486	171
+MNXR178085	movable	unbalanced	{"S": 1.0, "C": 9.0, "O": 1.0}	1504	573
+MNXR182759	one_sided	refused	["The reaction is empty (no participants listed), so it cannot be balanced or made concrete. No chemistry is described."]	1393	59
+MNXR143323	movable	unbalanced	{"C": -1.0, "O": -3.0}	1447	413
+MNXR182864	movable	balanced	{}	1452	372
+MNXR183055	movable	unbalanced	{"C": 2.0, "O": 8.0}	1475	276
+MNXR202847	movable	unbalanced	{"C": 1.0}	1538	508
+MNXR119153	movable	unusable	["id MNXM51954 has no structure in MetaNetX"]	1446	287
+MNXR180931	movable	unusable	["id MNXM145673 has no structure in MetaNetX"]	1485	193
+MNXR151432	movable	unusable	["id MNXM727915 has no structure in MetaNetX"]	1449	270
+MNXR137259	movable	unusable	["id MNXM741207 has no structure in MetaNetX"]	1453	155
+MNXR199086	movable	unbalanced	{"C": 8.0, "O": 5.0, "N": 1.0}	1463	369
+MNXR164254	movable	unusable	["id MNXM162272 has no structure in MetaNetX"]	1446	156
+MNXR104475	movable	unbalanced	{"O": 1.0}	1433	214
+MNXR132240	movable	unbalanced	{"O": -3.0, "P": -1.0}	1445	1615
+MNXR130601	movable	unusable	["id MNXM61031 has no structure in MetaNetX"]	1440	253
+MNXR171492	movable	balanced	{}	1498	405
+MNXR184672	movable	unbalanced	{"S": -1.0, "C": -111.0, "O": -51.0, "P": 1.0, "N": -58.0}	1435	922
+MNXR178517	movable	unusable	["id MNXM511674 has no structure in MetaNetX"]	1468	393
+MNXR199014	movable	unusable	["id MNXM1566051 has no structure in MetaNetX", "id MNXM1566052 has no structure in MetaNetX"]	1459	215
+MNXR200749	movable	unusable	["id MNXM1091020 has no structure in MetaNetX", "id MNXM1563272 has no structure in MetaNetX"]	1543	473
+MNXR195305	movable	unusable	["id MNXM1137574 has no structure in MetaNetX", "id MNXM1137588 has no structure in MetaNetX", "id MNXM1137589 has no structure in MetaNetX"]	1469	153
+MNXR160519	movable	unbalanced	{"C": -2.0, "O": -1.0}	1527	1529
+MNXR130525	movable	unusable	["id MNXM168626 has no structure in MetaNetX"]	1461	139
+MNXR201770	one_sided	refused	["The reaction identifier 'MNXR201770' is provided without any reaction equation or details. Without the actual reaction, "]	1393	88
+MNXR97899	movable	unusable	["id MNXM731019 has no structure in MetaNetX"]	1492	263
+MNXR129560	movable	unbalanced	{"S": -2.0, "N": -2.0, "C": -12.0, "O": -3.0}	1433	296
+MNXR178204	movable	unusable	["id MNXM588836 has no structure in MetaNetX"]	1445	249
+MNXR153073	movable	unusable	["id MNXM729632 has no structure in MetaNetX", "id MNXM729845 has no structure in MetaNetX"]	1493	179
+MNXR164147	movable	unusable	["id MNXM1096744 has no structure in MetaNetX", "id MNXM1096850 has no structure in MetaNetX"]	1501	359
+MNXR175822	movable	unusable	["id MNXM424 has no structure in MetaNetX"]	1461	161
+MNXR156024	movable	balanced	{}	1474	395
+MNXR130483	movable	refused	["The reaction involves protein complexes (IFNRJ2_activated and IFNRJ2) that are not concrete chemical species with define"]	1424	96
+MNXR142645	movable	refused	["The reaction as written is chemically nonsensical and cannot be made concrete without inventing chemistry. The right-han"]	1434	151
+MNXR136350	movable	unusable	["id MNXM3273 has no structure in MetaNetX"]	1466	904
+MNXR195279	movable	unusable	["id MNXM1137554 has no structure in MetaNetX"]	1456	137
+MNXR129643	movable	unusable	["id MNXM164372 has no structure in MetaNetX"]	1459	132
+MNXR160598	movable	unusable	["id MNXM1092451 has no structure in MetaNetX"]	1472	426
+MNXR174270	movable	unbalanced	{"P": -1.0, "N": -1.0, "C": -2.0, "O": -4.0}	1451	1632
+MNXR144356	movable	unusable	["id MNXM167529 has no structure in MetaNetX"]	1448	138
+MNXR160082	movable	unusable	["id MNXM1092394 has no structure in MetaNetX", "id MNXM1094361 has no structure in MetaNetX"]	1495	181
+MNXR168281	movable	unusable	["id MNXM1090071 has no structure in MetaNetX", "id MNXM1090072 has no structure in MetaNetX"]	1488	186
+MNXR101827	movable	unbalanced	{"C": -2.0}	1477	422
+MNXR132449	movable	unusable	["id MNXM167311 has no structure in MetaNetX"]	1454	139
+MNXR133479	movable	unusable	["id MNXM167972 has no structure in MetaNetX"]	1445	129
+MNXR171488	movable	unbalanced	{"C": -3.0}	1510	1590
+MNXR165576	movable	balanced	{}	1501	502
+MNXR159060	movable	unusable	["id MNXM1091917 has no structure in MetaNetX", "id MNXM1092827 has no structure in MetaNetX"]	1472	145
+MNXR162087	movable	unusable	["id MNXM1093876 has no structure in MetaNetX", "id MNXM1094173 has no structure in MetaNetX"]	1513	169
+MNXR143148	movable	unusable	["id MNXM163842 has no structure in MetaNetX", "smiles 'CC(=O)SCCCNC(=O)CNC(=O)[C@H](NC(=O)[C@H](NC(=O)[C@H](NC(=O)[C@H](NC(=O)[C@H](NC(=O)[C@H](NC(=O)[C@H](NC(=O)[C@H](NC(=O)[C@H](NC(=O)[C@H](NC(=O)[C@H](NC(=O)[C@H](NC(=O)[C@H](NC(=O)[C@H](NC(=O)[C@H](NC(=O)[C@H](NC(=O)[C@H](NC(=O)[C@H](NC(=O)[C@H](NC(=O)[C@H](NC(=O)[C@H](NC(=O)[C@H](NC(=O)[C@H](NC(=O)[C@H](NC(=O)[C@H](NC(=O)[C@H](NC(=O)[C@H](NC(=O)[C@H](NC(=O)[C@H](NC(=O)[C@H](NC(=O)[C@H](NC(=O)[C@H]' unparseable"]	1455	820
+MNXR117626	movable	balanced	{}	1453	334
+MNXR144821	movable	unbalanced	{"C": 14.0, "O": 4.0, "N": 1.0}	1531	417
+MNXR154568	movable	balanced	{}	1453	672
+MNXR168254	movable	unbalanced	{"C": 1.0}	1489	379
+MNXR203709	movable	unusable	["id MNXM1563532 has no structure in MetaNetX", "id MNXM1563531 has no structure in MetaNetX"]	1486	168
+MNXR136453	movable	unusable	["id MNXM16031 has no structure in MetaNetX", "id MNXM8295 has no structure in MetaNetX"]	1446	307
+MNXR161043	movable	unbalanced	{"P": -1.0, "N": 1.0, "O": -1.0}	1459	364
+MNXR130409	movable	unusable	["id MNXM169242 has no structure in MetaNetX"]	1451	129
+MNXR176730	movable	unusable	["smiles 'C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C)' unparseable", "smiles 'C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C)' unparseable"]	1430	983
+MNXR179248	movable	unusable	["id MNXM491060 has no structure in MetaNetX", "id MNXM588430 has no structure in MetaNetX", "id MNXM65318 has no structure in MetaNetX", "id MNXM900 has no structure in MetaNetX"]	1599	499
+MNXR150950	movable	unusable	["id MNXM1776 has no structure in MetaNetX", "smiles 'CCCCCCCC(=O)OH' unparseable"]	1452	264
+MNXR159994	movable	unusable	["smiles 'CC(C)C1CCCCC1C1CCCCC1C1CCCCC1C1CCCCC1C1CCCCC1C1CCCCC1C1CCCCC1C1CCCCC1C1CCCCC1C1CCCCC1C1CCCCC1C1CCCCC1C1CCCCC1C1CCCCC1C1CCCCC1C1CCCCC1C1CCCCC1C1CCCCC1C1CCCCC1C1CCCCC1C1CCCCC1C1CCCCC1C1CCCCC1C1CCCCC1C1CCCCC1C1CCCCC1C1CCCCC1C1CCCCC1C1CCCCC1C1CCCCC1C1CCCCC1C1CCCCC1C1CCCCC1C1CCCCC1C1CCCCC1C1CCCCC1C1CCCCC1C1CCCCC1C1CCCCC1C1CCCCC1C1CCCCC1C1CCCCC1C1CCCCC1C1CCCCC1C1CCCCC1C1CCCCC1C1CCCCC1C1CCCCC1C1CCCCC1C1' unparseable", "smiles 'CC(C)C1CCCCC1C1CCCCC1C1CCCCC1C1CCCCC1C1CCCCC1C1CCCCC1C1CCCCC1C1CCCCC1C1CCCCC1C1CCCCC1C1CCCCC1C1CCCCC1C1CCCCC1C1CCCCC1C1CCCCC1C1CCCCC1C1CCCCC1C1CCCCC1C1CCCCC1C1CCCCC1C1CCCCC1C1CCCCC1C1CCCCC1C1CCCCC1C1CCCCC1C1CCCCC1C1CCCCC1C1CCCCC1C1CCCCC1C1CCCCC1C1CCCCC1C1CCCCC1C1CCCCC1C1CCCCC1C1CCCCC1C1CCCCC1C1CCCCC1C1CCCCC1C1CCCCC1C1CCCCC1C1CCCCC1C1CCCCC1C1CCCCC1C1CCCCC1C1CCCCC1C1CCCCC1C1CCCCC1C1CCCCC1C1CCCCC1C1' unparseable"]	1488	1338
+MNXR183914	movable	unusable	["id MNXM740696 has no structure in MetaNetX", "id MNXM729096 has no structure in MetaNetX"]	1487	195
+MNXR195025	movable	unusable	["id MNXM1137349 has no structure in MetaNetX"]	1465	146
+MNXR137703	movable	unusable	["id MNXM1755 has no structure in MetaNetX", "id MNXM1843 has no structure in MetaNetX"]	1459	142
+MNXR144396	movable	unusable	["id MNXM167278 has no structure in MetaNetX"]	1468	141
+MNXR203260	movable	unbalanced	{"S": -1.0, "O": 1.0}	1479	314
+MNXR159640	movable	unusable	["id MNXM1093122 has no structure in MetaNetX", "id MNXM1093129 has no structure in MetaNetX", "id MNXM1102734 has no structure in MetaNetX", "id MNXM1093370 has no structure in MetaNetX"]	1545	163
+MNXR169510	movable	unbalanced	{"C": 9.0, "O": -1.0}	1556	423
+MNXR132464	movable	unusable	["id MNXM148990 has no structure in MetaNetX", "id MNXM167707 has no structure in MetaNetX", "id MNXM162321 has no structure in MetaNetX"]	1446	381
+MNXR172583	movable	unusable	["id MNXM1100014 has no structure in MetaNetX", "id MNXM1100015 has no structure in MetaNetX"]	1458	96
+MNXR145459	movable	unusable	["id MNXM727332 has no structure in MetaNetX", "id MNXM12123 has no structure in MetaNetX", "id MNXM13202 has no structure in MetaNetX"]	1450	157
+MNXR102841	movable	unbalanced	{"C": 5.0, "N": 1.0}	1463	456
+MNXR133928	movable	unusable	["id MNXM167548 has no structure in MetaNetX"]	1442	129
+MNXR132295	movable	unbalanced	{"C": -1.0, "O": -1.0}	1461	434
+MNXR178413	movable	unusable	["id MNXM588820 has no structure in MetaNetX", "id MNXM570856 has no structure in MetaNetX"]	1445	151
+MNXR137536	movable	unbalanced	{"O": -1.0}	1495	367
+MNXR203312	movable	unusable	["id MNXM1088780 has no structure in MetaNetX", "id MNXM1088965 has no structure in MetaNetX"]	1468	140
+MNXR160607	movable	unusable	["id MNXM1092036 has no structure in MetaNetX", "id MNXM1092425 has no structure in MetaNetX", "id MNXM1092429 has no structure in MetaNetX"]	1483	173
+MNXR183666	movable	unusable	["id MNXM17995 has no structure in MetaNetX"]	1437	152
+MNXR135253	movable	unusable	["id MNXM4007 has no structure in MetaNetX", "id MNXM90829 has no structure in MetaNetX"]	1524	277
+MNXR180734	movable	unusable	["id MNXM145696 has no structure in MetaNetX", "id MNXM740696 has no structure in MetaNetX", "id MNXM732146 has no structure in MetaNetX"]	1514	173
+MNXR144662	movable	unusable	["id MNXM12207 has no structure in MetaNetX", "id MNXM90149 has no structure in MetaNetX", "id MNXM730340 has no structure in MetaNetX", "id MNXM8863 has no structure in MetaNetX"]	1502	182
+MNXR162091	movable	unusable	["id MNXM1093835 has no structure in MetaNetX", "id MNXM1094173 has no structure in MetaNetX"]	1517	149
+MNXR195725	no_lever	unbalanced	{"O": 4.0}	1419	92
+MNXR177477	no_lever	balanced	{}	1442	125
+MNXR132270	movable	unusable	["id MNXM164580 has no structure in MetaNetX", "id MNXM167167 has no structure in MetaNetX"]	1472	129
+MNXR97087	movable	unusable	["id MNXM147359 has no structure in MetaNetX", "id MNXM145566 has no structure in MetaNetX"]	1517	178
+MNXR170906	movable	unbalanced	{"S": 2.0, "C": 7.0, "O": 6.0, "N": 2.0}	1476	596
+MNXR195205	movable	unusable	["a side of the rewrite is empty"]	1449	228
+MNXR154661	movable	unusable	["id MNXM1092542 has no structure in MetaNetX"]	1451	134
+MNXR162531	movable	unusable	["smiles 'CC/C=C\\\\/CC/C=C/CCCCC(=O)SCCNC(=O)CCNC(=O)[C@H](N)C(=O)O' unparseable"]	1452	469
+MNXR131058	movable	unusable	["id MNXM165632 has no structure in MetaNetX", "id MNXM165633 has no structure in MetaNetX"]	1466	145
+MNXR131579	movable	unusable	["id MNXM163644 has no structure in MetaNetX"]	1458	136
+MNXR153464	movable	unusable	["id MNXM735034 has no structure in MetaNetX", "id MNXM7580 has no structure in MetaNetX", "id MNXM89983 has no structure in MetaNetX"]	1519	186
+MNXR200505	movable	unbalanced	{"N": 1.0}	1459	310
+MNXR188080	movable	unusable	["id MNXM90597 has no structure in MetaNetX"]	1474	179
+MNXR154140	movable	unusable	["smiles 'CCCC(C)CC(O)C(=O)SCC(=O)NCC(=O)NCC(=O)NCC(=O)NCC(=O)NCC(=O)NCC(=O)NCC(=O)NCC(=O)NCC(=O)NCC(=O)NCC(=O)NCC(=O)NCC(=O)NCC(=O)NCC(=O)NCC(=O)NCC(=O)NCC(=O)NCC(=O)NCC(=O)NCC(=O)NCC(=O)NCC(=O)NCC(=O)NCC(=O)NCC(=O)NCC(=O)NCC(=O)NCC(=O)NCC(=O)NCC(=O)NCC(=O)NCC(=O)NCC(=O)NCC(=O)NCC(=O)NCC(=O)NCC(=O)NCC(=O)NCC(=O)NCC(=O)NCC(=O)NCC(=O)NCC(=O)NCC(=O)NCC(=O)NCC(=O)NCC(=O)NCC(=O)NCC(=O)NCC(=O)NCC(=O)NCC(=O)NCC(=' unparseable"]	1452	1655
+MNXR177849	movable	unbalanced	{"S": -1.0, "C": -22.0, "O": 3.0, "P": 1.0, "N": 1.0}	1471	340
+MNXR132420	movable	unusable	["id MNXM166034 has no structure in MetaNetX"]	1580	235
+MNXR155717	movable	unusable	["id MNXM1093459 has no structure in MetaNetX", "id MNXM1093463 has no structure in MetaNetX"]	1474	147
+MNXR136860	movable	unusable	["id MNXM10994 has no structure in MetaNetX", "id MNXM7190 has no structure in MetaNetX"]	1470	137
+MNXR130830	movable	unusable	["smiles 'CC(=O)NCCCCCC(=O)NCCCCCC(=O)NCCCCCC(=O)NCCCCCC(=O)NCCCCCC(=O)NCCCCCC(=O)NCCCCCC(=O)NCCCCCC(=O)NCCCCCC(=O)NCCCCCC(=O)NCCCCCC(=O)NCCCCCC(=O)NCCCCCC(=O)NCCCCCC(=O)NCCCCCC(=O)NCCCCCC(=O)NCCCCCC(=O)NCCCCCC(=O)NCCCCCC(=O)NCCCCCC(=O)NCCCCCC(=O)NCCCCCC(=O)NCCCCCC(=O)NCCCCCC(=O)NCCCCCC(=O)NCCCCCC(=O)NCCCCCC(=O)NCCCCCC(=O)NCCCCCC(=O)NCCCCCC(=O)NCCCCCC(=O)NCCCCCC(=O)NCCCCCC(=O)NCCCCCC(=O)NCCCCCC(=O)NCCCCCC(=' unparseable", "smiles 'CC(=O)NCCCCCC(=O)NCCCCCC(=O)NCCCCCC(=O)NCCCCCC(=O)NCCCCCC(=O)NCCCCCC(=O)NCCCCCC(=O)NCCCCCC(=O)NCCCCCC(=O)NCCCCCC(=O)NCCCCCC(=O)NCCCCCC(=O)NCCCCCC(=O)NCCCCCC(=O)NCCCCCC(=O)NCCCCCC(=O)NCCCCCC(=O)NCCCCCC(=O)NCCCCCC(=O)NCCCCCC(=O)NCCCCCC(=O)NCCCCCC(=O)NCCCCCC(=O)NCCCCCC(=O)NCCCCCC(=O)NCCCCCC(=O)NCCCCCC(=O)NCCCCCC(=O)NCCCCCC(=O)NCCCCCC(=O)NCCCCCC(=O)NCCCCCC(=O)NCCCCCC(=O)NCCCCCC(=O)NCCCCCC(=O)NCCCCCC(=' unparseable", "smiles 'CC(=O)NCCCCCC(=O)NCCCCCC(=O)NCCCCCC(=O)NCCCCCC(=O)NCCCCCC(=O)NCCCCCC(=O)NCCCCCC(=O)NCCCCCC(=O)NCCCCCC(=O)NCCCCCC(=O)NCCCCCC(=O)NCCCCCC(=O)NCCCCCC(=O)NCCCCCC(=O)NCCCCCC(=O)NCCCCCC(=O)NCCCCCC(=O)NCCCCCC(=O)NCCCCCC(=O)NCCCCCC(=O)NCCCCCC(=O)NCCCCCC(=O)NCCCCCC(=O)NCCCCCC(=O)NCCCCCC(=O)NCCCCCC(=O)NCCCCCC(=O)NCCCCCC(=O)NCCCCCC(=O)NCCCCCC(=O)NCCCCCC(=O)NCCCCCC(=O)NCCCCCC(=O)NCCCCCC(=O)NCCCCCC(=O)NCCCCCC(=' unparseable"]	1486	1663
+MNXR157846	movable	unusable	["id MNXM1092868 has no structure in MetaNetX", "id MNXM1093064 has no structure in MetaNetX"]	1465	145
+MNXR168219	movable	unusable	["id MNXM1088840 has no structure in MetaNetX", "id MNXM1088898 has no structure in MetaNetX"]	1467	315
+MNXR136531	movable	unusable	["smiles 'CC(=O)NCCSC(C)(=O)NCC(=O)O' unparseable", "smiles 'CC(=O)NCCSC(C)(=O)NCC(=O)O' unparseable", "smiles 'CC(=O)NCCSC(C)(=O)NC(=O)OP(=O)(O)O' unparseable", "smiles 'CC(=O)NCCSC(C)(=O)NCC(=O)O' unparseable"]	1453	498
+MNXR184868	movable	unbalanced	{"C": -11.0, "O": -7.0, "P": -1.0, "*": -2.0, "N": -3.0}	1483	227
+MNXR159943	movable	unusable	["id MNXM1092337 has no structure in MetaNetX", "id MNXM1094376 has no structure in MetaNetX"]	1497	179
+MNXR148042	movable	unusable	["id MNXM733631 has no structure in MetaNetX"]	1448	353
+MNXR104671	movable	unusable	["id MNXM145574 has no structure in MetaNetX"]	1512	157
+MNXR166646	movable	unbalanced	{"C": 1.0}	1499	401
+MNXR102778	movable	unusable	["id MNXM146604 has no structure in MetaNetX"]	1485	363
+MNXR144694	movable	unusable	["id MNXM9174 has no structure in MetaNetX", "id MNXM6242 has no structure in MetaNetX"]	1483	163
+MNXR165527	movable	unusable	["id MNXM1091234 has no structure in MetaNetX"]	1479	374
+MNXR147905	movable	unusable	["id MNXM9027 has no structure in MetaNetX"]	1446	249
+MNXR131049	movable	unusable	["smiles 'CC1=C(C=C(C=C1)C2=C(C=C(C=C2)C3=C(C=C(C=C3)C4=C(C=C(C=C4)C5=C(C=C(C=C5)C6=C(C=C(C=C6)C7=C(C=C(C=C7)C8=C(C=C(C=C8)C9=C(C=C(C=C9)C10=C(C=C(C=C10)C11=C(C=C(C=C11)C12=C(C=C(C=C12)C13=C(C=C(C=C13)C14=C(C=C(C=C14)C15=C(C=C(C=C15)C16=C(C=C(C=C16)C17=C(C=C(C=C17)C18=C(C=C(C=C18)C19=C(C=C(C=C19)C20=C(C=C(C=C20)C21=C(C=C(C=C21)C22=C(C=C(C=C22)C23=C(C=C(C=C23)C24=C(C=C(C=C24)C25=C(C=C(C=C25)C26=C(C=C(C=C26)C' unparseable"]	1487	823
+MNXR183295	movable	unusable	["id MNXM1100376 has no structure in MetaNetX", "id MNXM1100377 has no structure in MetaNetX"]	1499	210
+MNXR153988	movable	unusable	["id MNXM1091879 has no structure in MetaNetX"]	1480	191
+MNXR153291	no_lever	balanced	{}	1494	174
+MNXR133818	movable	unusable	["id MNXM168847 has no structure in MetaNetX"]	1453	137
+MNXR179945	movable	unusable	["smiles 'C1C(C(C(C(O1)O)O)O)OC2C(C(C(C(O2)O)O)O' unparseable"]	1425	349
+MNXR158770	movable	unusable	["id MNXM1092252 has no structure in MetaNetX"]	1456	142
+MNXR136190	movable	unusable	["id MNXM91692 has no structure in MetaNetX"]	1460	139
+MNXR207158	movable	refused	["The reaction is a summation of amino acid and ATP consumption with ATP hydrolysis products, but the chemistry being perf"]	1818	109
+MNXR174462	movable	refused	["The reaction as written is chemically implausible and cannot be made concrete without inventing chemistry. Trypsin is an"]	1441	98
+MNXR150466	movable	unbalanced	{"C": -1.0}	1494	492
+MNXR135849	movable	unusable	["id MNXM147672 has no structure in MetaNetX"]	1477	170
+MNXR171844	movable	unbalanced	{"C": -5.0, "O": -4.0}	1506	323
+MNXR195204	movable	unusable	["id MNXM1099638 has no structure in MetaNetX"]	1451	189
+MNXR131265	movable	unusable	["id MNXM165939 has no structure in MetaNetX"]	1473	134
+MNXR137557	movable	unusable	["id MNXM12030 has no structure in MetaNetX", "id MNXM2219 has no structure in MetaNetX", "id MNXM8812 has no structure in MetaNetX"]	1496	230
+MNXR162548	movable	unusable	["id MNXM1092437 has no structure in MetaNetX", "id MNXM6018 has no structure in MetaNetX"]	1462	161
+MNXR183210	movable	unusable	["id MNXM174068 has no structure in MetaNetX", "id MNXM174098 has no structure in MetaNetX"]	1478	377
+MNXR157086	one_sided	refused	["The reaction is empty (no left or right side provided), making it impossible to determine the chemistry or balance the e"]	1393	70
+MNXR201485	movable	unusable	["id MNXM1091285 has no structure in MetaNetX", "id MNXM1091258 has no structure in MetaNetX"]	1480	343
+MNXR170935	movable	unusable	["id MNXM1090998 has no structure in MetaNetX", "id MNXM1091000 has no structure in MetaNetX"]	1513	254
+MNXR100233	movable	unusable	["id MNXM148524 has no structure in MetaNetX"]	1464	150
+MNXR175370	movable	unbalanced	{"C": 2.0, "O": 1.0}	1471	138
+MNXR159574	movable	unbalanced	{"C": -2.0, "O": -2.0}	1461	432
+MNXR153128	movable	unusable	["id MNXM730542 has no structure in MetaNetX"]	1456	132
+MNXR132514	movable	unusable	["id MNXM163892 has no structure in MetaNetX"]	1448	302
+MNXR166380	movable	unbalanced	{"Ca": -3.0, "C": -25.0, "O": -3.0, "N": -3.0}	1484	397
+MNXR138261	movable	unusable	["id MNXM147096 has no structure in MetaNetX", "id MNXM163566 has no structure in MetaNetX"]	1456	133
+MNXR97723	movable	unusable	["smiles 'O=P(O)(O)C1CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC' unparseable", "id MNXM31415 has no structure in MetaNetX", "id MNXM163974 has no structure in MetaNetX", "smiles 'O=P(O)(O)C1CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC' unparseable"]	1527	717
+MNXR133869	movable	unusable	["id MNXM168086 has no structure in MetaNetX"]	1486	180
+MNXR148400	movable	balanced	{}	1452	339
+MNXR172620	movable	unusable	["id MNXM1100055 has no structure in MetaNetX"]	1468	150
+MNXR195326	movable	unusable	["id MNXM1137610 has no structure in MetaNetX", "id MNXM1137614 has no structure in MetaNetX"]	1469	1035
+MNXR131287	movable	unusable	["id MNXM168205 has no structure in MetaNetX"]	1458	138
+MNXR178497	movable	refused	["The reaction involves two monomers (MNXM570885 and MNXM570886) that are not defined in the database with concrete chemic"]	1432	104
+MNXR169735	movable	unbalanced	{"C": 1.0}	1484	377
+MNXR131440	movable	unbalanced	{"N": -1.0, "C": -13.0, "O": -1.0}	1450	350
+MNXR137497	movable	unusable	["id MNXM7182 has no structure in MetaNetX", "id MNXM731940 has no structure in MetaNetX", "id MNXM11010 has no structure in MetaNetX", "id MNXM740696 has no structure in MetaNetX"]	1548	457
+MNXR194931	movable	unusable	["id MNXM1137284 has no structure in MetaNetX"]	1463	134
+MNXR167914	movable	unusable	["id MNXM1088856 has no structure in MetaNetX", "id MNXM1088934 has no structure in MetaNetX"]	1503	351
+MNXR159897	movable	unusable	["id MNXM1092315 has no structure in MetaNetX", "id MNXM1094352 has no structure in MetaNetX"]	1493	146
+MNXR102757	movable	unbalanced	{"O": -3.0, "P": -1.0}	1488	404
+MNXR135298	movable	unusable	["id MNXM21532 has no structure in MetaNetX", "id MNXM8317 has no structure in MetaNetX"]	1440	131
+MNXR104111	movable	unbalanced	{"C": 28.0, "O": 26.0, "P": 6.0, "*": 2.0, "N": 12.0}	1447	324
+MNXR179240	movable	unbalanced	{"C": 2.0, "O": 1.0}	1483	528
+MNXR144486	movable	unusable	["id MNXM165335 has no structure in MetaNetX", "id MNXM165342 has no structure in MetaNetX"]	1474	138
+MNXR178081	movable	balanced	{}	1467	402
+MNXR155784	movable	unusable	["id MNXM1092689 has no structure in MetaNetX", "id MNXM1092862 has no structure in MetaNetX"]	1461	130
+MNXR130645	movable	unusable	["id MNXM162274 has no structure in MetaNetX", "id MNXM167750 has no structure in MetaNetX", "id MNXM165761 has no structure in MetaNetX"]	1493	161
+MNXR133403	movable	unusable	["id MNXM165292 has no structure in MetaNetX"]	1492	133
+MNXR103153	movable	unusable	["id MNXM148457 has no structure in MetaNetX", "id MNXM148458 has no structure in MetaNetX"]	1445	109
+MNXR129531	movable	unbalanced	{"P": -1.0, "S": -4.0, "N": -5.0, "C": -13.0, "O": -8.0}	1438	248
+MNXR176149	movable	unbalanced	{"S": 1.0, "C": 14.0, "O": 8.0, "P": 1.0, "*": 2.0, "N": 3.0}	1467	299
+MNXR131722	movable	unusable	["id MNXM165548 has no structure in MetaNetX"]	1469	133
+MNXR131727	movable	unusable	["id MNXM166264 has no structure in MetaNetX"]	1469	143
+MNXR142696	movable	refused	["The reaction includes 'BIOMASS [BIOMASS]' as a product, which is an amorphous mass with no defined chemical structure. T"]	2724	101
+MNXR123125	movable	unbalanced	{"P": -4.0, "*": -4.0, "C": -10.0, "O": -15.0}	1457	398
+MNXR145486	movable	unusable	["id MNXM741246 has no structure in MetaNetX"]	1477	171
+MNXR153544	no_lever	balanced	{}	1464	125
+MNXR131664	movable	unusable	["id MNXM166513 has no structure in MetaNetX"]	1453	129
+MNXR132256	movable	unusable	["id MNXM168470 has no structure in MetaNetX", "id MNXM168471 has no structure in MetaNetX"]	1459	137
+MNXR130931	movable	unusable	["id MNXM167196 has no structure in MetaNetX", "id MNXM167197 has no structure in MetaNetX"]	1473	140
+MNXR130165	movable	unusable	["id MNXM168184 has no structure in MetaNetX"]	1478	165
+MNXR156174	movable	unusable	["id MNXM1092876 has no structure in MetaNetX", "id MNXM1092954 has no structure in MetaNetX"]	1437	131
+MNXR132067	movable	unusable	["id MNXM168460 has no structure in MetaNetX"]	1455	138
+MNXR158978	movable	unusable	["harness: BadJSON: Expecting value: line 42 column 13 (char 3425); usage=Usage(prompt_tokens=1541, completion_tokens=2048, seconds=122.60114592200262)"]	0	0
+MNXR180642	movable	refused	["The reaction involves photons of different wavelengths and cannot be simplified into a balanced chemical reaction with c"]	1524	89
+MNXR145059	movable	unusable	["id MNXM741207 has no structure in MetaNetX"]	1493	332
+MNXR200823	movable	unbalanced	{"S": -1.0, "C": 8.0}	1595	407
+MNXR117094	movable	refused	["The reaction as written is chemically incoherent. The left side contains a specific protein (insulin-like growth factor-"]	1440	156
+MNXR136293	movable	unusable	["id MNXM6243 has no structure in MetaNetX"]	1489	324
+MNXR133174	movable	unusable	["id MNXM164222 has no structure in MetaNetX", "id MNXM166166 has no structure in MetaNetX"]	1495	261
+MNXR179838	movable	unusable	["id MNXM163982 has no structure in MetaNetX", "id MNXM163981 has no structure in MetaNetX"]	1510	202
+MNXR96189	movable	unusable	["id MNXM164802 has no structure in MetaNetX", "id MNXM736131 has no structure in MetaNetX"]	1466	159
+MNXR186336	movable	unbalanced	{"C": 7.0, "O": -1.0, "P": -1.0}	1485	336
+MNXR187702	movable	unbalanced	{"S": -1.0, "C": -1.0, "*": 1.0}	1473	317
+MNXR129642	movable	unusable	["id MNXM165900 has no structure in MetaNetX", "id MNXM166429 has no structure in MetaNetX"]	1488	128
+MNXR96544	movable	unusable	["id MNXM147543 has no structure in MetaNetX", "id MNXM148153 has no structure in MetaNetX"]	1472	186
+MNXR142961	one_sided	refused	["The reaction is empty (no left or right side provided), making it impossible to determine the chemistry or balance the e"]	1393	70
+MNXR203500	movable	unusable	["id MNXM1563491 has no structure in MetaNetX"]	1467	147
+MNXR180536	movable	unusable	["id MNXM507715 has no structure in MetaNetX"]	1440	141
+MNXR103238	movable	unbalanced	{"O": -1.0}	1439	411
+MNXR180679	movable	unusable	["id MNXM588579 has no structure in MetaNetX", "id MNXM681088 has no structure in MetaNetX", "id MNXM726186 has no structure in MetaNetX"]	1487	184
+MNXR137563	movable	unusable	["id MNXM15943 has no structure in MetaNetX", "id MNXM2417 has no structure in MetaNetX", "id MNXM8291 has no structure in MetaNetX"]	1461	183
+MNXR170595	movable	unusable	["id MNXM1090970 has no structure in MetaNetX", "id MNXM1090972 has no structure in MetaNetX"]	1449	172
+MNXR195054	movable	unusable	["id MNXM1137369 has no structure in MetaNetX"]	1481	157
+MNXR135924	movable	unusable	["smiles 'CC(C)=OCCOP(OCCN)(=O)COP(OCCN)(=O)COCC(C)=O' unparseable"]	1548	324
+MNXR129987	movable	unusable	["id MNXM164335 has no structure in MetaNetX"]	1465	132
+MNXR96798	movable	unusable	["id MNXM11903 has no structure in MetaNetX", "id MNXM8372 has no structure in MetaNetX"]	1478	152
+MNXR178508	movable	unusable	["id MNXM683698 has no structure in MetaNetX", "id MNXM683696 has no structure in MetaNetX"]	1464	306
+MNXR131979	movable	unusable	["id MNXM168550 has no structure in MetaNetX", "id MNXM168699 has no structure in MetaNetX"]	1448	127
+MNXR159561	movable	unbalanced	{"S": -2.0, "C": -4.0, "O": -5.0}	1481	540
+MNXR187103	movable	unbalanced	{"C": 14.0, "O": 7.0}	1490	1684
+MNXR104704	movable	unusable	["id MNXM145565 has no structure in MetaNetX", "id MNXM145932 has no structure in MetaNetX"]	1519	161
+MNXR133432	movable	unusable	["id MNXM167783 has no structure in MetaNetX"]	1459	138
+MNXR169248	movable	unbalanced	{"C": -7.0, "O": -1.0}	1475	326
+MNXR161741	movable	unbalanced	{"C": -12.0, "O": -1.0, "N": -1.0}	1527	700
+MNXR133433	movable	unusable	["id MNXM166346 has no structure in MetaNetX", "id MNXM167441 has no structure in MetaNetX"]	1481	127
+MNXR104678	movable	unusable	["id MNXM145575 has no structure in MetaNetX"]	1512	355
+MNXR131359	one_sided	refused	["The reaction MNXR131359 is not provided in the input, so it cannot be rewritten or analyzed. Please provide the reaction"]	1393	73
+MNXR178180	movable	refused	["The reaction involves only protein complexes and no concrete chemistry (no atoms are moved, bonds broken, or formed). Al"]	1461	80
+MNXR195030	movable	unbalanced	{"N": -2.0, "C": -12.0, "O": -5.0}	1462	511
+MNXR153480	movable	unbalanced	{"S": -1.0, "C": 9.0, "O": 11.0, "P": 3.0, "N": 4.0}	1473	342
+MNXR133981	movable	unusable	["id MNXM168444 has no structure in MetaNetX", "id MNXM168801 has no structure in MetaNetX"]	1463	128
+MNXR166183	movable	unbalanced	{"O": -3.0, "P": -1.0}	1461	479
+MNXR144652	movable	unusable	["id MNXM90149 has no structure in MetaNetX"]	1469	196
+MNXR131415	movable	unusable	["id MNXM166041 has no structure in MetaNetX", "id MNXM166042 has no structure in MetaNetX"]	1471	132
+MNXR101902	movable	unusable	["id MNXM736488 has no structure in MetaNetX", "id MNXM163763 has no structure in MetaNetX"]	1462	141
+MNXR199171	movable	unusable	["id MNXM21520 has no structure in MetaNetX"]	1507	175
+MNXR152278	movable	unusable	["id MNXM1102130 has no structure in MetaNetX", "id MNXM725923 has no structure in MetaNetX", "id MNXM739642 has no structure in MetaNetX"]	1460	139
+MNXR154812	movable	unusable	["id MNXM1092584 has no structure in MetaNetX"]	1504	409
+MNXR172876	movable	unusable	["id MNXM1100208 has no structure in MetaNetX"]	1451	134
+MNXR162411	no_lever	balanced	{}	1448	158
+MNXR133596	movable	unusable	["id MNXM164846 has no structure in MetaNetX", "id MNXM168000 has no structure in MetaNetX"]	1459	122
+MNXR135945	movable	unusable	["id MNXM5490 has no structure in MetaNetX"]	1475	133
+MNXR159871	movable	refused	["The reaction involves a long, undefined O antigen polysaccharide and a periplasmic polysaccharide with a specific chain "]	1505	99
+MNXR159037	movable	unusable	["id MNXM1091914 has no structure in MetaNetX", "id MNXM1092818 has no structure in MetaNetX"]	1492	143
+MNXR158165	movable	unusable	["id MNXM1093022 has no structure in MetaNetX"]	1470	192
+MNXR194122	movable	unbalanced	{"C": -5.0, "O": 1.0}	1513	433
+MNXR133740	movable	unusable	["id MNXM165158 has no structure in MetaNetX", "id MNXM165159 has no structure in MetaNetX"]	1438	319
+MNXR170569	movable	unusable	["id MNXM1088840 has no structure in MetaNetX", "id MNXM1089882 has no structure in MetaNetX", "id MNXM1088898 has no structure in MetaNetX", "id MNXM1089881 has no structure in MetaNetX"]	1552	529
+MNXR195274	movable	refused	["The reaction involves a 'Receptor-inhibitor complex' and a scFv antibody fragment binding to a viral spike glycoprotein."]	1447	94
+MNXR135205	movable	unusable	["id MNXM741305 has no structure in MetaNetX"]	1485	350
+MNXR100766	movable	unusable	["id MNXM146401 has no structure in MetaNetX", "id MNXM147129 has no structure in MetaNetX", "id MNXM146402 has no structure in MetaNetX", "id MNXM147128 has no structure in MetaNetX", "id MNXM147395 has no structure in MetaNetX"]	1497	179
+MNXR136351	movable	unusable	["id MNXM4587 has no structure in MetaNetX"]	1469	330
+MNXR160710	movable	unusable	["id MNXM1092861 has no structure in MetaNetX", "id MNXM1094005 has no structure in MetaNetX"]	1488	335
+MNXR132848	movable	unusable	["id MNXM1102420 has no structure in MetaNetX"]	1487	383
+MNXR206090	one_sided	refused	["The reaction identifier 'MNXR206090' was provided without any reaction equation or details. Without the actual reaction,"]	1393	88
+MNXR169591	movable	balanced	{}	1496	406
+MNXR162818	movable	unusable	["id MNXM1091561 has no structure in MetaNetX", "id MNXM1093119 has no structure in MetaNetX", "id MNXM1094228 has no structure in MetaNetX"]	1596	172
+MNXR177647	movable	refused	["The reaction involves DNA being cleaved, but the specific chemistry (e.g., which bonds are broken, what groups are invol"]	1420	96
+MNXR131304	movable	unusable	["id MNXM166058 has no structure in MetaNetX"]	1452	137
+MNXR172074	movable	unusable	["id MNXM1099616 has no structure in MetaNetX", "id MNXM1099617 has no structure in MetaNetX"]	1467	130
+MNXR194966	movable	unbalanced	{"O": 1.0}	1492	387
+MNXR96285	movable	refused	["The reaction is a biomass equation with numerous undefined or amorphous components (e.g., BIOMASS, Coenzyme F390 variant"]	3099	99
+MNXR178452	movable	refused	["The reaction involves amorphous complexes (EG11146-MONOMER, CPLX0-7681) with no concrete chemical structures. These are "]	1449	92
+MNXR178076	movable	unusable	["id MNXM19082 has no structure in MetaNetX", "id MNXM527974 has no structure in MetaNetX"]	1459	185
+MNXR158797	movable	unusable	["id MNXM1092249 has no structure in MetaNetX"]	1473	130
+MNXR172789	movable	unusable	["id MNXM1100159 has no structure in MetaNetX", "id MNXM162296 has no structure in MetaNetX"]	1439	144
+MNXR183259	movable	unbalanced	{"C": 5.0, "O": 3.0, "N": 1.0}	1498	747
+MNXR175500	movable	unusable	["id MNXM491083 has no structure in MetaNetX", "id MNXM525959 has no structure in MetaNetX"]	1449	302
+MNXR113433	movable	unusable	["id MNXM21520 has no structure in MetaNetX"]	1455	793
+MNXR206459	no_lever	unbalanced	{"Ca": 1.0, "C": 25.0, "O": 4.0, "N": 1.0, "F": 1.0}	1456	139

@@ -180,8 +180,11 @@ and Pillow: `mamba run -n figure-net python main/benchmarks/eydallin/digitize_fi
 
 `bake_pairs.py` decodes the bake into the schema `ecspr.model.build.load_pairs` reads. Handing
 that loader the encoded table does not raise — the element filter compares ints to `"C"`
-and returns zero rows — so the graph comes back empty rather than obviously wrong. Clear
-`cache/*.parquet` after a bake repin.
+and returns zero rows — so the graph comes back empty rather than obviously wrong. Each
+`cache/` entry is stamped with the bake it was decoded from and rebuilds itself when that
+moves, so a repin no longer needs anybody to remember to clear it — the stamp pairs the
+bake identity with `direction.parquet`'s `src_direction_sha256`, because the identity alone
+is unchanged by a direction-only re-bake and would have served the stale table happily.
 
 ## Whole-metabolome delta panel — a leak reading, and it moves with host and bake
 

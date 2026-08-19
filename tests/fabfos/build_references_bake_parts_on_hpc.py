@@ -93,6 +93,9 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
 
+# The PINNED engine, ahead of whatever is installed. Planning works on either; execution
+# does not -- only the pin resolves a `container:`/`conda:` env declaration by runtime
+# instead of handing the whole declaration to apptainer as a URI.
 _ENGINE = REPO / "src"
 if (_ENGINE / "metasmith").is_dir():
     sys.path.insert(0, str(_ENGINE))
@@ -107,6 +110,8 @@ from metasmith.python_api import (                                      # noqa: 
     TransformInstanceLibrary,
 )
 
+# The site bundle and the cluster checks live with the other executing drivers; there is
+# one copy of "what sockeye does differently" and this is not a second one.
 sys.path.insert(0, str(REPO / "research" / "fabfos" / "examples"))
 from _driver import (                                                   # noqa: E402
     SOCKEYE_ACCOUNT, SOCKEYE_CONTAINER, SOCKEYE_HOST, SOCKEYE_IMAGE_STORE,
@@ -129,9 +134,14 @@ TYPE_LIBRARIES = (
         "lookup.yml", "evidence.yml")]
 )
 
+# THE ONE GIVEN. Licensed, not redistributable, and the independent member of BOTH
+# ensembles. It is also the sample every part is planned against, including the two that
+# never open it -- `GenerateWorkflow` needs a sample and this graph has exactly one.
 GIVEN_TYPE = "fabfos_data::metacyc"
 GIVEN_AT = DATA / "originals" / "metacyc"
 
+# Everything any part might stage, keyed by type and valued by its path under data/. ONE
+# map, so the re-rooting onto the cluster and the local existence check cannot drift.
 ALL_INPUTS = {
     "fabfos_data::metanetx":     "originals/metanetx",
     "fabfos_data::chebi":        "originals/chebi",
@@ -142,10 +152,19 @@ ALL_INPUTS = {
     "lookup::atom_ranks":        "processed/lookups/atom_ranks.parquet",
     "lookup::xrefs":             "processed/lookups/xrefs.parquet",
     "lookup::synonyms":          "processed/lookups/synonyms.parquet",
+    # RUN STATE, not upstream data. Neither can have a producer -- the prior run's logs
+    # are a record of a run, and the thing that writes the cache is the lane that reads
+    # it -- so both are staged as givens and both may be empty. An absent cache is the
+    # ordinary first-run state; an absent cache DECLARED as one is what the audit
+    # refuses over.
     "fabfos_data::prior_bake_logs": "processed/metabolism_bake/logs",
     "fabfos_data::aam_cache":       "temp/aam_cache",
 }
 
+# The mapper members, and which verdicts each admits from `interm::aam_universe`. The two
+# neural members take `mappable`; Indigo also takes the oversized tail. Named here rather
+# than imported because the audit runs on a workstation that need not have the bake method
+# importable -- and `tests/ecspr/bake/test_worklist_gates.py` is what keeps the two honest.
 MEMBER_ADMITS = {
     "rxnmapper":   ("mappable",),
     "localmapper": ("mappable",),
@@ -162,8 +181,15 @@ MEMBER_ADMITS = {
 # resume -- and the ratio test read it as 97.2% unresumed and refused the run.
 GAP_FILLERS = {"localmapper"}
 
+# The deployed bake, which is a FLOOR and not a baseline: its run stopped at 20,000 of
+# 83,795. The audit reports the todo against it so "how much of this run is new ground"
+# is a number rather than an impression.
 DEPLOYED_BAKE = DATA / "processed" / "metabolism_bake"
 
+# The MetaCyc files any transform in this graph opens. The whole distribution is NOT
+# pushed, and that is a licence decision rather than a transfer-size one: the drop-in is
+# 1.6 GB of which 60 MB is read, it is not redistributable, and a shared cluster
+# filesystem is not the place to put more of it than the method needs.
 METACYC_FILES = ("atom-mappings-smiles.dat", "reactions.dat", "compounds.dat")
 
 # `data/.gitignore` is `/*/*` with a `.dvc` negation, so this is already ignored and must
@@ -174,7 +200,21 @@ TEMP = DATA / "temp"
 BAKE_SIF_DIR = REPO / "docker" / "ecspr_bake"
 IMG = "docker://quay.io/hallamlab/ecspr_bake:{}"
 
+# ---------------------------------------------------------------------------
+# the parts
+# ---------------------------------------------------------------------------
+#
+# `lanes` is an EQUALITY assertion. A lane missing means the part was planned short; a
+# lane EXTRA means an import did not satisfy its type and the planner resurrected another
+# part's producer, which is the failure this whole design has to make loud.
+#
+# `outputs` and `imports` are the same namespace: every import is some other part's
+# output, at the identical path, checked on startup by assert_seams_are_outputs.
 BRANCHES = {
+    # L0. Not a seam like the others and it runs FIRST, alone: every AAM lane reads these
+    # five tables, so a rebuild that silently differs from what REFERENCES.md describes is
+    # discovered six lanes later. They are also the reason `aam` lists them under
+    # `inputs` -- staged, all five or none, so `mnx_lookups` stays out of that plan.
     "lookups": dict(
         images=[IMG.format("aam")],
         lanes={"mnx_lookups"},
@@ -183,7 +223,11 @@ BRANCHES = {
         inputs=["fabfos_data::metanetx", "fabfos_data::chebi",
                 "fabfos_data::modelseed"],
         imports={},
+        # compounds.dat is 53,252 curated names in the synonym index, and the refusal for
+        # a missing drop-in is raised HERE rather than three transforms later.
         needs_metacyc=True,
+        # No tool runs: four TSVs are parsed into five parquets. The `check` verb is the
+        # evidence, and it is an exit code rather than a directory.
         evidence={},
         outputs={
             "lookup::reactions":   "processed/lookups/reactions.parquet",
@@ -193,11 +237,19 @@ BRANCHES = {
             "lookup::synonyms":    "processed/lookups/synonyms.parquet",
         },
     ),
+    # STAGE A. Everything that can be settled without a mapper, ending at the ONE
+    # submission table. It is a part rather than the head of the mapping part because the
+    # two have different failure characters: this is nine table operations and an hour,
+    # the next is most of a day of inference, and a method change in the preparation must
+    # not re-pay the mapping.
     "prepare": dict(
         images=[IMG.format("aam")],
         lanes={
             "aam_recount", "aam_worklist", "aam_blockers", "aam_nametwin",
             "aam_rescue",
+            # The forced-pair algebra and the pre-filter that drives the element
+            # reductions. Both are upstream of every member, which is what collapses
+            # three mapper passes into one.
             "aam_algebra", "aam_forecast", "aam_partial", "aam_universe",
         },
         targets=["interm::aam_universe"],
@@ -208,6 +260,7 @@ BRANCHES = {
             "lookup::xrefs", "lookup::synonyms",
         ],
         imports={},
+        # No lane here opens the drop-in. The curated layer is extracted in `assemble`.
         needs_metacyc=False,
         evidence={
             "recount":  "aam_recount",
@@ -220,6 +273,11 @@ BRANCHES = {
             "partial":  "aam_partial",
             "universe": "aam_universe",
         },
+        # SIX SEAMS, not one. `aam_universe` is what the mapping part reads, but the
+        # assembly reads four more of this part's products directly -- the stack lays the
+        # algebra down as its own layer and the reference closes the ledger against the
+        # worklist, the rescue and the forecast -- so every one of them has to survive
+        # this part rather than being recomputed by whoever needs it next.
         outputs={
             "interm::aam_universe":    "temp/_seams/aam_universe.parquet",
             "interm::aam_worklist":    "temp/_seams/aam_worklist.parquet",
@@ -230,6 +288,8 @@ BRANCHES = {
             "lookup::element_counts":  "temp/_seams/element_counts.parquet",
         },
     ),
+    # STAGE B. The three members, once each, over the one universe. This is the part the
+    # reuse audit exists for and the only one that reads the durable cache.
     "map": dict(
         images=[IMG.format("aam")],
         lanes={"rxnmapper", "indigo", "localmapper"},
@@ -238,6 +298,9 @@ BRANCHES = {
         inputs=["fabfos_data::metanetx", "fabfos_data::aam_cache"],
         imports={
             "interm::aam_universe": "temp/_seams/aam_universe.parquet",
+            # The extractor's three tables -- crosswalk, placeholders, per-element
+            # balance -- which is how a `completed` submission's invented atoms get
+            # suppressed and its conservation claim tested.
             "interm::aam_rescue":   "temp/_seams/aam_rescue",
         },
         needs_metacyc=False,
@@ -249,6 +312,7 @@ BRANCHES = {
             "interm::aam_member_localmapper": "temp/_seams/aam_member_localmapper.parquet",
         },
     ),
+    # STAGE C. Fuse, stack, correct, mint. Three lanes and no mapper.
     "assemble": dict(
         images=[IMG.format("aam")],
         lanes={"aam_stack", "aam_redox", "aam_reference"},
@@ -265,6 +329,7 @@ BRANCHES = {
             "interm::aam_partial":            "temp/_seams/aam_partial",
             "interm::aam_algebra":            "temp/_seams/aam_algebra",
         },
+        # The curated layer is read here, from atom-mappings-smiles.dat.
         needs_metacyc=True,
         evidence={
             "metacyc":   "aam_stack",
@@ -275,11 +340,21 @@ BRANCHES = {
         outputs={
             "ref::metabolism_vocab": "temp/metabolism/vocab.parquet",
             "ref::atom_pairs":       "temp/metabolism/atom_pairs.parquet",
+            # The two internal seams, retrieved even though this part produces them and
+            # consumes them itself. `ref::atom_pairs` is ENCODED against the vocabulary,
+            # so neither the tier-4 gate nor the redox spot-checks can read it -- and
+            # having the stack on disk is what lets `redox` and `reference` below re-run
+            # a failed correction or a failed minting without re-fusing anything.
             "interm::aam_stack":     "temp/_seams/aam_stack.parquet",
             "interm::aam_pairs":     "temp/_seams/aam_pairs",
             "interm::aam_ledger":    "temp/_seams/aam_ledger.parquet",
         },
     ),
+    # ---- the two recovery cuts of stage C -----------------------------------------
+    # Not part of the normal route: `assemble` runs all three lanes. These exist because
+    # the assembly's three steps have very different costs -- the fusion is the expensive
+    # one -- and a failure in the last of them must not re-pay the first. Each imports the
+    # seam immediately above it, so its lane-set equality proves nothing upstream re-ran.
     "redox": dict(
         images=[IMG.format("aam")],
         lanes={"aam_redox"},
@@ -312,9 +387,13 @@ BRANCHES = {
     "members": dict(
         images=[IMG.format("direction"), IMG.format("dgbyg")],
         lanes={"equilibrator", "dgbyg"},
+        # Targeted by their INTERMEDIATE types rather than by the trio, which is the
+        # point of this part: neither member needs the vocabulary, so both run while the
+        # AAM part is still going.
         targets=["interm::direction_member_eq", "interm::direction_member_dgbyg"],
         inputs=["fabfos_data::metanetx", "fabfos_data::equilibrator"],
         imports={},
+        # Neither member reads the drop-in -- the curated member belongs to the assembly.
         needs_metacyc=False,
         evidence={"equilibrator": "equilibrator", "dgbyg": "dgbyg"},
         outputs={
@@ -325,12 +404,16 @@ BRANCHES = {
     "direction": dict(
         images=[IMG.format("direction")],
         lanes={"direction_ensemble"},
+        # The UNCODED annotation, not the compiled ratios. That is the whole reason this
+        # part can run beside the AAM branch instead of behind it.
         targets=["interm::direction_annotation"],
         inputs=["fabfos_data::metanetx"],
         imports={
             "interm::direction_member_eq":    "temp/_seams/direction_member_eq.parquet",
             "interm::direction_member_dgbyg": "temp/_seams/direction_member_dgbyg.parquet",
         },
+        # The curated member IS the assembly's independent vote, read straight from
+        # reactions.dat. Without it this ensemble keeps only its two correlated members.
         needs_metacyc=True,
         evidence={
             "metacyc_direction":     "direction_ensemble",
@@ -346,10 +429,15 @@ BRANCHES = {
         targets=["ref::direction_ratios"],
         inputs=[],
         imports={
+            # From the AAM host, and an input to the ENCODING only: the ratios are coded
+            # against this vocabulary's `rxn` space and inherit its identity block.
             "ref::metabolism_vocab":        "temp/metabolism/vocab.parquet",
             "interm::direction_annotation": "temp/_seams/direction_annotation.parquet",
         },
         needs_metacyc=False,
+        # No tool runs here -- one table is re-expressed in another table's codes. The
+        # evidence for the direction call belongs to the assembly; the evidence for this
+        # step is `selftest_direction`, which is an exit code rather than a file.
         evidence={},
         outputs={"ref::direction_ratios": "temp/metabolism/direction.parquet"},
     ),
@@ -357,6 +445,13 @@ BRANCHES = {
 
 
 def assert_seams_are_outputs() -> None:
+    """Every import must be some other part's output, at the same path.
+
+    Cheap, and it closes the one gap the plan gate cannot see. The gate proves an import
+    RESOLVED; it cannot prove the file it resolved against is the one the producing part
+    actually writes. A path typo would sail through planning -- the item is declared, the
+    type is satisfied -- and surface as a direction table encoded against nothing.
+    """
     produced = {d: p for b in BRANCHES.values() for d, p in b["outputs"].items()}
     for name, spec in BRANCHES.items():
         for dtype, rel in spec["imports"].items():
@@ -374,10 +469,33 @@ ACQUIRE_LIB = BREF / "transforms" / "acquire"
 
 
 def cached_image_name(image: str) -> str:
+    """The filename metasmith looks for in the image store.
+
+    Mirrors `Environment._cached_name` in the pinned engine. A copy rather than an import
+    because the driver must PLACE the file before any engine code runs on the remote --
+    but it is a mirror, so if that method changes, this must too.
+    """
     return image.replace("://", "..").replace(":", "..").replace("/", "_") + ".sif"
 
 
+# ---------------------------------------------------------------------------
+# planning
+# ---------------------------------------------------------------------------
+
 def build_inputs(work: Path, branch: str, remote_root: str | None):
+    """Stage the given, this part's sources, and its imports from the parts before it.
+
+    RE-ROOTING IS NOT AN OPTIMISATION. metasmith binds an item's OWN path into the task
+    container -- the same string on both sides -- so an input declared at a workstation
+    path is bind-mounted at that path on the cluster node, where it does not exist, and
+    apptainer refuses with "mount source does not exist", naming neither the item nor the
+    path.
+
+    Existence is always checked against the LOCAL copy even when the declared path is
+    remote: the planner resolves on types and lineage and never on existence, so a missing
+    tree plans perfectly and fails hours later inside a container. The local copy is what
+    rsync just pushed, so checking it is checking the far side.
+    """
     spec = BRANCHES[branch]
     inputs = DataInstanceLibrary(work / "inputs.xgdb")
     for tl in TYPE_LIBRARIES:
@@ -390,12 +508,19 @@ def build_inputs(work: Path, branch: str, remote_root: str | None):
     for dtype in sorted(spec["inputs"]):
         rel = ALL_INPUTS[dtype]
         if dtype == "fabfos_data::aam_cache":
+            # AN EMPTY CACHE IS THE ORDINARY FIRST-RUN STATE, so its absence is created
+            # rather than reported. It has no producer -- the lane that writes it is the
+            # lane that reads it -- so a missing directory here would not schedule
+            # anything, it would make the part unplannable for want of a type.
             (DATA / rel).mkdir(parents=True, exist_ok=True)
         if not (DATA / rel).exists():
             missing.append(f"{dtype:32s} data/{rel}")
             continue
         inputs.AddItem(declared(rel), dtype)
 
+    # The seam. Declared whether or not it is here yet, so PLANNING can be checked before
+    # the producing part has run. What it must never do is silently fall back to
+    # scheduling the producer, and check_plan is what makes that impossible.
     for dtype, rel in sorted(spec["imports"].items()):
         if not (DATA / rel).exists():
             imported_missing.append(f"{dtype:32s} data/{rel}")
@@ -403,6 +528,9 @@ def build_inputs(work: Path, branch: str, remote_root: str | None):
 
     given = GIVEN_AT
     if not given.exists():
+        # Planning is type-driven and never opens an input, so an empty directory
+        # resolves the type exactly as the licensed distribution does. A RUN refuses --
+        # but only for the parts that actually read it.
         given = work / "metacyc_standin"
         given.mkdir(parents=True, exist_ok=True)
         print(f"NOTE: no MetaCyc drop-in at {GIVEN_AT}; standing in an empty directory "
@@ -433,6 +561,10 @@ def plan(work: Path, branch: str, remote_root: str | None, agent):
         DataInstanceLibrary.Load(BREF / "resources" / "buildlib"),
         inputs,
     ]
+    # acquire/ and compile/ are LOADED, not hidden. Loading them is what turns "the inputs
+    # were staged" into a checkable assertion instead of an assumption: hiding a transform
+    # makes an unmet input an unresolvable plan whose error names a TYPE, while loading it
+    # and asserting it did not run names the exact step that was skipped.
     transforms = [
         TransformInstanceLibrary.Load(ACQUIRE_LIB),
         TransformInstanceLibrary.Load(BREF / "transforms" / "compile"),
@@ -453,6 +585,14 @@ def plan(work: Path, branch: str, remote_root: str | None, agent):
 
 
 def check_plan(task, branch: str) -> tuple[set[str], list[str]]:
+    """The split's correctness proof: exactly this part's lanes, and nothing else.
+
+    EQUALITY, not containment, and the extra-lane case is the one that matters. A declared
+    import that does not satisfy its type is not an error anywhere in metasmith -- the
+    planner finds the type unmet and schedules its PRODUCER. For the direction part that
+    means quietly re-running the entire mapping part: three lanes and most of a day, charged
+    to an allocation, on nodes that have neither the image nor the inputs for them.
+    """
     spec = BRANCHES[branch]
     used, pinned_local = set(), set()
     for step in task.plan.steps:
@@ -498,6 +638,12 @@ def check_plan(task, branch: str) -> tuple[set[str], list[str]]:
 
 
 def plan_resources(task) -> dict:
+    """The declared Resources of each planned step, keyed by transform stem.
+
+    Read off the RESOLVED plan rather than kept by hand. `check_walltimes` and
+    `check_schedulable` both need the longest ask, and a hand-kept table drifts in the
+    direction that matters -- omitting the one step whose duration is unschedulable.
+    """
     out = {}
     for step in task.plan.steps:
         r = getattr(step.transform, "resources", None)
@@ -506,10 +652,31 @@ def plan_resources(task) -> dict:
     return out
 
 
+# ---------------------------------------------------------------------------
+# execution
+# ---------------------------------------------------------------------------
+
 def push_data(host: str, branch: str, remote_root: str) -> None:
+    """rsync this part's inputs to the host, at the paths the declarations use.
+
+    Converges: the sources are release-pinned directories and the lookups are rebuilt only
+    when MetaNetX moves, so a second run transfers nothing.
+
+    --size-only, and NEITHER the default (size+mtime) NOR --checksum. mtime is out because
+    hardlink placement and DVC checkout give a re-staged file a fresh one with identical
+    bytes. --checksum is out because of WHERE the reading happens: it makes the remote side
+    read and digest every byte it already has, and the remote side here is a LOGIN NODE.
+    Three consecutive runs died as `connection unexpectedly closed`, always on eQuilibrator
+    or MetaNetX, never on the small directories -- the scheduler killing a process that
+    spent minutes at full CPU on a shared host. It reads as a flaky link and is not one.
+
+    NO --delete: the remote root also holds a previous run's work directory and the caches
+    that make a lane resumable.
+    """
     spec = BRANCHES[branch]
     rels = [ALL_INPUTS[t] for t in spec["inputs"]] + list(spec["imports"].values())
     if spec["needs_metacyc"]:
+        # The drop-in, file by file rather than as a directory -- see METACYC_FILES.
         for release in sorted(p for p in (DATA / "originals/metacyc").glob("*")
                               if p.is_dir()):
             for name in METACYC_FILES:
@@ -524,12 +691,25 @@ def push_data(host: str, branch: str, remote_root: str) -> None:
             raise SystemExit(f"cannot push data/{rel} -- it is not here")
         print(f"  {rel}", flush=True)
         ssh_once(host, f"mkdir -p {remote_root}/{Path(rel).parent}")
+        # A trailing slash on a directory source, none on a file. rsync treats the two
+        # differently and getting it wrong nests the tree one level deeper every run.
         subprocess.run(["rsync", "-a", "--size-only", "--partial", "--info=stats1",
                         f"{src}/" if src.is_dir() else str(src),
                         f"{host}:{remote_root}/{rel}"], check=True)
 
 
 def place_images(host: str, branch: str, cache_dir: str, container: str) -> None:
+    """Put the agent image and this part's task images in the persistent store.
+
+    Runs on the LOGIN node, because a compute node has no outbound route: an image absent
+    when a task starts cannot be pulled, and the slurm preset's `errorStrategy='ignore'`
+    turns that into a SILENT green run with empty outputs.
+
+    ALL PUSHED, none pulled. `hallamlab/ecspr_bake` is private -- an anonymous-token
+    manifest request returns 401 for all three tags -- so a pull is not a fallback for a
+    missing local build, it is a different way to fail. Everything already in the store is
+    left alone, which is the normal case here: /arc outlives every run.
+    """
     ssh_once(host, f"mkdir -p {cache_dir}")
     wanted = [(container, None)]
     wanted += [(i, BAKE_SIF_DIR / cached_image_name(i)) for i in BRANCHES[branch]["images"]]
@@ -557,10 +737,46 @@ def place_images(host: str, branch: str, cache_dir: str, container: str) -> None
 
 GRACE_S = 300
 GRACE_STEP_S = 20
+# A FLOOR ON --poll-s, and it is a correctness bound rather than a courtesy to the login
+# node. `WaitForWorkflow` only returns `errored` once a SINGLE call has been going longer
+# than 5 s, so the poll interval is what decides whether the second question is asked at
+# t=30 s or t=120 s -- and `PID.lock` lands ~50 s after the trigger returns. A 30 s poll
+# therefore asks the one question that can be answered wrongly, inside the one window
+# where it is wrong. The default of 120 s is not a tuning knob; it is above that window.
 MIN_POLL_S = 90.0
 
 
 def wait_for_run(agent, task, timeout_s: int, poll_s: float) -> dict:
+    """Wait, and do not believe an `errored` that has not survived a real grace period.
+
+    `WaitForWorkflow` calls a run errored when `PID.lock` is absent AND the sentinel
+    `run completed at` is not yet in agent.log. Neither of those is a statement about the
+    run; they are two files written by different things at different times, and the gap
+    is open at BOTH ends of a run:
+
+      * At the END -- nextflow's process exits, and only then does the agent compile
+        results, resolve manifests and write the sentinel. On `direction` that gap was
+        48 s, so a successful three-minute run reported errored and its results sat on
+        the cluster unretrieved.
+      * At the START, which is the worse one, because it does not need a short run to
+        bite. `PID.lock` is written by the launcher ~50 s after the trigger returns, and
+        anything asking before that sees exactly the same absent-lock/absent-sentinel
+        pair. Observed 2026-07-27: the trigger returned at 22:30:39, the lock landed at
+        22:31:28, and a driver that asked in between declared a run errored that then ran
+        to completion with nobody watching it. See MIN_POLL_S for why the poll interval
+        is what decided whether that question got asked at all.
+
+    THE RE-CHECK MUST SLEEP, and the previous one did not. `WaitForWorkflow` RETURNS on an
+    errored verdict rather than continuing to poll, so a second call with `timeout_s=180`
+    asked once, got the same answer microseconds later, and reported a 3-minute grace
+    period it had never waited out. The loop below is the grace period: it is the sleeps
+    that distinguish a dead run from an unborn one, not the number of questions.
+
+    The probe's `timeout_s=8` is likewise not arbitrary. `errored` is only reachable after
+    5 s inside one call, so a shorter probe can only ever come back `timeout` -- which
+    here means the lock EXISTS and the run is alive, since that is the one state the call
+    cannot name.
+    """
     if poll_s < MIN_POLL_S:
         print(f"=== poll {poll_s:.0f}s raised to {MIN_POLL_S:.0f}s -- see MIN_POLL_S ===",
               flush=True)
@@ -583,6 +799,8 @@ def wait_for_run(agent, task, timeout_s: int, poll_s: float) -> dict:
                   f"({waited:.0f}s into the grace period) ===", flush=True)
             again["elapsed_s"] += result["elapsed_s"] + waited
             return again
+        # Anything else -- `running` above all -- means the lock is there now and the run
+        # never was errored. Hand it back to the real wait with the remaining budget.
         print(f"=== the lock exists now (`{again['status']}`): the run had not started "
               f"when it was first asked. Resuming the wait ===", flush=True)
         second = agent.WaitForWorkflow(task, timeout_s=timeout_s, poll_s=poll_s)
@@ -592,6 +810,20 @@ def wait_for_run(agent, task, timeout_s: int, poll_s: float) -> dict:
 
 
 def recover_evidence(run_dir: str, host: str, missing: list[str], staging: Path) -> dict:
+    """Pull an evidence directory out of the task work dir when publishing lost it.
+
+    TWO LANES WITH THE SAME REQUIREMENT SET GET THE SAME EVIDENCE ARTIFACT ID, and the
+    engine publishes by artifact id, so the second one to finish lands on a path the first
+    already holds and is silently dropped. `rxnmapper` and `indigo` are exactly that pair
+    -- same universe, same cache, same image, different transform -- and in the `map` run
+    both wrote `<run>/results/2_evidence-tool_output/<one id>/`, of which only `indigo/`
+    survived. Every other part is safe by accident: its lanes read different inputs.
+
+    Nothing is lost when it happens. The step's own evidence root is intact in its task
+    work directory, which is where the transform's success check read it -- so the run was
+    green and correct and only the copy to `results/` collapsed. This reaches past the
+    collision to the original rather than re-running a member to re-derive it.
+    """
     if not (missing and host and run_dir):
         return {}
     names = " -o ".join(f"-name {t}" for t in missing if t.replace("_", "").isalnum())
@@ -619,9 +851,33 @@ def recover_evidence(run_dir: str, host: str, missing: list[str], staging: Path)
 
 
 def retrieve(src_path: str, branch: str, host: str, staging: Path) -> int:
+    """Bring this part home, per lane, into data/temp -- where the other parts also land.
+
+    ROUTED BY THE `<tool>/` DIRECTORY INSIDE EACH ARTIFACT, not by filename and not by
+    type. An output is named `{batch}-{i}-{branch}.{hash}-{type key}` and every evidence
+    artifact has the SAME type, so neither names the lane that wrote it. The tool
+    directory is the only attribution left, which is why the lanes copy their evidence
+    ROOT rather than the directory under it.
+
+    The parts write disjoint tool directories and disjoint output paths, so running this
+    once per part composes into one complete data/temp rather than one overwriting the
+    next -- and the outputs land exactly where the next part's imports declare them, which
+    is what makes the seams work.
+
+    Nothing is published here. data/reference/ is written deliberately, because it
+    rewrites DVC directory hashes.
+    """
     spec = BRANCHES[branch]
     staging.mkdir(parents=True, exist_ok=True)
     print(f"\n=== retrieving {branch} into {TEMP.relative_to(REPO)} ===", flush=True)
+    # -L, AND IT IS THE WHOLE RETRIEVAL. Every entry under results/ is a symlink into
+    # nxf_work -- the engine publishes by linking, not by copying -- so a plain `-a`
+    # faithfully reproduces the links and lands a staging directory of dangling pointers.
+    # It does not fail: rsync reports success, the manifest parses, and every product
+    # reads as "MISSING on disk" while the run that produced it was perfect.
+    #
+    # --delete so staging MIRRORS this part's run rather than accumulating across runs.
+    # Safe because each part has its OWN staging directory.
     subprocess.run(["rsync", "-aL", "--delete", "--partial", "--info=stats1",
                     f"{host}:{src_path}/", f"{staging}/"], check=True)
 
@@ -629,6 +885,12 @@ def retrieve(src_path: str, branch: str, host: str, staging: Path) -> int:
     found: dict[str, Path] = {}
     products: dict[str, Path] = {}
     for rel, dtype_name, _ in lib.Iterate():
+        # The manifest covers the run's INPUTS too, and their declared paths are remote
+        # (`/scratch/...`, `/msm_home/...`) precisely so the task container binds them at
+        # the same string on both sides -- so none of them is under `staging` and every
+        # one would report MISSING. That noise is not harmless: "MISSING on disk" is the
+        # exact symptom of a retrieval that failed to dereference the engine's rellinks,
+        # and eleven false ones per run teach a reader to skip the line that matters.
         if dtype_name != "evidence::tool_output" and dtype_name not in spec["outputs"]:
             continue
         path = staging / rel
@@ -641,6 +903,17 @@ def retrieve(src_path: str, branch: str, host: str, staging: Path) -> int:
         elif dtype_name in spec["outputs"]:
             products[dtype_name] = path
 
+    # A DIRECTORY-TYPED PRODUCT IS PUBLISHED BUT NOT INDEXED, so the manifest cannot be
+    # the only way to one. Every type carrying an `ext:` appears in `_metadata/index.yml`
+    # and every type without one -- `evidence::tool_output`, and the four seams that ship
+    # a table beside the refusals that make it readable -- is written to results/ and
+    # named nowhere. One rule, two symptoms: the `members` run reported neither of its
+    # tool directories, and `prepare` reported the rescue, the algebra and the partial
+    # lane as absent while all three sat on disk.
+    #
+    # The layout IS the attribution: `<order>_<namespace>-<type>/<artifact>/`, which is
+    # also why the lanes copy their evidence ROOT rather than the directory under it. So
+    # this recovers a fact the index never held rather than guessing at a lost one.
     for d in sorted(p for p in staging.iterdir() if p.is_dir()):
         stem = d.name.split("_", 1)[-1] if d.name[0].isdigit() else d.name
         ns, _, tname = stem.partition("-")
@@ -654,6 +927,8 @@ def retrieve(src_path: str, branch: str, host: str, staging: Path) -> int:
             if len(artifacts) == 1:
                 products[dtype] = artifacts[0]
             elif artifacts:
+                # Two artifacts of one type in one run is a second producer, which the
+                # planner drops silently -- so say which rather than pick one.
                 print(f"  AMBIGUOUS: {dtype} has {len(artifacts)} published artifacts "
                       f"under {d.name}; refusing to choose", file=sys.stderr)
 
@@ -676,6 +951,11 @@ def retrieve(src_path: str, branch: str, host: str, staging: Path) -> int:
             continue
         dest = DATA / rel
         dest.parent.mkdir(parents=True, exist_ok=True)
+        # A PRODUCT IS A DIRECTORY WHENEVER ITS TYPE HAS NO `ext:`, and four of the seams
+        # are -- the rescue, the algebra, the partial lane and the corrected pair table
+        # each ship a table beside the refusals that make it readable. `copy2` on a
+        # directory raises IsADirectoryError, which used to be unreachable because every
+        # seam was a single parquet.
         if p.is_dir():
             if dest.exists():
                 shutil.rmtree(dest)
@@ -715,8 +995,22 @@ def retrieve(src_path: str, branch: str, host: str, staging: Path) -> int:
     return rc
 
 
+# ---------------------------------------------------------------------------
+# the reuse audit
+# ---------------------------------------------------------------------------
+#
+# What it answers, per member: how much of the universe is this run actually going to map,
+# and how much of that is ground the deployed bake already covers. What it REFUSES is the
+# case a run cannot tell from the inside -- a cache that was declared and did not take.
+# Every number below is a set difference over ids, so there is nothing to tune.
+
 CACHE_LOCAL = DATA / ALL_INPUTS["fabfos_data::aam_cache"]
 
+# Runs on the LOGIN NODE with nothing but the standard library, because the cache is TSV
+# and the point of the exercise is to read the copy that is actually there. A cached row
+# is identified by (id, hash of the submission string): the string is half the key, so a
+# row whose string moved is not a resumable row, and hashing it keeps the transfer at
+# ~40 bytes per row instead of shipping 15 MB of SMILES per member.
 CACHE_DIGEST_PY = r"""
 import hashlib, os, sys
 root = sys.argv[1]
@@ -751,15 +1045,30 @@ for member in sorted(os.listdir(root)):
                         print(member + "\tcache\t" + f[i] + "\t" + h)
 """
 
+# Below this the todo is a resume; at or above it, a cache that holds rows resumed
+# nothing. 0.95 rather than 1.0 because a handful of ids legitimately fall out between
+# runs -- a re-shard, a submission string that moved -- and rather than 0.5 because a
+# genuinely half-finished run is exactly what a resume is for.
 FULL_REMAP_FRACTION = 0.95
 
 
 def read_staged_cache(host: str, remote_cache: str) -> tuple[bool, dict, dict]:
+    """`(present, {member: {id: smiles_hash}}, {member: {attempted ids}})` from the REMOTE.
+
+    THE REMOTE COPY AND NOT THE LOCAL ONE, which is the whole point of the check. The
+    cache is staged at a path the task container binds by its own name, so a directory
+    that exists on this workstation and not on the cluster stages an EMPTY given and the
+    run silently re-maps everything -- and that is indistinguishable from a first run
+    unless somebody reads the far side. `present` is False when the path is not there at
+    all, which is the ordinary state before the first run and is reported rather than
+    refused.
+    """
     return parse_cache_digest(
         ssh_once(host, f"python3 - {remote_cache} <<'PYEOF'\n{CACHE_DIGEST_PY}\nPYEOF\n"))
 
 
 def parse_cache_digest(out: str) -> tuple[bool, dict, dict]:
+    """The digest above, as `(present, finished, attempted)`. Pure, so it is testable."""
     finished: dict[str, dict[str, str]] = {}
     attempted: dict[str, set[str]] = {}
     present = False
@@ -777,6 +1086,13 @@ def parse_cache_digest(out: str) -> tuple[bool, dict, dict]:
 
 
 def deployed_reactions() -> set[str]:
+    """The MNXRs the deployed bake carries at least one correspondence for.
+
+    Decoded rather than read: `ref::atom_pairs` is ENCODED against its vocabulary, so the
+    `rxn` column is an int code and the symbol table beside it is the only way back to an
+    MNXR. Returns an empty set when the deployed bake is not on disk -- that makes the
+    audit's last column absent, never zero, because zero is a claim.
+    """
     import pandas as pd
 
     pairs, vocab = DEPLOYED_BAKE / "atom_pairs.parquet", DEPLOYED_BAKE / "vocab.parquet"
@@ -790,6 +1106,24 @@ def deployed_reactions() -> set[str]:
 
 def decompose_member(keys: set, want: dict, have: dict, tried_all: set,
                      covered: set, base_of: dict):
+    """`(reusable, stale, tried, todo, todo_new)` for one member. Set arithmetic, no I/O.
+
+    A cached row counts as FINISHED only where the string it was produced from is the
+    string this run would send. One reaction has up to four submissions in this graph --
+    whole, collapsed, rescue-completed, element-reduced -- so a row keyed on the id alone
+    would serve whichever ran last, which is not staleness but a map of a different
+    molecule filed under this one's name. `stale` counts what that drops, and a large
+    `stale` after a method change is the key doing its job rather than a fault.
+
+    ATTEMPTED COUNTS AS DONE for this arithmetic, and that is deliberate: Indigo resumes
+    off what it STARTED, because a reaction it hung inside writes no row and re-offering
+    it hangs the lane again. So the todo is what neither finished nor was reached, which
+    is exactly what the next run will spend its hours on.
+
+    `todo_new` is at REACTION grain where the rest is at submission grain -- an element
+    reduction and its whole reaction are two submissions of one reaction, and the deployed
+    table knows only the reaction. `None` where the deployed bake is not on disk.
+    """
     reusable = {k for k in keys if k in have and want.get(k) == have[k]}
     stale = sum(1 for k, h in have.items() if want.get(k) != h)
     tried = tried_all & keys
@@ -799,6 +1133,15 @@ def decompose_member(keys: set, want: dict, have: dict, tried_all: set,
 
 
 def audit(host: str, remote_root: str) -> list[str]:
+    """Decompose each member's work before a single job is placed. Returns problems.
+
+    THE DECOMPOSITION IS THE REPORT AND THE REFUSAL IS ONE LINE OF IT. Reuse in this graph
+    happens at two grains and only one of them is visible in a plan: a declared import
+    keeps a whole transform out of the plan and `check_plan` proves it, while the durable
+    cache keeps individual REACTIONS out of a lane and nothing in the plan mentions it.
+    This is the second gate, and its numbers are what says whether a twelve-hour lane is
+    about to do twelve hours of work or twenty minutes of it.
+    """
     import pandas as pd
 
     problems: list[str] = []
@@ -848,6 +1191,17 @@ def audit(host: str, remote_root: str) -> list[str]:
             print(f"    {stale:,} cached rows are for a submission string this run would "
                   f"not send, and are not counted as finished")
 
+        # THE REFUSAL, and it asks a different question of a gap-filler. For an ordinary
+        # member, a cache holding rows and a todo that is still the whole universe are the
+        # same two facts an honest first run has, minus the rows -- so the rows are the
+        # only thing that can tell them apart, and there they say the cache did not take.
+        # Most likely the member directory is named differently on the remote, or the
+        # submission strings all moved and nothing said so.
+        #
+        # A gap-filler never sees the universe this column reports, so that ratio is not a
+        # signal about it either way. What IS a signal is whether the cache resumed what
+        # the member previously reached: a resume that drops rows it already has is the
+        # same fault, and it is the only form of it this member can exhibit.
         if member in GAP_FILLERS:
             print(f"    gap-filler: bounded at run time to what indigo and rxnmapper "
                   f"leave, so the todo above is an upper bound it does not reach")
@@ -874,6 +1228,13 @@ def audit(host: str, remote_root: str) -> list[str]:
 
 
 def audit_plan(used: set[str], branch: str) -> list[str]:
+    """The two named absences, on top of check_plan's lane-set equality.
+
+    Equality already catches both. They are named anyway because the equality failure says
+    "a lane this part does not own is scheduled" and lists it, while these say what it
+    MEANS -- the lookups were not staged, or a driver is still pointed at a graph that no
+    longer exists. The `lookups` part is exempt from the first: producing them is its job.
+    """
     problems = []
     if "mnx_lookups" in used and "mnx_lookups" not in BRANCHES[branch]["lanes"]:
         problems.append(
@@ -893,6 +1254,18 @@ def audit_plan(used: set[str], branch: str) -> list[str]:
 
 
 def promote_cache(found: dict) -> None:
+    """Fold this run's member output back into the durable cache.
+
+    Cache-in is a staged directory and cache-out is the evidence, which is the only shape
+    available: the staged copy is an input and a lane cannot write to it. So the merged
+    per-member table and the attempted-ids sidecars come home with the evidence and land
+    here, where the next run stages them from.
+
+    The merged table is CUMULATIVE -- a member carries its reusable prior rows into its own
+    output -- so this overwrites rather than accumulates. The displaced copy is kept for
+    one generation under a name `shard.cache_files` still reads, because a run that died
+    before merging is the case where the old file is the only one with the rows.
+    """
     for member in sorted(MEMBER_ADMITS):
         src = found.get(member)
         if src is None:
@@ -915,7 +1288,43 @@ def promote_cache(found: dict) -> None:
 
 
 def promote_logs() -> None:
+    """Write the finished bake's own run logs, from this run's evidence and its cache.
+
+    `prior_bake_logs` is staged FROM the bake a run is superseding, so a bake that does
+    not write its own leaves the next one reading its grandparent -- which is how the
+    logs beside the deployed table came to describe a run two generations back. This is
+    that loop closed: the last part of the route writes the logs the next route stages.
+
+    The step logs come from the run sandboxes rather than from the retrieved evidence,
+    because they are the engine's record of the invocation and not a tool's output.
+
+    IT REFUSES ON A ROUTE THAT DID NOT MAP, and that guard is the whole reason this is
+    not a bare call. Every table `runlogs build` writes is derived from the mapper caches
+    -- indigo's status and sidecars, the two neural lanes' derived status -- and it
+    `rmtree`s its output before writing. A DIRECTION-ONLY RE-BAKE stages no aam_cache
+    (`direction_bake` declares no inputs), so the rebuild would succeed, write a `logs/`
+    describing zero mapped reactions, and the promote would fold that over the record the
+    last full run wrote. That record is ground truth for the recall benchmark, and it is
+    not reproducible without re-running the mapping.
+
+    So: the mapper caches are a PRECONDITION, checked here rather than trusted from the
+    branch name. `reference` and a full `direction_bake` stage them and pass; a direction
+    -only route does not and is told what it would have had to stage.
+    """
     from ecspr.bake.aam import runlogs                                  # noqa: PLC0415
+
+    missing = [m for m in sorted(MEMBER_ADMITS)
+               if not (CACHE_LOCAL / m / "cache.tsv").exists()]
+    if missing:
+        print(f"  logs     NOT rebuilt -- no atom-mapping cache for {missing}.")
+        print(f"           `runlogs build` derives every table it writes from "
+              f"{CACHE_LOCAL.relative_to(REPO)}, and rmtree's its output first, so on a "
+              f"route that mapped nothing it would replace the last full run's logs with "
+              f"a record of zero reactions. Those logs are the recall benchmark's ground "
+              f"truth and cost a full mapping run to reproduce.")
+        print(f"           The promoted chunk KEEPS the logs/ it already has. To rebuild "
+              f"them deliberately, stage the cache and re-run this retrieval.")
+        return
 
     curated = sorted(TEMP.glob("metacyc/*/status.tsv"))
     runs = sorted(p for p in TEMP.glob("_run_*") if p.is_dir())
@@ -993,6 +1402,8 @@ def main() -> int:
 
     spec = BRANCHES[a.branch]
     if "fabfos_data::aam_cache" in spec["inputs"]:
+        # Before the push, not just before the plan: an empty durable cache is the
+        # ordinary first-run state, and `push_data` refuses an input that is not here.
         CACHE_LOCAL.mkdir(parents=True, exist_ok=True)
     work = a.work or (WORK_ROOT / a.branch)
     work.mkdir(parents=True, exist_ok=True)
@@ -1019,7 +1430,12 @@ def main() -> int:
         remote_root = a.remote_data or f"{a.scratch_root}/{a.user}/fabfos_r6/data"
         agent_home = f"{a.scratch_root}/{a.user}/fabfos_r6/agent_{a.branch}_{ts}"
 
+    # ---- the agent -------------------------------------------------------------
     if not a.run:
+        # A local agent for planning only. The runtime still has to be APPTAINER: it is
+        # what decides whether an env declaration resolves its `container:` or its
+        # `conda:` key, and the plan is only a claim about the real run if it resolved the
+        # same side of that fork.
         agent = Agent(home=Source.FromLocal(work / "agent_home"),
                       runtime=Runtime.APPTAINER)
     else:
@@ -1044,6 +1460,7 @@ def main() -> int:
                                       if not c.startswith("export APPTAINER_CACHEDIR=")]
                                      + [f"export APPTAINER_CACHEDIR={a.apptainer_cache}"])
 
+    # ---- plan ------------------------------------------------------------------
     print("=== planning ===", flush=True)
     inputs, task, seam_missing = plan(work, a.branch, remote_root, agent)
     if not task.ok:
@@ -1065,6 +1482,8 @@ def main() -> int:
         task.plan.RenderDAG(svg, blacklist_namespaces={"lib", "env", "buildlib"})
         print(f"\nDAG -> {svg}")
     except Exception as e:
+        # A picture, not a check. The gate above is the check, and losing the drawing
+        # because graphviz's `dot` is not on this env's PATH must not stop a cluster run.
         print(f"\nDAG not rendered ({type(e).__name__}: {e})")
 
     for p in problems:
@@ -1073,6 +1492,10 @@ def main() -> int:
         return 1
     print(f"\nexactly the {a.branch} part's lanes are in the plan, and nothing else")
 
+    # THE SECOND GATE. The plan proves reuse at TRANSFORM grain -- an import satisfied is a
+    # producer absent. Nothing in a plan says anything about reuse at REACTION grain, which
+    # is where the twelve hours are, so the cache gets its own check and it runs before a
+    # job is placed rather than after one comes back short.
     if a.branch == "map" and (a.run or a.audit):
         audit_problems = audit(a.host, remote_root)
         for p in audit_problems:
@@ -1092,15 +1515,22 @@ def main() -> int:
             f"is not here, so there was nothing to push and the remote path is empty. "
             f"Run the producing part first and retrieve it.")
 
+    # ---- execute ---------------------------------------------------------------
     print("=== Deploy() ===", flush=True)
     try:
         agent.Deploy()
     except subprocess.CalledProcessError as e:
+        # ONE session, one failure, one message. Never a retry loop: each attempt is a Duo
+        # push, and a prior run in this project was halted by an account lockout caused
+        # exactly that way.
         print(f"\ndeploy failed ({e}). The connection is multiplexed: open ONE session "
               f"by hand (`ssh {a.host}`), leave it open, and re-run. Do NOT delete the "
               f"ControlMaster socket and do NOT retry in a loop.", file=sys.stderr)
         return 4
 
+    # The pinned engine, as BOTH artifacts -- see provision_dev_overlay_remote. Deploy()
+    # binds `dev/metasmith` but does not create it, and every SLURM task stages the
+    # tarball rather than the directory.
     provision_dev_overlay_remote(a.host, agent_home)
 
     print("=== preflight ===", flush=True)
@@ -1109,6 +1539,9 @@ def main() -> int:
         return 4
 
     print(f"=== task key: {task.GetKey()} ===", flush=True)
+    # on_exist="clear" is safe HERE and only here: agent_home carries a timestamp, so it
+    # is a fresh directory every run and there is no prior intermediate to destroy. Never
+    # carry this flag onto a resubmission.
     agent.StageWorkflow(task, on_exist="clear")
 
     if check_staged_executor(a.host, agent_home, task.GetKey()):
@@ -1116,10 +1549,15 @@ def main() -> int:
     declared = plan_resources(task)
     if check_walltimes(a.host, declared):
         return 4
+    # The run's own directory, because sockeye's job_submit plugin refuses a submission
+    # with no working directory -- and ssh lands in $HOME, which is not where work runs.
     if check_schedulable(a.host, a.slurm_account, declared,
                          workdir=f"{agent_home}/runs/{task.GetKey()}"):
         return 4
 
+    # RunWorkflow's config_file DEFAULTS to the `local` preset, which would run every step
+    # on whatever node the agent sits on -- the login node. Selected explicitly so a
+    # future reader sees the choice rather than a default.
     params = {
         "slurmAccount": a.slurm_account,
         # Job arrays are the condition under which overlay filesystems throw bus errors,
@@ -1140,6 +1578,8 @@ def main() -> int:
     for line in result["tail"]:
         print(f"    {line}")
     if result["status"] != "completed":
+        # The run is on the cluster whatever this driver decided. Say where, and say how
+        # to pull it, so a verdict this side gets wrong costs a command rather than a run.
         print(f"\nIf the run did finish, its results are at\n"
               f"    {a.host}:{agent.GetResultSource(task).GetPath()}\n"
               f"and retrieval is separable:\n"

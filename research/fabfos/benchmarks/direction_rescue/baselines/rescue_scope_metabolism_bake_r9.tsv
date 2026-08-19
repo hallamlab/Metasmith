@@ -1,0 +1,17 @@
+# bake	metabolism_bake_r9
+# bake_stamp	0ffd4c8c6231696e8ba0dee859253df75d8a29320355c42b0fcac0f317d264c6:e8f72b8b298a97ef2023c7f842e8873290a1de4cdd933577504d63c067b6c9a6
+# substitutions	src/ecspr/bake/direction
+# couples	none
+# forecast_asdeployed	d01e6c3233973250
+# forecast_postfix	685500edf4483f5f
+mechanism	reactions	in_graph	confidence	note
+water_fix.tier0.dgbyg	25	25	high	forecast to gain dGbyG and still silent in the deployed bake
+water_fix.tier0.eq	371	365	high	forecast to gain eQuilibrator and still silent; an upper bound unless the forecast was given --resolution
+water_fix.tier0.either	385	379	high	forecast to leave tier 0 and still in it; r8 delivered 9,862 of 9,963
+water_fix.tier3.either	135	135	high	curated-only rows forecast to gain a thermo vote and still without one; r8 delivered 3,800 of 3,806
+carrier.closed_remainder	2086	1745	medium	every unreadable participant is a generic carrier AND the rest of the equation balances -- the direction is a dE'0 lookup, not a model. Needs a curated E'0 table, which does not exist yet
+carrier.crosswalk_ceiling	5367	3332	low	every unreadable participant is a generic carrier, balance unknown. Needs structures AND a rebalance; the stretch case
+wildcard.closed_remainder	3051	3005	low-medium	the only blockers are R-group residues and the body balances without them -- capping the residues is structurally sound and unvalidated
+wildcard.ceiling	10093	9949	low	R-group residues are the only blocker, remainder not necessarily closed
+unbalanced.only_blocker	1168	1073	very low	dG'0 of an unbalanced equation is not a physical quantity; listed so the residue is accounted for, not because it is a lever
+element_neutral_twin	303	277	DEAD END	every structureless blocker has an element-neutral same-name twin. Only 1,411 of 1,434,162 compounds are element-neutral at all and 1,378 of those carry a structure -- the predicate has almost nothing to work with, and this is a ceiling on a looser key than `aam_blockers` uses

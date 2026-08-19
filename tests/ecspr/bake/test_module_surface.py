@@ -21,7 +21,8 @@ MODULES = [
     "ecspr.bake.direction",
     "ecspr.bake.direction.calibrate", "ecspr.bake.direction.canon",
     "ecspr.bake.direction.combine", "ecspr.bake.direction.curated",
-    "ecspr.bake.direction.drive", "ecspr.bake.direction.metacyc_flatfile",
+    "ecspr.bake.direction.drive", "ecspr.bake.direction.forecast",
+    "ecspr.bake.direction.metacyc_flatfile",
     "ecspr.bake.direction.refdata", "ecspr.bake.direction.thermo_dgbyg",
     "ecspr.bake.direction.thermo_eq",
 ]
@@ -49,8 +50,11 @@ CLI = {
                   "--redox-emptied", "--out", "--out-summary"},
     },
     "ecspr.bake.aam.curation": {
+        # `--llm` is the twelfth proposer: a crosswalk harvested from the LLM
+        # curation lane, read in like `--nametwin` and `--blockers` rather than
+        # computed here, and pre-filtered to rows that pass `admit`.
         "propose": {"--lookups", "--element-counts", "--blockers", "--nametwin",
-                    "--worklist", "--chebi", "--modelseed",
+                    "--llm", "--worklist", "--chebi", "--modelseed",
                     "--override", "--drop-lane", "--out"},
         "complete": {"--lookups", "--element-counts", "--worklist", "--crosswalk",
                      "--char-limit", "--atom-limit", "--collapsed-atom-limit",
@@ -122,20 +126,45 @@ CLI = {
     "ecspr.bake.evidence": {
         "collect": {"--root", "--tool", "--version", "--file"},
         "manifest": {"--tool", "--version"},
+        # A lane whose method lives in a subpackage has nothing to be versioned BY: the
+        # default fallback hashes `bake/*.py` and misses `bake/direction/` entirely, and
+        # the packages a direction lane imports are pinned by its image. So it computes
+        # its own version and passes it back as `--version`.
+        "fingerprint": {"--package"},
     },
     "ecspr.bake.direction.drive": {
         "universe": {"--reac-prop", "--out"},
+        # `--substitutions` is r9's. It is the ONE flag that changes what the member is
+        # asked, so it must appear here and on `forecast build` together: giving it to one
+        # and not the other makes the accounting describe a bake nobody built.
         "eval": {"--member", "--universe", "--reac-prop", "--chem-prop",
-                 "--shard", "--require", "--out"},
+                 "--shard", "--require", "--substitutions", "--out"},
         "merge": {"--member", "--shard-file", "--expect", "--universe", "--out"},
     },
     "ecspr.bake.direction.curated": {
+        # `--supplementary-crosswalk` is a switch rather than always-on for the reason
+        # `--substitutions` is: the r8 baselines have to remain reproducible from this
+        # tree, and an arm that cannot be turned off cannot be shown to be off.
         "": {"--metacyc-reactions", "--reac-xref", "--reac-prop", "--chem-xref",
-             "--out", "--out-per-reaction"},
+             "--out", "--out-per-reaction", "--supplementary-crosswalk"},
+    },
+    "ecspr.bake.direction.forecast": {
+        # `resolve` is its own verb because it is the one part that needs
+        # eQuilibrator: `build` runs on table reads in any env with rdkit, and
+        # folding the two together would make the cheap half pay for the cache.
+        # `--substitutions` is here because a model compound eQuilibrator's frozen cache
+        # cannot resolve silences the very reaction it was added to unblock, so the
+        # resolution table has to be able to include them.
+        "resolve": {"--universe", "--reac-prop", "--chem-prop", "--mnxm-only",
+                    "--resume", "--substitutions", "--out"},
+        "build": {"--universe", "--reac-prop", "--chem-prop", "--resolution",
+                  "--mnxm-only", "--substitutions", "--out", "--out-summary"},
+        "backtest": {"--forecast", "--member-eq", "--member-dgbyg",
+                     "--out-summary"},
     },
     "ecspr.bake.direction.calibrate": {
         "": {"--curated", "--reac-prop", "--chem-prop", "--eq-member", "--limit",
-             "--out-calibration", "--out-points"},
+             "--substitutions", "--out-calibration", "--out-points"},
     },
     "ecspr.bake.direction.combine": {
         "": {"--base-mnxrs", "--eq", "--dgbyg", "--curated", "--calibration",

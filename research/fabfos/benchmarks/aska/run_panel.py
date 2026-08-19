@@ -40,6 +40,9 @@ ROOT = HERE.parents[3]
 CACHE = HERE / "cache"
 OUT = HERE / "out"
 
+sys.path.insert(0, str(HERE.parent))
+import bake_identity                                                          # noqa: E402
+
 PAIRS = ROOT / "data/fabfos/benchmark/reference_tier4/atom_pairs_tier4.parquet"
 DIRECTION = CACHE / "direction_ratios.parquet"
 HOST = ROOT / "data/fabfos/benchmarks/hosts/e_coli_k12/gpr_gem.parquet"
@@ -90,7 +93,9 @@ def main():
     out.mkdir(parents=True, exist_ok=True)
     log = out / "run.log"
 
-    basis = ["--atom-pairs", PAIRS, "--direction", DIRECTION,
+    # Refuse a direction table decoded from a bake that is no longer deployed: the panel
+    # would otherwise run to completion on the previous generation's ratios.
+    basis = ["--atom-pairs", PAIRS, "--direction", bake_identity.require_fresh(DIRECTION),
              "--element", "C", "--weighting", args.weighting]
 
     null_conditions = out / "conditions_null.tsv"

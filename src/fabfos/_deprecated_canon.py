@@ -365,11 +365,30 @@ DIR_DECADE = DIR_RT * _math.log(10.0)
 
 DIR_TAU_SHARED = DIR_DECADE
 DIR_TAU_CUR_FLOOR = DIR_DECADE
-DIR_S_MEAS_FLOOR = 0.1
-DIR_SIGMA_CEILING = 100.0
+DIR_S_MEAS_FLOOR = 0.1                  # kJ/mol; numerical only -- a real measurement
+                                        # is trusted at its own sigma
+DIR_SIGMA_CEILING = 100.0               # kJ/mol; a wider eQ uncertainty is no
+                                        # information -> the reaction is eQ-silent
+DIR_SIGMA_FLOOR = 1e-4                  # kJ/mol; a NARROWER one is no information
+                                        # either. eQuilibrator returns dG'=0 at this
+                                        # floor when a reaction's groups cancel
+                                        # identically -- a statement about the equation,
+                                        # not a measurement of it. Both the calibration
+                                        # arm and the combiner's vote must reject these.
 
-DIR_SIGMA_0 = 9.505
-DIR_SIGMA_0_BAND = (5.0, 40.0)
+# The reversible-default prior width = robust marginal spread of measured dG' on the
+# eQuilibrator reactant-contribution arm (1.4826*MAD), over the rows that clear
+# DIR_SIGMA_FLOOR. ESTIMATOR committed here; the VALUE is frozen from the calibration
+# run that produced it (532 measured reactions, marginal median -1.54). It must fall in
+# the plausibility band or it is a finding, not a constant. The robust spread runs BELOW
+# the outlier-inflated std, i.e. toward more shrinkage / more reversible -- the safe side.
+#
+# The previous value, 9.505, was fitted without the floor: 116 of its 471 anchors were
+# group-cancelling zeros. A quarter of the mass sitting at dG'=0 exactly is what pinned
+# that fit's median to 0.000 and halved its MAD, so it shrank every row of every bake
+# too hard. Fit this over the floored arm or it will drift back.
+DIR_SIGMA_0 = 23.489                    # kJ/mol
+DIR_SIGMA_0_BAND = (5.0, 40.0)          # outside => stop, it is a finding
 
 # The ratio must stay a FINITE conductance ratio, never a one-way gate: a handful of
 # polymer reactions carry a genuine |dG'| in the thousands of kJ/mol, whose exp()

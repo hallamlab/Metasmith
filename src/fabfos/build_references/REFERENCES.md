@@ -356,6 +356,13 @@ eQuilibrator and dGbyG (both TECRDB-fitted, correlated) and MetaCyc `REACTION-DI
 (independent).
 **Requires:** `originals/metanetx/` (`reac_prop`, `chem_prop`, `chem_xref`, `reac_xref`)
 + `originals/metacyc/reactions.dat` **[LICENSED]** + `originals/equilibrator/`.
+
+The one fitted value in the lane is `canon.DIR_SIGMA_0`, the reversible-default prior
+width, and it is fitted on the calibration's own measured arm. So anything that moves
+member **coverage** obliges a re-derivation, and every ratio in the table moves with it —
+σ₀ sets the shrinkage `λ = σ₀²/(σ₀²+s²)` on every row, including the rows that gained
+nothing. `combine` refuses a value outside `DIR_SIGMA_0_BAND` rather than warning, because
+a re-derivation that lands outside the band is a finding.
 dGbyG weights are **vendored code**, not data — they belong in the library, not `data/`.
 They are the 100 `.pt` heads of `models/mpnn_A139_B23_E300_L2_v2/`, ~105 MB, and they are
 **baked into the `:dgbyg` image by a git clone, not by pip**: they sit at the repository
@@ -363,6 +370,21 @@ root outside `src/dGbyG/`, no packaging declares them, and `api.py` locates them
 `__file__.split('src')[0]`, which resolves to nonsense from site-packages. A
 `pip install git+…` therefore yields an importable member that cannot load a single head —
 which is how the member sat "installed" and unused for a generation.
+
+**The identity block cannot tell two direction tables apart, and that is deliberate.** It
+is a fact about the *node space*, so a direction-only re-bake inherits its predecessor's
+identity byte for byte — r8 carries r7's `0ffd4c8c6231696e…`, and `assert_same_bake` is
+right to hold across the mixed trio while it is being built. What separates them is
+`direction.parquet`'s per-file `src_direction_sha256`, under a **different** footer key
+(`ecspr_bake_file`) precisely so the trio check does not compare it across three files that
+legitimately differ. Quote that field, never the identity, when asked which direction table
+something holds — and anything memoising a decode of this table must key on **both**, or it
+will serve a stale extract to a caller that checked the identity and was told the truth.
+
+**The chunk's `seams/direction_annotation.parquet` is that table's provenance record**: its
+sha256 is what `src_direction_sha256` names. Nothing compares the two, so a chunk assembled
+by hand can be left pointing at an annotation it does not carry, silently — swap the seam
+whenever the table is swapped.
 
 **`vocab.parquet`** — int-code vocabulary. Derived from the two above, no additional raw.
 
@@ -793,6 +815,15 @@ naming every precursor at once. Nothing raises; the numbers are just a different
 measurement. `nostoc_ecspr.py --compose` writes the current shape beside them and
 `check_conditions` refuses the old one, which is the only thing standing between a re-run
 and a plausible wrong answer.
+
+**So are `ecspr/networks/*/{atom_pairs,gpr,direction}.parquet`, and this one has no
+refusal in front of it.** They were composed from a bake older than the deployed one and
+record nowhere which bake that was, so `nostoc_ecspr_verify.py --structural` — which
+compares a freshly built graph against them — fails by construction and will keep failing
+until they are recomposed. Measured rather than inferred: the live graph is 167,375 nodes
+against the artifact's 162,801, and node count does not depend on the direction table, so
+the divergence predates any direction re-bake. Recompose before reading `--structural` as
+a verdict on anything.
 
 ---
 

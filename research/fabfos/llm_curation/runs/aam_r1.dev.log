@@ -1,0 +1,22 @@
+  25/400  140s
+  50/400  257s
+  75/400  406s
+  100/400  573s
+  125/400  737s
+  150/400  891s
+  175/400  1038s
+  200/400  1179s
+  225/400  1308s
+  250/400  1445s
+  275/400  1595s
+  300/400  1765s
+  325/400  1898s
+  350/400  2046s
+  375/400  2185s
+  400/400  2310s
+
+400 reactions in 2310s (10.4/min, 8-wide)
+  tokens 889,924 in + 129,864 out = 2549/reaction
+  !! 29 harness errors -- a constrained decode should not produce these
+  -> runs/aam_r1.dev.jsonl
+  -> runs/aam_r1.dev.meta.json
