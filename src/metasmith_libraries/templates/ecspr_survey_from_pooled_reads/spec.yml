@@ -26,9 +26,6 @@ target_types:
 - type: annotation::proteinbert_embeddings
   parents:
   - 0
-- type: annotation::proteinbert_index
-  parents:
-  - 0
 - type: annotation::gpr_table
   parents:
   - 0
