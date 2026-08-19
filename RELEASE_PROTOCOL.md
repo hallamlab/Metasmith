@@ -176,6 +176,12 @@ go out through the fork and a pull request per release.
 ./dev/metasmith.sh -uc    # upload the conda package to anaconda.org/hallamlab
 ```
 
+Both refuse to publish an artifact whose solver engine will not run there — `-ud`
+inspects the image, `-uc` installs the built package into a throwaway env — and
+that is the last gate, because packaging damage to the engine is invisible at
+build, install and import time. `-ud` also moves the `latest` and bare-version
+tags. Expect `-uc` to spend a minute on the clean-room install.
+
 The anaconda-client token persists at `~/.config/binstar/*.token` and lasts a
 year, so `anaconda login` is rarely needed — check with `anaconda whoami` /
 `anaconda auth --list` before assuming you're logged out. If you do need to
@@ -192,30 +198,6 @@ Then:
    no standing PR to reuse: each one closes on merge (#63 → 0.17.1, #64 →
    0.18.3, #65 → 0.18.8), and treating the last one as still open is how 0.20.0
    and 0.20.1 shipped to quay and anaconda without ever reaching upstream.
-3. Retag quay **`latest`** (and the bare `X.Y.Z`) onto the new image. There is no
-   dev/metasmith.sh step, but it needs no web UI either — `docker tag <image>:<version>-<hash>
-   <image>:latest && docker push <image>:latest`, same for the bare version.
-4. Install the published conda package into a throwaway env and confirm the
-   solver engine actually runs there (see below).
-
-### Verify the package a user would get
-
-The build-time guards check the *staging directory*, so they cannot see what
-packaging does to a file afterwards. `binary_relocation`/`detect_binary_files_with_prefix`
-are off in the recipe for exactly this reason — with them on, conda-build treats
-the cross-built `msm_solver` ELFs as libraries of the build host, patchelfs them,
-and the x86_64-linux binary segfaults on exec. Nothing fails at build, install,
-or import; the planner just quietly falls back to the 15x slower python search.
-So the only honest check is a clean-room install:
-
-```
-env -u PYTHONPATH mamba create -n vXYZ -c hallamlab -c bioconda -c conda-forge metasmith=X.Y.Z
-env -u PYTHONPATH mamba run -n vXYZ python -c \
-  "from metasmith.models.solver_backend import Backend; print(Backend('solve'))"
-```
-
-`rust`, not `python`. Clearing `PYTHONPATH` is load-bearing — the workspace
-checkout otherwise shadows the install and the test proves nothing.
 
 ## What goes in this file
 

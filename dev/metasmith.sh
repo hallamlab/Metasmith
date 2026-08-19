@@ -86,8 +86,7 @@ _assert_real_relays() {
 # DVC-tracked -- ships through the sdist as 444 and lands in the wheel as 644,
 # so the guard at -bp passes and the image plans on the python fallback
 # forever. Asking the installed package what it will actually use is the only
-# check downstream of every mode-mangling step, and it is the clean-room
-# verification RELEASE_PROTOCOL.md otherwise asks a human to remember.
+# check downstream of every mode-mangling step.
 # Set MSM_SKIP_SOLVER_CHECK=1 to override (shared with the staging guard: they
 # are the same claim, checked in two places).
 _assert_engine_in_image() {
