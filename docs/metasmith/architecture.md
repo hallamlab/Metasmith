@@ -420,21 +420,14 @@ sorted input `instance_id`s, canonical-CBOR encoded and blake3-32 multihashed; n
 output participates. On by default, with a per-transform opt-out and a global kill-switch.
 
 **Leaf ids are content-addressed, with the relative path folded in** —
-`multihash(blake3(file_bytes) ‖ relpath)` when the file is present at `AddItem` time, which is
-what makes two independent runs over identical inputs hit the same shards with no import step.
-Folding `relpath` in is not decoration: pure content-addressing collapses every
-degenerate-but-distinct input (N empty files, byte-identical samples) onto one id, flattening
-fan-out and tripping the solver's O(n²) collision path. Absent or remote inputs fall back to a
-random per-call id and get no reuse.
-
-**A leaf that is a DIRECTORY gets no content addressing** — the content branch is guarded on
-`is_file()` with no directory arm, so every staged reference *folder* mints a fresh id per stage
-and nothing downstream can reuse a cached result. The visible symptom is a library line churning
-in `_metadata/` on every rebuild; the expensive one is silent. The naive fix does not scale —
-hashing a 300k-file folder on every `AddItem` trades a miss for a full tree read — so the options
-worth weighing are reusing a DVC pin's existing hash, memoizing per-file digests on
-`(path, size, mtime)`, or letting a caller declare an id for an immutable acquisition. Anything
-weaker than real content hashing can produce a *false* hit, which is worse than today's miss.
+`multihash(content ‖ relpath)`, over the file's bytes or over a directory's whole tree, when the
+leaf is present at `AddItem` time. That is what makes two independent runs over identical inputs
+hit the same shards with no import step. Folding `relpath` in is not decoration: pure
+content-addressing collapses every degenerate-but-distinct input (N empty files, byte-identical
+samples) onto one id, flattening fan-out and tripping the solver's O(n²) collision path. Absent
+or remote inputs fall back to a random per-call id and get no reuse — and a 300k-file reference
+folder pays a full tree read per stage, which is why `fabfos/refs.py` substitutes the DVC pin's
+own md5 rather than deriving one.
 
 **A hit short-circuits the executor at compile time, not at run time.** The probe rewrites that
 step's emission into a synthetic channel, and **every tuple must re-enter `o.post` before any

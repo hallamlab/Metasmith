@@ -48,8 +48,9 @@ slicing from the method to the next one. `Deploy` is the last method in its modu
 slice needs an end-of-file fallback or it comes out empty — and every assertion there pins an
 *absence*, so it would pass on the empty slice.
 
-**Nothing in the bootstrap axis pulls a real image.** Every container test asserts the emitted
-command string, which is the point of the axis.
+**The bootstrap axis reaches no registry.** Some of it asserts the emitted command string and
+some of it runs that string against stub binaries on a doctored `PATH`, reading their log —
+so an assertion there can be about what the shell *did*, not only about what was generated.
 
 **Prefer the cheapest runtime that can answer the question.** When an e2e test asserts only on
 plan shape, channel wiring or DAG correctness, the contract runtime answers it; real execution
