@@ -59,7 +59,7 @@ sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from ecspr.model.build import load_pairs, load_direction_ratios, graph_from_pairs  # noqa: E402
-from ecspr.model.graph import Terminal, solve                                      # noqa: E402
+from ecspr.model.graph import Terminal, solve, measure_leak                        # noqa: E402
 import bake_pairs                                                                  # noqa: E402
 
 ASKA_GPR = ROOT / "data/fabfos/runs/aska/gpr"
@@ -76,11 +76,20 @@ _S: dict = {}
 
 
 def _ieff(weights: dict) -> float:
+    """The readout. Two-terminal conductance by default; the glycogen SHARE under
+    ``--probe share``, which is the same solve grounded somewhere other than the target so
+    that a clone diverting carbon away can score below the baseline. See
+    `monotonicity_ladder.py` for why the default cannot."""
     g = graph_from_pairs(_S["pairs"], _S["element"], weights, _S["ratios"])
     src = Terminal.metabolite(g, SOURCE_MNXM, label="glucose")
+    if src.missing:
+        raise SystemExit("[sweep] source missing")
+    if _S["probe"] == "share":
+        r = measure_leak(g, src, _S["prec"], leak=_S["leak"], port=1.0)
+        return float(r["draw"].get(GLYCOGEN_MNXM, 0.0))
     snk = Terminal.metabolite(g, GLYCOGEN_MNXM, label="glycogen")
-    if src.missing or snk.missing:
-        raise SystemExit(f"[sweep] terminal missing: {src.missing} {snk.missing}")
+    if snk.missing:
+        raise SystemExit(f"[sweep] terminal missing: {snk.missing}")
     return float(solve(g, src, snk).total)
 
 
@@ -105,6 +114,21 @@ def main() -> int:
                          "disconnects glycogen outright, because the glycogen-synthesis "
                          "step has single-lane support, so there would be no probe left "
                          "to run.")
+    ap.add_argument("--probe", choices=("twopoint", "share"), default="twopoint",
+                    help="`share` grounds at the biomass precursors instead of at glycogen "
+                         "and reads glycogen's fraction of the injected carbon, which is "
+                         "what Fig. 1 measures and the only form of this readout that can "
+                         "go DOWN (monotonicity_ladder.py)")
+    ap.add_argument("--ground", choices=("leak", "glycogen", "biomass"), default="biomass",
+                    help="share probe only: what competes with glycogen for the carbon")
+    ap.add_argument("--leak", type=float, default=1e-3, help="share probe only")
+    ap.add_argument("--ratio-override", default="",
+                    help="`MNXR...:ratio,...` applied on top of the baked direction "
+                         "ensemble. The ensemble ABSTAINS on the polymer reactions -- an "
+                         "explicit ratio of 1.0 from zero votes -- so this is how a "
+                         "direction it does not have gets supplied and the answer "
+                         "re-measured under it. Recorded in the output filename, because a "
+                         "sweep run under an override is a different measurement.")
     ap.add_argument("--limit", type=int, default=None, help="first N solvable clones (smoke test)")
     ap.add_argument("--out-dir", type=Path, default=OUT_DIR)
     a = ap.parse_args()
@@ -113,20 +137,42 @@ def main() -> int:
     if a.min_lanes > 1 and a.channel != "denovo":
         raise SystemExit("--min-lanes applies to the de-novo channel; the GEM channel is "
                          "one curated lane and has nothing to agree with")
+    override = {}
+    for item in filter(None, a.ratio_override.split(",")):
+        k, v = item.split(":")
+        override[k.strip()] = float(v)
     tag = (f"aska_sweep_{a.channel}_e_coli_ag1_fold{a.fold}_{a.element}"
-           + (f"_lanes{a.min_lanes}" if a.min_lanes > 1 else ""))
+           + (f"_{a.probe}{a.ground}{a.leak:g}" if a.probe != "twopoint" else "")
+           + (f"_lanes{a.min_lanes}" if a.min_lanes > 1 else "")
+           + (f"_dir{len(override)}x{min(override.values()):g}" if override else ""))
     part = a.out_dir / f"{tag}.partial.tsv"
     final = a.out_dir / f"{tag}.tsv"
 
     t0 = time.time()
     _S["pairs"] = load_pairs(bake_pairs.atom_pairs(), element=a.element)
     _S["ratios"] = load_direction_ratios(bake_pairs.direction_ratios())
+    if override:
+        was = {k: _S["ratios"].get(k) for k in override}
+        _S["ratios"].update(override)
+        print(f"[sweep] direction override: {was} -> {override}", file=sys.stderr)
     _S["element"], _S["fold"] = a.element, a.fold
+    _S["probe"], _S["leak"] = a.probe, a.leak
 
     host_path = HOST_GEM if a.channel == "gem" else HOST_DENOVO
     host = pd.read_parquet(host_path, columns=["mnxr"])
     base_w = {m: 1.0 for m in host.mnxr.dropna().astype(str).unique()}
     _S["base_w"] = base_w
+
+    _S["prec"] = None
+    if a.probe == "share":
+        import glycogen_share as GS
+        g0 = graph_from_pairs(_S["pairs"], a.element, base_w, _S["ratios"])
+        univ = set(g0.metabolites())
+        _S["prec"] = {"leak": None, "glycogen": [GLYCOGEN_MNXM],
+                      "biomass": sorted(set(GS.biomass_precursors(univ))
+                                        | {GLYCOGEN_MNXM})}[a.ground]
+        print(f"[sweep] share probe: ground={a.ground} leak={a.leak} "
+              f"({len(_S['prec']) if _S['prec'] else 0} ports)", file=sys.stderr)
 
     clone = pd.read_parquet(ASKA_GPR / f"gpr_{a.channel}.parquet")
     clone = clone[clone.in_atom_universe.fillna(False)]
