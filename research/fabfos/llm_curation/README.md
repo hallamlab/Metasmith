@@ -1,0 +1,113 @@
+# LLM curation lanes
+
+An LLM proposes; the element recount decides. That is the whole design, and it is the shape
+`curation.py` already uses one layer down — eleven ways of arguing from a name, one way of
+deciding. Nothing here trusts a model's account of its own work.
+
+## What runs what
+
+    panel.py      freeze the reactions the lane is measured on   [rdkit-scratch]
+    run_panel.py  one prompt revision over one split, billed     [ecspr]
+    arbiter.py    recount the elements; append the scoreboard    [rdkit-scratch]
+    harvest.py    model output -> crosswalk rows `admit` accepts [rdkit-scratch]
+    direction.py  panel / run / score for the direction lane     [both, per subcommand]
+    client.py     the constrained-decoding chat client
+    schema.py     the output contract they all agree on
+
+The environment split is forced, not chosen: rdkit is in `rdkit-scratch` and httpx is not,
+so the runner writes JSONL and the arbiter reads it rather than calling it. Both need
+`PYTHONPATH=src`.
+
+    PYTHONPATH=src mamba run -n rdkit-scratch python research/fabfos/llm_curation/panel.py
+    PYTHONPATH=src mamba run -n ecspr        python research/fabfos/llm_curation/run_panel.py \
+        --prompt prompts/aam_r1.md --split panel/dev.jsonl --out runs/aam_r1.dev.jsonl
+    PYTHONPATH=src mamba run -n rdkit-scratch python research/fabfos/llm_curation/arbiter.py \
+        --run runs/aam_r1.dev.jsonl --panel panel/dev.jsonl \
+        --scoreboard scoreboard.tsv --note "what changed"
+
+## The two things that make the numbers mean something
+
+**Precision is 100% by construction, so only coverage iterates.** An unbalanced rewrite is
+rejected rather than shipped, which means the lane cannot be wrong in the way that matters
+and "success rate" can only ever be a coverage figure. Coverage has a real ceiling below
+100%: `panel/PANEL.md` names the two strata no rewrite reaches, and refusal is the correct
+answer on both.
+
+**Iterate on `dev`, and score `heldout` once.** The split is frozen at a fixed seed for that
+reason. A number taken from a split the prompt was tuned against describes the prompt, not
+the universe.
+
+Controls are a gate, not a metric: a reaction that banks today must not come back
+unbalanced or with different element totals. Zero regressions or the revision does not
+count. Over-refusal on a control costs nothing, because in production a banked reaction
+never reaches this lane at all.
+
+## The direction lane is a different shape, for a measured reason
+
+`direction.py` asks each reaction twice — as written, and with the sides exchanged — and
+keeps a call **only where the two answers disagree**. Agreement across a swap means the
+model answered the layout rather than the chemistry, so agreement is the failure signal
+here, which inverts the usual reading of a consistency check.
+
+That is not a hunch. The pilot's model scored 100% on reactions MetaNetX writes
+left-to-right and 15–30% on those it writes right-to-left, which is a bias every
+independent opinion would share: an ensemble raises apparent confidence and leaves accuracy
+untouched. So this lane's ensemble shrinks rather than grows — two orientations of one
+opinion, not three opinions of one orientation.
+
+`score` prints three rows and they are meant to be read together: the trivial baseline of
+answering "as written" every time, the ungated single pass the pilot measured, and the
+gated result. The panel is balanced by written orientation in every split so the baseline
+sits at 50% rather than at whatever the class mix happens to be, and MetaCyc's curated call
+is the answer key and never appears in the prompt.
+
+## Cost
+
+`COSTS.md`, generated from `scoreboard.tsv`. Cost is collected from the first run rather
+than retrofitted — a revision that bought coverage by tripling its token spend is a
+different trade, and a coverage number alone cannot show it.
+
+## `pilot/`
+
+The two Haiku pilots that established the shape, kept because their failures are what the
+current prompts are built against and a summary would lose the cases. `prompt_dir.md` and
+`prompt_aam.md` are what was actually sent; the `*_out.jsonl` files are what came back.
+
+Two findings from them are load-bearing and point opposite ways. **AAM failures are
+idiosyncratic**, so independent opinions cancel them and an ensemble helps. **Direction
+failures are one shared bias** — the model ratifies whichever orientation MetaNetX wrote,
+scoring 100% on left-to-right and 15–30% on right-to-left — so an ensemble raises apparent
+confidence while leaving accuracy alone. Two orientations of one opinion is worth more
+there than three opinions of one orientation.
+
+The third is why `schema.py` has no `balanced` field: self-reported balance was right seven
+times and wrong seven times.
+
+## Running one revision
+
+`revise.sh` is the whole loop: the split, the control gate, two scoreboard rows.
+
+    ./revise.sh aam_r1 "what changed"
+    LIMIT=20 ./revise.sh aam_r1 "probe"        # first 20 records
+    SPLIT=heldout ./revise.sh aam_r3 "final"   # once, at the end
+
+`BASE_URL` and `MODEL` point it somewhere else. It calls each env`s interpreter
+directly: `mamba run` buffers a long run until it exits, and its `--no-capture-output`
+is broken in mamba 2.5.0.
+
+## Talking to the card
+
+`tunnel.sh` points `localhost:8080` at whichever fir job is currently serving. The
+allocation is a chain of 3-hour MIG jobs (`--dependency=afterany`), so the serving node
+changes and the tunnel has to follow it.
+
+Two things cost an hour each before they were understood, and neither is visible from the
+harness side. **llama.cpp logs to stderr**, so a readiness check that greps the job's
+`.out` file waits forever while the server is already listening. And **a full-H100 request
+queues for most of a day on fir while a single 3g.40gb MIG slice starts in minutes** — the
+queue depth is on whole cards, so size the request to the model rather than to the node.
+
+Qwen3 thinks out loud unless `chat_template_kwargs: {"enable_thinking": false}` is sent,
+which `client.py` does by default. A request without it comes back with an empty `content`
+and the answer stranded in `reasoning_content`, which reads exactly like a model that
+refused.

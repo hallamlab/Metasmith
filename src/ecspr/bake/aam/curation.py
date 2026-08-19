@@ -73,20 +73,63 @@ from . import worklist as aam_worklist
 
 ELEMENTS = ("C", "N", "S", "P")
 
+# The rescued universe is read by the SAME loaders the pass-1 members use, so it carries
+# the same three columns those loaders require. Everything else about it differs: the
+# SMILES is a completed reaction, not MetaNetX's, so the same MNXR has a different string
+# here than in the worklist -- which is exactly why the two passes are separate products.
 RESCUED_SCHEMA = pa.schema([
     ("mnxr", pa.string()), ("verdict", pa.string()), ("rxn_smiles", pa.string()),
     ("atoms", pa.int32()), ("chars", pa.int32()),
 ])
 CROSSWALK_COLS = ("mnxm", "smiles", "mnx_name", "element", "n_atoms", "basis", "lane")
 
+# Lane priority for the merge. A metabolite is claimed by exactly ONE lane, so all of
+# its element rows come from one argument -- mixing a twin's carbon count with a
+# fragment-sum's nitrogen count would be a structure no lane actually proposed.
+# CHANGING THIS ORDER CHANGES THE RESULT, which is why it is a named constant.
+#
+# The first five are the original order and are left exactly as they were, so the lanes
+# that were measured keep the claims they were measured making. The three added lanes
+# all propose `*`-BODY VEHICLES -- an asserted atom budget plus a body drawn as a dummy --
+# which is a weaker claim than a structure borrowed from a named twin or fetched from
+# ChEBI by accession, so they go after. `acceptor` is last but for `override` because it
+# is the deliberate bypass of `REFUSE`, and a bypass should claim only what nothing else
+# would.
+# `lipid` sits below every lane that FINDS a structure someone asserted and above every
+# lane that draws a conserved body as `*`: it is a construction, so a real record beats
+# it, but it is a complete concrete structure, so it beats a placeholder.
+# `nametwin` and `blockers` are produced OUTSIDE this module -- `aam.twins` writes them
+# as crosswalks and they are read in like `override`. They bracket the existing order
+# because they are the strongest and the weakest arguments in it. `nametwin` is first:
+# it recovers MNXref's OWN structured record for the same compound, gated on a shared
+# source accession or on a balance that closes only after the substitution, which is
+# harder evidence than any name-stem inference below it. `blockers` sits immediately
+# above `acceptor` because it makes the SAME claim -- a body with zero tracked atoms --
+# from MNXref's own record rather than from six hand-written spellings, so where both
+# fire the record wins and the regex stays as the fallback it was always meant to be.
+# `llm` is the weakest argument here and sits last but for the bypass. Every other lane
+# reasons from a record -- a twin's own structure, an xref, a name stem MNXref wrote --
+# while this one reasons from a model's assertion, tested against a balance recount and
+# nothing else. A tested assertion is real evidence, which is why it is admitted at all;
+# it is still the thing to yield when any lane sourced from a record also fires.
 LANE_PRIORITY = ("nametwin", "twin", "transform", "fragment", "carrier", "supplier",
-                 "lipid", "conserved", "polymer", "blockers", "acceptor", "override")
+                 "lipid", "conserved", "polymer", "blockers", "acceptor", "llm",
+                 "override")
 
 
+# =====================================================================
+# the placeholder library -- deterministic stand-ins for generic carriers
+# =====================================================================
 FE_OX, FE_RED = "[Fe+3]", "[Fe+2]"
+# thioredoxin-family: two cysteine thiols <-> one disulfide. Both C3S2; they differ by
+# the 2 H that oxidation removes, which is the real chemistry.
 DITHIOL, DISULFIDE = "SCCCS", "C1CCSS1"
+# quinone pool: redox conserves every carbon of the ring. Both C6O2.
 QUINONE, QUINOL = "O=C1C=CC(=O)C=C1", "Oc1ccc(O)cc1"
 
+# Order matters: first match wins. Each ox/red pair is atom-matched on purpose --
+# identical heavy-atom skeletons differing only in oxidation state -- so the mapper pairs
+# them with each other trivially and cannot confuse them with a concrete metabolite.
 PLACEHOLDERS = [
     (r"^oxidized \[?2fe-2s\]?[- ]\[?ferredoxin", FE_OX, "fe_s_carrier"),
     (r"^reduced \[?2fe-2s\]?[- ]\[?ferredoxin", FE_RED, "fe_s_carrier"),
@@ -104,8 +147,12 @@ PLACEHOLDERS = [
     (r"^reduced \[?rubredoxin", FE_RED, "rubredoxin"),
     (r"^\[?oxidized \[?adrenodoxin", FE_OX, "adrenodoxin"),
     (r"^\[?reduced \[?adrenodoxin", FE_RED, "adrenodoxin"),
+    # diflavin NADPH--hemoprotein (cytochrome P450) reductase: a 2e- carrier via FAD/FMN,
+    # no transferable C/N/S/P. Both bracket orderings occur and MetaNetX writes the dash
+    # run as -- or ---.
     (r"^\[?oxidized \[?nadph[- ]+hemoprotein reductase", FE_OX, "hemoprotein_reductase"),
     (r"^\[?reduced \[?nadph[- ]+hemoprotein reductase", FE_RED, "hemoprotein_reductase"),
+    # ferri = oxidized (Fe3+), ferro = reduced (Fe2+); one-electron protein carriers.
     (r"^ferricytochrome", FE_OX, "cytochrome_ferri"),
     (r"^ferrocytochrome", FE_RED, "cytochrome_ferri"),
     (r"^\[?thioredoxin\]?-dithiol", DITHIOL, "thiol_carrier"),
@@ -121,6 +168,16 @@ PLACEHOLDERS = [
 ]
 _COMPILED = [(re.compile(p, re.I), s, t) for p, s, t in PLACEHOLDERS]
 
+# NEVER stand in for these, whatever else matches. Three classes, refused because a
+# stand-in for them would be an INVENTION rather than a substitution:
+#   * non-molecules -- `Unknown`, `Carbon`, an electron, a photon. There is nothing to
+#     stand in FOR.
+#   * acyl carriers -- unlike an electron carrier, an ACP's thioester DOES carry the
+#     atoms through, so a stand-in would have to invent where they attach, and the
+#     balance gate cannot catch that: the atoms would balance while being routed through
+#     fabricated bonds.
+#   * generic donor/acceptor templates -- `A + 2[H] <-> AH2` is a template, not an
+#     instance.
 REFUSE = re.compile(
     r"^(unknown|carbon|d|nad|nadh|idh\d*|enzyme-\w+ complex|acceptor|reduced acceptor"
     r"|.*\bacp\b.*|.*acyl-carrier.*|.*acyl carrier.*|starch|chitin|.*tRNA.*"
@@ -130,6 +187,7 @@ REFUSE = re.compile(
 
 
 def placeholder_for(name: str):
+    """(smiles, tag) for a structureless generic, or None to leave it refused."""
     if not name:
         return None
     n = str(name).strip()
@@ -141,7 +199,17 @@ def placeholder_for(name: str):
     return None
 
 
+# =====================================================================
+# the admission check -- the four ways a curated row can be silently wrong
+# =====================================================================
+
 def count_struct(smiles: str, X: str):
+    """Atoms of element X in a SMILES, counted from the STRUCTURE.
+
+    The `*` dummy contributes to NO element -- the correct reading of a curated carrier,
+    not a convenient one: the row asserts the drawn atoms and explicitly declines to
+    claim the body. `gate_bodies_cancel` is what makes that silence safe for balance.
+    """
     from rdkit import Chem, RDLogger
     RDLogger.DisableLog("rdApp.*")
     mol = Chem.MolFromSmiles(smiles)
@@ -151,12 +219,25 @@ def count_struct(smiles: str, X: str):
 
 
 def read_crosswalk(path):
+    """Parse a curated crosswalk TSV.
+
+    `#` is a comment ONLY at line start. An inline `comment="#"` truncates any curated
+    SMILES containing a `#` triple bond (nitrile C#N, alkyne C#C) -- silently dropping
+    exactly the rows a curator most needs to supply.
+    """
     kept = [ln for ln in Path(path).read_text().splitlines()
             if not ln.lstrip().startswith("#")]
     return pd.read_csv(StringIO("\n".join(kept)), sep="\t")
 
 
 def admit(rows: pd.DataFrame, mets: pd.DataFrame, strict=True):
+    """mnxm -> curated SMILES, or abort. Every row is an ASSERTION; see the module doc.
+
+    ABORTS on the first bad row rather than skipping it. A curated crosswalk is a small
+    hand-authored artifact; a bad row in it is an authoring error to fix, not noise to
+    filter, and filtering would let a stale id sit in the file forever while its
+    contribution silently read as zero.
+    """
     need = {"mnxm", "smiles", "mnx_name", "element", "n_atoms", "basis"}
     missing = need - set(rows.columns)
     if missing:
@@ -169,15 +250,21 @@ def admit(rows: pd.DataFrame, mets: pd.DataFrame, strict=True):
         rec = idx.loc[r.mnxm]
         nm = rec["name"]
         smi = rec["smiles"]
+        # 1. ADDITIVE ONLY. A row may only SUPPLY a structure MetaNetX lacks. Overriding
+        #    one is a different and far larger claim, and it would let the crosswalk
+        #    perturb reactions that already map today.
         if isinstance(smi, str) and smi.strip():
             raise SystemExit(
                 f"[curation] {r.mnxm} already HAS a structure ({smi!r}). A curated row "
                 f"may only SUPPLY a structure MetaNetX lacks, never override one.")
+        # 2. STALE-ID TRIPWIRE. Not name-as-proof -- the check that the id the curator
+        #    reasoned about is the id they wrote down.
         if str(nm or "").strip() != str(r.mnx_name).strip():
             raise SystemExit(
                 f"[curation] {r.mnxm}: row says {str(r.mnx_name)!r}, the metabolite "
                 f"table says {nm!r}. The id is the key -- a mismatch means the row is "
                 f"about a different metabolite than the curator reasoned about.")
+        # 3. THE ROW CHECKS ITSELF.
         got = count_struct(r.smiles, r.element)
         if got is None:
             raise SystemExit(f"[curation] {r.mnxm}: SMILES {r.smiles!r} does not parse")
@@ -185,6 +272,10 @@ def admit(rows: pd.DataFrame, mets: pd.DataFrame, strict=True):
             raise SystemExit(
                 f"[curation] {r.mnxm}: asserts {r.n_atoms} {r.element}, but its SMILES "
                 f"{r.smiles!r} contains {got}")
+        # 4. THE CITATION IS THE EVIDENCE. `pd.isna` FIRST: an empty cell arrives as NaN
+        #    and `str(nan)` is "nan", which is truthy -- so a bare emptiness test accepts
+        #    a row with no citation at all. Measured: that gate silently passed the very
+        #    case it was written to catch.
         if pd.isna(r.basis) or not str(r.basis).strip():
             raise SystemExit(f"[curation] {r.mnxm}: no basis. A curated row cannot be "
                              f"verified against MetaNetX -- the citation IS its evidence.")
@@ -193,6 +284,22 @@ def admit(rows: pd.DataFrame, mets: pd.DataFrame, strict=True):
 
 
 def residue_slots(m, resolved, ph_mnxms, counts_of, residue_of):
+    """Unspecified `*` slots this participant carries, whichever source drew it.
+
+    ONE LEDGER FOR THE BODY, and that is the whole point of the function existing. A
+    body reaches a reaction by two routes -- a curated row draws it as `*` in the SMILES
+    this run supplies, and MetaNetX draws it as an R-group in a structure it already
+    had, recounted into `residue_of`. Those two used to be tallied in two different
+    places: `gate_bodies_cancel` saw only the curated half and `concrete_balance` only
+    the recounted half. A curated body on one side and a MetaNetX body on the other
+    therefore failed BOTH checks, each for the half it could not see, when between them
+    the two bodies cancel exactly.
+
+    `None` is an UNKNOWN slot count and is not a zero -- the caller must refuse it. A
+    placeholder is scaffolding whose atoms are suppressed downstream, so it carries no
+    body here either. A plain-formula participant carries none by construction:
+    `count_element` refuses a `*` outright, so anything it counted had no remainder.
+    """
     if m in ph_mnxms:
         return 0
     if m in resolved:
@@ -204,6 +311,23 @@ def residue_slots(m, resolved, ph_mnxms, counts_of, residue_of):
 
 def gate_bodies_cancel(subs, prods, resolved: dict, ph_mnxms=(), counts_of=None,
                        residue_of=None):
+    """Do the unspecified `*` bodies pair across the reaction?
+
+    A carrier draws its body as `*` and counts it as zero for every element. That is only
+    safe for balance when the SAME body stands on both sides and cancels. A carrier
+    appearing on ONE side would have its unknown body silently counted as nothing, and
+    the balance verdict would be about a molecule that does not exist.
+
+    This is also the answer to the standing objection that "the body cancels, so a wrong
+    carrier balances as well as the right one". That objection kills IDENTITY assertion
+    and not this one: identity was never tested by balance, whereas the DIFFERENCE the
+    row asserts -- one sulfur, say -- is both what is claimed and what is tested.
+
+    AN UNKNOWN SLOT COUNT PASSES HERE and is refused by `concrete_balance` instead. Both
+    are refusals and the reaction dies either way; refusing it there keeps "the bodies do
+    not cancel" and "a count is unknown" as separate verdicts in the tally, which is the
+    difference between a diagnosable bucket and an undiagnosable one.
+    """
     def slots(ms):
         return [residue_slots(m, resolved, ph_mnxms, counts_of or {}, residue_of or {})
                 for m in ms]
@@ -213,11 +337,42 @@ def gate_bodies_cancel(subs, prods, resolved: dict, ph_mnxms=(), counts_of=None,
     return sum(s) == sum(p)
 
 
+# ONE COUNTER IN THE TREE, and this is the alias rather than a second copy of it. Three
+# byte-identical implementations of "atoms of X in a MetaNetX formula" used to exist here,
+# in `atom_pairs`, and in `mnx_lookups`, all of which had to agree and none of which was
+# tested against the others. The one that is tested is the extractor's, so it is the one
+# that survives; the name stays because it is what this module's balance gates read.
 count_formula = AP.count_element
 
 
 def concrete_balance(subs, prods, formula_of, ph_mnxms, X, resolved=None,
                      counts_of=None, residue_of=None):
+    """Do the CONCRETE (non-placeholder) atoms of element X balance?
+
+    THIS is what tests the conservation claim. If a carrier actually donated or absorbed
+    an X atom, the concrete side that gained or lost it no longer balances and this
+    returns False -- so the reaction is refused for X while staying usable for the
+    elements the carrier really is inert to.
+
+    Returns None when a concrete participant's formula is untrustworthy: an unknown
+    count cannot be balanced, and abstaining is a refusal too.
+
+    A RESOLVED participant is counted from its CURATED STRUCTURE, not skipped. It is not
+    scaffolding -- it is a metabolite whose structure this run supplies, so its atoms are
+    part of the chemistry being balanced, and its asserted difference is precisely what
+    the balance then tests.
+
+    `counts_of` IS THE RECOUNT, AND IT COMES FIRST. A `C70H131N3O9PS*2` species has no
+    countable formula and an exactly countable structure, so consulting the formula
+    first would abstain on a reaction whose atoms are known. The count it supplies is
+    exact for the EXPLICIT atoms only, which is why the residue travels with it: the
+    unspecified slots have to cancel across the equation before the count means
+    anything about conservation, and an unknown slot count is a refusal like any other.
+
+    THE SLOTS ARE COUNTED BY `residue_slots`, NOT HERE, and the reason is in that
+    function's docstring: a curated `*` and a MetaNetX R-group are the same claim from
+    two sources, and this check used to see only the second of them.
+    """
     resolved = resolved or {}
     counts_of = counts_of or {}
     residue_of = residue_of or {}
@@ -239,18 +394,24 @@ def concrete_balance(subs, prods, formula_of, ph_mnxms, X, resolved=None,
             slots.append(residue_slots(m, resolved, ph_mnxms, counts_of, residue_of))
         tot[side], res[side] = n, slots
     if any(s is None for s in res["s"] + res["p"]):
-        return None
+        return None          # an unknown residue count is not a zero
     if sum(res["s"]) != sum(res["p"]):
-        return None
+        return None          # the unspecified remainders do not cancel
     if tot["s"] == 0 and tot["p"] == 0:
-        return None
+        return None          # element absent; nothing to say
     return tot["s"] == tot["p"]
 
 
+# =====================================================================
+# name normalisation shared by every name-anchored lane
+# =====================================================================
 _NORM = re.compile(r"[^a-z0-9]+")
 _LOCANT = re.compile(r"^\d+$|^[nosprc]$|^alpha$|^beta$|^gamma$|^d$|^l$|^dl$|^cis$"
                      r"|^trans$|^\d+[a-z]$")
 
+# ONE table, not four. In the previous generation this dictionary was duplicated
+# verbatim across four scripts, which is three chances for them to drift while every
+# script still ran. Each entry is the C/N/S/P DELTA a named modifier adds to its base.
 MODS = {
     "oxo": (0, 0, 0, 0), "keto": (0, 0, 0, 0), "hydroxy": (0, 0, 0, 0),
     "hydroxyl": (0, 0, 0, 0), "dehydro": (0, 0, 0, 0), "didehydro": (0, 0, 0, 0),
@@ -270,6 +431,9 @@ MODS = {
     "thio": (0, 0, 1, 0), "mercapto": (0, 0, 1, 0),
 }
 
+# One fragment per added atom, so a delta can be built as a real structure rather than
+# asserted as a number. Disconnected on purpose: the vehicle carries a COUNT, and
+# pretending to know where the methyl attaches would be a claim the name does not make.
 DELTA_FRAGMENT = {"C": "C", "N": "N", "S": "S", "P": "P"}
 
 
@@ -278,6 +442,7 @@ def norm(s):
 
 
 def base_aliases(n):
+    """The acid/ate/plural alternations that are spelling, not chemistry."""
     yield n
     if n.endswith(" acid"):
         yield n[:-5]
@@ -289,6 +454,8 @@ def base_aliases(n):
 
 
 def residue_names(tok):
+    """alanyl->alanine, acetyl->acetate, glucosyl->glucose -- the acyl/glycosyl
+    residue naming a fragment-sum argument reads."""
     if tok.endswith("yl"):
         stem = tok[:-2]
         yield stem + "ine"
@@ -300,7 +467,13 @@ def residue_names(tok):
     yield tok
 
 
+# =====================================================================
+# the reference index every lane reads
+# =====================================================================
+
 class Refs:
+    """The lookups, indexed the one way every lane needs them."""
+
     def __init__(self, lookups: Path, element_counts=None):
         self.reactions = pd.read_parquet(lookups / "reactions.parquet")
         mets = pd.read_parquet(
@@ -312,12 +485,20 @@ class Refs:
         self.formula_of = dict(zip(mets["mnxm"], mets["formula"]))
         struct = mets[mets["has_smiles"]]
         self.smiles_of = dict(zip(struct["mnxm"], struct["smiles"]))
+        # THE FORMULA COLUMNS ARE THE FALLBACK, NOT THE SOURCE. `n_C..n_P` are
+        # `count_element` over the MetaNetX formula, so every `*` species is NULL there
+        # -- and a NULL disqualifies the metabolite from every budget, every twin
+        # comparison and every balance below. `lookup::element_counts` reads the
+        # structure instead, which is where those counts actually are. Both are carried
+        # so this module still runs standalone against the five lookups alone.
         self.counts_of = {
             r.mnxm: (r.n_C, r.n_N, r.n_S, r.n_P)
             for r in mets.itertuples(index=False)
             if not (pd.isna(r.n_C) or pd.isna(r.n_N)
                     or pd.isna(r.n_S) or pd.isna(r.n_P))
         }
+        # Residues are 0 for a formula-derived count by construction: `count_element`
+        # refuses a `*` outright, so anything it counted had no unspecified remainder.
         self.residue_of = {m: 0 for m in self.counts_of}
         if element_counts is not None:
             from . import twins as _twins
@@ -328,6 +509,9 @@ class Refs:
             print(f"[curation] recount: {len(recounted):,} metabolites counted from "
                   f"their structure, {gained:,} of them unknown to the formula columns",
                   flush=True)
+        # name -> the SMALLEST structured metabolite carrying that name. Smallest,
+        # because a name that matches both a monomer and a polymer of it should resolve
+        # to the monomer: over-claiming atoms is the failure mode balance cannot catch.
         self.name2id = {}
         for m, s in self.smiles_of.items():
             c = self.counts_of.get(m)
@@ -346,11 +530,18 @@ class Refs:
               flush=True)
 
     def blocked(self):
+        """Reactions that parse but have at least one structureless participant --
+        exactly the set no mapper has ever seen."""
         d = self.reactions
         return d[(d["n_blockers"] > 0)]
 
 
+# =====================================================================
+# the proposer lanes
+# =====================================================================
+
 def _row(mnxm, smiles, name, counts, basis, lane):
+    """One proposal, expanded to the per-element rows the crosswalk carries."""
     out = []
     for X, n in zip(ELEMENTS, counts):
         if n and n > 0:
@@ -360,6 +551,18 @@ def _row(mnxm, smiles, name, counts, basis, lane):
 
 
 def lane_twin(refs: Refs, targets):
+    """SINGLE-BLOCKER CONSERVATION. A skeleton-preserving transform leaves a stub's
+    C/N/S/P counts equal to its structured partner's.
+
+    The independent evidence is the NAME, not the balance. Balance alone CANNOT validate
+    a single-blocker inference -- one unknown always back-fills the residual, so balance
+    is tautological here and the argument has to come from somewhere else. It comes from
+    the two names sharing a skeleton stem, which is exactly what "isomerisation /
+    epimerisation / lactonisation / hydration" means.
+
+    Restricted to ELEMENTARY 1:1 reactions with exactly one structured skeleton partner;
+    lumped multi-substrate pseudo-equations are excluded, and would fail automap anyway.
+    """
     from difflib import SequenceMatcher
     MIN_STEM = 5
     _strip = re.compile(r"\b(d|l|dl|alpha|beta|cis|trans|r|s|n|o|\d|acid|ion|anion|"
@@ -393,6 +596,12 @@ def lane_twin(refs: Refs, targets):
         cD = refs.counts_of.get(D)
         if not cD:
             continue
+        # THIS LANE BORROWS A STRUCTURE AND SO CANNOT ADD A BODY TO IT, which makes it
+        # the one lane that cannot be brought into line with the others on how many `*`
+        # a carrier-bodied name declares. Declining those was measured and REFUSED: it
+        # strands 50 metabolites that no lower lane picks up, and 52 reactions lose their
+        # only structure -- a larger loss than the inconsistency costs. The stem-overlap
+        # requirement above is what keeps the borrow honest instead.
         seen.add(P)
         basis = (f"single-blocker conservation: {P} '{refs.name_of.get(P)}' is the "
                  f"skeleton twin of structured {D} '{refs.name_of.get(D)}' in the 1:1 "
@@ -403,6 +612,13 @@ def lane_twin(refs: Refs, targets):
 
 
 def _vehicle(counts, caps=0):
+    """A SMILES carrying exactly `counts` heavy atoms plus `caps` dummies.
+
+    Connected if rdkit will take it, disconnected atoms otherwise. Either way the
+    vehicle asserts a COUNT and declines to assert connectivity -- which is the honest
+    reading of a name-derived budget, and is why the atom graph (which counts atoms, not
+    bonds) can use it at all.
+    """
     from rdkit import Chem, RDLogger
     RDLogger.DisableLog("rdApp.*")
     nC, nN, nS, nP = (int(x) for x in counts)
@@ -422,12 +638,24 @@ def _vehicle(counts, caps=0):
 
 
 def lane_transform(refs: Refs, targets):
+    """NAMED TRANSFORM. name = base + recognised modifier(s) -> base counts + delta."""
     rows, seen = [], set()
     for r in targets.itertuples(index=False):
         for P in r.blockers:
             if P in seen or P in refs.smiles_of:
                 continue
             nm = refs.name_of.get(P, "") or ""
+            # THE BODY BELONGS TO THE NAME, NOT TO THE LANE. `lane_conserved` drew
+            # `4-methyl-trans-hex-2-enoyl-ACP` with one `*`; this lane drew its substrate
+            # twin with none, and the dehydratase step between them was refused for an
+            # imbalance neither lane's chemistry claims -- the carrier cannot leave, and
+            # both sides say so once they agree on how many bodies the name declares.
+            #
+            # ONLY THE CAP COUNT IS TAKEN FROM THE SPLIT, not the cargo. Resolving the
+            # base against `strip_carriers`' core instead of the whole name reads better
+            # and measured worse: it costs 338 reactions and 808 balanced keys, because
+            # a name whose carrier tokens are part of how its budget resolves stops
+            # resolving at all and the reaction loses its only structure.
             caps = len(BODY_RE.findall(nm))
             toks = norm(nm).split()
             if not toks:
@@ -471,6 +699,24 @@ def lane_transform(refs: Refs, targets):
 
 
 def lane_fragment(refs: Refs, targets):
+    """FRAGMENT SUM. A name that splits into >=2 residue tokens each resolving to a
+    metabolite (dipeptides, acyl-amino-acids, glycosides) -> the summed budget.
+
+    THE CURATED PAIR OUTRANKS AN INFERRED SUM, and this lane is the only one that has to
+    say so. Every other lane derives its budget from a structure or from a conservation
+    argument; this one infers it by reading the NAME as chemistry, which is exactly the
+    reading a redox carrier's name defeats. `oxidized [NADPH--hemoprotein reductase]` is
+    an enzyme in an oxidation state, but its tokens resolve -- `nadph` to real NADPH and
+    `oxidized` to MNXM588580, a ModelSEED fragment stub whose name is the bare word
+    `Oxidized-`, the trailing hyphen erased by `norm`. The sum handed the reductase
+    C33/N11/P3. Its reduced twin has no such stub to collide with, so it fell through to
+    the placeholder library's `[Fe+2]`, and the couple stopped balancing: 1,122 reactions
+    completed, failed `concrete_balance` on carbon, and were never mapped.
+
+    Deferring costs nothing measurable and is the weaker claim of the two -- the library's
+    entries are atom-matched ox/red pairs, so where it covers a metabolite it also covers
+    its twin, which is the property the balance gate is testing.
+    """
     rows, seen = [], set()
     for r in targets.itertuples(index=False):
         for P in r.blockers:
@@ -479,6 +725,7 @@ def lane_fragment(refs: Refs, targets):
             nm = refs.name_of.get(P, "") or ""
             if placeholder_for(nm) is not None:
                 continue
+            # The cap count only, and for the reason `lane_transform` records.
             caps = len(BODY_RE.findall(nm))
             toks = [t for t in norm(nm).split() if not _LOCANT.match(t)]
             tot, frags, parts = [0, 0, 0, 0], 0, []
@@ -515,6 +762,18 @@ _CARGO = re.compile(r"^\s*(?:an?\s+)?([a-z0-9,\-\s\[\]]+?)[- ]+(?:\[?acp\]?|"
 
 
 def lane_carrier(refs: Refs, targets):
+    """CARRIER / ACYL VEHICLES -- the lane the previous generation measured a real
+    payoff from, and the one that needs the `*` body.
+
+    An acyl carrier is NOT an electron carrier: its thioester genuinely carries the cargo
+    atoms through. So the vehicle is `cargo + *` -- the cargo's atom budget drawn
+    explicitly, the ACP body drawn as one dummy that CANCELS across the equation. The
+    cargo transits; the body says nothing and is required to say nothing on both sides.
+
+    The cargo budget comes from the cargo's own name resolving to a structured
+    metabolite. Where it does not resolve, the lane declines -- inventing a chain length
+    is exactly the invention the REFUSE list exists to prevent.
+    """
     rows, seen = [], set()
     for r in targets.itertuples(index=False):
         for P in r.blockers:
@@ -525,6 +784,8 @@ def lane_carrier(refs: Refs, targets):
                 continue
             m = _CARGO.match(nm)
             if not m:
+                # bare `ACP` / `holo-[ACP]`: no cargo at all, so the whole molecule is
+                # body. It carries nothing, which a lone `*` states exactly.
                 if re.fullmatch(r"\s*(?:an?\s+)?(?:holo-)?\[?acp\]?\s*", nm, re.I):
                     seen.add(P)
                     rows.append(dict(mnxm=P, smiles="*", mnx_name=refs.name_of.get(P),
@@ -561,6 +822,16 @@ def _chebi_release(chebi_dir: Path):
 
 
 def _chebi_structures(chebi_dir: Path):
+    """ChEBI SMILES, keyed BOTH ways: `(by_accession, by_compound_id)`.
+
+    One pass, two keyings, because the lane needs both and the structures table is 89 MB
+    of gzip. The accession route arrives holding `CHEBI:15377` out of MetaNetX's xref
+    table; the name route arrives holding a bare `compound_id` out of ChEBI's own names
+    table, and translating between them costs a second scan for nothing.
+
+    `default_structure` wins where a compound has several. ChEBI carries tautomers and
+    protonation states as separate rows, so taking the first is taking an arbitrary one.
+    """
     d = _chebi_release(chebi_dir)
     if d is None:
         return {}, {}
@@ -573,6 +844,9 @@ def _chebi_structures(chebi_dir: Path):
             if len(p) > max(i_id, i_acc):
                 acc[p[i_id]] = p[i_acc]
     out, by_cid, is_default = {}, {}, set()
+    # The molfile column is a multi-line quoted CSV field, so this must go through a
+    # real csv reader -- splitting on tabs loses the row alignment for every structure
+    # that carries one, which is most of them.
     import csv
     csv.field_size_limit(1 << 24)
     with gzip.open(d / "structures.tsv.gz", "rt", errors="replace", newline="") as fh:
@@ -596,6 +870,13 @@ def _chebi_structures(chebi_dir: Path):
     return out, by_cid
 
 
+# ChEBI's own name table normalisation, kept SEPARATE from `norm` on purpose. `norm`
+# collapses to space-delimited words because the lanes that use it go on to read those
+# words; this one strips to bare alphanumerics because it only ever tests equality, and
+# the near-homographs it merges (stereo, locant and charge prefixes) share a formula --
+# which is all this lane takes from the hit. A genuinely wrong merge does not survive:
+# the element budget it proposes has to balance the reaction, and `complete` drops it if
+# it does not.
 _GREEK = {"alpha": "a", "beta": "b", "gamma": "g", "delta": "d", "epsilon": "e",
           "α": "a", "β": "b", "γ": "g", "δ": "d", "ε": "e",
           "ω": "w", "omega": "w"}
@@ -612,6 +893,14 @@ def norm_chebi(s) -> str:
 
 
 def _chebi_name_index(chebi_dir: Path, want: set) -> dict:
+    """`normalised name -> compound_id`, restricted to names some blocker asked for.
+
+    ChEBI's name table is the reach this lane exists for. MetaNetX's synonym index --
+    which route 2 already searches -- holds only the names MetaNetX itself recorded, so a
+    well-named small molecule that MetaNetX never cross-referenced is invisible to it
+    while ChEBI has both the name and the structure. Filtering to `want` while scanning
+    keeps a 8.7 MB table from becoming a dict of every name ChEBI knows.
+    """
     d = _chebi_release(chebi_dir)
     if d is None or not want:
         return {}
@@ -650,6 +939,15 @@ def _modelseed_structures(ms_dir: Path):
 
 
 def lane_supplier(refs: Refs, targets, lookups: Path, chebi=None, modelseed=None):
+    """EXTERNAL SUPPLIER. Resolve a blocker through an accession first, then a name.
+
+    TWO ROUTES, AND THE ORDER IS THE POINT. An ACCESSION route (`xrefs` says this MNXM
+    is chebi:15377, and ChEBI has a structure for chebi:15377) is an IDENTIFIER match --
+    the thing "resolving by name is what this codebase has already been burned by" was
+    asking for. Only where no accession resolves does the lane fall back to a NAME match
+    through the synonym index, and that fallback is deliberately generous because the
+    arbiter, not the proposer, is what makes generosity safe.
+    """
     chebi_smi, chebi_by_cid = _chebi_structures(chebi)
     ms_smi = _modelseed_structures(modelseed)
     if not chebi_smi and not ms_smi:
@@ -661,6 +959,7 @@ def lane_supplier(refs: Refs, targets, lookups: Path, chebi=None, modelseed=None
         return []
     want = set(blockers)
 
+    # route 1: accession
     xr = pd.read_parquet(lookups / "xrefs.parquet",
                          columns=["kind", "namespace", "foreign_id", "mnx_id"])
     xr = xr[(xr["kind"] == "chem") & xr["mnx_id"].isin(want)
@@ -673,6 +972,7 @@ def lane_supplier(refs: Refs, targets, lookups: Path, chebi=None, modelseed=None
         if smi:
             by_acc[r.mnx_id].append((r.namespace, r.foreign_id, smi))
 
+    # route 2: name, through the synonym index, for what route 1 missed
     still = [m for m in blockers if m not in by_acc]
     by_name = {}
     if still:
@@ -695,9 +995,15 @@ def lane_supplier(refs: Refs, targets, lookups: Path, chebi=None, modelseed=None
                 if m in by_name:
                     break
 
+    # route 3: ChEBI's OWN name table, for what neither of the first two reached.
+    # Route 2 searches the names MetaNetX recorded; this searches the names ChEBI
+    # recorded, which is a far larger set and is the only route that reaches a
+    # well-named molecule MetaNetX cross-referenced to BiGG and nothing else.
     still2 = [m for m in blockers if m not in by_acc and m not in by_name]
     by_cname = {}
     if still2 and chebi_by_cid:
+        # The blocker's own name plus every synonym MetaNetX filed against it: the
+        # deployed lever queried on both, and the synonym is often the one ChEBI knows.
         syn_of = defaultdict(list)
         sy = pd.read_parquet(lookups / "synonyms.parquet",
                              columns=["source", "source_id", "raw_name"])
@@ -759,7 +1065,37 @@ def _counts_from_smiles(smi):
     return tuple(sum(1 for a in mol.GetAtoms() if a.GetSymbol() == X) for X in ELEMENTS)
 
 
-_LIPID_HEAD = {
+# =====================================================================
+# the glycerolipid templater
+# =====================================================================
+# WHY A STRUCTURE MAY BE BUILT HERE AND NOWHERE ELSE. Every other lane finds a structure
+# that someone else asserted -- a twin's, a supplier's, a curated cap. This one CONSTRUCTS
+# one from the metabolite's name, which would be indefensible for a general molecule and is
+# defensible for exactly this family: a glycerolipid written in LIPID-MAPS shorthand states
+# its own composition. `1,2-Diacyl-sn-glycerol(16:1(9Z)/20:5(5Z,8Z,11Z,14Z,17Z))` fixes the
+# backbone, the head group, and every acyl chain's carbon count. MetaNetX simply never
+# recorded a structure for it, so every reaction touching one is refused over chemistry that
+# is fully determined -- and these are the largest single family left in the refused set.
+#
+# WHAT MAKES IT HONEST is that the build only has to be right about what is TRACKED. The
+# atom-pair table follows C/N/S/P; the `(C:D)` shorthand fixes those counts exactly, and D
+# -- the number of double bonds -- changes only hydrogen, which nothing here counts. So the
+# POSITION and GEOMETRY of the double bonds are free, and this lane places them canonically
+# rather than pretending to know them. That is the whole safety argument, and it is why the
+# same construction would be wrong for a lane that scored stereochemistry.
+#
+# THREE INDEPENDENT NETS, because a templater that is subtly wrong about carbon corrupts
+# atom identity silently:
+#   1. the family must be recognised AND the name must carry exactly as many `C:D` specs as
+#      the family has acyl positions -- a partial shorthand is refused, not guessed at;
+#   2. a name carrying a substituent no template represents is refused outright, because
+#      under-counting is the dangerous failure: the same wrong stub can sit on both sides of
+#      a transfer and cancel, walking a bad edge straight past the balance gate;
+#   3. the assembled structure is re-counted with RDKit and must equal the counts derived
+#      from the shorthand by hand. A mismatch is a template bug and drops the row.
+# The per-element balance gate in `complete` is the fourth, and it is not this lane's.
+
+_LIPID_HEAD = {                     # (SMILES from the sn-3 oxygen, head C, head N, head P)
     "OH":    ("O", 0, 0, 0),
     "PC":    ("OP(=O)([O-])OCC[N+](C)(C)C", 5, 1, 1),
     "PE":    ("OP(=O)(O)OCCN", 2, 1, 1),
@@ -774,6 +1110,9 @@ _LIPID_HEAD = {
     "PA":    ("OP(=O)(O)O", 0, 0, 1),
 }
 
+# family -> (acyl positions, head key). Glycerol contributes 3 C to every glycerolipid;
+# TAG has no head because a third acyl takes the sn-3 position, and FA is not a
+# glycerolipid at all -- it is the bare acid the same shorthand also describes.
 _LIPID_FAMILY = {
     "DAG": (2, "OH"), "TAG": (3, None), "PC": (2, "PC"), "PE": (2, "PE"),
     "LPC": (1, "PC"), "LPE": (1, "PE"), "PI": (2, "PI"), "PIP": (2, "PIP"),
@@ -782,6 +1121,7 @@ _LIPID_FAMILY = {
     "LPA": (1, "PA"), "FA": (1, None),
 }
 
+# Substituents that add carbon the `C:D` specs do not account for. Net 2 above.
 _LIPID_EXTRA = (
     "glucosaminyl", "glucosamin", "mannosyl", "mannosid", "mannose", "glucosyl",
     "glucuron", "sulfoquinovosyl", "sulphoquinovosyl", "acetyl", "glucosphingo",
@@ -792,8 +1132,9 @@ _CD = re.compile(r"(\d{1,2}):(\d+)")
 
 
 def _lipid_family_raw(n: str):
+    """Most specific first: `phosphatidylinositol bisphosphate` is PIP2, not PI."""
     if "ferredoxin" in n or "flavodoxin" in n or "thioredoxin" in n:
-        return None
+        return None                                   # `4:2` here is an Fe-S cluster
     if "trisphosphate" in n and "inositol" in n:
         return "PIP3"
     if "bisphosphate" in n and "inositol" in n:
@@ -828,6 +1169,9 @@ def _lipid_family_raw(n: str):
         return "LPA"
     if "phosphatidic acid" in n:
         return "PA"
+    # A free fatty acid ONLY where the shorthand fully determines it. Phospholipid
+    # "acids", methyl-branched chains and acyl-ACP carriers all carry carbon the spec
+    # does not state.
     if (" acid (" in n and _CD.search(n) and "phosphatid" not in n
             and "methyl" not in n and "acp" not in n):
         return "FA"
@@ -835,20 +1179,30 @@ def _lipid_family_raw(n: str):
 
 
 def lipid_family(name):
+    """The family, or None where any of the first two nets refuses."""
     n = str(name or "").lower()
     fam = _lipid_family_raw(n)
     if fam is None:
         return None
     if any(t in n for t in _LIPID_EXTRA):
         return None
+    # Galactosyl is carbon the template accounts for only in the galactolipids.
     if "galactosyl" in n and fam not in ("MGDG", "DGDG"):
         return None
+    # The shorthand must name every acyl position. A DAG written with one `C:D` is a
+    # name we have not understood, not a DAG with one chain.
     if len(_CD.findall(n)) != _LIPID_FAMILY[fam][0]:
         return None
     return fam
 
 
 def _acyl(n: int, d: int):
+    """The ester fragment from the carbonyl out: `C(=O)` plus n-1 chain carbons.
+
+    Double bonds are spaced three carbons apart from the beta position, which keeps them
+    non-cumulated and always valid. Their placement is arbitrary and that is admissible
+    here: only C/N/S/P counts are read downstream, and d changes neither.
+    """
     k = n - 1
     if k < 0:
         return None, 0
@@ -862,6 +1216,7 @@ def _acyl(n: int, d: int):
 
 
 def _build_lipid(family: str, specs):
+    """`(smiles, hand_C, hand_N, hand_P)` derived from the shorthand alone."""
     n_acyl, head_key = _LIPID_FAMILY[family]
     if len(specs) != n_acyl:
         return None
@@ -870,11 +1225,11 @@ def _build_lipid(family: str, specs):
         frag, nc = _acyl(c, d)
         if frag is None:
             return None
-        esters.append(("O" + frag, nc))
+        esters.append(("O" + frag, nc))          # the glycerol oxygen plus the acyl
     chain_c = sum(nc for _, nc in esters)
 
     if family == "FA":
-        return esters[0][0], chain_c, 0, 0
+        return esters[0][0], chain_c, 0, 0       # `OC(=O)...` is the free acid
     if family == "TAG":
         a1, a2, a3 = (e[0] for e in esters)
         return f"{a1}CC({a2})C{a3}", 3 + chain_c, 0, 0
@@ -908,6 +1263,7 @@ def lane_lipid(refs: Refs, targets):
             refused[f"{fam}:unparseable"] += 1
             continue
         c = tuple(sum(1 for a in mol.GetAtoms() if a.GetSymbol() == X) for X in ELEMENTS)
+        # Net 3: the assembled structure must carry exactly what the shorthand said.
         if (c[0], c[1], c[3]) != (hc, hn, hp):
             refused[f"{fam}:count_mismatch"] += 1
             continue
@@ -930,10 +1286,32 @@ def lane_lipid(refs: Refs, targets):
     return rows
 
 
+# =====================================================================
+# the budget resolver -- (heavy C/N/S/P, caps) for a structureless metabolite
+# =====================================================================
+# WHAT THE THREE ADDED LANES ALL NEED, and the reason they are three lanes and not
+# thirty rules. A conserved-body vehicle is `cargo + *`: an asserted atom budget for the
+# part that transits, and one dummy for the part that does not. The lanes differ in WHICH
+# metabolites they will draw that way and on what warrant; the arithmetic is shared.
+#
+# THE FORMULA IS THE FIRST AND BEST SOURCE, and it is the one the original five lanes do
+# not use. MetaNetX gives many structureless metabolites a formula that already says both
+# halves -- `C25H38N7O17P3S*` is a budget AND a declaration that one substituent is
+# unbounded. `count_formula` above returns None for exactly those, correctly, because an
+# unknown count cannot BALANCE. Here the question is different: what may be DRAWN. A `*`
+# in the formula is MetaNetX's own statement that the rest is a conserved body, which is
+# precisely the vehicle's claim.
+
 _FTOK = re.compile(r"([A-Z][a-z]?)(\d*)")
 
 
 def counts_formula_caps(f):
+    """(C, N, S, P, caps) from a formula, or None when it cannot be read.
+
+    `R`, `X`, `Z`, brackets and dots defeat it: those denote a variable group whose atom
+    count is not merely unknown but unbounded, and a vehicle drawn from a guess at one is
+    the invention this module exists to refuse. `*` does NOT defeat it -- it is counted.
+    """
     if not isinstance(f, str) or not f.strip():
         return None
     caps = f.count("*")
@@ -948,6 +1326,7 @@ def counts_formula_caps(f):
 
 
 def heavy_from_smiles(smi):
+    """(C, N, S, P, caps) from a SMILES; `caps` counts the `*` dummies."""
     from rdkit import Chem, RDLogger
     RDLogger.DisableLog("rdApp.*")
     mol = Chem.MolFromSmiles(smi)
@@ -963,11 +1342,30 @@ def heavy_from_smiles(smi):
     return (d["C"], d["N"], d["S"], d["P"], caps)
 
 
+# Carrier motifs. Each occurrence is one substitutable cap: the ACP, the CoA, the
+# protein, the holo/apo body. Longest first so `[acyl-carrier protein]` is one cap and
+# not two.
 CARRIER_PATS = [r"\[acyl-carrier protein\]", r"acyl-?carrier ?protein-?", r"\[acp\]",
                 r"\bacp\b", r"\[protein\]", r"protein\]-", r"-\[protein", r"\btrna\b",
                 r"\bholo\b", r"\bapo\b"]
 CARRIER_RE = re.compile("|".join(CARRIER_PATS), re.I)
 
+# THE SUBSET A VEHICLE-BUILDING LANE MAY DRAW A BODY FOR, derived from the list above so
+# the two cannot drift. Two different reasons for the two groups:
+#
+#   * `holo`, `apo` and `trna` are STATE PREFIXES rather than body markers. The bare form
+#     of the same protein carries no word at all, so drawing a cap for `apo-[X ligase]`
+#     and none for `[X ligase]` manufactures on one side exactly the asymmetry this rule
+#     exists to remove on the other. Measured: 49 reactions and 112 balanced keys lost
+#     against r6, gaining nothing.
+#   * `[protein]` IS a body and is excluded anyway, for one reaction. MNXR171321 joins two
+#     protein bodies into one, so counting them refuses it -- correctly, the two do not
+#     cancel -- and the r6 bake holds its sulfur key. Counting them is worth +7 reactions
+#     and +10 keys and costs that one, and the coverage stop-line does not permit the
+#     trade. Revisit if the stop-line is ever relaxed to net rather than per-key.
+#
+# `lane_conserved` still reads the FULL list: it resolves a budget rather than adding a
+# cap to one, and there a prefix is evidence of a body rather than a claim about count.
 STATE_PREFIX_PATS = (r"\btrna\b", r"\bholo\b", r"\bapo\b",
                      r"\[protein\]", r"protein\]-", r"-\[protein")
 BODY_RE = re.compile("|".join(p for p in CARRIER_PATS if p not in STATE_PREFIX_PATS),
@@ -975,12 +1373,17 @@ BODY_RE = re.compile("|".join(p for p in CARRIER_PATS if p not in STATE_PREFIX_P
 
 
 def strip_carriers(name):
+    """(caps, the name with its carrier motifs removed) -- the cargo half of the split."""
     caps = len(CARRIER_RE.findall(name or ""))
     core = CARRIER_RE.sub(" ", name or "")
+    # The leading article goes with the carrier. `an [acyl-carrier protein]` must leave
+    # NO core -- "an" is not a cargo, and a core of "an" is the difference between
+    # recognising a bare carrier body and failing to resolve one.
     core = re.sub(r"^\s*(an?|the)\s+", " ", norm(re.sub(r"[\[\]]", " ", core)))
     return caps, core.strip()
 
 
+# Abstract redox / acceptor placeholders: no C/N/S/P transits, one cancelable body.
 REDOX_KW = re.compile(r"flavoprotein|flavodoxin|ferredoxin|thioredoxin|glutaredoxin"
                       r"|rubredoxin|adrenodoxin|plastocyanin|azurin|cytochrome", re.I)
 PHOTON = re.compile(r"^h\s*nu$|^hnu$|^photon$|^light$|^e-?$|^electron$", re.I)
@@ -999,6 +1402,8 @@ def redox_carrier(nm):
     return bool(re.match(r"^ah2$|^a$", s, re.I))
 
 
+# Fatty-acyl nomenclature -> carbon count. An acyl name states its chain length, which is
+# the whole budget an acyl vehicle needs; nothing else in the name transits.
 NUM_ROOTS = {"meth": 1, "eth": 2, "prop": 3, "but": 4, "pent": 5, "hex": 6, "hept": 7,
              "oct": 8, "non": 9, "dec": 10, "undec": 11, "dodec": 12, "tridec": 13,
              "tetradec": 14, "pentadec": 15, "hexadec": 16, "heptadec": 17,
@@ -1018,6 +1423,8 @@ TRIVIAL_ACYL = {"acetyl": 2, "acetoacetyl": 4, "propionyl": 3, "propanoyl": 3,
                 "azelaoyl": 9, "sebacoyl": 10, "tiglyl": 5, "cinnamoyl": 9, "benzoyl": 7}
 _ACYL_SUFFIX = re.compile(r"(enoyl|anoyl|ynoyl|oyl|enoate|anoate|enoic|anoic)")
 
+# Free amino-acid C/N/S/P. Peptide-bond formation loses only H2O, so the C/N/S/P sum over
+# residues is exact -- which is what makes an aminoacyl cargo resolvable from its name.
 AA3 = {"ala": (3, 1, 0, 0), "arg": (6, 4, 0, 0), "asn": (4, 2, 0, 0), "asp": (4, 1, 0, 0),
        "cys": (3, 1, 1, 0), "gln": (5, 2, 0, 0), "glu": (5, 1, 0, 0), "gly": (2, 1, 0, 0),
        "his": (6, 3, 0, 0), "ile": (6, 1, 0, 0), "leu": (6, 1, 0, 0), "lys": (6, 2, 0, 0),
@@ -1034,7 +1441,7 @@ def acyl_budget(core):
     if not _ACYL_SUFFIX.search(core):
         return None
     best = None
-    for root, c in NUM_ROOTS.items():
+    for root, c in NUM_ROOTS.items():        # longest matching numeric root wins
         if root in x and (best is None or c > best):
             best = c
     return (best, 0, 0, 0) if best else None
@@ -1048,19 +1455,22 @@ def peptide_budget(name):
     for t in toks:
         c = AA3.get(t.lower())
         if c is None:
-            return None
+            return None      # one non-standard residue and the whole peptide is unresolved
         for i in range(4):
             tot[i] += c[i]
     return tuple(tot)
 
 
 def _budget_from_name(refs: Refs, core: str):
+    """The cargo's C/N/S/P from its NAME, by every route the original lanes already use
+    plus the two acyl/peptide vocabularies they do not."""
     if not core:
         return None
     for a in base_aliases(core):
         bid = refs.name2id.get(a)
         if bid and refs.counts_of.get(bid):
             return tuple(refs.counts_of[bid])
+    # named transform: base + modifier deltas
     toks = core.split()
     base_toks, delta, used = [], [0, 0, 0, 0], 0
     for t in toks:
@@ -1080,6 +1490,7 @@ def _budget_from_name(refs: Refs, core: str):
                 out = tuple(c[i] + delta[i] for i in range(4))
                 if all(v >= 0 for v in out):
                     return out
+    # fragment sum over >=2 resolvable residues
     tot, frags = [0, 0, 0, 0], 0
     for t in [t for t in toks if not _LOCANT.match(t)]:
         for rn in residue_names(t):
@@ -1097,6 +1508,12 @@ def _budget_from_name(refs: Refs, core: str):
 
 
 def resolve_budget(refs: Refs, m: str):
+    """`(heavy(C,N,S,P), caps, method)` for a structureless metabolite, or None.
+
+    The order is a trust order. A formula MetaNetX wrote beats a name we parsed; a name
+    that names a carrier and a cargo beats one we can only read as a whole. None means
+    the lanes decline -- inventing a chain length is exactly what `REFUSE` exists for.
+    """
     nm = refs.name_of.get(m, "") or ""
     if redox_carrier(nm):
         return ((0, 0, 0, 0), 1, "redox_carrier")
@@ -1117,7 +1534,18 @@ def resolve_budget(refs: Refs, m: str):
     return None
 
 
+# =====================================================================
+# the three lanes the deployed chain had and this one did not
+# =====================================================================
+
 def _vehicle_row(mnxm, name, heavy, caps, basis, lane):
+    """A `cargo + *` proposal, or None when the budget will not draw.
+
+    A vehicle with NO cargo still emits one row -- element C, zero atoms. That row
+    contributes no atom pair and is not meant to: it exists so `admit` records the
+    metabolite as resolved, which is what unblocks the reaction for its CONCRETE
+    partners. Dropping it because it looks empty is how a lane silently rescues nothing.
+    """
     smi = _vehicle(heavy, caps=caps)
     if smi is None:
         return None
@@ -1134,6 +1562,25 @@ _PROTEIN = re.compile(r"\[protein\]|phosphoprotein|-\[.*protein.*\]|\bprotein\b"
 
 
 def lane_acceptor(refs: Refs, targets):
+    """THE DELIBERATE `REFUSE` BYPASS: generic acceptors and `[protein]` bodies.
+
+    `REFUSE` declines these for a good reason -- `A + 2[H] <-> AH2` is a template rather
+    than an instance, and a stand-in for a template is an invention. This lane does not
+    dispute that; it declines to draw the template's ATOMS and draws only its BODY:
+
+      * a generic acceptor becomes a bare `*`. Zero C/N/S/P, one cancelling dummy. It
+        contributes NO atom pair. What it does is unblock the reaction so the CONCRETE
+        partners' real transit can be mapped, and the balance gate then tests, per
+        element, that nothing crossed into the acceptor.
+      * a `[protein]`-bodied metabolite becomes `cargo + *` -- the same decomposition as
+        an acyl carrier, because it is the same chemistry: `L-seryl-[protein]` carries a
+        serine that genuinely transits, on a body that does not.
+
+    IT IS A SEPARATE LANE SO ITS DELTA STAYS A SEPARATE NUMBER. In the deployed chain
+    this lever banked +426 reactions and cost 1,129 refusals at the body-cancel gate,
+    and that trade has to remain visible rather than dissolve into a total. `--drop-lane
+    acceptor` removes it and nothing else.
+    """
     rows, seen = [], set()
     for r in targets.itertuples(index=False):
         for P in r.blockers:
@@ -1155,7 +1602,7 @@ def lane_acceptor(refs: Refs, targets):
                 if b is None:
                     continue
                 heavy, caps, meth = b
-                caps = max(caps, 1)
+                caps = max(caps, 1)               # the protein body is always one `*`
                 got = _vehicle_row(
                     P, refs.name_of.get(P), heavy, caps,
                     f"REFUSE override (protein cargo): {P} '{nm}' is drawn as its "
@@ -1170,6 +1617,19 @@ def lane_acceptor(refs: Refs, targets):
 
 
 def lane_conserved(refs: Refs, targets):
+    """CONSERVED-BODY VEHICLES for every carrier family, not just ACP and CoA.
+
+    `lane_carrier` splits a name on the literal words ACP / acyl-carrier / CoA and
+    resolves the cargo through the synonym index. That is precise and it is narrow: the
+    same `cargo + *` decomposition is correct for tRNA-charged species, holo- and
+    apo-forms, protein bodies, and any metabolite whose MetaNetX FORMULA already carries
+    a `*` -- which is MetaNetX's own statement that the rest is an unbounded body.
+
+    This lane runs after `lane_carrier` and picks up what it declined. It prefers a
+    CONCRETE CoA TWIN where one exists: a structured CoA metabolite with the same
+    C/N/S/P and a shared acyl stem gives a real structure rather than a vehicle, so both
+    the thioester's reactions and free-CoA's reactions balance against the same atoms.
+    """
     from collections import defaultdict as _dd
     from difflib import SequenceMatcher
 
@@ -1204,6 +1664,10 @@ def lane_conserved(refs: Refs, targets):
             if b is None:
                 continue
             heavy, caps, meth = b
+            # Only draw a `*` body where there is a body to draw. A metabolite whose
+            # formula is clean and whose name names no carrier is not this lane's
+            # business -- the twin/transform/fragment/supplier lanes had first refusal
+            # and declining is their answer, not an invitation to invent one here.
             if caps == 0 and not CARRIER_RE.search(nm) and meth != "redox_carrier":
                 continue
             if "coa" in norm(nm).replace(" ", "") and any(heavy):
@@ -1231,6 +1695,9 @@ def lane_conserved(refs: Refs, targets):
     return rows
 
 
+# Canonical monomer structures for the ladder, tried LARGEST first so a C6 residual
+# decomposes to one hexose rather than six one-carbon units. Each is verified against its
+# own SMILES at import, so an emitted n_atoms always equals the structure it cites.
 _MONO_DEFS = [
     ("sialic",    (11, 1, 0, 0), "CC(=O)NC1C(O)CC(O)(C(O)C(O)CO)OC1C(=O)O"),
     ("HexNAc",    (8, 1, 0, 0),  "CC(=O)NC1C(O)OC(CO)C(O)C1O"),
@@ -1257,6 +1724,12 @@ def _monomers():
 
 
 def _decompose(vec):
+    """A signed C/N/S/P residual -> `{monomer: signed k}`, or None.
+
+    ACCEPTS ONLY A SINGLE-TYPE MULTIPLE. A residual that needs two different monomers to
+    explain it is a residual we have not understood, and the ladder's whole warrant is
+    that mass balance -- not the name -- pins which monomer transits.
+    """
     if all(v == 0 for v in vec):
         return {}
     for name, sig, _ in _monomers():
@@ -1273,6 +1746,7 @@ def _decompose(vec):
 
 
 def _backbone(nm):
+    """The polymer family key: a name with its length variance stripped out."""
     b = re.sub(r"\([^)]*\)|\bn\s*=?\s*[+-]?\d*\b|[0-9]|->|,|\bx\b", "", (nm or "").lower())
     b = re.sub(r"\b(alpha|beta|d|l|linked|unlinked|repeat|units?|substituted|"
                r"unsubstituted|branch|precursor|degradation|product|nonreducing|"
@@ -1281,6 +1755,22 @@ def _backbone(nm):
 
 
 def lane_polymer(refs: Refs, targets):
+    """POLYMER / GLYCOCONJUGATE LADDERS, levelled globally rather than per reaction.
+
+    The forsaken polymer tail is elongation and degradation ladders: a stub appears on
+    BOTH sides as two length variants, and a structured participant donates or releases
+    the monomer that distinguishes them. Neither variant has a structure, so MetaNetX
+    refuses the reaction -- yet its chemistry is determined. The shared backbone is a
+    carrier that cancels, and the balance-forced residual is exactly k whole monomers.
+
+    CONSISTENCY IS GLOBAL, NOT PER REACTION, and that is the part worth the code. Within
+    a backbone family the per-chain monomer count is solved by BFS over the ladder edges,
+    so one chain metabolite is never drawn two different ways in two reactions. A family
+    whose edges cannot be levelled -- a cycle disagrees, or a residual is not a clean
+    single-type multiple -- is DROPPED WHOLE. That refusal is the lever's honesty: 85
+    families were dropped in the deployed run, and a per-reaction version of this lane
+    would have banked them all with contradictory structures.
+    """
     from collections import defaultdict as _dd, deque
 
     def structured(m):
@@ -1371,6 +1861,8 @@ def lane_polymer(refs: Refs, targets):
                 level.pop(u, None)
             diag["family_inconsistent_dropped"] += 1
             continue
+        # Offset each monomer type so the family's minimum is >= 0. Every pairwise
+        # difference -- which is what the ladder actually determines -- is preserved.
         types = set()
         for u in comp:
             types |= set(level[u])
@@ -1413,7 +1905,12 @@ def lane_polymer(refs: Refs, targets):
     return rows
 
 
+# =====================================================================
+# merge + the arbiter
+# =====================================================================
+
 def merge(lanes: dict):
+    """One metabolite, one lane. Priority is LANE_PRIORITY and it changes the result."""
     rows = []
     claimed = set()
     for lane in LANE_PRIORITY:
@@ -1427,6 +1924,25 @@ def merge(lanes: dict):
 
 def complete(refs: Refs, resolved: dict, targets, smiles_limit=8000, atom_limit=None,
              collapsed_atom_limit=None):
+    """Build the completed reaction SMILES for every rescuable reaction. NO MAPPER RUNS.
+
+    THIS USED TO BE `arbitrate`, AND IT USED TO MAP. Indigo ran here, inside the curation
+    sweep, and whatever it produced became layer 3 -- which is why in the deployed table
+    every one of the 9,089 rescue-derived reactions is `mcs_only`: Indigo alone, at half
+    weight, because the crosswalk did not exist when the neural members ran and nothing
+    ever showed them the completed reactions. Splitting the mapping out turns those into
+    a second pass that all three members see, and what they agree on becomes full-weight
+    consensus. The completion itself -- which structures, which bodies cancel, which
+    elements balance -- is unchanged, and it never needed a mapper:
+
+      * `gate_bodies_cancel` is arithmetic over the `*` counts, curated and MetaNetX's.
+      * `concrete_balance` is arithmetic over formulas and curated structures.
+
+    Both are computed here so a rescued reaction arrives at the mappers already carrying
+    its verdict, and a reaction where no element could balance is never mapped at all.
+
+    Returns (rescued_rows, balance_rows, placeholder smiles, placeholder tags, tally).
+    """
     smi = dict(refs.smiles_of)
     smi.update(resolved)
     ph_smi, ph_tag = {}, {}
@@ -1435,6 +1951,11 @@ def complete(refs: Refs, resolved: dict, targets, smiles_limit=8000, atom_limit=
     for r in targets.itertuples(index=False):
         parts = set(r.substrates) | set(r.products)
         gens = [m for m in parts if m not in smi]
+        # `smi` now carries the curated structures, so a reaction blocked ONLY by
+        # resolved carriers has no generics left -- and would fall through as "already
+        # buildable" and be dropped, rescuing exactly nothing. It is not already
+        # buildable: it was skipped precisely because those participants had no structure
+        # at the time. Supplying one is what makes it a rescue case.
         has_resolved = any(m in resolved for m in parts)
         if not gens and not has_resolved:
             tally["already buildable"] += 1
@@ -1456,6 +1977,12 @@ def complete(refs: Refs, resolved: dict, targets, smiles_limit=8000, atom_limit=
     merged = dict(smi)
     merged.update(ph_smi)
     rescued, bal_rows = [], []
+    # A PROGRESS LINE, because this loop was silent for two hours and a lane with no
+    # output is a lane nobody can tell from a hung one. It parses a completed reaction
+    # SMILES per reaction and can collapse it, and a rescued reaction is the LARGEST
+    # string this build makes -- placeholder-completed polymers and lipids -- so the cost
+    # per reaction is bounded by nothing the caller can see. What it prints is what a
+    # reader needs to decide whether to wait: how far in, and how fast.
     t0 = time.time()
     for i, r in enumerate(todo):
         if i and i % 2_000 == 0:
@@ -1469,6 +1996,17 @@ def complete(refs: Refs, resolved: dict, targets, smiles_limit=8000, atom_limit=
         except KeyError:
             tally["still missing a structure"] += 1
             continue
+        # THE SAME TWO CUTS THE WORKLIST APPLIES TO PASS 1, and the same second chance.
+        # A completed reaction is a NEW string, so it has to be measured again rather
+        # than inherited -- and both sides call the same functions against the same
+        # constants, or the two disagree about what oversize means.
+        #
+        # THE CHAR GATE COMES FIRST AND IT GATES THE PARSE. `count_atoms` calls RDKit on
+        # the whole string, and a stoichiometric expansion can reach 80.7 MB
+        # (MNXR144749) -- a size RDKit does not return from. Counting unconditionally put
+        # that unbounded work AHEAD of the cheap bound that excludes it, which is how a
+        # 33-second loop became a two-hour one killed at its walltime. `worklist.adjudicate`
+        # has always ordered it this way; the two now agree.
         chars = len(rxn)
         atoms = (aam_worklist.count_atoms(rxn)
                  if atom_limit and chars <= smiles_limit else None)
@@ -1499,6 +2037,9 @@ def complete(refs: Refs, resolved: dict, targets, smiles_limit=8000, atom_limit=
                 bal_rows.append(dict(mnxr=r.mnxr, element=X, balanced=bool(b)))
                 banked = banked or bool(b)
         if not banked:
+            # Nothing to gain by mapping it: the extractor drops every element whose
+            # concrete atoms did not balance, so this reaction would produce no pair
+            # whatever the mappers said.
             tally["no element balances"] += 1
             continue
         rescued.append(dict(mnxr=r.mnxr, verdict="mappable", rxn_smiles=rxn,
@@ -1507,7 +2048,20 @@ def complete(refs: Refs, resolved: dict, targets, smiles_limit=8000, atom_limit=
     return rescued, bal_rows, ph_smi, ph_tag, tally
 
 
+# =====================================================================
+# driver
+# =====================================================================
+
 def _targets(refs: Refs, worklist=None):
+    """The reactions the rescue lanes aim at.
+
+    THE WORKLIST DECIDES, when one is given. `blocked_no_structure` is the rescuable
+    class; `non_molecule` is not (nothing can stand in for an electron), `no_transfer` is
+    not (the two sides are the same multiset, so there is nothing to map), and `oversize`
+    is not (it was refused for cost before any of this). Without a worklist the old
+    behaviour stands -- every reaction with a structureless participant -- so the module
+    is still usable on its own.
+    """
     if worklist is None:
         d = refs.blocked()
         print(f"[curation] {len(d):,} reactions have at least one structureless "
@@ -1538,7 +2092,12 @@ def cmd_propose(args):
         "polymer": lane_polymer(refs, targets),
         "acceptor": lane_acceptor(refs, targets),
     }
-    for key, path in (("nametwin", args.nametwin), ("blockers", args.blockers)):
+    # THE TWO TWIN LANES ARE READ IN, NOT RUN HERE. They are separate transforms so
+    # each delta stays a separate number and a 3.9 M-row xref scan is not repeated
+    # inside every rescue; what arrives is a crosswalk in exactly the shape the merge
+    # takes, and it goes through `admit` with every other row rather than around it.
+    for key, path in (("nametwin", args.nametwin), ("blockers", args.blockers),
+                      ("llm", args.llm)):
         if not path:
             continue
         t = read_crosswalk(path)
@@ -1552,6 +2111,9 @@ def cmd_propose(args):
         if k not in lanes:
             raise SystemExit(f"[curation] --drop-lane {k}: no such lane. "
                              f"Known: {sorted(lanes)}")
+        # DROPPED, NOT SKIPPED. The lane still runs and still prints its count, so the
+        # crosswalk records what excluding it cost rather than merely that it was
+        # excluded. That is the difference between a measured delta and an assumption.
         print(f"[curation]   lane {k} DROPPED by request "
               f"({len({r['mnxm'] for r in lanes[k]}):,} metabolites withheld)",
               flush=True)
@@ -1565,6 +2127,9 @@ def cmd_propose(args):
     print(f"[curation] merged crosswalk: {df.mnxm.nunique():,} metabolites, "
           f"{len(df):,} rows -> {args.out}", flush=True)
 
+    # DRY-RUN THE ADMISSION CHECK BEFORE ANYTHING EXPENSIVE. `admit` aborts the whole
+    # run on the first bad row, and the previous generation learned this by losing a
+    # mapping pass to a stale id in row 4,000.
     admit(df, refs.mets)
     print(f"[curation] admission check passed on all {len(df):,} rows", flush=True)
     return 0
@@ -1623,6 +2188,10 @@ def parse_args(argv=None):
                         "these lanes abstain on")
     p.add_argument("--blockers", default=None,
                    help="interm::aam_blockers/crosswalk.tsv -- element-neutral twins")
+    p.add_argument("--llm", default=None,
+                   help="a crosswalk harvested from the LLM curation lane. Pre-filtered "
+                        "to rows that pass `admit`: this reads it like any other, and "
+                        "`admit` aborts rather than skips, so one bad row kills the bake")
     p.add_argument("--nametwin", default=None,
                    help="interm::aam_nametwin/crosswalk.tsv -- same-name duplicates")
     p.add_argument("--worklist", default=None,

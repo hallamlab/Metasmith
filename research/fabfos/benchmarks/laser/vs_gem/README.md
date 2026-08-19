@@ -112,7 +112,10 @@ at all.
 - Both bake versions are mixed by necessity — the answer key is v1, the only
   direction table is v2. `verify_bake_join.py` bounds the damage (orientation
   disagreement, plus the v1 sha256 against `TIER4_FREEZE.md`) and must pass
-  before any solve.
+  before any solve. **It cannot currently run**: it reads
+  `data/fabfos/benchmark/reference_tier4`, a pin since retired and not on disk,
+  so the gate has to be re-pointed at the bake's own atom pairs before this
+  cohort is solved again.
 
 ## Order
 

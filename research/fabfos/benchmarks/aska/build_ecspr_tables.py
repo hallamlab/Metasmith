@@ -45,19 +45,22 @@ from __future__ import annotations
 
 import argparse
 import re
+import sys
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
-
-import sys                                                            # noqa: E402
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[3]
 sys.path.insert(0, str(ROOT / "src/metasmith_libraries/resources/lib"))
 import fabfos_evidence as fe                                          # noqa: E402
 CACHE = HERE / "cache"
-BAKE = ROOT / "data/fabfos/processed/metabolism_bake"
+
+sys.path.insert(0, str(HERE.parent))
+import bake_identity                                                          # noqa: E402
+
+BAKE = bake_identity.DEPLOYED
 HOST_GEM = ROOT / "data/fabfos/benchmarks/hosts/e_coli_k12/gpr_gem.parquet"
 STUDY = ROOT / "data/fabfos/benchmarks/aska_ffa"
 ROSTER = ROOT / "data/fabfos/originals/benchmarks/aska/library/aska_clone_minus.tsv"
@@ -266,15 +269,12 @@ def main():
           f"strata {sorted(set(like['n_units']))}; "
           f"{len(like)} drawable in --like")
 
-    dpath = args.out / "direction_ratios.parquet"
-    d = pd.read_parquet(BAKE / "direction.parquet")
-    v = pd.read_parquet(BAKE / "vocab.parquet")
-    rv = v[v["kind"] == "rxn"][["code", "symbol"]].rename(
-        columns={"code": "rxn", "symbol": "mnxr"})
-    d = d.merge(rv, on="rxn", how="inner")
-    d = d[d["mnxr"] != "EMPTY"][["mnxr", "ratio"]]
-    d.to_parquet(dpath, index=False)
-    print(f"[direction] {len(d):,} reactions -> {dpath}")
+    # The direction reference: the bake's integer-coded table decoded onto MNXR,
+    # which is the shape `ecspr.model.build.load_direction_ratios` reads. Stamped, so
+    # `run_panel.py` can refuse it after a repin rather than serving the old ratios.
+    dpath = bake_identity.build_direction_ratios(
+        args.out / "direction_ratios.parquet", BAKE)
+    print(f"[direction] {dpath} <- bake {bake_identity.identity(BAKE)}")
 
 
 if __name__ == "__main__":

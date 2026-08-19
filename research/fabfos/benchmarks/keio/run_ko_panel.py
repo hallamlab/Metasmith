@@ -66,11 +66,18 @@ EDITS = KEIO / "gpr_manual.parquet"
 EXTRACTION = KEIO / "extraction.tsv"
 EXPECTATIONS = KEIO / "Y" / "expectations.tsv"
 
-_BAKE = ROOT / "data" / "fabfos" / "processed" / "metabolism_bake"
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+import bake_identity                                                          # noqa: E402
+
+_BAKE = bake_identity.DEPLOYED
 
 SOURCE_NAME = "D-glucose"
 SOURCE_ALIASES = ["D-glucose", "glucose"]
 
+# condition -> (required metabolite as the panel names it, exact MetaNetX names to
+# resolve it by, role). The name list is the curator's, not a lookup: MetaNetX carries
+# several ids per compound and `resolve-metabolite` picks the most-connected one within
+# the element's atom-pair universe.
 PANEL = {
     "Keio:argA": ("L-arginine", ["L-arginine"], "distal"),
     "Keio:hisG": ("L-histidine", ["L-histidine"], "distal"),
@@ -81,17 +88,17 @@ PANEL = {
 DEFAULT_CONDITIONS = list(PANEL)
 
 
+# ---------------------------------------------------------------------------
+# references
+# ---------------------------------------------------------------------------
+
 def build_direction_ratios(out_path: Path) -> Path:
-    if out_path.exists():
-        return out_path
-    direction = pd.read_parquet(_BAKE / "direction.parquet")
-    vocab = pd.read_parquet(_BAKE / "vocab.parquet")
-    rxn_vocab = vocab[vocab.kind == "rxn"][["code", "symbol"]].rename(
-        columns={"code": "rxn", "symbol": "mnxr"})
-    df = direction.merge(rxn_vocab, on="rxn", how="inner")
-    df = df[df.mnxr != "EMPTY"][["mnxr", "ratio"]]
-    df.to_parquet(out_path)
-    return out_path
+    """metabolism_bake's direction.parquet joined through vocab.parquet onto mnxr.
+
+    Stamped with the bake it came from: the previous `if out_path.exists()` served r7's
+    ratios across the r8 repin without saying so.
+    """
+    return bake_identity.build_direction_ratios(out_path, _BAKE)
 
 
 def chem_names() -> dict:
@@ -100,6 +107,10 @@ def chem_names() -> dict:
                               "inchi", "inchikey", "smiles"])
     return dict(zip(chem.id.astype(str), chem.name.astype(str)))
 
+
+# ---------------------------------------------------------------------------
+# cli wrapper
+# ---------------------------------------------------------------------------
 
 def run(*args, want_json=True):
     cmd = [sys.executable, str(CLI), *[str(a) for a in args]]
@@ -116,6 +127,8 @@ def slug(condition_id: str) -> str:
 
 
 def solve_condition(condition_id, direction_path, source_mnxm, element, leak):
+    """Weights (background, minus this condition's deletions) -> universal-ground solve.
+    Resumable: an existing solve json for this condition is reused as-is."""
     out = CACHE / f"solve_{slug(condition_id)}_{element}.json"
     if out.exists():
         print(f"[panel] reusing {out.name}", file=sys.stderr)
@@ -134,7 +147,15 @@ def solve_condition(condition_id, direction_path, source_mnxm, element, leak):
     return json.loads(out.read_text())
 
 
+# ---------------------------------------------------------------------------
+# scoring
+# ---------------------------------------------------------------------------
+
 def rel_change(base_draw, ko_draw, mnxm):
+    """Fractional move of one metabolite's draw. A metabolite that was a node of the
+    background graph and is not a node of the knockout's is a full collapse (-1), not a
+    missing value -- deleting reactions can only remove nodes, so its absence IS the
+    measurement. The reverse (in ko, not in base) cannot happen and is asserted."""
     b = base_draw.get(mnxm)
     if b is None:
         return None, None, None
@@ -145,6 +166,11 @@ def rel_change(base_draw, ko_draw, mnxm):
 
 
 def score_field(base_draw, ko_draw, floor):
+    """Every metabolite of the background graph, ranked by fractional move.
+
+    `floor` drops metabolites whose background draw is a numerically meaningless
+    fraction of the injected current: their ratio is noise, and leaving them in lets
+    round-off occupy the top of the depletion ranking."""
     rows = []
     for m, b in base_draw.items():
         if b <= floor:
@@ -156,10 +182,18 @@ def score_field(base_draw, ko_draw, floor):
 
 
 def n_negative(rows):
+    """How many metabolites fall at all. Under a unit injection the draws sum to one, so
+    a deletion cannot lower everything -- what it does is push a small set down and lift
+    the rest by the redistributed remainder. That set's SIZE is the sharpest thing the
+    solve says: when it is 8 of 991 and all 8 are one pathway, the localisation claim
+    does not depend on where inside the set the required metabolite happened to land."""
     return sum(1 for r in rows if r[3] < 0)
 
 
 def rank_of(rows, mnxm):
+    """Where the target sits in the depletion ranking, reported as a tie band rather
+    than a single index: on a null condition every metabolite ties at 0.0 and a bare
+    rank would read as rank 1 of N, i.e. as a perfect call."""
     hit = next((r for r in rows if r[0] == mnxm), None)
     if hit is None:
         return None
@@ -168,6 +202,7 @@ def rank_of(rows, mnxm):
     n_tied = sum(1 for r in rows if r[3] == v)
     n = len(rows)
     return dict(rel_change=v, n_scored=n, n_more_depleted=n_below, n_tied=n_tied,
+                # fraction of the field this metabolite is strictly more depleted than
                 frac_beaten=(n - n_below - n_tied) / n if n else float("nan"))
 
 
@@ -192,6 +227,7 @@ def main():
     direction_path = build_direction_ratios(CACHE / "direction_ratios.parquet")
     names = chem_names()
 
+    # --- resolve terminals -------------------------------------------------
     source = run("resolve-metabolite", "--name", SOURCE_NAME,
                  "--exact-names", *SOURCE_ALIASES, "--atom-pairs", ATOM_PAIRS,
                  "--chem-prop", CHEM_PROP, "--element", args.element)
@@ -204,6 +240,7 @@ def main():
                              "--exact-names", *exact, "--atom-pairs", ATOM_PAIRS,
                              "--chem-prop", CHEM_PROP, "--element", args.element)
 
+    # --- solve -------------------------------------------------------------
     base = solve_condition("__base__", direction_path, source["mnxm"],
                            args.element, args.leak)
     kos = {cid: solve_condition(cid, direction_path, source["mnxm"],
@@ -214,6 +251,7 @@ def main():
     extraction = pd.read_csv(EXTRACTION, sep="\t").set_index("obs_id")
     expectations = pd.read_csv(EXPECTATIONS, sep="\t")
 
+    # --- per-condition tables ---------------------------------------------
     panel_rows, matrix_rows, top_rows, mech_rows = [], [], [], []
     for cid in args.conditions:
         ko = kos[cid]
@@ -225,6 +263,7 @@ def main():
         ex = extraction.loc[cid]
         del_mnxr = [r for r in str(ex.del_mnxr or "").split(",") if r and r != "nan"]
 
+        # the condition's own required metabolite, and every other condition's
         for tname, t in targets.items():
             r = rank_of(rows, t["mnxm"])
             is_own = PANEL[cid][0] == tname
@@ -258,6 +297,7 @@ def main():
             top_rows.append(dict(condition_id=cid, mnxm=m, name=names.get(m, ""),
                                  base_draw=b, ko_draw=k, rel_change=rc))
 
+        # the cohort's own mechanical answer key: the deleted reactions' products
         for e in expectations[expectations.condition_id == cid].itertuples(index=False):
             if e.element != args.element:
                 continue

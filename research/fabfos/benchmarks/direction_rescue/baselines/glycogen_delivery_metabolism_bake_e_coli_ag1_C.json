@@ -1,0 +1,77 @@
+{
+  "bake": "/home/tony/agentic_workspace/projects/metasmith/fabfos/directionality-scrape/data/fabfos/processed/metabolism_bake",
+  "stamp": "0ffd4c8c6231696e8ba0dee859253df75d8a29320355c42b0fcac0f317d264c6:96cc532cdf2ed3a1bd3d7673a9020f46d584d5e7cf4176b95f92b2728131517c",
+  "host": "e_coli_ag1",
+  "element": "C",
+  "sink": "MNXM738130",
+  "source": "MNXM1364061",
+  "n_background": 2308,
+  "n_reactions_used": 2022,
+  "delivery": [
+    {
+      "mnxr": "MNXR145036",
+      "genes": "glgP,malP",
+      "share": 0.5342075967854798,
+      "ratio": 1.0,
+      "dir_tier": 0,
+      "dir_method": "no_evidence"
+    },
+    {
+      "mnxr": "MNXR145046",
+      "genes": "glgA",
+      "share": 0.4043864552609452,
+      "ratio": 1.0,
+      "dir_tier": 0,
+      "dir_method": "no_evidence"
+    },
+    {
+      "mnxr": "MNXR145021",
+      "genes": "glgB,glgX",
+      "share": 0.061405947953574964,
+      "ratio": 0.08887647468269047,
+      "dir_tier": 2,
+      "dir_method": "dgbyg"
+    }
+  ],
+  "against": {
+    "path": "/home/tony/agentic_workspace/projects/metasmith/fabfos/bench-eydallin/research/fabfos/benchmarks/eydallin/cache/direction_ratios.parquet",
+    "stamp": null,
+    "delivery": {
+      "MNXR145036": 0.5678258402637917,
+      "MNXR145046": 0.3275927307250709,
+      "MNXR145021": 0.10458142901113796
+    }
+  },
+  "module": {
+    "MNXR145036": {
+      "ratio": 1.0,
+      "dir_tier": 0,
+      "dir_method": "no_evidence",
+      "dG_prime": 0.0
+    },
+    "MNXR145038": {
+      "ratio": 1.0,
+      "dir_tier": 0,
+      "dir_method": "no_evidence",
+      "dG_prime": 0.0
+    },
+    "MNXR145046": {
+      "ratio": 1.0,
+      "dir_tier": 0,
+      "dir_method": "no_evidence",
+      "dG_prime": 0.0
+    },
+    "MNXR145021": {
+      "ratio": 0.08887647468269047,
+      "dir_tier": 2,
+      "dir_method": "dgbyg",
+      "dG_prime": -6.000000961935363
+    },
+    "MNXR145639": {
+      "ratio": 0.20440178681762072,
+      "dir_tier": 2,
+      "dir_method": "eq_gc_x_dgbyg",
+      "dG_prime": -3.9355409669635666
+    }
+  }
+}

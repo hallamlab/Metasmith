@@ -1,0 +1,13 @@
+{
+ "revision": "aam_r3",
+ "model": "qwen3-32b",
+ "split": "controls",
+ "n": 200,
+ "harness_errors": 2,
+ "prompt_tokens": 635602,
+ "completion_tokens": 39320,
+ "seconds": 544.9,
+ "parallel": 8,
+ "thinking": false,
+ "max_tokens": 1024
+}
