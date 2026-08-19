@@ -346,16 +346,21 @@
                   {item.host.hostname ?? '(no hostname)'}
                 </div>
               </div>
-              <div class="row">
-                {#if item.host.managed}<span class="tag ok">msm</span>{/if}
-                <!-- an ssh host is a block in a text file you can also edit by
-                     hand, so this one really does remove it -->
-                <DeleteControl
-                  title="remove host"
-                  archived
-                  onconfirm={() => removeHost(item.host.alias)}
-                />
-              </div>
+              <!-- which run a row is in already says whether metasmith owns it,
+                   so the row carries no tag. Only a managed host is offered the
+                   delete: a native one is read here and rewritten nowhere, and
+                   the server refuses it anyway. An ssh host is a block in a text
+                   file you can also edit by hand, so this one really does
+                   remove it. -->
+              {#if item.host.managed}
+                <div class="row">
+                  <DeleteControl
+                    title="remove host"
+                    archived
+                    onconfirm={() => removeHost(item.host.alias)}
+                  />
+                </div>
+              {/if}
             </div>
           {/if}
         {/snippet}

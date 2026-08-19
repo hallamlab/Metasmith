@@ -92,8 +92,10 @@
       <h1>{host.alias}</h1>
       <div class="row">
         <button class="small" onclick={() => (sharing = true)}>share</button>
+        <!-- the word the rail groups this host under, and for a native one the
+             consequence of it: nothing on this page writes to the entry -->
         <span class="tag" class:ok={host.managed}>
-          {host.managed ? 'managed by metasmith' : 'yours'}
+          {host.managed ? 'managed by metasmith' : 'native — read only'}
         </span>
       </div>
     </div>
