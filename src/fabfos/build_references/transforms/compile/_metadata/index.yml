@@ -7,20 +7,20 @@ manifest:
     instance_id: 1e20788ec9dc6083e4690191e9394128f68643139ace334fb22b0b0914d9577fd17b
     origin: leaf
     type: transforms::transform
+  label_transfer_landmarks.py:
+    instance_id: 1e20925a20799212aba2197494490a9d8605efb946fd92d31dd71525967718c4b06c
+    origin: leaf
+    type: transforms::transform
+  label_transfer_landmarks_esmc.py:
+    instance_id: 1e2006035abbf78bacabb1decea4aebeadc51be63637487ee98530288f6d8ad79b21
+    origin: leaf
+    type: transforms::transform
   mnx_lookups.py:
     instance_id: 1e2024c112cdb85eeca6974bb960c36e149bc6eb36437462be8c115d11d2f74e76c5
     origin: leaf
     type: transforms::transform
   mnxr_lookup.py:
     instance_id: 1e2037a5560d54f0597b24ffd00162e6ec1fc4b7d41d9930dc9e4f4edfb15541c5d3
-    origin: leaf
-    type: transforms::transform
-  reference_label_pool.py:
-    instance_id: 1e20f0aad7c6c1bf99aa1dd8b6efdabbcddb56a1b212317d775af1cb02dedba39f45
-    origin: leaf
-    type: transforms::transform
-  reference_label_pool_esmc.py:
-    instance_id: 1e202f66555b6c0e56850e3b5ea6cb5e9b5cb9f011f9c120ab0612073e5440e4d0b1
     origin: leaf
     type: transforms::transform
   uniref50_dmnd.py:

@@ -8,7 +8,7 @@ The four things a fabfos run needs to turn ORFs into reactions, and nothing else
     kofam       profiles/ + ko_list        the HMM lane
     uniref50    uniref50.dmnd              the homology lane
     CLEAN       -- no artifact --          weights baked into external_clean
-    proteinBERT reference_label_pool       Swiss-Prot embeddings labelled with MNXR
+    proteinBERT label_transfer_landmarks       Swiss-Prot embeddings labelled with MNXR
 
 plus `mnxr_lookup`, which is not a fourth lane but every lane's terminus: kofam emits
 KOs, CLEAN emits ECs, DIAMOND and the pool emit UniProt accessions, and that one table
@@ -65,7 +65,7 @@ TARGETS = [
     ("R3", "ref::kofamscan_ko_list"),
     ("R4", "ref::uniref50_diamond_db"),
     ("R5", "ref::mnxr_lookup"),
-    ("R7", "ref::reference_label_pool"),
+    ("R7", "ref::label_transfer_landmarks"),
     # R8 belongs to the three decided-against lanes, not the canonical four -- the
     # ESM-C embedding lane and the EZpred EC heads share these weights. It is here
     # because it now HAS a producer that is not logistics/'s run-time downloader.
@@ -74,7 +74,7 @@ TARGETS = [
     # with ESM-C instead of ProteinBERT, so the ESM-C kNN lane has a pool of its own to
     # vote against. Two references rather than one directory with two stacks, because
     # the embedders live in two images and only this one needs a GPU.
-    ("R10", "ref::reference_label_pool_esmc"),
+    ("R10", "ref::label_transfer_landmarks_esmc"),
 ]
 
 # Every transform that must appear, so a plan that quietly drops a branch fails rather
@@ -88,8 +88,8 @@ EXPECTED = {
     # acquire -- one per source folder
     "metanetx", "kegg", "rhea", "kofam", "uniref", "swissprot", "esm_c",
     # compile
-    "kofam_ref", "uniref50_dmnd", "mnxr_lookup", "reference_label_pool",
-    "esm_c_weights", "reference_label_pool_esmc",
+    "kofam_ref", "uniref50_dmnd", "mnxr_lookup", "label_transfer_landmarks",
+    "esm_c_weights", "label_transfer_landmarks_esmc",
 }
 
 

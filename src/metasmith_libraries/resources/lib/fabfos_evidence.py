@@ -763,7 +763,7 @@ def read_embed_transfer(path, source: str, _bridge=None,
     df = df[df["channel"].isin(("pbert", "pbert_transfer"))
             & (df["raw_score"] >= EMBED_SCORE_FLOOR)].copy()
     # The pool is the bridge's `reviewed` cut by construction, so every transferred
-    # label inherits that quality -- see compile/reference_label_pool.py.
+    # label inherits that quality -- see compile/label_transfer_landmarks.py.
     df["evidence_quality"] = "reviewed"
     return _finish(df, source, "pbert", lane_set)
 

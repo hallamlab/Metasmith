@@ -249,12 +249,12 @@ def check_inputs_present(host: str, shards: list[str],
     for dtype, rel in annotation.REF_LAYOUT.items():
         probes.append(f'[ -e "{REFS_ROOT}/{rel}" ] || echo "MISSING {dtype} {rel}"')
     prof = f'{REFS_ROOT}/{annotation.REF_LAYOUT["ref::kofamscan_profiles"]}'
-    pool = f'{REFS_ROOT}/{annotation.REF_LAYOUT["ref::reference_label_pool"]}'
+    lm = f'{REFS_ROOT}/{annotation.REF_LAYOUT["ref::label_transfer_landmarks"]}'
     probes += [
         f'[ "$(ls -1 "{prof}" 2>/dev/null | head -1)" ] || '
         f'echo "EMPTY ref::kofamscan_profiles"',
-        f'for f in orf_index.parquet emb_pbert.npy; do [ -s "{pool}/$f" ] || '
-        f'echo "MISSING ref::reference_label_pool $f"; done',
+        f'[ -s "{lm}/landmarks.parquet" ] || '
+        f'echo "MISSING ref::label_transfer_landmarks landmarks.parquet"',
     ]
     out = ssh_once(host, "; ".join(probes)).strip()
     if out:
@@ -313,7 +313,7 @@ def plan(work: Path, agent, shards: list[str], control: bool = False):
     _agent, task, stubs = annotation.generate_workflow(
         work, orfs=orfs,
         kofam_profiles=None, kofam_ko_list=None, uniref50_db=None,
-        mnxr_lookup=None, label_pool=None,
+        mnxr_lookup=None, landmarks=None,
         runtime=Runtime.APPTAINER,
         refs_root=REFS_ROOT, verify_refs=False, stage_orfs="remote",
         # A control supplies no lane products, but it must STILL pin external

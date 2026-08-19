@@ -491,27 +491,14 @@ types:
     properties:
       Format: Parquet
       _:
-      - ProteinBERT embedding vectors
+      - ProteinBERT embedding vectors, keyed by sequence_id in the same row
       ext: parquet
   proteinbert_embeddings_chunk:
     properties:
       Format: Parquet
       _:
-      - Per-chunk ProteinBERT embeddings (sibling of proteinbert_embeddings)
+      - Per-chunk ProteinBERT embeddings, keyed by sequence_id (sibling of proteinbert_embeddings)
       ext: parquet
-      granularity: chunk
-  proteinbert_index:
-    properties:
-      Format: CSV
-      _:
-      - ProteinBERT sequence index
-      ext: csv
-  proteinbert_index_chunk:
-    properties:
-      Format: CSV
-      _:
-      - Per-chunk ProteinBERT index (sibling of proteinbert_index)
-      ext: csv
       granularity: chunk
   prott5_embeddings:
     properties:

@@ -20,7 +20,7 @@ we apply the variant that won its own dark-regime (c30) validation:
 THESE TWO CHANNEL NAMES ARE THIS MODULE'S OWN, and deliberately not the shipped
 mapper's `pbert` / `esmc`. Same backbones, different measurement: this votes over a
 metag+epi300+fosmid pool and only for dark ORFs, where `transforms/fabfos/gpr_4lane.py`
-votes over the Swiss-Prot `ref::reference_label_pool` for every ORF. Giving them one
+votes over the Swiss-Prot `ref::label_transfer_landmarks` for every ORF. Giving them one
 name would put two numbers with different referents in one column.
 
 Every emitted row uses the unified 8-column lane schema

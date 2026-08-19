@@ -95,7 +95,7 @@ LANES = {d: n for lane in ("kofam", "clean", "diamond", "proteinbert")
 # large enough for the absolute-path treatment the cluster drivers give the 17.5 GB set.
 REFS = {
     "ref::mnxr_lookup": "mnxr_lookup/mnxr_lookup.parquet",
-    "ref::reference_label_pool": "reference_label_pool/pool",
+    "ref::label_transfer_landmarks": "label_transfer_landmarks/landmarks",
 }
 
 # Anything in this set appearing in the plan means a staged lane did not satisfy its

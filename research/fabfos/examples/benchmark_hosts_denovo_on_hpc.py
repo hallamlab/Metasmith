@@ -30,7 +30,7 @@ three proteomes staged as unrelated givens give that pin nothing to bind to. The
 would then satisfy the mapper from whatever ORF set is cheapest to reach and the host
 attribution would land on a table built from something else.
 
-THE LANE SET IS CHECKED, NOT REPORTED. The fourth lane needs `ref::reference_label_pool`;
+THE LANE SET IS CHECKED, NOT REPORTED. The fourth lane needs `ref::label_transfer_landmarks`;
 `check_refs` probes it on the site before anything is staged, and B2's collector refuses a
 table whose channels are not the declared four. An absent reference stops the run here --
 it never yields a shorter table.
@@ -104,7 +104,7 @@ ARTIFACTS = REPO / "tests" / "fabfos" / "artifacts"
 INSERTS = SCADC / "sequences" / "inserts" / "inserts.fna"
 
 # The compiled references, by type -> the file or directory under data/fabfos/processed/.
-# `ref::reference_label_pool` is a DIRECTORY (index + embedding stack), which is the
+# `ref::label_transfer_landmarks` is a DIRECTORY (index + embedding stack), which is the
 # whole reason it is one product: the consumer addresses the stack by row, so an index
 # from one build against a stack from another misindexes every row silently.
 REFS_4 = {
@@ -112,7 +112,7 @@ REFS_4 = {
     "ref::kofamscan_ko_list": "kofam_ref/ko_list.tsv",
     "ref::uniref50_diamond_db": "uniref50_dmnd/uniref50.dmnd",
     "ref::mnxr_lookup": "mnxr_lookup/mnxr_lookup.parquet",
-    "ref::reference_label_pool": "reference_label_pool/pool",
+    "ref::label_transfer_landmarks": "label_transfer_landmarks/landmarks",
 }
 # The three decided-against lanes need three more. Two are built by the reference
 # driver alongside the canonical five; `ref::ezpred_model` is staged as a given,
@@ -121,7 +121,7 @@ REFS_4 = {
 # a missing implementation. See that directory's README.
 REFS_7 = dict(REFS_4, **{
     "ref::esm_c_600m_weights": "esm_c_weights/esmc_600m.tgz",
-    "ref::reference_label_pool_esmc": "reference_label_pool_esmc/pool",
+    "ref::label_transfer_landmarks_esmc": "label_transfer_landmarks_esmc/landmarks",
     "ref::ezpred_model": "ezpred_model/EZpred",
 })
 
@@ -147,7 +147,6 @@ PUBLISH_AT = {
     "annotation::clean_predictions": "lanes/clean.tsv",
     "annotation::diamond_uniref50_results": "lanes/diamond_uniref50.tsv",
     "annotation::proteinbert_embeddings": "lanes/proteinbert_embeddings.parquet",
-    "annotation::proteinbert_index": "lanes/proteinbert_index.csv",
     "annotation::deepec_predictions": "lanes/deepec.tsv",
     "annotation::ezpred_predictions": "lanes/ezpred.csv",
     "annotation::esm_c_embeddings": "lanes/esm_c_embeddings.parquet",

@@ -118,6 +118,14 @@ types:
   kraken2_db:
     properties:
     - Kraken2 database directory (hash.k2d + Bracken kmer_distrib)
+  label_transfer_landmarks:
+    properties:
+    - Reference ProteinBERT embeddings beside their MNXR labels, one row per accession
+      (landmarks.parquet + source.txt)
+  label_transfer_landmarks_esmc:
+    properties:
+    - Reference ESM-C embeddings beside their MNXR labels, one row per accession (landmarks.parquet
+      + source.txt)
   metabolism_vocab:
     properties:
       _:
@@ -151,14 +159,6 @@ types:
   reference_data:
     properties:
     - reference database
-  reference_label_pool:
-    properties:
-    - Reference embeddings + their MNXR labels for kNN label transfer (orf_index.parquet
-      + emb_*.npy)
-  reference_label_pool_esmc:
-    properties:
-    - Reference ESM-C embeddings + their MNXR labels for kNN label transfer (orf_index.parquet
-      + emb_esmc.npy)
   saprot_650m_weights:
     properties:
       _:

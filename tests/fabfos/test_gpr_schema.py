@@ -109,44 +109,53 @@ def _write_ezpred(p: Path):
     }).to_csv(p, index=False)
 
 
-def _write_query_embeddings(emb: Path, idx: Path, rng):
-    pd.DataFrame(rng.normal(size=(len(ORFS), DIM)).astype(np.float32)).to_parquet(emb, index=False)
-    pd.DataFrame({"sequence_id": ORFS}).to_csv(idx, index=False)
+def _dims(a: np.ndarray) -> pd.DataFrame:
+    return pd.DataFrame(a, columns=[f"dim_{i}" for i in range(a.shape[1])])
 
 
-def _write_pool(pool_dir: Path, rng, stacks=("emb_pbert.npy",)):
-    """A reference pool of 40 labelled members. K=30 in the mappers, so the pool must
-    hold at least that many or the top-K partition indexes past the end."""
+def _write_query_embeddings(emb: Path, rng, dim=DIM, idx: Path = None):
+    """The ProteinBERT type names its own rows; ESM-C's still uses a sibling index."""
+    vecs = _dims(rng.normal(size=(len(ORFS), dim)).astype(np.float32))
+    if idx is None:
+        pd.concat([pd.DataFrame({"sequence_id": ORFS}), vecs], axis=1).to_parquet(
+            emb, index=False)
+    else:
+        vecs.to_parquet(emb, index=False)
+        pd.DataFrame({"sequence_id": ORFS}).to_csv(idx, index=False)
+
+
+def _write_landmarks(lm_dir: Path, rng, dim=DIM, table="landmarks.parquet"):
+    """40 labelled landmarks. K=30 in the mappers, so there must be at least that many
+    or the top-K partition indexes past the end."""
     n = 40
-    pool_dir.mkdir(parents=True, exist_ok=True)
-    pd.DataFrame({
-        "role": ["reference"] * n,
-        "row": np.arange(n, dtype=np.int64),
-        "orf": [f"REF{i:04d}" for i in range(n)],
-        # every member carries the same two labels, so the kNN vote is 1.0 for both
-        # and clears any floor -- this test is about plumbing, not about recall
-        "mnxr_list": [";".join(MNXRS[:2])] * n,
-    }).to_parquet(pool_dir / "orf_index.parquet", index=False)
-    for s in stacks:
-        np.save(pool_dir / s, rng.normal(size=(n, DIM)).astype(np.float32))
+    lm_dir.mkdir(parents=True, exist_ok=True)
+    pd.concat([
+        pd.DataFrame({
+            "accession": [f"REF{i:04d}" for i in range(n)],
+            # every member carries the same two labels, so the kNN vote is 1.0 for
+            # both and clears any floor -- this test is about plumbing, not recall
+            "mnxr_list": [";".join(MNXRS[:2])] * n,
+        }),
+        _dims(rng.normal(size=(n, dim)).astype(np.float32)),
+    ], axis=1).to_parquet(lm_dir / table, index=False)
 
 
-def _lanes(work: Path, rng, seven: bool, pool_stacks=("emb_pbert.npy",),
-           esmc_pool_stacks=("emb_esmc.npy",)):
+def _lanes(work: Path, rng, seven: bool, lm_table="landmarks.parquet",
+           esmc_lm_dim=DIM):
     """Write every input both mappers read; return the format kwargs."""
     _write_orfs(work / "orfs.faa")
     _write_kofam(work / "kofam.csv")
     _write_clean(work / "clean.tsv")
     _write_uniref(work / "uniref.tsv")
     _write_bridge(work / "bridge.parquet")
-    _write_query_embeddings(work / "pbert.parquet", work / "pbert_index.csv", rng)
-    _write_pool(work / "pool", rng, stacks=pool_stacks)
+    _write_query_embeddings(work / "pbert.parquet", rng)
+    _write_landmarks(work / "landmarks", rng, table=lm_table)
     kw = dict(
         ev_lib=str(EV_LIB), orfs=str(work / "orfs.faa"),
         kofam=str(work / "kofam.csv"), clean=str(work / "clean.tsv"),
         uniref=str(work / "uniref.tsv"), bridge=str(work / "bridge.parquet"),
-        pbert_emb=str(work / "pbert.parquet"), pbert_idx=str(work / "pbert_index.csv"),
-        pool=str(work / "pool"), out=str(work / "gpr.parquet"),
+        pbert_emb=str(work / "pbert.parquet"),
+        landmarks=str(work / "landmarks"), out=str(work / "gpr.parquet"),
         # The BLAS thread floor the 4-lane driver bakes in; only that mapper has
         # the slot, and `format` ignores a key the 7-lane template does not use.
         # One, because these fixtures are a few rows and the driver would
@@ -156,17 +165,18 @@ def _lanes(work: Path, rng, seven: bool, pool_stacks=("emb_pbert.npy",),
     if seven:
         _write_deepec(work / "deepec.tsv")
         _write_ezpred(work / "ezpred.csv")
-        _write_query_embeddings(work / "esmc.parquet", work / "esmc_index.csv", rng)
-        # A SECOND pool, in its own directory. The ESM-C lane votes against ESM-C
-        # embeddings -- cosine distance between two embedding spaces is a number with
-        # no referent -- and the leaf name differs from `pool` because nextflow stages
-        # a process's inputs by basename and the mapper takes both.
-        _write_pool(work / "pool_esmc", rng, stacks=esmc_pool_stacks)
+        _write_query_embeddings(work / "esmc.parquet", rng, dim=esmc_lm_dim,
+                                idx=work / "esmc_index.csv")
+        # A SECOND landmark set, in its own directory. The ESM-C lane votes against
+        # ESM-C embeddings -- cosine distance between two embedding spaces is a number
+        # with no referent -- and the leaf name differs because nextflow stages a
+        # process's inputs by basename and the mapper takes both.
+        _write_landmarks(work / "landmarks_esmc", rng, dim=esmc_lm_dim)
         kw.update(
             lane_set="full_7", source="orfs",
             deepec=str(work / "deepec.tsv"), ezpred=str(work / "ezpred.csv"),
             esmc_emb=str(work / "esmc.parquet"), esmc_idx=str(work / "esmc_index.csv"),
-            pool_esmc=str(work / "pool_esmc"),
+            lm_esmc=str(work / "landmarks_esmc"),
         )
     else:
         kw.update(lane_set="chosen_4", source="orfs")
@@ -237,13 +247,13 @@ def test_gpr_4lane_driver_writes_a_valid_table(tmp_path):
     # evidence_quality is carried from the bridge, not defaulted: one of the two
     # UniProt accessions is unreviewed there.
     assert set(df[df["channel"] == "uniref50"]["evidence_quality"]) == {"reviewed", "unreviewed"}
-    # ... while the embedding lane inherits the pool's reviewed cut
+    # ... while the embedding lane inherits the landmarks' reviewed cut
     assert set(df[df["channel"] == "pbert"]["evidence_quality"]) == {"reviewed"}
 
 
 def test_gpr_7lane_driver_writes_a_valid_table(tmp_path):
     rng = np.random.default_rng(1)
-    kw = _lanes(tmp_path, rng, seven=True, pool_stacks=("emb_pbert.npy", "emb_esmc.npy"))
+    kw = _lanes(tmp_path, rng, seven=True)
     r = _run(_render("gpr_7lane", kw), tmp_path)
     assert r.returncode == 0, f"driver failed:\n{r.stdout}\n{r.stderr}"
     df = _check_table(tmp_path / "gpr.parquet", "full_7")
@@ -260,17 +270,28 @@ def test_gpr_7lane_driver_writes_a_valid_table(tmp_path):
 # the refusals
 # =====================================================================
 
-def test_esmc_lane_refuses_a_pool_without_its_stack(tmp_path):
-    """Point the ESM-C lane at a pool holding no emb_esmc.npy and it must refuse BY NAME.
-
-    There is no degraded mode: voting a query against a pool embedded by a different
-    model is not a weaker answer, it is a meaningless one.
-    """
+def test_embedding_lane_refuses_a_landmark_dir_without_its_table(tmp_path):
+    """No landmarks.parquet means no landmarks, and there is no degraded mode."""
     rng = np.random.default_rng(2)
-    kw = _lanes(tmp_path, rng, seven=True, esmc_pool_stacks=("emb_pbert.npy",))
+    kw = _lanes(tmp_path, rng, seven=False, lm_table="something_else.parquet")
+    r = _run(_render("gpr_4lane", kw), tmp_path)
+    assert r.returncode != 0
+    assert "landmarks.parquet" in r.stderr and "pbert" in r.stderr
+    assert not (tmp_path / "gpr.parquet").exists()
+
+
+def test_embedding_lane_refuses_a_query_of_a_different_width(tmp_path):
+    """Voting a query against landmarks embedded by a different model is not a weaker
+    answer, it is a meaningless one. Differing width is the half of that a mapper can
+    see, and it is what the ESM-C lane pointed at the ProteinBERT set would hit."""
+    rng = np.random.default_rng(2)
+    kw = _lanes(tmp_path, rng, seven=True, esmc_lm_dim=DIM)
+    kw["lm_esmc"] = kw["landmarks"]          # the pbert set, at the pbert width
+    _write_query_embeddings(tmp_path / "esmc.parquet", rng, dim=DIM + 4,
+                            idx=tmp_path / "esmc_index.csv")
     r = _run(_render("gpr_7lane", kw), tmp_path)
     assert r.returncode != 0
-    assert "emb_esmc.npy" in r.stderr and "esmc" in r.stderr
+    assert "esmc" in r.stderr and "dims" in r.stderr
     assert not (tmp_path / "gpr.parquet").exists()
 
 

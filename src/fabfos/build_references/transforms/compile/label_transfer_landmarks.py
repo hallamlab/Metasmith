@@ -1,4 +1,10 @@
-"""R7 -- the labelled embedding pool the kNN transfer lane votes against.
+"""R7 -- the labelled landmarks the kNN transfer lane votes against.
+
+ONE PARQUET, ONE ROW PER ACCESSION: the accession, its MNXR labels and its 512-float
+embedding side by side. Nothing addresses anything by row, which is the point. This
+artifact used to be an index parquet beside an .npy stack, and it shipped scrambled --
+see THE CHUNKS DO NOT SORT below.
+
 
 Swiss-Prot sequences, embedded with ProteinBERT, labelled with MetaNetX reaction ids
 mapped through Rhea. Those three clauses are one sentence and each is load-bearing:
@@ -33,10 +39,15 @@ Two traps worth stating because both are silent:
     weaker pool, it is a meaningless one -- cosine distance between two embedding
     spaces is a number with no referent. Enforced by sharing `env::proteinbert.env`
     with functionalAnnotation/proteinbert.py, whose flags are copied verbatim below.
-  * ONE PASS. The consumer indexes the embedding stack by row, so pairing an index
-    from one build with a stack from another misindexes every row and emits a full,
-    confident, WRONG table with nothing raised. Index and stack come out together
-    or not at all.
+  * THE CHUNKS DO NOT SORT INTO THE ORDER THEY WERE WRITTEN. `pbert` writes fixed
+    1,024-sequence chunks in FASTA order, named `<stem>.1`, `<stem>.2`, ... with no
+    zero padding, so `sorted(glob("*.npy"))` gives `.1, .10, .11, ... .2, .20, ...`
+    while its index stays in FASTA order. The shipped artifact was assembled from
+    those two orders as though they agreed: every one of its 222,019 references
+    carried another protein\'s reactions, the length check passed, the label merge
+    passed, and the lane emitted a full, confident, wrong table. The chunks are
+    stacked by their integer suffix here, and the result is checked against the FASTA
+    this transform wrote before a label is attached to it.
 
 THE WEIGHTS ARE FREE. ProteinBERT's are baked into the pinned image, so this
 transform acquires no model and the pool is the only artifact it produces. That is
@@ -51,7 +62,7 @@ model = Transform()
 image  = model.AddRequirement(lib.GetType("env::proteinbert.env"))
 source = model.AddRequirement(lib.GetType("fabfos_data::swissprot"))
 bridge = model.AddRequirement(lib.GetType("ref::mnxr_lookup"))
-pool   = model.AddProduct(lib.GetType("ref::reference_label_pool"))
+pool   = model.AddProduct(lib.GetType("ref::label_transfer_landmarks"))
 
 # The cut that defines the pool: bridge rows whose id_source is uniprot and whose
 # evidence_quality is reviewed. The second condition is what makes Swiss-Prot the right
@@ -62,15 +73,11 @@ POOL_EVIDENCE = "reviewed"
 FASTA_FILE = "uniprot_sprot.fasta.gz"
 RELDATE_FILE = "reldate.txt"
 
-# The layout the consumer reads. functionalAnnotation/gpr_4lane.py's embedding lane opens
-# exactly these two names inside the pool directory and indexes the stack by the index's
-# `row` column, which is why they are produced together and never separately.
-INDEX_NAME = "orf_index.parquet"
-STACK_NAME = "emb_pbert.npy"
-# A third file, read by nothing. An embedding pool is comparable to a query only if the
-# model matches and reproducible only if the sequence release does, and neither fact is
-# recoverable from the two files above.
-SOURCE_NAME = "pool_source.txt"
+# The layout the consumer reads: one table, and a provenance file read by nothing.
+# Landmarks are comparable to a query only if the model matches and reproducible only if
+# the sequence release does, and neither fact is recoverable from the table.
+TABLE_NAME = "landmarks.parquet"
+SOURCE_NAME = "source.txt"
 
 # The slice step: pick the pool members and write their sequences out as a FASTA for the
 # embedder. Split from the embedding step so the failure modes stay separable -- this half
@@ -186,69 +193,96 @@ with open(SOURCE_OUT, "w") as fh:
         fh.write("reldate\t" + reldate.read_text().strip().replace("\n", " | ") + "\n")
 '''
 
-# The assemble step: stitch the embedder's shards into ONE stack and write the index that
-# addresses it, in one pass. The consumer indexes the stack BY ROW, so an index from one
-# build against a stack from another misindexes every row and emits a full, confident,
-# wrong table with nothing raised -- which is why these two files are written together,
-# from the same in-memory arrays, or not at all.
-ASSEMBLE = r'''
+# The assemble step: stitch the embedder's chunks into one table whose every row
+# carries its own accession. The chunks are ordered by their integer suffix, never
+# lexicographically, and the resulting id order is checked against the FASTA this
+# transform wrote -- the one ordering here that neither the embedder nor a glob can
+# disturb.
+ASSEMBLE = r"""
+import re
 import shutil
+from pathlib import Path
+
 import numpy as np
 import pandas as pd
-from pathlib import Path
 
 SHARDS = Path("pbert_output")
 POOL = Path("{pool}")
 POOL.mkdir(parents=True, exist_ok=True)
 
-# The embedder writes one .npy per shard plus a csv index naming the sequences in order.
-# Both are read in the SAME sorted shard order, so row i of the stack is sequence i of
-# the index by construction rather than by coincidence.
-npys = sorted(SHARDS.glob("*.npy"))
+
+# `<stem>.<k>` with k unpadded, so the chunks order by k as an INTEGER.
+def chunk_no(path):
+    m = re.search(r"\.(\d+)$", path.stem)
+    if m is None:
+        raise SystemExit(
+            f"[pool] {{path.name}} does not end in a chunk number, so the order the "
+            f"embedder wrote its chunks in is not recoverable. Guessing one is what "
+            f"scrambled this artifact the first time")
+    return int(m.group(1))
+
+
+npys = sorted(SHARDS.glob("*.npy"), key=chunk_no)
 csvs = sorted(SHARDS.glob("*.csv"))
+if len(csvs) > 1:
+    csvs = sorted(csvs, key=chunk_no)
 if not npys or not csvs:
-    raise SystemExit(f"embedder produced no output under {{SHARDS}}")
-# Narrow and downcast EACH shard before stacking, never after. Written the other way
-# round -- vstack the full shards, then slice to 512 and cast -- the peak is every
-# shard at full ProteinBERT width in its native dtype, PLUS vstack's own copy of all
+    raise SystemExit(f"[pool] embedder produced no output under {{SHARDS}}")
+
+# Narrow and downcast EACH chunk before stacking, never after. Written the other way
+# round -- vstack the full chunks, then slice to 512 and cast -- the peak is every
+# chunk at full ProteinBERT width in its native dtype, PLUS vstack's own copy of all
 # of it, and only then is 99% of that thrown away. On ~222k sequences that is the
 # difference between tens of GB of transient and a couple.
 stack = np.vstack([np.load(f)[:, -512:].astype(np.float32) for f in npys])
 idx = pd.concat([pd.read_csv(f) for f in csvs], ignore_index=True)
-if len(idx) != len(stack):
-    raise SystemExit(f"index has {{len(idx)}} rows but the stack has {{len(stack)}} -- "
-                     f"pairing them would misindex every row silently")
-
-labels = pd.read_parquet("_pool_labels.parquet")
 # `pbert` names its id column `id`; the run-side transform renames it to
 # `sequence_id` on the way out. This reads the embedder's raw output, so it takes
 # either -- and refuses rather than producing an unlabelled pool if neither is there.
 for _cand in ("sequence_id", "id"):
     if _cand in idx.columns:
-        idx = idx.rename(columns={{_cand: "orf"}})
+        accession = idx[_cand].astype(str).to_numpy()
         break
 else:
-    raise SystemExit(f"the embedder index has no id column: {{list(idx.columns)}}")
-idx["row"] = np.arange(len(idx), dtype=np.int64)
-idx["role"] = "reference"
-merged = idx.merge(labels.rename(columns={{"accession": "orf"}}), on="orf", how="left")
-n_unlabelled = int(merged["mnxr_list"].isna().sum())
-merged["mnxr_list"] = merged["mnxr_list"].fillna("")
+    raise SystemExit(f"[pool] the embedder index has no id column: {{list(idx.columns)}}")
 
-np.save(POOL / "{stack_name}", stack)
-merged[["role", "row", "orf", "mnxr_list"]].to_parquet(POOL / "{index_name}", index=False)
-shutil.copy("_pool_source.txt", POOL / "{source_name}")
-print(f"[pool] {{len(merged):,}} reference embeddings, {{n_unlabelled:,}} unlabelled, "
-      f"{{merged['mnxr_list'].str.split(';').explode().replace('', None).nunique():,}} "
-      f"distinct MNXR", flush=True)
+if len(accession) != len(stack):
+    raise SystemExit(f"[pool] the embedder index has {{len(accession)}} rows and its "
+                     f"chunks stack to {{len(stack)}}")
+
+# THE ORDER IS CHECKED, NOT ASSUMED. Both the stack and the index claim to be in the
+# order of _pool.faa, which this transform wrote from its own selection. Disagreement
+# means the embedder changed how it names or splits its output, and the result of
+# proceeding is a complete, schema-valid, wrong artifact -- so it stops here.
+want = [ln[1:].split()[0] for ln in Path("_pool.faa").read_text().splitlines()
+        if ln.startswith(">")]
+if list(accession) != want:
+    bad = next((i for i, (a, b) in enumerate(zip(accession, want)) if a != b),
+               min(len(accession), len(want)))
+    raise SystemExit(
+        f"[pool] the embedder index is not in the order of the FASTA it was given: "
+        f"row {{bad}} is {{list(accession[bad:bad+1])}}, the FASTA has {{want[bad:bad+1]}}. "
+        f"Every landmark would carry another protein's reactions")
+
+labels = pd.read_parquet("_pool_labels.parquet")
+table = pd.DataFrame({{"accession": accession}}).merge(labels, on="accession", how="left")
+n_unlabelled = int(table["mnxr_list"].isna().sum())
 # Every sequence written was selected BECAUSE it had labels, so an unlabelled row here is
 # the embedder having dropped or renamed an id between the FASTA and its index -- which
-# would misalign the merge rather than merely thin the pool.
+# would misalign the merge rather than merely thin the set.
 if n_unlabelled:
-    raise SystemExit(f"{{n_unlabelled:,}} embedded sequences carry no label, but the pool "
-                     f"was selected on having one -- the embedder's index ids do not "
-                     f"match the FASTA headers this transform wrote")
-'''
+    raise SystemExit(f"[pool] {{n_unlabelled:,}} embedded sequences carry no label, but "
+                     f"the landmarks were selected on having one -- the embedder's index "
+                     f"ids do not match the FASTA headers this transform wrote")
+
+table = pd.concat([table, pd.DataFrame(
+    stack, columns=[f"dim_{{i}}" for i in range(stack.shape[1])])], axis=1)
+table.to_parquet(POOL / "{table_name}", index=False)
+shutil.copy("_pool_source.txt", POOL / "{source_name}")
+print(f"[pool] {{len(table):,}} landmarks, "
+      f"{{table['mnxr_list'].str.split(';').explode().nunique():,}} distinct MNXR, "
+      f"{{stack.shape[1]}} dims", flush=True)
+"""
 
 
 def protocol(context: ExecutionContext):
@@ -278,14 +312,14 @@ def protocol(context: ExecutionContext):
         .ifContainerDo(env=image, cmd=_cmd) \
         .ifVirtualEnvDo(env=image, cmd=_cmd)
 
-    assemble = ASSEMBLE.format(pool=ipool.container, index_name=INDEX_NAME,
-                               stack_name=STACK_NAME, source_name=SOURCE_NAME)
+    assemble = ASSEMBLE.format(pool=ipool.container, table_name=TABLE_NAME,
+                               source_name=SOURCE_NAME)
     context.LocalShell("cat > _pool_assemble.py << 'PYEOF'\n" + assemble + "\nPYEOF\n")
     context.ExecWithEnv() \
         .ifContainerDo(env=image, cmd="python3 _pool_assemble.py") \
         .ifVirtualEnvDo(env=image, cmd="python3 _pool_assemble.py")
 
-    ok = all((ipool.local / n).exists() for n in (INDEX_NAME, STACK_NAME, SOURCE_NAME))
+    ok = all((ipool.local / n).exists() for n in (TABLE_NAME, SOURCE_NAME))
     return ExecutionResult(
         manifest=[{pool: ipool.local}],
         success=ok,

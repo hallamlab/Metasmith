@@ -4,7 +4,7 @@ Three files into `swissprot/<release>/`: `uniprot_sprot.fasta.gz` (~90 MB),
 `reldate.txt` and `RELEASE.metalink`.
 
 WHY THIS EXISTS AS A SEPARATE SOURCE FROM uniref/. The label pool the kNN transfer
-lane votes against is DEFINED by Swiss-Prot accessions: compile/reference_label_pool
+lane votes against is DEFINED by Swiss-Prot accessions: compile/label_transfer_landmarks
 cuts the bridge to `id_source == "uniprot"` and `evidence_quality == "reviewed"`,
 and `reviewed` is assigned by which Rhea file a row came from -- rhea2uniprot.tsv is
 Swiss-Prot, rhea2uniprot_trembl.tsv.gz is TrEMBL. So the accessions are the reviewed

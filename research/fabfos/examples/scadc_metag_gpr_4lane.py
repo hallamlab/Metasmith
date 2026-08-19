@@ -27,7 +27,7 @@ THE VOTE IS NOT REIMPLEMENTED HERE
 the same way `tests/test_gpr_4lane_sparse_transfer.py` lifts it -- a copy would
 keep passing after the transform changed, and this lane's whole claim is that
 the metagenome pool is scored by the SAME rule as the fosmid units it is the
-null for. Only `_load_query` is replaced, because the metagenome embeddings are
+null for. Only `_read_query` is replaced, because the metagenome embeddings are
 a float16 `.npy` stack with a `contig,orf` index while the transform's input is
 a parquet with a `sequence_id` index. The arithmetic is untouched.
 
@@ -66,7 +66,7 @@ EMB_IDX = METAG / "annotations" / "proteinbert" / "metag.pbert.index.csv"
 ORFS_CSV = METAG / "sequences" / "metag.orfs.csv"
 GPR3 = METAG / "gpr" / "gpr_3lane.parquet"
 GPR4 = METAG / "gpr" / "gpr_4lane.parquet"
-POOL = ROOT / "data" / "fabfos" / "processed" / "reference_label_pool" / "pool"
+LANDMARKS = ROOT / "data" / "fabfos" / "processed" / "label_transfer_landmarks" / "landmarks"
 
 SLABS = ROOT / "data" / "fabfos" / "scratch" / "metag_pbert_lane"
 
@@ -100,12 +100,13 @@ def query_ids(pd):
 
 
 def install_loader(ns, np, pd, lo, hi):
-    """Point `lane_embed`'s query loader at one slab of the .npy stack.
+    """Point `lane_embed`'s query reader at one slab of the .npy stack.
 
-    The transform reads a parquet and an index whose id column is `sequence_id`;
-    the metagenome stack is float16 `.npy` and its index is `contig,orf`. The
-    producer's row-count check is kept, because it is the one that catches an
-    index and a stack that were not written together.
+    The transform reads one self-addressing parquet; the metagenome stack predates
+    that and is a float16 `.npy` beside a `contig,orf` index. The row-count check is
+    kept, because it is the one that catches an index and a stack that were not
+    written together -- which the collapsed type makes impossible but this legacy
+    pair does not.
     """
     ids = query_ids(pd)
     stack = np.load(EMB, mmap_mode="r")
@@ -115,10 +116,10 @@ def install_loader(ns, np, pd, lo, hi):
             f"{len(stack):,}. The lane addresses the stack BY ROW, so these "
             f"cannot be paired -- every vote would be attributed to the wrong ORF")
 
-    def _load_query(_parquet, _index_csv):
-        return ids[lo:hi], np.asarray(stack[lo:hi], dtype=np.float32)
+    def _read_query(_path):
+        return (ids[lo:hi], np.asarray(stack[lo:hi], dtype=np.float32), None)
 
-    ns["_load_query"] = _load_query
+    ns["_read_query"] = _read_query
     return len(ids)
 
 
@@ -137,7 +138,7 @@ def run_lane():
             continue
         install_loader(ns, np, pd, lo, hi)
         t0 = time.time()
-        df = ns["lane_embed"](None, None, str(POOL), "emb_pbert.npy", "pbert", ns["PBERT_FLOOR"])
+        df = ns["lane_embed"](None, str(LANDMARKS), "pbert", ns["PBERT_FLOOR"])
         tmp = out.with_suffix(".partial")
         df.to_parquet(tmp, index=False)
         tmp.rename(out)                     # atomic: a killed slab is absent, never half

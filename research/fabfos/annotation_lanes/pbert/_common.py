@@ -37,7 +37,8 @@ CACHE = HERE / "cache"
 BUNDLE = REPO / "data/fabfos/benchmarks/lane_dh10b"
 ANN = BUNDLE / "annotations"
 GEN = BUNDLE / "generators"
-POOL = REPO / "data/fabfos/processed/reference_label_pool/pool"
+LANDMARKS = REPO / "data/fabfos/processed/label_transfer_landmarks/landmarks"
+SHIPPED_POOL = REPO / "data/fabfos/processed/reference_label_pool/pool"
 REAC_PROP = REPO / "data/fabfos/originals/metanetx/4.5/reac_prop.tsv"
 
 L4 = re.compile(r"^\d+\.\d+\.\d+\.\d+$")
@@ -165,20 +166,28 @@ def orf_to_accession() -> dict[str, str]:
 def load_pool(repaired: bool = True):
     """(embeddings (N,512) float32, accessions ndarray, label_lists list[list[str]]).
 
-    `repaired` reads the index rebuilt by repair_pool_index.py, which pairs each
-    accession with the stack row that actually holds its embedding. The shipped
-    index does not -- see that script's header -- so `repaired=False` is what the
-    deployed lane sees and is only useful as the "before" row.
+    `repaired=True` reads `ref::label_transfer_landmarks`, one row per accession
+    carrying its labels and its embedding together. `repaired=False` reads the
+    retired pool, whose index does not describe its stack, and is only useful as
+    the "before" row -- see rebuild_landmarks.py for what separates them.
     """
-    src = (CACHE / "pool_index_repaired.parquet") if repaired else (POOL / "orf_index.parquet")
-    if repaired and not src.exists():
-        raise SystemExit(f"no {src} -- run repair_pool_index.py first")
-    idx = pd.read_parquet(src)
-    idx = idx[idx["role"] == "reference"].reset_index(drop=True)
-    emb = np.load(POOL / "emb_pbert.npy", mmap_mode="r")
-    emb = np.asarray(emb[idx["row"].to_numpy()], dtype=np.float32)
-    labels = [s.split(";") if s else [] for s in idx["mnxr_list"]]
-    return emb, idx["orf"].to_numpy(), labels
+    if repaired:
+        src = LANDMARKS / "landmarks.parquet"
+        if not src.exists():
+            raise SystemExit(f"no {src} -- run rebuild_landmarks.py first")
+        t = pd.read_parquet(src)
+        dims = [f"dim_{i}" for i in range(sum(c.startswith("dim_") for c in t.columns))]
+        emb = t[dims].to_numpy(dtype=np.float32)
+        acc = t["accession"].to_numpy()
+        mnxr = t["mnxr_list"].fillna("")
+    else:
+        idx = pd.read_parquet(SHIPPED_POOL / "orf_index.parquet")
+        idx = idx[idx["role"] == "reference"].reset_index(drop=True)
+        stack = np.load(SHIPPED_POOL / "emb_pbert.npy", mmap_mode="r")
+        emb = np.asarray(stack[idx["row"].to_numpy()], dtype=np.float32)
+        acc = idx["orf"].to_numpy()
+        mnxr = idx["mnxr_list"]
+    return emb, acc, [s.split(";") if s else [] for s in mnxr]
 
 
 def load_query():

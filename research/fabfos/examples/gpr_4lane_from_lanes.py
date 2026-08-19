@@ -45,7 +45,6 @@ WANT = {
     "2_annotation-clean_predictions": "clean",
     "6_annotation-diamond_uniref50_results": "uniref",
     "8_annotation-proteinbert_embeddings": "pbert_emb",
-    "8_annotation-proteinbert_index": "pbert_idx",
 }
 
 
@@ -68,7 +67,7 @@ def render(paths: dict, out: str, source: str, threads: int) -> str:
     return ns["DRIVER"].format(
         ev_lib=f"{SOCKEYE_AGENT_HOME}/dev/fabfos_evidence.py",
         bridge=f"{PROCESSED}/mnxr_lookup/mnxr_lookup.parquet",
-        pool=f"{PROCESSED}/reference_label_pool/pool",
+        pool=f"{PROCESSED}/label_transfer_landmarks/landmarks",
         out=out, lane_set="chosen_4", source=source, threads=threads, **paths)
 
 

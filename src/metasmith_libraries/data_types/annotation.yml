@@ -46,21 +46,19 @@ types:
       Format: CSV
       ext: csv
 
-  # ProteinBERT
+  # ProteinBERT. SELF-ADDRESSING, unlike the other embedders here: `sequence_id`
+  # sits in the same row as its vector, so there is no separate index and no row
+  # order for a consumer to get wrong. The retired `proteinbert_index` paired an
+  # id list against a stack by position, and the embedder's chunk files sort
+  # lexicographically (`.1, .10, .11, ... .2`) while its index is in FASTA order,
+  # so every multi-chunk input silently mislabelled every row.
   proteinbert_embeddings:
     extends:
     - protein_functional_embeddings
     properties:
-      _: ProteinBERT embedding vectors
+      _: ProteinBERT embedding vectors, keyed by sequence_id in the same row
       Format: Parquet
       ext: parquet
-  proteinbert_index:
-    extends:
-    - protein_embedding_index
-    properties:
-      _: ProteinBERT sequence index
-      Format: CSV
-      ext: csv
 
   # ProtT5-XL (Rostlab encoder-only embeddings)
   prott5_embeddings:
@@ -408,16 +406,10 @@ types:
       ext: csv
   proteinbert_embeddings_chunk:
     properties:
-      _: Per-chunk ProteinBERT embeddings (sibling of proteinbert_embeddings)
+      _: Per-chunk ProteinBERT embeddings, keyed by sequence_id (sibling of proteinbert_embeddings)
       Format: Parquet
       granularity: chunk
       ext: parquet
-  proteinbert_index_chunk:
-    properties:
-      _: Per-chunk ProteinBERT index (sibling of proteinbert_index)
-      Format: CSV
-      granularity: chunk
-      ext: csv
   deepec_predictions_chunk:
     properties:
       _: Per-chunk DeepEC TSV (sibling of deepec_predictions)

@@ -22,7 +22,7 @@ def merges(key, transform):
     return sorted(out)
 
 FAMILIES = {
-    "merge_proteinbert":     ["*proteinbert_embeddings_chunk", "*proteinbert_index_chunk"],
+    "merge_proteinbert":     ["*proteinbert_embeddings_chunk"],
     "merge_eggnog_mapper":   ["*eggnog_results_chunk"],
     "merge_diamond_uniref50":["*diamond_uniref50_results_chunk"],
     "merge_kofamscan":       ["*kofamscan_results_chunk"],
