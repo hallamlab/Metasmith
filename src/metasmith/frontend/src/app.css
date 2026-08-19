@@ -35,6 +35,11 @@
   --sunken: #0e1013;
   --select: #2b4a7d;
 
+  /* the band a rail heading paints -- a groove between runs of rows. It has to
+     read as neither the rail it sits on nor the hover a row takes, so it is
+     further from `--panel` in the same direction than `--bg` is */
+  --band: #0b0d11;
+
   /* the three notice bars, each a wash of its own hue */
   --notice-bad-bg: #3a2220;
   --notice-bad-line: #6b3a36;
@@ -81,6 +86,8 @@
 
   --sunken: #f7f8fa;
   --select: #b9d0f5;
+
+  --band: #dde2ea;
 
   --notice-bad-bg: #fdecea;
   --notice-bad-line: #e8b3ae;

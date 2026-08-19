@@ -202,7 +202,7 @@
   .heading {
     padding: 10px 12px 4px;
     border-bottom: 1px solid var(--line);
-    background: var(--bg);
+    background: var(--band);
     text-transform: uppercase;
     letter-spacing: 0.06em;
     font-size: 11px;
