@@ -1474,6 +1474,15 @@ def generate_workflow(name):
     }
     wf = p.write_request(name, request_body)
 
+    # The caller's own fingerprint of the recipe it is asking for, stored with
+    # the result verbatim and never recomputed here. That is the whole contract:
+    # whoever mints it is the only one who has to agree with itself about what a
+    # recipe serialises to, so the page can ask "is this plan mine?" without the
+    # two sides having to canonicalise identically in two languages. A caller
+    # that mints none (the CLI) simply stores none, and nothing can answer the
+    # question for that plan.
+    recipe_fingerprint = b.get("recipe_fingerprint")
+
     # A sample type is optional: without one the inputs are planned as they
     # stand, as a single unified view. The GUI's sample table never sets
     # this -- it always sends `sample_type: null` -- so a non-null value here
@@ -1585,6 +1594,7 @@ def generate_workflow(name):
             if staging.exists():
                 shutil.rmtree(staging)
             result["stdlib_commit"] = commit
+            result["recipe_fingerprint"] = recipe_fingerprint
             result["transform_libraries"] = list(transforms)
             result["resource_libraries"] = list(resources)
             # What the planner was actually given, read back off the library
