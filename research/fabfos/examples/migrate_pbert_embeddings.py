@@ -28,7 +28,7 @@ import numpy as np
 import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parent / "fir"))
-from pbert_permutation import fasta_to_legacy_row  # noqa: E402
+from pbert_permutation import CHUNK, fasta_to_legacy_row  # noqa: E402
 
 
 def iter_fasta(path: Path):
@@ -90,21 +90,40 @@ def main() -> int:
               file=sys.stderr)
         return 2
 
+    identity = np.arange(len(ids), dtype=np.int64)
+    lex = fasta_to_legacy_row(len(ids))
+    n_chunks = (len(ids) + CHUNK - 1) // CHUNK
+
+    # WHEN THERE IS ONLY ONE CANDIDATE, THERE IS NOTHING TO CHOOSE BETWEEN. The bug is
+    # that the embedder's chunk files sort lexicographically rather than numerically,
+    # so the only rival to the file's own order is `fasta_to_legacy_row`. Below TEN
+    # chunks -- `.1` through `.9` -- the two orders coincide and that rival IS the
+    # identity, which is why a small artifact is safe by arithmetic rather than by
+    # evidence. Demanding duplicate sequences here would refuse a migration that
+    # cannot be wrong, and this is the common case: an assembly's ORF set clears ten
+    # chunks only above 9,216 sequences.
+    if np.array_equal(lex, identity):
+        out = pd.concat([
+            pd.DataFrame({"sequence_id": ids}),
+            pd.DataFrame(emb, columns=[f"dim_{i}" for i in range(len(dims))]),
+        ], axis=1)
+        out_p.parent.mkdir(parents=True, exist_ok=True)
+        out.to_parquet(out_p, index=False)
+        print(f"wrote {out_p} -- {len(out):,} x {len(dims)}; {n_chunks} embedder "
+              f"chunk(s), so lexicographic and numeric chunk order coincide and the "
+              f"file's own order is the only candidate pairing")
+        return 0
+
     groups = duplicate_groups(records)
     if not groups:
-        print(f"{faa} has no two records sharing a sequence, so nothing here can "
-              f"confirm or refute the pairing. Re-embed rather than migrate.",
-              file=sys.stderr)
+        print(f"{faa} spans {n_chunks} embedder chunks, so the chunk order is "
+              f"genuinely ambiguous, and it has no two records sharing a sequence to "
+              f"settle it. Re-embed rather than migrate.", file=sys.stderr)
         return 2
 
-    identity = np.arange(len(ids), dtype=np.int64)
-    candidates = {"as written": identity}
-    # Under ten chunks the lexicographic order IS the numeric one, so the permutation
-    # is the identity and there is only ever one candidate to score. Adding it as a
-    # second name would make every small artifact look like an unresolvable tie.
-    lex = fasta_to_legacy_row(len(ids))
-    if not np.array_equal(lex, identity):
-        candidates["lexicographic-chunk"] = lex
+    # Two genuine candidates, because the early return above already handled the case
+    # where the lexicographic permutation collapses to the identity.
+    candidates = {"as written": identity, "lexicographic-chunk": lex}
     scores = {k: agreement(emb, v, groups) for k, v in candidates.items()}
     for k, v in scores.items():
         print(f"{k:22s} {v:6.1%} of {len(groups)} duplicate-sequence groups agree")
