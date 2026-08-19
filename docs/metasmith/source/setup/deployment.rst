@@ -63,6 +63,63 @@ Additional setup commands, to be run before the excution of each workflow, can b
     between sessions (e.g. a node-local ``/tmp``) forces a re-pull on every run.
     The example above uses ``/home/$USER/tmp``, which persists, so it is safe.
 
+.. note::
+
+    On clusters that use environment modules, the runtime must be loaded in
+    ``setup_commands`` — and some sites need more than the runtime's own module.
+    On UBC's **Sockeye**, ``module load apptainer`` alone fails; the working form
+    names the compiler it was built against:
+
+    .. code-block:: python
+        :linenos:
+
+        setup_commands=[
+            "module load gcc/9.4.0 apptainer/1.3.1",
+        ]
+
+    Which modules a site needs is a fact about that site. If ``apptainer
+    --version`` works interactively but a deploy or a run cannot find it, the
+    login shell is loading something your ``setup_commands`` are not.
+
+.. _Offline Compute Nodes:
+
+Compute nodes with no internet
+------------------------------------------------------------
+
+Tool images are fetched lazily, by the first task that needs each one. On a
+cluster whose compute nodes can reach a registry that is the right behaviour —
+nothing is downloaded that no step turned out to need. Where the compute nodes
+have **no route out**, it is the wrong place for the fetch to happen, and the
+run fails inside its first task rather than at submit time.
+
+Fill the store ahead of the run, from a host that *can* fetch — a login node:
+
+.. code-block:: bash
+    :caption: Terminal (login node)
+
+    metasmith workflow stage <agent> <task>
+    metasmith workflow materialise <agent> <task>
+    metasmith workflow run <agent> <task>
+
+``materialise`` fetches every image the staged workflow needs into the agent's
+image store, on the agent's own host, and exits non-zero if any of them could
+not be fetched — so a failure is visible before you submit rather than hours
+into a run. It is idempotent: running it again does nothing, because each image
+is skipped on the same check every task performs. Pass ``--force`` to re-fetch
+regardless, which is what to reach for when a store is suspect rather than
+incomplete.
+
+``workflow run`` reports on the store without touching it: any image the agent
+does not already hold is named before anything is transferred. That warning is
+the cue to run ``materialise`` first.
+
+.. note::
+
+    The store must be somewhere the compute nodes can *read*, which on most
+    clusters means shared storage rather than node-local scratch. This is the
+    same choice as the ``APPTAINER_CACHEDIR`` note above, seen from the other
+    side: a store on a node-local path is invisible to every other node.
+
 .. _Container Runtime:
 
 Container Runtime

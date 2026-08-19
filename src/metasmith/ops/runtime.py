@@ -29,6 +29,19 @@ def stage(
     return {"status": "staged", "task_key": task.GetKey(), "agent": Path(agent_path).stem}
 
 
+def materialise(agent_path: str, task_key: str, force: bool = False) -> dict:
+    """Fetch every tool image a staged task needs, onto the agent's host.
+
+    For a cluster whose compute nodes cannot reach a registry: run this from a
+    host that can (the login node), and the images are in the store before any
+    task looks for them. Idempotent -- a second run does nothing -- and it
+    raises if any image could not be fetched, so a caller does not proceed to
+    submit believing the store is complete.
+    """
+    agent = load_agent(agent_path)
+    return agent.MaterialiseImages(task_key, force=force)
+
+
 def staged_path(agent_path: str, task_key: str) -> str:
     agent = load_agent(agent_path)
     return str(agent._task_workspace(task_key))

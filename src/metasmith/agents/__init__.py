@@ -10,11 +10,18 @@ from .gpu import (
 )
 from .portability import (
     EnvPortabilityError, _check_env_portability, _read_env_manifest,
+    _read_env_manifest_doc,
+)
+from .images import (
+    ImageMaterialiseError, _check_image_store, _manifest_images,
+    _materialise_images, _tool_environment_for,
 )
 from .workflow_ops import GetNxfConfigPresets
 from .agent import Agent
 
 from .collect import CollectResults, _published_index, _published_path
+# Last, so that `runner`'s free functions win the three names `Agent` also carries as
+# methods: coms/api.py imports them bare from this package.
 from .runner import (
     CheckWorkflow, RunWorkflow, StageWorkflow, _extract_nxf_task_metadata,
 )
