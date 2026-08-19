@@ -96,7 +96,12 @@ def topk(metric: Metric, k=KWIDE, mask_cols=None):
                 c = mask_cols[i]
                 if c >= 0:
                     sim[i - s, c] = -np.inf
-        part = np.argpartition(-sim, k, axis=1)[:, :k]
+        # `kth` must be a valid index, so it clamps at n-1 when k reaches the pool
+        # size -- the slice below still takes everything. `gpr_4lane.py::lane_embed`
+        # clamps the same way; without it a pool smaller than k raises rather than
+        # returning the whole pool, which is only invisible here because the shipped
+        # pool is 222,019 rows and KWIDE is 200.
+        part = np.argpartition(-sim, min(k, sim.shape[1] - 1), axis=1)[:, :k]
         pv = np.take_along_axis(sim, part, 1)
         order = np.argsort(-pv, axis=1)
         I[s:e] = np.take_along_axis(part, order, 1)
@@ -112,7 +117,7 @@ def topk_l1(pool, query, k=KWIDE, qchunk=4):
         e = min(s + qchunk, n)
         d = np.abs(query[s:e, None, :] - pool[None, :, :]).sum(-1)
         sim = (-d).astype(np.float32)
-        part = np.argpartition(-sim, k, axis=1)[:, :k]
+        part = np.argpartition(-sim, min(k, sim.shape[1] - 1), axis=1)[:, :k]
         pv = np.take_along_axis(sim, part, 1)
         order = np.argsort(-pv, axis=1)
         I[s:e] = np.take_along_axis(part, order, 1)

@@ -152,9 +152,14 @@ def _write_landmarks(lm_dir: Path, rng, dim=DIM, table="landmarks.parquet",
     pd.concat([
         pd.DataFrame({
             "accession": [f"REF{i:04d}" for i in range(n)],
-            # every member carries the same two labels, so the kNN vote is 1.0 for
-            # both and clears any floor -- this test is about plumbing, not recall
-            "mnxr_list": [";".join(MNXRS[:2])] * n,
+            # THE LABELS DIFFER BY POSITION. Giving every landmark the same list made
+            # the emitted rows the same two MNXR whatever the quota admitted, so this
+            # test passed with the quota deleted. The first `len(ORFS)` landmarks are
+            # the ones placed on top of the queries by `near=`, and only they carry
+            # MNXRS[:2]; everything else carries a third id that must NOT appear
+            # unless the admission rule is broken.
+            "mnxr_list": [";".join(MNXRS[:2])] * len(ORFS)
+                         + [MNXRS[2]] * (n - len(ORFS)),
         }),
         _dims(a),
     ], axis=1).to_parquet(lm_dir / table, index=False)
@@ -265,6 +270,13 @@ def test_gpr_4lane_driver_writes_a_valid_table(tmp_path):
     # THE ABSTAIN. The 0.0008 call names an EC the bridge carries, so its absence is
     # the lane declining rather than a join that found nothing.
     assert len(clean[(clean["orf"] == ORFS[0]) & (clean["intermediate_id"] == ECS[1])]) == 0
+
+    # THE QUOTA ACTUALLY BIT. Only the landmarks sitting on top of the queries carry
+    # MNXRS[:2]; every other landmark carries MNXRS[2]. A lane that admitted the
+    # distant ones would emit it, so its absence is the admission rule working rather
+    # than a fixture that cannot tell the difference.
+    pb = df[df["channel"] == "pbert"]
+    assert set(pb["mnxr"]) == set(MNXRS[:2]), sorted(set(pb["mnxr"]))
 
     # evidence_quality is carried from the bridge, not defaulted: one of the two
     # UniProt accessions is unreviewed there.

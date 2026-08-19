@@ -29,6 +29,8 @@ HERE = Path(__file__).resolve().parent
 REPO = HERE.parents[3]
 sys.path.insert(0, str(HERE))
 import _knn  # noqa: E402
+sys.path.insert(0, str(REPO / "src/metasmith_libraries/resources/lib"))
+import fabfos_evidence as fe  # noqa: E402
 
 TRANSFORM = REPO / "src/metasmith_libraries/transforms/fabfos/gpr_4lane.py"
 EV_LIB = REPO / "src/metasmith_libraries/resources/lib/fabfos_evidence.py"
@@ -40,7 +42,16 @@ SETTINGS = [
     (0.00, 0.98, 30, 0.20),     # relative band only  -- admits a handful
     (0.60, 0.95, 8, 0.20),      # both, and k_max below the retrieval width
     (0.60, 0.95, 30, 0.00),     # zero vote floor: every label an admitted neighbour has
+    (fe.PBERT_NN_MIN, fe.PBERT_TAU, fe.PBERT_K_MAX, fe.PBERT_FLOOR),   # WHAT SHIPS
 ]
+
+# Landmark counts to run every setting against. The small one is not decoration: with
+# fewer landmarks than `k_max` the harness's `refine` PADS its rows with -1 / -inf
+# while the lane clamps `kk = min(k_max, n_landmarks)` and never sees a pad. Those are
+# two different pieces of code reaching the same answer, and every number this
+# directory reports comes from the padded one -- `sweep_threshold.py` refines under
+# `drop_col` and `twin_cut`, both of which pad.
+N_REFS = [300, 6]
 
 
 def lane_ns():
@@ -58,15 +69,27 @@ def lane_ns():
 
 def fixture(seed, n_ref=300, n_q=120, dim=24, vocab_n=40):
     """A pool with real structure: half the queries sit inside a cluster, half do not,
-    so both the abstain and the admission branch see traffic."""
+    so both the abstain and the admission branch see traffic.
+
+    Some landmarks carry a REPEATED label and some a trailing `;`. The lane collapses
+    both (`sorted(set(m for m in ... if m))`); anything that accumulates instead would
+    count a repeat twice and KeyError on the empty token. A fixture whose label lists
+    are deduplicated by construction cannot see either.
+    """
     rng = np.random.default_rng(seed)
     centres = rng.normal(size=(6, dim)).astype(np.float32)
-    ref = np.concatenate([c + 0.15 * rng.normal(size=(n_ref // 6, dim))
-                          for c in centres]).astype(np.float32)
+    ref = np.concatenate([c + 0.15 * rng.normal(size=(n_ref // 6 or 1, dim))
+                          for c in centres]).astype(np.float32)[:n_ref]
     vocab = [f"MNXR{100000 + i}" for i in range(vocab_n)]
-    lists = [";".join(sorted(set(rng.choice(vocab, size=int(rng.integers(0, 4)),
-                                            replace=False))))
-             for _ in range(len(ref))]
+    lists = []
+    for r in range(len(ref)):
+        picks = list(rng.choice(vocab, size=int(rng.integers(0, 4)), replace=False))
+        if picks and r % 7 == 0:
+            picks = picks + [picks[0]]          # a repeated label
+        t = ";".join(picks)
+        if picks and r % 11 == 0:
+            t += ";"                            # a trailing empty token
+        lists.append(t)
     half = n_q // 2
     q = np.concatenate([
         centres[rng.integers(0, 6, half)] + 0.15 * rng.normal(size=(half, dim)),
@@ -78,8 +101,8 @@ def fixture(seed, n_ref=300, n_q=120, dim=24, vocab_n=40):
 def main() -> int:
     ns = lane_ns()
     bad = 0
-    for seed in (1, 2, 3):
-        ref, lists, q = fixture(seed)
+    for seed, n_ref in [(s_, n) for s_ in (1, 2, 3) for n in N_REFS]:
+        ref, lists, q = fixture(seed, n_ref=n_ref)
         acc = np.array([f"REF{i:05d}" for i in range(len(ref))], dtype=object)
         qid = np.array([f"Q{i:05d}" for i in range(len(q))], dtype=object)
 
@@ -98,7 +121,9 @@ def main() -> int:
             m = _knn.build_metrics(ref, q, names=["cosine"])["cosine"]
             idx, val = _knn.topk(m, k=min(_knn.KWIDE, len(ref)))
             cos = np.einsum("nd,nkd->nk", _knn._norm(q), _knn._norm(ref)[idx])
-            label_lists = [s.split(";") if s else [] for s in lists]
+            # exactly `_common.load_pool`'s parse, which is exactly the lane's
+            label_lists = [sorted({m for m in (t.split(";") if t else []) if m})
+                           for t in lists]
 
             for nn_min, tau, k_max, floor in SETTINGS:
                 lane = ns["lane_embed"](str(td / "q.parquet"), str(td / "lm"),
@@ -119,7 +144,8 @@ def main() -> int:
                 TOL = 1e-5
                 worst = max((abs(got[k] - want[k]) for k in set(got) & set(want)),
                             default=0.0)
-                tag = f"seed {seed} nn_min={nn_min} tau={tau} k={k_max} floor={floor}"
+                tag = (f"seed {seed} refs={n_ref} nn_min={nn_min} tau={tau} "
+                       f"k={k_max} floor={floor}")
                 if set(got) == set(want) and worst <= TOL:
                     print(f"  ok   {tag}: {len(want)} calls agree "
                           f"(worst score gap {worst:.2e})")

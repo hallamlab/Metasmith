@@ -128,9 +128,30 @@ def main() -> int:
     # wrong, and that is the common case: an ORF set clears ten chunks only above
     # 9,216 sequences.
     if np.array_equal(by_index, by_lex):
+        # THE SHORTCUT RESTS ON `CHUNK`, WHICH THE ARTIFACT DOES NOT RECORD. 1,024 is
+        # what `proteinbert.py` pins today, but this script exists for artifacts that
+        # predate that pin, and a legacy set embedded at a smaller batch has more
+        # chunks than the arithmetic thinks -- which would collapse the two candidates
+        # wrongly and write a confident, wrong table with no gate at all. So when the
+        # FASTA offers duplicate sequences, they are checked anyway: the shortcut is
+        # allowed to save work, never to skip evidence that is there.
         chosen, why = by_index, (
-            f"{n_chunks} embedder chunk(s), so lexicographic and numeric chunk order "
-            f"coincide and there is only one candidate pairing")
+            f"{n_chunks} embedder chunk(s) at CHUNK={CHUNK}, so lexicographic and "
+            f"numeric chunk order coincide and there is only one candidate pairing")
+        groups = duplicate_groups(records)
+        if groups:
+            at = {n: i for i, n in enumerate(index_ids)}
+            gi = [[at[ids[j]] for j in g] for g in groups]
+            score = agreement(emb, chosen, gi)
+            if score <= 0.99:
+                print(f"the single candidate pairing agrees with only {score:.1%} of "
+                      f"{len(groups)} duplicate-sequence groups. The record count says "
+                      f"{n_chunks} chunk(s) at CHUNK={CHUNK}; the embeddings say "
+                      f"otherwise, so that batch size is wrong for this artifact and "
+                      f"the pairing is not determined. Re-embed rather than migrate.",
+                      file=sys.stderr)
+                return 1
+            why += f", confirmed on {len(groups)} duplicate-sequence groups"
     else:
         groups = duplicate_groups(records)
         if not groups:
