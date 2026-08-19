@@ -34,6 +34,12 @@ pipeline lane rather than a `src/` module. `dev/` breaks the pattern deliberatel
 script per buildable product (`metasmith.sh`, `libraries.sh`, `fabfos.sh`, `ecspr.sh`), each with
 `--help`.
 
+**Check a product's `dev/*.sh --help` before hand-rolling a command for it** — running tests,
+starting the GUI, building, packaging. These scripts pin the environment quirks a bare `python -m`
+or `pytest` invocation misses (the `PYTHONPATH` pin above, the GUI's fixed scratch workspace, the
+build-order dependencies), so a hand-rolled equivalent tends to look right and then fail somewhere
+downstream. Reach for the raw command only once you've confirmed the script has no flag for it.
+
 ## Environment
 
 Use the `msm` mamba environment: `mamba run -n msm <command>`.
