@@ -1037,6 +1037,7 @@ tests/metasmith/fixtures/compare_layouts.py:@9f0f32ad69efe722
 tests/metasmith/fixtures/generate_stress_dag.py:@9f0f32ad69efe722
 tests/metasmith/flow/repro/repro_16_group_buffering.py:@215caf6fb78eb6b6
 tests/metasmith/flow/test_as_samples.py:@f25191b620c05437
+tests/metasmith/solver/test_engine_problem.py:@14c12058bcca4823
 tests/metasmith/solver/test_iteration_order.py:@3ce321c4b70622a6
 tests/metasmith/solver/test_iteration_order.py:@6f3423dd8d4387bd
 tests/metasmith/solver/test_rng_contract.py:@0494ddb4d20055ba
