@@ -55,7 +55,7 @@ import sys, yaml
 from pathlib import Path
 src, dst = (Path(p) for p in sys.argv[1:3])
 spec = yaml.safe_load(src.read_text())
-skip = {"pytest", "networkx", "pip"}
+skip = {"pytest", "networkx", "pyyaml", "pip"}
 deps = [d for d in spec["dependencies"]
         if isinstance(d, str) and d.split("=")[0].split("<")[0].split(">")[0] not in skip]
 head = dst.read_text().split("name:")[0] if dst.exists() else ""

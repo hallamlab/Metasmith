@@ -15,6 +15,10 @@
 # rejects `+`. The hash is stamped IMMEDIATELY BEFORE the build, so the tag
 # cannot name a source state other than the one baked into the image -- and
 # --check re-reads the version out of the running image to prove it.
+#
+# WHAT THE IMAGE MUST BE ABLE TO DO is asserted by `ecspr selftest`, in the
+# package, so the image build, this script and the conda recipe's test block all
+# check the same thing. A copy of it here would be the one that goes stale.
 set -euo pipefail
 
 HERE=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
@@ -42,14 +46,6 @@ _image() {
 _stamp() { "$PY" -m ecspr._build_hash --write >/dev/null; }
 export PYTHONPATH="$REPO/src${PYTHONPATH:+:$PYTHONPATH}"
 
-VERIFY="from sksparse.cholmod import cho_factor; import numpy as np, scipy.sparse as sp; \
-A = sp.csc_matrix(np.array([[4.0,1.0],[1.0,3.0]])); \
-x = cho_factor(A).solve(np.array([1.0,2.0]).reshape(-1,1)).ravel(); \
-assert np.allclose(x, np.linalg.solve(A.toarray(), [1.0,2.0])), 'CHOLMOD solve is wrong'; \
-import ecspr, cobra, pandas, pyarrow; \
-from ecspr.model.directed import _HAVE_CHOLMOD; assert _HAVE_CHOLMOD, 'built without CHOLMOD'; \
-print('ecspr OK:', ecspr.__version__, '| cholmod + cobra', cobra.__version__)"
-
 case "${1:-}" in
     --build|-b)
         _stamp
@@ -63,13 +59,12 @@ case "${1:-}" in
             https://github.com/krallin/tini/releases/download/v0.19.0/tini \
             -O "$HERE/load/tini"
         export DOCKER_BUILDKIT=1
-        docker build --build-arg="VERIFY=$VERIFY" \
-            -t "$IMAGE" -f "$HERE/dockerfile" "$REPO"
+        docker build -t "$IMAGE" -f "$HERE/dockerfile" "$REPO"
     ;;
     --check|-c)
         IMAGE=$(_image)
         echo "checking $IMAGE"
-        docker run --rm "$IMAGE" python -c "$VERIFY"
+        docker run --rm "$IMAGE" ecspr selftest
         docker run --rm "$IMAGE" ecspr --where
         docker run --rm "$IMAGE" python -m pytest -q /opt/tests/ecspr
         # The tag is a claim about the code inside. Prove it rather than trust

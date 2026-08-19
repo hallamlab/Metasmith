@@ -14,7 +14,6 @@
 # reproducible image. This is a TAG pin, not a digest -- upstream could in
 # principle repush it, which is the residual risk of not carrying a sha256 here.
 FROM condaforge/miniforge3:25.3.0-3 AS build-env
-ARG VERIFY
 
 COPY src/ecspr/env.yml /opt/ecspr_env.yml
 RUN --mount=type=cache,target=/opt/conda/pkgs \
@@ -35,9 +34,9 @@ COPY tests/ecspr /opt/tests/ecspr
 RUN pip install --no-deps /opt/ecspr
 
 FROM build-env AS final
-# Fail the BUILD, not a queued job hours later, if a pin regressed: a real CHOLMOD
-# solve, then the package's own suite.
-RUN python -c "${VERIFY}" && python -m pytest -q /opt/tests/ecspr
+# Fail the BUILD, not a queued job hours later, if a pin regressed: the install
+# selftest, then the package's own suite.
+RUN ecspr selftest && python -m pytest -q /opt/tests/ecspr
 
 ADD docker/ecspr/load/tini /tini
 RUN chmod +x /tini
