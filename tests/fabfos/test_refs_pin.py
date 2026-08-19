@@ -50,9 +50,9 @@ def test_two_files_under_one_pin_get_distinct_ids(tmp_path):
     assert refs.dvc_leaf_id(md5, "kofam_ref/profiles") != refs.dvc_leaf_id(md5, "kofam_ref/ko_list.tsv")
 
 
-def test_freeze_registers_only_what_a_pin_covers(tmp_path):
+def test_pinning_registers_only_what_a_pin_covers(tmp_path):
     root = _fake_root(tmp_path)
-    report = refs.freeze_refs(root, tmp_path / "refs.xgdb")
+    report = refs.pin_refs(root, tmp_path / "refs.xgdb")
     assert set(report["added"]) == {"ref::kofamscan_profiles", "ref::kofamscan_ko_list"}
     assert "no .dvc pin" in report["skipped"]["ref::mnxr_lookup"], (
         "an unpinned reference must be skipped, not given a weaker id -- an id"
@@ -60,27 +60,26 @@ def test_freeze_registers_only_what_a_pin_covers(tmp_path):
     )
 
 
-def test_freezing_twice_after_touching_everything_yields_the_same_ids(tmp_path):
+def test_pinning_twice_after_touching_everything_yields_the_same_ids(tmp_path):
     root = _fake_root(tmp_path)
     out = tmp_path / "refs.xgdb"
-    refs.freeze_refs(root, out)
+    refs.pin_refs(root, out)
     first = _ids(out)
     for p in root.rglob("*"):
         if p.is_file():
-            p.chmod(0o644)
             p.touch()
-    refs.freeze_refs(root, out)
+    refs.pin_refs(root, out)
     assert _ids(out) == first, "an id moved when only mtime did"
 
 
 def test_a_changed_pin_moves_the_id(tmp_path):
     root = _fake_root(tmp_path)
     out = tmp_path / "refs.xgdb"
-    refs.freeze_refs(root, out)
+    refs.pin_refs(root, out)
     first = _ids(out)
     (root / "kofam_ref.dvc").write_text(yaml.safe_dump(
         {"outs": [{"md5": "0000000000000000000000000000ffff.dir", "path": "kofam_ref"}]}))
-    refs.freeze_refs(root, out)
+    refs.pin_refs(root, out)
     assert _ids(out) != first
 
 
@@ -93,32 +92,30 @@ def test_a_re_materialised_pin_self_heals_instead_of_raising(tmp_path):
     """
     root = _fake_root(tmp_path)
     out = tmp_path / "refs.xgdb"
-    refs.freeze_refs(root, out)
+    refs.pin_refs(root, out)
     before = _ids(out)
     for p in root.rglob("*"):
         if p.is_file():
-            p.chmod(0o644)
             p.touch()
-    lib = refs.load_frozen_refs(root, out)
+    lib = refs.load_pinned_refs(root, out)
     assert lib is not None
     assert {d: lib.Get(p).instance_id for p, d, _ in lib.Iterate()} == before
 
 
-def test_a_changed_pin_under_a_frozen_library_raises_naming_the_fix(tmp_path):
+def test_a_changed_pin_under_a_pinned_library_raises_naming_the_fix(tmp_path):
     root = _fake_root(tmp_path)
     out = tmp_path / "refs.xgdb"
-    refs.freeze_refs(root, out)
+    refs.pin_refs(root, out)
     for p in root.rglob("*"):
         if p.is_file():
-            p.chmod(0o644)
             p.touch()
     (root / "kofam_ref.dvc").write_text(yaml.safe_dump(
         {"outs": [{"md5": "0000000000000000000000000000ffff.dir", "path": "kofam_ref"}]}))
-    from metasmith.models.libraries.frozen import FrozenLibraryError
+    from metasmith.models.libraries.pinned import PinnedLibraryError
 
-    with pytest.raises(FrozenLibraryError) as e:
-        refs.load_frozen_refs(root, out)
-    assert "refs freeze" in str(e.value)
+    with pytest.raises(PinnedLibraryError) as e:
+        refs.load_pinned_refs(root, out)
+    assert "refs pin" in str(e.value)
 
 
 def test_a_recorded_provenance_id_beats_the_pin_derived_one(tmp_path):
@@ -127,7 +124,7 @@ def test_a_recorded_provenance_id_beats_the_pin_derived_one(tmp_path):
     out = tmp_path / "refs.xgdb"
     refs.record_published_provenance(
         root, "kofam_ref/profiles", instance_id="1e20aaaa", run="run-x")
-    refs.freeze_refs(root, out)
+    refs.pin_refs(root, out)
     ids = _ids(out)
     assert ids["ref::kofamscan_profiles"] == "1e20aaaa"
     assert ids["ref::kofamscan_ko_list"] != "1e20aaaa"

@@ -69,7 +69,7 @@ class TestContextPathInvariants:
         with pytest.raises(TypeError, match="must be a Path"):
             ContextPath(local="/msm_home/out.fa", external=Path("/scratch/out.fa"), container=Path("/ws/out.fa"))  # type: ignore
 
-    def test_is_frozen(self) -> None:
+    def test_is_pinned(self) -> None:
         cp = ContextPath(
             local=Path("/msm_home/out.fa"),
             external=Path("/scratch/agent/out.fa"),

@@ -13,7 +13,7 @@ from ...logging import Log
 from ..paths import DEFERRED, _DeferredPath, mint_deferred_path
 from ..remote import Logistics, Source, SourceType
 from ..solver import Dependency, Endpoint
-from .frozen import _FrozenLibrary
+from .pinned import _PinnedLibrary
 from .identity import _LeafIdentity
 from .telemetry_api import _TelemetryQueries
 from .transfer import _StoreTransfer
@@ -119,7 +119,7 @@ class DataInstance:
             }
         return inst
 
-class DataInstanceLibrary(_LeafIdentity, _StoreTransfer, _FrozenLibrary, _TelemetryQueries):
+class DataInstanceLibrary(_LeafIdentity, _StoreTransfer, _PinnedLibrary, _TelemetryQueries):
     schema: str = "v1"
     _path_to_meta: Path = Path("./_metadata")
     _path_to_types: Path = Path("./_metadata/types")
@@ -143,9 +143,9 @@ class DataInstanceLibrary(_LeafIdentity, _StoreTransfer, _FrozenLibrary, _Teleme
         self._endpoint_cache: dict[Path, Endpoint] = {}
         self.instance_meta: dict[Path, dict] = {}
         self._type_sources: dict[str, Path] = {}
-        # The `frozen:` block from index.yml, or None for the overwhelming
-        # majority of libraries. See frozen.py.
-        self._frozen: dict|None = None
+        # The `pinned:` block from index.yml, or None for the overwhelming
+        # majority of libraries. See pinned.py.
+        self._pinned: dict|None = None
         if isinstance(location, DataInstanceLibrary):
             other = location
             self.location = other.location
@@ -154,10 +154,10 @@ class DataInstanceLibrary(_LeafIdentity, _StoreTransfer, _FrozenLibrary, _Teleme
             self.instance_meta = other.instance_meta
             self.fork_id = other.fork_id
             self._type_sources = other._type_sources
-            # ...including the freeze, or the copy constructor is a laundering
-            # route: `DataInstanceLibrary(frozen_lib)` would hand back a
+            # ...including the pin, or the copy constructor is a laundering
+            # route: `DataInstanceLibrary(pinned_lib)` would hand back a
             # writable library over the same location and the same meta dict.
-            self._frozen = other._frozen
+            self._pinned = other._pinned
         else:
             location = Path(location).resolve()
             if not location.exists():
@@ -170,7 +170,7 @@ class DataInstanceLibrary(_LeafIdentity, _StoreTransfer, _FrozenLibrary, _Teleme
         return other in self.manifest
 
     def Purge(self):
-        self._refuse_if_frozen("Purge")
+        self._refuse_if_pinned("Purge")
         if self.location.exists():
             shutil.rmtree(self.location)
         self.location.mkdir(exist_ok=True)
@@ -381,7 +381,7 @@ class DataInstanceLibrary(_LeafIdentity, _StoreTransfer, _FrozenLibrary, _Teleme
         return path
 
     def AddItem(self, path: Path|str|_DeferredPath, dtype: str, parents: Iterable[Path]|None=None):
-        self._refuse_if_frozen("AddItem")
+        self._refuse_if_pinned("AddItem")
         return self._register(path, dtype, parents, self._mint_leaf_id)
 
     def RegisterItem(
@@ -407,7 +407,7 @@ class DataInstanceLibrary(_LeafIdentity, _StoreTransfer, _FrozenLibrary, _Teleme
                 "lineage_payload": lineage_payload,
                 "fork_id": self.fork_id,
             }
-        self._refuse_if_frozen("RegisterItem")
+        self._refuse_if_pinned("RegisterItem")
         assert origin in {"leaf", "lineage", "imported"}, f"bad origin {origin!r}"
         return self._register(path, dtype, parents, _set)
 
@@ -419,7 +419,7 @@ class DataInstanceLibrary(_LeafIdentity, _StoreTransfer, _FrozenLibrary, _Teleme
         lineage_payload: bytes,
         origin: str = "lineage",
     ) -> None:
-        self._refuse_if_frozen("SetLineageInstance")
+        self._refuse_if_pinned("SetLineageInstance")
         assert origin in {"lineage", "imported"}, (
             f"origin must be lineage or imported, got {origin!r}"
         )
@@ -430,7 +430,7 @@ class DataInstanceLibrary(_LeafIdentity, _StoreTransfer, _FrozenLibrary, _Teleme
         }
 
     def AddValue(self, name: str, value: str|dict, dtype: str, parents: Iterable[Path]|None=None):
-        self._refuse_if_frozen("AddValue")
+        self._refuse_if_pinned("AddValue")
         path = Path(name)
         if isinstance(value, dict):
             value = json.dumps(value)
@@ -443,7 +443,7 @@ class DataInstanceLibrary(_LeafIdentity, _StoreTransfer, _FrozenLibrary, _Teleme
         self._endpoint_cache.clear()
 
     def Remove(self, path: Path):
-        self._refuse_if_frozen("Remove")
+        self._refuse_if_pinned("Remove")
         assert path in self.manifest, f"not found [{path}]"
         try:
             K = Path("./test")
@@ -468,7 +468,7 @@ class DataInstanceLibrary(_LeafIdentity, _StoreTransfer, _FrozenLibrary, _Teleme
             self._mint_leaf_id(new)
 
     def Rename(self, path: Path, new: Path, _save=True):
-        self._refuse_if_frozen("Rename")
+        self._refuse_if_pinned("Rename")
         assert path in self.manifest, f"not found [{path}]"
         assert path.is_absolute() == new.is_absolute(), f"can not mix relative and absolute paths [{path}, {new}]"
         assert new not in self.manifest, f"already exists [{new}]"
@@ -497,7 +497,7 @@ class DataInstanceLibrary(_LeafIdentity, _StoreTransfer, _FrozenLibrary, _Teleme
         if _save: self.Save()
 
     def RenameByParent(self, parent_type: str):
-        self._refuse_if_frozen("RenameByParent")
+        self._refuse_if_pinned("RenameByParent")
         # Phase A -- plan, read-only; the moves and the manifest commit follow.
         rename_plan: list[tuple[Path, Path]] = []
 
@@ -587,12 +587,15 @@ class DataInstanceLibrary(_LeafIdentity, _StoreTransfer, _FrozenLibrary, _Teleme
         self.AddParentsTo(p, parents)
 
     #: Top-level index keys that are ABOUT the library rather than part of what
-    #: it is. `remote_src` is where a copy came from; `frozen` is a stat stamp
+    #: it is. `remote_src` is where a copy came from; `pinned` is a stat stamp
     #: over the same manifest. Letting either into the key would move the
     #: library key -- and so every task key built on it -- when nothing about
-    #: the data changed, which for `frozen` would re-break the plan stability
-    #: freezing exists to buy: a legitimate re-stamp must be invisible here.
-    _KEY_EXCLUDED_TOP_LEVEL = ("remote_src", "frozen")
+    #: the data changed, which for `pinned` would re-break the plan stability
+    #: pinning exists to buy: a legitimate re-stamp must be invisible here.
+    #: `frozen` is the pre-rename spelling of the same block; an index written
+    #: under it must key the same as one written now, or the rename moves every
+    #: task key built on a library nobody re-pinned.
+    _KEY_EXCLUDED_TOP_LEVEL = ("remote_src", "pinned", "frozen")
 
     def _calculate_key(self, _raw_override=None):
         src = _raw_override if _raw_override is not None else self.Pack()
@@ -612,7 +615,7 @@ class DataInstanceLibrary(_LeafIdentity, _StoreTransfer, _FrozenLibrary, _Teleme
         return self._hash
 
     def PruneTypes(self, save: bool=True, whitelist: set[str|Dependency|Endpoint]|None=None):
-        self._refuse_if_frozen("PruneTypes")
+        self._refuse_if_pinned("PruneTypes")
         used_type_names = set(self.manifest.values())
         if whitelist is None: whitelist = set() 
         wl_names = {x for x in whitelist if isinstance(x, str)}

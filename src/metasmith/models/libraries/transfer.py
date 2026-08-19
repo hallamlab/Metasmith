@@ -37,9 +37,9 @@ class _StoreTransfer:
                     d["lineage_payload"] = payload.hex()
             return d
         # A fork id set after the entries were minted leaves every leaf id stale, so what
-        # gets serialized would not be what Get() reports. A frozen library is exempt --
-        # re-deriving one of its ids is exactly the re-hash the freeze exists to stop.
-        if not self.is_frozen:
+        # gets serialized would not be what Get() reports. A pinned library is exempt --
+        # re-deriving one of its ids is exactly the re-hash the pin exists to stop.
+        if not self.is_pinned:
             for _path, _dtype in self.manifest.items():
                 _meta = self.instance_meta.get(_path)
                 if _meta is not None and _meta.get("fork_id") != self.fork_id:
@@ -51,11 +51,11 @@ class _StoreTransfer:
             manifest=man,
             fork_id=self.fork_id,
             remote_src=self.remote_src.Pack() if self.remote_src is not None else None,
-            # None for all but a frozen library, and the filter below drops it
+            # None for all but a pinned library, and the filter below drops it
             # -- so an ordinary index.yml is byte-identical to what it was
-            # before freezing existed, which is what keeps every committed one
+            # before pinning existed, which is what keeps every committed one
             # loading and keying unchanged.
-            frozen=self._frozen,
+            pinned=self._pinned,
         )
         return {k:v for k, v in packed.items() if v is not None}
 
@@ -98,7 +98,10 @@ class _StoreTransfer:
         lib.manifest = manifest
         lib.instance_meta = instance_meta
         lib.fork_id = raw.get("fork_id")
-        lib._frozen = raw.get("frozen")
+        # `frozen` is what this block was called before the rename. Read, never
+        # written: an index staged to a host that cannot re-pin it would
+        # otherwise load unpinned and re-hash 24 GB per plan, silently.
+        lib._pinned = raw.get("pinned", raw.get("frozen"))
         remote_src = raw.get("remote_src")
         lib.remote_src = Source.Unpack(remote_src) if remote_src is not None else None
         for k, v in raw["manifest"].items():
@@ -141,15 +144,15 @@ class _StoreTransfer:
         return lib
 
     def Save(self, update_types=True):
-        """Write the index. Refused on a frozen library -- see frozen.py."""
-        self._refuse_if_frozen("Save")
+        """Write the index. Refused on a pinned library -- see pinned.py."""
+        self._refuse_if_pinned("Save")
         self._persist(update_types=update_types)
 
     def _persist(self, update_types=True):
         """The write itself, without the refusal.
 
-        Freezing and unfreezing have to write the very index that says the
-        library is frozen, so the refusal lives on the public verb and the
+        Pinning and unpinning have to write the very index that says the
+        library is pinned, so the refusal lives on the public verb and the
         mechanics live here. Nothing else should call this.
         """
         ext = self._metadata_ext
@@ -167,19 +170,19 @@ class _StoreTransfer:
         write_yaml_atomic(index_path, self.Pack())
 
     def _ensure_saved(self, update_types=True):
-        """Persist unless frozen, where the on-disk index is authoritative.
+        """Persist unless pinned, where the on-disk index is authoritative.
 
         Staging calls `Save()` as a side effect of preparing a transfer, and a
-        frozen library still has to be stageable. There is nothing to write:
+        pinned library still has to be stageable. There is nothing to write:
         by definition its index already describes it.
         """
-        if self.is_frozen:
+        if self.is_pinned:
             return
         self._persist(update_types=update_types)
 
     @classmethod
     def Load(cls, path: Path|str, check_integrity=False, attach_trace: bool=True,
-             check_frozen_stamps: bool=True):
+             check_pinned_stamps: bool=True):
         path = Path(path)
         ext = cls._metadata_ext
         meta_path = path/cls._path_to_meta
@@ -206,12 +209,12 @@ class _StoreTransfer:
         self = cls.Unpack(location=path, raw=d, dtypes=dtypes, check_integrity=check_integrity)
         self.types = dtypes
         self._calculate_key(_raw_override=d)
-        # `check_frozen_stamps=False` is for the tools that exist to ADJUDICATE a drift --
+        # `check_pinned_stamps=False` is for the tools that exist to ADJUDICATE a drift --
         # `metasmith data verify` and `restamp`. Without it the documented remedy is
         # unreachable exactly when it is needed: the load raises, so the verb that would
         # report or clear the drift never runs.
-        if check_frozen_stamps:
-            self._verify_frozen_stamps()
+        if check_pinned_stamps:
+            self._verify_pinned_stamps()
         if attach_trace:
             for candidate in (
                 path / "_metasmith" / "trace.jsonl",
@@ -314,7 +317,7 @@ class _StoreTransfer:
         lib = cls.Load(dest, check_integrity=False)
         if as_image:
             lib.remote_src = src
-            lib._refuse_if_frozen("LoadFrom(as_image=True)")
+            lib._refuse_if_pinned("LoadFrom(as_image=True)")
             lib._ensure_saved()
         return lib
 
@@ -354,10 +357,10 @@ class _StoreTransfer:
     
     def LocalizeContents(self):
         # Copies absolute entries INTO the library and rewrites the manifest to
-        # the new paths. On a frozen reference library that would both move
+        # the new paths. On a pinned reference library that would both move
         # 24 GB and invalidate every recorded id, which is the opposite of what
-        # freezing it was for.
-        self._refuse_if_frozen("LocalizeContents")
+        # pinning it was for.
+        self._refuse_if_pinned("LocalizeContents")
         to_move = {}
         for path in self.manifest:
             if not path.is_absolute(): continue

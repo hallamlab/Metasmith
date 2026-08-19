@@ -7,43 +7,25 @@ wrong default for a set of reference databases: they are transform products with
 no inputs, they do not change, and re-deriving their identity costs 10 seconds
 of blake3 over 24 GB on *every* plan against a solve that takes 1.
 
-Freezing is how a library says its recorded ids are already correct. A frozen
+Pinning is how a library says its recorded ids are already correct. A pinned
 library refuses every mutation, returns `instance_meta` entries verbatim without
 consulting the filesystem, and records a cheap witness -- a stat stamp per
 top-level entry -- that `Load` checks so a library whose bytes visibly moved
 raises instead of silently serving an id that no longer describes them.
 
-## What the two cheap mechanisms do NOT catch
+**Nothing here touches file modes.** Protecting the bytes is the storage layer's
+job -- for the fabfos references, DVC's -- and marking entries read-only from
+here only ever bought accident-prevention the owner could undo, at the price of
+an EACCES that broke the next `dvc checkout`. The refusals bind callers of this
+API, not the filesystem, and that is the whole of the guarantee.
 
-Read this before trusting either one, and before changing either one. They are
-a smoke alarm, not a lock. The failure direction is asymmetric and bad: an
-undetected content swap under an unchanged id is a false cache *hit*, which
-replays a stale shard and produces silently wrong scientific output with no
-error anywhere. That asymmetry is why this is written down rather than
-reassured about.
+## What the stamp does NOT catch
 
-**The read-only mark (`chmod a-w`, top-level entries only) does not reach:**
-
-- *Inside a directory entry.* The mark is deliberately non-recursive --
-  `kofam_ref/profiles` holds 27,756 files and walking them would reintroduce the
-  cost this exists to remove. Clearing write on a directory blocks creating,
-  deleting and renaming entries in it; it does not block editing a file already
-  inside, and nested files keep whatever mode they had.
-- *Past the owner*, who can chmod it back, or *root*, who ignores it. It stops
-  accident, never intent.
-- *Past a legitimate `dvc checkout` of a different pin*, which swaps the bytes
-  and restores mode 444. The mode is unchanged and the content is not; nothing
-  about the mark notices.
-- *Past any caller that constructs a `DataInstanceLibrary` directly* rather than
-  going through this API, or that `rmtree`s the location. The refusals bind
-  callers, not the filesystem.
-- *Onto a remote agent.* Staging re-applies no modes, and mode preservation
-  across copy paths and filesystems is best effort.
-- *Where there is no local file at all* -- a library of remote paths has nothing
-  to mark.
-- It can also *break* a later `dvc checkout` or `dvc pull` with EACCES on the
-  read-only directory. That failure is loud, which is the acceptable half of the
-  trade; unfreeze first.
+Read this before trusting it, and before changing it. It is a smoke alarm, not a
+lock. The failure direction is asymmetric and bad: an undetected content swap
+under an unchanged id is a false cache *hit*, which replays a stale shard and
+produces silently wrong scientific output with no error anywhere. That asymmetry
+is why this is written down rather than reassured about.
 
 **The stat stamp `(size, mtime_ns)` does not reach:**
 
@@ -55,18 +37,18 @@ reassured about.
   is recorded to make the stamp less vacuous; it is still weak.
 - *Across hosts.* mtime granularity and clock skew on the NFS/Lustre filesystems
   the HPC copies live on make stamps non-comparable, so a stamp taken on another
-  host warns rather than raises. Honest coverage is "the machine that froze it".
-- *Tamper evidence.* The stamp lives in the file it validates and re-freezing
+  host warns rather than raises. Honest coverage is "the machine that pinned it".
+- *Tamper evidence.* The stamp lives in the file it validates and re-pinning
   silently re-stamps. This is a consistency check, not an integrity check.
 
 The likelier day-to-day failure is the **false positive**: re-materialising the
 same DVC pin moves mtime, and the bytes are fine. `Restamp()` is the remedy --
 it re-records stamps and moves no `instance_id`. Turning the check off is not
 the remedy, which is why there is a verb for this and the kill switch
-(`METASMITH_FROZEN_NOCHECK=1`) is documented as an emergency, not a fix.
+(`METASMITH_PINNED_NOCHECK=1`) is documented as an emergency, not a fix.
 
 **The escape hatch with none of these holes** is `metasmith data verify --deep`,
-which re-derives real content digests and compares them against what `freeze
+which re-derives real content digests and compares them against what `pin
 --deep` recorded. Expensive, never automatic: run it before a release or after a
 cache hit you did not expect. Where no `--deep` baseline exists it reports
 `UNVERIFIABLE`, never `OK` -- the tool must not launder "we did not check" into
@@ -96,14 +78,14 @@ from typing import Iterable
 from ...logging import Log
 
 
-class FrozenLibraryError(RuntimeError):
-    """A refusal by a frozen library, or a stamp that no longer matches."""
+class PinnedLibraryError(RuntimeError):
+    """A refusal by a pinned library, or a stamp that no longer matches."""
 
 
 #: Emergency only. Documented in the module docstring as *not* the remedy for a
 #: false positive -- `Restamp()` is. Present because a stamp that raises on a
 #: cluster at 3am must be defeatable by someone who cannot edit the index.
-_NOCHECK_ENV = "METASMITH_FROZEN_NOCHECK"
+_NOCHECK_ENV = "METASMITH_PINNED_NOCHECK"
 
 
 def _stamp(abs_path: Path) -> dict:
@@ -123,13 +105,19 @@ def _stamp(abs_path: Path) -> dict:
     return {"kind": "file", "size": st.st_size, "mtime_ns": st.st_mtime_ns}
 
 
-def _content_digest(abs_path: Path) -> str | None:
-    """A real digest of the bytes. Expensive; only `--deep` asks for it."""
+def _content_digest(abs_path: Path, *, force: bool = False) -> str | None:
+    """A real digest of the bytes. Expensive; only `--deep` asks for it.
+
+    `force` bypasses the per-process file-digest memo. A deep verify in a warm
+    process is asking whether the bytes moved; served from a memo keyed on
+    `(path, size, mtime_ns)` it would answer with the digest of the bytes that
+    were there when the memo was filled, which is the one answer it must not give.
+    """
     from ...caching.keys import content_multihash_key, tree_multihash_key
 
     try:
         if abs_path.is_dir():
-            return tree_multihash_key(abs_path).hex()
+            return tree_multihash_key(abs_path, force=force).hex()
         return content_multihash_key(abs_path).hex()
     except OSError:
         return None
@@ -150,38 +138,37 @@ def _describe(recorded: dict, observed: dict) -> str:
     return "; ".join(parts) or "no visible difference"
 
 
-class _FrozenLibrary:
-    #: The raw `frozen:` block from `index.yml`, or None. Absent means not
-    #: frozen, which is why every library written before this existed keeps
+class _PinnedLibrary:
+    #: The raw `pinned:` block from `index.yml`, or None. Absent means not
+    #: pinned, which is why every library written before this existed keeps
     #: loading unchanged.
-    _frozen: dict | None = None
+    _pinned: dict | None = None
 
     @property
-    def is_frozen(self) -> bool:
-        return self._frozen is not None
+    def is_pinned(self) -> bool:
+        return self._pinned is not None
 
-    def _refuse_if_frozen(self, verb: str) -> None:
-        if not self.is_frozen:
+    def _refuse_if_pinned(self, verb: str) -> None:
+        if not self.is_pinned:
             return
-        raise FrozenLibraryError(
-            f"[{verb}] refused: the library at [{self.location}] is frozen."
+        raise PinnedLibraryError(
+            f"[{verb}] refused: the library at [{self.location}] is pinned."
             " Its recorded instance_ids are what downstream cache keys are built"
             " from, so changing it here would re-key every run that used it."
-            " Unfreeze deliberately (`metasmith data unfreeze`) if that is what"
+            " Unpin deliberately (`metasmith data unpin`) if that is what"
             " you mean."
         )
 
     def _abs(self, path: Path) -> Path:
         return path if path.is_absolute() else self.location / path
 
-    def Freeze(
+    def Pin(
         self,
         *,
-        apply_permissions: bool = True,
         provenance: dict[Path, dict] | None = None,
         deep: bool = False,
     ) -> dict:
-        """Record stamps, mark the entries read-only, and refuse mutation after.
+        """Record stamps and refuse mutation after.
 
         `provenance` is an opaque per-path dict the caller supplies and this
         code never interprets -- fabfos passes the DVC pin each entry's id was
@@ -194,78 +181,47 @@ class _FrozenLibrary:
         `verify --deep` able to answer anything later. Without it, verification
         reports UNVERIFIABLE rather than OK, which is the honest answer.
 
-        Re-running on an already-frozen library re-stamps it, which is the
+        Re-running on an already-pinned library re-stamps it, which is the
         supported way to clear a false positive. It never re-mints an id.
         """
         provenance = provenance or {}
         entries: dict[str, dict] = {}
         missing: list[str] = []
-        chmod_failed: list[str] = []
         for path in sorted(self.manifest, key=str):
             abs_path = self._abs(path)
             if not abs_path.exists():
                 # Not an error: a library of remote paths, or one staged to a
                 # host that has not materialised its data, is still worth
-                # freezing for its ids. It simply has nothing to witness.
+                # pinning for its ids. It simply has nothing to witness.
                 missing.append(str(path))
                 continue
             entry = _stamp(abs_path)
-            if apply_permissions:
-                try:
-                    mode = abs_path.stat().st_mode
-                    os.chmod(abs_path, mode & ~0o222)
-                    entry["mode_applied"] = True
-                except OSError as e:
-                    # A shared HPC copy this user does not own. The freeze is
-                    # still valid -- the mark was advisory anyway.
-                    chmod_failed.append(f"{path}: {e}")
-                    entry["mode_applied"] = False
             if deep:
-                entry["content_digest"] = _content_digest(abs_path)
+                entry["content_digest"] = _content_digest(abs_path, force=True)
             prov = provenance.get(path)
             if prov is not None:
                 entry["provenance"] = prov
             entries[str(path)] = entry
-        self._frozen = {
+        self._pinned = {
             "at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
             "host": socket.gethostname(),
             "entries": entries,
         }
         self._persist(update_types=True)
-        for line in chmod_failed:
-            Log.Warn(f"could not mark read-only -- {line}")
         return {
             "location": str(self.location),
-            "frozen": len(entries),
+            "pinned": len(entries),
             "missing": missing,
-            "chmod_failed": chmod_failed,
         }
 
-    def Unfreeze(self, *, restore_permissions: bool = True) -> dict:
-        """Lift the freeze. Restores owner write on the entries it marked."""
-        if not self.is_frozen:
-            return {"location": str(self.location), "unfrozen": 0, "restored": []}
-        entries = self._frozen.get("entries", {})
-        restored: list[str] = []
-        if restore_permissions:
-            for name, entry in entries.items():
-                if not entry.get("mode_applied"):
-                    continue
-                abs_path = self._abs(Path(name))
-                if not abs_path.exists():
-                    continue
-                try:
-                    os.chmod(abs_path, abs_path.stat().st_mode | 0o200)
-                    restored.append(name)
-                except OSError as e:
-                    Log.Warn(f"could not restore write on [{name}]: {e}")
-        self._frozen = None
+    def Unpin(self) -> dict:
+        """Lift the pin, so the library can be rebuilt and re-pinned."""
+        if not self.is_pinned:
+            return {"location": str(self.location), "unpinned": 0}
+        entries = self._pinned.get("entries", {})
+        self._pinned = None
         self._persist(update_types=True)
-        return {
-            "location": str(self.location),
-            "unfrozen": len(entries),
-            "restored": restored,
-        }
+        return {"location": str(self.location), "unpinned": len(entries)}
 
     def Restamp(self, paths: Iterable[Path] | None = None) -> dict:
         """Re-record stamps without touching a single `instance_id`.
@@ -274,12 +230,12 @@ class _FrozenLibrary:
         unchanged -- because the DVC pin it minted the ids from is unchanged --
         calls this and the ids stay exactly as they were.
         """
-        if not self.is_frozen:
-            raise FrozenLibraryError(
-                f"[Restamp] refused: the library at [{self.location}] is not frozen"
+        if not self.is_pinned:
+            raise PinnedLibraryError(
+                f"[Restamp] refused: the library at [{self.location}] is not pinned"
             )
         targets = list(self.manifest) if paths is None else [Path(p) for p in paths]
-        entries = self._frozen.setdefault("entries", {})
+        entries = self._pinned.setdefault("entries", {})
         before = {k: dict(v) for k, v in entries.items()}
         changed: dict[str, str] = {}
         for path in targets:
@@ -294,9 +250,9 @@ class _FrozenLibrary:
             # is on disk now, and dropping it would turn a DRIFTED verdict into
             # UNVERIFIABLE -- both launder "we did not check" into "it is fine",
             # which is the one thing this whole mechanism must not do. A restamp
-            # asserts the STAMP moved; only `freeze --deep` may say anything
+            # asserts the STAMP moved; only `pin --deep` may say anything
             # about the bytes.
-            for carried in ("mode_applied", "provenance", "content_digest"):
+            for carried in ("provenance", "content_digest"):
                 if carried in old:
                     new[carried] = old[carried]
             entries[key] = new
@@ -304,14 +260,14 @@ class _FrozenLibrary:
                               {k: v for k, v in new.items() if k in _stamp_fields(new)})
             if old and drift != "no visible difference":
                 changed[key] = drift
-        self._frozen["at"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
-        self._frozen["host"] = socket.gethostname()
+        self._pinned["at"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        self._pinned["host"] = socket.gethostname()
         self._persist(update_types=True)
         return {"location": str(self.location), "restamped": len(targets), "changed": changed}
 
-    def _verify_frozen_stamps(self) -> None:
+    def _verify_pinned_stamps(self) -> None:
         """Raise if a stamped entry visibly moved on the host that stamped it."""
-        if not self.is_frozen:
+        if not self.is_pinned:
             return
         if os.environ.get(_NOCHECK_ENV):
             Log.Warn(
@@ -320,13 +276,13 @@ class _FrozenLibrary:
                 " emergency override, not a fix; see Restamp()."
             )
             return
-        recorded_host = self._frozen.get("host")
+        recorded_host = self._pinned.get("host")
         here = socket.gethostname()
         drift: list[str] = []
-        for name, entry in self._frozen.get("entries", {}).items():
+        for name, entry in self._pinned.get("entries", {}).items():
             abs_path = self._abs(Path(name))
             if not abs_path.exists():
-                # Existence is `check_integrity`'s job, and a frozen library
+                # Existence is `check_integrity`'s job, and a pinned library
                 # staged to an agent legitimately names paths this host does not
                 # have. Nothing to compare.
                 continue
@@ -339,39 +295,39 @@ class _FrozenLibrary:
             return
         if recorded_host != here:
             Log.Warn(
-                f"the frozen library at [{self.location}] was stamped on"
+                f"the pinned library at [{self.location}] was stamped on"
                 f" [{recorded_host}] and this is [{here}]; mtime is not"
                 " comparable across hosts, so the following are reported"
                 " rather than refused:\n" + "\n".join(drift)
             )
             return
-        raise FrozenLibraryError(
-            f"the frozen library at [{self.location}] no longer matches what was"
-            " recorded when it was frozen:\n" + "\n".join(drift) + "\n"
+        raise PinnedLibraryError(
+            f"the pinned library at [{self.location}] no longer matches what was"
+            " recorded when it was pinned:\n" + "\n".join(drift) + "\n"
             "  The recorded instance_ids may no longer describe these bytes, and"
             " serving them would be a false cache hit.\n"
             "  If the bytes are unchanged and only the stamp moved (re-materialising"
             " the same pin does that), re-record it:\n"
             "    metasmith data restamp <library>\n"
             "  If the bytes did change, the ids are wrong and the library must be"
-            " rebuilt and re-frozen."
+            " rebuilt and re-pinned."
         )
 
     def Verify(self, *, deep: bool = False) -> dict:
         """Report per entry, without raising. The escape hatch, on demand.
 
         `deep=True` re-derives a real content digest and compares it against
-        what `Freeze(deep=True)` recorded. Every hole listed at the top of this
+        what `Pin(deep=True)` recorded. Every hole listed at the top of this
         file is closed by that comparison and by nothing else -- and where no
         baseline was recorded the verdict is UNVERIFIABLE, never OK. Reporting
         "we did not check" as "it is fine" is the one thing this tool must not
         do, since the whole reason to run it is a suspicion the cheap checks
         cannot settle.
         """
-        if not self.is_frozen:
-            return {"location": str(self.location), "frozen": False, "entries": {}}
+        if not self.is_pinned:
+            return {"location": str(self.location), "pinned": False, "entries": {}}
         out: dict[str, dict] = {}
-        for name, entry in sorted(self._frozen.get("entries", {}).items()):
+        for name, entry in sorted(self._pinned.get("entries", {}).items()):
             abs_path = self._abs(Path(name))
             row = {"kind": entry.get("kind")}
             if not abs_path.exists():
@@ -385,9 +341,9 @@ class _FrozenLibrary:
                 baseline = entry.get("content_digest")
                 if baseline is None:
                     row["verdict"] = "UNVERIFIABLE"
-                    row["why"] = "no --deep baseline was recorded at freeze time"
+                    row["why"] = "no --deep baseline was recorded at pin time"
                 else:
-                    now = _content_digest(abs_path)
+                    now = _content_digest(abs_path, force=True)
                     row["verdict"] = "OK" if now == baseline else "DRIFTED"
                     if now != baseline:
                         row["content"] = f"recorded={baseline[:24]}… observed={(now or 'unreadable')[:24]}…"
@@ -396,9 +352,9 @@ class _FrozenLibrary:
             out[name] = row
         return {
             "location": str(self.location),
-            "frozen": True,
-            "host": self._frozen.get("host"),
-            "at": self._frozen.get("at"),
+            "pinned": True,
+            "host": self._pinned.get("host"),
+            "at": self._pinned.get("at"),
             "deep": deep,
             "entries": out,
         }

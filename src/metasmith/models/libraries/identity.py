@@ -60,14 +60,14 @@ class _LeafIdentity:
         return self.instance_meta[path]
 
     def _resolve_instance_meta(self, path: Path, dtype_name: str) -> dict:
-        if self.is_frozen:
+        if self.is_pinned:
             entry = self.instance_meta.get(path)
             if entry is None:
-                from .frozen import FrozenLibraryError
-                raise FrozenLibraryError(
-                    f"[{path}] is not recorded in the frozen library at"
-                    f" [{self.location}], and a frozen library will not mint an"
-                    " id. Rebuild and re-freeze it."
+                from .pinned import PinnedLibraryError
+                raise PinnedLibraryError(
+                    f"[{path}] is not recorded in the pinned library at"
+                    f" [{self.location}], and a pinned library will not mint an"
+                    " id. Rebuild and re-pin it."
                 )
             return entry
         if path in self.instance_meta:
