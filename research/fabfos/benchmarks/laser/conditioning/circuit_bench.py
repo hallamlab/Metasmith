@@ -44,7 +44,7 @@ sys.path.insert(0, str(ROOT / "src"))
 
 from ecspr.model.graph import AtomGraph, Terminal, solve  # noqa: E402
 
-OUT_DIR = Path(__file__).resolve().parent / "out"
+OUT_DIR = Path(__file__).resolve().parent / "cache"
 
 # Responses below this are the solver's own floor, not a small answer. The reduced gradient
 # converges to ~1e-8 in float64 on an ill-conditioned axis and power shares inherit that, so

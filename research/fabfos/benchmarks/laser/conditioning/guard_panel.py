@@ -52,7 +52,7 @@ import bake_pairs                                                     # noqa: E4
 
 HOSTS = ROOT / "data/fabfos/benchmarks/hosts"
 ASKA_GPR = ROOT / "data/fabfos/runs/aska/gpr"
-OUT_DIR = Path(__file__).resolve().parent / "out"
+OUT_DIR = Path(__file__).resolve().parent / "cache"
 
 SOURCE = "MNXM1364061"
 GLYCOGEN = "MNXM738130"
