@@ -34,7 +34,7 @@ import split_by_assembly as sp                                       # noqa: E40
 # (channel, intermediate_id, score, score_kind) tuples that satisfy the contract.
 LANES = [
     ("kofam", "K00001", 120.0, "hmm_bitscore"),
-    ("clean", "1.1.1.1", 0.25, "clean_maxsep_inv"),
+    ("clean", "1.1.1.1", 0.25, "clean_confidence"),
     ("uniref50", "P00001", 0.90, "blast_bsr"),
     ("pbert", "REF00001", 0.75, "knn_vote"),
 ]

@@ -175,10 +175,20 @@ CURATED = "curated"
 SCORE_KINDS = {
     # HMM bitscore, above the family's own KOfam threshold. Unbounded above.
     "hmm_bitscore": (0.0, None),
-    # CLEAN maxsep emits a DISTANCE to the EC cluster centre (lower is better; the
-    # worked example in its own parser is 8.06, which is no probability). Stored as
-    # 1/(1+d): monotone decreasing, positive, bounded, order-preserving within the
-    # lane, and lossless -- the distance is d = 1/s - 1.
+    # CLEAN's GMM-calibrated confidence, exactly as its wrapper writes it. Already
+    # higher-is-stronger and already in [0, 1], so the lane stores it unchanged.
+    "clean_confidence": (0.0, 1.0),
+    # RETIRED, AND REVERSED. `clean_score` was read as a maxsep DISTANCE and stored
+    # as 1/(1+d), which ranked every CLEAN call backwards -- the weakest call in the
+    # lane got the largest weight. It is not a distance. Measured against the
+    # 1,288-ORF DH10B truth set: correct calls sit at a median clean_score of 0.9973
+    # and wrong ones at 0.1328 (AUC 0.897 in the higher-is-better direction), and
+    # ORFs with no curated EC at all average 0.044 against 0.884 for those that have
+    # one. The mechanism is CLEAN's GMM calibration, which its wrapper enables by
+    # linking `data/pretrained/gmm_ensumble.pkl`; the numbers above are the evidence,
+    # and they do not depend on that reading. The kind is kept so a table produced
+    # before the fix SAYS its CLEAN lane is inverted rather than passing as sound;
+    # nothing writes it now, and such a lane must be re-derived, not rescaled.
     "clean_maxsep_inv": (0.0, 1.0),
     # DIAMOND bit-score ratio. ~1.0 for a self-hit; the ceiling is slack, not a claim.
     "blast_bsr": (0.0, 4.0),
@@ -197,12 +207,20 @@ SCORE_KINDS = {
 
 CHANNEL_SCORE_KIND = {
     "kofam": "hmm_bitscore",
-    "clean": "clean_maxsep_inv",
+    "clean": "clean_confidence",
     "uniref50": "blast_bsr",
     "pbert": "knn_vote",
     "esmc": "knn_vote",
     "deepec": "presence",
     "ezpred": "softmax",
+}
+
+# A score_kind no producer writes any more -> what replaced it. `validate_gpr` still
+# ACCEPTS a table carrying one, because refusing would only make an already-wrong
+# table unreadable; it names the retirement instead, so the reason is on screen where
+# the table is used rather than in a commit message.
+RETIRED_SCORE_KINDS = {
+    "clean_maxsep_inv": "clean_confidence",
 }
 
 # Carried from ref::mnxr_lookup, which already computes it and whose keep-first dedup
@@ -221,19 +239,63 @@ _MNXR_RE = re.compile(r"^MNXR\d+$")
 # pseudo-reactions for the edges between them. Both only ever appear under `composed`.
 _MNXR_COMPOSED_RE = re.compile(r"^(?:[A-Za-z0-9_.-]+:)?MNXR\d+$|^BRIDGE:[^\s]+$")
 
+# =====================================================================
+# LANE CUT-OFFS. Every threshold a lane abstains on, declared once and read by both
+# mappers -- the 4-lane and the 7-lane -- so a retuned number cannot ship in one and
+# not the other. They lived as literals in three files, which is how the pbert floor
+# came to have three homes.
+#
+# EVERY ONE OF THESE IS APPLIED INSIDE ITS LANE, BEFORE THE GPR TABLE EXISTS. That is
+# the kofam pattern, and kofam is the reason: it has always kept only `score >=
+# thrshld`, its family's own cutoff, at parse time. A lane that emits its weak calls
+# and leaves the cut to a reader has published them. There is nothing here to opt out
+# of, for the same reason there is no way to opt out of kofam's threshold.
+# =====================================================================
+
 # EZpred `ezpred` lane keeps level-4 ECs whose softmax score clears this floor.
 DL_EC_SCORE_FLOOR = 0.3
-# embed-transfer lane keeps kNN calls whose vote fraction clears this.
-EMBED_SCORE_FLOOR = 0.2
 
+# --- CLEAN -----------------------------------------------------------------
+# CLEAN never declines: it emits a full level-4 EC for ~99% of ORFs, so its coverage
+# measures its willingness rather than its reach. Its confidence separates well
+# (median 0.9973 on correct calls vs 0.1328 on wrong ones), so the abstain is a plain
+# threshold on it. 0.02 is the F1 argmax on the DH10B cohort -- P 0.954 / R 0.907 /
+# F1 0.930 / coverage 0.950, against P 0.919 / F1 0.918 with no abstain at all. The
+# scadc ablation's 0.01 scores 0.9293 on the same cohort, a tie within one grid step;
+# this is not a win over that study, it is the same cut re-derived on this chassis.
+CLEAN_MIN_SCORE = 0.02
 
-def clean_distance_to_score(d):
-    """CLEAN's maxsep distance -> the schema's higher-is-stronger raw_score.
+# --- ProteinBERT kNN label transfer ----------------------------------------
+# THE TWO PBERT THRESHOLDS ANSWER DIFFERENT QUESTIONS AND BOTH ARE NEEDED.
+#
+# PBERT_FLOOR is a LABEL-level cut on agreement: of the neighbours that voted, what
+# share carried this reaction. It cannot express "nothing in the reference set
+# resembles this protein", because the vote weights are normalised within the
+# admitted set -- thirty neighbours at cosine 0.15 that agree score 1.0.
+#
+# PBERT_NN_MIN is the ORF-level cut on PROXIMITY that the lane did not have. An ORF
+# whose nearest landmark is below it gets no call at all. This is the abstain that
+# was missing, and it is what a dark ORF needs.
+PBERT_NN_MIN = 0.7716
+# The quota. `PBERT_K_MAX` bounds retrieval; a neighbour then votes only if it also
+# sits within `PBERT_TAU` of the best one. Dense neighbourhoods therefore vote with
+# many neighbours and sparse ones with a few or with one, instead of every ORF being
+# assigned exactly K votes whether or not it has K neighbours worth having.
+PBERT_TAU = 0.98
+PBERT_K_MAX = 30
+PBERT_FLOOR = 0.20
 
-    Monotone decreasing and lossless (d = 1/s - 1), so no ordering inside the lane
-    changes and the raw distance stays recoverable. See SCORE_KINDS.
-    """
-    return 1.0 / (1.0 + d)
+# --- ESM-C kNN label transfer ----------------------------------------------
+# The same lane against a different backbone, and cosine is not comparable between two
+# embedding spaces -- so pbert's tuned numbers are not transferable here, and are not
+# copied. 0.0 for both quota knobs is the pre-quota behaviour stated explicitly:
+# retrieve K_MAX, admit all of them, refuse no ORF. The seven-lane reproduction has
+# not been measured, and an unmeasured cut-off would refuse ORFs on a number nobody
+# checked. Tune these on an ESM-C cohort before quoting an ESM-C precision.
+ESMC_NN_MIN = 0.0
+ESMC_TAU = 0.0
+ESMC_K_MAX = 30
+ESMC_FLOOR = 0.10
 
 
 # =====================================================================
@@ -476,7 +538,13 @@ def validate_gpr(df, lane_set: str, orf_ids, source: str, extensions=(),
         raise SystemExit(f"[gpr] unknown score_kind(s) {sorted(bad_kind)}; known: {sorted(SCORE_KINDS)}")
     for ch, kind in df.groupby("channel")["score_kind"].agg(lambda s: sorted(set(s))).items():
         want = ASSERTION_CHANNELS.get(ch) or CHANNEL_SCORE_KIND[ch]
-        if kind != [want]:
+        retired = sorted(k for k in kind if RETIRED_SCORE_KINDS.get(k) == want)
+        if retired:
+            print(f"[gpr] WARNING: channel {ch!r} carries the retired score_kind "
+                  f"{retired}, now {want!r}. The table is readable and its raw_score "
+                  f"is not -- see SCORE_KINDS for what that number actually is. "
+                  f"Re-run the mapper rather than rescaling it.", flush=True)
+        if [k for k in kind if k != want and k not in retired]:
             raise SystemExit(f"[gpr] channel {ch!r} carries score_kind {kind}, expected ['{want}']")
     s = df["raw_score"].astype(float)
     if not np.isfinite(s).all():
@@ -761,7 +829,7 @@ def read_embed_transfer(path, source: str, _bridge=None,
         return pd.DataFrame(columns=SCHEMA_COLS)
     df = pd.read_parquet(path)
     df = df[df["channel"].isin(("pbert", "pbert_transfer"))
-            & (df["raw_score"] >= EMBED_SCORE_FLOOR)].copy()
+            & (df["raw_score"] >= PBERT_FLOOR)].copy()
     # The pool is the bridge's `reviewed` cut by construction, so every transferred
     # label inherits that quality -- see compile/label_transfer_landmarks.py.
     df["evidence_quality"] = "reviewed"

@@ -76,9 +76,13 @@ def _write_kofam(p: Path):
 def _write_clean(p: Path, header=("Query ID", "Predicted EC number", "clean_score")):
     with open(p, "w") as fh:
         fh.write("\t".join(header) + "\n")
-        # maxsep DISTANCES, in CLEAN's own scale -- its parser's worked example is 8.06
-        fh.write(f"{ORFS[0]}\t{ECS[0]}\t8.06\n")
-        fh.write(f"{ORFS[1]}\t{ECS[1]}\t3.41\n")
+        # GMM-calibrated CONFIDENCES, in CLEAN's own scale -- higher is better, and
+        # bounded by 1. The third call is below fe.CLEAN_MIN_SCORE and must not reach
+        # the table: it names an EC the bridge does carry, so its absence is the
+        # lane abstaining rather than a join that found nothing.
+        fh.write(f"{ORFS[0]}\t{ECS[0]}\t0.9974\n")
+        fh.write(f"{ORFS[1]}\t{ECS[1]}\t0.1500\n")
+        fh.write(f"{ORFS[0]}\t{ECS[1]}\t0.0008\n")
 
 
 def _write_uniref(p: Path):
@@ -114,20 +118,36 @@ def _dims(a: np.ndarray) -> pd.DataFrame:
 
 
 def _write_query_embeddings(emb: Path, rng, dim=DIM, idx: Path = None):
-    """The ProteinBERT type names its own rows; ESM-C's still uses a sibling index."""
-    vecs = _dims(rng.normal(size=(len(ORFS), dim)).astype(np.float32))
+    """The ProteinBERT type names its own rows; ESM-C's still uses a sibling index.
+
+    Returns the vectors, because the landmark set has to be built AROUND them: the
+    pbert lane now refuses an ORF whose nearest landmark is below fe.PBERT_NN_MIN,
+    and two independent normal draws are orthogonal in expectation, so a landmark
+    set drawn on its own leaves every query abstaining and every lane empty.
+    """
+    a = rng.normal(size=(len(ORFS), dim)).astype(np.float32)
+    vecs = _dims(a)
     if idx is None:
         pd.concat([pd.DataFrame({"sequence_id": ORFS}), vecs], axis=1).to_parquet(
             emb, index=False)
     else:
         vecs.to_parquet(emb, index=False)
         pd.DataFrame({"sequence_id": ORFS}).to_csv(idx, index=False)
+    return a
 
 
-def _write_landmarks(lm_dir: Path, rng, dim=DIM, table="landmarks.parquet"):
-    """40 labelled landmarks. K=30 in the mappers, so there must be at least that many
-    or the top-K partition indexes past the end."""
+def _write_landmarks(lm_dir: Path, rng, dim=DIM, table="landmarks.parquet",
+                     near: np.ndarray = None):
+    """40 labelled landmarks. PBERT_K_MAX is 30 in the mappers, so there must be at
+    least that many or the top-K partition indexes past the end.
+
+    `near` puts a landmark on top of each query so the queries clear the lane's
+    proximity abstain; without it the fixture tests an empty table.
+    """
     n = 40
+    a = rng.normal(size=(n, dim)).astype(np.float32)
+    if near is not None:
+        a[:len(near)] = near + 0.001 * rng.normal(size=near.shape).astype(np.float32)
     lm_dir.mkdir(parents=True, exist_ok=True)
     pd.concat([
         pd.DataFrame({
@@ -136,7 +156,7 @@ def _write_landmarks(lm_dir: Path, rng, dim=DIM, table="landmarks.parquet"):
             # both and clears any floor -- this test is about plumbing, not recall
             "mnxr_list": [";".join(MNXRS[:2])] * n,
         }),
-        _dims(rng.normal(size=(n, dim)).astype(np.float32)),
+        _dims(a),
     ], axis=1).to_parquet(lm_dir / table, index=False)
 
 
@@ -148,8 +168,8 @@ def _lanes(work: Path, rng, seven: bool, lm_table="landmarks.parquet",
     _write_clean(work / "clean.tsv")
     _write_uniref(work / "uniref.tsv")
     _write_bridge(work / "bridge.parquet")
-    _write_query_embeddings(work / "pbert.parquet", rng)
-    _write_landmarks(work / "landmarks", rng, table=lm_table)
+    q = _write_query_embeddings(work / "pbert.parquet", rng)
+    _write_landmarks(work / "landmarks", rng, table=lm_table, near=q)
     kw = dict(
         ev_lib=str(EV_LIB), orfs=str(work / "orfs.faa"),
         kofam=str(work / "kofam.csv"), clean=str(work / "clean.tsv"),
@@ -165,13 +185,13 @@ def _lanes(work: Path, rng, seven: bool, lm_table="landmarks.parquet",
     if seven:
         _write_deepec(work / "deepec.tsv")
         _write_ezpred(work / "ezpred.csv")
-        _write_query_embeddings(work / "esmc.parquet", rng, dim=esmc_lm_dim,
-                                idx=work / "esmc_index.csv")
+        qe = _write_query_embeddings(work / "esmc.parquet", rng, dim=esmc_lm_dim,
+                                     idx=work / "esmc_index.csv")
         # A SECOND landmark set, in its own directory. The ESM-C lane votes against
         # ESM-C embeddings -- cosine distance between two embedding spaces is a number
         # with no referent -- and the leaf name differs because nextflow stages a
         # process's inputs by basename and the mapper takes both.
-        _write_landmarks(work / "landmarks_esmc", rng, dim=esmc_lm_dim)
+        _write_landmarks(work / "landmarks_esmc", rng, dim=esmc_lm_dim, near=qe)
         kw.update(
             lane_set="full_7", source="orfs",
             deepec=str(work / "deepec.tsv"), ezpred=str(work / "ezpred.csv"),
@@ -237,12 +257,14 @@ def test_gpr_4lane_driver_writes_a_valid_table(tmp_path):
     assert r.returncode == 0, f"driver failed:\n{r.stdout}\n{r.stderr}"
     df = _check_table(tmp_path / "gpr.parquet", "chosen_4")
 
-    # CLEAN's distance survives losslessly through the monotone re-expression:
-    # the 8.06 the parser's own example shows comes back out of 1/s - 1.
+    # CLEAN's confidence reaches the table AS ITSELF. It used to be pushed through
+    # a 1/(1+d) inversion on the reading that it was a distance, which ranked the
+    # lane backwards -- the least confident call carried the largest weight.
     clean = df[df["channel"] == "clean"]
-    assert np.isclose(sorted(1.0 / clean["raw_score"] - 1.0), [3.41, 8.06]).all()
-    # and the LARGER distance is now the WEAKER score, which is the whole point
-    assert clean["raw_score"].min() < clean["raw_score"].max()
+    assert sorted(np.round(clean["raw_score"].unique(), 4)) == [0.15, 0.9974]
+    # THE ABSTAIN. The 0.0008 call names an EC the bridge carries, so its absence is
+    # the lane declining rather than a join that found nothing.
+    assert len(clean[(clean["orf"] == ORFS[0]) & (clean["intermediate_id"] == ECS[1])]) == 0
 
     # evidence_quality is carried from the bridge, not defaulted: one of the two
     # UniProt accessions is unreviewed there.
@@ -306,6 +328,66 @@ def test_mapper_refuses_when_a_lane_contributes_no_rows(tmp_path):
     assert r.returncode != 0
     assert "kofam" in r.stderr and "0 rows" in r.stderr
     assert not (tmp_path / "gpr.parquet").exists()
+
+
+def test_embedding_lane_abstains_when_no_landmark_is_near(tmp_path):
+    """The refusal the pbert lane could not make.
+
+    `PBERT_FLOOR` gates the VOTE, which is normalised within the admitted
+    neighbours, so it reports agreement and not proximity -- thirty neighbours at
+    cosine 0.15 that agree score 1.0. Query vectors drawn independently of the
+    landmark set are orthogonal in expectation, which is the geometry of an ORF with
+    no relative in the reference: before the quota every one of them got a confident
+    call, which is the mechanism behind the spurious glycogen annotations.
+    """
+    rng = np.random.default_rng(11)
+    kw = _lanes(tmp_path, rng, seven=False)
+    # the landmarks no longer sit on top of the queries
+    _write_landmarks(tmp_path / "landmarks", np.random.default_rng(12))
+    r = _run(_render("gpr_4lane", kw), tmp_path)
+    assert "2 with no landmark at cosine" in r.stdout, r.stdout
+    # and the empty lane is then refused rather than written as a table with a
+    # silently missing channel
+    assert r.returncode != 0
+    assert "pbert" in r.stderr and "0 rows" in r.stderr
+    assert not (tmp_path / "gpr.parquet").exists()
+
+
+def test_embedding_lane_admits_by_neighbourhood_not_by_a_fixed_count(tmp_path):
+    """A dense neighbourhood votes with many neighbours, a thin one with exactly one.
+
+    The whole reason for the quota: a fixed top-K gives every ORF K votes whether or
+    not it has K worth having, so the distant ones vote at full weight precisely when
+    the near ones are few. Both runs here retrieve the same PBERT_K_MAX candidates;
+    what differs is how many of them clear the band.
+    """
+    def admitted(work: Path, seed: int, dense: bool) -> float:
+        work.mkdir(parents=True, exist_ok=True)
+        rng = np.random.default_rng(seed)
+        kw = _lanes(work, rng, seven=False)
+        q = pd.read_parquet(work / "pbert.parquet")
+        qv = q[[c for c in q.columns if c.startswith("dim_")]].to_numpy(np.float32)
+        n = 40
+        lm = np.random.default_rng(seed + 1).normal(size=(n, DIM)).astype(np.float32)
+        if dense:
+            # every landmark is a near-copy of the first query
+            lm[:] = qv[0] + 0.001 * rng.normal(size=(n, DIM)).astype(np.float32)
+        else:
+            # exactly one landmark per query, everything else far away
+            lm[:len(qv)] = qv + 0.001 * rng.normal(size=qv.shape).astype(np.float32)
+        (work / "landmarks").mkdir(exist_ok=True)
+        pd.concat([pd.DataFrame({"accession": [f"REF{i:04d}" for i in range(n)],
+                                 "mnxr_list": [";".join(MNXRS[:2])] * n}),
+                   _dims(lm)], axis=1).to_parquet(
+            work / "landmarks" / "landmarks.parquet", index=False)
+        r = _run(_render("gpr_4lane", kw), work)
+        line = next(ln for ln in r.stdout.splitlines() if ln.startswith("[gpr] pbert:"))
+        return float(line.split(" voting on ")[1].split(" admitted")[0])
+
+    thin = admitted(tmp_path / "thin", 21, dense=False)
+    packed = admitted(tmp_path / "packed", 31, dense=True)
+    assert thin == 1.0, f"a thin neighbourhood admitted {thin} neighbours"
+    assert packed >= 30.0, f"a dense neighbourhood admitted only {packed} neighbours"
 
 
 def test_mapper_refuses_an_orf_id_mismatch(tmp_path):
