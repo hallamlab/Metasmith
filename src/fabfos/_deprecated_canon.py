@@ -739,11 +739,16 @@ DIR_SIGMA_0_BAND = (5.0, 40.0)          # outside => stop, it is a finding
 # The ratio must stay a FINITE two-way conductance ratio -- never a hard one-way
 # gate (the standing ruling). A handful of macromolecular/polymer reactions carry a
 # genuine |dG'| of thousands of kJ/mol, whose exp() underflows to 0.0 (an infinite
-# gate). |dG'| is clamped to this bound: beyond ~the steepest realistic single-
-# reaction drive in metabolism, the flux-force is saturated, and clamping keeps the
-# ratio finite and > 0 (~3e-18 .. 3e17). Physical bound, committed independent of the
-# data; clamped rows are flagged, not hidden.
-DIR_DG_CLAMP = 100.0                     # kJ/mol
+# gate), so |dG'| is clamped before the exponential; clamped rows are flagged, not
+# hidden.
+#
+# THE BOUND IS STATED IN DECADES OF CONDUCTANCE, not in kJ/mol, because that is the
+# unit the ratio is consumed in. Three decades = the ensemble's confident level,
+# 1000:1. A thermodynamic dG' is a real energy and exponentiating it converts one
+# decade per DIR_DECADE (5.71 kJ/mol), so an unbounded pass-through hands the graph
+# asymmetries of 1e17 -- far past the point where the reverse branch is already
+# numerically dead, and past anything the evidence resolves.
+DIR_DG_CLAMP = 3.0 * DIR_DECADE          # kJ/mol; three decades == 1000:1
 
 # The five curated REACTION-DIRECTION values, in MNXR orientation. A sixth token
 # would be a KeyError at the aligner, not a silent default (which is how the ~7%
