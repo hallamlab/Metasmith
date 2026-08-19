@@ -210,3 +210,100 @@ def test_unparseable_manifest_refuses_rather_than_degrading():
 
 def test_manifest_constant_is_distinct_from_the_gpu_one():
     assert AgentPaths.ENV_MANIFEST != AgentPaths.GPU_MANIFEST
+
+
+# --------------------------------------------------- what a resource resolves to
+#
+# The manifest records which of `container:` / `conda:` each env resource
+# carries, so the preflight can answer "can this agent run this step". A
+# pre-flight *materialise* needs one thing more: the image itself, resolved at
+# stage time, where the library is actually on disk. Recording it here is what
+# lets the launch path answer "is this image in the store" without re-reading a
+# transform library it does not have.
+
+
+class _Dep:
+    key = "env"
+
+
+_DEP = _Dep()
+
+
+class _Inst:
+    def __init__(self, path, dtype_name="containers::tool.oci"):
+        self._path = path
+        self.dtype_name = dtype_name
+
+    def ResolvePath(self):
+        return self._path
+
+
+class _Step:
+    """The two attributes `_read_env_declarations` actually reads."""
+    def __init__(self, *paths):
+        from types import SimpleNamespace
+        self.transform = SimpleNamespace(_env_deps=[_DEP])
+        self.dependency_map = {_DEP: [_Inst(p) for p in paths]}
+
+
+def _declarations(*paths):
+    from metasmith.models.workflow.nextflow_codegen import _read_env_declarations
+    return _read_env_declarations(_Step(*paths))
+
+
+def test_declaration_records_both_resolved_values(tmp_path):
+    p = tmp_path/"kraken2.env"
+    p.write_text("container: docker://quay.io/biocontainers/kraken2:2.1.3--h43eeafb_0\nconda: kraken2-2.1.3\n")
+    assert _declarations(p) == {"kraken2.env": {
+        "container": "docker://quay.io/biocontainers/kraken2:2.1.3--h43eeafb_0",
+        "conda": "kraken2-2.1.3",
+    }}
+
+
+def test_declaration_of_a_container_only_resource_records_no_conda(tmp_path):
+    p = tmp_path/"ipr.env"
+    p.write_text("container: docker://quay.io/biocontainers/interproscan:5.59\n")
+    assert _declarations(p) == {"ipr.env": {
+        "container": "docker://quay.io/biocontainers/interproscan:5.59",
+    }}
+
+
+def test_legacy_bare_uri_resolves_as_a_container_and_nothing_else(tmp_path):
+    # A `*.oci` file whose whole content is a URI parses as a YAML scalar, not a
+    # mapping. It is a container image and has no conda form -- which is exactly
+    # what ResolveEnvImage does with it, and the reason this shares that helper
+    # rather than parsing the file a second way.
+    p = tmp_path/"tool.oci"
+    p.write_text("docker://quay.io/example/tool:1.0\n")
+    assert _declarations(p) == {"tool.oci": {"container": "docker://quay.io/example/tool:1.0"}}
+
+
+def test_unreadable_resource_stays_unknown(tmp_path):
+    # Not yet staged, binary, unparseable -- `null`, which the preflight must not
+    # read as "declares nothing", or a workspace staged before the resource
+    # landed fails for the wrong reason. There is no file to name it by, so the
+    # entry falls back to the declared type.
+    assert _declarations(tmp_path/"missing.env") == {"containers::tool.oci": None}
+
+
+def test_preflight_reads_both_manifest_generations(tmp_path):
+    """The recorded shape moved from a list of keys to a mapping of values.
+
+    Membership is the only thing the portability check ever asks of it, and
+    that means the same thing for both -- so a workspace staged by the previous
+    metasmith keeps getting the same verdict rather than a new failure.
+    """
+    old = {"P1": _step("P1", "gtdbtk", BOTH_ARMS, {"gtdbtk.env": ["container"]})}
+    new = {"P1": _step("P1", "gtdbtk", BOTH_ARMS, {"gtdbtk.env": {"container": "docker://x"}})}
+    for manifest in (old, new):
+        with pytest.raises(EnvPortabilityError, match="conda"):
+            _check_env_portability(manifest, _mamba())
+        _check_env_portability(manifest, _docker())  # no raise either way
+
+
+def test_manifest_schema_advanced_with_the_recorded_shape():
+    # The shape of a recorded value is self-describing (a list is the old
+    # generation, a mapping the new), so nothing *depends* on this number --
+    # but a wire format that changed without saying so is how the next reader
+    # gets it wrong.
+    assert AgentPaths.ENV_MANIFEST_SCHEMA == 2

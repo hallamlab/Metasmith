@@ -195,7 +195,11 @@ class TestProvisionGolden:
         assert len(steps) == 1
         cmd = steps[0][0]
 
-        assert cmd.startswith(f'mkdir -p "{STORE}"; if [ ! -e {SIF} ] && [ ! -d {SANDBOX} ]; then')
+        # The gate is artifact AND stamp: an unstamped artifact is one nothing
+        # has mounted, so it is not "already materialised".
+        assert cmd.startswith(
+            f'mkdir -p "{STORE}"; {{ [ -e {SIF} ] && [ -e {SIF}.verified ]; }}'
+        )
         assert f'apptainer build --force --sandbox {SANDBOX} {IMAGE}' in cmd, (
             "sandbox rung is not building from the registry"
         )
@@ -205,7 +209,11 @@ class TestProvisionGolden:
 
     def test_assertive_forces_a_rebuild(self):
         steps = _container(Runtime.APPTAINER).ProvisionSteps(agent_home=AGENT_HOME, assertive=True)
-        assert steps[0][0].startswith(f'mkdir -p "{STORE}"; rm -rf {SANDBOX} {SIF}; if [ ! -e {SIF} ]')
+        # The stamps go with the artifacts they vouch for; left behind, the
+        # re-pull would land under a "verified" claim nothing ever re-checked.
+        assert steps[0][0].startswith(
+            f'mkdir -p "{STORE}"; rm -rf {SANDBOX} {SIF} {SANDBOX}.verified {SIF}.verified; '
+        )
 
     def test_docker_assertive_is_a_no_op(self):
         default_cmd = _container(Runtime.DOCKER).ProvisionSteps(agent_home=AGENT_HOME)[0][0]

@@ -87,13 +87,16 @@ def _validate_exports(exports: dict[str, "str|Path"]|None) -> dict[str, str]:
 
 def _materialised_test(env: Environment) -> str:
     sif, sandbox = env.GetLocalPath(), env.GetSandboxPath()
+    sif_stamp, sandbox_stamp = env.GetLocalStampPath(), env.GetSandboxStampPath()
+    ok_sif = f'( [ -e {sif} ] && [ -e {sif_stamp} ] )'
+    ok_sandbox = f'( [ -d {sandbox} ] && [ -e {sandbox_stamp} ] )'
     match env.rootfs:
         case Rootfs.SIF:
-            return f'[ -e {sif} ]'
+            return ok_sif
         case Rootfs.SANDBOX:
-            return f'[ -d {sandbox} ]'
+            return ok_sandbox
         case _:
-            return f'( [ -e {sif} ] || [ -d {sandbox} ] )'
+            return f'( {ok_sif} || {ok_sandbox} )'
 
 
 class EnvDispatch:

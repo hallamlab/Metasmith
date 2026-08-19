@@ -34,6 +34,16 @@ def register(subs):
         a.agent, a.task_ref, a.on_exist, a.workspace, a.idle_timeout,
     ))
 
+    _mat = sp.add_parser(
+        "materialise", aliases=["materialize"],
+        help="fetch a staged task's tool images onto the agent, before running",
+    )
+    _mat.add_argument("agent")
+    _mat.add_argument("task_key")
+    _mat.add_argument("--force", action="store_true",
+                      help="re-fetch every image even if the store already holds it")
+    _mat.set_defaults(func=lambda a: _rt.materialise(a.agent, a.task_key, a.force))
+
     _run = sp.add_parser("run", help="launch a staged workflow")
     _run.add_argument("agent")
     _run.add_argument("task_key")

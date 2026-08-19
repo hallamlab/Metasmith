@@ -48,6 +48,10 @@ class AgentPaths:
     NXF_PARAMS = "workflow.params.yml"
     GPU_MANIFEST = "workflow.gpu.json"
     ENV_MANIFEST = "workflow.env.json"
+    # Schema 1 recorded which of `container:` / `conda:` a resource carried; schema 2
+    # records what each resolves to. Nothing branches on it -- it is here so a reader
+    # of an old manifest can tell which shape they have.
+    ENV_MANIFEST_SCHEMA = 2
     NXF_TRACE_FILE = "nxf_trace.tsv"
 
     @classmethod

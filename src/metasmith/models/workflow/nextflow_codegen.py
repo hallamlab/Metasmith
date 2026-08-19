@@ -15,7 +15,7 @@ from ...caching.layout import default_cache_root, out_dir, staging_dir
 from ...constants import AgentPaths
 from ...env import ContainerDef, Environment, Rootfs, Runtime
 from ...logging import Log
-from ..libraries import DataInstance, GPU_LABEL
+from ..libraries import DataInstance, GPU_LABEL, ResolveEnvImage
 from ..lineage import LinPayload
 from ..paths import PathMap
 from ..solver import Endpoint
@@ -97,8 +97,12 @@ class NextflowGenContext:
     cache_hit_strategy: str = "link"
     rootfs: "Rootfs|None" = None
 
-def _read_env_declarations(step) -> dict[str, list[str]]:
-    found: dict[str, list[str]|None] = {}
+def _read_env_declarations(step) -> dict[str, dict[str, str]|None]:
+    # Keyed by the resource file name; the value maps `container` / `conda` to what that
+    # world resolves to, through the same `ResolveEnvImage` execution uses. A resource
+    # that cannot be read is `None` -- UNKNOWN, which the preflight must not read as
+    # absent, or a workspace staged before the resource landed fails for the wrong reason.
+    found: dict[str, dict[str, str]|None] = {}
     for dep in getattr(step.transform, "_env_deps", []):
         for inst in step.dependency_map.get(dep, []):
             try:
@@ -106,14 +110,21 @@ def _read_env_declarations(step) -> dict[str, list[str]]:
                 name = Path(p).name
                 if name in found: continue
                 with open(p) as f:
-                    parsed = yaml.safe_load(f.read())
+                    content = f.read()
+                parsed = yaml.safe_load(content)
             except Exception:
                 found[Path(str(getattr(inst, "dtype_name", dep.key))).name] = None
                 continue
             if isinstance(parsed, dict):
-                found[name] = sorted(k for k in ("container", "conda") if parsed.get(k))
+                found[name] = {
+                    key: ResolveEnvImage(content, runtime, p)
+                    for key, runtime in (("container", Runtime.APPTAINER), ("conda", Runtime.MAMBA))
+                    if parsed.get(key)
+                }
             else:
-                found[name] = ["container"]
+                # A legacy bare-URI (*.oci) resource is a container image and nothing
+                # else; asking `ResolveEnvImage` for its conda form returns the same URI.
+                found[name] = {"container": ResolveEnvImage(content, Runtime.APPTAINER, p)}
     return found
 
 def apply_fs_strategy(context: NextflowGenContext) -> None:
@@ -286,6 +297,8 @@ def prepare_nextflow(task, context: NextflowGenContext):
                 "gpu_memory_gb": None if res.gpu_memory is None else res.gpu_memory.value_gb,
             }
             gpu_requirements[process_name] = gpu_req
+        # `arms: null` means the source could not be scanned -- unknown, not "declared
+        # nothing"; the same distinction `envs` draws per resource.
         _scan = step.transform._env_scan
         env_requirements[process_name] = {
             "step": step.order,
@@ -777,7 +790,20 @@ def prepare_nextflow(task, context: NextflowGenContext):
         f.write("\n")
 
     with open(context.work_dir/AgentPaths.ENV_MANIFEST, "w") as f:
-        json.dump({"schema": 1, "steps": env_requirements}, f, separators=(",", ":"))
+        json.dump(
+            {
+                "schema": AgentPaths.ENV_MANIFEST_SCHEMA,
+                # The per-task rootfs override, recorded beside the images
+                # because whoever materialises them ahead of a run has to
+                # produce the artifact the steps will actually look for. It is
+                # otherwise reachable only from per-step meta, which the
+                # launching host would have to parse a step at a time. `null`
+                # means none was declared, so the agent's own tendency stands.
+                "rootfs": None if context.rootfs is None else context.rootfs.value,
+                "steps": env_requirements,
+            },
+            f, separators=(",", ":"),
+        )
         f.write("\n")
 
     wf_output = []
