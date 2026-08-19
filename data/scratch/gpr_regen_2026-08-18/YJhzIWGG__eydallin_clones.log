@@ -1,0 +1,12 @@
+[gpr] clean: 101 calls, 58 below the abstain at 0.02
+[gpr] landmarks: 222019 references, 13112 MNXR, 310493 label edges (1.2 MiB sparse vs 10.84 GiB dense)
+[gpr] pbert: 85 ORFs, 33 with no landmark at cosine 0.7000 or better (abstain), 52 voting on 11.8 admitted neighbours on average, 152 calls
+[gpr] 642 rows | source=eydallin_clones | lane_set=chosen_4 | 55 of 85 nominators | 479 MNXR
+[gpr]   kofam            69 rows       28 ORFs ( 32.9% cover)      67 MNXR  score[hmm_bitscore] min=110.7 med=389.6 max=2051
+[gpr]   clean           376 rows       41 ORFs ( 48.2% cover)     338 MNXR  score[clean_confidence] min=0.0206 med=0.975 max=0.9989
+[gpr]   uniref50         45 rows       37 ORFs ( 43.5% cover)      43 MNXR  score[blast_bsr] min=0.615 med=0.9956 max=1.004
+[gpr]   pbert           152 rows       52 ORFs ( 61.2% cover)     137 MNXR  score[knn_vote] min=0.03316 med=0.2202 max=1
+[gpr]   evidence_quality {'reviewed': 642}
+[gpr_4lane] wrote 642 rows -> /scratch/st-shallam-1/txyliu/fabfos_b2/agent_home/regen/out/YJhzIWGG__eydallin_clones.partial
+
+--- stderr ---
