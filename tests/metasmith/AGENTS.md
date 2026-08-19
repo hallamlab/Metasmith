@@ -48,10 +48,8 @@ slicing from the method to the next one. `Deploy` is the last method in its modu
 slice needs an end-of-file fallback or it comes out empty — and every assertion there pins an
 *absence*, so it would pass on the empty slice.
 
-**Nothing in the bootstrap axis pulls a real image.** Most container tests assert the emitted
-command string, which is the point of the axis; the integrity tests go one step further and *run*
-that string against a stub `apptainer` on `PATH`, because what they pin is the chain's branching
-rather than its text. Neither reaches a registry.
+**Nothing in the bootstrap axis pulls a real image.** Every container test asserts the emitted
+command string, which is the point of the axis.
 
 **Prefer the cheapest runtime that can answer the question.** When an e2e test asserts only on
 plan shape, channel wiring or DAG correctness, the contract runtime answers it; real execution

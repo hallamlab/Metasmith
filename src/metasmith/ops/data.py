@@ -406,6 +406,50 @@ def save_library(library_path: str, update_types: bool = True) -> dict:
     return {"library": str(library_path), "saved": True}
 
 
+def freeze_library(library_path: str, permissions: bool = True,
+                   deep: bool = False) -> dict:
+    """Record what this library's entries look like, and refuse mutation after.
+
+    Cheap by default: one stat per entry, no reads. `--deep` additionally
+    records a real content digest, which is the only thing that makes a later
+    `verify --deep` able to answer anything -- and costs a full pass over the
+    data, once.
+    """
+    lib = load_data_lib(library_path)
+    return lib.Freeze(apply_permissions=permissions, deep=deep)
+
+
+def unfreeze_library(library_path: str, restore_permissions: bool = True) -> dict:
+    """Lift a freeze. Needed before anything else writes to these entries."""
+    # Also unchecked: unfreezing a library whose stamps have drifted is the
+    # correct move, not a thing to be blocked from doing.
+    lib = DataInstanceLibrary.Load(library_path, check_frozen_stamps=False)
+    return lib.Unfreeze(restore_permissions=restore_permissions)
+
+
+def restamp_library(library_path: str, entry: str | None = None) -> dict:
+    """Re-record the stat stamps, moving no identity.
+
+    The remedy for the expected false positive -- re-materialising the same data
+    moves mtime -- and deliberately not a way to switch the check off. A caller
+    reaching for this is asserting the bytes are unchanged.
+    """
+    lib = DataInstanceLibrary.Load(library_path, check_frozen_stamps=False)
+    return lib.Restamp([Path(entry)] if entry else None)
+
+
+def verify_library(library_path: str, deep: bool = False) -> dict:
+    """Report every frozen entry as OK / DRIFTED / MISSING / UNVERIFIABLE.
+
+    Cheap without `--deep` and worth exactly what the stat stamp is worth. With
+    `--deep` it re-derives content digests and is the only check with none of
+    the holes documented in `models/libraries/frozen.py` -- hours over a large
+    library, so run it before a release or after a cache hit you did not expect.
+    """
+    lib = DataInstanceLibrary.Load(library_path, check_frozen_stamps=False)
+    return lib.Verify(deep=deep)
+
+
 def trace_lineage(library_path: str, from_type: str, to_type: str) -> dict:
     lib = load_data_lib(library_path)
     pairs: dict[str, list[str]] = {}

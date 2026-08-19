@@ -79,6 +79,68 @@ def test_annotation_driver_accepts_a_bare_path(tmp_path):
     assert _given_orf_count(task) == 1
 
 
+def test_the_references_are_not_re_identified_on_every_plan(tmp_path):
+    """Two plans in one process must agree on every reference id, and read none.
+
+    This is the assertion the whole frozen-library change exists for. It failed
+    before it, and not marginally: `ref::kofamscan_profiles` and
+    `ref::reference_label_pool` are DIRECTORIES, which `_mint_leaf_id` cannot
+    content-address at all, so each build minted a fresh `uuid4` for them and
+    the task key below differed run to run on ONE machine. Skips where the
+    references are not materialised, since there is then nothing to freeze.
+    """
+    import pytest
+
+    from fabfos import refs
+
+    frozen = refs.load_frozen_refs(common.DATA_PROCESSED)
+    if frozen is None:
+        pytest.skip("no frozen reference library here; run `python -m fabfos.refs freeze`")
+
+    reads = {"n": 0}
+    import metasmith.models.libraries.identity as identity
+
+    original = identity.content_multihash_key
+
+    def counted(path, **kw):
+        # The ORF fasta is a legitimate read; a reference is not.
+        if str(path).startswith(str(common.DATA_PROCESSED)):
+            raise AssertionError(f"a reference was re-hashed during planning: {path}")
+        reads["n"] += 1
+        return original(path, **kw)
+
+    identity.content_multihash_key = counted
+    try:
+        keys, ids = [], []
+        for i in range(2):
+            work = tmp_path / f"run_{i}"
+            work.mkdir()
+            orfs = work / "orfs.faa"
+            orfs.touch()
+            _, task, stubs = annotation.generate_workflow(
+                work, orfs=orfs, kofam_profiles=None, kofam_ko_list=None,
+                uniref50_db=None, mnxr_lookup=None, label_pool=None,
+                runtime=Runtime.APPTAINER,
+            )
+            assert task.ok, task.plan
+            assert not stubs, stubs
+            keys.append(task.GetKey())
+            ids.append({i.dtype_name: i.instance_id for i in task.plan.given
+                        if i.dtype_name.startswith("ref::")})
+    finally:
+        identity.content_multihash_key = original
+
+    assert len(ids[0]) == len(annotation.REF_LAYOUT), (
+        f"the plan was given {sorted(ids[0])}, expected all of"
+        f" {sorted(annotation.REF_LAYOUT)}"
+    )
+    assert ids[0] == ids[1], "a reference identity moved between two plans"
+    assert keys[0] == keys[1], (
+        "the task key moved between two identical plans, so the second run"
+        " cannot reuse the first's cache"
+    )
+
+
 if __name__ == "__main__":
     import tempfile
 

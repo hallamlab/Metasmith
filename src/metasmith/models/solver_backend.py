@@ -72,7 +72,7 @@ class RustSolver(Solver):
             # a lie that reads as a slowdown.
             raise EngineError(
                 "the rust solver was asked for, but no usable msm_solver is"
-                " staged for this platform (./dev.sh -bel)"
+                " staged for this platform (./dev/metasmith.sh -bel)"
             )
         return solve_via_engine(
             info, given, transforms, target,
@@ -108,10 +108,15 @@ def _warn_about_the_unasked_for_fallback():
     if path is None:
         why = (
             f"no [{ENGINE_NAME}] is staged for [{platform_slot()}] -- build one"
-            " with [./dev.sh -bel], or [./dev.sh -be] to cross-build all four"
+            " with [./dev/metasmith.sh -bel], or [./dev/metasmith.sh -be] to"
+            " cross-build all four"
         )
     elif GetEngine() is None:
-        why = f"the binary at [{path}] was refused at its handshake (see above)"
+        why = (
+            f"the binary at [{path}] was refused at its handshake (see above)."
+            " If that was a permission error, the file lost its executable bit"
+            " somewhere between the build and here -- check [ls -l] on it"
+        )
     else:
         why = f"the binary at [{path}] does not advertise [solve]"
     Log.Warn(
