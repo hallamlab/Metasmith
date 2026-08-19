@@ -19,6 +19,15 @@ finished bake and is what the reference gate checks against `ecspr.model.build.g
 on the string tables, so its `..model.graph` import lives inside the function body. A test
 spawns one interpreter per lane to keep it there.
 
+**One quantity is bounded on both sides of the seam and the two bounds must agree.** The bake
+clamps |dG'| (`direction.canon.DIR_DG_CLAMP`) and the model clamps |log10 ratio|
+(`build.DIRECTION_DECADE_CAP`); `ratio = exp(dG'/RT)` is what relates them, so a table baked
+under one bound and read under another produces a graph that does not describe its own
+annotation, with nothing to raise. A test asserts the ratio of the two. Both are stated in
+decades of conductance rather than kJ/mol because that is the unit the ratio is consumed in —
+one decade costs only `DIR_DECADE`, ~5.71 kJ/mol, which is why an unbounded pass-through hands
+the graph asymmetries of 1e17.
+
 The bake reaches a job as **one staged input**: `build_references/build.sh` vendors `src/ecspr`
 into the transform library as `buildlib::ecspr`, and a transform invokes
 `python3 -m ecspr.bake.<lane>.<module>`. Its `instance_id` is the tree digest, which is what
@@ -65,6 +74,13 @@ is that "which reactions does this measurement respond to, and how much" costs o
 than two per reaction, and the answer is a partition rather than a ranking — `1/sum(eps^2)` is
 the effective number of reactions a given pair of terminals can respond to at all. Exact on the
 symmetric network and first-order under the rectified law; the sum holds either way, by Tellegen.
+
+**A partition of that size does not have thousands of members worth reporting, and reporting
+them anyway is what makes a result look unusable.** `scoring.responders` names the members
+carrying a stated share of a response and leaves the rest an explicit floor with its own count
+and mass. On a whole-library sweep the difference is between seven decades of spread and one,
+out of the same solve — so the choice of reported set, not the scale of the readout, is what
+decides whether a response can be regressed against anything.
 
 `--orientation` flips the baked direction reference and nothing else. It cannot be spelled
 `--direction`, which is already the *path* to the direction-ratios parquet; the bake's own
