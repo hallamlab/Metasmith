@@ -1,0 +1,43 @@
+name: ecspr_results_from_gpr_table
+description: 'Run an ECSPr ground-probe measurement over an existing GPR table: per-experiment
+
+  conditions plus the frozen atom-pair / direction-ratio reference basis, folded
+
+  into ecspr::results.'
+sample_type: null
+target_types:
+- ecspr::results
+transform_libraries:
+- fabfos
+resource_libraries:
+- env
+shared_input_paths: []
+input_library:
+  schema: v1
+  manifest:
+    /msm_deferred/120147ec7de7440b8f21aa6711b414b2:
+      type: ecspr::atom_pairs
+      instance_id: 1e2053157c588ed3e461c5f19d372e84c37ef5ba272db936ea452719d7677ed806da
+      origin: leaf
+    /msm_deferred/56cdc2995dca46bcb67980d57b731b15:
+      type: ecspr::conditions
+      parents:
+        MwfMEJmSauYK@experiment.txt: fabfos::experiment
+      instance_id: 1e202c9a3b0ed108b99a0499a2fbde6123c98a0ffc6d0244b14dc7dc58e1cfceb2ba
+      origin: leaf
+    /msm_deferred/b7e1210aae754aba9d53153e2ce01b6e:
+      type: ecspr::direction_ratios
+      instance_id: 1e2084d77fff72b33f158566f7763b79c8b13151f6e8c8f973fa85b8c102cbcfa314
+      origin: leaf
+    /msm_deferred/fe06031e9a2b4ecdbda9676ae3b447f0:
+      type: annotation::gpr_table
+      parents:
+        MwfMEJmSauYK@experiment.txt: fabfos::experiment
+      instance_id: 1e20ae3f65de37371acfe150b881c61a85e8daa835bad23b22fca33723c9dce40d69
+      origin: leaf
+    experiment.txt:
+      type: fabfos::experiment
+      instance_id: 1e20a4463c92423433c5cf6ccd738c532f5dbf90219d817dcbb5fcbf88818f98fcda
+      origin: leaf
+  values:
+    experiment.txt: ecspr_measurement

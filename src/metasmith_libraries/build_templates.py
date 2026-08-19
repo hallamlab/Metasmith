@@ -35,6 +35,9 @@ AUTHORS = (
     "fosmid_inserts_from_pooled_reads",
     "amplicon_asv_study_from_paired_reads",
     "viromics_survey_from_assembly",
+    "gpr_table_from_assembly",
+    "ecspr_results_from_gpr_table",
+    "ecspr_survey_from_pooled_reads",
 )
 
 # Authors that exist but cannot ship, and why. Kept visible rather than deleted:
