@@ -440,6 +440,12 @@ def main() -> int:
     if results is not None and not results.exists():
         raise SystemExit(f"no results at {results}")
 
+    # Source against source, so it needs no results tree -- and it ran below the
+    # early return, which meant the pin-only invocation the help text calls a
+    # complete gate never reached it. An unreachable mirror check and a dead one
+    # are the same thing to the reader.
+    check_direction_constants()
+
     if results is None:
         print(f"== reference gate over {a.processed} (pin only) ==")
         check_annotation_refs(a.processed)
@@ -468,7 +474,6 @@ def main() -> int:
     else:
         note("the metabolism trio is not in this run's results; bake not checked")
 
-    check_direction_constants()
     if bridge_p:
         check_bridge(bridge_p)
     else:
