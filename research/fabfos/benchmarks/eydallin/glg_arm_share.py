@@ -63,7 +63,6 @@ def main():
     print(f"[glg-share] base conductance {sol.total:.6f}; "
           f"{len(eps)} reactions carry a share, summing to {eps.sum():.10f}", file=sys.stderr)
 
-    # -- reaction -> clone, on the channel the sweep used ------------------------------
     gpr = pd.read_parquet(ASKA_GPR / f"gpr_{args.channel}.parquet")
     gpr = gpr[gpr.in_atom_universe.fillna(False)]
     gpr["mnxr"] = gpr.mnxr.astype(str)
@@ -99,7 +98,6 @@ def main():
         no_clone=float(tab.loc[~reachable_any, "elasticity"].sum()),
     )
 
-    # -- the 86, as clones, with their own elasticity mass -----------------------------
     ext = pd.read_csv(EXTRACTION, sep="\t")
     meas = pd.read_csv(MEASURED, sep="\t") if MEASURED.exists() else None
     r2e = eps.to_dict()
@@ -116,8 +114,6 @@ def main():
     hits = hits.merge(ext[["gene_norm", "function_supplTableS1"]],
                       left_on="gene", right_on="gene_norm", how="left").drop(columns="gene_norm")
     if meas is not None:
-        # `aska:<gene>` on the clone side, `eydallin:<gene>` on the phenotype side, and one
-        # of the 86 differs from its roster entry by case alone (ppK/ppk).
         pct = {str(c).split(":")[-1].lower(): v for c, v in zip(meas.condition_id, meas.pct_wt)}
         hits["pct_wt"] = hits.gene.str.lower().map(pct)
 

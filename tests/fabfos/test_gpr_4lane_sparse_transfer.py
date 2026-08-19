@@ -1,27 +1,26 @@
-"""The sparse label transfer must be the dense one, not merely like it.
-
-`gpr_4lane.lane_embed` used to materialise a dense (reference x MNXR) float32
-indicator matrix and take the kNN vote as `w @ L[nn]`. At the pinned pool that
-matrix is 222,019 x 13,112 -- 10.84 GiB, 99.97% zeros -- which is the whole
-reason the step had to declare 48 GB. It is now a CSR-shaped gather over only
-the labels the K neighbours actually carry.
-
-That is a rewrite of the one number the `pbert` lane reports, so "looks right"
-is not a standard. This runs BOTH forms over the same random pools and requires
-the emitted rows to match exactly: same (query, mnxr, donor) triples, in the
-same order, with scores equal to float tolerance.
-
-The cases are chosen for where the two forms could legitimately disagree:
-
-* a reference whose `mnxr_list` REPEATS a label -- the dense form writes 1.0
-  idempotently, an accumulation would count it twice;
-* a reference with NO labels, and a query whose whole neighbourhood has none;
-* an empty token from a trailing `;`, which `sorted(set(...))` must drop and
-  `vidx` would otherwise KeyError on;
-* ties in the similarity, which decide the `best` donor.
-
-Run: python tests/test_gpr_4lane_sparse_transfer.py   (or under pytest)
-"""
+# The sparse label transfer must be the dense one, not merely like it.
+#
+# `gpr_4lane.lane_embed` used to materialise a dense (reference x MNXR) float32
+# indicator matrix and take the kNN vote as `w @ L[nn]`. At the pinned pool that
+# matrix is 222,019 x 13,112 -- 10.84 GiB, 99.97% zeros -- which is the whole
+# reason the step had to declare 48 GB. It is now a CSR-shaped gather over only
+# the labels the K neighbours actually carry.
+#
+# That is a rewrite of the one number the `pbert` lane reports, so "looks right"
+# is not a standard. This runs BOTH forms over the same random pools and requires
+# the emitted rows to match exactly: same (query, mnxr, donor) triples, in the
+# same order, with scores equal to float tolerance.
+#
+# The cases are chosen for where the two forms could legitimately disagree:
+#
+# * a reference whose `mnxr_list` REPEATS a label -- the dense form writes 1.0
+#   idempotently, an accumulation would count it twice;
+# * a reference with NO labels, and a query whose whole neighbourhood has none;
+# * an empty token from a trailing `;`, which `sorted(set(...))` must drop and
+#   `vidx` would otherwise KeyError on;
+# * ties in the similarity, which decide the `best` donor.
+#
+# Run: python tests/test_gpr_4lane_sparse_transfer.py   (or under pytest)
 from __future__ import annotations
 
 import re
@@ -38,19 +37,12 @@ FLOOR = 0.20
 
 
 def _sparse_impl():
-    """The live implementation, lifted out of the mapper module.
-
-    Extracted rather than copied: a copy would keep passing after the mapper
-    changed, which is the one thing this test exists to prevent.
-    """
     src = MAPPER.read_text()
     # The vote is the middle of `lane_embed`; run it here against arrays rather
     # than files by re-executing just the arithmetic, which is the block below.
     start = src.index("    # THE LABEL MATRIX IS SPARSE")
     end = src.index('    print("[gpr] " + channel + ": "')
     block = src[start:end]
-    # The reads and the width check want files and a `_read_query`; the harness
-    # supplies q_orf/q_emb directly.
     block = re.sub(r"    q_orf, q_raw, _ = _read_query\(parquet\)\n"
                    r"(    if q_raw\.shape\[1\].*?referent\"\)\n)"
                    r"    q_emb = _norm\(q_raw\)\n", "", block, flags=re.S)
@@ -66,7 +58,6 @@ def _norm(x):
 
 
 def dense_rows(ref_mnxr_list, ref_orf, ref_emb, q_orf, q_emb, floor=FLOOR):
-    """The ORIGINAL implementation, verbatim from before the rewrite."""
     label_lists = [s.split(";") if s else [] for s in ref_mnxr_list]
     vocab = sorted({m for ls in label_lists for m in ls})
     vidx = {m: i for i, m in enumerate(vocab)}
@@ -95,11 +86,6 @@ def dense_rows(ref_mnxr_list, ref_orf, ref_emb, q_orf, q_emb, floor=FLOOR):
 
 def sparse_rows(ref_mnxr_list, ref_orf, ref_emb, q_orf, q_emb, floor=FLOOR):
     import pandas as pd
-    # THE QUOTA IS SET TO ITS NO-OP. `nn_min = tau = 0` and `k_max = K` admit
-    # exactly the top-K neighbours the dense form voted with, which is the setting
-    # this equivalence is a claim about: the two forms must compute the SAME VOTE.
-    # The quota's own behaviour -- which ORFs it refuses and how many neighbours it
-    # admits -- is a different claim, and test_gpr_schema.py makes it.
     ns = {
         "np": np, "pd": pd, "floor": floor,
         "nn_min": 0.0, "tau": 0.0, "k_max": K, "channel": "pbert",
@@ -131,8 +117,6 @@ def _case(seed, n_ref, n_q, dim, vocab_n, max_labels, *, dupe=False, empty=False
     ref_emb = _norm(rng.normal(size=(n_ref, dim)).astype(np.float32))
     q_emb = _norm(rng.normal(size=(n_q, dim)).astype(np.float32))
     if ties:
-        # Exact duplicate references: identical similarity for every query, so
-        # `argpartition` and `argmax` both face a tie.
         ref_emb[1::2] = ref_emb[0::2][: len(ref_emb[1::2])]
     ref_orf = [f"R{i}" for i in range(n_ref)]
     q_orf = [f"Q{i}" for i in range(n_q)]
@@ -182,12 +166,11 @@ def test_sparse_label_transfer_matches_dense():
 
 
 def test_trailing_semicolon_would_have_crashed_a_naive_port():
-    """The empty token is not hypothetical: `vidx[""]` is a KeyError.
-
-    The dense form tolerated it by putting `""` in the vocabulary; the sparse
-    form drops it in `sorted(set(...))`. Both must therefore agree that no row
-    ever carries an empty mnxr, which the schema validator would reject anyway.
-    """
+    # The empty token is not hypothetical: `vidx[""]` is a KeyError.
+    #
+    # The dense form tolerated it by putting `""` in the vocabulary; the sparse
+    # form drops it in `sorted(set(...))`. Both must therefore agree that no row
+    # ever carries an empty mnxr, which the schema validator would reject anyway.
     args = _case(**CASES["trailing_semicolon"])
     dense = dense_rows(*args, floor=0.02)
     sparse = sparse_rows(*args, floor=0.02)

@@ -195,8 +195,6 @@ class TestProvisionGolden:
         assert len(steps) == 1
         cmd = steps[0][0]
 
-        # The gate is artifact AND stamp: an unstamped artifact is one nothing
-        # has mounted, so it is not "already materialised".
         assert cmd.startswith(
             f'mkdir -p "{STORE}"; {{ [ -e {SIF} ] && [ -e {SIF}.verified ]; }}'
         )
@@ -209,8 +207,6 @@ class TestProvisionGolden:
 
     def test_assertive_forces_a_rebuild(self):
         steps = _container(Runtime.APPTAINER).ProvisionSteps(agent_home=AGENT_HOME, assertive=True)
-        # The stamps go with the artifacts they vouch for; left behind, the
-        # re-pull would land under a "verified" claim nothing ever re-checked.
         assert steps[0][0].startswith(
             f'mkdir -p "{STORE}"; rm -rf {SANDBOX} {SIF} {SANDBOX}.verified {SIF}.verified; '
         )

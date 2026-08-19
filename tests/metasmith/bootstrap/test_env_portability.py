@@ -239,7 +239,6 @@ class _Inst:
 
 
 class _Step:
-    """The two attributes `_read_env_declarations` actually reads."""
     def __init__(self, *paths):
         from types import SimpleNamespace
         self.transform = SimpleNamespace(_env_deps=[_DEP])
@@ -279,31 +278,17 @@ def test_legacy_bare_uri_resolves_as_a_container_and_nothing_else(tmp_path):
 
 
 def test_unreadable_resource_stays_unknown(tmp_path):
-    # Not yet staged, binary, unparseable -- `null`, which the preflight must not
-    # read as "declares nothing", or a workspace staged before the resource
-    # landed fails for the wrong reason. There is no file to name it by, so the
-    # entry falls back to the declared type.
     assert _declarations(tmp_path/"missing.env") == {"containers::tool.oci": None}
 
 
 def test_preflight_reads_both_manifest_generations(tmp_path):
-    """The recorded shape moved from a list of keys to a mapping of values.
-
-    Membership is the only thing the portability check ever asks of it, and
-    that means the same thing for both -- so a workspace staged by the previous
-    metasmith keeps getting the same verdict rather than a new failure.
-    """
     old = {"P1": _step("P1", "gtdbtk", BOTH_ARMS, {"gtdbtk.env": ["container"]})}
     new = {"P1": _step("P1", "gtdbtk", BOTH_ARMS, {"gtdbtk.env": {"container": "docker://x"}})}
     for manifest in (old, new):
         with pytest.raises(EnvPortabilityError, match="conda"):
             _check_env_portability(manifest, _mamba())
-        _check_env_portability(manifest, _docker())  # no raise either way
+        _check_env_portability(manifest, _docker())
 
 
 def test_manifest_schema_advanced_with_the_recorded_shape():
-    # The shape of a recorded value is self-describing (a list is the old
-    # generation, a mapping the new), so nothing *depends* on this number --
-    # but a wire format that changed without saying so is how the next reader
-    # gets it wrong.
     assert AgentPaths.ENV_MANIFEST_SCHEMA == 2

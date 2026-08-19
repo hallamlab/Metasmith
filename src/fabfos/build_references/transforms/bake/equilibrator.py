@@ -1,46 +1,45 @@
-"""Direction member lane: eQuilibrator -- component-contribution over the pinned cache.
-
-One of the two thermodynamic members, and the expensive one: loading the 1.3 GB compound
-cache and running component-contribution over the reaction universe is most of this
-ensemble's wall clock. It is its own step for the same reason LocalMapper is -- a change
-to the calibration or the combiner must not re-pay it.
-
-`XDG_CACHE_HOME` IS THE ONLY LEVER ON THE CACHE, and this is the fact the lane exists
-around. `equilibrator_cache.zenodo.get_cached_filepath` resolves through
-`pooch.os_cache("equilibrator")` -- i.e. `$XDG_CACHE_HOME/equilibrator/<file>` -- and
-reads nothing else. `EQUILIBRATOR_CACHE_DIR` is read by no part of pooch,
-equilibrator_cache or component_contribution: it was exported for a generation and was a
-no-op the whole time, and what actually made that build work was that the acquisition
-happened to leave the package's own nested layout in place. Now that
-`acquire/equilibrator.py` lifts the two artifacts into `equilibrator/<version>/`, the
-layout pooch expects is rebuilt here BY SYMLINK -- compounds.sqlite is 1.3 GB and a copy
-per member is 1.3 GB of nothing.
-
-Pooch re-checks its embedded md5 for each file before using it, which is the same claim
-`zenodo.md5` records in the acquired product. So a wrong or truncated staged cache is
-caught here rather than showing up as strange free energies.
-
-THE UNIVERSE IS RECOMPUTED, NOT PASSED. `dir_drive universe` is a parse of one MetaNetX
-release's reac_prop, and the release is asserted single at the top of every lane -- so
-the two members and the combiner derive the same list from the same bytes with the same
-code. Making it a product instead would put a shared node between two members that have
-nothing else to say to each other, and would serialise them behind it.
-
-SHARDED, AND IT WAS THE CRITICAL PATH UNTIL IT WAS. This lane ran at `cpus=1` while the
-dGbyG lane ran twenty-wide, so a members run cost whatever eQuilibrator cost serially --
-~38 minutes of a ~38 minute run, with the other member idle for most of it. Nothing about
-the member required that: `drive eval --shard i/n` and `drive merge --expect n` are
-member-generic, partitioned by the same crc32 of the MNXR the mapper lanes use, and the
-merge refuses unless the shards reconstitute the universe exactly.
-
-THE MEMORY MULTIPLIES AND DOES NOT AMORTISE. The 2.372 GB peak is fixed per process --
-parsed chem_prop plus component-contribution's preprocessor matrices, ~0 marginal per
-reaction -- so it does not fall as the partition narrows. Sixteen shards is 38 GB against
-a 190 GB node, which is why sixteen and not four.
-
-The 1.3 GB compound cache is shared BY SYMLINK across the shards rather than copied, and
-is opened read-only, so the fan-out costs one cache rather than sixteen.
-"""
+# Direction member lane: eQuilibrator -- component-contribution over the pinned cache.
+#
+# One of the two thermodynamic members, and the expensive one: loading the 1.3 GB compound
+# cache and running component-contribution over the reaction universe is most of this
+# ensemble's wall clock. It is its own step for the same reason LocalMapper is -- a change
+# to the calibration or the combiner must not re-pay it.
+#
+# `XDG_CACHE_HOME` IS THE ONLY LEVER ON THE CACHE, and this is the fact the lane exists
+# around. `equilibrator_cache.zenodo.get_cached_filepath` resolves through
+# `pooch.os_cache("equilibrator")` -- i.e. `$XDG_CACHE_HOME/equilibrator/<file>` -- and
+# reads nothing else. `EQUILIBRATOR_CACHE_DIR` is read by no part of pooch,
+# equilibrator_cache or component_contribution: it was exported for a generation and was a
+# no-op the whole time, and what actually made that build work was that the acquisition
+# happened to leave the package's own nested layout in place. Now that
+# `acquire/equilibrator.py` lifts the two artifacts into `equilibrator/<version>/`, the
+# layout pooch expects is rebuilt here BY SYMLINK -- compounds.sqlite is 1.3 GB and a copy
+# per member is 1.3 GB of nothing.
+#
+# Pooch re-checks its embedded md5 for each file before using it, which is the same claim
+# `zenodo.md5` records in the acquired product. So a wrong or truncated staged cache is
+# caught here rather than showing up as strange free energies.
+#
+# THE UNIVERSE IS RECOMPUTED, NOT PASSED. `dir_drive universe` is a parse of one MetaNetX
+# release's reac_prop, and the release is asserted single at the top of every lane -- so
+# the two members and the combiner derive the same list from the same bytes with the same
+# code. Making it a product instead would put a shared node between two members that have
+# nothing else to say to each other, and would serialise them behind it.
+#
+# SHARDED, AND IT WAS THE CRITICAL PATH UNTIL IT WAS. This lane ran at `cpus=1` while the
+# dGbyG lane ran twenty-wide, so a members run cost whatever eQuilibrator cost serially --
+# ~38 minutes of a ~38 minute run, with the other member idle for most of it. Nothing about
+# the member required that: `drive eval --shard i/n` and `drive merge --expect n` are
+# member-generic, partitioned by the same crc32 of the MNXR the mapper lanes use, and the
+# merge refuses unless the shards reconstitute the universe exactly.
+#
+# THE MEMORY MULTIPLIES AND DOES NOT AMORTISE. The 2.372 GB peak is fixed per process --
+# parsed chem_prop plus component-contribution's preprocessor matrices, ~0 marginal per
+# reaction -- so it does not fall as the partition narrows. Sixteen shards is 38 GB against
+# a 190 GB node, which is why sixteen and not four.
+#
+# The 1.3 GB compound cache is shared BY SYMLINK across the shards rather than copied, and
+# is opened read-only, so the fan-out costs one cache rather than sixteen.
 from metasmith.python_api import *
 
 lib   = TransformInstanceLibrary.ResolveParentLibrary(__file__)
@@ -167,12 +166,6 @@ def protocol(context: ExecutionContext):
 
     return ExecutionResult(
         manifest=[{out_eq: iout.local}, {ev: iev.local}],
-        # THE RAW OUTPUT IS PART OF THE RESULT, not a diagnostic nicety. This used to
-        # pass on the table alone, arguing that an evidence directory lost after a
-        # twelve-hour run was not worth failing over. It is: the copy happens seconds
-        # after the tool finished, in the same command, so an absence is not the lane
-        # being busy -- it is something going wrong that a green lane would hide, and the
-        # tool's own output is the only record of what it actually said.
         success=(iout.local.exists() and iout.local.stat().st_size > 0
                  and (iev.local / "equilibrator").is_dir()
                  and any((iev.local / "equilibrator").iterdir())),

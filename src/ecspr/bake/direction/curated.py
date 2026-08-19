@@ -1,45 +1,44 @@
-"""Curated member: BioCyc REACTION-DIRECTION, aligned to MNXR orientation.
-
-The hazard this module exists for: REACTION-DIRECTION is stated relative to
-MetaCyc's own equation orientation, but MNXref re-canonicalises orientation on
-import, so a naive metacyc-reaction -> MNXR join inverts the curated direction on
-~60% of reactions (measured). Direction cannot be made orientation-agnostic the
-way the AAM lane was, because orientation IS the signal. So every reaction's
-curated call is re-expressed in MNXR orientation by comparing the MetaCyc
-LEFT/RIGHT compound sets (mapped to MNXM) against the MNXR substrate/product sets.
-
-Anchor = the flat file's LEFT/RIGHT slots, which are self-consistent with its own
-REACTION-DIRECTION. The reac_xref col-3 equation (a newer MetaCyc) is an
-independent cross-check, recorded but not used to decide.
-
-SOURCE. The deployed member read a staged sqlite pgdb; this one reads the licensed
-drop-in's own `reactions.dat` through `dir_metacyc_flatfile`. Same three slots
-(REACTION-DIRECTION, LEFT, RIGHT), same alignment, one less derived artifact in the
-acquisition tier. EcoCyc is NOT a second source here: it carries no dedicated MNXref
-prefix and joins through the same `metacyc.reaction` map, so on this crosswalk it adds
-reaction ids MetaCyc already supplies rather than independent evidence -- and the drop-in
-is MetaCyc. The `source` column is kept so a second pgdb could be added back without a
-schema change.
-
-THE SUPPLEMENTARY CROSSWALK (`--supplementary-crosswalk`, off by default). 545 of the
-18,591 directed MetaCyc reactions carry no `metacyc.reaction` row in reac_xref, so the
-primary join never sees them -- and read as a list rather than as a count, they are
-overwhelmingly GENERIC-POLYMER chemistry (glucans, amylopectin, levan, maltodextrins,
-peptides, mRNA fragments), which is the same MetaNetX weakness the polymer substitution
-lane exists for. Those records are matched to an MNXR on the unordered set of their
-mapped MNXM participants, then re-expressed through `align_one` like any other -- never
-around it, which is the inversion this module is organised against.
-
-Two things make that safe rather than merely plausible. The key is PRICED, not argued:
-run over the 18,046 records reac_xref DOES crosswalk, where reac_xref is ground truth,
-it fires on 14,860 and is right on 14,801, and `SUPP_PRECISION_FLOOR` fails the build if
-that ever degrades. And the arm is ADDITIVE ONLY -- it matches only onto an MNXR no
-reac_xref row already claims -- so on every reaction it reaches there is no primary call
-for it to contradict. The orientation hazard is closed by construction; the precision
-figure is the backstop, not the argument.
-
-Standalone: `python -m ecspr.bake.direction.curated --out <parquet>` (any env with pandas).
-"""
+# Curated member: BioCyc REACTION-DIRECTION, aligned to MNXR orientation.
+#
+# The hazard this module exists for: REACTION-DIRECTION is stated relative to
+# MetaCyc's own equation orientation, but MNXref re-canonicalises orientation on
+# import, so a naive metacyc-reaction -> MNXR join inverts the curated direction on
+# ~60% of reactions (measured). Direction cannot be made orientation-agnostic the
+# way the AAM lane was, because orientation IS the signal. So every reaction's
+# curated call is re-expressed in MNXR orientation by comparing the MetaCyc
+# LEFT/RIGHT compound sets (mapped to MNXM) against the MNXR substrate/product sets.
+#
+# Anchor = the flat file's LEFT/RIGHT slots, which are self-consistent with its own
+# REACTION-DIRECTION. The reac_xref col-3 equation (a newer MetaCyc) is an
+# independent cross-check, recorded but not used to decide.
+#
+# SOURCE. The deployed member read a staged sqlite pgdb; this one reads the licensed
+# drop-in's own `reactions.dat` through `dir_metacyc_flatfile`. Same three slots
+# (REACTION-DIRECTION, LEFT, RIGHT), same alignment, one less derived artifact in the
+# acquisition tier. EcoCyc is NOT a second source here: it carries no dedicated MNXref
+# prefix and joins through the same `metacyc.reaction` map, so on this crosswalk it adds
+# reaction ids MetaCyc already supplies rather than independent evidence -- and the drop-in
+# is MetaCyc. The `source` column is kept so a second pgdb could be added back without a
+# schema change.
+#
+# THE SUPPLEMENTARY CROSSWALK (`--supplementary-crosswalk`, off by default). 545 of the
+# 18,591 directed MetaCyc reactions carry no `metacyc.reaction` row in reac_xref, so the
+# primary join never sees them -- and read as a list rather than as a count, they are
+# overwhelmingly GENERIC-POLYMER chemistry (glucans, amylopectin, levan, maltodextrins,
+# peptides, mRNA fragments), which is the same MetaNetX weakness the polymer substitution
+# lane exists for. Those records are matched to an MNXR on the unordered set of their
+# mapped MNXM participants, then re-expressed through `align_one` like any other -- never
+# around it, which is the inversion this module is organised against.
+#
+# Two things make that safe rather than merely plausible. The key is PRICED, not argued:
+# run over the 18,046 records reac_xref DOES crosswalk, where reac_xref is ground truth,
+# it fires on 14,860 and is right on 14,801, and `SUPP_PRECISION_FLOOR` fails the build if
+# that ever degrades. And the arm is ADDITIVE ONLY -- it matches only onto an MNXR no
+# reac_xref row already claims -- so on every reaction it reaches there is no primary call
+# for it to contradict. The orientation hazard is closed by construction; the precision
+# figure is the backstop, not the argument.
+#
+# Standalone: `python -m ecspr.bake.direction.curated --out <parquet>` (any env with pandas).
 from __future__ import annotations
 
 import argparse
@@ -69,13 +68,12 @@ FLIP = {
 
 
 def flip_verdict(left_ids, right_ids, sides_lr, cmap):
-    """Is this MetaCyc LEFT/RIGHT orientation flipped relative to the MNXR sides?
-
-    Returns (flipped, agree, flip): flipped is True/False, or None when there is
-    no overlap (nothing compared -> not a decision) or an exact tie (~transport,
-    same compound both sides). left/right are bare MetaCyc compound ids mapped to
-    MNXM via cmap, then overlapped against the MNXR substrate/product sets.
-    """
+    # Is this MetaCyc LEFT/RIGHT orientation flipped relative to the MNXR sides?
+    #
+    # Returns (flipped, agree, flip): flipped is True/False, or None when there is
+    # no overlap (nothing compared -> not a decision) or an exact tie (~transport,
+    # same compound both sides). left/right are bare MetaCyc compound ids mapped to
+    # MNXM via cmap, then overlapped against the MNXR substrate/product sets.
     if sides_lr is None:
         return None, 0, 0
     xl, xr = sides_lr
@@ -89,11 +87,10 @@ def flip_verdict(left_ids, right_ids, sides_lr, cmap):
 
 
 def align_one(direction, left_ids, right_ids, sides_lr, cmap):
-    """Return (aligned_direction, reason). aligned is None when undecidable.
-
-    reason in {same, flipped, no_direction, unknown_value, no_mnxr_sides,
-    no_overlap, tie}.
-    """
+    # Return (aligned_direction, reason). aligned is None when undecidable.
+    #
+    # reason in {same, flipped, no_direction, unknown_value, no_mnxr_sides,
+    # no_overlap, tie}.
     if not direction:
         return None, "no_direction"
     if direction not in FLIP:
@@ -113,9 +110,9 @@ SUPP_PRECISION_FLOOR = 0.99
 
 
 def _participant_index(sides):
-    """frozenset(MNXM participants) -> [MNXR]. The match key, and it is orientation-BLIND
-    on purpose: which side a compound sits on is what `align_one` decides afterwards, and
-    a key that encoded it would bake in the very flip this module exists to detect."""
+    # frozenset(MNXM participants) -> [MNXR]. The match key, and it is orientation-BLIND
+    # on purpose: which side a compound sits on is what `align_one` decides afterwards, and
+    # a key that encoded it would bake in the very flip this module exists to detect.
     idx = defaultdict(list)
     for mnxr, (xl, xr) in sides.items():
         idx[frozenset(xl | xr)].append(mnxr)
@@ -123,12 +120,11 @@ def _participant_index(sides):
 
 
 def _match_one(rec, idx, sides, cmap):
-    """(mnxr, None) for the one MNXR this record is, else (None, refusal_reason).
-
-    Every refusal is a whole-record refusal. A partially mapped equation is declined
-    rather than matched on the compounds that happened to resolve: a subset of the
-    participants is a different reaction, and it would match a different MNXR.
-    """
+    # (mnxr, None) for the one MNXR this record is, else (None, refusal_reason).
+    #
+    # Every refusal is a whole-record refusal. A partially mapped equation is declined
+    # rather than matched on the compounds that happened to resolve: a subset of the
+    # participants is a different reaction, and it would match a different MNXR.
     left, right = list(rec["left"]), list(rec["right"])
     if not left or not right:
         return None, "empty_side"
@@ -153,11 +149,10 @@ def _match_one(rec, idx, sides, cmap):
 
 
 def crosswalk_precision(records, id2mnxr, idx, sides, cmap):
-    """(correct, fired) for the key run over the records reac_xref DOES crosswalk.
-
-    A held-out check of thousands rather than an argument: on those records reac_xref is
-    the answer, so the key can simply be asked whether it agrees.
-    """
+    # (correct, fired) for the key run over the records reac_xref DOES crosswalk.
+    #
+    # A held-out check of thousands rather than an argument: on those records reac_xref is
+    # the answer, so the key can simply be asked whether it agrees.
     correct = fired = 0
     for rec in records:
         truth = id2mnxr.get(rec["unique_id"])
@@ -172,12 +167,11 @@ def crosswalk_precision(records, id2mnxr, idx, sides, cmap):
 
 
 def supplementary_map(records, id2mnxr, sides, cmap):
-    """(mc_id -> MNXR, refusal ledger, (correct, fired)) for the reac_xref gap.
-
-    Refuses to return anything at all if the key fails `SUPP_PRECISION_FLOOR` on the
-    held-out corpus, because a key that no longer identifies reactions would otherwise
-    hand confident directions to the wrong ones.
-    """
+    # (mc_id -> MNXR, refusal ledger, (correct, fired)) for the reac_xref gap.
+    #
+    # Refuses to return anything at all if the key fails `SUPP_PRECISION_FLOOR` on the
+    # held-out corpus, because a key that no longer identifies reactions would otherwise
+    # hand confident directions to the wrong ones.
     idx = _participant_index(sides)
     correct, fired = crosswalk_precision(records, id2mnxr, idx, sides, cmap)
     prec = correct / fired if fired else 0.0
@@ -206,11 +200,10 @@ def supplementary_map(records, id2mnxr, sides, cmap):
 
 
 def read_source(records, source: str, id2mnxr, sides, cmap, col3):
-    """One row per source reaction that carries a REACTION-DIRECTION and an MNXR.
-
-    Takes already-parsed records rather than a path because `build` runs it twice over
-    the one file -- once against reac_xref's map, once against the supplementary one.
-    """
+    # One row per source reaction that carries a REACTION-DIRECTION and an MNXR.
+    #
+    # Takes already-parsed records rather than a path because `build` runs it twice over
+    # the one file -- once against reac_xref's map, once against the supplementary one.
     rows = []
     for rec in records:
         d = rec["direction"]
@@ -240,11 +233,10 @@ def read_source(records, source: str, id2mnxr, sides, cmap, col3):
 
 
 def collapse_to_mnxr(df: pd.DataFrame) -> pd.DataFrame:
-    """One row per MNXR. aligned = the agreed direction across all contributing
-    reactions/sources, else None with source='disagree'. Many metacyc reactions
-    can share one MNXR (max ~167); a genuine conflict is recorded, never
-    first-wins-resolved.
-    """
+    # One row per MNXR. aligned = the agreed direction across all contributing
+    # reactions/sources, else None with source='disagree'. Many metacyc reactions
+    # can share one MNXR (max ~167); a genuine conflict is recorded, never
+    # first-wins-resolved.
     out = []
     for mnxr, g in df.groupby("mnxr", sort=False):
         decided = g[g["aligned"].notna()]

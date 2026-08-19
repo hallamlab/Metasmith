@@ -88,11 +88,6 @@ def main():
     fig, axes = plt.subplots(1, n_ax, figsize=(6.75 * n_ax, 5.4), facecolor=SURFACE)
     axL, axR = axes[0], axes[1]
 
-    # ---- left: the signed delta, which is what a regression would actually see -------
-    # Signed DECADES, not a linear or arcsinh axis. The magnitudes run over nine decades,
-    # so on any axis that respects the values the whole cohort but the top three collapses
-    # onto zero -- which hides the thing being asked about, namely whether sign tracks the
-    # phenotype down at the floor.
     style(axL)
     up = scored.pct_wt.to_numpy(float) >= 100.0
     floor_exp = lo - 1.0
@@ -123,7 +118,6 @@ def main():
              transform=axL.transAxes, ha="right", va="top", fontsize=9,
              color=TEXT_SECONDARY, linespacing=1.5)
 
-    # ---- right: magnitude in decades, with the responder cut on it -------------------
     style(axR)
     bins = np.arange(lo, hi + 0.5, 0.5)
     lg = np.log10(np.maximum(mag, 10.0 ** lo))
@@ -147,7 +141,6 @@ def main():
              transform=axR.transAxes, ha="right", va="top", fontsize=9,
              color=TEXT_SECONDARY)
 
-    # name the genes that carry it, since the point of the cut is that it is a short list
     named = scored.loc[keep, ["gene", "delta"]].sort_values(
         "delta", key=np.abs, ascending=False)
     axR.text(0.98, 0.52, "carrying it: " + ", ".join(named.gene.astype(str)[:8]),

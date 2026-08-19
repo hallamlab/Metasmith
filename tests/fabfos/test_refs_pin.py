@@ -1,13 +1,12 @@
-"""The reference library's identity construction, pinned.
-
-No real data: a fake `processed/` root with fake `.dvc` files is enough, because
-nothing here reads a reference byte -- which is the property being tested.
-
-The one thing to be careful about: `dvc_leaf_id` is asserted against a literal.
-That is not a tautology test. Changing the construction silently re-keys every
-cached run that ever touched a reference, and a failure here is the reminder
-that the change costs a cluster a round of recomputation.
-"""
+# The reference library's identity construction, pinned.
+#
+# No real data: a fake `processed/` root with fake `.dvc` files is enough, because
+# nothing here reads a reference byte -- which is the property being tested.
+#
+# The one thing to be careful about: `dvc_leaf_id` is asserted against a literal.
+# That is not a tautology test. Changing the construction silently re-keys every
+# cached run that ever touched a reference, and a failure here is the reminder
+# that the change costs a cluster a round of recomputation.
 
 from __future__ import annotations
 
@@ -40,12 +39,11 @@ def test_the_id_construction_is_exactly_this(tmp_path):
 
 
 def test_two_files_under_one_pin_get_distinct_ids(tmp_path):
-    """A `.dvc` covers a whole chunk, so the relative path has to be folded in.
-
-    Without it `kofam_ref/profiles` and `kofam_ref/ko_list.tsv` collapse to one
-    identity -- the same fan-out corruption `_mint_leaf_id` folds the path to
-    avoid.
-    """
+    # A `.dvc` covers a whole chunk, so the relative path has to be folded in.
+    #
+    # Without it `kofam_ref/profiles` and `kofam_ref/ko_list.tsv` collapse to one
+    # identity -- the same fan-out corruption `_mint_leaf_id` folds the path to
+    # avoid.
     md5 = "59e24a1aeb8fdc243b698f42e50468d9.dir"
     assert refs.dvc_leaf_id(md5, "kofam_ref/profiles") != refs.dvc_leaf_id(md5, "kofam_ref/ko_list.tsv")
 
@@ -84,12 +82,11 @@ def test_a_changed_pin_moves_the_id(tmp_path):
 
 
 def test_a_re_materialised_pin_self_heals_instead_of_raising(tmp_path):
-    """The expected day-to-day drift, and it must not need a human.
-
-    `dvc checkout` of the SAME pin re-links the files and moves mtime. The ids
-    are provably still correct, because the value they were minted from has not
-    changed -- so the stamp is re-recorded and nothing is re-hashed.
-    """
+    # The expected day-to-day drift, and it must not need a human.
+    #
+    # `dvc checkout` of the SAME pin re-links the files and moves mtime. The ids
+    # are provably still correct, because the value they were minted from has not
+    # changed -- so the stamp is re-recorded and nothing is re-hashed.
     root = _fake_root(tmp_path)
     out = tmp_path / "refs.xgdb"
     refs.pin_refs(root, out)
@@ -119,7 +116,7 @@ def test_a_changed_pin_under_a_pinned_library_raises_naming_the_fix(tmp_path):
 
 
 def test_a_recorded_provenance_id_beats_the_pin_derived_one(tmp_path):
-    """A published reference's real lineage id, when the publish step kept it."""
+    # A published reference's real lineage id, when the publish step kept it.
     root = _fake_root(tmp_path)
     out = tmp_path / "refs.xgdb"
     refs.record_published_provenance(
@@ -131,7 +128,7 @@ def test_a_recorded_provenance_id_beats_the_pin_derived_one(tmp_path):
 
 
 def test_no_module_keeps_its_own_copy_of_the_layout_table(tmp_path):
-    """One table. Two would mis-key an entry rather than fail."""
+    # One table. Two would mis-key an entry rather than fail.
     from fabfos.pipelines import annotation, ecspr
 
     assert annotation.REF_LAYOUT == {

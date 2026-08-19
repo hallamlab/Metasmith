@@ -1,35 +1,34 @@
-"""ProteinBERT embeddings for the ORFs -> one self-addressing parquet per chunk.
-
-`sequence_id` sits in the same row as its 512 floats. That is the whole design: an
-embedding table that names its own rows cannot be misindexed, and misindexing is
-what this transform used to do. It emitted an id list and a stack as two products,
-paired by row, and the pairing was wrong for every input larger than one embedder
-chunk -- see the chunk-order note below.
-
-THE EMBEDDER'S CHUNK FILES DO NOT SORT INTO THE ORDER THEY WERE WRITTEN. `pbert`
-writes fixed 1,024-sequence chunks in FASTA order, named `<stem>.1`, `<stem>.2`, ...
-with no zero padding, so `sorted(glob("*.npy"))` gives `.1, .10, .11, ... .19, .2,
-.20, ...` -- chunk 10 stacked before chunk 2. Measured 2026-08-05 by re-embedding
-four assemblies through this same pinned image: single-chunk samples matched on the
-diagonal at cosine 0.999, and a 49,522-ORF sample matched at 0.480 against a best of
-0.998. So the chunks are stacked by their integer suffix, never lexicographically,
-and the result is checked against the FASTA this transform wrote before an id is
-attached to it.
-
-THE ALPHABET IS NARROWED BEFORE THE EMBEDDER SEES IT. ProteinBERT tokenises exactly
-ACDEFGHIKLMNPQRSTUVWXY, and the image's encoder sizes its lookup array to the
-largest of those ordinals ('Y', 89) while guarding it with `c > len(arrayed_map)` --
-off by one, so a residue at ordinal exactly 90 indexes past the end and the run dies
-with `IndexError: getitem out of range` after the model has loaded. 'Z' is 90.
-Prodigal does not emit it, but this transform also runs on proteomes that are not
-prodigal's, and the same recoding is what makes the landmark set
-(build_references/compile/label_transfer_landmarks.py) comparable to this query in
-the first place -- two different alphabets are two different embedding spaces.
-
-THE INDEX COLUMN IS RENAMED HERE, ONCE. `pbert` writes `id`; every consumer reads
-`sequence_id`. Normalising at the producer means the type has one schema rather than
-each consumer guessing.
-"""
+# ProteinBERT embeddings for the ORFs -> one self-addressing parquet per chunk.
+#
+# `sequence_id` sits in the same row as its 512 floats. That is the whole design: an
+# embedding table that names its own rows cannot be misindexed, and misindexing is
+# what this transform used to do. It emitted an id list and a stack as two products,
+# paired by row, and the pairing was wrong for every input larger than one embedder
+# chunk -- see the chunk-order note below.
+#
+# THE EMBEDDER'S CHUNK FILES DO NOT SORT INTO THE ORDER THEY WERE WRITTEN. `pbert`
+# writes fixed 1,024-sequence chunks in FASTA order, named `<stem>.1`, `<stem>.2`, ...
+# with no zero padding, so `sorted(glob("*.npy"))` gives `.1, .10, .11, ... .19, .2,
+# .20, ...` -- chunk 10 stacked before chunk 2. Measured 2026-08-05 by re-embedding
+# four assemblies through this same pinned image: single-chunk samples matched on the
+# diagonal at cosine 0.999, and a 49,522-ORF sample matched at 0.480 against a best of
+# 0.998. So the chunks are stacked by their integer suffix, never lexicographically,
+# and the result is checked against the FASTA this transform wrote before an id is
+# attached to it.
+#
+# THE ALPHABET IS NARROWED BEFORE THE EMBEDDER SEES IT. ProteinBERT tokenises exactly
+# ACDEFGHIKLMNPQRSTUVWXY, and the image's encoder sizes its lookup array to the
+# largest of those ordinals ('Y', 89) while guarding it with `c > len(arrayed_map)` --
+# off by one, so a residue at ordinal exactly 90 indexes past the end and the run dies
+# with `IndexError: getitem out of range` after the model has loaded. 'Z' is 90.
+# Prodigal does not emit it, but this transform also runs on proteomes that are not
+# prodigal's, and the same recoding is what makes the landmark set
+# (build_references/compile/label_transfer_landmarks.py) comparable to this query in
+# the first place -- two different alphabets are two different embedding spaces.
+#
+# THE INDEX COLUMN IS RENAMED HERE, ONCE. `pbert` writes `id`; every consumer reads
+# `sequence_id`. Normalising at the producer means the type has one schema rather than
+# each consumer guessing.
 from metasmith.python_api import *
 from pathlib import Path
 
@@ -167,9 +166,6 @@ def protocol(context: ExecutionContext):
                 out_embeddings: iemb.local,
             },
         ],
-        # Non-empty, not merely present: the combiner refuses an index that is not
-        # in the FASTA's order, so a zero-byte file here means it died before
-        # writing.
         success=(iemb.local.exists() and iemb.local.stat().st_size > 0),
     )
 

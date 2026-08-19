@@ -19,14 +19,13 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 
 
 def resolve_refs_root() -> Path:
-    """The `processed/` root every reference default is measured from.
-
-    `FABFOS_REFS_ROOT` repoints it, which is how a run reaches a bake other than
-    this checkout's -- prod against one, local development against another,
-    without editing a default or passing five paths. `FABFOS_REFS_XGDB` moves the
-    pinned library that indexes it; the two are separate because the library is
-    generated beside the data, not inside it.
-    """
+    # The `processed/` root every reference default is measured from.
+    #
+    # `FABFOS_REFS_ROOT` repoints it, which is how a run reaches a bake other than
+    # this checkout's -- prod against one, local development against another,
+    # without editing a default or passing five paths. `FABFOS_REFS_XGDB` moves the
+    # pinned library that indexes it; the two are separate because the library is
+    # generated beside the data, not inside it.
     override = os.environ.get("FABFOS_REFS_ROOT")
     if override:
         return Path(override).expanduser().resolve()

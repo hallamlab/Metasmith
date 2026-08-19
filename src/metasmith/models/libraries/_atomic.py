@@ -1,22 +1,21 @@
-"""Writing a library index without leaving a half-written one behind.
-
-`Save()` used to be a bare truncating `open(..., "w")` followed by a
-`yaml.dump`. That is fine for a library one process builds and then reads, and
-it is not fine for one several concurrent plans load: a reader arriving mid-dump
-sees a truncated document, and a dump that raises leaves the index destroyed
-rather than stale.
-
-`os.replace` is what buys correctness here -- it is atomic within a filesystem,
-so a reader sees either the whole old file or the whole new one and never a
-prefix. The lock is a *courtesy* on top: it serialises two writers so the last
-one to finish wins cleanly instead of both racing, and it is advisory, bounded,
-and unreliable on NFS. Do not read it as mutual exclusion; read `os.replace` as
-the guarantee and the lock as noise reduction.
-
-The temp name carries pid and thread for the same reason `gui/store.py` does:
-one fixed `.tmp` beside the target makes two concurrent writes fight over one
-path, and the loser fails at the rename with an error that names nothing useful.
-"""
+# Writing a library index without leaving a half-written one behind.
+#
+# `Save()` used to be a bare truncating `open(..., "w")` followed by a
+# `yaml.dump`. That is fine for a library one process builds and then reads, and
+# it is not fine for one several concurrent plans load: a reader arriving mid-dump
+# sees a truncated document, and a dump that raises leaves the index destroyed
+# rather than stale.
+#
+# `os.replace` is what buys correctness here -- it is atomic within a filesystem,
+# so a reader sees either the whole old file or the whole new one and never a
+# prefix. The lock is a *courtesy* on top: it serialises two writers so the last
+# one to finish wins cleanly instead of both racing, and it is advisory, bounded,
+# and unreliable on NFS. Do not read it as mutual exclusion; read `os.replace` as
+# the guarantee and the lock as noise reduction.
+#
+# The temp name carries pid and thread for the same reason `gui/store.py` does:
+# one fixed `.tmp` beside the target makes two concurrent writes fight over one
+# path, and the loser fails at the rename with an error that names nothing useful.
 
 from __future__ import annotations
 
@@ -37,7 +36,6 @@ _LOCK_POLL_S = 0.05
 
 
 def _acquire(lock: Path) -> bool:
-    """O_EXCL create, following `caching/promote.py`'s shape. Best effort."""
     payload = f"{os.getpid()} {socket.gethostname()} {time.time():.6f}\n"
     try:
         fd = os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
@@ -54,7 +52,6 @@ def _acquire(lock: Path) -> bool:
 
 
 def write_yaml_atomic(path: Path, data: dict, *, sort_keys: bool = True) -> None:
-    """Replace `path` with `data`, atomically, under a best-effort lock."""
     path.parent.mkdir(parents=True, exist_ok=True)
     lock = path.with_name(path.name + ".lock")
     held = False

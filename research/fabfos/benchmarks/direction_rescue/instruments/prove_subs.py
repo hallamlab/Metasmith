@@ -1,27 +1,26 @@
-"""Step (a): PROVE END TO END that the retrieved member tables carry substitutions.
-
-This is the check `f4642fc` earned. Neither member lane passed `--substitutions` until
-that commit, and the failure was invisible: the job runs, exits 0, writes a full-size
-table, and the only difference is that the chemistry is r8's under an r9 DIRVER. So the
-question is not "did the run succeed" -- it did either way -- but "is the chemistry in
-this table the chemistry the tables describe".
-
-Four checks, in increasing order of how hard they are to pass by accident:
-
-  1. NOT EMPTY / FULL UNIVERSE. `drive eval` catches an ImportError and writes an EMPTY
-     member table, returning 0 ("the ensemble loses a vote, not the build"). A green run
-     with an absent member is the loudest silent failure here, so it is checked first.
-  2. sigma_sub > 0 EXISTS. The substituted-width column is written by nothing else. Zero
-     such rows means the tables did not reach the member.
-  3. COVERED REACTIONS SPOKE. Reactions the tables cover that were no_props / no_smiles /
-     wildcard in r8 must now carry a dg. This is the effect, not just the marker.
-  4. UNCOVERED REACTIONS ARE UNCHANGED, row for row, against r8's committed seam. This is
-     the invariant the whole mechanism was designed around -- no MetaNetX props key is
-     ever overwritten -- checked at the far end of the cluster rather than in a unit test.
-     A diff here is worse than a missing substitution: it means uncovered chemistry moved.
-
-Exit 0 only if all four pass on both members. Anything else and the run must be redone.
-"""
+# Step (a): PROVE END TO END that the retrieved member tables carry substitutions.
+#
+# This is the check `f4642fc` earned. Neither member lane passed `--substitutions` until
+# that commit, and the failure was invisible: the job runs, exits 0, writes a full-size
+# table, and the only difference is that the chemistry is r8's under an r9 DIRVER. So the
+# question is not "did the run succeed" -- it did either way -- but "is the chemistry in
+# this table the chemistry the tables describe".
+#
+# Four checks, in increasing order of how hard they are to pass by accident:
+#
+#   1. NOT EMPTY / FULL UNIVERSE. `drive eval` catches an ImportError and writes an EMPTY
+#      member table, returning 0 ("the ensemble loses a vote, not the build"). A green run
+#      with an absent member is the loudest silent failure here, so it is checked first.
+#   2. sigma_sub > 0 EXISTS. The substituted-width column is written by nothing else. Zero
+#      such rows means the tables did not reach the member.
+#   3. COVERED REACTIONS SPOKE. Reactions the tables cover that were no_props / no_smiles /
+#      wildcard in r8 must now carry a dg. This is the effect, not just the marker.
+#   4. UNCOVERED REACTIONS ARE UNCHANGED, row for row, against r8's committed seam. This is
+#      the invariant the whole mechanism was designed around -- no MetaNetX props key is
+#      ever overwritten -- checked at the far end of the cluster rather than in a unit test.
+#      A diff here is worse than a missing substitution: it means uncovered chemistry moved.
+#
+# Exit 0 only if all four pass on both members. Anything else and the run must be redone.
 import sys
 from pathlib import Path
 sys.path.insert(0, "src")
@@ -35,7 +34,6 @@ MNX = Path("data/fabfos/originals/metanetx/4.5")
 R8 = Path("data/fabfos/processed/metabolism_bake/seams")
 TABLES = Path("src/ecspr/bake/direction")
 SILENT = {"no_props", "no_smiles", "wildcard", "unresolved", "no_stoich", "unparseable"}
-# kJ/mol. See check 4: eight orders below anything that can move a tier.
 TOL = 1e-9
 
 new_eq, new_dg = Path(sys.argv[1]), Path(sys.argv[2])
@@ -45,11 +43,6 @@ names = load_mnxm_names(MNX / "chem_prop.tsv")
 formulas = load_mnxm_formulas(MNX / "chem_prop.tsv")
 allst = load_mnxr_stoich(MNX / "reac_prop.tsv")
 
-# THE COVERED SET IS PER MEMBER. A row refused for one member and kept for the other is
-# the ordinary `member_drift` path, so a reaction covered for dGbyG may be untouched for
-# eQuilibrator. Loading once and reusing the set would test check 3 against reactions this
-# member was never given, and -- worse -- exempt from check 4 rows that no table touches
-# for this member, which is the one invariant nothing else asserts.
 covered_by = {}
 for member in ("eq", "dgbyg"):
     subs = S.load(TABLES, props, names, formulas=formulas, member=member)
@@ -68,7 +61,6 @@ for member, newp, oldp in (("eq", new_eq, R8 / "direction_member_eq.parquet"),
     old = pd.read_parquet(oldp)
     print(f"  rows: r9 {len(new):,}   r8 {len(old):,}")
 
-    # 1 -- the empty-table failure mode
     if len(new) == 0:
         bad.append(f"{member}: EMPTY member table -- the member was absent in the image")
         print("  [1] FAIL empty\n"); continue
@@ -76,13 +68,11 @@ for member, newp, oldp in (("eq", new_eq, R8 / "direction_member_eq.parquet"),
         bad.append(f"{member}: universe changed {len(old):,} -> {len(new):,}")
     print(f"  [1] {'ok' if len(new) == len(old) else 'FAIL'} full universe")
 
-    # 2 -- the marker
     nsub = int((new["sigma_sub"].fillna(0) > 0).sum()) if "sigma_sub" in new else 0
     print(f"  [2] {'ok' if nsub else 'FAIL'} sigma_sub>0 rows: {nsub:,}")
     if not nsub:
         bad.append(f"{member}: no sigma_sub>0 row -- tables did not reach the member")
 
-    # 3 -- the effect
     o = old.set_index("mnxr"); n = new.set_index("mnxr")
     cov = sorted(covered & set(n.index) & set(o.index))
     was_silent = [m for m in cov if str(o.loc[m, "reason"]) in SILENT]
@@ -122,7 +112,6 @@ for member, newp, oldp in (("eq", new_eq, R8 / "direction_member_eq.parquet"),
         drift = (x[both] - y[both]).abs()
         if len(drift):
             worst = max(worst, float(drift.max()))
-        # NaN on exactly one side is an appearance or a disappearance, not a drift.
         changed |= (x.isna() != y.isna())
         changed |= both & ~np.isclose(x, y, rtol=1e-12, atol=TOL, equal_nan=True)
 

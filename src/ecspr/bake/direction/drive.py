@@ -96,8 +96,6 @@ def cmd_eval(args):
 
     stoich = load_mnxr_stoich(args.reac_prop)
     props = load_mnxm_props(args.chem_prop)
-    # No tables is the identity: an uncovered reaction walks the code path it walks today,
-    # which is what makes this switchable without re-validating the member.
     subs = substitute.load(
         args.substitutions, props,
         load_mnxm_names(args.chem_prop) if args.substitutions else {},

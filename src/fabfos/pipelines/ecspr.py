@@ -72,8 +72,6 @@ from . import common
 
 DOMAINS = ["fabfos"]
 
-# Relative paths come from the one table in `fabfos.refs`, which the pin
-# step reads too -- a second copy here would mis-key an entry rather than fail.
 DEFAULT_ATOM_PAIRS = common.DATA_PROCESSED / refs.relpaths_for("ecspr::atom_pairs")[0]
 DEFAULT_DIRECTION_RATIOS = common.DATA_PROCESSED / refs.relpaths_for("ecspr::direction_ratios")[0]
 
@@ -129,9 +127,6 @@ def build_inputs(work: Path, *, units: list[Unit], atom_pairs: Path | None,
         ("ecspr::atom_pairs", atom_pairs, DEFAULT_ATOM_PAIRS, "atom_pairs"),
         ("ecspr::direction_ratios", direction_ratios, DEFAULT_DIRECTION_RATIOS, "direction"),
     ):
-        # An override is a different file, so its identity is not the recorded one and it
-        # has to be staged; the recorded row is masked out below, or the solver sees two
-        # candidates of one type and picks arbitrarily.
         if dtype in covered and given is None:
             continue
         if dtype in covered:

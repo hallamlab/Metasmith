@@ -2,9 +2,6 @@ from __future__ import annotations
 
 import sys
 
-# Every heavy import lives INSIDE a check. `ecspr.cli` reaches this module for the
-# `selftest` verb, and `--help`/`--where` have to keep working on the env that is
-# missing the very things this asserts.
 
 CHECKS = []
 

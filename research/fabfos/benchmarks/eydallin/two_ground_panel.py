@@ -64,22 +64,19 @@ OUT_DIR = ROOT / "data/fabfos/runs/eydallin_clones/ecspr"
 SOURCE_MNXM = "MNXM1364061"          # D-glucose
 GLYCOGEN_MNXM = "MNXM738130"
 
-# The three networks. Reactions are the host GPR's own, not hand-picked.
 CASES = [
-    ("glgC", "positive", ["MNXR145050"]),   # glucose-1-phosphate adenylyltransferase
-    ("talA", "negative", ["MNXR146501"]),   # transaldolase
+    ("glgC", "positive", ["MNXR145050"]),
+    ("talA", "negative", ["MNXR146501"]),
 ]
 
-# Ground-B candidates. The first five are the top gainers under talA x2 in the full
-# 49-port biomass grounding; `biomass` is all 48 non-glycogen precursors at once.
 GROUND_B = {
     "pyridoxal5P": ["MNXM161"],
     "L-tryptophan": ["MNXM741553"],
     "L-tyrosine": ["MNXM76"],
     "thiamine-PP": ["MNXM256"],
-    "E4P": ["MNXM258"],                     # the branch point itself
+    "E4P": ["MNXM258"],
     "aromatics": ["MNXM741553", "MNXM76", "MNXM741664"],
-    "biomass": None,                        # filled at runtime
+    "biomass": None,
 }
 
 
@@ -91,7 +88,6 @@ def chem_names() -> dict:
 
 
 def measure(pairs, element, weights, ratios, ports, *, leak, port=1.0) -> dict:
-    """One solve; the current drawn at each ground plus the totals it must add up to."""
     g = graph_from_pairs(pairs, element, weights, ratios)
     src = Terminal.metabolite(g, SOURCE_MNXM, label="glucose")
     if src.missing:
@@ -128,9 +124,6 @@ def main():
           f"source {nm.get(SOURCE_MNXM)} -> ground A {nm.get(GLYCOGEN_MNXM)}; "
           f"leak={a.leak:g} fold={a.fold:g}", file=sys.stderr)
 
-    # The control: ONE ground, the target itself. This is what Rayleigh binds -- the sink
-    # IS the target, so KCL delivers the whole injection there and widening any edge can
-    # only raise the conductance. Run on the identical three networks.
     print("\n=== control: one ground (glucose -> glycogen), the two-point conductance ===",
           file=sys.stderr)
     onep = []
@@ -214,7 +207,6 @@ def main():
                "d_glycogen", "d_diversion", "frac_glycogen"]]
     print(show.to_string(index=False, float_format="%+.6e"), file=sys.stderr)
 
-    # The claim, stated as a check rather than as prose.
     ok = []
     for key, sub in df.groupby("ground_b", sort=False):
         s = sub.set_index("case")

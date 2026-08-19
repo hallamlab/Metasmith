@@ -19,8 +19,6 @@ HERE = Path(__file__).resolve().parent
 BEGIN = "<!-- BEGIN generated: costs.py -->"
 END = "<!-- END generated -->"
 
-# The residual is what the AAM lane is actually run over; the universe is what the
-# direction lane is. Quoting one number for both is the mistake this table avoids.
 AAM_TARGET = 12_417
 DIRECTION_TARGET = 83_795
 AAM_OPINIONS = 3
@@ -45,8 +43,6 @@ def projection(sb: pd.DataFrame) -> str:
     aam = sb[sb.split.astype(str).str.startswith(("dev", "heldout"))]
     if aam.empty:
         aam = sb
-    # The most recent run of the best-covered revision is the honest rate: an early
-    # revision's cost describes a prompt nobody will run.
     rate = int(aam.tokens_per_rxn.iloc[-1])
     per_min = float(aam.rxn_per_min.iloc[-1] or 0)
     aam_tok = rate * AAM_TARGET * AAM_OPINIONS

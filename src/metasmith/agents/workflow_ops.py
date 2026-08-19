@@ -166,17 +166,16 @@ class _WorkflowOps:
         return GetNxfConfigPresets(folder)
 
     def MaterialiseImages(self, task: WorkflowTask|str, force: bool=False) -> dict:
-        """Fetch every tool image a staged task needs, onto this agent's host.
-
-        The answer for a cluster whose compute nodes have no route to a
-        registry: run this from the login node, which does, and every task then
-        finds its image already in the store. It is idempotent -- a second run
-        does nothing -- because each image is skipped on the same
-        artifact-and-stamp test every task consults.
-
-        `force` re-fetches regardless, which is what to reach for when a store
-        is suspect rather than incomplete.
-        """
+        # Fetch every tool image a staged task needs, onto this agent's host.
+        #
+        # The answer for a cluster whose compute nodes have no route to a
+        # registry: run this from the login node, which does, and every task then
+        # finds its image already in the store. It is idempotent -- a second run
+        # does nothing -- because each image is skipped on the same
+        # artifact-and-stamp test every task consults.
+        #
+        # `force` re-fetches regardless, which is what to reach for when a store
+        # is suspect rather than incomplete.
         task_key = task.GetKey() if isinstance(task, WorkflowTask) else task
         with AgentShell(self) as sh_remote:
             workspace = AgentPaths.to_task(task_key, root=self.home.GetPath()).parent.parent
@@ -265,7 +264,6 @@ class _WorkflowOps:
             if gpu_planned:
                 Log.Info(f"GPU requests planned for [{len(gpu_planned)}] of [{len(gpu_manifest)}] declaring steps")
 
-            # Caught here rather than mid-run, after everything upstream has been computed.
             agent_env = Environment(
                 image=self.container, runtime=self.runtime, native=self.native,
                 rootfs=self.rootfs,

@@ -12,8 +12,6 @@ ezpred    = model.AddRequirement(lib.GetType("annotation::ezpred_predictions"), 
 uniref    = model.AddRequirement(lib.GetType("annotation::diamond_uniref50_results"), parents={orfs})
 pbert_emb = model.AddRequirement(lib.GetType("annotation::proteinbert_embeddings"), parents={orfs})
 esmc_emb  = model.AddRequirement(lib.GetType("annotation::esm_c_embeddings"), parents={orfs})
-# The ESM-C query is still an index beside a stack: only the ProteinBERT side was
-# collapsed into one self-addressing table.
 esmc_idx  = model.AddRequirement(lib.GetType("annotation::esm_c_index"), parents={orfs})
 bridge    = model.AddRequirement(lib.GetType("ref::mnxr_lookup"))
 landmarks = model.AddRequirement(lib.GetType("ref::label_transfer_landmarks"))

@@ -91,7 +91,6 @@ def main():
         2, 1, figsize=(9.0, 6.4), facecolor=SURFACE, sharex=True,
         gridspec_kw={"height_ratios": [3.2, 1.2], "hspace": 0.06})
 
-    # ---- top: overlaid KDEs, each normalised to its own density ---------------------
     style(axK)
     xs = np.linspace(xlim[0], xlim[1], 800)
     for d, color, label, n in (
@@ -117,7 +116,6 @@ def main():
              transform=axK.transAxes, ha="right", va="top", fontsize=9,
              color=TEXT_SECONDARY, linespacing=1.5)
 
-    # ---- bottom: barcode, both cohorts, hits tall/solid -----------------------------
     style(axB)
     axB.set_yticks([])
     for s in ("top", "right", "left"):

@@ -1,64 +1,63 @@
-"""ECSPr as a measuring instrument: an atom-resolved network, two terminals, one solution.
-
-WHAT THIS IS
-------------
-A graph plus two metabolite terminals in; a :class:`Solution` out. The solution can be
-interrogated at any node or metabolite for **current** and for **voltage**. That is the
-whole contract. The engine takes no perturbation argument and knows nothing about how the
-network was built: a knockout is a network built from a smaller gene set, and the
-comparison is a subtraction the caller does. `methods/pulsechase/run_pulsechase.py` has
-stated this contract in its own docstring since before it was implementable.
-
-WHY THE ATOM GRAPH AND NOT THE STAR
------------------------------------
-On the incumbent star topology a metabolite is a single node joined to reaction-node hubs.
-Eliminating a reaction node -- which is exactly what a Woodbury update does -- leaves a
-CLIQUE over every participant, so two participants that share no atom still get a
-conductance between them. Measured on MNXR106432 (carbon): the pyruvate-NADPH and
-pyruvate-CoA channels, which carry ZERO carbons, each score 0.700 while the real
-1-carbon pyruvate-CO2 channel scores 0.033 -- a zero-atom channel 21x more conductive
-than a real one. Here a node IS an atom (metabolite, canonical rank) and an edge IS an
-atom transfer, so there is no hub to manufacture a channel and an input terminal can carry
-an **atom mask** at all.
-
-THE MEASUREMENT THIS EXISTS FOR
--------------------------------
-Inject unit current at a growth substrate; merge every biomass precursor into one
-aggregate ground; solve once. Then read, per precursor, how much of that current it
-actually draws (:meth:`Solution.delivered`). A loss-of-function edge does not merely lower
-a point-to-point conductance -- it REDISTRIBUTES flow, and a starved precursor shows up as
-its share collapsing while the total barely moves. That question is invisible to a
-two-terminal probe, which is why the two-terminal probe was not enough.
-
-Per-precursor readout must be **current**, not potential. Merged precursors all sit at the
-same (ground) potential by construction, so no potential-based readout can distinguish
-among them; "shifts current away from a precursor" is inherently a current statement.
-Voltage is still exposed, because a non-terminal metabolite's atoms sit at genuinely
-different potentials and that is worth being able to see.
-
-HOW A TERMINAL WORKS
---------------------
-A terminal is a SET of atom nodes, shorted by exact node contraction -- parallel
-conductances kept, intra-terminal edges dropped. Not a large-weight approximation.
-
-One deliberate departure from `ecspr_atom_graph.merge_terminals`: parallel edges are NOT
-summed during contraction. Every original edge stays its own row and remembers its
-ORIGINAL endpoints. That is what makes per-precursor attribution exact -- with the edges
-summed there is no way to ask which precursor a merged edge fed -- and it is electrically
-identical, since parallel conductances between the same contracted pair carry current in
-the same proportion either way.
-
-THE SOLVE
----------
-Reused wholesale from :mod:`ecspr.model.directed`: signed incidence, softplus-smoothed diode,
-Newton with an energy-Armijo line search, CHOLMOD symbolic reuse. Nothing about the
-rectified network changes -- only the topology it runs on, and the fact that terminals are
-node sets rather than single nodes. When ``gm == gp`` everywhere the network is symmetric
-and one linear solve is exact; that path is taken explicitly rather than left for Newton
-to discover.
-
-Env: numpy + scipy (+ networkx only for the parity referent). No SCADC paths, no canon.
-"""
+# ECSPr as a measuring instrument: an atom-resolved network, two terminals, one solution.
+#
+# WHAT THIS IS
+# ------------
+# A graph plus two metabolite terminals in; a :class:`Solution` out. The solution can be
+# interrogated at any node or metabolite for **current** and for **voltage**. That is the
+# whole contract. The engine takes no perturbation argument and knows nothing about how the
+# network was built: a knockout is a network built from a smaller gene set, and the
+# comparison is a subtraction the caller does. `methods/pulsechase/run_pulsechase.py` has
+# stated this contract in its own docstring since before it was implementable.
+#
+# WHY THE ATOM GRAPH AND NOT THE STAR
+# -----------------------------------
+# On the incumbent star topology a metabolite is a single node joined to reaction-node hubs.
+# Eliminating a reaction node -- which is exactly what a Woodbury update does -- leaves a
+# CLIQUE over every participant, so two participants that share no atom still get a
+# conductance between them. Measured on MNXR106432 (carbon): the pyruvate-NADPH and
+# pyruvate-CoA channels, which carry ZERO carbons, each score 0.700 while the real
+# 1-carbon pyruvate-CO2 channel scores 0.033 -- a zero-atom channel 21x more conductive
+# than a real one. Here a node IS an atom (metabolite, canonical rank) and an edge IS an
+# atom transfer, so there is no hub to manufacture a channel and an input terminal can carry
+# an **atom mask** at all.
+#
+# THE MEASUREMENT THIS EXISTS FOR
+# -------------------------------
+# Inject unit current at a growth substrate; merge every biomass precursor into one
+# aggregate ground; solve once. Then read, per precursor, how much of that current it
+# actually draws (:meth:`Solution.delivered`). A loss-of-function edge does not merely lower
+# a point-to-point conductance -- it REDISTRIBUTES flow, and a starved precursor shows up as
+# its share collapsing while the total barely moves. That question is invisible to a
+# two-terminal probe, which is why the two-terminal probe was not enough.
+#
+# Per-precursor readout must be **current**, not potential. Merged precursors all sit at the
+# same (ground) potential by construction, so no potential-based readout can distinguish
+# among them; "shifts current away from a precursor" is inherently a current statement.
+# Voltage is still exposed, because a non-terminal metabolite's atoms sit at genuinely
+# different potentials and that is worth being able to see.
+#
+# HOW A TERMINAL WORKS
+# --------------------
+# A terminal is a SET of atom nodes, shorted by exact node contraction -- parallel
+# conductances kept, intra-terminal edges dropped. Not a large-weight approximation.
+#
+# One deliberate departure from `ecspr_atom_graph.merge_terminals`: parallel edges are NOT
+# summed during contraction. Every original edge stays its own row and remembers its
+# ORIGINAL endpoints. That is what makes per-precursor attribution exact -- with the edges
+# summed there is no way to ask which precursor a merged edge fed -- and it is electrically
+# identical, since parallel conductances between the same contracted pair carry current in
+# the same proportion either way.
+#
+# THE SOLVE
+# ---------
+# Reused wholesale from :mod:`ecspr.model.directed`: signed incidence, softplus-smoothed diode,
+# Newton with an energy-Armijo line search, CHOLMOD symbolic reuse. Nothing about the
+# rectified network changes -- only the topology it runs on, and the fact that terminals are
+# node sets rather than single nodes. When ``gm == gp`` everywhere the network is symmetric
+# and one linear solve is exact; that path is taken explicitly rather than left for Newton
+# to discover.
+#
+# Env: numpy + scipy (+ networkx only for the parity referent). No SCADC paths, no canon.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -100,21 +99,20 @@ SNK_SUPERNODE = ("__terminal__", "sink")
 
 @dataclass
 class AtomGraph:
-    """A directed atom-transfer network.
-
-    ``nodes`` are ``(metabolite, canonical_atom_rank)`` keys; ``edges`` is a list of
-    ``(tail_index, head_index)`` pairs into ``nodes``; ``gp`` / ``gm`` are the per-edge
-    forward / backward conductances (``gm = ratio * gp``, ratio = ``g_rev/g_fwd`` from the
-    direction ensemble; ratio 1.0 is the undirected limit).
-
-    Deliberately the same data shape :class:`ecspr.model.directed.OrientedNet` carries, so it
-    hands straight to ``build_incidence`` and ``directed_ceff``. The difference is that
-    there are no reaction nodes: an edge IS an atom transfer, so orientation comes from the
-    pair table's substrate/product columns and no reac_prop role parsing is needed.
-
-    ``meta`` carries build provenance (element, reaction count, AAM-gap count, ...). The
-    builders in :mod:`ecspr.model.build` fill it; nothing here reads it.
-    """
+    # A directed atom-transfer network.
+    #
+    # ``nodes`` are ``(metabolite, canonical_atom_rank)`` keys; ``edges`` is a list of
+    # ``(tail_index, head_index)`` pairs into ``nodes``; ``gp`` / ``gm`` are the per-edge
+    # forward / backward conductances (``gm = ratio * gp``, ratio = ``g_rev/g_fwd`` from the
+    # direction ensemble; ratio 1.0 is the undirected limit).
+    #
+    # Deliberately the same data shape :class:`ecspr.model.directed.OrientedNet` carries, so it
+    # hands straight to ``build_incidence`` and ``directed_ceff``. The difference is that
+    # there are no reaction nodes: an edge IS an atom transfer, so orientation comes from the
+    # pair table's substrate/product columns and no reac_prop role parsing is needed.
+    #
+    # ``meta`` carries build provenance (element, reaction count, AAM-gap count, ...). The
+    # builders in :mod:`ecspr.model.build` fill it; nothing here reads it.
     nodes: list
     edges: list
     gp: np.ndarray
@@ -146,9 +144,9 @@ class AtomGraph:
         return sorted(self._by_met)
 
     def atoms_of(self, met: str) -> list:
-        """Every atom node of ``met`` present in the graph, ordered by rank. Empty when the
-        metabolite is absent -- an absence a caller must be able to see and report, never a
-        raise (a precursor missing from a built graph is a coverage fact, not an error)."""
+        # Every atom node of ``met`` present in the graph, ordered by rank. Empty when the
+        # metabolite is absent -- an absence a caller must be able to see and report, never a
+        # raise (a precursor missing from a built graph is a coverage fact, not an error).
         return list(self._by_met.get(met, ()))
 
     def ranks_of(self, met: str) -> list:
@@ -157,7 +155,7 @@ class AtomGraph:
     # -- convenience -------------------------------------------------------
     @classmethod
     def from_edge_records(cls, records, meta=None):
-        """Build from ``[(tail_key, head_key, gp, gm), ...]``. Node order is first-seen."""
+        # Build from ``[(tail_key, head_key, gp, gm), ...]``. Node order is first-seen.
         nodes, idx, edges, gp, gm = [], {}, [], [], []
 
         def _i(k):
@@ -176,12 +174,11 @@ class AtomGraph:
 
     # -- serialisation -----------------------------------------------------
     def save(self, path):
-        """One ``.npz`` per graph: node keys, edge endpoints, gp, gm, and the meta as JSON.
-
-        Deliberately not a pickle. A staged reference artifact is read by a container that
-        may not hold this module, and a pickle would make the artifact depend on the class
-        that wrote it; arrays plus JSON depend on nothing.
-        """
+        # One ``.npz`` per graph: node keys, edge endpoints, gp, gm, and the meta as JSON.
+        #
+        # Deliberately not a pickle. A staged reference artifact is read by a container that
+        # may not hold this module, and a pickle would make the artifact depend on the class
+        # that wrote it; arrays plus JSON depend on nothing.
         import json as _json
         path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -206,8 +203,8 @@ class AtomGraph:
         return cls(nodes, edges, z["gp"], z["gm"], _json.loads(str(z["meta"])))
 
     def with_ratios(self, ratio: float):
-        """A copy with every backward ratio forced to ``ratio``. ``ratio=1.0`` is the
-        symmetric limit -- the undirected referent the parity gate measures against."""
+        # A copy with every backward ratio forced to ``ratio``. ``ratio=1.0`` is the
+        # symmetric limit -- the undirected referent the parity gate measures against.
         return AtomGraph(list(self.nodes), list(self.edges), self.gp.copy(),
                          ratio * self.gp, dict(self.meta), dict(self.idx))
 
@@ -218,13 +215,12 @@ class AtomGraph:
 
 @dataclass(frozen=True)
 class Terminal:
-    """A labelled SET of atom nodes, shorted into one super-node by the solve.
-
-    ``Terminal.metabolite(g, mnxm, mask=...)`` is one metabolite's atoms, optionally
-    restricted to a subset of canonical ranks -- the **atom mask**, the thing that only
-    exists on an atom-resolved graph. ``Terminal.merge(g, [mnxm, ...])`` is the aggregate
-    ground: every listed metabolite's atoms in one terminal.
-    """
+    # A labelled SET of atom nodes, shorted into one super-node by the solve.
+    #
+    # ``Terminal.metabolite(g, mnxm, mask=...)`` is one metabolite's atoms, optionally
+    # restricted to a subset of canonical ranks -- the **atom mask**, the thing that only
+    # exists on an atom-resolved graph. ``Terminal.merge(g, [mnxm, ...])`` is the aggregate
+    # ground: every listed metabolite's atoms in one terminal.
     label: str
     nodes: frozenset
     metabolites: tuple = ()
@@ -241,7 +237,7 @@ class Terminal:
 
     @classmethod
     def merge(cls, graph: AtomGraph, mnxms, mask=None, label="ground") -> "Terminal":
-        """The aggregate ground. ``mask`` is ``{mnxm: [ranks]}`` when given."""
+        # The aggregate ground. ``mask`` is ``{mnxm: [ranks]}`` when given.
         mnxms = tuple(mnxms)
         atoms, missing = set(), []
         for m in mnxms:
@@ -271,22 +267,21 @@ class Terminal:
 # =====================================================================
 
 class Solution:
-    """The result of one solve: potentials, edge currents, and lookups by node or metabolite.
-
-    Sign conventions, stated once because everything downstream depends on them:
-
-    * unit current is injected at the source terminal and drawn at the sink terminal, so
-      :attr:`injected` is 1.0 by construction;
-    * :meth:`current` returns net **inflow**, so it is ``+injected`` at the sink terminal,
-      ``-injected`` at the source terminal, and 0 at every interior node by KCL;
-    * :meth:`voltage` is the grounded potential (the sink super-node is the gauge, so its
-      potential is 0), and :attr:`total` is ``1 / (V_source - V_sink)`` -- the two-terminal
-      effective conductance between the two terminal SETS.
-
-    Every per-node quantity is computed from the ORIGINAL edge endpoints, not the
-    contracted ones, which is what lets a precursor merged into the ground still report the
-    current it individually draws.
-    """
+    # The result of one solve: potentials, edge currents, and lookups by node or metabolite.
+    #
+    # Sign conventions, stated once because everything downstream depends on them:
+    #
+    # * unit current is injected at the source terminal and drawn at the sink terminal, so
+    #   :attr:`injected` is 1.0 by construction;
+    # * :meth:`current` returns net **inflow**, so it is ``+injected`` at the sink terminal,
+    #   ``-injected`` at the source terminal, and 0 at every interior node by KCL;
+    # * :meth:`voltage` is the grounded potential (the sink super-node is the gauge, so its
+    #   potential is 0), and :attr:`total` is ``1 / (V_source - V_sink)`` -- the two-terminal
+    #   effective conductance between the two terminal SETS.
+    #
+    # Every per-node quantity is computed from the ORIGINAL edge endpoints, not the
+    # contracted ones, which is what lets a precursor merged into the ground still report the
+    # current it individually draws.
 
     __slots__ = ("graph", "source", "sink", "total", "injected", "converged",
                  "_phi_c", "_cidx", "_cmap", "_cur", "_otail", "_ohead", "_nin",
@@ -314,16 +309,16 @@ class Solution:
         self._nin = graph.n
 
     def original_edge_index(self) -> np.ndarray:
-        """Index into ``graph.edges`` for each solved edge -- the trace back from a current
-        to the reactions that built its conductance."""
+        # Index into ``graph.edges`` for each solved edge -- the trace back from a current
+        # to the reactions that built its conductance.
         return self._oedge
 
     def edge_currents(self) -> tuple:
-        """``(original_edge_index, current)`` for every edge that survived contraction."""
+        # ``(original_edge_index, current)`` for every edge that survived contraction.
         return self._oedge, self._cur
 
     def edge_drops(self) -> tuple:
-        """``(original_edge_index, V_tail - V_head)`` for every solved edge."""
+        # ``(original_edge_index, V_tail - V_head)`` for every solved edge.
         if self._cur.size == 0:
             return self._oedge, np.zeros(0)
         nodes = self.graph.nodes
@@ -336,22 +331,21 @@ class Solution:
         return self._oedge, phi[ci[self._otail]] - phi[ci[self._ohead]]
 
     def edge_power(self) -> tuple:
-        """``(original_edge_index, i_e * dv_e)`` -- the power each edge dissipates.
-
-        Tellegen makes these sum to the injected power, which at unit injection is exactly
-        the effective RESISTANCE. So an edge's share of this is its share of the two-point
-        measurement, and on the symmetric network it is also that edge's elasticity: the
-        derivative of ``log`` effective conductance with respect to ``log`` edge
-        conductance. Individual shares can be slightly negative inside the diode's
-        smoothing band, where the rectified law is not passive; the sum is exact regardless.
-        """
+        # ``(original_edge_index, i_e * dv_e)`` -- the power each edge dissipates.
+        #
+        # Tellegen makes these sum to the injected power, which at unit injection is exactly
+        # the effective RESISTANCE. So an edge's share of this is its share of the two-point
+        # measurement, and on the symmetric network it is also that edge's elasticity: the
+        # derivative of ``log`` effective conductance with respect to ``log`` edge
+        # conductance. Individual shares can be slightly negative inside the diode's
+        # smoothing band, where the rectified law is not passive; the sum is exact regardless.
         oe, dv = self.edge_drops()
         return oe, self._cur * dv
 
     # -- voltage -----------------------------------------------------------
     def voltage(self, node) -> float:
-        """Potential at an original atom node. ``nan`` when the node is outside the
-        component the two terminals share -- floating, not zero, and saying so."""
+        # Potential at an original atom node. ``nan`` when the node is outside the
+        # component the two terminals share -- floating, not zero, and saying so.
         ck = self._cmap.get(node)
         if ck is None:
             return float("nan")
@@ -359,16 +353,15 @@ class Solution:
         return float("nan") if j is None else float(self._phi_c[j])
 
     def drop(self, a, b) -> float:
-        """Potential difference ``V(a) - V(b)`` between two original nodes."""
+        # Potential difference ``V(a) - V(b)`` between two original nodes.
         return self.voltage(a) - self.voltage(b)
 
     def voltage_metabolite(self, mnxm) -> dict:
-        """Per-atom potentials plus a current-weighted mean.
-
-        A metabolite's atoms sit at genuinely different potentials unless the metabolite is
-        inside a terminal, so a bare scalar would be a lie. The weighted mean uses each
-        atom's throughput as its weight -- the potential the carbon actually experiences.
-        """
+        # Per-atom potentials plus a current-weighted mean.
+        #
+        # A metabolite's atoms sit at genuinely different potentials unless the metabolite is
+        # inside a terminal, so a bare scalar would be a lie. The weighted mean uses each
+        # atom's throughput as its weight -- the potential the carbon actually experiences.
         atoms = self.graph.atoms_of(mnxm)
         per = {a[1]: self.voltage(a) for a in atoms}
         wts = {a[1]: self.throughput(a) for a in atoms}
@@ -389,13 +382,12 @@ class Solution:
         return mk
 
     def _net_inflow(self, nodes) -> float:
-        """Net current entering a SET of original nodes.
-
-        Edges with both endpoints inside the set cancel term-by-term, so this is exactly
-        the boundary flux. Edges shorted away by contraction (both endpoints inside ONE
-        terminal) carry no current in the contracted model and are absent here -- which is
-        why the per-precursor currents still sum to the injected current.
-        """
+        # Net current entering a SET of original nodes.
+        #
+        # Edges with both endpoints inside the set cancel term-by-term, so this is exactly
+        # the boundary flux. Edges shorted away by contraction (both endpoints inside ONE
+        # terminal) carry no current in the contracted model and are absent here -- which is
+        # why the per-precursor currents still sum to the injected current.
         if self._cur.size == 0:
             return 0.0
         mk = self._mask(nodes)
@@ -403,7 +395,7 @@ class Solution:
                                          - mk[self._otail].astype(float))))
 
     def _boundary_flux(self, nodes) -> tuple:
-        """``(inflow, outflow)`` across the boundary of a node set, both non-negative."""
+        # ``(inflow, outflow)`` across the boundary of a node set, both non-negative.
         if self._cur.size == 0:
             return 0.0, 0.0
         mk = self._mask(nodes)
@@ -411,45 +403,42 @@ class Solution:
         return float(np.sum(np.maximum(c, 0.0))), float(np.sum(np.maximum(-c, 0.0)))
 
     def _boundary_abs(self, nodes) -> float:
-        """Current HANDLED by a node set: ``max(inflow, outflow)``.
-
-        Not ``0.5 * sum |i_e|``. The half-sum is right only where inflow equals outflow --
-        an interior node -- and is a factor-of-two undercount at a terminal, where all the
-        current arrives and none leaves. ``max`` gives the pass-through node its throughput
-        and the sink its full draw, which is what "how much carbon goes through here" means
-        at both.
-        """
+        # Current HANDLED by a node set: ``max(inflow, outflow)``.
+        #
+        # Not ``0.5 * sum |i_e|``. The half-sum is right only where inflow equals outflow --
+        # an interior node -- and is a factor-of-two undercount at a terminal, where all the
+        # current arrives and none leaves. ``max`` gives the pass-through node its throughput
+        # and the sink its full draw, which is what "how much carbon goes through here" means
+        # at both.
         i, o = self._boundary_flux(nodes)
         return max(i, o)
 
     def current(self, node) -> float:
-        """Net current flowing INTO an original atom node (0 at interior nodes by KCL)."""
+        # Net current flowing INTO an original atom node (0 at interior nodes by KCL).
         return self._net_inflow((node,))
 
     def throughput(self, node) -> float:
-        """Current handled by a node: ``max(inflow, outflow)`` over its incident edges.
-
-        The quantity to read at a CENTRAL metabolite, where the net current is 0 by KCL and
-        therefore says nothing -- what matters there is how much carbon goes through, not
-        how much stops.
-        """
+        # Current handled by a node: ``max(inflow, outflow)`` over its incident edges.
+        #
+        # The quantity to read at a CENTRAL metabolite, where the net current is 0 by KCL and
+        # therefore says nothing -- what matters there is how much carbon goes through, not
+        # how much stops.
         return self._boundary_abs((node,))
 
     # -- metabolite-level wrappers ----------------------------------------
     def delivered(self, mnxm) -> float:
-        """Net current drawn by a metabolite -- the load-bearing readout.
-
-        For a precursor merged into the aggregate ground this is exactly "how much of the
-        injected current this precursor draws". Summed over the ground's metabolites it
-        equals :attr:`injected` to solver tolerance (the conservation self-test).
-        """
+        # Net current drawn by a metabolite -- the load-bearing readout.
+        #
+        # For a precursor merged into the aggregate ground this is exactly "how much of the
+        # injected current this precursor draws". Summed over the ground's metabolites it
+        # equals :attr:`injected` to solver tolerance (the conservation self-test).
         return self._net_inflow(self.graph.atoms_of(mnxm))
 
     def throughput_metabolite(self, mnxm) -> float:
         return self._boundary_abs(self.graph.atoms_of(mnxm))
 
     def share(self, mnxm) -> float:
-        """:meth:`delivered` as a fraction of the injected current."""
+        # :meth:`delivered` as a fraction of the injected current.
         return self.delivered(mnxm) / self.injected if self.injected else 0.0
 
     def delivered_all(self, mnxms) -> dict:
@@ -457,7 +446,7 @@ class Solution:
 
     # -- diagnostics -------------------------------------------------------
     def conservation_error(self) -> float:
-        """``|sum_over_ground_metabolites(delivered) - injected|``."""
+        # ``|sum_over_ground_metabolites(delivered) - injected|``.
         tot = sum(self.delivered(m) for m in self.sink.metabolites)
         return abs(tot - self.injected)
 
@@ -478,11 +467,10 @@ def _zero_solution(graph, source, sink, note):
 # =====================================================================
 
 def _contract(graph: AtomGraph, source: Terminal, sink: Terminal):
-    """Exact node contraction of the two terminals. Parallel edges are NOT summed.
-
-    Returns ``(cnodes, cidx, cmap, ctail, chead, gp, gm, otail, ohead)`` where the ``c*``
-    arrays index the contracted node list and the ``o*`` arrays index the ORIGINAL one.
-    """
+    # Exact node contraction of the two terminals. Parallel edges are NOT summed.
+    #
+    # Returns ``(cnodes, cidx, cmap, ctail, chead, gp, gm, otail, ohead)`` where the ``c*``
+    # arrays index the contracted node list and the ``o*`` arrays index the ORIGINAL one.
     cmap = {}
     for nd in source.nodes:
         cmap[nd] = SRC_SUPERNODE
@@ -519,21 +507,20 @@ def _contract(graph: AtomGraph, source: Terminal, sink: Terminal):
 
 
 def _component(n, tail, head, seed):
-    """Node indices reachable from ``seed`` over the (undirected) contracted edges.
-
-    Reachability is asked from the SOURCE super-node only -- seeding it with both terminals
-    would make "the sink is reachable" true by construction and silently turn a
-    disconnected pair into a finite conductance.
-    """
+    # Node indices reachable from ``seed`` over the (undirected) contracted edges.
+    #
+    # Reachability is asked from the SOURCE super-node only -- seeding it with both terminals
+    # would make "the sink is reachable" true by construction and silently turn a
+    # disconnected pair into a finite conductance.
     A = sp.coo_matrix((np.ones(tail.size), (tail, head)), shape=(n, n)).tocsr()
     lab = sp.csgraph.connected_components(A, directed=False)[1]
     return np.flatnonzero(lab == lab[seed])
 
 
 def _undirected_phi(B, gp, s, t, g):
-    """Grounded potential of the plain undirected network -- exact when ``gm == gp``, and
-    the warm start otherwise (a warm start changes only the Newton iteration count, never
-    the answer: the smoothed energy is strictly convex with a unique grounded minimiser)."""
+    # Grounded potential of the plain undirected network -- exact when ``gm == gp``, and
+    # the warm start otherwise (a warm start changes only the Newton iteration count, never
+    # the answer: the smoothed energy is strictly convex with a unique grounded minimiser).
     n = B.shape[1]
     keep = np.arange(n) != g
     L = (B.T @ sp.diags(gp) @ B).tocsc()
@@ -545,17 +532,16 @@ def _undirected_phi(B, gp, s, t, g):
 
 def solve(graph: AtomGraph, source: Terminal, sink: Terminal, *, tol=None, warm=True,
           floor=DIODE_BACKWARD_FLOOR, delta=DIODE_SMOOTH_DELTA) -> Solution:
-    """Measure ``graph`` between two terminals. No perturbation argument, by design.
-
-    The terminals are shorted by exact contraction, unit current is injected source->sink,
-    and the rectified network is solved by the smoothed-diode Newton in
-    :mod:`ecspr.model.directed`. When every backward conductance equals its forward conductance
-    the network is symmetric and one linear solve is exact -- that path is taken explicitly.
-
-    An empty terminal, or two terminals with no connecting path, gives a DEFINITE ZERO
-    total rather than a raise: the atom graph is disconnected in general and an
-    unreachable precursor is a coverage fact the caller must be able to report.
-    """
+    # Measure ``graph`` between two terminals. No perturbation argument, by design.
+    #
+    # The terminals are shorted by exact contraction, unit current is injected source->sink,
+    # and the rectified network is solved by the smoothed-diode Newton in
+    # :mod:`ecspr.model.directed`. When every backward conductance equals its forward conductance
+    # the network is symmetric and one linear solve is exact -- that path is taken explicitly.
+    #
+    # An empty terminal, or two terminals with no connecting path, gives a DEFINITE ZERO
+    # total rather than a raise: the atom graph is disconnected in general and an
+    # unreachable precursor is a coverage fact the caller must be able to report.
     if source.nodes & sink.nodes:
         raise ValueError(
             f"terminals overlap on {len(source.nodes & sink.nodes)} atom node(s): "
@@ -623,11 +609,10 @@ def solve(graph: AtomGraph, source: Terminal, sink: Terminal, *, tol=None, warm=
 
 
 def derive_ieff(r_base: float, r_aug: float) -> tuple:
-    """(delta_ieff, g_base, g_aug) exact column transform, no re-solve.
-
-    Moved verbatim from the retired ``ecspr_solver``; the incumbent significance chain and
-    the pulse-chase suite both read it.
-    """
+    # (delta_ieff, g_base, g_aug) exact column transform, no re-solve.
+    #
+    # Moved verbatim from the retired ``ecspr_solver``; the incumbent significance chain and
+    # the pulse-chase suite both read it.
     rb = max(r_base, IEFF_EPS)
     ra = max(r_aug, IEFF_EPS)
     g_base = 1.0 / rb
@@ -674,15 +659,14 @@ OMEGA = ("__OMEGA__", 0)
 
 
 def attach_leak(graph: AtomGraph, precursors=None, *, leak=1e-6, port=1.0):
-    """A copy of ``graph`` with a virtual ground OMEGA every metabolite leaks into.
-
-    ``precursors`` are the biomass precursors, which get ``port`` instead of ``leak`` --
-    they are the real sinks and the leak is what everything else gets. Passing ``None``
-    gives every metabolite the same ``leak``, which is the pure-leak limit.
-
-    Each metabolite's conductance to OMEGA is its named value TOTAL, split evenly across
-    its atoms, so the readout does not become a proxy for molecule size.
-    """
+    # A copy of ``graph`` with a virtual ground OMEGA every metabolite leaks into.
+    #
+    # ``precursors`` are the biomass precursors, which get ``port`` instead of ``leak`` --
+    # they are the real sinks and the leak is what everything else gets. Passing ``None``
+    # gives every metabolite the same ``leak``, which is the pure-leak limit.
+    #
+    # Each metabolite's conductance to OMEGA is its named value TOTAL, split evenly across
+    # its atoms, so the readout does not become a proxy for molecule size.
     prec = set(precursors or ())
     nodes = list(graph.nodes) + [OMEGA]
     omega = len(nodes) - 1
@@ -718,13 +702,12 @@ def attach_leak(graph: AtomGraph, precursors=None, *, leak=1e-6, port=1.0):
 
 def measure_leak(graph: AtomGraph, source: Terminal, precursors=None, *,
                  leak=1e-6, port=1.0, tol=None):
-    """Inject at ``source``, drain at OMEGA, and report what every metabolite draws.
-
-    Returns ``dict(draw={mnxm: current}, total, prec_share, leak_frac, converged,
-    missing, n_metabolites)``. ``draw`` covers EVERY metabolite in the graph, which is
-    the whole point -- under the two-terminal probe all but the precursors are zero by
-    KCL and cannot be asked about at all.
-    """
+    # Inject at ``source``, drain at OMEGA, and report what every metabolite draws.
+    #
+    # Returns ``dict(draw={mnxm: current}, total, prec_share, leak_frac, converged,
+    # missing, n_metabolites)``. ``draw`` covers EVERY metabolite in the graph, which is
+    # the whole point -- under the two-terminal probe all but the precursors are zero by
+    # KCL and cannot be asked about at all.
     g2, leak_edges = attach_leak(graph, precursors, leak=leak, port=port)
     omega_t = Terminal.of_nodes("OMEGA", [OMEGA])
     src = Terminal(source.label, frozenset(source.nodes), source.metabolites,
@@ -758,12 +741,11 @@ def measure_leak(graph: AtomGraph, source: Terminal, precursors=None, *,
 
 def sweep_leak(graph: AtomGraph, source: Terminal, precursors, leaks, *,
                port=1.0, top=50, tol=None):
-    """Measure at each leak magnitude and report where the RANKING stops moving.
-
-    What is reported is Spearman agreement between consecutive leaks over the top-``top``
-    metabolites, not agreement on totals: the total conductance is nearly invariant to
-    the parameter, so a sweep that watches it reports stability that is not there.
-    """
+    # Measure at each leak magnitude and report where the RANKING stops moving.
+    #
+    # What is reported is Spearman agreement between consecutive leaks over the top-``top``
+    # metabolites, not agreement on totals: the total conductance is nearly invariant to
+    # the parameter, so a sweep that watches it reports stability that is not there.
     runs = []
     for lk in leaks:
         r = measure_leak(graph, source, precursors, leak=lk, port=port, tol=tol)

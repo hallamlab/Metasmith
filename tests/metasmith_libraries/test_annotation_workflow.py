@@ -400,14 +400,10 @@ class TestAnnotationWorkflowExecution:
 
         import pandas as pd
 
-        # `Iterate` yields paths relative to the result source, as elsewhere here.
         embeddings = [path for path, type_name, _ in results.Iterate()
                       if "proteinbert_embeddings" in type_name]
         assert embeddings, "No ProteinBERT embeddings found"
 
-        # The table names its own rows. There is no separate index to check against
-        # any more, and that is the point -- the pair this replaced was joined by
-        # position and got it wrong for every input past one embedder chunk.
         df = pd.read_parquet(results_path / embeddings[0])
         assert "sequence_id" in df.columns, df.columns[:8]
         assert df["sequence_id"].is_unique

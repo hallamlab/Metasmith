@@ -74,10 +74,6 @@ sys.path.insert(0, str(REPO / "src"))
 import ecspr.model.compose as ec  # noqa: E402
 import ecspr.model.conditions as econd  # noqa: E402
 
-# The bake is stored CODED and the graph builder reads the string schema, so it is
-# decoded before use -- see `benchmarks/eydallin/bake_pairs.py`, which owns that decode
-# for the whole tree. Composition consumes the DECODED table, so what this driver hands
-# the pipeline through `--atom-pairs` is already decoded and needs no vocab beside it.
 sys.path.insert(0, str(REPO / "research/fabfos/benchmarks/eydallin"))
 import bake_pairs  # noqa: E402
 
@@ -98,15 +94,12 @@ _DEFAULT_OUT = str(REPO / "data/scratch/nostoc_ecspr")
 # and thiamine is MNXM730135, not MNXM662), and a guessed id measures a run of structural
 # zeros that looks exactly like a biological finding.
 SUBSTRATES = {
-    "C": "MNXM1364061",   # D-glucose
-    "N": "MNXM729302",    # NH4(+)
-    "P": "MNXM9",         # phosphate
-    "S": "MNXM58",        # sulfate
+    "C": "MNXM1364061",
+    "N": "MNXM729302",
+    "P": "MNXM9",
+    "S": "MNXM58",
 }
 
-# The biomass endpoints. Filtered per element by presence in that element's atom-pair
-# table, so sulfur gets the four sulfur sinks and nothing else -- which is the honest
-# sulfur precursor set, not a shortfall.
 PRECURSORS = {
     "L-alanine": "MNXM1105732", "L-arginine": "MNXM739527",
     "L-asparagine": "MNXM1107821", "L-aspartate": "MNXM1364497",
@@ -128,9 +121,6 @@ PRECURSORS = {
 # a degree-1,100 carrier as a sink makes the P and S readouts a measurement of cofactor
 # pool connectivity rather than of biosynthesis.
 
-# Two-terminal endpoints are a deliberately SMALL subset. Each (source, endpoint) pair is
-# an independent solve, so the full precursor list above would multiply into hundreds of
-# solves per network without anyone having decided that it should.
 TWO_TERMINAL = {
     "C": ["L-glutamate", "L-serine", "chorismate", "L-histidine"],
     "N": ["L-glutamate", "L-glutamine", "L-histidine", "L-arginine"],
@@ -138,8 +128,6 @@ TWO_TERMINAL = {
     "S": ["L-cysteine", "L-methionine", "biotin"],
 }
 
-# The twelve. (member set, injecting member) -- the sink members are the rest of the set,
-# and a singleton reads its endpoints in itself.
 UNITS = [
     (("NOS", "ERY", "RHI"), "NOS"), (("NOS", "ERY", "RHI"), "ERY"),
     (("NOS", "ERY", "RHI"), "RHI"),
@@ -180,9 +168,6 @@ LOCAL_AGENT_ENV = "msm"
 
 
 def net_id(members, arm):
-    """A singleton has no bridges, so the blacklist cannot touch it: one id, one
-    composition, shared by both arms. Giving it two would make the control depend on the
-    thing it controls for."""
     return "-".join(members) + ("" if len(members) == 1 else f"_{arm}")
 
 
@@ -207,14 +192,13 @@ _FORMULA_RE = re.compile(r"([A-Z][a-z]?)(\d*)")
 
 
 def _parse_formula(formula: str) -> dict:
-    """`"C6H12O6"` -> `{"C": 6, "H": 12, "O": 6}`; blank/non-string -> `{}`.
-
-    A `*` RESIDUE IS KEPT, counting its explicit atoms only. `C28H49N3O10PS*2` is an
-    acyl-ACP whose carrier body MetaNetX leaves unspecified; dropping the whole formula
-    for that would take 7,701 metabolites -- most of the ACP, polymer and protein-bound
-    series -- out of the name table, and with them out of reach of the carrier rules that
-    are the reason the table exists.
-    """
+    # `"C6H12O6"` -> `{"C": 6, "H": 12, "O": 6}`; blank/non-string -> `{}`.
+    #
+    # A `*` RESIDUE IS KEPT, counting its explicit atoms only. `C28H49N3O10PS*2` is an
+    # acyl-ACP whose carrier body MetaNetX leaves unspecified; dropping the whole formula
+    # for that would take 7,701 metabolites -- most of the ACP, polymer and protein-bound
+    # series -- out of the name table, and with them out of reach of the carrier rules that
+    # are the reason the table exists.
     if not isinstance(formula, str) or not formula:
         return {}
     counts = {}
@@ -252,10 +236,6 @@ def build_refs(elements=ELEMENTS):
           f"{bl.carrier_class.nunique()} classes")
     return names, bl
 
-
-# =====================================================================
-# Compose
-# =====================================================================
 
 def compose_all(g0=1.0, elements=ELEMENTS):
     NETS.mkdir(parents=True, exist_ok=True)
@@ -325,11 +305,6 @@ def compose_all(g0=1.0, elements=ELEMENTS):
                       f"{rep['n_one_copy_only']:,} one-copy)  {rep['seconds']}s", flush=True)
 
             sinks = [o for o in members if o != src] or [src]
-            # TWO LISTS, TWO FILES -- not one table with a mode column. A conditions
-            # table carries no probe, the probe is chosen on the command line, and a set
-            # built for one probe staged against the other measures something nobody
-            # asked for. Only the ground file is consumed today; see the module
-            # docstring on why the other is written anyway.
             ground, two_terminal = ec.make_conditions(
                 network_id=nid, source_org=src, sink_orgs=sinks,
                 substrates=SUBSTRATES,
@@ -342,32 +317,14 @@ def compose_all(g0=1.0, elements=ELEMENTS):
             econd.write(ground, d / f"conditions_{src}.parquet")
             econd.write(two_terminal, d / f"conditions_2t_{src}.parquet")
             if len(members) == 1:
-                break  # one arm only: a singleton is arm-invariant by construction
+                break
 
     pd.DataFrame(reports).to_parquet(OUT / "compose_report.parquet", index=False)
     print(f"\n{len(done)} composed networks -> {NETS}")
     return reports
 
 
-# =====================================================================
-# Plan / run
-# =====================================================================
-
 def check_conditions(path: Path) -> None:
-    """Refuse a conditions file written before the two-list split.
-
-    THE OLD SHAPE PARSES CLEANLY AND MEASURES SOMETHING ELSE, which is why this is a
-    guard and not a comment. The staged sets in the pinned `nostoc/ecspr` chunk are one
-    row per (condition, SINK) with a `mode` column -- 92 rows for the NOS singleton --
-    because the transforms that consumed them filtered on `mode` themselves.
-    `ecspr.model.conditions.read` has no `mode`: it reads every row as its own Condition, so
-    those 92 rows become 92 one-sink ground solves where today's `make_conditions`
-    intends 4, one per element, each naming every precursor at once. Nothing raises. The
-    numbers are simply a different measurement.
-
-    So the chunk's condition sets are readable history, not inputs: `--compose` writes
-    the current shape beside them, and this is what stops a run reaching for the old one.
-    """
     import pandas as pd
     if not path.exists():
         raise SystemExit(f"no conditions at {path} -- run --compose first")
@@ -380,7 +337,6 @@ def check_conditions(path: Path) -> None:
 
 
 def invocations():
-    """One pipeline invocation per composed graph, its units passed together."""
     by_net = {}
     for members, src in UNITS:
         for arm in ARMS:
@@ -432,23 +388,22 @@ def build_cmd(nid, srcs, *, run, threads, outdir, agent_container=LOCAL_AGENT_EN
 # 48 h second attempt -- an ask SLURM will not start ahead of a maintenance window, i.e. a
 # retry that can never run. `_fir.check_walltimes` enforces the doubled ask and these
 # overrides are sized to clear it.
-FIR_RESOURCE_OVERRIDES = None  # built lazily; needs metasmith imports
+FIR_RESOURCE_OVERRIDES = None
 
 
 def _fir_overrides():
-    """Sized from a MEASURED singleton on fir, not from the transform's declaration.
-
-    The ground probe on a 162,801-node carbon graph ran 3 m 48 s at 167 MB peak RSS and
-    2.6% CPU -- the leaky solve is single-threaded and its memory is nothing. So
-    `ecspr_measure`'s 16 cpus / 64 GB / 24 h is an ask that only delays scheduling, and
-    the three-member graphs are ~3x that, nowhere near these ceilings. Walltime is where
-    the headroom goes.
-
-    Keyed on the transform's file stem, so this dict follows the library: when the two
-    probes were a transform each these were two entries, `measure_ground` and
-    `measure_two_terminal`. A stale key here is silent -- an override that matches no
-    step simply does not apply and the declared 24 h stands.
-    """
+    # Sized from a MEASURED singleton on fir, not from the transform's declaration.
+    #
+    # The ground probe on a 162,801-node carbon graph ran 3 m 48 s at 167 MB peak RSS and
+    # 2.6% CPU -- the leaky solve is single-threaded and its memory is nothing. So
+    # `ecspr_measure`'s 16 cpus / 64 GB / 24 h is an ask that only delays scheduling, and
+    # the three-member graphs are ~3x that, nowhere near these ceilings. Walltime is where
+    # the headroom goes.
+    #
+    # Keyed on the transform's file stem, so this dict follows the library: when the two
+    # probes were a transform each these were two entries, `measure_ground` and
+    # `measure_two_terminal`. A stale key here is silent -- an override that matches no
+    # step simply does not apply and the declared 24 h stands.
     from metasmith.python_api import Duration, Resources, Size
     return {
         "ecspr_measure": Resources(cpus=4, memory=Size.GB(32), duration=Duration(hours=3)),
@@ -483,9 +438,6 @@ def drive_fir(*, only=None, host=None, agent_home=None, container=None,
 
     agent = fir_agent(host=host, agent_home=agent_home, container=container)
 
-    # ONE agent, many tasks. Deploy and the overlay are per-agent-home, not per-task, so
-    # doing them once is not an optimisation -- repeating them mid-flight would replace
-    # the engine under runs that are already executing.
     print("=== Deploy() ===", flush=True)
     agent.Deploy()
     provision_dev_overlay_remote(host, agent_home)
@@ -510,9 +462,6 @@ def drive_fir(*, only=None, host=None, agent_home=None, container=None,
             # so referencing them makes the remote agent refuse to stage at all. A
             # composed network is tens of megabytes; copying is the cheap answer.
             stage="copy",
-            # A stable task key is what lets --wait and --retrieve name the same run
-            # directory as --run; without it a resubmission stages a fresh key sharing no
-            # cache with whatever already succeeded.
             on_inputs=pin_external_leaf_ids,
         )
         assert not stubs, f"{nid}: unexpected stubs {stubs}"
@@ -534,10 +483,6 @@ def drive_fir(*, only=None, host=None, agent_home=None, container=None,
         return 0
 
     if not wait_only:
-        # IN FLIGHT, not "launched so far". The throttle has to shrink as runs finish, so
-        # the set it waits on must be the ones actually submitted and still going --
-        # waiting on `tasks` (every planned network, including ones never submitted) makes
-        # the drain return immediately and the throttle a no-op.
         in_flight = {}
         for nid, (task, work) in tasks.items():
             agent.StageWorkflow(task, on_exist="update")
@@ -566,13 +511,12 @@ def drive_fir(*, only=None, host=None, agent_home=None, container=None,
 
 
 def _wait_for(agent, pending, host, agent_home, *, keep=0, retrieve_fn=None):
-    """Poll the agent's own run logs until at most `keep` of `pending` are still running.
-
-    MUTATES `pending`: completed runs are popped, so the caller's in-flight set shrinks as
-    slots free. The runs are DETACHED -- `RunWorkflow` launches nextflow with nohup and
-    returns -- so this process is a spectator and losing it loses nothing; re-attaching
-    works because the task keys are pinned.
-    """
+    # Poll the agent's own run logs until at most `keep` of `pending` are still running.
+    #
+    # MUTATES `pending`: completed runs are popped, so the caller's in-flight set shrinks as
+    # slots free. The runs are DETACHED -- `RunWorkflow` launches nextflow with nohup and
+    # returns -- so this process is a spectator and losing it loses nothing; re-attaching
+    # works because the task keys are pinned.
     import time
     from _fir import ssh_once
 
@@ -603,10 +547,6 @@ def drive(*, run, threads, outdir, only=None):
     env = dict(**{k: v for k, v in __import__("os").environ.items()})
     env["PYTHONPATH"] = str(REPO / "src") + ":" + env.get("PYTHONPATH", "")
     ok, bad = [], []
-    # Smallest graph first. A three-member carbon graph is ~490k nodes against a
-    # singleton's 163k and the leaky solve is superlinear in that, so ordering by member
-    # count means a run that has to be stopped early still has the controls and every
-    # pairwise comparison in hand rather than one unfinished triple.
     for nid, srcs in sorted(inv.items(), key=lambda kv: (kv[0].count("-"), kv[0])):
         cmd = build_cmd(nid, srcs, run=run, threads=threads, outdir=outdir)
         print(f"\n{'='*70}\n[{nid}] {len(srcs)} unit(s): {', '.join(srcs)}\n{'='*70}", flush=True)

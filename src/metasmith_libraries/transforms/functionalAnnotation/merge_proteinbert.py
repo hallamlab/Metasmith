@@ -1,13 +1,3 @@
-"""merge_proteinbert -- gather the per-chunk ProteinBERT parquets into one.
-
-A vertical concat, and that is the whole transform. It used to gather two products
-per chunk -- a parquet of vectors and a CSV of ids -- and pair them by sorting both
-lists of paths and zipping, on the assertion that sorted-by-name pairs align. When
-they did not, the merge attributed every embedding to another ORF and printed a
-`WARN`. `annotation::proteinbert_embeddings_chunk` now carries `sequence_id` in the
-row beside its vector, so there is nothing left to pair and chunk order decides
-nothing.
-"""
 from metasmith.python_api import *
 
 lib = TransformInstanceLibrary.ResolveParentLibrary(__file__)

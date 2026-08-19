@@ -45,7 +45,6 @@ _SECTION = re.compile(r"^##\s+(SYSTEM|USER)\s*$", re.M)
 
 
 def split_prompt(text: str) -> tuple[str, str]:
-    """The `## SYSTEM` and `## USER` halves of a prompt file."""
     parts = _SECTION.split(text)
     if len(parts) < 5:
         raise SystemExit("prompt file needs both a '## SYSTEM' and a '## USER' heading")
@@ -65,13 +64,6 @@ def _side(terms: list[dict]) -> str:
 
 
 def render(rec: dict) -> dict:
-    """The fields a USER template may interpolate.
-
-    `available` and `blocked` are the fix for the pilot's one input-design bug: the agent
-    is told, per participant, whether MetaNetX has a structure for it, and is given the
-    SMILES where it does. Without those two lists it cannot tell a blocker from a usable
-    term and rebuilds its answer out of the things it was asked to remove.
-    """
     avail, blocked = [], []
     for t in rec["left"] + rec["right"]:
         if t["has_structure"]:
@@ -89,7 +81,6 @@ def render(rec: dict) -> dict:
 
 
 def one(client: LLMClient, system: str, template: str, rec: dict) -> dict:
-    """One reaction, one call, always a record -- a failure is data, not an exception."""
     out = {"mnxr": rec["mnxr"], "stratum": rec["stratum"],
            "prompt_tokens": 0, "completion_tokens": 0, "seconds": 0.0, "error": None}
     try:
@@ -100,7 +91,7 @@ def one(client: LLMClient, system: str, template: str, rec: dict) -> dict:
                    seconds=u.seconds)
     except (BadJSON, SchemaRejected) as e:
         out["error"] = f"{type(e).__name__}: {e}"
-    except Exception as e:                       # transport exhausted, timeout, anything
+    except Exception as e:
         out["error"] = f"{type(e).__name__}: {e}"
     return out
 

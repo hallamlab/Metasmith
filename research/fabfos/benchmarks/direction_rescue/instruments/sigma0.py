@@ -1,12 +1,11 @@
-"""Re-derive DIR_SIGMA_0 by hand from a calibration run's own points table.
-
-The estimator is committed as prose in `canon.py` and computed by no code: the robust
-marginal spread (1.4826*MAD) of measured dG' on the eQuilibrator REACTANT-contribution
-arm, over the rows clearing DIR_SIGMA_FLOOR. This reimplements it, reproduces r8's
-committed value from r8's own points as the check that the reading is right, and then
-applies it to r9 -- twice, once over everything and once over the UNSUBSTITUTED subset,
-because asserted chemistry should not set the prior width that shrinks every row.
-"""
+# Re-derive DIR_SIGMA_0 by hand from a calibration run's own points table.
+#
+# The estimator is committed as prose in `canon.py` and computed by no code: the robust
+# marginal spread (1.4826*MAD) of measured dG' on the eQuilibrator REACTANT-contribution
+# arm, over the rows clearing DIR_SIGMA_FLOOR. This reimplements it, reproduces r8's
+# committed value from r8's own points as the check that the reading is right, and then
+# applies it to r9 -- twice, once over everything and once over the UNSUBSTITUTED subset,
+# because asserted chemistry should not set the prior width that shrinks every row.
 import sys
 from pathlib import Path
 import numpy as np
@@ -48,20 +47,12 @@ if __name__ == "__main__":
                                                       load_mnxm_props, load_mnxm_formulas)
             MNX = Path("data/fabfos/originals/metanetx/4.5")
             props = load_mnxm_props(MNX / "chem_prop.tsv")
-            # member="eq" AND NOT THE UNION. The points are the eQuilibrator
-            # reactant-contribution arm, so the subset to exclude is what eQuilibrator's
-            # OWN admitted rows touched. A row refused for eq and kept for dGbyG asserted
-            # nothing about these points, and excluding it would shrink the fit's
-            # denominator over chemistry this arm never saw.
             tabs = S.load(subs, props, load_mnxm_names(MNX / "chem_prop.tsv"),
                           formulas=load_mnxm_formulas(MNX / "chem_prop.tsv"),
                           member="eq")
             allst = load_mnxr_stoich(MNX / "reac_prop.tsv")
             cov = {m for m, v in allst.items() if tabs.covers(v[0])}
             print(f"  (eq substitution tables cover {len(cov):,} reactions)")
-        # NARROW, because the committed fit is the UNSUBSTITUTED one: a broad except here
-        # turns a refused table into a missing subset and a printed line nobody reads,
-        # and the number that gets committed is then the wrong one of the two.
         except (ImportError, OSError) as e:
             print(f"  (substituted subset unavailable: {type(e).__name__}: {e})")
         if cov:

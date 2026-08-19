@@ -297,8 +297,6 @@ def prepare_nextflow(task, context: NextflowGenContext):
                 "gpu_memory_gb": None if res.gpu_memory is None else res.gpu_memory.value_gb,
             }
             gpu_requirements[process_name] = gpu_req
-        # `arms: null` means the source could not be scanned -- unknown, not "declared
-        # nothing"; the same distinction `envs` draws per resource.
         _scan = step.transform._env_scan
         env_requirements[process_name] = {
             "step": step.order,

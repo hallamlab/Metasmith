@@ -1,38 +1,37 @@
-"""Build an :class:`ecspr.model.graph.AtomGraph` -- from atom pairs, from a GEM, or from a GPR.
-
-Three builders, one output. Everything downstream measures the same object, so what a
-number means is decided entirely by which reaction set went in and with what conductance.
-
-  * :func:`graph_from_pairs` -- the primitive. Atom-transfer table x per-reaction evidence
-    weight x per-reaction direction ratio -> a directed atom network. The other two reduce
-    to it.
-  * :func:`gem_to_graph`     -- a curated genome-scale model (COBRA JSON **or** SBML),
-    crosswalked to canonical MNXR and induced on the atom-mapped universe with uniform
-    E = 1.0.
-  * :func:`gpr_to_graph`     -- a GEM plus a set of ACTIVE GENES. Reactions whose
-    gene-protein-reaction rule is unsatisfied are dropped.
-
-WHY THE GPR BUILDER IS THE POINT
---------------------------------
-It is what lets the engine stop owning perturbation. A knockout is not an argument to the
-solver; it is a smaller gene set, hence a different network, and the comparison is a
-subtraction the caller does on two independent solves. This replaces the cross-scope
-`_val.ko_dead_mnxrs` the method map documents, and it means the engine never learns what a
-knockout is.
-
-The GPR is evaluated by **cobra's own** ``Reaction.gpr.eval`` -- the only correct AND/OR
-resolver. Re-deriving it from the gene-reaction rule string is how you silently turn an
-isozyme pair into a required complex.
-
-AAM COVERAGE IS A NUMBER, NOT A SILENCE
----------------------------------------
-Reactions absent from the atom-pair table cannot contribute an edge. That set is the AAM
-gap, and every builder returns its size in ``graph.meta``. It is the honest coverage of the
-built network, and a build that does not report it is a build whose conductances cannot be
-interpreted.
-
-Env: numpy + pandas (+ cobra only on the GEM/GPR paths, imported lazily).
-"""
+# Build an :class:`ecspr.model.graph.AtomGraph` -- from atom pairs, from a GEM, or from a GPR.
+#
+# Three builders, one output. Everything downstream measures the same object, so what a
+# number means is decided entirely by which reaction set went in and with what conductance.
+#
+#   * :func:`graph_from_pairs` -- the primitive. Atom-transfer table x per-reaction evidence
+#     weight x per-reaction direction ratio -> a directed atom network. The other two reduce
+#     to it.
+#   * :func:`gem_to_graph`     -- a curated genome-scale model (COBRA JSON **or** SBML),
+#     crosswalked to canonical MNXR and induced on the atom-mapped universe with uniform
+#     E = 1.0.
+#   * :func:`gpr_to_graph`     -- a GEM plus a set of ACTIVE GENES. Reactions whose
+#     gene-protein-reaction rule is unsatisfied are dropped.
+#
+# WHY THE GPR BUILDER IS THE POINT
+# --------------------------------
+# It is what lets the engine stop owning perturbation. A knockout is not an argument to the
+# solver; it is a smaller gene set, hence a different network, and the comparison is a
+# subtraction the caller does on two independent solves. This replaces the cross-scope
+# `_val.ko_dead_mnxrs` the method map documents, and it means the engine never learns what a
+# knockout is.
+#
+# The GPR is evaluated by **cobra's own** ``Reaction.gpr.eval`` -- the only correct AND/OR
+# resolver. Re-deriving it from the gene-reaction rule string is how you silently turn an
+# isozyme pair into a required complex.
+#
+# AAM COVERAGE IS A NUMBER, NOT A SILENCE
+# ---------------------------------------
+# Reactions absent from the atom-pair table cannot contribute an edge. That set is the AAM
+# gap, and every builder returns its size in ``graph.meta``. It is the honest coverage of the
+# built network, and a build that does not report it is a build whose conductances cannot be
+# interpreted.
+#
+# Env: numpy + pandas (+ cobra only on the GEM/GPR paths, imported lazily).
 from __future__ import annotations
 
 from pathlib import Path
@@ -57,9 +56,9 @@ ORIENTATIONS = ("as_written", "reversed")
 # =====================================================================
 
 def load_pairs(path, element=None) -> pd.DataFrame:
-    """The atom-transfer table. ``element`` restricts up front -- the carbon slice alone is
-    ~2M rows, so filtering before anything else is the difference between seconds and
-    minutes."""
+    # The atom-transfer table. ``element`` restricts up front -- the carbon slice alone is
+    # ~2M rows, so filtering before anything else is the difference between seconds and
+    # minutes.
     df = pd.read_parquet(path)
     return df if element is None else df[df.element == element]
 
@@ -81,15 +80,14 @@ DIRECTION_DECADE_CAP = 3.0
 
 
 def cap_direction_ratios(ratios: dict, decades: float = DIRECTION_DECADE_CAP) -> dict:
-    """``ratios`` with |log10 ratio| bounded at ``decades``. ``None`` or a non-finite bound
-    returns them untouched.
-
-    Applied to the ratio rather than to ``dG'`` because this is the model seam, where dG' is
-    no longer present -- and the two are equivalent, since ``ratio = exp(dG'/RT)`` is
-    monotone, so bounding either bounds the other. Bounding here rather than in the bake is
-    what makes the choice reviewable without a re-bake; ``reclamp_direction.py`` is the
-    replay that moves the same bound through the annotation when it is time to commit one.
-    """
+    # ``ratios`` with |log10 ratio| bounded at ``decades``. ``None`` or a non-finite bound
+    # returns them untouched.
+    #
+    # Applied to the ratio rather than to ``dG'`` because this is the model seam, where dG' is
+    # no longer present -- and the two are equivalent, since ``ratio = exp(dG'/RT)`` is
+    # monotone, so bounding either bounds the other. Bounding here rather than in the bake is
+    # what makes the choice reviewable without a re-bake; ``reclamp_direction.py`` is the
+    # replay that moves the same bound through the annotation when it is time to commit one.
     if decades is None or not np.isfinite(decades):
         return dict(ratios)
     lo, hi = 10.0 ** -decades, 10.0 ** decades
@@ -97,21 +95,20 @@ def cap_direction_ratios(ratios: dict, decades: float = DIRECTION_DECADE_CAP) ->
 
 
 def load_direction_ratios(path, *, cap: float | None = None) -> dict:
-    """``{mnxr: g_rev/g_fwd}`` from the direction ensemble. A reaction absent from the table
-    has ratio 1.0 -- the symmetric limit, i.e. "no directional evidence" degrades exactly to
-    the undirected model rather than to a guess.
-
-    ``cap`` bounds the asymmetry in decades; it is OFF by default so that loading a table
-    reports what the table says, and a caller that narrows it has said so.
-    """
+    # ``{mnxr: g_rev/g_fwd}`` from the direction ensemble. A reaction absent from the table
+    # has ratio 1.0 -- the symmetric limit, i.e. "no directional evidence" degrades exactly to
+    # the undirected model rather than to a guess.
+    #
+    # ``cap`` bounds the asymmetry in decades; it is OFF by default so that loading a table
+    # reports what the table says, and a caller that narrows it has said so.
     df = pd.read_parquet(path) if str(path).endswith(".parquet") else pd.read_csv(path, sep="\t")
     out = {str(r): float(v) for r, v in zip(df.mnxr, df.ratio) if str(r) != "EMPTY"}
     return cap_direction_ratios(out, cap) if cap is not None else out
 
 
 def load_evidence_weights(path, source="epi300", column="E_full") -> dict:
-    """``{mnxr: E_r}`` for one evidence source. ``E_full`` is the belief-conserving
-    allocation; ``E_dlec`` is its domain-limited variant."""
+    # ``{mnxr: E_r}`` for one evidence source. ``E_full`` is the belief-conserving
+    # allocation; ``E_dlec`` is its domain-limited variant.
     df = pd.read_parquet(path)
     if "source" in df.columns and source is not None:
         df = df[df.source == source]
@@ -123,14 +120,13 @@ def load_evidence_weights(path, source="epi300", column="E_full") -> dict:
 # =====================================================================
 
 def _explode_schema(df: pd.DataFrame) -> pd.DataFrame:
-    """Normalise the two atom-pair schemas onto one row per atom correspondence.
-
-    The frozen reference is already at pair granularity (int ``sub_idx``/``prod_idx``, a
-    scalar ``pair_w``). The incumbent extract and the toy fixtures pack a whole
-    substrate->product atom list into one row as comma-joined strings. Both must keep
-    working; the same two-schema tolerance ``ecspr_atom_graph._rank_list`` /
-    ``_weight_list`` carry, expressed once as a reshape instead of per-row in a loop.
-    """
+    # Normalise the two atom-pair schemas onto one row per atom correspondence.
+    #
+    # The frozen reference is already at pair granularity (int ``sub_idx``/``prod_idx``, a
+    # scalar ``pair_w``). The incumbent extract and the toy fixtures pack a whole
+    # substrate->product atom list into one row as comma-joined strings. Both must keep
+    # working; the same two-schema tolerance ``ecspr_atom_graph._rank_list`` /
+    # ``_weight_list`` carry, expressed once as a reshape instead of per-row in a loop.
     if not (df.sub_idx.dtype == object or df.prod_idx.dtype == object):
         return df
     rows = []
@@ -157,50 +153,49 @@ def graph_from_pairs(pairs: pd.DataFrame, element: str, weights: dict,
                      ratios: dict | None = None, *, use_confidence: bool = False,
                      with_provenance: bool = False, orientation: str = "as_written",
                      meta: dict | None = None) -> AtomGraph:
-    """Directed atom network for one element.
-
-    An edge is one atom transfer: tail ``(substrate, sub_idx)``, head ``(product,
-    prod_idx)``, with ``gp = E_r * pair_w`` and ``gm = ratio_r * gp``. Orientation comes
-    straight from the pair table's substrate/product columns -- no reaction roles, no
-    reac_prop parsing, because on an atom graph the transfer already names its own
-    direction.
-
-    ``pair_w`` is the pair's fanout-dilution weight: 1.0 for an ensemble consensus, 0.5 for
-    a lone-member correspondence, and conf/wsum for a disagreement diluted across
-    candidates. It is margin-conserving (a source atom's candidate weights sum to 1.0),
-    which is why it -- and not the raw ``confidence`` column -- is what folds into the
-    conductance. ``use_confidence`` multiplies ``confidence`` in as a SENSITIVITY knob; it
-    double-counts the dilution on lone-member and disagreement rows, so it is off by
-    default.
-
-    Parallel edges in the SAME direction are summed. That is exact, not an approximation:
-    both see the same potential drop ``x``, so ``sum_i [gp_i h(x) + gm_i (x - h(x))]`` is
-    the single edge ``(sum gp_i, sum gm_i)``. Anti-parallel edges are kept separate, where
-    the same identity does not hold.
-
-    A RATIO ABOVE 1 FLIPS THE EDGE -- it does not amplify it
-    -------------------------------------------------------
-    ``ratio = g_rev/g_fwd = exp(dG'/RT)`` is defined against the direction the MetaNetX
-    equation is WRITTEN in, so ``ratio > 1`` means the reaction as written is
-    thermodynamically unfavourable and actually runs the other way. On the real ensemble
-    that is not a rare edge case: ratios span 3e-18 to 3.3e17, and a quarter of the table
-    sits above 1.
-
-    Taking ``gm = ratio * gp`` literally there would give the reverse branch a conductance
-    of ``3e17 * E_r``, i.e. it would let the DIRECTION evidence manufacture conductance the
-    EXISTENCE evidence never supported -- a short circuit, and the reason a first run of
-    this builder returned per-precursor currents ~1e13 times the injected current. Direction
-    evidence may only ever throttle, never amplify. So an edge with ``ratio > 1`` is
-    REVERSED (tail and head swapped) and its ratio inverted, which preserves the physical
-    forward/backward asymmetry exactly while keeping the favoured branch at ``E_r *
-    pair_w``. At ``ratio == 1`` it is the identity, so the symmetric limit is untouched.
-
-    ``orientation`` reads the SAME baked reference the other way round: ``reversed``
-    inverts every ratio before any of the above runs, so an edge favoured as written
-    becomes throttled and vice versa. Nothing else changes -- same probe, same terminals,
-    same mask, same element -- which is why a reference whose ratios are all 1.0 gives
-    numerically identical answers under both. See :data:`ORIENTATIONS`.
-    """
+    # Directed atom network for one element.
+    #
+    # An edge is one atom transfer: tail ``(substrate, sub_idx)``, head ``(product,
+    # prod_idx)``, with ``gp = E_r * pair_w`` and ``gm = ratio_r * gp``. Orientation comes
+    # straight from the pair table's substrate/product columns -- no reaction roles, no
+    # reac_prop parsing, because on an atom graph the transfer already names its own
+    # direction.
+    #
+    # ``pair_w`` is the pair's fanout-dilution weight: 1.0 for an ensemble consensus, 0.5 for
+    # a lone-member correspondence, and conf/wsum for a disagreement diluted across
+    # candidates. It is margin-conserving (a source atom's candidate weights sum to 1.0),
+    # which is why it -- and not the raw ``confidence`` column -- is what folds into the
+    # conductance. ``use_confidence`` multiplies ``confidence`` in as a SENSITIVITY knob; it
+    # double-counts the dilution on lone-member and disagreement rows, so it is off by
+    # default.
+    #
+    # Parallel edges in the SAME direction are summed. That is exact, not an approximation:
+    # both see the same potential drop ``x``, so ``sum_i [gp_i h(x) + gm_i (x - h(x))]`` is
+    # the single edge ``(sum gp_i, sum gm_i)``. Anti-parallel edges are kept separate, where
+    # the same identity does not hold.
+    #
+    # A RATIO ABOVE 1 FLIPS THE EDGE -- it does not amplify it
+    # -------------------------------------------------------
+    # ``ratio = g_rev/g_fwd = exp(dG'/RT)`` is defined against the direction the MetaNetX
+    # equation is WRITTEN in, so ``ratio > 1`` means the reaction as written is
+    # thermodynamically unfavourable and actually runs the other way. On the real ensemble
+    # that is not a rare edge case: ratios span 3e-18 to 3.3e17, and a quarter of the table
+    # sits above 1.
+    #
+    # Taking ``gm = ratio * gp`` literally there would give the reverse branch a conductance
+    # of ``3e17 * E_r``, i.e. it would let the DIRECTION evidence manufacture conductance the
+    # EXISTENCE evidence never supported -- a short circuit, and the reason a first run of
+    # this builder returned per-precursor currents ~1e13 times the injected current. Direction
+    # evidence may only ever throttle, never amplify. So an edge with ``ratio > 1`` is
+    # REVERSED (tail and head swapped) and its ratio inverted, which preserves the physical
+    # forward/backward asymmetry exactly while keeping the favoured branch at ``E_r *
+    # pair_w``. At ``ratio == 1`` it is the identity, so the symmetric limit is untouched.
+    #
+    # ``orientation`` reads the SAME baked reference the other way round: ``reversed``
+    # inverts every ratio before any of the above runs, so an edge favoured as written
+    # becomes throttled and vice versa. Nothing else changes -- same probe, same terminals,
+    # same mask, same element -- which is why a reference whose ratios are all 1.0 gives
+    # numerically identical answers under both. See :data:`ORIENTATIONS`.
     if orientation not in ORIENTATIONS:
         raise ValueError(f"orientation must be one of {ORIENTATIONS}, got {orientation!r}")
     ratios = ratios or {}
@@ -288,16 +283,15 @@ def graph_from_pairs(pairs: pd.DataFrame, element: str, weights: dict,
 
 
 def reaction_currents(graph: AtomGraph, solution) -> pd.Series:
-    """Per-reaction current, ``{mnxr: sum_e |i_e| * gp_r,e / gp_e}``, descending.
-
-    Requires a graph built with ``with_provenance=True``. Current through parallel
-    conductances divides in exact proportion to conductance, so splitting an edge's current
-    by each contributing reaction's share of ``gp`` is exact, not an approximation.
-
-    This is how a validation run picks its knockout FROM THE RUN'S OWN RANKING rather than
-    naming a reaction in advance -- a demo that names its reaction proves nothing once the
-    universe moves.
-    """
+    # Per-reaction current, ``{mnxr: sum_e |i_e| * gp_r,e / gp_e}``, descending.
+    #
+    # Requires a graph built with ``with_provenance=True``. Current through parallel
+    # conductances divides in exact proportion to conductance, so splitting an edge's current
+    # by each contributing reaction's share of ``gp`` is exact, not an approximation.
+    #
+    # This is how a validation run picks its knockout FROM THE RUN'S OWN RANKING rather than
+    # naming a reaction in advance -- a demo that names its reaction proves nothing once the
+    # universe moves.
     prov = graph.meta.get("edge_reactions")
     if prov is None:
         raise ValueError("graph was not built with with_provenance=True")
@@ -312,25 +306,24 @@ def reaction_currents(graph: AtomGraph, solution) -> pd.Series:
 
 
 def reaction_elasticities(graph: AtomGraph, solution) -> pd.Series:
-    """Per-reaction ``dlog C_eff / dlog g_r``, descending. Sums to 1.
-
-    The two-point conductance is homogeneous of degree one in the conductances, so the
-    elasticities partition the measurement rather than merely ranking it -- and each one is
-    that reaction's share of the dissipated power, which one solve already knows. That
-    makes this the closed form of the perturbation sweep a caller would otherwise run: a
-    fold ``f`` on reaction ``r`` moves the readout by ``eps_r * log f`` to first order,
-    with no second solve.
-
-    Read the SPREAD, not just the ranking. ``1 / sum(eps^2)`` is the effective number of
-    reactions the probe can respond to at all: a series chain of k equal steps puts 1/k on
-    each, and a target whose chain is short has few levers no matter how large the network
-    around it is.
-
-    Exact on the symmetric network. Under the rectified law it is first-order, and the
-    diode's smoothing band can put a small negative share on an edge whose current and
-    drop disagree in sign; the sum stays 1 by Tellegen either way. Requires
-    ``with_provenance=True``, like :func:`reaction_currents`.
-    """
+    # Per-reaction ``dlog C_eff / dlog g_r``, descending. Sums to 1.
+    #
+    # The two-point conductance is homogeneous of degree one in the conductances, so the
+    # elasticities partition the measurement rather than merely ranking it -- and each one is
+    # that reaction's share of the dissipated power, which one solve already knows. That
+    # makes this the closed form of the perturbation sweep a caller would otherwise run: a
+    # fold ``f`` on reaction ``r`` moves the readout by ``eps_r * log f`` to first order,
+    # with no second solve.
+    #
+    # Read the SPREAD, not just the ranking. ``1 / sum(eps^2)`` is the effective number of
+    # reactions the probe can respond to at all: a series chain of k equal steps puts 1/k on
+    # each, and a target whose chain is short has few levers no matter how large the network
+    # around it is.
+    #
+    # Exact on the symmetric network. Under the rectified law it is first-order, and the
+    # diode's smoothing band can put a small negative share on an edge whose current and
+    # drop disagree in sign; the sum stays 1 by Tellegen either way. Requires
+    # ``with_provenance=True``, like :func:`reaction_currents`.
     prov = graph.meta.get("edge_reactions")
     if prov is None:
         raise ValueError("graph was not built with with_provenance=True")
@@ -352,8 +345,8 @@ def reaction_elasticities(graph: AtomGraph, solution) -> pd.Series:
 # =====================================================================
 
 def load_model(path):
-    """A COBRA model from JSON, SBML (.xml/.sbml/.xml.gz) or MATLAB. ``import cobra`` stays
-    lazy so the pairs-only path never pays for it."""
+    # A COBRA model from JSON, SBML (.xml/.sbml/.xml.gz) or MATLAB. ``import cobra`` stays
+    # lazy so the pairs-only path never pays for it.
     import cobra
     p = Path(path)
     name = p.name.lower()
@@ -369,7 +362,7 @@ def load_model(path):
 
 
 def load_reac_xref(path) -> tuple:
-    """``reac_xref.tsv`` -> ``(bigg.reaction -> MNXR, kegg.reaction -> MNXR)``, first wins."""
+    # ``reac_xref.tsv`` -> ``(bigg.reaction -> MNXR, kegg.reaction -> MNXR)``, first wins.
     bigg2m, kegg2m = {}, {}
     with open(path) as fh:
         for ln in fh:
@@ -386,25 +379,23 @@ def load_reac_xref(path) -> tuple:
 
 
 def atom_universe(pairs: pd.DataFrame, elements=ELEMENTS) -> set:
-    """Every MNXR carrying at least one atom transfer on one of ``elements``.
-
-    THIS is what "in universe" means in the atom lane. The star lane asked the same
-    question of ``mnx_bipartite`` -- whether a reaction carried a ``w_X > 0`` edge -- which
-    is a property of a topology that no longer exists here. Same question, asked of the
-    table the edges actually come from.
-    """
+    # Every MNXR carrying at least one atom transfer on one of ``elements``.
+    #
+    # THIS is what "in universe" means in the atom lane. The star lane asked the same
+    # question of ``mnx_bipartite`` -- whether a reaction carried a ``w_X > 0`` edge -- which
+    # is a property of a topology that no longer exists here. Same question, asked of the
+    # table the edges actually come from.
     df = pairs[pairs.element.isin(list(elements))] if "element" in pairs.columns else pairs
     return set(df.mnxr.unique())
 
 
 def crosswalk_gem(model, reac_xref, universe: set) -> tuple:
-    """GEM reaction -> ONE canonical current MNXR.
-
-    Preference order: a candidate that is in the atom-mapped universe first, then by source
-    priority ``bigg > kegg > embedded``. Returns ``(DataFrame[rxn_id, mnxr, source,
-    in_universe], stats)``. Lifted from the star lane's ``gem_crosswalk`` with the universe
-    supplied rather than read off a bipartite pickle.
-    """
+    # GEM reaction -> ONE canonical current MNXR.
+    #
+    # Preference order: a candidate that is in the atom-mapped universe first, then by source
+    # priority ``bigg > kegg > embedded``. Returns ``(DataFrame[rxn_id, mnxr, source,
+    # in_universe], stats)``. Lifted from the star lane's ``gem_crosswalk`` with the universe
+    # supplied rather than read off a bipartite pickle.
     bigg2m, kegg2m = load_reac_xref(reac_xref)
 
     def as_list(v):
@@ -440,12 +431,11 @@ def crosswalk_gem(model, reac_xref, universe: set) -> tuple:
 
 def gem_to_graph(model_path, reac_xref, pairs: pd.DataFrame, element: str,
                  ratios: dict | None = None, *, E: float = 1.0) -> AtomGraph:
-    """A curated GEM's reactome, induced on the atom-mapped universe with uniform ``E``.
-
-    Uniform conductance is deliberate: a curated model asserts that a reaction is PRESENT,
-    not how much evidence there is for it, so weighting it by anything would be inventing a
-    quantity. The evidence-weighted lane is :func:`graph_from_pairs` with real ``E_r``.
-    """
+    # A curated GEM's reactome, induced on the atom-mapped universe with uniform ``E``.
+    #
+    # Uniform conductance is deliberate: a curated model asserts that a reaction is PRESENT,
+    # not how much evidence there is for it, so weighting it by anything would be inventing a
+    # quantity. The evidence-weighted lane is :func:`graph_from_pairs` with real ``E_r``.
     model = load_model(model_path)
     xw, stats = crosswalk_gem(model, reac_xref, atom_universe(pairs))
     weights = {r: float(E) for r in xw.mnxr.dropna().unique()}
@@ -463,17 +453,16 @@ def gem_to_graph(model_path, reac_xref, pairs: pd.DataFrame, element: str,
 def gpr_to_graph(model_path, genes_active, reac_xref, pairs: pd.DataFrame, element: str,
                  ratios: dict | None = None, *, E: float = 1.0,
                  keep_ruleless: bool = True) -> AtomGraph:
-    """The GEM restricted to reactions whose GPR is satisfied by ``genes_active``.
-
-    An MNXR is LIVE if **any** GEM reaction mapping to it is live. The crosswalk is
-    many-GEM-reactions-to-one-MNXR, so a live and a dead reaction can land on the same
-    MNXR; treating that MNXR as dead would delete a route the organism still has. Recorded
-    here rather than left to the reader.
-
-    ``keep_ruleless`` keeps reactions with an empty gene-reaction rule -- exchanges,
-    diffusion, spontaneous chemistry. They have no gene to knock out, so dropping them
-    would make every gene set look like a starvation.
-    """
+    # The GEM restricted to reactions whose GPR is satisfied by ``genes_active``.
+    #
+    # An MNXR is LIVE if **any** GEM reaction mapping to it is live. The crosswalk is
+    # many-GEM-reactions-to-one-MNXR, so a live and a dead reaction can land on the same
+    # MNXR; treating that MNXR as dead would delete a route the organism still has. Recorded
+    # here rather than left to the reader.
+    #
+    # ``keep_ruleless`` keeps reactions with an empty gene-reaction rule -- exchanges,
+    # diffusion, spontaneous chemistry. They have no gene to knock out, so dropping them
+    # would make every gene set look like a starvation.
     model = load_model(model_path)
     active = set(genes_active)
     # cobra's `GPR.eval` takes KNOCKOUTS, not active genes -- it answers "is this rule
@@ -511,7 +500,7 @@ def gpr_to_graph(model_path, genes_active, reac_xref, pairs: pd.DataFrame, eleme
 
 
 def model_gene_ids(model_path) -> list:
-    """Every gene id in a model -- the full active set, i.e. the wild type."""
+    # Every gene id in a model -- the full active set, i.e. the wild type.
     return [g.id for g in load_model(model_path).genes]
 
 
@@ -523,8 +512,8 @@ GRAPH_STEM = "atom_graph_{X}.npz"
 
 
 def write_graph_dir(out_dir, graphs: dict, extra: dict | None = None):
-    """An ``ecspr::atom_graph`` directory: one ``atom_graph_{X}.npz`` per element plus a
-    build manifest carrying reaction counts, the AAM gap and the element."""
+    # An ``ecspr::atom_graph`` directory: one ``atom_graph_{X}.npz`` per element plus a
+    # build manifest carrying reaction counts, the AAM gap and the element.
     import json
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)

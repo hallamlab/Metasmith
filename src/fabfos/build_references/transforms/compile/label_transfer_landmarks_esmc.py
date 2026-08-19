@@ -1,34 +1,33 @@
-"""R10 -- the ESM-C half of the labelled landmarks.
-
-The same landmarks as `label_transfer_landmarks.py` -- the same bridge cut, the same
-Swiss-Prot release, the same accessions -- embedded with ESM-C 600M instead of
-ProteinBERT, so `gpr_7lane`'s ESM-C kNN lane has something to vote against.
-
-WHY A SECOND ARTIFACT RATHER THAN A SECOND FILE IN THE FIRST ONE. The two embedders
-live in two images (`env::proteinbert.env` carries no ESM-C SDK, and `env::esmc.env`
-carries no ProteinBERT), and the ESM-C pass needs a GPU while the ProteinBERT one
-does not. Folding both into one transform would make every ProteinBERT rebuild
-queue for a device and would put the two stacks' fate in one exit code. They are
-written separately, and each carries its accessions in the same rows as its own
-embeddings -- so neither can be paired with the other's vectors by accident.
-
-SAME MODEL AS THE QUERY, and this is the whole point of the file. Cosine distance
-between two embedding spaces is a number with no referent, so the pool is only
-meaningful if it was produced by the same function as
-`functionalAnnotation/esm_c.py`'s query embeddings. The inference block below is
-that transform's, copied: same weights (`ref::esm_c_600m_weights`), same
-`max_len`/`chunk_overlap`, same sliding-window aggregation with the same length
-weights, same `out.embeddings` mean over non-special tokens. **The two must be
-changed together.** What is deliberately dropped is the per-layer means: EZpred's
-heads are not in this path, and a (222k, 3, 1152) float32 stack is 3 GB of nothing.
-
-NO RESIDUE RECODING, unlike the ProteinBERT pool. That transform recodes because
-its encoder has an off-by-one that indexes past the end of its lookup array on
-ordinal 90 ('Z') and kills the run after the model has loaded. ESM-C's tokenizer
-maps anything it does not know to its unknown token, and -- more to the point -- the
-query lane does not recode either, so recoding here would make the pool and the
-query disagree about what a rare residue is.
-"""
+# R10 -- the ESM-C half of the labelled landmarks.
+#
+# The same landmarks as `label_transfer_landmarks.py` -- the same bridge cut, the same
+# Swiss-Prot release, the same accessions -- embedded with ESM-C 600M instead of
+# ProteinBERT, so `gpr_7lane`'s ESM-C kNN lane has something to vote against.
+#
+# WHY A SECOND ARTIFACT RATHER THAN A SECOND FILE IN THE FIRST ONE. The two embedders
+# live in two images (`env::proteinbert.env` carries no ESM-C SDK, and `env::esmc.env`
+# carries no ProteinBERT), and the ESM-C pass needs a GPU while the ProteinBERT one
+# does not. Folding both into one transform would make every ProteinBERT rebuild
+# queue for a device and would put the two stacks' fate in one exit code. They are
+# written separately, and each carries its accessions in the same rows as its own
+# embeddings -- so neither can be paired with the other's vectors by accident.
+#
+# SAME MODEL AS THE QUERY, and this is the whole point of the file. Cosine distance
+# between two embedding spaces is a number with no referent, so the pool is only
+# meaningful if it was produced by the same function as
+# `functionalAnnotation/esm_c.py`'s query embeddings. The inference block below is
+# that transform's, copied: same weights (`ref::esm_c_600m_weights`), same
+# `max_len`/`chunk_overlap`, same sliding-window aggregation with the same length
+# weights, same `out.embeddings` mean over non-special tokens. **The two must be
+# changed together.** What is deliberately dropped is the per-layer means: EZpred's
+# heads are not in this path, and a (222k, 3, 1152) float32 stack is 3 GB of nothing.
+#
+# NO RESIDUE RECODING, unlike the ProteinBERT pool. That transform recodes because
+# its encoder has an off-by-one that indexes past the end of its lookup array on
+# ordinal 90 ('Z') and kills the run after the model has loaded. ESM-C's tokenizer
+# maps anything it does not know to its unknown token, and -- more to the point -- the
+# query lane does not recode either, so recoding here would make the pool and the
+# query disagree about what a rare residue is.
 from metasmith.python_api import *
 
 lib   = TransformInstanceLibrary.ResolveParentLibrary(__file__)
@@ -40,8 +39,6 @@ bridge  = model.AddRequirement(lib.GetType("ref::mnxr_lookup"))
 weights = model.AddRequirement(lib.GetType("ref::esm_c_600m_weights"))
 pool    = model.AddProduct(lib.GetType("ref::label_transfer_landmarks_esmc"))
 
-# The cut that defines the set. Identical to label_transfer_landmarks.py by necessity:
-# the two stacks must describe the same accessions or the lanes are not comparable.
 POOL_ID_SOURCE = "uniprot"
 POOL_EVIDENCE = "reviewed"
 
@@ -51,8 +48,6 @@ RELDATE_FILE = "reldate.txt"
 TABLE_NAME = "landmarks.parquet"
 SOURCE_NAME = "source.txt"
 
-# functionalAnnotation/esm_c.py's constants. Copied, and the copy is the contract --
-# a pool embedded at a different max_len is a pool of different vectors.
 MODEL_NAME = "esmc_600m"
 BATCH_SIZE = 32
 MAX_LEN = 2048
@@ -259,9 +254,6 @@ pd.DataFrame({"sequence_id": ids, "index": list(range(len(ids)))}).to_csv(
 print(f"[pool-esmc] {emb.shape} -> {out_npy} in {time.time()-t0:.1f}s", flush=True)
 '''
 
-# One table, one row per accession: the embed step above wrote the stack and the ids
-# from the same arrays, and they are put in the same rows here before anything else
-# reads either.
 ASSEMBLE = r"""
 import shutil
 import numpy as np
@@ -313,9 +305,6 @@ def protocol(context: ExecutionContext):
         .ifContainerDo(env=image, cmd="python3 _pool_select.py") \
         .ifVirtualEnvDo(env=image, cmd="python3 _pool_select.py")
 
-    # ref::esm_c_600m_weights is the archive, not a directory: the SDK resolves
-    # data/weights/<file>.pth from the process cwd, so the layout is the unit and the
-    # tar is what carries it. Same unpack as functionalAnnotation/esm_c.py.
     context.LocalShell(f"mkdir -p weights && tar -xzf {iw.local} -C weights")
 
     with open("_pool_embed.py", "w") as f:

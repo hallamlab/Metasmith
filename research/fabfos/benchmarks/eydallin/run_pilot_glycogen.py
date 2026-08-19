@@ -76,8 +76,8 @@ SOURCE_NAME = "D-glucose"
 
 
 def build_direction_ratios(out_path: Path) -> Path:
-    """Stamped with the bake it came from -- this cache is the campaign's baseline, and
-    an unstamped one is how the r7 delivery split outlived the r8 repin."""
+    # Stamped with the bake it came from -- this cache is the campaign's baseline, and
+    # an unstamped one is how the r7 delivery split outlived the r8 repin.
     return bake_identity.build_direction_ratios(out_path, BAKE)
 
 

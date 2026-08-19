@@ -94,13 +94,12 @@ def _dims(a: np.ndarray) -> pd.DataFrame:
 
 
 def _write_query_embeddings(emb: Path, rng, dim=DIM, idx: Path = None):
-    """The ProteinBERT type names its own rows; ESM-C's still uses a sibling index.
-
-    Returns the vectors, because the landmark set has to be built AROUND them: the
-    pbert lane refuses an ORF whose nearest landmark is below fe.PBERT_NN_MIN, and
-    two independent normal draws are orthogonal in expectation, so a landmark set
-    drawn on its own leaves every query abstaining and every lane empty.
-    """
+    # The ProteinBERT type names its own rows; ESM-C's still uses a sibling index.
+    #
+    # Returns the vectors, because the landmark set has to be built AROUND them: the
+    # pbert lane refuses an ORF whose nearest landmark is below fe.PBERT_NN_MIN, and
+    # two independent normal draws are orthogonal in expectation, so a landmark set
+    # drawn on its own leaves every query abstaining and every lane empty.
     a = rng.normal(size=(len(ORFS), dim)).astype(np.float32)
     vecs = _dims(a)
     if idx is None:
@@ -114,12 +113,11 @@ def _write_query_embeddings(emb: Path, rng, dim=DIM, idx: Path = None):
 
 def _write_landmarks(lm_dir: Path, rng, dim=DIM, table="landmarks.parquet",
                      near: np.ndarray = None):
-    """40 labelled landmarks. PBERT_K_MAX is 30, so there must be at least that many
-    or the top-K partition indexes past the end.
-
-    `near` puts a landmark on top of each query so the queries clear the lane's
-    proximity abstain; without it the fixture tests an empty table.
-    """
+    # 40 labelled landmarks. PBERT_K_MAX is 30, so there must be at least that many
+    # or the top-K partition indexes past the end.
+    #
+    # `near` puts a landmark on top of each query so the queries clear the lane's
+    # proximity abstain; without it the fixture tests an empty table.
     n = 40
     a = rng.normal(size=(n, dim)).astype(np.float32)
     if near is not None:
@@ -143,7 +141,7 @@ def _write_landmarks(lm_dir: Path, rng, dim=DIM, table="landmarks.parquet",
 
 def _lanes(work: Path, rng, seven: bool, lm_table="landmarks.parquet",
            esmc_lm_dim=DIM):
-    """Write every input both mappers read; return the argv kwargs."""
+    # Write every input both mappers read; return the argv kwargs.
     _write_orfs(work / "orfs.faa")
     _write_kofam(work / "kofam.csv")
     _write_clean(work / "clean.tsv")
@@ -257,7 +255,7 @@ def test_gpr_7lane_driver_writes_a_valid_table(tmp_path):
 
 
 def test_embedding_lane_refuses_a_landmark_dir_without_its_table(tmp_path):
-    """No landmarks.parquet means no landmarks, and there is no degraded mode."""
+    # No landmarks.parquet means no landmarks, and there is no degraded mode.
     rng = np.random.default_rng(2)
     kw = _lanes(tmp_path, rng, seven=False, lm_table="something_else.parquet")
     r = _run(_argv("gpr_4lane", kw), tmp_path)
@@ -267,9 +265,9 @@ def test_embedding_lane_refuses_a_landmark_dir_without_its_table(tmp_path):
 
 
 def test_embedding_lane_refuses_a_query_of_a_different_width(tmp_path):
-    """Voting a query against landmarks embedded by a different model is not a weaker
-    answer, it is a meaningless one. Differing width is the half of that a mapper can
-    see, and it is what the ESM-C lane pointed at the ProteinBERT set would hit."""
+    # Voting a query against landmarks embedded by a different model is not a weaker
+    # answer, it is a meaningless one. Differing width is the half of that a mapper can
+    # see, and it is what the ESM-C lane pointed at the ProteinBERT set would hit.
     rng = np.random.default_rng(2)
     kw = _lanes(tmp_path, rng, seven=True, esmc_lm_dim=DIM)
     kw["lm_esmc"] = kw["landmarks"]          # the pbert set, at the pbert width
@@ -282,15 +280,14 @@ def test_embedding_lane_refuses_a_query_of_a_different_width(tmp_path):
 
 
 def test_embedding_lane_abstains_when_no_landmark_is_near(tmp_path):
-    """The refusal the pbert lane could not make.
-
-    `PBERT_FLOOR` gates the VOTE, which is normalised within the admitted
-    neighbours, so it reports agreement and not proximity -- thirty neighbours at
-    cosine 0.15 that agree score 1.0. Query vectors drawn independently of the
-    landmark set are orthogonal in expectation, which is the geometry of an ORF with
-    no relative in the reference: before the quota every one of them got a confident
-    call, which is the mechanism behind the spurious glycogen annotations.
-    """
+    # The refusal the pbert lane could not make.
+    #
+    # `PBERT_FLOOR` gates the VOTE, which is normalised within the admitted
+    # neighbours, so it reports agreement and not proximity -- thirty neighbours at
+    # cosine 0.15 that agree score 1.0. Query vectors drawn independently of the
+    # landmark set are orthogonal in expectation, which is the geometry of an ORF with
+    # no relative in the reference: before the quota every one of them got a confident
+    # call, which is the mechanism behind the spurious glycogen annotations.
     rng = np.random.default_rng(11)
     kw = _lanes(tmp_path, rng, seven=False)
     # the landmarks no longer sit on top of the queries
@@ -305,13 +302,12 @@ def test_embedding_lane_abstains_when_no_landmark_is_near(tmp_path):
 
 
 def test_embedding_lane_admits_by_neighbourhood_not_by_a_fixed_count(tmp_path):
-    """A dense neighbourhood votes with many neighbours, a thin one with exactly one.
-
-    The whole reason for the quota: a fixed top-K gives every ORF K votes whether or
-    not it has K worth having, so the distant ones vote at full weight precisely when
-    the near ones are few. Both runs here retrieve the same PBERT_K_MAX candidates;
-    what differs is how many of them clear the band.
-    """
+    # A dense neighbourhood votes with many neighbours, a thin one with exactly one.
+    #
+    # The whole reason for the quota: a fixed top-K gives every ORF K votes whether or
+    # not it has K worth having, so the distant ones vote at full weight precisely when
+    # the near ones are few. Both runs here retrieve the same PBERT_K_MAX candidates;
+    # what differs is how many of them clear the band.
     def admitted(work: Path, seed: int, dense: bool) -> float:
         work.mkdir(parents=True, exist_ok=True)
         rng = np.random.default_rng(seed)

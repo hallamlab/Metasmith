@@ -85,13 +85,6 @@ FORECAST_COLS = ("mnxr", "member", "mechanism", "blocker", "n_participants")
 # =====================================================================
 
 class CompoundProfile:
-    """Per-participant answers to every question a member asks about a compound.
-
-    Built once per distinct MNXM. `heavy` is `{element: count}` over non-hydrogen
-    atoms with explicit Hs added, which is what the balance check sums; it is None
-    when there is no readable structure to count.
-    """
-
     __slots__ = ("inchikey", "smiles", "parseable", "wildcard", "heavy")
 
     def __init__(self, inchikey, smiles, parseable, wildcard, heavy):
@@ -103,12 +96,6 @@ class CompoundProfile:
 
 
 def profile_compounds(participants, props):
-    """`{mnxm: CompoundProfile}` -- one RDKit parse per distinct participant.
-
-    RDKit is imported here rather than at module scope for the reason
-    `thermo_dgbyg` does it: the direction images are equilibrator OR torch, and a
-    module that cannot import in one of them takes the whole step down with it.
-    """
     from rdkit import Chem, RDLogger
     RDLogger.DisableLog("rdApp.*")
 
@@ -134,15 +121,14 @@ def profile_compounds(participants, props):
 # =====================================================================
 
 def predict_eq(stoich, profiles, resolved):
-    """`(mechanism, blocker)` for the eQuilibrator member.
-
-    Mirrors `EquilibratorMember.dgr`'s loop exactly: walk participants in the
-    equation's own order and return at the first one that fails, because that is
-    the reason the member will record. Order matters -- a reaction with one
-    structureless participant and one unresolvable one reports whichever comes
-    first, and a forecast that sorted the participants would disagree with the
-    member on which mechanism was to blame while agreeing that it was silent.
-    """
+    # `(mechanism, blocker)` for the eQuilibrator member.
+    #
+    # Mirrors `EquilibratorMember.dgr`'s loop exactly: walk participants in the
+    # equation's own order and return at the first one that fails, because that is
+    # the reason the member will record. Order matters -- a reaction with one
+    # structureless participant and one unresolvable one reports whichever comes
+    # first, and a forecast that sorted the participants would disagree with the
+    # member on which mechanism was to blame while agreeing that it was silent.
     for m in stoich:
         p = profiles.get(m)
         if p is None or not p.inchikey:
@@ -153,12 +139,6 @@ def predict_eq(stoich, profiles, resolved):
 
 
 def predict_dgbyg(stoich, profiles):
-    """`(mechanism, blocker)` for the dGbyG member, same short-circuit.
-
-    The balance test runs only after every participant passed, which is the
-    member's own order: an unreadable participant means there is no ledger to
-    balance, so `no_smiles` beats `unbalanced` rather than competing with it.
-    """
     for m in stoich:
         p = profiles.get(m)
         if p is None or p.smiles is None:
@@ -179,20 +159,6 @@ def predict_dgbyg(stoich, profiles):
 
 
 def build(universe, stoich_by_mnxr, profiles, resolved, subs_by_member=None):
-    """One row per (reaction, member). `rows, tally`.
-
-    `subs_by_member` rewrites the equation the same way `drive.cmd_eval` will, so the
-    forecast describes the chemistry the run will actually be handed. Omitting it here and
-    passing it there is the failure mode this argument exists to prevent: the accounting
-    would describe a bake that was never built.
-
-    KEYED BY MEMBER, because the admitted set is. A couple whose model compound a member
-    cannot place is refused for that member and kept for the other, so the two arms are
-    handed DIFFERENT equations for the same reaction. One shared rewrite would forecast
-    the refusing member as though it had been given the substitution -- over-predicting
-    precisely the reactions the refusal exists to withhold, which is the one place this
-    accounting is load-bearing.
-    """
     rows, tally = [], collections.Counter()
     for mnxr in universe:
         s = stoich_by_mnxr.get(mnxr)
@@ -245,14 +211,13 @@ def _props(chem_prop, mnxm_only):
 
 
 def cmd_resolve(args):
-    """Ask eQuilibrator once per distinct participant whether it holds the compound.
-
-    The member memoises this per process and a sharded run fragments that cache N
-    ways; doing it here instead makes it a 24k-compound pass whose answer is a file.
-    Uses `EquilibratorMember._compound` rather than a reimplementation, so the
-    InChI-first / InChIKey-fallback precedence cannot drift out of step with the
-    member whose behaviour this is predicting.
-    """
+    # Ask eQuilibrator once per distinct participant whether it holds the compound.
+    #
+    # The member memoises this per process and a sharded run fragments that cache N
+    # ways; doing it here instead makes it a 24k-compound pass whose answer is a file.
+    # Uses `EquilibratorMember._compound` rather than a reimplementation, so the
+    # InChI-first / InChIKey-fallback precedence cannot drift out of step with the
+    # member whose behaviour this is predicting.
     from .thermo_eq import EquilibratorMember
 
     from . import substitute
@@ -426,14 +391,13 @@ def cmd_build(args):
 
 
 def cmd_backtest(args):
-    """Score the forecast against member tables a real run already wrote.
-
-    NO RUN IS NEEDED FOR THIS. The deployed bake's two member parquets carry the
-    real `reason` for all 83,795 reactions, so the forecast's accuracy is a join.
-    Score the forecast built with `--mnxm-only` against a pre-water-fix bake, and
-    without it against a post-fix one; scoring the wrong pair measures the fix
-    rather than the forecast, and the summary records which was asked for.
-    """
+    # Score the forecast against member tables a real run already wrote.
+    #
+    # NO RUN IS NEEDED FOR THIS. The deployed bake's two member parquets carry the
+    # real `reason` for all 83,795 reactions, so the forecast's accuracy is a join.
+    # Score the forecast built with `--mnxm-only` against a pre-water-fix bake, and
+    # without it against a post-fix one; scoring the wrong pair measures the fix
+    # rather than the forecast, and the summary records which was asked for.
     fc = pd.read_parquet(args.forecast)
     lines = ["kind\tkey\tn"]
     for member, path in (("eq", args.member_eq), ("dgbyg", args.member_dgbyg)):

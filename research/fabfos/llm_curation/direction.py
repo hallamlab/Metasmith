@@ -51,8 +51,6 @@ sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(ROOT / "research/fabfos/benchmarks/direction_rescue"))
 sys.path.insert(0, str(HERE))
 
-# MetaCyc's curated call, collapsed to the two classes that name a direction. REVERSIBLE
-# is excluded: it is not a third answer to grade against, it is the absence of one.
 TRUTH = {
     "LEFT-TO-RIGHT": "left_to_right", "PHYSIOL-LEFT-TO-RIGHT": "left_to_right",
     "RIGHT-TO-LEFT": "right_to_left", "PHYSIOL-RIGHT-TO-LEFT": "right_to_left",
@@ -68,8 +66,6 @@ def side(terms: list[dict]) -> str:
         bits.append(f"{pre}{t['name']}")
     return " + ".join(bits)
 
-
-# ---------------------------------------------------------------- panel
 
 def cmd_panel(a) -> int:
     from measure_rescue import MNX, load_names
@@ -124,8 +120,6 @@ def cmd_panel(a) -> int:
     print(f"-> {a.out}")
     return 0
 
-
-# ---------------------------------------------------------------- run
 
 def cmd_run(a) -> int:
     from client import BadJSON, LLMClient, LLMConfig, SchemaRejected
@@ -192,8 +186,6 @@ def cmd_run(a) -> int:
     return 0
 
 
-# ---------------------------------------------------------------- score
-
 def cmd_score(a) -> int:
     rows = [json.loads(l) for l in a.run.read_text().splitlines() if l.strip()]
     per = collections.defaultdict(collections.Counter)
@@ -202,9 +194,6 @@ def cmd_score(a) -> int:
 
     for r in rows:
         cls, aw, sw = r["truth"], r["as_written"].get("call"), r["swapped"].get("call")
-        # The trivial baseline: answer "as written" every time. It is right on exactly
-        # the left_to_right class and wrong on the other, and it is what any reported
-        # accuracy has to beat to mean anything.
         baseline[cls]["correct" if cls == "left_to_right" else "wrong"] += 1
         # The single-pass model, ungated -- what the pilot measured.
         if aw in FLIP:
@@ -215,8 +204,6 @@ def cmd_score(a) -> int:
         if aw not in FLIP or sw not in FLIP:
             per[cls]["abstain_unsure"] += 1
         elif aw == sw:
-            # Same label to a reversed question: the layout was answered, not the
-            # chemistry. This is the bias, caught.
             per[cls]["abstain_layout"] += 1
         else:
             per[cls]["correct" if aw == cls else "wrong"] += 1

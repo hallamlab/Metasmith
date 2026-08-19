@@ -54,7 +54,6 @@ VERDICTS = ("balanced", "unbalanced", "unusable", "refused")
 
 
 def heavy_counts(smiles: str) -> collections.Counter | None:
-    """Heavy-atom element counts, or None if rdkit will not parse the SMILES."""
     m = Chem.MolFromSmiles(smiles)
     if m is None:
         return None
@@ -63,8 +62,6 @@ def heavy_counts(smiles: str) -> collections.Counter | None:
 
 
 class Resolver:
-    """Turns a proposed term into element counts, or says why it cannot."""
-
     def __init__(self, props: dict):
         self.props = props
         self._cache: dict[str, collections.Counter | None] = {}
@@ -77,9 +74,6 @@ class Resolver:
     def term(self, t: dict) -> tuple[collections.Counter | None, str | None]:
         n = float(t.get("n", 1) or 1)
         mnxm, smiles = t.get("id"), t.get("smiles")
-        # An id is checked first and its OWN structure used: a term carrying both an
-        # accession and a SMILES that disagree is the model asserting something MetaNetX
-        # contradicts, and the bake's structure is the one every other lane reads.
         if mnxm:
             s = (self.props.get(str(mnxm)) or {}).get("smiles")
             if not s:
@@ -107,18 +101,10 @@ class Resolver:
 
 
 def as_terms(side: list[dict]) -> list[dict]:
-    """A panel side in the runner's term shape.
-
-    The panel writes `coef` and the model writes `n`, and `Resolver.term` reads `n`. Left
-    unconverted the panel's coefficients silently read as 1 apiece, so an equation echoed
-    back verbatim compares unequal to itself -- which is how the control gate first
-    reported four regressions that were arithmetic rather than chemistry.
-    """
     return [{"id": t["id"], "n": t["coef"]} for t in side]
 
 
 def judge(rec: dict, res: Resolver) -> dict:
-    """Verdict for one model response, with the residual that produced it."""
     if rec.get("error"):
         return {"verdict": "unusable", "why": [f"harness: {rec['error']}"]}
     if rec.get("action") == "refuse":
@@ -143,17 +129,6 @@ def judge(rec: dict, res: Resolver) -> dict:
 
 
 def control_outcome(rec: dict, panel: dict, res: Resolver) -> str:
-    """Controls: `refused` and `preserved` are both fine; anything else is a regression.
-
-    A control is a reaction that banks today, so the lane must not make it worse. A
-    refusal cannot -- in production a banked reaction never reaches this lane at all, so
-    over-refusal on controls costs nothing. What would cost something is a rewrite that
-    fails to balance, or one that balances at different element totals, because that is
-    the model editing chemistry it was not asked to touch.
-    """
-    # A reaction the harness never got an answer for is not a regression. Scoring it as
-    # one fails a good revision for an infrastructure reason -- a prompt that overran its
-    # slot, a dropped connection -- and the gate is only worth having if it means chemistry.
     if rec.get("error"):
         return "unscorable"
     j = judge(rec, res)
@@ -181,12 +156,11 @@ SCOREBOARD_COLS = ("revision", "model", "split", "n", "balanced", "unbalanced",
 
 
 def append_scoreboard(path: Path, summary: dict, meta: dict, note: str) -> None:
-    """One row per revision, with cost beside coverage so the two are read together.
-
-    Wall-clock comes from the run's `.meta.json` rather than being re-derived: it is what
-    converts a token count into the GPU-hours a universe-scale run would bill, and it is
-    only knowable at the moment the run happened.
-    """
+    # One row per revision, with cost beside coverage so the two are read together.
+    #
+    # Wall-clock comes from the run's `.meta.json` rather than being re-derived: it is what
+    # converts a token count into the GPU-hours a universe-scale run would bill, and it is
+    # only knowable at the moment the run happened.
     mv = summary.get("movable", {})
     n = summary.get("n", 0) or 1
     secs = meta.get("seconds", 0) or 0

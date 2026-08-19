@@ -1,30 +1,3 @@
-"""Convert a legacy (embeddings parquet, index csv) pair into one self-addressing table.
-
-    python migrate_pbert_embeddings.py <orfs.faa> <emb.parquet> <index.csv> <out.parquet>
-
-`annotation::proteinbert_embeddings` now carries `sequence_id` beside its 512 floats;
-the pairs this replaces named the rows in a separate file and were paired by position.
-
-TWO INDEX CONVENTIONS ARE IN THE WILD AND NEITHER FILE SAYS WHICH IT IS. Some indexes
-list the ORFs in the FASTA's order, as the embedder wrote them. Others were rewritten
-into the STACK's order by an earlier repair -- one such even carries a redundant
-`global_row` column that is only its own row number. The two are indistinguishable by
-inspection, and reading one as the other attributes every embedding to another
-protein while producing a full, schema-valid table. So the index's id ORDER is never
-trusted here, only its id SET; the pairing is decided by evidence.
-
-THE EVIDENCE NEEDS NO RE-EMBEDDING: a deterministic embedder gives byte-identical
-sequences byte-identical vectors, so every group of ORFs sharing a sequence md5 must
-share a row. Two candidate pairings are scored against that -- the index already being
-in stack order, and the index being in FASTA order with the stack assembled by
-`sorted(glob("*.npy"))`, which puts chunk 10 before chunk 2 (`fasta_to_legacy_row`).
-Exactly one may pass.
-
-Below TEN chunks the two candidates can collapse into one, and then no evidence is
-needed because there is nothing to choose between. An artifact that IS ambiguous and
-has no duplicated sequence is refused rather than guessed at, because a guess here
-produces a complete, schema-valid, confidently wrong table.
-"""
 from __future__ import annotations
 
 import hashlib
@@ -103,21 +76,6 @@ def main() -> int:
     lex = fasta_to_legacy_row(len(ids))
     n_chunks = (len(ids) + CHUNK - 1) // CHUNK
 
-    # TWO INDEX CONVENTIONS ARE IN THE WILD AND THE FILE DOES NOT SAY WHICH IT IS.
-    # Some indexes list the ORFs in the FASTA's order, which is what the embedder's
-    # own output gives; others were rewritten into the STACK's order by an earlier
-    # repair, and one of those even carries a redundant `global_row` column that is
-    # just its own row number. Both look identical to a reader. So the id ORDER of the
-    # index is not trusted here -- only its id SET, checked above -- and the pairing
-    # is settled by evidence below.
-    #
-    #   "index position"       row i of the stack belongs to index row i, i.e. the
-    #                          index is already in stack order
-    #   "lexicographic-chunk"  the index is in FASTA order and the stack was assembled
-    #                          by `sorted(glob("*.npy"))`, so chunk 10 landed before
-    #                          chunk 2 -- `fasta_to_legacy_row` is that permutation
-    #
-    # `row_of[i]` is the stack row holding the protein named at index row i.
     by_index = identity
     by_lex = lex[[{n: i for i, n in enumerate(ids)}[n] for n in index_ids]]
 
@@ -159,7 +117,6 @@ def main() -> int:
                   f"genuinely ambiguous, and it has no two records sharing a sequence "
                   f"to settle it. Re-embed rather than migrate.", file=sys.stderr)
             return 2
-        # score against the FASTA's duplicate groups, expressed as index positions
         at = {n: i for i, n in enumerate(index_ids)}
         gi = [[at[ids[j]] for j in g] for g in groups]
         candidates = {"index position": by_index, "lexicographic-chunk": by_lex}

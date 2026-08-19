@@ -1,4 +1,3 @@
-"""Join the split-EC audit against the ECs the lanes actually emitted."""
 import json, sys
 from pathlib import Path
 import pandas as pd
@@ -10,11 +9,11 @@ CP = Path("data/fabfos/originals/metanetx/4.5/chem_prop.tsv")
 def load(name):
     return {r["ec"]: r for r in (json.loads(l) for l in open(TMP / name))}
 
-hard = load("ec_split_none.jsonl")      # share NO metabolite whatsoever
-soft = load("ec_split_0.05.jsonl")      # share nothing but the 11 ubiquitous currencies
+hard = load("ec_split_none.jsonl")
+soft = load("ec_split_0.05.jsonl")
 hard_split = {e for e, r in hard.items() if r["n_components"] >= 2}
 soft_split = {e for e, r in soft.items() if r["n_components"] >= 2}
-multi      = set(soft)                  # every level-4 EC with >= 2 MNXR
+multi      = set(soft)
 
 eq   = {}
 for line in open(RP):

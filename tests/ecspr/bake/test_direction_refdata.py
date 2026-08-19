@@ -1,21 +1,20 @@
-"""The direction lane's crosswalk loaders, at the one place they decide coverage.
-
-`load_mnxm_props` is the gate every thermo vote passes through: a compound absent
-from its output makes both members abstain on every reaction that carries it,
-before either does any chemistry. So what the loader ADMITS is a coverage
-decision, and until now nothing asserted it.
-
-MetaNetX 4.5 files water only as the pseudo-accession `WATER` -- not `MNXM2`, not
-anything beginning `MNXM` -- and `BIOMASS` is the only other non-MNXM row in the
-file. The two must be told apart by what they CARRY, never by their names: water
-has an InChI, an InChIKey and a SMILES and is ordinary chemistry; biomass has none
-of the three and is a bookkeeping placeholder. That is one assertion, in two
-directions, and it is the whole of this file.
-
-Driven by an inline two-line table rather than a fixture: the claim is about
-parsing rules, and a 809 MB reference file on disk would make the test a
-statement about DVC mount state instead.
-"""
+# The direction lane's crosswalk loaders, at the one place they decide coverage.
+#
+# `load_mnxm_props` is the gate every thermo vote passes through: a compound absent
+# from its output makes both members abstain on every reaction that carries it,
+# before either does any chemistry. So what the loader ADMITS is a coverage
+# decision, and until now nothing asserted it.
+#
+# MetaNetX 4.5 files water only as the pseudo-accession `WATER` -- not `MNXM2`, not
+# anything beginning `MNXM` -- and `BIOMASS` is the only other non-MNXM row in the
+# file. The two must be told apart by what they CARRY, never by their names: water
+# has an InChI, an InChIKey and a SMILES and is ordinary chemistry; biomass has none
+# of the three and is a bookkeeping placeholder. That is one assertion, in two
+# directions, and it is the whole of this file.
+#
+# Driven by an inline two-line table rather than a fixture: the claim is about
+# parsing rules, and a 809 MB reference file on disk would make the test a
+# statement about DVC mount state instead.
 from __future__ import annotations
 
 from ecspr.bake.direction import refdata
@@ -39,15 +38,14 @@ def _props(tmp_path, *rows):
 
 
 def test_water_is_admitted_under_its_pseudo_accession(tmp_path):
-    """The bug this test exists for, stated as the property it broke.
-
-    An `MNXM`-prefix filter here abstained BOTH thermo members on every
-    water-bearing reaction -- 30,546 of the 83,795-reaction universe, 36% of it --
-    and did so before any chemistry, so the abstention was recorded as `no_props`
-    and read downstream as a fact about the reaction rather than about the loader.
-    `_split_terms` in the same module already carried the warning; the loader did
-    not honour it.
-    """
+    # The bug this test exists for, stated as the property it broke.
+    #
+    # An `MNXM`-prefix filter here abstained BOTH thermo members on every
+    # water-bearing reaction -- 30,546 of the 83,795-reaction universe, 36% of it --
+    # and did so before any chemistry, so the abstention was recorded as `no_props`
+    # and read downstream as a fact about the reaction rather than about the loader.
+    # `_split_terms` in the same module already carried the warning; the loader did
+    # not honour it.
     props = _props(tmp_path, WATER, GLUCOSE)
     assert "WATER" in props, (
         "water is not an MNXM accession in MetaNetX 4.5, and dropping it here "
@@ -58,25 +56,12 @@ def test_water_is_admitted_under_its_pseudo_accession(tmp_path):
 
 
 def test_biomass_is_excluded_by_carrying_nothing_not_by_its_name(tmp_path):
-    """The guard that lets the namespace filter go: BIOMASS has no structure.
-
-    It is a bookkeeping pseudo-compound, so all three structure fields are empty
-    and the loader's `if rec:` drops it. Naming it in a deny-list would work today
-    and would be the wrong shape: the rule is "a row with no structure states
-    nothing", which is true of whatever MetaNetX files next.
-    """
     props = _props(tmp_path, WATER, BIOMASS, GLUCOSE)
     assert "BIOMASS" not in props
     assert set(props) == {"WATER", "MNXM1137670"}
 
 
 def test_an_empty_field_is_dropped_rather_than_stored_as_an_empty_string(tmp_path):
-    """A member tests `"smiles" not in p`, so an empty string would be a crash.
-
-    dGbyG hands whatever is under the key straight to RDKit; eQuilibrator hands
-    the InChIKey to its cache. Either would treat `""` as a structure it was asked
-    about and failed on, rather than as one it was never given.
-    """
     partial = ("MNXM01\tno-smiles\tmnx:x\tC\t0\t1.0\t"
                "InChI=1S/CH4/h1H4\tVNWKTOKETHGBQD-UHFFFAOYSA-N\t\n")
     props = _props(tmp_path, partial)
@@ -85,12 +70,6 @@ def test_an_empty_field_is_dropped_rather_than_stored_as_an_empty_string(tmp_pat
 
 
 def test_the_equation_parser_and_the_props_loader_share_one_namespace(tmp_path):
-    """Both halves of the join must keep water, or the join has no water in it.
-
-    `_split_terms` never forced MNXM and says so in its own docstring; the props
-    loader did. A participant one half emits and the other cannot resolve is an
-    abstention that looks like chemistry.
-    """
     assert refdata._split_terms("1 MNXM1@MNXD1 + 1 WATER@MNXD1") == {"MNXM1", "WATER"}
 
     reac_prop = tmp_path / "reac_prop.tsv"

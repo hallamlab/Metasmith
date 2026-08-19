@@ -1,70 +1,69 @@
-"""A library whose recorded identities are taken at their word.
-
-A `DataInstanceLibrary` normally derives a leaf's `instance_id` from the file's
-bytes at `AddItem` time. That is the right default and it is what makes two
-independent runs over identical inputs hit the same cache shards. It is the
-wrong default for a set of reference databases: they are transform products with
-no inputs, they do not change, and re-deriving their identity costs 10 seconds
-of blake3 over 24 GB on *every* plan against a solve that takes 1.
-
-Pinning is how a library says its recorded ids are already correct. A pinned
-library refuses every mutation, returns `instance_meta` entries verbatim without
-consulting the filesystem, and records a cheap witness -- a stat stamp per
-top-level entry -- that `Load` checks so a library whose bytes visibly moved
-raises instead of silently serving an id that no longer describes them.
-
-**Nothing here touches file modes.** Protecting the bytes is the storage layer's
-job -- for the fabfos references, DVC's -- and marking entries read-only from
-here only ever bought accident-prevention the owner could undo, at the price of
-an EACCES that broke the next `dvc checkout`. The refusals bind callers of this
-API, not the filesystem, and that is the whole of the guarantee.
-
-## What the stamp does NOT catch
-
-Read this before trusting it, and before changing it. It is a smoke alarm, not a
-lock. The failure direction is asymmetric and bad: an undetected content swap
-under an unchanged id is a false cache *hit*, which replays a stale shard and
-produces silently wrong scientific output with no error anywhere. That asymmetry
-is why this is written down rather than reassured about.
-
-**The stat stamp `(size, mtime_ns)` does not reach:**
-
-- *mtime is not content.* A same-size in-place edit that preserves mtime
-  (`cp -p`, `rsync --times`, `tar -p`, `touch -r`) passes undetected.
-- *Directories are the weak case, and they are the entries that most need it.* A
-  directory's mtime reflects only its own entry list and its inode size means
-  nothing, so a change nested inside one is invisible. The immediate-entry count
-  is recorded to make the stamp less vacuous; it is still weak.
-- *Across hosts.* mtime granularity and clock skew on the NFS/Lustre filesystems
-  the HPC copies live on make stamps non-comparable, so a stamp taken on another
-  host warns rather than raises. Honest coverage is "the machine that pinned it".
-- *Tamper evidence.* The stamp lives in the file it validates and re-pinning
-  silently re-stamps. This is a consistency check, not an integrity check.
-
-The likelier day-to-day failure is the **false positive**: re-materialising the
-same DVC pin moves mtime, and the bytes are fine. `Restamp()` is the remedy --
-it re-records stamps and moves no `instance_id`. Turning the check off is not
-the remedy, which is why there is a verb for this and the kill switch
-(`METASMITH_PINNED_NOCHECK=1`) is documented as an emergency, not a fix.
-
-**The escape hatch with none of these holes** is `metasmith data verify --deep`,
-which re-derives real content digests and compares them against what `pin
---deep` recorded. Expensive, never automatic: run it before a release or after a
-cache hit you did not expect. Where no `--deep` baseline exists it reports
-`UNVERIFIABLE`, never `OK` -- the tool must not launder "we did not check" into
-"it is fine".
-
-## Why this is not the shortcut `docs/metasmith/plans/cross-run-reentrancy.md` rejected
-
-That document rejected `(size, mtime)` as the *derivation* of identity, on the
-premise that hashing is a one-time build cost that amortizes to zero. Nothing
-here derives an identity from a stamp. The id comes from content (or, for the
-fabfos references, from the DVC pin's md5, which is itself a digest over the
-bytes); the stamp only raises a question about an id that already exists, and
-fails closed by raising. The rejection stands; this is a different mechanism at
-a different point in the pipeline. The premise it rested on is also what this
-change repairs -- the driver was re-paying that "one-time" cost per plan.
-"""
+# A library whose recorded identities are taken at their word.
+#
+# A `DataInstanceLibrary` normally derives a leaf's `instance_id` from the file's
+# bytes at `AddItem` time. That is the right default and it is what makes two
+# independent runs over identical inputs hit the same cache shards. It is the
+# wrong default for a set of reference databases: they are transform products with
+# no inputs, they do not change, and re-deriving their identity costs 10 seconds
+# of blake3 over 24 GB on *every* plan against a solve that takes 1.
+#
+# Pinning is how a library says its recorded ids are already correct. A pinned
+# library refuses every mutation, returns `instance_meta` entries verbatim without
+# consulting the filesystem, and records a cheap witness -- a stat stamp per
+# top-level entry -- that `Load` checks so a library whose bytes visibly moved
+# raises instead of silently serving an id that no longer describes them.
+#
+# **Nothing here touches file modes.** Protecting the bytes is the storage layer's
+# job -- for the fabfos references, DVC's -- and marking entries read-only from
+# here only ever bought accident-prevention the owner could undo, at the price of
+# an EACCES that broke the next `dvc checkout`. The refusals bind callers of this
+# API, not the filesystem, and that is the whole of the guarantee.
+#
+# ## What the stamp does NOT catch
+#
+# Read this before trusting it, and before changing it. It is a smoke alarm, not a
+# lock. The failure direction is asymmetric and bad: an undetected content swap
+# under an unchanged id is a false cache *hit*, which replays a stale shard and
+# produces silently wrong scientific output with no error anywhere. That asymmetry
+# is why this is written down rather than reassured about.
+#
+# **The stat stamp `(size, mtime_ns)` does not reach:**
+#
+# - *mtime is not content.* A same-size in-place edit that preserves mtime
+#   (`cp -p`, `rsync --times`, `tar -p`, `touch -r`) passes undetected.
+# - *Directories are the weak case, and they are the entries that most need it.* A
+#   directory's mtime reflects only its own entry list and its inode size means
+#   nothing, so a change nested inside one is invisible. The immediate-entry count
+#   is recorded to make the stamp less vacuous; it is still weak.
+# - *Across hosts.* mtime granularity and clock skew on the NFS/Lustre filesystems
+#   the HPC copies live on make stamps non-comparable, so a stamp taken on another
+#   host warns rather than raises. Honest coverage is "the machine that pinned it".
+# - *Tamper evidence.* The stamp lives in the file it validates and re-pinning
+#   silently re-stamps. This is a consistency check, not an integrity check.
+#
+# The likelier day-to-day failure is the **false positive**: re-materialising the
+# same DVC pin moves mtime, and the bytes are fine. `Restamp()` is the remedy --
+# it re-records stamps and moves no `instance_id`. Turning the check off is not
+# the remedy, which is why there is a verb for this and the kill switch
+# (`METASMITH_PINNED_NOCHECK=1`) is documented as an emergency, not a fix.
+#
+# **The escape hatch with none of these holes** is `metasmith data verify --deep`,
+# which re-derives real content digests and compares them against what `pin
+# --deep` recorded. Expensive, never automatic: run it before a release or after a
+# cache hit you did not expect. Where no `--deep` baseline exists it reports
+# `UNVERIFIABLE`, never `OK` -- the tool must not launder "we did not check" into
+# "it is fine".
+#
+# ## Why this is not the shortcut `docs/metasmith/plans/cross-run-reentrancy.md` rejected
+#
+# That document rejected `(size, mtime)` as the *derivation* of identity, on the
+# premise that hashing is a one-time build cost that amortizes to zero. Nothing
+# here derives an identity from a stamp. The id comes from content (or, for the
+# fabfos references, from the DVC pin's md5, which is itself a digest over the
+# bytes); the stamp only raises a question about an id that already exists, and
+# fails closed by raising. The rejection stands; this is a different mechanism at
+# a different point in the pipeline. The premise it rested on is also what this
+# change repairs -- the driver was re-paying that "one-time" cost per plan.
 
 from __future__ import annotations
 
@@ -79,7 +78,8 @@ from ...logging import Log
 
 
 class PinnedLibraryError(RuntimeError):
-    """A refusal by a pinned library, or a stamp that no longer matches."""
+    # A refusal by a pinned library, or a stamp that no longer matches.
+    pass
 
 
 #: Emergency only. Documented in the module docstring as *not* the remedy for a
@@ -89,12 +89,11 @@ _NOCHECK_ENV = "METASMITH_PINNED_NOCHECK"
 
 
 def _stamp(abs_path: Path) -> dict:
-    """A cheap witness that `abs_path` has not visibly moved.
-
-    One `stat` for a file. For a directory, one `stat` plus one `listdir` of the
-    immediate entries -- see the module docstring for exactly how little that
-    proves.
-    """
+    # A cheap witness that `abs_path` has not visibly moved.
+    #
+    # One `stat` for a file. For a directory, one `stat` plus one `listdir` of the
+    # immediate entries -- see the module docstring for exactly how little that
+    # proves.
     st = abs_path.stat()
     if stat_mod.S_ISDIR(st.st_mode):
         try:
@@ -106,13 +105,12 @@ def _stamp(abs_path: Path) -> dict:
 
 
 def _content_digest(abs_path: Path, *, force: bool = False) -> str | None:
-    """A real digest of the bytes. Expensive; only `--deep` asks for it.
-
-    `force` bypasses the per-process file-digest memo. A deep verify in a warm
-    process is asking whether the bytes moved; served from a memo keyed on
-    `(path, size, mtime_ns)` it would answer with the digest of the bytes that
-    were there when the memo was filled, which is the one answer it must not give.
-    """
+    # A real digest of the bytes. Expensive; only `--deep` asks for it.
+    #
+    # `force` bypasses the per-process file-digest memo. A deep verify in a warm
+    # process is asking whether the bytes moved; served from a memo keyed on
+    # `(path, size, mtime_ns)` it would answer with the digest of the bytes that
+    # were there when the memo was filled, which is the one answer it must not give.
     from ...caching.keys import content_multihash_key, tree_multihash_key
 
     try:
@@ -124,7 +122,7 @@ def _content_digest(abs_path: Path, *, force: bool = False) -> str | None:
 
 
 def _stamp_fields(entry: dict) -> set[str]:
-    """Just the witness, not the bookkeeping recorded beside it."""
+    # Just the witness, not the bookkeeping recorded beside it.
     return {"kind", "size", "mtime_ns", "n_entries"} & set(entry)
 
 
@@ -168,22 +166,21 @@ class _PinnedLibrary:
         provenance: dict[Path, dict] | None = None,
         deep: bool = False,
     ) -> dict:
-        """Record stamps and refuse mutation after.
-
-        `provenance` is an opaque per-path dict the caller supplies and this
-        code never interprets -- fabfos passes the DVC pin each entry's id was
-        derived from, which is what lets *it* tell a re-materialised pin (bytes
-        identical, mtime moved) from a genuinely different one. Metasmith stays
-        DVC-agnostic and round-trips the dict.
-
-        `deep=True` additionally records a real content digest per entry --
-        minutes to hours over 24 GB, and the only thing that makes
-        `verify --deep` able to answer anything later. Without it, verification
-        reports UNVERIFIABLE rather than OK, which is the honest answer.
-
-        Re-running on an already-pinned library re-stamps it, which is the
-        supported way to clear a false positive. It never re-mints an id.
-        """
+        # Record stamps and refuse mutation after.
+        #
+        # `provenance` is an opaque per-path dict the caller supplies and this
+        # code never interprets -- fabfos passes the DVC pin each entry's id was
+        # derived from, which is what lets *it* tell a re-materialised pin (bytes
+        # identical, mtime moved) from a genuinely different one. Metasmith stays
+        # DVC-agnostic and round-trips the dict.
+        #
+        # `deep=True` additionally records a real content digest per entry --
+        # minutes to hours over 24 GB, and the only thing that makes
+        # `verify --deep` able to answer anything later. Without it, verification
+        # reports UNVERIFIABLE rather than OK, which is the honest answer.
+        #
+        # Re-running on an already-pinned library re-stamps it, which is the
+        # supported way to clear a false positive. It never re-mints an id.
         provenance = provenance or {}
         entries: dict[str, dict] = {}
         missing: list[str] = []
@@ -215,7 +212,7 @@ class _PinnedLibrary:
         }
 
     def Unpin(self) -> dict:
-        """Lift the pin, so the library can be rebuilt and re-pinned."""
+        # Lift the pin, so the library can be rebuilt and re-pinned.
         if not self.is_pinned:
             return {"location": str(self.location), "unpinned": 0}
         entries = self._pinned.get("entries", {})
@@ -224,12 +221,11 @@ class _PinnedLibrary:
         return {"location": str(self.location), "unpinned": len(entries)}
 
     def Restamp(self, paths: Iterable[Path] | None = None) -> dict:
-        """Re-record stamps without touching a single `instance_id`.
-
-        The remedy for a false positive. A caller that knows the bytes are
-        unchanged -- because the DVC pin it minted the ids from is unchanged --
-        calls this and the ids stay exactly as they were.
-        """
+        # Re-record stamps without touching a single `instance_id`.
+        #
+        # The remedy for a false positive. A caller that knows the bytes are
+        # unchanged -- because the DVC pin it minted the ids from is unchanged --
+        # calls this and the ids stay exactly as they were.
         if not self.is_pinned:
             raise PinnedLibraryError(
                 f"[Restamp] refused: the library at [{self.location}] is not pinned"
@@ -266,7 +262,7 @@ class _PinnedLibrary:
         return {"location": str(self.location), "restamped": len(targets), "changed": changed}
 
     def _verify_pinned_stamps(self) -> None:
-        """Raise if a stamped entry visibly moved on the host that stamped it."""
+        # Raise if a stamped entry visibly moved on the host that stamped it.
         if not self.is_pinned:
             return
         if os.environ.get(_NOCHECK_ENV):
@@ -314,16 +310,15 @@ class _PinnedLibrary:
         )
 
     def Verify(self, *, deep: bool = False) -> dict:
-        """Report per entry, without raising. The escape hatch, on demand.
-
-        `deep=True` re-derives a real content digest and compares it against
-        what `Pin(deep=True)` recorded. Every hole listed at the top of this
-        file is closed by that comparison and by nothing else -- and where no
-        baseline was recorded the verdict is UNVERIFIABLE, never OK. Reporting
-        "we did not check" as "it is fine" is the one thing this tool must not
-        do, since the whole reason to run it is a suspicion the cheap checks
-        cannot settle.
-        """
+        # Report per entry, without raising. The escape hatch, on demand.
+        #
+        # `deep=True` re-derives a real content digest and compares it against
+        # what `Pin(deep=True)` recorded. Every hole listed at the top of this
+        # file is closed by that comparison and by nothing else -- and where no
+        # baseline was recorded the verdict is UNVERIFIABLE, never OK. Reporting
+        # "we did not check" as "it is fine" is the one thing this tool must not
+        # do, since the whole reason to run it is a suspicion the cheap checks
+        # cannot settle.
         if not self.is_pinned:
             return {"location": str(self.location), "pinned": False, "entries": {}}
         out: dict[str, dict] = {}

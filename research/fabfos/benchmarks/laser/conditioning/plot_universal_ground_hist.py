@@ -85,7 +85,6 @@ def main():
         2, 1, figsize=(8.4, 6.2), facecolor=SURFACE, sharex=True,
         gridspec_kw={"height_ratios": [3.4, 1.0], "hspace": 0.06})
 
-    # ---- top: linear, signed histogram --------------------------------------------
     style(axH)
     edges = np.linspace(xlim[0], xlim[1], a.bins + 1)
     axH.hist([d[up], d[~up]], bins=edges, stacked=True, color=[BLUE, RED],
@@ -106,7 +105,6 @@ def main():
              transform=axH.transAxes, ha="right", va="top", fontsize=9,
              color=TEXT_SECONDARY, linespacing=1.5)
 
-    # ---- bottom: barcode, one tick per condition at its exact delta ---------------
     style(axB)
     axB.set_yticks([])
     for s in ("top", "right", "left"):

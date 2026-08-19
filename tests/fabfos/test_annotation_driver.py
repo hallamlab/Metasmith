@@ -80,15 +80,14 @@ def test_annotation_driver_accepts_a_bare_path(tmp_path):
 
 
 def test_the_references_are_not_re_identified_on_every_plan(tmp_path):
-    """Two plans in one process must agree on every reference id, and read none.
-
-    This is the assertion the whole pinned-library change exists for. It failed
-    before it, and not marginally: `ref::kofamscan_profiles` and
-    `ref::label_transfer_landmarks` are DIRECTORIES, which `_mint_leaf_id` cannot
-    content-address at all, so each build minted a fresh `uuid4` for them and
-    the task key below differed run to run on ONE machine. Skips where the
-    references are not materialised, since there is then nothing to pin.
-    """
+    # Two plans in one process must agree on every reference id, and read none.
+    #
+    # This is the assertion the whole pinned-library change exists for. It failed
+    # before it, and not marginally: `ref::kofamscan_profiles` and
+    # `ref::label_transfer_landmarks` are DIRECTORIES, which `_mint_leaf_id` cannot
+    # content-address at all, so each build minted a fresh `uuid4` for them and
+    # the task key below differed run to run on ONE machine. Skips where the
+    # references are not materialised, since there is then nothing to pin.
     import pytest
 
     from fabfos import refs
@@ -103,7 +102,6 @@ def test_the_references_are_not_re_identified_on_every_plan(tmp_path):
     original = identity.content_multihash_key
 
     def counted(path, **kw):
-        # The ORF fasta is a legitimate read; a reference is not.
         if str(path).startswith(str(common.DATA_PROCESSED)):
             raise AssertionError(f"a reference was re-hashed during planning: {path}")
         reads["n"] += 1

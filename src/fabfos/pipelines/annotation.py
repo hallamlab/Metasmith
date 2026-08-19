@@ -57,9 +57,6 @@ DOMAINS = ["functionalAnnotation", "fabfos", "logistics"]
 
 ORFS_DIR_GLOB = "*.faa"
 
-# type -> its path RELATIVE to a `processed/` root. Derived from the ONE declaration in
-# `fabfos.refs`, which the reference-library build reads too: this list keying an entry
-# differently would mis-identify a reference rather than fail, so there is no second copy.
 REF_LAYOUT = {k: refs.relpaths_for(k)[0] for k in refs.ANNOTATION_REFS}
 
 DEFAULT_KOFAM_PROFILES = common.DATA_PROCESSED / REF_LAYOUT["ref::kofamscan_profiles"]
@@ -80,16 +77,15 @@ def build_inputs(work: Path, *, orfs, kofam_profiles: Path | None, kofam_ko_list
                   refs_root: "str | Path | None" = None, verify_refs: bool = True,
                   stage_orfs: str = "copy", use_pinned_refs: bool = True,
                   ) -> tuple[DataInstanceLibrary, dict[str, Path], "DataInstanceLibrary | None"]:
-    """Build the run's input library. Third return value is the pinned refs.
-
-    The references are not staged into `inputs` when a pinned reference library
-    covers them: registering one costs a content hash of up to 17 GB, on every
-    plan, to re-derive an id that was already settled. See `fabfos.refs`. The
-    pinned library is returned rather than re-loaded by the caller so there is
-    one resolution site, and it is None whenever the references went through
-    `stage_ref` after all -- an un-migrated checkout, `verify_refs=False`, or an
-    override.
-    """
+    # Build the run's input library. Third return value is the pinned refs.
+    #
+    # The references are not staged into `inputs` when a pinned reference library
+    # covers them: registering one costs a content hash of up to 17 GB, on every
+    # plan, to re-derive an id that was already settled. See `fabfos.refs`. The
+    # pinned library is returned rather than re-loaded by the caller so there is
+    # one resolution site, and it is None whenever the references went through
+    # `stage_ref` after all -- an un-migrated checkout, `verify_refs=False`, or an
+    # override.
     lib = common.resolve_library_root()
 
     inputs = DataInstanceLibrary(work / "inputs.xgdb")
@@ -120,8 +116,6 @@ def build_inputs(work: Path, *, orfs, kofam_profiles: Path | None, kofam_ko_list
         "ref::label_transfer_landmarks": landmarks,
     }
     stubs: dict[str, Path] = {}
-    # Only a LOCAL root can be pinned: `verify_refs=False` names paths on another
-    # host, where there is nothing to stat, mark or hash in the first place.
     pinned = None
     if use_pinned_refs and verify_refs and refs_root is None:
         pinned = refs.load_pinned_refs(common.DATA_PROCESSED)
@@ -132,9 +126,6 @@ def build_inputs(work: Path, *, orfs, kofam_profiles: Path | None, kofam_ko_list
 
     overridden = set()
     for dtype, rel in REF_LAYOUT.items():
-        # An override is a different file, so its identity is not the pinned
-        # one and it has to be staged. The pinned row is then masked out below,
-        # or the solver sees two candidates of one type and picks arbitrarily.
         if dtype in covered and given[dtype] is None:
             continue
         if dtype in covered:

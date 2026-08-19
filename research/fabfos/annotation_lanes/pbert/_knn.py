@@ -1,28 +1,27 @@
-"""kNN retrieval over the Swiss-Prot label pool, with the retrieval metric as the knob.
-
-WHAT VARIES AND WHAT DOES NOT. The lane does two distinct things with distance:
-it *retrieves* K neighbours, and it *weights* their votes. Only the first is the
-question here, so the panel swaps the retrieval metric and holds the weighting at
-the shipped rule -- cosine, negatives clipped to zero, normalised within the top-K
-(gpr_4lane.py's `w = vals / vals.sum()`). With cosine retrieval this reduces
-exactly to the deployed lane, so the incumbent is a row in its own panel rather
-than a separate code path. It also keeps the weighting defined for metrics whose
-similarity is unbounded (dot) or always negative (euclidean), where "clip at zero"
-has no meaning.
-
-THE GATE is the retrieval metric's own top-1 value -- `nn_similarity` in the lane's
-terms. Its scale is metric-specific, which is why the threshold sweep drives it off
-an observed quantile grid rather than a fixed ladder.
-
-Metrics. All but L1 are one matmul on a transformed pool, fitted on the pool alone:
-  cosine       L2-normalise both sides                     (the incumbent)
-  dot          raw inner product; magnitude-sensitive
-  euclidean    -||q-r||, via ||q||^2 + ||r||^2 - 2q.r
-  correlation  mean-centre each vector, then cosine
-  zscore       per-dimension standardise on pool stats, then cosine
-  whiten       PCA-whiten on pool covariance, then cosine
-  l1           -||q-r||_1; no BLAS form, query-subsampled
-"""
+# kNN retrieval over the Swiss-Prot label pool, with the retrieval metric as the knob.
+#
+# WHAT VARIES AND WHAT DOES NOT. The lane does two distinct things with distance:
+# it *retrieves* K neighbours, and it *weights* their votes. Only the first is the
+# question here, so the panel swaps the retrieval metric and holds the weighting at
+# the shipped rule -- cosine, negatives clipped to zero, normalised within the top-K
+# (gpr_4lane.py's `w = vals / vals.sum()`). With cosine retrieval this reduces
+# exactly to the deployed lane, so the incumbent is a row in its own panel rather
+# than a separate code path. It also keeps the weighting defined for metrics whose
+# similarity is unbounded (dot) or always negative (euclidean), where "clip at zero"
+# has no meaning.
+#
+# THE GATE is the retrieval metric's own top-1 value -- `nn_similarity` in the lane's
+# terms. Its scale is metric-specific, which is why the threshold sweep drives it off
+# an observed quantile grid rather than a fixed ladder.
+#
+# Metrics. All but L1 are one matmul on a transformed pool, fitted on the pool alone:
+#   cosine       L2-normalise both sides                     (the incumbent)
+#   dot          raw inner product; magnitude-sensitive
+#   euclidean    -||q-r||, via ||q||^2 + ||r||^2 - 2q.r
+#   correlation  mean-centre each vector, then cosine
+#   zscore       per-dimension standardise on pool stats, then cosine
+#   whiten       PCA-whiten on pool covariance, then cosine
+#   l1           -||q-r||_1; no BLAS form, query-subsampled
 from __future__ import annotations
 
 import numpy as np
@@ -38,7 +37,7 @@ def _norm(x):
 
 
 class Metric:
-    """A retrieval metric as a pair of pool-fitted transforms plus a similarity kind."""
+    # A retrieval metric as a pair of pool-fitted transforms plus a similarity kind.
 
     def __init__(self, name, q, r, kind="dot", sq_r=None):
         self.name, self.q, self.r, self.kind, self.sq_r = name, q, r, kind, sq_r
@@ -53,7 +52,7 @@ class Metric:
 
 
 def build_metrics(pool: np.ndarray, query: np.ndarray, names=None) -> dict:
-    """Return {name: Metric} with every transform fitted on the pool only."""
+    # Return {name: Metric} with every transform fitted on the pool only.
     out = {}
     want = set(names) if names else None
 
@@ -79,12 +78,11 @@ def build_metrics(pool: np.ndarray, query: np.ndarray, names=None) -> dict:
 
 
 def topk(metric: Metric, k=KWIDE, mask_cols=None):
-    """Top-k over the pool per query, by this metric's similarity.
-
-    Wide by default: exclusions are applied afterwards by `refine`, so one
-    retrieval serves every leakage condition.
-    Returns (idx (N,k) int32, vals (N,k) float32) sorted by descending similarity.
-    """
+    # Top-k over the pool per query, by this metric's similarity.
+    #
+    # Wide by default: exclusions are applied afterwards by `refine`, so one
+    # retrieval serves every leakage condition.
+    # Returns (idx (N,k) int32, vals (N,k) float32) sorted by descending similarity.
     n = len(metric.q)
     I = np.empty((n, k), np.int32)
     V = np.empty((n, k), np.float32)
@@ -126,13 +124,12 @@ def topk_l1(pool, query, k=KWIDE, qchunk=4):
 
 
 def refine(idx, cos, k=K, drop_col=None, twin_cut=None):
-    """Apply a leakage condition to a wide retrieval and return the surviving top-k.
-
-    drop_col[i] is a pool row to hide for query i (its own Swiss-Prot accession);
-    twin_cut hides every neighbour at or above that cosine (an exact-twin cut, the
-    cheap stand-in for the source study's DIAMOND cluster removal).
-    Returns (idx (N,k), cos (N,k)) padded with -1 / -inf where fewer than k survive.
-    """
+    # Apply a leakage condition to a wide retrieval and return the surviving top-k.
+    #
+    # drop_col[i] is a pool row to hide for query i (its own Swiss-Prot accession);
+    # twin_cut hides every neighbour at or above that cosine (an exact-twin cut, the
+    # cheap stand-in for the source study's DIAMOND cluster removal).
+    # Returns (idx (N,k), cos (N,k)) padded with -1 / -inf where fewer than k survive.
     n = len(idx)
     I = np.full((n, k), -1, np.int32)
     C = np.full((n, k), -np.inf, np.float32)
@@ -150,25 +147,24 @@ def refine(idx, cos, k=K, drop_col=None, twin_cut=None):
 
 def vote(idx, cos_of_neighbours, label_lists, floor,
          nn_min=0.0, tau=0.0, k_max=K, admitted=None):
-    """The deployed vote, line for line with `gpr_4lane.py::lane_embed`.
-
-    Retrieve `k_max` candidates; refuse the ORF outright if its best neighbour is
-    below `nn_min`; admit the rest only above `max(nn_min, tau * best)`; weight the
-    admitted set by cosine normalised within itself; keep labels >= `floor`.
-
-    TWO THRESHOLDS, TWO QUESTIONS. `floor` is a share of a vote normalised within
-    whatever was admitted, so it measures neighbour AGREEMENT and cannot say "no good
-    neighbour" -- thirty neighbours at cosine 0.15 that agree score 1.0. `nn_min`
-    measures PROXIMITY and is the refusal the lane did not have.
-
-    `nn_min = tau = 0` and `k_max = K` reproduce the pre-quota rule exactly, which is
-    what makes the incumbent a row in this panel rather than a separate code path.
-
-    `cos_of_neighbours` is the cosine of each retrieved neighbour -- the weighting
-    stays cosine whatever metric did the retrieving. `admitted`, if given, is filled
-    with the number of neighbours each query voted with (0 where it abstained).
-    Returns a list of {label: vote} dicts, one per query.
-    """
+    # The deployed vote, line for line with `gpr_4lane.py::lane_embed`.
+    #
+    # Retrieve `k_max` candidates; refuse the ORF outright if its best neighbour is
+    # below `nn_min`; admit the rest only above `max(nn_min, tau * best)`; weight the
+    # admitted set by cosine normalised within itself; keep labels >= `floor`.
+    #
+    # TWO THRESHOLDS, TWO QUESTIONS. `floor` is a share of a vote normalised within
+    # whatever was admitted, so it measures neighbour AGREEMENT and cannot say "no good
+    # neighbour" -- thirty neighbours at cosine 0.15 that agree score 1.0. `nn_min`
+    # measures PROXIMITY and is the refusal the lane did not have.
+    #
+    # `nn_min = tau = 0` and `k_max = K` reproduce the pre-quota rule exactly, which is
+    # what makes the incumbent a row in this panel rather than a separate code path.
+    #
+    # `cos_of_neighbours` is the cosine of each retrieved neighbour -- the weighting
+    # stays cosine whatever metric did the retrieving. `admitted`, if given, is filled
+    # with the number of neighbours each query voted with (0 where it abstained).
+    # Returns a list of {label: vote} dicts, one per query.
     out = []
     for i in range(len(idx)):
         ii = idx[i][:k_max]

@@ -1,25 +1,4 @@
 #!/usr/bin/env python3
-"""Which requirements have more than one transform that could fill them.
-
-This is the map that predicts a solve blowing its budget, and the compiled type
-count is not. The solver branches at a requirement with several reachable
-producers, and every independent target downstream of that fork multiplies the
-branch -- so a library set with one such fork sitting above two thirds of a
-template's targets is exponential in the number of targets, whatever the type
-surface looks like.
-
-`x.IsA(y)` is `y.properties <= x.properties`, so a product fills a requirement
-when the product's property set is a superset of the requirement's. Names never
-enter it: two differently-named types with identical properties are one node.
-
-    python research/metasmith_libraries/probe_ambiguity.py [library ...]
-
-Reachability is not modelled here -- a producer gated behind an input nobody has
-(long reads, an NCBI accession) still counts. Read the output as the *upper
-bound* on where a fork can appear, and confirm with `probe_solve_budget.py
---exclude` which of a pair is actually reachable for a given template.
-"""
-
 from __future__ import annotations
 
 import sys

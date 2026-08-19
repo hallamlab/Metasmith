@@ -83,7 +83,6 @@ def _one(job) -> dict:
 
 
 def _background(channel: str, host: str) -> tuple:
-    """``(weights, gene_map)`` for one channel of the AG1 background."""
     if channel == "gem":
         df = pd.read_parquet(HOSTS / host / "gpr_gem.parquet")
         names = df.groupby(df.mnxr.astype(str)).agg(
@@ -117,7 +116,6 @@ def main():
 
     _init(pairs, ratios, base_w, args.element)
 
-    # -- base solve, with provenance, for the per-reaction current attribution ----------
     g = graph_from_pairs(pairs, args.element, base_w, ratios, with_provenance=True)
     src = Terminal.metabolite(g, SOURCE_MNXM, label="glucose")
     snk = Terminal.metabolite(g, GLYCOGEN_MNXM, label="glycogen")
@@ -130,8 +128,6 @@ def main():
           f"{g.n} nodes, {g.m} edges)", file=sys.stderr)
     cur = reaction_currents(g, sol)
 
-    # A reaction absent from the atom universe cannot move anything; sweeping it is 2 solves
-    # for a guaranteed zero. Sweep exactly the reactions that built an edge.
     used = sorted(set(g.meta["edge_reactions"].mnxr))
     if args.limit:
         used = used[:args.limit]
@@ -168,7 +164,6 @@ def main():
     df.to_csv(out, sep="\t", index=False)
     print(f"[complexity] wrote {out}", file=sys.stderr)
 
-    # -- the summary numbers -----------------------------------------------------------
     eps = df.elasticity.clip(lower=0).to_numpy()
     tot = float(eps.sum())
     share = eps / tot if tot > 0 else eps

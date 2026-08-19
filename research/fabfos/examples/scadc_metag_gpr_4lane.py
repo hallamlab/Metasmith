@@ -69,29 +69,24 @@ LANDMARKS = ROOT / "data" / "fabfos" / "processed" / "label_transfer_landmarks" 
 
 SLABS = ROOT / "data" / "fabfos" / "scratch" / "metag_pbert_lane"
 
-SOURCE = "metag"          # the `source` column gpr_3lane.parquet already carries
+SOURCE = "metag"
 LANE_SET = "chosen_4"
 SLAB = 50_000
 THREADS = int(os.environ.get("GPR_THREADS", "16"))
 
-# Before numpy reaches this process, which it does through the mapper module. The
-# mapper declares these from its own `--threads` when it is the entry point; here
-# nothing else would.
 for _v in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS",
            "NUMEXPR_NUM_THREADS", "VECLIB_MAXIMUM_THREADS"):
     os.environ[_v] = str(THREADS)
 
 
-# ---------------------------------------------------------------- the live lane
 def load_lane_ns():
-    """Execute the mapper module and hand back its namespace.
-
-    `__name__` is not `__main__`, so the module's argument parsing and its `main()`
-    are both skipped -- `main()` is the container entry point and reads the three
-    other lanes' files, which this script does not have and does not need. What is
-    left is the schema stamping, the landmark loader and the sparse vote, and the
-    globals that entry point would have set are wired here instead.
-    """
+    # Execute the mapper module and hand back its namespace.
+    #
+    # `__name__` is not `__main__`, so the module's argument parsing and its `main()`
+    # are both skipped -- `main()` is the container entry point and reads the three
+    # other lanes' files, which this script does not have and does not need. What is
+    # left is the schema stamping, the landmark loader and the sparse vote, and the
+    # globals that entry point would have set are wired here instead.
     ns = {"__name__": "gpr_4lane_lane"}
     exec(compile(MAPPER.read_text(), str(MAPPER), "exec"), ns)  # noqa: S102
     fe = ns["load_evidence"](LIB / "fabfos_evidence.py")
@@ -105,14 +100,6 @@ def query_ids(pd):
 
 
 def install_loader(ns, np, pd, lo, hi):
-    """Point `lane_embed`'s query reader at one slab of the .npy stack.
-
-    The transform reads one self-addressing parquet; the metagenome stack predates
-    that and is a float16 `.npy` beside a `contig,orf` index. The row-count check is
-    kept, because it is the one that catches an index and a stack that were not
-    written together -- which the collapsed type makes impossible but this legacy
-    pair does not.
-    """
     ids = query_ids(pd)
     stack = np.load(EMB, mmap_mode="r")
     if len(ids) != len(stack):
@@ -148,12 +135,11 @@ def run_lane():
                               fe.PBERT_NN_MIN, fe.PBERT_TAU, fe.PBERT_K_MAX)
         tmp = out.with_suffix(".partial")
         df.to_parquet(tmp, index=False)
-        tmp.rename(out)                     # atomic: a killed slab is absent, never half
+        tmp.rename(out)
         print(f"[metag-pbert] slab {i:03d} rows[{lo:,}:{hi:,}] -> {len(df):,} rows "
               f"in {time.time()-t0:.0f}s", flush=True)
 
 
-# ------------------------------------------------------------------- assembly
 def assemble():
     import numpy as np
     import pandas as pd
@@ -198,9 +184,7 @@ def assemble():
     print(f"[metag-pbert] wrote {len(df):,} rows -> {GPR4}", flush=True)
 
 
-# ------------------------------------------------------------ alignment check
 def check_alignment():
-    """Re-run the stack/index pairing evidence quoted in this module's docstring."""
     import numpy as np
     import pandas as pd
     ids = query_ids(pd)

@@ -42,12 +42,11 @@ PROCESSED = REPO / "data/fabfos/processed"
 
 
 def run(label: str, *args: object) -> None:
-    """One assembly command, with its wall clock and peak RSS.
-
-    RSS is read from the child rusage rather than /usr/bin/time so the numbers land in the
-    same place as the rest of the output -- the resource declaration this replaces was
-    never measured, and a measurement nobody prints is the same thing again.
-    """
+    # One assembly command, with its wall clock and peak RSS.
+    #
+    # RSS is read from the child rusage rather than /usr/bin/time so the numbers land in the
+    # same place as the rest of the output -- the resource declaration this replaces was
+    # never measured, and a measurement nobody prints is the same thing again.
     before = resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss
     t0 = time.monotonic()
     r = subprocess.run([sys.executable, "-m", f"ecspr.bake.direction.{label}",

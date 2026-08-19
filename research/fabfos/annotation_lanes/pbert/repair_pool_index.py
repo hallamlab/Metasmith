@@ -1,51 +1,49 @@
-"""THE QUESTION -- the pbert lane transfers a label from the wrong protein. Why?
-
-Because `ref::reference_label_pool`'s index does not describe its embedding stack.
-The pool is 222,019 Swiss-Prot accessions in the release's FASTA order and a
-222,019-row ProteinBERT stack, and `reference_label_pool.py`'s ASSEMBLE step pairs
-them by row -- but the embedder writes the stack in SHARDS of 1,024, and the two
-`sorted(glob(...))` calls that read the shards back do not put the .npy files in
-the order the .csv index describes. Every row is then labelled with some other
-protein's reactions, and nothing raises: the length check passes, the label merge
-passes, and the lane emits a full, confident, wrong table. It is exactly the failure
-that transform's own docstring warns about, arriving through the one door it does
-not guard.
-
-Three independent observations pin it, none of which needs the embedder:
-  * 328 of 400 groups of pool accessions carrying IDENTICAL sequences have
-    DIFFERENT pool embeddings. A deterministic embedder cannot do that.
-  * For a DH10B ORF whose sequence is byte-identical to a Swiss-Prot K-12 entry,
-    the cosine to that entry's pool row is 0.26 -- background -- while an exact
-    match (1.000) sits elsewhere in the stack.
-  * Those exact matches land at a displacement from the accession's index position
-    that is constant in blocks of 1,024 and changes by multiples of 1,024 between
-    blocks. A shard permutation, not noise.
-
-THE REPAIR, and why it needs no re-embedding. The permutation moves whole shards, so
-recovering it means matching 217 index blocks to 217 stack blocks. The signature that
-identifies a block is which of its 1,024 positions hold a DUPLICATED item: in the
-index, an accession whose sequence appears elsewhere in the pool; in the stack, a row
-whose embedding appears elsewhere. Under the true pairing those two patterns are the
-same 1,024-bit vector, and they are nearly unique -- the median best match agrees on
-1,023 of 1,024 positions while the runner-up agrees on 774.
-
-Validated on held-out anchors the matching never saw: DH10B ORFs whose sequence is
-unique in the pool and byte-identical to a Swiss-Prot entry, so the row holding their
-embedding is known independently. 442 of 443 land exactly where the recovered map
-says. The seven blocks the signature cannot separate are dropped rather than guessed.
-
-SUPERSEDED by rebuild_landmarks.py, which computes the same permutation from the record
-count instead of searching for it -- the two agree on 100.00% of the 214,016 accessions
-this one resolved, and the analytic map also covers the 8 blocks the signature could not
-separate. Kept because it is the independent derivation that gate, and because the
-signature argument is what identified the defect in the first place.
-INPUT   data/fabfos/processed/reference_label_pool/pool/{orf_index.parquet,emb_pbert.npy}
-        data/fabfos/originals/swissprot/2026_02/uniprot_sprot.fasta.gz
-ENV     PYTHONPATH="$PWD/src" mamba run -n msm python \
-            research/fabfos/annotation_lanes/pbert/repair_pool_index.py
-OUT     research/fabfos/annotation_lanes/pbert/cache/pool_index_repaired.parquet
-        research/fabfos/annotation_lanes/pbert/pool_repair_dh10b.tsv   (committed)
-"""
+# THE QUESTION -- the pbert lane transfers a label from the wrong protein. Why?
+#
+# Because `ref::reference_label_pool`'s index does not describe its embedding stack.
+# The pool is 222,019 Swiss-Prot accessions in the release's FASTA order and a
+# 222,019-row ProteinBERT stack, and `reference_label_pool.py`'s ASSEMBLE step pairs
+# them by row -- but the embedder writes the stack in SHARDS of 1,024, and the two
+# `sorted(glob(...))` calls that read the shards back do not put the .npy files in
+# the order the .csv index describes. Every row is then labelled with some other
+# protein's reactions, and nothing raises: the length check passes, the label merge
+# passes, and the lane emits a full, confident, wrong table. It is exactly the failure
+# that transform's own docstring warns about, arriving through the one door it does
+# not guard.
+#
+# Three independent observations pin it, none of which needs the embedder:
+#   * 328 of 400 groups of pool accessions carrying IDENTICAL sequences have
+#     DIFFERENT pool embeddings. A deterministic embedder cannot do that.
+#   * For a DH10B ORF whose sequence is byte-identical to a Swiss-Prot K-12 entry,
+#     the cosine to that entry's pool row is 0.26 -- background -- while an exact
+#     match (1.000) sits elsewhere in the stack.
+#   * Those exact matches land at a displacement from the accession's index position
+#     that is constant in blocks of 1,024 and changes by multiples of 1,024 between
+#     blocks. A shard permutation, not noise.
+#
+# THE REPAIR, and why it needs no re-embedding. The permutation moves whole shards, so
+# recovering it means matching 217 index blocks to 217 stack blocks. The signature that
+# identifies a block is which of its 1,024 positions hold a DUPLICATED item: in the
+# index, an accession whose sequence appears elsewhere in the pool; in the stack, a row
+# whose embedding appears elsewhere. Under the true pairing those two patterns are the
+# same 1,024-bit vector, and they are nearly unique -- the median best match agrees on
+# 1,023 of 1,024 positions while the runner-up agrees on 774.
+#
+# Validated on held-out anchors the matching never saw: DH10B ORFs whose sequence is
+# unique in the pool and byte-identical to a Swiss-Prot entry, so the row holding their
+# embedding is known independently. 442 of 443 land exactly where the recovered map
+# says. The seven blocks the signature cannot separate are dropped rather than guessed.
+#
+# SUPERSEDED by rebuild_landmarks.py, which computes the same permutation from the record
+# count instead of searching for it -- the two agree on 100.00% of the 214,016 accessions
+# this one resolved, and the analytic map also covers the 8 blocks the signature could not
+# separate. Kept because it is the independent derivation that gate, and because the
+# signature argument is what identified the defect in the first place.
+# INPUT   data/fabfos/processed/reference_label_pool/pool/{orf_index.parquet,emb_pbert.npy}
+#         data/fabfos/originals/swissprot/2026_02/uniprot_sprot.fasta.gz
+# ENV     PYTHONPATH="$PWD/src" mamba run -n msm python             research/fabfos/annotation_lanes/pbert/repair_pool_index.py
+# OUT     research/fabfos/annotation_lanes/pbert/cache/pool_index_repaired.parquet
+#         research/fabfos/annotation_lanes/pbert/pool_repair_dh10b.tsv   (committed)
 from __future__ import annotations
 
 import collections
@@ -67,7 +65,6 @@ ALPHABET = set("ACDEFGHIKLMNPQRSTUVWXY")
 
 
 def tokenisable(s: str) -> str:
-    """The pool builder's recoding, so our md5 keys the sequence that was embedded."""
     return "".join(c if c in ALPHABET else "X" for c in s.upper())
 
 
@@ -140,7 +137,6 @@ def main():
     rep = rep.sort_values("row").reset_index(drop=True)
     rep.to_parquet(CACHE / "pool_index_repaired.parquet", index=False)
 
-    # ---- validation on anchors the matching never saw --------------------
     E = _knn._norm(np.asarray(emb, dtype=np.float32))
     q, qid = load_query()
     truth = set(load_cohort()["orf"])

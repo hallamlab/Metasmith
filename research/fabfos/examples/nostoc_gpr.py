@@ -124,14 +124,13 @@ def orf_paths() -> list[Path]:
 
 
 def check_refs(host: str, remote_processed: str) -> None:
-    """Every reference present AND non-empty on the host, in ONE ssh round trip.
-
-    Existence is not enough for two of them. An empty `profiles/` directory
-    passes `[ -e ]` and makes kofamscan emit an empty table that the step reports
-    as success; and the landmark table is one file, so a half-copied reference is
-    an unreadable parquet detected at the mapper, after all four
-    lanes have burned their allocations.
-    """
+    # Every reference present AND non-empty on the host, in ONE ssh round trip.
+    #
+    # Existence is not enough for two of them. An empty `profiles/` directory
+    # passes `[ -e ]` and makes kofamscan emit an empty table that the step reports
+    # as success; and the landmark table is one file, so a half-copied reference is
+    # an unreadable parquet detected at the mapper, after all four
+    # lanes have burned their allocations.
     probes = [f'[ -e "{remote_processed}/{rel}" ] || echo "MISSING {d} {rel}"'
               for d, rel in annotation.REF_LAYOUT.items()]
     prof = f'{remote_processed}/{annotation.REF_LAYOUT["ref::kofamscan_profiles"]}'
@@ -186,7 +185,6 @@ def check_plan(task, n_orfs: int) -> int:
         print(f"\ntransform set is {sorted(used)}, expected {sorted(expected)}",
               file=sys.stderr)
         bad = 1
-    # FIVE steps of THREE instances, not fifteen steps. See the module docstring.
     off = [s for s in task.plan.steps if len(s.group_by_instances) != n_orfs]
     if off:
         for s in off:
@@ -213,12 +211,6 @@ def check_plan(task, n_orfs: int) -> int:
 
 
 def write_provenance(dest_root: Path, run_key: str) -> None:
-    """What a reader cannot recover from the parquet, beside the tables.
-
-    Not a log: which reference pins produced these numbers, what fraction of each
-    proteome each lane reached, and the ways this reference set is NOT the
-    previously deployed method.
-    """
     import pandas as pd
 
     per_org = []
@@ -369,8 +361,6 @@ def publish(results: Path, *, dry_run: bool, run_key: str) -> int:
                                dry_run=dry_run, repo=REPO)
     if rc or dry_run:
         return rc
-    # The proteome beside the table it describes: a GPR table read against
-    # another run's ORFs joins on ids that merely look alike.
     for p in orf_paths():
         d = dest / p.stem / p.name
         d.parent.mkdir(parents=True, exist_ok=True)
@@ -468,8 +458,6 @@ def main() -> int:
         return preflight(a.host, a.agent_home, a.container, envs_from_plan(task),
                          mlib=MLIB)
 
-    # Not recoverable from a retrieved results tree, and --publish names it in
-    # PROVENANCE.md -- so it is written at plan time.
     (work / "RUN_KEY").write_text(task.GetKey())
 
     if a.retrieve:
@@ -494,8 +482,6 @@ def main() -> int:
               file=sys.stderr)
         return 4
 
-    # `update`, not `clear`: clearing destroys every cached lane, which on a
-    # resubmission is hours of recomputing work that already succeeded.
     agent.StageWorkflow(task, on_exist="update")
     if check_staged_executor(a.host, a.agent_home, task.GetKey()):
         return 4
@@ -521,14 +507,13 @@ def main() -> int:
 
 
 def _watch(agent, task, a, local_results: Path) -> int:
-    """Wait on a run already executing, then check, retrieve and verify it.
-
-    Reached both by `--run` (which launches and then watches) and by `--wait`
-    (which only watches). They are the same code because the run is DETACHED:
-    `RunWorkflow` launches nextflow with nohup and returns, so the local process
-    is a spectator and losing it loses nothing. Re-attaching only works because
-    the task key is stable -- see `_fir.pin_external_leaf_ids`.
-    """
+    # Wait on a run already executing, then check, retrieve and verify it.
+    #
+    # Reached both by `--run` (which launches and then watches) and by `--wait`
+    # (which only watches). They are the same code because the run is DETACHED:
+    # `RunWorkflow` launches nextflow with nohup and returns, so the local process
+    # is a spectator and losing it loses nothing. Re-attaching only works because
+    # the task key is stable -- see `_fir.pin_external_leaf_ids`.
     print(f"=== waiting (timeout {a.timeout_hours:.1f}h, poll {a.poll_s:.0f}s) ===",
           flush=True)
     result = agent.WaitForWorkflow(task, timeout_s=a.timeout_hours * 3600,
