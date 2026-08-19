@@ -1,0 +1,13 @@
+din {"n96aWxQY":["1e204c125dcc4dcea4a2575c76f06b391845b19b48bf2e9c093eba9a46af4058edf7"],"giHCQ5sY":["1e20ad30679c868682bd437bda45a04730900ff3cf4458572a4c161fc93b19b06551"],"m6AMyROB":["1e20ba19bd65db566dfd12eb5b81773d9cdf913516657385e1605f23f84ca76b0ab5"]}
+dot [{"UG1Y6fwy":["1e202f3750845a1f9efc742b0920eb9a95a26b455c10124faba7b3ee0ca1c1a9b87e"]}]
+sar {"n96aWxQY":1,"giHCQ5sY":1,"m6AMyROB":1,"UG1Y6fwy":1}
+slk {"n96aWxQY":"n96aWxQY","giHCQ5sY":"giHCQ5sY","m6AMyROB":"m6AMyROB"}
+par 1
+cache_key 1e205297219d6aa76b62ccb72bf30335801b825b0bc5f0a13b1f1240d0fc413bc63b
+out_identities {"UG1Y6fwy::0":"1e202f3750845a1f9efc742b0920eb9a95a26b455c10124faba7b3ee0ca1c1a9b87e"}
+cacheable true
+transform_key IfId0AF9
+step_name getNcbiSra
+sorted_inputs [["giHCQ5sY",["1e20ad30679c868682bd437bda45a04730900ff3cf4458572a4c161fc93b19b06551"]],["m6AMyROB",["1e20ba19bd65db566dfd12eb5b81773d9cdf913516657385e1605f23f84ca76b0ab5"]],["n96aWxQY",["1e204c125dcc4dcea4a2575c76f06b391845b19b48bf2e9c093eba9a46af4058edf7"]]]
+slot_files [{"dtype_key":"SzwAMEfK","ext":"","branch_idx":0,"slot_id":"1e202f3750845a1f9efc742b0920eb9a95a26b455c10124faba7b3ee0ca1c1a9b87e"}]
+batches [{"batch_idx":0,"start":0,"end":1,"sorted_inputs":[["giHCQ5sY",["1e20ad30679c868682bd437bda45a04730900ff3cf4458572a4c161fc93b19b06551"]],["m6AMyROB",["1e20ba19bd65db566dfd12eb5b81773d9cdf913516657385e1605f23f84ca76b0ab5"]],["n96aWxQY",["1e204c125dcc4dcea4a2575c76f06b391845b19b48bf2e9c093eba9a46af4058edf7"]]]}]

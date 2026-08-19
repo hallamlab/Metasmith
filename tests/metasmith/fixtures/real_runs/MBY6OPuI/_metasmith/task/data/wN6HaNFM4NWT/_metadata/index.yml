@@ -1,0 +1,12 @@
+manifest:
+  GCF_000005845.acc:
+    instance_id: 1e20129acd572a45f14ee9937e7556119488ac29286b8ac7118cd781100ce4c6fae6
+    origin: leaf
+    parents:
+      wN6HaNFM4NWT@GCF_000005845.name: ncbi::genome_name
+    type: ncbi::assembly_accession
+  GCF_000005845.name:
+    instance_id: 1e20e37a4f87840248f1c7ed6356348bfc4d612ed10b12d681f1b466034d8b41fd99
+    origin: leaf
+    type: ncbi::genome_name
+schema: v1

@@ -1,0 +1,12 @@
+manifest:
+  SRR5585544.acc:
+    instance_id: 1e20ba19bd65db566dfd12eb5b81773d9cdf913516657385e1605f23f84ca76b0ab5
+    origin: leaf
+    parents:
+      91CAiiemQHfy@reads_metadata.json: sequences::read_metadata
+    type: ncbi::sra_accession
+  reads_metadata.json:
+    instance_id: 1e20ad30679c868682bd437bda45a04730900ff3cf4458572a4c161fc93b19b06551
+    origin: leaf
+    type: sequences::read_metadata
+schema: v1
