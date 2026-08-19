@@ -30,7 +30,6 @@ TARGETS = [
     {"type": "annotation::clean_predictions", "parents": [0]},
     {"type": "annotation::diamond_uniref50_results", "parents": [0]},
     {"type": "annotation::proteinbert_embeddings", "parents": [0]},
-    {"type": "annotation::proteinbert_index", "parents": [0]},
     {"type": "annotation::gpr_table", "parents": [0]},
     {"type": "ecspr::results", "parents": [0]},
 ]

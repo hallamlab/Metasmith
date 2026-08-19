@@ -9,9 +9,8 @@ kofam     = model.AddRequirement(lib.GetType("annotation::kofamscan_results"), p
 clean     = model.AddRequirement(lib.GetType("annotation::clean_predictions"), parents={orfs})
 uniref    = model.AddRequirement(lib.GetType("annotation::diamond_uniref50_results"), parents={orfs})
 pbert_emb = model.AddRequirement(lib.GetType("annotation::proteinbert_embeddings"), parents={orfs})
-pbert_idx = model.AddRequirement(lib.GetType("annotation::proteinbert_index"), parents={orfs})
 bridge    = model.AddRequirement(lib.GetType("ref::mnxr_lookup"))
-pool      = model.AddRequirement(lib.GetType("ref::label_transfer_landmarks"))
+landmarks = model.AddRequirement(lib.GetType("ref::label_transfer_landmarks"))
 ev_lib    = model.AddRequirement(lib.GetType("lib::fabfos_evidence.py"))
 gpr_lib   = model.AddRequirement(lib.GetType("lib::fabfos_gpr"))
 out_gpr   = model.AddProduct(lib.GetType("annotation::gpr_table"))
@@ -26,9 +25,8 @@ def protocol(context: ExecutionContext):
     icln  = context.Input(clean)
     iuni  = context.Input(uniref)
     ipe   = context.Input(pbert_emb)
-    ipi   = context.Input(pbert_idx)
     ibr   = context.Input(bridge)
-    ipool = context.Input(pool)
+    ilm   = context.Input(landmarks)
     iev   = context.Input(ev_lib)
     igpr  = context.Input(gpr_lib)
     iout  = context.Output(out_gpr)
@@ -41,9 +39,8 @@ def protocol(context: ExecutionContext):
             --clean {icln.container} \
             --uniref {iuni.container} \
             --pbert-emb {ipe.container} \
-            --pbert-idx {ipi.container} \
             --bridge {ibr.container} \
-            --pool {ipool.container} \
+            --landmarks {ilm.container} \
             --out {iout.container} \
             --lane-set {LANE_SET} \
             --source {iorfs.local.stem} \

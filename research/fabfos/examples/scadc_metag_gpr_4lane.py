@@ -23,9 +23,9 @@ closes that.
 
 THE VOTE IS NOT REIMPLEMENTED HERE
 ----------------------------------
-`lane_embed` is lifted out of the live transform's DRIVER string and executed,
-the same way `tests/test_gpr_4lane_sparse_transfer.py` lifts it -- a copy would
-keep passing after the transform changed, and this lane's whole claim is that
+`lane_embed` is lifted out of the live mapper module and executed, the same way
+`tests/fabfos/test_gpr_4lane_sparse_transfer.py` lifts it -- a copy would
+keep passing after the mapper changed, and this lane's whole claim is that
 the metagenome pool is scored by the SAME rule as the fosmid units it is the
 null for. Only `_read_query` is replaced, because the metagenome embeddings are
 a float16 `.npy` stack with a `contig,orf` index while the transform's input is
@@ -51,14 +51,13 @@ from __future__ import annotations
 
 import argparse
 import os
-import re
 import sys
 import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[3]
-TRANSFORM = ROOT / "src" / "metasmith_libraries" / "transforms" / "fabfos" / "gpr_4lane.py"
 LIB = ROOT / "src" / "metasmith_libraries" / "resources" / "lib"
+MAPPER = LIB / "fabfos_gpr" / "gpr_4lane.py"
 
 METAG = ROOT / "data" / "fabfos" / "runs" / "scadc_metagenome"
 EMB = METAG / "annotations" / "proteinbert" / "metag.pbert.npy"
@@ -75,22 +74,28 @@ LANE_SET = "chosen_4"
 SLAB = 50_000
 THREADS = int(os.environ.get("GPR_THREADS", "16"))
 
+# Before numpy reaches this process, which it does through the mapper module. The
+# mapper declares these from its own `--threads` when it is the entry point; here
+# nothing else would.
+for _v in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS",
+           "NUMEXPR_NUM_THREADS", "VECLIB_MAXIMUM_THREADS"):
+    os.environ[_v] = str(THREADS)
+
 
 # ---------------------------------------------------------------- the live lane
 def load_lane_ns():
-    """Execute the transform's DRIVER prelude and hand back its namespace.
+    """Execute the mapper module and hand back its namespace.
 
-    Everything before `def main():` -- the schema stamping, the pool loader, the
-    sparse vote. `main()` itself is the container entry point and reads the three
-    other lanes' files, which this script does not have and does not need.
+    `__name__` is not `__main__`, so the module's argument parsing and its `main()`
+    are both skipped -- `main()` is the container entry point and reads the three
+    other lanes' files, which this script does not have and does not need. What is
+    left is the schema stamping, the landmark loader and the sparse vote, and the
+    globals that entry point would have set are wired here instead.
     """
-    src = TRANSFORM.read_text()
-    body = re.search(r"DRIVER = r'''\n(.*?)\n'''", src, re.S).group(1)
-    prelude = body[: body.index("def main():")]
-    filled = prelude.format(ev_lib=str(LIB / "fabfos_evidence.py"),
-                            lane_set=LANE_SET, source=SOURCE, threads=THREADS)
-    ns = {"__name__": "gpr_4lane_driver"}
-    exec(compile(filled, str(TRANSFORM) + "::DRIVER", "exec"), ns)  # noqa: S102
+    ns = {"__name__": "gpr_4lane_lane"}
+    exec(compile(MAPPER.read_text(), str(MAPPER), "exec"), ns)  # noqa: S102
+    fe = ns["load_evidence"](LIB / "fabfos_evidence.py")
+    ns.update(fe=fe, SCHEMA=fe.SCHEMA_COLS, LANE_SET=LANE_SET, SOURCE=SOURCE)
     return ns
 
 
@@ -138,8 +143,9 @@ def run_lane():
             continue
         install_loader(ns, np, pd, lo, hi)
         t0 = time.time()
-        df = ns["lane_embed"](None, str(LANDMARKS), "pbert", ns["PBERT_FLOOR"],
-                              ns["PBERT_NN_MIN"], ns["PBERT_TAU"], ns["PBERT_K_MAX"])
+        fe = ns["fe"]
+        df = ns["lane_embed"](None, str(LANDMARKS), "pbert", fe.PBERT_FLOOR,
+                              fe.PBERT_NN_MIN, fe.PBERT_TAU, fe.PBERT_K_MAX)
         tmp = out.with_suffix(".partial")
         df.to_parquet(tmp, index=False)
         tmp.rename(out)                     # atomic: a killed slab is absent, never half
