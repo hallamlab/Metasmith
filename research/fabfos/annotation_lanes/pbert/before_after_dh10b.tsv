@@ -1,0 +1,7 @@
+lane	config	precision	recall	f1	coverage	n_fired	n_correct
+pbert	as shipped: misaligned pool, cosine, floor 0.20, no gate	0.0043	0.0039	0.0041	0.8975	1156.0	5.0
+pbert	pool repaired only: cosine, floor 0.20, no gate	0.7012	0.6669	0.6836	0.9511	1225.0	859.0
+pbert	pool repaired + nn_similarity >= 0.7716, floor 0.00	0.9726	0.8261	0.8934	0.8494	1094.0	1064.0
+pbert	pool repaired + nn_similarity >= 0.7716, floor 0.20	0.8108	0.6623	0.7291	0.8168	1052.0	853.0
+clean	as shipped: no abstention	0.919	0.9161	0.9176	0.9969	1284.0	1180.0
+clean	abstain below 0.02	0.9542	0.9068	0.9299	0.9503	1224.0	1168.0
