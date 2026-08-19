@@ -41,7 +41,7 @@ from ecspr.model.graph import Terminal, solve                    # noqa: E402
 BAKE = ROOT / "data/fabfos/processed/metabolism_bake"
 ANNOT = BAKE / "seams/direction_annotation.parquet"
 HOSTS = ROOT / "data/fabfos/benchmarks/hosts"
-OUT_DIR = Path(__file__).resolve().parent / "out"
+OUT_DIR = Path(__file__).resolve().parent / "cache"
 # The ASKA library as the gene sweep ran it -- gene name and the reactions its clone adds.
 # Read for the gene->reaction map only; its own delta column is a fold measurement under a
 # different bake and is not used here.
