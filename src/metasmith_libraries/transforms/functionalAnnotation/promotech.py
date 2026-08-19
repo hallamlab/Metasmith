@@ -1,6 +1,3 @@
-import shutil
-from pathlib import Path
-
 from metasmith.python_api import *
 
 lib = TransformInstanceLibrary.ResolveParentLibrary(__file__)
@@ -9,31 +6,26 @@ model = Transform()
 image      = model.AddRequirement(lib.GetType("env::promotech.env"))
 assembly   = model.AddRequirement(lib.GetType("sequences::assembly"))
 gff        = model.AddRequirement(lib.GetType("sequences::gff"))
+extract    = model.AddRequirement(lib.GetType("lib::extract_noncoding_chunks.py"))
+merge      = model.AddRequirement(lib.GetType("lib::merge_promotech_results.py"))
 
 out_pred = model.AddProduct(lib.GetType("annotation::promotech_predictions"))
-
-# Helpers next to this transform file, copied into /ws at runtime
-# (same pattern as bakta_noncoding's _piler_cr_to_gff3.py).
-EXTRACT = Path(__file__).parent / "_extract_noncoding_chunks.py"
-MERGE   = Path(__file__).parent / "_merge_promotech_results.py"
 
 
 def protocol(context: ExecutionContext):
     iasm = context.Input(assembly)
     igff = context.Input(gff)
+    iextract = context.Input(extract)
+    imerge = context.Input(merge)
     opred = context.Output(out_pred)
-
-    shutil.copy(EXTRACT, Path.cwd() / "_extract_noncoding_chunks.py")
-    shutil.copy(MERGE,   Path.cwd() / "_merge_promotech_results.py")
 
     chunks_dir  = "/ws/pt_chunks"
     results_dir = "/ws/pt_results"
 
-    # Step 1: Extract non-coding intervals into <=1Mbp chunk FASTAs
     context.ExecWithEnv().ifContainerDo(
         env=image,
         cmd=f"""
-            python /ws/_extract_noncoding_chunks.py \
+            python {iextract.container} \
                 --fasta {iasm.container} \
                 --gff {igff.container} \
                 --outdir {chunks_dir} \
@@ -42,7 +34,6 @@ def protocol(context: ExecutionContext):
         """,
     )
 
-    # Step 2: Run PromoTech parse + predict on each chunk in parallel.
     cpus = context.params.get("cpus", 4)
     context.ExecWithEnv().ifContainerDo(
         env=image,
@@ -65,11 +56,10 @@ def protocol(context: ExecutionContext):
         """,
     )
 
-    # Step 3: Merge results and remap coordinates
     context.ExecWithEnv().ifContainerDo(
         env=image,
         cmd=f"""
-            python /ws/_merge_promotech_results.py \
+            python {imerge.container} \
                 --manifest {chunks_dir}/manifest.json \
                 --results-dir {results_dir} \
                 --output /ws/pt_merged.tsv &&

@@ -7,7 +7,6 @@ from ...common import NotImplementedException
 from ..colors import XColor, COLORS, ColorValue
 from .coordinates import Transform, Xywh2lrbt
 
-# abstract
 class Element:
     def _render(self, fig: go.Figure, parent: Panel, kwargs:dict=dict()) -> dict:
         raise NotImplementedException(f"{self} did not implement _render()")
@@ -136,11 +135,6 @@ class Canvas(Panel):
             axis["range"] = r
             _layout[k] = axis
         fig = fig.update_layout(_layout, shapes=prev_shapes+list(_yield_shapes()))
-            # margin={'l': BORDER, 'r': BORDER, 'b': BORDER, 't': BORDER},
-            # paper_bgcolor=self.bg_col,
-            # plot_bgcolor=self.bg_col,
-            # dragmode='pan',
-            # showlegend=False,
         self._last_render = fig
         return fig
 
@@ -150,7 +144,6 @@ class Canvas(Panel):
             scrollZoom=scroll_zoom
         ))
 
-# ---------------------------------------------------------------------------------------
 
 color_axis = 'rgba(0, 0, 0, 0.15)'
 color_black = 'rgba(0, 0, 0, 0)'
@@ -162,7 +155,6 @@ LAYOUT = dict(
     margin=dict(
         l=155, r=25, b=25, t=25, pad=5
     ),
-    # paper_bgcolor="white",
     font_family="Times New Roman",
     font_color="black",
     font_size=20,

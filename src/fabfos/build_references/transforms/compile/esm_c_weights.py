@@ -1,29 +1,3 @@
-"""R8 -- the ESM-C 600M weights the embedding lane and the EZpred heads share.
-
-**Requires:** `originals/esm_c/` (the whole source folder).
-
-Thin, and deliberately so: the archive `acquire/esm_c.py` wrote already has the
-layout the consumer needs, so this verifies and re-emits rather than repacking. What
-it verifies is the thing that cannot be recovered later --
-
-    data/weights/esmc_600m_2024_12_v0.pth   present, and over the size floor
-
--- because the SDK resolves that exact relative path from the process's cwd, and a
-truncated or gate-refused download leaves a file that exists. Failing here costs a
-re-fetch; failing downstream costs the GPU hours that ran before the load.
-
-WHY THERE IS AN ARTIFACT AT ALL, when CLEAN and ProteinBERT have none. Their weights
-are baked into their images, so under a container runtime there is nothing to
-acquire. ESM-C's are not: `env::esmc.env` ships the SDK, and the SDK downloads the
-checkpoint from a gated endpoint on first use. That download is exactly what a
-reference is for -- it happens once, here, and is pinned.
-
-THERE IS ALSO A DUPLICATE PRODUCER, and it is the reason every gate in this repo
-names it. `transforms/logistics/downloadEsmC.py` in the shipped library produces the
-same `ref::esm_c_600m_weights` by fetching it at run time. Two producers for one
-reference makes "which one built this" a planner tiebreak, so no plan here loads
-`logistics/`, and each gate asserts that downloader is absent BY NAME.
-"""
 from metasmith.python_api import *
 
 lib   = TransformInstanceLibrary.ResolveParentLibrary(__file__)
@@ -105,13 +79,5 @@ TransformInstance(
     protocol=protocol,
     model=model,
     group_by=image,
-    # NOT labels=["local"]. That label is right for `acquire/` -- a download needs the
-    # login node's network -- and copying it here is what pinned every compile to the
-    # login node under the slurm preset: `xlocalx` sets `executor = 'local'`, whose pool
-    # slurm.nf declares as 8 cores / 8 GB, and Nextflow's local executor REFUSES a
-    # process asking for more rather than queueing it. It also sets
-    # errorStrategy='ignore' with no retry, so the refusal is silent and the workflow
-    # goes green with the reference absent. Nothing in this transform touches the
-    # network; it belongs on a compute node.
     resources=Resources(cpus=2, memory=Size.GB(8), duration=Duration(hours=1)),
 )

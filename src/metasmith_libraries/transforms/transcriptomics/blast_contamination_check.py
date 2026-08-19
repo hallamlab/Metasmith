@@ -1,5 +1,3 @@
-"""Check for organellar sequence contamination in the chromosome assembly using BLASTn."""
-
 from metasmith.python_api import *
 
 lib      = TransformInstanceLibrary.ResolveParentLibrary(__file__)
@@ -14,7 +12,6 @@ def protocol(context: ExecutionContext):
     iorgref   = context.Input(orgref)
     iout      = context.Output(out)
 
-    # Same command either way: this tool is a plain CLI in both worlds.
     _cmd = f"""\
             makeblastdb \
                 -in {iassembly.container} \

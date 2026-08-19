@@ -1,13 +1,3 @@
-"""Histogram of cross-genome BLAST Score Ratio (BSR) distances.
-
-Input : pooled all-vs-all diamond blastp, outfmt 6, with genome-tagged ids of
-        the form  <genome>__<protein_id>  (qseqid, sseqid).
-Output: SVG histogram.
-
-BSR(query, subject) = bitscore(query, subject) / bitscore(query, query-self).
-We keep, per (query protein, target genome), the single best bitscore, then plot
-distance = 1 - BSR over cross-genome (query genome != subject genome) pairs.
-"""
 import sys
 import pandas as pd
 import numpy as np
@@ -20,24 +10,19 @@ COLS = ["qseqid", "sseqid", "pident", "length", "mismatch", "gapopen",
 df = pd.read_csv(path_blast, sep="\t", names=COLS)
 print("blast rows:", len(df))
 
-# genome tag is the prefix before the '__' separator
 df["qg"] = df["qseqid"].str.split("__").str[0]
 df["sg"] = df["sseqid"].str.split("__").str[0]
 print("genomes:", sorted(df["qg"].unique()))
 
-# self bitscore per query protein (query aligned to itself = max possible score)
 self_hits = df[df["qseqid"] == df["sseqid"]]
 self_score = self_hits.groupby("qseqid")["bitscore"].max()
 print("queries with a self score:", len(self_score))
 
-# cross-genome hits only
 cross = df[df["qg"] != df["sg"]].copy()
 print("cross-genome hits:", len(cross))
 
-# best hit per (query protein, target genome)
 best = cross.groupby(["qseqid", "sg"], sort=False)["bitscore"].max().reset_index()
 
-# normalize by the query's self score
 best["self"] = best["qseqid"].map(self_score)
 dropped = int(best["self"].isna().sum())
 if dropped:

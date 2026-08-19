@@ -217,64 +217,6 @@ def ColorValue(col: XColor):
     return ColorObj(col).color_value
 
 class Palettes:
-    # https://plotly.com/python/discrete-color/
     PLOTLY = [Color.Hex(c) for c in ['#636EFA', '#EF553B', '#00CC96', '#AB63FA', '#FFA15A', '#19D3F3', '#FF6692', '#B6E880', '#FF97FF', '#FECB52']]
-    # https://www.heavy.ai/blog/12-color-palettes-for-telling-better-stories-with-your-data
     SPRING_PASTEL = [Color.Hex(c) for c in ["#b2e061", "#7eb0d5", "#fd7f6f", "#bd7ebe", "#ffb55a", "#ffee65", "#beb9db", "#fdcce5", "#8bd3c7"]]
     DUTCH_FIELD = [Color.Hex(c) for c in ["#e60049", "#0bb4ff", "#50e991", "#e6d800", "#9b19f5", "#ffa300", "#dc0ab4", "#b3d4ff", "#00bfa0"]]
-
-
-# ########################################################################
-# custom themes may be overkill for now
-
-# class Theme:
-#     def __init__(self, palette: list[tuple[int, int, int]]) -> None:
-#         assert len(palette) >= 2
-#         self.__palette = palette
-
-#     @classmethod
-#     def rgb_str(cls, r, g, b, a):
-#         """r g b between 0 - 255, a between 0.0 - 1.0"""
-#         return f'rgba({r},{g},{b},{a})'
-
-#     def get_color(self, i:int, w: float):
-#         rgb = self.__palette[i%len(self.__palette)]
-#         s = 1000
-#         w = round(w*s)/s
-#         return self.rgb_str(*(rgb+(w,)))
-
-#     def background(self, w: float=1):
-#         return self.get_color(0, w)
-
-#     def primary(self, w:float=1):
-#         return self.get_color(1, w)
-
-#     def secondary(self, w:float=1):
-#         return self.get_color(2, w)
-
-# THEME_BLACK = Theme(palette=[
-#     (0, 0, 0),
-#     (255, 255, 255),
-#     (200, 200, 200)
-# ])
-
-# THEME_WHITE = Theme(palette=[
-#     (255, 255, 255),
-#     (0, 0, 0),
-#     (0, 15, 100)
-# ])
-
-# THEME_DARK = Theme(palette=[
-#     (30, 30, 30),
-#     (225, 225, 225),
-#     (0, 84, 225)
-# ])
-
-# _theme: Theme = THEME_WHITE
-
-# def set_theme(theme: Theme):
-#     global _theme
-#     _theme = theme
-
-# def get_theme():
-#     return _theme

@@ -16,27 +16,12 @@ import sys
 
 
 def load_manifest(path):
-    """Load chunk manifest JSON."""
     with open(path) as f:
         return json.load(f)
 
 
 def remap_predictions(predictions_path, regions):
-    """Remap flat PromoTech coordinates to original contig positions.
-
-    PromoTech concatenates all sequences in the FASTA and reports positions
-    in the concatenated string. We walk through the regions to find which
-    region each prediction falls in, then compute the original coordinate.
-
-    Args:
-        predictions_path: Path to genome_predictions.csv (TSV)
-        regions: List of {"contig", "start", "end", "length"} dicts
-
-    Yields:
-        (contig, orig_start, orig_end, score, strand, sequence) tuples
-    """
-    # Build cumulative offset table for the concatenated sequence
-    offsets = []  # (cum_start, cum_end, region)
+    offsets = []
     cum = 0
     for region in regions:
         offsets.append((cum, cum + region["length"], region))
@@ -44,21 +29,18 @@ def remap_predictions(predictions_path, regions):
 
     with open(predictions_path) as f:
         reader = csv.reader(f, delimiter="\t")
-        header = next(reader)  # skip header
+        header = next(reader)
         for row in reader:
             if len(row) < 6:
                 continue
-            # chrom, start, end, score, strand, sequence
             flat_start = int(row[1])
             flat_end = int(row[2])
             score = row[3]
             strand = row[4]
             sequence = row[5]
 
-            # Find which region this falls in
             for cum_start, cum_end, region in offsets:
                 if cum_start <= flat_start < cum_end:
-                    # Position within this region
                     offset_in_region = flat_start - cum_start
                     orig_start = region["start"] + offset_in_region
                     orig_end = orig_start + (flat_end - flat_start)

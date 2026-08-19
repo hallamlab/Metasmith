@@ -18,7 +18,6 @@ from collections import defaultdict
 
 
 def parse_fasta(path):
-    """Parse FASTA file into {contig_id: sequence} dict."""
     contigs = {}
     current_id = None
     parts = []
@@ -38,10 +37,6 @@ def parse_fasta(path):
 
 
 def parse_gff_cds(path):
-    """Parse Prodigal GFF for CDS intervals.
-
-    Returns {contig_id: [(start, end), ...]} with 0-based half-open coords.
-    """
     cds = defaultdict(list)
     with open(path) as f:
         for line in f:
@@ -53,7 +48,6 @@ def parse_gff_cds(path):
             if parts[2] != "CDS":
                 continue
             contig = parts[0]
-            # GFF is 1-based inclusive; convert to 0-based half-open
             start = int(parts[3]) - 1
             end = int(parts[4])
             cds[contig].append((start, end))
@@ -61,11 +55,9 @@ def parse_gff_cds(path):
 
 
 def noncoding_intervals(contig_len, cds_intervals):
-    """Compute non-coding intervals as complement of sorted/merged CDS."""
     if not cds_intervals:
         return [(0, contig_len)]
 
-    # Sort and merge overlapping CDS intervals
     sorted_cds = sorted(cds_intervals)
     merged = [sorted_cds[0]]
     for start, end in sorted_cds[1:]:
@@ -74,7 +66,6 @@ def noncoding_intervals(contig_len, cds_intervals):
         else:
             merged.append((start, end))
 
-    # Compute complement
     noncoding = []
     prev_end = 0
     for cds_start, cds_end in merged:
@@ -105,15 +96,14 @@ def main():
         len(contigs), sum(len(s) for s in contigs.values()) / 1e6))
     print("GFF: {} contigs with CDS annotations".format(len(cds_map)))
 
-    # Collect all non-coding regions
-    all_regions = []  # (contig_id, start, end, sequence)
+    all_regions = []
     total_nc_bp = 0
     for contig_id, seq in contigs.items():
         intervals = noncoding_intervals(len(seq), cds_map.get(contig_id, []))
         for start, end in intervals:
             region_seq = seq[start:end]
             if len(region_seq) < 40:
-                continue  # PromoTech needs at least 40nt
+                continue
             all_regions.append((contig_id, start, end, region_seq))
             total_nc_bp += len(region_seq)
 
@@ -121,7 +111,6 @@ def main():
         len(all_regions), total_nc_bp / 1e6,
         100.0 * total_nc_bp / max(1, sum(len(s) for s in contigs.values()))))
 
-    # Write chunks
     manifest = []
     chunk_idx = 0
     chunk_bp = 0
@@ -145,12 +134,10 @@ def main():
     start_chunk()
 
     for contig_id, start, end, seq in all_regions:
-        # Start new chunk if this region would exceed limit
         if chunk_bp > 0 and chunk_bp + len(seq) > args.max_chunk_bp:
             start_chunk()
 
         chunk_fh.write(">{}:{}-{}\n".format(contig_id, start, end))
-        # Write sequence in 80-char lines
         for i in range(0, len(seq), 80):
             chunk_fh.write(seq[i:i+80] + "\n")
 
@@ -162,7 +149,6 @@ def main():
         })
         chunk_bp += len(seq)
 
-    # Close last chunk
     if chunk_fh is not None:
         chunk_fh.close()
         manifest.append({
@@ -170,7 +156,6 @@ def main():
             "regions": chunk_regions,
         })
 
-    # Write manifest
     manifest_path = os.path.join(args.outdir, "manifest.json")
     with open(manifest_path, "w") as f:
         json.dump(manifest, f, indent=2)

@@ -1,10 +1,3 @@
-"""
-Response surface analysis for media optimization.
-
-Combined from growth_analysis_helpers.py and dse.growth_panel.py.
-Accepts CLI args: python response_surface.py <input.csv> <output_dir>
-"""
-
 import sys
 import os
 import re
@@ -24,42 +17,25 @@ from local.figures.template import BaseFigure, ApplyTemplate, go
 from local.figures.colors import Color, COLORS, Palettes
 
 
-# ── Configuration ────────────────────────────────────────────────────────────
-
 DEFAULT_DEGREE = 3
 DEFAULT_CRASH_THRESHOLD = 0.05
 DEGREE = DEFAULT_DEGREE
 OUTPUT_DIR = "./output"
 
 
-# ── Data structures ──────────────────────────────────────────────────────────
-
 @dataclass
 class Run:
-    media: np.ndarray  # 1D
-    growth: np.ndarray  # 3D: timepoints x (time, growth) x replicates
+    media: np.ndarray
+    growth: np.ndarray
 
-
-# ── Logistic growth model ────────────────────────────────────────────────────
 
 def logistic_growth(x, b, L, k, x0):
-    """
-    Logistic growth model.
-
-    Args:
-        x: time (array)
-        b: y offset
-        L: maximum value (carrying capacity)
-        k: growth rate, where doubling time = ln(2)/k
-        x0: inflection point
-    """
     z = k * (x - x0)
     growth = L * np.exp(-np.logaddexp(0, -z))
     return growth + b
 
 
 def compute_logistic_auc(params: tuple, t_min: float, t_max: float, n_points: int = 100) -> float:
-    """Compute AUC from fitted logistic curve parameters."""
     b, L, k, x0 = params
     t = np.linspace(t_min, t_max, n_points)
     od = logistic_growth(t, b, L, k, x0)
@@ -69,7 +45,6 @@ def compute_logistic_auc(params: tuple, t_min: float, t_max: float, n_points: in
 
 
 def fit_logistic_curve(x, y):
-    """Fit logistic curve to growth data."""
     bounds = [
         (-0.5, 0, 0, 0),
         (1, 15, 2, np.inf)
@@ -89,7 +64,6 @@ def fit_logistic_curve(x, y):
 
 
 def fit_replicate(t: np.ndarray, od: np.ndarray) -> tuple:
-    """Fit logistic curve to a single replicate."""
     valid = ~np.isnan(t) & ~np.isnan(od)
     t_valid = t[valid]
     od_valid = od[valid]
@@ -105,17 +79,7 @@ def fit_replicate(t: np.ndarray, od: np.ndarray) -> tuple:
         return None, 0.0, False
 
 
-# ── Outlier detection ────────────────────────────────────────────────────────
-
 def detect_crash(ods: np.ndarray, crash_threshold: float = DEFAULT_CRASH_THRESHOLD, n_clusters: int = 2):
-    """
-    Detect crashed vs healthy growth curves using K-means clustering.
-
-    Returns:
-        (clusters, cosine_distance)
-        - clusters: array where 0=healthy, 1=crashed
-        - cosine_distance: distance between final cluster centers
-    """
     X = ods.T
     n_replicates = X.shape[0]
     n_timepoints = X.shape[1] if X.ndim > 1 else 1
@@ -125,7 +89,6 @@ def detect_crash(ods: np.ndarray, crash_threshold: float = DEFAULT_CRASH_THRESHO
 
     X_sqrt = X
 
-    # Repeat to better resolve singlets
     X_repeated = np.vstack([X_sqrt, X_sqrt, X_sqrt])
 
     valid_mask = ~np.any(np.isnan(X_repeated), axis=1)
@@ -195,13 +158,6 @@ def detect_crash(ods: np.ndarray, crash_threshold: float = DEFAULT_CRASH_THRESHO
 
 
 def detect_outlier_replicates(t: np.ndarray, y: np.ndarray, crash_threshold: float = DEFAULT_CRASH_THRESHOLD, n_clusters: int = 2):
-    """
-    Detect outlier replicates using K-means clustering on growth curves,
-    and compute fitted logistic AUCs.
-
-    Returns:
-        (outliers, auc_values, fitted_params_list, cosine_distance)
-    """
     n_replicates = t.shape[1]
 
     clusters, cos_dist = detect_crash(y, crash_threshold, n_clusters)
@@ -227,11 +183,7 @@ def detect_outlier_replicates(t: np.ndarray, y: np.ndarray, crash_threshold: flo
     return outliers, auc_array, fitted_params_list, cos_dist
 
 
-# ── Polynomial model ─────────────────────────────────────────────────────────
-
 class PolyModel:
-    """Polynomial regression model."""
-
     def __init__(self, degree=DEFAULT_DEGREE):
         self.degree = degree
         self.poly = PolynomialFeatures(degree=degree)
@@ -250,15 +202,11 @@ class PolyModel:
         return self.model.predict(poly_variables)
 
 
-# ── Formatting helpers ───────────────────────────────────────────────────────
-
 def format_molecule(v):
-    """Format molecule names with subscripts for HTML."""
     return "".join(f"<sub>{s}</sub>" if s in "0123456789" else s for s in v)
 
 
 def get_power(coef):
-    """Extract power from coefficient name."""
     x = re.findall(r"<sup>\d+</sup>", coef)
     x = [v[len("<sup>"):-len("</sup>")] for v in x]
     x = [int(v) for v in x]
@@ -268,16 +216,12 @@ def get_power(coef):
 
 
 def calc_degree(name):
-    """Calculate degree of polynomial term."""
     toks = name.split(" * ")
     d = sum(get_power(t) for t in toks)
     return d
 
 
-# ── Data loading ─────────────────────────────────────────────────────────────
-
 def load_data(data_path: str):
-    """Load and process experimental data from CSV."""
     df = pd.read_csv(data_path)
 
     if "number" in df.columns and "HoursSinceStart" in df.columns:
@@ -287,20 +231,16 @@ def load_data(data_path: str):
 
 
 def load_data_dse(df: pd.DataFrame):
-    """Load DSE format data (R2-2_ReDecoded_Data or R4-1 axis_aligned style)."""
     all_cols = list(df.columns)
     od_value_idx = all_cols.index("OD_Value")
 
-    # Try DSE format first: OD_R1, OD_R2, etc.
     replicate_cols = [c for c in all_cols if c.startswith("OD_R") and c[4:].isdigit()]
 
     if replicate_cols:
-        # DSE format (R2-2): OD_R1, OD_R2, ...
         replicate_cols = sorted(replicate_cols, key=lambda x: int(x[4:]))
         first_rep_idx = all_cols.index(replicate_cols[0])
         media_cols = all_cols[od_value_idx + 1:first_rep_idx]
     else:
-        # Axis_aligned format (R4-1): OD_<number> columns (excluding OD_Value)
         replicate_cols_unsorted = [c for c in all_cols if re.match(r'^OD_\d+$', c)]
 
         if not replicate_cols_unsorted:
@@ -353,10 +293,7 @@ def load_data_dse(df: pd.DataFrame):
     return df, groups, RUNS
 
 
-# ── Model fitting ────────────────────────────────────────────────────────────
-
 def fit_growth_models(RUNS):
-    """Fit logistic models and compute AUC for all runs."""
     models = {}
     outlier_info = {}
 
@@ -407,13 +344,7 @@ def fit_growth_models(RUNS):
     return models, outlier_info
 
 
-# ── Crashed cultures output ──────────────────────────────────────────────────
-
 def save_crashed_cultures(outlier_info, output_dir):
-    """Save crashed cultures table to CSV.
-
-    Columns: sample_id, replicate_index, is_outlier, replicate_auc, cosine_distance
-    """
     rows = []
     for sample_id, (outliers, auc_per_rep, params_per_rep, cos_dist) in outlier_info.items():
         for rep_idx in range(len(outliers)):
@@ -430,10 +361,7 @@ def save_crashed_cultures(outlier_info, output_dir):
     return df
 
 
-# ── Feature preparation ──────────────────────────────────────────────────────
-
 def prepare_features(models, RUNS, outlier_info=None):
-    """Prepare feature matrix and target values (AUC)."""
     media = []
     values = []
     labels = []
@@ -456,7 +384,6 @@ def prepare_features(models, RUNS, outlier_info=None):
 
 
 def get_media_labels(df):
-    """Get formatted media labels."""
     if 'media_cols' in df.attrs:
         media_labels = [format_molecule(v.strip()) for v in df.attrs['media_cols']]
     else:
@@ -466,7 +393,6 @@ def get_media_labels(df):
 
 
 def get_coefficient_names(model, media_labels):
-    """Get coefficient names for polynomial model."""
     coef_names = []
     for x in model.poly.powers_:
         _sel = np.array([(i, v) for i, v in enumerate(x) if v > 0])
@@ -483,10 +409,7 @@ def get_coefficient_names(model, media_labels):
     return np.array(coef_names)
 
 
-# ── Plotting ─────────────────────────────────────────────────────────────────
-
 def plot_growth_panel(RUNS, models, outlier_info, output_dir):
-    """Create growth panel figure for all runs with outlier detection."""
     n_runs = len(RUNS)
     COLS = int(np.ceil(np.sqrt(n_runs)))
     ROWS = int(np.ceil(n_runs / COLS))
@@ -649,7 +572,6 @@ def plot_growth_panel(RUNS, models, outlier_info, output_dir):
 
 
 def plot_factor_importance(model, coef_names, output_dir, K=10):
-    """Plot first-degree (linear) factor importance."""
     first_degree_mask = np.array([calc_degree(name) == 1 for name in coef_names])
     first_degree_indices = np.where(first_degree_mask)[0]
 
@@ -692,7 +614,6 @@ def plot_factor_importance(model, coef_names, output_dir, K=10):
 
 
 def save_coefficients(coef_names, model, output_dir):
-    """Save coefficient table to CSV."""
     coef_order = np.abs(model.model.coef_).argsort()[::-1]
     _labels = coef_names[coef_order][::-1]
     _values = model.model.coef_[coef_order][::-1]
@@ -711,10 +632,7 @@ def save_coefficients(coef_names, model, output_dir):
     return df_coef
 
 
-# ── Optimization ─────────────────────────────────────────────────────────────
-
 def optimize_media(X, Y, media_labels):
-    """Run optimization to find optimal media composition."""
     _rows = []
     v2i_maps = []
     max_indices = []
@@ -757,7 +675,6 @@ def optimize_media(X, Y, media_labels):
 
 
 def plot_model_suggestions(results, Y, X, media_labels, _scale_to_index, output_dir):
-    """Plot model suggestions vs best tested."""
     best_i = Y.argmax()
 
     best = results[0][-1]
@@ -823,7 +740,6 @@ def plot_model_suggestions(results, Y, X, media_labels, _scale_to_index, output_
 
 
 def save_model_suggestions(scaled_media_vals, _media_labels, X, df_coef, output_dir):
-    """Save model suggestions to CSV."""
     c2v = {str(r.coefficient): r.value for _, r in df_coef[df_coef.degree == 1].iterrows()}
     xbest = scaled_media_vals.mean(axis=0)
     xbest = xbest / 2
@@ -849,7 +765,6 @@ COLOR_OPTIMUM = Color.Hex("#32cd32")
 
 
 def plot_response_surface_1d(X, Y, model, od2pct, media_labels, xbest, output_dir):
-    """Plot 1D cross sections of response surface."""
     xmax = X.max(axis=0)
     xmin = X.min(axis=0)
     xmid = xmin + (xmax - xmin) / 2
@@ -883,7 +798,6 @@ def plot_response_surface_1d(X, Y, model, od2pct, media_labels, xbest, output_di
         x_ind = np.linspace(xmin_i, xmax_i, resolution)
         x_ranges.append((col, row, [xmin_i, xmid[i], xmax_i]))
 
-        # Others fixed to mid
         mx = np.ones(shape=(len(x_ind), X.shape[1]))
         mx = mx * xmid
         mx[:, i] = x_ind
@@ -896,7 +810,6 @@ def plot_response_surface_1d(X, Y, model, od2pct, media_labels, xbest, output_di
             showlegend=False,
         ), row=row + 1, col=col + 1)
 
-        # Using best
         mx = np.ones(shape=(len(x_ind), X.shape[1]))
         mx = mx * xbest
         mx[:, i] = x_ind
@@ -909,7 +822,6 @@ def plot_response_surface_1d(X, Y, model, od2pct, media_labels, xbest, output_di
             showlegend=False,
         ), row=row + 1, col=col + 1)
 
-        # Using true data points
         mx_true = x.reshape(-1, 1)
         _model = PolyModel().fit(mx_true, y)
         y_pred = _model.transform(x_ind.reshape(-1, 1))
@@ -921,7 +833,6 @@ def plot_response_surface_1d(X, Y, model, od2pct, media_labels, xbest, output_di
             showlegend=False,
         ), row=row + 1, col=col + 1)
 
-        # Points
         fig.add_trace(go.Box(
             x=x, y=y,
             boxpoints="all",
@@ -955,7 +866,6 @@ def plot_response_surface_1d(X, Y, model, od2pct, media_labels, xbest, output_di
 
 
 def plot_response_surface_2d(X, Y, model, od2pct, media_labels, xbest, output_dir):
-    """Plot 2D heatmap of response surface."""
     xmax = X.max(axis=0)
     xmin = X.min(axis=0)
     xmid = xmin + (xmax - xmin) / 2
@@ -1080,10 +990,7 @@ def plot_response_surface_2d(X, Y, model, od2pct, media_labels, xbest, output_di
     fig.write_image(f"{output_dir}/response_surface2.svg")
 
 
-# ── Main ─────────────────────────────────────────────────────────────────────
-
 def main():
-    """Main entry point."""
     parser = argparse.ArgumentParser(description="Response Surface Analysis for Media Optimization")
     parser.add_argument("data_path", help="Path to CSV data file")
     parser.add_argument("output_dir", help="Output directory for results")
@@ -1092,40 +999,32 @@ def main():
     output_dir = args.output_dir
     os.makedirs(output_dir, exist_ok=True)
 
-    # Load data
     print(f"Loading data... (output to {output_dir})")
     df, groups, RUNS = load_data(args.data_path)
     print(f"Loaded {len(RUNS)} runs")
 
-    # Fit logistic models and detect outliers
     print("Fitting logistic models and detecting outliers...")
     models, outlier_info = fit_growth_models(RUNS)
 
     n_with_outliers = sum(1 for k, (outliers, _, _, _) in outlier_info.items() if np.any(outliers))
     print(f"Found {n_with_outliers}/{len(outlier_info)} samples with outlier replicates")
 
-    # Save crashed cultures table
     print("Saving crashed cultures table...")
     save_crashed_cultures(outlier_info, output_dir)
 
-    # Print AUC summary
     aucs = [auc for _, auc, _ in models.values()]
     print(f"AUC range: {min(aucs):.3f} - {max(aucs):.3f}, mean: {np.mean(aucs):.3f}")
 
-    # Create growth panel
     print("Plotting growth panel...")
     plot_growth_panel(RUNS, models, outlier_info, output_dir)
 
-    # Prepare features
     X, Y, labels = prepare_features(models, RUNS, outlier_info)
     print(f"Feature matrix shape: {X.shape}, Target shape: {Y.shape}")
 
-    # Fit polynomial model
     print("Fitting polynomial model on AUC...")
     model = PolyModel().fit(X, Y)
     print(f"R² score: {model.score:.4f}")
 
-    # Find base media index
     BASE_MEDIA_INDEX = None
     for i in range(X.shape[0]):
         row = X[i]
@@ -1142,42 +1041,34 @@ def main():
         BASE_MEDIA_INDEX = -1
     print(f"Base media: [{BASE_MEDIA_INDEX}={Y[BASE_MEDIA_INDEX]}]")
 
-    # Create OD to percentage change model
     od2pct = PolyModel(degree=1).fit(
         Y.reshape(-1, 1),
         ((Y - Y[BASE_MEDIA_INDEX]) / Y[BASE_MEDIA_INDEX]) * 100
     )
 
-    # Get media labels and coefficient names
     media_labels = get_media_labels(df)
     print(f"Media components: {media_labels}")
     coef_names = get_coefficient_names(model, media_labels)
 
-    # Plot factor importance
     print("Plotting factor importance...")
     plot_factor_importance(model, coef_names, output_dir, K=10)
 
-    # Save coefficients
     df_coef = save_coefficients(coef_names, model, output_dir)
     print(f"Coefficients saved to {output_dir}/response_surface_coefficients.csv")
 
-    # Run optimization
     print("Running optimization...")
     results, x_by_index, _scale_to_index = optimize_media(X, Y, media_labels)
 
-    # Plot model suggestions
     scaled_media_vals, _media_labels = plot_model_suggestions(
         results, Y, X, media_labels, _scale_to_index, output_dir
     )
 
-    # Save model suggestions
     df_suggestions, xbest = save_model_suggestions(
         scaled_media_vals, _media_labels, X, df_coef, output_dir
     )
     print(f"Model suggestions saved to {output_dir}/model_suggestions.csv")
     print(df_suggestions)
 
-    # Plot response surfaces
     print("Plotting response surfaces...")
     plot_response_surface_1d(X, Y, model, od2pct, media_labels, xbest, output_dir)
     plot_response_surface_2d(X, Y, model, od2pct, media_labels, xbest, output_dir)

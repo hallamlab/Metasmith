@@ -71,19 +71,12 @@ class LinkageResult[T]:
     linkage: Any
 
 def HierarchicalCluster(Z: np.ndarray, labels: list|None = None, method="ward", metric="euclidean", distance_sort=False, count_sort=False, sort_order=None) -> LinkageResult:
-    """
-    method: [single, complete, average, weighted, centroid, median, ward]
-    https://docs.scipy.org/doc/scipy/reference/generated/scipy.cluster.hierarchy.linkage.html
-    
-    metric: https://docs.scipy.org/doc/scipy/reference/generated/scipy.spatial.distance.pdist.html#scipy.spatial.distance.pdist 
-    """
     class FloatDict[U]:
         def __init__(self, d: dict[float, U] = dict()):
             self.d = d
             self.index = sorted(list(d.keys()))
 
         def _binary_search(self, k: float):
-            # binary search for the nearest key to account for floating point errors
             l, r = 0, len(self.index)-1
             while l < r:
                 m = (l + r) // 2
@@ -122,18 +115,13 @@ def HierarchicalCluster(Z: np.ndarray, labels: list|None = None, method="ward", 
             zero = 1.0e-4
             return abs(self.x - x) < zero and abs(self.y - y) < zero
 
-    # ###############################################################
-    # use scipy to do the clustering
     labels = list(labels) if labels is not None else list(range(Z.shape[0]))
     _Z = Z
     if metric=="precomputed": _Z = squareform(Z)
     linkage_data = linkage(_Z, method=method, metric=metric, optimal_ordering=False)
-    _p: Any = dict(count_sort=count_sort, distance_sort=distance_sort) # to bypass type warning
+    _p: Any = dict(count_sort=count_sort, distance_sort=distance_sort)
     dend = dendrogram(linkage_data, no_plot=True, labels=list(range(len(labels))), **_p)
 
-    # ###############################################################
-    # convert the arrays of inscrutible numbers and unhelpful tree
-    # tree structure from scipy into something useful 
     link_ys = dend["dcoord"]
     link_xs = dend["icoord"]
     clust_orderi = dend["ivl"]
@@ -181,11 +169,8 @@ def HierarchicalCluster(Z: np.ndarray, labels: list|None = None, method="ward", 
     root = DendrogramNode(_root.x, _root.y, _root.i)
     todo: list[DendrogramNode] = [root]
     label_index = 0
-    # seen = set()
     while len(todo) > 0:
         new = todo.pop()
-        # if new.i in seen: continue
-        # seen.add(new.i)
         if new.i == -1:
             new.i = clust_orderi[label_index]
             new.name = clust_order[label_index]
@@ -194,7 +179,7 @@ def HierarchicalCluster(Z: np.ndarray, labels: list|None = None, method="ward", 
         _node = nodes_by_i[new.i]
 
         _ch_coords = [_node.LeftCoords(), _node.RightCoords()]
-        _chl, _chr = sorted(_ch_coords, key=lambda x: x[0], reverse=True) # by x        
+        _chl, _chr = sorted(_ch_coords, key=lambda x: x[0], reverse=True)
         for ch, (chx, chy) in [("right", _chl), ("left", _chr)]:
             _child = getattr(_node, ch)
             if _child is None:
@@ -204,14 +189,10 @@ def HierarchicalCluster(Z: np.ndarray, labels: list|None = None, method="ward", 
             setattr(new, ch, new_child)
             todo.append(new_child)
     
-    # ###############################################################
-    # sync matrix order to clustering
 
     Z = Z[clust_orderi]
     if metric=="precomputed": Z = Z.T[clust_orderi].T
 
-    # ###############################################################
-    # order, if given
 
     if sort_order is not None:
         _pos = {}
@@ -232,8 +213,6 @@ def HierarchicalCluster(Z: np.ndarray, labels: list|None = None, method="ward", 
             return _pos[n.i]
         update_pos(root)
 
-    # ###############################################################
-    # normalize positions
 
     max_x, min_x, = -np.inf, np.inf
     max_y, min_y, = -np.inf, np.inf

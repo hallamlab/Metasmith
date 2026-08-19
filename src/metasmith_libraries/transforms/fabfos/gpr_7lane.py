@@ -1,29 +1,3 @@
-"""GPR mapper (full 7 lanes) -- fold every annotation lane into one gene-attributed
-GPR table -> annotation::gpr_table_7lane.
-
-Same shape and contract as gpr_4lane (see that file's header, and
-`lib::fabfos_evidence.py` for the schema itself); this is the full-coverage variant
-that adds the three lanes the chosen-4 subset omits:
-
-  DeepEC  (EC->MNXR, score-less -> raw_score = 1.0, score_kind "presence")
-  EZpred  (enzyme-head level-4 EC->MNXR, softmax score)
-  ESM-C   (embedding kNN transfer, like ProteinBERT but against the pool's ESM-C stack)
-
-All seven channels land in one long-format parquet; no cross-lane dedup.
-
-DeepEC's score is 1.0, NOT NaN. It is a score-less tool, and what a score-less
-tool asserts is presence. NaN made the downstream share-of-sum
-(buildlib/bench_evidence_weights) read the whole lane's total as zero and fall
-back to a uniform split with nothing raised -- i.e. it silently discarded the
-lane's ranking rather than declaring it absent.
-
-THE ESM-C LANE VOTES AGAINST ITS OWN POOL. `compile/reference_label_pool.py` writes
-the ProteinBERT stack; `compile/reference_label_pool_esmc.py` writes the ESM-C one
-over the same accessions. They are two references because they are two embedders in
-two images, one of which needs a GPU -- and each carries the index that addresses its
-own stack. `lane_embed` still refuses by name if the stack it was pointed at is
-absent, because a kNN vote across two embedding spaces is a number with no referent.
-"""
 from metasmith.python_api import *
 
 lib   = TransformInstanceLibrary.ResolveParentLibrary(__file__)
@@ -31,9 +5,6 @@ model = Transform()
 
 image     = model.AddRequirement(lib.GetType("env::python_for_data_science.env"))
 orfs      = model.AddRequirement(lib.GetType("sequences::orfs"))
-# Every lane pinned to `orfs` -- same reasoning as gpr_4lane: the mapper joins on
-# gene id, so each lane must annotate THIS ORF set, and the shared ancestor is
-# what stops the planner spawning a `prodigal` per lane.
 kofam     = model.AddRequirement(lib.GetType("annotation::kofamscan_results"), parents={orfs})
 clean     = model.AddRequirement(lib.GetType("annotation::clean_predictions"), parents={orfs})
 deepec    = model.AddRequirement(lib.GetType("annotation::deepec_predictions"), parents={orfs})
@@ -45,233 +16,12 @@ esmc_emb  = model.AddRequirement(lib.GetType("annotation::esm_c_embeddings"), pa
 esmc_idx  = model.AddRequirement(lib.GetType("annotation::esm_c_index"), parents={orfs})
 bridge    = model.AddRequirement(lib.GetType("ref::mnxr_lookup"))
 pool      = model.AddRequirement(lib.GetType("ref::reference_label_pool"))
-# The ESM-C stack is its own reference, not a second file in the pool above: two
-# embedders, two images, one of them needing a GPU. Each directory carries the
-# orf_index.parquet that addresses its own stack -- see ref::reference_label_pool_esmc.
 pool_esmc = model.AddRequirement(lib.GetType("ref::reference_label_pool_esmc"))
 ev_lib    = model.AddRequirement(lib.GetType("lib::fabfos_evidence.py"))
+gpr_lib   = model.AddRequirement(lib.GetType("lib::fabfos_gpr"))
 out_gpr   = model.AddProduct(lib.GetType("annotation::gpr_table_7lane"))
 
 LANE_SET = "full_7"
-
-
-DRIVER = r'''
-import sys, os
-import numpy as np
-import pandas as pd
-
-sys.path.insert(0, os.path.dirname("{ev_lib}"))
-import fabfos_evidence as fe
-
-SCHEMA = fe.SCHEMA_COLS
-LANE_SET = "{lane_set}"
-SOURCE = "{source}"
-K = 30
-PBERT_FLOOR = 0.20
-ESMC_FLOOR = 0.10
-DL_EC_FLOOR = fe.DL_EC_SCORE_FLOOR
-
-
-def finish(df, channel, projection_via=None):
-    """Stamp the columns every lane sets identically and order to the schema."""
-    df["source"] = SOURCE
-    df["channel"] = channel
-    df["score_kind"] = fe.CHANNEL_SCORE_KIND[channel]
-    df["lane_set"] = LANE_SET
-    if projection_via is not None:
-        df["projection_via"] = projection_via
-    if "intermediate_name" not in df.columns:
-        df["intermediate_name"] = ""
-    df["intermediate_name"] = df["intermediate_name"].fillna("")
-    if "evidence_quality" not in df.columns:
-        df["evidence_quality"] = "reviewed"
-    return df[SCHEMA]
-
-def orf_ids(fasta):
-    out = []
-    with open(fasta) as fh:
-        for line in fh:
-            if line.startswith(">"):
-                out.append(line[1:].split()[0])
-    return out
-
-def lane_kofam(path, ko_to_mnxr):
-    df = pd.read_csv(path)
-    df["score"] = pd.to_numeric(df["score"], errors="coerce")
-    df["thrshld"] = pd.to_numeric(df["thrshld"], errors="coerce")
-    df = df[df["score"].notna() & df["thrshld"].notna() & (df["score"] >= df["thrshld"])]
-    df = df.rename(columns={{"gene_name": "orf", "KO": "ko", "score": "raw_score"}})
-    df = df.merge(ko_to_mnxr, on="ko", how="inner")
-    df["intermediate_id"] = df["ko"]
-    return finish(df, "kofam", "kegg.reaction")
-
-# `clean_score` is CLEAN's maxsep DISTANCE (lower is better); stored through
-# fe.clean_distance_to_score so higher-is-stronger holds. See gpr_4lane.py.
-def lane_clean(path, ec_to_mnxr):
-    df = pd.read_csv(path, sep="\t")
-    if list(df.columns) != ["Query ID", "Predicted EC number", "clean_score"]:
-        raise SystemExit(
-            "[gpr] clean_predictions header is not the 3 columns this lane parses: "
-            "got " + repr(list(df.columns)))
-    df.columns = ["orf", "ec", "clean_dist"]
-    df["clean_dist"] = pd.to_numeric(df["clean_dist"], errors="coerce")
-    df = df[df["clean_dist"].notna() & (df["clean_dist"] >= 0)].copy()
-    df["raw_score"] = fe.clean_distance_to_score(df["clean_dist"])
-    df = df[df["ec"].astype(str).str.match(r"^\d+\.\d+\.\d+\.\d+$", na=False)]
-    df = df.merge(ec_to_mnxr, on="ec", how="inner")
-    df["intermediate_id"] = df["ec"]
-    return finish(df, "clean", "ec")
-
-# DeepEC: dev2 deepec_predictions is a TSV; col0 = gene id, col1 = predicted EC.
-# score-less -> raw_score = NaN (accepted).
-def lane_deepec(path, ec_to_mnxr):
-    rows = []
-    with open(path) as fh:
-        for line in fh:
-            parts = line.rstrip("\n").split("\t")
-            if len(parts) < 2:
-                continue
-            gene, ec = parts[0].strip(), parts[1].strip()
-            if not ec or ec.lower().startswith("predicted") or ec.count(".") < 1:
-                continue
-            rows.append((gene, ec))
-    df = pd.DataFrame(rows, columns=["orf", "ec"])
-    # DeepEC writes its calls PREFIXED -- `EC:4.2.1.47`, not `4.2.1.47`. Without this
-    # strip the level-4 match below rejects every row, the lane contributes nothing,
-    # and the only thing standing between that and a published 7-lane table missing a
-    # channel is validate_gpr's per-channel refusal. (CLEAN's wrapper strips the same
-    # prefix at the source; this lane reads DeepEC's file as written.)
-    df["ec"] = df["ec"].str.replace(r"^EC:", "", regex=True, case=False)
-    df = df[df["ec"].str.match(r"^\d+\.\d+\.\d+\.\d+$", na=False)]
-    df = df.merge(ec_to_mnxr, on="ec", how="inner")
-    df["intermediate_id"] = df["ec"]
-    # Presence, not NaN -- see the header.
-    df["raw_score"] = 1.0
-    return finish(df, "deepec", "ec")
-
-# EZpred: dev2 ezpred_predictions = sequence_id, ec_number, score, head_kind.
-def lane_ezpred(path, ec_to_mnxr):
-    df = pd.read_csv(path)
-    df = df[df["head_kind"] == "enzyme"]
-    df["score"] = pd.to_numeric(df["score"], errors="coerce")
-    df = df[df["score"] >= DL_EC_FLOOR]
-    df = df[df["ec_number"].astype(str).str.match(r"^\d+\.\d+\.\d+\.\d+$", na=False)]
-    df = df.merge(ec_to_mnxr, left_on="ec_number", right_on="ec", how="inner")
-    df = df.rename(columns={{"sequence_id": "orf", "score": "raw_score"}})
-    df["intermediate_id"] = df["ec_number"]
-    return finish(df, "ezpred", "ec")
-
-def lane_uniref(path, uniprot_to_mnxr):
-    df = pd.read_csv(path, sep="\t", header=None, names=fe._BLAST6_BSR_COLS, dtype=str)
-    df["evalue"] = pd.to_numeric(df["evalue"], errors="coerce")
-    df["bitscore"] = pd.to_numeric(df["bitscore"], errors="coerce")
-    df["bsr"] = pd.to_numeric(df["bsr"], errors="coerce")
-    df = df[df["bsr"].notna()]
-    df = (df.sort_values(["qseqid", "evalue", "bitscore"], ascending=[True, True, False])
-            .drop_duplicates(subset=["qseqid"], keep="first"))
-    df["uniprot_accession"] = df["sseqid"].str.replace(r"^UniRef50_", "", regex=True)
-    df["intermediate_name"] = df["stitle"].apply(fe._clean_stitle)
-    df = df.rename(columns={{"qseqid": "orf", "bsr": "raw_score"}})
-    joined = df.merge(uniprot_to_mnxr, on="uniprot_accession", how="inner")
-    joined["intermediate_id"] = joined["uniprot_accession"]
-    joined["projection_via"] = joined["dr_source"]
-    return finish(joined, "uniref50")
-
-def _query_ids(index_csv):
-    """The embedding index's id column -- `sequence_id` after the producer
-    normalises it, `id` as the embedder itself writes it. Both read, neither guessed."""
-    idx = pd.read_csv(index_csv)
-    for cand in ("sequence_id", "id"):
-        if cand in idx.columns:
-            return idx[cand].to_numpy()
-    raise SystemExit(
-        "[gpr] the embedding index " + index_csv + " has no id column (it holds "
-        + repr(list(idx.columns)) + "); the kNN lane keys its ORFs off it")
-
-def _norm(x):
-    n = np.linalg.norm(x, axis=1, keepdims=True)
-    return x / np.clip(n, 1e-9, None)
-
-def lane_embed(parquet, index_csv, pool_dir, emb_name, channel, floor):
-    stack = os.path.join(pool_dir, emb_name)
-    if not os.path.exists(stack):
-        raise SystemExit(
-            "[gpr] the reference label pool carries no " + emb_name + " (it holds "
-            + repr(sorted(os.listdir(pool_dir))) + "). The " + channel + " lane votes "
-            "against embeddings from its own model -- cosine distance between two "
-            "embedding spaces is a number with no referent -- so there is no "
-            "degraded mode here; the pool must be rebuilt with this embedder")
-    pool_idx = pd.read_parquet(os.path.join(pool_dir, "orf_index.parquet"))
-    ref = pool_idx[pool_idx["role"] == "reference"].reset_index(drop=True)
-    emb = np.load(stack, mmap_mode="r")
-    ref_emb = _norm(np.asarray(emb[ref["row"].to_numpy()], dtype=np.float32))
-    ref_orf = ref["orf"].to_numpy()
-    label_lists = [s.split(";") if s else [] for s in ref["mnxr_list"]]
-    vocab = sorted({{m for ls in label_lists for m in ls}})
-    vidx = {{m: i for i, m in enumerate(vocab)}}
-    L = np.zeros((len(ref), len(vocab)), dtype=np.float32)
-    for r, ls in enumerate(label_lists):
-        for m in ls:
-            L[r, vidx[m]] = 1.0
-    q_orf = _query_ids(index_csv)
-    q_emb = _norm(pd.read_parquet(parquet).to_numpy(dtype=np.float32))
-    rows = []
-    for s in range(0, len(q_emb), 256):
-        sim = q_emb[s:s+256] @ ref_emb.T
-        top = np.argpartition(-sim, min(K, sim.shape[1]-1), axis=1)[:, :K]
-        for bi in range(sim.shape[0]):
-            nn = top[bi]
-            vals = np.clip(sim[bi, nn], 0, None)
-            tot = vals.sum()
-            if tot <= 0:
-                continue
-            w = vals / tot
-            votes = w @ L[nn]
-            best = int(np.argmax(sim[bi, nn]))
-            for j in np.nonzero(votes >= floor)[0]:
-                # intermediate_id names the DONOR neighbour: label transfer IS the
-                # projection, so there is no KO or EC in between.
-                rows.append((q_orf[s+bi], vocab[j], ref_orf[nn[best]],
-                             float(min(votes[j], 1.0))))
-    df = pd.DataFrame(rows, columns=["orf", "mnxr", "intermediate_id", "raw_score"])
-    df["evidence_quality"] = "reviewed"   # the pool IS the bridge's reviewed cut
-    return finish(df, channel, "embedding_knn")
-
-def load_bridge(path):
-    """One table, three id spaces. Sliced by id_source into the per-lane frames the
-    lane functions expect. The spaces share no ids, so the slice is exact."""
-    b = pd.read_parquet(path, columns=["id", "id_source", "mnxr", "evidence_quality"])
-    def slice_as(src, name):
-        s = b[b["id_source"] == src][["id", "mnxr", "evidence_quality"]].drop_duplicates()
-        return s.rename(columns={{"id": name}})
-    return (slice_as("ko", "ko"),
-            slice_as("ec", "ec"),
-            slice_as("uniprot", "uniprot_accession").assign(dr_source="rhea"))
-
-def main():
-    ids = orf_ids("{orfs}")
-    if not ids:
-        raise SystemExit("[gpr] the input ORF FASTA has no records")
-    ko_to_mnxr, ec_to_mnxr, up_to_mnxr = load_bridge("{bridge}")
-    frames = [
-        lane_kofam("{kofam}", ko_to_mnxr),
-        lane_clean("{clean}", ec_to_mnxr),
-        lane_deepec("{deepec}", ec_to_mnxr),
-        lane_ezpred("{ezpred}", ec_to_mnxr),
-        lane_uniref("{uniref}", up_to_mnxr),
-        lane_embed("{pbert_emb}", "{pbert_idx}", "{pool}", "emb_pbert.npy", "pbert", PBERT_FLOOR),
-        lane_embed("{esmc_emb}", "{esmc_idx}", "{pool_esmc}", "emb_esmc.npy", "esmc", ESMC_FLOOR),
-    ]
-    gpr = pd.concat(frames, ignore_index=True)
-    gpr = gpr[gpr["orf"].isin(set(ids))]
-    key = ["source", "orf", "channel", "intermediate_id", "mnxr"]
-    gpr = gpr.drop_duplicates(subset=key).sort_values(key, kind="mergesort").reset_index(drop=True)
-    fe.validate_gpr(gpr, LANE_SET, ids, SOURCE)
-    gpr.to_parquet("{out}", index=False)
-    print("[gpr_7lane] wrote " + str(len(gpr)) + " rows -> {out}", flush=True)
-
-main()
-'''
 
 
 def protocol(context: ExecutionContext):
@@ -289,22 +39,32 @@ def protocol(context: ExecutionContext):
     ipool = context.Input(pool)
     ipesm = context.Input(pool_esmc)
     iev   = context.Input(ev_lib)
+    igpr  = context.Input(gpr_lib)
     iout  = context.Output(out_gpr)
 
-    driver = DRIVER.format(
-        ev_lib=iev.container,
-        orfs=iorfs.container, kofam=ikof.container, clean=icln.container,
-        deepec=idec.container, ezpred=iez.container, uniref=iuni.container,
-        pbert_emb=ipe.container, pbert_idx=ipi.container,
-        esmc_emb=iee.container, esmc_idx=iei.container,
-        bridge=ibr.container,
-        pool=ipool.container, pool_esmc=ipesm.container, out=iout.container,
-        lane_set=LANE_SET, source=iorfs.local.stem,
-    )
-    context.LocalShell("cat > _gpr_7lane.py << 'PYEOF'\n" + driver + "\nPYEOF\n")
+    cmd = f"""
+            python3 {igpr.container}/gpr_7lane.py \
+            --ev-lib {iev.container} \
+            --orfs {iorfs.container} \
+            --kofam {ikof.container} \
+            --clean {icln.container} \
+            --deepec {idec.container} \
+            --ezpred {iez.container} \
+            --uniref {iuni.container} \
+            --pbert-emb {ipe.container} \
+            --pbert-idx {ipi.container} \
+            --esmc-emb {iee.container} \
+            --esmc-idx {iei.container} \
+            --bridge {ibr.container} \
+            --pool {ipool.container} \
+            --pool-esmc {ipesm.container} \
+            --out {iout.container} \
+            --lane-set {LANE_SET} \
+            --source {iorfs.local.stem}
+    """
     context.ExecWithEnv() \
-        .ifContainerDo(env=image, cmd="python3 _gpr_7lane.py") \
-        .ifVirtualEnvDo(env=image, cmd="python3 _gpr_7lane.py")
+        .ifContainerDo(env=image, cmd=cmd) \
+        .ifVirtualEnvDo(env=image, cmd=cmd)
 
     return ExecutionResult(
         manifest=[{out_gpr: iout.local}],

@@ -14,13 +14,11 @@ def protocol(context: ExecutionContext):
     threads = context.params.get('cpus')
     threads = 8 if threads is None else threads
 
-    # Write BAM list for samtools merge
     bam_list = Path("bam_list.txt")
     with open(bam_list, "w") as f:
         for p in bam_paths:
             f.write(f"{p.container}\n")
 
-    # Same command either way: this tool is a plain CLI in both worlds.
     _cmd = f"""\
             samtools merge -@ {threads} -b {bam_list} merged.bam
             samtools sort -@ {threads} -o sorted.bam merged.bam

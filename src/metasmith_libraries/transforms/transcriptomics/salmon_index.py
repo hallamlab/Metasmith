@@ -9,7 +9,6 @@ out     = model.AddProduct(lib.GetType("transcriptomics::salmon_index"))
 def protocol(context: ExecutionContext):
     iasm=context.Input(asm)
     iout=context.Output(out)
-    # Same command either way: this tool is a plain CLI in both worlds.
     _cmd = f"salmon index -t {iasm.container} -i salmon_idx -k 31"
     context.ExecWithEnv() \
         .ifContainerDo(env=image, cmd=_cmd) \

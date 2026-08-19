@@ -6,9 +6,6 @@ from .base.geometry import Brush
 from .colors import XColor, ListOfXColor, Palettes, COLORS
 
 def CategoricalBar(
-    # df: pd.DataFrame, column_to_map: str, panel: Panel, 
-    # radius: float=0.5, thickness: float=0.03, circular=1.0,
-    # colors: XColor|ListOfXColor=Palettes.PLOTLY, binary_value: Any=None):
     assignments: Iterable[str],  panel: Panel, 
     position: float=0, width: float=1, thickness: float=0.03, circular: bool=True,
     color_map: dict[str, XColor]|None=None):
@@ -26,7 +23,7 @@ def CategoricalBar(
         if val == _last_val: continue
         if _last_val is not None:_mark_segment(_last_val, _last_i, i)
         _last_val, _last_i = val, i
-    _mark_segment(_last_val, _last_i, len_assignments) # close the last segment
+    _mark_segment(_last_val, _last_i, len_assignments)
     
     if color_map is None:
         color_map = {k:v for k, v in zip(segments.keys(), Palettes.PLOTLY)}

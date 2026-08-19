@@ -1,16 +1,13 @@
 from plotly import subplots as sp, graph_objs as go
 
 def SubplotSize(fig, row, col, ncols):
-    # Determine axis prefix (e.g., '' for first, '2' for second)
     axis_idx = (row - 1) * ncols + col
     xaxis_name = 'xaxis' if axis_idx == 1 else f'xaxis{axis_idx}'
     yaxis_name = 'yaxis' if axis_idx == 1 else f'yaxis{axis_idx}'
 
-    # Extract domains
     x_domain = getattr(fig.layout, xaxis_name).domain
     y_domain = getattr(fig.layout, yaxis_name).domain
 
-    # Get figure dimensions and margins
     width = fig.layout.width
     height = fig.layout.height
     margin = fig.layout.margin
@@ -19,7 +16,6 @@ def SubplotSize(fig, row, col, ncols):
     t = margin.t if margin else 0
     b = margin.b if margin else 0
 
-    # Calculate pixel dimensions
     plot_width = width - l - r
     plot_height = height - t - b
     subplot_width = (x_domain[1] - x_domain[0]) * plot_width
@@ -29,7 +25,6 @@ def SubplotSize(fig, row, col, ncols):
 
 def BaseFigure(shape: tuple[int, int]=(1, 1), **kwargs) -> go.Figure:
     ncols, nrows = shape
-    # column_widths=[0.1, 0.9], row_heights=[0.3, 0.1, 0.6],
     params: dict = dict(
         rows=nrows, cols=ncols,
         horizontal_spacing=0.02, vertical_spacing=0.02,
@@ -38,9 +33,6 @@ def BaseFigure(shape: tuple[int, int]=(1, 1), **kwargs) -> go.Figure:
     return sp.make_subplots(**params)
 
 def ApplyTemplate(fig: go.Figure, default_xaxis: dict = dict(), default_yaxis: dict = dict(), axis: dict[str, dict] = dict(), layout: dict = dict()):
-    # @axis
-    # example: {"1 1 y": dict(showticklabels=True, categoryorder='array', categoryarray=cat_list)}
-    # params: https://plotly.com/python/reference/layout/xaxis/
 
     color_none = 'rgba(0,0,0,0)'
     color_axis = 'rgba(0, 0, 0, 0.15)'

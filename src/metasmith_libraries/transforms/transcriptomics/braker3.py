@@ -1,4 +1,3 @@
-from pathlib import Path
 from metasmith.python_api import *
 
 lib     = TransformInstanceLibrary.ResolveParentLibrary(__file__)
