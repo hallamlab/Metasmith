@@ -141,12 +141,18 @@ def main():
     p.add_argument("--leak", type=float, default=1.0)
     p.add_argument("--ratio-override", default="",
                    help="`MNXR:ratio,...` on top of the baked ensemble, as in sweep_aska")
+    p.add_argument("--ratio-cap", type=float, default=None,
+                   help="bound |log10 direction ratio| at this many decades before the "
+                        "graph is built (ecspr.model.build.cap_direction_ratios). The "
+                        "shipped table spans 28.7 decades over a host's reactions and "
+                        "saturates by 6; the arm is tagged so a capped run cannot be "
+                        "mistaken for an uncapped one")
     p.add_argument("--out-dir", type=Path, default=OUT_DIR)
     a = p.parse_args()
     a.out_dir.mkdir(parents=True, exist_ok=True)
 
     pairs = load_pairs(bake_pairs.atom_pairs(), element=a.element)
-    ratios = load_direction_ratios(bake_pairs.direction_ratios())
+    ratios = load_direction_ratios(bake_pairs.direction_ratios(), cap=a.ratio_cap)
     override = {}
     for item in filter(None, a.ratio_override.split(",")):
         k, v = item.split(":")
@@ -283,7 +289,8 @@ def main():
                                                               if isinstance(x, str) and x}))),
             rxn_name=("evidence_name", "first"))
         df = df.join(nm, on="mnxr").sort_values("elasticity", ascending=False)
-        tag = f"{a.mode}_leak{a.leak:g}" + (f"_dir{len(override)}" if override else "")
+        tag = (f"{a.mode}_leak{a.leak:g}" + (f"_dir{len(override)}" if override else "")
+               + (f"_cap{a.ratio_cap:g}" if a.ratio_cap is not None else ""))
         out = a.out_dir / f"glycogen_share_spectrum_{tag}_{a.host}_{a.element}.tsv"
         df.to_csv(out, sep="\t", index=False)
         e = df.elasticity.dropna()
@@ -333,7 +340,8 @@ def main():
         df["pct_wt"] = df.gene.str.lower().map(pct)
         df = df.dropna(subset=["pct_wt"]).copy()
         df["log2fc_meas"] = np.log2(df.pct_wt / 100.0)
-        tag = f"{a.mode}_leak{a.leak:g}" + (f"_dir{len(override)}" if override else "")
+        tag = (f"{a.mode}_leak{a.leak:g}" + (f"_dir{len(override)}" if override else "")
+               + (f"_cap{a.ratio_cap:g}" if a.ratio_cap is not None else ""))
         out = a.out_dir / f"glycogen_share_cohort_{tag}_{a.host}_{a.element}.tsv"
         df.to_csv(out, sep="\t", index=False)
 

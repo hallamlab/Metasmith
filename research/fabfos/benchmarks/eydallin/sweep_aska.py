@@ -132,6 +132,12 @@ def main() -> int:
                          "re-measured under it. Recorded in the output filename, because a "
                          "sweep run under an override is a different measurement.")
     ap.add_argument("--limit", type=int, default=None, help="first N solvable clones (smoke test)")
+    ap.add_argument("--ratio-cap", type=float, default=None,
+                    help="bound |log10 direction ratio| at this many decades before the "
+                         "graph is built (ecspr.model.build.cap_direction_ratios). The "
+                         "shipped table spans 28.7 decades over a host's reactions and "
+                         "saturates by 6; the arm is tagged so a capped run cannot be "
+                         "mistaken for an uncapped one")
     ap.add_argument("--out-dir", type=Path, default=OUT_DIR)
     a = ap.parse_args()
     a.out_dir.mkdir(parents=True, exist_ok=True)
@@ -146,13 +152,15 @@ def main() -> int:
     tag = (f"aska_sweep_{a.channel}_e_coli_ag1_fold{a.fold}_{a.element}"
            + (f"_{a.probe}{a.ground}{a.leak:g}" if a.probe != "twopoint" else "")
            + (f"_lanes{a.min_lanes}" if a.min_lanes > 1 else "")
-           + (f"_dir{len(override)}x{min(override.values()):g}" if override else ""))
+           + (f"_dir{len(override)}x{min(override.values()):g}" if override else "")
+           + (f"_cap{a.ratio_cap:g}" if a.ratio_cap is not None else ""))
     part = a.out_dir / f"{tag}.partial.tsv"
     final = a.out_dir / f"{tag}.tsv"
 
     t0 = time.time()
     _S["pairs"] = load_pairs(bake_pairs.atom_pairs(), element=a.element)
-    _S["ratios"] = load_direction_ratios(bake_pairs.direction_ratios())
+    _S["ratios"] = load_direction_ratios(bake_pairs.direction_ratios(),
+                                         cap=a.ratio_cap)
     if override:
         was = {k: _S["ratios"].get(k) for k in override}
         _S["ratios"].update(override)

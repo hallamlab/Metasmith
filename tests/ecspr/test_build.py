@@ -215,3 +215,25 @@ def test_elasticities_need_provenance():
     sol = solve(g, Terminal.metabolite(g, "M0"), Terminal.metabolite(g, "M2"))
     with pytest.raises(ValueError):
         reaction_elasticities(g, sol)
+
+
+def test_the_two_seams_bound_the_ratio_at_the_same_width():
+    """`build.DIRECTION_DECADE_CAP` and the bake's `DIR_DG_CLAMP` are one statement.
+
+    The bake bounds |dG'| in kJ/mol and the model bounds |log10 ratio| in decades, and
+    `ratio = exp(dG'/RT)` is what relates them. If they drift apart, a table baked under one
+    bound gets read under another and the graph silently stops describing the annotation.
+    """
+    from ecspr.bake.direction import canon
+    from ecspr.model.build import DIRECTION_DECADE_CAP
+
+    assert canon.DIR_DG_CLAMP / canon.DIR_DECADE == pytest.approx(DIRECTION_DECADE_CAP)
+
+
+def test_capping_is_symmetric_and_leaves_the_undirected_limit_alone():
+    from ecspr.model.build import cap_direction_ratios
+
+    caught = cap_direction_ratios({"a": 1e17, "b": 1e-17, "c": 1.0, "d": 10.0}, 3.0)
+    assert caught == {"a": 1e3, "b": 1e-3, "c": 1.0, "d": 10.0}
+    assert cap_direction_ratios({"a": 1e17}, None) == {"a": 1e17}
+    assert cap_direction_ratios({"a": 1e17}, float("inf")) == {"a": 1e17}
