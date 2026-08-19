@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import os
 import socket
-from hashlib import md5
 from pathlib import Path
 
 from ..agents import Agent
@@ -20,6 +19,7 @@ from ..models.libraries import (
 from ..models.remote import Source
 from ..models.solver import Dependency, Endpoint
 from ..models.workflow import WorkflowStep
+from ..models.workflow.payload import build_entry, given_index
 
 
 def _load_or_make_agent(agent_home: Path | None) -> Agent:
@@ -81,20 +81,21 @@ def _bind_inputs(
 
 
 def _build_lineage(dep_map: dict[Dependency, list[DataInstance]], requires: list[Dependency]) -> dict:
-    index: dict[str, list[int]] = {}
-    file_groups: list[list[str]] = []
-    for dep in requires:
-        insts = dep_map[dep]
-        files: list[str] = []
-        for inst in insts:
-            p = str(inst.ResolvePath())
-            files.append(p)
-            h = md5(p.encode()).hexdigest()
-            h_val = int(h[:15], 16)
-            index.setdefault(inst.dtype.key, []).append(h_val)
-        file_groups.append(files)
-    index["FILES"] = file_groups
-    return index
+    given_by_path = {
+        inst.ResolvePath(): inst
+        for insts in dep_map.values()
+        for inst in insts
+    }
+    return build_entry([
+        (
+            dep_map[dep][0].dtype.key if dep_map[dep] else dep.key,
+            [
+                (inst.ResolvePath(), given_index(inst, given_by_path))
+                for inst in dep_map[dep]
+            ],
+        )
+        for dep in requires
+    ])
 
 
 def _build_dep2output(inst: TransformInstance) -> list[dict[Dependency, Endpoint]]:

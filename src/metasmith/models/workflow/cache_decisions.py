@@ -34,12 +34,27 @@ def compute_cache_decisions(
 
     decisions: dict[int, dict] = {}
     out_id_by_producer: dict[tuple[int, str, int], str] = {}
-
+    # A step's produce instances and the downstream step's require instances are
+    # distinct objects that both start life carrying the transform archetype's
+    # id. Stamping only the producer leaves the consumer naming the archetype, so
+    # `produces` and `consumes` land in different identity spaces and nothing can
+    # join a result to the step that made it.
+    slot_id_by_archetype: dict[str, str] = {}
 
     for step in task.plan.steps:
         transform_key = step.transform.GetKey() or step.transform.name or ""
         protocol_sig = getattr(step.transform, "_protocol_source_hash", "") or ""
         signature = f"{step.transform._hash}:{protocol_sig}"
+
+        for dep in step.transform.model.requires:
+            for inst in step.dependency_map.get(dep, []):
+                slot_id = slot_id_by_archetype.get(inst.instance_id)
+                if slot_id is None:
+                    continue
+                inst.instance_id = slot_id
+                inst.origin = "lineage"
+                inst._refresh_derived_keys()
+        step.RefreshViews()
 
         sorted_inputs: list[tuple[str, list[str]]] = []
         for dep in step.transform.model.requires:
@@ -68,6 +83,7 @@ def compute_cache_decisions(
                 out_slot_ids[(dep.key, branch_idx)] = slot_id
                 out_id_by_producer[(step.order, dep.key, branch_idx)] = slot_id
                 for inst in step.dependency_map.get(dep, []):
+                    slot_id_by_archetype[inst.instance_id] = slot_id
                     inst.instance_id = slot_id
                     inst.origin = "lineage"
                     inst._refresh_derived_keys()
@@ -273,6 +289,7 @@ def compute_cache_decisions(
                         slot_id=sid,
                         path=rel,
                         dtype_key=dk,
+                        parents=list(f.get("parents") or []),
                     )
                 )
         consumes = {

@@ -137,10 +137,12 @@ must come from file *content*.
 ## Planning
 
 **`group_by` and `batch_size` are two different axes and five files must agree on which is
-which.** `group_by` partitions a step's inputs by the named requirement's instances — one
-instance is one key, one key yields one task member holding every item matched to it, which is
+which.** `group_by` partitions a step's inputs by what arrives on the named requirement's channel — one
+item is one key, one key yields one task member holding every item matched to it, which is
 what turns a fan-out back into a fan-in. `batch_size` folds N whole keys into one task and
-never shards within a key, so a step runs `ceil(len(group_by_instances) / batch_size)` tasks.
+never shards within a key, so a step runs `ceil(<keys> / batch_size)` tasks. Keys are items, not
+plan instances: the plan carries one produce instance per dependency however many samples flow
+through it, so a step grouped on another step's output has as many keys as that step made files.
 `plan_oracle`, `cache_decisions`, `virtual_runtime`, the `TransformInstance` field and
 `Orchestrator.groovy::group` each restate that count independently; when the runtime drifted
 onto the other reading it did not fail — it silently handed a collecting transform one item,
@@ -417,7 +419,10 @@ exceeding host memory *before* the run, which looks like a dropped override and 
 
 **Cache identity is provenance, not bytes.** A step's `cache_key` is the transform key plus its
 sorted input `instance_id`s, canonical-CBOR encoded and blake3-32 multihashed; nothing about the
-output participates. On by default, with a per-transform opt-out and a global kill-switch.
+output participates. On by default, with a per-transform opt-out and a global kill-switch. An
+input produced by an earlier step names that step's slot id, so a key moves when its producer
+does; `cache_decisions` stamps the slot id onto the consumer's instance as well as the producer's,
+because the two start life sharing the transform archetype's id.
 
 **Leaf ids are content-addressed, with the relative path folded in** —
 `multihash(content ‖ relpath)`, over the file's bytes or over a directory's whole tree, when the
@@ -448,7 +453,22 @@ means promotion has not run yet — not that a buffer was lost. The dataclass in
 independent emitters of one record, and every field that diverged between them — an empty
 output path, a slot id standing in for a file id, the consumer's dtype key instead of the
 producer's — was invisible to a warm run and broke a lineage walk downstream.
-`tests/audit/test_quadrant_probe.py` is what compares them field by field.
+`tests/audit/test_quadrant_probe.py` is what compares them field by field. A step that opts out of
+caching promotes nothing but still emits its event: skipping it leaves every consumer downstream
+naming a parent no row accounts for.
+
+**A file's parents are recorded by what produced it, not derived from `consumes`.** `consumes`
+names compile-time slot ids, which every fan-out sibling of a step shares; `ProducedFile.parents`
+names the files a task actually read, taken off `PROV` positionally against `FILES` and stored in
+the shard so a hit answers the same way a miss does. `CollectResults` is then a merge of those
+rows — resolve each parent id to another produced file or to a given, register in topological
+order — rather than a reconstruction in a third identity space. A producer that leaves `parents`
+empty makes its outputs' ancestry unrecoverable.
+
+**`index.yml` stores the transitively reduced parent graph and `Load` re-expands it.** `Pack`
+drops a parent that is also a grandparent; `Unpack` walks the edges back into a closure. So a
+caller writes direct parents and reads ancestors, and `Trace` — one hop over the in-memory
+`parents` — answers multi-hop questions on any library that has been through a save.
 
 **Nextflow shares one lineage-index object across a multi-product process's outputs.** The
 sharing is decided by its output binding, before any code here runs, so the rule is that

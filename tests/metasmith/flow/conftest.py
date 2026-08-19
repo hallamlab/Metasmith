@@ -269,9 +269,13 @@ def build_multi_input_plan(tmp_path: Path, slots: int = 2) -> BuiltPlan:
     return BuiltPlan(plan=plan, data_library=lib, transform_libraries=[tr_lib])
 
 
-def build_branching_plan(tmp_path: Path, fanout: int = 2) -> BuiltPlan:
+def build_branching_plan(
+    tmp_path: Path, fanout: int = 2, n_samples: int = 1
+) -> BuiltPlan:
     types_path = _build_type_lib(tmp_path / "types.yml")
-    samples = _build_samples_lib(tmp_path, types_path, dtype="assembly")
+    samples = _build_samples_lib(
+        tmp_path, types_path, n_samples=n_samples, dtype="assembly"
+    )
     tr_lib = _build_transform_lib(
         tmp_path / "tr", types_path, mt.branching_transforms(n=fanout)
     )

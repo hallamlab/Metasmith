@@ -10,7 +10,6 @@ import subprocess
 import sys
 import time
 from dataclasses import dataclass
-from hashlib import md5
 from pathlib import Path
 from typing import Any
 
@@ -19,6 +18,16 @@ import yaml
 from ..constants import AgentPaths
 from ..models.lineage import LinPayload
 from ..models.remote import Source
+from ..models.workflow.payload import (
+    Index,
+    build_entry,
+    given_index,
+    merge_indexes,
+    output_file_id,
+    output_file_name,
+    output_index,
+    render_lin_line,
+)
 
 
 TRACE_ENV = "MSM_VIRTUAL_E2E_TRACE"
@@ -26,10 +35,6 @@ HOME_ENV = "MSM_VIRTUAL_AGENT_HOME"
 HOST_ENV = "MSM_VIRTUAL_HOST"
 FORCE_BOUNCE_ENV = "MSM_VIRTUAL_FORCE_BOUNCE"
 IN_CONTAINER_ENV = "MSM_VIRTUAL_IN_CONTAINER"
-
-
-def hash15(value: str) -> int:
-    return int(md5(value.encode()).hexdigest()[:15], 16)
 
 
 def _trace_path() -> Path | None:
@@ -291,34 +296,57 @@ def _load_task_from_workspace(workspace: Path):
     return WorkflowTask.Load(task_path, alt_data_paths=[AgentPaths.to_data()])
 
 
-def _seed_lineage(inst) -> dict[str, list[int]]:
-    lineage: dict[str, list[int]] = {}
-    stack = [inst]
-    seen: set[tuple[str, str]] = set()
-    while stack:
-        curr = stack.pop()
-        mark = (curr.parent_lib.GetKey(), str(curr.path))
-        if mark in seen:
-            continue
-        seen.add(mark)
-        p = curr.ResolvePath()
-        lineage[curr.dtype.key] = lineage.get(curr.dtype.key, []) + [hash15(str(p))]
-        parents = curr.parent_lib.parents.get(curr.path, [])
-        for pm in parents:
-            if pm.path in curr.parent_lib.manifest:
-                stack.append(curr.parent_lib.Get(pm.path))
-    return {k: sorted(set(v)) for k, v in lineage.items()}
-
-
 from ..models.workflow.grouping import select_for_key as _select_for_key
 
 
-def _merge_lineage(maps: list[dict[str, list[int]]]) -> dict[str, list[int]]:
-    out: dict[str, list[int]] = {}
-    for m in maps:
-        for k, vals in m.items():
-            out[k] = out.get(k, []) + list(vals)
-    return {k: sorted(set(v)) for k, v in out.items()}
+class StagedFiles:
+    """What each plan instance put on the channel, and under what identity.
+
+    Keyed on `instance_id`, which a step's produce instance and the downstream
+    step's require instance share — the plan carries one produce instance per
+    dependency however many samples run through it, so the per-sample
+    distinction lives in the files, not the instances.
+    """
+
+    def __init__(self, given: list) -> None:
+        self._by_instance: dict[str, list[tuple[Path, Index]]] = {}
+        by_path = {inst.ResolvePath(): inst for inst in given}
+        for inst in given:
+            self._by_instance.setdefault(inst.instance_id, []).append(
+                (inst.ResolvePath(), given_index(inst, by_path))
+            )
+
+    def record(self, inst, path: Path, index: Index) -> None:
+        self._by_instance.setdefault(inst.instance_id, []).append((path, index))
+
+    def of(self, insts, key_index: Index | None = None) -> list[tuple[Path, Index]]:
+        staged: list[tuple[Path, Index]] = []
+        for inst in insts:
+            made = self._by_instance.get(inst.instance_id)
+            if made is None:
+                # An input nothing upstream produced. Real Nextflow could not
+                # have reached this task at all; stage the plan's placeholder so
+                # the positional shape survives, and say so.
+                write_trace({
+                    "type": "unstaged_input",
+                    "dtype_key": inst.dtype.key,
+                    "instance_id": inst.instance_id,
+                })
+                made = [(inst.ResolvePath(), {inst.dtype.key: [inst.instance_id]})]
+            staged.extend(made)
+        if key_index is None:
+            return staged
+        # Orchestrator.group() keeps an item only where its index shares an
+        # identity with the by-key's. A slot whose files carry no shared
+        # identity at all is an aggregate — a reference database, a merged
+        # product — and every member sees all of it.
+        wanted = {i for ids in key_index.values() for i in ids}
+        matching = [
+            (p, ix)
+            for p, ix in staged
+            if wanted & {i for ids in ix.values() for i in ids}
+        ]
+        return matching or staged
 
 
 def _write_metadata_file(step, invocation_dir: Path, lineages: list[dict[str, Any]]) -> None:
@@ -362,7 +390,7 @@ def _write_metadata_file(step, invocation_dir: Path, lineages: list[dict[str, An
 
     with open(invocation_dir / METADATA_FILE, "w", encoding="utf-8") as f:
         f.write("res 1/1.GB/1\n")
-        f.write(f"lin {LinPayload(v=LinPayload.VERSION, entries=lineages).to_json()}\n")
+        f.write(f"lin {render_lin_line(lineages)}\n")
         f.write("fmt 2\n")
         f.write(f"din {json.dumps(dep_in, separators=(',', ':'))}\n")
         f.write(f"dot {json.dumps(dep_out, separators=(',', ':'))}\n")
@@ -376,6 +404,28 @@ def _write_metadata_file(step, invocation_dir: Path, lineages: list[dict[str, An
 def _manifest_name_for_target(target) -> str:
     spec = target.instance.dtype_name.replace("::", "-").replace(" ", "_")
     return f"{spec}.{target.instance.dtype.key}.{target.instance.instance_id}.json"
+
+
+def _read_slot_ids(workspace: Path) -> dict[int, dict[tuple[str, int], str]]:
+    """Per step, the compile-time slot id of each output slot.
+
+    The task the runtime loads still carries the transform archetype's ids; the
+    slot ids live only in the step meta, and they are what the on-channel file
+    identity is minted from.
+    """
+    out: dict[int, dict[tuple[str, int], str]] = {}
+    for meta_path in sorted(workspace.glob("workflow.step_*.meta")):
+        try:
+            order = int(meta_path.stem.rsplit("_", 1)[1])
+        except (IndexError, ValueError):
+            continue
+        for line in meta_path.read_text().splitlines():
+            if not line.startswith("slot_files "):
+                continue
+            for sf in json.loads(line.split(" ", 1)[1]):
+                key = (sf.get("dtype_key", ""), int(sf.get("branch_idx", 0)))
+                out.setdefault(order, {})[key] = sf.get("slot_id", "")
+    return out
 
 
 def _read_hit_decisions(workspace: Path) -> dict[int, dict]:
@@ -432,26 +482,18 @@ def _read_hit_decisions(workspace: Path) -> dict[int, dict]:
 
 
 def _populate_hit_outputs(
-    step,
-    hit: dict,
-    lineage_by_instance: dict[str, dict[str, list[int]]],
-    produced_by_dep: dict[str, list],
-) -> None:
+    step, hit: dict, staged: StagedFiles, slot_ids: dict[tuple[str, int], str]
+) -> list[tuple[str, Path]]:
     output_dir: Path = hit["output_dir"]
     cached_files = sorted(p for p in output_dir.glob("*") if p.is_file())
 
-    input_maps: list[dict[str, list[int]]] = []
-    for dep in step.transform.model.requires:
-        dep_insts = list(step.dependency_map.get(dep, []))
-        if not dep_insts:
-            continue
-        lineages = [
-            lineage_by_instance.get(inst.instance_id, _seed_lineage(inst))
-            for inst in dep_insts
-        ]
-        input_maps.append(_merge_lineage(lineages))
-    merged_inputs = _merge_lineage(input_maps)
+    merged_inputs = merge_indexes(
+        index
+        for dep in step.transform.model.requires
+        for _path, index in staged.of(step.dependency_map.get(dep, []))
+    )
 
+    produced: list[tuple[str, Path]] = []
     for branch_idx, dep_group in enumerate(step.transform.model.produces):
         for dep in dep_group:
             insts = list(step.dependency_map.get(dep, []))
@@ -466,13 +508,23 @@ def _populate_hit_outputs(
                 if f.name.startswith(branch_prefix) and f.name.endswith(suffix)
             ]
             for fpath in matching:
-                curr = dict(merged_inputs)
-                curr[out_inst.dtype.key] = [hash15(str(fpath))]
-                curr = {k: sorted(set(v)) for k, v in curr.items()}
-                lineage_by_instance[out_inst.instance_id] = curr
-                produced_by_dep.setdefault(out_inst.dtype.key, []).append(
-                    (fpath.resolve(), curr, out_inst.instance_id)
+                staged.record(
+                    out_inst,
+                    fpath.resolve(),
+                    output_index(
+                        merged_inputs,
+                        out_inst.dtype.key,
+                        output_file_id(
+                            slot_ids.get(
+                                (out_inst.dtype.key, branch_idx),
+                                out_inst.instance_id,
+                            ),
+                            fpath.name,
+                        ),
+                    ),
                 )
+                produced.append((out_inst.dtype.key, fpath.resolve()))
+    return produced
 
 
 def cli_nextflow(argv: list[str]) -> int:
@@ -501,18 +553,17 @@ def cli_nextflow(argv: list[str]) -> int:
     task = _load_task_from_workspace(workspace)
     bootstrap = Path(os.environ.get(HOME_ENV, str(AgentPaths.HOME_ROOT))) / "lib/msm_bootstrap"
 
-    lineage_by_instance: dict[str, dict[str, list[int]]] = {}
-    for inst in task.plan.given:
-        lineage_by_instance[inst.instance_id] = _seed_lineage(inst)
-
-    produced_by_dep: dict[str, list[tuple[Path, dict[str, list[int]], str]]] = {}
+    staged = StagedFiles(task.plan.given)
+    produced_by_dep: dict[str, list[Path]] = {}
 
     nxf_work = workspace / "nxf_work"
     nxf_work.mkdir(exist_ok=True)
 
     hit_decisions = _read_hit_decisions(workspace)
+    slot_ids_by_step = _read_slot_ids(workspace)
 
     for step in task.plan.steps:
+        step_slot_ids = slot_ids_by_step.get(step.order, {})
         if step.order in hit_decisions:
             hit = hit_decisions[step.order]
             write_trace(
@@ -524,12 +575,19 @@ def cli_nextflow(argv: list[str]) -> int:
                     "host": host,
                 }
             )
-            _populate_hit_outputs(
-                step, hit, lineage_by_instance, produced_by_dep
-            )
+            for dtype_key, fpath in _populate_hit_outputs(
+                step, hit, staged, step_slot_ids
+            ):
+                produced_by_dep.setdefault(dtype_key, []).append(fpath)
             continue
 
-        group_total = max(1, len(step.group_by_instances))
+        # A step runs once per item on its by-channel, not once per plan
+        # instance: the plan carries one produce instance however many samples
+        # flow through it, so counting instances collapses a per-sample step
+        # into a single task.
+        group_insts = step.group_by_instances
+        by_staged = staged.of(group_insts)
+        group_total = max(1, len(by_staged))
         batch_size = max(1, int(step.transform.batch_size))
 
         for start in range(0, group_total, batch_size):
@@ -538,38 +596,17 @@ def cli_nextflow(argv: list[str]) -> int:
             invocation_dir.mkdir(parents=True, exist_ok=True)
 
             members: list[dict[str, Any]] = []
-            input_maps: list[dict[str, list[int]]] = []
-            group_insts = step.group_by_instances
 
             for key_idx in range(start, end):
                 key_inst = group_insts[key_idx] if key_idx < len(group_insts) else None
-                lineage_entry: dict[str, Any] = {}
-                files: list[list[str]] = []
-                prov: list[list[dict]] = []
-
+                key_index = by_staged[key_idx][1] if key_idx < len(by_staged) else None
+                slots: list[tuple[str, list[tuple[Path, Index]]]] = []
                 for dep in step.transform.model.requires:
                     dep_insts = list(step.dependency_map.get(dep, []))
                     selected = _select_for_key(dep_insts, key_inst, key_idx)
                     dtype_key = selected[0].dtype.key if selected else dep.key
-                    paths = [str(inst.ResolvePath()) for inst in selected]
-                    files.append(paths)
-                    hashes = [hash15(str(Path(p))) for p in paths]
-                    lineage_entry[dtype_key] = hashes
-
-                    lineages = [
-                        lineage_by_instance.get(inst.instance_id, {dtype_key: hashes})
-                        for inst in selected
-                    ]
-                    input_maps.append(_merge_lineage(lineages))
-                    prov.append([
-                        lineage_by_instance.get(inst.instance_id)
-                        or _seed_lineage(inst)
-                        for inst in selected
-                    ])
-
-                lineage_entry[LinPayload.FILES_KEY] = files
-                lineage_entry[LinPayload.PROV_KEY] = prov
-                members.append(lineage_entry)
+                    slots.append((dtype_key, staged.of(selected, key_index)))
+                members.append(build_entry(slots))
 
             _write_metadata_file(step, invocation_dir, members)
 
@@ -613,63 +650,82 @@ def cli_nextflow(argv: list[str]) -> int:
             if res.returncode != 0:
                 return int(res.returncode)
 
-            merged_inputs = _merge_lineage(input_maps)
-            for branch_idx, dep_group in enumerate(step.transform.model.produces):
-                for dep in dep_group:
-                    insts = list(step.dependency_map.get(dep, []))
-                    if not insts:
-                        continue
-                    _first_key = (
-                        group_insts[start] if start < len(group_insts) else None
-                    )
-                    out_inst = _select_for_key(insts, _first_key, start)[0]
-                    ext = out_inst.dtype.GetPreferredFileExtension()
-                    pattern = f"*-*-{branch_idx + 1}.*-{out_inst.dtype.key}{ext}"
-                    files = sorted(invocation_dir.glob(pattern))
-                    if len(files) == 0:
-                        from ..hashing import KeyGenerator
-
-                        base_lin = {k: sorted(v) for k, v in merged_inputs.items()}
-                        _, lin_hash = KeyGenerator.FromStr(
-                            json.dumps(base_lin, separators=(",", ":"), sort_keys=True),
-                            l=16,
+            for member_idx, entry in enumerate(members):
+                key_idx = start + member_idx
+                _key_inst = (
+                    group_insts[key_idx] if key_idx < len(group_insts) else None
+                )
+                for branch_idx, dep_group in enumerate(
+                    step.transform.model.produces
+                ):
+                    for dep in dep_group:
+                        insts = list(step.dependency_map.get(dep, []))
+                        if not insts:
+                            continue
+                        out_inst = _select_for_key(insts, _key_inst, key_idx)[0]
+                        ext = out_inst.dtype.GetPreferredFileExtension()
+                        pattern = (
+                            f"{member_idx + 1}-*-{branch_idx + 1}."
+                            f"*-{out_inst.dtype.key}{ext}"
                         )
-                        synth = invocation_dir / (
-                            f"1-1-{branch_idx + 1}.{lin_hash}-{out_inst.dtype.key}{ext}"
-                        )
-                        synth.write_text(
-                            f"virtual output for step {step.order} {out_inst.dtype.key}\\n",
-                            encoding="utf-8",
-                        )
-                        files = [synth]
-                        write_trace(
-                            {
-                                "type": "virtual_output_synthesized",
-                                "step": step.order,
-                                "dep_key": out_inst.dtype.key,
-                                "path": str(synth),
-                            }
-                        )
-                    for fpath in files:
-                        curr = dict(merged_inputs)
-                        curr[out_inst.dtype.key] = [hash15(str(fpath))]
-                        curr = {k: sorted(set(v)) for k, v in curr.items()}
-                        lineage_by_instance[out_inst.instance_id] = curr
-                        produced_by_dep.setdefault(out_inst.dtype.key, []).append(
-                            (fpath.resolve(), curr, out_inst.instance_id)
-                        )
+                        files = sorted(invocation_dir.glob(pattern))
+                        if len(files) == 0:
+                            synth = invocation_dir / output_file_name(
+                                entry,
+                                out_inst.dtype,
+                                batch=member_idx,
+                                item=0,
+                                branch=branch_idx,
+                            )
+                            synth.write_text(
+                                f"virtual output for step {step.order} "
+                                f"{out_inst.dtype.key}\n",
+                                encoding="utf-8",
+                            )
+                            files = [synth]
+                            write_trace(
+                                {
+                                    "type": "virtual_output_synthesized",
+                                    "step": step.order,
+                                    "dep_key": out_inst.dtype.key,
+                                    "path": str(synth),
+                                }
+                            )
+                        for fpath in files:
+                            staged.record(
+                                out_inst,
+                                fpath.resolve(),
+                                output_index(
+                                    entry,
+                                    out_inst.dtype.key,
+                                    output_file_id(
+                                        step_slot_ids.get(
+                                            (out_inst.dtype.key, branch_idx),
+                                            out_inst.instance_id,
+                                        ),
+                                        fpath.name,
+                                    ),
+                                ),
+                            )
+                            produced_by_dep.setdefault(
+                                out_inst.dtype.key, []
+                            ).append(fpath.resolve())
 
     for target in task.plan.targets:
         dep_key = target.instance.dtype.key
-        entries = produced_by_dep.get(dep_key, [])
-        if not entries:
+        sources = produced_by_dep.get(dep_key, [])
+        if not sources:
             continue
 
-        out_dir = output_root / target.name.replace(" ", "_")
+        # The publish directory and the published basename both take the
+        # codegen's spelling (nextflow_codegen's `wf_output` block). A prefix
+        # invented here would put the results library in a filename space no
+        # other runtime uses, and the collector resolves published files by
+        # basename.
+        out_dir = output_root / target.name.replace(" ", "_").replace("::", "-")
         out_dir.mkdir(parents=True, exist_ok=True)
-        for i, (src, _lineage, _inst_id) in enumerate(entries):
-            dest = out_dir / f"{i + 1:04}_{src.name}"
-            shutil.copy2(src, dest)
+        for src in sources:
+            shutil.copy2(src, out_dir / src.name)
 
     for k in ["-with-report", "-with-dag", "-with-timeline", "-with-trace"]:
         v = opts.get(k)

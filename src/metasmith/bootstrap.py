@@ -15,6 +15,7 @@ from .models.paths import PathMap
 from .models.solver import Dependency, Endpoint
 from .hashing import KeyGenerator
 from .models.workflow import WorkflowTask, METADATA_FILE, BIND_FILE
+from .models.workflow.payload import output_file_name
 from .env import Environment, Rootfs
 from .models.lineage import ArityMismatchError, LinPayload, MissingInstanceError
 from .coms.via_file_watcher import RemoteShell
@@ -160,9 +161,8 @@ def ExecuteStep(
         }
         # PROV rides the same positional shape as FILES and is built from one
         # value in one closure with it, so the same zip routes it. Absent for a
-        # runtime that does not emit it (virtual, direct_run, the harness) and
-        # for any step with no inputs -- absent means "not captured", never
-        # "no ancestors".
+        # step with no inputs, and for a payload written before v4 -- absent
+        # means "not captured", never "no ancestors".
         prov_groups: list = batch_lineage.get(LinPayload.PROV_KEY, [])
         prov_by_dep_key: dict[str, list] = {
             dep.key: list(maps)
@@ -220,7 +220,6 @@ def ExecuteStep(
         Log.Info(m)
         return ExecutionResult(False)
 
-    _hashes = {}
     def _get_output_paths(key: Dependency, i: int, batch: int):
         found = False
         for branch, d2e in enumerate(dep2output):
@@ -229,22 +228,9 @@ def ExecuteStep(
                 found = True
                 break
         assert found, f"[{key}] not found in [{dep2output}]"
-        if batch not in _hashes:
-            # PROV only, NOT LinPayload.lineage_index(): FILES *is* folded into
-            # this hash today, and dropping it would rename every output file,
-            # which re-mints every file_instance_id and severs the link between
-            # existing shards and new runs. PROV's values are maps, so sorted()
-            # below raises on them -- this exclusion is what keeps the wire
-            # addition from failing every task in output naming.
-            lin = {
-                k: v for k, v in lineages[batch].items()
-                if k != LinPayload.PROV_KEY
-            }
-            slin = {k:sorted(lin[k]) for k in sorted(lin.keys())}
-            _, _hash = KeyGenerator.FromStr(json.dumps(slin), l=16)
-            _hashes[batch] = _hash
-        _hash = _hashes[batch]
-        name = f"{batch+1}-{i+1}-{branch+1}.{_hash}-{dtype.key}{dtype.GetPreferredFileExtension()}"
+        name = output_file_name(
+            lineages[batch], dtype, batch=batch, item=i, branch=branch
+        )
         return ContextPath.ForOutput(name, path_map)
 
     if len(agent.setup_commands)>0:

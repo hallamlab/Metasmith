@@ -14,7 +14,9 @@ KEY_PREFIX = bytes([BLAKE3_MULTIHASH_CODE, BLAKE3_DIGEST_LEN])
 # Cache-key epoch. Baked into every lineage_key so a bump renders pre-epoch
 # cache shards unreachable; the sqlite metadata row in CacheStore mirrors it
 # for runtime checks. Bumped 2 -> 3 in R5 when the lineage signature began
-# folding the transform's protocol-body identity (F1 fix).
+# folding the transform's protocol-body identity (F1 fix). Bumped 3 -> 4 when a
+# step's inputs began naming the producing step's slot id instead of the
+# transform archetype's, so a downstream key now moves when its producer does.
 #
 # DELIBERATELY SEPARATE from LIN_PAYLOAD_VERSION below: the cache epoch tracks
 # cache-key *semantics*, whereas the wire version tracks the Nextflow-channel
@@ -23,7 +25,7 @@ KEY_PREFIX = bytes([BLAKE3_MULTIHASH_CODE, BLAKE3_DIGEST_LEN])
 # emitter (`workflow.py` -> `Orchestrator.JsonforEcho([v:2, ...])`) hardcoded
 # the wire version and did not move in lockstep. Keeping them independent
 # means a future cache-semantics bump never again desyncs the wire protocol.
-CACHE_KEY_VERSION = 3
+CACHE_KEY_VERSION = 4
 
 # On-wire LinPayload envelope version (models/lineage.py). Tracks the SHAPE of
 # the `{"v": N, "entries": [...]}` value carried on the Nextflow channel. Do

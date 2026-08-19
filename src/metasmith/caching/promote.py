@@ -200,22 +200,96 @@ def _find_step_outputs(workspace: Path, step_order: int) -> list[Path]:
 _CANONICAL_OUTPUT_PREFIX = re.compile(r"^(\d+)-(\d+)-(\d+)\.")
 
 
-def _collect_output_indexes(workspace: Path) -> dict[str, dict]:
+def direct_parents(payload, slot_channels: list[str], member: int) -> list[str]:
+    """The identities one batch member's task descends from.
+
+    `PROV[s][i]` is the index of the i-th file staged into slot `s`, and that
+    file's own identity is the entry under the slot's channel name — the exact
+    direct parents. `PROV` is stamped by `Orchestrator.group`, so a step that
+    never groups has none; there the member's own index stands in, which is the
+    same ancestry flattened rather than a guess at it.
+
+    Never paired against a mismatched arity: a mispaired parent answers
+    confidently and wrongly, which is the failure this record exists to remove.
+    """
+    prov = payload.provenance_groups(member)
+    if prov and len(prov) == len(slot_channels):
+        parents = [
+            pid
+            for chan, group in zip(slot_channels, prov)
+            for item_index in group
+            for pid in item_index.get(chan, [])
+        ]
+        if parents:
+            return sorted(set(parents))
+    return sorted({
+        pid for ids in payload.lineage_index(member).values() for pid in ids
+    })
+
+
+def _match_output_slot(name: str, slot_files: list[dict]) -> dict | None:
+    """Which declared output slot a file named `<batch>-<i>-<branch>.<hash>-<key><ext>` fills."""
+    prefix, _dot, rest = name.partition(".")
+    tokens = prefix.split("-")
+    if len(tokens) < 3 or not rest:
+        return None
+    try:
+        branch_idx = int(tokens[2]) - 1
+    except ValueError:
+        return None
+    # Longest dtype key first: one key can be a suffix of another.
+    for sf in sorted(
+        slot_files,
+        key=lambda d: len(str(d.get("dtype_key", ""))),
+        reverse=True,
+    ):
+        if sf.get("branch_idx") != branch_idx:
+            continue
+        dk = sf.get("dtype_key", "")
+        if dk and name.endswith(f"-{dk}{sf.get('ext', '')}"):
+            return sf
+    return None
+
+
+def _batch_idx_of(path: Path, have_batch_dirs: bool, counter: list[int]) -> int:
+    if path.parent.name.startswith("batch_"):
+        try:
+            return int(path.parent.name.split("_")[1])
+        except (IndexError, ValueError):
+            return -1
+    if have_batch_dirs:
+        return -1
+    counter[0] += 1
+    return counter[0] - 1
+
+
+def _collect_output_provenance(workspace: Path) -> dict[str, dict]:
+    """Per output filename, the on-channel index and direct parents of its task.
+
+    Both come off the `.command.metadata` the task itself wrote, which is the
+    only first-hand record of what it read. A name is dropped when two tasks
+    claim it with different answers.
+    """
     from ..models.lineage import LinPayload
     from ..models.workflow import METADATA_FILE
 
+    # `nxf_work` is where the runner points nextflow; a caller that does not
+    # pass `-work-dir` gets nextflow's own default beside the workspace, and the
+    # record has to be found either way.
     root = workspace / "nxf_work"
     if not root.exists():
-        return {}
+        root = workspace
     found: dict[str, list[dict]] = {}
     for meta in root.rglob(METADATA_FILE):
         payload = None
+        slot_channels: list[str] = []
         try:
             for line in meta.read_text(errors="replace").splitlines():
                 head, _, rest = line.partition(" ")
                 if head == "lin":
                     payload = LinPayload.from_json(rest)
-                    break
+                elif head == "slk":
+                    slot_channels = list(json.loads(rest).values())
         except (OSError, ValueError, json.JSONDecodeError):
             continue
         if payload is None:
@@ -233,7 +307,10 @@ def _collect_output_indexes(workspace: Path) -> dict[str, dict]:
             member = int(m.group(1)) - 1
             if not (0 <= member < len(payload.entries)):
                 continue
-            found.setdefault(fp.name, []).append(payload.lineage_index(member))
+            found.setdefault(fp.name, []).append({
+                "index": payload.lineage_index(member),
+                "parents": direct_parents(payload, slot_channels, member),
+            })
     out: dict[str, dict] = {}
     for name, candidates in found.items():
         first = candidates[0]
@@ -392,6 +469,7 @@ def _append_invocation_event_v2(
                         slot_id=sid,
                         path=rel,
                         dtype_key=dk,
+                        parents=list(f.get("parents") or []),
                     )
                 )
             if produces:
@@ -411,6 +489,40 @@ def _append_invocation_event_v2(
         _emit(0, produces)
 
 
+def _record_uncacheable_step(
+    workspace: Path, spec, output_provenance: dict[str, dict]
+) -> None:
+    outputs = _find_step_outputs(workspace, spec.order)
+    if not outputs:
+        return
+    have_batch_dirs = any(p.parent.name.startswith("batch_") for p in outputs)
+    counter = [0]
+    files_meta: list[dict] = []
+    for src in outputs:
+        batch_idx = _batch_idx_of(src, have_batch_dirs, counter)
+        matched = _match_output_slot(src.name, spec.slot_files)
+        if matched is None:
+            files_meta.append({"relpath": src.name, "unmatched": True})
+            continue
+        prov = output_provenance.get(src.name) or {}
+        files_meta.append({
+            "relpath": f"out/{src.name}",
+            "slot_id": matched.get("slot_id", ""),
+            "dtype_key": matched.get("dtype_key", ""),
+            "branch_idx": matched.get("branch_idx", 0),
+            "batch_idx": batch_idx,
+            "parents": list(prov.get("parents") or []),
+        })
+    _append_invocation_event_v2(
+        workspace,
+        session_id=_read_session_id(workspace),
+        spec=spec,
+        status="miss",
+        cache_key_hex=spec.cache_key.hex(),
+        files_meta=files_meta,
+    )
+
+
 def promote_run(
     *,
     workspace: Path,
@@ -419,7 +531,7 @@ def promote_run(
 ) -> dict:
     log = log if log is not None else []
     cache_root.mkdir(parents=True, exist_ok=True)
-    output_indexes = _collect_output_indexes(workspace)
+    output_provenance = _collect_output_provenance(workspace)
     store = CacheStore.open(cache_root)
     try:
         promoted: list[str] = []
@@ -434,7 +546,15 @@ def promote_run(
         ]
         for meta_path in sorted(workspace.glob("workflow.step_*.meta")):
             spec = _read_step_meta(meta_path)
-            if spec is None or not spec.cacheable:
+            if spec is None:
+                continue
+            if not spec.cacheable:
+                # Nothing to promote, but the step still ran and its outputs are
+                # still someone's parents. A trace that skips it leaves a hole
+                # every consumer downstream of it falls into.
+                _record_uncacheable_step(
+                    workspace, spec, output_provenance
+                )
                 continue
             key_hex = spec.cache_key.hex()
             final_dir = _shard_dir(cache_root, key_hex)
@@ -473,18 +593,11 @@ def promote_run(
                 files_have_batch_dir = any(
                     p.parent.name.startswith("batch_") for p in outputs
                 )
-                fallback_batch_counter = 0
+                fallback_batch_counter = [0]
                 for src in outputs:
-                    parent = src.parent
-                    batch_dir_idx = -1
-                    if parent.name.startswith("batch_"):
-                        try:
-                            batch_dir_idx = int(parent.name.split("_")[1])
-                        except (IndexError, ValueError):
-                            batch_dir_idx = -1
-                    elif not files_have_batch_dir:
-                        batch_dir_idx = fallback_batch_counter
-                        fallback_batch_counter += 1
+                    batch_dir_idx = _batch_idx_of(
+                        src, files_have_batch_dir, fallback_batch_counter
+                    )
                     dest = out_dir / src.name
                     try:
                         src_in_tmp = src.parent.resolve() == tmp.resolve()
@@ -498,33 +611,10 @@ def promote_run(
                     relpath = str(dest.relative_to(tmp))
                     total_bytes += dest.stat().st_size
                     name = src.name
-                    prefix, _dot, rest = name.partition(".")
-                    tokens = prefix.split("-")
-                    branch_idx = -1
-                    if len(tokens) >= 3 and rest:
-                        try:
-                            branch_idx = int(tokens[2]) - 1
-                        except ValueError:
-                            branch_idx = -1
-                    matched: dict | None = None
-                    if branch_idx >= 0:
-                        candidates = sorted(
-                            spec.slot_files,
-                            key=lambda d: len(str(d.get("dtype_key", ""))),
-                            reverse=True,
-                        )
-                        for sf in candidates:
-                            if sf.get("branch_idx") != branch_idx:
-                                continue
-                            dk = sf.get("dtype_key", "")
-                            ext = sf.get("ext", "")
-                            if not dk:
-                                continue
-                            if name.endswith(f"-{dk}{ext}"):
-                                matched = sf
-                                break
+                    matched = _match_output_slot(name, spec.slot_files)
                     if matched is not None:
-                        ix = output_indexes.get(name)
+                        prov = output_provenance.get(name) or {}
+                        ix = prov.get("index")
                         if not ix:
                             no_index.append(name)
                         else:
@@ -537,6 +627,9 @@ def promote_run(
                             "dtype_key": matched.get("dtype_key", ""),
                             "branch_idx": matched.get("branch_idx", 0),
                             "batch_idx": batch_dir_idx,
+                            # What this file's task read. A hit replays the
+                            # shard, so the answer has to survive in it.
+                            "parents": list(prov.get("parents") or []),
                         })
                     else:
                         files_meta.append({
