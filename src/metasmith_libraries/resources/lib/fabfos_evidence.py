@@ -266,24 +266,46 @@ DL_EC_SCORE_FLOOR = 0.3
 CLEAN_MIN_SCORE = 0.02
 
 # --- ProteinBERT kNN label transfer ----------------------------------------
-# THE TWO PBERT THRESHOLDS ANSWER DIFFERENT QUESTIONS AND BOTH ARE NEEDED.
+# Tuned on the 1,288-ORF DH10B cohort against the 222,019-landmark set, choosing the
+# cell that maximises label-level (MNXR macro set-overlap) F1 under the `twin`
+# leakage condition -- every landmark at cosine >= 0.99 hidden. That pairing is
+# deliberate: label-level is the axis that PENALISES over-prediction, which is the
+# failure being fixed, and `twin` is the honest read for an ORF with no close
+# relative, which is the case that motivated the work. The chosen cell sits on a
+# broad plateau (0.4018-0.4036 across nn_min 0.65-0.75 and tau 0.90-0.98), not on a
+# spike. See research/fabfos/annotation_lanes/pbert/threshold_cosine_dh10b.tsv.
 #
-# PBERT_FLOOR is a LABEL-level cut on agreement: of the neighbours that voted, what
-# share carried this reaction. It cannot express "nothing in the reference set
-# resembles this protein", because the vote weights are normalised within the
-# admitted set -- thirty neighbours at cosine 0.15 that agree score 1.0.
+#                      ORF-level (EC)              label-level (MNXR)
+#   twin       P 0.6555 -> 0.8985   F1 0.6374 -> 0.8254   P 0.5655 -> 0.8050
+#   self       P 0.6852 -> 0.9204   F1 0.6683 -> 0.8505   P 0.5938 -> 0.8550
+#   pool       P 0.7104 -> 0.9611   F1 0.6929 -> 0.8983   P 0.6093 -> 0.9075
 #
-# PBERT_NN_MIN is the ORF-level cut on PROXIMITY that the lane did not have. An ORF
-# whose nearest landmark is below it gets no call at all. This is the abstain that
-# was missing, and it is what a dark ORF needs.
-PBERT_NN_MIN = 0.7716
-# The quota. `PBERT_K_MAX` bounds retrieval; a neighbour then votes only if it also
-# sits within `PBERT_TAU` of the best one. Dense neighbourhoods therefore vote with
-# many neighbours and sparse ones with a few or with one, instead of every ORF being
-# assigned exactly K votes whether or not it has K neighbours worth having.
-PBERT_TAU = 0.98
+# Coverage falls from 0.946 to 0.849 on `twin`: 189 of 1,288 ORFs now get no pbert
+# call at all. That is the point of the change, not a side effect of it.
+
+# THE ORF-LEVEL CUT ON PROXIMITY, and the refusal this lane did not have. An ORF
+# whose nearest landmark is below it gets no call. PBERT_FLOOR cannot do this job:
+# it thresholds a vote normalised within the admitted set, so it measures neighbour
+# AGREEMENT -- thirty neighbours at cosine 0.15 that agree score 1.0.
+PBERT_NN_MIN = 0.70
+# THE RELATIVE BAND. A neighbour votes only if its cosine is also within this
+# fraction of the best one for that ORF, so a dense neighbourhood votes with many
+# neighbours and a thin one with a few or with exactly one. It is nearly invisible on
+# the ORF-level axis and worth a great deal on the label-level one -- at nn_min 0.75
+# it lifts label precision from 0.708 to 0.826 while moving ORF-level F1 by 0.008 --
+# because emitting more labels per ORF makes an ORF-level intersection EASIER, so
+# that axis cannot see flooding and this band is what stops it.
+PBERT_TAU = 0.95
 PBERT_K_MAX = 30
-PBERT_FLOOR = 0.20
+# ZERO, AND MEASURED. The vote floor was 0.20 and its every increase costs F1 in all
+# three conditions (twin: 0.8254 at 0.00, 0.8081 at 0.20, 0.7888 at 0.50) -- once
+# nn_min decides which neighbours are close enough to speak and tau decides which of
+# those speak together, an agreement threshold has nothing left to reject but true
+# positives. It was standing in for a proximity gate, badly, and there is now a real
+# one. Kept as a knob rather than deleted; `lane_embed` refuses only a NEGATIVE
+# floor, because zero means "every label an admitted neighbour carries" and that is
+# a real setting, not a disabled one.
+PBERT_FLOOR = 0.00
 
 # --- ESM-C kNN label transfer ----------------------------------------------
 # The same lane against a different backbone, and cosine is not comparable between two

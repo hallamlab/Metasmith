@@ -1,13 +1,25 @@
 """THE QUESTION -- what did the two lanes score before, and what do they score now?
 
-Assembles the four rows the run exists to produce from the sweep tables. Nothing is
-computed here; every number is looked up, so this file cannot disagree with the
-sweeps that produced them.
+Assembles the rows the run exists to produce from the sweep tables. NOTHING IS
+COMPUTED HERE; every number is looked up, so this file cannot disagree with the
+sweeps that produced it.
 
-The pbert rows carry three states, not two, because the shipped lane has two
-independent defects and fixing them is not one step: the pool index misdescribes the
-stack (repair_pool_index.py), and the lane has no absolute-quality gate
-(sweep_threshold.py). The middle row is the pool repair alone.
+The pbert lane had two independent defects and fixing them is not one step, so it
+carries three states rather than two: the landmark set's index did not describe its
+embedding stack (rebuild_landmarks.py), and the lane had no way to refuse an ORF
+(sweep_threshold.py). The middle row is the landmark repair alone, at the vote rule
+the lane ran before this work -- without it the whole difference could be attributed
+to whichever of the two the reader already believed in.
+
+EVERY ROW IS REPORTED UNDER ALL THREE LEAKAGE CONDITIONS. `pool` is the deployed
+arrangement and it leaks: an ORF's own Swiss-Prot entry is a landmark. `twin` hides
+every neighbour at cosine >= 0.99 and is the honest read for an ORF with no close
+relative -- which is the case that motivated this work.
+
+CALL COUNTS SIT BESIDE THE SCORES, not behind them: a lane can raise ORF-level
+precision by emitting MORE labels per ORF, because that makes an intersection with
+the truth set easier. `n_calls` and the label-level columns are what make that
+visible.
 
 ENV     PYTHONPATH="$PWD/src" mamba run -n msm python \
             research/fabfos/annotation_lanes/pbert/report_before_after.py
@@ -21,38 +33,54 @@ from pathlib import Path
 import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from _common import HERE  # noqa: E402
+from _common import HERE, K, PBERT_FLOOR, PBERT_NN_MIN, PBERT_TAU  # noqa: E402
 
-COND = "pool"
-COLS = ["precision", "recall", "f1", "coverage", "n_fired", "n_correct"]
+CONDITIONS = ["pool", "self", "twin"]
+COLS = ["n_fired", "n_correct", "precision", "recall", "f1", "coverage",
+        "mnxr_macro_precision", "mnxr_macro_recall", "mnxr_macro_f1",
+        "n_calls", "calls_per_speaking_orf"]
+# the rule the lane ran before this work
+PRE_QUOTA = dict(nn_min=0.0, tau=0.0, k_max=30, floor=0.20)
 
 
-def row(label, config, src, **sel):
+def rows(label, config, src, **sel):
     d = pd.read_csv(HERE / src, sep="\t")
     for k, v in sel.items():
         d = d[d[k] == v]
-    if len(d) != 1:
-        raise SystemExit(f"{src} {sel} matched {len(d)} rows")
-    r = d.iloc[0]
-    return dict(lane=label, config=config, **{c: r[c] for c in COLS})
+    out = []
+    for cond in CONDITIONS:
+        c = d[d["condition"] == cond]
+        if len(c) != 1:
+            raise SystemExit(f"{src} {sel} condition={cond} matched {len(c)} rows")
+        r = c.iloc[0]
+        out.append(dict(lane=label, config=config, condition=cond,
+                        **{col: r.get(col, float("nan")) for col in COLS}))
+    return out
 
 
 def main():
-    rows = [
-        row("pbert", "as shipped: misaligned pool, cosine, floor 0.20, no gate",
-            "metrics_dh10b_shippedpool.tsv", metric="cosine", condition=COND),
-        row("pbert", "pool repaired only: cosine, floor 0.20, no gate",
-            "metrics_dh10b.tsv", metric="cosine", condition=COND),
-        row("pbert", "pool repaired + nn_similarity >= 0.7716, floor 0.00",
-            "threshold_cosine_dh10b.tsv", condition=COND, nn_quantile=0.15, floor=0.0),
-        row("pbert", "pool repaired + nn_similarity >= 0.7716, floor 0.20",
-            "threshold_cosine_dh10b.tsv", condition=COND, nn_quantile=0.15, floor=0.20),
-        row("clean", "as shipped: no abstention", "clean_abstain_dh10b.tsv", threshold=0.0),
-        row("clean", "abstain below 0.02", "clean_abstain_dh10b.tsv", threshold=0.02),
-    ]
-    out = pd.DataFrame(rows)
+    tuned = f"nn_min {PBERT_NN_MIN}, tau {PBERT_TAU}, k_max {K}, floor {PBERT_FLOOR}"
+    out = pd.DataFrame(
+        rows("pbert", "as shipped: misaligned landmarks, top-30, floor 0.20",
+             "metrics_dh10b_shippedpool.tsv", metric="cosine")
+        + rows("pbert", "landmarks repaired only: top-30, floor 0.20",
+               "threshold_cosine_dh10b.tsv", **PRE_QUOTA)
+        + rows("pbert", f"repaired + quota (SHIPPED): {tuned}",
+               "threshold_cosine_dh10b.tsv", nn_min=PBERT_NN_MIN, tau=PBERT_TAU,
+               k_max=K, floor=PBERT_FLOOR)
+    )
+
+    # CLEAN does not read the landmark set, so it has no leakage condition to vary
+    # and no MNXR columns -- it is scored in EC space directly.
+    cl = pd.read_csv(HERE / "clean_abstain_dh10b.tsv", sep="\t")
+    for cfg, thr in (("as shipped: no abstention", 0.0), ("abstain below 0.02", 0.02)):
+        r = cl[cl["threshold"] == thr].iloc[0]
+        out.loc[len(out)] = dict(lane="clean", config=cfg, condition="n/a",
+                                 **{c: r.get(c, float("nan")) for c in COLS})
+
     out.to_csv(HERE / "before_after_dh10b.tsv", sep="\t", index=False)
-    print(out.to_string(index=False))
+    with pd.option_context("display.width", 250, "display.max_columns", 40):
+        print(out.to_string(index=False))
     print(f"\nwrote {HERE/'before_after_dh10b.tsv'}")
 
 
