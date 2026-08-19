@@ -123,3 +123,35 @@ def gate(scored: pd.DataFrame) -> pd.DataFrame:
         return df
     df["null_over_control"] = df.null_sd / df.control_sd.replace(0.0, np.nan)
     return df
+
+
+# What fraction of a response a reported set must account for. Responses partition the
+# measurement (Tellegen; `build.reaction_elasticities` sums to 1), so "the members carrying
+# 90% of it" is a set the network chooses rather than a threshold somebody picked.
+RESPONSE_COVERAGE = 0.90
+
+
+def responders(values, coverage: float = RESPONSE_COVERAGE) -> np.ndarray:
+    """Boolean mask of the largest-|value| members that together carry ``coverage`` of the
+    total. The complement is the FLOOR, and it is not a set of small measurements.
+
+    A partition with an effective size near ten does not have four thousand members worth
+    reporting, and reporting them anyway is what makes an ECSPr readout look unusable: on the
+    4,102-clone ASKA library the whole distribution spans 7.7 decades between its 5th and
+    95th percentiles, while the eight genes carrying 90% of it span 1.0 and the twenty-five
+    carrying 99% span 2.5. Nothing about the network changed between those numbers -- only
+    which members were read as measurements.
+
+    So this is a reporting decision with a measured basis, not a cleanup. The floor keeps its
+    own count and mass, which is what stops "the tail is small" from becoming "the tail is
+    absent"; a member that leaves the responder set has not been shown to be zero.
+    """
+    v = np.abs(np.asarray(values, float))
+    v = np.where(np.isfinite(v), v, 0.0)
+    total = v.sum()
+    if not total > 0:
+        return np.zeros(v.shape, bool)
+    order = np.argsort(v)[::-1]
+    keep = np.zeros(v.shape, bool)
+    keep[order[:int(np.searchsorted(np.cumsum(v[order]) / total, coverage) + 1)]] = True
+    return keep
