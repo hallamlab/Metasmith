@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """The three-member community as twelve DIRECTED networks, measured twice.
 
+    python research/fabfos/examples/nostoc_ecspr.py --refs           # names + blacklist, from the bake
     python research/fabfos/examples/nostoc_ecspr.py --compose        # build the networks + conditions
     python research/fabfos/examples/nostoc_ecspr.py --plan           # plan every unit, run nothing
     python research/fabfos/examples/nostoc_ecspr.py --run            # measure
@@ -59,6 +60,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import subprocess
 import sys
 import time
@@ -72,6 +74,10 @@ sys.path.insert(0, str(REPO / "src"))
 import ecspr.model.compose as ec  # noqa: E402
 import ecspr.model.conditions as econd  # noqa: E402
 
+# The bake is stored CODED and the graph builder reads the string schema, so it is
+# decoded before use -- see `benchmarks/eydallin/bake_pairs.py`, which owns that decode
+# for the whole tree. Composition consumes the DECODED table, so what this driver hands
+# the pipeline through `--atom-pairs` is already decoded and needs no vocab beside it.
 sys.path.insert(0, str(REPO / "research/fabfos/benchmarks/eydallin"))
 import bake_pairs  # noqa: E402
 
@@ -82,13 +88,25 @@ MEMBERS = ("NOS", "ERY", "RHI")
 ELEMENTS = ("C", "N", "P", "S")
 _DEFAULT_OUT = str(REPO / "data/scratch/nostoc_ecspr")
 
+# --- the experiment's claim about what it is testing ---------------------------------
+#
+# M9-style minimal, one growth substrate per element. Glucose cannot be the source in the
+# N, P or S graphs -- it has no atom of any of them -- so each element's graph is entered
+# through that element's own minimal-medium salt. Every id below was resolved by NAME
+# against MetaNetX 4.5 and checked present in the decoded bake FOR ITS OWN ELEMENT; this
+# release does not use the ids one would guess (glucose is MNXM1364061, not MNXM1137670,
+# and thiamine is MNXM730135, not MNXM662), and a guessed id measures a run of structural
+# zeros that looks exactly like a biological finding.
 SUBSTRATES = {
-    "C": "MNXM1364061",
-    "N": "MNXM729302",
-    "P": "MNXM9",
-    "S": "MNXM58",
+    "C": "MNXM1364061",   # D-glucose
+    "N": "MNXM729302",    # NH4(+)
+    "P": "MNXM9",         # phosphate
+    "S": "MNXM58",        # sulfate
 }
 
+# The biomass endpoints. Filtered per element by presence in that element's atom-pair
+# table, so sulfur gets the four sulfur sinks and nothing else -- which is the honest
+# sulfur precursor set, not a shortfall.
 PRECURSORS = {
     "L-alanine": "MNXM1105732", "L-arginine": "MNXM739527",
     "L-asparagine": "MNXM1107821", "L-aspartate": "MNXM1364497",
@@ -105,7 +123,14 @@ PRECURSORS = {
     "biotin": "MNXM304", "thiamine": "MNXM730135", "chorismate": "MNXM337",
 }
 
+# Acetyl-CoA and S-adenosyl-L-methionine are biomass precursors in every GEM's biomass
+# reaction and are deliberately NOT endpoints here: both are on the carrier blacklist, and
+# a degree-1,100 carrier as a sink makes the P and S readouts a measurement of cofactor
+# pool connectivity rather than of biosynthesis.
 
+# Two-terminal endpoints are a deliberately SMALL subset. Each (source, endpoint) pair is
+# an independent solve, so the full precursor list above would multiply into hundreds of
+# solves per network without anyone having decided that it should.
 TWO_TERMINAL = {
     "C": ["L-glutamate", "L-serine", "chorismate", "L-histidine"],
     "N": ["L-glutamate", "L-glutamine", "L-histidine", "L-arginine"],
@@ -113,6 +138,8 @@ TWO_TERMINAL = {
     "S": ["L-cysteine", "L-methionine", "biotin"],
 }
 
+# The twelve. (member set, injecting member) -- the sink members are the rest of the set,
+# and a singleton reads its endpoints in itself.
 UNITS = [
     (("NOS", "ERY", "RHI"), "NOS"), (("NOS", "ERY", "RHI"), "ERY"),
     (("NOS", "ERY", "RHI"), "RHI"),
@@ -123,16 +150,112 @@ UNITS = [
 ]
 ARMS = ("bl-on", "bl-off")
 
+# The AGENT image, not the ecspr tool image. metasmith derives its default tag from the
+# engine's own version, and 0.20.1 has been pruned from quay -- it fails as a `manifest
+# unknown`, then a missing .sif, then a missing `msm_relay`, none of which says "nobody
+# built this image". The overlay replaces the container's metasmith package but NOT the
+# conda environment under it, so the base has to come from the same minor line as the
+# pinned engine or an import the engine makes is simply absent.
+#
+# `_fir.FIR_CONTAINER` is the same string and is the one the remote path uses; this is
+# the local one. They are separate names on purpose -- a local plan does not depend on
+# what fir happens to hold -- and both are checked against quay by `_fir.preflight`.
 AGENT_CONTAINER = "docker://quay.io/hallamlab/metasmith:0.20.4"
+
+# THE LOCAL RUN USES MAMBA, AND THAT IS NOT A CONVENIENCE. `env::ecspr.env` names
+# `quay.io/hallamlab/ecspr:2026.07.14` as its container and its own first line says that
+# tag is not yet republished -- the image has the env but not the package, so `ecspr` is
+# not on PATH inside it. Under a container runtime the step therefore fails with a bare
+# 127 and NOTHING ELSE: nextflow reports `terminated with an error exit status (1) --
+# Error is ignored`, the run "completes", zero products are written, and the driver prints
+# `1 ok, 0 failed`. So the failure looks exactly like success from here.
+#
+# `ecspr.env`'s `conda:` key is the working route, which is what `--runtime mamba` takes.
+# Under mamba `--agent-env` is a conda env NAME rather than an image (see
+# `common.make_agent`), so the two move together and neither may be set without the other.
+# `dev/ecspr.sh --iecspr` is what puts the CLI in the `ecspr` env; a fresh checkout has the
+# env's console-script shim pointing at no package and fails the same 127 way.
+LOCAL_RUNTIME = "mamba"
+LOCAL_AGENT_ENV = "msm"
 
 
 def net_id(members, arm):
+    """A singleton has no bridges, so the blacklist cannot touch it: one id, one
+    composition, shared by both arms. Giving it two would make the control depend on the
+    thing it controls for."""
     return "-".join(members) + ("" if len(members) == 1 else f"_{arm}")
 
 
 def unit_id(members, src, arm):
     return f"{net_id(members, arm)}__{src}"
 
+
+# =====================================================================
+# Refs -- the two tables cut from the bake's own metabolite universe
+# =====================================================================
+#
+# BOTH ARE FUNCTIONS OF THE BAKE AND MUST BE REBUILT WITH IT. `metabolite_names` is
+# chem_prop restricted to the metabolites the bake actually pairs, and the carrier
+# blacklist is name RULES materialised against that table -- so a metabolite the bake
+# newly reaches is simply absent from both, and absence from the blacklist is the
+# dangerous half: an unlisted degree-4,000 carrier gets bridged and every arm reports the
+# members as one well-mixed pot while looking entirely healthy. Nothing raises. Hence
+# `--refs` before `--compose`, and the coverage guard in `compose_all`.
+
+CHEM_PROP = REPO / "data/fabfos/originals/metanetx/4.5/chem_prop.tsv"
+_FORMULA_RE = re.compile(r"([A-Z][a-z]?)(\d*)")
+
+
+def _parse_formula(formula: str) -> dict:
+    """`"C6H12O6"` -> `{"C": 6, "H": 12, "O": 6}`; blank/non-string -> `{}`.
+
+    A `*` RESIDUE IS KEPT, counting its explicit atoms only. `C28H49N3O10PS*2` is an
+    acyl-ACP whose carrier body MetaNetX leaves unspecified; dropping the whole formula
+    for that would take 7,701 metabolites -- most of the ACP, polymer and protein-bound
+    series -- out of the name table, and with them out of reach of the carrier rules that
+    are the reason the table exists.
+    """
+    if not isinstance(formula, str) or not formula:
+        return {}
+    counts = {}
+    for el, n in _FORMULA_RE.findall(formula):
+        if not el:
+            continue
+        counts[el] = counts.get(el, 0) + (int(n) if n else 1)
+    return counts
+
+
+def build_refs(elements=ELEMENTS):
+    import ecspr.model.compose as _ec
+    OUT.mkdir(parents=True, exist_ok=True)
+    pairs = pd.read_parquet(bake_pairs.atom_pairs())
+    universe = set(pairs.substrate) | set(pairs["product"])
+    print(f"bake universe: {len(universe):,} metabolites over "
+          f"{pairs.mnxr.nunique():,} reactions", flush=True)
+
+    chem = pd.read_csv(CHEM_PROP, sep="\t", comment="#", usecols=[0, 1, 3], dtype=str,
+                       names=["id", "name", "reference", "formula", "charge", "mass",
+                              "inchi", "inchikey", "smiles"])
+    chem = chem[chem.id.isin(universe)]
+    rows = [(m, nm, f, el, n)
+            for m, nm, f in zip(chem.id, chem.name, chem.formula)
+            for el, n in _parse_formula(f).items() if el in elements]
+    names = pd.DataFrame(rows, columns=["mnxm", "name", "formula", "element", "n_atoms"])
+    names.to_parquet(OUT / "metabolite_names.parquet", index=False)
+    print(f"  metabolite_names: {len(names):,} rows, {names.mnxm.nunique():,} metabolites "
+          f"carrying a {'/'.join(elements)} atom "
+          f"({len(universe - set(names.mnxm)):,} of the universe carry none)")
+
+    bl = _ec.carrier_blacklist(names)
+    bl.to_parquet(OUT / "carrier_blacklist.parquet", index=False)
+    print(f"  carrier_blacklist: {len(bl):,} ids over "
+          f"{bl.carrier_class.nunique()} classes")
+    return names, bl
+
+
+# =====================================================================
+# Compose
+# =====================================================================
 
 def compose_all(g0=1.0, elements=ELEMENTS):
     NETS.mkdir(parents=True, exist_ok=True)
@@ -143,6 +266,25 @@ def compose_all(g0=1.0, elements=ELEMENTS):
     blacklist = set(pd.read_parquet(OUT / "carrier_blacklist.parquet").mnxm)
     gprs = {o: pd.read_parquet(GPR / o / "gpr_4lane.parquet") for o in MEMBERS}
     print(f"  {len(pairs):,} pair rows, {len(blacklist):,} blacklisted carriers")
+
+    # THE GUARD IS THE SUBSET DIRECTION, and only that direction. `--refs` cuts the name
+    # table FROM this universe, so a name the bake does not pair cannot have come from
+    # here -- it is the tell that the table was built against a different bake, which is
+    # exactly the silent staleness a repin leaves behind (the retired bake's table left 9).
+    #
+    # The converse is NOT a staleness signal and must not be checked: 4,633 metabolites
+    # the bake pairs carry no parseable formula in chem_prop and so appear in no name row
+    # by construction -- including hubs like `Ferrocytochrome b5` at degree 3,462. That is
+    # a real hole in what the carrier rules can reach, but it is a property of MetaNetX
+    # rather than of which bake this is, and refusing on it refuses every run.
+    strays = set(names.mnxm) - (set(pairs.substrate) | set(pairs["product"]))
+    if strays:
+        raise SystemExit(
+            f"REFUSING: {len(strays):,} metabolites in "
+            f"{OUT/'metabolite_names.parquet'} are absent from the bake "
+            f"(e.g. {', '.join(sorted(strays)[:4])}).\n"
+            f"  The name table is cut from the bake's own universe, so it was built "
+            f"against a different one. Re-run --refs.")
 
     present = {e: set(g.substrate) | set(g["product"]) for e, g in pairs.groupby("element")}
     prec_by_el, missing = {}, []
@@ -183,6 +325,11 @@ def compose_all(g0=1.0, elements=ELEMENTS):
                       f"{rep['n_one_copy_only']:,} one-copy)  {rep['seconds']}s", flush=True)
 
             sinks = [o for o in members if o != src] or [src]
+            # TWO LISTS, TWO FILES -- not one table with a mode column. A conditions
+            # table carries no probe, the probe is chosen on the command line, and a set
+            # built for one probe staged against the other measures something nobody
+            # asked for. Only the ground file is consumed today; see the module
+            # docstring on why the other is written anyway.
             ground, two_terminal = ec.make_conditions(
                 network_id=nid, source_org=src, sink_orgs=sinks,
                 substrates=SUBSTRATES,
@@ -195,14 +342,32 @@ def compose_all(g0=1.0, elements=ELEMENTS):
             econd.write(ground, d / f"conditions_{src}.parquet")
             econd.write(two_terminal, d / f"conditions_2t_{src}.parquet")
             if len(members) == 1:
-                break
+                break  # one arm only: a singleton is arm-invariant by construction
 
     pd.DataFrame(reports).to_parquet(OUT / "compose_report.parquet", index=False)
     print(f"\n{len(done)} composed networks -> {NETS}")
     return reports
 
 
+# =====================================================================
+# Plan / run
+# =====================================================================
+
 def check_conditions(path: Path) -> None:
+    """Refuse a conditions file written before the two-list split.
+
+    THE OLD SHAPE PARSES CLEANLY AND MEASURES SOMETHING ELSE, which is why this is a
+    guard and not a comment. The staged sets in the pinned `nostoc/ecspr` chunk are one
+    row per (condition, SINK) with a `mode` column -- 92 rows for the NOS singleton --
+    because the transforms that consumed them filtered on `mode` themselves.
+    `ecspr.model.conditions.read` has no `mode`: it reads every row as its own Condition, so
+    those 92 rows become 92 one-sink ground solves where today's `make_conditions`
+    intends 4, one per element, each naming every precursor at once. Nothing raises. The
+    numbers are simply a different measurement.
+
+    So the chunk's condition sets are readable history, not inputs: `--compose` writes
+    the current shape beside them, and this is what stops a run reaching for the old one.
+    """
     import pandas as pd
     if not path.exists():
         raise SystemExit(f"no conditions at {path} -- run --compose first")
@@ -215,6 +380,7 @@ def check_conditions(path: Path) -> None:
 
 
 def invocations():
+    """One pipeline invocation per composed graph, its units passed together."""
     by_net = {}
     for members, src in UNITS:
         for arm in ARMS:
@@ -225,9 +391,16 @@ def invocations():
     return {n: sorted(set(s)) for n, s in by_net.items()}
 
 
-def build_cmd(nid, srcs, *, run, threads, outdir, agent_container=AGENT_CONTAINER):
+def build_cmd(nid, srcs, *, run, threads, outdir, agent_container=LOCAL_AGENT_ENV,
+              runtime=LOCAL_RUNTIME):
     d = NETS / nid
+    # `--agent-env` is the one lever the CLI has over where the AGENT runs: it becomes
+    # `Agent.container`, which is a conda env name under mamba and an image URI under a
+    # container runtime. Its help names the mamba case because that is the one nobody
+    # can guess; under apptainer it is how you refuse the engine-version-derived default,
+    # which names a tag nobody necessarily pushed.
     cmd = [sys.executable, "-m", "fabfos.pipelines.ecspr",
+           "--runtime", runtime,
            "--agent-env", agent_container,
            "--atom-pairs", str(d / "atom_pairs.parquet"),
            "--direction-ratios", str(d / "direction.parquet"),
@@ -242,10 +415,40 @@ def build_cmd(nid, srcs, *, run, threads, outdir, agent_container=AGENT_CONTAINE
     return cmd
 
 
-FIR_RESOURCE_OVERRIDES = None
+# =====================================================================
+# fir
+# =====================================================================
+#
+# WHY THIS EXISTS. The measurement is compute-bound in one place: the leaky solve.
+# A single organism's carbon graph is 162,801 nodes and a three-member composed graph is
+# ~490k, and there is one solve per (network, element) on the ground side plus one per
+# (network, element, endpoint) on the two-terminal side. Locally that is ten-plus hours on
+# a shared workstation. On fir the units are independent, so they fan out as concurrent
+# slurm jobs on 192-core / 768 GB nodes and the wall clock collapses to the slowest single
+# unit plus queue.
+#
+# WALLTIMES ARE HALVED FROM WHAT THE TRANSFORM DECLARES, and that is not a guess.
+# `slurm.nf` DOUBLES the walltime on attempt >= 2, so `ecspr_measure`'s declared 24 h is a
+# 48 h second attempt -- an ask SLURM will not start ahead of a maintenance window, i.e. a
+# retry that can never run. `_fir.check_walltimes` enforces the doubled ask and these
+# overrides are sized to clear it.
+FIR_RESOURCE_OVERRIDES = None  # built lazily; needs metasmith imports
 
 
 def _fir_overrides():
+    """Sized from a MEASURED singleton on fir, not from the transform's declaration.
+
+    The ground probe on a 162,801-node carbon graph ran 3 m 48 s at 167 MB peak RSS and
+    2.6% CPU -- the leaky solve is single-threaded and its memory is nothing. So
+    `ecspr_measure`'s 16 cpus / 64 GB / 24 h is an ask that only delays scheduling, and
+    the three-member graphs are ~3x that, nowhere near these ceilings. Walltime is where
+    the headroom goes.
+
+    Keyed on the transform's file stem, so this dict follows the library: when the two
+    probes were a transform each these were two entries, `measure_ground` and
+    `measure_two_terminal`. A stale key here is silent -- an override that matches no
+    step simply does not apply and the declared 24 h stands.
+    """
     from metasmith.python_api import Duration, Resources, Size
     return {
         "ecspr_measure": Resources(cpus=4, memory=Size.GB(32), duration=Duration(hours=3)),
@@ -280,6 +483,9 @@ def drive_fir(*, only=None, host=None, agent_home=None, container=None,
 
     agent = fir_agent(host=host, agent_home=agent_home, container=container)
 
+    # ONE agent, many tasks. Deploy and the overlay are per-agent-home, not per-task, so
+    # doing them once is not an optimisation -- repeating them mid-flight would replace
+    # the engine under runs that are already executing.
     print("=== Deploy() ===", flush=True)
     agent.Deploy()
     provision_dev_overlay_remote(host, agent_home)
@@ -299,7 +505,14 @@ def drive_fir(*, only=None, host=None, agent_home=None, container=None,
             atom_pairs=d / "atom_pairs.parquet",
             direction_ratios=d / "direction.parquet",
             runtime=Runtime.APPTAINER, agent=agent,
+            # COPY, not reference. An absolute local path is an EXTERNAL input that
+            # metasmith binds verbatim into the remote container and does not transfer,
+            # so referencing them makes the remote agent refuse to stage at all. A
+            # composed network is tens of megabytes; copying is the cheap answer.
             stage="copy",
+            # A stable task key is what lets --wait and --retrieve name the same run
+            # directory as --run; without it a resubmission stages a fresh key sharing no
+            # cache with whatever already succeeded.
             on_inputs=pin_external_leaf_ids,
         )
         assert not stubs, f"{nid}: unexpected stubs {stubs}"
@@ -321,6 +534,10 @@ def drive_fir(*, only=None, host=None, agent_home=None, container=None,
         return 0
 
     if not wait_only:
+        # IN FLIGHT, not "launched so far". The throttle has to shrink as runs finish, so
+        # the set it waits on must be the ones actually submitted and still going --
+        # waiting on `tasks` (every planned network, including ones never submitted) makes
+        # the drain return immediately and the throttle a no-op.
         in_flight = {}
         for nid, (task, work) in tasks.items():
             agent.StageWorkflow(task, on_exist="update")
@@ -336,6 +553,9 @@ def drive_fir(*, only=None, host=None, agent_home=None, container=None,
                               params={"slurmAccount": account},
                               resource_overrides=overrides)
             in_flight[nid] = (task, work)
+            # Each RunWorkflow leaves a nextflow supervisor on the LOGIN node, idling on
+            # slurm. Eleven of those is rude on a shared login node even though each one is
+            # cheap, so the launch waits for a slot rather than firing them all at once.
             if max_concurrent and len(in_flight) >= max_concurrent:
                 print(f"  ({len(in_flight)} in flight; waiting for a slot)", flush=True)
                 _wait_for(agent, in_flight, host, agent_home,
@@ -346,6 +566,13 @@ def drive_fir(*, only=None, host=None, agent_home=None, container=None,
 
 
 def _wait_for(agent, pending, host, agent_home, *, keep=0, retrieve_fn=None):
+    """Poll the agent's own run logs until at most `keep` of `pending` are still running.
+
+    MUTATES `pending`: completed runs are popped, so the caller's in-flight set shrinks as
+    slots free. The runs are DETACHED -- `RunWorkflow` launches nextflow with nohup and
+    returns -- so this process is a spectator and losing it loses nothing; re-attaching
+    works because the task keys are pinned.
+    """
     import time
     from _fir import ssh_once
 
@@ -376,11 +603,31 @@ def drive(*, run, threads, outdir, only=None):
     env = dict(**{k: v for k, v in __import__("os").environ.items()})
     env["PYTHONPATH"] = str(REPO / "src") + ":" + env.get("PYTHONPATH", "")
     ok, bad = [], []
+    # Smallest graph first. A three-member carbon graph is ~490k nodes against a
+    # singleton's 163k and the leaky solve is superlinear in that, so ordering by member
+    # count means a run that has to be stopped early still has the controls and every
+    # pairwise comparison in hand rather than one unfinished triple.
     for nid, srcs in sorted(inv.items(), key=lambda kv: (kv[0].count("-"), kv[0])):
         cmd = build_cmd(nid, srcs, run=run, threads=threads, outdir=outdir)
         print(f"\n{'='*70}\n[{nid}] {len(srcs)} unit(s): {', '.join(srcs)}\n{'='*70}", flush=True)
         r = subprocess.run(cmd, cwd=REPO, env=env)
-        (ok if r.returncode == 0 else bad).append(nid)
+        # EXIT ZERO IS NOT EVIDENCE OF A MEASUREMENT. `slurm.nf`/`local.nf` run the step
+        # with `errorStrategy 'ignore'`, so a transform that dies -- a missing binary in
+        # the declared image is the one that has actually happened -- is reported as
+        # `terminated with an error exit status (1) -- Error is ignored`, the run
+        # "completes" with zero outputs, and the driver's exit code is 0. Count the
+        # products instead: one per (unit, element), and nothing else distinguishes the
+        # two outcomes from out here.
+        got = len(list((outdir / nid).rglob("ecspr-ground_results/*.parquet"))) if run else 1
+        want = len(srcs) * len(ELEMENTS) if run else 1
+        if r.returncode == 0 and got >= want:
+            ok.append(nid)
+        else:
+            bad.append(nid)
+            if r.returncode == 0:
+                print(f"[{nid}] FAILED SILENTLY: {got} ground products, expected {want}. "
+                      f"The step's own stderr is in the run's nxf_work task dir.",
+                      file=sys.stderr, flush=True)
     print(f"\n{len(ok)} ok, {len(bad)} failed" + (f": {bad}" if bad else ""))
     return 1 if bad else 0
 
@@ -388,6 +635,8 @@ def drive(*, run, threads, outdir, only=None):
 def main(argv=None):
     p = argparse.ArgumentParser(description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    p.add_argument("--refs", action="store_true",
+                    help="rebuild metabolite_names + carrier_blacklist from the bake")
     p.add_argument("--compose", action="store_true", help="build networks + conditions")
     p.add_argument("--plan", action="store_true", help="plan every unit, run nothing")
     p.add_argument("--run", action="store_true", help="plan and execute")
@@ -410,8 +659,10 @@ def main(argv=None):
     a = p.parse_args(argv)
 
     fir = a.fir or a.fir_preflight or a.fir_wait
-    if not (a.compose or a.plan or a.run or fir):
-        p.error("pick one of --compose / --plan / --run / --fir")
+    if not (a.refs or a.compose or a.plan or a.run or fir):
+        p.error("pick one of --refs / --compose / --plan / --run / --fir")
+    if a.refs:
+        build_refs(elements=tuple(a.elements))
     if a.compose:
         compose_all(g0=a.g0, elements=tuple(a.elements))
     if fir:
