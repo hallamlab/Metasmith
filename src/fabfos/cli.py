@@ -7,9 +7,10 @@ import sys
 from . import __version__, NAME, SHORT_SUMMARY
 
 DRIVERS = {
-    "assemble": "assembly",
-    "annotate": "annotation",
-    "ecspr": "ecspr",
+    "assemble": "pipelines.assembly",
+    "annotate": "pipelines.annotation",
+    "ecspr": "pipelines.ecspr",
+    "refs": "refs",
 }
 
 _USAGE = f"""usage: {NAME} <command> [options]
@@ -20,6 +21,7 @@ commands:
   assemble            reads -> putative inserts + ORFs
   annotate            ORFs + references -> GPR table
   ecspr               GPR table + references -> ECSPr results
+  refs                pin / inspect the reference library the three lanes read
 
   --version           the CLI package version
   --method-version    the method id: what this pipeline IS, not what it runs
@@ -71,7 +73,7 @@ def main(argv: "list[str] | None" = None) -> int:
 
     import importlib
 
-    driver = importlib.import_module(f".pipelines.{DRIVERS[cmd]}", __package__)
+    driver = importlib.import_module(f".{DRIVERS[cmd]}", __package__)
     return driver.main(rest)
 
 

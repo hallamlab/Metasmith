@@ -1,16 +1,10 @@
-import os
+import os, sys
 from pathlib import Path
-import setuptools
-
 HERE = Path(os.path.realpath(__file__)).parent
-NAME = HERE.name
-USER = "hallamlab"
-GIT_URL = f"https://github.com/{USER}/{NAME}"
-SHORT_SUMMARY = "A pipeline for the analysis of pooled fosmid data, run on metasmith"
-ENTRY_POINTS = [f"{e}={NAME}.cli:main" for e in (NAME, "ffs")]
-
-with open(HERE / "version.txt") as f:
-    VERSION = f.read().strip()
+_src = str(HERE.parent)
+sys.path = [_src] + [p for p in sys.path if p != _src]
+import setuptools
+from fabfos.constants import USER, NAME, VERSION, SHORT_SUMMARY, ENTRY_POINTS, GIT_URL
 
 if __name__ == "__main__":
     setuptools.setup(

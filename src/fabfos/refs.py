@@ -4,15 +4,14 @@ A reference here is 17 GB of diamond database, 7.2 GB of kofam profiles, an
 embedding stack. `DataInstanceLibrary.AddItem` derives a leaf's identity from
 the file's bytes, so registering these cost ~10 seconds of blake3 on every plan
 against a solve that takes 1 -- and it bought nothing, because the answer is the
-same every time. Two of the five are *directories*, which `_mint_leaf_id` cannot
-content-address at all, so they were getting a fresh `uuid4` per plan and the
-annotation lane's task key was already non-deterministic on one machine.
+same every time. Two of the five are *directories*, whose content address is a
+whole-tree walk -- the most expensive of the five to derive and the least likely
+to have changed.
 
 Every one of these chunks is DVC-pinned, and a `.dvc` file records an md5 that
 DVC computed over the real bytes. That is a better identity than anything this
-code could derive: cheaper (it is already written down), stronger for a
-directory (DVC hashes the tree, we cannot), and agreed on by every host that
-checks out the same pin. So an id here is
+code could derive: cheaper (it is already written down) and agreed on by every
+host that checks out the same pin. So an id here is
 
     multihash_key(b"dvc\\0" + md5 + relpath)
 
@@ -73,6 +72,8 @@ import yaml
 from metasmith.models.libraries.pinned import PinnedLibraryError
 from metasmith.python_api import DataInstanceLibrary
 from metasmith.caching.keys import multihash_key
+
+from .constants import RefPaths
 
 
 REF_LAYOUT: dict[str, "str | tuple[str, ...]"] = {
@@ -177,20 +178,20 @@ def record_published_provenance(refs_root: Path, rel: str, *, instance_id: str,
 
 
 def refs_library_path(refs_root: Path) -> Path:
-    # Where the pinned library for `refs_root` lives.
-    #
-    # Beside the data rather than inside it: the manifest holds absolute paths, so
-    # putting the library *at* `processed/` with relative entries would look
-    # tidier and would stage 24 GB on every run.
-    override = os.environ.get("FABFOS_REFS_XGDB")
-    if override:
-        return Path(override).expanduser().resolve()
-    return Path(refs_root).resolve().parent / "refs.xgdb"
+    return RefPaths.xgdb(refs_root)
 
 
 def _library_root() -> Path:
-    from .pipelines import common
-    return common.resolve_library_root()
+    return RefPaths.library_root()
+
+
+def _library_root_or_why() -> str:
+    # `--help` must answer even where no library is installed, which is exactly
+    # where a reader most needs to be told the variable exists.
+    try:
+        return str(RefPaths.library_root())
+    except FileNotFoundError:
+        return "not found; set this"
 
 
 def pin_refs(
@@ -323,11 +324,16 @@ def refs_view(lib: DataInstanceLibrary, keep_types: Iterable[str]):
     return lib.AsView(hide, invert=True)
 
 
-def _main(argv: list[str] | None = None) -> int:
-    from .pipelines import common
-
-    ap = argparse.ArgumentParser(prog="fabfos refs", description=__doc__,
-                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+def main(argv: list[str] | None = None) -> int:
+    ap = argparse.ArgumentParser(
+        prog="fabfos refs", description=__doc__,
+        epilog=(
+            "environment (fabfos.constants.RefPaths owns all three):\n"
+            f"  FABFOS_REFS_ROOT   the `processed/` root  [{RefPaths.REFS_ROOT}]\n"
+            f"  FABFOS_REFS_XGDB   the pinned library     [{RefPaths.xgdb(RefPaths.REFS_ROOT)}]\n"
+            f"  FABFOS_LIBRARY     the transform library  [{_library_root_or_why()}]\n"
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="verb", required=True)
     for verb, helptext in (
         ("pin", "build the pinned reference library (reads no data)"),
@@ -335,10 +341,12 @@ def _main(argv: list[str] | None = None) -> int:
         ("inspect", "show what the pinned library records"),
     ):
         s = sub.add_parser(verb, help=helptext)
-        s.add_argument("--refs-root", default=str(common.DATA_PROCESSED),
+        s.add_argument("--refs-root", default=str(RefPaths.REFS_ROOT),
                        help="the `processed/` root to pin"
-                            f" (default: $FABFOS_REFS_ROOT, else {common.DATA_PROCESSED})")
-        s.add_argument("--out", default=None)
+                            f" (default: $FABFOS_REFS_ROOT, else {RefPaths.DEFAULT_REFS_ROOT})")
+        s.add_argument("--out", default=None,
+                       help="the pinned library to write"
+                            " (default: $FABFOS_REFS_XGDB, else refs.xgdb beside --refs-root)")
     args = ap.parse_args(argv)
 
     root = Path(args.refs_root)
@@ -364,4 +372,4 @@ def _main(argv: list[str] | None = None) -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(_main())
+    sys.exit(main())

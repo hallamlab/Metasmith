@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 import time
 from pathlib import Path
 
@@ -15,55 +14,10 @@ from metasmith.python_api import (
     SourceType,
 )
 
-REPO_ROOT = Path(__file__).resolve().parents[3]
+from ..constants import REPO_ROOT, AGENT_ENV, RefPaths
 
-
-def resolve_refs_root() -> Path:
-    # The `processed/` root every reference default is measured from.
-    #
-    # `FABFOS_REFS_ROOT` repoints it, which is how a run reaches a bake other than
-    # this checkout's -- prod against one, local development against another,
-    # without editing a default or passing five paths. `FABFOS_REFS_XGDB` moves the
-    # pinned library that indexes it; the two are separate because the library is
-    # generated beside the data, not inside it.
-    override = os.environ.get("FABFOS_REFS_ROOT")
-    if override:
-        return Path(override).expanduser().resolve()
-    return REPO_ROOT / "data" / "fabfos" / "processed"
-
-
-DATA_PROCESSED = resolve_refs_root()
-
-
-def _looks_like_library(root: Path) -> bool:
-    return all((root / sub).is_dir() for sub in ("data_types", "resources", "transforms"))
-
-
-def resolve_library_root() -> Path:
-    override = os.environ.get("FABFOS_LIBRARY")
-    if override:
-        root = Path(override).expanduser().resolve()
-        if not _looks_like_library(root):
-            raise FileNotFoundError(
-                f"FABFOS_LIBRARY=[{root}] is not a metasmith library "
-                f"(missing data_types/ resources/ transforms/)"
-            )
-        return root
-
-    package_dir = Path(__file__).resolve().parent.parent
-    bundled = package_dir / "_library"
-    if _looks_like_library(bundled):
-        return bundled
-
-    dev_sibling = package_dir.parent / "metasmith_libraries"
-    if _looks_like_library(dev_sibling):
-        return dev_sibling
-
-    raise FileNotFoundError(
-        "could not locate the FabFos metasmith library. Set FABFOS_LIBRARY, "
-        "install the package with a bundled library, or run from a source "
-        "checkout with the sibling src/metasmith_libraries module present."
-    )
+DATA_PROCESSED = RefPaths.REFS_ROOT
+resolve_library_root = RefPaths.library_root
 
 
 def stage_ref(inputs: DataInstanceLibrary, staging: Path, dtype: str, *,
@@ -136,7 +90,7 @@ def add_execution_args(p) -> None:
                    help="refuse to run unless the live method matches ID "
                         "(full '0.4.0+abc1234' or bare '0.4.0')")
     g.add_argument("--agent-env", metavar="NAME",
-                   default=os.environ.get("FABFOS_AGENT_ENV"),
+                   default=AGENT_ENV,
                    help="conda env the AGENT runs in under --runtime mamba (the "
                         "one with metasmith installed); ignored otherwise. "
                         "Default: $FABFOS_AGENT_ENV")
