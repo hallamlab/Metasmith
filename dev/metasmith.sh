@@ -132,6 +132,82 @@ PY
     return 0
 }
 
+# The conda half of the check above. conda-build is where the damage happens:
+# with binary_relocation on it treats the cross-built ELFs as libraries of the
+# build host, patchelfs them, and the x86_64-linux binary segfaults on exec.
+# The recipe turns relocation off, so this asks the built package whether that
+# is still true -- in a clean env, from a local channel, before the artifact
+# leaves the machine. Nothing fails at build, install or import when it is not
+# true; the planner just falls back to the python search.
+# Set MSM_SKIP_SOLVER_CHECK=1 to override (shared with the two guards above:
+# they are the same claim, checked in three places).
+_assert_engine_in_conda_package() {
+    [ -n "$MSM_SKIP_SOLVER_CHECK" ] && {
+        echo "MSM_SKIP_SOLVER_CHECK set — skipping conda package solver engine check"
+        return 0
+    }
+    local pkg
+    pkg=$(find "$HERE/conda_build" -name "$NAME-*.tar.bz2" 2>/dev/null | head -1)
+    if [ -z "$pkg" ]; then
+        echo ""
+        echo "ERROR: no built conda package under $HERE/conda_build"
+        echo ""
+        echo "  Build it first:"
+        echo "    $HERE/dev/metasmith.sh -bc"
+        echo ""
+        echo "  Override (NOT recommended) by setting MSM_SKIP_SOLVER_CHECK=1."
+        return 1
+    fi
+    local env_name="${NAME}_pkgcheck_$$"
+    echo "installing $(basename "$pkg") into throwaway env [$env_name]"
+    echo "  (a clean-room install; expect this to take a minute)"
+    local out rc
+    if ! out=$(env -u PYTHONPATH mamba create -y -n "$env_name" \
+            -c "file://$HERE/conda_build" -c "$DEV_USER" -c bioconda -c conda-forge \
+            "$NAME=$VER" 2>&1); then
+        echo "$out" | tail -20
+        echo ""
+        echo "ERROR: the built conda package does not install into a clean env"
+        echo "  Override (NOT recommended) by setting MSM_SKIP_SOLVER_CHECK=1."
+        env -u PYTHONPATH mamba env remove -y -n "$env_name" >/dev/null 2>&1
+        return 1
+    fi
+    # PYTHONPATH cleared throughout: the workspace checkout otherwise shadows
+    # the install and this proves nothing.
+    out=$(env -u PYTHONPATH mamba run -n "$env_name" python -c "
+import os, sys
+from metasmith.models.solver_backend import Backend
+from metasmith.models.solver_engine import packaged_engine_path, platform_slot
+p = packaged_engine_path()
+print(f\"  slot={platform_slot()}\")
+print(f\"  path={p}\")
+if p is not None:
+    print(f\"  mode={oct(os.stat(p).st_mode & 0o777)} exec={os.access(p, os.X_OK)}\")
+b = Backend(\"solve\")
+print(f\"  backend={b}\")
+sys.exit(0 if b == \"rust\" else 1)
+" 2>&1)
+    rc=$?
+    echo "$out"
+    env -u PYTHONPATH mamba env remove -y -n "$env_name" >/dev/null 2>&1
+    if [ $rc -ne 0 ]; then
+        echo ""
+        echo "ERROR: the conda package at $pkg does not run the solver engine"
+        echo "  Published, it would plan on the python fallback -- correct, and"
+        echo "  roughly 15x slower -- and nothing downstream would say so."
+        echo ""
+        echo "  Check binary_relocation/detect_binary_files_with_prefix are still"
+        echo "  off in conda_recipe/metasmith/meta_template.yaml, then rebuild:"
+        echo "    $HERE/dev/metasmith.sh -be    # build all 4 targets and stage them"
+        echo "    $HERE/dev/metasmith.sh -bp    # rebuild the sdist"
+        echo "    $HERE/dev/metasmith.sh -bc    # rebuild the conda package"
+        echo ""
+        echo "  Override (NOT recommended) by setting MSM_SKIP_SOLVER_CHECK=1."
+        return 1
+    fi
+    return 0
+}
+
 # Refuse to bake a stale pip artifact into the image or conda package. dist/ is
 # produced once by -bp and then frozen; -bd re-tags the image from the *live*
 # source tree while installing whatever sdist sits in dist/, and -bc packages
@@ -447,6 +523,7 @@ case $1 in
     ;;
     -uc) # conda (personal channel)
         # run `anaconda login` first
+        _assert_engine_in_conda_package || exit 1
         find ./conda_build -name *.tar.bz2 | xargs -I % anaconda upload -u $DEV_USER %
     ;;
     -ud) # docker
@@ -455,8 +532,12 @@ case $1 in
         _assert_real_relays || exit 1
         _assert_engine_in_image || exit 1
 	    docker push $DOCKER_IMAGE:$DOCKER_TAG
-        echo "!!!"
-        echo "remember to update the \"latest\" tag"
+        # `latest` and the bare version are what a user without a pinned tag
+        # gets, so they move with the push rather than in a later web-UI visit.
+        for alias in latest "$VER"; do
+            docker tag $DOCKER_IMAGE:$DOCKER_TAG $DOCKER_IMAGE:$alias
+            docker push $DOCKER_IMAGE:$alias
+        done
         echo "https://$DOCKER_IMAGE?tab=tags"
     ;;
 
