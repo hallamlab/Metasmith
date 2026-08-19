@@ -519,6 +519,13 @@ behaviour are readable in `src/metasmith/gui/` and `src/metasmith/frontend/`.
   find out what a plan needs. So input problems are recorded into the result **at solve time**,
   and the run route refuses on that record rather than on what the page says at click time: the
   verdict must belong to the solve that produced the bundle a run would stage.
+- **What a plan was solved from lives in the plan.** The request is rewritten on nearly every
+  edit, so it describes the page as it is now and never the bundle beside it — asked whether a
+  result is stale, it answers about the editor. The browser fingerprints the recipe it sends and
+  the solve stores that string verbatim, minting nothing itself, so one implementation decides
+  what a recipe serialises to. That is also why `rows.normalize` runs on *both* sides of the
+  wire: a row just built and the same row just read off disk must serialise alike, or the
+  fingerprint moves on a reload that changed nothing.
 - **`ops.inputs.sync` is the one writer of an input library**, called unconditionally at the top
   of every solve — no gesture to remember, and no state between an edit and a solve that can go
   stale. **The sync is incremental, and that is not tidiness**: identity is a function of path and
