@@ -59,7 +59,7 @@ input_library:
       instance_id: 1e20bc1103fe1117d6c72d5dec95ac92c7d2adb58de9af18e068059cbd9c5f1a70dd
       origin: leaf
     /msm_deferred/38ec194cc9d846f78f8010b502757baa:
-      type: ref::reference_label_pool
+      type: ref::label_transfer_landmarks
       instance_id: 1e201aa9c60041ae54e36d2a4391b91149a77532e76174ca50a5aad7654b6827a93d
       origin: leaf
     /msm_deferred/59ac013d911f4359a77f25e73ca6b563:

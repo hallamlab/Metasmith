@@ -1,0 +1,2 @@
+pool_accessions	blocks	block_size	tail	blocks_resolved	accessions_kept	anchors	anchors_correct	identical_seq_groups	duplicated_sequences	duplicated_embeddings
+222019	217	1024	835	209	214016	443	442	15692	49955	51045

@@ -412,7 +412,7 @@ consumer rebuilds the `equilibrator/` level by symlink (compounds.sqlite is 1.3 
 this runs once per member). Pooch re-checks its embedded md5 before using either file, so
 a wrong or truncated staged cache is caught at the consumer too.
 
-### R7 · `proteinBERT/` — the reference label pool  ⚠ CHANGED, see *Open decisions*
+### R7 · `label_transfer_landmarks/` — the labelled landmarks  ⚠ CHANGED, see *Open decisions*
 Swiss-Prot sequences, embedded with ProteinBERT, labelled with MetaNetX reaction ids
 mapped through Rhea. Those three clauses are one sentence and each is load-bearing.
 **Requires:** `originals/swissprot/` + R5.
@@ -433,7 +433,18 @@ have drifted far enough apart that the pool is quietly a subset of what it claim
 The `reviewed` slice is 365,240 rows against 35,397,466 unreviewed, landing in the same
 order as the deployed pool's 273,764 — but it is not that pool; see *Open decisions*.
 
-### R10 · `reference_label_pool_esmc/` — the same pool, embedded with ESM-C
+**One parquet, one row per accession** — the accession, its MNXR labels and its 512
+floats side by side. It was an index parquet beside an `.npy` stack addressed by row,
+and it shipped scrambled: `pbert` writes fixed 1,024-sequence chunks named `<stem>.1`,
+`<stem>.2`, … with no zero padding, the assemble step stacked `sorted(glob("*.npy"))`,
+and lexicographic order puts chunk 10 before chunk 2 while the index stays in FASTA
+order. Every one of the 222,019 references then carried another protein's reactions,
+the length check passed and the label merge passed. The chunks are now stacked by their
+integer suffix and the id order is checked against the FASTA the transform itself wrote
+before a label is attached. **Every `pbert` column produced before this fix measured
+the misalignment rather than the lane.**
+
+### R10 · `label_transfer_landmarks_esmc/` — the same landmarks, embedded with ESM-C
 The same bridge cut, the same Swiss-Prot release, the same accessions as R7, embedded
 with ESM-C 600M so `gpr_7lane`'s ESM-C kNN lane has a pool of its own to vote against.
 **Requires:** `originals/swissprot/` + R5 + R8.
@@ -442,9 +453,8 @@ with ESM-C 600M so `gpr_7lane`'s ESM-C kNN lane has a pool of its own to vote ag
 images — `proteinbert.env` carries no ESM-C SDK and `esmc.env` carries no ProteinBERT —
 and only the ESM-C pass needs a GPU, so folding them together would make every
 ProteinBERT rebuild queue for a device and put both stacks' fate in one exit code. Each
-directory therefore carries the `orf_index.parquet` that addresses **its own** stack;
-pairing one run's index with another's embeddings misindexes every row and writes a
-full, confident, wrong table with nothing raised.
+carries its accessions in the rows of its own embeddings, so neither can be paired with
+the other's vectors by accident.
 
 **A pool is only comparable to a query if the same function produced both**, so the
 transform's inference block is `functionalAnnotation/esm_c.py`'s, copied — same weights,
@@ -464,7 +474,7 @@ The fourth annotation lane has **no compiled reference and no acquisition**. ESM
 the max-separation bundle are baked into `docker://quay.io/hallamlab/external_clean:2026.06.14`
 at `/app`, so under a container runtime the weights are already present and there is
 nothing for a transform to produce. The same holds for ProteinBERT's weights: R7 builds
-the labelled *pool*, never the model. The build's entire obligation to the CLEAN lane is
+the labelled *landmarks*, never the model. The build's entire obligation to the CLEAN lane is
 R5's `ec` route.
 
 **The asymmetry is the point, and it is not arbitrary.** Two of the seven lanes get a
@@ -474,7 +484,7 @@ do not:
 | lane | weights | artifact |
 |---|---|---|
 | CLEAN | baked into `external_clean` | none, and never will be |
-| ProteinBERT | baked into `external_proteinbert` | none — R7 is the labelled *pool* |
+| ProteinBERT | baked into `external_proteinbert` | none — R7 is the labelled *landmark set* |
 | ESM-C | the SDK fetches it on first use | **R8** (+ **R10**, the labelled pool) |
 | EZpred | Zenodo drops, plus a source tree | **R9** (no producer — see below) |
 
@@ -672,7 +682,7 @@ exists to keep that tree internally consistent and is about the tree, not about 
 **The lane set is the table's contract, and it is checked.** A B2 table carries exactly
 the four channels `lib::fabfos_evidence.LANE_SETS["chosen_4"]` declares; the collector
 refuses by name when the mapper's output does not, and its `BUILD.json` records the set it
-checked. The fourth lane's reference is R7 above, built by `compile/reference_label_pool.py`
+checked. The fourth lane's reference is R7 above, built by `compile/label_transfer_landmarks.py`
 — an absent pool is a staging failure that stops the run, never a shorter table.
 
 ### B3 · `<study>/gpr_manual.parquet`  (7 studies)
@@ -850,7 +860,7 @@ Everything under `data/` not named above.
 
 ## Open decisions
 
-**R7 — the reference label pool. RESOLVED in the contract, open in its consequence.**
+**R7 — the labelled landmarks. RESOLVED in the contract, open in its consequence.**
 The pool is now built from Swiss-Prot (2026_02, 222,019 reviewed sequences) labelled
 through the `mnxr_lookup` bridge rather than from a separate labelled proteome, which
 removes an acquisition and the KEGG licensing question with it. The built artifact

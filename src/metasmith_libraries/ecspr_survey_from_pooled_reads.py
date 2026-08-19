@@ -53,7 +53,7 @@ def build_spec(rebuild: bool = False) -> Spec:
         lib.AddItem(DEFERRED, "algorithm::fabfos_recovery.py")
 
         lib.AddItem(DEFERRED, "ref::mnxr_lookup")
-        lib.AddItem(DEFERRED, "ref::reference_label_pool")
+        lib.AddItem(DEFERRED, "ref::label_transfer_landmarks")
 
         lib.AddItem(DEFERRED, "ecspr::conditions", parents={exp})
         lib.AddItem(DEFERRED, "ecspr::atom_pairs")

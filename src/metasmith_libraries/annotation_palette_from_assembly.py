@@ -30,7 +30,6 @@ def build_spec(rebuild: bool = False) -> Spec:
             "annotation::diamond_uniref50_results",
             "annotation::eggnog_results",
             "annotation::proteinbert_embeddings",
-            "annotation::proteinbert_index",
             "taxonomy::metabuli",
         ],
         transform_libraries=A.transforms(

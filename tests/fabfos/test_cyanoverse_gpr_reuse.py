@@ -18,7 +18,7 @@ def _plan(work: Path, on_inputs):
     return annotation.generate_workflow(
         work, orfs=[f"{cv.SHARDS_DIR}/{s}.faa" for s in SHARDS],
         kofam_profiles=None, kofam_ko_list=None, uniref50_db=None,
-        mnxr_lookup=None, label_pool=None, runtime=Runtime.APPTAINER,
+        mnxr_lookup=None, landmarks=None, runtime=Runtime.APPTAINER,
         refs_root=cv.REFS_ROOT, verify_refs=False, stage_orfs="remote",
         on_inputs=on_inputs,
     )

@@ -18,7 +18,7 @@ WHICH REFERENCES, AND WHY EXACTLY THESE FIVE
     kofamscan_profiles + kofamscan_ko_list   the HMM lane          (one chunk)
     uniref50_diamond_db                      the homology lane
     mnxr_lookup                              EVERY lane's terminus
-    reference_label_pool                     the ProteinBERT kNN lane
+    label_transfer_landmarks                     the ProteinBERT kNN lane
 
 CLEAN and ProteinBERT get no artifact each, and the asymmetry is not an oversight:
 their weights are baked into their images, so under a container runtime there is
@@ -71,6 +71,7 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[3]
 
+# The PINNED engine, ahead of whatever is installed in the env.
 _ENGINE = REPO / "src"
 if (_ENGINE / "metasmith").is_dir():
     sys.path.insert(0, str(_ENGINE))
@@ -96,6 +97,9 @@ PROCESSED = DATA / "processed"
 SCRATCH = DATA / "scratch"
 ARTIFACTS = REPO / "tests" / "fabfos" / "artifacts"
 
+# Every source folder the four compiles read. Staged as-is: a `fabfos_data::` type is
+# a WHOLE upstream distribution, and each compile asserts for itself that the folder
+# holds exactly one release directory.
 SOURCES = {
     "fabfos_data::metanetx": "metanetx",
     "fabfos_data::kegg": "kegg",
@@ -103,6 +107,8 @@ SOURCES = {
     "fabfos_data::kofam": "kofam",
     "fabfos_data::uniref": "uniref",
     "fabfos_data::swissprot": "swissprot",
+    # T4: the ESM-C checkpoint, for the two lanes the chosen-four omits. `acquire/
+    # esm_c.py` writes it; the repository is public, so nothing here is gated.
     "fabfos_data::esm_c": "esm_c",
 }
 
@@ -111,26 +117,39 @@ TARGETS = [
     "ref::kofamscan_ko_list",
     "ref::uniref50_diamond_db",
     "ref::mnxr_lookup",
-    "ref::reference_label_pool",
+    "ref::label_transfer_landmarks",
+    # The three decided-against lanes need these two. `ref::ezpred_model` is NOT here:
+    # its compile is still in transforms/_deferred/, blocked on how a *patched* source
+    # tree enters the graph (see that directory's README), so the bundle is staged as a
+    # given for now and the open decision is recorded rather than silently resolved.
     "ref::esm_c_600m_weights",
-    "ref::reference_label_pool_esmc",
+    "ref::label_transfer_landmarks_esmc",
 ]
 
-EXPECTED = {"kofam_ref", "uniref50_dmnd", "mnxr_lookup", "reference_label_pool",
-            "esm_c_weights", "reference_label_pool_esmc"}
+EXPECTED = {"kofam_ref", "uniref50_dmnd", "mnxr_lookup", "label_transfer_landmarks",
+            "esm_c_weights", "label_transfer_landmarks_esmc"}
 
+# The processed tier. The KEY is the full path under data/processed/, because two
+# products share the kofam chunk: `<chunk>` is the DVC pin's granularity, and a
+# ko_list paired with profiles from a different build applies the wrong threshold to
+# every hit with nothing raised. `kofamscan_profiles` is a DIRECTORY of .hmm files
+# despite its `.tgz` type extension -- kofam_ref untars it, which is the whole point.
 PUBLISH_AT = {
     "ref::kofamscan_profiles": "kofam_ref/profiles",
     "ref::kofamscan_ko_list": "kofam_ref/ko_list.tsv",
     "ref::uniref50_diamond_db": "uniref50_dmnd/uniref50.dmnd",
     "ref::mnxr_lookup": "mnxr_lookup/mnxr_lookup.parquet",
-    "ref::reference_label_pool": "reference_label_pool/pool",
+    "ref::label_transfer_landmarks": "label_transfer_landmarks/landmarks",
+    # `.tgz` is not decoration here: the ESM SDK resolves `data/weights/<file>.pth`
+    # from the process cwd, so the archive IS the unit that layout belongs to and both
+    # consumers untar it before use.
     "ref::esm_c_600m_weights": "esm_c_weights/esmc_600m.tgz",
-    "ref::reference_label_pool_esmc": "reference_label_pool_esmc/pool_esmc",
+    "ref::label_transfer_landmarks_esmc": "label_transfer_landmarks_esmc/landmarks_esmc",
 }
 
-CHUNKS = ("kofam_ref", "uniref50_dmnd", "mnxr_lookup", "reference_label_pool",
-          "esm_c_weights", "reference_label_pool_esmc")
+# The DVC chunks those paths land in -- one pin each, two levels deep.
+CHUNKS = ("kofam_ref", "uniref50_dmnd", "mnxr_lookup", "label_transfer_landmarks",
+          "esm_c_weights", "label_transfer_landmarks_esmc")
 
 TYPE_LIBRARIES = (
     [MLIB / "data_types" / f for f in
@@ -139,19 +158,48 @@ TYPE_LIBRARIES = (
        ("fabfos_data.yml", "raw.yml", "interm.yml", "bench.yml", "buildlib.yml")]
 )
 
+# fir's cpubase nodes are 192 cores / 768 GB, so these asks are modest there and were
+# not on a desktop. The two poles: DIAMOND over an 8.2 GB fasta, and ProteinBERT over
+# the ~222k reviewed Swiss-Prot accessions the bridge selects.
+#
+# The pool's memory is the number that changed. It died locally at 142 of ~217 batches
+# with the host at 1 GB free; the fix is not a smaller batch but an allocation that is
+# actually reserved. TensorFlow sizes its arena off the visible core count, so cpus and
+# memory move together.
+#
+# The DURATIONS are deliberately near the measured cost rather than generously above
+# it. A walltime is not free optimism: SLURM refuses to start a job that cannot finish
+# before a reservation covering the nodes it needs, and fir's maintenance windows carry
+# ALL_NODES -- so a 12 h ask made both poles unschedulable with hundreds of nodes idle,
+# PENDING on `ReqNodeNotAvail` forever rather than failing. `check_walltimes` reports
+# that case now; these numbers are what actually fits.
 RESOURCE_OVERRIDES = {
     "uniref50_dmnd": Resources(cpus=32, memory=Size.GB(128), duration=Duration(hours=4)),
-    "reference_label_pool": Resources(cpus=16, memory=Size.GB(128), duration=Duration(hours=4)),
+    "label_transfer_landmarks": Resources(cpus=16, memory=Size.GB(128), duration=Duration(hours=4)),
     "mnxr_lookup": Resources(cpus=4, memory=Size.GB(64), duration=Duration(hours=4)),
     "kofam_ref": Resources(cpus=2, memory=Size.GB(16), duration=Duration(hours=2)),
     "esm_c_weights": Resources(cpus=2, memory=Size.GB(8), duration=Duration(hours=1)),
-    "reference_label_pool_esmc": Resources(
+    # The ESM-C pass over the same ~222k accessions. The GPU fields are repeated from
+    # the transform's own declaration on purpose: these directives are appended AFTER
+    # the rendered GPU block and win per-directive, so an override that named only
+    # cpus/memory here would be fine -- but one that ever grew an accelerator line
+    # would not, and stating the requirement twice is cheaper than relying on that.
+    # 2 h, not 3: `slurm.nf` doubles the walltime on retry, and a retry has to stay
+    # schedulable too. 3 h became a 6 h second attempt, which SLURM would not start
+    # before the maintenance window and so left PENDING forever.
+    "label_transfer_landmarks_esmc": Resources(
         cpus=8, memory=Size.GB(64), duration=Duration(hours=2),
         gpus=Gpus.REQUIRED, gpu_memory=Size.GB(24)),
 }
 
+# Images are read off the RESOLVED plan (`envs_from_plan`) and checked against fir's
+# apptainer store before anything is submitted. A compute node there has no outbound
+# network, so an image not already present when a task starts cannot be pulled and the
+# task dies after queueing rather than at submission.
+
 
 def sync_sources(host: str, remote_root: str) -> None:
+    """Upload the six pinned source folders. Idempotent; ~11.4 GB the first time."""
     ssh_once(host, f"mkdir -p {remote_root}")
     for name in sorted(set(SOURCES.values())):
         src = ORIGINALS / name
@@ -164,6 +212,10 @@ def sync_sources(host: str, remote_root: str) -> None:
 
 
 def check_sources(host: str, remote_root: str) -> None:
+    """Each source folder must hold EXACTLY ONE release directory, checked on the host.
+
+    One ssh round trip for all six -- never a call per folder, and never in a loop.
+    """
     probe = "; ".join(
         f'echo "{name} $(ls -d {remote_root}/{name}/*/ 2>/dev/null | wc -l)"'
         for name in sorted(set(SOURCES.values())))
@@ -180,6 +232,13 @@ def check_sources(host: str, remote_root: str) -> None:
 
 
 def build_inputs(work: Path, remote_root: str, given_refs=None) -> DataInstanceLibrary:
+    """Declare the six source folders at their ABSOLUTE fir paths.
+
+    Absolute means metasmith references them in place; relative would copy them into
+    the library and stage 11.4 GB through the task for no gain. Nothing here downloads:
+    degrading to an acquire step would produce a reference whose provenance is a fresh
+    pull rather than the pin this repo records.
+    """
     xgdb = work / "inputs.xgdb"
     if xgdb.exists():
         shutil.rmtree(xgdb)
@@ -190,6 +249,11 @@ def build_inputs(work: Path, remote_root: str, given_refs=None) -> DataInstanceL
         remote = f"{remote_root}/{name}"
         print(f"    {dtype:28s} {remote}")
         inputs.AddItem(remote, dtype)
+    # References already built and pinned, declared as GIVENS so a subset build reuses
+    # them instead of rebuilding them. That is not just a saving: the ESM-C pool and the
+    # ProteinBERT pool must be labelled from the SAME bridge, and a rebuilt
+    # mnxr_lookup is only guaranteed to be the pinned one if the build is bit-for-bit
+    # deterministic. Reusing the pinned artifact makes that a fact rather than a hope.
     for dtype, remote in (given_refs or {}).items():
         print(f"    {dtype:28s} {remote}   (given)")
         inputs.AddItem(remote, dtype)
@@ -205,6 +269,10 @@ def plan(work: Path, agent, remote_root: str, targets=None, given_refs=None):
         DataInstanceLibrary.Load(BREF / "resources" / "buildlib"),
         inputs,
     ]
+    # acquire/ is loaded even though everything it produces is staged. That is what
+    # makes the staging checkable: an acquire transform appearing in the plan means a
+    # source folder did not resolve, and it is named below rather than discovered from
+    # the network graph an hour later.
     transforms = [
         TransformInstanceLibrary.Load(BREF / "transforms" / "acquire"),
         TransformInstanceLibrary.Load(BREF / "transforms" / "compile"),
@@ -241,6 +309,8 @@ def check_plan(task, expected=None) -> int:
     if missing:
         print(f"\nMISSING expected transforms: {sorted(missing)}", file=sys.stderr)
         bad = 1
+    # Two producers for one reference makes provenance a tiebreak. Asserted by name
+    # rather than by "we did not load it", because a future edit could.
     for dup in ("downloadKofamscanDB", "downloadUniref50", "downloadEsmC"):
         if dup in used:
             print(f"\nlogistics/{dup} is in the plan -- it produces the same ref:: type "
@@ -263,6 +333,16 @@ def publish(results: Path, *, dry_run: bool, publish_at=None) -> int:
 
 
 def verify(results: Path, publish_at=None) -> int:
+    """Which references a finished run actually produced -- from the MANIFESTS.
+
+    "run completed" IS NOT "every step succeeded". `slurm.nf` sets
+    `errorStrategy='ignore'` once a process exhausts its retries, so a step that died on
+    every attempt leaves the workflow green with its output simply absent -- and a
+    zero-output run prints exactly like a successful one. `_manifests/ref-<name>.*.json`
+    is written for every DECLARED product whether or not its step ran, so matching on
+    the path reports a reference "present" when only its placeholder exists. An empty
+    list is the tell.
+    """
     publish_at = PUBLISH_AT if publish_at is None else publish_at
     landed = landed_products(results, publish_at)
     short = set(publish_at) - landed
@@ -325,6 +405,10 @@ def main() -> int:
     ap.add_argument("--work", default=str(SCRATCH / "annotation_references"))
     a = ap.parse_args()
 
+    # A chunk subset narrows the targets, what gets published, and what `verify`
+    # insists on. All three move together: a run built for two references that then
+    # checked for six would report four absent, and one that published all six would
+    # copy placeholder paths over four already-pinned chunks.
     if a.targets:
         chunks = [c.strip() for c in a.targets.split(",") if c.strip()]
         unknown = [c for c in chunks if c not in CHUNKS]
@@ -345,6 +429,9 @@ def main() -> int:
 
     work = Path(a.work).resolve()
     if a.targets:
+        # Its own work directory too: `build_inputs` wipes inputs.xgdb, and the run's
+        # results land beside it. Sharing one would make a subset run's retrieval
+        # overwrite the full run's.
         work = work.parent / f"{work.name}_{'+'.join(sorted(chunks))}"
     work.mkdir(parents=True, exist_ok=True)
     local_results = work / "results"
@@ -393,6 +480,11 @@ def main() -> int:
         print("\nplan only: nothing staged, nothing run. Add --run.")
         return 0
 
+    # Deploy and the overlay come FIRST, then preflight: two of the six things
+    # preflight checks are what these two steps create, so checking before them
+    # refuses every first run against a fresh agent home. Both are cheap and neither
+    # submits a job, so nothing is wasted by the order -- what must not happen is
+    # reaching `sbatch` with a tool image absent from the store.
     print("=== Deploy() ===", flush=True)
     agent.Deploy()
     provision_dev_overlay_remote(a.host, a.agent_home)

@@ -83,20 +83,18 @@ from metasmith.caching.keys import multihash_key
 #: A tuple means alternates, first existing wins -- the ESM-C pool is published
 #: as `pool_esmc` on the fir mirror and `pool` locally.
 REF_LAYOUT: dict[str, "str | tuple[str, ...]"] = {
-    # `ref::reference_label_pool` is a DIRECTORY (index + embedding stack),
-    # which is why it is one product: the consumer addresses the stack by row,
-    # so an index from one build against a stack from another misindexes every
-    # row silently.
+    # `ref::label_transfer_landmarks` is a DIRECTORY -- one parquet plus the
+    # provenance file naming the embedder and the Swiss-Prot release, neither of
+    # which is recoverable from the table.
     "ref::kofamscan_profiles": "kofam_ref/profiles",
     "ref::kofamscan_ko_list": "kofam_ref/ko_list.tsv",
     "ref::uniref50_diamond_db": "uniref50_dmnd/uniref50.dmnd",
     "ref::mnxr_lookup": "mnxr_lookup/mnxr_lookup.parquet",
-    "ref::reference_label_pool": "reference_label_pool/pool",
+    "ref::label_transfer_landmarks": "label_transfer_landmarks/landmarks",
     "ecspr::atom_pairs": "metabolism_bake/atom_pairs.parquet",
     "ecspr::direction_ratios": "metabolism_bake/direction.parquet",
     "ref::esm_c_600m_weights": "esm_c_weights/esmc_600m.tgz",
-    "ref::reference_label_pool_esmc": ("reference_label_pool_esmc/pool_esmc",
-                                       "reference_label_pool_esmc/pool"),
+    "ref::label_transfer_landmarks_esmc": "label_transfer_landmarks_esmc/landmarks_esmc",
     "ref::ezpred_model": "ezpred_model/EZpred",
 }
 
@@ -107,7 +105,7 @@ ANNOTATION_REFS = (
     "ref::kofamscan_ko_list",
     "ref::uniref50_diamond_db",
     "ref::mnxr_lookup",
-    "ref::reference_label_pool",
+    "ref::label_transfer_landmarks",
 )
 ECSPR_REFS = (
     "ecspr::atom_pairs",

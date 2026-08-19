@@ -25,7 +25,7 @@ def _plan(work: Path):
     orfs.touch()
     return annotation.generate_workflow(
         work, orfs=orfs, kofam_profiles=None, kofam_ko_list=None,
-        uniref50_db=None, mnxr_lookup=None, label_pool=None, runtime=Runtime.APPTAINER,
+        uniref50_db=None, mnxr_lookup=None, landmarks=None, runtime=Runtime.APPTAINER,
     )
 
 
@@ -56,7 +56,7 @@ def test_annotation_driver_plans_many_samples(tmp_path):
 
     agent, task, stubs = annotation.generate_workflow(
         tmp_path, orfs=orfs, kofam_profiles=None, kofam_ko_list=None,
-        uniref50_db=None, mnxr_lookup=None, label_pool=None, runtime=Runtime.APPTAINER,
+        uniref50_db=None, mnxr_lookup=None, landmarks=None, runtime=Runtime.APPTAINER,
     )
 
     assert task.ok, f"annotation driver failed to plan {len(orfs)} samples: {task.plan}"
@@ -73,7 +73,7 @@ def test_annotation_driver_accepts_a_bare_path(tmp_path):
     orfs.touch()
     _, task, _ = annotation.generate_workflow(
         tmp_path, orfs=orfs, kofam_profiles=None, kofam_ko_list=None,
-        uniref50_db=None, mnxr_lookup=None, label_pool=None, runtime=Runtime.APPTAINER,
+        uniref50_db=None, mnxr_lookup=None, landmarks=None, runtime=Runtime.APPTAINER,
     )
     assert task.ok
     assert _given_orf_count(task) == 1

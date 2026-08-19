@@ -1,3 +1,72 @@
+"""ECSPr embed-transfer lane (lane 4): protein-LM embedding label transfer.
+
+Faithful, method-preserving port of the scadc `05_embed_transfer/` pipeline into
+a single path-parameterized CLI so a metasmith transform can call it (NO hardcoded
+scadc paths). Ported verbatim from:
+  - _shared.py                  (id canonicalization, index + embedding loaders)
+  - _eval.py                    (Context label-matrix build, K / BATCH, device)
+  - 10_build_reference_pool.py  (reference pool + dark-query split + emb stacks)
+  - 30_train_projector.py       (CLEAN-style SupCon projection head, frozen backbone)
+  - 50_apply_fosmid.py          (the lane-4 producer: distance-weighted kNN vote)
+
+The lane transfers MetaNetX reaction (MNXR) labels to *dark* fosmid ORFs -- fosmid
+ORFs carrying ZERO reaction evidence from the other three lanes (kofam / clean /
+uniref50) -- through protein-LM embedding space, using a distance-weighted kNN
+vote over the full labeled reference pool (metag + epi300 + fosmid). Per-backbone
+we apply the variant that won its own dark-regime (c30) validation:
+  - pbert_transfer : RAW ProteinBERT embeddings   (floor 0.20)
+  - esmc_transfer  : PROJECTED ESM-C embeddings   (floor 0.10)
+
+THESE TWO CHANNEL NAMES ARE THIS MODULE'S OWN, and deliberately not the shipped
+mapper's `pbert` / `esmc`. Same backbones, different measurement: this votes over a
+metag+epi300+fosmid pool and only for dark ORFs, where `transforms/fabfos/gpr_4lane.py`
+votes over the Swiss-Prot `ref::label_transfer_landmarks` for every ORF. Giving them one
+name would put two numbers with different referents in one column.
+
+Every emitted row uses the unified 8-column lane schema
+    source, orf, channel, mnxr, intermediate_id, intermediate_name,
+    raw_score, projection_via
+plus nearest-neighbor audit columns (nn_similarity, k_support). This lane is
+exploratory: it is NOT folded into the canonical evidence table by this module.
+
+=====================================================================
+GATES / EXTERNAL INPUTS  (what must be provided to run this fresh)
+=====================================================================
+This lane cannot be computed from sequence alone -- it consumes precomputed
+protein-LM embeddings and the compiled evidence table. To run end to end you must
+stage, per source (fosmid / epi300 / metag):
+  - ProteinBERT embeddings : <src>.pbert.npy   (row i = ORF i, 512-d)
+                             + <src>.pbert.index.csv  (fosmid/epi300: container+orf
+                               columns; metag: single `orf_id` column)
+  - ESM-C 600M embeddings  : <src>.parquet  (cols dim_0..dim_1151, 1152-d)
+                             + <src>.index.csv  (sequence_id, index; metag ids use
+                               `k141_<c>-<n>` dashes, canonicalized to underscores)
+  - ORF amino-acid FASTA   : <src>.faa  (first header token == ORF id; only used to
+                               emit reference.faa / gold.faa for a downstream
+                               DIAMOND identity step -- optional for `apply`)
+and, once:
+  - the reference-pool LABEL SOURCE: the compiled evidence table parquet
+    (evidence_table_dlec.parquet) with cols source, orf, channel, mnxr,
+    intermediate_id -- this is the pool we transfer labels FROM.
+  - the TRAINED PROJECTOR weights: emb_esmc_proj.npy (produced by `train-projector`
+    from the reference pool) -- required by `apply` for the esmc_transfer channel.
+
+Practical: kNN is an all-pairs cosine over a ~270k-row reference pool per query
+batch -- GPU is required to be practical (local RTX 3060 in scadc). Pass
+`--device cuda`; it falls back to CPU if CUDA is unavailable. Needs the `ml` conda
+env (torch + CUDA) plus numpy / pandas / pyarrow. This lane is FOSMID-DARK-ONLY:
+it only annotates fosmid ORFs with zero reaction evidence from the other three lanes.
+
+Per-source input paths are supplied via a JSON manifest (--sources), NOT hardcoded:
+  {
+    "fosmid": {"esmc_parquet": "...", "esmc_index": "...",
+               "pbert_npy": "...", "pbert_index": "...", "fasta": "..."},
+    "epi300": {...},
+    "metag":  {...}
+  }
+Manifest key order defines the source order; `--query-source` (default "fosmid")
+names the dark source whose evidence-free ORFs become the query set.
+"""
 from __future__ import annotations
 
 import argparse
@@ -12,44 +81,56 @@ import pyarrow.parquet as pq
 import torch
 import torch.nn as nn
 
+# ---- unified lane schema (shared with the other 3 evidence lanes) ----
 SCHEMA_COLS = ["source", "orf", "channel", "mnxr",
                "intermediate_id", "intermediate_name", "raw_score", "projection_via"]
 
+# ---- embedding dimensions (defaults; overridable via CLI) ----
 ESMC_DIM = 1152
 PBERT_DIM = 512
 
-K = 30
-BATCH = 256
+# ---- kNN transfer hyper-parameters (from _eval.py; method-frozen) ----
+K = 30           # neighbors per query
+BATCH = 256      # query rows per GPU tile
 
+# ---- projector (30_) hyper-parameters (from 30_train_projector.py) ----
 PROJ_DIM = 256
 HID = 512
-K_PER = 8
-P_CLASSES = 32
+K_PER = 8        # samples per class per batch; also the >=K trainable floor
+P_CLASSES = 32   # classes per batch  -> batch 256
 STEPS = 2500
 LR = 1e-3
 TEMP = 0.1
 
+# Per-backbone apply variants: (embedding npy, channel, vote floor = c30 best-F1 tau).
 VARIANTS = [
-    ("emb_pbert.npy",     "pbert_transfer", 0.20),
-    ("emb_esmc_proj.npy", "esmc_transfer",  0.10),
+    ("emb_pbert.npy",     "pbert_transfer", 0.20),   # RAW ProteinBERT
+    ("emb_esmc_proj.npy", "esmc_transfer",  0.10),   # PROJECTED ESM-C
 ]
 
 
 def resolve_device(requested: str) -> str:
+    """CLI device with graceful CUDA fallback."""
     if requested == "cuda" and not torch.cuda.is_available():
         print("[warn] cuda requested but unavailable -> falling back to cpu", flush=True)
         return "cpu"
     return requested
 
 
+# =====================================================================
+# ID canonicalization + FASTA (port of _shared.py)
+# =====================================================================
+
 _DASH_RE = re.compile(r"-(\d+)$")
 
 
 def canon_orf(s: str) -> str:
+    """`k141_<contig>-<n>` -> `k141_<contig>_<n>`; no-op for fosmid/epi300 ids."""
     return _DASH_RE.sub(r"_\1", s)
 
 
 def iter_fasta(path: Path):
+    """Yield (orf_id, seq) -- orf_id is the first whitespace token after '>'."""
     name, chunks = None, []
     with open(path) as fh:
         for line in fh:
@@ -64,17 +145,27 @@ def iter_fasta(path: Path):
         yield name, "".join(chunks)
 
 
+# =====================================================================
+# Index loaders (port of _shared.py, parameterized by explicit paths)
+# =====================================================================
+
 def load_esmc_index(index_csv: Path) -> pd.DataFrame:
+    """cols: orf (canonical), index (row in the ESM-C parquet)."""
     df = pd.read_csv(index_csv)
     df["orf"] = df["sequence_id"].map(canon_orf)
     return df[["orf", "index"]]
 
 
 def load_pbert_index(index_csv: Path) -> pd.DataFrame:
+    """cols: orf (canonical), row (row in the .npy).
+
+    Auto-detects the two index layouts: metag's single `orf_id` column vs
+    fosmid/epi300's (container, orf) pair joined as `{container}_{orf}`.
+    """
     df = pd.read_csv(index_csv)
-    if "orf_id" in df.columns:
+    if "orf_id" in df.columns:                      # metag X_metag.index.csv
         df = df.rename(columns={"orf_id": "orf"})
-    else:
+    else:                                            # fosmid (fosmid, orf) / epi300 (contig, orf)
         c0 = df.columns[0]
         df["orf"] = df[c0].astype(str) + "_" + df["orf"].astype(str)
     df["orf"] = df["orf"].map(canon_orf)
@@ -82,7 +173,14 @@ def load_pbert_index(index_csv: Path) -> pd.DataFrame:
     return df[["orf", "row"]]
 
 
+# =====================================================================
+# Embedding readers (port of _shared.py)
+# =====================================================================
+
 def _read_parquet_rows(path: Path, want_rows: np.ndarray, dim: int) -> np.ndarray:
+    """Stream a (possibly multi-GB) ESM-C parquet and gather `want_rows` (global
+    row offsets), returning a (len(want_rows), dim) float32 array in the order of
+    `want_rows`. Peak memory is one batch + the accumulator."""
     want = np.asarray(want_rows, dtype=np.int64)
     order = {int(r): i for i, r in enumerate(want.tolist())}
     out = np.empty((len(want), dim), dtype=np.float32)
@@ -101,6 +199,7 @@ def _read_parquet_rows(path: Path, want_rows: np.ndarray, dim: int) -> np.ndarra
 
 def load_esmc_vectors(parquet: Path, index_csv: Path, needed: set,
                       dim: int = ESMC_DIM):
+    """Return (orfs, Nxdim float32) for the needed ORFs present in this source."""
     idx = load_esmc_index(index_csv)
     idx = idx[idx["orf"].isin(needed)]
     if idx.empty:
@@ -111,6 +210,8 @@ def load_esmc_vectors(parquet: Path, index_csv: Path, needed: set,
 
 def load_pbert_vectors(npy_path: Path, index_csv: Path, needed: set,
                        dim: int = PBERT_DIM):
+    """Return (orfs, Nxdim float32) for the needed ORFs present in this source.
+    The npy is mmap'd and fancy-indexed, so metag's 1.44M-row file is cheap."""
     idx = load_pbert_index(index_csv)
     idx = idx[idx["orf"].isin(needed)]
     if idx.empty:
@@ -120,7 +221,19 @@ def load_pbert_vectors(npy_path: Path, index_csv: Path, needed: set,
     return idx["orf"].tolist(), sub
 
 
+# =====================================================================
+# Context: reference pool + label matrix (port of _eval.Context, lean)
+# =====================================================================
+
 class Context:
+    """Reference table + label vocabulary + on-device label indicator matrix.
+
+    Faithful port of _eval.Context, trimmed to what the `apply` producer needs:
+    the reference split, the sorted MNXR vocabulary, and the (Nref x V) label
+    matrix. Cluster-leakage codes and the DIAMOND m8 (validation-only) are omitted
+    because `apply` runs with NO leakage removal on genuinely unlabeled ORFs.
+    """
+
     def __init__(self, orf_index_path: Path, device: str = "cpu"):
         self.dev = device
         idx = pd.read_parquet(orf_index_path)
@@ -128,6 +241,7 @@ class Context:
         ref["refpos"] = np.arange(len(ref))
         self.ref = ref
 
+        # ---- label vocabulary + reference label indicator (row, col) coords ----
         ref_label_lists = [s.split(";") if s else [] for s in ref["mnxr_list"]]
         vocab = sorted({m for ls in ref_label_lists for m in ls})
         self.vocab = vocab
@@ -142,6 +256,7 @@ class Context:
         self._L_gpu = None
 
     def label_matrix(self):
+        """(Nref, V) fp16 label indicator on-device (cached)."""
         if self._L_gpu is None:
             L = torch.zeros((len(self.ref), self.V), dtype=torch.float16, device=self.dev)
             L[torch.as_tensor(self._L_rows, device=self.dev),
@@ -150,7 +265,13 @@ class Context:
         return self._L_gpu
 
 
+# =====================================================================
+# Stage T1 -- build reference pool (port of 10_build_reference_pool.py)
+# =====================================================================
+
 def aggregate_labels(ev: pd.DataFrame) -> pd.DataFrame:
+    """Per (source, orf): mnxr_list, ec_list, channels, n_channels_max."""
+    # n_channels_max: max over the ORF's MNXRs of how many channels co-nominate it
     conom = (
         ev.groupby(["source", "orf", "mnxr"])["channel"].nunique()
           .groupby(level=[0, 1]).max()
@@ -173,6 +294,9 @@ def aggregate_labels(ev: pd.DataFrame) -> pd.DataFrame:
 def build_reference_pool(evidence_path: Path, sources: dict, query_source: str,
                          out_dir: Path, esmc_dim: int, pbert_dim: int,
                          write_fasta: bool = True):
+    """Port of 10_build_reference_pool.main, parameterized by an explicit source
+    manifest. `sources` maps src -> {esmc_parquet, esmc_index, pbert_npy,
+    pbert_index, fasta}; manifest key order defines SOURCES."""
     out_dir.mkdir(parents=True, exist_ok=True)
     SOURCES = tuple(sources.keys())
 
@@ -185,6 +309,7 @@ def build_reference_pool(evidence_path: Path, sources: dict, query_source: str,
 
     labeled_by_src = {s: set(lab.loc[lab["source"] == s, "orf"]) for s in SOURCES}
 
+    # Dark query set = query-source ORFs (ESM-C universe) with no evidence row.
     q_conf = sources[query_source]
     query_universe = set(load_esmc_index(Path(q_conf["esmc_index"]))["orf"])
     dark_query = query_universe - labeled_by_src[query_source]
@@ -204,7 +329,7 @@ def build_reference_pool(evidence_path: Path, sources: dict, query_source: str,
                                            Path(conf["pbert_index"]), needed, pbert_dim)
         e_row = {o: i for i, o in enumerate(e_orfs)}
         p_row = {o: i for i, o in enumerate(p_orfs)}
-        common = [o for o in e_orfs if o in p_row]
+        common = [o for o in e_orfs if o in p_row]   # both backbones present
         missing = len(needed) - len(common)
         print(f"     esmc {len(e_orfs):,}  pbert {len(p_orfs):,}  "
               f"both {len(common):,}  (dropped {missing:,})")
@@ -220,6 +345,7 @@ def build_reference_pool(evidence_path: Path, sources: dict, query_source: str,
     emb_pbert = np.concatenate(pbert_blocks, axis=0)
     assert len(idx) == len(emb_esmc) == len(emb_pbert)
 
+    # Attach labels; query rows get empty label fields / n_channels_max 0.
     idx = idx.merge(lab, on=["source", "orf"], how="left")
     for c in ("mnxr_list", "ec_list", "channels"):
         idx[c] = idx[c].fillna("")
@@ -240,6 +366,7 @@ def build_reference_pool(evidence_path: Path, sources: dict, query_source: str,
         print("[10] done (fasta skipped).")
         return
 
+    # FASTAs for the DIAMOND identity step: reference pool + gold queries.
     print("[10] writing reference.faa / gold.faa ...")
     ref_by_src = {s: set(idx.loc[(idx["source"] == s) & (idx["role"] == "reference"), "orf"])
                   for s in SOURCES}
@@ -261,6 +388,10 @@ def build_reference_pool(evidence_path: Path, sources: dict, query_source: str,
     print("[10] done.")
 
 
+# =====================================================================
+# Stage T3 -- train projector (port of 30_train_projector.py)
+# =====================================================================
+
 class Head(nn.Module):
     def __init__(self, d_in):
         super().__init__()
@@ -271,6 +402,7 @@ class Head(nn.Module):
 
 
 def supcon_loss(z, y):
+    """Supervised contrastive loss over a batch of L2-normalized z (N,d), labels y (N,)."""
     sim = (z @ z.T) / TEMP
     n = z.shape[0]
     eye = torch.eye(n, device=z.device, dtype=torch.bool)
@@ -288,6 +420,7 @@ def supcon_loss(z, y):
 
 def train_head(X: np.ndarray, ec_labels: np.ndarray, name: str, dev: str,
                steps: int = STEPS, seed: int = 0):
+    """X: (Ntrain, d) frozen embeddings; ec_labels: (Ntrain,) int class ids."""
     classes, counts = np.unique(ec_labels, return_counts=True)
     keep = set(classes[counts >= K_PER])
     mask = np.array([c in keep for c in ec_labels])
@@ -328,10 +461,12 @@ def project_all(head, emb_np, dev: str):
 def train_projector(in_dir: Path, out_dir: Path, dev: str,
                     steps: int = STEPS, seed: int = 0,
                     backbones=(("esmc", "emb_esmc.npy"), ("pbert", "emb_pbert.npy"))):
+    """Port of 30_train_projector.main; reads orf_index + emb stacks from in_dir."""
     out_dir.mkdir(parents=True, exist_ok=True)
     torch.manual_seed(seed)
     print(f"[30] device = {dev}")
     idx = pd.read_parquet(in_dir / "orf_index.parquet")
+    # training rows: reference, NOT gold, with a level-4 EC; one EC per ORF (first).
     train = idx[(idx["role"] == "reference") & (~idx["is_gold"])
                 & (idx["ec_list"] != "")].copy()
     train["ec"] = train["ec_list"].str.split(";").str[0]
@@ -353,8 +488,14 @@ def train_projector(in_dir: Path, out_dir: Path, dev: str,
     print("[30] done.")
 
 
+# =====================================================================
+# Stage T4 -- apply to dark fosmid ORFs (port of 50_apply_fosmid.py)
+# =====================================================================
+
 def apply_one(ctx: Context, q_emb_np, ref_emb_np, vocab, channel, floor, dev: str):
-    L = ctx.label_matrix()
+    """Distance-weighted kNN vote for one backbone. NO leakage removal (query ORFs
+    are genuinely unlabeled -> we want their real nearest labeled neighbors)."""
+    L = ctx.label_matrix()                                          # (Nref, V) fp16
     ref = torch.nn.functional.normalize(
         torch.as_tensor(ref_emb_np, device=dev, dtype=torch.float32), dim=1)
     q = torch.nn.functional.normalize(
@@ -365,7 +506,7 @@ def apply_one(ctx: Context, q_emb_np, ref_emb_np, vocab, channel, floor, dev: st
     nn_sim = torch.zeros(Nq, dtype=torch.float32, device=dev)
     ksup = torch.zeros(Nq, dtype=torch.long, device=dev)
     for s in range(0, Nq, BATCH):
-        sim = q[s:s + BATCH] @ ref.T
+        sim = q[s:s + BATCH] @ ref.T                               # (B, Nref) cosine
         vals, idx = torch.topk(sim, K, dim=1)
         nn_sim[s:s + BATCH] = vals[:, 0]
         nn_pos[s:s + BATCH] = idx[:, 0]
@@ -392,6 +533,7 @@ def apply_one(ctx: Context, q_emb_np, ref_emb_np, vocab, channel, floor, dev: st
 
 def apply_fosmid(in_dir: Path, out_path: Path, dev: str,
                  query_source: str = "fosmid", variants=VARIANTS):
+    """Port of 50_apply_fosmid.main; emits embed_transfer_candidates.parquet."""
     print(f"[50] device = {dev}", flush=True)
     orf_index_path = in_dir / "orf_index.parquet"
     ctx = Context(orf_index_path, device=dev)
@@ -429,6 +571,7 @@ def apply_fosmid(in_dir: Path, out_path: Path, dev: str,
     out.to_parquet(out_path, index=False)
     print(f"[50] wrote {out_path}  ({len(out):,} rows)", flush=True)
 
+    # quick coverage summary by confidence tier (union across both channels)
     print("\n[50] dark-ORF coverage by confidence tier (either channel):")
     for tier in (0.1, 0.3, 0.5, 0.7):
         cov = out[out["raw_score"] >= tier]["orf"].nunique()
@@ -436,6 +579,10 @@ def apply_fosmid(in_dir: Path, out_path: Path, dev: str,
               f"({cov/max(len(q),1):.1%})")
     return out
 
+
+# =====================================================================
+# CLI
+# =====================================================================
 
 def cmd_build_reference_pool(args):
     sources = json.loads(Path(args.sources).read_text())

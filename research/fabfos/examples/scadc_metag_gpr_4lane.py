@@ -27,7 +27,7 @@ THE VOTE IS NOT REIMPLEMENTED HERE
 the same way `tests/test_gpr_4lane_sparse_transfer.py` lifts it -- a copy would
 keep passing after the transform changed, and this lane's whole claim is that
 the metagenome pool is scored by the SAME rule as the fosmid units it is the
-null for. Only `_load_query` is replaced, because the metagenome embeddings are
+null for. Only `_read_query` is replaced, because the metagenome embeddings are
 a float16 `.npy` stack with a `contig,orf` index while the transform's input is
 a parquet with a `sequence_id` index. The arithmetic is untouched.
 
@@ -66,17 +66,24 @@ EMB_IDX = METAG / "annotations" / "proteinbert" / "metag.pbert.index.csv"
 ORFS_CSV = METAG / "sequences" / "metag.orfs.csv"
 GPR3 = METAG / "gpr" / "gpr_3lane.parquet"
 GPR4 = METAG / "gpr" / "gpr_4lane.parquet"
-POOL = ROOT / "data" / "fabfos" / "processed" / "reference_label_pool" / "pool"
+LANDMARKS = ROOT / "data" / "fabfos" / "processed" / "label_transfer_landmarks" / "landmarks"
 
 SLABS = ROOT / "data" / "fabfos" / "scratch" / "metag_pbert_lane"
 
-SOURCE = "metag"
+SOURCE = "metag"          # the `source` column gpr_3lane.parquet already carries
 LANE_SET = "chosen_4"
 SLAB = 50_000
 THREADS = int(os.environ.get("GPR_THREADS", "16"))
 
 
+# ---------------------------------------------------------------- the live lane
 def load_lane_ns():
+    """Execute the transform's DRIVER prelude and hand back its namespace.
+
+    Everything before `def main():` -- the schema stamping, the pool loader, the
+    sparse vote. `main()` itself is the container entry point and reads the three
+    other lanes' files, which this script does not have and does not need.
+    """
     src = TRANSFORM.read_text()
     body = re.search(r"DRIVER = r'''\n(.*?)\n'''", src, re.S).group(1)
     prelude = body[: body.index("def main():")]
@@ -93,6 +100,14 @@ def query_ids(pd):
 
 
 def install_loader(ns, np, pd, lo, hi):
+    """Point `lane_embed`'s query reader at one slab of the .npy stack.
+
+    The transform reads one self-addressing parquet; the metagenome stack predates
+    that and is a float16 `.npy` beside a `contig,orf` index. The row-count check is
+    kept, because it is the one that catches an index and a stack that were not
+    written together -- which the collapsed type makes impossible but this legacy
+    pair does not.
+    """
     ids = query_ids(pd)
     stack = np.load(EMB, mmap_mode="r")
     if len(ids) != len(stack):
@@ -101,10 +116,10 @@ def install_loader(ns, np, pd, lo, hi):
             f"{len(stack):,}. The lane addresses the stack BY ROW, so these "
             f"cannot be paired -- every vote would be attributed to the wrong ORF")
 
-    def _load_query(_parquet, _index_csv):
-        return ids[lo:hi], np.asarray(stack[lo:hi], dtype=np.float32)
+    def _read_query(_path):
+        return (ids[lo:hi], np.asarray(stack[lo:hi], dtype=np.float32), None)
 
-    ns["_load_query"] = _load_query
+    ns["_read_query"] = _read_query
     return len(ids)
 
 
@@ -123,14 +138,16 @@ def run_lane():
             continue
         install_loader(ns, np, pd, lo, hi)
         t0 = time.time()
-        df = ns["lane_embed"](None, None, str(POOL), "emb_pbert.npy", "pbert", ns["PBERT_FLOOR"])
+        df = ns["lane_embed"](None, str(LANDMARKS), "pbert", ns["PBERT_FLOOR"],
+                              ns["PBERT_NN_MIN"], ns["PBERT_TAU"], ns["PBERT_K_MAX"])
         tmp = out.with_suffix(".partial")
         df.to_parquet(tmp, index=False)
-        tmp.rename(out)
+        tmp.rename(out)                     # atomic: a killed slab is absent, never half
         print(f"[metag-pbert] slab {i:03d} rows[{lo:,}:{hi:,}] -> {len(df):,} rows "
               f"in {time.time()-t0:.0f}s", flush=True)
 
 
+# ------------------------------------------------------------------- assembly
 def assemble():
     import numpy as np
     import pandas as pd
@@ -175,7 +192,9 @@ def assemble():
     print(f"[metag-pbert] wrote {len(df):,} rows -> {GPR4}", flush=True)
 
 
+# ------------------------------------------------------------ alignment check
 def check_alignment():
+    """Re-run the stack/index pairing evidence quoted in this module's docstring."""
     import numpy as np
     import pandas as pd
     ids = query_ids(pd)
