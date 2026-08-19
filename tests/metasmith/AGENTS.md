@@ -1,59 +1,56 @@
 # Test suite layout
 
-The test tree is keyed by **axis of concern** — each top-level dir owns one kind of correctness, and the directory's `AGENTS.md` is the single source of truth for what belongs there.
+## What goes in this file
 
-| Dir | Owns | Marker (auto) |
-|---|---|---|
-| `unit/` | Contract pins, schema dataclasses, version chains, CLI surface, path/source parsing | `fast` |
-| `flow/` | Branching, batching, group_by, lineage forks, mixed cacheability, telemetry, concurrency — given a plan, does the runtime emit/route data correctly? See `flow/AGENTS.md` for the case catalog. | `fast` |
-| `cache/` | Lineage-addressed task cache: identity, hit/miss, promote, cross-task, cross-workflow, kill-switch | `fast` |
-| `gui/` | The web GUI's own suite — API routes, the CLI entry, ssh config, the fork discriminator. The inner loop while working on the page (`dev/metasmith.sh -tg`). | `fast + gui` |
-| `bootstrap/` | TransformInstanceLibrary load, container image build, sandbox decision probe — code paths that prepare the workspace before flow | `fast` |
-| `perf/` | Does it still hold up at scale — 10k-item libraries, 21k-instance plans. Minutes, not milliseconds. | `slow` |
-| `deploy/` | `Agent.Deploy()` — local + ssh-to-self, deploy-skip markers, install verification | `slow` |
-| `e2e/virtual/` | Plan→compile→virtual exec via `VirtualE2ERuntime` / `contract_runtime` (no Docker, no JVM) | `e2e_virtual` |
-| `e2e/docker/` | Plan→stage→`nextflow run` against real Docker via `NxfTestRunner` | `e2e_docker + slow + requires_docker` |
-| `e2e/agentic/` | opencode/claude-driven scenarios | `e2e_agentic + slow` |
-| `e2e/agentic/_harness/` | No-model harness checks (ralph loop, CONTROL.json, drivers) | `fast` |
-| `audit/` | Quadrant probe, lineage audit reports | `fast` |
+Why the tree is shaped this way, and the traps in writing a test for it that reading the tests
+will not tell you. What is recoverable by reading is not in here: which files exist, what each
+one covers, what a lane costs, and which markers a directory carries are all in the tree and in
+`conftest.py`, and a transcript of one goes stale without this file changing.
 
-Markers are applied by directory in `tests/conftest.py:pytest_collection_modifyitems`, and a file matching no row **fails collection** rather than quietly running in no gate — that is what makes directory-as-declaration a contract instead of a convention. Explicit `@pytest.mark.X` decorators are additive. Capability gates (`requires_ssh_localhost`, `requires_docker`, `requires_apptainer`, `requires_docker_dev_image`) skip cleanly when the capability is absent.
+## The directory is the declaration
 
-`python_solver` is the one marker that *removes* tests from every routine run, release included: the rust engine is the shipped solver and the python implementation is being retired, so tests that need it — the parity sweeps that use it as the engine's reference, and the few that trace its internals — skip unless `--python-solver` is passed. Reach for it when there is reason to suspect the engine, which is the only question the comparison still answers. What holds the engine to account without it is `check_plan`, which shares no code with either implementation. The `--solver=` session flag is unrelated and still selects which implementation everything else runs on.
+Each top-level directory owns one axis of concern, and `conftest.py` stamps that axis's markers
+on everything under it. A file that lands under no axis **fails collection** rather than
+quietly running in no gate — that is what makes directory-as-declaration a contract instead of a
+convention. An explicit `@pytest.mark.X` is additive, never a replacement; adding `slow` to a
+`fast` directory's file does not remove `fast`, so relocating the file or changing
+`_DIR_MARKERS` is the only way to move an axis.
 
-## How to add a test
+Pick the axis by what the test pins, not by what it uses. A test whose assertion is about
+*cost* — a duration, an operation count, an O(n) claim — belongs in the perf axis; one that is
+about correctness and merely happens to use a large fixture belongs with the behaviour it
+pins. A GUI test that needs a docker daemon is an e2e test.
 
-1. **Pick the axis.** What is this test actually pinning?
-   - Behavior of one function with no DAG → `unit/`
-   - Data routing through a planned workflow → `flow/`
-   - Cache key, store, or trace behavior → `cache/`
-   - Library load / image conversion / sandbox probe → `bootstrap/`
-   - A GUI route, or the page's inner loop → `gui/`
-   - Wall-clock or scale ceiling at 10k+ items → `perf/`
-   - `Agent.Deploy()` surface → `deploy/`
-   - End-to-end plan → stage → exec → result → `e2e/<virtual|docker|agentic>/`
+`python_solver` is the one marker that *removes* tests from every routine run, release
+included: the rust engine is the shipped solver, so tests that need the python implementation
+skip unless it is asked for. `--solver=` is unrelated and selects which implementation
+everything else runs on.
 
-2. **Check the catalog.** For flow tests, find or add a row in `flow/AGENTS.md`. New flow bugs ship a catalog row *before* the fix lands.
+## Writing one
 
-3. **Reuse stimuli.** Mock transforms live in `src/metasmith/testing/mock_transforms.py`. Don't define ad-hoc transforms per test.
+Reuse the shared stimuli rather than defining ad-hoc transforms per test, and assert through
+telemetry — the lineage trace and its walks — rather than grepping generated Nextflow text or
+work-dir filenames. When moving or renaming, update consumers in the same commit; never leave
+a stub file behind.
 
-4. **Assert through telemetry.** Flow + cache tests assert via `DataInstanceLibrary.Load(attach_trace=True)` — `find_invocations`, `walk_ancestors`, `get_lineage_of`, `summary()`. Never grep `workflow.nf` text or work-dir filenames.
+Set `PYTHONPATH` to this worktree's `src/`, and do not merely unset it: metasmith is not
+installed into the environment, so the subprocess tests need it, and an ambient value resolves
+the import to some other checkout.
 
-5. **No compat shims.** When moving or renaming, `git mv` + update consumers in the same commit. Don't leave `# moved to X` stub files.
+## Traps
 
-## Dev loop
+**The virtual runtime reimplements the cache-hit path from the store and never reads the
+generated `workflow.nf`.** Anything about the *emitted text* therefore has to be pinned at
+codegen level; a virtual run cannot see it.
 
-- `mamba run -n msm pytest -m fast` — default loop, finishes <60s
-- `mamba run -n msm pytest -m "fast or e2e_virtual"` — CI smoke gate
-- `mamba run -n msm pytest -m e2e_docker` — full local exec (needs Docker)
-- `mamba run -n msm pytest -m e2e_agentic --agent <opencode|claude>` — opt-in, model-billable
-- `./dev/metasmith.sh -tg` — the GUI suite alone (`tests/metasmith/gui/`), for the page's inner loop
+**The deploy axis's source-pattern tests read `Agent.Deploy`'s text rather than running it**,
+slicing from the method to the next one. `Deploy` is the last method in its module, so that
+slice needs an end-of-file fallback or it comes out empty — and every assertion there pins an
+*absence*, so it would pass on the empty slice.
 
-Set `PYTHONPATH` to this worktree's `src/`; do not merely unset it. `metasmith` is not installed into `msm`, so the subprocess tests need it, and an ambient workspace value resolves the import to some other checkout.
+**Nothing in the bootstrap axis pulls a real image.** Every container test asserts the emitted
+command string, which is the point of the axis.
 
-## Tracking new flow correctness gaps
-
-If you find a flow bug not in `flow/AGENTS.md`:
-1. Add a row to the appropriate axis with case ID + invariant + DAG shape
-2. Write the test under `tests/flow/test_<axis>.py` referencing the case ID in the docstring
-3. If it pins a historical bug, add a `tests/flow/repro/repro_<ticket>.py` and link it from the trap-case table
+**Prefer the cheapest runtime that can answer the question.** When an e2e test asserts only on
+plan shape, channel wiring or DAG correctness, the contract runtime answers it; real execution
+exists to verify the engine, not the planner.

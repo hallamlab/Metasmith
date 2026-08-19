@@ -5,6 +5,14 @@ out — plus the bake that builds the tables it reads. Extracted from fabfos, be
 is an **algorithm** rather than a dispatch into somebody else's tool, which is why it is a
 package with a command line instead of a staged resource file.
 
+## What goes in this file
+
+What ecspr is and why it is shaped that way: the seam between its two subpackages, the
+invariants that span more than one of them, and the traps whose cause is invisible from the
+code. What is recoverable by reading is not in here — module inventories, flags and command
+trees each have their own source of truth, and a transcript of one goes stale without this file
+changing.
+
 ## Two subpackages, and the seam between them
 
 `ecspr.model` is the measurement. `ecspr.bake` turns the MNXref universe into the atom pairs and

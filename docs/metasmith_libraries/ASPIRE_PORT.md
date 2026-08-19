@@ -13,6 +13,12 @@ resolution is orthogonal to whether the graph closes. Sourcing biocontainer URIs
 is the gating item for ever running this off a workstation, and QIIME2, ConQuR
 and SpiecEasi are the three that will resist.
 
+## What goes in this file
+
+The live record of one migration: what the ported graph does differently from the upstream
+pipeline, and what is still open. It is a punch list, so an item leaves it when the item is
+done rather than getting a note saying so.
+
 ## The table is the source
 
 `transforms/aspire/_generate.py` holds one row per ported process and writes both

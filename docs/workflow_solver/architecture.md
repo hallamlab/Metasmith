@@ -3,6 +3,13 @@
 `msm_solver`, the Rust half of the metasmith plan solver. Rust source under
 `src/workflow_solver/`; the built binaries are staged into `src/metasmith/engine/`.
 
+## What goes in this file
+
+How the Rust solver ships, and the contracts it shares with the Python implementation — the
+version constants, the wire envelope, the decision rules that must agree bit for bit. The code
+itself is the description of the search; what belongs here is what one side cannot see about
+the other.
+
 ## How it ships, and why that differs from the relay
 
 Unlike `msm_relay`, this binary runs **locally**, in whatever process is planning — CLI, GUI or
@@ -84,8 +91,3 @@ JSON, Python's `json` emits them anyway, and `serde_json` rejects them — and s
 is part of the decision contract, the wire cannot quietly not support NaN. A score is therefore
 either a JSON number or one of a fixed set of names, on both sides.
 
-## Note
-
-The module docstring at the top of `src/main.rs` still says the binary can be asked for `rng`
-"and nothing else, with the search still to come". That is stale: `CAPABILITIES` is
-`["rng", "solve"]` and the search modules are present and shipped.

@@ -12,6 +12,13 @@ Paths here are repo-relative. The library is `src/metasmith_libraries/`; its tes
 are `tests/metasmith_libraries/`, its conda recipes `envs/metasmith_libraries/`,
 and its research drivers `research/metasmith_libraries/`.
 
+## What goes in this file
+
+Authoring rules for this library: what the build guarantees, how an environment is declared,
+and the handful of conventions whose failure mode is silence rather than an error. Not what the
+library contains — the tree is that — and not the engine's behaviour, which is
+`docs/metasmith/architecture.md`.
+
 ## The build is not optional
 
     dev/libraries.sh -bm    # compile _metadata/ -- seconds
@@ -116,6 +123,23 @@ Five rules, each quiet if you break it:
   `AddItem` and identity follows the path, so re-minting on every build would change the
   template's task key each time and pile up duplicate rows. `--rebuild` is the deliberate
   way to start over after changing what the inputs *are*.
+
+## A protocol body is not a place to keep a program
+
+A transform that only calls somebody else's tool stops at a shell command. Anything with
+an algorithm in it — a reshape worth testing, a scoring pass, a model wrapper — goes in a
+file under `resources/lib/`, is declared as a `lib::` type, and is taken as a requirement
+like any other input. Reached that way it is staged by the same mechanism as a reference
+database: no container change, no bind, no copy.
+
+The failure of the alternative is not aesthetic. A program inside a string literal has no
+import graph, no syntax check, no test and no diff granularity, and interpolating paths
+into it with `.format()` means every one of its callers can silently pass the wrong thing.
+Take arguments on argv instead, and let the file be a file.
+
+The rule for shape: one file when the method is one file, a directory when several modules
+belong together. Build-side helpers go in `buildlib::` rather than `lib::`, because `lib::`
+ships in the wheel and nothing in that namespace runs during a pipeline.
 
 ## Drivers
 

@@ -7,6 +7,11 @@ reading the public docs.
 Pairs with `tests/test_tutorial_replay.py` (programmatic, mock containers,
 runs in CI). This suite is the real-container, model-in-the-loop sibling.
 
+## What goes in this file
+
+What this suite proves that no other suite can, and the mechanics of the spoof that make it
+possible. Not a roster of scenarios.
+
 ## How the spoof works
 
 Each test runs in an ephemeral sandbox dir; nothing persists across tests.
@@ -119,10 +124,10 @@ pytest tests/e2e/agentic/ -m "not e2e_agentic"
 # (2) harness smoke (~90 s, ~10K tokens) — confirms wiring
 pytest tests/e2e/agentic/test_harness_smoke_live.py -m e2e_agentic
 
-# (3) install test (~2 min)
+# (3) install test
 pytest tests/e2e/agentic/test_install.py -m e2e_agentic
 
-# (4) deploy test, both runtimes (~3 + 4 min)
+# (4) deploy test, both runtimes
 pytest tests/e2e/agentic/test_deploy.py -m e2e_agentic
 
 # (5) full tutorial runs

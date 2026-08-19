@@ -4,6 +4,12 @@ Verified end-to-end on 2026-05-19 using `/scratch/phyberos/dl_testing_claude/`.
 Six embedding models confirmed running standalone on H100 MIG slices, plus
 a Nextflow -> SLURM pipeline submitting GPU jobs from the login node.
 
+## What goes in this file
+
+What a GPU run needs on this cluster that a workstation run does not, and the constraints that
+have no other written home. Software versions and quotas move without warning — treat any named
+here as the last observed value rather than a fact.
+
 ## Cluster facts (per the Alliance Fir doc + observed)
 
 - Compute Canada / DRAC site, SLURM 24.11.6

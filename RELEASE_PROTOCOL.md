@@ -206,25 +206,9 @@ env -u PYTHONPATH mamba run -n vXYZ python -c \
 `rust`, not `python`. Clearing `PYTHONPATH` is load-bearing — the workspace
 checkout otherwise shadows the install and the test proves nothing.
 
----
+## What goes in this file
 
-## Quick reference
-
-| Step | Command | Produces |
-|------|---------|----------|
-| Test | `pytest -m "not docker and not e2e_docker and not e2e_agentic and not nextflow and not network and not requires_*"` | green gate |
-| Bump | edit `src/metasmith/version.txt` + commit | new version |
-| Relay | `./dev/metasmith.sh -brc` (pull) then `./dev/metasmith.sh -br` | relay binaries — 4 targets, none stubs |
-| Solver | `./dev/metasmith.sh -bec` (pull) then `./dev/metasmith.sh -be` | `src/metasmith/engine/` — 4 targets, shipped in the wheel |
-| GUI | `./dev/metasmith.sh --build-gui` (needs node) | `src/metasmith/gui/static/` |
-| Wheel | `./dev/metasmith.sh -bp` | pip wheel + sdist, build hash |
-| Docker | `./dev/metasmith.sh -bd` | local image `<version>-<hash>` |
-| SIF | `./dev/metasmith.sh -bs` | `metasmith.sif` |
-| Conda | `./dev/metasmith.sh -bc` | conda package |
-| Publish image | `./dev/metasmith.sh -ud` | image on quay.io |
-| Publish conda | `./dev/metasmith.sh -uc` | package on anaconda.org |
-| Retag quay | `docker tag`/`docker push` for `latest` + bare `X.Y.Z` | movable tags on quay.io |
-| Tags/branches | `git push origin release dev vX.Y.Z` | release on the fork |
-| Upstream | a **new** PR `release` → `hallamlab:release` | release upstream |
-
-> The env is `msm`. Run `dev/metasmith.sh` and tests through `mamba run -n msm`.
+The followable sequence for cutting a release, and the order constraints inside it — which
+artifact must exist before which, and which guard refuses a build that skips one. What a flag
+does is `dev/metasmith.sh --help`; what a step produces is the step. Neither is transcribed
+here, and nothing is duplicated between sections.
