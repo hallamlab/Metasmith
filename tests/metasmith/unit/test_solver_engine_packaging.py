@@ -65,6 +65,27 @@ def test_every_publishing_step_checks_the_engine_inside_the_image(verb):
     )
 
 
+def test_the_conda_upload_checks_the_engine_inside_the_package():
+    text = DEV_SH.read_text(encoding="utf-8")
+    arm = re.search(r"^    -uc\).*?(?=^    -|\A\Z)", text, re.S | re.M)
+    assert arm is not None, "dev.sh has no [-uc] arm any more"
+    assert "_assert_engine_in_conda_package" in arm.group(0), (
+        "dev.sh -uc no longer runs _assert_engine_in_conda_package; conda-build"
+        " is where the cross-built binaries get patchelfed into segfaulting, and"
+        " nothing after the upload would say so"
+    )
+
+
+def test_the_conda_package_guard_clears_pythonpath():
+    text = DEV_SH.read_text(encoding="utf-8")
+    fn = re.search(r"^_assert_engine_in_conda_package\(\).*?^\}", text, re.S | re.M)
+    assert fn is not None, "dev.sh has no _assert_engine_in_conda_package any more"
+    assert "env -u PYTHONPATH mamba run" in fn.group(0), (
+        "the clean-room check reads the solver backend with PYTHONPATH still"
+        " set; the workspace checkout shadows the install and it proves nothing"
+    )
+
+
 def test_the_stage_guard_checks_the_executable_bit():
     text = DEV_SH.read_text(encoding="utf-8")
     arm = re.search(r"^_assert_solver_engine\(\).*?^\}", text, re.S | re.M)
