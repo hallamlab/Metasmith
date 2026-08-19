@@ -23,12 +23,13 @@
   import LibraryList from './LibraryList.svelte'
   import RecipeCard from './RecipeCard.svelte'
   import ParamRows from '../components/ParamRows.svelte'
+  import { fingerprint } from '../lib/fingerprint.js'
   import { isPlumbing, libraryGraph, transformGraph, typeGraph } from '../lib/graphs.js'
   import { around, children, parents } from '../lib/highlight.js'
   import { mintTargetId, refId, refKey, targetsFromWire, targetsToWire } from '../lib/lineage.js'
   import { runSuffix } from '../lib/runname.js'
   import { paramRows, sameParams, toParams } from '../lib/params.js'
-  import { entries as rowEntries } from '../lib/rows.js'
+  import { entries as rowEntries, normalize as normalizeRowList } from '../lib/rows.js'
 
   let { name } = $props()
 
@@ -164,34 +165,11 @@
   let loadedFor = $state(null)
 
   // The input rows. These are the recipe: the input library is built from them
-  // when the workflow is solved, so a row is never anything else and never
-  // stops being editable. Read defensively -- a workflow written before the key
-  // existed simply has none, and one written before it was the whole story gets
-  // the rest of its rows from the server on the first read.
-  function normalizeRows(list) {
-    return (list ?? [])
-      .filter((d) => d && typeof d === 'object')
-      .map((d) => ({
-        id: String(d.id ?? nextRowId()),
-        mode: d.mode === 'value' ? 'value' : 'file',
-        path: d.path ?? '',
-        // Carried, never shown, never set on a new row. A value row states no
-        // name any more, but a recipe written when it did is the only thing
-        // that can still say where its *array* items are -- those are not in
-        // the record's row map, only in its generation list, so dropping this
-        // before a sync has run would re-mint every one of them. Delete it a
-        // release after `minted` is populated everywhere.
-        name: d.name ?? '',
-        // What a value row holds is a list of keyed entries. A row written when
-        // it was one string reads as one unkeyed entry here and is written back
-        // in the list form, so a recipe migrates on its first save -- and, since
-        // one unkeyed entry renders to exactly the text it always did, nothing
-        // in the library moves when it does.
-        values: rowEntries(d),
-        dtype: d.dtype ?? '',
-        parents: [...(d.parents ?? [])],
-      }))
-  }
+  // when the workflow is solved, so a row is never anything else and never stops
+  // being editable. A workflow written before the key existed simply has none,
+  // and one written before it was the whole story gets the rest of its rows from
+  // the server on the first read. `rows.normalize` is the shape itself.
+  const normalizeRows = (list) => normalizeRowList(list, nextRowId)
 
   // -- the sample table --------------------------------------------------------
   //
@@ -581,16 +559,29 @@
     return focus
   })
 
-  // Both sides through the serialiser, not just this one: the ids the page
-  // holds are minted per load and never match, and a recipe written by the CLI
-  // in an order that is legal but not the one this page would choose would
-  // otherwise read as permanently changed.
+  // The recipe as it stands, in eleven characters -- taken off the exact body a
+  // solve would send, so it cannot describe anything other than what the server
+  // would be given. `requestBody` is a hoisted declaration, which is what lets
+  // this sit beside the comparison it feeds rather than below the writer.
+  let recipeFingerprint = $derived(fingerprint(requestBody()))
+
+  // Is the plan below still the one this recipe produces?
+  //
+  // A solve stamps the fingerprint of the recipe it was handed into its own
+  // result, so this is one string compare and the two sides are one
+  // implementation. Comparing against the stored *request* instead -- which is
+  // what this did -- asks the wrong record twice over: `persist` rewrites it on
+  // every commit, so it tracks the editor rather than the plan, and the page's
+  // copy of it is not reloaded after a solve, so the badge could neither appear
+  // when the recipe had genuinely moved nor clear once it had been re-solved.
+  //
+  // A result with no fingerprint cannot answer -- one written before this
+  // existed, or by the CLI, which mints none. Silent rather than permanently
+  // accusing: "changed" is a claim, and there is no evidence for it here.
   let stale = $derived(
     wf?.planned &&
-      (JSON.stringify(targetsToWire(recipe.targets)) !==
-        JSON.stringify(targetsToWire(targetsFromWire(wf.request.target_types))) ||
-        JSON.stringify(recipe.transform_libraries) !==
-          JSON.stringify(wf.request.transform_libraries ?? [])),
+      !!wf.result?.recipe_fingerprint &&
+      wf.result.recipe_fingerprint !== recipeFingerprint,
   )
 
   // -- what the rows can be typed as ------------------------------------------
@@ -649,12 +640,17 @@
   // one place a parent becomes a position -- and this is its only caller, so a
   // write path that skipped it would ship an id where the file wants an int and
   // be refused by name rather than saved as a plausible wrong number.
+  //
+  // `input_drafts` goes out through `normalizeRows` for the same reason it comes
+  // in through it: this body is fingerprinted, and a fingerprint over a shape
+  // that depends on which gesture built the row is a fingerprint that changes on
+  // its own.
   function requestBody() {
     return {
       sample_type: null,
       target_types: targetsToWire(recipe.targets),
       transform_libraries: recipe.transform_libraries,
-      input_drafts: recipe.rows,
+      input_drafts: normalizeRows(recipe.rows),
     }
   }
 
@@ -946,7 +942,16 @@
     // has said anything at all.
     jobStatus = null
     jobPhase = null
-    const job = await attempt(() => api.post(`/workflows/${name}/generate`, requestBody()))
+    // Land the recipe first. `generate` takes the spec fields off this body but
+    // builds the input library from the rows *on disk*, so a field left in the
+    // same gesture that started the solve has to be written before the solve
+    // reads it -- and that is also what makes the fingerprint below true: it
+    // names the recipe the server will actually plan from.
+    await persist()
+    const body = requestBody()
+    const job = await attempt(() =>
+      api.post(`/workflows/${name}/generate`, { ...body, recipe_fingerprint: fingerprint(body) }),
+    )
     requestingSolve = false
     if (job) jobId = job.id
   }
@@ -1136,13 +1141,17 @@
           <span class="small muted">two outputs are the same type with the same lineage</span>
         {:else if tableProblem}
           <span class="small muted">{tableProblem}</span>
+        {:else if stale}
+          <!-- ahead of the sheet's line below, which is a description rather
+               than a warning: a sheet-attached recipe can go stale exactly like
+               any other, and the line saying how the solve will read it was
+               hiding the one saying the plan is not from this recipe -->
+          <span class="tag warn">recipe changed — the result below is from the old one</span>
         {:else if table?.attached}
           <span class="small muted">
             one unified solve over the sheet's {table.row_count}
             {table.row_count === 1 ? 'row' : 'rows'}
           </span>
-        {:else if stale}
-          <span class="tag warn">recipe changed — the result below is from the old one</span>
         {:else if wf.planned}
           <!-- solving locks the name and nothing else. Said out loud because the
                plan below reads as the finished article, and a page that only

@@ -1715,6 +1715,32 @@ class TestWorkflowGenerateMore:
         # and it survives the reload, like the hints beside it
         assert client.get(f"/api/workflows/{name}").get_json()["result"]["given"]
 
+    def test_a_result_carries_the_fingerprint_of_the_recipe_it_solved(self, client):
+        """How the page answers "is the plan below still this recipe?".
+
+        Stored verbatim and never recomputed here, which is the whole contract:
+        whoever mints a fingerprint is the only thing that has to agree with
+        itself about what a recipe serialises to, so the two sides never have to
+        canonicalise identically in two languages. It is not a spec field and
+        does not join the request -- the request is the recipe, and a
+        fingerprint of it stored beside it would be one more thing to keep true.
+        """
+        name = _make_workflow(client)
+        _seed_inputs(client, name)
+        result = _finish(client, client.post(
+            f"/api/workflows/{name}/generate", json={"recipe_fingerprint": "kf3n1qz"},
+        ).get_json())
+        assert result["recipe_fingerprint"] == "kf3n1qz"
+
+        body = client.get(f"/api/workflows/{name}").get_json()
+        assert body["result"]["recipe_fingerprint"] == "kf3n1qz"
+        assert "recipe_fingerprint" not in body["request"]
+
+        # A caller that mints none (the CLI) leaves the question unanswerable,
+        # which the page reads as "say nothing" rather than as "changed".
+        bare = _finish(client, client.post(f"/api/workflows/{name}/generate", json={}).get_json())
+        assert bare["recipe_fingerprint"] is None
+
     def test_targets_may_carry_lineage(self, client):
         """A target is either a bare name or a name plus the targets it comes off.
 
