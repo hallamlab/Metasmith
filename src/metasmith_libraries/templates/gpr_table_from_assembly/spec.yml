@@ -28,6 +28,6 @@ input_library:
       instance_id: 1e2041ec152185c4ce1bbe6b063ebed4a83ac8b6036dbdcdac21d5c9ee4b34431429
       origin: leaf
     /msm_deferred/99154cacdf57464291ec467c7c189f81:
-      type: ref::reference_label_pool
+      type: ref::label_transfer_landmarks
       instance_id: 1e20c495e6910b7518a4ad52a0873f01453f5614dcb336e962d0fccef2213bbd0239
       origin: leaf

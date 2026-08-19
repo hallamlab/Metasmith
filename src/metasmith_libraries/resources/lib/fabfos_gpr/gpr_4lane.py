@@ -271,7 +271,7 @@ def lane_embed(parquet, index_csv, pool_dir, emb_name, channel, floor):
                              float(min(votes[j], 1.0))))
     df = pd.DataFrame(rows, columns=["orf", "mnxr", "intermediate_id", "raw_score"])
     # The pool is the bridge's `reviewed` cut by construction (see
-    # compile/reference_label_pool.py), so every transferred label inherits it.
+    # compile/label_transfer_landmarks.py), so every transferred label inherits it.
     df["evidence_quality"] = "reviewed"
     return finish(df, channel, "embedding_knn")
 

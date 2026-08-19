@@ -185,23 +185,26 @@ types:
     properties:
       _: UniProt -> MNXR bridge via Rhea DR (parquet; uniprot_accession, dr_source, mnxr)
       ext: parquet
-  reference_label_pool:
+  # The labelled references the kNN transfer lane votes against -- NOT the label
+  # universe. One parquet: accession, its MNXR labels and its embedding in the same
+  # row, so there is no ordering for a consumer to get wrong. It replaces the
+  # retired `reference_label_pool`, which was an index parquet beside an .npy stack
+  # addressed by row; two files assembled through two independent `sorted(glob())`
+  # calls that did not agree, which labelled every reference with another protein's
+  # reactions and raised nothing.
+  label_transfer_landmarks:
     extends:
     - reference_data
     properties:
-      _: Reference embeddings + their MNXR labels for kNN label transfer (orf_index.parquet + emb_*.npy)
-  # The SAME pool -- same bridge cut, same Swiss-Prot release, same accessions --
-  # embedded with ESM-C instead of ProteinBERT. A separate artifact rather than a
-  # second file inside the one above, because the two are written by two transforms
-  # under two images and the index must be produced with the stack it addresses: a
-  # pool assembled from one run's index and another run's embeddings misindexes every
-  # row and emits a full, confident, wrong table. Each directory carries its own
-  # orf_index.parquet for exactly that reason.
-  reference_label_pool_esmc:
+      _: Reference ProteinBERT embeddings beside their MNXR labels, one row per accession (landmarks.parquet + source.txt)
+  # The SAME landmarks -- same bridge cut, same Swiss-Prot release, same accessions --
+  # embedded with ESM-C instead of ProteinBERT. A separate artifact because the two are
+  # written by two transforms under two images, one of which needs a GPU.
+  label_transfer_landmarks_esmc:
     extends:
     - reference_data
     properties:
-      _: Reference ESM-C embeddings + their MNXR labels for kNN label transfer (orf_index.parquet + emb_esmc.npy)
+      _: Reference ESM-C embeddings beside their MNXR labels, one row per accession (landmarks.parquet + source.txt)
 
   # -------------------------------------------------
   # Compiled metabolism tables (build_references/bake_metabolism.py).

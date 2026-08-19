@@ -30,7 +30,7 @@ three proteomes staged as unrelated givens give that pin nothing to bind to. The
 would then satisfy the mapper from whatever ORF set is cheapest to reach and the host
 attribution would land on a table built from something else.
 
-THE LANE SET IS CHECKED, NOT REPORTED. The fourth lane needs `ref::reference_label_pool`;
+THE LANE SET IS CHECKED, NOT REPORTED. The fourth lane needs `ref::label_transfer_landmarks`;
 `check_refs` probes it on the site before anything is staged, and B2's collector refuses a
 table whose channels are not the declared four. An absent reference stops the run here --
 it never yields a shorter table.
@@ -67,6 +67,8 @@ from _driver import (                                                   # noqa: 
     provision_dev_overlay_remote, publish_by_type, retrieve, sockeye_agent, ssh_once,
 )
 
+# Everything that differs between the two clusters, in ONE place. A driver that reaches
+# for `FIR_*` anywhere below this table is a driver that half-switched.
 SITES = {
     "fir": dict(
         host=FIR_HOST, agent_home=FIR_AGENT_HOME, agent=fir_agent, gpu=FIR_GPU,
@@ -77,6 +79,16 @@ SITES = {
         host=SOCKEYE_HOST, agent_home=SOCKEYE_AGENT_HOME, agent=sockeye_agent,
         gpu=SOCKEYE_GPU, account=SOCKEYE_ACCOUNT, gpu_account=SOCKEYE_GPU_ACCOUNT,
         image_store=SOCKEYE_IMAGE_STORE, container=SOCKEYE_CONTAINER,
+        # ON /arc, NOT /scratch, AND THAT IS MEASURED RATHER THAN TIDY. kofam_ref is
+        # 27,757 small files, and sockeye's /scratch creates 50 small files in over 110
+        # seconds where /arc does it in 183 ms -- a >600x gap that made every route in
+        # (globus at 7 files/min, tar on a login node at ~1.4/min, tar on a dedicated
+        # compute node at ~0.7/min) equally hopeless. Bulk throughput on /scratch is
+        # fine; it is metadata that is degraded, which is why a 17 GB single-file
+        # database lands there happily and a profile directory does not. /arc is also
+        # where the image store already lives and is the persistent tier, so reusable
+        # references belong there anyway. The layout mirrors fir's, so `REFS_4` needs no
+        # per-site form.
         processed="/arc/project/st-shallam-1/fabfos_refs/processed",
     ),
 }
@@ -91,16 +103,25 @@ ARTIFACTS = REPO / "tests" / "fabfos" / "artifacts"
 
 INSERTS = SCADC / "sequences" / "inserts" / "inserts.fna"
 
+# The compiled references, by type -> the file or directory under data/fabfos/processed/.
+# `ref::label_transfer_landmarks` is a DIRECTORY (index + embedding stack), which is the
+# whole reason it is one product: the consumer addresses the stack by row, so an index
+# from one build against a stack from another misindexes every row silently.
 REFS_4 = {
     "ref::kofamscan_profiles": "kofam_ref/profiles",
     "ref::kofamscan_ko_list": "kofam_ref/ko_list.tsv",
     "ref::uniref50_diamond_db": "uniref50_dmnd/uniref50.dmnd",
     "ref::mnxr_lookup": "mnxr_lookup/mnxr_lookup.parquet",
-    "ref::reference_label_pool": "reference_label_pool/pool",
+    "ref::label_transfer_landmarks": "label_transfer_landmarks/landmarks",
 }
+# The three decided-against lanes need three more. Two are built by the reference
+# driver alongside the canonical five; `ref::ezpred_model` is staged as a given,
+# because its compile is still in build_references/transforms/_deferred/ -- blocked on
+# how a *patched* upstream tree enters the graph, which is a tier decision rather than
+# a missing implementation. See that directory's README.
 REFS_7 = dict(REFS_4, **{
     "ref::esm_c_600m_weights": "esm_c_weights/esmc_600m.tgz",
-    "ref::reference_label_pool_esmc": "reference_label_pool_esmc/pool",
+    "ref::label_transfer_landmarks_esmc": "label_transfer_landmarks_esmc/landmarks",
     "ref::ezpred_model": "ezpred_model/EZpred",
 })
 
@@ -108,8 +129,14 @@ GENOMES = REPO / "data" / "fabfos" / "originals" / "genomes"
 
 TARGET_4 = "annotation::gpr_table"
 TARGET_7 = "annotation::gpr_table_7lane"
+# The real target. Asking for the mapper table alone would build three
+# unattributed tables and stop one step short of the artifact.
 TARGET_DENOVO = "ref::gpr_table_denovo"
 
+# Published as one chunk. They are only jointly meaningful -- a GPR table read against
+# another run's ORFs joins on ids that happen to look alike. Published beside the hosts: the tables, the ORFs the lanes ran on,
+# and every lane output. They are only jointly meaningful -- a GPR table read against
+# another run's ORFs joins on ids that happen to look alike.
 PUBLISH_AT = {
     "annotation::gpr_table": "gpr_4lane.parquet",
     "annotation::gpr_table_7lane": "gpr_7lane.parquet",
@@ -120,7 +147,6 @@ PUBLISH_AT = {
     "annotation::clean_predictions": "lanes/clean.tsv",
     "annotation::diamond_uniref50_results": "lanes/diamond_uniref50.tsv",
     "annotation::proteinbert_embeddings": "lanes/proteinbert_embeddings.parquet",
-    "annotation::proteinbert_index": "lanes/proteinbert_index.csv",
     "annotation::deepec_predictions": "lanes/deepec.tsv",
     "annotation::ezpred_predictions": "lanes/ezpred.csv",
     "annotation::esm_c_embeddings": "lanes/esm_c_embeddings.parquet",
@@ -130,26 +156,67 @@ PUBLISH_AT = {
 TYPE_LIBRARIES = ([MLIB / "data_types" / f for f in
                    ("sequences.yml", "annotation.yml", "ref.yml", "lib.yml",
                     "fabfos.yml", "ncbi.yml")]
+                  # the build-side namespaces the scatter and the collector are typed in
                   + [BREF / "data_types" / f for f in
                      ("fabfos_data.yml", "raw.yml", "interm.yml", "bench.yml",
                       "buildlib.yml", "lookup.yml", "evidence.yml")])
 
+# KOfam over ~5-6k ORFs against ~26k profiles is the CPU pole; CLEAN wants the GPU for
+# minutes. Everything else is minutes.
+#
+# Durations sit near the measured cost, not generously above it -- see the same note in
+# annotation_references_build.py. SLURM will not start a job that cannot finish before
+# a reservation covering the nodes it needs, and fir's maintenance windows are
+# ALL_NODES, so an over-generous walltime is not caution: it is a job that never runs.
 RESOURCE_OVERRIDES = {
     "kofamscan": Resources(cpus=16, memory=Size.GB(32), duration=Duration(hours=4)),
     "diamond_uniref50": Resources(cpus=16, memory=Size.GB(64), duration=Duration(hours=3)),
     "proteinbert": Resources(cpus=8, memory=Size.GB(32), duration=Duration(hours=2)),
     "clean": Resources(cpus=4, memory=Size.GB(32), duration=Duration(hours=2)),
+    # The three T4 lanes. Their declared durations (3-4 h) are sized for a metagenome,
+    # not for 5,892 ORFs -- and `slurm.nf` DOUBLES the walltime on retry, so a 4 h
+    # declaration is an 8 h second attempt, which SLURM will not start ahead of an
+    # ALL_NODES maintenance window and which therefore never runs at all. These are
+    # what the work costs here, so the retry stays schedulable too.
     "deepec": Resources(cpus=8, memory=Size.GB(32), duration=Duration(hours=1)),
     "esm_c": Resources(cpus=4, memory=Size.GB(32), duration=Duration(hours=1),
                        gpus=Gpus.REQUIRED, gpu_memory=Size.GB(24)),
     "ezpred": Resources(cpus=4, memory=Size.GB(32), duration=Duration(hours=1)),
+    # The mappers declare 8 GB, which is what a mapper reading five tables looks like
+    # it needs -- and is not. `lane_embed` materialises a DENSE (reference x MNXR)
+    # one-hot label matrix to do the kNN vote as a matmul, and this pool is 222,019
+    # references over 13,112 distinct MNXR: 10.84 GiB of float32 that is 99.97% zeros,
+    # before the embeddings or the bridge. Measured off the pinned pool, not guessed.
+    #
+    # 48 GB is the cheap fix and it is the wrong one -- the vote wants a sparse matrix
+    # or a gather over each neighbour's label list, which is a handful of entries per
+    # row. That is a transform change and so a new task key, which would discard every
+    # cached lane; an override does not. Left as the follow-up it is, because at the
+    # 6.96M-ORF scale the anaerobic-digester outputs sit at, no allocation saves this.
     "gpr_4lane": Resources(cpus=4, memory=Size.GB(48), duration=Duration(hours=1)),
     "gpr_7lane": Resources(cpus=4, memory=Size.GB(64), duration=Duration(hours=1)),
 }
 
 
 def expected_transforms(lanes: int) -> set[str]:
+    """The run tools this stage must use, imported from the compile-check.
+
+    One import rather than a second list. The gate and the run disagreeing about
+    which transforms the stage IS is the drift this closes.
+
+    NO PRODIGAL, and its absence is asserted rather than tolerated. A host proteome IS
+    the ORF set -- NCBI already called the genes -- so an ORF caller here would predict
+    genes over an amino-acid FASTA, which is not a smaller run, it is a different and
+    wrong one. `host_proteomes` takes its place: it fans the host set out into one ORF
+    set per host without parsing a single record.
+    """
     sys.path.insert(0, str(REPO / "tests"))
+    # `test_gpr_workflow` was retired in a690638 when the pilot compile-checks became
+    # per-driver unit tests, and this import went with it -- the driver then died on
+    # ModuleNotFoundError before it could preflight anything. Its successor covers the
+    # FOUR canonical lanes only, by design (see that file's header), so the three
+    # decided-against lanes are named here rather than subtracted from a set that no
+    # longer carries them.
     from test_annotation_driver import EXPECTED_TRANSFORMS  # noqa: E402
     four = set(EXPECTED_TRANSFORMS) | {"host_proteomes", "host_gpr_denovo"}
     if lanes == 7:
@@ -158,6 +225,12 @@ def expected_transforms(lanes: int) -> set[str]:
 
 
 def check_refs(host: str, remote_processed: str, lanes: int) -> None:
+    """Every reference must already be on the host, checked in ONE ssh round trip.
+
+    A missing reference is a refusal, never a stand-in: an empty database makes most
+    of these lanes produce an empty output and *succeed*, which is the exact failure
+    `validate_gpr` exists to catch -- one whole run too late to be cheap.
+    """
     refs = REFS_7 if lanes == 7 else REFS_4
     probe = "; ".join(f'[ -e "{remote_processed}/{rel}" ] || echo "MISSING {d} {rel}"'
                       for d, rel in refs.items())
@@ -188,9 +261,14 @@ def build_inputs(work: Path, lanes: int, remote_processed: str) -> DataInstanceL
           f"({n} proteomes)")
     if n < 1:
         raise SystemExit(f"no proteomes under {GENOMES}/*/genome/*.faa")
+    # Copied in, so it is a RELATIVE member of the library and travels with the task.
+    # ~30 MB of proteomes and models; the 17.5 GB of references they are annotated
+    # against stay where they are.
     shutil.copytree(GENOMES, xgdb / GENOMES.name, dirs_exist_ok=True)
     inputs.AddItem(GENOMES.name, "fabfos_data::genomes")
 
+    # ABSOLUTE host paths -> referenced in place on fir. Relative would copy 17.5 GB
+    # into the library and stage it through the task for no gain.
     for dtype, rel in (REFS_7 if lanes == 7 else REFS_4).items():
         remote = f"{remote_processed}/{rel}"
         print(f"    {dtype:32s} {remote}")
@@ -206,16 +284,29 @@ def plan(work: Path, agent, lanes: int, remote_processed: str):
         DataInstanceLibrary.Load(MLIB / "resources" / "lib"),
         inputs,
     ]
+    # NOT logistics/: it carries downloaders producing the same ref:: types the
+    # compiles do, and two producers for one reference makes provenance a tiebreak.
     transforms = [
         TransformInstanceLibrary.Load(MLIB / "transforms" / "metagenomics"),
         TransformInstanceLibrary.Load(MLIB / "transforms" / "functionalAnnotation"),
         TransformInstanceLibrary.Load(MLIB / "transforms" / "fabfos"),
+        # The scatter and the collector. `benchmark/` also carries host_gpr_gem and
+        # study_tier, which target types nothing here asks for, so they do not enter
+        # the plan -- the target set is what selects, not the library.
         TransformInstanceLibrary.Load(BREF / "transforms" / "benchmark"),
     ]
     tb = TargetBuilder()
+    # The 7-lane run asks for BOTH tables. The comparison the three extra lanes exist
+    # for is only clean if the two are read off the same ORFs and the same four
+    # canonical lane outputs -- and a separate 4-lane run cannot give that, because a
+    # different task key is a different run directory and nextflow shares no cache
+    # across them, so those four lanes would be recomputed rather than reused. Asking
+    # for both here costs one more mapper step over lane outputs that are already on
+    # disk, and it makes "same inputs" a fact about the graph.
     tb.Add(TARGET_7 if lanes == 7 else TARGET_4)
     if lanes == 7:
         tb.Add(TARGET_4)
+    # The artifact. Without it the run stops at three unattributed mapper tables.
     tb.Add(TARGET_DENOVO)
 
     return agent.GenerateWorkflow(
@@ -243,6 +334,10 @@ def check_plan(task, lanes: int) -> int:
             print(f"\nlogistics/{dup} is in the plan -- duplicate reference producer.",
                   file=sys.stderr)
             bad = 1
+    # One ORF set per host, and NO prodigal: a proteome is already the ORF set. Without
+    # the mapper's `parents={orfs}` pins the
+    # planner is free to satisfy each lane from whatever ORF set is cheapest to reach,
+    # and every gene-id join across lanes then comes back empty.
     n_prodigal = sum(1 for s in task.plan.steps
                      if Path(s.transform._path).stem in ("prodigal", "host_proteomes"))
     if n_prodigal != 1:
@@ -254,10 +349,15 @@ def check_plan(task, lanes: int) -> int:
     return bad
 
 
+
+
+
 def publish(results: Path, *, dry_run: bool, lanes: int = 4) -> int:
     rc = publish_by_type(results, PUBLISH_AT, REPO / "data" / "fabfos" / "benchmarks" / "denovo",
                          dry_run=dry_run, repo=REPO)
     if rc == 0 and not dry_run:
+        # The pin IS the provenance: this commit carries both this script and the
+        # .dvc file the next line writes, so re-running it here reproduces the chunk.
         print("Pin the chunk:  dvc add data/fabfos/runs/scadc_fosmids/annotations")
     return rc
 
@@ -292,6 +392,9 @@ def main() -> int:
                     help="which cluster to run on. Selects host, agent home, image "
                          "store, both SLURM accounts and the GPU declaration together "
                          "-- they are not independently choosable.")
+    # Every one of these defaults to None and is filled from --site below. An argparse
+    # default cannot depend on another flag, and hardcoding fir's here is what made the
+    # site switch a half-switch the first time.
     ap.add_argument("--host", default=None)
     ap.add_argument("--agent-home", default=None)
     ap.add_argument("--container", default=None,
@@ -324,6 +427,9 @@ def main() -> int:
             setattr(a, flag, site[key])
     print(f"=== site: {a.site} ({a.host}) ===")
 
+    # The work dir is per-SITE: it holds RUN_KEY and the retrieved results, and a run on
+    # one cluster silently overwriting the other's would make --publish attribute a
+    # table to the wrong machine.
     work = (Path(a.work).resolve() if a.work
             else SCRATCH / f"hosts_denovo_{a.site}_{a.lanes}lane")
     work.mkdir(parents=True, exist_ok=True)
@@ -351,11 +457,15 @@ def main() -> int:
     print(f"\nDAG -> {svg}")
     print(f"\n=== task key: {task.GetKey()} ===", flush=True)
 
+    # The images the RESOLVED plan reaches for -- read off the plan rather than kept
+    # in a list here, because a hand-kept list drifts exactly where it hurts.
     if a.preflight:
         return preflight(a.host, a.agent_home, a.container,
                          envs_from_plan(task), mlib=MLIB,
                          image_store=site.get("image_store"))
 
+    # run_campaign.py reads this to resume an attempt, and it is not recoverable
+    # from a retrieved results tree.
     (work / "RUN_KEY").write_text(task.GetKey())
 
     if a.retrieve:
@@ -383,6 +493,9 @@ def main() -> int:
         return 4
     if check_walltimes(a.host, RESOURCE_OVERRIDES):
         return 4
+    # Reservations that have not started yet are what check_walltimes sees; this asks
+    # the scheduler whether it would take the job AT ALL, which is the only thing that
+    # catches a maintenance window already in progress.
     if check_schedulable(a.host, a.slurm_account, RESOURCE_OVERRIDES,
                          workdir=a.agent_home):
         return 4

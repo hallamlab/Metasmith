@@ -69,7 +69,6 @@ PUBLISH_AT = {
     "annotation::clean_predictions": "annotations/lanes/clean.tsv",
     "annotation::diamond_uniref50_results": "annotations/lanes/diamond_uniref50.tsv",
     "annotation::proteinbert_embeddings": "annotations/lanes/proteinbert_embeddings.parquet",
-    "annotation::proteinbert_index": "annotations/lanes/proteinbert_index.csv",
 }
 
 EXPECTED = {"chunkOrfsForAnnotation",

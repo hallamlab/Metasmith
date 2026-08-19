@@ -11,7 +11,7 @@ uniref    = model.AddRequirement(lib.GetType("annotation::diamond_uniref50_resul
 pbert_emb = model.AddRequirement(lib.GetType("annotation::proteinbert_embeddings"), parents={orfs})
 pbert_idx = model.AddRequirement(lib.GetType("annotation::proteinbert_index"), parents={orfs})
 bridge    = model.AddRequirement(lib.GetType("ref::mnxr_lookup"))
-pool      = model.AddRequirement(lib.GetType("ref::reference_label_pool"))
+pool      = model.AddRequirement(lib.GetType("ref::label_transfer_landmarks"))
 ev_lib    = model.AddRequirement(lib.GetType("lib::fabfos_evidence.py"))
 gpr_lib   = model.AddRequirement(lib.GetType("lib::fabfos_gpr"))
 out_gpr   = model.AddProduct(lib.GetType("annotation::gpr_table"))

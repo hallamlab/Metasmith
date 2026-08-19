@@ -89,7 +89,7 @@ LANES = {d: n for lane in ("kofam", "clean", "diamond", "proteinbert")
 
 REFS = {
     "ref::mnxr_lookup": "mnxr_lookup/mnxr_lookup.parquet",
-    "ref::reference_label_pool": "reference_label_pool/pool",
+    "ref::label_transfer_landmarks": "label_transfer_landmarks/landmarks",
 }
 
 RECOMPUTED = {"kofamscan", "clean", "diamond_uniref50", "proteinbert", "host_proteomes",

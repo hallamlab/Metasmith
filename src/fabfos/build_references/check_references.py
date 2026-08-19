@@ -314,42 +314,49 @@ def check_annotation_refs(processed: Path) -> None:
     else:
         note("uniref50_dmnd/uniref50.dmnd not published; not checked")
 
-    # --- R7: the label pool. Index and stack are ONE artifact: the consumer
-    # addresses the stack BY ROW.
-    pool = processed / "reference_label_pool" / "pool"
-    if pool.is_dir():
-        idx_p = pool / "orf_index.parquet"
-        stack_p = pool / "emb_pbert.npy"
-        if idx_p.exists() and stack_p.exists():
-            idx = pd.read_parquet(idx_p)
-            stack = np.load(stack_p, mmap_mode="r")
-            check("pool: index length equals the embedding stack",
-                  len(idx) == stack.shape[0],
-                  f"{len(idx):,} rows vs {stack.shape[0]:,} -- pairing a mismatched "
-                  f"pair misindexes every row silently")
-            check("pool: embedding width matches what the query lane emits",
-                  stack.shape[1] == POOL_EMBED_DIM,
-                  f"{stack.shape[1]} dims, expected {POOL_EMBED_DIM}")
-            check("pool: rows address the stack contiguously from 0",
-                  list(idx["row"]) == list(range(len(idx))))
-            unlabelled = int((idx["mnxr_list"].fillna("") == "").sum())
-            check("pool: every member carries a label", unlabelled == 0,
-                  f"{unlabelled:,} unlabelled -- the pool was SELECTED on having one")
-            n_mnxr = idx["mnxr_list"].str.split(";").explode().replace("", None).nunique()
-            note(f"pool: {len(idx):,} reference embeddings, {n_mnxr:,} distinct MNXR")
-            src = pool / "pool_source.txt"
+    # --- R7: the labelled landmarks. One row per accession, carrying its labels and
+    # its embedding, so the checks are about the CONTENT rather than about two files
+    # agreeing -- which is what the retired index-beside-a-stack layout got wrong.
+    lm = processed / "label_transfer_landmarks" / "landmarks"
+    lm_table = lm / "landmarks.parquet"
+    if lm.is_dir():
+        if lm_table.exists():
+            t = pd.read_parquet(lm_table)
+            dims = [c for c in t.columns if c.startswith("dim_")]
+            check("landmarks: dim columns run contiguously from 0",
+                  sorted(dims, key=lambda c: int(c[4:]))
+                  == [f"dim_{i}" for i in range(len(dims))],
+                  "a gap stacks into a matrix of the wrong width rather than failing")
+            check("landmarks: embedding width matches what the query lane emits",
+                  len(dims) == POOL_EMBED_DIM,
+                  f"{len(dims)} dims, expected {POOL_EMBED_DIM}")
+            check("landmarks: every accession appears once",
+                  t["accession"].is_unique)
+            unlabelled = int((t["mnxr_list"].fillna("") == "").sum())
+            check("landmarks: every member carries a label", unlabelled == 0,
+                  f"{unlabelled:,} unlabelled -- the set was SELECTED on having one")
+            # A deterministic embedder gives identical sequences identical vectors, so
+            # duplicated rows are expected and duplicated rows ALONE are not. A stack
+            # assembled in the wrong chunk order still holds the right vectors, and the
+            # only thing that betrays it without the sequences in hand is the labels
+            # landing on rows that do not match: see `research/.../repair_pool_index.py`
+            # for the full signature test. This is its cheap half.
+            n_dup_vec = len(t) - len(t.drop_duplicates(subset=dims))
+            note(f"landmarks: {len(t):,} references, "
+                 f"{t['mnxr_list'].str.split(';').explode().nunique():,} distinct MNXR, "
+                 f"{n_dup_vec:,} rows share their embedding with another")
+            src = lm / "source.txt"
             if src.exists():
                 for line in src.read_text().strip().splitlines():
-                    note("pool: " + line.replace("\t", " = "))
+                    note("landmarks: " + line.replace("\t", " = "))
             else:
-                # Without it, which model and which sequence release produced the pool
-                # is not recoverable from the two files that matter.
-                check("pool: pool_source.txt records model and release", False)
+                # Without it, which model and which sequence release produced the
+                # landmarks is not recoverable from the table.
+                check("landmarks: source.txt records model and release", False)
         else:
-            check("pool: index and stack are both present", False,
-                  f"index={idx_p.exists()} stack={stack_p.exists()}")
+            check("landmarks: landmarks.parquet is present", False, str(lm_table))
     else:
-        note("reference_label_pool/pool not published; not checked")
+        note("label_transfer_landmarks/landmarks not published; not checked")
 
     # --- R8: the ESM-C weights, for the decided-against ESM-C and EZpred lanes.
     esmc = processed / "esm_c_weights" / "esmc_600m.tgz"
@@ -369,48 +376,42 @@ def check_annotation_refs(processed: Path) -> None:
         note("esm_c_weights/esmc_600m.tgz not published; the ESM-C and EZpred lanes "
              "are not runnable")
 
-    # --- R10: the ESM-C half of the label pool. Everything R7 is checked for, plus the
+    # --- R10: the ESM-C half of the landmarks. Everything R7 is checked for, plus the
     # one thing that only makes sense across the two: they must describe the SAME
-    # accessions in the SAME row order. A kNN lane compares its query against whichever
-    # pool it was pointed at, so two pools that disagree about row i do not fail -- they
-    # answer, from the wrong reference, and the two lanes stop being comparable, which
-    # is the entire reason the ESM-C lane exists.
-    pool_e = processed / "reference_label_pool_esmc" / "pool_esmc"
-    if pool_e.is_dir():
-        idx_p = pool_e / "orf_index.parquet"
-        stack_p = pool_e / "emb_esmc.npy"
-        if idx_p.exists() and stack_p.exists():
-            idx_e = pd.read_parquet(idx_p)
-            stack_e = np.load(stack_p, mmap_mode="r")
-            check("pool_esmc: index length equals the embedding stack",
-                  len(idx_e) == stack_e.shape[0],
-                  f"{len(idx_e):,} rows vs {stack_e.shape[0]:,}")
-            check("pool_esmc: embedding width is ESM-C 600M's",
-                  stack_e.shape[1] == ESMC_EMBED_DIM,
-                  f"{stack_e.shape[1]} dims, expected {ESMC_EMBED_DIM}")
-            check("pool_esmc: rows address the stack contiguously from 0",
-                  list(idx_e["row"]) == list(range(len(idx_e))))
-            unlabelled = int((idx_e["mnxr_list"].fillna("") == "").sum())
-            check("pool_esmc: every member carries a label", unlabelled == 0,
+    # accessions in the SAME order. A kNN lane compares its query against whichever
+    # landmarks it was pointed at, so two sets that disagree about row i do not fail --
+    # they answer, from the wrong reference, and the two lanes stop being comparable,
+    # which is the entire reason the ESM-C lane exists.
+    lm_e = processed / "label_transfer_landmarks_esmc" / "landmarks_esmc"
+    lm_e_table = lm_e / "landmarks.parquet"
+    if lm_e.is_dir():
+        if lm_e_table.exists():
+            t_e = pd.read_parquet(lm_e_table)
+            dims_e = [c for c in t_e.columns if c.startswith("dim_")]
+            check("landmarks_esmc: embedding width is ESM-C 600M's",
+                  len(dims_e) == ESMC_EMBED_DIM,
+                  f"{len(dims_e)} dims, expected {ESMC_EMBED_DIM}")
+            check("landmarks_esmc: every accession appears once",
+                  t_e["accession"].is_unique)
+            unlabelled = int((t_e["mnxr_list"].fillna("") == "").sum())
+            check("landmarks_esmc: every member carries a label", unlabelled == 0,
                   f"{unlabelled:,} unlabelled")
-            if (pool / "orf_index.parquet").exists():
-                idx_p_b = pd.read_parquet(pool / "orf_index.parquet")
-                check("pool_esmc: same accessions, same row order as the pbert pool",
-                      len(idx_e) == len(idx_p_b)
-                      and list(idx_e["orf"]) == list(idx_p_b["orf"]),
+            if lm_table.exists():
+                t_b = pd.read_parquet(lm_table, columns=["accession"])
+                check("landmarks_esmc: same accessions, same order as the pbert set",
+                      len(t_e) == len(t_b)
+                      and list(t_e["accession"]) == list(t_b["accession"]),
                       "the two kNN lanes must differ in their embedder and in nothing "
-                      "else; a pool that disagrees about row i answers from the wrong "
-                      "reference rather than failing")
-            src = pool_e / "pool_source.txt"
+                      "else")
+            src = lm_e / "source.txt"
             if src.exists():
                 for line in src.read_text().strip().splitlines():
-                    note("pool_esmc: " + line.replace("\t", " = "))
+                    note("landmarks_esmc: " + line.replace("\t", " = "))
         else:
-            check("pool_esmc: index and stack are both present", False,
-                  f"index={idx_p.exists()} stack={stack_p.exists()}")
+            check("landmarks_esmc: landmarks.parquet is present", False, str(lm_e_table))
     else:
-        note("reference_label_pool_esmc/pool_esmc not published; the ESM-C kNN lane is not "
-             "runnable")
+        note("label_transfer_landmarks_esmc/landmarks_esmc not published; the ESM-C kNN "
+             "lane is not runnable")
 
     # --- R9: the EZpred bundle. It has NO producer in the graph -- its compile is
     # parked in transforms/_deferred/ -- so the pin plus these assertions are the whole

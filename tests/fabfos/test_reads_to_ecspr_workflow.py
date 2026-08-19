@@ -57,7 +57,7 @@ STAGED_REFS = [
     "ref::esm_c_600m_weights",
     "ref::ezpred_model",
     "ref::mnxr_lookup",
-    "ref::reference_label_pool",
+    "ref::label_transfer_landmarks",
 ]
 
 ORFS = "sequences::orfs"

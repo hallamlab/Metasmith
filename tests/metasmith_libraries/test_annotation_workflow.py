@@ -373,7 +373,6 @@ class TestAnnotationWorkflowExecution:
     ):
         targets = TargetBuilder()
         targets.Add("annotation::proteinbert_embeddings")
-        targets.Add("annotation::proteinbert_index")
 
         task = agent.GenerateWorkflow(
             samples=list(orfs_input.AsSamples("sequences::orfs")),
@@ -399,17 +398,20 @@ class TestAnnotationWorkflowExecution:
         results = wait_for_workflow(agent, task, timeout=900)
         results_path = agent.GetResultSource(task).GetPath()
 
-        found_embeddings = False
-        found_index = False
+        import pandas as pd
 
-        for path, type_name, endpoint in results.Iterate():
-            if "proteinbert_embeddings" in type_name:
-                found_embeddings = True
-            if "proteinbert_index" in type_name:
-                found_index = True
+        # `Iterate` yields paths relative to the result source, as elsewhere here.
+        embeddings = [path for path, type_name, _ in results.Iterate()
+                      if "proteinbert_embeddings" in type_name]
+        assert embeddings, "No ProteinBERT embeddings found"
 
-        assert found_embeddings, "No ProteinBERT embeddings found"
-        assert found_index, "No ProteinBERT index found"
+        # The table names its own rows. There is no separate index to check against
+        # any more, and that is the point -- the pair this replaced was joined by
+        # position and got it wrong for every input past one embedder chunk.
+        df = pd.read_parquet(results_path / embeddings[0])
+        assert "sequence_id" in df.columns, df.columns[:8]
+        assert df["sequence_id"].is_unique
+        assert [c for c in df.columns if c.startswith("dim_")][:1] == ["dim_0"]
 
     def test_diamond_uniref50_e2e(
         self, agent, annotation_resources, annotation_transforms, orfs_input, uniref50_db_input

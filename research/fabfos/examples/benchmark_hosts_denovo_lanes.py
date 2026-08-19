@@ -94,7 +94,7 @@ LANES = {
     "proteinbert": dict(
         transform="proteinbert",
         products={"annotation::proteinbert_embeddings": "proteinbert_embeddings.parquet",
-                  "annotation::proteinbert_index": "proteinbert_index.csv"},
+                  },
     ),
 }
 
