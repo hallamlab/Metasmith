@@ -38,8 +38,32 @@ def test_data_dir():
     return TEST_DATA_DIR
 
 
+def _discard_stale_derived_home():
+    # runs/ and task_cache/ are keyed on the file-identity and cache-key contracts. A shard
+    # written under one contract must never be replayed under another, so both are dropped
+    # whenever the stamp disagrees with the versions this tree compiles against.
+    import shutil
+    from metasmith.caching.keys import CACHE_KEY_VERSION, LIN_PAYLOAD_VERSION
+
+    stamp_file = TEST_MSM_HOME / ".contract_stamp"
+    stamp = f"cache_key={CACHE_KEY_VERSION} lin_payload={LIN_PAYLOAD_VERSION}\n"
+    if stamp_file.is_file() and stamp_file.read_text() == stamp:
+        return
+
+    for name in ("runs", "task_cache"):
+        target = TEST_MSM_HOME / name
+        assert target.parent == TEST_MSM_HOME and target.name == name
+        if target.is_dir():
+            shutil.rmtree(target)
+
+    TEST_MSM_HOME.mkdir(parents=True, exist_ok=True)
+    stamp_file.write_text(stamp)
+
+
 @pytest.fixture(scope="session")
 def agent():
+    _discard_stale_derived_home()
+
     agent_home = Source.FromLocal(TEST_MSM_HOME)
     smith = Agent(
         home=agent_home,
