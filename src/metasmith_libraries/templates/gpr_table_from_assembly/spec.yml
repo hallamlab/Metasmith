@@ -1,0 +1,33 @@
+name: gpr_table_from_assembly
+description: 'Build the canonical chosen-4 GPR evidence table for an assembly: KOFAMSCAN,
+
+  CLEAN, DIAMOND UniRef50 and ProteinBERT folded into one gene-attributed
+
+  annotation::gpr_table.'
+sample_type: null
+target_types:
+- annotation::gpr_table
+transform_libraries:
+- metagenomics
+- logistics
+- functionalAnnotation
+- fabfos
+resource_libraries:
+- env
+- lib
+shared_input_paths: []
+input_library:
+  schema: v1
+  manifest:
+    /msm_deferred/489957f1aad94e6580cc871703492f59:
+      type: ref::mnxr_lookup
+      instance_id: 1e20b72a6f6af94fb7e870d7d4718e7147dbba4e5a2c3eb15e92fe151a390f362507
+      origin: leaf
+    /msm_deferred/5ad071967c0140e488c3affa6edb6fe3:
+      type: sequences::assembly
+      instance_id: 1e2041ec152185c4ce1bbe6b063ebed4a83ac8b6036dbdcdac21d5c9ee4b34431429
+      origin: leaf
+    /msm_deferred/99154cacdf57464291ec467c7c189f81:
+      type: ref::reference_label_pool
+      instance_id: 1e20c495e6910b7518a4ad52a0873f01453f5614dcb336e962d0fccef2213bbd0239
+      origin: leaf
