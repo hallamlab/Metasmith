@@ -3,7 +3,7 @@
   import { api } from '../lib/api.svelte.js'
   import {
     app, attempt, cachedWorkflow, cacheWorkflow, loadRuns, loadTypeIndex, loadTypes,
-    loadWorkflows, notify, patchWorkflowSummary, renameWorkflow, select, ui,
+    loadWorkflows, notify, patchWorkflowSummary, renameWorkflow, select, setLastAgent, ui,
     workflowRenameable,
   } from '../lib/state.svelte.js'
   import Ago from '../components/Ago.svelte'
@@ -81,7 +81,9 @@
   let sharing = $state(false)
   let savingTemplate = $state(false)
   let launching = $state(false)
-  let agentChoice = $state('')
+  // Starts on the agent last used anywhere, not blank -- picking one every
+  // time you open a workflow tab is a chore once you mostly run on one agent.
+  let agentChoice = $state(ui.lastAgent)
   let presetChoice = $state('')
   // This run's params, pre-filled from the chosen agent so what will be sent is
   // visible rather than implied, and `seededParams` is what was put there -- how
@@ -337,6 +339,14 @@
   let presets = $derived(Object.keys(chosenAgent?.config_presets ?? {}))
   // what leaving the box alone will actually use, so the blank option can say it
   let agentPreset = $derived(chosenAgent?.default_preset ?? 'local')
+
+  // `agentChoice` starts pre-filled from the remembered agent, but nothing
+  // seeded its params yet -- that only otherwise happens on the select's own
+  // `onchange`. Fires again once `app.agents` (fetched separately) actually
+  // has the entry; `seedFromAgent` is idempotent, so repeats are harmless.
+  $effect(() => {
+    if (chosenAgent) seedFromAgent(agentChoice)
+  })
 
   // an empty list means every library, here and on the server -- so the filter
   // is null rather than an empty Set, which would mean the opposite
@@ -1611,7 +1621,10 @@
           <Field label="on which agent">
             <select
               bind:value={agentChoice}
-              onchange={(e) => seedFromAgent(e.currentTarget.value)}
+              onchange={(e) => {
+                seedFromAgent(e.currentTarget.value)
+                setLastAgent(e.currentTarget.value)
+              }}
             >
               <option value="">choose an agent…</option>
               {#each app.agents.filter((a) => !a.archived_at) as a}

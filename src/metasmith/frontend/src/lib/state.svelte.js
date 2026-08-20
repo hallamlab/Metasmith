@@ -150,6 +150,14 @@ function storedCollapsed() {
 // showing, which pins a choice. Nothing cycles back to following the OS except
 // clearing the key.
 
+// -- last agent used to run a workflow --------------------------------------
+// Which agent was picked last, so opening a new workflow tab starts on the
+// agent you actually use rather than the empty "choose an agent…" prompt
+// every time. One value across all workflows -- the choice is about which
+// machine you are working from today, not about this particular workflow.
+
+const LAST_AGENT_KEY = 'metasmith.lastAgent'
+
 const THEME_KEY = 'metasmith.theme'
 
 function osTheme() {
@@ -181,6 +189,8 @@ export const ui = $state({
   themePref: stored(THEME_KEY, 'system', (r) => (r === 'light' || r === 'dark' ? r : 'system')),
   // what is actually showing: never 'system'. Everything that draws reads this
   theme: 'dark',
+  // the agent last used to run a workflow, off any workflow tab
+  lastAgent: stored(LAST_AGENT_KEY, '', (r) => r),
 })
 
 function remember(key, value) {
@@ -194,6 +204,11 @@ function remember(key, value) {
 export function setRailWidth(w) {
   ui.railWidth = clampRail(w)
   remember(RAIL_KEY, String(ui.railWidth))
+}
+
+export function setLastAgent(name) {
+  ui.lastAgent = name
+  remember(LAST_AGENT_KEY, name)
 }
 
 /** One panel's remembered geometry, hydrated on first ask.
