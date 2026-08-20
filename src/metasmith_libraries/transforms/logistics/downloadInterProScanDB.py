@@ -15,7 +15,7 @@ def protocol(context: ExecutionContext):
         env=image,
         cmd=f"""
             wget -q {IPRSCAN_DATA_URL} -O interproscan-data.tar.gz
-            mkdir -p {idata.container}
+            mkdir -p ipr_data
             tar xzf interproscan-data.tar.gz -C ipr_data --strip-components=1
         """,
     )
