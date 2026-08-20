@@ -68,11 +68,9 @@ def _make_writable(root: Path) -> None:
             pass
 
 
-def clone_stdlib(root: Path) -> dict:
-    dest = Path(root) / STDLIB_NAME
-    if dest.exists():
-        return {"path": str(dest), "cloned": False}
-
+def _rebuild_stdlib(dest: Path) -> dict:
+    """Copy and compile the standard library into a staging dir beside `dest`,
+    then swap it in. Never touches `dest` on failure."""
     src = library_module_root()
     if src is None:
         err = (
@@ -82,7 +80,7 @@ def clone_stdlib(root: Path) -> dict:
             "PYTHONPATH pointed at its src/."
         )
         Log.Error(err)
-        return {"path": str(dest), "cloned": False, "error": err}
+        return {"path": str(dest), "ok": False, "error": err}
 
     Log.Info(f"copying the standard library from [{src}]...")
     staging = dest.with_name(dest.name + ".partial")
@@ -99,9 +97,41 @@ def clone_stdlib(root: Path) -> dict:
         shutil.rmtree(staging, ignore_errors=True)
         err = f"could not build the standard library from [{src}]: {e}"
         Log.Error(err)
-        return {"path": str(dest), "cloned": False, "error": err}
+        return {"path": str(dest), "ok": False, "error": err}
+    if dest.exists():
+        _make_writable(dest)
+        shutil.rmtree(dest)
     staging.rename(dest)
-    return {"path": str(dest), "cloned": True, "source": str(src)}
+    return {"path": str(dest), "ok": True, "source": str(src)}
+
+
+def clone_stdlib(root: Path) -> dict:
+    dest = Path(root) / STDLIB_NAME
+    if dest.exists():
+        return {"path": str(dest), "cloned": False}
+    out = _rebuild_stdlib(dest)
+    result = {"path": out["path"], "cloned": out["ok"]}
+    if "error" in out:
+        result["error"] = out["error"]
+    if "source" in out:
+        result["source"] = out["source"]
+    return result
+
+
+def update_stdlib(root: Path) -> dict:
+    """Force a fresh copy of the standard library over whatever is already
+    cloned at `root`, then bust the caches and workflow copies built from the
+    old one -- the everyday `clone_stdlib` skips entirely once a copy exists,
+    which is right for bootstrapping a project but wrong for picking up
+    changes to an installed or edited `metasmith_libraries`."""
+    dest = Path(root) / STDLIB_NAME
+    out = _rebuild_stdlib(dest)
+    if out["ok"]:
+        _TYPES_CACHE.clear()
+        _INDEX_CACHE.clear()
+    return {"path": out["path"], "updated": out["ok"]} | (
+        {"error": out["error"]} if "error" in out else {}
+    ) | ({"source": out["source"]} if "source" in out else {})
 
 
 def stdlib_commit(root: Path) -> str | None:

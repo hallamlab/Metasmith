@@ -210,6 +210,21 @@ def get_type_index():
         ))
 
 
+@bp.post("/project/libraries/sync")
+def sync_libraries():
+    p = _project()
+
+    def _work(job):
+        with LogCapture(job):
+            out = stdlib.update_stdlib(p.root)
+            if out["updated"]:
+                stdlib.resync_workflow_types(p)
+            return out
+
+    job = _jobs().submit("library-sync", "sync the standard library", _work)
+    return jsonify(job.summary()), 202
+
+
 @bp.get("/ssh/hosts")
 def ssh_hosts():
     cfg = _ssh()
@@ -629,7 +644,7 @@ def deploy_agent(name):
 
     def _work(job):
         with LogCapture(job):
-            return op_agent.deploy(path, assertive)
+            return op_agent.deploy(path, assertive, on_phase=lambda p: job.emit(f"PHASE:{p}"))
 
     job = _jobs().submit("deploy", f"deploy {name}", _work, subject={"agent": name})
     return jsonify(job.summary()), 202
