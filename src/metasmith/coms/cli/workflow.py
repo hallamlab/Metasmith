@@ -44,6 +44,22 @@ def register(subs):
                       help="re-fetch every image even if the store already holds it")
     _mat.set_defaults(func=lambda a: _rt.materialise(a.agent, a.task_key, a.force))
 
+    _env = sp.add_parser(
+        "setup-env",
+        help="prepare the agent's host for a staged task: tool images for a "
+             "container agent, tool conda envs for a mamba one",
+    )
+    _env.add_argument("agent")
+    _env.add_argument("task_key")
+    _env.add_argument("--force", action="store_true",
+                      help="re-fetch or rebuild even what is already there")
+    _env.add_argument("--library", default=None,
+                      help="library to read conda recipes from "
+                           "(default: the installed metasmith_libraries)")
+    _env.set_defaults(func=lambda a: _rt.setup_environment(
+        a.agent, a.task_key, a.force, a.library,
+    ))
+
     _run = sp.add_parser("run", help="launch a staged workflow")
     _run.add_argument("agent")
     _run.add_argument("task_key")

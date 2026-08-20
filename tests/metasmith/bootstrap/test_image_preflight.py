@@ -17,11 +17,26 @@
 # Both read the stage-time env manifest rather than a transform library, since the
 # launching host may hold neither the library nor the images. Nothing here opens a
 # connection: the free functions take a shell, and these drive them with a stub.
+#
+# The same two halves for an agent that runs no containers at all: a mamba agent
+# needs the conda envs its steps name, and the library ships one recipe per tool
+# to build them from. What it cannot build it reports -- an env with no recipe, a
+# step with no `conda:` entry at all (named with the container it does have), a
+# host with no conda frontend -- because each of those is a fact about the agent
+# the person pressing the button has to act on, not an error in the workflow.
 
 from pathlib import Path
 
 import pytest
 
+from metasmith.agents.conda import (
+    NO_RECIPE,
+    CondaEnvError,
+    _conda_frontend,
+    _create_conda_envs,
+    _find_recipes,
+    _manifest_envs,
+)
 from metasmith.agents.images import (
     ImageMaterialiseError,
     _check_image_store,
@@ -206,3 +221,146 @@ class TestLaunchReport:
         sh = _StubShell()
         assert _check_image_store(sh, [], _apptainer(), HOME, rootfs=None) == []
         assert sh.commands == []
+
+
+BLAST = "blast-2.16"
+DIAMOND = "diamond-2.1"
+
+
+def _conda_step(process, transform, envs):
+    return {
+        "step": 1, "transform": transform, "process": process,
+        "arms": ["ifVirtualEnvDo"], "envs": envs,
+    }
+
+
+class _CondaShell:
+    # A host with a conda frontend and some envs already on it. The env that
+    # answers `run -n <name> true` is the env the wrapper every task is launched
+    # under would find, which is what the pre-flight consults.
+    def __init__(self, present=(), frontend="mamba", fails=()):
+        self.present = set(present)
+        self.frontend = frontend
+        self.fails = set(fails)
+        self.commands: list[str] = []
+        self.written: dict[str, str] = {}
+
+    def Exec(self, cmd, history=False, quiet=False, timeout=None, idle_timeout=None, what=None):
+        import base64
+        from metasmith.coms.terminals import ShellResult
+        self.commands.append(cmd)
+        if "command -v" in cmd:
+            if self.frontend is None: return ShellResult(out=[], err=[])
+            return ShellResult(out=[f"MSM_FRONTEND={self.frontend}"], err=[])
+        if " run -n " in cmd:
+            name = cmd.split(" run -n ")[1].split()[0]
+            return ShellResult(out=["env-ready"] if name in self.present else [], err=[])
+        if "base64 -d" in cmd:
+            blob = cmd.split('echo "')[1].split('"')[0]
+            path = cmd.rsplit("> ", 1)[1].strip('"')
+            self.written[path] = base64.b64decode(blob).decode()
+            return ShellResult(out=[], err=[])
+        if "env remove" in cmd:
+            self.present.discard(cmd.split("-n ")[1].split()[0])
+            return ShellResult(out=[], err=[])
+        if "env create" in cmd:
+            name = cmd.split("-n ")[1].split()[0]
+            if name not in self.fails: self.present.add(name)
+            return ShellResult(out=[], err=[])
+        return ShellResult(out=[], err=[])
+
+    def created(self) -> list[str]:
+        return [c.split("-n ")[1].split()[0] for c in self.commands if "env create" in c]
+
+
+class TestWhichEnvs:
+    def test_distinct_envs_across_steps(self):
+        steps = {
+            f"P{i}": _conda_step(f"P{i}", "t", {"a.env": {"container": KRAKEN, "conda": env}})
+            for i, env in enumerate([BLAST, DIAMOND, BLAST, DIAMOND])
+        }
+        envs, without, unknown = _manifest_envs(_doc(steps))
+        assert envs == sorted({BLAST, DIAMOND})
+        assert (without, unknown) == ([], [])
+
+    def test_a_step_with_no_conda_entry_is_named_with_what_it_does_have(self):
+        # The report this exists for: the workflow is runnable, just not here.
+        steps = {"P1": _conda_step("P1", "gtdbtk", {"g.env": {"container": KRAKEN}})}
+        envs, without, _ = _manifest_envs(_doc(steps))
+        assert envs == []
+        assert without == [{
+            "transform": "gtdbtk", "step": 1, "resource": "g.env", "container": KRAKEN,
+        }]
+
+    def test_a_resource_recorded_as_unknown_is_reported_not_ignored(self):
+        steps = {"P1": _conda_step("P1", "mystery", {"x.env": None})}
+        assert _manifest_envs(_doc(steps)) == ([], [], ["mystery"])
+
+    def test_no_manifest_is_nothing_to_do(self):
+        assert _manifest_envs({}) == ([], [], [])
+
+
+class TestRecipes:
+    def test_the_workflows_own_library_is_read_before_the_installed_one(self, tmp_path):
+        near, far = tmp_path/"near", tmp_path/"far"
+        for root, text in ((near, "name: blast # near"), (far, "name: blast # far")):
+            (root/"envs"/"tools").mkdir(parents=True)
+            (root/"envs"/"tools"/f"{BLAST}.yml").write_text(text)
+        found = _find_recipes([BLAST], [near/"envs"/"tools", far/"envs"/"tools"])
+        assert found[BLAST].endswith("near")
+
+    def test_an_env_with_no_recipe_reads_as_absent_rather_than_missing_file(self, tmp_path):
+        (tmp_path/"envs"/"tools").mkdir(parents=True)
+        assert _find_recipes([BLAST], [tmp_path/"envs"/"tools"]) == {BLAST: None}
+
+
+class TestCreateEnvs:
+    def test_a_missing_env_is_built_from_its_recipe(self):
+        sh = _CondaShell()
+        report = _create_conda_envs(sh, {BLAST: "name: blast"}, "mamba", HOME)
+        assert report == [{"env": BLAST, "ok": True, "skipped": False, "reason": None}]
+        assert sh.created() == [BLAST]
+        # the recipe is pushed as it stands, not rewritten from the env name
+        assert list(sh.written.values()) == ["name: blast"]
+
+    def test_an_env_that_is_already_there_is_left_alone(self):
+        sh = _CondaShell(present=[BLAST])
+        report = _create_conda_envs(sh, {BLAST: "name: blast"}, "mamba", HOME)
+        assert report[0]["skipped"] is True
+        assert sh.created() == []
+
+    def test_force_rebuilds_what_is_already_there(self):
+        sh = _CondaShell(present=[BLAST])
+        _create_conda_envs(sh, {BLAST: "name: blast"}, "mamba", HOME, force=True)
+        # removed first: `env create` refuses a name that already exists
+        assert any("env remove" in c for c in sh.commands)
+        assert sh.created() == [BLAST]
+
+    def test_an_env_with_no_recipe_is_reported_and_does_not_stop_the_rest(self):
+        sh = _CondaShell()
+        report = _create_conda_envs(
+            sh, {BLAST: None, DIAMOND: "name: diamond"}, "mamba", HOME,
+        )
+        assert [r["reason"] for r in report] == [NO_RECIPE, None]
+        assert sh.created() == [DIAMOND]
+
+    def test_an_env_that_will_not_build_fails_the_setup_after_trying_the_others(self):
+        sh = _CondaShell(fails=[BLAST])
+        with pytest.raises(CondaEnvError) as e:
+            _create_conda_envs(sh, {BLAST: "x", DIAMOND: "y"}, "mamba", HOME)
+        assert BLAST in str(e.value) and DIAMOND not in str(e.value)
+        assert sh.created() == [BLAST, DIAMOND]
+
+    def test_nothing_to_build_is_not_a_failure(self):
+        sh = _CondaShell()
+        assert _create_conda_envs(sh, {}, "mamba", HOME) == []
+
+
+class TestFrontend:
+    def test_it_reports_which_one_the_host_has(self):
+        assert _conda_frontend(_CondaShell(frontend="conda")) == "conda"
+
+    def test_a_host_with_neither_answers_none_rather_than_failing_a_create(self):
+        # The answer the caller reports, rather than an opaque `env create` error
+        # for every env in the workflow.
+        assert _conda_frontend(_CondaShell(frontend=None)) is None

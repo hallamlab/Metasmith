@@ -9,7 +9,7 @@ from typing import Iterable
 import yaml
 
 from ..constants import AgentPaths, MODULE_PATH
-from ..env import ContainerDef, Environment, Rootfs
+from ..env import ContainerDef, Environment, Rootfs, Runtime
 from ..logging import Log
 from ..models.libraries import (
     DataInstanceLibrary, DataInstanceLibraryView, Gpu, Resources,
@@ -19,6 +19,9 @@ from ..models.remote import GlobusSource, Logistics, Source
 from ..models.solver import Dependency, Transform
 from ..models.workflow import WorkflowPlan, WorkflowTask
 from ..coms.terminals import IDLE_TIMEOUT, PROBE_TIMEOUT
+from .conda import (
+    NO_RECIPE, _conda_frontend, _create_conda_envs, _find_recipes, _manifest_envs, _recipe_roots,
+)
 from .gpu import _plan_gpu_requests, _read_gpu_manifest, _render_gpu_config
 from .images import _check_image_store, _manifest_images, _materialise_images
 from .portability import _check_env_portability, _read_env_manifest, _read_env_manifest_doc
@@ -165,6 +168,16 @@ class _WorkflowOps:
     def GetNxfConfigPresets(self, folder: Path = MODULE_PATH/"nextflow_config"):
         return GetNxfConfigPresets(folder)
 
+    def _assert_staged(self, shell, task_key: str) -> Path:
+        workspace = AgentPaths.to_task(task_key, root=self.home.GetPath()).parent.parent
+        FLAG = "workspace exists"
+        res = shell.Exec(
+            f"[ -e {workspace} ] && echo '{FLAG}'", history=True, quiet=True,
+            idle_timeout=PROBE_TIMEOUT, what="checking the staged workspace",
+        )
+        assert FLAG in res.out, f"task not staged, expected [{workspace}] to exist"
+        return workspace
+
     def MaterialiseImages(self, task: WorkflowTask|str, force: bool=False) -> dict:
         # Fetch every tool image a staged task needs, onto this agent's host.
         #
@@ -178,14 +191,7 @@ class _WorkflowOps:
         # is suspect rather than incomplete.
         task_key = task.GetKey() if isinstance(task, WorkflowTask) else task
         with AgentShell(self) as sh_remote:
-            workspace = AgentPaths.to_task(task_key, root=self.home.GetPath()).parent.parent
-            FLAG = "workspace exists"
-            res = sh_remote.Exec(
-                f"[ -e {workspace} ] && echo '{FLAG}'", history=True, quiet=True,
-                idle_timeout=PROBE_TIMEOUT, what="checking the staged workspace",
-            )
-            assert FLAG in res.out, f"task not staged, expected [{workspace}] to exist"
-
+            workspace = self._assert_staged(sh_remote, task_key)
             doc = _read_env_manifest_doc(sh_remote, workspace)
             images, unknown = _manifest_images(doc)
             if unknown:
@@ -207,6 +213,55 @@ class _WorkflowOps:
             "images": report,
             "fetched": sum(1 for r in report if not r["skipped"]),
             "already_present": sum(1 for r in report if r["skipped"]),
+            "unknown": unknown,
+        }
+
+    def SetupEnvironment(
+        self, task: WorkflowTask|str, force: bool=False, library: Path|str|None=None,
+    ) -> dict:
+        # Prepare this agent's host to run a staged task, whatever it runs tools with.
+        #
+        # One verb over two mechanisms, because the user's question is the same in
+        # both cases and the answer is a property of the agent, not of them: a
+        # container agent needs its image store filled, a mamba or native agent
+        # needs its tool envs built. Both read the stage-time env manifest, and
+        # both are idempotent, so this is safe to press twice.
+        task_key = task.GetKey() if isinstance(task, WorkflowTask) else task
+        if not (self.native or self.runtime == Runtime.MAMBA):
+            return self.MaterialiseImages(task_key, force=force) | {"mode": "container"}
+
+        with AgentShell(self) as sh_remote:
+            workspace = self._assert_staged(sh_remote, task_key)
+            doc = _read_env_manifest_doc(sh_remote, workspace)
+            envs, no_conda, unknown = _manifest_envs(doc)
+            if unknown:
+                Log.Warn(
+                    f"could not tell which environments [{len(unknown)}] step(s) need"
+                    f" (re-stage to record them): {', '.join(unknown)}"
+                )
+            frontend = _conda_frontend(sh_remote)
+            report = []
+            if frontend is None:
+                Log.Warn(
+                    f"neither mamba nor conda is on this agent's PATH, so [{len(envs)}]"
+                    f" tool environment(s) cannot be created here"
+                )
+            else:
+                recipes = _find_recipes(envs, _recipe_roots(library))
+                report = _create_conda_envs(
+                    sh_remote, recipes, frontend, self.home.GetPath(), force=force,
+                )
+        return {
+            "task_key": task_key,
+            "runtime": "native" if self.native else self.runtime.name,
+            "mode": "conda",
+            "frontend": frontend,
+            "needed": envs,
+            "envs": report,
+            "created": sum(1 for r in report if r["ok"] and not r["skipped"]),
+            "already_present": sum(1 for r in report if r["skipped"]),
+            "no_recipe": [r["env"] for r in report if r["reason"] == NO_RECIPE],
+            "no_conda": no_conda,
             "unknown": unknown,
         }
 

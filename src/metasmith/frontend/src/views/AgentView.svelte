@@ -9,6 +9,7 @@
   import SaveChip from '../components/SaveChip.svelte'
   import ShareOut from '../components/ShareOut.svelte'
   import Spinner from '../components/Spinner.svelte'
+  import SplitButton from '../components/SplitButton.svelte'
 
   let { name } = $props()
 
@@ -20,8 +21,6 @@
   let ping = $state(null)
   let pinging = $state(false)
   let sharing = $state(false)
-  let deployMenuOpen = $state(false)
-  let deployMenuRoot = $state(null)
 
   // The name is a field like any other -- `PUT /agents/<name>` carries the whole
   // object, and a name that differs from the url is a rename. So the agent's
@@ -144,22 +143,11 @@
   }
 
   async function deploy(assertive = false) {
-    deployMenuOpen = false
     const job = await attempt(() =>
       api.post(`/agents/${name}/deploy`, assertive ? { assertive: true } : {}),
     )
     if (job) jobId = job.id
   }
-
-  // outside click closes the force-redeploy menu, the same gesture ParentPicker uses
-  $effect(() => {
-    if (!deployMenuOpen) return
-    const away = (e) => {
-      if (!deployMenuRoot?.contains(e.target)) deployMenuOpen = false
-    }
-    window.addEventListener('pointerdown', away, true)
-    return () => window.removeEventListener('pointerdown', away, true)
-  })
 
   async function unarchive() {
     await attempt(async () => {
@@ -221,35 +209,16 @@
           {/if}
           ping
         </button>
-        <div class="split" bind:this={deployMenuRoot}>
-          <button
-            class="primary"
-            onclick={() => deploy(false)}
-            disabled={problems.length > 0}
-          >deploy</button>
-          <button
-            class="primary chevron"
-            aria-expanded={deployMenuOpen}
-            aria-label="more deploy options"
-            title="more deploy options"
-            disabled={problems.length > 0}
-            onclick={() => (deployMenuOpen = !deployMenuOpen)}
-          >
-            <svg viewBox="0 0 10 6" width="10" height="6" aria-hidden="true" class:up={deployMenuOpen}>
-              <path d="M1 1L5 5L9 1" fill="none" stroke="currentColor" stroke-width="1.6"
-                    stroke-linecap="round" stroke-linejoin="round" />
-            </svg>
-          </button>
-          {#if deployMenuOpen}
-            <div class="menu">
-              <button
-                class="opt"
-                onclick={() => deploy(true)}
-                title="redeploy even if this agent already looks up to date"
-              >force redeploy</button>
-            </div>
-          {/if}
-        </div>
+        <SplitButton
+          label="deploy"
+          disabled={problems.length > 0}
+          onclick={() => deploy(false)}
+          options={[{
+            label: 'force redeploy',
+            title: 'redeploy even if this agent already looks up to date',
+            onclick: () => deploy(true),
+          }]}
+        />
       </div>
     </div>
 
@@ -375,45 +344,4 @@
     background: currentColor;
     opacity: 0.5;
   }
-  /* deploy, and beside it the one thing worth a second click: skipping past
-     "already looks deployed" when that judgement is wrong */
-  .split {
-    position: relative;
-    display: flex;
-  }
-  .split .primary:first-child {
-    border-right: none;
-    border-top-right-radius: 0;
-    border-bottom-right-radius: 0;
-  }
-  .split .chevron {
-    padding: 0 6px;
-    border-top-left-radius: 0;
-    border-bottom-left-radius: 0;
-  }
-  .split .chevron svg { transition: transform 0.12s; }
-  .split .chevron svg.up { transform: rotate(180deg); }
-  .split .menu {
-    position: absolute;
-    z-index: 30;
-    top: 100%;
-    right: 0;
-    margin-top: 4px;
-    min-width: 150px;
-    background: var(--panel);
-    border: 1px solid var(--accent);
-    border-radius: var(--radius);
-    box-shadow: 0 10px 24px var(--shadow);
-    overflow: hidden;
-  }
-  .split .opt {
-    display: block;
-    width: 100%;
-    background: none;
-    border: none;
-    border-radius: 0;
-    padding: 6px 10px;
-    text-align: left;
-  }
-  .split .opt:hover { background: var(--panel-2); border-color: transparent; }
 </style>

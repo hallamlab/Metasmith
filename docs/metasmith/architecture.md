@@ -371,6 +371,19 @@ registry is unreachable, so a never-pushed dev image still works. This is not ga
 verifies the extracted relay binary's magic bytes and size, so a stub or corrupted relay fails
 precisely instead of as a bare missing-file assertion later.
 
+**Preparing a host is a verb, never part of a launch.** Tool images materialise inside the first
+task that needs one — right on a connected cluster, impossible on a compute node with no route to
+a registry. Moving the pulls onto every launch would make the connected case pay for the
+disconnected one, so the two halves are split: `SetupEnvironment` fetches and is asked for
+explicitly (`metasmith workflow setup-env`, the GUI's `setup environment`), and the launch path
+only reports what is missing. It dispatches on the agent's own runtime — the image store for a
+container agent, `mamba env create` from the library's per-tool recipes for a mamba or native one
+— and reads the stage-time env manifest rather than a transform library, because the launching
+host may hold neither the library nor the images. A tool whose env resource carries no `conda:`
+entry is reported by name with the container it does have, rather than guessed at: a package spec
+inferred from an image tag would produce a plausible env that is not the one the transform was
+written against.
+
 **Nextflow is pinned**, and the pinned line's strict syntax parser is on by default: generated `.nf`
 and `Orchestrator.groovy` must avoid single-element parenthesized assignment and range-based for
 loops. Multi-element destructures and `for (x : collection)` are fine. **Upstream

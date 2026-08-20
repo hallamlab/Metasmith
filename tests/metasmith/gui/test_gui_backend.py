@@ -1550,6 +1550,66 @@ def runnable(client, tmp_path):
     return name
 
 
+class TestSetupEnvironment:
+    # Preparing the agent, without running on it.
+    #
+    # Staging first is the endpoint's job rather than the caller's: the manifest
+    # that says which images and envs a workflow needs is written by staging, so
+    # there is nothing to read before it. It writes no run record -- this is
+    # preparation, and a run that never happened should not appear in the list.
+
+    def _setup(self, client, workflow, report, **body):
+        with mock.patch("metasmith.ops.runtime.load_agent") as mload:
+            agent = mock.MagicMock()
+            agent.StageWorkflow.return_value = None
+            agent.SetupEnvironment.return_value = report
+            mload.return_value = agent
+            r = client.post(
+                f"/api/workflows/{workflow}/environment",
+                json={"agent": "smith"} | body,
+            )
+            assert r.status_code == 202, r.get_json()
+            result = _finish(client, r.get_json())
+        return agent, result
+
+    def test_it_stages_then_prepares_and_hands_back_the_report(self, client, runnable):
+        report = {"mode": "container", "fetched": 2, "already_present": 1}
+        agent, result = self._setup(client, runnable, report)
+        assert result == report
+        agent.StageWorkflow.assert_called_once()
+        assert agent.StageWorkflow.call_args[0][1] == "update"
+        key = client.get(f"/api/workflows/{runnable}").get_json()["task_key"]
+        assert agent.SetupEnvironment.call_args[0][0] == key
+
+    def test_the_recipes_come_from_the_workflows_own_library(self, client, runnable):
+        agent, _ = self._setup(client, runnable, {"mode": "conda"})
+        project: Project = client.application.config["MSM_PROJECT"]
+        assert agent.SetupEnvironment.call_args.kwargs["library"] == str(
+            project.root/"MetasmithLibraries"
+        )
+
+    def test_force_travels(self, client, runnable):
+        agent, _ = self._setup(client, runnable, {"mode": "conda"}, force=True)
+        assert agent.SetupEnvironment.call_args.kwargs["force"] is True
+
+    def test_it_writes_no_run(self, client, runnable):
+        self._setup(client, runnable, {"mode": "conda"})
+        assert client.get("/api/runs").get_json() == []
+
+    def test_it_refuses_an_agent_that_was_never_deployed(self, client, runnable, tmp_path):
+        client.post("/api/agents", json={"name": "fresh", "home": str(tmp_path/"fresh")})
+        r = client.post(f"/api/workflows/{runnable}/environment", json={"agent": "fresh"})
+        assert r.status_code == 409
+        assert "has not been deployed yet" in r.get_json()["error"]
+
+    def test_it_refuses_an_unplanned_workflow(self, client, tmp_path):
+        client.post("/api/agents", json={"name": "smith", "home": str(tmp_path/"h")})
+        name = _make_workflow(client)
+        r = client.post(f"/api/workflows/{name}/environment", json={"agent": "smith"})
+        assert r.status_code == 409
+        assert "no successful plan" in r.get_json()["error"]
+
+
 class TestRuns:
     def _launch(self, client, workflow) -> dict:
         with mock.patch("metasmith.ops.runtime.load_agent") as mload:
