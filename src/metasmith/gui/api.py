@@ -1388,12 +1388,9 @@ def _has_results(outputs: Path) -> bool:
     return outputs.is_dir() and any(outputs.iterdir())
 
 
-@bp.post("/runs")
-def create_run():
-    b = _body()
-    p = _project()
-    workflow = b.get("workflow")
-    agent_name = b.get("agent")
+def _runnable(p, workflow: str, agent_name: str):
+    # The pair of checks anything that reaches an agent with a workflow makes:
+    # a plan worth sending, and an agent able to receive it.
     assert workflow, "workflow is required"
     assert agent_name, "agent is required"
     wf = p.read_workflow(workflow)
@@ -1415,8 +1412,46 @@ def create_run():
         raise ProjectError(
             f"agent [{agent_name}] is not ready to run on: {'; '.join(problems)}"
         )
+    return wf, str(p.agent_path(agent_name))
 
-    agent_path = str(p.agent_path(agent_name))
+
+@bp.post("/workflows/<name>/environment")
+def setup_environment(name):
+    # Prepare the chosen agent to run this workflow, without running it.
+    #
+    # Staging first is not a side effect to hide: the manifest that says which
+    # images and envs the workflow needs is written by staging, so there is
+    # nothing to read before it. `update` re-stages in place, which is what the
+    # run path does too, so pressing this and then run does not stage twice.
+    b = _body()
+    p = _project()
+    agent_name = b.get("agent")
+    force = bool(b.get("force", False))
+    wf, agent_path = _runnable(p, name, agent_name)
+    found = stdlib.discover(p.root)
+    library = found["path"] if found["present"] else None
+
+    def _work(job):
+        with LogCapture(job):
+            staged = op_runtime.stage(agent_path, str(wf.path), "update", None)
+            return op_runtime.setup_environment(
+                agent_path, staged["task_key"], force=force, library=library,
+            )
+
+    job = _jobs().submit(
+        "environment", f"setup environment for {name}", _work,
+        subject={"workflow": name, "agent": agent_name},
+    )
+    return jsonify(job.summary()), 202
+
+
+@bp.post("/runs")
+def create_run():
+    b = _body()
+    p = _project()
+    workflow = b.get("workflow")
+    agent_name = b.get("agent")
+    wf, agent_path = _runnable(p, workflow, agent_name)
     rec = p.create_run(workflow, {
         "agent": agent_name,
         "preset": b.get("preset"),

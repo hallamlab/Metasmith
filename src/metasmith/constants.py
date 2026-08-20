@@ -37,6 +37,7 @@ class AgentPaths:
     WORK_ROOT = Path(os.environ.get("METASMITH_WORK_ROOT") or CONTAINER_WORK_ROOT)
     HOME_ROOT = Path(os.environ.get("METASMITH_HOME_ROOT") or CONTAINER_HOME_ROOT)
     CONTAINER_CACHE = Path("container_images")
+    CONDA_RECIPES = Path("env_recipes")
     INTERNALS = Path("_metasmith")
     STAGED = Path("runs")
     TASK = Path("task")

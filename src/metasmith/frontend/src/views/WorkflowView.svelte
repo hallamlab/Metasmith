@@ -10,6 +10,7 @@
   import EditableName from '../components/EditableName.svelte'
   import Field from '../components/Field.svelte'
   import JobLog from '../components/JobLog.svelte'
+  import SplitButton from '../components/SplitButton.svelte'
   import DagRail from '../components/DagRail.svelte'
   import MiniGraph from '../components/MiniGraph.svelte'
   import SaveAsTemplate from '../components/SaveAsTemplate.svelte'
@@ -44,6 +45,11 @@
   let jobId = $state(null)
   let jobStatus = $state(null)
   let jobPhase = $state(null)
+  // Which of the two jobs this page starts the log below is showing. The bar
+  // and the summary line are read off different kinds of result, and only one
+  // job runs at a time, so the page has to know which one it is watching.
+  let jobKind = $state('solve')
+  let jobRunning = $derived(!!jobId && jobStatus !== 'done' && jobStatus !== 'failed')
 
   // The solve button's own busy state, and the bar beside it. There's no
   // percentage worth showing -- the solver itself is one call we can't see
@@ -57,10 +63,8 @@
   // otherwise the button would sit un-busy for the first leg of the round
   // trip, which is exactly the moment a second click is most tempting.
   let requestingSolve = $state(false)
-  let solving = $derived(
-    requestingSolve || (!!jobId && jobStatus !== 'done' && jobStatus !== 'failed'),
-  )
-  let showSolveBar = $derived(solving || jobStatus === 'failed')
+  let solving = $derived(requestingSolve || (jobKind === 'solve' && jobRunning))
+  let showSolveBar = $derived(solving || (jobKind === 'solve' && jobStatus === 'failed'))
   let solveStage = $derived(Math.max(0, SOLVE_STAGES.indexOf(jobPhase)))
   let solveStageStates = $derived.by(() => {
     if (!showSolveBar) return SOLVE_STAGES.map(() => 'idle')
@@ -68,6 +72,11 @@
       i < solveStage ? 'done' : i > solveStage ? 'idle' : jobStatus === 'failed' ? 'failed' : 'running',
     )
   })
+  // The same gap the solve button covers, for the setup button.
+  let requestingSetup = $state(false)
+  let settingUp = $derived(requestingSetup || (jobKind === 'environment' && jobRunning))
+  // What the last setup on this page reported, rendered under the button.
+  let envReport = $state(null)
   let sharing = $state(false)
   let savingTemplate = $state(false)
   let launching = $state(false)
@@ -295,6 +304,7 @@
     }
     jobId = null
     jobStatus = null
+    envReport = null
     focus = null
     drawing = null
     // reset unconditionally, cache hit or not: this is what lets the one-time
@@ -934,6 +944,7 @@
 
   async function solve() {
     requestingSolve = true
+    jobKind = 'solve'
     // Cleared here, not left to `JobLog`'s own reset -- that only fires once
     // `jobId` changes below, and the request round trip happens before that.
     // Without this, solving again after a failed (or even a successful) solve
@@ -1016,6 +1027,23 @@
       if (Object.keys(kept).length) out[step] = kept
     }
     return Object.keys(out).length ? out : null
+  }
+
+  // Prepare the chosen agent for this workflow: the images its steps need if it
+  // runs containers, the conda envs they name if it does not. The endpoint
+  // stages first, because the manifest that answers "which ones" is written by
+  // staging -- so pressing this and then `stage and run` does not stage twice.
+  async function setupEnvironment(force = false) {
+    requestingSetup = true
+    jobKind = 'environment'
+    jobStatus = null
+    jobPhase = null
+    envReport = null
+    const job = await attempt(() =>
+      api.post(`/workflows/${name}/environment`, { agent: agentChoice, force }),
+    )
+    requestingSetup = false
+    if (job) jobId = job.id
   }
 
   async function launch() {
@@ -1128,7 +1156,7 @@
         <button
           class="primary"
           onclick={solve}
-          disabled={solving || recipe.targets.length === 0 || blankTarget || dupTarget || !!tableProblem}
+          disabled={solving || settingUp || recipe.targets.length === 0 || blankTarget || dupTarget || !!tableProblem}
         >
           {#if solving}<Spinner />{/if}
           {solving ? 'solving…' : wf.planned ? 'solve again' : 'solve'}
@@ -1180,6 +1208,16 @@
               bind:status={jobStatus}
               bind:phase={jobPhase}
               onend={async (summary) => {
+                if (jobKind === 'environment') {
+                  // Nothing on the page is derived from this -- it is a report
+                  // about the agent, not about the workflow -- so it is shown
+                  // as it came back and nothing is refetched.
+                  envReport = summary?.result ?? null
+                  if (summary?.status === 'failed') {
+                    notify(summary?.error ?? 'setup failed', 'refused')
+                  }
+                  return
+                }
                 // The SSE stream's own final payload already carries what a
                 // solve produced -- plan_graph, step_display, given, targets,
                 // hints, all of it, written to disk before the stream said
@@ -1553,15 +1591,67 @@
             </Field>
           {/if}
 
-          <div>
+          <div class="row" style="gap:8px">
             <button
               class="primary"
               onclick={launch}
-              disabled={!agentChoice || launching || recipeProblems.length > 0}
+              disabled={!agentChoice || launching || settingUp || recipeProblems.length > 0}
             >
               {launching ? 'launching…' : 'stage and run'}
             </button>
+            <!-- Beside run rather than on the agent page: which environment an
+                 agent needs is a fact about this workflow's steps, and this is
+                 where the agent for them was just chosen. -->
+            <SplitButton
+              label={settingUp ? 'setting up…' : 'setup environment'}
+              title="fetch this workflow's tool images, or build its conda envs, on the chosen agent"
+              disabled={!agentChoice || launching || settingUp || solving || recipeProblems.length > 0}
+              onclick={() => setupEnvironment(false)}
+              options={[{
+                label: 'force setup',
+                title: 're-fetch and rebuild even what the agent already has',
+                onclick: () => setupEnvironment(true),
+              }]}
+            />
           </div>
+          {#if envReport}
+            <div class="small col" style="gap:4px">
+              {#if envReport.mode === 'container'}
+                <span class="muted">
+                  {envReport.fetched} image(s) fetched · {envReport.already_present} already there
+                </span>
+              {:else if !envReport.frontend}
+                <span class="bad">
+                  neither mamba nor conda is on that agent's PATH, so its
+                  {envReport.needed?.length ?? 0} tool environment(s) could not be created
+                </span>
+              {:else}
+                <span class="muted">
+                  {envReport.created} environment(s) created · {envReport.already_present} already there
+                </span>
+              {/if}
+              {#if envReport.no_recipe?.length}
+                <span class="bad">
+                  no recipe ships for: {envReport.no_recipe.join(', ')} — create these by hand
+                </span>
+              {/if}
+              {#if envReport.no_conda?.length}
+                <!-- The report this verb exists to give a mamba agent: the step
+                     is fine, it just has no form this agent can run. -->
+                <span class="bad">
+                  these steps have no conda environment, but do have a container:
+                  {envReport.no_conda
+                    .map((e) => `${e.transform} (${e.container ?? 'no image either'})`)
+                    .join(', ')}
+                </span>
+              {/if}
+              {#if envReport.unknown?.length}
+                <span class="bad">
+                  could not tell what these steps need — re-stage: {envReport.unknown.join(', ')}
+                </span>
+              {/if}
+            </div>
+          {/if}
           {#if recipeProblems.length}
             <!-- A blank in the recipe is reported and never refused, right up to
                  here: a deferred input has no file to stage and a nameless pair

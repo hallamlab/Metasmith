@@ -41,6 +41,18 @@ def materialise(agent_path: str, task_key: str, force: bool = False) -> dict:
     return agent.MaterialiseImages(task_key, force=force)
 
 
+def setup_environment(
+    agent_path: str, task_key: str, force: bool = False, library: str | None = None,
+) -> dict:
+    # Prepare the agent's host for a staged task: tool images for a container
+    # agent, tool conda envs for a mamba or native one.
+    #
+    # `library` is where a conda env's recipe is read from -- the library the
+    # workflow was planned against -- and falls back to the installed package.
+    agent = load_agent(agent_path)
+    return agent.SetupEnvironment(task_key, force=force, library=library)
+
+
 def staged_path(agent_path: str, task_key: str) -> str:
     agent = load_agent(agent_path)
     return str(agent._task_workspace(task_key))
