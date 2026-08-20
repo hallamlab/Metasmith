@@ -1,15 +1,18 @@
 #!/usr/bin/env python3
-"""Glucose->DHAP host network figure, metabolite projection (PNG only).
+"""Glucose->DHAP host network figure, metabolite projection (PNG / SVG / HTML).
 
 Layout: every metabolite on a carbon-atom path from glucose to DHAP is placed
 by --dist. 'min' is the fewest carbon-to-carbon hops: x = dG/(dG+dD), y
 proportional to distance to the nearer endpoint. 'paths' (default) replaces
 both with one two-terminal solve (unit current glucose -> DHAP): x is the
 voltage progress 1 - v/v_source -- a conductance-weighted superposition over
-every route -- and y is the current-weighted mean hop-excess above the
-shortest chain, in absolute atom steps (mS + mT - Lmin), so a metabolite the
-flow passes through by a detour rises off the x-axis while a shortest-chain
-one sits at y=0. Pendant branches carry no current and are pruned. The
+every route -- and y is the log2 fold change of the current-weighted mean
+source->sink path length through the metabolite against the flow-weighted
+average distance an atom actually travels glucose->DHAP (the flow mean, ~16
+atom steps, not the 4-step minpath, because most carbon loops through
+pentose-phosphate branches). y=0 is the typical route the current actually
+takes; negative is a shortcut, positive a detour. Pendant branches carry no
+current and are pruned. The
 reaction nodes are collapsed OUT:
 every carbon atom-to-atom transit between two metabolites becomes one undirected
 metabolite-metabolite edge, drawn when both endpoints are on a glucose->DHAP
@@ -25,13 +28,25 @@ axis lines (only the delta colourbar survives under --delta); each metabolite is
 #212121 dot at 50% opacity whose area scales with the current flow through it, so the two terminals that
 carry the whole injected unit are the largest.
 
+A single plotly figure is drawn once and saved three ways -- as PNG, as SVG, and as
+a self-contained HTML -- so the static exports and the interactive render cannot
+drift. The on-hover annotations (common name, MNXM id, x/y position, and for each
+edge the per-edge current share and atom-transit count) are trace-level hovertext,
+so they exist only in the HTML copy; the png/svg are the same figure with that
+hover layer dropped automatically.
+
 Run:
     mamba run -n figure-net python research/fabfos/figures/metabolic_network/network_figure.py \
         --host e_coli_epi300/gpr/gpr_gem.parquet --out network_glucose_dhap.png
+
+Default output names branch per mode: paths mode writes
+network_glucose_dhap_paths_<y_mode>.{png,svg,html}; delta writes
+network_glucose_dhap_paths_<y_mode>_delta.{png,svg,html}.
 """
 from __future__ import annotations
 
 import argparse
+import re
 import sys
 from pathlib import Path
 
@@ -40,9 +55,8 @@ import pandas as pd
 import scipy.sparse as sp
 from scipy.sparse.csgraph import shortest_path
 
-import matplotlib
-matplotlib.use("Agg")
-import matplotlib.pyplot as plt
+import plotly.graph_objects as go
+from plotly.colors import sample_colorscale
 
 ROOT = Path(__file__).resolve().parents[4]
 BAKE = ROOT / "data/fabfos/processed/metabolism_bake"
@@ -130,17 +144,23 @@ def _mean_hop_excess(g, sol, met_list, met_sym, Lmin, *, thr=1e-8):
     # carries -- y must come from elsewhere or the layout collapses onto the curve
     # y ~ min(x, 1-x).
     #
-    # y_abs is the current-weighted mean hop-excess, in absolute atom steps:
+    # y_fc is the log2 fold change of the current-weighted mean source->sink path
+    # length through the metabolite against the flow-weighted mean path length of the
+    # whole solve -- the baseline is the distance an average carbon token actually
+    # travels glucose->DHAP (~16 atom steps, not the 4-step minpath):
     #
-    #     y_abs(m) = mS(m) + mT(m) - Lmin
+    #     y_fc(m) = log2( ms(m) / mean_path )
+    #     mean_path = sum( ms * through ) / sum(through)
     #
     # mS(m) is the current-weighted mean number of atom transits the current has taken to
-    # reach m from the source, mT(m) the mean it still has to go to reach the sink -- both
-    # accumulated by recursing over edges in potential order, current only ever flows
-    # downhill, so the recursion is triangular: O(E) total, no extra solves. y_dir is the
-    # same mean path length minus the SHORTEST chain through the molecule itself
-    # (dG+dD hops), i.e. the detour above the direct route rather than above the global
-    # 4-step spine. Pendant branches (throughput 0) carry no current and are pruned.
+    # reach m from the source, mT(m) the mean it still has to go to reach the sink, so
+    # ms = mS + mT is the mean source->sink steps through the molecule -- both accumulated
+    # by recursing over edges in potential order, current only ever flows downhill, so the
+    # recursion is triangular: O(E) total, no extra solves. The tuple also carries the
+    # signed absolute excess (ms - Lmin) at index 4 so the caller can prune sub-global
+    # single-carbon side-chains without touching the log2 value, and y_dir, the excess
+    # above the SHORTEST chain through the molecule itself (dG+dD hops) for the 'direct'
+    # y-mode. Pendant branches (throughput 0) carry no current and are pruned.
     oe, cur = sol.edge_currents()
     if oe.size == 0:
         return {}
@@ -198,6 +218,13 @@ def _mean_hop_excess(g, sol, met_list, met_sym, Lmin, *, thr=1e-8):
     ms = mS + mT                                  # per-atom mean S->T path length
     y_abs = ms - Lmin                              # SIGNED: negative = sub-global single-carbon chains
 
+    # flow-mean baseline: the current-weighted mean source->sink distance over the whole
+    # solve -- the distance an average carbon token actually travels (~16 atom steps, not
+    # the 4-step minpath). Every metabolite's y is its path length as a log2 fold change
+    # against this baseline, so 0 = the typical distance the current actually takes.
+    thr_t = float(through.sum())
+    mean_path = float(np.sum(ms * through) / thr_t) if thr_t > 0.0 else float(Lmin)
+
     v_src = float(v[list(src_idx)].max()) if src_idx else float("nan")
     out = {}
     for m, dg, dd in met_list:
@@ -210,12 +237,14 @@ def _mean_hop_excess(g, sol, met_list, met_sym, Lmin, *, thr=1e-8):
         if w[nz].sum() <= thr:
             continue                    # pendant branch: no current flows through it
         vm = float(np.sum(v[ai[nz]] * w[nz]) / w[nz].sum())
-        y_mean_abs = float(np.sum(y_abs[ai[nz]] * w[nz]) / w[nz].sum())
+        ms_met = float(np.sum(ms[ai[nz]] * w[nz]) / w[nz].sum())
+        y_mean_abs = ms_met - Lmin                # signed excess above minpath (for pruning)
+        y_fc = float(np.log2(max(ms_met, 1e-12) / max(mean_path, 1e-12)))
         # direct: excess above the shortest chain through THIS molecule (dG + dD hops);
         # per-molecule baseline so the floor is 0 by construction (rarely negative).
         y_dir = y_mean_abs - (dg + dd - Lmin)
-        out[m] = (1.0 - vm / v_src if v_src > 0 else 0.5, y_mean_abs, y_dir,
-                  float(np.sum(w[nz])))
+        out[m] = (1.0 - vm / v_src if v_src > 0 else 0.5, y_fc, y_dir,
+                  float(np.sum(w[nz])), y_mean_abs)
     return out
 
 
@@ -258,15 +287,21 @@ def main():
     ap.add_argument("--host", default="e_coli_epi300/gpr/gpr_gem.parquet")
     ap.add_argument("--out", type=Path,
                     default=Path(__file__).resolve().parent / "cache" / "network_glucose_dhap.png")
-    ap.add_argument("--dpi", type=int, default=150)
+    ap.add_argument("--dpi", type=int, default=150,
+                    help="raster scale for the static png/svg exports (scale factor = dpi/150). "
+                         "The figure is always written three ways -- as PNG, as SVG, and as "
+                         "a self-contained HTML whose on-hover annotations the png/svg drop "
+                         "automatically.")
     ap.add_argument("--seed", type=int, default=1)
     ap.add_argument("--dist", choices=("min", "paths"), default="paths",
                     help="layout distance: 'min' = fewest carbon-to-carbon hops; "
                          "'paths' = all-paths (voltage-drop) distance")
     ap.add_argument("--y-mode", choices=("absolute", "direct"), default="absolute",
-                    help="paths-mode y: 'absolute' = mean hop-excess above the global "
-                         "shortest chain (mS+mT-Lmin); 'direct' = excess above the "
-                         "shortest chain through each molecule (mS+mT-(dG+dD))")
+                    help="paths-mode y: 'absolute' = log2 fold change of the metabolite's "
+                         "current-weighted mean source->sink path length against the "
+                         "flow-weighted current distance glucose->DHAP (y=0 = typical "
+                         "route); 'direct' = excess above the shortest chain through "
+                         "each molecule (mS+mT-(dG+dD) atom steps)")
     ap.add_argument("--edge-weight", choices=("transits", "current"),
                     default="current",
                     help="edge visual weight: 'transits' = number of atom transits "
@@ -365,10 +400,11 @@ def main():
     # ``min`` counts only the fewest-hop route -- the thinnest chain that still connects,
     # badly under-counting metabolites reachable by many routes. The all-paths layout
     # replaces hop count with one two-terminal solve: x = voltage progress (a
-    # conductance-weighted superposition over every carbon route), y = current-weighted
-    # mean hop-excess above the shortest chain -- see :func:`_mean_hop_excess`. Pendant
+    # conductance-weighted superposition over every carbon route), y = log2 fold change
+    # against the flow-weighted current distance -- see :func:`_mean_hop_excess`. Pendant
     # branches carry no current and are pruned.
     ytop = 0.55
+    ymin = 0.0
     ylabel = ""
     met_flow = {}
     pair_cur_union = pair_cur_base = None
@@ -399,13 +435,16 @@ def main():
                   "falling back to min-hop layout", file=sys.stderr)
         else:
             met_flow = {m: p_[3] for m, p_ in laid.items()}
-            laid[met_code[GLUCOSE]] = (0.0, 0.0, 0.0)   # endpoints pinned to the poles
-            laid[met_code[DHAP]] = (1.0, 0.0, 0.0)
+            laid[met_code[GLUCOSE]] = (0.0, 0.0, 0.0, 0.0, 0.0)   # endpoints pinned to poles
+            laid[met_code[DHAP]] = (1.0, 0.0, 0.0, 0.0, 0.0)
             n_all = len(met_list)
             # prune side-chains whose current path is SHORTER than the minpath baseline
-            # (sub-global single-carbon routes): their signed detour is negative and they
-            # are not meaningful detour, so drop them rather than floor them onto y=0.
-            y_idx_prune = 2 if args.y_mode == "direct" else 1
+            # (sub-global single-carbon routes): their signed excess over the minimum is
+            # negative and they are not meaningful routes; drop them rather than floor
+            # them. In Log2FC mode this must use the ABSOLUTE excess (index 4), not the
+            # log2 fold change -- nearly everything is below the flow mean (~16 steps),
+            # so a log2<0 prune would wipe the figure.
+            y_idx_prune = 2 if args.y_mode == "direct" else 4
             kept = {m: p_ for m, p_ in laid.items() if p_[y_idx_prune] >= 0.0}
             met_list = [(m, dg, dd) for m, dg, dd in met_list if m in kept]
             x_met = {m: p_[0] for m, p_ in kept.items()}
@@ -415,7 +454,8 @@ def main():
             met_flow = {m: f for m, f in met_flow.items() if m in kept}
             ylabel = ("mean detour above shortest chain THROUGH the molecule (atom steps)"
                       if args.y_mode == "direct"
-                      else "mean detour above minpath baseline (atom steps)")
+                      else "log2 fold change vs the flow-weighted current distance glucose->DHAP")
+            ymin = min(0.0, 1.05 * min(y_met.values())) if y_met else 0.0
             ytop = max(0.55, 1.05 * max(y_met.values()))
             xs = np.array(list(x_met.values()))
             ys = np.array(list(y_met.values()))
@@ -507,84 +547,156 @@ def main():
 
     names = pd.read_parquet(NAME_TABLE).drop_duplicates("mnxm")
     nm = dict(zip(names.mnxm, names.name))
+    # ---- draw: ONE plotly figure, saved as PNG + SVG + interactive HTML ----
+    # Hover annotations (node: name + MNXM + position + handled current; edge: current
+    # share / delta / transit count) are trace-level hovertext, so they live only in the
+    # HTML copy. The png/svg are the same figure with that layer dropped automatically
+    # when plotly rasterises/vectorises it, so all three formats share one construction
+    # and cannot drift. Plotly cannot vary line width/colour per segment of one line
+    # trace, so edges are grouped into a few buckets by their visual driver (quota,
+    # |delta|, or transit count), each bucket one trace at its heaviest member's weight.
+    EDGE_GREY = "#9aa0a6"
 
-    # ---- draw ----
-    fig, ax = plt.subplots(figsize=(26, 16))
-    # edges: width encodes the strength of the collapsed atom transits; with --delta the
-    # darkness (alpha) weights |delta conductance| so corridors the clone strengthens go
-    # dark and corridors it reroutes flow away from go faint, with a diverging colour for
-    # the sign (red = more conductive with the clone, blue = less).
-    # visual weight: darkness and width both encode the per-edge measure. Current is
-    # square-root-scaled (the quota is heavy-tailed: hundreds of thin middle corridors
-    # against a handful of thick terminal ones), so the two-terminal concentration and
-    # the mid-network diffusion are both readable.
+    def _alpha(css, a):
+        m = re.match(r"#([0-9a-fA-F]{2})([0-9a-fA-F]{2})([0-9a-fA-F]{2})", css)
+        if m:
+            r, g, b = (int(m.group(i), 16) for i in (1, 2, 3))
+        else:
+            r, g, b = (int(v) for v in re.search(r"(\d+)\s*,\s*(\d+)\s*,\s*(\d+)", css).groups())
+        return f"rgba({r},{g},{b},{a:.3f})"
+
+    def _buckets(drv, n=5):
+        drv = np.asarray(drv, dtype=float)
+        if drv.size == 0:
+            return np.array([], dtype=int)
+        qs = np.append(np.unique(np.quantile(drv, np.linspace(0, 1, n + 1))), np.inf)
+        return np.clip(np.searchsorted(qs, np.maximum(drv, 0.0), side="right") - 1, 0, n - 1)
+
+    fig = go.Figure()
+
+    # per-edge hover text (uses the pair-level names table already loaded as `nm`)
+    edge_hover = {}
+    for k, (a, b) in enumerate(edges):
+        A, B = met_sym[a], met_sym[b]
+        head = f"<b>{A} · {nm.get(A, A)}</b> &rarr; <b>{B} · {nm.get(B, B)}</b>"
+        if delta_vals is not None:
+            edge_hover[k] = (f"{head}<br>&#916; conductance = {delta_vals[k]:+.4f}"
+                             f"<br>atom transits: {cnts[k]}")
+        else:
+            flow = (f"share of unit injected = {ew[k]:.4f}"
+                    if ew_label == "current (mass-flow quota)" else f"atom transits: {int(cnts[k])}")
+            edge_hover[k] = f"{head}<br>mass-flow {flow}"
+
     wmax = cnts.max() if len(cnts) else 1
-    lw = 0.15 + 2.2 * np.sqrt(cnts / wmax)
-    alpha = 0.22
-    if delta_vals is None and ew_label == "current (mass-flow quota)":
-        cmax = ew.max() if len(ew) else 1.0
-        scale = np.sqrt(ew / cmax) if cmax > 0 else np.zeros_like(ew)
-        alpha = 0.10 + 0.80 * scale
-        lw = 0.10 + 2.4 * scale
-        nz = ew > 0.0
-        print(f"[edge-weight] current: {int(nz.sum())}/{len(ew)} edges carry current "
-              f"(skipping {(~nz).sum()} zero-flow); max quota {cmax:.3f}")
+    recs = []      # (idx, a, b, driver, width, sign)
     if delta_vals is not None:
         dmax = float(np.abs(delta_vals).max()) or 1.0
-        cmap_d = plt.get_cmap("RdBu_r")
-        for (a, b), w, dv in zip(edges, lw, delta_vals):
-            nd = float(np.clip(dv / dmax, -1.0, 1.0))
-            ax.plot([x_met[a], x_met[b]], [y_met[a], y_met[b]],
-                    color=cmap_d(0.5 + 0.5 * nd), lw=w,
-                    alpha=0.08 + 0.75 * abs(nd), solid_capstyle="round", zorder=1)
+        lwb = 0.45 + 6.6 * np.sqrt(cnts / wmax)
+        for k, (a, b) in enumerate(edges):
+            nd = float(delta_vals[k]) / dmax
+            recs.append((k, a, b, float(abs(nd)), float(lwb[k]), 1 if nd >= 0 else -1))
     elif ew_label == "current (mass-flow quota)":
-        for (a, b), w, al, c in zip(edges, lw, alpha, ew):
-            if c <= 0.0:
-                continue
-            ax.plot([x_met[a], x_met[b]], [y_met[a], y_met[b]],
-                    color=EDGE_C, lw=w, alpha=al, solid_capstyle="round", zorder=1)
+        cmax = ew.max() if len(ew) else 1.0
+        sc = np.sqrt(ew / cmax) if cmax > 0 else np.zeros_like(ew)
+        recs = [(k, a, b, float(sc[k]), 0.30 + 7.2 * sc[k], 0)
+                for k, (a, b) in enumerate(edges) if ew[k] > 0.0]
+        print(f"[edge-weight] current: {len(recs)}/{len(edges)} edges carry current "
+              f"(skipping {len(edges) - len(recs)} zero-flow); max quota {cmax:.3f}")
     else:
-        for (a, b), w in zip(edges, lw):
-            ax.plot([x_met[a], x_met[b]], [y_met[a], y_met[b]],
-                    color=EDGE_C, lw=w, alpha=alpha, solid_capstyle="round", zorder=1)
+        recs = [(k, a, b, float(np.sqrt(cnts[k] / wmax)), 0.45 + 6.6 * np.sqrt(cnts[k] / wmax), 0)
+                for k, (a, b) in enumerate(edges)]
 
-    # metabolite nodes: dark fill (#212121) at 50% transparency, area scaled by the
-    # current flow through the metabolite. The two terminals carry the whole injected
-    # unit, so they are the largest dots; mid-flow corridors are intermediate; rest plain.
-    mx = [x_met[m] for m, _, _ in met_list]
-    my = [y_met[m] for m, _, _ in met_list]
+    def _emit_line_trace(xs, ys, cdata, width, color):
+        fig.add_trace(go.Scatter(
+            x=xs, y=ys, mode="lines", showlegend=False,
+            line=dict(width=width, color=color), hovertemplate="%{customdata}<extra></extra>",
+            customdata=cdata))
+
+    if delta_vals is not None:
+        # diverging sign; bucket by |delta| within each sign so colours never mix signs.
+        for sign in (1, -1):
+            sub = [r for r in recs if r[5] == sign]
+            if not sub:
+                continue
+            bi = _buckets([r[3] for r in sub])
+            for g in range(5):
+                sel = [sub[i] for i in range(len(sub)) if bi[i] == g]
+                if not sel:
+                    continue
+                mag = float(np.mean([r[3] for r in sel]))
+                nd = sign * mag
+                color = _alpha(sample_colorscale("RdBu", 0.5 + 0.5 * nd)[0], 0.05 + 0.75 * mag)
+                width = max(r[4] for r in sel)
+                xs, ys, cd = [], [], []
+                for r in sel:
+                    a, b = r[1], r[2]
+                    xs += [x_met[a], x_met[b], None]; ys += [y_met[a], y_met[b], None]
+                    cd += [edge_hover[r[0]]] * 2 + [None]
+                _emit_line_trace(xs, ys, cd, width, color)
+    else:
+        bi = _buckets([r[3] for r in recs])
+        for gi in range(5):
+            sel = [recs[i] for i in range(len(recs)) if bi[i] == gi]
+            if not sel:
+                continue
+            mag = float(np.mean([r[3] for r in sel]))
+            al = 0.20 + 0.80 * mag if ew_label == "current (mass-flow quota)" else 0.22
+            width = max(r[4] for r in sel)
+            xs, ys, cd = [], [], []
+            for r in sel:
+                a, b = r[1], r[2]
+                xs += [x_met[a], x_met[b], None]; ys += [y_met[a], y_met[b], None]
+                cd += [edge_hover[r[0]]] * 2 + [None]
+            _emit_line_trace(xs, ys, cd, width, _alpha(EDGE_GREY, al))
+
+    # delta colourbar via hidden marker colorscale (only axis-side legend survives).
+    if delta_vals is not None:
+        fig.add_trace(go.Scatter(
+            x=[0] * 256, y=np.linspace(0, 1, 256), mode="markers", hoverinfo="skip",
+            marker=dict(size=0, color=np.linspace(0, 1, 256), showscale=True,
+                        colorscale="RdBu", cmin=-1, cmax=1,
+                        colorbar=dict(title="delta conductance<br>host+clone2 − host<br>per pair")),
+            showlegend=False))
+
+    # nodes: opaque #212121, diameter = handled current (min ~4px, terminals ~34px)
+    node_codes = [m for m, _, _ in met_list]
     if met_flow:
         fmax = max(met_flow.values()) or 1.0
-        node_sizes = np.array([3.0 + 100.0 * (met_flow[m] / fmax) for m, _, _ in met_list])
+        sizes = [4.0 + 30.0 * (met_flow[m] / fmax) for m in node_codes]
+        nh = [f"<b>{met_sym[m]} · {nm.get(met_sym[m], met_sym[m])}</b>"
+              f"<br>x = {x_met[m]:.3f}<br>y = {y_met[m]:.2f}"
+              f"<br>current handled = {met_flow[m]:.4f}" for m in node_codes]
     else:
-        node_sizes = 4.0
-    ax.scatter(mx, my, s=node_sizes, c="#212121", alpha=0.5, zorder=2)
+        sizes = [5.0] * len(node_codes)
+        nh = [f"{met_sym[m]} · {nm.get(met_sym[m], met_sym[m])}"
+              f"<br>x = {x_met[m]:.3f}<br>y = {y_met[m]:.2f}" for m in node_codes]
+    fig.add_trace(go.Scatter(
+        x=[x_met[m] for m in node_codes], y=[y_met[m] for m in node_codes],
+        mode="markers", showlegend=False, marker=dict(size=sizes, color="#212121", line=dict(width=0)),
+        customdata=nh, hovertemplate="%{customdata}<extra></extra>"))
 
-    ax.set_xlim(-0.03, 1.03)
-    ax.set_ylim(-0.03, ytop)
-    ax.set_aspect("auto")
-    if delta_vals is not None:
-        sm = plt.cm.ScalarMappable(cmap="RdBu_r", norm=plt.Normalize(-1.0, 1.0))
-        sm.set_array([])
-        cb = fig.colorbar(sm, ax=ax, shrink=0.6, pad=0.01)
-        cb.set_label("delta conductance (host+clone2 - host), per met-met pair", fontsize=9)
-    # no title, no axis titles, no legend, no x ticks/labels or axis line -- the figure
-    # is self-contained; only the delta colourbar (when present) survives.
-    ax.set_xticks([])
-    ax.set_yticks([])
-    ax.spines[["top", "bottom", "right", "left"]].set_visible(False)
-    fig.tight_layout()
+    fig.update_layout(
+        showlegend=False, hovermode="closest", template="plotly_white",
+        width=1500, height=923, margin=dict(l=12, r=12, t=30, b=24),
+        xaxis=dict(range=(-0.03, 1.03), showgrid=False, zeroline=False, showticklabels=False, ticks=""),
+        yaxis=dict(range=(ymin - 0.03, ytop), showgrid=False, zeroline=False, showticklabels=False, ticks=""))
+
     args.out.parent.mkdir(parents=True, exist_ok=True)
-    # separate output per y-mode / delta: when --out is the default cache path, branch it
-    out = args.out
-    if out == Path(__file__).resolve().parent / "cache" / "network_glucose_dhap.png":
+    default = Path(__file__).resolve().parent / "cache" / "network_glucose_dhap"
+    stem = args.out.with_suffix("")
+    if stem == default:
         if args.delta:
-            out = out.with_name(f"network_glucose_dhap_paths_{args.y_mode}_delta.png")
+            stem = default.parent / f"network_glucose_dhap_paths_{args.y_mode}_delta"
         elif args.dist == "paths":
-            out = out.with_name(f"network_glucose_dhap_paths_{args.y_mode}.png")
-    fig.savefig(out, dpi=args.dpi)
-    print(f"wrote {out} ({out.stat().st_size/1e6:.1f} MB, dpi {args.dpi})")
-    plt.close(fig)
+            stem = default.parent / f"network_glucose_dhap_paths_{args.y_mode}"
+    scale = max(1.0, args.dpi / 150.0)
+    png, svg, html = stem.with_suffix(".png"), stem.with_suffix(".svg"), stem.with_suffix(".html")
+    fig.write_image(png, scale=scale)
+    fig.write_image(svg)
+    fig.write_html(html, include_plotlyjs="cdn", config={"displayModeBar": False})
+    print(f"wrote {png} ({png.stat().st_size/1e6:.1f} MB), "
+          f"{svg} ({svg.stat().st_size/1e6:.1f} MB), "
+          f"{html} ({html.stat().st_size/1e6:.1f} MB)")
 
 
 if __name__ == "__main__":
