@@ -2205,7 +2205,7 @@ class TestJobs:
         client.post("/api/agents", json={"name": "smith", "home": str(tmp_path / "h")})
         from metasmith.logging import Log
 
-        def _deploy(path, assertive=False):
+        def _deploy(path, assertive=False, on_phase=None):
             Log.Info("a distinctive line")
             return {"status": "deployed"}
 
