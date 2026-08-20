@@ -130,3 +130,67 @@ def test_gui_modules_import_without_flask(module):
     import importlib
 
     importlib.import_module(module)
+
+
+class TestServing:
+    # What a start prints, and what it must not.
+    #
+    # `app.run()` printed Flask's banner and werkzeug's "development server"
+    # warning on top of metasmith's own three lines, and neither could be turned
+    # off. The warning is about a public multi-user server; bound to loopback the
+    # only client is the person who started it. What replaces it fires on the one
+    # case where the advice is real -- a bind address other machines can reach --
+    # and says the thing that is actually true of this API.
+
+    def _serve(self, host="127.0.0.1"):
+        from metasmith.gui import app as gui_app
+
+        server = mock.MagicMock()
+        server.server_port = 8090
+        server.serve_forever.side_effect = KeyboardInterrupt
+        app = mock.MagicMock()
+        with mock.patch.object(gui_app, "create_app", return_value=app), \
+             mock.patch("werkzeug.serving.make_server", return_value=server):
+            code = gui_app.serve(host=host, port=8090, open_browser=False)
+        return code, server, app
+
+    def test_it_says_where_it_is_serving_and_nothing_more(self, caplog):
+        with caplog.at_level("INFO"):
+            code, _, app = self._serve()
+        assert code == 0
+        # The banners are printed by `app.run()` and nothing below it, so the
+        # thing to pin is that this does not go through it.
+        app.run.assert_not_called()
+        text = caplog.text
+        assert "serving at [http://127.0.0.1:8090]" in text
+        for banner in ("development server", "Running on", "Serving Flask app", "CTRL+C"):
+            assert banner not in text
+
+    def test_ctrl_c_closes_the_socket(self):
+        code, server, _ = self._serve()
+        assert code == 0
+        server.server_close.assert_called_once()
+
+    def test_a_loopback_bind_warns_about_nothing(self, caplog):
+        with caplog.at_level("INFO"):
+            self._serve()
+        assert "reachable from other machines" not in caplog.text
+
+    def test_a_reachable_bind_says_what_that_costs(self, caplog):
+        with caplog.at_level("INFO"):
+            self._serve(host="0.0.0.0")
+        said = [r for r in caplog.records if "reachable from other machines" in r.message]
+        assert len(said) == 1
+        assert "no authentication" in said[0].message
+
+    @pytest.mark.parametrize("host", ["127.0.0.1", "127.0.1.5", "localhost", "::1"])
+    def test_loopback_hosts(self, host):
+        from metasmith.gui.app import _is_loopback
+
+        assert _is_loopback(host)
+
+    @pytest.mark.parametrize("host", ["0.0.0.0", "", "::", "10.0.0.4", "some-node"])
+    def test_reachable_hosts(self, host):
+        from metasmith.gui.app import _is_loopback
+
+        assert not _is_loopback(host)
