@@ -14,6 +14,11 @@ assembly run.
     python annotation_trio_from_assembly.py [--rebuild] [--dag]
 """
 import sys
+from pathlib import Path
+
+# This driver lives beside its template's spec.yml, not next to _authoring.py,
+# so make the authoring module importable before anything else does.
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 import _authoring as A
 from metasmith.python_api import DEFERRED, Spec
