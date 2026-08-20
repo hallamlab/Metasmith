@@ -18,17 +18,11 @@
   } = $props()
   let lines = $state([])
   let box = $state(null)
-  // Whether the last entry in `lines` is still mid-redraw -- a `\r`-terminated
-  // part from a progress bar (docker/apptainer pull and the like; see
-  // Job.emit) rather than a committed line. Local to this stream, reset
-  // alongside `lines` whenever a new job is followed.
-  let lastWasProgress = false
 
   $effect(() => {
     const id = jobId
     if (!id) return
     lines = []
-    lastWasProgress = false
     status = 'running'
     phase = null
     const stop = api.stream(
@@ -42,14 +36,7 @@
           phase = marker[1]
           return
         }
-        // A trailing `\r` is a progress redraw rather than a finished line --
-        // it replaces whatever is already mid-redraw instead of stacking a
-        // new entry per tick, the same collapse `Job.emit` already applied
-        // server-side so backlog and live never disagree on what this shows.
-        const progress = line.endsWith('\r')
-        const shown = progress ? line.slice(0, -1) : line
-        lines = lastWasProgress ? [...lines.slice(0, -1), shown] : [...lines.slice(-2000), shown]
-        lastWasProgress = progress
+        lines = [...lines.slice(-2000), line]
         queueMicrotask(() => box && (box.scrollTop = box.scrollHeight))
       },
       // `onend` runs to completion before `status` flips: `status` is what

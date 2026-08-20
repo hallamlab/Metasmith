@@ -250,17 +250,8 @@ class LiveShell:
     def _make_tee(self, stream_name: str, cb_lst: list[Callable[[str], None]]):
         def _cb(x):
             if self._shell is None: return
-            decoded = self._shell.Decode(x)
-            # A pty segment that ends on a lone `\r` (see NonBlockingReader) is
-            # a progress redraw, not a finished line -- docker/apptainer pull
-            # and friends repaint one line rather than advancing it. Keep that
-            # one character on the message so a listener can tell "replaces
-            # the last line" from "is the next one" the same way a real
-            # terminal would. A `\n` (bare or after `\r`) commits as usual.
-            is_progress = decoded.endswith("\r")
-            msg = RemoveTrailingNewline(decoded)
+            msg = RemoveTrailingNewline(self._shell.Decode(x))
             if len(msg) == 0: return
-            if is_progress: msg += "\r"
             self._last_byte_time = time.monotonic()
             m = self._MARKER_RE.search(msg)
             if m and m.group("token") == self._token:
