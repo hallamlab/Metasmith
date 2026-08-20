@@ -127,6 +127,15 @@ class DagRenderer:
         self._nodes.setdefault(src, NodeKind.DATA)
         self._nodes.setdefault(dst, NodeKind.DATA)
 
+    def out_degree(self, name: str) -> int:
+        return sum(1 for src, _ in self._edges if src == name)
+
+    def remove_node(self, name: str) -> None:
+        self._nodes.pop(name, None)
+        self._labels.pop(name, None)
+        self._edges = [e for e in self._edges if name not in e]
+        self._seen_edges = {e for e in self._seen_edges if name not in e}
+
     def layout(self, order: Sequence[str] | None = None) -> Layout:
         return layout(self._nodes, self._edges, order)
 
