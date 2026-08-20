@@ -62,11 +62,12 @@ MAX_READERS = 256
 MAX_LINE_BYTES = 1 << 20
 _readers = set()
 class NonBlockingReader:
-    def __init__(self, io_handle: int, on_close: Callable[[NonBlockingReader], None] = None) -> None:
+    def __init__(self, io_handle: int, on_close: Callable[[NonBlockingReader], None] = None, sep: bytes = b"\n") -> None:
         self._callbacks = []
         self._lock = Condition()
         self._notify_out, self._notify_in = os.pipe()
         self._on_close = on_close
+        self._sep = sep
         self._worker = None
         self._is_closed = False
         self._io_handle = io_handle
@@ -112,22 +113,18 @@ class NonBlockingReader:
                             Log.Warn(f"NonBlockingReader: truncating oversized incomplete line on fd {fd}")
                             _truncation_warned[0] = True
                     changed = True
-                    if b"\n" in chunk or b"\r" in chunk: break
+                    if self._sep in chunk: break
                 if not changed and not _eof[0]: return []
 
                 joined = b''.join(_buffer)
-                # Universal-newline split, each boundary kept on the segment
-                # it ends: a lone `\r` is a progress redraw (docker/apptainer
-                # pull and the like, which repaint one line rather than
-                # advancing it), `\n` and `\r\n` are a finished line. The
-                # caller tells them apart by what a segment ends with, so
-                # that distinction has to survive the split rather than being
-                # thrown away here.
-                segments = joined.splitlines(keepends=True)
+                lines = joined.split(self._sep)
+                complete_segments = []
                 remainder = b''
-                if segments and not segments[-1].endswith((b"\n", b"\r")):
-                    remainder = segments.pop()
-                complete_segments = segments
+                for i, line in enumerate(lines):
+                    if i < len(lines)-1:
+                        complete_segments.append(line)
+                    else:
+                        remainder = line
                 _buffer.clear()
                 _buffer_bytes = 0
                 if _eof[0]:

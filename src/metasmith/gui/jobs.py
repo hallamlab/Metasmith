@@ -41,18 +41,7 @@ class Job:
     def emit(self, line: str):
         for part in str(line).rstrip("\n").split("\n"):
             with self._lock:
-                # A part ending in `\r` is a progress redraw (see LiveShell's
-                # tee), and whatever the stored last line is currently
-                # mid-redraw stays *one* entry -- the next part replaces it,
-                # whether that part is another tick or the line that commits
-                # it, instead of every tick of a pull's progress bar piling up
-                # as its own line. A subscriber joining mid-redraw and every
-                # live one apply the same rule off the same parts, so what
-                # they end up showing never diverges.
-                if self._lines and self._lines[-1].endswith("\r"):
-                    self._lines[-1] = part
-                else:
-                    self._lines.append(part)
+                self._lines.append(part)
                 if len(self._lines) > _MAX_LINES:
                     del self._lines[: len(self._lines) - _MAX_LINES]
                 subscribers = list(self._subscribers)
