@@ -428,6 +428,35 @@ export function cacheWorkflow(name, snapshot) {
   }
 }
 
+// -- per-step resource overrides --------------------------------------------
+// cpus/memory/duration typed into the launch panel, keyed by workflow name --
+// unlike the recently-viewed cache above, these survive a reload: they are a
+// deliberate override of what the transform declared, not a fetch result, and
+// losing one on an accidental refresh would mean retyping it before the next
+// launch. Step order is what the panel keys them by, so they carry over fine
+// across a re-plan as long as step numbering does not change.
+
+const overridesKey = (name) => `metasmith.overrides.${name}`
+
+export function loadOverrides(name) {
+  return stored(overridesKey(name), {}, (r) => {
+    const parsed = JSON.parse(r)
+    return parsed && typeof parsed === 'object' ? parsed : {}
+  })
+}
+
+export function saveOverrides(name, overrides) {
+  if (Object.keys(overrides).length) {
+    remember(overridesKey(name), JSON.stringify(overrides))
+  } else {
+    try {
+      localStorage.removeItem(overridesKey(name))
+    } catch {
+      // a browser with storage denied never wrote one to begin with
+    }
+  }
+}
+
 export async function loadRuns() {
   app.runs = await api.get(`/runs${archived()}`)
 }

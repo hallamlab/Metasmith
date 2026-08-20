@@ -2,9 +2,9 @@
   import { tick } from 'svelte'
   import { api } from '../lib/api.svelte.js'
   import {
-    app, attempt, cachedWorkflow, cacheWorkflow, loadRuns, loadTypeIndex, loadTypes,
-    loadWorkflows, notify, patchWorkflowSummary, renameWorkflow, select, setLastAgent, ui,
-    workflowRenameable,
+    app, attempt, cachedWorkflow, cacheWorkflow, loadOverrides, loadRuns, loadTypeIndex,
+    loadTypes, loadWorkflows, notify, patchWorkflowSummary, renameWorkflow, saveOverrides,
+    select, setLastAgent, ui, workflowRenameable,
   } from '../lib/state.svelte.js'
   import Ago from '../components/Ago.svelte'
   import EditableName from '../components/EditableName.svelte'
@@ -92,8 +92,10 @@
   let seededParams = $state({})
   // Per-step resources, keyed by step position, which is the only form that
   // produces a selector for one step rather than for every step of a transform.
-  // Boxes are strings; the server reads and checks the numbers.
-  let overrides = $state({})
+  // Boxes are strings; the server reads and checks the numbers. Seeded from
+  // what was typed in last time this workflow was open; the `name` effect
+  // below reloads it whenever the workflow changes.
+  let overrides = $state(loadOverrides(name))
   let focus = $state(null)
 
   // What the upper half of the panel is drawing. A type in focus draws its own
@@ -310,6 +312,7 @@
     envReport = null
     focus = null
     drawing = null
+    overrides = loadOverrides(n)
     // reset unconditionally, cache hit or not: this is what lets the one-time
     // recipe rebuild in `load()` still run on the background revalidation
     // fetch, so a recipe edited outside the browser surfaces even on a hit
@@ -1051,6 +1054,7 @@
 
   function setOverride(order, field, value) {
     overrides[order] = { ...(overrides[order] ?? {}), [field]: value }
+    saveOverrides(name, overrides)
   }
 
   // Only the boxes with something in them, and only the steps with such a box.
