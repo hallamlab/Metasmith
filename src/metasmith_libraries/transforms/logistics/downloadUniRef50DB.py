@@ -5,7 +5,9 @@ model   = Transform()
 image   = model.AddRequirement(lib.GetType("env::diamond.env"))
 db      = model.AddProduct(lib.GetType("ref::uniref50_diamond_db"))
 
-UNIREF50_URL = "https://ftp.uniprot.org/pub/databases/uniprot/uniref/uniref50/uniref50.fasta.gz"
+# ftp.uniprot.org 404s on every path; served from the EBI mirror instead, per
+# fabfos/build_references/transforms/acquire/uniref.py.
+UNIREF50_URL = "https://ftp.ebi.ac.uk/pub/databases/uniprot/current_release/uniref/uniref50/uniref50.fasta.gz"
 
 def protocol(context: ExecutionContext):
     idb = context.Output(db)
@@ -31,7 +33,7 @@ TransformInstance(
     labels=["local"],
     resources=Resources(
         cpus=8,
-        memory=Size.GB(64),
+        memory=Size.GB(14),
         duration=Duration(hours=12),
     ),
 )
