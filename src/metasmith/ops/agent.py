@@ -128,9 +128,9 @@ def ping(agent_path: str, timeout_s: int = 15) -> dict:
     }
 
 
-def deploy(agent_path: str, assertive: bool = False) -> dict:
+def deploy(agent_path: str, assertive: bool = False, on_phase=None) -> dict:
     agent = load_agent(agent_path)
-    agent.Deploy(assertive)
+    agent.Deploy(assertive, on_phase=on_phase)
     agent.Save(Path(agent_path))
     return {
         "status": "deployed",

@@ -9,6 +9,7 @@
   import Ago from '../components/Ago.svelte'
   import EditableName from '../components/EditableName.svelte'
   import Field from '../components/Field.svelte'
+  import Icon from '../components/Icon.svelte'
   import JobLog from '../components/JobLog.svelte'
   import SplitButton from '../components/SplitButton.svelte'
   import DagRail from '../components/DagRail.svelte'
@@ -942,6 +943,34 @@
     persist()
   }
 
+  // Re-copies the standard library from whatever `metasmith_libraries` is
+  // installed over the one already cloned into the project -- the everyday
+  // path (`bootstrap_project`) only clones once and never looks again, so
+  // this is the only way an edited or upgraded library reaches a project that
+  // already has one. Every open workflow's own copy of the type vocabulary is
+  // resynced against it server-side, so this page's `index` is what is stale
+  // afterward, not anything written to disk.
+  let syncingLibs = $state(false)
+  function syncLibraries() {
+    syncingLibs = true
+    attempt(() => api.post('/project/libraries/sync')).then((job) => {
+      if (!job) {
+        syncingLibs = false
+        return
+      }
+      api.stream(job.id, () => {}, async (summary) => {
+        syncingLibs = false
+        const result = summary?.result
+        if (summary?.status === 'failed' || result?.updated === false) {
+          notify(result?.error ?? summary?.error ?? 'library sync failed', 'refused')
+          return
+        }
+        await Promise.all([loadTypes(true), loadTypeIndex(true)])
+        notify('standard library updated', 'info')
+      })
+    })
+  }
+
   async function solve() {
     requestingSolve = true
     jobKind = 'solve'
@@ -1373,6 +1402,23 @@
                     </div>
                   </div>
                 </div>
+                {#if dagOpen && wf.result?.step_display?.length}
+                  <!-- The same three column headings `.res-head` draws over the
+                       rows below, riding up here too: once the plan scrolls the
+                       page past the diagram's own top, the in-flow header goes
+                       with it, and this is what keeps "which column is cpus"
+                       answered while the rows are still on screen. Inline with
+                       the diagram chips rather than pixel-aligned over the
+                       columns it labels -- the columns sit wherever the diagram
+                       ends, which moves with its width, and this bar is pinned
+                       to the card's own left edge regardless. -->
+                  <div class="dag-group dag-resources">
+                    <span class="dag-group-label">resources</span>
+                    <div class="dag-chips dag-res-head">
+                      <span>cpus</span><span>memory (GB)</span><span>time (h)</span>
+                    </div>
+                  </div>
+                {/if}
                 <!-- The server keeps its own rendering of this same plan around
                      (`GET /workflows/<name>/dag`, cached beside the bundle) --
                      `DagRail` draws the nodes as buttons for the click-to-panel
@@ -1722,6 +1768,15 @@
             apply
           </button>
         {/if}
+        <button
+          class="lib-sync"
+          disabled={syncingLibs}
+          onclick={syncLibraries}
+          title={syncingLibs ? 'syncing…' : 're-copy the standard library from what is installed, and resync every workflow against it'}
+          aria-label="sync the standard library"
+        >
+          <span class:spin={syncingLibs}><Icon name="regenerate" size={13} /></span>
+        </button>
       {/snippet}
 
       <!-- Two things, and the second one takes what the first leaves. There was
@@ -1829,12 +1884,13 @@
      The tint is the panel's own colour, which makes the whole thing invisible
      rather than a smudge when the diagram is folded away and there is nothing
      behind it to blur. */
-  /* Anchored to the top-left corner the row is pinned to. Hard on two sides and
-     soft on two: flush left at the card's own border and flush top, where the
-     column's overflow clips it against the nav bar -- both are edges the page
-     already draws, so an edge there reads as the card, not as a plate. It fades
-     out rightwards and downwards instead, which are the two sides that sit out
-     over the drawing.
+  /* Anchored to the top corners the row is pinned between. Hard on three sides
+     and soft on one: flush left and flush right at the card's own borders --
+     the row now runs the diagram chips out to the resources header, edge to
+     edge -- and flush top, where the column's overflow clips it against the
+     nav bar. All three are edges the page already draws, so an edge there
+     reads as the card, not as a plate. It fades out only downwards, over the
+     drawing below.
 
      Only while the row is riding the top of the column. Docked, it is over the
      card with nothing behind it to blur. */
@@ -1842,7 +1898,7 @@
   .dag-controls.stuck .dag-haze {
     display: block;
     position: absolute;
-    inset: -24px -46px -24px -14px;
+    inset: -24px -14px -24px -14px;
     z-index: -1;
     pointer-events: none;
     background: linear-gradient(
@@ -1853,45 +1909,33 @@
   }
   /* Each pane is blurrier and stops sooner than the one under it, and they
      compound -- `backdrop-filter` reads in whatever is already painted below.
-     So the blur *strength* steps down across the box rather than one uniform
+     So the blur *strength* steps down down the box rather than one uniform
      blur being faded out, which only ever reads as a plate with a soft rim.
-
-     Sideways the ramp is in pixels, not per cent: the row is several times
-     wider than it is tall, so a proportional fade ran halfway across the panel
-     while the same number down the side looked right. Each pane ends 46px
-     before the last and softens over the 46px before that, so the whole
-     falloff is the width of a chip or two regardless of how wide the row is.
-     Down the side it stays proportional, which is what looked right. */
+     Full width on every pane, left edge to right edge alike -- there is
+     nothing left of the row to taper toward once both sides are flush with
+     the card. */
   .dag-haze span {
     position: absolute;
     left: 0;
+    right: 0;
     top: 0;
     bottom: 0;
-    -webkit-mask-image:
-      linear-gradient(to right, #000 calc(100% - 46px), transparent 100%),
-      linear-gradient(to bottom, #000 var(--vcore), transparent var(--vedge));
-    mask-image:
-      linear-gradient(to right, #000 calc(100% - 46px), transparent 100%),
-      linear-gradient(to bottom, #000 var(--vcore), transparent var(--vedge));
-    -webkit-mask-composite: source-in;
-    mask-composite: intersect;
+    -webkit-mask-image: linear-gradient(to bottom, #000 var(--vcore), transparent var(--vedge));
+    mask-image: linear-gradient(to bottom, #000 var(--vcore), transparent var(--vedge));
   }
   .dag-haze span:nth-child(1) {
-    right: 0;
     --vcore: 45%;
     --vedge: 100%;
     -webkit-backdrop-filter: blur(1.5px);
     backdrop-filter: blur(1.5px);
   }
   .dag-haze span:nth-child(2) {
-    right: 46px;
     --vcore: 18%;
     --vedge: 55%;
     -webkit-backdrop-filter: blur(2.5px);
     backdrop-filter: blur(2.5px);
   }
   .dag-haze span:nth-child(3) {
-    right: 92px;
     --vcore: 0%;
     --vedge: 26%;
     -webkit-backdrop-filter: blur(3.5px);
@@ -1938,6 +1982,16 @@
   }
   /* the gap that says these choose what is saved rather than what is drawn */
   .dag-export { margin-left: 18px; }
+  /* set apart the same way `.dag-export` is -- a third choice of what this row
+     is about, not a continuation of the direction switch beside it */
+  .dag-resources { margin-left: 18px; }
+  .dag-res-head {
+    display: grid;
+    grid-template-columns: 4.5rem 5.75rem 4.5rem;
+    color: var(--muted);
+    font-size: 12px;
+    text-align: center;
+  }
   /* a lone pill, where `.dag-dir` is a pair of them: one gesture whose result
      arrives as a file, so there is no state for a second half to name */
   .dag-download {
@@ -1953,6 +2007,22 @@
   }
   .dag-download:hover { opacity: 1; color: var(--text); }
   .dag-download:disabled { opacity: 0.4; }
+
+  /* beside the panel's title, at the weight of the fold button next to it --
+     an action on the project's library, not on the workflow the panel is
+     otherwise about */
+  .lib-sync {
+    display: flex;
+    padding: 4px;
+    background: none;
+    border-color: transparent;
+    color: var(--muted);
+  }
+  .lib-sync:hover:not(:disabled) { color: var(--text); background: var(--panel-2); }
+  .lib-sync .spin { display: flex; animation: lib-sync-spin 0.9s linear infinite; }
+  @keyframes lib-sync-spin {
+    to { transform: rotate(360deg); }
+  }
   .link {
     background: none;
     border: none;

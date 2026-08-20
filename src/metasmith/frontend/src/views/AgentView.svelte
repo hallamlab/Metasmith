@@ -10,6 +10,7 @@
   import ShareOut from '../components/ShareOut.svelte'
   import Spinner from '../components/Spinner.svelte'
   import SplitButton from '../components/SplitButton.svelte'
+  import StageProgress from '../components/StageProgress.svelte'
 
   let { name } = $props()
 
@@ -18,9 +19,37 @@
   let runtimes = $state(['APPTAINER', 'DOCKER', 'MAMBA'])
   let defaultContainer = $state('')
   let jobId = $state(null)
+  let jobStatus = $state(null)
+  let jobPhase = $state(null)
   let ping = $state(null)
   let pinging = $state(false)
   let sharing = $state(false)
+
+  // The same bar `solve` shows, over the phases `Agent.Deploy` actually walks
+  // through (see the `PHASE:` markers `deploy_agent` emits in gui/api.py).
+  // Covers the gap between the click and the POST resolving with a job id,
+  // same reason `solve`'s `requestingSolve` does.
+  const DEPLOY_STAGES = ['connecting', 'provisioning', 'staging', 'finishing']
+  let requestingDeploy = $state(false)
+  let jobRunning = $derived(!!jobId && jobStatus !== 'done' && jobStatus !== 'failed')
+  let deploying = $derived(requestingDeploy || jobRunning)
+  // Once an agent has a deploy to show, the bar stays -- it is the record of
+  // the last attempt, not a spinner that vanishes when there is nothing left
+  // to wait on. `jobId` alone decides that: it is set both by clicking deploy
+  // and by finding a prior deploy job on load (below), so a revisit shows
+  // exactly what a page left open the whole time would.
+  let showDeployBar = $derived(!!jobId)
+  let deployStage = $derived(Math.max(0, DEPLOY_STAGES.indexOf(jobPhase)))
+  let deployStageStates = $derived.by(() => {
+    if (!showDeployBar) return DEPLOY_STAGES.map(() => 'idle')
+    return DEPLOY_STAGES.map((_, i) =>
+      i < deployStage ? 'done'
+      : i > deployStage ? 'idle'
+      : jobStatus === 'failed' ? 'failed'
+      : jobStatus === 'done' ? 'done'
+      : 'running',
+    )
+  })
 
   // The name is a field like any other -- `PUT /agents/<name>` carries the whole
   // object, and a name that differs from the url is a rename. So the agent's
@@ -80,12 +109,20 @@
     agent = null
     form = null
     jobId = null
+    jobStatus = null
+    jobPhase = null
     ping = null
     attempt(async () => {
       const d = await api.get('/defaults/agent').catch(() => null)
       if (d?.runtimes?.length) runtimes = d.runtimes
       if (d?.container) defaultContainer = d.container
       adopt(await api.get(`/agents/${n}`))
+      // The bar picks up where the last deploy left off, even one started
+      // from a tab that is gone -- jobs live on the server, keyed by agent,
+      // so the most recent one is what was last true here, reload or not.
+      if (n !== name) return
+      const jobs = await api.get(`/jobs?agent=${encodeURIComponent(n)}`).catch(() => [])
+      if (n === name && jobs?.length) jobId = jobs[0].id
     })
   })
 
@@ -143,9 +180,13 @@
   }
 
   async function deploy(assertive = false) {
+    requestingDeploy = true
+    jobStatus = null
+    jobPhase = null
     const job = await attempt(() =>
       api.post(`/agents/${name}/deploy`, assertive ? { assertive: true } : {}),
     )
+    requestingDeploy = false
     if (job) jobId = job.id
   }
 
@@ -210,8 +251,8 @@
           ping
         </button>
         <SplitButton
-          label="deploy"
-          disabled={problems.length > 0}
+          label={deploying ? 'deploying…' : 'deploy'}
+          disabled={problems.length > 0 || deploying}
           onclick={() => deploy(false)}
           options={[{
             label: 'force redeploy',
@@ -267,8 +308,14 @@
       </div>
     {/if}
 
+    {#if showDeployBar}
+      <StageProgress stages={DEPLOY_STAGES} stageStates={deployStageStates} />
+    {/if}
+
     <JobLog
       {jobId}
+      bind:status={jobStatus}
+      bind:phase={jobPhase}
       onend={async () => {
         await loadAgents()
         adopt(await api.get(`/agents/${name}`))
