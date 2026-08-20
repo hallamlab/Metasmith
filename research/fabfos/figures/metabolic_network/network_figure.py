@@ -13,9 +13,14 @@ one sits at y=0. Pendant branches carry no current and are pruned. The
 reaction nodes are collapsed OUT:
 every carbon atom-to-atom transit between two metabolites becomes one undirected
 metabolite-metabolite edge, drawn when both endpoints are on a glucose->DHAP
-path. Line width encodes how many atom transits a pair carries, so a collapsed
-edge still reads as a real reaction corridor rather than a summary line. The
-glycolysis spine carrying the minimum path is highlighted.
+path. By default (--edge-weight current) the line's darkness and width both encode
+the pair's share of the unit injected flow -- its mass-flow quota. Kirchhoff
+makes the cross-sectional current (any cut separating glucose from DHAP) sum
+to 1, so the figure reads as conservative mass flow: dark, thick at the two
+terminals where the current is concentrated, faint in the diffused middle, and
+the chain of strongest corridors emerges by itself as a connected "bolt".
+--edge-weight transits restores the older atom-transit-count width. The
+glycolysis spine carrying the minimum path is highlighted (flat line at y=0).
 
 Run:
     mamba run -n figure-net python research/fabfos/figures/metabolic_network/network_figure.py \
@@ -210,6 +215,40 @@ def _mean_hop_excess(g, sol, met_list, met_sym, Lmin, *, thr=1e-8):
     return out
 
 
+def _kcl_cut_sums(g, sol):
+    # Kirchhoff cross-sections on the atom graph: any cut separating the source set from
+    # the sink set carries exactly the injected unit current, because current flows only
+    # downhill in a harmonic potential -- so |i_e| summed over the cut IS the
+    # cross-sectional mass flow. Reports the source boundary, the sink boundary, and
+    # three mid cuts at 25/50/75% of the potential drop.
+    oe, cur = sol.edge_currents()
+    out = {}
+    if oe.size == 0:
+        return out
+    nodes = g.nodes
+    src = set(g.idx[nd] for nd in sol.source.nodes)
+    snk = set(g.idx[nd] for nd in sol.sink.nodes)
+    vmax = max(sol.voltage(nd) for nd in sol.source.nodes)
+    vmin = min(sol.voltage(nd) for nd in sol.sink.nodes)
+    out["source boundary"] = 0.0
+    out["sink boundary"] = 0.0
+    cuts = {f"cut {int(k)}%": vmax - (vmax - vmin) * k / 100.0 for k in (25, 50, 75)}
+    out.update({k: 0.0 for k in cuts})
+    for e, c in zip(oe, cur):
+        a, b = g.edges[int(e)]
+        j = abs(float(c))
+        if a in src or b in src:
+            out["source boundary"] += j
+        if a in snk or b in snk:
+            out["sink boundary"] += j
+        va, vb = sol.voltage(nodes[a]), sol.voltage(nodes[b])
+        lo, hi = (va, vb) if va < vb else (vb, va)
+        for k, thr in cuts.items():
+            if lo < thr < hi:
+                out[k] += j
+    return out
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--host", default="e_coli_epi300/gpr/gpr_gem.parquet")
@@ -224,6 +263,13 @@ def main():
                     help="paths-mode y: 'absolute' = mean hop-excess above the global "
                          "shortest chain (mS+mT-Lmin); 'direct' = excess above the "
                          "shortest chain through each molecule (mS+mT-(dG+dD))")
+    ap.add_argument("--edge-weight", choices=("transits", "current"),
+                    default="current",
+                    help="edge visual weight: 'transits' = number of atom transits "
+                         "between the pair (corridor strength); 'current' = the pair's "
+                         "share of the unit glucose->DHAP injected flow, the mass-flow "
+                         "quota -- a cut across the network sums to 1 (Kirchhoff), so "
+                         "current concentrates at the terminals and diffuses in the middle")
     ap.add_argument("--delta", type=str, default=None,
                     help="second host parquet (e.g. e_coli_epi300/gpr/gpr_epi300_clone2."
                          "parquet): diff the two-terminal solve against the baseline host "
@@ -325,11 +371,20 @@ def main():
         print("[delta] warning: --delta weights edges by a two-terminal solve; "
               "forcing --dist paths", file=sys.stderr)
         args.dist = "paths"
+    if args.dist == "min" and args.edge_weight == "current":
+        print("[edge-weight] --dist min has no solve; falling back to 'transits'",
+              file=sys.stderr)
+        args.edge_weight = "transits"
+    if args.delta and args.edge_weight == "current":
+        print("[edge-weight] --delta darkness is |delta conductance|; "
+              "ignoring --edge-weight current", file=sys.stderr)
+        args.edge_weight = "transits"
     if args.dist == "paths":
         g_all, sol = _build_solve(codes, p, rxn_sym, met_sym)
+        pair_cur = _pair_currents(g_all, sol)
         if args.delta:
             g_base, sol_base = _build_solve(base_codes, p, rxn_sym, met_sym)
-            pair_cur_union = _pair_currents(g_all, sol)
+            pair_cur_union = pair_cur
             pair_cur_base = _pair_currents(g_base, sol_base)
             print(f"[delta] current-carrying met-met pairs: "
                   f"union={len(pair_cur_union)} base={len(pair_cur_base)}")
@@ -399,6 +454,28 @@ def main():
     cnts = np.array([pair_count[e] for e in edges])
     print(f"metabolite-metabolite edges: {len(edges)} (from {int(cnts.sum())} atom transits)")
 
+    # per-edge weight: 'current' = the pair's share of the unit glucose->DHAP solve
+    # (the mass-flow quota); 'transits' = pooled atom-transit count. With current we
+    # verify Kirchhoff -- every cut separating glucose from DHAP carries exactly the
+    # injected unit current -- so the drawn weights are a conserved mass flow that
+    # concentrates at the terminals and diffuses in between.
+    ew, ew_label = cnts.astype(float), "transits"
+    if not args.delta and args.edge_weight == "current" and pair_cur is not None:
+        ew = np.array([pair_cur.get((A, B) if A < B else (B, A), 0.0)
+                       for a, b in edges
+                       for A, B in [(met_sym[a], met_sym[b])]])
+        ew_label = "current (mass-flow quota)"
+        kcl = _kcl_cut_sums(g_all, sol)
+        print("[kcl] cross-sectional current (injected = 1; every cut should sum to 1):")
+        for k, s in kcl.items():
+            print(f"      {k:>14s}: {s:.4f}")
+        g_sym = met_sym[met_code[GLUCOSE]]
+        d_sym = met_sym[met_code[DHAP]]
+        p_src = ew[[met_sym[a] == g_sym or met_sym[b] == g_sym for a, b in edges]].sum()
+        p_snk = ew[[met_sym[a] == d_sym or met_sym[b] == d_sym for a, b in edges]].sum()
+        print(f"      projected glucose boundary {p_src:.4f}; "
+              f"DHAP boundary {p_snk:.4f}")
+
     # per-edge delta conductance: union (host+clone2) current minus baseline host current,
     # per met-met pair. A pair the clone adds gets a positive delta (its whole current is
     # new); a host corridor the clone reroutes flow away from goes negative.
@@ -430,13 +507,22 @@ def main():
     # darkness (alpha) weights |delta conductance| so corridors the clone strengthens go
     # dark and corridors it reroutes flow away from go faint, with a diverging colour for
     # the sign (red = more conductive with the clone, blue = less).
+    # visual weight: darkness and width both encode the per-edge measure. Current is
+    # square-root-scaled (the quota is heavy-tailed: hundreds of thin middle corridors
+    # against a handful of thick terminal ones), so the two-terminal concentration and
+    # the mid-network diffusion are both readable.
     wmax = cnts.max() if len(cnts) else 1
     lw = 0.15 + 2.2 * np.sqrt(cnts / wmax)
-    if delta_vals is None:
-        for (a, b), w in zip(edges, lw):
-            ax.plot([x_met[a], x_met[b]], [y_met[a], y_met[b]],
-                    color=EDGE_C, lw=w, alpha=0.22, solid_capstyle="round", zorder=1)
-    else:
+    alpha = 0.22
+    if delta_vals is None and ew_label == "current (mass-flow quota)":
+        cmax = ew.max() if len(ew) else 1.0
+        scale = np.sqrt(ew / cmax) if cmax > 0 else np.zeros_like(ew)
+        alpha = 0.10 + 0.80 * scale
+        lw = 0.10 + 2.4 * scale
+        nz = ew > 0.0
+        print(f"[edge-weight] current: {int(nz.sum())}/{len(ew)} edges carry current "
+              f"(skipping {(~nz).sum()} zero-flow); max quota {cmax:.3f}")
+    if delta_vals is not None:
         dmax = float(np.abs(delta_vals).max()) or 1.0
         cmap_d = plt.get_cmap("RdBu_r")
         for (a, b), w, dv in zip(edges, lw, delta_vals):
@@ -444,6 +530,16 @@ def main():
             ax.plot([x_met[a], x_met[b]], [y_met[a], y_met[b]],
                     color=cmap_d(0.5 + 0.5 * nd), lw=w,
                     alpha=0.08 + 0.75 * abs(nd), solid_capstyle="round", zorder=1)
+    elif ew_label == "current (mass-flow quota)":
+        for (a, b), w, al, c in zip(edges, lw, alpha, ew):
+            if c <= 0.0:
+                continue
+            ax.plot([x_met[a], x_met[b]], [y_met[a], y_met[b]],
+                    color=EDGE_C, lw=w, alpha=al, solid_capstyle="round", zorder=1)
+    else:
+        for (a, b), w in zip(edges, lw):
+            ax.plot([x_met[a], x_met[b]], [y_met[a], y_met[b]],
+                    color=EDGE_C, lw=w, alpha=alpha, solid_capstyle="round", zorder=1)
 
     # metabolite nodes
     mx = [x_met[m] for m, _, _ in met_list]
@@ -480,10 +576,12 @@ def main():
     title_host = args.host
     if args.delta:
         title_host = f"{args.host} vs {args.delta} (line darkness = |delta conductance|)"
+    ew_note = ("; edges weighted by current quota (unit injected flow, any cut sums to 1)"
+               if ew_label == "current (mass-flow quota)" else "")
     ax.set_title(f"Glucose -> DHAP in {title_host}  ({'all-paths voltage' if args.dist == 'paths'
                  else 'min-hop'} layout; min atom shortest-path = {Lmin})\n"
                  f"{len(met_list)} metabolites, {len(edges)} collapsed met-met edges "
-                 f"from {int(cnts.sum())} atom transits",
+                 f"from {int(cnts.sum())} atom transits{ew_note}",
                  fontsize=12)
     if delta_vals is not None:
         sm = plt.cm.ScalarMappable(cmap="RdBu_r", norm=plt.Normalize(-1.0, 1.0))
