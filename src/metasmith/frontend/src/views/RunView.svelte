@@ -215,12 +215,16 @@
     if (rec.state === 'failed' || rec.state === 'cancelled') {
       return launched ? { stage: 1, status: 'fail' } : { stage: 0, status: 'fail' }
     }
+    // While staging/launching, `run_number` isn't assigned yet, so trace/log
+    // reads resolve through `logs.latest` -- which can still point at the
+    // *previous* run's directory until its launcher relinks it. Trusting
+    // `traceFailed` here paints a failure that belongs to the prior run.
+    if (rec.state === 'staging' || rec.state === 'launching') return { stage: 0, status: 'started' }
     // A task failure that Nextflow was told to ignore still lets the run
     // finish as `completed` -- but the run is not a success, so this is
     // reported as soon as it is known rather than waiting for `completed`
     // and momentarily showing blue over a failure that already happened.
     if (traceFailed) return { stage: 1, status: 'fail' }
-    if (rec.state === 'staging' || rec.state === 'launching') return { stage: 0, status: 'started' }
     if (rec.state === 'running') return { stage: 1, status: 'started' }
     return { stage: 2, status: 'success' }
   })
@@ -345,7 +349,7 @@
     </div>
 
     <StageProgress stages={STAGES} {stageStates} />
-    {#if traceFailed}
+    {#if traceFailed && rec.state !== 'staging' && rec.state !== 'launching'}
       <p class="small warnline">
         {trace.failed} task{trace.failed === 1 ? '' : 's'} failed. Nextflow was told to
         ignore step failures, so the run finished and was recorded as completed —
