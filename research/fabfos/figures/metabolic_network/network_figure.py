@@ -19,8 +19,11 @@ makes the cross-sectional current (any cut separating glucose from DHAP) sum
 to 1, so the figure reads as conservative mass flow: dark, thick at the two
 terminals where the current is concentrated, faint in the diffused middle, and
 the chain of strongest corridors emerges by itself as a connected "bolt".
---edge-weight transits restores the older atom-transit-count width. The
-glycolysis spine carrying the minimum path is highlighted (flat line at y=0).
+--edge-weight transits restores the older atom-transit-count width.
+The rendered figure is self-contained: no title, axis titles, legend, ticks, or
+axis lines (only the delta colourbar survives under --delta); each metabolite is a
+#212121 dot at 50% opacity whose area scales with the current flow through it, so the two terminals that
+carry the whole injected unit are the largest.
 
 Run:
     mamba run -n figure-net python research/fabfos/figures/metabolic_network/network_figure.py \
@@ -211,7 +214,8 @@ def _mean_hop_excess(g, sol, met_list, met_sym, Lmin, *, thr=1e-8):
         # direct: excess above the shortest chain through THIS molecule (dG + dD hops);
         # per-molecule baseline so the floor is 0 by construction (rarely negative).
         y_dir = y_mean_abs - (dg + dd - Lmin)
-        out[m] = (1.0 - vm / v_src if v_src > 0 else 0.5, y_mean_abs, y_dir)
+        out[m] = (1.0 - vm / v_src if v_src > 0 else 0.5, y_mean_abs, y_dir,
+                  float(np.sum(w[nz])))
     return out
 
 
@@ -366,6 +370,7 @@ def main():
     # branches carry no current and are pruned.
     ytop = 0.55
     ylabel = ""
+    met_flow = {}
     pair_cur_union = pair_cur_base = None
     if args.delta and args.dist != "paths":
         print("[delta] warning: --delta weights edges by a two-terminal solve; "
@@ -393,6 +398,7 @@ def main():
             print("[paths] solve produced no current-carrying metabolites; "
                   "falling back to min-hop layout", file=sys.stderr)
         else:
+            met_flow = {m: p_[3] for m, p_ in laid.items()}
             laid[met_code[GLUCOSE]] = (0.0, 0.0, 0.0)   # endpoints pinned to the poles
             laid[met_code[DHAP]] = (1.0, 0.0, 0.0)
             n_all = len(met_list)
@@ -406,6 +412,7 @@ def main():
             # pick the y variant by --y-mode
             y_idx = 2 if args.y_mode == "direct" else 1
             y_met = {m: p_[y_idx] for m, p_ in kept.items()}
+            met_flow = {m: f for m, f in met_flow.items() if m in kept}
             ylabel = ("mean detour above shortest chain THROUGH the molecule (atom steps)"
                       if args.y_mode == "direct"
                       else "mean detour above minpath baseline (atom steps)")
@@ -541,58 +548,31 @@ def main():
             ax.plot([x_met[a], x_met[b]], [y_met[a], y_met[b]],
                     color=EDGE_C, lw=w, alpha=alpha, solid_capstyle="round", zorder=1)
 
-    # metabolite nodes
+    # metabolite nodes: dark fill (#212121) at 50% transparency, area scaled by the
+    # current flow through the metabolite. The two terminals carry the whole injected
+    # unit, so they are the largest dots; mid-flow corridors are intermediate; rest plain.
     mx = [x_met[m] for m, _, _ in met_list]
     my = [y_met[m] for m, _, _ in met_list]
-    ax.scatter(mx, my, s=4, c=MET_C, zorder=2, label=f"metabolites ({len(met_list)})")
-
-    # endpoints
-    for m, lbl, xx in ((met_code[GLUCOSE], "D-glucose", 0.0), (met_code[DHAP], "DHAP", 1.0)):
-        ax.scatter([xx], [0.0], s=90, c=END_C, edgecolors="black", zorder=5)
-        ax.annotate(lbl, (xx, 0.0), textcoords="offset points", xytext=(0, 14),
-                    ha="center", fontsize=13, fontweight="bold", color=END_C)
-
-    # minpath spine: the baseline itself, drawn flat along y=0 so it reads as the
-    # reference the detour is measured against (the five spine metabolites' own detour
-    # values are plotted as data with the other nodes, not as the line).
-    spine_mets = [m for m in (met_code[GLUCOSE], met_code["MNXM1364111"],
-                              met_code["MNXM1107898"], met_code["MNXM1372044"],
-                              met_code[DHAP]) if m in x_met]
-    spine_x = [x_met[m] for m in spine_mets]
-    ax.plot(spine_x, [0.0] * len(spine_x), color=SPINE_C, lw=2.2, zorder=4)
-    for m, xx in zip(spine_mets, spine_x):
-        if m in (met_code[GLUCOSE], met_code[DHAP]):
-            continue
-        sym = {v: k for k, v in met_code.items()}[m]
-        lbl = nm.get(sym, sym)
-        ax.annotate(lbl, (xx, 0.0), textcoords="offset points", xytext=(0, -14),
-                    ha="center", fontsize=8, color=SPINE_C)
+    if met_flow:
+        fmax = max(met_flow.values()) or 1.0
+        node_sizes = np.array([3.0 + 100.0 * (met_flow[m] / fmax) for m, _, _ in met_list])
+    else:
+        node_sizes = 4.0
+    ax.scatter(mx, my, s=node_sizes, c="#212121", alpha=0.5, zorder=2)
 
     ax.set_xlim(-0.03, 1.03)
     ax.set_ylim(-0.03, ytop)
     ax.set_aspect("auto")
-    if ylabel:
-        ax.set_ylabel(ylabel, fontsize=9)
-    title_host = args.host
-    if args.delta:
-        title_host = f"{args.host} vs {args.delta} (line darkness = |delta conductance|)"
-    ew_note = ("; edges weighted by current quota (unit injected flow, any cut sums to 1)"
-               if ew_label == "current (mass-flow quota)" else "")
-    ax.set_title(f"Glucose -> DHAP in {title_host}  ({'all-paths voltage' if args.dist == 'paths'
-                 else 'min-hop'} layout; min atom shortest-path = {Lmin})\n"
-                 f"{len(met_list)} metabolites, {len(edges)} collapsed met-met edges "
-                 f"from {int(cnts.sum())} atom transits{ew_note}",
-                 fontsize=12)
     if delta_vals is not None:
         sm = plt.cm.ScalarMappable(cmap="RdBu_r", norm=plt.Normalize(-1.0, 1.0))
         sm.set_array([])
         cb = fig.colorbar(sm, ax=ax, shrink=0.6, pad=0.01)
         cb.set_label("delta conductance (host+clone2 - host), per met-met pair", fontsize=9)
-    ax.legend(loc="upper right", fontsize=9)
-    ax.set_xticks([0, 0.25, 0.5, 0.75, 1.0])
-    ax.set_xticklabels(["glucose\nx=0", "", "mid", "", "DHAP\nx=1"], fontsize=9)
+    # no title, no axis titles, no legend, no x ticks/labels or axis line -- the figure
+    # is self-contained; only the delta colourbar (when present) survives.
+    ax.set_xticks([])
     ax.set_yticks([])
-    ax.spines[["top", "right", "left"]].set_visible(False)
+    ax.spines[["top", "bottom", "right", "left"]].set_visible(False)
     fig.tight_layout()
     args.out.parent.mkdir(parents=True, exist_ok=True)
     # separate output per y-mode / delta: when --out is the default cache path, branch it
