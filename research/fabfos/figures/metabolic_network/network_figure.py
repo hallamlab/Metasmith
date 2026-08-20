@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Glucose->DHAP host network figure, metabolite projection (PNG / SVG / HTML).
+"""Glucose->DHAP host network figure, metabolite projection (PNG only).
 
 Layout: every metabolite on a carbon-atom path from glucose to DHAP is placed
 by --dist. 'min' is the fewest carbon-to-carbon hops: x = dG/(dG+dD), y
@@ -28,25 +28,13 @@ axis lines (only the delta colourbar survives under --delta); each metabolite is
 #212121 dot at 50% opacity whose area scales with the current flow through it, so the two terminals that
 carry the whole injected unit are the largest.
 
-A single plotly figure is drawn once and saved three ways -- as PNG, as SVG, and as
-a self-contained HTML -- so the static exports and the interactive render cannot
-drift. The on-hover annotations (common name, MNXM id, x/y position, and for each
-edge the per-edge current share and atom-transit count) are trace-level hovertext,
-so they exist only in the HTML copy; the png/svg are the same figure with that
-hover layer dropped automatically.
-
 Run:
     mamba run -n figure-net python research/fabfos/figures/metabolic_network/network_figure.py \
         --host e_coli_epi300/gpr/gpr_gem.parquet --out network_glucose_dhap.png
-
-Default output names branch per mode: paths mode writes
-network_glucose_dhap_paths_<y_mode>.{png,svg,html}; delta writes
-network_glucose_dhap_paths_<y_mode>_delta.{png,svg,html}.
 """
 from __future__ import annotations
 
 import argparse
-import re
 import sys
 from pathlib import Path
 
@@ -55,8 +43,9 @@ import pandas as pd
 import scipy.sparse as sp
 from scipy.sparse.csgraph import shortest_path
 
-import plotly.graph_objects as go
-from plotly.colors import sample_colorscale
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
 
 ROOT = Path(__file__).resolve().parents[4]
 BAKE = ROOT / "data/fabfos/processed/metabolism_bake"
@@ -287,11 +276,10 @@ def main():
     ap.add_argument("--host", default="e_coli_epi300/gpr/gpr_gem.parquet")
     ap.add_argument("--out", type=Path,
                     default=Path(__file__).resolve().parent / "cache" / "network_glucose_dhap.png")
-    ap.add_argument("--dpi", type=int, default=150,
-                    help="raster scale for the static png/svg exports (scale factor = dpi/150). "
-                         "The figure is always written three ways -- as PNG, as SVG, and as "
-                         "a self-contained HTML whose on-hover annotations the png/svg drop "
-                         "automatically.")
+    ap.add_argument("--format", choices=("png", "svg"), default="png",
+                    help="output format: 'png' (raster, dpi-scaled) or 'svg' (vector). "
+                         "Used to pick the extension of the auto-branched default output name.")
+    ap.add_argument("--dpi", type=int, default=150)
     ap.add_argument("--seed", type=int, default=1)
     ap.add_argument("--dist", choices=("min", "paths"), default="paths",
                     help="layout distance: 'min' = fewest carbon-to-carbon hops; "
@@ -547,156 +535,87 @@ def main():
 
     names = pd.read_parquet(NAME_TABLE).drop_duplicates("mnxm")
     nm = dict(zip(names.mnxm, names.name))
-    # ---- draw: ONE plotly figure, saved as PNG + SVG + interactive HTML ----
-    # Hover annotations (node: name + MNXM + position + handled current; edge: current
-    # share / delta / transit count) are trace-level hovertext, so they live only in the
-    # HTML copy. The png/svg are the same figure with that layer dropped automatically
-    # when plotly rasterises/vectorises it, so all three formats share one construction
-    # and cannot drift. Plotly cannot vary line width/colour per segment of one line
-    # trace, so edges are grouped into a few buckets by their visual driver (quota,
-    # |delta|, or transit count), each bucket one trace at its heaviest member's weight.
-    EDGE_GREY = "#9aa0a6"
 
-    def _alpha(css, a):
-        m = re.match(r"#([0-9a-fA-F]{2})([0-9a-fA-F]{2})([0-9a-fA-F]{2})", css)
-        if m:
-            r, g, b = (int(m.group(i), 16) for i in (1, 2, 3))
-        else:
-            r, g, b = (int(v) for v in re.search(r"(\d+)\s*,\s*(\d+)\s*,\s*(\d+)", css).groups())
-        return f"rgba({r},{g},{b},{a:.3f})"
-
-    def _buckets(drv, n=5):
-        drv = np.asarray(drv, dtype=float)
-        if drv.size == 0:
-            return np.array([], dtype=int)
-        qs = np.append(np.unique(np.quantile(drv, np.linspace(0, 1, n + 1))), np.inf)
-        return np.clip(np.searchsorted(qs, np.maximum(drv, 0.0), side="right") - 1, 0, n - 1)
-
-    fig = go.Figure()
-
-    # per-edge hover text (uses the pair-level names table already loaded as `nm`)
-    edge_hover = {}
-    for k, (a, b) in enumerate(edges):
-        A, B = met_sym[a], met_sym[b]
-        head = f"<b>{A} · {nm.get(A, A)}</b> &rarr; <b>{B} · {nm.get(B, B)}</b>"
-        if delta_vals is not None:
-            edge_hover[k] = (f"{head}<br>&#916; conductance = {delta_vals[k]:+.4f}"
-                             f"<br>atom transits: {cnts[k]}")
-        else:
-            flow = (f"share of unit injected = {ew[k]:.4f}"
-                    if ew_label == "current (mass-flow quota)" else f"atom transits: {int(cnts[k])}")
-            edge_hover[k] = f"{head}<br>mass-flow {flow}"
-
+    # ---- draw ----
+    fig, ax = plt.subplots(figsize=(26, 16))
+    # edges: width encodes the strength of the collapsed atom transits; with --delta the
+    # darkness (alpha) weights |delta conductance| so corridors the clone strengthens go
+    # dark and corridors it reroutes flow away from go faint, with a diverging colour for
+    # the sign (red = more conductive with the clone, blue = less).
+    # visual weight: darkness and width both encode the per-edge measure. Current is
+    # square-root-scaled (the quota is heavy-tailed: hundreds of thin middle corridors
+    # against a handful of thick terminal ones), so the two-terminal concentration and
+    # the mid-network diffusion are both readable.
     wmax = cnts.max() if len(cnts) else 1
-    recs = []      # (idx, a, b, driver, width, sign)
+    lw = 0.45 + 6.6 * np.sqrt(cnts / wmax)   # 3x the old width
+
+    alpha = 0.22
+    if delta_vals is None and ew_label == "current (mass-flow quota)":
+        cmax = ew.max() if len(ew) else 1.0
+        scale = np.sqrt(ew / cmax) if cmax > 0 else np.zeros_like(ew)
+        alpha = 0.20 + 0.80 * scale   # opacity: 0.2 (thinnest current) ... 1.00 (max quota)
+        lw = 0.30 + 7.2 * scale   # 3x the old width
+
+        nz = ew > 0.0
+        print(f"[edge-weight] current: {int(nz.sum())}/{len(ew)} edges carry current "
+              f"(skipping {(~nz).sum()} zero-flow); max quota {cmax:.3f}")
     if delta_vals is not None:
         dmax = float(np.abs(delta_vals).max()) or 1.0
-        lwb = 0.45 + 6.6 * np.sqrt(cnts / wmax)
-        for k, (a, b) in enumerate(edges):
-            nd = float(delta_vals[k]) / dmax
-            recs.append((k, a, b, float(abs(nd)), float(lwb[k]), 1 if nd >= 0 else -1))
+        cmap_d = plt.get_cmap("RdBu_r")
+        for (a, b), w, dv in zip(edges, lw, delta_vals):
+            nd = float(np.clip(dv / dmax, -1.0, 1.0))
+            ax.plot([x_met[a], x_met[b]], [y_met[a], y_met[b]],
+                    color=cmap_d(0.5 + 0.5 * nd), lw=w,
+                    alpha=0.08 + 0.75 * abs(nd), solid_capstyle="round", zorder=1)
     elif ew_label == "current (mass-flow quota)":
-        cmax = ew.max() if len(ew) else 1.0
-        sc = np.sqrt(ew / cmax) if cmax > 0 else np.zeros_like(ew)
-        recs = [(k, a, b, float(sc[k]), 0.30 + 7.2 * sc[k], 0)
-                for k, (a, b) in enumerate(edges) if ew[k] > 0.0]
-        print(f"[edge-weight] current: {len(recs)}/{len(edges)} edges carry current "
-              f"(skipping {len(edges) - len(recs)} zero-flow); max quota {cmax:.3f}")
-    else:
-        recs = [(k, a, b, float(np.sqrt(cnts[k] / wmax)), 0.45 + 6.6 * np.sqrt(cnts[k] / wmax), 0)
-                for k, (a, b) in enumerate(edges)]
-
-    def _emit_line_trace(xs, ys, cdata, width, color):
-        fig.add_trace(go.Scatter(
-            x=xs, y=ys, mode="lines", showlegend=False,
-            line=dict(width=width, color=color), hovertemplate="%{customdata}<extra></extra>",
-            customdata=cdata))
-
-    if delta_vals is not None:
-        # diverging sign; bucket by |delta| within each sign so colours never mix signs.
-        for sign in (1, -1):
-            sub = [r for r in recs if r[5] == sign]
-            if not sub:
+        for (a, b), w, al, c in zip(edges, lw, alpha, ew):
+            if c <= 0.0:
                 continue
-            bi = _buckets([r[3] for r in sub])
-            for g in range(5):
-                sel = [sub[i] for i in range(len(sub)) if bi[i] == g]
-                if not sel:
-                    continue
-                mag = float(np.mean([r[3] for r in sel]))
-                nd = sign * mag
-                color = _alpha(sample_colorscale("RdBu", 0.5 + 0.5 * nd)[0], 0.05 + 0.75 * mag)
-                width = max(r[4] for r in sel)
-                xs, ys, cd = [], [], []
-                for r in sel:
-                    a, b = r[1], r[2]
-                    xs += [x_met[a], x_met[b], None]; ys += [y_met[a], y_met[b], None]
-                    cd += [edge_hover[r[0]]] * 2 + [None]
-                _emit_line_trace(xs, ys, cd, width, color)
+            ax.plot([x_met[a], x_met[b]], [y_met[a], y_met[b]],
+                    color=EDGE_C, lw=w, alpha=al, solid_capstyle="round", zorder=1)
     else:
-        bi = _buckets([r[3] for r in recs])
-        for gi in range(5):
-            sel = [recs[i] for i in range(len(recs)) if bi[i] == gi]
-            if not sel:
-                continue
-            mag = float(np.mean([r[3] for r in sel]))
-            al = 0.20 + 0.80 * mag if ew_label == "current (mass-flow quota)" else 0.22
-            width = max(r[4] for r in sel)
-            xs, ys, cd = [], [], []
-            for r in sel:
-                a, b = r[1], r[2]
-                xs += [x_met[a], x_met[b], None]; ys += [y_met[a], y_met[b], None]
-                cd += [edge_hover[r[0]]] * 2 + [None]
-            _emit_line_trace(xs, ys, cd, width, _alpha(EDGE_GREY, al))
+        for (a, b), w in zip(edges, lw):
+            ax.plot([x_met[a], x_met[b]], [y_met[a], y_met[b]],
+                    color=EDGE_C, lw=w, alpha=alpha, solid_capstyle="round", zorder=1)
 
-    # delta colourbar via hidden marker colorscale (only axis-side legend survives).
-    if delta_vals is not None:
-        fig.add_trace(go.Scatter(
-            x=[0] * 256, y=np.linspace(0, 1, 256), mode="markers", hoverinfo="skip",
-            marker=dict(size=0, color=np.linspace(0, 1, 256), showscale=True,
-                        colorscale="RdBu", cmin=-1, cmax=1,
-                        colorbar=dict(title="delta conductance<br>host+clone2 − host<br>per pair")),
-            showlegend=False))
-
-    # nodes: opaque #212121, diameter = handled current (min ~4px, terminals ~34px)
-    node_codes = [m for m, _, _ in met_list]
+    # metabolite nodes: fully opaque constant #212121 (no outline); ONLY the area scales
+    # with current flow -- min stays 3.0, max 10x (103 -> 1030).
+    mx = [x_met[m] for m, _, _ in met_list]
+    my = [y_met[m] for m, _, _ in met_list]
     if met_flow:
         fmax = max(met_flow.values()) or 1.0
-        sizes = [4.0 + 30.0 * (met_flow[m] / fmax) for m in node_codes]
-        nh = [f"<b>{met_sym[m]} · {nm.get(met_sym[m], met_sym[m])}</b>"
-              f"<br>x = {x_met[m]:.3f}<br>y = {y_met[m]:.2f}"
-              f"<br>current handled = {met_flow[m]:.4f}" for m in node_codes]
+        qs = np.array([met_flow[m] / fmax for m, _, _ in met_list])
+        node_sizes = 3.0 + 1027.0 * qs      # min stays 3.0; max 10x (103 -> 1030)
     else:
-        sizes = [5.0] * len(node_codes)
-        nh = [f"{met_sym[m]} · {nm.get(met_sym[m], met_sym[m])}"
-              f"<br>x = {x_met[m]:.3f}<br>y = {y_met[m]:.2f}" for m in node_codes]
-    fig.add_trace(go.Scatter(
-        x=[x_met[m] for m in node_codes], y=[y_met[m] for m in node_codes],
-        mode="markers", showlegend=False, marker=dict(size=sizes, color="#212121", line=dict(width=0)),
-        customdata=nh, hovertemplate="%{customdata}<extra></extra>"))
+        node_sizes = 4.0
+    ax.scatter(mx, my, s=node_sizes, c="#212121", alpha=1.0, edgecolors="none", zorder=2)
 
-    fig.update_layout(
-        showlegend=False, hovermode="closest", template="plotly_white",
-        width=1500, height=923, margin=dict(l=12, r=12, t=30, b=24),
-        xaxis=dict(range=(-0.03, 1.03), showgrid=False, zeroline=False, showticklabels=False, ticks=""),
-        yaxis=dict(range=(ymin - 0.03, ytop), showgrid=False, zeroline=False, showticklabels=False, ticks=""))
-
+    ax.set_xlim(-0.03, 1.03)
+    ax.set_ylim(ymin - 0.03, ytop)
+    ax.set_aspect("auto")
+    if delta_vals is not None:
+        sm = plt.cm.ScalarMappable(cmap="RdBu_r", norm=plt.Normalize(-1.0, 1.0))
+        sm.set_array([])
+        cb = fig.colorbar(sm, ax=ax, shrink=0.6, pad=0.01)
+        cb.set_label("delta conductance (host+clone2 - host), per met-met pair", fontsize=9)
+    # no title, no axis titles, no legend, no x ticks/labels or axis line -- the figure
+    # is self-contained; only the delta colourbar (when present) survives.
+    ax.set_xticks([])
+    ax.set_yticks([])
+    ax.spines[["top", "bottom", "right", "left"]].set_visible(False)
+    fig.tight_layout()
     args.out.parent.mkdir(parents=True, exist_ok=True)
-    default = Path(__file__).resolve().parent / "cache" / "network_glucose_dhap"
-    stem = args.out.with_suffix("")
-    if stem == default:
+    # separate output per y-mode / delta: when --out is the default cache path, branch it
+    ext = args.format
+    out = args.out
+    if out == Path(__file__).resolve().parent / "cache" / "network_glucose_dhap.png":
         if args.delta:
-            stem = default.parent / f"network_glucose_dhap_paths_{args.y_mode}_delta"
+            out = out.with_name(f"network_glucose_dhap_paths_{args.y_mode}_delta.{ext}")
         elif args.dist == "paths":
-            stem = default.parent / f"network_glucose_dhap_paths_{args.y_mode}"
-    scale = max(1.0, args.dpi / 150.0)
-    png, svg, html = stem.with_suffix(".png"), stem.with_suffix(".svg"), stem.with_suffix(".html")
-    fig.write_image(png, scale=scale)
-    fig.write_image(svg)
-    fig.write_html(html, include_plotlyjs="cdn", config={"displayModeBar": False})
-    print(f"wrote {png} ({png.stat().st_size/1e6:.1f} MB), "
-          f"{svg} ({svg.stat().st_size/1e6:.1f} MB), "
-          f"{html} ({html.stat().st_size/1e6:.1f} MB)")
+            out = out.with_name(f"network_glucose_dhap_paths_{args.y_mode}.{ext}")
+    fig.savefig(out, dpi=args.dpi, format=ext)
+    print(f"wrote {out} ({out.stat().st_size/1e6:.1f} MB, dpi {args.dpi})")
+    plt.close(fig)
 
 
 if __name__ == "__main__":
