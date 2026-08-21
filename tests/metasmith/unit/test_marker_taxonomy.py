@@ -16,6 +16,7 @@ MANUAL_ONLY = {
     "requires_docker",
     "requires_apptainer",
     "requires_docker_dev_image",
+    "requires_relay",
     "network",
     "docker",
     "nextflow",

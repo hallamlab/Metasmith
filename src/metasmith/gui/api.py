@@ -1598,7 +1598,14 @@ def cancel_run(workflow, run):
     if not agent_name or not p.agent_exists(agent_name):
         raise ProjectError(f"agent [{agent_name}] is gone; cannot cancel remotely")
     out = op_runtime.cancel(str(p.agent_path(agent_name)), rec.record["task_key"])
-    p.update_run(workflow, run, {"state": "cancelled", "finished_at": utcnow()})
+    # Only call it cancelled when nothing is left running. A run with survivors
+    # stays `cancelling` and carries them, so the record cannot claim a stop it
+    # did not achieve.
+    survived = out.get("survived") or []
+    if survived:
+        p.update_run(workflow, run, {"state": "cancelling", "survivors": survived})
+    else:
+        p.update_run(workflow, run, {"state": "cancelled", "finished_at": utcnow(), "survivors": []})
     return jsonify(out)
 
 
