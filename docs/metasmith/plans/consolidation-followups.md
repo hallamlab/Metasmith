@@ -14,7 +14,9 @@ nothing.** Nextflow stages outputs into `<cache_root>/<key>.tmp/` as tasks finis
 manifest, the shard rename and the store upsert all happen in one call after the Nextflow
 process returns. A run killed before that returns banks nothing — and the runs most likely to
 be interrupted are the ones with the most to bank. Promoting per step, as each step's tasks
-drain, would cost one manifest write per step and make an interrupted run resumable.
+drain, would cost one manifest write per step and make an interrupted run resumable. Cancel now
+stops Nextflow's process group and leaves the driver alive to run this pass, so the natural next
+piece is making the pass worth reaching.
 
 **The orphan sweep can delete another run's finished, un-promoted work.** It removes every
 `<key>.tmp` lacking a manifest, and it globs the whole cache root rather than the workspace

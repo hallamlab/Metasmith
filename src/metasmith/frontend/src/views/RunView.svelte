@@ -367,6 +367,13 @@
     </div>
 
     <StageProgress stages={STAGES} {stageStates} />
+    {#if rec.survivors?.length}
+      <p class="small warnline">
+        cancel left {rec.survivors.length} process{rec.survivors.length === 1 ? '' : 'es'}
+        running on the agent, so this run is not stopped. Reclaim them with
+        <code>metasmith workflow reap {rec.agent} {rec.task_key}</code>.
+      </p>
+    {/if}
     {#if traceFailed && rec.state !== 'staging' && rec.state !== 'launching'}
       <p class="small warnline">
         {trace.failed} task{trace.failed === 1 ? '' : 's'} failed. Nextflow was told to
