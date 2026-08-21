@@ -131,6 +131,56 @@ PY
     return 0
 }
 
+# The library half of the same idea, and the same reason: an image whose bundle
+# is absent or empty installs, imports and runs. The only symptom is that the
+# GUI's type panel is blank and no template is offered, which nobody sees until
+# a user opens the page. Checked in the image because that is the artifact that
+# ships, not the tree it was built from.
+_assert_library_in_image() {
+    [ -n "$MSM_SKIP_LIBRARY_CHECK" ] && {
+        echo "MSM_SKIP_LIBRARY_CHECK set -- skipping in-image library check"
+        return 0
+    }
+    local img="$DOCKER_IMAGE:$DOCKER_TAG"
+    echo "checking standard library in $img"
+    local out rc
+    out=$(docker run --rm --entrypoint sh "$img" -c '
+        python - <<"PY"
+import sys
+from metasmith.agents.templates import standard_library_root, library_index, TEMPLATES_DIR
+root = standard_library_root()
+print("  root=%s" % root)
+if root is None:
+    print("  no standard library in this image")
+    sys.exit(1)
+idx = library_index(root)
+tdir = root/TEMPLATES_DIR
+tpl = sorted(p.name for p in tdir.iterdir()) if tdir.is_dir() else []
+print("  data_types=%d transforms=%d resources=%d templates=%d" % (
+    len(idx["data_types"]), len(idx["transform_libraries"]),
+    len(idx["resource_libraries"]), len(tpl)))
+ok = bool(idx["data_types"]) and bool(idx["transform_libraries"]) and bool(tpl)
+sys.exit(0 if ok else 1)
+PY
+    ' 2>&1)
+    rc=$?
+    echo "$out"
+    if [ $rc -ne 0 ]; then
+        echo ""
+        echo "ERROR: the image at $img carries no usable standard library"
+        echo "  metasmith will install, import and run; the GUI type panel will be"
+        echo "  empty and no template will be offered."
+        echo ""
+        echo "    $HERE/dev/metasmith.sh --vendor-library   # stage it into the package"
+        echo "    $HERE/dev/metasmith.sh -bp                # rebuild the sdist"
+        echo "    $HERE/dev/metasmith.sh -bd                # rebuild the image"
+        echo ""
+        echo "  Override (NOT recommended) by setting MSM_SKIP_LIBRARY_CHECK=1."
+        return 1
+    fi
+    return 0
+}
+
 # The conda half of the check above. conda-build is where the damage happens:
 # with binary_relocation on it treats the cross-built ELFs as libraries of the
 # build host, patchelfs them, and the x86_64-linux binary segfaults on exec.
@@ -549,6 +599,7 @@ case $1 in
     -bs) # apptainer image *from docker*
         _assert_real_relays || exit 1
         _assert_engine_in_image || exit 1
+        _assert_library_in_image || exit 1
         apptainer build --force $NAME.sif docker-daemon://$DOCKER_IMAGE:$DOCKER_TAG
     ;;
     --update_container)
@@ -581,6 +632,7 @@ case $1 in
         # sudo docker login quay.io
         _assert_real_relays || exit 1
         _assert_engine_in_image || exit 1
+        _assert_library_in_image || exit 1
 	    docker push $DOCKER_IMAGE:$DOCKER_TAG
         # `latest` and the bare version are what a user without a pinned tag
         # gets, so they move with the push rather than in a later web-UI visit.
