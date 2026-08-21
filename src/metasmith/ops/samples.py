@@ -101,6 +101,21 @@ def attach_table(
     return {"filename": filename or "pasted", "path": str(dest), **parsed}
 
 
+def table_to_text(table: dict) -> str:
+    """The attached table, serialized back to delimited text -- what a
+    re-edit starts from, whether the table began as a paste or an upload."""
+    import csv
+    import io
+
+    columns = table["columns"]
+    buf = io.StringIO()
+    writer = csv.writer(buf)
+    writer.writerow(columns)
+    for record in table["rows"]:
+        writer.writerow([record.get(c, "") for c in columns])
+    return buf.getvalue()
+
+
 def read_attached_table(where: str | Path) -> dict | None:
     p = attached_table_path(where)
     if p is None:
@@ -142,6 +157,25 @@ def bound_fields(row: dict) -> list[tuple[str, str]]:
 def is_bound(row: dict) -> bool:
     fields = bound_fields(row)
     return bool(fields) and all(col for _label, col in fields)
+
+
+def row_uniques(table: dict, rows: list[dict]) -> dict[str, int]:
+    """How many distinct items each bound array row would register, counting
+    duplicate values in its bound column(s) once rather than once per sheet
+    row -- the estimate shown before a solve has actually run."""
+    columns = set(table.get("columns") or [])
+    out: dict[str, int] = {}
+    for t in array_rows_of(rows):
+        cols = [col for _label, col in bound_fields(t)]
+        if not cols or any(c not in columns for c in cols):
+            continue
+        seen = {
+            tuple((record.get(c) or "").strip() for c in cols)
+            for record in table.get("rows") or []
+        }
+        seen.discard(tuple("" for _ in cols))
+        out[str(t["id"])] = len(seen)
+    return out
 
 
 def unbound_problems(rows: list[dict]) -> list[dict]:

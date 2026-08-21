@@ -69,6 +69,7 @@ def run(
     params: dict | None = None,
     resource_overrides: dict | None = None,
     stub_delay: float = 0,
+    is_local_preset: bool | None = None,
 ) -> dict:
     agent = load_agent(agent_path)
     if config_file is None and config_preset:
@@ -77,6 +78,8 @@ def run(
             f"preset [{config_preset}] not found, available: {list(presets.keys())}"
         )
         config_file = presets[config_preset]
+    if is_local_preset is None and config_preset:
+        is_local_preset = config_preset == "local"
 
     ro = None
     if resource_overrides:
@@ -97,10 +100,11 @@ def run(
 
     agent.RunWorkflow(
         task_key,
-        config_file=config_file,
+        config_file=Path(config_file) if config_file else None,
         params=params,
         resource_overrides=ro,
         stub_delay=stub_delay,
+        is_local_preset=is_local_preset,
     )
     return {"status": "running", "task_key": task_key, "agent": Path(agent_path).stem}
 

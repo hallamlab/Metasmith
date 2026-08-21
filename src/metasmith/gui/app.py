@@ -182,6 +182,8 @@ def serve(
     open_browser: bool = True,
     ssh_config_path: Path | str | None = None,
 ) -> int:
+    import logging
+
     from werkzeug.serving import make_server
 
     from ..constants import VERSION
@@ -189,8 +191,11 @@ def serve(
 
     app = create_app(project_root, ssh_config_path=ssh_config_path)
     # Below app.run(), which prints Flask's banner and werkzeug's production
-    # warning and offers no way to turn either off. Request logging is
-    # unaffected: it goes through the werkzeug logger either way.
+    # warning and offers no way to turn either off. Per-request access logs
+    # (one line per poll) are a separate, silenceable logger -- the frontend
+    # polls every few seconds, and at WARNING those lines stop while a real
+    # server error (5xx, broken pipe) still surfaces.
+    logging.getLogger("werkzeug").setLevel(logging.WARNING)
     server = make_server(host, port, app, threaded=True)
     url = f"http://{host}:{server.server_port}"
     Log.Info(f"Metasmith {VERSION}")
