@@ -9,6 +9,7 @@ image = model.AddRequirement(lib.GetType("env::diamond.env"))
 orfs = model.AddRequirement(lib.GetType("sequences::orf_chunk"))
 db = model.AddRequirement(lib.GetType("ref::uniref50_diamond_db"))
 out_results = model.AddProduct(lib.GetType("annotation::diamond_uniref50_results_chunk"))
+out_descriptions = model.AddProduct(lib.GetType("annotation::diamond_uniref50_descriptions_chunk"))
 
 _BLOSUM62_DIAG = {
     "A": 4, "R": 5, "N": 6, "D": 6, "C": 9, "Q": 5, "E": 5, "G": 6, "H": 8, "I": 4,
@@ -18,6 +19,20 @@ _BLOSUM62_DIAG = {
 _LAMBDA, _K, _LN2 = 0.267, 0.041, math.log(2)
 _LN_K = math.log(_K)
 _RAW = "diamond_raw.tsv"
+
+# `stitle` is the last field diamond asks for, so it is split off by position and
+# not by count: a subject title carrying a tab would otherwise become extra
+# columns. It leaves the hit table entirely and is the description half instead.
+_HITS_HEADER = "\t".join([
+    "qseqid", "sseqid", "pident", "length", "mismatch", "gapopen",
+    "qstart", "qend", "sstart", "send", "evalue", "bitscore", "bsr",
+]) + "\n"
+_STITLE_AT = 12
+_DESCRIPTIONS_HEADER = "sseqid\tdescription\n"
+
+
+def _one_line(text: str) -> str:
+    return " ".join(text.split())
 
 
 def _self_bitscores(fasta_path):
@@ -44,6 +59,7 @@ def protocol(context: ExecutionContext):
     iorfs = context.Input(orfs)
     idb = context.Input(db)
     iout = context.Output(out_results)
+    idesc = context.Output(out_descriptions)
 
     threads = context.params.get("cpus", 8)
     mem = context.params.get("memory")
@@ -71,25 +87,37 @@ def protocol(context: ExecutionContext):
 
     self_bs = _self_bitscores(iorfs.local)
     n = 0
+    titles: dict[str, str] = {}
     with open(_RAW) as fin, open(iout.local, "w") as fout:
+        fout.write(_HITS_HEADER)
         for line in fin:
             if not line.strip():
                 continue
-            fields = line.rstrip("\n").split("\t")
+            fields = line.rstrip("\n").split("\t", _STITLE_AT)
             try:
                 bits = float(fields[11])
                 sb = self_bs.get(fields[0], 0.0)
                 bsr = bits / sb if sb > 0 else 0.0
             except (ValueError, IndexError):
                 bsr = 0.0
-            fout.write(line.rstrip("\n") + f"\t{bsr:.4f}\n")
+            if len(fields) > _STITLE_AT:
+                titles.setdefault(fields[1], _one_line(fields[_STITLE_AT]))
+            fout.write("\t".join(fields[:_STITLE_AT]) + f"\t{bsr:.4f}\n")
             n += 1
-    print(f"[diamond_uniref50] {n:,} best hits", flush=True)
+
+    with open(idesc.local, "w") as fout:
+        fout.write(_DESCRIPTIONS_HEADER)
+        for sseqid in sorted(titles):
+            fout.write(f"{sseqid}\t{titles[sseqid]}\n")
+
+    print(f"[diamond_uniref50] {n:,} best hits over {len(titles):,} clusters",
+          flush=True)
 
     return ExecutionResult(
         manifest=[
             {
                 out_results: iout.local,
+                out_descriptions: idesc.local,
             },
         ],
         success=n > 0,

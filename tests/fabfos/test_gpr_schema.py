@@ -64,13 +64,18 @@ def _write_clean(p: Path, header=("Query ID", "Predicted EC number", "clean_scor
         fh.write(f"{ORFS[0]}\t{ECS[1]}\t0.0008\n")
 
 
-def _write_uniref(p: Path):
-    rows = []
+def _write_uniref(p: Path, descriptions: Path):
+    # The hit table carries the key; the subject title lives once per key beside
+    # it, which is the pair the lane joins.
+    rows, titles = [], []
     for orf, acc in zip(ORFS, ACCS):
         rows.append([orf, f"UniRef50_{acc}", "88.1", "300", "10", "1", "1", "300",
-                     "1", "300", "1e-90", "410.0",
-                     f"UniRef50_{acc} Some enzyme n=5 Tax=Bacteria RepID={acc}_BACSU", "0.93"])
-    pd.DataFrame(rows).to_csv(p, sep="\t", header=False, index=False)
+                     "1", "300", "1e-90", "410.0", "0.93"])
+        titles.append([f"UniRef50_{acc}",
+                       f"UniRef50_{acc} Some enzyme n=5 Tax=Bacteria RepID={acc}_BACSU"])
+    pd.DataFrame(rows, columns=fe._BLAST6_BSR_COLS).to_csv(p, sep="\t", index=False)
+    pd.DataFrame(titles, columns=["sseqid", "description"]).to_csv(
+        descriptions, sep="\t", index=False)
 
 
 def _write_deepec(p: Path):
@@ -145,14 +150,16 @@ def _lanes(work: Path, rng, seven: bool, lm_table="landmarks.parquet",
     _write_orfs(work / "orfs.faa")
     _write_kofam(work / "kofam.csv")
     _write_clean(work / "clean.tsv")
-    _write_uniref(work / "uniref.tsv")
+    _write_uniref(work / "uniref.tsv", work / "uniref_descriptions.tsv")
     _write_bridge(work / "bridge.parquet")
     q = _write_query_embeddings(work / "pbert.parquet", rng)
     _write_landmarks(work / "landmarks", rng, table=lm_table, near=q)
     kw = dict(
         ev_lib=str(EV_LIB), orfs=str(work / "orfs.faa"),
         kofam=str(work / "kofam.csv"), clean=str(work / "clean.tsv"),
-        uniref=str(work / "uniref.tsv"), bridge=str(work / "bridge.parquet"),
+        uniref=str(work / "uniref.tsv"),
+        uniref_descriptions=str(work / "uniref_descriptions.tsv"),
+        bridge=str(work / "bridge.parquet"),
         pbert_emb=str(work / "pbert.parquet"),
         landmarks=str(work / "landmarks"), out=str(work / "gpr.parquet"),
         # The BLAS thread floor the 4-lane mapper takes; only it has the flag. One,

@@ -421,6 +421,42 @@ class _WorkflowOps:
                 local_config = temp_dir/config_file.name
                 shutil.copy(config_file, local_config)
                 mover.QueueTransfer(src=Source.FromLocal(local_config), dest=ws_dest/AgentPaths.NXF_CONFIG)
+                if config_file.stem == "local":
+                    # The local preset's `executor` block is a static guess (see
+                    # nextflow_config/local.nf) -- it has no way to know what the
+                    # box actually has. `free -b`/`nproc` on the executing host
+                    # itself, appended here, overrides that guess with the real
+                    # number every run. One remote round trip, no interpreter
+                    # start on the far end.
+                    def _detect_host_resources() -> "tuple[int, int] | None":
+                        probe = sh_remote.Exec(
+                            "nproc && free -b | awk '/^Mem:/{print $2}'",
+                            history=True, quiet=True,
+                        )
+                        lines = [x.strip() for x in probe.out if x.strip()]
+                        if len(lines) < 2: return None
+                        try:
+                            return int(lines[0]), int(lines[1])
+                        except ValueError:
+                            return None
+                    detected = _detect_host_resources()
+                    if detected:
+                        host_cpus, host_mem_bytes = detected
+                        # headroom so nextflow's own pool doesn't compete with
+                        # the OS and whatever else is running on the box for the
+                        # last core or last slice of memory
+                        cpus = max(1, host_cpus - 1)
+                        mem_gb = max(1, int(host_mem_bytes / (1024**3) * 0.85))
+                        with open(local_config, "a") as f:
+                            f.write(f"\nexecutor {{ cpus = {cpus}; memory = '{mem_gb} GB' }}\n")
+                    else:
+                        Log.Warn("could not detect the local host's real cpus/memory; keeping the preset's static guess")
+                # An explicit `params.executor` (e.g. a GUI-set override) is meant to
+                # win over both the preset's static guess and the free -b/nproc
+                # auto-detect above -- append it last so its later assignment binds,
+                # rather than relying on `params.executor.cpus` inside the preset's
+                # own `executor {}` block, which reads correctly at runtime but is
+                # evaluated too early (before -params-file is merged) to ever apply.
                 executor_lines = _render_executor_config(parsed_params.get("executor"))
                 if executor_lines:
                     with open(local_config, "a") as f:

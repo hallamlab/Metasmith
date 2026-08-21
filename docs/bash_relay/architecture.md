@@ -23,6 +23,36 @@ elapsed time**, and why the shell has to be a pty — details on the client half
 size** before copying it, so a stub or corrupted relay fails with a precise error instead of a
 bare missing-file assertion several steps later.
 
+## The job protocol
+
+A job is a set of files in the I/O directory sharing one id. The client writes the script under
+`.compile` and **renames** it to `.start` — the watcher dispatches any `.start` it sees, so a
+script it could observe half-written would be run half-written. Before that rename the client
+also writes `.owner` (its own pid) and `.run` (`$METASMITH_RUN`, when the caller has one). The
+watcher then writes `.pid`, and the launcher writes `.done` with the exit code.
+
+Three invariants the two halves must both honour:
+
+**`.pid` holds a process group, not a bare pid.** The launcher runs each job under `set -m`, so
+the recorded number leads a group containing the tool the job started. Signalling the number
+alone stops the job's shell and orphans the tool. Every stop path — the client's, the watcher's,
+`kill-run` — signals the group, TERM then KILL.
+
+**A dead requester reclaims its job.** Requester and watcher always share a host (the workspace
+is `$TMPDIR/msm_<host>_<user>`), so `kill(owner, 0)` is exact. The watcher checks each tick and
+stops any job whose `.owner` is gone. This is what repairs the ownership inversion the bounce
+creates: a bounced job runs as a child of the watcher, so Nextflow sees only the client, and
+killing Nextflow would otherwise leave the tool running.
+
+**The watcher stops on `msm_relay stop` and nothing else.** It `setsid`s out of the login
+shell's process group, so a dropped connection's SIGHUP does not reach it. A shutdown that
+cannot kill a job keeps that job's records rather than deleting them — they are the only trace
+of what is still running.
+
+`msm_relay kill-run <token>` stops every job whose `.run` matches, and `status` names the run
+each job belongs to. The I/O directory is per host and shared by every run on it, so the token
+is the only thing that scopes a stop to one run.
+
 ## Cross-compilation, and the stub-relay bug
 
 Four targets: `x86_64`/`aarch64` × `linux-musl`/`apple-darwin`. `dev/metasmith.sh -br` builds

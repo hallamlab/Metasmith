@@ -196,6 +196,22 @@ def cancel(agent_path: str, task_key: str, timeout_s: float = 30.0) -> dict:
     return agent.CancelWorkflow(task_key, timeout_s)
 
 
+def ps(agent_path: str, task_key: str, scope: str = "run") -> dict:
+    # What this run still has running on the agent host: process group members,
+    # anything carrying its METASMITH_RUN token, labelled containers, relay jobs.
+    # `scope="workload"` drops the run group and the token scan, leaving what the
+    # driver put to work rather than the driver itself.
+    agent = load_agent(agent_path)
+    return agent.InspectWorkflowProcesses(task_key, scope)
+
+
+def reap(agent_path: str, task_key: str, passes: int = 3, scope: str = "run") -> dict:
+    # Kill what `ps` finds, sweeping until the set is empty or the passes are
+    # spent -- a group kill is not atomic against a fan-out still spawning.
+    agent = load_agent(agent_path)
+    return agent.ReapWorkflow(task_key, passes=passes, scope=scope)
+
+
 def list_runs(agent_path: str, task_key: str) -> list[dict]:
     agent = load_agent(agent_path)
     return agent.ListWorkflowRuns(task_key)

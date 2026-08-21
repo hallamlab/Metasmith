@@ -9,6 +9,7 @@ from typing import Iterable, Literal
 
 import yaml
 
+from ...hashing import KeyGenerator
 from ..libraries import (
     DataInstance, DataInstanceLibrary, DataInstanceLibraryView,
     TransformInstanceLibrary,
@@ -101,6 +102,7 @@ class WorkflowTask:
     def Pack(self):
         return dict(
             ok=self.ok,
+            key=self._key,
             data_libraries=[lib.GetKey() for lib in self.data_libraries],
             transform_libraries=[lib.GetKey() for lib in self.transform_libraries],
         )
@@ -215,9 +217,21 @@ class WorkflowTask:
         tr_libs = {n: TransformInstanceLibrary.Load(path/f"transforms/{n}") for n in raw_task["transform_libraries"]}
         _libraries: dict[str, DataInstanceLibrary] = data_libs|tr_libs
         plan =  WorkflowPlan.Unpack(raw_plan, _libraries)
-        return cls(
+        task = cls(
             ok=raw_task["ok"],
             plan=plan,
             data_libraries=[data_libs[n] for n in raw_task["data_libraries"]],
             transform_libraries=[tr_libs[n] for n in raw_task["transform_libraries"]],
         )
+        # The key names the staged directory, so it is a fact about this bundle
+        # rather than something to re-derive. `WorkflowPlan._update_hash` folds
+        # the given ids in, and staging re-mints those from the host's own view
+        # of the files -- without this, reloading a re-staged task would answer
+        # with a key that no directory is called. Bundles written before the key
+        # was recorded still recompute it, unchanged.
+        pinned = raw_task.get("key")
+        if pinned:
+            plan._hash, _ = KeyGenerator.FromStr(pinned, l=8)
+            plan._key = pinned
+            task._update_hash()
+        return task

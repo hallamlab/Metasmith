@@ -5,6 +5,11 @@ types:
       _: Parsed InterProScan protein matches
       Format: CSV
       ext: csv
+  interproscan_descriptions:
+    properties:
+      _: InterProScan signature accession to its signature description
+      Format: CSV
+      ext: csv
   interproscan_json:
     properties:
       _: InterProScan annotations in JSON format
@@ -23,6 +28,11 @@ types:
   kofamscan_results:
     properties:
       _: Filtered KofamScan KO assignments
+      Format: CSV
+      ext: csv
+  kofamscan_descriptions:
+    properties:
+      _: KO to its ko_list definition
       Format: CSV
       ext: csv
   kofamscan_source:
@@ -218,6 +228,11 @@ types:
       _: DIAMOND alignment to UniRef50
       Format: BLAST6
       ext: tsv
+  diamond_uniref50_descriptions:
+    properties:
+      _: UniRef50 cluster id to its subject title
+      Format: TSV
+      ext: tsv
   uniref50_source:
     properties:
       _: Marker for UniRef50 database download
@@ -404,6 +419,18 @@ types:
       Format: CSV
       granularity: chunk
       ext: csv
+  interproscan_descriptions_chunk:
+    properties:
+      _: Per-chunk InterProScan descriptions (sibling of interproscan_descriptions)
+      Format: CSV
+      granularity: chunk
+      ext: csv
+  kofamscan_descriptions_chunk:
+    properties:
+      _: Per-chunk KofamScan KO definitions (sibling of kofamscan_descriptions)
+      Format: CSV
+      granularity: chunk
+      ext: csv
   proteinbert_embeddings_chunk:
     properties:
       _: Per-chunk ProteinBERT embeddings, keyed by sequence_id (sibling of proteinbert_embeddings)
@@ -420,6 +447,12 @@ types:
     properties:
       _: Per-chunk DIAMOND UniRef50 BLAST6 (sibling of diamond_uniref50_results)
       Format: BLAST6
+      granularity: chunk
+      ext: tsv
+  diamond_uniref50_descriptions_chunk:
+    properties:
+      _: Per-chunk UniRef50 subject titles (sibling of diamond_uniref50_descriptions)
+      Format: TSV
       granularity: chunk
       ext: tsv
   busco_full_table_chunk:
