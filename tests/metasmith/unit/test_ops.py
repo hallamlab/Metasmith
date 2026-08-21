@@ -316,7 +316,7 @@ class TestAgentOps:
         with mock.patch.object(op_agent.Agent, "Deploy") as mdep:
             r = op_agent.deploy(str(agent_yaml))
         assert r["status"] == "deployed"
-        mdep.assert_called_once_with(False)
+        mdep.assert_called_once_with(False, on_phase=None)
 
 
 class TestDefaultPreset:
