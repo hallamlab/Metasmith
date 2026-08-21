@@ -6,7 +6,7 @@ import stat
 import subprocess
 from pathlib import Path
 
-from ..agents.templates import library_index
+from ..agents.templates import library_index, standard_library_root
 from ..constants import MODULE_PATH, STDLIB_NAME
 from ..logging import Log
 
@@ -16,14 +16,7 @@ _COPY_IGNORE = shutil.ignore_patterns("__pycache__", "*.pyc", "_metadata", ".git
 
 
 def library_module_root() -> Path | None:
-    try:
-        spec = importlib.util.find_spec("metasmith_libraries")
-    except (ImportError, ValueError):
-        return None
-    if spec is None or not spec.origin:
-        return None
-    root = Path(spec.origin).resolve().parent
-    return root if (root / "data_types").is_dir() else None
+    return standard_library_root()
 
 
 def _library_dirs(root: Path) -> tuple[list[str], list[str], list[str]]:
@@ -50,8 +43,13 @@ def compile_library(root: Path) -> dict:
 
 
 def _library_version(root: Path) -> str:
+    # The library has no version of its own any more: it ships inside this
+    # package, so metasmith's version IS its version. A source checkout that
+    # still carries a version.txt is honoured, for a library kept elsewhere.
     v = root / "version.txt"
-    return v.read_text().strip() if v.is_file() else "unknown"
+    if v.is_file(): return v.read_text().strip()
+    from ..constants import VERSION
+    return VERSION
 
 
 def _stamp(src: Path) -> str:
@@ -74,10 +72,11 @@ def _rebuild_stdlib(dest: Path) -> dict:
     src = library_module_root()
     if src is None:
         err = (
-            "the metasmith_libraries package is not installed, so there is no "
-            "standard library to copy. Install it (`conda install -c hallamlab "
-            "metasmith_libraries`), or run from a source checkout with "
-            "PYTHONPATH pointed at its src/."
+            "this metasmith carries no standard library: neither a vendored "
+            "bundle inside the package nor an importable metasmith_libraries. "
+            "An installed metasmith should always have the former -- if this is "
+            "a source checkout, point PYTHONPATH at its src/; if it is an "
+            "install, it was built without `dev/metasmith.sh --vendor-library`."
         )
         Log.Error(err)
         return {"path": str(dest), "ok": False, "error": err}

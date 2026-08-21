@@ -61,6 +61,9 @@ def register(subs):
                      help="destination directory (replaced wholesale)")
     _vl.add_argument("--check", action="store_true",
                      help="verify the existing bundle matches live source; do not copy")
+    _vl.add_argument("--no-metadata", action="store_true", dest="vendor_no_metadata",
+                     help="ship content only: skip _metadata/ and do not require it. "
+                          "For a consumer that compiles its own copy.")
     _vl.set_defaults(func=_cmd_vendor_library)
 
     p.set_defaults(func=_cmd_all)
@@ -87,6 +90,7 @@ def _cmd_transforms(args):
 
 
 def _cmd_vendor_library(args):
+    expect_metadata = not getattr(args, "vendor_no_metadata", False)
     if args.check:
-        return _ops.check_vendor_library(args.vendor_srcs, args.vendor_dst)
-    return _ops.vendor_library(args.vendor_srcs, args.vendor_dst)
+        return _ops.check_vendor_library(args.vendor_srcs, args.vendor_dst, expect_metadata)
+    return _ops.vendor_library(args.vendor_srcs, args.vendor_dst, expect_metadata)

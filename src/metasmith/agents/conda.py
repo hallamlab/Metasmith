@@ -76,19 +76,16 @@ def _manifest_envs(doc: dict) -> tuple[list[str], list[dict], list[str]]:
 
 
 def _installed_library_root() -> Path|None:
-    try:
-        spec = importlib.util.find_spec("metasmith_libraries")
-    except (ImportError, ValueError):
-        return None
-    if spec is None or not spec.origin: return None
-    return Path(spec.origin).resolve().parent
+    from .templates import standard_library_root
+    return standard_library_root()
 
 
 def _recipe_roots(library: "Path|str|None" = None) -> list[Path]:
     # Where a tool env's recipe is looked for, nearest first: the library this
-    # workflow was planned against, then the installed package. A source checkout
-    # has no `envs/` until `dev/libraries.sh --stage-envs` copies it in, which is
-    # why "no recipe" is a reportable answer rather than an assertion.
+    # workflow was planned against, then the one shipped inside this package.
+    # A source checkout's `envs/` lives outside the library root and so is not
+    # reachable from here, which is why "no recipe" is a reportable answer
+    # rather than an assertion; a vendored install carries `envs/` and resolves.
     roots = []
     if library: roots.append(Path(library)/RECIPES_IN_LIBRARY)
     installed = _installed_library_root()

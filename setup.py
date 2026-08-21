@@ -46,8 +46,14 @@ if __name__ == "__main__":
                 "jupyter_lab/**",
                 "gui/static/**",
                 "gui/icon/**",
-                "std/**",
                 "engine/**",
+                # the vendored standard library, staged by
+                # `dev/metasmith.sh --vendor-library` and never committed. It is
+                # content, not code, so find_packages cannot see it and nothing
+                # but this line ships it. Inside src/metasmith/ on purpose:
+                # `_build_hash.py` walks that tree, so the engine's build hash
+                # covers the library's content and the two cannot drift.
+                "vendor/**",
             ],
         },
         entry_points={

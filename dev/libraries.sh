@@ -106,38 +106,11 @@ case $1 in
         # size -- see the pinning note in `metagenomics_from_paired_reads.py`.
         ${PYTHON:-python} "$LIB/build_templates.py" "${@:2}" || exit 1
     ;;
-    --stage-envs) # copy envs/metasmith_libraries into the package for shipping
-        # The repo keeps one directory per module per facet, so the conda
-        # recipes behind each `conda:` declaration live at envs/<module>/ --
-        # outside the package, where setuptools cannot reach them. A conda
-        # install has no repo to read them from, so they are staged in as a
-        # build product, gitignored, the same way src/metasmith/{gui/static,
-        # engine} are. The planner never reads them; a `--runtime mamba` user
-        # creating tool envs by hand is who they are for.
-        rm -rf "$LIB/envs"
-        cp -r "$ENVS" "$LIB/envs"
-    ;;
-    -bp|--build-pip) # build the wheel/sdist
-        "$HERE/dev/libraries.sh" --stage-envs || exit 1
-        cd "$LIB"
-        rm -rf build dist *.egg-info
-        python -m build
-    ;;
-    -bc|--build-conda) # compile the recipe + build the conda package
-        "$HERE/dev/libraries.sh" -bp || exit 1
-        python "$HERE/conda_recipe/metasmith_libraries/compile_recipe.py" || exit 1
-        "$HERE/conda_recipe/metasmith_libraries/call_build.sh"
-    ;;
-    -uc|--upload-conda) # publish the built package to anaconda.org/hallamlab
-        # run `anaconda login` first. conda_build/ is shared by every product
-        # in this repo, so the glob names this one -- metasmith's own -uc
-        # sweeps the whole directory and would re-upload whatever else is in it.
-        VER=$(cat "$LIB/version.txt")
-        find "$HERE/conda_build" -name "metasmith_libraries-$VER-*.tar.bz2" \
-            | xargs -r -I % anaconda upload -u $DEV_USER %
-    ;;
-    ###################################################
-    # test
+    # The wheel/conda/upload arms and --stage-envs are gone. The library is no
+    # longer a separately built and published artifact: it ships inside the
+    # metasmith package, staged by `dev/metasmith.sh --vendor-library`, which
+    # carries envs/ directly and so needs no staging step here.
+
     --test-binning)
         pytest "$TESTS"/test_*.py -v --ignore="$TESTS/cache"
     ;;

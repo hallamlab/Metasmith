@@ -247,6 +247,40 @@ _assert_gui_bundle() {
 # about a linux ELF says whether it was linked against musl or against this
 # machine's glibc, and only one of those runs on someone else's machine.
 # Set MSM_SKIP_SOLVER_CHECK=1 to override.
+_vendor_stage="$HERE/src/$NAME/vendor"
+_lib_src="$HERE/src/metasmith_libraries"
+_lib_envs="$HERE/envs/metasmith_libraries"
+# The vendored standard library. Every failure here is silent at build, install
+# and import time -- an empty bundle ships, metasmith runs, and the GUI's type
+# panel is simply blank -- which is why it is a guard and not a comment. Same
+# claim as the engine's, checked at the same three steps.
+_assert_library_bundle() {
+    [ -n "$MSM_SKIP_LIBRARY_CHECK" ] && {
+        echo "MSM_SKIP_LIBRARY_CHECK set -- skipping library bundle check"
+        return 0
+    }
+    if [ ! -f "$_vendor_stage/VENDOR_HASH" ]; then
+        echo "no vendored standard library at [$_vendor_stage]"
+        echo "  run: ./dev/metasmith.sh --vendor-library"
+        return 1
+    fi
+    local missing=""
+    for d in data_types transforms resources templates envs; do
+        if [ ! -d "$_vendor_stage/$d" ] || [ -z "$(ls -A "$_vendor_stage/$d" 2>/dev/null)" ]; then
+            missing="$missing $d"
+        fi
+    done
+    if [ -n "$missing" ]; then
+        echo "vendored library at [$_vendor_stage] is missing or empty:$missing"
+        echo "  run: ./dev/metasmith.sh --vendor-library"
+        return 1
+    fi
+    local ntpl
+    ntpl=$(ls -1 "$_vendor_stage/templates" 2>/dev/null | wc -l)
+    echo "vendored library ok: $(cat "$_vendor_stage/VENDOR_HASH"), $ntpl templates"
+    return 0
+}
+
 _engine_stage="$HERE/src/$NAME/engine"
 _assert_solver_engine() {
     [ -n "$MSM_SKIP_SOLVER_CHECK" ] && {
@@ -386,6 +420,20 @@ case $1 in
 
     ###################################################
     # build
+    --vendor-library) # stage the standard library into the package so it ships
+        # Content only -- no _metadata/. The consumer compiles its own copy in a
+        # writable place (`gui.stdlib.clone_stdlib`), so shipping a compiled
+        # index would ship a build product that is discarded on arrival. That is
+        # also what removes the ordering hazard this step used to carry: nothing
+        # here needs a compiled library, so nothing has to be compiled first.
+        PYTHONPATH="$HERE/src" python -m $NAME build vendor-library --no-metadata \
+            --src "data_types=$_lib_src/data_types" \
+            --src "transforms=$_lib_src/transforms" \
+            --src "resources=$_lib_src/resources" \
+            --src "templates=$_lib_src/templates" \
+            --src "envs=$_lib_envs" \
+            --dst "$_vendor_stage" || exit 1
+    ;;
     --build-gui) # frontend bundle for `msm gui`
         # Needs node. It is a build dependency only — the bundle is shipped
         # prebuilt, so the runtime env has no use for it and base.yml does not
@@ -404,6 +452,7 @@ case $1 in
         # build pip package
         _assert_gui_bundle || exit 1
         _assert_solver_engine || exit 1
+        _assert_library_bundle || exit 1
         [ -d ./build ] && rm -r build
         [ -d ./dist ] && rm -r dist
         # Stamp build_hash.txt before sdist/wheel so FULL_VERSION is baked in.
@@ -423,6 +472,7 @@ case $1 in
     -bc) # conda
         # requires built pip package
         _assert_solver_engine || exit 1
+        _assert_library_bundle || exit 1
         _assert_dist_matches_source || exit 1
         rm -r $HERE/conda_build
         python ./conda_recipe/metasmith/compile_recipe.py
@@ -452,6 +502,7 @@ case $1 in
     ;;
     -bd) # docker
         _assert_gui_bundle || exit 1
+        _assert_library_bundle || exit 1
         # The image installs the sdist, so it carries whatever is staged here.
         # A stale stage is *mostly* self-detecting -- engine/ sits inside the
         # tree _build_hash walks, so staging changes FULL_VERSION -- but that
