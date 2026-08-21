@@ -20,7 +20,7 @@ from ..models.remote import GlobusSource, Logistics, Source
 from ..models.workflow import NextflowGenContext, WorkflowTask, restat_leaf_ids
 from ..serialization import StdTime
 from .agent import Agent
-from .collect import CollectResults
+from .collect import CollectResults, PublishCachedProducts
 
 def _rewrite_staged_plan(task_path: Path, task: WorkflowTask):
     doc_path = task_path/"task.yml"
@@ -410,6 +410,11 @@ def RunWorkflow(key: str, log_dir: Path, host: str, stub_delay: float):
                 )
         except Exception as e:
             Log.Warn(f"cache promote failed: {e}")
+
+    try:
+        PublishCachedProducts(workspace, output_path)
+    except Exception as e:
+        Log.Warn(f"publishing cache-hit products failed: {e}")
 
     Log.Info(f"compiling results")
     output = CollectResults(

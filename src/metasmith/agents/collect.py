@@ -1,14 +1,75 @@
 from __future__ import annotations
 
+import json
 import os
+import shutil
 from pathlib import Path
 
 import pandas as pd
 
+from ..caching.promote import CANONICAL_OUTPUT_PREFIX
+from ..constants import AgentPaths
 from ..logging import Log
 from ..models.libraries import DataInstance, DataInstanceLibrary, DataTypeLibrary
 from ..models.lineage import ProducedFile
 from ..models.workflow import WorkflowTask
+
+def _place(src: Path, dest: Path, strategy: str) -> None:
+    if src.is_dir():
+        # publishDir's own shape for a directory: a real directory whose
+        # leaves are links, so the shard's bytes are never duplicated.
+        dest.mkdir(parents=True, exist_ok=True)
+        for child in src.iterdir():
+            _place(child, dest/child.name, strategy)
+        return
+    if strategy == "link":
+        try:
+            os.link(src, dest)
+            return
+        except OSError:
+            pass
+    shutil.copy2(src, dest)
+
+
+def PublishCachedProducts(workspace: Path, output_path: Path) -> int:
+    """Put every cache-hit product into the results directory.
+
+    Nextflow adds a path to the publish set only when it resolves under the
+    session's own work directory (`PublishOp.collectFiles` -> `getTaskDir`),
+    and a cache shard lives outside it. The path is dropped with no log and no
+    error, so nothing the emitter puts on a channel can reach `results/` from a
+    shard -- the driver has to place them once nextflow has exited.
+    """
+    manifest = workspace/AgentPaths.CACHE_PUBLISH_MANIFEST
+    if not manifest.exists():
+        return 0
+    try:
+        plan = json.loads(manifest.read_text())
+    except (OSError, json.JSONDecodeError) as e:
+        Log.Warn(f"unreadable cache publish manifest [{manifest}]: {e}")
+        return 0
+    strategy = plan.get("strategy", "link")
+    placed = 0
+    for entry in plan.get("publish", []):
+        dest_dir = output_path/entry.get("path", "")
+        dest_dir.mkdir(parents=True, exist_ok=True)
+        for raw in entry.get("files", []):
+            src = Path(raw)
+            dest = dest_dir/src.name
+            if dest.exists():
+                continue
+            if not src.exists():
+                Log.Warn(
+                    f"cache-hit product [{src}] is gone from the shard; "
+                    f"[{entry.get('path')}] will be missing it"
+                )
+                continue
+            _place(src, dest, strategy)
+            placed += 1
+    if placed:
+        Log.Info(f"published [{placed}] product(s) from cache shards")
+    return placed
+
 
 def _published_index(output_path: Path) -> dict[str, Path]:
     index: dict[str, Path] = {}
@@ -17,7 +78,11 @@ def _published_index(output_path: Path) -> dict[str, Path]:
         if rel_dir.parts and rel_dir.parts[0] == "_metadata":
             dirs[:] = []
             continue
-        for name in files:
+        # A directory named in the canonical output spelling is one product,
+        # not a folder of them: index it, and do not index what is inside it.
+        products = [d for d in dirs if CANONICAL_OUTPUT_PREFIX.match(d)]
+        dirs[:] = [d for d in dirs if d not in set(products)]
+        for name in products + files:
             index.setdefault(name, rel_dir/name)
     return index
 

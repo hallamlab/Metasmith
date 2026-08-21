@@ -483,9 +483,9 @@ def _read_hit_decisions(workspace: Path) -> dict[int, dict]:
 
 def _populate_hit_outputs(
     step, hit: dict, staged: StagedFiles, slot_ids: dict[tuple[str, int], str]
-) -> list[tuple[str, Path]]:
+) -> None:
     output_dir: Path = hit["output_dir"]
-    cached_files = sorted(p for p in output_dir.glob("*") if p.is_file())
+    cached_files = sorted(output_dir.glob("*"))
 
     merged_inputs = merge_indexes(
         index
@@ -493,7 +493,6 @@ def _populate_hit_outputs(
         for _path, index in staged.of(step.dependency_map.get(dep, []))
     )
 
-    produced: list[tuple[str, Path]] = []
     for branch_idx, dep_group in enumerate(step.transform.model.produces):
         for dep in dep_group:
             insts = list(step.dependency_map.get(dep, []))
@@ -523,8 +522,6 @@ def _populate_hit_outputs(
                         ),
                     ),
                 )
-                produced.append((out_inst.dtype.key, fpath.resolve()))
-    return produced
 
 
 def cli_nextflow(argv: list[str]) -> int:
@@ -575,10 +572,12 @@ def cli_nextflow(argv: list[str]) -> int:
                     "host": host,
                 }
             )
-            for dtype_key, fpath in _populate_hit_outputs(
-                step, hit, staged, step_slot_ids
-            ):
-                produced_by_dep.setdefault(dtype_key, []).append(fpath)
+            # Staged, so a downstream miss can read them -- but NOT published.
+            # Real nextflow refuses to publish a path outside its work
+            # directory, so a shard's products reach `results/` only through
+            # the driver's `PublishCachedProducts`. Publishing them here made
+            # this runtime the one place the cache appeared to work.
+            _populate_hit_outputs(step, hit, staged, step_slot_ids)
             continue
 
         # A step runs once per item on its by-channel, not once per plan
@@ -725,7 +724,11 @@ def cli_nextflow(argv: list[str]) -> int:
         out_dir = output_root / target.name.replace(" ", "_").replace("::", "-")
         out_dir.mkdir(parents=True, exist_ok=True)
         for src in sources:
-            shutil.copy2(src, out_dir / src.name)
+            dest = out_dir / src.name
+            if src.is_dir():
+                shutil.copytree(src, dest, symlinks=True, dirs_exist_ok=True)
+            else:
+                shutil.copy2(src, dest)
 
     for k in ["-with-report", "-with-dag", "-with-timeline", "-with-trace"]:
         v = opts.get(k)

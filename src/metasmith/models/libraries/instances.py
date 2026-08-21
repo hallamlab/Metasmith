@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import tempfile
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -12,7 +14,7 @@ import yaml
 
 from ...hashing import KeyGenerator
 from ...logging import Log
-from ..paths import DEFERRED, _DeferredPath, mint_deferred_path
+from ..paths import DEFERRED, _DeferredPath, is_deferred, mint_deferred_path
 from ..remote import Logistics, Source, SourceType
 from ..solver import Dependency, Endpoint
 from .pinned import _PinnedLibrary
@@ -430,6 +432,62 @@ class DataInstanceLibrary(_LeafIdentity, _StoreTransfer, _PinnedLibrary, _Teleme
 
     def _invalidate_endpoint_cache(self):
         self._endpoint_cache.clear()
+
+    def Invalidate(self, paths: Iterable[Path]|None = None) -> dict:
+        """Say that the data behind these items has changed.
+
+        A leaf's identity is the absolute path it sits at and the mtime of the
+        top node -- one stat, whatever the size of what is there, which is what
+        keeps a 24 GB reference from costing a tree walk on every run. The
+        price is that a change below the top node is invisible, and this is the
+        lever for it: touch the path, re-mint through the same formula the
+        agent uses, and every cache key built on the old id stops matching.
+        """
+        self._refuse_if_pinned("Invalidate")
+        targets = (
+            list(self.manifest) if paths is None
+            else [Path(p) for p in paths]
+        )
+        moved: dict[str, dict[str, str]] = {}
+        skipped: dict[str, str] = {}
+        for path in targets:
+            if path not in self.manifest:
+                skipped[str(path)] = "not in the library"
+                continue
+            entry = self.instance_meta.get(path) or {}
+            if entry.get("origin", "leaf") != "leaf":
+                skipped[str(path)] = (
+                    "produced by a run; its identity is its lineage"
+                )
+                continue
+            abs_path = self._abs(path)
+            if is_deferred(abs_path):
+                skipped[str(path)] = "deferred; there is nothing to touch yet"
+                continue
+            try:
+                # Follows symlinks, because the id does. Strictly forward, so
+                # an item touched twice inside one clock tick still moves --
+                # an invalidate that leaves the id where it was is worse than
+                # no invalidate at all.
+                st = abs_path.stat()
+                bump = max(time.time_ns(), st.st_mtime_ns + 1)
+                os.utime(abs_path, ns=(bump, bump))
+            except OSError as e:
+                # Minting a random id for something this host cannot see is how
+                # a false hit gets built. Report it instead.
+                skipped[str(path)] = f"not reachable from this host: {e}"
+                continue
+            old_id = entry.get("instance_id", "")
+            moved[str(path)] = {
+                "from": old_id, "to": self._mint_leaf_id(path)
+            }
+        if moved:
+            self.Save()
+        return {
+            "library": str(self.location),
+            "moved": moved,
+            "skipped": skipped,
+        }
 
     def Remove(self, path: Path):
         self._refuse_if_pinned("Remove")

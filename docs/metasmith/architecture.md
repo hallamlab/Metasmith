@@ -487,7 +487,22 @@ cannot stat it, and `CollectResults` later joins the trace against that same pla
 unmodified files at the same paths hits the same shards; two hosts holding identical bytes at
 different paths do not agree, and a same-mtime in-place edit is invisible. A path nothing can stat
 keeps a random per-call id and gets no reuse. `fabfos/refs.py` substitutes the DVC pin's own md5,
-which survives the re-materialisation that moves an mtime.
+which survives the re-materialisation that moves an mtime. A change below the top node is
+invisible by construction, and `msm data invalidate` is the lever for it: it moves the mtime
+forward and re-mints through the same formula, so client and agent still agree.
+
+**Nextflow will not publish a path outside its own work directory.** `PublishOp.collectFiles`
+adds a path to the publish set only when `getTaskDir` resolves it under `session.workDir`, its
+`tmp`, or `bucketDir`; anything else is dropped with no log and no error. A cache shard is outside
+all three, so nothing the emitter puts on a channel reaches `results/` from a hit — the emitter
+records the channel-to-directory spelling in `workflow.cache_publish.json` and the driver places
+those products itself once nextflow has exited. This is invisible from here: the run reports
+`completed` and the results directory is simply empty.
+
+**A product is whatever carries the canonical `<batch>-<item>-<branch>.<hash>-<key><ext>` name** —
+a directory as readily as a file. Nothing on the promote or the hit path may branch on the
+declared extension to decide which: `GetPreferredFileExtension` answers `""` for plenty of file
+types, and a directory type can carry one.
 
 **A hit short-circuits the executor at compile time, not at run time.** The probe rewrites that
 step's emission into a synthetic channel, and **every tuple must re-enter `o.post` before any

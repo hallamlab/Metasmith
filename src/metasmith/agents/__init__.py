@@ -19,7 +19,12 @@ from .images import (
 from .workflow_ops import GetNxfConfigPresets
 from .agent import Agent
 
-from .collect import CollectResults, _published_index, _published_path
+from .collect import (
+    CollectResults,
+    PublishCachedProducts,
+    _published_index,
+    _published_path,
+)
 from .runner import (
     CheckWorkflow, RunWorkflow, StageWorkflow, _extract_nxf_task_metadata,
 )

@@ -64,15 +64,19 @@ def _groovy_index_literal(index: dict) -> str:
     return "[" + ", ".join(parts) + "]"
 
 
+def branch_name_pattern(branch_idx: int) -> "re.Pattern[str]":
+    return re.compile(rf"^\d+-\d+-{branch_idx + 1}\.")
+
+
 def cached_files_for_branch(
     cache_out: Path, branch_idx: int, suffix: str
 ) -> list[Path]:
     if not cache_out.exists():
         return []
-    pat = re.compile(rf"^\d+-\d+-{branch_idx + 1}\.")
+    pat = branch_name_pattern(branch_idx)
     return sorted(
         f for f in cache_out.glob("*")
-        if f.is_file() and pat.match(f.name) and f.name.endswith(suffix)
+        if pat.match(f.name) and f.name.endswith(suffix)
     )
 
 
@@ -603,6 +607,7 @@ def prepare_nextflow(task, context: NextflowGenContext):
     wf_main = []
     wf_publish = set()       
     published_channels: dict[str, tuple[int, DataInstance]] = {}
+    cache_publish_files: dict[str, list[Path]] = {}
     resources = {}
     gpu_requirements: dict[str, dict] = {}
     env_requirements: dict[str, dict] = {}
@@ -639,6 +644,7 @@ def prepare_nextflow(task, context: NextflowGenContext):
         if is_hit:
             cache_out = out_dir(decision["entry"].output_root)
             _out_indexes = decision.get("out_indexes") or {}
+            hit_files_by_key: dict[str, list[Path]] = {}
             cached_channels: list[str] = []
             cached_channel_var = f"__cached_step_{step.order}"
             channel_exprs: list[str] = []
@@ -655,8 +661,12 @@ def prepare_nextflow(task, context: NextflowGenContext):
                         cache_out, branch_idx, suffix
                     )
                     if not cached_files:
-                        channel_exprs.append("Channel.empty()")
-                        continue
+                        raise ValueError(
+                            f"cache hit for step {step.order} "
+                            f"({step.transform.name}) holds no file for "
+                            f"{dep.key}[{branch_idx}]; the shard should have "
+                            "been demoted to a miss"
+                        )
                     _no_index = [
                         f.name for f in cached_files
                         if f.name not in _out_indexes
@@ -668,6 +678,9 @@ def prepare_nextflow(task, context: NextflowGenContext):
                             f"for {_no_index}; the shard should have been "
                             "demoted to a miss"
                         )
+                    hit_files_by_key.setdefault(
+                        out_inst.dtype.key, []
+                    ).extend(cached_files)
                     tuples = ", ".join(
                         f"[{_groovy_index_literal(_out_indexes[fp.name])}, "
                         f"file('{path_map.ExternalToLocal(fp)}')]"
@@ -706,6 +719,12 @@ def prepare_nextflow(task, context: NextflowGenContext):
                 k = inst.dtype.key
                 wf_publish.add(k)
                 published_channels[k] = (step.order, inst)
+                # Keyed on the channel that reaches `publish:`, not on the
+                # step: `o.mix` merges several producers into one, and a step
+                # can be a hit and a merge input at once.
+                cache_publish_files.setdefault(k, []).extend(
+                    hit_files_by_key.get(k, [])
+                )
             continue
 
         process_name, src, src_res = prepare_step(step)
@@ -814,6 +833,7 @@ def prepare_nextflow(task, context: NextflowGenContext):
         f.write("\n")
 
     wf_output = []
+    cache_publish: list[dict] = []
     _e2target = {x.instance.dtype:x for x in the_plan.targets}
     for ch, (step_order, inst) in published_channels.items():
         spec_name = inst.dtype_name.replace(' ', '_').replace("::", "-")
@@ -826,7 +846,27 @@ def prepare_nextflow(task, context: NextflowGenContext):
             TAB+TAB+f"path '{out_name}'",
             TAB+"}",
         ]
-        
+        if cache_publish_files.get(ch):
+            cache_publish.append({
+                "channel": ch,
+                "path": out_name,
+                "files": [str(f) for f in cache_publish_files[ch]],
+            })
+
+    # One side derives the results spelling, the other reads it: the driver
+    # publishes what nextflow silently declines to.
+    with open(context.work_dir/AgentPaths.CACHE_PUBLISH_MANIFEST, "w") as f:
+        json.dump(
+            {
+                "schema": 1,
+                "strategy": context.cache_hit_strategy,
+                "publish": cache_publish,
+            },
+            f, separators=(",", ":"),
+        )
+        f.write("\n")
+
+
     content = [
         f"workflow"+" {",
         "main:",

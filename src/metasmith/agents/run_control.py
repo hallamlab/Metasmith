@@ -179,7 +179,8 @@ class _RunControl:
         run_dir = self._resolve_run_dir(task_key, run)
         agent_log = run_dir / "agent.log"
         workspace = self._task_workspace(task_key)
-        pid_lock = workspace / "PID.lock"
+        pid_lock = workspace / AgentPaths.PID_LOCK_FILE
+        run_pgid = workspace / AgentPaths.RUN_PGID_FILE
 
         start = time.monotonic()
         cur_poll = poll_s
@@ -188,18 +189,34 @@ class _RunControl:
 
         while True:
             elapsed = time.monotonic() - start
+            # Labelled, not positional: `grep -c` prints its 0 *and* exits 1,
+            # so a bare `|| echo 0` fallback emits the count twice and shifts
+            # every line after it.
             cmd = (
                 f"if [ -e {agent_log} ]; then "
-                f"stat -c %Y {agent_log}; "
-                f"grep -c '{sentinel}' {agent_log} 2>/dev/null || echo 0; "
-                f"else echo MISSING; echo 0; fi; "
-                f"[ -e {pid_lock} ] && echo PID_ALIVE || echo PID_GONE"
+                f"echo \"MTIME $(stat -c %Y {agent_log})\"; "
+                f"echo \"COUNT $(grep -c '{sentinel}' {agent_log} 2>/dev/null)\"; "
+                f"else echo 'MTIME MISSING'; echo 'COUNT 0'; fi; "
+                f"[ -e {pid_lock} ] && echo 'PID ALIVE' || echo 'PID GONE'; "
+                # PID.lock goes when nextflow exits, but the driver runs on for
+                # as long as promotion, results and log gathering take, and it
+                # is what writes the sentinel. RUN.pgid holds the driver's own
+                # process group; while anything is left in it the run is alive.
+                f"if [ -s {run_pgid} ]; then "
+                f"kill -0 -\"$(cat {run_pgid})\" 2>/dev/null "
+                f"&& echo 'DRIVER ALIVE' || echo 'DRIVER GONE'; "
+                f"else echo 'DRIVER UNKNOWN'; fi"
             )
             res = self._remote_oneshot(cmd, timeout=30)
-            lines = [ln.strip() for ln in res.out if ln.strip()]
-            mtime_line = lines[0] if lines else ""
-            count_line = lines[1] if len(lines) > 1 else "0"
-            pid_line = lines[-1] if lines else "PID_GONE"
+            fields: dict[str, str] = {}
+            for ln in res.out:
+                label, _, value = ln.strip().partition(" ")
+                if label and value:
+                    fields.setdefault(label, value.strip())
+            mtime_line = fields.get("MTIME", "")
+            count_line = fields.get("COUNT", "0")
+            pid_line = fields.get("PID", "GONE")
+            driver_line = fields.get("DRIVER", "UNKNOWN")
 
             log_exists = mtime_line != "MISSING"
             try:
@@ -222,7 +239,13 @@ class _RunControl:
                     "last_log_mtime": last_mtime,
                     "tail": tail.get("lines", []),
                 }
-            if log_exists and pid_line == "PID_GONE" and count == 0 and elapsed >= grace_s:
+            # A workspace with no RUN.pgid cannot answer, and answering "wait"
+            # there would hang forever on a run that really did die.
+            driver_alive = driver_line == "ALIVE"
+            if (
+                log_exists and pid_line == "GONE" and not driver_alive
+                and count == 0 and elapsed >= grace_s
+            ):
                 tail = self.TailWorkflowLog(task_key, source="agent", lines=20, run=run)
                 return {
                     "task_key": task_key,
