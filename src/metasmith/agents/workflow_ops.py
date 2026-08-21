@@ -305,13 +305,14 @@ class _WorkflowOps:
         return dict(self.default_params) | dict(params or {})
 
     def RunWorkflow(
-            self, 
-            task: WorkflowTask|str, 
-            config_file: Path|None=None, 
+            self,
+            task: WorkflowTask|str,
+            config_file: Path|None=None,
             params: dict|Path|str|None=None,
             resource_overrides: ResourceOverrides|None=None,
             gpus: Gpu|None=None,
             stub_delay: float=0,
+            is_local_preset: bool|None=None,
         ) -> None:
         is_dry_run = stub_delay>0
         if is_dry_run:
@@ -421,7 +422,14 @@ class _WorkflowOps:
                 local_config = temp_dir/config_file.name
                 shutil.copy(config_file, local_config)
                 mover.QueueTransfer(src=Source.FromLocal(local_config), dest=ws_dest/AgentPaths.NXF_CONFIG)
-                if config_file.stem == "local":
+                # Whether this run's config descends from the local preset --
+                # the caller's word on that (`is_local_preset`) wins when given,
+                # since the GUI always stages preset content under a fixed
+                # `preset.nf` name and the stem can no longer say so. Absent
+                # that, fall back to the stem for callers that pass
+                # nextflow_config/local.nf directly.
+                _is_local = is_local_preset if is_local_preset is not None else config_file.stem == "local"
+                if _is_local:
                     # The local preset's `executor` block is a static guess (see
                     # nextflow_config/local.nf) -- it has no way to know what the
                     # box actually has. `free -b`/`nproc` on the executing host
