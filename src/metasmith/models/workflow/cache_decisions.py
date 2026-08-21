@@ -5,7 +5,14 @@ import os
 
 from ...logging import Log
 from .grouping import select_for_key
-from .nextflow_codegen import NextflowGenContext
+from .nextflow_codegen import NextflowGenContext, branch_name_pattern
+
+
+def _branch_name_matches(name: str, branch_idx: int, dtype) -> bool:
+    suffix = f"-{dtype.key}{dtype.GetPreferredFileExtension()}"
+    return bool(
+        branch_name_pattern(branch_idx).match(name)
+    ) and name.endswith(suffix)
 
 def compute_cache_decisions(
     task, context: NextflowGenContext
@@ -133,6 +140,51 @@ def compute_cache_decisions(
                     f"index for {len(missing) or 'any'} output(s); demoting "
                     "the hit so the step re-runs rather than emitting a tuple "
                     "the orchestrator would drop"
+                )
+                hit = False
+                out_indexes = {}
+
+        if hit:
+            # Every produce slot the step declares must be one the shard can
+            # actually serve. Serving some and not others emits an empty
+            # channel into a group that never completes: nextflow then declares
+            # the consumer and never submits it, with no trace row and no
+            # error, and the run still reports completed. Demotion is
+            # all-or-nothing -- a step served half from the shard and half from
+            # a fresh execution would emit a channel whose members came from
+            # two different runs of the transform.
+            matched_rows = [
+                row for row in (manifest.get("files") or [])
+                if not row.get("unmatched") and row.get("relpath")
+            ]
+            # A pre-slot_id manifest has its own degenerate path further down
+            # and would fail this check on rows that never carried the fields.
+            legacy = any("slot_id" not in row for row in matched_rows)
+            names = [
+                str(row["relpath"]).rsplit("/", 1)[-1] for row in matched_rows
+            ]
+            unserved: list[str] = []
+            if not legacy:
+                for branch_idx, dep_group in enumerate(
+                    step.transform.model.produces
+                ):
+                    for dep in dep_group:
+                        insts = step.dependency_map.get(dep, [])
+                        if not insts:
+                            continue
+                        # The same question the emitter asks of the shard, so a
+                        # slot that passes here cannot come up empty there.
+                        if not any(
+                            _branch_name_matches(n, branch_idx, insts[0].dtype)
+                            for n in names
+                        ):
+                            unserved.append(f"{dep.key}[{branch_idx}]")
+            if unserved:
+                Log.Warn(
+                    f"cache shard {cache_key.hex()[:8]} cannot serve "
+                    f"{', '.join(unserved)}; demoting the hit so step "
+                    f"{step.order} re-runs rather than emitting an empty "
+                    "channel the consumer would wait on forever"
                 )
                 hit = False
                 out_indexes = {}

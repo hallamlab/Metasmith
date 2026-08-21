@@ -153,6 +153,19 @@ def register(subs):
     _rs.add_argument("--entry", default=None, help="one entry, instead of all")
     _rs.set_defaults(func=lambda a: _ops.restamp_library(a.library, a.entry))
 
+    _iv = sp.add_parser(
+        "invalidate",
+        help="say an item's data changed, so runs that used it re-run",
+    )
+    _iv.add_argument("library")
+    _iv.add_argument("entries", nargs="*",
+                     help="entry paths within the library")
+    _iv.add_argument("--all", action="store_true",
+                     help="every leaf entry in the library")
+    _iv.set_defaults(func=lambda a: _ops.invalidate_items(
+        a.library, a.entries, a.all,
+    ))
+
     _vf = sp.add_parser("verify", help="report drift in a pinned library")
     _vf.add_argument("library")
     _vf.add_argument("--deep", action="store_true",
