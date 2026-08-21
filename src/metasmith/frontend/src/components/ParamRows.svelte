@@ -56,10 +56,6 @@
 
   <div class="entry addrow">
     <button class="small" onclick={add}>+ a param</button>
-    <span class="small muted">
-      an underscore nests: <code>process_clusterOptions</code> becomes
-      <code>process.clusterOptions</code>
-    </span>
   </div>
 </div>
 
@@ -69,5 +65,4 @@
   .entry :global(input) { min-width: 0; }
   .trail { display: flex; align-items: center; }
   .addrow { gap: 10px; }
-  code { font-size: 11px; }
 </style>

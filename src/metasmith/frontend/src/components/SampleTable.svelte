@@ -11,11 +11,13 @@
     table = null, // {attached, filename, columns, row_count, preview, problems, expansion}
     onattach, // (File|null, text|null) => Promise
     ondetach,
+    onedit, // () => Promise<string> -- the attached table, as raw text
   } = $props()
 
   let pasting = $state(false)
   let text = $state('')
   let peeking = $state(false)
+  let editing = $state(false)
 
   let attached = $derived(!!table?.attached)
   let problems = $derived(table?.problems ?? [])
@@ -32,6 +34,22 @@
     pasting = false
   }
 
+  // Re-editing is a re-paste: the sheet comes back as text, the edit lands
+  // by attaching it again over the same table, rather than a detach-then-
+  // reattach round trip that would lose whatever the sheet already registered
+  // in between.
+  async function startEdit() {
+    text = (await onedit?.()) ?? ''
+    editing = true
+    peeking = false
+  }
+
+  async function saveEdit() {
+    if (!text.trim()) return
+    await onattach?.(null, text)
+    editing = false
+  }
+
   async function upload(e) {
     const file = e.currentTarget.files?.[0]
     if (!file) return
@@ -43,11 +61,6 @@
 <div class="strip" class:on={attached}>
   {#if !attached}
     <div class="row wrap">
-      <span class="small muted grow">
-        Have a sample sheet? Attach it and every row below picks a column of it
-        instead of holding its own value — one run per sheet row. The sheet has
-        to hold the finished values; nothing is built out of them.
-      </span>
       <label class="filebtn small">
         upload
         <input type="file" accept=".csv,.tsv,.tab,.txt,.xlsx,.xlsm" onchange={upload} />
@@ -79,10 +92,22 @@
       </details>
       <span class="mono truncate grow" title={table.filename}>{table.filename}</span>
       <span class="small muted">{table.row_count} row(s) · {table.columns.length} column(s)</span>
+      <button class="small" onclick={startEdit}>edit</button>
       <DeleteControl title="take the sheet away — what it registered stays" onconfirm={ondetach} />
     </div>
 
-    {#if peeking}
+    {#if editing}
+      <textarea
+        class="mono"
+        rows="4"
+        spellcheck="false"
+        bind:value={text}
+      ></textarea>
+      <div class="row">
+        <button class="small" onclick={saveEdit} disabled={!text.trim()}>use this</button>
+        <button class="small" onclick={() => (editing = false)}>cancel</button>
+      </div>
+    {:else if peeking}
       <div class="peek">
         <table class="small">
           <thead>
@@ -106,10 +131,6 @@
       </ul>
     {:else if registered}
       <span class="small muted">{registered} row(s) registered, as of the last solve</span>
-    {:else}
-      <span class="small muted">
-        Ready — solving registers one item per array row, per sheet row.
-      </span>
     {/if}
   {/if}
 </div>
