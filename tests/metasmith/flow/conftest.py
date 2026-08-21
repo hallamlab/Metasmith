@@ -144,8 +144,9 @@ def _build_transform_lib(
     meta = tr_path / "_metadata"
     types_dir = meta / "types"
     types_dir.mkdir(parents=True, exist_ok=True)
-    shutil.copy(types_path, types_dir / f"{namespace}.yml")
-    (types_dir / "transforms.yml").write_text(
+    _write_input(types_dir / f"{namespace}.yml",
+                 types_path.read_text(encoding="utf-8"))
+    _write_input(types_dir / "transforms.yml",
         textwrap.dedent(
             """\
             schema: v1
@@ -161,15 +162,13 @@ def _build_transform_lib(
                 - transform
             """
         ),
-        encoding="utf-8",
     )
     manifest: dict[str, dict[str, str]] = {}
     for name, code in transforms.items():
-        (tr_path / f"{name}.py").write_text(code, encoding="utf-8")
+        _write_input(tr_path / f"{name}.py", code)
         manifest[f"{name}.py"] = {"type": "transforms::transform"}
-    (meta / "index.yml").write_text(
-        yaml.dump({"manifest": manifest, "schema": "v1"}), encoding="utf-8"
-    )
+    _write_input(meta / "index.yml",
+                 yaml.dump({"manifest": manifest, "schema": "v1"}))
     return TransformInstanceLibrary.Load(tr_path)
 
 
