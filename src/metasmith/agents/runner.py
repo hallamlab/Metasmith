@@ -263,6 +263,12 @@ def StageWorkflow(task_key: str, verify: bool, host: str, rootfs: Rootfs|None = 
         resources_file=AgentPaths.NXF_RES,
         rootfs=rootfs,
     ))
+    # Codegen's cache-decision pass stamps deterministic lineage ids onto the
+    # plan's produce/require instances -- the ids baked into every .nf/.meta
+    # file. Write the plan again so task.yml agrees with what execution will
+    # actually see; otherwise a downstream step's dependency_map still carries
+    # the pre-stamp id and lookups against the .meta payload miss.
+    _rewrite_staged_plan(task_path, task)
     nxflib_dir = work_dir/"lib"
     nxflib_dir.mkdir(parents=True, exist_ok=True)
     orchestrator_lib = MODULE_PATH/"nextflow_config/Orchestrator.groovy"
@@ -415,6 +421,18 @@ def RunWorkflow(key: str, log_dir: Path, host: str, stub_delay: float):
         PublishCachedProducts(workspace, output_path)
     except Exception as e:
         Log.Warn(f"publishing cache-hit products failed: {e}")
+
+    # `_metasmith/trace.jsonl` sits at the workspace root and gets truncated
+    # on the next stage, so a cache-hit step -- which never becomes a
+    # Nextflow process and so has no row in nxf_tasks.csv -- would otherwise
+    # be unrecoverable once collected. Copy it alongside nxf_tasks.csv, into
+    # the one per-run directory that survives collection. Taken after cache
+    # promotion, which appends its own miss/promoted events to the same file --
+    # a copy taken before would freeze a lineage trace that promotion hadn't
+    # finished writing yet, under a filename that looks final.
+    lineage_trace = workspace/"_metasmith"/"trace.jsonl"
+    if lineage_trace.is_file():
+        shutil.copy(lineage_trace, workspace/log_dir/"trace.jsonl")
 
     Log.Info(f"compiling results")
     output = CollectResults(

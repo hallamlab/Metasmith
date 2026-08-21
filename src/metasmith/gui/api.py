@@ -859,6 +859,7 @@ def get_workflow(name):
                 "step_display": display, "plan_graph": plan_graph,
             })
     out["result"] = wf.result
+    out["overrides"] = wf.overrides
     out["runs"] = [_run_summary(r) for r in runs]
     lib_path = wf.path / wf.request.get("input_library", INPUT_LIBRARY_DIRNAME)
     out["input_library"] = {"path": str(lib_path), "exists": lib_path.is_dir()}
@@ -902,6 +903,11 @@ def create_workflow():
         op_data.materialize_template(
             template.spec.input_library, lib_path, type_library_paths=types,
         )
+    default_preset = op_agent.config_presets()
+    if default_preset:
+        source = "local" if "local" in default_preset else default_preset[0]
+        p.write_preset(wf.name, op_agent.preset_content(source))
+        p.write_request(wf.name, {"preset_source": source})
     _rows_of(wf.name)
     return jsonify(_workflow_summary(p.read_workflow(wf.name))), 201
 
@@ -921,6 +927,48 @@ def put_workflow(name):
 @bp.patch("/workflows/<name>")
 def patch_workflow(name):
     return jsonify(_workflow_summary(_project().write_request(name, _body())))
+
+
+@bp.put("/workflows/<name>/overrides")
+def put_workflow_overrides(name):
+    p = _project()
+    overrides = _checked_overrides(_body().get("resource_overrides")) or {}
+    wf = p.write_overrides(name, overrides)
+    return jsonify({"name": name, "overrides": wf.overrides})
+
+
+@bp.get("/workflows/<name>/preset")
+def get_workflow_preset(name):
+    p = _project()
+    wf = p.read_workflow(name)
+    return jsonify({
+        "name": name,
+        "content": p.read_preset(name) or "",
+        "preset_source": wf.request.get("preset_source"),
+    })
+
+
+@bp.put("/workflows/<name>/preset")
+def put_workflow_preset(name):
+    p = _project()
+    b = _body()
+    p.write_preset(name, b.get("content") or "")
+    return jsonify({"name": name, "content": p.read_preset(name) or ""})
+
+
+@bp.post("/workflows/<name>/preset/adopt")
+def adopt_workflow_preset(name):
+    p = _project()
+    source = _checked_preset(_body().get("source"))
+    assert source, "a preset name is required"
+    p.write_preset(name, op_agent.preset_content(source))
+    wf = p.write_request(name, {"preset_source": source})
+    return jsonify({"name": name, "content": p.read_preset(name) or "", "preset_source": source})
+
+
+@bp.get("/presets")
+def list_all_presets():
+    return jsonify(op_agent.config_presets())
 
 
 @bp.post("/workflows/<name>/rename")
@@ -957,6 +1005,9 @@ def fork_workflow(name):
     src_record = op_samples.record_path(p.input_library_path(name))
     if src_record.is_file():
         shutil.copy2(src_record, op_samples.record_path(p.input_library_path(forked.name)))
+    src_preset = p.preset_path(name)
+    if src_preset.is_file():
+        p.write_preset(forked.name, src_preset.read_text())
     return jsonify(_workflow_summary(p.read_workflow(forked.name))), 201
 
 
@@ -1374,7 +1425,7 @@ def _run_summary(r) -> dict:
         "archived_at": r.archived_at,
         **{k: r.record.get(k) for k in (
             "agent", "task_key", "staged_path", "created_at", "launched_at", "finished_at",
-            "collected_at", "run_number", "preset", "error",
+            "collected_at", "run_number", "preset_source", "error",
             "params", "resource_overrides",
         )},
     }
@@ -1460,6 +1511,24 @@ def setup_environment(name):
     return jsonify(job.summary()), 202
 
 
+def _ensure_preset(p, workflow: str) -> str | None:
+    # A workflow created before per-workflow presets existed has no
+    # `preset.nf` of its own -- adopt one now, the same content eager
+    # adoption would have written at creation time, rather than launching
+    # against a config file that was never written.
+    wf = p.read_workflow(workflow)
+    source = wf.request.get("preset_source")
+    if p.preset_path(workflow).is_file():
+        return source
+    available = op_agent.config_presets()
+    if not available:
+        return source
+    source = "local" if "local" in available else available[0]
+    p.write_preset(workflow, op_agent.preset_content(source))
+    p.write_request(workflow, {"preset_source": source})
+    return source
+
+
 @bp.post("/runs")
 def create_run():
     b = _body()
@@ -1467,9 +1536,10 @@ def create_run():
     workflow = b.get("workflow")
     agent_name = b.get("agent")
     wf, agent_path = _runnable(p, workflow, agent_name)
+    preset_source = _ensure_preset(p, workflow)
     rec = p.create_run(workflow, {
         "agent": agent_name,
-        "preset": b.get("preset"),
+        "preset_source": preset_source,
         "params": _checked_params(b.get("params")) or None,
         "resource_overrides": _checked_overrides(b.get("resource_overrides")),
         "on_exist": b.get("on_exist", "update"),
@@ -1492,7 +1562,7 @@ def create_run():
                 op_runtime.run(
                     agent_path,
                     staged["task_key"],
-                    config_preset=rec.record.get("preset"),
+                    config_file=str(p.preset_path(workflow)),
                     params=rec.record.get("params"),
                     resource_overrides=rec.record.get("resource_overrides"),
                 )

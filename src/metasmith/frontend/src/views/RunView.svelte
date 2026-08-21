@@ -407,7 +407,7 @@
           {#if rec.finished_at}
             <tr><td class="muted">finished</td><td><Ago iso={rec.finished_at} /></td></tr>
           {/if}
-          {#if rec.preset}<tr><td class="muted">preset</td><td class="mono">{rec.preset}</td></tr>{/if}
+          {#if rec.preset_source}<tr><td class="muted">preset</td><td class="mono">{rec.preset_source}</td></tr>{/if}
           <!-- A run is reproducible only if it says what it was launched with,
                and neither of these is visible anywhere else once the launch
                panel has been left. The agent's own defaults are layered in on
@@ -482,13 +482,6 @@
           <p class="small muted">{log.error}</p>
         {/if}
         <pre class="log">{log.lines?.join('\n') || 'nothing yet'}</pre>
-      {/if}
-      {#if rec.live}
-        <p class="small muted">
-          Backing off from 5s up to 60s between refreshes. The run is detached
-          on the agent, so closing this page — or restarting the server — does
-          not stop or lose it.
-        </p>
       {/if}
     </div>
 
