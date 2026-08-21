@@ -9,6 +9,7 @@ import yaml
 
 from ...hashing import KeyGenerator
 from ...logging import Log
+from ._atomic import write_yaml_atomic
 from ..remote import Logistics, Source, SourceType
 from ..solver import Endpoint
 
@@ -151,5 +152,7 @@ class DataTypeLibrary:
         )
 
     def Save(self, path: Path):
-        with open(path, "w") as f:
-            yaml.safe_dump(self.Pack(), f)
+        # os.replace, not a truncating write: it is atomic for a concurrent
+        # reader, and it breaks a hardlink instead of writing through it -- a
+        # staged image links its metadata from the library it images.
+        write_yaml_atomic(Path(path), self.Pack())

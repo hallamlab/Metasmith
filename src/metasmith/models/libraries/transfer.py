@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import shutil
 from pathlib import Path
 
@@ -249,6 +250,70 @@ class _StoreTransfer:
             dest=dest,
         )
         return mover
+
+    _IMAGE_SKIP_DIRS = {"__pycache__"}
+
+    def MaterializeImage(self, dest: Path, drop: set[Path]) -> int:
+        # A copy of the library tree MINUS the named manifest entries. Stated as
+        # a subtraction rather than a selection because the manifest does not
+        # list everything a transform needs at runtime: `build_libraries` skips
+        # `_`-prefixed files, and several of those are helper scripts their
+        # neighbours copy out by `Path(__file__).parent`. Selecting from the
+        # manifest would drop them with nothing to say so.
+        dest = Path(dest)
+        src_root = self.location
+        drop = {Path(p) for p in drop if not Path(p).is_absolute()}
+
+        def _dropped(rel: Path) -> bool:
+            return any(rel == d or d in rel.parents for d in drop)
+
+        meta_root = Path(self._path_to_meta)
+
+        def _reproduce(src: Path, dst: Path, rel: Path):
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            if dst.is_symlink() or dst.exists():
+                dst.unlink()
+            if src.is_symlink():
+                # Staging runs with resolve_symlinks=False, so a library that
+                # went through Consolidate() ships links whose targets resolve
+                # on the remote. Resolving them here would send the bytes.
+                os.symlink(os.readlink(src), dst)
+                return
+            # The image's own metadata gets rewritten by the prune that follows,
+            # so it is copied. Everything else is content the image only reads.
+            if meta_root not in rel.parents:
+                try:
+                    os.link(src, dst)
+                    return
+                except OSError:
+                    pass
+            shutil.copy2(src, dst)
+
+        dest.mkdir(parents=True, exist_ok=True)
+        made: list[Path] = []
+        for here, dirs, files in os.walk(src_root, followlinks=False):
+            here = Path(here)
+            rel_dir = here.relative_to(src_root)
+            linked_dirs = [d for d in dirs if (here/d).is_symlink()]
+            dirs[:] = [
+                d for d in dirs
+                if d not in self._IMAGE_SKIP_DIRS
+                and d not in linked_dirs
+                and not _dropped(rel_dir/d)
+            ]
+            (dest/rel_dir).mkdir(parents=True, exist_ok=True)
+            made.append(rel_dir)
+            for name in files + linked_dirs:
+                if name.endswith(".pyc"): continue
+                rel = rel_dir/name
+                if _dropped(rel): continue
+                _reproduce(here/name, dest/rel, rel)
+        # Deepest first, after every child is in place: writing a child bumps
+        # its parent's mtime, and a pinned library's witness for a directory
+        # entry is that mtime.
+        for rel_dir in sorted(made, key=lambda p: len(p.parts), reverse=True):
+            shutil.copystat(src_root/rel_dir, dest/rel_dir)
+        return sum(1 for d in drop if (src_root/d).exists())
 
     def SaveAs(self, dest: Source, label: str|None=None):
         mover = self.PrepTransfer(dest)

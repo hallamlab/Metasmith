@@ -95,6 +95,15 @@ compiled `_metadata/types/`, so a new type must land in all of them (`metasmith 
 Skipped, a plan becomes unreachable only from certain libraries — which reads like a solver bug
 and is not.
 
+**A library carries the types its own transforms declare, and `PruneTypes` is what establishes
+that.** `Load` reads every file under `_metadata/types/` and takes each as a namespace, so the
+prune only means something if it unlinks — a file left behind is a namespace nobody declared,
+silently in force. Two consequences follow from the narrowing. A namespace present in a library
+no longer implies the type is: resolve a name by asking for the *type*, never by finding the
+first library holding its namespace. And a transform must reach every type it uses through
+`AddRequirement`/`AddProduct` — a bare `GetType` the contract never mentions is invisible to the
+prune and is gone on the next build.
+
 ## Data and transforms
 
 **A `DataInstance`'s `instance_id` derives from path, dtype name and parent library — never
@@ -295,6 +304,17 @@ agent image's `site-packages`, which is what lets an old base tag run a new engi
 engine gains a third-party import the image's env lacks. Adding `cbor2` was enough: on the older
 tag every task died *after* staging, so the first sign was a queued job failing. A new dependency
 in `envs/metasmith/base.yml` means the site's base tag has to move too.
+
+**A stage sends the plan, not the library.** Each library ships as an image: its `_metadata/`
+whole, plus the manifest entries the plan resolved against and every file the manifest does not
+name. The manifest itself is never narrowed — the library key is a hash of it, and that key names
+the staged directory, prefixes every packed `DataInstance` and appears in every step's transform
+reference — so the prune is expressed as a *subtraction* of unused entries rather than a selection
+of used ones. That is also what keeps it correct: `build` excludes `_`-prefixed files from the
+manifest, and several of those are helper scripts their neighbours copy out by `__file__`, so a
+selection would drop a runtime dependency with nothing to say so. The mask comes from
+`plan.given`, the steps' transforms and the ancestor closure of both, which crosses libraries
+because a parent entry names the library it lives in.
 
 **Local transfers.** `Logistics` copies local→local in process — plain files, symlinks and trees
 of those — and hands everything else to `rsync -auP`. The split is about **latency, not

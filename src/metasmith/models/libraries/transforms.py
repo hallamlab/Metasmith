@@ -117,14 +117,17 @@ class TransformInstanceLibrary(DataInstanceLibrary):
             self.AddTypeLibrary(namespace="transforms", lib=transform_types)
         self._transform_cache: dict[Path, TransformInstance] = {}
 
-    def PruneTypes(self, save: bool=True):
-        indirect_whitelist: list[Dependency] = []
-        for path, tr in self.IterateTransforms():
-            indirect_whitelist += tr.model.requires
-            indirect_whitelist += [i for g in tr.model.produces for i in g]
-        def _in(x: Dependency):
-            return any(x.properties == d.properties for g in self.types.values() for d in g.types.values())
-        super().PruneTypes(save=save, whitelist={x for x in indirect_whitelist if _in(x)})
+    def PruneTypes(self, save: bool=True, whitelist: set|None=None):
+        # Every manifest entry of a transform library is `transforms::transform`,
+        # so what the library actually needs is only visible by importing each
+        # transform and reading the types it declares. A caller that already
+        # holds those transforms passes the whitelist instead.
+        if whitelist is None:
+            whitelist = set()
+            for _path, tr in self.IterateTransforms():
+                whitelist |= set(tr.model.requires)
+                whitelist |= {d for group in tr.model.produces for d in group}
+        super().PruneTypes(save=save, whitelist=whitelist)
 
     def AddStub(self, path: Path|str, exist_ok: bool=True):
         path = Path(path)
@@ -201,8 +204,8 @@ class TransformInstanceLibrary(DataInstanceLibrary):
         return TransformInstanceLibraryView(self, mask, invert)
 
     @classmethod
-    def Load(cls, path: Path|str):
-        return cls(DataInstanceLibrary.Load(path))
+    def Load(cls, path: Path|str, **kwargs):
+        return cls(DataInstanceLibrary.Load(path, **kwargs))
 
     @classmethod
     def LoadFrom(cls, src: Source, dest: Path, label: str|None=None):
@@ -224,6 +227,15 @@ class TransformInstanceLibraryView(DataInstanceLibraryView):
             p = p.with_suffix(".py")
         assert p in self._mask, f"transform [{p}] is hidden by view mask"
         return self._original.GetTransform(p, reload=reload)
+
+    def _prune_whitelist(self) -> set:
+        # Read off the masked transforms, which the source library already
+        # imported while planning -- the image's own copies are never loaded.
+        wl: set[Dependency] = set()
+        for _path, tr in self.IterateTransforms():
+            wl |= set(tr.model.requires)
+            wl |= {d for group in tr.model.produces for d in group}
+        return wl
 
     @property
     def types(self):
