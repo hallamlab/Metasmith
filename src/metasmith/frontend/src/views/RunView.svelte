@@ -483,13 +483,6 @@
         {/if}
         <pre class="log">{log.lines?.join('\n') || 'nothing yet'}</pre>
       {/if}
-      {#if rec.live}
-        <p class="small muted">
-          Backing off from 5s up to 60s between refreshes. The run is detached
-          on the agent, so closing this page — or restarting the server — does
-          not stop or lose it.
-        </p>
-      {/if}
     </div>
 
     <div class="card col" style="gap:8px">
