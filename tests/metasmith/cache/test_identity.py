@@ -23,7 +23,7 @@ def test_key_carries_multihash_prefix():
     assert len(k) == 2 + 32
 
 
-def test_addItem_content_addressed_when_file_present(tmp_path):
+def test_addItem_stat_addressed_when_file_present(tmp_path):
     from metasmith.models.libraries import DataInstanceLibrary, DataTypeLibrary
     from metasmith.models.solver import Endpoint
 
@@ -32,24 +32,25 @@ def test_addItem_content_addressed_when_file_present(tmp_path):
     tpath = tmp_path / "types.yml"
     types.Save(tpath)
 
-    def _build_once(payload: str) -> str:
+    (tmp_path / "samples.xgdb").mkdir(parents=True, exist_ok=True)
+    (tmp_path / "samples.xgdb" / "a.txt").write_text("payload\n", encoding="utf-8")
+
+    def _register_once() -> str:
         lib = DataInstanceLibrary(tmp_path / "samples.xgdb")
-        lib.Purge()
         lib.AddTypeLibrary(tpath, namespace="cf")
-        (lib.location / "a.txt").write_text(payload, encoding="utf-8")
         lib.AddItem(Path("a.txt"), "cf::seed")
         return lib.Get(Path("a.txt")).instance_id
 
-    id1 = _build_once("payload\n")
-    id2 = _build_once("payload\n")
+    id1 = _register_once()
+    id2 = _register_once()
     assert id1 == id2, (
-        "same input bytes produced different leaf ids; content-addressed "
-        "leaves must be byte-stable across runs for cross-run reentrancy"
+        "registering an untouched file twice produced different leaf ids; a "
+        "leaf id must be stable across runs for cross-run reentrancy"
     )
     assert bytes.fromhex(id1)[:2] == b"\x1e\x20"
 
-    id3 = _build_once("DIFFERENT\n")
-    assert id3 != id1
+    (tmp_path / "samples.xgdb" / "a.txt").write_text("DIFFERENT\n", encoding="utf-8")
+    assert _register_once() != id1, "an edited file kept its leaf id"
 
 
 def test_addItem_same_bytes_distinct_paths_are_distinct(tmp_path):
@@ -101,7 +102,11 @@ def test_addItem_unique_per_call_when_file_absent(tmp_path):
     )
 
 
-def test_addItem_directory_leaf_is_content_addressed(tmp_path):
+def test_addItem_directory_leaf_costs_one_stat(tmp_path):
+    # A directory leaf is stat'd, not walked: a 300k-file reference folder costs
+    # what a small file costs. The price is reach -- a change nested inside one
+    # does not move the directory's own mtime, and so is invisible here. The
+    # smoke alarm for that is `models/libraries/pinned.py`, not this id.
     from metasmith.models.libraries import DataInstanceLibrary, DataTypeLibrary
     from metasmith.models.solver import Endpoint
 
@@ -110,30 +115,26 @@ def test_addItem_directory_leaf_is_content_addressed(tmp_path):
     tpath = tmp_path / "types.yml"
     types.Save(tpath)
 
-    def _build_once(files: dict[str, str]) -> str:
+    pkg = tmp_path / "samples.xgdb" / "pkg"
+    (pkg / "sub").mkdir(parents=True)
+    (pkg / "mod.py").write_text("X = 1\n", encoding="utf-8")
+    (pkg / "sub" / "leaf.py").write_text("Y = 2\n", encoding="utf-8")
+
+    def _register_once() -> str:
         lib = DataInstanceLibrary(tmp_path / "samples.xgdb")
-        lib.Purge()
         lib.AddTypeLibrary(tpath, namespace="cf")
-        pkg = lib.location / "pkg"
-        for rel, payload in files.items():
-            p = pkg / rel
-            p.parent.mkdir(parents=True, exist_ok=True)
-            p.write_text(payload, encoding="utf-8")
         lib.AddItem(Path("pkg"), "cf::seed")
         return lib.Get(Path("pkg")).instance_id
 
-    tree = {"__init__.py": "", "mod.py": "X = 1\n", "sub/leaf.py": "Y = 2\n"}
-    id1 = _build_once(tree)
-    id2 = _build_once(tree)
-    assert id1 == id2, (
-        "re-staging an unchanged directory minted a different id; a directory "
-        "leaf must be tree-addressed or every recompile throws away the cache"
+    id1 = _register_once()
+    assert _register_once() == id1, (
+        "re-registering an unchanged directory minted a different id; every "
+        "recompile would throw away the cache"
     )
     assert bytes.fromhex(id1)[:2] == b"\x1e\x20"
 
-    assert _build_once({**tree, "sub/leaf.py": "Y = 3\n"}) != id1, "content change not seen"
-    renamed = {"__init__.py": "", "mod.py": "X = 1\n", "sub/other.py": "Y = 2\n"}
-    assert _build_once(renamed) != id1, "rename with identical bytes not seen"
+    (pkg / "added.py").write_text("Z = 3\n", encoding="utf-8")
+    assert _register_once() != id1, "a new immediate entry did not move the id"
 
 
 def test_tree_key_ignores_empty_directories_and_reads_symlink_targets(tmp_path):
