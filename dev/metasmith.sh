@@ -635,6 +635,19 @@ case $1 in
         pytest -m gui -q --durations=0 --durations-min=0.25 $HERE/tests/metasmith/gui $@
     ;;
 
+    -tl) # the process-lifecycle suite -- what actually dies when a run is stopped
+        shift
+        cd $HERE
+        # Pinned, not prepended -- same reason as -tg.
+        export PYTHONPATH=$HERE/src
+        # The directory is the definition of the set, and handing pytest the
+        # path keeps collection from importing the e2e modules.
+        [ -d "$HERE/tests/metasmith/lifecycle" ] || { echo "tests/metasmith/lifecycle/ is missing"; exit 1; }
+        # These spawn real process trees, so a hang here is a hang with children:
+        # --durations makes a test that is waiting out a kill ladder obvious.
+        pytest -m lifecycle -q --durations=0 --durations-min=1.0 $HERE/tests/metasmith/lifecycle $@
+    ;;
+
     -td) # inject updates to an agent home for dev binds
         shift
         export PYTHONPATH=$HERE/src:$HERE/src/metasmith/lib:$PYTHONPATH

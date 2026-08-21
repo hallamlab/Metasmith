@@ -29,6 +29,7 @@ _DIR_MARKERS: list[tuple[str, list[str]]] = [
     ("e2e/agentic/_harness", ["fast"]),
     ("e2e/agentic", ["e2e_agentic", "slow"]),
     ("audit", ["fast"]),
+    ("lifecycle", ["lifecycle", "slow"]),
 ]
 
 

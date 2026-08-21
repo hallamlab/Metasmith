@@ -61,7 +61,8 @@ class TestRunCommandGolden:
         cmd = _container(Runtime.DOCKER).MakeRunCommand(local=False)
         assert cmd == (
             'docker run --platform=linux/amd64 --rm -u $(id -u):$(id -g) '
-            '--network=host -e TMPDIR=${TMPDIR-"/tmp"} --entrypoint="" '
+            '--network=host -e TMPDIR=${TMPDIR-"/tmp"} '
+            '--label msm.run=${METASMITH_RUN:-} --entrypoint="" '
             '--workdir="/ws" '
             '--mount type=bind,source="/host/data",target="/data" '
             '--mount type=bind,source="/host/db",target="/db" '
@@ -72,7 +73,8 @@ class TestRunCommandGolden:
         cmd = _container(Runtime.DOCKER, workdir=None, binds=[]).MakeRunCommand(local=False)
         assert cmd == (
             'docker run --platform=linux/amd64 --rm -u $(id -u):$(id -g) '
-            '--network=host -e TMPDIR=${TMPDIR-"/tmp"} --entrypoint="" '
+            '--network=host -e TMPDIR=${TMPDIR-"/tmp"} '
+            '--label msm.run=${METASMITH_RUN:-} --entrypoint="" '
             'quay.io/example/tool:1.0'
         )
 
@@ -81,6 +83,7 @@ class TestRunCommandGolden:
         assert cmd == (
             'apptainer exec --no-home --cleanenv --env TMPDIR=${TMPDIR-"/tmp"} '
             '--env OPENBLAS_NUM_THREADS=${SLURM_CPUS_PER_TASK:-1} --env OMP_NUM_THREADS=${SLURM_CPUS_PER_TASK:-1} '
+            '--env METASMITH_RUN=${METASMITH_RUN:-} '
             '--pwd "/ws" '
             '--bind /host/data:/data,/host/db:/db '
             'docker://quay.io/example/tool:1.0'
@@ -91,6 +94,7 @@ class TestRunCommandGolden:
         assert cmd == (
             'apptainer exec --no-home --cleanenv --env TMPDIR=${TMPDIR-"/tmp"} '
             '--env OPENBLAS_NUM_THREADS=${SLURM_CPUS_PER_TASK:-1} --env OMP_NUM_THREADS=${SLURM_CPUS_PER_TASK:-1} '
+            '--env METASMITH_RUN=${METASMITH_RUN:-} '
             'docker://quay.io/example/tool:1.0'
         )
 
@@ -99,6 +103,7 @@ class TestRunCommandGolden:
         assert cmd == (
             'apptainer exec --no-home --cleanenv --env TMPDIR=${TMPDIR-"/tmp"} '
             '--env OPENBLAS_NUM_THREADS=${SLURM_CPUS_PER_TASK:-1} --env OMP_NUM_THREADS=${SLURM_CPUS_PER_TASK:-1} '
+            '--env METASMITH_RUN=${METASMITH_RUN:-} '
             '--pwd "/ws" '
             '--bind /host/data:/data,/host/db:/db '
             f'"$(if [ -d "{SANDBOX}" ]; then echo "{SANDBOX}"; else echo "{SIF}"; fi)"'
