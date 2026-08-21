@@ -86,22 +86,31 @@
   let agentChoice = $state(ui.lastAgent)
 
   // This workflow's own copy of a Nextflow config preset, editable as raw
-  // text -- decoupled from the shared package preset it was seeded from at
-  // creation, the same load/dirty/save/revert idiom as `SshEditor.svelte`,
-  // reusing `ConfigEditor` rather than a new editor component.
+  // text -- decoupled from the shared package preset it was chosen from --
+  // reusing `ConfigEditor` rather than a new editor component. `presetSource`
+  // is the dropdown's own value: which preset this workflow is editing and
+  // will stage and run with, persisted server-side (`/preset/adopt` writes it
+  // into the workflow's request, the same file `target_types` and
+  // `input_drafts` live in) exactly like the recipe and the resource
+  // overrides are. Content is autosaved (see the effect below) rather than
+  // held behind a save button.
   let presetLoaded = $state(null)
   let presetContent = $state('')
-  let presetSource = $state(null)
+  let presetSource = $state('')
   let presetSaved = $state(false)
+  // Locked to hidden until a preset is chosen -- there is nothing of this
+  // workflow's own to show before then.
+  let presetOpen = $state(false)
   let allPresets = $state([])
-  let presetDirty = $derived(presetLoaded !== null && presetContent !== presetLoaded)
+  let resetArmed = $state(false)
+  let resetTimer
 
   async function loadPreset() {
     const body = await attempt(() => api.get(`/workflows/${name}/preset`))
     if (!body) return
     presetContent = body.content
     presetLoaded = body.content
-    presetSource = body.preset_source
+    presetSource = body.preset_source ?? ''
   }
 
   async function savePreset() {
@@ -115,18 +124,13 @@
     })
   }
 
-  function revertPreset() {
-    presetContent = presetLoaded ?? ''
-  }
-
-  // Switching the base preset overwrites unsaved edits, so it asks first if
-  // the editor is dirty -- there is no undo for a discarded edit once the new
-  // content has landed.
+  // Selecting a preset from the dropdown adopts it immediately -- there is
+  // nothing to confirm, since picking one is picking which one you are
+  // looking at, not a step you can get wrong. `reset` (below) is the
+  // destructive move: re-adopting the preset already selected, discarding
+  // whatever this workflow has since edited into it.
   async function adoptPreset(source) {
     if (!source) return
-    if (presetDirty && !confirm('Switch the base preset? Unsaved edits to this preset will be lost.')) {
-      return
-    }
     await attempt(async () => {
       const body = await api.post(`/workflows/${name}/preset/adopt`, { source })
       presetContent = body.content
@@ -135,6 +139,31 @@
       return true
     })
   }
+
+  // Armed the same way `DeleteControl` is: a first press only proposes it, so
+  // discarding this workflow's own edits back to the stock preset takes a
+  // deliberate second press.
+  function armReset() {
+    if (!presetSource) return
+    if (resetArmed) {
+      clearTimeout(resetTimer)
+      resetArmed = false
+      adoptPreset(presetSource)
+      return
+    }
+    resetArmed = true
+    resetTimer = setTimeout(() => (resetArmed = false), 2000)
+  }
+
+  // A second after typing in the preset stops, it saves itself -- the same
+  // debounce as a keystroke-driven save anywhere else on this page, so there
+  // is nothing left to press once the box says what you want.
+  $effect(() => {
+    const content = presetContent
+    if (presetLoaded === null || content === presetLoaded) return
+    const t = setTimeout(savePreset, 1000)
+    return () => clearTimeout(t)
+  })
   // This run's params, pre-filled from the chosen agent so what will be sent is
   // visible rather than implied, and `seededParams` is what was put there -- how
   // the page tells "still the agent's defaults" from "someone typed over them".
@@ -271,6 +300,11 @@
     await loadTable()
   }
 
+  async function editTable() {
+    const out = await attempt(() => api.get(`/workflows/${name}/table/raw`))
+    return out?.text ?? ''
+  }
+
   // Which rows every sample should see. Held as row references (`#id`), not as
   // paths: a row under a sheet registers one path per distinct set of cells and
   // none of them exists until the solve, so the request says which *row* and the
@@ -377,13 +411,17 @@
     planFocus = null
     presetLoaded = null
     presetContent = ''
-    presetSource = null
+    presetSource = ''
+    presetOpen = false
     attempt(async () => {
       await Promise.all([load(true), loadTypes(), loadTypeIndex(), loadPreset()])
       void n
     })
   })
 
+  // Loaded once, eagerly, on mount rather than on the dropdown's first open --
+  // the same package-wide vocabulary on every workflow page, so there is
+  // nothing per-workflow to key this effect off of.
   $effect(() => {
     attempt(async () => (allPresets = await api.get('/presets')))
   })
@@ -1253,6 +1291,7 @@
           {sharedPaths}
           columns={table?.columns ?? []}
           rowCount={table?.row_count ?? 0}
+          rowUniques={table?.row_uniques ?? {}}
           expansion={table?.expansion ?? null}
           onshared={setShared}
           onfocus={showType}
@@ -1267,7 +1306,7 @@
           onadd={addRow}
         >
           {#snippet tableStrip()}
-            <SampleTable {table} onattach={attachTable} ondetach={detachTable} />
+            <SampleTable {table} onattach={attachTable} ondetach={detachTable} onedit={editTable} />
           {/snippet}
         </RecipeCard>
 
@@ -1299,11 +1338,6 @@
               one unified solve over the sheet's {table.row_count}
               {table.row_count === 1 ? 'row' : 'rows'}
             </span>
-          {:else if wf.planned}
-            <!-- solving locks the name and nothing else. Said out loud because the
-                 plan below reads as the finished article, and a page that only
-                 shows a result looks like it stopped taking edits. -->
-            <span class="small muted">the recipe is still editable — solving again replans it</span>
           {/if}
         </div>
 
@@ -1681,7 +1715,7 @@
 
           <p class="small muted">
             solved <Ago iso={wf.generated_at} />{#if wf.result.stdlib_commit}
-              · library <span class="mono">{wf.result.stdlib_commit.slice(0, 12)}</span>{/if}
+              against library <span class="mono">{wf.result.stdlib_commit.slice(0, 12)}</span>{/if}
           </p>
         {:else}
           <HintsPanel result={wf.result} onadd={useType} />
@@ -1697,10 +1731,6 @@
         <div class="field">
           <span class="small muted">params</span>
           <ParamRows bind:rows={runParams} inherited={chosenAgent?.default_params ?? {}} />
-          <span class="small muted hint">
-            this run only — the agent's defaults are already here, and a key
-            typed over one of them wins
-          </span>
         </div>
 
         <!-- An agent that is still being filled in is listed and disabled,
@@ -1710,7 +1740,7 @@
              Never having been deployed is on that list too -- it is not one
              of the agent's `problems`, because the deploy button reads those
              and would disable itself, but it stops a run just as surely. -->
-        <Field label="on which agent">
+        <Field label="agent">
           <select
             bind:value={agentChoice}
             onchange={(e) => {
@@ -1731,31 +1761,50 @@
           </select>
         </Field>
         <div class="field">
-          <div class="spread">
-            <span class="small muted">nextflow preset — this workflow's own copy</span>
-            <div class="row" style="gap:8px">
-              {#if presetSaved}<span class="tag ok">saved</span>{/if}
-              {#if allPresets.length}
-                <select
-                  class="small"
-                  value=""
-                  onchange={(e) => {
-                    adoptPreset(e.currentTarget.value)
-                    e.currentTarget.value = ''
-                  }}
-                >
-                  <option value="" disabled>switch base preset…</option>
-                  {#each allPresets as p}<option value={p}>{p}</option>{/each}
-                </select>
-              {/if}
-              <button class="small" onclick={revertPreset} disabled={!presetDirty}>revert</button>
-              <button class="small primary" onclick={savePreset} disabled={!presetDirty}>save</button>
+          <div class="row wrap" style="gap:8px; align-items:center;">
+            <span class="small muted">preset</span>
+            <div class="dag-dir" role="group" aria-label="show or hide the preset editor">
+              <button
+                type="button"
+                class:on={presetOpen}
+                disabled={!presetSource}
+                onclick={() => presetSource && (presetOpen = true)}
+              >show</button>
+              <button
+                type="button"
+                class:on={!presetOpen}
+                disabled={!presetSource}
+                onclick={() => (presetOpen = false)}
+              >hide</button>
             </div>
+            <select
+              class="small preset-select"
+              bind:value={presetSource}
+              onchange={(e) => adoptPreset(e.currentTarget.value)}
+            >
+              <option value="" disabled>choose a preset…</option>
+              {#each allPresets as p}<option value={p}>{p}</option>{/each}
+            </select>
+            <button
+              type="button"
+              class="small"
+              disabled={!presetSource}
+              onclick={armReset}
+              title={resetArmed
+                ? "click again to confirm — this discards this workflow's own edits"
+                : 'reset this preset to its stock content, discarding this workflow\'s own edits'}
+            >{resetArmed ? 'confirm reset?' : 'reset'}</button>
+            {#if presetSaved}<span class="tag ok">saved</span>{/if}
           </div>
-          {#if presetSource}
-            <span class="small muted hint">seeded from “{presetSource}”; edits here are this workflow's own</span>
+          {#if presetOpen}
+            <ConfigEditor
+              bind:value={presetContent}
+              rows={30}
+              resizable={false}
+              language="plain"
+              label="nextflow preset"
+            />
           {/if}
-          <ConfigEditor bind:value={presetContent} rows={10} language="plain" label="nextflow preset" />
         </div>
 
         <div class="row" style="gap:8px">
@@ -1789,10 +1838,6 @@
             Fill them in and solve again.
           </p>
         {/if}
-        <p class="small muted">
-          The same workflow can run on any agent — staging copies it there
-          first, then launches and detaches.
-        </p>
       </div>
       {/if}
 
@@ -1816,6 +1861,14 @@
                   <td>
                     <span class="tag" class:live={r.live} class:ok={r.state === 'completed'}
                       class:bad={r.state === 'failed'}>{r.state}</span>
+                    <!-- The watcher couldn't tell if this run is still going --
+                         same repeating failure every tick, since nothing about
+                         it changes on its own -- so surface it rather than let
+                         a wedged run sit there looking identical to a healthy
+                         one. -->
+                    {#if r.live && r.probe_error}
+                      <span class="tag warn" title={r.probe_error}>can't check status</span>
+                    {/if}
                   </td>
                 </tr>
               {/each}
@@ -2047,6 +2100,11 @@
     font-size: 11px;
   }
   .dag-dir button.on { background: var(--accent); color: var(--panel); }
+  /* The global `select { width: 100% }` rule (app.css) is meant for a select
+     alone in a field, not one sharing a row with a chip and a button -- left
+     unset here it claims the row's full width and pushes everything after it
+     onto its own line, so the "inline" row wraps one control per line. */
+  .preset-select { width: auto; }
   /* Each cluster under a heading and a rule of its own, so what a chip acts on
      is read off the group rather than guessed from the chip. */
   .dag-group {
@@ -2143,7 +2201,6 @@
   /* the same shape `Field` renders, for the two blocks that hold rows rather
      than a single control and so cannot be a <label> */
   .field { display: flex; flex-direction: column; gap: 3px; }
-  .hint { line-height: 1.3; }
   /* why the launch button is off, in the colour the rest of the page refuses in */
   p.bad { color: var(--bad); line-height: 1.3; }
   /* the steps beside the diagram: rows can't be independently positioned

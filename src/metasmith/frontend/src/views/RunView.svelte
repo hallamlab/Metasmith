@@ -376,9 +376,7 @@
     {/if}
     {#if traceFailed && rec.state !== 'staging' && rec.state !== 'launching'}
       <p class="small warnline">
-        {trace.failed} task{trace.failed === 1 ? '' : 's'} failed. Nextflow was told to
-        ignore step failures, so the run finished and was recorded as completed —
-        the steps below are what actually happened.
+        {trace.failed} task{trace.failed === 1 ? '' : 's'} failed
       </p>
     {/if}
 
