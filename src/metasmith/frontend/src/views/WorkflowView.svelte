@@ -1053,16 +1053,33 @@
   // this token by name; see `UNLIMITED` in gui/api.py.
   const UNLIMITED = 'unlimited'
 
-  function setOverride(order, field, value) {
-    overrides[order] = { ...(overrides[order] ?? {}), [field]: value }
+  // Keyed by the transform, not `step.order`: order is a position in the
+  // CURRENT plan, and regenerating a workflow (e.g. pointing a given at a
+  // different source, which drops or adds upstream steps) renumbers every
+  // step after the change. A numeric key then silently reattaches to
+  // whichever step now sits at that position -- not an error, just the wrong
+  // step getting the override while the one it was meant for gets none. The
+  // transform name is what backend/workflow_ops.py's string-keyed branch
+  // already matches processes by (`.*__{tr}`), so this needs no server change.
+  function stepKey(step) {
+    return (step?.transform ?? '').replace(/\.py$/, '')
+  }
+
+  function setOverride(key, field, value) {
+    overrides[key] = { ...(overrides[key] ?? {}), [field]: value }
     saveOverrides(name, overrides)
   }
 
   // Only the boxes with something in them, and only the steps with such a box.
   // An empty string sent as a value would be a resource directive of nothing.
+  // Also drops any key that names no step in the CURRENT plan -- a leftover
+  // from before a regenerate reshuffled step order, which must not be sent
+  // under a stale key and land on whatever step now occupies it.
   function overridePayload() {
+    const valid = new Set((wf?.result?.step_display ?? []).map(stepKey))
     const out = {}
     for (const [step, spec] of Object.entries(overrides)) {
+      if (!valid.has(step)) continue
       const kept = {}
       for (const f of OVERRIDE_FIELDS) {
         const v = (spec?.[f] ?? '').toString().trim()
@@ -1547,6 +1564,7 @@
                       </div>
                       {#each wf.result.step_display as step, i}
                         {@const cy = planCy.get(step.order) ?? (i + 0.5) * pitch}
+                        {@const key = stepKey(step)}
                         <div
                           class="res-row"
                           style={`top: ${cy - pitch / 2}px; height: ${pitch}px`}
@@ -1555,7 +1573,7 @@
                           data-transform={step.transform}
                         >
                           {#each OVERRIDE_FIELDS as f}
-                            {@const v = overrides[step.order]?.[f] ?? ''}
+                            {@const v = overrides[key]?.[f] ?? ''}
                             {#if f === 'duration_h' && v === UNLIMITED}
                               <!-- The box cannot show a number for this, and
                                    showing an empty one would read as the other
@@ -1568,7 +1586,7 @@
                                 placeholder={step.declared_resources?.[f] ?? '—'}
                                 aria-label={`${f} for step ${step.order}`}
                                 value={v}
-                                oninput={(e) => setOverride(step.order, f, e.currentTarget.value)}
+                                oninput={(e) => setOverride(key, f, e.currentTarget.value)}
                               />
                             {/if}
                           {/each}
@@ -1577,17 +1595,17 @@
                                over the three numbers, which are right-aligned -->
                           <button
                             class="inf"
-                            class:on={overrides[step.order]?.duration_h === UNLIMITED}
-                            aria-pressed={overrides[step.order]?.duration_h === UNLIMITED}
-                            title={overrides[step.order]?.duration_h === UNLIMITED
+                            class:on={overrides[key]?.duration_h === UNLIMITED}
+                            aria-pressed={overrides[key]?.duration_h === UNLIMITED}
+                            title={overrides[key]?.duration_h === UNLIMITED
                               ? 'back to a time limit'
                               : 'run with no time limit at all'}
                             aria-label={`no time limit for step ${step.order}`}
                             onclick={() =>
                               setOverride(
-                                step.order,
+                                key,
                                 'duration_h',
-                                overrides[step.order]?.duration_h === UNLIMITED ? '' : UNLIMITED,
+                                overrides[key]?.duration_h === UNLIMITED ? '' : UNLIMITED,
                               )}
                           >∞</button>
                         </div>
@@ -1662,22 +1680,30 @@
             >
               {launching ? 'launching…' : 'stage and run'}
             </button>
+          </div>
+          <!-- "setup environment" is hidden pending real testing -- do not ship
+               an untested feature to release. Markup, setupEnvironment(), and
+               envReport are left wired below so re-enabling this is just
+               flipping these two `false`s back on. -->
+          {#if false}
             <!-- Beside run rather than on the agent page: which environment an
                  agent needs is a fact about this workflow's steps, and this is
                  where the agent for them was just chosen. -->
-            <SplitButton
-              label={settingUp ? 'setting up…' : 'setup environment'}
-              title="fetch this workflow's tool images, or build its conda envs, on the chosen agent"
-              disabled={!agentChoice || launching || settingUp || solving || recipeProblems.length > 0}
-              onclick={() => setupEnvironment(false)}
-              options={[{
-                label: 'force setup',
-                title: 're-fetch and rebuild even what the agent already has',
-                onclick: () => setupEnvironment(true),
-              }]}
-            />
-          </div>
-          {#if envReport}
+            <div class="row" style="gap:8px">
+              <SplitButton
+                label={settingUp ? 'setting up…' : 'setup environment'}
+                title="fetch this workflow's tool images, or build its conda envs, on the chosen agent"
+                disabled={!agentChoice || launching || settingUp || solving || recipeProblems.length > 0}
+                onclick={() => setupEnvironment(false)}
+                options={[{
+                  label: 'force setup',
+                  title: 're-fetch and rebuild even what the agent already has',
+                  onclick: () => setupEnvironment(true),
+                }]}
+              />
+            </div>
+          {/if}
+          {#if false && envReport}
             <div class="small col" style="gap:4px">
               {#if envReport.mode === 'container'}
                 <span class="muted">
@@ -1881,7 +1907,7 @@
     /* the one column template the sticky header, the guide lines and the rows
        all share -- restated in any one of them and it can drift out of step
        with the others, which is exactly the "two headers" this replaces */
-    --res-cols: 4.5rem 5.75rem 4.5rem 1.75rem;
+    --res-cols: 4.5rem 6rem 4.5rem 1.75rem;
   }
   /* zero, as far as the layout is concerned: it exists to be watched */
   .dag-mark { height: 1px; margin-bottom: -1px; }
@@ -2015,6 +2041,8 @@
      that is what keeps it flush with `.res-body` below, which is anchored to
      the same edge by `.dag-row`'s `justify-content: flex-end` */
   .dag-resources { margin-left: auto; }
+  /* "resources" names the whole grid below, not just its left edge */
+  .dag-resources .dag-group-label { text-align: center; }
   .dag-res-head {
     display: grid;
     grid-template-columns: var(--res-cols);
