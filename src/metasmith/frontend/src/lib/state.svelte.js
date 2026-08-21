@@ -433,8 +433,13 @@ export function cacheWorkflow(name, snapshot) {
 // unlike the recently-viewed cache above, these survive a reload: they are a
 // deliberate override of what the transform declared, not a fetch result, and
 // losing one on an accidental refresh would mean retyping it before the next
-// launch. Step order is what the panel keys them by, so they carry over fine
-// across a re-plan as long as step numbering does not change.
+// launch. The panel keys each entry by transform name, not step order --
+// order is a position in the current plan, and a regenerate that adds or
+// drops upstream steps renumbers everything after the change, which used to
+// leave a stale numeric key silently reattached to whatever step now sits at
+// that position. `WorkflowView.svelte`'s `overridePayload()` also drops any
+// key naming no step in the current plan, so an entry from a since-removed
+// step is dropped rather than sent under a name nothing matches.
 
 const overridesKey = (name) => `metasmith.overrides.${name}`
 

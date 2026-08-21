@@ -4,6 +4,7 @@ from .steps import WorkflowStep, WorkflowTarget
 from .diagnostics import PlanHint, _diagnose_plan_failure
 from .plan import WorkflowPlan
 from .cache_decisions import compute_cache_decisions
+from .leaf_identity import restat_leaf_ids
 from .nextflow_codegen import (
     BIND_FILE, METADATA_FILE, NextflowGenContext, NextflowProcessName,
     apply_fs_strategy, prepare_nextflow, _read_env_declarations,

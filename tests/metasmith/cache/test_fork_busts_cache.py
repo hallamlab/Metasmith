@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from pathlib import Path
+from metasmith.models.libraries import DataInstanceLibrary
 
 from tests.metasmith.cache._cache_harness import (
     build_samples_library,
@@ -16,36 +16,43 @@ from tests.metasmith.cache._cache_harness import (
 TYPE_NAMES = ("seed", "mid", "out")
 
 
-def _build_pipeline_task(root: Path, fork_id: str | None = None):
+def test_forked_library_misses_a_cache_its_twin_would_hit(tmp_path, virtual_runtime):
+    # One library, three plans. Leaf ids are the path and the mtime, so building
+    # the control somewhere else would miss for a reason that has nothing to do
+    # with the fork -- the control has to be the same files in the same place.
+    root = tmp_path / "a"
     types_path = build_types_library(root, TYPE_NAMES)
     samples = build_samples_library(root, types_path, count=2, input_type="seed")
-    if fork_id is not None:
-        samples.fork_id = fork_id
-        samples.Save()
-    transforms = {
-        "trA": identity_transform_code("trA", "seed", "mid"),
-        "trB": identity_transform_code("trB", "mid", "out"),
-    }
-    tr_lib = build_transform_library(root / "tr", types_path, transforms)
-    return build_workflow_task(
-        samples,
-        tr_lib,
-        sample_type="seed",
-        target_specs=[("out_target", {"out"})],
+    tr_lib = build_transform_library(
+        root / "tr",
+        types_path,
+        {
+            "trA": identity_transform_code("trA", "seed", "mid"),
+            "trB": identity_transform_code("trB", "mid", "out"),
+        },
     )
 
+    def _plan(lib: DataInstanceLibrary):
+        return build_workflow_task(
+            lib,
+            tr_lib,
+            sample_type="seed",
+            target_specs=[("out_target", {"out"})],
+        )
 
-def test_forked_library_misses_a_cache_its_twin_would_hit(tmp_path, virtual_runtime):
-    task_a = _build_pipeline_task(tmp_path / "a")
+    task_a = _plan(DataInstanceLibrary.Load(samples.location))
     snap_a = capture_run(virtual_runtime, task_a)
     assert snap_a.executed_steps, "run A executed zero steps (bad fixture)"
 
-    task_control = _build_pipeline_task(tmp_path / "control")
+    task_control = _plan(DataInstanceLibrary.Load(samples.location))
     assert task_control.GetKey() == task_a.GetKey()
     clear_trace(virtual_runtime)
     assert capture_run(virtual_runtime, task_control).executed_steps == ()
 
-    task_b = _build_pipeline_task(tmp_path / "b", fork_id="deadbeef")
+    forked = DataInstanceLibrary.Load(samples.location)
+    forked.fork_id = "deadbeef"
+    forked.Save()
+    task_b = _plan(forked)
     assert task_b.GetKey() != task_a.GetKey(), (
         "a fork left the task key untouched; the fork id is not reaching "
         "instance ids, so it cannot reach cache keys either"

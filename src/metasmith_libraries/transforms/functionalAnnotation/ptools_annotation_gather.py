@@ -54,12 +54,10 @@ for _, r in ko_df.iterrows():
     rows.append({{"orf_id": str(r["gene_name"]), "kind": "KEGG", "value": str(r["KO"]),
                   "score": score, "confidence": "best"}})
 
-# DIAMOND UniRef50: BLAST6 (qseqid sseqid pident length mismatch gapopen qstart qend sstart send evalue bitscore).
-# diamond_uniref50 transform sets --max-target-seqs 1 so this is already best-hit-per-query;
+# DIAMOND UniRef50: headered BLAST6 + bsr, written by diamond_uniref50.
+# That transform sets --max-target-seqs 1 so this is already best-hit-per-query;
 # still dedup defensively in case the upstream relaxes that.
-COLS = ["qseqid","sseqid","pident","length","mismatch","gapopen",
-        "qstart","qend","sstart","send","evalue","bitscore"]
-hit_df = pd.read_csv("{ihits.container}", sep="\\t", header=None, names=COLS, dtype=str)
+hit_df = pd.read_csv("{ihits.container}", sep="\\t", dtype=str)
 hit_df["evalue"]   = pd.to_numeric(hit_df["evalue"],   errors="coerce")
 hit_df["bitscore"] = pd.to_numeric(hit_df["bitscore"], errors="coerce")
 hit_df = (hit_df.sort_values(["qseqid","evalue","bitscore"], ascending=[True,True,False])

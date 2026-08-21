@@ -15,6 +15,7 @@ from pathlib import Path
 
 import pytest
 
+import metasmith.agents.conda as _conda
 import metasmith.agents.workflow_ops as _agents
 from metasmith.agents import Agent
 from metasmith.constants import AgentPaths
@@ -96,6 +97,14 @@ def _setup(monkeypatch, home, doc, runtime=Runtime.MAMBA, library=None, **kw) ->
         def __exit__(self, *a): return False
 
     monkeypatch.setattr(_agents, "AgentShell", _AgentShell)
+    # `_recipe_roots` searches the planning library AND the installed package.
+    # These tests are about what the agent does with the library it was handed,
+    # so the second root is shut off: with it live, the answer depends on
+    # whether `dev/libraries.sh --stage-envs` has ever run in this checkout --
+    # a staged src/metasmith_libraries/envs/tools/ supplies recipes the tmp_path
+    # library deliberately does not have, and "no recipe for gtdbtk" stops being
+    # true for anyone who followed AGENTS.md.
+    monkeypatch.setattr(_conda, "_installed_library_root", lambda: None)
     agent = Agent(home=Source.FromLocal(home), runtime=runtime)
     return agent.SetupEnvironment(TASK_KEY, library=library), shell
 

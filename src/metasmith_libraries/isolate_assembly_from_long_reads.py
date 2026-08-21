@@ -24,7 +24,9 @@ def build_spec(rebuild: bool = False) -> Spec:
         target_types=[
             "sequences::hifiasm_meta_assembly",
             "annotation::diamond_uniref50_results",
+            "annotation::diamond_uniref50_descriptions",
             "annotation::kofamscan_results",
+            "annotation::kofamscan_descriptions",
         ],
         transform_libraries=A.transforms(
             "logistics", "assembly", "metagenomics", "functionalAnnotation"),

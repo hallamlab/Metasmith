@@ -7,7 +7,9 @@ description: 'Run the broadest feasible set of annotators against an existing as
 sample_type: sequences::assembly
 target_types:
 - annotation::kofamscan_results
+- annotation::kofamscan_descriptions
 - annotation::diamond_uniref50_results
+- annotation::diamond_uniref50_descriptions
 - annotation::eggnog_results
 - annotation::proteinbert_embeddings
 - taxonomy::metabuli

@@ -71,6 +71,19 @@ def content_multihash_key(path, *, chunk_size: int = 1 << 20) -> bytes:
     return KEY_PREFIX + hasher.digest(length=BLAKE3_DIGEST_LEN)
 
 
+def stat_multihash_key(abs_path, mtime_ns: int) -> bytes:
+    # Identity of a leaf input as *where it is and when it last changed*, which
+    # is the only identity derivable on the host that owns a 24 GB reference
+    # without reading it. The path is the absolute one on that host, so an id
+    # minted here is meaningful only against that filesystem -- two hosts
+    # holding identical bytes do not agree, and that is the trade this makes.
+    payload = (
+        b"stat\x00" + str(abs_path).encode("utf-8")
+        + b"\x00" + str(int(mtime_ns)).encode("ascii")
+    )
+    return multihash_key(payload)
+
+
 def tree_multihash_key(path, *, chunk_size: int = 1 << 20, force: bool = False) -> bytes:
     root = Path(path)
     hasher = blake3()

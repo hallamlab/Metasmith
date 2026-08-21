@@ -417,14 +417,16 @@ class DataInstanceLibrary(_LeafIdentity, _StoreTransfer, _PinnedLibrary, _Teleme
         }
 
     def AddValue(self, name: str, value: str|dict, dtype: str, parents: Iterable[Path]|None=None):
+        # The file is written before it is registered: a leaf id is derived from
+        # the file's stat, and registering first would find nothing there and
+        # fall back to a random id.
         self._refuse_if_pinned("AddValue")
         path = Path(name)
         if isinstance(value, dict):
             value = json.dumps(value)
-        path = self.AddItem(path=path, dtype=dtype, parents=parents)
         with open(self.location/path, "w") as f:
             f.write(value)
-        return path
+        return self.AddItem(path=path, dtype=dtype, parents=parents)
 
     def _invalidate_endpoint_cache(self):
         self._endpoint_cache.clear()

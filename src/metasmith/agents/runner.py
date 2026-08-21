@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Iterable
 
 import pandas as pd
+import yaml
 
 from ..constants import AgentPaths, MODULE_PATH, VERSION
 from ..coms.terminals import LiveShell
@@ -16,10 +17,20 @@ from ..logging import Log
 from ..models.libraries import DataInstanceLibrary
 from ..models.paths import PathMap
 from ..models.remote import GlobusSource, Logistics, Source
-from ..models.workflow import NextflowGenContext, WorkflowTask
+from ..models.workflow import NextflowGenContext, WorkflowTask, restat_leaf_ids
 from ..serialization import StdTime
 from .agent import Agent
 from .collect import CollectResults
+
+def _rewrite_staged_plan(task_path: Path, task: WorkflowTask):
+    doc_path = task_path/"task.yml"
+    with open(doc_path) as f:
+        doc = yaml.safe_load(f)
+    doc["plan"] = task.plan.Pack()
+    tmp = doc_path.with_name(f"{doc_path.name}.{os.getpid()}.part")
+    with open(tmp, "w") as f:
+        yaml.dump(doc, f)
+    os.replace(tmp, doc_path)
 
 def StageWorkflow(task_key: str, verify: bool, host: str, rootfs: Rootfs|None = None):
     agent = Agent.Load(AgentPaths.HOME_ROOT/"lib/agent.yml")
@@ -113,6 +124,12 @@ def StageWorkflow(task_key: str, verify: bool, host: str, rootfs: Rootfs|None = 
             assert x.address in _completed, f"failed to transfer [{x.address}]"
         return processed_libs
     task.data_libraries = move_remote_libs(task.data_libraries, data_dir)
+
+    # This host owns the files; the client that minted their ids did not. Settle
+    # identity here, and write it back so the plan on disk agrees with the ids
+    # the codegen below is about to bake into the cache keys.
+    restat_leaf_ids(task)
+    _rewrite_staged_plan(task_path, task)
 
     Log.Info(f"compiling nextflow script")
     task.PrepareNextflow(NextflowGenContext(

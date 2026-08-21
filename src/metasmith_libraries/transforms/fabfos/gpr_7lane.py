@@ -10,6 +10,7 @@ clean     = model.AddRequirement(lib.GetType("annotation::clean_predictions"), p
 deepec    = model.AddRequirement(lib.GetType("annotation::deepec_predictions"), parents={orfs})
 ezpred    = model.AddRequirement(lib.GetType("annotation::ezpred_predictions"), parents={orfs})
 uniref    = model.AddRequirement(lib.GetType("annotation::diamond_uniref50_results"), parents={orfs})
+uniref_d  = model.AddRequirement(lib.GetType("annotation::diamond_uniref50_descriptions"), parents={orfs})
 pbert_emb = model.AddRequirement(lib.GetType("annotation::proteinbert_embeddings"), parents={orfs})
 esmc_emb  = model.AddRequirement(lib.GetType("annotation::esm_c_embeddings"), parents={orfs})
 esmc_idx  = model.AddRequirement(lib.GetType("annotation::esm_c_index"), parents={orfs})
@@ -30,6 +31,7 @@ def protocol(context: ExecutionContext):
     idec  = context.Input(deepec)
     iez   = context.Input(ezpred)
     iuni  = context.Input(uniref)
+    iunid = context.Input(uniref_d)
     ipe   = context.Input(pbert_emb)
     iee   = context.Input(esmc_emb)
     iei   = context.Input(esmc_idx)
@@ -49,6 +51,7 @@ def protocol(context: ExecutionContext):
             --deepec {idec.container} \
             --ezpred {iez.container} \
             --uniref {iuni.container} \
+            --uniref-descriptions {iunid.container} \
             --pbert-emb {ipe.container} \
             --esmc-emb {iee.container} \
             --esmc-idx {iei.container} \
