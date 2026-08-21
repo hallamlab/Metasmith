@@ -17,10 +17,16 @@ target_types:
 - type: annotation::kofamscan_results
   parents:
   - 0
+- type: annotation::kofamscan_descriptions
+  parents:
+  - 0
 - type: annotation::clean_predictions
   parents:
   - 0
 - type: annotation::diamond_uniref50_results
+  parents:
+  - 0
+- type: annotation::diamond_uniref50_descriptions
   parents:
   - 0
 - type: annotation::proteinbert_embeddings

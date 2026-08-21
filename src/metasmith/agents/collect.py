@@ -22,13 +22,18 @@ def _published_index(output_path: Path) -> dict[str, Path]:
     return index
 
 
-def _published_path(path: Path, output_path: Path, index: dict[str, Path]) -> Path:
+def _published_path(
+    path: Path, output_path: Path, index: dict[str, Path], warn: bool = True,
+) -> Path:
     rel = path.relative_to(output_path)
     if (output_path/rel).exists():
         return rel
     found = index.get(rel.name)
     if found is None:
-        Log.Warn(f"produced file [{rel}] is not in the results directory")
+        # An unpublished intermediate is still registered: the entry is the only
+        # thing that lets a target name it as an ancestor. It just has no file.
+        if warn:
+            Log.Warn(f"produced file [{rel}] is not in the results directory")
         return rel
     return found
 
@@ -147,7 +152,10 @@ def CollectResults(
         abs_path = rel if rel.is_absolute() else output_path / rel
         cinst = _resolve_instance(pf.dtype_key, pf.slot_id or fid)
         path = output.AddItem(
-            path=_published_path(abs_path, output_path, published),
+            path=_published_path(
+                abs_path, output_path, published,
+                warn=task.plan.publish_intermediates,
+            ),
             dtype=cinst.dtype_name,
             parents=parents,
         )

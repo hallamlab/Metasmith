@@ -9,6 +9,7 @@
   import StageProgress from '../components/StageProgress.svelte'
   import FileTree from '../components/FileTree.svelte'
   import FilePreview from '../components/FilePreview.svelte'
+  import AncestryList from '../components/AncestryList.svelte'
 
   let { workflow, run } = $props()
 
@@ -287,6 +288,23 @@
     }
   }
 
+  // The ancestry list names a parent by its path; selecting it means finding
+  // the tree node that path belongs to, since the preview reads a node.
+  function nodeAt(path, node = tree?.root) {
+    if (!node) return null
+    if (node.path === path) return node
+    for (const c of node.children ?? []) {
+      const hit = nodeAt(path, c)
+      if (hit) return hit
+    }
+    return null
+  }
+
+  function pickPath(path) {
+    const hit = nodeAt(path)
+    if (hit) picked = hit
+  }
+
   async function cancel() {
     busy = true
     await attempt(async () => {
@@ -558,9 +576,8 @@
           Collected, but this does not read as a result library: {results.error}
         </p>
       {:else}
-        <!-- What was asked for, before what came back: a collected folder full
-             of intermediates looks like a success until it is read against the
-             request. -->
+        <!-- What was asked for, before what came back: a folder with files in
+             it looks like a success until it is read against the request. -->
         {#if results.targets?.length}
           <table class="small targets">
             <thead><tr><th></th><th>requested output</th><th>delivered</th></tr></thead>
@@ -583,10 +600,30 @@
             </p>
           {/if}
         {/if}
-        <p class="small muted">
-          The files themselves are in the panel on the right — click one to look
-          inside it.
-        </p>
+        <details class="step-details" open>
+          <summary class="steprow">
+            <span class="chevron"></span>
+            <span>collected files</span>
+            <span class="muted small">
+              {tree?.collected ? 'click one to look inside it' : 'not collected yet'}
+            </span>
+          </summary>
+          <div class="treebox">
+            {#if !tree?.collected}
+              <p class="small muted" style="padding:8px">
+                Nothing to browse until the results are collected.
+              </p>
+            {:else}
+              <FileTree node={tree.root} selected={picked?.path} onpick={(n) => (picked = n)} />
+              {#if tree.truncated}
+                <p class="small muted" style="padding:8px">
+                  Listing stopped early — this folder is bigger than the tree will
+                  walk. What is shown is a prefix, not the whole of it.
+                </p>
+              {/if}
+            {/if}
+          </div>
+        </details>
         <div class="row" style="gap:8px; align-items:center">
           <p class="small muted mono" style="margin:0">{results.path}</p>
           <CopyButton text={results.path} label="copy the results path" />
@@ -597,26 +634,12 @@
 
   <SidePanel
     id="run"
-    title="results"
-    subtitle={tree?.collected ? (picked?.name ?? 'nothing selected') : 'not collected yet'}
-    topDefault={300}
+    title="selected result"
+    subtitle={picked?.name ?? 'nothing selected'}
+    topDefault={240}
   >
     {#snippet top()}
-      <div class="treebox">
-        {#if !tree?.collected}
-          <p class="small muted" style="padding:8px">
-            Nothing to browse until the results are collected.
-          </p>
-        {:else}
-          <FileTree node={tree.root} selected={picked?.path} onpick={(n) => (picked = n)} />
-          {#if tree.truncated}
-            <p class="small muted" style="padding:8px">
-              Listing stopped early — this folder is bigger than the tree will
-              walk. What is shown is a prefix, not the whole of it.
-            </p>
-          {/if}
-        {/if}
-      </div>
+      <AncestryList node={picked} onpick={pickPath} />
     {/snippet}
     <FilePreview {workflow} {run} node={picked} />
   </SidePanel>
@@ -630,7 +653,7 @@
   .pane { display: flex; flex: 1; min-width: 0; height: 100%; align-items: stretch; }
   .main { flex: 1; min-width: 0; overflow-y: auto; padding: 18px; }
   .loading { padding: 18px; }
-  .treebox { height: 100%; overflow: auto; }
+  .treebox { max-height: 340px; overflow: auto; }
 
   /* the same four states as StageProgress's segments, as a marker beside a row */
   .pip {

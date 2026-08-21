@@ -30,6 +30,7 @@ def _args():
     p.add_argument("--source", required=True)
     p.add_argument("--threads", type=int, required=True)
     p.add_argument("--uniref", required=True)
+    p.add_argument("--uniref-descriptions", required=True)
     return p.parse_args()
 
 
@@ -142,9 +143,16 @@ def lane_clean(df, ec_to_mnxr):
     df["intermediate_id"] = df["ec"]
     return finish(df, "clean", "ec")
 
-# ---- uniref50 lane: dev2 diamond_uniref50_results = BLAST6 + stitle + bsr (14 col)
-def parse_uniref(path):
-    df = pd.read_csv(path, sep="\t", header=None, names=fe._BLAST6_BSR_COLS, dtype=str)
+# ---- uniref50 lane: diamond_uniref50_results = BLAST6 + bsr, headered (13 col),
+# with the subject title in diamond_uniref50_descriptions beside it.
+def parse_uniref(path, descriptions):
+    df = pd.read_csv(path, sep="\t", dtype=str)
+    if list(df.columns) != fe._BLAST6_BSR_COLS:
+        raise SystemExit(
+            "[gpr] diamond_uniref50_results header is not the "
+            + str(len(fe._BLAST6_BSR_COLS)) + " columns this lane parses: got "
+            + repr(list(df.columns)) + ". diamond_uniref50 writes the header, "
+            "so a drift here silently renames every column and empties the lane")
     df["evalue"] = pd.to_numeric(df["evalue"], errors="coerce")
     df["bitscore"] = pd.to_numeric(df["bitscore"], errors="coerce")
     df["bsr"] = pd.to_numeric(df["bsr"], errors="coerce")
@@ -152,7 +160,8 @@ def parse_uniref(path):
     df = (df.sort_values(["qseqid", "evalue", "bitscore"], ascending=[True, True, False])
             .drop_duplicates(subset=["qseqid"], keep="first"))
     df["uniprot_accession"] = df["sseqid"].str.replace(r"^UniRef50_", "", regex=True)
-    df["intermediate_name"] = df["stitle"].apply(fe._clean_stitle)
+    titles = fe.read_uniref50_titles(descriptions)
+    df["intermediate_name"] = df["sseqid"].map(titles).fillna("").apply(fe._clean_stitle)
     return df.rename(columns={"qseqid": "orf", "bsr": "raw_score"})
 
 def lane_uniref(df, uniprot_to_mnxr):
@@ -369,7 +378,7 @@ def main():
     # Parse every lane FIRST, so the bridge read below knows which ids matter.
     kof = parse_kofam(str(A.kofam))
     cln = parse_clean(str(A.clean))
-    uni = parse_uniref(str(A.uniref))
+    uni = parse_uniref(str(A.uniref), str(A.uniref_descriptions))
     frames = [
         lane_kofam(kof, bridge_slice(str(A.bridge), "ko", "ko", kof["ko"].unique())),
         lane_clean(cln, bridge_slice(str(A.bridge), "ec", "ec", cln["ec"].unique())),
