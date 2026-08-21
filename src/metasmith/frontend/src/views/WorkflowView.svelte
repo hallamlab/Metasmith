@@ -1,5 +1,5 @@
 <script>
-  import { tick } from 'svelte'
+  import { tick, untrack } from 'svelte'
   import { api } from '../lib/api.svelte.js'
   import {
     app, attempt, cachedWorkflow, cacheWorkflow, loadOverrides, loadRuns, loadTypeIndex,
@@ -347,8 +347,17 @@
   // seeded its params yet -- that only otherwise happens on the select's own
   // `onchange`. Fires again once `app.agents` (fetched separately) actually
   // has the entry; `seedFromAgent` is idempotent, so repeats are harmless.
+  //
+  // `seedFromAgent` reads and writes `runParams`/`seededParams` itself, and
+  // its write is a fresh array/object every time even when nothing changed
+  // -- so tracking those reads here would make the effect its own trigger,
+  // looping forever instead of settling. `untrack` keeps this effect keyed
+  // to only `chosenAgent`/`agentChoice`, which is the actual condition for
+  // re-seeding.
   $effect(() => {
-    if (chosenAgent) seedFromAgent(agentChoice)
+    if (!chosenAgent) return
+    const next = agentChoice
+    untrack(() => seedFromAgent(next))
   })
 
   // an empty list means every library, here and on the server -- so the filter
@@ -1038,14 +1047,6 @@
   // and guessing at it is how the two stopped agreeing.
   const ROW_H = 26
 
-  // The column header's own height. It has to sit *inside* the rows box and in
-  // normal flow, because it is the only thing there that is -- absolutely
-  // placed rows contribute no width, so it is what sizes the box. It is then
-  // nudged down by `position: relative` onto the diagram's first row, which
-  // costs the layout nothing: the rows' origin stays the image's own top, and
-  // the header takes the space beside a node that never has a row of its own.
-  const HEAD_H = 18
-
   // What the ∞ button puts in the time box. An empty box already means
   // something -- "whatever the transform declared" -- so "no limit at all"
   // needs a value of its own rather than the absence of one. The server knows
@@ -1358,9 +1359,6 @@
                is its natural size and the card scrolls. -->
           {@const pitch = planGraph?.row_pitch ?? ROW_H}
           {@const dagHeight = planGraph?.height ?? (wf.result?.step_display?.length ?? 0) * pitch}
-          {@const topCy = planGraph?.nodes?.length
-            ? Math.min(...planGraph.nodes.map((n) => n.cy))
-            : HEAD_H / 2}
           <div class="dag-details" bind:this={dagEl}>
             <!-- where the control row sits when it is not riding the top of the
                  column; once this has scrolled out, the row is stuck -->
@@ -1416,23 +1414,6 @@
                     </div>
                   </div>
                 </div>
-                {#if dagOpen && wf.result?.step_display?.length}
-                  <!-- The same three column headings `.res-head` draws over the
-                       rows below, riding up here too: once the plan scrolls the
-                       page past the diagram's own top, the in-flow header goes
-                       with it, and this is what keeps "which column is cpus"
-                       answered while the rows are still on screen. Inline with
-                       the diagram chips rather than pixel-aligned over the
-                       columns it labels -- the columns sit wherever the diagram
-                       ends, which moves with its width, and this bar is pinned
-                       to the card's own left edge regardless. -->
-                  <div class="dag-group dag-resources">
-                    <span class="dag-group-label">resources</span>
-                    <div class="dag-chips dag-res-head">
-                      <span>cpus</span><span>memory (GB)</span><span>time (h)</span>
-                    </div>
-                  </div>
-                {/if}
                 <!-- The server keeps its own rendering of this same plan around
                      (`GET /workflows/<name>/dag`, cached beside the bundle) --
                      `DagRail` draws the nodes as buttons for the click-to-panel
@@ -1496,24 +1477,49 @@
                   </div>
                 </div>
                 {/if}
+                {#if dagOpen && wf.result?.step_display?.length}
+                  <!-- The one column heading, now: `.res-head` used to draw a
+                       second copy of it in flow over the rows, pixel-chased
+                       onto the diagram's first node, but a plan that scrolled
+                       the page past that point had already carried this bar up
+                       here to answer "which column is cpus" -- so the in-flow
+                       one was always the redundant half. Pushed to the far
+                       right of the row by `margin-left: auto` rather than
+                       inline after the export group: the row's columns are
+                       right-justified against the same edge (see `.dag-row`),
+                       and matching `--res-cols` here is what keeps this bar
+                       sitting directly over them instead of just labelling the
+                       row from wherever it happens to end. -->
+                  <div class="dag-group dag-resources">
+                    <span class="dag-group-label">resources</span>
+                    <div class="dag-chips dag-res-head">
+                      <span>cpus</span><span>memory (GB)</span><span>time (h)</span><span></span>
+                    </div>
+                  </div>
+                {/if}
               </div>
             {/if}
             {#if dagOpen}
-            <div class="dag-scroll">
-              <div class="dag-box">
-                <div class="dag-body">
-                  {#if planGraph}
-                    <DagRail
-                      geo={planGraph}
-                      marks={planMarks}
-                      meta={planMeta}
-                      ground="var(--panel)"
-                      onpick={pickPlanNode}
-                      onhover={(id) => (planPointed = id)}
-                    />
-                  {/if}
+            <!-- Right-justified: the resource columns are a fixed width, so
+                 they anchor the row's right edge and the diagram grows to
+                 their left as the plan does. Only `.dag-scroll` scrolls --
+                 the columns are a flex sibling outside it, so they and the
+                 header above stay in place while the diagram itself pans. -->
+            <div class="dag-row">
+              <div class="dag-scroll">
+                {#if planGraph}
+                  <DagRail
+                    geo={planGraph}
+                    marks={planMarks}
+                    meta={planMeta}
+                    ground="var(--panel)"
+                    onpick={pickPlanNode}
+                    onhover={(id) => (planPointed = id)}
+                  />
+                {/if}
+              </div>
 
-                  {#if wf.result?.step_display?.length}
+              {#if wf.result?.step_display?.length}
                     <!-- Keyed by position, which is what makes a selector
                          address one step. Empty is "as the transform
                          declared", which is what the greyed number in each box
@@ -1522,25 +1528,21 @@
                          pitch -- and both numbers come from the placement the
                          server stored, never from a constant here. -->
                     <div class="res-body" style={`height: ${dagHeight}px`}>
-                      <!-- level with the diagram's first node, which is the
-                           synthetic `given` and so never has a row of its own -->
-                      <div
-                        class="res-head"
-                        style={`height: ${HEAD_H}px; top: ${topCy - HEAD_H / 2}px`}
-                      >
-                        <span>cpus</span><span>memory (GB)</span><span>time (h)</span><span></span>
-                      </div>
+                      <!-- Nothing else here is in normal flow -- the guides and
+                           rows below are all absolutely placed, which is how a
+                           row can sit at its node's own `cy` instead of the
+                           next slot in a stack -- so this is what gives the box
+                           its width. Sized off `--res-cols`, the same template
+                           the header above and the rows below both use, rather
+                           than a number restated here that could drift from
+                           theirs. -->
+                      <div class="res-sizer" aria-hidden="true"></div>
                       <!-- One line down the middle of each value column, so a
                            number can be followed to its heading across the gap
-                           the rows leave between them. Starts under the header
-                           and runs to the foot; on the same grid template as
-                           the rows, which is the only thing keeping it
-                           centred. -->
-                      <div
-                        class="res-guides"
-                        aria-hidden="true"
-                        style={`top: ${topCy + HEAD_H / 2}px`}
-                      >
+                           the rows leave between them. Runs the full height of
+                           the box; on the same grid template as the rows,
+                           which is the only thing keeping it centred. -->
+                      <div class="res-guides" aria-hidden="true">
                         <span></span><span></span><span></span>
                       </div>
                       {#each wf.result.step_display as step, i}
@@ -1592,8 +1594,6 @@
                       {/each}
                     </div>
                   {/if}
-                </div>
-              </div>
             </div>
             {/if}
           </div>
@@ -1846,15 +1846,19 @@
   /* The diagram sits on the card's own ground: it is drawn with no plate of its
      own, and one painted under it was never any colour but this card's -- which
      is also what a hollow marker is filled with, since hollow reads hollow only
-     where the fill and the ground agree. The block it makes with the step rows is
-     narrower than the card, so it is centred as one thing -- and the scroller
-     around it is what keeps a plan wider than the card from widening the card
-     instead of scrolling. No fold and no height cap: this grows with the plan. */
-  .dag-scroll { overflow-x: auto; margin-top: 8px; }
-  .dag-box { width: max-content; margin-inline: auto; display: flex; flex-direction: column; gap: 4px; }
-  /* the drawing and the rows box, flex siblings with nothing between them: they
-     share a top by construction, which is the whole of the alignment */
-  .dag-body { display: flex; align-items: flex-start; gap: 10px; }
+     where the fill and the ground agree. The resource columns are a fixed
+     width, so the row is right-justified against them instead of centred: the
+     diagram grows to their left as the plan does, and only once it runs out of
+     room does it scroll -- the columns stay put rather than being carried off
+     sideways with it. No fold and no height cap on the row itself: it grows
+     with the plan. */
+  .dag-row { display: flex; align-items: flex-start; justify-content: flex-end; gap: 10px; margin-top: 8px; }
+  /* shrinks below its own content width before it grows the row -- which is
+     what lets it scroll instead of pushing `.res-body` off the right edge */
+  .dag-scroll { overflow-x: auto; min-width: 0; flex: 0 1 auto; }
+  /* the fixed-width half of the row; never shrinks, which is what anchors the
+     right edge `.dag-row` justifies against */
+  .res-body { flex: 0 0 auto; position: relative; }
   /* the fold around the job log: a summary its own
      row with the status pill riding beside it, so a job's outcome reads
      without opening the scrollback that produced it */
@@ -1872,7 +1876,13 @@
      it was. Top left, not top right: the direction is read before the
      diagram, not after it -- and top right is where the info panel's own
      grip sits when this same diagram is reused there. */
-  .dag-details { position: relative; }
+  .dag-details {
+    position: relative;
+    /* the one column template the sticky header, the guide lines and the rows
+       all share -- restated in any one of them and it can drift out of step
+       with the others, which is exactly the "two headers" this replaces */
+    --res-cols: 4.5rem 5.75rem 4.5rem 1.75rem;
+  }
   /* zero, as far as the layout is concerned: it exists to be watched */
   .dag-mark { height: 1px; margin-bottom: -1px; }
   .dag-controls {
@@ -1880,7 +1890,9 @@
     z-index: 5;
     top: 0;
     left: 0;
-    display: inline-flex;
+    display: flex;
+    width: 100%;
+    box-sizing: border-box;
     /* the export block is a heading taller than the direction switch; bottom
        alignment is what keeps the one pill level with the row of chips rather
        than floating against the middle of the taller block */
@@ -1999,12 +2011,20 @@
   }
   /* the gap that says these choose what is saved rather than what is drawn */
   .dag-export { margin-left: 18px; }
-  /* set apart the same way `.dag-export` is -- a third choice of what this row
-     is about, not a continuation of the direction switch beside it */
-  .dag-resources { margin-left: 18px; }
+  /* pushed to the row's own right edge rather than a fixed gap after export --
+     that is what keeps it flush with `.res-body` below, which is anchored to
+     the same edge by `.dag-row`'s `justify-content: flex-end` */
+  .dag-resources { margin-left: auto; }
   .dag-res-head {
     display: grid;
-    grid-template-columns: 4.5rem 5.75rem 4.5rem;
+    grid-template-columns: var(--res-cols);
+    /* the same box model as `.res-row` and `.res-guides` below -- border and
+       padding both count toward the grid's own width, so a header sized any
+       other way sits shifted from the columns it names */
+    box-sizing: border-box;
+    border-left: 1px solid transparent;
+    border-right: 1px solid transparent;
+    padding: 0 6px;
     color: var(--muted);
     font-size: 12px;
     text-align: center;
@@ -2066,39 +2086,41 @@
   p.bad { color: var(--bad); line-height: 1.3; }
   /* the steps beside the diagram: rows can't be independently positioned
      inside an actual <table>, so each one is an absolutely placed grid row
-     instead, `top:` pinned to its transform's `dag_cy`. The header is the only
+     instead, `top:` pinned to its transform's `dag_cy`. The sizer is the only
      thing here in normal flow, which is deliberate -- it is what gives this box
      its width, since absolutely placed rows contribute none. Make it absolute
-     and the box collapses and the centring goes with it. Both share one column
-     template so they line up like a table's columns did; there is no name
-     column, because the node level with the row is the name. */
-  .res-head,
+     and the box collapses and the centring goes with it. All three share one
+     column template so they line up like a table's columns did; there is no
+     name column, because the node level with the row is the name. */
+  .res-sizer,
   .res-row,
   .res-guides {
     display: grid;
     /* rem, not em: the header is 12px and a row is the body's 14px, so an
        em-based track resolves to two different widths and the rows overflow
-       the box the header sized -- which is how the ∞ button ended up outside
+       the box the sizer measured -- which is how the ∞ button ended up outside
        its own row's outline. The last track is the ∞ button's own, and it is
-       fixed rather than `auto` for the same reason: the header's fourth cell is
+       fixed rather than `auto` for the same reason: the sizer's fourth cell is
        empty, so an `auto` track is nothing there and a button's width here. */
-    grid-template-columns: 4.5rem 5.75rem 4.5rem 1.75rem;
+    grid-template-columns: var(--res-cols);
     align-items: center;
     gap: 4px;
   }
-  /* relative, not absolute: it still occupies its place in flow -- which is
-     what sizes the box -- and is only painted lower */
-  .res-head {
-    position: relative;
-    z-index: 1;
-    font-weight: normal;
-    color: var(--muted);
-    font-size: 12px;
+  /* In normal flow and otherwise empty -- everything else in `.res-body` is
+     absolutely placed, which is how a row lands at its node's own `cy`
+     instead of the next slot in a stack, and that leaves this the only thing
+     here sizing the box. Zero height so it takes no visual space: the header
+     that used to live in flow here now rides in `.dag-controls` instead, and
+     restating its rem widths there off the same `--res-cols` is what keeps
+     the two from drifting apart. */
+  .res-sizer {
+    height: 0;
+    overflow: hidden;
+    box-sizing: border-box;
+    border-left: 1px solid transparent;
+    border-right: 1px solid transparent;
     padding: 0 6px;
-    white-space: nowrap;
-    text-align: center;
   }
-  .res-body { position: relative; }
   /* the outline is what lets a value be followed back to the node it sits
      level with; its height is the diagram's own row pitch, set inline */
   .res-row {
@@ -2112,14 +2134,13 @@
     padding: 0 6px;
   }
   /* the guides, under everything above. Border and padding are the row's, not
-     the header's: a track has to land where the numbers are, and the row's 1px
-     outline shifts its content box by that much. */
+     the sizer's: a track has to land where the numbers are, and the row's 1px
+     outline shifts its content box by that much. Runs the full height of the
+     box now that nothing above it needs the room. */
   .res-guides {
     position: absolute;
     z-index: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
+    inset: 0;
     box-sizing: border-box;
     border: 1px solid transparent;
     padding: 0 6px;
