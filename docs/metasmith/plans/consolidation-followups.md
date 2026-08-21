@@ -102,10 +102,11 @@ next rename fails against it. The orphan sweep only reaches `.tmp` directories. 
 stale lock from a crashed job on another host in a shared cache is never reclaimed, correctly,
 since a dead remote cannot be distinguished from a live one.
 
-**A DVC-pinned build artifact whose objects leave every cache is unrecoverable.**
-`src/metasmith/engine.dvc` holds a four-target cross-compile that exists in no other form, so
-one careless collection destroys it. The rule that manages this is under *When a build
-artifact may be DVC-pinned* in `docs/metasmith/architecture.md`.
+**A DVC-pinned artifact whose objects leave every cache is unrecoverable.** The live instance is
+`data/fabfos/runs/aska/gpr`: no remote is configured, the pinned generation exists nowhere but a
+shared local cache that no longer holds it, and the files on disk are hardlinks into that cache —
+so `dvc checkout --force` would delete them with nothing to restore. The rule that manages this
+is under *When a build artifact may be DVC-pinned* in `docs/metasmith/architecture.md`.
 
 ## Deliberately rejected
 

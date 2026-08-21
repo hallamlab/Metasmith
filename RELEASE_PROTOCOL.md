@@ -39,6 +39,13 @@ Note this does **not** exclude `slow` — the `perf` axis (10k-item libraries) i
 a few minutes and belongs in a release gate. For the minute-by-minute dev loop
 use `-m fast`, and `./dev/metasmith.sh -tg` for the GUI alone.
 
+**Budget 25 minutes.** Measured 2026-08-20 on a 16-core box under other load:
+1968 selected, 296 deselected, 20m38s wall. `perf` and `flow` are two thirds of
+that (290s and 362s), so run them last if you need to cut the sweep short — the
+other eight axes together are under seven minutes. `pytest-timeout` is not in
+`msm`, so every `@pytest.mark.timeout` in the tree is inert and nothing bounds a
+hung test; wrap the run in `timeout` if you are leaving it unattended.
+
 ### Exercise the gated tiers when relevant
 
 The marker tiers above are skipped in the fast sweep because they need
