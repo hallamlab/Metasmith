@@ -308,6 +308,12 @@
   // this existed, which means none.
   let recipeProblems = $derived(wf?.result?.recipe_problems ?? [])
 
+  // Every run of this workflow shares one task_key workspace on the agent, so
+  // only one can actually be live at a time -- see the guard in store.py's
+  // create_run. Surfacing it here keeps the button from being the way someone
+  // discovers that the hard way.
+  let liveRun = $derived(wf?.runs?.find((r) => r.live) ?? null)
+
   let rowSeq = 0
   const nextRowId = () => `d${(rowSeq++).toString(36)}${Math.random().toString(36).slice(2, 7)}`
 
@@ -1756,11 +1762,21 @@
           <button
             class="primary"
             onclick={launch}
-            disabled={!agentChoice || launching || settingUp || recipeProblems.length > 0}
+            disabled={!agentChoice || launching || settingUp || recipeProblems.length > 0 || !!liveRun}
           >
             {launching ? 'launching…' : 'stage and run'}
           </button>
         </div>
+        {#if liveRun}
+          <!-- Every run of this workflow stages into the same task_key
+               workspace on the agent -- one PID.lock, one process group. A
+               second run launched now wouldn't run alongside the live one, it
+               would silently take over that workspace, so cancelling either
+               run afterwards could kill the wrong one. -->
+          <p class="small muted">
+            run <strong>{liveRun.name}</strong> is still {liveRun.state} — cancel it before starting another.
+          </p>
+        {/if}
         {#if recipeProblems.length}
           <!-- A blank in the recipe is reported and never refused, right up to
                here: a deferred input has no file to stage and a nameless pair

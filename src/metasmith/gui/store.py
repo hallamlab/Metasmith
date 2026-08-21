@@ -447,6 +447,18 @@ class Project:
 
     def create_run(self, workflow: str, record: dict) -> RunRecord:
         wf = self.read_workflow(workflow)
+        # Every run of a workflow stages into the same task_key workspace on the
+        # agent -- one PID.lock, one process group. A second run launched while
+        # the first is still live doesn't run alongside it, it silently takes
+        # over that workspace, so cancelling either run record afterwards kills
+        # whatever the agent is actually running, not necessarily the one whose
+        # button was clicked.
+        live = [r.name for r in self.list_runs(workflow) if r.live]
+        if live:
+            raise ProjectError(
+                f"workflow [{workflow}] already has a live run ({', '.join(live[:3])}); "
+                f"cancel it before starting another"
+            )
         name = generate_run_name(workflow, taken=self.run_names(workflow))
         path = self.runs_dir(workflow) / name
         (path / OUTPUTS_DIRNAME).mkdir(parents=True)
