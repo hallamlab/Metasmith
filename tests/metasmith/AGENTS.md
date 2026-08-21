@@ -52,6 +52,10 @@ slice needs an end-of-file fallback or it comes out empty — and every assertio
 some of it runs that string against stub binaries on a doctored `PATH`, reading their log —
 so an assertion there can be about what the shell *did*, not only about what was generated.
 
+**A lifecycle test that fails partway leaves live processes behind.** Everything it spawns goes
+through the `spawner` fixture, which group-kills in teardown whatever the test asserted; a raw
+`subprocess.Popen` there hands the next test a process it will find and mistake for its own.
+
 **Prefer the cheapest runtime that can answer the question.** When an e2e test asserts only on
 plan shape, channel wiring or DAG correctness, the contract runtime answers it; real execution
 exists to verify the engine, not the planner.

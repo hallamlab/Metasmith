@@ -55,6 +55,18 @@ class AgentPaths:
     ENV_MANIFEST_SCHEMA = 2
     NXF_TRACE_FILE = "nxf_trace.tsv"
 
+    # A run's identity and its process group, written by start.sh beside PID.lock.
+    # PID.lock holds nextflow's pgid and is the cancel handle; RUN.pgid holds the
+    # whole run's pgid and RUN.token the environment token every descendant
+    # inherits, which together are the reap handle.
+    PID_LOCK_FILE = "PID.lock"
+    RUN_PGID_FILE = "RUN.pgid"
+    RUN_TOKEN_FILE = "RUN.token"
+    RUN_TOKEN_ENV = "METASMITH_RUN"
+    # Docker label carrying RUN_TOKEN_ENV: `--rm` leaves no other handle on a
+    # container whose client was killed.
+    RUN_LABEL = "msm.run"
+
     @classmethod
     def to_staged(cls, root: Path|None=None):
         if root is None: root = cls.HOME_ROOT

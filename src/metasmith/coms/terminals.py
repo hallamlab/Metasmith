@@ -2,6 +2,7 @@ from __future__ import annotations
 import os
 import re
 import secrets
+import signal
 import time
 from contextlib import contextmanager
 from typing import IO, Callable
@@ -46,8 +47,18 @@ class TerminalProcess:
         def __exit__(self, exc_type, exc_val, exc_tb):
             self.Lock.release()
 
-    def __init__(self, extra_pass_fds: tuple[int, ...] = ()) -> None:
+    # TERM -> KILL window for the shell (and its group, when we own one).
+    _STOP_GRACE_S = 2.0
+
+    def __init__(
+        self, extra_pass_fds: tuple[int, ...] = (), new_session: bool = True,
+    ) -> None:
+        # `new_session` makes this bash a session and process-group leader, so
+        # Dispose can signal the whole group. Pass False to leave it in the
+        # caller's group -- for a shell that is meant to die with the run that
+        # started it, where signalling the group would signal the caller too.
         self._fds: list[int] = []
+        self._owns_group = new_session
         self._console: subprocess.Popen | None = None
         self._err_reader: NonBlockingReader | None = None
         self._out_reader: NonBlockingReader | None = None
@@ -64,7 +75,7 @@ class TerminalProcess:
                 stderr=err_slave,
                 pass_fds=extra_pass_fds,
                 close_fds=True,
-                start_new_session=True,
+                start_new_session=new_session,
             )
 
             self.ENCODING = "utf-8"
@@ -84,19 +95,37 @@ class TerminalProcess:
             if r is not None:
                 try: r.Dispose()
                 except Exception: pass
-        if self._console is not None:
-            try:
-                self._console.terminate()
-                try: self._console.wait(timeout=2)
-                except subprocess.TimeoutExpired:
-                    self._console.kill()
-                    try: self._console.wait(timeout=2)
-                    except subprocess.TimeoutExpired: pass
-            except Exception: pass
+        try: self._stop_console()
+        except Exception: pass
         for fd in self._fds:
             try: os.close(fd)
             except OSError: pass
         self._fds = []
+
+    def _signal_console(self, sig: int):
+        console = self._console
+        if console is None: return
+        try:
+            if self._owns_group:
+                # Signalled even once bash itself has exited: a process group
+                # outlives its leader, and that survivor is exactly the orphan
+                # a leader-only signal leaves behind.
+                os.killpg(console.pid, sig)
+            elif console.returncode is None:
+                console.send_signal(sig)
+        except (ProcessLookupError, PermissionError):
+            pass
+
+    def _stop_console(self):
+        console = self._console
+        if console is None: return
+        self._signal_console(signal.SIGTERM)
+        try: console.wait(timeout=self._STOP_GRACE_S)
+        except subprocess.TimeoutExpired: pass
+        self._signal_console(signal.SIGKILL)
+        try: console.wait(timeout=self._STOP_GRACE_S)
+        except subprocess.TimeoutExpired:
+            Log.Error("TerminalProcess: shell did not exit")
 
     def Send(self, payload: bytes):
         if self._closed: raise ConnectionError("terminal disposed")
@@ -157,17 +186,10 @@ class TerminalProcess:
         if self._out_reader is not None:
             try: self._out_reader.Dispose()
             except Exception as e: Log.Error(f"TerminalProcess.Dispose() out_reader [{e}]")
-        if self._console is not None:
-            try:
-                self._console.terminate()
-                try: self._console.wait(timeout=2)
-                except subprocess.TimeoutExpired:
-                    self._console.kill()
-                    try: self._console.wait(timeout=2)
-                    except subprocess.TimeoutExpired:
-                        Log.Error(f"TerminalProcess.Dispose() subprocess did not exit")
-            except Exception as e:
-                Log.Error(f"TerminalProcess.Dispose() console [{e}]")
+        try:
+            self._stop_console()
+        except Exception as e:
+            Log.Error(f"TerminalProcess.Dispose() console [{e}]")
         for i, fd in enumerate(self._fds):
             try:
                 os.close(fd)
@@ -197,7 +219,8 @@ class LiveShell:
 
     _pop_drop_first_marker = False
 
-    def __init__(self) -> None:
+    def __init__(self, new_session: bool = True) -> None:
+        self._new_session = new_session
         self._err_callbacks: list[Callable[[str], None]] = []
         self._out_callbacks: list[Callable[[str], None]] = []
         self._results: dict[str, int] = {}
@@ -211,7 +234,7 @@ class LiveShell:
         self._depth = 0
 
         try:
-            self._shell = TerminalProcess()
+            self._shell = TerminalProcess(new_session=self._new_session)
 
             # Tee callbacks on each stream:
             #  - parse marker lines and route to _results / _sync_received

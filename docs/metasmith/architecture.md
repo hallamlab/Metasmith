@@ -285,6 +285,22 @@ returns when the launch script exits. Any script going straight to `GetResultSou
 the run and crashes on a missing results directory. The contract is a sentinel line in the run's
 agent log, which `metasmith workflow wait` blocks on. Poll for it; do not sleep and hope.
 
+**A run is a process group and a token.** `start.sh` backgrounds the driver under `set -m`, so
+the whole run descends from one process group, and exports `METASMITH_RUN=<task_key>.<timestamp>`,
+which every descendant inherits, docker tool containers carry as the `msm.run` label and
+apptainer's `--cleanenv` has put back explicitly. Both are written beside `PID.lock` as
+`RUN.pgid` and `RUN.token`. The group is the cheap handle; the token is the backstop, because it
+survives a `setsid` out of the group and cannot be shed. `metasmith workflow ps` reports what a
+run still has running on its agent and `workflow reap` reclaims it.
+
+**Cancel is a ladder, and reports what it did not achieve.** Removing `PID.lock` makes the
+driver's supervisor TERM Nextflow's *own* process group — a second group, so the driver survives
+to snapshot logs and promote the cache — and that TERM is given a real window, because Nextflow's
+shutdown hook is what reaches `bin/scancel` for grid jobs. Then a group KILL, then a reap.
+`CancelWorkflow` returns `{stopped, survived, rung}`; a run with survivors is recorded
+`cancelling`, never `cancelled`. On SLURM the guarantee stops at Nextflow's own shutdown, which
+is deliberate: a cancelled job dies with its allocation.
+
 **`Source.Parse` must be a fixed point on its own output**, because anything storing an agent
 home re-parses it on the next save. It was not: `SshSource` renders `ssh://host:path` while
 `Parse` read the `:` as part of the host, so a remote home grew a colon per save until nothing

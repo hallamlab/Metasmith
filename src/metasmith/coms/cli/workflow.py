@@ -92,6 +92,19 @@ def register(subs):
     _cancel.add_argument("--timeout", type=float, default=30.0)
     _cancel.set_defaults(func=lambda a: _rt.cancel(a.agent, a.task_key, a.timeout))
 
+    _ps = sp.add_parser("ps", help="what this run still has running on the agent")
+    _ps.add_argument("agent")
+    _ps.add_argument("task_key")
+    _ps.add_argument("--scope", default="run", choices=["run", "workload"])
+    _ps.set_defaults(func=lambda a: _rt.ps(a.agent, a.task_key, a.scope))
+
+    _reap = sp.add_parser("reap", help="kill whatever a run left running on the agent")
+    _reap.add_argument("agent")
+    _reap.add_argument("task_key")
+    _reap.add_argument("--passes", type=int, default=3)
+    _reap.add_argument("--scope", default="run", choices=["run", "workload"])
+    _reap.set_defaults(func=lambda a: _rt.reap(a.agent, a.task_key, a.passes, a.scope))
+
     _runs = sp.add_parser("runs", help="list all runs for a task on an agent")
     _runs.add_argument("agent")
     _runs.add_argument("task_key")
