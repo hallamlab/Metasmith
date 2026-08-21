@@ -263,6 +263,12 @@ def StageWorkflow(task_key: str, verify: bool, host: str, rootfs: Rootfs|None = 
         resources_file=AgentPaths.NXF_RES,
         rootfs=rootfs,
     ))
+    # Codegen's cache-decision pass stamps deterministic lineage ids onto the
+    # plan's produce/require instances -- the ids baked into every .nf/.meta
+    # file. Write the plan again so task.yml agrees with what execution will
+    # actually see; otherwise a downstream step's dependency_map still carries
+    # the pre-stamp id and lookups against the .meta payload miss.
+    _rewrite_staged_plan(task_path, task)
     nxflib_dir = work_dir/"lib"
     nxflib_dir.mkdir(parents=True, exist_ok=True)
     orchestrator_lib = MODULE_PATH/"nextflow_config/Orchestrator.groovy"
