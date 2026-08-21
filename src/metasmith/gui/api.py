@@ -1371,6 +1371,7 @@ def _table_payload(name: str, lib_path: Path, table_dir: Path, *, rows=None, rec
         "row_count": table["row_count"],
         "preview": table["rows"][:5],
         "problems": checked["problems"],
+        "row_uniques": op_samples.row_uniques(table, rows),
         "expansion": {
             "row_count": record.get("row_count", 0),
             "counts": {k: len(v) for k, v in (record.get("generated") or {}).items()},
@@ -1383,6 +1384,13 @@ def _table_payload(name: str, lib_path: Path, table_dir: Path, *, rows=None, rec
 def get_table(name):
     p = _project()
     return jsonify(_table_payload(name, p.input_library_path(name), _table_dir(name)))
+
+
+@bp.get("/workflows/<name>/table/raw")
+def get_table_raw(name):
+    table = op_samples.read_attached_table(_table_dir(name))
+    assert table is not None, "no table attached"
+    return jsonify({"text": op_samples.table_to_text(table)})
 
 
 @bp.post("/workflows/<name>/table")
@@ -1426,6 +1434,7 @@ def _run_summary(r) -> dict:
         **{k: r.record.get(k) for k in (
             "agent", "task_key", "staged_path", "created_at", "launched_at", "finished_at",
             "collected_at", "run_number", "preset_source", "error",
+            "probe_error", "probe_error_at",
             "params", "resource_overrides",
         )},
     }
@@ -1563,6 +1572,7 @@ def create_run():
                     agent_path,
                     staged["task_key"],
                     config_file=str(p.preset_path(workflow)),
+                    is_local_preset=rec.record.get("preset_source") == "local",
                     params=rec.record.get("params"),
                     resource_overrides=rec.record.get("resource_overrides"),
                 )
