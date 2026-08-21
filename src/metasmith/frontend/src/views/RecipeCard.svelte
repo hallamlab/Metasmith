@@ -35,6 +35,7 @@
     // registered per row
     columns = [],
     rowCount = 0,
+    rowUniques = {},
     expansion = null,
     sharedPaths = [],
     // the sheet's own strip, rendered under the inputs band by the view above --
@@ -464,7 +465,7 @@
               {:else if expansion?.counts?.[row.id]}
                 <span class="tag">× {expansion.counts[row.id]} registered</span>
               {:else}
-                <span class="tag">× {rowCount} once expanded</span>
+                <span class="tag">× {rowUniques[row.id] ?? rowCount} once expanded</span>
               {/if}
               <!-- A sample's mask is one index item's lineage, so a reference
                    sitting beside the per-sample files is in no sample at all.
@@ -503,9 +504,6 @@
            kind of thing to add, a row, and what it holds is a switch on the row
            itself rather than a different action to take here. -->
       <button class="small" onclick={() => onadd?.('input')}>+ an input</button>
-      <span class="small muted">
-        a file you have or a value you type; nothing is copied
-      </span>
     </div>
 
     <div class="heading out small muted spread">
@@ -547,7 +545,6 @@
 
     <div class="addrow">
       <button class="small" onclick={() => onadd?.('output')}>+ an output</button>
-      <span class="small muted">a type you want out of this — the planner finds the way to it</span>
     </div>
   </div>
 </div>
@@ -602,8 +599,12 @@
   .row-item input,
   .row-item select {
     height: 28px;
-    line-height: 1.35;
   }
+  /* an input's own text sits inside a line box and wants the nudge; a select's
+     does not -- its value is centered by the UA's own layout, and giving it
+     the same line-height only pushes that centering past the fixed height
+     above, clipping the bottom of the text. */
+  .row-item input { line-height: 1.35; }
   /* the second line of an input row, and the whole of an output row: same
      columns, no gap above it, so an input's two lines read as one row */
   .row-item.detail { align-items: flex-start; padding-top: 0; }
