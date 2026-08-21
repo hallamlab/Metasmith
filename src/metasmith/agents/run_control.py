@@ -324,6 +324,36 @@ class _RunControl:
             "lines": out if exists else [],
         }
 
+    def _cat_if_exists(self, path: Path) -> tuple[bool, list[str]]:
+        res = self._remote_oneshot(
+            f"[ -e {path} ] && cat {path} || echo __MSM_MISSING__", timeout=30,
+        )
+        out = res.out
+        exists = not (len(out) == 1 and out[0].strip() == "__MSM_MISSING__")
+        return exists, (out if exists else [])
+
+    def ReadCacheHits(self, task: WorkflowTask | str, run: int | None = None) -> dict:
+        # `runner.py` copies `_metasmith/trace.jsonl` into a finished run's own
+        # `logs.*` dir once it's done, so that copy is the first thing to try --
+        # it is this run's data, permanently. Only a run still in flight (or one
+        # collected before that copy existed) has none there yet, and the
+        # live workspace file is only that run's data while it's still the one
+        # occupying the shared workspace -- compare `logs.*` basenames rather
+        # than `_resolve_run_dir`'s full paths, since the `run=None` (latest)
+        # resolution goes through `readlink -f` and fully resolves any symlink
+        # in the agent home path, while the explicit-`run` resolution does not.
+        task_key = task._key if isinstance(task, WorkflowTask) else str(task)
+        run_dir = self._resolve_run_dir(task_key, run)
+        per_run_path = run_dir / "trace.jsonl"
+        exists, lines = self._cat_if_exists(per_run_path)
+        if exists:
+            return {"task_key": task_key, "run": run, "run_dir": str(run_dir), "file": str(per_run_path), "exists": True, "lines": lines}
+        if run is not None and run_dir.name != self._resolve_run_dir(task_key, None).name:
+            return {"task_key": task_key, "run": run, "run_dir": str(run_dir), "file": str(per_run_path), "exists": False, "lines": []}
+        live_path = self._task_workspace(task_key) / "_metasmith" / "trace.jsonl"
+        exists, lines = self._cat_if_exists(live_path)
+        return {"task_key": task_key, "run": run, "run_dir": str(run_dir), "file": str(live_path), "exists": exists, "lines": lines}
+
     def _scan_cmd(self, script: str, task_key: str, **extra: str) -> str:
         return RenderScan(
             script,
