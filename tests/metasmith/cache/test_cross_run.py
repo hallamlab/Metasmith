@@ -5,6 +5,8 @@ from pathlib import Path
 
 import pytest
 
+from metasmith.models.libraries import DataInstanceLibrary
+
 from tests.metasmith.cache._cache_harness import (
     build_samples_library,
     build_transform_library,
@@ -37,23 +39,45 @@ def _build_pipeline_task(root: Path):
     )
 
 
-def test_fresh_library_same_inputs_hits_cache(tmp_path, virtual_runtime):
-    task_a = _build_pipeline_task(tmp_path / "a")
+def test_resubmitted_library_hits_cache(tmp_path, virtual_runtime):
+    # The reuse leaf identity buys: the same files, untouched, planned again.
+    # Leaf ids are the stat, so what carries across is a path whose mtime has
+    # not moved -- not bytes that happen to match somewhere else.
+    root = tmp_path / "a"
+    types_path = build_types_library(root, TYPE_NAMES)
+    samples = build_samples_library(root, types_path, count=2, input_type="seed")
+    tr_lib = build_transform_library(
+        root / "tr",
+        types_path,
+        {
+            "trA": identity_transform_code("trA", "seed", "mid"),
+            "trB": identity_transform_code("trB", "mid", "out"),
+        },
+    )
+
+    def _plan():
+        return build_workflow_task(
+            DataInstanceLibrary.Load(samples.location),
+            tr_lib,
+            sample_type="seed",
+            target_specs=[("out_target", {"out"})],
+        )
+
+    task_a = _plan()
     snap_a = capture_run(virtual_runtime, task_a)
     assert snap_a.executed_steps, "run A executed zero steps (bad fixture)"
 
-    task_b = _build_pipeline_task(tmp_path / "b")
-
+    task_b = _plan()
     assert task_b.GetKey() == task_a.GetKey(), (
-        "fresh library over identical bytes produced a different task key; "
-        "leaf identity is not content-stable, so cross-run reuse is impossible"
+        "re-planning the same untouched library produced a different task key; "
+        "leaf identity is not stable across runs, so reuse is impossible"
     )
 
     clear_trace(virtual_runtime)
     snap_b = capture_run(virtual_runtime, task_b)
     assert snap_b.executed_steps == (), (
-        f"run B re-executed steps {snap_b.executed_steps}; a fresh run on "
-        f"identical inputs should be a full cache hit"
+        f"run B re-executed steps {snap_b.executed_steps}; a re-plan over "
+        f"untouched inputs should be a full cache hit"
     )
 
     assert snap_b.result_fingerprints == snap_a.result_fingerprints, (
@@ -62,9 +86,16 @@ def test_fresh_library_same_inputs_hits_cache(tmp_path, virtual_runtime):
     )
 
 
-def test_perturbed_inputs_get_distinct_identity(tmp_path, virtual_runtime):
-    from metasmith.models.libraries import DataInstanceLibrary
+def test_identical_bytes_elsewhere_do_not_collapse(tmp_path, virtual_runtime):
+    # Deliberate, not a defect. Identity is the path and the mtime, so a second
+    # copy of the same bytes under a different root is a different input. The
+    # trade is one stat per leaf instead of a read of every byte.
+    task_a = _build_pipeline_task(tmp_path / "a")
+    task_b = _build_pipeline_task(tmp_path / "b")
+    assert task_a.GetKey() != task_b.GetKey()
 
+
+def test_perturbed_inputs_get_distinct_identity(tmp_path, virtual_runtime):
     types_path = build_types_library(tmp_path, TYPE_NAMES)
 
     def _leaf_id(payload: str, where: str) -> str:
@@ -78,31 +109,26 @@ def test_perturbed_inputs_get_distinct_identity(tmp_path, virtual_runtime):
     id_original = _leaf_id("sample payload\n", "orig.xgdb")
     id_perturbed = _leaf_id("PERTURBED payload\n", "pert.xgdb")
     assert id_original != id_perturbed, (
-        "perturbed input bytes minted the same leaf id — content-addressing "
-        "is not sensitive to file contents"
+        "two distinct inputs minted the same leaf id"
     )
 
 
-def test_leaf_id_portable_across_abs_and_rel_path(tmp_path, virtual_runtime):
-    from metasmith.models.libraries import DataInstanceLibrary
-
+def test_leaf_id_same_for_abs_and_rel_arguments(tmp_path, virtual_runtime):
     types_path = build_types_library(tmp_path, TYPE_NAMES)
+    root = tmp_path / "root.xgdb"
+    (root / "sub").mkdir(parents=True)
+    (root / "sub" / "data.txt").write_text("payload\n", encoding="utf-8")
 
-    def _leaf_id(where: str, use_absolute_arg: bool) -> str:
-        lib = DataInstanceLibrary(tmp_path / where)
-        lib.Purge()
+    def _leaf_id(use_absolute_arg: bool) -> str:
+        lib = DataInstanceLibrary(root)
         lib.AddTypeLibrary(types_path, namespace="cf")
-        (lib.location / "sub").mkdir(parents=True, exist_ok=True)
-        (lib.location / "sub" / "data.txt").write_text("payload\n", encoding="utf-8")
-        arg = (lib.location / "sub" / "data.txt") if use_absolute_arg else Path("sub/data.txt")
+        arg = (root / "sub" / "data.txt") if use_absolute_arg else Path("sub/data.txt")
         lib.AddItem(arg, "cf::seed")
         return lib.Get(arg).instance_id
 
-    id_rel = _leaf_id("relroot.xgdb", use_absolute_arg=False)
-    id_abs = _leaf_id("a/deeper/absroot.xgdb", use_absolute_arg=True)
-    assert id_rel == id_abs, (
-        "same library-relative path + bytes minted different leaf ids for "
-        "relative vs absolute AddItem arguments; cross-host reuse would miss"
+    assert _leaf_id(False) == _leaf_id(True), (
+        "one file addressed relatively and absolutely minted two leaf ids; the "
+        "identity is the resolved path, so the spelling must not matter"
     )
 
 

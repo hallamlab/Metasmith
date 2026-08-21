@@ -27,7 +27,9 @@ def build_spec(rebuild: bool = False) -> Spec:
         shared_input_paths=["eggnog_source.marker"],
         target_types=[
             "annotation::kofamscan_results",
+            "annotation::kofamscan_descriptions",
             "annotation::diamond_uniref50_results",
+            "annotation::diamond_uniref50_descriptions",
             "annotation::eggnog_results",
             "annotation::proteinbert_embeddings",
             "taxonomy::metabuli",

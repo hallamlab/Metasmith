@@ -97,11 +97,10 @@ def test_the_copy_constructor_does_not_launder_a_pin(tmp_path):
         copy.AddItem(Path("new.txt"), "t::thing")
 
 
-def test_a_pinned_get_reads_no_file(tmp_path, monkeypatch):
-    # The whole point: 24 GB of references cost one stat, not one blake3.
-    #
-    # Monkeypatching the digest to raise is a deterministic stand-in for the
-    # 10 seconds this removes, which is not something a test can assert on.
+def test_a_pinned_get_touches_no_file(tmp_path, monkeypatch):
+    # The whole point: a pinned library answers from what it recorded, without
+    # consulting the filesystem at all -- so a `dvc checkout` that restores the
+    # identical bytes under 24 GB of references cannot move a single id.
     lib = _library(tmp_path)
     lib.Pin()
     before = {p: lib.Get(p).instance_id for p in lib.manifest}
@@ -109,20 +108,18 @@ def test_a_pinned_get_reads_no_file(tmp_path, monkeypatch):
     import metasmith.models.libraries.identity as identity
 
     def _boom(*a, **k):
-        raise AssertionError("a pinned library re-hashed a file")
+        raise AssertionError("a pinned library re-derived an identity")
 
-    monkeypatch.setattr(identity, "content_multihash_key", _boom)
+    monkeypatch.setattr(identity, "stat_leaf_id", _boom)
     reloaded = DataInstanceLibrary.Load(lib.location)
     after = {p: reloaded.Get(p).instance_id for p in reloaded.manifest}
     assert after == before
 
 
 def test_a_pinned_directory_entry_keeps_one_identity(tmp_path):
-    # Directories were the worst case, not merely an unhandled one.
-    #
-    # `_mint_leaf_id` gates content addressing on `is_file()`, so a directory fell
-    # through to `uuid4 + time_ns` and got a fresh id on every build -- which made
-    # the plan key non-deterministic on one machine, before any question of two.
+    # Directories are the weak case a pin most has to cover: a directory's own
+    # mtime moves on any change to its immediate entries, and says nothing about
+    # what is nested inside. A recorded id sidesteps both.
     types_yml = tmp_path / "t.yml"
     types_yml.write_text(yaml.safe_dump(TYPES))
     lib = DataInstanceLibrary(tmp_path / "lib.xgdb")

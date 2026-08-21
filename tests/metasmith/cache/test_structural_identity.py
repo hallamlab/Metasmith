@@ -47,11 +47,20 @@ def _batched_transform_code(tr_name: str, *, batch_size: int) -> str:
     )
 
 
-def _build_task(root: Path, *, batch_size: int, tr_name: str):
-    types_path = build_types_library(root, TYPE_NAMES)
-    samples = build_samples_library(root, types_path, count=2, input_type="seed")
+# The samples library is shared across the two tasks of every test here, and
+# that is load-bearing: leaf ids are the path and the mtime, so a second copy of
+# the same inputs elsewhere would miss for a reason that has nothing to do with
+# batch_size.
+def _fixture(tmp_path: Path):
+    types_path = build_types_library(tmp_path, TYPE_NAMES)
+    samples = build_samples_library(tmp_path, types_path, count=2, input_type="seed")
+    return types_path, samples
+
+
+def _build_task(fixture, tr_root: Path, *, batch_size: int, tr_name: str):
+    types_path, samples = fixture
     tr_lib = build_transform_library(
-        root / "tr",
+        tr_root,
         types_path,
         {tr_name: _batched_transform_code(tr_name, batch_size=batch_size)},
     )
@@ -61,11 +70,12 @@ def _build_task(root: Path, *, batch_size: int, tr_name: str):
 
 
 def test_same_batch_size_hits_cross_run(tmp_path, virtual_runtime):
-    task_a = _build_task(tmp_path / "a", batch_size=1, tr_name="tr_bs_ctl")
+    fixture = _fixture(tmp_path)
+    task_a = _build_task(fixture, tmp_path / "a" / "tr", batch_size=1, tr_name="tr_bs_ctl")
     snap_a = capture_run(virtual_runtime, task_a)
     assert snap_a.executed_steps, "run A executed zero steps (bad fixture)"
 
-    task_b = _build_task(tmp_path / "b", batch_size=1, tr_name="tr_bs_ctl")
+    task_b = _build_task(fixture, tmp_path / "b" / "tr", batch_size=1, tr_name="tr_bs_ctl")
     clear_trace(virtual_runtime)
     snap_b = capture_run(virtual_runtime, task_b)
     assert snap_b.executed_steps == (), (
@@ -75,11 +85,12 @@ def test_same_batch_size_hits_cross_run(tmp_path, virtual_runtime):
 
 
 def test_changed_batch_size_misses(tmp_path, virtual_runtime):
-    task_a = _build_task(tmp_path / "a", batch_size=1, tr_name="tr_bs_one")
+    fixture = _fixture(tmp_path)
+    task_a = _build_task(fixture, tmp_path / "a" / "tr", batch_size=1, tr_name="tr_bs_one")
     snap_a = capture_run(virtual_runtime, task_a)
     assert snap_a.executed_steps, "run A executed zero steps (bad fixture)"
 
-    task_b = _build_task(tmp_path / "b", batch_size=2, tr_name="tr_bs_two")
+    task_b = _build_task(fixture, tmp_path / "b" / "tr", batch_size=2, tr_name="tr_bs_two")
     clear_trace(virtual_runtime)
     snap_b = capture_run(virtual_runtime, task_b)
     assert snap_b.executed_steps != (), (

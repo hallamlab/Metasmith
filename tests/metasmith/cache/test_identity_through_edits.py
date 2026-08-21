@@ -28,7 +28,9 @@ def _lib(location: Path, types_path: Path) -> DataInstanceLibrary:
     return lib
 
 
-def test_rename_re_mints_a_leaf_id_to_match_a_fresh_build(tmp_path, types_path):
+def test_rename_re_mints_a_leaf_id_to_match_a_fresh_registration(tmp_path, types_path):
+    from metasmith.models.libraries.identity import stat_leaf_id
+
     lib = _lib(tmp_path / "a.xgdb", types_path)
     old_id = lib.Get(Path("s0/reads.fq")).instance_id
 
@@ -36,16 +38,9 @@ def test_rename_re_mints_a_leaf_id_to_match_a_fresh_build(tmp_path, types_path):
     new_id = lib.Get(Path("s0/renamed.fq")).instance_id
 
     assert new_id != old_id, "leaf id ignored the path it folds in"
-
-    fresh = DataInstanceLibrary(tmp_path / "b.xgdb")
-    fresh.AddTypeLibrary(types_path, namespace="mock")
-    (fresh.location / "s0").mkdir(parents=True, exist_ok=True)
-    (fresh.location / "s0" / "renamed.fq").write_text(">r\nACGT\n")
-    fresh.AddItem(Path("s0/renamed.fq"), "mock::reads")
-
-    assert new_id == fresh.Get(Path("s0/renamed.fq")).instance_id, (
-        "a renamed library and a fresh one over the same bytes at the same "
-        "path disagree on identity"
+    assert new_id == stat_leaf_id(lib.location / "s0" / "renamed.fq"), (
+        "a renamed leaf and a fresh registration of the file now at that path "
+        "disagree on identity"
     )
 
 

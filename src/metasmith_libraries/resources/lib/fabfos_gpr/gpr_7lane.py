@@ -33,6 +33,7 @@ def _args():
     p.add_argument("--pbert-emb", required=True)
     p.add_argument("--source", required=True)
     p.add_argument("--uniref", required=True)
+    p.add_argument("--uniref-descriptions", required=True)
     return p.parse_args()
 
 
@@ -144,8 +145,14 @@ def lane_ezpred(path, ec_to_mnxr):
     df["intermediate_id"] = df["ec_number"]
     return finish(df, "ezpred", "ec")
 
-def lane_uniref(path, uniprot_to_mnxr):
-    df = pd.read_csv(path, sep="\t", header=None, names=fe._BLAST6_BSR_COLS, dtype=str)
+def lane_uniref(path, descriptions, uniprot_to_mnxr):
+    df = pd.read_csv(path, sep="\t", dtype=str)
+    if list(df.columns) != fe._BLAST6_BSR_COLS:
+        raise SystemExit(
+            "[gpr] diamond_uniref50_results header is not the "
+            + str(len(fe._BLAST6_BSR_COLS)) + " columns this lane parses: got "
+            + repr(list(df.columns)) + ". diamond_uniref50 writes the header, "
+            "so a drift here silently renames every column and empties the lane")
     df["evalue"] = pd.to_numeric(df["evalue"], errors="coerce")
     df["bitscore"] = pd.to_numeric(df["bitscore"], errors="coerce")
     df["bsr"] = pd.to_numeric(df["bsr"], errors="coerce")
@@ -153,7 +160,8 @@ def lane_uniref(path, uniprot_to_mnxr):
     df = (df.sort_values(["qseqid", "evalue", "bitscore"], ascending=[True, True, False])
             .drop_duplicates(subset=["qseqid"], keep="first"))
     df["uniprot_accession"] = df["sseqid"].str.replace(r"^UniRef50_", "", regex=True)
-    df["intermediate_name"] = df["stitle"].apply(fe._clean_stitle)
+    titles = fe.read_uniref50_titles(descriptions)
+    df["intermediate_name"] = df["sseqid"].map(titles).fillna("").apply(fe._clean_stitle)
     df = df.rename(columns={"qseqid": "orf", "bsr": "raw_score"})
     joined = df.merge(uniprot_to_mnxr, on="uniprot_accession", how="inner")
     joined["intermediate_id"] = joined["uniprot_accession"]
@@ -330,7 +338,7 @@ def main():
         lane_clean(str(A.clean), ec_to_mnxr),
         lane_deepec(str(A.deepec), ec_to_mnxr),
         lane_ezpred(str(A.ezpred), ec_to_mnxr),
-        lane_uniref(str(A.uniref), up_to_mnxr),
+        lane_uniref(str(A.uniref), str(A.uniref_descriptions), up_to_mnxr),
         lane_embed(str(A.pbert_emb), None, str(A.landmarks), "pbert", PBERT_FLOOR,
                    PBERT_NN_MIN, PBERT_TAU, PBERT_K_MAX),
         lane_embed(str(A.esmc_emb), str(A.esmc_idx), str(A.lm_esmc), "esmc", ESMC_FLOOR,

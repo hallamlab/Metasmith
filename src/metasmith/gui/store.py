@@ -33,7 +33,9 @@ RESULT_FILE = "result.yml"
 RUN_FILE = "run.yml"
 GUI_STATE_FILE = ".metasmith_gui.yml"
 
-LIVE_RUN_STATES = {"staging", "staged", "launching", "running"}
+# `cancelling` is live: the cancel returned survivors, so work is still on the
+# agent and the run must not be deletable.
+LIVE_RUN_STATES = {"staging", "staged", "launching", "running", "cancelling"}
 
 
 def utcnow() -> str:

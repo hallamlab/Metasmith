@@ -87,7 +87,11 @@ class WorkflowPlan:
     _archetype_translation: dict[DataInstance, DataInstance]|None = None
     dropped_targets: list[str] = field(default_factory=list)
     hints: list[PlanHint] = field(default_factory=list)
-    publish_intermediates: bool = True
+    # A run publishes its targets and nothing else. The per-step outputs stay in
+    # the work dir and the cache store, so what a collect copies back is what was
+    # asked for -- at the cost of a run that dies early leaving an empty results
+    # folder, where the per-step logs are then the only record.
+    publish_intermediates: bool = False
     _solver_inputs: tuple|None = None
 
     def __post_init__(self):
@@ -215,7 +219,7 @@ class WorkflowPlan:
             given=given,
             targets=[_unpack_target(d) for d in raw["targets"]],
             steps=steps,
-            publish_intermediates=raw.get("publish_intermediates", True),
+            publish_intermediates=raw.get("publish_intermediates", False),
         )
 
     @classmethod

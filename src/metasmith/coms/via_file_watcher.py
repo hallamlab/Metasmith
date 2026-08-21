@@ -1,13 +1,18 @@
 from pathlib import Path
 from typing import Callable, Any, TypeVar, TypeAlias
-from time import sleep
+from time import monotonic, sleep
 from dataclasses import dataclass
 import os, signal
 
 from .ipc import CurrentTimeMillis, GenerateId, ResetGenerator
 from .ipc import RemoveLeadingIndent, RemoveTrailingNewline
+from ..constants import AgentPaths
 from ..logging import Log
 from .terminals import ShellResult
+
+# TERM -> KILL window for a job's process group. Mirrors GROUP_KILL_GRACE_MS in
+# bash_relay/src/remote_shell.rs; the two clients must behave identically.
+GROUP_KILL_GRACE_S = 5.0
 
 @dataclass
 class Job:
@@ -18,24 +23,53 @@ class Job:
     out_i: int = 0
     err_i: int = 0
 
-    def _get_pid(self, pidf: Path):
+    def _get_pgid(self, pidf: Path):
+        # The .pid file holds a process GROUP id: the relay's launcher.sh runs
+        # each job under `set -m`, so the recorded number leads a group holding
+        # the tool the job started. Signalling the number alone stops the job's
+        # shell and orphans that tool. 0 and negatives address our own group or
+        # everything we may signal, so a truncated file yields -1 and no signal.
         try:
             with open(pidf) as f:
                 pid = [l.replace("\n", "").strip() for l in f.readlines()]
-            pid = int(pid[0]) if len(pid)>0 else -1
-            return pid
+            pgid = int(pid[0]) if len(pid)>0 else -1
+            return pgid if pgid > 1 else -1
         except:
             pass
         return -1
 
+    def _signal_group(self, pgid: int, sig: int) -> bool:
+        if pgid <= 1: return False
+        try:
+            os.killpg(pgid, sig)
+            return True
+        except (ProcessLookupError, PermissionError):
+            return False
+
     def SignalStop(self):
         pidf = self.out_log.with_suffix(".pid")
+        if not pidf.exists(): return
+        self._signal_group(self._get_pgid(pidf), signal.SIGINT)
+
+    def _group_alive(self, pgid: int) -> bool:
+        # PermissionError means the group exists and is someone else's -- alive,
+        # and not ours to stop. Only ProcessLookupError means gone.
+        if pgid <= 1: return False
         try:
-            if pidf.exists():
-                pid = self._get_pid(pidf)
-                os.kill(pid, signal.SIGINT)
+            os.killpg(pgid, 0)
         except ProcessLookupError:
+            return False
+        except PermissionError:
             pass
+        return True
+
+    def _kill_group_escalating(self, pgid: int, grace: float = GROUP_KILL_GRACE_S):
+        if not self._signal_group(pgid, signal.SIGTERM): return
+        deadline = monotonic() + grace
+        while monotonic() < deadline:
+            if not self._group_alive(pgid): return
+            sleep(0.1)
+        self._signal_group(pgid, signal.SIGKILL)
 
     def Dispose(self, timeout: float=3):
         pidf = self.out_log.with_suffix(".pid")
@@ -46,12 +80,7 @@ class Job:
         
         code = 1
         if not donef.exists():
-            pid = self._get_pid(pidf)
-            try:
-                os.kill(pid, signal.SIGTERM)
-                sleep(0.5)
-            except ProcessLookupError:
-                pass
+            self._kill_group_escalating(self._get_pgid(pidf))
         else:
             with open(donef) as f:
                 code = f.readline().strip()
@@ -65,7 +94,12 @@ class Job:
             self.err_log,
         ]
         if donef.exists():
-            to_del += [donef, pidf]
+            to_del += [
+                donef, pidf,
+                self.out_log.with_suffix(".owner"),
+                self.out_log.with_suffix(".orphan"),
+                self.out_log.with_suffix(".run"),
+            ]
         for p in to_del:
             p.unlink(missing_ok=True)
         return code
@@ -114,6 +148,15 @@ class RemoteShell:
             err_log=script_path.with_suffix(".err"),
             done_path=script_path.with_suffix(".done"),
         )
+        # Who asked for this job, and which run it belongs to. Written before
+        # the rename so the watcher never sees a dispatchable job without them:
+        # the owner pid is how it reclaims a job whose requester died, the run
+        # token is how a cancel reaches one run's jobs in a workspace every run
+        # on the host shares.
+        script_path.with_suffix(".owner").write_text(f"{os.getpid()}\n")
+        token = os.environ.get(AgentPaths.RUN_TOKEN_ENV, "").strip()
+        if token:
+            script_path.with_suffix(".run").write_text(f"{token}\n")
         script_path.rename(script_path.with_suffix(".start"))
         return k
 
