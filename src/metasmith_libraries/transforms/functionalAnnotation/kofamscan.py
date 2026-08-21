@@ -70,10 +70,10 @@ def protocol(context: ExecutionContext):
     if not iprofiles.local.is_dir():
         raise SystemExit(
             f"[kofamscan] ref::kofamscan_profiles staged at {iprofiles.local} is not a "
-            f"directory. compile/kofam_ref.py produces the unpacked profile directory; "
-            f"an archive here means the reference came from logistics/"
-            f"downloadKofamscanDB.py instead, which is the duplicate producer every "
-            f"reference plan excludes.")
+            f"directory. Both producers -- logistics/downloadKofamDB.py and "
+            f"fabfos build_references compile/kofam_ref.py -- unpack the archive "
+            f"with --strip-components=1; an archive here is one of them having "
+            f"moved profiles.tar.gz into the slot instead.")
     n_hmm = len(list(iprofiles.local.glob("*.hmm")))
     if n_hmm == 0:
         raise SystemExit(

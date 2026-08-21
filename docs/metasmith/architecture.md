@@ -707,9 +707,8 @@ The two Rust products are built separately and shipped differently; see
 ### When a build artifact may be DVC-pinned
 
 A generated artifact earns a pin when rebuilding it is expensive *and* the pin is genuinely how it
-reaches consumers — `src/metasmith/engine.dvc` qualifies on both counts, since it carries a
-four-target cross-compile that a source checkout has no other way to obtain. An artifact that
-something regenerates on demand does not qualify, and neither does one nothing reads; the GUI's
+reaches consumers. An artifact that something regenerates on demand does not qualify, and
+neither does one nothing reads; the GUI's
 `scratch/gui-main` pin managed to be both, snapshotting 31 files of local run detritus that
 `dev/metasmith.sh --gui` recreates with `mkdir -p`, and its objects had already left every cache
 by the time it was removed.

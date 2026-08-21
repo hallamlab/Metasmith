@@ -40,6 +40,32 @@ def GetNxfConfigPresets(folder: Path = MODULE_PATH/"nextflow_config") -> dict[st
     return presets
 
 
+def _render_executor_config(executor: dict|None) -> list[str]:
+    # Sizing the executor through `params` does not work, and fails silently.
+    #
+    # The presets declare `executor { cpus = params.executor.cpus; ... }`, and
+    # that block is evaluated while the config is being parsed -- at which point
+    # `params` holds only what the config's own `params { }` block declared. The
+    # `-params-file` merge lands afterwards, so the executor keeps the preset's
+    # defaults while `params.executor` reads correctly at runtime and every
+    # caller believes it was heard. An 8 GB local executor then refuses at
+    # submit every step asking for more, `errorStrategy = ignore` swallows the
+    # refusal, and the run reports completed having produced nothing.
+    #
+    # Appending a literal block to the same config file is what actually binds:
+    # within one file the later assignment wins, which is the same mechanism
+    # `resource_overrides` already relies on.
+    if not isinstance(executor, dict) or not executor: return []
+    TAB = "\t"
+    lines = ["", "executor {"]
+    for key, value in executor.items():
+        if value is None: continue
+        rendered = value if isinstance(value, (int, float)) else f"'{value}'"
+        lines.append(f"{TAB}{key} = {rendered}")
+    lines += ["}", ""]
+    return lines
+
+
 class _WorkflowOps:
     def GenerateWorkflow(
         self,
@@ -363,6 +389,7 @@ class _WorkflowOps:
                 temp_dir = Path(temp_dir)
                 if params is None:
                     params = dict(nothing=None)
+                parsed_params: dict = {}
                 if isinstance(params, dict):
                     params_local = temp_dir/AgentPaths.NXF_PARAMS
                     def _parse(d: dict):
@@ -384,8 +411,9 @@ class _WorkflowOps:
                                 parsed[stacks[0]] = v
                         return parsed
 
+                    parsed_params = _parse(params)
                     with open(params_local, "w") as f:
-                        yaml.safe_dump(_parse(params), f)
+                        yaml.safe_dump(parsed_params, f)
                     params_source = Source.FromLocal(params_local)
                 elif isinstance(params, Path):
                     params_source = Source.FromLocal(params)
@@ -393,6 +421,10 @@ class _WorkflowOps:
                 local_config = temp_dir/config_file.name
                 shutil.copy(config_file, local_config)
                 mover.QueueTransfer(src=Source.FromLocal(local_config), dest=ws_dest/AgentPaths.NXF_CONFIG)
+                executor_lines = _render_executor_config(parsed_params.get("executor"))
+                if executor_lines:
+                    with open(local_config, "a") as f:
+                        f.write("\n".join(executor_lines))
                 if gpu_planned:
                     is_scheduler = "slurmAccount" in local_config.read_text()
                     gpu_lines = _render_gpu_config(gpu_planned, gpus, is_scheduler)
