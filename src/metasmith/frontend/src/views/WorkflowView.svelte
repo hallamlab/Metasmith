@@ -2,16 +2,16 @@
   import { tick, untrack } from 'svelte'
   import { api } from '../lib/api.svelte.js'
   import {
-    app, attempt, cachedWorkflow, cacheWorkflow, loadOverrides, loadRuns, loadTypeIndex,
+    app, attempt, cachedWorkflow, cacheWorkflow, loadRuns, loadTypeIndex,
     loadTypes, loadWorkflows, notify, patchWorkflowSummary, renameWorkflow, saveOverrides,
     select, setLastAgent, ui, workflowRenameable,
   } from '../lib/state.svelte.js'
   import Ago from '../components/Ago.svelte'
+  import ConfigEditor from '../components/ConfigEditor.svelte'
   import EditableName from '../components/EditableName.svelte'
   import Field from '../components/Field.svelte'
   import Icon from '../components/Icon.svelte'
   import JobLog from '../components/JobLog.svelte'
-  import SplitButton from '../components/SplitButton.svelte'
   import DagRail from '../components/DagRail.svelte'
   import MiniGraph from '../components/MiniGraph.svelte'
   import SaveAsTemplate from '../components/SaveAsTemplate.svelte'
@@ -84,7 +84,57 @@
   // Starts on the agent last used anywhere, not blank -- picking one every
   // time you open a workflow tab is a chore once you mostly run on one agent.
   let agentChoice = $state(ui.lastAgent)
-  let presetChoice = $state('')
+
+  // This workflow's own copy of a Nextflow config preset, editable as raw
+  // text -- decoupled from the shared package preset it was seeded from at
+  // creation, the same load/dirty/save/revert idiom as `SshEditor.svelte`,
+  // reusing `ConfigEditor` rather than a new editor component.
+  let presetLoaded = $state(null)
+  let presetContent = $state('')
+  let presetSource = $state(null)
+  let presetSaved = $state(false)
+  let allPresets = $state([])
+  let presetDirty = $derived(presetLoaded !== null && presetContent !== presetLoaded)
+
+  async function loadPreset() {
+    const body = await attempt(() => api.get(`/workflows/${name}/preset`))
+    if (!body) return
+    presetContent = body.content
+    presetLoaded = body.content
+    presetSource = body.preset_source
+  }
+
+  async function savePreset() {
+    await attempt(async () => {
+      const body = await api.put(`/workflows/${name}/preset`, { content: presetContent })
+      presetContent = body.content
+      presetLoaded = body.content
+      presetSaved = true
+      setTimeout(() => (presetSaved = false), 1500)
+      return true
+    })
+  }
+
+  function revertPreset() {
+    presetContent = presetLoaded ?? ''
+  }
+
+  // Switching the base preset overwrites unsaved edits, so it asks first if
+  // the editor is dirty -- there is no undo for a discarded edit once the new
+  // content has landed.
+  async function adoptPreset(source) {
+    if (!source) return
+    if (presetDirty && !confirm('Switch the base preset? Unsaved edits to this preset will be lost.')) {
+      return
+    }
+    await attempt(async () => {
+      const body = await api.post(`/workflows/${name}/preset/adopt`, { source })
+      presetContent = body.content
+      presetLoaded = body.content
+      presetSource = body.preset_source
+      return true
+    })
+  }
   // This run's params, pre-filled from the chosen agent so what will be sent is
   // visible rather than implied, and `seededParams` is what was put there -- how
   // the page tells "still the agent's defaults" from "someone typed over them".
@@ -95,7 +145,7 @@
   // Boxes are strings; the server reads and checks the numbers. Seeded from
   // what was typed in last time this workflow was open; the `name` effect
   // below reloads it whenever the workflow changes.
-  let overrides = $state(loadOverrides(name))
+  let overrides = $state({})
   let focus = $state(null)
 
   // What the upper half of the panel is drawing. A type in focus draws its own
@@ -282,6 +332,7 @@
         transform_libraries: wf.request.transform_libraries ?? [],
         rows: normalizeRows(wf.request.input_drafts),
       }
+      overrides = wf.overrides ?? {}
     }
     cacheWorkflow(name, { wf, items, table })
   }
@@ -312,16 +363,23 @@
     envReport = null
     focus = null
     drawing = null
-    overrides = loadOverrides(n)
+    overrides = hit ? (hit.wf.overrides ?? {}) : {}
     // reset unconditionally, cache hit or not: this is what lets the one-time
     // recipe rebuild in `load()` still run on the background revalidation
     // fetch, so a recipe edited outside the browser surfaces even on a hit
     loadedFor = null
     planFocus = null
+    presetLoaded = null
+    presetContent = ''
+    presetSource = null
     attempt(async () => {
-      await Promise.all([load(true), loadTypes(), loadTypeIndex()])
+      await Promise.all([load(true), loadTypes(), loadTypeIndex(), loadPreset()])
       void n
     })
+  })
+
+  $effect(() => {
+    attempt(async () => (allPresets = await api.get('/presets')))
   })
 
   // The runs card is a live list too, for the same reason the rail is: a run
@@ -336,12 +394,8 @@
   })
 
   // The chosen agent, off the list already loaded. Nothing is fetched for this:
-  // `/agents` carries both the presets and the one the agent declares, and an
-  // extra round trip on every change of a dropdown bought nothing.
+  // an extra round trip on every change of a dropdown bought nothing.
   let chosenAgent = $derived(app.agents.find((a) => a.name === agentChoice) ?? null)
-  let presets = $derived(Object.keys(chosenAgent?.config_presets ?? {}))
-  // what leaving the box alone will actually use, so the blank option can say it
-  let agentPreset = $derived(chosenAgent?.default_preset ?? 'local')
 
   // `agentChoice` starts pre-filled from the remembered agent, but nothing
   // seeded its params yet -- that only otherwise happens on the select's own
@@ -1114,7 +1168,6 @@
       api.post('/runs', {
         workflow: name,
         agent: agentChoice,
-        preset: presetChoice || null,
         params: Object.keys(params).length ? params : null,
         resource_overrides: overridePayload(),
       }),
@@ -1184,7 +1237,7 @@
         </div>
       </div>
 
-      <div class="card" id="msm-recipe">
+      <div class="card col" style="gap:10px" id="msm-recipe">
         <RecipeCard
           {items}
           rows={recipe.rows}
@@ -1211,49 +1264,47 @@
             <SampleTable {table} onattach={attachTable} ondetach={detachTable} />
           {/snippet}
         </RecipeCard>
-      </div>
 
-      <div class="row wrap">
-        <button
-          class="primary"
-          onclick={solve}
-          disabled={solving || settingUp || recipe.targets.length === 0 || blankTarget || dupTarget || !!tableProblem}
-        >
-          {#if solving}<Spinner />{/if}
-          {solving ? 'solving…' : wf.planned ? 'solve again' : 'solve'}
-        </button>
-        {#if recipe.targets.length === 0}
-          <span class="small muted">add at least one output</span>
-        {:else if blankTarget}
-          <span class="small muted">an output row has no type yet</span>
-        {:else if dupTarget}
-          <span class="small muted">two outputs are the same type with the same lineage</span>
-        {:else if tableProblem}
-          <span class="small muted">{tableProblem}</span>
-        {:else if stale}
-          <!-- ahead of the sheet's line below, which is a description rather
-               than a warning: a sheet-attached recipe can go stale exactly like
-               any other, and the line saying how the solve will read it was
-               hiding the one saying the plan is not from this recipe -->
-          <span class="tag warn">recipe changed — the result below is from the old one</span>
-        {:else if table?.attached}
-          <span class="small muted">
-            one unified solve over the sheet's {table.row_count}
-            {table.row_count === 1 ? 'row' : 'rows'}
-          </span>
-        {:else if wf.planned}
-          <!-- solving locks the name and nothing else. Said out loud because the
-               plan below reads as the finished article, and a page that only
-               shows a result looks like it stopped taking edits. -->
-          <span class="small muted">the recipe is still editable — solving again replans it</span>
+        <div class="row wrap">
+          <button
+            class="primary"
+            onclick={solve}
+            disabled={solving || settingUp || recipe.targets.length === 0 || blankTarget || dupTarget || !!tableProblem}
+          >
+            {#if solving}<Spinner />{/if}
+            {solving ? 'solving…' : wf.planned ? 'solve again' : 'solve'}
+          </button>
+          {#if recipe.targets.length === 0}
+            <span class="small muted">add at least one output</span>
+          {:else if blankTarget}
+            <span class="small muted">an output row has no type yet</span>
+          {:else if dupTarget}
+            <span class="small muted">two outputs are the same type with the same lineage</span>
+          {:else if tableProblem}
+            <span class="small muted">{tableProblem}</span>
+          {:else if stale}
+            <!-- ahead of the sheet's line below, which is a description rather
+                 than a warning: a sheet-attached recipe can go stale exactly like
+                 any other, and the line saying how the solve will read it was
+                 hiding the one saying the plan is not from this recipe -->
+            <span class="tag warn">recipe changed — the result below is from the old one</span>
+          {:else if table?.attached}
+            <span class="small muted">
+              one unified solve over the sheet's {table.row_count}
+              {table.row_count === 1 ? 'row' : 'rows'}
+            </span>
+          {:else if wf.planned}
+            <!-- solving locks the name and nothing else. Said out loud because the
+                 plan below reads as the finished article, and a page that only
+                 shows a result looks like it stopped taking edits. -->
+            <span class="small muted">the recipe is still editable — solving again replans it</span>
+          {/if}
+        </div>
+
+        {#if showSolveBar}
+          <StageProgress stages={SOLVE_STAGES} stageStates={solveStageStates} />
         {/if}
-      </div>
 
-      {#if showSolveBar}
-        <StageProgress stages={SOLVE_STAGES} stageStates={solveStageStates} />
-      {/if}
-
-      <div class="card col" style="gap:10px">
         {#if jobId}
           <!-- one log for both jobs this page starts: a solve and a bundle
                expand are the same shape of thing to watch, and only one of
@@ -1327,7 +1378,13 @@
             />
           </details>
         {/if}
+      </div>
 
+      <!-- The solved artifact: the DAG a solve produced, regardless of
+           success/failure/pending. Kept apart from the solve card above (the
+           action) and the stage-and-run card below (what a successful plan
+           unlocks). -->
+      <div class="card col" style="gap:10px">
         {#if !wf.planned}
           <h3>plan</h3>
           <p class="small muted">
@@ -1620,147 +1677,108 @@
             solved <Ago iso={wf.generated_at} />{#if wf.result.stdlib_commit}
               · library <span class="mono">{wf.result.stdlib_commit.slice(0, 12)}</span>{/if}
           </p>
-
-          <!-- Pre-filled from the agent, so what will be sent is on the screen
-               rather than implied. Editing a row here changes this run only;
-               the agent keeps what it declares. -->
-          <div class="field">
-            <span class="small muted">params</span>
-            <ParamRows bind:rows={runParams} inherited={chosenAgent?.default_params ?? {}} />
-            <span class="small muted hint">
-              this run only — the agent's defaults are already here, and a key
-              typed over one of them wins
-            </span>
-          </div>
-
-          <!-- An agent that is still being filled in is listed and disabled,
-               not hidden: "the one I made is missing" is a worse thing to work
-               out than "the one I made says it has no host yet". The route
-               refuses the same agents, so this is a signpost, not the check.
-               Never having been deployed is on that list too -- it is not one
-               of the agent's `problems`, because the deploy button reads those
-               and would disable itself, but it stops a run just as surely. -->
-          <Field label="on which agent">
-            <select
-              bind:value={agentChoice}
-              onchange={(e) => {
-                seedFromAgent(e.currentTarget.value)
-                setLastAgent(e.currentTarget.value)
-              }}
-            >
-              <option value="">choose an agent…</option>
-              {#each app.agents.filter((a) => !a.archived_at) as a}
-                {@const said = [
-                  ...(a.problems ?? []),
-                  ...(a.deployed === false ? ['has not been deployed yet'] : []),
-                ]}
-                <option value={a.name} disabled={said.length > 0}>
-                  {a.name}{said.length ? ` — ${said.join(', ')}` : ''}
-                </option>
-              {/each}
-            </select>
-          </Field>
-          {#if presets.length}
-            <!-- the blank option names what it resolves to. It used to say
-                 "(agent default)" for a thing agents could not declare, so it
-                 silently meant `local` on every cluster login node. -->
-            <Field label="nextflow preset">
-              <select bind:value={presetChoice}>
-                <option value="">{agentPreset} — this agent's default</option>
-                {#each presets as p}<option value={p}>{p}</option>{/each}
-              </select>
-            </Field>
-          {/if}
-
-          <div class="row" style="gap:8px">
-            <button
-              class="primary"
-              onclick={launch}
-              disabled={!agentChoice || launching || settingUp || recipeProblems.length > 0}
-            >
-              {launching ? 'launching…' : 'stage and run'}
-            </button>
-          </div>
-          <!-- "setup environment" is hidden pending real testing -- do not ship
-               an untested feature to release. Markup, setupEnvironment(), and
-               envReport are left wired below so re-enabling this is just
-               flipping these two `false`s back on. -->
-          {#if false}
-            <!-- Beside run rather than on the agent page: which environment an
-                 agent needs is a fact about this workflow's steps, and this is
-                 where the agent for them was just chosen. -->
-            <div class="row" style="gap:8px">
-              <SplitButton
-                label={settingUp ? 'setting up…' : 'setup environment'}
-                title="fetch this workflow's tool images, or build its conda envs, on the chosen agent"
-                disabled={!agentChoice || launching || settingUp || solving || recipeProblems.length > 0}
-                onclick={() => setupEnvironment(false)}
-                options={[{
-                  label: 'force setup',
-                  title: 're-fetch and rebuild even what the agent already has',
-                  onclick: () => setupEnvironment(true),
-                }]}
-              />
-            </div>
-          {/if}
-          {#if false && envReport}
-            <div class="small col" style="gap:4px">
-              {#if envReport.mode === 'container'}
-                <span class="muted">
-                  {envReport.fetched} image(s) fetched · {envReport.already_present} already there
-                </span>
-              {:else if !envReport.frontend}
-                <span class="bad">
-                  neither mamba nor conda is on that agent's PATH, so its
-                  {envReport.needed?.length ?? 0} tool environment(s) could not be created
-                </span>
-              {:else}
-                <span class="muted">
-                  {envReport.created} environment(s) created · {envReport.already_present} already there
-                </span>
-              {/if}
-              {#if envReport.no_recipe?.length}
-                <span class="bad">
-                  no recipe ships for: {envReport.no_recipe.join(', ')} — create these by hand
-                </span>
-              {/if}
-              {#if envReport.no_conda?.length}
-                <!-- The report this verb exists to give a mamba agent: the step
-                     is fine, it just has no form this agent can run. -->
-                <span class="bad">
-                  these steps have no conda environment, but do have a container:
-                  {envReport.no_conda
-                    .map((e) => `${e.transform} (${e.container ?? 'no image either'})`)
-                    .join(', ')}
-                </span>
-              {/if}
-              {#if envReport.unknown?.length}
-                <span class="bad">
-                  could not tell what these steps need — re-stage: {envReport.unknown.join(', ')}
-                </span>
-              {/if}
-            </div>
-          {/if}
-          {#if recipeProblems.length}
-            <!-- A blank in the recipe is reported and never refused, right up to
-                 here: a deferred input has no file to stage and a nameless pair
-                 has no key to be read under. Off the solve that made this plan,
-                 not off what the boxes say now -- so the way out is to fill it
-                 in and solve again, which is also what puts the fix in the
-                 bundle. The route refuses the same thing; this is a signpost. -->
-            <p class="small bad">
-              This plan was solved from an unfinished recipe: {recipeProblems.join('; ')}.
-              Fill them in and solve again.
-            </p>
-          {/if}
-          <p class="small muted">
-            The same workflow can run on any agent — staging copies it there
-            first, then launches and detaches.
-          </p>
         {:else}
           <HintsPanel result={wf.result} onadd={useType} />
         {/if}
       </div>
+
+      {#if wf.success}
+      <div class="card col" style="gap:10px">
+        <h3>stage and run</h3>
+        <!-- Pre-filled from the agent, so what will be sent is on the screen
+             rather than implied. Editing a row here changes this run only;
+             the agent keeps what it declares. -->
+        <div class="field">
+          <span class="small muted">params</span>
+          <ParamRows bind:rows={runParams} inherited={chosenAgent?.default_params ?? {}} />
+          <span class="small muted hint">
+            this run only — the agent's defaults are already here, and a key
+            typed over one of them wins
+          </span>
+        </div>
+
+        <!-- An agent that is still being filled in is listed and disabled,
+             not hidden: "the one I made is missing" is a worse thing to work
+             out than "the one I made says it has no host yet". The route
+             refuses the same agents, so this is a signpost, not the check.
+             Never having been deployed is on that list too -- it is not one
+             of the agent's `problems`, because the deploy button reads those
+             and would disable itself, but it stops a run just as surely. -->
+        <Field label="on which agent">
+          <select
+            bind:value={agentChoice}
+            onchange={(e) => {
+              seedFromAgent(e.currentTarget.value)
+              setLastAgent(e.currentTarget.value)
+            }}
+          >
+            <option value="">choose an agent…</option>
+            {#each app.agents.filter((a) => !a.archived_at) as a}
+              {@const said = [
+                ...(a.problems ?? []),
+                ...(a.deployed === false ? ['has not been deployed yet'] : []),
+              ]}
+              <option value={a.name} disabled={said.length > 0}>
+                {a.name}{said.length ? ` — ${said.join(', ')}` : ''}
+              </option>
+            {/each}
+          </select>
+        </Field>
+        <div class="field">
+          <div class="spread">
+            <span class="small muted">nextflow preset — this workflow's own copy</span>
+            <div class="row" style="gap:8px">
+              {#if presetSaved}<span class="tag ok">saved</span>{/if}
+              {#if allPresets.length}
+                <select
+                  class="small"
+                  value=""
+                  onchange={(e) => {
+                    adoptPreset(e.currentTarget.value)
+                    e.currentTarget.value = ''
+                  }}
+                >
+                  <option value="" disabled>switch base preset…</option>
+                  {#each allPresets as p}<option value={p}>{p}</option>{/each}
+                </select>
+              {/if}
+              <button class="small" onclick={revertPreset} disabled={!presetDirty}>revert</button>
+              <button class="small primary" onclick={savePreset} disabled={!presetDirty}>save</button>
+            </div>
+          </div>
+          {#if presetSource}
+            <span class="small muted hint">seeded from “{presetSource}”; edits here are this workflow's own</span>
+          {/if}
+          <ConfigEditor bind:value={presetContent} rows={10} language="plain" label="nextflow preset" />
+        </div>
+
+        <div class="row" style="gap:8px">
+          <button
+            class="primary"
+            onclick={launch}
+            disabled={!agentChoice || launching || settingUp || recipeProblems.length > 0}
+          >
+            {launching ? 'launching…' : 'stage and run'}
+          </button>
+        </div>
+        {#if recipeProblems.length}
+          <!-- A blank in the recipe is reported and never refused, right up to
+               here: a deferred input has no file to stage and a nameless pair
+               has no key to be read under. Off the solve that made this plan,
+               not off what the boxes say now -- so the way out is to fill it
+               in and solve again, which is also what puts the fix in the
+               bundle. The route refuses the same thing; this is a signpost. -->
+          <p class="small bad">
+            This plan was solved from an unfinished recipe: {recipeProblems.join('; ')}.
+            Fill them in and solve again.
+          </p>
+        {/if}
+        <p class="small muted">
+          The same workflow can run on any agent — staging copies it there
+          first, then launches and detaches.
+        </p>
+      </div>
+      {/if}
 
       {#if wf.runs?.length}
         <div class="card col" style="gap:8px">

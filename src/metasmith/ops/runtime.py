@@ -62,13 +62,13 @@ def run(
     agent_path: str,
     task_key: str,
     config_preset: str | None = None,
+    config_file: str | None = None,
     params: dict | None = None,
     resource_overrides: dict | None = None,
     stub_delay: float = 0,
 ) -> dict:
     agent = load_agent(agent_path)
-    config_file = None
-    if config_preset:
+    if config_file is None and config_preset:
         presets = agent.GetNxfConfigPresets()
         assert config_preset in presets, (
             f"preset [{config_preset}] not found, available: {list(presets.keys())}"

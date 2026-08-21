@@ -430,36 +430,28 @@ export function cacheWorkflow(name, snapshot) {
 
 // -- per-step resource overrides --------------------------------------------
 // cpus/memory/duration typed into the launch panel, keyed by workflow name --
-// unlike the recently-viewed cache above, these survive a reload: they are a
-// deliberate override of what the transform declared, not a fetch result, and
-// losing one on an accidental refresh would mean retyping it before the next
-// launch. The panel keys each entry by transform name, not step order --
-// order is a position in the current plan, and a regenerate that adds or
-// drops upstream steps renumbers everything after the change, which used to
-// leave a stale numeric key silently reattached to whatever step now sits at
-// that position. `WorkflowView.svelte`'s `overridePayload()` also drops any
-// key naming no step in the current plan, so an entry from a since-removed
-// step is dropped rather than sent under a name nothing matches.
-
-const overridesKey = (name) => `metasmith.overrides.${name}`
-
-export function loadOverrides(name) {
-  return stored(overridesKey(name), {}, (r) => {
-    const parsed = JSON.parse(r)
-    return parsed && typeof parsed === 'object' ? parsed : {}
-  })
-}
+// persisted server-side in `workflows/<name>/overrides.yml`, the same way the
+// rest of a workflow is, so they survive a reload in any browser/profile. The
+// panel keys each entry by transform name, not step order -- order is a
+// position in the current plan, and a regenerate that adds or drops upstream
+// steps renumbers everything after the change, which used to leave a stale
+// numeric key silently reattached to whatever step now sits at that
+// position. `WorkflowView.svelte`'s `overridePayload()` also drops any key
+// naming no step in the current plan, so an entry from a since-removed step
+// is dropped rather than sent under a name nothing matches.
+//
+// `setOverride` fires on every keystroke, so the network write is debounced
+// per workflow rather than sent on every call -- the in-memory `overrides`
+// state the UI reads from is updated synchronously by the caller regardless.
+const OVERRIDE_SAVE_DEBOUNCE_MS = 600
+const overrideSaveTimers = new Map()
 
 export function saveOverrides(name, overrides) {
-  if (Object.keys(overrides).length) {
-    remember(overridesKey(name), JSON.stringify(overrides))
-  } else {
-    try {
-      localStorage.removeItem(overridesKey(name))
-    } catch {
-      // a browser with storage denied never wrote one to begin with
-    }
-  }
+  clearTimeout(overrideSaveTimers.get(name))
+  overrideSaveTimers.set(name, setTimeout(() => {
+    overrideSaveTimers.delete(name)
+    api.put(`/workflows/${name}/overrides`, { resource_overrides: overrides }).catch(() => {})
+  }, OVERRIDE_SAVE_DEBOUNCE_MS))
 }
 
 export async function loadRuns() {

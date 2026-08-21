@@ -130,9 +130,19 @@
     return out
   }
 
+  // -- plain -------------------------------------------------------------
+  // No grammar at all -- used for content this box has no vocabulary for
+  // (a Nextflow config's Groovy), where colouring wrong would mislead more
+  // than colouring nothing.
+  function highlightPlain(line) {
+    return escapeHtml(line)
+  }
+
   // The trailing newline matters: without it the underlay is one line shorter
   // than the textarea and the last line drifts as you scroll to the bottom.
-  let highlight = $derived(language === 'bash' ? highlightBash : highlightSsh)
+  let highlight = $derived(
+    language === 'bash' ? highlightBash : language === 'plain' ? highlightPlain : highlightSsh,
+  )
   let html = $derived(value.split('\n').map(highlight).join('\n') + '\n')
 
   function syncScroll() {
