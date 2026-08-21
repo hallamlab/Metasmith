@@ -70,7 +70,7 @@ class _WorkflowOps:
     def StageWorkflow(
         self, task: WorkflowTask, on_exist: str = "update",
         verify_external_paths: bool=False, idle_timeout: float|None = IDLE_TIMEOUT,
-        rootfs: Rootfs|str|None = None,
+        rootfs: Rootfs|str|None = None, prune_libraries: bool = True,
     ):
         task.RefuseIfDeferred()
         rootfs = Rootfs.Parse(rootfs) if rootfs is not None else None
@@ -114,7 +114,10 @@ class _WorkflowOps:
                         task_stage_partial = "transforms_only"
 
             Log.Info(f"sending context for workflow [{task._key}]")
-            task.SaveAs(self.home.ReplacePathWith(remote_path), partial=task_stage_partial)
+            task.SaveAs(
+                self.home.ReplacePathWith(remote_path),
+                partial=task_stage_partial, prune=prune_libraries,
+            )
             Log.Info(f"staging")
             mock = self._get_mock_container(task)
             if len(mock.container.binds) > 0:
