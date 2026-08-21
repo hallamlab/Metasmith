@@ -203,12 +203,14 @@ that is the last gate, because packaging damage to the engine is invisible at
 build, install and import time. `-ud` also moves the `latest` and bare-version
 tags. Expect `-uc` to spend a minute on the clean-room install.
 
-The anaconda-client token persists at `~/.config/binstar/*.token` and lasts a
-year, so `anaconda login` is rarely needed — check with `anaconda whoami` /
-`anaconda auth --list` before assuming you're logged out. If you do need to
-re-auth, it must run on a real TTY: `conda run`/`mamba run` swallow stdin, so
-the `Username:` prompt dies on `[ERROR] EOF when reading a line`. Pass
-`--no-capture-output`, or invoke the env's `bin/anaconda` directly.
+The anaconda-client token is a **per-host** file at `~/.config/binstar/*.token`
+and lasts a year, so a host that has never published has none and the cheapest
+fix is to copy the file from one that has. Check with `anaconda org whoami`, not
+`anaconda whoami`: anaconda-client 1.14 split anaconda.com from anaconda.org, and
+the bare subcommands prompt for a destination and die on a non-TTY with
+`Inappropriate ioctl for device` — which reads as an auth failure and is not one.
+A real `anaconda org login` needs a real TTY; `conda run`/`mamba run` swallow
+stdin, so invoke the env's `bin/anaconda` directly.
 
 Then:
 
