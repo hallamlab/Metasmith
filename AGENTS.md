@@ -83,13 +83,14 @@ The ordering that makes this work at all: compiling metadata needs a working eng
 engine needs the library — so the compile must run **from the source tree**, never from an
 installed package.
 
-The engine ships no copy of the standard library. It declares `metasmith_libraries` as a conda
-dependency in `envs/metasmith/base.yml`, and `gui.stdlib.clone_stdlib` finds that package by
-import, copies it into the project and compiles it there. An install without it runs and every
-type panel is empty, which is why the dependency is one-way: the library is content, and a
-`metasmith` dependency back would be a cycle conda cannot solve. The `vendor-library` verb
-survives only for fabfos's own bundled copy, and it is `python -m metasmith build
-vendor-library` — not a `dev/metasmith.sh` flag.
+The engine ships the standard library inside its own package, staged by `dev/metasmith.sh
+--vendor-library` into `src/metasmith/vendor/`. It is a build product like the three above:
+generated, never committed, and `_assert_library_bundle` refuses `-bp`, `-bc` and `-bd` without
+it. Content only — no `_metadata/` — so nothing has to be compiled before it, and the consumer
+compiles its own copy in a writable place (`gui.stdlib.clone_stdlib`). It sits *inside*
+`src/metasmith/` on purpose: `_build_hash` walks that tree, so the library's content is part of
+the engine's version and the two cannot drift. fabfos's own bundled copy still requires
+metadata, which is what `--no-metadata` exists to opt out of.
 
 A fourth step is needed before anything *stages an agent*, and its absence looks nothing like
 its cause: `bash envs/fabfos/setup_agent_env.sh` (idempotent; the script's own header explains
