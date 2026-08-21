@@ -1526,13 +1526,21 @@ def run_log(workflow, run):
     key = rec.record.get("task_key")
     if not key:
         return jsonify({"lines": []})
+    run_number = rec.record.get("run_number")
+    if run_number is None:
+        # Pre-launch (staging/staged/launching) this task_key has no run-specific
+        # log dir yet -- only `logs.latest`, a symlink shared across every run of
+        # this task_key that still points at whichever run came before this one
+        # until the launcher relinks it. Resolving through it here would hand
+        # back the PREVIOUS run's log instead of "nothing yet".
+        return jsonify({"lines": []})
     try:
         out = op_runtime.tail(
             str(p.agent_path(agent_name)),
             key,
             source=request.args.get("source", "agent"),
             lines=int(request.args.get("lines", 200)),
-            run=rec.record.get("run_number"),
+            run=run_number,
         )
     except Exception as exc:
         return jsonify({"lines": [], "error": str(exc)})
@@ -1564,9 +1572,17 @@ def run_trace(workflow, run):
         out = op_runtime.read_trace("/nonexistent")
         out["error"] = f"agent [{agent_name}] is gone"
         return jsonify(out)
+    run_number = rec.record.get("run_number")
+    if run_number is None:
+        # Same hazard as run_log above: pre-launch there is no run-specific trace
+        # file yet, only the task's shared `logs.latest`, which can still point
+        # at whichever run came before this one -- every per-step chip in the
+        # GUI is driven straight off this response, so leaking it here is what
+        # paints steps as already done/failed the instant a new run is created.
+        return jsonify(op_runtime.read_trace("/nonexistent"))
     try:
         return jsonify(op_runtime.trace(
-            str(p.agent_path(agent_name)), key, rec.record.get("run_number"),
+            str(p.agent_path(agent_name)), key, run_number,
         ))
     except Exception as exc:
         out = op_runtime.read_trace("/nonexistent")

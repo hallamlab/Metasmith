@@ -215,11 +215,11 @@
     if (rec.state === 'failed' || rec.state === 'cancelled') {
       return launched ? { stage: 1, status: 'fail' } : { stage: 0, status: 'fail' }
     }
-    // While staging/launching, `run_number` isn't assigned yet, so trace/log
-    // reads resolve through `logs.latest` -- which can still point at the
-    // *previous* run's directory until its launcher relinks it. Trusting
+    // Before `run_number` is assigned -- staging, staged, or launching --
+    // trace/log reads resolve through `logs.latest`, which can still point at
+    // the *previous* run's directory until its launcher relinks it. Trusting
     // `traceFailed` here paints a failure that belongs to the prior run.
-    if (rec.state === 'staging' || rec.state === 'launching') return { stage: 0, status: 'started' }
+    if (rec.run_number == null) return { stage: 0, status: 'started' }
     // A task failure that Nextflow was told to ignore still lets the run
     // finish as `completed` -- but the run is not a success, so this is
     // reported as soon as it is known rather than waiting for `completed`
@@ -442,10 +442,22 @@
           <button class="small" onclick={refreshNow}>refresh now</button>
         </div>
       </div>
-      {#if log.error}
-        <p class="small muted">{log.error}</p>
+      {#if rec.run_number == null}
+        <!-- Not just `staging`/`launching` -- `staged` sits between them, and
+             `run_number` isn't assigned until the launcher script has actually
+             relinked `logs.latest` to the new run's directory. Any state
+             before that number lands, a tail read with no `run` still
+             resolves through `logs.latest` itself, which can still point at
+             the PREVIOUS run right up until the relink. Keying off the
+             number rather than naming every pre-run state is what keeps this
+             from quietly reopening the gap the next state gets added. -->
+        <p class="small muted">nothing yet -- staging</p>
+      {:else}
+        {#if log.error}
+          <p class="small muted">{log.error}</p>
+        {/if}
+        <pre class="log">{log.lines?.join('\n') || 'nothing yet'}</pre>
       {/if}
-      <pre class="log">{log.lines?.join('\n') || 'nothing yet'}</pre>
       {#if rec.live}
         <p class="small muted">
           Backing off from 5s up to 60s between refreshes. The run is detached
