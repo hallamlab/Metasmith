@@ -8,6 +8,7 @@ orfs      = model.AddRequirement(lib.GetType("sequences::orfs"))
 kofam     = model.AddRequirement(lib.GetType("annotation::kofamscan_results"), parents={orfs})
 clean     = model.AddRequirement(lib.GetType("annotation::clean_predictions"), parents={orfs})
 uniref    = model.AddRequirement(lib.GetType("annotation::diamond_uniref50_results"), parents={orfs})
+uniref_d  = model.AddRequirement(lib.GetType("annotation::diamond_uniref50_descriptions"), parents={orfs})
 pbert_emb = model.AddRequirement(lib.GetType("annotation::proteinbert_embeddings"), parents={orfs})
 bridge    = model.AddRequirement(lib.GetType("ref::mnxr_lookup"))
 landmarks = model.AddRequirement(lib.GetType("ref::label_transfer_landmarks"))
@@ -24,6 +25,7 @@ def protocol(context: ExecutionContext):
     ikof  = context.Input(kofam)
     icln  = context.Input(clean)
     iuni  = context.Input(uniref)
+    iunid = context.Input(uniref_d)
     ipe   = context.Input(pbert_emb)
     ibr   = context.Input(bridge)
     ilm   = context.Input(landmarks)
@@ -38,6 +40,7 @@ def protocol(context: ExecutionContext):
             --kofam {ikof.container} \
             --clean {icln.container} \
             --uniref {iuni.container} \
+            --uniref-descriptions {iunid.container} \
             --pbert-emb {ipe.container} \
             --bridge {ibr.container} \
             --landmarks {ilm.container} \

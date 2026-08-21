@@ -1720,7 +1720,7 @@ def _node(entry_path: Path, root: Path, name: str) -> dict:
         "type": "dir" if (entry_path.is_dir() and not dangling) else "file",
         "size": size, "mtime": mtime,
         "symlink": link, "dangling": dangling,
-        "role": role, "type_name": None, "is_item": False,
+        "role": role, "type_name": None, "is_item": False, "parents": [],
         "children": [] if entry_path.is_dir() and not dangling else None,
     }
 
@@ -1759,7 +1759,8 @@ def run_tree(workflow, run):
     tree = {
         "name": "", "path": "", "type": "dir", "role": "output",
         "size": None, "mtime": None, "symlink": False, "dangling": False,
-        "type_name": None, "is_item": False, "children": walk(root, 0),
+        "type_name": None, "is_item": False, "parents": [],
+        "children": walk(root, 0),
     }
     _tag_manifest_types(outputs, tree)
     tree["children"].sort(key=lambda n: (n["role"] != "output", n["name"]))
@@ -1771,30 +1772,59 @@ def run_tree(workflow, run):
 
 def _tag_manifest_types(outputs: Path, tree: dict) -> None:
     try:
-        info = op_data.inspect_library(str(outputs))
+        lib = op_data.load_data_lib(str(outputs))
     except Exception:
         return
     named = {
-        i["path"]: i["type_name"] for i in info["items"]
-        if not Path(i["path"]).is_absolute()
+        str(p): dtype_name for p, dtype_name, _ep in lib.Iterate()
+        if not p.is_absolute()
     }
     if not named:
         return
     by_name = {}
+    key_by_name = {}
     for k, v in named.items():
         by_name.setdefault(Path(k).name, v)
+        key_by_name.setdefault(Path(k).name, k)
+    ancestry = _ancestry_index(lib, outputs, named)
 
     def visit(node):
-        t = named.get(node["path"])
-        if t is None and node["type"] == "file":
-            t = by_name.get(node["name"])
+        key = node["path"] if node["path"] in named else None
+        if key is None and node["type"] == "file":
+            key = key_by_name.get(node["name"])
+        t = named.get(key) if key else None
         if t is not None:
             node["type_name"] = t
             node["is_item"] = True
+            node["parents"] = ancestry.get(key, [])
         for c in node.get("children") or []:
             visit(c)
 
     visit(tree)
+
+
+# Every ancestor, not just the file's direct parents: `DataInstanceLibrary.Unpack`
+# re-expands the transitively reduced graph on disk into the full closure, so the
+# panel can answer "where did this come from" without walking anything.
+def _ancestry_index(lib, outputs: Path, named: dict[str, str]) -> dict[str, list[dict]]:
+    out: dict[str, list[dict]] = {}
+    for path, parents in lib.parents.items():
+        key = str(path)
+        if key not in named:
+            continue
+        rows = []
+        for pm in parents:
+            p = Path(pm.path)
+            node = None if p.is_absolute() else str(p)
+            rows.append({
+                "path": str(p),
+                "type_name": pm.name,
+                # An unpublished intermediate is in the manifest with no file
+                # behind it; the panel says so rather than offering it as a link.
+                "node": node if node and (outputs/p).exists() else None,
+            })
+        out[key] = rows
+    return out
 
 
 @bp.get("/runs/<workflow>/<run>/file")
