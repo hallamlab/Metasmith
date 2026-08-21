@@ -116,6 +116,7 @@ unset PYTHONPATH
 ./dev/metasmith.sh -br         # build the relay binaries (all four arch/os targets)
 ./dev/metasmith.sh -be         # build the solver engine (same four targets) + stage it
 ./dev/metasmith.sh --build-gui # build the frontend bundle (needs node; see below)
+./dev/metasmith.sh --vendor-library # stage the standard library into the package
 ./dev/metasmith.sh -bp         # build the pip wheel + sdist  (stamps build_hash.txt)
 ./dev/metasmith.sh -bd         # build the docker image, tagged <version>-<hash>
 ./dev/metasmith.sh -bs         # build the apptainer .sif from the local docker image
@@ -125,6 +126,19 @@ unset PYTHONPATH
 `-brc`/`-br` produce the relay binaries that get baked into the docker image;
 build them before `-bd`. `-bp` stamps `build_hash.txt`, which fixes the build
 hash that ties the wheel, image tag, and SIF to the exact source state.
+
+The order is only load-bearing where one step consumes another's output. The
+four producers above `-bp` — relays, solver engine, GUI bundle, vendored library
+— are independent of each other and can run concurrently; so can `-bd` and `-bc`
+below it, which read the same frozen `dist/` sdist and write to disjoint places.
+
+`--vendor-library` re-stages `src/metasmith_libraries/` into
+`src/metasmith/vendor/`, which is inside the tree `_build_hash` walks — so it
+must land before `-bp` stamps the hash, or the wheel ships a library the version
+does not describe. **Re-stage it every release rather than trusting the bundle a
+previous build left behind**: `_assert_library_bundle` checks that the bundle
+exists, not that it is current, so a library edit since the last build is
+shipped stale and nothing says so.
 
 The cross-compile container is an **upstream** image
 (`joseluisq/rust-linux-darwin-builder`) and `-brc` now pulls it. It used to
