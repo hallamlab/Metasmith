@@ -45,19 +45,21 @@ def CollectResults(
 ) -> DataInstanceLibrary:
     output = DataInstanceLibrary(output_path)
     tlibs: dict[str, DataTypeLibrary] = {}
-    for lib in task.transform_libraries:
-        for namespace, tlib in lib.types.items():
-            tlibs[namespace] = tlib
-    for lib in task.data_libraries:
+    # Staged libraries are pruned per-transform (PruneTypes), so two libraries
+    # in the same namespace can carry disjoint types -- union them instead of
+    # last-one-wins, and copy rather than mutate the incoming library's own
+    # DataTypeLibrary object.
+    for lib in list(task.transform_libraries) + list(task.data_libraries):
         for namespace, tlib in lib.types.items():
             if namespace in tlibs:
                 _lib = tlibs[namespace]
-                for k, e in tlib.types.items():
-                    if k in _lib: continue
-                    _lib[k] = e
             else:
-                _lib = tlib
-            tlibs[namespace] = _lib
+                _lib = DataTypeLibrary.Unpack(tlib.Pack())
+                _lib.types = {}
+                tlibs[namespace] = _lib
+            for k, e in tlib.types.items():
+                if k in _lib.types: continue
+                _lib.types[k] = e
     for namespace, tlib in tlibs.items():
         output.AddTypeLibrary(namespace=namespace, lib=tlib)
     inst_id2inst: dict[str, DataInstance] = {}
