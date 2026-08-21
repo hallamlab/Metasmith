@@ -87,6 +87,18 @@ instead: `ORGANISM` is bare species for most isolates, `DEFINITION` carries the 
 only sometimes, and two assemblies of one species collide under either. PPanGGOLiN then
 refuses the whole run over duplicate names.
 
+## An annotator emits its hits and its descriptions
+
+Two products, not one: a hit table keyed on an accession, and a table mapping that
+accession to what it means. The description is written once per key rather than repeated
+on every hit row, and both halves travel the chunk/merge pair — a `<type>_descriptions_chunk`
+beside the `<type>_chunk`, merged with the keys deduplicated.
+`transforms/functionalAnnotation/diamond_uniref50.py` and its merge are the reference.
+
+**A merged description table is only delivered if it is a target.** A run publishes what was
+asked for and nothing else, so a template naming `annotation::kofamscan_results` and not
+`annotation::kofamscan_descriptions` gets one of the two files.
+
 ## Templates
 
 A template is a starting point a user picks in the GUI: a `metasmith.Spec` whose input

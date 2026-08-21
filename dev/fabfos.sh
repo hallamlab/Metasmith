@@ -35,7 +35,7 @@ case $1 in
         # bundle, which `--check`/-bp/-bc now refuse rather than shipping.
         "$HERE/dev/fabfos.sh" --build-metadata
         echo "bundling metasmith library: $LIB_SRC (+ $LIB_ENVS) -> $LIB_DST"
-        # shared with metasmith's own release (dev/metasmith.sh --vendor-library):
+        # the same verb metasmith exposes; the engine itself no longer vendors:
         # data_types/resources/transforms are the pieces the planner loads at
         # runtime; envs/ -- the conda recipes behind each `conda:` declaration --
         # the planner never reads but a `--runtime mamba` install needs to create

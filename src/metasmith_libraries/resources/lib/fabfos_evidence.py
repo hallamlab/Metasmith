@@ -831,23 +831,43 @@ def read_dl_ec(path, source: str, ec_to_mnxr: pd.DataFrame,
 
 _BLAST6_BSR_COLS = [
     "qseqid", "sseqid", "pident", "length", "mismatch", "gapopen",
-    "qstart", "qend", "sstart", "send", "evalue", "bitscore", "stitle", "bsr",
+    "qstart", "qend", "sstart", "send", "evalue", "bitscore", "bsr",
 ]
 
 
+def read_uniref50_titles(path) -> dict:
+    """`sseqid -> stitle` from the descriptions table beside a hit table."""
+    if path is None or not Path(path).exists():
+        return {}
+    df = pd.read_csv(path, sep="\t", dtype=str).fillna("")
+    if list(df.columns[:2]) != ["sseqid", "description"]:
+        raise SystemExit(
+            "[evidence] uniref50 descriptions header is not (sseqid, description): "
+            "got " + repr(list(df.columns)) + ". merge_diamond_uniref50 writes it, "
+            "so a drift here silently empties every intermediate_name")
+    return dict(zip(df["sseqid"], df["description"]))
+
+
 def read_uniref50(path, source: str, uniprot_to_mnxr: pd.DataFrame,
-                  lane_set: str = "chosen_4") -> pd.DataFrame:
-    """Load DIAMOND BLAST6+stitle+BSR; best-hit per ORF; project UniProt -> MNXR."""
+                  lane_set: str = "chosen_4", descriptions=None) -> pd.DataFrame:
+    """Load DIAMOND BLAST6+BSR; best-hit per ORF; project UniProt -> MNXR."""
     if path is None or not Path(path).exists():
         return pd.DataFrame(columns=SCHEMA_COLS)
-    df = pd.read_csv(path, sep="\t", header=None, names=_BLAST6_BSR_COLS, dtype=str)
+    df = pd.read_csv(path, sep="\t", dtype=str)
+    if list(df.columns) != _BLAST6_BSR_COLS:
+        raise SystemExit(
+            "[evidence] uniref50 hit header is not the " + str(len(_BLAST6_BSR_COLS))
+            + " columns this lane parses: got " + repr(list(df.columns))
+            + ". diamond_uniref50 writes the header, so a drift here silently "
+            "renames every column and empties the lane")
     df["evalue"] = pd.to_numeric(df["evalue"], errors="coerce")
     df["bitscore"] = pd.to_numeric(df["bitscore"], errors="coerce")
     df["bsr"] = pd.to_numeric(df["bsr"], errors="coerce")
     df = (df.sort_values(["qseqid", "evalue", "bitscore"], ascending=[True, True, False])
             .drop_duplicates(subset=["qseqid"], keep="first"))
     df["uniprot_accession"] = df["sseqid"].str.replace(r"^UniRef50_", "", regex=True)
-    df["intermediate_name"] = df["stitle"].apply(_clean_stitle)
+    titles = read_uniref50_titles(descriptions)
+    df["intermediate_name"] = df["sseqid"].map(titles).fillna("").apply(_clean_stitle)
     df = df[["qseqid", "uniprot_accession", "intermediate_name", "bsr"]].rename(
         columns={"qseqid": "orf", "bsr": "raw_score"})
     df["orf"] = df["orf"].str.replace(r"-(\d+)$", r"_\1", regex=True)
@@ -1001,7 +1021,8 @@ def build_mnxr_lookup(ko: Path, ec: Path, uniprot: Path, out: Path):
 # =====================================================================
 
 def compile_evidence(source, kofam, dl_ec, uniref50, embed,
-                     ko_to_mnxr_path, ec_to_mnxr_path, uniprot_to_mnxr_path, out):
+                     ko_to_mnxr_path, ec_to_mnxr_path, uniprot_to_mnxr_path, out,
+                     uniref50_descriptions=None):
     print("[compile] loading bridges...", flush=True)
     ko_to_mnxr = load_ko_to_mnxr(ko_to_mnxr_path) if ko_to_mnxr_path else pd.DataFrame(columns=["ko", "mnxr"])
     # ec_to_mnxr here is the PRE-BUILT 2-col bridge (from build-ec-bridge), not
@@ -1022,11 +1043,12 @@ def compile_evidence(source, kofam, dl_ec, uniref50, embed,
         ("uniref50", read_uniref50, uniref50, uniprot_to_mnxr),
         ("pbert", read_embed_transfer, embed, None),
     ]
+    extra = {"uniref50": {"descriptions": uniref50_descriptions}}
     frames = []
     for name, reader, path, bridge in lanes:
         if not path:
             continue
-        f = reader(path, source, bridge)
+        f = reader(path, source, bridge, **extra.get(name, {}))
         print(f"[compile] {name}: {len(f):,} rows ({f['orf'].nunique():,} ORFs, {f['mnxr'].nunique():,} MNXRs)", flush=True)
         frames.append(f)
     if not frames:
@@ -1066,6 +1088,7 @@ def main():
     c.add_argument("--kofam", type=Path, default=None)
     c.add_argument("--dl-ec", type=Path, default=None)
     c.add_argument("--uniref50", type=Path, default=None)
+    c.add_argument("--uniref50-descriptions", type=Path, default=None)
     c.add_argument("--embed", type=Path, default=None)
     c.add_argument("--ko-to-mnxr", type=Path, default=None)
     c.add_argument("--ec-to-mnxr", type=Path, default=None)
@@ -1084,7 +1107,8 @@ def main():
         build_mnxr_lookup(a.ko_to_mnxr, a.ec_to_mnxr, a.uniprot_to_mnxr, a.out)
     elif a.cmd == "compile":
         compile_evidence(a.source, a.kofam, a.dl_ec, a.uniref50, a.embed,
-                         a.ko_to_mnxr, a.ec_to_mnxr, a.uniprot_to_mnxr, a.out)
+                         a.ko_to_mnxr, a.ec_to_mnxr, a.uniprot_to_mnxr, a.out,
+                         uniref50_descriptions=a.uniref50_descriptions)
 
 
 if __name__ == "__main__":

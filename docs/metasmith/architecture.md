@@ -143,6 +143,12 @@ to it is invisible: the step does its work, reports success internally, and the 
 failed `ls`. Nothing downstream can read a host or a sample out of those names, so attribution
 must come from file *content*.
 
+**A run publishes its targets and nothing else** (`WorkflowPlan.publish_intermediates`, off by
+default). Intermediates stay in the work dir and the cache store, so what a collect copies back is
+what was asked for — and a run that dies before its last step leaves an empty results folder, where
+the per-step logs are the only record. `CollectResults` still registers an unpublished file: the
+manifest entry is what lets a target name it as an ancestor, and it simply has no file behind it.
+
 ## Planning
 
 **`group_by` and `batch_size` are two different axes and five files must agree on which is
@@ -457,15 +463,15 @@ input produced by an earlier step names that step's slot id, so a key moves when
 does; `cache_decisions` stamps the slot id onto the consumer's instance as well as the producer's,
 because the two start life sharing the transform archetype's id.
 
-**Leaf ids are content-addressed, with the relative path folded in** —
-`multihash(content ‖ relpath)`, over the file's bytes or over a directory's whole tree, when the
-leaf is present at `AddItem` time. That is what makes two independent runs over identical inputs
-hit the same shards with no import step. Folding `relpath` in is not decoration: pure
-content-addressing collapses every degenerate-but-distinct input (N empty files, byte-identical
-samples) onto one id, flattening fan-out and tripping the solver's O(n²) collision path. Absent
-or remote inputs fall back to a random per-call id and get no reuse — and a 300k-file reference
-folder pays a full tree read per stage, which is why `fabfos/refs.py` substitutes the DVC pin's
-own md5 rather than deriving one.
+**Leaf ids are stat-addressed** — `multihash("stat" ‖ abspath ‖ mtime_ns)`, one stat whether the
+leaf is a file or a 300k-file directory. The absolute path belongs to whichever host ran the stat,
+so `StageWorkflow` re-derives every leaf id on the agent before compiling (`restat_leaf_ids`) and
+writes the plan back to `task.yml`: the client that registered an input living on the agent's host
+cannot stat it, and `CollectResults` later joins the trace against that same plan. Re-submitting
+unmodified files at the same paths hits the same shards; two hosts holding identical bytes at
+different paths do not agree, and a same-mtime in-place edit is invisible. A path nothing can stat
+keeps a random per-call id and gets no reuse. `fabfos/refs.py` substitutes the DVC pin's own md5,
+which survives the re-materialisation that moves an mtime.
 
 **A hit short-circuits the executor at compile time, not at run time.** The probe rewrites that
 step's emission into a synthetic channel, and **every tuple must re-enter `o.post` before any
@@ -707,9 +713,8 @@ The two Rust products are built separately and shipped differently; see
 ### When a build artifact may be DVC-pinned
 
 A generated artifact earns a pin when rebuilding it is expensive *and* the pin is genuinely how it
-reaches consumers — `src/metasmith/engine.dvc` qualifies on both counts, since it carries a
-four-target cross-compile that a source checkout has no other way to obtain. An artifact that
-something regenerates on demand does not qualify, and neither does one nothing reads; the GUI's
+reaches consumers. An artifact that something regenerates on demand does not qualify, and
+neither does one nothing reads; the GUI's
 `scratch/gui-main` pin managed to be both, snapshotting 31 files of local run detritus that
 `dev/metasmith.sh --gui` recreates with `mkdir -p`, and its objects had already left every cache
 by the time it was removed.

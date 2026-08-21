@@ -5,40 +5,43 @@ import time
 import uuid
 from pathlib import Path
 
-from ...caching.keys import content_multihash_key, multihash_key, tree_multihash_key
+from ...caching.keys import multihash_key, stat_multihash_key
 from ...hashing import KeyGenerator
 from ..paths import is_deferred
+
+
+def stat_leaf_id(abs_path: Path, fork_id: str | None = None) -> str | None:
+    # The leaf identity of whatever is at `abs_path` on this host, or None if
+    # this host cannot see it. One stat, no bytes read -- a directory costs the
+    # same as a file, where a content address costs a whole-tree walk.
+    #
+    # The path is folded in as given: absolute, on the filesystem being stat'd.
+    # Callers that mint on one host for a file that lives on another get None
+    # and must fall back; the honest re-derivation happens at staging time, on
+    # the host that owns the file.
+    try:
+        st = abs_path.stat()
+    except OSError:
+        return None
+    key = stat_multihash_key(abs_path, st.st_mtime_ns)
+    if fork_id:
+        key = multihash_key(key + b"\x00fork:" + fork_id.encode("utf-8"))
+    return key.hex()
 
 
 class _LeafIdentity:
     def _mint_leaf_id(self, path: Path) -> str:
         key = None
         if is_deferred(path):
-            key = multihash_key(b"deferred\x00" + str(path).encode("utf-8"))
+            key = multihash_key(b"deferred\x00" + str(path).encode("utf-8")).hex()
         elif not os.environ.get("METASMITH_LEAF_RANDOM"):
             abs_path = path if path.is_absolute() else self.location / path
-            try:
-                fold_path = abs_path.relative_to(self.location)
-            except ValueError:
-                fold_path = path
-            try:
-                content = None
-                if abs_path.is_file():
-                    content = content_multihash_key(abs_path)
-                elif abs_path.is_dir():
-                    content = tree_multihash_key(abs_path)
-                if content is not None:
-                    fold = str(fold_path).encode("utf-8")
-                    if self.fork_id:
-                        fold += b"\x00fork:" + self.fork_id.encode("utf-8")
-                    key = multihash_key(content + fold)
-            except OSError:
-                key = None
+            key = stat_leaf_id(abs_path, self.fork_id)
         if key is None:
             raw = uuid.uuid4().bytes + time.time_ns().to_bytes(16, "big", signed=False)
-            key = multihash_key(raw)
+            key = multihash_key(raw).hex()
         self.instance_meta[path] = {
-            "instance_id": key.hex(),
+            "instance_id": key,
             "origin": "leaf",
             "lineage_payload": None,
             "fork_id": self.fork_id,

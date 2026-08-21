@@ -2040,6 +2040,41 @@ class TestResultTree:
             f"/api/runs/{runnable}/{run}/file", query_string={"path": "escape.txt"})
         assert r.status_code >= 400
 
+    def test_a_node_carries_its_whole_ancestry(self, client, runnable, tmp_path):
+        run = TestResultsFiltering._name(client, runnable)
+        project: Project = client.application.config["MSM_PROJECT"]
+        outputs = project.outputs_path(runnable, run)
+        outputs.mkdir(parents=True, exist_ok=True)
+
+        external = tmp_path / "reads.fq"
+        external.write_text("@x\nACGT\n+\n!!!!\n")
+        types = DataTypeLibrary()
+        for name in ("reads", "assembly", "bam"):
+            types[name] = Endpoint(properties={name})
+        tp = tmp_path / "t.yml"
+        types.Save(tp)
+
+        lib = DataInstanceLibrary(outputs)
+        lib.AddTypeLibrary(tp, namespace="mock")
+        lib.AddItem(external, "mock::reads")
+        (outputs / "asm.fa").write_text("asm")
+        lib.AddItem(Path("asm.fa"), "mock::assembly", parents=[external])
+        (outputs / "out.bam").write_text("bam")
+        lib.AddItem(Path("out.bam"), "mock::bam", parents=[Path("asm.fa")])
+        lib.Save()
+
+        flat = self._flat(client.get(f"/api/runs/{runnable}/{run}/tree").get_json()["root"])
+        # The grandparent is there because a saved index is read back expanded,
+        # not because the tree walks anything.
+        parents = flat["out.bam"]["parents"]
+        assert {p["type_name"] for p in parents} == {"mock::assembly", "mock::reads"}
+        by_type = {p["type_name"]: p for p in parents}
+        assert by_type["mock::assembly"]["node"] == "asm.fa"
+        assert by_type["mock::reads"]["node"] is None
+        assert flat["asm.fa"]["parents"] == [
+            {"path": str(external), "type_name": "mock::reads", "node": None},
+        ]
+
     def test_the_alias_resolves_for_reading(self, client, runnable, tmp_path):
         run, _ = self._collected(client, runnable, tmp_path)
         body = client.get(
@@ -2205,7 +2240,7 @@ class TestJobs:
         client.post("/api/agents", json={"name": "smith", "home": str(tmp_path / "h")})
         from metasmith.logging import Log
 
-        def _deploy(path, assertive=False):
+        def _deploy(path, assertive=False, on_phase=None):
             Log.Info("a distinctive line")
             return {"status": "deployed"}
 

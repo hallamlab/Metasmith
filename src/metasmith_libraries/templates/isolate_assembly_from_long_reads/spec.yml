@@ -7,7 +7,9 @@ sample_type: sequences::long_reads
 target_types:
 - sequences::hifiasm_meta_assembly
 - annotation::diamond_uniref50_results
+- annotation::diamond_uniref50_descriptions
 - annotation::kofamscan_results
+- annotation::kofamscan_descriptions
 transform_libraries:
 - logistics
 - assembly

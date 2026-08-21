@@ -1,11 +1,11 @@
 # A library whose recorded identities are taken at their word.
 #
-# A `DataInstanceLibrary` normally derives a leaf's `instance_id` from the file's
-# bytes at `AddItem` time. That is the right default and it is what makes two
-# independent runs over identical inputs hit the same cache shards. It is the
-# wrong default for a set of reference databases: they are transform products with
-# no inputs, they do not change, and re-deriving their identity costs 10 seconds
-# of blake3 over 24 GB on *every* plan against a solve that takes 1.
+# A `DataInstanceLibrary` derives a leaf's `instance_id` from where the file is
+# and when it last changed -- one stat, re-taken at staging time on the host that
+# owns it. That is cheap enough for anything, and it is still the wrong identity
+# for a set of reference databases: a `dvc checkout` restoring the very same
+# bytes moves mtime, so every id under 24 GB of references would move and take
+# every downstream cache shard with it.
 #
 # Pinning is how a library says its recorded ids are already correct. A pinned
 # library refuses every mutation, returns `instance_meta` entries verbatim without
@@ -54,16 +54,13 @@
 # `UNVERIFIABLE`, never `OK` -- the tool must not launder "we did not check" into
 # "it is fine".
 #
-# ## Why this is not the shortcut `docs/metasmith/plans/cross-run-reentrancy.md` rejected
+# ## Where a pinned id comes from
 #
-# That document rejected `(size, mtime)` as the *derivation* of identity, on the
-# premise that hashing is a one-time build cost that amortizes to zero. Nothing
-# here derives an identity from a stamp. The id comes from content (or, for the
-# fabfos references, from the DVC pin's md5, which is itself a digest over the
-# bytes); the stamp only raises a question about an id that already exists, and
-# fails closed by raising. The rejection stands; this is a different mechanism at
-# a different point in the pipeline. The premise it rested on is also what this
-# change repairs -- the driver was re-paying that "one-time" cost per plan.
+# Not from a stat. fabfos mints these from the DVC pin's md5, a digest over the
+# real bytes that every host checking out the same pin agrees on -- host-portable
+# where a stat-derived id is not, and stable across the re-materialisation that
+# would move one. That is the whole reason a pin is worth keeping. The stamp
+# below only raises a question about an id that already exists.
 
 from __future__ import annotations
 

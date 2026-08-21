@@ -42,8 +42,11 @@ def build_spec(rebuild: bool = False) -> Spec:
         sample_type="sequences::assembly",
         target_types=[
             "annotation::kofamscan_results",
+            "annotation::kofamscan_descriptions",
             "annotation::diamond_uniref50_results",
+            "annotation::diamond_uniref50_descriptions",
             "annotation::interproscan_results",
+            "annotation::interproscan_descriptions",
         ],
         transform_libraries=A.transforms(
             "logistics", "metagenomics", "functionalAnnotation"),

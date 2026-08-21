@@ -62,7 +62,7 @@ def _stage(task: WorkflowTask, work_dir: Path) -> str:
 
 
 class TestPublishIntermediates:
-    def test_default_publishes_all(self, mock_samples, mock_types, temp_dir):
+    def test_enabled_publishes_all(self, mock_samples, mock_types, temp_dir):
         task = _binning_task(mock_samples, mock_types, temp_dir, publish_intermediates=True)
         bam_order = None
         for step in task.plan.steps:
@@ -100,12 +100,15 @@ class TestPublishIntermediates:
         restored = WorkflowPlan.Unpack(packed, libraries)
         assert restored.publish_intermediates is False
 
-    def test_unpack_legacy_defaults_true(self, mock_samples, mock_types, temp_dir):
-        task = _binning_task(mock_samples, mock_types, temp_dir, publish_intermediates=False)
+    def test_default_is_targets_only(self, mock_samples, mock_types, temp_dir):
+        task = _binning_task(mock_samples, mock_types, temp_dir, publish_intermediates=True)
+        assert WorkflowPlan(given=[], targets=[], steps=[]).publish_intermediates is False
+
+        # An index with no flag reads the way the dataclass defaults, so the two
+        # cannot drift into publishing different things for the same plan.
         packed = task.plan.Pack()
         packed.pop("publish_intermediates", None)
-
         libraries = {task.transform_libraries[0].GetKey(): task.transform_libraries[0]}
         libraries[mock_samples.GetKey()] = mock_samples
         restored = WorkflowPlan.Unpack(packed, libraries)
-        assert restored.publish_intermediates is True
+        assert restored.publish_intermediates is False

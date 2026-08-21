@@ -30,16 +30,19 @@ resolve to the same instance_ids.
 
 Two sources of identity:
 
-- **Leaf** (``origin="leaf"``) — set by ``DataInstanceLibrary.AddItem``.
-  **Content-addressed** (``multihash(blake3(file_bytes) ‖ relpath)``) when
-  the file is present at add time, so identical input bytes at the same
-  relative path yield identical leaf ids across independent runs — this is
-  what makes cross-run resume automatic without ``import-library``. The
-  relative path is folded in so distinct files that share bytes stay
-  distinct (no fan-out collapse). Falls back to a unique-per-call random
-  id when the file is absent/unreadable (remote or lazily materialized
-  inputs get no cross-run reuse). Force the legacy random id with
-  ``METASMITH_LEAF_RANDOM=1``.
+- **Leaf** (``origin="leaf"``) — minted by ``DataInstanceLibrary.AddItem``
+  and re-derived at staging time by ``restat_leaf_ids``.
+  **Stat-addressed** (``multihash("stat" ‖ abspath ‖ mtime_ns)``): one
+  stat, no bytes read, so a 24 GB reference costs what a small file costs.
+  Re-submitting the same files, unmodified, at the same paths therefore
+  reuses cached results across runs. The absolute path belongs to the host
+  that ran the stat, which is why staging re-derives: the client that
+  registered a remote input cannot see it, and the agent that will read it
+  can. Two hosts holding identical bytes at different paths do not agree,
+  and an in-place edit that restores mtime is invisible — the same
+  asymmetry ``models/libraries/pinned.py`` spells out. Falls back to a
+  unique-per-call random id where nothing can stat the path. Force the
+  legacy random id with ``METASMITH_LEAF_RANDOM=1``.
 - **Lineage** (``origin="lineage"``) — set by the planner /
   post-execution promote: ``instance_id = lineage_key(...)`` over the
   transform's static metadata + input identities. Two workspaces running

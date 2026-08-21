@@ -44,11 +44,20 @@ def _variant_transform_code(body_marker: str) -> str:
     )
 
 
-def _build_task(root: Path, body_marker: str, tr_name: str):
-    types_path = build_types_library(root, TYPE_NAMES)
-    samples = build_samples_library(root, types_path, count=1, input_type="seed")
+# The samples library is shared across the two tasks of every test here, and
+# that is load-bearing: leaf ids are the path and the mtime, so a second copy of
+# the same inputs elsewhere would miss for a reason that has nothing to do with
+# the protocol these tests are about.
+def _fixture(tmp_path: Path):
+    types_path = build_types_library(tmp_path, TYPE_NAMES)
+    samples = build_samples_library(tmp_path, types_path, count=1, input_type="seed")
+    return types_path, samples
+
+
+def _build_task(fixture, tr_root: Path, body_marker: str, tr_name: str):
+    types_path, samples = fixture
     tr_lib = build_transform_library(
-        root / "tr", types_path, {tr_name: _variant_transform_code(body_marker)}
+        tr_root, types_path, {tr_name: _variant_transform_code(body_marker)}
     )
     return build_workflow_task(
         samples, tr_lib, sample_type="seed", target_specs=[("out_target", {"out"})]
@@ -56,11 +65,12 @@ def _build_task(root: Path, body_marker: str, tr_name: str):
 
 
 def test_identical_protocol_still_hits_cross_run(tmp_path, virtual_runtime):
-    task_a = _build_task(tmp_path / "a", "SAME", tr_name="tr_hit")
+    fixture = _fixture(tmp_path)
+    task_a = _build_task(fixture, tmp_path / "a" / "tr", "SAME", tr_name="tr_hit")
     snap_a = capture_run(virtual_runtime, task_a)
     assert snap_a.executed_steps, "run A executed zero steps (bad fixture)"
 
-    task_b = _build_task(tmp_path / "b", "SAME", tr_name="tr_hit")
+    task_b = _build_task(fixture, tmp_path / "b" / "tr", "SAME", tr_name="tr_hit")
     clear_trace(virtual_runtime)
     snap_b = capture_run(virtual_runtime, task_b)
     assert snap_b.executed_steps == (), (
@@ -70,11 +80,12 @@ def test_identical_protocol_still_hits_cross_run(tmp_path, virtual_runtime):
 
 
 def test_changed_protocol_body_misses(tmp_path, virtual_runtime):
-    task_a = _build_task(tmp_path / "a", "ONE", tr_name="tr_one")
+    fixture = _fixture(tmp_path)
+    task_a = _build_task(fixture, tmp_path / "a" / "tr", "ONE", tr_name="tr_one")
     snap_a = capture_run(virtual_runtime, task_a)
     assert snap_a.executed_steps, "run A executed zero steps (bad fixture)"
 
-    task_b = _build_task(tmp_path / "b", "TWO", tr_name="tr_two")
+    task_b = _build_task(fixture, tmp_path / "b" / "tr", "TWO", tr_name="tr_two")
     clear_trace(virtual_runtime)
     snap_b = capture_run(virtual_runtime, task_b)
     assert snap_b.executed_steps != (), (
