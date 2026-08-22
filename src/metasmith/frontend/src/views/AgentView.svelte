@@ -26,29 +26,29 @@
   let sharing = $state(false)
 
   // The same bar `solve` shows, over the phases `Agent.Deploy` actually walks
-  // through (see the `PHASE:` markers `deploy_agent` emits in gui/api.py).
-  // Covers the gap between the click and the POST resolving with a job id,
-  // same reason `solve`'s `requestingSolve` does.
-  const DEPLOY_STAGES = ['connecting', 'provisioning', 'staging', 'finishing']
+  // through (see the `PHASE:` markers `deploy_agent` emits in gui/api.py),
+  // plus a trailing `deployed` segment that isn't a job phase at all -- it
+  // reflects `agent.deployed`, the same field the page used to check for the
+  // "nothing installed at this home yet" text. An all-idle bar (no job ever
+  // run, not deployed) is what says "not deployed" now, instead of that text.
+  const JOB_STAGES = ['connecting', 'provisioning', 'staging', 'finishing']
+  const DEPLOY_STAGES = [...JOB_STAGES, 'deployed']
   let requestingDeploy = $state(false)
   let jobRunning = $derived(!!jobId && jobStatus !== 'done' && jobStatus !== 'failed')
   let deploying = $derived(requestingDeploy || jobRunning)
-  // Once an agent has a deploy to show, the bar stays -- it is the record of
-  // the last attempt, not a spinner that vanishes when there is nothing left
-  // to wait on. `jobId` alone decides that: it is set both by clicking deploy
-  // and by finding a prior deploy job on load (below), so a revisit shows
-  // exactly what a page left open the whole time would.
-  let showDeployBar = $derived(!!jobId)
-  let deployStage = $derived(Math.max(0, DEPLOY_STAGES.indexOf(jobPhase)))
+  let jobStage = $derived(Math.max(0, JOB_STAGES.indexOf(jobPhase)))
   let deployStageStates = $derived.by(() => {
-    if (!showDeployBar) return DEPLOY_STAGES.map(() => 'idle')
-    return DEPLOY_STAGES.map((_, i) =>
-      i < deployStage ? 'done'
-      : i > deployStage ? 'idle'
-      : jobStatus === 'failed' ? 'failed'
-      : jobStatus === 'done' ? 'done'
-      : 'running',
-    )
+    const jobStates = !jobId
+      ? JOB_STAGES.map(() => 'idle')
+      : JOB_STAGES.map((_, i) =>
+          i < jobStage ? 'done'
+          : i > jobStage ? 'idle'
+          : jobStatus === 'failed' ? 'failed'
+          : jobStatus === 'done' ? 'done'
+          : 'running',
+        )
+    const deployedState = agent?.deployed ? 'done' : jobStatus === 'failed' ? 'failed' : 'idle'
+    return [...jobStates, deployedState]
   })
 
   // The name is a field like any other -- `PUT /agents/<name>` carries the whole
@@ -286,14 +286,6 @@
         <span class="tag warn">incomplete</span>
         <span>{problems.join(' · ')}</span>
       </div>
-    {:else if agent.deployed === false}
-      <!-- separate from `problems` on purpose: this one is fixed by pressing
-           the button above, not by filling anything in, so it must not be
-           allowed to disable it -->
-      <p class="small muted" style="margin:0">
-        Nothing is installed at this home yet — deploy it before launching a run
-        on it.
-      </p>
     {/if}
 
     {#if ping}
@@ -308,9 +300,7 @@
       </div>
     {/if}
 
-    {#if showDeployBar}
-      <StageProgress stages={DEPLOY_STAGES} stageStates={deployStageStates} />
-    {/if}
+    <StageProgress stages={DEPLOY_STAGES} stageStates={deployStageStates} />
 
     <JobLog
       {jobId}
@@ -340,11 +330,6 @@
             {/each}
           </tbody>
         </table>
-        <p class="small muted">
-          Renaming this agent takes its runs with it; deleting it archives it
-          instead, since a run whose agent is gone cannot be tailed, cancelled,
-          or collected.
-        </p>
       </div>
     {/if}
   </div>
