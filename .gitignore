@@ -8,6 +8,9 @@ __pycache__
 .ipynb_checkpoints
 .virtual_documents
 /*.ipynb
+# names this worktree's src/ absolutely, so the editor's notebook kernels resolve
+# metasmith here rather than through whichever checkout an ambient PYTHONPATH won
+/.env
 
 **/build/
 **/dist/
