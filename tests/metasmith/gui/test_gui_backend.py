@@ -1624,6 +1624,15 @@ class TestRuns:
             _finish(client, body["job"])
         return body["run"]
 
+    def _cancel(self, client, workflow, run) -> None:
+        # A workflow may only have one live run, so a second launch has to
+        # follow the first one being stopped.
+        with mock.patch("metasmith.ops.runtime.load_agent") as mload:
+            mload.return_value = mock.MagicMock()
+            mload.return_value.CancelWorkflow.return_value = {"status": "cancelled"}
+            assert client.post(
+                f"/api/runs/{workflow}/{run}/cancel", json={}).status_code == 200
+
     def test_launch_records_agent_and_key(self, client, runnable):
         run = self._launch(client, runnable)
         body = client.get(f"/api/runs/{runnable}/{run['name']}").get_json()
@@ -1644,12 +1653,14 @@ class TestRuns:
 
     def test_two_runs_of_one_workflow_are_distinct(self, client, runnable):
         a = self._launch(client, runnable)
+        self._cancel(client, runnable, a["name"])
         b = self._launch(client, runnable)
         assert a["name"] != b["name"]
         assert a["task_key"] == b["task_key"]
 
     def test_runs_list_is_newest_first(self, client, runnable):
-        self._launch(client, runnable)
+        first = self._launch(client, runnable)
+        self._cancel(client, runnable, first["name"])
         self._launch(client, runnable)
         listed = client.get("/api/runs").get_json()
         assert len(listed) == 2
