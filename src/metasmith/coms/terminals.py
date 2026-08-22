@@ -34,6 +34,14 @@ class ShellResult:
     err: list[str]
     exit_code: int | None = None
 
+class ShellDiedError(ConnectionError):
+    def __init__(self, message: str, exit_code: int | None = None, tail: str | None = None):
+        if tail:
+            message = f"{message}; last output:\n{tail}"
+        super().__init__(message)
+        self.exit_code = exit_code
+        self.tail = tail
+
 class TerminalProcess:
     class Pipe:
         def __init__(self, io:IO[bytes], lock: Condition|None = None) -> None:
@@ -129,10 +137,17 @@ class TerminalProcess:
 
     def Send(self, payload: bytes):
         if self._closed: raise ConnectionError("terminal disposed")
+        if not self.IsAlive():
+            raise ShellDiedError("shell process exited before this command could be written", exit_code=self.ExitCode())
         stdin = self._in
         with self._in:
-            stdin.IO.write(payload)
-            stdin.IO.flush()
+            try:
+                stdin.IO.write(payload)
+                stdin.IO.flush()
+            except (BrokenPipeError, OSError, ValueError) as e:
+                raise ShellDiedError(
+                    f"shell process exited while writing ({e})", exit_code=self.ExitCode(),
+                ) from e
 
     def Decode(self, payload: bytes):
         return payload.decode(encoding=self.ENCODING)
@@ -390,11 +405,13 @@ class LiveShell:
         started = time.monotonic()
         deadline = None if timeout is None else started + timeout
         went_silent = False
+        shell_died = False
         with self._cond:
             while not self._is_fully_synced(_hash) and not self._closed:
                 if self._shell is None or not self._shell.IsAlive():
                     if not self._is_fully_synced(_hash):
                         self._cond.wait(timeout=self._INIT_POLL_INTERVAL)
+                        shell_died = not self._is_fully_synced(_hash)
                     break
                 remaining = self._INIT_POLL_INTERVAL
                 if deadline is not None:
@@ -413,11 +430,17 @@ class LiveShell:
                     remaining = min(remaining, idle_timeout - silent)
                 self._cond.wait(timeout=remaining)
             exit_code = self._results.pop(_hash, None)
+            exit_status = self._shell.ExitCode() if self._shell is not None else None
             self._pending.discard(_hash)
             self._sync_received.pop(_hash, None)
         if went_silent:
             raise TimeoutError(
                 f"[{what or 'command'}] produced no output for {idle_timeout:g}s"
+            )
+        if shell_died and not self._closed:
+            raise ShellDiedError(
+                f"shell exited (rc={exit_status}) while running [{what or 'command'}]",
+                exit_code=exit_status,
             )
         return exit_code
 

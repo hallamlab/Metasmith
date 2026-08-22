@@ -248,7 +248,8 @@ class Agent(_WorkflowOps, _RunControl):
             do_step("\n".join(_cmds))
             _phase("provisioning")
             for _cmd, _display_cmd in container.ProvisionSteps(agent_home=resolved_agent_home, assertive=assertive):
-                do_step(cmd=_cmd, display_cmd=_display_cmd)
+                res = do_step(cmd=_cmd, display_cmd=_display_cmd)
+                assert res.exit_code in (0, None), f"provisioning step failed (exit={res.exit_code}): {_display_cmd or _cmd}"
 
             _phase("staging")
             _remote_file(

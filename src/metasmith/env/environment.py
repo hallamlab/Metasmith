@@ -256,7 +256,7 @@ class Environment:
             return (
                 f'{self.MakePullCommand()} || '
                 f'docker image inspect "{image}" >/dev/null 2>&1 || '
-                f'{{ echo "ERROR: could not pull [{image}] and no local copy is cached" >&2; exit 1; }}'
+                f'{{ echo "ERROR: could not pull [{image}] and no local copy is cached" >&2; false; }}'
             )
         sif, sandbox = self.GetLocalPath(), self.GetSandboxPath()
         if sif is None or sandbox is None: return ""
