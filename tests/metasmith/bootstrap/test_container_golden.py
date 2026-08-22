@@ -185,7 +185,7 @@ class TestProvisionGolden:
         assert cmd == (
             'docker pull --platform=linux/amd64 quay.io/example/tool:1.0 || '
             'docker image inspect "quay.io/example/tool:1.0" >/dev/null 2>&1 || '
-            '{ echo "ERROR: could not pull [quay.io/example/tool:1.0] and no local copy is cached" >&2; exit 1; }'
+            '{ echo "ERROR: could not pull [quay.io/example/tool:1.0] and no local copy is cached" >&2; false; }'
         )
 
     def test_docker_native_has_nothing_to_provision(self):
