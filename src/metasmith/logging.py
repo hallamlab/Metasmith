@@ -1,5 +1,7 @@
 import logging.handlers
 import sys
+import threading
+from contextlib import contextmanager
 from pathlib import Path
 import logging
 from typing import Callable
@@ -45,6 +47,12 @@ class InfoFilter(logging.Filter):
     def filter(self, record):
         return record.levelno < logging.ERROR
 
+_quiet = threading.local()
+
+class QuietFilter(logging.Filter):
+    def filter(self, record):
+        return record.levelno >= logging.WARNING or not getattr(_quiet, "on", False)
+
 _formatter = CustomFormatter(
     "%(asctime)s %(levelname)s| %(message)s",
     "%(levelname)s| %(message)s",
@@ -57,6 +65,7 @@ _no_ansi_formatter = CustomFormatter(
 _handler = logging.StreamHandler(stream=sys.stdout)
 _handler.setFormatter(_formatter)
 _handler.addFilter(InfoFilter())
+_handler.addFilter(QuietFilter())
 _handler_err = logging.StreamHandler(stream=sys.stderr)
 _handler_err.setLevel(logging.ERROR)
 _handler_err.setFormatter(_formatter)
@@ -87,6 +96,19 @@ class Log:
             _stdout_on()
         else:
             _stdout_off()
+
+    @classmethod
+    @contextmanager
+    def Quiet(cls):
+        # Keeps a background thread's chatter off the terminal while leaving it
+        # in the job log and the log files, which the other handlers still get.
+        # Warnings and errors are never suppressed.
+        previous = getattr(_quiet, "on", False)
+        _quiet.on = True
+        try:
+            yield
+        finally:
+            _quiet.on = previous
 
     @classmethod
     def AddLogFile(cls, file_path: Path, raw=False, rotate=None):
