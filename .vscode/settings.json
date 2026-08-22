@@ -1,8 +1,4 @@
 {
-    "python.autoComplete.extraPaths": [
-        "${workspaceFolder}/src/metasmith/lib",
-        "${workspaceFolder}/src",
-    ],
     "python.analysis.extraPaths": [
         "${workspaceFolder}/src/metasmith/lib",
         "${workspaceFolder}/src",
@@ -10,6 +6,7 @@
     "python.analysis.exclude": [
         "**/cache",
     ],
+    "python.analysis.typeCheckingMode": "basic",
     "terminal.integrated.env.linux": {
         "PYTHONPATH": "${workspaceFolder}/src/metasmith/lib:${workspaceFolder}/src",
         "ws": "${workspaceFolder}",

@@ -51,6 +51,12 @@ metasmith` and fails on its own. An ambient workspace `PYTHONPATH` is the opposi
 resolves the import to some other checkout. `PYTHONPATH="$PWD/src" mamba run -n msm …` is the
 form that is right under both.
 
+The same pin has to reach an editor's notebook kernels, which read neither `.vscode/` nor the
+terminal environment. They read `${workspaceFolder}/.env`, whose contents are literal — so each
+worktree needs its own, and it is gitignored precisely because it names one checkout:
+
+    printf 'PYTHONPATH=%s/src/metasmith/lib:%s/src\n' "$PWD" "$PWD" > .env
+
 ## A fresh checkout is not runnable until the libraries are compiled
 
 Every transform library carries a `_metadata/` directory compiled from its `data_types/*.yml` and
