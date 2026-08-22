@@ -8,7 +8,7 @@ use std::thread::{self, sleep};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::borrow::Cow;
 use nix::sys::signal::{killpg, Signal};
-use nix::unistd::{getpid, Pid};
+use nix::unistd::Pid;
 
 use crate::utils::{generate_id, current_time_millis};
 
@@ -230,8 +230,6 @@ impl Job {
             }
         }
 
-        let owner_file = self.out_log.with_extension("owner");
-        let orphan_file = self.out_log.with_extension("orphan");
         let run_file = self.out_log.with_extension("run");
 
         let mut files_to_delete = vec![
@@ -243,8 +241,6 @@ impl Job {
 
             files_to_delete.push(&done_file);
             files_to_delete.push(&pid_file);
-            files_to_delete.push(&owner_file);
-            files_to_delete.push(&orphan_file);
             files_to_delete.push(&run_file);
         }
 
@@ -369,15 +365,10 @@ impl RemoteShell {
             f.write_all(script.as_bytes())?;
             f.write_all(b"\n")?;
 
-            // Who asked for this job, and which run it belongs to. Written
-            // before the rename below so the watcher never sees a dispatchable
-            // job without them: the owner pid is how it reclaims a job whose
-            // requester died, and the run token is how a cancel reaches one
-            // run's jobs in a workspace shared by every run on the host.
-            fs::write(
-                job_compile_path.with_extension("owner"),
-                format!("{}\n", getpid().as_raw()),
-            )?;
+            // Which run this job belongs to, written before the rename below
+            // so the watcher never sees a dispatchable job without it: the run
+            // token is how a cancel reaches one run's jobs in a workspace
+            // shared by every run on the host.
             if let Ok(token) = std::env::var("METASMITH_RUN") {
                 if !token.trim().is_empty() {
                     fs::write(
