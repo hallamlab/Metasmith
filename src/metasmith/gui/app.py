@@ -69,6 +69,17 @@ def warm_template_dags(p: "Project") -> None:  # noqa: F821
         Log.Warn(f"could not warm template DAGs: {exc}")
 
 
+def _warm(fn, *args) -> None:
+    # A first run has nothing cached, so these three solve and draw every
+    # shipped template -- over a hundred planner lines, printed after the
+    # "serving at" banner and ending mid-solve. The terminal then reads as a
+    # GUI hung on a solve when the server has been up the whole time.
+    from ..logging import Log
+
+    with Log.Quiet():
+        fn(*args)
+
+
 def bind_project(
     app: "Flask",  # noqa: F821
     project_root: Path | str = ".",
@@ -78,9 +89,12 @@ def bind_project(
     project = Project(project_root)
     project.initialize()
     install_log_capture()
-    threading.Thread(target=warm_type_index, args=(project.root,), daemon=True).start()
-    threading.Thread(target=warm_template_dags, args=(project,), daemon=True).start()
-    threading.Thread(target=resync_workflow_types, args=(project,), daemon=True).start()
+    for fn, arg in (
+        (warm_type_index, project.root),
+        (warm_template_dags, project),
+        (resync_workflow_types, project),
+    ):
+        threading.Thread(target=_warm, args=(fn, arg), daemon=True).start()
 
     instance_id = uuid4().hex
     jobs = JobRunner()
