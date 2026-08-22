@@ -10,7 +10,7 @@ use std::os::unix::fs::PermissionsExt;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::process::Command;
-use nix::sys::signal::{kill, killpg, Signal};
+use nix::sys::signal::{killpg, Signal};
 use nix::unistd::Pid;
 use serde::{Serialize, Deserialize};
 use scopeguard::guard;
@@ -157,31 +157,6 @@ pub fn kill_run(workspace: &Path, token: &str) -> usize {
         }
     }
     killed
-}
-
-/// Reclaim jobs whose requester died. Requester and watcher always share a host
-/// -- the workspace is $TMPDIR/msm_<host>_<user> -- so `kill(owner, 0)` is an
-/// exact liveness test needing no heartbeat and no clock. Without this a bounced
-/// job outlives the client that stands in for it in nextflow's process tree,
-/// which is how killing nextflow leaves tools running.
-fn reclaim_orphaned_jobs(workspace: &Path) {
-    for path in job_pid_files(workspace) {
-        if path.with_extension("done").exists() { continue; }
-
-        let owner_file = path.with_extension("owner");
-        let Ok(raw) = fs::read_to_string(&owner_file) else { continue };
-        let Ok(owner) = raw.trim().parse::<i32>() else { continue };
-        if owner <= 1 { continue; }
-        if kill(Pid::from_raw(owner), None).is_ok() { continue; }
-
-        Logger::info(&format!(
-            "Requester [{}] of job [{}] is gone, reclaiming", owner, path.display(),
-        ));
-        // Renamed rather than removed so a wedged group is not re-signalled
-        // every tick, and so the reclaim stays visible in the workspace.
-        let _ = fs::rename(&owner_file, path.with_extension("orphan"));
-        if let Some(pgid) = read_pgid(&path) { kill_job_group(pgid); }
-    }
 }
 
 pub fn wipe_workspace(workspace: &Path) -> bool {
@@ -448,8 +423,6 @@ pub fn run_watcher(workspace: &PathBuf, cwd: &PathBuf) {
             Logger::info("'active' file was deleted");
             running.store(false, Ordering::SeqCst);
         }
-
-        reclaim_orphaned_jobs(workspace);
 
         for check_path in status_checks {
             let status_data = Status {
