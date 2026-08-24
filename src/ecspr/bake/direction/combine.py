@@ -175,13 +175,19 @@ def combine_row(r, calib, sigma_0, dg_clamp=DG_CLAMP, widen_suspect=True):
 
     tv = thermo_vote(eq_dg, eq_sig, eq_gc, db_dg, r.get("dgbyg_sigma"))
     cat = r.get("biocyc_category")
-    prior = calib.get(cat) if cat else None       # (mu, tau, n) or None
+    prior = calib.get(cat) if cat else None       # (mu, tau, n, scale) or None
+    applied = _applied_correction(tv, eq_corr, db_corr, eq_dg, db_dg)
 
     votes = []                                    # (mu, s)
     if tv is not None:
         votes.append((tv[0], tv[1]))
     if prior is not None:
-        mu_c, tau_c, n_c = prior
+        # A PRIOR FITTED ON ONE QUANTITY DOES NOT APPLY TO ANOTHER, and the fix is upstream:
+        # `calibrate` fits the bin on the same corrected number the vote above carries, and
+        # names that scale in `prior_quantity`. Nothing is converted here -- a conversion at
+        # this seam would be a per-reaction transport, which was measured and rejected (see
+        # canon). `unstated` marks a calibration built on dG'o, which is r9's arm.
+        mu_c, tau_c, n_c, _scale = prior
         votes.append((mu_c, max(tau_c, TAU_CUR_FLOOR)))
 
     if not votes:                                 # default reversible, as a limit
@@ -273,9 +279,8 @@ def combine_row(r, calib, sigma_0, dg_clamp=DG_CLAMP, widen_suspect=True):
         dgbyg_wildcard=r.get("dgbyg_wildcard"), sigma_sub=sigma_sub,
         # The ratio comes apart again without re-running anything: the standard number,
         # the correction and its two halves, and the width of each.
-        dG_standard=(mu_post - _applied_correction(tv, eq_corr, db_corr, eq_dg, db_dg)
-                     if s_post is not None else None),
-        dG_correction=_applied_correction(tv, eq_corr, db_corr, eq_dg, db_dg),
+        dG_standard=(mu_post - applied if s_post is not None else None),
+        dG_correction=applied,
         molecularity=max(_zero(r.get("eq_molecularity")), _zero(r.get("dgbyg_molecularity")),
                          key=abs),
         skew=max(_zero(r.get("eq_skew")), _zero(r.get("dgbyg_skew")), key=abs),
@@ -287,6 +292,7 @@ def combine_row(r, calib, sigma_0, dg_clamp=DG_CLAMP, widen_suspect=True):
         prior_mu=(prior[0] if prior else None),
         prior_tau=(prior[1] if prior else None),
         prior_n=(prior[2] if prior else None),
+        prior_quantity=(prior[3] if prior else None),
     )
 
 
@@ -339,7 +345,12 @@ def build(base_mnxrs, eq_df, db_df, curated, calib_df, sigma_0,
     width = "mad_spread" if prior_width_kind == "robust" else "tau"
     if width not in calib_df.columns:
         raise ValueError(f"calibration table carries no {width!r} column")
-    calib = {r.category: (r.median, getattr(r, width), int(r.n))
+    # The scale comes from the table rather than from a flag, so a calibration built by
+    # r9's code -- which states none -- reads as `unstated` and is used verbatim. That is
+    # what keeps every arm of the re-bake below this one reproducible from its own
+    # artifacts.
+    calib = {r.category: (r.median, getattr(r, width), int(r.n),
+                          getattr(r, "prior_quantity", "unstated"))
              for r in calib_df.itertuples()}
     rows = [combine_row(rec, calib, sigma_0, dg_clamp, widen_suspect)
             for rec in df.to_dict("records")]

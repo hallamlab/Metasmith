@@ -4,14 +4,19 @@
 # (`equilibrator.py`, `dgbyg.py`); the curated member is read here, from the drop-in, the
 # same way `aam_ensemble` reads the other .dat.
 #
-# IT NEEDS NO CHEMISTRY ENV. `dir_calibrate` imports `dir_thermo_eq` at module level, but
+# IT INSTANTIATES NO MEMBER. `dir_calibrate` imports `dir_thermo_eq` at module level, but
 # that module imports `equilibrator_api` inside `EquilibratorMember.__init__`, and the
-# calibration reads the member table rather than instantiating it. All three commands here
-# run in a plain pandas env off artifacts already on disk, in about fifteen seconds --
-# `benchmarks/direction_rescue/reassemble.py` does exactly that and reproduces r8's
-# annotation frame-for-frame. Which is what makes the three re-fit arms of a re-bake --
-# chemistry, calibration, sigma_0 -- separable offline instead of confounded in one run.
-# It still shares the eQuilibrator image because the lane is grouped by image.
+# calibration reads the member table rather than instantiating it. `dir_quotient annotate`
+# does need rdkit, because the substitution table it restages through admits its models by
+# parsing SMILES -- rdkit is in this image, which is the other reason the lane is grouped by
+# it.
+#
+# WHAT THAT BUYS IS AN OFFLINE RE-FIT. `curated`, `calibrate` and `combine` are pure pandas
+# over artifacts already on disk, so `benchmarks/direction_rescue/reassemble.py` re-runs them
+# in seconds and reproduces the deployed annotation frame-for-frame, taking the correction
+# table as an input rather than recomputing it. That is what makes the arms of a re-bake --
+# balance gate, prior width, quotient, prior scale, constants -- separable offline instead of
+# confounded in one run.
 #
 # THE CURATED CALL IS THE LOAD-BEARING STEP, not a formality. REACTION-DIRECTION is stated
 # in MetaCyc's equation orientation and MNXref re-canonicalises orientation on import, so a
@@ -59,6 +64,8 @@ image      = model.AddRequirement(lib.GetType("env::equilibrator.env"))
 metanetx   = model.AddRequirement(lib.GetType("fabfos_data::metanetx"))
 
 metacyc    = model.AddRequirement(lib.GetType("fabfos_data::metacyc"))
+ecmdb      = model.AddRequirement(lib.GetType("fabfos_data::ecmdb"))
+bionumbers = model.AddRequirement(lib.GetType("fabfos_data::bionumbers"))
 member_eq  = model.AddRequirement(lib.GetType("interm::direction_member_eq"))
 member_db  = model.AddRequirement(lib.GetType("interm::direction_member_dgbyg"))
 
@@ -103,13 +110,29 @@ RESOLVE = f"""
              'its two CORRELATED members and has nothing that can break a tie' >&2
         exit 1
     fi
-    echo "[direction] metanetx $(basename $MNX) · metacyc $MCVER"
+    for pair in "ecmdb {ecmdb}" "bionumbers {bionumbers}"; do
+        set -- $pair
+        N=$(find $2 -mindepth 1 -maxdepth 1 -type d | wc -l)
+        if [ "$N" -ne 1 ]; then
+            echo "[direction] expected exactly one $1 release under $2, found $N." \\
+                 'A concentration is only interpretable against the release it was' \\
+                 'measured in, and two would be aggregated against each other' >&2
+            exit 1
+        fi
+    done
+    ECMDB=$(find {ecmdb} -mindepth 1 -maxdepth 1 -type d)
+    BIONUMBERS=$(find {bionumbers} -mindepth 1 -maxdepth 1 -type d)
+
+    echo "[direction] metanetx $(basename $MNX) · metacyc $MCVER ·" \\
+         "ecmdb $(basename $ECMDB) · bionumbers $(basename $BIONUMBERS)"
 """
 
 
 def protocol(context: ExecutionContext):
     imnx = context.Input(metanetx)
     imc  = context.Input(metacyc)
+    iec  = context.Input(ecmdb)
+    ibn  = context.Input(bionumbers)
     ieq  = context.Input(member_eq)
     idb  = context.Input(member_db)
     ilib = context.Input(bakelib)
@@ -117,7 +140,8 @@ def protocol(context: ExecutionContext):
     iev  = context.Output(ev)
     libdir = ilib.container.parent
 
-    resolve = RESOLVE.format(metanetx=imnx.container, metacyc=imc.container)
+    resolve = RESOLVE.format(metanetx=imnx.container, metacyc=imc.container,
+                             ecmdb=iec.container, bionumbers=ibn.container)
     py = f"PYTHONPATH={libdir} OMP_NUM_THREADS=1 python3"
 
     cmd = f"""
@@ -154,10 +178,33 @@ def protocol(context: ExecutionContext):
             --version $MCVER \
             --file _curated_per_mnxr.parquet _curated_per_reaction.parquet
 
+        # THE REACTION QUOTIENT. One concentration and one width per metabolite from the
+        # pinned sources, then one correction per (MNXR, member) -- per member, because the
+        # substitution lane restages polymer and carrier chemistry and a row refused for one
+        # member and kept for the other does not have one equation between them.
+        {py} -m ecspr.bake.direction.quotient table \
+            --source ecmdb bionumbers \
+            --chunk ecmdb=$ECMDB bionumbers=$BIONUMBERS \
+            --chem-xref $MNX/chem_xref.tsv \
+            --chem-prop $MNX/chem_prop.tsv \
+            --out _concentrations.tsv
+        {py} -m ecspr.bake.direction.quotient annotate \
+            --table _concentrations.tsv \
+            --reac-prop $MNX/reac_prop.tsv \
+            --chem-prop $MNX/chem_prop.tsv \
+            --substitutions {libdir}/ecspr/bake/direction \
+            --out _correction.parquet
+        {py} -m ecspr.bake.evidence collect --root _ev --tool direction_quotient \
+            --version $DIRVER \
+            --file _concentrations.tsv _correction.parquet
+
+        # --quotient HERE TOO, not only in the combiner. The prior is averaged with the
+        # thermo vote, so it has to be fitted on the number the thermo vote carries.
         {py} -m ecspr.bake.direction.calibrate \
             --curated _curated_per_mnxr.parquet \
             --reac-prop $MNX/reac_prop.tsv \
             --eq-member {ieq.container} \
+            --quotient _correction.parquet \
             --out-calibration _calibration.parquet \
             --out-points _calibration_points.parquet
 
@@ -171,6 +218,7 @@ def protocol(context: ExecutionContext):
             --dgbyg {idb.container} \
             --curated _curated_per_mnxr.parquet \
             --calibration _calibration.parquet \
+            --quotient _correction.parquet \
             --out direction_annotation.parquet
         cp direction_annotation.parquet {iout.container}
 
@@ -188,7 +236,8 @@ def protocol(context: ExecutionContext):
         .ifContainerDo(env=image, cmd=cmd) \
         .ifVirtualEnvDo(env=image, cmd=cmd)
 
-    kept = [iev.local / t for t in ("metacyc_direction", "direction_calibration")]
+    kept = [iev.local / t for t in ("metacyc_direction", "direction_quotient",
+                                    "direction_calibration")]
     return ExecutionResult(
         manifest=[{annot: iout.local}, {ev: iev.local}],
         success=iout.local.exists() and iout.local.stat().st_size > 0
@@ -200,10 +249,14 @@ TransformInstance(
     protocol=protocol,
     model=model,
     group_by=image,
-    # MEASURED against r8's own inputs, which this step reproduces exactly: curated
-    # 9.4 s / 224 MB, calibrate 3.6 s / 252 MB, combine 2.3 s / 354 MB. Fifteen seconds
-    # and a third of a gigabyte, single-threaded because the lane sets OMP_NUM_THREADS=1.
-    # The declaration it replaces -- 4 cpus, 32 GB, 2 hours -- was never a measurement.
-    # SHARD_COST.md carries the numbers and how they were taken.
-    resources=Resources(cpus=1, memory=Size.GB(4), duration=Duration(minutes=30)),
+    # MEASURED on the pinned inputs, command by command: curated 9.4 s / 224 MB,
+    # `quotient table` 48.5 s / 3.8 GB, `quotient annotate` 14.2 s / 2.2 GB,
+    # calibrate 3.6 s / 252 MB, combine 2.3 s / 354 MB. Under a minute and a half,
+    # single-threaded because the lane sets OMP_NUM_THREADS=1.
+    #
+    # THE MEMORY IS THE QUOTIENT'S CROSSWALK. `quotient table` reads all 678 MB of
+    # chem_xref and builds a name index over it, which is the whole peak -- everything
+    # else in the lane runs in a third of a gigabyte. 8 GB leaves headroom over the
+    # measured 3.8; the previous 4 would not have.
+    resources=Resources(cpus=1, memory=Size.GB(8), duration=Duration(minutes=30)),
 )

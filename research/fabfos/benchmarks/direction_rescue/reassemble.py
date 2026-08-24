@@ -84,6 +84,10 @@ def main() -> None:
     ap.add_argument("--clamp", default=None,
                     help="r10 arm: magnitude bound in kJ/mol ('100' is what r9 was baked "
                          "with; canon has since moved to three decades without a re-bake)")
+    ap.add_argument("--prior-quantity", default=None,
+                    help="r10 arm: 'physiological' fits the curated prior against the "
+                         "corrected number, which also hands --quotient to calibrate; "
+                         "'standard' is r9")
     ap.add_argument("--prior-width", default=None,
                     help="r10 arm: which stored spread the curated prior uses "
                          "('tau' is r9, 'robust' is r10)")
@@ -124,7 +128,13 @@ def main() -> None:
         run("calibrate", "--curated", curated, "--reac-prop", MNX / "reac_prop.tsv",
             "--eq-member", eq, "--out-calibration", calibration,
             "--out-points", out / "_calibration_points.parquet",
-            *(["--balance-gate", a.balance_gate] if a.balance_gate else []))
+            *(["--balance-gate", a.balance_gate] if a.balance_gate else []),
+            *(["--prior-quantity", a.prior_quantity] if a.prior_quantity else []),
+            # The fit sees the correction only where the prior is being stated on the
+            # corrected scale. Handing it over unconditionally would move the arm that
+            # prices the concentration term into the one that prices the prior.
+            *(["--quotient", str(a.quotient)]
+              if (a.quotient and a.prior_quantity == "physiological") else []))
 
     combine = ["--base-mnxrs", out / "_universe.json", "--eq", eq, "--dgbyg", dgbyg,
                "--curated", curated, "--calibration", calibration,

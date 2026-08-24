@@ -68,7 +68,9 @@ def test_shrinkage_pulls_an_uncertain_vote_toward_reversible():
 
 
 def test_the_provenance_ladder_records_who_spoke_rather_than_selecting():
-    calib = {"LEFT-TO-RIGHT": (-15.0, 5.0, 40)}
+    # (centre, width, n, the scale the centre is stated on). `physiological` is r10's:
+    # the bin was fitted on the same corrected number the members carry.
+    calib = {"LEFT-TO-RIGHT": (-15.0, 5.0, 40, "physiological")}
     measured = C.combine_row({"mnxr": "R", "eq_dg": -20.0, "eq_sigma": 1.0,
                               "eq_uses_gc": False, "biocyc_category": "LEFT-TO-RIGHT"},
                              calib=calib, sigma_0=canon.DIR_SIGMA_0)

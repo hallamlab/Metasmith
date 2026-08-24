@@ -1,10 +1,12 @@
 # What else is in MetaCyc's reactions.dat, and is any of it worth a vote?
 #
 # `metacyc_flatfile.load_reactions` returns four slots -- unique_id, direction, left, right --
-# from a record carrying thirty-four attributes. This script scores the three that could
-# plausibly carry directional evidence, and the answer for all three is no. It exists so that
-# "no" is a measurement rather than an opinion, and so the numbers in the r10 plan can be
-# re-derived from the pinned MetaCyc 26 and MNXref 4.5 chunks.
+# from a record carrying thirty-four attributes. This script scores every one that could
+# plausibly carry directional evidence, and the answer for all of them is no. THE READER
+# STAYS AT FOUR SLOTS BECAUSE OF WHAT IS BELOW, not because nobody looked: a field carried
+# into a schema that nothing reads is a maintenance obligation bought with nothing. It exists
+# so that "no" is a measurement rather than an opinion, and so the numbers in the r10 record
+# can be re-derived from the pinned MetaCyc 26 and MNXref 4.5 chunks.
 #
 # THE ORIENTATION TRAP IS THE WHOLE REASON THIS IS NON-TRIVIAL. MNXref re-canonicalises
 # equation orientation on import, and 61% of the GIBBS-0-bearing records need a sign flip to
@@ -32,17 +34,32 @@
 #   signal r10 wants was already sitting in the annotation as two columns nothing compares.
 #
 #   pathways.dat REACTION-LAYOUT -- an explicit :DIRECTION per reaction per pathway, 12,409
-#   reactions, 12,253 unanimous across their own pathways, aligning to 11,119 MNXR of which
-#   10,994 are in-graph. 699 are reactions the curated member calls REVERSIBLE. Not rejected:
-#   priced as an arm of the r10 ladder. But a pathway layout is a FLUX CONVENTION, not a
-#   thermodynamic claim -- 156 reactions carry conflicting directions across their own
-#   pathways, which is glycolysis against gluconeogenesis showing up in the data.
+#   reactions, 12,253 unanimous across their own pathways. REJECTED, and the number that
+#   rejects it is coverage: of the 11,494 unanimous calls whose reaction MetaCyc also
+#   describes, ZERO belong to a reaction with no reaction-level REACTION-DIRECTION. The
+#   pathway layout can only restate an arrow or contradict one, and it restates: over the
+#   10,774 directional arrows carrying a unanimous pathway call it agrees on 10,768, 99.94%.
+#   Its whole non-duplicated content is 720 reactions the arrow calls REVERSIBLE, and
+#   overriding a reaction-level arrow is the one thing a flux convention must not do -- 156
+#   reactions carry conflicting directions across their own pathways, which is glycolysis
+#   against gluconeogenesis showing up in the data. No held-out label can score that override
+#   either: the label there IS reversible.
 #
 #   enzrxns.dat REACTION-DIRECTION -- 8,260 enzyme-level calls over 5,989 reactions, every one
 #   of which already carries a reaction-level arrow. Zero coverage, and an enzyme-level call
 #   cannot be aligned to an MNXR independently of the reaction it belongs to.
 #
 #   PHYSIOLOGICALLY-RELEVANT? -- T on 19,572 of 19,597 records. Discriminates nothing.
+#
+#   REACTION-BALANCE-STATUS -- :BALANCED on 18,361 records, :UNBALANCED-UNFIXABLE on 851,
+#   :UNDETERMINED on 385. Real signal and already held: 485 of the 503 crosswalked
+#   :UNBALANCED-UNFIXABLE records land on an MNXR MetaNetX ALSO calls unbalanced, which the
+#   lane's own `dG_suspect` already flags. It adds 18 rows out of 83,795. Rejected as
+#   subsumed, not as uninformative.
+#
+#   EC-NUMBER -- 15,508 records. Its one plausible use is explaining the MNXRs whose several
+#   contributing MetaCyc reactions disagree about direction. There are 38 such MNXR in the
+#   whole crosswalk, and different ECs explain 17 of them.
 #
 # GIBBS-0 IS ONLY EVER SET ON BALANCED REACTIONS, so the "wild values are unbalanced equations"
 # hypothesis is not available: MetaCyc filters at source, and 37.6% of what survives is still
@@ -99,6 +116,7 @@ def load_reaction_fields() -> list[dict]:
             direction=(rec.get("REACTION-DIRECTION") or [None])[0],
             gibbs=(float(g[0]) if g else None),
             balance=(rec.get("REACTION-BALANCE-STATUS") or [None])[0],
+            ec=tuple(rec.get("EC-NUMBER") or ()),
             phys_relevant=(rec.get("PHYSIOLOGICALLY-RELEVANT?") or [None])[0],
             left=list(rec.get("LEFT") or []),
             right=list(rec.get("RIGHT") or []),
@@ -127,8 +145,8 @@ def align_gibbs(records, id2mnxr, sides, cmap) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
-def pathway_directions(records, id2mnxr, sides, cmap):
-    # metacyc reaction -> aligned L2R/R2L, unanimous calls only.
+def pathway_votes() -> dict:
+    # metacyc reaction -> Counter of the :DIRECTION its pathways lay it out in.
     layout = re.compile(r"\((\S+)\s.*?:DIRECTION\s+:(L2R|R2L)")
     votes: dict[str, Counter] = defaultdict(Counter)
     for pwy in iter_records(MC / "pathways.dat"):
@@ -136,6 +154,26 @@ def pathway_directions(records, id2mnxr, sides, cmap):
             m = layout.match(entry)
             if m:
                 votes[m.group(1)][m.group(2)] += 1
+    return votes
+
+
+def pathway_vs_arrow(records, votes) -> pd.DataFrame:
+    # The reaction-level arrow against the unanimous pathway call, in METACYC's OWN
+    # orientation. No MNXR alignment is needed and none is wanted: both are stated against
+    # the same LEFT/RIGHT slots, and aligning applies the same flip to both.
+    by_id = {r["unique_id"]: r for r in records}
+    tab: Counter = Counter()
+    for mc_id, v in votes.items():
+        rec = by_id.get(mc_id)
+        if rec is None or len(v) != 1 or not rec["direction"]:
+            continue
+        tab[(rec["direction"], next(iter(v)))] += 1
+    rows = sorted({k[0] for k in tab})
+    return pd.DataFrame({d: {c: tab[(d, c)] for c in ("L2R", "R2L")} for d in rows}).T
+
+
+def pathway_directions(records, id2mnxr, sides, cmap, votes):
+    # metacyc reaction -> aligned L2R/R2L, unanimous calls only.
     by_id = {r["unique_id"]: r for r in records}
     conflicting = sum(1 for v in votes.values() if len(v) > 1)
     rows = []
@@ -235,14 +273,61 @@ def main():
            lambda s: f"dG_raw sign correct {np.mean(np.sign(s.dG_raw) == s.curated_sign):6.1%}")
     print("  ... accuracy RISES with the gap. Disagreeing with GIBBS-0 is a good sign.")
 
-    pwy, n_seen, n_conflict = pathway_directions(records, id2mnxr, sides, cmap)
+    votes = pathway_votes()
+    pwy, n_seen, n_conflict = pathway_directions(records, id2mnxr, sides, cmap, votes)
     print(f"\n=== pathways.dat REACTION-LAYOUT ===")
     print(f"  reactions with a pathway direction {n_seen}, conflicting across pathways {n_conflict}")
+    # THE COVERAGE NUMBER IS THE ONE THAT DECIDES IT. A source that only ever restates an
+    # arrow already read cannot move a held-out score, whatever else is true of it.
+    known = {r["unique_id"] for r in records}
+    arrow = {r["unique_id"] for r in records if r["direction"]}
+    unanimous = {k for k, v in votes.items() if len(v) == 1}
+    print(f"  unanimous and a known reaction {len(unanimous & known)}, of which with NO "
+          f"reaction-level arrow {len(unanimous & known - arrow)}")
+    cross = pathway_vs_arrow(records, votes)
+    print("  reaction-level arrow x unanimous pathway call:")
+    print("    " + cross.to_string().replace("\n", "\n    "))
+    directional = cross.drop(index="REVERSIBLE", errors="ignore")
+    agree = (directional.loc[[i for i in directional.index if "LEFT-TO-RIGHT" in i], "L2R"].sum()
+             + directional.loc[[i for i in directional.index if i.endswith("RIGHT-TO-LEFT")],
+                               "R2L"].sum())
+    print(f"  it agrees with the arrow on {agree} of {int(directional.to_numpy().sum())} "
+          f"({agree / directional.to_numpy().sum():.2%}) -- a restatement, not a second "
+          f"opinion")
     p = frame.merge(pwy, on="mnxr", how="inner")
     in_graph = int(p.in_graph.fillna(False).sum()) if "in_graph" in p else -1
     print(f"  aligned to {len(p)} MNXR, in-graph {in_graph}")
     print(f"  of which the curated member calls REVERSIBLE: "
           f"{int((p.biocyc_category == 'REVERSIBLE').sum())}")
+
+    print("\n=== REACTION-BALANCE-STATUS ===")
+    bal = pd.DataFrame([dict(mc_id=r["unique_id"], balance=r["balance"]) for r in records])
+    bal["mnxr"] = bal.mc_id.map(id2mnxr)
+    bal = bal.dropna(subset=["mnxr"])
+    bal["mnx_balanced"] = bal.mnxr.map(balanced)
+    bal = bal.dropna(subset=["mnx_balanced"])
+    print(pd.crosstab(bal.balance, bal.mnx_balanced).to_string())
+    print("  ... MetaNetX already calls almost all of them unbalanced, and the lane's own "
+          "dG_suspect reads that. The field's whole addition is the disagreeing corner.")
+    sc = bal.merge(frame[["mnxr", "dir_tier", "dG_raw", "curated_sign"]], on="mnxr")
+    sc = sc[(sc.curated_sign != 0) & (sc.dir_tier == 2) & sc.dG_raw.notna()]
+    for b, g in sc.groupby("balance"):
+        print(f"    {b:<24} n={len(g):5d}  ensemble sign correct "
+              f"{np.mean(np.sign(g.dG_raw) == g.curated_sign):6.1%}")
+
+    print("\n=== EC-NUMBER on the direction conflicts it might explain ===")
+    per = pd.DataFrame([dict(mc_id=r["unique_id"], direction=r["direction"], ec=r["ec"])
+                        for r in records if r["direction"]])
+    per["mnxr"] = per.mc_id.map(id2mnxr)
+    tally = Counter()
+    for _mnxr, g in per.dropna(subset=["mnxr"]).groupby("mnxr"):
+        if g.direction.nunique() <= 1:
+            continue
+        ecs = [e for e in g.ec if e]
+        tally["conflicts"] += 1
+        tally["fewer than two ECs" if len(ecs) < 2
+              else ("one shared EC" if len(set(ecs)) == 1 else "different ECs")] += 1
+    print("  " + ", ".join(f"{k}={v}" for k, v in tally.items()))
 
     enz = list(iter_records(MC / "enzrxns.dat"))
     with_dir = [r for r in enz if "REACTION-DIRECTION" in r and "REACTION" in r]

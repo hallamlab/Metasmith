@@ -8,6 +8,11 @@ DIR_RT = DIR_R * DIR_T
 DIR_DECADE = DIR_RT * _math.log(10.0)
 
 DIR_TAU_SHARED = DIR_DECADE
+# A GUARD, AND UNDER r10's PRIOR IT NEVER BINDS. It caps how confident one curated category
+# may be by flooring its fitted width at one decade. Swept 0.25 to 3 decades on the held-out
+# folds, the accuracy, the decided count and every ratio are identical, because the narrowest
+# directional bin fitted on the corrected number is 19.06 kJ/mol -- above the widest floor
+# swept. It stays at one decade as a bound on a future fit, not as a fitted value.
 DIR_TAU_CUR_FLOOR = DIR_DECADE
 DIR_S_MEAS_FLOOR = 0.1                  # kJ/mol; numerical only -- a real measurement
                                         # is trusted at its own sigma
@@ -40,6 +45,10 @@ DIR_SIGMA_FLOOR = 1e-4                  # kJ/mol; a NARROWER one is no informati
 #
 # It lands inside DIR_SIGMA_0_BAND, so the band stands as committed rather than needing a
 # re-derivation of its own.
+#
+# REFITTING THE CURATED PRIOR DOES NOT MOVE THIS. sigma_0 is the MARGINAL spread of the
+# anchors, so it is a property of the points rather than of the fit -- the prior enters
+# neither the population nor the estimator. `poc_constants.py` re-derives it.
 DIR_SIGMA_0 = 28.017                    # kJ/mol
 DIR_SIGMA_0_BAND = (5.0, 40.0)          # outside => stop, it is a finding
 
@@ -50,12 +59,13 @@ DIR_SIGMA_0_BAND = (5.0, 40.0)          # outside => stop, it is a finding
 # THE BOUND IS STATED IN DECADES OF CONDUCTANCE, not kJ/mol, because that is the unit
 # the ratio is consumed in -- one decade per DIR_DECADE. Unbounded pass-through hands
 # the graph asymmetries of 1e17, far past where the reverse branch is numerically dead.
-# RE-EARNED ON r10's OWN TABLE, because the concentration term moves the distribution and a
-# cap whose warrant describes a different distribution is not a warrant. Sweeping the mean
-# forward share of the two-way conductance over the corrected posterior: 1.050814 at one
-# decade, 1.062603 at three, 1.062701 at four, 1.062711 at six and at nine. Three decades
-# sits 0.010% from where the level stops moving, and unbounded overflows exp() to nan --
-# which is the other half of why this bound exists.
+# RE-EARNED ON r10's OWN TABLE, because the concentration term and the refitted prior both
+# move the distribution, and a cap whose warrant describes a different distribution is not a
+# warrant. Sweeping the mean forward share of the two-way conductance, 2r/(1+r), over the
+# final posterior: 1.050603 at one decade, 1.060666 at two, 1.061456 at three, 1.061514 at
+# four, and 1.061518 at six and at nine. Three decades sits 0.006% from where the level stops
+# moving, and unbounded overflows exp() -- which is the other half of why this bound exists.
+# `poc_constants.py` re-runs the sweep against a run's own annotation.
 DIR_DG_CLAMP = 3.0 * DIR_DECADE          # three decades == 1000:1
 
 # =====================================================================
@@ -167,6 +177,36 @@ DIR_BALANCE_GATE = "after_member"
 
 DIR_PRIOR_WIDTH_KINDS = ("robust", "tau")
 DIR_PRIOR_WIDTH_KIND = "robust"
+
+# WHICH QUANTITY THE CURATED PRIOR IS FITTED AGAINST.
+#
+# The calibration fits a category's centre from the eQuilibrator member's dG, and the
+# combiner averages that centre with the thermo vote. Once the vote carries a reaction
+# quotient the vote is a PHYSIOLOGICAL dG' and the centre is still a STANDARD-STATE one, so
+# the two numbers being averaged are numbers about different things.
+#
+# WHAT THE COMBINER NEEDS IS THE DISTRIBUTION OF dG' WITHIN A BIN, so every category is
+# fitted on the corrected column. The label's semantics explain why the bins differ from
+# each other; they do not choose the column. Measured on the calibration population, every
+# bin's centre moves the way its own label asserts once the correction lands --
+# PHYSIOL-RIGHT-TO-LEFT 25.04 -> 36.09, PHYSIOL-LEFT-TO-RIGHT -20.05 -> -24.68,
+# RIGHT-TO-LEFT 14.01 -> 21.14, LEFT-TO-RIGHT -27.11 -> -30.21, and REVERSIBLE toward zero,
+# -1.45 -> -0.90. The correction never saw the labels, so that is corroboration rather than
+# a fit.
+#
+# A PER-REACTION TRANSPORT OF THE IRREVERSIBLE BINS WAS TRIED AND REJECTED. Splitting the
+# taxonomy by the `PHYSIOL-` prefix -- fitting the irreversible bins on dG'o and adding each
+# reaction's own correction to that centre -- moves 16 held-out reactions and every one of
+# them off the curated side, all in the two transported bins. An irreversibility claim is
+# about the reaction, and pricing it per reaction injects concentration noise into a
+# statement that was never about concentrations. `poc_prior_holdout.py` still scores that
+# arm, so the rejection stays reproducible.
+#
+# `standard` is r9's behaviour -- fitted on dG'o and used as if it were dG'. It is kept so
+# the re-bake prices this change as its own arm, and it writes `unstated` into the
+# calibration table so the annotation names the scale it was built on.
+DIR_PRIOR_QUANTITIES = ("physiological", "standard")
+DIR_PRIOR_QUANTITY = "physiological"
 
 # THE MAGNITUDE CAP'S SECOND JOB, MADE EXPLICIT.
 #

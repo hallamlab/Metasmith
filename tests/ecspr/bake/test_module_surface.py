@@ -163,8 +163,13 @@ CLI = {
         # `--balance-gate` selects whether the raw reac_prop balance test runs before or
         # after the member is consulted. r10 moved it after; the r9 position is kept so
         # the re-bake can price the change as its own arm.
+        #
+        # `--quotient` and `--prior-quantity` are the second half of the same story: the
+        # prior is fitted against the number the combiner averages it with, and r9's
+        # standard-state fit is kept as its own arm too.
         "": {"--curated", "--reac-prop", "--chem-prop", "--eq-member", "--limit",
-             "--substitutions", "--balance-gate", "--out-calibration", "--out-points"},
+             "--substitutions", "--balance-gate", "--quotient", "--prior-quantity",
+             "--out-calibration", "--out-points"},
     },
     "ecspr.bake.direction.combine": {
         # `--prior-width` picks which stored spread the curated prior uses, and `--clamp`
