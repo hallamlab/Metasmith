@@ -53,12 +53,25 @@ def normalise(ids: pd.Series) -> set[str]:
 
 
 def clean_table(run: Path) -> Path | None:
-    """The CLEAN lane, under either layout: `lanes/clean.tsv` or `clean/<x>.clean.tsv`."""
+    """The CLEAN lane, under either layout: `lanes/clean.tsv` or `clean/<x>.clean.tsv`.
+
+    A run derived from another host's table -- AG1 from DH1, LW06 from BW25113 -- runs no
+    lanes of its own but keeps its parent's ORF namespace, so the parent's lanes are the
+    ones that back it. Following the borrow is what makes its verdict mean the same thing
+    as a host's.
+    """
     lanes = run / "annotations" / "lanes" / "clean.tsv"
     if lanes.exists():
         return lanes
     old = sorted((run / "annotations" / "clean").glob("*.clean.tsv"))
-    return old[0] if old else None
+    if old:
+        return old[0]
+    borrow = next((run / "gpr").glob("BUILD_borrow.json"), None)
+    if borrow:
+        parent = json.loads(borrow.read_text()).get("borrowed_from")
+        if parent:
+            return clean_table(run.parent / parent)
+    return None
 
 
 def denovo_table(run: Path) -> Path | None:
