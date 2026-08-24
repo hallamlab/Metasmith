@@ -63,6 +63,12 @@ an *older* image than its version number suggested and carried no polars at all 
 already succeeded. Every digest here carries a comment naming the tag it is, the date,
 and what was verified inside it.
 
+**`python_for_data_science` carries no pyarrow.** Parquet under that env goes through
+`lib::fabfos_evidence`'s `read_parquet` / `write_parquet`, which select polars or pyarrow
+by what the interpreter has — the same module is imported outside any container, where
+pyarrow is what exists. `pd.read_parquet` and `DataFrame.to_parquet` are pyarrow front
+ends and fail there, at module import, after the expensive lanes have already succeeded.
+
 `ExecWithContainer` is retired; the engine rejects it statically. Use
 `context.ExecWithEnv().ifContainerDo(env=, cmd=)`, and add `.ifVirtualEnvDo(env=, cmd=)`
 only for a conda arm you have actually run. See `docs/metasmith_libraries/ENV_PORT.md`.
