@@ -50,7 +50,8 @@ def robust(x: np.ndarray):
     return med, MAD_K * mad
 
 
-def points_from_member(curated_per_mnxr, reac_prop, eq_member):
+def points_from_member(curated_per_mnxr, reac_prop, eq_member,
+                       balance_gate=canon.DIR_BALANCE_GATE):
     # The same table as `compute_points`, READ rather than recomputed.
     #
     # WHY THIS EXISTS. `compute_points` instantiates `EquilibratorMember()` and re-scores
@@ -77,12 +78,11 @@ def points_from_member(curated_per_mnxr, reac_prop, eq_member):
             continue
         _st, is_bal, is_tr = s
         if is_tr:
+            # A transport reaction carries a membrane term that a standard dGr'0 does not
+            # model at all. Unlike the balance test below, restaging cannot fix that, so
+            # this gate stays above the member.
             rows.append(dict(mnxr=mnxr, category=cat, dg=None, sigma=None,
                              uses_gc=None, reason="transport", is_transport=True))
-            continue
-        if not is_bal:
-            rows.append(dict(mnxr=mnxr, category=cat, dg=None, sigma=None,
-                             uses_gc=None, reason="unbalanced", is_transport=False))
             continue
         if mnxr not in mem.index:
             # The member ran over the universe; a curated reaction outside it is a
@@ -91,6 +91,20 @@ def points_from_member(curated_per_mnxr, reac_prop, eq_member):
                              uses_gc=None, reason="not_in_member", is_transport=False))
             continue
         r = mem.loc[mnxr]
+        # THE BALANCE TEST BELONGS HERE, BELOW THE MEMBER, NOT ABOVE IT. `is_balanced`
+        # comes off raw `reac_prop`, but the member does not score the raw equation -- the
+        # substitution lane restages polymer and carrier chemistry first, and 546 curated
+        # reactions that reac_prop calls unbalanced come back from the member balanced and
+        # answered. Refusing them on the raw verdict discards a real measurement and, worse,
+        # changes the POPULATION the category prior is fitted on. An equation the member
+        # could not close still fails: it fails by the member declining it, which is a
+        # verdict about the equation that was actually scored.
+        answered = (balance_gate == "after_member"
+                    and r["reason"] == "ok" and pd.notna(r["dg"]))
+        if not is_bal and not answered:
+            rows.append(dict(mnxr=mnxr, category=cat, dg=None, sigma=None,
+                             uses_gc=None, reason="unbalanced", is_transport=False))
+            continue
         # The member writes the arm indicator as `flag`; calibration knows it as
         # `uses_gc`. One rename, in one place, rather than two schemas.
         rows.append(dict(mnxr=mnxr, category=cat, dg=r["dg"], sigma=r["sigma"],
@@ -227,6 +241,10 @@ def main(argv=None):
                          "same transform, so re-instantiating component-contribution to "
                          "reproduce them is about half this lane's wall clock for no new "
                          "artifact and no new check")
+    ap.add_argument("--balance-gate", default=canon.DIR_BALANCE_GATE,
+                    choices=list(canon.DIR_BALANCE_GATES),
+                    help="whether the raw reac_prop balance test runs before or after the "
+                         "member is consulted")
     ap.add_argument("--out-calibration", required=True)
     ap.add_argument("--out-points", required=True)
     ap.add_argument("--limit", type=int, default=None, help="cap eQ reactions (testing)")
@@ -236,7 +254,8 @@ def main(argv=None):
                         "table, which already carries whatever the run was given.")
     a = ap.parse_args(argv)
     if a.eq_member:
-        points = points_from_member(Path(a.curated), Path(a.reac_prop), Path(a.eq_member))
+        points = points_from_member(Path(a.curated), Path(a.reac_prop), Path(a.eq_member),
+                                    balance_gate=a.balance_gate)
     elif a.chem_prop:
         points = compute_points(Path(a.curated), Path(a.reac_prop),
                                 Path(a.chem_prop), a.limit, a.substitutions)

@@ -101,7 +101,7 @@ def thermo_vote(eq_dg, eq_sig, eq_gc, db_dg, db_sig):
     return None
 
 
-def combine_row(r, calib, sigma_0):
+def combine_row(r, calib, sigma_0, dg_clamp=DG_CLAMP):
     # Normalise the eQ row ONCE, here: everything below reads eq_dg/eq_sig/eq_gc and
     # never the raw columns, so the vote and the provenance label cannot disagree about
     # whether eQuilibrator spoke. The raw columns are still emitted verbatim below.
@@ -141,9 +141,9 @@ def combine_row(r, calib, sigma_0):
         mu_eff = lam * mu_post
         s_eff = s_post
     # keep the ratio a finite two-way conductance ratio, never a hard gate
-    clamped = abs(mu_eff) > DG_CLAMP
+    clamped = abs(mu_eff) > dg_clamp
     if clamped:
-        mu_eff = math.copysign(DG_CLAMP, mu_eff)
+        mu_eff = math.copysign(dg_clamp, mu_eff)
     ratio = math.exp(mu_eff / RT)
 
     # provenance ladder: a record of which regime spoke, NOT a selection.
@@ -192,7 +192,8 @@ def combine_row(r, calib, sigma_0):
     )
 
 
-def build(base_mnxrs, eq_df, db_df, curated, calib_df, sigma_0):
+def build(base_mnxrs, eq_df, db_df, curated, calib_df, sigma_0,
+          prior_width_kind=canon.DIR_PRIOR_WIDTH_KIND, dg_clamp=DG_CLAMP):
     eq = eq_df.rename(columns={"dg": "eq_dg", "sigma": "eq_sigma", "flag": "eq_uses_gc",
                                "sigma_sub": "eq_sigma_sub"})
     db = db_df.rename(columns={"dg": "dgbyg_dg", "sigma": "dgbyg_sigma",
@@ -210,9 +211,30 @@ def build(base_mnxrs, eq_df, db_df, curated, calib_df, sigma_0):
           .merge(db[["mnxr", "dgbyg_dg", "dgbyg_sigma", "dgbyg_wildcard",
                      "dgbyg_sigma_sub"]], on="mnxr", how="left")
           .merge(cur[["mnxr", "biocyc_category", "biocyc_source"]], on="mnxr", how="left"))
-    calib = {r.category: (r.median, r.tau, int(r.n)) for r in calib_df.itertuples()}
-    rows = [combine_row(rec, calib, sigma_0) for rec in df.to_dict("records")]
-    return pd.DataFrame(rows)
+    # A ROBUST CENTRE AND A NON-ROBUST SCALE ARE NOT A PAIR. `calibrate.fit` computes both
+    # estimators from the same points and stores both; this lane read `median` for the
+    # centre and `tau` -- a plain variance-minus-mean-sigma-squared -- for the width, so a
+    # handful of outliers set the width of a bin whose centre had already been protected
+    # from them. The robust spread runs 2x to 20x narrower, and under `tau` the shrinkage
+    # annihilated the vote: PHYSIOL-RIGHT-TO-LEFT fits to +24.76 kJ/mol, a 21,734:1 ratio,
+    # and shipped 1.37.
+    #
+    # SELECTABLE, because this moves 6,072 reactions by four orders of magnitude and a
+    # change that large is priced as its own arm of the re-bake rather than asserted.
+    if prior_width_kind not in canon.DIR_PRIOR_WIDTH_KINDS:
+        raise ValueError(f"unknown prior width {prior_width_kind!r}; "
+                         f"expected one of {canon.DIR_PRIOR_WIDTH_KINDS}")
+    width = "mad_spread" if prior_width_kind == "robust" else "tau"
+    if width not in calib_df.columns:
+        raise ValueError(f"calibration table carries no {width!r} column")
+    calib = {r.category: (r.median, getattr(r, width), int(r.n))
+             for r in calib_df.itertuples()}
+    rows = [combine_row(rec, calib, sigma_0, dg_clamp) for rec in df.to_dict("records")]
+    out = pd.DataFrame(rows)
+    # Named in the annotation, so a consumer reads which estimator produced the width it
+    # is looking at rather than inferring it from the release number.
+    out["prior_width_kind"] = prior_width_kind
+    return out
 
 
 def main(argv=None):
@@ -222,6 +244,13 @@ def main(argv=None):
     ap.add_argument("--dgbyg", required=True)
     ap.add_argument("--curated", required=True)
     ap.add_argument("--calibration", required=True)
+    ap.add_argument("--clamp", type=float, default=canon.DIR_DG_CLAMP,
+                    help="magnitude bound on dG_prime, kJ/mol. The DEPLOYED r9 was baked "
+                         "at 100.0 and canon has since moved to three decades (17.12) "
+                         "without a re-bake, so reproducing r9 needs --clamp 100")
+    ap.add_argument("--prior-width", default=canon.DIR_PRIOR_WIDTH_KIND,
+                    choices=list(canon.DIR_PRIOR_WIDTH_KINDS),
+                    help="which stored spread estimator the curated prior uses")
     ap.add_argument("--sigma0", type=float, default=canon.DIR_SIGMA_0,
                     help="reversible-default prior width; defaults to canon.DIR_SIGMA_0")
     ap.add_argument("--out", required=True)
@@ -232,9 +261,12 @@ def main(argv=None):
                          f"-- that is a finding, not a constant; stop and look.")
     base = json.load(open(a.base_mnxrs))
     out = build(base, pd.read_parquet(a.eq), pd.read_parquet(a.dgbyg),
-                pd.read_parquet(a.curated), pd.read_parquet(a.calibration), a.sigma0)
+                pd.read_parquet(a.curated), pd.read_parquet(a.calibration), a.sigma0,
+                prior_width_kind=a.prior_width, dg_clamp=a.clamp)
     out.to_parquet(a.out, index=False)
     print(f"[combine] {len(out)} base-graph reactions -> {a.out}")
+    print(f"[combine] curated prior width: {a.prior_width}  "
+          f"clamp: {a.clamp:.4g} kJ/mol ({a.clamp / canon.DIR_DECADE:.2f} decades)")
     print("[combine] dir_tier:\n" + out["dir_tier"].value_counts().sort_index().to_string())
     nonrev = out[out["ratio"] != 1.0]
     print(f"[combine] carry direction (ratio != 1.0): {len(nonrev)} ({len(nonrev)/len(out):.1%})")

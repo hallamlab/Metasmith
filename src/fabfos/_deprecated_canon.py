@@ -482,6 +482,32 @@ DIR_CONC_COLUMNS = ("mnxr", "member", "molecularity", "skew", "dG_correction",
                     "sigma_conc", "n_conc_measured", "n_conc_defaulted",
                     "n_conc_excluded", "n_conc_gas_phase", "delta_n")
 
+# WHICH STORED SPREAD ESTIMATOR THE CURATED PRIOR USES.
+#
+# `calibrate.fit` computes a robust centre (`median`) and BOTH widths from the same points:
+# `mad_spread` (1.4826*MAD, robust) and `tau` (a plain variance minus the mean member
+# variance, not robust). The combiner paired the robust centre with the non-robust width,
+# so a handful of outliers set the width of a bin whose centre had already been protected
+# from them, and shrinkage then annihilated the vote -- PHYSIOL-RIGHT-TO-LEFT fits to
+# +24.76 kJ/mol, a 21,734:1 ratio, and shipped 1.37.
+#
+# A ROBUST CENTRE AND A NON-ROBUST SCALE ARE NOT A PAIR.
+# WHERE THE BALANCE TEST SITS RELATIVE TO THE MEMBER.
+#
+# `is_balanced` comes off raw `reac_prop`, but the member does not score the raw equation:
+# the substitution lane restages polymer and carrier chemistry first. 546 curated reactions
+# that reac_prop calls unbalanced come back from the member balanced and answered, and
+# refusing them on the raw verdict discards a real measurement AND changes the population
+# the category prior is fitted on -- the directional bins roughly double.
+#
+# `before_member` is r9's behaviour, kept so the re-bake can price this change as its own
+# arm rather than confound it with the estimator change.
+DIR_BALANCE_GATES = ("after_member", "before_member")
+DIR_BALANCE_GATE = "after_member"
+
+DIR_PRIOR_WIDTH_KINDS = ("robust", "tau")
+DIR_PRIOR_WIDTH_KIND = "robust"
+
 DIR_CATEGORIES = ("PHYSIOL-LEFT-TO-RIGHT", "LEFT-TO-RIGHT", "REVERSIBLE",
                   "PHYSIOL-RIGHT-TO-LEFT", "RIGHT-TO-LEFT")
 
