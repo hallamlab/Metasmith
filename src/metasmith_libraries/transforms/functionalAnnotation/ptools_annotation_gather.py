@@ -21,6 +21,7 @@ def protocol(context: ExecutionContext):
     script = f"""
 import csv
 import pandas as pd
+import polars as pl
 
 orf_ids = []
 with open("{iorfs.container}") as fh:
@@ -72,7 +73,10 @@ for _, r in hit_df.iterrows():
 
 df = pd.DataFrame(rows, columns=["orf_id","kind","value","score","confidence"])
 df = df[df["orf_id"].isin(set(orf_ids))]
-df.to_parquet("{iout.container}", index=False)
+# polars writes the parquet: pandas' own writer is a pyarrow front end and this
+# image carries no pyarrow. The handover is column-wise through numpy because
+# `pl.from_pandas` is itself implemented over arrow.
+pl.DataFrame({{c: df[c].to_numpy() for c in df.columns}}).write_parquet("{iout.container}")
 """
 
     context.LocalShell("cat > _gather.py << 'PYEOF'\n" + script + "\nPYEOF\n")
