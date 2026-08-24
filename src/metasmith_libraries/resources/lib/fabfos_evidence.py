@@ -88,15 +88,29 @@ def write_parquet(df: pd.DataFrame, path, compression=None) -> None:
         extra = {} if compression is None else {"compression": compression}
         df.to_parquet(path, index=False, **extra)
         return
+    _to_polars(df).write_parquet(path, compression=compression or "zstd")
+
+
+# The two conversions below go column-wise through numpy on purpose: both of
+# polars' pandas bridges (`from_pandas`, `to_pandas`) are implemented over arrow,
+# and so need the one dependency this branch exists to do without.
+
+def _to_polars(df: pd.DataFrame):
     import polars as pl
-    frame = pl.DataFrame({c: df[c].to_numpy() for c in df.columns})
-    frame.write_parquet(path, compression=compression or "zstd")
+    cols = {}
+    for name in df.columns:
+        s = df[name]
+        arr = s.to_numpy()
+        if arr.dtype.kind in "OUS":
+            # pandas spells a missing string NaN -- under pandas 3's `str` dtype as
+            # much as under object -- and polars refuses a float among strings, so
+            # the sentinel has to be translated rather than passed through.
+            arr = s.astype(object).where(s.notna(), None).to_numpy()
+        cols[name] = arr
+    return pl.DataFrame(cols)
 
 
 def _from_polars(df) -> pd.DataFrame:
-    # Column-wise through numpy on purpose: both of polars' pandas bridges
-    # (`from_pandas`, `to_pandas`) are implemented over arrow, and so need the
-    # one dependency this branch exists to do without.
     return pd.DataFrame({c: df[c].to_numpy() for c in df.columns})
 
 SCHEMA_COLS = [
