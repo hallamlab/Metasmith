@@ -1,8 +1,11 @@
 # E. coli intracellular metabolite concentration survey
 
-Working dir: `/home/tony/.claude/jobs/4d683583/tmp/conc_survey/`
 Purpose: one physiological absolute intracellular concentration per metabolite, for a
-reaction-quotient term in a bioinformatics reference build.
+reaction-quotient term in a bioinformatics reference build. Contents: one entry per source
+considered, each stating its overlap with ECMDB and what it adds, and the rule that kept or
+refused it. The two sources this kept are pinned under `data/fabfos/originals/`. The
+downloads the rest produced were deleted, so an entry here is the only record of them.
+Written before r10. Read it as a dated survey, not as a description of the shipped lane.
 
 Baseline to beat: **ECMDB 2.0** — 1,186 growth-condition measurements over **891 metabolites**,
 already downloaded elsewhere. Every entry below states overlap-with-ECMDB and what it adds.
@@ -62,7 +65,7 @@ rejected; non-E.-coli organisms discarded.
   ```
   No KEGG, no ChEBI, no HMDB, no InChIKey, no PubChem in the study record. RefMet names can be resolved one at a
   time via `/rest/refmet/name/<name>/all`, which yields `pubchem_cid` + `inchi_key` — but **not** KEGG or ChEBI,
-  which are the two prefixes `build_concentration_table.py` actually joins on. So MW joins to MetaNetX only through a
+  which are the two prefixes the join used at survey time. So MW joins to MetaNetX only through a
   second hop (name → RefMet → InChIKey → `chem_prop`), and every ambiguous channel above breaks it.
 - **Growth conditions** yes, and good ones: strain, genotype, medium, aerobic/anaerobic, growth phase, temperature,
   and per-sample `Factors` strings.
@@ -113,7 +116,7 @@ rejected; non-E.-coli organisms discarded.
   atp[c]    ATP                          c            (empty)      0.00963          0.009465    0.00813  0.0114
   ```
   So the join is **`bigg.metabolite:` into MetaNetX `chem_xref`**, after stripping the `[c]` suffix. That is a
-  *third* namespace beyond the `kegg.compound:` / `chebi:` pair `build_concentration_table.py` currently uses.
+  *third* namespace beyond the `kegg.compound:` / `chebi:` pair the join used at survey time.
   The bundled `ecoli.xml` is a 13CFLUX carbon-mapping file with zero KEGG/ChEBI annotation, and `ecoli_mea.xlsx`
   holds labeling fractions and fluxes, not concentrations — neither rescues the crosswalk.
 - **Growth conditions** single condition, stated in Online Methods: **E. coli K-12 NCM3722, 37 °C, Gutnick minimal
@@ -141,7 +144,7 @@ rejected; non-E.-coli organisms discarded.
 - **Paper** PMID **19561621**, PMCID **PMC2754216**, "Absolute metabolite concentrations and implied enzyme active
   site occupancy in Escherichia coli."
 - **Status** this is *the* canonical E. coli absolute-concentration dataset, and it is **already in hand**: ECMDB's
-  scraped rows cite `PMID: 19561621`, and `build_concentration_table.py` already prefers that PMID. Re-downloading
+  scraped rows cite `PMID: 19561621`, which the aggregation already prefers. Re-downloading
   it buys nothing.
 - **Supplementary files are `NIHMS109101-supplement-1.pdf` and `NIHMS109101-supplement-2.doc`** (from the EPMC
   `fullTextXML` `xlink:href` list). A **PDF and a Word document — not machine-readable tables.**
@@ -192,7 +195,7 @@ rejected; non-E.-coli organisms discarded.
   CHEBI:37736          C6H14O12P2        FBP                        0.08037715
   ```
   ChEBI + full InChI + SMILES is strictly the best-annotated source in this survey — `chebi:` is already one of the
-  two prefixes `build_concentration_table.py` joins on. **The identifiers are excellent and the numbers are
+  two prefixes the join used at survey time. **The identifiers are excellent and the numbers are
   worthless.** If MetaboLights ever deposits a molar E. coli study, it will join for free.
 - **Growth conditions** yes, and unusually rich — `s_*.txt` carries per-sample factor values, and `i_Investigation.txt`
   carries strain, medium, temperature, growth phase and growth rate.
@@ -492,7 +495,7 @@ own measurements are unreachable, and that is ~3× the size of everything the pa
 ECMDB carries `moldb_inchikey` for all 891, and MetaNetX `chem_prop` carries an `InChIKey` column for 1,231,714
 rows, so the obvious fix is to join on it. **It fails**: of the 891, only **72 hit an exact 27-character InChIKey**
 in `chem_prop`, yielding **75 MNXM — a third of what the KEGG/ChEBI route already reaches**. A further 155 match on
-the 14-character skeleton only, and the skeleton is exactly the join `build_concentration_table.py` already
+the 14-character skeleton only, and the skeleton is exactly the join the survey-time script already
 documents as unsafe (`HXXFSFRBOHSIMQ` is a seventeen-accession hexose-phosphate bucket). ECMDB stores the neutral
 acid form; MetaNetX stores a reference protonation state, so the third block diverges. **Stated as a negative
 result: do not build the InChIKey route.**

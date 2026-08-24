@@ -48,8 +48,10 @@ CP = "data/fabfos/originals/metanetx/4.5/chem_prop.tsv"
 RP = "data/fabfos/originals/metanetx/4.5/reac_prop.tsv"
 BAKE = "data/fabfos/processed/metabolism_bake"
 
-conc = {r["mnxm"]: (float(r["conc_mM"]), r["name"], int(r["n_all"]))
-        for r in csv.DictReader(open("research/fabfos/bake/work/conc_mnxm.tsv"),
+# The SAME table the bake read, written by `ecspr.bake.direction.quotient table`. Reading a
+# second aggregation of the same sources would make an agreement below meaningless.
+conc = {r["mnxm"]: (float(r["conc_mM"]), r["name"], int(r["n_conditions"]))
+        for r in csv.DictReader(open("research/fabfos/bake/work/concentrations.tsv"),
                                 delimiter="\t")}
 stoich = load_mnxr_stoich(RP)
 names = load_mnxm_names(CP)
@@ -97,7 +99,7 @@ for mnxm, coeff in sorted(rewritten.items(), key=lambda kv: kv[0]):
         c, cname, n = hit
     term = RT * coeff * math.log(c / 1000.0)   # mM -> M
     corr += term
-    tag = f"(ECMDB {cname}, n={n})" if n else "(no measurement -- 1 mM default)"
+    tag = f"({cname}, {n} condition(s))" if n else "(no measurement -- 1 mM default)"
     print(f"    {coeff:+g}  {nm:34s} {c:9.4f} mM  {tag}  -> {term:+8.3f} kJ/mol")
 
 # THE CHECK. `corr` is computed here from the pinned table and the restaged equation, with

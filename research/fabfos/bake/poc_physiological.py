@@ -77,7 +77,8 @@ def main(argv=None):
     ap = argparse.ArgumentParser()
     ap.add_argument("--reac-prop", required=True)
     ap.add_argument("--chem-prop", required=True)
-    ap.add_argument("--conc", required=True, help="conc_mnxm.tsv from build_concentration_table")
+    ap.add_argument("--conc", required=True,
+                    help="the table `ecspr.bake.direction.quotient table` writes")
     ap.add_argument("--default-mM", type=float, default=1.0,
                     help="concentration for a participant ECMDB does not measure. 1 mM is "
                          "eQuilibrator's own physiological default, so CONC degrades to "
