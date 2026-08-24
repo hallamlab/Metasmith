@@ -2,8 +2,8 @@
 
 The 2026-08-18 regen re-ran the mapper over lane outputs that lived only on Sockeye. This
 one re-ran **the lanes themselves**, so every host and the clone cohort now has an
-`annotations/lanes/` in the tree that its de-novo table is actually built from. That was
-the point: eleven of thirteen runs had a de-novo GPR table with nothing behind it here.
+`annotations/lanes/` in the tree that its de-novo table is actually built from. Eleven of
+thirteen runs had a de-novo GPR table with nothing behind it here.
 
 | run | site that won | rows | pbert | clean | matches 08-18 |
 |---|---|---|---|---|---|
@@ -33,9 +33,9 @@ is the only thing that says otherwise, and it was itself wrong (below).
 - **`proteinbert` chunk order.** The guard against stacking chunk 10 before chunk 2
   matched a *trailing* integer; the image writes `<stem>.<k>.embedding.npy` and announces
   that pattern itself. No four-lane run had passed this step since the guard landed.
-- **`python_for_data_science` at tag 1.4.0.** No pyarrow, and pandas 3.0.5 has no parquet
-  engine without it. `gpr_4lane` imports pyarrow at module level, so it died after all
-  four lanes had already succeeded. Pinned back to 1.2.5.
+- **`python_for_data_science` at tag 1.4.0 has no pyarrow.** `gpr_4lane` imported it at
+  module level and died there, after all four lanes had already succeeded. Pinned back to
+  1.2.5 to finish the campaign; the durable fix came after, below.
 - **Unstamped images on a read-only store.** The engine gates on `<sif>` AND
   `<sif>.verified`; an unstamped image sends the task to re-stamp it, which flocks the
   store. Sockeye's is `/arc`, read-only from a compute node, so it fell through to
@@ -43,6 +43,17 @@ is the only thing that says otherwise, and it was itself wrong (below).
   checks both.
 - **`landed_products` read only `_manifests/`,** which these result trees do not have, so
   it called all seven targets absent from a run that had produced six.
+
+## Then the pin moved forward instead (2026-08-24)
+
+Reverting to 1.2.5 kept the campaign moving but left the env one bump behind a tree that
+had already moved. The image is not the thing that cannot read parquet — polars carries
+its own reader and writer, and only pandas' `read_parquet`/`to_parquet` are pyarrow front
+ends. So the pin is 1.4.0 and the code no longer names pyarrow: `lib::fabfos_evidence`
+owns `read_parquet` / `write_parquet`, chooses polars or pyarrow by what the interpreter
+has, and both GPR mappers and `ptools_annotation_gather` go through it. Filter pushdown
+survives the move — the bridge's uniprot slice is still cut in the reader, not on the
+heap. **Unrun as of this writing**; the first four-lane run on 1.4.0 is the check.
 
 ## Running it again
 
