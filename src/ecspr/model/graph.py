@@ -313,6 +313,36 @@ class Solution:
         # to the reactions that built its conductance.
         return self._oedge
 
+    def solved_system(self, floor=DIODE_BACKWARD_FLOOR) -> dict:
+        # The linear algebra the solve actually ran on: incidence, conductances and
+        # potentials over the CONTRACTED, component-restricted node set.
+        #
+        # Contraction and component restriction both change the index space, and neither is
+        # recoverable from ``graph`` alone -- so anything that must re-enter the solved
+        # system (:mod:`ecspr.model.sensitivity` is the caller that exists) has to be handed
+        # it rather than rebuild it and hope the two agree.
+        # A definite zero -- empty terminal, no edges, terminals disconnected -- has no
+        # solved system at all, and says so rather than half-building one.
+        if self._cur.size == 0 or SRC_SUPERNODE not in self._cidx:
+            z = np.zeros(0)
+            return dict(B=sp.csr_matrix((0, 0)), gp=z, gm=z.copy(), phi=z.copy(), n=0,
+                        source=-1, sink=-1, oedge=self._oedge)
+        nodes = self.graph.nodes
+        ci = np.full(self._nin, -1, np.int64)
+        for j in np.unique(np.concatenate([self._otail, self._ohead])):
+            k = self._cidx.get(self._cmap.get(nodes[j]))
+            if k is not None:
+                ci[j] = k
+        tail, head = ci[self._otail], ci[self._ohead]
+        n = len(self._phi_c)
+        gp = self.graph.gp[self._oedge]
+        return dict(
+            B=build_incidence(list(zip(tail.tolist(), head.tolist())), n),
+            gp=gp, gm=np.maximum(self.graph.gm[self._oedge], floor * gp),
+            phi=np.asarray(self._phi_c, float), n=n,
+            source=self._cidx[SRC_SUPERNODE], sink=self._cidx[SNK_SUPERNODE],
+            oedge=self._oedge)
+
     def edge_currents(self) -> tuple:
         # ``(original_edge_index, current)`` for every edge that survived contraction.
         return self._oedge, self._cur
