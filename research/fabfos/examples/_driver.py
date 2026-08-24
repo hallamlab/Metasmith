@@ -167,20 +167,34 @@ def preflight(host: str, agent_home: str, container: str, tool_envs, *,
     roots = "${APPTAINER_CACHEDIR:-$HOME/.apptainer} " + f"{agent_home}/container_images"
     if image_store:
         roots = f"{image_store} " + roots
+    # A `.sif` alone is not readiness. The engine gates on `<sif>` AND `<sif>.verified`,
+    # and an unstamped image sends the task down the re-verify path: flock the store,
+    # exec the image, stamp it. On sockeye the store is /arc, which is READ-ONLY from a
+    # compute node, so the flock fails, the fallback is `apptainer pull`, and that dies
+    # with `no route to host`. Checking only existence passed that store and let the run
+    # fail four lanes later.
     for label, uri in wanted.items():
+        sif = sif_name(uri)
         checks.append(
-            f'find {roots} '
-            f'-maxdepth 1 -name "{sif_name(uri)}" -print -quit 2>/dev/null | grep -q . '
-            f'&& echo "OK   {label}: {uri}" '
-            f'|| echo "MISSING {label}: {uri} -- a compute node cannot pull it"')
+            f'f=$(find {roots} -maxdepth 1 -name "{sif}" -print -quit 2>/dev/null); '
+            f'if [ -z "$f" ]; then '
+            f'echo "MISSING {label}: {uri} -- a compute node cannot pull it"; '
+            f'elif [ ! -e "$f.verified" ]; then '
+            f'echo "UNVERIFIED {label}: {uri} -- $f has no .verified sidecar; a task '
+            f'will try to stamp one and cannot if that store is read-only"; '
+            f'else echo "OK   {label}: {uri}"; fi')
     out = ssh_once(host, "; ".join(checks))
     print(out.rstrip())
-    bad = [ln for ln in out.splitlines() if ln.startswith("MISSING")]
-    if bad:
-        print(f"\n{len(bad)} prerequisite(s) absent on {host}. Pull the images on the "
-              f"LOGIN node (`apptainer pull`) before running.", file=sys.stderr)
-        return 1
-    return 0
+    missing = [ln for ln in out.splitlines() if ln.startswith("MISSING")]
+    unverified = [ln for ln in out.splitlines() if ln.startswith("UNVERIFIED")]
+    if missing:
+        print(f"\n{len(missing)} prerequisite(s) absent on {host}. Pull the images on "
+              f"the LOGIN node (`apptainer pull`) before running.", file=sys.stderr)
+    if unverified:
+        print(f"\n{len(unverified)} image(s) unstamped on {host}. On the LOGIN node: "
+              f"`apptainer exec --no-home --cleanenv <sif> true && : > <sif>.verified`.",
+              file=sys.stderr)
+    return 1 if (missing or unverified) else 0
 
 
 def check_staged_executor(host: str, agent_home: str, task_key: str) -> int:

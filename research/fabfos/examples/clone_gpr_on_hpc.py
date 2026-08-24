@@ -269,8 +269,7 @@ def verify(results: Path) -> int:
               f"read _metasmith/logs.*/main.log.",
               file=sys.stderr)
         return 2
-    print(f"{TARGET} present. Now: --publish, then "
-          f"`dvc add data/fabfos/runs/eydallin_clones/gpr`.")
+    print(f"{TARGET} and {len(LANES)} lane table(s) present. Now: --publish.")
     return 0
 
 
