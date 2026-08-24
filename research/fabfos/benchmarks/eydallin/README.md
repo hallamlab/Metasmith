@@ -342,6 +342,28 @@ and each AUC is printed beside the same AUC computed on reaction count alone, be
 confound is what sank the ASKA/FFA arm and a number that does not beat it carries no
 information.
 
+## The anabolic/catabolic ratio over the library — a sign, not a ranking
+
+`sweep_aska_ratio.py` is the same sweep carrying a second two-point solve per clone,
+glycogen → pyruvate (`MNXM23`), and scoring the ratio C(glucose→glycogen) /
+C(glycogen→pyruvate). Both conductances rise under any fold, so the ratio cancels the part
+of the rise that is network-wide; on the 45-condition DH1 panel that took sign agreement
+from 10/45 to 30/45. Outputs and `analyse_aska_ratio_sweep.py`'s report land in
+`data/fabfos/runs/aska/ecspr/`.
+
+**It does not move the classifier.** Full-library AUC 0.534 curated / 0.489 de-novo against
+0.546 / 0.500 for the raw numerator re-run on the same r10 bake, and a reaction-count
+control of 0.540 / 0.485 — the same tie for last place, one probe or two. The README's
+0.536 / 0.464 are pre-r10 and pre-de-novo-rebuild, so they are not the comparison to quote.
+
+**What the ratio does buy is the sign, and only on the de-novo channel**, where glgA, glgB,
+malP, glgP and glgC are the whole top five of 4,102 clones — no null clone reaches any of
+their magnitudes — and all five signs match Fig. 1, malP and glgB included. On the curated
+channel those two stay wrong-signed (+5.81%, +2.08%) while still sitting at the 99.9th
+percentile of the null, so the miss is a direction error rather than a failure to see them.
+Across all labelled positives the sign agrees 61% curated / 70% de-novo, neither better than
+the deficient-heavy base rate (Fisher p = 1 and 0.6).
+
 ## How much was there to find — the network, not the ranking
 
 **See `REPORT.md` § *How much was there to find in the first place*; this section is the
