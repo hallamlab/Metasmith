@@ -164,6 +164,21 @@ types:
         curation sweep's supplier lane: a name and an accession are the only handles
         a structureless MetaNetX stub has.
 
+  ecmdb:
+    extends: [download]
+    properties:
+      _: >-
+        ECMDB's E. coli metabolome distribution (ecmdb/<release>/): `ecmdb.json.zip` as
+        served, plus `concentrations.json` -- the paginated /concentrations browse walked
+        into one table by `buildlib::ecmdb_scrape.py`. BOTH are needed and neither
+        substitutes for the other: the bulk file is 3,760 metabolite cards carrying
+        kegg/chebi/hmdb/m2m identifiers and NO concentrations, and the browse is the only
+        machine-readable source of the measurements. The scrape is the acquisition, not a
+        parse -- there is no API -- which puts it on the same footing as the KEGG REST
+        responses saved as the endpoint returned them. The measurements are not ECMDB's
+        own: the citation column names the primary studies by PMID, so this is citable as
+        a panel rather than as one database's opinion.
+
   modelseed:
     extends: [download]
     properties:

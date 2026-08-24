@@ -15,6 +15,10 @@ manifest:
     instance_id: 1e20d17692bc7767cc735cebc010f787f274b05604910df52dd66c695dc71aa0ee6a
     origin: leaf
     type: transforms::transform
+  ecmdb.py:
+    instance_id: 1e2095daa923c573a4ed275af6a546b991bb0b81ae7330eb734e524ad4c9103bbc6b
+    origin: leaf
+    type: transforms::transform
   equilibrator.py:
     instance_id: 1e20c286d03462718b44ebbe9d1be53f9cb8579695a3631c391625db587350baa0ec
     origin: leaf

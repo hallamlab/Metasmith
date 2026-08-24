@@ -399,6 +399,57 @@ DIR_SIGMA_0_BAND = (5.0, 40.0)          # outside => stop, it is a finding
 # the graph asymmetries of 1e17, far past where the reverse branch is numerically dead.
 DIR_DG_CLAMP = 3.0 * DIR_DECADE          # three decades == 1000:1
 
+# =====================================================================
+# the reaction quotient
+# =====================================================================
+# THE RATIO IS A PHYSIOLOGICAL QUANTITY, so the number shrunk toward reversible is
+# dG'o + RT*ln(Q), not dG'o. The correction decomposes into two parts with completely
+# different data requirements, and conflating them is why the cheap fix looks sufficient:
+#
+#   molecularity  RT * dn * ln(1 mM)             needs NO data. This is exactly what
+#                                                eQuilibrator's `physiological_dg_prime`
+#                                                returns, and over the voted set its
+#                                                MEDIAN |value| is 0.00 kJ/mol -- most
+#                                                biochemistry conserves solute count.
+#   skew          RT * sum(nu_i * ln(c_i/1 mM))  needs a measured concentration per
+#                                                participant, and is identically zero
+#                                                under a uniform concentration. 30.7% of
+#                                                in-graph reactions carry one past a
+#                                                decade, which no uniform prior can see.
+#
+# A PARTICIPANT WITH NO MEASUREMENT IS PRICED AT THE DEFAULT, NEVER SKIPPED. Skipping
+# leaves it at the 1 M standard state while its partners move to millimolar, which makes
+# the correction one-sided: on MNXR145036 that returns -17.3 kJ/mol where the balanced
+# answer is +5.4. A one-sided quotient is worse than none.
+DIR_CONC_DEFAULT_mM = 1.0
+
+# Widths, in DECADES of concentration, folded into sigma at the seam sigma_sub uses.
+# The floor exists because 41% of the measured metabolites rest on a single growth
+# condition, and a single measurement has no spread of its own -- a confident zero width
+# on one number is the failure this prevents.
+DIR_CONC_SPREAD_FLOOR = 0.30
+# sigma of a log-uniform over the 1 uM .. 10 mM window MDF analyses use: 4/sqrt(12).
+DIR_CONC_SPREAD_DEFAULT = 4.0 / _math.sqrt(12.0)
+
+# Already inside eQuilibrator's prime potentials. Adding them again double-counts.
+DIR_CONC_IMPLICIT = frozenset({"WATER", "MNXM1"})
+
+# Activity set by a partial pressure, which is a different measurement from an
+# intracellular pool -- so these are excluded from the quotient and COUNTED, not silently
+# defaulted. Dissolved O2 alone is 7,028 in-graph solute incidences.
+DIR_CONC_GASES = frozenset({"MNXM735438", "MNXM13", "MNXM1098", "MNXM1101872",
+                            "MNXM10917", "MNXM732448"})
+
+# A polymer or an unspecified acceptor has no free-solute concentration. This is the same
+# assertion `substitute.py` makes about its standard term, and it is why the phosphorylase
+# family needs its polymer budget balanced BEFORE a concentration term means anything.
+DIR_CONC_UNIT_ACTIVITY = frozenset({"MNXM738130", "MNXM8348", "MNXM727735", "MNXM725902",
+                                    "BIOMASS", "MNXM01", "MNXM8975"})
+
+DIR_CONC_COLUMNS = ("mnxr", "member", "molecularity", "skew", "dG_correction",
+                    "sigma_conc", "n_conc_measured", "n_conc_defaulted",
+                    "n_conc_excluded", "delta_n")
+
 DIR_CATEGORIES = ("PHYSIOL-LEFT-TO-RIGHT", "LEFT-TO-RIGHT", "REVERSIBLE",
                   "PHYSIOL-RIGHT-TO-LEFT", "RIGHT-TO-LEFT")
 
