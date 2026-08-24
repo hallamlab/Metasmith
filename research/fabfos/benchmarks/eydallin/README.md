@@ -145,13 +145,19 @@ carbon claim, and the N/P/S copies asserted three directions nobody measured.
 
 **The study folder's own `gpr_manual.parquet` still carries no reactions, and that is
 correct.** It is the curator's reading, and the curator resolved none — so
-`Y/expectations.tsv` stays empty and the cohort cannot be scored through it. The edges
-live beside it instead, two independent readings of the same 86 names:
+`Y/expectations.tsv` stays empty and the cohort cannot be scored through it. Every one of
+its 86 nulls now has a gene-specific verdict rather than a blank cell, though:
+`resolve_gene_manual.py` reads the model's own annotations by two independent joins
+(current symbol and b-number), searches it directly for anything either join missed,
+confirms the near-misses are transport-excluded by MetaNetX's own flag, and publishes
+both `data/fabfos/benchmarks/eydallin/gpr_manual.parquet` (host `e_coli_dh1`) and a
+`gpr_manual_report.tsv` beside it naming why. The edges live beside those instead, two
+independent readings of the same 86 names:
 
 | | |
 |---|---|
 | `data/fabfos/runs/eydallin_clones/annotations/` | the clone ORFs as W3110 proteins, plus `clone_resolution.tsv` |
-| `data/fabfos/runs/eydallin_clones/gpr/gpr_gem.parquet` | what iECDH1ME8569_1439 asserts — `clone_gem_census.tsv` has the per-clone counts |
+| `data/fabfos/runs/eydallin_clones/gpr/gpr_gem.parquet` | what iECDH1ME8569_1439 asserts, read directly against `e_coli_dh1` |
 | `data/fabfos/runs/eydallin_clones/gpr/gpr_denovo.parquet` | what the four annotation lanes infer — `BUILD_denovo.json` has the lane set and the counts |
 
 The lanes see several times the clones the model does, and both tables carry

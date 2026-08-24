@@ -9,14 +9,16 @@ that asks a curated genome-scale model. The other reads the sequence -- the four
 annotation lanes over `eydallin_clones.faa` -- and the comparison between them is the
 point, which is why they are separate files on one schema rather than one merged table.
 
-IT READS THE HOST'S OWN TABLE, NOT THE MODEL. `data/fabfos/benchmarks/hosts/e_coli_ag1/
-gpr_gem.parquet` already carries every (model gene -> reaction -> MNXR) row for AG1,
+IT READS THE HOST'S OWN TABLE, NOT THE MODEL. `data/fabfos/benchmarks/hosts/e_coli_dh1/
+gpr_gem.parquet` already carries every (model gene -> reaction -> MNXR) row for DH1,
 crosswalked once and labelled with `in_atom_universe` against one bake. Re-deriving that
 here from the JSON would put a second resolver in the tree, and two resolvers over one
 model is how a clone's edge and the background's edge for the same reaction come to
-disagree. Subsetting is also what makes the AG1 edit list bind: `GTPDPK` is absent from
-the background because relA1 broke it, so a relA clone cannot silently add it back
-through a path the host table never had.
+disagree. Subsetting is also what makes an edit list bind: AG1's `GTPDPK` is absent from
+ITS background because relA1 broke it, so a relA clone read against AG1 cannot silently
+add it back through a path that host table never had -- DH1 carries no such edit, and is
+the host this cohort's notebook actually runs against, so this reads DH1 directly rather
+than through AG1's borrowed subset.
 
 A CLONE'S NAME IS RESOLVED THROUGH THE B-NUMBER, exactly as the ORF set is. The model
 names its genes by current symbol and the paper writes 2010 symbols, so `erfK` has to
@@ -51,10 +53,10 @@ import fabfos_evidence as fe                                          # noqa: E4
 EXTRACTION = REPO / "data/fabfos/benchmarks/eydallin/extraction.tsv"
 MG1655_GBK = REPO / "data/fabfos/originals/genomes/e_coli_k12/genome/NC_000913.3.gbk"
 MG1655_FAA = REPO / "data/fabfos/originals/genomes/e_coli_k12/genome/NC_000913.3.faa"
-HOST_GPR = REPO / "data/fabfos/benchmarks/hosts/e_coli_ag1/gpr_gem.parquet"
+HOST_GPR = REPO / "data/fabfos/benchmarks/hosts/e_coli_dh1/gpr_gem.parquet"
 OUT = REPO / "data/fabfos/runs/eydallin_clones/gpr"
 
-HOST = "e_coli_ag1"
+HOST = "e_coli_dh1"
 COHORT = "eydallin"
 SOURCE_ORGANISM = "e_coli_w3110"
 
@@ -129,9 +131,15 @@ def main() -> int:
                   .reset_index(drop=True))
     fe.validate_gpr(df, LANE_SET, None, gem_id, EXTENSIONS)
     out_dir.mkdir(parents=True, exist_ok=True)
+    # DVC checks data out as read-only hardlinks into its cache -- opening one for
+    # write would mutate the shared cache object under every other checkout of the
+    # same content. Unlink first so the write lands on a fresh inode.
+    (out_dir / "gpr_gem.parquet").unlink(missing_ok=True)
     df.to_parquet(out_dir / "gpr_gem.parquet", index=False, compression="zstd")
+    # No `clone_gem_census.tsv` any more -- `resolve_gene_manual.py`'s report and
+    # `gpr_manual.parquet` are the per-gene record now, and a live table beside a
+    # frozen TSV saying the same thing is how the two come to disagree.
     cen = pd.DataFrame(census)
-    cen.to_csv(out_dir / "clone_gem_census.tsv", sep="\t", index=False)
 
     with_rxn = cen[cen["n_reactions"] > 0]
     in_uni = cen[cen["n_in_universe"] > 0]
@@ -146,7 +154,7 @@ def main() -> int:
     if len(named_no_rxn):
         print(f"    {len(named_no_rxn)} name a model gene that carries no reaction: "
               f"{sorted(named_no_rxn['gene'])}")
-    print(f"\n-> {out_dir}/gpr_gem.parquet and clone_gem_census.tsv")
+    print(f"\n-> {out_dir}/gpr_gem.parquet")
     return 0
 
 
