@@ -172,7 +172,8 @@ CLI = {
         # canon has since moved to three decades without a re-bake, so reproducing r9
         # needs to be able to say so.
         "": {"--base-mnxrs", "--eq", "--dgbyg", "--curated", "--calibration",
-             "--sigma0", "--prior-width", "--clamp", "--out"},
+             "--sigma0", "--prior-width", "--clamp", "--quotient",
+             "--no-widen-suspect", "--out"},
     },
     "ecspr.bake.direction.quotient": {
         "table": {"--source", "--chunk", "--chem-xref", "--chem-prop",

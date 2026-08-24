@@ -77,6 +77,10 @@ def main() -> None:
     ap.add_argument("--balance-gate", default=None,
                     help="r10 arm: where the raw reac_prop balance test runs relative to "
                          "the member ('before_member' is r9)")
+    ap.add_argument("--quotient", type=Path, default=None,
+                    help="r10 arm: per-(MNXR, member) correction table")
+    ap.add_argument("--no-widen-suspect", action="store_true",
+                    help="r10 arm: report dG_suspect without widening those rows")
     ap.add_argument("--clamp", default=None,
                     help="r10 arm: magnitude bound in kJ/mol ('100' is what r9 was baked "
                          "with; canon has since moved to three decades without a re-bake)")
@@ -131,6 +135,10 @@ def main() -> None:
         combine += ["--prior-width", a.prior_width]
     if a.clamp is not None:
         combine += ["--clamp", a.clamp]
+    if a.quotient is not None:
+        combine += ["--quotient", a.quotient]
+    if a.no_widen_suspect:
+        combine += ["--no-widen-suspect"]
     run("combine", *combine)
 
     got = pd.read_parquet(out / "direction_annotation.parquet")

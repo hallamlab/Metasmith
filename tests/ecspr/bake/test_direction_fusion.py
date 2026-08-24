@@ -193,7 +193,12 @@ def test_a_substituted_measurement_is_not_reported_as_measured():
 
 
 def test_the_substitution_width_widens_the_posterior_and_shrinks_the_ratio():
-    base = {"mnxr": "R", "eq_dg": -20.0, "eq_sigma": 1.0, "eq_uses_gc": True}
+    # BELOW THE CLAMP ON PURPOSE. r10 re-fitted DIR_SIGMA_0 to 28.017 while DIR_DG_CLAMP
+    # stayed at three decades (17.12), so a confident row at -20 kJ/mol now clamps whether
+    # or not the width is applied -- and two clamped rows are equal, which would hide the
+    # very effect this pins. The shrinkage and the clamp do different jobs, and this test
+    # is about the shrinkage.
+    base = {"mnxr": "R", "eq_dg": -12.0, "eq_sigma": 1.0, "eq_uses_gc": True}
     plain = C.combine_row(base, calib={}, sigma_0=canon.DIR_SIGMA_0)
     subbed = C.combine_row({**base, "dgbyg_sigma_sub": 8.0}, calib={},
                            sigma_0=canon.DIR_SIGMA_0)

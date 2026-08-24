@@ -286,8 +286,14 @@ def cmd_annotate(args):
         covered = 0
         for mnxr, (st, _balanced, _transport) in stoich.items():
             covered += subs.covers(st)
+            restaged = subs.rewrite(st)
+            # THE BALANCE VERDICT ON THE EQUATION THE MEMBER ACTUALLY SCORED, not on the
+            # form MetaNetX wrote. `reac_prop`'s own is_balanced is about the latter, and
+            # the whole point of the substitution lane is that the two differ. Carried
+            # here because this is the only place that holds the restaged stoichiometry.
             rows.append(dict(mnxr=mnxr, member=member,
-                             **correction(subs.rewrite(st), conc)))
+                             restaged_balanced=subs.balances(restaged),
+                             **correction(restaged, conc)))
         print(f"[quotient:{member}] {len(stoich)} reactions, {covered} restaged by "
               f"substitution before the quotient")
 

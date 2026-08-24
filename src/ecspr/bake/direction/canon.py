@@ -31,7 +31,16 @@ DIR_SIGMA_FLOOR = 1e-4                  # kJ/mol; a NARROWER one is no informati
 # group-cancelling zeros. A quarter of the mass sitting at dG'=0 exactly is what pinned
 # that fit's median to 0.000 and halved its MAD, so it shrank every row of every bake
 # too hard. Fit this over the floored arm or it will drift back.
-DIR_SIGMA_0 = 23.489                    # kJ/mol
+# r10 RE-FITS IT ON THE PHYSIOLOGICAL QUANTITY, which is the one now being shrunk. Same
+# estimator, same arm, same floor -- 565 measured anchors (up from r9's 532, because the
+# balance gate moved below the member and stopped discarding restaged equations). The
+# marginal median moves toward zero, -1.165 -> -0.683, so the corrected quantity is the
+# more symmetric of the two, and the robust spread widens 24.075 -> 28.017 because a
+# concentration correction is information the standard-state number did not carry.
+#
+# It lands inside DIR_SIGMA_0_BAND, so the band stands as committed rather than needing a
+# re-derivation of its own.
+DIR_SIGMA_0 = 28.017                    # kJ/mol
 DIR_SIGMA_0_BAND = (5.0, 40.0)          # outside => stop, it is a finding
 
 # The ratio must stay a FINITE conductance ratio, never a one-way gate: a handful of
@@ -41,6 +50,12 @@ DIR_SIGMA_0_BAND = (5.0, 40.0)          # outside => stop, it is a finding
 # THE BOUND IS STATED IN DECADES OF CONDUCTANCE, not kJ/mol, because that is the unit
 # the ratio is consumed in -- one decade per DIR_DECADE. Unbounded pass-through hands
 # the graph asymmetries of 1e17, far past where the reverse branch is numerically dead.
+# RE-EARNED ON r10's OWN TABLE, because the concentration term moves the distribution and a
+# cap whose warrant describes a different distribution is not a warrant. Sweeping the mean
+# forward share of the two-way conductance over the corrected posterior: 1.050814 at one
+# decade, 1.062603 at three, 1.062701 at four, 1.062711 at six and at nine. Three decades
+# sits 0.010% from where the level stops moving, and unbounded overflows exp() to nan --
+# which is the other half of why this bound exists.
 DIR_DG_CLAMP = 3.0 * DIR_DECADE          # three decades == 1000:1
 
 # =====================================================================
@@ -124,7 +139,8 @@ DIR_CONC_MAX_EXPANSION = 3
 
 DIR_CONC_COLUMNS = ("mnxr", "member", "molecularity", "skew", "dG_correction",
                     "sigma_conc", "n_conc_measured", "n_conc_defaulted",
-                    "n_conc_excluded", "n_conc_gas_phase", "delta_n")
+                    "n_conc_excluded", "n_conc_gas_phase", "delta_n",
+                    "restaged_balanced")
 
 # WHICH STORED SPREAD ESTIMATOR THE CURATED PRIOR USES.
 #
@@ -151,6 +167,27 @@ DIR_BALANCE_GATE = "after_member"
 
 DIR_PRIOR_WIDTH_KINDS = ("robust", "tau")
 DIR_PRIOR_WIDTH_KIND = "robust"
+
+# THE MAGNITUDE CAP'S SECOND JOB, MADE EXPLICIT.
+#
+# `DIR_DG_CLAMP` is a numerical bound and its warrant is a saturation sweep. It was also
+# silently absorbing a population whose posterior is not thermodynamics -- the unbalanced
+# fraction rises monotonically with |dG'|, 2.7% under one decade to 66.4% past a hundred.
+# A direction label cannot find that bound, because clamping is monotone and
+# sign-preserving, so decided accuracy is identical at every value.
+#
+# A suspect row is WIDENED by this much rather than dropped or squashed. Widening reuses
+# the seam `sigma_sub` and `sigma_conc` already use, needs no new branch, preserves
+# coverage, and keeps reversible-by-default a limit of one rule instead of an if-branch.
+# Three decades: enough that a broken equation cannot carry a confident call, not so much
+# that it is silenced.
+DIR_SUSPECT_SIGMA = 3.0 * DIR_DECADE
+
+# When two members disagree by more than this, the equation is the suspect rather than
+# either estimate. MEASURED: across bands of |eq - dgbyg| the unbalanced fraction runs
+# 2.5%, 8.7%, 11.1%, 18.4%, 21.9% -- monotone, and further-reaching than the magnitude
+# test. This is the band where it passes 10%.
+DIR_MEMBER_GAP = 15.0
 
 DIR_CATEGORIES = ("PHYSIOL-LEFT-TO-RIGHT", "LEFT-TO-RIGHT", "REVERSIBLE",
                   "PHYSIOL-RIGHT-TO-LEFT", "RIGHT-TO-LEFT")

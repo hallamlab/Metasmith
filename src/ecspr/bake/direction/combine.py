@@ -42,6 +42,8 @@ TAU_CUR_FLOOR = canon.DIR_TAU_CUR_FLOOR
 S_MEAS_FLOOR = canon.DIR_S_MEAS_FLOOR
 SIGMA_FLOOR = canon.DIR_SIGMA_FLOOR
 DG_CLAMP = canon.DIR_DG_CLAMP
+SUSPECT_SIGMA = canon.DIR_SUSPECT_SIGMA
+MEMBER_GAP = canon.DIR_MEMBER_GAP
 
 
 def _num(x):
@@ -101,12 +103,77 @@ def thermo_vote(eq_dg, eq_sig, eq_gc, db_dg, db_sig):
     return None
 
 
-def combine_row(r, calib, sigma_0, dg_clamp=DG_CLAMP):
+# WHY A ROW IS EXTREME, recorded rather than absorbed silently by the clamp.
+#
+# The magnitude bound does two jobs and only admits to one. Its numerical warrant is real
+# -- the conductance saturates well inside it -- but it also swallows a large population
+# whose posterior is not thermodynamics at all: the unbalanced fraction climbs
+# monotonically with |dG'|, from 2.7% under one decade to 66.4% past a hundred. Clamping
+# hides that, because clamping is monotone and sign-preserving, so a direction LABEL scores
+# identically at every bound and cannot be used to find it.
+#
+# So the two jobs are split. The bound stays numerical. Brokenness becomes a named signal,
+# and the row is WIDENED rather than dropped.
+def _suspect(r, eq_dg, db_dg, sigma_sub) -> str:
+    # An empty string means "nothing wrong here"; a non-empty one names the first reason.
+    # Ordered most specific first, because a row can be several of these at once and the
+    # most actionable one is the one worth reporting.
+    bal = r.get("eq_restaged_balanced")
+    if bal is None or (isinstance(bal, float) and bal != bal):
+        bal = r.get("dgbyg_restaged_balanced")
+    if _num(bal) or isinstance(bal, (bool,)):
+        if bal is False or bal == 0:
+            return "unbalanced"
+    # MEMBER DISAGREEMENT BEATS MAGNITUDE AS A BROKENNESS DETECTOR, and it was already on
+    # disk as two columns nothing compared. Across bands of |eq - dgbyg| the unbalanced
+    # fraction runs 2.5%, 8.7%, 11.1%, 18.4%, 21.9% -- monotone, and it reaches further
+    # than the magnitude test does. The same test built on MetaCyc's own dGr'0 is NOT
+    # monotone (0.3, 2.2, 14.1, 15.6, 10.6) and the ensemble gets MORE accurate as that
+    # gap widens, which is why the third opinion is not used here.
+    if _num(eq_dg) and _num(db_dg) and abs(eq_dg - db_dg) > MEMBER_GAP:
+        return "member_disagreement"
+    if sigma_sub > 0 and not _num(r.get("eq_dg")) and not _num(r.get("dgbyg_dg")):
+        return "unpaired_residue"
+    return ""
+
+
+def _applied_correction(tv, eq_corr, db_corr, eq_dg, db_dg) -> float:
+    # WHICH member's correction actually reached the posterior. `thermo_vote` may fuse both
+    # members or fall through to one, so reporting a fixed member's number would describe a
+    # correction the ratio did not receive.
+    if tv is None:
+        return 0.0
+    if _num(eq_dg) and _num(db_dg):
+        return (eq_corr + db_corr) / 2.0
+    return eq_corr if _num(eq_dg) else db_corr
+
+
+def combine_row(r, calib, sigma_0, dg_clamp=DG_CLAMP, widen_suspect=True):
     # Normalise the eQ row ONCE, here: everything below reads eq_dg/eq_sig/eq_gc and
     # never the raw columns, so the vote and the provenance label cannot disagree about
     # whether eQuilibrator spoke. The raw columns are still emitted verbatim below.
     eq_dg, eq_sig, eq_gc = eq_vote(r.get("eq_dg"), r.get("eq_sigma"), r.get("eq_uses_gc"))
-    tv = thermo_vote(eq_dg, eq_sig, eq_gc, r.get("dgbyg_dg"), r.get("dgbyg_sigma"))
+
+    # THE REACTION QUOTIENT, APPLIED TO EACH MEMBER'S OWN NUMBER AND BEFORE THEY FUSE.
+    #
+    # Q is a function of (stoichiometry, concentrations) alone, so it belongs here rather
+    # than inside a member -- putting it in one would leave `thermo_vote` fusing an answer
+    # about a cell with an answer about a beaker. But it is EVALUATED per member, because
+    # the stoichiometry is per member: the substitution lane restages polymer and carrier
+    # chemistry, and a row refused for one member and kept for the other does not have one
+    # equation between them.
+    #
+    # AFTER `eq_vote`, WHICH IS WHY THIS IS SAFE. That test detects a group cancellation
+    # from the member's RAW sigma, and it has already run. The correction moves dG, never
+    # sigma, so nothing here can lift a cancelling zero back over SIGMA_FLOOR.
+    eq_corr = _zero(r.get("eq_dG_correction"))
+    db_corr = _zero(r.get("dgbyg_dG_correction"))
+    if _num(eq_dg):
+        eq_dg = eq_dg + eq_corr
+    db_dg_raw = r.get("dgbyg_dg")
+    db_dg = db_dg_raw + db_corr if _num(db_dg_raw) else db_dg_raw
+
+    tv = thermo_vote(eq_dg, eq_sig, eq_gc, db_dg, r.get("dgbyg_sigma"))
     cat = r.get("biocyc_category")
     prior = calib.get(cat) if cat else None       # (mu, tau, n) or None
 
@@ -130,8 +197,27 @@ def combine_row(r, calib, sigma_0, dg_clamp=DG_CLAMP):
     # re-promotes it to tier 1, which is the defect r8 was baked to remove. An asserted
     # structure has a width and a posterior that ignored it would read as a measurement.
     sigma_sub = max(_zero(r.get("eq_sigma_sub")), _zero(r.get("dgbyg_sigma_sub")))
-    if s_post is not None and sigma_sub > 0:
-        s_post = math.hypot(s_post, sigma_sub)
+
+    # THE CONCENTRATION WIDTH GOES IN AT THE SAME SEAM AND BEFORE SHRINKAGE. The order is
+    # the whole argument: lambda damps toward "no information about physiological
+    # direction", and a concentration is information about exactly that. A posterior that
+    # took the correction's VALUE but not its WIDTH would read a defaulted 1 mM as a
+    # measurement.
+    sigma_conc = max(_zero(r.get("eq_sigma_conc")), _zero(r.get("dgbyg_sigma_conc")))
+
+    # AND A ROW THE LANE THINKS IS BROKEN IS WIDENED, NOT DROPPED OR SQUASHED. Widening
+    # reuses this same mechanism, needs no new branch, and keeps coverage: a reaction that
+    # carries a call today still carries one, just less confidently. Abstaining instead
+    # would lose coverage, which this re-bake treats as a stop.
+    # DETECTION ALWAYS RUNS; THE WIDENING IS WHAT IS GATED. The column is a diagnostic and
+    # costs nothing, so every arm of the re-bake reports it and only the arm that earns the
+    # sigma effect applies it.
+    suspect = _suspect(r, eq_dg, db_dg, sigma_sub)
+    sigma_suspect = SUSPECT_SIGMA if (suspect and widen_suspect) else 0.0
+
+    for extra in (sigma_sub, sigma_conc, sigma_suspect):
+        if s_post is not None and extra > 0:
+            s_post = math.hypot(s_post, extra)
 
     # shrinkage decision rule
     if s_post is None:
@@ -185,6 +271,18 @@ def combine_row(r, calib, sigma_0, dg_clamp=DG_CLAMP):
         eq_dg=r.get("eq_dg"), eq_sigma=r.get("eq_sigma"), eq_uses_gc=r.get("eq_uses_gc"),
         dgbyg_dg=r.get("dgbyg_dg"), dgbyg_sigma=r.get("dgbyg_sigma"),
         dgbyg_wildcard=r.get("dgbyg_wildcard"), sigma_sub=sigma_sub,
+        # The ratio comes apart again without re-running anything: the standard number,
+        # the correction and its two halves, and the width of each.
+        dG_standard=(mu_post - _applied_correction(tv, eq_corr, db_corr, eq_dg, db_dg)
+                     if s_post is not None else None),
+        dG_correction=_applied_correction(tv, eq_corr, db_corr, eq_dg, db_dg),
+        molecularity=max(_zero(r.get("eq_molecularity")), _zero(r.get("dgbyg_molecularity")),
+                         key=abs),
+        skew=max(_zero(r.get("eq_skew")), _zero(r.get("dgbyg_skew")), key=abs),
+        sigma_conc=sigma_conc,
+        n_conc_measured=r.get("eq_n_conc_measured"),
+        n_conc_defaulted=r.get("eq_n_conc_defaulted"),
+        dG_suspect=suspect,
         biocyc_category=cat, biocyc_source=r.get("biocyc_source"),
         prior_mu=(prior[0] if prior else None),
         prior_tau=(prior[1] if prior else None),
@@ -193,7 +291,8 @@ def combine_row(r, calib, sigma_0, dg_clamp=DG_CLAMP):
 
 
 def build(base_mnxrs, eq_df, db_df, curated, calib_df, sigma_0,
-          prior_width_kind=canon.DIR_PRIOR_WIDTH_KIND, dg_clamp=DG_CLAMP):
+          prior_width_kind=canon.DIR_PRIOR_WIDTH_KIND, dg_clamp=DG_CLAMP,
+          quotient_df=None, widen_suspect=True):
     eq = eq_df.rename(columns={"dg": "eq_dg", "sigma": "eq_sigma", "flag": "eq_uses_gc",
                                "sigma_sub": "eq_sigma_sub"})
     db = db_df.rename(columns={"dg": "dgbyg_dg", "sigma": "dgbyg_sigma",
@@ -211,6 +310,19 @@ def build(base_mnxrs, eq_df, db_df, curated, calib_df, sigma_0,
           .merge(db[["mnxr", "dgbyg_dg", "dgbyg_sigma", "dgbyg_wildcard",
                      "dgbyg_sigma_sub"]], on="mnxr", how="left")
           .merge(cur[["mnxr", "biocyc_category", "biocyc_source"]], on="mnxr", how="left"))
+
+    # THE QUOTIENT ARRIVES PER (MNXR, MEMBER) AND IS PIVOTED TO ONE ROW PER MNXR, prefixed
+    # by member. Absent entirely -- no `--quotient` -- every column is missing, `_zero`
+    # reads that as 0.0, and the lane reproduces its standard-state self exactly. That is
+    # what makes the concentration term a priceable arm rather than a rewrite.
+    QCOLS = ("dG_correction", "sigma_conc", "molecularity", "skew",
+             "n_conc_measured", "n_conc_defaulted", "restaged_balanced")
+    if quotient_df is not None:
+        for member, g in quotient_df.groupby("member"):
+            keep = [c for c in QCOLS if c in g.columns]
+            df = df.merge(
+                g[["mnxr"] + keep].rename(columns={c: f"{member}_{c}" for c in keep}),
+                on="mnxr", how="left")
     # A ROBUST CENTRE AND A NON-ROBUST SCALE ARE NOT A PAIR. `calibrate.fit` computes both
     # estimators from the same points and stores both; this lane read `median` for the
     # centre and `tau` -- a plain variance-minus-mean-sigma-squared -- for the width, so a
@@ -229,7 +341,8 @@ def build(base_mnxrs, eq_df, db_df, curated, calib_df, sigma_0,
         raise ValueError(f"calibration table carries no {width!r} column")
     calib = {r.category: (r.median, getattr(r, width), int(r.n))
              for r in calib_df.itertuples()}
-    rows = [combine_row(rec, calib, sigma_0, dg_clamp) for rec in df.to_dict("records")]
+    rows = [combine_row(rec, calib, sigma_0, dg_clamp, widen_suspect)
+            for rec in df.to_dict("records")]
     out = pd.DataFrame(rows)
     # Named in the annotation, so a consumer reads which estimator produced the width it
     # is looking at rather than inferring it from the release number.
@@ -244,6 +357,14 @@ def main(argv=None):
     ap.add_argument("--dgbyg", required=True)
     ap.add_argument("--curated", required=True)
     ap.add_argument("--calibration", required=True)
+    ap.add_argument("--no-widen-suspect", action="store_true",
+                    help="report dG_suspect but do not widen those rows' sigma. The "
+                         "detection is a free diagnostic; the widening is the arm.")
+    ap.add_argument("--quotient", default=None,
+                    help="per-(MNXR, member) correction table from "
+                         "`ecspr.bake.direction.quotient annotate`. Omit and the lane is "
+                         "standard-state, exactly as before -- which is the arm the "
+                         "re-bake prices the concentration term against.")
     ap.add_argument("--clamp", type=float, default=canon.DIR_DG_CLAMP,
                     help="magnitude bound on dG_prime, kJ/mol. The DEPLOYED r9 was baked "
                          "at 100.0 and canon has since moved to three decades (17.12) "
@@ -262,9 +383,15 @@ def main(argv=None):
     base = json.load(open(a.base_mnxrs))
     out = build(base, pd.read_parquet(a.eq), pd.read_parquet(a.dgbyg),
                 pd.read_parquet(a.curated), pd.read_parquet(a.calibration), a.sigma0,
-                prior_width_kind=a.prior_width, dg_clamp=a.clamp)
+                prior_width_kind=a.prior_width, dg_clamp=a.clamp,
+                quotient_df=(pd.read_parquet(a.quotient) if a.quotient else None),
+                widen_suspect=not a.no_widen_suspect)
     out.to_parquet(a.out, index=False)
     print(f"[combine] {len(out)} base-graph reactions -> {a.out}")
+    if a.quotient:
+        sus = out["dG_suspect"].astype(str)
+        print(f"[combine] quotient applied; suspect rows: "
+              + ", ".join(f"{k}={v}" for k, v in sus[sus != ""].value_counts().items()))
     print(f"[combine] curated prior width: {a.prior_width}  "
           f"clamp: {a.clamp:.4g} kJ/mol ({a.clamp / canon.DIR_DECADE:.2f} decades)")
     print("[combine] dir_tier:\n" + out["dir_tier"].value_counts().sort_index().to_string())

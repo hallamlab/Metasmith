@@ -1,0 +1,245 @@
+mnxm	name	conc_mM	log10_spread	n_sources	sources	n_conditions	citations
+MNXM10	NADH	0.11306647614375705	0.21125567611893215	1	ecmdb	3	PMID:  19561621
+MNXM10641	alpha,omega-Diamine	1.1849664552859838	1.0370151065765	1	ecmdb	4	Experimentally Determined  Download Details|PMID:  8742354
+MNXM1092518	cis-aconitate	0.05708194152013061	0.7781512503836436	1	ecmdb	4	PMID:  19561621
+MNXM11	diphosphate	0.5	0.0	1	ecmdb	1	PMID:  6291941
+MNXM1101285	GMP	0.04098780306383842	0.4648867983026508	1	ecmdb	2	PMID:  17379776|PMID:  19561621
+MNXM1101474	UTP	2.6850187645615726	1.0970410021455004	1	ecmdb	4	PMID:  17379776|PMID:  19561621
+MNXM1101868	IMP	0.175316856006489	0.38149046055077895	1	ecmdb	2	PMID:  17379776|PMID:  19561621
+MNXM1102128	UDP	0.8312280072278605	0.6662657263081382	1	ecmdb	2	PMID:  17379776|PMID:  19561621
+MNXM1102191	CDP	0.14400000000000004	0.0	1	ecmdb	1	PMID:  17379776
+MNXM1103086	adenosine 5'-phosphosulfate	0.007000000000000002	0.0	1	ecmdb	1	PMID:  19561621
+MNXM1103104	uridine	2.09	0.0	1	ecmdb	1	PMID:  19561621
+MNXM1103205	alpha-D-ribose 1-phosphate	0.9738664538401409	0.28424981549909817	1	ecmdb	3	PMID:  19561621
+MNXM1103285	GDP	0.0685280161459603	1.5746741908383297	1	ecmdb	5	PMID:  11488613|PMID:  17379776|PMID:  19561621
+MNXM1103302	CMP	0.36	0.0	1	ecmdb	1	PMID:  19561621
+MNXM1103335	inosine	0.030999999999999996	0.0	1	ecmdb	1	PMID:  17379776
+MNXM1103400	guanosine	0.0070710678118654745	1.0969100130080565	1	ecmdb	2	PMID:  17379776|PMID:  19561621
+MNXM1103428	ITP	0.2059975728012347	0.004216484401163512	1	ecmdb	2	PMID:  17379776|PMID:  19561621
+MNXM1103553	GTP	1.3033895395408213	1.0964643541881351	1	ecmdb	5	PMID:  11488613|PMID:  17379776|PMID:  19561621
+MNXM1103718	CTP	1.0551383492258224	0.9859135387213949	1	ecmdb	4	PMID:  17379776|PMID:  19561621
+MNXM1103802	acetoacetyl-CoA	0.021999999999999995	0.0	1	ecmdb	1	PMID:  19561621
+MNXM1103953	CMP-N-acetyl-beta-neuraminate	0.169	0.0	1	ecmdb	1	PMID:  17379776
+MNXM1104065	alpha-D-glucosamine 6-phosphate	0.4648779100328273	0.5610107577352078	1	ecmdb	4	PMID:  17379776|PMID:  19561621
+MNXM1104266	acetyl-CoA	0.17722200219226333	1.9626060729241268	1	ecmdb	7	PMID:  11488613|PMID:  15158257|PMID:  19561621|Park, C., Park, C., Lee, Y., Lee, S.Y., Oh, H.B., Lee, J. (2011) Determination of the Intracellular Concentration of Metabolites in Escherichia coli Collected during the Exponential and Stationary Growth Phases using Liquid Chromatography-Mass Spectrometry. Bull Korean Chem. Soc. 32: 524-530.
+MNXM1104300	butanoyl-CoA	0.008000000000000004	0.0	1	ecmdb	1	PMID:  17379776
+MNXM1104453	5-phospho-alpha-D-ribose 1-diphosphate	0.15481498562935186	0.4384918523635314	1	ecmdb	3	PMID:  19561621
+MNXM1104529	UDP-N-acetyl-alpha-D-glucosamine	2.651130342764343	1.2316726846817199	1	ecmdb	4	PMID:  17379776|PMID:  19561621
+MNXM1104531	2-methylpropanoyl-CoA	0.008000000000000004	0.0	1	ecmdb	1	PMID:  17379776
+MNXM1104545	ADP-beta-D-ribose	0.026000000000000002	0.0	1	ecmdb	1	PMID:  17379776
+MNXM1104559	IDP	0.04242640687119287	0.49485002168009395	1	ecmdb	2	PMID:  17379776|PMID:  19561621
+MNXM1104774	succinyl-CoA	0.507685009431004	0.7910065710692307	1	ecmdb	3	PMID:  19561621
+MNXM1104823	UMP	0.129	0.0	1	ecmdb	1	PMID:  17379776
+MNXM1104890	UDP-alpha-D-glucuronate	0.25019295141285336	0.8337383388121975	1	ecmdb	5	Experimentally Determined  Download Details|PMID:  17379776|PMID:  19561621
+MNXM1105684	beta-D-glucosamine	0.018999999999999996	0.0	1	ecmdb	1	PMID:  17379776
+MNXM1105732	L-alanine	0.5375816435181396	2.3273589343863303	1	ecmdb	7	Experimentally Determined  Download Details|PMID:  17379776|PMID:  19561621
+MNXM1105736	(S)-carnitine	0.004000000000000001	0.0	1	ecmdb	1	PMID:  17379776
+MNXM1105737	(R)-carnitine	0.004000000000000001	0.0	1	ecmdb	1	PMID:  17379776
+MNXM1105760	adenosine	0.00283901391331568	2.678448337191417	1	ecmdb	2	PMID:  17379776|PMID:  19561621
+MNXM1105762	FADH2	0.038	0.0	1	ecmdb	1	PMID:  17379776
+MNXM1105798	N-acetyl-alpha-D-glucosamine 1-phosphate	0.082	0.0	1	ecmdb	1	PMID:  19561621
+MNXM1105941	myo-inositol	0.00664939976115098	0.06694678963061307	1	ecmdb	3	PMID:  19561621
+MNXM1105977	ADP-alpha-D-glucose	0.004000000000000001	0.0	1	ecmdb	1	PMID:  19561621
+MNXM1106093	malonyl-CoA	0.035	0.0	1	ecmdb	1	PMID:  19561621
+MNXM1106761	L-leucine	0.17672198560367483	0.2710667722865381	1	ecmdb	6	Experimentally Determined  Download Details|PMID:  17379776|PMID:  19561621
+MNXM1107192	(S)-malate	2.682404095081167	0.31250981334741135	1	ecmdb	3	PMID:  19561621
+MNXM1107752	citrate	1.7719678642580494	2.344808920242569	1	ecmdb	4	Experimentally Determined  Download Details|PMID:  19561621
+MNXM1107769	L-histidine	0.03825702140783871	3.02864518144953	1	ecmdb	6	Experimentally Determined  Download Details|PMID:  17379776|PMID:  19561621
+MNXM1107820	asparagine	0.11501362607235863	3.123448874145789	1	ecmdb	5	Experimentally Determined  Download Details|PMID:  17379776|PMID:  19561621
+MNXM1107821	L-asparagine	0.11501362607235863	3.123448874145789	1	ecmdb	5	Experimentally Determined  Download Details|PMID:  17379776|PMID:  19561621
+MNXM1107898	beta-D-fructose 6-phosphate	0.15857457837687625	0.7220353084047122	1	ecmdb	3	PMID:  11488613|PMID:  15158257|PMID:  17379776
+MNXM1107904	(S)-methylmalonyl-CoA	0.507685009431004	0.7910065710692307	1	ecmdb	3	PMID:  19561621
+MNXM1108290	trans-urocanate	0.06900000000000002	0.0	1	ecmdb	1	PMID:  17379776
+MNXM1108291	urocanate	0.06900000000000002	0.0	1	ecmdb	1	PMID:  17379776
+MNXM1108519	D-histidine	0.03825702140783871	3.02864518144953	1	ecmdb	6	Experimentally Determined  Download Details|PMID:  17379776|PMID:  19561621
+MNXM1136254	(R)-glycerate	1.41	0.0	1	ecmdb	1	PMID:  19561621
+MNXM1137677	D-arabinose 5-phosphate	0.9738664538401409	0.28424981549909817	1	ecmdb	3	PMID:  19561621
+MNXM114	L-proline	0.3713577331508756	0.585026652029182	1	ecmdb	6	Experimentally Determined  Download Details|PMID:  17379776|PMID:  19561621
+MNXM118	putrescine	0.07000000000000002	0.0	1	ecmdb	1	PMID:  17379776
+MNXM123	L-homocysteine	0.37	0.0	1	ecmdb	1	PMID:  19561621
+MNXM12322	N(5)-acetyl-L-ornithine	0.02946663864239084	2.8145532370629205	1	ecmdb	5	Experimentally Determined  Download Details|PMID:  17379776|PMID:  19561621
+MNXM1238	L-xylulose 5-phosphate	0.9738664538401409	0.28424981549909817	1	ecmdb	3	PMID:  19561621
+MNXM124	spermidine	0.5946427498927402	1.320625551727362	1	ecmdb	2	PMID:  8742354
+MNXM128	Ca(2+)	0.023237900077244515	4.823908740944319	1	ecmdb	2	"1. Cybercell Database:  http://ccdb.wishartlab.com/CCDB/cgi-bin/STAT_NEW.cgi   	2. Phillips R., Kondev, J., Theriot, J. (2008) “Physical Biology of the Cell” Garland Science, New York, NY.|PMID:  2442165"
+MNXM1281	L-histidinol	0.017031084994052675	0.18708664335714453	1	ecmdb	3	PMID:  19561621
+MNXM13159	triethanolamine	0.060999999999999985	0.0	1	ecmdb	1	PMID:  17379776
+MNXM1363766	(S)-S-adenosyl-L-methionine	0.2424508592280503	1.3979400086720377	1	ecmdb	4	PMID:  17379776|PMID:  19561621
+MNXM1363767	S-adenosyl-L-methionine	0.2424508592280503	1.3979400086720377	1	ecmdb	4	PMID:  17379776|PMID:  19561621
+MNXM1363862	D-fructose	1.383	0.0	1	ecmdb	1	Experimentally Determined  Download Details
+MNXM1363910	alpha-D-ribofuranose 5-phosphate	0.9738664538401409	0.28424981549909817	1	ecmdb	3	PMID:  19561621
+MNXM1363911	aldehydo-D-ribose 5-phosphate	0.9738664538401409	0.28424981549909817	1	ecmdb	3	PMID:  19561621
+MNXM1363925	cytidine	0.003000000000000001	0.0	1	ecmdb	1	PMID:  19561621
+MNXM1364019	UDP-alpha-D-glucose	1.311381740977196	0.6552148773673393	1	ecmdb	4	PMID:  17379776|PMID:  19561621
+MNXM1364111	D-glucose 6-phosphate	0.1915550146652642	1.1335389083702176	1	ecmdb	4	"1. Cybercell Database:  http://ccdb.wishartlab.com/CCDB/cgi-bin/STAT_NEW.cgi   	2. Phillips R., Kondev, J., Theriot, J. (2008) “Physical Biology of the Cell” Garland Science, New York, NY.|PMID:  11488613|PMID:  15158257|PMID:  17379776"
+MNXM1364147	FMN	0.020349683764179862	1.2471546148811263	1	ecmdb	3	PMID:  19561621
+MNXM1364149	FAD	0.10153947881475225	0.6299502060825404	1	ecmdb	4	PMID:  11488613|PMID:  19561621
+MNXM1364200	L-methionine S-oxide	0.007000000000000002	0.0	1	ecmdb	1	Experimentally Determined  Download Details
+MNXM1364212	D-glucopyranose 1-phosphate	0.10664766045910046	1.0974361117785136	1	ecmdb	3	PMID:  17379776|Park, C., Park, C., Lee, Y., Lee, S.Y., Oh, H.B., Lee, J. (2011) Determination of the Intracellular Concentration of Metabolites in Escherichia coli Collected during the Exponential and Stationary Growth Phases using Liquid Chromatography-Mass Spectrometry. Bull Korean Chem. Soc. 32: 524-530.
+MNXM1364214	alpha-D-glucose 1-phosphate	0.10664766045910046	1.0974361117785136	1	ecmdb	3	PMID:  17379776|Park, C., Park, C., Lee, Y., Lee, S.Y., Oh, H.B., Lee, J. (2011) Determination of the Intracellular Concentration of Metabolites in Escherichia coli Collected during the Exponential and Stationary Growth Phases using Liquid Chromatography-Mass Spectrometry. Bull Korean Chem. Soc. 32: 524-530.
+MNXM1364229	beta-D-fructose 1,6-bisphosphate	0.5680580898454598	3.482873583608754	1	ecmdb	7	PMID:  11488613|PMID:  15158257|PMID:  19561621|Park, C., Park, C., Lee, Y., Lee, S.Y., Oh, H.B., Lee, J. (2011) Determination of the Intracellular Concentration of Metabolites in Escherichia coli Collected during the Exponential and Stationary Growth Phases using Liquid Chromatography-Mass Spectrometry. Bull Korean Chem. Soc. 32: 524-530.
+MNXM1364230	alpha-D-fructofuranose 1,6-bisphosphate(4-)	0.5680580898454598	3.482873583608754	1	ecmdb	7	PMID:  11488613|PMID:  15158257|PMID:  19561621|Park, C., Park, C., Lee, Y., Lee, S.Y., Oh, H.B., Lee, J. (2011) Determination of the Intracellular Concentration of Metabolites in Escherichia coli Collected during the Exponential and Stationary Growth Phases using Liquid Chromatography-Mass Spectrometry. Bull Korean Chem. Soc. 32: 524-530.
+MNXM1364266	propanoyl-CoA	0.004999999999999999	0.0	1	ecmdb	1	PMID:  19561621
+MNXM1364268	L-lysine	0.510434327764184	0.32444776943394255	1	ecmdb	5	Experimentally Determined  Download Details|PMID:  17379776|PMID:  19561621
+MNXM1364269	D-lysine	0.510434327764184	0.32444776943394255	1	ecmdb	5	Experimentally Determined  Download Details|PMID:  17379776|PMID:  19561621
+MNXM1364496	D-aspartate	2.3010163737446603	1.4408530476825965	1	ecmdb	5	Experimentally Determined  Download Details|PMID:  17379776|PMID:  19561621
+MNXM1364497	L-aspartate	2.3010163737446603	1.4408530476825965	1	ecmdb	5	Experimentally Determined  Download Details|PMID:  17379776|PMID:  19561621
+MNXM1365243	(S)-2-(Pyrrolidin-2-yl)acetic acid	0.006000000000000003	0.0	1	ecmdb	1	PMID:  17379776
+MNXM1368456	uracil	1.0130000000000001	0.0	1	ecmdb	1	Experimentally Determined  Download Details
+MNXM1368457	Uracil	1.0130000000000001	0.0	1	ecmdb	1	Experimentally Determined  Download Details
+MNXM1368744	2-oxoglutarate	0.49557162545463046	0.1431769859413559	1	ecmdb	3	PMID:  19561621
+MNXM1368745	(2Z)-2-hydroxypent-2-enedioate	0.49557162545463046	0.1431769859413559	1	ecmdb	3	PMID:  19561621
+MNXM1369177	D-glucono-1,5-lactone	1.04	0.0	1	ecmdb	1	PMID:  19561621
+MNXM1371056	2-methylmaleate	0.020000000000000004	0.0	1	ecmdb	1	PMID:  17379776
+MNXM1371191	glutathione disulfide	3.214846691262169	0.6386080952319977	1	ecmdb	4	PMID:  17379776|PMID:  19561621
+MNXM1371727	(E)-cinnamate	0.11063453348751462	0.17929639893089278	1	ecmdb	2	PMID:  17379776
+MNXM1371728	cinnamate	0.11063453348751462	0.17929639893089278	1	ecmdb	2	PMID:  17379776
+MNXM1373	D-tryptophan	0.01501054516284506	0.4259687322722814	1	ecmdb	5	Experimentally Determined  Download Details|PMID:  17379776|PMID:  19561621
+MNXM1373739	N-Acetyl-ornithine	0.02946663864239084	2.8145532370629205	1	ecmdb	5	Experimentally Determined  Download Details|PMID:  17379776|PMID:  19561621
+MNXM14187	2-amino-3-hydroxybutanoic acid	0.14911235763474837	0.15248248586233015	1	ecmdb	3	Experimentally Determined  Download Details|PMID:  17379776|PMID:  19561621
+MNXM142	L-threonine	0.14911235763474837	0.15248248586233015	1	ecmdb	3	Experimentally Determined  Download Details|PMID:  17379776|PMID:  19561621
+MNXM144	beta-alanine	0.012000000000000002	0.0	1	ecmdb	1	PMID:  17379776
+MNXM145	D-ribulose 5-phosphate	0.08127222234232696	2.8195439355418688	1	ecmdb	6	PMID:  17379776|PMID:  19561621|Park, C., Park, C., Lee, Y., Lee, S.Y., Oh, H.B., Lee, J. (2011) Determination of the Intracellular Concentration of Metabolites in Escherichia coli Collected during the Exponential and Stationary Growth Phases using Liquid Chromatography-Mass Spectrometry. Bull Korean Chem. Soc. 32: 524-530.
+MNXM1506428	1H-Imidazole-2-methanethiol	0.18599999999999997	0.0	1	ecmdb	1	PMID:  17379776
+MNXM1507817	3-Pyrrolidineacetic acid	0.006000000000000003	0.0	1	ecmdb	1	PMID:  17379776
+MNXM1508190	o-Acetylhydroxylamine	0.273367883995176	0.1313592577126964	1	ecmdb	2	Experimentally Determined  Download Details|PMID:  17379776
+MNXM1508303	Arabinofuranosylcytosine	0.003000000000000001	0.0	1	ecmdb	1	PMID:  19561621
+MNXM1509917	Flavinat	0.10153947881475225	0.6299502060825404	1	ecmdb	4	PMID:  11488613|PMID:  19561621
+MNXM152	dTDP	0.378	0.0	1	ecmdb	1	PMID:  19561621
+MNXM1552	D-arginine	0.23435179752531743	0.9916842728321339	1	ecmdb	3	Experimentally Determined  Download Details|PMID:  17379776|PMID:  19561621
+MNXM1555902	D-fructose 6-phosphate	0.15857457837687625	0.7220353084047122	1	ecmdb	3	PMID:  11488613|PMID:  15158257|PMID:  17379776
+MNXM1555935	isobutanoyl-CoA	0.008000000000000004	0.0	1	ecmdb	1	PMID:  17379776
+MNXM1572	methylmalonate	0.989624258691893	0.4495502453531477	1	ecmdb	4	Experimentally Determined  Download Details|PMID:  19561621
+MNXM1608	(R)-malate	2.682404095081167	0.31250981334741135	1	ecmdb	3	PMID:  19561621
+MNXM162989	D-proline	0.3713577331508756	0.585026652029182	1	ecmdb	6	Experimentally Determined  Download Details|PMID:  17379776|PMID:  19561621
+MNXM163366	enol-oxaloacetate	0.029999999999999995	0.0	1	ecmdb	1	PMID:  15158257
+MNXM164	4-hydroxybenzoate	0.22914398882295703	1.1799713887242653	1	ecmdb	3	PMID:  19561621
+MNXM168	adenine	0.0051052359379454605	2.0086001717619175	1	ecmdb	5	Experimentally Determined  Download Details|PMID:  17379776|PMID:  19561621
+MNXM168188	L-talonate	0.04200000000000001	0.0	1	ecmdb	1	PMID:  19561621
+MNXM1819	D-glutamine	1.045520662190555	1.4297873759240323	1	ecmdb	6	Experimentally Determined  Download Details|PMID:  17379776|PMID:  19561621
+MNXM186	D-xylulose 5-phosphate	0.2813330605674161	2.8195439355418688	1	ecmdb	12	PMID:  17379776|PMID:  19561621|Park, C., Park, C., Lee, Y., Lee, S.Y., Oh, H.B., Lee, J. (2011) Determination of the Intracellular Concentration of Metabolites in Escherichia coli Collected during the Exponential and Stationary Growth Phases using Liquid Chromatography-Mass Spectrometry. Bull Korean Chem. Soc. 32: 524-530.
+MNXM188	anthranilate	0.003408658099402499	0.22184874961635614	1	ecmdb	4	PMID:  17379776|PMID:  19561621
+MNXM192	4-aminobutanoate	0.044	0.0	1	ecmdb	1	PMID:  17379776
+MNXM1932	Mn	4.0	0.0	1	ecmdb	1	"1. Cybercell Database:  http://ccdb.wishartlab.com/CCDB/cgi-bin/STAT_NEW.cgi   	2. Phillips R., Kondev, J., Theriot, J. (2008) “Physical Biology of the Cell” Garland Science, New York, NY."
+MNXM199	L-valine	1.2969842981155457	1.3465474782152855	1	ecmdb	6	Experimentally Determined  Download Details|PMID:  17379776|PMID:  19561621
+MNXM2112	D-cysteine	0.20400000000000001	0.0	1	ecmdb	1	Experimentally Determined  Download Details
+MNXM2139	N-acetyl-L-aspartate	0.14100000000000001	0.0	1	ecmdb	1	PMID:  17379776
+MNXM216	nicotinamide	0.044	0.0	1	ecmdb	1	PMID:  17379776
+MNXM2182	3'-CMP	0.36	0.0	1	ecmdb	1	PMID:  19561621
+MNXM23	pyruvate	2.691653766738954	0.9515533709285436	1	ecmdb	2	"1. Cybercell Database:  http://ccdb.wishartlab.com/CCDB/cgi-bin/STAT_NEW.cgi   	2. Phillips R., Kondev, J., Theriot, J. (2008) “Physical Biology of the Cell” Garland Science, New York, NY.|Park, C., Park, C., Lee, Y., Lee, S.Y., Oh, H.B., Lee, J. (2011) Determination of the Intracellular Concentration of Metabolites in Escherichia coli Collected during the Exponential and Stationary Growth Phases using Liquid Chromatography-Mass Spectrometry. Bull Korean Chem. Soc. 32: 524-530."
+MNXM243	3',5'-cyclic AMP	0.07513339224243905	0.6202848114341615	1	ecmdb	3	PMID:  19561621
+MNXM25	succinate	0.989624258691893	0.4495502453531477	1	ecmdb	4	Experimentally Determined  Download Details|PMID:  19561621
+MNXM2514	D-threonine	0.14911235763474837	0.15248248586233015	1	ecmdb	3	Experimentally Determined  Download Details|PMID:  17379776|PMID:  19561621
+MNXM252	(S)-dihydroorotate	0.006214465011907718	0.4771212547196624	1	ecmdb	3	PMID:  19561621
+MNXM258	D-erythrose 4-phosphate	0.0017320508075688776	0.4771212547196626	1	ecmdb	2	Park, C., Park, C., Lee, Y., Lee, S.Y., Oh, H.B., Lee, J. (2011) Determination of the Intracellular Concentration of Metabolites in Escherichia coli Collected during the Exponential and Stationary Growth Phases using Liquid Chromatography-Mass Spectrometry. Bull Korean Chem. Soc. 32: 524-530.
+MNXM26	acetate	0.658	0.0	1	ecmdb	1	Experimentally Determined  Download Details
+MNXM27	Na(+)	40.371538297461115	1.5751878449276613	1	ecmdb	3	"1. Cybercell Database:  http://ccdb.wishartlab.com/CCDB/cgi-bin/STAT_NEW.cgi   	2. Phillips R., Kondev, J., Theriot, J. (2008) “Physical Biology of the Cell” Garland Science, New York, NY.|PMID:  13909522"
+MNXM270	riboflavin	0.019951549388358213	0.06366907986937731	1	ecmdb	3	PMID:  19561621
+MNXM275	(2R)-2-phosphoglycerate	2.116992293576731	0.4316832157967105	1	ecmdb	3	PMID:  19561621
+MNXM280	acetyl phosphate	1.2056813923670258	0.1719352992845235	1	ecmdb	3	PMID:  19561621
+MNXM286	dATP	0.04253659975372278	0.6283889300503116	1	ecmdb	4	PMID:  17379776|PMID:  19561621
+MNXM29	glycine	0.273367883995176	0.1313592577126964	1	ecmdb	2	Experimentally Determined  Download Details|PMID:  17379776
+MNXM2922	2-amino-4-hydroxypteridine	0.024000000000000007	0.0	1	ecmdb	1	PMID:  17379776
+MNXM3	ATP	2.9074067852330976	1.4927153400685582	1	ecmdb	6	"1. Cybercell Database:  http://ccdb.wishartlab.com/CCDB/cgi-bin/STAT_NEW.cgi   	2. Phillips R., Kondev, J., Theriot, J. (2008) “Physical Biology of the Cell” Garland Science, New York, NY.|PMID:  11488613|PMID:  17379776|PMID:  19561621"
+MNXM300	sarcosine	0.032496153618543834	0.013363961557981474	1	ecmdb	2	Experimentally Determined  Download Details
+MNXM328	agmatine	0.03316624790355399	1.041392685158225	1	ecmdb	2	PMID:  8742354
+MNXM3302	methimazole	0.18599999999999997	0.0	1	ecmdb	1	PMID:  17379776
+MNXM331	D-glutamate	14.794239016646456	2.759886504331022	1	ecmdb	5	Experimentally Determined  Download Details|PMID:  17379776|PMID:  19561621
+MNXM341	D-gluconate	0.04200000000000001	0.0	1	ecmdb	1	PMID:  19561621
+MNXM34885	2-aminoisobutanoate	0.010999999999999998	0.0	1	ecmdb	1	PMID:  17379776
+MNXM3511	5-oxo-D-proline	0.19699999999999998	0.0	1	ecmdb	1	PMID:  17379776
+MNXM353	L-homoserine	0.016	0.0	1	ecmdb	1	PMID:  17379776
+MNXM35904	3'-deoxyadenosine 5'-monophosphate	0.011224972160321818	0.1918855262389132	1	ecmdb	2	PMID:  17379776|PMID:  19561621
+MNXM360	dCTP	0.024041630560342614	0.30102999566398125	1	ecmdb	2	PMID:  17379776|PMID:  19561621
+MNXM37	L-glutamine	1.045520662190555	1.4297873759240323	1	ecmdb	6	Experimentally Determined  Download Details|PMID:  17379776|PMID:  19561621
+MNXM37807	5'-D-arabinosyladenine triphosphate	2.9074067852330976	1.4927153400685582	1	ecmdb	6	"1. Cybercell Database:  http://ccdb.wishartlab.com/CCDB/cgi-bin/STAT_NEW.cgi   	2. Phillips R., Kondev, J., Theriot, J. (2008) “Physical Biology of the Cell” Garland Science, New York, NY.|PMID:  11488613|PMID:  17379776|PMID:  19561621"
+MNXM3816	2-methylpropan-1-amine	0.026000000000000002	0.0	1	ecmdb	1	PMID:  17379776
+MNXM39	formate	0.18400000000000002	0.0	1	ecmdb	1	Experimentally Determined  Download Details
+MNXM394	dTTP	1.1739304587682982	0.9444826721501686	1	ecmdb	3	PMID:  19561621
+MNXM40333	ADP	0.2903720732217709	0.5780928355710684	1	ecmdb	6	"1. Cybercell Database:  http://ccdb.wishartlab.com/CCDB/cgi-bin/STAT_NEW.cgi   	2. Phillips R., Kondev, J., Theriot, J. (2008) “Physical Biology of the Cell” Garland Science, New York, NY.|PMID:  11488613|PMID:  17379776|PMID:  19561621"
+MNXM419	pyridoxine	0.001	0.0	1	ecmdb	1	PMID:  17379776
+MNXM432	dAMP	0.011224972160321818	0.1918855262389132	1	ecmdb	2	PMID:  17379776|PMID:  19561621
+MNXM455	2,3-dihydroxybenzoate	0.25015546596795757	0.4771212547196624	1	ecmdb	3	PMID:  19561621
+MNXM46	oxaloacetate	0.029999999999999995	0.0	1	ecmdb	1	PMID:  15158257
+MNXM465	N-carbamoyl-L-aspartate	0.16848011497017581	1.3394882474831569	1	ecmdb	4	PMID:  17379776|PMID:  19561621
+MNXM4668	monomethyl sulfate	0.13000000000000003	0.0	1	ecmdb	1	PMID:  17379776
+MNXM472056	2-(6-aminopurin-9-yl)-5-(hydroxymethyl)oxolane-3,4-diol	0.00283901391331568	2.678448337191417	1	ecmdb	2	PMID:  17379776|PMID:  19561621
+MNXM490899	glutathione	3.3011276129097604	2.5379424917162137	1	ecmdb	4	PMID:  17379776|PMID:  19561621
+MNXM491562	Arabinosylhypoxanthine	0.030999999999999996	0.0	1	ecmdb	1	PMID:  17379776
+MNXM5	NADP(+)	0.057704981259184114	2.4983105537896004	1	ecmdb	4	"1. Cybercell Database:  http://ccdb.wishartlab.com/CCDB/cgi-bin/STAT_NEW.cgi   	2. Phillips R., Kondev, J., Theriot, J. (2008) “Physical Biology of the Cell” Garland Science, New York, NY.|PMID:  11488613|PMID:  17379776|PMID:  19561621"
+MNXM501	N(1)-acetylspermidine	0.11357816691600545	1.156347200859924	1	ecmdb	2	PMID:  8742354
+MNXM525944	Glucose-1-P	0.10664766045910046	1.0974361117785136	1	ecmdb	3	PMID:  17379776|Park, C., Park, C., Lee, Y., Lee, S.Y., Oh, H.B., Lee, J. (2011) Determination of the Intracellular Concentration of Metabolites in Escherichia coli Collected during the Exponential and Stationary Growth Phases using Liquid Chromatography-Mass Spectrometry. Bull Korean Chem. Soc. 32: 524-530.
+MNXM527181	homoserine	0.016	0.0	1	ecmdb	1	PMID:  17379776
+MNXM555	quinolinate	0.00377976314968462	1.1249387366083001	1	ecmdb	3	PMID:  19561621
+MNXM5704	D-tyrosine	0.0521001511423812	0.4771212547196626	1	ecmdb	5	Experimentally Determined  Download Details|PMID:  17379776|PMID:  19561621
+MNXM588097	Nicotinamide hypoxanthine dinucleotide	0.14600000000000002	0.0	1	ecmdb	1	PMID:  17379776
+MNXM59280	L-alloisoleucine	0.13352754832036526	0.8239087409443188	1	ecmdb	6	Experimentally Determined  Download Details|PMID:  17379776|PMID:  19561621
+MNXM602	shikimate	0.013999999999999999	0.0	1	ecmdb	1	PMID:  19561621
+MNXM625	2'-deoxyadenosine	0.003000000000000001	0.0	1	ecmdb	1	PMID:  19561621
+MNXM647	2'-deoxyguanosine	0.0005200000000000004	0.0	1	ecmdb	1	PMID:  19561621
+MNXM653	Mg(2+)	1.4968824138154981	1.3665315444204134	1	ecmdb	3	"1. Cybercell Database:  http://ccdb.wishartlab.com/CCDB/cgi-bin/STAT_NEW.cgi   	2. Phillips R., Kondev, J., Theriot, J. (2008) “Physical Biology of the Cell” Garland Science, New York, NY.|PMID:  5341484"
+MNXM66	sn-glycerol 3-phosphate	0.19580701550758403	1.2198944655655546	1	ecmdb	4	"1. Cybercell Database:  http://ccdb.wishartlab.com/CCDB/cgi-bin/STAT_NEW.cgi   	2. Phillips R., Kondev, J., Theriot, J. (2008) “Physical Biology of the Cell” Garland Science, New York, NY.|PMID:  19561621"
+MNXM660	2-phenylethylamine	0.0004300000000000001	0.0	1	ecmdb	1	Experimentally Determined  Download Details
+MNXM684	L-pipecolate	0.006000000000000003	0.0	1	ecmdb	1	PMID:  17379776
+MNXM726710	Fe	17.999999999999996	0.0	1	ecmdb	1	"1. Cybercell Database:  http://ccdb.wishartlab.com/CCDB/cgi-bin/STAT_NEW.cgi   	2. Phillips R., Kondev, J., Theriot, J. (2008) “Physical Biology of the Cell” Garland Science, New York, NY."
+MNXM727061	glycerol 1-phosphate	0.19580701550758403	1.2198944655655546	1	ecmdb	4	"1. Cybercell Database:  http://ccdb.wishartlab.com/CCDB/cgi-bin/STAT_NEW.cgi   	2. Phillips R., Kondev, J., Theriot, J. (2008) “Physical Biology of the Cell” Garland Science, New York, NY.|PMID:  19561621"
+MNXM727062	sn-glycerol 1-phosphate	0.19580701550758403	1.2198944655655546	1	ecmdb	4	"1. Cybercell Database:  http://ccdb.wishartlab.com/CCDB/cgi-bin/STAT_NEW.cgi   	2. Phillips R., Kondev, J., Theriot, J. (2008) “Physical Biology of the Cell” Garland Science, New York, NY.|PMID:  19561621"
+MNXM727276	CoA	2.8444133919045655	0.5203352857006971	1	ecmdb	3	PMID:  19561621
+MNXM727604	(2R)-3-phosphoglycerate	2.116992293576731	0.4316832157967105	1	ecmdb	3	PMID:  19561621
+MNXM728255	trans-aconitate	0.05708194152013061	0.7781512503836436	1	ecmdb	4	PMID:  19561621
+MNXM728256	aconitate(3-)	0.05708194152013061	0.7781512503836436	1	ecmdb	4	PMID:  19561621
+MNXM728294	AMP	0.37860366234557513	1.3953523476983956	1	ecmdb	5	PMID:  11488613|PMID:  17379776|PMID:  19561621
+MNXM728337	L-isoleucine	0.13352754832036526	0.8239087409443188	1	ecmdb	6	Experimentally Determined  Download Details|PMID:  17379776|PMID:  19561621
+MNXM728500	adenine arabinoside	0.00283901391331568	2.678448337191417	1	ecmdb	2	PMID:  17379776|PMID:  19561621
+MNXM729215	Zn(2+)	4.0	0.0	1	ecmdb	1	"1. Cybercell Database:  http://ccdb.wishartlab.com/CCDB/cgi-bin/STAT_NEW.cgi   	2. Phillips R., Kondev, J., Theriot, J. (2008) “Physical Biology of the Cell” Garland Science, New York, NY."
+MNXM729595	acetoacetate	0.037	0.0	1	ecmdb	1	Experimentally Determined  Download Details
+MNXM729920	N-acetyl-D-mannosamine 1-phosphate	0.082	0.0	1	ecmdb	1	PMID:  19561621
+MNXM73	phosphoenolpyruvate	0.17676466151490136	2.085712113206583	1	ecmdb	5	PMID:  15158257|PMID:  19561621|Park, C., Park, C., Lee, Y., Lee, S.Y., Oh, H.B., Lee, J. (2011) Determination of the Intracellular Concentration of Metabolites in Escherichia coli Collected during the Exponential and Stationary Growth Phases using Liquid Chromatography-Mass Spectrometry. Bull Korean Chem. Soc. 32: 524-530.
+MNXM7301	diethanolamine	0.020000000000000004	0.0	1	ecmdb	1	PMID:  17379776
+MNXM730221	3-phenylpyruvate	0.1374610357914749	0.3357921019231933	1	ecmdb	3	PMID:  19561621
+MNXM731023	nonanedioate	0.020000000000000004	0.0	1	ecmdb	1	PMID:  17379776
+MNXM731145	Cardiolipin	4.638000000000003e-05	0.0	1	ecmdb	1	PMID:  22956318
+MNXM731165	copper atom	4.0	0.0	1	ecmdb	1	"1. Cybercell Database:  http://ccdb.wishartlab.com/CCDB/cgi-bin/STAT_NEW.cgi   	2. Phillips R., Kondev, J., Theriot, J. (2008) “Physical Biology of the Cell” Garland Science, New York, NY."
+MNXM731667	carnitine	0.004000000000000001	0.0	1	ecmdb	1	PMID:  17379776
+MNXM732471	L-citrulline	0.3669577822084422	1.550550171878196	1	ecmdb	5	Experimentally Determined  Download Details|PMID:  17379776|PMID:  19561621
+MNXM732487	hypoxanthine	0.2770000000000001	0.0	1	ecmdb	1	PMID:  17379776
+MNXM732594	2-deoxy-D-ribose 5-phosphate	0.303	0.0	1	ecmdb	1	PMID:  19561621
+MNXM732620	H2O2	0.00021213203435596433	0.14266750356873148	1	ecmdb	2	PMID:  8990289
+MNXM732914	beta-D-ribopyranose	0.26	0.0	1	ecmdb	1	PMID:  11488613
+MNXM733114	guanine	0.018210775011801437	1.7970365945440172	1	ecmdb	4	PMID:  17379776|PMID:  19561621
+MNXM733981	alanine	0.012000000000000002	0.0	1	ecmdb	1	PMID:  17379776
+MNXM734080	6-phospho-D-gluconate	0.49894507766939433	1.2907840411980191	1	ecmdb	6	PMID:  11488613|PMID:  15158257|PMID:  19561621|Park, C., Park, C., Lee, Y., Lee, S.Y., Oh, H.B., Lee, J. (2011) Determination of the Intracellular Concentration of Metabolites in Escherichia coli Collected during the Exponential and Stationary Growth Phases using Liquid Chromatography-Mass Spectrometry. Bull Korean Chem. Soc. 32: 524-530.
+MNXM735047	dADP	0.052999999999999985	0.0	1	ecmdb	1	PMID:  17379776
+MNXM735438	O2	0.22978250586152116	0.1205739312058498	1	bionumbers	2	BNID:108724|BNID:109182
+MNXM735978	chloride	16.589595260376193	0.8702087605972879	1	ecmdb	3	"1. Cybercell Database:  http://ccdb.wishartlab.com/CCDB/cgi-bin/STAT_NEW.cgi   	2. Phillips R., Kondev, J., Theriot, J. (2008) “Physical Biology of the Cell” Garland Science, New York, NY.|PMID:  13909522"
+MNXM736064	trans-4-hydroxy-L-proline	0.00030999999999999995	0.0	1	ecmdb	1	Experimentally Determined  Download Details
+MNXM736654	dGMP	0.05100000000000002	0.0	1	ecmdb	1	PMID:  19561621
+MNXM737057	UDP-beta-L-iduronate	0.25019295141285336	0.8337383388121975	1	ecmdb	5	Experimentally Determined  Download Details|PMID:  17379776|PMID:  19561621
+MNXM737340	fumarate	0.19857127638062874	0.3658134210109636	1	ecmdb	3	PMID:  19561621
+MNXM737786	serine	0.11002246032945985	0.8540528826671834	1	ecmdb	5	Experimentally Determined  Download Details|PMID:  17379776|PMID:  19561621
+MNXM737787	L-serine	0.11002246032945985	0.8540528826671834	1	ecmdb	5	Experimentally Determined  Download Details|PMID:  17379776|PMID:  19561621
+MNXM737841	Mo	4.0	0.0	1	ecmdb	1	"1. Cybercell Database:  http://ccdb.wishartlab.com/CCDB/cgi-bin/STAT_NEW.cgi   	2. Phillips R., Kondev, J., Theriot, J. (2008) “Physical Biology of the Cell” Garland Science, New York, NY."
+MNXM738067	cysteine	0.20400000000000001	0.0	1	ecmdb	1	Experimentally Determined  Download Details
+MNXM738068	L-cysteine	0.20400000000000001	0.0	1	ecmdb	1	Experimentally Determined  Download Details
+MNXM738702	NADPH	0.24851576877409354	0.6654026566897504	1	ecmdb	5	"1. Cybercell Database:  http://ccdb.wishartlab.com/CCDB/cgi-bin/STAT_NEW.cgi   	2. Phillips R., Kondev, J., Theriot, J. (2008) “Physical Biology of the Cell” Garland Science, New York, NY.|PMID:  17379776|PMID:  19561621"
+MNXM738783	(R)-methylmalonyl-CoA	0.507685009431004	0.7910065710692307	1	ecmdb	3	PMID:  19561621
+MNXM738803	methionine	0.06723362982131618	0.6842467475153124	1	ecmdb	6	Experimentally Determined  Download Details|PMID:  17379776|PMID:  19561621
+MNXM738804	L-methionine	0.06723362982131618	0.6842467475153124	1	ecmdb	6	Experimentally Determined  Download Details|PMID:  17379776|PMID:  19561621
+MNXM739527	L-arginine	0.23435179752531743	0.9916842728321339	1	ecmdb	3	Experimentally Determined  Download Details|PMID:  17379776|PMID:  19561621
+MNXM741172	glutamate	14.794239016646456	2.759886504331022	1	ecmdb	5	Experimentally Determined  Download Details|PMID:  17379776|PMID:  19561621
+MNXM741173	L-glutamate	14.794239016646456	2.759886504331022	1	ecmdb	5	Experimentally Determined  Download Details|PMID:  17379776|PMID:  19561621
+MNXM741174	ornithine	0.04852821965067327	1.4265112613645754	1	ecmdb	5	Experimentally Determined  Download Details|PMID:  17379776|PMID:  19561621
+MNXM741553	L-tryptophan	0.01501054516284506	0.4259687322722814	1	ecmdb	5	Experimentally Determined  Download Details|PMID:  17379776|PMID:  19561621
+MNXM741664	L-phenylalanine	0.037075461680585474	0.5642714304385625	1	ecmdb	5	Experimentally Determined  Download Details|PMID:  17379776|PMID:  19561621
+MNXM76	L-tyrosine	0.0521001511423812	0.4771212547196626	1	ecmdb	5	Experimentally Determined  Download Details|PMID:  17379776|PMID:  19561621
+MNXM761	cytosine	0.011832159566199233	0.14612803567823796	1	ecmdb	2	PMID:  17379776|PMID:  19561621
+MNXM77	dihydroxyacetone phosphate	0.31040540784853277	0.5682815649500039	1	ecmdb	3	PMID:  19561621
+MNXM8	NAD(+)	1.8813345621421118	0.8161721164307103	1	ecmdb	6	Experimentally Determined  Download Details|PMID:  11488613|PMID:  17379776|PMID:  19561621
+MNXM817	N(2)-acetyl-L-ornithine	0.02946663864239084	2.8145532370629205	1	ecmdb	5	Experimentally Determined  Download Details|PMID:  17379776|PMID:  19561621
+MNXM840	L-2,4-diaminobutanoate	0.033	0.0	1	ecmdb	1	PMID:  17379776
+MNXM8497	D-leucine	0.17672198560367483	0.2710667722865381	1	ecmdb	6	Experimentally Determined  Download Details|PMID:  17379776|PMID:  19561621
+MNXM8512	D-valine	1.2969842981155457	1.3465474782152855	1	ecmdb	6	Experimentally Determined  Download Details|PMID:  17379776|PMID:  19561621
+MNXM89629	keto-D-fructose 6-phosphate	0.15857457837687625	0.7220353084047122	1	ecmdb	3	PMID:  11488613|PMID:  15158257|PMID:  17379776
+MNXM9	phosphate	5.000000000000001	0.0	1	ecmdb	1	"1. Cybercell Database:  http://ccdb.wishartlab.com/CCDB/cgi-bin/STAT_NEW.cgi   	2. Phillips R., Kondev, J., Theriot, J. (2008) “Physical Biology of the Cell” Garland Science, New York, NY."
+MNXM901	L-ribulose 5-phosphate	0.08127222234232696	2.8195439355418688	1	ecmdb	6	PMID:  17379776|PMID:  19561621|Park, C., Park, C., Lee, Y., Lee, S.Y., Oh, H.B., Lee, J. (2011) Determination of the Intracellular Concentration of Metabolites in Escherichia coli Collected during the Exponential and Stationary Growth Phases using Liquid Chromatography-Mass Spectrometry. Bull Korean Chem. Soc. 32: 524-530.
+MNXM943	cadaverine	0.5916079783099616	0.9420080530223132	1	ecmdb	2	PMID:  8742354
+MNXM95	K(+)	78.50559144452616	1.3699112850717943	1	ecmdb	3	"1. Cybercell Database:  http://ccdb.wishartlab.com/CCDB/cgi-bin/STAT_NEW.cgi   	2. Phillips R., Kondev, J., Theriot, J. (2008) “Physical Biology of the Cell” Garland Science, New York, NY.|PMID:  13909522"
