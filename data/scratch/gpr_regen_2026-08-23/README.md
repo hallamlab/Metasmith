@@ -33,9 +33,9 @@ is the only thing that says otherwise, and it was itself wrong (below).
 - **`proteinbert` chunk order.** The guard against stacking chunk 10 before chunk 2
   matched a *trailing* integer; the image writes `<stem>.<k>.embedding.npy` and announces
   that pattern itself. No four-lane run had passed this step since the guard landed.
-- **`python_for_data_science` at tag 1.4.0.** No pyarrow, pandas 3.0.5 — no parquet
-  engine by either route, so `gpr_4lane` died on `import pyarrow` after all four lanes had
-  already succeeded. Pinned back to 1.2.5.
+- **`python_for_data_science` at tag 1.4.0.** No pyarrow, and pandas 3.0.5 has no parquet
+  engine without it. `gpr_4lane` imports pyarrow at module level, so it died after all
+  four lanes had already succeeded. Pinned back to 1.2.5.
 - **Unstamped images on a read-only store.** The engine gates on `<sif>` AND
   `<sif>.verified`; an unstamped image sends the task to re-stamp it, which flocks the
   store. Sockeye's is `/arc`, read-only from a compute node, so it fell through to
