@@ -54,10 +54,22 @@ owns `read_parquet` / `write_parquet`, chooses polars or pyarrow by what the int
 has, and both GPR mappers and `ptools_annotation_gather` go through it. Filter pushdown
 survives the move — the bridge's uniprot slice is still cut in the reader, not on the
 heap. 1.4.0 holds polars 1.43.2 and neither pyarrow nor fastparquet, measured in the
-image; both engines round-trip a nullable table and agree on both pushdowns. One thing
-the move cost: pandas spells a missing string NaN and polars refuses a float among
-strings, so the writer translates the sentinel per column. **The mapper itself has not
-run on 1.4.0** — that is the check still outstanding.
+image. One thing the move cost: pandas spells a missing string NaN and polars refuses a
+float among strings, so the writer translates the sentinel per column.
+
+Checked in the image against real inputs, no Nextflow involved:
+
+| what ran | result |
+|---|---|
+| `gpr_4lane` on DH1's lanes, real bridge and landmarks | 30,722 rows, **identical to the pinned table** on all 10 mapper columns |
+| `build_mnxr_lookup`, old pyarrow code vs new polars code | identical rows, order and dtypes; `min()` still keeps `reviewed` |
+| `ptools_annotation_gather`, same comparison | 7,873 rows identical, nulls included |
+| `load_mnxr_lookup` on the 30.5M-row bridge | same md5 per slice under both engines; uniprot slice 23,525,373 rows |
+| `gpr_7lane`'s four moved calls | read 4,373×512 embeddings, sliced the bridge, wrote a nullable table |
+| `read_gpr`, `read_dl_ec`, `load_uniprot_to_mnxr` | as before; `read_dl_ec` keeps both predicates |
+
+What is still unrun is the engine around it: image staging, `.verified` sidecars and the
+nine-step workflow on a cluster.
 
 ## Running it again
 
