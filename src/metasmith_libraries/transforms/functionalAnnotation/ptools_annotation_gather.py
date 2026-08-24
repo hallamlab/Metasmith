@@ -71,12 +71,14 @@ for _, r in hit_df.iterrows():
                   "score": float(r["bitscore"]) if pd.notna(r["bitscore"]) else None,
                   "confidence": "best"}})
 
-df = pd.DataFrame(rows, columns=["orf_id","kind","value","score","confidence"])
-df = df[df["orf_id"].isin(set(orf_ids))]
 # polars writes the parquet: pandas' own writer is a pyarrow front end and this
-# image carries no pyarrow. The handover is column-wise through numpy because
-# `pl.from_pandas` is itself implemented over arrow.
-pl.DataFrame({{c: df[c].to_numpy() for c in df.columns}}).write_parquet("{iout.container}")
+# image carries no pyarrow. Built from `rows` rather than handed over from pandas,
+# because `pl.from_pandas` is itself implemented over arrow.
+keep = set(orf_ids)
+rows = [r for r in rows if r["orf_id"] in keep]
+pl.DataFrame(rows, schema={{"orf_id": pl.String, "kind": pl.String,
+                            "value": pl.String, "score": pl.Float64,
+                            "confidence": pl.String}}).write_parquet("{iout.container}")
 """
 
     context.LocalShell("cat > _gather.py << 'PYEOF'\n" + script + "\nPYEOF\n")
