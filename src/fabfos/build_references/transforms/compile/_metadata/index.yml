@@ -8,7 +8,7 @@ manifest:
     origin: leaf
     type: transforms::transform
   label_transfer_landmarks.py:
-    instance_id: 1e208a63e54cfd3c396646628193cfb26d38d81a990fa223f9f3cc801275ae50a315
+    instance_id: 1e2083876c7fac91ac2b121201775269647861adaf27d50c6f20df1ecd0de99429fb
     origin: leaf
     type: transforms::transform
   label_transfer_landmarks_esmc.py:
