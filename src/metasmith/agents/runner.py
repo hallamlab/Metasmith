@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Iterable
 
 import pandas as pd
+import yaml
 
 from ..constants import AgentPaths, MODULE_PATH, VERSION
 from ..coms.terminals import LiveShell
@@ -16,10 +17,141 @@ from ..logging import Log
 from ..models.libraries import DataInstanceLibrary
 from ..models.paths import PathMap
 from ..models.remote import GlobusSource, Logistics, Source
-from ..models.workflow import NextflowGenContext, WorkflowTask
+from ..models.workflow import NextflowGenContext, WorkflowTask, restat_leaf_ids
 from ..serialization import StdTime
 from .agent import Agent
-from .collect import CollectResults
+from .collect import CollectResults, PublishCachedProducts
+
+def _rewrite_staged_plan(task_path: Path, task: WorkflowTask):
+    doc_path = task_path/"task.yml"
+    with open(doc_path) as f:
+        doc = yaml.safe_load(f)
+    doc["plan"] = task.plan.Pack()
+    tmp = doc_path.with_name(f"{doc_path.name}.{os.getpid()}.part")
+    with open(tmp, "w") as f:
+        yaml.dump(doc, f)
+    os.replace(tmp, doc_path)
+
+
+# TERM -> KILL window for nextflow's own process group when a run is cancelled.
+# Nextflow's shutdown hook is what reaches `bin/scancel` for grid jobs, so this
+# has to outlast a JVM draining a full submission queue, not merely outlast
+# process exit.
+NXF_SHUTDOWN_GRACE_S = 60
+
+def RenderLauncher(task_key: str, setup_commands: list[str], binds: str) -> str:
+    # start.sh: the root of a run. Everything the run consists of descends from
+    # the process it backgrounds, and carries the token it exports.
+    return "\n".join([
+        f'#!/bin/bash',
+        'cd $( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )',
+        "# >>> agent setup commands",
+    ]+list(setup_commands)+[
+        "# <<<",
+        f'TIMESTAMP=$(date +"%Y-%m-%d_%H-%M-%S")',
+        f'LOG_DIR="./{AgentPaths.INTERNALS}/logs.$TIMESTAMP"',
+        f'LOG_LATEST="./{AgentPaths.INTERNALS}/logs.latest"',
+        f'mkdir -p $LOG_DIR',
+        f'[ -e $LOG_LATEST ] && rm "$LOG_LATEST"; ln -s "./logs.$TIMESTAMP" "$LOG_LATEST"',
+        f"[ -e {AgentPaths.NXF_PARAMS} ] || echo '{{}}' > {AgentPaths.NXF_PARAMS}",
+        f'[ -e {AgentPaths.NXF_CONFIG} ] || touch {AgentPaths.NXF_CONFIG}',
+        f'echo "start time was [$TIMESTAMP]"',
+        f'export BINDS="{binds}"',
+        f'export OPENBLAS_NUM_THREADS=1',
+        f'export OMP_NUM_THREADS=1',
+        # The run's identity, inherited by every descendant. `set -m` gives the
+        # backgrounded driver a fresh process group -- the portable way, since
+        # setsid(1) is util-linux and absent on macOS -- so $! is the run's pgid.
+        # The token is the backstop for anything that later setsid()s out of it.
+        # The timestamp is the one already naming logs.$TIMESTAMP, so a leak
+        # traces back to a single run directory.
+        f'export {AgentPaths.RUN_TOKEN_ENV}="{task_key}.$TIMESTAMP"',
+        f'echo "${AgentPaths.RUN_TOKEN_ENV}" > ./{AgentPaths.RUN_TOKEN_FILE}',
+        f'set -m',
+        f'nohup ../../msm api run_workflow -a key={task_key} host=$(hostname) log_dir=$LOG_DIR stub_delay=${{1:-0}} </dev/null >$LOG_DIR/agent.log 2>&1 &',
+        f'RUN_PGID=$!',
+        f'set +m',
+        f'echo "$RUN_PGID" > ./{AgentPaths.RUN_PGID_FILE}',
+        f'echo "run token is [${AgentPaths.RUN_TOKEN_ENV}], run pgid is [$RUN_PGID]"',
+    ])
+
+
+def RenderNextflowScript(
+    *, workspace, log_dir, host: str, results_folder: str,
+    nxf_report, nxf_dag, stub_param: str,
+) -> str:
+    # Nextflow, plus the supervisor that stops it. PID.lock holds nextflow's own
+    # pgid (see `set -m` below), so removing the lock file stops the whole run
+    # and leaves this driver alive to snapshot logs and promote the cache.
+    return f"""
+            cd {workspace}
+            PIDF=./{AgentPaths.PID_LOCK_FILE}
+            stop() {{
+                [[ -e "$PIDF" ]] && rm $PIDF
+                [ -e squeue.log ] && mv squeue.log {log_dir}
+                [ -e scancel.log ] && mv scancel.log {log_dir}
+                [ -e {AgentPaths.NXF_WORKFLOW} ] && cp {AgentPaths.NXF_WORKFLOW} {log_dir}
+                [ -e {AgentPaths.NXF_CONFIG} ] && cp {AgentPaths.NXF_CONFIG} {log_dir}
+                [ -e {AgentPaths.NXF_RES} ] && cp {AgentPaths.NXF_RES} {log_dir}
+                [ -e {AgentPaths.NXF_PARAMS} ] && cp {AgentPaths.NXF_PARAMS} {log_dir}
+                if [ -e {nxf_dag} ]; then
+                    dot -Tsvg {nxf_dag} -o {nxf_dag.stem}.svg
+                    rm {nxf_dag}
+                fi
+                exit 0
+            }}
+            trap stop EXIT
+
+            export NXF_HOME=./.nextflow
+            export NXF_ENABLE_VIRTUAL_THREADS=true
+            export NXF_OFFLINE=TRUE # don't go online and search for latest version
+            export OPENBLAS_NUM_THREADS=1
+            export OMP_NUM_THREADS=1
+            export NXF_OPTS="-Xms2g -Xmx10g -XX:ActiveProcessorCount=1 -Djdk.virtualThreadScheduler.maxPoolSize=512"
+            set -m
+            nextflow \
+                -config ./{AgentPaths.NXF_RES} \
+                -config ./{AgentPaths.NXF_CONFIG} \
+                -log {log_dir}/nxf.log \
+                run ./{AgentPaths.NXF_WORKFLOW} \
+                -params-file ./{AgentPaths.NXF_PARAMS} \
+                --hostName "{host}" \
+                --output "{results_folder}" \
+                -with-report {nxf_report} \
+                -with-dag {nxf_dag} \
+                -with-timeline {log_dir}/nxf_timeline.html \
+                -with-trace {log_dir}/{AgentPaths.NXF_TRACE_FILE} \
+                {stub_param} \
+                -lib ./lib \
+                -ansi-log false \
+                -resume \
+                -work-dir {workspace}/nxf_work &
+            PID=$!
+            set +m
+            echo "nextflow PID is [$PID]"
+            echo $PID >$PIDF
+            while true; do
+                if ! [[ -d "/proc/$PID" ]]; then
+                    break
+                fi
+                if ! [[ -e "$PIDF" ]]; then
+                    # $PID is a pgid: `set -m` above put nextflow in its own group,
+                    # so this reaches the tools it spawned and not this supervisor.
+                    # TERM first and wait -- the shutdown hook is what scancels grid
+                    # jobs -- then KILL whatever is left of the group.
+                    kill -TERM -$PID 2>/dev/null
+                    for _ in $(seq {NXF_SHUTDOWN_GRACE_S}); do
+                        [[ -d "/proc/$PID" ]] || break
+                        sleep 1
+                    done
+                    kill -KILL -$PID 2>/dev/null
+                    wait $PID 2>/dev/null
+                    break
+                fi
+                sleep 1
+            done
+            """
+
 
 def StageWorkflow(task_key: str, verify: bool, host: str, rootfs: Rootfs|None = None):
     agent = Agent.Load(AgentPaths.HOME_ROOT/"lib/agent.yml")
@@ -114,6 +246,12 @@ def StageWorkflow(task_key: str, verify: bool, host: str, rootfs: Rootfs|None = 
         return processed_libs
     task.data_libraries = move_remote_libs(task.data_libraries, data_dir)
 
+    # This host owns the files; the client that minted their ids did not. Settle
+    # identity here, and write it back so the plan on disk agrees with the ids
+    # the codegen below is about to bake into the cache keys.
+    restat_leaf_ids(task)
+    _rewrite_staged_plan(task_path, task)
+
     Log.Info(f"compiling nextflow script")
     task.PrepareNextflow(NextflowGenContext(
         workflow_file=AgentPaths.NXF_WORKFLOW,
@@ -125,6 +263,12 @@ def StageWorkflow(task_key: str, verify: bool, host: str, rootfs: Rootfs|None = 
         resources_file=AgentPaths.NXF_RES,
         rootfs=rootfs,
     ))
+    # Codegen's cache-decision pass stamps deterministic lineage ids onto the
+    # plan's produce/require instances -- the ids baked into every .nf/.meta
+    # file. Write the plan again so task.yml agrees with what execution will
+    # actually see; otherwise a downstream step's dependency_map still carries
+    # the pre-stamp id and lookups against the .meta payload miss.
+    _rewrite_staged_plan(task_path, task)
     nxflib_dir = work_dir/"lib"
     nxflib_dir.mkdir(parents=True, exist_ok=True)
     orchestrator_lib = MODULE_PATH/"nextflow_config/Orchestrator.groovy"
@@ -137,25 +281,7 @@ def StageWorkflow(task_key: str, verify: bool, host: str, rootfs: Rootfs|None = 
     if len(mock.container.binds)>0:
         Log.Info(f"external binds {[a for a, b in mock.container.binds]}")
     with open(launcher_path, "w") as f:
-        f.write("\n".join([
-            f'#!/bin/bash',
-            'cd $( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )',
-            "# >>> agent setup commands",
-        ]+agent.setup_commands+[
-            "# <<<",
-            f'TIMESTAMP=$(date +"%Y-%m-%d_%H-%M-%S")',
-            f'LOG_DIR="./{AgentPaths.INTERNALS}/logs.$TIMESTAMP"',
-            f'LOG_LATEST="./{AgentPaths.INTERNALS}/logs.latest"',
-            f'mkdir -p $LOG_DIR',
-            f'[ -e $LOG_LATEST ] && rm "$LOG_LATEST"; ln -s "./logs.$TIMESTAMP" "$LOG_LATEST"',
-            f"[ -e {AgentPaths.NXF_PARAMS} ] || echo '{{}}' > {AgentPaths.NXF_PARAMS}",
-            f'[ -e {AgentPaths.NXF_CONFIG} ] || touch {AgentPaths.NXF_CONFIG}',
-            f'echo "start time was [$TIMESTAMP]"',
-            f'export BINDS="{binds}"',
-            f'export OPENBLAS_NUM_THREADS=1',
-            f'export OMP_NUM_THREADS=1',
-            f'nohup ../../msm api run_workflow -a key={task_key} host=$(hostname) log_dir=$LOG_DIR stub_delay=${{1:-0}} >$LOG_DIR/agent.log 2>&1 &',
-        ]))
+        f.write(RenderLauncher(task_key, agent.setup_commands, binds))
     os.chmod(launcher_path, 0o754)
 
     Log.Info(f"drawing DAG")
@@ -248,69 +374,19 @@ def RunWorkflow(key: str, log_dir: Path, host: str, stub_delay: float):
     output_path = workspace/results_folder
     if output_path.exists(): shutil.rmtree(output_path)
     output_path.mkdir(parents=True, exist_ok=True)
-    with LiveShell() as shell:
+    # Not a new session: nextflow belongs to the run this driver is, so it stays
+    # in the run's session rather than escaping where a reap cannot see it.
+    with LiveShell(new_session=False) as shell:
         shell.RegisterOnOut(Log.Info)
         shell.RegisterOnErr(Log.Error)
         Log.Info(f"calling nextflow from container")
         stub_param = f"-stub --testSpread={stub_delay:0.3f}" if stub_delay>0 else ""
         shell.Exec(
-            f"""
-            cd {workspace}
-            PIDF=./PID.lock
-            stop() {{
-                [[ -e "$PIDF" ]] && rm $PIDF
-                [ -e squeue.log ] && mv squeue.log {log_dir}
-                [ -e scancel.log ] && mv scancel.log {log_dir}
-                [ -e {AgentPaths.NXF_WORKFLOW} ] && cp {AgentPaths.NXF_WORKFLOW} {log_dir}
-                [ -e {AgentPaths.NXF_CONFIG} ] && cp {AgentPaths.NXF_CONFIG} {log_dir}
-                [ -e {AgentPaths.NXF_RES} ] && cp {AgentPaths.NXF_RES} {log_dir}
-                [ -e {AgentPaths.NXF_PARAMS} ] && cp {AgentPaths.NXF_PARAMS} {log_dir}
-                if [ -e {nxf_dag} ]; then
-                    dot -Tsvg {nxf_dag} -o {nxf_dag.stem}.svg
-                    rm {nxf_dag}
-                fi
-                exit 0
-            }}
-            trap stop EXIT
-
-            export NXF_HOME=./.nextflow
-            export NXF_ENABLE_VIRTUAL_THREADS=true
-            export NXF_OFFLINE=TRUE # don't go online and search for latest version
-            export OPENBLAS_NUM_THREADS=1
-            export OMP_NUM_THREADS=1
-            export NXF_OPTS="-Xms2g -Xmx10g -XX:ActiveProcessorCount=1 -Djdk.virtualThreadScheduler.maxPoolSize=512"
-            nextflow \
-                -config ./{AgentPaths.NXF_RES} \
-                -config ./{AgentPaths.NXF_CONFIG} \
-                -log {log_dir}/nxf.log \
-                run ./{AgentPaths.NXF_WORKFLOW} \
-                -params-file ./{AgentPaths.NXF_PARAMS} \
-                --hostName "{host}" \
-                --output "{results_folder}" \
-                -with-report {nxf_report} \
-                -with-dag {nxf_dag} \
-                -with-timeline {log_dir}/nxf_timeline.html \
-                -with-trace {log_dir}/{AgentPaths.NXF_TRACE_FILE} \
-                {stub_param} \
-                -lib ./lib \
-                -ansi-log false \
-                -resume \
-                -work-dir {workspace}/nxf_work &
-            PID=$!
-            echo "nextflow PID is [$PID]"
-            echo $PID >$PIDF
-            while true; do
-                if ! [[ -d "/proc/$PID" ]]; then
-                    break
-                fi
-                if ! [[ -e "$PIDF" ]]; then
-                    kill $PID
-                    wait $PID
-                    break
-                fi
-                sleep 1
-            done
-            """,
+            RenderNextflowScript(
+                workspace=workspace, log_dir=log_dir, host=host,
+                results_folder=results_folder, nxf_report=nxf_report,
+                nxf_dag=nxf_dag, stub_param=stub_param,
+            ),
             timeout=None,
         )
 
@@ -340,6 +416,23 @@ def RunWorkflow(key: str, log_dir: Path, host: str, stub_delay: float):
                 )
         except Exception as e:
             Log.Warn(f"cache promote failed: {e}")
+
+    try:
+        PublishCachedProducts(workspace, output_path)
+    except Exception as e:
+        Log.Warn(f"publishing cache-hit products failed: {e}")
+
+    # `_metasmith/trace.jsonl` sits at the workspace root and gets truncated
+    # on the next stage, so a cache-hit step -- which never becomes a
+    # Nextflow process and so has no row in nxf_tasks.csv -- would otherwise
+    # be unrecoverable once collected. Copy it alongside nxf_tasks.csv, into
+    # the one per-run directory that survives collection. Taken after cache
+    # promotion, which appends its own miss/promoted events to the same file --
+    # a copy taken before would freeze a lineage trace that promotion hadn't
+    # finished writing yet, under a filename that looks final.
+    lineage_trace = workspace/"_metasmith"/"trace.jsonl"
+    if lineage_trace.is_file():
+        shutil.copy(lineage_trace, workspace/log_dir/"trace.jsonl")
 
     Log.Info(f"compiling results")
     output = CollectResults(

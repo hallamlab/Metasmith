@@ -141,7 +141,8 @@ class Agent(_WorkflowOps, _RunControl):
     def _run_cleanup(self, shell: LiveShell):
         pass
 
-    def Deploy(self, assertive: bool=False, runtime: Runtime|None=None, image: str|None=None, native: bool|None=None, rootfs: Rootfs|str|None=None):
+    def Deploy(self, assertive: bool=False, runtime: Runtime|None=None, image: str|None=None, native: bool|None=None, rootfs: Rootfs|str|None=None, on_phase=None):
+        _phase = on_phase or (lambda _: None)
         if runtime is not None:
             self.runtime = runtime
         if image is not None:
@@ -192,6 +193,7 @@ class Agent(_WorkflowOps, _RunControl):
                     Log.Error(e)
                 assert len(res.completed) == 1, f"failed to deploy files"
 
+            _phase("connecting")
             _quiet = True
             self._run_setup(shell)
             _quiet = False
@@ -244,9 +246,12 @@ class Agent(_WorkflowOps, _RunControl):
                 f"mkdir -p {p}" for p, _ in container.container.binds
             ]
             do_step("\n".join(_cmds))
+            _phase("provisioning")
             for _cmd, _display_cmd in container.ProvisionSteps(agent_home=resolved_agent_home, assertive=assertive):
-                do_step(cmd=_cmd, display_cmd=_display_cmd)
+                res = do_step(cmd=_cmd, display_cmd=_display_cmd)
+                assert res.exit_code in (0, None), f"provisioning step failed (exit={res.exit_code}): {_display_cmd or _cmd}"
 
+            _phase("staging")
             _remote_file(
                 container.RenderMsmWrapper(
                     agent_home=resolved_agent_home,
@@ -296,6 +301,7 @@ class Agent(_WorkflowOps, _RunControl):
             )
 
             _sync_remote_files()
+            _phase("finishing")
             relay_bin = AgentPaths.to_relay(resolved_agent_home)
             if not container.needs_relay:
                 Log.Info(f"runtime [{self.runtime.name}] needs no relay, skipping container extraction")

@@ -1,14 +1,16 @@
 <script>
-  import { tick } from 'svelte'
+  import { tick, untrack } from 'svelte'
   import { api } from '../lib/api.svelte.js'
   import {
-    app, attempt, cachedWorkflow, cacheWorkflow, loadRuns, loadTypeIndex, loadTypes,
-    loadWorkflows, notify, patchWorkflowSummary, renameWorkflow, select, ui,
-    workflowRenameable,
+    app, attempt, cachedWorkflow, cacheWorkflow, loadRuns, loadTypeIndex,
+    loadTypes, loadWorkflows, notify, patchWorkflowSummary, renameWorkflow, saveOverrides,
+    select, setLastAgent, ui, workflowRenameable,
   } from '../lib/state.svelte.js'
   import Ago from '../components/Ago.svelte'
+  import ConfigEditor from '../components/ConfigEditor.svelte'
   import EditableName from '../components/EditableName.svelte'
   import Field from '../components/Field.svelte'
+  import Icon from '../components/Icon.svelte'
   import JobLog from '../components/JobLog.svelte'
   import DagRail from '../components/DagRail.svelte'
   import MiniGraph from '../components/MiniGraph.svelte'
@@ -44,6 +46,11 @@
   let jobId = $state(null)
   let jobStatus = $state(null)
   let jobPhase = $state(null)
+  // Which of the two jobs this page starts the log below is showing. The bar
+  // and the summary line are read off different kinds of result, and only one
+  // job runs at a time, so the page has to know which one it is watching.
+  let jobKind = $state('solve')
+  let jobRunning = $derived(!!jobId && jobStatus !== 'done' && jobStatus !== 'failed')
 
   // The solve button's own busy state, and the bar beside it. There's no
   // percentage worth showing -- the solver itself is one call we can't see
@@ -57,10 +64,8 @@
   // otherwise the button would sit un-busy for the first leg of the round
   // trip, which is exactly the moment a second click is most tempting.
   let requestingSolve = $state(false)
-  let solving = $derived(
-    requestingSolve || (!!jobId && jobStatus !== 'done' && jobStatus !== 'failed'),
-  )
-  let showSolveBar = $derived(solving || jobStatus === 'failed')
+  let solving = $derived(requestingSolve || (jobKind === 'solve' && jobRunning))
+  let showSolveBar = $derived(solving || (jobKind === 'solve' && jobStatus === 'failed'))
   let solveStage = $derived(Math.max(0, SOLVE_STAGES.indexOf(jobPhase)))
   let solveStageStates = $derived.by(() => {
     if (!showSolveBar) return SOLVE_STAGES.map(() => 'idle')
@@ -68,11 +73,97 @@
       i < solveStage ? 'done' : i > solveStage ? 'idle' : jobStatus === 'failed' ? 'failed' : 'running',
     )
   })
+  // The same gap the solve button covers, for the setup button.
+  let requestingSetup = $state(false)
+  let settingUp = $derived(requestingSetup || (jobKind === 'environment' && jobRunning))
+  // What the last setup on this page reported, rendered under the button.
+  let envReport = $state(null)
   let sharing = $state(false)
   let savingTemplate = $state(false)
   let launching = $state(false)
-  let agentChoice = $state('')
-  let presetChoice = $state('')
+  // Starts on the agent last used anywhere, not blank -- picking one every
+  // time you open a workflow tab is a chore once you mostly run on one agent.
+  let agentChoice = $state(ui.lastAgent)
+
+  // This workflow's own copy of a Nextflow config preset, editable as raw
+  // text -- decoupled from the shared package preset it was chosen from --
+  // reusing `ConfigEditor` rather than a new editor component. `presetSource`
+  // is the dropdown's own value: which preset this workflow is editing and
+  // will stage and run with, persisted server-side (`/preset/adopt` writes it
+  // into the workflow's request, the same file `target_types` and
+  // `input_drafts` live in) exactly like the recipe and the resource
+  // overrides are. Content is autosaved (see the effect below) rather than
+  // held behind a save button.
+  let presetLoaded = $state(null)
+  let presetContent = $state('')
+  let presetSource = $state('')
+  let presetSaved = $state(false)
+  // Locked to hidden until a preset is chosen -- there is nothing of this
+  // workflow's own to show before then.
+  let presetOpen = $state(false)
+  let allPresets = $state([])
+  let resetArmed = $state(false)
+  let resetTimer
+
+  async function loadPreset() {
+    const body = await attempt(() => api.get(`/workflows/${name}/preset`))
+    if (!body) return
+    presetContent = body.content
+    presetLoaded = body.content
+    presetSource = body.preset_source ?? ''
+  }
+
+  async function savePreset() {
+    await attempt(async () => {
+      const body = await api.put(`/workflows/${name}/preset`, { content: presetContent })
+      presetContent = body.content
+      presetLoaded = body.content
+      presetSaved = true
+      setTimeout(() => (presetSaved = false), 1500)
+      return true
+    })
+  }
+
+  // Selecting a preset from the dropdown adopts it immediately -- there is
+  // nothing to confirm, since picking one is picking which one you are
+  // looking at, not a step you can get wrong. `reset` (below) is the
+  // destructive move: re-adopting the preset already selected, discarding
+  // whatever this workflow has since edited into it.
+  async function adoptPreset(source) {
+    if (!source) return
+    await attempt(async () => {
+      const body = await api.post(`/workflows/${name}/preset/adopt`, { source })
+      presetContent = body.content
+      presetLoaded = body.content
+      presetSource = body.preset_source
+      return true
+    })
+  }
+
+  // Armed the same way `DeleteControl` is: a first press only proposes it, so
+  // discarding this workflow's own edits back to the stock preset takes a
+  // deliberate second press.
+  function armReset() {
+    if (!presetSource) return
+    if (resetArmed) {
+      clearTimeout(resetTimer)
+      resetArmed = false
+      adoptPreset(presetSource)
+      return
+    }
+    resetArmed = true
+    resetTimer = setTimeout(() => (resetArmed = false), 2000)
+  }
+
+  // A second after typing in the preset stops, it saves itself -- the same
+  // debounce as a keystroke-driven save anywhere else on this page, so there
+  // is nothing left to press once the box says what you want.
+  $effect(() => {
+    const content = presetContent
+    if (presetLoaded === null || content === presetLoaded) return
+    const t = setTimeout(savePreset, 1000)
+    return () => clearTimeout(t)
+  })
   // This run's params, pre-filled from the chosen agent so what will be sent is
   // visible rather than implied, and `seededParams` is what was put there -- how
   // the page tells "still the agent's defaults" from "someone typed over them".
@@ -80,7 +171,9 @@
   let seededParams = $state({})
   // Per-step resources, keyed by step position, which is the only form that
   // produces a selector for one step rather than for every step of a transform.
-  // Boxes are strings; the server reads and checks the numbers.
+  // Boxes are strings; the server reads and checks the numbers. Seeded from
+  // what was typed in last time this workflow was open; the `name` effect
+  // below reloads it whenever the workflow changes.
   let overrides = $state({})
   let focus = $state(null)
 
@@ -207,6 +300,11 @@
     await loadTable()
   }
 
+  async function editTable() {
+    const out = await attempt(() => api.get(`/workflows/${name}/table/raw`))
+    return out?.text ?? ''
+  }
+
   // Which rows every sample should see. Held as row references (`#id`), not as
   // paths: a row under a sheet registers one path per distinct set of cells and
   // none of them exists until the solve, so the request says which *row* and the
@@ -244,6 +342,12 @@
   // this existed, which means none.
   let recipeProblems = $derived(wf?.result?.recipe_problems ?? [])
 
+  // Every run of this workflow shares one task_key workspace on the agent, so
+  // only one can actually be live at a time -- see the guard in store.py's
+  // create_run. Surfacing it here keeps the button from being the way someone
+  // discovers that the hard way.
+  let liveRun = $derived(wf?.runs?.find((r) => r.live) ?? null)
+
   let rowSeq = 0
   const nextRowId = () => `d${(rowSeq++).toString(36)}${Math.random().toString(36).slice(2, 7)}`
 
@@ -268,6 +372,7 @@
         transform_libraries: wf.request.transform_libraries ?? [],
         rows: normalizeRows(wf.request.input_drafts),
       }
+      overrides = wf.overrides ?? {}
     }
     cacheWorkflow(name, { wf, items, table })
   }
@@ -295,17 +400,30 @@
     }
     jobId = null
     jobStatus = null
+    envReport = null
     focus = null
     drawing = null
+    overrides = hit ? (hit.wf.overrides ?? {}) : {}
     // reset unconditionally, cache hit or not: this is what lets the one-time
     // recipe rebuild in `load()` still run on the background revalidation
     // fetch, so a recipe edited outside the browser surfaces even on a hit
     loadedFor = null
     planFocus = null
+    presetLoaded = null
+    presetContent = ''
+    presetSource = ''
+    presetOpen = false
     attempt(async () => {
-      await Promise.all([load(true), loadTypes(), loadTypeIndex()])
+      await Promise.all([load(true), loadTypes(), loadTypeIndex(), loadPreset()])
       void n
     })
+  })
+
+  // Loaded once, eagerly, on mount rather than on the dropdown's first open --
+  // the same package-wide vocabulary on every workflow page, so there is
+  // nothing per-workflow to key this effect off of.
+  $effect(() => {
+    attempt(async () => (allPresets = await api.get('/presets')))
   })
 
   // The runs card is a live list too, for the same reason the rail is: a run
@@ -320,12 +438,25 @@
   })
 
   // The chosen agent, off the list already loaded. Nothing is fetched for this:
-  // `/agents` carries both the presets and the one the agent declares, and an
-  // extra round trip on every change of a dropdown bought nothing.
+  // an extra round trip on every change of a dropdown bought nothing.
   let chosenAgent = $derived(app.agents.find((a) => a.name === agentChoice) ?? null)
-  let presets = $derived(Object.keys(chosenAgent?.config_presets ?? {}))
-  // what leaving the box alone will actually use, so the blank option can say it
-  let agentPreset = $derived(chosenAgent?.default_preset ?? 'local')
+
+  // `agentChoice` starts pre-filled from the remembered agent, but nothing
+  // seeded its params yet -- that only otherwise happens on the select's own
+  // `onchange`. Fires again once `app.agents` (fetched separately) actually
+  // has the entry; `seedFromAgent` is idempotent, so repeats are harmless.
+  //
+  // `seedFromAgent` reads and writes `runParams`/`seededParams` itself, and
+  // its write is a fresh array/object every time even when nothing changed
+  // -- so tracking those reads here would make the effect its own trigger,
+  // looping forever instead of settling. `untrack` keeps this effect keyed
+  // to only `chosenAgent`/`agentChoice`, which is the actual condition for
+  // re-seeding.
+  $effect(() => {
+    if (!chosenAgent) return
+    const next = agentChoice
+    untrack(() => seedFromAgent(next))
+  })
 
   // an empty list means every library, here and on the server -- so the filter
   // is null rather than an empty Set, which would mean the opposite
@@ -932,8 +1063,37 @@
     persist()
   }
 
+  // Re-copies the standard library from whatever `metasmith_libraries` is
+  // installed over the one already cloned into the project -- the everyday
+  // path (`bootstrap_project`) only clones once and never looks again, so
+  // this is the only way an edited or upgraded library reaches a project that
+  // already has one. Every open workflow's own copy of the type vocabulary is
+  // resynced against it server-side, so this page's `index` is what is stale
+  // afterward, not anything written to disk.
+  let syncingLibs = $state(false)
+  function syncLibraries() {
+    syncingLibs = true
+    attempt(() => api.post('/project/libraries/sync')).then((job) => {
+      if (!job) {
+        syncingLibs = false
+        return
+      }
+      api.stream(job.id, () => {}, async (summary) => {
+        syncingLibs = false
+        const result = summary?.result
+        if (summary?.status === 'failed' || result?.updated === false) {
+          notify(result?.error ?? summary?.error ?? 'library sync failed', 'refused')
+          return
+        }
+        await Promise.all([loadTypes(true), loadTypeIndex(true)])
+        notify('standard library updated', 'info')
+      })
+    })
+  }
+
   async function solve() {
     requestingSolve = true
+    jobKind = 'solve'
     // Cleared here, not left to `JobLog`'s own reset -- that only fires once
     // `jobId` changes below, and the request round trip happens before that.
     // Without this, solving again after a failed (or even a successful) solve
@@ -985,29 +1145,39 @@
   // and guessing at it is how the two stopped agreeing.
   const ROW_H = 26
 
-  // The column header's own height. It has to sit *inside* the rows box and in
-  // normal flow, because it is the only thing there that is -- absolutely
-  // placed rows contribute no width, so it is what sizes the box. It is then
-  // nudged down by `position: relative` onto the diagram's first row, which
-  // costs the layout nothing: the rows' origin stays the image's own top, and
-  // the header takes the space beside a node that never has a row of its own.
-  const HEAD_H = 18
-
   // What the ∞ button puts in the time box. An empty box already means
   // something -- "whatever the transform declared" -- so "no limit at all"
   // needs a value of its own rather than the absence of one. The server knows
   // this token by name; see `UNLIMITED` in gui/api.py.
   const UNLIMITED = 'unlimited'
 
-  function setOverride(order, field, value) {
-    overrides[order] = { ...(overrides[order] ?? {}), [field]: value }
+  // Keyed by the transform, not `step.order`: order is a position in the
+  // CURRENT plan, and regenerating a workflow (e.g. pointing a given at a
+  // different source, which drops or adds upstream steps) renumbers every
+  // step after the change. A numeric key then silently reattaches to
+  // whichever step now sits at that position -- not an error, just the wrong
+  // step getting the override while the one it was meant for gets none. The
+  // transform name is what backend/workflow_ops.py's string-keyed branch
+  // already matches processes by (`.*__{tr}`), so this needs no server change.
+  function stepKey(step) {
+    return (step?.transform ?? '').replace(/\.py$/, '')
+  }
+
+  function setOverride(key, field, value) {
+    overrides[key] = { ...(overrides[key] ?? {}), [field]: value }
+    saveOverrides(name, overrides)
   }
 
   // Only the boxes with something in them, and only the steps with such a box.
   // An empty string sent as a value would be a resource directive of nothing.
+  // Also drops any key that names no step in the CURRENT plan -- a leftover
+  // from before a regenerate reshuffled step order, which must not be sent
+  // under a stale key and land on whatever step now occupies it.
   function overridePayload() {
+    const valid = new Set((wf?.result?.step_display ?? []).map(stepKey))
     const out = {}
     for (const [step, spec] of Object.entries(overrides)) {
+      if (!valid.has(step)) continue
       const kept = {}
       for (const f of OVERRIDE_FIELDS) {
         const v = (spec?.[f] ?? '').toString().trim()
@@ -1018,6 +1188,23 @@
     return Object.keys(out).length ? out : null
   }
 
+  // Prepare the chosen agent for this workflow: the images its steps need if it
+  // runs containers, the conda envs they name if it does not. The endpoint
+  // stages first, because the manifest that answers "which ones" is written by
+  // staging -- so pressing this and then `stage and run` does not stage twice.
+  async function setupEnvironment(force = false) {
+    requestingSetup = true
+    jobKind = 'environment'
+    jobStatus = null
+    jobPhase = null
+    envReport = null
+    const job = await attempt(() =>
+      api.post(`/workflows/${name}/environment`, { agent: agentChoice, force }),
+    )
+    requestingSetup = false
+    if (job) jobId = job.id
+  }
+
   async function launch() {
     launching = true
     const params = toParams(runParams)
@@ -1025,7 +1212,6 @@
       api.post('/runs', {
         workflow: name,
         agent: agentChoice,
-        preset: presetChoice || null,
         params: Object.keys(params).length ? params : null,
         resource_overrides: overridePayload(),
       }),
@@ -1095,7 +1281,7 @@
         </div>
       </div>
 
-      <div class="card" id="msm-recipe">
+      <div class="card col" style="gap:10px" id="msm-recipe">
         <RecipeCard
           {items}
           rows={recipe.rows}
@@ -1105,6 +1291,7 @@
           {sharedPaths}
           columns={table?.columns ?? []}
           rowCount={table?.row_count ?? 0}
+          rowUniques={table?.row_uniques ?? {}}
           expansion={table?.expansion ?? null}
           onshared={setShared}
           onfocus={showType}
@@ -1119,52 +1306,45 @@
           onadd={addRow}
         >
           {#snippet tableStrip()}
-            <SampleTable {table} onattach={attachTable} ondetach={detachTable} />
+            <SampleTable {table} onattach={attachTable} ondetach={detachTable} onedit={editTable} />
           {/snippet}
         </RecipeCard>
-      </div>
 
-      <div class="row wrap">
-        <button
-          class="primary"
-          onclick={solve}
-          disabled={solving || recipe.targets.length === 0 || blankTarget || dupTarget || !!tableProblem}
-        >
-          {#if solving}<Spinner />{/if}
-          {solving ? 'solving…' : wf.planned ? 'solve again' : 'solve'}
-        </button>
-        {#if recipe.targets.length === 0}
-          <span class="small muted">add at least one output</span>
-        {:else if blankTarget}
-          <span class="small muted">an output row has no type yet</span>
-        {:else if dupTarget}
-          <span class="small muted">two outputs are the same type with the same lineage</span>
-        {:else if tableProblem}
-          <span class="small muted">{tableProblem}</span>
-        {:else if stale}
-          <!-- ahead of the sheet's line below, which is a description rather
-               than a warning: a sheet-attached recipe can go stale exactly like
-               any other, and the line saying how the solve will read it was
-               hiding the one saying the plan is not from this recipe -->
-          <span class="tag warn">recipe changed — the result below is from the old one</span>
-        {:else if table?.attached}
-          <span class="small muted">
-            one unified solve over the sheet's {table.row_count}
-            {table.row_count === 1 ? 'row' : 'rows'}
-          </span>
-        {:else if wf.planned}
-          <!-- solving locks the name and nothing else. Said out loud because the
-               plan below reads as the finished article, and a page that only
-               shows a result looks like it stopped taking edits. -->
-          <span class="small muted">the recipe is still editable — solving again replans it</span>
+        <div class="row wrap">
+          <button
+            class="primary"
+            onclick={solve}
+            disabled={solving || settingUp || recipe.targets.length === 0 || blankTarget || dupTarget || !!tableProblem}
+          >
+            {#if solving}<Spinner />{/if}
+            {solving ? 'solving…' : wf.planned ? 'solve again' : 'solve'}
+          </button>
+          {#if recipe.targets.length === 0}
+            <span class="small muted">add at least one output</span>
+          {:else if blankTarget}
+            <span class="small muted">an output row has no type yet</span>
+          {:else if dupTarget}
+            <span class="small muted">two outputs are the same type with the same lineage</span>
+          {:else if tableProblem}
+            <span class="small muted">{tableProblem}</span>
+          {:else if stale}
+            <!-- ahead of the sheet's line below, which is a description rather
+                 than a warning: a sheet-attached recipe can go stale exactly like
+                 any other, and the line saying how the solve will read it was
+                 hiding the one saying the plan is not from this recipe -->
+            <span class="tag warn">recipe changed — the result below is from the old one</span>
+          {:else if table?.attached}
+            <span class="small muted">
+              one unified solve over the sheet's {table.row_count}
+              {table.row_count === 1 ? 'row' : 'rows'}
+            </span>
+          {/if}
+        </div>
+
+        {#if showSolveBar}
+          <StageProgress stages={SOLVE_STAGES} stageStates={solveStageStates} />
         {/if}
-      </div>
 
-      {#if showSolveBar}
-        <StageProgress stages={SOLVE_STAGES} stageStates={solveStageStates} />
-      {/if}
-
-      <div class="card col" style="gap:10px">
         {#if jobId}
           <!-- one log for both jobs this page starts: a solve and a bundle
                expand are the same shape of thing to watch, and only one of
@@ -1180,6 +1360,16 @@
               bind:status={jobStatus}
               bind:phase={jobPhase}
               onend={async (summary) => {
+                if (jobKind === 'environment') {
+                  // Nothing on the page is derived from this -- it is a report
+                  // about the agent, not about the workflow -- so it is shown
+                  // as it came back and nothing is refetched.
+                  envReport = summary?.result ?? null
+                  if (summary?.status === 'failed') {
+                    notify(summary?.error ?? 'setup failed', 'refused')
+                  }
+                  return
+                }
                 // The SSE stream's own final payload already carries what a
                 // solve produced -- plan_graph, step_display, given, targets,
                 // hints, all of it, written to disk before the stream said
@@ -1228,7 +1418,13 @@
             />
           </details>
         {/if}
+      </div>
 
+      <!-- The solved artifact: the DAG a solve produced, regardless of
+           success/failure/pending. Kept apart from the solve card above (the
+           action) and the stage-and-run card below (what a successful plan
+           unlocks). -->
+      <div class="card col" style="gap:10px">
         {#if !wf.planned}
           <h3>plan</h3>
           <p class="small muted">
@@ -1277,9 +1473,6 @@
                is its natural size and the card scrolls. -->
           {@const pitch = planGraph?.row_pitch ?? ROW_H}
           {@const dagHeight = planGraph?.height ?? (wf.result?.step_display?.length ?? 0) * pitch}
-          {@const topCy = planGraph?.nodes?.length
-            ? Math.min(...planGraph.nodes.map((n) => n.cy))
-            : HEAD_H / 2}
           <div class="dag-details" bind:this={dagEl}>
             <!-- where the control row sits when it is not riding the top of the
                  column; once this has scrolled out, the row is stuck -->
@@ -1398,24 +1591,49 @@
                   </div>
                 </div>
                 {/if}
+                {#if dagOpen && wf.result?.step_display?.length}
+                  <!-- The one column heading, now: `.res-head` used to draw a
+                       second copy of it in flow over the rows, pixel-chased
+                       onto the diagram's first node, but a plan that scrolled
+                       the page past that point had already carried this bar up
+                       here to answer "which column is cpus" -- so the in-flow
+                       one was always the redundant half. Pushed to the far
+                       right of the row by `margin-left: auto` rather than
+                       inline after the export group: the row's columns are
+                       right-justified against the same edge (see `.dag-row`),
+                       and matching `--res-cols` here is what keeps this bar
+                       sitting directly over them instead of just labelling the
+                       row from wherever it happens to end. -->
+                  <div class="dag-group dag-resources">
+                    <span class="dag-group-label">resources</span>
+                    <div class="dag-chips dag-res-head">
+                      <span>cpus</span><span>memory (GB)</span><span>time (h)</span><span></span>
+                    </div>
+                  </div>
+                {/if}
               </div>
             {/if}
             {#if dagOpen}
-            <div class="dag-scroll">
-              <div class="dag-box">
-                <div class="dag-body">
-                  {#if planGraph}
-                    <DagRail
-                      geo={planGraph}
-                      marks={planMarks}
-                      meta={planMeta}
-                      ground="var(--panel)"
-                      onpick={pickPlanNode}
-                      onhover={(id) => (planPointed = id)}
-                    />
-                  {/if}
+            <!-- Right-justified: the resource columns are a fixed width, so
+                 they anchor the row's right edge and the diagram grows to
+                 their left as the plan does. Only `.dag-scroll` scrolls --
+                 the columns are a flex sibling outside it, so they and the
+                 header above stay in place while the diagram itself pans. -->
+            <div class="dag-row">
+              <div class="dag-scroll">
+                {#if planGraph}
+                  <DagRail
+                    geo={planGraph}
+                    marks={planMarks}
+                    meta={planMeta}
+                    ground="var(--panel)"
+                    onpick={pickPlanNode}
+                    onhover={(id) => (planPointed = id)}
+                  />
+                {/if}
+              </div>
 
-                  {#if wf.result?.step_display?.length}
+              {#if wf.result?.step_display?.length}
                     <!-- Keyed by position, which is what makes a selector
                          address one step. Empty is "as the transform
                          declared", which is what the greyed number in each box
@@ -1424,29 +1642,26 @@
                          pitch -- and both numbers come from the placement the
                          server stored, never from a constant here. -->
                     <div class="res-body" style={`height: ${dagHeight}px`}>
-                      <!-- level with the diagram's first node, which is the
-                           synthetic `given` and so never has a row of its own -->
-                      <div
-                        class="res-head"
-                        style={`height: ${HEAD_H}px; top: ${topCy - HEAD_H / 2}px`}
-                      >
-                        <span>cpus</span><span>memory (GB)</span><span>time (h)</span><span></span>
-                      </div>
+                      <!-- Nothing else here is in normal flow -- the guides and
+                           rows below are all absolutely placed, which is how a
+                           row can sit at its node's own `cy` instead of the
+                           next slot in a stack -- so this is what gives the box
+                           its width. Sized off `--res-cols`, the same template
+                           the header above and the rows below both use, rather
+                           than a number restated here that could drift from
+                           theirs. -->
+                      <div class="res-sizer" aria-hidden="true"></div>
                       <!-- One line down the middle of each value column, so a
                            number can be followed to its heading across the gap
-                           the rows leave between them. Starts under the header
-                           and runs to the foot; on the same grid template as
-                           the rows, which is the only thing keeping it
-                           centred. -->
-                      <div
-                        class="res-guides"
-                        aria-hidden="true"
-                        style={`top: ${topCy + HEAD_H / 2}px`}
-                      >
+                           the rows leave between them. Runs the full height of
+                           the box; on the same grid template as the rows,
+                           which is the only thing keeping it centred. -->
+                      <div class="res-guides" aria-hidden="true">
                         <span></span><span></span><span></span>
                       </div>
                       {#each wf.result.step_display as step, i}
                         {@const cy = planCy.get(step.order) ?? (i + 0.5) * pitch}
+                        {@const key = stepKey(step)}
                         <div
                           class="res-row"
                           style={`top: ${cy - pitch / 2}px; height: ${pitch}px`}
@@ -1455,7 +1670,7 @@
                           data-transform={step.transform}
                         >
                           {#each OVERRIDE_FIELDS as f}
-                            {@const v = overrides[step.order]?.[f] ?? ''}
+                            {@const v = overrides[key]?.[f] ?? ''}
                             {#if f === 'duration_h' && v === UNLIMITED}
                               <!-- The box cannot show a number for this, and
                                    showing an empty one would read as the other
@@ -1468,7 +1683,7 @@
                                 placeholder={step.declared_resources?.[f] ?? '—'}
                                 aria-label={`${f} for step ${step.order}`}
                                 value={v}
-                                oninput={(e) => setOverride(step.order, f, e.currentTarget.value)}
+                                oninput={(e) => setOverride(key, f, e.currentTarget.value)}
                               />
                             {/if}
                           {/each}
@@ -1477,111 +1692,154 @@
                                over the three numbers, which are right-aligned -->
                           <button
                             class="inf"
-                            class:on={overrides[step.order]?.duration_h === UNLIMITED}
-                            aria-pressed={overrides[step.order]?.duration_h === UNLIMITED}
-                            title={overrides[step.order]?.duration_h === UNLIMITED
+                            class:on={overrides[key]?.duration_h === UNLIMITED}
+                            aria-pressed={overrides[key]?.duration_h === UNLIMITED}
+                            title={overrides[key]?.duration_h === UNLIMITED
                               ? 'back to a time limit'
                               : 'run with no time limit at all'}
                             aria-label={`no time limit for step ${step.order}`}
                             onclick={() =>
                               setOverride(
-                                step.order,
+                                key,
                                 'duration_h',
-                                overrides[step.order]?.duration_h === UNLIMITED ? '' : UNLIMITED,
+                                overrides[key]?.duration_h === UNLIMITED ? '' : UNLIMITED,
                               )}
                           >∞</button>
                         </div>
                       {/each}
                     </div>
                   {/if}
-                </div>
-              </div>
             </div>
             {/if}
           </div>
 
           <p class="small muted">
             solved <Ago iso={wf.generated_at} />{#if wf.result.stdlib_commit}
-              · library <span class="mono">{wf.result.stdlib_commit.slice(0, 12)}</span>{/if}
-          </p>
-
-          <!-- Pre-filled from the agent, so what will be sent is on the screen
-               rather than implied. Editing a row here changes this run only;
-               the agent keeps what it declares. -->
-          <div class="field">
-            <span class="small muted">params</span>
-            <ParamRows bind:rows={runParams} inherited={chosenAgent?.default_params ?? {}} />
-            <span class="small muted hint">
-              this run only — the agent's defaults are already here, and a key
-              typed over one of them wins
-            </span>
-          </div>
-
-          <!-- An agent that is still being filled in is listed and disabled,
-               not hidden: "the one I made is missing" is a worse thing to work
-               out than "the one I made says it has no host yet". The route
-               refuses the same agents, so this is a signpost, not the check.
-               Never having been deployed is on that list too -- it is not one
-               of the agent's `problems`, because the deploy button reads those
-               and would disable itself, but it stops a run just as surely. -->
-          <Field label="on which agent">
-            <select
-              bind:value={agentChoice}
-              onchange={(e) => seedFromAgent(e.currentTarget.value)}
-            >
-              <option value="">choose an agent…</option>
-              {#each app.agents.filter((a) => !a.archived_at) as a}
-                {@const said = [
-                  ...(a.problems ?? []),
-                  ...(a.deployed === false ? ['has not been deployed yet'] : []),
-                ]}
-                <option value={a.name} disabled={said.length > 0}>
-                  {a.name}{said.length ? ` — ${said.join(', ')}` : ''}
-                </option>
-              {/each}
-            </select>
-          </Field>
-          {#if presets.length}
-            <!-- the blank option names what it resolves to. It used to say
-                 "(agent default)" for a thing agents could not declare, so it
-                 silently meant `local` on every cluster login node. -->
-            <Field label="nextflow preset">
-              <select bind:value={presetChoice}>
-                <option value="">{agentPreset} — this agent's default</option>
-                {#each presets as p}<option value={p}>{p}</option>{/each}
-              </select>
-            </Field>
-          {/if}
-
-          <div>
-            <button
-              class="primary"
-              onclick={launch}
-              disabled={!agentChoice || launching || recipeProblems.length > 0}
-            >
-              {launching ? 'launching…' : 'stage and run'}
-            </button>
-          </div>
-          {#if recipeProblems.length}
-            <!-- A blank in the recipe is reported and never refused, right up to
-                 here: a deferred input has no file to stage and a nameless pair
-                 has no key to be read under. Off the solve that made this plan,
-                 not off what the boxes say now -- so the way out is to fill it
-                 in and solve again, which is also what puts the fix in the
-                 bundle. The route refuses the same thing; this is a signpost. -->
-            <p class="small bad">
-              This plan was solved from an unfinished recipe: {recipeProblems.join('; ')}.
-              Fill them in and solve again.
-            </p>
-          {/if}
-          <p class="small muted">
-            The same workflow can run on any agent — staging copies it there
-            first, then launches and detaches.
+              against library <span class="mono">{wf.result.stdlib_commit.slice(0, 12)}</span>{/if}
           </p>
         {:else}
           <HintsPanel result={wf.result} onadd={useType} />
         {/if}
       </div>
+
+      {#if wf.success}
+      <div class="card col" style="gap:10px">
+        <h3>stage and run</h3>
+        <!-- Pre-filled from the agent, so what will be sent is on the screen
+             rather than implied. Editing a row here changes this run only;
+             the agent keeps what it declares. -->
+        <div class="field">
+          <span class="small muted">params</span>
+          <ParamRows bind:rows={runParams} inherited={chosenAgent?.default_params ?? {}} />
+        </div>
+
+        <!-- An agent that is still being filled in is listed and disabled,
+             not hidden: "the one I made is missing" is a worse thing to work
+             out than "the one I made says it has no host yet". The route
+             refuses the same agents, so this is a signpost, not the check.
+             Never having been deployed is on that list too -- it is not one
+             of the agent's `problems`, because the deploy button reads those
+             and would disable itself, but it stops a run just as surely. -->
+        <Field label="agent">
+          <select
+            bind:value={agentChoice}
+            onchange={(e) => {
+              seedFromAgent(e.currentTarget.value)
+              setLastAgent(e.currentTarget.value)
+            }}
+          >
+            <option value="">choose an agent…</option>
+            {#each app.agents.filter((a) => !a.archived_at) as a}
+              {@const said = [
+                ...(a.problems ?? []),
+                ...(a.deployed === false ? ['has not been deployed yet'] : []),
+              ]}
+              <option value={a.name} disabled={said.length > 0}>
+                {a.name}{said.length ? ` — ${said.join(', ')}` : ''}
+              </option>
+            {/each}
+          </select>
+        </Field>
+        <div class="field">
+          <div class="row wrap" style="gap:8px; align-items:center;">
+            <span class="small muted">preset</span>
+            <div class="dag-dir" role="group" aria-label="show or hide the preset editor">
+              <button
+                type="button"
+                class:on={presetOpen}
+                disabled={!presetSource}
+                onclick={() => presetSource && (presetOpen = true)}
+              >show</button>
+              <button
+                type="button"
+                class:on={!presetOpen}
+                disabled={!presetSource}
+                onclick={() => (presetOpen = false)}
+              >hide</button>
+            </div>
+            <select
+              class="small preset-select"
+              bind:value={presetSource}
+              onchange={(e) => adoptPreset(e.currentTarget.value)}
+            >
+              <option value="" disabled>choose a preset…</option>
+              {#each allPresets as p}<option value={p}>{p}</option>{/each}
+            </select>
+            <button
+              type="button"
+              class="small"
+              disabled={!presetSource}
+              onclick={armReset}
+              title={resetArmed
+                ? "click again to confirm — this discards this workflow's own edits"
+                : 'reset this preset to its stock content, discarding this workflow\'s own edits'}
+            >{resetArmed ? 'confirm reset?' : 'reset'}</button>
+            {#if presetSaved}<span class="tag ok">saved</span>{/if}
+          </div>
+          {#if presetOpen}
+            <ConfigEditor
+              bind:value={presetContent}
+              rows={30}
+              resizable={false}
+              language="plain"
+              label="nextflow preset"
+            />
+          {/if}
+        </div>
+
+        <div class="row" style="gap:8px">
+          <button
+            class="primary"
+            onclick={launch}
+            disabled={!agentChoice || launching || settingUp || recipeProblems.length > 0 || !!liveRun}
+          >
+            {launching ? 'launching…' : 'stage and run'}
+          </button>
+        </div>
+        {#if liveRun}
+          <!-- Every run of this workflow stages into the same task_key
+               workspace on the agent -- one PID.lock, one process group. A
+               second run launched now wouldn't run alongside the live one, it
+               would silently take over that workspace, so cancelling either
+               run afterwards could kill the wrong one. -->
+          <p class="small muted">
+            run <strong>{liveRun.name}</strong> is still {liveRun.state} — cancel it before starting another.
+          </p>
+        {/if}
+        {#if recipeProblems.length}
+          <!-- A blank in the recipe is reported and never refused, right up to
+               here: a deferred input has no file to stage and a nameless pair
+               has no key to be read under. Off the solve that made this plan,
+               not off what the boxes say now -- so the way out is to fill it
+               in and solve again, which is also what puts the fix in the
+               bundle. The route refuses the same thing; this is a signpost. -->
+          <p class="small bad">
+            This plan was solved from an unfinished recipe: {recipeProblems.join('; ')}.
+            Fill them in and solve again.
+          </p>
+        {/if}
+      </div>
+      {/if}
 
       {#if wf.runs?.length}
         <div class="card col" style="gap:8px">
@@ -1603,6 +1861,14 @@
                   <td>
                     <span class="tag" class:live={r.live} class:ok={r.state === 'completed'}
                       class:bad={r.state === 'failed'}>{r.state}</span>
+                    <!-- The watcher couldn't tell if this run is still going --
+                         same repeating failure every tick, since nothing about
+                         it changes on its own -- so surface it rather than let
+                         a wedged run sit there looking identical to a healthy
+                         one. -->
+                    {#if r.live && r.probe_error}
+                      <span class="tag warn" title={r.probe_error}>can't check status</span>
+                    {/if}
                   </td>
                 </tr>
               {/each}
@@ -1632,6 +1898,15 @@
             apply
           </button>
         {/if}
+        <button
+          class="lib-sync"
+          disabled={syncingLibs}
+          onclick={syncLibraries}
+          title={syncingLibs ? 'syncing…' : 're-copy the standard library from what is installed, and resync every workflow against it'}
+          aria-label="sync the standard library"
+        >
+          <span class:spin={syncingLibs}><Icon name="regenerate" size={13} /></span>
+        </button>
       {/snippet}
 
       <!-- Two things, and the second one takes what the first leaves. There was
@@ -1684,15 +1959,19 @@
   /* The diagram sits on the card's own ground: it is drawn with no plate of its
      own, and one painted under it was never any colour but this card's -- which
      is also what a hollow marker is filled with, since hollow reads hollow only
-     where the fill and the ground agree. The block it makes with the step rows is
-     narrower than the card, so it is centred as one thing -- and the scroller
-     around it is what keeps a plan wider than the card from widening the card
-     instead of scrolling. No fold and no height cap: this grows with the plan. */
-  .dag-scroll { overflow-x: auto; margin-top: 8px; }
-  .dag-box { width: max-content; margin-inline: auto; display: flex; flex-direction: column; gap: 4px; }
-  /* the drawing and the rows box, flex siblings with nothing between them: they
-     share a top by construction, which is the whole of the alignment */
-  .dag-body { display: flex; align-items: flex-start; gap: 10px; }
+     where the fill and the ground agree. The resource columns are a fixed
+     width, so the row is right-justified against them instead of centred: the
+     diagram grows to their left as the plan does, and only once it runs out of
+     room does it scroll -- the columns stay put rather than being carried off
+     sideways with it. No fold and no height cap on the row itself: it grows
+     with the plan. */
+  .dag-row { display: flex; align-items: flex-start; justify-content: flex-end; gap: 10px; margin-top: 8px; }
+  /* shrinks below its own content width before it grows the row -- which is
+     what lets it scroll instead of pushing `.res-body` off the right edge */
+  .dag-scroll { overflow-x: auto; min-width: 0; flex: 0 1 auto; }
+  /* the fixed-width half of the row; never shrinks, which is what anchors the
+     right edge `.dag-row` justifies against */
+  .res-body { flex: 0 0 auto; position: relative; }
   /* the fold around the job log: a summary its own
      row with the status pill riding beside it, so a job's outcome reads
      without opening the scrollback that produced it */
@@ -1710,7 +1989,13 @@
      it was. Top left, not top right: the direction is read before the
      diagram, not after it -- and top right is where the info panel's own
      grip sits when this same diagram is reused there. */
-  .dag-details { position: relative; }
+  .dag-details {
+    position: relative;
+    /* the one column template the sticky header, the guide lines and the rows
+       all share -- restated in any one of them and it can drift out of step
+       with the others, which is exactly the "two headers" this replaces */
+    --res-cols: 4.5rem 6rem 4.5rem 1.75rem;
+  }
   /* zero, as far as the layout is concerned: it exists to be watched */
   .dag-mark { height: 1px; margin-bottom: -1px; }
   .dag-controls {
@@ -1718,7 +2003,9 @@
     z-index: 5;
     top: 0;
     left: 0;
-    display: inline-flex;
+    display: flex;
+    width: 100%;
+    box-sizing: border-box;
     /* the export block is a heading taller than the direction switch; bottom
        alignment is what keeps the one pill level with the row of chips rather
        than floating against the middle of the taller block */
@@ -1739,12 +2026,13 @@
      The tint is the panel's own colour, which makes the whole thing invisible
      rather than a smudge when the diagram is folded away and there is nothing
      behind it to blur. */
-  /* Anchored to the top-left corner the row is pinned to. Hard on two sides and
-     soft on two: flush left at the card's own border and flush top, where the
-     column's overflow clips it against the nav bar -- both are edges the page
-     already draws, so an edge there reads as the card, not as a plate. It fades
-     out rightwards and downwards instead, which are the two sides that sit out
-     over the drawing.
+  /* Anchored to the top corners the row is pinned between. Hard on three sides
+     and soft on one: flush left and flush right at the card's own borders --
+     the row now runs the diagram chips out to the resources header, edge to
+     edge -- and flush top, where the column's overflow clips it against the
+     nav bar. All three are edges the page already draws, so an edge there
+     reads as the card, not as a plate. It fades out only downwards, over the
+     drawing below.
 
      Only while the row is riding the top of the column. Docked, it is over the
      card with nothing behind it to blur. */
@@ -1752,7 +2040,7 @@
   .dag-controls.stuck .dag-haze {
     display: block;
     position: absolute;
-    inset: -24px -46px -24px -14px;
+    inset: -24px -14px -24px -14px;
     z-index: -1;
     pointer-events: none;
     background: linear-gradient(
@@ -1763,45 +2051,33 @@
   }
   /* Each pane is blurrier and stops sooner than the one under it, and they
      compound -- `backdrop-filter` reads in whatever is already painted below.
-     So the blur *strength* steps down across the box rather than one uniform
+     So the blur *strength* steps down down the box rather than one uniform
      blur being faded out, which only ever reads as a plate with a soft rim.
-
-     Sideways the ramp is in pixels, not per cent: the row is several times
-     wider than it is tall, so a proportional fade ran halfway across the panel
-     while the same number down the side looked right. Each pane ends 46px
-     before the last and softens over the 46px before that, so the whole
-     falloff is the width of a chip or two regardless of how wide the row is.
-     Down the side it stays proportional, which is what looked right. */
+     Full width on every pane, left edge to right edge alike -- there is
+     nothing left of the row to taper toward once both sides are flush with
+     the card. */
   .dag-haze span {
     position: absolute;
     left: 0;
+    right: 0;
     top: 0;
     bottom: 0;
-    -webkit-mask-image:
-      linear-gradient(to right, #000 calc(100% - 46px), transparent 100%),
-      linear-gradient(to bottom, #000 var(--vcore), transparent var(--vedge));
-    mask-image:
-      linear-gradient(to right, #000 calc(100% - 46px), transparent 100%),
-      linear-gradient(to bottom, #000 var(--vcore), transparent var(--vedge));
-    -webkit-mask-composite: source-in;
-    mask-composite: intersect;
+    -webkit-mask-image: linear-gradient(to bottom, #000 var(--vcore), transparent var(--vedge));
+    mask-image: linear-gradient(to bottom, #000 var(--vcore), transparent var(--vedge));
   }
   .dag-haze span:nth-child(1) {
-    right: 0;
     --vcore: 45%;
     --vedge: 100%;
     -webkit-backdrop-filter: blur(1.5px);
     backdrop-filter: blur(1.5px);
   }
   .dag-haze span:nth-child(2) {
-    right: 46px;
     --vcore: 18%;
     --vedge: 55%;
     -webkit-backdrop-filter: blur(2.5px);
     backdrop-filter: blur(2.5px);
   }
   .dag-haze span:nth-child(3) {
-    right: 92px;
     --vcore: 0%;
     --vedge: 26%;
     -webkit-backdrop-filter: blur(3.5px);
@@ -1824,6 +2100,11 @@
     font-size: 11px;
   }
   .dag-dir button.on { background: var(--accent); color: var(--panel); }
+  /* The global `select { width: 100% }` rule (app.css) is meant for a select
+     alone in a field, not one sharing a row with a chip and a button -- left
+     unset here it claims the row's full width and pushes everything after it
+     onto its own line, so the "inline" row wraps one control per line. */
+  .preset-select { width: auto; }
   /* Each cluster under a heading and a rule of its own, so what a chip acts on
      is read off the group rather than guessed from the chip. */
   .dag-group {
@@ -1848,6 +2129,26 @@
   }
   /* the gap that says these choose what is saved rather than what is drawn */
   .dag-export { margin-left: 18px; }
+  /* pushed to the row's own right edge rather than a fixed gap after export --
+     that is what keeps it flush with `.res-body` below, which is anchored to
+     the same edge by `.dag-row`'s `justify-content: flex-end` */
+  .dag-resources { margin-left: auto; }
+  /* "resources" names the whole grid below, not just its left edge */
+  .dag-resources .dag-group-label { text-align: center; }
+  .dag-res-head {
+    display: grid;
+    grid-template-columns: var(--res-cols);
+    /* the same box model as `.res-row` and `.res-guides` below -- border and
+       padding both count toward the grid's own width, so a header sized any
+       other way sits shifted from the columns it names */
+    box-sizing: border-box;
+    border-left: 1px solid transparent;
+    border-right: 1px solid transparent;
+    padding: 0 6px;
+    color: var(--muted);
+    font-size: 12px;
+    text-align: center;
+  }
   /* a lone pill, where `.dag-dir` is a pair of them: one gesture whose result
      arrives as a file, so there is no state for a second half to name */
   .dag-download {
@@ -1863,6 +2164,22 @@
   }
   .dag-download:hover { opacity: 1; color: var(--text); }
   .dag-download:disabled { opacity: 0.4; }
+
+  /* beside the panel's title, at the weight of the fold button next to it --
+     an action on the project's library, not on the workflow the panel is
+     otherwise about */
+  .lib-sync {
+    display: flex;
+    padding: 4px;
+    background: none;
+    border-color: transparent;
+    color: var(--muted);
+  }
+  .lib-sync:hover:not(:disabled) { color: var(--text); background: var(--panel-2); }
+  .lib-sync .spin { display: flex; animation: lib-sync-spin 0.9s linear infinite; }
+  @keyframes lib-sync-spin {
+    to { transform: rotate(360deg); }
+  }
   .link {
     background: none;
     border: none;
@@ -1884,44 +2201,45 @@
   /* the same shape `Field` renders, for the two blocks that hold rows rather
      than a single control and so cannot be a <label> */
   .field { display: flex; flex-direction: column; gap: 3px; }
-  .hint { line-height: 1.3; }
   /* why the launch button is off, in the colour the rest of the page refuses in */
   p.bad { color: var(--bad); line-height: 1.3; }
   /* the steps beside the diagram: rows can't be independently positioned
      inside an actual <table>, so each one is an absolutely placed grid row
-     instead, `top:` pinned to its transform's `dag_cy`. The header is the only
+     instead, `top:` pinned to its transform's `dag_cy`. The sizer is the only
      thing here in normal flow, which is deliberate -- it is what gives this box
      its width, since absolutely placed rows contribute none. Make it absolute
-     and the box collapses and the centring goes with it. Both share one column
-     template so they line up like a table's columns did; there is no name
-     column, because the node level with the row is the name. */
-  .res-head,
+     and the box collapses and the centring goes with it. All three share one
+     column template so they line up like a table's columns did; there is no
+     name column, because the node level with the row is the name. */
+  .res-sizer,
   .res-row,
   .res-guides {
     display: grid;
     /* rem, not em: the header is 12px and a row is the body's 14px, so an
        em-based track resolves to two different widths and the rows overflow
-       the box the header sized -- which is how the ∞ button ended up outside
+       the box the sizer measured -- which is how the ∞ button ended up outside
        its own row's outline. The last track is the ∞ button's own, and it is
-       fixed rather than `auto` for the same reason: the header's fourth cell is
+       fixed rather than `auto` for the same reason: the sizer's fourth cell is
        empty, so an `auto` track is nothing there and a button's width here. */
-    grid-template-columns: 4.5rem 5.75rem 4.5rem 1.75rem;
+    grid-template-columns: var(--res-cols);
     align-items: center;
     gap: 4px;
   }
-  /* relative, not absolute: it still occupies its place in flow -- which is
-     what sizes the box -- and is only painted lower */
-  .res-head {
-    position: relative;
-    z-index: 1;
-    font-weight: normal;
-    color: var(--muted);
-    font-size: 12px;
+  /* In normal flow and otherwise empty -- everything else in `.res-body` is
+     absolutely placed, which is how a row lands at its node's own `cy`
+     instead of the next slot in a stack, and that leaves this the only thing
+     here sizing the box. Zero height so it takes no visual space: the header
+     that used to live in flow here now rides in `.dag-controls` instead, and
+     restating its rem widths there off the same `--res-cols` is what keeps
+     the two from drifting apart. */
+  .res-sizer {
+    height: 0;
+    overflow: hidden;
+    box-sizing: border-box;
+    border-left: 1px solid transparent;
+    border-right: 1px solid transparent;
     padding: 0 6px;
-    white-space: nowrap;
-    text-align: center;
   }
-  .res-body { position: relative; }
   /* the outline is what lets a value be followed back to the node it sits
      level with; its height is the diagram's own row pitch, set inline */
   .res-row {
@@ -1935,14 +2253,13 @@
     padding: 0 6px;
   }
   /* the guides, under everything above. Border and padding are the row's, not
-     the header's: a track has to land where the numbers are, and the row's 1px
-     outline shifts its content box by that much. */
+     the sizer's: a track has to land where the numbers are, and the row's 1px
+     outline shifts its content box by that much. Runs the full height of the
+     box now that nothing above it needs the room. */
   .res-guides {
     position: absolute;
     z-index: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
+    inset: 0;
     box-sizing: border-box;
     border: 1px solid transparent;
     padding: 0 6px;

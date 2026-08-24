@@ -131,6 +131,56 @@ PY
     return 0
 }
 
+# The library half of the same idea, and the same reason: an image whose bundle
+# is absent or empty installs, imports and runs. The only symptom is that the
+# GUI's type panel is blank and no template is offered, which nobody sees until
+# a user opens the page. Checked in the image because that is the artifact that
+# ships, not the tree it was built from.
+_assert_library_in_image() {
+    [ -n "$MSM_SKIP_LIBRARY_CHECK" ] && {
+        echo "MSM_SKIP_LIBRARY_CHECK set -- skipping in-image library check"
+        return 0
+    }
+    local img="$DOCKER_IMAGE:$DOCKER_TAG"
+    echo "checking standard library in $img"
+    local out rc
+    out=$(docker run --rm --entrypoint sh "$img" -c '
+        python - <<"PY"
+import sys
+from metasmith.agents.templates import standard_library_root, library_index, TEMPLATES_DIR
+root = standard_library_root()
+print("  root=%s" % root)
+if root is None:
+    print("  no standard library in this image")
+    sys.exit(1)
+idx = library_index(root)
+tdir = root/TEMPLATES_DIR
+tpl = sorted(p.name for p in tdir.iterdir()) if tdir.is_dir() else []
+print("  data_types=%d transforms=%d resources=%d templates=%d" % (
+    len(idx["data_types"]), len(idx["transform_libraries"]),
+    len(idx["resource_libraries"]), len(tpl)))
+ok = bool(idx["data_types"]) and bool(idx["transform_libraries"]) and bool(tpl)
+sys.exit(0 if ok else 1)
+PY
+    ' 2>&1)
+    rc=$?
+    echo "$out"
+    if [ $rc -ne 0 ]; then
+        echo ""
+        echo "ERROR: the image at $img carries no usable standard library"
+        echo "  metasmith will install, import and run; the GUI type panel will be"
+        echo "  empty and no template will be offered."
+        echo ""
+        echo "    $HERE/dev/metasmith.sh --vendor-library   # stage it into the package"
+        echo "    $HERE/dev/metasmith.sh -bp                # rebuild the sdist"
+        echo "    $HERE/dev/metasmith.sh -bd                # rebuild the image"
+        echo ""
+        echo "  Override (NOT recommended) by setting MSM_SKIP_LIBRARY_CHECK=1."
+        return 1
+    fi
+    return 0
+}
+
 # The conda half of the check above. conda-build is where the damage happens:
 # with binary_relocation on it treats the cross-built ELFs as libraries of the
 # build host, patchelfs them, and the x86_64-linux binary segfaults on exec.
@@ -247,6 +297,40 @@ _assert_gui_bundle() {
 # about a linux ELF says whether it was linked against musl or against this
 # machine's glibc, and only one of those runs on someone else's machine.
 # Set MSM_SKIP_SOLVER_CHECK=1 to override.
+_vendor_stage="$HERE/src/$NAME/vendor"
+_lib_src="$HERE/src/metasmith_libraries"
+_lib_envs="$HERE/envs/metasmith_libraries"
+# The vendored standard library. Every failure here is silent at build, install
+# and import time -- an empty bundle ships, metasmith runs, and the GUI's type
+# panel is simply blank -- which is why it is a guard and not a comment. Same
+# claim as the engine's, checked at the same three steps.
+_assert_library_bundle() {
+    [ -n "$MSM_SKIP_LIBRARY_CHECK" ] && {
+        echo "MSM_SKIP_LIBRARY_CHECK set -- skipping library bundle check"
+        return 0
+    }
+    if [ ! -f "$_vendor_stage/VENDOR_HASH" ]; then
+        echo "no vendored standard library at [$_vendor_stage]"
+        echo "  run: ./dev/metasmith.sh --vendor-library"
+        return 1
+    fi
+    local missing=""
+    for d in data_types transforms resources templates envs; do
+        if [ ! -d "$_vendor_stage/$d" ] || [ -z "$(ls -A "$_vendor_stage/$d" 2>/dev/null)" ]; then
+            missing="$missing $d"
+        fi
+    done
+    if [ -n "$missing" ]; then
+        echo "vendored library at [$_vendor_stage] is missing or empty:$missing"
+        echo "  run: ./dev/metasmith.sh --vendor-library"
+        return 1
+    fi
+    local ntpl
+    ntpl=$(ls -1 "$_vendor_stage/templates" 2>/dev/null | wc -l)
+    echo "vendored library ok: $(cat "$_vendor_stage/VENDOR_HASH"), $ntpl templates"
+    return 0
+}
+
 _engine_stage="$HERE/src/$NAME/engine"
 _assert_solver_engine() {
     [ -n "$MSM_SKIP_SOLVER_CHECK" ] && {
@@ -362,14 +446,14 @@ case $1 in
     # environments
 
     --idev) # with dev tools for packaging
-        cd $HERE/envs
+        cd $HERE/envs/metasmith
         echo "updating conda env: $2"
         echo "WARNING: you will need to install docker and apptainer individually"
         sleep 2
         $CONDA env update -n $2 -f ./dev.yml
     ;;
     --ibase) # base only
-        cd $HERE/envs
+        cd $HERE/envs/metasmith
         echo "creating new conda env: $NAME"
         sleep 2
         $CONDA env create --no-default-packages -n $NAME -f ./base.yml
@@ -386,6 +470,20 @@ case $1 in
 
     ###################################################
     # build
+    --vendor-library) # stage the standard library into the package so it ships
+        # Content only -- no _metadata/. The consumer compiles its own copy in a
+        # writable place (`gui.stdlib.clone_stdlib`), so shipping a compiled
+        # index would ship a build product that is discarded on arrival. That is
+        # also what removes the ordering hazard this step used to carry: nothing
+        # here needs a compiled library, so nothing has to be compiled first.
+        PYTHONPATH="$HERE/src" python -m $NAME build vendor-library --no-metadata \
+            --src "data_types=$_lib_src/data_types" \
+            --src "transforms=$_lib_src/transforms" \
+            --src "resources=$_lib_src/resources" \
+            --src "templates=$_lib_src/templates" \
+            --src "envs=$_lib_envs" \
+            --dst "$_vendor_stage" || exit 1
+    ;;
     --build-gui) # frontend bundle for `msm gui`
         # Needs node. It is a build dependency only — the bundle is shipped
         # prebuilt, so the runtime env has no use for it and base.yml does not
@@ -404,6 +502,7 @@ case $1 in
         # build pip package
         _assert_gui_bundle || exit 1
         _assert_solver_engine || exit 1
+        _assert_library_bundle || exit 1
         [ -d ./build ] && rm -r build
         [ -d ./dist ] && rm -r dist
         # Stamp build_hash.txt before sdist/wheel so FULL_VERSION is baked in.
@@ -423,6 +522,7 @@ case $1 in
     -bc) # conda
         # requires built pip package
         _assert_solver_engine || exit 1
+        _assert_library_bundle || exit 1
         _assert_dist_matches_source || exit 1
         rm -r $HERE/conda_build
         python ./conda_recipe/metasmith/compile_recipe.py
@@ -452,6 +552,7 @@ case $1 in
     ;;
     -bd) # docker
         _assert_gui_bundle || exit 1
+        _assert_library_bundle || exit 1
         # The image installs the sdist, so it carries whatever is staged here.
         # A stale stage is *mostly* self-detecting -- engine/ sits inside the
         # tree _build_hash walks, so staging changes FULL_VERSION -- but that
@@ -498,6 +599,7 @@ case $1 in
     -bs) # apptainer image *from docker*
         _assert_real_relays || exit 1
         _assert_engine_in_image || exit 1
+        _assert_library_in_image || exit 1
         apptainer build --force $NAME.sif docker-daemon://$DOCKER_IMAGE:$DOCKER_TAG
     ;;
     --update_container)
@@ -530,6 +632,7 @@ case $1 in
         # sudo docker login quay.io
         _assert_real_relays || exit 1
         _assert_engine_in_image || exit 1
+        _assert_library_in_image || exit 1
 	    docker push $DOCKER_IMAGE:$DOCKER_TAG
         # `latest` and the bare version are what a user without a pinned tag
         # gets, so they move with the push rather than in a later web-UI visit.
@@ -633,6 +736,19 @@ case $1 in
         # -q and no per-test names: this is meant to be run every minute, so
         # what it prints is the count and the failures, not a 200-line roster.
         pytest -m gui -q --durations=0 --durations-min=0.25 $HERE/tests/metasmith/gui $@
+    ;;
+
+    -tl) # the process-lifecycle suite -- what actually dies when a run is stopped
+        shift
+        cd $HERE
+        # Pinned, not prepended -- same reason as -tg.
+        export PYTHONPATH=$HERE/src
+        # The directory is the definition of the set, and handing pytest the
+        # path keeps collection from importing the e2e modules.
+        [ -d "$HERE/tests/metasmith/lifecycle" ] || { echo "tests/metasmith/lifecycle/ is missing"; exit 1; }
+        # These spawn real process trees, so a hang here is a hang with children:
+        # --durations makes a test that is waiting out a kill ladder obvious.
+        pytest -m lifecycle -q --durations=0 --durations-min=1.0 $HERE/tests/metasmith/lifecycle $@
     ;;
 
     -td) # inject updates to an agent home for dev binds

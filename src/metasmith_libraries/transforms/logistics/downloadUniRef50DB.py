@@ -5,13 +5,23 @@ model   = Transform()
 image   = model.AddRequirement(lib.GetType("env::diamond.env"))
 db      = model.AddProduct(lib.GetType("ref::uniref50_diamond_db"))
 
-UNIREF50_URL = "https://ftp.uniprot.org/pub/databases/uniprot/uniref/uniref50/uniref50.fasta.gz"
+# ftp.uniprot.org has gone down whole-host before (every path 404s, not just
+# this one) without warning -- pinning a single mirror just resets the same
+# fragility clock. Try each in order and fall through on failure instead.
+UNIREF50_URLS = [
+    "https://ftp.ebi.ac.uk/pub/databases/uniprot/current_release/uniref/uniref50/uniref50.fasta.gz",
+    "https://ftp.uniprot.org/pub/databases/uniprot/uniref/uniref50/uniref50.fasta.gz",
+    "https://ftp.expasy.org/databases/uniprot/current_release/uniref/uniref50/uniref50.fasta.gz",
+]
 
 def protocol(context: ExecutionContext):
     idb = context.Output(db)
 
+    fetch = " || \\\n            ".join(
+        f'wget -q "{u}" -O uniref50.fasta.gz' for u in UNIREF50_URLS
+    )
     _cmd = f"""
-            wget -q {UNIREF50_URL} -O uniref50.fasta.gz
+            {fetch} || {{ echo "all uniref50 mirrors failed" >&2; exit 1; }}
             diamond makedb --in uniref50.fasta.gz -d uniref50
             mv uniref50.dmnd {idb.container}
         """
@@ -31,7 +41,7 @@ TransformInstance(
     labels=["local"],
     resources=Resources(
         cpus=8,
-        memory=Size.GB(64),
+        memory=Size.GB(14),
         duration=Duration(hours=12),
     ),
 )

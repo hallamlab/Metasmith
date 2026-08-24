@@ -89,6 +89,18 @@ def _build_type_lib(out_path: Path, names: Iterable[str] | None = None) -> Path:
     return out_path
 
 
+def _write_input(path: Path, text: str) -> None:
+    # Leave an input file alone when its content already matches.
+    #
+    # A leaf id is the file's path and mtime, and several tests here model a
+    # re-run by calling a builder twice against one `tmp_path`. Rewriting
+    # identical bytes would move mtime, re-key every input, and turn the second
+    # run into a cold cache -- which is the thing those tests are measuring.
+    if path.is_file() and path.read_text(encoding="utf-8") == text:
+        return
+    path.write_text(text, encoding="utf-8")
+
+
 def _build_samples_lib(
     tmp_path: Path,
     types_path: Path,
@@ -102,14 +114,14 @@ def _build_samples_lib(
     lib.AddTypeLibrary(types_path, namespace=namespace)
     parents: list = []
     if shared_root:
-        (lib.location / "root.json").write_text('{"id": "root"}', encoding="utf-8")
+        _write_input(lib.location / "root.json", '{"id": "root"}')
         root = lib.AddItem(Path("root.json"), f"{namespace}::sample_metadata")
         parents = [root]
     for i in range(n_samples):
         sid = f"sample_{i:02d}"
         sdir = lib.location / sid
         sdir.mkdir(parents=True, exist_ok=True)
-        (sdir / f"{dtype}.txt").write_text(f">{sid}\nACGT\n", encoding="utf-8")
+        _write_input(sdir / f"{dtype}.txt", f">{sid}\nACGT\n")
         lib.AddItem(
             Path(f"{sid}/{dtype}.txt"),
             f"{namespace}::{dtype}",
@@ -132,8 +144,9 @@ def _build_transform_lib(
     meta = tr_path / "_metadata"
     types_dir = meta / "types"
     types_dir.mkdir(parents=True, exist_ok=True)
-    shutil.copy(types_path, types_dir / f"{namespace}.yml")
-    (types_dir / "transforms.yml").write_text(
+    _write_input(types_dir / f"{namespace}.yml",
+                 types_path.read_text(encoding="utf-8"))
+    _write_input(types_dir / "transforms.yml",
         textwrap.dedent(
             """\
             schema: v1
@@ -149,15 +162,13 @@ def _build_transform_lib(
                 - transform
             """
         ),
-        encoding="utf-8",
     )
     manifest: dict[str, dict[str, str]] = {}
     for name, code in transforms.items():
-        (tr_path / f"{name}.py").write_text(code, encoding="utf-8")
+        _write_input(tr_path / f"{name}.py", code)
         manifest[f"{name}.py"] = {"type": "transforms::transform"}
-    (meta / "index.yml").write_text(
-        yaml.dump({"manifest": manifest, "schema": "v1"}), encoding="utf-8"
-    )
+    _write_input(meta / "index.yml",
+                 yaml.dump({"manifest": manifest, "schema": "v1"}))
     return TransformInstanceLibrary.Load(tr_path)
 
 
@@ -251,8 +262,8 @@ def build_multi_input_plan(tmp_path: Path, slots: int = 2) -> BuiltPlan:
         sid = f"sample_{i:02d}"
         sdir = lib.location / sid
         sdir.mkdir(parents=True, exist_ok=True)
-        (sdir / "reads.fq").write_text(f">r_{i}\nACGT\n", encoding="utf-8")
-        (sdir / "assembly.fa").write_text(f">a_{i}\nACGTACGT\n", encoding="utf-8")
+        _write_input(sdir / "reads.fq", f">r_{i}\nACGT\n")
+        _write_input(sdir / "assembly.fa", f">a_{i}\nACGTACGT\n")
         r = lib.AddItem(Path(f"{sid}/reads.fq"), "mock::reads")
         lib.AddItem(Path(f"{sid}/assembly.fa"), "mock::assembly", parents=[r])
     lib.Save()
@@ -399,17 +410,17 @@ def build_labelled_collection_plan(
     types_path = _build_type_lib(tmp_path / "types.yml")
     lib = DataInstanceLibrary(tmp_path / "labelled.xgdb")
     lib.AddTypeLibrary(types_path, namespace="mock")
-    (lib.location / "root.json").write_text('{"id": "root"}', encoding="utf-8")
+    _write_input(lib.location / "root.json", '{"id": "root"}')
     root = lib.AddItem(Path("root.json"), "mock::sample_metadata")
 
     order = list(range(n_samples))
     for i in order[::-1] if shuffle else order:
         sid = f"sample_{i:02d}"
-        (lib.location / f"{sid}.label").write_text(f"name-of-{sid}", encoding="utf-8")
+        _write_input(lib.location / f"{sid}.label", f"name-of-{sid}")
         label = lib.AddItem(Path(f"{sid}.label"), "mock::label", parents=[root])
         sdir = lib.location / sid
         sdir.mkdir(parents=True, exist_ok=True)
-        (sdir / "assembly.txt").write_text(f">{sid}\nACGT\n", encoding="utf-8")
+        _write_input(sdir / "assembly.txt", f">{sid}\nACGT\n")
         lib.AddItem(Path(f"{sid}/assembly.txt"), "mock::assembly", parents=[label])
     lib.Save()
 

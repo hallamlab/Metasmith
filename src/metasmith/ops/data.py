@@ -421,6 +421,15 @@ def restamp_library(library_path: str, entry: str | None = None) -> dict:
     return lib.Restamp([Path(entry)] if entry else None)
 
 
+def invalidate_items(
+    library_path: str, entries: list[str] | None = None, all: bool = False
+) -> dict:
+    lib = load_data_lib(library_path)
+    if not entries and not all:
+        raise ValueError("name at least one entry, or pass all=True")
+    return lib.Invalidate(None if all else [Path(e) for e in entries])
+
+
 def verify_library(library_path: str, deep: bool = False) -> dict:
     lib = DataInstanceLibrary.Load(library_path, check_pinned_stamps=False)
     return lib.Verify(deep=deep)

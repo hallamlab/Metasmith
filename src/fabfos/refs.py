@@ -1,17 +1,15 @@
-"""The reference databases, identified once instead of re-hashed every plan.
+"""The reference databases, identified from their pin instead of their filesystem.
 
 A reference here is 17 GB of diamond database, 7.2 GB of kofam profiles, an
 embedding stack. `DataInstanceLibrary.AddItem` derives a leaf's identity from
-the file's bytes, so registering these cost ~10 seconds of blake3 on every plan
-against a solve that takes 1 -- and it bought nothing, because the answer is the
-same every time. Two of the five are *directories*, whose content address is a
-whole-tree walk -- the most expensive of the five to derive and the least likely
-to have changed.
+the file's path and mtime, which costs nothing to take and nothing to retake --
+but it moves whenever `dvc checkout` re-materialises the very same bytes, and
+these are the entries under which the most downstream cache sits.
 
 Every one of these chunks is DVC-pinned, and a `.dvc` file records an md5 that
 DVC computed over the real bytes. That is a better identity than anything this
-code could derive: cheaper (it is already written down) and agreed on by every
-host that checks out the same pin. So an id here is
+code could derive: agreed on by every host that checks out the same pin, and
+indifferent to when the bytes last landed. So an id here is
 
     multihash_key(b"dvc\\0" + md5 + relpath)
 
@@ -27,8 +25,8 @@ a per-file md5 is recoverable from the `.dir` object in the DVC cache if the
 over-invalidation ever costs more than it saves.
 
 **An entry with no pin is not pinned.** It stays on `common.stage_ref`'s path
-and pays the hash, correctly. Substituting a weaker id for one that cannot be
-derived honestly is how a false cache hit gets built.
+and takes the ordinary stat-derived id, correctly. Substituting a weaker id for
+one that cannot be derived honestly is how a false cache hit gets built.
 
 ## The library on disk
 

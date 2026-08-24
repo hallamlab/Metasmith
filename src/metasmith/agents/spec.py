@@ -164,14 +164,26 @@ class Spec:
         assert len(targets) > 0, "[targets] can not be empty"
 
         def _get_endpoint(dtype_name: str):
-            ns, _ = dtype_name.split("::")
+            # By the type, not by its namespace: a library carries only the
+            # types its own transforms declare, so several hold `annotation`
+            # and only one of them holds `annotation::kofamscan_results`.
+            ns, name = dtype_name.split("::")
+            seen_namespace = False
             for trlib in transforms:
-                if ns not in trlib.types: continue
-                e = trlib.GetType(dtype_name)
+                tlib = trlib.types.get(ns)
+                if tlib is None: continue
+                seen_namespace = True
+                if name not in tlib: continue
                 lpath = trlib.location
                 loc = "..." + "/".join(lpath.parts[-3:]) if len(lpath.parts) > 3 else f"{lpath}"
                 Log.Info(f"[{dtype_name}] resolved by [{loc}]")
-                return e
+                return trlib.GetType(dtype_name)
+            if seen_namespace:
+                raise AssertionError(
+                    f"no transform library declares [{dtype_name}]; the"
+                    f" namespace [{ns}] is present but nothing in it produces"
+                    f" or consumes [{name}]"
+                )
             raise AssertionError(f"no transforms had the namespace [{ns}]")
 
         target_model = Transform()

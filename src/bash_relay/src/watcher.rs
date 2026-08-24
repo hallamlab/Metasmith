@@ -10,7 +10,7 @@ use std::os::unix::fs::PermissionsExt;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::process::Command;
-use nix::sys::signal::{kill, Signal};
+use nix::sys::signal::{killpg, Signal};
 use nix::unistd::Pid;
 use serde::{Serialize, Deserialize};
 use scopeguard::guard;
@@ -63,41 +63,120 @@ impl Status {
     }
 }
 
-fn try_kill_jobs(workspace: &Path) {
-    if let Ok(entries) = fs::read_dir(workspace) {
-        for entry in entries.flatten() {
-            let path = entry.path();
+// A job's `.pid` holds a process GROUP id, not a bare pid: launcher.sh runs the
+// job under `set -m`, so the recorded number leads a group containing the tool
+// the job actually started. Signalling the number alone stops the job's shell
+// and orphans that tool -- which is the leak this whole protocol exists to
+// close. Everything below therefore signals the group.
+const JOB_KILL_GRACE_MS: u128 = 5_000;
 
-            if !path.extension().map_or(false, |ext| ext == "pid") {
-                continue;
-            }
+fn read_pgid(pid_file: &Path) -> Option<i32> {
+    let raw = fs::read_to_string(pid_file).ok()?;
+    let pgid: i32 = raw.trim().parse().ok()?;
+    // 0 and negatives address the caller's own group or "everything": a
+    // truncated or half-written .pid must never be read as either.
+    if pgid > 1 { Some(pgid) } else { None }
+}
 
-            if let Err(e) = (|| -> Result<(), Box<dyn std::error::Error>> {
+fn group_alive(pgid: i32) -> bool {
+    // EPERM means the group exists and is someone else's -- alive, and not ours
+    // to stop. Only ESRCH means gone.
+    !matches!(killpg(Pid::from_raw(pgid), None), Err(nix::Error::ESRCH))
+}
 
-                let content = fs::read_to_string(&path)?;
-                let pid_str = content.trim();
+fn kill_job_group(pgid: i32) {
+    let pid = Pid::from_raw(pgid);
 
-                let pid_val: i32 = pid_str.parse()?;
-                let pid = Pid::from_raw(pid_val);
+    match killpg(pid, Signal::SIGTERM) {
+        Ok(_) => Logger::info(&format!("  - sent SIGTERM to group [{}]", pgid)),
+        Err(nix::Error::ESRCH) => return,
+        Err(e) => {
+            Logger::error(&format!("  - Warning: Failed to SIGTERM group [{}]: {}", pgid, e));
+            return;
+        }
+    }
 
-                kill(pid, Signal::SIGTERM)?;
+    let start = current_time_millis();
+    while group_alive(pgid) {
+        if current_time_millis().saturating_sub(start) >= JOB_KILL_GRACE_MS { break; }
+        thread::sleep(Duration::from_millis(100));
+    }
 
-                Logger::info(&format!("  - sent SIGTERM to PID: [{}]", pid_val));
+    if group_alive(pgid) {
+        match killpg(pid, Signal::SIGKILL) {
+            Ok(_) => Logger::info(&format!("  - sent SIGKILL to group [{}]", pgid)),
+            Err(nix::Error::ESRCH) => {}
+            Err(e) => Logger::error(&format!("  - Warning: Failed to SIGKILL group [{}]: {}", pgid, e)),
+        }
+    }
+}
 
-                Ok(())
-            })() {
-
-                Logger::error(&format!("  - Warning: Failed to kill [{}]", e));
+fn job_pid_files(workspace: &Path) -> Vec<PathBuf> {
+    let mut out = Vec::new();
+    match fs::read_dir(workspace) {
+        Ok(entries) => {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.extension().map_or(false, |ext| ext == "pid") {
+                    out.push(path);
+                }
             }
         }
-    } else {
-        Logger::error(&format!("Warning: Failed to read workspace directory for killing jobs: {}", workspace.display()));
+        Err(e) => Logger::error(&format!(
+            "Warning: Failed to read workspace directory {}: {}", workspace.display(), e,
+        )),
     }
+    out
+}
+
+fn try_kill_jobs(workspace: &Path) {
+    for path in job_pid_files(workspace) {
+        match read_pgid(&path) {
+            Some(pgid) => kill_job_group(pgid),
+            None => Logger::error(&format!(
+                "  - Warning: no usable pgid in [{}]", path.display(),
+            )),
+        }
+    }
+}
+
+/// Kill every job tagged with `token` in its `.run` file, leaving other runs'
+/// jobs alone. This is what scopes a cancel to one run in a workspace that is
+/// shared by every run on the host.
+pub fn kill_run(workspace: &Path, token: &str) -> usize {
+    let mut killed = 0;
+    for path in job_pid_files(workspace) {
+        let run_file = path.with_extension("run");
+        let tagged = fs::read_to_string(&run_file)
+            .map_or(false, |c| c.trim() == token);
+        if !tagged { continue; }
+        if let Some(pgid) = read_pgid(&path) {
+            Logger::info(&format!("Killing job [{}] of run [{}]", path.display(), token));
+            kill_job_group(pgid);
+            killed += 1;
+        }
+    }
+    killed
 }
 
 pub fn wipe_workspace(workspace: &Path) -> bool {
 
     try_kill_jobs(workspace);
+
+    // Whatever try_kill_jobs could not kill is a genuine survivor. Its records
+    // are the only trace of it, so they outlive the wipe -- deleting them is
+    // how a half-failed shutdown used to erase the evidence of what it left
+    // running.
+    let survivors: Vec<String> = job_pid_files(workspace).into_iter()
+        .filter(|p| read_pgid(p).map_or(false, group_alive))
+        .filter_map(|p| p.file_stem().map(|s| s.to_string_lossy().into_owned()))
+        .collect();
+    if !survivors.is_empty() {
+        Logger::error(&format!(
+            "  - Warning: [{}] job(s) survived shutdown, keeping their records: {}",
+            survivors.len(), survivors.join(", "),
+        ));
+    }
 
     let mut safe_wait = false;
 
@@ -108,6 +187,12 @@ pub fn wipe_workspace(workspace: &Path) -> bool {
             if path == workspace { continue; }
 
             if path.file_name().map_or(false, |name| name == "main.log") {
+                continue;
+            }
+
+            if path.file_stem().map_or(false, |stem| {
+                survivors.iter().any(|s| s.as_str() == stem.to_string_lossy())
+            }) {
                 continue;
             }
 
@@ -162,7 +247,12 @@ pub fn setup_launcher_script(workspace: &Path, cwd: &Path, active_path: &Path, l
         "PIDF=$2",
         "DONEF=$3",
         &format!("cd {}", cwd.display()),
+        // `set -m` gives the job its own process group, so the $PID recorded
+        // below is a pgid and a stop reaches the tool the job started, not
+        // just the shell that started it.
+        "set -m",
         &format!("{} {}/$SCRIPT &", TARGET_SHELL_EXE, workspace.display()),
+        "set +m",
         &format!("cd {}", workspace.display()),
         "PID=$!",
         "echo $PID > $PIDF",
@@ -308,7 +398,14 @@ pub fn run_watcher(workspace: &PathBuf, cwd: &PathBuf) {
                     else if file_name.ends_with(".pid") {
 
                         if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
-                            active_jobs.push(stem.to_string());
+                            let run = fs::read_to_string(path.with_extension("run"))
+                                .ok()
+                                .map(|c| c.trim().to_string())
+                                .filter(|c| !c.is_empty());
+                            active_jobs.push(match run {
+                                Some(token) => format!("{} run={}", stem, token),
+                                None => stem.to_string(),
+                            });
                         }
                     }
                     else if file_name.ends_with(".check") {

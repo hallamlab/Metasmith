@@ -33,14 +33,18 @@ def test_sif_is_tried_first_then_the_mksquashfs_workaround_then_the_sandbox():
 
 def test_auto_leaves_an_existing_sandbox_alone():
     cmd = _cmd()
-    assert f"[ ! -e {SIF} ] && [ ! -d {SANDBOX} ]" in cmd
-    assert f"rm -rf {SANDBOX}" not in cmd
+    short_circuit = f"{{ [ -d {SANDBOX} ] && [ -e {SANDBOX}.verified ]; }}"
+    assert short_circuit in cmd
+    assert cmd.index(short_circuit) < cmd.index(f"rm -rf {SANDBOX}")
 
 
 def test_sandbox_mode_never_packs_a_squashfs():
     cmd = _cmd(rootfs=Rootfs.SANDBOX)
-    assert f"[ -d {SANDBOX} ] || apptainer build --force --sandbox {SANDBOX} {IMAGE}" in cmd
+    build = f"apptainer build --force --sandbox {SANDBOX} {IMAGE}"
+    assert build in cmd
+    assert cmd.index(f"[ -d {SANDBOX} ]") < cmd.index(build)
     assert "pull" not in cmd and "mksquashfs" not in cmd
+    assert SIF not in cmd
 
 
 def test_sif_mode_refuses_to_unpack_and_drops_a_stale_sandbox():

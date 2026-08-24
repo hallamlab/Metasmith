@@ -6,7 +6,7 @@ import stat
 import subprocess
 from pathlib import Path
 
-from ..agents.templates import library_index
+from ..agents.templates import library_index, standard_library_root
 from ..constants import MODULE_PATH, STDLIB_NAME
 from ..logging import Log
 
@@ -16,14 +16,7 @@ _COPY_IGNORE = shutil.ignore_patterns("__pycache__", "*.pyc", "_metadata", ".git
 
 
 def library_module_root() -> Path | None:
-    try:
-        spec = importlib.util.find_spec("metasmith_libraries")
-    except (ImportError, ValueError):
-        return None
-    if spec is None or not spec.origin:
-        return None
-    root = Path(spec.origin).resolve().parent
-    return root if (root / "data_types").is_dir() else None
+    return standard_library_root()
 
 
 def _library_dirs(root: Path) -> tuple[list[str], list[str], list[str]]:
@@ -50,8 +43,13 @@ def compile_library(root: Path) -> dict:
 
 
 def _library_version(root: Path) -> str:
+    # The library has no version of its own any more: it ships inside this
+    # package, so metasmith's version IS its version. A source checkout that
+    # still carries a version.txt is honoured, for a library kept elsewhere.
     v = root / "version.txt"
-    return v.read_text().strip() if v.is_file() else "unknown"
+    if v.is_file(): return v.read_text().strip()
+    from ..constants import VERSION
+    return VERSION
 
 
 def _stamp(src: Path) -> str:
@@ -68,21 +66,20 @@ def _make_writable(root: Path) -> None:
             pass
 
 
-def clone_stdlib(root: Path) -> dict:
-    dest = Path(root) / STDLIB_NAME
-    if dest.exists():
-        return {"path": str(dest), "cloned": False}
-
+def _rebuild_stdlib(dest: Path) -> dict:
+    """Copy and compile the standard library into a staging dir beside `dest`,
+    then swap it in. Never touches `dest` on failure."""
     src = library_module_root()
     if src is None:
         err = (
-            "the metasmith_libraries package is not installed, so there is no "
-            "standard library to copy. Install it (`conda install -c hallamlab "
-            "metasmith_libraries`), or run from a source checkout with "
-            "PYTHONPATH pointed at its src/."
+            "this metasmith carries no standard library: neither a vendored "
+            "bundle inside the package nor an importable metasmith_libraries. "
+            "An installed metasmith should always have the former -- if this is "
+            "a source checkout, point PYTHONPATH at its src/; if it is an "
+            "install, it was built without `dev/metasmith.sh --vendor-library`."
         )
         Log.Error(err)
-        return {"path": str(dest), "cloned": False, "error": err}
+        return {"path": str(dest), "ok": False, "error": err}
 
     Log.Info(f"copying the standard library from [{src}]...")
     staging = dest.with_name(dest.name + ".partial")
@@ -99,9 +96,41 @@ def clone_stdlib(root: Path) -> dict:
         shutil.rmtree(staging, ignore_errors=True)
         err = f"could not build the standard library from [{src}]: {e}"
         Log.Error(err)
-        return {"path": str(dest), "cloned": False, "error": err}
+        return {"path": str(dest), "ok": False, "error": err}
+    if dest.exists():
+        _make_writable(dest)
+        shutil.rmtree(dest)
     staging.rename(dest)
-    return {"path": str(dest), "cloned": True, "source": str(src)}
+    return {"path": str(dest), "ok": True, "source": str(src)}
+
+
+def clone_stdlib(root: Path) -> dict:
+    dest = Path(root) / STDLIB_NAME
+    if dest.exists():
+        return {"path": str(dest), "cloned": False}
+    out = _rebuild_stdlib(dest)
+    result = {"path": out["path"], "cloned": out["ok"]}
+    if "error" in out:
+        result["error"] = out["error"]
+    if "source" in out:
+        result["source"] = out["source"]
+    return result
+
+
+def update_stdlib(root: Path) -> dict:
+    """Force a fresh copy of the standard library over whatever is already
+    cloned at `root`, then bust the caches and workflow copies built from the
+    old one -- the everyday `clone_stdlib` skips entirely once a copy exists,
+    which is right for bootstrapping a project but wrong for picking up
+    changes to an installed or edited `metasmith_libraries`."""
+    dest = Path(root) / STDLIB_NAME
+    out = _rebuild_stdlib(dest)
+    if out["ok"]:
+        _TYPES_CACHE.clear()
+        _INDEX_CACHE.clear()
+    return {"path": out["path"], "updated": out["ok"]} | (
+        {"error": out["error"]} if "error" in out else {}
+    ) | ({"source": out["source"]} if "source" in out else {})
 
 
 def stdlib_commit(root: Path) -> str | None:

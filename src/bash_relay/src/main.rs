@@ -12,7 +12,7 @@ use std::time::Duration;
 use std::thread;
 use gethostname::gethostname;
 use users::get_current_username;
-use nix::unistd::{fork, ForkResult};
+use nix::unistd::{fork, setsid, ForkResult};
 use nix::sys::signal::{signal, SigHandler, SIGCHLD};
 
 #[cfg(target_family = "unix")]
@@ -20,7 +20,7 @@ use std::os::unix::fs::symlink;
 #[cfg(target_family = "windows")]
 use std::os::windows::fs::symlink_dir;
 
-use crate::watcher::{run_watcher, check_status_default_timeout, Status, wipe_workspace};
+use crate::watcher::{run_watcher, check_status_default_timeout, kill_run, Status, wipe_workspace};
 use crate::utils::current_time_millis;
 use crate::remote_shell::RemoteShell;
 
@@ -48,6 +48,12 @@ pub struct ArgsBounce {
     pub cmd: String,
 }
 
+#[derive(Debug, Parser)]
+pub struct ArgsKillRun {
+
+    pub token: String,
+}
+
 #[derive(Subcommand, Debug)]
 enum Commands {
     Start(ArgsStart),
@@ -55,6 +61,7 @@ enum Commands {
     Status,
     Logs,
     Bounce(ArgsBounce),
+    KillRun(ArgsKillRun),
 }
 
 fn calculate_default_io_path() -> PathBuf {
@@ -202,23 +209,24 @@ fn main() {
 
                 let _ = setup_workspace(&workspace, args.local);
 
+                // Ignoring SIGCHLD is what reaps each dispatched job: nothing
+                // waits on the `sh -c nohup ... &` the watcher spawns, so
+                // without this every finished job leaves a zombie. Needed in
+                // both modes -- a connected watcher dispatches the same way.
+                unsafe {
+                    match signal(SIGCHLD, SigHandler::SigIgn) {
+                        Ok(_) => {}
+                        Err(e) => {
+                            eprintln!("Failed to set SIGCHLD handler: {}", e);
+
+                        }
+                    }
+                }
+
                 if args.connected {
 
                     run_watcher(&workspace, &current_working_directory)
                 } else {
-
-                    // Ignoring SIGCHLD is what reaps the daemonized watcher:
-                    // nothing waits on it once the parent exits, so without this
-                    // every finished job leaves a zombie.
-                    unsafe {
-                        match signal(SIGCHLD, SigHandler::SigIgn) {
-                            Ok(_) => {}
-                            Err(e) => {
-                                eprintln!("Failed to set SIGCHLD handler: {}", e);
-
-                            }
-                        }
-                    }
 
                     match unsafe { fork() } {
                         Ok(ForkResult::Parent { child }) => {
@@ -243,6 +251,15 @@ fn main() {
                         }
 
                         Ok(ForkResult::Child) => {
+
+                            // Leave the login shell's process group. Otherwise a
+                            // dropped ssh connection SIGHUPs that group, the
+                            // shutdown guard runs, and the relay takes down the
+                            // bookkeeping for jobs it only half-killed. A daemon
+                            // relay stops on `msm_relay stop` and nothing else.
+                            if let Err(e) = setsid() {
+                                eprintln!("Failed to detach watcher into its own session: {}", e);
+                            }
 
                             run_watcher(&workspace, &current_working_directory)
                         }
@@ -339,6 +356,12 @@ fn main() {
 
                 }
             }
+        }
+        Commands::KillRun(args) => {
+
+            let killed = kill_run(&workspace, &args.token);
+
+            println!("killed [{}] job(s) of run [{}]", killed, args.token);
         }
         Commands::Status => {
             let status = watcher::check_status_default_timeout(&workspace);

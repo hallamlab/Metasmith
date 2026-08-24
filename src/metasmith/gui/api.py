@@ -210,6 +210,21 @@ def get_type_index():
         ))
 
 
+@bp.post("/project/libraries/sync")
+def sync_libraries():
+    p = _project()
+
+    def _work(job):
+        with LogCapture(job):
+            out = stdlib.update_stdlib(p.root)
+            if out["updated"]:
+                stdlib.resync_workflow_types(p)
+            return out
+
+    job = _jobs().submit("library-sync", "sync the standard library", _work)
+    return jsonify(job.summary()), 202
+
+
 @bp.get("/ssh/hosts")
 def ssh_hosts():
     cfg = _ssh()
@@ -629,7 +644,7 @@ def deploy_agent(name):
 
     def _work(job):
         with LogCapture(job):
-            return op_agent.deploy(path, assertive)
+            return op_agent.deploy(path, assertive, on_phase=lambda p: job.emit(f"PHASE:{p}"))
 
     job = _jobs().submit("deploy", f"deploy {name}", _work, subject={"agent": name})
     return jsonify(job.summary()), 202
@@ -844,6 +859,7 @@ def get_workflow(name):
                 "step_display": display, "plan_graph": plan_graph,
             })
     out["result"] = wf.result
+    out["overrides"] = wf.overrides
     out["runs"] = [_run_summary(r) for r in runs]
     lib_path = wf.path / wf.request.get("input_library", INPUT_LIBRARY_DIRNAME)
     out["input_library"] = {"path": str(lib_path), "exists": lib_path.is_dir()}
@@ -887,6 +903,11 @@ def create_workflow():
         op_data.materialize_template(
             template.spec.input_library, lib_path, type_library_paths=types,
         )
+    default_preset = op_agent.config_presets()
+    if default_preset:
+        source = "local" if "local" in default_preset else default_preset[0]
+        p.write_preset(wf.name, op_agent.preset_content(source))
+        p.write_request(wf.name, {"preset_source": source})
     _rows_of(wf.name)
     return jsonify(_workflow_summary(p.read_workflow(wf.name))), 201
 
@@ -906,6 +927,48 @@ def put_workflow(name):
 @bp.patch("/workflows/<name>")
 def patch_workflow(name):
     return jsonify(_workflow_summary(_project().write_request(name, _body())))
+
+
+@bp.put("/workflows/<name>/overrides")
+def put_workflow_overrides(name):
+    p = _project()
+    overrides = _checked_overrides(_body().get("resource_overrides")) or {}
+    wf = p.write_overrides(name, overrides)
+    return jsonify({"name": name, "overrides": wf.overrides})
+
+
+@bp.get("/workflows/<name>/preset")
+def get_workflow_preset(name):
+    p = _project()
+    wf = p.read_workflow(name)
+    return jsonify({
+        "name": name,
+        "content": p.read_preset(name) or "",
+        "preset_source": wf.request.get("preset_source"),
+    })
+
+
+@bp.put("/workflows/<name>/preset")
+def put_workflow_preset(name):
+    p = _project()
+    b = _body()
+    p.write_preset(name, b.get("content") or "")
+    return jsonify({"name": name, "content": p.read_preset(name) or ""})
+
+
+@bp.post("/workflows/<name>/preset/adopt")
+def adopt_workflow_preset(name):
+    p = _project()
+    source = _checked_preset(_body().get("source"))
+    assert source, "a preset name is required"
+    p.write_preset(name, op_agent.preset_content(source))
+    wf = p.write_request(name, {"preset_source": source})
+    return jsonify({"name": name, "content": p.read_preset(name) or "", "preset_source": source})
+
+
+@bp.get("/presets")
+def list_all_presets():
+    return jsonify(op_agent.config_presets())
 
 
 @bp.post("/workflows/<name>/rename")
@@ -942,6 +1005,9 @@ def fork_workflow(name):
     src_record = op_samples.record_path(p.input_library_path(name))
     if src_record.is_file():
         shutil.copy2(src_record, op_samples.record_path(p.input_library_path(forked.name)))
+    src_preset = p.preset_path(name)
+    if src_preset.is_file():
+        p.write_preset(forked.name, src_preset.read_text())
     return jsonify(_workflow_summary(p.read_workflow(forked.name))), 201
 
 
@@ -1305,6 +1371,7 @@ def _table_payload(name: str, lib_path: Path, table_dir: Path, *, rows=None, rec
         "row_count": table["row_count"],
         "preview": table["rows"][:5],
         "problems": checked["problems"],
+        "row_uniques": op_samples.row_uniques(table, rows),
         "expansion": {
             "row_count": record.get("row_count", 0),
             "counts": {k: len(v) for k, v in (record.get("generated") or {}).items()},
@@ -1317,6 +1384,13 @@ def _table_payload(name: str, lib_path: Path, table_dir: Path, *, rows=None, rec
 def get_table(name):
     p = _project()
     return jsonify(_table_payload(name, p.input_library_path(name), _table_dir(name)))
+
+
+@bp.get("/workflows/<name>/table/raw")
+def get_table_raw(name):
+    table = op_samples.read_attached_table(_table_dir(name))
+    assert table is not None, "no table attached"
+    return jsonify({"text": op_samples.table_to_text(table)})
 
 
 @bp.post("/workflows/<name>/table")
@@ -1359,7 +1433,8 @@ def _run_summary(r) -> dict:
         "archived_at": r.archived_at,
         **{k: r.record.get(k) for k in (
             "agent", "task_key", "staged_path", "created_at", "launched_at", "finished_at",
-            "collected_at", "run_number", "preset", "error",
+            "collected_at", "run_number", "preset_source", "error",
+            "probe_error", "probe_error_at",
             "params", "resource_overrides",
         )},
     }
@@ -1388,12 +1463,9 @@ def _has_results(outputs: Path) -> bool:
     return outputs.is_dir() and any(outputs.iterdir())
 
 
-@bp.post("/runs")
-def create_run():
-    b = _body()
-    p = _project()
-    workflow = b.get("workflow")
-    agent_name = b.get("agent")
+def _runnable(p, workflow: str, agent_name: str):
+    # The pair of checks anything that reaches an agent with a workflow makes:
+    # a plan worth sending, and an agent able to receive it.
     assert workflow, "workflow is required"
     assert agent_name, "agent is required"
     wf = p.read_workflow(workflow)
@@ -1415,11 +1487,68 @@ def create_run():
         raise ProjectError(
             f"agent [{agent_name}] is not ready to run on: {'; '.join(problems)}"
         )
+    return wf, str(p.agent_path(agent_name))
 
-    agent_path = str(p.agent_path(agent_name))
+
+@bp.post("/workflows/<name>/environment")
+def setup_environment(name):
+    # Prepare the chosen agent to run this workflow, without running it.
+    #
+    # Staging first is not a side effect to hide: the manifest that says which
+    # images and envs the workflow needs is written by staging, so there is
+    # nothing to read before it. `update` re-stages in place, which is what the
+    # run path does too, so pressing this and then run does not stage twice.
+    b = _body()
+    p = _project()
+    agent_name = b.get("agent")
+    force = bool(b.get("force", False))
+    wf, agent_path = _runnable(p, name, agent_name)
+    found = stdlib.discover(p.root)
+    library = found["path"] if found["present"] else None
+
+    def _work(job):
+        with LogCapture(job):
+            staged = op_runtime.stage(agent_path, str(wf.path), "update", None)
+            return op_runtime.setup_environment(
+                agent_path, staged["task_key"], force=force, library=library,
+            )
+
+    job = _jobs().submit(
+        "environment", f"setup environment for {name}", _work,
+        subject={"workflow": name, "agent": agent_name},
+    )
+    return jsonify(job.summary()), 202
+
+
+def _ensure_preset(p, workflow: str) -> str | None:
+    # A workflow created before per-workflow presets existed has no
+    # `preset.nf` of its own -- adopt one now, the same content eager
+    # adoption would have written at creation time, rather than launching
+    # against a config file that was never written.
+    wf = p.read_workflow(workflow)
+    source = wf.request.get("preset_source")
+    if p.preset_path(workflow).is_file():
+        return source
+    available = op_agent.config_presets()
+    if not available:
+        return source
+    source = "local" if "local" in available else available[0]
+    p.write_preset(workflow, op_agent.preset_content(source))
+    p.write_request(workflow, {"preset_source": source})
+    return source
+
+
+@bp.post("/runs")
+def create_run():
+    b = _body()
+    p = _project()
+    workflow = b.get("workflow")
+    agent_name = b.get("agent")
+    wf, agent_path = _runnable(p, workflow, agent_name)
+    preset_source = _ensure_preset(p, workflow)
     rec = p.create_run(workflow, {
         "agent": agent_name,
-        "preset": b.get("preset"),
+        "preset_source": preset_source,
         "params": _checked_params(b.get("params")) or None,
         "resource_overrides": _checked_overrides(b.get("resource_overrides")),
         "on_exist": b.get("on_exist", "update"),
@@ -1442,7 +1571,8 @@ def create_run():
                 op_runtime.run(
                     agent_path,
                     staged["task_key"],
-                    config_preset=rec.record.get("preset"),
+                    config_file=str(p.preset_path(workflow)),
+                    is_local_preset=rec.record.get("preset_source") == "local",
                     params=rec.record.get("params"),
                     resource_overrides=rec.record.get("resource_overrides"),
                 )
@@ -1476,13 +1606,21 @@ def run_log(workflow, run):
     key = rec.record.get("task_key")
     if not key:
         return jsonify({"lines": []})
+    run_number = rec.record.get("run_number")
+    if run_number is None:
+        # Pre-launch (staging/staged/launching) this task_key has no run-specific
+        # log dir yet -- only `logs.latest`, a symlink shared across every run of
+        # this task_key that still points at whichever run came before this one
+        # until the launcher relinks it. Resolving through it here would hand
+        # back the PREVIOUS run's log instead of "nothing yet".
+        return jsonify({"lines": []})
     try:
         out = op_runtime.tail(
             str(p.agent_path(agent_name)),
             key,
             source=request.args.get("source", "agent"),
             lines=int(request.args.get("lines", 200)),
-            run=rec.record.get("run_number"),
+            run=run_number,
         )
     except Exception as exc:
         return jsonify({"lines": [], "error": str(exc)})
@@ -1514,9 +1652,17 @@ def run_trace(workflow, run):
         out = op_runtime.read_trace("/nonexistent")
         out["error"] = f"agent [{agent_name}] is gone"
         return jsonify(out)
+    run_number = rec.record.get("run_number")
+    if run_number is None:
+        # Same hazard as run_log above: pre-launch there is no run-specific trace
+        # file yet, only the task's shared `logs.latest`, which can still point
+        # at whichever run came before this one -- every per-step chip in the
+        # GUI is driven straight off this response, so leaking it here is what
+        # paints steps as already done/failed the instant a new run is created.
+        return jsonify(op_runtime.read_trace("/nonexistent"))
     try:
         return jsonify(op_runtime.trace(
-            str(p.agent_path(agent_name)), key, rec.record.get("run_number"),
+            str(p.agent_path(agent_name)), key, run_number,
         ))
     except Exception as exc:
         out = op_runtime.read_trace("/nonexistent")
@@ -1532,7 +1678,14 @@ def cancel_run(workflow, run):
     if not agent_name or not p.agent_exists(agent_name):
         raise ProjectError(f"agent [{agent_name}] is gone; cannot cancel remotely")
     out = op_runtime.cancel(str(p.agent_path(agent_name)), rec.record["task_key"])
-    p.update_run(workflow, run, {"state": "cancelled", "finished_at": utcnow()})
+    # Only call it cancelled when nothing is left running. A run with survivors
+    # stays `cancelling` and carries them, so the record cannot claim a stop it
+    # did not achieve.
+    survived = out.get("survived") or []
+    if survived:
+        p.update_run(workflow, run, {"state": "cancelling", "survivors": survived})
+    else:
+        p.update_run(workflow, run, {"state": "cancelled", "finished_at": utcnow(), "survivors": []})
     return jsonify(out)
 
 
@@ -1654,7 +1807,7 @@ def _node(entry_path: Path, root: Path, name: str) -> dict:
         "type": "dir" if (entry_path.is_dir() and not dangling) else "file",
         "size": size, "mtime": mtime,
         "symlink": link, "dangling": dangling,
-        "role": role, "type_name": None, "is_item": False,
+        "role": role, "type_name": None, "is_item": False, "parents": [],
         "children": [] if entry_path.is_dir() and not dangling else None,
     }
 
@@ -1693,7 +1846,8 @@ def run_tree(workflow, run):
     tree = {
         "name": "", "path": "", "type": "dir", "role": "output",
         "size": None, "mtime": None, "symlink": False, "dangling": False,
-        "type_name": None, "is_item": False, "children": walk(root, 0),
+        "type_name": None, "is_item": False, "parents": [],
+        "children": walk(root, 0),
     }
     _tag_manifest_types(outputs, tree)
     tree["children"].sort(key=lambda n: (n["role"] != "output", n["name"]))
@@ -1705,30 +1859,59 @@ def run_tree(workflow, run):
 
 def _tag_manifest_types(outputs: Path, tree: dict) -> None:
     try:
-        info = op_data.inspect_library(str(outputs))
+        lib = op_data.load_data_lib(str(outputs))
     except Exception:
         return
     named = {
-        i["path"]: i["type_name"] for i in info["items"]
-        if not Path(i["path"]).is_absolute()
+        str(p): dtype_name for p, dtype_name, _ep in lib.Iterate()
+        if not p.is_absolute()
     }
     if not named:
         return
     by_name = {}
+    key_by_name = {}
     for k, v in named.items():
         by_name.setdefault(Path(k).name, v)
+        key_by_name.setdefault(Path(k).name, k)
+    ancestry = _ancestry_index(lib, outputs, named)
 
     def visit(node):
-        t = named.get(node["path"])
-        if t is None and node["type"] == "file":
-            t = by_name.get(node["name"])
+        key = node["path"] if node["path"] in named else None
+        if key is None and node["type"] == "file":
+            key = key_by_name.get(node["name"])
+        t = named.get(key) if key else None
         if t is not None:
             node["type_name"] = t
             node["is_item"] = True
+            node["parents"] = ancestry.get(key, [])
         for c in node.get("children") or []:
             visit(c)
 
     visit(tree)
+
+
+# Every ancestor, not just the file's direct parents: `DataInstanceLibrary.Unpack`
+# re-expands the transitively reduced graph on disk into the full closure, so the
+# panel can answer "where did this come from" without walking anything.
+def _ancestry_index(lib, outputs: Path, named: dict[str, str]) -> dict[str, list[dict]]:
+    out: dict[str, list[dict]] = {}
+    for path, parents in lib.parents.items():
+        key = str(path)
+        if key not in named:
+            continue
+        rows = []
+        for pm in parents:
+            p = Path(pm.path)
+            node = None if p.is_absolute() else str(p)
+            rows.append({
+                "path": str(p),
+                "type_name": pm.name,
+                # An unpublished intermediate is in the manifest with no file
+                # behind it; the panel says so rather than offering it as a link.
+                "node": node if node and (outputs/p).exists() else None,
+            })
+        out[key] = rows
+    return out
 
 
 @bp.get("/runs/<workflow>/<run>/file")

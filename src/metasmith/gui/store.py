@@ -30,10 +30,14 @@ CACHE_DIRNAME = ".cache"
 
 REQUEST_FILE = "request.yml"
 RESULT_FILE = "result.yml"
+OVERRIDES_FILE = "overrides.yml"
+PRESET_FILE = "preset.nf"
 RUN_FILE = "run.yml"
 GUI_STATE_FILE = ".metasmith_gui.yml"
 
-LIVE_RUN_STATES = {"staging", "staged", "launching", "running"}
+# `cancelling` is live: the cancel returned survivors, so work is still on the
+# agent and the run must not be deletable.
+LIVE_RUN_STATES = {"staging", "staged", "launching", "running", "cancelling"}
 
 
 def utcnow() -> str:
@@ -67,6 +71,7 @@ class WorkflowRecord:
     path: Path
     request: dict = field(default_factory=dict)
     result: dict = field(default_factory=dict)
+    overrides: dict = field(default_factory=dict)
     archived_at: str | None = None
 
     @property
@@ -280,6 +285,7 @@ class Project:
             path=path,
             request=_read_yaml(path / REQUEST_FILE),
             result=_read_yaml(path / RESULT_FILE),
+            overrides=_read_yaml(path / OVERRIDES_FILE),
             archived_at=self.archived_at("workflows", name),
         )
 
@@ -352,6 +358,29 @@ class Project:
         _write_yaml(wf.path / RESULT_FILE, {"schema": SCHEMA, "generated_at": utcnow()} | result)
         return self.read_workflow(name)
 
+    def write_overrides(self, name: str, overrides: dict) -> WorkflowRecord:
+        wf = self.read_workflow(name)
+        _write_yaml(wf.path / OVERRIDES_FILE, overrides)
+        return self.read_workflow(name)
+
+    def preset_path(self, name: str) -> Path:
+        return self.workflow_path(name) / PRESET_FILE
+
+    def read_preset(self, name: str) -> str | None:
+        p = self.preset_path(name)
+        return p.read_text() if p.is_file() else None
+
+    def write_preset(self, name: str, content: str):
+        p = self.preset_path(name)
+        p.parent.mkdir(parents=True, exist_ok=True)
+        tmp = p.with_name(f"{p.name}.{os.getpid()}.{threading.get_ident():x}.tmp")
+        try:
+            tmp.write_text(content)
+            os.replace(tmp, p)
+        except BaseException:
+            tmp.unlink(missing_ok=True)
+            raise
+
     def input_library_path(self, name: str) -> Path:
         wf = self.read_workflow(name)
         return wf.path / wf.request.get("input_library", INPUT_LIBRARY_DIRNAME)
@@ -418,6 +447,18 @@ class Project:
 
     def create_run(self, workflow: str, record: dict) -> RunRecord:
         wf = self.read_workflow(workflow)
+        # Every run of a workflow stages into the same task_key workspace on the
+        # agent -- one PID.lock, one process group. A second run launched while
+        # the first is still live doesn't run alongside it, it silently takes
+        # over that workspace, so cancelling either run record afterwards kills
+        # whatever the agent is actually running, not necessarily the one whose
+        # button was clicked.
+        live = [r.name for r in self.list_runs(workflow) if r.live]
+        if live:
+            raise ProjectError(
+                f"workflow [{workflow}] already has a live run ({', '.join(live[:3])}); "
+                f"cancel it before starting another"
+            )
         name = generate_run_name(workflow, taken=self.run_names(workflow))
         path = self.runs_dir(workflow) / name
         (path / OUTPUTS_DIRNAME).mkdir(parents=True)

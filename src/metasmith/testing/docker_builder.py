@@ -144,6 +144,8 @@ def build_docker_image(tag: str|None = None, version: str|None = None) -> str:
     result = subprocess.run(
         [
             "docker", "build",
+            # The build context is the repo root; the Dockerfile is not.
+            "-f", str(REPO_ROOT / "docker/metasmith/Dockerfile"),
             "--build-arg", "CONDA_ENV=metasmith_env",
             "--build-arg", "PACKAGE=metasmith",
             "--build-arg", f"VERSION={version}",
@@ -153,7 +155,9 @@ def build_docker_image(tag: str|None = None, version: str|None = None) -> str:
         ],
         cwd=REPO_ROOT,
         capture_output=True, text=True,
-        timeout=600,
+        # A cold conda solve is the slow part; 10 minutes was not enough for it
+        # on a busy machine, and a killed build looks exactly like a broken one.
+        timeout=3600,
     )
     if result.returncode != 0:
         raise RuntimeError(f"Docker build failed:\n{result.stderr}")

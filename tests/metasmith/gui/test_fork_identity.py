@@ -20,8 +20,6 @@ from tests.metasmith.e2e.docker.conftest import create_transform_library
 
 pytestmark = pytest.mark.gui
 
-GOLDEN_UNFORKED_KEY = "fqPeg6kww9S3"
-
 
 @pytest.fixture
 def types_path(tmp_path) -> Path:
@@ -63,8 +61,12 @@ class TestUnforkedIsUnchanged:
         assert fixed_lib.fork_id is None
         assert "fork_id" not in fixed_lib.Pack()
 
-    def test_key_matches_golden(self, fixed_lib):
-        assert fixed_lib.GetKey() == GOLDEN_UNFORKED_KEY
+    def test_key_is_stable_across_reloads(self, fixed_lib):
+        # No golden constant to compare against: a library's key folds in its
+        # instance ids, and those are the paths and mtimes of this machine's
+        # files. Stability across reloads is the invariant that survives.
+        first = DataInstanceLibrary.Load(fixed_lib.location).GetKey()
+        assert DataInstanceLibrary.Load(fixed_lib.location).GetKey() == first
 
     def test_index_yaml_has_no_fork_key(self, fixed_lib):
         index = fixed_lib.location / DataInstanceLibrary._path_to_meta / "index.yml"
@@ -73,16 +75,16 @@ class TestUnforkedIsUnchanged:
 
 
 class TestForkChangesIdentity:
+    # One library, forked in place. Leaf ids are the path and the mtime, so a
+    # second library built elsewhere differs for reasons that are not the fork.
     def test_key_and_instance_ids_change(self, tmp_path, types_path):
-        a = _build_lib(tmp_path / "a.xgdb", types_path)
-        b = _build_lib(tmp_path / "b.xgdb", types_path)
-        assert a.GetKey() == b.GetKey()
-        assert _instance_ids(a) == _instance_ids(b)
+        lib = _build_lib(tmp_path / "a.xgdb", types_path)
+        key_before, ids_before = lib.GetKey(), _instance_ids(lib)
 
-        b.fork_id = "deadbeef"
-        b._calculate_key()
-        assert b.GetKey() != a.GetKey()
-        assert _instance_ids(b).isdisjoint(_instance_ids(a))
+        lib.fork_id = "deadbeef"
+        lib._calculate_key()
+        assert lib.GetKey() != key_before
+        assert _instance_ids(lib).isdisjoint(ids_before)
 
     def test_task_key_changes(self, tmp_path, types_path):
         transforms = create_transform_library(
@@ -102,13 +104,13 @@ class TestForkChangesIdentity:
             assert r["success"] is True
             return r["task_key"]
 
-        a = _build_lib(tmp_path / "a.xgdb", types_path)
-        b = _build_lib(tmp_path / "b.xgdb", types_path)
-        assert _plan(a) == _plan(b), "content-free identity should collapse these"
+        lib = _build_lib(tmp_path / "a.xgdb", types_path)
+        before = _plan(lib)
+        assert _plan(lib) == before, "re-planning an untouched library moved the key"
 
-        b.fork_id = "deadbeef"
-        b.Save()
-        assert _plan(a) != _plan(b)
+        lib.fork_id = "deadbeef"
+        lib.Save()
+        assert _plan(lib) != before
 
 
 class TestForkIdSurvivesRoundTrips:

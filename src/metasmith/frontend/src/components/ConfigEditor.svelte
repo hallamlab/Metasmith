@@ -130,15 +130,59 @@
     return out
   }
 
+  // -- plain -------------------------------------------------------------
+  // No grammar at all -- used for content this box has no vocabulary for
+  // (a Nextflow config's Groovy), where colouring wrong would mislead more
+  // than colouring nothing.
+  function highlightPlain(line) {
+    return escapeHtml(line)
+  }
+
   // The trailing newline matters: without it the underlay is one line shorter
   // than the textarea and the last line drifts as you scroll to the bottom.
-  let highlight = $derived(language === 'bash' ? highlightBash : highlightSsh)
+  let highlight = $derived(
+    language === 'bash' ? highlightBash : language === 'plain' ? highlightPlain : highlightSsh,
+  )
   let html = $derived(value.split('\n').map(highlight).join('\n') + '\n')
 
   function syncScroll() {
     if (!underlay || !ta) return
     underlay.scrollTop = ta.scrollTop
     underlay.scrollLeft = ta.scrollLeft
+  }
+
+  // Scroll chaining to a page that scrolls, not just to the nearest box: the
+  // browser hands a wheel gesture to whichever scrollable box is exhausted
+  // first, which on a trackpad's momentum tail can mean several frames spent
+  // stuck against this box's own limit before the page picks the rest up --
+  // read as the two fighting each other. Forwarding the remainder by hand,
+  // frame by frame, the moment this box has nowhere left to go removes the gap.
+  function findScrollParent(el) {
+    let node = el?.parentElement
+    while (node) {
+      const style = getComputedStyle(node)
+      if (/(auto|scroll)/.test(style.overflowY) && node.scrollHeight > node.clientHeight) return node
+      node = node.parentElement
+    }
+    return null
+  }
+
+  // The ancestor chain is stable for as long as this box stays mounted, so the
+  // walk above only needs to happen once -- redoing it (with a getComputedStyle
+  // per ancestor) on every wheel tick is what made the forwarded scroll choppy:
+  // short content pins the textarea at both boundaries at once, so *every*
+  // event on it took the expensive path.
+  let scrollParent
+
+  function onWheel(e) {
+    if (!ta) return
+    const atTop = ta.scrollTop <= 0
+    const atBottom = ta.scrollTop + ta.clientHeight >= ta.scrollHeight - 1
+    if ((e.deltaY < 0 && !atTop) || (e.deltaY > 0 && !atBottom)) return
+    if (scrollParent === undefined) scrollParent = findScrollParent(ta)
+    if (!scrollParent) return
+    e.preventDefault()
+    scrollParent.scrollTop += e.deltaY
   }
 
   // Tab belongs to the document here, not to the focus ring: this is an editor,
@@ -166,6 +210,7 @@
     autocorrect="off"
     onscroll={syncScroll}
     onkeydown={onKeydown}
+    onwheel={onWheel}
   ></textarea>
 </div>
 

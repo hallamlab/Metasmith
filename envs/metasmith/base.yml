@@ -10,18 +10,16 @@ dependencies:
   - rsync=3.4.1
   - pigz=2.8
   - unzip=6.0
-  - git=2.52.0 # tutorials and user libraries; the standard library is a package
+  - git=2.52.0 # tutorials and user libraries; the standard library ships in the package
 
-  # The standard library, and the reason `msm gui` has anything in its type
-  # panel: `gui/stdlib.clone_stdlib` locates this package by import, copies it
-  # into the project and compiles it there. Without it metasmith installs and
-  # runs, and every page is empty.
-  #
-  # The dependency is one-way ON PURPOSE. metasmith_libraries used to declare
-  # `metasmith` in turn -- true of what imports its transforms, but a cycle
-  # conda cannot solve, and wrong besides: the library is content, with no
-  # entry point and nothing to run. The engine that reads it is the consumer.
-  - metasmith_libraries
+  # The standard library ships INSIDE this package, vendored to
+  # `metasmith/vendor/` by `dev/metasmith.sh --vendor-library`, so there is no
+  # dependency to declare here. It used to be a separate conda package named on
+  # this line, which meant conda's solve was the only thing that could deliver
+  # it -- a wheel, a `pip install` and the relay-free runtimes got no library at
+  # all. It also made the library a second versioned artifact inside a monorepo
+  # whose whole point is that a library change and its consumer land in one
+  # commit.
   - tk=8.6.13 # for globus
 
   # # relay now just uses files

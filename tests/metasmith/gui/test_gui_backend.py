@@ -1550,6 +1550,66 @@ def runnable(client, tmp_path):
     return name
 
 
+class TestSetupEnvironment:
+    # Preparing the agent, without running on it.
+    #
+    # Staging first is the endpoint's job rather than the caller's: the manifest
+    # that says which images and envs a workflow needs is written by staging, so
+    # there is nothing to read before it. It writes no run record -- this is
+    # preparation, and a run that never happened should not appear in the list.
+
+    def _setup(self, client, workflow, report, **body):
+        with mock.patch("metasmith.ops.runtime.load_agent") as mload:
+            agent = mock.MagicMock()
+            agent.StageWorkflow.return_value = None
+            agent.SetupEnvironment.return_value = report
+            mload.return_value = agent
+            r = client.post(
+                f"/api/workflows/{workflow}/environment",
+                json={"agent": "smith"} | body,
+            )
+            assert r.status_code == 202, r.get_json()
+            result = _finish(client, r.get_json())
+        return agent, result
+
+    def test_it_stages_then_prepares_and_hands_back_the_report(self, client, runnable):
+        report = {"mode": "container", "fetched": 2, "already_present": 1}
+        agent, result = self._setup(client, runnable, report)
+        assert result == report
+        agent.StageWorkflow.assert_called_once()
+        assert agent.StageWorkflow.call_args[0][1] == "update"
+        key = client.get(f"/api/workflows/{runnable}").get_json()["task_key"]
+        assert agent.SetupEnvironment.call_args[0][0] == key
+
+    def test_the_recipes_come_from_the_workflows_own_library(self, client, runnable):
+        agent, _ = self._setup(client, runnable, {"mode": "conda"})
+        project: Project = client.application.config["MSM_PROJECT"]
+        assert agent.SetupEnvironment.call_args.kwargs["library"] == str(
+            project.root/"MetasmithLibraries"
+        )
+
+    def test_force_travels(self, client, runnable):
+        agent, _ = self._setup(client, runnable, {"mode": "conda"}, force=True)
+        assert agent.SetupEnvironment.call_args.kwargs["force"] is True
+
+    def test_it_writes_no_run(self, client, runnable):
+        self._setup(client, runnable, {"mode": "conda"})
+        assert client.get("/api/runs").get_json() == []
+
+    def test_it_refuses_an_agent_that_was_never_deployed(self, client, runnable, tmp_path):
+        client.post("/api/agents", json={"name": "fresh", "home": str(tmp_path/"fresh")})
+        r = client.post(f"/api/workflows/{runnable}/environment", json={"agent": "fresh"})
+        assert r.status_code == 409
+        assert "has not been deployed yet" in r.get_json()["error"]
+
+    def test_it_refuses_an_unplanned_workflow(self, client, tmp_path):
+        client.post("/api/agents", json={"name": "smith", "home": str(tmp_path/"h")})
+        name = _make_workflow(client)
+        r = client.post(f"/api/workflows/{name}/environment", json={"agent": "smith"})
+        assert r.status_code == 409
+        assert "no successful plan" in r.get_json()["error"]
+
+
 class TestRuns:
     def _launch(self, client, workflow) -> dict:
         with mock.patch("metasmith.ops.runtime.load_agent") as mload:
@@ -1563,6 +1623,15 @@ class TestRuns:
             body = r.get_json()
             _finish(client, body["job"])
         return body["run"]
+
+    def _cancel(self, client, workflow, run) -> None:
+        # A workflow may only have one live run, so a second launch has to
+        # follow the first one being stopped.
+        with mock.patch("metasmith.ops.runtime.load_agent") as mload:
+            mload.return_value = mock.MagicMock()
+            mload.return_value.CancelWorkflow.return_value = {"status": "cancelled"}
+            assert client.post(
+                f"/api/runs/{workflow}/{run}/cancel", json={}).status_code == 200
 
     def test_launch_records_agent_and_key(self, client, runnable):
         run = self._launch(client, runnable)
@@ -1584,12 +1653,14 @@ class TestRuns:
 
     def test_two_runs_of_one_workflow_are_distinct(self, client, runnable):
         a = self._launch(client, runnable)
+        self._cancel(client, runnable, a["name"])
         b = self._launch(client, runnable)
         assert a["name"] != b["name"]
         assert a["task_key"] == b["task_key"]
 
     def test_runs_list_is_newest_first(self, client, runnable):
-        self._launch(client, runnable)
+        first = self._launch(client, runnable)
+        self._cancel(client, runnable, first["name"])
         self._launch(client, runnable)
         listed = client.get("/api/runs").get_json()
         assert len(listed) == 2
@@ -1980,6 +2051,41 @@ class TestResultTree:
             f"/api/runs/{runnable}/{run}/file", query_string={"path": "escape.txt"})
         assert r.status_code >= 400
 
+    def test_a_node_carries_its_whole_ancestry(self, client, runnable, tmp_path):
+        run = TestResultsFiltering._name(client, runnable)
+        project: Project = client.application.config["MSM_PROJECT"]
+        outputs = project.outputs_path(runnable, run)
+        outputs.mkdir(parents=True, exist_ok=True)
+
+        external = tmp_path / "reads.fq"
+        external.write_text("@x\nACGT\n+\n!!!!\n")
+        types = DataTypeLibrary()
+        for name in ("reads", "assembly", "bam"):
+            types[name] = Endpoint(properties={name})
+        tp = tmp_path / "t.yml"
+        types.Save(tp)
+
+        lib = DataInstanceLibrary(outputs)
+        lib.AddTypeLibrary(tp, namespace="mock")
+        lib.AddItem(external, "mock::reads")
+        (outputs / "asm.fa").write_text("asm")
+        lib.AddItem(Path("asm.fa"), "mock::assembly", parents=[external])
+        (outputs / "out.bam").write_text("bam")
+        lib.AddItem(Path("out.bam"), "mock::bam", parents=[Path("asm.fa")])
+        lib.Save()
+
+        flat = self._flat(client.get(f"/api/runs/{runnable}/{run}/tree").get_json()["root"])
+        # The grandparent is there because a saved index is read back expanded,
+        # not because the tree walks anything.
+        parents = flat["out.bam"]["parents"]
+        assert {p["type_name"] for p in parents} == {"mock::assembly", "mock::reads"}
+        by_type = {p["type_name"]: p for p in parents}
+        assert by_type["mock::assembly"]["node"] == "asm.fa"
+        assert by_type["mock::reads"]["node"] is None
+        assert flat["asm.fa"]["parents"] == [
+            {"path": str(external), "type_name": "mock::reads", "node": None},
+        ]
+
     def test_the_alias_resolves_for_reading(self, client, runnable, tmp_path):
         run, _ = self._collected(client, runnable, tmp_path)
         body = client.get(
@@ -2145,7 +2251,7 @@ class TestJobs:
         client.post("/api/agents", json={"name": "smith", "home": str(tmp_path / "h")})
         from metasmith.logging import Log
 
-        def _deploy(path, assertive=False):
+        def _deploy(path, assertive=False, on_phase=None):
             Log.Info("a distinctive line")
             return {"status": "deployed"}
 

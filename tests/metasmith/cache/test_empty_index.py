@@ -13,7 +13,29 @@ from metasmith.models.workflow.cache_decisions import compute_cache_decisions
 from tests.metasmith.cache.fixtures.cache_fixtures import linear_3step
 
 
+# The promote fixtures below declare their own slot, so this pairs with the
+# `dtype_key`/`ext` in `_promote_one_output`'s StepPromoteSpec. The probe
+# fixtures run against a real plan and must use that plan's own dtype key.
 _OUTPUT_NAME = "1-1-1.abcdef-step_a.txt"
+
+
+def _probe_output_name(task) -> tuple[str, str]:
+    """The name the first step's product really takes, and its dtype key.
+
+    `payload.output_file_name` ends every product with `-<dtype key><ext>`, and
+    both the process output glob and the cache-hit probe match on that tail. A
+    made-up tail names a file the engine never writes.
+    """
+    step = min(task.plan.steps, key=lambda s: s.order)
+    for dep_group in step.transform.model.produces:
+        for dep in dep_group:
+            insts = step.dependency_map.get(dep, [])
+            if not insts:
+                continue
+            dtype = insts[0].dtype
+            ext = dtype.GetPreferredFileExtension()
+            return f"1-1-1.abcdef-{dtype.key}{ext}", dtype.key
+    raise AssertionError("the fixture's first step declares no product")
 
 
 def _context(workspace: Path, cache_root: Path) -> NextflowGenContext:
@@ -29,12 +51,14 @@ def _context(workspace: Path, cache_root: Path) -> NextflowGenContext:
     )
 
 
-def _seed_shard(cache_root: Path, cache_key: bytes, index: dict) -> None:
+def _seed_shard(
+    cache_root: Path, cache_key: bytes, index: dict, name: str, dtype_key: str
+) -> None:
     key_hex = cache_key.hex()
     final = shard_dir(cache_root, key_hex)
     (final / "out").mkdir(parents=True)
-    (final / "out" / _OUTPUT_NAME).write_text("payload")
-    relpath = f"out/{_OUTPUT_NAME}"
+    (final / "out" / name).write_text("payload")
+    relpath = f"out/{name}"
     manifest = encode_manifest(
         cache_key=cache_key,
         transform_key="trA",
@@ -43,11 +67,11 @@ def _seed_shard(cache_root: Path, cache_key: bytes, index: dict) -> None:
         output_files=[{
             "relpath": relpath,
             "slot_id": "a" * 64,
-            "dtype_key": "step_a",
+            "dtype_key": dtype_key,
             "branch_idx": 0,
             "batch_idx": 0,
         }],
-        out_identities={"step_a::0": "a" * 64},
+        out_identities={f"{dtype_key}::0": "a" * 64},
         index_payload=[{"relpath": relpath, "index": index}],
     )
     (final / "manifest.cbor").write_bytes(manifest)
@@ -65,8 +89,9 @@ def _seed_shard(cache_root: Path, cache_key: bytes, index: dict) -> None:
         store.close()
 
 
-def _probe_first_step(tmp_path: Path, index: dict) -> dict:
+def _probe_first_step(tmp_path: Path, index: dict) -> tuple[dict, str]:
     task = linear_3step.build_task(tmp_path)
+    name, dtype_key = _probe_output_name(task)
     workspace = tmp_path / "ws"
     workspace.mkdir(exist_ok=True)
     cache_root = tmp_path / "task_cache"
@@ -76,13 +101,13 @@ def _probe_first_step(tmp_path: Path, index: dict) -> dict:
     first = min(cold)
     assert not cold[first]["hit"], "the cold probe hit an empty cache"
 
-    _seed_shard(cache_root, cold[first]["cache_key"], index)
+    _seed_shard(cache_root, cold[first]["cache_key"], index, name, dtype_key)
     warm = compute_cache_decisions(task, _context(workspace, cache_root))
-    return warm[first]
+    return warm[first], name
 
 
 def test_a_shard_whose_index_row_is_empty_is_demoted(tmp_path):
-    decision = _probe_first_step(tmp_path, {})
+    decision, _name = _probe_first_step(tmp_path, {})
 
     assert not decision["hit"], (
         "a shard whose only output carries an empty index was replayed; "
@@ -96,13 +121,13 @@ def test_a_shard_whose_index_row_is_empty_is_demoted(tmp_path):
 
 
 def test_a_shard_with_a_real_index_row_still_hits(tmp_path):
-    decision = _probe_first_step(tmp_path, {"seed": ["1e20aaaa"]})
+    decision, name = _probe_first_step(tmp_path, {"seed": ["1e20aaaa"]})
 
     assert decision["hit"], (
         "the rig cannot produce a hit at all, so the demotion test above "
         "proves nothing"
     )
-    assert decision["out_indexes"] == {_OUTPUT_NAME: {"seed": ["1e20aaaa"]}}
+    assert decision["out_indexes"] == {name: {"seed": ["1e20aaaa"]}}
 
 
 def _work_tree(workspace: Path, entry: dict) -> None:

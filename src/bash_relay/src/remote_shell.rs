@@ -7,7 +7,7 @@ use std::sync::{Arc, Mutex};
 use std::thread::{self, sleep};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::borrow::Cow;
-use nix::sys::signal::{kill, Signal};
+use nix::sys::signal::{killpg, Signal};
 use nix::unistd::Pid;
 
 use crate::utils::{generate_id, current_time_millis};
@@ -86,7 +86,13 @@ struct Job {
     start_path: PathBuf,
 }
 
-fn get_pid_from_file(pid_file: &Path) -> Result<i32, String> {
+// The `.pid` file holds a process GROUP id: launcher.sh runs the job under
+// `set -m`, so the recorded number leads a group containing the tool the job
+// started. Signalling the number alone stops the job's shell and orphans that
+// tool, which is the leak this protocol exists to close.
+const GROUP_KILL_GRACE_MS: u128 = 5_000;
+
+fn get_pgid_from_file(pid_file: &Path) -> Result<i32, String> {
     if !pid_file.exists() {
         return Err(format!("PID file not found: {}", pid_file.display()));
     }
@@ -95,8 +101,47 @@ fn get_pid_from_file(pid_file: &Path) -> Result<i32, String> {
         .map_err(|e| format!("Failed to read PID file: {}", e))?;
 
     let pid_str = contents.trim();
-    pid_str.parse::<i32>()
-        .map_err(|_| format!("Invalid PID format in file: {}", pid_str))
+    let pgid = pid_str.parse::<i32>()
+        .map_err(|_| format!("Invalid PID format in file: {}", pid_str))?;
+
+    // 0 and negatives address the caller's own group or every process it may
+    // signal: a truncated .pid must never be read as either.
+    if pgid > 1 { Ok(pgid) } else { Err(format!("Refusing to signal group {}", pgid)) }
+}
+
+fn group_alive(pgid: Pid) -> bool {
+    // EPERM means the group exists and is someone else's -- alive, and not ours
+    // to stop. Only ESRCH means gone.
+    !matches!(killpg(pgid, None), Err(nix::Error::ESRCH))
+}
+
+fn kill_group_escalating(pgid_val: i32) {
+    let pgid = Pid::from_raw(pgid_val);
+
+    match killpg(pgid, Signal::SIGTERM) {
+        Ok(_) => println!("Sent SIGTERM to group {}", pgid_val),
+        Err(nix::Error::ESRCH) => {
+            println!("Group {} not found during SIGTERM.", pgid_val);
+            return;
+        }
+        Err(e) => {
+            eprintln!("Failed to send SIGTERM to group {}: {}", pgid_val, e);
+            return;
+        }
+    }
+
+    let start = current_time_millis();
+    while group_alive(pgid) {
+        if current_time_millis().saturating_sub(start) >= GROUP_KILL_GRACE_MS { break; }
+        sleep(Duration::from_millis(100));
+    }
+
+    if group_alive(pgid) {
+        match killpg(pgid, Signal::SIGKILL) {
+            Ok(_) => println!("Sent SIGKILL to group {}", pgid_val),
+            Err(e) => eprintln!("Failed to send SIGKILL to group {}: {}", pgid_val, e),
+        }
+    }
 }
 
 impl Job {
@@ -120,20 +165,20 @@ impl Job {
             return;
         }
 
-        if let Ok(pid) = get_pid_from_file(&pid_file) {
-            let nix_pid = Pid::from_raw(pid);
+        if let Ok(pgid) = get_pgid_from_file(&pid_file) {
+            let nix_pgid = Pid::from_raw(pgid);
 
-            match kill(nix_pid, Signal::SIGINT) {
+            match killpg(nix_pgid, Signal::SIGINT) {
                 Ok(_) => {
-                    println!("SignalStop: Sent SIGINT to PID {}", pid);
+                    println!("SignalStop: Sent SIGINT to group {}", pgid);
                 }
                 Err(nix::Error::ESRCH) => {
 
-                    println!("PID {} not found during SIGTERM (ProcessLookupError).", pid);
+                    println!("Group {} not found during SIGINT (ProcessLookupError).", pgid);
                 }
                 Err(e) => {
 
-                    println!("Failed to send SIGTERM to PID {}: {}", pid, e);
+                    println!("Failed to send SIGINT to group {}: {}", pgid, e);
                 }
             }
         } else {
@@ -161,23 +206,8 @@ impl Job {
 
         if !done_file.exists() {
 
-            if let Ok(pid) = get_pid_from_file(&pid_file) {
-
-                let nix_pid = Pid::from_raw(pid);
-
-                match kill(nix_pid, Signal::SIGTERM) {
-                    Ok(_) => {
-                        println!("Successfully sent SIGTERM to PID {}", pid);
-                        sleep(Duration::from_millis(500));
-                    }
-                    Err(nix::Error::ESRCH) => {
-
-                        println!("PID {} not found during SIGTERM (ProcessLookupError).", pid);
-                    }
-                    Err(e) => {
-                        eprintln!("Failed to send SIGTERM to PID {}: {}", pid, e);
-                    }
-                }
+            if let Ok(pgid) = get_pgid_from_file(&pid_file) {
+                kill_group_escalating(pgid);
             }
         } else {
 
@@ -200,6 +230,8 @@ impl Job {
             }
         }
 
+        let run_file = self.out_log.with_extension("run");
+
         let mut files_to_delete = vec![
             &self.out_log,
             &self.err_log,
@@ -209,6 +241,7 @@ impl Job {
 
             files_to_delete.push(&done_file);
             files_to_delete.push(&pid_file);
+            files_to_delete.push(&run_file);
         }
 
         for p in files_to_delete {
@@ -331,6 +364,19 @@ impl RemoteShell {
             }
             f.write_all(script.as_bytes())?;
             f.write_all(b"\n")?;
+
+            // Which run this job belongs to, written before the rename below
+            // so the watcher never sees a dispatchable job without it: the run
+            // token is how a cancel reaches one run's jobs in a workspace
+            // shared by every run on the host.
+            if let Ok(token) = std::env::var("METASMITH_RUN") {
+                if !token.trim().is_empty() {
+                    fs::write(
+                        job_compile_path.with_extension("run"),
+                        format!("{}\n", token.trim()),
+                    )?;
+                }
+            }
 
             // Written under `.compile` and renamed: the watcher dispatches any
             // `.start` file it sees, so a script it can observe half-written

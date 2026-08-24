@@ -24,7 +24,13 @@ target_types:
 - type: annotation::diamond_uniref50_results
   parents:
   - 0
+- type: annotation::diamond_uniref50_descriptions
+  parents:
+  - 0
 - type: annotation::kofamscan_results
+  parents:
+  - 0
+- type: annotation::kofamscan_descriptions
   parents:
   - 0
 - type: taxonomy::metabuli
@@ -45,22 +51,22 @@ target_types:
   - 0
 - type: taxonomy::checkm_stats
   parents:
-  - 11
-- type: taxonomy::gtdbtk
-  parents:
-  - 11
-- type: taxonomy::checkm_stats
-  parents:
-  - 12
-- type: taxonomy::gtdbtk
-  parents:
-  - 12
-- type: taxonomy::checkm_stats
-  parents:
   - 13
 - type: taxonomy::gtdbtk
   parents:
   - 13
+- type: taxonomy::checkm_stats
+  parents:
+  - 14
+- type: taxonomy::gtdbtk
+  parents:
+  - 14
+- type: taxonomy::checkm_stats
+  parents:
+  - 15
+- type: taxonomy::gtdbtk
+  parents:
+  - 15
 - type: binning::metabat2_contig_to_bin_table
   parents:
   - 0

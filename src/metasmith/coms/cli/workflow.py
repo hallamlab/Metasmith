@@ -44,6 +44,22 @@ def register(subs):
                       help="re-fetch every image even if the store already holds it")
     _mat.set_defaults(func=lambda a: _rt.materialise(a.agent, a.task_key, a.force))
 
+    _env = sp.add_parser(
+        "setup-env",
+        help="prepare the agent's host for a staged task: tool images for a "
+             "container agent, tool conda envs for a mamba one",
+    )
+    _env.add_argument("agent")
+    _env.add_argument("task_key")
+    _env.add_argument("--force", action="store_true",
+                      help="re-fetch or rebuild even what is already there")
+    _env.add_argument("--library", default=None,
+                      help="library to read conda recipes from "
+                           "(default: the installed metasmith_libraries)")
+    _env.set_defaults(func=lambda a: _rt.setup_environment(
+        a.agent, a.task_key, a.force, a.library,
+    ))
+
     _run = sp.add_parser("run", help="launch a staged workflow")
     _run.add_argument("agent")
     _run.add_argument("task_key")
@@ -75,6 +91,19 @@ def register(subs):
     _cancel.add_argument("task_key")
     _cancel.add_argument("--timeout", type=float, default=30.0)
     _cancel.set_defaults(func=lambda a: _rt.cancel(a.agent, a.task_key, a.timeout))
+
+    _ps = sp.add_parser("ps", help="what this run still has running on the agent")
+    _ps.add_argument("agent")
+    _ps.add_argument("task_key")
+    _ps.add_argument("--scope", default="run", choices=["run", "workload"])
+    _ps.set_defaults(func=lambda a: _rt.ps(a.agent, a.task_key, a.scope))
+
+    _reap = sp.add_parser("reap", help="kill whatever a run left running on the agent")
+    _reap.add_argument("agent")
+    _reap.add_argument("task_key")
+    _reap.add_argument("--passes", type=int, default=3)
+    _reap.add_argument("--scope", default="run", choices=["run", "workload"])
+    _reap.set_defaults(func=lambda a: _rt.reap(a.agent, a.task_key, a.passes, a.scope))
 
     _runs = sp.add_parser("runs", help="list all runs for a task on an agent")
     _runs.add_argument("agent")

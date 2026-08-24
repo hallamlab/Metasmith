@@ -32,8 +32,18 @@ def _parse_vendor_srcs(srcs: list[str]) -> dict[str, Path]:
     return mapping
 
 
-def _library_content_hash(mapping: dict[str, Path]) -> str:
-    parts = [f"{name}:{compute_build_hash(path)}" for name, path in sorted(mapping.items())]
+# A bundle that ships no compiled metadata must not stamp it either: the hash has
+# to describe the bytes that actually landed, or `--check` calls a bundle stale
+# every time somebody recompiles a `_metadata/` the bundle does not contain.
+_METADATA_DIR = "_metadata"
+
+
+def _library_content_hash(mapping: dict[str, Path], *, with_metadata: bool = True) -> str:
+    skip = frozenset() if with_metadata else frozenset({_METADATA_DIR})
+    parts = [
+        f"{name}:{compute_build_hash(path, also_exclude=skip)}"
+        for name, path in sorted(mapping.items())
+    ]
     return hashlib.md5("\0".join(parts).encode()).hexdigest()[:7]
 
 
@@ -105,10 +115,16 @@ def _assert_metadata_present(dst_path: Path) -> None:
         )
 
 
-def vendor_library(srcs: list[str], dst: str) -> dict:
+def vendor_library(srcs: list[str], dst: str, expect_metadata: bool = True) -> dict:
+    # `expect_metadata` is the difference between this command's two consumers.
+    # fabfos ships a library whose `_metadata/` must already be compiled, so a
+    # hollow bundle is refused. metasmith ships content only and compiles its own
+    # copy in the project (`gui.stdlib.clone_stdlib`), so shipping `_metadata/`
+    # would be shipping a build product that the consumer immediately discards --
+    # and requiring it here is what forced a compile before every vendor.
     mapping = _parse_vendor_srcs(srcs)
     dst_path = Path(dst).resolve()
-    content_hash = _library_content_hash(mapping)
+    content_hash = _library_content_hash(mapping, with_metadata=expect_metadata)
 
     if dst_path.exists():
         shutil.rmtree(dst_path)
@@ -117,13 +133,15 @@ def vendor_library(srcs: list[str], dst: str) -> dict:
         # AGENTS.md is an authoring brief that resolves by directory proximity, so a
         # copy of it beside the vendored code is a second one that drifts from the
         # source without anything noticing.
-        shutil.copytree(path, dst_path / name, ignore=shutil.ignore_patterns("AGENTS.md"))
-    _assert_metadata_present(dst_path)
+        skip = ["AGENTS.md", "__pycache__"]
+        if not expect_metadata: skip.append(_METADATA_DIR)
+        shutil.copytree(path, dst_path / name, ignore=shutil.ignore_patterns(*skip))
+    if expect_metadata: _assert_metadata_present(dst_path)
     (dst_path / "VENDOR_HASH").write_text(content_hash)
     return {"dst": str(dst_path), "vendored": sorted(mapping), "content_hash": content_hash}
 
 
-def check_vendor_library(srcs: list[str], dst: str) -> dict:
+def check_vendor_library(srcs: list[str], dst: str, expect_metadata: bool = True) -> dict:
     mapping = _parse_vendor_srcs(srcs)
     dst_path = Path(dst).resolve()
     stamp_file = dst_path / "VENDOR_HASH"
@@ -132,12 +150,12 @@ def check_vendor_library(srcs: list[str], dst: str) -> dict:
             f"no vendored bundle at [{dst_path}] (missing VENDOR_HASH) -- run "
             f"vendor-library first"
         )
-    live_hash = _library_content_hash(mapping)
+    live_hash = _library_content_hash(mapping, with_metadata=expect_metadata)
     stamped_hash = stamp_file.read_text().strip()
     if stamped_hash != live_hash:
         raise ValueError(
             f"vendored bundle at [{dst_path}] is stale: stamped [{stamped_hash}], "
             f"live source [{live_hash}]. Re-run vendor-library."
         )
-    _assert_metadata_present(dst_path)
+    if expect_metadata: _assert_metadata_present(dst_path)
     return {"dst": str(dst_path), "content_hash": live_hash, "ok": True}

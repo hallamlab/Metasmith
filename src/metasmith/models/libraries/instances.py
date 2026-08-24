@@ -1,16 +1,20 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
+import tempfile
+import time
 from dataclasses import dataclass
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from typing import Iterable
 
 import yaml
 
 from ...hashing import KeyGenerator
 from ...logging import Log
-from ..paths import DEFERRED, _DeferredPath, mint_deferred_path
+from ..paths import DEFERRED, _DeferredPath, is_deferred, mint_deferred_path
 from ..remote import Logistics, Source, SourceType
 from ..solver import Dependency, Endpoint
 from .pinned import _PinnedLibrary
@@ -415,17 +419,75 @@ class DataInstanceLibrary(_LeafIdentity, _StoreTransfer, _PinnedLibrary, _Teleme
         }
 
     def AddValue(self, name: str, value: str|dict, dtype: str, parents: Iterable[Path]|None=None):
+        # The file is written before it is registered: a leaf id is derived from
+        # the file's stat, and registering first would find nothing there and
+        # fall back to a random id.
         self._refuse_if_pinned("AddValue")
         path = Path(name)
         if isinstance(value, dict):
             value = json.dumps(value)
-        path = self.AddItem(path=path, dtype=dtype, parents=parents)
         with open(self.location/path, "w") as f:
             f.write(value)
-        return path
+        return self.AddItem(path=path, dtype=dtype, parents=parents)
 
     def _invalidate_endpoint_cache(self):
         self._endpoint_cache.clear()
+
+    def Invalidate(self, paths: Iterable[Path]|None = None) -> dict:
+        """Say that the data behind these items has changed.
+
+        A leaf's identity is the absolute path it sits at and the mtime of the
+        top node -- one stat, whatever the size of what is there, which is what
+        keeps a 24 GB reference from costing a tree walk on every run. The
+        price is that a change below the top node is invisible, and this is the
+        lever for it: touch the path, re-mint through the same formula the
+        agent uses, and every cache key built on the old id stops matching.
+        """
+        self._refuse_if_pinned("Invalidate")
+        targets = (
+            list(self.manifest) if paths is None
+            else [Path(p) for p in paths]
+        )
+        moved: dict[str, dict[str, str]] = {}
+        skipped: dict[str, str] = {}
+        for path in targets:
+            if path not in self.manifest:
+                skipped[str(path)] = "not in the library"
+                continue
+            entry = self.instance_meta.get(path) or {}
+            if entry.get("origin", "leaf") != "leaf":
+                skipped[str(path)] = (
+                    "produced by a run; its identity is its lineage"
+                )
+                continue
+            abs_path = self._abs(path)
+            if is_deferred(abs_path):
+                skipped[str(path)] = "deferred; there is nothing to touch yet"
+                continue
+            try:
+                # Follows symlinks, because the id does. Strictly forward, so
+                # an item touched twice inside one clock tick still moves --
+                # an invalidate that leaves the id where it was is worse than
+                # no invalidate at all.
+                st = abs_path.stat()
+                bump = max(time.time_ns(), st.st_mtime_ns + 1)
+                os.utime(abs_path, ns=(bump, bump))
+            except OSError as e:
+                # Minting a random id for something this host cannot see is how
+                # a false hit gets built. Report it instead.
+                skipped[str(path)] = f"not reachable from this host: {e}"
+                continue
+            old_id = entry.get("instance_id", "")
+            moved[str(path)] = {
+                "from": old_id, "to": self._mint_leaf_id(path)
+            }
+        if moved:
+            self.Save()
+        return {
+            "library": str(self.location),
+            "moved": moved,
+            "skipped": skipped,
+        }
 
     def Remove(self, path: Path):
         self._refuse_if_pinned("Remove")
@@ -600,21 +662,52 @@ class DataInstanceLibrary(_LeafIdentity, _StoreTransfer, _PinnedLibrary, _Teleme
 
     def PruneTypes(self, save: bool=True, whitelist: set[str|Dependency|Endpoint]|None=None):
         self._refuse_if_pinned("PruneTypes")
-        used_type_names = set(self.manifest.values())
-        if whitelist is None: whitelist = set() 
-        wl_names = {x for x in whitelist if isinstance(x, str)}
-        wl_types = {x for x in whitelist if not isinstance(x, str)}
-        used_type_names |= wl_names
+        used_type_names = self._used_type_names()
+        if whitelist is None: whitelist = set()
+        used_type_names |= {x for x in whitelist if isinstance(x, str)}
+        # Matched on properties, not on the node hash: a Dependency minted by
+        # AddRequirement(example=e) carries the caller's parents, so it hashes
+        # differently from the library Endpoint it was cloned from.
+        wl_props = {
+            frozenset(x.properties)
+            for x in whitelist if not isinstance(x, str)
+        }
         for namespace, lib in list(self.types.items()):
-            lib_types = {f"{namespace}::{dtype}" for dtype in lib.types}
-            _used = used_type_names.intersection(lib_types)
-            if len(_used) == 0:
+            keep = {
+                k for k, v in lib.types.items()
+                if f"{namespace}::{k}" in used_type_names or frozenset(v.properties) in wl_props
+            }
+            if len(keep) == 0:
                 del self.types[namespace]
             else:
                 new = DataTypeLibrary.Unpack(lib.Pack())
-                new.types = {k:v for k, v in lib.types.items() if f"{namespace}::{k}" in _used or v in wl_types}
+                new.types = {k: v for k, v in lib.types.items() if k in keep}
                 self.types[namespace] = new
-        if save: self.Save(update_types=True)
+        if save:
+            # Load re-reads every file under _metadata/types/ and takes each one
+            # as a namespace, so a prune that only narrows memory is undone by
+            # the next load -- and a file left by an older build with a wider
+            # --types is a namespace nobody declared. What survives here is what
+            # the directory holds.
+            #
+            # The unlink lives in PruneTypes rather than in _persist because
+            # _ensure_saved() calls _persist on every PrepTransfer, and stripping
+            # a source library as a side effect of preparing to send it is not
+            # what that call means.
+            types_dir = self.location/self._path_to_types
+            if types_dir.is_dir():
+                for f in types_dir.iterdir():
+                    if f.is_dir() or f.suffix != self._metadata_ext: continue
+                    if f.stem in self.types: continue
+                    f.unlink(missing_ok=True)
+            self.Save(update_types=True)
+
+    def _used_type_names(self) -> set[str]:
+        # Index `parents:` entries name types too, and Unpack dereferences them
+        # before any manifest entry is read.
+        names = set(self.manifest.values())
+        names |= {p.name for lst in self.parents.values() for p in lst}
+        return names
 
     def AsView(self, mask: set[Path], invert=False):
         return DataInstanceLibraryView(self, mask, invert)
@@ -654,3 +747,48 @@ class DataInstanceLibraryView:
         for p in sorted(self._mask):
             inst = self._original.Get(p)
             yield p, inst.dtype_name, inst.dtype
+
+    def _prune_whitelist(self) -> set:
+        return set()
+
+    def PruneTypes(self, save: bool=True, whitelist: set|None=None):
+        wl = set(whitelist) if whitelist else set()
+        return self._original.PruneTypes(save=save, whitelist=wl|self._prune_whitelist())
+
+    def PrepTransfer(self, dest: Source, mover: Logistics|None=None, image_root: Path|None=None):
+        # The masked half of the library, and only it. Materialized once and
+        # queued as a single transfer, so the SSH executor still opens one
+        # rsync per library rather than one per file.
+        o = self._original
+        o._ensure_saved()
+        for p, _name, _dtype in self.Iterate():
+            assert p.is_absolute() or (o.location/p).exists(), f"file not found [{p}]"
+        drop = {p for p in o.manifest if p not in self._mask}
+        if image_root is None:
+            image_root = Path(tempfile.mkdtemp(prefix="msm.image."))
+        image_root = Path(image_root)
+        skipped = o.MaterializeImage(image_root, drop)
+        # The manifest is never narrowed -- the library key is a hash of it --
+        # so every type the manifest names has to survive. The mask narrows the
+        # whitelist instead, which is where a transform library's 28 namespaces
+        # collapse to the handful its kept transforms declare.
+        # Not check_pinned_stamps: the image was written a moment ago and the
+        # witness is about the library it came from, not about this copy.
+        image = type(o).Load(image_root, check_pinned_stamps=False)
+        if not image.is_pinned:
+            image.PruneTypes(save=True, whitelist=self._prune_whitelist())
+        Log.Info(
+            f"staging [{o.location.name}] as [{len(self._mask)}] of"
+            f" [{len(o.manifest)}] entries; [{skipped}] skipped"
+        )
+        if mover is None:
+            mover = Logistics()
+        mover.QueueTransfer(src=Source.FromLocal(image_root), dest=dest)
+        return mover
+
+    def SaveAs(self, dest: Source, label: str|None=None):
+        with TemporaryDirectory(prefix="msm.image.") as tmp:
+            mover = self.PrepTransfer(dest, image_root=Path(tmp)/self._original.location.name)
+            res = mover.ExecuteTransfers(label=label)
+        assert len(res.completed) == 1, f"move failed"
+        return res
