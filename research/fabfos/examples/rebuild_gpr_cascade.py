@@ -25,6 +25,8 @@ SCRATCH = REPO / "data" / "fabfos" / "scratch"
 LOCAL_SCRATCH = REPO / "data" / "scratch"
 BREF = REPO / "src" / "fabfos" / "build_references"
 BENCH = REPO / "research" / "fabfos" / "benchmarks"
+# dvc lives in its own env, not the project one -- `mamba run -n msm dvc` finds nothing.
+DVC = "/home/tony/lib/miniforge3/envs/dvc/bin/dvc"
 
 # run name -> the ORF-set stem its work directories are named after
 SETS = {
@@ -76,6 +78,14 @@ def main() -> int:
         print(f"\n{len(missing)} set(s) have no finished run: {missing}", file=sys.stderr)
         return 1
 
+    # DVC materialises a pinned out as a read-only hardlink into its cache, so every
+    # publisher below would die on PermissionError against a tree that is up to date.
+    # `unprotect` swaps the link for a writable copy and leaves the cache intact.
+    tracked = [d for d in (REPO / "data" / "fabfos" / "runs").glob("*/gpr")
+               if (d.parent / "gpr.dvc").exists()]
+    if run([DVC, "unprotect", *tracked], dry=a.dry_run):
+        return 2
+
     if not a.skip_publish:
         for name in SETS:
             if run(py + [REPO / "research/fabfos/examples/clone_gpr_on_hpc.py",
@@ -91,8 +101,10 @@ def main() -> int:
             return 3
 
     steps = [
+        # this one wants the parquet itself, where host_denovo_from_mapper takes the tree
         (BENCH / "eydallin" / "build_clone_gpr_denovo.py",
-         ["--mapper", found["eydallin_clones"], "--publish"]),
+         ["--mapper", next((found["eydallin_clones"] / "annotation-gpr_table").glob("*.parquet")),
+          "--publish"]),
         (BREF / "derive_ag1_denovo.py", ["--publish"]),
         (BREF / "derive_lw06_denovo.py", ["--publish"]),
         (BENCH / "eydallin" / "build_aska_gpr.py", ["--publish"]),
