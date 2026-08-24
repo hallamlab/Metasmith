@@ -91,7 +91,7 @@ GPR4 = METAG / "gpr" / "gpr_4lane.parquet"
 ORFS_CSV = METAG / "sequences" / "metag.orfs.csv"
 NULLS = METAG / "nulls"
 SCORED = METAG / "ecspr"
-HOST_GEM = ROOT / "data" / "fabfos" / "benchmarks" / "hosts" / "e_coli_epi300" / "gpr_gem.parquet"
+HOST_GEM = ROOT / "data" / "fabfos" / "runs" / "e_coli_epi300" / "gpr" / "gpr_gem.parquet"
 
 FULL_K = 1000
 SEED = 20260731

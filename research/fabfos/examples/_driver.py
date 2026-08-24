@@ -58,7 +58,7 @@ SOCKEYE_GPU_ACCOUNT = "st-shallam-1-gpu"
 SOCKEYE_GPU = Gpu(memory=Size.GB(32), extra=["--partition=gpu"])
 
 
-SOCKEYE_CONTAINER = "docker://quay.io/hallamlab/metasmith:0.20.4"
+SOCKEYE_CONTAINER = "docker://quay.io/hallamlab/metasmith:0.21.1"
 
 
 def ssh_once(host: str, command: str) -> str:
