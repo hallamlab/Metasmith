@@ -345,12 +345,22 @@ def wait_for_run(work: Path, task_key: str, timeout_s: int, *, poll_s: float = 3
 def landed_products(results: Path, dtypes) -> set[str]:
     landed = set()
     man = results / "_manifests"
-    if not man.is_dir():
+    if man.is_dir():
+        for dtype in dtypes:
+            stem = dtype.replace("::", "-") + "."
+            hits = [p for p in man.glob("*.json") if p.name.startswith(stem)]
+            if hits and any(json.loads(p.read_text()) for p in hits):
+                landed.add(dtype)
         return landed
+    # No _manifests: a result tree is then one directory per landed type, named for it
+    # and optionally ordered by a `<n>_` prefix -- the same shape publish_by_type keys
+    # on. Reading only the manifests here reported every target absent from a run that
+    # had produced all but one of them.
+    by_key = {re.sub(r"^\d+_", "", d.name): d
+              for d in results.iterdir() if d.is_dir() and not d.name.startswith("_")}
     for dtype in dtypes:
-        stem = dtype.replace("::", "-") + "."
-        hits = [p for p in man.glob("*.json") if p.name.startswith(stem)]
-        if hits and any(json.loads(p.read_text()) for p in hits):
+        d = by_key.get(dtype.replace("::", "-"))
+        if d and any(p for p in d.iterdir() if not p.name.startswith(".")):
             landed.add(dtype)
     return landed
 
