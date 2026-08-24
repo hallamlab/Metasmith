@@ -1,36 +1,77 @@
 # Re-baking direction
 
-**r9 is the deployed direction table.** This is the protocol that produced it and the set of
-things that cost a run each when found the hard way. The artifact itself — the trio, its
-identity block, what `src_direction_sha256` is for — is documented at
-`src/fabfos/build_references/REFERENCES.md` § R6, and is not repeated here.
+**Purpose & Contents.** This is the protocol for re-baking the direction table, and the set
+of things that cost a run each when found the hard way. It carries the sequence, the
+staging rule, what every re-bake must re-derive, and the traps. The artifact itself — the
+trio, its identity block, what `src_direction_sha256` is for — is documented at
+`src/fabfos/build_references/REFERENCES.md` § R6 and is not repeated here. The direction
+mechanism is documented where it runs, in `src/ecspr/bake/direction/canon.py`.
 
-## Where the lane stands
+**r10 is the deployed direction table.** `data/fabfos/processed/metabolism_bake` pins md5
+`dc5a7ca03e31d4b17063e5dec22a3cba.dir`, and `direction.parquet`'s `src_direction_sha256` is
+`554b4d8f`. It is the first bake whose ratio is a PHYSIOLOGICAL quantity: every number is
+`exp(dG'/RT)` with a reaction quotient formed from measured E. coli concentrations, where
+every bake before it shipped `exp(dG'o/RT)` and called it a direction.
 
-Three defects in how the ensemble read its own inputs are fixed and baked. Water was
-filtered out of the compound table, so both thermodynamic members abstained on 36% of the
-universe before attempting any chemistry. `dir_method` named members that had arrived as
-`NaN` through a left merge, where `NaN is not None`. And eQuilibrator's group cancellations
-— dG′ = 0 at the sigma floor, a statement about the equation rather than a measurement of
-it — were being promoted to tier 1.
+Accuracy against MetaCyc's own directional categories rises on all seven strata and falls on
+none — 89.9% → 95.7% overall. No reaction that carried a vote stops carrying one: the tier
+transition matrix r9 → r10 is diagonal at 36,151 / 2,171 / 39,401 / 6,072.
 
-Tier 0 fell 47,266 → 37,404 with nothing losing a vote; tier 1 is 2,171 rows, none at the
-floor. What is left of the gap is a carrier-curation problem, measured in `README.md`.
+## Bake history, for anyone comparing two of them
 
-**r9 is promoted.** `data/fabfos/processed/metabolism_bake` now pins md5
-`4f2148b92ebfda8e65124660eabad711.dir`, and all three verifiers were re-run at that path
-after the rename rather than only at the staged one. It is the first bake whose members actually receive the
-substitution tables: `--substitutions` reached neither member lane until `f4642fc`, so every
-substitution row committed for r8 was inert in it. Read any r8-vs-r9 delta with that in
-mind — it is the whole substitution lane arriving, not the acyl rows alone.
+Only what a reader comparing bakes needs. The rest is in the commits that made each one.
 
-Tier 0 falls 37,404 → 36,151. 1,173 of the 1,253 are in-graph and 1,108 of those point past
-tenfold, so they are calls rather than nudges; 568 tier-3 rows trade the curated prior for a
-measured vote. Tier 1 does not move by a single reaction and neither does σ₀ (23.4892,
-n=532): nothing substituted lands on eQuilibrator's reactant-contribution arm, which is the
-same fact read from two directions.
+- **r8** fixed three defects in how the ensemble read its own inputs: water filtered out of
+  the compound table, so both thermodynamic members abstained on 36% of the universe before
+  attempting any chemistry; `dir_method` naming members that arrived as `NaN` through a left
+  merge; and eQuilibrator's group cancellations promoted to tier 1.
+- **r9** is the first bake whose members actually RECEIVE the substitution tables.
+  `--substitutions` reached neither member lane until `f4642fc`, so every substitution row
+  committed for r8 was inert in it. Read any r8-vs-r9 delta as the whole substitution lane
+  arriving, not the acyl rows alone. Tier 0 fell 37,404 → 36,151 and σ₀ did not move,
+  because nothing substituted lands on eQuilibrator's reactant-contribution arm.
+- **r10** is the first bake whose ratio is a physiological quantity. It also moved the
+  curated prior onto that same quantity, made the balance gate consult the member before
+  refusing, and split the magnitude cap's two jobs into a numerical bound and a named
+  `dG_suspect` signal. Tier counts do not move at all.
 
-## The sequence
+## The pricing ladder, and the assembly order
+
+**Price the arms before assembling.** `reassemble.py` re-runs `curated`, `calibrate` and
+`combine` off artifacts on disk in about fifteen seconds. `ladder.sh` drives six of those
+runs, each adding exactly one flag to the one below it, so every delta belongs to exactly
+one mechanism. `ladder_table.py` reads the six annotations into one table.
+
+**Arm 1 must come out IDENTICAL, and three flags are needed for that.**
+`--supplementary-crosswalk` is what r9 was baked with. `--clamp 100` is what r9 was baked
+with, before canon moved to three decades without a re-bake. `--sigma0 23.489` is r9's
+fitted value. Hold all three through arms 2-5, so each delta is its mechanism alone and arm
+6's delta is the constants alone.
+
+    arm  change          differs  clamped  wrong  accuracy  MNXR145036
+      1  r9 reproduced         -    6,516    894    89.90%      0.2044
+      2  + balance gate   17,231    6,516    898    89.86%      0.2044
+      3  + robust width   17,231    6,372    531    94.11%      0.2044
+      4  + quotient       83,795    5,796    398    95.65%      5.3161
+      5  + prior on dG'   17,231    5,839    397    95.68%      5.3161
+      6  + constants      83,795   19,872    397    95.68%      6.0012
+
+The two prior arms move exactly the 17,231 rows carrying a curated category and the two
+thermodynamic arms move all of them. Read arms 3 and 5 as unscored: `dG_raw` contains the
+prior on every scored row, so that column scores the quotient cleanly and the prior not at
+all. The prior's evidence is `research/fabfos/bake/poc_prior_holdout.py`.
+
+**Then run the bake.** `curated` → `quotient table` → `quotient annotate` → `calibrate` →
+fit sigma_0 → commit both canon copies → re-vendor `buildlib::ecspr` → `direction` →
+`direction_bake`. Re-vendor after the last code edit and before the assembly, or the run
+uses the old chemistry with nothing saying so.
+
+**On a direction-only route the members do not re-run.** The quotient is a function of
+stoichiometry and concentrations, so the deployed `direction_member_eq` and
+`direction_member_dgbyg` stay unchanged inputs and the re-bake is a minutes-long local job
+rather than a cluster run. That is what makes several changes in one bake tractable.
+
+## Staging, verifying and promoting
 
 **Build the new chunk beside the deployed one, verify against *that path*, then promote.**
 Two reasons it is this order and not the convenient one:
@@ -63,7 +104,17 @@ should be confirmed in the retrieval output rather than assumed.
 a different denominator. It is fitted on the measured arm, so any change to member coverage
 moves it, and it sets the shrinkage on every row including the rows that gained nothing.
 `combine` refuses a value outside `DIR_SIGMA_0_BAND` rather than warning. Update both
-`canon.py` and `_deprecated_canon.py`; `check_direction_constants` compares them.
+`canon.py` and `_deprecated_canon.py`. `check_direction_constants` compares them.
+
+**A change to the curated PRIOR does not move σ₀.** σ₀ is the MARGINAL spread of the
+anchors, so the prior enters neither the population nor the estimator. r10 expected it to
+move and measured that it does not. The clamp is different: it is a property of the
+posterior, so the prior does move it.
+
+**Both fitted constants come out of `research/fabfos/bake/poc_constants.py`**, against a
+run's own `_calibration_points.parquet` and `direction_annotation.parquet`. A fitted
+quantity whose derivation lives only in a commit message cannot be re-run when the
+distribution it describes moves.
 
 **The deployed-bake test pins.** `S_NODES`, `S_EDGES` and the float32 guard in
 `tests/ecspr/bake/test_deployed_bake.py` route through `ratio_by_code`, so a direction-only
@@ -80,7 +131,8 @@ direction`) and never quote a previous run's value.
 
 The curated prior is fitted per category on the same measured arm, so all `biocyc_only`
 rows re-price without any of those reactions gaining a member of its own. Do not read a
-large tier-3 delta as a bug.
+large tier-3 delta as a bug. Two of r10's five changes move the prior, so it moves every one
+of those rows and nothing else — which is what the ladder's `differs` column shows.
 
 ## Derived artifacts that do not record which bake they came from
 
@@ -125,7 +177,7 @@ dGbyG through the ordinary one-sided path, with nothing special-cased and `DIR_D
 untouched. Because tier 1 needs eQuilibrator's reactant-contribution arm, these reactions
 can never reach it.
 
-## Traps this re-bake paid for
+## Traps paid for the hard way
 
 **The relay workspace is shared across agent homes.** It is `/tmp/msm_<login-node>_<user>`,
 symlinked from each new agent home, so a watcher that fails to hand over wedges the *next*
@@ -149,12 +201,12 @@ silenced by an unlookup-able stand-in.
 **A `bake/direction/*.py` edit moves `DIRVER` whether or not it moves chemistry.** The
 fingerprint hashes the package, so the `forecast.py` union fix taken after r9's artifacts
 were produced carried the tree `lib-direction-2865c03abc32` → `lib-direction-d938deb31ec7`
-while every member table, annotation and ratio stayed exactly as baked. **r9's staged
-artifacts are stamped `2865c03abc32` and that is the version that describes them.** If r10
-re-bakes from this tree the version moves for a real reason; do not "fix" the mismatch by
+while every member table, annotation and ratio stayed exactly as baked. r9's staged
+artifacts are stamped `2865c03abc32` and that is the version that describes them; r10's is
+`lib-direction-c1c105165235`. Recompute it per bake and never "fix" a mismatch by
 restamping anything.
 
-## Two decisions r9 deliberately does not carry
+## One decision the lane deliberately does not carry
 
 **Branching glycogen stays out**, and it costs exactly three tier-0 reactions --
 `MNXR136341`, `MNXR145038`, `MNXR145039`. 411 MetaNetX compounds carry the acceptor
@@ -162,14 +214,6 @@ formula `C18H32O16` and at least three are defensible branched alpha-glucans (pa
 `MNXM1104683`, isomaltotriose `MNXM1104226`/`MNXM1106015`, 6-O-glucosylmaltose
 `MNXM1107398`). No gate separates them, so authoring a row would be choosing one by hand
 and calling it a lookup. Open for the principal, not refused on evidence.
-
-**Calibrate's stale balance gate is deferred to r10.** `calibrate.py:85` returns
-`unbalanced` from raw `reac_prop` BEFORE consulting the member, discarding 479 reactions
-the member balanced after restaging. Sigma_0 is 23.489 either way, because the committed
-fit is the unsubstituted subset -- so the constant is settled and only the bins move
-(`PHYSIOL-LEFT-TO-RIGHT` tau 98.27 -> 112.18). Fixing it inside r9 would make every ratio a
-mix of chemistry and calibration change and cost the attribution the four-way pricing was
-built to give.
 
 ## The negative control, and why the old one expired
 
@@ -181,7 +225,15 @@ That is the mechanism working. Reading it as a regression would have meant rever
 row that was built to reach it.
 
 `MNXR145038` is the part of the old control that still holds: it carries *branching*
-glycogen (`MNXM8348`), left uncovered on purpose above, and stays tier 0 at 1.000.
+glycogen (`MNXM8348`), left uncovered on purpose above, and stays tier 0 at 1.000 through
+r10 as well.
+
+**r10 needed a third control, because it repairs a different thing again.** A concentration
+term moves a reaction the substitution lane already reached, so `MNXR145036` is the
+POSITIVE control there and not a negative one: it goes 0.204 → 6.00, and `poc_glgp.py`
+re-derives that correction from the pinned table with no reference to the lane and checks it
+against the annotation. `MNXR145038` stays the negative control, because a reaction with no
+substitution has no restaged equation for a quotient to price.
 
 So a control for a substitution bake must be a reaction the tables **do not cover**, and it
 must name which member's uncovered set it comes from — the two differ, and `covers()` now

@@ -11,8 +11,16 @@ manifest:
     instance_id: 1e20add968219864cd779cca19137180bd882d4da9a11fd664768de4194a28f33af4
     origin: leaf
     type: transforms::transform
+  bionumbers.py:
+    instance_id: 1e20edbb24f7c3d757f00281ffead7c59817780c3cb243deafb0319b1fbe1aaebe61
+    origin: leaf
+    type: transforms::transform
   chebi.py:
     instance_id: 1e2053024ecc4edc861e1f0d238c77583b75db89d6f0e659266248d44327d4aaa14f
+    origin: leaf
+    type: transforms::transform
+  ecmdb.py:
+    instance_id: 1e2095daa923c573a4ed275af6a546b991bb0b81ae7330eb734e524ad4c9103bbc6b
     origin: leaf
     type: transforms::transform
   equilibrator.py:

@@ -22,7 +22,7 @@ MODULES = [
     "ecspr.bake.direction.calibrate", "ecspr.bake.direction.canon",
     "ecspr.bake.direction.combine", "ecspr.bake.direction.curated",
     "ecspr.bake.direction.drive", "ecspr.bake.direction.forecast",
-    "ecspr.bake.direction.metacyc_flatfile",
+    "ecspr.bake.direction.metacyc_flatfile", "ecspr.bake.direction.quotient",
     "ecspr.bake.direction.refdata", "ecspr.bake.direction.thermo_dgbyg",
     "ecspr.bake.direction.thermo_eq",
 ]
@@ -160,12 +160,31 @@ CLI = {
                      "--out-summary"},
     },
     "ecspr.bake.direction.calibrate": {
+        # `--balance-gate` selects whether the raw reac_prop balance test runs before or
+        # after the member is consulted. r10 moved it after; the r9 position is kept so
+        # the re-bake can price the change as its own arm.
+        #
+        # `--quotient` and `--prior-quantity` are the second half of the same story: the
+        # prior is fitted against the number the combiner averages it with, and r9's
+        # standard-state fit is kept as its own arm too.
         "": {"--curated", "--reac-prop", "--chem-prop", "--eq-member", "--limit",
-             "--substitutions", "--out-calibration", "--out-points"},
+             "--substitutions", "--balance-gate", "--quotient", "--prior-quantity",
+             "--out-calibration", "--out-points"},
     },
     "ecspr.bake.direction.combine": {
+        # `--prior-width` picks which stored spread the curated prior uses, and `--clamp`
+        # exposes the magnitude bound -- the DEPLOYED r9 was baked at 100 kJ/mol while
+        # canon has since moved to three decades without a re-bake, so reproducing r9
+        # needs to be able to say so.
         "": {"--base-mnxrs", "--eq", "--dgbyg", "--curated", "--calibration",
-             "--sigma0", "--out"},
+             "--sigma0", "--prior-width", "--clamp", "--quotient",
+             "--no-widen-suspect", "--out"},
+    },
+    "ecspr.bake.direction.quotient": {
+        "table": {"--source", "--chunk", "--chem-xref", "--chem-prop",
+                  "--max-expansion", "--out"},
+        "annotate": {"--table", "--reac-prop", "--chem-prop", "--substitutions",
+                     "--member", "--out"},
     },
 }
 

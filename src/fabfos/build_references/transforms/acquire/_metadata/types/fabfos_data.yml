@@ -5,10 +5,33 @@ ontology:
   version: '1.25'
 schema: v1
 types:
+  aam_cache:
+    properties:
+    - 'The mapper members'' durable cache, one directory per member holding `cache.tsv`
+      and the attempted-ids sidecars. STAGED EMPTY ON A FIRST RUN and that is the
+      ordinary state: it has no producer, because the thing that writes it is the
+      same lane that reads it. It exists because the in-task cache lives in node-local
+      scratch and is discarded on retry, so a lane OOM-killed two thirds of the way
+      through lost all of it. A cached row is reused only when the SUBMISSION STRING
+      it was produced from is the one this run would send -- a reaction has one id
+      and up to four strings, and serving the wrong one is not staleness but a map
+      of a different molecule filed under this one''s name.'
+  bench_aromatic:
+    properties:
+    - 'PMC5583500, extracted by hand (benchmarks/aromatic/). Contrast case: a heterologous
+      aromatic-catabolism route expected to REGISTER.'
   bench_eydallin:
     properties:
     - Eydallin et al. 2010 -- the glycogen-metabolism screen's supplementary table
       and full text (benchmarks/eydallin/).
+  bench_fa_supply:
+    properties:
+    - 'Bogorad 2013 and Li et al. 2020, extracted by hand (benchmarks/fa_supply/).
+      Contrast case: a parallel edge onto a hub, expected to be SWAMPED.'
+  bench_forsberg:
+    properties:
+    - 'PMC4711125, extracted by hand (benchmarks/forsberg/). Contrast case: a functionally-selected
+      insert set, the closest cohort here to a fosmid screen.'
   bench_keio:
     properties:
     - Baba et al. 2006 (doi:10.1038/msb4100050) -- the Keio single-gene knockout collection's
@@ -18,6 +41,26 @@ types:
     - The LASER metabolic-engineering database's upstream repository at a pinned commit
       (benchmarks/laser/). 232 primary papers under one folder -- it is a database
       of publications, not a publication.
+  bench_pg_anionic:
+    properties:
+    - 'Ohta et al. 1981 and Tan et al. 2012, extracted by hand (benchmarks/pg_anionic/).
+      Contrast case: in-base dosage only, expected to NO-OP. Its expectation has been
+      wrong in this tree before -- a "predicted null" that recorded an implementation''s
+      no-op rather than the source table''s `+`.'
+  benchmark_study:
+    properties:
+    - One benchmark study's source material as acquired, under benchmarks/<study>/.
+      The derived, standardised form is data/benchmarks/<study>/.
+  bionumbers:
+    properties:
+    - 'BioNumbers records for the quantities no metabolomics database measures (bionumbers/<retrieval-date>/):
+      `records.json` as the site''s search returned it, plus the individual record
+      pages for every BNID the bake actually reads. BioNumbers has no bulk download
+      and no API, so a search plus the cited record pages IS the acquisition. UNDER
+      THE MEASURED-E.-COLI RULE THIS SUPPLIES EXACTLY ONE COMPOUND, dissolved O2 --
+      which is nonetheless the third most common participant in the reaction universe,
+      behind only water and the proton. Every other candidate is refused in `sources/bionumbers_rejected.tsv`
+      with its reason.'
   chebi:
     properties:
     - 'ChEBI flat files (chebi/rel<N>/): compounds, names and structures as served,
@@ -26,6 +69,22 @@ types:
       pin rather than a label on whatever is current. Feeds the curation sweep''s
       supplier lane: a name and an accession are the only handles a structureless
       MetaNetX stub has.'
+  download:
+    properties:
+    - One upstream source's distribution, acquired verbatim into its own folder under
+      data/originals/. Never parsed, unpacked, filtered or renamed here.
+  ecmdb:
+    properties:
+    - 'ECMDB''s E. coli metabolome distribution (ecmdb/<release>/): `ecmdb.json.zip`
+      as served, plus `concentrations.json` -- the paginated /concentrations browse
+      walked into one table by `buildlib::ecmdb_scrape.py`. BOTH are needed and neither
+      substitutes for the other: the bulk file is 3,760 metabolite cards carrying
+      kegg/chebi/hmdb/m2m identifiers and NO concentrations, and the browse is the
+      only machine-readable source of the measurements. The scrape is the acquisition,
+      not a parse -- there is no API -- which puts it on the same footing as the KEGG
+      REST responses saved as the endpoint returned them. The measurements are not
+      ECMDB''s own: the citation column names the primary studies by PMID, so this
+      is citable as a panel rather than as one database''s opinion.'
   equilibrator:
     properties:
     - 'eQuilibrator compound cache (equilibrator/<package-version>/): compounds.sqlite
@@ -54,6 +113,13 @@ types:
     - Per-host NCBI assembly data (genomes/<host>/genome/) and the published curated
       model where one exists (genomes/<host>/GEM/). The host set is a fact in the
       transform, not a caller's argument.
+  given:
+    properties:
+    - 'A folder that CANNOT be fetched -- licensed, or lab-internal with no published
+      source. It is STAGED as an input, never produced: there is no transform, because
+      a transform that only checks a directory it did not create does no work and
+      just moves the failure one step later. A drop-in that is absent or short fails
+      where it is read.'
   kegg:
     properties:
     - KEGG REST bulk link responses (kegg/<release>/), saved as the endpoints returned
@@ -68,6 +134,11 @@ types:
       no checksums, so the directory is named after the gzip header''s MTIME on the
       profiles -- a stamp carried inside the artifact, so it stays re-derivable offline
       from the file it names.'
+  metacyc:
+    properties:
+    - 'The MetaCyc flat-file distribution as dropped in (metacyc/<version>/). Licensed
+      and not redistributable: it is the reason this graph has a given at all. Verified
+      here, never fetched.'
   metanetx:
     properties:
     - 'MetaNetX/MNXref release tree (metanetx/<version>/): chem_prop, chem_xref, reac_prop,
@@ -79,6 +150,16 @@ types:
       git commit that last touched it. ModelSEED publishes no releases and the file
       is served from a branch, so the commit sha IS the version -- and it is a stronger
       pin than a release number, because it names the exact tree.
+  prior_bake_logs:
+    properties:
+    - 'A previous metabolism bake''s per-reaction records -- `indigo_status.tsv`,
+      `indigo_unreturned.tsv`, `attempted/`, and the two derived neural status tables.
+      THE EMPIRICAL HALF OF `aam_forecast`: which reaction Indigo hangs on is not
+      a function of the string and does not need to be, because the last run wrote
+      it down. Coverage may be PARTIAL -- a run that dies leaves nothing about the
+      reactions past where it died -- so a reaction absent from every table was never
+      asked, and the forecast reports that denominator rather than reading absence
+      as success.'
   rhea:
     properties:
     - 'Rhea release tree (rhea/<release>/), mirroring the FTP layout: tsv/, ctfiles/,
@@ -94,3 +175,8 @@ types:
     - UniRef50 cluster representative sequences (uniref/<release>/), gzipped as served,
       with the RELEASE.metalink that names the release and carries the md5 they are
       verified against.
+  vector:
+    properties:
+    - Cloning vector backbone sequences. Lab-internal and unpublished -- the pCC1
+      record is a Hallam Lab sequencing result, so there is no upstream URL and no
+      transform can produce it.
