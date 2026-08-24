@@ -45,7 +45,7 @@ import bake_identity                                                          # 
 
 PAIRS = ROOT / "data/fabfos/benchmark/reference_tier4/atom_pairs_tier4.parquet"
 DIRECTION = CACHE / "direction_ratios.parquet"
-HOST = ROOT / "data/fabfos/benchmarks/hosts/e_coli_k12/gpr_gem.parquet"
+HOST = ROOT / "data/fabfos/runs/e_coli_k12/gpr/gpr_gem.parquet"
 CLONES = CACHE / "gpr_clones.parquet"
 TESA = CACHE / "gpr_tesa.parquet"
 POOL = CACHE / "gpr_null_pool.parquet"

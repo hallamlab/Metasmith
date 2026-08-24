@@ -61,7 +61,7 @@ import bake_pairs                                                               
 
 BAKE = ROOT / "data/fabfos/processed/metabolism_bake"
 LOOKUPS = ROOT / "data/fabfos/processed/lookups"
-HOSTS = ROOT / "data/fabfos/benchmarks/hosts"
+RUNS = ROOT / "data/fabfos/runs"
 
 SOURCE_MNXM = "MNXM1364061"      # D-glucose
 GLYCOGEN_MNXM = "MNXM738130"
@@ -130,7 +130,7 @@ def main():
     pairs = load_pairs(bake_pairs.atom_pairs(), element=args.element)
     baked = load_direction_ratios(bake_pairs.direction_ratios())
     curated = dict(baked, **CURATED)
-    host = pd.read_parquet(HOSTS / args.host / "gpr_gem.parquet")
+    host = pd.read_parquet(RUNS / args.host / "gpr" / "gpr_gem.parquet")
     base_w = {m: 1.0 for m in host.mnxr.dropna().astype(str).unique()}
 
     def graph(weights, ratios):

@@ -51,7 +51,7 @@ from ecspr.model.graph import Terminal, solve                       # noqa: E402
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import bake_pairs  # noqa: E402
 
-HOSTS = ROOT / "data/fabfos/benchmarks/hosts"
+RUNS = ROOT / "data/fabfos/runs"
 ASKA_GPR = ROOT / "data/fabfos/runs/aska/gpr"
 OUT_DIR = ROOT / "data/fabfos/runs/eydallin_clones/ecspr"
 
@@ -84,7 +84,7 @@ def _one(job) -> dict:
 
 def _background(channel: str, host: str) -> tuple:
     if channel == "gem":
-        df = pd.read_parquet(HOSTS / host / "gpr_gem.parquet")
+        df = pd.read_parquet(RUNS / host / "gpr" / "gpr_gem.parquet")
         names = df.groupby(df.mnxr.astype(str)).agg(
             genes=("feature_name", lambda s: ",".join(sorted({x for x in s if x}))),
             rxn_name=("evidence_name", "first"))

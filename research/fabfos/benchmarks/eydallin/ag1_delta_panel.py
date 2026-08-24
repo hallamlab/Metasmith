@@ -31,7 +31,7 @@ from ecspr.model.graph import Terminal, measure_leak                            
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import bake_pairs  # noqa: E402
 
-HOSTS = ROOT / "data/fabfos/benchmarks/hosts"
+RUNS = ROOT / "data/fabfos/runs"
 CLONE_GPR = ROOT / "data/fabfos/runs/eydallin_clones/gpr/gpr_gem.parquet"
 MEASURED = ROOT / "data/fabfos/benchmarks/eydallin/Y/measured_glycogen.tsv"
 OUT_DIR = ROOT / "data/fabfos/runs/eydallin_clones/ecspr"
@@ -51,12 +51,12 @@ def main():
     p.add_argument("--leak", type=float, default=1e-6)
     p.add_argument("--out-dir", type=Path, default=OUT_DIR)
     p.add_argument("--host", default="e_coli_ag1",
-                   help="host GEM under benchmarks/hosts/ (e_coli_k12 reproduces the "
+                   help="host GEM under runs/<host>/gpr/ (e_coli_k12 reproduces the "
                         "earlier panels' basis on the current bake)")
     args = p.parse_args()
     genes = args.gene or GENES
     args.out_dir.mkdir(parents=True, exist_ok=True)
-    host_gem = HOSTS / args.host / "gpr_gem.parquet"
+    host_gem = RUNS / args.host / "gpr" / "gpr_gem.parquet"
 
     pairs = load_pairs(bake_pairs.atom_pairs(), element=args.element)
     ratios = load_direction_ratios(bake_pairs.direction_ratios())

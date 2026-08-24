@@ -54,7 +54,7 @@ ROOT = Path(__file__).resolve().parents[4]
 HERE = Path(__file__).resolve().parent
 RESPONSE = ROOT / "data/fabfos/originals/benchmarks/aska/ffa/ffa_response.tsv"
 GENOME = ROOT / "data/fabfos/originals/genomes/e_coli_k12/genome/NC_000913.3.gbk"
-HOST_GEM = ROOT / "data/fabfos/benchmarks/hosts/e_coli_k12/gpr_gem.parquet"
+HOST_GEM = ROOT / "data/fabfos/runs/e_coli_k12/gpr/gpr_gem.parquet"
 EXTRACT = ROOT / "data/fabfos/benchmarks/_extractions/aska_ffa/extraction.tsv"
 
 CITATION = ("Fang et al. Metab Eng 2025;92:13-21; "

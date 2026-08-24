@@ -432,7 +432,6 @@ def test_the_schema_covers_every_gpr_table_in_the_tree():
     tables = sorted(set(
         glob.glob(str(REPO_ROOT / "data/fabfos/runs/*/gpr/*.parquet"))
         + glob.glob(str(REPO_ROOT / "data/fabfos/nostoc/annotation/*/gpr_4lane.parquet"))
-        + glob.glob(str(REPO_ROOT / "data/fabfos/benchmarks/hosts/*/gpr_gem.parquet"))
         + glob.glob(str(REPO_ROOT / "data/fabfos/benchmarks/*/gpr_manual.parquet"))))
     if not tables:
         pytest.skip("the DVC-tracked GPR tables are not materialised here")

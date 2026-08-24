@@ -53,7 +53,7 @@ DEFAULT_OUT_DIR = Path(__file__).resolve().parent / "cache"
 
 ATOM_PAIRS = ROOT / "data" / "fabfos" / "benchmark" / "reference_tier4" / "atom_pairs_tier4.parquet"
 CHEM_PROP = ROOT / "data" / "fabfos" / "originals" / "metanetx" / "4.5" / "chem_prop.tsv"
-HOSTS_DIR = ROOT / "data" / "fabfos" / "benchmarks" / "hosts"
+RUNS = ROOT / "data" / "fabfos" / "runs"
 EDITS = ROOT / "data" / "fabfos" / "benchmarks" / "laser" / "gpr_manual.parquet"
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
@@ -136,7 +136,7 @@ def main():
     p = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     p.add_argument("--condition-id", required=True,
                    help='e.g. "LASER:Record1419612292.57:M1"')
-    p.add_argument("--host", required=True, help="host dir name under data/benchmarks/hosts/")
+    p.add_argument("--host", required=True, help="host dir name under data/fabfos/runs/")
     p.add_argument("--target", required=True, help="metabolite name to resolve and measure")
     p.add_argument("--target-names", nargs="*", default=None,
                    help="alternate exact names for --target (default: [--target])")
@@ -156,7 +156,7 @@ def main():
     OUT_DIR = args.out_dir
     OUT_DIR.mkdir(parents=True, exist_ok=True)
 
-    host_gem = HOSTS_DIR / args.host / "gpr_gem.parquet"
+    host_gem = RUNS / args.host / "gpr" / "gpr_gem.parquet"
     if not host_gem.exists():
         raise SystemExit(f"no such host GEM: {host_gem}")
     host_unit = str(pd.read_parquet(host_gem, columns=["unit_id"]).unit_id.iloc[0])

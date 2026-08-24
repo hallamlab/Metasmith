@@ -63,7 +63,7 @@ from ecspr.model.graph import Terminal, solve, measure_leak                     
 import bake_pairs                                                                  # noqa: E402
 
 ASKA_GPR = ROOT / "data/fabfos/runs/aska/gpr"
-HOST_GEM = ROOT / "data/fabfos/benchmarks/hosts/e_coli_ag1/gpr_gem.parquet"
+HOST_GEM = ROOT / "data/fabfos/runs/e_coli_ag1/gpr/gpr_gem.parquet"
 HOST_DENOVO = ROOT / "data/fabfos/runs/e_coli_ag1/gpr/gpr_denovo.parquet"
 OUT_DIR = ROOT / "data/fabfos/runs/eydallin_clones/ecspr"
 

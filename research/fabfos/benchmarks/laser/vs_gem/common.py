@@ -29,8 +29,7 @@ REAC_XREF = MNX / "reac_xref.tsv"
 sys.path.insert(0, str(ROOT / "src" / "metasmith_libraries" / "resources" / "lib"))
 import fabfos_evidence as FE                                          # noqa: E402
 
-HOSTS = ROOT / "data" / "fabfos" / "benchmarks" / "hosts"
-DENOVO = ROOT / "data" / "fabfos" / "runs"
+RUNS = ROOT / "data" / "fabfos" / "runs"
 LIB = ROOT / "src" / "metasmith_libraries" / "resources" / "lib"
 
 POOL_SEED = 20260809
@@ -150,7 +149,7 @@ def read_gpr(path):
 
 
 def host_native_reactions(host_dir: str) -> set:
-    g = read_gpr(HOSTS / host_dir / "gpr_gem.parquet")
+    g = read_gpr(RUNS / host_dir / "gpr" / "gpr_gem.parquet")
     return set(g.mnxr.astype(str).unique())
 
 

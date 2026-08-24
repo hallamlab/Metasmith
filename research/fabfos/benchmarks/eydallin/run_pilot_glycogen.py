@@ -61,7 +61,7 @@ import bake_pairs                                                             # 
 
 ATOM_PAIRS = bake_pairs.atom_pairs()
 CHEM_PROP = ROOT / "data" / "fabfos" / "originals" / "metanetx" / "4.5" / "chem_prop.tsv"
-HOST_GEM = ROOT / "data" / "fabfos" / "benchmarks" / "hosts" / "e_coli_k12" / "gpr_gem.parquet"
+HOST_GEM = ROOT / "data" / "fabfos" / "runs" / "e_coli_k12" / "gpr" / "gpr_gem.parquet"
 BAKE = ROOT / "data" / "fabfos" / "processed" / "metabolism_bake"
 OUT_DIR = Path(__file__).resolve().parent / "cache"
 OUT_DIR.mkdir(parents=True, exist_ok=True)
