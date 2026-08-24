@@ -196,9 +196,10 @@ POOL = Path("{pool}")
 POOL.mkdir(parents=True, exist_ok=True)
 
 
-# `<stem>.<k>` with k unpadded, so the chunks order by k as an INTEGER.
+# `<stem>.<k>.embedding.npy` with k unpadded, so the chunks order by k as an INTEGER.
+# The number is INSIDE the name, not at its end.
 def chunk_no(path):
-    m = re.search(r"\.(\d+)$", path.stem)
+    m = re.search(r"\.(\d+)(?:\.embedding)?$", path.stem)
     if m is None:
         raise SystemExit(
             f"[pool] {{path.name}} does not end in a chunk number, so the order the "

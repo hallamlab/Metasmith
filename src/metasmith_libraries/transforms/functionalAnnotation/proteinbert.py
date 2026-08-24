@@ -7,9 +7,10 @@
 # chunk -- see the chunk-order note below.
 #
 # THE EMBEDDER'S CHUNK FILES DO NOT SORT INTO THE ORDER THEY WERE WRITTEN. `pbert`
-# writes fixed 1,024-sequence chunks in FASTA order, named `<stem>.1`, `<stem>.2`, ...
-# with no zero padding, so `sorted(glob("*.npy"))` gives `.1, .10, .11, ... .19, .2,
-# .20, ...` -- chunk 10 stacked before chunk 2. Measured 2026-08-05 by re-embedding
+# writes fixed 1,024-sequence chunks in FASTA order, named `<stem>.1.embedding.npy`,
+# `<stem>.2.embedding.npy`, ... with no zero padding, so `sorted(glob("*.npy"))` gives
+# `.1, .10, .11, ... .19, .2, .20, ...` -- chunk 10 stacked before chunk 2. Measured
+# 2026-08-05 by re-embedding
 # four assemblies through this same pinned image: single-chunk samples matched on the
 # diagonal at cosine 0.999, and a 49,522-ORF sample matched at 0.480 against a best of
 # 0.998. So the chunks are stacked by their integer suffix, never lexicographically,
@@ -74,9 +75,12 @@ import polars as pl
 in_dir, faa, out_path = Path(sys.argv[1]), Path(sys.argv[2]), Path(sys.argv[3])
 
 
-# `<stem>.<k>` with k unpadded, so the chunks order by k as an INTEGER.
+# `<stem>.<k>.embedding.npy` with k unpadded, so the chunks order by k as an INTEGER.
+# The number is INSIDE the name, not at its end -- the image announces the pattern it
+# writes as `<stem>.#.embedding.npy`, and matching only a trailing number rejects every
+# file the embedder produces.
 def chunk_no(path):
-    m = re.search(r"\.(\d+)$", path.stem)
+    m = re.search(r"\.(\d+)(?:\.embedding)?$", path.stem)
     if m is None:
         raise SystemExit(
             f"[pbert] {path.name} does not end in a chunk number, so the order the "
