@@ -8,6 +8,7 @@ import yaml
 
 HERE = Path(os.path.realpath(__file__)).parent
 PKG = HERE.parent.parent / "src" / "ecspr"
+ENV_SPEC = HERE.parent.parent / "envs" / "ecspr" / "base.yml"
 sys.path.insert(0, str(PKG.parent))
 
 from ecspr import NAME, SHORT_SUMMARY, USER, ENTRY_POINTS, VERSION, BUILD_HASH  # noqa: E402
@@ -30,7 +31,7 @@ def compile_recipe(out_dir: Path) -> tuple[Path, Path]:
             f"traceable to a source state. Stamp it first:\n"
             f"    PYTHONPATH={PKG.parent} python -m ecspr._build_hash --write")
 
-    raw = yaml.safe_load((PKG / "env.yml").read_text())
+    raw = yaml.safe_load(ENV_SPEC.read_text())
     deps = [d for d in raw["dependencies"]
             if isinstance(d, str) and _name(d) not in TEST_ONLY]
     reqs = "\n".join(f"    - {d}" for d in deps)

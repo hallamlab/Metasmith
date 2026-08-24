@@ -13,6 +13,9 @@
 set -e
 HERE=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )/.." &> /dev/null && pwd )
 ECSPR_SRC="$HERE/src/ecspr"
+# ecspr's env spec lives under the shared top-level envs/ directory, not
+# inside src/ecspr -- same reason the tool env recipe below does.
+ECSPR_ENV="$HERE/envs/ecspr/base.yml"
 # ecspr's tool env recipe lives with the rest of metasmith_libraries' per-tool
 # envs, not inside src/metasmith_libraries itself -- envs/ is a shared
 # top-level directory now, not nested under each module's own src/ tree.
@@ -26,7 +29,7 @@ case $1 in
         # conda already solved them from the same env.yml.
         # Idempotent: re-running after a dependency change should reinstall the
         # package, not refuse because the env is already there.
-        mamba env create -y -f "$ECSPR_SRC/env.yml" \
+        mamba env create -y -f "$ECSPR_ENV" \
             || echo "  (env 'ecspr' exists; reinstalling the package into it)"
         mamba run -n ecspr pip install -e "$ECSPR_SRC" --no-deps --no-build-isolation
         # Which copy did we get? The whole point of the editable install is that
@@ -50,7 +53,7 @@ case $1 in
         # envs/metasmith_libraries/tools/ecspr.yml is what a `--runtime mamba`
         # install creates the tool env from. It is env.yml plus the package
         # itself, and it is regenerated here so the two cannot silently disagree.
-        python - "$ECSPR_SRC/env.yml" "$LIB_TOOL_ENVS/ecspr.yml" <<'PY'
+        python - "$ECSPR_ENV" "$LIB_TOOL_ENVS/ecspr.yml" <<'PY'
 import sys, yaml
 from pathlib import Path
 src, dst = (Path(p) for p in sys.argv[1:3])
