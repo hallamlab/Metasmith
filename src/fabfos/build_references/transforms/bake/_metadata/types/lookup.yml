@@ -30,12 +30,6 @@ types:
         for a structured participant this count IS len(ranks), and `recount check`
         asserts it.'
       ext: parquet
-  lookup_table:
-    properties:
-      _:
-      - A derived table read by more than one metabolism transform. Pinned and named
-        (data/processed/lookups/), unlike interm::; build-side only, unlike ref::.
-      ext: parquet
   metabolites:
     properties:
       _:
