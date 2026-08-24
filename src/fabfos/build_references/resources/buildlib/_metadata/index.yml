@@ -24,7 +24,7 @@ manifest:
     origin: leaf
     type: buildlib::ecmdb_scrape.py
   ecspr:
-    instance_id: 1e203f49087bf69f33193532334be05a8955d329c5ac173fdc9a9e65951bf34b6bc0
+    instance_id: 1e200d90415b3333409a1053ad0535b1352b784d548ef15181cb13d1cb5b987826ef
     origin: leaf
     type: buildlib::ecspr
   mnx_lookups.py:

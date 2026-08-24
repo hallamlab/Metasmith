@@ -38,7 +38,8 @@ from pathlib import Path
 
 import pandas as pd
 
-from .canon import (DIR_CONC_COLUMNS, DIR_CONC_DEFAULT_mM, DIR_CONC_GASES,
+from .canon import (DIR_CONC_COLUMNS, DIR_CONC_DEFAULT_mM, DIR_CONC_GAS_PHASE,
+                    DIR_CONC_MAX_EXPANSION,
                     DIR_CONC_IMPLICIT, DIR_CONC_SPREAD_DEFAULT, DIR_CONC_SPREAD_FLOOR,
                     DIR_CONC_UNIT_ACTIVITY, DIR_DECADE, DIR_RT)
 from .refdata import (load_mnxm_formulas, load_mnxm_names, load_mnxm_props,
@@ -52,20 +53,23 @@ MEMBERS = ("eq", "dgbyg")
 # the MetaNetX join
 # =====================================================================
 
-def alias_index(chem_xref: Path) -> dict[str, set[str]]:
-    # '<namespace>:<accession>' -> {MNXM}, from chem_xref column 2 AND the '||'-separated
-    # alias list in column 3.
+OBSOLETE = "secondary/obsolete/fantasy identifier"
+
+
+def _norm(name: str) -> str:
+    # Case, spacing and punctuation are display choices, not chemistry. 'D-Glucose
+    # 1-phosphate' and 'D-glucose-1-phosphate' are the same string once they are gone.
+    return "".join(ch for ch in str(name).lower() if ch.isalnum())
+
+
+def read_xref(chem_xref: Path):
+    # (accession -> {MNXM}, normalised name -> {MNXM}) from chem_xref.
     #
-    # COLUMN 3 IS THE POINT, and joining on the accession alone is the trap. KEGG's C00103
-    # (glucose 1-phosphate) resolves through column 2 to MNXM1364214, the ALPHA anomer,
-    # while the reaction universe uses MNXM1364212 -- so the single most load-bearing
-    # metabolite in the phosphorylase case is missed by an exact-accession join.
-    #
-    # The other tempting key is worse. `HXXFSFRBOHSIMQ`, the InChIKey connectivity block
-    # that reaches MNXM1364212, holds seventeen accessions: glucose, galactose, mannose,
-    # allose and gulose 1-phosphate, every anomer and both enantiomeric series. It is a
-    # hexose-phosphate bucket, not a compound.
-    index: dict[str, set[str]] = {}
+    # COLUMN 3 IS A LIST OF NAMES, not of accessions -- 'O2||Disauerstoff||dioxygen||...'.
+    # That distinction is the whole join. Reading it as accessions silently produces a
+    # table that is 20% short and misses the one metabolite this lane was built for.
+    by_accession: dict[str, set[str]] = {}
+    by_name: dict[str, set[str]] = {}
     with open(chem_xref) as fh:
         for line in fh:
             if not line or line.startswith("#"):
@@ -76,30 +80,19 @@ def alias_index(chem_xref: Path) -> dict[str, set[str]]:
             src, mnxm = parts[0], parts[1]
             if not mnxm or mnxm == "EMPTY":
                 continue
-            index.setdefault(src, set()).add(mnxm)
-            if len(parts) < 3:
+            names = parts[2] if len(parts) > 2 else ""
+            if names.strip() == OBSOLETE:
+                # A superseded id points at history, not at the current compound.
                 continue
-            for alias in parts[2].split("||"):
-                alias = alias.strip()
-                # MetaNetX marks superseded entries in the same list. A secondary id is a
-                # pointer to history, not a synonym for the current compound.
-                if not alias or ":" not in alias:
-                    continue
-                low = alias.lower()
-                if "secondary" in low or "obsolete" in low:
-                    continue
-                index.setdefault(alias, set()).add(mnxm)
-    return index
+            by_accession.setdefault(src, set()).add(mnxm)
+            for name in names.split("||"):
+                key = _norm(name)
+                if key:
+                    by_name.setdefault(key, set()).add(mnxm)
+    return by_accession, by_name
 
 
-def joiner(chem_xref: Path, chem_prop: Path):
-    # Returns `mnxm_of(namespace, accession) -> mnxm | None`, guarded on formula+charge.
-    #
-    # THE GUARD IS WHAT MAKES THE ALIAS LIST SAFE. Alias lists span protonation states and
-    # R-group generics, so an unguarded expansion hands one measurement to several distinct
-    # compounds. Requiring the candidates to agree on formula AND charge collapses that to
-    # the one MetaNetX itself treats as the reference protonation.
-    index = alias_index(chem_xref)
+def read_props(chem_prop: Path):
     formulas, charges, names = {}, {}, {}
     with open(chem_prop) as fh:
         for line in fh:
@@ -109,25 +102,80 @@ def joiner(chem_xref: Path, chem_prop: Path):
             if len(p) < 5 or not p[0]:
                 continue
             names[p[0]], formulas[p[0]], charges[p[0]] = p[1], p[3], p[4]
+    return formulas, charges, names
 
-    def mnxm_of(namespace, accession):
-        key = f"{namespace}:{accession}"
-        hits = index.get(key)
-        if not hits:
-            return None
-        if len(hits) == 1:
-            return next(iter(hits))
-        by_shape: dict[tuple, list[str]] = {}
-        for m in hits:
-            by_shape.setdefault((formulas.get(m), charges.get(m)), []).append(m)
-        # One (formula, charge) shape across every candidate means the alias list is
-        # naming one compound under several ids. More than one means it is naming several,
-        # and picking between them is not this function's call.
-        if len(by_shape) != 1:
-            return None
-        return sorted(next(iter(by_shape.values())))[0]
 
-    return mnxm_of, names
+def joiner(chem_xref: Path, chem_prop: Path, max_expansion: int = DIR_CONC_MAX_EXPANSION):
+    # Returns `mnxms_of(namespace, accession) -> [mnxm]`, expanded by name and guarded on
+    # formula and charge.
+    #
+    # IT RETURNS A SET, NOT ONE ID, and that is the point. MetaNetX splits glucose
+    # 1-phosphate into `MNXM1364212` (D-glucopyranose 1-phosphate) and `MNXM1364214`
+    # (the alpha anomer). KEGG's C00103 resolves to the anomer; the reaction universe
+    # writes glycogen phosphorylase with the other one. A measurement of the POOL belongs
+    # to both, so resolving to a single id loses the measurement exactly where it is most
+    # load-bearing.
+    #
+    # THE EXPANSION IS BY NAME, NOT BY InChIKey SKELETON, and the skeleton was tried first.
+    # The connectivity block `HXXFSFRBOHSIMQ` holds seventeen accessions: glucose,
+    # galactose, mannose, allose and gulose 1-phosphate, every anomer and both enantiomeric
+    # series. It is a hexose-phosphate bucket, not a compound. Two accessions sharing the
+    # NAME `D-Glucose 1-phosphate` are two accessions MetaNetX says are that compound,
+    # which separates the anomers of glucose 1-phosphate from galactose 1-phosphate where
+    # a skeleton cannot.
+    #
+    # FORMULA AND CHARGE MUST STILL AGREE. Name lists span protonation states and R-group
+    # generics, so an unguarded expansion hands one measurement to several distinct
+    # compounds.
+    #
+    # AND THE EXPANSION IS CAPPED, because formula and charge cannot separate stereoisomers.
+    # Unbounded, `kegg.compound:C08353` (beta-D-ribopyranose) reaches seven accessions
+    # including `lyxose` and `aldehydo-L-ribose` -- a C2 epimer and an enantiomer, same
+    # formula, same charge, genuinely different compounds. The link runs through a GENERIC
+    # entry (`pentofuranose`) that lists many pentoses as synonyms, so a name shared by many
+    # accessions is a category label rather than an identity. An accession that expands past
+    # the cap falls back to its primary id alone rather than spraying one measurement across
+    # a sugar family. The cap is SWEPT against held-out curated directions, not chosen.
+    by_accession, by_name = read_xref(chem_xref)
+    formulas, charges, names = read_props(chem_prop)
+
+    # Reversed once, so expanding a metabolite is a lookup rather than a scan of a name
+    # index with ~1.1 M keys.
+    names_of: dict[str, set[str]] = {}
+    for name, holders in by_name.items():
+        for m in holders:
+            names_of.setdefault(m, set()).add(name)
+
+    def shape(m):
+        return (formulas.get(m), charges.get(m))
+
+    def mnxms_of(namespace, accession):
+        # A MetaNetX accession is its own answer. `chem_xref` carries no
+        # `metanetx.chemical:` self-references, so a source that already speaks MNXM --
+        # BioNumbers does, because its rows have no chemical identifier of their own --
+        # would otherwise never join. Checked against `chem_prop`, not trusted.
+        if namespace == "metanetx.chemical":
+            return [accession] if accession in formulas else []
+        primary = by_accession.get(f"{namespace}:{accession}") or set()
+        if not primary:
+            return []
+        want = {shape(m) for m in primary}
+        if len(want) != 1 or want == {(None, None)}:
+            # The accession itself names more than one compound. Choosing between them is
+            # not this function's call.
+            return []
+        target = next(iter(want))
+        out = set(primary)
+        for m in primary:
+            for name in names_of.get(m, ()):
+                for other in by_name.get(name, ()):
+                    if shape(other) == target:
+                        out.add(other)
+        if len(out) > max_expansion:
+            return sorted(primary)
+        return sorted(out)
+
+    return mnxms_of, names
 
 
 # =====================================================================
@@ -146,14 +194,17 @@ def correction(stoich: dict, conc: dict) -> dict:
     # so a reaction whose correction is small because it was mostly excluded is
     # distinguishable from one whose correction is small because it is balanced.
     delta_n = skew = var_log = 0.0
-    n_measured = n_defaulted = n_excluded = 0
+    n_measured = n_defaulted = n_excluded = n_gas = 0
     for mnxm, coeff in stoich.items():
         if mnxm in DIR_CONC_IMPLICIT:
             # Already inside eQuilibrator's prime potentials; adding it double-counts.
             continue
-        if mnxm in DIR_CONC_GASES or mnxm in DIR_CONC_UNIT_ACTIVITY:
+        if mnxm in DIR_CONC_UNIT_ACTIVITY:
+            # No free-solute concentration exists for a polymer or a generic acceptor,
+            # so there is nothing to price. This is the ONLY exclusion.
             n_excluded += 1
             continue
+        n_gas += mnxm in DIR_CONC_GAS_PHASE
         delta_n += coeff
         hit = conc.get(mnxm)
         if hit is None:
@@ -170,7 +221,7 @@ def correction(stoich: dict, conc: dict) -> dict:
                 dG_correction=molecularity + skew_kj,
                 sigma_conc=DIR_DECADE * math.sqrt(var_log),
                 n_conc_measured=n_measured, n_conc_defaulted=n_defaulted,
-                n_conc_excluded=n_excluded, delta_n=delta_n)
+                n_conc_excluded=n_excluded, n_conc_gas_phase=n_gas, delta_n=delta_n)
 
 
 def read_table(path: Path) -> dict:
@@ -203,8 +254,9 @@ def cmd_table(args):
         frames.append(frame)
     rows = pd.concat(frames, ignore_index=True)
 
-    mnxm_of, names = joiner(Path(args.chem_xref), Path(args.chem_prop))
-    table = src_pkg.aggregate(rows, mnxm_of, names)
+    mnxms_of, names = joiner(Path(args.chem_xref), Path(args.chem_prop),
+                            max_expansion=args.max_expansion)
+    table = src_pkg.aggregate(rows, mnxms_of, names)
     placed = len(table)
     print(f"[quotient] {len(rows)} rows -> {placed} MNXM "
           f"({int((table.n_conditions > 1).sum())} with more than one condition, "
@@ -266,6 +318,9 @@ def parse_args(argv=None):
                    help="pinned originals directory per source")
     t.add_argument("--chem-xref", required=True)
     t.add_argument("--chem-prop", required=True)
+    t.add_argument("--max-expansion", type=int, default=DIR_CONC_MAX_EXPANSION,
+                   help="refuse a name expansion wider than this and keep the primary id "
+                        "alone; swept against held-out curated directions")
     t.add_argument("--out", required=True)
     t.set_defaults(fn=cmd_table)
 

@@ -434,11 +434,22 @@ DIR_CONC_SPREAD_DEFAULT = 4.0 / _math.sqrt(12.0)
 # Already inside eQuilibrator's prime potentials. Adding them again double-counts.
 DIR_CONC_IMPLICIT = frozenset({"WATER", "MNXM1"})
 
-# Activity set by a partial pressure, which is a different measurement from an
-# intracellular pool -- so these are excluded from the quotient and COUNTED, not silently
-# defaulted. Dissolved O2 alone is 7,028 in-graph solute incidences.
-DIR_CONC_GASES = frozenset({"MNXM735438", "MNXM13", "MNXM1098", "MNXM1101872",
-                            "MNXM10917", "MNXM732448"})
+# A DISSOLVED GAS PARTICIPATES LIKE ANY OTHER SOLUTE. Its activity is set by a partial
+# pressure rather than by a pool the cell titrates, so its measurement comes from a
+# solubility at a stated pO2 rather than from metabolomics -- but that is a statement about
+# PROVENANCE, not a reason to leave it out.
+#
+# EXCLUDING A GAS IS THE WORST OF THE THREE OPTIONS, which is why this set is a label and
+# not a skip list. Dropping a participant from the quotient is arithmetically identical to
+# pricing it at the 1 M standard state: for dissolved O2 that is 1000 mM against a measured
+# 0.264, an overstatement of 3.58 decades, where even the flat 1 mM default is only 0.58
+# out. At 7,028 in-graph incidences O2 is the single largest participant in the universe,
+# so the difference is not academic.
+#
+# Counted separately so a reader can see which of a reaction's concentrations came from a
+# gas-phase source.
+DIR_CONC_GAS_PHASE = frozenset({"MNXM735438", "MNXM13", "MNXM1098", "MNXM1101872",
+                                "MNXM10917", "MNXM732448"})
 
 # A polymer or an unspecified acceptor has no free-solute concentration. This is the same
 # assertion `substitute.py` makes about its standard term, and it is why the phosphorylase
@@ -446,9 +457,30 @@ DIR_CONC_GASES = frozenset({"MNXM735438", "MNXM13", "MNXM1098", "MNXM1101872",
 DIR_CONC_UNIT_ACTIVITY = frozenset({"MNXM738130", "MNXM8348", "MNXM727735", "MNXM725902",
                                     "BIOMASS", "MNXM01", "MNXM8975"})
 
+# How wide a name expansion may go before it is refused.
+#
+# SET BY WHAT IT HAS TO REACH, because the held-out curated benchmark cannot choose it.
+# Across caps 1 to unbounded that benchmark moves between 91.95% and 92.03% -- 7 reactions
+# out of 9,060 decided -- so it does not discriminate, and reading its 0.08-point preference
+# for the narrowest table as a result would be reading noise.
+#
+# What DOES discriminate is whether the join reaches `MNXM1364212`. KEGG's C00103 resolves
+# to the alpha anomer `MNXM1364214`, while the reaction universe writes glycogen
+# phosphorylase with the other id; the expansion has to be at least 3 wide to carry the
+# measurement across. Below that, MNXR145036's correction is +3.99 kJ/mol against a
+# break-even of +4.175 -- the reaction that motivated this whole lane stays backwards, and
+# the benchmark cannot see it, because MNXR145036 carries no curated directional category
+# and is therefore absent from the validation population entirely.
+#
+# 3 is the SMALLEST value that reaches it. Going wider buys nothing measurable and starts
+# linking through generic entries: unbounded, `kegg.compound:C08353` reaches seven
+# accessions including `lyxose` and `aldehydo-L-ribose`, a C2 epimer and an enantiomer that
+# formula and charge cannot separate.
+DIR_CONC_MAX_EXPANSION = 3
+
 DIR_CONC_COLUMNS = ("mnxr", "member", "molecularity", "skew", "dG_correction",
                     "sigma_conc", "n_conc_measured", "n_conc_defaulted",
-                    "n_conc_excluded", "delta_n")
+                    "n_conc_excluded", "n_conc_gas_phase", "delta_n")
 
 DIR_CATEGORIES = ("PHYSIOL-LEFT-TO-RIGHT", "LEFT-TO-RIGHT", "REVERSIBLE",
                   "PHYSIOL-RIGHT-TO-LEFT", "RIGHT-TO-LEFT")

@@ -51,6 +51,16 @@ types:
     properties:
     - One benchmark study's source material as acquired, under benchmarks/<study>/.
       The derived, standardised form is data/benchmarks/<study>/.
+  bionumbers:
+    properties:
+    - 'BioNumbers records for the quantities no metabolomics database measures (bionumbers/<retrieval-date>/):
+      `records.json` as the site''s search returned it, plus the individual record
+      pages for every BNID the bake actually reads. BioNumbers has no bulk download
+      and no API, so a search plus the cited record pages IS the acquisition. UNDER
+      THE MEASURED-E.-COLI RULE THIS SUPPLIES EXACTLY ONE COMPOUND, dissolved O2 --
+      which is nonetheless the third most common participant in the reaction universe,
+      behind only water and the proton. Every other candidate is refused in `sources/bionumbers_rejected.tsv`
+      with its reason.'
   chebi:
     properties:
     - 'ChEBI flat files (chebi/rel<N>/): compounds, names and structures as served,

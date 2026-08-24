@@ -17,6 +17,8 @@ from ecspr.bake.direction import quotient as Q
 from ecspr.bake.direction.canon import (DIR_CONC_SPREAD_DEFAULT, DIR_CONC_SPREAD_FLOOR,
                                         DIR_DECADE, DIR_RT)
 
+O2 = "MNXM735438"
+
 G1P = "MNXM1364212"          # glucose 1-phosphate, the id the reaction universe uses
 G1P_ALPHA = "MNXM1364214"    # the alpha anomer, which is what kegg:C00103 resolves to
 PI = "MNXM9"
@@ -45,11 +47,34 @@ def test_the_measured_phosphorylase_skew_is_the_measured_pool_ratio():
     conc = {PI: (5.0, 0.5), G1P: (5.0 / 46.9, 0.4)}
     got = Q.correction(stoich, conc)
     assert got["n_conc_excluded"] == 1, "the polymer carries no free-solute concentration"
+    assert got["n_conc_gas_phase"] == 0
     assert got["n_conc_measured"] == 2
     assert got["skew"] / DIR_DECADE == pytest.approx(math.log10(46.9), rel=1e-6)
     # Delta n is zero over the solutes, so molecularity contributes nothing -- which is
     # why `physiological_dg_prime` alone would not move this reaction at all.
     assert got["molecularity"] == pytest.approx(0.0, abs=1e-12)
+
+
+def test_a_dissolved_gas_participates_rather_than_dropping_out():
+    # EXCLUDING A GAS IS ARITHMETICALLY IDENTICAL TO PRICING IT AT 1 M. For dissolved O2
+    # that overstates the driving force of every oxidation by 3.58 decades, which is worse
+    # than the flat default it was meant to avoid. It is labelled, not skipped.
+    measured = Q.correction({O2: -1.0, PI: 1.0}, {O2: (0.264, 0.3), PI: (5.0, 0.5)})
+    assert measured["n_conc_gas_phase"] == 1
+    assert measured["n_conc_excluded"] == 0, "a gas is not excluded"
+    assert measured["n_conc_measured"] == 2
+    expected = DIR_DECADE * (math.log10(5.0) - math.log10(0.264))
+    assert measured["skew"] == pytest.approx(expected, rel=1e-9)
+    # It moves delta_n too, which an excluded participant would not.
+    assert measured["delta_n"] == pytest.approx(0.0)
+
+
+def test_a_polymer_is_the_only_thing_excluded_outright():
+    # A polymer genuinely has no free-solute concentration, so there is nothing to price.
+    got = Q.correction({GLYCOGEN: -1.0, PI: 1.0}, {PI: (5.0, 0.5)})
+    assert got["n_conc_excluded"] == 1
+    assert got["n_conc_gas_phase"] == 0
+    assert got["delta_n"] == pytest.approx(1.0), "only the phosphate counts"
 
 
 def test_water_and_the_proton_are_already_in_the_prime_potentials():
@@ -96,63 +121,95 @@ def test_the_width_adds_in_quadrature_and_scales_with_the_coefficient():
 # the MetaNetX join
 # =====================================================================
 
-# Column 3 carries the '||'-separated alias list. The real trap in one fixture: KEGG's
-# C00103 sits in column 2 against the ALPHA anomer, and reaches the id the reaction
-# universe actually uses only through the alias list.
+# COLUMN 3 IS A LIST OF NAMES, not of accessions -- that distinction is the join. The real
+# trap in one fixture: KEGG's C00103 sits in column 1 against the ALPHA anomer, and the id
+# the reaction universe actually uses is reached only because both carry the NAME
+# 'D-Glucose 1-phosphate' and agree on formula and charge.
 XREF = "\n".join([
     "#source\tID\tdescription",
-    f"kegg.compound:C00103\t{G1P_ALPHA}\talpha-D-glucose 1-phosphate||kegg.compound:C00103",
-    f"chebi:29042\t{G1P}\tD-glucose 1-phosphate||kegg.compound:C00103||chebi:29042",
-    f"kegg.compound:C00009\t{PI}\tphosphate||kegg.compound:C00009",
-    "kegg.compound:C99999\tMNXM77777\tsomething||kegg.compound:C99999 (secondary)",
+    f"kegg.compound:C00103\t{G1P_ALPHA}\talpha-D-glucose 1-phosphate||D-Glucose 1-phosphate",
+    f"chebi:16077\t{G1P}\tD-glucopyranose 1-phosphate||Cori ester||D-Glucose 1-phosphate",
+    f"kegg.compound:C00009\t{PI}\tphosphate",
+    f"chebi:12967\t{G1P}\tsecondary/obsolete/fantasy identifier",
+    f"kegg.compound:C00095\tMNXM_FRU_A\tD-fructose||D-Fructose",
+    "kegg.compound:C99999\tMNXM_HUB1\tpentose||D-ribose",
+    "chebi:99999\tMNXM_HUB2\tlyxose||D-ribose",
+    "chebi:99998\tMNXM_HUB3\taldehydo-L-ribose||D-ribose",
+    "chebi:99997\tMNXM_HUB4\tD-ribopyranose||D-ribose",
 ]) + "\n"
 
 PROP = "\n".join([
     "#ID\tname\treference\tformula\tcharge\tmass\tInChI\tInChIKey\tSMILES",
-    f"{G1P}\tD-glucose 1-phosphate\t\tC6H11O9P\t-2\t260.0\t\t\t",
+    f"{G1P}\tD-glucopyranose 1-phosphate\t\tC6H11O9P\t-2\t260.0\t\t\t",
     f"{G1P_ALPHA}\talpha-D-glucose 1-phosphate\t\tC6H11O9P\t-2\t260.0\t\t\t",
     f"{PI}\tphosphate\t\tHO4P\t-2\t96.0\t\t\t",
+    f"{O2}\tO2\t\tO2\t0\t32.0\t\t\t",
+    "MNXM_FRU_A\tD-fructose\t\tC6H12O6\t0\t180.0\t\t\t",
+    "MNXM_HUB1\tpentose\t\tC5H10O5\t0\t150.0\t\t\t",
+    "MNXM_HUB2\tlyxose\t\tC5H10O5\t0\t150.0\t\t\t",
+    "MNXM_HUB3\taldehydo-L-ribose\t\tC5H10O5\t0\t150.0\t\t\t",
+    "MNXM_HUB4\tD-ribopyranose\t\tC5H10O5\t0\t150.0\t\t\t",
 ]) + "\n"
 
 
-def _joiner(tmp_path, xref=XREF, prop=PROP):
+def _joiner(tmp_path, xref=XREF, prop=PROP, cap=3):
     (tmp_path / "chem_xref.tsv").write_text(xref)
     (tmp_path / "chem_prop.tsv").write_text(prop)
-    return Q.joiner(tmp_path / "chem_xref.tsv", tmp_path / "chem_prop.tsv")
+    return Q.joiner(tmp_path / "chem_xref.tsv", tmp_path / "chem_prop.tsv",
+                    max_expansion=cap)
 
 
-def test_the_alias_list_reaches_the_id_the_reaction_universe_uses(tmp_path):
-    # Both anomers share a formula and a charge, so the guard passes and the join
-    # resolves. Without the alias list this accession reaches only the alpha anomer,
-    # and the single most load-bearing metabolite in the phosphorylase case is missed.
-    mnxm_of, _ = _joiner(tmp_path)
-    assert mnxm_of("kegg.compound", "C00103") == G1P
+def test_the_shared_name_reaches_the_id_the_reaction_universe_uses(tmp_path):
+    # Without this the measured [G1P] is absent and the correction is applied to [Pi]
+    # alone, which is worse than applying none: a one-sided Q term invents a pool skew.
+    mnxms_of, _ = _joiner(tmp_path)
+    assert set(mnxms_of("kegg.compound", "C00103")) == {G1P, G1P_ALPHA}
+
+
+def test_a_measurement_belongs_to_every_id_metanetx_gives_the_compound(tmp_path):
+    # Both anomers are the same pool, so both carry the measurement.
+    mnxms_of, _ = _joiner(tmp_path)
+    assert sorted(mnxms_of("kegg.compound", "C00103")) == sorted([G1P, G1P_ALPHA])
 
 
 def test_an_accession_naming_one_compound_resolves_to_it(tmp_path):
-    mnxm_of, _ = _joiner(tmp_path)
-    assert mnxm_of("kegg.compound", "C00009") == PI
+    mnxms_of, _ = _joiner(tmp_path)
+    assert mnxms_of("kegg.compound", "C00009") == [PI]
 
 
 def test_an_unknown_accession_is_a_miss_not_a_guess(tmp_path):
-    mnxm_of, _ = _joiner(tmp_path)
-    assert mnxm_of("kegg.compound", "C00000") is None
+    mnxms_of, _ = _joiner(tmp_path)
+    assert mnxms_of("kegg.compound", "C00000") == []
 
 
-def test_a_secondary_alias_is_not_a_synonym(tmp_path):
-    # MetaNetX marks superseded entries in the same list. A secondary id points at
-    # history, not at the current compound.
-    mnxm_of, _ = _joiner(tmp_path)
-    assert mnxm_of("kegg.compound", "C99999 (secondary)") is None
+def test_a_metanetx_accession_is_its_own_answer(tmp_path):
+    # BioNumbers rows carry no chemical identifier, so their mapping is written in MNXM
+    # directly. `chem_xref` has no `metanetx.chemical:` self-references to join through.
+    mnxms_of, _ = _joiner(tmp_path)
+    assert mnxms_of("metanetx.chemical", O2) == [O2]
+    assert mnxms_of("metanetx.chemical", "MNXM_NOT_REAL") == []
 
 
-def test_candidates_that_disagree_on_formula_are_refused(tmp_path):
-    # An alias list spanning two distinct compounds is not a synonym set, and choosing
-    # between them is not the join's call.
-    xref = XREF + f"kegg.compound:C11111\t{PI}\tx||kegg.compound:C11111\n" \
-                  f"kegg.compound:C11111\t{G1P}\tx||kegg.compound:C11111\n"
-    mnxm_of, _ = _joiner(tmp_path, xref=xref)
-    assert mnxm_of("kegg.compound", "C11111") is None
+def test_an_obsolete_row_contributes_no_names(tmp_path):
+    # MetaNetX marks superseded entries with a literal marker in the name column. Reading
+    # it as a name would make every obsolete id a synonym of every other.
+    _, _ = _joiner(tmp_path)
+    _, by_name = Q.read_xref(tmp_path / "chem_xref.tsv")
+    assert Q._norm("secondary/obsolete/fantasy identifier") not in by_name
+
+
+def test_the_expansion_is_capped_so_a_generic_hub_cannot_link_a_sugar_family(tmp_path):
+    # Unbounded, the shared name 'D-ribose' links a pentose hub, lyxose (a C2 epimer) and
+    # aldehydo-L-ribose (the enantiomer). Formula and charge cannot separate them.
+    mnxms_of, _ = _joiner(tmp_path, cap=3)
+    assert mnxms_of("kegg.compound", "C99999") == ["MNXM_HUB1"], "wide expansion refused"
+    wide, _ = _joiner(tmp_path, cap=99)
+    assert len(wide("kegg.compound", "C99999")) == 4, "and it is a real link, not absent"
+
+
+def test_names_differing_only_in_case_and_punctuation_are_one_name(tmp_path):
+    mnxms_of, _ = _joiner(tmp_path)
+    assert Q._norm("D-Glucose 1-phosphate") == Q._norm("d_glucose-1-phosphate")
 
 
 # =====================================================================
@@ -170,7 +227,7 @@ def _rows(*specs):
 def test_conditions_aggregate_by_geometric_mean(tmp_path):
     from ecspr.bake.direction import sources as S
     rows = _rows(("ecmdb", "C00009", 1.0, "PMID:1"), ("ecmdb", "C00009", 100.0, "PMID:2"))
-    table = S.aggregate(rows, lambda ns, acc: PI)
+    table = S.aggregate(rows, lambda ns, acc: [PI])
     assert len(table) == 1
     # The geometric mean of 1 and 100 is 10; the arithmetic mean, 50.5, is a number
     # neither condition exhibits.
@@ -182,7 +239,7 @@ def test_conditions_aggregate_by_geometric_mean(tmp_path):
 def test_every_metabolite_names_the_databases_behind_it(tmp_path):
     from ecspr.bake.direction import sources as S
     rows = _rows(("ecmdb", "C00009", 1.0, "PMID:1"), ("bionumbers", "C00009", 4.0, "BNID:2"))
-    table = S.aggregate(rows, lambda ns, acc: PI)
+    table = S.aggregate(rows, lambda ns, acc: [PI])
     assert table.n_sources.iloc[0] == 2
     assert table.sources.iloc[0] == "bionumbers|ecmdb"
     assert set(table.citations.iloc[0].split("|")) == {"PMID:1", "BNID:2"}
@@ -212,7 +269,8 @@ def test_the_summary_reads_the_skew_column_not_the_dataframe_method():
     # method and every comparison against it raises rather than reporting a number.
     frame = pd.DataFrame([dict(mnxr="MNXR1", member="eq", molecularity=0.0, skew=9.5,
                                dG_correction=9.5, sigma_conc=1.0, n_conc_measured=2,
-                               n_conc_defaulted=0, n_conc_excluded=1, delta_n=0.0)])
+                               n_conc_defaulted=0, n_conc_excluded=1,
+                               n_conc_gas_phase=0, delta_n=0.0)])
     assert float(frame["skew"].abs().median()) == pytest.approx(9.5)
     assert callable(frame.skew), "pandas still shadows this column with its method"
     assert isinstance(frame["skew"], pd.Series)

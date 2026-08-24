@@ -96,20 +96,24 @@ def validate(frame: pd.DataFrame, source: str) -> pd.DataFrame:
     return frame[list(ROW_COLUMNS)]
 
 
-def aggregate(rows: pd.DataFrame, mnxm_of, names: dict | None = None) -> pd.DataFrame:
+def aggregate(rows: pd.DataFrame, mnxms_of, names: dict | None = None) -> pd.DataFrame:
     # Rows -> one concentration and one width per MNXM.
     #
-    # `mnxm_of(namespace, accession) -> mnxm | None` is the MetaNetX join, injected rather
-    # than imported: it needs `chem_xref`, which is 678 MB, and building its alias index
-    # twice is the expensive part of this lane.
+    # `mnxms_of(namespace, accession) -> [mnxm]` is the MetaNetX join, injected rather than
+    # imported: it needs `chem_xref`, which is 678 MB, and building its name index twice is
+    # the expensive part of this lane.
     #
     # GEOMETRIC MEAN, and the spread is the log10 range across contributing rows -- so a
     # metabolite measured once gets spread 0.0 and is floored downstream, while one
     # measured across eight carbon sources carries what those conditions actually did.
     names = names or {}
     rows = rows.copy()
-    rows["mnxm"] = [mnxm_of(ns, acc) for ns, acc in zip(rows["id_namespace"], rows["id"])]
-    placed = rows[rows["mnxm"].notna()]
+    # ONE MEASUREMENT CAN BELONG TO SEVERAL MNXM. MetaNetX splits some pools by anomeric
+    # or protonation specification, and a measurement of the pool is a measurement of every
+    # id MetaNetX gives it -- so the join returns a set and the rows explode over it.
+    rows["mnxm"] = [mnxms_of(ns, acc) for ns, acc in zip(rows["id_namespace"], rows["id"])]
+    placed = rows.explode("mnxm")
+    placed = placed[placed["mnxm"].notna()]
     out = []
     for mnxm, g in placed.groupby("mnxm"):
         logs = [math.log10(v) for v in g["value_mM"]]
