@@ -24,13 +24,22 @@ from metasmith.python_api import (                                      # noqa: 
 FIR_HOST = "fir"
 FIR_AGENT_HOME = "/scratch/phyberos/fabfos_refs/agent_home"
 
-FIR_CONTAINER = "docker://quay.io/hallamlab/metasmith:0.19.0-fabfos"
+# 0.19.0-fabfos was a locally built SIF that was never pushed; `docker pull` cannot
+# reach it and only fir's apptainer cache still holds one. This tracks the released
+# image the source tree matches, so the dev overlay patches source rather than papering
+# over a two-release gap in the base env.
+FIR_CONTAINER = "docker://quay.io/hallamlab/metasmith:0.21.0"
 FIR_SETUP_COMMANDS = ["module load apptainer"]
 
 FIR_ACCOUNT = "rrg-shallam-ab"
 FIR_GPU_ACCOUNT = "def-shallam"
 
-FIR_GPU = Gpu(memory=Size.GB(80), type="h100", count=4, flag="--gpus-per-node=")
+# `DevicesFor` divides the step's declared gpu_memory by this, so the declared size is
+# what one device HOLDS, not what the job wants. CLEAN asks for 16 GB and is the only
+# GPU step in the four-lane graph; a 2g.20gb MIG slice covers it and fir has far more of
+# those free than whole H100s.
+FIR_GPU = Gpu(memory=Size.GB(20), type="nvidia_h100_80gb_hbm3_2g.20gb",
+              flag="--gpus-per-node=")
 
 
 SOCKEYE_HOST = "sockeye"
