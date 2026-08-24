@@ -1,0 +1,6 @@
+outs:
+- md5: 151c1cc9dffdcdfd5702373145ca4fd2.dir
+  size: 11270852
+  nfiles: 5
+  hash: md5
+  path: ecmdb
