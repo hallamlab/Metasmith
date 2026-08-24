@@ -56,7 +56,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import bake_pairs                                                   # noqa: E402
 from glycogen_share import biomass_precursors                       # noqa: E402
 
-HOSTS = ROOT / "data/fabfos/benchmarks/hosts"
+RUNS = ROOT / "data/fabfos/runs"
 CHEM_PROP = ROOT / "data/fabfos/originals/metanetx/4.5/chem_prop.tsv"
 MEASURED = ROOT / "data/fabfos/benchmarks/eydallin/Y/measured_glycogen.tsv"
 OUT_DIR = ROOT / "data/fabfos/runs/eydallin_clones/ecspr"
@@ -110,7 +110,7 @@ def main():
 
     pairs = load_pairs(bake_pairs.atom_pairs(), element=a.element)
     ratios = load_direction_ratios(bake_pairs.direction_ratios())
-    host = pd.read_parquet(HOSTS / a.host / "gpr_gem.parquet")
+    host = pd.read_parquet(RUNS / a.host / "gpr" / "gpr_gem.parquet")
     base_w = {m: 1.0 for m in host.mnxr.dropna().astype(str).unique()}
     g0 = graph_from_pairs(pairs, a.element, base_w, ratios)
     universe = set(g0.metabolites())

@@ -345,8 +345,7 @@ that difference.
 | extractions | `data/fabfos/benchmarks/_extractions/scales_{tol,prod}/` |
 | studies (tier-built) | `data/fabfos/benchmarks/scales_{tol,prod}/` |
 | declared axes + controls | `data/fabfos/originals/benchmarks/scales/gof_scales.tsv` |
-| hosts | `data/fabfos/benchmarks/hosts/e_coli_{bw25113,lw06}/` |
-| de-novo host tables | `data/fabfos/runs/e_coli_{bw25113,lw06}/gpr/` |
+| host tables, GEM and de-novo | `data/fabfos/runs/e_coli_{bw25113,lw06}/gpr/` |
 | per-gene tables + census | `data/fabfos/runs/scales/gpr/` |
 | mechanistic arm | `data/fabfos/runs/scales/ecspr/sink_panel_{gem,denovo}_C.tsv`, `SINK_PANEL.md` |
 | sweeps and scores | `data/fabfos/runs/scales/ecspr/scales_sweep_*`, `SCORE_*` |

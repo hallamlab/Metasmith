@@ -35,7 +35,7 @@ from ecspr.model.graph import Terminal, solve                       # noqa: E402
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import bake_pairs  # noqa: E402
 
-HOSTS = ROOT / "data/fabfos/benchmarks/hosts"
+RUNS = ROOT / "data/fabfos/runs"
 CHEM_PROP = ROOT / "data/fabfos/originals/metanetx/4.5/chem_prop.tsv"
 OUT_DIR = ROOT / "data/fabfos/runs/eydallin_clones/ecspr"
 
@@ -121,7 +121,7 @@ def main():
 
     pairs = load_pairs(bake_pairs.atom_pairs(), element=args.element)
     ratios = load_direction_ratios(bake_pairs.direction_ratios())
-    host = pd.read_parquet(HOSTS / args.host / "gpr_gem.parquet")
+    host = pd.read_parquet(RUNS / args.host / "gpr" / "gpr_gem.parquet")
     base_w = {m: 1.0 for m in host.mnxr.dropna().astype(str).unique()}
     g = graph_from_pairs(pairs, args.element, base_w, ratios, with_provenance=True)
     print(f"[targets] {g.meta['n_reactions_used']} reactions, {g.n} nodes, {g.m} edges",

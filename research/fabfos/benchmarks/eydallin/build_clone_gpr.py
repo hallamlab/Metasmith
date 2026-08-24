@@ -9,7 +9,7 @@ that asks a curated genome-scale model. The other reads the sequence -- the four
 annotation lanes over `eydallin_clones.faa` -- and the comparison between them is the
 point, which is why they are separate files on one schema rather than one merged table.
 
-IT READS THE HOST'S OWN TABLE, NOT THE MODEL. `data/fabfos/benchmarks/hosts/e_coli_ag1/
+IT READS THE HOST'S OWN TABLE, NOT THE MODEL. `data/fabfos/runs/e_coli_ag1/gpr/
 gpr_gem.parquet` already carries every (model gene -> reaction -> MNXR) row for AG1,
 crosswalked once and labelled with `in_atom_universe` against one bake. Re-deriving that
 here from the JSON would put a second resolver in the tree, and two resolvers over one
@@ -51,7 +51,7 @@ import fabfos_evidence as fe                                          # noqa: E4
 EXTRACTION = REPO / "data/fabfos/benchmarks/eydallin/extraction.tsv"
 MG1655_GBK = REPO / "data/fabfos/originals/genomes/e_coli_k12/genome/NC_000913.3.gbk"
 MG1655_FAA = REPO / "data/fabfos/originals/genomes/e_coli_k12/genome/NC_000913.3.faa"
-HOST_GPR = REPO / "data/fabfos/benchmarks/hosts/e_coli_ag1/gpr_gem.parquet"
+HOST_GPR = REPO / "data/fabfos/runs/e_coli_ag1/gpr/gpr_gem.parquet"
 OUT = REPO / "data/fabfos/runs/eydallin_clones/gpr"
 
 HOST = "e_coli_ag1"

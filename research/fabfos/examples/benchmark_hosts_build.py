@@ -23,7 +23,7 @@ BREF = REPO / "src" / "fabfos" / "build_references"
 DATA = REPO / "data" / "fabfos"
 ARTIFACTS = REPO / "tests" / "fabfos" / "artifacts"
 SCRATCH = DATA / "scratch"
-PUBLISH_AT = DATA / "benchmarks" / "hosts"
+PUBLISH_AT = DATA / "runs"
 
 AGENT_ENV = "msm-fabfos"
 
@@ -185,10 +185,15 @@ def main() -> int:
                 dst_file.unlink()
             shutil.copy2(src_file, dst_file)
 
+        # `hosts/<host>/gpr_gem.parquet` is the transform's own layout inside one output
+        # directory; the run tier keys on the run, so this fans out per host rather than
+        # dropping the directory. BUILD.json describes the build, not a host, so one copy
+        # sits at the tier root.
         dest = PUBLISH_AT
         dest.mkdir(parents=True, exist_ok=True)
         for host_dir in sorted(src.glob("*")):
-            replace(host_dir / "gpr_gem.parquet", dest / host_dir.name / "gpr_gem.parquet")
+            replace(host_dir / "gpr_gem.parquet",
+                    dest / host_dir.name / "gpr" / "gpr_gem.parquet")
         replace(src.parent / "BUILD.json", dest / "BUILD_gem.json")
         sroot = studies[0].parent.parent if studies else None
         for study_dir in sorted(p for p in sroot.glob("*") if p.is_dir()) if sroot else []:

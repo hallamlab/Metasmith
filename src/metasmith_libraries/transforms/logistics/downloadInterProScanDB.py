@@ -15,16 +15,26 @@ def protocol(context: ExecutionContext):
         env=image,
         cmd=f"""
             wget -q {IPRSCAN_DATA_URL} -O interproscan-data.tar.gz
-            mkdir -p {idata.container}
+            mkdir -p ipr_data
             tar xzf interproscan-data.tar.gz -C ipr_data --strip-components=1
         """,
     )
 
+    # setup.py and interproscan.properties are the IMAGE's copies at
+    # /opt/interproscan, and the container's working directory is the task's /ws,
+    # so the indexing has to run from there. The downloaded `data/` is bound over
+    # the image's missing one, so what runs is the installed tool indexing the
+    # models we just fetched.
+    #
+    # In a subshell, because the exit trap the command is wrapped in writes its
+    # exitcode marker to a relative path: a bare `cd` leaves the trap firing in
+    # /opt/interproscan, which is not writable by the task's uid, and the step
+    # fails on the marker write after setup.py has already succeeded.
     context.ExecWithEnv().ifContainerDo(
         env=img_ipr,
         binds=[(context.external_cwd/"ipr_data/data", "/opt/interproscan/data")],
         cmd=f"""\
-            python3 setup.py -f interproscan.properties --force
+            (cd /opt/interproscan && python3 setup.py -f interproscan.properties --force)
         """
     )
 

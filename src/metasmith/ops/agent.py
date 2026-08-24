@@ -46,6 +46,12 @@ def config_presets() -> list[str]:
         return []
 
 
+def preset_content(name: str) -> str:
+    presets = GetNxfConfigPresets()
+    assert name in presets, f"unknown nextflow preset [{name}]; expected one of {sorted(presets)}"
+    return Path(presets[name]).read_text()
+
+
 def load_agent(agent_path: str) -> Agent:
     return Agent.Load(Path(agent_path))
 
@@ -128,9 +134,9 @@ def ping(agent_path: str, timeout_s: int = 15) -> dict:
     }
 
 
-def deploy(agent_path: str, assertive: bool = False) -> dict:
+def deploy(agent_path: str, assertive: bool = False, on_phase=None) -> dict:
     agent = load_agent(agent_path)
-    agent.Deploy(assertive)
+    agent.Deploy(assertive, on_phase=on_phase)
     agent.Save(Path(agent_path))
     return {
         "status": "deployed",

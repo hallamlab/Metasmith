@@ -150,6 +150,14 @@ function storedCollapsed() {
 // showing, which pins a choice. Nothing cycles back to following the OS except
 // clearing the key.
 
+// -- last agent used to run a workflow --------------------------------------
+// Which agent was picked last, so opening a new workflow tab starts on the
+// agent you actually use rather than the empty "choose an agent…" prompt
+// every time. One value across all workflows -- the choice is about which
+// machine you are working from today, not about this particular workflow.
+
+const LAST_AGENT_KEY = 'metasmith.lastAgent'
+
 const THEME_KEY = 'metasmith.theme'
 
 function osTheme() {
@@ -181,6 +189,8 @@ export const ui = $state({
   themePref: stored(THEME_KEY, 'system', (r) => (r === 'light' || r === 'dark' ? r : 'system')),
   // what is actually showing: never 'system'. Everything that draws reads this
   theme: 'dark',
+  // the agent last used to run a workflow, off any workflow tab
+  lastAgent: stored(LAST_AGENT_KEY, '', (r) => r),
 })
 
 function remember(key, value) {
@@ -194,6 +204,11 @@ function remember(key, value) {
 export function setRailWidth(w) {
   ui.railWidth = clampRail(w)
   remember(RAIL_KEY, String(ui.railWidth))
+}
+
+export function setLastAgent(name) {
+  ui.lastAgent = name
+  remember(LAST_AGENT_KEY, name)
 }
 
 /** One panel's remembered geometry, hydrated on first ask.
@@ -411,6 +426,32 @@ export function cacheWorkflow(name, snapshot) {
   while (workflowCache.size > WORKFLOW_CACHE_SIZE) {
     workflowCache.delete(workflowCache.keys().next().value)
   }
+}
+
+// -- per-step resource overrides --------------------------------------------
+// cpus/memory/duration typed into the launch panel, keyed by workflow name --
+// persisted server-side in `workflows/<name>/overrides.yml`, the same way the
+// rest of a workflow is, so they survive a reload in any browser/profile. The
+// panel keys each entry by transform name, not step order -- order is a
+// position in the current plan, and a regenerate that adds or drops upstream
+// steps renumbers everything after the change, which used to leave a stale
+// numeric key silently reattached to whatever step now sits at that
+// position. `WorkflowView.svelte`'s `overridePayload()` also drops any key
+// naming no step in the current plan, so an entry from a since-removed step
+// is dropped rather than sent under a name nothing matches.
+//
+// `setOverride` fires on every keystroke, so the network write is debounced
+// per workflow rather than sent on every call -- the in-memory `overrides`
+// state the UI reads from is updated synchronously by the caller regardless.
+const OVERRIDE_SAVE_DEBOUNCE_MS = 600
+const overrideSaveTimers = new Map()
+
+export function saveOverrides(name, overrides) {
+  clearTimeout(overrideSaveTimers.get(name))
+  overrideSaveTimers.set(name, setTimeout(() => {
+    overrideSaveTimers.delete(name)
+    api.put(`/workflows/${name}/overrides`, { resource_overrides: overrides }).catch(() => {})
+  }, OVERRIDE_SAVE_DEBOUNCE_MS))
 }
 
 export async function loadRuns() {

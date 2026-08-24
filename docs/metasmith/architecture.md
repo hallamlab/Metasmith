@@ -95,6 +95,15 @@ compiled `_metadata/types/`, so a new type must land in all of them (`metasmith 
 Skipped, a plan becomes unreachable only from certain libraries — which reads like a solver bug
 and is not.
 
+**A library carries the types its own transforms declare, and `PruneTypes` is what establishes
+that.** `Load` reads every file under `_metadata/types/` and takes each as a namespace, so the
+prune only means something if it unlinks — a file left behind is a namespace nobody declared,
+silently in force. Two consequences follow from the narrowing. A namespace present in a library
+no longer implies the type is: resolve a name by asking for the *type*, never by finding the
+first library holding its namespace. And a transform must reach every type it uses through
+`AddRequirement`/`AddProduct` — a bare `GetType` the contract never mentions is invisible to the
+prune and is gone on the next build.
+
 ## Data and transforms
 
 **A `DataInstance`'s `instance_id` derives from path, dtype name and parent library — never
@@ -133,6 +142,12 @@ names every output and the generated process collects exactly that glob, so a fi
 to it is invisible: the step does its work, reports success internally, and the task dies on a
 failed `ls`. Nothing downstream can read a host or a sample out of those names, so attribution
 must come from file *content*.
+
+**A run publishes its targets and nothing else** (`WorkflowPlan.publish_intermediates`, off by
+default). Intermediates stay in the work dir and the cache store, so what a collect copies back is
+what was asked for — and a run that dies before its last step leaves an empty results folder, where
+the per-step logs are the only record. `CollectResults` still registers an unpublished file: the
+manifest entry is what lets a target name it as an ancestor, and it simply has no file behind it.
 
 ## Planning
 
@@ -285,6 +300,22 @@ returns when the launch script exits. Any script going straight to `GetResultSou
 the run and crashes on a missing results directory. The contract is a sentinel line in the run's
 agent log, which `metasmith workflow wait` blocks on. Poll for it; do not sleep and hope.
 
+**A run is a process group and a token.** `start.sh` backgrounds the driver under `set -m`, so
+the whole run descends from one process group, and exports `METASMITH_RUN=<task_key>.<timestamp>`,
+which every descendant inherits, docker tool containers carry as the `msm.run` label and
+apptainer's `--cleanenv` has put back explicitly. Both are written beside `PID.lock` as
+`RUN.pgid` and `RUN.token`. The group is the cheap handle; the token is the backstop, because it
+survives a `setsid` out of the group and cannot be shed. `metasmith workflow ps` reports what a
+run still has running on its agent and `workflow reap` reclaims it.
+
+**Cancel is a ladder, and reports what it did not achieve.** Removing `PID.lock` makes the
+driver's supervisor TERM Nextflow's *own* process group — a second group, so the driver survives
+to snapshot logs and promote the cache — and that TERM is given a real window, because Nextflow's
+shutdown hook is what reaches `bin/scancel` for grid jobs. Then a group KILL, then a reap.
+`CancelWorkflow` returns `{stopped, survived, rung}`; a run with survivors is recorded
+`cancelling`, never `cancelled`. On SLURM the guarantee stops at Nextflow's own shutdown, which
+is deliberate: a cancelled job dies with its allocation.
+
 **`Source.Parse` must be a fixed point on its own output**, because anything storing an agent
 home re-parses it on the next save. It was not: `SshSource` renders `ssh://host:path` while
 `Parse` read the `:` as part of the host, so a remote home grew a colon per save until nothing
@@ -295,6 +326,17 @@ agent image's `site-packages`, which is what lets an old base tag run a new engi
 engine gains a third-party import the image's env lacks. Adding `cbor2` was enough: on the older
 tag every task died *after* staging, so the first sign was a queued job failing. A new dependency
 in `envs/metasmith/base.yml` means the site's base tag has to move too.
+
+**A stage sends the plan, not the library.** Each library ships as an image: its `_metadata/`
+whole, plus the manifest entries the plan resolved against and every file the manifest does not
+name. The manifest itself is never narrowed — the library key is a hash of it, and that key names
+the staged directory, prefixes every packed `DataInstance` and appears in every step's transform
+reference — so the prune is expressed as a *subtraction* of unused entries rather than a selection
+of used ones. That is also what keeps it correct: `build` excludes `_`-prefixed files from the
+manifest, and several of those are helper scripts their neighbours copy out by `__file__`, so a
+selection would drop a runtime dependency with nothing to say so. The mask comes from
+`plan.given`, the steps' transforms and the ancestor closure of both, which crosses libraries
+because a parent entry names the library it lives in.
 
 **Local transfers.** `Logistics` copies local→local in process — plain files, symlinks and trees
 of those — and hands everything else to `rsync -auP`. The split is about **latency, not
@@ -371,6 +413,19 @@ registry is unreachable, so a never-pushed dev image still works. This is not ga
 verifies the extracted relay binary's magic bytes and size, so a stub or corrupted relay fails
 precisely instead of as a bare missing-file assertion later.
 
+**Preparing a host is a verb, never part of a launch.** Tool images materialise inside the first
+task that needs one — right on a connected cluster, impossible on a compute node with no route to
+a registry. Moving the pulls onto every launch would make the connected case pay for the
+disconnected one, so the two halves are split: `SetupEnvironment` fetches and is asked for
+explicitly (`metasmith workflow setup-env`, the GUI's `setup environment`), and the launch path
+only reports what is missing. It dispatches on the agent's own runtime — the image store for a
+container agent, `mamba env create` from the library's per-tool recipes for a mamba or native one
+— and reads the stage-time env manifest rather than a transform library, because the launching
+host may hold neither the library nor the images. A tool whose env resource carries no `conda:`
+entry is reported by name with the container it does have, rather than guessed at: a package spec
+inferred from an image tag would produce a plausible env that is not the one the transform was
+written against.
+
 **Nextflow is pinned**, and the pinned line's strict syntax parser is on by default: generated `.nf`
 and `Orchestrator.groovy` must avoid single-element parenthesized assignment and range-based for
 loops. Multi-element destructures and `for (x : collection)` are fine. **Upstream
@@ -424,15 +479,30 @@ input produced by an earlier step names that step's slot id, so a key moves when
 does; `cache_decisions` stamps the slot id onto the consumer's instance as well as the producer's,
 because the two start life sharing the transform archetype's id.
 
-**Leaf ids are content-addressed, with the relative path folded in** —
-`multihash(content ‖ relpath)`, over the file's bytes or over a directory's whole tree, when the
-leaf is present at `AddItem` time. That is what makes two independent runs over identical inputs
-hit the same shards with no import step. Folding `relpath` in is not decoration: pure
-content-addressing collapses every degenerate-but-distinct input (N empty files, byte-identical
-samples) onto one id, flattening fan-out and tripping the solver's O(n²) collision path. Absent
-or remote inputs fall back to a random per-call id and get no reuse — and a 300k-file reference
-folder pays a full tree read per stage, which is why `fabfos/refs.py` substitutes the DVC pin's
-own md5 rather than deriving one.
+**Leaf ids are stat-addressed** — `multihash("stat" ‖ abspath ‖ mtime_ns)`, one stat whether the
+leaf is a file or a 300k-file directory. The absolute path belongs to whichever host ran the stat,
+so `StageWorkflow` re-derives every leaf id on the agent before compiling (`restat_leaf_ids`) and
+writes the plan back to `task.yml`: the client that registered an input living on the agent's host
+cannot stat it, and `CollectResults` later joins the trace against that same plan. Re-submitting
+unmodified files at the same paths hits the same shards; two hosts holding identical bytes at
+different paths do not agree, and a same-mtime in-place edit is invisible. A path nothing can stat
+keeps a random per-call id and gets no reuse. `fabfos/refs.py` substitutes the DVC pin's own md5,
+which survives the re-materialisation that moves an mtime. A change below the top node is
+invisible by construction, and `msm data invalidate` is the lever for it: it moves the mtime
+forward and re-mints through the same formula, so client and agent still agree.
+
+**Nextflow will not publish a path outside its own work directory.** `PublishOp.collectFiles`
+adds a path to the publish set only when `getTaskDir` resolves it under `session.workDir`, its
+`tmp`, or `bucketDir`; anything else is dropped with no log and no error. A cache shard is outside
+all three, so nothing the emitter puts on a channel reaches `results/` from a hit — the emitter
+records the channel-to-directory spelling in `workflow.cache_publish.json` and the driver places
+those products itself once nextflow has exited. This is invisible from here: the run reports
+`completed` and the results directory is simply empty.
+
+**A product is whatever carries the canonical `<batch>-<item>-<branch>.<hash>-<key><ext>` name** —
+a directory as readily as a file. Nothing on the promote or the hit path may branch on the
+declared extension to decide which: `GetPreferredFileExtension` answers `""` for plenty of file
+types, and a directory type can carry one.
 
 **A hit short-circuits the executor at compile time, not at run time.** The probe rewrites that
 step's emission into a synthetic channel, and **every tuple must re-enter `o.post` before any
@@ -674,9 +744,8 @@ The two Rust products are built separately and shipped differently; see
 ### When a build artifact may be DVC-pinned
 
 A generated artifact earns a pin when rebuilding it is expensive *and* the pin is genuinely how it
-reaches consumers — `src/metasmith/engine.dvc` qualifies on both counts, since it carries a
-four-target cross-compile that a source checkout has no other way to obtain. An artifact that
-something regenerates on demand does not qualify, and neither does one nothing reads; the GUI's
+reaches consumers. An artifact that something regenerates on demand does not qualify, and
+neither does one nothing reads; the GUI's
 `scratch/gui-main` pin managed to be both, snapshotting 31 files of local run detritus that
 `dev/metasmith.sh --gui` recreates with `mkdir -p`, and its objects had already left every cache
 by the time it was removed.

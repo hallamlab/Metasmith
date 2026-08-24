@@ -3,6 +3,7 @@ from __future__ import annotations
 import threading
 from datetime import datetime, timezone
 
+from ..logging import Log
 from ..ops import runtime as op_runtime
 from .store import Project, utcnow
 
@@ -108,6 +109,8 @@ class RunWatcher:
             return {"run": rec.name, "state": "failed"}
         if not agent_name or not key or not self.project.agent_exists(agent_name):
             return None
+        launch_age_s = _age_s(rec.record.get("launched_at"))
+        driver_grace = launch_age_s <= _DRIVER_GRACE_S
         try:
             probe = op_runtime.wait(
                 str(self.project.agent_path(agent_name)),
@@ -115,19 +118,50 @@ class RunWatcher:
                 timeout_s=0.0,
                 poll_s=1.0,
                 run=rec.record.get("run_number"),
-                grace_s=(
-                    0.0
-                    if _age_s(rec.record.get("launched_at")) > _DRIVER_GRACE_S
-                    else _DRIVER_GRACE_S
-                ),
+                grace_s=(0.0 if not driver_grace else _DRIVER_GRACE_S),
             )
         except Exception as exc:
+            # A run stuck here never recovers on its own -- the same failure
+            # repeats identically every tick -- so unlike a `None` return
+            # (genuinely "still running, ask again later") this has to reach
+            # the run record, or the GUI shows a live run forever with nothing
+            # to explain why it never finishes.
+            Log.Warn(f"probe failed for run [{rec.workflow}/{rec.name}]: {exc}")
+            self.project.update_run(rec.workflow, rec.name, {
+                "probe_error": str(exc), "probe_error_at": utcnow(),
+            })
             return {"run": rec.name, "error": str(exc)}
 
-        state = _STATUS_TO_STATE.get(probe.get("status", ""))
+        status = probe.get("status", "")
+        state = _STATUS_TO_STATE.get(status)
         if state is None:
+            # "timeout" is the expected, steady-state answer for a run that is
+            # genuinely still going (the watcher's own probe uses timeout_s=0,
+            # so almost every live tick reports it) -- nothing to do but ask
+            # again next tick. "missing" means `agent.log` itself never
+            # appeared, which is only expected for the few seconds it takes
+            # the driver to start up; past the driver grace window it means
+            # the driver never ran here at all (most often: a later run
+            # silently took over this task_key's shared workspace before this
+            # one wrote anything -- see `Project.create_run`), and nothing
+            # will ever change that on its own.
+            if status == "missing" and not driver_grace:
+                self.project.update_run(rec.workflow, rec.name, {
+                    "state": "failed",
+                    "finished_at": utcnow(),
+                    "error": (
+                        "no log ever appeared for this run -- it was likely superseded "
+                        "by a later run on the same workspace before it could start"
+                    ),
+                    "probe_error": None, "probe_error_at": None,
+                })
+                return {"run": rec.name, "state": "failed"}
+            if rec.record.get("probe_error"):
+                self.project.update_run(rec.workflow, rec.name, {
+                    "probe_error": None, "probe_error_at": None,
+                })
             return None
-        patch = {"state": state, "finished_at": utcnow()}
+        patch = {"state": state, "finished_at": utcnow(), "probe_error": None, "probe_error_at": None}
         if state == "failed":
             patch["error"] = "the run stopped without reporting completion"
         self.project.update_run(rec.workflow, rec.name, patch)

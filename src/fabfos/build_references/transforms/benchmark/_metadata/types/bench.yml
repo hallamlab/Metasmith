@@ -5,9 +5,6 @@ ontology:
   version: '1.25'
 schema: v1
 types:
-  benchmark_artifact:
-    properties:
-    - part of the evaluation set
   condition_gpr:
     properties:
       _:
@@ -23,12 +20,6 @@ types:
       - One row per network to build -- host, arm, tier, and which condition_gpr edges
         it applies. This is the table the run-time network construction reads; it
         is what makes X derivable rather than stored.
-      ext: tsv
-  expectations:
-    properties:
-      _:
-      - Y -- the expected direction of movement per (condition, edge), with its anchor
-        and basis. Already built; carried as a declared input rather than rebuilt.
       ext: tsv
   study_benchmark:
     properties:

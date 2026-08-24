@@ -51,6 +51,16 @@ types:
     properties:
     - One benchmark study's source material as acquired, under benchmarks/<study>/.
       The derived, standardised form is data/benchmarks/<study>/.
+  bionumbers:
+    properties:
+    - 'BioNumbers records for the quantities no metabolomics database measures (bionumbers/<retrieval-date>/):
+      `records.json` as the site''s search returned it, plus the individual record
+      pages for every BNID the bake actually reads. BioNumbers has no bulk download
+      and no API, so a search plus the cited record pages IS the acquisition. UNDER
+      THE MEASURED-E.-COLI RULE THIS SUPPLIES EXACTLY ONE COMPOUND, dissolved O2 --
+      which is nonetheless the third most common participant in the reaction universe,
+      behind only water and the proton. Every other candidate is refused in `sources/bionumbers_rejected.tsv`
+      with its reason.'
   chebi:
     properties:
     - 'ChEBI flat files (chebi/rel<N>/): compounds, names and structures as served,
@@ -63,6 +73,18 @@ types:
     properties:
     - One upstream source's distribution, acquired verbatim into its own folder under
       data/originals/. Never parsed, unpacked, filtered or renamed here.
+  ecmdb:
+    properties:
+    - 'ECMDB''s E. coli metabolome distribution (ecmdb/<release>/): `ecmdb.json.zip`
+      as served, plus `concentrations.json` -- the paginated /concentrations browse
+      walked into one table by `buildlib::ecmdb_scrape.py`. BOTH are needed and neither
+      substitutes for the other: the bulk file is 3,760 metabolite cards carrying
+      kegg/chebi/hmdb/m2m identifiers and NO concentrations, and the browse is the
+      only machine-readable source of the measurements. The scrape is the acquisition,
+      not a parse -- there is no API -- which puts it on the same footing as the KEGG
+      REST responses saved as the endpoint returned them. The measurements are not
+      ECMDB''s own: the citation column names the primary studies by PMID, so this
+      is citable as a panel rather than as one database''s opinion.'
   equilibrator:
     properties:
     - 'eQuilibrator compound cache (equilibrator/<package-version>/): compounds.sqlite

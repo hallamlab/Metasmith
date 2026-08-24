@@ -5,14 +5,40 @@ from pathlib import Path
 
 import yaml
 
+from ..constants import MODULE_PATH
 from .spec import Spec
 
 TEMPLATES_DIR = "templates"
+VENDOR_DIRNAME = "vendor"
 TEMPLATE_FILE = "spec.yml"
 
 DATA_TYPES_DIRNAME = "data_types"
 TRANSFORMS_DIRNAME = "transforms"
 RESOURCES_DIRNAME = "resources"
+
+
+def standard_library_root() -> Path | None:
+    # Where the shipped standard library is, for every consumer that needs it:
+    # `gui.stdlib` copies it into a project, `agents.conda` reads its `envs/`
+    # recipes. Two rungs, in this order.
+    #
+    # 1. The bundle vendored inside this package. An installed metasmith always
+    #    has one, whatever it was installed by -- which is the point: conda's
+    #    solve was the only thing that ever delivered a separate library
+    #    package, so a wheel, a `pip install` and the relay-free runtimes had no
+    #    mechanism at all.
+    # 2. An importable `metasmith_libraries`, which is what a source checkout on
+    #    PYTHONPATH has and a vendored install never needs.
+    vendored = MODULE_PATH/VENDOR_DIRNAME
+    if (vendored/DATA_TYPES_DIRNAME).is_dir(): return vendored
+    import importlib.util
+    try:
+        spec = importlib.util.find_spec("metasmith_libraries")
+    except (ImportError, ValueError):
+        return None
+    if spec is None or not spec.origin: return None
+    root = Path(spec.origin).resolve().parent
+    return root if (root/DATA_TYPES_DIRNAME).is_dir() else None
 
 
 def library_index(root: Path | str) -> dict:

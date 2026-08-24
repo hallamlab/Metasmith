@@ -32,6 +32,7 @@ AUTHORS = (
     "metagenomics_from_paired_reads",
     "isolate_assembly_from_long_reads",
     "annotation_palette_from_assembly",
+    "annotation_trio_from_assembly",
     "fosmid_inserts_from_pooled_reads",
     "amplicon_asv_study_from_paired_reads",
     "viromics_survey_from_assembly",
@@ -48,10 +49,24 @@ BLOCKED = {
 }
 
 
+def _load_author(name: str):
+    # One author driver sits beside its template's spec.yml; the rest live at
+    # the package root. Try the package-root import first, then the folder.
+    try:
+        return importlib.import_module(name)
+    except ImportError:
+        spec = importlib.util.spec_from_file_location(
+            name, HERE / "templates" / name / f"{name}.py")
+        assert spec and spec.loader, f"no author module found for [{name}]"
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+
+
 def authors() -> list:
     found = []
     for name in AUTHORS:
-        module = importlib.import_module(name)
+        module = _load_author(name)
         missing = [a for a in ("NAME", "DESCRIPTION", "build_spec") if not hasattr(module, a)]
         assert not missing, f"[{name}] is listed as a template author but defines no {missing}"
         found.append(module)

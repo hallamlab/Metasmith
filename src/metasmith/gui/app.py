@@ -69,6 +69,17 @@ def warm_template_dags(p: "Project") -> None:  # noqa: F821
         Log.Warn(f"could not warm template DAGs: {exc}")
 
 
+def _warm(fn, *args) -> None:
+    # A first run has nothing cached, so these three solve and draw every
+    # shipped template -- over a hundred planner lines, printed after the
+    # "serving at" banner and ending mid-solve. The terminal then reads as a
+    # GUI hung on a solve when the server has been up the whole time.
+    from ..logging import Log
+
+    with Log.Quiet():
+        fn(*args)
+
+
 def bind_project(
     app: "Flask",  # noqa: F821
     project_root: Path | str = ".",
@@ -78,9 +89,12 @@ def bind_project(
     project = Project(project_root)
     project.initialize()
     install_log_capture()
-    threading.Thread(target=warm_type_index, args=(project.root,), daemon=True).start()
-    threading.Thread(target=warm_template_dags, args=(project,), daemon=True).start()
-    threading.Thread(target=resync_workflow_types, args=(project,), daemon=True).start()
+    for fn, arg in (
+        (warm_type_index, project.root),
+        (warm_template_dags, project),
+        (resync_workflow_types, project),
+    ):
+        threading.Thread(target=_warm, args=(fn, arg), daemon=True).start()
 
     instance_id = uuid4().hex
     jobs = JobRunner()
@@ -159,6 +173,22 @@ def create_app(
     return app
 
 
+def _is_loopback(host: str) -> bool:
+    # The bind address decides whether this GUI is reachable from off the
+    # machine, and that is the only thing the exposure warning is about.
+    import ipaddress
+
+    h = (host or "").strip().strip("[]")
+    if h in ("localhost", "localhost.localdomain"): return True
+    try:
+        return ipaddress.ip_address(h).is_loopback
+    except ValueError:
+        # An empty host means every interface; a name is resolved by the OS at
+        # bind time, and anything we cannot read as loopback is treated as
+        # exposed rather than quietly assumed safe.
+        return False
+
+
 def serve(
     project_root: Path | str = ".",
     host: str = "127.0.0.1",
@@ -166,20 +196,42 @@ def serve(
     open_browser: bool = True,
     ssh_config_path: Path | str | None = None,
 ) -> int:
+    import logging
+
+    from werkzeug.serving import make_server
+
     from ..constants import VERSION
     from ..logging import Log
 
     app = create_app(project_root, ssh_config_path=ssh_config_path)
-    url = f"http://{host}:{port}"
+    # Below app.run(), which prints Flask's banner and werkzeug's production
+    # warning and offers no way to turn either off. Per-request access logs
+    # (one line per poll) are a separate, silenceable logger -- the frontend
+    # polls every few seconds, and at WARNING those lines stop while a real
+    # server error (5xx, broken pipe) still surfaces.
+    logging.getLogger("werkzeug").setLevel(logging.WARNING)
+    server = make_server(host, port, app, threaded=True)
+    url = f"http://{host}:{server.server_port}"
     Log.Info(f"Metasmith {VERSION}")
     Log.Info(f"project [{Path(project_root).resolve()}]")
     if not bundle_exists():
         Log.Error("the GUI bundle is missing; run ./dev.sh --build-gui")
     Log.Info(f"serving at [{url}]")
+    if not _is_loopback(host):
+        Log.Warn(
+            f"bound to [{host}] -- this GUI is reachable from other machines, and it has no"
+            " authentication. Anyone who can reach the port can read files on this host and"
+            " stage and run work on every agent it knows. Bind 127.0.0.1 and use an ssh tunnel."
+        )
     if open_browser:
         try:
             webbrowser.open(url)
         except Exception:
             pass
-    app.run(host=host, port=port, threaded=True, debug=False, use_reloader=False)
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        server.server_close()
     return 0

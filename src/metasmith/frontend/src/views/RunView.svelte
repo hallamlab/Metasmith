@@ -9,6 +9,7 @@
   import StageProgress from '../components/StageProgress.svelte'
   import FileTree from '../components/FileTree.svelte'
   import FilePreview from '../components/FilePreview.svelte'
+  import AncestryList from '../components/AncestryList.svelte'
 
   let { workflow, run } = $props()
 
@@ -215,12 +216,16 @@
     if (rec.state === 'failed' || rec.state === 'cancelled') {
       return launched ? { stage: 1, status: 'fail' } : { stage: 0, status: 'fail' }
     }
+    // Before `run_number` is assigned -- staging, staged, or launching --
+    // trace/log reads resolve through `logs.latest`, which can still point at
+    // the *previous* run's directory until its launcher relinks it. Trusting
+    // `traceFailed` here paints a failure that belongs to the prior run.
+    if (rec.run_number == null) return { stage: 0, status: 'started' }
     // A task failure that Nextflow was told to ignore still lets the run
     // finish as `completed` -- but the run is not a success, so this is
     // reported as soon as it is known rather than waiting for `completed`
     // and momentarily showing blue over a failure that already happened.
     if (traceFailed) return { stage: 1, status: 'fail' }
-    if (rec.state === 'staging' || rec.state === 'launching') return { stage: 0, status: 'started' }
     if (rec.state === 'running') return { stage: 1, status: 'started' }
     return { stage: 2, status: 'success' }
   })
@@ -281,6 +286,23 @@
       path: `_metadata/logs.latest/steps/${processOf(task.name)}_${h}.log`,
       size: null, type_name: null, dangling: false, type: 'file',
     }
+  }
+
+  // The ancestry list names a parent by its path; selecting it means finding
+  // the tree node that path belongs to, since the preview reads a node.
+  function nodeAt(path, node = tree?.root) {
+    if (!node) return null
+    if (node.path === path) return node
+    for (const c of node.children ?? []) {
+      const hit = nodeAt(path, c)
+      if (hit) return hit
+    }
+    return null
+  }
+
+  function pickPath(path) {
+    const hit = nodeAt(path)
+    if (hit) picked = hit
   }
 
   async function cancel() {
@@ -345,11 +367,16 @@
     </div>
 
     <StageProgress stages={STAGES} {stageStates} />
-    {#if traceFailed}
+    {#if rec.survivors?.length}
       <p class="small warnline">
-        {trace.failed} task{trace.failed === 1 ? '' : 's'} failed. Nextflow was told to
-        ignore step failures, so the run finished and was recorded as completed —
-        the steps below are what actually happened.
+        cancel left {rec.survivors.length} process{rec.survivors.length === 1 ? '' : 'es'}
+        running on the agent, so this run is not stopped. Reclaim them with
+        <code>metasmith workflow reap {rec.agent} {rec.task_key}</code>.
+      </p>
+    {/if}
+    {#if traceFailed && rec.state !== 'staging' && rec.state !== 'launching'}
+      <p class="small warnline">
+        {trace.failed} task{trace.failed === 1 ? '' : 's'} failed
       </p>
     {/if}
 
@@ -378,7 +405,7 @@
           {#if rec.finished_at}
             <tr><td class="muted">finished</td><td><Ago iso={rec.finished_at} /></td></tr>
           {/if}
-          {#if rec.preset}<tr><td class="muted">preset</td><td class="mono">{rec.preset}</td></tr>{/if}
+          {#if rec.preset_source}<tr><td class="muted">preset</td><td class="mono">{rec.preset_source}</td></tr>{/if}
           <!-- A run is reproducible only if it says what it was launched with,
                and neither of these is visible anywhere else once the launch
                panel has been left. The agent's own defaults are layered in on
@@ -438,16 +465,21 @@
           <button class="small" onclick={refreshNow}>refresh now</button>
         </div>
       </div>
-      {#if log.error}
-        <p class="small muted">{log.error}</p>
-      {/if}
-      <pre class="log">{log.lines?.join('\n') || 'nothing yet'}</pre>
-      {#if rec.live}
-        <p class="small muted">
-          Backing off from 5s up to 60s between refreshes. The run is detached
-          on the agent, so closing this page — or restarting the server — does
-          not stop or lose it.
-        </p>
+      {#if rec.run_number == null}
+        <!-- Not just `staging`/`launching` -- `staged` sits between them, and
+             `run_number` isn't assigned until the launcher script has actually
+             relinked `logs.latest` to the new run's directory. Any state
+             before that number lands, a tail read with no `run` still
+             resolves through `logs.latest` itself, which can still point at
+             the PREVIOUS run right up until the relink. Keying off the
+             number rather than naming every pre-run state is what keeps this
+             from quietly reopening the gap the next state gets added. -->
+        <p class="small muted">nothing yet -- staging</p>
+      {:else}
+        {#if log.error}
+          <p class="small muted">{log.error}</p>
+        {/if}
+        <pre class="log">{log.lines?.join('\n') || 'nothing yet'}</pre>
       {/if}
     </div>
 
@@ -542,9 +574,8 @@
           Collected, but this does not read as a result library: {results.error}
         </p>
       {:else}
-        <!-- What was asked for, before what came back: a collected folder full
-             of intermediates looks like a success until it is read against the
-             request. -->
+        <!-- What was asked for, before what came back: a folder with files in
+             it looks like a success until it is read against the request. -->
         {#if results.targets?.length}
           <table class="small targets">
             <thead><tr><th></th><th>requested output</th><th>delivered</th></tr></thead>
@@ -567,10 +598,30 @@
             </p>
           {/if}
         {/if}
-        <p class="small muted">
-          The files themselves are in the panel on the right — click one to look
-          inside it.
-        </p>
+        <details class="step-details" open>
+          <summary class="steprow">
+            <span class="chevron"></span>
+            <span>collected files</span>
+            <span class="muted small">
+              {tree?.collected ? 'click one to look inside it' : 'not collected yet'}
+            </span>
+          </summary>
+          <div class="treebox">
+            {#if !tree?.collected}
+              <p class="small muted" style="padding:8px">
+                Nothing to browse until the results are collected.
+              </p>
+            {:else}
+              <FileTree node={tree.root} selected={picked?.path} onpick={(n) => (picked = n)} />
+              {#if tree.truncated}
+                <p class="small muted" style="padding:8px">
+                  Listing stopped early — this folder is bigger than the tree will
+                  walk. What is shown is a prefix, not the whole of it.
+                </p>
+              {/if}
+            {/if}
+          </div>
+        </details>
         <div class="row" style="gap:8px; align-items:center">
           <p class="small muted mono" style="margin:0">{results.path}</p>
           <CopyButton text={results.path} label="copy the results path" />
@@ -581,26 +632,12 @@
 
   <SidePanel
     id="run"
-    title="results"
-    subtitle={tree?.collected ? (picked?.name ?? 'nothing selected') : 'not collected yet'}
-    topDefault={300}
+    title="selected result"
+    subtitle={picked?.name ?? 'nothing selected'}
+    topDefault={240}
   >
     {#snippet top()}
-      <div class="treebox">
-        {#if !tree?.collected}
-          <p class="small muted" style="padding:8px">
-            Nothing to browse until the results are collected.
-          </p>
-        {:else}
-          <FileTree node={tree.root} selected={picked?.path} onpick={(n) => (picked = n)} />
-          {#if tree.truncated}
-            <p class="small muted" style="padding:8px">
-              Listing stopped early — this folder is bigger than the tree will
-              walk. What is shown is a prefix, not the whole of it.
-            </p>
-          {/if}
-        {/if}
-      </div>
+      <AncestryList node={picked} onpick={pickPath} />
     {/snippet}
     <FilePreview {workflow} {run} node={picked} />
   </SidePanel>
@@ -614,7 +651,7 @@
   .pane { display: flex; flex: 1; min-width: 0; height: 100%; align-items: stretch; }
   .main { flex: 1; min-width: 0; overflow-y: auto; padding: 18px; }
   .loading { padding: 18px; }
-  .treebox { height: 100%; overflow: auto; }
+  .treebox { max-height: 340px; overflow: auto; }
 
   /* the same four states as StageProgress's segments, as a marker beside a row */
   .pip {

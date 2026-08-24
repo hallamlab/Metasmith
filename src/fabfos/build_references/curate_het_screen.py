@@ -67,6 +67,7 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[3]
 BENCH = REPO / "data" / "fabfos" / "benchmarks"
+RUNS = REPO / "data" / "fabfos" / "runs"
 LASER_ROOT = REPO / "data" / "fabfos" / "originals" / "benchmarks" / "laser"
 LASER_INPUTS = LASER_ROOT / "inputs"
 PUBLISH_AT = REPO / "data" / "fabfos" / "originals" / "benchmarks" / "het_screen"
@@ -214,7 +215,7 @@ def pairings_ec() -> dict:
 
 def native_labels() -> dict:
     import pandas as pd
-    gem = pd.read_parquet(BENCH / "hosts" / "e_coli_k12" / "gpr_gem.parquet",
+    gem = pd.read_parquet(RUNS / "e_coli_k12" / "gpr" / "gpr_gem.parquet",
                           columns=["orf", "feature_name"])
     have = {str(x).strip().lower()
             for col in ("orf", "feature_name") for x in gem[col] if str(x).strip()}

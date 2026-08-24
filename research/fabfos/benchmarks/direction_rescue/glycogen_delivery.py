@@ -40,7 +40,7 @@ from ecspr.model.build import (load_pairs, load_direction_ratios,             # 
                                graph_from_pairs)
 from ecspr.model.graph import Terminal, solve                                 # noqa: E402
 
-HOSTS = ROOT / "data/fabfos/benchmarks/hosts"
+RUNS = ROOT / "data/fabfos/runs"
 CACHE = HERE / "cache"
 OUT = HERE / "baselines"
 
@@ -105,7 +105,7 @@ def main() -> None:
     ratios = load_direction_ratios(
         bake_identity.build_direction_ratios(sub / "direction_ratios.parquet", args.bake))
 
-    gpr = pd.read_parquet(HOSTS / args.host / "gpr_gem.parquet")
+    gpr = pd.read_parquet(RUNS / args.host / "gpr" / "gpr_gem.parquet")
     gene = gpr.groupby(gpr.mnxr.astype(str)).feature_name.apply(
         lambda s: ",".join(sorted({x for x in s if isinstance(x, str) and x})[:8]))
     weights = {m: 1.0 for m in gpr.mnxr.dropna().astype(str).unique()}

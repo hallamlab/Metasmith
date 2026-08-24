@@ -61,15 +61,15 @@ worktree needs its own, and it is gitignored precisely because it names one chec
 
 Every transform library carries a `_metadata/` directory compiled from its `data_types/*.yml` and
 its transform Python. **It is a build product**, and a library with no metadata does not degrade,
-it raises: `DataTypeLibrary` asserts the index exists before planning begins. Three commands,
-because there are three libraries and only one of them is reached by the vendoring step:
+it raises: `DataTypeLibrary` asserts the index exists before planning begins. Three libraries,
+three commands:
 
     dev/libraries.sh -bm                        # the standard library under src/metasmith_libraries
     dev/fabfos.sh -bm                           # fabfos's own algorithm library, inside the package
     src/fabfos/build_references/build.sh        # the build-side library (also vendors src/ecspr)
 
 The second is easy to forget precisely because it sits inside `src/fabfos/` rather than under a
-library root, which is also why `--vendor-library` never sees it.
+library root, so nothing that walks library roots reaches it.
 
 **Whether the compiled metadata is TRACKED differs between them, and it matters when you edit a
 transform.** `src/metasmith_libraries/**/_metadata/` is gitignored, so a fresh clone has none and
@@ -87,9 +87,16 @@ also much slower, so the split matters.
 
 The ordering that makes this work at all: compiling metadata needs a working engine, and the
 engine needs the library — so the compile must run **from the source tree**, never from an
-installed package. `dev/metasmith.sh --vendor-library` does exactly that before it copies, and
-refuses to stamp a bundle whose metadata came out empty. Shipping one that did would be silent:
-the GUI's type panel simply goes blank.
+installed package.
+
+The engine ships the standard library inside its own package, staged by `dev/metasmith.sh
+--vendor-library` into `src/metasmith/vendor/`. It is a build product like the three above:
+generated, never committed, and `_assert_library_bundle` refuses `-bp`, `-bc` and `-bd` without
+it. Content only — no `_metadata/` — so nothing has to be compiled before it, and the consumer
+compiles its own copy in a writable place (`gui.stdlib.clone_stdlib`). It sits *inside*
+`src/metasmith/` on purpose: `_build_hash` walks that tree, so the library's content is part of
+the engine's version and the two cannot drift. fabfos's own bundled copy still requires
+metadata, which is what `--no-metadata` exists to opt out of.
 
 A fourth step is needed before anything *stages an agent*, and its absence looks nothing like
 its cause: `bash envs/fabfos/setup_agent_env.sh` (idempotent; the script's own header explains

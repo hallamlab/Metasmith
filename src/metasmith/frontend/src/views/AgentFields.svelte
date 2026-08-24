@@ -95,7 +95,7 @@
     </div>
   {/if}
 
-  <Field label="runtime" hint="how a tool is provided on that host">
+  <Field label="runtime">
     <select bind:value={form.runtime}>
       {#each runtimes as r}
         <option value={r}>{RUNTIME_LABELS[r] ?? r.toLowerCase()}</option>
@@ -114,7 +114,7 @@
       label="container image"
       hint={form.container?.trim() && form.container.trim() !== defaultContainer
         ? 'pinned to something other than this metasmith’s own image'
-        : 'what metasmith itself runs from on that host — this one matches this copy of metasmith'}
+        : null}
     >
       <input class="mono" bind:value={form.container} placeholder={defaultContainer} />
     </Field>
@@ -124,10 +124,7 @@
        on the workflow because it is a fact about the machine: a login node
        needs `slurm` for every run anyone ever launches on it, and the person
        clicking launch is the one least placed to know that. -->
-  <Field
-    label="nextflow preset"
-    hint="the config a run uses when it does not name one"
-  >
+  <Field label="nextflow preset">
     <select bind:value={form.preset}>
       <option value="">local — run here, no scheduler</option>
       {#each presets.filter((p) => p !== 'local') as p}
@@ -143,15 +140,9 @@
   <div class="field">
     <span class="small muted">default params</span>
     <ParamRows bind:rows={form.params} />
-    <span class="small muted hint">
-      passed to every run on this agent; a run may add to them or override one
-    </span>
   </div>
 
-  <Field
-    label="setup commands"
-    hint="run before anything else on that host — one per line, e.g. module load"
-  >
+  <Field label="setup commands">
     <ConfigEditor
       bind:value={form.setup}
       language="bash"
@@ -167,7 +158,6 @@
   .grid { display: flex; flex-direction: column; gap: 10px; }
   /* the same shape `Field` renders, for the rows that cannot be a label */
   .field { display: flex; flex-direction: column; gap: 3px; }
-  .hint { line-height: 1.3; }
 
   .tabs { display: flex; gap: 2px; }
   .tab {

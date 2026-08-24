@@ -99,7 +99,7 @@ def read_panel(path: Path) -> list[dict]:
 
 def host_weights(host: str, channel: str = "gem", universe: set | None = None) -> dict:
     if channel == "gem":
-        p = ROOT / f"data/fabfos/benchmarks/hosts/{host}/gpr_gem.parquet"
+        p = ROOT / f"data/fabfos/runs/{host}/gpr/gpr_gem.parquet"
         df = pd.read_parquet(p, columns=["mnxr", "in_atom_universe"])
         keep = df.in_atom_universe.fillna(False).astype(bool)
     else:

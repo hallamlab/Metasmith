@@ -40,7 +40,7 @@ from ecspr.model.graph import Terminal, solve                    # noqa: E402
 
 BAKE = ROOT / "data/fabfos/processed/metabolism_bake"
 ANNOT = BAKE / "seams/direction_annotation.parquet"
-HOSTS = ROOT / "data/fabfos/benchmarks/hosts"
+RUNS = ROOT / "data/fabfos/runs"
 OUT_DIR = Path(__file__).resolve().parent / "cache"
 ASKA = ROOT / "data/fabfos/runs/eydallin_clones/ecspr/aska_sweep_gem_e_coli_ag1_fold2.0_C.tsv"
 
@@ -208,7 +208,7 @@ def main() -> int:
 
     rows: list = []
     for host in a.hosts:
-        gpr = pd.read_parquet(HOSTS / host / "gpr_gem.parquet")
+        gpr = pd.read_parquet(RUNS / host / "gpr" / "gpr_gem.parquet")
         assert set(gpr.lane_set.unique()) == {"curated"}, f"{host} is not the curated arm"
         weights = {m: 1.0 for m in gpr.mnxr.dropna().unique()}
         print(f"\n== {host}: {len(weights):,} reactions", file=sys.stderr)

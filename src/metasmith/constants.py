@@ -37,6 +37,7 @@ class AgentPaths:
     WORK_ROOT = Path(os.environ.get("METASMITH_WORK_ROOT") or CONTAINER_WORK_ROOT)
     HOME_ROOT = Path(os.environ.get("METASMITH_HOME_ROOT") or CONTAINER_HOME_ROOT)
     CONTAINER_CACHE = Path("container_images")
+    CONDA_RECIPES = Path("env_recipes")
     INTERNALS = Path("_metasmith")
     STAGED = Path("runs")
     TASK = Path("task")
@@ -47,12 +48,27 @@ class AgentPaths:
     NXF_RES = "workflow.resources.nf"
     NXF_PARAMS = "workflow.params.yml"
     GPU_MANIFEST = "workflow.gpu.json"
+    # Where each cache-hit step's shard products have to be copied to, because
+    # nextflow will not publish a path outside its own work directory.
+    CACHE_PUBLISH_MANIFEST = "workflow.cache_publish.json"
     ENV_MANIFEST = "workflow.env.json"
     # Schema 1 recorded which of `container:` / `conda:` a resource carried; schema 2
     # records what each resolves to. Nothing branches on it -- it is here so a reader
     # of an old manifest can tell which shape they have.
     ENV_MANIFEST_SCHEMA = 2
     NXF_TRACE_FILE = "nxf_trace.tsv"
+
+    # A run's identity and its process group, written by start.sh beside PID.lock.
+    # PID.lock holds nextflow's pgid and is the cancel handle; RUN.pgid holds the
+    # whole run's pgid and RUN.token the environment token every descendant
+    # inherits, which together are the reap handle.
+    PID_LOCK_FILE = "PID.lock"
+    RUN_PGID_FILE = "RUN.pgid"
+    RUN_TOKEN_FILE = "RUN.token"
+    RUN_TOKEN_ENV = "METASMITH_RUN"
+    # Docker label carrying RUN_TOKEN_ENV: `--rm` leaves no other handle on a
+    # container whose client was killed.
+    RUN_LABEL = "msm.run"
 
     @classmethod
     def to_staged(cls, root: Path|None=None):

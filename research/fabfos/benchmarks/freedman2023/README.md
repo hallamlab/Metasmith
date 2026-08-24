@@ -21,7 +21,7 @@ because no host background exists for this organism.
 | inserts with **both** | **0** |
 | conditions | 1 (GS-2 + 6 g/L cellobiose, 34 °C, anaerobic, batch, 118 h) |
 | elements | C only |
-| host background | none — `data/benchmarks/hosts/` holds three E. coli GEMs and nothing else |
+| host background | none — every `gpr_gem.parquet` under `data/fabfos/runs/` is an E. coli one |
 
 ## The library
 

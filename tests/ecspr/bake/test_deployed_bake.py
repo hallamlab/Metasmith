@@ -7,17 +7,18 @@
 # cost. Sulfur is the same coverage for 24,198 pair rows instead of ~1.5M -- so
 # this whole file runs in about a second against the real deployed trio.
 #
-# The counts below are the r9 bake. They are a REGRESSION pin over a fixed
+# The counts below are the r10 bake. They are a REGRESSION pin over a fixed
 # artifact, not a claim about what a rebake should produce: when the bake is
 # rebuilt they move, and the honest response is to re-derive them and say in the
 # commit which bake they now describe.
 #
 # `BAKE` CANNOT TELL YOU WHICH BAKE THAT IS. The identity is a fact about the node
-# space, so r9 -- a direction-only re-bake -- inherits r7's 0ffd4c8c6231696e byte
-# for byte. The field that separates them is `direction.parquet`'s per-file
-# `src_direction_sha256`, e8f72b8b for r9 against 96cc532c for r8 and d3acf218 for
-# r7, and it lives under a different footer key so that `assert_same_bake` does
-# not compare it across the trio.
+# space, so r10 -- a direction-only re-bake, like r9 before it -- inherits r7's
+# 0ffd4c8c6231696e byte for byte. The field that separates them is
+# `direction.parquet`'s per-file `src_direction_sha256`, 554b4d8f for r10 against
+# e8f72b8b for r9, 96cc532c for r8 and d3acf218 for r7, and it lives under a
+# different footer key so that `assert_same_bake` does not compare it across the
+# trio.
 #
 # The sulfur counts run through `ratio_by_code`, so they are DIRECTION-SENSITIVE
 # as well as topology-sensitive: a re-bake that only changed the direction table
@@ -29,7 +30,10 @@ import pytest
 from ecspr.bake import encoding as refs
 
 BAKE = "0ffd4c8c6231696e"
-S_NODES, S_EDGES, S_PAIR_ROWS = 7833, 11076, 26352
+# S_EDGES is the only one r10 moved, 11,076 -> 11,092. A direction-only re-bake
+# routes through `ratio_by_code`, so the edge count is what it can touch and the
+# node, pair-row, reaction and metabolite counts are what it cannot.
+S_NODES, S_EDGES, S_PAIR_ROWS = 7833, 11092, 26352
 S_REACTIONS_USED, S_METABOLITES = 18142, 6613
 
 
@@ -105,14 +109,15 @@ def test_a_reaction_with_no_atom_pairs_is_counted_as_a_gap_not_dropped(deployed_
 def test_ratios_stay_float64(deployed_bake):
     # The consumer's flip test is a threshold at exactly 1.0.
     #
-    # Ratios land a couple of float32 ULPs off that threshold -- r8's closest
-    # approaches are 1.0000002325 above and 0.9999990700 below -- so which side of
-    # it an edge falls on is decided by the width of the type as much as by the
-    # chemistry. r7 carried four that crossed outright under float32 (MNXR112716 at
-    # 1.0000000000016507); r8 carries none, and the window below was widened from
-    # 1e-7 to 1e-6 to keep describing the population that is actually at risk. That
-    # no reaction crosses TODAY is a property of one artifact, not a reason to stop
-    # checking the type. A re-encoding may not change topology.
+    # Ratios land a couple of float32 ULPs off that threshold -- r10's closest
+    # approaches are 1.0000001793 above and 0.9999996794 below, six reactions inside
+    # 1e-6 on each side -- so which side of it an edge falls on is decided by the
+    # width of the type as much as by the chemistry. r7 carried four that crossed
+    # outright under float32 (MNXR112716 at 1.0000000000016507); r8, r9 and r10 carry
+    # none, and the window below was widened from 1e-7 to 1e-6 to keep describing the
+    # population that is actually at risk. That no reaction crosses TODAY is a
+    # property of one artifact, not a reason to stop checking the type. A re-encoding
+    # may not change topology.
     D = refs.load_direction(deployed_bake["direction"])
     assert str(D["ratio"].dtype) == "float64"
     near = D[(D["ratio"] > 1.0) & (D["ratio"] < 1.0 + 1e-6)]

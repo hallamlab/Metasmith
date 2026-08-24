@@ -14,7 +14,7 @@ ROOT = Path(__file__).resolve().parents[3]
 
 REFS = ROOT / "data" / "fabfos" / "runs" / "scadc_ecspr" / "refs"
 GPR = ROOT / "data" / "fabfos" / "runs" / "scadc_fosmids" / "gpr" / "gpr_4lane.parquet"
-HOST_GEM = ROOT / "data" / "fabfos" / "benchmarks" / "hosts" / "e_coli_epi300" / "gpr_gem.parquet"
+HOST_GEM = ROOT / "data" / "fabfos" / "runs" / "e_coli_epi300" / "gpr" / "gpr_gem.parquet"
 CONDITIONS = ROOT / "data" / "fabfos" / "runs" / "scadc_ecspr" / "conditions.parquet"
 OUT = ROOT / "data" / "fabfos" / "runs" / "scadc_ecspr" / "results.parquet"
 

@@ -35,7 +35,7 @@ from ecspr.model.graph import Terminal, solve                                   
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import bake_pairs  # noqa: E402
 
-HOSTS = ROOT / "data/fabfos/benchmarks/hosts"
+RUNS = ROOT / "data/fabfos/runs"
 CLONE_GPR = ROOT / "data/fabfos/runs/eydallin_clones/gpr/gpr_gem.parquet"
 MEASURED = ROOT / "data/fabfos/benchmarks/eydallin/Y/measured_glycogen.tsv"
 OUT_DIR = ROOT / "data/fabfos/runs/eydallin_clones/ecspr"
@@ -55,7 +55,7 @@ def main():
 
     pairs = load_pairs(bake_pairs.atom_pairs(), element=args.element)
     ratios = load_direction_ratios(bake_pairs.direction_ratios())
-    host = pd.read_parquet(HOSTS / args.host / "gpr_gem.parquet")
+    host = pd.read_parquet(RUNS / args.host / "gpr" / "gpr_gem.parquet")
     base_w = {m: 1.0 for m in host.mnxr.dropna().astype(str).unique()}
 
     clone = pd.read_parquet(CLONE_GPR)

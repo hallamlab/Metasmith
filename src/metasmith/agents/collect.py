@@ -1,14 +1,75 @@
 from __future__ import annotations
 
+import json
 import os
+import shutil
 from pathlib import Path
 
 import pandas as pd
 
+from ..caching.promote import CANONICAL_OUTPUT_PREFIX
+from ..constants import AgentPaths
 from ..logging import Log
 from ..models.libraries import DataInstance, DataInstanceLibrary, DataTypeLibrary
 from ..models.lineage import ProducedFile
 from ..models.workflow import WorkflowTask
+
+def _place(src: Path, dest: Path, strategy: str) -> None:
+    if src.is_dir():
+        # publishDir's own shape for a directory: a real directory whose
+        # leaves are links, so the shard's bytes are never duplicated.
+        dest.mkdir(parents=True, exist_ok=True)
+        for child in src.iterdir():
+            _place(child, dest/child.name, strategy)
+        return
+    if strategy == "link":
+        try:
+            os.link(src, dest)
+            return
+        except OSError:
+            pass
+    shutil.copy2(src, dest)
+
+
+def PublishCachedProducts(workspace: Path, output_path: Path) -> int:
+    """Put every cache-hit product into the results directory.
+
+    Nextflow adds a path to the publish set only when it resolves under the
+    session's own work directory (`PublishOp.collectFiles` -> `getTaskDir`),
+    and a cache shard lives outside it. The path is dropped with no log and no
+    error, so nothing the emitter puts on a channel can reach `results/` from a
+    shard -- the driver has to place them once nextflow has exited.
+    """
+    manifest = workspace/AgentPaths.CACHE_PUBLISH_MANIFEST
+    if not manifest.exists():
+        return 0
+    try:
+        plan = json.loads(manifest.read_text())
+    except (OSError, json.JSONDecodeError) as e:
+        Log.Warn(f"unreadable cache publish manifest [{manifest}]: {e}")
+        return 0
+    strategy = plan.get("strategy", "link")
+    placed = 0
+    for entry in plan.get("publish", []):
+        dest_dir = output_path/entry.get("path", "")
+        dest_dir.mkdir(parents=True, exist_ok=True)
+        for raw in entry.get("files", []):
+            src = Path(raw)
+            dest = dest_dir/src.name
+            if dest.exists():
+                continue
+            if not src.exists():
+                Log.Warn(
+                    f"cache-hit product [{src}] is gone from the shard; "
+                    f"[{entry.get('path')}] will be missing it"
+                )
+                continue
+            _place(src, dest, strategy)
+            placed += 1
+    if placed:
+        Log.Info(f"published [{placed}] product(s) from cache shards")
+    return placed
+
 
 def _published_index(output_path: Path) -> dict[str, Path]:
     index: dict[str, Path] = {}
@@ -17,18 +78,27 @@ def _published_index(output_path: Path) -> dict[str, Path]:
         if rel_dir.parts and rel_dir.parts[0] == "_metadata":
             dirs[:] = []
             continue
-        for name in files:
+        # A directory named in the canonical output spelling is one product,
+        # not a folder of them: index it, and do not index what is inside it.
+        products = [d for d in dirs if CANONICAL_OUTPUT_PREFIX.match(d)]
+        dirs[:] = [d for d in dirs if d not in set(products)]
+        for name in products + files:
             index.setdefault(name, rel_dir/name)
     return index
 
 
-def _published_path(path: Path, output_path: Path, index: dict[str, Path]) -> Path:
+def _published_path(
+    path: Path, output_path: Path, index: dict[str, Path], warn: bool = True,
+) -> Path:
     rel = path.relative_to(output_path)
     if (output_path/rel).exists():
         return rel
     found = index.get(rel.name)
     if found is None:
-        Log.Warn(f"produced file [{rel}] is not in the results directory")
+        # An unpublished intermediate is still registered: the entry is the only
+        # thing that lets a target name it as an ancestor. It just has no file.
+        if warn:
+            Log.Warn(f"produced file [{rel}] is not in the results directory")
         return rel
     return found
 
@@ -40,19 +110,21 @@ def CollectResults(
 ) -> DataInstanceLibrary:
     output = DataInstanceLibrary(output_path)
     tlibs: dict[str, DataTypeLibrary] = {}
-    for lib in task.transform_libraries:
-        for namespace, tlib in lib.types.items():
-            tlibs[namespace] = tlib
-    for lib in task.data_libraries:
+    # Staged libraries are pruned per-transform (PruneTypes), so two libraries
+    # in the same namespace can carry disjoint types -- union them instead of
+    # last-one-wins, and copy rather than mutate the incoming library's own
+    # DataTypeLibrary object.
+    for lib in list(task.transform_libraries) + list(task.data_libraries):
         for namespace, tlib in lib.types.items():
             if namespace in tlibs:
                 _lib = tlibs[namespace]
-                for k, e in tlib.types.items():
-                    if k in _lib: continue
-                    _lib[k] = e
             else:
-                _lib = tlib
-            tlibs[namespace] = _lib
+                _lib = DataTypeLibrary.Unpack(tlib.Pack())
+                _lib.types = {}
+                tlibs[namespace] = _lib
+            for k, e in tlib.types.items():
+                if k in _lib.types: continue
+                _lib.types[k] = e
     for namespace, tlib in tlibs.items():
         output.AddTypeLibrary(namespace=namespace, lib=tlib)
     inst_id2inst: dict[str, DataInstance] = {}
@@ -147,7 +219,10 @@ def CollectResults(
         abs_path = rel if rel.is_absolute() else output_path / rel
         cinst = _resolve_instance(pf.dtype_key, pf.slot_id or fid)
         path = output.AddItem(
-            path=_published_path(abs_path, output_path, published),
+            path=_published_path(
+                abs_path, output_path, published,
+                warn=task.plan.publish_intermediates,
+            ),
             dtype=cinst.dtype_name,
             parents=parents,
         )

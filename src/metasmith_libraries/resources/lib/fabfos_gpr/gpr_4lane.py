@@ -30,6 +30,7 @@ def _args():
     p.add_argument("--source", required=True)
     p.add_argument("--threads", type=int, required=True)
     p.add_argument("--uniref", required=True)
+    p.add_argument("--uniref-descriptions", required=True)
     return p.parse_args()
 
 
@@ -51,16 +52,16 @@ if __name__ == "__main__":
 
 import numpy as np
 import pandas as pd
-import pyarrow as pa
-import pyarrow.compute as pc
-import pyarrow.parquet as pq
 
 
 def load_evidence(ev_lib):
     """The staged `lib::fabfos_evidence.py`, imported from wherever it landed.
 
     It carries the bridge loaders, the stitle cleaner, the schema, the score
-    contract and the validator, and it is pandas-only so this image can hold it.
+    contract, the validator, and the parquet reader and writer every table here
+    goes through -- `fe.read_parquet` / `fe.write_parquet` pick the engine the
+    interpreter actually has, which is polars in this image and pyarrow outside
+    it. Nothing in this file may touch parquet by another route.
     """
     sys.path.insert(0, os.path.dirname(str(ev_lib)))
     import fabfos_evidence
@@ -142,9 +143,16 @@ def lane_clean(df, ec_to_mnxr):
     df["intermediate_id"] = df["ec"]
     return finish(df, "clean", "ec")
 
-# ---- uniref50 lane: dev2 diamond_uniref50_results = BLAST6 + stitle + bsr (14 col)
-def parse_uniref(path):
-    df = pd.read_csv(path, sep="\t", header=None, names=fe._BLAST6_BSR_COLS, dtype=str)
+# ---- uniref50 lane: diamond_uniref50_results = BLAST6 + bsr, headered (13 col),
+# with the subject title in diamond_uniref50_descriptions beside it.
+def parse_uniref(path, descriptions):
+    df = pd.read_csv(path, sep="\t", dtype=str)
+    if list(df.columns) != fe._BLAST6_BSR_COLS:
+        raise SystemExit(
+            "[gpr] diamond_uniref50_results header is not the "
+            + str(len(fe._BLAST6_BSR_COLS)) + " columns this lane parses: got "
+            + repr(list(df.columns)) + ". diamond_uniref50 writes the header, "
+            "so a drift here silently renames every column and empties the lane")
     df["evalue"] = pd.to_numeric(df["evalue"], errors="coerce")
     df["bitscore"] = pd.to_numeric(df["bitscore"], errors="coerce")
     df["bsr"] = pd.to_numeric(df["bsr"], errors="coerce")
@@ -152,7 +160,8 @@ def parse_uniref(path):
     df = (df.sort_values(["qseqid", "evalue", "bitscore"], ascending=[True, True, False])
             .drop_duplicates(subset=["qseqid"], keep="first"))
     df["uniprot_accession"] = df["sseqid"].str.replace(r"^UniRef50_", "", regex=True)
-    df["intermediate_name"] = df["stitle"].apply(fe._clean_stitle)
+    titles = fe.read_uniref50_titles(descriptions)
+    df["intermediate_name"] = df["sseqid"].map(titles).fillna("").apply(fe._clean_stitle)
     return df.rename(columns={"qseqid": "orf", "bsr": "raw_score"})
 
 def lane_uniref(df, uniprot_to_mnxr):
@@ -174,7 +183,7 @@ def lane_uniref(df, uniprot_to_mnxr):
 # table missing `dim_7` still stacks into a matrix of the wrong width rather than
 # failing.
 def _read_embeddings(path, id_col):
-    df = pd.read_parquet(path)
+    df = fe.read_parquet(path)
     if id_col not in df.columns:
         raise SystemExit(
             "[gpr] " + path + " has no " + id_col + " column (it holds "
@@ -345,10 +354,9 @@ def bridge_slice(path, src, name, wanted):
 
     The bridge is 30.5 million rows over three id spaces and the read used to be
     the whole thing, into pandas, in every task -- gigabytes of object-dtype
-    strings, ~1000 times, to keep a fraction of a percent of them. Both cuts
-    happen in arrow, where a string column is dictionary-backed and a filter is a
-    kernel rather than a Python loop; only the surviving rows are ever handed to
-    pandas.
+    strings, ~1000 times, to keep a fraction of a percent of them. Both cuts are
+    pushed into the parquet reader instead, so only the surviving rows are ever
+    handed to pandas.
 
     `wanted` is the lane's own parsed ids, so the result is bounded by the SHARD.
     That is the whole point: the reference does not grow with the corpus and the
@@ -356,11 +364,10 @@ def bridge_slice(path, src, name, wanted):
     """
     if len(wanted) == 0:
         return pd.DataFrame(columns=[name, "mnxr", "evidence_quality"])
-    t = pq.read_table(path, columns=["id", "id_source", "mnxr", "evidence_quality"],
-                      filters=[("id_source", "==", src)])
-    t = t.filter(pc.is_in(t.column("id"), value_set=pa.array(sorted(set(wanted)))))
-    df = t.select(["id", "mnxr", "evidence_quality"]).to_pandas().drop_duplicates()
-    return df.rename(columns={"id": name})
+    df = fe.read_parquet(
+        path, columns=["id", "mnxr", "evidence_quality"],
+        filters=[("id_source", "==", src), ("id", "in", sorted(set(wanted)))])
+    return df.drop_duplicates().rename(columns={"id": name})
 
 def main():
     ids = orf_ids(str(A.orfs))
@@ -369,7 +376,7 @@ def main():
     # Parse every lane FIRST, so the bridge read below knows which ids matter.
     kof = parse_kofam(str(A.kofam))
     cln = parse_clean(str(A.clean))
-    uni = parse_uniref(str(A.uniref))
+    uni = parse_uniref(str(A.uniref), str(A.uniref_descriptions))
     frames = [
         lane_kofam(kof, bridge_slice(str(A.bridge), "ko", "ko", kof["ko"].unique())),
         lane_clean(cln, bridge_slice(str(A.bridge), "ec", "ec", cln["ec"].unique())),
@@ -407,7 +414,7 @@ def main():
     # lane whose reference never staged all used to produce a zero-row parquet and
     # report success.
     fe.validate_gpr(gpr, LANE_SET, ids, SOURCE)
-    gpr.to_parquet(str(A.out), index=False)
+    fe.write_parquet(gpr, str(A.out))
     print("[gpr_4lane] wrote " + str(len(gpr)) + " rows -> " + str(A.out), flush=True)
 
 

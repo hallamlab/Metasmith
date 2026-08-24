@@ -87,7 +87,11 @@ class WorkflowPlan:
     _archetype_translation: dict[DataInstance, DataInstance]|None = None
     dropped_targets: list[str] = field(default_factory=list)
     hints: list[PlanHint] = field(default_factory=list)
-    publish_intermediates: bool = True
+    # A run publishes its targets and nothing else. The per-step outputs stay in
+    # the work dir and the cache store, so what a collect copies back is what was
+    # asked for -- at the cost of a run that dies early leaving an empty results
+    # folder, where the per-step logs are then the only record.
+    publish_intermediates: bool = False
     _solver_inputs: tuple|None = None
 
     def __post_init__(self):
@@ -215,7 +219,7 @@ class WorkflowPlan:
             given=given,
             targets=[_unpack_target(d) for d in raw["targets"]],
             steps=steps,
-            publish_intermediates=raw.get("publish_intermediates", True),
+            publish_intermediates=raw.get("publish_intermediates", False),
         )
 
     @classmethod
@@ -474,6 +478,7 @@ class WorkflowPlan:
         r = DagRenderer(font=font, label_mode=label_mode, colour=colour, theme=theme, background=background)
         r.add_node(NodeKind.TRANSFORM, "given")
 
+        given_inst_names: set[str] = set()
         k2names: dict[Endpoint, set[str]] = {}
         for x in self.given:
             if _get_ns(x.dtype_name) in blacklist_namespaces: continue
@@ -498,6 +503,7 @@ class WorkflowPlan:
                     for pname in pinsts:
                         r.add_edge(pname, inst_name)
                 r.add_edge("given", inst_name)
+                given_inst_names.add(inst_name)
 
         for step in self.steps:
             transform_name = f"{step.order} {step.transform.name}"
@@ -521,7 +527,15 @@ class WorkflowPlan:
             for name in outputs:
                 r.add_edge(transform_name, name)
 
-        for target in {x.instance.dtype_name for x in self.targets}:
+        target_names = {x.instance.dtype_name for x in self.targets}
+        for inst_name in given_inst_names:
+            if inst_name in target_names: continue
+            if r.out_degree(inst_name) == 0:
+                r.remove_node(inst_name)
+        if "given" not in target_names and r.out_degree("given") == 0:
+            r.remove_node("given")
+
+        for target in target_names:
             r.mark(NodeKind.TARGET, target)
         if target_sink:
             r.add_node(NodeKind.TRANSFORM, "target")

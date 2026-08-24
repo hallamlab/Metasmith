@@ -33,7 +33,7 @@ from ecspr.model.graph import Terminal, solve                       # noqa: E402
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import bake_pairs  # noqa: E402
 
-HOSTS = ROOT / "data/fabfos/benchmarks/hosts"
+RUNS = ROOT / "data/fabfos/runs"
 ASKA_GPR = ROOT / "data/fabfos/runs/aska/gpr"
 CHEM_PROP = ROOT / "data/fabfos/originals/metanetx/4.5/chem_prop.tsv"
 OUT_DIR = ROOT / "data/fabfos/runs/eydallin_clones/ecspr"
@@ -124,7 +124,7 @@ def main():
     report = {}
     for channel in ("gem", "denovo"):
         if channel == "gem":
-            gpr = pd.read_parquet(HOSTS / args.host / "gpr_gem.parquet")
+            gpr = pd.read_parquet(RUNS / args.host / "gpr" / "gpr_gem.parquet")
         else:
             gpr = pd.read_parquet(ASKA_GPR / "gpr_denovo.parquet")
         gene = gpr.groupby(gpr.mnxr.astype(str)).feature_name.apply(

@@ -190,12 +190,18 @@ class Environment:
         binds = custom_bind_param if custom_bind_param is not None else self.MakeBindsParam()
         match self.runtime:
             case Runtime.DOCKER:
-                others = ['--platform=linux/amd64', '--rm', '-u $(id -u):$(id -g)', '--network=host', '-e TMPDIR=${TMPDIR-"/tmp"}', '--entrypoint=""']
+                # `--rm` hands the container to dockerd, so a killed client
+                # leaves nothing to find it by. The label is that handle:
+                # `docker ps --filter label=msm.run=<token>`. Not `--name` --
+                # a retry would collide with a predecessor still dying.
+                others = ['--platform=linux/amd64', '--rm', '-u $(id -u):$(id -g)', '--network=host', '-e TMPDIR=${TMPDIR-"/tmp"}', f'--label {AgentPaths.RUN_LABEL}=${{{AgentPaths.RUN_TOKEN_ENV}:-}}', '--entrypoint=""']
                 workdir = f'--workdir="{self.container.workdir}"' if self.container.workdir is not None else ''
                 run = 'run'
             case Runtime.APPTAINER:
                 nthreads = '${SLURM_CPUS_PER_TASK:-1}'
-                others = ['--no-home', '--cleanenv', '--env TMPDIR=${TMPDIR-"/tmp"}', f'--env OPENBLAS_NUM_THREADS={nthreads}', f'--env OMP_NUM_THREADS={nthreads}']
+                # `--cleanenv` drops the run token, and the token is what a
+                # reap scans /proc for -- so it is put back explicitly.
+                others = ['--no-home', '--cleanenv', '--env TMPDIR=${TMPDIR-"/tmp"}', f'--env OPENBLAS_NUM_THREADS={nthreads}', f'--env OMP_NUM_THREADS={nthreads}', f'--env {AgentPaths.RUN_TOKEN_ENV}=${{{AgentPaths.RUN_TOKEN_ENV}:-}}']
                 workdir = f'--pwd "{self.container.workdir}"' if self.container.workdir is not None else ''
                 binds = custom_bind_param if custom_bind_param is not None else self.MakeBindsParam()
                 if not isinstance(local, bool):
@@ -250,7 +256,7 @@ class Environment:
             return (
                 f'{self.MakePullCommand()} || '
                 f'docker image inspect "{image}" >/dev/null 2>&1 || '
-                f'{{ echo "ERROR: could not pull [{image}] and no local copy is cached" >&2; exit 1; }}'
+                f'{{ echo "ERROR: could not pull [{image}] and no local copy is cached" >&2; false; }}'
             )
         sif, sandbox = self.GetLocalPath(), self.GetSandboxPath()
         if sif is None or sandbox is None: return ""
@@ -486,6 +492,10 @@ class Environment:
                 ls -lh .
                 echo "relay =========================="
                 $INTERNALS/relay/msm_relay start --local
+                # The stop on the last line is only reached when the task exits
+                # normally; a killed task would otherwise leave its own watcher
+                # daemon running. Same class of problem as msm_phantom_guard.
+                trap '$INTERNALS/relay/msm_relay stop >/dev/null 2>&1' EXIT INT TERM
                 echo "stage control-plane ============"
                 # Under SLURM array fan-out, copy the small shared control-plane
                 # subset into this task's node-local scratch so N tasks don't all

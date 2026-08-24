@@ -24,7 +24,7 @@ and contig-, bin- and SSU-level taxonomy.
 # downstream work across them (35 steps rather than 29). Ambiguity that wide is
 # also what the search pays for: unpinned, this template took ~190s and 6 GB to
 # solve and blocked every other job behind the GUI's plan lock; pinned, ~3s.
-_MB, _SB, _CB = 11, 12, 13
+_MB, _SB, _CB = 13, 14, 15
 TARGETS = [
     "sequences::megahit_assembly",
     "sequences::read_qc_stats",
@@ -33,7 +33,9 @@ TARGETS = [
     {"type": "sequences::assembly_per_contig_coverage", "parents": [0]},
     {"type": "sequences::assembly_per_bp_coverage", "parents": [0]},
     {"type": "annotation::diamond_uniref50_results", "parents": [0]},
+    {"type": "annotation::diamond_uniref50_descriptions", "parents": [0]},
     {"type": "annotation::kofamscan_results", "parents": [0]},
+    {"type": "annotation::kofamscan_descriptions", "parents": [0]},
     {"type": "taxonomy::metabuli", "parents": [0]},
     "taxonomy::phyloflash_summary",
     {"type": "binning_local::cluster_table", "parents": [0]},

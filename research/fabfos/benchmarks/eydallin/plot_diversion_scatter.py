@@ -26,7 +26,7 @@ import pandas as pd
 
 ROOT = Path(__file__).resolve().parents[4]
 
-HOSTS = ROOT / "data/fabfos/benchmarks/hosts"
+RUNS = ROOT / "data/fabfos/runs"
 CHEM_PROP = ROOT / "data/fabfos/originals/metanetx/4.5/chem_prop.tsv"
 OUT_DIR = ROOT / "data/fabfos/runs/eydallin_clones/ecspr"
 CACHE = Path(__file__).resolve().parent / "cache"
@@ -77,7 +77,7 @@ def compute(a) -> pd.DataFrame:
         ratios = clip_ratios(ratios, a.clip_ratio)
         print(f"[div] clipped {n_clipped}/{len(ratios)} reaction ratios to "
               f"{a.clip_ratio:g}:1", file=sys.stderr)
-    host = pd.read_parquet(HOSTS / a.host / "gpr_gem.parquet")
+    host = pd.read_parquet(RUNS / a.host / "gpr" / "gpr_gem.parquet")
     base_w = {m: 1.0 for m in host.mnxr.dropna().astype(str).unique()}
 
     base = draws(pairs, a.element, base_w, ratios, a.leak)

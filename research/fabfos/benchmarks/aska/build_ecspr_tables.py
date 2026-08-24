@@ -61,7 +61,7 @@ sys.path.insert(0, str(HERE.parent))
 import bake_identity                                                          # noqa: E402
 
 BAKE = bake_identity.DEPLOYED
-HOST_GEM = ROOT / "data/fabfos/benchmarks/hosts/e_coli_k12/gpr_gem.parquet"
+HOST_GEM = ROOT / "data/fabfos/runs/e_coli_k12/gpr/gpr_gem.parquet"
 STUDY = ROOT / "data/fabfos/benchmarks/aska_ffa"
 ROSTER = ROOT / "data/fabfos/originals/benchmarks/aska/library/aska_clone_minus.tsv"
 GENOME = ROOT / "data/fabfos/originals/genomes/e_coli_k12/genome/NC_000913.3.gbk"

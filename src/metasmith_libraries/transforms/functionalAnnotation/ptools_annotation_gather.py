@@ -21,6 +21,7 @@ def protocol(context: ExecutionContext):
     script = f"""
 import csv
 import pandas as pd
+import polars as pl
 
 orf_ids = []
 with open("{iorfs.container}") as fh:
@@ -54,12 +55,10 @@ for _, r in ko_df.iterrows():
     rows.append({{"orf_id": str(r["gene_name"]), "kind": "KEGG", "value": str(r["KO"]),
                   "score": score, "confidence": "best"}})
 
-# DIAMOND UniRef50: BLAST6 (qseqid sseqid pident length mismatch gapopen qstart qend sstart send evalue bitscore).
-# diamond_uniref50 transform sets --max-target-seqs 1 so this is already best-hit-per-query;
+# DIAMOND UniRef50: headered BLAST6 + bsr, written by diamond_uniref50.
+# That transform sets --max-target-seqs 1 so this is already best-hit-per-query;
 # still dedup defensively in case the upstream relaxes that.
-COLS = ["qseqid","sseqid","pident","length","mismatch","gapopen",
-        "qstart","qend","sstart","send","evalue","bitscore"]
-hit_df = pd.read_csv("{ihits.container}", sep="\\t", header=None, names=COLS, dtype=str)
+hit_df = pd.read_csv("{ihits.container}", sep="\\t", dtype=str)
 hit_df["evalue"]   = pd.to_numeric(hit_df["evalue"],   errors="coerce")
 hit_df["bitscore"] = pd.to_numeric(hit_df["bitscore"], errors="coerce")
 hit_df = (hit_df.sort_values(["qseqid","evalue","bitscore"], ascending=[True,True,False])
@@ -72,9 +71,14 @@ for _, r in hit_df.iterrows():
                   "score": float(r["bitscore"]) if pd.notna(r["bitscore"]) else None,
                   "confidence": "best"}})
 
-df = pd.DataFrame(rows, columns=["orf_id","kind","value","score","confidence"])
-df = df[df["orf_id"].isin(set(orf_ids))]
-df.to_parquet("{iout.container}", index=False)
+# polars writes the parquet: pandas' own writer is a pyarrow front end and this
+# image carries no pyarrow. Built from `rows` rather than handed over from pandas,
+# because `pl.from_pandas` is itself implemented over arrow.
+keep = set(orf_ids)
+rows = [r for r in rows if r["orf_id"] in keep]
+pl.DataFrame(rows, schema={{"orf_id": pl.String, "kind": pl.String,
+                            "value": pl.String, "score": pl.Float64,
+                            "confidence": pl.String}}).write_parquet("{iout.container}")
 """
 
     context.LocalShell("cat > _gather.py << 'PYEOF'\n" + script + "\nPYEOF\n")

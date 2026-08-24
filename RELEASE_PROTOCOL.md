@@ -39,6 +39,13 @@ Note this does **not** exclude `slow` — the `perf` axis (10k-item libraries) i
 a few minutes and belongs in a release gate. For the minute-by-minute dev loop
 use `-m fast`, and `./dev/metasmith.sh -tg` for the GUI alone.
 
+**Budget 25 minutes.** Measured 2026-08-20 on a 16-core box under other load:
+1968 selected, 296 deselected, 20m38s wall. `perf` and `flow` are two thirds of
+that (290s and 362s), so run them last if you need to cut the sweep short — the
+other eight axes together are under seven minutes. `pytest-timeout` is not in
+`msm`, so every `@pytest.mark.timeout` in the tree is inert and nothing bounds a
+hung test; wrap the run in `timeout` if you are leaving it unattended.
+
 ### Exercise the gated tiers when relevant
 
 The marker tiers above are skipped in the fast sweep because they need
@@ -109,6 +116,7 @@ unset PYTHONPATH
 ./dev/metasmith.sh -br         # build the relay binaries (all four arch/os targets)
 ./dev/metasmith.sh -be         # build the solver engine (same four targets) + stage it
 ./dev/metasmith.sh --build-gui # build the frontend bundle (needs node; see below)
+./dev/metasmith.sh --vendor-library # stage the standard library into the package
 ./dev/metasmith.sh -bp         # build the pip wheel + sdist  (stamps build_hash.txt)
 ./dev/metasmith.sh -bd         # build the docker image, tagged <version>-<hash>
 ./dev/metasmith.sh -bs         # build the apptainer .sif from the local docker image
@@ -118,6 +126,19 @@ unset PYTHONPATH
 `-brc`/`-br` produce the relay binaries that get baked into the docker image;
 build them before `-bd`. `-bp` stamps `build_hash.txt`, which fixes the build
 hash that ties the wheel, image tag, and SIF to the exact source state.
+
+The order is only load-bearing where one step consumes another's output. The
+four producers above `-bp` — relays, solver engine, GUI bundle, vendored library
+— are independent of each other and can run concurrently; so can `-bd` and `-bc`
+below it, which read the same frozen `dist/` sdist and write to disjoint places.
+
+`--vendor-library` re-stages `src/metasmith_libraries/` into
+`src/metasmith/vendor/`, which is inside the tree `_build_hash` walks — so it
+must land before `-bp` stamps the hash, or the wheel ships a library the version
+does not describe. **Re-stage it every release rather than trusting the bundle a
+previous build left behind**: `_assert_library_bundle` checks that the bundle
+exists, not that it is current, so a library edit since the last build is
+shipped stale and nothing says so.
 
 The cross-compile container is an **upstream** image
 (`joseluisq/rust-linux-darwin-builder`) and `-brc` now pulls it. It used to
@@ -182,12 +203,14 @@ that is the last gate, because packaging damage to the engine is invisible at
 build, install and import time. `-ud` also moves the `latest` and bare-version
 tags. Expect `-uc` to spend a minute on the clean-room install.
 
-The anaconda-client token persists at `~/.config/binstar/*.token` and lasts a
-year, so `anaconda login` is rarely needed — check with `anaconda whoami` /
-`anaconda auth --list` before assuming you're logged out. If you do need to
-re-auth, it must run on a real TTY: `conda run`/`mamba run` swallow stdin, so
-the `Username:` prompt dies on `[ERROR] EOF when reading a line`. Pass
-`--no-capture-output`, or invoke the env's `bin/anaconda` directly.
+The anaconda-client token is a **per-host** file at `~/.config/binstar/*.token`
+and lasts a year, so a host that has never published has none and the cheapest
+fix is to copy the file from one that has. Check with `anaconda org whoami`, not
+`anaconda whoami`: anaconda-client 1.14 split anaconda.com from anaconda.org, and
+the bare subcommands prompt for a destination and die on a non-TTY with
+`Inappropriate ioctl for device` — which reads as an auth failure and is not one.
+A real `anaconda org login` needs a real TTY; `conda run`/`mamba run` swallow
+stdin, so invoke the env's `bin/anaconda` directly.
 
 Then:
 

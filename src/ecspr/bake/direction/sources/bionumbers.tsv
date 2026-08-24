@@ -1,0 +1,14 @@
+# WHICH BioNumbers RECORDS ARE CONCENTRATIONS, and what compound each one is about.
+#
+# THIS FILE MAPS IDENTITY, NEVER VALUES. The number and its unit are read from the pinned
+# record; this table says only "BNID N is a concentration of compound X". BioNumbers rows
+# carry an organism and free text and no chemical identifier at all, so something has to
+# supply the identifier, and doing it here -- one line per BNID, checkable against the
+# pinned record's own description -- is the narrowest place to put it.
+#
+# WHY THIS IS NOT A CURATED CONCENTRATION TABLE. Every value still comes from a cited
+# record under the same measured-only rule ECMDB is held to. What is hand-made is the
+# assertion that a given BNID is about O2, which BioNumbers does not state machine-readably.
+bnid	mnx_accession	id_namespace	compound	why
+108724	MNXM735438	metanetx.chemical	O2	Oxygen solubility in M9 medium at 37 C -- the growth medium and temperature this reference universe assumes
+109182	MNXM735438	metanetx.chemical	O2	Oxygen concentration in air-saturated aqueous buffer at 37 C -- a second condition, which is what gives the pool a measured width instead of a floored one

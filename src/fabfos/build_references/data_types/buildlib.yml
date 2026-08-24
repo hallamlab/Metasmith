@@ -40,6 +40,17 @@ types:
       src: mnx_lookups
       _: builds and reads the five lookups -- reactions, metabolites, atom_ranks, xrefs, synonyms -- and owns the canonical-rank and formula-count definitions every consumer used to re-implement
 
+  # -- the acquisition methods -------------------------------------------------
+  # An acquire transform's driver is a shell string, which is the right shape for `wget`
+  # and the wrong shape for a paginated HTML scrape. ECMDB publishes its metabolite cards
+  # as a file and its CONCENTRATIONS only as a browse, so the acquisition is half download
+  # and half scraper, and the scraper is a method.
+  ecmdb_scrape.py:
+    extends: [build_module]
+    properties:
+      src: ecmdb_scrape
+      _: walks ECMDB's paginated /concentrations browse into one JSON table, values normalised to mM, refusing a short snapshot rather than pinning one
+
   # -- the bake method ---------------------------------------------------------
   # ONE entry, and it is a directory: the whole ecspr package, vendored out of
   # src/ecspr by build.sh. It used to be twenty-one flat modules with twenty-one

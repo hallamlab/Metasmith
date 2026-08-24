@@ -186,18 +186,55 @@ def _find_step_outputs(workspace: Path, step_order: int) -> list[Path]:
     step_dir = workspace / "nxf_work" / f"step_{step_order:02}"
     if not step_dir.exists():
         return out
-    for fp in sorted(step_dir.rglob("*")):
-        if not fp.is_file():
+    _walk_step_outputs(step_dir, out)
+    return sorted(out)
+
+
+def _walk_step_outputs(directory: Path, out: list[Path]) -> None:
+    # A directory named in the canonical output spelling IS one output. The
+    # walk stops there: descending would promote its members as separate files
+    # and the directory itself would never reach the shard. Every other
+    # directory -- the run's own layout, `batch_*` -- is a container.
+    try:
+        entries = sorted(directory.iterdir())
+    except OSError:
+        return
+    for fp in entries:
+        if fp.name.startswith(".command") or fp.name == "META":
             continue
-        if fp.name.startswith(".command"):
-            continue
-        if fp.name == "META":
+        if fp.is_dir():
+            if fp.is_symlink():
+                # A staged input, not a product.
+                continue
+            if CANONICAL_OUTPUT_PREFIX.match(fp.name):
+                out.append(fp)
+            else:
+                _walk_step_outputs(fp, out)
             continue
         out.append(fp)
-    return out
 
 
-_CANONICAL_OUTPUT_PREFIX = re.compile(r"^(\d+)-(\d+)-(\d+)\.")
+CANONICAL_OUTPUT_PREFIX = re.compile(r"^(\d+)-(\d+)-(\d+)\.")
+
+
+def _entry_size(path: Path) -> int:
+    # What the shard costs on disk, which is what `msm cache gc --max-size`
+    # budgets against. A directory's own inode size answers a few kilobytes for
+    # a product of any size.
+    if not path.is_dir():
+        try:
+            return path.stat().st_size
+        except OSError:
+            return 0
+    total = 0
+    for fp in path.rglob("*"):
+        if fp.is_symlink() or not fp.is_file():
+            continue
+        try:
+            total += fp.stat().st_size
+        except OSError:
+            continue
+    return total
 
 
 def direct_parents(payload, slot_channels: list[str], member: int) -> list[str]:
@@ -299,9 +336,10 @@ def _collect_output_provenance(workspace: Path) -> dict[str, dict]:
         except OSError:
             continue
         for fp in siblings:
-            if fp.is_symlink() or not fp.is_file():
+            # Staged inputs are symlinks; products are not.
+            if fp.is_symlink():
                 continue
-            m = _CANONICAL_OUTPUT_PREFIX.match(fp.name)
+            m = CANONICAL_OUTPUT_PREFIX.match(fp.name)
             if m is None:
                 continue
             member = int(m.group(1)) - 1
@@ -575,8 +613,7 @@ def promote_run(
                     }
                     outputs = [
                         p for p in tmp.iterdir()
-                        if p.is_file()
-                        and p.name not in skip_names
+                        if p.name not in skip_names
                         and not p.name.startswith(".command")
                     ]
                 if not outputs:
@@ -606,10 +643,16 @@ def promote_run(
                     if src.resolve() != dest.resolve():
                         if src_in_tmp:
                             shutil.move(str(src), str(dest))
+                        elif src.is_dir():
+                            # A half-copied tree from a killed attempt would
+                            # make every retry of this shard raise.
+                            if dest.exists():
+                                shutil.rmtree(dest)
+                            shutil.copytree(src, dest, symlinks=True)
                         else:
                             shutil.copy2(src, dest)
                     relpath = str(dest.relative_to(tmp))
-                    total_bytes += dest.stat().st_size
+                    total_bytes += _entry_size(dest)
                     name = src.name
                     matched = _match_output_slot(name, spec.slot_files)
                     if matched is not None:

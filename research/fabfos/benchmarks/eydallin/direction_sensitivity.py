@@ -39,7 +39,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import bake_pairs                                                   # noqa: E402
 from glycogen_cut import _route_usage                                # noqa: E402
 
-HOSTS = ROOT / "data/fabfos/benchmarks/hosts"
+RUNS = ROOT / "data/fabfos/runs"
 OUT_DIR = ROOT / "data/fabfos/runs/eydallin_clones/ecspr"
 
 SOURCE_MNXM = "MNXM1364061"
@@ -72,7 +72,7 @@ def main():
     pairs = load_pairs(bake_pairs.atom_pairs(), element=args.element)
     base_ratios = load_direction_ratios(bake_pairs.direction_ratios(),
                                         cap=args.ratio_cap)
-    host = pd.read_parquet(HOSTS / args.host / "gpr_gem.parquet")
+    host = pd.read_parquet(RUNS / args.host / "gpr" / "gpr_gem.parquet")
     base_w = {m: 1.0 for m in host.mnxr.dropna().astype(str).unique()}
     gene = host.groupby(host.mnxr.astype(str)).feature_name.apply(
         lambda s: ",".join(sorted({x for x in s if isinstance(x, str) and x})))

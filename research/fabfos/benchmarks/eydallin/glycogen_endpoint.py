@@ -12,7 +12,7 @@ import bake_pairs  # noqa: E402
 from ecspr.model.build import graph_from_pairs, load_direction_ratios, load_pairs  # noqa: E402
 from ecspr.model.graph import Terminal, solve  # noqa: E402
 
-HOST_GEM = ROOT / "data/fabfos/benchmarks/hosts/e_coli_k12/gpr_gem.parquet"
+HOST_GEM = ROOT / "data/fabfos/runs/e_coli_k12/gpr/gpr_gem.parquet"
 
 SOURCE = "MNXM1364061"
 TARGETS = {

@@ -9,6 +9,8 @@
   import SaveChip from '../components/SaveChip.svelte'
   import ShareOut from '../components/ShareOut.svelte'
   import Spinner from '../components/Spinner.svelte'
+  import SplitButton from '../components/SplitButton.svelte'
+  import StageProgress from '../components/StageProgress.svelte'
 
   let { name } = $props()
 
@@ -17,11 +19,37 @@
   let runtimes = $state(['APPTAINER', 'DOCKER', 'MAMBA'])
   let defaultContainer = $state('')
   let jobId = $state(null)
+  let jobStatus = $state(null)
+  let jobPhase = $state(null)
   let ping = $state(null)
   let pinging = $state(false)
   let sharing = $state(false)
-  let deployMenuOpen = $state(false)
-  let deployMenuRoot = $state(null)
+
+  // The same bar `solve` shows, over the phases `Agent.Deploy` actually walks
+  // through (see the `PHASE:` markers `deploy_agent` emits in gui/api.py),
+  // plus a trailing `deployed` segment that isn't a job phase at all -- it
+  // reflects `agent.deployed`, the same field the page used to check for the
+  // "nothing installed at this home yet" text. An all-idle bar (no job ever
+  // run, not deployed) is what says "not deployed" now, instead of that text.
+  const JOB_STAGES = ['connecting', 'provisioning', 'staging', 'finishing']
+  const DEPLOY_STAGES = [...JOB_STAGES, 'deployed']
+  let requestingDeploy = $state(false)
+  let jobRunning = $derived(!!jobId && jobStatus !== 'done' && jobStatus !== 'failed')
+  let deploying = $derived(requestingDeploy || jobRunning)
+  let jobStage = $derived(Math.max(0, JOB_STAGES.indexOf(jobPhase)))
+  let deployStageStates = $derived.by(() => {
+    const jobStates = !jobId
+      ? JOB_STAGES.map(() => 'idle')
+      : JOB_STAGES.map((_, i) =>
+          i < jobStage ? 'done'
+          : i > jobStage ? 'idle'
+          : jobStatus === 'failed' ? 'failed'
+          : jobStatus === 'done' ? 'done'
+          : 'running',
+        )
+    const deployedState = agent?.deployed ? 'done' : jobStatus === 'failed' ? 'failed' : 'idle'
+    return [...jobStates, deployedState]
+  })
 
   // The name is a field like any other -- `PUT /agents/<name>` carries the whole
   // object, and a name that differs from the url is a rename. So the agent's
@@ -81,12 +109,20 @@
     agent = null
     form = null
     jobId = null
+    jobStatus = null
+    jobPhase = null
     ping = null
     attempt(async () => {
       const d = await api.get('/defaults/agent').catch(() => null)
       if (d?.runtimes?.length) runtimes = d.runtimes
       if (d?.container) defaultContainer = d.container
       adopt(await api.get(`/agents/${n}`))
+      // The bar picks up where the last deploy left off, even one started
+      // from a tab that is gone -- jobs live on the server, keyed by agent,
+      // so the most recent one is what was last true here, reload or not.
+      if (n !== name) return
+      const jobs = await api.get(`/jobs?agent=${encodeURIComponent(n)}`).catch(() => [])
+      if (n === name && jobs?.length) jobId = jobs[0].id
     })
   })
 
@@ -144,22 +180,15 @@
   }
 
   async function deploy(assertive = false) {
-    deployMenuOpen = false
+    requestingDeploy = true
+    jobStatus = null
+    jobPhase = null
     const job = await attempt(() =>
       api.post(`/agents/${name}/deploy`, assertive ? { assertive: true } : {}),
     )
+    requestingDeploy = false
     if (job) jobId = job.id
   }
-
-  // outside click closes the force-redeploy menu, the same gesture ParentPicker uses
-  $effect(() => {
-    if (!deployMenuOpen) return
-    const away = (e) => {
-      if (!deployMenuRoot?.contains(e.target)) deployMenuOpen = false
-    }
-    window.addEventListener('pointerdown', away, true)
-    return () => window.removeEventListener('pointerdown', away, true)
-  })
 
   async function unarchive() {
     await attempt(async () => {
@@ -221,35 +250,16 @@
           {/if}
           ping
         </button>
-        <div class="split" bind:this={deployMenuRoot}>
-          <button
-            class="primary"
-            onclick={() => deploy(false)}
-            disabled={problems.length > 0}
-          >deploy</button>
-          <button
-            class="primary chevron"
-            aria-expanded={deployMenuOpen}
-            aria-label="more deploy options"
-            title="more deploy options"
-            disabled={problems.length > 0}
-            onclick={() => (deployMenuOpen = !deployMenuOpen)}
-          >
-            <svg viewBox="0 0 10 6" width="10" height="6" aria-hidden="true" class:up={deployMenuOpen}>
-              <path d="M1 1L5 5L9 1" fill="none" stroke="currentColor" stroke-width="1.6"
-                    stroke-linecap="round" stroke-linejoin="round" />
-            </svg>
-          </button>
-          {#if deployMenuOpen}
-            <div class="menu">
-              <button
-                class="opt"
-                onclick={() => deploy(true)}
-                title="redeploy even if this agent already looks up to date"
-              >force redeploy</button>
-            </div>
-          {/if}
-        </div>
+        <SplitButton
+          label={deploying ? 'deploying…' : 'deploy'}
+          disabled={problems.length > 0 || deploying}
+          onclick={() => deploy(false)}
+          options={[{
+            label: 'force redeploy',
+            title: 'redeploy even if this agent already looks up to date',
+            onclick: () => deploy(true),
+          }]}
+        />
       </div>
     </div>
 
@@ -276,14 +286,6 @@
         <span class="tag warn">incomplete</span>
         <span>{problems.join(' · ')}</span>
       </div>
-    {:else if agent.deployed === false}
-      <!-- separate from `problems` on purpose: this one is fixed by pressing
-           the button above, not by filling anything in, so it must not be
-           allowed to disable it -->
-      <p class="small muted" style="margin:0">
-        Nothing is installed at this home yet — deploy it before launching a run
-        on it.
-      </p>
     {/if}
 
     {#if ping}
@@ -298,8 +300,12 @@
       </div>
     {/if}
 
+    <StageProgress stages={DEPLOY_STAGES} stageStates={deployStageStates} />
+
     <JobLog
       {jobId}
+      bind:status={jobStatus}
+      bind:phase={jobPhase}
       onend={async () => {
         await loadAgents()
         adopt(await api.get(`/agents/${name}`))
@@ -324,11 +330,6 @@
             {/each}
           </tbody>
         </table>
-        <p class="small muted">
-          Renaming this agent takes its runs with it; deleting it archives it
-          instead, since a run whose agent is gone cannot be tailed, cancelled,
-          or collected.
-        </p>
       </div>
     {/if}
   </div>
@@ -375,45 +376,4 @@
     background: currentColor;
     opacity: 0.5;
   }
-  /* deploy, and beside it the one thing worth a second click: skipping past
-     "already looks deployed" when that judgement is wrong */
-  .split {
-    position: relative;
-    display: flex;
-  }
-  .split .primary:first-child {
-    border-right: none;
-    border-top-right-radius: 0;
-    border-bottom-right-radius: 0;
-  }
-  .split .chevron {
-    padding: 0 6px;
-    border-top-left-radius: 0;
-    border-bottom-left-radius: 0;
-  }
-  .split .chevron svg { transition: transform 0.12s; }
-  .split .chevron svg.up { transform: rotate(180deg); }
-  .split .menu {
-    position: absolute;
-    z-index: 30;
-    top: 100%;
-    right: 0;
-    margin-top: 4px;
-    min-width: 150px;
-    background: var(--panel);
-    border: 1px solid var(--accent);
-    border-radius: var(--radius);
-    box-shadow: 0 10px 24px var(--shadow);
-    overflow: hidden;
-  }
-  .split .opt {
-    display: block;
-    width: 100%;
-    background: none;
-    border: none;
-    border-radius: 0;
-    padding: 6px 10px;
-    text-align: left;
-  }
-  .split .opt:hover { background: var(--panel-2); border-color: transparent; }
 </style>

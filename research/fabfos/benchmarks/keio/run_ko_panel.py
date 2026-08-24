@@ -60,7 +60,7 @@ OUT = HERE / "out"
 
 ATOM_PAIRS = ROOT / "data" / "fabfos" / "benchmark" / "reference_tier4" / "atom_pairs_tier4.parquet"
 CHEM_PROP = ROOT / "data" / "fabfos" / "originals" / "metanetx" / "4.5" / "chem_prop.tsv"
-HOST_GEM = ROOT / "data" / "fabfos" / "benchmarks" / "hosts" / "e_coli_k12" / "gpr_gem.parquet"
+HOST_GEM = ROOT / "data" / "fabfos" / "runs" / "e_coli_k12" / "gpr" / "gpr_gem.parquet"
 KEIO = ROOT / "data" / "fabfos" / "benchmarks" / "keio"
 EDITS = KEIO / "gpr_manual.parquet"
 EXTRACTION = KEIO / "extraction.tsv"

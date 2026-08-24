@@ -53,7 +53,7 @@ ECSPR = ROOT / "data" / "fabfos" / "runs" / "scadc_ecspr"
 REFS = ECSPR / "refs"
 CONDITIONS = ECSPR / "conditions.parquet"
 RESULTS = ECSPR / "results.parquet"
-HOST_GEM = ROOT / "data" / "fabfos" / "benchmarks" / "hosts" / "e_coli_epi300" / "gpr_gem.parquet"
+HOST_GEM = ROOT / "data" / "fabfos" / "runs" / "e_coli_epi300" / "gpr" / "gpr_gem.parquet"
 NULL_OUT = ECSPR / "null"
 
 REMOTE_WORK = "/scratch/phyberos/fabfos_metagenome"

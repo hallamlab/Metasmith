@@ -27,10 +27,10 @@ ARMS = ("gem", "denovo_ev", "denovo_uni")
 
 def base_weights(arm: str, host_dir: str) -> tuple[dict, float]:
     if arm == "gem":
-        g = C.read_gpr(C.HOSTS / host_dir / "gpr_gem.parquet")
+        g = C.read_gpr(C.RUNS / host_dir / "gpr" / "gpr_gem.parquet")
         w = {r: 1.0 for r in g.mnxr.astype(str).unique()}
         return w, 1.0
-    src = C.DENOVO / host_dir / "gpr" / "gpr_denovo.parquet"
+    src = C.RUNS / host_dir / "gpr" / "gpr_denovo.parquet"
     d = C.read_gpr(src)
     if arm == "denovo_uni":
         w = {r: 1.0 for r in d.mnxr.astype(str).unique()}

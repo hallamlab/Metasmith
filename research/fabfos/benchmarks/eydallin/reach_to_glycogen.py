@@ -34,7 +34,7 @@ bake_c = (ap[ap.element == 0][["rxn", "tail_met", "head_met"]]
                   head_met=lambda d: d.head_met.map(sym))
           .drop_duplicates())
 
-gpr = pd.read_parquet(f"{R}/data/fabfos/benchmarks/hosts/e_coli_k12/gpr_gem.parquet")
+gpr = pd.read_parquet(f"{R}/data/fabfos/runs/e_coli_k12/gpr/gpr_gem.parquet")
 host_rxn = set(gpr.mnxr)
 
 cp = pd.read_csv(f"{R}/data/fabfos/originals/metanetx/4.5/chem_prop.tsv", sep="\t", comment="#",

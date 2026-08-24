@@ -56,7 +56,7 @@ manifest:
     origin: leaf
     type: transforms::transform
   direction_ensemble.py:
-    instance_id: 1e2056c7f8d17aa5ab32e264b6e28236415333ec197e9d6e91956b7220f7fc82e782
+    instance_id: 1e208f4575c6353241aebfc81159ff28d0ecfa93b8fd2b7505addbdf335871d73134
     origin: leaf
     type: transforms::transform
   equilibrator.py:

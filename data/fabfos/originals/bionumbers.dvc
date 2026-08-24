@@ -1,0 +1,6 @@
+outs:
+- md5: cb3b15195388dbf06f8027fcc811f89c.dir
+  size: 102290
+  nfiles: 4
+  hash: md5
+  path: bionumbers

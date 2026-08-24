@@ -18,4 +18,6 @@ markers = [
     "network: requires LIVESHELL_REMOTE_HOST (ssh-reachable host) env var",
     "gui: the web GUI's own suite -- the inner loop while working on it (dev/metasmith.sh -tg)",
     "python_solver: needs the python solver (parity, or its internals); opt-in via --python-solver",
+    "lifecycle: process lifecycle -- spawns real process trees and signals them (dev/metasmith.sh -tl)",
+    "requires_relay: the msm_relay binary for this platform must be built (dev/metasmith.sh -br)",
 ]

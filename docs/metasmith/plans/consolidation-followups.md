@@ -9,12 +9,27 @@ module already states belongs here either.
 
 ## Open bugs
 
+**A directory-typed given whose content changes below its top level keeps its leaf id, so the
+cache serves stale results as if they were this run's.** A leaf id is absolute path plus
+`mtime_ns` — no content, no size, no inode — and it stats the top-level directory only, so an
+in-place edit or any create/delete/replace inside a subdirectory leaves the id where it was and
+every cacheable step hits. Reproduced end-to-end against a real `dvc checkout`, with a
+restat-only control that does not hit, so the hit is caused by the identity and nothing else.
+Reachable here: `ref::ezpred_model` is directory-typed over a dvc `.dir` with 45 files below
+depth 1, and 6 of 11 dvc-tracked reference dirs share that shape. `ref::kofamscan_profiles`
+escapes only because its files sit flat at depth 1, which one reorganisation would undo. The
+first move is content addressing with stat demoted to a memo key — that changes
+`CACHE_KEY_VERSION` and invalidates every existing shard, so it is a migration, not a patch.
+Ships unfixed in 0.21.0.
+
 **Promotion is a single post-execution pass, so a long or interrupted run banks almost
 nothing.** Nextflow stages outputs into `<cache_root>/<key>.tmp/` as tasks finish, but the
 manifest, the shard rename and the store upsert all happen in one call after the Nextflow
 process returns. A run killed before that returns banks nothing — and the runs most likely to
 be interrupted are the ones with the most to bank. Promoting per step, as each step's tasks
-drain, would cost one manifest write per step and make an interrupted run resumable.
+drain, would cost one manifest write per step and make an interrupted run resumable. Cancel now
+stops Nextflow's process group and leaves the driver alive to run this pass, so the natural next
+piece is making the pass worth reaching.
 
 **The orphan sweep can delete another run's finished, un-promoted work.** It removes every
 `<key>.tmp` lacking a manifest, and it globs the whole cache root rather than the workspace
@@ -90,6 +105,15 @@ impossible. Whether it collapses to one plan is a library-design call.
 
 ## Accepted risks
 
+**An external mtime-touching event makes the next run cold, and one file is enough.** Stat
+addressing bought the thing it was for — a 24 GB DIAMOND database or a 27k-file profiles tree
+costs one stat instead of a full-tree hash — and the price is that only leaves inside a given
+data library are stat-keyed, so moving one of them empties the whole hit set, including
+downstream steps that never read it. `rsync -a` preserves mtimes, so staging does not itself
+re-key; exposure is external events, and `dvc checkout` under a reference tree is the live one.
+Mitigation is to pin the library: `restat_leaf_ids()` skips pinned libraries by design. The
+same identity scheme fails the other way under *Open bugs*, and one fix answers both.
+
 **A mutable container tag can produce a false cache hit.** A container's leaf id addresses the
 docker URL string, not the resolved image digest, so a pinned tag busts the cache on a version
 bump and `:latest` does not. Inherent to tag-addressing; mitigated by the convention of
@@ -102,10 +126,11 @@ next rename fails against it. The orphan sweep only reaches `.tmp` directories. 
 stale lock from a crashed job on another host in a shared cache is never reclaimed, correctly,
 since a dead remote cannot be distinguished from a live one.
 
-**A DVC-pinned build artifact whose objects leave every cache is unrecoverable.**
-`src/metasmith/engine.dvc` holds a four-target cross-compile that exists in no other form, so
-one careless collection destroys it. The rule that manages this is under *When a build
-artifact may be DVC-pinned* in `docs/metasmith/architecture.md`.
+**A DVC-pinned artifact whose objects leave every cache is unrecoverable.** The live instance is
+`data/fabfos/runs/aska/gpr`: no remote is configured, the pinned generation exists nowhere but a
+shared local cache that no longer holds it, and the files on disk are hardlinks into that cache —
+so `dvc checkout --force` would delete them with nothing to restore. The rule that manages this
+is under *When a build artifact may be DVC-pinned* in `docs/metasmith/architecture.md`.
 
 ## Deliberately rejected
 

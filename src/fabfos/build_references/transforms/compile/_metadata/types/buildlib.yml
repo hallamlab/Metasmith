@@ -46,6 +46,13 @@ types:
       _:
       - python module imported by a build transform's driver; never ships in the wheel
       usage: library
+  ecmdb_scrape.py:
+    properties:
+      _:
+      - walks ECMDB's paginated /concentrations browse into one JSON table, values
+        normalised to mM, refusing a short snapshot rather than pinning one
+      src: ecmdb_scrape
+      usage: library
   ecspr:
     properties:
       _:
