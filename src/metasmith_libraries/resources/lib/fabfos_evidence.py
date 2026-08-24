@@ -28,8 +28,9 @@ now read; the per-bridge loaders above stay for reading the trio directly.
 
 GATES: the lane INPUTS are produced fresh upstream by the heavy annotator
 transforms (kofamscan, EZpred/ESM-C dl_ec, DIAMOND-vs-UniRef50, embed-transfer).
-This module only needs pandas/pyarrow + the MetaNetX/Rhea reference tables (present
-on disk); it recomputes NOTHING that must be reused (the metaG null lives elsewhere).
+This module only needs pandas + a parquet engine (see below) and the MetaNetX/Rhea
+reference tables (present on disk); it recomputes NOTHING that must be reused (the
+metaG null lives elsewhere).
 """
 from __future__ import annotations
 
@@ -38,6 +39,65 @@ import re
 from pathlib import Path
 
 import pandas as pd
+
+# =====================================================================
+# parquet I/O
+# =====================================================================
+# Two engines, because this module is imported in two places whose dependency
+# sets do not overlap: the `python_for_data_science` image, which carries polars
+# and no pyarrow, and the local analysis env, which carries pyarrow and no
+# polars. pandas is the common language but cannot be the common engine --
+# `pd.read_parquet` is itself a pyarrow/fastparquet front end.
+#
+# Every parquet touchpoint in this file and in both GPR mappers goes through the
+# two functions below, so an image whose engine changes costs one branch here
+# rather than a scatter of ModuleNotFoundErrors nine steps into a run.
+try:
+    import pyarrow  # noqa: F401
+    _PARQUET_ENGINE = "pyarrow"
+except ModuleNotFoundError:
+    _PARQUET_ENGINE = "polars"
+
+# Filters are (column, op, value) triples in pyarrow's own vocabulary, so that
+# branch passes them straight through. Both engines push them into the reader --
+# that pushdown is what keeps the bridge's 30.4M-row uniprot slice off the heap
+# when a lane wants only its own ids.
+_FILTER_OPS = {
+    "==": lambda col, v: col == v,
+    ">=": lambda col, v: col >= v,
+    "in": lambda col, v: col.is_in(list(v)),
+}
+
+
+def read_parquet(path, columns=None, filters=None) -> pd.DataFrame:
+    if _PARQUET_ENGINE == "pyarrow":
+        return pd.read_parquet(path, columns=columns, filters=filters)
+    import polars as pl
+    lf = pl.scan_parquet(path)
+    for col, op, value in filters or ():
+        if op not in _FILTER_OPS:
+            raise ValueError(f"unsupported parquet filter {op!r}")
+        lf = lf.filter(_FILTER_OPS[op](pl.col(col), value))
+    if columns is not None:
+        lf = lf.select(list(columns))
+    return _from_polars(lf.collect())
+
+
+def write_parquet(df: pd.DataFrame, path, compression=None) -> None:
+    if _PARQUET_ENGINE == "pyarrow":
+        extra = {} if compression is None else {"compression": compression}
+        df.to_parquet(path, index=False, **extra)
+        return
+    import polars as pl
+    frame = pl.DataFrame({c: df[c].to_numpy() for c in df.columns})
+    frame.write_parquet(path, compression=compression or "zstd")
+
+
+def _from_polars(df) -> pd.DataFrame:
+    # Column-wise through numpy on purpose: both of polars' pandas bridges
+    # (`from_pandas`, `to_pandas`) are implemented over arrow, and so need the
+    # one dependency this branch exists to do without.
+    return pd.DataFrame({c: df[c].to_numpy() for c in df.columns})
 
 SCHEMA_COLS = [
     "source", "orf", "channel", "mnxr",
@@ -453,13 +513,11 @@ def read_gpr(paths, extensions=None):
     a block: a reader that needs `unit_id` should say so and fail on a table without it,
     rather than discover the gap as a KeyError three frames later.
     """
-    import pandas as pd
-
     if isinstance(paths, (str, bytes)) or hasattr(paths, "__fspath__"):
         paths = [paths]
     frames = []
     for path in paths:
-        df = pd.read_parquet(path)
+        df = read_parquet(path)
         ext = tuple(extensions) if extensions is not None else extensions_of(df)
         if not is_unified(df) or (extensions is not None
                                   and list(df.columns) != schema_for(ext)):
@@ -711,7 +769,7 @@ def load_ec_to_mnxr(path: Path) -> pd.DataFrame:
 
 def load_uniprot_to_mnxr(path: Path) -> pd.DataFrame:
     """The cache produced by build-uniprot-bridge."""
-    return pd.read_parquet(path)
+    return read_parquet(path)
 
 
 # The three id spaces share no ids, so `id` alone is unambiguous in the
@@ -729,7 +787,7 @@ def load_mnxr_lookup(path: Path, id_source: str) -> pd.DataFrame:
     """
     if id_source not in MNXR_LOOKUP_SOURCES:
         raise ValueError(f"unknown id_source {id_source!r}; expected one of {MNXR_LOOKUP_SOURCES}")
-    df = pd.read_parquet(
+    df = read_parquet(
         path, columns=["id", "mnxr"], filters=[("id_source", "==", id_source)],
     )
     if df.empty:
@@ -811,11 +869,11 @@ def read_dl_ec(path, source: str, ec_to_mnxr: pd.DataFrame,
 
     parquet columns: sequence_id, ec_number, score, head_kind. Keeps enzyme-head,
     level-4 ECs (x.x.x.x) clearing DL_EC_SCORE_FLOOR; raw_score carries the
-    EZpred confidence. Filters pushed to pyarrow so huge parquets never fully load.
+    EZpred confidence. Filters pushed into the reader so huge parquets never fully load.
     """
     if path is None or not Path(path).exists():
         return pd.DataFrame(columns=SCHEMA_COLS)
-    df = pd.read_parquet(
+    df = read_parquet(
         path,
         columns=["sequence_id", "ec_number", "score"],
         filters=[("head_kind", "==", "enzyme"), ("score", ">=", DL_EC_SCORE_FLOOR)],
@@ -891,7 +949,7 @@ def read_embed_transfer(path, source: str, _bridge=None,
     """
     if path is None or not Path(path).exists():
         return pd.DataFrame(columns=SCHEMA_COLS)
-    df = pd.read_parquet(path)
+    df = read_parquet(path)
     df = df[df["channel"].isin(("pbert", "pbert_transfer"))
             & (df["raw_score"] >= EMBED_ARCHIVE_FLOOR)].copy()
     # The pool is the bridge's `reviewed` cut by construction, so every transferred
@@ -953,7 +1011,7 @@ def build_uniprot_bridge(reac_xref: Path, rhea_swiss: Path, rhea_trembl: Path, o
     out_df = (out_df.sort_values(["uniprot_accession", "mnxr", "evidence_quality"])
                     .drop_duplicates(subset=["uniprot_accession", "external_id", "mnxr"], keep="first"))
     Path(out).parent.mkdir(parents=True, exist_ok=True)
-    out_df.to_parquet(out, index=False)
+    write_parquet(out_df, out)
     print(f"[bridge] wrote {len(out_df):,} rows ({out_df['uniprot_accession'].nunique():,} UniProts) -> {out}", flush=True)
 
 
@@ -975,45 +1033,50 @@ def build_mnxr_lookup(ko: Path, ec: Path, uniprot: Path, out: Path):
     they carry `evidence_quality` empty rather than being assigned one here.
     `dr_source` is dropped: it is constant "rhea" across every uniprot row, and
     the lane that used it already declares `projection_via` itself.
+
+    The uniprot side is 30.4M rows and is the one step here that will not fit in
+    pandas -- object-dtype strings at that count are gigabytes to then dedup away
+    -- so this function is polars-only rather than going through `read_parquet`
+    above. It is a build step, run in the image that carries polars.
     """
-    import pyarrow as pa
-    import pyarrow.compute as pc
-    import pyarrow.parquet as pq
+    import polars as pl
 
     frames = []
     for path, source, col in ((ko, "ko", "ko"), (ec, "ec", "ec")):
         df = pd.read_csv(path, sep="\t")[[col, "mnxr"]].drop_duplicates()
-        df.columns = ["id", "mnxr"]
-        df["id_source"] = source
-        df["evidence_quality"] = ""
-        frames.append(df[["id", "id_source", "mnxr", "evidence_quality"]])
         print(f"[lookup] {source}: {len(df):,} distinct pairs", flush=True)
+        frames.append(pl.LazyFrame({
+            "id": df[col].to_numpy(),
+            "id_source": [source] * len(df),
+            "mnxr": df["mnxr"].to_numpy(),
+            "evidence_quality": [""] * len(df),
+        }))
 
-    up = pq.read_table(uniprot, columns=["uniprot_accession", "mnxr", "evidence_quality", "dr_source"])
-    print(f"[lookup] uniprot: {up.num_rows:,} rows in", flush=True)
-    seen = pc.unique(up.column("dr_source")).to_pylist()
+    up = pl.scan_parquet(uniprot).select(
+        ["uniprot_accession", "mnxr", "evidence_quality", "dr_source"])
+    seen = up.select(pl.col("dr_source").unique()).collect().to_series().to_list()
     if seen != ["rhea"]:
         raise ValueError(f"dr_source is not constant 'rhea' ({seen}); it cannot be dropped")
-    up = up.drop_columns(["dr_source"])
-    # min() over the group keeps "reviewed" wherever any route was reviewed.
-    up = up.group_by(["uniprot_accession", "mnxr"]).aggregate([("evidence_quality", "min")])
-    up = pa.table({
-        "id": up.column("uniprot_accession"),
-        "id_source": pa.array(["uniprot"] * up.num_rows, pa.string()),
-        "mnxr": up.column("mnxr"),
-        "evidence_quality": up.column("evidence_quality_min"),
-    })
-    print(f"[lookup] uniprot: {up.num_rows:,} distinct pairs", flush=True)
+    up = (
+        up.group_by(["uniprot_accession", "mnxr"])
+          # min() over the group keeps "reviewed" wherever any route was reviewed.
+          .agg(pl.col("evidence_quality").min())
+          .select([
+              pl.col("uniprot_accession").alias("id"),
+              pl.lit("uniprot").alias("id_source"),
+              pl.col("mnxr"),
+              pl.col("evidence_quality"),
+          ])
+    )
 
-    table = pa.concat_tables([pa.Table.from_pandas(f, preserve_index=False) for f in frames] + [up])
     # Sorting on the two keys the readers filter and join by is what makes the
-    # `filters=[("id_source", ...)]` pushdown skip row groups rather than scan
-    # them, and it is most of the difference between 100 MB and 82 MB on disk.
-    table = table.sort_by([("id_source", "ascending"), ("id", "ascending")])
+    # `id_source` pushdown skip row groups rather than scan them, and it is most
+    # of the difference between 100 MB and 82 MB on disk.
+    table = pl.concat(frames + [up], how="vertical").sort(["id_source", "id"]).collect()
     Path(out).parent.mkdir(parents=True, exist_ok=True)
-    pq.write_table(table, out, compression="zstd")
-    print(f"[lookup] wrote {table.num_rows:,} rows -> {out}", flush=True)
-    return table.num_rows
+    table.write_parquet(out, compression="zstd")
+    print(f"[lookup] wrote {len(table):,} rows -> {out}", flush=True)
+    return len(table)
 
 
 # =====================================================================
@@ -1055,7 +1118,7 @@ def compile_evidence(source, kofam, dl_ec, uniref50, embed,
         raise SystemExit("no lane inputs provided; nothing to compile")
     out_df = pd.concat(frames, ignore_index=True)
     Path(out).parent.mkdir(parents=True, exist_ok=True)
-    out_df.to_parquet(out, index=False)
+    write_parquet(out_df, out)
     print(f"[compile] wrote {len(out_df):,} rows -> {out}", flush=True)
 
 
