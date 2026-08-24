@@ -53,7 +53,11 @@ ends. So the pin is 1.4.0 and the code no longer names pyarrow: `lib::fabfos_evi
 owns `read_parquet` / `write_parquet`, chooses polars or pyarrow by what the interpreter
 has, and both GPR mappers and `ptools_annotation_gather` go through it. Filter pushdown
 survives the move — the bridge's uniprot slice is still cut in the reader, not on the
-heap. **Unrun as of this writing**; the first four-lane run on 1.4.0 is the check.
+heap. 1.4.0 holds polars 1.43.2 and neither pyarrow nor fastparquet, measured in the
+image; both engines round-trip a nullable table and agree on both pushdowns. One thing
+the move cost: pandas spells a missing string NaN and polars refuses a float among
+strings, so the writer translates the sentinel per column. **The mapper itself has not
+run on 1.4.0** — that is the check still outstanding.
 
 ## Running it again
 
