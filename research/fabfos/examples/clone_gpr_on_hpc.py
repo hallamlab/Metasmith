@@ -58,16 +58,31 @@ DATA = REPO / "data"
 SCRATCH = DATA / "scratch"
 ARTIFACTS = REPO / "tests" / "artifacts"
 
-CLONES = DATA / "fabfos" / "eydallin_clones" / "annotations" / "eydallin_clones.faa"
-PUBLISH_INTO = DATA / "fabfos" / "eydallin_clones"
+CLONES = DATA / "fabfos" / "runs" / "eydallin_clones" / "annotations" / "eydallin_clones.faa"
+PUBLISH_INTO = DATA / "fabfos" / "runs" / "eydallin_clones"
 
 TARGET = "annotation::gpr_table"
+
+# A run publishes its declared targets and nothing else, so the merged lane tables are
+# targets in their own right rather than fallout of the mapper's. Declaring them is also
+# what keeps the chunk files out: `publish_intermediates` would land every one.
+LANES = [
+    "annotation::kofamscan_results",
+    "annotation::kofamscan_descriptions",
+    "annotation::clean_predictions",
+    "annotation::diamond_uniref50_results",
+    "annotation::diamond_uniref50_descriptions",
+    "annotation::proteinbert_embeddings",
+]
 
 PUBLISH_AT = {
     "annotation::gpr_table": "gpr/gpr_denovo_mapper.parquet",
     "annotation::kofamscan_results": "annotations/lanes/kofamscan.csv",
+    "annotation::kofamscan_descriptions": "annotations/lanes/kofamscan_descriptions.csv",
     "annotation::clean_predictions": "annotations/lanes/clean.tsv",
     "annotation::diamond_uniref50_results": "annotations/lanes/diamond_uniref50.tsv",
+    "annotation::diamond_uniref50_descriptions":
+        "annotations/lanes/diamond_uniref50_descriptions.tsv",
     "annotation::proteinbert_embeddings": "annotations/lanes/proteinbert_embeddings.parquet",
 }
 
@@ -108,6 +123,8 @@ def plan(work: Path, agent, orfs: Path, remote_processed: str):
     ]
     tb = TargetBuilder()
     tb.Add(TARGET)
+    for lane in LANES:
+        tb.Add(lane)
     return agent.GenerateWorkflow(
         samples=list(inputs.AsSamples("sequences::orfs")),
         resources=resources,
@@ -209,7 +226,9 @@ def main() -> int:
               file=sys.stderr)
         return 4
 
-    agent.StageWorkflow(task, on_exist="update")
+    # "update" would keep a run directory whose workflow.nf and Orchestrator.groovy were
+    # compiled against a different identity space; every re-stage here starts clean.
+    agent.StageWorkflow(task, on_exist="clear")
     if check_staged_executor(site["host"], site["agent_home"], task.GetKey()):
         return 4
     if check_walltimes(site["host"], B2.RESOURCE_OVERRIDES):
@@ -241,10 +260,13 @@ def main() -> int:
 
 
 def verify(results: Path) -> int:
-    landed = landed_products(results, [TARGET])
-    if TARGET not in landed:
-        print(f"\nTHE RUN IS GREEN BUT {TARGET} IS ABSENT. Nextflow ignores a process "
-              f"that exhausted its retries; read _metasmith/logs.*/main.log.",
+    wanted = [TARGET] + LANES
+    landed = landed_products(results, wanted)
+    missing = [t for t in wanted if t not in landed]
+    if missing:
+        print(f"\nTHE RUN IS GREEN BUT {len(missing)} TARGET(S) ARE ABSENT: "
+              f"{missing}. Nextflow ignores a process that exhausted its retries; "
+              f"read _metasmith/logs.*/main.log.",
               file=sys.stderr)
         return 2
     print(f"{TARGET} present. Now: --publish, then "
