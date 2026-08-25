@@ -143,6 +143,66 @@ against MG1655, which is the opposite perturbation in a strain nobody ran the sc
 Conditions are **C only**: glycogen is a glucose polymer, so the measured direction is a
 carbon claim, and the N/P/S copies asserted three directions nobody measured.
 
+**Two different reference genomes answer two different questions here, and neither
+substitutes for the other.** AG1 is only ever the ASKA library's *host* — the paper's
+own Methods calls it "the ASKA library['s] plasmids recipient" — and contributes no
+sequence to any clone; the inserts are W3110 ORFs, PCR-amplified from that genome
+before cloning (Kitagawa et al. 2005, the library's own paper). So a table describing
+what a clone actually **is** — `data/fabfos/runs/eydallin_clones/parse/gof/gof.csv`
+(`parse/build_gof_table.py`) and `annotations/eydallin_clones.faa` — is keyed on
+**W3110**. DH1 enters only downstream, as AG1's model *proxy*: AG1 has no curated GEM
+of its own, so every ECSPr-facing table (`gpr_manual.parquet`, `gpr_gem.parquet`,
+`gpr_denovo.parquet` below) resolves genes against DH1's `iECDH1ME8569_1439` instead,
+because that is the only curated model this lineage has — not because DH1 is where any
+sequence came from.
+
+`gof.csv` also carries one reaction per gene (`mnxr`, `mnxr_mapping_method`,
+`reaction_equation`, `direction_ratio`, `carbon_bond_change`, `no_mapping_reason`),
+resolved through four channels in order: `GEM` (`gpr_gem.parquet`, 34/86 genes),
+`LLM review` (6 more, hand-picked from MetaNetX's full reaction universe for genes
+the curated GEM has no trace of at all but whose textbook chemistry is unambiguous
+— e.g. `yjcC`'s c-di-GMP phosphodiesterase, `yeaP`'s diguanylate cyclase, `yncG`'s
+glutathione S-transferase), `denovo` (2 more — `ydcJ`, `yfaY` — gap-filled from the
+de-novo GPR channel's `gpr_denovo.parquet`, only where >=2 of its independent
+projection methods, on scales too different to rank against each other, converge
+on the exact same reaction out of a small candidate pool), and blank (44 genes).
+Every gene lands in exactly one of the four — a blank `mnxr` always carries a
+`no_mapping_reason`, and neither the LLM-review nor the denovo channel is a guess
+dressed up as a reaction (`parse/build_gof_reactions.py`'s
+`MANUAL_MNXR`/`denovo_gapfill`/`NO_MAPPING_REASON`). The de-novo gap-fill is
+scoped to `uncharacterized` genes only, never to genes already assigned a
+functional category — tried against the full miss-list first, it promoted `clpA`
+(a protease) and `recQ` (a DNA helicase) to the exact same generic ATP-hydrolysis
+reaction, a domain-similarity artifact, not real biology; a gene the literature has
+already placed outside metabolism needs a cited dissent to move (as `MANUAL_MNXR`
+requires), not an algorithmic coincidence.
+`no_mapping_reason` is one categorical value from eleven — each the gene's own
+established functional category, not a paraphrase invented for this column, so a
+class of one (`proteolysis`, `dna_replication`, `rna_processing`, `translation`)
+is still the right class rather than a signal to merge it into a vaguer neighbor:
+`regulatory` (15 genes), `transport` (4), `envelope_assembly_or_secretion` (4 —
+structural/assembly/secretion-apparatus components), `dna_repair` (2),
+`toxin_antitoxin` (2), `proteolysis`/`dna_replication`/`rna_processing`/
+`translation` (1 gene each), `uncharacterized` (11 genes remaining after the
+de-novo gap-fill — function or substrate not established in the literature,
+including the one confirmed pseudogene), and `ambiguous_metabolic_reaction` (2
+genes, `erfK`/`nagD` — a real, specific metabolic enzyme that MetaNetX does have a
+reaction for, but not one distinguishable from a paralog or broad substrate class
+by compound name alone).
+`reaction_equation` is written in compound names (`metabolites.parquet`), not
+MetaNetX ids, e.g. `ADP-alpha-D-glucose -> ADP + Glycogen`, not
+`1 MNXM1105977@MNXD1 = 1 MNXM40333@MNXD1 + 1 MNXM738130@MNXD1`.
+`direction_ratio` is the baked value from `data/fabfos/processed/metabolism_bake`
+(`bake_pairs.direction_ratios()`), not derived here. `carbon_bond_change` reads the
+same bake's atom-mapped pairs to say whether the reaction's carbons stay one-to-one
+between substrate and product molecules (`no_change`) or a molecule's carbons split
+apart (`breaks`), merge with another's (`creates`), or both (`both`); blank means no
+carbon atom-mapping exists for that reaction. Because a gene can nominate more than
+one reaction in the GEM channel (isozymes, or one ORF in several GPR rules), the pick
+is one candidate per gene with a documented tie-break, and every candidate — chosen or
+not, with its evidence — is in `gof_reaction_edges.csv` beside it
+(`parse/build_gof_reactions.py`).
+
 **The study folder's own `gpr_manual.parquet` still carries no reactions, and that is
 correct.** It is the curator's reading, and the curator resolved none — so
 `Y/expectations.tsv` stays empty and the cohort cannot be scored through it. Every one of
