@@ -35,6 +35,24 @@ TEXTBOOK_DIRECTION is hand-entered from standard-state biochemistry and is the p
 the file. Each entry is the expected sign of dG'° for the equation AS WRITTEN ABOVE, not
 for the enzyme's physiological direction -- MetaNetX writes many of these backwards and
 scoring against the enzyme's name instead of its equation inverts half the table.
+
+SCORE EACH TIER AGAINST WHAT THAT TIER CLAIMS. `dir_tier` is not a confidence grade, it is
+which KIND of claim the ensemble is making, and one anchor cannot score all four:
+
+    tier 0   abstention. 36,151 rows, every one at exactly 1.0. Asserts nothing; excluded.
+    tier 1   a declared irreversibility, mostly from a GEM's own bounds. 2,171 rows, 1,683
+             of them pinned at a clamp because a clamp is how "irreversible" is spelled in
+             ratio units. This is NOT a dG' claim -- glgC is declared irreversible because
+             PPi hydrolysis pulls it in vivo, which is true, and its own dG'o is still ~0.
+    tier 2   a thermodynamic estimate. Score this one against dG'o.
+    tier 3   BioCyc's curated arrow. 6,072 rows, none clamped. A curated direction, not a
+             free energy.
+
+MASS BALANCE PREDICTS THE RAIL. Among tier-2 rows, 84.3% of those MetaNetX cannot call
+balanced sit at a clamp against 41.0% of the balanced ones. An equation that does not
+balance yields a dG' that saturates, so `is_balanced` belongs beside every clamped value.
+The glycogen family is in the unbalanced class for a specific reason: `Glycogen` has no
+definite formula, so no equation containing it can be balance-checked at all.
 """
 from __future__ import annotations
 
@@ -137,6 +155,19 @@ TEXTBOOK_DIRECTION = {
 
 RT = 8.314e-3 * 298.15
 
+BAKE = ROOT / "data/fabfos/processed/metabolism_bake"
+REACTIONS = ROOT / "data/fabfos/processed/lookups/reactions.parquet"
+
+TIER_CLAIM = {0: "abstains", 1: "declares irreversible", 2: "estimates dG'", 3: "cites BioCyc"}
+
+# Standard-state dG'o in kJ/mol for the equation as written, for the glycogen family only.
+# The whole argument about that family turns on magnitude rather than sign, and these two
+# are the anchors that make it a single-parameter defect rather than two failures.
+TEXTBOOK_DG = {
+    "MNXR145036": (-3.1, "Lehninger: phosphorolysis is +3.1; written here as synthesis, so -3.1"),
+    "MNXR145046": (-13.0, "glycosyl transfer from a nucleotide sugar"),
+}
+
 
 def ratio_class(r: float) -> str:
     if not np.isfinite(r):
@@ -163,6 +194,28 @@ def observed_direction(r: float) -> str:
     return "eq" if lo <= r <= hi else ("fwd" if r < 1 else "rev")
 
 
+def replaceable(p: Path) -> Path:
+    """Break the hardlink before writing.
+
+    Once this output has been `dvc add`ed it comes back as a read-only hardlink into the
+    shared cache, so a re-run dies on PermissionError -- and chmod-ing it writable instead
+    would write THROUGH the link and corrupt the cache generation every other worktree
+    shares. Unlinking leaves the cache object alone and starts a fresh inode.
+    """
+    p.unlink(missing_ok=True)
+    return p
+
+
+def bake_direction() -> pd.DataFrame:
+    """`dir_tier` beside the ratio, read from the deployed bake rather than the decode
+    cache -- the cache carries only (mnxr, ratio) and the tier is the column that says
+    which question the ratio is answering."""
+    d = pd.read_parquet(BAKE / "direction.parquet")
+    v = pd.read_parquet(BAKE / "vocab.parquet")
+    d["mnxr"] = d.rxn.map(v[v.kind == "rxn"].set_index("code").symbol)
+    return d[["mnxr", "dir_tier"]]
+
+
 def load() -> pd.DataFrame:
     d = pd.read_csv(GOF)
     d["phenotype"] = np.where(d.pct_glycogen_production > 100, "excess", "deficient")
@@ -174,7 +227,9 @@ def load() -> pd.DataFrame:
         d[f"{ch}_n_rxn"] = d.gene.map(s.n_rxn).fillna(0).astype(int)
         d[f"{ch}_delta"] = d.gene.map(s.delta_ratio_pct).fillna(0.0)
         d[f"{ch}_rxns"] = d.gene.map(s.rxns)
-    return d
+    d = d.merge(bake_direction(), on="mnxr", how="left")
+    bal = pd.read_parquet(REACTIONS, columns=["mnxr", "is_balanced"])
+    return d.merge(bal, on="mnxr", how="left")
 
 
 def ladder(d: pd.DataFrame, ch: str) -> dict:
@@ -258,20 +313,45 @@ def main():
     m["obs"] = m.direction_ratio.map(observed_direction)
     m["expect"] = m.mnxr.map(lambda x: (TEXTBOOK_DIRECTION.get(x) or (None,))[0])
     m["basis"] = m.mnxr.map(lambda x: (TEXTBOOK_DIRECTION.get(x) or (None, ""))[1])
+    m["dg"] = RT * np.log(m.direction_ratio)
     scored = m[m.expect.notna() & (m.obs != "abstain")]
     ok = scored[scored.obs == scored.expect]
     L.append(f"\n  against a textbook sign, on the {len(scored)} rows that carry both a claim "
-             f"and an anchor:")
-    L.append(f"      {len(ok)}/{len(scored)} agree.  The disagreements:\n")
-    for r in scored[scored.obs != scored.expect].sort_values("gene").itertuples():
-        L.append(f"      {r.gene:6s} {r.mnxr}  ratio {r.direction_ratio:>10.4g}  "
-                 f"says {r.obs:3s}, textbook says {r.expect}")
+             f"and an anchor: {len(ok)}/{len(scored)} agree.")
+
+    L.append("\n  BY TIER -- and only tier 2 is making a dG' claim at all:")
+    for t, sub in scored.groupby("dir_tier"):
+        hit = int((sub.obs == sub.expect).sum())
+        L.append(f"      tier {int(t)} ({TIER_CLAIM[int(t)]:22s}) {hit:2d}/{len(sub):2d}")
+    L.append("      Scoring tier 1 against dG'o is a category error: a declared")
+    L.append("      irreversibility is a statement about the cell, not about the reaction.")
+
+    L.append("\n  the disagreements, with the tier and the balance flag that explain them:\n")
+    for r in scored[scored.obs != scored.expect].sort_values(["dir_tier", "gene"]).itertuples():
+        bal = r.is_balanced if isinstance(r.is_balanced, str) and r.is_balanced else "unbalanced"
+        L.append(f"      {r.gene:6s} {r.mnxr}  tier {int(r.dir_tier)}  dG' {r.dg:+7.2f}  "
+                 f"[{'balanced' if bal == 'B' else bal}]  says {r.obs:3s}, textbook {r.expect}")
         L.append(f"             {r.basis}")
-        L.append(f"             {r.reaction_equation}")
-    L.append(f"\n      {int((m.expect.isna()).sum())} rows carry no textbook anchor "
+
+    L.append(f"\n      {int(m.expect.isna().sum())} rows carry no textbook anchor "
              f"(identity equations, generic R, the invalid de-novo row);")
-    L.append(f"      {int((m.obs == 'abstain').sum())} more are ensemble abstentions at "
-             f"exactly 1.0 and assert nothing.")
+    L.append(f"      {int((m.obs == 'abstain').sum())} more are tier-0 abstentions and assert "
+             f"nothing.")
+
+    L.append("\n  how far off, where a NUMBER is anchored and not just a sign:\n")
+    for mx, (want, why) in TEXTBOOK_DG.items():
+        r = m[m.mnxr == mx].iloc[0]
+        L.append(f"      {r.gene:6s} {mx}  bake {r.dg:+6.2f}  textbook {want:+6.1f}  "
+                 f"miss {r.dg - want:+6.2f} kJ/mol")
+        L.append(f"             {why}")
+    L.append("\n      These two are ONE defect. The alpha-1,4 glucosyl residue enters the")
+    L.append("      synthase as a product and phosphorolysis as a substrate, so a single")
+    L.append("      wrong group value shows up with opposite sign in the two reactions.")
+    L.append("      Solved independently they demand -7.54 and -12.80 kJ/mol on that one")
+    L.append("      value -- agreeing to 5.3 kJ/mol, which is what makes it one defect and")
+    L.append("      not two. The mean offset lands phosphorolysis at +5.7 (textbook +3.1)")
+    L.append("      and the synthase at -10.4 (textbook -13.0), both with the right sign.")
+    L.append("      Correcting it is the bake's to make, not this scope's.")
 
     L.append("\n  the polymer budget, visible here as a carbon-bond call:")
     for r in m[m.gene.isin(["glgA", "glgP", "malP", "glgB"])].sort_values("gene").itertuples():
@@ -289,11 +369,13 @@ def main():
     out = d[cols].copy()
     out["reaction_fidelity"] = out.gene.map(lambda g: REACTION_FIDELITY.get(g, ("", ""))[0])
     out["ratio_class"] = out.direction_ratio.map(ratio_class)
+    out["dir_tier"] = d.dir_tier
+    out["is_balanced"] = d.is_balanced
     out["textbook_direction"] = out.mnxr.map(lambda x: (TEXTBOOK_DIRECTION.get(x) or (None,))[0])
-    out.to_csv(OUT / "gof_audit.tsv", sep="\t", index=False)
+    out.to_csv(replaceable(OUT / "gof_audit.tsv"), sep="\t", index=False)
 
     text = "\n".join(L) + "\n"
-    (OUT / "gof_audit.txt").write_text(text)
+    replaceable(OUT / "gof_audit.txt").write_text(text)
     print(text)
 
 
