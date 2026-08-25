@@ -75,6 +75,19 @@ types:
       - member_b
       - on
       ext: parquet
+  carrier_blacklist:
+    properties:
+      _: 'metabolites that may NOT carry a bridge between two members, materialised from `ecspr.model.compose`''s name rules against `metabolite_names`. A carrier is what does not cross a membrane -- ATP, NAD(P)(H), CoA, ferredoxin, phosphate -- and reaction degree is savagely skewed, so bridging one lets current cross from member to member through the cofactor pool and return through another while every solve looks entirely healthy. NOTHING RAISES on an unlisted carrier, which makes absence from this table the dangerous half of a stale bake: the ids are resolved against one bake''s universe and a metabolite it newly reaches is simply not here. It is a modelling choice rather than a fact, which is why the composition experiment runs with it and without it.'
+      Format: parquet
+      fields:
+      - mnxm
+      - name
+      - carrier_class
+      ext: parquet
+  composed_network:
+    properties:
+      _: 'ONE composed network as a directory: `atom_pairs.parquet`, `direction.parquet`, `gpr.parquet` and `bridges.parquet`. A directory rather than four products because the four are meaningless apart -- the pair table carries member-prefixed metabolite and reaction ids that only this network''s own GPR and direction tables agree with. NOT NETWORK-AGNOSTIC, unlike the reference bake it is cut from: it must be staged per network and never shared, which is the one way it differs from `atom_pairs`. `bridges.parquet` reports EVERY candidate bridge including the ones that got no edge, because a metabolite both members use identically has zero mismatch and yields nothing, and that reads exactly like a typo unless the row is there to say otherwise.'
+      Format: DIRECTORY
   ecspr_tests:
     properties:
       _: 'what is MEASURED on a composition, one row per test. Names the composition, the element, the source (growth substrate) hub, the sink (biomass precursor) hubs, the readout hubs, the probe and the orientation. `sink_hub` and `readout_hub` are separate because naming a metabolite a sink gives it a PORT to ground instead of a leak, which changes the answer, while reading it changes nothing. `read_against` names another TEST -- a baseline is a baseline measurement, not a baseline network, and the same construction under a second probe has a different baseline. `ecspr draw` emits its null pool in exactly this schema plus the conditions it draws, which is what makes the null arm the same command with different files.'

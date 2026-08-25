@@ -157,17 +157,40 @@ def build_inputs(work: Path, *, units: list[Unit], atom_pairs: Path | None,
     for ns in ("fabfos", "annotation", "ecspr", "ref"):
         inputs.AddTypeLibrary(lib / "data_types" / f"{ns}.yml")
 
+    # ONE STAGED ITEM PER FILE, WITH EVERY UNIT THAT NEEDS IT AS A PARENT. Two units can
+    # share a table -- a composed network measured in both directions is two units on one
+    # `gpr.parquet` -- and adding it twice is an outright assertion failure in
+    # `DataInstanceLibrary`. Adding it once under the FIRST unit would be worse: the
+    # second unit's `group_by=exp` would then find no GPR table and the transform would
+    # quietly measure the wrong set. So the adds are gathered and flushed with the union.
+    #
+    # Under `stage="copy"` the destination name is part of the identity, because two units
+    # deliberately copy one conditions table to two per-unit names.
+    staged: dict = {}
+
     def _add(path: Path, dtype: str, *, name: str, parents=None):
         p = Path(path).expanduser().resolve()
-        if stage == "copy":
-            dest = inputs.location / name
-            if p.is_dir():
-                shutil.copytree(p, dest, dirs_exist_ok=True)
+        key = (p, name) if stage == "copy" else p
+        if key in staged:
+            got = staged[key]
+            if got["dtype"] != dtype:
+                raise SystemExit(f"{p} is staged as both {got['dtype']} and {dtype}")
+            got["parents"] |= set(parents or ())
+            return
+        staged[key] = dict(path=p, dtype=dtype, name=name, parents=set(parents or ()))
+
+    def _flush():
+        for e in staged.values():
+            if stage == "copy":
+                dest = inputs.location / e["name"]
+                if e["path"].is_dir():
+                    shutil.copytree(e["path"], dest, dirs_exist_ok=True)
+                else:
+                    shutil.copy(e["path"], dest)
+                inputs.AddItem(e["name"], e["dtype"], parents=e["parents"])
             else:
-                shutil.copy(p, dest)
-            inputs.AddItem(name, dtype, parents=parents or set())
-        else:
-            inputs.AddItem(p, dtype, parents=parents or set())
+                inputs.AddItem(e["path"], e["dtype"], parents=e["parents"])
+        staged.clear()
 
     for unit in units:
         exp = inputs.AddValue(f"experiment_{unit.name}.txt", unit.name, "fabfos::experiment")
@@ -221,6 +244,7 @@ def build_inputs(work: Path, *, units: list[Unit], atom_pairs: Path | None,
         if not real:
             stubs[dtype] = path
 
+    _flush()
     inputs.Save()
     if pinned is not None:
         pinned = refs.refs_view(pinned, set(refs.ECSPR_REFS) & covered - overridden)

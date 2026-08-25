@@ -3,6 +3,7 @@
     ecspr two-point --gpr ... --conditions ... --tests ...   two terminals, merged sink
     ecspr ground    --gpr ... --conditions ... --tests ...   universal leakage ground
     ecspr fba       --gpr ... --conditions ... --tests ...   flux balance on a carved frame
+    ecspr compose   --conditions ... --compositions ...      members joined by bridges
     ecspr conditions --gpr ... --background ... --column gene  a sweep, as two tables
     ecspr draw      --gpr <pool> --like-tests ...            the null pool, as two tables
     ecspr score     --results ... --null ...                 delta, z, rank, the gate
@@ -111,6 +112,35 @@ def build_parser() -> argparse.ArgumentParser:
     gr.add_argument("--readout-hub", nargs="*", default=[],
                     help="explicit readout metabolites for the one-shot form")
     gr.set_defaults(_run="ground")
+
+    cp = sub.add_parser("compose",
+                        help="build the composed networks a compositions table declares")
+    cp.add_argument("--gpr", nargs="+", required=True,
+                    help="the GPR tables the members' conditions select across")
+    cp.add_argument("--conditions", required=True,
+                    help="conditions table; a MEMBER is one of its condition_ids, which "
+                         "is what lets a member be perturbed")
+    cp.add_argument("--compositions", required=True,
+                    help="compositions table: composition_id, member_a, member_b, on")
+    cp.add_argument("--atom-pairs", required=True,
+                    help="the REFERENCE baked atom-transfer table, not a composed one")
+    cp.add_argument("--direction", default=None,
+                    help="the reference direction-ratios parquet")
+    cp.add_argument("--names", default=None,
+                    help="ecspr::metabolite_names, for the bridge report and the "
+                         "blacklist's own provenance check")
+    cp.add_argument("--blacklist", default=None,
+                    help="carrier blacklist parquet. WITHOUT IT every degree-4,000 "
+                         "cofactor is bridgeable, and current then crosses between "
+                         "members through the cofactor pool while every solve looks "
+                         "healthy")
+    cp.add_argument("--g0", type=float, default=1.0,
+                    help="bridge conductance scale; free, reported, never hidden")
+    cp.add_argument("--elements", nargs="+", default=["C", "N", "P", "S"])
+    cp.add_argument("--out", required=True,
+                    help="directory; one subdirectory per composition")
+    cp.add_argument("--log", default=None)
+    cp.set_defaults(_run="compose")
 
     fb = sub.add_parser("fba",
                         help="flux balance on the frame a condition's rows carve")

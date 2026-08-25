@@ -90,6 +90,36 @@ def test_copy_staging_names_inputs_for_the_unit(tmp_path):
             "atom_pairs.parquet", "direction.parquet"} <= staged, sorted(staged)
 
 
+def test_two_units_may_share_one_gpr_table(tmp_path):
+    # A COMPOSED NETWORK MEASURED IN BOTH DIRECTIONS is two units on one `gpr.parquet` and
+    # one conditions table -- only the terminals move, which is what makes the pair a
+    # comparison rather than two unrelated numbers. Staging it twice is an assertion
+    # failure; staging it under the first unit alone would leave the second unit's
+    # `group_by=exp` with no GPR table and measure the wrong set without saying so.
+    shared_gpr = tmp_path / "gpr.parquet"
+    shared_cond = tmp_path / "conditions.parquet"
+    for f in (shared_gpr, shared_cond):
+        f.touch()
+    units = []
+    for name in ("net__ERY", "net__RHI"):
+        t = tmp_path / f"tests_{name}.parquet"
+        t.touch()
+        units.append(ecspr.Unit(name=name, gpr_tables=[shared_gpr],
+                                conditions=shared_cond, tests=t))
+    seen = []
+    agent, task, stubs = ecspr.generate_workflow(
+        tmp_path / "work", units=units, atom_pairs=None, direction_ratios=None,
+        runtime=Runtime.APPTAINER, on_inputs=seen.append,
+    )
+    assert task.ok, f"shared-table plan failed: {task.plan}"
+    lib = seen[0]
+    staged = [p for p in lib.manifest if Path(str(p)).name == "gpr.parquet"]
+    assert len(staged) == 1, f"the shared table must be staged once, got {staged}"
+    # ONE PLAN STEP, TWO SAMPLES. `ecspr_measure` is `group_by=exp`, so the fan-out is at
+    # run time -- the plan is the template and both units resolve through it.
+    assert len(list(lib.AsSamples("fabfos::experiment"))) == 2
+
+
 def test_both_arms_plan_in_one_run(tmp_path):
     # WHY ONE PLAN. The two arms are only comparable if they measured the same
     # construction, and the thing that guarantees it is that they read one conditions

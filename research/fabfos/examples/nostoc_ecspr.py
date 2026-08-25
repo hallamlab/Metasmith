@@ -2,14 +2,24 @@
 """The three-member community as twelve DIRECTED networks, measured twice.
 
     python research/fabfos/examples/nostoc_ecspr.py --refs           # names + blacklist, from the bake
-    python research/fabfos/examples/nostoc_ecspr.py --compose        # build the networks + conditions
+    python research/fabfos/examples/nostoc_ecspr.py --compose        # build the networks + tests
     python research/fabfos/examples/nostoc_ecspr.py --plan           # plan every unit, run nothing
     python research/fabfos/examples/nostoc_ecspr.py --run            # measure
     python research/fabfos/examples/nostoc_ecspr.py --run --only NOS-ERY_bl-on   # one network
 
     {NOS,ERY,RHI} gpr_4lane + the reference bake
-        -> ecspr.model.compose  -> per-network atom_pairs + direction + gpr + conditions
+        -> ecspr::conditions (one per member) + ecspr::compositions (one per network)
+        -> ecspr.model.compose  -> per-network atom_pairs + direction + gpr + tests
         -> ecspr_measure  -> ecspr::results
+
+A MEMBER IS A CONDITION, WHICH IS WHY THE MEMBER LIST BECAME TWO TABLES. `--compose`
+writes one condition per member and one composition per network, and the community is
+then a declaration rather than a Python list of tuples. It buys the case this driver
+never had: a member can be PERTURBED, so "Nostoc beside Erythrobacter" and "Nostoc beside
+a knockout of Erythrobacter" are two compositions over the same annotation tables and the
+knockout is a `subtract` step like every other perturbation in the project.
+
+**WARNING** THIS DRIVER WRITES INTO `data/`, WHICH DVC HARDLINKS. See `_write`.
 
 WHAT `a -> b` MEANS. Glucose is injected into member `a`'s private copy of the network
 and the biomass endpoints are read in member `b`'s. Both directions are measured on the
@@ -26,10 +36,10 @@ Seven composed graphs, twelve directed measurements. Under `ground` there is no 
 to place, so what distinguishes the directed measurements there is the injecting copy;
 under `two-point` each (source, endpoint) pair is its own solve.
 
-ONLY THE GROUND ARM HAS A TRANSFORM. `--compose` writes BOTH condition sets, because
+ONLY THE GROUND ARM HAS A TRANSFORM. `--compose` writes BOTH test sets, because
 they are one modelling decision and splitting them would let the two drift; but the
 transform library declares one measurement step, `ecspr_measure`, and it dispatches
-`ecspr ground`. The two-point conditions are written and staged and nothing consumes
+`ecspr ground`. The two-point tests are written and staged and nothing consumes
 them. That is deliberate rather than half-finished: the measurement of record for both
 probes is the pinned `data/fabfos/nostoc/ecspr` chunk, produced when the library carried
 a transform per probe, and declaring the second one again is a library change with a
@@ -52,14 +62,21 @@ graph's tables through `--atom-pairs` / `--direction-ratios`. Composition happen
 DECODED bake, so what it emits is already in the schema the graph builder reads and
 nothing downstream needs to know a bake was involved.
 
-The composition is deliberately OUTSIDE the DAG. The bridge math is a modelling decision
-still being iterated, and staging its output keeps that loop off the library rebuild.
-Promoting it to a transform is mechanical once it settles.
+The composition now HAS a transform -- `compose_network`, producing `ecspr::composed_network`
+-- and this driver still does the work locally. That is not an oversight. The transform
+produces a DIRECTORY type, deliberately: the composed pair table, its direction table and
+its GPR table carry member-prefixed ids that only agree with each other, so they are one
+product. Chaining it into the measurement inside one plan would mean a transform consuming
+`ecspr::atom_pairs` and producing it, and one type would then mean both the shared
+reference and a per-network cut with nothing to tell a measurement which it had been
+handed. The transform is the route for a plan that composes MANY communities at once; this
+driver stays local because the bridge math is still being iterated.
 """
 from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import subprocess
 import sys
@@ -72,7 +89,9 @@ REPO = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO / "src"))
 
 import ecspr.model.compose as ec  # noqa: E402
+import ecspr.model.compositions as ecomp  # noqa: E402
 import ecspr.model.conditions as econd  # noqa: E402
+import ecspr.model.tests as etests  # noqa: E402
 
 sys.path.insert(0, str(REPO / "research/fabfos/benchmarks/eydallin"))
 import bake_pairs  # noqa: E402
@@ -80,6 +99,10 @@ import bake_pairs  # noqa: E402
 GPR = REPO / "data/fabfos/nostoc/annotation"
 OUT = REPO / "data/fabfos/nostoc/ecspr"
 NETS = OUT / "networks"
+# The members' own GPR tables under names a conditions table can select on. All three are
+# called `gpr_4lane.parquet` where they live, and a condition names its table by BASENAME,
+# so two of the three would be unreachable in one corpus.
+TABLES = OUT / "member_tables"
 MEMBERS = ("NOS", "ERY", "RHI")
 ELEMENTS = ("C", "N", "P", "S")
 _DEFAULT_OUT = str(REPO / "data/scratch/nostoc_ecspr")
@@ -167,6 +190,24 @@ LOCAL_RUNTIME = "mamba"
 LOCAL_AGENT_ENV = "msm"
 
 
+def _write(df, dest: Path):
+    """**WARNING** NEVER WRITE THROUGH A FILE UNDER `data/`.
+
+    DVC's cache type here is `hardlink,symlink`, so a checked-out file is ONE INODE WITH
+    MANY NAMES -- the composed tables under `data/fabfos/nostoc/ecspr/` carry link counts
+    of 19, 27 and 37. `to_parquet` opens the path for writing and truncates that inode, so
+    a plain overwrite edits the cache itself and every other checkout of that content
+    silently becomes the new file. `dvc status` stays clean throughout.
+
+    Writing a sibling and renaming over the name breaks the link instead of following it.
+    """
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    tmp = dest.with_name(dest.name + ".writing")
+    df.to_parquet(tmp, index=False)
+    os.replace(tmp, dest)
+    return dest
+
+
 def net_id(members, arm):
     return "-".join(members) + ("" if len(members) == 1 else f"_{arm}")
 
@@ -225,13 +266,13 @@ def build_refs(elements=ELEMENTS):
             for m, nm, f in zip(chem.id, chem.name, chem.formula)
             for el, n in _parse_formula(f).items() if el in elements]
     names = pd.DataFrame(rows, columns=["mnxm", "name", "formula", "element", "n_atoms"])
-    names.to_parquet(OUT / "metabolite_names.parquet", index=False)
+    _write(names, OUT / "metabolite_names.parquet")
     print(f"  metabolite_names: {len(names):,} rows, {names.mnxm.nunique():,} metabolites "
           f"carrying a {'/'.join(elements)} atom "
           f"({len(universe - set(names.mnxm)):,} of the universe carry none)")
 
     bl = _ec.carrier_blacklist(names)
-    bl.to_parquet(OUT / "carrier_blacklist.parquet", index=False)
+    _write(bl, OUT / "carrier_blacklist.parquet")
     print(f"  carrier_blacklist: {len(bl):,} ids over "
           f"{bl.carrier_class.nunique()} classes")
     return names, bl
@@ -278,62 +319,111 @@ def compose_all(g0=1.0, elements=ELEMENTS):
     if missing:
         raise SystemExit("REFUSING: " + "; ".join(missing))
 
+    # THE MEMBERS BECOME CONDITIONS AND THE COMMUNITY BECOMES A TABLE. A member is a
+    # condition_id, which is what lets one be perturbed: a knockout member is a `subtract`
+    # step and nothing else about the composition changes. The corpus is keyed by basename
+    # and all three members' tables are called `gpr_4lane.parquet`, so they are written out
+    # under distinct names -- a condition names its table by basename and two tables
+    # sharing one are unreachable.
+    TABLES.mkdir(parents=True, exist_ok=True)
+    corpus = {}
+    for o in MEMBERS:
+        _write(gprs[o], TABLES / f"{o}.parquet")
+        corpus[f"{o}.parquet"] = gprs[o]
+    member_conditions = [econd.single(o, f"{o}.parquet") for o in MEMBERS]
+    econd.write(member_conditions, OUT / "member_conditions.parquet")
+    conditions = {c.condition_id: c for c in member_conditions}
+
+    comps = {arm: [] for arm in ARMS}
+    seen = set()
+    for members, _src in UNITS:
+        if len(members) == 1:
+            # A SINGLETON IS A ONE-MEMBER COMPOSITION, not a second kind of thing. It has
+            # no bridges, so the two arms are identical: it is composed once and shared,
+            # which is also what makes it the control for composition itself.
+            nid = net_id(members, ARMS[0])
+            if nid not in seen:
+                seen.add(nid)
+                comps[ARMS[0]].append(ecomp.single(nid, members[0]))
+            continue
+        for arm in ARMS:
+            nid = net_id(members, arm)
+            if nid in seen:
+                continue
+            seen.add(nid)
+            # A BLANK `on` MEANS BRIDGE ON EVERYTHING the mismatch finds, which is what
+            # this experiment does. Naming metabolites instead restricts the bridges to
+            # those, and the report then says per named one whether an edge came out.
+            comps[arm].append(ecomp.Composition(
+                nid, tuple(members),
+                {(a, b): () for i, a in enumerate(members) for b in members[i + 1:]}))
+    for arm in ARMS:
+        if comps[arm]:
+            ecomp.write(comps[arm], OUT / f"compositions_{arm}.parquet")
+
     reports = []
     done = set()
+    for arm in ARMS:
+        for c in comps[arm]:
+            nid = c.composition_id
+            d = NETS / nid
+            d.mkdir(parents=True, exist_ok=True)
+            done.add(nid)
+            t0 = time.time()
+            out = ec.compose_composition(
+                c, conditions, corpus, pairs, direction, elements=elements, g0=g0,
+                blacklist=(blacklist if arm == "bl-on" else frozenset()), names=names)
+            _write(out["pairs"], d / "atom_pairs.parquet")
+            _write(out["direction"], d / "direction.parquet")
+            _write(out["gpr"], d / "gpr.parquet")
+            _write(out["bridges"], d / "bridges.parquet")
+            # WHAT THE MEASUREMENT RESOLVES. The composed GPR table is one network, so its
+            # conditions table is one condition over one table. The composition is what
+            # BUILT it; this is what the probe reads.
+            econd.write([econd.single(nid, "gpr.parquet")], d / "conditions.parquet")
+            rep = dict(out["report"], arm=arm, seconds=round(time.time() - t0, 1))
+            reports.append(rep)
+            print(f"[{nid}] {rep['n_orfs']:,} orfs  {rep['n_reactions']:,} rxn  "
+                  f"{rep['n_pair_rows']:,} pair rows  {rep['n_bridge_rows']:,} bridge "
+                  f"rows over {rep['n_bridged']:,} metabolites  "
+                  f"({rep['n_blocked_blacklist']:,} blocked, "
+                  f"{rep['n_one_copy_only']:,} one-copy)  {rep['seconds']}s", flush=True)
+
     for members, src in UNITS:
         for arm in ARMS:
             nid = net_id(members, arm)
             d = NETS / nid
-            if nid not in done:
-                done.add(nid)
-                d.mkdir(parents=True, exist_ok=True)
-                t0 = time.time()
-                out = ec.compose({o: gprs[o] for o in members}, pairs, direction,
-                                 elements=elements, g0=g0,
-                                 blacklist=(blacklist if arm == "bl-on" else frozenset()),
-                                 names=names, network_id=nid)
-                out["pairs"].to_parquet(d / "atom_pairs.parquet", index=False)
-                out["direction"].to_parquet(d / "direction.parquet", index=False)
-                out["gpr"].to_parquet(d / "gpr.parquet", index=False)
-                out["bridges"].to_parquet(d / "bridges.parquet", index=False)
-                rep = dict(out["report"], arm=arm, seconds=round(time.time() - t0, 1))
-                reports.append(rep)
-                print(f"[{nid}] {rep['n_orfs']:,} orfs  {rep['n_reactions']:,} rxn  "
-                      f"{rep['n_pair_rows']:,} pair rows  {rep['n_bridge_rows']:,} bridge "
-                      f"rows over {rep['n_bridged']:,} metabolites  "
-                      f"({rep['n_blocked_blacklist']:,} blocked, "
-                      f"{rep['n_one_copy_only']:,} one-copy)  {rep['seconds']}s", flush=True)
-
             sinks = [o for o in members if o != src] or [src]
-            ground, two_terminal = ec.make_conditions(
+            ground, two_terminal = ec.make_tests(
                 network_id=nid, source_org=src, sink_orgs=sinks,
                 substrates=SUBSTRATES,
                 precursors={e: [PRECURSORS[n] for n in prec_by_el[e]] for e in elements},
-                media=f"M9|g0={g0}|bl={'on' if arm == 'bl-on' else 'off'}",
                 elements=elements,
                 two_terminal_precursors={
                     e: [PRECURSORS[n] for n in TWO_TERMINAL[e] if n in prec_by_el[e]]
                     for e in elements})
-            econd.write(ground, d / f"conditions_{src}.parquet")
-            econd.write(two_terminal, d / f"conditions_2t_{src}.parquet")
+            etests.write(ground, d / f"tests_{src}.parquet", "ecspr")
+            etests.write(two_terminal, d / f"tests_2t_{src}.parquet", "ecspr")
             if len(members) == 1:
                 break
 
-    pd.DataFrame(reports).to_parquet(OUT / "compose_report.parquet", index=False)
+    _write(pd.DataFrame(reports), OUT / "compose_report.parquet")
     print(f"\n{len(done)} composed networks -> {NETS}")
     return reports
 
 
-def check_conditions(path: Path) -> None:
+def check_tests(path: Path) -> None:
     import pandas as pd
     if not path.exists():
-        raise SystemExit(f"no conditions at {path} -- run --compose first")
+        raise SystemExit(f"no tests at {path} -- run --compose first")
     cols = set(pd.read_parquet(path).columns)
-    if "mode" in cols:
+    if "mode" in cols or "background_column" in cols:
         raise SystemExit(
-            f"{path} is the PRE-SPLIT conditions shape (it carries a `mode` column).\n"
-            f"  It parses without error and measures one solve per sink instead of one "
-            f"per element, so it must not be staged. Re-run --compose.")
+            f"{path} is a PRE-SPLIT conditions table, not a tests table.\n"
+            f"  It parses without error and measures the wrong thing, so it must not be "
+            f"staged. Re-run --compose.")
+    if "test_id" not in cols:
+        raise SystemExit(f"{path} carries no test_id column; re-run --compose.")
 
 
 def invocations():
@@ -364,8 +454,9 @@ def build_cmd(nid, srcs, *, run, threads, outdir, agent_container=LOCAL_AGENT_EN
            "--dag", str(REPO / "research/fabfos/reports/dag/ecspr" / nid),
            "--threads", str(threads)]
     for s in srcs:
-        check_conditions(d / f"conditions_{s}.parquet")
-        cmd += ["--unit", f"{nid}__{s}:{d/'gpr.parquet'}:{d/f'conditions_{s}.parquet'}"]
+        check_tests(d / f"tests_{s}.parquet")
+        cmd += ["--unit", f"{nid}__{s}:{d/'gpr.parquet'}:{d/'conditions.parquet'}:"
+                          f"{d/f'tests_{s}.parquet'}"]
     if run:
         cmd.append("--run")
     return cmd
@@ -448,10 +539,11 @@ def drive_fir(*, only=None, host=None, agent_home=None, container=None,
         work = outdir / nid
         work.mkdir(parents=True, exist_ok=True)
         for s in srcs:
-            check_conditions(d / f"conditions_{s}.parquet")
+            check_tests(d / f"tests_{s}.parquet")
         units = [pipeline.Unit(name=f"{nid}__{s}",
-                               gpr_table=d / "gpr.parquet",
-                               conditions=d / f"conditions_{s}.parquet") for s in srcs]
+                               gpr_tables=[d / "gpr.parquet"],
+                               conditions=d / "conditions.parquet",
+                               tests=d / f"tests_{s}.parquet") for s in srcs]
         _a, task, stubs = pipeline.generate_workflow(
             work, units=units,
             atom_pairs=d / "atom_pairs.parquet",
