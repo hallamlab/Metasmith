@@ -29,9 +29,16 @@ from pathlib import Path
 import pandas as pd
 
 HERE = Path(__file__).resolve().parent
-ROOT = HERE.parents[3]
-TIER = ROOT / "data/scratch/bench_conditions_local/study_tier/aska_ffa"
-EXTRACT = ROOT / "data/fabfos/benchmarks/_extractions/aska_ffa/extraction.tsv"
+def _repo_root(start: Path) -> Path:
+    for d in [start, *start.parents]:
+        if (d / "data/fabfos").is_dir():
+            return d
+    raise SystemExit(f"no ancestor of {start} contains data/fabfos")
+
+
+ROOT = _repo_root(HERE)
+TIER = ROOT / "data/scratch/bench_conditions_local/study_tier/fang"
+EXTRACT = ROOT / "data/fabfos/benchmarks/_extractions/fang/extraction.tsv"
 PAIRS = ROOT / "data/fabfos/benchmark/reference_tier4/atom_pairs_tier4.parquet"
 
 

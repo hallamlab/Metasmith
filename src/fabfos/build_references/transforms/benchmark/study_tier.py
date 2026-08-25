@@ -46,7 +46,11 @@ STUDIES = {
     "pg_anionic": dict(reader="gene_row", cohort="pg_anionic", arm="gof", host="e_coli_epi300"),
     "forsberg":   dict(reader="gene_row", cohort="forsberg", arm="gof", host="e_coli_epi300"),
     "fa_supply":  dict(reader="gene_row", cohort="fa_supply", arm="gof", host="e_coli_epi300"),
-    "aska_ffa":   dict(reader="gene_ovx", cohort="aska_ffa", arm="gof", host="e_coli_k12"),
+    # Registered under the library's name until the lane was consolidated per paper.
+    # The KEY is written into the published tables' `source`, `build_id`, `unit_id` and
+    # `<study>:BASELINE` ids, so the products checked in under
+    # `data/fabfos/benchmarks/fang/` still carry `aska_ffa` there until the next build.
+    "fang":       dict(reader="gene_ovx", cohort="fang", arm="gof", host="e_coli_k12"),
     "scales_tol":  dict(reader="gene_ovx_row", cohort="scales_tol", arm="gof",
                         host="e_coli_bw25113",
                         directions={"tolerant_both": "up", "tolerant_15": "up",

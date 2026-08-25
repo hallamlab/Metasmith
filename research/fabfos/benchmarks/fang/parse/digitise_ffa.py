@@ -32,15 +32,15 @@ the unanchored bars.
 Writes two tables into the acquisitions tier, beside the PDF and the supplement
 they were read from:
 
-    data/fabfos/originals/benchmarks/aska/ffa/ffa_response.tsv
-    data/fabfos/originals/benchmarks/aska/ffa/ffa_anchors.tsv
+    data/fabfos/originals/benchmarks/fang/ffa/ffa_response.tsv
+    data/fabfos/originals/benchmarks/fang/ffa/ffa_anchors.tsv
 
 A digitisation is a human reading of a figure, the same kind of given as the
 curated study extractions -- not something a rebuild recomputes. Run it under
 an env with pypdf and Pillow (`figure-net` on this box):
 
     /home/tony/lib/miniforge3/envs/figure-net/bin/python \\
-        main/benchmarks/aska/digitise_ffa.py
+        research/fabfos/benchmarks/fang/parse/digitise_ffa.py
 """
 from __future__ import annotations
 
@@ -54,8 +54,15 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
-ROOT = Path(__file__).resolve().parents[4]
-ASKA = ROOT / "data" / "fabfos" / "originals" / "benchmarks" / "aska"
+def _repo_root(start: Path) -> Path:
+    for d in [start, *start.parents]:
+        if (d / "data/fabfos").is_dir():
+            return d
+    raise SystemExit(f"no ancestor of {start} contains data/fabfos")
+
+
+ROOT = _repo_root(Path(__file__).resolve())
+ASKA = ROOT / "data" / "fabfos" / "originals" / "benchmarks" / "fang"
 PDF = ASKA / "ffa" / "1-s2.0-S1096717625000989-main.pdf"
 DOCX = ASKA / "ffa" / "1-s2.0-S1096717625000989-mmc1.docx"
 

@@ -57,7 +57,7 @@ def auc(pos: np.ndarray, neg: np.ndarray) -> tuple:
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--run", type=Path, required=True,
-                    help="a run directory, e.g. main/benchmarks/aska/out/n1000")
+                    help="a run directory, e.g. research/fabfos/benchmarks/fang/out/n1000")
     ap.add_argument("--probe", default="two-point")
     ap.add_argument("--readout", default="total")
     ap.add_argument("--out", type=Path, default=None)

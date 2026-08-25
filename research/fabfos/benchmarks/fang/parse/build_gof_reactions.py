@@ -52,9 +52,9 @@ def _repo_root(start: Path) -> Path:
 
 REPO = _repo_root(Path(__file__).resolve())
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(REPO / "research/fabfos/benchmarks/eydallin"))
 sys.path.insert(0, str(REPO / "research/fabfos/benchmarks/eydallin/parse"))
-sys.path.insert(0, str(REPO / "research/fabfos/benchmarks/aska"))
 
 import bake_pairs                                                             # noqa: E402
 from build_extraction import gene_to_bnumber                                  # noqa: E402

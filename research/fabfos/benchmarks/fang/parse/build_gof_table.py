@@ -46,10 +46,11 @@ ITS OWN PANEL, so the five genes assayed on both backgrounds (`ydeA`, `setA`, `s
 collapsing the pair onto one row deletes either the paper's second-round headline or the
 control that makes it interesting.
 
-THE TITERS ARE NOT RE-DIGITISED HERE. `data/fabfos/benchmarks/aska_ffa/extraction.tsv`
-already carries them, read off the figure bars by `research/fabfos/benchmarks/aska/
-digitise_ffa.py` against the four titers the paper states in prose (F0 799.6, rfaY 2461.3,
-RF 2240.3, rfaY-yafL 3447.6). Re-measuring the same bars would be a second answer to a
+THE TITERS ARE NOT RE-DIGITISED HERE. `data/fabfos/benchmarks/fang/extraction.tsv`
+already carries them, read off the figure bars by this lane's own
+`plots`-side pair -- `parse/digitise_ffa.py` and `parse/build_extraction.py` -- against
+the four titers the paper states in prose (F0 799.6, rfaY 2461.3, RF 2240.3,
+rfaY-yafL 3447.6). Re-measuring the same bars would be a second answer to a
 settled question, and two digitisations of one figure is how two arms of this campaign
 would come to disagree about what the screen measured.
 """
@@ -72,13 +73,13 @@ def _repo_root(start: Path) -> Path:
 
 
 REPO = _repo_root(Path(__file__).resolve())
-sys.path.insert(0, str(REPO / "research/fabfos/benchmarks/aska"))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(REPO / "research/fabfos/benchmarks/eydallin/gpr_build"))
 
 from build_clone_orfs import read_faa                                       # noqa: E402
 from build_extraction import gene_to_bnumber                                # noqa: E402
 
-EXTRACTION = REPO / "data/fabfos/benchmarks/aska_ffa/extraction.tsv"
+EXTRACTION = REPO / "data/fabfos/benchmarks/fang/extraction.tsv"
 W3110_FAA = REPO / "data/fabfos/originals/genomes/e_coli_w3110/genome/CP165600.1.faa"
 MG1655_FAA = REPO / "data/fabfos/originals/genomes/e_coli_k12/genome/NC_000913.3.faa"
 MG1655_GBK = REPO / "data/fabfos/originals/genomes/e_coli_k12/genome/NC_000913.3.gbk"

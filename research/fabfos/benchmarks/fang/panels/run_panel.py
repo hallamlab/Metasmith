@@ -15,8 +15,8 @@ the solver's numerical floor. If the null does not clear that floor, every z bel
 it is noise over noise, and no number of draws fixes it.
 
     ./dev.sh -e --where                     # confirm which ecspr is imported
-    python main/benchmarks/aska/run_panel.py --draws 32     # the gate
-    python main/benchmarks/aska/run_panel.py --draws 1000   # the run
+    python research/fabfos/benchmarks/fang/panels/run_panel.py --draws 32     # the gate
+    python research/fabfos/benchmarks/fang/panels/run_panel.py --draws 1000   # the run
 
 Solves shard per condition and resume from what is on disk, because this
 workstation kills long local jobs and a thousand-draw null is exactly the shape of
@@ -36,11 +36,19 @@ from pathlib import Path
 import pandas as pd
 
 HERE = Path(__file__).resolve().parent
-ROOT = HERE.parents[3]
-CACHE = HERE / "cache"
+def _repo_root(start: Path) -> Path:
+    for d in [start, *start.parents]:
+        if (d / "data/fabfos").is_dir():
+            return d
+    raise SystemExit(f"no ancestor of {start} contains data/fabfos")
+
+
+ROOT = _repo_root(HERE)
+LANE = ROOT / "research/fabfos/benchmarks/fang"
+CACHE = LANE / "cache"
 OUT = HERE / "out"
 
-sys.path.insert(0, str(HERE.parent))
+sys.path.insert(0, str(ROOT / "research/fabfos/benchmarks"))
 import bake_identity                                                          # noqa: E402
 
 PAIRS = ROOT / "data/fabfos/benchmark/reference_tier4/atom_pairs_tier4.parquet"
@@ -53,6 +61,8 @@ OBSERVED = CACHE / "conditions_observed.tsv"
 LIKE = CACHE / "conditions_like.tsv"
 
 PROBES = ("two-point", "ground")
+# The study's former registration name, still the id in the published tier products this
+# panel reads. See `data/fabfos/benchmarks/fang/README.md`.
 BASELINE = "aska_ffa:BASELINE"
 
 

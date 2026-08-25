@@ -39,7 +39,7 @@ complementation strain deletes the chromosomal copy and carries a plasmid one, a
 only a key that separates the host's row from the clone's row can say that. Both
 genes are sole-gene reactions in iML1515, so the drop is exact.
 
-Writes everything under `research/fabfos/benchmarks/aska/cache/`.
+Writes everything under `research/fabfos/benchmarks/fang/cache/`.
 """
 from __future__ import annotations
 
@@ -52,17 +52,25 @@ import numpy as np
 import pandas as pd
 
 HERE = Path(__file__).resolve().parent
-ROOT = HERE.parents[3]
+def _repo_root(start: Path) -> Path:
+    for d in [start, *start.parents]:
+        if (d / "data/fabfos").is_dir():
+            return d
+    raise SystemExit(f"no ancestor of {start} contains data/fabfos")
+
+
+ROOT = _repo_root(HERE)
 sys.path.insert(0, str(ROOT / "src/metasmith_libraries/resources/lib"))
 import fabfos_evidence as fe                                          # noqa: E402
-CACHE = HERE / "cache"
+LANE = ROOT / "research/fabfos/benchmarks/fang"
+CACHE = LANE / "cache"
 
-sys.path.insert(0, str(HERE.parent))
+sys.path.insert(0, str(ROOT / "research/fabfos/benchmarks"))
 import bake_identity                                                          # noqa: E402
 
 BAKE = bake_identity.DEPLOYED
 HOST_GEM = ROOT / "data/fabfos/runs/e_coli_k12/gpr/gpr_gem.parquet"
-STUDY = ROOT / "data/fabfos/benchmarks/aska_ffa"
+STUDY = ROOT / "data/fabfos/benchmarks/fang"
 ROSTER = ROOT / "data/fabfos/originals/benchmarks/aska/library/aska_clone_minus.tsv"
 GENOME = ROOT / "data/fabfos/originals/genomes/e_coli_k12/genome/NC_000913.3.gbk"
 
@@ -198,6 +206,10 @@ def condition_rows(study_conds: pd.DataFrame, ext: pd.DataFrame,
                   background_values=SEP.join((HOST_UNIT, TESA_UNIT)),
                   drop_column="intermediate_id", draw_id=None)
 
+    # `aska_ffa` is the id the published study-tier products under
+    # `data/fabfos/benchmarks/fang/` were built with, and these tables have to join
+    # against them. It is the study's former registration name, kept because the ids are
+    # in data rather than because the lane is still called that.
     rows = [dict(condition_id="aska_ffa:BASELINE", mask_column="", mask_values="",
                  drop_values=SEP.join(base_drop), arm="observed", cohort="aska_ffa",
                  is_control=1, stratum=0, n_units=0, **common)]

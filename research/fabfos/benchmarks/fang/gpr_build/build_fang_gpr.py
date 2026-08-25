@@ -55,7 +55,6 @@ def _repo_root(start: Path) -> Path:
 REPO = _repo_root(Path(__file__).resolve())
 HERE = Path(__file__).resolve().parents[1]
 
-sys.path.insert(0, str(REPO / "research/fabfos/benchmarks/aska"))
 sys.path.insert(0, str(HERE / "parse"))
 import build_gof_table as bgt                                         # noqa: E402
 from build_extraction import gene_to_bnumber                          # noqa: E402
@@ -74,7 +73,7 @@ HOST_DENOVO = REPO / "data/fabfos/runs/e_coli_k12/gpr/gpr_denovo.parquet"
 BAKE = REPO / "data/fabfos/processed/metabolism_bake"
 METANETX = REPO / "data/fabfos/originals/metanetx"
 GOF_DIR = REPO / "data/fabfos/runs/fang_clones/parse/gof"
-EXTRACTION = REPO / "data/fabfos/benchmarks/aska_ffa/extraction.tsv"
+EXTRACTION = REPO / "data/fabfos/benchmarks/fang/extraction.tsv"
 OUT = REPO / "data/fabfos/runs/fang/gpr"
 
 HOST = "e_coli_k12"
@@ -168,7 +167,9 @@ def main() -> int:
     ap.add_argument("--publish", action="store_true",
                     help=f"write into {OUT.relative_to(REPO)} rather than beside this script")
     a = ap.parse_args()
-    out_dir = OUT if a.publish else (HERE / "out" / "fang_gpr")
+    # `out/` also holds the glycerol -> FFA arm's tracked result tables, so a dry run
+    # writes into a scratch subdirectory the lane's .gitignore covers.
+    out_dir = OUT if a.publish else (HERE / "out" / "dryrun" / "fang_gpr")
 
     roster = read_roster(ROSTER)
     genes = sorted(roster.gene.unique())

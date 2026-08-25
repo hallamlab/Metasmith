@@ -33,12 +33,12 @@ did mark every increase they saw.
 
 Writes the extraction the build tier copies as bytes:
 
-    data/fabfos/benchmarks/_extractions/aska_ffa/extraction.tsv
+    data/fabfos/benchmarks/_extractions/fang/extraction.tsv
 
 and, beside this script, the resolution census that says how much of the study
 the model can see at all:
 
-    main/benchmarks/aska/out/orf_resolution.tsv
+    research/fabfos/benchmarks/fang/out/orf_resolution.tsv
 """
 from __future__ import annotations
 
@@ -50,12 +50,19 @@ from pathlib import Path
 
 import pandas as pd
 
-ROOT = Path(__file__).resolve().parents[4]
+def _repo_root(start: Path) -> Path:
+    for d in [start, *start.parents]:
+        if (d / "data/fabfos").is_dir():
+            return d
+    raise SystemExit(f"no ancestor of {start} contains data/fabfos")
+
+
+ROOT = _repo_root(Path(__file__).resolve())
 HERE = Path(__file__).resolve().parent
-RESPONSE = ROOT / "data/fabfos/originals/benchmarks/aska/ffa/ffa_response.tsv"
+RESPONSE = ROOT / "data/fabfos/originals/benchmarks/fang/ffa/ffa_response.tsv"
 GENOME = ROOT / "data/fabfos/originals/genomes/e_coli_k12/genome/NC_000913.3.gbk"
 HOST_GEM = ROOT / "data/fabfos/runs/e_coli_k12/gpr/gpr_gem.parquet"
-EXTRACT = ROOT / "data/fabfos/benchmarks/_extractions/aska_ffa/extraction.tsv"
+EXTRACT = ROOT / "data/fabfos/benchmarks/_extractions/fang/extraction.tsv"
 
 CITATION = ("Fang et al. Metab Eng 2025;92:13-21; "
             "doi:10.1016/j.ymben.2025.06.010")
@@ -126,6 +133,12 @@ def main():
             ctrl = float(hit["ffa"].iloc[0]) if len(hit) else float("nan")
         fold = r["ffa"] / ctrl
         measured = direction(fold, r["significance"], r["bar_colour"])
+        # THE `aska_ffa` PREFIX IS FROZEN, NOT STALE. `extraction.tsv` is the lane's
+        # primary artifact -- copied as bytes from the acquisition, never regenerated --
+        # and its `obs_id` column already carries these ids. Renaming the prefix here
+        # would make this script disagree with the file it is supposed to reproduce, and
+        # the study tier takes `obs_id` verbatim wherever it exists, so nothing downstream
+        # is keyed on the prefix meaning the study's current name.
         obs = f"aska_ffa:{fig}:{strain}"
         genes = [g for g in r["clones"].split("|") if g]
         dels = [g for g in r["deletions"].split("|") if g]
