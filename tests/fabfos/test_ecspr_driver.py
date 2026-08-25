@@ -90,6 +90,44 @@ def test_copy_staging_names_inputs_for_the_unit(tmp_path):
             "atom_pairs.parquet", "direction.parquet"} <= staged, sorted(staged)
 
 
+def test_both_arms_plan_in_one_run(tmp_path):
+    # WHY ONE PLAN. The two arms are only comparable if they measured the same
+    # construction, and the thing that guarantees it is that they read one conditions
+    # table inside one run rather than two invocations that agreed by hand.
+    units = []
+    for name in ("pool_a",):
+        tables = []
+        for which in ("host", "clones"):
+            g = tmp_path / f"{which}_{name}.parquet"
+            g.touch()
+            tables.append(g)
+        for f in (f"conditions_{name}.parquet", f"tests_{name}.parquet",
+                  f"gem_tests_{name}.parquet", f"media_{name}.parquet",
+                  "iECDH1ME8569_1439.json"):
+            (tmp_path / f).touch()
+        units.append(ecspr.Unit(name=name, gpr_tables=tables,
+                                conditions=tmp_path / f"conditions_{name}.parquet",
+                                tests=tmp_path / f"tests_{name}.parquet"))
+    mnx = tmp_path / "metanetx"
+    mnx.mkdir()
+    ecspr.attach_fba(units, [(
+        "pool_a", tmp_path / "gem_tests_pool_a.parquet",
+        [tmp_path / "iECDH1ME8569_1439.json"], tmp_path / "media_pool_a.parquet")])
+
+    agent, task, stubs = ecspr.generate_workflow(
+        tmp_path / "work", units=units, atom_pairs=None, direction_ratios=None,
+        metanetx=mnx, runtime=Runtime.APPTAINER,
+    )
+    assert task.ok, f"two-arm plan failed: {task.plan}"
+    assert {"ecspr_measure", "fba_measure"} <= common.step_transform_names(task)
+
+
+def test_a_unit_with_no_fba_arm_plans_exactly_as_before(tmp_path):
+    agent, task, stubs = _plan(tmp_path)
+    assert task.ok
+    assert "fba_measure" not in common.step_transform_names(task)
+
+
 if __name__ == "__main__":
     import tempfile
 

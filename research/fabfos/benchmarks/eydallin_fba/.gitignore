@@ -1,3 +1,9 @@
 cache/
 out/models/
 __pycache__/
+out/fba.log
+# The staged GPR tables are symlinks into data/, which DVC owns. `build_tables.py`
+# recreates them; committing a link to a DVC-managed path would break on a fresh
+# checkout that has not pulled the data.
+out/tables/*_gem.parquet
+out/tables/*_denovo.parquet

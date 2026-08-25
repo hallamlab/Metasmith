@@ -165,6 +165,20 @@ types:
       ext: parquet
 
   # -------------------------------------------------
+  # The MetaNetX release itself, as the release directory rather than as three types.
+  # `ecspr fba` inserts an annotation-asserted reaction the curated frame never named,
+  # and doing that needs all three files together: reac_prop for the stoichiometry,
+  # chem_prop for formula, charge and InChIKey, chem_xref for the BiGG crosswalk that
+  # lands an MNXM on the frame's own metabolite. They are one pinned release and split
+  # them and a bridge built from one version indexes another version's equations.
+  metanetx_release:
+    extends:
+    - reference_data
+    properties:
+      _: A pinned MetaNetX MNXref release directory (reac_prop.tsv, chem_prop.tsv, chem_xref.tsv); the sliced parquets ecspr caches are written beside them
+      Format: DIRECTORY
+
+  # -------------------------------------------------
   # The pre-consolidation trio. Superseded by mnxr_lookup for the GPR mappers;
   # still typed because build-mnxr-lookup reads them.
   ko_to_mnxr:

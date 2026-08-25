@@ -121,14 +121,19 @@ types:
       ext: parquet
   media:
     properties:
-      _: 'a growth medium as exchange bounds, one row per (medium, exchange reaction). A GEM input only; a conductance measurement has no exchange bounds to set, which is why `media` left the ECSPr side entirely rather than staying a column nothing read.'
+      _: 'a growth medium as exchange bounds, one row per (medium, exchange reaction). `exchange` is a reaction id ON THE FRAME the test names, not an MNXR -- a medium is only a medium relative to a frame''s own exchange set, and going through a crosswalk would let a compound the frame cannot take up look like one it can. Applying a medium CLOSES every exchange it does not name: a medium that only opened what it listed would be the frame''s shipped medium plus the listed compounds, which is a different experiment. A GEM input only; a conductance measurement has no exchange bounds to set, which is why `media` left the ECSPr side entirely rather than staying a column nothing read.'
       Format: parquet
       fields:
       - media
-      - mnxr
+      - exchange
       - lower_bound
       - upper_bound
       ext: parquet
+  frame:
+    properties:
+      _: 'the STOICHIOMETRIC FRAME a flux balance test carves -- a curated genome-scale model, which is where the stoichiometry comes from. A GPR table carries gene-to-reaction evidence and no stoichiometry at all, so a condition can say which of a frame''s reactions survive and can never say what any of them does. A `gem_tests` row names one of these by file name or by stem.'
+      Format: JSON
+      ext: json
   results:
     properties:
       _: 'THE ECSPr measurement -- one row per (test, probe, orientation, element, readout). Keyed on `test_id` rather than `condition_id`, because one condition can carry several tests and they must not collapse into one row. `readout` is a sink metabolite, any metabolite from the universal ground''s draw vector, or `total`; a readout whose name starts with `_` is a per-test DIAGNOSTIC (coverage, convergence, the AAM gap, whether the test abstained) carried in the same table so a result cannot be read without it. Significance is NOT here -- it is a subtraction and a rank over these rows against a null measured in the same schema, which `ecspr score` performs.'

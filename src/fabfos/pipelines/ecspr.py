@@ -1,10 +1,18 @@
 #!/usr/bin/env python3
-"""Driver 3/3: GPR table(s) + conditions + tests -> the ECSPr measurement.
+"""Driver 3/3: GPR table(s) + conditions + tests -> the measurement, on either arm.
 
     gpr_table + conditions + ecspr_tests + atom_pairs + direction_ratios
         -> ecspr_measure -> ecspr::results
+    gpr_table + conditions + gem_tests + frame + media + metanetx_release
+        -> fba_measure   -> ecspr::fba_results
 
-One transform, deliberately -- see ``transforms/fabfos/ecspr_measure.py``. Each
+TWO ARMS, ONE CONDITIONS TABLE. ``--fba`` attaches the flux balance arm to a unit
+that already has one, and both transforms read that unit's own conditions table --
+so a construction measured as atom conductance and as flux balance is the SAME
+construction, and the comparison is a property of the plan rather than of two
+invocations agreeing by hand. A unit with no ``--fba`` plans exactly as before.
+
+One transform per arm, deliberately -- see ``transforms/fabfos/ecspr_measure.py``. Each
 ``--unit`` is its own ``fabfos::experiment`` (a GPR table paired with its own
 condition set); ``ecspr_measure`` is ``group_by=exp``, so N units resolve to N
 jobs in one plan with no change to the transform (see the "runtime fan-out"
@@ -78,6 +86,7 @@ DOMAINS = ["fabfos"]
 
 DEFAULT_ATOM_PAIRS = common.DATA_PROCESSED / refs.relpaths_for("ecspr::atom_pairs")[0]
 DEFAULT_DIRECTION_RATIOS = common.DATA_PROCESSED / refs.relpaths_for("ecspr::direction_ratios")[0]
+DEFAULT_METANETX = common.REPO_ROOT / "data/fabfos/originals/metanetx/4.5"
 
 
 @dataclass
@@ -86,6 +95,16 @@ class Unit:
     gpr_tables: list
     conditions: Path
     tests: Path
+    # The flux balance arm, attached by `--fba` rather than folded into `--unit`. It
+    # reads the SAME conditions table -- that is the whole point of the split -- and adds
+    # only what an LP needs that a conductance measurement does not.
+    gem_tests: Path | None = None
+    frames: list | None = None
+    media: Path | None = None
+
+    @property
+    def measures_flux(self) -> bool:
+        return bool(self.gem_tests and self.frames and self.media)
 
 
 def parse_unit(spec: str) -> Unit:
@@ -103,21 +122,49 @@ def parse_unit(spec: str) -> Unit:
                 tests=Path(tests))
 
 
+def parse_fba(spec: str) -> tuple:
+    parts = spec.split(":")
+    if len(parts) != 4:
+        raise argparse.ArgumentTypeError(
+            f"--fba expects NAME:GEM_TESTS:FRAMES:MEDIA, where FRAMES is one or more "
+            f"model paths separated by commas; got [{spec}]")
+    name, tests, frames, media = parts
+    models = [Path(f) for f in frames.split(",") if f]
+    if not models:
+        raise argparse.ArgumentTypeError(f"--fba {name} names no frame")
+    return name, Path(tests), models, Path(media)
+
+
+def attach_fba(units: list, specs) -> list:
+    by_name = {u.name: u for u in units}
+    for name, tests, frames, media in specs or ():
+        if name not in by_name:
+            raise SystemExit(f"--fba names unit {name!r}, which no --unit declares "
+                             f"(have {sorted(by_name)})")
+        u = by_name[name]
+        u.gem_tests, u.frames, u.media = tests, frames, media
+    return units
+
+
 def build_inputs(work: Path, *, units: list[Unit], atom_pairs: Path | None,
-                  direction_ratios: Path | None, stage: str = "reference",
-                  use_pinned_refs: bool = True,
+                  direction_ratios: Path | None, metanetx: Path | None = None,
+                  stage: str = "reference", use_pinned_refs: bool = True,
                   ) -> tuple[DataInstanceLibrary, dict[str, Path], "DataInstanceLibrary | None"]:
     lib = common.resolve_library_root()
 
     inputs = DataInstanceLibrary(work / "inputs.xgdb")
     inputs.Purge()
-    for ns in ("fabfos", "annotation", "ecspr"):
+    for ns in ("fabfos", "annotation", "ecspr", "ref"):
         inputs.AddTypeLibrary(lib / "data_types" / f"{ns}.yml")
 
     def _add(path: Path, dtype: str, *, name: str, parents=None):
         p = Path(path).expanduser().resolve()
         if stage == "copy":
-            shutil.copy(p, inputs.location / name)
+            dest = inputs.location / name
+            if p.is_dir():
+                shutil.copytree(p, dest, dirs_exist_ok=True)
+            else:
+                shutil.copy(p, dest)
             inputs.AddItem(name, dtype, parents=parents or set())
         else:
             inputs.AddItem(p, dtype, parents=parents or set())
@@ -134,6 +181,25 @@ def build_inputs(work: Path, *, units: list[Unit], atom_pairs: Path | None,
              name=f"{unit.name}.conditions.parquet", parents={exp})
         _add(unit.tests, "ecspr::ecspr_tests",
              name=f"{unit.name}.ecspr_tests.parquet", parents={exp})
+        if not unit.measures_flux:
+            continue
+        _add(unit.gem_tests, "ecspr::gem_tests",
+             name=f"{unit.name}.gem_tests.parquet", parents={exp})
+        _add(unit.media, "ecspr::media", name=f"{unit.name}.media.parquet",
+             parents={exp})
+        # A FRAME KEEPS ITS OWN NAME, like a GPR table and for the same reason: a
+        # `gem_tests` row names its frame by stem.
+        for f in unit.frames:
+            _add(f, "ecspr::frame", name=Path(f).name, parents={exp})
+
+    if any(u.measures_flux for u in units):
+        mnx = Path(metanetx) if metanetx else DEFAULT_METANETX
+        if not mnx.exists():
+            raise SystemExit(
+                f"the flux balance arm needs a MetaNetX release and {mnx} is not there. "
+                f"Without it a lane-asserted reaction the frame never named is lost, "
+                f"which on a de-novo condition is most of them; pass --metanetx")
+        _add(mnx, "ref::metanetx_release", name=mnx.name)
 
     stubs: dict[str, Path] = {}
     pinned = refs.load_pinned_refs(common.DATA_PROCESSED) if use_pinned_refs else None
@@ -163,12 +229,13 @@ def build_inputs(work: Path, *, units: list[Unit], atom_pairs: Path | None,
 
 def generate_workflow(work: Path, *, units: list[Unit], atom_pairs: Path | None,
                        direction_ratios: Path | None, runtime: Runtime,
+                       metanetx: Path | None = None,
                        agent_env: str | None = None, stage: str = "reference",
                        agent=None, on_inputs=None):
     lib = common.resolve_library_root()
     inputs, stubs, pinned_refs = build_inputs(
         work, units=units, atom_pairs=atom_pairs,
-        direction_ratios=direction_ratios, stage=stage,
+        direction_ratios=direction_ratios, metanetx=metanetx, stage=stage,
     )
     if on_inputs is not None:
         on_inputs(inputs)
@@ -183,6 +250,10 @@ def generate_workflow(work: Path, *, units: list[Unit], atom_pairs: Path | None,
 
     targets = TargetBuilder()
     targets.Add("ecspr::results")
+    # BOTH ARMS IN ONE PLAN, so the comparison happens inside one run against one set of
+    # staged tables rather than across two invocations that could have drifted apart.
+    if any(u.measures_flux for u in units):
+        targets.Add("ecspr::fba_results")
 
     if agent is None:
         agent = common.make_agent(work, runtime, container=agent_env)
@@ -202,6 +273,13 @@ def _build_parser() -> argparse.ArgumentParser:
                     help="one measurement unit (repeatable): the GPR tables the "
                          "conditions select across (comma-separated), the conditions "
                          "table, and the ecspr_tests table")
+    p.add_argument("--fba", action="append", default=None, type=parse_fba,
+                    metavar="NAME:GEM_TESTS:FRAMES:MEDIA",
+                    help="add the flux balance arm to the named unit (repeatable). It "
+                         "reads that unit's own conditions table, so the two arms measure "
+                         "the same construction rather than two versions of it")
+    p.add_argument("--metanetx", default=None, metavar="DIR",
+                    help=f"MetaNetX release directory (default: {DEFAULT_METANETX})")
     p.add_argument("--atom-pairs", default=None, metavar="PARQUET")
     p.add_argument("--direction-ratios", default=None, metavar="PARQUET")
     p.add_argument("--staging", default=None, help="working dir (default: <output>/_fabfos)")
@@ -228,9 +306,10 @@ def main(argv=None) -> int:
 
     print("=== ecspr: staging inputs + planning ===")
     agent, task, stubs = generate_workflow(
-        staging, units=a.unit,
+        staging, units=attach_fba(a.unit, a.fba),
         atom_pairs=Path(a.atom_pairs) if a.atom_pairs else None,
         direction_ratios=Path(a.direction_ratios) if a.direction_ratios else None,
+        metanetx=Path(a.metanetx) if a.metanetx else None,
         runtime=runtime, agent_env=a.agent_env,
     )
 

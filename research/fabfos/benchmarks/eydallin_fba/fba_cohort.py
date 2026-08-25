@@ -49,9 +49,11 @@ from pathlib import Path
 import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "src"))
 import common as C  # noqa: E402
-import kornberg as K  # noqa: E402
-import mnx_insert as MI  # noqa: E402
+
+from ecspr.model import fba as F  # noqa: E402
+from ecspr.model import mnx as MX  # noqa: E402
 
 FOLD = 2.0
 VMIN = 0.1
@@ -69,7 +71,7 @@ def reference_state(model, medium, pin):
     """(biomass reaction, gmax, pinned glycogen optimum, pFBA fluxes) under `medium`."""
     from cobra.flux_analysis import pfba
     bio = _biomass(model)
-    model.medium = {k: v for k, v in medium.items() if k in model.reactions}
+    F.apply_medium(model, medium)
     gmax = model.slim_optimize()
     if gmax is None or gmax != gmax:
         return bio, 0.0, None, {}
@@ -112,59 +114,93 @@ def _forced(model, vref, rxn_ids):
 
 
 class Clones:
-    """What each clone asserts, resolved onto one host model.
+    """What each clone asserts, read from the conditions table and resolved onto a host.
 
     `present` are reaction ids the host already carries.  `absent` are the assertions the
     host does not, which only the `add` arm uses.
+
+    THE ASSERTIONS COME FROM THE CONDITIONS TABLE, not from a channel-specific loader.
+
+    **CAUTION** WHAT A CLONE ASSERTS IS NOT WHAT IT ADDS. A clone's condition is the host's
+    rows unioned with that clone's, and taking the difference between resolving the two
+    gives the EMPTY SET for all 34 GEM clones and all 55 de-novo ones -- every clone is a
+    chromosomal *E. coli* ORF the host already carries, so it adds nothing. `relax` and
+    `force` act on what the clone asserts whether the host has it or not, so the set they
+    need is the clone's own steps resolved WITHOUT the background.
     """
 
     def __init__(self, model, channel: str, min_lanes: int):
+        from ecspr.model import conditions as cond_mod
+        from ecspr.model import fba as F
+        from ecspr.model.probes import load_corpus
+
         self.model = model
         self.channel = channel
         self.frame = C.load_model()
-        if channel == "gem":
-            self.asserted = C.clone_gem_rxns()
-        else:
-            self.asserted = C.clone_denovo_mnxr(min_lanes)
-            self.by_mnxr, self.frame_by_mnxr = {}, {}
-            for rid, mnxr in C.model_mnxr_map().items():
-                self.frame_by_mnxr.setdefault(mnxr, rid)
-                if rid in model.reactions:
-                    self.by_mnxr.setdefault(mnxr, rid)
-            for r in model.reactions:
-                if r.id.startswith(MI.HET_PREFIX):
-                    self.by_mnxr.setdefault(r.id[len(MI.HET_PREFIX):], r.id)
-            self.bridge = MI.bridge_for(model)
+        tables = C.OUT / "tables"
+        corpus = load_corpus(sorted(tables.glob("*_gem.parquet"))
+                             + sorted(tables.glob("*_denovo.parquet")))
+        conds = {c.condition_id: c
+                 for c in cond_mod.read(tables / "conditions.parquet")}
+        background = {s.table for s in conds[f"{channel}:baseline"].steps}
+        self.asserted = {}
+        for cid, cond in conds.items():
+            if not cid.startswith(f"{channel}:") or cid.endswith(":baseline"):
+                continue
+            alone = cond_mod.Condition(
+                cid, tuple(s for s in cond.steps if s.table not in background))
+            a = F.assertions(alone, corpus, min_lanes=min_lanes)
+            self.asserted[cid.split(":", 1)[1].lower()] = (a.ids, a.mnxrs, a)
+
+        self.xwalk, _cen = F.crosswalk(self.frame, corpus)
+        self.frame_by_mnxr, self.by_mnxr = {}, {}
+        for rid, mnxr in self.xwalk.items():
+            self.frame_by_mnxr.setdefault(mnxr, rid)
+            if rid in model.reactions:
+                self.by_mnxr.setdefault(mnxr, rid)
+        for r in model.reactions:
+            if r.id.startswith(MX.HET_PREFIX):
+                self.by_mnxr.setdefault(r.id[len(MX.HET_PREFIX):], r.id)
+        self.release = MX.Release(C.MNX, cache=C.CACHE)
+        self.bridge = self.release.bridge(model)
 
     def resolve(self, key: str):
-        items = self.asserted.get(key, [])
-        if self.channel == "gem":
-            present = [x for x in items if x in self.model.reactions]
-            absent = [x for x in items if x not in self.model.reactions
-                      and x in self.frame.reactions]
-        else:
-            present = [self.by_mnxr[x] for x in items if x in self.by_mnxr]
-            absent = [x for x in items if x not in self.by_mnxr]
+        got = self.asserted.get(key)
+        if got is None:
+            return [], []
+        ids, mnxrs, a = got
+        # THE ID ROUTE WINS AND THE CROSSWALK IS THE FALLBACK. A curated row names a frame
+        # reaction outright, so that reaction is what the evidence is about; a de-novo row
+        # names a KO or an EC number, which reaches the frame only through its MNXR.
+        # Taking both routes for a curated row instead fans out to whatever else shares
+        # the MNXR -- it gave serB two reactions where the table names one, and forcing
+        # the second put six otherwise-answered configurations into infeasibility.
+        present = [x for x in ids if x in self.model.reactions]
+        covered = {self.xwalk.get(x) for x in present}
+        present += [self.by_mnxr[x] for x in mnxrs
+                    if x in self.by_mnxr and x not in covered]
+        absent = [x for x in ids
+                  if x not in self.model.reactions and x in self.frame.reactions]
+        absent += [x for x in mnxrs if x not in self.by_mnxr and x not in covered]
         return sorted(set(present)), sorted(set(absent))
 
     def insert(self, absent):
         """Put the absent assertions into the model.  Call inside `with model:`."""
-        if self.channel == "gem":
-            new = [self.frame.reactions.get_by_id(r).copy() for r in absent]
-            self.model.add_reactions(new)
-            return [r.id for r in new]
         # An assertion the carve removed exists in the curated frame already, balanced and
         # in BiGG form.  Take it from there and go to MetaNetX only for what the frame
         # never had.  Skipping this step leaves the arm with nothing to add: of 424 absent
         # assertions across 50 clones, MetaNetX admits none -- 250 are unbalanced, 75 span
         # compartments, 58 reach a metabolite the frame does not hold.
-        from_frame = [self.frame_by_mnxr[x] for x in absent if x in self.frame_by_mnxr]
+        from_frame = [x for x in absent if x in self.frame.reactions]
+        from_frame += [self.frame_by_mnxr[x] for x in absent
+                       if x in self.frame_by_mnxr]
         new = [self.frame.reactions.get_by_id(r).copy() for r in sorted(set(from_frame))
                if r not in self.model.reactions]
         if new:
             self.model.add_reactions(new)
-        rest = [x for x in absent if x not in self.frame_by_mnxr]
-        got, _rej, _cen = MI.insert(self.model, rest, self.bridge)
+        rest = [x for x in absent
+                if x not in self.frame_by_mnxr and x not in self.frame.reactions]
+        got, _rej, _cen = MX.insert(self.model, rest, self.bridge, self.release)
         return [r.id for r in new] + list(got.values())
 
 
@@ -216,8 +252,8 @@ def _one(model, clones, bio, gmax, pin, vref, host_g, host_relax,
             if not added:
                 rec["status"] = "insertion_refused"
                 return rec
-            MI.close_energy_cycles(model, added)
-            if MI.energy_cycles(model):
+            MX.close_energy_cycles(model, added)
+            if MX.energy_cycles(model):
                 rec["status"] = "energy_cycle"
                 return rec
             v = _solve(model, bio, gmax, pin)
@@ -260,11 +296,11 @@ def main() -> int:
     ap.add_argument("--out", type=Path, default=C.OUT / "cohort.tsv")
     a = ap.parse_args()
 
-    import cobra
-    probe = cobra.io.load_json_model(str(C.OUT / "models" / "ag1_gem.json"))
-    formulas = K.formula_by_bigg(C.chem_prop(), C.bigg_bridge())
-    kb, _absent = K.kornberg(probe, formulas)
-    media = {"kornberg": kb, "m9": K.m9(probe)}
+    # THE MEDIA COME FROM THE TABLE, not from a function call here. `kornberg.py` keeps
+    # the derivation and the paper's own words, and `build_tables.py` writes down what it
+    # computes -- so the medium is an input both arms read rather than a call one of them
+    # makes.
+    media = F.load_media(C.OUT / "tables" / "media.parquet")
     if a.medium != "both":
         media = {a.medium: media[a.medium]}
 

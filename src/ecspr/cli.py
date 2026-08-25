@@ -1,11 +1,21 @@
-"""The ecspr command line -- four measuring verbs, and nothing that edits a network.
+"""The ecspr command line -- the measuring verbs, and nothing that edits a network.
 
     ecspr two-point --gpr ... --conditions ... --tests ...   two terminals, merged sink
     ecspr ground    --gpr ... --conditions ... --tests ...   universal leakage ground
+    ecspr fba       --gpr ... --conditions ... --tests ...   flux balance on a carved frame
     ecspr conditions --gpr ... --background ... --column gene  a sweep, as two tables
     ecspr draw      --gpr <pool> --like-tests ...            the null pool, as two tables
     ecspr score     --results ... --null ...                 delta, z, rank, the gate
     ecspr selftest                                           can this env measure at all
+
+TWO ARMS, ONE PAIR OF TABLES. ``ground`` measures atom conductance and ``fba``
+measures flux balance, and both read the same conditions table -- so a
+construction measured one way and the other is the same construction, rather than
+two hand-written approximations of one. They differ in which tests table they take
+(``ecspr::ecspr_tests`` against ``ecspr::gem_tests``) and in what the condition's
+weights are allowed to mean: an LP has no use for evidence in nats, so ``factor``
+reaches ``fba`` only through ``carve_threshold``, where more belief can put a
+reaction into the model. It never moves a bound.
 
 ECSPr MEASURES; IT DOES NOT EDIT. There is no weight builder, no metabolite
 resolver, no add/delete policy and no background flag, because each of those is an
@@ -101,6 +111,59 @@ def build_parser() -> argparse.ArgumentParser:
     gr.add_argument("--readout-hub", nargs="*", default=[],
                     help="explicit readout metabolites for the one-shot form")
     gr.set_defaults(_run="ground")
+
+    fb = sub.add_parser("fba",
+                        help="flux balance on the frame a condition's rows carve")
+    fb.add_argument("--gpr", nargs="+", required=True,
+                    help="GPR table(s) the conditions select across")
+    fb.add_argument("--conditions", required=True, help="conditions table (long)")
+    fb.add_argument("--tests", required=True, help="gem_tests table")
+    fb.add_argument("--frame", nargs="+", required=True, metavar="MODEL",
+                    help="stoichiometric frame(s); a test's `frame` column names one by "
+                         "file name or by stem")
+    fb.add_argument("--media", default=None,
+                    help="media table: one row per (media, exchange, bounds)")
+    fb.add_argument("--mnx", default=None, metavar="DIR",
+                    help="a MetaNetX release directory (reac_prop, chem_prop, "
+                         "chem_xref). Without it a lane-asserted reaction the frame "
+                         "never named is simply lost, which on a de-novo condition is "
+                         "most of them")
+    fb.add_argument("--mnx-cache", default=None,
+                    help="where the sliced MetaNetX parquets live (default: beside --mnx)")
+    fb.add_argument("--weighting", choices=("belief", "uniform"), default="belief")
+    fb.add_argument("--emit", choices=("summary", "fluxes", "reduced-costs"),
+                    default="summary",
+                    help="`reduced-costs` adds a row per reaction from the same LP the "
+                         "target flux came from -- magnitude for the price of one solve")
+    fb.add_argument("--gapfill-media", default=None, metavar="MEDIA",
+                    help="repair every model in this one medium instead of in each "
+                         "test's own. Giving it makes the built model a claim about the "
+                         "ORGANISM rather than about the broth, so a comparison across "
+                         "media compares one model. Without it, two media are two models")
+    fb.add_argument("--no-gapfill", action="store_true",
+                    help="leave the carve infeasible rather than repairing it. The carve "
+                         "is deep enough to take biomass to zero, so this is a diagnostic")
+    fb.add_argument("--census", default=None,
+                    help="per-build census JSON (default: <out>.census.json)")
+    fb.add_argument("--frame-default", default=None, dest="frame_default",
+                    help="the frame a test leaves blank")
+    fb.add_argument("--media-default", default=None, dest="media_default",
+                    help="the medium a test leaves blank")
+    fb.add_argument("--objective", default=None,
+                    help="the growth reaction; default is the frame's own objective")
+    fb.add_argument("--target", default=None,
+                    help="the metabolite whose demand is maximised at the growth pin")
+    fb.add_argument("--growth-pin", type=float, default=0.1,
+                    help="fraction of each model's OWN maximum growth to hold while the "
+                         "target is maximised (default 0.1). A fraction and not an "
+                         "absolute rate: a carved model grows far slower than its frame")
+    fb.add_argument("--min-lanes", type=int, default=1,
+                    help="channels that must agree before a reaction survives the carve. "
+                         "1 by default and deliberately -- no two lanes agree on any "
+                         "reaction of the E. coli glycogen pathway")
+    fb.add_argument("--out", required=True, help="fba_results table (.parquet or .tsv)")
+    fb.add_argument("--log", default=None)
+    fb.set_defaults(_run="fba")
 
     cd = sub.add_parser("conditions",
                         help="build a sweep's conditions and tests from a background")

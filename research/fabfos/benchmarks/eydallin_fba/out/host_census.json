@@ -1,17 +1,56 @@
 [
   {
-    "channel": "gem",
-    "removed": [
+    "n_rows": 4885,
+    "n_units": 1,
+    "n_mnxr": 2308,
+    "n_ids": 2754,
+    "n_mnxr_before_belief": 2308,
+    "n_mnxr_all_lanes": 2308,
+    "crosswalk": 2755,
+    "crosswalk_from_corpus": 2754,
+    "crosswalk_from_frame": 1,
+    "crosswalk_disagree": 1231,
+    "frame_reactions": 2755,
+    "kept": 2754,
+    "carved_away": 1,
+    "ungoverned": 530,
+    "carved_away_ids": [
       "GTPDPK"
-    ]
+    ],
+    "insert": {
+      "requested": 0,
+      "inserted": 0,
+      "skipped": "no MetaNetX release"
+    },
+    "closed_after_insert": 0,
+    "media_missing": 0,
+    "growth_carved": 0.982478,
+    "gapfill": {
+      "needed": 0,
+      "reactions": [],
+      "status": "skipped"
+    },
+    "growth_after_gapfill": null,
+    "closed_after_gapfill": 0,
+    "growth_final": 0.982478,
+    "energy_cycles_open": 0,
+    "channel": "gem"
   },
   {
-    "channel": "denovo",
-    "min_lanes": 1,
+    "n_rows": 30711,
+    "n_units": 1,
+    "n_mnxr": 11248,
+    "n_ids": 4708,
+    "n_mnxr_before_belief": 11248,
+    "n_mnxr_all_lanes": 11248,
+    "crosswalk": 2755,
+    "crosswalk_from_corpus": 2754,
+    "crosswalk_from_frame": 1,
+    "crosswalk_disagree": 1231,
     "frame_reactions": 2755,
-    "ungoverned_kept": 530,
-    "carved_away": 1035,
     "kept": 1720,
+    "carved_away": 1035,
+    "ungoverned": 530,
     "insert": {
       "requested": 10092,
       "inserted": 417,
@@ -29,35 +68,8 @@
       "unbalanced_on_frame": 11,
       "already_present": 282
     },
-    "energy_cycles_closed": {
-      "HET_MNXR153621": "reverse",
-      "HET_MNXR96486": "reverse",
-      "HET_MNXR189682": "reverse",
-      "HET_MNXR188986": "reverse",
-      "HET_MNXR190954": "reverse",
-      "HET_MNXR144473": "reverse",
-      "HET_MNXR190281": "reverse",
-      "HET_MNXR190860": "reverse",
-      "HET_MNXR190952": "reverse",
-      "HET_MNXR191230": "forward",
-      "HET_MNXR130506": "reverse",
-      "HET_MNXR197793": "forward",
-      "HET_MNXR113581": "forward",
-      "HET_MNXR190894": "reverse",
-      "HET_MNXR144949": "reverse",
-      "HET_MNXR180500": "forward",
-      "HET_MNXR106403": "reverse",
-      "HET_MNXR101444": "forward",
-      "HET_MNXR188732": "reverse",
-      "HET_MNXR145718": "reverse",
-      "HET_MNXR103363": "forward",
-      "HET_MNXR107636": "reverse",
-      "HET_MNXR99475": "reverse",
-      "HET_MNXR102010": "reverse",
-      "HET_MNXR133276": "forward",
-      "HET_MNXR100364": "reverse",
-      "HET_MNXR116110": "reverse"
-    },
+    "closed_after_insert": 27,
+    "media_missing": 0,
     "growth_carved": 0.0,
     "gapfill": {
       "needed": 58,
@@ -123,23 +135,30 @@
       ],
       "status": "ok",
       "target_growth": 0.098248,
-      "growth_reached": 1.38957,
       "method": "l1_relaxation"
     },
-    "growth_gapfilled": 1.38957,
-    "energy_cycles_closed_after_gapfill": {
-      "HET_MNXR137689": "forward",
-      "HET_MNXR166566": "forward"
-    },
-    "growth_final": 0.24612
+    "growth_after_gapfill": 1.38957,
+    "closed_after_gapfill": 2,
+    "growth_final": 0.24612,
+    "energy_cycles_open": 0,
+    "channel": "denovo",
+    "min_lanes": 1
   },
   {
-    "channel": "denovo",
-    "min_lanes": 2,
+    "n_rows": 30711,
+    "n_units": 1,
+    "n_mnxr": 2409,
+    "n_ids": 4340,
+    "n_mnxr_before_belief": 2409,
+    "n_mnxr_all_lanes": 11248,
+    "crosswalk": 2755,
+    "crosswalk_from_corpus": 2754,
+    "crosswalk_from_frame": 1,
+    "crosswalk_disagree": 1231,
     "frame_reactions": 2755,
-    "ungoverned_kept": 530,
-    "carved_away": 1495,
     "kept": 1260,
+    "carved_away": 1495,
+    "ungoverned": 530,
     "insert": {
       "requested": 1713,
       "inserted": 195,
@@ -157,9 +176,8 @@
       "unbalanced_on_frame": 7,
       "already_present": 53
     },
-    "energy_cycles_closed": {
-      "HET_MNXR153621": "reverse"
-    },
+    "closed_after_insert": 1,
+    "media_missing": 0,
     "growth_carved": 0.0,
     "gapfill": {
       "needed": 104,
@@ -271,22 +289,30 @@
       ],
       "status": "ok",
       "target_growth": 0.098248,
-      "growth_reached": 1.36697,
       "method": "l1_relaxation"
     },
-    "growth_gapfilled": 1.36697,
-    "energy_cycles_closed_after_gapfill": {
-      "HET_MNXR96486": "reverse"
-    },
-    "growth_final": 0.575924
+    "growth_after_gapfill": 1.36697,
+    "closed_after_gapfill": 1,
+    "growth_final": 0.575924,
+    "energy_cycles_open": 0,
+    "channel": "denovo",
+    "min_lanes": 2
   },
   {
-    "channel": "denovo",
-    "min_lanes": 3,
+    "n_rows": 30711,
+    "n_units": 1,
+    "n_mnxr": 1166,
+    "n_ids": 3606,
+    "n_mnxr_before_belief": 1166,
+    "n_mnxr_all_lanes": 11248,
+    "crosswalk": 2755,
+    "crosswalk_from_corpus": 2754,
+    "crosswalk_from_frame": 1,
+    "crosswalk_disagree": 1231,
     "frame_reactions": 2755,
-    "ungoverned_kept": 530,
-    "carved_away": 1720,
     "kept": 1035,
+    "carved_away": 1720,
+    "ungoverned": 530,
     "insert": {
       "requested": 675,
       "inserted": 129,
@@ -304,9 +330,8 @@
       "unbalanced_on_frame": 4,
       "already_present": 5
     },
-    "energy_cycles_closed": {
-      "HET_MNXR153621": "reverse"
-    },
+    "closed_after_insert": 1,
+    "media_missing": 0,
     "growth_carved": 0.0,
     "gapfill": {
       "needed": 173,
@@ -487,13 +512,13 @@
       ],
       "status": "ok",
       "target_growth": 0.098248,
-      "growth_reached": 1.384148,
       "method": "l1_relaxation"
     },
-    "growth_gapfilled": 1.384148,
-    "energy_cycles_closed_after_gapfill": {
-      "HET_MNXR96486": "reverse"
-    },
-    "growth_final": 0.853127
+    "growth_after_gapfill": 1.384148,
+    "closed_after_gapfill": 1,
+    "growth_final": 0.853127,
+    "energy_cycles_open": 0,
+    "channel": "denovo",
+    "min_lanes": 3
   }
 ]
