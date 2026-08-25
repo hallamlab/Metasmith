@@ -37,47 +37,17 @@ drops every renamed gene. `condition_id` (`eydallin:<gene>`) is written straight
 from `extraction.tsv`'s own spelling by the same script, so it is the stable key;
 this script joins on `condition_id.split(":")[1]`, not `feature_name`.
 
-THE PICK IS AN in_atom_universe TIE-BREAK, NOT AN EVIDENCE RANKING, BECAUSE THERE
-IS NO EVIDENCE TO RANK ON YET: every row in `gpr_gem.parquet` today carries
-`raw_score=1.0` and `evidence_quality="unknown"` -- presence/absence GPR calls,
-not scored ones. Ranking on a constant would be an arbitrary row order dressed up
-as a ranking. `in_atom_universe` is the one real discriminator available -- it says
-whether the reaction has atom-mapping data behind it at all, which is also exactly
-what the carbon-bond column below needs -- so the primary pick prefers
-`in_atom_universe=True`, then breaks any remaining tie on `mnxr` for determinism.
-When `gpr_gem.parquet` grows real per-reaction scores this tie-break is the first
-thing to replace.
-
-`reaction_equation` IS NAMES, NOT MNXM IDS. `reactions.parquet`'s own `equation`
-column is MetaNetX's internal notation (`1 MNXM1105977@MNXD1 = 1 MNXM40333@MNXD1 +
-...`); `legible_equation()` swaps every id for `metabolites.parquet`'s name, drops
-the compartment tag (every compound here sits in one), and writes `->` instead of
-`=` so it reads substrates-consumed -> products-made. All 131 compound ids this
-cohort's reactions use resolve to a name; nothing here silently falls back to the
-raw id.
-
-CARBON-BOND CHANGE IS READ OFF THE BAKED ATOM MAP, NOT GUESSED FROM THE EQUATION
-STRING. `atom_pairs.parquet` (via `bake_pairs.py`, this tree's shared decode of
-`data/fabfos/processed/metabolism_bake`) already pairs each carbon atom on the
-substrate side of a reaction to the carbon atom it becomes on the product side.
-Group those pairs into connected components by shared atoms: a component spanning
-more than one SUBSTRATE molecule means those molecules' carbons became bonded
-(`creates`); a component spanning more than one PRODUCT molecule means one
-molecule's carbons came apart (`breaks`); a component touching more than one
-molecule on both sides is `both`; every component 1:1 is `no_change`. A reaction
-with no carbon atoms in the map at all (nothing in `in_atom_universe`, or a
-reaction with no carbon on either side, e.g. a proton antiport) is left blank --
-unknown, not "no change". This was checked against three of the resolved
-reactions: HSK (homoserine kinase, `MNXR100737`) is a clean 1:1 phosphorylation
--> `no_change`; 5'-deoxyadenosine nucleosidase (`MNXR152703`) splits one molecule
-into adenine + ribose -> `breaks`; glucosamine-6-phosphate deaminase
-(`MNXR115917`) is a 1:1 deamination -> `no_change`.
+HOW A REACTION IS PICKED, HOW ITS EQUATION IS MADE LEGIBLE, AND HOW THE CARBON-BOND
+CALL IS READ OFF THE BAKED ATOM MAP ARE ALL IN `reaction_chemistry.py`, beside this
+file and shared with `build_lof_reactions.py`. Two copies of those rules is how the
+two halves of this benchmark would come to disagree about what `breaks` means. Of the
+131 compound ids this cohort's reactions use, all resolve to a name -- nothing here
+silently falls back to a raw id.
 """
 from __future__ import annotations
 
 import argparse
 import csv
-import re
 import sys
 from collections import Counter
 from pathlib import Path
@@ -89,17 +59,16 @@ HERE = Path(__file__).resolve().parent
 
 sys.path.insert(0, str(HERE.parent))
 import bake_pairs                                                             # noqa: E402
+from reaction_chemistry import (carbon_bond_change, denovo_gapfill,            # noqa: E402
+                                legible_equation, pick_primary)
 
 GOF_DIR = REPO / "data/fabfos/runs/eydallin_clones/parse/gof"
 GOF_CSV = GOF_DIR / "gof.csv"
 EDGES_CSV = GOF_DIR / "gof_reaction_edges.csv"
 GPR_GEM = REPO / "data/fabfos/runs/eydallin_clones/gpr/gpr_gem.parquet"
 GPR_DENOVO = REPO / "data/fabfos/runs/eydallin_clones/gpr/gpr_denovo.parquet"
-DENOVO_MAX_CANDIDATES = 10
 REACTIONS = REPO / "data/fabfos/processed/lookups/reactions.parquet"
 METABOLITES = REPO / "data/fabfos/processed/lookups/metabolites.parquet"
-
-EQUATION_TERM_RE = re.compile(r"(\d+(?:\.\d+)?) (\S+?)@\S+")
 
 # LLM REVIEW, THE THIRD CHANNEL, FOR THE 52 GENES `iECDH1ME8569_1439` HAS NO TRACE OF AT
 # ALL (`resolve_gene_manual.py`'s exhaustive search -- every gene identifier plus a
@@ -236,121 +205,6 @@ EDGE_COLS = ("gene", "channel", "model_gene_symbol", "mnxr", "is_primary",
              "primary_reason", "intermediate_id", "intermediate_name", "raw_score",
              "evidence_quality", "in_atom_universe", "gpr_rule", "reaction_equation",
              "direction_ratio", "carbon_bond_change")
-
-
-class _UnionFind:
-    def __init__(self):
-        self.parent: dict = {}
-
-    def find(self, x):
-        self.parent.setdefault(x, x)
-        while self.parent[x] != x:
-            self.parent[x] = self.parent[self.parent[x]]
-            x = self.parent[x]
-        return x
-
-    def union(self, a, b):
-        ra, rb = self.find(a), self.find(b)
-        if ra != rb:
-            self.parent[ra] = rb
-
-
-def carbon_bond_change(pairs_for_mnxr: pd.DataFrame) -> str:
-    """`pairs_for_mnxr` is `atom_pairs`'s rows for one `mnxr`, `element == "C"` only.
-    See the module docstring for what each outcome means."""
-    c = pairs_for_mnxr[pairs_for_mnxr.element == "C"]
-    if c.empty:
-        return ""
-
-    uf = _UnionFind()
-    for sub_met, prod_met in c[["substrate", "product"]].drop_duplicates().itertuples(index=False):
-        s_node, p_node = ("S", sub_met), ("P", prod_met)
-        uf.find(s_node)
-        uf.find(p_node)
-        uf.union(s_node, p_node)
-
-    components: dict = {}
-    for node in uf.parent:
-        components.setdefault(uf.find(node), []).append(node)
-
-    creates = breaks = False
-    for members in components.values():
-        n_sub = sum(1 for k, _ in members if k == "S")
-        n_prod = sum(1 for k, _ in members if k == "P")
-        if n_sub > 1:
-            creates = True
-        if n_prod > 1:
-            breaks = True
-
-    if creates and breaks:
-        return "both"
-    if creates:
-        return "creates"
-    if breaks:
-        return "breaks"
-    return "no_change"
-
-
-def legible_equation(equation: str, names: dict[str, str]) -> str:
-    """MetaNetX writes `1 MNXM1105977@MNXD1 = 1 MNXM40333@MNXD1 + ...` -- ids and a
-    bare `=`, compartment tag included even though every compound in this cohort's
-    reactions sits in one compartment. Swap each id for `metabolites.parquet`'s name,
-    drop the compartment tag, drop a bare `1` coefficient, and write the arrow a
-    stoichiometry-reader actually reads left-to-right as consumed -> produced."""
-    lhs, rhs = equation.split(" = ")
-
-    def side(text: str) -> str:
-        terms = []
-        for coeff, mid in EQUATION_TERM_RE.findall(text):
-            name = names.get(mid, mid)
-            terms.append(name if coeff == "1" else f"{coeff} {name}")
-        return " + ".join(terms)
-
-    return f"{side(lhs)} -> {side(rhs)}"
-
-
-def pick_primary(candidates: pd.DataFrame) -> tuple[pd.Series | None, str]:
-    if candidates.empty:
-        return None, ""
-    ordered = candidates.sort_values(
-        by=["in_atom_universe", "raw_score", "mnxr"],
-        ascending=[False, False, True],
-    )
-    reason = ("only candidate" if len(ordered) == 1 else
-              "in_atom_universe tie-break" if ordered.iloc[0]["in_atom_universe"] else
-              "mnxr tie-break (no in_atom_universe candidate)")
-    return ordered.iloc[0], reason
-
-
-def denovo_gapfill(gpr_denovo: pd.DataFrame, genes: set[str]) -> dict[str, tuple[str, str]]:
-    """The de-novo channel is noisy by design -- ~3 independent projection methods
-    (HMM/KO bitscore, BLAST reciprocal-best-hit, an embedding k-NN vote) each throw
-    candidates at a gene, on scales that aren't comparable to each other (a bitscore
-    of 295 and a knn_vote of 0.04 aren't the same kind of number), so ranking by
-    `raw_score` the way `pick_primary` does for the GEM channel would just reward
-    whichever method happens to score highest, not the gene's actual reaction. What
-    IS comparable across methods is agreement: gap-fill a gene only when >=2 of
-    those independent methods land on the exact same `mnxr`, the way
-    `resolve_gene_manual.py`'s own two-method-agreement check works for the GEM
-    channel. And only when the candidate pool is small (<=10) -- `ylcG` has 99
-    candidates because its EC hit (3.1.1.4, a broad phospholipase class) enumerates
-    every reaction MetaNetX carries under that EC number, so its top knn_vote pick
-    landing inside that huge pool is a coincidence of pool size, not real
-    convergence, and is excluded here even though it technically clears the
-    2-method bar."""
-    out: dict[str, tuple[str, str]] = {}
-    sub = gpr_denovo[gpr_denovo["gene"].isin(genes)]
-    for gene, g in sub.groupby("gene"):
-        if g["mnxr"].nunique() > DENOVO_MAX_CANDIDATES:
-            continue
-        agreement = g.groupby("mnxr")["score_kind"].nunique()
-        qualifying = agreement[agreement >= 2]
-        if len(qualifying) == 1:
-            mnxr = qualifying.index[0]
-            methods = sorted(g[g["mnxr"] == mnxr]["score_kind"].unique())
-            out[gene] = (mnxr, f"de-novo channel, {len(methods)} independent "
-                         f"methods agree ({', '.join(methods)})")
-    return out
 
 
 def main() -> int:

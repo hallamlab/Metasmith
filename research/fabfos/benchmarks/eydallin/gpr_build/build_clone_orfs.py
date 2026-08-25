@@ -60,7 +60,7 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[5]
 HERE = Path(__file__).resolve().parents[1]
 
-sys.path.insert(0, str(REPO / "main" / "benchmarks" / "aska"))
+sys.path.insert(0, str(REPO / "research" / "fabfos" / "benchmarks" / "aska"))
 from build_extraction import gene_to_bnumber                          # noqa: E402
 
 EXTRACTION = REPO / "data/fabfos/benchmarks/eydallin/extraction.tsv"
