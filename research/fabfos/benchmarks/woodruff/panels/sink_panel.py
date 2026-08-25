@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Effective conductance glucose -> each declared sink, per host, on the curated channel.
 
-    mamba run -n build-refs-cobra python research/fabfos/benchmarks/scales/sink_panel.py
+    mamba run -n build-refs-cobra python research/fabfos/benchmarks/woodruff/panels/sink_panel.py
 
 WHAT THIS MEASURES. One two-point solve per (host, axis): unit current injected at
 D-glucose's carbon atoms, drawn at the sink's, and `Solution.total` is the effective
@@ -64,11 +64,11 @@ import bake_pairs                                                            # n
 from ecspr.model.build import graph_from_pairs, load_direction_ratios, load_pairs  # noqa: E402
 from ecspr.model.graph import Terminal, solve                                # noqa: E402
 
-PANEL_TSV = ROOT / "data/fabfos/originals/benchmarks/scales/gof_scales.tsv"
+PANEL_TSV = ROOT / "data/fabfos/originals/benchmarks/woodruff/gof_scales.tsv"
 HOSTS = ("e_coli_bw25113", "e_coli_lw06")
-OUT_TSV = ROOT / "data/fabfos/runs/scales/ecspr/sink_panel_gem_C.tsv"
+OUT_TSV = ROOT / "data/fabfos/runs/woodruff_clones/ecspr/sink_panel_gem_C.tsv"
 
-INSERTION = ROOT / "data/fabfos/runs/scales/gpr/gpr_insertion.parquet"
+INSERTION = ROOT / "data/fabfos/runs/woodruff_clones/gpr/gpr_insertion.parquet"
 
 FIELDS = ("host", "background", "channel", "role", "axis", "src_mnxm", "sink_mnxm",
           "sink_name", "element", "n_rxn", "g", "converged", "src_is_node",

@@ -1,6 +1,22 @@
-# Would ECSPr find what SCALEs found?
+# Would ECSPr find what Woodruff's SCALEs screens found?
 
-**No, on both arms — and the mechanistic result that looked like a win does not survive its
+**No, on all three arms.** Two arms were run first — a glucose-rooted sink panel and a
+whole-library classifier — and both came back null. A third was added afterwards, running
+the protocol the eydallin benchmark settled: parse the screen into a `gof.csv` keyed on the
+real expression host, attach reaction chemistry through a four-channel cascade, restrict to
+genes whose reaction changes a carbon skeleton, and score a two-point conductance **ratio**
+between competing metabolic fates rather than a single readout. That arm is reported in
+§ *The ratio arm* and is also null: best AUC anywhere **0.5467 (p = 0.15)**, against a
+reaction-count size control of 0.5347, on the population the method has a mechanism for.
+
+The ratio arm's *mechanics* work, and that is worth separating from its statistics. Both
+preconditions pass — every terminal is a reachable atom-mapped node, and a ×2 fold demonstrably
+multiplies rather than unions — and the score is genuinely two-sided where a single-probe
+readout cannot be: 566 of 981 solved genes raise the ethanol share, 367 lower it. The top of
+the ranking is chemically exactly right (adhE +21.8%, ppc −14.3%, maeB −11.3%). It simply
+does not correlate with what the screen measured.
+
+**No, on both prior arms — and the mechanistic result that looked like a win does not survive its
 own controls.** The headline finding was that ECSPr separates the production paper's
 rank-one hit from its stated non-hit: g(glucose→trehalose) = 12.43 against
 g(glucose→betaine) = 0. Three controls, all added after an adversarial review and all
@@ -53,8 +69,13 @@ The production paper's gene symbols lived in a workbook that survives in its sup
 PowerPoint only as a dead OLE link, so its distribution is recoverable but anonymous. The
 companion paper ships a complete named workbook, and that is the arm with the statistics.
 
-**Neither arm's fitness values may be joined to the other's.** The later paper recalculated
+**Neither paper's fitness values may be joined to the other's.** The later paper recalculated
 the earlier selections; the ranges differ sixfold and a trial join matched 337 of 4,103.
+
+The third arm — § *The ratio arm* — straddles the two and says so on every page: it takes the
+**companion paper's gene names and phenotype** because they are the only per-gene ones that
+survive, and measures conductance on the **production paper's host** because LW06 is where
+the production selection happened. It joins no fitness value to any other.
 
 ### How falsifiable each decode actually is
 
@@ -320,11 +341,225 @@ accident. Merge refuses a missing shard *and* a present-but-short one.
 **Resampled small-null cross-check.** 200 draws of 100 random genes against the confirmed
 set: AUC 0.5214 ± 0.0218, agreeing with the exhaustive sweep.
 
+## The ratio arm
+
+The eydallin benchmark settled a four-stage protocol and this arm runs it here unchanged in
+shape: a `gof.csv` keyed on the real expression host, reaction chemistry attached through a
+four-channel cascade, a restriction to genes whose reaction changes a carbon skeleton, and a
+score that is the **ratio of two competing two-point conductances** rather than one readout.
+
+    ratio = C(pyruvate MNXM23 → ethanol MNXM1108092) / C(pyruvate MNXM23 → oxaloacetate MNXM46)
+
+**Why a ratio.** Effective conductance is monotone in every edge conductance (Rayleigh), so
+a ×2 fold on any gene can only push a single readout *up*. A signed phenotype — this gene
+helps production, that one hurts it — is inexpressible in one such number, and three
+sessions of correlation against one said so before the ratio existed. Dividing two competing
+fates of the *same* source metabolite is what makes the score two-sided: pyruvate is the
+branch point LW06 was engineered around, ethanol is where it is supposed to send carbon, and
+oxaloacetate is the anaplerotic fate that competes for it. A gene raising both legs equally
+scores zero; only a gene that shifts the split registers. The two conductances are
+**independent solves on one graph**, never two readings of one, and that doubles the
+per-gene cost on purpose.
+
+### Which population `gof.csv` describes, and why it is not the production paper's
+
+The production screen ranked 4,103 genes and **4,100 of them are anonymous** — its workbook
+survives in the supplementary PowerPoint only as a dead OLE link, so `parse/decode_mmc1_chart.py`
+recovers the distribution and not the names. Exactly three genes are nameable, and only
+because the prose names them: betA (rank 2243), betB (1993), betI (1052). A gene-keyed table
+of three rows is not a screen.
+
+So `gof.csv` keys on the **companion tolerance paper** instead — the same SCALEs library, the
+same lab, screened in BW25113 Δ*recA*, with a complete named workbook: 4,225 genes, each with
+a b-number and two fitness values. What survives the two arms' refusal to be joined is the
+*library*: both papers screen the same genomic BW25113 fragment collection, so the gene
+population is shared even though the phenotype is not.
+
+**The consequence is stated rather than buried: the phenotype is the companion paper's and
+the host is the production paper's.** The conductance is measured on LW06 because LW06 is
+the organism the production selection ran in; the only per-gene phenotype either paper leaves
+nameable is ethanol *tolerance* in a different strain and medium. Nothing here turns one into
+the other, and no AUC below is a statement about production fitness. That mismatch is this
+arm's largest limit, and it is a property of the surviving data rather than of the method.
+
+| | |
+|---|---|
+| rows in `gof.csv` | **4,225** — every screened gene keeps a row |
+| with a BW25113 locus tag and product | 3,891 |
+| unresolved (blank identity, row kept) | 334 — BW25113 deletes araA/araB/araD, and 265 of its 4,400 proteins carry no gene symbol at all |
+| phenotype column | `fitness_30gL_ethanol`, the companion paper's own freq_final/freq_initial |
+
+### The four-channel cascade, and where it is weaker than eydallin's
+
+`mnxr_mapping_method` says which channel resolved each gene; a blank `mnxr` and a blank
+`no_mapping_reason` never both happen. The rules — `carbon_bond_change`, `legible_equation`,
+`pick_primary`'s `in_atom_universe`-first tie-break, `denovo_gapfill` — are **imported from
+`benchmarks/eydallin/parse/reaction_chemistry.py`, not copied**. Two copies of those rules is
+how two benchmarks in one tree come to disagree about what `breaks` means.
+
+| channel | genes | note |
+|---|---|---|
+| `GEM` | 1,503 | iML1515's GPR against the screened genes; 644 of them nominate more than one reaction |
+| `LLM review` | 3 | eydallin's own hand-picked table, inherited verbatim and **not extended** |
+| `denovo` | 104 | ≥2 independent projection methods agree on one reaction, pool ≤ 10 |
+| blank | 2,615 | with a stated `no_mapping_reason` |
+
+**Two places this arm is honestly weaker than the benchmark it copies.**
+
+*The LLM-review channel was not extended.* Hand-reviewing a 4,225-gene screen is not
+something that was done, and a partial hand-review would put curator attention exactly where
+the reader cannot see it. Six eydallin entries are inherited; three of them are genes this
+screen also measures and the curated GEM also misses. The rest of the miss list is left to
+the mechanical channels.
+
+*`no_mapping_reason` is mechanical here.* Eydallin's eleven-way functional split
+(`regulatory`, `transport`, `dna_repair`, …) is a hand adjudication of 52 genes against each
+gene's own literature. It does not scale to 2,700, and inventing it by keyword would be
+exactly the fabrication the column exists to prevent. So this column reports **which channel
+failed**, not why the biology has no reaction — `no_candidate_in_either_channel` (1,485),
+`denovo_candidates_disagree` (1,032), `denovo_pick_is_nonspecific` (98). That is a weaker
+statement than eydallin's and is labelled as one.
+
+**The third category is eydallin's hand rejection, mechanised.** Eydallin refused `ucpA`,
+`yabI`, `ylcG` and `yqjA` because a strong de-novo hit on a catalytic *fold* is not evidence
+a gene does that fold's specific reaction. At this scale the non-specificity has a mechanical
+signature: the same reaction gets nominated for many unrelated genes. Run unfiltered, the
+cascade hands `MNXR153054` (`ADP + phosphate → ATP`) to **35** genes, a generic DNA
+polymerase to 13 and a generic RNA polymerase to 5 — the identical artifact, at scale. A
+gene-specific hit is nominated once, so a gap-fill reaction claimed by more than one gene is
+dropped from every one of them.
+
+`carbon_bond_change` is read off the baked atom map by connected components, never from the
+equation string; the two give different answers and only the first is a measurement. Over
+`gof.csv`: `no_change` 989, `creates` 169, `both` 144, `breaks` 126, unknown 2,797. **439
+genes change a carbon skeleton**, and that is the restricted population below.
+
+### Both preconditions pass, and they are the reason the null is readable
+
+*Reachability.* All four metabolites resolve as nodes of the LW06 atom-mapped carbon graph —
+pyruvate `MNXM23`, ethanol `MNXM1108092`, oxaloacetate `MNXM46`, D-glucose `MNXM1364061` —
+and both legs are strictly positive. There is no `g = 0` anywhere in this arm and no
+not-a-node. The distinction matters here because the sink panel above already showed the two
+are different failures: Kdo₂-lipid A returns a hard zero with `sink_is_node=True`, glucose
+1-phosphate is not a node at all, and only the second is uninterpretable. Neither happens
+here. `sweep_woodruff_ratio.py` raises on a missing terminal rather than reporting it as zero.
+
+*Fold semantics.* **Every gene in this library is a gene the host already carries, so an
+implementation that added a clone's reactions to the background as a set would be the
+identity map and the entire sweep would return flat — which reads as a null result rather
+than as a bug.** `--fold-check` refuses to proceed unless multiplication moves the ratio and
+union does not:
+
+| `adhP` (ALCD2x, ALCD19 — the two alcohol dehydrogenase reactions LW06 keeps after Δ*adhE*) | ratio | Δ |
+|---|---|---|
+| fold 1.0 | 0.111255142 | +0.000000% |
+| fold 2.0 | 0.134818939 | **+21.179962%** |
+| fold 4.0 | 0.150798041 | +35.542536% |
+| set-union control | 0.111255142 | **+0.000000%** |
+
+The union control is exactly zero for every gene tested. The distinction is real and the
+sweep is on the right side of it.
+
+### The measurement
+
+Background is the `in_atom_universe` filter at uniform 1.0 — **1,409 reactions** on
+`e_coli_lw06`'s edited iML1515, this benchmark's convention since `sweeps/sweep_scales.py`,
+not the eydallin sweep's unfiltered dict. Nothing in this arm is comparable to an eydallin
+number.
+
+    C(pyruvate → ethanol)      0.698176795
+    C(pyruvate → oxaloacetate) 6.275456419
+    host ratio                 0.111255142
+
+4,225 genes, 981 atom-mapped and solved, 3,244 exact zeros. Every row reads `finite`; no
+gene severed either terminal at fold 2.
+
+**Three reactions are refused rather than restored.** LW06 is BW25113 with ldhA, ackA,
+frdABCD and adhE knocked out, while the clone GPR table was built against unedited iML1515 —
+so `ldhA`, `frdA`, `frdB` and `frdD` nominate LDH_D, FRD2 and FRD3, reactions this host does
+not have. Folding a weight the background does not carry is not dosage, it is topology, and
+the fold semantics cannot express it. Restoring FRD2/FRD3 would be worse: its GPR rule is
+`frdA and frdB and frdC and frdD` and all four are deleted, so no single-gene clone
+reconstitutes the complex. Those four genes fall through to the exact-zero population with
+the reason recorded in the manifest.
+
+### The ranking, every AUC beside its size control
+
+|population | positive set | n | AUC library | size ctrl | AUC atom-mapped | size ctrl |
+|---|---|---|---|---|---|---|
+| all genes | tolerant_15 | 4,225 | 0.4854 (p 0.81) | 0.4902 | 0.5085 (p 0.43) | 0.5477 |
+| all genes | tolerant_30 | 4,225 | 0.4998 (p 0.51) | 0.4973 | 0.5212 (p 0.23) | 0.5156 |
+| all genes | **confirmed clones** | 4,225 | 0.5823 (p 0.087) | **0.5980** | 0.3600 (p 0.86) | 0.5565 |
+| skeleton-changing | tolerant_15 | 439 | 0.4412 (p 0.80) | 0.4559 | 0.5097 (p 0.45) | 0.5341 |
+| skeleton-changing | **tolerant_30** | 439 | **0.5467 (p 0.15)** | 0.5347 | 0.5226 (p 0.31) | 0.5093 |
+| skeleton-changing | confirmed clones | 439 | *1 of 12 survives — no ranking* | | | |
+
+**Nothing clears significance, and restricting to the skeleton-changing genes does not
+rescue it.** The best number anywhere is 0.5467 at p = 0.15, and its size control is 0.5347 —
+the improvement over reaction count alone is 0.012 of AUC. On the confirmed-clone set the
+size control **beats** ECSPr again (0.5980 against 0.5823), which is the same confound that
+sank the classifier arm above and the ASKA/FFA arm before it. Precision at the top is at or
+below expectation everywhere except one cell (5 of the top 25, expected 2.6, p = 0.106,
+module-struck).
+
+The tautology control strikes 84 genes carrying a reaction incident to any of the three
+terminals — defined mechanically off the atom-pair table, so it cannot be widened per arm.
+Striking them moves nothing, and the reason is the one the classifier arm already found:
+almost none of the module genes are genes the screen scored as positives. The tautology
+itself is plainly there — the probe ranks **adhE first and adhP second**, the two alcohol
+dehydrogenases sitting on the numerator's last step — exactly as ECSPr found the glycogen
+module it grounded at in the eydallin benchmark.
+
+### What the ratio does deliver
+
+**It is two-sided, and that was the point.** Of 981 solved genes, 566 raise the ethanol share
+and 367 lower it; among the 110 atom-mapped tolerant_30 positives, 67 up and 40 down. A
+one-probe conductance cannot produce that split at all.
+
+**The top of the ranking is chemically correct.** adhE +21.8% and adhP +21.2% (the alcohol
+dehydrogenases), ppc −14.3% (the model's single PEP carboxylase, the largest lever on the
+denominator), maeB −11.3% and mqo −5.2% (the malate route to oxaloacetate), ppsA −6.7% (PEP
+synthase), pckA −2.6%, the citrate lyase subunits −3.4%. Every one of those is a gene that
+genuinely moves the pyruvate branch point, and the sign is right in every case. The probe is
+measuring what it claims to measure.
+
+**The response is concentrated.** Median |Δratio| across solved genes is 0.0013%; only 116
+genes move it past 0.1% and 38 past 1%. So the ranking's body is solver-scale noise ordering
+that the AUC nonetheless consumes — the same defect the classifier arm's negative-delta table
+documents.
+
+**Two real positives sit in the extreme tail.** maeB (tolerant_30, Δ −11.26%) is beaten by 3
+of 3,738 measured negatives, and glpQ (tolerant_30, +4.70%) by 6. A threshold at either would
+carry an FPR under 0.2%. But with 487 positives in the set, two in the top six is not a
+screen — it is what 487 draws from a 4,225-gene population produce.
+
+### Where I7 bites
+
+**iML1515 carries no pyruvate carboxylase.** `pyc` has zero GPR rows in this host. Every
+pyruvate → oxaloacetate route is indirect — through PEP (`ppsA`, or `pykA`/`pykF` run
+backwards, then `ppc`, the single PEP-carboxylase row) or through malate (`maeA`/`maeB`, then
+`mdh` or `mqo`). The denominator therefore measures a diffuse anaplerotic capacity spread
+over roughly eight reactions rather than the sensitivity of one committed enzyme, which is
+what the eydallin benchmark's glycogen → pyruvate arm had. The ratio still solves and both
+legs are finite; the null is correspondingly less sharp than eydallin's, and a reader should
+not treat "the ratio did not rank these genes" as "doubling the committed step was
+invisible", because there is no committed step here to double.
+
 ## Limits, stated rather than discovered later
 
 **No version of ECSPr in this tree takes medium as an input.** The conditions schema carries
-a media column that nothing interprets. This is the ceiling on both arms and it is why the
+a media column that nothing interprets. This is the ceiling on every arm and it is why the
 betaine result cannot mean what it appeared to.
+
+**The ratio arm scores a production-host measurement against a tolerance-strain phenotype**,
+because the production screen's per-gene identities do not survive on disk. That is not a
+mismatch chosen for convenience — § *Which population `gof.csv` describes* has the whole
+argument — but it is the single largest reason a null there is weaker evidence than the
+classifier arm's.
+
+**The ratio's denominator has no committed enzyme.** iML1515 has no pyruvate carboxylase, so
+pyruvate → oxaloacetate runs through PEP or malate across roughly eight reactions. § *Where
+I7 bites*.
 
 **A zero is a claim about the basis.** The Kdo₂-lipid A control is in the panel so that
 every future reader meets this limit as a measurement rather than discovering it.
@@ -344,14 +579,32 @@ that difference.
 |---|---|
 | extractions | `data/fabfos/benchmarks/_extractions/scales_{tol,prod}/` |
 | studies (tier-built) | `data/fabfos/benchmarks/scales_{tol,prod}/` |
-| declared axes + controls | `data/fabfos/originals/benchmarks/scales/gof_scales.tsv` |
+| declared axes + controls | `data/fabfos/originals/benchmarks/woodruff/gof_scales.tsv` |
 | host tables, GEM and de-novo | `data/fabfos/runs/e_coli_{bw25113,lw06}/gpr/` |
-| per-gene tables + census | `data/fabfos/runs/scales/gpr/` |
-| mechanistic arm | `data/fabfos/runs/scales/ecspr/sink_panel_{gem,denovo}_C.tsv`, `SINK_PANEL.md` |
-| sweeps and scores | `data/fabfos/runs/scales/ecspr/scales_sweep_*`, `SCORE_*` |
+| per-gene tables + census | `data/fabfos/runs/woodruff_clones/gpr/` |
+| mechanistic arm | `data/fabfos/runs/woodruff_clones/ecspr/sink_panel_{gem,denovo}_C.tsv`, `SINK_PANEL.md` |
+| classifier sweeps and scores | `data/fabfos/runs/woodruff_clones/ecspr/scales_sweep_*`, `SCORE_*` |
+| ratio arm: gene table + chemistry | `data/fabfos/runs/woodruff_clones/parse/gof/gof{,_reaction_edges}.csv` |
+| ratio arm: sweep and score | `data/fabfos/runs/woodruff_clones/ecspr/woodruff_ratio_sweep_*`, `SCORE_woodruff_ratio_sweep_*` |
 
-Scripts are in `research/fabfos/benchmarks/scales/`; host identity checks are
+Scripts are in `research/fabfos/benchmarks/woodruff/`, grouped as `parse/`, `gpr_build/`,
+`panels/` and `sweeps/`. The ratio arm is `parse/build_gof_table.py` →
+`parse/build_gof_reactions.py` → `sweeps/sweep_woodruff_ratio.py` →
+`sweeps/analyse_woodruff_ratio_sweep.py`; run `sweep_woodruff_ratio.py --fold-check` first,
+which is cheap and refuses on either precondition. Host identity checks are
 `src/fabfos/build_references/check_lw06_identity.py` and `derive_lw06_denovo.py`.
+
+**The ratio arm's rules are imported from the eydallin benchmark, not copied**, and that
+coupling is deliberate: `benchmarks/eydallin/parse/reaction_chemistry.py` owns
+`carbon_bond_change`, `pick_primary`, `legible_equation` and `denovo_gapfill`, and
+`benchmarks/eydallin/bake_pairs.py` owns the decoded atom-pair and direction tables —
+the same import `sweeps/sweep_scales.py` already makes. Moving either file breaks this
+benchmark.
+
+The **study cohorts keep their `scales_{tol,prod}` names**. Those strings are `dataset`
+values inside the tier-built extractions and `condition_id` prefixes throughout every GPR
+parquet on disk; renaming them is a data migration, not a rename, and SCALEs is the library's
+own name in both papers regardless of which author the benchmark is filed under.
 
 The de-novo annotation ran on **sockeye** (fir carries none of the four lane databases), and
 its workflow **exited green having run 7 of 9 steps** — a lineage key was dropped on one

@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Per-gene edge tables and the reach census for the SCALEs benchmark.
 
-    mamba run -n build-refs-cobra python research/fabfos/benchmarks/scales/build_scales_gpr.py
-    ... --publish        # writes data/fabfos/runs/scales/gpr/
+    mamba run -n build-refs-cobra python research/fabfos/benchmarks/woodruff/gpr_build/build_scales_gpr.py
+    ... --publish        # writes data/fabfos/runs/woodruff_clones/gpr/
 
 THE POPULATION IS THE COMPANION ARM. `scales_tol` names all 4,225 genes it measured, so it
 is the arm a classifier can be scored on. `scales_prod` measured 4,103 and can name three:
@@ -79,7 +79,7 @@ import fabfos_evidence as fe                                          # noqa: E4
 
 EXTRACTION = REPO / "data/fabfos/benchmarks/_extractions/scales_tol/extraction.tsv"
 CLONES = REPO / "data/fabfos/benchmarks/_extractions/scales_tol/clones.tsv"
-GOF = REPO / "data/fabfos/originals/benchmarks/scales/gof_scales.tsv"
+GOF = REPO / "data/fabfos/originals/benchmarks/woodruff/gof_scales.tsv"
 MG1655_GBK = REPO / "data/fabfos/originals/genomes/e_coli_k12/genome/NC_000913.3.gbk"
 MG1655_FAA = REPO / "data/fabfos/originals/genomes/e_coli_k12/genome/NC_000913.3.faa"
 BW_GBK = REPO / "data/fabfos/originals/genomes/e_coli_bw25113/genome/CP193896.1.gbk"
@@ -88,7 +88,7 @@ HOST_GEM = REPO / "data/fabfos/runs/e_coli_bw25113/gpr/gpr_gem.parquet"
 HOST_DENOVO = REPO / "data/fabfos/runs/e_coli_bw25113/gpr/gpr_denovo.parquet"
 BAKE = REPO / "data/fabfos/processed/metabolism_bake"
 METANETX = REPO / "data/fabfos/originals/metanetx"
-OUT = REPO / "data/fabfos/runs/scales/gpr"
+OUT = REPO / "data/fabfos/runs/woodruff_clones/gpr"
 
 HOST = "e_coli_bw25113"
 COHORT = "scales_tol"
