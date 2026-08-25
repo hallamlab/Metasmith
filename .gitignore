@@ -1,5 +1,6 @@
 /cache
 /research/fabfos/annotation_lanes/cache/
+cache
 *.sif
 __pycache__
 # stamped from the source tree immediately before each build; committing one would
