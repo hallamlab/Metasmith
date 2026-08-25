@@ -390,6 +390,11 @@ mamba run -n msm-fabfos python parse/build_lof_table.py --publish
 mamba run -n msm-fabfos python parse/build_lof_reactions.py --publish
 mamba run -n msm-fabfos python gpr_build/build_lof_gpr.py --publish
 
+mamba run -n ecspr python panels/twopoint_panel.py --host e_coli_bw25113 \
+    --gene glgC --gene glgA --gene glgB --gene glgX --gene glgP --gene pgm --gene galU \
+    --gene lpxP --gene nagB --gene pfkA --gene pfkB \
+    --fold 0 --fold 0.5 --fold 2.0 --cohort-prefix eydallin2007 \
+    --measured data/fabfos/benchmarks/eydallin_2007/Y/measured_glycogen.tsv
 mamba run -n ecspr python panels/twopoint_cohort.py --host e_coli_bw25113 --fold 0 \
     --clone-gpr data/fabfos/runs/eydallin_clones/gpr/lof/gpr_gem.parquet \
     --measured data/fabfos/benchmarks/eydallin_2007/Y/measured_glycogen.tsv
@@ -409,10 +414,11 @@ mamba run -n msm   python sweeps/analyse_aska_sweep.py --host e_coli_bw25113 --f
 ```
 
 **Every one of those flags defaults to the 2010 arm's value**, so `sweep_aska.py`,
-`sweep_aska_ratio.py`, `twopoint_cohort.py` and both analysers still reproduce their
-existing outputs from an unchanged command line — checked byte for byte against the pinned
-files, with the pristine scripts re-run from `git show` under the same bake to separate a
-refactor's effect from the bake's. The deletion arm is those scripts with different inputs
+`sweep_aska_ratio.py`, `twopoint_cohort.py`, `twopoint_panel.py` and both analysers still
+reproduce their existing outputs from an unchanged command line — checked byte for byte
+against the pinned files, with the pristine scripts re-run from `git show` under the same
+bake to separate a refactor's effect from the bake's. `twopoint_panel.py` is the one
+exception and only in its filename, for the collision reason given above. The deletion arm is those scripts with different inputs
 rather than a fork of them. Two knobs are not cosmetic: `--score absdelta`, because
 Rayleigh makes every fold-0 delta ≤ 0 and the raw delta would rank the untouched genes
 first, and `--assayed-only`, because an essential gene has no Keio mutant and was never
@@ -511,6 +517,12 @@ cohort genes the curated AG1 GEM can see) ground at glycogen: source D-glucose
 `MNXM1364061`, sink glycogen `MNXM738130`, element C, host `e_coli_ag1` on the r7 bake,
 base conductance **5.689489**. Overexpression is a ×2 conductance fold on the gene's
 reactions, as before.
+
+`twopoint_panel.py`'s output name now carries its fold set —
+`twopoint_e_coli_ag1_fold2.0+0.5_C.tsv`, renamed from `twopoint_e_coli_ag1_C.tsv` with its
+bytes unchanged. It was the one output here that encoded no fold, so a deletion run and a
+doubling run of the same panel at the same host landed on one path and the second silently
+became the first.
 
 **Direction is inexpressible under this probe, by a theorem rather than by a gap in the
 data.** Effective conductance is non-decreasing in every edge conductance (Rayleigh), so a
@@ -687,6 +699,59 @@ strictly positive weights, so a deleted reaction's atom-transfer rows never beco
 all; on this background nothing disconnected, and the host reads glucose → glycogen 2.3086,
 glycogen → pyruvate 2.6840, ratio 0.8602. A `--fold 1.0` run returns bit-exact zero on all
 23 solvable mutants, which is the check that separates a result from solver jitter.
+
+### The two-fold-axis panel — the doubling arm's probe, run backwards
+
+`panels/twopoint_panel.py` is the small-panel counterpart to the library sweep: a handful of
+metabolically relevant genes rather than a population, and **two fold axes rather than one**,
+which is what turns a column of numbers into a claim about the network. The 2007 run adds a
+third, `--fold 0`, because that is the operation the screen actually performed.
+
+The gene list is iML1515's glycogen module — `glgA`, `glgB`, `glgC`, `glgP`, `glgX`, `pgm`,
+`galU`, all seven of them Eydallin 2007 hits — plus `nagB`, `pfkA` and `pfkB` off the path as
+external controls. **`ddg` is not in iML1515 and `lpxP` stands in for it.** The 2010 panel
+used `ddg` because the AG1 GEM carried it directly; iML1515 names only the cold-shock
+paralog, so the substitution is a model difference and not a curation choice.
+
+| gene | ×0 (deletion) | ×0.5 | ×2 | measured, % WT |
+|---|---|---|---|---|
+| glgA | **−1.061** | −0.258 | +0.249 | 0.0 |
+| glgC | **−0.618** | −0.132 | +0.099 | 0.0 |
+| glgP | **−0.291** | −0.080 | +0.114 | 217.9 |
+| pgm | **−0.147** | −0.067 | +0.105 | 0.0 |
+| glgB / glgX | **−0.094** | −0.041 | +0.061 | 0.0 / 20.1 |
+| pfkA | −3.6e-4 | −6.2e-5 | +5.1e-5 | — |
+| pfkB | −2.0e-4 | −5.4e-5 | +4.6e-5 | — |
+| lpxP | −7.2e-5 | −2.0e-5 | +1.7e-5 | — |
+| galU | −8.6e-6 | −3.2e-6 | +3.5e-6 | 35.2 |
+| nagB | −4.7e-6 | −2.0e-6 | +3.1e-6 | — |
+
+(log2 fold change of I_eff; host `e_coli_bw25113`, base conductance 2.308629.)
+
+**Monotonicity holds on the removal axis too: 11/11 deltas ≥ 0 upward, 22/22 ≤ 0 downward.**
+The 2010 arm verified this on a scaling axis only, where a fold is a resistor value. Fold 0
+deletes the atom-transfer rows outright, and the theorem survives the harsher operation.
+
+**On-path and off-path separate by 263× at the narrowest boundary** — `glgB`/`glgX`, the
+weakest module gene, against `pfkA`, the strongest control — and by 225,000× end to end. That
+is the same classification claim the 2010 arm made, and it holds under deletion.
+
+**The two axes rank the panel the same way: ρ = +0.97 (p = 5e-7) between the fold-0 loss and
+the fold-2 gain.** This is worth saying plainly because it is the comparison the two axes
+exist to make, and it cuts against reading the arms as independent evidence. Deleting a gene
+and doubling it are, under this probe, two readings of one quantity — the edge's share of the
+glucose → glycogen current — so the deletion arm's AUC is not a second opinion on the
+doubling arm's ranking. What it *is* is a ranking that can be scored against a two-sided
+phenotype, which the doubling arm's could not be.
+
+**`galU` is a false negative with a mechanism.** It is a measured glycogen-deficient mutant
+at 35.2 % of wild type and it sits at the bottom of the off-path floor, below `lpxP`. E. coli
+builds glycogen from ADP-glucose through `glgC`, not from the UDP-glucose `galU` makes, so
+the model is right that `galU` is off this path and the phenotype is right that deleting it
+costs glycogen anyway. The probe measures the path; that phenotype is not on it.
+
+`glgB` and `glgX` return bit-identical numbers at every fold, which is the MetaNetX collapse
+onto `MNXR145021` showing up downstream exactly where *Cohort state* predicts it.
 
 ### Over the library — 1,387 assayed genes, 38 of them Eydallin's
 
