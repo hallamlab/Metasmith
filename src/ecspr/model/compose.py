@@ -113,7 +113,7 @@ import sys
 import numpy as np
 import pandas as pd
 
-from . import conditions as cond_mod
+from . import tests as test_mod
 from . import evidence as _net
 
 ELEMENTS = ("C", "N", "P", "S")
@@ -445,8 +445,19 @@ def compose(members: dict, pairs: pd.DataFrame, direction: pd.DataFrame | None =
 # Conditions
 # =====================================================================
 
-def make_conditions(*, network_id, source_org, sink_orgs, substrates, precursors,
-                    media, elements=ELEMENTS, two_terminal_precursors=None) -> tuple:
+def make_tests(*, network_id, source_org, sink_orgs, substrates, precursors,
+               elements=ELEMENTS, two_terminal_precursors=None) -> tuple:
+    """`(ground tests, two-point tests)` for one composed network.
+
+    TESTS, NOT CONDITIONS. What a composed network IS is now the composition plus its
+    members' conditions; what is asked of it is a terminal spec, and every one of these
+    names the same `network_id`. That is the split: eleven measurements on one
+    composition used to be eleven conditions carrying eleven copies of one mask.
+
+    `media` is gone from here. It was written on every row and read by nothing -- a
+    conductance measurement has no exchange bounds to set -- and it now lives on
+    `gem_tests` where it is a real input.
+    """
     tt_prec = two_terminal_precursors or {}
     ground, two_terminal = [], []
     for el in elements:
@@ -456,18 +467,21 @@ def make_conditions(*, network_id, source_org, sink_orgs, substrates, precursors
         prec = precursors.get(el, ())
         if not prec:
             continue
-        ground.append(cond_mod.Condition(
-            condition_id=f"{network_id}|{source_org}->{'+'.join(sink_orgs)}|{el}|ground",
-            element=el, source_hub=tag(source_org, src),
-            sinks=tuple(tag(so, p) for so in sink_orgs for p in prec),
-            media=media,
+        ground.append(test_mod.Test(
+            test_id=f"{network_id}|{source_org}->{'+'.join(sink_orgs)}|{el}|ground",
+            network=network_id, arm="ecspr",
+            settings=dict(element=el, source_hub=tag(source_org, src),
+                          sink_hub=test_mod.SEP.join(
+                              tag(so, p) for so in sink_orgs for p in prec),
+                          probe="ground"),
         ))
         for p in tt_prec.get(el, ()):
             for so in sink_orgs:
-                two_terminal.append(cond_mod.Condition(
-                    condition_id=f"{network_id}|{source_org}->{so}|{el}|2t|{p}",
-                    element=el, source_hub=tag(source_org, src),
-                    sinks=(tag(so, p),), media=media,
+                two_terminal.append(test_mod.Test(
+                    test_id=f"{network_id}|{source_org}->{so}|{el}|2t|{p}",
+                    network=network_id, arm="ecspr",
+                    settings=dict(element=el, source_hub=tag(source_org, src),
+                                  sink_hub=tag(so, p), probe="two-point"),
                 ))
     return ground, two_terminal
 
@@ -633,19 +647,21 @@ def _selftest_blacklist():
     return 0
 
 
-def _selftest_conditions():
-    print("[compose] conditions name the copies, and carry the arm in their strings")
-    g, t = make_conditions(network_id="A-B", source_org="A", sink_orgs=["B"],
-                           substrates={"C": "GLC"}, precursors={"C": ["P1", "P2"]},
-                           media="M9|g0=1.0|bl=on", elements=("C",),
-                           two_terminal_precursors={"C": ["P1"]})
+def _selftest_tests():
+    print("[compose] tests name the copies, and every one names the same network")
+    g, t = make_tests(network_id="A-B", source_org="A", sink_orgs=["B"],
+                      substrates={"C": "GLC"}, precursors={"C": ["P1", "P2"]},
+                      elements=("C",), two_terminal_precursors={"C": ["P1"]})
     for c in g + t:
-        print(f"  {c.condition_id}  {c.source_hub} -> {'|'.join(c.sinks)}")
+        print(f"  {c.test_id}  {c.source_hub} -> {'|'.join(c.sinks)}")
     assert {c.source_hub for c in g} == {"A:GLC"}, "glucose is injected into the SOURCE copy"
     assert set(g[0].sinks) == {"B:P1", "B:P2"}, "endpoints are read in the SINK copy"
-    assert len(g) == 1, "a ground condition names every endpoint at once"
+    assert len(g) == 1, "a ground test names every endpoint at once"
     assert len(t) == 1 and t[0].sinks == ("B:P1",)
-    assert all(c.media == "M9|g0=1.0|bl=on" for c in g + t)
+    # THE SPLIT, ASSERTED: every measurement on this composition names the composition,
+    # so the construction is written down once instead of once per measurement.
+    assert {c.network for c in g + t} == {"A-B"}
+    assert all("media" not in c.settings for c in g + t)
     print("  PASS\n")
     return 0
 
@@ -659,7 +675,7 @@ def _selftest() -> int:
     _selftest_mismatch()
     _selftest_bridge_conductance()
     _selftest_blacklist()
-    _selftest_conditions()
+    _selftest_tests()
     print("ALL PASS")
     return 0
 

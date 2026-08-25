@@ -33,6 +33,12 @@ UNIT_COL = "genome_unit"
 GENE_COL = "gene"
 
 
+# The column `ecspr.model.conditions.resolve` stamps on every row it returns. Imported
+# by name rather than by module to keep `conditions` importable from here without a
+# cycle -- it reads this module's `UNIT_COL`.
+_WEIGHT_COL = "_condition_weight"
+
+
 def load_gpr(paths) -> pd.DataFrame:
     if isinstance(paths, (str, bytes)) or hasattr(paths, "__fspath__"):
         paths = [paths]
@@ -88,6 +94,15 @@ def _normalise(df: pd.DataFrame) -> pd.DataFrame:
         else out["mnxr"]).astype(str)
     out["mnxr"] = out["mnxr"].astype(str)
     out["llr"] = pd.to_numeric(out["llr"], errors="coerce").fillna(0.0)
+    # DOSAGE ENTERS HERE, AND ONLY HERE. A condition's per-row weight scales what the
+    # row's evidence is worth, which is exactly what a second physical copy of the gene
+    # does -- `pool_logodds` reads `llr` linearly inside its saturating term, so
+    # `2 x llr` and two relabelled copies agree to float equality. Applying it further
+    # down, to the pooled conductance, would instead scale a probability and stop being
+    # evidence at all.
+    if _WEIGHT_COL in out.columns:
+        w = pd.to_numeric(out[_WEIGHT_COL], errors="coerce").fillna(1.0)
+        out["llr"] = out["llr"] * w
     return out.dropna(subset=["mnxr"])
 
 
@@ -104,11 +119,34 @@ def weights_from_rows(rows: pd.DataFrame, weighting: str = "belief") -> dict:
     return {str(r): float(e) for r, e in E.items()}
 
 
+def coverage(rows: pd.DataFrame, w: dict) -> dict:
+    """What the condition actually selected, for the results table to carry.
+
+    `n_units` counts DISTINCT COPIES, not rows: it is the denominator a null draw is
+    matched on, so a condition that adds a second copy of one gene must read as one more
+    unit than the background and not as one more row.
+    """
+    in_universe = (int(rows["in_atom_universe"].fillna(False).astype(bool).sum())
+                   if "in_atom_universe" in rows.columns else None)
+    return dict(n_rows=int(len(rows)),
+                n_units=int(rows[UNIT_COL].nunique()) if UNIT_COL in rows.columns else 0,
+                n_reactions=len(w), n_rows_in_atom_universe=in_universe)
+
+
 def condition_weights(df: pd.DataFrame, *, weighting="belief", **mask) -> tuple:
     rows = apply_mask(df, **mask)
     w = weights_from_rows(rows, weighting)
-    in_universe = (int(rows["in_atom_universe"].fillna(False).astype(bool).sum())
-                   if "in_atom_universe" in rows.columns else None)
-    cov = dict(n_rows=int(len(rows)), n_units=int(rows[UNIT_COL].nunique()),
-               n_reactions=len(w), n_rows_in_atom_universe=in_universe)
-    return w, cov
+    return w, coverage(rows, w)
+
+
+def resolve_weights(condition, corpus: dict, *, weighting="belief") -> tuple:
+    """A `Condition` plus `{table: DataFrame}` -> `({mnxr: E}, coverage)`.
+
+    The entry point that replaces `condition_weights` for anything reading the long
+    conditions table. The mask form above stays for the tables that have not been
+    converted yet.
+    """
+    from .conditions import resolve
+    rows = resolve(condition, corpus)
+    w = weights_from_rows(rows, weighting)
+    return w, coverage(rows, w)

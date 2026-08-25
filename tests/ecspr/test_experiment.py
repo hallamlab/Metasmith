@@ -4,8 +4,9 @@ import pytest
 
 from ecspr.model import conditions as cond_mod
 from ecspr.model import nulls, probes, scoring
+from ecspr.model import tests as test_mod
 from ecspr.model.evidence import POOL_LAM0, nomination_contributions
-from ecspr.model.gpr import _normalise, condition_weights, load_gpr
+from ecspr.model.gpr import _normalise, condition_weights, load_gpr, resolve_weights
 
 HOST = "iML1515"
 
@@ -50,36 +51,53 @@ def pairs_path(tmp_path):
     return p
 
 
-def _cond(cid, values, **meta):
+GPR_TABLE = "gpr.parquet"
+
+# The host, every time. A condition is the background plus whatever it adds.
+BACKGROUND = cond_mod.Step(table=GPR_TABLE, type="genome_unit", set=(HOST,),
+                           operation="union")
+BASELINE = cond_mod.Condition(condition_id="baseline", steps=(BACKGROUND,))
+
+
+def _cond(cid, values, **_meta):
     return cond_mod.Condition(
-        condition_id=cid, element="C", source_hub="S", sinks=("P1", "P2"),
-        background_column="genome_unit", background_values=(HOST,),
-        mask_column="condition_id", mask_values=values, meta=meta)
+        condition_id=cid,
+        steps=(BACKGROUND, cond_mod.Step(table=GPR_TABLE, type="condition_id",
+                                         set=tuple(values), operation="union")))
 
 
-BASELINE = cond_mod.Condition(
-    condition_id="baseline", element="C", source_hub="S", sinks=("P1", "P2"),
-    background_column="genome_unit", background_values=(HOST,), meta=dict(n_units=1))
+def _test(cid, **meta):
+    """The measurement every condition here is put under: one ground, two sinks."""
+    return test_mod.Test(
+        test_id=cid, network=cid, arm="ecspr",
+        read_against="" if cid == "baseline" else "baseline",
+        settings=dict(element="C", source_hub="S", sink_hub="P1|P2"),
+        meta=dict(n_units=1) | meta)
+
+
+def _corpus(gpr_path):
+    return {GPR_TABLE: load_gpr(gpr_path)}
 
 
 def test_background_alone_is_the_host(gpr_path):
-    w, cov = condition_weights(load_gpr(gpr_path), weighting="uniform",
-                               **BASELINE.mask_kwargs())
+    w, cov = resolve_weights(BASELINE, _corpus(gpr_path), weighting="uniform")
     assert w == {"R1": 1.0, "R2": 1.0, "R3": 1.0}
     assert cov["n_units"] == 1
 
 
 def test_an_overexpression_is_a_sum_not_a_policy(gpr_path):
-    w, _ = condition_weights(load_gpr(gpr_path), weighting="uniform",
-                             **_cond("C_over", ("C_over",)).mask_kwargs())
+    w, cov = resolve_weights(_cond("C_over", ("C_over",)), _corpus(gpr_path),
+                             weighting="uniform")
     assert w == {"R1": 1.0, "R2": 2.0, "R3": 1.0}
+    assert cov["n_units"] == 2, "the host copy and the clone copy are two units"
 
 
-def test_a_deletion_is_the_drop_mask(gpr_path):
+def test_a_deletion_is_a_subtract_step(gpr_path):
     c = cond_mod.Condition(
-        condition_id="C_del", source_hub="S", background_column="genome_unit",
-        background_values=(HOST,), drop_column="mnxr", drop_values=("R3",))
-    w, _ = condition_weights(load_gpr(gpr_path), weighting="uniform", **c.mask_kwargs())
+        condition_id="C_del",
+        steps=(BACKGROUND, cond_mod.Step(table=GPR_TABLE, type="mnxr", set=("R3",),
+                                         operation="subtract")))
+    w, _ = resolve_weights(c, _corpus(gpr_path), weighting="uniform")
     assert w == {"R1": 1.0, "R2": 1.0}
 
 
@@ -170,29 +188,30 @@ def test_an_unknown_mask_column_is_refused(gpr_path):
 
 @pytest.mark.parametrize("ext", [".parquet", ".tsv"])
 def test_conditions_round_trip(tmp_path, ext):
-    c = _cond("C_over", ("C_over",), n_units=1, is_control=False)
+    c = _cond("C_over", ("C_over",))
     p = cond_mod.write([BASELINE, c], tmp_path / f"conds{ext}")
     back = cond_mod.read(p)
     assert [x.condition_id for x in back] == ["baseline", "C_over"]
-    assert back[1].mask_values == ("C_over",)
-    assert back[1].background_values == (HOST,)
-    assert back[1].sinks == ("P1", "P2")
+    assert back[1].steps[1].set == ("C_over",)
+    assert back[1].steps[0].set == (HOST,)
+    assert back[1].tables == (GPR_TABLE,)
 
 
-def test_the_explicit_form_takes_no_mask():
-    c = cond_mod.single("whole_table", element="C", source="S", sinks=["P1"])
-    assert c.mask_column is None and c.mask_values == ()
-    assert c.background_column is None and c.drop_column is None
+def test_the_explicit_form_is_one_whole_table():
+    c = cond_mod.single("whole_table", GPR_TABLE)
+    assert len(c.steps) == 1
+    assert c.steps[0].type == "" and c.steps[0].operation == "union"
 
 
-def _run(pairs_path, gpr_path, conds, probe, tmp_path, **kw):
+def _run(pairs_path, gpr_path, conds, probe, tmp_path, tests=None, **kw):
     basis = probes.Basis(pairs_path, None, element="C")
-    return probes.run(basis, gpr_path, conds, probe=probe, weighting="uniform",
+    ts = tests if tests is not None else [_test(c.condition_id) for c in conds]
+    return probes.run(basis, gpr_path, conds, ts, probe=probe, weighting="uniform",
                       shard_dir=tmp_path / f"shards_{probe}", log=lambda m: None, **kw)
 
 
-def _value(df, cid, readout):
-    r = df[(df.condition_id == cid) & (df.readout == readout)]
+def _value(df, tid, readout):
+    r = df[(df.test_id == tid) & (df.readout == readout)]
     return float(r.value.iloc[0])
 
 
@@ -212,18 +231,20 @@ def test_an_added_route_raises_the_total(pairs_path, gpr_path, tmp_path):
 
 
 def test_a_control_returns_the_baseline_exactly(pairs_path, gpr_path, tmp_path):
-    conds = [BASELINE, _cond("C_ctrl", ("C_ctrl",), is_control=True)]
-    df = _run(pairs_path, gpr_path, conds, "ground", tmp_path)
+    conds = [BASELINE, _cond("C_ctrl", ("C_ctrl",))]
+    df = _run(pairs_path, gpr_path, conds, "ground", tmp_path,
+              tests=[_test("baseline"), _test("C_ctrl", is_control=True)])
     for readout in ("total", "P1", "P2"):
         assert _value(df, "C_ctrl", readout) == _value(df, "baseline", readout)
 
 
 def test_resume_skips_what_is_on_disk(pairs_path, gpr_path, tmp_path):
     conds = [BASELINE, _cond("C_new", ("C_new",))]
+    ts = [_test(c.condition_id) for c in conds]
     a = _run(pairs_path, gpr_path, conds, "ground", tmp_path)
     seen = []
     basis = probes.Basis(pairs_path, None, element="C")
-    b = probes.run(basis, gpr_path, conds, probe="ground", weighting="uniform",
+    b = probes.run(basis, gpr_path, conds, ts, probe="ground", weighting="uniform",
                    shard_dir=tmp_path / "shards_ground", log=seen.append)
     assert any("resumed 2" in m for m in seen)
     pd.testing.assert_frame_equal(a, b)
@@ -231,10 +252,10 @@ def test_resume_skips_what_is_on_disk(pairs_path, gpr_path, tmp_path):
 
 def test_a_missing_source_abstains_rather_than_scoring_zero(pairs_path, gpr_path,
                                                             tmp_path):
-    c = cond_mod.Condition(condition_id="nowhere", element="C", source_hub="ABSENT",
-                           sinks=("P1",), background_column="genome_unit",
-                           background_values=(HOST,))
-    df = _run(pairs_path, gpr_path, [c], "two-point", tmp_path)
+    c = cond_mod.Condition(condition_id="nowhere", steps=(BACKGROUND,))
+    t = test_mod.Test(test_id="nowhere", network="nowhere", arm="ecspr",
+                      settings=dict(element="C", source_hub="ABSENT", sink_hub="P1"))
+    df = _run(pairs_path, gpr_path, [c], "two-point", tmp_path, tests=[t])
     assert _value(df, "nowhere", "_abstained") == 1.0
     assert "total" not in set(df.readout)
 
@@ -246,45 +267,56 @@ def test_orientation_is_inert_on_a_symmetric_reference(pairs_path, gpr_path, tmp
     out = {}
     for o in ("as_written", "reversed"):
         basis = probes.Basis(pairs_path, dp, element="C", orientation=o)
-        out[o] = probes.run(basis, gpr_path, [BASELINE], probe="ground",
-                            weighting="uniform", log=lambda m: None)
+        out[o] = probes.run(basis, gpr_path, [BASELINE], [_test("baseline")],
+                            probe="ground", weighting="uniform", log=lambda m: None)
     a, b = out["as_written"], out["reversed"]
     keep = ~a.readout.str.startswith("_")
     assert np.allclose(a[keep].value.to_numpy(float), b[keep].value.to_numpy(float))
 
 
-def test_draw_is_deterministic_and_emits_a_conditions_table(gpr_path, tmp_path):
-    like = [_cond("C_new", ("C_new",), n_units=1)]
-    a = nulls.draw(gpr_path, like, n=8, seed=7, draw_column="orf",
-                   log=lambda m: None)
-    b = nulls.draw(gpr_path, like, n=8, seed=7, draw_column="orf",
-                   log=lambda m: None)
-    assert [c.mask_values for c in a] == [c.mask_values for c in b]
-    pa = cond_mod.write(a, tmp_path / "n1.parquet")
-    pb = cond_mod.write(b, tmp_path / "n2.parquet")
+def _draw(gpr_path, like_tests, **kw):
+    like_conds = [_cond(t.network, (t.network,)) for t in like_tests]
+    return nulls.draw(gpr_path, like_conds, like_tests, background=(BACKGROUND,),
+                      pool_table=GPR_TABLE, log=lambda m: None, **kw)
+
+
+def test_draw_is_deterministic_and_emits_both_tables(gpr_path, tmp_path):
+    like = [_test("C_new")]
+    ca, ta = _draw(gpr_path, like, n=8, seed=7, draw_column="orf")
+    cb, tb = _draw(gpr_path, like, n=8, seed=7, draw_column="orf")
+    assert [c.steps[-1].set for c in ca] == [c.steps[-1].set for c in cb]
+    pa = cond_mod.write(ca, tmp_path / "n1.parquet")
+    pb = cond_mod.write(cb, tmp_path / "n2.parquet")
     assert pa.read_bytes() == pb.read_bytes(), "the same seed must write one pool"
     back = cond_mod.read(pa)
     assert len(back) == 8
-    assert all(c.mask_column == "orf" for c in back)
-    assert all(c.source_hub == "S" and c.sinks == ("P1", "P2") for c in back), \
-        "a drawn condition inherits the terminals of the arm it is the null for"
+    # THE BACKGROUND IS CARRIED, not re-authored: a null on a graph with no host in it
+    # abstains, and would read as "no effect" rather than as a broken draw.
+    assert all(c.steps[0] == BACKGROUND for c in back)
+    assert all(c.steps[-1].type == "orf" for c in back)
+    assert all(t.sinks == ("P1", "P2") and t.source_hub == "S" for t in ta), \
+        "a drawn test inherits the measurement of the arm it is the null for"
+    assert {t.network for t in ta} == {c.condition_id for c in ca}
 
 
 def test_draw_refuses_an_unmatched_null(gpr_path):
+    bare = test_mod.Test(test_id="C_new", network="C_new", arm="ecspr",
+                         settings=dict(element="C", source_hub="S", sink_hub="P1"))
     with pytest.raises(ValueError, match="n_units"):
-        nulls.draw(gpr_path, [_cond("C_new", ("C_new",))], n=4, seed=1,
-                   log=lambda m: None)
+        _draw(gpr_path, [bare], n=4, seed=1)
 
 
 def test_the_null_arm_is_the_same_command(pairs_path, gpr_path, tmp_path):
-    like = [_cond("C_new", ("C_new",), n_units=1)]
-    pool = nulls.draw(gpr_path, like, n=6, seed=3, log=lambda m: None)
-    obs = _run(pairs_path, gpr_path, [BASELINE] + like, "two-point", tmp_path)
-    nul = _run(pairs_path, gpr_path, pool, "two-point", tmp_path)
-    assert set(nul.probe) == {"two-point"} and len(set(nul.condition_id)) == 6
+    like = [_test("C_new")]
+    like_c = [_cond("C_new", ("C_new",))]
+    pool_c, pool_t = _draw(gpr_path, like, n=6, seed=3)
+    obs = _run(pairs_path, gpr_path, [BASELINE] + like_c, "two-point", tmp_path,
+               tests=[_test("baseline")] + like)
+    nul = _run(pairs_path, gpr_path, pool_c, "two-point", tmp_path, tests=pool_t)
+    assert set(nul.probe) == {"two-point"} and len(set(nul.test_id)) == 6
 
-    scored = scoring.score(obs, nul, baseline="baseline", conditions=like + pool)
-    row = scored[(scored.condition_id == "C_new") & (scored.readout == "total")]
+    scored = scoring.score(obs, nul, tests=[_test("baseline")] + like + pool_t)
+    row = scored[(scored.test_id == "C_new") & (scored.readout == "total")]
     assert len(row) == 1
     assert row.delta.iloc[0] > 0
     assert row.null_n.iloc[0] == 6
@@ -293,18 +325,32 @@ def test_the_null_arm_is_the_same_command(pairs_path, gpr_path, tmp_path):
 
 
 def test_the_gate_reports_both_spreads(pairs_path, gpr_path, tmp_path):
-    like = [_cond("C_new", ("C_new",), n_units=1),
-            _cond("C_ctrl", ("C_ctrl",), n_units=1, is_control=True),
-            _cond("C_over", ("C_over",), n_units=1, is_control=True)]
-    pool = nulls.draw(gpr_path, like, n=6, seed=11, log=lambda m: None)
-    obs = _run(pairs_path, gpr_path, [BASELINE] + like, "two-point", tmp_path)
-    nul = _run(pairs_path, gpr_path, pool, "two-point", tmp_path)
-    g = scoring.gate(scoring.score(obs, nul, baseline="baseline",
-                                   conditions=like + pool))
+    like = [_test("C_new"), _test("C_ctrl", is_control=True),
+            _test("C_over", is_control=True)]
+    like_c = [_cond(t.network, (t.network,)) for t in like]
+    pool_c, pool_t = _draw(gpr_path, like, n=6, seed=11)
+    obs = _run(pairs_path, gpr_path, [BASELINE] + like_c, "two-point", tmp_path,
+               tests=[_test("baseline")] + like)
+    nul = _run(pairs_path, gpr_path, pool_c, "two-point", tmp_path, tests=pool_t)
+    g = scoring.gate(scoring.score(obs, nul,
+                                   tests=[_test("baseline")] + like + pool_t))
     tot = g[g.readout == "total"].iloc[0]
     assert tot.n_controls == 2
     assert tot.null_n == 6
     assert "null_over_control" in g.columns
+
+
+def test_the_baseline_flag_and_the_column_may_not_disagree(pairs_path, gpr_path,
+                                                           tmp_path):
+    # `read_against` is per test, so it can say two things in one run and a single flag
+    # cannot. Honouring both silently would make the deltas depend on which a reader
+    # happened to look at.
+    like = [_test("C_new")]
+    like_c = [_cond("C_new", ("C_new",))]
+    obs = _run(pairs_path, gpr_path, [BASELINE] + like_c, "two-point", tmp_path,
+               tests=[_test("baseline")] + like)
+    with pytest.raises(ValueError, match="disagrees with the read_against"):
+        scoring.score(obs, obs, baseline="C_new", tests=[_test("baseline")] + like)
 
 
 @pytest.mark.parametrize("ext", [".parquet", ".tsv"])

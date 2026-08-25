@@ -14,11 +14,20 @@ EXPECTED_TRANSFORMS = {"ecspr_measure"}
 def _plan(work: Path):
     units = []
     for name in ("pool_a", "pool_b"):
-        gpr = work / f"gpr_{name}.parquet"
-        gpr.touch()
+        # TWO GPR TABLES PER UNIT, because that is the case the split exists for: a
+        # conditions table selects the host background out of one and the clone
+        # perturbation out of the other, and staging only one resolves half a condition.
+        tables = []
+        for which in ("host", "clones"):
+            g = work / f"{which}_{name}.parquet"
+            g.touch()
+            tables.append(g)
         cond = work / f"conditions_{name}.parquet"
         cond.touch()
-        units.append(ecspr.Unit(name=name, gpr_table=gpr, conditions=cond))
+        tests = work / f"tests_{name}.parquet"
+        tests.touch()
+        units.append(ecspr.Unit(name=name, gpr_tables=tables, conditions=cond,
+                                tests=tests))
     return ecspr.generate_workflow(
         work, units=units, atom_pairs=None, direction_ratios=None,
         runtime=Runtime.APPTAINER,
@@ -54,10 +63,11 @@ def test_copy_staging_names_inputs_for_the_unit(tmp_path):
     for name in ("net_a", "net_b"):
         d = tmp_path / name
         d.mkdir()
-        (d / "gpr.parquet").touch()
-        (d / "conditions.parquet").touch()
-        units.append(ecspr.Unit(name=name, gpr_table=d / "gpr.parquet",
-                                conditions=d / "conditions.parquet"))
+        for f in (f"{name}_gpr.parquet", "conditions.parquet", "tests.parquet"):
+            (d / f).touch()
+        units.append(ecspr.Unit(name=name, gpr_tables=[d / f"{name}_gpr.parquet"],
+                                conditions=d / "conditions.parquet",
+                                tests=d / "tests.parquet"))
 
     work = tmp_path / "work"
     seen = []
@@ -71,8 +81,12 @@ def test_copy_staging_names_inputs_for_the_unit(tmp_path):
     assert len(seen) == 1, "on_inputs must run once, after staging and before planning"
 
     staged = {p.name for p in (work / "inputs.xgdb").iterdir() if p.suffix == ".parquet"}
-    assert {"net_a.gpr.parquet", "net_b.gpr.parquet",
+    # THE GPR TABLES KEEP THEIR OWN NAMES. Everything else is renamed for the unit, but
+    # a conditions table's `table` column is a basename, so renaming a GPR table would
+    # make every condition naming it select nothing.
+    assert {"net_a_gpr.parquet", "net_b_gpr.parquet",
             "net_a.conditions.parquet", "net_b.conditions.parquet",
+            "net_a.ecspr_tests.parquet", "net_b.ecspr_tests.parquet",
             "atom_pairs.parquet", "direction.parquet"} <= staged, sorted(staged)
 
 

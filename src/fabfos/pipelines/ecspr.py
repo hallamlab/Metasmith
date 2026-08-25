@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Driver 3/3: GPR table(s) + conditions -> the ECSPr measurement.
+"""Driver 3/3: GPR table(s) + conditions + tests -> the ECSPr measurement.
 
-    gpr_table + conditions + atom_pairs + direction_ratios
+    gpr_table + conditions + ecspr_tests + atom_pairs + direction_ratios
         -> ecspr_measure -> ecspr::results
 
 One transform, deliberately -- see ``transforms/fabfos/ecspr_measure.py``. Each
@@ -44,8 +44,12 @@ all, which is also what makes a benchmark run and this plan the same code.
 Usage:
 
     python -m fabfos.pipelines.ecspr \\
-        --unit pool_a:gpr_a.parquet:conditions_a.parquet \\
-        --unit pool_b:gpr_b.parquet:conditions_b.parquet
+        --unit pool_a:gpr_a.parquet:conditions_a.parquet:tests_a.parquet \\
+        --unit pool_b:gpr_b.parquet:conditions_b.parquet:tests_b.parquet
+
+A UNIT NAMES SEVERAL GPR TABLES. Repeat the GPR field with a comma -- a
+conditions table selects across the host table and the clone table by name, and
+staging only one of them resolves the condition to half of itself.
 
 Planning is what it does; ``--run`` opts into executing. The DAG lands under
 ``research/fabfos/reports/dag/`` unless ``--dag`` says otherwise.
@@ -79,18 +83,24 @@ DEFAULT_DIRECTION_RATIOS = common.DATA_PROCESSED / refs.relpaths_for("ecspr::dir
 @dataclass
 class Unit:
     name: str
-    gpr_table: Path
+    gpr_tables: list
     conditions: Path
+    tests: Path
 
 
 def parse_unit(spec: str) -> Unit:
     parts = spec.split(":")
-    if len(parts) != 3:
+    if len(parts) != 4:
         raise argparse.ArgumentTypeError(
-            f"--unit expects NAME:GPR_TABLE:CONDITIONS, got [{spec}]"
+            f"--unit expects NAME:GPR_TABLES:CONDITIONS:TESTS, where GPR_TABLES is one "
+            f"or more paths separated by commas; got [{spec}]"
         )
-    name, gpr, cond = parts
-    return Unit(name=name, gpr_table=Path(gpr), conditions=Path(cond))
+    name, gpr, cond, tests = parts
+    tables = [Path(g) for g in gpr.split(",") if g]
+    if not tables:
+        raise argparse.ArgumentTypeError(f"--unit {name} names no GPR table")
+    return Unit(name=name, gpr_tables=tables, conditions=Path(cond),
+                tests=Path(tests))
 
 
 def build_inputs(work: Path, *, units: list[Unit], atom_pairs: Path | None,
@@ -114,10 +124,16 @@ def build_inputs(work: Path, *, units: list[Unit], atom_pairs: Path | None,
 
     for unit in units:
         exp = inputs.AddValue(f"experiment_{unit.name}.txt", unit.name, "fabfos::experiment")
-        _add(unit.gpr_table, "annotation::gpr_table",
-             name=f"{unit.name}.gpr.parquet", parents={exp})
+        # THE STAGED NAME IS THE NAME THE CONDITIONS TABLE USES. A condition's `table`
+        # column is a basename, so renaming a staged table to `<unit>.gpr.parquet` would
+        # make every condition that names it resolve to nothing -- and an empty
+        # selection raises rather than reporting a null, which is the point.
+        for g in unit.gpr_tables:
+            _add(g, "annotation::gpr_table", name=Path(g).name, parents={exp})
         _add(unit.conditions, "ecspr::conditions",
              name=f"{unit.name}.conditions.parquet", parents={exp})
+        _add(unit.tests, "ecspr::ecspr_tests",
+             name=f"{unit.name}.ecspr_tests.parquet", parents={exp})
 
     stubs: dict[str, Path] = {}
     pinned = refs.load_pinned_refs(common.DATA_PROCESSED) if use_pinned_refs else None
@@ -182,8 +198,10 @@ def generate_workflow(work: Path, *, units: list[Unit], atom_pairs: Path | None,
 def _build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--unit", action="append", required=True, type=parse_unit,
-                    metavar="NAME:GPR_TABLE:CONDITIONS",
-                    help="one measurement unit (repeatable): a GPR table + its condition set")
+                    metavar="NAME:GPR_TABLES:CONDITIONS:TESTS",
+                    help="one measurement unit (repeatable): the GPR tables the "
+                         "conditions select across (comma-separated), the conditions "
+                         "table, and the ecspr_tests table")
     p.add_argument("--atom-pairs", default=None, metavar="PARQUET")
     p.add_argument("--direction-ratios", default=None, metavar="PARQUET")
     p.add_argument("--staging", default=None, help="working dir (default: <output>/_fabfos)")
