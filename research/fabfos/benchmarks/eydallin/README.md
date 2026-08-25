@@ -25,6 +25,18 @@ two-point probe and not of the method: grounding at the biomass precursors inste
 glycogen makes the readout a share, shares are signed, and the signed correlation against
 Fig. 1 goes from undefined to +0.40. It is n = 23 and p ≈ 0.03–0.07, and it moves no AUC.
 
+**The verdict above is about the OVEREXPRESSION arm, and the same lab's deletion screen
+answers differently.** Eydallin et al. 2007 (*J. Bacteriol.* 189(24):8709–8722) swept the
+Keio collection and reported 65 genes; that arm is built out below, and against the
+library it was screened out of it reaches **AUC 0.729 (p = 9e-5) over the reactions the
+method can see, 0.656 (p = 0.01) once the glycogen module is struck, with a flat reaction-
+count control both times**. That is the first number on this target that beats its own
+size control. Why a deletion and not a doubling: Rayleigh bounds effective conductance
+from below as well as above, so a fold of 2 raises the readout by an amount the theorem
+caps, while `--fold 0` removes the edge outright and the network has to route around it.
+The caveats are real and sit with the result — 23 of the 65 are measurable at all, and the
+anabolic/catabolic ratio that rescued the doubling arm is *wrong-signed* here.
+
 ## What the pilot measured
 
 Universal-ground (`measure_leak`) probe, source D-glucose, element C, leak 1e-6, host
@@ -140,6 +152,9 @@ from the paper's own label, read against **`e_coli_ag1`** — the strain the ASK
 lives in, borrowing DH1's model under a measured genotype edit
 (`build_references/check_ag1_identity.py`). Before this it was `arm=lof` / `n_del=1`
 against MG1655, which is the opposite perturbation in a strain nobody ran the screen in.
+**That mislabel was about the 2010 screen and has nothing to do with the 2007 one below**,
+which is a genuine loss-of-function arm carrying `arm=lof` correctly; the two are only
+easy to confuse now that both exist.
 Conditions are **C only**: glycogen is a glucose polymer, so the measured direction is a
 carbon claim, and the N/P/S copies asserted three directions nobody measured.
 
@@ -229,6 +244,123 @@ checks that folder holds exactly five names.
 (`PMC2900218` is an unrelated ADHD paper; the real one is `PMC2853380`), so re-acquisition
 is broken and the extraction survives only because it is stored as bytes.
 
+## The 2007 deletion arm — the same lab, the opposite perturbation
+
+Eydallin et al. published this screen three years before the ASKA one: the whole Keio
+collection of single-gene deletions, same readout, same medium, 65 genes reported — 35
+whose deletion *raises* glycogen and 30 whose deletion lowers it. Everything about it is a
+mirror of the arm above except the sign, and the differences are the point:
+
+| | 2010, above | 2007, here |
+|---|---|---|
+| perturbation | an ASKA plasmid, `action=add` | a chromosomal deletion, `action=del` |
+| strain | AG1 hosting W3110 ORFs | BW25113, which *is* the mutant |
+| model | DH1's `iECDH1ME8569_1439`, a proxy | iML1515, BW25113's own |
+| phenotype figure | a downscaled JPEG | vector, with drawing operators |
+| population | 4,123 clones assayed | 3,908 b-numbered mutants assayed |
+
+`data/fabfos/benchmarks/eydallin_2007/` holds the extraction (65 genes, `gene_norm`,
+`phenotype`, `source_table`, `cog_category`, `function_supplTableS1`) and the digitised
+`Y/measured_glycogen.tsv`. The supplement is a Word 97 binary and this host has no
+converter, so it is split on the format's own `\x07` cell delimiter; the tables and the
+supplement then agree as a set, which is an independent check nobody had to write.
+
+**The strain and the model finally agree.** `parse/build_lof_table.py` keys on BW25113
+because a deletion mutant *is* its chromosome — no plasmid, no insert, so there is no
+second genome to reconcile and no proxy to borrow. Resolution is the same three legs the
+clone ORF set uses, pointed at a different target: name → b-number through MG1655's
+GenBank (which carries `/gene_synonym`, and six of these names were retired after 2007 —
+`ybhE` is `pgl`, `yhbG` is `lptB`, `yobG` is `mgrB`, `cspC` is `cspE`, `cysU` is `cysT`,
+`deoT` is `yciT`), b-number → MG1655's protein, then protein → BW25113 by exact sequence.
+**65/65 resolve**, 64 by sequence and one (`nlpD`) by symbol.
+
+**The figures are vector, so there is nothing to fit.** `plots/digitize_2007_figs.py` reads
+bar tops straight off the drawing operators — no subpixel edge model, no quantisation
+lattice, none of the apparatus Fig. 1's raster needed. Calibration is a least-squares line
+through the axis tick labels, and it is *reported* rather than asserted: residuals of 0.43
+and 0.95 points of position against bar pitches of 9.5 and 11.1. Values span 0.0 % to
+1102.4 % of a wild type the captions put at 147 nmol glucose mg protein⁻¹ (**not** the 2010
+figure's 45).
+
+Fig. 2 draws only 25 bars for its 30 labels, and that gap is why bars match labels by
+x-centre and never by ordinal position. The five without a bar are exactly the paper's
+glycogen-*less* mutants — `glgA`, `glgB`, `glgC`, `ubiG`, `pgm` — whose value rounds to
+zero; every other label sits within 2.5 points of a bar while those five sit 12 to 56 away,
+so nothing lands in the gap the cut has to fall in. They are recorded as 0.0 and named in
+the script's own output rather than dropped. Four guards refuse rather than warn: the label
+set must equal the extraction's 65, Fig. 1 must have 35 labels *and* 35 bars, Fig. 2 must
+have 30 labels, and no value may land on the wrong side of WT for its own figure.
+
+`parse/lof/lof.csv` carries `gof.csv`'s eleven columns in the same order, so the two halves
+can be read side by side, and `lof_reaction_edges.csv` beside it holds all 96 candidate
+edges with the 21 multi-candidate genes intact. The chemistry itself is not duplicated:
+`parse/reaction_chemistry.py` is one implementation of `carbon_bond_change`,
+`legible_equation`, `pick_primary` and `denovo_gapfill` that both drivers import, because
+two copies of those rules is how two halves of one benchmark come to disagree about what
+`breaks` means.
+
+**The side channels contribute nothing here, and that is a finding rather than a gap.**
+Coverage is `GEM` 38/65, `LLM review` 0, `denovo` 0, and 27 genes categorised. The 2010
+half's two side channels rescued 8 of its 52 misses because that cohort's misses were
+plasmid-borne enzymes DH1's small model lacked. These 27 are sigma factors, response
+regulators, ribosomal proteins, proteases and RNA-acting enzymes — genes with no metabolite
+substrate to have missed. An overexpression screen surfaces enzymes; a deletion screen of
+the same phenotype surfaces the regulatory network around them. The two genuine enzymes
+among them (`glnD`, `miaA`) were checked rather than assumed: both have their textbook
+reaction in MetaNetX and three independent de-novo methods nominate it, and both were
+categorised anyway, because their substrates are macromolecules and neither reaction is in
+the atom universe — an id nothing downstream can carry current through is coverage on
+paper only. `no_mapping_reason` reuses the eleven-category vocabulary and needed two more
+of the same kind: `protein_modification` (`glnD`, `phoQ`) and `electron_carrier` (`fdx`).
+The tally is `regulatory` 11, `uncharacterized` 4, `translation` 3, `proteolysis` 2,
+`protein_modification` 2, `rna_processing` 2, `electron_carrier` 1, `transport` 1,
+`envelope_assembly_or_secretion` 1.
+
+**`glgB` and `glgX` collapse onto one reaction id, and every table downstream shows it.**
+They are distinct BiGG reactions — `GLBRAN2` branching, `GLDBRAN2` debranching — but
+MetaNetX canonicalises by direction, so both resolve to `MNXR145021`. `lof.csv` therefore
+prints the *branching* equation for the debranching enzyme and one `direction_ratio`
+describing the canonical direction rather than each gene's actual one. The edge table's
+`intermediate_id`/`intermediate_name` keep the two apart, which is what that column pair is
+for. In the panel the two genes return bit-identical numbers, which is the collapse showing
+through rather than a coincidence.
+
+Two consistency checks across the halves pass without being arranged to: `rpoS` is
+`regulatory` in both, and `glgP` resolves to `MNXR145036` in both.
+
+### Where the deletion arm's tables live
+
+`runs/eydallin_clones/` now holds **two cohorts**, and the directory name only describes
+one of them — the 2007 mutants are not clones. Keeping them together was deliberate (one
+DVC chunk, one place to look) and `parse/gof/` vs `parse/lof/` already set the pattern.
+
+| | |
+|---|---|
+| `data/fabfos/runs/eydallin_clones/parse/lof/` | `lof.csv`, `lof_reaction_edges.csv`, `lof_resolution.tsv` |
+| `data/fabfos/runs/eydallin_clones/gpr/lof/` | the 65-mutant cohort GPR and its census |
+| `data/fabfos/runs/keio/gpr/` | every iML1515 gene as a deletion condition, plus the roster |
+| `data/fabfos/runs/keio/ecspr/` | the library sweeps and their classifier reports |
+
+`gpr_build/build_lof_gpr.py` writes both GPR tables in one pass, which is the opposite of
+how the 2010 arm splits `build_clone_gpr.py` from `build_aska_gpr.py`. It can be, because
+here the cohort is a strict row-subset of the library: same model, same b-number join, same
+background. Two scripts would be two resolvers over one model, and that is the failure this
+tree keeps writing warnings about.
+
+**A negative has to have been assayed.** The ASKA library was screened whole, so every
+clone in it is a measured negative. The Keio collection is not whole — an essential gene
+has no mutant, so the 2007 screen never looked at it, and scoring it as a negative would
+credit the method for ranking below genes nobody measured. `benchmarks/keio/baba_roster.py`
+reads Baba 2006's own supplement for the roster: Supplementary Table 2 gives 4,208
+b-numbered ORFs the campaign targeted, Supplementary Table 6 gives the 300 where no viable
+mutant was obtained, and the collection is the difference — 3,908. (Baba quotes 3,985; the
+gap is W3110 ORFs with no MG1655 counterpart, which this tree cannot join on either way.)
+Of iML1515's 1,511 genes, **124 were never assayed and are dropped from every negative set
+below; none of them is one of the 65.** That file carries its own OLE2/BIFF8 decoder
+because the supplement is Excel 97 and this host has no xlrd, no calamine, no gnumeric and
+no LibreOffice — checked, not assumed — and a dependency added to a shared environment for
+one table read once is the worse trade.
+
 ## Running it
 
 ```bash
@@ -243,6 +375,50 @@ and `data/fabfos/originals/metanetx` checked out, and both submodules initialise
 
 `digitize_fig1.py` needs none of that — only the acquisition chunk and an env with pypdf
 and Pillow: `mamba run -n figure-net python main/benchmarks/eydallin/digitize_fig1.py`.
+
+`plots/digitize_2007_figs.py` runs under **`awm`**, alone in this tree, because reading a
+bar top off a vector figure means reading drawing operators and PyMuPDF is the only
+installed library that exposes them. Everything else here is `msm-fabfos` for a table
+builder or `ecspr` for a solve.
+
+The deletion arm end to end, all four steps idempotent:
+
+```bash
+mamba run -n awm        python plots/digitize_2007_figs.py
+mamba run -n msm-fabfos python parse/build_lof_table.py --publish
+mamba run -n msm-fabfos python parse/build_lof_reactions.py --publish
+mamba run -n msm-fabfos python gpr_build/build_lof_gpr.py --publish
+
+mamba run -n ecspr python panels/twopoint_cohort.py --host e_coli_bw25113 --fold 0 \
+    --clone-gpr data/fabfos/runs/eydallin_clones/gpr/lof/gpr_gem.parquet \
+    --measured data/fabfos/benchmarks/eydallin_2007/Y/measured_glycogen.tsv
+mamba run -n ecspr python sweeps/sweep_aska_ratio.py --channel gem --host e_coli_bw25113 \
+    --fold 0 --label eydallin2007 --census mutant_census.tsv \
+    --cohort-dir data/fabfos/runs/eydallin_clones/gpr/lof \
+    --out-dir data/fabfos/runs/eydallin_clones/ecspr
+mamba run -n msm   python sweeps/analyse_lof_cohort.py
+
+mamba run -n ecspr python sweeps/sweep_aska.py --channel gem --host e_coli_bw25113 \
+    --fold 0 --label keio --cohort-dir data/fabfos/runs/keio/gpr \
+    --census mutant_census.tsv --out-dir data/fabfos/runs/keio/ecspr --workers 6
+mamba run -n msm   python sweeps/analyse_aska_sweep.py --host e_coli_bw25113 --fold 0 \
+    --label keio --channels gem --score absdelta --assayed-only \
+    --sweep-dir data/fabfos/runs/keio/ecspr --out-dir data/fabfos/runs/keio/ecspr \
+    --measured data/fabfos/benchmarks/eydallin_2007/Y/measured_glycogen.tsv
+```
+
+**Every one of those flags defaults to the 2010 arm's value**, so `sweep_aska.py`,
+`sweep_aska_ratio.py`, `twopoint_cohort.py` and both analysers still reproduce their
+existing outputs from an unchanged command line — checked byte for byte against the pinned
+files, with the pristine scripts re-run from `git show` under the same bake to separate a
+refactor's effect from the bake's. The deletion arm is those scripts with different inputs
+rather than a fork of them. Two knobs are not cosmetic: `--score absdelta`, because
+Rayleigh makes every fold-0 delta ≤ 0 and the raw delta would rank the untouched genes
+first, and `--assayed-only`, because an essential gene has no Keio mutant and was never
+measured.
+
+Budget: the 65-mutant cohort is seconds; the 1,511-gene library is 1.4 min for the
+two-point sweep and 1.8 for the ratio, on six workers.
 
 `bake_pairs.py` decodes the bake into the schema `ecspr.model.build.load_pairs` reads. Handing
 that loader the encoded table does not raise — the element filter compares ints to `"C"`
@@ -497,3 +673,90 @@ Four things that will bite:
 - **An edge between two members of a merged sink terminal is shorted away by contraction**,
   so the merged-terminal form cannot express an exit from the target. That is why the real
   probe uses `attach_leak`, whose drains are resistors to ground rather than shorts.
+
+## The deletion arm's result — the first number here that beats its own controls
+
+Two probes, one perturbation (`--fold 0`), scored twice: over the 65-mutant cohort, where
+the question is *which direction*, and over the library, where it is *which genes*. Every
+figure carries the reaction-count control beside it, because the ASKA/FFA arm died exactly
+there — tracking clone size at rho = +0.69 and the phenotype at +0.01.
+
+`--fold 0` is a real edge removal and not a small resistor. `graph_from_pairs` keeps only
+strictly positive weights, so a deleted reaction's atom-transfer rows never become edges at
+all; on this background nothing disconnected, and the host reads glucose → glycogen 2.3086,
+glycogen → pyruvate 2.6840, ratio 0.8602. A `--fold 1.0` run returns bit-exact zero on all
+23 solvable mutants, which is the check that separates a result from solver jitter.
+
+### Over the library — 1,387 assayed genes, 38 of them Eydallin's
+
+`sweeps/sweep_aska.py`, then `analyse_aska_sweep.py --score absdelta --assayed-only`. The
+`absdelta` is not cosmetic: Rayleigh makes every fold-0 delta ≤ 0, so ranking on the raw
+delta puts the genes the deletion did not touch at the top.
+
+| scored over | ECSPr | size control |
+|---|---|---|
+| atom-mapped (n = 884, 23 positive) | **0.729** (p = 9e-5) | 0.510 (p = 0.43) |
+| atom-mapped, glycogen module struck (n = 877, 18 positive) | **0.656** (p = 0.012) | 0.541 (p = 0.24) |
+| whole library incl. the 503 exact zeros | 0.580 (p = 0.04) | 0.487 |
+| whole library, module struck | 0.510 (n.s.) | 0.468 |
+
+The top 10 of the library holds 6 of the 65 against 0.3 expected (p = 5e-8). Reach is not
+the explanation: 60.5 % of the positives are atom-mapped against 63.8 % of everything else,
+OR = 0.87, p = 0.73 — so the method is no more likely to *see* a hit than a non-hit, and
+the AUC is about the ranking rather than about who got measured. The ratio probe scored the
+same way lands in the same place (0.718 → 0.642 module-struck), so the two probes agree
+about *which* genes even where they disagree about direction.
+
+**What the module-struck row buys.** A glucose → glycogen probe ranking glycogen synthase
+first is close to arithmetic, and the 2010 arm's whole signal turned out to be exactly
+that. Striking `glgA`, `glgB`, `glgC`, `glgP`, `glgX`, `malP` and `malQ` from *both* classes
+leaves 0.656 at p = 0.012 with the size control still flat. That is the sentence this
+benchmark did not previously have.
+
+The top of the ranking is also legible, which the doubling arm's never was. Below the glg
+genes sit `malP`, `malQ`, `malS`, `amyA`, `malZ` and `glk` — maltodextrin and glucose
+metabolism, none of them Eydallin hits and all of them one reaction from the polymer. And
+`ycjU` and `yqaB` score within 5e-5 of `pgm`, which is what β-phosphoglucomutase paralogs
+should do. These are false positives in the scoring and near-misses in the biology, and the
+distinction is worth keeping.
+
+### Over the cohort — direction, and where the ratio fails
+
+`panels/twopoint_cohort.py` and `sweeps/sweep_aska_ratio.py`, scored by
+`sweeps/analyse_lof_cohort.py`. **23 of the 65 carry an atom-mapped reaction** (15 excess,
+8 deficient); the other 42 are exact zeros and have no direction to be right or wrong about.
+
+| | all 23 | module struck (16) |
+|---|---|---|
+| AUC, deficient above excess by conductance lost | **0.850** (p = 0.004) | 0.714 (p = 0.19) |
+| ...size control | 0.275 | 0.411 |
+| signed Spearman vs the digitised figures | **+0.663** (p = 6e-4) | +0.430 (p = 0.10) |
+| ...size control | +0.412 (p = 0.05) | +0.212 |
+| ratio sign agreement | 16/23 = 69.6 % | 12/16 = 75.0 % |
+| ...majority-class base rate | 65.2 % | 87.5 % |
+
+The size control on the first row is *below* 0.5 — reaction count ranks these the wrong
+way round — so the two-point AUC is not a size artifact. The module-struck column is
+consistent in direction and cannot reach significance either way: striking the module
+leaves 2 deficient genes out of 16.
+
+**The anabolic/catabolic ratio is wrong-signed on this cohort, and that is the honest
+result.** It rescued the doubling arm — sign agreement 10/45 → 30/45 there — and here it
+agrees 16/23 against a base rate of 65.2 % (Fisher p = 0.30), ranks excess above deficient
+at AUC 0.425, and is *beaten by reaction count* (0.725, p = 0.026). With the module struck
+its signed Spearman is −0.679 at p = 0.004: significantly backwards, not merely absent.
+
+The mechanism is visible in the table. `galU`, `glgX`, `glgB` and `pgl` are all
+glycogen-*deficient* mutants whose deletion the model reads as ratio-*raising*, because
+cutting them costs the catabolic leg more than the anabolic one. That is the known
+glycogen-direction gap arriving where it does damage: MetaNetX carries glycogen as a
+fixed-formula molecule rather than a polymer increment, the direction ensemble abstains on
+those reactions with an explicit 1.0 from zero votes, and a probe that reads branching and
+debranching as one canonical direction cannot tell a mutant that cannot build the polymer
+from one that cannot break it. `glgP` — the one glycogen-excess gene in the module — is
+called correctly and by a wide margin (+448 %, above every one of the 1,349 negatives).
+
+So the two readouts answer different halves and only one of them works: the magnitude says
+*which* genes with an AUC that survives its controls, and the direction is left to a bake
+that does not yet know glycogen is a polymer. Fixing that is upstream of this benchmark,
+and the ratio's sign is the measurement that says how much it costs.
