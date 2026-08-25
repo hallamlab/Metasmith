@@ -1,26 +1,17 @@
 # Would ECSPr find what Woodruff's SCALEs screens found?
 
-**No, on all three arms.** Two arms were run first — a glucose-rooted sink panel and a
-whole-library classifier — and both came back null. A third was added afterwards, running
+**No, on all three arms.** Two were run first — a glucose-rooted sink panel over declared
+metabolite axes (§ *The mechanistic arm*) and a whole-library classifier (§ *The classifier
+arm*) — and both came back null. A third was added afterwards (§ *The ratio arm*), running
 the protocol the eydallin benchmark settled: parse the screen into a `gof.csv` keyed on the
 real expression host, attach reaction chemistry through a four-channel cascade, restrict to
 genes whose reaction changes a carbon skeleton, and score a two-point conductance **ratio**
-between competing metabolic fates rather than a single readout. That arm is reported in
-§ *The ratio arm* and is also null: best AUC anywhere **0.5467 (p = 0.15)**, against a
-reaction-count size control of 0.5347, on the population the method has a mechanism for.
+between competing metabolic fates rather than a single readout. It is null as well.
 
-The ratio arm's *mechanics* work, and that is worth separating from its statistics. Both
-preconditions pass — every terminal is a reachable atom-mapped node, and a ×2 fold demonstrably
-multiplies rather than unions — and the score is genuinely two-sided where a single-probe
-readout cannot be: 566 of 981 solved genes raise the ethanol share, 367 lower it. The top of
-the ranking is chemically exactly right (adhE +21.8%, ppc −14.3%, maeB −11.3%). It simply
-does not correlate with what the screen measured.
-
-**No, on both prior arms — and the mechanistic result that looked like a win does not survive its
-own controls.** The headline finding was that ECSPr separates the production paper's
-rank-one hit from its stated non-hit: g(glucose→trehalose) = 12.43 against
-g(glucose→betaine) = 0. Three controls, all added after an adversarial review and all
-declared in the axis file, take that apart:
+On the first arm, the mechanistic result that looked like a win does not survive its own
+controls. ECSPr appeared to separate the production paper's rank-one hit from its stated
+non-hit: g(glucose→trehalose) = 12.43 against g(glucose→betaine) = 0. Three controls, all
+added after an adversarial review and all declared in the axis file, take that apart:
 
 - **D-maltose — trehalose's α-1,4 structural isomer, named in neither paper — scores
   29.62, 2.4× higher.** The property the trehalose axis is high for is being two glucoses.
@@ -47,6 +38,18 @@ axis was declared *for it* — moves glucose→serine conductance by **1.65 × 1
 the probe, on the axis chosen to see it. Whatever this method measures, it is not
 sensitivity of a pathway to its own committed enzyme.
 
+On the third arm the numbers land in the same place. Its best AUC is 0.5467 (p = 0.15)
+against a reaction-count size control of 0.5347, on the population the method has a mechanism
+for; on the confirmed clones it is 0.5823 against a size control of 0.5980, so reaction count
+wins there too, exactly as it does above.
+
+But the ratio arm's *mechanics* work, and that is worth separating from its statistics. Both
+preconditions pass — every terminal is a reachable atom-mapped node, and a ×2 fold demonstrably
+multiplies rather than unions — and the score is genuinely two-sided where a single-probe
+readout cannot be: 566 of 981 solved genes raise the ethanol share, 367 lower it. The top of
+the ranking is chemically exactly right (adhE +21.8%, ppc −14.3%, maeB −11.3%). It simply
+does not correlate with what the screen measured.
+
 This is a negative result about the method, not about the study. The screens are sound, the
 extractions reproduce the papers' own arithmetic, and the controls are the ones designed to
 break the claim.
@@ -67,7 +70,8 @@ library.
 
 The production paper's gene symbols lived in a workbook that survives in its supplementary
 PowerPoint only as a dead OLE link, so its distribution is recoverable but anonymous. The
-companion paper ships a complete named workbook, and that is the arm with the statistics.
+companion paper ships a complete named workbook, and it is therefore the source of every
+per-gene statistic in this report — on all three arms.
 
 **Neither paper's fitness values may be joined to the other's.** The later paper recalculated
 the earlier selections; the ranges differ sixfold and a trial join matched 337 of 4,103.
@@ -93,9 +97,9 @@ But the paper quotes **ranks**, not values — the values in `ANCHORS` are annot
 itself. It confirms internal consistency and the absence of an off-by-one; it is **not** an
 external falsification, and "both decodes are falsifiable" was wrong. One is.
 
-**The production arm cannot honestly be binarised**, and the code says so rather than
-inventing a threshold: the companion's fitness > 1 cut applied here labels 85% of the genome
-enriched, and the production paper quotes no threshold at all.
+**The production screen's fitness cannot honestly be binarised**, and the code says so rather
+than inventing a threshold: the companion's fitness > 1 cut applied here labels 85% of the
+genome enriched, and the production paper quotes no threshold at all.
 
 ## The hosts, computed rather than assumed
 
@@ -260,7 +264,7 @@ But the de-novo channel *does* see all twelve, and its AUC on them is 0.55–0.6
 between 0.065 and 0.29. So "the method cannot see them" explains the curated arm and not the
 benchmark.
 
-### Ranking, every AUC beside its size control
+### Ranking on the eight axes, every AUC beside its size control
 
 | channel | axis | positive set | AUC library | size ctrl | AUC atom-mapped | size ctrl | p |
 |---|---|---|---|---|---|---|---|
@@ -371,7 +375,7 @@ of three rows is not a screen.
 
 So `gof.csv` keys on the **companion tolerance paper** instead — the same SCALEs library, the
 same lab, screened in BW25113 Δ*recA*, with a complete named workbook: 4,225 genes, each with
-a b-number and two fitness values. What survives the two arms' refusal to be joined is the
+a b-number and two fitness values. What survives the two screens' refusal to be joined is the
 *library*: both papers screen the same genomic BW25113 fragment collection, so the gene
 population is shared even though the phenotype is not.
 
@@ -462,6 +466,13 @@ sweep is on the right side of it.
 
 ### The measurement
 
+**This arm runs the curated channel only**, unlike the two above, which each report curated
+and de-novo side by side. The de-novo background is 10,938 reactions and the ratio costs two
+solves a gene; it was not run here, and no de-novo column below is missing — there is simply
+no de-novo ratio number in this tree yet. What the classifier arm already established about
+that channel — that it sees 89% of the screen instead of 23% and still ranks at chance — is
+the reason a curated-only null is not merely a reach result.
+
 Background is the `in_atom_universe` filter at uniform 1.0 — **1,409 reactions** on
 `e_coli_lw06`'s edited iML1515, this benchmark's convention since `sweeps/sweep_scales.py`,
 not the eydallin sweep's unfiltered dict. Nothing in this arm is comparable to an eydallin
@@ -471,8 +482,9 @@ number.
     C(pyruvate → oxaloacetate) 6.275456419
     host ratio                 0.111255142
 
-4,225 genes, 981 atom-mapped and solved, 3,244 exact zeros. Every row reads `finite`; no
-gene severed either terminal at fold 2.
+4,225 genes, 981 atom-mapped and solved, 3,244 exact zeros. That is the classifier arm's 985
+curated atom-mapped genes less the four the next paragraph refuses; the population is
+otherwise the same one. Every row reads `finite`; no gene severed either terminal at fold 2.
 
 **Three reactions are refused rather than restored.** LW06 is BW25113 with ldhA, ackA,
 frdABCD and adhE knocked out, while the clone GPR table was built against unedited iML1515 —
@@ -483,7 +495,7 @@ the fold semantics cannot express it. Restoring FRD2/FRD3 would be worse: its GP
 reconstitutes the complex. Those four genes fall through to the exact-zero population with
 the reason recorded in the manifest.
 
-### The ranking, every AUC beside its size control
+### Ranking on the ratio, every AUC beside its size control
 
 |population | positive set | n | AUC library | size ctrl | AUC atom-mapped | size ctrl |
 |---|---|---|---|---|---|---|
