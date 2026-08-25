@@ -14,7 +14,16 @@ therefore unanswerable by construction. What remains askable: does a clone that 
 glycogen FAR from wild-type, in either direction, sit on an edge that carries more of the
 glucose -> glycogen current?
 
-    mamba run -n ecspr python research/fabfos/benchmarks/eydallin/twopoint_cohort.py
+    mamba run -n ecspr python research/fabfos/benchmarks/eydallin/panels/twopoint_cohort.py
+    ... --host e_coli_bw25113 --fold 0 \
+        --clone-gpr data/fabfos/runs/eydallin_clones/gpr/lof/gpr_gem.parquet \
+        --measured data/fabfos/benchmarks/eydallin_2007/Y/measured_glycogen.tsv
+
+THE COHORT AND THE HOST ARE FLAGS, and their defaults are the 2010 ASKA run this script
+was written for, so an unchanged command line still reproduces that output byte for byte.
+The 2007 deletion arm is the same probe over a different cohort against a different host:
+`--fold 0` deletes rather than doubles, and the output filename carries the host, which is
+what keeps the two arms' results from landing on the same path.
 """
 from __future__ import annotations
 
@@ -49,6 +58,10 @@ def main():
     p.add_argument("--fold", type=float, default=2.0)
     p.add_argument("--host", default="e_coli_ag1")
     p.add_argument("--element", default="C")
+    p.add_argument("--clone-gpr", type=Path, default=CLONE_GPR,
+                   help="the cohort's own GPR table, a subset of the host's")
+    p.add_argument("--measured", type=Path, default=MEASURED,
+                   help="the digitised phenotype table, joined on `condition_id`")
     p.add_argument("--out-dir", type=Path, default=OUT_DIR)
     args = p.parse_args()
     args.out_dir.mkdir(parents=True, exist_ok=True)
@@ -58,7 +71,7 @@ def main():
     host = pd.read_parquet(RUNS / args.host / "gpr" / "gpr_gem.parquet")
     base_w = {m: 1.0 for m in host.mnxr.dropna().astype(str).unique()}
 
-    clone = pd.read_parquet(CLONE_GPR)
+    clone = pd.read_parquet(args.clone_gpr)
     clone = clone[clone.in_atom_universe & (clone.channel == "gem_gpr")]
     absent = sorted(set(clone.mnxr.astype(str)) - set(base_w))
     if absent:
@@ -91,7 +104,7 @@ def main():
         print(f"  {row.condition_id:22} {v:.6f}  {v - base:+.6f}", file=sys.stderr)
 
     df = pd.DataFrame(rows)
-    meas = pd.read_csv(MEASURED, sep="\t")
+    meas = pd.read_csv(args.measured, sep="\t")
     df["k"] = df.condition_id.str.lower()
     meas["k"] = meas.condition_id.str.lower()
     df = df.merge(meas[["k", "pct_wt"]], on="k", how="left").drop(columns="k")

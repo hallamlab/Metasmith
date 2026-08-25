@@ -33,6 +33,12 @@ those ties as a loss and understates the result by a wide margin.
 THE HUNDRED DRAWS ARE A SUBSET OF THIS, and are reported as such. The exhaustive sweep
 contains any sample of it and carries no sampling error, so the resampled figure is here to
 show the two agree, not to stand in for the exhaustive one.
+
+A NEGATIVE MUST HAVE BEEN ASSAYED. The ASKA library was screened whole, so every clone in it
+is a measured negative and `--assayed-only` changes nothing there. A Keio-based screen is not
+whole: an essential gene has no mutant, so the screen never looked at it, and scoring it as a
+negative would credit the method for ranking below genes nobody measured. Where the sweep
+carries the roster flag, `--assayed-only` drops those rows and says how many it dropped.
 """
 from __future__ import annotations
 
@@ -146,7 +152,7 @@ def resample(df: pd.DataFrame, *, n_neg: int, reps: int, seed: int, log) -> dict
 MEASURED = ROOT / "data/fabfos/benchmarks/eydallin/Y/measured_glycogen.tsv"
 
 
-def _direction(df: pd.DataFrame, log) -> dict:
+def _direction(df: pd.DataFrame, log, measured: Path = MEASURED) -> dict:
     out = {}
     pos = df[df.is_positive & (df.n_rxn > 0)].copy()
     pos = pos[pos.delta.abs() > 1e-12]
@@ -170,8 +176,8 @@ def _direction(df: pd.DataFrame, log) -> dict:
     log(f"  sign agreement {agree}/{len(pos)} = {agree / max(len(pos), 1):.1%}  "
         f"OR={orr:.3g}  Fisher p={pf:.3g}")
 
-    if MEASURED.exists():
-        meas = pd.read_csv(MEASURED, sep="\t")
+    if measured.exists():
+        meas = pd.read_csv(measured, sep="\t")
         pct = {str(c).split(":")[-1].lower(): v
                for c, v in zip(meas.condition_id, meas.pct_wt)}
         pos["pct_wt"] = pos.gene.str.lower().map(pct)
@@ -191,9 +197,11 @@ def main() -> int:
     ap.add_argument("--element", default="C")
     ap.add_argument("--channels", nargs="+", default=["gem", "denovo"])
     ap.add_argument("--score", choices=("delta", "absdelta"), default="delta",
-                    help="`absdelta` ranks by how far a clone moves glycogen in EITHER "
-                         "direction. Only meaningful for a sweep whose probe can go down; "
-                         "under the two-point probe every delta is >= 0 and the two agree.")
+                    help="`absdelta` ranks by how far a gene moves glycogen in EITHER "
+                         "direction, and is what a DELETION sweep needs: Rayleigh makes "
+                         "every fold-0 delta <= 0, so ranking on the raw delta puts the "
+                         "genes the deletion did not touch at the top. Under a doubling "
+                         "every delta is >= 0 and the two agree.")
     ap.add_argument("--direction", action="store_true",
                     help="also ask whether the SIGN of the response matches the sign of "
                          "the phenotype -- the question a monotone probe cannot pose")
@@ -202,6 +210,15 @@ def main() -> int:
                          "reads that sweep and writes its own report beside it")
     ap.add_argument("--reps", type=int, default=2000)
     ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--host", default="e_coli_ag1")
+    ap.add_argument("--label", default="aska",
+                    help="the sweep's filename stem, matching `sweep_aska.py --label`")
+    ap.add_argument("--sweep-dir", type=Path, default=SWEEPS)
+    ap.add_argument("--measured", type=Path, default=MEASURED,
+                    help="digitised phenotypes, for the signed check under --direction")
+    ap.add_argument("--assayed-only", action="store_true",
+                    help="keep only genes the screen's collection actually carried; "
+                         "requires an `assayed` column in the sweep")
     ap.add_argument("--out-dir", type=Path, default=OUT)
     a = ap.parse_args()
 
@@ -213,12 +230,27 @@ def main() -> int:
 
     report = {}
     for ch in a.channels:
-        f = SWEEPS / f"aska_sweep_{ch}_e_coli_ag1_fold{a.fold}_{a.element}{a.suffix}.tsv"
+        f = (a.sweep_dir /
+             f"{a.label}_sweep_{ch}_{a.host}_fold{a.fold}_{a.element}{a.suffix}.tsv")
         if not f.exists():
             log(f"\n### {ch}: {f.name} not present -- skipped")
             continue
         df = pd.read_csv(f, sep="\t")
         df["is_positive"] = df.is_positive.astype(bool)
+        roster_info = None
+        if a.assayed_only:
+            if "assayed" not in df.columns:
+                raise SystemExit(f"[analyse] {f.name} has no `assayed` column; the "
+                                 f"sweep's census did not carry a roster, so there is "
+                                 f"nothing to restrict to")
+            keep = df.assayed.astype(bool)
+            dropped_pos = int((~keep & df.is_positive).sum())
+            log(f"\n### roster: {int((~keep).sum()):,} of {len(df):,} genes are not in "
+                f"the screened collection and were never assayed -- dropped "
+                f"({dropped_pos} of them labelled positive)")
+            roster_info = dict(dropped=int((~keep).sum()),
+                               dropped_positive=dropped_pos, kept=int(keep.sum()))
+            df = df[keep].reset_index(drop=True)
         # The ranking statistic. delta and log2FC are monotone in each other here (one
         # shared baseline), so which one is ranked on cannot change any AUC; delta is
         # used because a clone that reaches nothing is an exact 0 rather than a log of 1.
@@ -229,7 +261,9 @@ def main() -> int:
             f"{int(df.is_positive.sum())} Eydallin positives\n{'=' * 78}")
 
         report[ch] = {}
-        log("\n-- all 86 positives " + "-" * 56)
+        if roster_info:
+            report[ch]["roster"] = roster_info
+        log(f"\n-- all {int(df.is_positive.sum())} positives " + "-" * 56)
         report[ch]["all"] = analyse(df, f"{ch}:all", log)
         report[ch]["all"]["resample"] = resample(df, n_neg=100, reps=a.reps,
                                                  seed=a.seed, log=log)
@@ -250,10 +284,10 @@ def main() -> int:
             .to_string(index=False, float_format=lambda v: f"{v:.6g}"))
 
         if a.direction:
-            report[ch]["direction"] = _direction(df, log)
+            report[ch]["direction"] = _direction(df, log, a.measured)
 
     a.out_dir.mkdir(parents=True, exist_ok=True)
-    stem = f"aska_classifier_report{a.suffix}"
+    stem = f"{a.label}_classifier_report{a.suffix}"
     (a.out_dir / f"{stem}.json").write_text(json.dumps(report, indent=2, default=float))
     (a.out_dir / f"{stem}.txt").write_text("\n".join(lines) + "\n")
     print(f"\n-> {a.out_dir}/{stem}.{{json,txt}}")

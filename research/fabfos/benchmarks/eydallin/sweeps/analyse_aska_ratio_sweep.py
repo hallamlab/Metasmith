@@ -67,6 +67,13 @@ def main() -> int:
     ap.add_argument("--suffix", default="")
     ap.add_argument("--reps", type=int, default=2000)
     ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--host", default="e_coli_ag1")
+    ap.add_argument("--label", default="aska",
+                    help="the sweep's filename stem, matching "
+                         "`sweep_aska_ratio.py --label`")
+    ap.add_argument("--sweep-dir", type=Path, default=SWEEPS)
+    ap.add_argument("--assayed-only", action="store_true",
+                    help="keep only genes the screen's collection actually carried")
     ap.add_argument("--out-dir", type=Path, default=SWEEPS)
     a = ap.parse_args()
 
@@ -78,13 +85,25 @@ def main() -> int:
 
     report = {}
     for ch in a.channels:
-        f = SWEEPS / (f"aska_ratio_sweep_{ch}_e_coli_ag1_fold{a.fold}_"
-                      f"{a.element}{a.suffix}.tsv")
+        f = a.sweep_dir / (f"{a.label}_ratio_sweep_{ch}_{a.host}_fold{a.fold}_"
+                           f"{a.element}{a.suffix}.tsv")
         if not f.exists():
             log(f"\n### {ch}: {f.name} not present -- skipped")
             continue
         df = pd.read_csv(f, sep="\t")
         df["is_positive"] = df.is_positive.astype(bool)
+        roster_info = None
+        if a.assayed_only:
+            if "assayed" not in df.columns:
+                raise SystemExit(f"[analyse] {f.name} carries no `assayed` column")
+            keep = df.assayed.astype(bool)
+            roster_info = dict(dropped=int((~keep).sum()),
+                               dropped_positive=int((~keep & df.is_positive).sum()),
+                               kept=int(keep.sum()))
+            log(f"\n### roster: {roster_info['dropped']:,} of {len(df):,} genes were "
+                f"never assayed and are dropped "
+                f"({roster_info['dropped_positive']} of them labelled positive)")
+            df = df[keep].reset_index(drop=True)
         df["score"] = df.delta_ratio_pct.abs().astype(float)
         log(f"\n{'=' * 78}\n### channel {ch}  --  {len(df):,} clone genes, "
             f"{int((df.n_rxn > 0).sum()):,} atom-mapped, "
@@ -94,7 +113,9 @@ def main() -> int:
             f"glycogen->pyruvate {df.host_gp.iloc[0]:.6f})\n{'=' * 78}")
 
         report[ch] = {}
-        log("\n-- all 86 positives " + "-" * 56)
+        if roster_info:
+            report[ch]["roster"] = roster_info
+        log(f"\n-- all {int(df.is_positive.sum())} positives " + "-" * 56)
         report[ch]["all"] = A.analyse(df, f"{ch}:all", log)
         report[ch]["all"]["resample"] = A.resample(df, n_neg=100, reps=a.reps,
                                                    seed=a.seed, log=log)
@@ -120,7 +141,7 @@ def main() -> int:
             f"{int((signed.delta_ratio_pct > 0).sum())} of them positive-signed")
 
     a.out_dir.mkdir(parents=True, exist_ok=True)
-    stem = f"aska_ratio_classifier_report{a.suffix}"
+    stem = f"{a.label}_ratio_classifier_report{a.suffix}"
     (a.out_dir / f"{stem}.json").write_text(json.dumps(report, indent=2, default=float))
     (a.out_dir / f"{stem}.txt").write_text("\n".join(lines) + "\n")
     print(f"\n-> {a.out_dir}/{stem}.{{json,txt}}")

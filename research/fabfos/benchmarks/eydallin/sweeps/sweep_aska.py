@@ -36,6 +36,19 @@ built and assayed and the method cannot see. Those rows are most of the library 
 what the AUC's tie structure is made of.
 
 Rows are appended as they finish, so an interrupted sweep resumes for free.
+
+THE LIBRARY, ITS HOST AND ITS LABEL ARE FLAGS whose defaults are the ASKA run above, so
+an unchanged command line reproduces that output byte for byte. The 2007 deletion arm is
+the same sweep pointed at the Keio collection:
+
+    ... --channel gem --host e_coli_bw25113 --fold 0 --label keio \
+        --cohort-dir data/fabfos/runs/keio/gpr --census mutant_census.tsv \
+        --out-dir data/fabfos/runs/keio/ecspr
+
+`--fold 0` is not a small resistor. It sets the weight to 0.0, and `graph_from_pairs`
+keeps only strictly positive weights, so those atom-transfer rows never become edges at
+all and the terminals can genuinely disconnect -- which is the operation a deletion
+performs and the one the doubling arm could not express.
 """
 from __future__ import annotations
 
@@ -62,15 +75,32 @@ from ecspr.model.build import load_pairs, load_direction_ratios, graph_from_pair
 from ecspr.model.graph import Terminal, solve, measure_leak                        # noqa: E402
 import bake_pairs                                                                  # noqa: E402
 
-ASKA_GPR = ROOT / "data/fabfos/runs/aska/gpr"
-HOST_GEM = ROOT / "data/fabfos/runs/e_coli_ag1/gpr/gpr_gem.parquet"
-HOST_DENOVO = ROOT / "data/fabfos/runs/e_coli_ag1/gpr/gpr_denovo.parquet"
-OUT_DIR = ROOT / "data/fabfos/runs/eydallin_clones/ecspr"
+RUNS = ROOT / "data/fabfos/runs"
+ASKA_GPR = RUNS / "aska/gpr"
+OUT_DIR = RUNS / "eydallin_clones/ecspr"
 
 SOURCE_MNXM = "MNXM1364061"
 GLYCOGEN_MNXM = "MNXM738130"
 
 FIELDS = ("condition_id", "gene", "n_rxn", "ieff_pert", "delta", "rxns")
+
+# What the sweep carries through from the census. The first five are required -- the
+# labels every statistic downstream joins on. `assayed` is optional because only a
+# deletion library has it: it says the collection actually contains this mutant, and so
+# separates a measured negative from a gene nobody ever looked at.
+CENSUS_REQUIRED = ("gene", "condition_id", "b_number", "eydallin_gene",
+                   "eydallin_phenotype")
+CENSUS_OPTIONAL = ("assayed", "essential")
+
+
+def read_census(path: Path) -> pd.DataFrame:
+    census = pd.read_csv(path, sep="\t").drop_duplicates("gene")
+    missing = [c for c in CENSUS_REQUIRED if c not in census.columns]
+    if missing:
+        raise SystemExit(f"[sweep] {path.name} has no {missing} column(s); the sweep "
+                         f"joins its labels through them")
+    keep = list(CENSUS_REQUIRED) + [c for c in CENSUS_OPTIONAL if c in census.columns]
+    return census[keep]
 
 _S: dict = {}
 
@@ -93,7 +123,7 @@ def _one(task):
     gene, rxns = task
     base_w, fold = _S["base_w"], _S["fold"]
     v = _ieff({**base_w, **{r: base_w[r] * fold for r in rxns}})
-    return dict(condition_id=f"aska:{gene}", gene=gene, n_rxn=len(rxns),
+    return dict(condition_id=f"{_S['prefix']}:{gene}", gene=gene, n_rxn=len(rxns),
                 ieff_pert=v, delta=v - _S["base"], rxns=",".join(rxns))
 
 
@@ -125,6 +155,16 @@ def main() -> int:
                          "direction it does not have gets supplied and the answer "
                          "re-measured under it. Recorded in the output filename, because a "
                          "sweep run under an override is a different measurement.")
+    ap.add_argument("--host", default="e_coli_ag1",
+                    help="the background organism, read as runs/<host>/gpr/gpr_<channel>")
+    ap.add_argument("--cohort-dir", type=Path, default=ASKA_GPR,
+                    help="the library's GPR directory")
+    ap.add_argument("--census", default="clone_census.tsv",
+                    help="census filename inside --cohort-dir; it is what carries the "
+                         "population, so a gene absent from the GPR still gets a row")
+    ap.add_argument("--label", default="aska",
+                    help="output filename stem; every knob that changes the "
+                         "measurement is already in the name, and this names the library")
     ap.add_argument("--limit", type=int, default=None, help="first N solvable clones (smoke test)")
     ap.add_argument("--ratio-cap", type=float, default=None,
                     help="bound |log10 direction ratio| at this many decades before the "
@@ -143,7 +183,7 @@ def main() -> int:
     for item in filter(None, a.ratio_override.split(",")):
         k, v = item.split(":")
         override[k.strip()] = float(v)
-    tag = (f"aska_sweep_{a.channel}_e_coli_ag1_fold{a.fold}_{a.element}"
+    tag = (f"{a.label}_sweep_{a.channel}_{a.host}_fold{a.fold}_{a.element}"
            + (f"_{a.probe}{a.ground}{a.leak:g}" if a.probe != "twopoint" else "")
            + (f"_lanes{a.min_lanes}" if a.min_lanes > 1 else "")
            + (f"_dir{len(override)}x{min(override.values()):g}" if override else "")
@@ -162,7 +202,7 @@ def main() -> int:
     _S["element"], _S["fold"] = a.element, a.fold
     _S["probe"], _S["leak"] = a.probe, a.leak
 
-    host_path = HOST_GEM if a.channel == "gem" else HOST_DENOVO
+    host_path = RUNS / a.host / "gpr" / f"gpr_{a.channel}.parquet"
     host = pd.read_parquet(host_path, columns=["mnxr"])
     base_w = {m: 1.0 for m in host.mnxr.dropna().astype(str).unique()}
     _S["base_w"] = base_w
@@ -178,8 +218,14 @@ def main() -> int:
         print(f"[sweep] share probe: ground={a.ground} leak={a.leak} "
               f"({len(_S['prec']) if _S['prec'] else 0} ports)", file=sys.stderr)
 
-    clone = pd.read_parquet(ASKA_GPR / f"gpr_{a.channel}.parquet")
+    clone = pd.read_parquet(a.cohort_dir / f"gpr_{a.channel}.parquet")
     clone = clone[clone.in_atom_universe.fillna(False)]
+    # The prefix is the cohort table's own, not a constant: `aska:`, `keio:` and
+    # `eydallin2007:` are three different populations and the id has to say which.
+    prefixes = sorted({str(c).split(":", 1)[0] for c in clone.condition_id})
+    if len(prefixes) != 1:
+        raise SystemExit(f"[sweep] the cohort GPR mixes condition prefixes {prefixes}")
+    _S["prefix"] = prefixes[0]
     if a.min_lanes > 1:
         agree = clone.groupby(["condition_id", "mnxr"]).channel.nunique()
         clone = clone[pd.MultiIndex.from_arrays([clone.condition_id, clone.mnxr])
@@ -189,8 +235,8 @@ def main() -> int:
         raise SystemExit(f"[sweep] {len(absent)} clone reaction(s) are not in the "
                          f"{a.channel} background, e.g. {absent[:5]}")
 
-    census = pd.read_csv(ASKA_GPR / "clone_census.tsv", sep="\t").drop_duplicates("gene")
-    by_gene = (clone.assign(g=clone.condition_id.str.replace("aska:", "", regex=False))
+    census = read_census(a.cohort_dir / a.census)
+    by_gene = (clone.assign(g=clone.condition_id.str.split(":", n=1).str[1])
                .groupby("g").mnxr.apply(lambda s: sorted(set(s.astype(str)))).to_dict())
 
     _S["base"] = _ieff(base_w)
@@ -225,8 +271,7 @@ def main() -> int:
                           f"eta {(len(todo) - i) * el / i / 60:.1f} min", file=sys.stderr)
 
     solved = pd.read_csv(part, sep="\t")
-    df = census[["gene", "condition_id", "b_number", "eydallin_gene",
-                 "eydallin_phenotype"]].copy()
+    df = census.copy()
     df = df.merge(solved.drop(columns=["condition_id"]), on="gene", how="left")
     df["n_rxn"] = df.n_rxn.fillna(0).astype(int)
     df["ieff_base"] = _S["base"]

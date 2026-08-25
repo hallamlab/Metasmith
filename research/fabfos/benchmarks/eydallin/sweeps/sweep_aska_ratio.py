@@ -26,7 +26,16 @@ doubles the per-clone cost, and that is the price of the normalisation.
 Everything `sweep_aska.py`'s docstring says about the background still holds, verbatim: each
 channel folds against its own background and the two are never mixed, the fold is flat at 1.0
 in both channels, a clone with no atom-mapped reaction gets a row carrying an exact zero
-rather than an absence, and rows append as they finish so an interrupted sweep resumes.
+rather than an absence, and rows append as they finish so an interrupted sweep resumes. So do
+its `--host`, `--cohort-dir`, `--census` and `--label` flags and their defaults.
+
+UNDER A DELETION THE DENOMINATOR CAN REACH ZERO, which doubling never allowed. Rayleigh
+bounds the ratio's two legs separately and only from above, so `--fold 0` can disconnect
+glycogen from pyruvate outright while glucose still reaches it. That is not a solver failure
+and it is not an infinity to be clipped: it is the strongest anabolic reading the probe can
+return, and it is recorded as such rather than dropped. Where BOTH legs go to zero the gene
+has severed glycogen from the network on both sides and the ratio is genuinely undefined --
+a different event, counted separately, never folded in with the first.
 """
 from __future__ import annotations
 
@@ -52,17 +61,19 @@ from ecspr.model.build import load_pairs, load_direction_ratios, graph_from_pair
 from ecspr.model.graph import Terminal, solve                                      # noqa: E402
 import bake_pairs                                                                  # noqa: E402
 
-ASKA_GPR = ROOT / "data/fabfos/runs/aska/gpr"
-HOST_GEM = ROOT / "data/fabfos/runs/e_coli_ag1/gpr/gpr_gem.parquet"
-HOST_DENOVO = ROOT / "data/fabfos/runs/e_coli_ag1/gpr/gpr_denovo.parquet"
-OUT_DIR = ROOT / "data/fabfos/runs/aska/ecspr"
+RUNS = ROOT / "data/fabfos/runs"
+ASKA_GPR = RUNS / "aska/gpr"
+OUT_DIR = RUNS / "aska/ecspr"
 
 GLUCOSE_MNXM = "MNXM1364061"
 GLYCOGEN_MNXM = "MNXM738130"
 PYRUVATE_MNXM = "MNXM23"
 
 FIELDS = ("condition_id", "gene", "n_rxn", "over_gg", "over_gp", "over_ratio",
-          "delta_ratio_pct", "rxns")
+          "delta_ratio_pct", "ratio_state", "rxns")
+
+# What the two legs did, kept as a word rather than inferred from an inf or a NaN later.
+FINITE, SINK_SEVERED, ISOLATED = "finite", "sink_severed", "isolated"
 
 _S: dict = {}
 
@@ -79,18 +90,21 @@ def _ratio(weights: dict) -> tuple:
     g = graph_from_pairs(_S["pairs"], _S["element"], weights, _S["ratios"])
     gg = _probe(g, GLUCOSE_MNXM, GLYCOGEN_MNXM)
     gp = _probe(g, GLYCOGEN_MNXM, PYRUVATE_MNXM)
-    return gg, gp, gg / gp
+    if gp > 0:
+        return gg, gp, gg / gp, FINITE
+    return gg, gp, (float("inf") if gg > 0 else float("nan")), \
+        (SINK_SEVERED if gg > 0 else ISOLATED)
 
 
 def _one(task):
     gene, rxns = task
     base_w, fold = _S["base_w"], _S["fold"]
-    gg, gp, r = _ratio({**base_w, **{x: base_w[x] * fold for x in rxns}})
+    gg, gp, r, state = _ratio({**base_w, **{x: base_w[x] * fold for x in rxns}})
     host_r = _S["host_ratio"]
-    return dict(condition_id=f"aska:{gene}", gene=gene, n_rxn=len(rxns),
+    return dict(condition_id=f"{_S['prefix']}:{gene}", gene=gene, n_rxn=len(rxns),
                 over_gg=gg, over_gp=gp, over_ratio=r,
                 delta_ratio_pct=100.0 * (r - host_r) / host_r,
-                rxns=",".join(rxns))
+                ratio_state=state, rxns=",".join(rxns))
 
 
 def main() -> int:
@@ -106,6 +120,13 @@ def main() -> int:
                          "disconnects glycogen outright, because the glycogen-synthesis "
                          "step has single-lane support, so there would be no probe left "
                          "to run.")
+    ap.add_argument("--host", default="e_coli_ag1",
+                    help="the background organism, read as runs/<host>/gpr/gpr_<channel>")
+    ap.add_argument("--cohort-dir", type=Path, default=ASKA_GPR,
+                    help="the library's GPR directory")
+    ap.add_argument("--census", default="clone_census.tsv",
+                    help="census filename inside --cohort-dir")
+    ap.add_argument("--label", default="aska", help="output filename stem")
     ap.add_argument("--limit", type=int, default=None, help="first N solvable clones (smoke test)")
     ap.add_argument("--ratio-cap", type=float, default=None,
                     help="bound |log10 direction ratio| at this many decades before the "
@@ -118,7 +139,7 @@ def main() -> int:
     if a.min_lanes > 1 and a.channel != "denovo":
         raise SystemExit("--min-lanes applies to the de-novo channel; the GEM channel is "
                          "one curated lane and has nothing to agree with")
-    tag = (f"aska_ratio_sweep_{a.channel}_e_coli_ag1_fold{a.fold}_{a.element}"
+    tag = (f"{a.label}_ratio_sweep_{a.channel}_{a.host}_fold{a.fold}_{a.element}"
            + (f"_lanes{a.min_lanes}" if a.min_lanes > 1 else "")
            + (f"_cap{a.ratio_cap:g}" if a.ratio_cap is not None else ""))
     part = a.out_dir / f"{tag}.partial.tsv"
@@ -129,13 +150,17 @@ def main() -> int:
     _S["ratios"] = load_direction_ratios(bake_pairs.direction_ratios(), cap=a.ratio_cap)
     _S["element"], _S["fold"] = a.element, a.fold
 
-    host_path = HOST_GEM if a.channel == "gem" else HOST_DENOVO
+    host_path = RUNS / a.host / "gpr" / f"gpr_{a.channel}.parquet"
     host = pd.read_parquet(host_path, columns=["mnxr"])
     base_w = {m: 1.0 for m in host.mnxr.dropna().astype(str).unique()}
     _S["base_w"] = base_w
 
-    clone = pd.read_parquet(ASKA_GPR / f"gpr_{a.channel}.parquet")
+    clone = pd.read_parquet(a.cohort_dir / f"gpr_{a.channel}.parquet")
     clone = clone[clone.in_atom_universe.fillna(False)]
+    prefixes = sorted({str(c).split(":", 1)[0] for c in clone.condition_id})
+    if len(prefixes) != 1:
+        raise SystemExit(f"[sweep] the cohort GPR mixes condition prefixes {prefixes}")
+    _S["prefix"] = prefixes[0]
     if a.min_lanes > 1:
         agree = clone.groupby(["condition_id", "mnxr"]).channel.nunique()
         clone = clone[pd.MultiIndex.from_arrays([clone.condition_id, clone.mnxr])
@@ -145,11 +170,17 @@ def main() -> int:
         raise SystemExit(f"[sweep] {len(absent)} clone reaction(s) are not in the "
                          f"{a.channel} background, e.g. {absent[:5]}")
 
-    census = pd.read_csv(ASKA_GPR / "clone_census.tsv", sep="\t").drop_duplicates("gene")
-    by_gene = (clone.assign(g=clone.condition_id.str.replace("aska:", "", regex=False))
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    from sweep_aska import read_census                                 # noqa: E402
+    census = read_census(a.cohort_dir / a.census)
+    by_gene = (clone.assign(g=clone.condition_id.str.split(":", n=1).str[1])
                .groupby("g").mnxr.apply(lambda s: sorted(set(s.astype(str)))).to_dict())
 
-    host_gg, host_gp, host_ratio = _ratio(base_w)
+    host_gg, host_gp, host_ratio, host_state = _ratio(base_w)
+    if host_state != FINITE:
+        raise SystemExit(f"[sweep] the UNPERTURBED host already reads {host_state}: "
+                         f"glucose->glycogen {host_gg:.6g}, glycogen->pyruvate "
+                         f"{host_gp:.6g}. There is no ratio to perturb")
     _S["host_ratio"] = host_ratio
     print(f"[sweep] {a.channel}: {len(base_w):,} background reactions | "
           f"glucose->glycogen {host_gg:.9f} | glycogen->pyruvate {host_gp:.9f} | "
@@ -182,15 +213,18 @@ def main() -> int:
                           f"eta {(len(todo) - i) * el / i / 60:.1f} min", file=sys.stderr)
 
     solved = pd.read_csv(part, sep="\t")
-    df = census[["gene", "condition_id", "b_number", "eydallin_gene",
-                 "eydallin_phenotype"]].copy()
+    df = census.copy()
     df = df.merge(solved.drop(columns=["condition_id"]), on="gene", how="left")
+    unsolved = df.n_rxn.isna()
     df["n_rxn"] = df.n_rxn.fillna(0).astype(int)
     df["host_gg"], df["host_gp"], df["host_ratio"] = host_gg, host_gp, host_ratio
     df["over_gg"] = df.over_gg.fillna(host_gg)
     df["over_gp"] = df.over_gp.fillna(host_gp)
     df["over_ratio"] = df.over_ratio.fillna(host_ratio)
     df["delta_ratio_pct"] = df.delta_ratio_pct.fillna(0.0)
+    # A gene the method never reached was never perturbed, so it reads exactly the host
+    # -- which is `finite` by the guard above, not a missing state.
+    df["ratio_state"] = df.ratio_state.where(~unsolved, FINITE)
     df["rxns"] = df.rxns.fillna("")
     df["channel"] = a.channel
     df["is_positive"] = df.eydallin_gene.notna() & (df.eydallin_gene.astype(str) != "")
@@ -203,7 +237,13 @@ def main() -> int:
           f"{len(df) - n_solved:,} exact zeros\n"
           f"    positives {int(df.is_positive.sum())} "
           f"({int((df.is_positive & (df.n_rxn > 0)).sum())} atom-mapped)\n"
+          f"    ratio state {df.ratio_state.value_counts().to_dict()}\n"
           f"    total {(time.time() - t0) / 60:.1f} min", file=sys.stderr)
+    degenerate = df[df.ratio_state != FINITE]
+    if len(degenerate):
+        print(f"    genes that severed glycogen: "
+              f"{degenerate[['gene', 'ratio_state', 'over_gg', 'over_gp']].to_string(index=False)}",
+              file=sys.stderr)
     print(df[df.is_positive].head(15)[["gene", "eydallin_phenotype", "n_rxn",
                                        "delta_ratio_pct"]].to_string(index=False),
           file=sys.stderr)
