@@ -171,7 +171,7 @@ def net_id(members, arm):
     return "-".join(members) + ("" if len(members) == 1 else f"_{arm}")
 
 
-def unit_id(members, src, arm):
+def unit_name(members, src, arm):
     return f"{net_id(members, arm)}__{src}"
 
 

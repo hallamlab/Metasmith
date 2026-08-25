@@ -42,9 +42,9 @@ it, and `./dev.sh -e --where` says which package it imported.
   The ASKA winners are largely transporters, so the host column counts exactly
   those as visible and overstates the ceiling by roughly a factor of two.
 - **Counting units differently in the two arms.** `--weighting uniform` scores a
-  reaction by how many distinct `unit_id`s nominate it. The study tier writes one
-  `unit_id` per *study*, so a two-clone strain would add one unit while a size-2
-  null draw adds two. `build_ecspr_tables.py` rewrites `unit_id` to the clone for
+  reaction by how many distinct `genome_unit`s nominate it. The study tier writes one
+  `genome_unit` per *study*, so a two-clone strain would add one unit while a size-2
+  null draw adds two. `build_ecspr_tables.py` rewrites `genome_unit` to the clone for
   exactly this reason.
 - **Dropping a deletion by `mnxr`.** The ΔrfaY-complemented strain deletes the
   chromosomal copy and carries a plasmid one. A drop keyed on the reaction removes

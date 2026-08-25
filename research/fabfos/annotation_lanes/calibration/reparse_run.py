@@ -70,7 +70,7 @@ def main() -> int:
     dest.mkdir(parents=True, exist_ok=True)
     mapper = dest / "gpr_denovo_mapper.parquet"
 
-    # `--source` is the mapper's stamp on every row and becomes `unit_id` downstream, so
+    # `--source` is the mapper's stamp on every row and becomes `genome_unit` downstream, so
     # it names the ORF set rather than the host: two hosts differing by one reaction
     # would otherwise be indistinguishable in a concatenated table.
     subprocess.run([sys.executable, str(LIB / "fabfos_gpr/gpr_4lane.py"),

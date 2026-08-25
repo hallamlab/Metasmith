@@ -6,7 +6,7 @@ thing that runs a probe, and everything here is a table it reads. Four artifacts
 each with one reason to exist.
 
 `gpr_clones.parquet` is the study tier's own `gpr_manual.parquet` with ONE FIELD
-CHANGED: `unit_id` becomes the clone rather than the study. Under `--weighting
+CHANGED: `genome_unit` becomes the clone rather than the study. Under `--weighting
 uniform` a reaction's conductance is the number of distinct units nominating it,
 so leaving every clone under one unit would make a two-clone strain add the same
 conductance as a one-clone strain, while a size-2 null draw adds two units. The
@@ -138,7 +138,7 @@ def build_tesa(host: pd.DataFrame) -> pd.DataFrame:
             raise SystemExit(f"[tesa] {mnxr} is not a host reaction; the plasmid "
                              f"may only duplicate edges the host already has")
         rows.append(_blank_row(
-            source="pF", build_id="plasmid_pF", unit_id=TESA_UNIT, orf="tesA_prime",
+            source="pF", build_id="plasmid_pF", genome_unit=TESA_UNIT, orf="tesA_prime",
             feature_kind="curated_gene", feature_name="tesA'", mnxr=mnxr,
             intermediate_id=f"pF:{mnxr}",
             intermediate_name="leaderless cytosolic acyl-ACP thioesterase (pF)",
@@ -160,7 +160,7 @@ def build_pool(host: pd.DataFrame, lookup: dict) -> tuple:
         got = by_gene.get(tag)
         if not tag:
             unresolved += 1
-        common = dict(source="aska_minus", build_id="aska_minus", unit_id=clone,
+        common = dict(source="aska_minus", build_id="aska_minus", genome_unit=clone,
                       orf=tag or clone, feature_kind="aska_clone", feature_name=gene,
                       intermediate_id=clone, intermediate_name=f"pCA24N-{gene}")
         if got is None or got.empty:
@@ -177,7 +177,7 @@ def build_pool(host: pd.DataFrame, lookup: dict) -> tuple:
                 .sort_values(fe.grain_key(EXTENSIONS), kind="mergesort",
                              na_position="last").reset_index(drop=True))
     fe.validate_gpr(pool, "curated", None, "aska_minus", EXTENSIONS)
-    return pool, dict(clones=int(pool["unit_id"].nunique()), with_reactions=seen,
+    return pool, dict(clones=int(pool["genome_unit"].nunique()), with_reactions=seen,
                       unresolved=unresolved,
                       draw_values=int(pool["orf"].nunique()))
 
@@ -194,7 +194,7 @@ def condition_rows(study_conds: pd.DataFrame, ext: pd.DataFrame,
     base_drop = list(FADE_EVIDENCE)
     common = dict(element="C", source_hub=SOURCE, sink_hub=SEP.join(SINKS),
                   readout_hub=SEP.join(SINKS), media="",
-                  background_column="unit_id",
+                  background_column="genome_unit",
                   background_values=SEP.join((HOST_UNIT, TESA_UNIT)),
                   drop_column="intermediate_id", draw_id=None)
 
@@ -246,9 +246,9 @@ def main():
 
     clones = pd.read_parquet(STUDY / "gpr_manual.parquet")
     clones = clones[fe.schema_for(fe.extensions_of(clones))].copy()
-    clones["unit_id"] = ("aska:" + clones["feature_name"].fillna("none").astype(str))
+    clones["genome_unit"] = ("aska:" + clones["feature_name"].fillna("none").astype(str))
     clones.to_parquet(args.out / "gpr_clones.parquet", index=False)
-    print(f"[clones] {len(clones)} rows, {clones['unit_id'].nunique()} units, "
+    print(f"[clones] {len(clones)} rows, {clones['genome_unit'].nunique()} units, "
           f"{clones['condition_id'].nunique()} conditions")
 
     pool, stats = build_pool(host, lookup)

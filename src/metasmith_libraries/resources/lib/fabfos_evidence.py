@@ -118,7 +118,7 @@ def _from_polars(df) -> pd.DataFrame:
     return pd.DataFrame({c: df[c].to_numpy() for c in df.columns})
 
 SCHEMA_COLS = [
-    "source", "orf", "channel", "mnxr",
+    "source", "orf", "gene", "channel", "mnxr",
     "intermediate_id", "intermediate_name",
     "llr", "projection_via",
     "evidence_quality", "lane_set",
@@ -133,6 +133,18 @@ SCHEMA_COLS = [
 # names a construct rather than a sequence. One always-populated column is what lets
 # belief conservation group per nominator without a fallback chain deciding, per table,
 # which column that is.
+#
+# `gene` NAMES THE SAME THING A PERSON WOULD, and is null where nobody knows one. It is
+# core rather than an extension block because a conditions table selects on it by name:
+# a column that is present on the host table and absent on the clone table would make
+# one condition resolve differently depending on which tables were staged, which is the
+# silently-empty selection the algebra exists to refuse. An ORF from an unnamed contig
+# carries null here, and null is not selectable -- that is the honest answer, not a gap.
+
+# Core columns a row may leave null, and the only ones. `mnxr` is null exactly on a
+# roster row (a nominator in the population that resolves to no reaction); `gene` is
+# null wherever the producer knows no symbol.
+NULLABLE_CORE = ("mnxr", "gene")
 
 # ---------------------------------------------------------------------------
 # EXTENSION BLOCKS. Every GPR table in this tree is SCHEMA_COLS plus zero or more of
@@ -143,10 +155,21 @@ SCHEMA_COLS = [
 # A block is added when a LAYER needs it, not when a table happens to have it: a
 # consumer can then test for the block rather than for a column.
 SCHEMA_EXTENSIONS = {
-    # WHICH BUILD, WHICH ORGANISM, WHICH BACKGROUND. `unit_id` is the background
-    # selector `ecspr.model.gpr` reads -- the model or proteome these rows describe --
-    # and is what makes "this condition runs against this host" a concatenation.
-    "attribution": ("build_id", "host", "unit_id"),
+    # WHICH BUILD, WHICH ORGANISM, WHICH PHYSICAL COPY. `genome_unit` names ONE
+    # physically separate copy of DNA inside one cell -- a chromosome, a plasmid, a
+    # fosmid insert, an ASKA clone are each one -- and it is DECLARED here rather than
+    # inferred from a file name or from `source`, which is the engine's instance id on a
+    # pipeline-written table.
+    #
+    # It is the grain evidence pools over (`ecspr.model.evidence.ASSERTION_KEY`), and
+    # that is the whole account of what an overexpression is: the host's copy and the
+    # clone's copy are two units, so their conductances add. Collapse the two into one
+    # unit and every overexpression arm becomes a no-op.
+    #
+    # A unit is NOT an organism. Two organisms in one community are two `member`s, get
+    # private metabolites and are joined by bridges (`ecspr.model.compose`). Two units
+    # are one cell and simply add evidence.
+    "attribution": ("build_id", "host", "genome_unit"),
     # HOW THE NOMINATOR MAPS TO REACTIONS. An ORF maps per gene; a GEM gene maps
     # through a boolean rule, and `feature_kind=ruleless` says the model gave none.
     "feature": ("feature_kind", "feature_name", "gpr_rule"),
@@ -181,8 +204,13 @@ def extensions_of(df) -> tuple:
     Block membership is all-or-nothing: a table has the block or it does not. Counting
     columns cannot answer this -- core plus attribution+feature+universe is 18 wide,
     and so is the old cohort layout.
+
+    Retired spellings count as the column they became. A table on a pre-schema layout
+    HAS its blocks, under older names -- it is `to_unified`'s job to rename them, and
+    reading a legacy `unit_id` as a missing `genome_unit` would refuse the very tables
+    that mapping exists to accept.
     """
-    cols = set(df.columns)
+    cols = {_LEGACY_CORE.get(c, c) for c in df.columns}
     found = []
     for name, block in SCHEMA_EXTENSIONS.items():
         have = [c for c in block if c in cols]
@@ -535,6 +563,11 @@ _LEGACY_CORE = {
     "feature_id": "orf",
     "evidence_id": "intermediate_id",
     "evidence_name": "intermediate_name",
+    # `unit_id` said "the model or proteome these rows describe", which conflated the
+    # organism with the copy. `genome_unit` names ONE physically separate copy, and the
+    # rename is the whole change -- every committed table's values are already units in
+    # that sense.
+    "unit_id": "genome_unit",
 }
 # `feature_id` is null on a curated row -- a curated set names a construct, not a
 # sequence -- so the nominator is recovered in this order and `orf` is populated once,
@@ -554,15 +587,20 @@ def normalise_channel(ch: str) -> str:
     return RETIRED_CHANNELS.get(ch, ch)
 
 
-def to_unified(df, extensions=("attribution", "feature", "universe")):
+def to_unified(df, extensions=("attribution", "feature", "universe"), *, gene=None):
     """One of the pre-schema layouts -> SCHEMA_COLS plus `extensions`.
+
+    `gene` names the column holding the gene symbol, or None when the table has none.
+    It is NOT guessed. `feature_name` holds a model gene on a GEM table and an EC
+    description on a de-novo one, so reading it blind would populate the ontology this
+    column exists to consolidate with strings out of a different namespace.
 
     Single place for the mapping, so a producer and a one-off data migration cannot
     disagree about it. The caller names the blocks because only the caller knows which
     layer the table belongs to; the 18-column cohort tables add `cohort`.
 
     Raises rather than guessing: an assertion channel whose `raw_score` is not 1.0, or
-    a table carrying more than one `unit_id`, is a table this mapping does not describe.
+    a table carrying more than one `genome_unit`, is a table this mapping does not describe.
     """
     import pandas as pd
 
@@ -577,6 +615,13 @@ def to_unified(df, extensions=("attribution", "feature", "universe")):
         raise SystemExit(f"[gpr] {int(orf.isna().sum()) if orf is not None else 'every'} "
                          f"row(s) name no nominator in any of {_ORF_SOURCES}")
     out["orf"] = orf.astype(str)
+    if gene is None:
+        out["gene"] = pd.Series([None] * len(out), dtype="object")
+    elif gene not in out.columns:
+        raise SystemExit(f"[gpr] --gene names {gene!r}, which is not a column of this "
+                         f"table (has {sorted(out.columns)})")
+    else:
+        out["gene"] = out[gene].astype("object").where(out[gene].notna(), None)
 
     out["channel"] = out["channel"].map(normalise_channel)
     lanes = sorted(set(out["channel"]) - set(ASSERTION_CHANNELS))
@@ -610,16 +655,16 @@ def to_unified(df, extensions=("attribution", "feature", "universe")):
               f"calibration reads, so this table is unweighted, not weighted-neutral. "
               f"Re-run the mapper on the raw lane files.", flush=True)
 
-    if "unit_id" in out.columns and out["unit_id"].nunique() != 1:
-        raise SystemExit(f"[gpr] {out['unit_id'].nunique()} unit_ids in one table "
-                         f"{sorted(out['unit_id'].unique())[:4]}; `source` names one "
+    if "genome_unit" in out.columns and out["genome_unit"].nunique() != 1:
+        raise SystemExit(f"[gpr] {out['genome_unit'].nunique()} genome_units in one table "
+                         f"{sorted(out['genome_unit'].unique())[:4]}; `source` names one "
                          f"artifact, so this table is really several")
     # `source` names the artifact the rows were read out of. A pre-schema table did not
-    # record one, and `unit_id` is the closest thing it has -- so a migrated table says
+    # record one, and `genome_unit` is the closest thing it has -- so a migrated table says
     # the model or proteome where a freshly produced one says the ORF set it was mapped
     # from. Both are true of the table; they are not the same string, and a reader
     # comparing `source` across the two eras has to know that.
-    out["source"] = out["unit_id"].astype(str) if "unit_id" in out.columns else ""
+    out["source"] = out["genome_unit"].astype(str) if "genome_unit" in out.columns else ""
     # The lane set is a property of the evidence, not of the file: a table with no lane
     # channels asserts rather than measures, whatever it is called.
     out["lane_set"] = _lane_set_for(set(lanes))
@@ -648,7 +693,7 @@ def read_gpr(paths, extensions=None):
     nominator lived in `feature_id`, `feature_name` or `evidence_id`.
 
     `extensions` defaults to the blocks the table already carries. Pass it to require
-    a block: a reader that needs `unit_id` should say so and fail on a table without it,
+    a block: a reader that needs `genome_unit` should say so and fail on a table without it,
     rather than discover the gap as a KeyError three frames later.
     """
     if isinstance(paths, (str, bytes)) or hasattr(paths, "__fspath__"):
@@ -735,14 +780,14 @@ def validate_gpr(df, lane_set: str, orf_ids, source: str, extensions=(),
     # population and resolves to no reaction at all. A census keeps those rows on
     # purpose -- dropping them would silently shrink the denominator of every rate
     # measured over the population. On a lane row a null mnxr is a broken join.
-    core = [c for c in SCHEMA_COLS if c != "mnxr"]
+    core = [c for c in SCHEMA_COLS if c not in NULLABLE_CORE]
     nulls = {c: int(df[c].isna().sum()) for c in core if df[c].isna().any()}
     n_bad_mnxr = int((df["mnxr"].isna() & ~assertion).sum())
     if n_bad_mnxr:
         nulls["mnxr (on lane rows)"] = n_bad_mnxr
     if nulls:
         raise SystemExit(f"[gpr] null values in {nulls} -- every core column is "
-                         f"non-null by contract, except `mnxr` on an assertion row")
+                         f"non-null by contract, except {list(NULLABLE_CORE)}")
 
     allowed = set(expected) | set(ASSERTION_CHANNELS)
 
@@ -958,6 +1003,11 @@ def _finish(df: pd.DataFrame, source: str, channel: str, lane_set: str,
     if "intermediate_name" not in df.columns:
         df["intermediate_name"] = ""
     df["intermediate_name"] = df["intermediate_name"].fillna("")
+    # A lane annotates a sequence and never learns a gene symbol for it. Null here is
+    # the measurement, not a gap to be filled from `intermediate_name`, which holds an
+    # EC or KO description.
+    if "gene" not in df.columns:
+        df["gene"] = pd.Series([None] * len(df), dtype="object")
     return df[SCHEMA_COLS]
 
 

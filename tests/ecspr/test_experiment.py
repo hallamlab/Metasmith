@@ -4,18 +4,23 @@ import pytest
 
 from ecspr.model import conditions as cond_mod
 from ecspr.model import nulls, probes, scoring
-from ecspr.model.evidence import nomination_contributions
+from ecspr.model.evidence import POOL_LAM0, nomination_contributions
 from ecspr.model.gpr import _normalise, condition_weights, load_gpr
 
 HOST = "iML1515"
 
 
-def _gpr_rows(unit, feature, mnxrs, *, condition=None, channel="gem_gpr"):
-    return [dict(source=unit, orf=feature, channel=channel, mnxr=r,
-                 intermediate_id=r, intermediate_name=r, raw_score=1.0,
-                 score_kind="presence", projection_via="x",
+# What a curated assertion is worth, in nats -- `fabfos_evidence.ASSERTION_LLR`. Every
+# row here is on an assertion channel, so they all carry the one declared constant.
+ASSERTION_LLR = 2.99
+
+
+def _gpr_rows(unit, feature, mnxrs, *, condition=None, channel="gem_gpr", gene=None):
+    return [dict(source=unit, orf=feature, gene=gene or feature, channel=channel,
+                 mnxr=r, intermediate_id=r, intermediate_name=r,
+                 llr=ASSERTION_LLR, projection_via="x",
                  evidence_quality="reviewed", lane_set="curated",
-                 build_id="t", host="h", unit_id=unit,
+                 build_id="t", host="h", genome_unit=unit,
                  feature_kind="gene", feature_name=feature, gpr_rule=None,
                  in_atom_universe=True, condition_id=condition)
             for r in mnxrs]
@@ -48,13 +53,13 @@ def pairs_path(tmp_path):
 def _cond(cid, values, **meta):
     return cond_mod.Condition(
         condition_id=cid, element="C", source_hub="S", sinks=("P1", "P2"),
-        background_column="unit_id", background_values=(HOST,),
+        background_column="genome_unit", background_values=(HOST,),
         mask_column="condition_id", mask_values=values, meta=meta)
 
 
 BASELINE = cond_mod.Condition(
     condition_id="baseline", element="C", source_hub="S", sinks=("P1", "P2"),
-    background_column="unit_id", background_values=(HOST,), meta=dict(n_units=1))
+    background_column="genome_unit", background_values=(HOST,), meta=dict(n_units=1))
 
 
 def test_background_alone_is_the_host(gpr_path):
@@ -72,7 +77,7 @@ def test_an_overexpression_is_a_sum_not_a_policy(gpr_path):
 
 def test_a_deletion_is_the_drop_mask(gpr_path):
     c = cond_mod.Condition(
-        condition_id="C_del", source_hub="S", background_column="unit_id",
+        condition_id="C_del", source_hub="S", background_column="genome_unit",
         background_values=(HOST,), drop_column="mnxr", drop_values=("R3",))
     w, _ = condition_weights(load_gpr(gpr_path), weighting="uniform", **c.mask_kwargs())
     assert w == {"R1": 1.0, "R2": 1.0}
@@ -80,9 +85,19 @@ def test_a_deletion_is_the_drop_mask(gpr_path):
 
 def _belief(rows, **mask):
     w, _ = condition_weights(pd.DataFrame(rows), weighting="belief",
-                             background_column="unit_id", background_values=(HOST,),
+                             background_column="genome_unit", background_values=(HOST,),
                              **mask)
     return w
+
+
+def _lam(E):
+    """The pooled log-odds behind a conductance -- `pool_logodds` inverted.
+
+    THE ADDITIVE AXIS, and the one these properties are claims about. Evidence pools in
+    log-odds; a probability compresses as it approaches the ceiling, so a ratio taken on
+    `E` measures how saturated the pool is rather than how much the evidence was worth.
+    """
+    return float(np.log(E / (1.0 - E))) - POOL_LAM0
 
 
 def test_belief_weighting_conserves_per_feature(gpr_path):
@@ -91,7 +106,7 @@ def test_belief_weighting_conserves_per_feature(gpr_path):
     df = load_gpr(gpr_path)
     extra = pd.DataFrame(_gpr_rows(HOST, "b4", ["R1", "R2"]))
     rows = _normalise(pd.concat([df, extra], ignore_index=True))
-    rows = rows[rows.unit_id == HOST]
+    rows = rows[rows.genome_unit == HOST]
     mass = nomination_contributions(rows).groupby("mnxr")["contrib"].sum()
     assert mass["R3"] == pytest.approx(1.0)
     assert mass["R1"] == pytest.approx(1.5)   # b1's whole 1.0, plus half of b4's
@@ -106,18 +121,37 @@ def test_belief_weighting_is_a_bounded_probability(gpr_path):
 
 
 def test_repeating_one_assertion_saturates(gpr_path):
-    one = _belief(_gpr_rows(HOST, "b1", ["R1"]))["R1"]
-    two = _belief([r for f in range(2) for r in _gpr_rows(HOST, f"b{f}", ["R1"])])["R1"]
-    forty = _belief([r for f in range(40) for r in _gpr_rows(HOST, f"b{f}", ["R1"])])["R1"]
-    assert one < two < forty
-    assert forty - two < 0.1 * (two - one)
+    # ONE ASSERTION IS WORTH ITS OWN `llr` AND NO MORE, however many genes repeat it.
+    # That ceiling is the whole reason `pool_logodds` exists: 65 ORFs asserting one EC
+    # through one channel used to out-rank a reaction three methods confirmed.
+    one = _lam(_belief(_gpr_rows(HOST, "b1", ["R1"]))["R1"])
+    two = _lam(_belief([r for f in range(2)
+                        for r in _gpr_rows(HOST, f"b{f}", ["R1"])])["R1"])
+    forty = _lam(_belief([r for f in range(40)
+                          for r in _gpr_rows(HOST, f"b{f}", ["R1"])])["R1"])
+    assert one < two < forty <= ASSERTION_LLR
+    # 40 repeats REACH the ceiling exactly: `1 - exp(-40/0.5)` is 1.0 in float64, so
+    # this is the saturation being attained rather than approached.
+    assert forty == pytest.approx(ASSERTION_LLR)
+    # The 38 further repeats buy under a fifth of what the second one did.
+    assert forty - two < 0.2 * (two - one)
 
 
 def test_two_channels_agreeing_beat_one_channel_repeated(gpr_path):
-    repeated = _belief([r for f in range(2) for r in _gpr_rows(HOST, f"b{f}", ["R1"])])
-    agreeing = _belief(_gpr_rows(HOST, "b1", ["R1"], channel="ch_a")
-                       + _gpr_rows(HOST, "b1", ["R1"], channel="ch_b"))
-    assert agreeing["R1"] > 1.5 * repeated["R1"]
+    # THE CEILING IS THE TEST. Two genes on one channel are ONE assertion, so no number
+    # of them can pass what that assertion is worth. Two channels are TWO assertions and
+    # add, so one gene on two channels passes it with room to spare.
+    #
+    # Stated in log-odds, and without a ratio: on the probability axis the repeated pair
+    # is already 97% of the way to its own ceiling, so a ratio there measures saturation
+    # rather than evidence. A ratio in log-odds is no better -- belief conservation
+    # splits the ORF's 1.0 across its two lanes, so each of the agreeing channels
+    # carries half the mass and the ratio lands at 1.29. The ceiling does not move.
+    repeated = _lam(_belief([r for f in range(2)
+                             for r in _gpr_rows(HOST, f"b{f}", ["R1"])])["R1"])
+    agreeing = _lam(_belief(_gpr_rows(HOST, "b1", ["R1"], channel="ch_a")
+                            + _gpr_rows(HOST, "b1", ["R1"], channel="ch_b"))["R1"])
+    assert repeated < ASSERTION_LLR < agreeing
 
 
 def test_a_second_unit_is_a_second_assertion(gpr_path):
@@ -198,7 +232,7 @@ def test_resume_skips_what_is_on_disk(pairs_path, gpr_path, tmp_path):
 def test_a_missing_source_abstains_rather_than_scoring_zero(pairs_path, gpr_path,
                                                             tmp_path):
     c = cond_mod.Condition(condition_id="nowhere", element="C", source_hub="ABSENT",
-                           sinks=("P1",), background_column="unit_id",
+                           sinks=("P1",), background_column="genome_unit",
                            background_values=(HOST,))
     df = _run(pairs_path, gpr_path, [c], "two-point", tmp_path)
     assert _value(df, "nowhere", "_abstained") == 1.0

@@ -137,7 +137,7 @@ def main() -> int:
           f"{len(dn_by_tag):,} locus_tags -> ORF id, {len(dn_gene):,} ORFs carry a symbol")
 
     gem = pd.read_parquet(HOST_GEM)
-    gem_id = str(gem["unit_id"].iloc[0])
+    gem_id = str(gem["genome_unit"].iloc[0])
     gem_by_symbol: dict[str, set[str]] = {}
     for name, fid in zip(gem[gem.feature_kind == "gem_gene"]["feature_name"],
                          gem[gem.feature_kind == "gem_gene"]["orf"]):
@@ -188,13 +188,13 @@ def main() -> int:
         if len(g_hit):
             gem_parts.append(g_hit.assign(
                 source=gem_id, build_id=f"direct_{COHORT}_{gem_id}", host=HOST,
-                unit_id=gem_id, feature_kind="clone_gene", condition_id=cond,
+                genome_unit=gem_id, feature_kind="clone_gene", condition_id=cond,
                 cohort=COHORT, action="add", source_organism=SOURCE_ORGANISM))
         if len(d_hit):
             dn_parts.append(d_hit.assign(
                 source="aska_orfs",
                 build_id=f"denovo_{COHORT}_" + "+".join(dn_lanes), host=HOST,
-                unit_id="aska_orfs", feature_kind="clone_gene",
+                genome_unit="aska_orfs", feature_kind="clone_gene",
                 feature_name=gene, condition_id=cond, cohort=COHORT, action="add",
                 source_organism=SOURCE_ORGANISM))
 
@@ -233,7 +233,7 @@ def main() -> int:
     g1 = cen.drop_duplicates("gene")
     manifest = dict(
         roster=str(ROSTER.relative_to(REPO)), roster_clones=int(len(roster)),
-        roster_genes=int(len(genes)), host=HOST, cohort=COHORT, gem_unit_id=gem_id,
+        roster_genes=int(len(genes)), host=HOST, cohort=COHORT, gem_genome_unit=gem_id,
         denovo_lanes=dn_lanes, universe=ustats,
         gem=dict(rows=int(len(gem_df)),
                  genes_resolved=int((g1.gem_feature != "").sum()),

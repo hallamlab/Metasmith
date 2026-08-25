@@ -28,11 +28,15 @@ def _genomes(tmp: Path) -> Path:
     return tmp / "genomes"
 
 
-def _score(channel: str, i: int) -> float:
-    lo, hi = fe.SCORE_KINDS[fe.CHANNEL_SCORE_KIND[channel]]
-    if hi is None:
-        return float(lo + 40.0 + i)
-    return float(lo + (hi - lo) * (0.4 + 0.05 * (i % 8)))
+def _llr(channel: str, i: int) -> float:
+    """A plausible weight for one call from this lane, in nats.
+
+    A MAPPER TABLE IS ALREADY CALIBRATED. The lane's own score is spent inside the
+    mapper (`fe.calibrate`), so what this fixture stands in for is the output of that,
+    not an input to it. The spread is there so a driver that collapsed the column would
+    show up.
+    """
+    return round(3.0 + 0.25 * (i % 8) + 0.1 * fe.CHANNELS.index(channel), 3)
 
 
 def _mapper_table(path: Path, channels) -> pd.DataFrame:
@@ -42,8 +46,8 @@ def _mapper_table(path: Path, channels) -> pd.DataFrame:
             rows.append({
                 "source": ACC, "orf": orf, "channel": ch,
                 "mnxr": f"MNXR{100000 + i}", "intermediate_id": f"X{i}",
-                "intermediate_name": f"thing {i}", "raw_score": _score(ch, i),
-                "score_kind": fe.CHANNEL_SCORE_KIND[ch], "projection_via": "ec",
+                "intermediate_name": f"thing {i}", "llr": _llr(ch, i),
+                "gene": None, "projection_via": "ec",
                 "evidence_quality": "reviewed", "lane_set": "chosen_4",
             })
     df = pd.DataFrame(rows)[fe.SCHEMA_COLS]

@@ -46,7 +46,7 @@ def decoded(chunk: str):
 
 def nostoc_gpr() -> pd.DataFrame:
     g = pd.read_parquet(GPR)
-    return g.assign(unit_id=g.orf)
+    return g.assign(genome_unit=g.orf)
 
 
 def run(chunk: str) -> dict:

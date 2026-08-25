@@ -24,6 +24,12 @@
 # overexpression arm a no-op. A physically separate copy is separate evidence; a paralog
 # within one copy is not.
 #
+# `genome_unit` says which copy, and the producer declares it -- it is not inferred from
+# a file name or from `source`, which on a pipeline-written table is the engine's
+# instance id. A unit is one copy of DNA inside ONE CELL. Two organisms are two
+# `member`s, which is a different construction: private metabolites joined by bridges,
+# in `ecspr.model.compose`.
+#
 # `belief_mass` keeps the pre-pooling sum available, because that is the quantity per-ORF
 # conservation is a statement about and the one a gene-count ledger has to read.
 #
@@ -98,9 +104,13 @@ import pandas as pd
 POOL_LAM0 = -3.0
 POOL_TAU = 0.5
 
-#: One independent assertion. `unit_id` is absent from composed/synthetic tables,
+#: One independent assertion. `genome_unit` is absent from composed/synthetic tables,
 #: which then pool as a single unit -- correct, since they describe one genome.
-ASSERTION_KEY = ("unit_id", "channel", "intermediate_id")
+ASSERTION_KEY = ("genome_unit", "channel", "intermediate_id")
+
+#: The declared physical copy (`fabfos_evidence`'s `attribution` block). It is half of
+#: the nominator's identity -- see `nomination_contributions`.
+UNIT_COL = "genome_unit"
 
 
 def nomination_contributions(df: pd.DataFrame) -> pd.DataFrame:
@@ -120,6 +130,25 @@ def nomination_contributions(df: pd.DataFrame) -> pd.DataFrame:
     # held for any non-negative score and silently fell back to uniform when a lane's
     # scores summed to zero. A uniform split sums to one by construction, so
     # `_assert_conservation` now checks arithmetic rather than an input contract.
+    #
+    # THE NOMINATOR IS (genome_unit, orf), NOT orf. A host chromosome and an ASKA clone
+    # of one of its own genes are two units carrying the same ORF id, and everything
+    # below keys on `orf` alone -- starting with the dedup on the very next line.
+    #
+    # PUTTING THE UNIT IN `ASSERTION_KEY` IS NOT ENOUGH ON ITS OWN, and that is the
+    # subtlety worth the comment: the dedup runs first and deletes the second unit's row
+    # outright, so `pool_logodds` never sees the unit that would have made the two rows
+    # two assertions. On a toy two-copy frame at llr 2.99, E is 0.397797066112 for one
+    # copy, the same 0.397797066112 for two units without this prefix, and
+    # 0.897586872438 with it. The prefix is worth the entire second copy, which is the
+    # whole account of what an overexpression does.
+    #
+    # Done here rather than at load because this is the only place the namespaced form
+    # is wanted: a conditions table selects on the raw `orf` a person authored. The raw
+    # id survives as `orf_raw` for the callers whose keys are ORF ids in the FASTA.
+    df = df.assign(orf_raw=df["orf"].astype(str))
+    if UNIT_COL in df.columns:
+        df["orf"] = df[UNIT_COL].astype(str) + "::" + df["orf_raw"]
     d = df.drop_duplicates(["orf", "channel", "intermediate_id", "mnxr"]).copy()
     nom = (d.groupby(["orf", "channel", "intermediate_id"], sort=False)
            .agg(F_n=("mnxr", "nunique"))
@@ -239,10 +268,16 @@ def per_unit_weights(df_src: pd.DataFrame, unit_col: str) -> dict:
     # This is the PRE-pooling ledger (`belief_mass` at unit grain), not a conductance:
     # the unit is part of the assertion key, so summing these maps over units is not
     # `compute_E`. Null-draw research wants exactly this additive form.
+    #
+    # THE KEYS ARE THE IDS IN THE FASTA, so this reads `orf_raw` rather than the
+    # unit-namespaced `orf` the pooling groups on. A null draw indexes its ORF pool by
+    # these keys, and a prefix would silently match none of them.
     rows = nomination_contributions(df_src)
-    if unit_col == "contig":
+    if unit_col in ("orf", "contig"):
         rows = rows.copy()
-        rows["contig"] = rows["orf"].str.rsplit("_", n=1).str[0]
+        rows["orf"] = rows["orf_raw"]
+        if unit_col == "contig":
+            rows["contig"] = rows["orf_raw"].str.rsplit("_", n=1).str[0]
     agg = rows.groupby([unit_col, "mnxr"], sort=False)["contrib"].sum()
     out: dict = defaultdict(dict)
     for (unit, mnxr), c in agg.items():

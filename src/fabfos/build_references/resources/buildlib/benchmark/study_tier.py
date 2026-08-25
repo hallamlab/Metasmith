@@ -408,7 +408,7 @@ for study, spec in sorted(STUDIES.items()):
     gpr["source"] = study
     gpr["build_id"] = f"manual_{study}"
     gpr["host"] = host
-    gpr["unit_id"] = study
+    gpr["genome_unit"] = study
     gpr["channel"] = CHANNEL
     gpr["lane_set"] = LANE_SET
     # NOT ASSERTED. The extractions carry no quality grade, and inventing one would let a

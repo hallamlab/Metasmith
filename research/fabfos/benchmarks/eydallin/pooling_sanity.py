@@ -57,7 +57,7 @@ MEASURED = ROOT / "data/fabfos/benchmarks/eydallin/Y/measured_glycogen.tsv"
 WT = 100.0
 
 # READ FROM THE HOST TABLE, never restated. This was the literal "proteome", which
-# `unit_id` has not carried since it became the ORF set's accession -- so the background
+# `genome_unit` has not carried since it became the ORF set's accession -- so the background
 # mask selected zero rows, the weight dict came back empty, and the run died at
 # "terminal absent" as though the bake were wrong. A background selector that names a
 # value no table holds fails far from its cause.
@@ -74,21 +74,21 @@ def _legacy_weights(df, **mask):
     rows = apply_mask(df, **mask)
     E = _legacy.pool(_legacy.contributions(_legacy.normalise(rows)))
     w = {str(r): float(e) for r, e in E.items()}
-    cov = dict(n_rows=int(len(rows)), n_units=int(rows["unit_id"].nunique()),
+    cov = dict(n_rows=int(len(rows)), n_units=int(rows["genome_unit"].nunique()),
                n_reactions=len(w))
     return w, cov
 
 
 def host_unit(df) -> str:
-    u = sorted(set(df.loc[df["condition_id"].isna(), "unit_id"].astype(str))
-               if "condition_id" in df.columns else set(df["unit_id"].astype(str)))
+    u = sorted(set(df.loc[df["condition_id"].isna(), "genome_unit"].astype(str))
+               if "condition_id" in df.columns else set(df["genome_unit"].astype(str)))
     if len(u) != 1:
-        raise SystemExit(f"expected one background unit_id, found {u}")
+        raise SystemExit(f"expected one background genome_unit, found {u}")
     return u[0]
 
 
 def measure(pairs, ratios, df, label, legacy=False, unit=None, **mask):
-    mask = dict(background_column="unit_id", background_values=(unit,), **mask)
+    mask = dict(background_column="genome_unit", background_values=(unit,), **mask)
     w, cov = (_legacy_weights(df, **mask) if legacy
               else condition_weights(df, weighting="belief", **mask))
     g = graph_from_pairs(pairs, "C", w, ratios)
@@ -124,7 +124,7 @@ def main():
     pairs = load_pairs(bake_pairs.atom_pairs(), element="C")
 
     unit = host_unit(df)
-    print(f"background unit_id = {unit!r}")
+    print(f"background genome_unit = {unit!r}")
     base = measure(pairs, ratios, df, "base (ag1 alone)", legacy=args.legacy, unit=unit)
     print(f"base   rows={base['n_rows']:6d} units={base['n_units']} "
           f"reactions={base['n_reactions']:5d} used={base['n_used']:5d} "

@@ -16,7 +16,21 @@ WEIGHTINGS = ("belief", "uniform")
 # and silently merge unrelated ORFs into one construct.
 ORF_COL = "orf"
 _LEGACY_ORF_FALLBACK = ("feature_id", "feature_name", "evidence_id")
-UNIT_COL = "unit_id"
+
+# ONE PHYSICALLY SEPARATE COPY OF DNA INSIDE ONE CELL -- a chromosome, a plasmid, a
+# fosmid insert, an ASKA clone. Declared by the producer (`fabfos_evidence`'s
+# `attribution` block), never inferred here from a file name or from `source`, which on
+# a pipeline-written table is the engine's instance id.
+#
+# It is the grain evidence pools over, and `_normalise` namespaces `orf` by it. Two
+# units are one cell and their conductances ADD; two organisms are two `member`s and
+# get private metabolites joined by bridges (`ecspr.model.compose`).
+UNIT_COL = "genome_unit"
+
+# The authoring handle. A conditions table names a gene here, so this is the column that
+# has to mean the same thing on a host table and on a clone table. Null wherever the
+# producer knows no symbol, and null is not selectable.
+GENE_COL = "gene"
 
 
 def load_gpr(paths) -> pd.DataFrame:

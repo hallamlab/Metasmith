@@ -102,7 +102,7 @@ for path in tables:
     # The unit is the proteome, not a model: this table's claim is "this host's own
     # annotation lanes infer these reactions", and naming a GEM here would imply a
     # curated model was consulted, which is the whole thing the de-novo line is not.
-    df["unit_id"] = df["source"]
+    df["genome_unit"] = df["source"]
     df["feature_kind"] = "orf"
     df["feature_name"] = df["intermediate_name"]
     # There is no boolean rule: a de-novo call is per ORF, and inventing "orf" as a

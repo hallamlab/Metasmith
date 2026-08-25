@@ -96,7 +96,7 @@ def write_conditions(path, condition_id, host_unit, source, target, element):
         raise SystemExit(f"no rows for condition {condition_id!r} in {EDITS}")
     dropped = tuple(sorted(set(edits[edits.action == "del"].mnxr.astype(str))))
     common = dict(element=element, source_hub=source, sinks=(), readouts=(target,),
-                  background_column="unit_id", background_values=(host_unit,))
+                  background_column="genome_unit", background_values=(host_unit,))
     rows = [
         cond_mod.Condition(condition_id=BASELINE_ID, meta=dict(
             arm="baseline", n_units=1, is_control=False), **common),
@@ -159,7 +159,7 @@ def main():
     host_gem = RUNS / args.host / "gpr" / "gpr_gem.parquet"
     if not host_gem.exists():
         raise SystemExit(f"no such host GEM: {host_gem}")
-    host_unit = str(pd.read_parquet(host_gem, columns=["unit_id"]).unit_id.iloc[0])
+    host_unit = str(pd.read_parquet(host_gem, columns=["genome_unit"]).genome_unit.iloc[0])
 
     slug = re.sub(r"[^A-Za-z0-9]+", "_", args.condition_id).strip("_")
     direction_path = build_direction_ratios(OUT_DIR / "direction_ratios.parquet")

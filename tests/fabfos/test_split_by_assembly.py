@@ -17,22 +17,26 @@ import fabfos_evidence as fe                                         # noqa: E40
 import split_by_assembly as sp                                       # noqa: E402
 
 LANES = [
-    ("kofam", "K00001", 120.0, "hmm_bitscore"),
-    ("clean", "1.1.1.1", 0.25, "clean_confidence"),
-    ("uniref50", "P00001", 0.90, "blast_bsr"),
-    ("pbert", "REF00001", 0.75, "knn_vote"),
+    # (channel, intermediate_id, llr). A shard table is a MAPPER output, so its weights
+    # are already in nats -- the lane's own score was spent inside the mapper. The four
+    # differ so a split that reattributed a row to the wrong assembly would show up as a
+    # changed weight rather than only as a changed count.
+    ("kofam", "K00001", 6.14),
+    ("clean", "1.1.1.1", 4.35),
+    ("uniref50", "P00001", 8.87),
+    ("pbert", "REF00001", 5.02),
 ]
 
 
 def _rows(sample: str, orf: str, shard: str, channels=None):
     out = []
-    for i, (ch, iid, score, kind) in enumerate(LANES):
+    for i, (ch, iid, llr) in enumerate(LANES):
         if channels is not None and ch not in channels:
             continue
         out.append({
-            "source": shard, "orf": f"{sample}::{orf}", "channel": ch,
+            "source": shard, "orf": f"{sample}::{orf}", "gene": None, "channel": ch,
             "mnxr": f"MNXR{1000 + i}", "intermediate_id": iid,
-            "intermediate_name": iid, "raw_score": score, "score_kind": kind,
+            "intermediate_name": iid, "llr": llr,
             "projection_via": "test", "evidence_quality": "reviewed",
             "lane_set": "chosen_4",
         })

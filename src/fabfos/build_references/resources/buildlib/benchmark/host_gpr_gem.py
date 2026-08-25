@@ -140,7 +140,7 @@ for host, src_host in sorted(GEM_SOURCE.items()):
         rule = (r.gene_reaction_rule or "").strip()
         genes = list(r.genes)
         common = dict(
-            build_id=build_id, host=host, unit_id=gem_id, source=gem_id,
+            build_id=build_id, host=host, genome_unit=gem_id, source=gem_id,
             mnxr=mnxr, channel=CHANNEL, lane_set=LANE_SET,
             intermediate_id=r.id, intermediate_name=r.name or "",
             # A curated model's assertion is a presence claim; `evidence_quality` says

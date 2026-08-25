@@ -17,7 +17,7 @@ import pandas as pd
 LEGACY_LAM0 = -3.0
 LEGACY_LAM1 = 1.0
 LEGACY_TAU = 0.25
-ASSERTION_KEY = ("unit_id", "channel", "intermediate_id")
+ASSERTION_KEY = ("genome_unit", "channel", "intermediate_id")
 
 
 def normalise(df: pd.DataFrame) -> pd.DataFrame:

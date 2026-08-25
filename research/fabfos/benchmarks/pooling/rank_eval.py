@@ -111,7 +111,7 @@ def main():
         "n_orf": dn.groupby("mnxr")["orf"].nunique(),
         "n_channel": dn.groupby("mnxr")["channel"].nunique(),
         "n_assert": norm.groupby("mnxr").apply(
-            lambda g: g.drop_duplicates(["unit_id", "channel", "intermediate_id"]).shape[0],
+            lambda g: g.drop_duplicates(["genome_unit", "channel", "intermediate_id"]).shape[0],
             include_groups=False),
     })
     universe, ustats = bu.atom_universe(

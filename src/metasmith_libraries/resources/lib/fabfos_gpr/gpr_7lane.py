@@ -74,6 +74,10 @@ def finish(df, channel, projection_via=None):
     df["intermediate_name"] = df["intermediate_name"].fillna("")
     if "evidence_quality" not in df.columns:
         df["evidence_quality"] = "reviewed"
+    # A lane annotates a sequence and never learns a gene symbol for it. Null is the
+    # measurement, not a gap to fill from `intermediate_name` -- that holds an EC or KO
+    # description, which is a different namespace from the one `gene` consolidates.
+    df["gene"] = pd.Series([None] * len(df), dtype="object")
     return df[SCHEMA]
 
 def orf_ids(fasta):
