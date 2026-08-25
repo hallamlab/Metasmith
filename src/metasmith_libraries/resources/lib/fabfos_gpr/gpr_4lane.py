@@ -19,6 +19,7 @@ def _args():
     import argparse
     p = argparse.ArgumentParser(description="chosen-4 GPR mapper")
     p.add_argument("--bridge", required=True)
+    p.add_argument("--calibration", required=True)
     p.add_argument("--clean", required=True)
     p.add_argument("--ev-lib", required=True)
     p.add_argument("--kofam", required=True)
@@ -69,10 +70,14 @@ def load_evidence(ev_lib):
 
 
 def finish(df, channel, projection_via=None):
-    """Stamp the columns every lane sets identically and order to the schema."""
+    """Stamp the columns every lane sets identically and order to the schema.
+
+    `raw_score` is consumed here and never reaches the table. This is the last place
+    the lane's own scale exists, so it is the only correct place to spend it.
+    """
     df["source"] = SOURCE
     df["channel"] = channel
-    df["score_kind"] = fe.CHANNEL_SCORE_KIND[channel]
+    df["llr"] = fe.calibrate(CAL, channel, df.pop("raw_score").to_numpy())
     df["lane_set"] = LANE_SET
     if projection_via is not None:
         df["projection_via"] = projection_via
@@ -104,8 +109,12 @@ def parse_kofam(path):
     df = pd.read_csv(path)
     df["score"] = pd.to_numeric(df["score"], errors="coerce")
     df["thrshld"] = pd.to_numeric(df["thrshld"], errors="coerce")
-    df = df[df["score"].notna() & df["thrshld"].notna() & (df["score"] >= df["thrshld"])]
-    return df.rename(columns={"gene_name": "orf", "KO": "ko", "score": "raw_score"})
+    df = df[df["score"].notna() & df["thrshld"].notna() & (df["score"] >= df["thrshld"])].copy()
+    # THE RATIO, NOT THE BITSCORE. A bitscore is a length-and-family quantity, and the
+    # family's own threshold is the only thing that makes two of them comparable -- so
+    # the calibration is fitted on score/thrshld and the lane must hand it the same.
+    df["raw_score"] = df["score"] / df["thrshld"]
+    return df.rename(columns={"gene_name": "orf", "KO": "ko"})
 
 def lane_kofam(df, ko_to_mnxr):
     df = df.merge(ko_to_mnxr, on="ko", how="inner")
@@ -421,6 +430,17 @@ def main():
 if __name__ == "__main__":
     fe = load_evidence(A.ev_lib)
     SCHEMA = fe.SCHEMA_COLS
+    # `ref::lane_calibration`: what one call from each lane is worth, in nats. Staged as
+    # a requirement rather than defaulted, because a table built with no calibration is
+    # an UNWEIGHTED table and must not be mistaken for a weighted one.
+    CAL = fe.load_calibration(str(A.calibration))
+    if CAL is None:
+        raise SystemExit(
+            "[gpr] --calibration " + str(A.calibration) + " holds no "
+            "lane_calibration.json. Every lane would fall back to a flat "
+            + str(fe.UNCALIBRATED_LLR) + " nats, which is a table that says every "
+            "annotation call is worth the same -- the thing this reference exists to "
+            "stop being true")
     LANE_SET = str(A.lane_set)
     SOURCE = str(A.source)
     # The lane cut-offs are fe's, not this module's. They were literals here, in the

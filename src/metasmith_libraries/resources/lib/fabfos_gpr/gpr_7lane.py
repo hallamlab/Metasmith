@@ -18,6 +18,7 @@ def _args():
     import argparse
     p = argparse.ArgumentParser(description="full-7 GPR mapper")
     p.add_argument("--bridge", required=True)
+    p.add_argument("--calibration", required=True)
     p.add_argument("--clean", required=True)
     p.add_argument("--deepec", required=True)
     p.add_argument("--esmc-emb", required=True)
@@ -52,10 +53,19 @@ def load_evidence(ev_lib):
 
 
 def finish(df, channel, projection_via=None):
-    """Stamp the columns every lane sets identically and order to the schema."""
+    """Stamp the columns every lane sets identically and order to the schema.
+
+    `raw_score` is consumed here and never reaches the table.
+
+    **CAUTION** Three of these seven lanes have no fitted curve. `deepec` is
+    score-less, and `ezpred` and `esmc` were never benchmarked -- only the chosen four
+    were. `fe.calibrate` gives them fe.UNCALIBRATED_LLR, which is "one call at the
+    corpus average", and a `full_7` table is therefore weighted on four of its lanes
+    and flat on three. That is a property of this lane set, not of the schema.
+    """
     df["source"] = SOURCE
     df["channel"] = channel
-    df["score_kind"] = fe.CHANNEL_SCORE_KIND[channel]
+    df["llr"] = fe.calibrate(CAL, channel, df.pop("raw_score").to_numpy())
     df["lane_set"] = LANE_SET
     if projection_via is not None:
         df["projection_via"] = projection_via
@@ -78,8 +88,11 @@ def lane_kofam(path, ko_to_mnxr):
     df = pd.read_csv(path)
     df["score"] = pd.to_numeric(df["score"], errors="coerce")
     df["thrshld"] = pd.to_numeric(df["thrshld"], errors="coerce")
-    df = df[df["score"].notna() & df["thrshld"].notna() & (df["score"] >= df["thrshld"])]
-    df = df.rename(columns={"gene_name": "orf", "KO": "ko", "score": "raw_score"})
+    df = df[df["score"].notna() & df["thrshld"].notna() & (df["score"] >= df["thrshld"])].copy()
+    # The RATIO, not the bitscore -- the calibration is fitted on score/thrshld. See
+    # gpr_4lane.py::parse_kofam.
+    df["raw_score"] = df["score"] / df["thrshld"]
+    df = df.rename(columns={"gene_name": "orf", "KO": "ko"})
     df = df.merge(ko_to_mnxr, on="ko", how="inner")
     df["intermediate_id"] = df["ko"]
     return finish(df, "kofam", "kegg.reaction")
@@ -127,9 +140,9 @@ def lane_deepec(path, ec_to_mnxr):
     df = df[df["ec"].str.match(r"^\d+\.\d+\.\d+\.\d+$", na=False)]
     df = df.merge(ec_to_mnxr, on="ec", how="inner")
     df["intermediate_id"] = df["ec"]
-    # A score-less tool asserts PRESENCE, and 1.0 is how that is spelled. NaN made
-    # the downstream share-of-sum read the whole lane's total as zero and fall back
-    # to a uniform split with nothing raised.
+    # A score-less tool asserts PRESENCE, and 1.0 is how that is spelled. It carries
+    # no information, so `fe.calibrate` maps the whole lane to UNCALIBRATED_LLR --
+    # correctly, since there is nothing here to weight by.
     df["raw_score"] = 1.0
     return finish(df, "deepec", "ec")
 
@@ -356,6 +369,12 @@ def main():
 if __name__ == "__main__":
     fe = load_evidence(A.ev_lib)
     SCHEMA = fe.SCHEMA_COLS
+    CAL = fe.load_calibration(str(A.calibration))
+    if CAL is None:
+        raise SystemExit(
+            "[gpr] --calibration " + str(A.calibration) + " holds no "
+            "lane_calibration.json; every lane would fall back to a flat "
+            + str(fe.UNCALIBRATED_LLR) + " nats")
     LANE_SET = str(A.lane_set)
     SOURCE = str(A.source)
     # Every lane cut-off is fe's. See the block there for what each one gates and why

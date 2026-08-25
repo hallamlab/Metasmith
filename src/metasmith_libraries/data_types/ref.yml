@@ -206,6 +206,17 @@ types:
     properties:
       _: Reference ESM-C embeddings beside their MNXR labels, one row per accession (landmarks.parquet + source.txt)
 
+  # What one call from each annotation lane is worth, in nats, as a function of that
+  # lane's own score. Fitted on the DH10B Swiss-Prot cohort; the artifact carries its
+  # own apply rule, its prior, the score range each curve has support over, and the
+  # digest of every input the fit saw. `fabfos_evidence.load_calibration` is the only
+  # reader, so the rule lives in one place.
+  lane_calibration:
+    extends:
+    - reference_data
+    properties:
+      _: Per-lane score-to-log-likelihood-ratio calibration (lane_calibration.json + source.txt)
+
   # -------------------------------------------------
   # Compiled metabolism tables (build_references/bake_metabolism.py).
   # The three are ONE artifact in three files: each carries identical bake-identity

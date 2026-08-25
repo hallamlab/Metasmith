@@ -119,6 +119,11 @@ from . import evidence as _net
 ELEMENTS = ("C", "N", "P", "S")
 SEP = ":"
 BRIDGE_CHANNEL = "bridge"
+# Mirrors `fabfos_evidence.BRIDGE_LLR`, duplicated for the same reason
+# BRIDGE_CHANNEL is: ecspr does not import the staged evidence library. A bridge is
+# scaffolding the composition put there, not evidence about a member, so it carries no
+# weight -- its conductance is set where the network is composed.
+BRIDGE_LLR = 0.0
 
 BRIDGE_COLS = ["element", "org_a", "org_b", "metabolite", "name",
                "M_a", "M_b", "asymmetry", "G_a", "G_b", "k_atoms",
@@ -324,7 +329,7 @@ def bridge_table(members: dict, pairs: pd.DataFrame, element: str, conductances:
 def _synthetic_orf_rows(mnxr: str, source: str) -> dict:
     return dict(source=source, orf=f"__bridge__{SEP}{mnxr}", channel=BRIDGE_CHANNEL,
                 mnxr=mnxr, intermediate_id=mnxr, intermediate_name=mnxr,
-                raw_score=1.0, score_kind="bridge", projection_via="compose",
+                llr=BRIDGE_LLR, projection_via="compose",
                 evidence_quality="synthetic", lane_set=BRIDGE_CHANNEL)
 
 
@@ -476,7 +481,7 @@ def _toy_gpr(source, rxns):
     # arithmetic under test is the composition's, not the allocation's.
     return pd.DataFrame([dict(source=source, orf=f"{source}_g{i}", channel="clean",
                               mnxr=r, intermediate_id=f"i{i}", intermediate_name="x",
-                              raw_score=1.0, score_kind="p", projection_via="t",
+                              llr=1.0, projection_via="t",
                               evidence_quality="q", lane_set="clean")
                          for i, r in enumerate(rxns)])
 

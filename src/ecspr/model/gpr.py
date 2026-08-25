@@ -24,7 +24,7 @@ def load_gpr(paths) -> pd.DataFrame:
         paths = [paths]
     frames = [pd.read_parquet(p) for p in paths]
     df = pd.concat(frames, ignore_index=True, sort=False)
-    missing = {"mnxr", "channel", "raw_score", UNIT_COL} - set(df.columns)
+    missing = {"mnxr", "channel", "llr", UNIT_COL} - set(df.columns)
     if missing:
         raise ValueError(f"GPR table is missing required columns: {sorted(missing)}")
     return df
@@ -73,7 +73,7 @@ def _normalise(df: pd.DataFrame) -> pd.DataFrame:
         else out["evidence_id"] if "evidence_id" in out.columns
         else out["mnxr"]).astype(str)
     out["mnxr"] = out["mnxr"].astype(str)
-    out["raw_score"] = pd.to_numeric(out["raw_score"], errors="coerce").fillna(1.0)
+    out["llr"] = pd.to_numeric(out["llr"], errors="coerce").fillna(0.0)
     return out.dropna(subset=["mnxr"])
 
 
