@@ -2,6 +2,7 @@
 
     ecspr two-point --gpr ... --conditions ... --tests ...   two terminals, merged sink
     ecspr ground    --gpr ... --conditions ... --tests ...   universal leakage ground
+    ecspr conditions --gpr ... --background ... --column gene  a sweep, as two tables
     ecspr draw      --gpr <pool> --like-tests ...            the null pool, as two tables
     ecspr score     --results ... --null ...                 delta, z, rank, the gate
     ecspr selftest                                           can this env measure at all
@@ -100,6 +101,36 @@ def build_parser() -> argparse.ArgumentParser:
     gr.add_argument("--readout-hub", nargs="*", default=[],
                     help="explicit readout metabolites for the one-shot form")
     gr.set_defaults(_run="ground")
+
+    cd = sub.add_parser("conditions",
+                        help="build a sweep's conditions and tests from a background")
+    cd.add_argument("--gpr", nargs="+", required=True,
+                    help="the GPR tables the sweep selects across")
+    cd.add_argument("--background", required=True, metavar="TABLE:COLUMN:VALUES",
+                    help="what is always in -- typically the host's genome_unit. Written "
+                         "the way a step is, so the builder's output and a hand-written "
+                         "table are the same thing")
+    cd.add_argument("--table", required=True, help="the table the perturbation comes from")
+    cd.add_argument("--column", required=True,
+                    help="the column the sweep iterates -- `gene` for a named arm")
+    cd.add_argument("--family", default="gof_each",
+                    choices=("gof_each", "gof_all", "lof_each", "lof_named"))
+    cd.add_argument("--values", nargs="*", default=[],
+                    help="restrict to these; default is every distinct value, in the "
+                         "table's own order")
+    cd.add_argument("--factor", type=float, default=1.0,
+                    help="dosage: what one union of a row is worth (default 1.0)")
+    cd.add_argument("--prefix", default="", help="prepended to every id")
+    cd.add_argument("--baseline-id", default="baseline")
+    cd.add_argument("--element", default="C")
+    cd.add_argument("--source", required=True, help="source metabolite (MNXM)")
+    cd.add_argument("--sinks", nargs="*", default=[])
+    cd.add_argument("--readout-hub", nargs="*", default=[])
+    cd.add_argument("--probe", default="ground", choices=("ground", "two-point"))
+    cd.add_argument("--out", required=True, help="the conditions table")
+    cd.add_argument("--out-tests", required=True, help="the ecspr_tests table")
+    cd.add_argument("--log", default=None)
+    cd.set_defaults(_run="conditions")
 
     dr = sub.add_parser("draw", help="draw a size-matched null pool, as the two tables")
     dr.add_argument("--gpr", nargs="+", required=True, help="the pool to draw units from")
