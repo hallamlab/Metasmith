@@ -3,6 +3,14 @@
 
     mamba run -n ecspr python \
         research/fabfos/benchmarks/woodruff/sweeps/analyse_woodruff_ratio_sweep.py
+    ... --channel denovo
+    ... --channel denovo --suffix _lanes2
+
+ONE CHANNEL PER RUN, AND THE CHANNEL BELONGS BESIDE EVERY NUMBER. The curated and de-novo
+backgrounds are 1,409 and 8,560 reactions on the same host, so their conductances and their
+`delta_ratio_pct` magnitudes are not comparable to each other -- only ranks within one
+channel are. Nothing here reads two sweeps at once, and the report tables state the channel
+on every row.
 
 `sweeps/score_scales.py` scores the one-probe sweep and is imported here whole -- same
 reach 2x2 before any ranking statistic, same mid-rank Mann-Whitney AUC, same reaction-count
@@ -102,11 +110,15 @@ def main() -> int:
     ap.add_argument("--fold", type=float, default=2.0)
     ap.add_argument("--element", default="C")
     ap.add_argument("--host", default=HOST)
+    ap.add_argument("--suffix", default="",
+                    help="the sweep tag's trailing part, e.g. `_lanes2` for a "
+                         "lane-filtered de-novo run")
     ap.add_argument("--reps", type=int, default=2000)
     ap.add_argument("--seed", type=int, default=20260825)
     a = ap.parse_args()
 
-    tag = f"woodruff_ratio_sweep_{a.channel}_{a.host}_fold{a.fold}_{a.element}"
+    tag = (f"woodruff_ratio_sweep_{a.channel}_{a.host}_fold{a.fold}_{a.element}"
+           f"{a.suffix}")
     sweep = SWEEPS / f"{tag}.tsv"
     if not sweep.exists():
         raise SystemExit(f"{sweep.relative_to(ROOT)} does not exist -- run "
@@ -140,6 +152,14 @@ def main() -> int:
     log(f"host ratio  {base['host_ratio']:.9f}   ratio state {base['ratio_state']}")
     log(f"refused as host-deleted: {base['host_deleted_reactions_refused']} on "
         f"{base['genes_affected_by_refusal']}")
+    lf = base.get("lane_filter")
+    if lf:
+        log(f"clone-side lane filter --min-lanes {lf['min_lanes']} (background left "
+            f"whole): {lf['genes_before']:,} -> {lf['genes_after']:,} genes with a "
+            f"reaction, mean reactions per clone {lf['mean_rxn_before']:.2f} -> "
+            f"{lf['mean_rxn_after']:.2f}")
+    else:
+        log("clone-side lane filter: none")
     log("positive sets: " + ", ".join(f"{k} {len(v):,}" for k, v in pos_sets.items()))
 
     pairs = load_pairs(bake_pairs.atom_pairs(), element=a.element)

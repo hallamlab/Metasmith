@@ -2,9 +2,10 @@
 """Every SCALEs gene, TWO conductance readouts each on LW06, scored as their ratio.
 
     mamba run -n ecspr python research/fabfos/benchmarks/woodruff/sweeps/sweep_woodruff_ratio.py \
-        --fold-check                       # the two preconditions, solves nothing else
-    mamba run -n ecspr python research/fabfos/benchmarks/woodruff/sweeps/sweep_woodruff_ratio.py \
-        --channel gem --workers 3
+        --channel gem --fold-check         # the two preconditions, solves nothing else
+    ... --channel gem --workers 3
+    ... --channel denovo --workers 3                    # unfiltered, ~40 min
+    ... --channel denovo --min-lanes 2 --workers 3      # the lane filter, clone-side
 
     ratio = C(pyruvate -> ethanol) / C(pyruvate -> oxaloacetate)
 
@@ -37,6 +38,24 @@ follows it: transport reactions carry atom pairs and therefore real edges, and l
 them in lets carbon reach a sink through a periplasmic shortcut that performs no
 chemistry. 1,409 reactions filtered against 2,186 unfiltered on this host. NOTHING HERE
 IS COMPARABLE TO AN EYDALLIN NUMBER, which used an unfiltered weight dict.
+
+THE TWO CHANNELS' CONDUCTANCES ARE NOT COMPARABLE TO EACH OTHER EITHER -- backgrounds of
+1,409 curated and 8,560 de-novo reactions on the same host. Only ranks within one channel
+are, and the two reach the shared filter convention by different routes: the GEM table
+carries `in_atom_universe`, while the de-novo table arrives entirely null and has the flag
+recomputed here against the bake's own atom universe (`host_weights` refuses if either
+stops being true).
+
+THE DE-NOVO CHANNEL IS PROMISCUOUS AND `--min-lanes` IS THE KNOWN ANSWER, NOT A TUNING
+KNOB. In the eydallin benchmark one ProtBERT call assigned glgC's committed step to 27
+unrelated ORFs -- secE, cyoA-D, nuoA, rpsJ, tolR among them -- which tied at an identical
+delta, filled the top of the ranking and pushed the AUC BELOW chance rather than to it;
+`--min-lanes 2` moved it 0.4636 -> 0.4922. The same promiscuity is visible here before any
+statistic: unfiltered, this cohort's de-novo table gives `adhP` 142 reactions against the
+curated channel's 2, and 7.75 reactions per clone on average. The filter is applied
+CLONE-SIDE ONLY. Applying it to the background is what disconnected eydallin's target
+outright, because the committed step had single-lane support, and there would have been no
+probe left to run.
 
 FOLD MULTIPLIES; IT DOES NOT UNION. Every gene in this library is a gene the host already
 carries, so an implementation that added a clone's reactions to the background as a SET
@@ -101,11 +120,15 @@ sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(ROOT / "research/fabfos/benchmarks/eydallin"))
 
 import bake_pairs                                                                  # noqa: E402
+sys.path.insert(0, str(ROOT / "src/fabfos/build_references/resources/buildlib"))
+import bench_universe as bu                                                        # noqa: E402
 from ecspr.model.build import graph_from_pairs, load_direction_ratios, load_pairs  # noqa: E402
 from ecspr.model.graph import Terminal, solve                                      # noqa: E402
 
 GPR = ROOT / "data/fabfos/runs/woodruff_clones/gpr"
 OUT_DIR = ROOT / "data/fabfos/runs/woodruff_clones/ecspr"
+BAKE = ROOT / "data/fabfos/processed/metabolism_bake"
+METANETX = ROOT / "data/fabfos/originals/metanetx"
 
 HOST = "e_coli_lw06"
 COHORT = "scales_tol"
@@ -128,14 +151,66 @@ FOLD_CHECK_GENE = "adhp"
 _S: dict = {}
 
 
-def host_weights(host: str, channel: str) -> dict:
+def host_weights(host: str, channel: str, universe: set | None = None) -> dict:
+    """The background, filtered the way `sweeps/sweep_scales.py` settled it for this
+    benchmark. The GEM table carries `in_atom_universe` already; the de-novo table arrives
+    entirely null and the flag has to be recomputed against the bake's own atom universe,
+    so the two channels reach the same convention by different routes and the guard below
+    refuses if that ever stops being true."""
     p = ROOT / f"data/fabfos/runs/{host}/gpr/gpr_{channel}.parquet"
     df = pd.read_parquet(p, columns=["mnxr", "in_atom_universe"])
-    keep = df.in_atom_universe.fillna(False).astype(bool)
-    if not keep.any():
-        raise SystemExit(f"{p.relative_to(ROOT)} has no in_atom_universe=True rows; the "
-                         f"filtered background convention cannot be applied to it")
+    if channel == "gem":
+        keep = df.in_atom_universe.fillna(False).astype(bool)
+        if not keep.any():
+            raise SystemExit(f"{p.relative_to(ROOT)} has no in_atom_universe=True rows; the "
+                             f"filtered background convention cannot be applied to it")
+    else:
+        if df.in_atom_universe.notna().any():
+            raise SystemExit(
+                f"{p.relative_to(ROOT)} has a non-null in_atom_universe; it used to arrive "
+                f"entirely null and be recomputed here. Check which flag is authoritative "
+                f"before trusting either.")
+        if universe is None:
+            raise SystemExit("the de-novo background needs the atom universe to recompute")
+        keep = df.mnxr.astype(str).isin(universe)
     return {m: 1.0 for m in sorted(df[keep].mnxr.dropna().astype(str).unique())}
+
+
+def terminal_report(base_w: dict, channel: str) -> tuple:
+    """Precondition (a), per terminal and per leg, printed before anything is swept.
+
+    An unreachable terminal is UNINTERPRETABLE, never a zero, and the two are different
+    failures: the sink panel in this same benchmark has Kdo2-lipid A returning a hard
+    `g = 0` with `sink_is_node=True` while glucose 1-phosphate is not a node of the curated
+    graph at all. Only the first is a measurement. So `sink_is_node` and `converged` are
+    reported for every terminal on every channel rather than inferred from a number being
+    finite."""
+    g = graph_from_pairs(_S["pairs"], _S["element"], base_w, _S["ratios"])
+    named = (("pyruvate", PYRUVATE_MNXM), ("ethanol", ETHANOL_MNXM),
+             ("oxaloacetate", OXALOACETATE_MNXM))
+    terms, missing = {}, []
+    print(f"[terminals] {channel}: {len(base_w):,} background reactions", file=sys.stderr)
+    for name, mnxm in named:
+        t = Terminal.metabolite(g, mnxm, label=name)
+        terms[name] = t
+        node = not t.missing
+        if not node:
+            missing.append(f"{name} ({mnxm})")
+        print(f"  {name:14s} {mnxm:14s} sink_is_node={node}", file=sys.stderr)
+    if missing:
+        print(f"[terminals] UNINTERPRETABLE on the {channel} channel: "
+              f"{', '.join(missing)} is not a node of this graph. That is a coverage fact "
+              f"about this basis, NOT a conductance of zero, and no sweep is run from it.",
+              file=sys.stderr)
+        return terms, None
+    legs = {}
+    for leg, (a, b) in (("numerator", ("pyruvate", "ethanol")),
+                        ("denominator", ("pyruvate", "oxaloacetate"))):
+        s = solve(g, terms[a], terms[b])
+        legs[leg] = (float(s.total), bool(s.converged))
+        print(f"  {leg:12s} C({a} -> {b}) = {s.total:.9f}  converged={s.converged}",
+              file=sys.stderr)
+    return terms, legs
 
 
 def _probe(g, src_mnxm: str, snk_mnxm: str) -> float:
@@ -214,12 +289,23 @@ def main() -> int:
     ap.add_argument("--host", default=HOST)
     ap.add_argument("--fold-check", action="store_true",
                     help="run both preconditions and exit without sweeping")
+    ap.add_argument("--min-lanes", type=int, default=1,
+                    help="de-novo only: credit the CLONE with a reaction only when at least "
+                         "this many of the four annotation lanes assert it. THE BACKGROUND "
+                         "IS LEFT WHOLE -- in the eydallin benchmark applying the same rule "
+                         "to the background disconnected the target outright, because the "
+                         "committed step had single-lane support and there would have been "
+                         "no probe left to run.")
     ap.add_argument("--limit", type=int, default=None, help="first N solvable genes (smoke)")
     ap.add_argument("--out-dir", type=Path, default=OUT_DIR)
     a = ap.parse_args()
     a.out_dir.mkdir(parents=True, exist_ok=True)
 
-    tag = f"woodruff_ratio_sweep_{a.channel}_{a.host}_fold{a.fold}_{a.element}"
+    if a.min_lanes > 1 and a.channel != "denovo":
+        raise SystemExit("--min-lanes applies to the de-novo channel; the GEM channel is "
+                         "one curated lane and has nothing to agree with")
+    tag = (f"woodruff_ratio_sweep_{a.channel}_{a.host}_fold{a.fold}_{a.element}"
+           + (f"_lanes{a.min_lanes}" if a.min_lanes > 1 else ""))
     part = a.out_dir / f"{tag}.partial.tsv"
     final = a.out_dir / f"{tag}.tsv"
 
@@ -228,7 +314,13 @@ def main() -> int:
     _S["ratios"] = load_direction_ratios(bake_pairs.direction_ratios())
     _S["element"], _S["fold"] = a.element, a.fold
 
-    base_w = host_weights(a.host, a.channel)
+    universe = None
+    if a.channel == "denovo":
+        universe, ustats = bu.atom_universe(
+            BAKE / "vocab.parquet", BAKE / "atom_pairs.parquet",
+            exclude=bu.transport_mnxrs(bu.reac_prop_path(METANETX)))
+        print(bu.universe_line(ustats, "woodruff"), file=sys.stderr)
+    base_w = host_weights(a.host, a.channel, universe)
     _S["base_w"] = base_w
 
     census = pd.read_csv(GPR / "gene_census.tsv", sep="\t", dtype=str).fillna("")
@@ -244,9 +336,35 @@ def main() -> int:
               f"restored (see the docstring): {deleted} on gene(s) {hit}", file=sys.stderr)
         clone = clone[~clone.mnxr.astype(str).isin(deleted)]
 
+    def per_clone(frame) -> tuple:
+        g = frame.groupby("g").mnxr.nunique()
+        return int(g.size), float(g.mean()) if g.size else 0.0
+
+    n_before, mean_before = per_clone(clone)
+    lane_filter = None
+    if a.min_lanes > 1:
+        agree = clone.groupby(["g", "mnxr"]).channel.nunique()
+        clone = clone[pd.MultiIndex.from_arrays([clone.g, clone.mnxr])
+                      .isin(agree[agree >= a.min_lanes].index)]
+        n_after, mean_after = per_clone(clone)
+        lane_filter = dict(min_lanes=a.min_lanes, genes_before=n_before,
+                           genes_after=n_after, mean_rxn_before=mean_before,
+                           mean_rxn_after=mean_after)
+        print(f"[sweep] --min-lanes {a.min_lanes} applied CLONE-SIDE (the background is "
+              f"whole): {n_before:,} -> {n_after:,} genes with a reaction, mean reactions "
+              f"per clone {mean_before:.2f} -> {mean_after:.2f}", file=sys.stderr)
+    else:
+        print(f"[sweep] no lane filter: {n_before:,} genes with a reaction, mean "
+              f"{mean_before:.2f} reactions per clone", file=sys.stderr)
+
     by_gene = clone.groupby("g").mnxr.apply(lambda s: sorted(set(s.astype(str)))).to_dict()
     norm_to_gene = dict(zip(census.gene_norm, census.gene))
 
+    terms, legs = terminal_report(base_w, a.channel)
+    if legs is None:
+        raise SystemExit(f"[sweep] a terminal is not a node of the {a.channel} graph. "
+                         f"Reported above as uninterpretable; nothing is swept and no "
+                         f"zero is written")
     host_num, host_den, host_ratio, host_state = _ratio(base_w)
     if host_state != FINITE:
         raise SystemExit(f"[sweep] the UNPERTURBED host already reads {host_state}: "
@@ -276,20 +394,28 @@ def main() -> int:
     print(f"[sweep] {len(census):,} measured genes | {len(todo_all):,} atom-mapped | "
           f"{len(todo):,} to solve on {a.workers} worker(s)", file=sys.stderr)
 
+    # Open the partial ONLY when there is something to append to it. Once a finished sweep
+    # has been `dvc add`ed, the partial comes back as a read-only hardlink out of the DVC
+    # cache, so an unconditional `open("a")` makes re-running a COMPLETE sweep -- to refresh
+    # its manifest, or to check it still reproduces -- die on PermissionError with every
+    # number already on disk.
     new = not part.exists()
-    with part.open("a", newline="") as fh:
-        w = csv.DictWriter(fh, fieldnames=list(FIELDS), delimiter="\t")
-        if new:
-            w.writeheader()
-        t = time.time()
-        with mp.Pool(a.workers) as pool:
-            for i, rec in enumerate(pool.imap_unordered(_one, todo, chunksize=2), 1):
-                w.writerow(rec)
-                if i % 25 == 0:
-                    fh.flush()
-                    el = time.time() - t
-                    print(f"  {i:5}/{len(todo)}  {el / i:.2f}s/gene  "
-                          f"eta {(len(todo) - i) * el / i / 60:.1f} min", file=sys.stderr)
+    if todo:
+        with part.open("a", newline="") as fh:
+            w = csv.DictWriter(fh, fieldnames=list(FIELDS), delimiter="\t")
+            if new:
+                w.writeheader()
+            t = time.time()
+            with mp.Pool(a.workers) as pool:
+                for i, rec in enumerate(pool.imap_unordered(_one, todo, chunksize=2), 1):
+                    w.writerow(rec)
+                    if i % 25 == 0:
+                        fh.flush()
+                        el = time.time() - t
+                        print(f"  {i:5}/{len(todo)}  {el / i:.2f}s/gene  "
+                              f"eta {(len(todo) - i) * el / i / 60:.1f} min", file=sys.stderr)
+    else:
+        print("[sweep] nothing to solve; re-merging the existing partial", file=sys.stderr)
 
     solved = pd.read_csv(part, **READ_EXACT)
     keep = ["gene", "gene_norm", "bnum_from_name", "bnum_sheet", "phenotype",
@@ -318,11 +444,14 @@ def main() -> int:
         tag=tag, channel=a.channel, host=a.host, cohort=COHORT, fold=a.fold,
         element=a.element, background_reactions=len(base_w),
         weight_dict_convention="in_atom_universe filter, uniform 1.0",
-        numerator=dict(src=PYRUVATE_MNXM, snk=ETHANOL_MNXM, base=host_num),
-        denominator=dict(src=PYRUVATE_MNXM, snk=OXALOACETATE_MNXM, base=host_den),
+        numerator=dict(src=PYRUVATE_MNXM, snk=ETHANOL_MNXM, base=host_num,
+                       converged=legs["numerator"][1], sink_is_node=True),
+        denominator=dict(src=PYRUVATE_MNXM, snk=OXALOACETATE_MNXM, base=host_den,
+                         converged=legs["denominator"][1], sink_is_node=True),
         host_ratio=host_ratio, measured_genes=int(len(census)), solved_genes=n_solved,
         exact_zero_genes=int(len(census)) - n_solved,
         host_deleted_reactions_refused=deleted, genes_affected_by_refusal=hit,
+        lane_filter=lane_filter,
         ratio_state=df.ratio_state.value_counts().to_dict(),
         minutes=round((time.time() - t0) / 60, 2))
     (a.out_dir / f"{tag}.BUILD.json").write_text(json.dumps(manifest, indent=2))
@@ -332,6 +461,25 @@ def main() -> int:
           f"{len(df) - n_solved:,} exact zeros\n"
           f"    ratio state {df.ratio_state.value_counts().to_dict()}\n"
           f"    total {(time.time() - t0) / 60:.1f} min", file=sys.stderr)
+    # THE DE-NOVO CHANNEL'S KNOWN PATHOLOGY, CHECKED RATHER THAN REDISCOVERED. In the
+    # eydallin benchmark one promiscuous ProtBERT call assigned glgC's committed step to 27
+    # unrelated ORFs; they tied at an identical delta, filled the top of the ranking and
+    # pushed the AUC BELOW chance. The signature is a large block of genes sharing one
+    # delta, so it is printed here whether or not a lane filter was applied.
+    solved_rows = df[df.n_rxn > 0]
+    if len(solved_rows):
+        blocks = solved_rows.groupby("delta_ratio_pct").gene.agg(list)
+        biggest = max(blocks, key=len)
+        if len(biggest) > 1:
+            shared = set.intersection(*(set(str(r).split(",")) for r in
+                                        solved_rows[solved_rows.gene.isin(biggest)].rxns))
+            print(f"    largest tie block: {len(biggest)} genes share one delta "
+                  f"({sorted(biggest)[:12]}{' ...' if len(biggest) > 12 else ''}); "
+                  f"reactions common to all of them: {sorted(shared) or 'none'}",
+                  file=sys.stderr)
+        else:
+            print("    largest tie block: 1 gene -- no shared-reaction tie block",
+                  file=sys.stderr)
     print(df.head(15)[["gene", "phenotype", "n_rxn", "delta_ratio_pct"]]
           .to_string(index=False), file=sys.stderr)
     return 0
