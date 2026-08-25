@@ -365,7 +365,8 @@ one table read once is the worse trade.
 
 ```bash
 docker run --rm -v "$PWD":/ws -w /ws fabfos:local \
-    python main/benchmarks/eydallin/run_pilot_glycogen.py --gene glgC --fold 2.0
+    python research/fabfos/benchmarks/eydallin/glycogen/run_pilot_glycogen.py \
+        --gene glgC --fold 2.0
 ```
 
 `--fold 0` deletes the gene's reactions (LOF); `--fold >1` is the overexpression model.
@@ -374,7 +375,7 @@ docker run --rm -v "$PWD":/ws -w /ws fabfos:local \
 and `data/fabfos/originals/metanetx` checked out, and both submodules initialised.
 
 `digitize_fig1.py` needs none of that — only the acquisition chunk and an env with pypdf
-and Pillow: `mamba run -n figure-net python main/benchmarks/eydallin/digitize_fig1.py`.
+and Pillow: `mamba run -n figure-net python plots/digitize_fig1.py`.
 
 `plots/digitize_2007_figs.py` runs under **`awm`**, alone in this tree, because reading a
 bar top off a vector figure means reading drawing operators and PyMuPDF is the only
