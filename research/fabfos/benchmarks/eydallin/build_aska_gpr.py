@@ -221,7 +221,7 @@ def main() -> int:
 
     gem_df = assemble(gem_parts, gem)
     dn_df = assemble(dn_parts, dn)
-    dn_df["raw_score"] = dn_df["raw_score"].astype(np.float32)
+    dn_df["llr"] = dn_df["llr"].astype(np.float32)
     fe.validate_gpr(gem_df, GEM_LANE_SET, None, gem_id, EXTENSIONS)
     fe.validate_gpr(dn_df, DENOVO_LANE_SET, None, "aska_orfs", EXTENSIONS)
 

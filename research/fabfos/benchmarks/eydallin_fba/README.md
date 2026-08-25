@@ -103,6 +103,14 @@ Growth does not fall as the carve deepens. Gapfill draws on the reactions the ca
 and a deeper carve leaves it more to draw on, so the three de-novo hosts are not a
 monotone series. Read each as its own model.
 
+**CAUTION** This arm reads a GPR table as a LANE COUNT and never reads its weight. The
+carve keeps a reaction when `channel.nunique() >= min_lanes`, so the per-call confidence
+that `ref::lane_calibration` puts in the `llr` column is invisible here. A change to the
+evidence weighting cannot move any number on this page, and a null from this arm is a
+statement about what it consumes rather than about the weighting.
+`research/fabfos/benchmarks/eydallin/pooling_sanity.py` is the eydallin path that does
+read it.
+
 **CAUTION** `min_lanes` defaults to 1 here and to 2 everywhere else in this project. No two
 annotation lanes agree on any reaction of the glycogen pathway. GLGC, GLCS1, GLBRAN2 and
 PGMT each rest on a single lane, so a two-lane carve deletes the phenotype under study and

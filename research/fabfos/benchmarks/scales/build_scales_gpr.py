@@ -108,7 +108,7 @@ def assemble(parts, like) -> pd.DataFrame:
     df = (pd.concat(parts, ignore_index=True) if parts else like.reindex(columns=COLS))
     df = df[COLS]
     if len(df):
-        df["raw_score"] = df["raw_score"].astype(np.float32)
+        df["llr"] = df["llr"].astype(np.float32)
     return (df.sort_values(fe.grain_key(EXTENSIONS), kind="mergesort")
               .reset_index(drop=True))
 
@@ -259,7 +259,7 @@ def build_insertion(universe: set) -> tuple:
         rows.append(dict(
             source="attTn7_pdc_adhB", orf=gene, channel="curated_insertion", mnxr=mnxr,
             intermediate_id=gene, intermediate_name=str(r.ec),
-            raw_score=np.float32(1.0), score_kind="presence", projection_via="manual",
+            llr=np.float32(fe.ASSERTION_LLR), projection_via="manual",
             evidence_quality="unknown", lane_set="curated",
             build_id="insertion_scales_prod", host=PROD_HOST, unit_id="attTn7_pdc_adhB",
             feature_kind="insertion_gene", feature_name=gene, gpr_rule=gene,
@@ -268,7 +268,7 @@ def build_insertion(universe: set) -> tuple:
             source_organism=INSERT_SOURCE_ORGANISM))
     df = pd.DataFrame(rows, columns=COLS)
     if len(df):
-        df["raw_score"] = df["raw_score"].astype(np.float32)
+        df["llr"] = df["llr"].astype(np.float32)
         fe.validate_gpr(df, "curated", None, "attTn7_pdc_adhB", EXTENSIONS)
     return df, unresolved
 

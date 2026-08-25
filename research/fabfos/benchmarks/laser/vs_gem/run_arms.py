@@ -35,8 +35,8 @@ def base_weights(arm: str, host_dir: str) -> tuple[dict, float]:
     if arm == "denovo_uni":
         w = {r: 1.0 for r in d.mnxr.astype(str).unique()}
         return w, 1.0
-    d["raw_score"] = d["raw_score"].astype("float64")
-    e = EV.compute_E(d[["orf", "channel", "intermediate_id", "mnxr", "raw_score"]],
+    d["llr"] = d["llr"].astype("float64")
+    e = EV.compute_E(d[["orf", "channel", "intermediate_id", "mnxr", "llr"]],
                      label=f"{host_dir}/denovo")
     w = {str(k): float(v) for k, v in e.items()}
     return w, float(np.median(list(w.values())))

@@ -1,7 +1,7 @@
 """GPR mapper (chosen 4 lanes): kofam + CLEAN + uniref50 + ProteinBERT -> one
 gene-attributed GPR table.
 
-The schema, the channel vocabulary, the per-channel score_kind and every lane
+The schema, the channel vocabulary, the per-lane score calibration and every lane
 cut-off live in `lib::fabfos_evidence.py` and are read from it. Two copies, one
 per mapper, is how the tree came to hold two different channel vocabularies at
 once.

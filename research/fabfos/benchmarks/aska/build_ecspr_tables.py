@@ -123,7 +123,7 @@ def carbon_pairs(bake: Path) -> pd.DataFrame:
 
 def _blank_row(**kw):
     row = {c: None for c in GPR_COLS}
-    row.update(channel="manual_gpr", raw_score=np.float32(1.0), score_kind="presence",
+    row.update(channel="manual_gpr", llr=np.float32(fe.ASSERTION_LLR),
                projection_via="curated", evidence_quality="unknown", lane_set="curated",
                host="e_coli_k12")
     row.update(kw)
