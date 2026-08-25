@@ -11,7 +11,7 @@ also measures the denominator once, as its own row.
 
 WHY THIS RUNS BEFORE THE SWEEP. A sweep over an unreachable sink returns a column of exact
 zeros and a flat delta for all 4,102 clones -- indistinguishable, in the output, from a real
-null. `research/fabfos/benchmarks/scales/REPORT.md` established the failure with the
+null. `research/fabfos/benchmarks/woodruff/REPORT.md` established the failure with the
 `ctl_kdo2lipida` control: Kdo2-lipid A scores exactly 0 on the curated channel with
 `sink_is_node=True` and `converged=True`, and 20.37 on the de-novo channel. So a zero here
 carries no information until the node check has separated the three cases this file's output
@@ -21,8 +21,9 @@ distinguishes by column rather than by a comment:
     sink_is_node=True, g=0     it is, and no atom-resolved carbon route reaches it
     g>0                        reachable
 
-The middle case is a statement about THIS basis, not about the organism -- `sink_panel.py`'s
-own docstring makes the argument and it is not repeated here. The node check is computed off
+The middle case is a statement about THIS basis, not about the organism --
+`research/fabfos/benchmarks/woodruff/panels/sink_panel.py`'s own docstring makes the argument
+and it is not repeated here. The node check is computed off
 the atom-pair table rather than off the built graph, so it is independent of
 `Terminal.missing`, and the two are asserted equal.
 
