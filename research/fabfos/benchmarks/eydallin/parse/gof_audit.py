@@ -51,8 +51,15 @@ which KIND of claim the ensemble is making, and one anchor cannot score all four
 MASS BALANCE PREDICTS THE RAIL. Among tier-2 rows, 84.3% of those MetaNetX cannot call
 balanced sit at a clamp against 41.0% of the balanced ones. An equation that does not
 balance yields a dG' that saturates, so `is_balanced` belongs beside every clamped value.
-The glycogen family is in the unbalanced class for a specific reason: `Glycogen` has no
-definite formula, so no equation containing it can be balance-checked at all.
+
+`Glycogen` IS NOT A FORMULA-LESS POLYMER, and assuming it is sends the diagnosis to the
+wrong place. MNXM738130 carries C24H42O21 -- maltotetraose's formula, charge 0. What is
+wrong with the two accessions this benchmark walks is that the ACCEPTOR IS MISSING from
+the substrate side, so they are carbon-unbalanced outright: MNXR145046 runs 16 C -> 34 C
+and MNXR145036 runs 6 C -> 24 C. Balanced counterparts exist for both (MNXR132476 and
+MNXR145632) and return the SAME dG' to two decimals, which is what rules out the missing
+acceptor as the cause and puts it on the group values instead. Check the balance and find
+the balanced sibling before blaming the polymer.
 """
 from __future__ import annotations
 
