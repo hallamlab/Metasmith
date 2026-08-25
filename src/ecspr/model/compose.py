@@ -30,7 +30,7 @@ Two consequences worth stating because they are load-bearing rather than inciden
     so `sum(belief_mass) == n_orfs` still holds exactly and the driver's conservation
     assert stays meaningful instead of being weakened for us. That ORF spends its whole
     1.0 on one pseudo-reaction, so every bridge pools to the SAME `E_r` --
-    `evidence.pooled_E_of_mass(1.0)`, not 1.0 -- and `pair_w` is divided by it so the
+    `evidence.pooled_E_of_mass(1.0, BRIDGE_LLR)`, not 1.0 -- and `pair_w` is divided by it
     product is the `g_bridge` the bridge table computed.
 
 THE BRIDGE WEIGHT IS A GENE-LEVEL MISMATCH, DILUTED TWICE
@@ -343,7 +343,7 @@ def compose(members: dict, pairs: pd.DataFrame, direction: pd.DataFrame | None =
     # Every bridge is one synthetic ORF spending 1.0 on one pseudo-reaction, so they all
     # pool to this same E_r. Dividing it out of pair_w is what makes E_r * pair_w equal
     # the g_bridge the bridge table computed.
-    e_bridge = _net.pooled_E_of_mass(1.0)
+    e_bridge = _net.pooled_E_of_mass(1.0, BRIDGE_LLR)
 
     dup = set()
     seen = {}
@@ -593,7 +593,7 @@ def _selftest_bridge_conductance():
           f"E {e_br.E_full.unique()}")
     assert (e_br.belief_mass.sub(1.0).abs() < 1e-12).all()
     assert e_br.E_full.std(ddof=0) < 1e-15 or len(e_br) == 1
-    assert abs(float(e_br.E_full.iloc[0]) - _net.pooled_E_of_mass(1.0)) < 1e-12
+    assert abs(float(e_br.E_full.iloc[0]) - _net.pooled_E_of_mass(1.0, BRIDGE_LLR)) < 1e-12
     assert (w.E_full > 0).all() and (w.E_full < 1).all()
     # g0 scales the conductance linearly and nothing else -- the sweep that must converge
     # to the isolated members as g0 -> 0 is only meaningful if this holds.

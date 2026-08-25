@@ -1,0 +1,50 @@
+{
+  "borrowed_from": "e_coli_dh1",
+  "source": "/home/tony/.claude/jobs/31139d4c/tmp/reparse/e_coli_dh1/gpr_denovo.parquet",
+  "genotype": {
+    "recA1": {
+      "gene": "recA",
+      "allele": "loss"
+    },
+    "endA1": {
+      "gene": "endA",
+      "allele": "loss"
+    },
+    "gyrA96": {
+      "gene": "gyrA",
+      "allele": "variant"
+    },
+    "thi-1": {
+      "gene": null,
+      "allele": "unresolved"
+    },
+    "hsdR17": {
+      "gene": "hsdR",
+      "allele": "loss"
+    },
+    "supE44": {
+      "gene": "glnV",
+      "allele": "gain"
+    },
+    "relA1": {
+      "gene": "relA",
+      "allele": "loss"
+    }
+  },
+  "withheld_kind": "loss",
+  "withheld_orfs": [
+    "lcl|NC_017638.1_prot_ECDH1ME8569_RS22490_4320",
+    "lcl|NC_017638.1_prot_WP_000226815.1_2772",
+    "lcl|NC_017638.1_prot_WP_000286501.1_2929",
+    "lcl|NC_017638.1_prot_WP_000963138.1_2686"
+  ],
+  "rows_dh1": 30722,
+  "rows_ag1": 30711,
+  "rows_withheld": 11,
+  "mnxr_only_in_dh1": [
+    "MNXR174253",
+    "MNXR174255",
+    "MNXR187714",
+    "MNXR188099"
+  ]
+}
