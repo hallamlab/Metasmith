@@ -1,6 +1,6 @@
 {
   "borrowed_from": "e_coli_dh1",
-  "source": "/home/tony/.claude/jobs/31139d4c/tmp/reparse/e_coli_dh1/gpr_denovo.parquet",
+  "source": "/home/tony/.claude/jobs/31139d4c/tmp/mig_applied/reparse/e_coli_dh1/gpr_denovo.parquet",
   "genotype": {
     "recA1": {
       "gene": "recA",

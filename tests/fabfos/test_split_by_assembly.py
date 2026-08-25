@@ -37,6 +37,7 @@ def _rows(sample: str, orf: str, shard: str, channels=None):
             "source": shard, "orf": f"{sample}::{orf}", "gene": None, "channel": ch,
             "mnxr": f"MNXR{1000 + i}", "intermediate_id": iid,
             "intermediate_name": iid, "llr": llr,
+            "llr_route": "calibrated",
             "projection_via": "test", "evidence_quality": "reviewed",
             "lane_set": "chosen_4",
         })

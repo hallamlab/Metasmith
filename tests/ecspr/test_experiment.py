@@ -18,7 +18,7 @@ ASSERTION_LLR = 2.99
 def _gpr_rows(unit, feature, mnxrs, *, condition=None, channel="gem_gpr", gene=None):
     return [dict(source=unit, orf=feature, gene=gene or feature, channel=channel,
                  mnxr=r, intermediate_id=r, intermediate_name=r,
-                 llr=ASSERTION_LLR, projection_via="x",
+                 llr=ASSERTION_LLR, llr_route="asserted", projection_via="x",
                  evidence_quality="reviewed", lane_set="curated",
                  build_id="t", host="h", genome_unit=unit,
                  feature_kind="gene", feature_name=feature, gpr_rule=None,

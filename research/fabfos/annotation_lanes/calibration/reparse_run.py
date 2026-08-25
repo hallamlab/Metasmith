@@ -49,10 +49,19 @@ def main() -> int:
     # graft is refused, because a differing row set means the mapper changed what the
     # table contains and only a real re-collect can say what the blocks should hold.
     ap.add_argument("--graft-onto", type=Path)
+    # Which column of the GRAFTED table holds the gene symbol. There is no rule
+    # that covers every table -- a cohort puts it in `orf`, an ASKA table in
+    # `feature_name` -- so the caller says, and `to_unified` refuses to guess.
+    ap.add_argument("--gene-column", default=None)
+    ap.add_argument("--lanes", type=Path,
+                    help="a directory holding the six lane files, if not the run's own")
     a = ap.parse_args()
 
     run = C.REPO / "data/fabfos/runs" / a.host
-    lanes = run / "annotations/lanes"
+    # The two scadc runs predate the flat `lanes/` layout and their `annotations/` is
+    # DVC-managed and read-only, so `migrations/scadc_lanes_adapter.py` materialises the
+    # six files elsewhere and names the directory here.
+    lanes = a.lanes or (run / "annotations/lanes")
     if not lanes.is_dir():
         raise SystemExit(
             f"no {lanes}. Seven of the thirteen runs have their lane files "
@@ -100,10 +109,33 @@ def main() -> int:
                 f"same rows: {len(kn - ko):,} new, {len(ko - kn):,} gone. The graft is "
                 f"only sound while the mapper changes what a call is WORTH and not "
                 f"which calls exist -- re-collect this table instead")
-        merged = old.drop(columns=["raw_score", "score_kind"], errors="ignore").merge(
-            new[key + ["llr"]], on=key, how="left", validate="one_to_one")
-        cols = [c for c in C.fe.schema_for(C.fe.extensions_of(merged))]
-        merged = merged[cols]
+        # THE BLOCKS MIGRATE, THE WEIGHT IS REPARSED. `to_unified` is what puts the old
+        # table's own columns on the current schema -- the retired spellings included,
+        # so a table still saying `unit_id` lands on `genome_unit` here rather than
+        # failing a column select three lines down. Its `llr` is a placeholder by
+        # construction and every bit of it is replaced below.
+        ext = C.fe.extensions_of(old)
+        old = C.fe.to_unified(old, ext, gene=a.gene_column)
+        # EVERYTHING THE MAPPER DECIDES COMES FROM THE MAPPER. `llr` is the weight and
+        # `llr_route` says whether that weight was measured; grafting the weight and
+        # leaving the route behind would produce a calibrated table that cannot say it
+        # is one. `gene` stays the OLD table's, because a cohort names its construct and
+        # the mapper only ever sees the FASTA header of a clone insert.
+        carried = ["llr", "llr_route"]
+        merged = old.drop(columns=carried, errors="ignore").merge(
+            new[key + carried], on=key, how="left", validate="one_to_one")
+        merged = merged[C.fe.schema_for(ext)]
+        # A LEFT MERGE THAT MATCHES NOTHING IS STILL ONE-TO-ONE, so `validate` cannot
+        # see this and the key-set check above cannot either -- it runs before
+        # `to_unified` has touched the columns the key is built from. What a silent
+        # miss produces is a table of nulls that only fails five steps downstream.
+        n_null = int(merged["llr"].isna().sum())
+        if n_null:
+            raise SystemExit(
+                f"[graft] {n_null:,} of {len(merged):,} rows took no llr from the "
+                f"reparse. The two tables' grain keys do not line up -- compare "
+                f"`source`, which is {sorted(set(old['source']))[:2]} on the migrated "
+                f"table and {sorted(set(new['source']))[:2]} on the reparsed one")
         dest_g = dest / a.graft_onto.name
         merged.to_parquet(dest_g, index=False, compression="zstd")
         print(f"\n[graft] {len(merged):,} rows, llr from the reparse -> {dest_g}")

@@ -12,6 +12,7 @@ retuning a deployed cut-off means re-running this mapper rather than re-filterin
 a table.
 """
 import os
+import re
 import sys
 
 
@@ -78,6 +79,7 @@ def finish(df, channel, projection_via=None):
     df["source"] = SOURCE
     df["channel"] = channel
     df["llr"] = fe.calibrate(CAL, channel, df.pop("raw_score").to_numpy())
+    df["llr_route"] = fe.llr_route_for(CAL, channel)
     df["lane_set"] = LANE_SET
     if projection_via is not None:
         df["projection_via"] = projection_via
@@ -86,19 +88,37 @@ def finish(df, channel, projection_via=None):
     df["intermediate_name"] = df["intermediate_name"].fillna("")
     if "evidence_quality" not in df.columns:
         df["evidence_quality"] = "reviewed"
-    # A lane annotates a sequence and never learns a gene symbol for it. Null is the
-    # measurement, not a gap to fill from `intermediate_name` -- that holds an EC or KO
-    # description, which is a different namespace from the one `gene` consolidates.
-    df["gene"] = pd.Series([None] * len(df), dtype="object")
+    # THE SYMBOL IS THE FASTA'S, read once in `orf_ids`. A lane names an EC or a KO
+    # and never learns what the gene is called, so nothing here can fill this in --
+    # and `intermediate_name` must not, because it holds an EC description, which is a
+    # different namespace from the one `gene` consolidates.
+    df["gene"] = df["orf"].map(GENES).astype("object")
+    df["gene"] = df["gene"].where(df["gene"].notna(), None)
     return df[SCHEMA]
 
+# `[gene=thrA]`, as NCBI writes it in a `_protein.faa` header. A prodigal contig has
+# no such tag and gets None, which is the honest answer for an ORF on an unnamed contig.
+_GENE_TAG = re.compile(r"\[gene=([^\]]+)\]")
+
+
 def orf_ids(fasta):
-    out = []
+    """`([id, ...], {id: gene or None})` -- the ORF set and what each ORF is called.
+
+    THE SYMBOL COMES OUT OF THE FASTA, not out of a lane. A lane names an EC or a KO
+    and never learns what the gene is called, so `gene` can only be populated here,
+    where the header that declares it is being read anyway. Every one of K-12's 4,318
+    records carries the tag; a metagenome's carry none, and both are described.
+    """
+    out, genes = [], {}
     with open(fasta) as fh:
         for line in fh:
-            if line.startswith(">"):
-                out.append(line[1:].split()[0])
-    return out
+            if not line.startswith(">"):
+                continue
+            oid = line[1:].split()[0]
+            out.append(oid)
+            m = _GENE_TAG.search(line)
+            genes[oid] = m.group(1) if m else None
+    return out, genes
 
 # Each lane PARSES first and joins to the bridge later. The order matters at this
 # scale: the bridge is 30.5 million rows over three id spaces, and reading it
@@ -383,7 +403,10 @@ def bridge_slice(path, src, name, wanted):
     return df.drop_duplicates().rename(columns={"id": name})
 
 def main():
-    ids = orf_ids(str(A.orfs))
+    # `GENES` is module-level for the same reason SOURCE and CAL are: `finish` is
+    # called once per lane and every lane stamps the same value from it.
+    global GENES
+    ids, GENES = orf_ids(str(A.orfs))
     if not ids:
         raise SystemExit("[gpr] the input ORF FASTA has no records")
     # Parse every lane FIRST, so the bridge read below knows which ids matter.

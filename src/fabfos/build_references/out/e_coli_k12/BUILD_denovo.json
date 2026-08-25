@@ -1,6 +1,6 @@
 {
   "host": "e_coli_k12",
-  "source": "/home/tony/.claude/jobs/31139d4c/tmp/reparse/e_coli_k12/gpr_denovo_mapper.parquet",
+  "source": "/home/tony/.claude/jobs/31139d4c/tmp/mig_applied/reparse/e_coli_k12/gpr_denovo_mapper.parquet",
   "proteome": "NC_000913.3.faa",
   "lane_set": "chosen_4",
   "lanes": [

@@ -68,10 +68,17 @@ def _write_bridge(p: Path):
     pd.DataFrame(rows, columns=["id", "id_source", "mnxr", "evidence_quality"]).to_parquet(p, index=False)
 
 
+# ONE TAGGED RECORD AND ONE UNTAGGED ONE, in one FASTA. A RefSeq `_protein.faa` tags
+# every record; a prodigal contig tags none; and the mapper has to describe both without
+# a mode. `gene` is the tag or it is null, per record.
+GENE_OF = {ORFS[0]: "thrA", ORFS[1]: None}
+
+
 def _write_orfs(p: Path):
     with open(p, "w") as fh:
         for o in ORFS:
-            fh.write(f">{o} # some prodigal trailer\nMKV\n")
+            tag = f" [gene={GENE_OF[o]}]" if GENE_OF[o] else ""
+            fh.write(f">{o}{tag} # some prodigal trailer\nMKV\n")
 
 
 def _write_kofam(p: Path):
@@ -242,9 +249,10 @@ def _check_table(out: Path, lane_set: str):
     assert len(df) > 0
     core = [c for c in fe.SCHEMA_COLS if c not in fe.NULLABLE_CORE]
     assert not df[core].isna().any().any(), "the core is non-null in every column"
-    # A lane annotates a sequence and learns no gene symbol, so this column is entirely
-    # null on a mapper table. Null is the measurement, not a gap.
-    assert df["gene"].isna().all()
+    # The symbol is the FASTA header's, per record -- not a lane's, and not the table's.
+    assert dict(df.groupby("orf")["gene"].agg(
+        lambda s: s.dropna().unique()[0] if s.notna().any() else None)) == {
+        o: GENE_OF[o] for o in set(df["orf"])}
     expected = set(fe.LANE_SETS[lane_set])
     assert set(df["channel"]) == expected, f"missing channels: {expected - set(df['channel'])}"
     assert set(df["lane_set"]) == {lane_set}
@@ -428,7 +436,8 @@ def _one_row(channel, lane_set, **over):
     row = {
         "source": "orfs", "orf": ORFS[0], "gene": None, "channel": channel,
         "mnxr": MNXRS[0], "intermediate_id": ECS[0], "intermediate_name": "",
-        "llr": 4.0, "projection_via": "ec", "evidence_quality": "reviewed",
+        "llr": 4.0, "llr_route": fe.llr_route_for(_CALIBRATION, channel),
+        "projection_via": "ec", "evidence_quality": "reviewed",
         "lane_set": lane_set,
     }
     row.update(over)

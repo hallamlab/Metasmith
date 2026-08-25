@@ -47,6 +47,7 @@ def _mapper_table(path: Path, channels) -> pd.DataFrame:
                 "source": ACC, "orf": orf, "channel": ch,
                 "mnxr": f"MNXR{100000 + i}", "intermediate_id": f"X{i}",
                 "intermediate_name": f"thing {i}", "llr": _llr(ch, i),
+                "llr_route": "calibrated",
                 "gene": None, "projection_via": "ec",
                 "evidence_quality": "reviewed", "lane_set": "chosen_4",
             })

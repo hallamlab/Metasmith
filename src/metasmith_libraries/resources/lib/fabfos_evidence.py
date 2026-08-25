@@ -120,9 +120,36 @@ def _from_polars(df) -> pd.DataFrame:
 SCHEMA_COLS = [
     "source", "orf", "gene", "channel", "mnxr",
     "intermediate_id", "intermediate_name",
-    "llr", "projection_via",
+    "llr", "llr_route", "projection_via",
     "evidence_quality", "lane_set",
 ]
+
+# WHERE THIS ROW'S `llr` CAME FROM. A number in nats says nothing about whether anyone
+# measured it, and the tree holds both kinds at once: a `full_7` table is weighted on
+# its four fitted lanes and flat on the three that were never benchmarked. Without this
+# column the two are indistinguishable, and a ranking read off the flat half looks
+# exactly like a ranking read off the measured half.
+#
+# It is PER ROW, not per table, for that reason. It is core rather than an extension
+# block because every row has one -- there is no such thing as an llr from nowhere.
+LLR_ROUTES = (
+    # The lane's own score, through its fitted curve in `ref::lane_calibration`.
+    "calibrated",
+    # A lane with no fitted curve, at UNCALIBRATED_LLR. Not weighted-neutral --
+    # unweighted, and the difference matters when it is compared against a fitted lane.
+    "uncalibrated",
+    # An assertion channel at its declared constant (`ASSERTION_CHANNELS`). Nobody
+    # measured a curator; the constant is the strongest LLR any lane earned.
+    "asserted",
+    # A composition's bridge pseudo-reaction, at BRIDGE_LLR. Scaffolding the
+    # composition put there, not evidence about either member.
+    "bridge",
+    # Migrated off a pre-schema table that did not keep what the calibration reads.
+    # kofam stored a bare bitscore and dropped the family threshold the ratio needs,
+    # so there is nothing left to recover the score from. Re-run the mapper on the raw
+    # lane files to replace it.
+    "migrated",
+)
 
 # The grain: one row per (source, orf, channel, intermediate_id, mnxr). NO cross-lane
 # dedup -- the same ORF->MNXR claim from two lanes stays two rows, distinguished by
@@ -383,6 +410,21 @@ def load_calibration(path):
             "parameters on purpose -- a v2 that changed the clamp or the floor would "
             "read as v1 and silently reweight every reaction")
     return doc
+
+
+def llr_route_for(cal, channel: str) -> str:
+    """Which of LLR_ROUTES `calibrate` will have taken for this channel.
+
+    Read from the same two inputs `calibrate` branches on, so the column cannot claim a
+    fitted curve the artifact does not carry. A lane absent from the artifact is
+    `uncalibrated` whether the artifact is missing entirely or merely missing that lane
+    -- both give UNCALIBRATED_LLR, and both are the same claim about the number.
+    """
+    if channel in ASSERTION_CHANNELS:
+        return "bridge" if channel == "bridge" else "asserted"
+    if cal is None or channel not in cal.get("lanes", {}):
+        return "uncalibrated"
+    return "calibrated"
 
 
 def calibrate(cal, channel: str, scores) -> np.ndarray:
@@ -648,6 +690,13 @@ def to_unified(df, extensions=("attribution", "feature", "universe"), *, gene=No
     out["llr"] = np.where(assertion,
                           out["channel"].map(ASSERTION_CHANNELS).astype(float),
                           UNCALIBRATED_LLR)
+    # An assertion migrates EXACTLY -- its constant is declared, not fitted, so the
+    # pre-schema table and a freshly written one carry the same number for the same
+    # reason. Only the lane rows lose anything, and only they say `migrated`.
+    out["llr_route"] = np.where(
+        assertion, out["channel"].map(
+            {c: ("bridge" if c == "bridge" else "asserted") for c in ASSERTION_CHANNELS}),
+        "migrated")
     n_lane = int((~assertion).sum())
     if n_lane:
         print(f"[gpr] WARNING: migrating {n_lane:,} lane rows with llr = "
@@ -659,12 +708,16 @@ def to_unified(df, extensions=("attribution", "feature", "universe"), *, gene=No
         raise SystemExit(f"[gpr] {out['genome_unit'].nunique()} genome_units in one table "
                          f"{sorted(out['genome_unit'].unique())[:4]}; `source` names one "
                          f"artifact, so this table is really several")
-    # `source` names the artifact the rows were read out of. A pre-schema table did not
-    # record one, and `genome_unit` is the closest thing it has -- so a migrated table says
-    # the model or proteome where a freshly produced one says the ORF set it was mapped
-    # from. Both are true of the table; they are not the same string, and a reader
+    # `source` names the artifact the rows were read out of. A table that RECORDS one
+    # keeps it: `source` is half the grain key, so overwriting a real value strands
+    # every row against anything joined to it -- which is what happened to the cohort
+    # graft, whose reparsed mapper says `eydallin_clones` where the unit says `clones`.
+    # Only the oldest layout is missing it, and there `genome_unit` is the closest thing
+    # the table has, so a migrated row from THAT era says the model or proteome where a
+    # freshly produced one says the ORF set. They are not the same string, and a reader
     # comparing `source` across the two eras has to know that.
-    out["source"] = out["genome_unit"].astype(str) if "genome_unit" in out.columns else ""
+    if "source" not in out.columns or out["source"].isna().all():
+        out["source"] = out["genome_unit"].astype(str) if "genome_unit" in out.columns else ""
     # The lane set is a property of the evidence, not of the file: a table with no lane
     # channels asserts rather than measures, whatever it is called.
     out["lane_set"] = _lane_set_for(set(lanes))
@@ -837,6 +890,20 @@ def validate_gpr(df, lane_set: str, orf_ids, source: str, extensions=(),
     bad_eq = set(df["evidence_quality"].unique()) - set(EVIDENCE_QUALITY)
     if bad_eq:
         raise SystemExit(f"[gpr] unknown evidence_quality {sorted(bad_eq)}; known: {list(EVIDENCE_QUALITY)}")
+    bad_route = set(df["llr_route"].unique()) - set(LLR_ROUTES)
+    if bad_route:
+        raise SystemExit(f"[gpr] unknown llr_route {sorted(bad_route)}; known: "
+                         f"{list(LLR_ROUTES)}")
+    # An assertion's weight is a declared constant and a lane's is not, so the two
+    # cannot share a route. A lane row claiming `asserted` would read as a curator's
+    # call, which is the one thing this column exists to keep separable.
+    crossed = sorted(set(
+        f"{c}/{r}" for c, r in
+        df[["channel", "llr_route"]].drop_duplicates().itertuples(index=False)
+        if (c in ASSERTION_CHANNELS) != (r in ("asserted", "bridge"))))
+    if crossed:
+        raise SystemExit(f"[gpr] channel and llr_route disagree about whether the row "
+                         f"is an assertion: {crossed}")
     # A COMPOSED network is a community, and its rows come from two places: each
     # member's own lane evidence, and the bridges that join them. Those are different
     # claims, so they carry different `lane_set` values in one table -- which is why a
@@ -889,7 +956,8 @@ def validate_gpr(df, lane_set: str, orf_ids, source: str, extensions=(),
               f"({100.0*g['orf'].nunique()/max(n_ids,1):5.1f}% cover)  "
               f"{g['mnxr'].nunique():>6,} MNXR  "
               f"llr med={v.median():.4g} max={v.max():.4g} "
-              f"zero={100.0*(v <= 0).mean():.1f}%", flush=True)
+              f"zero={100.0*(v <= 0).mean():.1f}%  "
+              f"{'/'.join(sorted(set(g['llr_route'])))}", flush=True)
     print(f"[gpr]   evidence_quality {df['evidence_quality'].value_counts().to_dict()}", flush=True)
     return df
 
@@ -997,6 +1065,7 @@ def _finish(df: pd.DataFrame, source: str, channel: str, lane_set: str,
     df["source"] = source
     df["channel"] = channel
     df["llr"] = calibrate(cal, channel, df.pop("raw_score").to_numpy())
+    df["llr_route"] = llr_route_for(cal, channel)
     df["lane_set"] = lane_set
     if "evidence_quality" not in df.columns:
         df["evidence_quality"] = "reviewed"
