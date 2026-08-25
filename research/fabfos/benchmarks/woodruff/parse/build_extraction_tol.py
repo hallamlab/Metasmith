@@ -105,7 +105,7 @@ def classify(f15: float, f30: float) -> str:
 
 def main() -> None:
     repo = find_repo_root(Path(__file__).resolve().parent)
-    xlsx = repo / "data/fabfos/originals/benchmarks/scales/1-s2.0-S109671761200119X-mmc1.xlsx"
+    xlsx = repo / "data/fabfos/originals/benchmarks/woodruff/1-s2.0-S109671761200119X-mmc1.xlsx"
     out_dir = repo / "data/fabfos/benchmarks/_extractions" / DATASET
     out_dir.mkdir(parents=True, exist_ok=True)
 

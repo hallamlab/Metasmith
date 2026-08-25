@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Score the SCALEs sweep: reach first, then rank, then the two controls.
 
-    mamba run -n build-refs-cobra python research/fabfos/benchmarks/scales/score_scales.py \
+    mamba run -n build-refs-cobra python research/fabfos/benchmarks/woodruff/sweeps/score_scales.py \
         --channel gem
 
 THE ORDER OF THIS FILE IS THE ARGUMENT. The reach 2x2 is computed and printed before any
@@ -53,13 +53,14 @@ def _repo_root(start: Path) -> Path:
 ROOT = _repo_root(Path(__file__).resolve())
 sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(ROOT / "research/fabfos/benchmarks/eydallin"))
+sys.path.insert(0, str(ROOT / "research/fabfos/benchmarks/eydallin/sweeps"))
 
 import bake_pairs                                                      # noqa: E402
 from ecspr.model.build import load_pairs                               # noqa: E402
 from analyse_aska_sweep import auc, precision_at_k, resample           # noqa: E402
 
-SWEEPS = ROOT / "data/fabfos/runs/scales/ecspr"
-GPR = ROOT / "data/fabfos/runs/scales/gpr"
+SWEEPS = ROOT / "data/fabfos/runs/woodruff_clones/ecspr"
+GPR = ROOT / "data/fabfos/runs/woodruff_clones/gpr"
 CLONES = ROOT / "data/fabfos/benchmarks/_extractions/scales_tol/clones.tsv"
 
 HOST = "e_coli_bw25113"

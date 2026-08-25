@@ -6,7 +6,7 @@ from pathlib import Path
 
 C = "http://schemas.openxmlformats.org/drawingml/2006/chart"
 
-PPTX_REL = "data/fabfos/originals/benchmarks/scales/1-s2.0-S1096717613000098-mmc1.pptx"
+PPTX_REL = "data/fabfos/originals/benchmarks/woodruff/1-s2.0-S1096717613000098-mmc1.pptx"
 CHART_PART = "ppt/charts/chart1.xml"
 
 REF_PROD = "'New Summary'!$C$2:$C$4115"

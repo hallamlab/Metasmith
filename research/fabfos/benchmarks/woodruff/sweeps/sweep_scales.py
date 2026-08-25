@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Every gene the SCALEs tolerance screen measured, over the whole declared axis panel.
 
-    mamba run -n build-refs-cobra python research/fabfos/benchmarks/scales/sweep_scales.py \
+    mamba run -n build-refs-cobra python research/fabfos/benchmarks/woodruff/sweeps/sweep_scales.py \
         --channel gem --workers 6
     ... --shard 3 --nshards 64        # one slice, for a cluster array
 
@@ -76,11 +76,11 @@ import bench_universe as bu                                                     
 from ecspr.model.build import graph_from_pairs, load_direction_ratios, load_pairs  # noqa: E402
 from ecspr.model.graph import Terminal, solve                                      # noqa: E402
 
-GPR = ROOT / "data/fabfos/runs/scales/gpr"
-PANEL_TSV = ROOT / "data/fabfos/originals/benchmarks/scales/gof_scales.tsv"
+GPR = ROOT / "data/fabfos/runs/woodruff_clones/gpr"
+PANEL_TSV = ROOT / "data/fabfos/originals/benchmarks/woodruff/gof_scales.tsv"
 BAKE = ROOT / "data/fabfos/processed/metabolism_bake"
 METANETX = ROOT / "data/fabfos/originals/metanetx"
-OUT_DIR = ROOT / "data/fabfos/runs/scales/ecspr"
+OUT_DIR = ROOT / "data/fabfos/runs/woodruff_clones/ecspr"
 
 HOST = "e_coli_bw25113"
 COHORT = "scales_tol"
