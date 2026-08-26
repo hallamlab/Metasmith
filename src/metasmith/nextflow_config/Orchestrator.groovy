@@ -17,6 +17,11 @@ class Orchestrator {
     // models/lineage.py's LinPayload.FILES_KEY / PROV_KEY.
     public static final String FILES_KEY = "FILES"
     public static final String PROV_KEY = "PROV"
+    // KEY is the member's cache key, stamped by _route before submission and
+    // read by the task to name and promote its products. Kept in lockstep
+    // with LinPayload.KEY_KEY.
+    public static final String KEY_KEY = "KEY"
+    public static final List RESERVED_KEYS = [FILES_KEY, PROV_KEY, KEY_KEY]
 
     // Raised when a stream `classify()` proved to be a descendant of the
     // by-stream delivers an item whose index does not carry the by-key.
@@ -51,7 +56,7 @@ class Orchestrator {
     // descendant indexes (_collateBatch and _post both copy shallowly) and no
     // production path mutates one.
     public static Map stripReserved(index) {
-        return index.findAll((k, v) -> !(k in [FILES_KEY, PROV_KEY]))
+        return index.findAll((k, v) -> !(k in RESERVED_KEYS))
     }
 
     private Map index_history
@@ -118,7 +123,11 @@ class Orchestrator {
                         group = [group]
                     }
                     return group.collect((item) -> { // map
-                        def v = "${sid}::${item.name}".md5()
+                        // The batch position is where the member sat in the
+                        // task that ran it, not part of what the file is.
+                        // Mirrors LinPayload.canonical_output_name.
+                        def cname = item.name.replaceFirst(/^\d+-/, "1-")
+                        def v = "${sid}::${cname}".md5()
                         // println("post: <$name> $v $item")
                         index = [:]+index // copy the hashmap
                         index[name] = [v]
@@ -190,7 +199,7 @@ class Orchestrator {
         // would be meaningless. Unreachable today (they are stripped before
         // anything re-enters here), but it makes "an index value is a list of
         // hashes" true locally instead of true by argument elsewhere.
-        def keys = indexes.inject([:].keySet(), (result, i) -> result+i.keySet()) - [FILES_KEY, PROV_KEY] // reduce
+        def keys = indexes.inject([:].keySet(), (result, i) -> result+i.keySet()) - RESERVED_KEYS // reduce
         for (key : keys) {
             // if any is missing, use the remainder
             // if remainder different, skip
@@ -308,7 +317,7 @@ class Orchestrator {
     // has to: `errorStrategy 'ignore'` is process-wide (local.nf, slurm.nf),
     // so a dropped task means a key that never reaches its count, and that
     // must degrade to a late flush rather than a hang.
-    public def group(by, streams, targets, batch_size, expected) {
+    private def _grouped(by, streams, targets, expected) {
         def parents = streams.collect((k, s) -> k) as Set
         for (t : targets) {
             def existing = this.child2parent.get(t, java.util.concurrent.ConcurrentHashMap.newKeySet())
@@ -344,7 +353,7 @@ class Orchestrator {
             ]
         })
 
-        return _batch(batch_size, to_group
+        return to_group
         .collect((stream) -> {
             def (name, _stream) = stream
             def relation = stream_relations[name]
@@ -597,7 +606,120 @@ class Orchestrator {
             def values = groups.collect(channel -> channel.collect(group -> group[-1]))
             common_index[PROV_KEY] = per_item
             return [common_index, *values]
-        }))
+        })
+    }
+
+    public def group(by, streams, targets, batch_size, expected) {
+        return this._batch(batch_size, this._grouped(by, streams, targets, expected))
+    }
+
+    // The cached form. `cache` names the step for the key helper:
+    //   tk, sig      the transform key and signature the key folds
+    //   slk          the channel name of each required slot, in slot order
+    //   cache_root   where the shards are, in this process's coordinates
+    //   cacheable    false sends every member to the real process
+    //   helper       the command that runs metasmith.caching.invocation
+    //   hits_log     the file one JSON line per hit member is appended to
+    //   step, step_name
+    // Returns [misses, hits]: two batched channels in the shape _batch
+    // emits. A miss batch feeds the real process; a hit batch feeds its
+    // `_cached` twin as [indexes, sources], where each source is
+    // [position, shard file, name without its position].
+    public def group(by, streams, targets, batch_size, expected, cache) {
+        return this._route(batch_size, this._grouped(by, streams, targets, expected), cache)
+    }
+
+    // One helper call per batch decides every member of it. The Python side
+    // is the only key implementation; this side only carries its verdict.
+    // A member whose row is missing, a helper that fails, or a non-zero exit
+    // is a miss: the cost of a wrong miss is compute, the cost of a wrong hit
+    // is a wrong result.
+    public static List probeMembers(helper, Map spec) {
+        def json = JsonOutput.toJson(spec)
+        def proc = new ProcessBuilder(helper as List<String>).start()
+        proc.outputStream.withWriter("UTF-8") { w -> w << json }
+        def out = new StringBuilder()
+        def err = new StringBuilder()
+        proc.waitForProcessOutput(out, err)
+        if (proc.exitValue() != 0) {
+            throw new RuntimeException("cache helper failed (${proc.exitValue()}): ${err}")
+        }
+        def rows = out.toString().split("\n").findAll(l -> l.trim().size() > 0).collect(l -> {
+            def parts = l.trim().split(/\|/, 3) as List
+            while (parts.size() < 3) parts << ""
+            return parts
+        })
+        if (rows.size() != spec.members.size()) {
+            throw new RuntimeException("cache helper answered ${rows.size()} rows for ${spec.members.size()} members")
+        }
+        return rows
+    }
+
+    private def _decide(batch, cache) {
+        def members = batch.collect(item -> item[0])
+        def rows = null
+        if (cache.cacheable == true) {
+            try {
+                rows = probeMembers(cache.helper, [
+                    tk: cache.tk, sig: cache.sig, slk: cache.slk,
+                    cache_root: cache.cache_root, members: members,
+                ])
+            } catch (Exception e) {
+                System.err.println("[metasmith] step ${cache.step} (${cache.step_name}): ${e.message}; running every member")
+                rows = null
+            }
+        }
+        return [batch, (0..<batch.size())].transpose().collect((item, i) -> {
+            def index = [:] + item[0]
+            def row = (rows == null) ? ["-", "-", ""] : rows[i]
+            index[KEY_KEY] = row[0]
+            def hit = (row[1] == "hit")
+            if (hit) this._logHit(cache, row[0], row[2], index)
+            return [item: [index, *item[1..-1]], hit: hit, shard: row[2]]
+        })
+    }
+
+    private synchronized void _logHit(cache, key, shard, index) {
+        if (cache.hits_log == null) return
+        def f = new File(cache.hits_log as String)
+        f.parentFile?.mkdirs()
+        f << JsonOutput.toJson([
+            step: cache.step, step_name: cache.step_name, key: key, shard: shard,
+            entry: index.findAll((k, v) -> k != FILES_KEY),
+        ]) << "\n"
+    }
+
+    private def _collateHits(rows) {
+        def collated = this._collateBatch(rows.collect(r -> r.item))
+        def indexes = collated[0]
+        def sources = []
+        rows.eachWithIndex { r, i ->
+            def out = new File(r.shard as String, "out")
+            def files = out.listFiles() ?: []
+            files.sort { a, b -> a.name <=> b.name }.each { f ->
+                sources << [i + 1, f.absolutePath, f.name.replaceFirst(/^\d+-/, "")]
+            }
+        }
+        return [indexes, sources]
+    }
+
+    public def _route(size, channel, cache) {
+        def decided = channel.collate(size).map(batch -> this._decide(batch, cache))
+        def misses = decided
+            .map(rows -> rows.findAll(r -> !r.hit))
+            .filter(rows -> rows.size() > 0)
+            .map(rows -> this._collateBatch(rows.collect(r -> r.item)))
+        def hits = decided
+            .map(rows -> rows.findAll(r -> r.hit))
+            .filter(rows -> rows.size() > 0)
+            .map(rows -> this._collateHits(rows))
+        return [misses, hits]
+    }
+
+    // The outputs of a process and of its `_cached` twin, one mixed channel
+    // per output slot, so downstream sees one producer.
+    public List mixOuts(a, b) {
+        return [a, b].transpose().collect((x, y) -> x.mix(y))
     }
 
     private def _collateBatch(batch) {

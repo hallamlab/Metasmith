@@ -11,7 +11,7 @@ from pathlib import Path
 import yaml
 
 from ...caching.keys import LIN_PAYLOAD_VERSION
-from ...caching.layout import default_cache_root, out_dir, staging_dir
+from ...caching.layout import default_cache_root
 from ...constants import AgentPaths
 from ...env import ContainerDef, Environment, Rootfs, Runtime
 from ...logging import Log
@@ -25,6 +25,12 @@ from .steps import WorkflowStep
 
 METADATA_FILE = ".command.metadata"
 BIND_FILE = ".command.binds"
+# One JSON line per batch member, written by the task after its protocol ran:
+# what the member was keyed on, whether it was promoted, and what it produced.
+CACHE_RECORD_FILE = ".command.cache"
+# One JSON line per member the orchestrator served from a shard.
+CACHE_HITS_LOG = "_metasmith/cache_hits.jsonl"
+DEFAULT_CACHE_HELPER = ("python", "-m", "metasmith.caching.invocation")
 
 
 def AssertBindPathsAreShellSafe(paths: Iterable[Path], step_name: str):
@@ -44,45 +50,17 @@ _RESERVED_KEYS_GROOVY = (
     "[" + ", ".join(f"'{k}'" for k in sorted(LinPayload.RESERVED_KEYS)) + "]"
 )
 
-def _groovy_index_literal(index: dict) -> str:
-    def _val(v):
-        if isinstance(v, bool):
-            return "true" if v else "false"
-        if isinstance(v, (int, float)):
-            return str(v)
-        return "'" + str(v).replace("\\", "\\\\").replace("'", "\\'") + "'"
-
-    if not index:
-        return "[:]"
-    parts = []
-    for k in sorted(index):
-        v = index[k]
-        vals = v if isinstance(v, (list, tuple)) else [v]
-        parts.append(
-            f"'{k}': [" + ", ".join(_val(x) for x in vals) + "]"
-        )
-    return "[" + ", ".join(parts) + "]"
-
-
 def branch_name_pattern(branch_idx: int) -> "re.Pattern[str]":
     return re.compile(rf"^\d+-\d+-{branch_idx + 1}\.")
-
-
-def cached_files_for_branch(
-    cache_out: Path, branch_idx: int, suffix: str
-) -> list[Path]:
-    if not cache_out.exists():
-        return []
-    pat = branch_name_pattern(branch_idx)
-    return sorted(
-        f for f in cache_out.glob("*")
-        if pat.match(f.name) and f.name.endswith(suffix)
-    )
 
 
 def NextflowProcessName(order: int, transform_name) -> str:
     name = str(transform_name).replace('/', '_')
     return f"p{order:02}__{name}"
+
+
+def CachedProcessName(process_name: str) -> str:
+    return f"{process_name}_cached"
 
 
 @dataclass
@@ -99,6 +77,7 @@ class NextflowGenContext:
     bootstrap_var: str = "${params.bootstrap_def}"
     cache_root: Path | None = None
     cache_hit_strategy: str = "link"
+    cache_helper: tuple[str, ...] = DEFAULT_CACHE_HELPER
     rootfs: "Rootfs|None" = None
 
 def _read_env_declarations(step) -> dict[str, dict[str, str]|None]:
@@ -291,21 +270,6 @@ def prepare_nextflow(task, context: NextflowGenContext):
             TAB+f"label 'x{x}x'"
             for x in step.transform.labels
         ]
-        decision = cache_decisions.get(step.order)
-        if decision is not None and decision.get("cacheable", True):
-            cache_tmp = staging_dir(
-                context.cache_root, decision["cache_key"].hex()
-            )
-            src += [
-                TAB + (
-                    f"publishDir \"{cache_tmp}\", "
-                    f"mode: '{context.cache_hit_strategy}', "
-                    "overwrite: true, "
-                    "failOnError: true, "
-                    "pattern: '*'"
-                )
-            ]
-
         def _make_bind_var(i: int, is_assignment=False):
             s = "\\$" if not is_assignment else ""
             return f"{s}b{i+1}"
@@ -395,30 +359,11 @@ def prepare_nextflow(task, context: NextflowGenContext):
             if context.rootfs is not None:
                 f.write(f"rootfs {context.rootfs.value}\n")
             if cache_decision is not None:
-                f.write(
-                    f"cache_key {cache_decision['cache_key'].hex()}\n"
-                )
-                out_ids_serialized = {
-                    f"{slot}::{branch}": iid
-                    for (slot, branch), iid
-                    in cache_decision["out_instance_ids"].items()
-                }
-                f.write(
-                    "out_identities "
-                    f"{json.dumps(out_ids_serialized, separators=(',',':'))}\n"
-                )
+                f.write(f"transform_key {cache_decision['transform_key']}\n")
+                f.write(f"signature {cache_decision['signature']}\n")
+                f.write(f"step_name {step.transform.name or ''}\n")
                 f.write(
                     f"cacheable {'true' if cache_decision['cacheable'] else 'false'}\n"
-                )
-                f.write(f"transform_key {cache_decision['transform_key']}\n")
-                f.write(f"step_name {step.transform.name or ''}\n")
-                sorted_inputs_serialized = [
-                    [slot_key, list(ids)]
-                    for slot_key, ids in cache_decision["sorted_inputs"]
-                ]
-                f.write(
-                    "sorted_inputs "
-                    f"{json.dumps(sorted_inputs_serialized, separators=(',',':'))}\n"
                 )
                 slot_files: list[dict] = []
                 for branch_idx, dep_group in enumerate(
@@ -447,10 +392,6 @@ def prepare_nextflow(task, context: NextflowGenContext):
                 f.write(
                     "slot_files "
                     f"{json.dumps(slot_files, separators=(',',':'))}\n"
-                )
-                f.write(
-                    "batches "
-                    f"{json.dumps(cache_decision.get('batches', []), separators=(',',':'))}\n"
                 )
         mock_outputs = [
             f'"1-1-{branch+1}.test$hash-{x.dtype.key}{x.dtype.GetPreferredFileExtension()}"'
@@ -489,6 +430,7 @@ def prepare_nextflow(task, context: NextflowGenContext):
             f'echo "{external_binds_param}" >{BIND_FILE}',
             f'{context.bootstrap_var}',
             f'bootstrap {context.external_work_var} "{step.order}" ${{params.hostName}}',
+            f'[ "\\$__msm_wd" = "\\$PWD" ] || cp -f {CACHE_RECORD_FILE} "\\$__msm_wd/" 2>/dev/null || true',
             f'[ -e .command.success ] && exit 0 || exit 1',
             '"""',
             'stub:',
@@ -512,6 +454,39 @@ def prepare_nextflow(task, context: NextflowGenContext):
             ""
         ]
         return process_name, "\n".join(src), src_res
+
+    def prepare_twin(step: WorkflowStep):
+        # A hit runs as a task, on the driver's own host, that links the shard's
+        # products into its work dir under the member's position. Nextflow then
+        # publishes and traces it like any other task, and no scheduler saw it.
+        process_name = NextflowProcessName(step.order, step.transform.name)
+        twin_name = CachedProcessName(process_name)
+        _used, produced_archetypes = get_io_signature(step)
+        optional = ", optional: true" if len(produced_archetypes) > 1 else ""
+        src = [
+            f"process {twin_name}"+" {",
+            TAB+"executor 'local'",
+            TAB+"cache false",
+            "input:",
+            TAB+"tuple val(index), val(sources)",
+            "output:",
+        ] + [
+            TAB+f'tuple val(index),path("*-{branch+1}.*-{x.dtype.key}{x.dtype.GetPreferredFileExtension()}"){optional}'
+            for branch, g in enumerate(produced_archetypes) for x in g
+        ] + [
+            "script:",
+            '"""',
+            f'echo "step {step.order} (cached), sample $index"',
+            "${sources.collect { s -> \"ln -f '${s[1]}' '${s[0]}-${s[2]}' 2>/dev/null || cp -r '${s[1]}' '${s[0]}-${s[2]}'\" }.join('\\n')}",
+            '"""',
+            "stub:",
+            '"""',
+            "${sources.collect { s -> \"touch '${s[0]}-${s[2]}'\" }.join('\\n')}",
+            '"""',
+            "}",
+            "",
+        ]
+        return twin_name, "\n".join(src), ["cpus 1", "memory '256 MB'"]
 
     def ensure_local_folder(n):
         d = context.work_dir/n
@@ -649,22 +624,17 @@ def prepare_nextflow(task, context: NextflowGenContext):
     wf_main = []
     wf_publish = set()       
     published_channels: dict[str, tuple[int, DataInstance]] = {}
-    cache_publish_files: dict[str, list[Path]] = {}
     resources = {}
     gpu_requirements: dict[str, dict] = {}
     env_requirements: dict[str, dict] = {}
 
 
+    helper_literal = "[" + ", ".join(f"'{t}'" for t in context.cache_helper) + "]"
+    cache_root_literal = path_map.Render(context.cache_root, dialect="groovy")
+    hits_log_literal = f"{context.external_work_var}/{CACHE_HITS_LOG}"
+
     for step in the_plan.steps:
         decision = cache_decisions.get(step.order)
-        is_hit = bool(decision and decision.get("hit"))
-        if is_hit and decision.get("entry") is None:
-            Log.Warn(
-                f"cache hit for step {step.order} carries no store entry; "
-                "treating as a miss"
-            )
-            decision["hit"] = False
-            is_hit = False
         used_archetypes, produced_archetypes = get_io_signature(step)
         produced_names = [get_prod_name(x.dtype) for g in produced_archetypes for x in g]
         produced_snames = [get_prod_name(x.dtype, force_singular=True) for g in produced_archetypes for x in g]
@@ -683,96 +653,13 @@ def prepare_nextflow(task, context: NextflowGenContext):
             "[" + ", ".join(f"'{s}'" for s in produced_slot_ids) + "]"
         )
 
-        if is_hit:
-            cache_out = out_dir(decision["entry"].output_root)
-            _out_indexes = decision.get("out_indexes") or {}
-            hit_files_by_key: dict[str, list[Path]] = {}
-            cached_channels: list[str] = []
-            cached_channel_var = f"__cached_step_{step.order}"
-            channel_exprs: list[str] = []
-            for branch_idx, dep_group in enumerate(step.transform.model.produces):
-                for dep in dep_group:
-                    insts = step.dependency_map.get(dep, [])
-                    if not insts:
-                        channel_exprs.append("Channel.empty()")
-                        continue
-                    out_inst = insts[0]
-                    ext = out_inst.dtype.GetPreferredFileExtension()
-                    suffix = f"-{out_inst.dtype.key}{ext}"
-                    cached_files = cached_files_for_branch(
-                        cache_out, branch_idx, suffix
-                    )
-                    if not cached_files:
-                        raise ValueError(
-                            f"cache hit for step {step.order} "
-                            f"({step.transform.name}) holds no file for "
-                            f"{dep.key}[{branch_idx}]; the shard should have "
-                            "been demoted to a miss"
-                        )
-                    _no_index = [
-                        f.name for f in cached_files
-                        if f.name not in _out_indexes
-                    ]
-                    if _no_index:
-                        raise ValueError(
-                            f"cache hit for step {step.order} "
-                            f"({step.transform.name}) has no on-channel index "
-                            f"for {_no_index}; the shard should have been "
-                            "demoted to a miss"
-                        )
-                    hit_files_by_key.setdefault(
-                        out_inst.dtype.key, []
-                    ).extend(cached_files)
-                    tuples = ", ".join(
-                        f"[{_groovy_index_literal(_out_indexes[fp.name])}, "
-                        f"file('{path_map.ExternalToLocal(fp)}')]"
-                        for fp in cached_files
-                    )
-                    channel_exprs.append(f"Channel.of({tuples})")
-            wf_main.append(
-                f"def {cached_channel_var} = [{', '.join(channel_exprs)}]"
-            )
-            if len(produced_names) == 1:
-                wf_main.append(
-                    f"_{produced_names[0]} = "
-                    f"(o.post(o.asStreams({cached_channel_var}), k, {slot_ids_literal}))[0]"
-                )
-            else:
-                wf_main.append(
-                    f"({produced}) = "
-                    f"o.post(o.asStreams({cached_channel_var}), k, {slot_ids_literal})"
-                )
-            if step.order in final_steps_for_merging:
-                for e in final_steps_for_merging[step.order]:
-                    names = to_merge_names[e]
-                    to_mix = [f"_{x}" for x in names]
-                    name = get_prod_name(e, force_singular=True)
-                    wf_main.append(
-                        f"_{name} = o.mix([{', '.join(to_mix)}])"
-                    )
-            if the_plan.publish_intermediates:
-                to_pubish = [x for g in produced_archetypes for x in g]
-            else:
-                to_pubish = [
-                    x for g in produced_archetypes for x in g
-                    if x.dtype in target_endpoints
-                ]
-            for inst in to_pubish:
-                k = inst.dtype.key
-                wf_publish.add(k)
-                published_channels[k] = (step.order, inst)
-                # Keyed on the channel that reaches `publish:`, not on the
-                # step: `o.mix` merges several producers into one, and a step
-                # can be a hit and a merge input at once.
-                cache_publish_files.setdefault(k, []).extend(
-                    hit_files_by_key.get(k, [])
-                )
-            continue
-
         process_name, src, src_res = prepare_step(step)
         resources[process_name] = src_res
         src_process.append(src)
         if len(used_archetypes)>0:
+            twin_name, twin_src, twin_res = prepare_twin(step)
+            resources[twin_name] = twin_res
+            src_process.append(twin_src)
             _inst = step.group_by_instances
             _dtypes = {x.dtype.key for x in _inst}
             if len(_dtypes)>1:
@@ -805,19 +692,39 @@ def prepare_nextflow(task, context: NextflowGenContext):
                 )
                 + "]"
             )
-            used = (
-                f"o.group('{gb}', [{using_symbols}], k, "
-                f"{step.transform.batch_size}, {expected_literal})"
+            slk_literal = "[" + ", ".join(f"'{x.dtype.key}'" for x in used_archetypes) + "]"
+            cacheable = bool(decision and decision.get("cacheable"))
+            cache_literal = (
+                f"[tk: '{(decision or {}).get('transform_key', '')}', "
+                f"sig: '{(decision or {}).get('signature', '')}', "
+                f"slk: {slk_literal}, "
+                f"cache_root: \"{cache_root_literal}\", "
+                f"cacheable: {'true' if cacheable else 'false'}, "
+                f"helper: {helper_literal}, "
+                f"hits_log: \"{hits_log_literal}\", "
+                f"step: {step.order}, step_name: '{step.transform.name}']"
             )
+            miss_var = f"__miss_{step.order}"
+            hit_var = f"__hit_{step.order}"
+            out_var = f"__out_{step.order}"
+            wf_main.append(
+                f"({miss_var}, {hit_var}) = o.group('{gb}', [{using_symbols}], k, "
+                f"{step.transform.batch_size}, {expected_literal}, {cache_literal})"
+            )
+            wf_main.append(
+                f"{out_var} = o.mixOuts(o.asStreams({process_name}({miss_var})), "
+                f"o.asStreams({twin_name}({hit_var})))"
+            )
+            streams_expr = out_var
         else:
-            used = ""
+            streams_expr = f"o.asStreams({process_name}())"
         if len(produced_names) == 1:
             wf_main.append(
-                f"_{produced_names[0]} = (o.post(o.asStreams({process_name}({used})), k, {slot_ids_literal}))[0]"
+                f"_{produced_names[0]} = (o.post({streams_expr}, k, {slot_ids_literal}))[0]"
             )
         else:
             wf_main.append(
-                f"({produced}) = o.post(o.asStreams({process_name}({used})), k, {slot_ids_literal})"
+                f"({produced}) = o.post({streams_expr}, k, {slot_ids_literal})"
             )
         if step.order in final_steps_for_merging:
             for e in final_steps_for_merging[step.order]:
@@ -875,7 +782,6 @@ def prepare_nextflow(task, context: NextflowGenContext):
         f.write("\n")
 
     wf_output = []
-    cache_publish: list[dict] = []
     _e2target = {x.instance.dtype:x for x in the_plan.targets}
     for ch, (step_order, inst) in published_channels.items():
         spec_name = inst.dtype_name.replace(' ', '_').replace("::", "-")
@@ -888,26 +794,6 @@ def prepare_nextflow(task, context: NextflowGenContext):
             TAB+TAB+f"path '{out_name}'",
             TAB+"}",
         ]
-        if cache_publish_files.get(ch):
-            cache_publish.append({
-                "channel": ch,
-                "path": out_name,
-                "files": [str(f) for f in cache_publish_files[ch]],
-            })
-
-    # One side derives the results spelling, the other reads it: the driver
-    # publishes what nextflow silently declines to.
-    with open(context.work_dir/AgentPaths.CACHE_PUBLISH_MANIFEST, "w") as f:
-        json.dump(
-            {
-                "schema": 1,
-                "strategy": context.cache_hit_strategy,
-                "publish": cache_publish,
-            },
-            f, separators=(",", ":"),
-        )
-        f.write("\n")
-
 
     content = [
         f"workflow"+" {",

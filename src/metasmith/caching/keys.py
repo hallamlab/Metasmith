@@ -17,6 +17,8 @@ KEY_PREFIX = bytes([BLAKE3_MULTIHASH_CODE, BLAKE3_DIGEST_LEN])
 # folding the transform's protocol-body identity (F1 fix). Bumped 3 -> 4 when a
 # step's inputs began naming the producing step's slot id instead of the
 # transform archetype's, so a downstream key now moves when its producer does.
+# Bumped 4 -> 5 when the unit became one group member's invocation, keyed on
+# the own-ids that member consumed, and a slot id lost its step order.
 #
 # DELIBERATELY SEPARATE from LIN_PAYLOAD_VERSION below: the cache epoch tracks
 # cache-key *semantics*, whereas the wire version tracks the Nextflow-channel
@@ -25,7 +27,7 @@ KEY_PREFIX = bytes([BLAKE3_MULTIHASH_CODE, BLAKE3_DIGEST_LEN])
 # emitter (`workflow.py` -> `Orchestrator.JsonforEcho([v:2, ...])`) hardcoded
 # the wire version and did not move in lockstep. Keeping them independent
 # means a future cache-semantics bump never again desyncs the wire protocol.
-CACHE_KEY_VERSION = 4
+CACHE_KEY_VERSION = 5
 
 # On-wire LinPayload envelope version (models/lineage.py). Tracks the SHAPE of
 # the `{"v": N, "entries": [...]}` value carried on the Nextflow channel. Do
@@ -42,10 +44,13 @@ CACHE_KEY_VERSION = 4
 #     one, and the `.nf` is written by the client's metasmith while bootstrap
 #     runs from the agent container's, so the two ends can be different
 #     builds. The bump turns that into a named refusal.
+# v5: each member carries `KEY`, its cache key as minted on the channel before
+#     submission ("-" when the member has no identity to key on). The task
+#     names its products by it and promotes under it.
 #
 # The emitter interpolates this constant (`nextflow_codegen.LIN_ECHO_EXPR`)
 # rather than restating it, so emitter and parser cannot drift.
-LIN_PAYLOAD_VERSION = 4
+LIN_PAYLOAD_VERSION = 5
 
 
 def canonical_cbor(payload) -> bytes:

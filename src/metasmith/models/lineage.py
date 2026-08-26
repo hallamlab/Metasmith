@@ -4,6 +4,7 @@ from dataclasses import dataclass, field, asdict
 from pathlib import Path
 from typing import Any, ClassVar, Iterable, Literal, Optional, Union
 import json
+import re
 
 from ..caching.keys import LIN_PAYLOAD_VERSION, canonical_cbor, multihash_key
 from ..logging import Log
@@ -66,8 +67,11 @@ class LinPayload:
     VERSION: ClassVar[int] = LIN_PAYLOAD_VERSION
     FILES_KEY: ClassVar[str] = "FILES"
     PROV_KEY: ClassVar[str] = "PROV"
+    # The member's cache key, stamped by `Orchestrator._route` before the
+    # task is submitted; "-" for a member that cannot be keyed.
+    KEY_KEY: ClassVar[str] = "KEY"
 
-    RESERVED_KEYS: ClassVar[frozenset[str]] = frozenset({"FILES", "PROV"})
+    RESERVED_KEYS: ClassVar[frozenset[str]] = frozenset({"FILES", "PROV", "KEY"})
 
     def Pack(self) -> dict:
         return {"v": self.v, "entries": [dict(m) for m in self.entries]}
@@ -119,10 +123,21 @@ class LinPayload:
     FILE_ID_SEP: ClassVar[str] = "::"
 
     @staticmethod
+    def canonical_output_name(name: str) -> str:
+        """The name with its batch position normalised to 1.
+
+        A product is named `<pos>-<item>-<branch>.<token>-<dtype><ext>`, and
+        `pos` is where the member sat in the batch that ran it. The same member
+        in another batch sits elsewhere; its product is the same file.
+        """
+        return re.sub(r"^\d+-", "1-", Path(str(name)).name, count=1)
+
+    @staticmethod
     def mint_file_id(slot_id: str, relative_path: Union[str, Path]) -> str:
+        # One end of an identity; the other is Orchestrator._post.
         from hashlib import md5
 
-        name = Path(str(relative_path)).name
+        name = LinPayload.canonical_output_name(str(relative_path))
         composite = f"{slot_id}{LinPayload.FILE_ID_SEP}{name}"
         return md5(composite.encode("utf-8")).hexdigest()
 

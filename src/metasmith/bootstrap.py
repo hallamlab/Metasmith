@@ -112,6 +112,7 @@ def ExecuteStep(
     params: dict,
     host_local: bool = False,
     slot_channels: dict[str, str]|None = None,
+    cache_meta: "StepCacheMeta|None" = None,
 ) -> ExecutionResult:
     from .models.workflow import WorkflowStep
     assert isinstance(step, WorkflowStep)
@@ -329,6 +330,8 @@ def ExecuteStep(
                 Log.Info(f"batch [{i+1}] of [{len(results)}]")
             on_exit(result, f"reports {'success' if result.success else 'failure'}")
         success = any(r.success for r in results)
+        if cache_meta is not None:
+            _promote(cache_meta, lineages, results)
         if success: Path(".command.success").touch()
         return ExecutionResult(success)
     except Exception as e:
@@ -340,6 +343,31 @@ def ExecuteStep(
         with open("traceback.temp", "r") as f:
             Log.Error(f.read()[:-1])
         return ExecutionResult(False)
+
+
+def _promote(cache_meta, lineages: list, results: list) -> None:
+    # The member keys came in on the payload; the products are in cwd. A
+    # protocol that answered once for a whole batch answered for every member.
+    from .caching.layout import default_cache_root
+    from .caching.promote import promote_members
+
+    if len(results) == len(lineages):
+        successes = [bool(r.success) for r in results]
+    else:
+        successes = [any(r.success for r in results)] * len(lineages)
+    try:
+        records = promote_members(
+            cwd=Path.cwd(),
+            entries=lineages,
+            meta=cache_meta,
+            cache_root=default_cache_root(AgentPaths.HOME_ROOT),
+            successes=successes,
+        )
+    except Exception as e:
+        Log.Warn(f"cache promote failed: {e}")
+        return
+    for r in records:
+        Log.Info(f"cache [{r['status']}] member [{r['member'] + 1}] key [{r['key'][:12]}]")
 
 
 def StageAndRunTransform(workspace: Path, step_index: int, host: str, stage_root: Path|None=None):
@@ -537,6 +565,10 @@ def StageAndRunTransform(workspace: Path, step_index: int, host: str, stage_root
                         continue
                     dgroup[dep] = insts[0].dtype
                 dep2output.append(dgroup)
+        cache_meta = None
+        if "transform_key" in raw_meta:
+            from .caching.promote import StepCacheMeta
+            cache_meta = StepCacheMeta.from_raw(step_index, raw_meta)
         return ExecuteStep(
             step=step,
             agent=agent,
@@ -549,4 +581,5 @@ def StageAndRunTransform(workspace: Path, step_index: int, host: str, stage_root
             params=params,
             host_local=not agent_env.needs_relay,
             slot_channels=slk,
+            cache_meta=cache_meta,
         )
