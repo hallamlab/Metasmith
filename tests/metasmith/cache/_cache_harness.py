@@ -33,6 +33,7 @@ class RunSnapshot:
     result_fingerprints: tuple[tuple[str, str], ...]
     cache_state: tuple[tuple[str, int], ...]
     target_manifests: tuple[tuple[str, int], ...]
+    workspace: Path = field(default=Path("."))
 
 
 def build_types_library(tmp_path: Path, type_names: Iterable[str]) -> Path:
@@ -342,6 +343,7 @@ def capture_run(virtual_runtime, task: WorkflowTask) -> RunSnapshot:
         result_fingerprints=_collect_result_fingerprints(workspace),
         cache_state=_collect_cache_state(virtual_runtime.home),
         target_manifests=_collect_target_manifests(workspace),
+        workspace=workspace,
     )
 
 

@@ -45,6 +45,7 @@ def run_cached_stub(
     *,
     before_promote=None,
     timeout: int = 300,
+    trace: Path | None = None,
 ) -> Path:
     """One cached run. Returns the results directory.
 
@@ -82,6 +83,7 @@ def run_cached_stub(
             "-stub",
             "-lib", "./lib",
             "-ansi-log", "false",
+            *(["-with-trace", str(trace)] if trace else []),
         ],
         capture_output=True,
         text=True,
@@ -245,3 +247,28 @@ class TestDirectoryProducts:
         for d in published:
             assert (d / "a.txt").read_text() == "alpha\n"
             assert (d / "b.txt").read_text() == "beta\n"
+
+
+def _task_rows(trace: Path) -> list[dict[str, str]]:
+    lines = trace.read_text().splitlines()
+    head = lines[0].split("\t")
+    return [dict(zip(head, l.split("\t"))) for l in lines[1:] if l.strip()]
+
+
+class TestAHitIsALocalTask:
+    def test_every_hit_runs_as_a_cached_twin_and_publishes(
+        self, simple_workflow_task, tmp_path, docker_image
+    ):
+        home = tmp_path / "agent_home"
+        first = run_cached_stub(simple_workflow_task, tmp_path / "run1", home, docker_image)
+        trace = tmp_path / "run2" / "nxf_trace.tsv"
+        second = run_cached_stub(
+            simple_workflow_task, tmp_path / "run2", home, docker_image, trace=trace,
+        )
+        rows = _task_rows(trace)
+        assert rows, "the second run submitted no task at all: a hit must run as a task"
+        names = sorted({r["name"].split(" ")[0] for r in rows})
+        not_twin = [n for n in names if not n.endswith("_cached")]
+        assert not not_twin, f"hits were not served by `*_cached` twins: {not_twin}"
+        assert all(r["status"] == "COMPLETED" for r in rows), rows
+        assert _results_tree(second) == _results_tree(first)
