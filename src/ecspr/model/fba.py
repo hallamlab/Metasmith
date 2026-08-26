@@ -962,12 +962,28 @@ def run(frames, gpr_paths, conditions, tests, media, *, release=None, weighting=
     if of:
         if not (0 <= int(part) < int(of)):
             raise ValueError(f"--part {part} is not in range for --of {of}")
-        keys = list(groups)
-        mine = {i for n, k in enumerate(keys) if n % int(of) == int(part)
-                for i in groups[k]}
-        log(f"[fba] part {part}/{of}: {len(mine)} of {len(tests)} test(s) over "
-            f"{sum(1 for n in range(len(keys)) if n % int(of) == int(part))} of "
-            f"{len(keys)} difference group(s)")
+        # BALANCE ON TESTS, NOT ON GROUPS. Dealing whole groups round-robin assumes they
+        # are the same size and they are not: 2,458 of fuhrer's 3,806 deletions name a gene
+        # that carves the frame identically, so they collapse into ONE group holding
+        # two thirds of the sweep. Strided over 32 parts that group went to task 0 alone,
+        # which then ran for an hour while thirty-one tasks finished in a minute each.
+        #
+        # A contiguous cut by test position keeps every group whole except the one or two
+        # that straddle a boundary, and those cost one extra difference in the neighbouring
+        # part -- cheap beside the imbalance it removes.
+        sized, pos = [], 0
+        for k in groups:
+            sized.append((k, pos, pos + len(groups[k])))
+            pos += len(groups[k])
+        lo = pos * int(part) // int(of)
+        hi = pos * (int(part) + 1) // int(of)
+        mine = {i for k, a, b in sized if a < hi and b > lo
+                for n, i in enumerate(groups[k], start=a) if lo <= n < hi}
+        split = sum(1 for _k, a, b in sized if a < lo < b or a < hi < b)
+        log(f"[fba] part {part}/{of}: {len(mine)} of {len(tests)} test(s), "
+            f"contiguous positions [{lo}, {hi}) over {len(groups)} difference group(s)"
+            + (f"; {split} group(s) straddle a boundary and are built here too"
+               if split else ""))
 
     shard_dir = Path(shard_dir) if shard_dir else None
     if shard_dir:

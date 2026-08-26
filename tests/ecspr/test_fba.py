@@ -460,6 +460,41 @@ def test_parts_split_differences_and_reassemble_into_the_whole(frame, tmp_path):
     pd.testing.assert_frame_equal(whole, assembled)
 
 
+def test_one_huge_group_beside_small_ones_still_splits(frame, tmp_path):
+    # THE IMBALANCE IS THE DEFECT, not the failure to split. Dealing whole groups
+    # round-robin assumes they are the same size; on fuhrer 2,458 of 3,806 deletions carve
+    # the frame identically and collapse into ONE group holding two thirds of the sweep,
+    # which then went to array task 0 alone while thirty-one tasks finished in a minute.
+    gpr = _gpr(tmp_path)
+    common = dict(frame="toy", media="m", target_hub="bio_c", growth_pin=0.1)
+    # One condition read many times over -- the shape a cohort of no-op deletions takes --
+    # beside one that actually differs.
+    ts = [T.Test(test_id="base", network="both", arm="gem", settings=dict(common))]
+    ts += [T.Test(test_id=f"flat{i}", network="both", arm="gem", read_against="base",
+                  settings=dict(common)) for i in range(12)]
+    ts += [T.Test(test_id="ko", network="ko", arm="gem", read_against="base",
+                  settings=dict(common))]
+    args = ([frame], [gpr], [BOTH, _ko_g1()], ts, {"m": MEDIUM})
+    whole = F.run(*args, do_gapfill=False, log=lambda _m: None)
+
+    shards = tmp_path / "array"
+    shards.mkdir()
+    shares = []
+    for i in range(4):
+        seen = []
+        F.run(*args, do_gapfill=False, shard_dir=tmp_path / f"t{i}", part=i, of=4,
+              log=seen.append)
+        shares.append(len(list((tmp_path / f"t{i}").glob("*.json"))))
+        for f in (tmp_path / f"t{i}").glob("*.json"):
+            (shards / f.name).write_text(f.read_text())
+    assert sum(shares) == 14, shares
+    # No task carries more than half, which round-robin over two groups could not manage:
+    # it gave one task all 13 of the flat tests and the other exactly one.
+    assert max(shares) <= 7, shares
+    assembled = F.run(*args, do_gapfill=False, shard_dir=shards, log=lambda _m: None)
+    pd.testing.assert_frame_equal(whole, assembled)
+
+
 def test_a_part_out_of_range_is_refused(frame, tmp_path):
     gpr = _gpr(tmp_path)
     with pytest.raises(ValueError, match="not in range"):

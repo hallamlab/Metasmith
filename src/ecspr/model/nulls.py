@@ -126,6 +126,11 @@ def draw(pool_paths, like_conditions, like_tests, *, n: int, seed: int,
             "the drawn units ALONE. Pass the observed arm's background or every draw "
             "abstains on a graph with no host in it.")
 
+    # THE PROTOTYPE INDEX IS A POSITION IN THIS LIST, so it is stable only for a fixed set
+    # of prototypes. Adding a second arm's tests to a draw renumbers the first arm's -- the
+    # drawn CONDITIONS are unchanged (they do not depend on the prototypes at all) but
+    # every test id moves, and a results table measured before the second arm was added no
+    # longer joins to the tests table on disk. Re-emit both arms in one draw, then measure.
     ordered = sorted(protos.items(), key=lambda kv: str(kv[0]))
     conditions, tests = [], []
 
