@@ -80,6 +80,13 @@ class Cohort:
     conditions_path: Path = None
     #: Extra GPR tables a passed-in conditions table names, beyond `host_gpr`.
     extra_gpr: tuple = ()
+    #: `[(leg, source_mnxm, sink_mnxm)]` -- the CONDUCTANCE arm's two-point legs over the
+    #: same conditions. Given, `build` writes an `ecspr_tests` table beside the gem one,
+    #: so `ecspr draw --like-tests <that> --like-gem-tests <the gem one>` emits one drawn
+    #: pool that both arms measure. Two arms on two pools have adjacent error bars rather
+    #: than comparable ones, and that is the whole point of the comparison.
+    legs: tuple = ()
+    element: str = "C"
 
     def __post_init__(self):
         if not self.baseline_id:
@@ -156,6 +163,31 @@ def gem_tests(c: Cohort, conds: list, axis_targets: list) -> list:
     return out
 
 
+def ecspr_tests(c: Cohort, conds: list) -> list:
+    """The conductance arm's tests over the SAME conditions the gem tests read.
+
+    One test per (leg, condition). `two-point` names its readout after the sink, so two
+    legs of a ratio come back on distinct rows of `scoring.KEYS["ecspr"]` and are never
+    pooled -- the quotient is taken downstream, from the two legs' own deltas.
+    """
+    out = []
+    for leg, src, snk in c.legs:
+        base_id = f"{leg}.{c.baseline_id}"
+        settings = dict(element=c.element, source_hub=src, sink_hub=snk)
+        out.append(test_mod.Test(
+            test_id=base_id, network=c.baseline_id, arm="ecspr", settings=dict(settings),
+            meta=dict(cohort=c.name, is_control=1, stratum=0, n_units=0, draw_id=None)))
+        for cond in conds:
+            if cond.condition_id == c.baseline_id:
+                continue
+            out.append(test_mod.Test(
+                test_id=f"{leg}.{cond.condition_id}", network=cond.condition_id,
+                arm="ecspr", read_against=base_id, settings=dict(settings),
+                meta=dict(cohort=c.name, is_control=int(len(cond.steps) == 1),
+                          stratum=1, n_units=1, draw_id=None)))
+    return out
+
+
 def media_rows(c: Cohort) -> list:
     """The frame's own minimal medium at a fixed glucose uptake."""
     model = fba_mod.load_frame(c.frame)
@@ -182,6 +214,11 @@ def build(c: Cohort) -> dict:
     test_mod.write(ts, c.out / "gem_tests.parquet", "gem")
     fba_mod.write_media(rows, c.out / "media.parquet")
     print(f"[tests] {len(ts):,} -> {c.out / 'gem_tests.parquet'}")
+    if c.legs:
+        es = ecspr_tests(c, conds)
+        test_mod.write(es, c.out / "ecspr_tests.parquet", "ecspr")
+        print(f"[tests] {len(es):,} conductance -> {c.out / 'ecspr_tests.parquet'} "
+              f"({len(c.legs)} leg(s) on the same conditions)")
     print(f"[media] {len(rows)} bounds -> {c.out / 'media.parquet'}")
     return dict(conditions=len(conds), perturbing=perturbing, tests=len(ts),
                 axes=len(tgt))

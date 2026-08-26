@@ -47,6 +47,15 @@ CENSUS = D.ROOT / "data/fabfos/runs/eydallin_clones/gpr/lof/mutant_census.tsv"
 SINKS = (("glycogen", "target", "MNXM738130", "glycogen"),
          ("pyruvate", "control", "MNXM23", "pyruvate"))
 
+#: THE RATIO'S TWO LEGS, and they are not the same thing as the two SINKS above. Flux
+#: balance maximises a flux TO a metabolite from the medium, so both its axes share one
+#: source; the conductance arm solves glucose -> glycogen against glycogen -> pyruvate,
+#: and glycogen is the second leg's SOURCE. The quotient is taken downstream from the two
+#: legs' own deltas -- `two-point` names its readout after the sink, so the two never pool.
+GLUCOSE = "MNXM1364061"
+LEGS = (("gg", GLUCOSE, "MNXM738130"),
+        ("gp", "MNXM738130", "MNXM23"))
+
 
 def cohort() -> D.Cohort:
     census = pd.read_csv(CENSUS, sep="\t").drop_duplicates("gene")
@@ -57,6 +66,7 @@ def cohort() -> D.Cohort:
         cohort_gpr=D.ROOT / "data/fabfos/runs/eydallin_clones/gpr/lof/gpr_gem.parquet",
         condition_ids=tuple(census.condition_id),
         sinks=SINKS,
+        legs=LEGS,
         out=HERE / "cache",
     )
 
