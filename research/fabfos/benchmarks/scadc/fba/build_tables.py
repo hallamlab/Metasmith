@@ -97,6 +97,11 @@ def cohort() -> D.Cohort:
         baseline_id=BASELINE_ID,
         conditions_path=CONDITIONS,
         extra_gpr=(TABLES / T_FOSMIDS,),
+        # AN INSERT IS ONE genome_unit AND 9 TO 81 ORFs, and the null draws ORFs -- see
+        # `ecspr draw --size-from`. Sizing the observation the same way is what lets the
+        # size-matched p find a stratum at all; on unit count it found none and every
+        # `p_stratum` came back NaN.
+        size_column=("orf", T_FOSMIDS),
         out=CACHE,
     )
 

@@ -87,6 +87,12 @@ class Cohort:
     #: than comparable ones, and that is the whole point of the comparison.
     legs: tuple = ()
     element: str = "C"
+    #: `(column, table)` -- how big a construction IS, counted in the units a null draws.
+    #: Unset, a perturbation is one genome_unit and `n_units` is 1, which is right for a
+    #: deletion screen. It is WRONG for a library: a fosmid is one unit carrying 9 to 81
+    #: ORFs, so a null matched on unit count can only redraw the observed inserts. Set it
+    #: to the column `ecspr draw --size-from` is given and the strata agree on both sides.
+    size_column: tuple = ()
 
     def __post_init__(self):
         if not self.baseline_id:
@@ -137,9 +143,27 @@ def targets(c: Cohort) -> list:
     return out
 
 
+def sizes(c: Cohort, conds: list) -> dict:
+    """`{condition_id: how many draw-units it perturbs}` -- the stratum both arms match on.
+
+    A NULL AND AN OBSERVATION HAVE TO BE SIZED THE SAME WAY OR THE MATCH SILENTLY MISSES.
+    `ecspr score` looks the observation's `n_units` up among the null's strata; where the
+    null was drawn with `--size-from orf` and the observation still says 1, no stratum
+    matches and `p_stratum` comes back NaN for every row.
+    """
+    if not c.size_column:
+        return {}
+    from ecspr.model.nulls import size_in
+    column, table = c.size_column
+    pool = pd.read_parquet(next(p for p in (c.cohort_gpr, *c.extra_gpr)
+                                if Path(p).name == table))
+    return {x.condition_id: size_in(pool, x, column, table) for x in conds}
+
+
 def gem_tests(c: Cohort, conds: list, axis_targets: list) -> list:
     settings = dict(frame=Path(c.frame).stem, media=c.media, objective="",
                     growth_pin=GROWTH_PIN, min_lanes=1)
+    n_of = sizes(c, conds)
     out = []
     for axis, _role, met, _tier in axis_targets:
         base_id = f"{axis}.{c.baseline_id}"
@@ -159,7 +183,8 @@ def gem_tests(c: Cohort, conds: list, axis_targets: list) -> list:
                 # mutant, and a mutant whose gene carries no reaction of this frame is a
                 # real perturbation that cannot move the measurement -- a control.
                 meta=dict(cohort=c.name, is_control=int(len(cond.steps) == 1),
-                          stratum=1, n_units=1, draw_id=None)))
+                          stratum=n_of.get(cond.condition_id, 1),
+                          n_units=n_of.get(cond.condition_id, 1), draw_id=None)))
     return out
 
 
@@ -170,6 +195,7 @@ def ecspr_tests(c: Cohort, conds: list) -> list:
     legs of a ratio come back on distinct rows of `scoring.KEYS["ecspr"]` and are never
     pooled -- the quotient is taken downstream, from the two legs' own deltas.
     """
+    n_of = sizes(c, conds)
     out = []
     for leg, src, snk in c.legs:
         base_id = f"{leg}.{c.baseline_id}"
@@ -184,7 +210,8 @@ def ecspr_tests(c: Cohort, conds: list) -> list:
                 test_id=f"{leg}.{cond.condition_id}", network=cond.condition_id,
                 arm="ecspr", read_against=base_id, settings=dict(settings),
                 meta=dict(cohort=c.name, is_control=int(len(cond.steps) == 1),
-                          stratum=1, n_units=1, draw_id=None)))
+                          stratum=n_of.get(cond.condition_id, 1),
+                          n_units=n_of.get(cond.condition_id, 1), draw_id=None)))
     return out
 
 

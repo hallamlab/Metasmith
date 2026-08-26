@@ -26,7 +26,7 @@ def _pool_values(pool: pd.DataFrame, draw_column: str) -> np.ndarray:
     return np.array(sorted(v), dtype=object)
 
 
-def _size_in(pool: pd.DataFrame, condition, column: str, table: str) -> int:
+def size_in(pool: pd.DataFrame, condition, column: str, table: str) -> int:
     """How many distinct `column` values one construction's perturbation reaches.
 
     THE SIZE A NULL MATCHES HAS TO BE COUNTED IN THE UNITS THE DRAW PICKS. `n_units`
@@ -95,7 +95,7 @@ def draw(pool_paths, like_conditions, like_tests, *, n: int, seed: int,
     for t in like_tests:
         if size_from:
             c = by_id.get(t.network)
-            s = _size_in(pool, c, size_from, pool_table) if c is not None else None
+            s = size_in(pool, c, size_from, pool_table) if c is not None else None
         else:
             s = t.meta.get("n_units")
             s = int(s) if s is not None and s == s else size
