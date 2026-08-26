@@ -34,14 +34,6 @@ def shard_dir(cache_root: Path, key_hex: str) -> Path:
     )
 
 
-def staging_dir(cache_root: Path, key_hex: str) -> Path:
-    return Path(cache_root) / f"{key_hex}.tmp"
-
-
-def lock_file(cache_root: Path, key_hex: str) -> Path:
-    return Path(cache_root) / f"{key_hex}.lock"
-
-
 def out_dir(shard: Path) -> Path:
     return Path(shard) / OUT_DIR_NAME
 
