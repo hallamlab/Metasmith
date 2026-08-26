@@ -73,6 +73,44 @@ def test_the_backbone_axes_enter_at_dhap():
     assert "MNXM77" not in set(set4_lipid.src_mnxm)
 
 
+def test_host_substitutions_are_additive_and_keep_the_declared_axis():
+    base = ecspr_axes.load()
+    df = ecspr_axes.load(host_subs="epi300")
+    subs = df[df.axis_set == "host_sub"]
+    assert len(df) == len(base) + len(subs)
+    # The declared axis is never replaced -- it stays as the control that says whether the
+    # generic has come into the host graph yet.
+    assert set(base.axis_id) <= set(df.axis_id)
+    assert set(subs.substitutes) <= set(base.axis_id)
+    assert (subs.member_label != "").all()
+    assert (base.substitutes == "").all()
+
+
+def test_a_substitution_moves_exactly_one_endpoint():
+    df = ecspr_axes.load(host_subs="epi300")
+    by_id = df.set_index("axis_id")
+    for s in df[df.axis_set == "host_sub"].itertuples():
+        d = by_id.loc[s.substitutes]
+        moved = [(d.src_mnxm != s.src_mnxm), (d.dst_mnxm != s.dst_mnxm)]
+        assert sum(moved) == 1, f"{s.axis_id} moved {sum(moved)} endpoints"
+        assert s.element == d.element
+
+
+def test_a_family_with_no_host_member_yields_no_substitution():
+    # lipid II is declared with an empty member list: this host's graph carries no lipid II
+    # species of any acylation, and an empty list is the honest answer rather than a
+    # stand-in from a different family.
+    spec = json.loads(ecspr_axes.HOST_SUBS["epi300"].read_text())
+    assert spec["MNXM163519"]["members"] == []
+    df = ecspr_axes.load(host_subs="epi300")
+    assert not (df[df.axis_set == "host_sub"].dst_mnxm == "MNXM163519").any()
+
+
+def test_an_unknown_host_is_refused():
+    with pytest.raises(ValueError, match="no substitutions for host"):
+        ecspr_axes.load(host_subs="nostoc")
+
+
 def test_every_axis_is_one_to_one():
     for path in (ecspr_axes.SET4, ecspr_axes.LIPID_EXT):
         for axis_id, r in json.loads(path.read_text()).items():

@@ -35,8 +35,13 @@ SET4_N = 79
 
 LIPID_EXT = CURATED / "biomass_dag_axes_set4_lipid_ext.json"
 
+#: `{host: substitutions file}`. A substitution says which members of a declared family a
+#: GIVEN HOST's graph actually carries, so it is named for the host and never for set4.
+HOST_SUBS = {"epi300": CURATED / "host_substitutions_epi300.json"}
+
 COLUMNS = ("axis_id", "element", "src_mnxm", "dst_mnxm", "category", "route",
-           "module_id", "module_name", "description", "purpose", "axis_set")
+           "module_id", "module_name", "description", "purpose", "axis_set",
+           "substitutes", "member_label")
 
 
 def sha256(path: Path) -> str:
@@ -54,11 +59,42 @@ def _rows(path: Path, axis_set: str) -> list:
                         category=r["category"], route=r["route"],
                         module_id=r["module_id"], module_name=r["module_name"],
                         description=r["description"], purpose=r["purpose"],
-                        axis_set=axis_set))
+                        axis_set=axis_set, substitutes="", member_label=""))
     return out
 
 
-def load(*, lipid_ext: bool = True) -> pd.DataFrame:
+def _substituted(rows: list, host: str) -> list:
+    # One extra axis per (declared axis, host-present member) pair.
+    #
+    # THE DECLARED AXIS IS NEVER REMOVED. It rides along as a control, so a bake that brings
+    # the declared metabolite into the host graph shows up as the control coming alive
+    # rather than as a silent change of what the phospholipid axes mean. A family with no
+    # host-present member at all -- lipid II here -- yields nothing, and that is the honest
+    # answer rather than a stand-in from a neighbouring family.
+    subs = json.loads(Path(HOST_SUBS[host]).read_text())
+    subs = {k: v for k, v in subs.items() if not k.startswith("_")}
+    out = []
+    for r in rows:
+        for end in ("src_mnxm", "dst_mnxm"):
+            spec = subs.get(r[end])
+            if not spec:
+                continue
+            for m in spec["members"]:
+                s = dict(r)
+                s[end] = m["mnxm"]
+                s["axis_id"] = f"{r['axis_id']}__{host}_{m['label']}"
+                s["module_name"] = f"{r['module_name']} [{m['label']}]"
+                s["description"] = (f"{r['description']}; {spec['declared_name']} carried "
+                                    f"on {m['name']} because the declared id is not a node "
+                                    f"in the {host} graph")
+                s["axis_set"] = "host_sub"
+                s["substitutes"] = r["axis_id"]
+                s["member_label"] = m["label"]
+                out.append(s)
+    return out
+
+
+def load(*, lipid_ext: bool = True, host_subs: str | None = None) -> pd.DataFrame:
     # The sha is checked on every load rather than once at recovery, because the failure it
     # guards against is an EDIT, and an edit happens after recovery.
     got = sha256(SET4)
@@ -72,6 +108,11 @@ def load(*, lipid_ext: bool = True) -> pd.DataFrame:
         raise ValueError(f"expected {SET4_N} set4 axes, got {len(rows)}")
     if lipid_ext:
         rows += _rows(LIPID_EXT, "lipid_ext")
+    if host_subs:
+        if host_subs not in HOST_SUBS:
+            raise ValueError(f"no substitutions for host {host_subs!r}; "
+                             f"have {sorted(HOST_SUBS)}")
+        rows += _substituted(rows, host_subs)
 
     df = pd.DataFrame(rows, columns=list(COLUMNS))
     # (element, source, sink) is what a measurement IS, so two rows sharing it are one

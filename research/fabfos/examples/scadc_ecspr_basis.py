@@ -60,6 +60,11 @@ DEFAULT_OUT = REPO / "data/scratch/scadc_ecspr/basis"
 ELEMENT = "C"
 ELEMENTS = ("C", "N", "P", "S")
 
+# Which host's substitution table to expand. A substitution says which members of a
+# declared family THIS host's graph carries, so it belongs to the host and not to set4 --
+# and measuring the SCADC inserts on any other background would need a different one.
+HOST = "epi300"
+
 # Glucose in, and the four sinks merged into one ground. Carried as NAMES, because an id
 # is a fact about one MetaNetX release and this arm has already outlived one: the ids the
 # retired generation used are recorded beside each entry and are compared, not assumed.
@@ -194,7 +199,7 @@ def build_terminals(pairs: pd.DataFrame, out: Path) -> dict:
 
 
 def build_axes(pairs: pd.DataFrame, terminals: dict, out: Path) -> pd.DataFrame:
-    axes = ecspr_axes.load()
+    axes = ecspr_axes.load(host_subs=HOST)
     chem = _chem_prop()
 
     # Every endpoint must be a node in ITS OWN element's pair table. An axis whose source
@@ -229,7 +234,8 @@ def build_axes(pairs: pd.DataFrame, terminals: dict, out: Path) -> pd.DataFrame:
 
     rows = [dict(axis_id=r.axis_id, element=r.element, source=r.src_mnxm,
                  sink_hub=r.dst_mnxm, category=r.category, axis_set=r.axis_set,
-                 module_name=r.module_name) for r in axes.itertuples()]
+                 module_name=r.module_name, substitutes=r.substitutes,
+                 member_label=r.member_label) for r in axes.itertuples()]
     # THE PUBLISHED AXIS RIDES ALONG, so the rebuilt path can be checked against a number
     # that already exists. Its sinks are merged into one ground, which is why `sink_hub`
     # is a joined field on every row rather than a single id.
@@ -237,7 +243,8 @@ def build_axes(pairs: pd.DataFrame, terminals: dict, out: Path) -> pd.DataFrame:
                      source=terminals["source"],
                      sink_hub="|".join(terminals["sinks"].values()),
                      category="legacy", axis_set="legacy",
-                     module_name="D-glucose -> 4 biomass hubs (merged)"))
+                     module_name="D-glucose -> 4 biomass hubs (merged)",
+                     substitutes="", member_label=""))
     df = pd.DataFrame(rows)
 
     doc = {"bake_identity": bake_identity.identity(), "axes": rows}
