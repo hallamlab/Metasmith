@@ -487,7 +487,7 @@ def prepare_nextflow(task, context: NextflowGenContext):
             "}",
             "",
         ]
-        return twin_name, "\n".join(src), ["cpus 1", "memory '256 MB'"]
+        return twin_name, "\n".join(src), ["cpus = 1", "memory = '256 MB'"]
 
     def ensure_local_folder(n):
         d = context.work_dir/n
