@@ -41,15 +41,15 @@ Dropping EZpred costs nothing the study relied on: it was near-silent on dark ma
 production threshold (fires on 0 of 3,310 dark fosmid ORFs, where CLEAN reaches 3,278), and
 its apparent coverage was sub-0.3 fan-out noise.
 
-## Two findings the reproduction has to settle
+## Two findings, both settled
 
 **The transfer lanes' zero is a marginal-contribution zero, not an accuracy zero.**
 `e6d36f16` draws ProteinBERT and ESM-C bar-less because "every transfer-containing combo
 collapses onto its non-transfer twin" — on a curated chassis they add no ORF the other lanes
 did not already get. `14cafb1c` separately reports the transfer lane at P = R = 0.839 on
 DH10B and 0.845 on EPI300. Those reconcile as *accurate in isolation, redundant in
-combination*, but no journal says so outright. Establish which quantity each number is
-before either is quoted.
+combination* — and neither figure is about the lane this project ships. `pbert/README.md`
+settles which quantity each number is.
 
 **CLEAN never abstains**, and that is the precedent for objective 2. It emits a full L4 EC
 on ~99% of ORFs, so its 99.4% metag coverage was an artifact of not abstaining rather than
@@ -58,3 +58,11 @@ of reach. Its score *is* discriminative (correct 0.94 vs wrong 0.40), and thresh
 metag coverage to 31.4%. That is the same shape as the pbert problem in `pbert/README.md`:
 a lane that cannot decline, given a threshold on a quantity that was discriminative all
 along.
+
+## Every precision on this page is a single number
+
+A precision depends on how easy the benchmark happened to be, so a table of them says
+which lane did better *here* and cannot say what to do with a particular call.
+`calibration/` fits the error rate as a function of each lane's own score instead. That
+answers a question this page cannot: given this call, at this score, how much should the
+reaction be believed. Two of these four scores turn out to answer it and two do not.

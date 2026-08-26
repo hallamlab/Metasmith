@@ -17,8 +17,8 @@ THE READOUT IS THE ELASTICITY, NOT A PERTURBATION. One solve carries every react
 distribution costs one solve rather than one solve per reaction -- and it is exact where a
 finite difference would be reporting float64 noise.
 
-CURATED ARM ONLY. `gpr_gem.parquet` carries `lane_set=curated`, every row `score_kind=
-presence`. The de-novo tables carry a `pbert` channel whose landmark index is under repair,
+CURATED ARM ONLY. `gpr_gem.parquet` carries `lane_set=curated`, every row at the declared
+`fabfos_evidence.ASSERTION_LLR`. The de-novo tables carry a `pbert` channel whose landmark index is under repair,
 so a number taken from them today is not a number about this instrument.
 
     mamba run -n ecspr python research/fabfos/benchmarks/laser/conditioning/decade_budget.py

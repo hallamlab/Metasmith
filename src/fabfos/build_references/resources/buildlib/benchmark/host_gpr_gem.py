@@ -140,16 +140,18 @@ for host, src_host in sorted(GEM_SOURCE.items()):
         rule = (r.gene_reaction_rule or "").strip()
         genes = list(r.genes)
         common = dict(
-            build_id=build_id, host=host, unit_id=gem_id, source=gem_id,
+            build_id=build_id, host=host, genome_unit=gem_id, source=gem_id,
             mnxr=mnxr, channel=CHANNEL, lane_set=LANE_SET,
             intermediate_id=r.id, intermediate_name=r.name or "",
             # A curated model's assertion is a presence claim; `evidence_quality` says
             # a human curated it, which is a stronger statement than any lane makes.
-            score_kind="presence", evidence_quality="reviewed",
-            # A curated model asserts that a reaction is PRESENT, not how much evidence
-            # there is for it, so weighting it by anything would be inventing a quantity.
-            # The evidence-weighted line is gpr_denovo.
-            raw_score=1.0, projection_via=via,
+            evidence_quality="reviewed",
+            # A curated model asserts that a reaction is PRESENT, and `fe.ASSERTION_LLR`
+            # is the declared worth of an assertion -- the strongest LLR any annotation
+            # lane earned on the DH10B cohort, which is the conservative reading of "a
+            # curator is at least as good as the best tool we measured". It is DECLARED,
+            # not measured: no truth set adjudicates a curated model.
+            llr=fe.ASSERTION_LLR, projection_via=via,
             in_atom_universe=bool(in_universe),
             # CARRIED, not evaluated. A reference table has no perturbation, so evaluating
             # the boolean rule here would bake in one condition -- and the consumer must
@@ -175,7 +177,7 @@ for host, src_host in sorted(GEM_SOURCE.items()):
                              feature_name=g.name or ""))
 
     df = pd.DataFrame(rows, columns=fe.schema_for(EXTENSIONS))
-    df["raw_score"] = df["raw_score"].astype(np.float32)
+    df["llr"] = df["llr"].astype(np.float32)
     df["in_atom_universe"] = df["in_atom_universe"].astype(bool)
     df = df.sort_values(fe.grain_key(EXTENSIONS), kind="mergesort",
                         na_position="last").reset_index(drop=True)

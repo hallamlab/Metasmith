@@ -1,6 +1,6 @@
 outs:
-- md5: 8bc42eb0cd19cedc69b3f2230ed0dc88.dir
-  size: 54935243
+- md5: 696ce76e37dd22f80e0a537bbf67d61c.dir
+  size: 54978753
   nfiles: 91
   hash: md5
   path: benchmarks

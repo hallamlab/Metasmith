@@ -78,6 +78,19 @@ def proteins_for(host: str, symbols: set[str]) -> dict[str, list[str]]:
     return out
 
 
+def _rel(p: Path) -> str:
+    """Repo-relative where it can be, absolute where it cannot.
+
+    A rebuilt source can live OUTSIDE the tree -- the migration reparses into a scratch
+    directory on purpose -- and recording where a borrow came from must not be the thing
+    that refuses it.
+    """
+    try:
+        return str(p.relative_to(REPO))
+    except ValueError:
+        return str(p)
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--from", dest="src", type=Path,
@@ -88,7 +101,7 @@ def main() -> int:
 
     if not a.src.exists():
         raise SystemExit(
-            f"no BW25113 de-novo table at {a.src.relative_to(REPO)}.\n  Build it: "
+            f"no BW25113 de-novo table at {_rel(a.src)}.\n  Build it: "
             f"`python research/fabfos/examples/clone_gpr_on_hpc.py --orfs "
             f"data/fabfos/originals/genomes/{PARENT}/genome/CP193896.1.faa --into "
             f"data/fabfos/runs/{PARENT} --site sockeye --run`, then --publish, then "
@@ -136,7 +149,7 @@ def main() -> int:
     keep.to_parquet(out / "gpr_denovo.parquet", index=False, compression="zstd")
     only = sorted(set(lost["mnxr"]) - set(keep["mnxr"]))
     (out / "BUILD_borrow.json").write_text(json.dumps(dict(
-        borrowed_from=PARENT, source=str(a.src.relative_to(REPO)),
+        borrowed_from=PARENT, source=_rel(a.src),
         genotype={k: dict(gene=v[0], allele=v[1])
                   for k, v in {**BW25113_MARKERS, **LW06_MARKERS}.items()},
         withheld_kind="loss",

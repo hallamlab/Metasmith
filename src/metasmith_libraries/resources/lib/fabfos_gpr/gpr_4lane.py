@@ -1,7 +1,7 @@
 """GPR mapper (chosen 4 lanes): kofam + CLEAN + uniref50 + ProteinBERT -> one
 gene-attributed GPR table.
 
-The schema, the channel vocabulary, the per-channel score_kind and every lane
+The schema, the channel vocabulary, the per-lane score calibration and every lane
 cut-off live in `lib::fabfos_evidence.py` and are read from it. Two copies, one
 per mapper, is how the tree came to hold two different channel vocabularies at
 once.
@@ -12,6 +12,7 @@ retuning a deployed cut-off means re-running this mapper rather than re-filterin
 a table.
 """
 import os
+import re
 import sys
 
 
@@ -19,6 +20,7 @@ def _args():
     import argparse
     p = argparse.ArgumentParser(description="chosen-4 GPR mapper")
     p.add_argument("--bridge", required=True)
+    p.add_argument("--calibration", required=True)
     p.add_argument("--clean", required=True)
     p.add_argument("--ev-lib", required=True)
     p.add_argument("--kofam", required=True)
@@ -69,10 +71,15 @@ def load_evidence(ev_lib):
 
 
 def finish(df, channel, projection_via=None):
-    """Stamp the columns every lane sets identically and order to the schema."""
+    """Stamp the columns every lane sets identically and order to the schema.
+
+    `raw_score` is consumed here and never reaches the table. This is the last place
+    the lane's own scale exists, so it is the only correct place to spend it.
+    """
     df["source"] = SOURCE
     df["channel"] = channel
-    df["score_kind"] = fe.CHANNEL_SCORE_KIND[channel]
+    df["llr"] = fe.calibrate(CAL, channel, df.pop("raw_score").to_numpy())
+    df["llr_route"] = fe.llr_route_for(CAL, channel)
     df["lane_set"] = LANE_SET
     if projection_via is not None:
         df["projection_via"] = projection_via
@@ -81,15 +88,37 @@ def finish(df, channel, projection_via=None):
     df["intermediate_name"] = df["intermediate_name"].fillna("")
     if "evidence_quality" not in df.columns:
         df["evidence_quality"] = "reviewed"
+    # THE SYMBOL IS THE FASTA'S, read once in `orf_ids`. A lane names an EC or a KO
+    # and never learns what the gene is called, so nothing here can fill this in --
+    # and `intermediate_name` must not, because it holds an EC description, which is a
+    # different namespace from the one `gene` consolidates.
+    df["gene"] = df["orf"].map(GENES).astype("object")
+    df["gene"] = df["gene"].where(df["gene"].notna(), None)
     return df[SCHEMA]
 
+# `[gene=thrA]`, as NCBI writes it in a `_protein.faa` header. A prodigal contig has
+# no such tag and gets None, which is the honest answer for an ORF on an unnamed contig.
+_GENE_TAG = re.compile(r"\[gene=([^\]]+)\]")
+
+
 def orf_ids(fasta):
-    out = []
+    """`([id, ...], {id: gene or None})` -- the ORF set and what each ORF is called.
+
+    THE SYMBOL COMES OUT OF THE FASTA, not out of a lane. A lane names an EC or a KO
+    and never learns what the gene is called, so `gene` can only be populated here,
+    where the header that declares it is being read anyway. Every one of K-12's 4,318
+    records carries the tag; a metagenome's carry none, and both are described.
+    """
+    out, genes = [], {}
     with open(fasta) as fh:
         for line in fh:
-            if line.startswith(">"):
-                out.append(line[1:].split()[0])
-    return out
+            if not line.startswith(">"):
+                continue
+            oid = line[1:].split()[0]
+            out.append(oid)
+            m = _GENE_TAG.search(line)
+            genes[oid] = m.group(1) if m else None
+    return out, genes
 
 # Each lane PARSES first and joins to the bridge later. The order matters at this
 # scale: the bridge is 30.5 million rows over three id spaces, and reading it
@@ -104,8 +133,12 @@ def parse_kofam(path):
     df = pd.read_csv(path)
     df["score"] = pd.to_numeric(df["score"], errors="coerce")
     df["thrshld"] = pd.to_numeric(df["thrshld"], errors="coerce")
-    df = df[df["score"].notna() & df["thrshld"].notna() & (df["score"] >= df["thrshld"])]
-    return df.rename(columns={"gene_name": "orf", "KO": "ko", "score": "raw_score"})
+    df = df[df["score"].notna() & df["thrshld"].notna() & (df["score"] >= df["thrshld"])].copy()
+    # THE RATIO, NOT THE BITSCORE. A bitscore is a length-and-family quantity, and the
+    # family's own threshold is the only thing that makes two of them comparable -- so
+    # the calibration is fitted on score/thrshld and the lane must hand it the same.
+    df["raw_score"] = df["score"] / df["thrshld"]
+    return df.rename(columns={"gene_name": "orf", "KO": "ko"})
 
 def lane_kofam(df, ko_to_mnxr):
     df = df.merge(ko_to_mnxr, on="ko", how="inner")
@@ -370,7 +403,10 @@ def bridge_slice(path, src, name, wanted):
     return df.drop_duplicates().rename(columns={"id": name})
 
 def main():
-    ids = orf_ids(str(A.orfs))
+    # `GENES` is module-level for the same reason SOURCE and CAL are: `finish` is
+    # called once per lane and every lane stamps the same value from it.
+    global GENES
+    ids, GENES = orf_ids(str(A.orfs))
     if not ids:
         raise SystemExit("[gpr] the input ORF FASTA has no records")
     # Parse every lane FIRST, so the bridge read below knows which ids matter.
@@ -421,6 +457,17 @@ def main():
 if __name__ == "__main__":
     fe = load_evidence(A.ev_lib)
     SCHEMA = fe.SCHEMA_COLS
+    # `ref::lane_calibration`: what one call from each lane is worth, in nats. Staged as
+    # a requirement rather than defaulted, because a table built with no calibration is
+    # an UNWEIGHTED table and must not be mistaken for a weighted one.
+    CAL = fe.load_calibration(str(A.calibration))
+    if CAL is None:
+        raise SystemExit(
+            "[gpr] --calibration " + str(A.calibration) + " holds no "
+            "lane_calibration.json. Every lane would fall back to a flat "
+            + str(fe.UNCALIBRATED_LLR) + " nats, which is a table that says every "
+            "annotation call is worth the same -- the thing this reference exists to "
+            "stop being true")
     LANE_SET = str(A.lane_set)
     SOURCE = str(A.source)
     # The lane cut-offs are fe's, not this module's. They were literals here, in the

@@ -58,6 +58,10 @@ STAGED_REFS = [
     "ref::ezpred_model",
     "ref::mnxr_lookup",
     "ref::label_transfer_landmarks",
+    # What one call from each lane is worth, in nats. The mapper REQUIRES it rather
+    # than defaulting: a table built with no calibration is an unweighted table, and
+    # must not be mistaken for a weighted one.
+    "ref::lane_calibration",
 ]
 
 ORFS = "sequences::orfs"
@@ -104,6 +108,11 @@ def _plan_reads_to_ecspr(work: Path):
     conditions = work / "conditions.parquet"
     conditions.touch()
     inputs.AddItem(conditions, "ecspr::conditions", parents={exp})
+    # WHAT IS MEASURED, staged beside WHAT THE NETWORK IS. Both are human authoring
+    # acts, so both are given rather than produced -- the pipeline disconnects here.
+    tests = work / "ecspr_tests.parquet"
+    tests.touch()
+    inputs.AddItem(tests, "ecspr::ecspr_tests", parents={exp})
     inputs.Save()
 
     resources = [

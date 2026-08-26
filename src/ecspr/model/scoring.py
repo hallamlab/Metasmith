@@ -42,38 +42,77 @@ def _stats(obs: np.ndarray, null: np.ndarray) -> dict:
                 p_floor=1.0 / (m + 1.0))
 
 
-def score(observed: pd.DataFrame, null: pd.DataFrame, *, baseline: str,
-          conditions=None) -> pd.DataFrame:
+def _baselines(obs: pd.DataFrame, tests, baseline) -> dict:
+    """`{test_id: the test_id its deltas are taken against}`.
+
+    THE COLUMN WINS, AND A DISAGREEMENT IS REFUSED. `read_against` is per test, so it
+    can say two different things in one run -- two probes on one network have two
+    baselines -- and a single `--baseline` flag cannot express that. The flag survives
+    only as the fallback for a test whose column is blank; honouring both silently
+    would make the reported deltas depend on which one a reader happened to look at.
+    """
+    declared = {t.test_id: t.read_against for t in (tests or []) if t.read_against}
+    if baseline and declared:
+        disagree = sorted(tid for tid, b in declared.items() if b != baseline)
+        if disagree:
+            raise ValueError(
+                f"--baseline {baseline!r} disagrees with the read_against column on "
+                f"{len(disagree)} test(s), e.g. {disagree[:3]}. Drop the flag: the "
+                f"column is per test and the flag cannot be")
+    out = dict(declared)
+    if baseline:
+        for tid in obs.test_id.astype(str).unique():
+            out.setdefault(tid, baseline)
+    if not out:
+        raise ValueError("no test names a baseline: the tests table's read_against "
+                         "column is empty and no --baseline was given")
+    missing = sorted(set(out.values()) - set(obs.test_id.astype(str)))
+    if missing:
+        raise ValueError(f"baseline test(s) {missing[:5]} are not in the observed "
+                         f"results; a baseline is measured like any other test")
+    return out
+
+
+def score(observed: pd.DataFrame, null: pd.DataFrame, *, baseline=None,
+          tests=None) -> pd.DataFrame:
     obs = _measurements(observed)
     nul = _measurements(null)
-    if baseline not in set(obs.condition_id):
-        raise ValueError(f"baseline condition {baseline!r} is not in the observed "
-                         f"results; it must be measured like any other row")
+    base_of = _baselines(obs, tests, baseline)
 
-    base = (obs[obs.condition_id == baseline]
-            .set_index(list(KEY))["value"].rename("baseline"))
+    # One baseline VECTOR per distinct baseline test, indexed by the readout key.
+    base_tables = {b: obs[obs.test_id == b].set_index(list(KEY))["value"]
+                   for b in set(base_of.values())}
     meta = {}
-    if conditions:
-        meta = {c.condition_id: dict(
-            is_control=bool(c.meta.get("is_control")),
-            stratum=(int(c.meta["n_units"]) if c.meta.get("n_units") is not None
-                     and c.meta.get("n_units") == c.meta.get("n_units") else None))
-            for c in conditions}
+    if tests:
+        meta = {t.test_id: dict(
+            is_control=bool(t.meta.get("is_control")),
+            stratum=(int(t.meta["n_units"]) if t.meta.get("n_units") is not None
+                     and t.meta.get("n_units") == t.meta.get("n_units") else None))
+            for t in tests}
 
-    obs = obs[obs.condition_id != baseline].join(base, on=list(KEY))
+    obs = obs[~obs.test_id.isin(set(base_of.values()))].copy()
+    idx = pd.MultiIndex.from_frame(obs[list(KEY)])
+    obs["baseline"] = [
+        base_tables[base_of[tid]].get(k, np.nan)
+        for tid, k in zip(obs.test_id.astype(str), idx)]
     obs["delta"] = obs.value - obs.baseline
-    obs["is_control"] = [bool(meta.get(c, {}).get("is_control")) for c in obs.condition_id]
-    obs["stratum"] = [meta.get(c, {}).get("stratum") for c in obs.condition_id]
+    obs["is_control"] = [bool(meta.get(c, {}).get("is_control")) for c in obs.test_id]
+    obs["stratum"] = [meta.get(c, {}).get("stratum") for c in obs.test_id]
 
-    nul = nul.join(base, on=list(KEY))
+    # THE NULL IS READ AGAINST THE SAME BASELINE ITS OBSERVED ARM IS. With several
+    # baselines in one run there is no single one to subtract, so the null takes the
+    # baseline of whichever observed test names it -- and with only one, this is what it
+    # always was.
+    null_base = base_tables[sorted(base_of.values())[0]]
+    nul = nul.join(null_base.rename("baseline"), on=list(KEY))
     nul["delta"] = nul.value - nul.baseline
-    nul_stratum = {c.condition_id: c.meta.get("stratum") for c in (conditions or [])}
-    nul["stratum"] = [nul_stratum.get(c) for c in nul.condition_id]
+    nul_stratum = {t.test_id: t.meta.get("stratum") for t in (tests or [])}
+    nul["stratum"] = [nul_stratum.get(c) for c in nul.test_id]
     if nul.stratum.isna().all():
-        # A pool drawn by `ecspr draw` names its stratum in the condition id, which
-        # is what keeps size matching working when the null's own conditions table
-        # was not passed alongside the results.
-        nul["stratum"] = nul.condition_id.astype(str).str.extract(r":s(\d+):")[0]
+        # A pool drawn by `ecspr draw` names its stratum in the test id, which is what
+        # keeps size matching working when the null's own tests table was not passed
+        # alongside the results.
+        nul["stratum"] = nul.test_id.astype(str).str.extract(r":s(\d+):")[0]
         nul["stratum"] = pd.to_numeric(nul["stratum"], errors="coerce")
 
     out = []
@@ -102,7 +141,7 @@ def score(observed: pd.DataFrame, null: pd.DataFrame, *, baseline: str,
 
     if not out:
         return obs
-    cols = ["condition_id", *KEY, "value", "baseline", "delta", "is_control", "stratum",
+    cols = ["test_id", *KEY, "value", "baseline", "delta", "is_control", "stratum",
             "null_n", "null_mean", "null_sd", "z", "p_emp", "q_bh", "p_floor",
             "pct_rank", "z_stratum", "p_stratum", "null_n_stratum"]
     return pd.concat(out, ignore_index=True)[cols]

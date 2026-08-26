@@ -21,10 +21,10 @@ chemistry. The mechanistic arm was run filtered; the classifier arm is run filte
 two arms therefore sit on one background and their numbers are comparable. Anything
 compared against the eydallin sweep is NOT, and the report says so.
 
-FOLD IS FLAT AT 1.0 ACROSS REACTIONS. The de-novo table's per-row `raw_score` spans four
-orders of magnitude and is not normalised across the four lanes, so weighting by it in one
-channel against a flat fold in the other would make the two rankings incomparable for
-reasons that are not biology.
+FOLD IS FLAT AT 1.0 ACROSS REACTIONS. The lanes are now on one scale -- `llr`, in nats --
+so the old objection that they were not comparable is gone. What remains is that a FOLD is
+a dosage claim and a weight is a confidence claim; see `benchmarks/eydallin/sweep_aska.py`,
+which carries the argument.
 
 A GENE WITH NO ATOM-MAPPED REACTION IS AN EXACT ZERO, not an absence. It is never solved --
 folding nothing is the identity -- but it gets its row on every axis, because it is a gene

@@ -305,8 +305,9 @@ clones carry that reaction library-wide, and 28 of the 31 rows asserting it are
 cytochrome oxidase subunit do not carry glgC's activity. That single promiscuous call fills
 most of the de-novo channel's top thirty, and it is the concrete reason the de-novo AUC sits
 *below* chance rather than merely at it. The four lanes are unioned here and unweighted,
-deliberately — the lanes' `raw_score` is not normalised across them — so this is what an
-unfiltered de-novo channel costs.
+deliberately — at the time the lanes were not on one scale — so this is what an
+unfiltered de-novo channel costs. They are now: see
+`research/fabfos/annotation_lanes/calibration/`.
 
 **That pathology was fixed, and fixing it changed nothing.** `sweep_aska.py --min-lanes 2`
 credits a clone with a reaction only when at least two of the four lanes assert it — an

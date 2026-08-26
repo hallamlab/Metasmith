@@ -92,7 +92,7 @@ def main() -> int:
     df = g.copy()
     df["build_id"] = f"denovo_{a.host}_" + "+".join(lanes)
     df["host"] = a.host
-    df["unit_id"] = df["source"]
+    df["genome_unit"] = df["source"]
     df["feature_kind"] = "orf"
     df["feature_name"] = df["intermediate_name"]
     df["gpr_rule"] = None

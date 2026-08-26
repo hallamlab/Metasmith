@@ -61,9 +61,12 @@ BAKE = ROOT / "data/fabfos/processed/metabolism_bake"
 NAME_TABLE = ROOT / "data/fabfos/nostoc/ecspr/metabolite_names.parquet"
 
 sys.path.insert(0, str(ROOT / "src"))
+sys.path.insert(0, str(ROOT / "src/metasmith_libraries/resources/lib"))
 import ecspr                                                    # noqa: E402,F401
 from ecspr.model.build import graph_from_pairs, load_direction_ratios       # noqa: E402
 from ecspr.model.graph import Terminal, solve                                # noqa: E402
+import ecspr.model.evidence as EV                                            # noqa: E402
+import fabfos_evidence as FE                                                 # noqa: E402
 
 GLUCOSE = "MNXM1364061"   # D-glucose (stereo-resolved)
 DHAP = "MNXM77"           # dihydroxyacetone phosphate
@@ -85,11 +88,34 @@ def load_vocab():
     return out
 
 
+def _resolve_host(host: str) -> Path:
+    # relative to data/fabfos/runs, matching every other reader of a run's GPR table --
+    # except an absolute path, which lets --weighting belief point at a table reparsed
+    # with a real calibrated llr (e.g. by reparse_run.py --graft-onto) without publishing
+    # it over the DVC-pinned run.
+    p = Path(host)
+    return p if p.is_absolute() else ROOT / "data/fabfos/runs" / host
+
+
 def host_rxn_codes(host, vocab):
-    df = pd.read_parquet(ROOT / "data/fabfos/runs" / host)
+    df = pd.read_parquet(_resolve_host(host))
     mnxr = pd.unique(df["mnxr"].dropna())
     rcode = vocab["rxn"][1]
     return {rcode[s] for s in mnxr if s in rcode}
+
+
+def belief_weights(hosts) -> dict:
+    # Per-reaction E_r pooled from the calibrated per-lane llr (ref::lane_calibration),
+    # the same call `run_arms.py::base_weights` and `pooling_sanity.py` make -- see
+    # `ecspr.model.evidence.compute_E`. `FE.read_gpr` fills a placeholder llr=2.0 for a
+    # table that was never reparsed with the calibration, so this is silently a flat
+    # weighting again on any host that hasn't been through
+    # `annotation_lanes/calibration/reparse_run.py`.
+    frames = [FE.read_gpr(_resolve_host(h)) for h in hosts]
+    d = pd.concat(frames, ignore_index=True, sort=False)
+    d["llr"] = d["llr"].astype("float64")
+    e = EV.compute_E(d[["orf", "channel", "intermediate_id", "mnxr", "llr"]])
+    return {str(k): float(v) for k, v in e.items()}
 
 
 def _pair_currents(g, sol):
@@ -112,8 +138,11 @@ def _pair_currents(g, sol):
     return out
 
 
-def _build_solve(codes, p, rxn_sym, met_sym):
+def _build_solve(codes, p, rxn_sym, met_sym, belief=None):
     # Graph + solve for one reaction set (element C), the same construction main() uses.
+    # `belief`, when given, is the {mnxr: E_r} dict from `belief_weights()` -- the base
+    # per-reaction conductance is the calibrated pooled belief rather than a flat 1.0 for
+    # every present reaction (the GPR-union scheme).
     ap = p[p.rxn.isin(codes)]
     pairs_dec = pd.DataFrame({
         "mnxr": ap.rxn.map(rxn_sym),
@@ -125,7 +154,16 @@ def _build_solve(codes, p, rxn_sym, met_sym):
         "pair_w": ap.pair_w,
     })
     host_mnxr = set(ap.rxn.map(rxn_sym))
-    weights = {mnxr: 1.0 for mnxr in host_mnxr}
+    if belief is None:
+        weights = {mnxr: 1.0 for mnxr in host_mnxr}
+    else:
+        missing = host_mnxr - belief.keys()
+        if missing:
+            raise SystemExit(
+                f"[belief] {len(missing)} of {len(host_mnxr)} drawn reactions have no "
+                f"calibrated weight (e.g. {sorted(missing)[:5]}) -- the belief host table "
+                f"does not cover the same reaction set host_rxn_codes read")
+        weights = {mnxr: belief[mnxr] for mnxr in host_mnxr}
     d = pd.read_parquet(BAKE / "direction.parquet")
     ratios = (d.assign(mnxr=d.rxn.map(rxn_sym), ratio=d.ratio)
               .dropna(subset=["mnxr"])
@@ -301,6 +339,14 @@ def main():
                          "flow-weighted current distance glucose->DHAP (y=0 = typical "
                          "route); 'direct' = excess above the shortest chain through "
                          "each molecule (mS+mT-(dG+dD) atom steps)")
+    ap.add_argument("--weighting", choices=("uniform", "belief"), default="uniform",
+                    help="per-reaction base conductance before the atom-transit split: "
+                         "'uniform' = every present reaction counts as 1.0, the GPR-union "
+                         "scheme this figure always used; 'belief' = the calibrated pooled "
+                         "log-odds weight E_r (ecspr.model.evidence.compute_E) read off "
+                         "--host's (and --delta's) own llr column -- a table that was never "
+                         "reparsed against ref::lane_calibration carries a flat placeholder "
+                         "llr, so this is silently 'uniform' again on such a host")
     ap.add_argument("--edge-weight", choices=("transits", "current"),
                     default="current",
                     help="edge visual weight: 'transits' = number of atom transits "
@@ -419,10 +465,18 @@ def main():
               "ignoring --edge-weight current", file=sys.stderr)
         args.edge_weight = "transits"
     if args.dist == "paths":
-        g_all, sol = _build_solve(codes, p, rxn_sym, met_sym)
+        belief_all = belief_base = None
+        if args.weighting == "belief":
+            belief_base = belief_weights([args.host])
+            belief_all = (belief_base if not args.delta else
+                          belief_weights([args.host, args.delta]))
+            print(f"[belief] {len(belief_all)} reactions weighted; "
+                  f"E median {np.median(list(belief_all.values())):.4g}, "
+                  f"max {max(belief_all.values()):.4g}")
+        g_all, sol = _build_solve(codes, p, rxn_sym, met_sym, belief=belief_all)
         pair_cur = _pair_currents(g_all, sol)
         if args.delta:
-            g_base, sol_base = _build_solve(base_codes, p, rxn_sym, met_sym)
+            g_base, sol_base = _build_solve(base_codes, p, rxn_sym, met_sym, belief=belief_base)
             pair_cur_union = pair_cur
             pair_cur_base = _pair_currents(g_base, sol_base)
             print(f"[delta] current-carrying met-met pairs: "
