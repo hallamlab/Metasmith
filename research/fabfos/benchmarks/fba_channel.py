@@ -86,7 +86,16 @@ def build(results: Path, like: pd.DataFrame, arm: str, baseline: str,
     nums = NUMERATOR[arm] or tuple(c for c in f.columns if c != den)
 
     keep = [c for c in LABEL_COLS if c in like.columns]
+    # THE LABEL IS PER (CONDITION, AXIS) WHERE THE SCREEN HAS AXES. Fuhrer labels a mutant
+    # positive on one ion and not on another, so collapsing the sweep to one row per
+    # condition takes whichever axis sorted first and stamps its `is_positive`,
+    # `direction` and `z` onto all sixteen. Every flux row then carried one axis's labels
+    # and the cut reported the same ten "metabolically active" mutants on every axis.
+    per_axis = "axis" in like.columns and NUMERATOR[arm] is None
     lk = like.drop_duplicates("condition_id").set_index("condition_id")
+    if per_axis:
+        by_axis = {ax: g.drop_duplicates("condition_id").set_index("condition_id")
+                   for ax, g in like.groupby("axis")}
     labels = lk[keep]
     # AN ABSTENTION HAS TO BE A ROW. A deletion that takes growth to zero emits no target
     # flux at all, so it is ABSENT from the pivot rather than NaN in it -- and a channel
@@ -120,10 +129,10 @@ def build(results: Path, like: pd.DataFrame, arm: str, baseline: str,
         d.loc[d.ratio_state != "finite", "delta_ratio_pct"] = np.nan
         # `n_rxn` IS THE CONDUCTANCE ARM'S REACH, kept so the two channels count the same
         # population. This arm's own reach is `ratio_state`.
-        d = d.join(labels, on="condition_id")
-        if "n_rxn" in like.columns:
-            d["n_rxn"] = d.condition_id.map(
-                like.drop_duplicates("condition_id").set_index("condition_id").n_rxn)
+        src = by_axis.get(axis_of.get(num, num), lk) if per_axis else lk
+        d = d.join(src[[c for c in keep if c in src.columns]], on="condition_id")
+        if "n_rxn" in src.columns:
+            d["n_rxn"] = d.condition_id.map(src.n_rxn)
         d["rxns"] = ""
         d["channel"] = "fba"
         d["fba_axis"] = num

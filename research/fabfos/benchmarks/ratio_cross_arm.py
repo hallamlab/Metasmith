@@ -101,11 +101,21 @@ SWEEPS = {
 
 
 def auc(score, label):
+    """Mid-rank AUC over the rows that HAVE a score.
+
+    AN ABSTENTION IS NOT A ZERO AND IT IS NOT A RANK EITHER. The flux balance channel
+    reports NaN where a deletion takes growth to zero, and one NaN makes `mannwhitneyu`
+    return nan for the whole axis -- 75 lethal mutants silently voided an AUC over 858.
+    Dropping them ranks the population the arm could answer for, which is the honest set,
+    and the `active`/`responders` counts beside it say how many that was.
+    """
+    score = np.asarray(score, float)
     label = np.asarray(label, bool)
+    ok = np.isfinite(score)
+    score, label = score[ok], label[ok]
     if label.sum() == 0 or (~label).sum() == 0:
         return float("nan")
-    u, _ = mannwhitneyu(np.asarray(score, float)[label],
-                        np.asarray(score, float)[~label], alternative="greater")
+    u, _ = mannwhitneyu(score[label], score[~label], alternative="greater")
     return u / (label.sum() * (~label).sum())
 
 
@@ -118,7 +128,11 @@ def cut(sub: pd.DataFrame) -> dict:
     # zero there reads as "the probe saw it and no reaction carried it", which is a
     # different and much stronger claim than "this arm does not answer that question".
     named = bool(union(sub))
-    return dict(active=len(sub), responders=len(live), movers=len(mov),
+    # HOW MANY OF THEM THE ARM COULD SCORE AT ALL, which is not the same as how many moved.
+    # A flux balance axis the frame cannot reach returns NaN for every mutant, and without
+    # this the printout blames an undefined AUC on a one-sided label set.
+    return dict(active=len(sub), scored=int(sub.delta_ratio_pct.notna().sum()),
+                responders=len(live), movers=len(mov),
                 rxn_all=len(union(live)) if named else None,
                 rxn_movers=len(union(mov)) if named else None,
                 mover_rxns=union(mov), live=live, mov=mov)
@@ -250,6 +264,9 @@ def main():
                     f"{r['rxn_movers']:3d} across the movers"
                     + (f"  [{','.join(mv)}]" if 0 < len(mv) <= 10 else ""))
                 lines.append(
+                    "          AUC: undefined -- this arm returned no score for this "
+                    "stratum at all"
+                    if r["auc"] != r["auc"] and not r["scored"] else
                     "          AUC: undefined -- every labelled row is a positive, so "
                     "there is nothing to rank them above"
                     if r["auc"] != r["auc"] else
