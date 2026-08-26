@@ -140,12 +140,27 @@ This is the bug class this lane keeps producing, and it is silent by constructio
 consumer gets a plausible table from the previous bake and no error. The eydallin decode
 cache is fixed — it stamps each entry with the bake identity *paired with*
 `src_direction_sha256`, since the identity alone does not move on a direction-only re-bake.
-Two instances remain live and are not this lane's to fix:
 
-- `data/fabfos/nostoc/ecspr/networks/*/{atom_pairs,gpr,direction}.parquet` — pre-composed
-  from a bake older than r7, so `nostoc_ecspr_verify.py --structural` fails by construction.
-- `verify_bake_join.py` reads the retired `data/fabfos/benchmark/reference_tier4` pin and
-  cannot run at all.
+`scan_direction_caches.py` beside this file covers decode caches. `scan_results_bake.py`
+covers the RESULT chunks, which is where the staleness gets read as a finding. Run it after
+every promote. It grades each chunk *measured*, *stamped* or *dated*, and only the first
+two are evidence — a date says which bake was deployed when the bytes were written, not
+which one the writer read.
+
+**CAUTION** A chunk can hold two bakes at once, and reading either half alone reports it as
+current. `data/fabfos/nostoc/ecspr` is that case today: its composed
+`networks/*/direction.parquet` was recut on r10 and matches the deployed table on all
+12,221 reactions, while the measurements under `results/` predate the r10 promote and
+`PROVENANCE.md` still says r7. The scan grades that row `SPLIT`.
+
+`REFERENCES.md` says why a tier4 consumer may not simply be repointed: the two bases are
+not nested, so anything re-run on the bake is a new measurement rather than a ported one.
+Six readers of that dropped pin are still live — `benchmarks/aska/{run_panel,triage}.py`,
+`benchmarks/keio/run_ko_panel.py`, `benchmarks/laser/pilot/run_pilot.py`,
+`benchmarks/laser/vs_gem/common.py` and `tests/fabfos/build_references_tier4_agreement.py`.
+The SCADC arm was the seventh, and `research/fabfos/examples/scadc_ecspr_basis.py` is what
+re-basing one costs: the decode goes through `bake_pairs`, and the terminals are
+re-resolved by NAME against the new universe rather than carried over as ids.
 
 Before adding a cache here, ask what it would serve after the next repin.
 

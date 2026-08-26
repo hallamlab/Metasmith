@@ -27,9 +27,12 @@ None of those is a measurement, and each of them is a choice this study made. Th
 measurement is `ecspr ground`, run below with no arguments the deployed transform
 does not also pass.
 
-NOT the deployed reference basis -- tier4 atom pairs, not the canonical MNXref release
-(same caveat examples/scadc_ecspr.py's own docstring states). Fine for a pilot, not a
-number to publish as-is.
+NOT the deployed reference basis -- tier4 atom pairs, not the canonical MNXref release.
+Fine for a pilot, not a number to publish as-is. THE PIN IS GONE, so this no longer
+degrades: `data/fabfos/benchmark/reference_tier4` was retired and this script cannot run
+until it reads `processed/metabolism_bake` instead. `examples/scadc_ecspr_basis.py` is
+what re-basing one of these costs -- the decode goes through `bake_pairs`, and the
+terminals are re-resolved against the new universe rather than carried over as ids.
 
 Supersedes run_pilot_lycopene.py, whose one invocation was:
     --condition-id "LASER:Record1423246634.26:M1" --host e_coli_k12 --target Lycopene
