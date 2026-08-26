@@ -21,11 +21,21 @@ tree were written before the block existed, and each needs a different answer.
                            pools 63,914 rows as one anonymous copy, so an insert-level unit
                            is a correction and `--report` prices it.
 
-  scadc_metagenome         LEFT ALONE. The unit there is a MAG and this table carries no
+  scadc_metagenome         ONE ANONYMOUS UNIT, and that is a claim rather than a
+                           placeholder. The unit there is a MAG and this table carries no
                            binning at all -- `orf` names a contig, and contigs of one
                            genome are one cell's DNA, so a contig-level unit would claim a
-                           separateness the data does not support. It stays without a
-                           block, which is the honest state.
+                           separateness the data does not support. `genome_unit = source`
+                           says "one pool of DNA I cannot separate", which is exactly the
+                           pooling grain the table already had, so it is inert too.
+
+  gpr_denovo_mapper x7     ONE GENOME PER TABLE, and `source` is its accession. The same
+                           case as nostoc, and inert for the same reason.
+
+Two files under `runs/e_coli_epi300/gpr/` are deliberately absent from this list. They are
+reaction SETS -- mnxr x channel x origin, no nominator and no weight -- from an older
+host-plus-insert union arm, so the evidence schema has nothing to describe there.
+`gpr_to_llr.py` and `tests/fabfos/test_gpr_schema.py` name them for the same reason.
 
 `source` IS NOT THE UNIT on a pipeline-written table -- scadc's is the engine's instance id
 (`1-1-1.sLtui6SR1GPBQSMO-dYNQuWp0`), which is why it moves to `build_id` here.
@@ -40,6 +50,7 @@ import sys
 from pathlib import Path
 
 import pandas as pd
+import pyarrow.parquet as pq
 
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT / "src"))
@@ -53,11 +64,18 @@ RUNS = ROOT / "data/fabfos/runs"
 
 #: `path -> how the unit is derived`. `source` means the table's own single-valued
 #: `source`; `insert` means the head of the ORF name, up to its last underscore.
+MAPPER_RUNS = ("e_coli_bw25113", "e_coli_dh1", "e_coli_dh10b", "e_coli_epi300",
+               "e_coli_k12", "e_coli_w3110", "eydallin_clones")
+
 TARGETS = {
     **{NOSTOC / o / "gpr_4lane.parquet": ("source", "nostoc_community", o)
        for o in ("NOS", "ERY", "RHI")},
     RUNS / "scadc_fosmids/gpr/gpr_4lane.parquet": ("insert", "scadc", "scadc_fosmids"),
     RUNS / "scadc_fosmids/gpr/gpr_7lane.parquet": ("insert", "scadc", "scadc_fosmids"),
+    RUNS / "scadc_metagenome/gpr/gpr_4lane.parquet": ("source", "scadc",
+                                                      "scadc_metagenome"),
+    **{RUNS / r / "gpr/gpr_denovo_mapper.parquet": ("source", r, None)
+       for r in MAPPER_RUNS},
 }
 
 EXTENSIONS = ("attribution",)
@@ -85,7 +103,8 @@ def units_for(df: pd.DataFrame, how: str) -> pd.Series:
     raise SystemExit(f"unknown derivation {how!r}")
 
 
-def convert(path: Path, how: str, host: str, source: str) -> pd.DataFrame:
+def convert(path: Path, how: str, host: str, source) -> pd.DataFrame:
+    """Add the block. `source=None` keeps the table's own, which is already the accession."""
     df = pd.read_parquet(path)
     if fe.extensions_of(df):
         raise SystemExit(f"{path} already carries {fe.extensions_of(df)}")
@@ -94,7 +113,8 @@ def convert(path: Path, how: str, host: str, source: str) -> pd.DataFrame:
     # The engine's instance id is provenance, not identity: it keeps its own column.
     out["build_id"] = df["source"].astype(str)
     out["host"] = host
-    out["source"] = source
+    if source is not None:
+        out["source"] = source
     return out[fe.schema_for(EXTENSIONS)]
 
 
@@ -111,6 +131,11 @@ def main() -> int:
         if not path.exists():
             print(f"[skip] {path} is not checked out")
             continue
+        # IDEMPOTENT, and the check reads the parquet FOOTER rather than the table: the
+        # metagenome is 19.7M rows and this runs once per table that already has a block.
+        if "genome_unit" in pq.read_schema(path).names:
+            print(f"[done] {path.relative_to(ROOT)} already carries the block")
+            continue
         out = convert(path, how, host, source)
         n = out["genome_unit"].nunique()
         line = (f"[{path.relative_to(ROOT)}] {len(out):,} rows, {n:,} unit(s) "
@@ -126,7 +151,8 @@ def main() -> int:
                      f" ({'INERT' if moved == 0 else 'a correction'})")
         print(line, flush=True)
         if a.write:
-            fe.validate_gpr(out, out["lane_set"].iloc[0], None, source, EXTENSIONS)
+            fe.validate_gpr(out, out["lane_set"].iloc[0], None,
+                            str(out["source"].iloc[0]), EXTENSIONS)
             _write(out, path)
             print(f"  -> {path}")
     return 0
