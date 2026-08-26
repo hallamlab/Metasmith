@@ -17,6 +17,14 @@ VACUOUS IS NOT NULL, and the distinction is the whole point of this file. A null
 says the method was asked and had no answer. This says the method was never askable on this
 cohort, which is a fact about the construction and not about flux balance.
 
+**CAUTION** WOODRUFF'S NON-ZERO COUNT IS THE HOST'S OWN DELETIONS. Against `e_coli_lw06`
+the clones assert 3 curated reactions and 10 de-novo ones the host lacks, and every one of
+them is a reaction lw06 was engineered to remove -- `MNXR101037`, `MNXR198970` and
+`MNXR99639`, on `frdA`, `frdB`, `frdD` and `ldhA`. Adding them back does not model a clone,
+it un-deletes the strain, and `sweeps/sweep_woodruff_ratio.py` refuses them for that reason.
+The same shape as the fuhrer gapfill: the only thing available to add is the host's genotype.
+Against `e_coli_bw25113`, the strain lw06 was built from, the count is zero.
+
 THE COUNT IS NOT ALWAYS ZERO AND THAT MATTERS. Where a handful of reactions ARE absent, the
 arm is vacuous for every clone except those, and this file names how many rather than
 rounding to "vacuous". Run the arm on a cohort whose count is non-zero; skip the ones at
@@ -49,6 +57,13 @@ COHORTS = (
     ("eydallin2010", "e_coli_ag1", "eydallin_clones", "denovo"),
     ("fang", "e_coli_k12", "fang", "gem"),
     ("fang", "e_coli_k12", "fang", "denovo"),
+    # BOTH HOSTS, because this cohort has been measured against both and the answer is a
+    # property of the pair. `sweeps/sweep_woodruff_ratio.py` runs on lw06 and the retired
+    # `sweeps/sweep_scales.py` ran on bw25113, so a vacuity verdict quoted for one of them
+    # says nothing about the other. Reading the wrong host has produced a wrong count in
+    # this campaign before.
+    ("woodruff", "e_coli_lw06", "woodruff_clones", "gem"),
+    ("woodruff", "e_coli_lw06", "woodruff_clones", "denovo"),
     ("woodruff", "e_coli_bw25113", "woodruff_clones", "gem"),
     ("woodruff", "e_coli_bw25113", "woodruff_clones", "denovo"),
 )
