@@ -57,6 +57,12 @@ from ecspr.model import mnx                                           # noqa: E4
 from ecspr.model import tests as test_mod                             # noqa: E402
 
 MNX_DIR = ROOT / "data/fabfos/originals/metanetx/4.5"
+
+#: WHERE THE SLICED PARQUETS GO, and it is not beside the release. `mnx.Release` defaults
+#: its cache to the release directory, which here is a DVC-pinned ORIGINALS chunk -- so the
+#: first bridge silently added two derived files to it and `dvc status` then reported the
+#: originals as modified. Derived data does not belong in an originals pin.
+MNX_CACHE = ROOT / "data/scratch/mnx_cache"
 GROWTH_PIN = 0.1
 GLC_UPTAKE = 10.0
 
@@ -129,7 +135,8 @@ def targets(c: Cohort) -> list:
     the two arms have to be aimed at one molecule for their answers to be about one thing.
     """
     model = fba_mod.load_frame(c.frame)
-    bridge = mnx.Release(MNX_DIR).bridge(model)
+    MNX_CACHE.mkdir(parents=True, exist_ok=True)
+    bridge = mnx.Release(MNX_DIR, cache=MNX_CACHE).bridge(model)
     out, absent = [], []
     for axis, role, mnxm, name in c.sinks:
         met, tier = bridge.get(mnxm, create=False)
@@ -266,7 +273,8 @@ def probe(c: Cohort, *, do_gapfill=False) -> pd.DataFrame:
     base = fba_mod.build_baseline(c.frame, a, None, medium, corpus=corpus,
                                   do_gapfill=do_gapfill, log=print, label=c.baseline_id)
     model = base.model
-    bridge = mnx.Release(MNX_DIR).bridge(model)
+    MNX_CACHE.mkdir(parents=True, exist_ok=True)
+    bridge = mnx.Release(MNX_DIR, cache=MNX_CACHE).bridge(model)
     carved = base.census.get("carved_away_ids")
     print(f"[probe] the carve removed {base.census['carved_away']} reaction(s)"
           + (f": {carved}" if carved else "")

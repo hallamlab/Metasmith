@@ -29,7 +29,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import shlex
 import subprocess
 import sys
 from pathlib import Path
@@ -48,10 +47,12 @@ FRAMES = {
     "iECDH10B_1368": REPO / "data/fabfos/originals/genomes/e_coli_dh10b/GEM/iECDH10B_1368.json",
 }
 
-#: The sliced MetaNetX parquets. `MetBridge` writes them beside the release the first time
-#: it is asked; shipping them means no array task ever builds one.
-MNX_CACHE = [REPO / "data/fabfos/originals/metanetx/4.5/chem_prop_slim.parquet",
-             REPO / "data/fabfos/originals/metanetx/4.5/biggM_bridge.parquet"]
+#: The sliced MetaNetX parquets, out of the release directory on purpose -- that is a
+#: DVC-pinned ORIGINALS chunk and derived files do not belong in one. Shipping them means no
+#: array task builds one, which on a Lustre filesystem is the difference between a job and
+#: thirty-two re-reads of an 809 MB table.
+MNX_CACHE = [REPO / "data/scratch/mnx_cache/chem_prop_slim.parquet",
+             REPO / "data/scratch/mnx_cache/biggM_bridge.parquet"]
 
 B = REPO / "research/fabfos/benchmarks"
 
@@ -211,13 +212,22 @@ def submit(args) -> int:
     sif = f"{SIF_DIR}/{sif_name(image)}"
     out = []
     for j in _selected(args):
-        env = " ".join(shlex.quote(f"{k}={v}") for k, v in dict(
-            JOB=j["name"], SIF=sif, ROOT=ROOT, MNX=(MNX if j["mnx"] else ""),
-            FRAME=j["frame"], GPR=" ".join(p.name for p in j["gpr"]),
-            NTASKS=str(j["tasks"])).items())
+        # `--export` SPLITS ON COMMAS AND CANNOT CARRY A SPACE. A two-table cohort went
+        # out as `GPR=epi300_gem.parquet,scadc_fosmids_4lane.parquet`, sbatch read the
+        # comma as its own separator, and every scadc task started with half its corpus
+        # and died on the first condition that named the other table. The list travels
+        # colon-separated and the sbatch splits it back.
+        env = dict(JOB=j["name"], SIF=sif, ROOT=ROOT, MNX=(MNX if j["mnx"] else ""),
+                   FRAME=j["frame"], GPR=":".join(p.name for p in j["gpr"]),
+                   NTASKS=str(j["tasks"]))
+        bad = {k: v for k, v in env.items() if "," in v or " " in v}
+        if bad:
+            raise SystemExit(f"--export cannot carry {bad}: a comma or a space in a "
+                             f"value is read as the end of the value")
         cmd = (f"sbatch --account={ACCOUNT} --job-name=fba_{j['name']} "
                f"--array=0-{j['tasks'] - 1} --time={j['hours']}:00:00 "
-               f"--export=ALL,{env.replace(' ', ',')} {ROOT}/fba_array.sbatch")
+               f"--export=ALL,{','.join(f'{k}={v}' for k, v in env.items())} "
+               f"{ROOT}/fba_array.sbatch")
         out.append(f"### {j['name']}\n" + ssh(cmd).strip())
     print("\n".join(out))
     print("\nCheck later with --status. Never poll in a loop.")
