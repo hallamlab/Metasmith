@@ -491,3 +491,29 @@ def test_a_deletion_by_bounds_and_by_removal_are_the_same_program(frame):
     with b.model:
         F.apply_medium(b.model, MEDIUM)
         assert F._growth(b.model) == pytest.approx(10.0)
+
+
+def test_a_model_that_does_not_grow_abstains_rather_than_reading_unpinned(frame,
+                                                                          tmp_path):
+    # AN LP DOES NOT RETURN AN EXACT ZERO. A lethal deletion comes back at 3e-15, and the
+    # growth pin is a FRACTION of each model's own maximum -- so a pin of 0.1 x 3e-15
+    # constrains nothing, the target is maximised unpinned, and the dead strain reads as
+    # the largest mover in its cohort. It happened: two dead Eydallin mutants outranked
+    # the two genes that genuinely carry the glycogen pathway.
+    gpr = _gpr(tmp_path)
+    # GLCt is the only way carbon enters, so deleting its gene stops growth outright.
+    ko_t = C.Condition("ko_t", (
+        C.Step(table="host.parquet", type="", set=(), operation="union"),
+        C.Step(table="host.parquet", type="gene", set=("bT",), operation="subtract"),
+    ))
+    common = dict(frame="toy", media="m", target_hub="bio_c", growth_pin=0.1)
+    ts = [T.Test(test_id="base", network="both", arm="gem", settings=dict(common)),
+          T.Test(test_id="dead", network="ko_t", arm="gem", read_against="base",
+                 settings=dict(common))]
+    df = F.run([frame], [gpr], [BOTH, ko_t], ts, {"m": MEDIUM}, do_gapfill=False,
+               log=lambda _m: None)
+    rows = {(r.test_id, r.readout): r.value for r in df.itertuples()}
+    assert rows[("dead", "growth")] < F.GROWTH_TOL
+    assert rows[("dead", "_host_zero")] == 1.0 and rows[("dead", "_abstained")] == 1.0
+    assert ("dead", "target") not in rows, \
+        "a model that cannot grow has no pinned target to report"

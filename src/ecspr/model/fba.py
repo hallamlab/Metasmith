@@ -65,6 +65,13 @@ DEMAND_PREFIX = "DM_"
 GAPFILL_GROWTH_FRAC = 0.1
 GAPFILL_TARGET_FLOOR = 0.01
 
+#: WHAT COUNTS AS NOT GROWING. An LP does not return an exact zero: a lethal deletion comes
+#: back at 3e-15, which is zero, and comparing it to `0.0` lets it through. The growth pin is
+#: a FRACTION of each model's own maximum, so a pin of 0.1 x 3e-15 constrains nothing and the
+#: target is then maximised unpinned -- which made two dead Eydallin mutants the largest
+#: movers in their cohort, larger than the two genes that genuinely carry the pathway.
+GROWTH_TOL = 1e-9
+
 #: A carve this shallow gets its reactions named in the census. A curated GPR table
 #: carving one reaction away is a strain edit, and the caller checks it by name.
 CARVE_NAMED_LIMIT = 20
@@ -752,7 +759,7 @@ def measure(model, t, medium: dict, census: dict, *, emit="summary") -> list:
             diag += [("_abstained", 1), ("_missing_target", 1)]
             return _rows(t.test_id, obj_name, out + diag)
         diag.append(("_missing_target", 0))
-        if gmax <= 0.0:
+        if gmax <= GROWTH_TOL:
             diag += [("_abstained", 1), ("_host_zero", 1)]
             return _rows(t.test_id, obj_name, out + diag)
 
