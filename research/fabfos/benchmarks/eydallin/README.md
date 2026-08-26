@@ -37,6 +37,14 @@ caps, while `--fold 0` removes the edge outright and the network has to route ar
 The caveats are real and sit with the result — 23 of the 65 are measurable at all, and the
 anabolic/catabolic ratio that rescued the doubling arm is *wrong-signed* here.
 
+**Both arms now read one conditions table, and that changed what they disagree about.**
+Flux balance reaches six of the 65 deletions where conductance reaches 26, on the identical
+1,500-draw pool — but the twelve mutants the two arms used to disagree about were an
+artefact of the perturbation, not of the method. A `--fold 0` sweep deletes a REACTION and a
+conditions table deletes a GENE. Under gene deletion, `glgA` and `glgC` are the only two
+mutants whose reactions leave this network, which is exactly what flux balance finds. See
+*Flux balance on the same 65 mutants* at the end.
+
 ## What the pilot measured
 
 Universal-ground (`measure_leak`) probe, source D-glucose, element C, leak 1e-6, host
@@ -826,3 +834,54 @@ So the two readouts answer different halves and only one of them works: the magn
 *which* genes with an AUC that survives its controls, and the direction is left to a bake
 that does not yet know glycogen is a polymer. Fixing that is upstream of this benchmark,
 and the ratio's sign is the measurement that says how much it costs.
+
+## Flux balance on the same 65 mutants — and what it takes for the two arms to compare
+
+`fba/build_tables.py` declares this cohort once and emits three tables: an arm-neutral
+conditions table, a `gem_tests` table for `ecspr fba`, and an `ecspr_tests` table for
+`ecspr two-point`. One `ecspr draw` over them writes a single pool of 1,500 random
+single-gene deletions that both arms then measure. Adding the second arm left the drawn
+conditions table byte-identical, which is the check that the pool is shared rather than
+merely similar.
+
+**CAUTION** THE TWO ARMS PERTURB DIFFERENTLY UNTIL THEY READ ONE CONDITIONS TABLE. The
+`--fold 0` sweep above zeroes every reaction a gene names. A conditions table subtracts the
+GENE, so a reaction another gene also nominates survives. Twelve of the 23 measurable
+mutants differ between the two operations. `glgP`'s two reactions are both nominated by
+`malP`, `glgB` and `glgX` nominate one reaction and cover each other, and every reaction of
+`cysI` is covered by `cysJ`. **`glgA` and `glgC` are the only two mutants here whose
+deletion removes a reaction from this network**, which is exactly and only what flux balance
+finds.
+
+Flux balance reaches six of the 65. Six more are lethal on M9-glycogen and abstain rather
+than reporting a zero. `glgA` and `glgC` take the glycogen flux to exactly zero and are
+labelled deficient, which is correct and is also the answer the arm is structurally
+guaranteed to get: they are the pathway's own committed steps. The other 53 are flat. Their
+null says why the arm is so quiet — **97.6 % of 1,500 random single-gene deletions change
+the glycogen flux by exactly nothing, and 7.1 % are lethal.**
+
+The two arms on the same pool, ratio against ratio:
+
+| | conductance | flux balance |
+|---|---|---|
+| mutants that move at all | 26 of 65 | 6 of 59 |
+| null spread (sd) | 0.0187 | 0.0147 |
+| largest movers | glgP +0.337, glgA/glgC −0.304 | glgA/glgC −0.386 |
+| smallest q (BH over 65) | 0.072 | 0.063 |
+
+Neither arm clears BH at 5 %, and the reason is the pool rather than the effect: `glgA` and
+`glgC` are *in* the host pool the null draws from, so two of the 1,500 draws are the answer
+itself and the empirical p cannot fall below 3/1394. **The conductance arm's reach is four
+times the flux arm's on identical constructions, and the two rank them almost independently
+(Spearman +0.065 over the 22 either arm moves, same sign on 15).**
+
+**The calibrated `llr` is what buys that reach.** A stoichiometric model treats a reaction
+as present or absent, so a deletion another gene covers is invisible to it. Belief weighting
+lowers a reaction's pooled evidence when one of its nominators goes, so the conductance arm
+answers in degrees. Scored on the deletion cohort's own labels, it is worth AUC 0.708 → 0.917
+and Spearman +0.368 → +0.745. With the glycogen module struck the two weightings agree
+(0.929 against 0.857), so the gain is specifically in the isozyme-covered genes.
+
+`fba/head_to_head.py` produces the table above. `fba_channel.py` renders the flux result as
+another channel of `../ratio_cross_arm.py`, where `MOVER_PCT` and the `rxns` union do not
+cross the boundary and say so.

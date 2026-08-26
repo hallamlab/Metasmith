@@ -133,3 +133,32 @@ The paper does not supply the adjacency set behind Table EV4's AUC. That is why
 - **Against Table EV4, as though it were the same task.** It is the transpose: Fuhrer ranks
   by the phenotype and labels by adjacency; this arm ranks by topology and labels by the
   phenotype.
+
+## The flux balance arm on the same 3,806 mutants
+
+`fba/build_tables.py` declares this cohort over `../fba_arm.py` and emits the three tables
+`ecspr fba` reads. It builds from the same host GPR table and the same deletion table the
+conductance sweep reads, so a mutant measured both ways is one mutant.
+
+**CAUTION** TWO OF THE EIGHT TARGET AXES CANNOT BE ASKED OF FLUX BALANCE AT ALL. Oxalate
+(`c00209_neg870`) and butanal (`c01412_pos2`) are not metabolites of iML1515, and neither
+are their precursor controls. Their zeros are a statement about the frame, not a null
+result. They are also the screen's two highest published AUCs, so a report that drops them
+silently loses the arm's best cases. `--probe` prints the state of every axis before any
+sweep runs.
+
+**CAUTION** DO NOT GAPFILL THIS BASELINE. The carve removes exactly `ARAI`, `LACZ`, `LYXI`,
+`RBK_L1`, `RMI`, `RMK` and `RMPA` — BW25113's own ΔaraBAD, ΔlacZ and ΔrhaBAD against the
+MG1655-derived iML1515. A gapfill draws on precisely what the carve removed, so the repair
+restores the host strain's genotype and reports a plausible growth rate while doing it.
+Every run here passes `--no-gapfill`.
+
+**2,458 of the 3,806 screened deletions are invisible to this frame.** Their gene carries no
+row of the host GPR table at all, so the condition is the baseline over again. They are
+marked `is_control`, which is what makes the noise floor a measured quantity rather than an
+assumption, and they collapse into one difference group holding two thirds of the sweep —
+see `ecspr fba --part`, which balances on test count for that reason.
+
+A BH pass cannot resolve this cohort. Each axis carries 1,348 non-control tests, so an
+empirical p reaches 0.05/1348 only at n ≥ 26,959 draws. The stratum-matched p and the AUC
+carry it instead, and the null shipped here is 2,000 draws.
