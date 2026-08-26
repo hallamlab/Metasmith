@@ -45,6 +45,12 @@ import pandas as pd
 #: The denominator axis per arm, by the frame metabolite a gem result names in `target`.
 #: It is the arm's own -- pyruvate for the glycogen ratio, CO2 for fuhrer -- and it is the
 #: column that says whether one axis moved or the whole carbon budget did.
+#:
+#: **CAUTION** FUHRER'S DENOMINATOR IS AT ITS BOUND. Maximum flux to CO2 on the unperturbed
+#: host is 1000, the exchange ceiling, and it stays there under every deletion the frame can
+#: absorb. The normalisation is therefore a constant on that arm and its ratio is a rescaled
+#: numerator, which is NOT true of the conductance arm's CO2 denominator. Read the two arms'
+#: fuhrer ratios as ranks and never as the same quantity.
 DENOMINATOR = {"eydallin_lof": "pyr_c", "fuhrer": "co2_c"}
 
 #: Which numerator axes to emit. `None` means every target that is not the denominator,
@@ -68,7 +74,9 @@ def fluxes(results: Path) -> pd.DataFrame:
     return m.pivot_table(index="condition_id", columns="target", values="value")
 
 
-def build(results: Path, like: pd.DataFrame, arm: str, baseline: str) -> pd.DataFrame:
+def build(results: Path, like: pd.DataFrame, arm: str, baseline: str,
+          axis_of: dict = None) -> pd.DataFrame:
+    axis_of = axis_of or {}
     f = fluxes(results)
     den = DENOMINATOR[arm]
     if den not in f.columns:
@@ -85,7 +93,9 @@ def build(results: Path, like: pd.DataFrame, arm: str, baseline: str) -> pd.Data
     # that is quietly six rows shorter than the one beside it is compared over a different
     # population without saying so. Reindexing over the conductance sweep's own conditions
     # brings them back as `abstained`.
-    f = f.reindex(sorted(set(f.index) | set(lk.index) | {baseline}))
+    ids = {str(x) for x in set(f.index) | set(lk.index) | {baseline}
+           if isinstance(x, str) or x == x}
+    f = f.reindex(sorted(ids))
     out = []
     for num in nums:
         r = f[num] / f[den]
@@ -99,8 +109,15 @@ def build(results: Path, like: pd.DataFrame, arm: str, baseline: str) -> pd.Data
             "host_ratio": base,
         })
         d = d[d.condition_id != baseline]
+        # AN UNREACHABLE AXIS IS NOT A FLAT ONE. Where the unperturbed host carries no flux
+        # to the target at all -- oxalate and butanal are not metabolites of iML1515 -- the
+        # ratio is 0/0 and every delta is NaN. That is the frame refusing the question, and
+        # it is the state fuhrer's two highest published AUCs are in, so it gets its own
+        # name rather than being counted among the mutants that did not move.
         d["ratio_state"] = np.where(d.fba_ratio.isna(), "abstained", "finite")
-        d.loc[d.ratio_state == "abstained", "delta_ratio_pct"] = np.nan
+        if not (base > 0):
+            d["ratio_state"] = "unreachable"
+        d.loc[d.ratio_state != "finite", "delta_ratio_pct"] = np.nan
         # `n_rxn` IS THE CONDUCTANCE ARM'S REACH, kept so the two channels count the same
         # population. This arm's own reach is `ratio_state`.
         d = d.join(labels, on="condition_id")
@@ -111,7 +128,11 @@ def build(results: Path, like: pd.DataFrame, arm: str, baseline: str) -> pd.Data
         d["channel"] = "fba"
         d["fba_axis"] = num
         if NUMERATOR[arm] is None:
-            d["axis"] = num
+            # THE AXIS NAME HAS TO BE THE SCREEN'S, not the frame's. `ratio_cross_arm`
+            # strata are the declared axes (`c00209_neg870`), while a gem result names the
+            # frame metabolite the flux was taken to (`oxa_c`). Grouping on the second
+            # gives one stratum per metabolite that joins to no label at all.
+            d["axis"] = axis_of.get(num, num)
         out.append(d)
     return pd.concat(out, ignore_index=True)
 
@@ -125,16 +146,24 @@ def main() -> int:
                     help="the conductance sweep TSV whose labels and rows this mirrors")
     ap.add_argument("--baseline", required=True,
                     help="the condition_id every ratio is taken against")
+    ap.add_argument("--axes", type=Path, default=None,
+                    help="the arm's `probe_axes.tsv`, which maps the frame metabolite a "
+                         "gem result names back to the axis the screen declared")
     ap.add_argument("--out", type=Path, required=True)
     a = ap.parse_args()
 
     like = pd.read_csv(a.like, sep="\t")
-    d = build(a.results, like, a.arm, a.baseline)
+    axis_of = {}
+    if a.axes:
+        ax = pd.read_csv(a.axes, sep="\t")
+        axis_of = dict(zip(ax.metabolite.astype(str), ax.axis.astype(str)))
+    d = build(a.results, like, a.arm, a.baseline, axis_of)
     a.out.parent.mkdir(parents=True, exist_ok=True)
     d.to_csv(a.out, sep="\t", index=False)
     fin = d[d.ratio_state == "finite"]
-    print(f"[fba-channel] {len(d):,} rows ({len(fin):,} finite, "
-          f"{len(d) - len(fin):,} abstained) -> {a.out}")
+    print(f"[fba-channel] {len(d):,} rows -> {a.out}")
+    for st, n in d.ratio_state.value_counts().items():
+        print(f"[fba-channel]   {st}: {n:,}")
     print(f"[fba-channel] host ratio {d.host_ratio.iloc[0]:.6g} "
           f"({d.host_num.iloc[0]:.6g} / {d.host_den.iloc[0]:.6g})")
     print(f"[fba-channel] responders {int((fin.delta_ratio_pct.abs() > 1e-12).sum()):,} | "
