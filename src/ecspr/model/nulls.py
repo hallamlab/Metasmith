@@ -81,6 +81,12 @@ def draw(pool_paths, like_conditions, like_tests, *, n: int, seed: int,
                 f"test {t.test_id!r} carries no n_units and no --size was given; a "
                 f"null that is not size-matched ranks big constructions high by "
                 f"construction")
+        if int(s) == 0:
+            # A STRATUM OF SIZE ZERO IS THE BASELINE, and the pool already carries it once.
+            # An observed tests table names its own baseline as a test -- it is measured
+            # like any other -- so `--like-tests` hands one in, and drawing "nothing" per
+            # stratum would emit n copies of the background under n different ids.
+            continue
         strata.setdefault(int(s), []).append(t)
         arm_strata.setdefault(t.arm, set()).add(int(s))
 
