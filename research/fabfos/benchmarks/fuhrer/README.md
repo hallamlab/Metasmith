@@ -159,6 +159,26 @@ marked `is_control`, which is what makes the noise floor a measured quantity rat
 assumption, and they collapse into one difference group holding two thirds of the sweep —
 see `ecspr fba --part`, which balances on test count for that reason.
 
+### The two arms on the same axes
+
+Mean AUC over the axes each channel can score, with its reaction-count size control beside
+it, from `../ratio_cross_arm.py` on r11:
+
+| channel | mean AUC | size control |
+|---|---|---|
+| conductance, curated | **0.6644** | 0.4460 |
+| conductance, de-novo | 0.6196 | 0.4476 |
+| flux balance | 0.4961 | 0.4660 |
+
+Per axis, curated conductance against flux balance: 0.6096/unreachable, 0.5977/0.5016,
+0.7528/0.3294, 0.5452/unreachable, 0.7067/0.6052, 0.6096/0.4727, 0.7258/0.4828,
+0.7676/0.5849. **The conductance arm beats flux balance on every axis flux balance can
+reach and beats its own size control on all eight. Flux balance is at chance and is not
+distinguishable from its own control.** Both are ranked over the same population: the
+metabolically-active count matches axis for axis, because the flux channel takes its reach
+filter from the conductance sweep so a difference between them is a difference in what was
+measured rather than in who was counted.
+
 A BH pass cannot resolve this cohort. Each axis carries 1,348 non-control tests, so an
 empirical p reaches 0.05/1348 only at n ≥ 26,959 draws. The stratum-matched p and the AUC
 carry it instead, and the null shipped here is 2,000 draws.
