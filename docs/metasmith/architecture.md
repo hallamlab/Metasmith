@@ -300,6 +300,28 @@ returns when the launch script exits. Any script going straight to `GetResultSou
 the run and crashes on a missing results directory. The contract is a sentinel line in the run's
 agent log, which `metasmith workflow wait` blocks on. Poll for it; do not sleep and hope.
 
+**A container step's exit code has two sources, and the marker is the weaker one.** Every
+container command is wrapped in a generated bounce script (`_metasmith/.bounce.<key>`) whose EXIT
+trap records the status to a marker file the host reads back. A transform is free to change
+directory, and several in the standard library do, so the marker is written to its **absolute**
+path under the container workdir and the trap ends on `exit $?` — a relative marker follows the
+`cd`, and a landing directory the task uid cannot write turns the trap's own failure into the
+script's status, so a step that succeeded reports failure. The container's own exit status from
+the launching shell is the source of truth; the marker refines it. A marker that cannot be read
+means the script never reached its trap, and that is reported as such: conflating it with a
+command that returned 1 is what once made a succeeded step and a failed one indistinguishable.
+
+**Nextflow exits 0 on a run whose steps were ignored, so the agent log is where the difference
+lives.** The presets end their `errorStrategy` in `ignore` on purpose — one dead annotator must
+not destroy an eleven-sample run — and `workflow.failOnIgnore` stays false for the same reason.
+The driver therefore reads the trace itself and ends the run on one of two sentinel lines,
+`AgentPaths.RUN_DONE_SENTINEL` or `RUN_FAILED_SENTINEL`. `WaitForWorkflow` counts both and the
+GUI's watcher maps them to a run state. A driver that emitted only the done sentinel would report
+a run completed with its products missing, which is what a user reads as "finished". The
+errorStrategy's retry branch is guarded by `params.process.tries`, and `maxRetries` must stay
+above that threshold or nextflow stops retrying before the strategy asks it to — a `tries` of 1
+makes the retry branch unreachable and sends every first failure straight to `ignore`.
+
 **A run is a process group and a token.** `start.sh` backgrounds the driver under `set -m`, so
 the whole run descends from one process group, and exports `METASMITH_RUN=<task_key>.<timestamp>`,
 which every descendant inherits, docker tool containers carry as the `msm.run` label and
@@ -490,6 +512,25 @@ keeps a random per-call id and gets no reuse. `fabfos/refs.py` substitutes the D
 which survives the re-materialisation that moves an mtime. A change below the top node is
 invisible by construction, and `msm data invalidate` is the lever for it: it moves the mtime
 forward and re-mints through the same formula, so client and agent still agree.
+
+**A cache key covers a plan step, not one invocation.** The solver folds a multi-sample run into
+one *unique case*, so every step after the fan-in carries a single plan instance whatever the
+sample count and the per-sample fan-out happens in nextflow at runtime. A step's key therefore
+lists the ids of everything the step consumes across every sample, and a produced slot's id is
+derived from that key — so adding one sample moves the producing step's key, its output slot id,
+and the key of every step downstream of it. Reusing the work already done for the samples common
+to two runs would mean keying on the invocation rather than the step: a structural plan-level slot
+id and a per-batch entry looked up at execution time against the real inputs that invocation
+consumed. Decoupling the slot id from the key without that is unsafe — the id is what joins a
+consumer's requirement to the producing invocation, so an id that did not encode its inputs would
+let a lookup serve one sample's result for another.
+
+**A database shard outlives a re-solve and dies with the agent home.** A download step consumes
+only its tool environment, so its key is stat-addressed on the env files under
+`<agent_home>/data/env` — path and mtime. Re-staging and re-solving the same recipe leave those
+alone, which is why a second run does not re-fetch five gigabytes. A fresh agent home re-stages
+the env files at new paths with new mtimes, so it re-fetches everything; so does any change to a
+downloader's protocol source, which is part of the signature.
 
 **Nextflow will not publish a path outside its own work directory.** `PublishOp.collectFiles`
 adds a path to the publish set only when `getTaskDir` resolves it under `session.workDir`, its

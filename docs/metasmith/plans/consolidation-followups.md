@@ -132,6 +132,29 @@ shared local cache that no longer holds it, and the files on disk are hardlinks 
 so `dvc checkout --force` would delete them with nothing to restore. The rule that manages this
 is under *When a build artifact may be DVC-pinned* in `docs/metasmith/architecture.md`.
 
+**Adding one sample re-runs every sample.** A cache key covers a plan step, not one invocation,
+and a produced slot's id is derived from that key — so a step that consumes N samples re-keys when
+N changes and carries every step downstream with it. Measured on
+`annotation_trio_from_assembly`: going from two assemblies to three moves the key of all five
+per-sample steps and all three merges; only the three database steps hold. The three merges are
+correct to move. Reproduced by
+`tests/metasmith/cache/test_sample_addition.py::test_a_per_sample_step_keeps_the_keys_it_already_minted`,
+which is **red on purpose** and names the offenders. The first move is not the batch-level key
+that looks obvious: the solver folds a run into one unique case, so there is no batch downstream
+of the fan-in to key on, and keying per batch fixes the first step and nothing after it. It needs
+a structural plan-level slot id plus a per-batch entry looked up at execution time against the
+real inputs an invocation consumed — see FANOUT-1 below, which is the same change and was declined
+once for reasons that still hold.
+
+**A database transform fetches and indexes under one cache key, so an indexing failure discards
+the archive.** `FetchCommand` makes a *retry in the same work directory* free — the transfer lands
+on `<dest>.part` and is promoted only when it is whole — but nextflow gives a retry a fresh work
+directory by default, so that only helps a re-run that reuses the directory. The durable fix is to
+split each downloader into a fetch transform and an index transform, so the fetch is a cache entry
+of its own. That is a library-shape change: `downloadUniRef50DB`, `downloadKofamDB` and
+`downloadInterProScanDB` each grow an intermediate `ref::` type, and every plan that names them
+re-solves.
+
 ## Deliberately rejected
 
 **Per-Nextflow-task cache keying (FANOUT-1).** It moved the cache unit from the step to the
@@ -142,7 +165,9 @@ state. And it inlines one Groovy tuple literal per cached batch into a single `C
 with no bound on the generated source — at real fan-out scale that is a Groovy compile failure
 on resume rather than a diagnostic. The accepted cost is that a re-run where one sample of a
 fan-out changed recomputes the whole step: slower but correct. FANOUT-1 is the optimisation,
-not the correctness fix.
+not the correctness fix. That accepted cost has since been measured — see *Adding one sample
+re-runs every sample* above — and it is larger than "one step": the re-key propagates through the
+slot ids to every step downstream.
 
 **Deep-copying index value lists.** The lists are shared by reference across the DAG and the
 no-writer rule is enforced only at the top-level map, but every production write was audited
