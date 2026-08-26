@@ -271,7 +271,7 @@ types:
     extends:
     - reference_data
     properties:
-      _: Per-host GPR tables asserted by a curated genome-scale model, hosts/<host>/gpr_gem.parquet (long-format, one row per gene x MNXR; uniform raw_score)
+      _: Per-host GPR tables asserted by a curated genome-scale model, hosts/<host>/gpr_gem.parquet (long-format, one row per gene x MNXR; every row carries the declared assertion `llr`, because a curated model asserts a reaction is PRESENT and says nothing about how strongly)
       Format: DIRECTORY
   gpr_table_denovo:
     extends:

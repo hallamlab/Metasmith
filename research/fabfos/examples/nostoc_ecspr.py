@@ -190,6 +190,21 @@ LOCAL_RUNTIME = "mamba"
 LOCAL_AGENT_ENV = "msm"
 
 
+def _fresh(dest: Path) -> Path:
+    """Break the link on `dest` so a library writer may create it.
+
+    `ecspr.model.conditions.write` and friends open the destination directly, which is
+    right for a run directory and wrong here: under `data/` the path is a DVC hardlink,
+    and DVC also leaves it read-only, so the open fails outright. UNLINKING IS THE SAFE
+    HALF -- it drops one name from the inode and leaves the cached content alone.
+    Truncating it is what would rewrite every other checkout.
+    """
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    if dest.exists() or dest.is_symlink():
+        dest.unlink()
+    return dest
+
+
 def _write(df, dest: Path):
     """**WARNING** NEVER WRITE THROUGH A FILE UNDER `data/`.
 
@@ -331,7 +346,7 @@ def compose_all(g0=1.0, elements=ELEMENTS):
         _write(gprs[o], TABLES / f"{o}.parquet")
         corpus[f"{o}.parquet"] = gprs[o]
     member_conditions = [econd.single(o, f"{o}.parquet") for o in MEMBERS]
-    econd.write(member_conditions, OUT / "member_conditions.parquet")
+    econd.write(member_conditions, _fresh(OUT / "member_conditions.parquet"))
     conditions = {c.condition_id: c for c in member_conditions}
 
     comps = {arm: [] for arm in ARMS}
@@ -359,7 +374,7 @@ def compose_all(g0=1.0, elements=ELEMENTS):
                 {(a, b): () for i, a in enumerate(members) for b in members[i + 1:]}))
     for arm in ARMS:
         if comps[arm]:
-            ecomp.write(comps[arm], OUT / f"compositions_{arm}.parquet")
+            ecomp.write(comps[arm], _fresh(OUT / f"compositions_{arm}.parquet"))
 
     reports = []
     done = set()
@@ -380,7 +395,8 @@ def compose_all(g0=1.0, elements=ELEMENTS):
             # WHAT THE MEASUREMENT RESOLVES. The composed GPR table is one network, so its
             # conditions table is one condition over one table. The composition is what
             # BUILT it; this is what the probe reads.
-            econd.write([econd.single(nid, "gpr.parquet")], d / "conditions.parquet")
+            econd.write([econd.single(nid, "gpr.parquet")],
+                        _fresh(d / "conditions.parquet"))
             rep = dict(out["report"], arm=arm, seconds=round(time.time() - t0, 1))
             reports.append(rep)
             print(f"[{nid}] {rep['n_orfs']:,} orfs  {rep['n_reactions']:,} rxn  "
@@ -402,8 +418,8 @@ def compose_all(g0=1.0, elements=ELEMENTS):
                 two_terminal_precursors={
                     e: [PRECURSORS[n] for n in TWO_TERMINAL[e] if n in prec_by_el[e]]
                     for e in elements})
-            etests.write(ground, d / f"tests_{src}.parquet", "ecspr")
-            etests.write(two_terminal, d / f"tests_2t_{src}.parquet", "ecspr")
+            etests.write(ground, _fresh(d / f"tests_{src}.parquet"), "ecspr")
+            etests.write(two_terminal, _fresh(d / f"tests_2t_{src}.parquet"), "ecspr")
             if len(members) == 1:
                 break
 
