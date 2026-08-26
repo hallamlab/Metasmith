@@ -38,6 +38,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+from itertools import groupby
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -531,6 +533,67 @@ def build_baseline(frame_path, a: Assertions, xwalk: dict | None, medium: dict, 
                     inserted=dict(inserted))
 
 
+@contextmanager
+def perturbed(baseline: Baseline, a: Assertions, *, release=None, target=None,
+              log=None, label=""):
+    """`(model, census)` for a perturbed condition, as a context.
+
+    A CONTEXT BECAUSE A DELETION NEED NOT COPY THE MODEL. Removing a reaction and pinning
+    it to zero flux are the same linear program -- the column is there and can carry
+    nothing -- and cobra unwinds a bound change when the context closes. Measured on
+    iML1515: a `model.copy()` is 0.373 s and a knockout inside a context plus a solve is
+    0.006 s. Over the Fuhrer cohort's 3,806 deletions on eight axes that is three hours of
+    copying against three minutes, which decides whether the arm is a coffee break or a
+    cluster job.
+
+    So a withdrawal-only difference moves bounds on the baseline itself and puts them
+    back; anything that adds a reaction copies, because a structure change cannot be
+    unwound by a bound. The census says which route was taken, because `_n_reactions`
+    means different things on the two: on the bounds route the withdrawn reactions are
+    still counted and are carrying nothing.
+    """
+    withdraw, back, want = delta_sets(baseline, a)
+    if not (withdraw or back or want):
+        census = dict(baseline.census, **a.census)
+        census["delta"] = dict(withdrawn=0, reintroduced=0, inserted=0, requested=0,
+                               closed_after_insert=0, unmet=0, empty=1)
+        yield baseline.model, census
+        return
+    if withdraw and not (back or want):
+        census = dict(baseline.census, **a.census)
+        baseline_final = census.pop("growth_final", None)
+        for k in ("growth_carved", "growth_after_gapfill", "carved_away_ids"):
+            census.pop(k, None)
+        census["delta"] = dict(withdrawn=len(withdraw), reintroduced=0, inserted=0,
+                               requested=0, closed_after_insert=0, unmet=0, empty=0,
+                               by_bounds=1, baseline_growth_final=baseline_final)
+        census["gapfill"] = dict(baseline.census.get("gapfill", {}), inherited=1)
+        with baseline.model:
+            for rid in withdraw:
+                baseline.model.reactions.get_by_id(rid).knock_out()
+            if log:
+                log(f"[fba] {label}: delta -{len(withdraw)} by bounds on the baseline")
+            yield baseline.model, census
+        return
+    yield apply_delta(baseline, a, release=release, target=target, log=log, label=label)
+
+
+def delta_sets(baseline: Baseline, a: Assertions) -> tuple:
+    """`(withdraw, reintroduce, insert)` -- the three moves, as id and MNXR lists."""
+    base = baseline.a
+    ref = baseline.model
+    present = {r.id for r in ref.reactions}
+    native = set(baseline.xwalk.values())
+    withdraw = [r.id for r in ref.reactions
+                if r.gene_reaction_rule.strip()
+                and baseline.asserts(r.id, base) and not baseline.asserts(r.id, a)]
+    back = [r.id for r in baseline.donor.reactions
+            if r.id not in present and baseline.asserts(r.id, a)
+            and not baseline.asserts(r.id, base)]
+    want = sorted(a.mnxrs - base.mnxrs - native - set(baseline.inserted))
+    return withdraw, back, want
+
+
 def apply_delta(baseline: Baseline, a: Assertions, *, release=None, target=None,
                 log=None, label="") -> tuple:
     """A perturbed condition as a DIFFERENCE on the baseline model. `(model, census)`.
@@ -564,16 +627,7 @@ def apply_delta(baseline: Baseline, a: Assertions, *, release=None, target=None,
     """
     base = baseline.a
     ref = baseline.model
-    present = {r.id for r in ref.reactions}
-    native = set(baseline.xwalk.values())
-
-    withdraw = [r.id for r in ref.reactions
-                if r.gene_reaction_rule.strip()
-                and baseline.asserts(r.id, base) and not baseline.asserts(r.id, a)]
-    back = [r.id for r in baseline.donor.reactions
-            if r.id not in present and baseline.asserts(r.id, a)
-            and not baseline.asserts(r.id, base)]
-    want = sorted(a.mnxrs - base.mnxrs - native - set(baseline.inserted))
+    withdraw, back, want = delta_sets(baseline, a)
 
     if not (withdraw or back or want):
         # AN EMPTY DIFFERENCE IS THE COMMON CASE AND IT MUST COST NOTHING. Two conditions
@@ -874,10 +928,10 @@ def run(frames, gpr_paths, conditions, tests, media, *, release=None, weighting=
     built: dict = {}
     census_log: dict = {}
     by_index: dict = {}
-    cur_key, cur_model, cur_census = None, None, None
     n_delta = n_empty = n_resumed = n_skipped = 0
-    for n, i in enumerate(order):
-        t, pl = tests[i], plans[i]
+    todo = []
+    for i in order:
+        t = tests[i]
         shard = shard_dir / _shard_name(t, signature) if shard_dir else None
         if shard is not None and resume and shard.exists():
             by_index[i] = json.loads(shard.read_text())
@@ -886,6 +940,32 @@ def run(frames, gpr_paths, conditions, tests, media, *, release=None, weighting=
         if i not in mine:
             n_skipped += 1
             continue
+        todo.append(i)
+
+    done = 0
+
+    def _emit(model, census):
+        """Measure every test of one group on the model that group is about."""
+        nonlocal done
+        for i in chunk:
+            t = tests[i]
+            by_index[i] = rows_i = measure(model, t, plans[i]["medium"],
+                                           dict(census, **plans[i]["a"].census),
+                                           emit=emit)
+            if shard_dir is not None:
+                (shard_dir / _shard_name(t, signature)).write_text(json.dumps(rows_i))
+            done += 1
+            if done == 1 or done % 10 == 0 or done == len(todo):
+                log(f"[fba] {done}/{len(todo)} tests to solve "
+                    f"({len(built)} baseline(s) built, {n_delta} difference(s) applied)")
+
+    # ONE DIFFERENCE PER GROUP, not per test. `order` puts every test of one
+    # (baseline, assertion set) together, so a condition carrying several growth pins or
+    # several media is differenced once and measured that many times inside the one
+    # perturbed model.
+    for _dkey, group in groupby(todo, key=lambda i: plans[i]["delta_key"]):
+        chunk = list(group)
+        pl = plans[chunk[0]]
         if pl["base_key"] not in built:
             frame_name = pl["base_key"][0]
             if frame_name not in xwalks:
@@ -903,26 +983,15 @@ def run(frames, gpr_paths, conditions, tests, media, *, release=None, weighting=
         b = built[pl["base_key"]]
 
         if pl["a"].key == pl["root_a"].key:
-            model, census = b.model, b.census
-        else:
-            if cur_key != pl["delta_key"]:
-                cur_model, cur_census = apply_delta(
-                    b, pl["a"], release=release, target=pl["base_key"][1], log=None,
-                    label=t.network)
-                cur_key = pl["delta_key"]
-                n_delta += 1
-                n_empty += int(bool(cur_census.get("delta", {}).get("empty")))
-                census_log[f"{pl['base_key'][0]}|{pl['base_key'][3]}|{t.network}"] = \
-                    _jsonable(cur_census)
-            model, census = cur_model, cur_census
-
-        by_index[i] = rows_i = measure(model, t, pl["medium"],
-                                       dict(census, **pl["a"].census), emit=emit)
-        if shard is not None:
-            shard.write_text(json.dumps(rows_i))
-        if n == 0 or (n + 1) % 10 == 0 or n + 1 == len(tests):
-            log(f"[fba] {n + 1}/{len(tests)} tests "
-                f"({len(built)} baseline(s) built, {n_delta} difference(s) applied)")
+            _emit(b.model, b.census)
+            continue
+        with perturbed(b, pl["a"], release=release, target=pl["base_key"][1],
+                       log=None, label=tests[chunk[0]].network) as (model, census):
+            n_delta += 1
+            n_empty += int(bool(census.get("delta", {}).get("empty")))
+            census_log[f"{pl['base_key'][0]}|{pl['base_key'][3]}|"
+                       f"{tests[chunk[0]].network}"] = _jsonable(census)
+            _emit(model, census)
 
     log(f"[fba] {len(built)} baseline build(s), {n_delta} difference(s), "
         f"{len(tests)} test(s)"

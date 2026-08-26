@@ -460,3 +460,34 @@ def test_a_part_out_of_range_is_refused(frame, tmp_path):
         F.run([frame], [gpr], [BOTH, _ko_g1()], _two_media_tests(),
               {"m": MEDIUM, "m2": MEDIUM2}, do_gapfill=False, part=2, of=2,
               log=lambda _m: None)
+
+
+def test_a_deletion_by_bounds_and_by_removal_are_the_same_program(frame):
+    # WHY A DELETION NEED NOT COPY THE MODEL. A reaction removed and a reaction pinned to
+    # zero flux are the same linear program, so the cheap route has to give the same
+    # number as the expensive one -- and the baseline has to come back unharmed, because
+    # every other perturbation is measured on it afterwards.
+    base_a = F.assertions(BOTH, CORPUS)
+    ko_a = F.assertions(_ko_g1(), CORPUS)
+    b = F.build_baseline(frame, base_a, None, MEDIUM, corpus=CORPUS, do_gapfill=False)
+    before = {r.id: (r.lower_bound, r.upper_bound) for r in b.model.reactions}
+
+    with F.perturbed(b, ko_a) as (m1, c1):
+        with m1:
+            F.apply_medium(m1, MEDIUM)
+            by_bounds = F._growth(m1)
+    m2, c2 = F.apply_delta(b, ko_a)
+    with m2:
+        F.apply_medium(m2, MEDIUM)
+        by_removal = F._growth(m2)
+
+    assert by_bounds == by_removal == 0.0
+    assert c1["delta"]["withdrawn"] == c2["delta"]["withdrawn"] == 1
+    assert c1["delta"]["by_bounds"] == 1 and "by_bounds" not in c2["delta"]
+    # the copy really did lose the reaction; the bounds route kept it, carrying nothing
+    assert "R1" not in {r.id for r in m2.reactions}
+    assert {r.id: (r.lower_bound, r.upper_bound) for r in b.model.reactions} == before
+    # ...and the baseline still grows, which is what says the context unwound
+    with b.model:
+        F.apply_medium(b.model, MEDIUM)
+        assert F._growth(b.model) == pytest.approx(10.0)
