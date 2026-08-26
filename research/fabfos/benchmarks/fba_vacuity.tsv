@@ -1,0 +1,7 @@
+cohort	channel	host	clones	conditions	clone_mnxr	mnxr_host_lacks	clone_ids	ids_host_lacks	verdict
+eydallin2010	gem	e_coli_ag1	eydallin_clones	34	79	0	79	0	vacuous by construction
+eydallin2010	denovo	e_coli_ag1	eydallin_clones	55	479	0	131	11	0 reaction(s) and 11 id(s) can bite
+fang	gem	e_coli_k12	fang	1479	2098	0	2197	0	vacuous by construction
+fang	denovo	e_coli_k12	fang	2571	10749	0	4574	0	vacuous by construction
+woodruff	gem	e_coli_bw25113	woodruff_clones	1503	2118	0	2217	0	vacuous by construction
+woodruff	denovo	e_coli_bw25113	woodruff_clones	2477	10549	0	4456	0	vacuous by construction

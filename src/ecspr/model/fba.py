@@ -937,9 +937,15 @@ def run(frames, gpr_paths, conditions, tests, media, *, release=None, weighting=
     order = sorted(range(len(tests)),
                    key=lambda i: (_rank(plans[i]["base_key"]), _rank(plans[i]["a"].key)))
 
+    # THE UNIT A PART MUST NOT SPLIT IS THE DIFFERENCE, not the baseline. Every test of one
+    # (baseline, assertion set) shares one perturbed model, so splitting there would build
+    # it twice; a baseline, by contrast, is ONE build that a task can afford to repeat.
+    # Partitioning on the baseline was right only while each target had its own -- with the
+    # target out of the build key a whole cohort is one baseline group, and `--of` could
+    # not split it at all.
     groups: dict = {}
     for i in order:
-        groups.setdefault(plans[i]["base_key"], []).append(i)
+        groups.setdefault(plans[i]["delta_key"], []).append(i)
     mine = set(range(len(tests)))
     if of:
         if not (0 <= int(part) < int(of)):
@@ -949,7 +955,7 @@ def run(frames, gpr_paths, conditions, tests, media, *, release=None, weighting=
                 for i in groups[k]}
         log(f"[fba] part {part}/{of}: {len(mine)} of {len(tests)} test(s) over "
             f"{sum(1 for n in range(len(keys)) if n % int(of) == int(part))} of "
-            f"{len(keys)} baseline group(s)")
+            f"{len(keys)} difference group(s)")
 
     shard_dir = Path(shard_dir) if shard_dir else None
     if shard_dir:

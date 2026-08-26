@@ -186,11 +186,14 @@ def build_parser() -> argparse.ArgumentParser:
     fb.add_argument("--no-resume", action="store_true",
                     help="do not shard, and do not resume from shards on disk")
     fb.add_argument("--part", type=int, default=None, metavar="I",
-                    help="solve only part I of --of. THE SPLIT IS OVER BASELINES, not "
-                         "over tests: a boundary drawn through a baseline would have "
-                         "every array task rebuild it. A test outside this part is read "
-                         "from its shard if one exists and is otherwise left unsolved, "
-                         "so a final run with no --part assembles every task's output")
+                    help="solve only part I of --of. THE SPLIT IS OVER DIFFERENCES, not "
+                         "over tests: every test of one perturbed condition shares one "
+                         "model, so a boundary drawn through it would build that model "
+                         "twice. Each part rebuilds the baseline it needs, which is one "
+                         "build and cheap beside its share of the work. A test outside "
+                         "this part is read from its shard if one exists and is "
+                         "otherwise left unsolved, so a final run with no --part "
+                         "assembles every task's output")
     fb.add_argument("--of", type=int, default=None, metavar="N",
                     help="how many parts --part is one of")
     fb.add_argument("--census", default=None,

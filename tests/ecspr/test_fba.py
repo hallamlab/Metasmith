@@ -426,10 +426,9 @@ def test_a_shard_written_under_other_settings_does_not_resume_into_this_run(fram
     assert len(list(shards.glob("*.json"))) == 8
 
 
-def test_parts_split_baselines_and_reassemble_into_the_whole(frame, tmp_path):
-    # THE SPLIT IS OVER BASELINES. Two media are two repairs and therefore two baselines;
-    # each part gets whole ones, so no array task rebuilds another's model. Running both
-    # parts into one shard directory and then assembling with no part reproduces the
+def test_parts_split_differences_and_reassemble_into_the_whole(frame, tmp_path):
+    # THE SPLIT IS OVER DIFFERENCES, and every test of one perturbed condition stays with
+    # its own. Running both parts and then assembling with no part reproduces the
     # single-process answer exactly.
     gpr = _gpr(tmp_path)
     args = ([frame], [gpr], [BOTH, _ko_g1()], _two_media_tests(),
@@ -444,7 +443,8 @@ def test_parts_split_baselines_and_reassemble_into_the_whole(frame, tmp_path):
         seen = []
         F.run(*args, do_gapfill=False, shard_dir=tmp_path / f"task{i}", part=i, of=2,
               log=seen.append)
-        assert "1 baseline build(s)" in seen[-1]
+        # Each part builds the baselines ITS differences need -- repeating a baseline
+        # across tasks is one build, and cheap beside not splitting a difference.
         assert "2 not in this part" in seen[-1]
         for f in (tmp_path / f"task{i}").glob("*.json"):
             (shards / f.name).write_text(f.read_text())
