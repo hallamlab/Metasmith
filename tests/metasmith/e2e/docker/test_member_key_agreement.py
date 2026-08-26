@@ -44,10 +44,9 @@ def _members() -> list[dict]:
 
 
 MAIN_NF = '''
-import groovy.json.JsonSlurper
 workflow {
     def o = new Orchestrator(Channel.fromList([null]))
-    def spec = new JsonSlurper().parse(new File("spec.json"))
+    def spec = new groovy.json.JsonSlurper().parse(new File("spec.json"))
     def helper = ["python", "-m", "metasmith.caching.invocation"]
     def rows = o.probeMembers(helper, spec)
     rows.each { row -> println("MEMBER " + row.join("|")) }

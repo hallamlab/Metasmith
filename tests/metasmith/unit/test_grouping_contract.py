@@ -37,12 +37,16 @@ def test_a_collecting_step_emits_no_expectation_for_its_archetype_slot(
         resources_file=AgentPaths.NXF_RES,
     ))
 
-    calls = re.findall(r"o\.group\((.*?)\)\)\)", (ws / "workflow.nf").read_text())
+    # `o.group(by, [streams], k, batch_size, expected, [cache])`: the
+    # expectation is the map just before the cache map.
+    calls = re.findall(
+        r"o\.group\('\w+', \[([^\]]*)\], k, \d+, (\[[^\]]*\]), \[tk:",
+        (ws / "workflow.nf").read_text(),
+    )
     assert calls, "no o.group call was emitted"
-    collecting = [c for c in calls if c.count("_") >= 2 and "," in c]
+    collecting = [(streams, exp) for streams, exp in calls if "," in streams]
     assert collecting, f"no collecting o.group among {calls}"
-    for call in collecting:
-        expected = call.rsplit(",", 1)[-1].strip()
+    for call, expected in collecting:
         assert expected == "[:]", (
             "a collecting step told group() how many items its key expects, "
             f"which it cannot know from one archetype: {call}"

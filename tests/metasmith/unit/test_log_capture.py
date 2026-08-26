@@ -1,24 +1,30 @@
 from __future__ import annotations
 from pathlib import Path
 
-from metasmith.caching.promote import _find_step_logs
+from metasmith.caching.promote import _copy_task_logs
 from metasmith.models.lineage import LogBundle
 
 
-def test_find_step_logs_locates_command_files(tmp_path):
-    ws = tmp_path / "ws"
-    step_dir = ws / "nxf_work" / "step_03" / "ab" / "cd"
-    step_dir.mkdir(parents=True)
+def test_the_producing_tasks_logs_land_in_the_member_shard(tmp_path):
+    task_dir = tmp_path / "nxf_work" / "ab" / "cd"
+    task_dir.mkdir(parents=True)
     for ext in ("sh", "out", "err", "log"):
-        (step_dir / f".command.{ext}").write_text(f"<{ext}>")
-    (step_dir / "output.fa").write_text(">c1\nACGT\n")
+        (task_dir / f".command.{ext}").write_text(f"<{ext}>")
+    (task_dir / "output.fa").write_text(">c1\nACGT\n")
+    shard = tmp_path / "task_cache" / "1e" / "20ab"
+    shard.mkdir(parents=True)
 
-    found = _find_step_logs(ws, 3)
-    names = sorted(p.name for p in found)
+    _copy_task_logs(task_dir, shard)
+    names = sorted(p.name for p in (shard / "logs").iterdir())
     assert names == sorted(
         [".command.err", ".command.log", ".command.out", ".command.sh"]
     )
-    assert _find_step_logs(ws, 4) == []
+
+    # A shard that already has logs keeps them: the first producer's run is
+    # the one the shard's products came from.
+    (task_dir / ".command.out").write_text("<later run>")
+    _copy_task_logs(task_dir, shard)
+    assert (shard / "logs" / ".command.out").read_text() == "<out>"
 
 
 def test_log_bundle_status_discriminates_available_vs_pruned():
