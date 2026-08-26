@@ -63,9 +63,33 @@ defects in THIS FILE, and they cost the atom lane 29 of the curated set4 axes:
   * DUPLICATE-METABOLITE reactions where two DISTINCT MNXMs share one canonical SMILES
     are genuinely ambiguous -- `pop(0)` picks between different metabolites -- and stay
     refused. That refusal is real.
+  * `stripped` AGAIN, on a second and much smaller regex-shaped fault: a MULTI-COMPONENT
+    participant. MetaNetX writes a salt or an ion pair as ONE metabolite with one
+    `.`-joined SMILES -- ammonium hydroxide is `[NH4+].[OH-]` -- and the submission
+    builder joins participants with `.` too, so that metabolite reaches the mapper as two
+    components and comes back as two templates. The count of templates then exceeds the
+    count of participants and the whole reaction is refused, on all three members at once,
+    which is the tell: three independent mappers do not agree about chemistry, they agree
+    about arithmetic. 248 of the universe's participants are multi-component and they sit
+    in 567 reactions. See `coalesce_components`, which merges the components back BEFORE
+    the alignment check and is a no-op everywhere else.
+  * A REUSED ATOM-MAP NUMBER is refused per atom (`duplicate_map_numbers`). An atom map
+    is a bijection, so a number may appear at most once per side. The product loop reads
+    each product atom's number out of `sub_index`, so a number repeated on the product
+    side pairs one substrate atom with two product atoms, in two different molecules when
+    the repeats sit in different templates. Indigo does this on 56% of what it maps: on
+    MNXR166070 it labels the ATP ribose with L-rhamnulose-1-phosphate's numbers and leaves
+    ADP's own ribose unmapped, which put five sugar carbons into ATP at half weight and
+    gave the fusion a decoy to dilute against. This refusal came AFTER two generations of
+    the bake shipped without it, and it is the one refusal here that is arithmetic rather
+    than chemistry -- nothing outside the mapped string is consulted.
 
 The lesson worth keeping: a refusal rate is not evidence about the world until the
-refusals have been read. Reporting 37.8% coverage as a property of the atom mapping,
+refusals have been read. It kept being worth keeping: the multi-component refusal above
+was found four generations later, in the same status column, by reading it again.
+`mapped_nothing` had been carried as a chemistry residual across three re-bakes and an
+LLM curation panel; 285 of its 571 reactions are compartment transport with nothing to
+transfer, and most of the rest were this. Reporting 37.8% coverage as a property of the atom mapping,
 when most of it was this file disagreeing with a regex, put a false limitation into a
 report and nearly retired a set of biologically real axes. Every status here is
 counted and reported so the next reader can check rather than believe.
@@ -92,7 +116,10 @@ EQ_TERM = re.compile(r"(\d+(?:\.\d+)?)\s+(MNXM\w+)@\w+")
 
 PAIR_COLS = ("mnxr", "element", "substrate", "product", "n_atoms",
              "sub_idx", "prod_idx", "pair_w")
-STATUS_COLS = ("mnxr", "status", "n_sub", "n_prod", "n_mapped_sub", "n_mapped_prod")
+STATUS_COLS = ("mnxr", "status", "n_sub", "n_prod", "n_mapped_sub", "n_mapped_prod",
+               "n_dup_map")
+
+ON_NONINJECTIVE = ("trim", "refuse")
 
 
 def canon_smiles(smi: str):
@@ -304,27 +331,160 @@ def distinct_structures(mnxms: list, smiles_of: dict) -> int:
     return n
 
 
-def reduce_for_element(sub_mnxms: list, prod_mnxms: list, formulas: dict, X: str):
-    keep_s, keep_p, n_s, n_p = [], [], 0, 0
+def element_budget(m: str, X: str, formulas: dict,
+                   counts_of: dict | None, residue_of: dict | None):
+    """What a participant contributes to X: explicit atoms, and unspecified residue.
+
+    Two propositions, kept apart. `count_element` collapses them: it answers `None` for
+    any formula carrying `*`, `(` or `)`, so `C13H16O17P2*4` -- which states its carbon
+    exactly -- is read as stating nothing. The explicit half is a COUNT and may be summed;
+    the residue half is an UNKNOWN and may only be required to cancel. Returning them
+    separately is what lets a caller assert a balance without asserting a size.
+
+    `lookup::element_counts` answers both where it has the species, and the formula
+    answers the first alone where it does not -- in which case the residue is zero,
+    because a formula with a residue marker is exactly what `count_element` refuses.
+    """
+    if counts_of is not None:
+        c = counts_of.get(m)
+        if c is not None:
+            r = (residue_of or {}).get(m)
+            if r is None or (r != r):
+                return None
+            return int(c[ELEMENTS.index(X)]), int(r)
+    n = count_element(formulas.get(m), X)
+    return None if n is None else (n, 0)
+
+
+def reduce_for_element(sub_mnxms: list, prod_mnxms: list, formulas: dict, X: str,
+                       counts_of: dict | None = None,
+                       residue_of: dict | None = None):
+    """Keep only what carries X, and only if X still balances over what is kept.
+
+    A participant may be dropped only when it is known to carry no X AT ALL -- no explicit
+    atoms and no residue that could hold some. Dropping one that might carry X would
+    re-route an atom rather than ignore it, which is the whole reason this reduction is
+    sound where a strip is not.
+
+    With no `counts_of` this is what it always was: the residue is zero everywhere, the
+    cancellation is trivial, and the result is identical participant for participant.
+    """
+    keep_s, keep_p, n_s, n_p, r_s, r_p = [], [], 0, 0, 0, 0
     for side, keep, ms in ((0, keep_s, sub_mnxms), (1, keep_p, prod_mnxms)):
         for m in ms:
-            c = count_element(formulas.get(m), X)
-            if c is None:
+            got = element_budget(m, X, formulas, counts_of, residue_of)
+            if got is None:
                 return None
-            if c:
-                keep.append(m)
-                if side == 0:
-                    n_s += c
-                else:
-                    n_p += c
-    if not keep_s or not keep_p or n_s != n_p:
+            c, r = got
+            if not c and not r:
+                continue
+            keep.append(m)
+            if side == 0:
+                n_s += c
+                r_s += r
+            else:
+                n_p += c
+                r_p += r
+    if not keep_s or not keep_p or n_s != n_p or r_s != r_p:
         return None
     return keep_s, keep_p
 
 
+def duplicate_map_numbers(sub_mols: list, prod_mols: list) -> set:
+    dup = set()
+    for side in (sub_mols, prod_mols):
+        seen = Counter()
+        for mol in side:
+            if mol is None:
+                continue
+            for a in mol.GetAtoms():
+                n = a.GetAtomMapNum()
+                if n > 0:
+                    seen[n] += 1
+        dup |= {n for n, k in seen.items() if k > 1}
+    return dup
+
+
+def coalesce_components(mols: list, mnxms: list, canon: dict):
+    """Merge the templates that are components of one multi-component participant.
+
+    MetaNetX writes a salt or an ion pair as one metabolite with one multi-component
+    SMILES -- ammonium hydroxide is `[NH4+].[OH-]`. The submission builder joins
+    participants with `.`, so that metabolite reaches the mapper as two components, and
+    the mapper returns two templates for one participant. The strict alignment check
+    counts templates against participants and refuses the whole reaction.
+
+    Combining the components back is exact rather than approximate: `CanonicalRankAtoms`
+    is a canonical labelling, so ranking the recombined molecule gives the same ranks as
+    ranking the metabolite's own SMILES, whatever order the components arrive in. That
+    is what lets the pair indices stay in the frame `lookup::atom_ranks` publishes -- the
+    frame the pair table indexes into, and the one a wrong answer here would silently
+    leave.
+
+    Conservative by construction: every participant must be satisfied exactly and every
+    template claimed, or nothing is merged and the caller sees what it saw before. A
+    single-component participant claims its template first, so a component key it shares
+    with a salt cannot be taken from it.
+    """
+    need = {}
+    for m in set(mnxms):
+        cs = canon.get(m)
+        if cs and "." in cs:
+            parts = [canon_smiles(x) for x in cs.split(".")]
+            if all(parts):
+                need[m] = parts
+    if not need:
+        return mols, False
+
+    keys = []
+    for mol in mols:
+        if mol is None:
+            return mols, False
+        keys.append(frag_keys(mol)[0])
+    if any(k is None for k in keys):
+        return mols, False
+
+    free = defaultdict(list)
+    for i, k in enumerate(keys):
+        free[k].append(i)
+
+    groups = []
+    for m in mnxms:
+        if m in need:
+            continue
+        cs = canon.get(m)
+        if cs is None or not free.get(cs):
+            return mols, False
+        groups.append((m, [free[cs].pop(0)]))
+
+    for m in mnxms:
+        if m not in need:
+            continue
+        picked = []
+        for part in need[m]:
+            if not free.get(part):
+                return mols, False
+            picked.append(free[part].pop(0))
+        groups.append((m, picked))
+
+    if any(v for v in free.values()):
+        return mols, False
+    if not any(len(idxs) > 1 for _m, idxs in groups):
+        return mols, False
+
+    out = []
+    for _m, idxs in sorted(groups, key=lambda g: min(g[1])):
+        combined = mols[idxs[0]]
+        for i in idxs[1:]:
+            combined = Chem.CombineMols(combined, mols[i])
+        out.append(combined)
+    return out, True
+
+
 def pairs_from_mapped(mapped_smi: str, sub_mnxms: list, prod_mnxms: list,
                       canon: dict, conn: dict = None, align: str = "strict",
-                      collapsed_counts: tuple | None = None):
+                      collapsed_counts: tuple | None = None,
+                      on_noninjective: str = "trim", stats: dict | None = None):
     if not mapped_smi or pd.isna(mapped_smi):
         return {}, "no_mapping"
     try:
@@ -338,6 +498,17 @@ def pairs_from_mapped(mapped_smi: str, sub_mnxms: list, prod_mnxms: list,
     n_prod_t = rxn.GetNumProductTemplates()
     sub_mols = [rxn.GetReactantTemplate(i) for i in range(n_sub_t)]
     prod_mols = [rxn.GetProductTemplate(j) for j in range(n_prod_t)]
+
+    # BEFORE the alignment check, because the mismatch it is about to refuse is an
+    # accounting one: a multi-component participant is one metabolite and several
+    # templates. Merging is a no-op for every reaction whose participants are all
+    # single-component, and it refuses to merge unless the whole side accounts for.
+    sub_mols, merged_s = coalesce_components(sub_mols, sub_mnxms, canon)
+    prod_mols, merged_p = coalesce_components(prod_mols, prod_mnxms, canon)
+    if merged_s or merged_p:
+        n_sub_t, n_prod_t = len(sub_mols), len(prod_mols)
+        if stats is not None:
+            stats["coalesced"] = True
 
     if align == "strict":
         exact = (n_sub_t == len(sub_mnxms) and n_prod_t == len(prod_mnxms))
@@ -368,6 +539,19 @@ def pairs_from_mapped(mapped_smi: str, sub_mnxms: list, prod_mnxms: list,
         sub_named, amb_s = match_mols(sub_mols, sub_mnxms, canon, conn)
         prod_named, amb_p = match_mols(prod_mols, prod_mnxms, canon, conn)
 
+    # An atom map is a bijection, so a map number may appear at most once per side. The
+    # product loop below reads each product atom's number out of `sub_index`, so a number
+    # repeated on the PRODUCT side pairs one substrate atom with two product atoms -- in
+    # two different molecules when the repeats sit in different templates, which is a
+    # transfer no chemistry performed. A number repeated on the SUBSTRATE side is the
+    # mirror: `sub_index` keeps whichever atom it saw last and the other is lost silently.
+    # Indigo emits the product-side form on 56% of the reactions it maps.
+    dup = duplicate_map_numbers(sub_mols, prod_mols)
+    if stats is not None:
+        stats["n_dup_map"] = len(dup)
+    if dup and on_noninjective == "refuse":
+        return {}, "non_injective"
+
     sub_ranks = [canonical_ranks(m) for m in sub_mols]
     prod_ranks = [canonical_ranks(m) for m in prod_mols]
     if any(r is None for r in sub_ranks) or any(r is None for r in prod_ranks):
@@ -384,7 +568,7 @@ def pairs_from_mapped(mapped_smi: str, sub_mnxms: list, prod_mnxms: list,
     for j, mol in enumerate(prod_mols):
         for a in mol.GetAtoms():
             n = a.GetAtomMapNum()
-            if n <= 0:
+            if n <= 0 or n in dup:
                 continue
             el = a.GetSymbol()
             if el not in ELEMENTS:
@@ -404,7 +588,11 @@ def pairs_from_mapped(mapped_smi: str, sub_mnxms: list, prod_mnxms: list,
                 for pm, wp in prod_cands:
                     pairs[(el, sm, pm)].append((s_rank, p_rank, ws * wp))
     if not pairs:
-        return {}, "no_pairs"
+        return {}, ("non_injective" if dup else "no_pairs")
+    if dup:
+        # Reported ahead of `ambiguous_diluted`: a trimmed map is a member that abstains on
+        # the atoms it contradicts itself about, which is the more consequential fact.
+        return dict(pairs), "injectivity_trimmed"
     return dict(pairs), ("ambiguous_diluted" if (amb_s or amb_p) else "ok")
 
 
@@ -521,20 +709,26 @@ def cmd_extract(args):
 
     rows, status_rows = [], []
     tally = defaultdict(int)
+    n_dup_rxn = n_dup_slots = 0
     for k, rec in enumerate(aam.itertuples(index=False)):
         r = rec.mnxr
         pe = parsed.get(r)
         if pe is None:
             tally["no_equation"] += 1
             status_rows.append(dict(mnxr=r, status="no_equation", n_sub=0, n_prod=0,
-                                    n_mapped_sub=0, n_mapped_prod=0))
+                                    n_mapped_sub=0, n_mapped_prod=0, n_dup_map=0))
             continue
         subs, prods = pe
+        st = {}
         pairs, status = pairs_from_mapped(
             getattr(rec, "mapped_rxn_smiles", None), subs, prods, canon,
             conn=conn if args.connectivity_fallback else None, align=args.align,
             collapsed_counts=(distinct_structures(subs, raw),
-                              distinct_structures(prods, raw)))
+                              distinct_structures(prods, raw)),
+            on_noninjective=args.on_noninjective, stats=st)
+        n_dup = int(st.get("n_dup_map", 0))
+        n_dup_rxn += n_dup > 0
+        n_dup_slots += n_dup
         if not pairs and status == "no_mapping" and args.fallback_forced:
             fp = forced_pairs(subs, prods, formulas, ranks_of)
             if fp:
@@ -558,7 +752,8 @@ def cmd_extract(args):
         status_rows.append(dict(mnxr=r, status=status, n_sub=len(subs),
                                 n_prod=len(prods),
                                 n_mapped_sub=len({p[1] for p in pairs}),
-                                n_mapped_prod=len({p[2] for p in pairs})))
+                                n_mapped_prod=len({p[2] for p in pairs}),
+                                n_dup_map=n_dup))
         for (el, sm, pm), idxs in pairs.items():
             rows.append(dict(mnxr=out_mnxr, element=el, substrate=sm, product=pm,
                              n_atoms=len(idxs),
@@ -576,6 +771,10 @@ def cmd_extract(args):
 
     print(f"\n[atom-pairs] {len(df):,} (rxn, element, sub, prod) pairs "
           f"over {df.mnxr.nunique():,} reactions -> {args.out}")
+    print(f"\n[atom-pairs] injectivity ({args.on_noninjective}): {n_dup_rxn:,} of "
+          f"{len(aam):,} reactions reuse an atom-map number within one side "
+          f"({100*n_dup_rxn/max(len(aam),1):.1f}%), {n_dup_slots:,} numbers in all. "
+          f"A reused number names no correspondence and is not one.")
     print("\n[atom-pairs] per-reaction outcome:")
     for s, n in sorted(tally.items(), key=lambda x: -x[1]):
         print(f"    {s:22s} {n:>7,}  ({100*n/len(aam):5.1f}%)")
@@ -646,6 +845,11 @@ def parse_args(argv=None):
                         "retry on the InChIKey connectivity block -- which is invariant "
                         "to the protonation and tautomer differences MetaCyc and "
                         "MetaNetX have about the same molecule, and to nothing else")
+    p.add_argument("--on-noninjective", choices=ON_NONINJECTIVE, default="trim",
+                   help="what to do with a map that reuses an atom-map number within "
+                        "one side. `trim` drops the contradicted atoms and keeps the "
+                        "rest of the reaction, so the member abstains where it argues "
+                        "with itself. `refuse` drops the whole reaction")
     p.add_argument("--min-confidence", type=float, default=None,
                    help="omit to keep the mapper's whole universe (tier B applies no "
                         "confidence gate; the acetyl-CoA split is chemically correct "

@@ -67,7 +67,7 @@ CLI = {
                   "--targets", "--out-forced", "--out-claims", "--out-summary"},
     },
     "ecspr.bake.aam.partial": {
-        "build": {"--lookups", "--forecast", "--rescue",
+        "build": {"--lookups", "--forecast", "--rescue", "--element-counts",
                   "--atom-limit", "--char-limit",
                   "--out", "--out-forced", "--out-summary"},
     },
@@ -91,8 +91,9 @@ CLI = {
         "check": {"--counts", "--atom-ranks"},
     },
     "ecspr.bake.aam.layers": {
-        "fuse": {"--member", "--submission-class", "--out"},
+        "fuse": {"--member", "--submission-class", "--reac-prop", "--out"},
         "stack": {"--layer", "--out"},
+        "audit": {"--pairs", "--reac-prop", "--worklist", "--out", "--max-reactions"},
     },
     "ecspr.bake.aam.indigo_member": {
         "map": {"--universe", "--out", "--limit", "--timeout", "--shard",
@@ -113,7 +114,7 @@ CLI = {
         "extract": {"--aam", "--reac-prop", "--chem-prop", "--out", "--out-status",
                     "--align", "--connectivity-fallback", "--fallback-forced",
                     "--balance", "--placeholders", "--resolved", "--min-confidence",
-                    "--universe"},
+                    "--universe", "--on-noninjective"},
         "selftest": set(),
     },
     "ecspr.bake.metabolism": {
