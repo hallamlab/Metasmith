@@ -43,18 +43,44 @@ def build_inputs(lib_root: Path, at: Path, n: int = 1):
     return lib
 
 
+def build_named_inputs(lib_root: Path, at: Path, names: list[str]):
+    """An input library of the named assemblies, in that order.
+
+    A file that already exists at its path is left alone, so a second library
+    built at the same location keeps the leaf ids of the samples it shares
+    with the first: a leaf's id is its path and mtime.
+    """
+    from metasmith.python_api import DataInstanceLibrary
+
+    lib = DataInstanceLibrary(at / "inputs.xgdb")
+    lib.AddTypeLibrary(lib_root / "data_types" / "sequences.yml")
+    lib.location.mkdir(parents=True, exist_ok=True)
+    for name in names:
+        d = lib.location / name
+        d.mkdir(parents=True, exist_ok=True)
+        f = d / "asm.fna"
+        if not f.exists():
+            f.write_text(f">{name}\nACGTACGTACGT\n", encoding="utf-8")
+        lib.AddItem(Path(f"{name}/asm.fna"), "sequences::assembly")
+    lib.Save()
+    return lib
+
+
 def solve_trio(lib_root: Path, inputs, targets: list[str] | None = None,
-               shared: list[str] | None = None):
+               shared: list[str] | None = None,
+               transform_roots: dict[str, Path] | None = None):
+    """`transform_roots` swaps a namespace's library for another location."""
     from metasmith.python_api import Spec
+
+    roots = {n: lib_root / "transforms" / n for n in TRANSFORM_NAMESPACES}
+    roots.update(transform_roots or {})
 
     spec = Spec(
         input_library=inputs,
         sample_type="sequences::assembly",
         target_types=list(targets if targets is not None else TARGETS),
         shared_input_paths=list(shared or []),
-        transform_libraries=[
-            lib_root / "transforms" / n for n in TRANSFORM_NAMESPACES
-        ],
+        transform_libraries=[roots[n] for n in TRANSFORM_NAMESPACES],
         resource_libraries=[lib_root / "resources" / "env"],
     )
     task = spec.Solve()
