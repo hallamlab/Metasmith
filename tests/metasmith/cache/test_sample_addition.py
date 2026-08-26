@@ -3,8 +3,9 @@
 Pins I7 of the annotation-trio investigation. The trio runs at two samples,
 then at three in the same agent home with the first two samples untouched on
 disk. The keys the run minted are read back from the trace: a per-sample step
-keeps every key it already had and adds one, a merge over every sample moves,
-and a database step does not know how many samples there are.
+keeps every key it already had and adds one, and a database step does not know
+how many samples there are. The trio's merges are per sample too -- each folds
+one sample's chunks -- so they answer to the first rule.
 """
 
 from __future__ import annotations
@@ -21,8 +22,7 @@ from ._cache_harness import capture_run, clear_trace
 
 # Named rather than derived, because the plan gives no handle to derive them
 # from: the solver folds the trio into one unique case, so every step after
-# `prodigal` carries a single plan instance whatever the sample count, and a
-# merge is indistinguishable from a per-sample annotator by shape alone.
+# `prodigal` carries a single plan instance whatever the sample count.
 PER_SAMPLE = [
     "prodigal",
     "chunkOrfsForAnnotation",
@@ -30,6 +30,7 @@ PER_SAMPLE = [
     "kofamscan",
     "interproscan",
 ]
+# `group_by=parent_orfs`: one task per sample, folding that sample's chunks.
 MERGES = [
     "merge_diamond_uniref50",
     "merge_kofamscan",
@@ -77,12 +78,12 @@ def test_a_per_sample_step_keeps_the_keys_it_already_minted(trio_at_two_and_thre
     assert not narrow, f"a per-sample step at three samples does not hold three keys: {narrow}"
 
 
-def test_a_step_that_consumes_every_sample_still_rekeys(trio_at_two_and_three):
+def test_a_per_sample_merge_keeps_its_keys_too(trio_at_two_and_three):
     at2, at3 = trio_at_two_and_three
-    unchanged = sorted(n for n in MERGES if at2[n] == at3[n])
-    assert not unchanged, (
-        f"a merge over every sample kept its key when a sample was added: {unchanged}"
-    )
+    rerun = sorted(n for n in MERGES if not at2[n] <= at3[n])
+    assert not rerun, f"adding one sample re-keys a per-sample merge: {rerun}"
+    narrow = sorted(n for n in MERGES if len(at3[n]) != 3)
+    assert not narrow, f"a merge at three samples does not hold three keys: {narrow}"
 
 
 def test_a_database_step_is_untouched_by_the_sample_count(trio_at_two_and_three):

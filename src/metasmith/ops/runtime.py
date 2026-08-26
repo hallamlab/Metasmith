@@ -8,9 +8,7 @@ from pathlib import Path
 from ..constants import AgentPaths
 from ..logging import Log
 from ..models.libraries import Resources, Size, Duration
-from ..models.lineage import InvocationEvent
 from ..models.remote import Source, SourceType, Logistics
-from ..models.workflow import NextflowProcessName
 from ..coms.terminals import IDLE_TIMEOUT
 from . import workspace as _ws
 from .agent import load_agent
@@ -181,53 +179,12 @@ def _trace_envelope(rows: list[dict], source: str, path: str | None) -> dict:
     }
 
 
-def parse_cache_hits(lines) -> list[dict]:
-    # A cache-hit step never becomes a Nextflow process -- codegen splices its
-    # cached files straight into the channel instead of invoking it -- so it
-    # has no row in Nextflow's own trace file. Reconstruct one from the
-    # lineage trace so a cached step reads as done rather than never-ran.
-    if isinstance(lines, str):
-        lines = lines.splitlines()
-    rows = []
-    for line in lines:
-        line = line.strip()
-        if not line:
-            continue
-        try:
-            ev = InvocationEvent.from_jsonl(line)
-        except Exception:
-            continue
-        if ev is None or ev.status != "hit" or ev.step_order is None:
-            continue
-        process = NextflowProcessName(ev.step_order, ev.step_name or ev.transform_key)
-        rows.append({
-            "name": f"{process} (cached)",
-            "hash": "",
-            "status": "CACHED-METASMITH",
-            "exit": 0,
-            "state": "done",
-        })
-    return rows
-
-
-def _merge_cache_hits(rows: list[dict], hit_lines) -> list[dict]:
-    hits = parse_cache_hits(hit_lines)
-    if not hits:
-        return rows
-    known = {r["name"].split(" ")[0] for r in rows}
-    return rows + [h for h in hits if h["name"].split(" ")[0] not in known]
-
-
 def read_trace(log_dir: str | Path) -> dict:
     p = Path(log_dir)
-    d = p if p.is_dir() else p.parent
     trace_file = p/AgentPaths.NXF_TRACE_FILE if p.is_dir() else p
     if not trace_file.is_file():
         return _trace_envelope([], "local", str(trace_file))
     rows = parse_trace(trace_file.read_text(encoding="utf-8", errors="replace"))
-    hits_file = d/"trace.jsonl"
-    if hits_file.is_file():
-        rows = _merge_cache_hits(rows, hits_file.read_text(encoding="utf-8", errors="replace"))
     return _trace_envelope(rows, "local", str(trace_file))
 
 
@@ -235,12 +192,6 @@ def trace(agent_path: str, task_key: str, run: int | None = None) -> dict:
     agent = load_agent(agent_path)
     res = agent.ReadWorkflowTrace(task_key, run)
     rows = parse_trace(res["lines"]) if res["exists"] else []
-    try:
-        hits = agent.ReadCacheHits(task_key, run)
-        if hits["exists"]:
-            rows = _merge_cache_hits(rows, hits["lines"])
-    except Exception as e:
-        Log.Warn(f"failed to read cache-hit trace for [{task_key}]: {e}")
     return _trace_envelope(rows, "agent", res["file"]) | {"run_dir": res["run_dir"]}
 
 

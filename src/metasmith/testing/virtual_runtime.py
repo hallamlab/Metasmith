@@ -325,7 +325,9 @@ class StagedFiles:
     def record(self, inst, path: Path, index: Index) -> None:
         self._by_instance.setdefault(inst.instance_id, []).append((path, index))
 
-    def of(self, insts, key_index: Index | None = None) -> list[tuple[Path, Index]]:
+    def of(
+        self, insts, key_index: Index | None = None, common: set[str] | None = None,
+    ) -> list[tuple[Path, Index]]:
         staged: list[tuple[Path, Index]] = []
         for inst in insts:
             made = self._by_instance.get(inst.instance_id)
@@ -346,7 +348,10 @@ class StagedFiles:
         # identity with the by-key's. A slot whose files carry no shared
         # identity at all is an aggregate — a reference database, a merged
         # product — and every member sees all of it.
-        wanted = {i for ids in key_index.values() for i in ids}
+        # An identity every member of the group carries -- the tool's own
+        # environment, a reference every sample reads -- distinguishes nothing,
+        # so it cannot be the join. What is left is what the by-key alone has.
+        wanted = {i for ids in key_index.values() for i in ids} - (common or set())
         matching = [
             (p, ix)
             for p, ix in staged
@@ -412,122 +417,100 @@ def _manifest_name_for_target(target) -> str:
     return f"{spec}.{target.instance.dtype.key}.{target.instance.instance_id}.json"
 
 
-def _read_slot_ids(workspace: Path) -> dict[int, dict[tuple[str, int], str]]:
-    """Per step, the compile-time slot id of each output slot.
+def _read_step_metas(workspace: Path) -> dict[int, "StepCacheMeta"]:
+    from ..caching.promote import read_step_meta
 
-    The task the runtime loads still carries the transform archetype's ids; the
-    slot ids live only in the step meta, and they are what the on-channel file
-    identity is minted from.
-    """
-    out: dict[int, dict[tuple[str, int], str]] = {}
+    out = {}
     for meta_path in sorted(workspace.glob("workflow.step_*.meta")):
-        try:
-            order = int(meta_path.stem.rsplit("_", 1)[1])
-        except (IndexError, ValueError):
-            continue
-        for line in meta_path.read_text().splitlines():
-            if not line.startswith("slot_files "):
-                continue
-            for sf in json.loads(line.split(" ", 1)[1]):
-                key = (sf.get("dtype_key", ""), int(sf.get("branch_idx", 0)))
-                out.setdefault(order, {})[key] = sf.get("slot_id", "")
+        meta = read_step_meta(meta_path)
+        if meta is not None:
+            out[meta.order] = meta
     return out
 
 
-def _read_hit_decisions(workspace: Path) -> dict[int, dict]:
-    from ..caching.layout import default_cache_root, out_dir
+def _slot_ids(meta) -> dict[tuple[str, int], str]:
+    return {
+        (sf.get("dtype_key", ""), int(sf.get("branch_idx", 0))): sf.get("slot_id", "")
+        for sf in (meta.slot_files if meta is not None else [])
+    }
 
+
+def _cache_root() -> Path | None:
+    from ..caching.layout import default_cache_root
+
+    if os.environ.get("METASMITH_CACHE", "1").lower() in {"0", "false", "off", "no"}:
+        return None
     home = Path(os.environ.get(HOME_ENV, str(AgentPaths.HOME_ROOT)))
-    cache_root = default_cache_root(home)
-    if not cache_root.exists():
-        return {}
-    if os.environ.get("METASMITH_CACHE", "1").lower() in {
-        "0", "false", "off", "no"
-    }:
-        return {}
-    meta_specs: dict[int, dict] = {}
-    for meta_path in sorted(workspace.glob("workflow.step_*.meta")):
-        try:
-            order = int(meta_path.stem.rsplit("_", 1)[1])
-        except (IndexError, ValueError):
-            continue
-        cache_key_hex: str | None = None
-        cacheable = True
-        for line in meta_path.read_text().splitlines():
-            if line.startswith("cache_key "):
-                cache_key_hex = line.split(" ", 1)[1].strip()
-            elif line.startswith("cacheable "):
-                cacheable = line.split(" ", 1)[1].strip().lower() == "true"
-        if cache_key_hex is None:
-            continue
-        meta_specs[order] = {
-            "cache_key": bytes.fromhex(cache_key_hex),
-            "cacheable": cacheable,
-        }
-    if not meta_specs:
-        return {}
-    from ..caching.store import CacheStore
-
-    hits: dict[int, dict] = {}
-    store = CacheStore.open(cache_root)
-    try:
-        for order, spec in meta_specs.items():
-            if not spec["cacheable"]:
-                continue
-            entry = store.probe(spec["cache_key"])
-            if entry is None or not store.files_exist(entry):
-                continue
-            hits[order] = {
-                "cache_key": spec["cache_key"],
-                "output_dir": out_dir(entry.output_root),
-            }
-            store.touch(spec["cache_key"])
-    finally:
-        store.close()
-    return hits
+    return default_cache_root(home)
 
 
-def _populate_hit_outputs(
-    step, hit: dict, staged: StagedFiles, slot_ids: dict[tuple[str, int], str]
+def _decide_member(entry: dict, meta, cache_root: Path | None):
+    """The member's key and, when a shard can serve it, that shard.
+
+    The same three calls the orchestrator makes through the helper; a
+    runtime that answered the question its own way would be a second cache.
+    """
+    from ..caching.invocation import consumed_of, member_key, probe
+
+    key_hex = "-"
+    shard = None
+    if cache_root is not None and meta is not None and meta.cacheable:
+        consumed = consumed_of(entry, meta.channels)
+        if consumed is not None:
+            key = member_key(meta.transform_key, meta.signature, consumed)
+            key_hex = key.hex()
+            shard = probe(cache_root, key)
+    entry[LinPayload.KEY_KEY] = key_hex
+    return key_hex, shard
+
+
+def _stage_hit(
+    step, shard: Path, staged: StagedFiles, slot_ids: dict[tuple[str, int], str],
+    produced_by_dep: dict[str, list[Path]],
 ) -> None:
-    output_dir: Path = hit["output_dir"]
-    cached_files = sorted(output_dir.glob("*"))
+    from ..caching.invocation import read_manifest
 
-    merged_inputs = merge_indexes(
-        index
-        for dep in step.transform.model.requires
-        for _path, index in staged.of(step.dependency_map.get(dep, []))
-    )
-
+    manifest = read_manifest(shard) or {}
+    lineage = manifest.get("lineage") or {}
+    by_slot = {}
     for branch_idx, dep_group in enumerate(step.transform.model.produces):
         for dep in dep_group:
             insts = list(step.dependency_map.get(dep, []))
-            if not insts:
-                continue
-            out_inst = insts[0]
-            ext = out_inst.dtype.GetPreferredFileExtension()
-            suffix = f"-{out_inst.dtype.key}{ext}"
-            branch_prefix = f"1-1-{branch_idx + 1}."
-            matching = [
-                f for f in cached_files
-                if f.name.startswith(branch_prefix) and f.name.endswith(suffix)
-            ]
-            for fpath in matching:
-                staged.record(
-                    out_inst,
-                    fpath.resolve(),
-                    output_index(
-                        merged_inputs,
-                        out_inst.dtype.key,
-                        output_file_id(
-                            slot_ids.get(
-                                (out_inst.dtype.key, branch_idx),
-                                out_inst.instance_id,
-                            ),
-                            fpath.name,
-                        ),
-                    ),
-                )
+            if insts:
+                by_slot[(insts[0].dtype.key, branch_idx)] = insts[0]
+    for f in manifest.get("files", []):
+        out_inst = by_slot.get((f.get("dtype_key", ""), int(f.get("branch_idx", 0))))
+        if out_inst is None:
+            continue
+        fpath = (shard / f["relpath"]).resolve()
+        staged.record(
+            out_inst,
+            fpath,
+            output_index(
+                lineage,
+                out_inst.dtype.key,
+                output_file_id(
+                    slot_ids.get((out_inst.dtype.key, int(f.get("branch_idx", 0))), out_inst.instance_id),
+                    fpath.name,
+                ),
+            ),
+        )
+        produced_by_dep.setdefault(out_inst.dtype.key, []).append(fpath)
+
+
+def _log_hit(workspace: Path, step, key_hex: str, shard: Path, entry: dict) -> None:
+    from ..caching.promote import CACHE_HITS_LOG
+
+    log = workspace / CACHE_HITS_LOG
+    log.parent.mkdir(parents=True, exist_ok=True)
+    with open(log, "a", encoding="utf-8") as f:
+        f.write(json.dumps({
+            "step": step.order,
+            "step_name": step.transform.name,
+            "key": key_hex,
+            "shard": str(shard),
+            "entry": {k: v for k, v in entry.items() if k != LinPayload.FILES_KEY},
+        }, separators=(",", ":")) + "\n")
 
 
 def cli_nextflow(argv: list[str]) -> int:
@@ -562,8 +545,8 @@ def cli_nextflow(argv: list[str]) -> int:
     nxf_work = workspace / "nxf_work"
     nxf_work.mkdir(exist_ok=True)
 
-    hit_decisions = _read_hit_decisions(workspace)
-    slot_ids_by_step = _read_slot_ids(workspace)
+    step_metas = _read_step_metas(workspace)
+    cache_root = _cache_root()
     # One row per invocation, in the columns real nextflow writes for
     # `-with-trace`. The driver reads this file to learn what each task did,
     # so a runtime that cannot express a failed task cannot exercise how a
@@ -574,25 +557,8 @@ def cli_nextflow(argv: list[str]) -> int:
     }
 
     for step in task.plan.steps:
-        step_slot_ids = slot_ids_by_step.get(step.order, {})
-        if step.order in hit_decisions:
-            hit = hit_decisions[step.order]
-            write_trace(
-                {
-                    "type": "cache_hit",
-                    "step": step.order,
-                    "step_name": step.transform.name,
-                    "cache_key": hit["cache_key"].hex(),
-                    "host": host,
-                }
-            )
-            # Staged, so a downstream miss can read them -- but NOT published.
-            # Real nextflow refuses to publish a path outside its work
-            # directory, so a shard's products reach `results/` only through
-            # the driver's `PublishCachedProducts`. Publishing them here made
-            # this runtime the one place the cache appeared to work.
-            _populate_hit_outputs(step, hit, staged, step_slot_ids)
-            continue
+        meta = step_metas.get(step.order)
+        step_slot_ids = _slot_ids(meta)
 
         # A step runs once per item on its by-channel, not once per plan
         # instance: the plan carries one produce instance however many samples
@@ -602,14 +568,15 @@ def cli_nextflow(argv: list[str]) -> int:
         by_staged = staged.of(group_insts)
         group_total = max(1, len(by_staged))
         batch_size = max(1, int(step.transform.batch_size))
+        by_ids = [{i for ids in ix.values() for i in ids} for _p, ix in by_staged]
+        common_ids = set.intersection(*by_ids) if len(by_ids) > 1 else set()
+        by_instance_ids = {inst.instance_id for inst in group_insts}
 
         for start in range(0, group_total, batch_size):
             end = min(group_total, start + batch_size)
-            invocation_dir = nxf_work / f"step_{step.order:02}" / f"batch_{start:04}_{end:04}"
-            invocation_dir.mkdir(parents=True, exist_ok=True)
 
             members: list[dict[str, Any]] = []
-
+            key_of_member: list = []
             for key_idx in range(start, end):
                 key_inst = group_insts[key_idx] if key_idx < len(group_insts) else None
                 key_index = by_staged[key_idx][1] if key_idx < len(by_staged) else None
@@ -618,10 +585,41 @@ def cli_nextflow(argv: list[str]) -> int:
                     dep_insts = list(step.dependency_map.get(dep, []))
                     selected = _select_for_key(dep_insts, key_inst, key_idx)
                     dtype_key = selected[0].dtype.key if selected else dep.key
-                    slots.append((dtype_key, staged.of(selected, key_index)))
-                members.append(build_entry(slots))
+                    if any(i.instance_id in by_instance_ids for i in selected) and key_idx < len(by_staged):
+                        # The by-slot carries the key item and nothing else:
+                        # Orchestrator.group emits one tuple per by-key.
+                        slots.append((dtype_key, [by_staged[key_idx]]))
+                    else:
+                        slots.append((dtype_key, staged.of(selected, key_index, common_ids)))
+                entry = build_entry(slots)
+                members.append(entry)
+                key_of_member.append((key_inst, key_idx))
 
-            _write_metadata_file(step, invocation_dir, members)
+            # Decide every member of the batch before anything is submitted,
+            # the way Orchestrator._route does; a hit is served from its shard
+            # and never reaches bootstrap.
+            misses: list[int] = []
+            for m, entry in enumerate(members):
+                key_hex, shard = _decide_member(entry, meta, cache_root)
+                if shard is None:
+                    misses.append(m)
+                    continue
+                write_trace({
+                    "type": "cache_hit",
+                    "step": step.order,
+                    "step_name": step.transform.name,
+                    "cache_key": key_hex,
+                    "host": host,
+                })
+                _log_hit(workspace, step, key_hex, shard, entry)
+                _stage_hit(step, shard, staged, step_slot_ids, produced_by_dep)
+            if not misses:
+                continue
+
+            miss_entries = [members[m] for m in misses]
+            invocation_dir = nxf_work / f"step_{step.order:02}" / f"batch_{start:04}_{end:04}"
+            invocation_dir.mkdir(parents=True, exist_ok=True)
+            _write_metadata_file(step, invocation_dir, miss_entries)
 
             dep_arity = {
                 dep.key: len(step.dependency_map.get(dep, []))
@@ -634,7 +632,7 @@ def cli_nextflow(argv: list[str]) -> int:
                     "step": step.order,
                     "step_name": step.transform.name,
                     "batch_start": start,
-                    "batch_end": end,
+                    "batch_end": start + len(misses),
                     "host": host,
                     "dep_arity": dep_arity,
                     "sample_arity": len(step.group_by_instances),
@@ -685,11 +683,9 @@ def cli_nextflow(argv: list[str]) -> int:
                 # the one place a dead step stops the workflow.
                 continue
 
-            for member_idx, entry in enumerate(members):
-                key_idx = start + member_idx
-                _key_inst = (
-                    group_insts[key_idx] if key_idx < len(group_insts) else None
-                )
+            for member_idx, m in enumerate(misses):
+                entry = members[m]
+                _key_inst, key_idx = key_of_member[m]
                 for branch_idx, dep_group in enumerate(
                     step.transform.model.produces
                 ):
@@ -745,6 +741,20 @@ def cli_nextflow(argv: list[str]) -> int:
                             produced_by_dep.setdefault(
                                 out_inst.dtype.key, []
                             ).append(fpath.resolve())
+
+            # What the task's own bootstrap does once the protocol has run:
+            # promote every member under the key it was handed. `cli_metasmith`
+            # runs no protocol, so the runtime calls the same function itself.
+            if meta is not None and cache_root is not None:
+                from ..caching.promote import promote_members
+
+                promote_members(
+                    cwd=invocation_dir,
+                    entries=miss_entries,
+                    meta=meta,
+                    cache_root=cache_root,
+                    successes=[True] * len(miss_entries),
+                )
 
     for target in task.plan.targets:
         dep_key = target.instance.dtype.key

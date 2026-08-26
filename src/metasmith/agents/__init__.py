@@ -22,7 +22,6 @@ from .agent import Agent
 
 from .collect import (
     CollectResults,
-    PublishCachedProducts,
     _published_index,
     _published_path,
 )

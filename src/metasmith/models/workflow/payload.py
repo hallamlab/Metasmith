@@ -84,14 +84,26 @@ def render_lin_line(entries: list[dict]) -> str:
     return LinPayload(v=LinPayload.VERSION, entries=entries).to_json()
 
 
-def output_name_hash(entry: dict) -> str:
-    # PROV only, NOT lineage_index(): FILES *is* folded into this hash, and
-    # dropping it would rename every output file, which re-mints every
-    # file_instance_id and severs existing shards from new runs. PROV's values
-    # are maps, so the sort below raises on them.
-    lin = {k: v for k, v in entry.items() if k != LinPayload.PROV_KEY}
-    slin = {k: sorted(lin[k]) for k in sorted(lin.keys())}
-    _, h = KeyGenerator.FromStr(json.dumps(slin), l=16)
+KEY_TOKEN_LEN = 16
+
+
+def member_token(entry: dict) -> str:
+    """The token a member's products carry in their names.
+
+    The member key when the member has one, so a product's name -- and with it
+    the file id `_post` mints from the name -- is the same in every run that
+    reaches the member. A member without a key gets a token from its lineage
+    index instead, which keeps two uncacheable members from naming one file.
+    """
+    key = entry.get(LinPayload.KEY_KEY)
+    if key is None:
+        raise KeyError("lin entry carries no KEY: the orchestrator did not route this member")
+    if key != "-":
+        return key[-KEY_TOKEN_LEN:]
+    lin = {
+        k: sorted(v) for k, v in entry.items() if k not in LinPayload.RESERVED_KEYS
+    }
+    _, h = KeyGenerator.FromStr(json.dumps(lin, sort_keys=True), l=KEY_TOKEN_LEN)
     return h
 
 
@@ -101,5 +113,5 @@ def output_file_name(
     """The name a transform's output file takes, everywhere one is named."""
     return (
         f"{batch + 1}-{item + 1}-{branch + 1}."
-        f"{output_name_hash(entry)}-{dtype.key}{dtype.GetPreferredFileExtension()}"
+        f"{member_token(entry)}-{dtype.key}{dtype.GetPreferredFileExtension()}"
     )

@@ -70,7 +70,11 @@ class TestTrioGainsASample:
 
 
 class TestASampleReturnsInADifferentRun:
-    """Run 1: `[A, B, C]`. Run 2: `[X, A, Y]` through a plan with fewer targets."""
+    """Run 1: `[A, B, C]`. Run 2: `[X, A, Y]` through a plan with fewer targets.
+
+    Every step of the trio is per sample, the merges included (each folds one
+    sample's chunks), so A hits everywhere and X and Y miss everywhere.
+    """
 
     RUN2_TARGETS = [t for t in TARGETS if "interproscan" not in t]
 
@@ -88,8 +92,7 @@ class TestASampleReturnsInADifferentRun:
         )
         per_sample = [n for n in PER_SAMPLE if n != "interproscan"]
         merges = [n for n in MERGES if n != "merge_interproscan"]
-        expected = {n: 2 for n in per_sample}
-        expected.update({n: 1 for n in merges})
+        expected = {n: 2 for n in per_sample + merges}
         expected.update({n: 0 for n in DATABASES if "InterPro" not in n})
         _assert_calls(_calls(virtual_runtime), expected, "[A,B,C] then [X,A,Y]")
         hits = _hits(second.workspace)
@@ -123,7 +126,7 @@ class TestASampleReturnsInADifferentRun:
             ),
         )
         expected = {"prodigal": 2, "chunkOrfsForAnnotation": 2, "diamond_uniref50": 2}
-        expected.update({"kofamscan": 3, "merge_kofamscan": 1, "merge_diamond_uniref50": 1})
+        expected.update({"kofamscan": 3, "merge_kofamscan": 3, "merge_diamond_uniref50": 2})
         expected.update({n: 0 for n in DATABASES if "InterPro" not in n})
         _assert_calls(_calls(virtual_runtime), expected, "kofamscan edited")
 

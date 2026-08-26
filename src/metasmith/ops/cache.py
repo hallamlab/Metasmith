@@ -6,6 +6,7 @@ import time
 from pathlib import Path
 
 from ..caching.layout import default_cache_root
+from ..caching.promote import tombstone_shard
 from ..caching.store import CacheStore, decode_manifest
 
 
@@ -64,6 +65,7 @@ def gc_cache(
             for e in list(store.iter_entries()):
                 if e.last_hit_at < cutoff:
                     store.tombstone(e.key)
+                    tombstone_shard(root, e.key.hex())
                     tombstoned.append(e.key.hex())
 
         if max_size_bytes is not None:
@@ -77,6 +79,7 @@ def gc_cache(
                     if total <= max_size_bytes:
                         break
                     store.tombstone(e.key)
+                    tombstone_shard(root, e.key.hex())
                     tombstoned.append(e.key.hex())
                     total -= e.size_bytes
 

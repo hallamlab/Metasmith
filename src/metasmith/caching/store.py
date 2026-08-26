@@ -22,7 +22,7 @@ SCHEMA_VERSION = "1"
 CACHE_EPOCH_KEY = "lineage_payload_version"
 TRACE_SESSION_COUNTER_KEY = "trace_session_counter"
 SHARD_LAYOUT_VERSION_KEY = "shard_layout_version"
-SHARD_LAYOUT_VERSION = 2
+SHARD_LAYOUT_VERSION = 3
 
 
 _CREATE_SQL = [

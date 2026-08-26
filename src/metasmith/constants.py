@@ -48,9 +48,6 @@ class AgentPaths:
     NXF_RES = "workflow.resources.nf"
     NXF_PARAMS = "workflow.params.yml"
     GPU_MANIFEST = "workflow.gpu.json"
-    # Where each cache-hit step's shard products have to be copied to, because
-    # nextflow will not publish a path outside its own work directory.
-    CACHE_PUBLISH_MANIFEST = "workflow.cache_publish.json"
     ENV_MANIFEST = "workflow.env.json"
     # Schema 1 recorded which of `container:` / `conda:` a resource carried; schema 2
     # records what each resolves to. Nothing branches on it -- it is here so a reader

@@ -24,7 +24,7 @@ from ..models.workflow import (
 )
 from ..serialization import StdTime
 from .agent import Agent
-from .collect import CollectResults, PublishCachedProducts
+from .collect import CollectResults
 
 def _rewrite_staged_plan(task_path: Path, task: WorkflowTask):
     doc_path = task_path/"task.yml"
@@ -544,38 +544,24 @@ def RunWorkflow(key: str, log_dir: Path, host: str, stub_delay: float):
             f" products are missing: {', '.join(failed_steps)}"
         )
 
-    if os.environ.get("METASMITH_CACHE", "1").lower() not in {
-        "0", "false", "off", "no"
-    }:
-        try:
-            from ..caching.layout import default_cache_root
-            from ..caching.promote import promote_run
-
-            agent_home = Path(str(extern_home))
-            cache_root = default_cache_root(agent_home)
-            summary = promote_run(workspace=workspace, cache_root=cache_root)
-            if summary.get("promoted") or summary.get("skipped"):
-                Log.Info(
-                    "cache promote: "
-                    f"{len(summary['promoted'])} written, "
-                    f"{len(summary['skipped'])} skipped"
-                )
-        except Exception as e:
-            Log.Warn(f"cache promote failed: {e}")
-
     try:
-        PublishCachedProducts(workspace, output_path)
+        from ..caching.layout import default_cache_root
+        from ..caching.promote import record_run
+
+        summary = record_run(
+            workspace=workspace, cache_root=default_cache_root(Path(str(extern_home))),
+        )
+        Log.Info(
+            f"cache: {len(summary['promoted'])} member(s) promoted, "
+            f"{len(summary['hits'])} served from shards"
+        )
     except Exception as e:
-        Log.Warn(f"publishing cache-hit products failed: {e}")
+        Log.Warn(f"cache record failed: {e}")
 
     # `_metasmith/trace.jsonl` sits at the workspace root and gets truncated
-    # on the next stage, so a cache-hit step -- which never becomes a
-    # Nextflow process and so has no row in nxf_tasks.csv -- would otherwise
-    # be unrecoverable once collected. Copy it alongside nxf_tasks.csv, into
-    # the one per-run directory that survives collection. Taken after cache
-    # promotion, which appends its own miss/promoted events to the same file --
-    # a copy taken before would freeze a lineage trace that promotion hadn't
-    # finished writing yet, under a filename that looks final.
+    # on the next stage. Copy it alongside nxf_tasks.csv, into the one per-run
+    # directory that survives collection -- after `record_run`, which is what
+    # writes the run's member events into it.
     lineage_trace = workspace/"_metasmith"/"trace.jsonl"
     if lineage_trace.is_file():
         shutil.copy(lineage_trace, workspace/log_dir/"trace.jsonl")
