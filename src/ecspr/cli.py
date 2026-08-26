@@ -170,9 +170,29 @@ def build_parser() -> argparse.ArgumentParser:
                          "test's own. Giving it makes the built model a claim about the "
                          "ORGANISM rather than about the broth, so a comparison across "
                          "media compares one model. Without it, two media are two models")
+    fb.add_argument("--no-delta", action="store_true",
+                    help="build every distinct assertion set from the frame instead of "
+                         "differencing each perturbation against the baseline its "
+                         "`read_against` names. A diagnostic: where a perturbation "
+                         "changes no assertion the two must agree bit for bit, and a "
+                         "cohort of real deletions runs one build per mutant AND has its "
+                         "deletions drawn back by the rebuilt gapfill")
     fb.add_argument("--no-gapfill", action="store_true",
                     help="leave the carve infeasible rather than repairing it. The carve "
                          "is deep enough to take biomass to zero, so this is a diagnostic")
+    fb.add_argument("--shard-dir", default=None,
+                    help="per-TEST shards for resume (default: <out>.shards). A killed "
+                         "array task restarts here rather than re-solving")
+    fb.add_argument("--no-resume", action="store_true",
+                    help="do not shard, and do not resume from shards on disk")
+    fb.add_argument("--part", type=int, default=None, metavar="I",
+                    help="solve only part I of --of. THE SPLIT IS OVER BASELINES, not "
+                         "over tests: a boundary drawn through a baseline would have "
+                         "every array task rebuild it. A test outside this part is read "
+                         "from its shard if one exists and is otherwise left unsolved, "
+                         "so a final run with no --part assembles every task's output")
+    fb.add_argument("--of", type=int, default=None, metavar="N",
+                    help="how many parts --part is one of")
     fb.add_argument("--census", default=None,
                     help="per-build census JSON (default: <out>.census.json)")
     fb.add_argument("--frame-default", default=None, dest="frame_default",
@@ -227,9 +247,13 @@ def build_parser() -> argparse.ArgumentParser:
 
     dr = sub.add_parser("draw", help="draw a size-matched null pool, as the two tables")
     dr.add_argument("--gpr", nargs="+", required=True, help="the pool to draw units from")
-    dr.add_argument("--like-tests", required=True,
+    dr.add_argument("--like-tests", default=None,
                     help="observed ecspr_tests: supplies the measurement specs and the "
                          "size strata")
+    dr.add_argument("--like-gem-tests", default=None, dest="like_gem_tests",
+                    help="observed gem_tests, for a flux balance null. Giving BOTH is "
+                         "the point: one drawn pool of constructions, measured by both "
+                         "arms, so their error bars are comparable rather than adjacent")
     dr.add_argument("--like-conditions", default=None,
                     help="observed conditions; --background names one of them")
     dr.add_argument("--background", default=None,
@@ -248,7 +272,9 @@ def build_parser() -> argparse.ArgumentParser:
     dr.add_argument("--size", type=int, default=None,
                     help="stratum size for tests carrying no n_units")
     dr.add_argument("--out", required=True, help="the null conditions table")
-    dr.add_argument("--out-tests", required=True, help="the null tests table")
+    dr.add_argument("--out-tests", default=None, help="the null ecspr_tests table")
+    dr.add_argument("--out-gem-tests", default=None, dest="out_gem_tests",
+                    help="the null gem_tests table")
     dr.add_argument("--log", default=None)
     dr.set_defaults(_run="draw")
 
@@ -259,9 +285,14 @@ def build_parser() -> argparse.ArgumentParser:
                     help="the test_id the deltas are taken against, for a run whose "
                          "tests table leaves `read_against` blank. The COLUMN wins where "
                          "both are given, and disagreeing with it is refused")
+    sc.add_argument("--arm", choices=("ecspr", "gem"), default="ecspr",
+                    help="which arm's results these are. It decides only what identifies "
+                         "a measurement -- (probe, orientation, element, readout) for "
+                         "ecspr, (objective, readout) for gem. Scoring on the wrong one "
+                         "matches nothing rather than failing")
     sc.add_argument("--tests", default=None,
-                    help="observed ecspr_tests; supplies read_against, is_control and "
-                         "the strata")
+                    help="observed tests table for --arm; supplies read_against, "
+                         "is_control and the strata")
     sc.add_argument("--null-tests", default=None,
                     help="the null tests table, if its ids do not name their stratum")
     sc.add_argument("--out", required=True)

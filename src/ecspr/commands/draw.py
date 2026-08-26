@@ -8,7 +8,18 @@ from ..model import tests as test_mod
 
 
 def draw(args, log):
-    like_tests = test_mod.read(args.like_tests, "ecspr")
+    # ONE DRAW, EITHER ARM, AND USUALLY BOTH. The drawn conditions are arm-neutral -- a
+    # random construction is a random construction -- so a pool given both arms'
+    # prototypes emits two tests tables over ONE set of constructions. That shared pool is
+    # what makes the two arms' error bars comparable rather than merely adjacent.
+    like_tests = []
+    for path, arm in ((args.like_tests, "ecspr"), (args.like_gem_tests, "gem")):
+        if path:
+            like_tests += test_mod.read(path, arm)
+    if not like_tests:
+        raise SystemExit("give --like-tests, --like-gem-tests, or both: the draw takes "
+                         "its measurement specs and its size strata from an observed "
+                         "tests table")
     like_conds = (cond_mod.read(args.like_conditions)
                   if args.like_conditions else [])
 
@@ -38,9 +49,18 @@ def draw(args, log):
                            background=background, draw_column=args.draw_column,
                            pool_table=pool_table, size=args.size, log=log)
     out_c = cond_mod.write(conds, args.out)
-    out_t = test_mod.write(ts, args.out_tests, "ecspr")
-    log(f"[draw] seed={args.seed} n={args.n} -> {len(conds):,} conditions, "
-        f"{len(ts):,} tests -> {out_c}, {out_t}")
-    log("[draw] the null arm is now the same probe command with "
-        f"--conditions {out_c} --tests {out_t}")
+    log(f"[draw] seed={args.seed} n={args.n} -> {len(conds):,} conditions -> {out_c}")
+    for arm, path, verb in (("ecspr", args.out_tests, "ecspr ground/two-point"),
+                            ("gem", args.out_gem_tests, "ecspr fba")):
+        rows = [t for t in ts if t.arm == arm]
+        if not rows:
+            continue
+        if not path:
+            raise SystemExit(f"{len(rows)} {arm} test(s) were drawn but no "
+                             f"--out-{'tests' if arm == 'ecspr' else 'gem-tests'} "
+                             f"was given")
+        out_t = test_mod.write(rows, path, arm)
+        log(f"[draw] {len(rows):,} {arm} tests -> {out_t}")
+        log(f"[draw] the {arm} null arm is now `{verb} --conditions {out_c} "
+            f"--tests {out_t}`")
     return 0

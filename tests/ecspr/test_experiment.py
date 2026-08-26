@@ -292,14 +292,25 @@ def test_draw_is_deterministic_and_emits_both_tables(gpr_path, tmp_path):
     pb = cond_mod.write(cb, tmp_path / "n2.parquet")
     assert pa.read_bytes() == pb.read_bytes(), "the same seed must write one pool"
     back = cond_mod.read(pa)
-    assert len(back) == 8
+    # EIGHT DRAWS AND THE POOL'S OWN BASELINE. The background with nothing drawn onto it
+    # is a condition like any other, and it has to be in the table: it is what the drawn
+    # constructions are a perturbation OF, and the flux balance arm builds it once and
+    # differences every draw against it.
+    drawn = [c for c in back if c.condition_id != "null:baseline"]
+    assert len(back) == 9 and len(drawn) == 8
+    base = [c for c in back if c.condition_id == "null:baseline"]
+    assert len(base) == 1 and base[0].steps == (BACKGROUND,)
     # THE BACKGROUND IS CARRIED, not re-authored: a null on a graph with no host in it
     # abstains, and would read as "no effect" rather than as a broken draw.
     assert all(c.steps[0] == BACKGROUND for c in back)
-    assert all(c.steps[-1].type == "orf" for c in back)
+    assert all(c.steps[-1].type == "orf" for c in drawn)
     assert all(t.sinks == ("P1", "P2") and t.source_hub == "S" for t in ta), \
         "a drawn test inherits the measurement of the arm it is the null for"
     assert {t.network for t in ta} == {c.condition_id for c in ca}
+    # ...and every drawn test names that baseline, so `tests.read` accepts the table and
+    # the scorer has something to subtract.
+    assert {t.read_against for t in ta if t.meta["draw_id"] is not None} == \
+        {"null:t0:baseline"}
 
 
 def test_a_null_carries_a_multi_step_background_including_its_subtracts(gpr_path):
@@ -336,7 +347,9 @@ def test_the_null_arm_is_the_same_command(pairs_path, gpr_path, tmp_path):
     obs = _run(pairs_path, gpr_path, [BASELINE] + like_c, "two-point", tmp_path,
                tests=[_test("baseline")] + like)
     nul = _run(pairs_path, gpr_path, pool_c, "two-point", tmp_path, tests=pool_t)
-    assert set(nul.probe) == {"two-point"} and len(set(nul.test_id)) == 6
+    # Six draws plus the pool's own baseline, which is measured like any other test.
+    assert set(nul.probe) == {"two-point"} and len(set(nul.test_id)) == 7
+    assert "null:t0:baseline" in set(nul.test_id)
 
     scored = scoring.score(obs, nul, tests=[_test("baseline")] + like + pool_t)
     row = scored[(scored.test_id == "C_new") & (scored.readout == "total")]
@@ -396,3 +409,96 @@ def test_responders_cover_what_they_claim_and_leave_the_rest_as_floor():
     assert v[responders(v, 0.90) & ~responders(v, 0.5)].size >= 1
     assert not responders(np.zeros(4)).any()
     assert responders(v, 1.0).sum() == 5          # the exact zero never joins
+
+
+# -------------------------------------------------- one drawn pool, measured both ways
+
+
+def _gem_test(cid, **meta):
+    """A flux balance measurement of the same construction the conductance arm reads."""
+    return test_mod.Test(
+        test_id=f"gem:{cid}", network=cid, arm="gem",
+        read_against="" if cid == "baseline" else "gem:baseline",
+        settings=dict(frame="iML1515", media="m9", objective="BIOMASS",
+                      target_hub="glycogen_c", growth_pin=0.1, min_lanes=1),
+        meta=dict(n_units=1) | meta)
+
+
+def test_one_draw_serves_both_arms_over_the_same_constructions(gpr_path):
+    # THE WHOLE REASON THE DRAW IS ARM-NEUTRAL. A random construction is a random
+    # construction; what differs is how it is read. Drawing twice would give the two arms
+    # different random networks and their error bars would stop being comparable.
+    like = [_test("C_new"), _gem_test("C_new")]
+    conds, ts = _draw(gpr_path, like, n=4, seed=5, draw_column="orf")
+    by_arm = {a: [t for t in ts if t.arm == a] for a in ("ecspr", "gem")}
+    assert len(by_arm["ecspr"]) == len(by_arm["gem"]) == 5   # four draws and a baseline
+    assert ({t.network for t in by_arm["ecspr"]}
+            == {t.network for t in by_arm["gem"]}
+            == {c.condition_id for c in conds})
+    # ...and each arm's settings survive, which is the bug: read as one schema, the other
+    # arm's settings vanish and every one of its prototypes collapses into one.
+    g = [t for t in by_arm["gem"] if t.meta["draw_id"] is not None][0]
+    e = [t for t in by_arm["ecspr"] if t.meta["draw_id"] is not None][0]
+    assert g.settings["frame"] == "iML1515" and g.settings["objective"] == "BIOMASS"
+    assert e.settings["source_hub"] == "S" and "frame" not in e.settings
+
+
+def test_each_arms_null_tests_round_trip_through_its_own_schema(gpr_path, tmp_path):
+    like = [_test("C_new"), _gem_test("C_new")]
+    _conds, ts = _draw(gpr_path, like, n=3, seed=5, draw_column="orf")
+    for arm, cols in (("ecspr", "source_hub"), ("gem", "frame")):
+        rows = [t for t in ts if t.arm == arm]
+        p = test_mod.write(rows, tmp_path / f"null_{arm}.parquet", arm)
+        back = test_mod.read(p, arm)          # also checks read_against resolves
+        assert len(back) == len(rows)
+        assert all(t.settings.get(cols) for t in back)
+        # `arm` IS THE SCHEMA ARM, so the observed/null marker cannot live there. What
+        # survives the writer is `draw_id`: a row with one came from a draw.
+        assert {t.arm for t in back} == {arm}
+        assert sum(1 for t in back if pd.notna(t.meta.get("draw_id"))) == 3
+
+
+def _gem_results(spec):
+    rows = []
+    for tid, val in spec:
+        rows.append(dict(test_id=tid, objective="BIOMASS", readout="target", value=val))
+        rows.append(dict(test_id=tid, objective="BIOMASS", readout="_abstained",
+                         value=0.0))
+    return pd.DataFrame(rows)
+
+
+def test_a_flux_balance_result_scores_through_the_same_code_path():
+    # I6. `scoring.KEY` used to be the conductance key outright, so a gem result -- which
+    # carries `objective` and none of probe, orientation or element -- matched nothing in
+    # the null pool and came back with every z nan. Same statistics, different key.
+    obs = _gem_results([("gem:baseline", 1.0), ("gem:hit", 3.0), ("gem:ctl", 1.02)])
+    nul = _gem_results([("null:t0:baseline", 1.0)]
+                       + [(f"null:t0:s1:{j:06d}", 1.0 + 0.01 * j) for j in range(20)])
+    ts = [test_mod.Test(test_id="gem:baseline", network="b", arm="gem"),
+          test_mod.Test(test_id="gem:hit", network="h", arm="gem",
+                        read_against="gem:baseline", meta=dict(n_units=1)),
+          test_mod.Test(test_id="gem:ctl", network="c", arm="gem",
+                        read_against="gem:baseline",
+                        meta=dict(n_units=1, is_control=1))]
+    scored = scoring.score(obs, nul, tests=ts, arm="gem")
+    assert set(scored.columns) >= {"objective", "readout", "z", "p_emp", "q_bh",
+                                   "p_stratum", "null_n_stratum"}
+    hit = scored[(scored.test_id == "gem:hit") & (scored.readout == "target")].iloc[0]
+    assert hit.null_n == 20 and np.isfinite(hit.z) and hit.z > 3
+    assert hit.p_emp == pytest.approx(1 / 21)
+    # the control is excluded from the BH pass and included in the gate
+    assert np.isnan(scored[scored.test_id == "gem:ctl"].q_bh).all()
+    g = scoring.gate(scored, "gem")
+    assert int(g.n_controls.max()) == 1
+
+
+def test_scoring_an_arm_on_the_other_arms_key_is_refused():
+    # It used to come back as a table of nan rather than as an error, which reads like a
+    # null result.
+    obs = _gem_results([("gem:baseline", 1.0), ("gem:hit", 3.0)])
+    nul = _gem_results([(f"null:t0:s1:{j:06d}", 1.0) for j in range(5)])
+    ts = [test_mod.Test(test_id="gem:baseline", network="b", arm="gem"),
+          test_mod.Test(test_id="gem:hit", network="h", arm="gem",
+                        read_against="gem:baseline", meta=dict(n_units=1))]
+    with pytest.raises(ValueError, match="which the 'ecspr' arm keys on"):
+        scoring.score(obs, nul, tests=ts, arm="ecspr")

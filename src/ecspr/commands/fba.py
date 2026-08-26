@@ -26,11 +26,21 @@ def fba(args, log):
 
     log(f"[fba] {len(ts)} test(s) on {len(conds)} network(s) | "
         f"frames={len(args.frame)} media={sorted(media)} "
-        f"weighting={args.weighting} gapfill={not args.no_gapfill}")
+        f"weighting={args.weighting} gapfill={not args.no_gapfill} "
+        f"delta={not args.no_delta}")
+
+    from pathlib import Path
+    shard = (None if args.no_resume
+             else Path(args.shard_dir or f"{args.out}.shards"))
+    if (args.part is None) != (args.of is None):
+        log("[fba] --part and --of go together; ignoring the one given alone")
+        args.part = args.of = None
 
     df = fba_mod.run(args.frame, args.gpr, conds, ts, media, release=release,
                      weighting=args.weighting, emit=args.emit,
                      do_gapfill=not args.no_gapfill, gapfill_media=args.gapfill_media,
+                     delta=not args.no_delta, shard_dir=shard,
+                     resume=not args.no_resume, part=args.part, of=args.of,
                      census_out=args.census or f"{args.out}.census.json", log=log)
     out = fba_mod.write_results(df, args.out)
     log(f"[fba] {len(df):,} rows -> {out}")

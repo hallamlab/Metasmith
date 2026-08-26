@@ -169,7 +169,7 @@ def test_one_build_serves_every_test_that_shares_it(frame, tmp_path):
     seen = []
     df = F.run([frame], [gpr], [BOTH], ts, {"m": MEDIUM}, do_gapfill=False,
                census_out=tmp_path / "census.json", log=seen.append)
-    assert seen[-1].endswith("(1 model(s) built)")
+    assert seen[-1] == f"[fba] 1 baseline build(s), 0 difference(s), {len(ts)} test(s)"
     got = {(r.test_id, r.readout): r.value for r in df.itertuples()}
     assert got[("pin0.9", "target")] == pytest.approx(1.0)
     assert got[("pin0.1", "target")] == pytest.approx(9.0)
@@ -197,7 +197,7 @@ def test_two_conditions_that_carve_alike_share_one_build(frame, tmp_path):
     seen = []
     df = F.run([frame], [gpr, clone], [BOTH, dosed], ts, {"m": MEDIUM}, do_gapfill=False,
                log=seen.append)
-    assert seen[-1].endswith("(1 model(s) built)")
+    assert seen[-1] == f"[fba] 1 baseline build(s), 0 difference(s), {len(ts)} test(s)"
     # ...and the per-condition counts still come from the condition, so a shared build
     # cannot hide which rows went into it.
     rows = {(r.test_id, r.readout): r.value for r in df.itertuples()}
@@ -259,3 +259,204 @@ def test_results_mirror_the_conductance_schema(frame, tmp_path):
     assert list(df.columns) == list(F.RESULT_COLUMNS)
     assert (df.readout.str.startswith("_")).any(), \
         "a result must carry its own diagnostics, so it cannot be read without them"
+
+
+# ---------------------------------------------------------- a perturbation is a delta
+
+
+def _ko_g1():
+    """The host, minus the gene that nominates R1. A knockout subtracts on `gene`."""
+    return C.Condition("ko", (
+        C.Step(table="host.parquet", type="", set=(), operation="union"),
+        C.Step(table="host.parquet", type="gene", set=("b1",), operation="subtract"),
+    ))
+
+
+def _ko_tests():
+    common = dict(frame="toy", media="m", target_hub="bio_c", growth_pin=0.1)
+    return [T.Test(test_id="base", network="both", arm="gem", settings=dict(common)),
+            T.Test(test_id="ko", network="ko", arm="gem", read_against="base",
+                   settings=dict(common))]
+
+
+def test_a_deleted_gene_stays_deleted_through_the_gapfill(frame, tmp_path):
+    # THE DEFECT THIS TASK EXISTS FOR. `build_from` hands its gapfill a donor made of
+    # exactly the reactions the carve removed, so on a deletion cohort the deleted
+    # reaction is the FIRST thing the repair draws back -- and the model then reports a
+    # plausible growth rate for a strain that no longer has the gene. Differencing
+    # against the baseline leaves the repair where it belongs, on the baseline.
+    gpr = tmp_path / "host.parquet"
+    CORPUS["host.parquet"].to_parquet(gpr, index=False)
+    seen = []
+    df = F.run([frame], [gpr], [BOTH, _ko_g1()], _ko_tests(), {"m": MEDIUM},
+               do_gapfill=True, log=seen.append)
+    rows = {(r.test_id, r.readout): r.value for r in df.itertuples()}
+    assert rows[("base", "growth")] == pytest.approx(10.0)
+    assert rows[("ko", "growth")] == 0.0
+    assert rows[("ko", "_delta_withdrawn")] == 1.0
+    assert seen[-1] == "[fba] 1 baseline build(s), 1 difference(s), 2 test(s)"
+
+
+def test_rebuilding_a_deletion_lets_the_gapfill_draw_it_back(frame, tmp_path):
+    # WHAT `--no-delta` COSTS, kept as a test so the old path cannot be mistaken for a
+    # second opinion. The same knockout, rebuilt from the frame, grows exactly as fast as
+    # the strain that still has the gene -- because the repair put the gene's reaction
+    # back and nothing in the census says so under a name that reads like a warning.
+    gpr = tmp_path / "host.parquet"
+    CORPUS["host.parquet"].to_parquet(gpr, index=False)
+    df = F.run([frame], [gpr], [BOTH, _ko_g1()], _ko_tests(), {"m": MEDIUM},
+               do_gapfill=True, delta=False, log=lambda _m: None)
+    rows = {(r.test_id, r.readout): r.value for r in df.itertuples()}
+    assert rows[("ko", "growth")] == pytest.approx(10.0)
+    assert rows[("ko", "_gapfill_needed")] == 1.0
+
+
+def test_a_perturbation_that_changes_no_assertion_is_measured_identically(frame,
+                                                                          tmp_path):
+    # THE EQUIVALENCE CHECK, and it is what says the difference is being applied rather
+    # than merely being cheap. A second copy of a reaction the host already carries
+    # changes the network and not the carve, so differencing and rebuilding have to agree
+    # bit for bit -- and they do it from one build instead of two.
+    gpr = tmp_path / "host.parquet"
+    CORPUS["host.parquet"].to_parquet(gpr, index=False)
+    clone = tmp_path / "clone.parquet"
+    pd.DataFrame([_row("clone_g1", "c1", "R1", "MNXR2", 6.0)]).to_parquet(clone,
+                                                                          index=False)
+    dosed = C.Condition("clone", (
+        C.Step(table="host.parquet", type="", set=(), operation="union"),
+        C.Step(table="clone.parquet", type="", set=(), operation="union"),
+    ))
+    common = dict(frame="toy", media="m", target_hub="bio_c", growth_pin=0.1)
+    ts = [T.Test(test_id="base", network="both", arm="gem", settings=dict(common)),
+          T.Test(test_id="clone", network="clone", arm="gem", read_against="base",
+                 settings=dict(common))]
+    seen = []
+    a = F.run([frame], [gpr, clone], [BOTH, dosed], ts, {"m": MEDIUM}, do_gapfill=True,
+              log=seen.append)
+    b = F.run([frame], [gpr, clone], [BOTH, dosed], ts, {"m": MEDIUM}, do_gapfill=True,
+              delta=False, log=lambda _m: None)
+    key = ["test_id", "readout"]
+    shared = sorted(set(a.readout) & set(b.readout) - {"_gapfill_inherited"})
+    ai = a[a.readout.isin(shared)].set_index(key).value.sort_index()
+    bi = b[b.readout.isin(shared)].set_index(key).value.sort_index()
+    pd.testing.assert_series_equal(ai, bi)
+    assert seen[-1] == "[fba] 1 baseline build(s), 0 difference(s), 2 test(s)"
+
+
+def test_a_baseline_on_other_settings_is_not_differenced_against(frame, tmp_path):
+    # A `read_against` that crosses a threshold, a frame, a target or a repair medium is
+    # not this test's baseline: differencing there would measure the perturbation PLUS
+    # the setting change and report it as the perturbation. Such a test builds on its own.
+    gpr = tmp_path / "host.parquet"
+    CORPUS["host.parquet"].to_parquet(gpr, index=False)
+    ts = [T.Test(test_id="base", network="both", arm="gem",
+                 settings=dict(frame="toy", media="m", target_hub="bio_c",
+                               growth_pin=0.1, carve_threshold=0.5)),
+          T.Test(test_id="ko", network="ko", arm="gem", read_against="base",
+                 settings=dict(frame="toy", media="m", target_hub="bio_c",
+                               growth_pin=0.1))]
+    seen = []
+    F.run([frame], [gpr], [BOTH, _ko_g1()], ts, {"m": MEDIUM}, do_gapfill=False,
+          log=seen.append)
+    assert seen[-1] == "[fba] 2 baseline build(s), 0 difference(s), 2 test(s)"
+
+
+def test_read_against_cannot_form_a_cycle(frame, tmp_path):
+    gpr = tmp_path / "host.parquet"
+    CORPUS["host.parquet"].to_parquet(gpr, index=False)
+    common = dict(frame="toy", media="m", target_hub="bio_c", growth_pin=0.1)
+    ts = [T.Test(test_id="a", network="both", arm="gem", read_against="b",
+                 settings=dict(common)),
+          T.Test(test_id="b", network="both", arm="gem", read_against="a",
+                 settings=dict(common))]
+    with pytest.raises(ValueError, match="forms a cycle"):
+        F.run([frame], [gpr], [BOTH], ts, {"m": MEDIUM}, do_gapfill=False,
+              log=lambda _m: None)
+
+
+# ------------------------------------------------------------- shards, resume and parts
+
+
+MEDIUM2 = {"EX_glc_e": (-5.0, 1000.0)}
+
+
+def _two_media_tests():
+    common = dict(frame="toy", target_hub="bio_c", growth_pin=0.1)
+    out = []
+    for med in ("m", "m2"):
+        out.append(T.Test(test_id=f"base_{med}", network="both", arm="gem",
+                          settings=dict(common, media=med)))
+        out.append(T.Test(test_id=f"ko_{med}", network="ko", arm="gem",
+                          read_against=f"base_{med}", settings=dict(common, media=med)))
+    return out
+
+
+def _gpr(tmp_path):
+    p = tmp_path / "host.parquet"
+    CORPUS["host.parquet"].to_parquet(p, index=False)
+    return p
+
+
+def test_a_shard_directory_resumes_without_re_solving(frame, tmp_path):
+    gpr = _gpr(tmp_path)
+    shards = tmp_path / "shards"
+    args = ([frame], [gpr], [BOTH, _ko_g1()], _two_media_tests(),
+            {"m": MEDIUM, "m2": MEDIUM2})
+    first = F.run(*args, do_gapfill=False, shard_dir=shards, log=lambda _m: None)
+    assert len(list(shards.glob("*.json"))) == 4
+    seen = []
+    again = F.run(*args, do_gapfill=False, shard_dir=shards, log=seen.append)
+    assert seen[-1] == "[fba] 0 baseline build(s), 0 difference(s), 4 test(s), 4 resumed"
+    pd.testing.assert_frame_equal(first, again)
+
+
+def test_a_shard_written_under_other_settings_does_not_resume_into_this_run(frame,
+                                                                            tmp_path):
+    # The shard key carries the run-level settings, so a directory written with the
+    # repair off cannot hand its rows to a run with the repair on. Without that the two
+    # constructions mix and nothing says so.
+    gpr = _gpr(tmp_path)
+    shards = tmp_path / "shards"
+    args = ([frame], [gpr], [BOTH, _ko_g1()], _two_media_tests(),
+            {"m": MEDIUM, "m2": MEDIUM2})
+    F.run(*args, do_gapfill=False, shard_dir=shards, log=lambda _m: None)
+    seen = []
+    F.run(*args, do_gapfill=True, shard_dir=shards, log=seen.append)
+    assert "resumed" not in seen[-1]
+    assert len(list(shards.glob("*.json"))) == 8
+
+
+def test_parts_split_baselines_and_reassemble_into_the_whole(frame, tmp_path):
+    # THE SPLIT IS OVER BASELINES. Two media are two repairs and therefore two baselines;
+    # each part gets whole ones, so no array task rebuilds another's model. Running both
+    # parts into one shard directory and then assembling with no part reproduces the
+    # single-process answer exactly.
+    gpr = _gpr(tmp_path)
+    args = ([frame], [gpr], [BOTH, _ko_g1()], _two_media_tests(),
+            {"m": MEDIUM, "m2": MEDIUM2})
+    whole = F.run(*args, do_gapfill=False, log=lambda _m: None)
+
+    # Each part gets its own directory, which is what two array tasks running at once
+    # actually see -- neither can resume from work the other has not finished.
+    shards = tmp_path / "array"
+    shards.mkdir()
+    for i in (0, 1):
+        seen = []
+        F.run(*args, do_gapfill=False, shard_dir=tmp_path / f"task{i}", part=i, of=2,
+              log=seen.append)
+        assert "1 baseline build(s)" in seen[-1]
+        assert "2 not in this part" in seen[-1]
+        for f in (tmp_path / f"task{i}").glob("*.json"):
+            (shards / f.name).write_text(f.read_text())
+    seen = []
+    assembled = F.run(*args, do_gapfill=False, shard_dir=shards, log=seen.append)
+    assert seen[-1] == "[fba] 0 baseline build(s), 0 difference(s), 4 test(s), 4 resumed"
+    pd.testing.assert_frame_equal(whole, assembled)
+
+
+def test_a_part_out_of_range_is_refused(frame, tmp_path):
+    gpr = _gpr(tmp_path)
+    with pytest.raises(ValueError, match="not in range"):
+        F.run([frame], [gpr], [BOTH, _ko_g1()], _two_media_tests(),
+              {"m": MEDIUM, "m2": MEDIUM2}, do_gapfill=False, part=2, of=2,
+              log=lambda _m: None)

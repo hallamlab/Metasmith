@@ -36,6 +36,7 @@
 # do.
 from __future__ import annotations
 
+import hashlib
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -400,6 +401,36 @@ def gapfill(model, donor, medium: dict, *, target=None, frame_path=None,
             "target_growth": round(target_flux, 6), "method": "l1_relaxation"}
 
 
+@dataclass
+class Baseline:
+    """A built model, plus everything a PERTURBATION of it needs to move it by hand.
+
+    The four extras are what make `apply_delta` possible without a second build:
+    `xwalk` says which frame reaction is which MNXR, `donor` holds copies of what the
+    carve took away so a native reaction can come back, `inserted` says where each
+    heterologous MNXR landed, and `a` is the assertion set the whole thing was carved to.
+    """
+    model: object
+    census: dict
+    a: Assertions
+    xwalk: dict
+    donor: object
+    inserted: dict = field(default_factory=dict)
+
+    def mnxr_of(self, rid: str):
+        """The MNXR a reaction of this model stands for, native or inserted."""
+        if not hasattr(self, "_by_rid"):
+            object.__setattr__(self, "_by_rid",
+                               {v: k for k, v in (self.inserted or {}).items()})
+        return self.xwalk.get(rid) or self._by_rid.get(rid)
+
+    def asserts(self, rid: str, a: Assertions) -> bool:
+        if rid in a.ids:
+            return True
+        m = self.mnxr_of(rid)
+        return bool(m) and m in a.mnxrs
+
+
 def build(frame_path, condition, corpus: dict, medium: dict, *, min_lanes=1,
           carve_threshold=None, weighting="belief", target=None, release=None,
           do_gapfill=True, log=None) -> tuple:
@@ -411,9 +442,15 @@ def build(frame_path, condition, corpus: dict, medium: dict, *, min_lanes=1,
                       corpus=corpus)
 
 
-def build_from(frame_path, a: Assertions, xwalk: dict | None, medium: dict, *,
-               target=None, release=None, do_gapfill=True, log=None, label="",
-               corpus=None) -> tuple:
+def build_from(frame_path, a: Assertions, xwalk: dict | None, medium: dict, **kw) -> tuple:
+    """`(model, census)` -- `build_baseline` for callers that want only the two."""
+    b = build_baseline(frame_path, a, xwalk, medium, **kw)
+    return b.model, b.census
+
+
+def build_baseline(frame_path, a: Assertions, xwalk: dict | None, medium: dict, *,
+                   target=None, release=None, do_gapfill=True, log=None, label="",
+                   corpus=None) -> Baseline:
     """An assertion set plus a frame -> a carved, repaired cobra model and its census.
 
     `medium` IS THE MEDIUM THE MODEL IS BUILT AND REPORTED UNDER, which need not be the
@@ -490,6 +527,96 @@ def build_from(frame_path, a: Assertions, xwalk: dict | None, medium: dict, *,
         log(f"[fba] {label}: kept {len(keep)}, carved {len(drop)}, "
             f"inserted {len(inserted)}, gapfilled "
             f"{census['gapfill'].get('needed')}, growth {census['growth_final']}")
+    return Baseline(model=model, census=census, a=a, xwalk=xwalk, donor=donor,
+                    inserted=dict(inserted))
+
+
+def apply_delta(baseline: Baseline, a: Assertions, *, release=None, target=None,
+                log=None, label="") -> tuple:
+    """A perturbed condition as a DIFFERENCE on the baseline model. `(model, census)`.
+
+    A PERTURBATION IS NOT A REBUILD. Rebuilding was both slow and wrong, and the same
+    change fixes the two:
+
+      WRONG, because `build_from` hands its gapfill a donor made of exactly the
+      reactions the carve removed. On a loss-of-function cohort the deleted reaction is
+      therefore the first thing the repair draws back, and the model reports a plausible
+      growth rate for a strain that no longer has the gene. Here the repair belongs to
+      the BASELINE and is not re-run, so a deletion stays deleted.
+
+      SLOW, because keying a build on the assertion set gives every deletion its own
+      load, carve, insertion, cycle closure and gapfill -- 3,806 of them on the Fuhrer
+      cohort. A difference is one model copy and a handful of reaction edits.
+
+    THREE MOVES, and each one has to be there:
+
+      withdraw     a governed reaction the baseline asserted and this condition does not.
+                   Gapfilled reactions are asserted by NEITHER, so they are left alone --
+                   they are part of what the baseline IS.
+      reintroduce  a reaction the baseline's carve took away that this condition asserts.
+                   This is the carve re-evaluated, not a repair: it draws only on
+                   `baseline.donor`, which is the frame's own reactions.
+      insert       an MNXR this condition asserts that the frame never named. Same
+                   admission rules as the build, and the cycles are closed afterwards --
+                   adding reactions to an already-repaired model can reopen one that the
+                   build shut, which is the lesson `build_baseline`'s double closure
+                   already encodes.
+    """
+    base = baseline.a
+    ref = baseline.model
+    present = {r.id for r in ref.reactions}
+    native = set(baseline.xwalk.values())
+
+    withdraw = [r.id for r in ref.reactions
+                if r.gene_reaction_rule.strip()
+                and baseline.asserts(r.id, base) and not baseline.asserts(r.id, a)]
+    back = [r.id for r in baseline.donor.reactions
+            if r.id not in present and baseline.asserts(r.id, a)
+            and not baseline.asserts(r.id, base)]
+    want = sorted(a.mnxrs - base.mnxrs - native - set(baseline.inserted))
+
+    if not (withdraw or back or want):
+        # AN EMPTY DIFFERENCE IS THE COMMON CASE AND IT MUST COST NOTHING. Two conditions
+        # can carry different assertion sets and still carve one frame identically:
+        # `Assertions.key` counts every `intermediate_id`, and a de-novo table's are KO
+        # and EC numbers that reach no frame reaction at all. On the Eydallin cohort that
+        # is the whole story -- its thirteen "distinct models" were one carve, one repair
+        # and one growth rate, separated only by a KO string per clone.
+        census = dict(baseline.census, **a.census)
+        census["delta"] = dict(withdrawn=0, reintroduced=0, inserted=0, requested=0,
+                               closed_after_insert=0, unmet=0, empty=1)
+        return ref, census
+
+    model = ref.copy()
+    if withdraw:
+        model.remove_reactions(withdraw, remove_orphans=False)
+    if back:
+        model.add_reactions([baseline.donor.reactions.get_by_id(r).copy() for r in back])
+
+    inserted, closed = {}, 0
+    if want and release is not None:
+        inserted, _rejected, ins_census = mnx.insert(model, want, release.bridge(model),
+                                                     release)
+        closed = len(mnx.close_energy_cycles(model, list(inserted.values())))
+    if target:
+        demand_for(model, target)
+
+    census = dict(baseline.census, **a.census)
+    # THE BASELINE'S GROWTH NUMBERS DO NOT DESCRIBE THIS MODEL and carrying them would
+    # put the baseline's rate in every perturbed row under a name that reads like the
+    # row's own. `measure` reports this model's growth under the test's own medium.
+    baseline_final = census.pop("growth_final", None)
+    for k in ("growth_carved", "growth_after_gapfill", "carved_away_ids"):
+        census.pop(k, None)
+    census["delta"] = dict(withdrawn=len(withdraw), reintroduced=len(back),
+                           inserted=len(inserted), requested=len(want),
+                           closed_after_insert=closed,
+                           unmet=len(want) - len(inserted), empty=0,
+                           baseline_growth_final=baseline_final)
+    census["gapfill"] = dict(baseline.census.get("gapfill", {}), inherited=1)
+    if log:
+        log(f"[fba] {label}: delta -{len(withdraw)} +{len(back)} native "
+            f"+{len(inserted)} inserted on the baseline build")
     return model, census
 
 
@@ -578,24 +705,93 @@ def measure(model, t, medium: dict, census: dict, *, emit="summary") -> list:
     return _rows(t.test_id, obj_name, out + diag)
 
 
+def _root_test(tid: str, by_test: dict) -> str:
+    """The test a test is ultimately read against; itself when it is a baseline."""
+    seen, cur = [], tid
+    while True:
+        nxt = (by_test[cur].read_against or "").strip()
+        if not nxt or nxt == cur:
+            return cur
+        if nxt not in by_test:
+            raise ValueError(f"test {cur!r} reads against {nxt!r}, which is not a test "
+                             f"in this table")
+        if nxt in seen:
+            raise ValueError("`read_against` forms a cycle: "
+                             + " -> ".join(seen + [nxt]))
+        seen.append(cur)
+        cur = nxt
+
+
+def _plan(t, media, index, gapfill_media):
+    """What one test needs: its frame, medium, thresholds and assertion-set key."""
+    frame_name = str(t.settings.get("frame") or "")
+    if frame_name not in index:
+        raise ValueError(f"test {t.test_id!r} names frame {frame_name!r}, which was "
+                         f"not staged (have {sorted(index)})")
+    media_name = str(t.settings.get("media") or "")
+    if media_name and media_name not in media:
+        raise ValueError(f"test {t.test_id!r} names medium {media_name!r}, which the "
+                         f"media table does not carry (has {sorted(media)})")
+    threshold = t.settings.get("carve_threshold")
+    return dict(
+        frame=frame_name, media=media_name, medium=media.get(media_name, {}),
+        min_lanes=int(t.settings.get("min_lanes") or 1),
+        threshold=None if threshold in (None, "", 0) else float(threshold),
+        target=str(t.settings.get("target_hub") or ""),
+        build_media=gapfill_media if gapfill_media is not None else media_name)
+
+
+def _shard_name(t, signature: str) -> str:
+    """One test's shard. The signature carries every RUN-level setting that changes the
+    answer, so a directory written under a different repair or a different differencing
+    rule does not resume into this one and quietly mix two constructions."""
+    h = hashlib.blake2b(f"{t.test_id}\x00{signature}".encode(),
+                        digest_size=8).hexdigest()
+    return f"{h}.json"
+
+
 def run(frames, gpr_paths, conditions, tests, media, *, release=None, weighting="belief",
-        emit="summary", do_gapfill=True, gapfill_media=None, census_out=None,
-        log=print) -> pd.DataFrame:
+        emit="summary", do_gapfill=True, gapfill_media=None, delta=True, census_out=None,
+        shard_dir=None, resume=True, part=None, of=None, log=print) -> pd.DataFrame:
     """Every gem test, on the condition it names and the frame it names.
 
-    A BUILD IS KEYED ON THE ASSERTION SET, not on the condition. Two conditions that carve
-    the frame identically get one model, and on the Eydallin cohort that is 87 conditions
-    to one build per channel -- each clone is a chromosomal *E. coli* ORF the host already
-    carries, so the perturbation changes the network and not the carve. A carve plus an
-    insertion plus a gapfill is minutes, so this is the difference between minutes and
-    hours. The per-condition counts still come from the condition, so a shared build never
-    hides which rows went into it.
+    A PERTURBATION IS A DIFFERENCE ON ITS BASELINE, not a build of its own. `read_against`
+    already names each test's baseline, so the baseline condition is built once -- carve,
+    insertion, cycle closure, gapfill -- and every test reading against it is measured on
+    a copy of that model with its own condition's reactions withdrawn, reintroduced or
+    inserted. `apply_delta` says why that is the correct construction and not merely the
+    cheap one; the short of it is that re-running the gapfill on a deletion draws the
+    deleted reaction straight back.
+
+    TWO CONDITIONS THAT CARVE IDENTICALLY STILL SHARE ONE MODEL. On the Eydallin cohort
+    every clone is a chromosomal *E. coli* ORF the host already carries, so 86 perturbed
+    conditions produce one assertion set and the difference is empty. The per-condition
+    counts still come from the condition, so a shared model never hides which rows went
+    into it.
+
+    ONLY BASELINES ARE KEPT. A delta model is measured and dropped, because a cohort of
+    3,806 deletions would otherwise hold 3,806 cobra models at once. Tests are therefore
+    walked in an order grouped by (baseline, assertion set) so that a condition carrying
+    several tests is differenced once; the rows come back in the table's own order.
 
     `gapfill_media` NAMES ONE MEDIUM FOR EVERY REPAIR, and giving it makes the built model
     a claim about the organism rather than about the broth. Without it each medium gets
-    its own gapfill and therefore its own model, so a comparison across media compares two
-    different models -- which is defensible for asking what a medium costs, and wrong for
+    its own gapfill and therefore its own baseline, so a comparison across media compares
+    two different models -- defensible for asking what a medium costs, and wrong for
     asking what a perturbation does.
+
+    `delta=False` restores the older behaviour of building every distinct assertion set
+    from the frame. It is a diagnostic: on a cohort whose perturbations change no
+    assertion the two must agree bit for bit, and that is the check that says the
+    difference is being applied correctly.
+
+    `shard_dir` MAKES A KILLED RUN RESUMABLE, one JSON file per test, exactly as the
+    conductance arm shards. `part`/`of` split the work for a cluster array, and THEY SPLIT
+    BASELINES RATHER THAN TESTS: the unit of work is a test but the expensive object is a
+    build, so a boundary drawn through a baseline would have every task rebuild it. Whole
+    baseline groups go to one part. A test outside this part is not solved; if its shard
+    is on disk it is read, which is what lets a final run with no `part` assemble every
+    array task's output without solving anything.
     """
     corpus = load_corpus(gpr_paths)
     by_id = {c.condition_id: c for c in conditions}
@@ -603,59 +799,138 @@ def run(frames, gpr_paths, conditions, tests, media, *, release=None, weighting=
     if missing:
         raise ValueError(f"{len(missing)} test(s) name networks with no condition: "
                          f"{missing[:5]}. Known: {sorted(by_id)[:5]}")
+    if gapfill_media is not None and gapfill_media not in media:
+        raise ValueError(f"--gapfill-media names {gapfill_media!r}, which the media "
+                         f"table does not carry (has {sorted(media)})")
     index = frame_index(frames)
+    by_test = {t.test_id: t for t in tests}
+
+    asserted: dict = {}
+
+    def assertion_set(network, min_lanes, threshold):
+        akey = (network, min_lanes, threshold)
+        if akey not in asserted:
+            asserted[akey] = assertions(by_id[network], corpus, min_lanes=min_lanes,
+                                        carve_threshold=threshold, weighting=weighting)
+        return asserted[akey]
+
+    # ---- one pass to work out what each test is measured on, before anything is built.
+    plans = []
+    for t in tests:
+        pl = _plan(t, media, index, gapfill_media)
+        pl["a"] = a = assertion_set(t.network, pl["min_lanes"], pl["threshold"])
+        root = _root_test(t.test_id, by_test) if delta else t.test_id
+        rt = by_test[root]
+        rpl = pl if root == t.test_id else _plan(rt, media, index, gapfill_media)
+        # A BASELINE ON DIFFERENT SETTINGS IS NOT THIS TEST'S BASELINE. Differencing
+        # across a frame, a target, a threshold or a repair medium would silently measure
+        # the perturbation plus the setting change, so such a test builds on its own.
+        same = all(rpl[k] == pl[k] for k in
+                   ("frame", "target", "min_lanes", "threshold", "build_media"))
+        if not same:
+            root, rt, rpl = t.test_id, t, pl
+        pl["root"] = root
+        pl["root_a"] = ra = (a if root == t.test_id
+                             else assertion_set(rt.network, rpl["min_lanes"],
+                                                rpl["threshold"]))
+        pl["root_network"] = rt.network
+        pl["repair_medium"] = (media[gapfill_media] if gapfill_media is not None
+                               else rpl["medium"])
+        pl["base_key"] = (rpl["frame"], rpl["target"], ra.key, rpl["build_media"])
+        pl["delta_key"] = (pl["base_key"], a.key)
+        plans.append(pl)
+
+    # A STABLE GROUPING ORDER, and `hash()` is not one: it is salted per interpreter, so
+    # an assertion set would sort differently in two processes and the difference count
+    # would stop being reproducible. First appearance is the ordering instead.
+    rank: dict = {}
+    def _rank(k):
+        return rank.setdefault(k, len(rank))
+    order = sorted(range(len(tests)),
+                   key=lambda i: (_rank(plans[i]["base_key"]), _rank(plans[i]["a"].key)))
+
+    groups: dict = {}
+    for i in order:
+        groups.setdefault(plans[i]["base_key"], []).append(i)
+    mine = set(range(len(tests)))
+    if of:
+        if not (0 <= int(part) < int(of)):
+            raise ValueError(f"--part {part} is not in range for --of {of}")
+        keys = list(groups)
+        mine = {i for n, k in enumerate(keys) if n % int(of) == int(part)
+                for i in groups[k]}
+        log(f"[fba] part {part}/{of}: {len(mine)} of {len(tests)} test(s) over "
+            f"{sum(1 for n in range(len(keys)) if n % int(of) == int(part))} of "
+            f"{len(keys)} baseline group(s)")
+
+    shard_dir = Path(shard_dir) if shard_dir else None
+    if shard_dir:
+        shard_dir.mkdir(parents=True, exist_ok=True)
+    signature = json.dumps(dict(weighting=weighting, emit=emit, do_gapfill=do_gapfill,
+                                gapfill_media=gapfill_media, delta=delta),
+                           sort_keys=True)
 
     xwalks: dict = {}
     built: dict = {}
-    asserted: dict = {}
     census_log: dict = {}
-    rows = []
-    for i, t in enumerate(tests):
-        frame_name = str(t.settings.get("frame") or "")
-        if frame_name not in index:
-            raise ValueError(f"test {t.test_id!r} names frame {frame_name!r}, which was "
-                             f"not staged (have {sorted(index)})")
-        media_name = str(t.settings.get("media") or "")
-        if media_name and media_name not in media:
-            raise ValueError(f"test {t.test_id!r} names medium {media_name!r}, which the "
-                             f"media table does not carry (has {sorted(media)})")
-        medium = media.get(media_name, {})
-        min_lanes = int(t.settings.get("min_lanes") or 1)
-        threshold = t.settings.get("carve_threshold")
-        threshold = None if threshold in (None, "", 0) else float(threshold)
-        target = str(t.settings.get("target_hub") or "")
-
-        akey = (t.network, min_lanes, threshold)
-        if akey not in asserted:
-            asserted[akey] = assertions(by_id[t.network], corpus, min_lanes=min_lanes,
-                                        carve_threshold=threshold, weighting=weighting)
-        a = asserted[akey]
-
-        if gapfill_media is not None and gapfill_media not in media:
-            raise ValueError(f"--gapfill-media names {gapfill_media!r}, which the media "
-                             f"table does not carry (has {sorted(media)})")
-        repair = media[gapfill_media] if gapfill_media is not None else None
-
-        # The medium is part of the build key only when each medium gets its own repair.
-        key = (frame_name, target, a.key,
-               media_name if gapfill_media is None else gapfill_media)
-        if key not in built:
+    by_index: dict = {}
+    cur_key, cur_model, cur_census = None, None, None
+    n_delta = n_empty = n_resumed = n_skipped = 0
+    for n, i in enumerate(order):
+        t, pl = tests[i], plans[i]
+        shard = shard_dir / _shard_name(t, signature) if shard_dir else None
+        if shard is not None and resume and shard.exists():
+            by_index[i] = json.loads(shard.read_text())
+            n_resumed += 1
+            continue
+        if i not in mine:
+            n_skipped += 1
+            continue
+        if pl["base_key"] not in built:
+            frame_name = pl["base_key"][0]
             if frame_name not in xwalks:
                 xwalks[frame_name] = crosswalk(load_frame(index[frame_name]), corpus,
                                                log=log)
             xwalk, xcensus = xwalks[frame_name]
-            model, census = build_from(index[frame_name], a, xwalk,
-                                       repair if repair is not None else medium,
-                                       target=target, release=release,
-                                       do_gapfill=do_gapfill, log=log, label=t.network)
-            census.update(xcensus, build_media=gapfill_media or media_name)
-            built[key] = (model, census)
-            census_log[f"{frame_name}|{gapfill_media or media_name}|"
-                       f"{t.network}"] = _jsonable(census)
-        model, census = built[key]
-        rows += measure(model, t, medium, dict(census, **a.census), emit=emit)
-        if i == 0 or (i + 1) % 10 == 0 or i + 1 == len(tests):
-            log(f"[fba] {i + 1}/{len(tests)} tests ({len(built)} model(s) built)")
+            b = build_baseline(index[frame_name], pl["root_a"], xwalk,
+                               pl["repair_medium"], target=pl["base_key"][1],
+                               release=release, do_gapfill=do_gapfill, log=log,
+                               label=pl["root_network"])
+            b.census.update(xcensus, build_media=pl["base_key"][3], builds=1)
+            built[pl["base_key"]] = b
+            census_log[f"{frame_name}|{pl['base_key'][3]}|{pl['root_network']}"] = \
+                _jsonable(b.census)
+        b = built[pl["base_key"]]
+
+        if pl["a"].key == pl["root_a"].key:
+            model, census = b.model, b.census
+        else:
+            if cur_key != pl["delta_key"]:
+                cur_model, cur_census = apply_delta(
+                    b, pl["a"], release=release, target=pl["base_key"][1], log=None,
+                    label=t.network)
+                cur_key = pl["delta_key"]
+                n_delta += 1
+                n_empty += int(bool(cur_census.get("delta", {}).get("empty")))
+                census_log[f"{pl['base_key'][0]}|{pl['base_key'][3]}|{t.network}"] = \
+                    _jsonable(cur_census)
+            model, census = cur_model, cur_census
+
+        by_index[i] = rows_i = measure(model, t, pl["medium"],
+                                       dict(census, **pl["a"].census), emit=emit)
+        if shard is not None:
+            shard.write_text(json.dumps(rows_i))
+        if n == 0 or (n + 1) % 10 == 0 or n + 1 == len(tests):
+            log(f"[fba] {n + 1}/{len(tests)} tests "
+                f"({len(built)} baseline(s) built, {n_delta} difference(s) applied)")
+
+    log(f"[fba] {len(built)} baseline build(s), {n_delta} difference(s), "
+        f"{len(tests)} test(s)"
+        + (f" ({n_empty} difference(s) empty: those conditions carve the frame "
+           f"identically)" if n_empty else "")
+        + (f", {n_resumed} resumed" if n_resumed else "")
+        + (f", {n_skipped} not in this part" if n_skipped else ""))
+    rows = [r for i in range(len(tests)) for r in by_index.get(i, ())]
 
     if census_out:
         Path(census_out).parent.mkdir(parents=True, exist_ok=True)

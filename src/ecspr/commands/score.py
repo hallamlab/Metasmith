@@ -9,14 +9,14 @@ from ..model import tests as test_mod
 def score(args, log):
     obs = probes.read_results(args.results)
     nul = probes.read_results(args.null)
-    ts = test_mod.read(args.tests, "ecspr") if args.tests else None
+    ts = test_mod.read(args.tests, args.arm) if args.tests else None
     if args.null_tests:
-        ts = (ts or []) + test_mod.read(args.null_tests, "ecspr")
-    scored = scoring.score(obs, nul, baseline=args.baseline, tests=ts)
+        ts = (ts or []) + test_mod.read(args.null_tests, args.arm)
+    scored = scoring.score(obs, nul, baseline=args.baseline, tests=ts, arm=args.arm)
     out = probes.write_results(scored, args.out)
     log(f"[score] {len(scored):,} scored rows -> {out}")
 
-    g = scoring.gate(scored)
+    g = scoring.gate(scored, args.arm)
     if g.empty:
         log("[score] no readouts to gate")
         return 0
