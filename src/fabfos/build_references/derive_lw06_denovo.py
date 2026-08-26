@@ -25,7 +25,7 @@ on purT/tdcD in the curated channel.
 
 THE ENGINEERED INSERTION IS NOT ADDED HERE. pdcZm and adhBZm are Zymomonas genes on a Tn7
 insertion and appear in no E. coli proteome; they ride as study GPR rows
-(`data/fabfos/runs/scales/gpr/gpr_insertion.parquet`) that concatenate at solve time. This
+(`data/fabfos/runs/woodruff_clones/gpr/gpr_insertion.parquet`) that concatenate at solve time. This
 file only subtracts, like every other host step.
 
 The genotype is imported from `check_lw06_identity.py` rather than restated: that file

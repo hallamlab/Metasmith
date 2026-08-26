@@ -46,7 +46,11 @@ STUDIES = {
     "pg_anionic": dict(reader="gene_row", cohort="pg_anionic", arm="gof", host="e_coli_epi300"),
     "forsberg":   dict(reader="gene_row", cohort="forsberg", arm="gof", host="e_coli_epi300"),
     "fa_supply":  dict(reader="gene_row", cohort="fa_supply", arm="gof", host="e_coli_epi300"),
-    "aska_ffa":   dict(reader="gene_ovx", cohort="aska_ffa", arm="gof", host="e_coli_k12"),
+    # Registered under the library's name until the lane was consolidated per paper.
+    # The KEY is written into the published tables' `source`, `build_id`, `unit_id` and
+    # `<study>:BASELINE` ids, so the products checked in under
+    # `data/fabfos/benchmarks/fang/` still carry `aska_ffa` there until the next build.
+    "fang":       dict(reader="gene_ovx", cohort="fang", arm="gof", host="e_coli_k12"),
     "scales_tol":  dict(reader="gene_ovx_row", cohort="scales_tol", arm="gof",
                         host="e_coli_bw25113",
                         directions={"tolerant_both": "up", "tolerant_15": "up",
@@ -54,6 +58,15 @@ STUDIES = {
     "scales_prod": dict(reader="gene_ovx_row", cohort="scales_prod", arm="gof",
                         host="e_coli_lw06", elements=("C",),
                         directions={"not_enriched": "flat"}),
+    # `gene_del` rather than `gene_ovx_row`, and therefore NO `directions` map, even though
+    # this screen reports metabolites moving in both directions. The direction a `gene_del`
+    # row asserts is the CONDUCTANCE's -- a knockout removes a route -- and that is uniform.
+    # Which METABOLITE rose or fell is per (gene, metabolite) and cannot be a per-gene
+    # column at all; it lives in `data/fabfos/benchmarks/fuhrer/Y/`, keyed on the metabolite
+    # it is about. Collapsing it to one label per gene is the mistake `gene_ovx_row`'s own
+    # docstring warns about, made worse by 7,534 readouts per gene.
+    "fuhrer":     dict(reader="gene_del", cohort="fuhrer", arm="lof",
+                       host="e_coli_bw25113", elements=("C",)),
 }
 
 CONTROL_KINDS = ("baseline", "structural", "on_path", "declared")

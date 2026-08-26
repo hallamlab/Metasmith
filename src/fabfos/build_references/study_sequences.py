@@ -60,7 +60,7 @@ HET_TABLE = (REPO / "data" / "fabfos" / "originals" / "benchmarks" / "het_screen
              / "heterologous_uniprot.tsv")
 
 STUDIES = ("laser", "keio", "eydallin", "aromatic", "fa_supply", "forsberg",
-           "pg_anionic", "aska_ffa")
+           "pg_anionic", "fang")
 
 ECOLI_TAXON = "562"
 
