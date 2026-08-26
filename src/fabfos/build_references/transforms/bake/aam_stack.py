@@ -115,7 +115,7 @@ def protocol(context: ExecutionContext):
         # One pass, three layers, and no layer that exists only because of the order the
         # passes happened to run in.
         {py} -m ecspr.bake.aam.layers fuse --submission-class whole \
-            {members} --out L2/stack.parquet
+            {members} --reac-prop $MNX/reac_prop.tsv --out L2/stack.parquet
 
         # The rescue's completions. THE SAME ARITHMETIC AS L2, because it is the same
         # question -- three mappers, one reaction, who agrees. That the reaction reached
@@ -124,13 +124,13 @@ def protocol(context: ExecutionContext):
         # stamping `curated_recovery, 1.0` is what makes a rescued row's provenance say
         # which members actually spoke.
         {py} -m ecspr.bake.aam.layers fuse --submission-class completed \
-            {members} --out L3/stack.parquet
+            {members} --reac-prop $MNX/reac_prop.tsv --out L3/stack.parquet
 
         # The element reductions. What makes this layer different is not how its members
         # are fused but what a row of it CLAIMS: one element of a reaction nothing mapped
         # whole. That is carried in the method it is stamped with at stack time.
         {py} -m ecspr.bake.aam.layers fuse --submission-class reduced \
-            {members} --out L5/stack.parquet
+            {members} --reac-prop $MNX/reac_prop.tsv --out L5/stack.parquet
 
         # ---- the stack ------------------------------------------------------------
         # In order, most trusted first. The two forced arms need no fusion -- conservation
@@ -152,9 +152,19 @@ def protocol(context: ExecutionContext):
             --out aam_stack.parquet
         cp aam_stack.parquet {iout.container}
 
+        # An atom map is a bijection, and a fused table can still break it where two
+        # members disagree about which MOLECULE receives an atom. That is not the
+        # ensemble's designed abstention: `compile_atom_graph` sums the diluted rows into
+        # one edge set, so a solve enters on one member's map and leaves on the other's.
+        # REPORTED, not gated -- a ceiling has to come from a measured run, and picking
+        # one here would freeze a number nobody derived. Pass --max-reactions to gate.
+        {py} -m ecspr.bake.aam.layers audit \
+            --pairs aam_stack.parquet --reac-prop $MNX/reac_prop.tsv \
+            --out injectivity.tsv
+
         {py} -m ecspr.bake.evidence collect --root _ev --tool stack \
             --file L2/stack.parquet L3/stack.parquet L5/stack.parquet \
-                   aam_stack.parquet
+                   aam_stack.parquet injectivity.tsv
         mkdir -p {iev.container}
         cp -r _ev/. {iev.container}/
     """

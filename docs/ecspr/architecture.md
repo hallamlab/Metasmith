@@ -120,7 +120,15 @@ The **AAM lane** adjudicates the whole reaction universe before any mapper runs,
 down an additive layer stack — curated maps, an ensemble discounting its two neural members
 for shared architectural bias while its combinatorial member votes independently, a curation
 sweep, conservation algebra, per-element partial maps — where a layer claims only what the
-layers above left unclaimed and the gates refuse rather than warn. The **direction lane** fuses
+layers above left unclaimed and the gates refuse rather than warn. **A member must be a
+bijection before it may vote.** Nothing downstream can tell a mapper that reuses one atom-map
+number from a mapper that disagrees, so an atom the member sends to two molecules is dropped
+at extraction rather than diluted at fusion, where it would have become a transfer no
+chemistry performed. **A participant written `c` times may hold `c` destinations and no
+more.** Its copies share one atom identity, so keeping a single destination dropped a real
+edge wherever `2 A = B + C` sent them to different products; the weight still divides
+across those destinations rather than doubling, because `graph_from_pairs` folds it into
+conductance on the strength of summing to one. The **direction lane** fuses
 two correlated thermodynamic estimates with a curated category prior, shrinks a wide posterior
 toward reversible, and hands the model `ratio = exp(ΔG'°/RT)`.
 
