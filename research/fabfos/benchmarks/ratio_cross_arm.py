@@ -42,6 +42,7 @@ numbers here. The bare percentage reads as a result and is not one.
 from __future__ import annotations
 
 import sys
+from functools import partial
 from pathlib import Path
 
 import numpy as np
@@ -82,7 +83,19 @@ SWEEPS = {
         ratio="C(glucose->axis sink) / C(glucose->CO2)",
         host="e_coli_bw25113",
         files={"gem": RUNS / "fuhrer_clones/ecspr/fuhrer_ratio_sweep_gem_e_coli_bw25113_fold0.0_C_ctl.tsv",
-               "denovo": RUNS / "fuhrer_clones/ecspr/fuhrer_ratio_sweep_denovo_e_coli_bw25113_fold0.0_C_lanes2_ctl.tsv"},
+               "denovo": RUNS / "fuhrer_clones/ecspr/fuhrer_ratio_sweep_denovo_e_coli_bw25113_fold0.0_C_lanes2_ctl.tsv",
+               "fba": RUNS / "fuhrer_clones/ecspr/fuhrer_fba_channel.tsv"},
+    ),
+    # THE ONE CONDUCTANCE ARM THAT BEAT ITS OWN CONTROLS, and it was not in this cut: it
+    # reads `runs/eydallin_clones/` under the 2007 label rather than `runs/aska/`. Its
+    # ratio is the gain-of-function arm's, at fold 0 rather than fold 2, so its deltas are
+    # not on that arm's scale for the same reason fuhrer's are not -- read the rank
+    # statistics across the boundary and nothing else.
+    "eydallin_lof": dict(
+        ratio="C(glucose->glycogen) / C(glycogen->pyruvate), fold 0",
+        host="e_coli_bw25113",
+        files={"gem": RUNS / "eydallin_clones/ecspr/eydallin2007_ratio_sweep_gem_e_coli_bw25113_fold0.0_C.tsv",
+               "fba": RUNS / "eydallin_clones/ecspr/eydallin2007_fba_channel.tsv"},
     ),
 }
 
@@ -100,8 +113,14 @@ def cut(sub: pd.DataFrame) -> dict:
     live = sub[sub.delta_ratio_pct.abs() > 1e-12]
     mov = live[live.delta_ratio_pct.abs() >= MOVER_PCT]
     union = lambda f: sorted({r for s in f.rxns.dropna() for r in str(s).split(",") if r})
+    # A CHANNEL THAT NAMES NO REACTIONS REPORTS NONE, NOT ZERO. The flux balance channel's
+    # perturbation is a change of bounds on a frame, so it has no `rxns` to union -- and a
+    # zero there reads as "the probe saw it and no reaction carried it", which is a
+    # different and much stronger claim than "this arm does not answer that question".
+    named = bool(union(sub))
     return dict(active=len(sub), responders=len(live), movers=len(mov),
-                rxn_all=len(union(live)), rxn_movers=len(union(mov)),
+                rxn_all=len(union(live)) if named else None,
+                rxn_movers=len(union(mov)) if named else None,
                 mover_rxns=union(mov), live=live, mov=mov)
 
 
@@ -120,13 +139,23 @@ def sign(live: pd.DataFrame, expect_pos: pd.Series) -> dict:
                 vs_base_p=float(binomtest(ok, len(live), base, alternative="greater").pvalue))
 
 
-def rows_eydallin(d, ch):
+def rows_eydallin(d, ch, arm="eydallin", stratum=None):
+    """Both eydallin cohorts, and the expectation points the same way on each.
+
+    The clones OVEREXPRESS and the 2007 mutants DELETE, but the phenotype was measured on
+    the same perturbation the model applies either way -- a mutant labelled
+    `glycogen_excess` is one whose deletion RAISED glycogen -- so `excess` expects a rise
+    in both. This is not the fuhrer case, where the label is the metabolite's direction
+    under a deletion and the expectation flips.
+    """
     met = d[(d.is_positive == True) & (d.n_rxn > 0)]  # noqa: E712
     c = cut(met)
     s = sign(c["live"], met.eydallin_phenotype == "glycogen_excess")
     sm = sign(c["mov"], met.eydallin_phenotype == "glycogen_excess")
     am = d[d.n_rxn > 0]
-    yield dict(arm="eydallin", channel=ch, stratum="86 hits", n_labelled=int(d.is_positive.sum()),
+    yield dict(arm=arm, channel=ch,
+               stratum=stratum or f"{int(d.is_positive.sum())} hits",
+               n_labelled=int(d.is_positive.sum()),
                auc=auc(am.delta_ratio_pct.abs(), am.is_positive),
                size=auc(am.n_rxn, am.is_positive), **c, **{f"sign_{k}": v for k, v in s.items()},
                mover_sign=f"{sm.get('ok','-')}/{sm.get('n',0)}")
@@ -193,7 +222,8 @@ def rows_fuhrer(d, ch):
 
 
 BUILDERS = {"eydallin": rows_eydallin, "fang": rows_fang, "woodruff": rows_woodruff,
-            "fuhrer": rows_fuhrer}
+            "fuhrer": rows_fuhrer,
+            "eydallin_lof": partial(rows_eydallin, arm="eydallin_lof")}
 
 
 def main():
@@ -214,10 +244,15 @@ def main():
                     f"metabolically active {r['active']:4d}  responders {r['responders']:4d}  "
                     f">={MOVER_PCT:g}% movers {r['movers']:2d}")
                 lines.append(
+                    "          reactions: this arm names none"
+                    if r["rxn_all"] is None else
                     f"          reactions: {r['rxn_all']:3d} across all responders, "
                     f"{r['rxn_movers']:3d} across the movers"
                     + (f"  [{','.join(mv)}]" if 0 < len(mv) <= 10 else ""))
                 lines.append(
+                    "          AUC: undefined -- every labelled row is a positive, so "
+                    "there is nothing to rank them above"
+                    if r["auc"] != r["auc"] else
                     f"          AUC atom-mapped {r['auc']:.4f}  |  size control {r['size']:.4f}")
                 if r.get("sign_ok") is None:
                     lines.append(f"          sign: {r['mover_sign']} "
