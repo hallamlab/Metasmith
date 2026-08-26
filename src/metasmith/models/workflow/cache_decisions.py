@@ -14,7 +14,7 @@ import json
 import os
 
 from ...logging import Log
-from .nextflow_codegen import NextflowGenContext
+from .nextflow_codegen import CACHE_HITS_LOG, NextflowGenContext
 
 
 def cache_enabled() -> bool:
@@ -78,11 +78,13 @@ def compute_cache_decisions(task, context: NextflowGenContext) -> dict[int, dict
             "step_name": step.transform.name or "",
         }
 
-    _open_trace(context)
+    session_id = _open_trace(context)
+    for d in decisions.values():
+        d["session"] = session_id
     return decisions
 
 
-def _open_trace(context: NextflowGenContext) -> None:
+def _open_trace(context: NextflowGenContext) -> int:
     from ..lineage import INVOCATION_EVENT_SCHEMA_VERSION, SessionStart
     from ...constants import VERSION
 
@@ -107,6 +109,13 @@ def _open_trace(context: NextflowGenContext) -> None:
         except OSError as e:
             Log.Warn(f"could not rotate the previous trace: {e}")
 
+    hits_log = context.work_dir / CACHE_HITS_LOG
+    if hits_log.exists():
+        try:
+            hits_log.rename(hits_log.with_name(f"cache_hits.{prev_session_id}.jsonl"))
+        except OSError as e:
+            Log.Warn(f"could not rotate the previous hit log: {e}")
+
     sentinel = SessionStart(
         session_id=prev_session_id + 1,
         compile_started_at="",
@@ -115,3 +124,4 @@ def _open_trace(context: NextflowGenContext) -> None:
     )
     with open(trace_path, "w", encoding="utf-8") as f:
         f.write(sentinel.to_jsonl() + "\n")
+    return prev_session_id + 1

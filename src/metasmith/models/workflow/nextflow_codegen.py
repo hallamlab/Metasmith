@@ -365,6 +365,7 @@ def prepare_nextflow(task, context: NextflowGenContext):
                 f.write(
                     f"cacheable {'true' if cache_decision['cacheable'] else 'false'}\n"
                 )
+                f.write(f"session {cache_decision.get('session', 0)}\n")
                 slot_files: list[dict] = []
                 for branch_idx, dep_group in enumerate(
                     step.transform.model.produces
