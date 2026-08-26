@@ -151,7 +151,9 @@ which one the writer read.
 current. `data/fabfos/nostoc/ecspr` is that case today: its composed
 `networks/*/direction.parquet` was recut on r10 and matches the deployed table on all
 12,221 reactions, while the measurements under `results/` predate the r10 promote and
-`PROVENANCE.md` still says r7. The scan grades that row `SPLIT`.
+`PROVENANCE.md` still says r7. The scan grades that row `SPLIT`. Closing it is not a
+re-run: `REFERENCES.md` records that those results were written by two transforms the
+library has since collapsed into one, so the current library cannot reproduce them.
 
 `REFERENCES.md` says why a tier4 consumer may not simply be repointed: the two bases are
 not nested, so anything re-run on the bake is a new measurement rather than a ported one.
