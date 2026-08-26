@@ -34,10 +34,26 @@ class Basis:
         self.ratios = load_direction_ratios(direction) if direction else {}
         self.atom_pairs_path = str(atom_pairs)
         self.direction_path = str(direction) if direction else None
+        self._by_element = {element: self}
 
     def graph(self, weights):
         return graph_from_pairs(self.pairs, self.element, weights, self.ratios,
                                 orientation=self.orientation)
+
+    def for_element(self, element: str) -> "Basis":
+        # ONE BASIS PER ELEMENT, built on demand and shared across the run.
+        #
+        # **CAUTION** A test carries its own `element`, and `measure` LABELS its rows with
+        # it -- but the graph used to come from whichever element the caller constructed the
+        # basis on. A tests table spanning C, N, P and S therefore solved every row on one
+        # element's graph and labelled the rows with four, silently. The label and the graph
+        # now come from the same object, so that cannot be said any more.
+        if element not in self._by_element:
+            sib = Basis(self.atom_pairs_path, self.direction_path, element=element,
+                        orientation=self.orientation)
+            sib._by_element = self._by_element
+            self._by_element[element] = sib
+        return self._by_element[element]
 
 
 def _rows(tid, probe, orientation, element, pairs):
@@ -48,20 +64,25 @@ def _rows(tid, probe, orientation, element, pairs):
 
 def measure(basis: Basis, corpus: dict, condition, t: test_mod.Test, *, probe: str,
             weighting="belief", leak=1e-6, port=1.0, readouts="sinks",
-            resolved=None) -> list:
+            resolved=None, graph=None) -> list:
     """One test on one condition. `corpus` is `{table name: DataFrame}`.
 
     THE CONDITION AND THE TEST ARE SEPARATE ARGUMENTS because they come from separate
     tables and one condition serves several tests. Resolving the condition is the
     expensive half -- the metagenome corpus is 19.7M rows -- so `run` resolves each
     condition once and passes the result in as `resolved`.
+
+    `graph` is the same economy one level down: the graph is a pure function of the
+    condition's weights and the basis, so the tests sharing both share one. `run` passes
+    it; a direct caller may leave it out and pay for its own.
     """
     if probe not in PROBES:
         raise ValueError(f"probe must be one of {PROBES}, got {probe!r}")
-    element = t.element or basis.element
+    basis = basis.for_element(t.element) if t.element else basis
+    element = basis.element
     weights, cov = (resolved if resolved is not None
                     else resolve_weights(condition, corpus, weighting=weighting))
-    g = basis.graph(weights)
+    g = basis.graph(weights) if graph is None else graph
 
     diag = [(f"_{k}", v) for k, v in cov.items() if v is not None]
     diag += [("_n_nodes", g.meta["n_nodes"]), ("_n_edges", g.meta["n_edges"]),
@@ -103,12 +124,18 @@ def measure(basis: Basis, corpus: dict, condition, t: test_mod.Test, *, probe: s
 
 
 def _shard_name(t: test_mod.Test, probe, orientation) -> str:
-    # **CAUTION** THIS KEY CHANGED with the condition/test split, so every shard
-    # directory written before it stops resuming and re-solves. That is correct -- the
-    # old key hashed a condition_id that no longer identifies a measurement -- but a
-    # long sweep will look like it lost its cache.
-    h = hashlib.blake2b(f"{t.test_id}\x00{probe}\x00{orientation}".encode(),
-                        digest_size=8).hexdigest()
+    # **CAUTION** THIS KEY CHANGED TWICE, so every shard directory written before either
+    # change stops resuming and re-solves. That is correct both times, but a long sweep
+    # will look like it lost its cache.
+    #
+    # First with the condition/test split: the old key hashed a condition_id that no longer
+    # identifies a measurement. Then with the TERMINALS, which it had never covered -- so a
+    # re-run that kept the test ids and changed the sink set resumed the old sinks' answers
+    # under the new sinks' name, and nothing anywhere said so. A shard is a MEASUREMENT,
+    # and the terminals are half of what a measurement is.
+    key = "\x00".join((t.test_id, probe, orientation, t.element,
+                       t.source_hub, SEP.join(t.sinks), SEP.join(t.readouts)))
+    h = hashlib.blake2b(key.encode(), digest_size=8).hexdigest()
     return f"{h}.json"
 
 
@@ -153,7 +180,16 @@ def run(basis: Basis, gpr_paths, conditions, tests, *, probe, weighting="belief"
     # ONE RESOLUTION PER CONDITION, however many tests read it. Kept here rather than
     # inside `measure` so the cache cannot outlive the corpus it was computed from.
     resolved: dict = {}
-    frames, n_done, n_new = [], 0, 0
+    # ONE GRAPH PER (CONDITION, ELEMENT), and it is dropped the moment the network
+    # changes. Unbounded it would be the run's memory ceiling -- a null shard is a
+    # thousand conditions and a carbon graph is twenty thousand nodes -- so it holds only
+    # the network in hand, at most one graph per element. That is the whole win when a
+    # tests table carries many axes on one construction: forty carbon axes used to build
+    # the same carbon graph forty times. It is worth nothing when the tests are not
+    # grouped by network, which is why the hit count is logged rather than assumed.
+    graphs: dict = {}
+    graphs_for = None
+    frames, n_done, n_new, n_built = [], 0, 0, 0
     for i, t in enumerate(tests):
         shard = shard_dir / _shard_name(t, probe, basis.orientation) if shard_dir else None
         if shard is not None and shard.exists():
@@ -163,9 +199,15 @@ def run(basis: Basis, gpr_paths, conditions, tests, *, probe, weighting="belief"
         if t.network not in resolved:
             resolved[t.network] = resolve_weights(by_id[t.network], corpus,
                                                   weighting=weighting)
-        rows = measure(basis, corpus, by_id[t.network], t, probe=probe,
+        b = basis.for_element(t.element) if t.element else basis
+        if graphs_for != t.network:
+            graphs, graphs_for = {}, t.network
+        if b.element not in graphs:
+            graphs[b.element] = b.graph(resolved[t.network][0])
+            n_built += 1
+        rows = measure(b, corpus, by_id[t.network], t, probe=probe,
                        weighting=weighting, leak=leak, port=port, readouts=readouts,
-                       resolved=resolved[t.network])
+                       resolved=resolved[t.network], graph=graphs[b.element])
         if shard is not None:
             shard.write_text(json.dumps(rows))
         frames.append(pd.DataFrame(rows))
@@ -173,6 +215,9 @@ def run(basis: Basis, gpr_paths, conditions, tests, *, probe, weighting="belief"
         if n_new == 1 or n_new % 25 == 0 or i + 1 == len(tests):
             log(f"[{probe}] {i + 1}/{len(tests)} tests "
                 f"({n_new} solved, {n_done} resumed)")
+    if n_new:
+        log(f"[{probe}] {n_built} graph build(s) for {n_new} solve(s) over "
+            f"{len(resolved)} network(s)")
     if n_done:
         log(f"[{probe}] resumed {n_done} test(s) from {shard_dir}")
     if not frames:

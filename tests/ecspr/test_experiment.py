@@ -241,6 +241,39 @@ def test_a_control_returns_the_baseline_exactly(pairs_path, gpr_path, tmp_path):
         assert _value(df, "C_ctrl", readout) == _value(df, "baseline", readout)
 
 
+def test_a_changed_sink_set_does_not_resume_the_old_one(pairs_path, gpr_path, tmp_path):
+    # The failure this guards is silent: same test ids, different terminals, and the shard
+    # on disk answers for terminals nobody asked about.
+    conds = [BASELINE]
+    wide = [_test("baseline")]
+    narrow = [test_mod.Test(test_id="baseline", network="baseline", arm="ecspr",
+                            settings=dict(element="C", source_hub="S", sink_hub="P1"),
+                            meta=dict(n_units=1))]
+    a = _run(pairs_path, gpr_path, conds, "two-point", tmp_path, tests=wide)
+    seen = []
+    basis = probes.Basis(pairs_path, None, element="C")
+    b = probes.run(basis, gpr_path, conds, narrow, probe="two-point", weighting="uniform",
+                   shard_dir=tmp_path / "shards_two-point", log=seen.append)
+    assert any("0 resumed" in m for m in seen)
+    assert _value(a, "baseline", "total") != _value(b, "baseline", "total")
+    assert "P2" in set(a.readout) and "P2" not in set(b.readout)
+
+
+def test_one_run_may_span_elements(pairs_path, gpr_path, tmp_path):
+    # A test's `element` used to label the row while the graph came from whichever element
+    # the basis was built on, so a mixed table reported four elements off one graph.
+    ts = [test_mod.Test(test_id=f"baseline_{e}", network="baseline", arm="ecspr",
+                        settings=dict(element=e, source_hub="S", sink_hub="P1|P2"),
+                        meta=dict(n_units=1))
+          for e in ("C", "N")]
+    df = _run(pairs_path, gpr_path, [BASELINE], "two-point", tmp_path, tests=ts)
+    assert set(df.element) == {"C", "N"}
+    # The N graph of this fixture has no edges at all, so it must abstain rather than
+    # report the carbon answer under an N label.
+    assert _value(df, "baseline_C", "total") > 0
+    assert _value(df, "baseline_N", "_abstained") == 1
+
+
 def test_resume_skips_what_is_on_disk(pairs_path, gpr_path, tmp_path):
     conds = [BASELINE, _cond("C_new", ("C_new",))]
     ts = [_test(c.condition_id) for c in conds]
@@ -345,6 +378,63 @@ def test_the_null_arm_is_the_same_command(pairs_path, gpr_path, tmp_path):
     assert row.null_n.iloc[0] == 6
     assert 0.0 <= row.p_emp.iloc[0] <= 1.0
     assert row.p_floor.iloc[0] == pytest.approx(1.0 / 7.0)
+
+
+def _axis_test(cid, sink, **meta):
+    # One axis, named in the test id the way a many-axis arm names them.
+    return test_mod.Test(
+        test_id=f"{cid}@{sink}", network=cid, arm="ecspr",
+        read_against="" if cid == "baseline" else f"baseline@{sink}",
+        settings=dict(element="C", source_hub="S", sink_hub=sink),
+        meta=dict(n_units=1) | meta)
+
+
+def _two_axis_run(pairs_path, gpr_path, tmp_path, n=6, seed=5):
+    # R2 is M->P1 and R4 is M->P2, so C_over moves the P1 axis alone and C_new the P2
+    # axis alone. Pooled on `total` the two are one number and neither shows.
+    axes = ("P1", "P2")
+    conds = [BASELINE] + [_cond(c, (c,)) for c in ("C_new", "C_over")]
+    ts = [_axis_test(c, s) for c in ("baseline", "C_new", "C_over") for s in axes]
+    obs = _run(pairs_path, gpr_path, conds, "two-point", tmp_path, tests=ts)
+    like = [t for t in ts if t.network != "baseline"]
+    pool_c, pool_t = _draw(gpr_path, like, n=n, seed=seed)
+    nul = probes.run(probes.Basis(pairs_path, None, element="C"), gpr_path, pool_c,
+                     pool_t, probe="two-point", weighting="uniform",
+                     shard_dir=tmp_path / "shards_null", log=lambda m: None)
+    return obs, nul, ts + pool_t
+
+
+def test_each_axis_is_scored_against_its_own_null(pairs_path, gpr_path, tmp_path):
+    obs, nul, ts = _two_axis_run(pairs_path, gpr_path, tmp_path, n=6)
+    scored = scoring.score(obs, nul, tests=ts)
+
+    def row(tid, sink):
+        r = scored[(scored.test_id == f"{tid}@{sink}") & (scored.readout == "total")]
+        assert len(r) == 1, f"{tid}@{sink}: {len(r)} rows"
+        return r.iloc[0]
+
+    # Each axis takes its OWN host measurement as the baseline. The two happen to be
+    # equal on this fixture, so the check is against the host solve rather than between
+    # them: a wrong baseline would still be a number, just the other axis's.
+    for sink in ("P1", "P2"):
+        host = _value(obs, f"baseline@{sink}", "total")
+        assert row("C_new", sink).baseline == host
+        assert row("C_over", sink).baseline == host
+    # The perturbation lands on exactly the axis whose reaction it adds.
+    assert row("C_new", "P2").delta > 0 and row("C_new", "P1").delta == 0
+    assert row("C_over", "P1").delta > 0 and row("C_over", "P2").delta == 0
+    # Six draws per axis, not twelve pooled across both.
+    assert row("C_new", "P1").null_n == 6 and row("C_new", "P2").null_n == 6
+    assert row("C_new", "P1").null_mean != row("C_new", "P2").null_mean
+
+
+def test_a_many_axis_run_without_its_tests_table_is_refused(pairs_path, gpr_path,
+                                                            tmp_path):
+    # Without the terminals every row keys on the same empty axis, so one axis's
+    # baseline is the only one that resolves. That must stop the run, not produce NaN.
+    obs, nul, _ts = _two_axis_run(pairs_path, gpr_path, tmp_path, n=4)
+    with pytest.raises(ValueError, match="no baseline at their readout key"):
+        scoring.score(obs, nul, baseline="baseline@P1")
 
 
 def test_the_gate_reports_both_spreads(pairs_path, gpr_path, tmp_path):

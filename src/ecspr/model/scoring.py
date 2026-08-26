@@ -3,12 +3,48 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
+from .tests import SEP
+
 DIAG_PREFIX = "_"
-KEY = ("probe", "orientation", "element", "readout")
+
+# WHAT MAKES TWO ROWS THE SAME MEASUREMENT, and therefore what an observation is ranked
+# against. `readout` alone is not it, and the gap is silent in both directions:
+#
+#   * every two-point test emits a readout called `total`, so N axes in one run collapse
+#     into one pool and each observation is scored against the others' nulls;
+#   * two axes can share a sink and differ only in their source -- eight of set4's 79 do --
+#     so even naming the readout after the sink does not separate them.
+#
+# The terminals are the missing half, and they live on the tests table rather than in the
+# results. `score` joins them on when a tests table is given, and refuses a run that needs
+# them and has none.
+AXIS = ("source_hub", "sink_hub")
+KEY = ("probe", "orientation", "element") + AXIS + ("readout",)
 
 
 def _measurements(df: pd.DataFrame) -> pd.DataFrame:
     return df[~df.readout.astype(str).str.startswith(DIAG_PREFIX)].copy()
+
+
+def _with_axis(df: pd.DataFrame, tests, side: str) -> pd.DataFrame:
+    # The terminals a test declared, attached to every row it produced. Absent a tests
+    # table there is exactly one safe reading -- that the whole run is one axis -- and it
+    # is written in rather than assumed, so `KEY` has the same arity either way.
+    if not tests:
+        for c in AXIS:
+            df[c] = ""
+        return df
+    axis = {t.test_id: (t.source_hub, SEP.join(t.sinks)) for t in tests}
+    missing = sorted(set(df.test_id.astype(str)) - set(axis))
+    if missing:
+        raise ValueError(
+            f"{len(missing)} {side} test(s) have results but no row in the tests "
+            f"table(s), e.g. {missing[:3]}. Their terminals are unknown, so they cannot "
+            f"be told apart from another axis measured in the same run")
+    ids = df.test_id.astype(str)
+    for i, c in enumerate(AXIS):
+        df[c] = [axis[tid][i] for tid in ids]
+    return df
 
 
 def _bh(p: np.ndarray) -> np.ndarray:
@@ -75,8 +111,8 @@ def _baselines(obs: pd.DataFrame, tests, baseline) -> dict:
 
 def score(observed: pd.DataFrame, null: pd.DataFrame, *, baseline=None,
           tests=None) -> pd.DataFrame:
-    obs = _measurements(observed)
-    nul = _measurements(null)
+    obs = _with_axis(_measurements(observed), tests, "observed")
+    nul = _with_axis(_measurements(null), tests, "null")
     base_of = _baselines(obs, tests, baseline)
 
     # One baseline VECTOR per distinct baseline test, indexed by the readout key.
@@ -95,15 +131,36 @@ def score(observed: pd.DataFrame, null: pd.DataFrame, *, baseline=None,
     obs["baseline"] = [
         base_tables[base_of[tid]].get(k, np.nan)
         for tid, k in zip(obs.test_id.astype(str), idx)]
+    # A measurement whose baseline did not resolve is not a small effect, it is no
+    # measurement -- and unrefused it becomes a NaN delta that the pool quietly drops.
+    # It is also how a many-axis run scored WITHOUT a tests table announces itself: every
+    # axis but the baseline test's own finds nothing to subtract.
+    orphan = obs[obs.baseline.isna()]
+    if len(orphan):
+        hint = ("" if tests else
+                "\n  no tests table was given, so every row was keyed on an empty axis; "
+                "pass --tests (and --null-tests) if this run measures more than one "
+                "source -> sink pair")
+        raise ValueError(
+            f"{len(orphan)} of {len(obs)} observed measurement(s) have no baseline at "
+            f"their readout key, e.g. "
+            f"{orphan.iloc[0][['test_id', *KEY]].to_dict()}{hint}")
     obs["delta"] = obs.value - obs.baseline
     obs["is_control"] = [bool(meta.get(c, {}).get("is_control")) for c in obs.test_id]
     obs["stratum"] = [meta.get(c, {}).get("stratum") for c in obs.test_id]
 
-    # THE NULL IS READ AGAINST THE SAME BASELINE ITS OBSERVED ARM IS. With several
-    # baselines in one run there is no single one to subtract, so the null takes the
-    # baseline of whichever observed test names it -- and with only one, this is what it
-    # always was.
-    null_base = base_tables[sorted(base_of.values())[0]]
+    # THE NULL IS READ AGAINST THE BASELINE OF ITS OWN AXIS. A null draw carries no
+    # `read_against` -- it is a construction, not an arm -- so the axis in `KEY` is what
+    # says which baseline is its. This used to take whichever baseline sorted first,
+    # which was right while a run had one and wrong the moment it had 83: every axis
+    # would have been scored against one axis's host measurement.
+    null_base = pd.concat(base_tables.values())
+    clash = null_base.index[null_base.index.duplicated()]
+    if len(clash):
+        raise ValueError(
+            f"{len(clash)} readout key(s) are claimed by more than one baseline test, "
+            f"e.g. {list(clash[:2])}. Two baselines for one measurement is two answers "
+            f"to 'what is this a delta from'")
     nul = nul.join(null_base.rename("baseline"), on=list(KEY))
     nul["delta"] = nul.value - nul.baseline
     nul_stratum = {t.test_id: t.meta.get("stratum") for t in (tests or [])}
@@ -116,9 +173,12 @@ def score(observed: pd.DataFrame, null: pd.DataFrame, *, baseline=None,
         nul["stratum"] = pd.to_numeric(nul["stratum"], errors="coerce")
 
     out = []
+    nul_by_key = {k: v for k, v in nul.groupby(list(KEY), sort=False)}
+    empty_pool = nul.iloc[0:0]
     for key, g in obs.groupby(list(KEY), sort=False):
-        pool = nul[(nul.probe == key[0]) & (nul.orientation == key[1])
-                   & (nul.element == key[2]) & (nul.readout == key[3])]
+        # Matched on the WHOLE key, by name rather than by position: the null for one axis
+        # is the draws measured on that axis, and nothing else in the table.
+        pool = nul_by_key.get(key, empty_pool)
         g = g.copy()
         st = _stats(g.delta.to_numpy(float), pool.delta.dropna().to_numpy(float))
         for c in ("null_n", "null_mean", "null_sd", "z", "p_emp", "pct_rank", "p_floor"):
