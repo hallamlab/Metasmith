@@ -331,20 +331,61 @@ def distinct_structures(mnxms: list, smiles_of: dict) -> int:
     return n
 
 
-def reduce_for_element(sub_mnxms: list, prod_mnxms: list, formulas: dict, X: str):
-    keep_s, keep_p, n_s, n_p = [], [], 0, 0
+def element_budget(m: str, X: str, formulas: dict,
+                   counts_of: dict | None, residue_of: dict | None):
+    """What a participant contributes to X: explicit atoms, and unspecified residue.
+
+    Two propositions, kept apart. `count_element` collapses them: it answers `None` for
+    any formula carrying `*`, `(` or `)`, so `C13H16O17P2*4` -- which states its carbon
+    exactly -- is read as stating nothing. The explicit half is a COUNT and may be summed;
+    the residue half is an UNKNOWN and may only be required to cancel. Returning them
+    separately is what lets a caller assert a balance without asserting a size.
+
+    `lookup::element_counts` answers both where it has the species, and the formula
+    answers the first alone where it does not -- in which case the residue is zero,
+    because a formula with a residue marker is exactly what `count_element` refuses.
+    """
+    if counts_of is not None:
+        c = counts_of.get(m)
+        if c is not None:
+            r = (residue_of or {}).get(m)
+            if r is None or (r != r):
+                return None
+            return int(c[ELEMENTS.index(X)]), int(r)
+    n = count_element(formulas.get(m), X)
+    return None if n is None else (n, 0)
+
+
+def reduce_for_element(sub_mnxms: list, prod_mnxms: list, formulas: dict, X: str,
+                       counts_of: dict | None = None,
+                       residue_of: dict | None = None):
+    """Keep only what carries X, and only if X still balances over what is kept.
+
+    A participant may be dropped only when it is known to carry no X AT ALL -- no explicit
+    atoms and no residue that could hold some. Dropping one that might carry X would
+    re-route an atom rather than ignore it, which is the whole reason this reduction is
+    sound where a strip is not.
+
+    With no `counts_of` this is what it always was: the residue is zero everywhere, the
+    cancellation is trivial, and the result is identical participant for participant.
+    """
+    keep_s, keep_p, n_s, n_p, r_s, r_p = [], [], 0, 0, 0, 0
     for side, keep, ms in ((0, keep_s, sub_mnxms), (1, keep_p, prod_mnxms)):
         for m in ms:
-            c = count_element(formulas.get(m), X)
-            if c is None:
+            got = element_budget(m, X, formulas, counts_of, residue_of)
+            if got is None:
                 return None
-            if c:
-                keep.append(m)
-                if side == 0:
-                    n_s += c
-                else:
-                    n_p += c
-    if not keep_s or not keep_p or n_s != n_p:
+            c, r = got
+            if not c and not r:
+                continue
+            keep.append(m)
+            if side == 0:
+                n_s += c
+                r_s += r
+            else:
+                n_p += c
+                r_p += r
+    if not keep_s or not keep_p or n_s != n_p or r_s != r_p:
         return None
     return keep_s, keep_p
 

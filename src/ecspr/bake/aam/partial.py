@@ -160,22 +160,28 @@ def _uniq(mnxms: list) -> list:
     return out
 
 
-def _still_balances(sub_mnxms: list, prod_mnxms: list, formulas: dict, X: str) -> bool:
-    ns = np_ = 0
+def _still_balances(sub_mnxms: list, prod_mnxms: list, formulas: dict, X: str,
+                    counts_of: dict | None = None,
+                    residue_of: dict | None = None) -> bool:
+    ns = np_ = rs = rp = 0
     for ms, sink in ((sub_mnxms, "s"), (prod_mnxms, "p")):
         for m in ms:
-            c = AP.count_element(formulas.get(m), X)
-            if c is None:
+            got = AP.element_budget(m, X, formulas, counts_of, residue_of)
+            if got is None:
                 return False
+            c, r = got
             if sink == "s":
                 ns += c
+                rs += r
             else:
                 np_ += c
-    return ns == np_
+                rp += r
+    return ns == np_ and rs == rp
 
 
 def build(targets: dict, equations: dict, formulas: dict, smiles_of: dict,
-          ranks_of: dict, char_limit: int, atom_limit: int):
+          ranks_of: dict, char_limit: int, atom_limit: int,
+          counts_of: dict | None = None, residue_of: dict | None = None):
     uni, forced, tally = [], [], Counter()
     for mnxr in sorted(targets):
         offered = targets[mnxr]
@@ -202,7 +208,8 @@ def build(targets: dict, equations: dict, formulas: dict, smiles_of: dict,
             if X in settled:
                 tally[f"settled by the forced arm: {X}"] += 1
                 continue
-            red = AP.reduce_for_element(subs, prods, formulas, X)
+            red = AP.reduce_for_element(subs, prods, formulas, X,
+                                        counts_of, residue_of)
             if red is None:
                 tally[f"no balanced reduction: {X}"] += 1
                 continue
@@ -218,7 +225,8 @@ def build(targets: dict, equations: dict, formulas: dict, smiles_of: dict,
             if len(smi) > char_limit or n is None or n > atom_limit:
                 cks, ckp = _uniq(ks), _uniq(kp)
                 if ((len(cks), len(ckp)) != (len(ks), len(kp))
-                        and _still_balances(cks, ckp, formulas, X)):
+                        and _still_balances(cks, ckp, formulas, X,
+                                            counts_of, residue_of)):
                     smi_c = _write(cks, ckp, smiles_of)
                     n_c = W.count_atoms(smi_c) if len(smi_c) <= char_limit else None
                     if n_c is not None and n_c <= atom_limit:
@@ -276,6 +284,13 @@ def cmd_build(args):
                          columns=["mnxr", "equation"])
     equations = dict(zip(rx["mnxr"], rx["equation"]))
     formulas, smiles_of, ranks_of, n_rescued = load_lookups(args.lookups, args.rescue)
+    counts_of = residue_of = None
+    if args.element_counts:
+        from . import twins as _T
+        counts_of, residue_of, _src = _T.read_element_counts(args.element_counts)
+        print(f"[partial] recount: {len(counts_of):,} species carry an exact per-element "
+              f"count. Without it a formula holding `*` states nothing and the reduction "
+              f"refuses the slot.", flush=True)
     targets = targets_from(args.forecast)
     n_offers = sum(len(v) for v in targets.values())
     print(f"[partial] {len(targets):,} target reactions, {n_offers:,} offered "
@@ -284,7 +299,8 @@ def cmd_build(args):
           f"{n_rescued:,} of them the rescue's)", flush=True)
 
     uni, forced, tally = build(targets, equations, formulas, smiles_of, ranks_of,
-                               args.char_limit, args.atom_limit)
+                               args.char_limit, args.atom_limit,
+                               counts_of, residue_of)
 
     udf = pd.DataFrame(uni, columns=list(UNIVERSE_COLS))
     pq.write_table(pa.Table.from_pandas(udf, schema=UNIVERSE_SCHEMA,
@@ -309,6 +325,7 @@ def cmd_build(args):
     lines.append(f"product\toffered_pairs\t{n_offers}")
     lines.append(f"limit\tatom_limit\t{args.atom_limit}")
     lines.append(f"limit\tchar_limit\t{args.char_limit}")
+    lines.append(f"input\trecounted_species\t{len(counts_of) if counts_of else 0}")
     Path(args.out_summary).write_text("\n".join(lines) + "\n")
 
     print("\n" + "=" * 60)
@@ -336,6 +353,14 @@ def parse_args(argv=None):
                    help="interm::aam_rescue. Its crosswalk supplies the structures this "
                         "lane needs to reduce a rescue-completed reaction at all; its "
                         "placeholder list is what keeps the invented ones out")
+    p.add_argument("--element-counts", type=Path, default=None,
+                   help="lookup::element_counts -- the recount. A reduction has to know "
+                        "which participants carry X before it may drop the rest, and a "
+                        "formula carrying a residue marker does not say. The recount "
+                        "takes the explicit count off the STRUCTURE and ships the residue "
+                        "slots beside it, so the reduction can require the residues to "
+                        "cancel instead of pretending they are not there. Omit and this "
+                        "lane behaves exactly as it did")
     p.add_argument("--atom-limit", type=int, default=W.ATOM_LIMIT)
     p.add_argument("--char-limit", type=int, default=W.SMILES_LEN_LIMIT)
     p.add_argument("--out", required=True, help="the partial universe, parquet")
