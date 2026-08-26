@@ -73,6 +73,17 @@ SWEEPS = {
         files={"gem": RUNS / "woodruff_clones/ecspr/woodruff_ratio_sweep_gem_e_coli_lw06_fold2.0_C.tsv",
                "denovo": RUNS / "woodruff_clones/ecspr/woodruff_ratio_sweep_denovo_e_coli_lw06_fold2.0_C_lanes2.tsv"},
     ),
+    # The only DELETION arm in the cut, at fold 0 rather than fold 2. Its deltas are
+    # therefore not on the other three's scale and the `movers` column is not comparable
+    # across the boundary -- severing an edge and doubling one are different sizes of
+    # perturbation. What IS comparable is every RANK statistic: AUC, the size control, and
+    # sign agreement against a base rate.
+    "fuhrer": dict(
+        ratio="C(glucose->axis sink) / C(glucose->CO2)",
+        host="e_coli_bw25113",
+        files={"gem": RUNS / "fuhrer_clones/ecspr/fuhrer_ratio_sweep_gem_e_coli_bw25113_fold0.0_C_ctl.tsv",
+               "denovo": RUNS / "fuhrer_clones/ecspr/fuhrer_ratio_sweep_denovo_e_coli_bw25113_fold0.0_C_lanes2_ctl.tsv"},
+    ),
 }
 
 
@@ -156,7 +167,33 @@ def rows_woodruff(d, ch):
                               f"{int((c['live'].delta_ratio_pct<0).sum())}down")
 
 
-BUILDERS = {"eydallin": rows_eydallin, "fang": rows_fang, "woodruff": rows_woodruff}
+def rows_fuhrer(d, ch):
+    """One stratum per declared TARGET axis. The `_precursor` size-control axes are swept
+    into the same file and are excluded here: they carry the target's population but no
+    readout of their own, so a row for one would report the target's labels under a
+    different axis name."""
+    for ax in sorted(a for a in d.axis.unique() if not str(a).endswith("_precursor")):
+        a = d[(d.axis == ax) & d.screened.astype(bool) & d.assayed.astype(bool)]
+        met = a[a.is_positive.astype(bool) & (a.n_rxn > 0)]
+        signed = met[met.direction.isin(["+", "-"])]
+        c = cut(met)
+        cs = cut(signed)
+        # `direction == "+"` is the metabolite RISING. The expectation on a deletion arm is
+        # the opposite of the gof arms', and `sign` compares against the label set's own
+        # base rate either way, which is what makes the two comparable at all.
+        s = sign(cs["live"], signed.direction == "+")
+        sm = sign(cs["mov"], signed.direction == "+")
+        am = a[a.n_rxn > 0]
+        yield dict(arm="fuhrer", channel=ch, stratum=f"axis {ax}",
+                   n_labelled=int(a.is_positive.sum()),
+                   auc=auc(am.delta_ratio_pct.abs(), am.is_positive),
+                   size=auc(am.n_rxn, am.is_positive), **c,
+                   **{f"sign_{k}": v for k, v in s.items()},
+                   mover_sign=f"{sm.get('ok','-')}/{sm.get('n',0)}")
+
+
+BUILDERS = {"eydallin": rows_eydallin, "fang": rows_fang, "woodruff": rows_woodruff,
+            "fuhrer": rows_fuhrer}
 
 
 def main():
@@ -193,9 +230,16 @@ def main():
                         f"   movers {r['mover_sign']}")
 
     OUT.mkdir(parents=True, exist_ok=True)
-    pd.DataFrame(recs).to_csv(OUT / "ratio_cross_arm.tsv", sep="\t", index=False)
     text = "\n".join(lines) + "\n"
-    (OUT / "ratio_cross_arm.txt").write_text(text)
+    # Both outputs are DVC-pinned, and a checkout is a read-only hardlink into the shared
+    # cache. Writing through one raises rather than corrupting -- but only on the SECOND
+    # run of this script, after the first has been pinned, which is why it survived three
+    # arms before the fourth hit it.
+    for path, payload in (("ratio_cross_arm.tsv", None), ("ratio_cross_arm.txt", text)):
+        (OUT / path).unlink(missing_ok=True)
+        if payload is not None:
+            (OUT / path).write_text(payload)
+    pd.DataFrame(recs).to_csv(OUT / "ratio_cross_arm.tsv", sep="\t", index=False)
     print(text)
     print(f"-> {(OUT / 'ratio_cross_arm.tsv').relative_to(ROOT)}", file=sys.stderr)
 

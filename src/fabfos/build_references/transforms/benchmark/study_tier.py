@@ -58,6 +58,15 @@ STUDIES = {
     "scales_prod": dict(reader="gene_ovx_row", cohort="scales_prod", arm="gof",
                         host="e_coli_lw06", elements=("C",),
                         directions={"not_enriched": "flat"}),
+    # `gene_del` rather than `gene_ovx_row`, and therefore NO `directions` map, even though
+    # this screen reports metabolites moving in both directions. The direction a `gene_del`
+    # row asserts is the CONDUCTANCE's -- a knockout removes a route -- and that is uniform.
+    # Which METABOLITE rose or fell is per (gene, metabolite) and cannot be a per-gene
+    # column at all; it lives in `data/fabfos/benchmarks/fuhrer/Y/`, keyed on the metabolite
+    # it is about. Collapsing it to one label per gene is the mistake `gene_ovx_row`'s own
+    # docstring warns about, made worse by 7,534 readouts per gene.
+    "fuhrer":     dict(reader="gene_del", cohort="fuhrer", arm="lof",
+                       host="e_coli_bw25113", elements=("C",)),
 }
 
 CONTROL_KINDS = ("baseline", "structural", "on_path", "declared")
