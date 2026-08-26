@@ -47,6 +47,10 @@ class StepCacheMeta:
     cacheable: bool
     slot_files: list = field(default_factory=list)
     slot_channels: dict = field(default_factory=dict)
+    # The trace session this stage opened. A work directory outlives a run,
+    # so a record names the session it belongs to and the driver reads only
+    # its own.
+    session: int = 0
 
     @property
     def channels(self) -> list[str]:
@@ -68,6 +72,7 @@ class StepCacheMeta:
             cacheable=raw.get("cacheable", "false").strip().lower() == "true",
             slot_files=_json("slot_files", []),
             slot_channels=_json("slk", {}),
+            session=int(raw.get("session", "0").strip() or 0),
         )
 
 
@@ -222,6 +227,7 @@ def promote_members(
             {k: v for k, v in f.items() if k != "src"} for f in files
         ]
         record = {
+            "session": meta.session,
             "step": meta.order,
             "step_name": meta.step_name,
             "member": member,
@@ -379,6 +385,8 @@ def record_run(*, workspace: Path, cache_root: Path, log: list | None = None) ->
                     rec = json.loads(line)
                 except json.JSONDecodeError:
                     log.append(("warn", f"unreadable record in {rec_file}"))
+                    continue
+                if int(rec.get("session", -1)) != session_id:
                     continue
                 meta = meta_by_order.get(int(rec.get("step", 0)))
                 status = rec.get("status", "")
