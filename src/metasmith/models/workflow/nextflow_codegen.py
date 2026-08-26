@@ -460,6 +460,8 @@ def prepare_nextflow(task, context: NextflowGenContext):
         # A hit runs as a task, on the driver's own host, that links the shard's
         # products into its work dir under the member's position. Nextflow then
         # publishes and traces it like any other task, and no scheduler saw it.
+        # No `stub:` block: under `-stub` the copy is still the twin's whole job,
+        # and a touched stand-in cannot serve a directory product.
         process_name = NextflowProcessName(step.order, step.transform.name)
         twin_name = CachedProcessName(process_name)
         _used, produced_archetypes = get_io_signature(step)
@@ -479,10 +481,6 @@ def prepare_nextflow(task, context: NextflowGenContext):
             '"""',
             f'echo "step {step.order} (cached), sample $index"',
             "${sources.collect { s -> \"ln -f '${s[1]}' '${s[0]}-${s[2]}' 2>/dev/null || cp -r '${s[1]}' '${s[0]}-${s[2]}'\" }.join('\\n')}",
-            '"""',
-            "stub:",
-            '"""',
-            "${sources.collect { s -> \"touch '${s[0]}-${s[2]}'\" }.join('\\n')}",
             '"""',
             "}",
             "",
