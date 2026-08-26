@@ -269,6 +269,13 @@ def build_parser() -> argparse.ArgumentParser:
     dr.add_argument("--pool-table", default=None,
                     help="the name the null conditions give the pool table; defaults to "
                          "the basename of the single --gpr path")
+    dr.add_argument("--draw-operation", choices=("union", "intersect", "subtract"),
+                    default="union", dest="draw_operation",
+                    help="what a draw DOES to the background. `union` for an "
+                         "overexpression or insertion cohort, `subtract` for a deletion "
+                         "one. Getting it wrong on a deletion screen gives a pool with "
+                         "no spread at all: the drawn genes are already in the host, so "
+                         "every draw reproduces the baseline")
     dr.add_argument("--size", type=int, default=None,
                     help="stratum size for tests carrying no n_units")
     dr.add_argument("--out", required=True, help="the null conditions table")

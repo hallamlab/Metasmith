@@ -221,9 +221,10 @@ class Assertions:
     ids: set = field(default_factory=set)
     mnxrs: set = field(default_factory=set)
     census: dict = field(default_factory=dict)
+    _key: str = field(default="", repr=False, compare=False)
 
     @property
-    def key(self) -> tuple:
+    def key(self) -> str:
         """WHAT ACTUALLY DECIDES THE MODEL, so two conditions that carve identically
         share one build.
 
@@ -231,8 +232,25 @@ class Assertions:
         chromosomal *E. coli* ORF the host already carries, so 86 perturbed conditions
         produce one assertion set -- and keying a build on the condition would run 86
         identical carves, insertions and gapfills, which is hours rather than minutes.
+
+        A DIGEST AND NOT THE SETS THEMSELVES, and it is cached. This key goes into a
+        build key, a difference key and a sort key, and a run holds one per test: on the
+        Fuhrer cohort's 64,719 tests, returning a fresh pair of frozensets over ~5,000
+        strings each time cost 35 GB and the process was killed. Sixteen bytes per test
+        costs nothing.
+
+        `blake2b` and not `hash()`: `hash()` is salted per interpreter, so the same two
+        conditions would share a build in one process and not in the next.
         """
-        return (frozenset(self.ids), frozenset(self.mnxrs))
+        if not self._key:
+            h = hashlib.blake2b(digest_size=16)
+            for part in (self.ids, self.mnxrs):
+                h.update(b"\x00")
+                for v in sorted(str(x) for x in part):
+                    h.update(v.encode())
+                    h.update(b"\x01")
+            self._key = h.hexdigest()
+        return self._key
 
 
 def assertions(condition, corpus: dict, *, min_lanes: int = 1, carve_threshold=None,

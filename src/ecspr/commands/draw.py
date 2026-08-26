@@ -47,7 +47,8 @@ def draw(args, log):
 
     conds, ts = nulls.draw(args.gpr, like_conds, like_tests, n=args.n, seed=args.seed,
                            background=background, draw_column=args.draw_column,
-                           pool_table=pool_table, size=args.size, log=log)
+                           pool_table=pool_table, size=args.size,
+                           operation=args.draw_operation, log=log)
     out_c = cond_mod.write(conds, args.out)
     log(f"[draw] seed={args.seed} n={args.n} -> {len(conds):,} conditions -> {out_c}")
     for arm, path, verb in (("ecspr", args.out_tests, "ecspr ground/two-point"),

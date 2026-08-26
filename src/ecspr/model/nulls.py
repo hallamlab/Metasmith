@@ -43,14 +43,24 @@ def _settings_key(t: test_mod.Test) -> tuple:
 
 def draw(pool_paths, like_conditions, like_tests, *, n: int, seed: int,
          background=(), draw_column="orf", pool_table="null_pool.parquet",
-         size=None, log=print) -> tuple:
+         size=None, operation="union", log=print) -> tuple:
     """`(conditions, tests)` -- the null pool, in the two published schemas.
 
     `background` is the steps every drawn condition starts from, so a null construction
     is the same host plus a random perturbation rather than a random perturbation alone.
     Pass the observed arm's background steps; without them the null measures a graph
     with no host in it and every draw abstains.
+
+    `operation` IS THE OBSERVED ARM'S OWN PERTURBATION, and it is not always `union`. A
+    deletion cohort's observed condition SUBTRACTS a gene from the background; a null that
+    unions random genes onto the same background is the null for a different experiment,
+    and on a deletion screen it is a null that cannot move at all -- the drawn genes are
+    already in the host, so every draw reproduces the baseline and the pool has zero
+    spread. Match the observed arm.
     """
+    if operation not in cond_mod.OPERATIONS:
+        raise ValueError(f"operation must be one of {cond_mod.OPERATIONS}, "
+                         f"got {operation!r}")
     pool = load_gpr(pool_paths)
     values = _pool_values(pool, draw_column)
     if values.size == 0:
@@ -121,7 +131,7 @@ def draw(pool_paths, like_conditions, like_tests, *, n: int, seed: int,
                 condition_id=cid,
                 steps=tuple(background) + (cond_mod.Step(
                     table=pool_table, type=draw_column, set=pick,
-                    operation="union"),)))
+                    operation=operation),)))
             # ONE CONDITION, EVERY MEASUREMENT SPEC. The draw is what is random; reading
             # it two ways is two tests on one construction, which is exactly the split
             # the tests table exists for.
