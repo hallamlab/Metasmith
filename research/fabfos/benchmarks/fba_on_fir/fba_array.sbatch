@@ -23,8 +23,14 @@ IN=$ROOT/inputs/$JOB
 RUN=$ROOT/runs/$JOB
 mkdir -p "$RUN/shards"
 
+# COLON-SEPARATED, because `--export` reads a comma as the end of the value and cannot
+# carry a space at all -- see run.py --submit.
 GPR_ARGS=()
-for g in $GPR; do GPR_ARGS+=("$IN/gpr/$g"); done
+IFS=':' read -ra _gpr <<< "$GPR"
+for g in "${_gpr[@]}"; do
+    [ -f "$IN/gpr/$g" ] || { echo "no such GPR table: $IN/gpr/$g" >&2; exit 1; }
+    GPR_ARGS+=("$IN/gpr/$g")
+done
 
 MNX_ARGS=()
 if [ -n "${MNX:-}" ]; then

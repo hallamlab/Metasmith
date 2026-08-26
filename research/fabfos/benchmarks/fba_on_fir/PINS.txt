@@ -1,5 +1,9 @@
-driver repo   fad4e26884d9301fedd30d8ea438d3d5b5cb9f83 (feat/fabfos/bench-fba)
+driver repo   3483af5a6ef1a0989650f70b160b8b01b3e3cfe8 (feat/fabfos/bench-fba)
 image         quay.io/hallamlab/ecspr:0.1.0-d85a723
 metanetx      4.5 (pinned by the .md5 sidecars beside the release)
 
 THE FLUX BALANCE ARM READS NO BAKE PRODUCT. It reads a frame GEM, a GPR table and MetaNetX, none of which a promote touches, so these numbers carry no bake generation and must not be reported with one.
+
+WORKING TREE NOT CLEAN at stage time:
+     M research/fabfos/benchmarks/fba_on_fir/fba_array.sbatch
+     M research/fabfos/benchmarks/fba_on_fir/run.py

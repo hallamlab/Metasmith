@@ -198,10 +198,13 @@ def stage(args) -> int:
     (HERE / "PINS.txt").write_text(pins())
     rsync(HERE / "PINS.txt", f"{ROOT}/PINS.txt")
     rsync(HERE / "fba_array.sbatch", f"{ROOT}/fba_array.sbatch")
+    # EVERY JOB, NOT THE SELECTED ONES. `--stage scadc_obs scadc_null` used to overwrite
+    # this with a two-entry file, so the record of what the array is said whatever the last
+    # partial stage happened to be.
     (HERE / "jobs.json").write_text(json.dumps(
         {j["name"]: dict(tasks=j["tasks"], hours=j["hours"], frame=j["frame"],
-                         mnx=j["mnx"], gpr=[p.name for p in j["gpr"]]) for j in jobs},
-        indent=2) + "\n")
+                         mnx=j["mnx"], gpr=[p.name for p in j["gpr"]])
+         for j in JOBS.values()}, indent=2) + "\n")
     rsync(HERE / "jobs.json", f"{ROOT}/jobs.json")
     print(f"staged {len(jobs)} job(s) -> {HOST}:{ROOT}")
     return 0
