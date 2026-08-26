@@ -37,7 +37,7 @@ import pandas as pd
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parents[1]))
 
-import fba_deletion as D                                              # noqa: E402
+import fba_arm as D                                              # noqa: E402
 
 CENSUS = D.ROOT / "data/fabfos/runs/eydallin_clones/gpr/lof/mutant_census.tsv"
 

@@ -1,9 +1,15 @@
-"""One deletion cohort -> the three tables `ecspr fba` reads. Shared by every such arm.
+"""One cohort -> the three tables `ecspr fba` reads. Shared by every flux balance arm.
 
 WHY THIS IS SHARED AND NOT COPIED. Fuhrer, the Eydallin 2007 mutants and Keio are the same
 experiment three times: a host GPR table, a table of ORFs each mutant deletes, and a set of
 metabolites to measure the flux to. A second copy of that reader is a second answer, which
 is the same reason `ecspr.model.fba` exists rather than a loader per arm.
+
+A COHORT THAT ALREADY HAS A CONDITIONS TABLE PASSES IT IN, and that is the case worth
+having: the SCADC fosmids were built through `ecspr conditions` for the conductance arm, so
+the flux balance arm reads that very table and the two arms are measuring one construction
+rather than two that were written to agree. `conditions_path` is how a cohort says so, and
+`conditions()` below is only for a cohort that has none.
 
 WHAT A COHORT STILL HAS TO SAY FOR ITSELF is its frame, its host table, its deletion table,
 its medium and its sinks. Those are the `Cohort` fields, and they are the only thing an arm's
@@ -70,6 +76,10 @@ class Cohort:
     media: str = "m9"
     baseline_id: str = ""
     out: Path = field(default=Path("cache"))
+    #: An existing arm-neutral conditions table to read instead of building one.
+    conditions_path: Path = None
+    #: Extra GPR tables a passed-in conditions table names, beyond `host_gpr`.
+    extra_gpr: tuple = ()
 
     def __post_init__(self):
         if not self.baseline_id:
@@ -81,6 +91,11 @@ class Cohort:
 
 
 def conditions(c: Cohort) -> list:
+    if c.conditions_path is not None:
+        got = cond_mod.read(c.conditions_path)
+        print(f"[conditions] {len(got):,} read from {c.conditions_path} -- the same "
+              f"table the conductance arm measured")
+        return got
     background = (cond_mod.Step(table=c.host_table, type="", set=(), operation="union"),)
     cohort = pd.read_parquet(c.cohort_gpr)
     dropped = (cohort.groupby("condition_id").orf
@@ -155,9 +170,10 @@ def build(c: Cohort) -> dict:
     c.out.mkdir(parents=True, exist_ok=True)
     conds = conditions(c)
     perturbing = sum(1 for x in conds if len(x.steps) > 1)
-    print(f"[conditions] {len(conds):,} ({perturbing:,} remove at least one reaction of "
-          f"this frame, {len(conds) - 1 - perturbing:,} are the baseline over again "
-          f"because the gene carries none)")
+    if c.conditions_path is None:
+        print(f"[conditions] {len(conds):,} ({perturbing:,} remove at least one reaction "
+              f"of this frame, {len(conds) - 1 - perturbing:,} are the baseline over "
+              f"again because the gene carries none)")
     tgt = targets(c)
     print(f"[axes] {len(tgt)} of {len(c.sinks)} declared sinks are on this frame")
     ts = gem_tests(c, conds, tgt)
@@ -179,7 +195,7 @@ def probe(c: Cohort, *, do_gapfill=False) -> pd.DataFrame:
     output from a real null. The three cases are separated by column here rather than
     inferred downstream from a float.
     """
-    corpus = fba_mod.load_corpus([c.host_gpr])
+    corpus = fba_mod.load_corpus([c.host_gpr, *c.extra_gpr])
     conds = {x.condition_id: x for x in cond_mod.read(c.out / "conditions.parquet")}
     medium = fba_mod.load_media(c.out / "media.parquet")[c.media]
     a = fba_mod.assertions(conds[c.baseline_id], corpus)

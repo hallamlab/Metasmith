@@ -40,7 +40,7 @@ import pandas as pd
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parents[1]))
 
-import fba_deletion as D                                              # noqa: E402
+import fba_arm as D                                              # noqa: E402
 
 AXES = D.ROOT / "data/fabfos/benchmarks/fuhrer/axes.tsv"
 CENSUS = D.ROOT / "data/fabfos/runs/fuhrer_clones/gpr/mutant_census.tsv"

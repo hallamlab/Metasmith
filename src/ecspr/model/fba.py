@@ -801,8 +801,16 @@ def _root_test(tid: str, by_test: dict) -> str:
         cur = nxt
 
 
-def _plan(t, media, index, gapfill_media):
-    """What one test needs: its frame, medium, thresholds and assertion-set key."""
+def _plan(t, media, index, gapfill_media, do_gapfill=True):
+    """What one test needs: its frame, medium, thresholds and assertion-set key.
+
+    THE TARGET IS PART OF THE BUILD ONLY WHEN THERE IS A GAPFILL. It reaches the
+    construction through exactly one door -- the repair's requirement that the target carry
+    a token flux -- and `measure` adds the demand reaction itself. So with the repair off,
+    every target shares one model, and a cohort measured on seventeen axes builds ONE
+    baseline rather than seventeen and differences each mutant once rather than seventeen
+    times.
+    """
     frame_name = str(t.settings.get("frame") or "")
     if frame_name not in index:
         raise ValueError(f"test {t.test_id!r} names frame {frame_name!r}, which was "
@@ -816,7 +824,7 @@ def _plan(t, media, index, gapfill_media):
         frame=frame_name, media=media_name, medium=media.get(media_name, {}),
         min_lanes=int(t.settings.get("min_lanes") or 1),
         threshold=None if threshold in (None, "", 0) else float(threshold),
-        target=str(t.settings.get("target_hub") or ""),
+        target=(str(t.settings.get("target_hub") or "") if do_gapfill else ""),
         build_media=gapfill_media if gapfill_media is not None else media_name)
 
 
@@ -896,11 +904,12 @@ def run(frames, gpr_paths, conditions, tests, media, *, release=None, weighting=
     # ---- one pass to work out what each test is measured on, before anything is built.
     plans = []
     for t in tests:
-        pl = _plan(t, media, index, gapfill_media)
+        pl = _plan(t, media, index, gapfill_media, do_gapfill)
         pl["a"] = a = assertion_set(t.network, pl["min_lanes"], pl["threshold"])
         root = _root_test(t.test_id, by_test) if delta else t.test_id
         rt = by_test[root]
-        rpl = pl if root == t.test_id else _plan(rt, media, index, gapfill_media)
+        rpl = pl if root == t.test_id else _plan(rt, media, index,
+                                                 gapfill_media, do_gapfill)
         # A BASELINE ON DIFFERENT SETTINGS IS NOT THIS TEST'S BASELINE. Differencing
         # across a frame, a target, a threshold or a repair medium would silently measure
         # the perturbation plus the setting change, so such a test builds on its own.
