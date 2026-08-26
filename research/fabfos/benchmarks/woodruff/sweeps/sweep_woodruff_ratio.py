@@ -437,6 +437,12 @@ def main() -> int:
     df["host"] = a.host
     df["fold"] = a.fold
     df = df.sort_values("delta_ratio_pct", ascending=False).reset_index(drop=True)
+    # A CHECKED-OUT FILE UNDER data/ IS ONE INODE WITH MANY NAMES, and one of them
+    # is the DVC cache's. Writing THROUGH it edits the cache in place while
+    # `dvc status` stays clean; unlinking this name first breaks the link and
+    # leaves the cache alone. Only the second run of a sweep can hit it, which is
+    # why it is invisible until a re-run.
+    final.unlink(missing_ok=True)
     df.to_csv(final, sep="\t", index=False)
 
     n_solved = int((df.n_rxn > 0).sum())

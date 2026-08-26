@@ -314,6 +314,12 @@ def main() -> int:
     out["is_positive"] = out.fang_direction.astype(str) == "up"
     out["assayed"] = out.assayed_individually.astype(bool)
     out = out.sort_values(["axis", "delta_ratio_pct"], ascending=[True, False])
+    # A CHECKED-OUT FILE UNDER data/ IS ONE INODE WITH MANY NAMES, and one of them
+    # is the DVC cache's. Writing THROUGH it edits the cache in place while
+    # `dvc status` stays clean; unlinking this name first breaks the link and
+    # leaves the cache alone. Only the second run of a sweep can hit it, which is
+    # why it is invisible until a re-run.
+    final.unlink(missing_ok=True)
     out.to_csv(final, sep="\t", index=False)
 
     print(f"\n[sweep] wrote {final}", file=sys.stderr)
