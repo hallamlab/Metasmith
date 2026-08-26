@@ -51,9 +51,12 @@ from .gpr import UNIT_COL, weights_from_rows
 from .probes import load_corpus
 
 #: Mirrors `ecspr.model.probes.RESULT_COLUMNS` so the two arms are read the same way.
-#: `objective` names the reaction that was maximised; a `_`-prefixed readout is a
-#: diagnostic, carried in the same table so a result cannot be read without it.
-RESULT_COLUMNS = ("test_id", "objective", "readout", "value")
+#: `objective` names the reaction that was maximised, `target` the metabolite the flux was
+#: taken to, and a `_`-prefixed readout is a diagnostic, carried in the same table so a
+#: result cannot be read without it. `(objective, target, readout)` is what
+#: `scoring.KEYS["gem"]` identifies a measurement by -- see `_rows` for why the target has
+#: to be in the table rather than only in the tests file.
+RESULT_COLUMNS = ("test_id", "objective", "target", "readout", "value")
 
 MEDIA_COLUMNS = ("media", "exchange", "lower_bound", "upper_bound")
 
@@ -702,8 +705,17 @@ def apply_delta(baseline: Baseline, a: Assertions, *, release=None, target=None,
 # --------------------------------------------------------------------- the solve
 
 
-def _rows(tid, objective, pairs) -> list:
-    return [dict(test_id=tid, objective=objective, readout=k,
+def _rows(tid, objective, target, pairs) -> list:
+    """The long form: one row per readout, carrying what identifies the measurement.
+
+    `target` IS PART OF THE IDENTITY, not a label. A cohort measured on eight axes takes
+    every one of them on the same objective and the same `target` readout name, so a
+    scorer keyed on `(objective, readout)` alone pools eight chemically different fluxes
+    into one null -- and their magnitudes differ by more than an order of magnitude, so
+    the pooled spread is whichever axis moves most and every other axis is scored against
+    it. The column is blank for a test that names no target, and for every diagnostic.
+    """
+    return [dict(test_id=tid, objective=objective, target=target, readout=k,
                  value=(float(v) if v is not None else None)) for k, v in pairs]
 
 
@@ -743,7 +755,7 @@ def measure(model, t, medium: dict, census: dict, *, emit="summary") -> list:
         if objective_id:
             if objective_id not in model.reactions:
                 diag.append(("_abstained", 1))
-                return _rows(t.test_id, objective_id, out + diag)
+                return _rows(t.test_id, objective_id, target, out + diag)
             model.objective = objective_id
         bio = _biomass(model)
         gmax = _growth(model)
@@ -752,16 +764,16 @@ def measure(model, t, medium: dict, census: dict, *, emit="summary") -> list:
 
         if not target:
             diag.append(("_abstained", 0))
-            return _rows(t.test_id, obj_name, out + diag)
+            return _rows(t.test_id, obj_name, target, out + diag)
 
         dm = demand_for(model, target)
         if dm is None:
             diag += [("_abstained", 1), ("_missing_target", 1)]
-            return _rows(t.test_id, obj_name, out + diag)
+            return _rows(t.test_id, obj_name, target, out + diag)
         diag.append(("_missing_target", 0))
         if gmax <= GROWTH_TOL:
             diag += [("_abstained", 1), ("_host_zero", 1)]
-            return _rows(t.test_id, obj_name, out + diag)
+            return _rows(t.test_id, obj_name, target, out + diag)
 
         if bio is not None:
             bio.lower_bound = max(bio.lower_bound, pin * gmax)
@@ -781,7 +793,7 @@ def measure(model, t, medium: dict, census: dict, *, emit="summary") -> list:
             out += [(f"{tag}{rid}", float(v)) for rid, v in series.items()
                     if abs(float(v)) > 1e-12]
 
-    return _rows(t.test_id, obj_name, out + diag)
+    return _rows(t.test_id, obj_name, target, out + diag)
 
 
 def _root_test(tid: str, by_test: dict) -> str:
@@ -960,8 +972,13 @@ def run(frames, gpr_paths, conditions, tests, media, *, release=None, weighting=
     shard_dir = Path(shard_dir) if shard_dir else None
     if shard_dir:
         shard_dir.mkdir(parents=True, exist_ok=True)
+    # THE SHARD SIGNATURE CARRIES THE ROW SCHEMA. A shard is a cached measurement, and a
+    # run that emits a column the cached rows do not have would resume straight over the
+    # gap -- the run reports success and the assembled table is missing the column for
+    # every resumed test. Naming the columns here retires those shards instead.
     signature = json.dumps(dict(weighting=weighting, emit=emit, do_gapfill=do_gapfill,
-                                gapfill_media=gapfill_media, delta=delta),
+                                gapfill_media=gapfill_media, delta=delta,
+                                columns=list(RESULT_COLUMNS)),
                            sort_keys=True)
 
     xwalks: dict = {}

@@ -26,6 +26,25 @@ def _pool_values(pool: pd.DataFrame, draw_column: str) -> np.ndarray:
     return np.array(sorted(v), dtype=object)
 
 
+def _size_in(pool: pd.DataFrame, condition, column: str, table: str) -> int:
+    """How many distinct `column` values one construction's perturbation reaches.
+
+    THE SIZE A NULL MATCHES HAS TO BE COUNTED IN THE UNITS THE DRAW PICKS. `n_units`
+    counts genome copies, and for a fosmid library that is 1 for every insert while the
+    inserts carry 9 to 81 ORFs -- so a per-unit draw over that library can only ever
+    return one of the 170 inserts, which are the observed constructions themselves. Such
+    a pool is not a null: every observation sits at its centre by construction.
+    """
+    vals: set = set()
+    for st in condition.steps:
+        if st.table != table or not st.set:
+            continue
+        sel = (pool[pool[st.type].astype(str).isin([str(x) for x in st.set])]
+               if st.type and st.type in pool.columns else pool)
+        vals |= set(sel[column].dropna().astype(str))
+    return len(vals)
+
+
 def _settings_key(t: test_mod.Test) -> tuple:
     """What makes two tests the same MEASUREMENT, ignoring which network they run on.
 
@@ -43,7 +62,7 @@ def _settings_key(t: test_mod.Test) -> tuple:
 
 def draw(pool_paths, like_conditions, like_tests, *, n: int, seed: int,
          background=(), draw_column="orf", pool_table="null_pool.parquet",
-         size=None, operation="union", log=print) -> tuple:
+         size=None, size_from=None, operation="union", log=print) -> tuple:
     """`(conditions, tests)` -- the null pool, in the two published schemas.
 
     `background` is the steps every drawn condition starts from, so a null construction
@@ -74,8 +93,12 @@ def draw(pool_paths, like_conditions, like_tests, *, n: int, seed: int,
     # drawn condition.
     arm_strata: dict = {}
     for t in like_tests:
-        s = t.meta.get("n_units")
-        s = int(s) if s is not None and s == s else size
+        if size_from:
+            c = by_id.get(t.network)
+            s = _size_in(pool, c, size_from, pool_table) if c is not None else None
+        else:
+            s = t.meta.get("n_units")
+            s = int(s) if s is not None and s == s else size
         if s is None:
             raise ValueError(
                 f"test {t.test_id!r} carries no n_units and no --size was given; a "

@@ -281,6 +281,14 @@ def build_parser() -> argparse.ArgumentParser:
                          "every draw reproduces the baseline")
     dr.add_argument("--size", type=int, default=None,
                     help="stratum size for tests carrying no n_units")
+    dr.add_argument("--size-from", dest="size_from", default=None,
+                    help="measure each observed construction's size by counting its "
+                         "distinct values in THIS pool column, instead of reading "
+                         "n_units. Use it whenever the draw column is not the column "
+                         "n_units counts: a fosmid library carries one genome_unit per "
+                         "insert and 9 to 81 ORFs inside it, so a per-unit draw over "
+                         "that library can only return one of the observed inserts and "
+                         "every observation sits at its own null's centre")
     dr.add_argument("--out", required=True, help="the null conditions table")
     dr.add_argument("--out-tests", default=None, help="the null ecspr_tests table")
     dr.add_argument("--out-gem-tests", default=None, dest="out_gem_tests",

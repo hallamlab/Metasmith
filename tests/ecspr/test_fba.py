@@ -259,6 +259,12 @@ def test_results_mirror_the_conductance_schema(frame, tmp_path):
     assert list(df.columns) == list(F.RESULT_COLUMNS)
     assert (df.readout.str.startswith("_")).any(), \
         "a result must carry its own diagnostics, so it cannot be read without them"
+    # THE TARGET IS IN THE TABLE, not only in the tests file. `scoring.KEYS["gem"]` keys
+    # on it, so a cohort measured on several axes is scored against a null per axis
+    # rather than against all of them pooled. `RESULT_COLUMNS` is what decides whether it
+    # survives into the written table, and it once did not while `_rows` emitted it.
+    assert "target" in F.RESULT_COLUMNS
+    assert set(df.target) == {"bio_c"}
 
 
 # ---------------------------------------------------------- a perturbation is a delta

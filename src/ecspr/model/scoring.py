@@ -10,11 +10,17 @@ DIAG_PREFIX = "_"
 #: arm-neutral and must stay that way; the arm enters here and nowhere else.
 #:
 #: A conductance row is keyed on the probe, the orientation, the element and the readout.
-#: A flux balance row carries none of those: it names the reaction that was maximised and
-#: the readout taken. Keying a gem result on the conductance columns does not fail, it
-#: matches NOTHING -- the null pool comes back empty and every z is nan.
+#: A flux balance row carries none of those: it names the reaction that was maximised, the
+#: metabolite the flux was taken to, and the readout. Keying a gem result on the
+#: conductance columns does not fail, it matches NOTHING -- the null pool comes back empty
+#: and every z is nan.
+#:
+#: `target` EARNS ITS PLACE IN THE GEM KEY the way `element` does in the conductance one.
+#: A cohort measured on several axes takes them all on one objective under one `target`
+#: readout name, so dropping it pools axes whose fluxes differ by an order of magnitude and
+#: scores each of them against the spread of whichever moves most.
 KEYS = {"ecspr": ("probe", "orientation", "element", "readout"),
-        "gem": ("objective", "readout")}
+        "gem": ("objective", "target", "readout")}
 
 #: The conductance key, kept as a name because it is what this module meant by `KEY`
 #: before there were two arms.

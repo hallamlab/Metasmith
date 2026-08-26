@@ -333,6 +333,50 @@ def test_a_null_carries_a_multi_step_background_including_its_subtracts(gpr_path
     assert "R3" not in w
 
 
+def _library(tmp_path, sizes=(2, 3, 4)):
+    """A fosmid-shaped pool: a few multi-ORF inserts, one `genome_unit` each."""
+    rows = []
+    for i, k in enumerate(sizes):
+        rows += [r for j in range(k)
+                 for r in _gpr_rows(f"ins{i}", f"o{i}_{j}", [f"R{i}_{j}"],
+                                    condition=f"ins{i}", channel="manual_gpr")]
+    p = tmp_path / "lib.parquet"
+    pd.DataFrame(rows).to_parquet(p, index=False)
+    return p
+
+
+def test_a_per_unit_draw_over_a_library_returns_the_observed_constructions(tmp_path):
+    # A DEGENERATE POOL, AND IT LOOKS EXACTLY LIKE A WORKING ONE. Each insert is one
+    # genome_unit, so `n_units` is 1 for every observation and a draw of one unit can only
+    # come back as one of the inserts that were measured. Every observation then sits at
+    # its own null's centre and nothing can clear it, with no error anywhere.
+    lib = _library(tmp_path)
+    like_c = [cond_mod.Condition(f"ins{i}", (cond_mod.Step(
+        table="lib.parquet", type="genome_unit", set=(f"ins{i}",), operation="union"),))
+        for i in range(3)]
+    like = [test_mod.Test(test_id=f"ins{i}", network=f"ins{i}", arm="gem",
+                          settings=dict(objective="BIO", target_hub="M"),
+                          meta=dict(n_units=1)) for i in range(3)]
+    conds, _ = nulls.draw([lib], like_c, like, n=20, seed=3, draw_column="genome_unit",
+                          pool_table="lib.parquet", log=lambda _m: None)
+    drawn = {c.steps[-1].set for c in conds if c.condition_id != "null:baseline"}
+    assert drawn == {("ins0",), ("ins1",), ("ins2",)}, (
+        "a unit-level draw over a library of units is the library")
+
+    # `size_from` counts the size in the units the draw picks, so the strata are the
+    # inserts' ORF counts and a draw is a random set of that many ORFs from anywhere.
+    conds2, _ = nulls.draw([lib], like_c, like, n=20, seed=3, draw_column="orf",
+                           size_from="orf", pool_table="lib.parquet",
+                           log=lambda _m: None)
+    sizes = {len(c.steps[-1].set) for c in conds2 if c.condition_id != "null:baseline"}
+    assert sizes == {2, 3, 4}, "the strata are the observed ORF counts"
+    whole = {frozenset(f"o{i}_{j}" for j in range(k))
+             for i, k in enumerate((2, 3, 4))}
+    got = {frozenset(c.steps[-1].set) for c in conds2
+           if c.condition_id != "null:baseline"}
+    assert len(got - whole) > 0.5 * len(got), "most draws must not be observed inserts"
+
+
 def test_draw_refuses_an_unmatched_null(gpr_path):
     bare = test_mod.Test(test_id="C_new", network="C_new", arm="ecspr",
                          settings=dict(element="C", source_hub="S", sink_hub="P1"))
@@ -458,12 +502,13 @@ def test_each_arms_null_tests_round_trip_through_its_own_schema(gpr_path, tmp_pa
         assert sum(1 for t in back if pd.notna(t.meta.get("draw_id"))) == 3
 
 
-def _gem_results(spec):
+def _gem_results(spec, target="MNXM1"):
     rows = []
     for tid, val in spec:
-        rows.append(dict(test_id=tid, objective="BIOMASS", readout="target", value=val))
-        rows.append(dict(test_id=tid, objective="BIOMASS", readout="_abstained",
-                         value=0.0))
+        rows.append(dict(test_id=tid, objective="BIOMASS", target=target,
+                         readout="target", value=val))
+        rows.append(dict(test_id=tid, objective="BIOMASS", target=target,
+                         readout="_abstained", value=0.0))
     return pd.DataFrame(rows)
 
 
@@ -490,6 +535,37 @@ def test_a_flux_balance_result_scores_through_the_same_code_path():
     assert np.isnan(scored[scored.test_id == "gem:ctl"].q_bh).all()
     g = scoring.gate(scored, "gem")
     assert int(g.n_controls.max()) == 1
+
+
+def test_two_target_axes_are_not_pooled_into_one_null():
+    # A COHORT MEASURED ON SEVERAL AXES TAKES THEM ALL ON ONE OBJECTIVE, so a key of
+    # (objective, readout) put every axis in one pool. The axes here differ by two orders
+    # of magnitude, which is the real case: pooled, the narrow axis is scored against the
+    # wide one's spread and its own real move disappears into it.
+    wide = _gem_results([("gem:baseline", 100.0), ("gem:hit", 100.0)], target="WIDE")
+    narrow = _gem_results([("gem:baseline", 1.0), ("gem:hit", 2.0)], target="NARROW")
+    nwide = _gem_results([("null:t0:baseline", 100.0)]
+                         + [(f"null:t0:s1:{j:06d}", 100.0 + j) for j in range(20)],
+                         target="WIDE")
+    nnarrow = _gem_results([("null:t0:baseline", 1.0)]
+                           + [(f"null:t0:s1:{j:06d}", 1.0 + 0.001 * j) for j in range(20)],
+                           target="NARROW")
+    ts = [test_mod.Test(test_id="gem:baseline", network="b", arm="gem"),
+          test_mod.Test(test_id="gem:hit", network="h", arm="gem",
+                        read_against="gem:baseline", meta=dict(n_units=1))]
+    scored = scoring.score(pd.concat([wide, narrow], ignore_index=True),
+                           pd.concat([nwide, nnarrow], ignore_index=True),
+                           tests=ts, arm="gem")
+    hit = scored[(scored.test_id == "gem:hit") & (scored.readout == "target")]
+    assert set(hit.target) == {"WIDE", "NARROW"}
+    n = hit[hit.target == "NARROW"].iloc[0]
+    w = hit[hit.target == "WIDE"].iloc[0]
+    # Each axis is scored against its OWN spread. The narrow axis moved by 1.0 against a
+    # null spread of 0.006 and is seen at z > 100; pooled with the wide axis's spread of
+    # 5.9 that same move would have come back at z 0.15 and vanished.
+    assert n.null_sd < 0.01 and n.z > 100
+    assert w.null_sd > 5.0 and w.delta == 0.0
+    assert abs(n.z) > 50 * abs(w.z)
 
 
 def test_scoring_an_arm_on_the_other_arms_key_is_refused():
