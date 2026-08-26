@@ -4,8 +4,8 @@
     scadc_ecspr_basis.py                 the bake decode and the terminals, first
     scadc_ecspr_arm.py --stage           working GPR copies, under names that cannot collide
                        --conditions      the two tables, then the ORF-counted strata
-                       --gate            every axis on the host alone, 83 solves
-                       --measure         the observed run, 171 x 83 solves
+                       --gate            every axis on the host alone, one solve each
+                       --measure         the observed run, one solve per (network, axis)
                        --host-probe      the host's own draw vector on this bake
                        --draw --shards   26,000 null constructions, split for the array
                        --fir-status      one batched connect, never a loop
@@ -17,23 +17,23 @@ The basis step runs first and this reads its `terminals.json` and `axes.json` ra
 restating any ids; it refuses outright if either was resolved against a different bake.
 
 WHAT IS MEASURED. One condition per insert -- the host's GEM rows and that insert's rows
-both selected, their conductances summing -- and 83 TESTS on each of them. The baseline is
+both selected, their conductances summing -- and ONE TEST PER AXIS on each of them. The baseline is
 the host alone, and every arm reads against the baseline OF ITS OWN AXIS. The reason this
 is CLI calls rather than the open-coded `scadc_ecspr.py` it replaces is that the null has
 to traverse the identical code path to be a null at all, which a hand-rolled sampler beside
 a hand-rolled observation cannot promise.
 
-WHY 83 AND NOT ONE. The published generation merged four biomass hubs into one ground and
+WHY MANY AND NOT ONE. The published generation merged four biomass hubs into one ground and
 measured the single number that came out. That is one readout, and its null result says
 only that no insert moves THAT number -- `PROVENANCE.md` says so itself. set4 asks the
 question 79 more ways, over four elements; three added axes ask it about the glycerol
 backbone of the phospholipids, which set4 does not reach; and the published axis rides
-along as the 83rd so the rebuilt path can be checked against a number that already exists.
+along last so the rebuilt path can be checked against a number that already exists.
 `--gate` is where that check happens, and it must be run BEFORE the bake moves.
 
 A CONDITION IS RESOLVED ONCE AND ITS GRAPH BUILT ONCE PER ELEMENT, which is why the tests
-table is written network-major. Axis-major would rebuild the carbon graph 14,193 times
-instead of 171, and nothing would report it as anything but a slow run.
+table is written network-major. Axis-major would rebuild the carbon graph once per TEST
+instead of once per network, and nothing would report it as anything but a slow run.
 
 THE UNIT IS THE INSERT, WHICH IT WAS NOT BEFORE. The generation this replaces measured
 183 contigs against a table that carried one anonymous copy; the rebuilt insert set is
@@ -186,9 +186,9 @@ def conditions() -> None:
 
 
 # `ecspr conditions` emits ONE test per network, because a sweep is a set of networks
-# read one way. This arm reads each of them 83 ways, so the conditions are built once and
-# the tests table is the cross product. The terminals the builder was given survive as the
-# legacy axis and nowhere else.
+# read one way. This arm reads each of them once per AXIS, so the conditions are built
+# once and the tests table is the cross product. The terminals the builder was given
+# survive as the legacy axis and nowhere else.
 #
 # THE ROWS COME OUT NETWORK-MAJOR, and that is load-bearing rather than tidy: `probes.run`
 # caches the atom graph per (network, element) and drops it the moment the network changes,
@@ -251,9 +251,9 @@ def strata() -> None:
     rep = _buckets(n_orf.tolist())
 
     tests = pd.read_parquet(WORK / "tests.parquet")
-    # ON THE NETWORK, not the test id: 83 tests share one insert and it is the insert that
-    # has a size. `stratum` is written alongside because `recipes` set it from the
-    # PRE-override n_units -- 1 for every insert -- and it stayed that way in the published
+    # ON THE NETWORK, not the test id: every axis's test shares one insert, and it is the
+    # insert that has a size. `stratum` is written alongside because `recipes` set it from
+    # the PRE-override n_units -- 1 for every insert -- and it stayed that way in the
     # tables. Nothing reads it (`scoring` takes `n_units`), so it was wrong in silence.
     sizes = tests.network.map(n_orf)
     tests["n_units"] = sizes.map(rep)
@@ -322,7 +322,7 @@ def _tests_for_draw() -> Path:
     # the measurement settings, and writes its own tests with no baseline at all -- the
     # observed table keeps the reference, and that is the one the scorer reads.
     t = pd.read_parquet(WORK / "tests.parquet")
-    # On the NETWORK: with 83 axes the baseline is 83 rows, not one.
+    # On the NETWORK: with many axes the baseline is one row per axis, not one row.
     t = t[t.network != BASELINE_ID].copy()
     t["read_against"] = ""
     return _write(t, WORK / "tests_for_draw.parquet")
@@ -354,7 +354,7 @@ def draw_contiguous(n: int, seed: int) -> None:
     like = test_mod.read(WORK / "tests_for_draw.parquet", "ecspr")
     # ONE PROTO PER DISTINCT MEASUREMENT, grouped and ordered by `nulls._settings_key`
     # rather than by anything invented here. Style D differs from style A in its SAMPLING
-    # and in nothing else, so it has to cut the 14,110 observed tests into the same 83
+    # and in nothing else, so it has to cut the observed tests into the same
     # measurements A does -- and reaching into the private helper is how that is
     # guaranteed instead of asserted. Taking `like[0]` was correct while there was one.
     protos = {}
@@ -409,7 +409,7 @@ def draw_contiguous(n: int, seed: int) -> None:
 # not just a convenient one: every condition in a shard draws the same number of ORFs, so
 # the shards are the same size in work, and a task loads the 19.7M-row pool table once.
 #
-# THE AXIS HALF IS NEW, and 83 axes forced it. A (style, stratum) shard is now 83,000
+# THE AXIS HALF IS NEW, and a hundred axes forced it. A (style, stratum) shard is now 100,000
 # solves and a carbon solve is 0.81 s, so it would want most of a day and no four-hour
 # walltime would hold it. The blocks are cut by ELEMENT first because the cost is nowhere
 # near uniform -- 0.81 s on carbon against 0.06 on nitrogen, 0.03 on phosphorus and 0.01
@@ -555,7 +555,7 @@ def score() -> None:
 # EVERY AXIS ON THE HOST ALONE, BEFORE THE NULL COSTS ANYTHING. An axis whose terminals
 # the host graph does not connect returns a definite zero on every construction, and in
 # the scored output that is indistinguishable from a real null. The null is 280 core-hours,
-# so finding it afterwards is expensive; this is 83 solves and about two minutes.
+# so finding it afterwards is expensive; this is one solve per axis, about two minutes.
 #
 # A DEFINITE ZERO IS NOT A REASON TO DROP AN AXIS. An insert can connect terminals the host
 # cannot, and that is the entire hypothesis this arm exists to test. It is reported and

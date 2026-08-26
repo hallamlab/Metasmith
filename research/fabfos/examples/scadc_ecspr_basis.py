@@ -8,10 +8,11 @@ Writes `metabolite_names.parquet`, `terminals.json` and `axes.json` under
 `data/scratch/scadc_ecspr/basis/`. The two decoded bake tables are NOT written here --
 they are the shared cache `bake_pairs` maintains, and this prints where they landed.
 
-THE ARM MEASURES 83 AXES, NOT ONE. Eighty-two come from `ecspr_axes` -- set4's 79 plus
-the three glycerol-backbone axes added beside it -- and each is one source and one sink
-on one element. The eighty-third is the published four-hub merged axis, carried forward
-unchanged so a rebuilt path can be checked against a number that already exists.
+THE ARM MEASURES MANY AXES, NOT ONE, and `ecspr_axes` says how many: set4's 79, plus the
+three glycerol-backbone axes added beside it, plus one per (declared axis, host-present
+member) where set4 names a metabolite the EPI300 graph does not carry. Each is one source
+and one sink on one element. The published four-hub merged axis is appended last, carried
+forward unchanged so a rebuilt path can be checked against a number that already exists.
 
 TWO DIFFERENT CHECKS, BECAUSE THE TWO SETS ARE DIFFERENT KINDS OF THING. The four hubs
 are carried as NAMES and resolved against the bake, because an id is a fact about one
