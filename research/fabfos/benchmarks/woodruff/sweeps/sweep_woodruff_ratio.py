@@ -120,7 +120,12 @@ sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(ROOT / "research/fabfos/benchmarks/eydallin"))
 
 import bake_pairs                                                                  # noqa: E402
-sys.path.insert(0, str(ROOT / "src/fabfos/build_references/resources/buildlib"))
+# APPENDED, NEVER PREPENDED. The vendored buildlib carries its own COPY of the
+# ecspr package, so putting it at the front of sys.path makes `import ecspr` resolve
+# to a snapshot instead of the working tree -- silently, and only where the two have
+# drifted. The buildlib is on the path for `bench_universe`; everything else must
+# still come from src/.
+sys.path.append(str(ROOT / "src/fabfos/build_references/resources/buildlib"))
 import bench_universe as bu                                                        # noqa: E402
 from ecspr.model.build import graph_from_pairs, load_direction_ratios, load_pairs  # noqa: E402
 from ecspr.model.graph import Terminal, solve                                      # noqa: E402

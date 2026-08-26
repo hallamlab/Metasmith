@@ -40,7 +40,17 @@ sys.path.insert(0, str(ROOT / "src"))
 from ecspr.model import evidence as _ev  # noqa: E402
 from ecspr.model.gpr import _normalise, weights_from_rows  # noqa: E402
 
-sys.path.insert(0, str(ROOT / "src/fabfos/build_references/resources/buildlib"))
+# APPENDED, NEVER PREPENDED. The vendored buildlib carries its own COPY of the
+
+# ecspr package, so putting it at the front of sys.path makes `import ecspr` resolve
+
+# to a snapshot instead of the working tree -- silently, and only where the two have
+
+# drifted. The buildlib is on the path for `bench_universe`; everything else must
+
+# still come from src/.
+
+sys.path.append(str(ROOT / "src/fabfos/build_references/resources/buildlib"))
 import bench_universe as bu  # noqa: E402
 sys.path.insert(0, str(ROOT / "research/fabfos/annotation_lanes/calibration"))
 import _legacy  # noqa: E402
