@@ -22,6 +22,7 @@ from ..coms.terminals import IDLE_TIMEOUT, PROBE_TIMEOUT
 from .conda import (
     NO_RECIPE, _conda_frontend, _create_conda_envs, _find_recipes, _manifest_envs, _recipe_roots,
 )
+from .ceiling import ResourceCeilingError, check_launch
 from .gpu import _plan_gpu_requests, _read_gpu_manifest, _render_gpu_config
 from .images import _check_image_store, _manifest_images, _materialise_images
 from .portability import _check_env_portability, _read_env_manifest, _read_env_manifest_doc
@@ -38,6 +39,21 @@ def GetNxfConfigPresets(folder: Path = MODULE_PATH/"nextflow_config") -> dict[st
         if not f.name.endswith(".nf"): continue
         presets[f.stem] = f.absolute()
     return presets
+
+
+def _read_step_resources(sh_remote, workspace: Path) -> str:
+    # The per-step requests a stage wrote. A workspace staged before this file
+    # existed simply has nothing to check, which is not an error.
+    try:
+        res = sh_remote.Exec(
+            f"cat {workspace/AgentPaths.NXF_RES} 2>/dev/null",
+            history=True, quiet=True,
+            idle_timeout=PROBE_TIMEOUT, what="reading the step resources",
+        )
+        return "\n".join(res.out)
+    except Exception as e:
+        Log.Warn(f"could not read [{AgentPaths.NXF_RES}]: {e}")
+        return ""
 
 
 def _render_executor_config(executor: dict|None) -> list[str]:
@@ -475,6 +491,17 @@ class _WorkflowOps:
                     if gpu_lines:
                         with open(local_config, "a") as f:
                             f.write("\n".join(gpu_lines))
+                # After every block that can move the ceiling -- the preset's
+                # guess, the detected host, an explicit params.executor -- and
+                # before the launcher is triggered, so a plan that cannot be
+                # scheduled here says so instead of being discovered an hour in.
+                _resources = _read_step_resources(sh_remote, workspace)
+                _caps = check_launch(
+                    local_config.read_text(), _resources, bool(_is_local),
+                )
+                if _caps:
+                    with open(local_config, "a") as f:
+                        f.write("\n".join(_caps))
                 if resource_overrides is not None:
                     with open(local_config, "a") as f:
                         TAB="\t"

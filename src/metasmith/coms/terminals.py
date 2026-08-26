@@ -364,6 +364,11 @@ class LiveShell:
             self._cond.notify_all()
 
 
+    def SecondsSinceRead(self) -> float:
+        """How long the command has been silent, or 0 with no shell to ask."""
+        if self._shell is None: return 0.0
+        return self._shell.SecondsSinceRead()
+
     def RegisterOnOut(self, callback: Callable[[str], None]):
         self._out_callbacks.append(callback)
 

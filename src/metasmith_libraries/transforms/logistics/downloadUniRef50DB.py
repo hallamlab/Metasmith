@@ -17,14 +17,11 @@ UNIREF50_URLS = [
 def protocol(context: ExecutionContext):
     idb = context.Output(db)
 
-    fetch = " || \\\n            ".join(
-        f'wget -q "{u}" -O uniref50.fasta.gz' for u in UNIREF50_URLS
-    )
-    _cmd = f"""
-            {fetch} || {{ echo "all uniref50 mirrors failed" >&2; exit 1; }}
-            diamond makedb --in uniref50.fasta.gz -d uniref50
-            mv uniref50.dmnd {idb.container}
-        """
+    _cmd = "\n".join([
+        FetchCommand(UNIREF50_URLS, "uniref50.fasta.gz", label="uniref50"),
+        "diamond makedb --in uniref50.fasta.gz -d uniref50",
+        f"mv uniref50.dmnd {idb.container}",
+    ])
     context.ExecWithEnv() \
         .ifContainerDo(env=image, cmd=_cmd) \
         .ifVirtualEnvDo(env=image, cmd=_cmd)

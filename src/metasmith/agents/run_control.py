@@ -170,7 +170,7 @@ class _RunControl:
         timeout_s: float = 3600.0,
         poll_s: float = 5.0,
         run: int | None = None,
-        sentinel: str = "run completed at",
+        sentinel: str = AgentPaths.RUN_DONE_SENTINEL,
         since_mtime: float | None = None,
         grace_s: float = 5.0,
     ) -> dict:
@@ -196,7 +196,8 @@ class _RunControl:
                 f"if [ -e {agent_log} ]; then "
                 f"echo \"MTIME $(stat -c %Y {agent_log})\"; "
                 f"echo \"COUNT $(grep -c '{sentinel}' {agent_log} 2>/dev/null)\"; "
-                f"else echo 'MTIME MISSING'; echo 'COUNT 0'; fi; "
+                f"echo \"FAILED $(grep -c '{AgentPaths.RUN_FAILED_SENTINEL}' {agent_log} 2>/dev/null)\"; "
+                f"else echo 'MTIME MISSING'; echo 'COUNT 0'; echo 'FAILED 0'; fi; "
                 f"[ -e {pid_lock} ] && echo 'PID ALIVE' || echo 'PID GONE'; "
                 # PID.lock goes when nextflow exits, but the driver runs on for
                 # as long as promotion, results and log gathering take, and it
@@ -227,13 +228,17 @@ class _RunControl:
                 count = int(count_line)
             except ValueError:
                 count = 0
+            try:
+                fail_count = int(fields.get("FAILED", "0"))
+            except ValueError:
+                fail_count = 0
 
             fresh = (since_mtime is None) or (last_mtime > since_mtime)
-            if log_exists and count > 0 and fresh:
+            if log_exists and (count > 0 or fail_count > 0) and fresh:
                 tail = self.TailWorkflowLog(task_key, source="agent", lines=20, run=run)
                 return {
                     "task_key": task_key,
-                    "status": "completed",
+                    "status": "failed" if fail_count > 0 else "completed",
                     "run_dir": str(run_dir),
                     "elapsed_s": elapsed,
                     "last_log_mtime": last_mtime,

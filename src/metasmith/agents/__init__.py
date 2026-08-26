@@ -4,6 +4,7 @@ from .shell import AgentShell
 from .targets import ResourceOverrides, TargetBuilder, TargetSpec
 from .spec import Spec
 from .templates import Template
+from .ceiling import ResourceCeilingError
 from .gpu import (
     GPU_LABEL, GpuRequirementError, _GPU_BEFORE_SCRIPT, _plan_gpu_requests,
     _read_gpu_manifest, _render_gpu_config,

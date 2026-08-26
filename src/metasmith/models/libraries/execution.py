@@ -415,12 +415,22 @@ class ExecutionContext:
         h, k = KeyGenerator.FromStr(cmd)
         _bounce_script = Path(f"./_metasmith/.bounce.{k}")
         _bounce_script.parent.mkdir(parents=True, exist_ok=True)
-        exit_codef = Path(f"exitcode.{GenerateId()}")
+        # The marker is written to its absolute path in the container, and the
+        # trap ends on the command's own status. A transform is free to change
+        # directory -- several in the standard library do -- and a relative
+        # marker follows it: into a directory the task uid cannot write, the
+        # write fails, the trap's failure becomes the script's status, and a
+        # step that succeeded reports failure.
+        marker_name = f"exitcode.{GenerateId()}"
+        exit_codef = Path(marker_name)
+        container_marker = env.container.workdir/marker_name
         with open(_bounce_script, "w") as f:
             script = [
                 f"cd {env.container.workdir}",
                 "on_exit() {",
-                f"    echo $? > {exit_codef}",
+                "    __msm_code=$?",
+                f"    echo $__msm_code > {container_marker} 2>/dev/null || true",
+                "    exit $__msm_code",
                 "}",
                 "trap on_exit EXIT",
                 "set -e",
@@ -443,17 +453,39 @@ class ExecutionContext:
             f"{_container_start} {env.container.workdir/_bounce_script}",
             timeout=None, history=history
         )
+        # The container's own status is the source of truth: it survives a
+        # transform that leaves the shell somewhere unwritable, and it is the
+        # only thing there is when the trap never ran at all. The marker
+        # refines it, and a marker that cannot be read is reported as such --
+        # not silently turned into a plain exit 1, which is what made a
+        # succeeded step and a failed one indistinguishable.
+        marker_status = None
         try:
             with open(exit_codef) as f:
-                exit_code = f.readline().strip()
-                exit_code = int(exit_code)
-        except:
+                marker_status = int(f.readline().strip())
+        except Exception:
+            marker_status = None
+        exit_code = result.exit_code if result.exit_code is not None else marker_status
+        if exit_code is None:
             exit_code = 1
         msg = f"<- container exit [{exit_code}] <-"
         Log.Info(msg+"-"*(BREAK_LENGTH-len(msg)))
+        if marker_status is None:
+            Log.Warn(
+                f"the exit marker [{exit_codef}] could not be read, so the"
+                f" container's own status [{exit_code}] is all there is: the"
+                f" script did not reach its exit trap"
+            )
+        elif marker_status != exit_code:
+            Log.Warn(
+                f"the exit marker [{exit_codef}] says [{marker_status}] and the"
+                f" container says [{exit_code}]; taking the container's"
+            )
         if exit_codef.exists(): exit_codef.unlink()
         if exit_code != 0:
-            Log.Error("a non-zero exit code ocurred while running script in container")
+            Log.Error(
+                f"the script in the container exited with code [{exit_code}]"
+            )
             time.sleep(5)
             sys.exit(exit_code)
         return result
