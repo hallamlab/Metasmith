@@ -60,8 +60,16 @@ def _stats(obs: np.ndarray, null: np.ndarray) -> dict:
     # Two-sided, and by |deviation from the null's own centre| rather than by
     # |value|: fed and starved are both departures, and a one-tailed count would
     # call one of them uninteresting by construction.
+    #
+    # THE TIE HAS TO BE A TIE. A drawn pool is usually a point mass plus a tail -- most
+    # random perturbations move a given measurement by exactly nothing -- so `>=` lands on
+    # float equality for the majority of the pool at once, and two observations that are
+    # both zero to fourteen decimals came back at p 0.034 and p 0.77 depending on which
+    # side of the last bit they fell. The tolerance is scaled to the pool so it is a
+    # statement about numerical noise rather than about effect size.
     dev_null = np.abs(null - mu)
-    ge = (dev_null[None, :] >= np.abs(obs - mu)[:, None]).sum(axis=1)
+    tol = 1e-9 * max(1.0, float(np.max(np.abs(null))))
+    ge = (dev_null[None, :] >= np.abs(obs - mu)[:, None] - tol).sum(axis=1)
     p = (ge + 1.0) / (m + 1.0)
     pct = (null[None, :] < obs[:, None]).sum(axis=1) / m
     return dict(null_n=m, null_mean=mu, null_sd=sd, z=z, p_emp=p, pct_rank=pct,

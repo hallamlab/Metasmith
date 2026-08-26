@@ -43,17 +43,29 @@ import bake_pairs  # noqa: E402
 
 #: When each generation became the deployed bake, from `git log` on the pin. Used only for
 #: the `dated` grade, and only to name a generation -- never to assert one.
-PROMOTES = [("2026-08-24", "r10"), ("2026-08-18", "r9"), ("2026-08-17", "r7"),
-            ("2026-08-14", "pre-bake")]
+PROMOTES = [("2026-08-26", "r11"), ("2026-08-24", "r10"), ("2026-08-18", "r9"),
+            ("2026-08-17", "r7"), ("2026-08-14", "pre-bake")]
 
+#: The generation this scan calls current -- the newest entry above, never a literal. The
+#: grades below said "r10" in six places and every one of them would have kept saying it
+#: after the r11 promote, reporting a stale chunk as current.
+CURRENT = PROMOTES[0][1]
+CURRENT_SINCE = PROMOTES[0][0]
+
+#: Every ECSPr results chunk in the tree. `scales/ecspr` was here and is now
+#: `woodruff_clones/ecspr`; a renamed chunk reported `absent`, which reads like "nothing to
+#: check" rather than "this list is stale", so the list is checked against the tree below.
 CHUNKS = [
     "data/fabfos/runs/aska/ecspr",
     "data/fabfos/runs/e_coli_epi300/ecspr",
     "data/fabfos/runs/eydallin_clones/ecspr",
+    "data/fabfos/runs/fang/ecspr",
+    "data/fabfos/runs/fuhrer_clones/ecspr",
+    "data/fabfos/runs/keio/ecspr",
     "data/fabfos/runs/scadc_fosmids/ecspr",
     "data/fabfos/runs/scadc_metagenome/ecspr",
     "data/fabfos/runs/scadc_metagenome/nulls",
-    "data/fabfos/runs/scales/ecspr",
+    "data/fabfos/runs/woodruff_clones/ecspr",
     "data/fabfos/nostoc/ecspr",
 ]
 
@@ -79,6 +91,36 @@ def mtimes(chunk: Path) -> tuple:
     ts = sorted(pd.Timestamp(p.stat().st_mtime, unit="s").strftime("%Y-%m-%d")
                 for p in chunk.rglob("*") if p.is_file())
     return (ts[0], ts[-1], len(ts)) if ts else ("", "", 0)
+
+
+def measured_atoms(chunk: Path, deployed: set) -> str:
+    """Compare any composed atom-pair table under the chunk to the deployed bake.
+
+    THE DIRECTION TABLE IS NOT THE BAKE. r11 rebuilt the atom lane and left r10's
+    direction table byte for byte, so `measured_basis` alone called every r10 chunk
+    current -- the strongest grade this scan has, blind to the only thing that moved.
+    A generation is a node space AND a direction table, which is exactly why
+    `bake_identity.identity()` is a pair.
+    """
+    found = sorted(chunk.rglob("atom_pairs.parquet"))
+    if not found:
+        return ""
+    hits = []
+    for p in found[:4]:
+        d = pd.read_parquet(p, columns=["mnxr", "element", "substrate", "product",
+                                        "sub_idx", "prod_idx"])
+        for c in ("mnxr", "substrate", "product"):
+            d[c] = d[c].astype(str).str.split(":").str[-1]
+        here = set(map(tuple, d.drop_duplicates().to_numpy().tolist()))
+        if here:
+            hits.append(len(here & deployed) / len(here))
+    if not hits:
+        return ""
+    lo, hi = min(hits), max(hits)
+    if lo > 0.9999:
+        return f"atoms ARE the deployed bake ({len(found)} table(s), {hi:.2%} present)"
+    return (f"atoms are NOT the deployed bake ({len(found)} table(s), "
+            f"{lo:.2%}-{hi:.2%} present)")
 
 
 def measured_basis(chunk: Path, deployed: pd.Series) -> str:
@@ -116,6 +158,11 @@ def measured_basis(chunk: Path, deployed: pd.Series) -> str:
 def main() -> int:
     print(f"deployed bake: {bake_identity.identity()}")
     deployed = pd.read_parquet(bake_pairs.direction_ratios()).set_index("mnxr").ratio
+    dp = pd.read_parquet(bake_pairs.atom_pairs(),
+                         columns=["mnxr", "element", "substrate", "product",
+                                  "sub_idx", "prod_idx"])
+    deployed_atoms = set(map(tuple, dp.drop_duplicates().to_numpy().tolist()))
+    del dp
 
     rows = []
     for rel in CHUNKS:
@@ -128,26 +175,34 @@ def main() -> int:
         lo, hi, n = mtimes(chunk)
         pinned = pin_date(chunk)
         basis = measured_basis(chunk, deployed)
+        atoms = measured_atoms(chunk, deployed_atoms)
 
-        if basis:
+        if basis or atoms:
             grade = "measured"
-            gen = "r10" if "IS the" in basis else "older than r10"
-            evidence = basis
+            # BOTH HALVES HAVE TO AGREE. A generation is a node space and a direction
+            # table, and an r10->r11 promote moved only the first, so a chunk matching on
+            # direction alone is not current.
+            parts = [x for x in (basis, atoms) if x]
+            current = all("NOT" not in x for x in parts) and len(parts) == 2
+            gen = CURRENT if current else f"older than {CURRENT}"
+            if len(parts) == 1:
+                gen += " (one half unchecked)"
+            evidence = "; ".join(parts)
             # THE SPLIT IS THE FINDING, so it may not collapse into one generation. A
             # chunk whose basis was recut on the deployed bake while the measurements
             # taken on it were not re-run holds two bakes under one pin, and reading the
             # basis alone reports it as current.
             res = [p for p in chunk.rglob("*") if p.is_file()
                    and "results" in p.relative_to(chunk).parts]
-            if gen == "r10" and res:
+            if gen == CURRENT and res:
                 newest = max(pd.Timestamp(p.stat().st_mtime, unit="s") for p in res)
-                if newest.strftime("%Y-%m-%d") < PROMOTES[0][0]:
-                    grade, gen = "SPLIT", "basis r10, results older"
+                if newest.strftime("%Y-%m-%d") < CURRENT_SINCE:
+                    grade, gen = "SPLIT", f"basis {CURRENT}, results older"
                     evidence += (f"; but results/ newest is "
-                                 f"{newest.strftime('%Y-%m-%d')}, before the r10 promote")
+                                 f"{newest.strftime('%Y-%m-%d')}, before the {CURRENT} promote")
         elif stamps:
             grade = "stamped"
-            gen = "r10" if stamps == {bake_identity.identity()} else "not r10"
+            gen = CURRENT if stamps == {bake_identity.identity()} else f"not {CURRENT}"
             evidence = "; ".join(sorted(s[:16] + ":" + s[-16:] for s in stamps))
         else:
             grade, gen = "dated", generation(hi)

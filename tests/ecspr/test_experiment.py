@@ -568,6 +568,29 @@ def test_two_target_axes_are_not_pooled_into_one_null():
     assert abs(n.z) > 50 * abs(w.z)
 
 
+def test_a_pool_that_is_mostly_one_value_scores_its_ties_alike():
+    # A DRAWN POOL IS A POINT MASS PLUS A TAIL. Most random perturbations move a given
+    # measurement by exactly nothing -- 97.6% of them on the eydallin deletion null -- so
+    # the whole mass sits at one deviation from the null's mean and `>=` lands on float
+    # equality for all of it at once. Two observations that were both zero to fourteen
+    # decimals came back at p 0.034 and p 0.77 depending on the last bit.
+    obs = _gem_results([("gem:baseline", 5.0), ("gem:a", 5.0 + 1e-14),
+                        ("gem:b", 5.0 - 4e-14), ("gem:hit", 1.0)])
+    nul = _gem_results([("null:t0:baseline", 5.0)]
+                       + [(f"null:t0:s1:{j:06d}", 5.0) for j in range(48)]
+                       + [(f"null:t0:s1:{j:06d}", 2.0) for j in range(48, 50)])
+    ts = [test_mod.Test(test_id="gem:baseline", network="b", arm="gem")] + [
+        test_mod.Test(test_id=f"gem:{k}", network=k, arm="gem",
+                      read_against="gem:baseline", meta=dict(n_units=1))
+        for k in ("a", "b", "hit")]
+    scored = scoring.score(obs, nul, tests=ts, arm="gem")
+    t = scored[scored.readout == "target"].set_index("test_id")
+    assert t.loc["gem:a", "p_emp"] == pytest.approx(t.loc["gem:b", "p_emp"]), (
+        "two observations equal to fourteen decimals must not get different p")
+    # and the real effect is still the extreme one
+    assert t.loc["gem:hit", "p_emp"] < t.loc["gem:a", "p_emp"]
+
+
 def test_scoring_an_arm_on_the_other_arms_key_is_refused():
     # It used to come back as a table of nan rather than as an error, which reads like a
     # null result.
