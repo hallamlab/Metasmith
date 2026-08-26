@@ -37,6 +37,7 @@ class _Generated:
         lines = script.group(1).splitlines()
         last = max(i for i, l in enumerate(lines) if ".command.metadata" in l)
         self.script = lines[: last + 1]
+        self.full_script = lines
         self.hash_def = next(
             l for l in stub.group(1).splitlines() if l.startswith("def hash")
         )
@@ -70,7 +71,7 @@ def _stage(root: Path):
     return task, workspace
 
 
-def _nf(gen: _Generated, *, scratch: bool, publish_to: str | None) -> str:
+def _nf(gen: _Generated, *, scratch: bool, publish_to: str | None, extra: list[str] | None = None) -> str:
     directives = []
     if scratch:
         directives.append("\tscratch true")
@@ -92,6 +93,7 @@ def _nf(gen: _Generated, *, scratch: bool, publish_to: str | None) -> str:
         gen.hash_def,
         '"""',
         *gen.script,
+        *(extra or []),
         gen.touch,
         '"""',
         "}",
@@ -151,7 +153,7 @@ def test_the_metadata_reaches_the_work_dir_under_scratch(staged):
     assert '"seed":["1e20aaaa"]' in body, (
         f"the metadata arrived but not the index it was written with:\n{body}"
     )
-    assert f"cache_key " in body, (
+    assert "transform_key " in body, (
         f"the step meta was not folded into the copy:\n{body}"
     )
 
@@ -169,41 +171,40 @@ def test_scratch_off_is_unchanged_and_silent(staged):
     )
 
 
-def test_a_second_run_hits_instead_of_demoting(staged):
-    from metasmith.caching.promote import promote_run
-    from metasmith.models.workflow.cache_decisions import compute_cache_decisions
+def test_the_cache_record_reaches_the_work_dir_under_scratch(staged):
+    """What the task promotes with is written in scratch; the driver reads the work dir."""
+    import json
+
+    from metasmith.caching.promote import CACHE_RECORD_FILE, record_run
+    from metasmith.telemetry import TraceIndex
 
     task, workspace, gen, runner = staged
     cache_root = workspace.parent / "task_cache"
-    key_hex = next(
-        l.split(" ", 1)[1].strip()
-        for l in (workspace / _STEP_META).read_text().splitlines()
-        if l.startswith("cache_key ")
+    meta_text = (workspace / _STEP_META).read_text()
+    session = next(
+        int(l.split(" ", 1)[1]) for l in meta_text.splitlines() if l.startswith("session ")
     )
-
-    _run(
-        runner,
-        _nf(gen, scratch=True, publish_to=f"/ws/task_cache/{key_hex}.tmp"),
-        "/ws/staged/nxf_work",
+    record = {
+        "session": session, "step": _STEP_ORDER, "step_name": "trA", "member": 0,
+        "key": "-", "status": "uncacheable", "consumes": {},
+        "produces": [{"relpath": "out/1-1-1.abcdef-x.txt", "slot_id": "a" * 64,
+                      "dtype_key": "x", "branch_idx": 0, "parents": ["1e20aaaa"], "size": 1}],
+        "lineage": {"seed": ["1e20aaaa"]},
+    }
+    copy_line = next(l for l in gen.full_script if CACHE_RECORD_FILE in l)
+    nf = _nf(gen, scratch=True, publish_to=None, extra=[
+        f"echo '{json.dumps(record)}' >{CACHE_RECORD_FILE}",
+        copy_line,
+    ])
+    task_dir = _run(runner, nf, "/ws/staged/nxf_work")
+    assert (task_dir / CACHE_RECORD_FILE).exists(), (
+        "the task's cache record did not survive its scratch directory, so the "
+        f"driver records nothing for it. work dir holds: {sorted(p.name for p in task_dir.iterdir())}"
     )
-
-    log: list = []
-    summary = promote_run(workspace=workspace, cache_root=cache_root, log=log)
-    assert key_hex in summary["promoted"], (
-        f"run one promoted nothing for step {_STEP_ORDER}: {summary}, {log}"
-    )
-
-    decisions = compute_cache_decisions(task, _probe_context(workspace, cache_root))
-    first = min(decisions)
-    assert decisions[first]["hit"], (
-        "the second run demoted the shard the first one promoted; the "
-        "metadata never reached the work directory, so the shard carries no "
-        f"ancestry and cannot be replayed. promote log: {log}"
-    )
-    assert decisions[first]["out_indexes"], (
-        "the shard replayed with no index, which stops the run at the first "
-        "descendant group"
-    )
+    record_run(workspace=workspace, cache_root=cache_root)
+    trace = TraceIndex.read(workspace / "_metasmith" / "trace.jsonl")
+    assert [e.status for e in trace.events] == ["miss"], [e.to_dict() for e in trace.events]
+    assert trace.events[0].produces[0].parents == ["1e20aaaa"]
 
 
 def _probe_context(workspace: Path, cache_root: Path):

@@ -41,30 +41,3 @@ def test_dump_virtual_runtime_quadrants(virtual_runtime, tmp_path):
     print(f"\n=== RUN 2 WARM: {len(trace2.splitlines())} lines, {len(snap2.executed_steps)} executed steps ===")
     for line in trace2.splitlines()[:20]:
         print(f"  {line[:200]}")
-
-
-def test_s3_batches_decomposition_n3(virtual_runtime, tmp_path):
-    task = build_task(tmp_path, n_samples=3)
-    capture_run(virtual_runtime, task)
-    workspace = sorted((virtual_runtime.home / "runs").glob("*"))[-1]
-    step_metas = sorted(workspace.glob("workflow.step_*.meta"))
-    assert len(step_metas) == 3, f"expected 3 step metas, got {len(step_metas)}"
-    for sm in step_metas:
-        text = sm.read_text()
-        batch_line = next(
-            (l for l in text.splitlines() if l.startswith("batches ")),
-            None,
-        )
-        assert batch_line is not None, f"no batches line in {sm.name}: {text}"
-        batches = json.loads(batch_line.partition(" ")[2])
-        assert isinstance(batches, list) and batches, (
-            f"{sm.name}: batches empty/non-list: {batches!r}"
-        )
-        for b in batches:
-            assert {"batch_idx", "start", "end", "sorted_inputs"} <= set(b.keys()), (
-                f"{sm.name} batch missing keys: {b!r}"
-            )
-        print(f"\n  {sm.name}: {len(batches)} batches")
-        for b in batches:
-            print(f"    batch_idx={b['batch_idx']} [{b['start']},{b['end']}) "
-                  f"sorted_inputs={b['sorted_inputs']}")

@@ -17,14 +17,12 @@ from metasmith.models.libraries.identity import stat_leaf_id
 from metasmith.models.libraries.pinned import PinnedLibraryError
 
 from metasmith.models.workflow import restat_leaf_ids
-from metasmith.models.workflow.cache_decisions import compute_cache_decisions
 
 from tests.metasmith.cache._cache_harness import (
     build_samples_library,
     build_types_library,
 )
 from tests.metasmith.cache.fixtures.cache_fixtures import linear_3step
-from tests.metasmith.cache.test_empty_index import _context
 
 
 def _library(tmp_path: Path) -> DataInstanceLibrary:
@@ -97,30 +95,31 @@ def test_invalidate_reports_what_it_could_not_do(tmp_path):
     assert set(report["skipped"]) == {str(item), "nothing/here.txt"}
 
 
-def test_invalidating_a_given_moves_the_cache_key(tmp_path):
+def test_invalidating_a_given_moves_the_member_key(tmp_path):
     """The production path: invalidate, and the agent's own re-stat moves it.
 
     `restat_leaf_ids` re-derives every leaf id from this host's view of the
-    file before a run compiles, so a moved mtime lands in the lineage key and
-    nothing built on the old one matches.
+    file before a run compiles. A member's key folds the ids it consumed, so
+    a moved leaf id is a different key and nothing built on the old one
+    matches.
     """
+    from metasmith.caching.invocation import member_key
+
     task = linear_3step.build_task(tmp_path)
-    workspace = tmp_path / "ws"
-    workspace.mkdir(exist_ok=True)
-    cache_root = tmp_path / "task_cache"
-    cache_root.mkdir(exist_ok=True)
 
-    decisions = compute_cache_decisions(task, _context(workspace, cache_root))
-    first = min(decisions)
-    before = decisions[first]["cache_key"]
+    def _first_step_keys() -> set[bytes]:
+        step = min(task.plan.steps, key=lambda s: s.order)
+        keys = set()
+        for dep in step.transform.model.requires:
+            for inst in step.dependency_map.get(dep, []):
+                keys.add(member_key("trA", "sig", {inst.dtype.key: [inst.instance_id]}))
+        return keys
 
+    before = _first_step_keys()
     assert task.data_libraries[0].Invalidate()["moved"], "invalidate moved nothing"
     restat_leaf_ids(task)
-
-    after = compute_cache_decisions(
-        task, _context(workspace, cache_root)
-    )[first]["cache_key"]
-    assert after != before, (
-        "the cache key did not move, so every shard built on the old data "
+    after = _first_step_keys()
+    assert not (before & after), (
+        "a member key did not move, so every shard built on the old data "
         "would still be served"
     )

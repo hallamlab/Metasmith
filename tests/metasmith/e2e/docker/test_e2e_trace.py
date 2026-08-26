@@ -97,14 +97,14 @@ def run_stub_workflow(
         capture_output=True, timeout=120,
     )
 
-    from metasmith.caching.promote import promote_run
+    from metasmith.caching.promote import record_run
     cache_root = work_dir / "task_cache"
     try:
-        promote_run(workspace=work_dir, cache_root=cache_root)
+        record_run(workspace=work_dir, cache_root=cache_root)
     except Exception as e:
         if not nxf_clean_exit:
             raise AssertionError(
-                f"promote_run failed after a tolerated upstream Duration "
+                f"record_run failed after a tolerated upstream Duration "
                 f"assertion. Underlying error: {e!r}\n"
                 f"STDOUT:\n{result.stdout[-2000:]}\n"
                 f"STDERR:\n{(result.stderr or '')[-2000:]}"
@@ -630,5 +630,5 @@ class TestStubTraceHasInvocationEvents:
         n_steps = 1
         assert len(events) >= n_steps * self.N_SAMPLES, (
             f"expected >= {n_steps * self.N_SAMPLES} non-sentinel events "
-            f"(n_steps × n_samples), got {len(events)} — docker stub bypasses promote_run"
+            f"(n_steps × n_samples), got {len(events)} — docker stub bypasses record_run"
         )

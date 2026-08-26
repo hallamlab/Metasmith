@@ -7,111 +7,81 @@ from pathlib import Path
 import pytest
 
 
-def test_promote_lockfile_orphan_recovery(tmp_path):
-    from metasmith.caching.promote import _acquire_lock
+from metasmith.caching.layout import shard_dir
+from metasmith.caching.promote import StepCacheMeta, promote_members
+from metasmith.models.lineage import LinPayload
+from metasmith.models.workflow.payload import build_entry
 
+KEY = "1e20" + "ef" * 32
+META = StepCacheMeta(
+    order=1, transform_key="trA", signature="sig", step_name="trA", cacheable=True,
+    slot_files=[{"dtype_key": "step_a", "ext": ".txt", "branch_idx": 0, "slot_id": "a" * 64}],
+    slot_channels={"seed_dep": "seed"},
+)
+
+
+def _task_dir(tmp_path: Path, name: str, payload: str = "payload") -> Path:
+    cwd = tmp_path / name
+    cwd.mkdir()
+    (cwd / "1-1-1.abcdef-step_a.txt").write_text(payload)
+    return cwd
+
+
+def _entry() -> dict:
+    e = build_entry([("seed", [("/w/in.txt", {"seed": ["1e20aaaa"]})])])
+    e[LinPayload.KEY_KEY] = KEY
+    return e
+
+
+def test_a_promotion_leaves_no_staging_behind(tmp_path):
     cache_root = tmp_path / "task_cache"
-    cache_root.mkdir()
-    key_hex = "abc123"
-    lock = cache_root / f"{key_hex}.lock"
-    lock.write_text(
-        f"99999999 {__import__('socket').gethostname()} {time.time():.6f}\n"
+    records = promote_members(
+        cwd=_task_dir(tmp_path, "t1"), entries=[_entry()], meta=META,
+        cache_root=cache_root, successes=[True],
     )
-    acquired = _acquire_lock(cache_root, key_hex)
-    assert acquired is not None, "stale-pid lock was not reclaimed"
-    assert lock.exists(), "lock file should be re-created by the reclaim path"
+    assert records[0]["status"] == "promoted"
+    assert not list(cache_root.glob("*.tmp")), "the staging directory outlived the rename"
+    assert (shard_dir(cache_root, KEY) / "manifest.cbor").exists()
 
 
-def test_promote_picks_up_orphan_tmp(tmp_path):
-    from metasmith.caching.promote import recover_orphan_tmp_dirs
-
+def test_an_existing_shard_wins(tmp_path):
     cache_root = tmp_path / "task_cache"
-    cache_root.mkdir()
-    key_hex = "deadbeef"
-    tmp = cache_root / f"{key_hex}.tmp"
-    (tmp / "out").mkdir(parents=True)
-    (tmp / "out" / "f.txt").write_text("payload")
-    (tmp / "manifest.cbor").write_bytes(b"\x00manifest")
-
-    actions = recover_orphan_tmp_dirs(cache_root, [key_hex])
-    assert actions == {key_hex: "promoted"}
-    assert not tmp.exists(), "orphan .tmp should have been renamed"
-    final = cache_root / key_hex[:2] / key_hex[2:]
-    assert (final / "manifest.cbor").exists()
-
-
-def test_promote_discards_incomplete_tmp(tmp_path):
-    from metasmith.caching.promote import recover_orphan_tmp_dirs
-
-    cache_root = tmp_path / "task_cache"
-    cache_root.mkdir()
-    key_hex = "feedface"
-    tmp = cache_root / f"{key_hex}.tmp"
-    (tmp / "out").mkdir(parents=True)
-    (tmp / "out" / "partial.txt").write_text("incomplete")
-
-    actions = recover_orphan_tmp_dirs(cache_root, [key_hex])
-    assert actions == {key_hex: "deleted"}
-    assert not tmp.exists()
-    assert not (cache_root / key_hex[:2] / key_hex[2:]).exists()
-
-
-def test_reclaim_leaves_another_runs_staging_alone(tmp_path):
-    from metasmith.caching.promote import recover_orphan_tmp_dirs
-
-    cache_root = tmp_path / "task_cache"
-    cache_root.mkdir()
-
-    mine = cache_root / "aaaa1111.tmp"
-    (mine / "out").mkdir(parents=True)
-    (mine / "out" / "partial.txt").write_text("mine, abandoned")
-
-    theirs = cache_root / "bbbb2222.tmp"
-    (theirs / "out").mkdir(parents=True)
-    (theirs / "out" / "big.bin").write_text("another run, still writing")
-
-    actions = recover_orphan_tmp_dirs(cache_root, ["aaaa1111"])
-
-    assert actions == {"aaaa1111": "deleted"}
-    assert not mine.exists()
-    assert (theirs / "out" / "big.bin").read_text() == "another run, still writing"
-
-
-def test_promote_run_reclaims_only_its_own_keys(tmp_path, monkeypatch):
-    from metasmith.caching import promote as promote_mod
-
-    workspace = tmp_path / "ws"
-    workspace.mkdir()
-    cache_root = tmp_path / "task_cache"
-    cache_root.mkdir()
-
-    (workspace / "workflow.step_00.meta").write_text("{}")
-
-    spec = promote_mod.StepPromoteSpec(
-        order=0,
-        cache_key=bytes.fromhex("aaaa1111"),
-        cacheable=True,
-        transform_key="t",
-        signature="s",
-        out_identities={},
-        dep_out=[],
+    promote_members(
+        cwd=_task_dir(tmp_path, "t1", "first"), entries=[_entry()], meta=META,
+        cache_root=cache_root, successes=[True],
     )
-    monkeypatch.setattr(promote_mod, "_read_step_meta", lambda _p: spec)
-
-    mine = cache_root / "aaaa1111.tmp"
-    (mine / "out").mkdir(parents=True)
-    (mine / "out" / "partial.txt").write_text("mine, abandoned")
-
-    theirs = cache_root / "bbbb2222.tmp"
-    (theirs / "out").mkdir(parents=True)
-    (theirs / "out" / "big.bin").write_text("another run, still writing")
-
-    summary = promote_mod.promote_run(workspace=workspace, cache_root=cache_root)
-
-    assert summary["orphan_recovery"] == {"aaaa1111": "deleted"}
-    assert (theirs / "out" / "big.bin").exists(), (
-        "promote_run swept a .tmp belonging to another run"
+    records = promote_members(
+        cwd=_task_dir(tmp_path, "t2", "second"), entries=[_entry()], meta=META,
+        cache_root=cache_root, successes=[True],
     )
+    assert records[0]["status"] == "exists"
+    assert (shard_dir(cache_root, KEY) / "out" / "1-1-1.abcdef-step_a.txt").read_text() == "first"
+    assert not list(cache_root.glob("*.tmp"))
+
+
+def test_a_failed_member_is_recorded_and_not_promoted(tmp_path):
+    cache_root = tmp_path / "task_cache"
+    records = promote_members(
+        cwd=_task_dir(tmp_path, "t1"), entries=[_entry()], meta=META,
+        cache_root=cache_root, successes=[False],
+    )
+    assert records[0]["status"] == "failed"
+    assert not shard_dir(cache_root, KEY).exists()
+
+
+def test_a_product_is_stored_under_its_canonical_position(tmp_path):
+    # The member sat third in its batch; in the shard it is member one.
+    cwd = tmp_path / "t3"
+    cwd.mkdir()
+    (cwd / "3-1-1.abcdef-step_a.txt").write_text("third")
+    entries = [{LinPayload.KEY_KEY: "-"}, {LinPayload.KEY_KEY: "-"}, _entry()]
+    cache_root = tmp_path / "task_cache"
+    records = promote_members(
+        cwd=cwd, entries=entries, meta=META, cache_root=cache_root, successes=[True] * 3,
+    )
+    assert [r["status"] for r in records] == ["uncacheable", "uncacheable", "promoted"]
+    assert (shard_dir(cache_root, KEY) / "out" / "1-1-1.abcdef-step_a.txt").read_text() == "third"
+    assert records[2]["produces"][0]["relpath"] == "out/1-1-1.abcdef-step_a.txt"
 
 
 def test_network_fs_uses_copy_strategy(tmp_path, monkeypatch):
@@ -201,6 +171,12 @@ def test_gc_tombstone_delay(tmp_path):
     assert summary["tombstoned"] == [key_hex]
     assert summary["deleted"] == []
     assert (cache_root / key_hex[:2] / key_hex[2:] / "out" / "f.txt").exists()
+    from metasmith.caching.invocation import TOMBSTONE_NAME, probe
+
+    assert (cache_root / key_hex[:2] / key_hex[2:] / TOMBSTONE_NAME).exists(), (
+        "a tombstoned row left its shard servable to a task that never opens sqlite"
+    )
+    assert probe(cache_root, key) is None
 
     summary = gc_cache(
         cache_root=str(cache_root),

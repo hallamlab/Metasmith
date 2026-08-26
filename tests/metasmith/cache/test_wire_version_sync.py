@@ -50,12 +50,13 @@ def test_parser_classvar_tracks_module_constant():
 
 def test_cache_epoch_and_wire_version_are_independent():
     # Pinned so a bump has to be deliberate. They happen to be equal again: the
-    # cache epoch moved to 4 when a step's inputs began naming their producer's
-    # slot id, and the wire envelope did not move with it. Equality is allowed;
-    # defining one in terms of the other is what R5 did, and it desynced the
-    # Groovy emitter from its parser with a green fast suite.
-    assert CACHE_KEY_VERSION == 4
-    assert LIN_PAYLOAD_VERSION == 4
+    # cache epoch moved to 5 when the unit became one member's invocation, and
+    # the wire envelope moved to 5 when a member began carrying its KEY -- two
+    # bumps for two reasons. Equality is allowed; defining one in terms of the
+    # other is what R5 did, and it desynced the Groovy emitter from its parser
+    # with a green fast suite.
+    assert CACHE_KEY_VERSION == 5
+    assert LIN_PAYLOAD_VERSION == 5
     import metasmith.caching.keys as keys_mod
 
     keys_src = Path(keys_mod.__file__).read_text()
@@ -64,7 +65,7 @@ def test_cache_epoch_and_wire_version_are_independent():
 
 
 _GROOVY_KEY_RE = re.compile(
-    r"public\s+static\s+final\s+String\s+(FILES_KEY|PROV_KEY)\s*=\s*\"([^\"]+)\""
+    r"public\s+static\s+final\s+String\s+(FILES_KEY|PROV_KEY|KEY_KEY)\s*=\s*\"([^\"]+)\""
 )
 
 
@@ -76,17 +77,24 @@ def _orchestrator_source() -> str:
 
 def test_groovy_reserved_keys_match_the_parser():
     found = dict(_GROOVY_KEY_RE.findall(_orchestrator_source()))
-    assert found == {"FILES_KEY": LinPayload.FILES_KEY, "PROV_KEY": LinPayload.PROV_KEY}, (
+    assert found == {
+        "FILES_KEY": LinPayload.FILES_KEY,
+        "PROV_KEY": LinPayload.PROV_KEY,
+        "KEY_KEY": LinPayload.KEY_KEY,
+    }, (
         f"Orchestrator.groovy declares {found}, but the parser expects "
-        f"FILES_KEY={LinPayload.FILES_KEY!r} PROV_KEY={LinPayload.PROV_KEY!r}. "
-        "A renamed key on one side leaves the other reading a key nobody writes: "
-        "FILES silently empties every input group, PROV silently disables "
-        "provenance. Neither raises."
+        f"FILES_KEY={LinPayload.FILES_KEY!r} PROV_KEY={LinPayload.PROV_KEY!r} "
+        f"KEY_KEY={LinPayload.KEY_KEY!r}. A renamed key on one side leaves the "
+        "other reading a key nobody writes: FILES silently empties every input "
+        "group, PROV silently disables provenance, KEY leaves every product "
+        "unnamed. None raises."
     )
 
 
 def test_reserved_keys_are_the_set_lineage_index_filters():
-    assert LinPayload.RESERVED_KEYS == {LinPayload.FILES_KEY, LinPayload.PROV_KEY}
+    assert LinPayload.RESERVED_KEYS == {
+        LinPayload.FILES_KEY, LinPayload.PROV_KEY, LinPayload.KEY_KEY,
+    }
 
 
 def test_the_orchestrator_strips_every_reserved_key_on_the_way_out():
@@ -97,8 +105,10 @@ def test_the_orchestrator_strips_every_reserved_key_on_the_way_out():
         "strip is what keeps FILES and PROV out of every downstream index"
     )
     strip = src.split("public static Map stripReserved(")[1].split("\n    }\n")[0]
-    for key in ("FILES_KEY", "PROV_KEY"):
-        assert key in strip, (
-            f"stripReserved does not strip {key}; it will propagate into "
-            "every downstream index and into promoted shards"
-        )
+    assert "RESERVED_KEYS" in strip, (
+        "stripReserved does not strip RESERVED_KEYS; a reserved key will "
+        "propagate into every downstream index and into promoted shards"
+    )
+    reserved = src.split("public static final List RESERVED_KEYS = [")[1].split("]")[0]
+    for key in ("FILES_KEY", "PROV_KEY", "KEY_KEY"):
+        assert key in reserved, f"RESERVED_KEYS does not list {key}"

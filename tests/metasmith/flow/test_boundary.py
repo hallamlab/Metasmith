@@ -45,8 +45,10 @@ def test_e2_single_input_chain(tmp_path, virtual_runtime):
 def test_e3_large_fanout_batches_correctly(tmp_path, virtual_runtime):
     bp = build_batched_plan(tmp_path, n_inputs=50, batch_size=10)
     task, lib = run_and_load(virtual_runtime, bp)
-    assert len(lib._trace.events) == 5, (
-        f"expected 5 batched invocations, got {len(lib._trace.events)}"
+    calls = [e for e in virtual_runtime.parse_trace() if e.get("type") == "bootstrap_call"]
+    assert len(calls) == 5, f"expected 5 batched tasks, got {len(calls)}"
+    assert len(lib._trace.events) == 50, (
+        f"expected one event per member, 50, got {len(lib._trace.events)}"
     )
 
 

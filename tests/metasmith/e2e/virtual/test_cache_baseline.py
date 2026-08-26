@@ -45,7 +45,7 @@ def test_cache_dir_populated_after_first_run(name, tmp_path, virtual_runtime):
     snap = capture_run(virtual_runtime, task)
 
     assert snap.cache_state != (), (
-        f"fixture {name}: cache_root was empty; promote_run did not "
+        f"fixture {name}: cache_root was empty; the tasks promoted nothing and record_run "
         f"deposit any entries"
     )
     rel_files = {relpath for relpath, _ in snap.cache_state}
