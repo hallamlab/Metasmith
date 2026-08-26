@@ -18,6 +18,7 @@ import yaml
 from ..constants import AgentPaths
 from ..models.lineage import LinPayload
 from ..models.remote import Source
+from ..models.workflow import NextflowProcessName
 from ..models.workflow.payload import (
     Index,
     build_entry,
@@ -35,6 +36,11 @@ HOME_ENV = "MSM_VIRTUAL_AGENT_HOME"
 HOST_ENV = "MSM_VIRTUAL_HOST"
 FORCE_BOUNCE_ENV = "MSM_VIRTUAL_FORCE_BOUNCE"
 IN_CONTAINER_ENV = "MSM_VIRTUAL_IN_CONTAINER"
+# Comma-separated transform names whose invocations report FAILED. This runtime
+# stubs the transform executor away, so a protocol that raises still reports
+# success -- a declared failure is the only way to give it a dead step, and a
+# dead step is what the driver's failure reporting has to be tested against.
+FAIL_STEPS_ENV = "MSM_VIRTUAL_FAIL_STEPS"
 
 
 def _trace_path() -> Path | None:
@@ -558,6 +564,14 @@ def cli_nextflow(argv: list[str]) -> int:
 
     hit_decisions = _read_hit_decisions(workspace)
     slot_ids_by_step = _read_slot_ids(workspace)
+    # One row per invocation, in the columns real nextflow writes for
+    # `-with-trace`. The driver reads this file to learn what each task did,
+    # so a runtime that cannot express a failed task cannot exercise how a
+    # failure is reported.
+    nxf_trace_rows: list[dict[str, Any]] = []
+    declared_failures = {
+        n.strip() for n in os.environ.get(FAIL_STEPS_ENV, "").split(",") if n.strip()
+    }
 
     for step in task.plan.steps:
         step_slot_ids = slot_ids_by_step.get(step.order, {})
@@ -627,27 +641,49 @@ def cli_nextflow(argv: list[str]) -> int:
                 }
             )
 
-            env = os.environ.copy()
-            env[IN_CONTAINER_ENV] = "1" if env.get(FORCE_BOUNCE_ENV, "0") == "1" else "0"
-            res = subprocess.run(
-                [str(bootstrap), str(workspace), str(step.order), host],
-                cwd=invocation_dir,
-                env=env,
-                check=False,
-                capture_output=True,
-                text=True,
-            )
-            write_trace(
-                {
-                    "type": "bootstrap_result",
-                    "step": step.order,
-                    "code": int(res.returncode),
-                    "stdout_tail": res.stdout[-500:],
-                    "stderr_tail": res.stderr[-500:],
-                }
-            )
-            if res.returncode != 0:
-                return int(res.returncode)
+            if step.transform.name in declared_failures:
+                returncode = 1
+                write_trace(
+                    {
+                        "type": "declared_failure",
+                        "step": step.order,
+                        "step_name": step.transform.name,
+                    }
+                )
+            else:
+                env = os.environ.copy()
+                env[IN_CONTAINER_ENV] = "1" if env.get(FORCE_BOUNCE_ENV, "0") == "1" else "0"
+                res = subprocess.run(
+                    [str(bootstrap), str(workspace), str(step.order), host],
+                    cwd=invocation_dir,
+                    env=env,
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                )
+                returncode = int(res.returncode)
+                write_trace(
+                    {
+                        "type": "bootstrap_result",
+                        "step": step.order,
+                        "code": returncode,
+                        "stdout_tail": res.stdout[-500:],
+                        "stderr_tail": res.stderr[-500:],
+                    }
+                )
+            nxf_trace_rows.append({
+                "task_id": len(nxf_trace_rows) + 1,
+                "hash": f"{step.order:02x}/{start:06x}",
+                "name": NextflowProcessName(step.order, step.transform.name),
+                "status": "COMPLETED" if returncode == 0 else "FAILED",
+                "exit": returncode,
+            })
+            if returncode != 0:
+                # The shipped local preset ends its errorStrategy in `ignore`,
+                # so a failed task leaves a FAILED row behind and the run
+                # carries on without it. Aborting here would make this runtime
+                # the one place a dead step stops the workflow.
+                continue
 
             for member_idx, entry in enumerate(members):
                 key_idx = start + member_idx
@@ -737,6 +773,13 @@ def cli_nextflow(argv: list[str]) -> int:
             p.parent.mkdir(parents=True, exist_ok=True)
             if k == "-with-report":
                 p.write_text("<html><body>virtual nextflow report</body></html>\n", encoding="utf-8")
+            elif k == "-with-trace":
+                cols = ["task_id", "hash", "name", "status", "exit"]
+                lines = ["\t".join(cols)]
+                lines += [
+                    "\t".join(str(row[c]) for c in cols) for row in nxf_trace_rows
+                ]
+                p.write_text("\n".join(lines) + "\n", encoding="utf-8")
             else:
                 p.write_text("virtual\n", encoding="utf-8")
 
