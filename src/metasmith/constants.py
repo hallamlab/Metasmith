@@ -58,6 +58,13 @@ class AgentPaths:
     ENV_MANIFEST_SCHEMA = 2
     NXF_TRACE_FILE = "nxf_trace.tsv"
 
+    # The two lines the driver ends a run with, and the only thing a watcher on
+    # another host has to look at. A run whose steps were ignored ends on the
+    # failed line: nextflow itself exits 0, so the agent log is where the
+    # difference between "finished" and "finished with nothing" lives.
+    RUN_DONE_SENTINEL = "run completed at"
+    RUN_FAILED_SENTINEL = "run failed at"
+
     # A run's identity and its process group, written by start.sh beside PID.lock.
     # PID.lock holds nextflow's pgid and is the cancel handle; RUN.pgid holds the
     # whole run's pgid and RUN.token the environment token every descendant

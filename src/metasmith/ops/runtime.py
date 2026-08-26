@@ -120,7 +120,8 @@ def wait(
 ) -> dict:
     agent = load_agent(agent_path)
     return agent.WaitForWorkflow(
-        task_key, timeout_s, poll_s, run, "run completed at", since_mtime, grace_s,
+        task_key, timeout_s, poll_s, run,
+        AgentPaths.RUN_DONE_SENTINEL, since_mtime, grace_s,
     )
 
 

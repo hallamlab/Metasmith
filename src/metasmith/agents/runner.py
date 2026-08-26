@@ -4,6 +4,8 @@ import json
 import os
 import re
 import shutil
+import time
+import threading
 from pathlib import Path
 from typing import Iterable
 
@@ -17,7 +19,9 @@ from ..logging import Log
 from ..models.libraries import DataInstanceLibrary
 from ..models.paths import PathMap
 from ..models.remote import GlobusSource, Logistics, Source
-from ..models.workflow import NextflowGenContext, WorkflowTask, restat_leaf_ids
+from ..models.workflow import (
+    NextflowGenContext, NextflowProcessName, WorkflowTask, restat_leaf_ids,
+)
 from ..serialization import StdTime
 from .agent import Agent
 from .collect import CollectResults, PublishCachedProducts
@@ -326,6 +330,140 @@ def _extract_nxf_task_metadata(log_dir_abs: Path) -> "pd.DataFrame | None":
         return None
 
 
+# How long a run has to be silent before the driver says anything, and how much
+# longer each time after that. Cumulative, so a run that never speaks beats at
+# 5, 20, 50, 110 and then 170 minutes and hourly after -- about fifteen lines
+# over a twelve-hour InterProScan step, not one every five minutes.
+HEARTBEAT_GAPS_S = (5 * 60, 15 * 60, 30 * 60, 60 * 60)
+_HEARTBEAT_POLL_S = 20.0
+
+
+def heartbeat_marks(silence_s: float, gaps=HEARTBEAT_GAPS_S) -> list[float]:
+    """The seconds-of-silence at which a run silent for `silence_s` speaks."""
+    marks: list[float] = []
+    at, i = gaps[0], 0
+    while at <= silence_s:
+        marks.append(at)
+        i = min(i + 1, len(gaps) - 1)
+        at += gaps[i]
+    return marks
+
+
+def _running_tasks(workspace: Path, task) -> list[tuple[str, float]]:
+    # Nextflow's own trace file only lands a row when a task finishes, so it
+    # cannot answer "what is running". The work directory can: a task that has
+    # begun and has no exit code yet is running, and its `.command.begin` is
+    # when it started.
+    now = time.time()
+    found: list[tuple[str, float]] = []
+    for begun in (workspace/"nxf_work").glob("*/*/.command.begin"):
+        d = begun.parent
+        if (d/".exitcode").exists(): continue
+        name = d.name[:6]
+        try:
+            with open(d/".command.log") as f:
+                first = f.readline()
+            order = [int(x) for x in re.findall(r"\d+", first)][0]
+            name = NextflowProcessName(order, task.plan.steps[order-1].transform.name)
+        except Exception:
+            pass
+        try:
+            found.append((name, max(0.0, now - begun.stat().st_mtime)))
+        except OSError:
+            continue
+    return sorted(found, key=lambda kv: -kv[1])
+
+
+def _heartbeat_line(workspace: Path, task, silent_s: float) -> str:
+    running = _running_tasks(workspace, task)
+    quiet = f"nextflow has said nothing for {silent_s/60:.0f} min"
+    if not running:
+        return f"{quiet}, and no step is running"
+    names = ", ".join(n for n, _ in running[:4])
+    if len(running) > 4:
+        names += f" (+{len(running)-4} more)"
+    return (
+        f"{quiet}; [{len(running)}] step(s) still running, longest "
+        f"{running[0][1]/60:.0f} min: {names}"
+    )
+
+
+class _Heartbeat:
+    """Says whether a quiet run is still working, and does it rarely.
+
+    Silence-triggered rather than periodic: a run nextflow is narrating emits
+    nothing at all, because there is nothing to add. The reporter watched a
+    ninety-five minute run print nothing, because `wget -q` says nothing and
+    the agent log is exactly as chatty as nextflow is.
+    """
+
+    def __init__(self, shell, workspace: Path, task):
+        self._shell = shell
+        self._workspace = workspace
+        self._task = task
+        self._stop = threading.Event()
+        self._thread: threading.Thread | None = None
+
+    def __enter__(self):
+        self._thread = threading.Thread(
+            target=self._loop, name="msm-run-heartbeat", daemon=True,
+        )
+        self._thread.start()
+        return self
+
+    def __exit__(self, *_):
+        self._stop.set()
+        if self._thread is not None:
+            self._thread.join(timeout=5)
+        return False
+
+    def _loop(self):
+        gap_i, next_at, seen, last = 0, HEARTBEAT_GAPS_S[0], 0.0, None
+        while not self._stop.wait(_HEARTBEAT_POLL_S):
+            try:
+                silent = self._shell.SecondsSinceRead()
+            except Exception:
+                return
+            if silent < seen:
+                # nextflow spoke; the next silence starts from the shortest gap
+                gap_i, next_at = 0, HEARTBEAT_GAPS_S[0]
+            seen = silent
+            if silent < next_at:
+                continue
+            try:
+                line = _heartbeat_line(self._workspace, self._task, silent)
+            except Exception:
+                line = None
+            if line and line != last:
+                Log.Info(line)
+                last = line
+            gap_i = min(gap_i + 1, len(HEARTBEAT_GAPS_S) - 1)
+            next_at = silent + HEARTBEAT_GAPS_S[gap_i]
+
+
+_FAILED_STATES = {"FAILED", "ABORTED"}
+
+
+def _failed_steps(df_tasks: "pd.DataFrame | None") -> list[str]:
+    # A process is failed if nextflow said so, or if it "completed" with a
+    # non-zero code -- the shipped presets end their errorStrategy in `ignore`,
+    # which leaves the row behind and carries on.
+    if df_tasks is None or len(df_tasks) == 0:
+        return []
+    names: list[str] = []
+    for _, row in df_tasks.iterrows():
+        status = str(row.get("status", "")).strip().upper()
+        try:
+            code = int(str(row.get("exit", "")).strip())
+        except (TypeError, ValueError):
+            code = 0
+        if status in _FAILED_STATES or code != 0:
+            name = str(row.get("name", "")).strip()
+            if name and name not in names:
+                names.append(name)
+    return names
+
+
 def RunWorkflow(key: str, log_dir: Path, host: str, stub_delay: float):
     task_path = AgentPaths.to_task(key)
     workspace = task_path.parent.parent
@@ -381,14 +519,15 @@ def RunWorkflow(key: str, log_dir: Path, host: str, stub_delay: float):
         shell.RegisterOnErr(Log.Error)
         Log.Info(f"calling nextflow from container")
         stub_param = f"-stub --testSpread={stub_delay:0.3f}" if stub_delay>0 else ""
-        shell.Exec(
-            RenderNextflowScript(
-                workspace=workspace, log_dir=log_dir, host=host,
-                results_folder=results_folder, nxf_report=nxf_report,
-                nxf_dag=nxf_dag, stub_param=stub_param,
-            ),
-            timeout=None,
-        )
+        with _Heartbeat(shell, workspace, task):
+            shell.Exec(
+                RenderNextflowScript(
+                    workspace=workspace, log_dir=log_dir, host=host,
+                    results_folder=results_folder, nxf_report=nxf_report,
+                    nxf_dag=nxf_dag, stub_param=stub_param,
+                ),
+                timeout=None,
+            )
 
     df_tasks = _extract_nxf_task_metadata(workspace/log_dir)
     if df_tasks is not None:
@@ -397,6 +536,13 @@ def RunWorkflow(key: str, log_dir: Path, host: str, stub_delay: float):
         Log.Info(f"extracted task metadata to [{nxf_task_meta}]")
     else:
         Log.Warn(f"no task metadata extracted from [{workspace/log_dir}]")
+
+    failed_steps = _failed_steps(df_tasks)
+    if failed_steps:
+        Log.Error(
+            f"[{len(failed_steps)}] step(s) failed and were ignored, so their"
+            f" products are missing: {', '.join(failed_steps)}"
+        )
 
     if os.environ.get("METASMITH_CACHE", "1").lower() not in {
         "0", "false", "off", "no"
@@ -483,7 +629,17 @@ def RunWorkflow(key: str, log_dir: Path, host: str, stub_delay: float):
     latest_link = (output_metadata_path/f"logs.latest")
     if latest_link.exists(): latest_link.unlink()
     latest_link.symlink_to(f"../../{log_dir}")
-    Log.Info(f"run completed at [{StdTime.Timestamp()}]")
+    if failed_steps:
+        # Ignoring a dead step is the right strategy -- one dead annotator must
+        # not destroy an eleven-sample run -- but the run is not a success, and
+        # saying it completed is how a user is told their results are there when
+        # the step that makes them never ran.
+        Log.Error(
+            f"{AgentPaths.RUN_FAILED_SENTINEL} [{StdTime.Timestamp()}] with [{len(failed_steps)}]"
+            f" ignored step(s): {', '.join(failed_steps)}"
+        )
+    else:
+        Log.Info(f"{AgentPaths.RUN_DONE_SENTINEL} [{StdTime.Timestamp()}]")
 
 def CheckWorkflow(key: str, index: int|None=None, quiet: bool=False) -> dict:
     task_path = AgentPaths.to_task(key)

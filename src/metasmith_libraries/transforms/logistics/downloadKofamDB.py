@@ -19,14 +19,14 @@ def protocol(context: ExecutionContext):
     # reports as zero annotations rather than as an error.
     context.ExecWithEnv().ifContainerDo(
         env=image,
-        cmd=f"""
-            set -e
-            wget -q {PROFILES_URL} -O profiles.tar.gz
-            wget -q {KO_LIST_URL} -O ko_list.gz
-            mkdir -p {iprofiles.container}
-            tar -xzf profiles.tar.gz -C {iprofiles.container} --strip-components=1
-            gunzip -c ko_list.gz > {iko_list.container}
-        """,
+        cmd="\n".join([
+            "set -e",
+            FetchCommand(PROFILES_URL, "profiles.tar.gz"),
+            FetchCommand(KO_LIST_URL, "ko_list.gz"),
+            f"mkdir -p {iprofiles.container}",
+            f"tar -xzf profiles.tar.gz -C {iprofiles.container} --strip-components=1",
+            f"gunzip -c ko_list.gz > {iko_list.container}",
+        ]),
     )
 
     n_hmm = len(list(iprofiles.local.glob("*.hmm"))) if iprofiles.local.is_dir() else 0

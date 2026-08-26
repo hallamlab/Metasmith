@@ -29,8 +29,7 @@ def protocol(context: ExecutionContext):
                 --fasta {iasm.container} \
                 --gff {igff.container} \
                 --outdir {chunks_dir} \
-                --max-chunk-bp 1000000 &&
-            cd /ws
+                --max-chunk-bp 1000000
         """,
     )
 
@@ -51,8 +50,7 @@ def protocol(context: ExecutionContext):
             }} &&
             export -f run_chunk &&
             ls {chunks_dir}/*.fna | xargs -I{{}} -P {cpus} \
-                bash -c 'run_chunk "$@"' _ {{}} &&
-            cd /ws
+                bash -c 'run_chunk "$@"' _ {{}}
         """,
     )
 
@@ -62,8 +60,7 @@ def protocol(context: ExecutionContext):
             python {imerge.container} \
                 --manifest {chunks_dir}/manifest.json \
                 --results-dir {results_dir} \
-                --output /ws/pt_merged.tsv &&
-            cd /ws
+                --output /ws/pt_merged.tsv
         """,
     )
 

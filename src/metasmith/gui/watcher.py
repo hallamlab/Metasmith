@@ -9,6 +9,7 @@ from .store import Project, utcnow
 
 _STATUS_TO_STATE = {
     "completed": "completed",
+    "failed": "failed",
     "errored": "failed",
 }
 

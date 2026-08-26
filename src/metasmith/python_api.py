@@ -1,6 +1,7 @@
 from .models.libraries import Endpoint, DataTypeLibrary, DataInstance, DataInstanceLibrary
 from .models.libraries import Transform, TransformInstance, TransformInstanceLibrary
 from .models.libraries import ExecutionContext, ExecutionResult, Resources, Size, Duration, Gpu, Gpus
+from .models.libraries import FetchCommand
 from .models.workflow import WorkflowTask, WorkflowPlan, WorkflowStep, WorkflowTarget
 from .models.direct_run import RunTransform
 from .models.paths import DEFERRED, DeferredPathError

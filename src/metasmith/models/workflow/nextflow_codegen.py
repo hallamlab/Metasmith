@@ -161,8 +161,50 @@ def apply_fs_strategy(context: NextflowGenContext) -> None:
     )
 
 
+_REF_NAMESPACE = "ref::"
+_ENV_NAMESPACE = "env::"
+
+
+def _dtype_names(step, deps) -> set[str]:
+    return {
+        str(getattr(inst, "dtype_name", d.key))
+        for d in deps for inst in step.dependency_map.get(d, [])
+    }
+
+
+def DownloadSteps(plan) -> list:
+    """The steps of `plan` that fetch a reference artifact from the internet.
+
+    A step qualifies when everything it produces is a `ref::` type and
+    everything it consumes is an `env::` one -- it takes no sample input, so
+    there is nothing for it to do but fetch. That is worth saying out loud
+    before a run starts: the difference between a workflow that finishes in
+    twenty-five minutes and one that spends ninety on databases is whether the
+    input set carried them, and nothing else announces it.
+    """
+    found = []
+    for step in plan.steps:
+        produces = [d for g in step.transform.model.produces for d in g]
+        requires = list(step.transform.model.requires)
+        made = _dtype_names(step, produces)
+        taken = _dtype_names(step, requires)
+        if not made or not taken:
+            continue
+        if all(n.startswith(_REF_NAMESPACE) for n in made) and \
+                all(n.startswith(_ENV_NAMESPACE) for n in taken):
+            found.append(step)
+    return found
+
+
 def prepare_nextflow(task, context: NextflowGenContext):
     TAB = "\t"
+    downloads = DownloadSteps(task.plan)
+    if downloads:
+        Log.Info(
+            f"[{len(downloads)}] step(s) in this plan fetch a reference"
+            f" database rather than reading one that was given:"
+            f" {', '.join(s.transform.name for s in downloads)}"
+        )
     def _strip_var(s: str):
         return s[2:-1]
     if context.cache_root is None:
