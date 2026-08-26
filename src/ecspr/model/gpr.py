@@ -50,29 +50,6 @@ def load_gpr(paths) -> pd.DataFrame:
     return df
 
 
-def _select(df, column, values):
-    if not column or not len(values):
-        return None
-    if column not in df.columns:
-        raise ValueError(f"mask column {column!r} is not in the GPR table "
-                         f"(has {sorted(df.columns)})")
-    return df[column].astype("object").isin(list(values))
-
-
-def apply_mask(df: pd.DataFrame, *, background_column=None, background_values=(),
-               mask_column=None, mask_values=(), drop_column=None,
-               drop_values=()) -> pd.DataFrame:
-    bg = _select(df, background_column, background_values)
-    mk = _select(df, mask_column, mask_values)
-    keep = None
-    for part in (bg, mk):
-        if part is not None:
-            keep = part if keep is None else (keep | part)
-    out = df if keep is None else df[keep]
-    dr = _select(out, drop_column, drop_values)
-    return out if dr is None else out[~dr]
-
-
 def _normalise(df: pd.DataFrame) -> pd.DataFrame:
     out = df.copy()
     orf = None
@@ -133,18 +110,12 @@ def coverage(rows: pd.DataFrame, w: dict) -> dict:
                 n_reactions=len(w), n_rows_in_atom_universe=in_universe)
 
 
-def condition_weights(df: pd.DataFrame, *, weighting="belief", **mask) -> tuple:
-    rows = apply_mask(df, **mask)
-    w = weights_from_rows(rows, weighting)
-    return w, coverage(rows, w)
-
-
 def resolve_weights(condition, corpus: dict, *, weighting="belief") -> tuple:
     """A `Condition` plus `{table: DataFrame}` -> `({mnxr: E}, coverage)`.
 
-    The entry point that replaces `condition_weights` for anything reading the long
-    conditions table. The mask form above stays for the tables that have not been
-    converted yet.
+    THE ONLY WAY A CONSTRUCTION BECOMES WEIGHTS. The fixed three-part mask this replaced
+    -- background OR mask MINUS drop, over one concatenated frame -- expressed no order,
+    no intersection and no third step, and every caller of it is now on the algebra.
     """
     from .conditions import resolve
     rows = resolve(condition, corpus)

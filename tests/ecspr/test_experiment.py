@@ -6,7 +6,7 @@ from ecspr.model import conditions as cond_mod
 from ecspr.model import nulls, probes, scoring
 from ecspr.model import tests as test_mod
 from ecspr.model.evidence import POOL_LAM0, nomination_contributions
-from ecspr.model.gpr import _normalise, condition_weights, load_gpr, resolve_weights
+from ecspr.model.gpr import _normalise, load_gpr, resolve_weights
 
 HOST = "iML1515"
 
@@ -101,10 +101,12 @@ def test_a_deletion_is_a_subtract_step(gpr_path):
     assert w == {"R1": 1.0, "R2": 1.0}
 
 
-def _belief(rows, **mask):
-    w, _ = condition_weights(pd.DataFrame(rows), weighting="belief",
-                             background_column="genome_unit", background_values=(HOST,),
-                             **mask)
+def _belief(rows, table="rows.parquet"):
+    """The host's whole table, weighted by belief. The properties below are about the
+    allocation, so the construction is the simplest one that has all the rows in it."""
+    c = cond_mod.Condition("x", (cond_mod.Step(table=table, type="", set=(),
+                                               operation="union"),))
+    w, _ = resolve_weights(c, {table: pd.DataFrame(rows)}, weighting="belief")
     return w
 
 
@@ -176,14 +178,15 @@ def test_a_second_unit_is_a_second_assertion(gpr_path):
     host = _gpr_rows(HOST, "b2", ["R2"])
     clone = _gpr_rows("clone", "cA", ["R2"], condition="C_over")
     alone = _belief(host)["R2"]
-    together = _belief(host + clone, mask_column="condition_id",
-                       mask_values=("C_over",))["R2"]
+    together = _belief(host + clone)["R2"]
     assert together > 1.5 * alone
 
 
-def test_an_unknown_mask_column_is_refused(gpr_path):
-    with pytest.raises(ValueError):
-        condition_weights(load_gpr(gpr_path), mask_column="nope", mask_values=("x",))
+def test_an_unknown_selector_column_is_refused(gpr_path):
+    bad = cond_mod.Condition("x", (BACKGROUND, cond_mod.Step(
+        table=GPR_TABLE, type="nope", set=("x",), operation="union")))
+    with pytest.raises(ValueError, match="not a column"):
+        resolve_weights(bad, _corpus(gpr_path))
 
 
 @pytest.mark.parametrize("ext", [".parquet", ".tsv"])
@@ -297,6 +300,26 @@ def test_draw_is_deterministic_and_emits_both_tables(gpr_path, tmp_path):
     assert all(t.sinks == ("P1", "P2") and t.source_hub == "S" for t in ta), \
         "a drawn test inherits the measurement of the arm it is the null for"
     assert {t.network for t in ta} == {c.condition_id for c in ca}
+
+
+def test_a_null_carries_a_multi_step_background_including_its_subtracts(gpr_path):
+    # THE ASKA PANEL'S SHAPE, and what replaced a script that copied two columns onto
+    # every drawn row by hand. Its background is TWO whole tables -- the host GEM and the
+    # plasmid -- minus a constant set of the host's reactions, because every strain in
+    # that paper is a deletion mutant. A null drawn on the plain host is a null for a
+    # different experiment, and it comes back looking like a smaller effect rather than
+    # like a broken draw.
+    deleted = cond_mod.Step(table=GPR_TABLE, type="intermediate_id", set=("R3",),
+                            operation="subtract")
+    baseline = cond_mod.Condition("baseline", (BACKGROUND, deleted))
+    like = [_test("C_new")]
+    conds, _ts = nulls.draw([gpr_path], [baseline], like, n=5, seed=11,
+                            background=baseline.steps, draw_column="orf",
+                            pool_table=GPR_TABLE, log=lambda _m: None)
+    assert all(c.steps[:2] == (BACKGROUND, deleted) for c in conds)
+    # and the subtract still bites: R3 is out of every drawn construction
+    w, _cov = resolve_weights(conds[0], _corpus(gpr_path))
+    assert "R3" not in w
 
 
 def test_draw_refuses_an_unmatched_null(gpr_path):
