@@ -494,12 +494,17 @@ exceeding host memory *before* the run, which looks like a dropped override and 
 
 ## Task cache and lineage
 
-**Cache identity is provenance, not bytes.** A step's `cache_key` is the transform key plus its
-sorted input `instance_id`s, canonical-CBOR encoded and blake3-32 multihashed; nothing about the
-output participates. On by default, with a per-transform opt-out and a global kill-switch. An
-input produced by an earlier step names that step's slot id, so a key moves when its producer
-does; `cache_decisions` stamps the slot id onto the consumer's instance as well as the producer's,
-because the two start life sharing the transform archetype's id.
+**The cache unit is one group member's invocation, and its identity is provenance, not bytes.**
+A member is one entry of a step's batch on the Nextflow channel: one `by` item with the files
+its other slots joined to it. Its key is the transform key, the lineage signature, and the sorted
+own-ids of every file it consumed per slot, canonical-CBOR encoded and blake3-32 multihashed.
+Nothing about the output participates. The ids come off the member's `PROV`, so a member whose
+`PROV` is missing or whose items lack an own-id is uncacheable and keys as `-`. One module,
+`caching/invocation.py`, holds the key, the probe and the structural slot id. It imports only
+`caching/keys.py` and the standard library. The orchestrator runs it as a subprocess once per
+batch (`python -m metasmith.caching.invocation`, JSON on stdin), which costs about 0.07 s of
+interpreter start-up per call at any batch width. On by default, with a per-transform opt-out
+and the `METASMITH_CACHE=0` kill switch. A helper failure is a miss, never a hit.
 
 **Leaf ids are stat-addressed** — `multihash("stat" ‖ abspath ‖ mtime_ns)`, one stat whether the
 leaf is a file or a 300k-file directory. The absolute path belongs to whichever host ran the stat,
@@ -513,17 +518,15 @@ which survives the re-materialisation that moves an mtime. A change below the to
 invisible by construction, and `msm data invalidate` is the lever for it: it moves the mtime
 forward and re-mints through the same formula, so client and agent still agree.
 
-**A cache key covers a plan step, not one invocation.** The solver folds a multi-sample run into
-one *unique case*, so every step after the fan-in carries a single plan instance whatever the
-sample count and the per-sample fan-out happens in nextflow at runtime. A step's key therefore
-lists the ids of everything the step consumes across every sample, and a produced slot's id is
-derived from that key — so adding one sample moves the producing step's key, its output slot id,
-and the key of every step downstream of it. Reusing the work already done for the samples common
-to two runs would mean keying on the invocation rather than the step: a structural plan-level slot
-id and a per-batch entry looked up at execution time against the real inputs that invocation
-consumed. Decoupling the slot id from the key without that is unsafe — the id is what joins a
-consumer's requirement to the producing invocation, so an id that did not encode its inputs would
-let a lookup serve one sample's result for another.
+**A slot id is structural. It joins a consumer to a producer and carries no inputs.** The
+solver folds a multi-sample run into one *unique case*, so a step has one plan instance whatever
+the sample count and the per-sample fan-out happens on the channel at run time. A produced slot's
+id therefore hashes the transform key, the signature, the slot, the branch, and the slot ids
+upstream of it (`given:<dtype>` for a given). It never folds a leaf id or the step's order. Two
+runs that reach a transform through the same chain of transforms mint the same slot id, however
+their sample sets, step orders, or unrelated steps differ, and the member key then decides the
+hit from the ids that member actually consumed. That is what lets sample A hit in run 2 when run
+1 computed it beside B and C and run 2 places it beside X and Y through a changed plan.
 
 **A database shard outlives a re-solve and dies with the agent home.** A download step consumes
 only its tool environment, so its key is stat-addressed on the env files under
@@ -532,49 +535,64 @@ alone, which is why a second run does not re-fetch five gigabytes. A fresh agent
 the env files at new paths with new mtimes, so it re-fetches everything; so does any change to a
 downloader's protocol source, which is part of the signature.
 
-**Nextflow will not publish a path outside its own work directory.** `PublishOp.collectFiles`
-adds a path to the publish set only when `getTaskDir` resolves it under `session.workDir`, its
-`tmp`, or `bucketDir`; anything else is dropped with no log and no error. A cache shard is outside
-all three, so nothing the emitter puts on a channel reaches `results/` from a hit — the emitter
-records the channel-to-directory spelling in `workflow.cache_publish.json` and the driver places
-those products itself once nextflow has exited. This is invisible from here: the run reports
-`completed` and the results directory is simply empty.
+**A hit runs as a task, on the local executor.** Nextflow publishes only paths under its own
+work directory and drops the rest without a log line, so a shard path on a channel never reaches
+`results/`. The emitter therefore writes a twin process `<name>_cached` beside each step:
+`executor 'local'`, `cache false`, no container, `cpus = 1`, `memory = '256 MB'`, the same
+`output:` block. `Orchestrator.group` collates a batch, asks the helper for each member's key and
+shard, stamps `KEY` onto the member, and returns two channels: the misses collated into the real
+process, the hits collated into the twin with the shard's `out/` files as values. The twin links
+or copies each source into its work dir under the member's position, so publish, trace and
+`nxf_tasks.csv` see a completed task and no scheduler saw a job. The twin has no `stub:` block.
+Under `-stub` the copy is still its whole job, and a touched stand-in cannot serve a directory
+product. `mixOuts` joins the two processes' outputs per branch before `o.post`, so downstream sees
+one producer. The resource ceiling reads the twin's resources like any other process.
 
-**A product is whatever carries the canonical `<batch>-<item>-<branch>.<hash>-<key><ext>` name** —
-a directory as readily as a file. Nothing on the promote or the hit path may branch on the
-declared extension to decide which: `GetPreferredFileExtension` answers `""` for plenty of file
-types, and a directory type can carry one.
+**A product is whatever carries the canonical `<pos>-<item>-<branch>.<token>-<dtype><ext>` name**
+— a directory as readily as a file. `<token>` is the tail of the member key, or a lineage hash for
+an uncacheable member, so the name is the same in every run that reaches the member. A file's id
+hashes the name with `<pos>` replaced by `1`, in `LinPayload.mint_file_id` and in
+`Orchestrator._post` alike, so a member's products keep their identity whatever position the
+member takes in a batch. Nothing on the promote or the hit path may branch on the declared
+extension to decide file from directory: `GetPreferredFileExtension` answers `""` for plenty of
+file types, and a directory type can carry one.
 
-**A hit short-circuits the executor at compile time, not at run time.** The probe rewrites that
-step's emission into a synthetic channel, and **every tuple must re-enter `o.post` before any
-downstream `o.group` observes it**, or the orchestrator deadlocks — any change to cache-hit
-codegen has to preserve that. The post-exec promote atomic-renames the staging dir onto the
-shard; the reclaim sweep that follows is scoped to the promoting run's own keys, because an
-unsealed `.tmp` is indistinguishable from one another run is still writing. Every on-disk name in
-that sentence is defined once in `caching/layout.py`, since compile, promote, telemetry and ops
-must agree and disagreeing reads as a cache miss rather than an error.
+**A task promotes its own members, and the driver records the run afterwards.** After the
+protocol, `promote_members` writes one shard per successful member: the products renamed to
+position `1`, linked on the same filesystem and copied otherwise, and a `manifest.cbor` with each
+file's slot id, dtype, `parents` from that member's `PROV`, and the member's `consumes`. The shard
+is staged as `<key>.<host>.<pid>.tmp` and renamed onto its final name. An existing shard wins. A
+member whose required branch produced nothing mints no shard. The task then writes one
+`.command.cache` record beside `.command.metadata`, one JSON line per member, and never opens
+sqlite. A hit is decided by the probe alone: a manifest, every listed file present, and no
+`tombstone` marker. After Nextflow exits, `record_run` reads every `.command.cache` of the run's
+session and `_metasmith/cache_hits.jsonl`, appends one trace event per member, upserts one sqlite
+row per shard, and copies the producing task's `.command.*` into the shard's `logs/`. Sqlite is
+bookkeeping for `msm cache ls` and `gc`, never the hit authority. Every on-disk name in this
+paragraph is defined once, in `caching/layout.py` and `caching/invocation.py`.
 
 **`trace.jsonl` is the canonical event log, and it records banked work, not run work.** It
-rotates on compile and is never truncated; a `SessionStart` sentinel leads every fresh file. Rows
-are appended from inside the promote loop, so a lone sentinel after a hundred completed tasks
-means promotion has not run yet — not that a buffer was lost. The dataclass in
-`models/lineage.py` is the row spec.
+rotates on compile and is never truncated. A `SessionStart` sentinel leads every fresh file, and
+`cache_hits.jsonl` rotates with it. Rows are appended by `record_run` after Nextflow exits, so a
+lone sentinel after a hundred completed tasks means `record_run` has not run yet, not that a
+buffer was lost. Each row's `task_hash` is the member key, so a fan-out step has one row per
+member. The dataclass in `models/lineage.py` is the row spec.
 
-**The cache-hit route and the promote route must emit the same event shape.** They are two
-independent emitters of one record, and every field that diverged between them — an empty
-output path, a slot id standing in for a file id, the consumer's dtype key instead of the
-producer's — was invisible to a warm run and broke a lineage walk downstream.
-`tests/audit/test_quadrant_probe.py` is what compares them field by field. A step that opts out of
-caching promotes nothing but still emits its event: skipping it leaves every consumer downstream
-naming a parent no row accounts for.
+**A hit and a promotion reach the trace through one emitter.** `record_run` builds both from
+the same manifest, so a hit's `produces`, slot ids and dtype keys are the producer's, not the
+consumer's. Every field that diverged when the two routes had separate emitters — an empty
+output path, a slot id standing in for a file id — was invisible to a warm run and broke a
+lineage walk downstream. `tests/audit/test_quadrant_probe.py` dumps the quadrants for
+comparison. A step that opts out of caching promotes nothing but still records its members:
+skipping it leaves every consumer downstream naming a parent no row accounts for.
 
-**A file's parents are recorded by what produced it, not derived from `consumes`.** `consumes`
-names compile-time slot ids, which every fan-out sibling of a step shares; `ProducedFile.parents`
-names the files a task actually read, taken off `PROV` positionally against `FILES` and stored in
-the shard so a hit answers the same way a miss does. `CollectResults` is then a merge of those
-rows — resolve each parent id to another produced file or to a given, register in topological
-order — rather than a reconstruction in a third identity space. A producer that leaves `parents`
-empty makes its outputs' ancestry unrecoverable.
+**A file's parents are recorded by what produced it.** `ProducedFile.parents` names the files a
+member actually read, taken off `PROV` positionally against `FILES` and stored in the shard, so a
+hit answers the same way a miss does. `consumes` is the same ids grouped by slot, the form the key
+hashes. `CollectResults` is then a merge of those rows — resolve each parent id to another
+produced file or to a given, register in topological order — rather than a reconstruction in a
+third identity space. A producer that leaves `parents` empty makes its outputs' ancestry
+unrecoverable.
 
 **`index.yml` stores the transitively reduced parent graph and `Load` re-expands it.** `Pack`
 drops a parent that is also a grandparent; `Unpack` walks the edges back into a closure. So a
@@ -588,14 +606,14 @@ writer, and the writer is the half this repo controls. Deep-copying instead is n
 changes the rendered index, which feeds `file_instance_id`, which would orphan every existing
 cache shard.
 
-**Two version constants, deliberately separate.** `CACHE_KEY_VERSION` is the cache-key epoch;
-`LIN_PAYLOAD_VERSION` is the on-wire envelope the Groovy side parses. They were one constant
-once, and bumping it for a key-epoch reason desynced the emitter and failed every containerized
-step with a masked exit 1 that no fast test could see. `SHARD_LAYOUT_VERSION` separately tracks
-the log capture that makes a shard's stdout resolve after `rm -rf work/`.
+**Three version constants, deliberately separate.** `CACHE_KEY_VERSION` is the cache-key epoch;
+`LIN_PAYLOAD_VERSION` is the on-wire envelope the Groovy side parses, and v5 of it is where a
+member carries `KEY`. They were one constant once, and bumping it for a key-epoch reason desynced
+the emitter and failed every containerized step with a masked exit 1 that no fast test could see.
+`SHARD_LAYOUT_VERSION` tracks the shard's own layout: the manifest shape and the log capture that
+makes a shard's stdout resolve after `rm -rf work/`.
 
-Open weaknesses in this subsystem — single-pass promotion, an orphan sweep that can reach another
-run's staging — are tracked in `plans/consolidation-followups.md`.
+Open weaknesses in this subsystem are tracked in `plans/consolidation-followups.md`.
 
 ## Re-exported packages
 

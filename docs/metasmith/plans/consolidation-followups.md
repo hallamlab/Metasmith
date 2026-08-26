@@ -119,32 +119,22 @@ docker URL string, not the resolved image digest, so a pinned tag busts the cach
 bump and `:latest` does not. Inherent to tag-addressing; mitigated by the convention of
 pinning biocontainer tags.
 
-**A crash between the promote rename and the store upsert orphans a shard.** The rename is
-atomic and there is no window where the store reports a hit with files absent, but a crash in
-that gap leaves a final directory with no row, and the key then recomputes forever because the
-next rename fails against it. The orphan sweep only reaches `.tmp` directories. Related: a
-stale lock from a crashed job on another host in a shared cache is never reclaimed, correctly,
-since a dead remote cannot be distinguished from a live one.
+**A crash between a task's promote and the driver's `record_run` leaves a shard with no sqlite
+row.** The rename is atomic and the probe reads the manifest, so the shard still serves. Only
+`msm cache ls` and `gc` miss it, until a later run that hits it upserts the row. An orphaned
+`<key>.<host>.<pid>.tmp` from a killed task is never reclaimed: nothing sweeps them, correctly,
+since a dead writer on another host cannot be distinguished from a live one.
+
+**A hit costs one helper subprocess per batch and one local task per hit batch.** The helper
+(`python -m metasmith.caching.invocation`) takes about 0.07 s per call in the agent environment,
+flat from 1 to 200 members, so a 200-batch step pays about 14 s of interpreter start-up on the
+head node. Measured on this host only, not on a cluster submit node.
 
 **A DVC-pinned artifact whose objects leave every cache is unrecoverable.** The live instance is
 `data/fabfos/runs/aska/gpr`: no remote is configured, the pinned generation exists nowhere but a
 shared local cache that no longer holds it, and the files on disk are hardlinks into that cache —
 so `dvc checkout --force` would delete them with nothing to restore. The rule that manages this
 is under *When a build artifact may be DVC-pinned* in `docs/metasmith/architecture.md`.
-
-**Adding one sample re-runs every sample.** A cache key covers a plan step, not one invocation,
-and a produced slot's id is derived from that key — so a step that consumes N samples re-keys when
-N changes and carries every step downstream with it. Measured on
-`annotation_trio_from_assembly`: going from two assemblies to three moves the key of all five
-per-sample steps and all three merges; only the three database steps hold. The three merges are
-correct to move. Reproduced by
-`tests/metasmith/cache/test_sample_addition.py::test_a_per_sample_step_keeps_the_keys_it_already_minted`,
-which is **red on purpose** and names the offenders. The first move is not the batch-level key
-that looks obvious: the solver folds a run into one unique case, so there is no batch downstream
-of the fan-in to key on, and keying per batch fixes the first step and nothing after it. It needs
-a structural plan-level slot id plus a per-batch entry looked up at execution time against the
-real inputs an invocation consumed — see FANOUT-1 below, which is the same change and was declined
-once for reasons that still hold.
 
 **A database transform fetches and indexes under one cache key, so an indexing failure discards
 the archive.** `FetchCommand` makes a *retry in the same work directory* free — the transfer lands
@@ -156,18 +146,6 @@ of its own. That is a library-shape change: `downloadUniRef50DB`, `downloadKofam
 re-solves.
 
 ## Deliberately rejected
-
-**Per-Nextflow-task cache keying (FANOUT-1).** It moved the cache unit from the step to the
-task, so a rerun with partial input overlap would reuse the shards it already had. Declined on
-two grounds. It was written against a month-stale base and hand-merging it into a subsystem
-that had since evolved would have produced a caching system matching neither branch's tested
-state. And it inlines one Groovy tuple literal per cached batch into a single `Channel.of(...)`
-with no bound on the generated source — at real fan-out scale that is a Groovy compile failure
-on resume rather than a diagnostic. The accepted cost is that a re-run where one sample of a
-fan-out changed recomputes the whole step: slower but correct. FANOUT-1 is the optimisation,
-not the correctness fix. That accepted cost has since been measured — see *Adding one sample
-re-runs every sample* above — and it is larger than "one step": the re-key propagates through the
-slot ids to every step downstream.
 
 **Deep-copying index value lists.** The lists are shared by reference across the DAG and the
 no-writer rule is enforced only at the top-level map, but every production write was audited
@@ -184,9 +162,6 @@ correctly. The per-item guard catches the reported case earlier anyway.
 **The caching and reentrancy path has never been run live through the sockeye relay.** The
 cross-host proof was assembled from separate hosts showing cache-key identity, not from one
 relayed run.
-
-**FANOUT-1's scaling cliff was never reproduced.** Its failure mode is only observable at real
-multi-sample fan-out scale, which no suite exercises.
 
 **Deploy-and-run end to end on the HPC hosts was red at the last check** and has not been
 re-verified since the bind failure was made fail-fast.

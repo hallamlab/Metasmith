@@ -39,9 +39,12 @@ the import to some other checkout.
 
 ## Traps
 
-**The virtual runtime reimplements the cache-hit path from the store and never reads the
-generated `workflow.nf`.** Anything about the *emitted text* therefore has to be pinned at
-codegen level; a virtual run cannot see it.
+**The virtual runtime calls the real key, probe and promote functions but never reads the
+generated `workflow.nf`.** Per batch it runs `consumed_of`, `member_key`, `probe` and
+`promote_members` from `caching/`, so a cache test there exercises the same decision the task
+makes. What it cannot see is the Groovy: `Orchestrator._route`, the `_cached` twin, publish and
+the trace TSV only run in the docker lane. Anything about the *emitted text* has to be pinned at
+codegen level.
 
 **The deploy axis's source-pattern tests read `Agent.Deploy`'s text rather than running it**,
 slicing from the method to the next one. `Deploy` is the last method in its module, so that
