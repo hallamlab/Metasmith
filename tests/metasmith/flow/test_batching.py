@@ -64,13 +64,17 @@ def test_g2_batch_size_n_union_of_parents(tmp_path, virtual_runtime):
     )
     assert (bootstraps[0]["batch_start"], bootstraps[0]["batch_end"]) == (0, n)
 
+    # One batch carried every member, and the cache unit is the member: one
+    # promoted event per member, each consuming its own input alone.
     consume_sets = _invocation_consumes_sets(lib)
-    assert len(consume_sets) == 1, (
-        f"<G2> expected 1 promoted event, got {len(consume_sets)}"
+    assert len(consume_sets) == n, (
+        f"<G2> expected {n} promoted events (one per member), got {len(consume_sets)}"
     )
-    assert len(consume_sets[0]) == n, (
-        f"<G2> expected parents-union of size {n}, got {len(consume_sets[0])}: "
-        f"{consume_sets[0]}"
+    assert all(len(c) == 1 for c in consume_sets), (
+        f"<G2> a member's consumes must be its own input alone: {consume_sets}"
+    )
+    assert len(set.union(*consume_sets)) == n, (
+        f"<G2> the members do not cover {n} distinct inputs: {consume_sets}"
     )
 
 
@@ -93,9 +97,8 @@ def test_g3_uneven_batches(tmp_path, virtual_runtime):
     )
 
     consume_sets = _invocation_consumes_sets(lib)
-    assert len(consume_sets) == len(expected_slices), (
-        f"<G3> expected {len(expected_slices)} promoted events, "
-        f"got {len(consume_sets)}"
+    assert len(consume_sets) == n, (
+        f"<G3> expected {n} promoted events (one per member), got {len(consume_sets)}"
     )
 
 
@@ -156,10 +159,9 @@ def test_g8_duplicate_group_keys(tmp_path, virtual_runtime):
     assert (bootstraps[0]["batch_start"], bootstraps[0]["batch_end"]) == (0, n)
 
     consume_sets = _invocation_consumes_sets(lib)
-    assert len(consume_sets) == 1, (
-        f"<G8> expected 1 promoted event, got {len(consume_sets)}"
+    assert len(consume_sets) == n, (
+        f"<G8> expected {n} promoted events (one per member), got {len(consume_sets)}"
     )
-    assert len(consume_sets[0]) == n, (
-        f"<G8> expected both inputs collated into one batch's parent set, "
-        f"got {len(consume_sets[0])}: {consume_sets[0]}"
+    assert len(set.union(*consume_sets)) == n, (
+        f"<G8> the one batch's members do not cover both inputs: {consume_sets}"
     )

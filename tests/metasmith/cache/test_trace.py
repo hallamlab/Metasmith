@@ -55,5 +55,5 @@ def test_msm_status_joins_meta(tmp_path, virtual_runtime, capsys):
     assert result["run_dir"] == str(run_dir)
     assert result["meta"], "no workflow.step_*.meta files were joined"
     for order, body in result["meta"].items():
-        assert "cache_key" in body, f"step {order} meta missing cache_key"
+        assert "transform_key" in body, f"step {order} meta missing transform_key"
         assert "cacheable" in body, f"step {order} meta missing cacheable"

@@ -44,79 +44,6 @@ def _stage_split_home(task, agent_home: Path, run_dir: str = "run") -> Path:
     return external_work
 
 
-def _seed_cache_from_meta(agent_home: Path, workspace: Path, step_name: str):
-    from metasmith.caching.layout import default_cache_root, out_dir, shard_dir
-    from metasmith.caching.store import CacheStore, encode_manifest
-
-    key_hex = ""
-    slot_files: list[dict] = []
-    for meta in sorted(workspace.glob("workflow.step_*.meta")):
-        fields: dict[str, str] = {}
-        for line in meta.read_text().splitlines():
-            head, _, rest = line.partition(" ")
-            fields[head] = rest
-        if fields.get("step_name", "").strip() != step_name:
-            continue
-        key_hex = fields.get("cache_key", "").strip()
-        slot_files = json.loads(fields.get("slot_files", "[]"))
-        break
-    assert key_hex and slot_files, (
-        f"no step named {step_name!r} with cache_key + slot_files in {workspace}"
-    )
-
-    cache_root = default_cache_root(agent_home)
-    shard = shard_dir(cache_root, key_hex)
-    outs = out_dir(shard)
-    outs.mkdir(parents=True, exist_ok=True)
-
-    seeded: list[Path] = []
-    files_meta: list[dict] = []
-    index_meta: list[dict] = []
-    for sf in slot_files:
-        name = (
-            f"1-1-{sf['branch_idx'] + 1}.cachedseed"
-            f"-{sf['dtype_key']}{sf['ext']}"
-        )
-        fp = outs / name
-        fp.write_text("cached\n")
-        seeded.append(fp)
-        relpath = str(fp.relative_to(shard))
-        files_meta.append({
-            "relpath": relpath,
-            "slot_id": sf["slot_id"],
-            "dtype_key": sf["dtype_key"],
-            "branch_idx": sf["branch_idx"],
-        })
-        index_meta.append({
-            "relpath": relpath,
-            "index": {sf["dtype_key"]: ["cachedseed"]},
-        })
-
-    payload = encode_manifest(
-        cache_key=bytes.fromhex(key_hex),
-        transform_key="",
-        signature="",
-        lineage_payload=b"",
-        output_files=files_meta,
-        out_identities={},
-        index_payload=index_meta,
-    )
-    (shard / "manifest.cbor").write_bytes(payload)
-    store = CacheStore.open(cache_root)
-    try:
-        store.upsert(
-            key=bytes.fromhex(key_hex),
-            transform_key="",
-            payload=payload,
-            output_root=str(shard.relative_to(cache_root)),
-            size_bytes=sum(p.stat().st_size for p in seeded),
-            origin="lineage",
-        )
-    finally:
-        store.close()
-    return cache_root, seeded, key_hex
-
-
 def test_no_plugin_in_generated_nf(tmp_path):
     task = linear_3step.build_task(tmp_path)
     workspace = _stage(task, tmp_path)
@@ -142,127 +69,97 @@ def test_generated_config_has_no_process_cache_directive(tmp_path):
             )
 
 
-def test_cache_hit_channel_is_home_rooted(tmp_path):
+def test_every_grouped_step_gets_a_cached_twin_and_a_two_stream_group(tmp_path):
+    from metasmith.models.workflow.nextflow_codegen import (
+        CachedProcessName, NextflowProcessName,
+    )
+
+    task = linear_3step.build_task(tmp_path)
+    workspace = _stage(task, tmp_path)
+    body = (workspace / "workflow.nf").read_text()
+
+    for step in task.plan.steps:
+        name = NextflowProcessName(step.order, step.transform.name)
+        twin = CachedProcessName(name)
+        assert f"process {twin} {{" in body, f"no twin process for {name}"
+        assert f"(__miss_{step.order}, __hit_{step.order}) = o.group(" in body
+        assert f"o.mixOuts(o.asStreams({name}(__miss_{step.order})), o.asStreams({twin}(__hit_{step.order})))" in body
+    assert "Channel.of(" not in body, "a hit is a task now, not a spliced channel"
+    assert "publishDir" not in body, "no process publishes into the cache any more"
+
+
+def test_the_twin_runs_locally_and_never_reuses_a_nextflow_cache(tmp_path):
+    task = linear_3step.build_task(tmp_path)
+    workspace = _stage(task, tmp_path)
+    body = (workspace / "workflow.nf").read_text()
+    twin = body[body.index("_cached {"):]
+    twin = twin[:twin.index("\n}\n")]
+    assert "executor 'local'" in twin
+    assert "cache false" in twin
+    assert "tuple val(index), val(sources)" in twin
+
+
+def test_the_twin_is_in_the_resources_file_the_ceiling_reads(tmp_path):
+    from metasmith.agents.ceiling import parse_requests
     from metasmith.constants import AgentPaths
-
-    agent_home = tmp_path / "agent_home"
-    agent_home.mkdir()
-
-    task = mixed_cacheability.build_task(tmp_path / "src")
-    ws1 = _stage_split_home(task, agent_home, run_dir="run1")
-    cache_root, seeded, _ = _seed_cache_from_meta(agent_home, ws1, "trA")
-    assert seeded, "seeded no cached files for trA"
-
-    ws2 = _stage_split_home(task, agent_home, run_dir="run2")
-    body = (ws2 / "workflow.nf").read_text()
-
-    channel_lines = [l for l in body.splitlines() if "Channel.of(" in l]
-    assert channel_lines, (
-        "step 1 did not become a cache hit; no synthetic channel emitted"
-    )
-    for line in channel_lines:
-        assert str(agent_home) not in line, (
-            "cache-hit channel carries the HOST spelling of the agent home, "
-            "which the bootstrap container cannot resolve:\n"
-            f"  {line.strip()}"
-        )
-        assert str(AgentPaths.HOME_ROOT) in line, (
-            f"cache-hit channel is not rooted at HOME_ROOT:\n  {line.strip()}"
-        )
-
-    from metasmith.models.paths import PathMap
-
-    path_map = PathMap(extern_home=agent_home, task_key=ws2.name)
-    for fp in seeded:
-        expected = path_map.ExternalToLocal(fp)
-        assert f"file('{expected}')" in body, (
-            f"expected cached file literal {expected} not in workflow.nf"
-        )
-
-    from metasmith.testing.contract_runtime import (
-        CompiledTask,
-        check_emitted_addresses,
+    from metasmith.models.workflow.nextflow_codegen import (
+        CachedProcessName, NextflowProcessName,
     )
 
-    violations = check_emitted_addresses(CompiledTask(
-        workspace=ws2,
-        key=ws2.name,
-        task=task,
-        workflow_nf=body,
-        home_root=AgentPaths.HOME_ROOT,
-        work_root=AgentPaths.WORK_ROOT,
-        external_home=agent_home,
-    ))
-    assert violations == [], f"address checker flagged the fixed output: {violations}"
+    task = linear_3step.build_task(tmp_path)
+    workspace = _stage(task, tmp_path)
+    requests = parse_requests((workspace / AgentPaths.NXF_RES).read_text())
+    for step in task.plan.steps:
+        twin = CachedProcessName(NextflowProcessName(step.order, step.transform.name))
+        assert twin in requests, f"{twin} has no resources entry"
+        cpus, gb = requests[twin]
+        assert (cpus or 1) <= 1 and (gb or 0) < 1, f"the twin asks for real resources: {requests[twin]}"
 
 
-def test_cache_hit_follows_the_store_row_not_the_key(tmp_path):
-    from metasmith.caching.layout import default_cache_root, out_dir, shard_dir
-    from metasmith.caching.store import CacheStore
-    from metasmith.constants import AgentPaths
-
-    agent_home = tmp_path / "agent_home"
-    agent_home.mkdir()
-    task = mixed_cacheability.build_task(tmp_path / "src")
-    ws1 = _stage_split_home(task, agent_home, run_dir="run1")
-    cache_root, seeded, key_hex = _seed_cache_from_meta(agent_home, ws1, "trA")
-
-    derived = shard_dir(cache_root, key_hex)
-    relocated = cache_root / "relocated" / key_hex
-    relocated.parent.mkdir(parents=True, exist_ok=True)
-    derived.rename(relocated)
-    assert not derived.exists()
-
-    store = CacheStore.open(cache_root)
-    try:
-        row = store.probe(bytes.fromhex(key_hex))
-        store.upsert(
-            key=row.key,
-            transform_key=row.transform_key,
-            payload=row.payload,
-            output_root=str(relocated.relative_to(cache_root)),
-            size_bytes=row.size_bytes,
-            origin=row.origin,
-        )
-    finally:
-        store.close()
-
-    ws2 = _stage_split_home(task, agent_home, run_dir="run2")
-    body = (ws2 / "workflow.nf").read_text()
-    assert "Channel.empty()" not in body, (
-        "cache hit globbed the key-derived shard, which no longer exists"
-    )
-
-    from metasmith.models.paths import PathMap
-
-    path_map = PathMap(extern_home=agent_home, task_key=ws2.name)
-    expected = path_map.ExternalToLocal(
-        out_dir(relocated) / Path(seeded[0]).name
-    )
-    assert f"file('{expected}')" in body, (
-        f"emitted literal does not follow the store row; expected {expected}"
-    )
-    assert str(AgentPaths.HOME_ROOT) in body
-
-
-def test_publish_dir_stays_external(tmp_path):
-    from metasmith.constants import AgentPaths
-
+def test_the_cache_root_and_hit_log_are_rendered_through_params(tmp_path):
+    # The head process resolves them at run time in its own coordinates; a
+    # host spelling baked in at compile time would be wrong in the container.
     agent_home = tmp_path / "agent_home"
     agent_home.mkdir()
     task = mixed_cacheability.build_task(tmp_path / "src")
     ws = _stage_split_home(task, agent_home)
+    body = (ws / "workflow.nf").read_text()
+    group_lines = [l for l in body.splitlines() if "o.group(" in l]
+    assert group_lines
+    for line in group_lines:
+        assert 'cache_root: "${params.home}/task_cache"' in line, line
+        assert 'hits_log: "${params.workspace}/_metasmith/cache_hits.jsonl"' in line, line
+        assert str(agent_home) not in line, line
 
-    publish_lines = [
-        l for l in (ws / "workflow.nf").read_text().splitlines()
-        if "publishDir" in l
-    ]
-    assert publish_lines, "no publishDir emitted for a cacheable miss step"
-    for line in publish_lines:
-        assert str(agent_home) in line, (
-            f"publishDir lost the host spelling:\n  {line.strip()}"
-        )
-        assert str(AgentPaths.HOME_ROOT) not in line, (
-            "publishDir carries the container spelling; the head process "
-            f"writes through the host path:\n  {line.strip()}"
-        )
+
+def test_an_uncacheable_step_routes_everything_to_the_real_process(tmp_path):
+    task = mixed_cacheability.build_task(tmp_path / "src")
+    workspace = _stage(task, tmp_path)
+    body = (workspace / "workflow.nf").read_text()
+    by_step = {
+        s.order: s.transform.name for s in task.plan.steps
+    }
+    for line in body.splitlines():
+        if "o.group(" not in line:
+            continue
+        order = int(line.split("__miss_")[1].split(",")[0])
+        want = "false" if by_step[order] == "trB" else "true"
+        assert f"cacheable: {want}" in line, f"{by_step[order]}: {line}"
+
+
+def test_the_step_meta_carries_what_the_task_promotes_with(tmp_path):
+    from metasmith.caching.promote import read_step_meta
+
+    task = linear_3step.build_task(tmp_path)
+    workspace = _stage(task, tmp_path)
+    metas = sorted(workspace.glob("workflow.step_*.meta"))
+    assert len(metas) == len(task.plan.steps)
+    for mp in metas:
+        meta = read_step_meta(mp)
+        assert meta is not None, mp
+        assert meta.transform_key and meta.signature and meta.step_name
+        assert meta.slot_files and all(sf["slot_id"] for sf in meta.slot_files)
+        assert meta.slot_channels
+        text = mp.read_text()
+        for gone in ("cache_key ", "batches ", "sorted_inputs ", "out_identities "):
+            assert gone not in text, f"{mp.name} still carries {gone.strip()}"

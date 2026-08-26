@@ -1,75 +1,81 @@
-"""A shard that cannot serve every slot the step declares must not be replayed.
+"""A shard that cannot serve every slot the member declares is never made or served.
 
-The emitter turns a hit into `Channel.of(...)` per produce slot. A slot the
-shard holds nothing for used to become `Channel.empty()`, and the consumer's
-input group then never completes: nextflow declares the process, never submits
-it, writes no trace row and no error, and the run still reports completed.
-Demotion has to happen at decision time, and all-or-nothing -- half a step from
-the shard and half from a fresh execution emits a channel whose members came
-from two different runs of the transform.
+A member whose required branch produced nothing mints no shard. A shard one
+of whose listed files has gone is not a hit. A member with an empty optional
+branch is still whole.
 """
 
 from __future__ import annotations
 
 from pathlib import Path
 
-from metasmith.models.workflow.cache_decisions import compute_cache_decisions
+from metasmith.caching.invocation import TOMBSTONE_NAME, probe
+from metasmith.caching.layout import shard_dir
+from metasmith.caching.promote import StepCacheMeta, promote_members
+from metasmith.models.lineage import LinPayload
+from metasmith.models.workflow.payload import build_entry
 
-from tests.metasmith.cache.fixtures.cache_fixtures import linear_3step
-from tests.metasmith.cache.test_empty_index import (
-    _context,
-    _probe_output_name,
-    _seed_shard,
-)
-
-_REAL_INDEX = {"seed": ["1e20aaaa"]}
+KEY = "1e20" + "cd" * 32
 
 
-def _probe_with_shard_named(tmp_path: Path, rename) -> dict:
-    task = linear_3step.build_task(tmp_path)
-    name, dtype_key = _probe_output_name(task)
-    workspace = tmp_path / "ws"
-    workspace.mkdir(exist_ok=True)
+def _meta(branches: int) -> StepCacheMeta:
+    return StepCacheMeta(
+        order=1, transform_key="trA", signature="sig", step_name="trA", cacheable=True,
+        slot_files=[
+            {"dtype_key": f"out{b}", "ext": ".txt", "branch_idx": b, "slot_id": "a" * 64}
+            for b in range(branches)
+        ],
+        slot_channels={"seed_dep": "seed"},
+    )
+
+
+def _entry() -> dict:
+    e = build_entry([("seed", [("/w/in.txt", {"seed": ["1e20aaaa"]})])])
+    e[LinPayload.KEY_KEY] = KEY
+    return e
+
+
+def _promote(tmp_path: Path, names: list[str], branches: int):
+    cwd = tmp_path / "task"
+    cwd.mkdir()
+    for n in names:
+        (cwd / n).write_text("payload")
     cache_root = tmp_path / "task_cache"
-    cache_root.mkdir(exist_ok=True)
-
-    cold = compute_cache_decisions(task, _context(workspace, cache_root))
-    first = min(cold)
-    assert not cold[first]["hit"], "the cold probe hit an empty cache"
-
-    _seed_shard(
-        cache_root, cold[first]["cache_key"], _REAL_INDEX,
-        rename(name), dtype_key,
+    records = promote_members(
+        cwd=cwd, entries=[_entry()], meta=_meta(branches), cache_root=cache_root, successes=[True],
     )
-    warm = compute_cache_decisions(task, _context(workspace, cache_root))
-    return warm[first]
+    return records, cache_root
 
 
-def test_the_rig_hits_when_the_shard_serves_the_slot(tmp_path):
-    decision = _probe_with_shard_named(tmp_path, lambda n: n)
-    assert decision["hit"], (
-        "the rig cannot produce a hit at all, so the demotions below prove "
-        "nothing"
-    )
+def test_a_member_whose_required_branch_is_empty_mints_no_shard(tmp_path):
+    records, cache_root = _promote(tmp_path, [], branches=1)
+    assert [r["status"] for r in records] == ["incomplete"]
+    assert not shard_dir(cache_root, KEY).exists()
+    assert probe(cache_root, bytes.fromhex(KEY)) is None
 
 
-def test_a_shard_holding_only_another_branch_is_demoted(tmp_path):
-    decision = _probe_with_shard_named(
-        tmp_path, lambda n: n.replace("1-1-1.", "1-1-2.")
-    )
-    assert not decision["hit"], (
-        "a shard whose only output belongs to a branch the step does not "
-        "declare was replayed; the declared branch would emit an empty "
-        "channel and hang the consumer"
-    )
-    assert decision["out_indexes"] == {}, (
-        f"a demoted hit must carry no indexes forward: {decision['out_indexes']}"
-    )
+def test_a_member_whose_only_product_is_another_dtype_mints_no_shard(tmp_path):
+    records, cache_root = _promote(tmp_path, ["1-1-1.abcdef-other.txt"], branches=1)
+    assert [r["status"] for r in records] == ["incomplete"]
+    assert not shard_dir(cache_root, KEY).exists()
 
 
-def test_a_shard_holding_another_dtype_is_demoted(tmp_path):
-    decision = _probe_with_shard_named(tmp_path, lambda n: n + "_other")
-    assert not decision["hit"], (
-        "a shard whose output does not end with the slot's dtype key was "
-        "replayed; the emitter's glob finds nothing under that name"
-    )
+def test_an_empty_optional_branch_still_promotes(tmp_path):
+    records, cache_root = _promote(tmp_path, ["1-1-1.abcdef-out0.txt"], branches=2)
+    assert [r["status"] for r in records] == ["promoted"]
+    assert probe(cache_root, bytes.fromhex(KEY)) is not None
+
+
+def test_a_shard_missing_a_listed_file_is_not_a_hit(tmp_path):
+    _records, cache_root = _promote(tmp_path, ["1-1-1.abcdef-out0.txt"], branches=1)
+    shard = shard_dir(cache_root, KEY)
+    assert probe(cache_root, bytes.fromhex(KEY)) == shard
+    (shard / "out" / "1-1-1.abcdef-out0.txt").unlink()
+    assert probe(cache_root, bytes.fromhex(KEY)) is None
+
+
+def test_a_tombstoned_shard_is_not_a_hit(tmp_path):
+    _records, cache_root = _promote(tmp_path, ["1-1-1.abcdef-out0.txt"], branches=1)
+    shard = shard_dir(cache_root, KEY)
+    (shard / TOMBSTONE_NAME).touch()
+    assert probe(cache_root, bytes.fromhex(KEY)) is None
