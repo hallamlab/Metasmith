@@ -113,6 +113,14 @@ def main():
     if len(unmatched):
         print(f"[2pt-cohort] no phenotype for {list(unmatched.condition_id)}", file=sys.stderr)
     df = df.dropna(subset=["pct_wt"]).copy()
+    # AN EMPTY JOIN IS A WRONG `--measured`, NOT A NULL RESULT. Pointing the 2007 deletion
+    # cohort at the 2010 clone phenotypes matches nothing, and every statistic downstream
+    # then prints "n=0, too few" and exits 0 -- a clean-looking run that measured nothing.
+    if not len(df):
+        raise SystemExit(
+            f"[2pt-cohort] not one of the {len(unmatched)} solved condition(s) has a row in "
+            f"{args.measured}. The cohort and the phenotype table are for different "
+            f"screens; pass the --measured that names these condition_ids.")
 
     df["log2fc_meas"] = np.log2(df.pct_wt / 100.0)
     df["abs_log2fc_meas"] = df.log2fc_meas.abs()
