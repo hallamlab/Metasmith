@@ -28,12 +28,27 @@ here, and the migration this entry wants still costs a second one.
 after `StageWorkflow` copies the data libraries into `runs/<task key>/_metasmith/task/data/`, so
 `stat_multihash_key` hashes a path containing the task key, and the task key is a function of the
 whole plan. Adding a sample re-paths every staged leaf, which moves every leaf id, which moves
-every member key — and that is precisely the case the member unit exists to make cheap. Proven
-arithmetically rather than inferred: recomputing the key over the container path and the host
-file's mtime reproduces a real run's recorded ids bit for bit. Only inputs left outside the
-workspace keep stable ids, which is why `shared_input_paths` databases reuse fine. The id must
-not contain the task key — derive it from the library-relative path, or stage libraries to a
-home-level location shared across runs.
+every member key — and that is precisely the case the member unit exists to make cheap. Only
+inputs left outside the workspace keep stable ids, which is why `shared_input_paths` databases
+reuse fine. The id must not contain the task key — derive it from the library-relative path, or
+stage libraries to a home-level location shared across runs.
+
+Measured end to end against the **published 0.22.0** — clean-room conda client, freshly pulled
+image, the annotation trio on real sequence and real tools — as three runs in one agent home:
+
+| run | samples | wall clock | members | hits |
+|---|---|---|---|---|
+| 1 | `[A,B]` cold | 61 min | 16 promoted | 0 (correct) |
+| 2 | `[A,B,C]` | 93 min | 24 promoted | **0** |
+| 3 | `[A,B,C]` again | 110 s | 0 promoted | 24 |
+
+Run 2 is the defect: 24 real tasks, no `_cached` twins, `cache_hits.jsonl` absent, though run 1
+had already computed A and B. Run 3 is the control that makes it a diagnosis rather than an
+observation — the same plan re-staged keeps its task key, so every leaf id survives and all 24
+members hit. The member cache is functional on the shipped build; it fails only when the sample
+set changes. A and B's products were identical across runs 1 and 2 (interproscan set-identical
+rather than byte-identical — it does not order its matches deterministically), so the 93 minutes
+bought nothing. Run inputs and the full record are in `/home/tony/msm.gate022/GATE.md`.
 
 **An epoch bump tells the user to run a command that reclaims nothing.** `CacheStore.open` warns
 that old shards are unreachable and names `msm cache gc --delete`, but the delete branch of
@@ -206,3 +221,8 @@ the image after `docker rmi` and a fresh `docker pull`, so the registry copy is 
 lanes were green for 0.22.0 (11/11 templates, `backend=rust`, library stamp `0.22.0+53d5540`
 identical in both artifacts). Nothing automates this, so it is a gap again the moment a release
 ships without somebody running it.
+
+That pass proves the artifacts **plan**; it runs no workflow. The separate question of whether a
+published release *executes* correctly was answered for 0.22.0 by the three trio runs under *A
+staged leaf's id folds the task key* above — worth repeating per release, since planning green
+and running green are different claims and only the second one found anything.
