@@ -253,6 +253,25 @@ Then:
    no standing PR to reuse: each one closes on merge (#63 → 0.17.1, #64 →
    0.18.3, #65 → 0.18.8), and treating the last one as still open is how 0.20.0
    and 0.20.1 shipped to quay and anaconda without ever reaching upstream.
+3. Drive both published artifacts as a **consumer**, not as the builder. Every
+   guard above reads the local build — `-uc` installs from `file://conda_build`
+   and `-ud` inspects the image docker already holds — so nothing so far has
+   touched what anaconda.org and quay actually serve. Two lanes, both from
+   outside every worktree and with `env -u PYTHONPATH`, since an ambient
+   `PYTHONPATH` resolves `metasmith` to a checkout and the run proves nothing:
+
+   ```
+   mamba create -y -n msm_gate -c hallamlab -c bioconda -c conda-forge metasmith=X.Y.Z
+   docker rmi quay.io/hallamlab/metasmith:X.Y.Z{,-<hash>} :latest && docker pull …:X.Y.Z-<hash>
+   ```
+
+   In each: `msm --help`, `Backend("solve") == "rust"`, `clone_stdlib` into an
+   empty directory, and every shipped template solved. The `docker rmi` is the
+   load-bearing half — without it the locally built image is what gets tested,
+   which is the thing this step exists to avoid. The library stamp
+   (`stdlib.discover(root)["commit"]`) must agree between the two artifacts;
+   they are built from one vendored tree and a disagreement means one of them
+   was staged from something else.
 
 ## What goes in this file
 
