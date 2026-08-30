@@ -10,8 +10,10 @@ import time
 
 import pytest
 
+from metasmith.constants import AgentPaths
 from metasmith.gui.store import Project
 from metasmith.ops import runtime as op_runtime
+from metasmith.ops.agent import load_agent
 
 from .test_e2e_gui_run import _ready_to_launch, _real_relay, gui  # noqa: F401
 
@@ -21,6 +23,8 @@ pytestmark = pytest.mark.docker
 STUB_DELAY_S = 180.0
 # How long the driver may take to finish its post-run pass after nextflow stops.
 DRAIN_TIMEOUT_S = 180.0
+# How long the container may take to get from `run` returning to nextflow being up.
+LAUNCH_TIMEOUT_S = 120.0
 
 
 def _eventually(predicate, timeout: float, interval: float = 2.0) -> bool:
@@ -40,7 +44,20 @@ def _launch_stub_run(gui, tmp_path, docker_image) -> tuple[str, str]:
     # and without one a one-step run finishes before there is anything to cancel.
     staged = op_runtime.stage(agent_path, str(project.workflow_path(wf_name)))
     op_runtime.run(agent_path, staged["task_key"], stub_delay=STUB_DELAY_S)
-    return agent_path, staged["task_key"]
+    key = staged["task_key"]
+    # `run` returns once start.sh has detached, and start.sh writes RUN.token
+    # immediately but PID.lock only once nextflow is up -- about a minute apart
+    # here. `cancel` keys on PID.lock, so a cancel inside that window reports
+    # `not_running` and stops nothing, while `ps` already answers. Every test
+    # below means to act on a run that is genuinely cancellable, so wait on that
+    # file rather than on the first sign of life. The stub sleeps STUB_DELAY_S,
+    # so there is no risk of waiting past the end of the run.
+    agent = load_agent(agent_path)
+    pid_lock = agent._task_workspace(key) / AgentPaths.PID_LOCK_FILE
+    assert _eventually(lambda: pid_lock.exists(), LAUNCH_TIMEOUT_S), (
+        f"nextflow never came up: no {pid_lock} after {LAUNCH_TIMEOUT_S}s"
+    )
+    return agent_path, key
 
 
 @pytest.mark.skipif(

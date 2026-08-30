@@ -44,6 +44,15 @@ workaround is `msm cache gc --older-than 0 --grace 0 --delete`, which tombstones
 one pass — but it is indiscriminate, so it takes the post-epoch shards with it. The fix is to
 tombstone on the epoch-mismatch path, where the mismatch is already detected.
 
+**Cancelling a run during its first minute silently does nothing.** `CancelWorkflow` keys on
+`PID.lock`, which `start.sh` writes only once nextflow is up, while `RUN.token` lands as soon as
+the launcher detaches. Measured on the docker lane: 22:40 for the token, 22:41 for the lock. A
+cancel in that window returns `method: noop`, `status: not_running` — and the run then proceeds.
+`ps` already reports the run during the same window, so the two disagree about whether anything
+is running. The user-visible shape is a cancel button that reports nothing to stop and leaves the
+run going. Either widen what cancel will act on to the run pgid `start.sh` already records, or
+have it wait out the startup window rather than answer from a file that is not there yet.
+
 **`check_launch` reads the config before `resource_overrides` is applied.** In
 `agents/workflow_ops.py`, the preflight at the top of the launch runs against the transforms'
 declared numbers, and the caller's per-step overrides land afterwards. So a caller who has

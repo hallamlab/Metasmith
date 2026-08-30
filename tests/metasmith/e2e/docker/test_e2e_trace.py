@@ -98,7 +98,12 @@ def run_stub_workflow(
     )
 
     from metasmith.caching.promote import record_run
+    from .conftest import promote_stub_tasks
     cache_root = work_dir / "task_cache"
+    # The stub never reaches bootstrap, so nothing records what each member
+    # produced. CollectResults reads the trace rather than the disk, so without
+    # this the results library comes back empty and every Trace query is empty.
+    promote_stub_tasks(work_dir, cache_root)
     try:
         record_run(workspace=work_dir, cache_root=cache_root)
     except Exception as e:

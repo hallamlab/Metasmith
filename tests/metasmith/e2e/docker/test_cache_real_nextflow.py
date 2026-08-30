@@ -23,14 +23,14 @@ import pytest
 
 from metasmith.agents import CollectResults
 from metasmith.caching.layout import default_cache_root
-from metasmith.caching.promote import (
-    CACHE_RECORD_FILE, StepCacheMeta, promote_members, record_run,
-)
+from metasmith.caching.promote import record_run
 from metasmith.models.lineage import LinPayload
 from metasmith.constants import MODULE_PATH, AgentPaths
 from metasmith.env import Runtime
 from metasmith.models.workflow import NextflowGenContext, WorkflowTask
 from metasmith.telemetry import TraceIndex
+
+from .conftest import promote_stub_tasks
 
 pytestmark = [pytest.mark.docker, pytest.mark.slow]
 
@@ -118,35 +118,6 @@ def run_cached_stub(
     )
     output.Save()
     return work_dir / "results"
-
-
-def promote_stub_tasks(work_dir: Path, cache_root: Path) -> None:
-    """What bootstrap does after the protocol, for every stub task that ran."""
-    metas = {}
-    for mp in sorted(work_dir.glob("workflow.step_*.meta")):
-        raw = dict(
-            l.partition(" ")[::2] for l in mp.read_text().splitlines() if l.strip()
-        )
-        order = int(mp.stem.rsplit("_", 1)[1])
-        metas[order] = StepCacheMeta.from_raw(order, raw)
-    roots = [p for p in (work_dir / "nxf_work", work_dir / "work") if p.is_dir()]
-    for meta_file in sorted(p for r in roots for p in r.rglob(".command.metadata")):
-        task_dir = meta_file.parent
-        if (task_dir / CACHE_RECORD_FILE).exists():
-            continue
-        raw = dict(
-            l.partition(" ")[::2] for l in meta_file.read_text().splitlines() if l.strip()
-        )
-        if "lin" not in raw or "transform_key" not in raw:
-            continue
-        order = next(
-            o for o, m in metas.items() if m.transform_key == raw["transform_key"]
-        )
-        entries = LinPayload.from_json(raw["lin"]).entries
-        promote_members(
-            cwd=task_dir, entries=entries, meta=metas[order],
-            cache_root=cache_root, successes=[True] * len(entries),
-        )
 
 
 def _statuses(work_dir: Path) -> set[str]:
