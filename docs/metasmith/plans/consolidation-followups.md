@@ -196,8 +196,13 @@ re-verified since the bind failure was made fail-fast.
 regression there stays invisible. The same blind spot hid a record-path bug: the docker lane
 promotes from the host, so a container-side path never enters a cache record.
 
-**No published artifact has been installed and driven as a user receives it.** Every release
-guard inspects the artifact as the builder sees it — `-ud` reads the image, `-uc` installs into a
-throwaway env — and neither is a clean-room `mamba create -c hallamlab metasmith=<version>` from
-outside every worktree, with `msm --help`, a rust solver report, a `clone_stdlib` into an empty
-project and a plan that solves. Open since 0.21.0.
+**Closed at 0.22.0: the published artifacts are now driven as a user receives them.** The
+release guards still only inspect the artifact as the builder sees it — `-ud` reads the locally
+built image, `-uc` installs from `file://conda_build` — so the consumer check is a separate pass
+and stays manual: `mamba create -c hallamlab -c bioconda -c conda-forge metasmith=<version>` from
+outside every worktree with `env -u PYTHONPATH`, then `msm --help`, a rust solver report, a
+`clone_stdlib` into an empty project and every shipped template solved; and the same drive inside
+the image after `docker rmi` and a fresh `docker pull`, so the registry copy is what runs. Both
+lanes were green for 0.22.0 (11/11 templates, `backend=rust`, library stamp `0.22.0+53d5540`
+identical in both artifacts). Nothing automates this, so it is a gap again the moment a release
+ships without somebody running it.
