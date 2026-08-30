@@ -518,6 +518,17 @@ which survives the re-materialisation that moves an mtime. A change below the to
 invisible by construction, and `msm data invalidate` is the lever for it: it moves the mtime
 forward and re-mints through the same formula, so client and agent still agree.
 
+**CAUTION** A staged leaf's id folds the task key, so only an identical plan reuses its shards.
+`restat_leaf_ids` runs after `StageWorkflow` copies the data libraries into
+`runs/<task key>/_metasmith/task/data/`, so the absolute path it stats carries the task key, and
+the task key is a function of the whole plan. Re-running one plan re-derives every id unchanged
+and hits every shard. Adding a sample mints a new task key, re-paths every staged leaf, and
+changes every member key beneath it, so nothing hits — which is the case the member unit exists
+to serve. An input left outside the workspace keeps a stable id, so the databases named by
+`shared_input_paths` do reuse their shards across plans. Two real runs of the annotation trio
+confirmed both halves. No test covers this: the virtual runtime and the `-stub` docker lane never
+stage one library under two task keys.
+
 **A slot id is structural. It joins a consumer to a producer and carries no inputs.** The
 solver folds a multi-sample run into one *unique case*, so a step has one plan instance whatever
 the sample count and the per-sample fan-out happens on the channel at run time. A produced slot's
@@ -526,7 +537,8 @@ upstream of it (`given:<dtype>` for a given). It never folds a leaf id or the st
 runs that reach a transform through the same chain of transforms mint the same slot id, however
 their sample sets, step orders, or unrelated steps differ, and the member key then decides the
 hit from the ids that member actually consumed. That is what lets sample A hit in run 2 when run
-1 computed it beside B and C and run 2 places it beside X and Y through a changed plan.
+1 computed it beside B and C and run 2 places it beside X and Y through a changed plan. Slot
+identity holds that up. The staged leaf ids beneath it defeat it today, per the caution above.
 
 **A database shard outlives a re-solve and dies with the agent home.** A download step consumes
 only its tool environment, so its key is stat-addressed on the env files under
@@ -570,6 +582,14 @@ session and `_metasmith/cache_hits.jsonl`, appends one trace event per member, u
 row per shard, and copies the producing task's `.command.*` into the shard's `logs/`. Sqlite is
 bookkeeping for `msm cache ls` and `gc`, never the hit authority. Every on-disk name in this
 paragraph is defined once, in `caching/layout.py` and `caching/invocation.py`.
+
+**CAUTION** A record names its shard as the container saw it. The task writes `.command.cache`
+inside its own container, where the cache root is `/msm_home/task_cache`, and the driver reads
+that record on the host, where the same directory sits under the agent home. `record_run`
+therefore derives every shard from the member key and treats the recorded path as a fallback.
+It also indexes each record and each hit on its own, because this pass is the sole writer of the
+run's member events and it runs after Nextflow has exited: one unreadable record must cost one
+record, not the run's whole bookkeeping behind a single warning.
 
 **`trace.jsonl` is the canonical event log, and it records banked work, not run work.** It
 rotates on compile and is never truncated. A `SessionStart` sentinel leads every fresh file, and

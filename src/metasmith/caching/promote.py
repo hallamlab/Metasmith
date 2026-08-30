@@ -353,6 +353,25 @@ def _copy_task_logs(task_dir: Path, shard: Path) -> None:
             continue
 
 
+def _resolve_shard(cache_root: Path, key_hex: str, recorded) -> Path:
+    """This key's shard, as seen from here.
+
+    A task writes its record inside its own container, so the path it names is
+    the container's view of the cache root -- `/msm_home/task_cache/...` where
+    the driver sees the agent home. The key determines the shard, so derive it
+    and fall back to the recorded path only when the key names nothing.
+    """
+    if key_hex and key_hex != "-":
+        derived = _shard_dir(cache_root, key_hex)
+        if derived.is_dir():
+            return derived
+    return Path(recorded) if recorded else _shard_dir(cache_root, key_hex)
+
+
+def _output_root(shard: Path, cache_root: Path) -> str:
+    return str(shard.relative_to(cache_root)) if shard.is_relative_to(cache_root) else str(shard)
+
+
 def record_run(*, workspace: Path, cache_root: Path, log: list | None = None) -> dict:
     """Append this run's member events to the trace and index its shards."""
     from ..models.lineage import InvocationEvent, append_invocation_event
@@ -388,42 +407,49 @@ def record_run(*, workspace: Path, cache_root: Path, log: list | None = None) ->
                     continue
                 if int(rec.get("session", -1)) != session_id:
                     continue
-                meta = meta_by_order.get(int(rec.get("step", 0)))
-                status = rec.get("status", "")
-                key_hex = str(rec.get("key", "-"))
-                if status == "promoted":
-                    shard = Path(rec["shard"])
-                    manifest = read_manifest(shard) or {}
-                    store.upsert(
-                        key=bytes.fromhex(key_hex),
-                        transform_key=meta.transform_key if meta else "",
-                        payload=canonical_cbor(manifest) if manifest else b"",
-                        output_root=str(shard.relative_to(cache_root)),
-                        size_bytes=int(manifest.get("size", 0)),
-                        origin="lineage",
+                # One unusable record must not cost the run every other one:
+                # this pass is the only thing that writes the run's member
+                # events, and it runs after nextflow has already exited.
+                try:
+                    meta = meta_by_order.get(int(rec.get("step", 0)))
+                    status = rec.get("status", "")
+                    key_hex = str(rec.get("key", "-"))
+                    if status == "promoted":
+                        shard = _resolve_shard(cache_root, key_hex, rec.get("shard"))
+                        manifest = read_manifest(shard) or {}
+                        store.upsert(
+                            key=bytes.fromhex(key_hex),
+                            transform_key=meta.transform_key if meta else "",
+                            payload=canonical_cbor(manifest) if manifest else b"",
+                            output_root=_output_root(shard, cache_root),
+                            size_bytes=int(manifest.get("size", 0)),
+                            origin="lineage",
+                        )
+                        _copy_task_logs(rec_file.parent, shard)
+                        promoted.append(key_hex)
+                    event_status = "promoted" if status == "promoted" else (
+                        "fail" if status == "failed" else "miss"
                     )
-                    _copy_task_logs(rec_file.parent, shard)
-                    promoted.append(key_hex)
-                event_status = "promoted" if status == "promoted" else (
-                    "fail" if status == "failed" else "miss"
-                )
-                if event_status == "fail" and not rec.get("produces"):
+                    if event_status == "fail" and not rec.get("produces"):
+                        continue
+                    task_hash = key_hex if key_hex != "-" else (
+                        f"nokey:{rec.get('step')}:{rec_file.parent.name}:{n}"
+                    )
+                    append_invocation_event(trace_path, InvocationEvent(
+                        task_hash=task_hash,
+                        transform_key=meta.transform_key if meta else "",
+                        status=event_status,
+                        consumes={k: list(v) for k, v in (rec.get("consumes") or {}).items()},
+                        produces=_produced_files(rec.get("produces") or []),
+                        session_id=session_id,
+                        step_order=int(rec.get("step", 0)) or None,
+                        step_name=rec.get("step_name") or (meta.step_name if meta else ""),
+                        cache_key=key_hex if key_hex != "-" else None,
+                        work_dir=str(rec_file.parent),
+                    ))
+                except Exception as e:
+                    log.append(("warn", f"record {n} in {rec_file} not indexed: {e}"))
                     continue
-                task_hash = key_hex if key_hex != "-" else (
-                    f"nokey:{rec.get('step')}:{rec_file.parent.name}:{n}"
-                )
-                append_invocation_event(trace_path, InvocationEvent(
-                    task_hash=task_hash,
-                    transform_key=meta.transform_key if meta else "",
-                    status=event_status,
-                    consumes={k: list(v) for k, v in (rec.get("consumes") or {}).items()},
-                    produces=_produced_files(rec.get("produces") or []),
-                    session_id=session_id,
-                    step_order=int(rec.get("step", 0)) or None,
-                    step_name=rec.get("step_name") or (meta.step_name if meta else ""),
-                    cache_key=key_hex if key_hex != "-" else None,
-                    work_dir=str(rec_file.parent),
-                ))
 
         hits_log = workspace / CACHE_HITS_LOG
         if hits_log.is_file():
@@ -436,36 +462,40 @@ def record_run(*, workspace: Path, cache_root: Path, log: list | None = None) ->
                     log.append(("warn", "unreadable line in the cache hit log"))
                     continue
                 key_hex = str(hit.get("key", ""))
-                shard = Path(hit.get("shard", ""))
+                shard = _resolve_shard(cache_root, key_hex, hit.get("shard"))
                 manifest = read_manifest(shard)
                 if not key_hex or manifest is None:
                     log.append(("warn", f"hit {key_hex[:8]} has no readable shard"))
                     continue
-                meta = meta_by_order.get(int(hit.get("step", 0)))
-                entry = hit.get("entry") or {}
-                consumed = consumed_of(entry, meta.channels) if meta else None
-                if store.probe(bytes.fromhex(key_hex)) is None:
-                    store.upsert(
-                        key=bytes.fromhex(key_hex),
+                try:
+                    meta = meta_by_order.get(int(hit.get("step", 0)))
+                    entry = hit.get("entry") or {}
+                    consumed = consumed_of(entry, meta.channels) if meta else None
+                    if store.probe(bytes.fromhex(key_hex)) is None:
+                        store.upsert(
+                            key=bytes.fromhex(key_hex),
+                            transform_key=str(manifest.get("tk", "")),
+                            payload=canonical_cbor(manifest),
+                            output_root=_output_root(shard, cache_root),
+                            size_bytes=int(manifest.get("size", 0)),
+                            origin="lineage",
+                        )
+                    store.touch(bytes.fromhex(key_hex))
+                    hits.append(key_hex)
+                    append_invocation_event(trace_path, InvocationEvent(
+                        task_hash=key_hex,
                         transform_key=str(manifest.get("tk", "")),
-                        payload=canonical_cbor(manifest),
-                        output_root=str(shard.relative_to(cache_root)) if shard.is_relative_to(cache_root) else str(shard),
-                        size_bytes=int(manifest.get("size", 0)),
-                        origin="lineage",
-                    )
-                store.touch(bytes.fromhex(key_hex))
-                hits.append(key_hex)
-                append_invocation_event(trace_path, InvocationEvent(
-                    task_hash=key_hex,
-                    transform_key=str(manifest.get("tk", "")),
-                    status="hit",
-                    consumes=consumed or {k: list(v) for k, v in (manifest.get("consumes") or {}).items()},
-                    produces=_produced_files(manifest.get("files") or []),
-                    session_id=session_id,
-                    step_order=int(hit.get("step", 0)) or None,
-                    step_name=hit.get("step_name") or (meta.step_name if meta else ""),
-                    cache_key=key_hex,
-                ))
+                        status="hit",
+                        consumes=consumed or {k: list(v) for k, v in (manifest.get("consumes") or {}).items()},
+                        produces=_produced_files(manifest.get("files") or []),
+                        session_id=session_id,
+                        step_order=int(hit.get("step", 0)) or None,
+                        step_name=hit.get("step_name") or (meta.step_name if meta else ""),
+                        cache_key=key_hex,
+                    ))
+                except Exception as e:
+                    log.append(("warn", f"hit {key_hex[:8]} not indexed: {e}"))
+                    continue
     finally:
         store.close()
     return {"promoted": promoted, "hits": hits}
