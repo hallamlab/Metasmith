@@ -20,21 +20,36 @@ depth 1, and 6 of 11 dvc-tracked reference dirs share that shape. `ref::kofamsca
 escapes only because its files sit flat at depth 1, which one reorganisation would undo. The
 first move is content addressing with stat demoted to a memo key — that changes
 `CACHE_KEY_VERSION` and invalidates every existing shard, so it is a migration, not a patch.
-Ships unfixed in 0.21.0.
+Ships unfixed in 0.22.0. That release moves `CACHE_KEY_VERSION` to 5 for an unrelated reason —
+the unit became one group member's invocation — so the epoch bump users pay for buys nothing
+here, and the migration this entry wants still costs a second one.
 
-**Promotion is a single post-execution pass, so a long or interrupted run banks almost
-nothing.** Nextflow stages outputs into `<cache_root>/<key>.tmp/` as tasks finish, but the
-manifest, the shard rename and the store upsert all happen in one call after the Nextflow
-process returns. A run killed before that returns banks nothing — and the runs most likely to
-be interrupted are the ones with the most to bank. Promoting per step, as each step's tasks
-drain, would cost one manifest write per step and make an interrupted run resumable. Cancel now
-stops Nextflow's process group and leaves the driver alive to run this pass, so the natural next
-piece is making the pass worth reaching.
+**A staged leaf's id folds the task key, so nothing hits across plans.** `restat_leaf_ids` runs
+after `StageWorkflow` copies the data libraries into `runs/<task key>/_metasmith/task/data/`, so
+`stat_multihash_key` hashes a path containing the task key, and the task key is a function of the
+whole plan. Adding a sample re-paths every staged leaf, which moves every leaf id, which moves
+every member key — and that is precisely the case the member unit exists to make cheap. Proven
+arithmetically rather than inferred: recomputing the key over the container path and the host
+file's mtime reproduces a real run's recorded ids bit for bit. Only inputs left outside the
+workspace keep stable ids, which is why `shared_input_paths` databases reuse fine. The id must
+not contain the task key — derive it from the library-relative path, or stage libraries to a
+home-level location shared across runs.
 
-**The orphan sweep can delete another run's finished, un-promoted work.** It removes every
-`<key>.tmp` lacking a manifest, and it globs the whole cache root rather than the workspace
-being promoted — so promoting one run can destroy another run's staging, and holding a step
-back means moving its `.tmp` aside rather than merely omitting it from this pass.
+**An epoch bump tells the user to run a command that reclaims nothing.** `CacheStore.open` warns
+that old shards are unreachable and names `msm cache gc --delete`, but the delete branch of
+`gc_cache` skips every entry whose `tombstoned_at` is null, and nothing tombstones a pre-epoch
+row. So the one command the warning names is a no-op against exactly the shards it is about, and
+they sit on disk indefinitely. 0.22.0 moves the epoch, so every existing user meets this. The
+workaround is `msm cache gc --older-than 0 --grace 0 --delete`, which tombstones and unlinks in
+one pass — but it is indiscriminate, so it takes the post-epoch shards with it. The fix is to
+tombstone on the epoch-mismatch path, where the mismatch is already detected.
+
+**`check_launch` reads the config before `resource_overrides` is applied.** In
+`agents/workflow_ops.py`, the preflight at the top of the launch runs against the transforms'
+declared numbers, and the caller's per-step overrides land afterwards. So a caller who has
+already capped every step to fit the host is still refused, and `METASMITH_SKIP_RESOURCE_CHECK=1`
+is the only way through. The overrides do win once the run starts, confirmed from the generated
+`workflow.config.nf` — this is ordering, not precedence.
 
 **The local executor silently ignores `-params-file` for its memory cap.** The `params{
 executor{ memory } }` block in `local.nf` wins over the params file, because the executor
@@ -165,3 +180,14 @@ relayed run.
 
 **Deploy-and-run end to end on the HPC hosts was red at the last check** and has not been
 re-verified since the bind failure was made fail-fast.
+
+**No test stages one data library under two task keys**, in either the virtual runtime or the
+`-stub` docker lane, so nothing can see the cross-plan re-keying under *Open bugs* and a
+regression there stays invisible. The same blind spot hid a record-path bug: the docker lane
+promotes from the host, so a container-side path never enters a cache record.
+
+**No published artifact has been installed and driven as a user receives it.** Every release
+guard inspects the artifact as the builder sees it — `-ud` reads the image, `-uc` installs into a
+throwaway env — and neither is a clean-room `mamba create -c hallamlab metasmith=<version>` from
+outside every worktree, with `msm --help`, a rust solver report, a `clone_stdlib` into an empty
+project and a plan that solves. Open since 0.21.0.
