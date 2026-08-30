@@ -1,4 +1,3 @@
-import json
 import pytest
 from pathlib import Path
 
@@ -8,6 +7,7 @@ from metasmith.models.libraries import (
     ExecutionResult,
 )
 from metasmith.models.solver import Endpoint, Transform
+from metasmith.models.lineage import LinPayload
 from metasmith.models.workflow import WorkflowPlan, WorkflowTask, METADATA_FILE
 from metasmith.testing.transform_harness import TransformHarness, MockShell
 from metasmith.testing.mock_transforms import (
@@ -18,6 +18,12 @@ from metasmith.testing.mock_transforms import (
 )
 
 from .conftest import create_transform_library
+
+
+def lin_line_of(metadata: str) -> str:
+    """The `lin` line's payload, which is an envelope rather than a bare list."""
+    line = [l for l in metadata.split("\n") if l.startswith("lin ")][0]
+    return line[4:]
 
 
 def _make_task(mock_samples, mock_types, temp_dir, transforms, target_props, target_name):
@@ -85,9 +91,7 @@ class TestHarnessBasic:
         for expected in ["res", "lin", "fmt", "din", "dot", "inp", "out"]:
             assert expected in keys
 
-        lin_line = [l for l in lines if l.startswith("lin ")][0]
-        lin_data = json.loads(lin_line[4:])
-        assert isinstance(lin_data, list)
+        assert isinstance(LinPayload.from_json(lin_line_of(content)).entries, list)
 
     def test_input_files_accessible(self, mock_samples, mock_types, temp_dir):
         task = _make_task(
@@ -189,15 +193,14 @@ class TestHarnessLineage:
         )
         meta_path = harness.write_metadata()
         content = meta_path.read_text()
-        lin_line = [l for l in content.split("\n") if l.startswith("lin")][0]
-        lin_data = json.loads(lin_line[4:])
+        entries = LinPayload.from_json(lin_line_of(content)).entries
 
-        assert isinstance(lin_data, list)
-        assert len(lin_data) > 0
+        assert isinstance(entries, list)
+        assert len(entries) > 0
 
-        for entry in lin_data:
+        for entry in entries:
             assert isinstance(entry, dict)
-            assert "FILES" in entry
+            assert LinPayload.FILES_KEY in entry
 
     def test_files_entry_correct(self, mock_samples, mock_types, temp_dir):
         task = _make_task(
@@ -211,11 +214,8 @@ class TestHarnessLineage:
         )
         meta_path = harness.write_metadata()
         content = meta_path.read_text()
-        lin_line = [l for l in content.split("\n") if l.startswith("lin")][0]
-        lin_data = json.loads(lin_line[4:])
-
-        for entry in lin_data:
-            files = entry["FILES"]
+        for entry in LinPayload.from_json(lin_line_of(content)).entries:
+            files = entry[LinPayload.FILES_KEY]
             assert isinstance(files, list)
             for file_group in files:
                 assert isinstance(file_group, list)

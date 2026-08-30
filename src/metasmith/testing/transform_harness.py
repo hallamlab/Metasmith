@@ -16,6 +16,7 @@ from ..models.libraries import (
     DataInstance,
 )
 from ..models.solver import Dependency, Endpoint
+from ..models.lineage import LinPayload
 from ..models.workflow import WorkflowStep, WorkflowTask, METADATA_FILE
 from ..models.workflow.payload import (
     build_entry, given_index, output_file_name, render_lin_line,
@@ -164,7 +165,15 @@ class TransformHarness:
                         for di in batch_insts
                     ],
                 ))
-            lineages.append(build_entry(slots))
+            entry = build_entry(slots)
+            # Every routed member carries KEY: the orchestrator stamps it before
+            # submission and `member_token` refuses an entry without one. This
+            # harness runs a transform in isolation with no cache and no
+            # orchestrator, so "-" is the honest value -- the same one a member
+            # with no identity to key on gets, which names products from the
+            # lineage index instead.
+            entry[LinPayload.KEY_KEY] = "-"
+            lineages.append(entry)
 
         return lineages
 
