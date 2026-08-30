@@ -272,6 +272,15 @@ Then:
    (`stdlib.discover(root)["commit"]`) must agree between the two artifacts;
    they are built from one vendored tree and a disagreement means one of them
    was staged from something else.
+4. Then **run something**. Everything above proves the release plans; none of it
+   executes a workflow, and that is where 0.22.0's defect was — it shipped
+   solving eleven templates cleanly while failing the case it was cut for. Drive
+   whatever scenario the release claims to fix, on the published artifacts, and
+   pair it with a control that should behave the *opposite* way. A single run
+   that misses tells you nothing: it could be a broken cache or a correct miss.
+   The 0.22.0 pass was three trio runs — cold, add-a-sample, re-run-unchanged —
+   and only the third one turned the second from an observation into a
+   diagnosis. Budget hours, not minutes.
 
 ## What goes in this file
 
