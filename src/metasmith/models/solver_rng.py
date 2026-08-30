@@ -9,6 +9,20 @@ from typing import Sequence
 # its second implementation and failed silently.
 SOLVER_RNG_VERSION = 1
 
+# What the two implementations promise each other, and it is NOT bit equality.
+# The draw stream is exact: same seed, same ops, same draw counts, same
+# decisions. Derived VALUES are exact everywhere except `log2`, where Rust's
+# libm and CPython's disagree in the last digit. Measured over the five
+# differential seeds: 8 of 36,290 values differ, all of them `log2`, all of
+# them 1 ULP, and zero draw-count mismatches.
+#
+# So the tolerance is a statement about libm, not slack in the contract --
+# anything wider would hide a real divergence, and demanding zero asserts an
+# agreement two libms do not offer. A one-ULP difference can still flip an
+# argmax at a near-tie; that residue is under *Open bugs* in
+# docs/metasmith/plans/consolidation-followups.md rather than solved here.
+SOLVER_VALUE_TOLERANCE_ULP = 1
+
 _MASK32 = 0xFFFFFFFF
 _2_32 = 1 << 32
 _SIGMA = (0x61707865, 0x3320646E, 0x79622D32, 0x6B206574)

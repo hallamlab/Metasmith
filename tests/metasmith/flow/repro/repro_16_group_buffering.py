@@ -9,9 +9,15 @@ from tests.metasmith.flow.conftest import build_group_then_split_plan, run_and_l
 
 
 # Hard wall on this pin so a deadlock regression here surfaces as a fast
-# failure rather than a hang. The virtual_runtime path completes in
-# well under a second for this plan shape on commodity CI.
-_REPRO_16_WALL_BUDGET_S = 5.0
+# failure rather than a hang. It is a liveness bound, not a cost claim -- a
+# cost claim belongs in the perf axis, per tests/metasmith/AGENTS.md.
+#
+# The original 5.0 was set when this plan shape ran in well under a second.
+# The member cache moved the unit to one group member's invocation, and the
+# virtual runtime now calls the real key, probe and promote functions per
+# member, which took the same shape to ~17s. Widened to keep the guard while
+# it stops asserting a speed nobody committed to.
+_REPRO_16_WALL_BUDGET_S = 60.0
 
 
 def test_repro_16_group_buffering_no_deadlock(tmp_path, virtual_runtime):
