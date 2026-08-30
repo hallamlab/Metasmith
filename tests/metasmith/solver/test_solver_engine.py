@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 import stat
 import sys
 
@@ -25,7 +26,7 @@ from metasmith.models.solver_engine import (
     platform_slot,
     probe_engine,
 )
-from metasmith.models.solver_rng import SOLVER_RNG_VERSION
+from metasmith.models.solver_rng import SOLVER_RNG_VERSION, SOLVER_VALUE_TOLERANCE_ULP
 from metasmith.testing.rng_trace import execute_ops, execute_ops_via_engine, generate_ops
 
 
@@ -208,14 +209,48 @@ def test_the_two_streams_are_the_same_stream(rust_engine):
         execute_ops(42, ops)["results"]
 
 
+def _ulp_distance(a: float, b: float) -> int:
+    lo, hi = (a, b) if a < b else (b, a)
+    n = 0
+    while lo < hi and n <= SOLVER_VALUE_TOLERANCE_ULP:
+        lo = math.nextafter(lo, math.inf)
+        n += 1
+    return n
+
+
+def _assert_values_agree(mine, theirs, seed: int, index: int) -> None:
+    if isinstance(mine, list):
+        assert isinstance(theirs, list) and len(mine) == len(theirs)
+        for a, b in zip(mine, theirs):
+            _assert_values_agree(a, b, seed, index)
+        return
+    if isinstance(mine, float) and isinstance(theirs, float) and mine != theirs:
+        assert _ulp_distance(mine, theirs) <= SOLVER_VALUE_TOLERANCE_ULP, (
+            f"seed {seed} op {index}: {mine!r} and {theirs!r} are further apart "
+            f"than {SOLVER_VALUE_TOLERANCE_ULP} ULP"
+        )
+        return
+    assert mine == theirs, f"seed {seed} op {index}: {mine!r} != {theirs!r}"
+
+
 @pytest.mark.parametrize("seed", [0, 1, 42, 2**31, 2**63 - 1])
 def test_a_generated_script_agrees_draw_for_draw(rust_engine, seed):
+    # The draw stream is exact; derived values carry libm's last digit. See
+    # SOLVER_VALUE_TOLERANCE_ULP for why the tolerance is one ULP and not zero.
     ops = generate_ops(seed, 2000)
     mine = execute_ops(seed, ops)
     theirs = execute_ops_via_engine(rust_engine, seed, ops)
     assert theirs["rng_version"] == mine["rng_version"]
-    assert theirs["results"] == mine["results"]
     assert theirs["draws"] == mine["draws"]
+
+    assert len(theirs["results"]) == len(mine["results"])
+    for i, (a, b) in enumerate(zip(mine["results"], theirs["results"])):
+        assert a.keys() == b.keys()
+        assert a.get("draws") == b.get("draws"), f"seed {seed} op {i}: draw count moved"
+        for k in a:
+            if k == "draws":
+                continue
+            _assert_values_agree(a[k], b[k], seed, i)
 
 
 def test_the_hard_cases_agree(rust_engine):

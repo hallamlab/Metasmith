@@ -90,14 +90,15 @@ Nothing reads that index today, so the loss is invisible; anything that later as
 produced a file gets a plausible answer built from the wrong level. Decide first whether the
 index is a provenance record or a convenience lookup — the two want different walks.
 
-**The two solver implementations disagree by one ULP on `log2`.** Not a decision-rule
-divergence: the streams match and `draws` is identical on every seed, and every differing
-entry is `log2`'s last digit — Rust's libm against CPython's. A one-ULP difference in a score
-can still flip an `argmax` at a near-tie, so choose a policy — a tolerance, one side adopting
-the other's implementation, or asserting on `draws` alone — and state it next to
-`SOLVER_RNG_VERSION`, which currently asserts an agreement that does not hold. The differential
-gate also runs against a staged binary older than the Rust source, so rebuild before treating
-any of this as settled.
+**A one-ULP `log2` difference between the two solvers can still flip an `argmax` at a
+near-tie.** The policy this entry used to ask for is now set: `SOLVER_VALUE_TOLERANCE_ULP` in
+`models/solver_rng.py` states that the draw stream is exact and derived values carry libm's last
+digit, and the differential test enforces exactly that. Measured against a staged binary that
+post-dates the last change to `src/workflow_solver/`, so the stale-binary caveat this entry used
+to carry does not apply: 8 of 36,290 values differ across the five seeds, all `log2`, all 1 ULP,
+zero draw-count mismatches. What stays open is the consequence, not the divergence — nothing
+establishes how near a tie has to be for that last digit to change a plan, and the corpus has
+never been searched for one.
 
 **Two solver tests are expensive and sit in an axis that says they are not.** One solves every
 shipped template and one walks the corpus; together they dominate a gate meant to be quick.

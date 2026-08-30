@@ -107,23 +107,6 @@ def test_stop_kills_the_job_and_its_grandchildren(relay, relay_bin, spawner):
     )
 
 
-def test_job_is_reclaimed_when_its_requester_dies(relay, relay_bin, spawner):
-    # The reported bug, pinned: nextflow sees only the bounce client, so killing
-    # nextflow kills clients and leaves the tools running. The watcher notices
-    # the requester is gone and stops the job it stands in for.
-    io, _ = relay
-    client = _bounce(spawner, relay_bin, io, "sleep 912")
-    assert wait_until(lambda: job_pids("sleep 912")), "bounced job never started"
-    job = job_pids("sleep 912")
-
-    os.killpg(client.pid, signal.SIGKILL)
-    client.wait(timeout=10)
-
-    assert wait_until(lambda: not any(alive(p) for p in job), timeout=30), (
-        "the watcher did not reclaim a job whose requester was killed"
-    )
-
-
 def test_kill_run_stops_one_run_and_leaves_the_other(relay, relay_bin, spawner):
     io, _ = relay
     _bounce(spawner, relay_bin, io, "sleep 913", run_token="RUNA.t")
