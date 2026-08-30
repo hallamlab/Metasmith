@@ -548,9 +548,13 @@ def RunWorkflow(key: str, log_dir: Path, host: str, stub_delay: float):
         from ..caching.layout import default_cache_root
         from ..caching.promote import record_run
 
+        cache_log: list = []
         summary = record_run(
             workspace=workspace, cache_root=default_cache_root(Path(str(extern_home))),
+            log=cache_log,
         )
+        for level, msg in cache_log:
+            (Log.Warn if level == "warn" else Log.Info)(f"cache: {msg}")
         Log.Info(
             f"cache: {len(summary['promoted'])} member(s) promoted, "
             f"{len(summary['hits'])} served from shards"
