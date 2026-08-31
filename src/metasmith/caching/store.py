@@ -106,10 +106,23 @@ class CacheStore:
         ).fetchone()
         stored = int(row[0]) if row is not None else 0
         if stored < CACHE_KEY_VERSION:
+            # Every entry was keyed under the old epoch, so nothing will ever ask
+            # for one again. Tombstone them here or the command this warning
+            # names reclaims nothing: `gc --delete` only unlinks rows that are
+            # already tombstoned, and an epoch bump tombstones none of them.
+            #
+            # The stamp is 0, not `now`. The grace period exists to let a run
+            # that is already reading a shard finish; a shard whose key can no
+            # longer be minted has no such reader, and a `now` stamp would hold
+            # the disk for a day after the warning told the user how to free it.
+            cur = conn.execute(
+                "UPDATE entries SET tombstoned_at = 0 WHERE tombstoned_at IS NULL"
+            )
+            stranded = max(cur.rowcount, 0)
             Log.Warn(
                 f"cache epoch v{CACHE_KEY_VERSION} supersedes v{stored}; "
-                f"old shards at {cache_root} are unreachable. "
-                f"Run `msm cache gc --delete` to reclaim."
+                f"[{stranded}] shard(s) at {cache_root} are unreachable and have "
+                f"been tombstoned. Run `msm cache gc --delete` to reclaim."
             )
             conn.execute(
                 "UPDATE schema_meta SET v = ? WHERE k = ?",

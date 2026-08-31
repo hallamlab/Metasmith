@@ -94,3 +94,82 @@ def test_lineage_key_version_baked_in(tmp_path):
     finally:
         keys_mod.CACHE_KEY_VERSION = original
     assert base != bumped
+
+
+def test_an_epoch_bump_tombstones_what_it_strands(tmp_path):
+    # The warning names `msm cache gc --delete`, and gc only unlinks rows that
+    # are already tombstoned. Without this the command reclaims nothing, and
+    # every user who takes an epoch bump keeps paying for shards no key reaches.
+    from metasmith.ops.cache import gc_cache
+
+    cache_root = tmp_path / "cache"
+    store = CacheStore.open(cache_root)
+    try:
+        shard = cache_root / "shard"
+        shard.mkdir(parents=True)
+        (shard / "out.txt").write_text("stale\n", encoding="utf-8")
+        store.upsert(
+            key=b"\x01" * 34,
+            transform_key="tr.x",
+            payload=b"{}",
+            output_root=str(shard),
+            size_bytes=6,
+            origin="lineage",
+        )
+        conn = store.conn
+        conn.execute(
+            "UPDATE schema_meta SET v = ? WHERE k = ?",
+            (str(CACHE_KEY_VERSION - 1), CACHE_EPOCH_KEY),
+        )
+        conn.commit()
+    finally:
+        store.close()
+
+    store = CacheStore.open(cache_root)
+    try:
+        live = list(store.iter_entries())
+        stranded = list(store.iter_entries(include_tombstoned=True))
+        assert live == [], "a pre-epoch shard is still offered as reachable"
+        assert len(stranded) == 1
+        assert stranded[0].tombstoned_at is not None
+    finally:
+        store.close()
+
+    res = gc_cache(str(cache_root), delete=True)
+    assert res["deleted"] == [(b"\x01" * 34).hex()], (
+        "the command the epoch warning names did not reclaim the shards it"
+        " stranded"
+    )
+    assert not shard.exists()
+
+
+def test_an_epoch_bump_does_not_touch_post_epoch_shards(tmp_path):
+    # The indiscriminate version of the fix takes the shards this run is about
+    # to write with it.
+    from metasmith.ops.cache import gc_cache
+
+    cache_root = tmp_path / "cache"
+    store = CacheStore.open(cache_root)
+    try:
+        shard = cache_root / "shard"
+        shard.mkdir(parents=True)
+        store.upsert(
+            key=b"\x02" * 34,
+            transform_key="tr.x",
+            payload=b"{}",
+            output_root=str(shard),
+            size_bytes=1,
+            origin="lineage",
+        )
+    finally:
+        store.close()
+
+    store = CacheStore.open(cache_root)
+    try:
+        assert len(list(store.iter_entries())) == 1
+    finally:
+        store.close()
+
+    res = gc_cache(str(cache_root), delete=True)
+    assert res["deleted"] == []
+    assert shard.exists()
