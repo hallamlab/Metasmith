@@ -216,6 +216,16 @@ class WorkflowTask:
         data_libs = {n: load_lib(n) for n in raw_task["data_libraries"]}
         tr_libs = {n: TransformInstanceLibrary.Load(path/f"transforms/{n}") for n in raw_task["transform_libraries"]}
         _libraries: dict[str, DataInstanceLibrary] = data_libs|tr_libs
+        # A library key names the directory this bundle staged it into, so -- as
+        # with the task key below -- it is a fact about the bundle rather than
+        # something to re-derive. A library whose manifest names its own key
+        # (an entry with a parent in the same library) cannot re-derive it: the
+        # key is a hash of a manifest that contains the key. `DataInstance.Pack`
+        # asks the library for its key, so a plan rewritten after a load would
+        # otherwise name a library this task has never heard of.
+        for _recorded, _lib in _libraries.items():
+            _lib._hash, _ = KeyGenerator.FromStr(_recorded, l=12)
+            _lib._key = _recorded
         plan =  WorkflowPlan.Unpack(raw_plan, _libraries)
         task = cls(
             ok=raw_task["ok"],

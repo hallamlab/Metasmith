@@ -72,11 +72,11 @@ def test_a_member_without_prov_is_uncacheable():
     assert inv.consumed_of(entry, SLOTS) is None
 
 
-def test_the_key_is_a_blake3_multihash_under_epoch_5():
+def test_the_key_is_a_blake3_multihash_under_epoch_6():
     inv = _invocation()
     from metasmith.caching.keys import CACHE_KEY_VERSION, KEY_PREFIX
 
-    assert CACHE_KEY_VERSION == 5
+    assert CACHE_KEY_VERSION == 6
     key = inv.member_key(TK, SIG, {"seed": ["id-a"], "ref": ["id-db"]})
     assert isinstance(key, bytes) and key[: len(KEY_PREFIX)] == KEY_PREFIX
     assert len(key) == len(KEY_PREFIX) + 32

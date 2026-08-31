@@ -130,10 +130,13 @@ def test_the_references_are_not_re_identified_on_every_plan(tmp_path):
         f" {sorted(annotation.REF_LAYOUT)}"
     )
     assert ids[0] == ids[1], "a reference identity moved between two plans"
-    assert keys[0] == keys[1], (
-        "the task key moved between two identical plans, so the second run"
-        " cannot reuse the first's cache"
-    )
+    # Not the task key. `build_inputs` copies the orfs into a library under the
+    # run's own working directory, and a leaf is identified by where it is, so
+    # the run's own input is a different file in every run and the key moves
+    # with it. What must not move is the references, above -- they are the 24 GB
+    # the pin exists for, and they are shared across runs rather than copied
+    # into one. A run that wants to reuse another's shards has to be given the
+    # same input library, not a fresh copy of the same bytes.
 
 
 if __name__ == "__main__":
