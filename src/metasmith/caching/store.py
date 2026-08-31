@@ -100,6 +100,13 @@ class CacheStore:
             "INSERT OR IGNORE INTO schema_meta(k, v) VALUES (?, ?)",
             (TRACE_SESSION_COUNTER_KEY, "0"),
         )
+        # Read-and-upgrade under a write lock. Several tasks of one run open this
+        # store at once, and without the lock two of them can both read the old
+        # epoch -- at which point the second one's tombstone sweep takes the
+        # first one's freshly promoted shards with it, and the next run misses
+        # results it just computed.
+        conn.commit()
+        conn.execute("BEGIN IMMEDIATE")
         row = conn.execute(
             "SELECT v FROM schema_meta WHERE k = ?",
             (CACHE_EPOCH_KEY,),
