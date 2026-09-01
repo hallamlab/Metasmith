@@ -40,8 +40,11 @@ RUN --mount=type=cache,target=/opt/conda/pkgs \
 ENV PATH=/opt/conda/envs/${CONDA_ENV}/bin:/app:/opt/globusconnectpersonal-latest:$PATH
 
 # install src
-COPY ./dist/*.tar.gz /opt/metasmith.tar.gz
-RUN pip install /opt/metasmith.tar.gz
+# .whl instead of the sdist: the sdist needs pip build-isolation to fetch
+# setuptools from PyPI, and the wheel is built from that same sdist so it
+# installs identical bytes with no build backend needed.
+COPY ./dist/*.whl /opt/
+RUN pip install /opt/*.whl
 
 COPY ./lib/globusconnectpersonal-latest /opt/globusconnectpersonal-latest
 COPY ./src/bash_relay/target/x86_64-unknown-linux-musl/release/msm_relay /app/msm_relay.x86_64-linux
