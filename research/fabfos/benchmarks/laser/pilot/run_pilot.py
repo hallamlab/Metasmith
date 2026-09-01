@@ -7,7 +7,7 @@ at a named target under the universal-leakage ("universal ground") method.
         --condition-id "LASER:Record1419612292.57:M1" --host e_coli_k12 --target Isoprene
 
 Writes research/fabfos/benchmarks/laser/pilot/cache/pilot_<slug>.json, and the
-conditions table it measured against beside it.
+conditions and tests tables it measured against beside it.
 
 WHAT THIS SCRIPT IS FOR, NOW THAT ECSPr HAS A CLI
 --------------------------------------------------
@@ -17,9 +17,9 @@ Everything here is the EXPERIMENT DESIGNER'S half, and it is here rather than in
   * joining the bake's direction ensemble through the vocabulary onto MNXR;
   * resolving a metabolite NAME ("Isoprene") to an MNXM id, restricted to the
     atom-pairs universe and broken toward the most-connected candidate;
-  * turning a LASER record's add/del rows into a MASK -- the added rows are selected
-    by condition_id, and a deleted reaction is withheld by its MNXR, which takes the
-    host's rows for it out too;
+  * turning a LASER record's add/del rows into a CONDITION -- the added rows are
+    unioned in by condition_id, and a deleted reaction is subtracted by its MNXR from
+    both tables, which takes the host's rows for it out too;
   * the AAM coverage diagnostic, which distinguishes "zero flux" from "never became
     a node".
 
@@ -27,9 +27,12 @@ None of those is a measurement, and each of them is a choice this study made. Th
 measurement is `ecspr ground`, run below with no arguments the deployed transform
 does not also pass.
 
-NOT the deployed reference basis -- tier4 atom pairs, not the canonical MNXref release
-(same caveat examples/scadc_ecspr.py's own docstring states). Fine for a pilot, not a
-number to publish as-is.
+NOT the deployed reference basis -- tier4 atom pairs, not the canonical MNXref release.
+Fine for a pilot, not a number to publish as-is. THE PIN IS GONE, so this no longer
+degrades: `data/fabfos/benchmark/reference_tier4` was retired and this script cannot run
+until it reads `processed/metabolism_bake` instead. `examples/scadc_ecspr_basis.py` is
+what re-basing one of these costs -- the decode goes through `bake_pairs`, and the
+terminals are re-resolved against the new universe rather than carried over as ids.
 
 Supersedes run_pilot_lycopene.py, whose one invocation was:
     --condition-id "LASER:Record1423246634.26:M1" --host e_coli_k12 --target Lycopene
@@ -47,6 +50,7 @@ import pandas as pd
 
 from ecspr.model import conditions as cond_mod
 from ecspr.model import probes
+from ecspr.model import tests as test_mod
 
 ROOT = Path(__file__).resolve().parents[5]
 DEFAULT_OUT_DIR = Path(__file__).resolve().parent / "cache"
@@ -89,27 +93,45 @@ def resolve_metabolite(name, exact_names, element) -> dict:
                 element=element, n_candidates=int(hits.id.nunique()))
 
 
-def write_conditions(path, condition_id, host_unit, source, target, element):
+def write_tables(cond_path, test_path, condition_id, host_table, source, target, element):
+    """The construction and the measurement, as the two tables `ecspr ground` reads.
+
+    A DELETION SUBTRACTS FROM BOTH TABLES. The edits table carries the `del` rows for this
+    condition, so the union step brings them in and the subtract has to reach them as well
+    as the host's -- one step per table, because a step names one table by definition.
+    """
     edits = pd.read_parquet(EDITS)
     edits = edits[edits.condition_id == condition_id]
     if edits.empty:
         raise SystemExit(f"no rows for condition {condition_id!r} in {EDITS}")
     dropped = tuple(sorted(set(edits[edits.action == "del"].mnxr.astype(str))))
-    common = dict(element=element, source_hub=source, sinks=(), readouts=(target,),
-                  background_column="unit_id", background_values=(host_unit,))
-    rows = [
-        cond_mod.Condition(condition_id=BASELINE_ID, meta=dict(
-            arm="baseline", n_units=1, is_control=False), **common),
-        cond_mod.Condition(condition_id=condition_id, mask_column="condition_id",
-                           mask_values=(condition_id,), drop_column="mnxr",
-                           drop_values=dropped,
-                           meta=dict(arm="observed", n_units=1, is_control=False),
-                           **common),
+
+    host_step = cond_mod.Step(table=host_table, type="", set=(), operation="union")
+    steps = (host_step,
+             cond_mod.Step(table=EDITS.name, type="condition_id", set=(condition_id,),
+                           operation="union"))
+    for table in (host_table, EDITS.name):
+        if dropped:
+            steps += (cond_mod.Step(table=table, type="mnxr", set=dropped,
+                                    operation="subtract"),)
+    conds = [cond_mod.Condition(condition_id=BASELINE_ID, steps=(host_step,)),
+             cond_mod.Condition(condition_id=condition_id, steps=steps)]
+    cond_mod.write(conds, cond_path)
+
+    settings = dict(element=element, source_hub=source, sink_hub="",
+                    readout_hub=target, probe="ground")
+    tests = [
+        test_mod.Test(test_id=BASELINE_ID, network=BASELINE_ID, arm="ecspr",
+                      settings=settings,
+                      meta=dict(arm="baseline", n_units=1, is_control=False)),
+        test_mod.Test(test_id=condition_id, network=condition_id, arm="ecspr",
+                      read_against=BASELINE_ID, settings=settings,
+                      meta=dict(arm="observed", n_units=1, is_control=False)),
     ]
-    cond_mod.write(rows, path)
-    print(f"[conditions] {condition_id}: mask on condition_id, "
-          f"{len(dropped)} reaction(s) withheld -> {path}", file=sys.stderr)
-    return path, dropped
+    test_mod.write(tests, test_path, "ecspr")
+    print(f"[tables] {condition_id}: {len(dropped)} reaction(s) withheld -> "
+          f"{cond_path}, {test_path}", file=sys.stderr)
+    return cond_path, test_path, dropped
 
 
 def check_coverage(target_mnxm, condition_id, element):
@@ -159,7 +181,6 @@ def main():
     host_gem = RUNS / args.host / "gpr" / "gpr_gem.parquet"
     if not host_gem.exists():
         raise SystemExit(f"no such host GEM: {host_gem}")
-    host_unit = str(pd.read_parquet(host_gem, columns=["unit_id"]).unit_id.iloc[0])
 
     slug = re.sub(r"[^A-Za-z0-9]+", "_", args.condition_id).strip("_")
     direction_path = build_direction_ratios(OUT_DIR / "direction_ratios.parquet")
@@ -167,9 +188,9 @@ def main():
     target = resolve_metabolite(args.target, args.target_names or [args.target],
                                 args.element)
 
-    cond_path, dropped = write_conditions(
-        OUT_DIR / f"conditions_{slug}.tsv", args.condition_id, host_unit,
-        source["mnxm"], target["mnxm"], args.element)
+    cond_path, test_path, dropped = write_tables(
+        OUT_DIR / f"conditions_{slug}.tsv", OUT_DIR / f"tests_{slug}.tsv",
+        args.condition_id, host_gem.name, source["mnxm"], target["mnxm"], args.element)
 
     results_path = OUT_DIR / f"results_{slug}.tsv"
     # `--weighting uniform`: a curated GEM asserts a reaction is PRESENT, not how much
@@ -178,7 +199,7 @@ def main():
     cmd = [
         "ecspr", "ground",
         "--gpr", str(host_gem), str(EDITS),
-        "--conditions", str(cond_path),
+        "--conditions", str(cond_path), "--tests", str(test_path),
         "--atom-pairs", str(ATOM_PAIRS), "--direction", str(direction_path),
         "--element", args.element, "--weighting", "uniform",
         "--leak", str(args.leak), "--orientation", args.orientation,
@@ -190,7 +211,7 @@ def main():
     res = probes.read_results(results_path)
 
     def val(cid, readout):
-        r = res[(res.condition_id == cid) & (res.readout == readout)]
+        r = res[(res.test_id == cid) & (res.readout == readout)]
         return float(r.value.iloc[0]) if len(r) else None
 
     d_base, d_pert = val(BASELINE_ID, target["mnxm"]), val(args.condition_id,

@@ -30,7 +30,7 @@ Two consequences worth stating because they are load-bearing rather than inciden
     so `sum(belief_mass) == n_orfs` still holds exactly and the driver's conservation
     assert stays meaningful instead of being weakened for us. That ORF spends its whole
     1.0 on one pseudo-reaction, so every bridge pools to the SAME `E_r` --
-    `evidence.pooled_E_of_mass(1.0)`, not 1.0 -- and `pair_w` is divided by it so the
+    `evidence.pooled_E_of_mass(1.0, BRIDGE_LLR)`, not 1.0 -- and `pair_w` is divided by it
     product is the `g_bridge` the bridge table computed.
 
 THE BRIDGE WEIGHT IS A GENE-LEVEL MISMATCH, DILUTED TWICE
@@ -113,16 +113,21 @@ import sys
 import numpy as np
 import pandas as pd
 
-from . import conditions as cond_mod
+from . import tests as test_mod
 from . import evidence as _net
 
 ELEMENTS = ("C", "N", "P", "S")
 SEP = ":"
 BRIDGE_CHANNEL = "bridge"
+# Mirrors `fabfos_evidence.BRIDGE_LLR`, duplicated for the same reason
+# BRIDGE_CHANNEL is: ecspr does not import the staged evidence library. A bridge is
+# scaffolding the composition put there, not evidence about a member, so it carries no
+# weight -- its conductance is set where the network is composed.
+BRIDGE_LLR = 0.0
 
 BRIDGE_COLS = ["element", "org_a", "org_b", "metabolite", "name",
                "M_a", "M_b", "asymmetry", "G_a", "G_b", "k_atoms",
-               "g_bridge", "blacklisted", "bridged"]
+               "g_bridge", "blacklisted", "declared", "bridged"]
 
 
 def tag(org: str, mid: str) -> str:
@@ -273,7 +278,8 @@ def atom_ranks(beliefs: pd.Series, pairs: pd.DataFrame) -> dict:
 
 
 def bridge_table(members: dict, pairs: pd.DataFrame, element: str, conductances: dict, *,
-                 g0=1.0, blacklist=frozenset(), names=None, ranks=None) -> pd.DataFrame:
+                 g0=1.0, blacklist=frozenset(), names=None, ranks=None,
+                 declared=None) -> pd.DataFrame:
     # One row per (organism pair, metabolite) candidate bridge, for one element.
     #
     # Every candidate is reported, including the ones that get no edge -- blacklisted, or
@@ -298,12 +304,20 @@ def bridge_table(members: dict, pairs: pd.DataFrame, element: str, conductances:
         M[o] = diluted_gene_counts(members[o], el)
         G[o] = incident_conductance(conductances[o], el)
 
+    declared = declared or {}
     rows = []
     for i, a in enumerate(orgs):
         for b in orgs[i + 1:]:
             shared = set(K[a]) & set(K[b])
             union = set(K[a]) | set(K[b])
-            for met in sorted(union):
+            # A DECLARED `on` LIST RESTRICTS THE CANDIDATES AND IS REPORTED IN FULL,
+            # including a metabolite neither member carries. Silently dropping such a row
+            # would make a typo in the compositions table indistinguishable from a
+            # metabolite the two members happen to use identically -- and the second is a
+            # real answer.
+            dec = tuple(declared.get((a, b)) or declared.get((b, a)) or ())
+            cands = sorted(set(dec)) if dec else sorted(union)
+            for met in cands:
                 ma, mb = float(M[a].get(met, 0.0)), float(M[b].get(met, 0.0))
                 tot = ma + mb
                 d = abs(ma - mb) / tot if tot > 0 else float("nan")
@@ -313,7 +327,8 @@ def bridge_table(members: dict, pairs: pd.DataFrame, element: str, conductances:
                 ok = (met in shared) and k > 0 and not bl and tot > 0 and d > 0
                 gbr = (g0 * d * min(ga, gb) / k) if ok else 0.0
                 rows.append((element, a, b, met, name_of.get(met, ""), ma, mb, d,
-                             ga, gb, k, gbr, int(bl), int(ok and gbr > 0)))
+                             ga, gb, k, gbr, int(bl), int(bool(dec)),
+                             int(ok and gbr > 0)))
     return pd.DataFrame(rows, columns=BRIDGE_COLS)
 
 
@@ -324,13 +339,13 @@ def bridge_table(members: dict, pairs: pd.DataFrame, element: str, conductances:
 def _synthetic_orf_rows(mnxr: str, source: str) -> dict:
     return dict(source=source, orf=f"__bridge__{SEP}{mnxr}", channel=BRIDGE_CHANNEL,
                 mnxr=mnxr, intermediate_id=mnxr, intermediate_name=mnxr,
-                raw_score=1.0, score_kind="bridge", projection_via="compose",
+                llr=BRIDGE_LLR, projection_via="compose",
                 evidence_quality="synthetic", lane_set=BRIDGE_CHANNEL)
 
 
 def compose(members: dict, pairs: pd.DataFrame, direction: pd.DataFrame | None = None, *,
             elements=ELEMENTS, g0=1.0, blacklist=frozenset(), names=None,
-            network_id=None) -> dict:
+            network_id=None, declared=None) -> dict:
     orgs = sorted(members)
     network_id = network_id or "-".join(orgs)
     beliefs = {o: reaction_beliefs(members[o]) for o in orgs}
@@ -338,20 +353,7 @@ def compose(members: dict, pairs: pd.DataFrame, direction: pd.DataFrame | None =
     # Every bridge is one synthetic ORF spending 1.0 on one pseudo-reaction, so they all
     # pool to this same E_r. Dividing it out of pair_w is what makes E_r * pair_w equal
     # the g_bridge the bridge table computed.
-    e_bridge = _net.pooled_E_of_mass(1.0)
-
-    dup = set()
-    seen = {}
-    for o in orgs:
-        for orf in members[o]["orf"].unique():
-            if orf in seen and seen[orf] != o:
-                dup.add(orf)
-            seen[orf] = o
-    if dup:
-        raise ValueError(
-            f"{len(dup):,} ORF ids appear in more than one member (e.g. {sorted(dup)[:3]}). "
-            f"Belief conservation is per-ORF, so a shared id would silently merge two "
-            f"organisms' genes into one.")
+    e_bridge = _net.pooled_E_of_mass(1.0, BRIDGE_LLR)
 
     # --- the private copies -------------------------------------------------
     keep_el = pairs[pairs.element.isin(elements)] if "element" in pairs.columns else pairs
@@ -364,6 +366,14 @@ def compose(members: dict, pairs: pd.DataFrame, direction: pd.DataFrame | None =
         pair_parts.append(sub)
         g = members[o].copy()
         g["mnxr"] = o + SEP + g["mnxr"].astype(str)
+        # `orf` IS PREFIXED BY MEMBER, exactly as `mnxr` and the metabolites are. This
+        # used to be a refusal -- two members sharing an ORF id raised, because belief
+        # conservation is per-ORF and a shared id would have merged two cells' genes into
+        # one. That is the right diagnosis and the wrong remedy: it also refused the case
+        # the compositions table exists for, a strain beside its own mutant, where the
+        # two members share every ORF id by construction. The beliefs above are computed
+        # per member on the unprefixed table, so conservation is already per member.
+        g["orf"] = o + SEP + g["orf"].astype(str)
         gpr_parts.append(g)
 
     # --- the bridges --------------------------------------------------------
@@ -372,7 +382,8 @@ def compose(members: dict, pairs: pd.DataFrame, direction: pd.DataFrame | None =
         el_pairs = keep_el[keep_el.element == el] if "element" in keep_el.columns else keep_el
         ranks = {o: atom_ranks(beliefs[o], el_pairs) for o in orgs}
         bt = bridge_table(beliefs, el_pairs, el, conduct, g0=g0,
-                          blacklist=blacklist, names=names, ranks=ranks)
+                          blacklist=blacklist, names=names, ranks=ranks,
+                          declared=declared)
         bridge_parts.append(bt)
         live = bt[bt.bridged == 1]
         if not len(live):
@@ -392,10 +403,22 @@ def compose(members: dict, pairs: pd.DataFrame, direction: pd.DataFrame | None =
     if bridge_pairs:
         bp = pd.DataFrame(bridge_pairs, columns=["mnxr", "element", "substrate",
                                                  "product", "sub_idx", "prod_idx", "pair_w"])
+        # A BRIDGE ROW SAYS SO IN THE PROVENANCE COLUMNS the reference table carries.
+        # Filling them with NaN instead would leave the composed table's only synthetic
+        # rows indistinguishable from a reference row whose provenance went missing -- and
+        # an all-NaN column changes the concatenated dtype under a future pandas.
         for c in out_pairs.columns:
-            if c not in bp.columns:
-                bp[c] = np.nan
-        out_pairs = pd.concat([out_pairs, bp[out_pairs.columns]], ignore_index=True)
+            if c in bp.columns:
+                continue
+            bp[c] = (BRIDGE_CHANNEL if c == "method"
+                     else network_id if c == "source"
+                     else np.nan)
+        # The reference table is memory-tuned -- uint16 ranks, float32 weights -- and a
+        # column of Python floats concatenated onto it silently widens the whole table. A
+        # three-member composed graph is 1.4M rows, so the widening is real.
+        bp = bp[out_pairs.columns].astype(
+            {c: t for c, t in out_pairs.dtypes.items() if c in bp.columns})
+        out_pairs = pd.concat([out_pairs, bp], ignore_index=True)
     out_pairs["sub_idx"] = out_pairs["sub_idx"].astype(int)
     out_pairs["prod_idx"] = out_pairs["prod_idx"].astype(int)
 
@@ -432,16 +455,55 @@ def compose(members: dict, pairs: pd.DataFrame, direction: pd.DataFrame | None =
                              & ((bridges.M_a == 0) | (bridges.M_b == 0))).sum())
         if len(bridges) else 0,
     )
+    # PER DECLARED ROW, WHETHER AN EDGE CAME OUT. `bridge_table` gates on `d > 0`, so a
+    # metabolite both members use identically yields no edge -- a real answer that reads
+    # exactly like a typo in the compositions table unless these are counted apart.
+    if len(bridges) and (bridges.declared == 1).any():
+        dec = bridges[bridges.declared == 1]
+        report.update(
+            n_declared=int(len(dec)),
+            n_declared_bridged=int((dec.bridged == 1).sum()),
+            n_declared_blocked=int(((dec.blacklisted == 1) & (dec.bridged == 0)).sum()),
+            n_declared_not_carried=int(((dec.M_a == 0) | (dec.M_b == 0)).sum()),
+            n_declared_no_mismatch=int(((dec.bridged == 0) & (dec.blacklisted == 0)
+                                        & (dec.M_a > 0) & (dec.M_b > 0)).sum()))
     return dict(pairs=out_pairs, gpr=out_gpr, direction=out_dir,
                 bridges=bridges, report=report)
+
+
+def compose_composition(composition, conditions: dict, corpus: dict, pairs, direction=None,
+                        **kw) -> dict:
+    """A declared community -> the composed tables, with each member resolved as a condition.
+
+    THE ENTRY POINT THAT MAKES A MEMBER PERTURBABLE. `conditions` is
+    `{condition_id: Condition}` and `corpus` is `{table name: DataFrame}`, so a member is
+    built by the same set algebra a single-organism measurement uses and a knockout member
+    differs from an unperturbed one only in its steps.
+    """
+    from .compositions import resolve_members
+    members = resolve_members(composition, conditions, corpus)
+    declared = {pair: mets for pair, mets in composition.bridges.items() if mets}
+    return compose(members, pairs, direction, network_id=composition.composition_id,
+                   declared=declared or None, **kw)
 
 
 # =====================================================================
 # Conditions
 # =====================================================================
 
-def make_conditions(*, network_id, source_org, sink_orgs, substrates, precursors,
-                    media, elements=ELEMENTS, two_terminal_precursors=None) -> tuple:
+def make_tests(*, network_id, source_org, sink_orgs, substrates, precursors,
+               elements=ELEMENTS, two_terminal_precursors=None) -> tuple:
+    """`(ground tests, two-point tests)` for one composed network.
+
+    TESTS, NOT CONDITIONS. What a composed network IS is now the composition plus its
+    members' conditions; what is asked of it is a terminal spec, and every one of these
+    names the same `network_id`. That is the split: eleven measurements on one
+    composition used to be eleven conditions carrying eleven copies of one mask.
+
+    `media` is gone from here. It was written on every row and read by nothing -- a
+    conductance measurement has no exchange bounds to set -- and it now lives on
+    `gem_tests` where it is a real input.
+    """
     tt_prec = two_terminal_precursors or {}
     ground, two_terminal = [], []
     for el in elements:
@@ -451,18 +513,21 @@ def make_conditions(*, network_id, source_org, sink_orgs, substrates, precursors
         prec = precursors.get(el, ())
         if not prec:
             continue
-        ground.append(cond_mod.Condition(
-            condition_id=f"{network_id}|{source_org}->{'+'.join(sink_orgs)}|{el}|ground",
-            element=el, source_hub=tag(source_org, src),
-            sinks=tuple(tag(so, p) for so in sink_orgs for p in prec),
-            media=media,
+        ground.append(test_mod.Test(
+            test_id=f"{network_id}|{source_org}->{'+'.join(sink_orgs)}|{el}|ground",
+            network=network_id, arm="ecspr",
+            settings=dict(element=el, source_hub=tag(source_org, src),
+                          sink_hub=test_mod.SEP.join(
+                              tag(so, p) for so in sink_orgs for p in prec),
+                          probe="ground"),
         ))
         for p in tt_prec.get(el, ()):
             for so in sink_orgs:
-                two_terminal.append(cond_mod.Condition(
-                    condition_id=f"{network_id}|{source_org}->{so}|{el}|2t|{p}",
-                    element=el, source_hub=tag(source_org, src),
-                    sinks=(tag(so, p),), media=media,
+                two_terminal.append(test_mod.Test(
+                    test_id=f"{network_id}|{source_org}->{so}|{el}|2t|{p}",
+                    network=network_id, arm="ecspr",
+                    settings=dict(element=el, source_hub=tag(source_org, src),
+                                  sink_hub=tag(so, p), probe="two-point"),
                 ))
     return ground, two_terminal
 
@@ -476,7 +541,7 @@ def _toy_gpr(source, rxns):
     # arithmetic under test is the composition's, not the allocation's.
     return pd.DataFrame([dict(source=source, orf=f"{source}_g{i}", channel="clean",
                               mnxr=r, intermediate_id=f"i{i}", intermediate_name="x",
-                              raw_score=1.0, score_kind="p", projection_via="t",
+                              llr=1.0, projection_via="t",
                               evidence_quality="q", lane_set="clean")
                          for i, r in enumerate(rxns)])
 
@@ -588,7 +653,7 @@ def _selftest_bridge_conductance():
           f"E {e_br.E_full.unique()}")
     assert (e_br.belief_mass.sub(1.0).abs() < 1e-12).all()
     assert e_br.E_full.std(ddof=0) < 1e-15 or len(e_br) == 1
-    assert abs(float(e_br.E_full.iloc[0]) - _net.pooled_E_of_mass(1.0)) < 1e-12
+    assert abs(float(e_br.E_full.iloc[0]) - _net.pooled_E_of_mass(1.0, BRIDGE_LLR)) < 1e-12
     assert (w.E_full > 0).all() and (w.E_full < 1).all()
     # g0 scales the conductance linearly and nothing else -- the sweep that must converge
     # to the isolated members as g0 -> 0 is only meaningful if this holds.
@@ -628,19 +693,76 @@ def _selftest_blacklist():
     return 0
 
 
-def _selftest_conditions():
-    print("[compose] conditions name the copies, and carry the arm in their strings")
-    g, t = make_conditions(network_id="A-B", source_org="A", sink_orgs=["B"],
-                           substrates={"C": "GLC"}, precursors={"C": ["P1", "P2"]},
-                           media="M9|g0=1.0|bl=on", elements=("C",),
-                           two_terminal_precursors={"C": ["P1"]})
+def _selftest_tests():
+    print("[compose] tests name the copies, and every one names the same network")
+    g, t = make_tests(network_id="A-B", source_org="A", sink_orgs=["B"],
+                      substrates={"C": "GLC"}, precursors={"C": ["P1", "P2"]},
+                      elements=("C",), two_terminal_precursors={"C": ["P1"]})
     for c in g + t:
-        print(f"  {c.condition_id}  {c.source_hub} -> {'|'.join(c.sinks)}")
+        print(f"  {c.test_id}  {c.source_hub} -> {'|'.join(c.sinks)}")
     assert {c.source_hub for c in g} == {"A:GLC"}, "glucose is injected into the SOURCE copy"
     assert set(g[0].sinks) == {"B:P1", "B:P2"}, "endpoints are read in the SINK copy"
-    assert len(g) == 1, "a ground condition names every endpoint at once"
+    assert len(g) == 1, "a ground test names every endpoint at once"
     assert len(t) == 1 and t[0].sinks == ("B:P1",)
-    assert all(c.media == "M9|g0=1.0|bl=on" for c in g + t)
+    # THE SPLIT, ASSERTED: every measurement on this composition names the composition,
+    # so the construction is written down once instead of once per measurement.
+    assert {c.network for c in g + t} == {"A-B"}
+    assert all("media" not in c.settings for c in g + t)
+    print("  PASS\n")
+    return 0
+
+
+def _selftest_strain_and_its_mutant():
+    print("[compose] a strain and its own mutant compose")
+    pairs = _toy_pairs()
+    # THE CASE THE COMPOSITIONS TABLE EXISTS FOR. The two members share every ORF id by
+    # construction, which used to raise: belief conservation is per-ORF, so a shared id
+    # would have merged two cells' genes into one. Prefixing `orf` by member is the fix.
+    wt = _toy_gpr("S", ["R1", "R2", "R3"])
+    ko = _toy_gpr("S", ["R1", "R2"])
+    out = compose({"wt": wt, "ko": ko}, pairs, elements=("C",), g0=1.0)
+    orfs = set(out["gpr"]["orf"])
+    print(f"  orfs {sorted(o for o in orfs if not o.startswith('__bridge__'))}")
+    assert "wt:S_g0" in orfs and "ko:S_g0" in orfs, orfs
+    w = _net.compute_weights(out["gpr"])
+    n_orf = out["gpr"]["orf"].nunique()
+    print(f"  sum(belief_mass)={w.belief_mass.sum():.9f} over {n_orf} ORFs")
+    assert abs(w.belief_mass.sum() - n_orf) < 1e-9, "conservation must survive the merge"
+    # R3 is the knocked-out reaction: present in one copy only, so it is reported and
+    # never bridged.
+    r3 = out["bridges"][out["bridges"].metabolite == "P2"]
+    assert len(r3) and (r3.bridged == 0).all(), r3
+    print("  PASS\n")
+    return 0
+
+
+def _selftest_declared_bridges():
+    print("[compose] a declared `on` list restricts the bridges and reports each one")
+    pairs = _toy_pairs()
+    a, b = _toy_gpr("A", ["R1", "R2"]), _toy_gpr("B", ["R2", "R3", "R4"])
+    # P1 is the one metabolite the two use differently; X is used identically; Z is not in
+    # the network at all. All three are declared, and all three must be REPORTED --
+    # "used identically" is a real answer and reads exactly like a typo otherwise.
+    out = compose({"A": a, "B": b}, pairs, elements=("C",), g0=1.0,
+                  declared={("A", "B"): ("P1", "X", "Z")})
+    bt = out["bridges"].set_index("metabolite")
+    for met in ("P1", "X", "Z"):
+        r = bt.loc[met]
+        print(f"  {met}: declared={r.declared} M_a={r.M_a} M_b={r.M_b} "
+              f"D={r.asymmetry} bridged={r.bridged}")
+        assert r.declared == 1
+    assert bt.loc["P1"].bridged == 1
+    assert bt.loc["X"].bridged == 0 and bt.loc["X"].M_a > 0 and bt.loc["X"].M_b > 0, \
+        "X is used identically: zero mismatch, no edge, still reported"
+    assert bt.loc["Z"].bridged == 0 and bt.loc["Z"].M_a == 0
+    rep = out["report"]
+    print(f"  report: {rep['n_declared']} declared, {rep['n_declared_bridged']} bridged, "
+          f"{rep['n_declared_no_mismatch']} zero-mismatch, "
+          f"{rep['n_declared_not_carried']} not carried")
+    assert (rep["n_declared"], rep["n_declared_bridged"]) == (3, 1), rep
+    assert rep["n_declared_no_mismatch"] == 1 and rep["n_declared_not_carried"] == 1
+    # And nothing outside the declared list is bridged, however mismatched.
+    assert set(out["bridges"].metabolite) == {"P1", "X", "Z"}
     print("  PASS\n")
     return 0
 
@@ -654,7 +776,9 @@ def _selftest() -> int:
     _selftest_mismatch()
     _selftest_bridge_conductance()
     _selftest_blacklist()
-    _selftest_conditions()
+    _selftest_strain_and_its_mutant()
+    _selftest_declared_bridges()
+    _selftest_tests()
     print("ALL PASS")
     return 0
 

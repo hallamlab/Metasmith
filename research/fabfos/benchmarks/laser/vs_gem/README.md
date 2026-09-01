@@ -104,7 +104,7 @@ at all.
   speed trick: 117 open demands raise unmodified iML1515's growth from 0.877 to
   1.384. The scaffold gate checks base growth is unchanged before any scoring LP.
 - `ecspr_evidence.compute_E` fails conservation on the de-novo table because
-  `raw_score` is float32. Cast to float64 **in the driver**; never loosen the
+  `llr` is float32. Cast to float64 **in the driver**; never loosen the
   library tolerance.
 - The counterfactual pool is seeded once in `common.POOL_SEED` and shared by
   every arm and by FBA. Regenerating it per arm voids every head-to-head p-value

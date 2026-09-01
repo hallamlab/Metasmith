@@ -24,11 +24,13 @@ channel the clone's reactions are already in that channel's background and the f
 purely a widening. The two channels' absolute conductances are consequently NOT comparable
 to each other; only ranks within a channel are.
 
-FOLD IS FLAT AT 1.0 IN BOTH CHANNELS. The de-novo table carries a per-row `raw_score`
-spanning four orders of magnitude, and it is deliberately unused: it is not normalised
-across the four lanes, so a score-weighted fold in one channel against a flat fold in the
-other would make the two rankings incomparable in a way that has nothing to do with the
-biology.
+FOLD IS FLAT AT 1.0 IN BOTH CHANNELS, and the reason has changed. It used to be that the
+de-novo table's per-row score was not normalised across the four lanes, so weighting by it
+in one channel against a flat fold in the other compared two different things. That
+objection is gone: `llr` is one number in one unit in every lane. What remains is that a
+FOLD is a dosage claim and a weight is a confidence claim, and multiplying them conflates
+"there are two copies of this enzyme" with "we are sure this enzyme exists". Whether the
+two should combine, and how, is not settled here.
 
 A CLONE WITH NO ATOM-MAPPED REACTION IS AN EXACT ZERO, not an absence. It is never solved --
 folding nothing is the identity -- but it gets its row, because it is a clone the screen

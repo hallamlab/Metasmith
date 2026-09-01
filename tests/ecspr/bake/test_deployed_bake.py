@@ -29,12 +29,14 @@ import pytest
 
 from ecspr.bake import encoding as refs
 
-BAKE = "0ffd4c8c6231696e"
-# S_EDGES is the only one r10 moved, 11,076 -> 11,092. A direction-only re-bake
-# routes through `ratio_by_code`, so the edge count is what it can touch and the
-# node, pair-row, reaction and metabolite counts are what it cannot.
-S_NODES, S_EDGES, S_PAIR_ROWS = 7833, 11092, 26352
-S_REACTIONS_USED, S_METABOLITES = 18142, 6613
+BAKE = "bd1ed84ec2d54ed3"
+# ALL SIX MOVED, which r8 to r10 could not do. Those were direction-only re-bakes:
+# they route through `ratio_by_code`, so the edge count was the only thing they could
+# touch and the node, pair-row, reaction and metabolite counts were what they could
+# not. r11 is the first generation since r7 to rewrite the atom table itself, so the
+# whole set is re-derived rather than one number of it.
+S_NODES, S_EDGES, S_PAIR_ROWS = 7964, 11162, 26643
+S_REACTIONS_USED, S_METABOLITES = 18211, 6658
 
 
 @pytest.fixture(scope="module")

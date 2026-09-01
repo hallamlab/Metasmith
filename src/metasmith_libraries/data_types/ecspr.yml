@@ -9,7 +9,7 @@ types:
 # release exists to prevent.
   atom_pairs:
     properties:
-      _: atom-atom mapping table (AAM), one row per (mnxr, element, substrate atom -> product atom) transit. `sub_idx`/`prod_idx` are canonical atom RANKS within a metabolite, not names -- decoding a node back to a chemical identity needs `metabolite_names`. `pair_w` is the atom-transit count, which is both the edge weight and, via the w<=0 drop, the connectivity.
+      _: 'atom-atom mapping table (AAM), one row per (mnxr, element, substrate atom -> product atom) transit. `sub_idx`/`prod_idx` are canonical atom RANKS within a metabolite, not names -- decoding a node back to a chemical identity needs `metabolite_names`. `pair_w` is the atom-transit count, which is both the edge weight and, via the w<=0 drop, the connectivity.'
       Format: parquet
       fields:
       - mnxr
@@ -25,7 +25,7 @@ types:
       ext: parquet
   direction_ratios:
     properties:
-      _: per-reaction DIRECTIONALITY ratios for the directed (diode) solve; MNXR -> g_rev/g_fwd = exp(dG'/RT) from the fused direction ensemble. ratio==1.0 is reversible (parity with the undirected model); every reaction is present.
+      _: 'per-reaction DIRECTIONALITY ratios for the directed (diode) solve; MNXR -> g_rev/g_fwd = exp(dG''/RT) from the fused direction ensemble. ratio==1.0 is reversible (parity with the undirected model); every reaction is present.'
       Format: parquet
       fields:
       - mnxr
@@ -38,7 +38,7 @@ types:
       ext: parquet
   metabolite_names:
     properties:
-      _: MNXM -> chemical identity (name, formula, per-element atom counts). REQUIRED to decode `atom_pairs` -- that table carries metabolite ids and canonical atom ranks, so without this the node keys of the atom-transfer graph have no chemical meaning and the conditions' source/sink hubs cannot be resolved onto it.
+      _: 'MNXM -> chemical identity (name, formula, per-element atom counts). REQUIRED to decode `atom_pairs` -- that table carries metabolite ids and canonical atom ranks, so without this the node keys of the atom-transfer graph have no chemical meaning and the conditions'' source/sink hubs cannot be resolved onto it.'
       Format: parquet
       fields:
       - mnxm
@@ -48,41 +48,124 @@ types:
       - n_atoms
       ext: parquet
 # -----------------------------------------
-# Per-experiment. The condition set is the EXPERIMENT'S choice, not the engine's
-# -- the caller stages the set it means. Do not infer it from a filename.
+# Per-experiment. WHAT A NETWORK IS and WHAT IS MEASURED ON IT are two tables, not
+# one row, because one construction carries several probes and two different arms.
+# The caller stages the set it means; do not infer it from a filename.
   conditions:
     properties:
-      _: the measurement's condition set -- TERMINALS plus a MASK, one row per condition. The terminals name the source (growth substrate) hub, the sink (biomass precursor) hubs, the readout hubs and the element; the mask is three (column, values) pairs over the GPR table, where `background_*` is what is always in (the host), `mask_*` is what this condition adds, and `drop_*` withholds rows the other two let through. An overexpression is therefore a host row and a clone row both being selected and their conductances summing, and a knockout is a drop; the engine takes no perturbation argument and interprets no action column. `sink_hub` and `readout_hub` are separate because naming a metabolite a sink gives it a PORT to ground instead of a leak, which changes the answer, while reading it changes nothing. Per-experiment on purpose; the engine has no default set. `ecspr draw` emits its null pool in exactly this schema, which is what makes the null arm the same command with a different file.
+      _: 'what a network IS -- an ordered set algebra over the GPR tables, LONG format, one row per step. A step is a predicate `(row is in `table`) AND (row[`type`] is in `set`)`, and a condition is the left fold of its steps in `step` order -- `union` adds them, `intersect` keeps only them, `subtract` removes them. `step` is a column rather than a file position because order decides the answer and a spreadsheet round trip does not preserve file order. `factor` is DOSAGE, added to an already-present row''s weight instead of duplicating the row; that is exact rather than approximate, because pooling reads `llr` linearly. A knockout subtracts on `gene` or `genome_unit`, never on `mnxr` -- belief conservation is recomputed on the survivors, so dropping one of a gene''s reactions pushes its belief onto the siblings. A step selecting nothing RAISES unless `allow_empty` says the emptiness is intended. Schema in ecspr.model.conditions.'
       Format: parquet
       fields:
       - condition_id
-      - element
-      - source_hub
-      - sink_hub
-      - readout_hub
-      - media
-      - background_column
-      - background_values
-      - mask_column
-      - mask_values
-      - drop_column
-      - drop_values
+      - step
+      - table
+      - type
+      - set
+      - operation
+      - factor
+      - allow_empty
+      ext: parquet
+  compositions:
+    properties:
+      _: 'a community, as members joined on shared metabolites. One row per (composition, member pair, metabolite). A MEMBER is a `conditions` condition_id, so a member can be perturbed; `on` is a metabolite BOTH members carry, and it joins them in the composed network. An empty `member_b` declares a one-member network, which is what makes every ecspr_test name a composition. Bridges are symmetric: nothing in the bake knows which way a metabolite crosses, and a declared direction would be a transport claim the bake cannot check. A member is a separate CELL and gets private metabolites; a `genome_unit` is a separate copy inside one cell and merely adds evidence.'
+      Format: parquet
+      fields:
+      - composition_id
+      - member_a
+      - member_b
+      - on
+      ext: parquet
+  carrier_blacklist:
+    properties:
+      _: 'metabolites that may NOT carry a bridge between two members, materialised from `ecspr.model.compose`''s name rules against `metabolite_names`. A carrier is what does not cross a membrane -- ATP, NAD(P)(H), CoA, ferredoxin, phosphate -- and reaction degree is savagely skewed, so bridging one lets current cross from member to member through the cofactor pool and return through another while every solve looks entirely healthy. NOTHING RAISES on an unlisted carrier, which makes absence from this table the dangerous half of a stale bake: the ids are resolved against one bake''s universe and a metabolite it newly reaches is simply not here. It is a modelling choice rather than a fact, which is why the composition experiment runs with it and without it.'
+      Format: parquet
+      fields:
+      - mnxm
+      - name
+      - carrier_class
+      ext: parquet
+  composed_network:
+    properties:
+      _: 'ONE composed network as a directory: `atom_pairs.parquet`, `direction.parquet`, `gpr.parquet` and `bridges.parquet`. A directory rather than four products because the four are meaningless apart -- the pair table carries member-prefixed metabolite and reaction ids that only this network''s own GPR and direction tables agree with. NOT NETWORK-AGNOSTIC, unlike the reference bake it is cut from: it must be staged per network and never shared, which is the one way it differs from `atom_pairs`. `bridges.parquet` reports EVERY candidate bridge including the ones that got no edge, because a metabolite both members use identically has zero mismatch and yields nothing, and that reads exactly like a typo unless the row is there to say otherwise.'
+      Format: DIRECTORY
+  ecspr_tests:
+    properties:
+      _: 'what is MEASURED on a composition, one row per test. Names the composition, the element, the source (growth substrate) hub, the sink (biomass precursor) hubs, the readout hubs, the probe and the orientation. `sink_hub` and `readout_hub` are separate because naming a metabolite a sink gives it a PORT to ground instead of a leak, which changes the answer, while reading it changes nothing. `read_against` names another TEST -- a baseline is a baseline measurement, not a baseline network, and the same construction under a second probe has a different baseline. `ecspr draw` emits its null pool in exactly this schema plus the conditions it draws, which is what makes the null arm the same command with different files.'
+      Format: parquet
+      fields:
+      - test_id
+      - network
+      - read_against
       - arm
       - cohort
       - is_control
       - stratum
       - n_units
       - draw_id
+      - element
+      - source_hub
+      - sink_hub
+      - readout_hub
+      - probe
+      - orientation
+      - weighting
       ext: parquet
-  results:
+  gem_tests:
     properties:
-      _: THE ECSPr measurement -- one row per (condition, probe, orientation, element, readout). `readout` is a sink metabolite, any metabolite from the universal ground's draw vector, or `total`; a readout whose name starts with `_` is a per-condition DIAGNOSTIC (coverage, convergence, the AAM gap, whether the condition abstained) carried in the same table so a result cannot be read without it. Significance is NOT here -- it is a subtraction and a rank over these rows against a null measured in the same schema, which `ecspr score` performs -- so a baseline is named at scoring time rather than flagged at measurement time.
+      _: 'what is measured on a condition by FLUX BALANCE, one row per test. Names the condition, the frame the carve is applied to, the medium (`ecspr::media`), the objective, the target hub and the growth pin. Same purpose as `ecspr_tests` and different content -- and it names a CONDITION rather than a composition, because a community flux balance model needs compartments and exchange reactions, which is a different construction from the atom graph `compose` builds. `min_lanes` is the carve''s agreement threshold and defaults to 1 deliberately: no two annotation lanes agree on any reaction of the glycogen pathway, so a two-lane carve deletes the phenotype.'
       Format: parquet
       fields:
-      - condition_id
+      - test_id
+      - network
+      - read_against
+      - arm
+      - cohort
+      - is_control
+      - stratum
+      - n_units
+      - draw_id
+      - frame
+      - media
+      - objective
+      - target_hub
+      - growth_pin
+      - min_lanes
+      - carve_threshold
+      ext: parquet
+  media:
+    properties:
+      _: 'a growth medium as exchange bounds, one row per (medium, exchange reaction). `exchange` is a reaction id ON THE FRAME the test names, not an MNXR -- a medium is only a medium relative to a frame''s own exchange set, and going through a crosswalk would let a compound the frame cannot take up look like one it can. Applying a medium CLOSES every exchange it does not name: a medium that only opened what it listed would be the frame''s shipped medium plus the listed compounds, which is a different experiment. A GEM input only; a conductance measurement has no exchange bounds to set, which is why `media` left the ECSPr side entirely rather than staying a column nothing read.'
+      Format: parquet
+      fields:
+      - media
+      - exchange
+      - lower_bound
+      - upper_bound
+      ext: parquet
+  frame:
+    properties:
+      _: 'the STOICHIOMETRIC FRAME a flux balance test carves -- a curated genome-scale model, which is where the stoichiometry comes from. A GPR table carries gene-to-reaction evidence and no stoichiometry at all, so a condition can say which of a frame''s reactions survive and can never say what any of them does. A `gem_tests` row names one of these by file name or by stem.'
+      Format: JSON
+      ext: json
+  results:
+    properties:
+      _: 'THE ECSPr measurement -- one row per (test, probe, orientation, element, readout). Keyed on `test_id` rather than `condition_id`, because one condition can carry several tests and they must not collapse into one row. `readout` is a sink metabolite, any metabolite from the universal ground''s draw vector, or `total`; a readout whose name starts with `_` is a per-test DIAGNOSTIC (coverage, convergence, the AAM gap, whether the test abstained) carried in the same table so a result cannot be read without it. Significance is NOT here -- it is a subtraction and a rank over these rows against a null measured in the same schema, which `ecspr score` performs.'
+      Format: parquet
+      fields:
+      - test_id
       - probe
       - orientation
       - element
+      - readout
+      - value
+      ext: parquet
+  fba_results:
+    properties:
+      _: 'THE FLUX BALANCE measurement, mirroring `results` so the two arms are comparable by construction rather than by coincidence. One row per (test, readout); `readout` is a flux, a shadow price, a reduced cost or `objective`, and a `_`-prefixed readout is a diagnostic (reactions carved, the medium applied, whether the LP was feasible, the cofactor dissipation check).'
+      Format: parquet
+      fields:
+      - test_id
+      - objective
       - readout
       - value
       ext: parquet

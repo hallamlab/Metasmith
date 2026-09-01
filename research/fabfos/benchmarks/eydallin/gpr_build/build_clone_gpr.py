@@ -89,7 +89,7 @@ def main() -> int:
     to_bnum = gene_to_bnumber(MG1655_GBK)
     sym_for_b = mg1655_symbol_for_bnumber(MG1655_FAA)
     host = pd.read_parquet(HOST_GPR)
-    gem_id = host["unit_id"].iloc[0]
+    gem_id = host["genome_unit"].iloc[0]
     genes = host[host["feature_kind"] == "gem_gene"]
     by_symbol: dict[str, set[str]] = {}
     for name, fid in zip(genes["feature_name"], genes["orf"]):
@@ -121,7 +121,7 @@ def main() -> int:
         if len(hit):
             parts.append(hit.assign(
                 source=gem_id, build_id=f"direct_{COHORT}_{gem_id}", host=HOST,
-                unit_id=gem_id, feature_kind="clone_gene",
+                genome_unit=gem_id, feature_kind="clone_gene",
                 condition_id=cond, cohort=COHORT, action="add",
                 source_organism=SOURCE_ORGANISM))
 

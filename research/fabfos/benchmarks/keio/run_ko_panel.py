@@ -39,8 +39,10 @@ the repo root:
         python main/benchmarks/keio/run_ko_panel.py
 
 NOT the deployed reference basis -- tier4 atom pairs, not the canonical MNXref
-release (the same caveat examples/scadc_ecspr.py carries). A pilot, not a number to
-publish as-is.
+release. A pilot, not a number to publish as-is. THE PIN IS GONE, so this no longer
+degrades: `data/fabfos/benchmark/reference_tier4` was retired and this script cannot
+run until it reads `processed/metabolism_bake` instead. `examples/scadc_ecspr_basis.py`
+is what re-basing one of these costs.
 """
 from __future__ import annotations
 

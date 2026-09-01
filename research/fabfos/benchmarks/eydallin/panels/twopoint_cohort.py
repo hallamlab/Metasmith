@@ -113,6 +113,14 @@ def main():
     if len(unmatched):
         print(f"[2pt-cohort] no phenotype for {list(unmatched.condition_id)}", file=sys.stderr)
     df = df.dropna(subset=["pct_wt"]).copy()
+    # AN EMPTY JOIN IS A WRONG `--measured`, NOT A NULL RESULT. Pointing the 2007 deletion
+    # cohort at the 2010 clone phenotypes matches nothing, and every statistic downstream
+    # then prints "n=0, too few" and exits 0 -- a clean-looking run that measured nothing.
+    if not len(df):
+        raise SystemExit(
+            f"[2pt-cohort] not one of the {len(unmatched)} solved condition(s) has a row in "
+            f"{args.measured}. The cohort and the phenotype table are for different "
+            f"screens; pass the --measured that names these condition_ids.")
 
     df["log2fc_meas"] = np.log2(df.pct_wt / 100.0)
     df["abs_log2fc_meas"] = df.log2fc_meas.abs()
@@ -120,6 +128,12 @@ def main():
     df["direction"] = np.where(df.pct_wt >= 100, "excess", "deficient")
 
     out = args.out_dir / f"twopoint_cohort_{args.host}_fold{args.fold}_{args.element}.tsv"
+    # A CHECKED-OUT FILE UNDER data/ IS ONE INODE WITH MANY NAMES, and one of them
+    # is the DVC cache's. Writing THROUGH it edits the cache in place while
+    # `dvc status` stays clean; unlinking this name first breaks the link and
+    # leaves the cache alone. Only the second run of a sweep can hit it, which is
+    # why it is invisible until a re-run.
+    out.unlink(missing_ok=True)
     df.to_csv(out, sep="\t", index=False)
     print(f"\n[2pt-cohort] wrote {out}\n", file=sys.stderr)
 

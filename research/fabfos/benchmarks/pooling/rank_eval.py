@@ -9,11 +9,21 @@
 # of the highest-conductance reactions rest on one (unit, channel, evidence_id) with no
 # corroboration at all.
 #
-# With `--sweep`, jointly sweeps the pooling constants (lam0, lam1, tau) and prints the
-# same panel per point. tau and lam1 interact -- tau sets where saturation begins, lam1
-# the ceiling -- so they are swept together, never one at a time. A point where lam1 is
-# large and tau tiny is a hard count of distinct assertions wearing a sigmoid; recognise
-# it rather than shipping it.
+# With `--sweep`, sweeps the pooling constants (lam0, tau) and prints the same panel per
+# point. `lam1` IS NOT SWEPT ANY MORE AND CANNOT BE: what one assertion is worth is now
+# the row's own calibrated `llr`, measured per lane rather than chosen. What is left to
+# choose is where saturation begins, and a tiny tau is a hard count of distinct
+# assertions wearing a sigmoid -- recognise it rather than shipping it.
+#
+# `--before` adds the pre-calibration weighting on the OLD table beside the sweep, from
+# a frozen copy in the calibration study. The two tables carry the same rows, so the
+# pair isolates the weighting.
+#
+# **CAUTION** THE UNIVERSE FILTER DOES NOT COME FROM THE TABLE. `in_atom_universe` is
+# null on every row of every de-novo table this reads -- it is on the schema's keep list
+# and no producer has ever populated it -- so `dn.groupby(...).any()` returned False
+# everywhere and this panel silently scored ZERO reactions. It is computed here from
+# `ecspr::atom_pairs` instead, which is what the column was meant to cache.
 from __future__ import annotations
 
 import argparse
@@ -30,8 +40,28 @@ sys.path.insert(0, str(ROOT / "src"))
 from ecspr.model import evidence as _ev  # noqa: E402
 from ecspr.model.gpr import _normalise, weights_from_rows  # noqa: E402
 
+# APPENDED, NEVER PREPENDED. The vendored buildlib carries its own COPY of the
+
+# ecspr package, so putting it at the front of sys.path makes `import ecspr` resolve
+
+# to a snapshot instead of the working tree -- silently, and only where the two have
+
+# drifted. The buildlib is on the path for `bench_universe`; everything else must
+
+# still come from src/.
+
+sys.path.append(str(ROOT / "src/fabfos/build_references/resources/buildlib"))
+import bench_universe as bu  # noqa: E402
+sys.path.insert(0, str(ROOT / "research/fabfos/annotation_lanes/calibration"))
+import _legacy  # noqa: E402
+
 GPR = ROOT / "data/fabfos/runs/e_coli_k12/gpr"
+BAKE = ROOT / "data/fabfos/processed/metabolism_bake"
+MNX = ROOT / "data/fabfos/originals/metanetx"
 WATCH = "MNXR172198"    # 65 ORFs, one evidence_id (EC 2.7.13.3), no corroboration
+# float64 saturates the sigmoid at exactly 1.0 once the pooled log-odds pass this, so
+# every reaction above it ties with every other one above it.
+TIE_POINT = 37.0
 
 
 def auroc(truth: np.ndarray, score: np.ndarray) -> float:
@@ -71,22 +101,34 @@ def panel(E: pd.Series, meta: pd.DataFrame, name: str) -> dict:
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--sweep", action="store_true")
+    ap.add_argument("--denovo", type=Path, default=GPR / "gpr_denovo.parquet",
+                    help="the calibrated table; the default is the published one")
+    ap.add_argument("--before", type=Path,
+                    help="a pre-calibration table for the same host, scored under the "
+                         "frozen legacy weighting beside the sweep")
     ap.add_argument("--out", type=Path)
     args = ap.parse_args()
 
-    dn = pd.read_parquet(GPR / "gpr_denovo.parquet")
+    dn = pd.read_parquet(args.denovo)
     gem = pd.read_parquet(GPR / "gpr_gem.parquet")
     norm = _normalise(dn)
 
     meta = pd.DataFrame({
         "in_universe": dn.groupby("mnxr")["in_atom_universe"].any(),
-        "n_orf": dn.groupby("mnxr")["feature_id"].nunique(),
+        # `orf`, not `feature_id`: the latter is built by `_normalise` and has never
+        # been a column of a GPR table, so this line raised on every table it was ever
+        # pointed at.
+        "n_orf": dn.groupby("mnxr")["orf"].nunique(),
         "n_channel": dn.groupby("mnxr")["channel"].nunique(),
         "n_assert": norm.groupby("mnxr").apply(
-            lambda g: g.drop_duplicates(["unit_id", "channel", "intermediate_id"]).shape[0],
+            lambda g: g.drop_duplicates(["genome_unit", "channel", "intermediate_id"]).shape[0],
             include_groups=False),
     })
-    meta["in_universe"] = meta.in_universe.fillna(False).astype(bool)
+    universe, ustats = bu.atom_universe(
+        BAKE / "vocab.parquet", BAKE / "atom_pairs.parquet",
+        exclude=bu.transport_mnxrs(bu.reac_prop_path(MNX)))
+    print(bu.universe_line(ustats, "rank_eval"))
+    meta["in_universe"] = meta.index.isin(universe)
     meta["truth"] = meta.index.isin(set(gem.mnxr.astype(str)))
     print(f"K-12 de novo: {len(meta)} MNXR, {int(meta.in_universe.sum())} in universe, "
           f"{int(meta[meta.in_universe].truth.sum())} of those in iML1515")
@@ -95,14 +137,28 @@ def main():
     print("\n== as built ==")
     rows.append(panel(pd.Series(weights_from_rows(dn, "belief")), meta, "belief (current)"))
 
+    if args.before:
+        old = _legacy.normalise(pd.read_parquet(args.before))
+        oc = _legacy.contributions(old)
+        print("\n== before: the pre-calibration weighting, frozen ==")
+        rows.append(panel(_legacy.pool(oc), meta, "legacy lam1=1 tau=0.25"))
+        lo = _legacy.pooled_logodds(oc)
+        print(f"  tied at the float64 ceiling: {int((lo >= TIE_POINT).sum()):,} "
+              f"of {len(lo):,} reactions  (max log-odds {lo.max():.4g})")
+
     if args.sweep:
         contrib = _ev.nomination_contributions(norm)
-        print("\n== sweep (lam0, lam1, tau) ==")
-        grid = itertools.product((-4.0, -3.0, -2.0), (1.0, 2.0, 3.0, 4.0),
-                                 (0.1, 0.25, 0.5, 1.0))
-        for lam0, lam1, tau in grid:
-            E = _ev.pool_logodds(contrib, lam0=lam0, lam1=lam1, tau=tau)
-            rows.append(panel(E, meta, f"lam0={lam0:g} lam1={lam1:g} tau={tau:g}"))
+        print("\n== sweep (lam0, tau) -- lam1 is the calibrated llr and is not a knob ==")
+        for lam0, tau in itertools.product((-4.0, -3.0, -2.0),
+                                           (0.1, 0.25, 0.5, 1.0, 2.0)):
+            E = _ev.pool_logodds(contrib, lam0=lam0, tau=tau)
+            r = panel(E, meta, f"lam0={lam0:g} tau={tau:g}")
+            lo = _legacy.new_pooled_logodds(contrib, lam0=lam0, tau=tau)
+            r["n_tied"] = int((lo >= TIE_POINT).sum())
+            r["max_logodds"] = float(lo.max())
+            print(f"      tied at the float64 ceiling: {r['n_tied']:,} of {len(lo):,}"
+                  f"  (max log-odds {r['max_logodds']:.4g})")
+            rows.append(r)
 
     if args.out:
         args.out.parent.mkdir(parents=True, exist_ok=True)

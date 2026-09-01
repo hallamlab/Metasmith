@@ -93,9 +93,9 @@ output to decide what to sweep and refuses to start without it.
   gpr_denovo.parquet` leaves that column null. Filtering on it yields an empty graph and a run
   in which nothing is reachable.
 - **Counting units differently in the two arms.** `--weighting uniform` scores a reaction by
-  how many distinct `unit_id`s nominate it. The study tier writes one `unit_id` per *study*,
+  how many distinct `genome_unit`s nominate it. The study tier writes one `genome_unit` per *study*,
   so a two-clone strain would add one unit while a size-2 null draw adds two.
-  `gpr_build/build_ecspr_tables.py` rewrites `unit_id` to the clone for exactly this reason.
+  `gpr_build/build_ecspr_tables.py` rewrites `genome_unit` to the clone for exactly this reason.
 - **Dropping a deletion by `mnxr`.** The ΔrfaY-complemented strain deletes the chromosomal
   copy and carries a plasmid one. A drop keyed on the reaction removes both; the drop is keyed
   on `intermediate_id`, which separates the host's row from the clone's. Both deleted genes

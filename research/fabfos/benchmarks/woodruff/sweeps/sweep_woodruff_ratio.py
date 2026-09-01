@@ -120,7 +120,12 @@ sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(ROOT / "research/fabfos/benchmarks/eydallin"))
 
 import bake_pairs                                                                  # noqa: E402
-sys.path.insert(0, str(ROOT / "src/fabfos/build_references/resources/buildlib"))
+# APPENDED, NEVER PREPENDED. The vendored buildlib carries its own COPY of the
+# ecspr package, so putting it at the front of sys.path makes `import ecspr` resolve
+# to a snapshot instead of the working tree -- silently, and only where the two have
+# drifted. The buildlib is on the path for `bench_universe`; everything else must
+# still come from src/.
+sys.path.append(str(ROOT / "src/fabfos/build_references/resources/buildlib"))
 import bench_universe as bu                                                        # noqa: E402
 from ecspr.model.build import graph_from_pairs, load_direction_ratios, load_pairs  # noqa: E402
 from ecspr.model.graph import Terminal, solve                                      # noqa: E402
@@ -437,6 +442,12 @@ def main() -> int:
     df["host"] = a.host
     df["fold"] = a.fold
     df = df.sort_values("delta_ratio_pct", ascending=False).reset_index(drop=True)
+    # A CHECKED-OUT FILE UNDER data/ IS ONE INODE WITH MANY NAMES, and one of them
+    # is the DVC cache's. Writing THROUGH it edits the cache in place while
+    # `dvc status` stays clean; unlinking this name first breaks the link and
+    # leaves the cache alone. Only the second run of a sweep can hit it, which is
+    # why it is invisible until a re-run.
+    final.unlink(missing_ok=True)
     df.to_csv(final, sep="\t", index=False)
 
     n_solved = int((df.n_rxn > 0).sum())

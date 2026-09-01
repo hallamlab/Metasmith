@@ -444,6 +444,32 @@ integer suffix and the id order is checked against the FASTA the transform itsel
 before a label is attached. **Every `pbert` column produced before this fix measured
 the misalignment rather than the lane.**
 
+### R11 · `lane_calibration/` — what one call from each lane is worth
+A per-lane curve from the lane's own score to a log-likelihood ratio in nats, fitted on
+the DH10B Swiss-Prot cohort. It replaces `raw_score` and `score_kind` in the GPR table
+with one column that means the same thing in every lane.
+**Requires:** nothing at build time. It is fitted by
+`research/fabfos/annotation_lanes/calibration/`, which reads a run's lane outputs, R5 and
+R7 — all of which exist before this does.
+
+**It is a JSON, not a parquet, and it is meant to be read by a person.** Four lanes of
+two parameters is not a table problem. The file carries its own apply rule, the score
+range each curve has support over, the prior it was fitted against, the caveats, and the
+md5 of every input the fit saw — because a calibration is a claim about a benchmark and
+the claim is only checkable if the benchmark is named.
+
+**The prior in this file and `ecspr.model.evidence.POOL_LAM0` are the same number, and
+that is load-bearing.** `llr` is fitted as `logit(P(correct | score)) - POOL_LAM0`, so
+`sigmoid(llr + POOL_LAM0)` comes out at exactly the calibrated accuracy of a reaction
+carrying one assertion. `fabfos_evidence.load_calibration` refuses a file whose fit used
+a different reference; the consumer side has no such check, because ecspr does not stage
+this artifact.
+
+**Two of the four lanes ship as constants.** KOfam's bitscore-over-threshold and
+UniRef50's score ratio do not beat their own intercept on held-out folds, so the fitted
+slope was dropped rather than shipped as noise. That is a property of those scores, not a
+gap in the fit — see the study's README for the deciles behind it.
+
 ### R10 · `label_transfer_landmarks_esmc/` — the same landmarks, embedded with ESM-C
 The same bridge cut, the same Swiss-Prot release, the same accessions as R7, embedded
 with ESM-C 600M so `gpr_7lane`'s ESM-C kNN lane has a pool of its own to vote against.

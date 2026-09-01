@@ -108,7 +108,7 @@ def assemble(parts, like) -> pd.DataFrame:
     df = (pd.concat(parts, ignore_index=True) if parts else like.reindex(columns=COLS))
     df = df[COLS]
     if len(df):
-        df["raw_score"] = df["raw_score"].astype(np.float32)
+        df["llr"] = df["llr"].astype(np.float32)
     return (df.sort_values(fe.grain_key(EXTENSIONS), kind="mergesort")
               .reset_index(drop=True))
 
@@ -141,7 +141,7 @@ def symbol_for_bnumber(faa: Path) -> dict[str, str]:
 
 
 def build_curated(ext: pd.DataFrame, gem: pd.DataFrame, universe: set) -> tuple:
-    gem_id = str(gem["unit_id"].iloc[0])
+    gem_id = str(gem["genome_unit"].iloc[0])
     genes = gem[gem.feature_kind == "gem_gene"]
     by_fid = {f: g for f, g in genes.groupby("orf")}
     by_symbol: dict[str, set[str]] = {}
@@ -181,7 +181,7 @@ def build_curated(ext: pd.DataFrame, gem: pd.DataFrame, universe: set) -> tuple:
         if len(hit):
             parts.append(hit.assign(
                 source=gem_id, build_id=f"direct_{COHORT}_{gem_id}", host=HOST,
-                unit_id=gem_id, feature_kind="clone_gene", condition_id=cond,
+                genome_unit=gem_id, feature_kind="clone_gene", condition_id=cond,
                 cohort=COHORT, action="add", source_organism=SOURCE_ORGANISM))
         record.append(dict(
             gene=gene, gene_norm=norm, condition_id=cond,
@@ -233,7 +233,7 @@ def build_denovo(ext: pd.DataFrame, rec: pd.DataFrame, universe: set) -> tuple:
             parts.append(hit.assign(
                 source="bw25113_orfs",
                 build_id="denovo_" + COHORT + "_" + "+".join(lanes), host=HOST,
-                unit_id="bw25113_orfs", feature_kind="clone_gene",
+                genome_unit="bw25113_orfs", feature_kind="clone_gene",
                 feature_name=gene, condition_id=cond, cohort=COHORT, action="add",
                 source_organism=SOURCE_ORGANISM))
         cols.append(dict(
@@ -259,16 +259,16 @@ def build_insertion(universe: set) -> tuple:
         rows.append(dict(
             source="attTn7_pdc_adhB", orf=gene, channel="curated_insertion", mnxr=mnxr,
             intermediate_id=gene, intermediate_name=str(r.ec),
-            raw_score=np.float32(1.0), score_kind="presence", projection_via="manual",
+            llr=np.float32(fe.ASSERTION_LLR), projection_via="manual",
             evidence_quality="unknown", lane_set="curated",
-            build_id="insertion_scales_prod", host=PROD_HOST, unit_id="attTn7_pdc_adhB",
+            build_id="insertion_scales_prod", host=PROD_HOST, genome_unit="attTn7_pdc_adhB",
             feature_kind="insertion_gene", feature_name=gene, gpr_rule=gene,
             in_atom_universe=mnxr in universe,
             condition_id=f"{PROD_COHORT}:{gene}", cohort=PROD_COHORT, action="add",
             source_organism=INSERT_SOURCE_ORGANISM))
     df = pd.DataFrame(rows, columns=COLS)
     if len(df):
-        df["raw_score"] = df["raw_score"].astype(np.float32)
+        df["llr"] = df["llr"].astype(np.float32)
         fe.validate_gpr(df, "curated", None, "attTn7_pdc_adhB", EXTENSIONS)
     return df, unresolved
 
@@ -344,7 +344,7 @@ def main() -> int:
             "in_atom_universe filter, uniform weight 1.0 -- the same convention "
             "sink_panel.py used for T5, so the mechanistic and classifier arms share a "
             "background"),
-        gem=dict(rows=int(len(gem_df)), unit_id=gem_id,
+        gem=dict(rows=int(len(gem_df)), genome_unit=gem_id,
                  mnxr=int(gem_df.mnxr.nunique()), **leg(rec, "gem")),
         denovo=dict(rows=int(len(dn_df)), lanes=lanes,
                     mnxr=int(dn_df.mnxr.nunique()) if len(dn_df) else 0,

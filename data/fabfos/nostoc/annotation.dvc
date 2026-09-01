@@ -1,6 +1,6 @@
 outs:
-- md5: 5982b5541f5347b16acb9067c77045e9.dir
-  size: 7490816
+- md5: 95da523179473bd3e6d79d0f8f5a898a.dir
+  size: 6947298
   nfiles: 7
   hash: md5
   path: annotation

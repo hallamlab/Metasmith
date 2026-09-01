@@ -408,16 +408,16 @@ for study, spec in sorted(STUDIES.items()):
     gpr["source"] = study
     gpr["build_id"] = f"manual_{study}"
     gpr["host"] = host
-    gpr["unit_id"] = study
+    gpr["genome_unit"] = study
     gpr["channel"] = CHANNEL
-    gpr["score_kind"] = fe.ASSERTION_CHANNELS[CHANNEL]
     gpr["lane_set"] = LANE_SET
     # NOT ASSERTED. The extractions carry no quality grade, and inventing one would let a
     # downstream filter act on a distinction no curator drew.
     gpr["evidence_quality"] = "unknown"
     # A curator asserts that an edge IS claimed, not how strongly -- the same argument
-    # the GEM table's uniform 1.0 rests on. The evidence-weighted line is gpr_denovo.
-    gpr["raw_score"] = np.float32(1.0)
+    # the GEM table rests on, and the same declared constant. The evidence-weighted
+    # line is gpr_denovo.
+    gpr["llr"] = np.float32(fe.ASSERTION_CHANNELS[CHANNEL])
     gpr["projection_via"] = "curated"
     # Nullable, because a row with no reaction has no answer to "is it in the atom
     # universe" and `False` would be one. Under pandas 2 a None into a bool column

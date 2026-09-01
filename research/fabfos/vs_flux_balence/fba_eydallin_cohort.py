@@ -5,10 +5,11 @@ Generalises fba_glycogen.py (5 hardcoded genes) to every one of Eydallin 2010's 
 screened genes that iML1515 carries, and scores the sign of each gene's predicted
 glycogen change against Fig. 1.
 
-Host.  iML1515 (K-12 MG1655).  The screen ran in AG1 and ECSPr reads DH1; no
-DH1/AG1 GEM is on disk in a cobra-loadable form, so the FBA arm uses the K-12
-model fba_glycogen.py already used.  Gene identity is carried by b-number, which
-is shared, so the join is exact even though the model is not the screen's strain.
+Host.  iML1515 (K-12 MG1655).  The screen ran in AG1 and ECSPr reads DH1.  This arm
+uses the K-12 model fba_glycogen.py already used.  benchmarks/eydallin_fba/ runs the
+strain's own iECDH1ME8569_1439 and reaches the same finding, so the host here is a
+choice rather than a constraint.  Gene identity is carried by b-number, which is
+shared, so the join is exact even though the model is not.
 
 Mapping.  measured_glycogen.tsv -> clone_gem_census.tsv (b_number, current_symbol)
 -> iML1515 gene id.  iML1515 gene ids ARE b-numbers, so the primary join needs no

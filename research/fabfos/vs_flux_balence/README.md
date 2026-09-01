@@ -42,11 +42,21 @@ reaches 16 that iML1515 has no gene for, all through the de-novo channel.
 
 ## Choices that would move the numbers
 
-- Host is K-12 iML1515, not DH1/AG1 — no strain GEM is on disk in cobra-loadable form.
-  Gene identity travels by b-number, so the join is exact even though the model is not.
+- Host is K-12 iML1515, not DH1/AG1. `iECDH1ME8569_1439.json` does load in cobra and
+  `benchmarks/eydallin_fba/` runs on it, so this arm's host is a choice rather than a
+  constraint. Gene identity travels by b-number, so the join is exact even though the
+  model is not.
 - `GROWTH_FRAC = 0.9` is inherited from `fba_glycogen.py`. It sets how much carbon is left
   for glycogen and therefore every delta's magnitude, but not its sign: the ceiling
   argument above holds at any fraction.
 - `VMIN` (floor capacity for a reaction the reference leaves at zero) and `FOLD` set the
   size of the perturbation for off-in-WT genes. `--sweep` runs the grid; accuracy stays
   between 13/15 and 17/23 across it, which is the always-down base rate throughout.
+
+## A second arm reaches the same finding
+
+`research/fabfos/benchmarks/eydallin_fba/` builds its models from the project's GPR tables
+instead of loading one, uses the strain's own GEM, and runs Kornberg medium. Its
+obligate-flux arm is a constant-down predictor too, with sign accuracy equal to the base
+rate in all twelve of its configurations. The negative result survives changing the host,
+the medium and the construction.

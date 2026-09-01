@@ -1,0 +1,58 @@
+[
+  {
+    "model": "ag1_gem",
+    "reactions": 2755,
+    "metabolites": 1950,
+    "genes": 1439,
+    "growth_m9": 0.982478,
+    "glycogen_m9_pin0.9": 0.94646,
+    "glycogen_m9_pin0.5": 4.698554,
+    "glycogen_m9_pin0.1": 8.448539,
+    "growth_kornberg": 0.630688,
+    "glycogen_kornberg_pin0.9": 6.418496,
+    "glycogen_kornberg_pin0.5": 8.564952,
+    "glycogen_kornberg_pin0.1": 10.303353
+  },
+  {
+    "model": "ag1_denovo_l1",
+    "reactions": 2196,
+    "metabolites": 1642,
+    "genes": 1053,
+    "growth_m9": 0.24612,
+    "glycogen_m9_pin0.9": 0.552857,
+    "glycogen_m9_pin0.5": 2.764286,
+    "glycogen_m9_pin0.1": 4.975714,
+    "growth_kornberg": 0.23477,
+    "glycogen_kornberg_pin0.9": 1.654195,
+    "glycogen_kornberg_pin0.5": 3.505312,
+    "glycogen_kornberg_pin0.1": 5.347381
+  },
+  {
+    "model": "ag1_denovo_l2",
+    "reactions": 1560,
+    "metabolites": 1384,
+    "genes": 787,
+    "growth_m9": 0.575924,
+    "glycogen_m9_pin0.9": 0.835263,
+    "glycogen_m9_pin0.5": 4.176316,
+    "glycogen_m9_pin0.1": 7.517368,
+    "growth_kornberg": 0.07324,
+    "glycogen_kornberg_pin0.9": 7.766041,
+    "glycogen_kornberg_pin0.5": 8.126295,
+    "glycogen_kornberg_pin0.1": 8.485199
+  },
+  {
+    "model": "ag1_denovo_l3",
+    "reactions": 1338,
+    "metabolites": 1286,
+    "genes": 681,
+    "growth_m9": 0.853127,
+    "glycogen_m9_pin0.9": 0.917813,
+    "glycogen_m9_pin0.5": 4.582261,
+    "glycogen_m9_pin0.1": 8.129533,
+    "growth_kornberg": 0.0,
+    "glycogen_kornberg_pin0.9": 9.006349,
+    "glycogen_kornberg_pin0.5": 9.006349,
+    "glycogen_kornberg_pin0.1": 9.006349
+  }
+]

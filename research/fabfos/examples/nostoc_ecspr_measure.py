@@ -69,7 +69,7 @@ def shimmed_gpr(nid, work) -> Path:
     if dest.exists():
         return dest
     g = pd.read_parquet(NETS / nid / "gpr.parquet")
-    g.assign(unit_id=g.orf, feature_id=g.orf, feature_name=g.orf,
+    g.assign(genome_unit=g.orf, feature_id=g.orf, feature_name=g.orf,
              evidence_id=g.intermediate_id).to_parquet(dest, index=False)
     return dest
 

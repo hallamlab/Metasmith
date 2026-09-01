@@ -96,6 +96,12 @@ Four things a reader should not have to rediscover:
 - **The vote floor has no job left.** Every increase from 0.00 costs F1 in all three
   leakage conditions. It was standing in for a proximity gate, badly; with a real one it
   removes only true positives.
+- **The vote saturates, and that is a defect of the score rather than of the tuning.**
+  Over half of this lane's calls sit at exactly 1.0, because an ORF admitting a single
+  neighbour votes 1.0 whatever that neighbour is worth. The score cannot separate
+  unanimous-among-many from only-one-voter, so the calibrated weight in `calibration/`
+  is flat across the top five deciles. Admitted-neighbour count is the obvious thing to
+  fold in and is not folded in; nothing here has measured whether it would help.
 - **`tau` is invisible on the ORF-level axis and does real work on the label-level one** —
   at nn_min 0.75 it lifts label precision 0.708 → 0.826 while moving ORF F1 by 0.008.
   Emitting more labels per ORF makes an ORF-level intersection with the truth set EASIER,
@@ -136,11 +142,13 @@ the deployed artifacts and neither file says which it is.
 
 ## Things measured here that constrain what comes next
 
-- **`raw_score` is inert downstream for this lane.** `nomination_contributions` groups by
-  `(orf, channel, intermediate_id)`, and pbert's `intermediate_id` is the single best
-  donor, so there is one nomination group per `(orf, pbert)`, `w_n` is identically 1.0,
-  and `contrib = 1/F_n/n_lanes`. The vote floor therefore changes how pbert's belief
-  SPREADS across reactions, never how much it carries. No metric in these sweeps sees it.
+- **The vote is inert in the DILUTION stage and load-bearing in the POOLING one.**
+  `nomination_contributions` groups by `(orf, channel, intermediate_id)`, and pbert's
+  `intermediate_id` is the single best donor, so there is one nomination group per
+  `(orf, pbert)` and `contrib = 1/F_n/n_lanes` whatever the vote was. The vote reaches
+  the weighting through `llr` instead, where it is worth 2.96 to 6.16 nats. So the vote
+  floor changes how pbert's belief SPREADS across reactions and the vote VALUE changes
+  how much each spread claim is worth. No metric in these sweeps sees either.
 - **The abstain moves the other lanes.** An ORF's belief splits across the lanes that
   fired, so an ORF pbert declines reweights its remaining lanes by `n_lanes`. Belief
   conservation still holds exactly; the redistribution is the designed semantics, not a
