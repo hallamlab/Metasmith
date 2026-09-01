@@ -16,8 +16,6 @@ from metasmith.models.libraries import DataInstanceLibrary
 from metasmith.models.libraries.identity import stat_leaf_id
 from metasmith.models.libraries.pinned import PinnedLibraryError
 
-from metasmith.models.workflow import restat_leaf_ids
-
 from tests.metasmith.cache._cache_harness import (
     build_samples_library,
     build_types_library,
@@ -96,29 +94,40 @@ def test_invalidate_reports_what_it_could_not_do(tmp_path):
 
 
 def test_invalidating_a_given_moves_the_member_key(tmp_path):
-    """The production path: invalidate, and the agent's own re-stat moves it.
+    """The production path: invalidate, then plan.
 
-    `restat_leaf_ids` re-derives every leaf id from this host's view of the
-    file before a run compiles. A member's key folds the ids it consumed, so
-    a moved leaf id is a different key and nothing built on the old one
-    matches.
+    Invalidate is a client-side operation on a library, and it moves the ids the
+    library records. A plan already built holds its own copy of every id and is
+    stale by construction -- staging does not rescue it, because staging leaves
+    an input the client staged itself alone, which is what keeps a leaf's
+    identity independent of the plan around it. So the order that matters is
+    invalidate first, plan second, and that is what this asserts.
     """
     from metasmith.caching.invocation import member_key
+    from tests.metasmith.cache._cache_harness import build_workflow_task
 
     task = linear_3step.build_task(tmp_path)
 
-    def _first_step_keys() -> set[bytes]:
-        step = min(task.plan.steps, key=lambda s: s.order)
+    def _first_step_keys(t) -> set[bytes]:
+        step = min(t.plan.steps, key=lambda s: s.order)
         keys = set()
         for dep in step.transform.model.requires:
             for inst in step.dependency_map.get(dep, []):
                 keys.add(member_key("trA", "sig", {inst.dtype.key: [inst.instance_id]}))
         return keys
 
-    before = _first_step_keys()
-    assert task.data_libraries[0].Invalidate()["moved"], "invalidate moved nothing"
-    restat_leaf_ids(task)
-    after = _first_step_keys()
+    before = _first_step_keys(task)
+    lib = task.data_libraries[0]
+    assert lib.Invalidate()["moved"], "invalidate moved nothing"
+
+    replanned = build_workflow_task(
+        lib,
+        task.transform_libraries[0],
+        sample_type="seed",
+        target_specs=[("step_c_target", {"step_c"})],
+    )
+    after = _first_step_keys(replanned)
+    assert after, "the re-plan produced no member keys"
     assert not (before & after), (
         "a member key did not move, so every shard built on the old data "
         "would still be served"
