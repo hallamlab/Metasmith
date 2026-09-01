@@ -39,12 +39,15 @@ Note this does **not** exclude `slow` — the `perf` axis (10k-item libraries) i
 a few minutes and belongs in a release gate. For the minute-by-minute dev loop
 use `-m fast`, and `./dev/metasmith.sh -tg` for the GUI alone.
 
-**Budget 25 minutes.** Measured 2026-08-20 on a 16-core box under other load:
-1968 selected, 296 deselected, 20m38s wall. `perf` and `flow` are two thirds of
-that (290s and 362s), so run them last if you need to cut the sweep short — the
-other eight axes together are under seven minutes. `pytest-timeout` is not in
-`msm`, so every `@pytest.mark.timeout` in the tree is inert and nothing bounds a
-hung test; wrap the run in `timeout` if you are leaving it unattended.
+**Budget 30 minutes.** Measured 2026-08-30 on a 16-core box: 2088 selected, 311
+deselected, 27–29 min wall. `perf` and `flow` dominate, so run them last if you
+need to cut the sweep short. `pytest-timeout` is not in `msm`, so every
+`@pytest.mark.timeout` in the tree is inert and nothing bounds a hung test. Wrap
+the run in `timeout` if you are leaving it unattended.
+
+Do not run a build or another lane beside it. The perf axis asserts wall clock,
+and `test_save_load_roundtrip_10k` fails at 62.7s against its 60s limit under a
+concurrent docker build while passing well inside it on a quiet box.
 
 ### Exercise the gated tiers when relevant
 
@@ -58,8 +61,37 @@ infrastructure the dev box may lack. Run the ones a release touches:
 - **`e2e_agentic`** — live agent-driven scenarios; opt-in, needs an API key and a
   compiled standard library (`dev/libraries.sh -b`).
 
+### Collect the shipped library before you gate it
+
+The engine ships `src/metasmith_libraries/`, but the release branch merges only
+the engine's own line. A library fix authored on a product branch reaches no
+release until somebody carries it, and nothing warns.
+
+Before gating, ask each product branch what it has that `release` does not:
+
+```
+git log --oneline release..<branch> -- src/metasmith_libraries/
+```
+
+Run it for `fabfos/dev` and `libraries/mono` at least, and read the answer as
+content rather than as commits — cherry-picks land under new SHAs, so a picked
+commit still lists here forever. Diff the paths to confirm.
+
+**CAUTION** Check the direction before merging anything. `release` is usually
+*ahead* on the same files, so a plain `git diff release <branch>` shows the
+engine's own work as a deletion. The commit list above is the reliable question.
+
+0.22.0 nearly shipped two library bugs this way: a regex anchored on a trailing
+number that made every ProteinBERT run exit at the embedder, and an env pinned
+to an image with no pyarrow without the change that stops parquet going through
+it.
+
 ### Focus areas
 
+- **Run the docker lane, not only the dependency-free tier.** It is where the
+  Groovy, the cached twin, publish and the trace actually run. Skipping it for a
+  few releases let three test-harness assumptions rot silently, and the first
+  run after the cache rewrite failed 5 of 191.
 - **Scope the depth to the change.** When `src/metasmith/` is unchanged from the
   last release, the version→tag chain tests (`test_container_tag`,
   `test_dev_sh_tag`, `test_build_pip_version_split`, all under `tests/unit/`)
@@ -221,6 +253,34 @@ Then:
    no standing PR to reuse: each one closes on merge (#63 → 0.17.1, #64 →
    0.18.3, #65 → 0.18.8), and treating the last one as still open is how 0.20.0
    and 0.20.1 shipped to quay and anaconda without ever reaching upstream.
+3. Drive both published artifacts as a **consumer**, not as the builder. Every
+   guard above reads the local build — `-uc` installs from `file://conda_build`
+   and `-ud` inspects the image docker already holds — so nothing so far has
+   touched what anaconda.org and quay actually serve. Two lanes, both from
+   outside every worktree and with `env -u PYTHONPATH`, since an ambient
+   `PYTHONPATH` resolves `metasmith` to a checkout and the run proves nothing:
+
+   ```
+   mamba create -y -n msm_gate -c hallamlab -c bioconda -c conda-forge metasmith=X.Y.Z
+   docker rmi quay.io/hallamlab/metasmith:X.Y.Z{,-<hash>} :latest && docker pull …:X.Y.Z-<hash>
+   ```
+
+   In each: `msm --help`, `Backend("solve") == "rust"`, `clone_stdlib` into an
+   empty directory, and every shipped template solved. The `docker rmi` is the
+   load-bearing half — without it the locally built image is what gets tested,
+   which is the thing this step exists to avoid. The library stamp
+   (`stdlib.discover(root)["commit"]`) must agree between the two artifacts;
+   they are built from one vendored tree and a disagreement means one of them
+   was staged from something else.
+4. Then **run something**. Everything above proves the release plans; none of it
+   executes a workflow, and that is where 0.22.0's defect was — it shipped
+   solving eleven templates cleanly while failing the case it was cut for. Drive
+   whatever scenario the release claims to fix, on the published artifacts, and
+   pair it with a control that should behave the *opposite* way. A single run
+   that misses tells you nothing: it could be a broken cache or a correct miss.
+   The 0.22.0 pass was three trio runs — cold, add-a-sample, re-run-unchanged —
+   and only the third one turned the second from an observation into a
+   diagnosis. Budget hours, not minutes.
 
 ## What goes in this file
 
