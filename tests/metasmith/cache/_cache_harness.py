@@ -17,6 +17,7 @@ from metasmith.models.libraries import (
     DataTypeLibrary,
     TransformInstanceLibrary,
 )
+from metasmith.caching.keys import multihash_key
 from metasmith.caching.layout import CACHE_DIR_NAME
 from metasmith.models.remote import Source
 from metasmith.models.solver import Endpoint, Transform
@@ -24,7 +25,9 @@ from metasmith.models.workflow import (
     NextflowGenContext,
     WorkflowPlan,
     WorkflowTask,
+    restat_leaf_ids,
 )
+from metasmith.agents.runner import _rewrite_staged_plan
 
 
 @dataclass(frozen=True)
@@ -115,10 +118,22 @@ def build_transform_library(
         encoding="utf-8",
     )
 
+    # A compiled library carries a recorded `instance_id` per entry -- that is
+    # what `dev/libraries.sh -bm` freezes into the index. An index without them
+    # mints one wherever it is loaded and then persists it, so a staged copy
+    # stops keying like the source it was staged from, and the plan, which names
+    # its transform library by key, no longer resolves against the task's
+    # libraries. Record them here, as a real library does.
     manifest = {}
     for name, code in transforms.items():
         (tr_path / f"{name}.py").write_text(code, encoding="utf-8")
-        manifest[f"{name}.py"] = {"type": "transforms::transform"}
+        manifest[f"{name}.py"] = {
+            "type": "transforms::transform",
+            "origin": "leaf",
+            "instance_id": multihash_key(
+                f"{name}\x00".encode("utf-8") + code.encode("utf-8")
+            ).hex(),
+        }
 
     (meta / "index.yml").write_text(
         yaml.dump({"manifest": manifest, "schema": "v1"}),
@@ -241,6 +256,13 @@ def _stage_task(task: WorkflowTask) -> tuple[str, Path, WorkflowTask]:
     workspace = task_path.parent.parent
     workspace.mkdir(parents=True, exist_ok=True)
 
+    # Mirror `agents/runner.py::StageWorkflow`: identity settles on the host that
+    # owns the staged files, and the plan on disk is rewritten so it agrees with
+    # the ids codegen is about to bake into the cache keys. A harness that skips
+    # this stages a task no agent ever stages.
+    restat_leaf_ids(staged)
+    _rewrite_staged_plan(task_path, staged)
+
     context = NextflowGenContext(
         workflow_file=AgentPaths.NXF_WORKFLOW,
         work_dir=workspace,
@@ -251,6 +273,9 @@ def _stage_task(task: WorkflowTask) -> tuple[str, Path, WorkflowTask]:
         resources_file=AgentPaths.NXF_RES,
     )
     staged.PrepareNextflow(context)
+    # Codegen stamps deterministic lineage ids onto the plan; production writes
+    # the plan a second time so task.yml agrees with what execution sees.
+    _rewrite_staged_plan(task_path, staged)
 
     lib_dir = workspace / "lib"
     lib_dir.mkdir(exist_ok=True)

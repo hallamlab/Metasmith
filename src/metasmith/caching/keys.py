@@ -19,6 +19,10 @@ KEY_PREFIX = bytes([BLAKE3_MULTIHASH_CODE, BLAKE3_DIGEST_LEN])
 # transform archetype's, so a downstream key now moves when its producer does.
 # Bumped 4 -> 5 when the unit became one group member's invocation, keyed on
 # the own-ids that member consumed, and a slot id lost its step order.
+# Bumped 5 -> 6 when staging stopped re-deriving the identity of an input the
+# client staged out of its own library: those ids moved once, from the agent's
+# reading of the plan-named staged path to the client's reading of its own copy,
+# so every shard written before this answers to a key nothing will ask for.
 #
 # DELIBERATELY SEPARATE from LIN_PAYLOAD_VERSION below: the cache epoch tracks
 # cache-key *semantics*, whereas the wire version tracks the Nextflow-channel
@@ -27,7 +31,7 @@ KEY_PREFIX = bytes([BLAKE3_MULTIHASH_CODE, BLAKE3_DIGEST_LEN])
 # emitter (`workflow.py` -> `Orchestrator.JsonforEcho([v:2, ...])`) hardcoded
 # the wire version and did not move in lockstep. Keeping them independent
 # means a future cache-semantics bump never again desyncs the wire protocol.
-CACHE_KEY_VERSION = 5
+CACHE_KEY_VERSION = 6
 
 # On-wire LinPayload envelope version (models/lineage.py). Tracks the SHAPE of
 # the `{"v": N, "entries": [...]}` value carried on the Nextflow channel. Do

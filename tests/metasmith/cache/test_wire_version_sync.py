@@ -49,13 +49,13 @@ def test_parser_classvar_tracks_module_constant():
 
 
 def test_cache_epoch_and_wire_version_are_independent():
-    # Pinned so a bump has to be deliberate. They happen to be equal again: the
-    # cache epoch moved to 5 when the unit became one member's invocation, and
-    # the wire envelope moved to 5 when a member began carrying its KEY -- two
-    # bumps for two reasons. Equality is allowed; defining one in terms of the
-    # other is what R5 did, and it desynced the Groovy emitter from its parser
-    # with a green fast suite.
-    assert CACHE_KEY_VERSION == 5
+    # Pinned so a bump has to be deliberate. They have moved apart again: the
+    # cache epoch went to 6 when staging stopped re-deriving the identity of an
+    # input the client staged itself, which is a cache-key semantics change and
+    # nothing to do with what travels on the channel. Defining one in terms of
+    # the other is what R5 did, and it desynced the Groovy emitter from its
+    # parser with a green fast suite.
+    assert CACHE_KEY_VERSION == 6
     assert LIN_PAYLOAD_VERSION == 5
     import metasmith.caching.keys as keys_mod
 
