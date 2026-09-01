@@ -24,41 +24,6 @@ Ships unfixed in 0.22.0. That release moves `CACHE_KEY_VERSION` to 5 for an unre
 the unit became one group member's invocation — so the epoch bump users pay for buys nothing
 here, and the migration this entry wants still costs a second one.
 
-**A staged leaf's id folds the task key, so nothing hits across plans.** `restat_leaf_ids` runs
-after `StageWorkflow` copies the data libraries into `runs/<task key>/_metasmith/task/data/`, so
-`stat_multihash_key` hashes a path containing the task key, and the task key is a function of the
-whole plan. Adding a sample re-paths every staged leaf, which moves every leaf id, which moves
-every member key — and that is precisely the case the member unit exists to make cheap. Only
-inputs left outside the workspace keep stable ids, which is why `shared_input_paths` databases
-reuse fine. The id must not contain the task key — derive it from the library-relative path, or
-stage libraries to a home-level location shared across runs.
-
-Measured end to end against the **published 0.22.0** — clean-room conda client, freshly pulled
-image, the annotation trio on real sequence and real tools — as three runs in one agent home:
-
-| run | samples | wall clock | members | hits |
-|---|---|---|---|---|
-| 1 | `[A,B]` cold | 61 min | 16 promoted | 0 (correct) |
-| 2 | `[A,B,C]` | 93 min | 24 promoted | **0** |
-| 3 | `[A,B,C]` again | 110 s | 0 promoted | 24 |
-
-Run 2 is the defect: 24 real tasks, no `_cached` twins, `cache_hits.jsonl` absent, though run 1
-had already computed A and B. Run 3 is the control that makes it a diagnosis rather than an
-observation — the same plan re-staged keeps its task key, so every leaf id survives and all 24
-members hit. The member cache is functional on the shipped build; it fails only when the sample
-set changes. A and B's products were identical across runs 1 and 2 (interproscan set-identical
-rather than byte-identical — it does not order its matches deterministically), so the 93 minutes
-bought nothing. Run inputs and the full record are in `/home/tony/msm.gate022/GATE.md`.
-
-**An epoch bump tells the user to run a command that reclaims nothing.** `CacheStore.open` warns
-that old shards are unreachable and names `msm cache gc --delete`, but the delete branch of
-`gc_cache` skips every entry whose `tombstoned_at` is null, and nothing tombstones a pre-epoch
-row. So the one command the warning names is a no-op against exactly the shards it is about, and
-they sit on disk indefinitely. 0.22.0 moves the epoch, so every existing user meets this. The
-workaround is `msm cache gc --older-than 0 --grace 0 --delete`, which tombstones and unlinks in
-one pass — but it is indiscriminate, so it takes the post-epoch shards with it. The fix is to
-tombstone on the epoch-mismatch path, where the mismatch is already detected.
-
 **Cancelling a run during its first minute silently does nothing.** `CancelWorkflow` keys on
 `PID.lock`, which `start.sh` writes only once nextflow is up, while `RUN.token` lands as soon as
 the launcher detaches. Measured on the docker lane: 22:40 for the token, 22:41 for the lock. A
@@ -207,8 +172,9 @@ relayed run.
 re-verified since the bind failure was made fail-fast.
 
 **No test stages one data library under two task keys**, in either the virtual runtime or the
-`-stub` docker lane, so nothing can see the cross-plan re-keying under *Open bugs* and a
-regression there stays invisible. The same blind spot hid a record-path bug: the docker lane
+`-stub` docker lane. 0.22.1 stopped a staged leaf's id depending on the task key, so this is a
+regression guard rather than a way to see an open bug -- and the defect it would guard needed a
+93-minute real run to find, twice. The same blind spot hid a record-path bug: the docker lane
 promotes from the host, so a container-side path never enters a cache record.
 
 **Closed at 0.22.0: the published artifacts are now driven as a user receives them.** The
@@ -223,6 +189,8 @@ identical in both artifacts). Nothing automates this, so it is a gap again the m
 ships without somebody running it.
 
 That pass proves the artifacts **plan**; it runs no workflow. The separate question of whether a
-published release *executes* correctly was answered for 0.22.0 by the three trio runs under *A
-staged leaf's id folds the task key* above — worth repeating per release, since planning green
-and running green are different claims and only the second one found anything.
+release *executes* correctly is answered by driving the annotation trio at two then three
+samples: `/home/tony/msm.gate022/GATE.md` for 0.22.0, which failed it, and
+`/home/tony/msm.gate0221/GATE.md` for 0.22.1, which passes. Worth repeating per release, since
+planning green and running green are different claims and only the second one has found
+anything.
