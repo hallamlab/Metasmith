@@ -64,9 +64,12 @@ def _run(args, log, probe, **kw):
              else Path(args.shard_dir or f"{args.out}.shards"))
     basis = probes.Basis(args.atom_pairs, args.direction, element=args.element,
                          orientation=args.orientation.replace("-", "_"))
+    # `--element` is the DEFAULT a test that names none falls back to, not the element the
+    # run is on: a tests table spanning several gets a basis each, built on demand.
+    elements = sorted({t.element for t in ts if t.element} | {args.element})
     log(f"[{probe}] {len(ts)} test(s) on {len(conds)} network(s) | "
-        f"element={args.element} orientation={basis.orientation} "
-        f"weighting={args.weighting} "
+        f"element={'.'.join(elements)} (default {args.element}) "
+        f"orientation={basis.orientation} weighting={args.weighting} "
         f"| pairs={len(basis.pairs):,} rows, ratios={len(basis.ratios):,}")
     df = probes.run(basis, args.gpr, conds, ts, probe=probe,
                     weighting=args.weighting, shard_dir=shard, log=log, **kw)

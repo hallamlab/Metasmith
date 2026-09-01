@@ -1,0 +1,67 @@
+{
+  "_about": {
+    "host": "epi300",
+    "host_unit": "iECDH10B_1368",
+    "resolved_against_bake": "0ffd4c8c6231696e8ba0dee859253df75d8a29320355c42b0fcac0f317d264c6:554b4d8f9293e7824dc03508333f46ce5014b143d47d0e33055055fcb998f25e",
+    "why": "set4 was curated over the nostoc community graphs. Eleven of its axis endpoints are not nodes in the EPI300 host graph at all, so those axes measure a structural zero on every construction -- which in a scored table is indistinguishable from a real null. Each entry here names the members this host DOES carry. A substitution is a fact about a HOST, not about set4, which is why this file is named for one and set4 is untouched.",
+    "rule": "Among members of the declared family that the host graph carries, rank by the number of host-nominated reactions incident on the metabolite. For the phospholipids, restrict first to genuine DIACYL species -- a concrete formula with no `*` residue and at least 30 carbons, which is two acyl chains plus the glycerophospho backbone. That restriction is load-bearing: the highest-degree PE-named member the host carries is MNXM1364224 at 22 reactions, and its formula is C5H14NO6P, the deacylated headgroup rather than a phospholipid at all.",
+    "two_members_not_one": "Where the top of a family is not a clear winner, both are carried and the axis is measured twice. That is this arm's own rule for an unmakeable choice -- the same reason it draws two null sampler styles mismatched in opposite directions -- and it turns the choice into a measured spread instead of an argument. C18:1 and C16:0 rank first and second in BOTH phospholipid families here, and they are E. coli's two dominant membrane acyl chains.",
+    "the_generic_stays": "The declared id is never removed. It rides along as a control row, so a later bake that brings it into the host graph shows up as the control coming alive rather than as a silent change of meaning."
+  },
+
+  "MNXM115": {
+    "declared_name": "phosphatidylethanolamine",
+    "family": "phospholipid",
+    "elements": ["C", "N", "P"],
+    "absent_because": "the generic PE carries a `*` residue formula (C7H12NO8P*2); this host's reactions name acyl-resolved species",
+    "members": [
+      {"mnxm": "MNXM32178", "label": "C16:0", "degree": [6, 6, 6],
+       "name": "1,2-dihexadecanoyl-sn-glycero-3-phosphoethanolamine"},
+      {"mnxm": "MNXM2150", "label": "C18:1", "degree": [7, 7, 7],
+       "name": "Phosphatidylethanolamine (dioctadec-11-enoyl, n-C18:1)"}
+    ]
+  },
+
+  "MNXM725992": {
+    "declared_name": "Phosphatidylglycerol",
+    "family": "phospholipid",
+    "elements": ["C", "P"],
+    "absent_because": "the generic PG carries a `*` residue formula (C8H12O10P*2); this host's reactions name acyl-resolved species",
+    "members": [
+      {"mnxm": "MNXM734041", "label": "C16:0", "degree": [10, 10],
+       "name": "dipalmitoyl phosphatidylglycerol"},
+      {"mnxm": "MNXM731815", "label": "C18:1", "degree": [10, 10],
+       "name": "Phosphatidylglycerol (dioctadec-11-enoyl, n-C18:1)"}
+    ]
+  },
+
+  "MNXM1105855": {
+    "declared_name": "alpha-D-glucose 6-phosphate",
+    "family": "catabolic",
+    "elements": ["C"],
+    "absent_because": "an anomer-resolved id; this host's reactions name the anomer-free entry, same formula C6H11O9P",
+    "members": [
+      {"mnxm": "MNXM1364111", "label": "anomer-free", "degree": null,
+       "name": "D-glucose 6-phosphate"}
+    ]
+  },
+
+  "MNXM1372045": {
+    "declared_name": "D-glyceraldehyde 3-phosphate",
+    "family": "catabolic",
+    "elements": ["C", "P"],
+    "absent_because": "a stereochemistry-resolved sibling of the id this host's reactions name; the two differ by two hydrogens in the MetaNetX formula and by one digit in the id",
+    "members": [
+      {"mnxm": "MNXM1372044", "label": "stereo-free", "degree": null,
+       "name": "glyceraldehyde 3-phosphate"}
+    ]
+  },
+
+  "MNXM163519": {
+    "declared_name": "a lipid II",
+    "family": "murein",
+    "elements": ["C", "N"],
+    "absent_because": "no lipid II species of any acylation is a node in this host's graph",
+    "members": []
+  }
+}

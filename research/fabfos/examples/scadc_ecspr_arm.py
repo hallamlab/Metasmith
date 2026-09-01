@@ -4,7 +4,8 @@
     scadc_ecspr_basis.py                 the bake decode and the terminals, first
     scadc_ecspr_arm.py --stage           working GPR copies, under names that cannot collide
                        --conditions      the two tables, then the ORF-counted strata
-                       --measure         the observed run, 171 solves
+                       --gate            every axis on the host alone, one solve each
+                       --measure         the observed run, one solve per (network, axis)
                        --host-probe      the host's own draw vector on this bake
                        --draw --shards   26,000 null constructions, split for the array
                        --fir-status      one batched connect, never a loop
@@ -12,16 +13,27 @@
                        --score           delta, z, p, q and the gate, per null style
                        --publish         into data/fabfos/runs/scadc_fosmids/ecspr/
 
-The basis step runs first and this reads its `terminals.json` rather than restating four
-ids; it refuses outright if that file was resolved against a different bake.
+The basis step runs first and this reads its `terminals.json` and `axes.json` rather than
+restating any ids; it refuses outright if either was resolved against a different bake.
 
-WHAT IS MEASURED. One condition per insert: the host's GEM rows and that insert's rows
-both selected, their conductances summing, glucose injected and the four biomass hubs
-merged into one ground. The baseline is the host alone, and every arm reads against it.
-That is the same experiment the retired `scadc_ecspr.py` open-coded -- and the reason it
-is now four CLI calls instead is that the null has to traverse the identical code path to
-be a null at all, which a hand-rolled sampler beside a hand-rolled observation cannot
-promise.
+WHAT IS MEASURED. One condition per insert -- the host's GEM rows and that insert's rows
+both selected, their conductances summing -- and ONE TEST PER AXIS on each of them. The baseline is
+the host alone, and every arm reads against the baseline OF ITS OWN AXIS. The reason this
+is CLI calls rather than the open-coded `scadc_ecspr.py` it replaces is that the null has
+to traverse the identical code path to be a null at all, which a hand-rolled sampler beside
+a hand-rolled observation cannot promise.
+
+WHY MANY AND NOT ONE. The published generation merged four biomass hubs into one ground and
+measured the single number that came out. That is one readout, and its null result says
+only that no insert moves THAT number -- `PROVENANCE.md` says so itself. set4 asks the
+question 79 more ways, over four elements; three added axes ask it about the glycerol
+backbone of the phospholipids, which set4 does not reach; and the published axis rides
+along last so the rebuilt path can be checked against a number that already exists.
+`--gate` is where that check happens, and it must be run BEFORE the bake moves.
+
+A CONDITION IS RESOLVED ONCE AND ITS GRAPH BUILT ONCE PER ELEMENT, which is why the tests
+table is written network-major. Axis-major would rebuild the carbon graph once per TEST
+instead of once per network, and nothing would report it as anything but a slow run.
 
 THE UNIT IS THE INSERT, WHICH IT WAS NOT BEFORE. The generation this replaces measured
 183 contigs against a table that carried one anonymous copy; the rebuilt insert set is
@@ -76,6 +88,19 @@ T_METAG = "scadc_metag_4lane.parquet"
 HOST_UNIT = "iECDH10B_1368"
 ELEMENT = "C"
 BASELINE_ID = "epi300_host"
+LEGACY_AXIS = "legacy__glucose__4hubs__C"
+
+# THE REPRODUCTION CONTROL, and it is a pair rather than a number. `--gate` asserts the
+# legacy axis returns this on the host, and it does so ONLY on the bake the number was
+# taken from -- an ECSPr total is meaningless without its generation, and asserting it
+# across a promote would fail for the one reason that is not a fault.
+#
+# Run the gate on r10 before moving to a newer bake. It is the only point at which a fault
+# in the rebuilt path can be told apart from a shift in the bake, because afterwards both
+# have moved and the difference has two causes.
+LEGACY_BAKE = ("0ffd4c8c6231696e8ba0dee859253df75d8a29320355c42b0fcac0f317d264c6:"
+               "554b4d8f9293e7824dc03508333f46ce5014b143d47d0e33055055fcb998f25e")
+LEGACY_TOTAL = 1.94037893
 
 
 def _ecspr(*argv: str) -> None:
@@ -104,6 +129,19 @@ def terminals() -> dict:
             f"  the deployed bake is {bake_identity.identity()}\n"
             f"  re-run scadc_ecspr_basis.py")
     return doc
+
+
+def axes() -> list:
+    path = BASIS / "axes.json"
+    if not path.exists():
+        raise SystemExit(f"no {path.relative_to(REPO)} -- run scadc_ecspr_basis.py first")
+    doc = json.loads(path.read_text())
+    if doc["bake_identity"] != bake_identity.identity():
+        raise SystemExit(
+            f"{path.relative_to(REPO)} was resolved against {doc['bake_identity']}\n"
+            f"  the deployed bake is {bake_identity.identity()}\n"
+            f"  re-run scadc_ecspr_basis.py")
+    return doc["axes"]
 
 
 def stage() -> None:
@@ -144,6 +182,38 @@ def conditions() -> None:
            "--baseline-id", BASELINE_ID,
            "--out", WORK / "conditions.parquet",
            "--out-tests", WORK / "tests.parquet")
+    expand_tests()
+
+
+# `ecspr conditions` emits ONE test per network, because a sweep is a set of networks
+# read one way. This arm reads each of them once per AXIS, so the conditions are built
+# once and the tests table is the cross product. The terminals the builder was given
+# survive as the legacy axis and nowhere else.
+#
+# THE ROWS COME OUT NETWORK-MAJOR, and that is load-bearing rather than tidy: `probes.run`
+# caches the atom graph per (network, element) and drops it the moment the network changes,
+# so an axis-major table would rebuild the carbon graph 14,193 times instead of 171.
+def expand_tests() -> None:
+    ax = axes()
+    base = pd.read_parquet(WORK / "tests.parquet")
+    if base.test_id.astype(str).str.contains("::").any():
+        raise SystemExit("tests.parquet is already expanded -- re-run --conditions")
+    rows = []
+    for rec in base.to_dict("records"):
+        for a in ax:
+            r = dict(rec)
+            r["test_id"] = f"{rec['network']}::{a['axis_id']}"
+            r["read_against"] = ("" if rec["network"] == BASELINE_ID
+                                 else f"{BASELINE_ID}::{a['axis_id']}")
+            r["element"] = a["element"]
+            r["source_hub"] = a["source"]
+            r["sink_hub"] = a["sink_hub"]
+            rows.append(r)
+    out = pd.DataFrame(rows, columns=list(base.columns))
+    _write(out, WORK / "tests.parquet")
+    per_el = out.drop_duplicates("test_id").element.value_counts().to_dict()
+    print(f"[expand] {len(base)} network(s) x {len(ax)} axes -> {len(out):,} tests "
+          f"({per_el})")
 
 
 # THE STRATUM IS COUNTED IN ORFs HERE, AND THAT IS A DECISION THIS ARM HAS TO MAKE.
@@ -181,8 +251,13 @@ def strata() -> None:
     rep = _buckets(n_orf.tolist())
 
     tests = pd.read_parquet(WORK / "tests.parquet")
-    sizes = tests.test_id.map(n_orf)
+    # ON THE NETWORK, not the test id: every axis's test shares one insert, and it is the
+    # insert that has a size. `stratum` is written alongside because `recipes` set it from
+    # the PRE-override n_units -- 1 for every insert -- and it stayed that way in the
+    # tables. Nothing reads it (`scoring` takes `n_units`), so it was wrong in silence.
+    sizes = tests.network.map(n_orf)
     tests["n_units"] = sizes.map(rep)
+    tests["stratum"] = tests["n_units"]
     _write(tests, WORK / "tests.parquet")
 
     sidecar = pd.DataFrame({"insert": n_orf.index, "n_orf": n_orf.values})
@@ -196,9 +271,10 @@ def strata() -> None:
           f"{len(used)} strata {used}")
     print(f"[strata] worst size mismatch {sidecar.lost_pct.max():.1f}%, "
           f"median {sidecar.lost_pct.median():.1f}%")
-    print(f"[strata] baseline row carries n_units "
-          f"{tests.loc[tests.test_id == BASELINE_ID, 'n_units'].tolist()} "
-          f"(no draw is matched to it; it is what every arm reads against)")
+    base_units = tests.loc[tests.network == BASELINE_ID, "n_units"]
+    print(f"[strata] the {len(base_units)} baseline rows carry n_units "
+          f"{sorted(set(base_units.dropna())) or 'none'} "
+          f"(no draw is matched to them; they are what every arm reads against)")
 
 
 # No `--source` / `--sinks` here, deliberately: a tests table carries its own terminals
@@ -246,7 +322,8 @@ def _tests_for_draw() -> Path:
     # the measurement settings, and writes its own tests with no baseline at all -- the
     # observed table keeps the reference, and that is the one the scorer reads.
     t = pd.read_parquet(WORK / "tests.parquet")
-    t = t[t.test_id != BASELINE_ID].copy()
+    # On the NETWORK: with many axes the baseline is one row per axis, not one row.
+    t = t[t.network != BASELINE_ID].copy()
     t["read_against"] = ""
     return _write(t, WORK / "tests_for_draw.parquet")
 
@@ -270,10 +347,20 @@ def draw_contiguous(n: int, seed: int) -> None:
     from ecspr.model import conditions as cond_mod
     from ecspr.model import tests as test_mod
 
+    from ecspr.model.nulls import _settings_key
+
     conds = cond_mod.read(WORK / "conditions.parquet")
     background = {c.condition_id: c for c in conds}[BASELINE_ID].steps
     like = test_mod.read(WORK / "tests_for_draw.parquet", "ecspr")
-    proto = like[0]
+    # ONE PROTO PER DISTINCT MEASUREMENT, grouped and ordered by `nulls._settings_key`
+    # rather than by anything invented here. Style D differs from style A in its SAMPLING
+    # and in nothing else, so it has to cut the observed tests into the same
+    # measurements A does -- and reaching into the private helper is how that is
+    # guaranteed instead of asserted. Taking `like[0]` was correct while there was one.
+    protos = {}
+    for t in like:
+        protos.setdefault(_settings_key(t), t)
+    ordered = [p for _k, p in sorted(protos.items(), key=lambda kv: str(kv[0]))]
     strata = sorted({int(t.meta["n_units"]) for t in like})
 
     pool = pd.read_parquet(TABLES / T_METAG, columns=["orf"]).orf.drop_duplicates()
@@ -304,42 +391,82 @@ def draw_contiguous(n: int, seed: int) -> None:
                 condition_id=cid,
                 steps=tuple(background) + (cond_mod.Step(
                     table=T_METAG, type="orf", set=pick, operation="union"),)))
-            out_tests.append(test_mod.Test(
-                test_id=f"nullD:t0:s{s}:{j:06d}", network=cid, arm="ecspr",
-                settings=dict(proto.settings),
-                meta=dict(arm="null", stratum=s, n_units=s, draw_id=j,
-                          is_control=False, cohort=None)))
+            for ti, proto in enumerate(ordered):
+                out_tests.append(test_mod.Test(
+                    test_id=f"nullD:t{ti}:s{s}:{j:06d}", network=cid, arm="ecspr",
+                    settings=dict(proto.settings),
+                    meta=dict(arm="null", stratum=s, n_units=s, draw_id=j,
+                              is_control=False, cohort=None)))
     cond_mod.write(out_conds, WORK / "nullD_conditions.parquet")
     test_mod.write(out_tests, WORK / "nullD_tests.parquet", "ecspr")
     print(f"[drawD] {len(eligible):,} eligible contigs at the largest stratum | "
-          f"{len(strata)} strata {strata} x {n} draws -> {len(out_conds):,} conditions")
+          f"{len(strata)} strata {strata} x {n} draws x {len(ordered)} axes -> "
+          f"{len(out_conds):,} conditions, {len(out_tests):,} tests")
     print(f"[drawD] {WORK / 'nullD_conditions.parquet'}")
 
 
-# ONE SHARD PER (style, stratum), which is the natural unit and not just a convenient
-# one: every condition in a shard draws the same number of ORFs, so the shards are the
-# same size in work, and a task loads the 19.7M-row pool table once and then never
-# touches another shard's. Splitting here rather than filtering on the cluster keeps the
-# array task a single command with no selection logic to disagree with this file's.
+# ONE SHARD PER (style, stratum, axis block). The stratum half is the natural unit and
+# not just a convenient one: every condition in a shard draws the same number of ORFs, so
+# the shards are the same size in work, and a task loads the 19.7M-row pool table once.
+#
+# THE AXIS HALF IS NEW, and a hundred axes forced it. A (style, stratum) shard is now 100,000
+# solves and a carbon solve is 0.81 s, so it would want most of a day and no four-hour
+# walltime would hold it. The blocks are cut by ELEMENT first because the cost is nowhere
+# near uniform -- 0.81 s on carbon against 0.06 on nitrogen, 0.03 on phosphorus and 0.01
+# on sulfur -- so all the non-carbon axes ride in one block and carbon splits into fixed
+# ones.
+#
+# The conditions table is REPEATED in every block of its stratum, and that is the price:
+# each block re-resolves those constructions against the 19.7M-row pool, about a tenth of
+# the run's total work. It buys a task that fits the walltime, which is the difference
+# between an array that queues and one that does not.
+CARBON_AXES_PER_SHARD = 9
+
+
+def _axis_blocks() -> list:
+    ax = axes()
+    key = [(a["element"], a["source"], a["sink_hub"]) for a in ax]
+    carbon = [k for k in key if k[0] == "C"]
+    other = [k for k in key if k[0] != "C"]
+    blocks = [carbon[i:i + CARBON_AXES_PER_SHARD]
+              for i in range(0, len(carbon), CARBON_AXES_PER_SHARD)]
+    if other:
+        blocks.append(other)
+    return blocks
+
+
 def shards() -> None:
     out = WORK / "shards"
     out.mkdir(parents=True, exist_ok=True)
     for old in out.glob("*.parquet"):
         old.unlink()
+    blocks = _axis_blocks()
     n = 0
     for style in ("A", "D"):
         t = pd.read_parquet(WORK / f"null{style}_tests.parquet")
         c = pd.read_parquet(WORK / f"null{style}_conditions.parquet")
+        # A NULL TEST ID DOES NOT NAME ITS AXIS -- `nulls.draw` numbers the measurement
+        # specs `t0..t82` and never writes what they are -- so the block is selected on
+        # the terminals themselves, which both null styles and the observed arm carry.
+        t_key = list(zip(t.element, t.source_hub, t.sink_hub))
         for s, ts in t.groupby("stratum"):
             s = int(s)
-            _write(ts, out / f"null{style}_s{s}_tests.parquet")
-            _write(c[c.condition_id.isin(set(ts.network))],
-                   out / f"null{style}_s{s}_conditions.parquet")
-            n += 1
+            sub_key = [k for k, m in zip(t_key, t.stratum == s) if m]
+            conds = c[c.condition_id.isin(set(ts.network))]
+            for b, block in enumerate(blocks):
+                want = set(block)
+                sel = ts[[k in want for k in sub_key]]
+                if sel.empty:
+                    continue
+                name = f"null{style}_s{s}_b{b}"
+                _write(sel, out / f"{name}_tests.parquet")
+                _write(conds, out / f"{name}_conditions.parquet")
+                n += 1
     names = sorted(p.name.replace("_tests.parquet", "")
                    for p in out.glob("*_tests.parquet"))
     (out / "SHARDS.txt").write_text("\n".join(names) + "\n")
-    print(f"[shards] {n} shards -> {out.relative_to(REPO)} "
+    print(f"[shards] {n} shards over {len(blocks)} axis block(s) "
+          f"({[len(b) for b in blocks]} axes each) -> {out.relative_to(REPO)} "
           f"({len(names)} listed in SHARDS.txt)")
 
 
@@ -425,6 +552,69 @@ def score() -> None:
                "--log", WORK / "score.log")
 
 
+# EVERY AXIS ON THE HOST ALONE, BEFORE THE NULL COSTS ANYTHING. An axis whose terminals
+# the host graph does not connect returns a definite zero on every construction, and in
+# the scored output that is indistinguishable from a real null. The null is 280 core-hours,
+# so finding it afterwards is expensive; this is one solve per axis, about two minutes.
+#
+# A DEFINITE ZERO IS NOT A REASON TO DROP AN AXIS. An insert can connect terminals the host
+# cannot, and that is the entire hypothesis this arm exists to test. It is reported and
+# kept, so that a zero in the results has already been seen here rather than discovered.
+def gate() -> None:
+    t = pd.read_parquet(WORK / "tests.parquet")
+    t = t[t.network == BASELINE_ID].copy()
+    t["read_against"] = ""
+    if t.empty:
+        raise SystemExit("no baseline rows in tests.parquet -- run --conditions first")
+    tp = _write(t, WORK / "gate_tests.parquet")
+    _ecspr("two-point",
+           "--atom-pairs", bake_pairs.atom_pairs(),
+           "--direction", bake_pairs.direction_ratios(),
+           "--element", ELEMENT,
+           "--gpr", TABLES / T_HOST, TABLES / T_FOSMIDS,
+           "--conditions", WORK / "conditions.parquet",
+           "--tests", tp, "--no-resume",
+           "--out", WORK / "gate_results.parquet",
+           "--log", WORK / "gate.log")
+
+    r = pd.read_parquet(WORK / "gate_results.parquet")
+    w = r.pivot_table(index="test_id", columns="readout", values="value",
+                      aggfunc="first")
+    meta = pd.DataFrame(axes()).set_index("axis_id")
+    w["axis_id"] = [str(i).split("::", 1)[1] for i in w.index]
+    w = w.join(meta, on="axis_id")
+
+    cols = ["axis_id", "element", "axis_set", "module_name", "total",
+            "_abstained", "_missing_source", "_missing_sinks", "_n_nodes", "_n_edges"]
+    show = w[[c for c in cols if c in w.columns]].sort_values(
+        ["element", "axis_set", "total"], ascending=[True, True, False])
+    print(f"\n=== the host alone, {len(w)} axes on bake {bake_identity.identity()[:16]} ===")
+    print(show.to_string(index=False, float_format=lambda x: f"{x:.6g}"))
+
+    dead = w[(w.total.fillna(0) == 0) | (w._abstained.fillna(0) > 0)]
+    print(f"\n{len(dead)} of {len(w)} axes carry no current on the host alone"
+          + (":" if len(dead) else "."))
+    for a in dead.itertuples():
+        print(f"  {a.element} {a.axis_id}  ({a.module_name})")
+
+    legacy = w[w.axis_id == LEGACY_AXIS]
+    if legacy.empty:
+        raise SystemExit(f"the legacy axis {LEGACY_AXIS} is not in the gate")
+    got = float(legacy.total.iloc[0])
+    if bake_identity.identity() != LEGACY_BAKE:
+        print(f"\n[gate] legacy axis = {got:.9g} on this bake; the published "
+              f"{LEGACY_TOTAL:.9g} is r10's, so the two are not comparable and the "
+              f"reproduction check is NOT asserted here. Run the gate on r10 first.")
+    elif abs(got - LEGACY_TOTAL) > 5e-9:
+        raise SystemExit(
+            f"[gate] the legacy axis returns {got:.9g}, not the published "
+            f"{LEGACY_TOTAL:.9g}, on the bake that number was taken from. The rebuilt "
+            f"path has changed the measurement -- fix that before spending the null")
+    else:
+        print(f"\n[gate] legacy axis reproduces the published {LEGACY_TOTAL:.9g} "
+              f"exactly; the rebuilt path is faithful on r10")
+
+
 # The numbers a report quotes, printed from the scored tables rather than remembered.
 #
 # `z_stratum` / `p_stratum` ARE THE PRIMARY READOUT, not `z` / `p_emp`. The pooled columns
@@ -435,9 +625,10 @@ def report() -> None:
     obs = pd.read_parquet(WORK / "results.parquet")
     w = obs.pivot_table(index="test_id", columns="readout", values="value",
                         aggfunc="first")
-    base = w.loc[BASELINE_ID, "total"]
-    print(f"host baseline C(glucose -> 4 hubs) = {base:.9g}")
-    print(f"171 tests, converged {int(w._converged.sum())}, "
+    legacy = f"{BASELINE_ID}::{LEGACY_AXIS}"
+    base = w.loc[legacy if legacy in w.index else BASELINE_ID, "total"]
+    print(f"host baseline, legacy axis C(glucose -> 4 merged hubs) = {base:.9g}")
+    print(f"{len(w)} tests, converged {int(w._converged.sum())}, "
           f"abstained {int(w._abstained.sum())}, "
           f"CHOLMOD {int(w._cholmod_available.sum())}")
 
@@ -540,6 +731,8 @@ def main(argv=None):
     p.add_argument("--conditions", action="store_true",
                    help="build the two tables, then set the ORF-counted strata")
     p.add_argument("--measure", action="store_true")
+    p.add_argument("--gate", action="store_true",
+                   help="every axis on the host alone, before the null costs anything")
     p.add_argument("--draw", action="store_true",
                    help="both null styles, as conditions + tests tables")
     p.add_argument("-n", type=int, default=1000, help="draws per stratum per style")
@@ -553,17 +746,19 @@ def main(argv=None):
     p.add_argument("--publish", action="store_true")
     p.add_argument("--dry-run", action="store_true", dest="dry_run")
     a = p.parse_args(argv)
-    if not (a.stage or a.conditions or a.measure or a.host_probe or a.draw
+    if not (a.stage or a.conditions or a.measure or a.gate or a.host_probe or a.draw
             or a.shards or a.fir_status or a.retrieve or a.score
             or a.publish or a.report):
-        p.error("pick one of --stage / --conditions / --measure / --host-probe / "
-                "--draw / --shards / --fir-status / --retrieve / --score / "
-                "--publish / --report")
+        p.error("pick one of --stage / --conditions / --measure / --gate / "
+                "--host-probe / --draw / --shards / --fir-status / --retrieve / "
+                "--score / --publish / --report")
     if a.stage:
         stage()
     if a.conditions:
         conditions()
         strata()
+    if a.gate:
+        gate()
     if a.measure:
         measure()
     if a.host_probe:

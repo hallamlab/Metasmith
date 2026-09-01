@@ -795,12 +795,26 @@ the model — but never a RESULT. `audit_y_inputs` enforces it over the paths th
 
 ## `curated/` — hand-authored, no producer
 
-### C1 · `ECSPr_axes/biomass_dag_axes_set4.json`
-The 79 biomass source→sink axis **definitions**. Graph-independent: it is set4 itself, so
-it is the same table regardless of which universe the solve runs on. Declared
-`producer: hand-curated`, `determinism: frozen` in the incumbent provenance. 28 KB — git
-text, not a DVC chunk. The pin (`data/fabfos/processed/ECSPr_axes.dvc`) had no content;
-the file has to be recovered from the incumbent tree.
+### C1 · `ECSPr_axes/`
+Three files at `data/fabfos/curated/ECSPr_axes/`, read through
+`research/fabfos/benchmarks/ecspr_axes.py`. Git text rather than a DVC chunk, which is the
+one exception `data/fabfos/.gitignore` carries and says so.
+
+- `biomass_dag_axes_set4.json` — the 79 biomass source→sink axis **definitions**.
+  Graph-independent: it is set4 itself, so it is the same table regardless of which
+  universe the solve runs on. `producer: hand-curated`, `determinism: frozen`, and the
+  loader asserts its sha on every read. Recovered here from the incumbent tree; the old
+  pin (`data/fabfos/processed/ECSPr_axes.dvc`) had no content and is not used.
+- `biomass_dag_axes_set4_lipid_ext.json` — three carbon axes set4 does not reach, entering
+  the phospholipids at DHAP rather than at the acyl chains. **A SEPARATE FILE ON PURPOSE**:
+  consumers this repository does not own assert set4's sha, so an axis added by editing
+  set4 breaks them for a reason that has nothing to do with them.
+- `host_substitutions_epi300.json` — which members of a declared family a given HOST's
+  graph actually carries. set4's endpoints were curated over the nostoc graphs and eleven
+  of them are not nodes in the EPI300 graph at all, which measures a structural zero that
+  reads as a null. Named for the host because that is what it is a fact about. Its own
+  `_about` block carries the selection rule and why the highest-degree candidate is the
+  wrong one.
 
 ### C2 · `benchmark_decisions/`
 `gene_reaction_overrides.tsv`, `host_lineage.tsv`, `target_resolution.tsv` — curated
