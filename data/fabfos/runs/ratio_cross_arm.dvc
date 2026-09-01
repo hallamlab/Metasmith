@@ -1,0 +1,6 @@
+outs:
+- md5: 016906b2c0dc17c7c43f5389b1d771c5.dir
+  size: 7600
+  nfiles: 2
+  hash: md5
+  path: ratio_cross_arm
