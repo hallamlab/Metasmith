@@ -835,6 +835,22 @@ def _solve_by_mcts_python(
                 state.valid = False if rejected else _is_valid(target_appl)
 
                 
+        _slot_cache: dict[Transform, list[tuple[Dependency, Dependency]]] = {}
+        # The (requirement, lineage anchor) pairs of a transform, in scoring
+        # order. Held across candidates: the sort inside is over a transform
+        # that does not change, and the refiner rescores a whole plan per
+        # candidate.
+        def _lineage_slots(tr: Transform) -> list[tuple[Dependency, Dependency]]:
+            slots = _slot_cache.get(tr)
+            if slots is None:
+                slots = [
+                    (p, lin_p)
+                    for p in tr.requires
+                    for lin_p in _by_dependency(p.parents)
+                ]
+                _slot_cache[tr] = slots
+            return slots
+
         def score_node(state: RefinerState):
             validate_node(state)
             used_as_lineage: set[Endpoint] = set()
@@ -849,36 +865,57 @@ def _solve_by_mcts_python(
                     lineage_usage[e] = lineage_usage.get(e, 0)+1
             e_score = entropy(list(lineage_usage.values()))
 
-            _product2producer: dict[Endpoint, Application] = {}
+            # Keyed by `Node.hash` rather than by the node: `Node.__eq__` is
+            # already hash equality, so this decides the same thing, and the
+            # walk below is the refiner's hottest loop by a wide margin -- a
+            # python-level `__hash__` per dict probe there is most of its cost.
+            _product2producer: dict[int, Application] = {}
             for step in _steps:
                 for pgroup in step.produced:
                     for e in pgroup.values():
-                        _product2producer[e] = step
-            _depth_maps: dict[Endpoint, dict[Endpoint, int]] = {}
-            def _depths_from(e: Endpoint) -> dict[Endpoint, int]:
-                depths = _depth_maps.get(e)
-                if depths is not None: return depths
-                depths = {}
-                todo = [(e, 0)]
+                        _product2producer[e.hash] = step
+            # A walk is resumable rather than run to exhaustion. The stack is
+            # LIFO and the first visit to a node fixes its depth, so the value
+            # for the anchor is final the moment the walk reaches it and the
+            # rest of the traversal cannot change it. `_depth_walks` holds the
+            # suspended stack; its absence for a source means that source's
+            # walk ran out, so a miss there is a real "not an ancestor".
+            _depth_maps: dict[int, dict[int, int]] = {}
+            _depth_walks: dict[int, list[tuple[int, int]]] = {}
+            def _depth_between(e: Endpoint, a: Endpoint) -> int:
+                ek, ak = e.hash, a.hash
+                depths = _depth_maps.get(ek)
+                if depths is None:
+                    depths = {}
+                    _depth_maps[ek] = depths
+                    todo = [(ek, 0)]
+                    _depth_walks[ek] = todo
+                else:
+                    d = depths.get(ak)
+                    if d is not None: return d
+                    todo = _depth_walks.get(ek)
+                    if todo is None: return -1
+                p2p = _product2producer
                 while len(todo)>0:
                     n, d = todo.pop()
                     if n in depths: continue
                     depths[n] = d
-                    prod = _product2producer[n]
-                    for pe in prod.used.values():
-                        todo.append((pe, d+1))
-                _depth_maps[e] = depths
-                return depths
+                    nd = d+1
+                    for pe in p2p[n].used.values():
+                        todo.append((pe.hash, nd))
+                    if n == ak: return d
+                del _depth_walks[ek]
+                return -1
+            _n_steps = len(_steps)
             def _max_distance_to(e: Endpoint, a: Endpoint):
-                max_d = _depths_from(e).get(a, -1)
-                return max_d/len(_steps) if max_d>0 else 1.0
+                max_d = _depth_between(e, a)
+                return max_d/_n_steps if max_d>0 else 1.0
             lin_distances: list[float] = []
             for step in _steps:
-                for p in step.transform.requires:
-                    for lin_p in _by_dependency(p.parents):
-                        e = step.used[p]
-                        pe= step.used[lin_p] # type: ignore
-                        lin_distances.append(_max_distance_to(e, pe))
+                for p, lin_p in _lineage_slots(step.transform):
+                    e = step.used[p]
+                    pe= step.used[lin_p] # type: ignore
+                    lin_distances.append(_max_distance_to(e, pe))
             if len(lin_distances)>0:
                 lin_score = -sum(lin_distances)/len(lin_distances)
             else:
