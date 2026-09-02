@@ -1,0 +1,294 @@
+# Antonio Castellano-Hinojosa's manual viromics pipeline, step by step, against
+# what src/metasmith_libraries can plan today.
+#
+# Transcribed from `Viromics_workflow_table.xlsx` (gmail, 2026-06-10), which is
+# the authoritative contract sketch: one row per step with tool, version, key
+# parameters, inputs and outputs. The `01_`..`15_` shell scripts (gmail
+# 2026-05-15, slack 2026-06-16) cover rows 1-15 only and are the source for the
+# exact thresholds. Both are under reference/.
+#
+# status is what the LIBRARY can do, not what the pipeline needs:
+#   available   a transform produces the row's output on the row's tool
+#   substitute  a transform reaches the same contract by a different tool, or
+#               reaches part of the row's output
+#   missing     nothing in the library produces it
+#
+# `produces` names the metasmith type a target can be asked for. A row without
+# one cannot be a target, whatever its status.
+
+steps:
+  # ---------------------------------------------------------------- A. reads
+  - n: 1
+    group: read preprocessing
+    tool: FastQC v0.12.1
+    status: substitute
+    transform: assembly/seqkit_reads.py
+    produces: sequences::read_qc_stats
+    note: >-
+      assembly/_disabled/fastqc.py is the tool-for-tool match and is disabled;
+      seqkit reports the same read statistics without the html.
+  - n: 2
+    group: read preprocessing
+    tool: Trimmomatic v0.39
+    status: substitute
+    transform: assembly/bbduk.py
+    produces: sequences::clean_short_reads
+    note: >-
+      bbduk trims to the same contract (short_reads -> clean_short_reads). The
+      thresholds differ from LEADING:3 TRAILING:3 SLIDINGWINDOW:4:15 MINLEN:50.
+
+  # ------------------------------------------------------------- B. assembly
+  - n: 3
+    group: assembly
+    tool: metaSPAdes v4.2.0
+    status: available
+    transform: assembly/spades.py
+    produces: sequences::spades_assembly
+    note: --only-assembler is not passed; the transform runs the read-correction stage.
+  - n: 4
+    group: assembly
+    tool: MEGAHIT v1.1.3
+    status: available
+    transform: assembly/megahit.py
+    produces: sequences::megahit_assembly
+
+  # ----------------------------------------- C. viral identification, curation
+  - n: 5
+    group: viral identification
+    tool: SeqKit (combine + rename + >=1 kb)
+    status: missing
+    note: >-
+      Concatenates both assemblers across all samples into ONE cross-sample
+      FASTA (SAMPLE|assembler|id). No transform does this, and the shape is the
+      hard part: every step from here to 25 runs on a single pooled object
+      rather than per sample, which is a different sample_type, not a missing
+      tool.
+  - n: 6
+    group: viral identification
+    tool: MMseqs2 easy-cluster (95% id, 80% cov, cov-mode 0)
+    status: missing
+    note: pre-clustering of the pooled contigs; diamond_linclust is amino-acid only.
+  - n: 7
+    group: viral identification
+    tool: geNomad v1.5.1 end-to-end
+    status: substitute
+    transform: metagenomics/taxonomy/genomad.py
+    produces: taxonomy::genomad_virus_summary, taxonomy::genomad_plasmid_summary
+    note: >-
+      Runs the same command but keeps only the two summary tsvs. Steps 8, 10
+      and 12 all read `*_virus_genes.tsv`, and step 8 reads `*_virus.fna`;
+      neither is a product, so the whole filtering chain is unreachable until
+      genomad.py declares them.
+  - n: 8
+    group: viral identification
+    tool: python (pandas + Biopython) gene-level filter
+    status: missing
+    note: >-
+      Keep a contig if viral_genes>0, or viral==0 and host==0, or >=75% unknown
+      genes; and length >=1 kb. viral = hallmark or marker matching .V; host =
+      uscg or marker matching .C.
+  - n: 9
+    group: viral identification
+    tool: CheckV v1.0.1 (db v1.5) end_to_end
+    status: missing
+    note: host trimming; `viruses.fna` is what the vOTU clustering consumes.
+  - n: 10
+    group: viral identification
+    tool: MMseqs2 cluster (95% id, 80% cov of shorter, cov-mode 1)
+    status: missing
+    note: the vOTU definition itself.
+  - n: 11
+    group: viral identification
+    tool: SeqKit fx2tab (vOTU counts by size)
+    status: missing
+  - n: 12
+    group: viral identification
+    tool: python annotation filter (>=100 kb mobile-element artefacts)
+    status: missing
+    note: >-
+      Drops vOTUs >=100 kb whose geNomad gene annotations match transposase,
+      glycosyltransferase, nucleotidyltransferase, carbohydrate kinase,
+      NDP-sugar epimerase, LPS, endonuclease, integrase, plasmid stability /
+      parA-parB, or toxin-antitoxin.
+  - n: 13
+    group: viral identification
+    tool: SeqKit (counts after curation)
+    status: missing
+  - n: 14
+    group: viral identification
+    tool: CheckV v1.0.1 (final QA)
+    status: missing
+    note: quality_summary.tsv is half of the paper's Supplementary Data 2.
+  - n: 15
+    group: viral identification
+    tool: VIBRANT v1.2.1
+    status: missing
+    note: virulent vs temperate call; the other half of Supplementary Data 2.
+
+  # ------------------------------- D. read mapping, abundance, microdiversity
+  - n: 16
+    group: abundance
+    tool: CoverM v0.7.0 contig (minimap2-sr, trimmed_mean)
+    status: substitute
+    transform: assembly/assembly_stats.py
+    produces: sequences::assembly_per_contig_coverage, sequences::assembly_stats
+    note: >-
+      Per-contig coverage of a per-sample assembly by its own reads. Not the
+      same object: CoverM maps every sample against the shared vOTU reference,
+      which is what makes the matrix cross-sample.
+  - n: 17
+    group: abundance
+    tool: minimap2 + SAMtools (microdiversity bams)
+    status: substitute
+    transform: assembly/assembly_stats.py
+    produces: alignment::bam
+    note: same caveat as 16 -- the reference is the sample's own assembly.
+  - n: 18
+    group: abundance
+    tool: MetaPop v0.0.48 (pi, Watterson theta, FST)
+    status: missing
+    note: >-
+      metagenomics/instrain.py is the nearest microdiversity transform, but it
+      profiles against binning::derep_mag_ref, not a vOTU reference.
+
+  # -------------------------------------------------------------- E. taxonomy
+  - n: 19
+    group: taxonomy
+    tool: geNomad v1.5.1 (ICTV markers, virus_score >=0.7)
+    status: substitute
+    transform: metagenomics/taxonomy/genomad.py
+    produces: taxonomy::genomad_virus_summary
+    note: the summary carries the taxonomy column; `*_taxonomy.tsv` is not a product.
+  - n: 20
+    group: taxonomy
+    tool: vConTACT3 v3.1.4
+    status: missing
+
+  # ------------------------------------------- F. host prediction, virus-host
+  - n: 21
+    group: host prediction
+    tool: iPHoP v1.8.0
+    status: missing
+  - n: 22
+    group: host prediction
+    tool: CCTyper (CRISPRCasTyper)
+    status: missing
+  - n: 23
+    group: host prediction
+    tool: BLASTn v2.13.0 (spacer -> vOTU matching)
+    status: missing
+    note: amplicon/blast_map_asvs.py is the only blastn transform and is ASV-shaped.
+
+  # ------------------------------------------------------------------ G. AMGs
+  - n: 24
+    group: AMGs
+    tool: DRAM-v v1.5.0 annotate + distill
+    status: available
+    transform: functionalAnnotation/dramv.py
+    produces: annotation::dramv_annotations, annotation::dramv_distill
+    note: >-
+      Drives DRAM-v off VirSorter2, not geNomad -- it requires
+      virsorter2_viral_sequences and virsorter2_affi_contigs. That is a
+      different viral call than the pipeline's, and it is why VirSorter2
+      appears in the plan at all.
+  - n: 25
+    group: AMGs
+    tool: KEGG Mapper
+    status: missing
+    note: >-
+      functionalAnnotation/kofamscan.py assigns the KOs; nothing maps them onto
+      pathway categories.
+
+  # --------------------------------------------------- H. MAG recovery (virome)
+  # Covered by the metagenomics_from_paired_reads template, not by this one.
+  - n: 26
+    group: MAG recovery
+    tool: SeqKit (contigs >=1 kb)
+    status: missing
+  - n: 27
+    group: MAG recovery
+    tool: BWA + SAMtools
+    status: substitute
+    transform: assembly/assembly_stats.py
+    produces: alignment::bam
+    note: minimap2 rather than bwa.
+  - n: 28
+    group: MAG recovery
+    tool: jgi_summarize_bam_contig_depths
+    status: substitute
+    note: each binner computes its own depth from alignment::bam.
+  - n: 29
+    group: MAG recovery
+    tool: MetaBAT2 v2.18
+    status: available
+    transform: metagenomics/binning/metabat2.py
+    produces: sequences::metabat2_bin_fasta
+  - n: 30
+    group: MAG recovery
+    tool: MaxBin2 v2.2.7
+    status: substitute
+    transform: metagenomics/binning/semibin2.py
+    produces: sequences::semibin2_bin_fasta
+    note: a second binner, not this binner.
+  - n: 31
+    group: MAG recovery
+    tool: CONCOCT v1.1.0
+    status: substitute
+    transform: metagenomics/binning/comebin.py
+    produces: sequences::comebin_bin_fasta
+    note: a third binner, not this binner.
+  - n: 32
+    group: MAG recovery
+    tool: BinSanity v0.5.4
+    status: missing
+  - n: 33
+    group: MAG recovery
+    tool: ABAWACA + ESOM v1.0.0
+    status: missing
+  - n: 34
+    group: MAG recovery
+    tool: metaWRAP Bin_refinement v1.3.2
+    status: substitute
+    transform: metagenomics/binning/aggregator.py
+    produces: binning_local::quality_bin_fasta
+    note: a checkm-gated union of the three binners rather than metaWRAP's refinement.
+  - n: 35
+    group: MAG recovery
+    tool: shell/python MAG collection
+    status: substitute
+    transform: metagenomics/binning/aggregator.py
+  - n: 36
+    group: MAG recovery
+    tool: dRep v3.4.0
+    status: substitute
+    transform: metagenomics/binning/skani_dedup.py
+    produces: binning_local::cluster_table
+    note: skANI rather than dRep.
+  - n: 37
+    group: MAG recovery
+    tool: CheckM2 v1.1.0
+    status: substitute
+    transform: metagenomics/binning/checkm.py
+    produces: taxonomy::checkm_stats
+    note: CheckM rather than CheckM2; the QS = completeness - 5x contamination cut is not applied.
+  - n: 38
+    group: MAG recovery
+    tool: GTDB-Tk v2 (r214)
+    status: available
+    transform: metagenomics/taxonomy/gtdbtk.py
+    produces: taxonomy::gtdbtk
+  - n: 39
+    group: MAG recovery
+    tool: CoverM v0.7.0 genome
+    status: missing
+  - n: 40
+    group: MAG recovery
+    tool: DRAM v1.5.0
+    status: substitute
+    transform: functionalAnnotation/dram_annotate_genes.py
+    produces: annotation::dram_annotations_chunk
+    note: annotates ORF chunks; no distill step and no per-MAG rollup.
+
+# Reachable but absent from the table: crAssphage coverage as a faecal-source
+# marker (metagenomics/crassphage.py), which the shipped
+# viromics_survey_from_assembly template already targets.
