@@ -5,14 +5,23 @@ import json
 import re
 from pathlib import Path
 from collections import deque
+from operator import attrgetter
 
 from ..hashing import KeyGenerator
 from .dag_renderer import DagRenderer, Label, LabelMode, NodeKind
 from .solver_rng import DecisionStream, argmax_index, argmin_index
 from .solver_math import entropy
+from .solver_policy import ActivePolicy, Arm
 
-_SELECTION_WEIGHTS = (75, 20, 5)
-_SELECTION_TOP_K = 1
+# Attribute reads for the non-adaptive selection path. `attrgetter` is a C-level
+# call, which is the point: this runs once per frontier entry per selection and
+# a Python lambda here is measurable on the default path.
+_mcts_scores = attrgetter("score")
+_refiner_scores = attrgetter("scores")
+
+
+def active_policy_name() -> str:
+    return ActivePolicy().name
 
 class Node:
     PROPERTY_FIELD = "properties"
@@ -259,6 +268,11 @@ class RefinerState:
     _sig: str|None = None
     _hash: int = 0
     _iteration: int = -1
+    #: Transform of the step this state swapped in, or None for the state the
+    #: refiner started from. Only the selection policy reads it: it is the key
+    #: statistics are shared under, and nothing about the search or the score
+    #: depends on it.
+    _swapped_in: Any = None
     def Signature(self):
         if self._sig is None:
             self._sig = "".join(sorted(s.Signature() for s in self.steps))
@@ -851,13 +865,16 @@ def _solve_by_mcts_python(
             vscore = score*state.valid
             state.scores = [score, vscore]
         
+        policy = ActivePolicy().fork()
+        _adaptive = policy.wants_observations
         def select_node(frontier: list[RefinerState]) -> int:
-            p_i = rng.weighted_index(_SELECTION_WEIGHTS)
-            if p_i<len(_SELECTION_WEIGHTS)-1:
-                return rng.pick_top_k([s.scores[p_i] for s in frontier], _SELECTION_TOP_K)
-            else:
-                return rng.bounded_int(len(frontier))
-        
+            if _adaptive:
+                return policy.select(rng, [
+                    Arm(s.scores, s._swapped_in, (s.scores[0], 1.0 if s.valid else 0.0))
+                    for s in frontier
+                ])
+            return policy.select_from(rng, frontier, _refiner_scores)
+
         def remove_node(frontier: list[RefinerState], index: int):
             frontier[index], frontier[-1] = frontier[-1], frontier[index]
             return frontier.pop()
@@ -892,6 +909,12 @@ def _solve_by_mcts_python(
         valids: list[RefinerState] = [initial_state]
         history: list[RefinerState] = []
         i = 0
+        # The incumbent a refiner iteration is trying to beat. `scores[1]` is
+        # unusable for this: it is `score*valid` over a score that is never
+        # positive, so an invalid state's 0.0 outranks every valid one. The
+        # final pick is safe because it maximises over `valids` alone; a reward
+        # computed over the frontier is not, and has to read validity itself.
+        incumbent = initial_state.scores[0] if initial_state.valid else float("-inf")
         while len(frontier)>0 and i<max_iters:
             i += 1
             statei = select_node(frontier)
@@ -900,12 +923,25 @@ def _solve_by_mcts_python(
             history.append(state)
             if state.valid:
                 valids.append(state)
+            improved = 0.0
             for sig, base, appl in expand_node(state):
                 if sig in seen: continue
                 seen.add(sig)
                 child = RefinerState(steps=base+[appl], _sig=sig)
                 score_node(child)
+                child._swapped_in = appl.transform
+                if child.valid and child.scores[0] > incumbent:
+                    incumbent = child.scores[0]
+                    improved = 1.0
                 frontier.append(child)
+            if _adaptive:
+                # Through `reward_for` like the mcts site, not as a raw 0/1:
+                # otherwise a policy configured not to estimate a value still
+                # accumulates one here, and the two callers disagree about what
+                # the same configuration means.
+                policy.observe(
+                    state._swapped_in, policy.reward_for(improved > 0, 0.0, 0.0)
+                )
         si: int = argmax_index([s.scores[1] for s in valids])
         refined = valids[si]
         return RefinerResult(
@@ -939,12 +975,48 @@ def _solve_by_mcts_python(
             appl.score = [dist, opportunity]
             return appl
 
+        mcts_policy = ActivePolicy().fork()
+        _mcts_adaptive = mcts_policy.wants_observations
         def select_node(frontier: list[Application]):
-            p_i = rng.weighted_index(_SELECTION_WEIGHTS)
-            if p_i<len(_SELECTION_WEIGHTS)-1:
-                return rng.pick_top_k([s.score[p_i] for s in frontier], _SELECTION_TOP_K)
-            else:
-                return rng.bounded_int(len(frontier))
+            if _mcts_adaptive:
+                return mcts_policy.select(
+                    rng, [Arm(a.score, a.transform) for a in frontier]
+                )
+            return mcts_policy.select_from(rng, frontier, _mcts_scores)
+
+        _target_requirements = list(target.requires)
+        def progress_of(state: SolverState) -> float:
+            """How close this state is to being able to apply the target.
+
+            Counting the target's satisfied requirements is the load-bearing
+            term, and the distance table is a fraction of one requirement
+            underneath it as a tie-break. The count is what makes this usable as
+            a reward at all: `candidate_transforms` only ever grows, so anything
+            read off it alone rises monotonically along every path, and crediting
+            an action by that would rank transforms by how late they are usually
+            applied rather than by whether they got anywhere.
+
+            A transform becoming a *candidate* is not the same as its inputs
+            being satisfiable -- `product2consumer` admits a transform as soon as
+            one of its inputs exists -- which is why the requirement count is
+            taken against `have` rather than against the candidate set.
+            """
+            met = 0
+            for d in _target_requirements:
+                for e in state.have:
+                    if e.IsA(d):
+                        met += 1
+                        break
+            closeness = 0.0
+            if max_distance_score > 0:
+                best = None
+                for tr in state.candidate_transforms:
+                    dd = distance_scores.get(tr)
+                    if dd is None: continue
+                    if best is None or dd < best: best = dd
+                if best is not None:
+                    closeness = max(0.0, 1.0-best/max_distance_score)
+            return (met+closeness)/(len(_target_requirements)+1)
 
         def remove_node(frontier: list[Application], index: int):
             frontier[index], frontier[-1] = frontier[-1], frontier[index]
@@ -1137,7 +1209,12 @@ def _solve_by_mcts_python(
             valid_timeline_ks = get_all_children(node.initial_timeline)
             source_states = [s for s in current_timelines if s.k in valid_timeline_ks]
             carry_over = [s for s in current_timelines if s.k not in valid_timeline_ks]
-            next_states = [s for g in [expand_node(s, node) for s in source_states] for s in g]
+            # Kept paired with the source it came from, rather than flattened
+            # in one comprehension, so the policy can be told what this
+            # application *changed* and not merely where it landed. The
+            # flattened order is unchanged.
+            expansions = [(s, expand_node(s, node)) for s in source_states]
+            next_states = [ns for _, group in expansions for ns in group]
             history.append(carry_over+next_states)
             remain: list[SolverState] = []
             for s in next_states:
@@ -1152,6 +1229,21 @@ def _solve_by_mcts_python(
                     solved_state = merge_states(solved_state, s) if solved_state is not None else s
                 else:
                     remain.append(s)
+
+            if mcts_policy.wants_observations:
+                solved_here = len(remain) < len(next_states)
+                best_before, best_after = 0.0, 0.0
+                if not solved_here and mcts_policy.wants_rewards:
+                    for src, group in expansions:
+                        before = progress_of(src)
+                        for ns in group:
+                            after = progress_of(ns)
+                            if after-before >= best_after-best_before:
+                                best_before, best_after = before, after
+                mcts_policy.observe(
+                    node.transform,
+                    mcts_policy.reward_for(solved_here, best_before, best_after),
+                )
 
             if len(remain)+len(carry_over) == 0:
                 if solved_state is None: break
