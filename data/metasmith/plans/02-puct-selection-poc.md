@@ -14,11 +14,21 @@ can change what it does next.
 Can a PUCT rule replace that split without losing plan soundness, and find plans in fewer
 expansions?
 
-**Short answer.** Yes — sound on every case tried, 640/640 held-out instances solved against the
-baseline's 627, with smaller plans and about a third fewer expansions. But an ablation shows the
-gain comes from PUCT's *exploration* term applied to the heuristics the solver already had, **not**
-from the learned value estimate, which is nearly inert at this iteration budget. That distinction
-is in the mechanism section below and it should govern how much of this is worth porting.
+**Short answer, and it is smaller than a generated corpus would suggest.**
+
+- Sound everywhere: no plan from either policy was refused, on any case in this work.
+- **On the eleven shipped templates — the actual job — PUCT changes nothing on ten of them.** On
+  the eleventh it is clearly better: a 9-step plan every time where the baseline returns 9, 11 or
+  12 depending on the seed.
+- **On wall clock the two policies are indistinguishable on this host.** Two of my own earlier
+  measurements pointed in opposite directions and both were box-load artifacts.
+- On generated hard instances PUCT solves 5 problems in 320 that the baseline never solves. That is
+  synthetic and should be read as suggestive.
+- An ablation shows the gain comes from PUCT's *exploration* term over the heuristics the solver
+  already had, **not** from the learned value, which is nearly inert at this budget.
+- **The largest effect found in this session is not PUCT at all**: the default `max_refine=256`
+  costs 77% of template solve time and changes the plan on 1 template/seed pair in 22, which a
+  budget of 8 fully serves.
 
 ## What was built
 
@@ -73,90 +83,98 @@ application, and that every binding descends from its declared lineage constrain
   fingerprints on all eleven shipped templates, and template wall clock against the pre-change
   numbers (25.514s → 25.654s, +0.5%, noise on a shared box).
 
-## The benchmark had to be built first
+## What happens on the actual workflow solve tasks
 
-The shipped corpora do not exercise the selection policy. `CORPUS` and `STRESS_CORPUS` solve in
-7–13 mcts iterations against a budget of 256, and across 1,120 generated cases spanning the eight
-differential profiles the median is 5–9 iterations. Only the `sink` profile reaches the budget —
-and the cases that reach it are exactly the cases the baseline fails to solve.
+The eleven shipped templates are the real job: real transform libraries, real lineage constraints,
+real product groups, real multi-sample timelines. Everything else in this report is generated
+instances, which exist in volume but reproduce none of that. **The templates are the grounding and
+they do not support the headline a generated corpus would give.**
 
-So the honest axis here is **solve rate on hard instances**, not wall clock on easy ones. Tuning
-used problem seeds 0–19; the results below are from seeds 40–79, which were never run during
-development.
+11 templates x 4 seeds x 3 arms = 132 solves, python solver throughout.
 
-## Results
+**Soundness: 132/132 accepted by `check_plan`.**
 
-*Held-out: eight profiles, problem seeds 40–79, solve seeds 42 and 7. Python solver both sides,
-same problem objects, same seeds.*
+**Plans: identical on 10 of 11 templates**, under every arm and every seed. PUCT changes nothing
+on them.
 
-**Soundness: no plan from either policy was refused by `check_plan`.**
+The exception is the one place PUCT clearly earns its keep:
 
-| | baseline | PUCT |
+| `isolate_assembly_from_long_reads` | plan steps | distinct plans over 4 seeds |
 |---|---|---|
-| rows solved | 627 / 640 | **640 / 640** |
-| rows only this policy solved | 0 | 13 |
+| baseline | 9, 11 or 12 depending on seed | **3** |
+| PUCT | **9** | **1** |
+| PUCT, counts only | **9** | **1** |
 
-**Read that per problem, not per row, because the two sides do not have the same corpus size.**
-PUCT at `top_k=1` draws no randomness, so its 640 rows are 320 distinct runs — each problem solved
-once and counted twice — while the baseline genuinely gets two attempts per problem. The thirteen
-gained rows are **8 distinct problems**, and of those the baseline solves 3 under one of its two
-seeds. So the defensible statement is:
+The baseline's answer depends on the seed, and two of its four answers are 22-33% longer than the
+one PUCT returns every time. PUCT's mcts phase finds the 9-step plan directly, without needing the
+refiner to get there. That is a real quality-and-stability win on a real workflow, and it is the
+strongest single result in this work.
+
+Aggregated over the eleven templates, meaned across seeds, on the deterministic counters:
+
+| | baseline | PUCT | PUCT, counts only |
+|---|---|---|---|
+| mcts iterations | 232.2 | 227.0 | **214.0** |
+| refiner iterations | 367.8 | 360.0 | 360.0 |
+| plan steps | 135.2 | **134.0** | **134.0** |
+
+Marginal, and in PUCT's favour. **On wall clock the two are indistinguishable.** Measured
+back-to-back in one process at `max_refine=256`: baseline 22.72s, PUCT 21.72s, counts-only 21.62s.
+An earlier single-seed run of mine reported the templates at 29.2s -> 19.9s and called it a 32%
+PUCT win; a later four-seed run put PUCT 48% *behind*. Both were box-load artifacts. **The
+machine's variability on this host exceeds the difference between the policies, so no wall-clock
+claim about PUCT versus the baseline is supportable here** — only the iteration and step counts,
+which are deterministic, are.
+
+## The real lever on this workload is the refiner budget, not the policy
+
+Refiner telemetry reports `found_on=[1]` on every template, every arm, every seed: the winner is
+always the state the refiner was handed, and it then spends its remaining budget finding nothing.
+
+Priced across all eleven templates at two seeds, varying only `max_refine` (88 solves, all sound):
+
+| `max_refine` | total | plans changed |
+|---|---|---|
+| 256 (default) | 41.53s | — |
+| 8 | 14.19s | none |
+| 1 | 10.20s | 1 of 22 |
+| 0 | 9.48s | 1 of 22 |
+
+**The default budget costs 77% of total solve time and changes the plan on one template/seed pair
+in twenty-two — and that one case is fully served by a budget of 8.** On
+`isolate_assembly_from_long_reads/s7` the refiner turns a 13-step plan into an 11-step one, and it
+does so within 8 iterations; the remaining 248 buy nothing anywhere.
+
+Back-to-back over all eleven templates at seed 42: **22.72s at 256 against 6.61s at 8, with no plan
+changed** — a 3.4x saving, far above the noise that swamps the policy comparison, and entirely
+independent of this work. If anything here is worth acting on first, it is this.
+
+The two interact the way you would expect: at `max_refine=8` the arms are 6.61s / 6.34s / 6.24s,
+still a wash.
+
+## On generated instances, where the search is actually under load
+
+The templates cannot show a capability difference because both policies solve all of them. The
+generated corpus can, and this is where PUCT's solve-rate result comes from — but it is synthetic,
+and the section above is the reason to read it as suggestive rather than as the finding.
+
+Neither shipped corpus exercises selection: `CORPUS` and `STRESS_CORPUS` solve in 7–13 mcts
+iterations against a budget of 256, and across 1,120 generated cases the median is 5–9. Only the
+`sink` profile reaches the budget, and the cases that reach it are the ones the baseline fails.
+Tuning used problem seeds 0–19; the numbers below are seeds 40–79, never run during development.
+
+*640 cases, eight profiles, solve seeds 42 and 7.* **No plan from either policy was refused by
+`check_plan`.** Read solve rate per problem, not per row: PUCT at `top_k=1` draws no randomness, so
+its 640 rows are 320 distinct runs while the baseline genuinely gets two attempts each. The 13 rows
+PUCT gains are 8 distinct problems, 3 of which the baseline solves under one of its two seeds. So:
 
 > **PUCT solves 5 problems out of 320 that the baseline never solves under either seed, and loses
-> none.**
+> none** — `cyclic-61`, `sink-48`, `sink-68`, `sink-77`, `sink-78`.
 
-The five are `cyclic-61`, `sink-48`, `sink-68`, `sink-77`, `sink-78`. The other three
-(`cyclic-53`, `sink-56`, `sink-64`) are ones the baseline gets under one seed and misses under the
-other, which is the seed lottery PUCT replaces with a deterministic answer rather than a capability
-it lacked.
-
-That is a real capability gain and a much smaller one than "640/640 versus 627/640" suggests. A
-95% binomial interval on 320/320 is [0.989, 1.0], so a PUCT failure rate around 1% is entirely
-consistent with this data — the corpus cannot show better than that.
-
-Ten of the thirteen gained rows are in the `sink` profile, the one place the search is under load;
-three are in `cyclic`. No row was lost.
-
-On the **627 cases both solved**, which is the only comparison over a common set:
-
-| | baseline | PUCT | change |
-|---|---|---|---|
-| mcts iterations | 7,064 | 4,606 | −34.8% |
-| refiner iterations | 2,695 | 1,128 | −58.1% |
-| plan steps | 3,803 | 3,655 | **−3.9%** |
-| wall clock | 34.5s | 2.4s | −93.2% |
-
-PUCT used fewer iterations on 413 of 627, more on 20, the same on 194. Its plan was **smaller on 23
-cases, larger on 3, and identical in size on 601** — and byte-identical by fingerprint on 490 of
-627. So it is mostly finding *the same plan with less work*, not a different one.
-
-**The wall-clock ratio is largely an artifact of the harness and should not be quoted.** Over all
-640 cases the raw figures are 129.4s → 2.8s, a 46× ratio — but 73% of the baseline's total is spent
-on rows it never solves, and **90.0s of that is six 15-second timeout caps, i.e. the harness
-constant rather than either algorithm**. Raise the cap and the ratio grows without bound; it is
-measuring my `--timeout` flag. The paired figure on the common set (34.5s → 2.4s) is the honest one
-and is itself inflated by the refiner being reached less often. The iteration counts are the
-durable measurement here; the seconds are not.
-
-### The eleven shipped templates
-
-These are the only cases in the panel that are real workflows over real transform libraries, and
-they are what a claim about "the solver" has to survive.
-
-**PUCT is sound on 11/11 and returns the identical plan on 10/11.** Total solve time 29.2s → 19.9s
-(−32%); mcts iterations 236 → 227.
-
-The one template whose plan changed is `isolate_assembly_from_long_reads` (20 → 11 mcts
-iterations). Both plans pass `check_plan`. **Soundness is not the same as appropriateness** — for a
-real workflow, two sound plans may select different tools, and nothing in this harness adjudicates
-which is the better science. That single case would need a human to look at it before anyone
-adopted this.
-
-`metagenomics_from_paired_reads`, the one expensive template at 24.1s → 17.3s, is worth reading
-carefully: its refiner runs the full 256 iterations under *both* policies and it returns the same
-plan, so the 6.9s saved is entirely per-iteration cost — PUCT is walking cheaper intermediate
-states, not doing less refinement. That is a smaller and less interesting win than the generated
-corpus suggests, and it is the realistic one.
+On the 627 rows both solved: mcts iterations −34.8%, refiner iterations −58.1%, plan steps −3.9%,
+identical plan on 490 of 627. The raw wall clock over all 640 rows is 129.4s → 2.8s and should not
+be quoted — 73% of the baseline's total goes on rows it never solves, of which 90.0s is six
+15-second timeout caps, which is the harness constant rather than either algorithm.
 
 ### The reward shape is what the result rests on
 
