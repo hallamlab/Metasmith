@@ -11,6 +11,7 @@ from ..hashing import KeyGenerator
 from .dag_renderer import DagRenderer, Label, LabelMode, NodeKind
 from .solver_rng import DecisionStream, argmax_index, argmin_index
 from .solver_math import entropy
+from .solver_bound import min_depth_between, objective_ceiling
 from .solver_policy import ActivePolicy, Arm
 
 # Attribute reads for the non-adaptive selection path. `attrgetter` is a C-level
@@ -18,6 +19,24 @@ from .solver_policy import ActivePolicy, Arm
 # a Python lambda here is measurable on the default path.
 _mcts_scores = attrgetter("score")
 _refiner_scores = attrgetter("scores")
+
+#: POC. Off by default: the cutoff is only sound while the ceiling in
+#: `solver_bound` stays above the true optimum, and a ceiling that slips below it
+#: changes plans and every fingerprint with them.
+REFINER_ORACLE: bool = False
+
+class UseRefinerOracle:
+    """Enable the refiner's branch and bound cutoff for the duration of a block."""
+    def __init__(self, enabled: bool=True): self._want = enabled; self._prev = False
+    def __enter__(self):
+        global REFINER_ORACLE
+        self._prev, REFINER_ORACLE = REFINER_ORACLE, self._want
+        return self
+    def __exit__(self, *_):
+        global REFINER_ORACLE
+        REFINER_ORACLE = self._prev
+        return False
+
 
 
 def active_policy_name() -> str:
@@ -738,6 +757,9 @@ def _solve_by_mcts_python(
         _history: list[RefinerState]
         _iterations: int
         _found_on: int
+        #: Set when the cutoff proved no reachable plan can beat the incumbent.
+        _certified: bool = False
+        _ceiling: float|None = None
     def refine_mcts(initial_solution: list[Application], max_iters: int):
         def validate_node(state: RefinerState):
             produced_from: dict[Endpoint, list[Endpoint]] = {}
@@ -899,11 +921,43 @@ def _solve_by_mcts_python(
                     appl._iteration = step._iteration
                     yield "".join(sorted(base_sigs+[appl.Signature()])), base, appl
 
+        def _ceiling_for(steps: list[Application]) -> float:
+            production: dict[Dependency, list[Endpoint]] = {}
+            producer_inputs: dict[Endpoint, list[Endpoint]] = {}
+            for step in steps:
+                _from = list(step.used.values())
+                for pgroup in step.produced:
+                    for p, e in pgroup.items():
+                        production[p] = production.get(p, [])+[e]
+                        producer_inputs[e] = _from
+            def _candidates(dep: Dependency) -> set:
+                out: set = set()
+                for product in demand2product.get(dep, ()):
+                    out |= set(production.get(product, ()))
+                return out
+            anchor_candidates: list[set] = []
+            min_depths: list[int] = []
+            n_slots = 0
+            for step in steps:
+                for p in step.transform.requires:
+                    n_slots += 1
+                    for lin_p in _by_dependency(p.parents):
+                        anchor_candidates.append(_candidates(lin_p)) # type: ignore
+                        min_depths.append(min_depth_between(
+                            producer_inputs, _candidates(p), _candidates(lin_p), # type: ignore
+                        ))
+            return objective_ceiling(
+                n_steps=len(steps), n_usages=max(1, n_slots),
+                anchor_candidates=anchor_candidates, lineage_min_depths=min_depths,
+            )
+
         initial_state = RefinerState(
             steps=initial_solution,
             valid=True,
         )
         score_node(initial_state)
+        _ceiling = _ceiling_for(initial_solution) if REFINER_ORACLE else None
+        _certified = False
         frontier: list[RefinerState] = [initial_state]
         seen: set[str] = {initial_state.Signature()}
         valids: list[RefinerState] = [initial_state]
@@ -916,6 +970,9 @@ def _solve_by_mcts_python(
         # computed over the frontier is not, and has to read validity itself.
         incumbent = initial_state.scores[0] if initial_state.valid else float("-inf")
         while len(frontier)>0 and i<max_iters:
+            if _ceiling is not None and incumbent >= _ceiling - 1e-9:
+                _certified = True
+                break
             i += 1
             statei = select_node(frontier)
             state = remove_node(frontier, statei)
@@ -949,6 +1006,8 @@ def _solve_by_mcts_python(
             _history=history,
             _iterations=i,
             _found_on=refined._iteration,
+            _certified=_certified,
+            _ceiling=_ceiling,
         )
 
     @dataclass
