@@ -309,6 +309,31 @@ would not catch that.
   policy tests now 17 and green. This is completing the recommendation, not widening the task: the
   point of the POC is to say what is worth porting, and the thing worth porting should be the thing
   that is actually there.
+- **22:10** **User steer: blocksworld is not useful, ground on the actual workflow solve tasks.**
+  Correct. I had gone looking for an external reference and found `research/metasmith/
+  solver_benchmarking/` — 120 PlanBench Blocksworld instances against pyperplan. It ran clean (all
+  three arms 100% coverage, exactly optimal+2, no plan lengthened) but it is pure-state synthetic
+  planning: no lineage, no product groups, no timelines, and the same easy regime as `CORPUS`. It
+  answers a question nobody asked. Section removed from the report.
+- **22:25** **Grounding on the templates overturns my own headline, and the earlier number was
+  wrong.** 11 templates × 4 seeds × 3 arms = 132 solves, all sound.
+  - `metagenomics_from_paired_reads`, the dominant real template: baseline **11.7s** on all four
+    seeds, PUCT **17.3s** on all four — PUCT is **~48% slower**, deterministically, for a
+    byte-identical plan. My earlier `templates_ab` run reported baseline 24.1s and called it a 32%
+    PUCT win; four independent seeds say the baseline is 11.7s and that measurement was taken on a
+    loaded box. **The direction of the template claim was wrong and is corrected.**
+  - Over the whole real workload PUCT is **~35% slower** (15.6s → 21.0s), all of it metagenomics.
+  - Where PUCT is genuinely better: `isolate_assembly_from_long_reads`. The baseline gives **three
+    distinct plans across four seeds** (9, 11 and 12 steps); PUCT gives the 9-step plan every time.
+    Same for counts-only. That is the seed lottery replaced by a deterministic best answer, on a
+    real workflow.
+  - Other 9 templates: identical plans, near-identical cost.
+- **22:35** **The actual lever on the real workload is not the selection policy.** Refiner
+  telemetry reports `found_on=[1]` on every template, every arm, every seed — the winner is always
+  the state the refiner was handed, and it then burns its remaining budget finding nothing. Priced
+  directly on metagenomics at one sitting: `max_refine=256` 22.26s, `max_refine=1` 1.33s,
+  `max_refine=0` 0.63s, **all three the same fingerprint**. That is ~35x for a byte-identical plan.
+  Running the full budget sweep across all 11 templates to see whether it holds everywhere.
 - **21:05** **Adversarial review returned nine findings; triage below.** It is a good review and it
   landed several real hits.
   - **F5 VERIFIED, fixed — the most serious.** The default path was decision-identical but **19%
