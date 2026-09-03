@@ -41,10 +41,45 @@ pub const WIRE_VERSION: u32 = 2;
 /// What this binary can actually be asked to do. The Python side falls back to
 /// its own implementation for anything not advertised here, which is how the
 /// port ships one capability at a time instead of all at once.
-pub const CAPABILITIES: &[&str] = &["rng", "solve"];
+// Adding a capability is backwards compatible and adding a reply field is not,
+// which is why the witness arrives as a capability and WIRE_VERSION stays at 2.
+// The Python side negotiates per capability, so an older staged binary that does
+// not advertise `check` falls back for that one thing rather than wholesale.
+pub const CAPABILITIES: &[&str] = &["rng", "solve", "check"];
 
 pub const ENGINE_NAME: &str = "msm_solver";
 pub const ENGINE_VERSION: &str = env!("CARGO_PKG_VERSION");
+
+/// One violated clause of the plan specification, located by integers.
+///
+/// `u32::MAX` in a position field means "does not apply", which is how a
+/// clause about the whole plan (`boundary`, `nonempty`) reports itself. The
+/// witness crate carries no strings, so `clause` is named here rather than
+/// there.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EncodedViolation {
+    /// Owned rather than `&'static str`: the witness names its clauses with
+    /// static strings, but this struct is also *read back* by the check
+    /// harness, and a borrowed field cannot outlive a deserializer.
+    pub clause: String,
+    pub step: u32,
+    pub slot: u32,
+    pub endpoint: u32,
+}
+
+/// The verdict on a `(request, reply)` pair.
+///
+/// `ok` and `complete` are different questions and both are reported.
+/// An incomplete plan is a search that gave up, which is not the same as a
+/// plan that is wrong -- so a caller gating on this checks the implication
+/// `complete -> ok` rather than `ok` alone.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CheckReply {
+    pub wire_version: u32,
+    pub ok: bool,
+    pub complete: bool,
+    pub violations: Vec<EncodedViolation>,
+}
 
 /// A float on the wire: a number, or a name for the three values JSON has none.
 #[derive(Debug, Clone, Serialize, Deserialize)]

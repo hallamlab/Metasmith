@@ -1,0 +1,15 @@
+[package]
+name = "solver_witness"
+version = "0.1.0"
+# Deliberately behind msm_solver's edition 2024. Charon pins its own rustc
+# nightly, and the older edition is the one most likely to survive that pin.
+edition = "2021"
+
+# ZERO dependencies, and this is a constraint rather than a preference. It is
+# what gives Charon a chance of lowering the whole crate, and it is what makes
+# the build immune to the crates.io routing that has broken container builds
+# here before. Nothing may be added without checking both.
+[dependencies]
+
+[lib]
+path = "src/lib.rs"

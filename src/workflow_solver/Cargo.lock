@@ -130,6 +130,7 @@ dependencies = [
  "rand_chacha",
  "serde",
  "serde_json",
+ "solver_witness",
 ]
 
 [[package]]
@@ -223,6 +224,10 @@ dependencies = [
  "serde_core",
  "zmij",
 ]
+
+[[package]]
+name = "solver_witness"
+version = "0.1.0"
 
 [[package]]
 name = "strsim"
