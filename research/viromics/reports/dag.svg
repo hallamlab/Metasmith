@@ -1,0 +1,146 @@
+<svg viewBox="0 0 880 712" role="img" aria-label="Topology of the planned viromics pipeline"><defs><marker id="ah" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path class="ahp" d="M 0,0.8 L 7.2,4 L 0,7.2 z"/></marker></defs><text class="band" x="14" y="24">PER SAMPLE — the metagenomics template the library already ships</text>
+<g class="nd g"><rect x="38.5" y="36" width="103.0" height="34" rx="17"/>
+<text class="l1" x="90.0" y="57.0">paired reads</text>
+</g>
+<g class="nd t"><rect x="188.0" y="36" width="96.0" height="34" rx="3"/>
+<text class="l1" x="236.0" y="57.0">bbduk</text>
+</g>
+<g class="nd t"><rect x="316.0" y="36" width="96.0" height="34" rx="3"/>
+<text class="l1" x="364.0" y="57.0">megahit</text>
+</g>
+<g class="nd d"><rect x="454.0" y="36" width="96.0" height="34" rx="17"/>
+<text class="l1" x="502.0" y="57.0">assembly</text>
+</g>
+<g class="nd t"><rect x="606.0" y="36" width="116.0" height="34" rx="3"/>
+<text class="l1" x="664.0" y="57.0">assembly_stats</text>
+</g>
+<g class="nd d"><rect x="742.0" y="36" width="116.0" height="34" rx="17"/>
+<text class="l1" x="800.0" y="57.0">coverage + bam</text>
+</g>
+<path class="e" d="M 141.5,53.0 L 182.0,53.0" marker-end="url(#ah)"/>
+<path class="e" d="M 284.0,53.0 L 310.0,53.0" marker-end="url(#ah)"/>
+<path class="e" d="M 412.0,53.0 L 448.0,53.0" marker-end="url(#ah)"/>
+<path class="e" d="M 550.0,53.0 L 600.0,53.0" marker-end="url(#ah)"/>
+<path class="e" d="M 722.0,53.0 L 736.0,53.0" marker-end="url(#ah)"/>
+<text class="band" x="14" y="100">GENOME RECOVERY — untouched</text>
+<text class="band" x="444" y="100">VIRAL CALLING AND PER-CONTIG ANNOTATION — still per sample</text>
+<path class="sep" d="M 424,90 L 424,404"/>
+<g class="nd t"><rect x="14.0" y="134" width="192.0" height="46" rx="3"/>
+<text class="l1" x="110.0" y="153">3 binners</text>
+<text class="l2" x="110.0" y="168">metabat2 · semibin2 · comebin</text>
+</g>
+<g class="nd t"><rect x="14.0" y="200" width="192.0" height="46" rx="3"/>
+<text class="l1" x="110.0" y="219">aggregator + CheckM2</text>
+<text class="l2" x="110.0" y="234">quality_bin_fasta</text>
+</g>
+<g class="nd t"><rect x="14.0" y="266" width="192.0" height="46" rx="3"/>
+<text class="l1" x="110.0" y="285">skANI + GTDB-Tk r232</text>
+<text class="l2" x="110.0" y="300">taxonomy::gtdbtk</text>
+</g>
+<g class="nd n"><rect x="228.0" y="200" width="182.0" height="46" rx="3"/>
+<text class="l1" x="319.0" y="219">CCTyper</text>
+<text class="l2" x="319.0" y="234">crispr_spacers</text>
+</g>
+<g class="nd n"><rect x="228.0" y="266" width="182.0" height="46" rx="3"/>
+<text class="l1" x="319.0" y="285">iPHoP add_to_db</text>
+<text class="l2" x="319.0" y="300">iphop_augmented_db</text>
+</g>
+<path class="e" d="M 110.0,180 L 110.0,194" marker-end="url(#ah)"/>
+<path class="e" d="M 110.0,246 L 110.0,260" marker-end="url(#ah)"/>
+<path class="e" d="M 206.0,223.0 L 222.0,223.0" marker-end="url(#ah)"/>
+<path class="e" d="M 206.0,289.0 L 222.0,289.0" marker-end="url(#ah)"/>
+<g class="nd d"><rect x="444.0" y="134" width="426.0" height="34" rx="17"/>
+<text class="l1" x="657.0" y="155.0">contig_batch  ·  ~5 Mbp shards, headers sample-prefixed</text>
+</g>
+<g class="nd t"><rect x="444.0" y="190" width="138.0" height="46" rx="3"/>
+<text class="l1" x="513.0" y="209">geNomad</text>
+<text class="l2" x="513.0" y="224">genes · taxonomy</text>
+</g>
+<g class="nd t"><rect x="590.0" y="190" width="138.0" height="46" rx="3"/>
+<text class="l1" x="659.0" y="209">VirSorter2</text>
+<text class="l2" x="659.0" y="224">affi_contigs</text>
+</g>
+<g class="nd n"><rect x="736.0" y="190" width="134.0" height="46" rx="3"/>
+<text class="l1" x="803.0" y="209">VIBRANT</text>
+<text class="l2" x="803.0" y="224">lifestyle · AMGs</text>
+</g>
+<g class="nd t"><rect x="590.0" y="252" width="138.0" height="46" rx="3"/>
+<text class="l1" x="659.0" y="271">DRAM-v</text>
+<text class="l2" x="659.0" y="286">annotations · distill</text>
+</g>
+<path class="e" d="M 657.0,168 L 657.0,179.0 L 513.0,179.0 L 513.0,184" marker-end="url(#ah)"/>
+<path class="e" d="M 657.0,168 L 657.0,179.0 L 659.0,179.0 L 659.0,184" marker-end="url(#ah)"/>
+<path class="e" d="M 657.0,168 L 657.0,179.0 L 803.0,179.0 L 803.0,184" marker-end="url(#ah)"/>
+<path class="e" d="M 659.0,236 L 659.0,246" marker-end="url(#ah)"/>
+<g class="nd d"><rect x="444.0" y="314" width="426.0" height="34" rx="17"/>
+<text class="l1" x="657.0" y="335.0">candidate_virus  ·  contig, start, end, caller, score</text>
+</g>
+<g class="nd n"><rect x="444.0" y="370" width="426.0" height="46" rx="3"/>
+<text class="l1" x="657.0" y="389">merge_candidate_calls  (g)</text>
+<text class="l2" x="657.0" y="404">dedup identical · union overlapping, min start → max end</text>
+</g>
+<path class="e" d="M 513.0,236 L 513.0,275.0 L 657.0,275.0 L 657.0,308" marker-end="url(#ah)"/>
+<path class="e" d="M 803.0,236 L 803.0,275.0 L 657.0,275.0 L 657.0,308" marker-end="url(#ah)"/>
+<path class="e" d="M 659.0,236 L 659.0,220 L 560,220 L 560,306 L 657.0,306 L 657.0,308" marker-end="url(#ah)"/>
+<path class="e" d="M 657.0,348 L 657.0,364" marker-end="url(#ah)"/>
+<path class="e" d="M 550.0,53.0 L 600.0,53.0" marker-end="url(#ah)"/>
+<path class="e" d="M 502.0,70 L 502.0,112 L 110.0,112 L 110.0,128" marker-end="url(#ah)"/>
+<path class="e" d="M 502.0,70 L 502.0,112 L 657.0,112 L 657.0,128" marker-end="url(#ah)"/>
+<path class="e" d="M 800.0,70 L 800.0,80 L 874,80 L 874,157.0 L 212.0,157.0" marker-end="url(#ah)"/>
+<g class="nd f"><rect x="487.0" y="436" width="340.0" height="54" rx="17"/>
+<text class="l1" x="657.0" y="455">dereplicated_candidate_virus</text>
+<text class="l2" x="657.0" y="470">the frozen reference</text>
+</g>
+<path class="e" d="M 657.0,416 L 657.0,430" marker-end="url(#ah)"/>
+<path class="freeze" d="M 14,512 L 866,512"/>
+<rect class="freezechip" x="529.0" y="501" width="255.9" height="22" rx="11"/>
+<text class="freezelbl" x="657" y="516">FROZEN — nothing below writes sequence</text>
+<text class="band" x="14" y="534">ON THE FROZEN SET — the cross-sample tools only, and every product is a leaf</text>
+<g class="nd n"><rect x="14.0" y="560" width="192.0" height="52" rx="3"/>
+<text class="l1" x="110.0" y="579">spacer BLASTn</text>
+<text class="l2" x="110.0" y="594">spacer_host_links</text>
+</g>
+<g class="nd n"><rect x="234.0" y="560" width="192.0" height="52" rx="3"/>
+<text class="l1" x="330.0" y="579">iPHoP predict</text>
+<text class="l2" x="330.0" y="594">host_prediction</text>
+</g>
+<g class="nd n"><rect x="454.0" y="560" width="192.0" height="52" rx="3"/>
+<text class="l1" x="550.0" y="579">CheckV end_to_end</text>
+<text class="l2" x="550.0" y="594">contamination + QA</text>
+</g>
+<g class="nd n"><rect x="674.0" y="560" width="192.0" height="52" rx="3"/>
+<text class="l1" x="770.0" y="579">MMseqs2 cov-1</text>
+<text class="l2" x="770.0" y="594">votu_cluster_table</text>
+</g>
+<g class="nd n"><rect x="14.0" y="630" width="192.0" height="52" rx="3"/>
+<text class="l1" x="110.0" y="649">seqkit fx2tab</text>
+<text class="l2" x="110.0" y="664">contig_length_table</text>
+</g>
+<g class="nd n"><rect x="234.0" y="630" width="192.0" height="52" rx="3"/>
+<text class="l1" x="330.0" y="649">MMseqs2 cov-0</text>
+<text class="l2" x="330.0" y="664">precluster_table</text>
+</g>
+<g class="nd n"><rect x="454.0" y="630" width="192.0" height="52" rx="3"/>
+<text class="l1" x="550.0" y="649">vConTACT3</text>
+<text class="l2" x="550.0" y="664">vcontact3_assignments</text>
+</g>
+<g class="nd n"><rect x="674.0" y="630" width="192.0" height="52" rx="3"/>
+<text class="l1" x="770.0" y="649">prodigal-gv → kofamscan</text>
+<text class="l2" x="770.0" y="664">kofamscan_results</text>
+</g>
+<path class="e" d="M 657.0,490 L 657.0,540"/>
+<path class="e" d="M 4,540 L 664,540"/>
+<path class="e" d="M 4,540 L 4,656"/>
+<path class="e" d="M 4,586 L 8,586" marker-end="url(#ah)"/>
+<path class="e" d="M 4,656 L 8,656" marker-end="url(#ah)"/>
+<path class="e" d="M 224,540 L 224,656"/>
+<path class="e" d="M 224,586 L 228,586" marker-end="url(#ah)"/>
+<path class="e" d="M 224,656 L 228,656" marker-end="url(#ah)"/>
+<path class="e" d="M 444,540 L 444,656"/>
+<path class="e" d="M 444,586 L 448,586" marker-end="url(#ah)"/>
+<path class="e" d="M 444,656 L 448,656" marker-end="url(#ah)"/>
+<path class="e" d="M 664,540 L 664,656"/>
+<path class="e" d="M 664,586 L 668,586" marker-end="url(#ah)"/>
+<path class="e" d="M 664,656 L 668,656" marker-end="url(#ah)"/>
+<path class="e xlink" d="M 410.0,223.0 L 418,223.0 L 418,492 L 110.0,492 L 110.0,554" marker-end="url(#ah)"/>
+<path class="e xlink" d="M 319.0,312 L 319.0,500 L 330.0,500 L 330.0,624" marker-end="url(#ah)"/></svg>

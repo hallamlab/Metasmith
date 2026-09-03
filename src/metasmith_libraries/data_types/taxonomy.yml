@@ -20,6 +20,20 @@ types:
     properties:
       _: genomad plasmid summary
       ext: tsv
+  # The gene table is what every one of Antonio's curation predicates actually
+  # reads -- marker, virus_hallmark and uscg are columns here and nowhere else --
+  # so declaring it is what moves those rules out of the DAG and into a join.
+  # `<out>/<prefix>_annotate/<prefix>_taxonomy.tsv`, NOT a file in the summary
+  # directory -- and it survives `--cleanup`, which removes only the `_mmseqs2`
+  # subdirectory (genomad/modules/annotate.py:210).
+  genomad_taxonomy:
+    properties:
+      _: genomad ICTV lineage and agreement score per called viral sequence
+      ext: tsv
+  genomad_virus_genes:
+    properties:
+      _: genomad per-gene table for the called viral sequences -- marker, virus_hallmark, uscg, annotation_description, annotation_accessions, annotation_conjscan, annotation_amr, taxname
+      ext: tsv
 
   checkm_stats:
     properties:
