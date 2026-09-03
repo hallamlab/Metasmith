@@ -520,6 +520,43 @@ We will prepare resources and transforms using the same method shown in the My f
         ani_transforms
     ]
 
+Run it on its own
+------------------------------------------------------------
+
+Run the transform by itself before you ask the solver for a workflow. The solver checks that the
+contract connects. It does not check that the command line inside the protocol is correct. Only
+running the protocol does that, and a whole workflow is a slow way to find a typo.
+
+:python:`msm run` executes one transform against files you supply. It skips the solver and
+Nextflow, and it uses the same code that runs a workflow step.
+
+Supply the inputs as files. A workflow would fetch the genomes through
+:python:`getNcbiAssembly`, so download two of them yourself for this test.
+
+.. code-block:: bash
+    :caption: Terminal
+
+    $ echo "e coli" > pangenome.txt
+    $ echo "docker://staphb/fastani:1.34" > fastani.oci
+
+    $ msm run ani_transforms/fastani.py \
+        --agent-home ./msm_home \
+        -i pan=./pangenome.txt \
+        -i asm=./DH10b.fna \
+        -i asm=./K12.fna \
+        -i image=./fastani.oci \
+        -w ./fastani_out
+
+Each ``-i`` names the variable the requirement was assigned to in :python:`fastani.py`. That file
+declares :python:`pan`, :python:`asm` and :python:`image`. :python:`asm` is repeated because the
+protocol reads it with :python:`context.InputGroup`.
+
+Metasmith finds the library by walking up from the transform file to :python:`ani_transforms`. The
+agent supplies the container runtime, so deploy one first.
+
+Read the products at the end of the run, then edit the protocol and run it again. See
+`Transforms <../usage/transforms.html>`_ for the full description of this command.
+
 Upstream chain
 ------------------------------------------------------------
 

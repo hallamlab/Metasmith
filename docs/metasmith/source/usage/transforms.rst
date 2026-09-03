@@ -197,6 +197,64 @@ obtained from studying its `documentation <https://www.ncbi.nlm.nih.gov/books/NB
         },
     )
 
+Running one transform
+===========================================================
+
+Run a single transform against files you already have. The solver does not plan a workflow.
+Nextflow does not run. The protocol executes through the same code that runs a workflow step, so a
+transform that works here works in a generated workflow.
+
+Use this to check a protocol while you write it. A full workflow is the slower way to learn that a
+command line is wrong.
+
+Two things must exist first.
+
+1. The transform's library is compiled. :python:`TransformInstanceLibrary.Save` compiles it, and so
+   does ``msm build``. A library with no compiled :python:`_metadata/` cannot be loaded at all.
+2. An agent is deployed. The agent supplies the runtime that the protocol's tool environment needs.
+
+.. code-block:: bash
+    :caption: Terminal
+
+    $ msm run simple_genomics/prodigal.py \
+        -i contigs=./contigs.fna \
+        -i image=./prodigal.env \
+        -w ./prodigal_out
+
+Metasmith finds the library by walking up from the transform file. It takes the nearest parent
+directory that holds a compiled :python:`_metadata/`.
+
+Name each input after the variable it was assigned to in the transform. The prodigal transform
+above declares :python:`contigs` and :python:`image`, so those are the names ``-i`` accepts. A
+product is not an input and cannot be bound. Repeat one name to give that input several files,
+which is what :python:`context.InputGroup` reads.
+
+.. code-block:: bash
+    :caption: Terminal
+
+    $ msm run ani_transforms/fastani.py \
+        -i pan=./pangenome.txt \
+        -i asm=./genome_1.fna \
+        -i asm=./genome_2.fna \
+        -i image=./fastani.env
+
+Name the agent with ``--agent-home``, or set ``AGENT_HOME``. A run inside an agent's own shell
+finds it already set.
+
+Products land in the working directory. Metasmith names each product from its lineage and lists
+every one at the end of the run.
+
+.. caution::
+
+    ``-i`` names a slot, not a type. Metasmith does not check that the file you bind matches the
+    type the transform declares. Register your inputs in a
+    `DataInstanceLibrary <./data.html>`_ to have types checked, which is also what a generated
+    workflow reads.
+
+This path keeps no cache and reuses no earlier result. Every run executes the protocol. Once the
+transform behaves, generate a workflow to run it at scale over many samples. See
+`Workflow generation <./workflow_generation.html>`_.
+
 References
 ===========================================================
 
