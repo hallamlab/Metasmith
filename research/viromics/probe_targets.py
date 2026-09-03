@@ -26,7 +26,6 @@ from __future__ import annotations
 
 import argparse
 import sys
-import tempfile
 import time
 from pathlib import Path
 
@@ -35,9 +34,7 @@ MLIB = HERE.parents[1] / "src" / "metasmith_libraries"
 sys.path.insert(0, str(MLIB))
 sys.path.insert(0, str(HERE))
 
-import _authoring as A                                              # noqa: E402
-from metasmith.python_api import DEFERRED, Spec, DataInstanceLibrary  # noqa: E402
-import viromics_survey_from_paired_reads as V                       # noqa: E402
+import viromics_survey_from_paired_reads as V                     # noqa: E402
 
 # One representative target per producing transform. The rest are siblings of
 # these, produced by the same task.
@@ -55,30 +52,12 @@ def name_of(t) -> str:
     return t if isinstance(t, str) else t["type"]
 
 
-def spec_for(targets) -> Spec:
-    lib = DataInstanceLibrary(Path(tempfile.mkdtemp(prefix="msm-probe-")))
-    for tl in ("sequences.yml", "alignment.yml", "ref.yml", "annotation.yml",
-               "taxonomy.yml", "binning.yml", "binning_local.yml", "viromics.yml"):
-        lib.AddTypeLibrary(A.TYPES / tl)
-    study = lib.AddValue("contig_study.json", {"logistics": "contig study"},
-                         "viromics::contig_study")
-    meta = lib.AddValue("reads_metadata.json",
-                        {"parity": "paired", "length_class": "short"},
-                        "sequences::read_metadata", parents={study})
-    pair = lib.AddValue("read_pair.txt", "sample_1", "sequences::read_pair",
-                        parents={meta})
-    lib.AddItem(DEFERRED, "sequences::zipped_forward_short_reads", parents={pair})
-    lib.AddItem(DEFERRED, "sequences::zipped_reverse_short_reads", parents={pair})
-    return Spec(
-        input_library=lib,
-        sample_type="sequences::read_metadata",
-        shared_input_paths=["contig_study.json"],
-        target_types=targets,
-        transform_libraries=A.transforms(
-            "logistics", "assembly", "metagenomics", "functionalAnnotation",
-            "viromics"),
-        resource_libraries=[A.envs()],
-    )
+def spec_for(targets):
+    # The driver's own spec, with the target list swapped out -- so a probe
+    # cannot drift from what the driver actually solves. `build_spec` reads
+    # the module global when it is called, which is what makes this work.
+    V.TARGETS = list(targets)
+    return V.build_spec()
 
 
 def solve(targets, max_iter, max_refine, seed):

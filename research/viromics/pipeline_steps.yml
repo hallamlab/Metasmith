@@ -67,10 +67,11 @@ steps:
     status: dropped
     note: >-
       Redundant against megahit, and expensive twice over: spades_assembly and
-      megahit_assembly are both sequences::assembly, so an unpinned target is
-      satisfiable from either and the planner answers different targets from
-      different assemblers. Dropping it is what keeps the driver's _ASM pin
-      honest.
+      megahit_assembly are both sequences::assembly, so an unpinned slot is
+      satisfiable from either and the planner did answer the MAG lane from one
+      assembler and the viral lane from the other. The driver now masks
+      spades.py out of the assembly library rather than hoping the targets pin
+      every slot.
   - n: 4
     group: assembly
     tool: MEGAHIT v1.1.3

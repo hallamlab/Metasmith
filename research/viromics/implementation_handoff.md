@@ -358,23 +358,48 @@ abundance in rows 16 and 39.
 
 ## Two things the next session should fix first
 
-**An orphaned metaSPAdes run.** The solved plan carries a `spades` step whose
-outputs nothing consumes. It is not merely wasteful in a mock DAG — on real data
-it is a whole second assembly of every sample, for nothing. It appears only when
-a per-sample target outside the viral lane is named: the viral lane alone solves
-in 36 steps with no spades, and adding any one of `annotation::dramv_distill`,
-`taxonomy::metabuli` or `annotation::dram_annotations` — each pinned to the
-megahit assembly — brings it in and takes the solve from 4 s to ~18 s. Pinning
-the targets harder does not remove it, so the binding is upstream of them: some
-`sequences::assembly` slot inside the chain (`prodigal`, `metabuli` and
-`dramv`'s batch lineage are the candidates) is free to bind the other assembler.
-`metagenomics_from_paired_reads` does not have this problem, so it is solvable —
-diff the two drivers' plans rather than guessing.
+**GTDB-Tk classifies one binner's bins, not the pool.** The plan runs it on
+SemiBin2's bins alone: one target reaches it, so the planner needed one
+instance, and it bound the first bin type it could. `iphop_add_to_db` collects
+`binning_local::quality_bin_fasta` — the aggregator's whole pool, drawn from all
+three binners — and joins the taxonomy on `user_genome`, so every bin MetaBAT2
+or COMEBin contributed joins to nothing. `metagenomics_from_paired_reads` names
+`taxonomy::gtdbtk` once per binner for exactly this reason; do the same here, or
+move GTDB-Tk onto the quality pool so there is one run and one lineage.
+
+Read this off `reports/chunk-viral-light.svg`, where the single `gtdbtk` node
+sits under `semibin2_bin_fasta` while `iphop_add_to_db` reaches sideways to the
+pool. The step list does not show it.
+
+**A study-wide input has to be named shared, or the whole solve fails.**
+`sample_type` masks the input library down to each sample and its relatives, so
+a deferred item with no parents belongs to no sample and the solver never sees
+it. Worse, one unreachable target drops *every* target: the plan comes back
+`ok=False` with zero steps and thirteen innocent targets in the dropped list.
+The two GPR references are named in `shared_input_paths`, and because a deferred
+path is minted at solve time, `build_spec` reads those paths back off the
+manifest rather than hard-coding them.
+
+**Nothing classifies reads.** Antonio's taxonomy is contig-level and bin-level,
+and this plan matches that — but `metagenomics_from_paired_reads` also names
+phyloFlash, and a read-level answer is the only one of the four levels missing.
+It is one target away. Decide it rather than inherit it.
+
+*Fixed, for the record.* The plan used to assemble every sample twice:
+metaSPAdes and megahit both ran, the viral lane bound megahit and the MAG lane's
+generic `sequences::assembly` slot bound metaSPAdes. No lineage constraint fixes
+that — matching is ancestral, so "descends from this assembly" cannot be told
+from "descends from that one" — and every attempt to pin it with another target
+built both lanes instead of one, at 51 to 58 steps. `_assembly_without_spades()`
+in the driver masks `spades.py` out of the assembly library it hands the
+planner, which is the same thing `pipeline_steps.yml` row 3 already said in
+prose. The mask is not recorded in a saved Template, so pin the assembler in the
+targets before `--author`.
 
 **The target list is short on purpose, and must stay short.** A target is not a
 request for a file; it is a slot the planner has to satisfy consistently with
 every other slot. Naming all forty of Antonio's outputs made the solve take
-minutes and then return no plan at all; naming the nine that nothing else pulls
+minutes and then return no plan at all; naming the fourteen that nothing else pulls
 in solves the same graph in a second and produces every one of those outputs
 anyway. Before adding a target, check with
 

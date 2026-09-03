@@ -8,6 +8,13 @@ and render the DAG, or with `--author` to ship it. It sits under `research/`
 rather than in the package because `A.author` asserts a complete solve, and the
 transforms it plans are not implemented yet.
 
+`research/viromics/reports/` holds the written-up version and the pictures behind
+it. `mkdag.py` draws the intended topology by hand; `mkplandag.py` renders the
+solved plan beside the shipped metagenomics template's; `mkchunkdags.py` cuts
+that same solve into four readable views — spine, function, viral, taxonomy.
+Re-run all three after changing the driver, or the report's numbers drift from
+the plan's.
+
 ## The one decision this template makes
 
 Antonio's pipeline is a **chain of filters**: each curation step writes a smaller
@@ -48,25 +55,50 @@ contig contract that both satisfy.
 
 ## What it solves to
 
-13 targets, **45 steps, zero dropped, about a second**. The plan covers every
+14 targets, **53 steps, zero dropped, about a second**. The plan covers every
 module: reads → QC → bbduk → megahit → contig batches → coverage and bam; three
 callers → the merge → the frozen set; CheckV, both MMseqs2 clusterings, the
 length table, vConTACT3, prodigal-gv → KOfam; three binners → CheckM2 →
 aggregator → skANI → GTDB-Tk → CCTyper → iPHoP; DRAM-v, DRAM and Metabuli.
 
+**The gene table is one target, not four.** `annotation::gpr_table` pulls the
+whole chosen-4 panel in behind it — KOfamScan, CLEAN, DIAMOND UniRef50 and
+ProteinBERT, each chunked, merged and folded by `fabfos/gpr_4lane.py` — for one
+slot instead of four. It goes beyond Antonio's step 25, which asks for KO
+assignment alone. It also costs the driver the `fabfos` transform library, the
+`resources/lib` resource library, and two study-wide references,
+`ref::mnxr_lookup` and `ref::label_transfer_landmarks`.
+
+**A study-wide input has to be named shared.** `sample_type` masks the input
+library down to each sample and its relatives, so a deferred item with no
+parents belongs to no sample and the solver never sees it — the solve then drops
+*every* target, not just the unreachable one. `build_spec` reads the two GPR
+reference paths back off the manifest and passes them in `shared_input_paths`.
+
 **The target list is short on purpose.** A target is not a request for a file to
 exist — it is a slot the planner must satisfy consistently with every other slot,
 and this pipeline's outputs mostly arrive as dependencies of one another. Naming
 all forty of Antonio's outputs made the solve take minutes and then return no
-plan at all; naming the nine nothing else reaches solves the same graph in a
+plan at all; naming the fourteen nothing else reaches solves the same graph in a
 second and produces those forty outputs anyway. `probe_targets.py` is how that
 list was found and how to check it before adding to it.
 
-**One known defect.** The plan carries an orphaned `spades` step — nothing
-consumes its output, and on real data that is a second assembly of every sample
-for nothing. It appears only once a per-sample target outside the viral lane is
-named; the viral lane alone solves in 36 steps with none. `implementation_handoff.md`
-has the diagnosis. Fix it before running this on anything real.
+**One assembler, said outright.** `megahit_assembly` and `spades_assembly` both
+satisfy `sequences::assembly`, and only the viral lane's targets pin one — so
+the planner used to answer the MAG lane's generic slot with metaSPAdes and
+assemble every sample twice. No lineage constraint fixes that, because matching
+is ancestral: "descends from this assembly" cannot be told from "descends from
+that one", and pinning it with another target builds both lanes instead of one.
+`_assembly_without_spades()` in the driver hands the planner an assembly library
+with metaSPAdes masked out. A saved template records a library by location, so
+that mask does not survive `--author` — pin the assembler in the targets before
+shipping it.
+
+**Two gaps the plan makes visible.** GTDB-Tk runs on SemiBin2's bins only, while
+`iphop_add_to_db` collects the aggregator's whole quality pool, so bins from
+MetaBAT2 or COMEBin join to no taxonomy. And nothing classifies reads: the
+shipped metagenomics template names phyloFlash for that and this driver does
+not.
 
 ## State
 
