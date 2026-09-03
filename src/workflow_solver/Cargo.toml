@@ -18,6 +18,10 @@ serde_json = { version = "1.0", features = ["float_roundtrip"] }
 # stability is a documented guarantee of the crate, which is precisely why it is
 # here and `rand::StdRng` is not.
 rand_chacha = "0.10"
+# The plan witness. A path dependency with no dependencies of its own, kept a
+# separate crate so Charon can lower it alone: this binary is edition 2024 and
+# pulls four registry crates, none of which the extraction toolchain will read.
+solver_witness = { path = "../solver_witness" }
 
 [profile.release]
 opt-level = 3

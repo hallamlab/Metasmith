@@ -10,14 +10,14 @@
 //!
 //! Rows are emitted parents-first, so the decoder can build them in one pass.
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::det::{self, Map};
 use crate::model::EpId;
 use crate::problem::Problem;
 use crate::search::{ApplId, Arena};
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct EncodedEndpoint {
     pub props: Vec<u32>,
     pub parents: Vec<u32>,
@@ -25,7 +25,7 @@ pub struct EncodedEndpoint {
     pub source_node: Option<u32>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct EncodedStep {
     pub transform: u32,
     pub timeline: i64,
@@ -33,7 +33,7 @@ pub struct EncodedStep {
     pub produced: Vec<Vec<(u32, u32)>>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct SolveReply {
     pub wire_version: u32,
     pub complete: bool,
