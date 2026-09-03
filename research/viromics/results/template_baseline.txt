@@ -1,0 +1,170 @@
+
+[pangenome_heatmap_from_assembly]
+  steps=3
+  getNcbiAssembly                  -> sequences::gbk, sequences::gff, sequences::isolate_assembly, sequences::orfs
+  heatmap                          -> pangenome::heatmap
+  ppanggolin                       -> pangenome::ppanggolin_matrix, pangenome::ppanggolin_raw
+
+[metagenomics_from_paired_reads]
+  steps=29
+  aggregator                       -> binning_local::quality_bin_fasta
+  assembly_stats                   -> alignment::bam, sequences::assembly_per_bp_coverage, sequences::assembly_per_contig_coverage, sequences::assembly_stats
+  bbduk                            -> sequences::clean_short_reads, sequences::discarded_short_reads
+  checkm                           -> taxonomy::checkm_stats
+  checkm                           -> taxonomy::checkm_stats
+  checkm                           -> taxonomy::checkm_stats
+  chunkOrfsForAnnotation           -> sequences::orf_chunk
+  comebin                          -> binning::comebin_contig_to_bin_table, sequences::comebin_bin_fasta
+  diamond_uniref50                 -> annotation::diamond_uniref50_descriptions_chunk, annotation::diamond_uniref50_results_chunk
+  downloadGtdbDB                   -> ref::gtdb
+  downloadKofamDB                  -> ref::kofamscan_ko_list, ref::kofamscan_profiles
+  downloadMetabuliDB               -> ref::metabuli_ref
+  downloadPhyloflashDB             -> ref::phyloflash_db
+  downloadUniRef50DB               -> ref::uniref50_diamond_db
+  gtdbtk                           -> taxonomy::gtdbtk
+  gtdbtk                           -> taxonomy::gtdbtk
+  gtdbtk                           -> taxonomy::gtdbtk
+  interleave_zipped_short_reads    -> sequences::short_reads
+  kofamscan                        -> annotation::kofamscan_descriptions_chunk, annotation::kofamscan_results_chunk
+  megahit                          -> sequences::megahit_assembly, sequences::megahit_assembly_graph
+  merge_diamond_uniref50           -> annotation::diamond_uniref50_descriptions, annotation::diamond_uniref50_results
+  merge_kofamscan                  -> annotation::kofamscan_descriptions, annotation::kofamscan_results
+  metabat2                         -> binning::metabat2_contig_to_bin_table, sequences::metabat2_bin_fasta
+  metabuli                         -> taxonomy::metabuli, taxonomy::metabuli_krona, taxonomy::metabuli_report
+  phyloflash                       -> taxonomy::phyloflash_ntu_abundance, taxonomy::phyloflash_report_html, taxonomy::phyloflash_ssu_spades, taxonomy::phyloflash_summary
+  prodigal                         -> sequences::gff, sequences::orfs
+  semibin2                         -> binning::semibin2_contig_to_bin_table, sequences::semibin2_bin_fasta
+  seqkit_reads                     -> sequences::read_qc_stats
+  skani_dedup                      -> binning_local::cluster_table
+
+[isolate_assembly_from_long_reads]
+  steps=12
+  chunkOrfsForAnnotation           -> sequences::orf_chunk
+  diamond_uniref50                 -> annotation::diamond_uniref50_descriptions_chunk, annotation::diamond_uniref50_results_chunk
+  downloadKofamDB                  -> ref::kofamscan_ko_list, ref::kofamscan_profiles
+  downloadUniRef50DB               -> ref::uniref50_diamond_db
+  filtlong                         -> sequences::clean_long_reads, sequences::discarded_long_reads
+  flye                             -> sequences::flye_assembly
+  hifiasm_meta                     -> sequences::hifiasm_meta_assembly
+  kofamscan                        -> annotation::kofamscan_descriptions_chunk, annotation::kofamscan_results_chunk
+  merge_diamond_uniref50           -> annotation::diamond_uniref50_descriptions, annotation::diamond_uniref50_results
+  merge_kofamscan                  -> annotation::kofamscan_descriptions, annotation::kofamscan_results
+  prodigal                         -> sequences::gff, sequences::orfs
+  seqkit_reads                     -> sequences::read_qc_stats
+
+[annotation_palette_from_assembly]
+  steps=15
+  chunkOrfsForAnnotation           -> sequences::orf_chunk
+  diamond_uniref50                 -> annotation::diamond_uniref50_descriptions_chunk, annotation::diamond_uniref50_results_chunk
+  downloadEggnogDB                 -> annotation::eggnog_data
+  downloadKofamDB                  -> ref::kofamscan_ko_list, ref::kofamscan_profiles
+  downloadMetabuliDB               -> ref::metabuli_ref
+  downloadUniRef50DB               -> ref::uniref50_diamond_db
+  eggnog_mapper                    -> annotation::eggnog_results_chunk
+  kofamscan                        -> annotation::kofamscan_descriptions_chunk, annotation::kofamscan_results_chunk
+  merge_diamond_uniref50           -> annotation::diamond_uniref50_descriptions, annotation::diamond_uniref50_results
+  merge_eggnog_mapper              -> annotation::eggnog_results
+  merge_kofamscan                  -> annotation::kofamscan_descriptions, annotation::kofamscan_results
+  merge_proteinbert                -> annotation::proteinbert_embeddings
+  metabuli                         -> taxonomy::metabuli, taxonomy::metabuli_krona, taxonomy::metabuli_report
+  prodigal                         -> sequences::gff, sequences::orfs
+  proteinbert                      -> annotation::proteinbert_embeddings_chunk
+
+[annotation_trio_from_assembly]
+  steps=11
+  chunkOrfsForAnnotation           -> sequences::orf_chunk
+  diamond_uniref50                 -> annotation::diamond_uniref50_descriptions_chunk, annotation::diamond_uniref50_results_chunk
+  downloadInterProScanDB           -> ref::interproscan_data
+  downloadKofamDB                  -> ref::kofamscan_ko_list, ref::kofamscan_profiles
+  downloadUniRef50DB               -> ref::uniref50_diamond_db
+  interproscan                     -> annotation::interproscan_descriptions_chunk, annotation::interproscan_results_chunk
+  kofamscan                        -> annotation::kofamscan_descriptions_chunk, annotation::kofamscan_results_chunk
+  merge_diamond_uniref50           -> annotation::diamond_uniref50_descriptions, annotation::diamond_uniref50_results
+  merge_interproscan               -> annotation::interproscan_descriptions, annotation::interproscan_results
+  merge_kofamscan                  -> annotation::kofamscan_descriptions, annotation::kofamscan_results
+  prodigal                         -> sequences::gff, sequences::orfs
+
+[fosmid_inserts_from_pooled_reads]
+  steps=7
+  assembly_stats                   -> alignment::bam, sequences::assembly_per_bp_coverage, sequences::assembly_per_contig_coverage, sequences::assembly_stats
+  background_filter                -> sequences::host_filtered_short_reads
+  bbduk                            -> sequences::clean_short_reads, sequences::discarded_short_reads
+  megahit                          -> sequences::megahit_assembly, sequences::megahit_assembly_graph
+  resolve_inserts                  -> fabfos::insert_metadata, fabfos::putative_inserts
+  seqkit_reads                     -> sequences::read_qc_stats
+  spades                           -> sequences::spades_assembly, sequences::spades_assembly_graph, sequences::spades_contig_paths
+
+[amplicon_asv_study_from_paired_reads]
+  steps=18
+  chimera_check                    -> aspire::nochimera_fasta
+  concat_fastas                    -> aspire::concat_counts_fasta, aspire::concat_fasta
+  create_count_matrix              -> amplicon::asv_seqs, amplicon::asv_table
+  denoise                          -> aspire::centroids_fasta
+  dereplicate                      -> aspire::derep_fasta
+  downloadSilvaDB                  -> amplicon::silva_db
+  fastp_qc                         -> aspire::fastp_report_html, aspire::fastp_report_json, aspire::qc_reads_fwd, aspire::qc_reads_rev
+  filter_counts                    -> aspire::counts_decon, aspire::counts_filtered, aspire::counts_micro, aspire::counts_mito
+  filter_reads                     -> aspire::filtered_fasta
+  filter_table                     -> aspire::asv_filtered_counts, aspire::asv_filtered_seqs
+  general_stats                    -> aspire::concat_stats, aspire::fastp_stats, aspire::fastq_stats, aspire::filtered_stats
+  merge_reads                      -> aspire::merged_reads
+  mito_decontam                    -> aspire::mito_plots, aspire::mito_summary_tables, aspire::nontarget_table
+  mitomaster                       -> aspire::contaminant_blast6, aspire::mito_blast6, aspire::mitomaster_table
+  prepare_blast_databases          -> aspire::contaminant_blast_db, aspire::mito_blast_db
+  sankey                           -> aspire::sankey_outputs
+  sina_trim                        -> aspire::sina_aligned_seqs, aspire::sina_log, aspire::sina_trimmed_seqs, aspire::sina_v_regions
+  taxonomy                         -> amplicon::asv_taxonomy, aspire::taxonomy_stats, aspire::taxonomy_uppercase_seqs
+
+[viromics_survey_from_assembly]
+  steps=9
+  crassphage                       -> annotation::crassphage_coverage
+  downloadCrassphageRef            -> annotation::crassphage_ref
+  downloadDramDB                   -> annotation::dram_db
+  downloadVirsorter2DB             -> annotation::virsorter2_db
+  dramv                            -> annotation::dramv_annotations, annotation::dramv_distill
+  genomad                          -> taxonomy::genomad_plasmid_summary, taxonomy::genomad_virus_summary
+  ref_genomad                      -> ref::genomad
+  splitContigsForAmr               -> sequences::contig_batch
+  virsorter2                       -> annotation::virsorter2_affi_contigs, annotation::virsorter2_boundary, annotation::virsorter2_scores, annotation::virsorter2_viral_sequences
+
+[gpr_table_from_assembly]
+  steps=12
+  chunkOrfsForAnnotation           -> sequences::orf_chunk
+  clean                            -> annotation::clean_predictions
+  diamond_uniref50                 -> annotation::diamond_uniref50_descriptions_chunk, annotation::diamond_uniref50_results_chunk
+  downloadKofamDB                  -> ref::kofamscan_ko_list, ref::kofamscan_profiles
+  downloadUniRef50DB               -> ref::uniref50_diamond_db
+  gpr_4lane                        -> annotation::gpr_table
+  kofamscan                        -> annotation::kofamscan_descriptions_chunk, annotation::kofamscan_results_chunk
+  merge_diamond_uniref50           -> annotation::diamond_uniref50_descriptions, annotation::diamond_uniref50_results
+  merge_kofamscan                  -> annotation::kofamscan_descriptions, annotation::kofamscan_results
+  merge_proteinbert                -> annotation::proteinbert_embeddings
+  prodigal                         -> sequences::gff, sequences::orfs
+  proteinbert                      -> annotation::proteinbert_embeddings_chunk
+
+[ecspr_results_from_gpr_table]
+  steps=1
+  ecspr_measure                    -> ecspr::results
+
+[ecspr_survey_from_pooled_reads]
+  steps=20
+  assembly_stats                   -> alignment::bam, sequences::assembly_per_bp_coverage, sequences::assembly_per_contig_coverage, sequences::assembly_stats
+  background_filter                -> sequences::host_filtered_short_reads
+  bbduk                            -> sequences::clean_short_reads, sequences::discarded_short_reads
+  chunkOrfsForAnnotation           -> sequences::orf_chunk
+  clean                            -> annotation::clean_predictions
+  diamond_uniref50                 -> annotation::diamond_uniref50_descriptions_chunk, annotation::diamond_uniref50_results_chunk
+  downloadKofamDB                  -> ref::kofamscan_ko_list, ref::kofamscan_profiles
+  downloadUniRef50DB               -> ref::uniref50_diamond_db
+  ecspr_measure                    -> ecspr::results
+  gpr_4lane                        -> annotation::gpr_table
+  kofamscan                        -> annotation::kofamscan_descriptions_chunk, annotation::kofamscan_results_chunk
+  megahit                          -> sequences::megahit_assembly, sequences::megahit_assembly_graph
+  merge_diamond_uniref50           -> annotation::diamond_uniref50_descriptions, annotation::diamond_uniref50_results
+  merge_kofamscan                  -> annotation::kofamscan_descriptions, annotation::kofamscan_results
+  merge_proteinbert                -> annotation::proteinbert_embeddings
+  prodigal                         -> sequences::gff, sequences::orfs
+  proteinbert                      -> annotation::proteinbert_embeddings_chunk
+  resolve_inserts                  -> fabfos::insert_metadata, fabfos::putative_inserts
+  seqkit_reads                     -> sequences::read_qc_stats
+  spades                           -> sequences::spades_assembly, sequences::spades_assembly_graph, sequences::spades_contig_paths
