@@ -35,7 +35,7 @@ MLIB = HERE.parents[1] / "src" / "metasmith_libraries"
 sys.path.insert(0, str(MLIB))
 
 import _authoring as A                                       # noqa: E402
-from metasmith.python_api import DEFERRED, Spec              # noqa: E402
+from metasmith.python_api import DEFERRED, Spec, TransformInstanceLibrary              # noqa: E402
 
 NAME = "viromics_survey_from_paired_reads"
 DESCRIPTION = """
@@ -112,7 +112,31 @@ TARGETS = [
     {"type": "annotation::dramv_distill", "parents": [_ASM]},               # 10
     {"type": "taxonomy::metabuli", "parents": [_ASM]},                      # 11
     {"type": "annotation::dram_annotations", "parents": [_ASM]},            # 12
+    # The whole chosen-4 panel in one target: KOfamScan, CLEAN, DIAMOND UniRef50
+    # and ProteinBERT, each run on the contig ORFs and folded into one
+    # gene-attributed table. Naming it is cheaper than naming the four lanes.
+    {"type": "annotation::gpr_table", "parents": [_ASM]},                   # 13
 ]
+
+
+def _assembly_without_spades():
+    """The assembly transform library, minus metaSPAdes.
+
+    `megahit_assembly` and `spades_assembly` both satisfy `sequences::assembly`,
+    and only the viral lane's targets pin an assembler. Left in the search, the
+    planner is free to answer the MAG lane's generic slot with a second assembly
+    of every sample -- which is what it did, binning metaSPAdes contigs while the
+    viral lane ran on megahit. No lineage constraint fixes it: matching is
+    ancestral, so "descends from this assembly" cannot be told from "descends
+    from that one", and every attempt to pin it with another target built both
+    lanes instead of one. Antonio's step 3 is dropped against megahit
+    (`pipeline_steps.yml`), so state that here: this study has one assembler.
+
+    A saved Template records a library by location, so this mask does not survive
+    `--author`. Pin the assembler in the targets before shipping it.
+    """
+    lib = TransformInstanceLibrary.Load((A.MLIB / "transforms" / "assembly").resolve())
+    return lib.AsView({Path("spades.py")}, invert=True)
 
 
 def build_spec(rebuild: bool = False) -> Spec:
@@ -133,16 +157,28 @@ def build_spec(rebuild: bool = False) -> Spec:
                             parents={meta})
         lib.AddItem(DEFERRED, "sequences::zipped_forward_short_reads", parents={pair})
         lib.AddItem(DEFERRED, "sequences::zipped_reverse_short_reads", parents={pair})
+        # The two study-wide references the GPR lanes fold their calls against.
+        lib.AddItem(DEFERRED, "ref::mnxr_lookup")
+        lib.AddItem(DEFERRED, "ref::label_transfer_landmarks")
+
+    input_library = A.deferred_inputs(NAME, inputs, rebuild=rebuild)
+    # A deferred item is minted at a synthetic path, and `sample_type` masks the
+    # library down to each sample and its relatives -- so an input with no
+    # parents belongs to no sample and the solver never sees it. The two GPR
+    # references are study-wide, so they have to be named shared, and their
+    # paths are only knowable by reading them back off the manifest.
+    shared = ["contig_study.json"] + sorted(
+        str(path) for path, dtype in getattr(input_library, "manifest", {}).items()
+        if dtype in ("ref::mnxr_lookup", "ref::label_transfer_landmarks"))
 
     return Spec(
-        input_library=A.deferred_inputs(NAME, inputs, rebuild=rebuild),
+        input_library=input_library,
         sample_type="sequences::read_metadata",
-        shared_input_paths=["contig_study.json"],
+        shared_input_paths=shared,
         target_types=TARGETS,
-        transform_libraries=A.transforms(
-            "logistics", "assembly", "metagenomics", "functionalAnnotation",
-            "viromics"),
-        resource_libraries=[A.envs()],
+        transform_libraries=[_assembly_without_spades()] + A.transforms(
+            "logistics", "metagenomics", "functionalAnnotation", "viromics", "fabfos"),
+        resource_libraries=[A.envs(), A.MLIB / "resources" / "lib"],
     )
 
 
