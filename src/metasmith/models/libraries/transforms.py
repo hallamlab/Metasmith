@@ -21,6 +21,25 @@ from .resources import Resources
 from .types import DataTypeLibrary
 
 
+def _collect_dep_names(module, model: Transform) -> tuple[dict[str, Dependency], set[str]]:
+    # A dependency is identified by its properties and its lineage, so two
+    # requirements declared from the same type with the same parents are one
+    # object to the model. Nothing downstream can tell two names for it apart,
+    # so they are recorded and marked rather than silently collapsing onto one
+    # slot. This runs for every transform the solver loads, so an ambiguous
+    # pair is reported where it is used, not raised here.
+    names: dict[str, Dependency] = {
+        k: v for k, v in vars(module).items()
+        if not k.startswith("_") and isinstance(v, Dependency)
+    }
+    by_dep: dict[Dependency, list[str]] = {}
+    for k, v in names.items():
+        if v in model.requires:
+            by_dep.setdefault(v, []).append(k)
+    ambiguous = {k for ks in by_dep.values() if len(ks) > 1 for k in ks}
+    return names, ambiguous
+
+
 @dataclass
 class TransformInstance:
     protocol: Callable[[ExecutionContext], ExecutionResult|list[ExecutionResult]]
@@ -37,7 +56,15 @@ class TransformInstance:
     _hash: int = -1
     _env_scan: "EnvScan|None" = None
     _env_deps: list[Dependency] = field(default_factory=list)
+    _dep_names: dict[str, Dependency] = field(default_factory=dict)
+    _ambiguous_dep_names: set[str] = field(default_factory=set)
     _protocol_source_hash: str = ""
+
+    def BindableNames(self) -> list[str]:
+        return sorted(
+            k for k, d in self._dep_names.items()
+            if d in self.model.requires and k not in self._ambiguous_dep_names
+        )
 
     def __post_init__(self):
         assert self.batch_size>0, self.model
@@ -90,6 +117,7 @@ class TransformInstance:
                         if isinstance(d, Dependency) and d not in seen:
                             seen.append(d)
                 tr._env_deps = seen
+            tr._dep_names, tr._ambiguous_dep_names = _collect_dep_names(m, tr.model)
             tr._hash, tr._key = tr.model.hash, tr.model.key
             try:
                 src_text = (parent_lib / definition).read_text(
@@ -179,7 +207,11 @@ class TransformInstanceLibrary(DataInstanceLibrary):
                 lib = cls.Load(p)
                 cls._parent_library_cache[root] = (sig, lib)
                 return lib
-        assert False
+        raise ValueError(
+            f"[{path}] is not inside a transform library: no parent directory holds "
+            f"a compiled [{DataInstanceLibrary._path_to_meta}]. "
+            "Run `metasmith build` against the library first."
+        )
 
     def __getitem__(self, transform: Path|str):
         return self.GetTransform(transform)
