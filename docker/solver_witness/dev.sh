@@ -42,17 +42,36 @@ case "${1:---help}" in
         docker build --progress=plain $NET -t "$IMAGE" "$HERE"
     ;;
     --versions)
-        in_container bash -lc 'charon --version; aeneas -help 2>&1 | head -1; lean --version; rustc --version'
+        in_container bash -c 'echo "charon:   $(charon version 2>&1 | head -1)"; echo "toolchain: $(charon toolchain-version 2>&1 | head -1)"; echo "aeneas:   $(aeneas --help 2>&1 | head -1)"; echo "lean:     $(lean --version)"'
     ;;
     -x)
         # Extract one crate: dev.sh -x <path-to-crate-relative-to-repo>
         shift
         crate="${1:?usage: dev.sh -x <crate-dir>}"
-        in_container bash -lc "cd '/root/src/$crate' && charon --dest-file /root/out/\$(basename '$crate').llbc && aeneas -backend lean -dest /root/out /root/out/\$(basename '$crate').llbc"
+        name=$(basename "$crate")
+        # Passed through the environment rather than interpolated into the
+        # container command: the nesting of quotes needed to expand one variable
+        # in the outer shell and another in the inner one silently produced a
+        # file called '$name.llbc' once already.
+        docker run --rm -i $NET \
+            --mount type=bind,source="$REPO",target=/root/src \
+            --mount type=bind,source="$TARGET_DIR",target=/root/target \
+            --mount type=bind,source="$OUT_DIR",target=/root/out \
+            --env CARGO_TARGET_DIR=/root/target \
+            --env CRATE="$crate" --env NAME="$name" \
+            --workdir /root/src \
+            "$IMAGE" bash -c '
+                set -e
+                cd "/root/src/$CRATE"
+                charon cargo --preset=aeneas --dest-file "/root/out/$NAME.llbc"
+                aeneas -backend lean -loops-to-rec -split-files -dest /root/out "/root/out/$NAME.llbc"
+                echo "extracted to $OUT_DIR:"
+            '
+        ls -la "$OUT_DIR"
     ;;
     -s)
         shift
-        in_container bash -lc "${*:-bash}"
+        in_container bash -c "${*:-bash}"
     ;;
     *)
         echo "usage: dev.sh [-b | --versions | -x <crate-dir> | -s <cmd>]"

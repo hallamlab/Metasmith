@@ -88,8 +88,14 @@ RUN cd /opt/aeneas && eval $(opam env) && make setup-charon
 RUN cd /opt/aeneas && eval $(opam env) && make
 
 # `opam env` is not inherited by `docker run`, so bake it in rather than making
-# every caller remember to eval it.
+# every caller remember to eval it. Charon builds into the checkout rather than
+# onto the PATH, so name that directory too.
 ENV OPAM_SWITCH_PREFIX=/opt/opam/${OCAML_VERSION}
-ENV PATH=$OPAM_SWITCH_PREFIX/bin:$PATH
+ENV PATH=$OPAM_SWITCH_PREFIX/bin:/opt/aeneas/charon/bin:$PATH
+
+# Resolve `stable` now, so the toolchain is *in* the image. elan otherwise
+# downloads Lean on first use, and containers here run with `--rm`, so that
+# download would repeat on every single invocation.
+RUN lean --version && lake --version
 
 WORKDIR /root/src
