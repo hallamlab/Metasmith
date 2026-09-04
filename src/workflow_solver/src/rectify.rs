@@ -15,10 +15,14 @@
 //! writer wins, which is plainly what the line intends -- would change plan
 //! ordering on any graph where two steps produce equal endpoints.
 //!
-//! **Endpoints are mutated in place.** `new_e.parents |= ...; RefreshHash()`
-//! changes an endpoint everything else is already pointing at, and the change is
-//! meant to be seen. This is why the arena holds endpoints by identity instead
-//! of interning them.
+//! **One product, one instance, one producer.** The search hands `rectify`
+//! endpoints that are values: a fresh one per candidate application, so a
+//! consumer holds a different endpoint from the one its producer emitted and
+//! equality is all they share. `endpoint_map` reconciles them by signature, and
+//! that is the only reason it is keyed that way. It deliberately does not reuse
+//! an instance across two producing steps -- that merged two transforms'
+//! outputs into one endpoint with two producers, which compiles to two processes
+//! writing one file.
 
 use crate::det::{self, Map, Set};
 use crate::model::{EpId, EpSig};
@@ -164,9 +168,16 @@ pub fn rectify(
     steps.swap(target_at, last);
     if prune { steps = prune_steps(ar, &steps); }
 
-    // Keyed by *equality*, like Python's `dict[Endpoint, Endpoint]`. Its
-    // companion `rev_emap` is written and never read on the Python side, and is
-    // not carried here.
+    // The search builds endpoints as VALUES -- a fresh one per candidate
+    // application -- so one logical product exists as several equal endpoints,
+    // and this map is the only thing that turns them into one instance. Hence
+    // the signature key: a consumer holds a different endpoint from the one its
+    // producer emitted, and equality is all they share.
+    //
+    // What it must NOT do is reuse an instance across two producing steps. That
+    // merges two transforms' outputs into one endpoint with two producers, which
+    // compiles to two processes writing one file. Every product below is a fresh
+    // instance for that reason.
     let mut endpoint_map: Map<EpSig, EpId> = det::map();
 
     let node_order = get_order(ar, &steps);
@@ -187,6 +198,20 @@ pub fn rectify(
 fn fix_endpoints(
     p: &Problem, ar: &mut Arena, a: ApplId, endpoint_map: &mut Map<EpSig, EpId>,
 ) -> Result<(), String> {
+    if ar.appl(a).transform == p.given_index {
+        // A given is already what it claims to be. `lineage` is empty and
+        // `extra` reduces to the endpoint's own parents, because a given's
+        // parents are ancestors of a given by definition -- so the rebuild below
+        // is a copy with no change of content. Making that copy mints a second
+        // identity for one input while the lineage kept by `inherent_parents`
+        // still names the first, which is where the endpoint twins came from.
+        let groups: Vec<Group> = ar.appls[a as usize].produced.clone();
+        for g in &groups {
+            for &(_, e) in g { endpoint_map.insert(ar.eps.sig(e), e); }
+        }
+        ar.resign(p, a);
+        return Ok(());
+    }
     let requires = p.transforms[ar.appl(a).transform as usize].requires.clone();
     let mut lineage: Vec<EpId> = Vec::new();
     for d in requires {
@@ -205,7 +230,6 @@ fn fix_endpoints(
     for g in &groups {
         let mut ng: Group = Vec::with_capacity(g.len());
         for &(d, e) in g {
-            let old_sig = ar.eps.sig(e);
             // The original endpoint's own parents, kept only where they are
             // problem inputs -- everything else is about to be re-derived from
             // the step's actual inputs.
@@ -218,20 +242,12 @@ fn fix_endpoints(
                 .collect();
             extra.extend_from_slice(&lineage);
             let extra = ar.ep_set(extra);
-            let new_e = match endpoint_map.get(&old_sig).copied() {
-                Some(mapped) => {
-                    // In place: everything already pointing at `mapped` sees the
-                    // wider lineage, and its signature changes underneath them.
-                    ar.eps.extend_parents(mapped, &extra);
-                    mapped
-                }
-                None => {
-                    let ty = ar.eps.ty(e);
-                    ar.eps.new_endpoint(ty, &extra)
-                }
-            };
+            // Always fresh. Reusing a mapped instance here is what gave one
+            // endpoint two producers.
+            let ty = ar.eps.ty(e);
+            let new_e = ar.eps.new_endpoint(ty, &extra);
             ng.push((d, new_e));
-            endpoint_map.insert(old_sig, new_e);
+            endpoint_map.insert(ar.eps.sig(e), new_e);
         }
         new_produced.push(ng);
     }
