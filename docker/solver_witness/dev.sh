@@ -322,8 +322,13 @@ case "${1:---help}" in
         # into the same project and asks lake for a single module, so a clause
         # proof iterates against exactly what the gate will later see.
         #
-        # Builds serialize on lake own lock, so several of these may run at once
-        # and will simply queue.
+        # SERIALIZED here, and not by lake. Lake locks its own build
+        # directory, which is not the resource that collides: two invocations
+        # re-stage the SAME SolverWitness/ tree, so one deletes the other
+        # files mid-build, and both wrote one shared log whose tail then
+        # reported somebody else errors against your line numbers. Measured,
+        # not theorised -- it corrupted the feedback of two agents working on
+        # disjoint modules. flock makes several callers queue instead.
         shift
         mod="${1:?usage: dev.sh --lean-build <module>, e.g. SolverWitness.Proof.Basis}"
         # Interpolated into a shell command inside the container, so it is
@@ -334,6 +339,9 @@ case "${1:---help}" in
         in_lean "
             set -e
             export PATH=/root/leanhome/elan/bin:\$PATH
+            exec 9>/root/leanhome/.lean-build.lock
+            flock 9
+            log=\$(mktemp /root/leanhome/lean-build.XXXXXX.log)
             cd /root/leanhome/proj
             mkdir -p SolverWitness
             find SolverWitness -mindepth 1 ! -name Types.lean ! -name Funs.lean \
@@ -344,11 +352,12 @@ case "${1:---help}" in
             done
             cp -r /root/src/src/solver_witness/lean/. SolverWitness/
             rc=0
-            lake build $mod > /root/leanhome/lean-build.log 2>&1 || rc=\$?
+            lake build $mod > \$log 2>&1 || rc=\$?
             # The Aeneas dependency replays two sorry warnings of its own on
             # every build; they are not this tree and drown everything else.
             grep -vE '^.[0-9 /]*.Replayed|^warning: Aeneas|^info: .*Replayed' \
-                /root/leanhome/lean-build.log | tail -60
+                \$log | tail -60
+            rm -f \$log
             exit \$rc
         "
     ;;

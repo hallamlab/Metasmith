@@ -28,17 +28,65 @@
   exposes its unfolding equation as `<name>.eq_def`, and that is all a proof
   needs: termination is established by well-founded induction in the PROOF, on
   the measure `bound - index`, rather than by a measure attached to the
-  definition.
+  definition. Do not reach for `fixpoint_induct` -- its motive must be
+  admissible, and pinning a return value is not.
 
-  Every loop in the witness has the shape `while [ok &&] i < bound { … i += 1 }`,
-  so every proof has the shape:
+  Every loop in the witness has the shape `while [ok &&] i < bound { ... i += 1 }`,
+  and this is the shape of the proof, measured on `bits.eq_loop`:
 
-      induct on fuel `k` with `bound - i ≤ k`
-      rw [<name>.eq_def]; dsimp only     -- `dsimp` matters: the body opens with
-      split                              -- `have i1 := …`, which `split` will
-      · … step through the monadic binds -- not see through on its own
-        exact ih … (by scalar_tac)
-      · exact trivial-case
+      theorem f_spec (..) (h : ..) :
+          ∀ (k : Nat) (i : Usize), bound - i.val ≤ k → f .. i ⦃ r => r = c i ⦄
+        intro k; induction k with
+        | zero => ..                       -- in-bounds branch: `exfalso; scalar_tac`
+        | succ k ih => ..
+      rw [f.eq_def]; dsimp only; split      -- `dsimp only` is REQUIRED: the body
+                                            -- opens `have i1 := ..`, and `split`
+                                            -- will not see through the let_fun
+      step as ⟨x, hx⟩                       -- steps one monadic bind
+
+  Six things that cost builds to learn:
+
+  1. **Say it over `List.drop i`, not as a bounded `∀ j, i ≤ j → ...`.** The
+     inductive step is then exactly `List.drop_eq_getElem_cons` -- one head, one
+     tail -- and the wrapper falls out at `i = 0` by `List.drop_zero` with no
+     index algebra anywhere. An accumulating loop (`union`, `of_ids`) wants the
+     same trick over `take i` and `set`.
+
+  2. **Never let `decide` appear in a rewrite.** `Slice α` is a plain `def` for a
+     subtype, so `a.val` only type-checks once `Slice` unfolds, which `rw` and
+     `simp` motive checks will not do at `instances` transparency. Rewriting a
+     goal `r = decide P` fails with "the motive is not type correct" and an
+     application mismatch pointing at an `↑a` that looks perfectly well typed --
+     an error that names nothing to do with the cause. Prove the bare `P` (or
+     `¬P`) as its own `have`, then close with `decide_eq_true h` or
+     `decide_eq_false h`, `.symm` since the goal is `c = decide P`.
+
+  3. **`WP.spec_mono` is how the goal reaches the induction hypothesis.** The IH
+     is stated at `i+1` and the goal at `i`, differing by an `Iff`, so
+     `exact WP.spec_mono (ih i2 (by scalar_tac)) (fun r hr => hr.trans
+     (decide_eq_decide.mpr hiff.symm))` -- and no rewriting under `decide`.
+
+  4. **`step` finds the primitive specs unaided**, including
+     `Slice.index_usize_spec` and `Usize.add_spec`, and discharges their
+     preconditions itself (its default is `grind`, not `scalar_tac`) provided the
+     bounds are already in context. Put `have hia : i.val < a.val.length := by
+     scalar_tac` in first; the `drop` lemma needs it again anyway.
+
+  5. **A tactic block inlined into a rewrite makes its implicits opaque.**
+     `rw [foo.mpr (by scalar_tac)]` reports "did not find an instance of the
+     pattern" for a pattern plainly present, because the block's goal is what
+     would have fixed the implicit arguments. State it as a `have` with an
+     explicit type.
+
+  6. **`simp` can undo the rewrite you just made.** `List.getElem_cons_drop` is a
+     simp lemma and folds `l[i] :: l.drop (i+1)` straight back to `l.drop i`.
+     Close such a chain with `List.cons.injEq` inside the same `rw`, by `rfl`.
+
+  `scalar_tac` discharges every arithmetic side condition here -- the fuel
+  decrease, the bounds, and the exhausted-loop case -- but wants `exfalso` first
+  when the goal is not itself arithmetic. And no `simp only [WP.spec_ok]` is
+  needed anywhere: `spec`, `theta` and `wp_return` are plain definitions, so on
+  an `ok` the triple IS the equation definitionally and a bare `exact` sees it.
 -/
 
 import SolverWitness.Types
