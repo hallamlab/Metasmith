@@ -29,6 +29,7 @@ from typing import Any
 from ..models.solver_backend import Backend
 from ..models.solver_engine import CallEngine, EngineFor
 from ..models.solver_wire import encode_problem
+from .solver_spec import CLAUSES
 
 __all__ = [
     "require_rust",
@@ -119,154 +120,122 @@ def solve_and_check(
 
 
 # ---------------------------------------------------------------------------
-# decoys: one per clause, each derived from an accepted reply
+# decoys: one per clause, each derived from a reply the checker just accepted
 # ---------------------------------------------------------------------------
+#
+# Shared, so the engine's witness and `solver_spec`'s python reference are
+# adjudicating the SAME mutated plans. Two copies of these drifted apart once
+# already, and a decoy that differs between the two turns a real disagreement
+# into a diff nobody can read.
 
 
-def _first_nongiven_step(request: dict, reply: dict) -> int | None:
+def _first_plan_step(request: dict, reply: dict) -> int:
     for i, s in enumerate(reply["steps"]):
         if s["transform"] != request["given_index"] and s["used"]:
             return i
-    return None
+    raise AssertionError("no non-given step consumes anything")
 
 
-def _decoy_conformance(request: dict, reply: dict) -> bool:
-    """Bind a slot to an endpoint that does not carry its properties."""
-    i = _first_nongiven_step(request, reply)
-    if i is None:
-        return False
-    slot, _ = reply["steps"][i]["used"][0]
-    # An endpoint carrying no properties at all cannot satisfy a slot that
-    # demands any, and every plan has at least one such slot.
-    if not request["nodes"][slot]["props"]:
-        return False
-    reply["endpoints"].append({"props": [], "parents": [], "source_node": None})
-    reply["steps"][i]["used"][0] = [slot, len(reply["endpoints"]) - 1]
-    return True
+def _d_indexed(q, r):
+    r["steps"][_first_plan_step(q, r)]["used"][0][0] = len(q["nodes"]) + 1000
 
 
-def _decoy_provenance(request: dict, reply: dict) -> bool:
-    """Consume an endpoint no step ever emitted."""
-    i = _first_nongiven_step(request, reply)
-    if i is None:
-        return False
-    slot, ep = reply["steps"][i]["used"][0]
-    clone = copy.deepcopy(reply["endpoints"][ep])
-    reply["endpoints"].append(clone)
-    reply["steps"][i]["used"][0] = [slot, len(reply["endpoints"]) - 1]
-    return True
+def _d_shape(q, r):
+    del r["steps"][_first_plan_step(q, r)]["used"][0]
 
 
-def _decoy_schedulable(request: dict, reply: dict) -> bool:
-    """Put a consumer before its producer."""
-    for j, s in enumerate(reply["steps"]):
-        if not s["used"]:
+def _d_conformance(q, r):
+    i = _first_plan_step(q, r)
+    slot = r["steps"][i]["used"][0][0]
+    r["endpoints"].append({"props": [], "parents": [], "source_node": None})
+    r["steps"][i]["used"][0] = [slot, len(r["endpoints"]) - 1]
+
+
+def _d_emission(q, r):
+    i = _first_plan_step(q, r)
+    for group in r["steps"][i]["produced"]:
+        for k, (slot, _) in enumerate(group):
+            if q["nodes"][slot]["props"]:
+                r["endpoints"].append({"props": [], "parents": [], "source_node": None})
+                group[k] = [slot, len(r["endpoints"]) - 1]
+                return
+
+
+def _d_derived(q, r):
+    # One extra parent the step did not confer. It has to be an index the
+    # endpoint does not already carry, and below the endpoint's own -- a higher
+    # one would trip `indexed` instead and prove nothing about this clause.
+    for i, s in enumerate(r["steps"]):
+        if s["transform"] == q["given_index"]:
             continue
-        ep = s["used"][0][1]
-        for i, t in enumerate(reply["steps"]):
-            if i < j and any(b[1] == ep for g in t["produced"] for b in g):
-                reply["steps"][i], reply["steps"][j] = reply["steps"][j], reply["steps"][i]
-                return True
-    return False
+        for group in s["produced"]:
+            for _, e in group:
+                carried = set(r["endpoints"][e]["parents"])
+                spare = next((x for x in range(e) if x not in carried), None)
+                if spare is None:
+                    continue
+                r["endpoints"][e]["parents"] = sorted(carried | {spare})
+                return
 
 
-def _decoy_boundary(request: dict, reply: dict) -> bool:
-    """Delete the target step."""
-    for i, s in enumerate(reply["steps"]):
-        if s["transform"] == request["target_index"]:
-            del reply["steps"][i]
-            return True
-    return False
+def _d_uniqueProducer(q, r):
+    i = _first_plan_step(q, r)
+    _, e = r["steps"][i]["produced"][0][0]
+    for j, s in enumerate(r["steps"]):
+        if j != i and s["transform"] != q["given_index"] and s["produced"] and s["produced"][0]:
+            s["produced"][0][0] = [s["produced"][0][0][0], e]
+            return
 
 
-def _decoy_rooted(request: dict, reply: dict) -> bool:
-    """Strip a produced endpoint's declared lineage."""
-    for s in reply["steps"]:
-        if s["transform"] == request["given_index"] or not s["used"]:
+def _d_provenance(q, r):
+    i = _first_plan_step(q, r)
+    slot, e = r["steps"][i]["used"][0]
+    r["endpoints"].append(copy.deepcopy(r["endpoints"][e]))
+    r["steps"][i]["used"][0] = [slot, len(r["endpoints"]) - 1]
+
+
+def _d_givens(q, r):
+    # A property id that exists but that this given does not carry. Reaching past
+    # the interned table instead would trip `indexed` and prove nothing here.
+    for s in r["steps"]:
+        if s["transform"] != q["given_index"]:
             continue
-        for g in s["produced"]:
-            for _, ep in g:
-                if reply["endpoints"][ep]["parents"]:
-                    reply["endpoints"][ep]["parents"] = []
-                    return True
-    return False
+        _, e = s["produced"][0][0]
+        carried = set(r["endpoints"][e]["props"])
+        spare = next(x for x in range(q["n_properties"]) if x not in carried)
+        r["endpoints"][e]["props"] = sorted(carried | {spare})
+        return
 
 
-def _decoy_givens(request: dict, reply: dict) -> bool:
-    """Have the given step present an endpoint matching no declared input."""
-    for s in reply["steps"]:
-        if s["transform"] != request["given_index"]:
-            continue
-        for g in s["produced"]:
-            if not g:
-                continue
-            _, ep = g[0]
-            # A property id past the end of the interned table belongs to no
-            # declared given by construction.
-            reply["endpoints"][ep]["props"] = [request["n_properties"] + 1]
-            return True
-    return False
+def _d_schedulable(q, r):
+    plan = [i for i, s in enumerate(r["steps"]) if s["transform"] != q["given_index"]]
+    for j in plan:
+        for _, e in r["steps"][j]["used"]:
+            for i in plan:
+                if i < j and any(b == e for g in r["steps"][i]["produced"] for _, b in g):
+                    r["steps"][i], r["steps"][j] = r["steps"][j], r["steps"][i]
+                    return
 
 
-def _decoy_shape(request: dict, reply: dict) -> bool:
-    """Drop a required slot's binding."""
-    i = _first_nongiven_step(request, reply)
-    if i is None or len(reply["steps"][i]["used"]) < 1:
-        return False
-    del reply["steps"][i]["used"][0]
-    return True
+def _d_target(q, r):
+    for i, s in enumerate(r["steps"]):
+        if s["transform"] == q["target_index"]:
+            del r["steps"][i]
+            return
 
 
-def _decoy_indexed(request: dict, reply: dict) -> bool:
-    """Name a slot that does not exist."""
-    i = _first_nongiven_step(request, reply)
-    if i is None:
-        return False
-    reply["steps"][i]["used"][0][0] = len(request["nodes"]) + 1000
-    return True
+#: clause name -> the mutation. Several mutations legitimately trip more than one
+#: clause, so a test asserts the named clause is *among* those violated.
+DECOYS: dict[str, Any] = {c: globals()[f"_d_{c}"] for c in CLAUSES}
 
 
-def _decoy_nonempty(request: dict, reply: dict) -> bool:
-    reply["steps"] = []
-    return True
-
-
-def _decoy_emission(request: dict, reply: dict) -> bool:
-    """Emit an endpoint that does not carry the properties of the slot it left."""
-    for s in reply["steps"]:
-        if s["transform"] == request["given_index"]:
-            continue
-        for g in s["produced"]:
-            for k, (slot, _) in enumerate(g):
-                if request["nodes"][slot]["props"]:
-                    reply["endpoints"].append(
-                        {"props": [], "parents": [], "source_node": None})
-                    g[k] = [slot, len(reply["endpoints"]) - 1]
-                    return True
-    return False
-
-
-#: clause name -> (mutation, whether the clause must be the one that fires).
-#: Several mutations legitimately trip more than one clause -- deleting the
-#: target step breaks `boundary` and also orphans whatever it consumed -- so the
-#: assertion is that the named clause is *among* those violated.
-DECOYS: dict[str, Any] = {
-    "indexed": _decoy_indexed,
-    "nonempty": _decoy_nonempty,
-    "shape": _decoy_shape,
-    "provenance": _decoy_provenance,
-    "conformance": _decoy_conformance,
-    "emission": _decoy_emission,
-    "rooted": _decoy_rooted,
-    "givens": _decoy_givens,
-    "schedulable": _decoy_schedulable,
-    "boundary": _decoy_boundary,
-}
-
-
-def apply_decoy(clause: str, request: dict, reply: dict) -> dict | None:
-    """Return a mutated copy of `reply`, or None when this case cannot host it."""
-    out = copy.deepcopy(reply)
-    if not DECOYS[clause](request, out):
+def apply_decoy(clause: str, request: dict, reply: dict) -> tuple[dict, dict] | None:
+    """Return mutated copies, or None when this case cannot host the decoy."""
+    q, r = copy.deepcopy(request), copy.deepcopy(reply)
+    try:
+        DECOYS[clause](q, r)
+    except (AssertionError, IndexError, StopIteration):
         return None
-    return out
+    if q == request and r == reply:
+        return None
+    return q, r

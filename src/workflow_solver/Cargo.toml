@@ -22,6 +22,11 @@ rand_chacha = "0.10"
 # separate crate so Charon can lower it alone: this binary is edition 2024 and
 # pulls four registry crates, none of which the extraction toolchain will read.
 solver_witness = { path = "../solver_witness" }
+# The reporting half, kept a separate crate so `charon cargo` run in
+# `solver_witness` cannot reach it. Everything Charon cannot lower -- `String`,
+# `&'static str`, the loops that locate a violation -- lives there, which makes
+# "never extracted" a property of the dependency graph rather than a flag.
+solver_witness_audit = { path = "../solver_witness_audit" }
 
 [profile.release]
 opt-level = 3

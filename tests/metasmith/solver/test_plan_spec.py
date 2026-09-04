@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import copy
-
 import pytest
 
 from metasmith.models.solver_backend import Backend
@@ -9,6 +7,7 @@ from metasmith.models.solver_engine import SOLVER_WIRE_VERSION, CallEngine, Engi
 from metasmith.models.solver_wire import encode_problem
 from metasmith.testing.solver_bench import CORPUS, STRESS_CORPUS, _libraries_root
 from metasmith.testing.solver_spec import CLAUSES, check_spec
+from metasmith.testing.witness_check import DECOYS, apply_decoy
 from metasmith.testing.solver_verification import generate_problem, problem_of_plan
 
 ALL_CASES = [(n, s, d) for n, s, d in CORPUS + STRESS_CORPUS]
@@ -104,106 +103,12 @@ def test_the_shipped_templates_satisfy_the_specification(engine):
 
 
 # --------------------------------------------------------------------------
-# decoys: one per clause, each derived from a reply the checker just accepted
+# decoys
 # --------------------------------------------------------------------------
-
-
-def _first_plan_step(request: dict, reply: dict) -> int:
-    for i, s in enumerate(reply["steps"]):
-        if s["transform"] != request["given_index"] and s["used"]:
-            return i
-    raise AssertionError("no non-given step consumes anything")
-
-
-def _d_indexed(q, r):
-    r["steps"][_first_plan_step(q, r)]["used"][0][0] = len(q["nodes"]) + 1000
-
-
-def _d_shape(q, r):
-    del r["steps"][_first_plan_step(q, r)]["used"][0]
-
-
-def _d_conformance(q, r):
-    i = _first_plan_step(q, r)
-    slot = r["steps"][i]["used"][0][0]
-    r["endpoints"].append({"props": [], "parents": [], "source_node": None})
-    r["steps"][i]["used"][0] = [slot, len(r["endpoints"]) - 1]
-
-
-def _d_emission(q, r):
-    i = _first_plan_step(q, r)
-    for group in r["steps"][i]["produced"]:
-        for k, (slot, _) in enumerate(group):
-            if q["nodes"][slot]["props"]:
-                r["endpoints"].append({"props": [], "parents": [], "source_node": None})
-                group[k] = [slot, len(r["endpoints"]) - 1]
-                return
-
-
-def _d_derived(q, r):
-    # One extra parent the step did not confer. It has to be an index the
-    # endpoint does not already carry, and below the endpoint's own -- a higher
-    # one would trip `indexed` instead and prove nothing about this clause.
-    for i, s in enumerate(r["steps"]):
-        if s["transform"] == q["given_index"]:
-            continue
-        for group in s["produced"]:
-            for _, e in group:
-                carried = set(r["endpoints"][e]["parents"])
-                spare = next((x for x in range(e) if x not in carried), None)
-                if spare is None:
-                    continue
-                r["endpoints"][e]["parents"] = sorted(carried | {spare})
-                return
-
-
-def _d_uniqueProducer(q, r):
-    i = _first_plan_step(q, r)
-    _, e = r["steps"][i]["produced"][0][0]
-    for j, s in enumerate(r["steps"]):
-        if j != i and s["transform"] != q["given_index"] and s["produced"] and s["produced"][0]:
-            s["produced"][0][0] = [s["produced"][0][0][0], e]
-            return
-
-
-def _d_provenance(q, r):
-    i = _first_plan_step(q, r)
-    slot, e = r["steps"][i]["used"][0]
-    r["endpoints"].append(copy.deepcopy(r["endpoints"][e]))
-    r["steps"][i]["used"][0] = [slot, len(r["endpoints"]) - 1]
-
-
-def _d_givens(q, r):
-    # A property id that exists but that this given does not carry. Reaching past
-    # the interned table instead would trip `indexed` and prove nothing here.
-    for s in r["steps"]:
-        if s["transform"] != q["given_index"]:
-            continue
-        _, e = s["produced"][0][0]
-        carried = set(r["endpoints"][e]["props"])
-        spare = next(x for x in range(q["n_properties"]) if x not in carried)
-        r["endpoints"][e]["props"] = sorted(carried | {spare})
-        return
-
-
-def _d_schedulable(q, r):
-    plan = [i for i, s in enumerate(r["steps"]) if s["transform"] != q["given_index"]]
-    for j in plan:
-        for _, e in r["steps"][j]["used"]:
-            for i in plan:
-                if i < j and any(b == e for g in r["steps"][i]["produced"] for _, b in g):
-                    r["steps"][i], r["steps"][j] = r["steps"][j], r["steps"][i]
-                    return
-
-
-def _d_target(q, r):
-    for i, s in enumerate(r["steps"]):
-        if s["transform"] == q["target_index"]:
-            del r["steps"][i]
-            return
-
-
-DECOYS = {c: globals()[f"_d_{c}"] for c in CLAUSES}
+#
+# The mutations live in `witness_check` so that this suite and the engine's own
+# witness adjudicate the SAME mutated plans. A decoy that differs between the two
+# turns a real disagreement into a diff nobody can read.
 
 
 @pytest.mark.parametrize("clause", sorted(DECOYS))
@@ -216,15 +121,11 @@ def test_each_clause_rejects_a_plan_built_to_break_it(engine, clause):
             continue
         # Derived from a reply the checker has just accepted, so a rejection
         # cannot be blamed on the plan merely being malformed.
-        bad_q, bad_r = copy.deepcopy(request), copy.deepcopy(reply)
-        try:
-            DECOYS[clause](bad_q, bad_r)
-        except (AssertionError, IndexError, StopIteration):
-            continue
-        if bad_r == reply and bad_q == request:
+        bad = apply_decoy(clause, request, reply)
+        if bad is None:
             continue
         hosted += 1
-        got = check_spec(bad_q, bad_r)
+        got = check_spec(*bad)
         assert got.violated(clause), (
             f"{clause} decoy on {name} was not caught by {clause}; "
             f"got {got.violations or 'nothing at all'}"

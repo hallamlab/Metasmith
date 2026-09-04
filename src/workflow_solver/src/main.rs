@@ -213,8 +213,8 @@ fn cmd_check() -> Result<(), String> {
         ));
     }
     let p = witness::problem_of(&req.request);
-    let q = witness::plan_of(&req.reply);
-    let verdict = solver_witness::check(&p, &q);
+    let q = witness::plan_of(&req.request, &req.reply)?;
+    let verdict = solver_witness_audit::audit(&p, &q);
 
     emit(&wire::CheckReply {
         wire_version: WIRE_VERSION,
@@ -224,10 +224,10 @@ fn cmd_check() -> Result<(), String> {
             .violations
             .iter()
             .map(|x| wire::EncodedViolation {
-                clause: x.clause.name().to_string(),
-                step: x.step,
-                slot: x.slot,
-                endpoint: x.endpoint,
+                clause: solver_witness_audit::name(x.clause).to_string(),
+                step: x.step as u32,
+                slot: x.slot as u32,
+                endpoint: x.endpoint as u32,
             })
             .collect(),
     })?;
@@ -290,7 +290,9 @@ fn cmd_solve() -> Result<(), String> {
     // pins exactly that behaviour, and a gate that refused it would break the
     // regression while looking like it had found something.
     if plan.complete {
-        let verdict = solver_witness::check(&witness::problem_of(&enc), &witness::plan_of(&plan));
+        let wp = witness::problem_of(&enc);
+        let wq = witness::plan_of(&enc, &plan)?;
+        let verdict = solver_witness_audit::audit(&wp, &wq);
         if !verdict.ok() {
             eprint!("{}", witness::render(&verdict));
             return Err(
