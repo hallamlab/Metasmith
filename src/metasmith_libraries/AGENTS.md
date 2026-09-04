@@ -172,8 +172,11 @@ were picked, nothing opened. It is the tool for "why did the planner add that st
   `require_configured()` and exit if a placeholder is unfilled.
 - **A `sample_type` masks the library down to that row's lineage.** Anything with no lineage
   relation to it — a weight tarball, a reference DB — becomes invisible to the plan and comes
-  back as a `download*` step. Either leave the sample type unset or list the entry in
-  `shared_input_paths`.
+  back as a `download*` step. Leave the sample type unset, list the entry in
+  `shared_input_paths`, or parent the entry to the sample row. Reach for the last when the
+  reference has no producer at all — `ref::mnxr_lookup` and `ref::label_transfer_landmarks`
+  are consumed by `gpr_4lane` and produced by nothing, so there is no `download*` step to
+  fall back to and an invisible one takes the whole plan down.
 - To force all sibling transforms (e.g. all three binners), target a downstream that requires
   them all (`binning_local::cluster_table`), or give each sibling's target a distinct parent.
 

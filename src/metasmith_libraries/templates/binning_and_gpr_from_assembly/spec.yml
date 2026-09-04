@@ -1,0 +1,86 @@
+name: binning_and_gpr_from_assembly
+description: 'Bin an existing assembly with three binners, filter the bins on CheckM2
+  quality
+
+  and dereplicate them with skani, and in the same pass build the gene-attributed
+
+  GPR evidence table from KOFAMSCAN, CLEAN, DIAMOND UniRef50 and ProteinBERT.
+
+  Takes the assembly and the long reads it was built from; the reads are what the
+
+  coverage the binners need is computed from.'
+sample_type: sequences::read_metadata
+target_types:
+- sequences::assembly_stats
+- sequences::assembly_per_contig_coverage
+- sequences::assembly_per_bp_coverage
+- sequences::metabat2_bin_fasta
+- sequences::semibin2_bin_fasta
+- sequences::comebin_bin_fasta
+- binning_local::quality_bin_fasta
+- binning_local::cluster_table
+- binning::metabat2_contig_to_bin_table
+- binning::semibin2_contig_to_bin_table
+- binning::comebin_contig_to_bin_table
+- sequences::read_qc_stats
+- annotation::gpr_table
+- annotation::kofamscan_results
+- annotation::kofamscan_descriptions
+- annotation::clean_predictions
+- annotation::diamond_uniref50_results
+- annotation::diamond_uniref50_descriptions
+- annotation::proteinbert_embeddings
+- sequences::orfs
+- sequences::gff
+- type: taxonomy::checkm_stats
+  parents:
+  - 3
+- type: taxonomy::checkm_stats
+  parents:
+  - 4
+- type: taxonomy::checkm_stats
+  parents:
+  - 5
+transform_libraries:
+- metagenomics
+- assembly
+- logistics
+- functionalAnnotation
+- fabfos
+resource_libraries:
+- env
+- lib
+shared_input_paths: []
+input_library:
+  schema: v1
+  manifest:
+    /msm_deferred/44c19330e3ba45f8b3690cb7b23fd5ef:
+      type: ref::mnxr_lookup
+      parents:
+        Gte56glvsTbQ@reads_metadata.json: sequences::read_metadata
+      instance_id: 1e20f4fb07036304fd0def727e138b76ece5e9cf8c55b8107f3be9b591e03a07832e
+      origin: leaf
+    /msm_deferred/81fc149efaf644ecb8ecc574c8540631:
+      type: sequences::long_reads
+      parents:
+        Gte56glvsTbQ@reads_metadata.json: sequences::read_metadata
+      instance_id: 1e204ad09d252ab26bbc003f715234318966ec3f5f2859d8287875988627e05bbc9b
+      origin: leaf
+    /msm_deferred/a34387b9d4944e6383dbdc8550acc24c:
+      type: sequences::assembly
+      parents:
+        Gte56glvsTbQ@reads_metadata.json: sequences::read_metadata
+      instance_id: 1e20051ef743bd147f60358a2d8a819550ab8e84154e31ab52d117f75285972da283
+      origin: leaf
+    /msm_deferred/a524d06bbed44132a0d22a4a130215c9:
+      type: ref::label_transfer_landmarks
+      parents:
+        Gte56glvsTbQ@reads_metadata.json: sequences::read_metadata
+      instance_id: 1e20b26c2231789741d8fbc6b39e60e57b10a827fc854e812f5a1f94c8c02d399e46
+      origin: leaf
+    reads_metadata.json:
+      type: sequences::read_metadata
+      instance_id: 1e20fe0ce8dc325e31efed7ce5f0da7d4278020e10d1c442b698ccdc2276f3cb64be
+      origin: leaf
+  values:
+    reads_metadata.json: '{"parity": "single", "length_class": "long"}'
