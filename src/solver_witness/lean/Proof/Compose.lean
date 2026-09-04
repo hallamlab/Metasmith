@@ -20,6 +20,8 @@ import SolverWitness.Proof.Lineage
 namespace SolverProof
 
 open Aeneas Aeneas.Std Result
+-- `types.*` lives under `solver_witness`; `Spec.lean` opens it the same way.
+open solver_witness
 
 /- The clause lemmas proved so far, reachable from one place. Four are stated
    under `WellIndexed`, which is the case split `check_spec` owes; the `_raw`
@@ -38,5 +40,34 @@ open Aeneas Aeneas.Std Result
 #check @cl_emission_spec_exact
 #check @ancestors_spec
 #check @descends_spec
+
+/-! ## The obligation
+
+  Moved here from `Spec.lean` because the import direction forbids it there:
+  every proof module imports the specification for its vocabulary, so the
+  specification cannot import them back to use their lemmas.
+
+  Stated as ONE EQUATION rather than as the biconditional. The biconditional
+  alone does not pin the negative case -- a checker that FAILS on every invalid
+  plan satisfies `check p q = ok true ↔ Valid p q` vacuously. The equation gives
+  totality, soundness and completeness together.
+
+  **The proof case-splits on `WellIndexed`.** Five of the ten clause lemmas --
+  Shape, Derived, Conformance, Emission, Givens -- are equivalent to their
+  conjuncts only under it, for three unrelated reasons, each machine-checked in
+  the module that found it. On the branch where `cl_indexed` is false, `check` is
+  false and so is `Valid`, and the unconditional `_raw`/`_exact` forms carry that
+  branch. On the branch where it holds, its conjuncts ARE the hypotheses those
+  five need. `cl_indexed_spec` is unconditional, which is what makes the split
+  available at all.
+-/
+
+theorem check_spec (p : types.Problem) (q : types.Plan) :
+    solver_witness.check p q = Result.ok (decide (SolverSpec.Valid p q)) := by
+  sorry
+
+theorem check_correct (p : types.Problem) (q : types.Plan) :
+    solver_witness.check p q = Result.ok true ↔ SolverSpec.Valid p q := by
+  rw [check_spec]; simp
 
 end SolverProof

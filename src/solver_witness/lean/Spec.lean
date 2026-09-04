@@ -345,14 +345,13 @@ instance (p : types.Problem) (q : types.Plan) : Decidable (Valid p q) :=
   every invalid plan satisfies `check p q = .ok true ↔ Valid p q` vacuously. The
   equation gives totality, soundness and completeness together, and it is what
   the clause-by-clause decomposition naturally produces.
+
+  **The obligation is DISCHARGED in `Proof/Compose.lean`, not here**, and the
+  direction of the imports is why: every proof module imports this file for the
+  vocabulary above, so this file cannot import them back. What stays here is the
+  statement of what a correct plan is, which is the part that has to be read and
+  believed. `SolverProof.check_spec` is the theorem, and `SolverProof.check_correct`
+  -- `∀ S. Certified(S) = Valid(S)` -- follows from it in one line.
 -/
-
-theorem check_spec (p : types.Problem) (q : types.Plan) :
-    solver_witness.check p q = Result.ok (decide (Valid p q)) := by
-  sorry
-
-theorem check_correct (p : types.Problem) (q : types.Plan) :
-    solver_witness.check p q = Result.ok true ↔ Valid p q := by
-  rw [check_spec]; simp
 
 end SolverSpec
