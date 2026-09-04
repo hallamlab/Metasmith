@@ -30,14 +30,22 @@ mkdir -p "$CROSS_TARGET_DIR" "$HOST_TARGET_DIR"
 
 in_container() {
     echo "in container: $@"
-    # Mounted at its own host path, not at a container-local one: cargo records
-    # absolute paths in its fingerprints, so the directory has to be called the
-    # same thing on both sides or every build invalidates the last one's work.
+    # The target dir is mounted at its own host path, not at a container-local
+    # one: cargo records absolute paths in its fingerprints, so the directory has
+    # to be called the same thing on both sides or every build invalidates the
+    # last one's work.
+    #
+    # `solver_witness` is mounted beside this crate because Cargo.toml depends on
+    # it by the relative path `../solver_witness`. Mounting this crate alone puts
+    # that path outside the container and cargo fails while resolving the
+    # dependency graph, before it compiles anything.
     docker run --rm \
-        --mount type=bind,source="$HERE",target="/root/src"\
+        ${MSM_DOCKER_DNS:+--dns "$MSM_DOCKER_DNS"} \
+        --mount type=bind,source="$HERE",target="/root/src/workflow_solver"\
+        --mount type=bind,source="$HERE/../solver_witness",target="/root/src/solver_witness"\
         --mount type=bind,source="$CROSS_TARGET_DIR",target="$CROSS_TARGET_DIR"\
         --env CARGO_TARGET_DIR="$CROSS_TARGET_DIR" \
-        --workdir /root/src \
+        --workdir /root/src/workflow_solver \
         $DOCKER_IMAGE \
         "$@"
 }
