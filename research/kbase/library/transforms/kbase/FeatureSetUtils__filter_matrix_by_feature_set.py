@@ -9,6 +9,8 @@ service     : FeatureSetUtils.filter_expression_matrix_with_feature_set
 Create a subset of gene expression values including only genes, which match
 genes provided in a list.
 
+Optional in KBase and therefore not a requirement here: expression_matrix_ref.
+
 Stub: the model is the port, the body only touches its outputs. This does
 not run the KBase app. Regenerate with research/kbase/library/_generate.py.
 """
@@ -17,12 +19,11 @@ from metasmith.python_api import *
 
 lib   = TransformInstanceLibrary.ResolveParentLibrary(__file__)
 model = Transform()
-study                 = model.AddRequirement(lib.GetType("kbase::study"))
-sample                = model.AddRequirement(lib.GetType("kbase::sample"), parents={study})
-expression_matrix_ref = model.AddRequirement(lib.GetType("kbase::accepts_27"), parents={sample})  # optional in KBase
-feature_set_ref       = model.AddRequirement(lib.GetType("kbase::KBaseCollections_FeatureSet"), parents={sample})
-env                   = model.AddRequirement(lib.GetType("env::FeatureSetUtils.env"))
-report_               = model.AddProduct(lib.GetType("kbase::report"))
+study           = model.AddRequirement(lib.GetType("kbase::study"))
+sample          = model.AddRequirement(lib.GetType("kbase::sample"), parents={study})
+feature_set_ref = model.AddRequirement(lib.GetType("kbase::KBaseCollections_FeatureSet"), parents={sample})
+env             = model.AddRequirement(lib.GetType("env::FeatureSetUtils.env"))
+report_         = model.AddProduct(lib.GetType("kbase::report"))
 
 def protocol(context: ExecutionContext):
     made = {report_: context.Output(report_)}
@@ -36,7 +37,7 @@ def protocol(context: ExecutionContext):
 TransformInstance(
     protocol=protocol,
     model=model,
-    group_by=expression_matrix_ref,
+    group_by=feature_set_ref,
     labels=[],
     resources=Resources(
         cpus=4,

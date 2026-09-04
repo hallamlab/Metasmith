@@ -9,6 +9,8 @@ service     : MergeMetabolicAnnotations.import_annotations
 Import a file in TSV format from your staging area with new annotations to add
 to an existing genome
 
+Optional in KBase and therefore not a requirement here: genome.
+
 Stub: the model is the port, the body only touches its outputs. This does
 not run the KBase app. Regenerate with research/kbase/library/_generate.py.
 """
@@ -19,7 +21,6 @@ lib   = TransformInstanceLibrary.ResolveParentLibrary(__file__)
 model = Transform()
 study       = model.AddRequirement(lib.GetType("kbase::study"))
 sample      = model.AddRequirement(lib.GetType("kbase::sample"), parents={study})
-genome      = model.AddRequirement(lib.GetType("kbase::KBaseGenomes_Genome"), parents={sample})  # optional in KBase
 env         = model.AddRequirement(lib.GetType("env::MergeMetabolicAnnotations.env"))
 output_name = model.AddProduct(lib.GetType("kbase::KBaseGenomes_Genome"))
 report_     = model.AddProduct(lib.GetType("kbase::report"))
@@ -37,7 +38,7 @@ def protocol(context: ExecutionContext):
 TransformInstance(
     protocol=protocol,
     model=model,
-    group_by=genome,
+    group_by=sample,
     labels=[],
     resources=Resources(
         cpus=8,

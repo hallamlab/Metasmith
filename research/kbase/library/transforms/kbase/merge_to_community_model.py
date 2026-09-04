@@ -8,6 +8,9 @@ service     : KBaseFBAModeling.models_to_community_model
 
 Merge two or more metabolic models into a compartmentalized community model.
 
+Optional in KBase and therefore not a requirement here: input_models,
+input_modelset.
+
 Stub: the model is the port, the body only touches its outputs. This does
 not run the KBase app. Regenerate with research/kbase/library/_generate.py.
 """
@@ -16,11 +19,9 @@ from metasmith.python_api import *
 
 lib   = TransformInstanceLibrary.ResolveParentLibrary(__file__)
 model = Transform()
-study          = model.AddRequirement(lib.GetType("kbase::study"))
-sample         = model.AddRequirement(lib.GetType("kbase::sample"), parents={study})
-input_models   = model.AddRequirement(lib.GetType("kbase::KBaseFBA_FBAModel"), parents={sample})  # optional in KBase
-input_modelset = model.AddRequirement(lib.GetType("kbase::KBaseFBA_FBAModelSet"), parents={sample})  # optional in KBase
-output_model   = model.AddProduct(lib.GetType("kbase::KBaseFBA_FBAModel"))
+study        = model.AddRequirement(lib.GetType("kbase::study"))
+sample       = model.AddRequirement(lib.GetType("kbase::sample"), parents={study})
+output_model = model.AddProduct(lib.GetType("kbase::KBaseFBA_FBAModel"))
 
 def protocol(context: ExecutionContext):
     made = {output_model: context.Output(output_model)}
@@ -34,7 +35,7 @@ def protocol(context: ExecutionContext):
 TransformInstance(
     protocol=protocol,
     model=model,
-    group_by=input_models,
+    group_by=sample,
     labels=['inactive'],
     resources=Resources(
         cpus=4,

@@ -9,6 +9,9 @@ service     : PangenomeOrthomcl.build_pangenome_with_orthomcl
 Create a Pangenome object by performing OrthoMCL orthologous groups
 construction on a set of Genomes.
 
+Optional in KBase and therefore not a requirement here: input_genomeset,
+input_genomes.
+
 Stub: the model is the port, the body only touches its outputs. This does
 not run the KBase app. Regenerate with research/kbase/library/_generate.py.
 """
@@ -19,8 +22,6 @@ lib   = TransformInstanceLibrary.ResolveParentLibrary(__file__)
 model = Transform()
 study            = model.AddRequirement(lib.GetType("kbase::study"))
 sample           = model.AddRequirement(lib.GetType("kbase::sample"), parents={study})
-input_genomeset  = model.AddRequirement(lib.GetType("kbase::KBaseSearch_GenomeSet"), parents={sample})  # optional in KBase
-input_genomes    = model.AddRequirement(lib.GetType("kbase::KBaseGenomes_Genome"), parents={sample})  # optional in KBase
 env              = model.AddRequirement(lib.GetType("env::PangenomeOrthomcl.env"))
 output_pangenome = model.AddProduct(lib.GetType("kbase::KBaseGenomes_Pangenome"))
 report_          = model.AddProduct(lib.GetType("kbase::report"))
@@ -38,7 +39,7 @@ def protocol(context: ExecutionContext):
 TransformInstance(
     protocol=protocol,
     model=model,
-    group_by=input_genomeset,
+    group_by=sample,
     labels=[],
     resources=Resources(
         cpus=8,

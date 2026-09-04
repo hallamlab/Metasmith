@@ -8,6 +8,8 @@ service     : fba_tools.bulk_export_objects
 
 Bulk download many modeling objects as one file.
 
+Optional in KBase and therefore not a requirement here: refs.
+
 Stub: the model is the port, the body only touches its outputs. This does
 not run the KBase app. Regenerate with research/kbase/library/_generate.py.
 """
@@ -18,7 +20,6 @@ lib   = TransformInstanceLibrary.ResolveParentLibrary(__file__)
 model = Transform()
 study   = model.AddRequirement(lib.GetType("kbase::study"))
 sample  = model.AddRequirement(lib.GetType("kbase::sample"), parents={study})
-refs    = model.AddRequirement(lib.GetType("kbase::accepts_17"), parents={sample})  # optional in KBase
 env     = model.AddRequirement(lib.GetType("env::fba_tools.env"))
 report_ = model.AddProduct(lib.GetType("kbase::report"))
 
@@ -34,7 +35,7 @@ def protocol(context: ExecutionContext):
 TransformInstance(
     protocol=protocol,
     model=model,
-    group_by=refs,
+    group_by=sample,
     labels=[],
     resources=Resources(
         cpus=4,

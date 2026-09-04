@@ -8,6 +8,8 @@ service     : kb_ReadsUtilities.KButil_FASTQ_to_FASTA
 
 Turns SingleEndLibrary containing FASTQ into SingleEndLibrary containing FASTA
 
+Optional in KBase and therefore not a requirement here: input_ref.
+
 Stub: the model is the port, the body only touches its outputs. This does
 not run the KBase app. Regenerate with research/kbase/library/_generate.py.
 """
@@ -18,7 +20,6 @@ lib   = TransformInstanceLibrary.ResolveParentLibrary(__file__)
 model = Transform()
 study       = model.AddRequirement(lib.GetType("kbase::study"))
 sample      = model.AddRequirement(lib.GetType("kbase::sample"), parents={study})
-input_ref   = model.AddRequirement(lib.GetType("kbase::KBaseFile_SingleEndLibrary"), parents={sample})  # optional in KBase
 env         = model.AddRequirement(lib.GetType("env::kb_ReadsUtilities.env"))
 output_name = model.AddProduct(lib.GetType("kbase::KBaseFile_SingleEndLibrary"))
 report_     = model.AddProduct(lib.GetType("kbase::report"))
@@ -36,7 +37,7 @@ def protocol(context: ExecutionContext):
 TransformInstance(
     protocol=protocol,
     model=model,
-    group_by=input_ref,
+    group_by=sample,
     labels=['inactive'],
     resources=Resources(
         cpus=2,

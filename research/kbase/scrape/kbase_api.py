@@ -70,10 +70,13 @@ def _key(params) -> str:
 
 def call(service: str, url: str, method: str, params, *,
          jsonrpc2: bool = False, timeout: int = 90, retries: int = 4,
-         refresh: bool = False):
-    """One cached RPC. Returns the unwrapped result, or raises KBaseError."""
+         refresh: bool = False, no_cache: bool = False):
+    """One cached RPC. Returns the unwrapped result, or raises KBaseError.
+
+    `no_cache` is for a caller that stores the response itself in a better form.
+    """
     path = _cache_path(service, method.split(".")[-1], _key(params))
-    if path.exists() and not refresh:
+    if path.exists() and not refresh and not no_cache:
         return json.loads(path.read_text())["result"]
 
     if jsonrpc2:
@@ -88,6 +91,8 @@ def call(service: str, url: str, method: str, params, *,
     # The 1.1 services wrap every return in a single-element list; jsonrpc2 does not.
     if not jsonrpc2 and isinstance(result, list) and len(result) == 1:
         result = result[0]
+    if no_cache:
+        return result
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps({"method": method, "params": params,
                                 "fetched": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),

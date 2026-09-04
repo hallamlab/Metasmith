@@ -8,6 +8,8 @@ service     : KBaseFeatureValues.build_feature_set
 
 Create a new FeatureSet by selecting features from a Genome.
 
+Optional in KBase and therefore not a requirement here: base_feature_set.
+
 Stub: the model is the port, the body only touches its outputs. This does
 not run the KBase app. Regenerate with research/kbase/library/_generate.py.
 """
@@ -19,7 +21,6 @@ model = Transform()
 study              = model.AddRequirement(lib.GetType("kbase::study"))
 sample             = model.AddRequirement(lib.GetType("kbase::sample"), parents={study})
 input_genome       = model.AddRequirement(lib.GetType("kbase::KBaseGenomes_Genome"), parents={sample})
-base_feature_set   = model.AddRequirement(lib.GetType("kbase::KBaseCollections_FeatureSet"), parents={sample})  # optional in KBase
 output_feature_set = model.AddProduct(lib.GetType("kbase::KBaseCollections_FeatureSet"))
 
 def protocol(context: ExecutionContext):

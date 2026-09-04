@@ -8,6 +8,8 @@ service     : VirSorter.run_VirSorter
 
 Identifies viral sequences from viral and microbial metagenomes
 
+Optional in KBase and therefore not a requirement here: add_genomes.
+
 Stub: the model is the port, the body only touches its outputs. This does
 not run the KBase app. Regenerate with research/kbase/library/_generate.py.
 """
@@ -19,7 +21,6 @@ model = Transform()
 study              = model.AddRequirement(lib.GetType("kbase::study"))
 sample             = model.AddRequirement(lib.GetType("kbase::sample"), parents={study})
 genomes            = model.AddRequirement(lib.GetType("kbase::accepts_40"), parents={sample})
-add_genomes        = model.AddRequirement(lib.GetType("kbase::accepts_40"), parents={sample})  # optional in KBase
 env                = model.AddRequirement(lib.GetType("env::VirSorter.env"))
 binned_contig_name = model.AddProduct(lib.GetType("kbase::KBaseMetagenomes_BinnedContigs"))
 report_            = model.AddProduct(lib.GetType("kbase::report"))

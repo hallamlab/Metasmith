@@ -8,6 +8,9 @@ service     : kb_MaSuRCA.run_masurca_assembler
 
 Assemble reads using the MaSuRCA assembler.
 
+Optional in KBase and therefore not a requirement here: pacbio_reads,
+nanopore_reads.
+
 Stub: the model is the port, the body only touches its outputs. This does
 not run the KBase app. Regenerate with research/kbase/library/_generate.py.
 """
@@ -20,8 +23,6 @@ study                 = model.AddRequirement(lib.GetType("kbase::study"))
 sample                = model.AddRequirement(lib.GetType("kbase::sample"), parents={study})
 pe_id                 = model.AddRequirement(lib.GetType("kbase::accepts_12"), parents={sample})
 jp_id                 = model.AddRequirement(lib.GetType("kbase::accepts_12"), parents={sample})
-pacbio_reads          = model.AddRequirement(lib.GetType("kbase::accepts_06"), parents={sample})  # optional in KBase
-nanopore_reads        = model.AddRequirement(lib.GetType("kbase::accepts_06"), parents={sample})  # optional in KBase
 env                   = model.AddRequirement(lib.GetType("env::kb_MaSuRCA.env"))
 output_contigset_name = model.AddProduct(lib.GetType("kbase::KBaseGenomeAnnotations_Assembly"))
 report_               = model.AddProduct(lib.GetType("kbase::report"))

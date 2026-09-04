@@ -8,6 +8,8 @@ service     : FBAFileUtil.tsv_file_to_model
 
 none
 
+Optional in KBase and therefore not a requirement here: genomeObject.
+
 Stub: the model is the port, the body only touches its outputs. This does
 not run the KBase app. Regenerate with research/kbase/library/_generate.py.
 """
@@ -18,7 +20,6 @@ lib   = TransformInstanceLibrary.ResolveParentLibrary(__file__)
 model = Transform()
 study        = model.AddRequirement(lib.GetType("kbase::study"))
 sample       = model.AddRequirement(lib.GetType("kbase::sample"), parents={study})
-genomeobject = model.AddRequirement(lib.GetType("kbase::KBaseGenomes_Genome"), parents={sample})  # optional in KBase
 env          = model.AddRequirement(lib.GetType("env::FBAFileUtil.env"))
 outputobject = model.AddProduct(lib.GetType("kbase::KBaseFBA_FBAModel"))
 
@@ -34,7 +35,7 @@ def protocol(context: ExecutionContext):
 TransformInstance(
     protocol=protocol,
     model=model,
-    group_by=genomeobject,
+    group_by=sample,
     labels=['inactive'],
     resources=Resources(
         cpus=4,

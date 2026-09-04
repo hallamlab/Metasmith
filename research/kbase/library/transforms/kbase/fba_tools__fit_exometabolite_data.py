@@ -10,6 +10,9 @@ Identify the minimal set of biochemical reactions to add to a draft metabolic
 model to enable production and consumption of as many exometabolites as
 possible
 
+Optional in KBase and therefore not a requirement here: media_ref,
+source_fbamodel_id.
+
 References workspace types the registry no longer serves:
 KBaseMatrices.MetaboliteMatrix. They are still declared, from the app spec's
 own naming.
@@ -26,8 +29,6 @@ study              = model.AddRequirement(lib.GetType("kbase::study"))
 sample             = model.AddRequirement(lib.GetType("kbase::sample"), parents={study})
 fbamodel_id        = model.AddRequirement(lib.GetType("kbase::KBaseFBA_FBAModel"), parents={sample})
 exometabolite_ref  = model.AddRequirement(lib.GetType("kbase::accepts_57"), parents={sample})
-media_ref          = model.AddRequirement(lib.GetType("kbase::KBaseBiochem_Media"), parents={sample})  # optional in KBase
-source_fbamodel_id = model.AddRequirement(lib.GetType("kbase::KBaseFBA_FBAModel"), parents={sample})  # optional in KBase
 env                = model.AddRequirement(lib.GetType("env::fba_tools.env"))
 fbamodel_output_id = model.AddProduct(lib.GetType("kbase::KBaseFBA_FBAModel"))
 exomedia_output_id = model.AddProduct(lib.GetType("kbase::KBaseBiochem_Media"))

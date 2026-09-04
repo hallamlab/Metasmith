@@ -8,6 +8,9 @@ service     : SnekmerLearnApply.run_SnekmerLearnApply
 
 Annotate Genome or Protein Sequence Set Object with Snekmer Apply.
 
+Optional in KBase and therefore not a requirement here: protein_input,
+genome_input.
+
 Stub: the model is the port, the body only touches its outputs. This does
 not run the KBase app. Regenerate with research/kbase/library/_generate.py.
 """
@@ -16,12 +19,10 @@ from metasmith.python_api import *
 
 lib   = TransformInstanceLibrary.ResolveParentLibrary(__file__)
 model = Transform()
-study         = model.AddRequirement(lib.GetType("kbase::study"))
-sample        = model.AddRequirement(lib.GetType("kbase::sample"), parents={study})
-protein_input = model.AddRequirement(lib.GetType("kbase::KBaseSequences_ProteinSequenceSet"), parents={sample})  # optional in KBase
-genome_input  = model.AddRequirement(lib.GetType("kbase::KBaseGenomes_Genome"), parents={sample})  # optional in KBase
-env           = model.AddRequirement(lib.GetType("env::SnekmerLearnApply.env"))
-report_       = model.AddProduct(lib.GetType("kbase::report"))
+study   = model.AddRequirement(lib.GetType("kbase::study"))
+sample  = model.AddRequirement(lib.GetType("kbase::sample"), parents={study})
+env     = model.AddRequirement(lib.GetType("env::SnekmerLearnApply.env"))
+report_ = model.AddProduct(lib.GetType("kbase::report"))
 
 def protocol(context: ExecutionContext):
     made = {report_: context.Output(report_)}
@@ -35,7 +36,7 @@ def protocol(context: ExecutionContext):
 TransformInstance(
     protocol=protocol,
     model=model,
-    group_by=protein_input,
+    group_by=sample,
     labels=['inactive'],
     resources=Resources(
         cpus=8,

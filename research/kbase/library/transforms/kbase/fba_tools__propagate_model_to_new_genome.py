@@ -9,6 +9,8 @@ service     : fba_tools.propagate_model_to_new_genome
 Translate the metabolic model of one organism to another, using a mapping of
 similar proteins between their genomes.
 
+Optional in KBase and therefore not a requirement here: media_id.
+
 Stub: the model is the port, the body only touches its outputs. This does
 not run the KBase app. Regenerate with research/kbase/library/_generate.py.
 """
@@ -21,7 +23,6 @@ study                = model.AddRequirement(lib.GetType("kbase::study"))
 sample               = model.AddRequirement(lib.GetType("kbase::sample"), parents={study})
 fbamodel_id          = model.AddRequirement(lib.GetType("kbase::KBaseFBA_FBAModel"), parents={sample})
 proteincomparison_id = model.AddRequirement(lib.GetType("kbase::GenomeComparison_ProteomeComparison"), parents={sample})
-media_id             = model.AddRequirement(lib.GetType("kbase::KBaseBiochem_Media"), parents={sample})  # optional in KBase
 env                  = model.AddRequirement(lib.GetType("env::fba_tools.env"))
 fbamodel_output_id   = model.AddProduct(lib.GetType("kbase::KBaseFBA_FBAModel"))
 report_              = model.AddProduct(lib.GetType("kbase::report"))

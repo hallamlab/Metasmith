@@ -9,6 +9,8 @@ service     : fba_tools.run_model_characterization
 Runs a variety of algorithms on a model to characterize its quality, pathways,
 and auxotrophy.
 
+Optional in KBase and therefore not a requirement here: metagenome_model_id.
+
 Stub: the model is the port, the body only touches its outputs. This does
 not run the KBase app. Regenerate with research/kbase/library/_generate.py.
 """
@@ -17,13 +19,12 @@ from metasmith.python_api import *
 
 lib   = TransformInstanceLibrary.ResolveParentLibrary(__file__)
 model = Transform()
-study               = model.AddRequirement(lib.GetType("kbase::study"))
-sample              = model.AddRequirement(lib.GetType("kbase::sample"), parents={study})
-fbamodel_id         = model.AddRequirement(lib.GetType("kbase::KBaseFBA_FBAModel"), parents={sample})
-metagenome_model_id = model.AddRequirement(lib.GetType("kbase::KBaseFBA_FBAModel"), parents={sample})  # optional in KBase
-env                 = model.AddRequirement(lib.GetType("env::fba_tools.env"))
-fbamodel_output_id  = model.AddProduct(lib.GetType("kbase::KBaseFBA_FBAModel"))
-report_             = model.AddProduct(lib.GetType("kbase::report"))
+study              = model.AddRequirement(lib.GetType("kbase::study"))
+sample             = model.AddRequirement(lib.GetType("kbase::sample"), parents={study})
+fbamodel_id        = model.AddRequirement(lib.GetType("kbase::KBaseFBA_FBAModel"), parents={sample})
+env                = model.AddRequirement(lib.GetType("env::fba_tools.env"))
+fbamodel_output_id = model.AddProduct(lib.GetType("kbase::KBaseFBA_FBAModel"))
+report_            = model.AddProduct(lib.GetType("kbase::report"))
 
 def protocol(context: ExecutionContext):
     made = {fbamodel_output_id: context.Output(fbamodel_output_id)}

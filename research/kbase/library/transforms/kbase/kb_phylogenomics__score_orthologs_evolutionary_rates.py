@@ -9,6 +9,9 @@ service     : kb_phylogenomics.score_orthologs_evolutionary_rates
 Score the evolutionary rates of orthologs and save most conserved and most
 divergent features
 
+Optional in KBase and therefore not a requirement here:
+input_compare_genome_refs.
+
 Stub: the model is the port, the body only touches its outputs. This does
 not run the KBase app. Regenerate with research/kbase/library/_generate.py.
 """
@@ -17,13 +20,12 @@ from metasmith.python_api import *
 
 lib   = TransformInstanceLibrary.ResolveParentLibrary(__file__)
 model = Transform()
-study                     = model.AddRequirement(lib.GetType("kbase::study"))
-sample                    = model.AddRequirement(lib.GetType("kbase::sample"), parents={study})
-input_genome_ref          = model.AddRequirement(lib.GetType("kbase::KBaseGenomes_Genome"), parents={sample})
-input_pangenome_ref       = model.AddRequirement(lib.GetType("kbase::KBaseGenomes_Pangenome"), parents={sample})
-input_compare_genome_refs = model.AddRequirement(lib.GetType("kbase::KBaseGenomes_Genome"), parents={sample})  # optional in KBase
-env                       = model.AddRequirement(lib.GetType("env::kb_phylogenomics.env"))
-report_                   = model.AddProduct(lib.GetType("kbase::report"))
+study               = model.AddRequirement(lib.GetType("kbase::study"))
+sample              = model.AddRequirement(lib.GetType("kbase::sample"), parents={study})
+input_genome_ref    = model.AddRequirement(lib.GetType("kbase::KBaseGenomes_Genome"), parents={sample})
+input_pangenome_ref = model.AddRequirement(lib.GetType("kbase::KBaseGenomes_Pangenome"), parents={sample})
+env                 = model.AddRequirement(lib.GetType("env::kb_phylogenomics.env"))
+report_             = model.AddProduct(lib.GetType("kbase::report"))
 
 def protocol(context: ExecutionContext):
     made = {report_: context.Output(report_)}

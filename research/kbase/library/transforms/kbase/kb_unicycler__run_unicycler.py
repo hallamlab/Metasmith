@@ -8,6 +8,9 @@ service     : kb_unicycler.run_unicycler
 
 Assemble reads using the Unicycler assembler.
 
+Optional in KBase and therefore not a requirement here:
+short_paired_libraries, short_unpaired_libraries, long_reads_library.
+
 Stub: the model is the port, the body only touches its outputs. This does
 not run the KBase app. Regenerate with research/kbase/library/_generate.py.
 """
@@ -16,14 +19,11 @@ from metasmith.python_api import *
 
 lib   = TransformInstanceLibrary.ResolveParentLibrary(__file__)
 model = Transform()
-study                    = model.AddRequirement(lib.GetType("kbase::study"))
-sample                   = model.AddRequirement(lib.GetType("kbase::sample"), parents={study})
-short_paired_libraries   = model.AddRequirement(lib.GetType("kbase::accepts_12"), parents={sample})  # optional in KBase
-short_unpaired_libraries = model.AddRequirement(lib.GetType("kbase::accepts_14"), parents={sample})  # optional in KBase
-long_reads_library       = model.AddRequirement(lib.GetType("kbase::accepts_06"), parents={sample})  # optional in KBase
-env                      = model.AddRequirement(lib.GetType("env::kb_unicycler.env"))
-output_contigset_name    = model.AddProduct(lib.GetType("kbase::KBaseGenomeAnnotations_Assembly"))
-report_                  = model.AddProduct(lib.GetType("kbase::report"))
+study                 = model.AddRequirement(lib.GetType("kbase::study"))
+sample                = model.AddRequirement(lib.GetType("kbase::sample"), parents={study})
+env                   = model.AddRequirement(lib.GetType("env::kb_unicycler.env"))
+output_contigset_name = model.AddProduct(lib.GetType("kbase::KBaseGenomeAnnotations_Assembly"))
+report_               = model.AddProduct(lib.GetType("kbase::report"))
 
 def protocol(context: ExecutionContext):
     made = {output_contigset_name: context.Output(output_contigset_name)}
@@ -38,7 +38,7 @@ def protocol(context: ExecutionContext):
 TransformInstance(
     protocol=protocol,
     model=model,
-    group_by=short_paired_libraries,
+    group_by=sample,
     labels=[],
     resources=Resources(
         cpus=16,

@@ -11,6 +11,9 @@ model to enable it to produce biomass in a specified media.<b>This app is now
 obsolete, replaced by the new ModelSEED2 app: <i>MS2 - Improved Gapfill
 Metabolic Models</i>.</b>
 
+Optional in KBase and therefore not a requirement here: media_id,
+source_fbamodel_id.
+
 Stub: the model is the port, the body only touches its outputs. This does
 not run the KBase app. Regenerate with research/kbase/library/_generate.py.
 """
@@ -22,8 +25,6 @@ model = Transform()
 study              = model.AddRequirement(lib.GetType("kbase::study"))
 sample             = model.AddRequirement(lib.GetType("kbase::sample"), parents={study})
 fbamodel_id        = model.AddRequirement(lib.GetType("kbase::KBaseFBA_FBAModel"), parents={sample})
-media_id           = model.AddRequirement(lib.GetType("kbase::KBaseBiochem_Media"), parents={sample})  # optional in KBase
-source_fbamodel_id = model.AddRequirement(lib.GetType("kbase::KBaseFBA_FBAModel"), parents={sample})  # optional in KBase
 env                = model.AddRequirement(lib.GetType("env::fba_tools.env"))
 fbamodel_output_id = model.AddProduct(lib.GetType("kbase::KBaseFBA_FBAModel"))
 report_            = model.AddProduct(lib.GetType("kbase::report"))

@@ -8,6 +8,9 @@ service     : GenericsAPI.run_pca
 
 Perform PCA analysis on Matrix object
 
+Optional in KBase and therefore not a requirement here:
+attribute_mapping_obj_ref.
+
 References workspace types the registry no longer serves: KBaseMatrices. They
 are still declared, from the app spec's own naming.
 
@@ -19,13 +22,12 @@ from metasmith.python_api import *
 
 lib   = TransformInstanceLibrary.ResolveParentLibrary(__file__)
 model = Transform()
-study                     = model.AddRequirement(lib.GetType("kbase::study"))
-sample                    = model.AddRequirement(lib.GetType("kbase::sample"), parents={study})
-input_obj_ref             = model.AddRequirement(lib.GetType("kbase::KBaseProfile_FunctionalProfile"), parents={sample})
-attribute_mapping_obj_ref = model.AddRequirement(lib.GetType("kbase::KBaseExperiments_AttributeMapping"), parents={sample})  # optional in KBase
-env                       = model.AddRequirement(lib.GetType("env::GenericsAPI.env"))
-pca_matrix_name           = model.AddProduct(lib.GetType("kbase::KBaseExperiments_PCAMatrix"))
-report_                   = model.AddProduct(lib.GetType("kbase::report"))
+study           = model.AddRequirement(lib.GetType("kbase::study"))
+sample          = model.AddRequirement(lib.GetType("kbase::sample"), parents={study})
+input_obj_ref   = model.AddRequirement(lib.GetType("kbase::KBaseProfile_FunctionalProfile"), parents={sample})
+env             = model.AddRequirement(lib.GetType("env::GenericsAPI.env"))
+pca_matrix_name = model.AddProduct(lib.GetType("kbase::KBaseExperiments_PCAMatrix"))
+report_         = model.AddProduct(lib.GetType("kbase::report"))
 
 def protocol(context: ExecutionContext):
     made = {pca_matrix_name: context.Output(pca_matrix_name)}

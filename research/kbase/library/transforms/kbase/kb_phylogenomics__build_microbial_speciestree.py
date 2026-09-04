@@ -9,6 +9,8 @@ service     : kb_phylogenomics.build_microbial_speciestree
 Build Species Tree for your Microbial Genomes, optionally including Tree
 Skeleton of Phylum Exemplars
 
+Optional in KBase and therefore not a requirement here: input_genome2_refs.
+
 Stub: the model is the port, the body only touches its outputs. This does
 not run the KBase app. Regenerate with research/kbase/library/_generate.py.
 """
@@ -17,13 +19,12 @@ from metasmith.python_api import *
 
 lib   = TransformInstanceLibrary.ResolveParentLibrary(__file__)
 model = Transform()
-study              = model.AddRequirement(lib.GetType("kbase::study"))
-sample             = model.AddRequirement(lib.GetType("kbase::sample"), parents={study})
-input_genome_refs  = model.AddRequirement(lib.GetType("kbase::accepts_54"), parents={sample})
-input_genome2_refs = model.AddRequirement(lib.GetType("kbase::accepts_54"), parents={sample})  # optional in KBase
-env                = model.AddRequirement(lib.GetType("env::kb_phylogenomics.env"))
-output_tree_name   = model.AddProduct(lib.GetType("kbase::KBaseTrees_Tree"))
-report_            = model.AddProduct(lib.GetType("kbase::report"))
+study             = model.AddRequirement(lib.GetType("kbase::study"))
+sample            = model.AddRequirement(lib.GetType("kbase::sample"), parents={study})
+input_genome_refs = model.AddRequirement(lib.GetType("kbase::accepts_54"), parents={sample})
+env               = model.AddRequirement(lib.GetType("env::kb_phylogenomics.env"))
+output_tree_name  = model.AddProduct(lib.GetType("kbase::KBaseTrees_Tree"))
+report_           = model.AddProduct(lib.GetType("kbase::report"))
 
 def protocol(context: ExecutionContext):
     made = {output_tree_name: context.Output(output_tree_name)}

@@ -9,6 +9,8 @@ service     : fba_tools.compare_models
 This App compares Flux Balance Analysis (FBA) models based on reactions,
 compounds, biomass, and protein families.
 
+Optional in KBase and therefore not a requirement here: pangenome_ref.
+
 Stub: the model is the port, the body only touches its outputs. This does
 not run the KBase app. Regenerate with research/kbase/library/_generate.py.
 """
@@ -17,13 +19,12 @@ from metasmith.python_api import *
 
 lib   = TransformInstanceLibrary.ResolveParentLibrary(__file__)
 model = Transform()
-study         = model.AddRequirement(lib.GetType("kbase::study"))
-sample        = model.AddRequirement(lib.GetType("kbase::sample"), parents={study})
-model_ref     = model.AddRequirement(lib.GetType("kbase::KBaseFBA_FBAModel"), parents={sample})
-pangenome_ref = model.AddRequirement(lib.GetType("kbase::KBaseGenomes_Pangenome"), parents={sample})  # optional in KBase
-env           = model.AddRequirement(lib.GetType("env::fba_tools.env"))
-mc_name       = model.AddProduct(lib.GetType("kbase::KBaseFBA_ModelComparison"))
-report_       = model.AddProduct(lib.GetType("kbase::report"))
+study     = model.AddRequirement(lib.GetType("kbase::study"))
+sample    = model.AddRequirement(lib.GetType("kbase::sample"), parents={study})
+model_ref = model.AddRequirement(lib.GetType("kbase::KBaseFBA_FBAModel"), parents={sample})
+env       = model.AddRequirement(lib.GetType("env::fba_tools.env"))
+mc_name   = model.AddProduct(lib.GetType("kbase::KBaseFBA_ModelComparison"))
+report_   = model.AddProduct(lib.GetType("kbase::report"))
 
 def protocol(context: ExecutionContext):
     made = {mc_name: context.Output(mc_name)}

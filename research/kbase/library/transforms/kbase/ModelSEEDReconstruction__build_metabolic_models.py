@@ -9,6 +9,9 @@ service     : ModelSEEDReconstruction.build_metabolic_models
 Using ModelSEED2 pipeline, construct draft metabolic models based on input
 annotated genomes.
 
+Optional in KBase and therefore not a requirement here: gapfilling_media_list,
+gs_template_ref, core_template_ref, expression_refs.
+
 Stub: the model is the port, the body only touches its outputs. This does
 not run the KBase app. Regenerate with research/kbase/library/_generate.py.
 """
@@ -17,15 +20,11 @@ from metasmith.python_api import *
 
 lib   = TransformInstanceLibrary.ResolveParentLibrary(__file__)
 model = Transform()
-study                 = model.AddRequirement(lib.GetType("kbase::study"))
-sample                = model.AddRequirement(lib.GetType("kbase::sample"), parents={study})
-genome_refs           = model.AddRequirement(lib.GetType("kbase::accepts_52"), parents={sample})
-gapfilling_media_list = model.AddRequirement(lib.GetType("kbase::KBaseBiochem_Media"), parents={sample})  # optional in KBase
-gs_template_ref       = model.AddRequirement(lib.GetType("kbase::KBaseFBA_NewModelTemplate"), parents={sample})  # optional in KBase
-core_template_ref     = model.AddRequirement(lib.GetType("kbase::KBaseFBA_NewModelTemplate"), parents={sample})  # optional in KBase
-expression_refs       = model.AddRequirement(lib.GetType("kbase::KBaseFeatureValues_ExpressionMatrix"), parents={sample})  # optional in KBase
-env                   = model.AddRequirement(lib.GetType("env::ModelSEEDReconstruction.env"))
-report_               = model.AddProduct(lib.GetType("kbase::report"))
+study       = model.AddRequirement(lib.GetType("kbase::study"))
+sample      = model.AddRequirement(lib.GetType("kbase::sample"), parents={study})
+genome_refs = model.AddRequirement(lib.GetType("kbase::accepts_52"), parents={sample})
+env         = model.AddRequirement(lib.GetType("env::ModelSEEDReconstruction.env"))
+report_     = model.AddProduct(lib.GetType("kbase::report"))
 
 def protocol(context: ExecutionContext):
     made = {report_: context.Output(report_)}
