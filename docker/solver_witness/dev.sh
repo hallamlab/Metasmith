@@ -141,6 +141,45 @@ case "${1:---help}" in
         ls -la "$OUT_DIR"
         gate "$OUT_DIR"
     ;;
+    -xd)
+        # Extract with TERMINATION MEASURES instead of `partial_fixpoint`.
+        #
+        # This is what `check_spec` needs and the default extraction cannot give.
+        # A `partial_fixpoint` definition comes with `fixpoint_induct`, which is
+        # Scott induction: it proves partial correctness -- if the function
+        # returns, the answer is right -- and says nothing about whether it
+        # returns. `check_spec` is an EQUATION, so it asserts totality, and no
+        # amount of Scott induction will produce it.
+        #
+        # `-decreases-clauses` emits a `Clauses/Template.lean` of measures to
+        # fill: one `_terminates` measure and one `_decreases` tactic per loop,
+        # ~73 pairs, each of them `len - i` and `simp; omega`. Fill them and the
+        # definitions terminate, which is what makes the equation provable.
+        shift
+        crate="${1:?usage: dev.sh -xd <crate-dir>}"
+        name=$(basename "$crate")
+        # Cleaned INSIDE the container. It runs as root and leaves root-owned
+        # directories behind, and the host cannot unlink inside one -- which is
+        # the same trap the cargo target dir is kept outside the worktree for.
+        docker run --rm -i $NET \
+            --mount type=bind,source="$REPO",target=/root/src \
+            --mount type=bind,source="$TARGET_DIR",target=/root/target \
+            --mount type=bind,source="$OUT_DIR",target=/root/out \
+            --env CARGO_TARGET_DIR=/root/target \
+            --env CRATE="$crate" --env NAME="$name" \
+            --workdir /root/src \
+            "$IMAGE" bash -c '
+                set -e
+                rm -rf /root/out/dec
+                mkdir -p /root/out/dec/Clauses
+                cd "/root/src/$CRATE"
+                charon cargo --preset=aeneas --dest-file "/root/out/$NAME.llbc"
+                aeneas -backend lean -loops-to-rec -decreases-clauses -split-files \
+                    -dest /root/out/dec "/root/out/$NAME.llbc"
+            '
+        echo "measures to supply: $(grep -c "_terminates\|_decreases" "$OUT_DIR"/dec/Clauses/Template.lean 2>/dev/null || echo 0)"
+        gate "$OUT_DIR/dec"
+    ;;
     --gate)
         shift
         gate "${1:-$OUT_DIR}"
@@ -202,6 +241,7 @@ case "${1:---help}" in
         echo "  -b          build the image"
         echo "  --versions  report the pinned toolchain versions"
         echo "  -x DIR      extract crate DIR to Lean, into $OUT_DIR"
+        echo "  -xd DIR     extract with termination measures (needed for check_spec)"
         echo "  -s CMD      run CMD in the container"
         echo "  --gate [DIR] adjudicate an extraction (default $OUT_DIR)"
         echo "  --lean-init  stand up the lean project (slow: toolchain + mathlib)"

@@ -833,7 +833,12 @@ pub fn cl_schedulable(q: &Plan) -> bool {
 /// Exactly one application of the target. This also rules out the empty plan,
 /// which is why there is no separate `nonempty` clause.
 pub fn cl_target(p: &Problem, q: &Plan) -> bool {
-    let mut n = 0;
+    // `usize`, not the `i32` inference would pick. Aeneas models arithmetic as
+    // fallible, so the counter's width is a proof obligation: at `i32` the
+    // addition carries an overflow side condition unrelated to anything the
+    // clause means, while a `usize` counter is bounded by the step count, which
+    // is bounded by the vector length.
+    let mut n: usize = 0;
     let mut i = 0;
     while i < q.steps.len() {
         if q.steps[i].transform == p.target_tr {
