@@ -34,6 +34,7 @@ AUTHORS = (
     "annotation_palette_from_assembly",
     "annotation_trio_from_assembly",
     "fosmid_inserts_from_pooled_reads",
+    "binning_and_gpr_from_assembly",
     "amplicon_asv_study_from_paired_reads",
     "viromics_survey_from_assembly",
     "gpr_table_from_assembly",
