@@ -25,6 +25,25 @@ mkdir -p "$OUT_DIR"
 # whole question by using the resolver that is already known to work here.
 NET="${MSM_WITNESS_NET:---network=host}"
 
+# A PERSISTENT lean home. The container is `--rm`, so elan's toolchain download
+# and every lake package fetch are lost the moment it exits -- and the aeneas
+# backend depends on Mathlib, which is not something to download twice. This
+# directory holds elan's toolchains and the lake project, and it is a build
+# product like every other cache here: outside the worktree, safe to delete.
+LEAN_HOME="${MSM_WITNESS_LEAN_HOME:-$HOME/.cache/metasmith/witness-lean-home}"
+mkdir -p "$LEAN_HOME"
+
+in_lean() {
+    docker run --rm -i $NET \
+        --mount type=bind,source="$REPO",target=/root/src \
+        --mount type=bind,source="$OUT_DIR",target=/root/out \
+        --mount type=bind,source="$LEAN_HOME",target=/root/leanhome \
+        --env ELAN_HOME=/root/leanhome/elan \
+        --env PATH=/root/leanhome/elan/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
+        --workdir /root/leanhome \
+        "$IMAGE" bash -c "$1"
+}
+
 # Adjudicate an extraction. Aeneas emits a hole rather than failing, and the
 # Lean still compiles, so nothing downstream notices that the function a proof is
 # about was never translated. This is the only thing standing between that and a
@@ -126,6 +145,53 @@ case "${1:---help}" in
         shift
         gate "${1:-$OUT_DIR}"
     ;;
+    --lean-init)
+        # Stand up the lean project the specification is checked in. Long: it
+        # fetches a toolchain and Mathlib. Idempotent, and everything lands in
+        # LEAN_HOME so a second run is cheap.
+        in_lean '
+            set -e
+            mkdir -p /root/leanhome/elan
+            if [ ! -x /root/leanhome/elan/bin/elan ]; then
+                curl -sSf https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh \
+                    -o /tmp/elan-init.sh
+                sh /tmp/elan-init.sh -y --default-toolchain none
+            fi
+            export PATH=/root/leanhome/elan/bin:$PATH
+            # A copy, not the image path: `lake build` writes `.lake/` beside the
+            # sources, and anything written under /opt is lost with the container.
+            [ -d /root/leanhome/aeneas ] || cp -r /opt/aeneas/backends/lean /root/leanhome/aeneas
+            mkdir -p /root/leanhome/proj/SolverWitness
+            cd /root/leanhome/proj
+            cp /root/leanhome/aeneas/lean-toolchain .
+            cat > lakefile.lean <<LAKE
+import Lake
+open Lake DSL
+
+require aeneas from "../aeneas"
+
+package «solverWitnessSpec» {}
+
+@[default_target] lean_lib SolverWitness {}
+LAKE
+            lake update || true
+            lake exe cache get || echo "NOTE: mathlib cache miss; falling back to a source build"
+            lake build aeneas
+            echo "LEAN-INIT-OK"
+        '
+    ;;
+    --lean-check)
+        # Copy the freshest extraction and the specification in, then build.
+        in_lean '
+            set -e
+            export PATH=/root/leanhome/elan/bin:$PATH
+            cd /root/leanhome/proj
+            cp /root/out/Types.lean /root/out/Funs.lean SolverWitness/
+            cp /root/src/src/solver_witness/lean/Spec.lean SolverWitness/
+            lake build 2>&1 | tail -40
+            echo "LEAN-CHECK-DONE"
+        '
+    ;;
     -s)
         shift
         in_container bash -c "${*:-bash}"
@@ -137,5 +203,7 @@ case "${1:---help}" in
         echo "  -x DIR      extract crate DIR to Lean, into $OUT_DIR"
         echo "  -s CMD      run CMD in the container"
         echo "  --gate [DIR] adjudicate an extraction (default $OUT_DIR)"
+        echo "  --lean-init  stand up the lean project (slow: toolchain + mathlib)"
+        echo "  --lean-check build Spec.lean against the current extraction"
     ;;
 esac
