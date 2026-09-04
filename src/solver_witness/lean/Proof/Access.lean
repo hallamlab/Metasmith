@@ -136,24 +136,24 @@ theorem producesOf_ne (p : types.Problem) (t : Nat) (h : ¬ t < p.transforms.val
 
 /-! ## The three table sizes -/
 
-theorem n_nodes_spec (p : types.Problem) :
+@[step] theorem n_nodes_spec (p : types.Problem) :
     access.n_nodes p ⦃ n => n.val = SolverSpec.nNodes p ⦄ := by
   unfold access.n_nodes
   simp [SolverSpec.nNodes]
 
-theorem n_transforms_spec (p : types.Problem) :
+@[step] theorem n_transforms_spec (p : types.Problem) :
     access.n_transforms p ⦃ n => n.val = SolverSpec.nTransforms p ⦄ := by
   unfold access.n_transforms
   simp [SolverSpec.nTransforms]
 
-theorem n_endpoints_spec (q : types.Plan) :
+@[step] theorem n_endpoints_spec (q : types.Plan) :
     access.n_endpoints q ⦃ n => n.val = SolverSpec.nEndpoints q ⦄ := by
   unfold access.n_endpoints
   simp [SolverSpec.nEndpoints]
 
 /-! ## Nodes -/
 
-theorem node_nprops_spec (p : types.Problem) (d : Std.Usize) :
+@[step] theorem node_nprops_spec (p : types.Problem) (d : Std.Usize) :
     access.node_nprops p d ⦃ n => n.val = (SolverSpec.nodeProps p d.val).length ⦄ := by
   unfold access.node_nprops
   dsimp only
@@ -166,7 +166,7 @@ theorem node_nprops_spec (p : types.Problem) (d : Std.Usize) :
     have hd : ¬ d.val < p.nodes.val.length := by scalar_tac
     simp [SolverSpec.nodeProps, nd_ne p d.val hd, SolverSpec.emptyNode, nats_length]
 
-theorem node_prop_spec (p : types.Problem) (d i : Std.Usize) :
+@[step] theorem node_prop_spec (p : types.Problem) (d i : Std.Usize) :
     access.node_prop p d i
       ⦃ x => x.val = ((SolverSpec.nodeProps p d.val)[i.val]?).getD access.NONE.val ⦄ := by
   unfold access.node_prop
@@ -188,7 +188,7 @@ theorem node_prop_spec (p : types.Problem) (d i : Std.Usize) :
     have hd : ¬ d.val < p.nodes.val.length := by scalar_tac
     simp [SolverSpec.nodeProps, nd_ne p d.val hd, SolverSpec.emptyNode, SolverSpec.nats]
 
-theorem node_nparents_spec (p : types.Problem) (d : Std.Usize) :
+@[step] theorem node_nparents_spec (p : types.Problem) (d : Std.Usize) :
     access.node_nparents p d ⦃ n => n.val = (SolverSpec.nodeParents p d.val).length ⦄ := by
   unfold access.node_nparents
   dsimp only
@@ -201,7 +201,7 @@ theorem node_nparents_spec (p : types.Problem) (d : Std.Usize) :
     have hd : ¬ d.val < p.nodes.val.length := by scalar_tac
     simp [SolverSpec.nodeParents, nd_ne p d.val hd, SolverSpec.emptyNode, nats_length]
 
-theorem node_parent_spec (p : types.Problem) (d i : Std.Usize) :
+@[step] theorem node_parent_spec (p : types.Problem) (d i : Std.Usize) :
     access.node_parent p d i
       ⦃ x => x.val = ((SolverSpec.nodeParents p d.val)[i.val]?).getD access.NONE.val ⦄ := by
   unfold access.node_parent
@@ -225,7 +225,7 @@ theorem node_parent_spec (p : types.Problem) (d i : Std.Usize) :
 
 /-! ## Endpoints -/
 
-theorem ep_nprops_spec (q : types.Plan) (e : Std.Usize) :
+@[step] theorem ep_nprops_spec (q : types.Plan) (e : Std.Usize) :
     access.ep_nprops q e ⦃ n => n.val = (SolverSpec.epProps q e.val).length ⦄ := by
   unfold access.ep_nprops
   dsimp only
@@ -238,7 +238,7 @@ theorem ep_nprops_spec (q : types.Plan) (e : Std.Usize) :
     have he : ¬ e.val < q.endpoints.val.length := by scalar_tac
     simp [SolverSpec.epProps, ep_ne q e.val he, SolverSpec.emptyEndpoint, nats_length]
 
-theorem ep_prop_spec (q : types.Plan) (e i : Std.Usize) :
+@[step] theorem ep_prop_spec (q : types.Plan) (e i : Std.Usize) :
     access.ep_prop q e i
       ⦃ x => x.val = ((SolverSpec.epProps q e.val)[i.val]?).getD access.NONE.val ⦄ := by
   unfold access.ep_prop
@@ -260,7 +260,7 @@ theorem ep_prop_spec (q : types.Plan) (e i : Std.Usize) :
     have he : ¬ e.val < q.endpoints.val.length := by scalar_tac
     simp [SolverSpec.epProps, ep_ne q e.val he, SolverSpec.emptyEndpoint, SolverSpec.nats]
 
-theorem ep_nparents_spec (q : types.Plan) (e : Std.Usize) :
+@[step] theorem ep_nparents_spec (q : types.Plan) (e : Std.Usize) :
     access.ep_nparents q e ⦃ n => n.val = (SolverSpec.epParents q e.val).length ⦄ := by
   unfold access.ep_nparents
   dsimp only
@@ -273,7 +273,7 @@ theorem ep_nparents_spec (q : types.Plan) (e : Std.Usize) :
     have he : ¬ e.val < q.endpoints.val.length := by scalar_tac
     simp [SolverSpec.epParents, ep_ne q e.val he, SolverSpec.emptyEndpoint, nats_length]
 
-theorem ep_parent_spec (q : types.Plan) (e i : Std.Usize) :
+@[step] theorem ep_parent_spec (q : types.Plan) (e i : Std.Usize) :
     access.ep_parent q e i
       ⦃ x => x.val = ((SolverSpec.epParents q e.val)[i.val]?).getD access.NONE.val ⦄ := by
   unfold access.ep_parent
@@ -297,7 +297,7 @@ theorem ep_parent_spec (q : types.Plan) (e i : Std.Usize) :
 
 /-! ## Transforms -/
 
-theorem tr_nrequires_spec (p : types.Problem) (t : Std.Usize) :
+@[step] theorem tr_nrequires_spec (p : types.Problem) (t : Std.Usize) :
     access.tr_nrequires p t ⦃ n => n.val = (SolverSpec.requiresOf p t.val).length ⦄ := by
   unfold access.tr_nrequires
   dsimp only
@@ -310,7 +310,7 @@ theorem tr_nrequires_spec (p : types.Problem) (t : Std.Usize) :
     have ht : ¬ t.val < p.transforms.val.length := by scalar_tac
     simp [requiresOf_ne p t.val ht]
 
-theorem tr_require_spec (p : types.Problem) (t i : Std.Usize) :
+@[step] theorem tr_require_spec (p : types.Problem) (t i : Std.Usize) :
     access.tr_require p t i
       ⦃ x => x.val = ((SolverSpec.requiresOf p t.val)[i.val]?).getD access.NONE.val ⦄ := by
   unfold access.tr_require
@@ -332,7 +332,7 @@ theorem tr_require_spec (p : types.Problem) (t i : Std.Usize) :
     have ht : ¬ t.val < p.transforms.val.length := by scalar_tac
     simp [requiresOf_ne p t.val ht]
 
-theorem tr_ngroups_spec (p : types.Problem) (t : Std.Usize) :
+@[step] theorem tr_ngroups_spec (p : types.Problem) (t : Std.Usize) :
     access.tr_ngroups p t ⦃ n => n.val = (SolverSpec.producesOf p t.val).length ⦄ := by
   unfold access.tr_ngroups
   dsimp only
@@ -345,7 +345,7 @@ theorem tr_ngroups_spec (p : types.Problem) (t : Std.Usize) :
     have ht : ¬ t.val < p.transforms.val.length := by scalar_tac
     simp [producesOf_ne p t.val ht]
 
-theorem tr_ngroup_slots_spec (p : types.Problem) (t g : Std.Usize) :
+@[step] theorem tr_ngroup_slots_spec (p : types.Problem) (t g : Std.Usize) :
     access.tr_ngroup_slots p t g
       ⦃ n => n.val = (((SolverSpec.producesOf p t.val)[g.val]?).getD []).length ⦄ := by
   unfold access.tr_ngroup_slots
@@ -367,7 +367,7 @@ theorem tr_ngroup_slots_spec (p : types.Problem) (t g : Std.Usize) :
     have ht : ¬ t.val < p.transforms.val.length := by scalar_tac
     simp [producesOf_ne p t.val ht]
 
-theorem tr_group_slot_spec (p : types.Problem) (t g i : Std.Usize) :
+@[step] theorem tr_group_slot_spec (p : types.Problem) (t g i : Std.Usize) :
     access.tr_group_slot p t g i
       ⦃ x => x.val
           = ((((SolverSpec.producesOf p t.val)[g.val]?).getD [])[i.val]?).getD access.NONE.val ⦄ := by

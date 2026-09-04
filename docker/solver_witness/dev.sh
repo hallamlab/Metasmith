@@ -361,8 +361,14 @@ case "${1:---help}" in
             lake build $mod > \$log 2>&1 || rc=\$?
             # The Aeneas dependency replays two sorry warnings of its own on
             # every build; they are not this tree and drown everything else.
+            # Errors first and in full, then the tail. tail alone truncates to
+            # the LAST failures, so an agent whose first declaration is broken
+            # sees only the consequences and has to stub the rest to reach the
+            # cause. Reported after it cost a build cycle.
+            grep -aE '^error' \$log | head -60
+            echo '-- tail --'
             grep -avE '^.[0-9 /]*.Replayed|^warning: Aeneas|^info: .*Replayed' \
-                \$log | tail -60
+                \$log | tail -40
             rm -f \$log
             exit \$rc
         "
