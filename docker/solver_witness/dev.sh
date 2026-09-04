@@ -224,12 +224,19 @@ case "${1:---help}" in
             export PATH=/root/leanhome/elan/bin:$PATH
             cd /root/leanhome/proj
             cp /root/src/docker/solver_witness/lakefile.lean .
-            # The source tree is REPLACED rather than overlaid. A proof file
-            # deleted upstream otherwise lingers here, keeps building, and keeps
-            # being counted as proved.
-            rm -rf SolverWitness
+            # The hand-written tree is REPLACED rather than overlaid, so a proof
+            # file deleted upstream stops being built and counted. The
+            # extraction beside it is copied only when its CONTENT differs:
+            # Funs.lean carries 73 recursive definitions and costs minutes to
+            # rebuild, and copying it unconditionally moves its mtime and pays
+            # that on every single invocation.
             mkdir -p SolverWitness
-            cp /root/out/Types.lean /root/out/Funs.lean SolverWitness/
+            find SolverWitness -mindepth 1 ! -name Types.lean ! -name Funs.lean \
+                -delete 2>/dev/null || true
+            for f in Types Funs; do
+                cmp -s /root/out/$f.lean SolverWitness/$f.lean \
+                    || cp /root/out/$f.lean SolverWitness/
+            done
             cp -r /root/src/src/solver_witness/lean/. SolverWitness/
             rc=0
             lake build > /root/leanhome/lean-check.log 2>&1 || rc=$?
@@ -307,6 +314,44 @@ case "${1:---help}" in
             exit $fail
         '
     ;;
+    --lean-build)
+        # The proof dev loop: stage the tree and build ONE module.
+        #
+        # --lean-check rebuilds and re-adjudicates everything, which is right for
+        # a gate and far too slow for writing a proof. This stages the same tree
+        # into the same project and asks lake for a single module, so a clause
+        # proof iterates against exactly what the gate will later see.
+        #
+        # Builds serialize on lake own lock, so several of these may run at once
+        # and will simply queue.
+        shift
+        mod="${1:?usage: dev.sh --lean-build <module>, e.g. SolverWitness.Proof.Basis}"
+        # Interpolated into a shell command inside the container, so it is
+        # constrained to what a Lean module name can contain.
+        case "$mod" in
+            *[!A-Za-z0-9_.]*) echo "bad module name: $mod" >&2; exit 2 ;;
+        esac
+        in_lean "
+            set -e
+            export PATH=/root/leanhome/elan/bin:\$PATH
+            cd /root/leanhome/proj
+            mkdir -p SolverWitness
+            find SolverWitness -mindepth 1 ! -name Types.lean ! -name Funs.lean \
+                -delete 2>/dev/null || true
+            for f in Types Funs; do
+                cmp -s /root/out/\$f.lean SolverWitness/\$f.lean \
+                    || cp /root/out/\$f.lean SolverWitness/
+            done
+            cp -r /root/src/src/solver_witness/lean/. SolverWitness/
+            rc=0
+            lake build $mod > /root/leanhome/lean-build.log 2>&1 || rc=\$?
+            # The Aeneas dependency replays two sorry warnings of its own on
+            # every build; they are not this tree and drown everything else.
+            grep -vE '^.[0-9 /]*.Replayed|^warning: Aeneas|^info: .*Replayed' \
+                /root/leanhome/lean-build.log | tail -60
+            exit \$rc
+        "
+    ;;
     -s)
         shift
         in_container bash -c "${*:-bash}"
@@ -320,6 +365,7 @@ case "${1:---help}" in
         echo "  -s CMD      run CMD in the container"
         echo "  --gate [DIR] adjudicate an extraction (default $OUT_DIR)"
         echo "  --lean-init  stand up the lean project (slow: toolchain + mathlib)"
-        echo "  --lean-check build Spec.lean against the current extraction"
+        echo "  --lean-check build the whole Lean tree and adjudicate it"
+        echo "  --lean-build MOD  build one module (the proof dev loop)"
     ;;
 esac
