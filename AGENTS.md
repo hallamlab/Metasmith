@@ -137,6 +137,7 @@ migration's own history rather than for anything you would branch from today.
 | `ecspr` | Atom-resolved conductance measurement over metabolic GPR tables (`ecspr.model`), plus the metabolism bake that builds the tables it reads (`ecspr.bake`). A package with a command line, because these are algorithms rather than dispatches into somebody else's tool. The two subpackages never import each other at module scope. | [docs/ecspr](docs/ecspr/architecture.md) |
 | `bash_relay` | `msm_relay` — the Rust binary metasmith drives a remote host through. Cross-built to four targets and baked into the agent container image. | [docs/bash_relay](docs/bash_relay/architecture.md) |
 | `workflow_solver` | `msm_solver` — the Rust plan-search engine. Runs locally, so it is staged into `src/metasmith/engine/` and ships as package data rather than in the image. | [docs/workflow_solver](docs/workflow_solver/architecture.md) |
+| `solver_witness` | The plan witness: the predicate that decides whether a plan satisfies the specification, and the only part of the solver anything is proved about. A second crate `solver_witness_audit` holds the names and the loops that locate a violation, and depends on this one — so the extraction toolchain cannot reach it and "never extracted" is a property of the dependency graph. | [docs/metasmith/solver-spec.md](docs/metasmith/solver-spec.md) |
 
 Test selection is by directory rather than by hand-written marks; `tests/metasmith/AGENTS.md`
 is that contract and the traps around it.
