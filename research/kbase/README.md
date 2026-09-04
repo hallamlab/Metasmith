@@ -23,7 +23,7 @@ a KBase app.
 |---|---|
 | `scrape/` | the fetchers, and only the fetchers |
 | `upstream/` | `PROVENANCE.md` — service, endpoint and date per artifact |
-| `catalog/` | the distilled per-app and per-type tables, the census and the conversion ledger |
+| `catalog/` | the distilled per-app, per-parameter and per-type tables, the census and the conversion ledger |
 | `library/` | a self-contained metasmith library root, and the generator that writes it |
 | `narratives/` | extracted app cells and the reconstructed dependency DAGs |
 | `curation/` | one numbered round per curation pass, `r1/`, `r2/` — a round never edits an earlier one |

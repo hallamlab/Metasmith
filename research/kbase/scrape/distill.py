@@ -2,7 +2,13 @@
 """Distill the raw KBase scrape into the generator's input table and the census.
 
 Writes catalog/apps.jsonl (one record per app, the only thing the generator
-reads), catalog/types.jsonl, and catalog/census.json + census.md.
+reads), catalog/params.jsonl, catalog/types.jsonl, and catalog/census.json +
+census.md.
+
+apps.jsonl keeps only the parameters that carry a workspace type, because that is
+all the generator can model. params.jsonl keeps every parameter the spec declares,
+including the 1,885 knobs that carry no type at all, so a later round can normalise
+them without going back to the raw scrape.
 
 The census is the fixed denominator for the whole port. It is written before any
 conversion decision so that no later filtering can move it.
@@ -109,6 +115,40 @@ def distill_app(aid: str, rec: dict, modules: dict, tstat: dict) -> dict:
     }
 
 
+def distill_params(aid: str, rec: dict) -> list[dict]:
+    """Every declared parameter, typed or not.
+
+    `ui_class` is what separates the three populations KBase mixes into one list:
+    `input` and `output` carry a workspace type and are what apps.jsonl models,
+    while `parameter` is a knob with no type -- a threshold, a preset, a flag.
+    """
+    spec = rec.get("spec") or {}
+    out = []
+    for p in spec.get("parameters") or []:
+        to = p.get("text_options") or {}
+        dd = p.get("dropdown_options") or {}
+        cb = p.get("checkbox_options") or {}
+        out.append({
+            "app_id": aid,
+            "param_id": p.get("id"),
+            "ui_class": p.get("ui_class"),
+            "field_type": p.get("field_type"),
+            "ui_name": p.get("ui_name"),
+            "short_hint": (p.get("short_hint") or "").strip(),
+            "optional": bool(p.get("optional")),
+            "advanced": bool(p.get("advanced")),
+            "disabled": bool(p.get("disabled")),
+            "allow_multiple": bool(p.get("allow_multiple")),
+            "ws_types": list(to.get("valid_ws_types") or []),
+            "is_output_name": bool(to.get("is_output_name")),
+            "defaults": [v for v in (p.get("default_values") or []) if v != ""],
+            "choices": [o.get("value") for o in (dd.get("options") or [])],
+            "checkbox": [cb.get("unchecked_value"), cb.get("checked_value")] if cb else [],
+            "dynamic_source": (p.get("dynamic_dropdown_options") or {}).get("data_source"),
+        })
+    return out
+
+
 def census(apps: list[dict], tstat: dict, modules: dict) -> dict:
     def count(pred): return sum(1 for a in apps if pred(a))
     tfail = collections.Counter(v["status"] for v in tstat.values())
@@ -200,6 +240,8 @@ def main():
     apps = [distill_app(a, r, modules, tstat) for a, r in sorted(raw_apps.items())]
 
     (CAT / "apps.jsonl").write_text("".join(json.dumps(a) + "\n" for a in apps))
+    params = [row for a, r in sorted(raw_apps.items()) for row in distill_params(a, r)]
+    (CAT / "params.jsonl").write_text("".join(json.dumps(p) + "\n" for p in params))
     (CAT / "types.jsonl").write_text("".join(
         json.dumps({"ws_type": k, **v, "description": (raw_types[k].get("description") or "").strip()}) + "\n"
         for k, v in sorted(tstat.items())))
