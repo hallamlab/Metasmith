@@ -343,6 +343,38 @@ class Solution:
     def RenderDAG(self, path_base: Path|str, format: str ='svg', *, font: str = 'Arial', keys: bool = True, show_step_order: bool = False, label_mode: LabelMode = LabelMode.COLUMN, colour: str = "module", theme: str = "light", background: bool = True):
         return self.BuildDAG(font=font, keys=keys, show_step_order=show_step_order, label_mode=label_mode, colour=colour, theme=theme, background=background).render(path_base, format)
     
+def _canonicalise_givens(given: list[set[Endpoint]]):
+    """Collapse the givens and their lineage to one object per logical endpoint.
+
+    A caller may hand in the same logical input twice as two objects -- a parent
+    reached through `Clone()` beside the given it is a parent of -- and five of
+    the eleven shipped templates do. `encode_problem`'s interner already collapses
+    them for the rust path, so only the python path ever saw the duplicates, and
+    the two backends disagreed about how many endpoints a problem even has.
+
+    Rewrites `parents` to the canonical object rather than rebuilding anything, so
+    the caller keeps the identity of every endpoint it actually passed. A
+    signature is built from its parents' keys, and equal parents have equal keys,
+    so no signature moves and one pass suffices. `Endpoint.__eq__` is signature
+    equality, so no caller can observe the substitution except through `is`.
+    """
+    roots = [e for group in given for e in group]
+    todo, seen, order = list(roots), set(), []
+    while todo:
+        e = todo.pop()
+        if id(e) in seen: continue
+        seen.add(id(e))
+        order.append(e)
+        todo.extend(e.parents)
+    # Roots first, so a given the caller passed always wins over a lineage-only
+    # copy of itself.
+    canon: dict[str, Endpoint] = {}
+    for e in roots: canon.setdefault(e.Signature(), e)
+    for e in order: canon.setdefault(e.Signature(), e)
+    for e in order:
+        if len(e.parents) > 0:
+            e.parents = {canon[p.Signature()] for p in e.parents} # type: ignore
+
 def solve_by_mcts(
     given: list[set[Endpoint]],
     transforms: Iterable[Transform],
@@ -352,6 +384,7 @@ def solve_by_mcts(
     max_refine: int=256,
 ) -> Solution:
     from .solver_backend import _get_solver_class
+    _canonicalise_givens(given)
     return _get_solver_class()().Solve(
         given, transforms, target,
         seed=seed, max_iter=max_iter, max_refine=max_refine,
@@ -710,31 +743,47 @@ def _solve_by_mcts_python(
             for e in step.used.values():
                 _product2consumer[e] = _product2consumer.get(e, [])+[step]
 
+        # The search builds endpoints as VALUES -- a fresh object per candidate
+        # application -- so one logical product exists as several equal objects,
+        # and this map is the only thing that turns them into one instance. It is
+        # therefore keyed by signature: a consumer holds a different object from
+        # the one its producer emitted, and equality is all they share.
+        #
+        # What it must NOT do is reuse an instance across two producing steps.
+        # That merges two transforms' outputs into one endpoint with two
+        # producers, which compiles to two processes writing one file. Every
+        # product below is a fresh instance for that reason.
         endpoint_map: dict[Endpoint, Endpoint] = {}
-        rev_emap: dict[Endpoint, Endpoint] = {}
         def _fix_endpoints(appl: Application):
-            lineage: set[Endpoint] = set()
-            for p in appl.transform.requires:
-                e = appl.used[p]
-                e = endpoint_map.get(e, e)
-                appl.used[p] = e
-                lineage.add(e)
-                lineage.update(e.parents) # type: ignore
-            new_produced = []
-            for pgroup in appl.produced:
-                new_pgroup = {}
-                for p, e in pgroup.items():
-                    if e in endpoint_map:
-                        new_e = endpoint_map[e]
-                        new_e.parents|=lineage|(e.parents&inherent_parents)
-                        new_e.RefreshHash()
-                    else:
+            if appl.transform is given_tr:
+                # A given is already what it claims to be. `lineage` is empty and
+                # `e.parents & inherent_parents` is `e.parents`, because a given's
+                # parents are ancestors of a given by definition -- so rebuilding
+                # is a copy with no change of content. Making that copy mints a
+                # second object for one input while the lineage kept below still
+                # names the first, which is where the endpoint twins came from.
+                for pgroup in appl.produced:
+                    for e in pgroup.values():
+                        endpoint_map[e] = e
+            else:
+                lineage: set[Endpoint] = set()
+                for p in appl.transform.requires:
+                    e = appl.used[p]
+                    e = endpoint_map.get(e, e)
+                    appl.used[p] = e
+                    lineage.add(e)
+                    lineage.update(e.parents) # type: ignore
+                new_produced = []
+                for pgroup in appl.produced:
+                    new_pgroup = {}
+                    for p, e in pgroup.items():
+                        # Always fresh. Reusing a mapped instance here is what
+                        # gave one endpoint two producers.
                         new_e = Endpoint(e.properties, parents=lineage|(e.parents&inherent_parents)) # type: ignore
-                    new_pgroup[p] = new_e
-                    endpoint_map[e] = new_e
-                    rev_emap[new_e] = e
-                new_produced.append(new_pgroup)
-            appl.produced = new_produced
+                        new_pgroup[p] = new_e
+                        endpoint_map[e] = new_e
+                    new_produced.append(new_pgroup)
+                appl.produced = new_produced
             appl._sig = None
             appl._hash = None
             appl.Signature()
@@ -803,7 +852,7 @@ def _solve_by_mcts_python(
                         s for s in pending
                         if all(e in have for e in s.used.values())
                     ]
-                    if len(ready) == 0: return False
+                    if len(ready) == 0: return False # looped
                     for s in ready:
                         have |= {e for pgroup in s.produced for e in pgroup.values()}
                     scheduled = {id(s) for s in ready}

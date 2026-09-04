@@ -126,8 +126,13 @@ def test_the_engine_solves_the_shipped_templates(engine):
         pytest.skip("the standard library is not compiled — run `dev/libraries.sh -bm`")
     from metasmith.agents import Template
 
+    # Counted against what is actually shipped rather than against a literal: the
+    # library grows, and a stale literal here fails for the one reason that says
+    # nothing about the two implementations agreeing.
+    templates = list(Template.Discover(root))
+    assert len(templates) >= 4, f"only {len(templates)} templates discovered"
     seen = 0
-    for template in Template.Discover(root):
+    for template in templates:
         problem = problem_of_plan(template.spec.Solve().plan, name=template.name)
         if problem is None: continue
         mine, theirs = _both(engine, problem)
@@ -135,4 +140,7 @@ def test_the_engine_solves_the_shipped_templates(engine):
         assert plan_fingerprint(theirs) == plan_fingerprint(mine), template.name
         assert _sequence(theirs) == _sequence(mine), f"{template.name}: different order"
         seen += 1
-    assert seen == 4, f"expected the four shipped templates, adjudicated {seen}"
+    assert seen == len(templates), (
+        f"adjudicated {seen} of {len(templates)} shipped templates -- the rest carry "
+        "no solver inputs, so nothing compared the two implementations on them"
+    )

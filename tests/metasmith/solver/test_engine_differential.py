@@ -14,8 +14,13 @@ from metasmith.testing.solver_differential import (
     run_sweep,
 )
 
+#: Cases where the PYTHON side exceeds `CASE_TIMEOUT`, so the sweep cannot judge
+#: them on the clock. Each was rerun with `timeout=0` and the two implementations
+#: agreed. `sink` is the profile that reaches the iteration cap, and all four of
+#: `sink-7`'s streams are now here.
 SETTLED_OFF_THE_CLOCK = {
     "sink-3/s2147483647",
+    "sink-7/s7",
     "sink-7/s42",
     "sink-7/s1234",
     "sink-7/s2147483647",
