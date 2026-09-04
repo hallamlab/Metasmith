@@ -2,240 +2,282 @@
   What a correct plan is.
 
   This file is normative. `docs/metasmith/solver-spec.md` carries the prose and
-  the reasons; `src/lib.rs` is the executable checker that must satisfy it, and
-  `theorem check_sound` at the bottom is the obligation relating the two.
+  the reasons; `src/solver_witness/src/` is the executable checker that must
+  satisfy it, and `check_spec` at the bottom is the obligation relating the two.
 
-  Deliberately no Mathlib. Set equality on lists is written out as mutual
-  inclusion rather than reached for through `Finset`, so this builds against a
-  bare Lean toolchain in seconds. The specification is small enough that the
-  dependency would cost more than it saves.
+  **It is written over the types Aeneas emitted, not over hand-written twins of
+  them.** The version this replaces declared its own `Problem` and `Plan` and
+  proved things about those, with nothing relating them to what was extracted --
+  so the theorem, had it been proved, would have been about a different object.
+  Importing `SolverWitness.Types` and `SolverWitness.Funs` is what makes
+  `check_spec` a statement about the function the engine actually runs.
 
-  The types are the wire format. Properties are interned to integers, nodes
-  carry integer parents, and every endpoint has an index, so the specification
-  talks about the bytes that leave the process rather than about the solver's
-  in-memory arenas.
+  The wire representation is coerced to plain lists of `Nat` on the way in. Every
+  quantifier below is then bounded by a list, which is what makes `Valid`
+  decidable without Mathlib's order or finiteness machinery -- and decidability
+  is not optional here, because `check_spec` is stated as an equation against
+  `decide`.
 -/
 
-namespace SolverWitness
+import SolverWitness.Types
+import SolverWitness.Funs
 
-abbrev PropId := Nat
-/-- Index into `Problem.nodes`: a slot on a transform, or the declared type of a
-given input. The node table serves both roles. -/
-abbrev NodeId := Nat
-/-- Index into `Plan.endpoints`. Position, not structure -- see `Same`. -/
-abbrev EpId := Nat
-/-- Index into `Problem.transforms`. -/
-abbrev TrId := Nat
+namespace SolverSpec
+
+open Aeneas Aeneas.Std
+open solver_witness
+
+/-! ## The wire, as plain lists -/
+
+abbrev Ids := List Nat
+
+def nats (v : alloc.vec.Vec Std.Usize) : Ids :=
+  v.val.map (fun x => x.val)
+
+def idPairs (v : alloc.vec.Vec (Std.Usize × Std.Usize)) : List (Nat × Nat) :=
+  v.val.map (fun b => (b.1.val, b.2.val))
+
+def idLists (v : alloc.vec.Vec (alloc.vec.Vec Std.Usize)) : List Ids :=
+  v.val.map nats
+
+def pairLists (v : alloc.vec.Vec (alloc.vec.Vec (Std.Usize × Std.Usize))) :
+    List (List (Nat × Nat)) :=
+  v.val.map idPairs
+
+/-- Out of range yields the empty thing, matching the checker's accessors. A
+panic is not a verdict, so both sides are total and `Indexed` is what turns an
+id that names nothing into a rejection. -/
+def emptyNode : types.Node :=
+  { props := alloc.vec.Vec.new Std.Usize, parents := alloc.vec.Vec.new Std.Usize }
+
+def emptyEndpoint : types.Endpoint :=
+  { props := alloc.vec.Vec.new Std.Usize, parents := alloc.vec.Vec.new Std.Usize }
+
+def nd (p : types.Problem) (d : Nat) : types.Node := p.nodes.val.getD d emptyNode
+def ep (q : types.Plan) (e : Nat) : types.Endpoint := q.endpoints.val.getD e emptyEndpoint
+
+def nodeProps (p : types.Problem) (d : Nat) : Ids := nats (nd p d).props
+def nodeParents (p : types.Problem) (d : Nat) : Ids := nats (nd p d).parents
+def epProps (q : types.Plan) (e : Nat) : Ids := nats (ep q e).props
+def epParents (q : types.Plan) (e : Nat) : Ids := nats (ep q e).parents
+
+def nNodes (p : types.Problem) : Nat := p.nodes.val.length
+def nTransforms (p : types.Problem) : Nat := p.transforms.val.length
+def nEndpoints (q : types.Plan) : Nat := q.endpoints.val.length
+def nProps (p : types.Problem) : Nat := p.n_props.val
+def givenTr (p : types.Problem) : Nat := p.given_tr.val
+def targetTr (p : types.Problem) : Nat := p.target_tr.val
+def givenGroups (p : types.Problem) : List Ids := idLists p.given
+def givens (q : types.Plan) : List (Nat × Nat) := idPairs q.givens
+
+def requiresOf (p : types.Problem) (t : Nat) : Ids :=
+  match p.transforms.val[t]? with
+  | some tr => nats tr.requires
+  | none => []
+
+def producesOf (p : types.Problem) (t : Nat) : List Ids :=
+  match p.transforms.val[t]? with
+  | some tr => idLists tr.produces
+  | none => []
+
+structure StepView where
+  transform : Nat
+  used : List (Nat × Nat)
+  produced : List (List (Nat × Nat))
+
+def stepView (s : types.Step) : StepView :=
+  { transform := s.transform.val, used := idPairs s.used, produced := pairLists s.produced }
+
+def steps (q : types.Plan) : List StepView := q.steps.val.map stepView
+
+/-! ## 1. A type is a collection of atomic properties -/
+
+/-- `IsA A B` -- "A is a B" -- when B's properties are contained in A's. More
+properties means more specific, so a subtype satisfies a supertype's demand and
+never the reverse. -/
+def IsA (a b : Ids) : Prop := ∀ x ∈ b, x ∈ a
 
 /-- Mutual inclusion. Property lists and slot lists are sets in everything but
-representation, and comparing them by position is wrong in both places it is
-tempting: `requires` may name one slot twice, and a merged step's product groups
-are not in declaration order. -/
-def SameSet {α : Type} (a b : List α) : Prop :=
-  (∀ x ∈ a, x ∈ b) ∧ (∀ x ∈ b, x ∈ a)
+representation. -/
+def SameSet (a b : Ids) : Prop := (∀ x ∈ a, x ∈ b) ∧ (∀ x ∈ b, x ∈ a)
 
-structure Node where
-  props : List PropId
-  /-- Lineage anchors. For a `requires` slot these are earlier slots of the same
-  transform; for a given node they are that endpoint's real lineage and belong
-  to no transform at all. -/
-  parents : List NodeId
+/-! ## 2. Well-indexed -/
 
-structure Transform where
-  requires : List NodeId
-  /-- One inner list per product group. For the given transform the groups are
-  *alternatives*, one per sample; for every other transform they are conjunctive
-  and all of them are emitted. -/
-  produces : List (List NodeId)
+/-- Every id names something that exists, every parent precedes its child in both
+tables, and no transform names one requirement twice.
 
-structure Problem where
-  nodes : Array Node
-  transforms : Array Transform
-  givenTr : TrId
-  callerTrs : List TrId
-  targetTr : TrId
-  given : List (List NodeId)
+The range conditions stop the specification being vacuous rather than merely
+incomplete: an out-of-range index reads as the empty node above, and an empty
+demand is satisfied by anything.
 
-structure Endpoint where
-  props : List PropId
-  parents : List EpId
+The ordering conditions are what make the checker's ancestor closure a single
+increasing pass, and what make `Ancestor` below well founded. The encoder emits
+both tables parents-first, so a violation is a malformed reply.
 
-structure Step where
-  transform : TrId
-  used : List (NodeId × EpId)
-  produced : List (List (NodeId × EpId))
+`Nodup` on `requires` is a well-formedness condition: a transform must have
+unique requirements. Two structurally identical ones intern to a single node id,
+and `Shape` would then accept one binding for two inputs. -/
+def WellIndexed (p : types.Problem) (q : types.Plan) : Prop :=
+  targetTr p < nTransforms p ∧ givenTr p < nTransforms p ∧
+  (∀ g ∈ givenGroups p, ∀ n ∈ g, n < nNodes p) ∧
+  (∀ gn ∈ givens q, gn.1 < nEndpoints q ∧ gn.2 < nNodes p) ∧
+  (∀ d < nNodes p, ∀ a ∈ nodeParents p d, a < d) ∧
+  (∀ e < nEndpoints q, ∀ f ∈ epParents q e, f < e) ∧
+  (∀ d < nNodes p, ∀ x ∈ nodeProps p d, x < nProps p) ∧
+  (∀ e < nEndpoints q, ∀ x ∈ epProps q e, x < nProps p) ∧
+  (∀ t < nTransforms p,
+      (requiresOf p t).Nodup ∧
+      (∀ d ∈ requiresOf p t, d < nNodes p) ∧
+      (∀ g ∈ producesOf p t, ∀ d ∈ g, d < nNodes p)) ∧
+  (∀ s ∈ steps q,
+      s.transform < nTransforms p ∧
+      (∀ b ∈ s.used, b.1 < nNodes p ∧ b.2 < nEndpoints q) ∧
+      (∀ g ∈ s.produced, ∀ b ∈ g, b.1 < nNodes p ∧ b.2 < nEndpoints q))
 
-structure Plan where
-  endpoints : Array Endpoint
-  steps : List Step
-  /-- Whether the search finished. An incomplete plan is a search that gave up,
-  which is a different answer from a wrong one. -/
-  complete : Bool
+/-! ## 3. Ancestry, by identity -/
 
-/-- Every id names something that exists.
+/-- The reflexive-transitive closure of an endpoint's declared parents.
 
-Without this the specification is vacuous rather than merely incomplete:
-`getElem!` returns the `Inhabited` default for an out-of-range index, which is
-an empty property list, and an empty demand is satisfied by anything. A plan
-binding a slot id of one billion would pass every clause below. -/
-def WellIndexed (p : Problem) (q : Plan) : Prop :=
-  p.givenTr < p.transforms.size ∧
-  p.targetTr < p.transforms.size ∧
-  (∀ n ∈ p.nodes.toList, ∀ a ∈ n.parents, a < p.nodes.size) ∧
-  (∀ t ∈ p.transforms.toList,
-      (∀ d ∈ t.requires, d < p.nodes.size) ∧
-      (∀ g ∈ t.produces, ∀ d ∈ g, d < p.nodes.size)) ∧
-  (∀ e ∈ q.endpoints.toList, ∀ f ∈ e.parents, f < q.endpoints.size) ∧
-  (∀ grp ∈ p.given, ∀ n ∈ grp, n < p.nodes.size) ∧
-  (∀ s ∈ q.steps,
-      s.transform < p.transforms.size ∧
-      (∀ b ∈ s.used, b.1 < p.nodes.size ∧ b.2 < q.endpoints.size) ∧
-      (∀ g ∈ s.produced, ∀ b ∈ g, b.1 < p.nodes.size ∧ b.2 < q.endpoints.size))
+Compared by INDEX. An endpoint's identity is its position, and nothing here
+identifies two rows by their contents: two files made by different steps are two
+files even at the same type and the same lineage. A structural relation cannot
+say so, which is what let a step anchor to one file and consume something derived
+from another.
 
-/-- Two endpoints are the same *for lineage* when their properties agree and
-their lineage agrees, all the way down.
+The `m < e` guard is inside the definition rather than carried as a hypothesis.
+`Valid` must be decidable for the theorem below to typecheck, and `WellIndexed`
+is one of its own fields, so it cannot be assumed while deciding a sibling. Under
+`WellIndexed` the guard never fires. -/
+def Ancestor (q : types.Plan) : Nat → Nat → Prop
+  | e, f => e = f ∨ ∃ m ∈ epParents q e, m < e ∧ Ancestor q m f
+  decreasing_by all_goals omega
 
-**Structure, not position, and this was measured rather than chosen.** Comparing
-lineage by arena index rejects seven of the eleven shipped workflows. The solver
-emits structural twins -- one endpoint carried over from the caller's own
-objects, one minted during the search, identical properties and identical
-parents -- and a step consumes one twin while the endpoints it produces record
-the other. The Python checker has always compared this way.
+/-! ## 4. Instancing, and satisfaction -/
 
-Well founded because an endpoint's parents are emitted before it, so the
-recursion descends a strictly decreasing index. -/
-inductive Same (q : Plan) : EpId → EpId → Prop where
-  | mk {x y : EpId} :
-      SameSet (q.endpoints[x]!).props (q.endpoints[y]!).props →
-      (∀ a ∈ (q.endpoints[x]!).parents, ∃ b ∈ (q.endpoints[y]!).parents, Same q a b) →
-      (∀ b ∈ (q.endpoints[y]!).parents, ∃ a ∈ (q.endpoints[x]!).parents, Same q a b) →
-      Same q x y
+/-- What this step bound to slot `a`. The first match, so no clause needs `Shape`
+to hold before a binding can be resolved. -/
+def boundTo : List (Nat × Nat) → Nat → Option Nat
+  | [], _ => none
+  | b :: rest, a => if b.1 = a then some b.2 else boundTo rest a
 
-/-- Step `s` emits endpoint `e`: it came out of one of `s`'s output slots. -/
-def Emits (s : Step) (e : EpId) : Prop :=
-  ∃ g ∈ s.produced, ∃ b ∈ g, b.2 = e
+/-- INSTANCING. A slot's anchors name other slots; `Inst` resolves each to the
+endpoint THIS step bound to it -- the instance, carrying full lineage -- rather
+than leaving it as the transform's declared output type. -/
+def Inst (p : types.Problem) (used : List (Nat × Nat)) (d : Nat) : List (Option Nat) :=
+  (nodeParents p d).map (boundTo used)
 
-/-- Ancestry: the transitive closure of an endpoint's *declared* parents, taken
-up to `Same`.
+/-- May endpoint `e` fill slot `d`, in a step whose bindings are `used`?
+Properties and lineage in one relation.
 
-One source, not the union of declared parents and the producing step's inputs.
-The step graph adds nothing once `Sound.rooted` holds, and `rooted` is checked
-rather than assumed. -/
-inductive Ancestor (q : Plan) : EpId → EpId → Prop where
-  | direct {e a f : EpId} : a ∈ (q.endpoints[e]!).parents → Same q a f → Ancestor q e f
-  | trans {e m f : EpId} : m ∈ (q.endpoints[e]!).parents → Ancestor q m f → Ancestor q e f
+The anchor's binding must be the endpoint `e` actually descends from -- matched
+is consumed, the same instance. With identity that makes a crossover impossible
+rather than merely unlikely: an endpoint derived from one file cannot satisfy an
+anchor bound to a different file, however alike the two files are.
 
-/-- May endpoint `e` fill slot `d`, in a step whose bindings are `u`?
+Non-recursive on the demand: the anchor's own properties and lineage are checked
+when THAT binding is checked, by this same clause over this same step. -/
+def Satisfies (p : types.Problem) (q : types.Plan)
+    (used : List (Nat × Nat)) (e d : Nat) : Prop :=
+  IsA (epProps q e) (nodeProps p d) ∧
+  ∀ o ∈ Inst p used d, ∃ f, o = some f ∧ Ancestor q e f
 
-Properties and lineage are one test rather than two clauses. The anchoring to
-`u` is what stops a sample crossover: without it, "descends from *an* endpoint
-satisfying the anchor" lets one sample's reads fill a slot anchored to another
-sample's, which is exactly what the shipped lineage chains exist to prevent.
+/-! ## 5. The remaining vocabulary -/
 
-Anchoring also removes the recursion. The anchor's own properties and lineage
-are checked when *that* binding is checked, by the same clause over the same
-step. -/
-def Fills (p : Problem) (q : Plan) (u : List (NodeId × EpId)) (e : EpId) (d : NodeId) : Prop :=
-  (∀ x ∈ (p.nodes[d]!).props, x ∈ (q.endpoints[e]!).props) ∧
-  (∀ a ∈ (p.nodes[d]!).parents,
-      ∃ f, (a, f) ∈ u ∧ (Same q e f ∨ Ancestor q e f))
+def Emits (s : StepView) (e : Nat) : Prop := ∃ g ∈ s.produced, ∃ b ∈ g, b.2 = e
 
-/-- The slot half of a binding list. -/
-def slots (bs : List (NodeId × EpId)) : List NodeId := bs.map Prod.fst
+def slotsOf (bs : List (Nat × Nat)) : Ids := bs.map Prod.fst
 
-/-- Does this step honour the shape of its transform's contract?
+/-- The step binds exactly the slots its transform requires, and emits exactly
+one endpoint per declared product slot. Without this a step that binds nothing
+passes every clause below vacuously.
 
-The given transform is the exception on the output side: its product groups are
-alternatives, and branching hands the step one group per timeline, so it emits
-fewer groups than it declares. -/
-def Applies (p : Problem) (s : Step) : Prop :=
-  let t := p.transforms[s.transform]!
-  (slots s.used).Nodup ∧
-  SameSet (slots s.used) t.requires ∧
-  (s.transform = p.givenTr →
-      ∀ g ∈ s.produced, ∃ dg ∈ t.produces, SameSet (slots g) dg) ∧
-  (s.transform ≠ p.givenTr →
-      s.produced.length = t.produces.length ∧
-      ∀ gd ∈ s.produced.zip t.produces, SameSet (slots gd.1) gd.2)
+No exemption for a given step, because there is no given step: the givens are a
+parameter and the adapter strips it. That removed four exemptions and a boundary
+conjunct, all of them case splits a completeness proof would have had to carry. -/
+def Shape (p : types.Problem) (s : StepView) : Prop :=
+  (slotsOf s.used).Nodup ∧
+  SameSet (slotsOf s.used) (requiresOf p s.transform) ∧
+  s.produced.length = (producesOf p s.transform).length ∧
+  ∀ gd ∈ s.produced.zip (producesOf p s.transform), SameSet (slotsOf gd.1) gd.2
 
-/-- A condition on the *problem*, not on the plan.
+/-- The lineage a step confers on what it produces: everything it consumed, and
+those endpoints' own parents. One hop, which is why `Ancestor` is transitive -- a
+three-level given chain loses its grandparent at the first step. -/
+def Confers (q : types.Plan) (used : List (Nat × Nat)) : Ids :=
+  (used.map Prod.snd) ++ (used.map Prod.snd).flatMap (fun f => epParents q f)
 
-`Fills` requires the anchor to be bound in the same step, so an anchor has to be
-one of that transform's own inputs, declared earlier -- otherwise the step could
-not have chosen the anchor's binding by the time it needed it. Declaration order
-is the reference space.
+/-- A produced endpoint's declared lineage is EXACTLY what its step confers.
 
-Scoped to `requires` slots on purpose. Product slots may carry lineage and
-nothing constrains where those parents live, and given-endpoint nodes carry
-parents belonging to no transform at all, so quantifying over every node would
-refuse every real problem. -/
-def WellFormed (p : Problem) : Prop :=
-  ∀ t ∈ p.transforms.toList, ∀ i d, t.requires.get? i = some d →
-    ∀ a ∈ (p.nodes[d]!).parents, ∃ j, j < i ∧ t.requires.get? j = some a
+Equality, not containment. A product free to declare extra parents can buy any
+anchor it likes, which is a crossover written by hand rather than found by the
+search. This is what ties the declared lineage to the step graph, and it is what
+lets `Ancestor` read the declared closure alone instead of a union of two
+relations. -/
+def Derived (q : types.Plan) (used : List (Nat × Nat)) (e : Nat) : Prop :=
+  SameSet (epParents q e) (Confers q used)
 
-/-- The ten conditions. -/
-structure Sound (p : Problem) (q : Plan) : Prop where
-  /-- 0. Every id names something that exists. -/
-  indexed : WellIndexed p q
-  /-- 1. A plan with no steps is not a plan. -/
-  nonempty : q.steps ≠ []
-  /-- 2. Every step honours its transform's contract. -/
-  shape : ∀ s ∈ q.steps, Applies p s
-  /-- 3. Nothing is consumed out of thin air. Compared by *position*: a plan
-  that consumes something nothing produced is not repaired by something else
-  producing a lookalike. -/
-  provenance : ∀ s ∈ q.steps, ∀ b ∈ s.used, ∃ s' ∈ q.steps, Emits s' b.2
-  /-- 4. Every input binding fits its slot, properties and lineage together. -/
-  conformance : ∀ s ∈ q.steps, ∀ b ∈ s.used, Fills p q s.used b.2 b.1
-  /-- 5. Every produced endpoint fits the slot it left. The given step is exempt:
-  after a timeline merge it emits one sample's endpoint under another sample's
-  slot, so the property subset genuinely does not hold there. -/
-  emission : ∀ s ∈ q.steps, s.transform ≠ p.givenTr →
-      ∀ g ∈ s.produced, ∀ b ∈ g, Fills p q s.used b.2 b.1
-  /-- 6. A produced endpoint declares, among its parents, every endpoint its own
-  step consumed. This is what makes the narrow `Ancestor` sufficient: with it,
-  the step graph reaches nothing the declared closure does not. -/
-  rooted : ∀ s ∈ q.steps, s.transform ≠ p.givenTr →
-      ∀ g ∈ s.produced, ∀ b ∈ g, ∀ c ∈ s.used,
-        ∃ a ∈ (q.endpoints[b.2]!).parents, Same q a c.2
-  /-- 7. The given step presents only endpoints matching a declared input. This
-  is what stops a plan inventing its own starting data. -/
-  givens : ∀ s ∈ q.steps, s.transform = p.givenTr →
-      ∀ g ∈ s.produced, ∀ b ∈ g,
-        ∃ grp ∈ p.given, ∃ n ∈ grp,
-          SameSet (p.nodes[n]!).props (q.endpoints[b.2]!).props
-  /-- 8. If one step emits what another consumes, the emitter comes first. A
-  list that is a topological order is itself the proof that the graph is
-  acyclic, so this replaces the separate ordering and cycle clauses. -/
-  schedulable : ∀ i j : Fin q.steps.length, ∀ b ∈ (q.steps.get j).used,
-      Emits (q.steps.get i) b.2 → i < j
-  /-- 9. Exactly one target application and exactly one given application, and
-  the given one consumes nothing. -/
-  boundary :
-    (q.steps.filter (fun s => s.transform == p.targetTr)).length = 1 ∧
-    (q.steps.filter (fun s => s.transform == p.givenTr)).length = 1 ∧
-    (∀ s ∈ q.steps, s.transform = p.givenTr → s.used = [])
+/-! ## 6. A valid plan -/
 
-/-
-  The obligation.
+structure Valid (p : types.Problem) (q : types.Plan) : Prop where
+  indexed        : WellIndexed p q
+  shape          : ∀ s ∈ steps q, Shape p s
+  /-- Every input binding fits the slot it filled. -/
+  conformance    : ∀ s ∈ steps q, ∀ b ∈ s.used, Satisfies p q s.used b.2 b.1
+  /-- Every produced endpoint fits the slot it left... -/
+  emission       : ∀ s ∈ steps q, ∀ g ∈ s.produced, ∀ b ∈ g, Satisfies p q s.used b.2 b.1
+  /-- ...and carries the lineage its step confers, no more and no less. -/
+  derived        : ∀ s ∈ steps q, ∀ g ∈ s.produced, ∀ b ∈ g, Derived q s.used b.2
+  /-- One endpoint, one producer. Two steps emitting one endpoint is two
+  processes writing one file, and `rectify` produced exactly that until it was
+  repaired. -/
+  uniqueProducer : ∀ e < nEndpoints q, ∀ i ∈ (steps q).zipIdx, ∀ j ∈ (steps q).zipIdx,
+                     Emits i.1 e → Emits j.1 e → i.2 = j.2
+  /-- Nothing is consumed out of thin air. -/
+  provenance     : ∀ s ∈ steps q, ∀ b ∈ s.used,
+                     (∃ s' ∈ steps q, Emits s' b.2) ∨ (∃ gn ∈ givens q, gn.1 = b.2)
+  /-- Every presented given is one the problem declared, paired one to one, and
+  the pairing the wire supplied is a real correspondence: equal properties, and a
+  lineage edge on one side exactly when there is one on the other.
 
-  `check` is `solver_witness::check`, extracted through Charon and Aeneas. The
-  statement is deliberately one-directional: when the witness accepts, the plan
-  really is sound. The converse is not claimed and is not true -- a rejection
-  says this plan is wrong, never that no plan exists.
+  There is deliberately NO condition confining a plan to one declared group. The
+  groups are one per sample and a multi-sample workflow legitimately spans all of
+  them. What keeps a single step from mixing two samples is the lineage anchors
+  in `conformance`, not group membership -- so a problem whose transforms declare
+  no anchors has not asked for the samples to be kept apart. -/
+  givens         : ((givens q).map Prod.fst).Nodup ∧ ((givens q).map Prod.snd).Nodup ∧
+                   (∀ gn ∈ givens q, ∃ g ∈ givenGroups p, gn.2 ∈ g) ∧
+                   (∀ gn ∈ givens q, SameSet (epProps q gn.1) (nodeProps p gn.2)) ∧
+                   (∀ gn ∈ givens q, ∀ f ∈ epParents q gn.1,
+                      ∃ hn ∈ givens q, hn.1 = f ∧ hn.2 ∈ nodeParents p gn.2) ∧
+                   (∀ gn ∈ givens q, ∀ a ∈ nodeParents p gn.2,
+                      ∃ hn ∈ givens q, hn.2 = a ∧ hn.1 ∈ epParents q gn.1)
+  /-- The planned workflow is a DAG. A list that is a topological order is itself
+  the proof, so this replaces a separate cycle check. Declared LINEAGE may still
+  contain cycles, and does; this clause is about the step graph only. -/
+  schedulable    : ∀ cj ∈ (steps q).zipIdx, ∀ b ∈ cj.1.used,
+                     ∀ pi ∈ (steps q).zipIdx, Emits pi.1 b.2 → pi.2 < cj.2
+  /-- Exactly one application of the target. This also rules out the empty plan,
+  which is why there is no separate `nonempty` clause. -/
+  target         : ((steps q).filter (fun s => s.transform == targetTr p)).length = 1
 
-  `WellFormed` is a hypothesis about the problem rather than a clause of
-  soundness, because it is what makes `conformance` *satisfiable* at all: an
-  anchor that is not one of the transform's own requirements can never be bound
-  in the step that needs it. It is discharged by the library loader, which
-  refuses to build such a transform, and by the Rust generator, which refuses a
-  later anchor rather than guessing.
+/-! ## 7. The obligation
 
-  Stated once the extraction exists, because Aeneas emits into a monad for
-  anything partial and the extracted `check` will not be a bare `Bool`.
+  `solver_witness.check` is the extracted checker, so it arrives in Aeneas's
+  `Result` monad and the statement is over that value.
+
+  Stated as ONE EQUATION rather than as the biconditional directly. The
+  biconditional alone does not pin the negative case: a checker that FAILS on
+  every invalid plan satisfies `check p q = .ok true ↔ Valid p q` vacuously. The
+  equation gives totality, soundness and completeness together, and it is what
+  the clause-by-clause decomposition naturally produces.
 -/
--- theorem check_sound (p : Problem) (q : Plan) (hw : WellFormed p) :
---     check p q = true → Sound p q := by
+
+-- theorem check_spec (p : types.Problem) (q : types.Plan) :
+--     solver_witness.check p q = Result.ok (decide (Valid p q)) := by
 --   sorry
 
-end SolverWitness
+-- theorem check_correct (p : types.Problem) (q : types.Plan) :
+--     solver_witness.check p q = Result.ok true ↔ Valid p q := by
+--   rw [check_spec]; simp
+
+end SolverSpec
