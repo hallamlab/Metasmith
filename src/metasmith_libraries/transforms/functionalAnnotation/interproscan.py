@@ -76,7 +76,7 @@ def protocol(context: ExecutionContext):
         cmd=f"""
             mkdir -p output
             export I5OPTS="-Xms4g -Xmx48g"
-            sed '/^[^>]/s/\*//g' {iorfs.container} > ./{iorfs.container.stem}.clean.faa
+            sed '/^[^>]/s/\\*//g' {iorfs.container} > ./{iorfs.container.stem}.clean.faa
             /opt/interproscan/interproscan.sh \
                 --disable-precalc \
                 --verbose \
