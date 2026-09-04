@@ -2,7 +2,7 @@
   Four clauses over the STEP LIST: `target`, `uniqueProducer`, `provenance` and
   `schedulable`. Read `Proof/Basis.lean` first for the loop recipe; what follows
   is what a clause whose conjunct quantifies over `List.zipIdx` needs on top of
-  it, plus three traps that cost this file most of its builds.
+  it, plus four traps that cost this file most of its builds.
 
   ## `emits` is proved once
 
@@ -28,6 +28,11 @@
   LATER entry emits", and the only thing separating the head from the tail is
   that the tail's indices are strictly larger.
 
+  A loop nested inside another contributes its verdict as a second `decide`, so
+  the step of the outer induction is not `decide_eq_decide` but `decide_and_of_iff`:
+  one iff, `outer i ↔ inner ∧ outer (i+1)`, and the `Bool` algebra is done once,
+  here, rather than by a case split at each of the four sites.
+
   ## The scan, not the pointwise judgement
 
   `cl_unique_producer` does NOT call `unique_producer_at`, the pointwise
@@ -40,11 +45,12 @@
   length bound, `i < steps.len() ≤ usize::MAX`; a checker whose step list could
   be `usize::MAX` long would be wrong rather than unproved.
 
-  ## Three traps, all of them consequences of Basis's second warning
+  ## Four traps, all of them consequences of Basis's second warning
 
   `alloc.vec.Vec α` is a `def` for a subtype, so a term containing `v.val` is
   type-correct only once `Vec` unfolds -- which does not happen at `instances`
-  transparency. Everything below follows from that one fact.
+  transparency. The first three follow from that one fact, and the fourth is the
+  same discipline applied to `@[reducible]`.
 
   1. **A postcondition must not mention any `Vec`'s `.val`.** Not for elegance:
      `Decidable` synthesis runs at `instances` transparency, so
@@ -73,12 +79,40 @@
      what `Proof/Access.lean` warns not to use after an index rewrite. `show`
      with the reduced program is the way through: the two differ by iota on a
      literal pair, so the defeq check is free.
+
+  4. **The goal's copy of the postcondition is not the one you wrote.** By the
+     time the recipe reaches the closing step, `SolverSpec.Emits` has been
+     delta-reduced in the goal and its implication pushed -- `(∃ g ∈ …, …) → S`
+     arrives as `∀ g ∈ …, … → S` -- while the SAME statement reached through the
+     induction hypothesis is still folded. So `rw [decide_eq_true h]` reports
+     "did not find an occurrence" of a pattern that is on the screen, and
+     `exact decide_eq_decide.mpr h` reports an application type mismatch, because
+     the two `decide`s carry `Decidable` instances built on different-looking
+     propositions.
+
+     Close with `exact`, never `rw`: it unifies at default transparency, which
+     covers the delta. `decide_eq_decide`, `decide_and_of_iff` and `decide_or_of_iff`
+     exist so that every closing step can be one. Where the pushed implication is
+     what differs -- only `schedulable`, whose conjunct is the one with `Emits` in
+     an antecedent -- reconcile with
+     `simpa only [SolverSpec.Emits, exists_imp, and_imp] using h`: `simpa` rewrites
+     hypothesis and goal with the same set, and `simp only` with exactly those
+     three pushes both without contracting either, which a plain `simpa` does
+     asymmetrically and then fails on.
+
+  And one arithmetic note that is not about transparency: the fuel decrease of a
+  loop over a hoisted list is `used.length - i ≤ m`, whose `length` is an opaque
+  atom. `scalar_tac` does not close it; `omega` does.
 -/
 
 import SolverWitness.Types
 import SolverWitness.Funs
 import SolverWitness.Spec
 import SolverWitness.Proof.Basis
+
+set_option synthInstance.maxSize 1000
+set_option synthInstance.maxHeartbeats 1000000
+set_option maxHeartbeats 1000000
 
 namespace SolverProof
 
@@ -100,6 +134,31 @@ theorem ok_of_spec {α} {x : Result α} {P : α → Prop} (h : x ⦃ z => P z �
   | ok v => exact ⟨v, rfl, by simpa only [WP.spec_ok] using h⟩
   | fail e => simp only [WP.spec_fail] at h
   | div => simp only [WP.spec_div] at h
+
+/-- A loop whose body runs another loop reports two verdicts; this is how they
+become one. Named away from `decide_and_eq`: `Proof/Lineage.lean` has its own,
+oriented the other way round, and two same-named declarations in `SolverProof`
+would collide the moment one module imports both. -/
+theorem decide_and_of_iff {p q r : Prop} [Decidable p] [Decidable q] [Decidable r]
+    (h : r ↔ (p ∧ q)) : (decide p && decide q) = decide r := by
+  by_cases hp : p
+  · by_cases hq : q
+    · simp [hp, hq, h.mpr ⟨hp, hq⟩]
+    · have hr : ¬ r := fun hr => hq (h.mp hr).2
+      simp [hp, hq, hr]
+  · have hr : ¬ r := fun hr => hp (h.mp hr).1
+    simp [hp, hr]
+
+/-- The same for a loop that stops on the first success rather than the first
+failure. -/
+theorem decide_or_of_iff {p q r : Prop} [Decidable p] [Decidable q] [Decidable r]
+    (h : r ↔ (p ∨ q)) : (decide p || decide q) = decide r := by
+  by_cases hp : p
+  · simp [hp, h.mpr (Or.inl hp)]
+  · by_cases hq : q
+    · simp [hp, hq, h.mpr (Or.inr hq)]
+    · have hr : ¬ r := fun hr => (h.mp hr).elim hp hq
+      simp [hp, hq, hr]
 
 /-- The extraction indexes a `Vec` through `Vec.index`; in range it is `ok` of
 the element. -/
@@ -214,7 +273,11 @@ theorem emits_inner_spec
       split
       · exfalso; scalar_tac
       · have hnil : row.drop k.val = [] := List.drop_eq_nil_iff.mpr (by scalar_tac)
-        exact ok_spec (by rw [hhf, hnil]; simp)
+        have hno : ¬ (∃ b ∈ row.drop k.val, b.2 = e.val) := by rw [hnil]; simp
+        refine ok_spec ?_
+        rw [hhf]
+        simp only [Bool.false_or]
+        exact (decide_eq_false hno).symm
   | succ m ih =>
     intro hit k hk
     rw [clauses.emits_loop0_loop0.eq_def]
@@ -246,33 +309,39 @@ theorem emits_inner_spec
             exact ⟨(a.val, ee.val), List.mem_cons_self, by rw [heq]⟩
           simp only [bind_tc_ok]
           step as ⟨ k1, hk1' ⟩
-          refine WP.spec_mono (ih true k1 (by scalar_tac)) ?_
+          refine WP.spec_mono (ih true k1 (by omega)) ?_
           intro r hr
-          rw [hr, hhf, decide_eq_true hyes]
-          simp
+          refine hr.trans ?_
+          rw [hhf]
+          simp only [Bool.true_or, Bool.false_or]
+          exact (decide_eq_true hyes).symm
         · next hne =>
           have hane : ¬ (ee.val = e.val) := by
             intro hc; exact hne (by scalar_tac)
-          have hiff : (∃ b ∈ row.drop (k.val + 1), b.2 = e.val)
+          simp only [bind_tc_ok]
+          step as ⟨ k1, hk1' ⟩
+          have hiff : (∃ b ∈ row.drop k1.val, b.2 = e.val)
               ↔ (∃ b ∈ row.drop k.val, b.2 = e.val) := by
-            rw [hcons]
+            rw [hk1', hcons]
             constructor
             · rintro ⟨x, hx, hx2⟩
               exact ⟨x, List.mem_cons_of_mem _ hx, hx2⟩
             · rintro ⟨x, hx, hx2⟩
               rcases List.mem_cons.mp hx with hx' | hx'
-              · exact absurd (hx' ▸ hx2) hane
+              · rw [hx'] at hx2; exact absurd hx2 hane
               · exact ⟨x, hx', hx2⟩
-          simp only [bind_tc_ok]
-          step as ⟨ k1, hk1' ⟩
-          have hk1'' : k1.val = k.val + 1 := by scalar_tac
-          refine WP.spec_mono (ih false k1 (by scalar_tac)) ?_
+          refine WP.spec_mono (ih false k1 (by omega)) ?_
           intro r hr
-          rw [hr, hhf, hk1'']
+          refine hr.trans ?_
+          rw [hhf]
           simp only [Bool.false_or]
           exact decide_eq_decide.mpr hiff
       · have hnil : row.drop k.val = [] := List.drop_eq_nil_iff.mpr (by scalar_tac)
-        exact ok_spec (by rw [hhf, hnil]; simp)
+        have hno : ¬ (∃ b ∈ row.drop k.val, b.2 = e.val) := by rw [hnil]; simp
+        refine ok_spec ?_
+        rw [hhf]
+        simp only [Bool.false_or]
+        exact (decide_eq_false hno).symm
 
 /-- The outer loop: the product groups still to look at. -/
 theorem emits_outer_spec (s : types.Step) (e : Std.Usize) :
@@ -297,7 +366,12 @@ theorem emits_outer_spec (s : types.Step) (e : Std.Usize) :
       · exfalso; scalar_tac
       · have hnil : (SolverSpec.pairLists s.produced).drop g.val = [] :=
           List.drop_eq_nil_iff.mpr (by scalar_tac)
-        exact ok_spec (by rw [hhf, hnil]; simp)
+        have hno : ¬ (∃ gp ∈ (SolverSpec.pairLists s.produced).drop g.val,
+            ∃ b ∈ gp, b.2 = e.val) := by rw [hnil]; simp
+        refine ok_spec ?_
+        rw [hhf]
+        simp only [Bool.false_or]
+        exact (decide_eq_false hno).symm
   | succ m ih =>
     intro hit g hk
     rw [clauses.emits_loop0.eq_def]
@@ -320,49 +394,55 @@ theorem emits_outer_spec (s : types.Step) (e : Std.Usize) :
         rw [hin]
         simp only [bind_tc_ok]
         step as ⟨ g1, hg1 ⟩
-        have hg1' : g1.val = g.val + 1 := by scalar_tac
-        refine WP.spec_mono (ih _ g1 (by scalar_tac)) ?_
+        have hd0 : (SolverSpec.idPairs (s.produced.val[g.val]'hg)).drop (0#usize).val
+            = SolverSpec.idPairs (s.produced.val[g.val]'hg) := List.drop_zero
+        have hiff : (∃ gp ∈ (SolverSpec.pairLists s.produced).drop g.val,
+              ∃ b ∈ gp, b.2 = e.val)
+            ↔ ((∃ b ∈ (SolverSpec.idPairs (s.produced.val[g.val]'hg)).drop (0#usize).val,
+                  b.2 = e.val)
+                ∨ (∃ gp ∈ (SolverSpec.pairLists s.produced).drop g1.val,
+                  ∃ b ∈ gp, b.2 = e.val)) := by
+          rw [hd0, hg1, hcons]
+          constructor
+          · rintro ⟨x, hx, hx2⟩
+            rcases List.mem_cons.mp hx with hx' | hx'
+            · exact Or.inl (by rw [← hx']; exact hx2)
+            · exact Or.inr ⟨x, hx', hx2⟩
+          · rintro (h | ⟨x, hx, hx2⟩)
+            · exact ⟨_, List.mem_cons_self, h⟩
+            · exact ⟨x, List.mem_cons_of_mem _ hx, hx2⟩
+        refine WP.spec_mono (ih _ g1 (by omega)) ?_
         intro r hr
-        rw [hr, hhf, hg1']
-        by_cases hem : ∃ b ∈ SolverSpec.idPairs (s.produced.val[g.val]'hg), b.2 = e.val
-        · have h0 : ∃ b ∈ (SolverSpec.idPairs (s.produced.val[g.val]'hg)).drop (0#usize).val,
-              b.2 = e.val := by simpa using hem
-          have hyes : ∃ gp ∈ (SolverSpec.pairLists s.produced).drop g.val,
-              ∃ b ∈ gp, b.2 = e.val := by
-            rw [hcons]
-            exact ⟨_, List.mem_cons_self, hem⟩
-          rw [decide_eq_true h0, decide_eq_true hyes]
-          simp
-        · have h0 : ¬ (∃ b ∈ (SolverSpec.idPairs (s.produced.val[g.val]'hg)).drop (0#usize).val,
-              b.2 = e.val) := by simpa using hem
-          have hiff : (∃ gp ∈ (SolverSpec.pairLists s.produced).drop (g.val + 1),
-                ∃ b ∈ gp, b.2 = e.val)
-              ↔ (∃ gp ∈ (SolverSpec.pairLists s.produced).drop g.val,
-                ∃ b ∈ gp, b.2 = e.val) := by
-            rw [hcons]
-            constructor
-            · rintro ⟨x, hx, hx2⟩
-              exact ⟨x, List.mem_cons_of_mem _ hx, hx2⟩
-            · rintro ⟨x, hx, hx2⟩
-              rcases List.mem_cons.mp hx with hx' | hx'
-              · exact absurd (hx' ▸ hx2) hem
-              · exact ⟨x, hx', hx2⟩
-          rw [decide_eq_false h0]
-          simp only [Bool.false_or]
-          exact decide_eq_decide.mpr hiff
+        refine hr.trans ?_
+        rw [hhf]
+        simp only [Bool.false_or]
+        exact decide_or_of_iff hiff
       · have hnil : (SolverSpec.pairLists s.produced).drop g.val = [] :=
           List.drop_eq_nil_iff.mpr (by scalar_tac)
-        exact ok_spec (by rw [hhf, hnil]; simp)
+        have hno : ¬ (∃ gp ∈ (SolverSpec.pairLists s.produced).drop g.val,
+            ∃ b ∈ gp, b.2 = e.val) := by rw [hnil]; simp
+        refine ok_spec ?_
+        rw [hhf]
+        simp only [Bool.false_or]
+        exact (decide_eq_false hno).symm
 
 /-- The helper, in the specification's own vocabulary. -/
 theorem emits_spec (s : types.Step) (e : Std.Usize) :
     clauses.emits s e ⦃ r => r = decide (SolverSpec.Emits (SolverSpec.stepView s) e.val) ⦄ := by
   have h := emits_outer_spec s e (SolverSpec.pairLists s.produced).length false 0#usize
     (by scalar_tac)
+  have hd0 : (SolverSpec.pairLists s.produced).drop (0#usize).val
+      = SolverSpec.pairLists s.produced := List.drop_zero
+  have hiff : (∃ gp ∈ (SolverSpec.pairLists s.produced).drop (0#usize).val,
+        ∃ b ∈ gp, b.2 = e.val)
+      ↔ SolverSpec.Emits (SolverSpec.stepView s) e.val := by
+    rw [hd0]
+    exact Iff.rfl
   refine WP.spec_mono h ?_
   intro r hr
-  rw [hr]
-  simp
+  refine hr.trans ?_
+  simp only [Bool.false_or]
+  exact decide_eq_decide.mpr hiff
 
 /-! ## 9. target -/
 
@@ -408,12 +488,10 @@ theorem cl_target_loop_spec (p : types.Problem) (q : types.Plan) :
           simp
         have hbnd2 : n.val + 1 ≤ Usize.max := by scalar_tac
         step as ⟨ n1, hn1 ⟩
-        have hn1' : n1.val = n.val + 1 := by scalar_tac
         step as ⟨ i2, hi2 ⟩
-        have hi2' : i2.val = i.val + 1 := by scalar_tac
-        refine WP.spec_mono (ih n1 i2 (by scalar_tac) (by scalar_tac)) ?_
+        refine WP.spec_mono (ih n1 i2 (by omega) (by omega)) ?_
         intro r hr
-        rw [hr, hi2', hcnt, hn1']
+        rw [hr, hi2, hcnt, hn1]
         omega
       · next htr =>
         have hb : ¬ (((SolverSpec.stepView (q.steps.val[i.val]'hi)).transform
@@ -428,10 +506,9 @@ theorem cl_target_loop_spec (p : types.Problem) (q : types.Plan) :
           rw [hcons, List.filter_cons, if_neg hb]
         simp only [bind_tc_ok]
         step as ⟨ i2, hi2 ⟩
-        have hi2' : i2.val = i.val + 1 := by scalar_tac
-        refine WP.spec_mono (ih n i2 (by scalar_tac) (by scalar_tac)) ?_
+        refine WP.spec_mono (ih n i2 (by omega) (by omega)) ?_
         intro r hr
-        rw [hr, hi2', hcnt]
+        rw [hr, hi2, hcnt]
     · have hnil : (SolverSpec.steps q).drop i.val = [] := by
         refine List.drop_eq_nil_iff.mpr ?_
         rw [steps_length]; scalar_tac
@@ -495,7 +572,10 @@ theorem cl_unique_producer_inner_spec (q : types.Plan) (e : Std.Usize) :
               NoneEmits e.val (((SolverSpec.steps q).zipIdx).drop i.val)) := by
           rw [hnil]
           exact ⟨by simp [AtMostOne], by simp [NoneEmits]⟩
-        exact ok_spec (by rw [hok, decide_eq_true hyes])
+        refine ok_spec ?_
+        rw [hok]
+        simp only [Bool.true_and]
+        exact congrArg (Prod.mk q) (decide_eq_true hyes).symm
     · next hok =>
       have hf : ok1 = false := by simpa using hok
       exact ok_spec (by rw [hf]; simp)
@@ -518,11 +598,13 @@ theorem cl_unique_producer_inner_spec (q : types.Plan) (e : Std.Usize) :
         simp only [bind_tc_ok]
         split
         · next hem =>
-          have hE : SolverSpec.Emits (SolverSpec.stepView (q.steps.val[i.val]'hi)) e.val := by
-            simpa using hem
+          have hE : SolverSpec.Emits (SolverSpec.stepView (q.steps.val[i.val]'hi)) e.val :=
+            of_decide_eq_true hem
           split
           · next hseen =>
-            have hsn : seen ≠ access.NONE := by simpa using hseen
+            have hsn : seen ≠ access.NONE := by
+              intro hc
+              simp [hc] at hseen
             have hno : ¬ (AtMostOne e.val (((SolverSpec.steps q).zipIdx).drop i.val) ∧
                 (seen ≠ access.NONE →
                   NoneEmits e.val (((SolverSpec.steps q).zipIdx).drop i.val))) := by
@@ -537,21 +619,33 @@ theorem cl_unique_producer_inner_spec (q : types.Plan) (e : Std.Usize) :
                      (seen ≠ access.NONE →
                        NoneEmits e.val (((SolverSpec.steps q).zipIdx).drop i.val)))) ⦄
             step as ⟨ i2, hi2 ⟩
-            refine WP.spec_mono (ih false i i2 (by scalar_tac)) ?_
+            refine WP.spec_mono (ih false i i2 (by omega)) ?_
             intro r hr
-            rw [hr, decide_eq_false hno]
-            simp
+            refine hr.trans ?_
+            rw [hok]
+            simp only [Bool.false_and, Bool.true_and]
+            exact congrArg (Prod.mk q) (decide_eq_false hno).symm
           · next hseen =>
-            have hsn : seen = access.NONE := by simpa using hseen
+            have hsn : seen = access.NONE := by
+              by_contra hc
+              simp [hc] at hseen
             have hiNONE : i ≠ access.NONE := index_ne_NONE q i hi
+            show (do
+                let i2 ← i + 1#usize
+                clauses.cl_unique_producer_loop0_loop0 q true e i i2) ⦃ r =>
+                  r = (q, ok1 && decide
+                    (AtMostOne e.val (((SolverSpec.steps q).zipIdx).drop i.val) ∧
+                     (seen ≠ access.NONE →
+                       NoneEmits e.val (((SolverSpec.steps q).zipIdx).drop i.val)))) ⦄
+            step as ⟨ i2, hi2 ⟩
             have hiff :
-                (AtMostOne e.val (((SolverSpec.steps q).zipIdx).drop (i.val + 1)) ∧
+                (AtMostOne e.val (((SolverSpec.steps q).zipIdx).drop i2.val) ∧
                   (i ≠ access.NONE →
-                    NoneEmits e.val (((SolverSpec.steps q).zipIdx).drop (i.val + 1))))
+                    NoneEmits e.val (((SolverSpec.steps q).zipIdx).drop i2.val)))
                 ↔ (AtMostOne e.val (((SolverSpec.steps q).zipIdx).drop i.val) ∧
                     (seen ≠ access.NONE →
                       NoneEmits e.val (((SolverSpec.steps q).zipIdx).drop i.val))) := by
-              rw [hcons]
+              rw [hi2, hcons]
               constructor
               · rintro ⟨-, h2⟩
                 have hno := h2 hiNONE
@@ -573,50 +667,15 @@ theorem cl_unique_producer_inner_spec (q : types.Plan) (e : Std.Usize) :
                     List.mem_cons_self x (List.mem_cons_of_mem _ hx) hE hEx
                   have hxi := hTidx x hx
                   omega
-            show (do
-                let i2 ← i + 1#usize
-                clauses.cl_unique_producer_loop0_loop0 q true e i i2) ⦃ r =>
-                  r = (q, ok1 && decide
-                    (AtMostOne e.val (((SolverSpec.steps q).zipIdx).drop i.val) ∧
-                     (seen ≠ access.NONE →
-                       NoneEmits e.val (((SolverSpec.steps q).zipIdx).drop i.val)))) ⦄
-            step as ⟨ i2, hi2 ⟩
-            have hi2' : i2.val = i.val + 1 := by scalar_tac
-            refine WP.spec_mono (ih true i i2 (by scalar_tac)) ?_
+            refine WP.spec_mono (ih true i i2 (by omega)) ?_
             intro r hr
-            rw [hr, hi2', hok]
+            refine hr.trans ?_
+            rw [hok]
             simp only [Bool.true_and]
             exact congrArg (Prod.mk q) (decide_eq_decide.mpr hiff)
         · next hem =>
-          have hE : ¬ SolverSpec.Emits (SolverSpec.stepView (q.steps.val[i.val]'hi)) e.val := by
-            simpa using hem
-          have hiff :
-              (AtMostOne e.val (((SolverSpec.steps q).zipIdx).drop (i.val + 1)) ∧
-                (seen ≠ access.NONE →
-                  NoneEmits e.val (((SolverSpec.steps q).zipIdx).drop (i.val + 1))))
-              ↔ (AtMostOne e.val (((SolverSpec.steps q).zipIdx).drop i.val) ∧
-                  (seen ≠ access.NONE →
-                    NoneEmits e.val (((SolverSpec.steps q).zipIdx).drop i.val))) := by
-            rw [hcons]
-            constructor
-            · rintro ⟨h1, h2⟩
-              refine ⟨?_, ?_⟩
-              · intro x hx y hy hEx hEy
-                rcases List.mem_cons.mp hx with hx' | hx'
-                · exact absurd (hx' ▸ hEx) hE
-                · rcases List.mem_cons.mp hy with hy' | hy'
-                  · exact absurd (hy' ▸ hEy) hE
-                  · exact h1 x hx' y hy' hEx hEy
-              · intro hsn x hx hEx
-                rcases List.mem_cons.mp hx with hx' | hx'
-                · exact absurd (hx' ▸ hEx) hE
-                · exact h2 hsn x hx' hEx
-            · rintro ⟨h1, h2⟩
-              refine ⟨?_, ?_⟩
-              · intro x hx y hy hEx hEy
-                exact h1 x (List.mem_cons_of_mem _ hx) y (List.mem_cons_of_mem _ hy) hEx hEy
-              · intro hsn x hx hEx
-                exact h2 hsn x (List.mem_cons_of_mem _ hx) hEx
+          have hE : ¬ SolverSpec.Emits (SolverSpec.stepView (q.steps.val[i.val]'hi)) e.val :=
+            fun hc => hem (decide_eq_true hc)
           show (do
               let i2 ← i + 1#usize
               clauses.cl_unique_producer_loop0_loop0 q true e seen i2) ⦃ r =>
@@ -625,10 +684,37 @@ theorem cl_unique_producer_inner_spec (q : types.Plan) (e : Std.Usize) :
                    (seen ≠ access.NONE →
                      NoneEmits e.val (((SolverSpec.steps q).zipIdx).drop i.val)))) ⦄
           step as ⟨ i2, hi2 ⟩
-          have hi2' : i2.val = i.val + 1 := by scalar_tac
-          refine WP.spec_mono (ih true seen i2 (by scalar_tac)) ?_
+          have hiff :
+              (AtMostOne e.val (((SolverSpec.steps q).zipIdx).drop i2.val) ∧
+                (seen ≠ access.NONE →
+                  NoneEmits e.val (((SolverSpec.steps q).zipIdx).drop i2.val)))
+              ↔ (AtMostOne e.val (((SolverSpec.steps q).zipIdx).drop i.val) ∧
+                  (seen ≠ access.NONE →
+                    NoneEmits e.val (((SolverSpec.steps q).zipIdx).drop i.val))) := by
+            rw [hi2, hcons]
+            constructor
+            · rintro ⟨h1, h2⟩
+              refine ⟨?_, ?_⟩
+              · intro x hx y hy hEx hEy
+                rcases List.mem_cons.mp hx with hx' | hx'
+                · rw [hx'] at hEx; exact absurd hEx hE
+                · rcases List.mem_cons.mp hy with hy' | hy'
+                  · rw [hy'] at hEy; exact absurd hEy hE
+                  · exact h1 x hx' y hy' hEx hEy
+              · intro hsn x hx hEx
+                rcases List.mem_cons.mp hx with hx' | hx'
+                · rw [hx'] at hEx; exact absurd hEx hE
+                · exact h2 hsn x hx' hEx
+            · rintro ⟨h1, h2⟩
+              refine ⟨?_, ?_⟩
+              · intro x hx y hy hEx hEy
+                exact h1 x (List.mem_cons_of_mem _ hx) y (List.mem_cons_of_mem _ hy) hEx hEy
+              · intro hsn x hx hEx
+                exact h2 hsn x (List.mem_cons_of_mem _ hx) hEx
+          refine WP.spec_mono (ih true seen i2 (by omega)) ?_
           intro r hr
-          rw [hr, hi2', hok]
+          refine hr.trans ?_
+          rw [hok]
           simp only [Bool.true_and]
           exact congrArg (Prod.mk q) (decide_eq_decide.mpr hiff)
       · have hnil : ((SolverSpec.steps q).zipIdx).drop i.val = [] := by
@@ -639,7 +725,10 @@ theorem cl_unique_producer_inner_spec (q : types.Plan) (e : Std.Usize) :
               NoneEmits e.val (((SolverSpec.steps q).zipIdx).drop i.val)) := by
           rw [hnil]
           exact ⟨by simp [AtMostOne], by simp [NoneEmits]⟩
-        exact ok_spec (by rw [hok, decide_eq_true hyes])
+        refine ok_spec ?_
+        rw [hok]
+        simp only [Bool.true_and]
+        exact congrArg (Prod.mk q) (decide_eq_true hyes).symm
     · next hok =>
       have hf : ok1 = false := by simpa using hok
       exact ok_spec (by rw [hf]; simp)
@@ -661,7 +750,10 @@ theorem cl_unique_producer_outer_spec (q : types.Plan) (ne : Std.Usize) :
       · have hyes : ∀ e' < ne.val, e.val ≤ e' → AtMostOne e' ((SolverSpec.steps q).zipIdx) := by
           intro e' h1 h2
           exfalso; scalar_tac
-        exact ok_spec (by rw [hok, decide_eq_true hyes])
+        refine ok_spec ?_
+        rw [hok]
+        simp only [Bool.true_and]
+        exact (decide_eq_true hyes).symm
     · next hok =>
       have hf : ok1 = false := by simpa using hok
       exact ok_spec (by rw [hf]; simp)
@@ -672,6 +764,7 @@ theorem cl_unique_producer_outer_spec (q : types.Plan) (ne : Std.Usize) :
     · next hok =>
       split
       · next hlt =>
+        have hen : e.val < ne.val := by scalar_tac
         obtain ⟨v, hv, hvP⟩ := ok_of_spec (cl_unique_producer_inner_spec q e
           q.steps.val.length true access.NONE 0#usize (by scalar_tac))
         obtain ⟨vq, vb⟩ := v
@@ -686,42 +779,36 @@ theorem cl_unique_producer_outer_spec (q : types.Plan) (ne : Std.Usize) :
                     AtMostOne e' ((SolverSpec.steps q).zipIdx))) ⦄
         rw [hv1]
         step as ⟨ e1, he1 ⟩
-        have he1' : e1.val = e.val + 1 := by scalar_tac
-        refine WP.spec_mono (ih vb e1 (by scalar_tac)) ?_
-        intro r hr
-        rw [hr, he1', hok, hv2]
-        have hsimp : (AtMostOne e.val (((SolverSpec.steps q).zipIdx).drop (0#usize).val) ∧
-            (access.NONE ≠ access.NONE →
-              NoneEmits e.val (((SolverSpec.steps q).zipIdx).drop (0#usize).val)))
-            ↔ AtMostOne e.val ((SolverSpec.steps q).zipIdx) := by
-          simp only [show (0#usize : Std.Usize).val = 0 from rfl, List.drop_zero]
+        have hd0 : ((SolverSpec.steps q).zipIdx).drop (0#usize).val
+            = (SolverSpec.steps q).zipIdx := List.drop_zero
+        have hiff : (∀ e' < ne.val, e.val ≤ e' → AtMostOne e' ((SolverSpec.steps q).zipIdx))
+            ↔ ((AtMostOne e.val (((SolverSpec.steps q).zipIdx).drop (0#usize).val) ∧
+                  (access.NONE ≠ access.NONE →
+                    NoneEmits e.val (((SolverSpec.steps q).zipIdx).drop (0#usize).val)))
+                ∧ (∀ e' < ne.val, e1.val ≤ e' →
+                    AtMostOne e' ((SolverSpec.steps q).zipIdx))) := by
+          rw [hd0, he1]
           constructor
-          · exact fun h => h.1
-          · exact fun h => ⟨h, fun hc => absurd rfl hc⟩
-        by_cases hae : AtMostOne e.val ((SolverSpec.steps q).zipIdx)
-        · have h1 := decide_eq_true (hsimp.mpr hae)
-          have h2 : (∀ e' < ne.val, e.val + 1 ≤ e' → AtMostOne e' ((SolverSpec.steps q).zipIdx))
-              ↔ (∀ e' < ne.val, e.val ≤ e' → AtMostOne e' ((SolverSpec.steps q).zipIdx)) := by
-            constructor
-            · intro h e' hlt' hle'
-              rcases Nat.eq_or_lt_of_le hle' with heq | hlt2
-              · rw [← heq]; exact hae
-              · exact h e' hlt' (by omega)
-            · intro h e' hlt' hle'
-              exact h e' hlt' (by omega)
-          rw [h1]
-          simp only [Bool.true_and]
-          exact decide_eq_decide.mpr h2
-        · have h1 := decide_eq_false (fun h => hae (hsimp.mp h))
-          have h2 : ¬ (∀ e' < ne.val, e.val ≤ e' → AtMostOne e' ((SolverSpec.steps q).zipIdx)) := by
-            intro h
-            exact hae (h e.val (by scalar_tac) (Nat.le_refl _))
-          rw [h1, decide_eq_false h2]
-          simp
+          · intro h
+            exact ⟨⟨h e.val hen (Nat.le_refl _), fun hc => absurd rfl hc⟩,
+                   fun e' h1 h2 => h e' h1 (by omega)⟩
+          · rintro ⟨⟨hA, -⟩, hB⟩ e' h1 h2
+            rcases Nat.eq_or_lt_of_le h2 with heq | hlt2
+            · rw [← heq]; exact hA
+            · exact hB e' h1 (by omega)
+        refine WP.spec_mono (ih vb e1 (by omega)) ?_
+        intro r hr
+        refine hr.trans ?_
+        rw [hv2, hok]
+        simp only [Bool.true_and]
+        exact decide_and_of_iff hiff
       · have hyes : ∀ e' < ne.val, e.val ≤ e' → AtMostOne e' ((SolverSpec.steps q).zipIdx) := by
           intro e' h1 h2
           exfalso; scalar_tac
-        exact ok_spec (by rw [hok, decide_eq_true hyes])
+        refine ok_spec ?_
+        rw [hok]
+        simp only [Bool.true_and]
+        exact (decide_eq_true hyes).symm
     · next hok =>
       have hf : ok1 = false := by simpa using hok
       exact ok_spec (by rw [hf]; simp)
@@ -736,19 +823,24 @@ theorem cl_unique_producer_spec (q : types.Plan) :
   simp only [bind_tc_ok]
   have h := cl_unique_producer_outer_spec q (alloc.vec.Vec.len q.endpoints)
     (alloc.vec.Vec.len q.endpoints).val true 0#usize (by scalar_tac)
-  refine WP.spec_mono h ?_
-  intro r hr
-  rw [hr]
-  simp only [Bool.true_and]
   have hne : (alloc.vec.Vec.len q.endpoints).val = SolverSpec.nEndpoints q := by
     simp [SolverSpec.nEndpoints]
-  refine decide_eq_decide.mpr ?_
-  rw [hne]
-  constructor
-  · intro h e he i hi j hj hEi hEj
-    exact h e he (by scalar_tac) i hi j hj hEi hEj
-  · intro h e he _
-    exact h e he
+  have hiff : (∀ e' < (alloc.vec.Vec.len q.endpoints).val, (0#usize).val ≤ e' →
+        AtMostOne e' ((SolverSpec.steps q).zipIdx))
+      ↔ (∀ e < SolverSpec.nEndpoints q, ∀ i ∈ (SolverSpec.steps q).zipIdx,
+          ∀ j ∈ (SolverSpec.steps q).zipIdx,
+            SolverSpec.Emits i.1 e → SolverSpec.Emits j.1 e → i.2 = j.2) := by
+    rw [hne]
+    constructor
+    · intro hh e he i hi j hj hEi hEj
+      exact hh e he (Nat.zero_le _) i hi j hj hEi hEj
+    · intro hh e he _
+      exact hh e he
+  refine WP.spec_mono h ?_
+  intro r hr
+  refine hr.trans ?_
+  simp only [Bool.true_and]
+  exact decide_eq_decide.mpr hiff
 
 /-! ## 6. provenance
 
@@ -779,7 +871,12 @@ theorem is_given_loop_spec (q : types.Plan) (e : Std.Usize) :
       · exfalso; scalar_tac
       · have hnil : (SolverSpec.givens q).drop i.val = [] :=
           List.drop_eq_nil_iff.mpr (by scalar_tac)
-        exact ok_spec (by rw [hhf, hnil]; simp)
+        have hno : ¬ (∃ gn ∈ (SolverSpec.givens q).drop i.val, gn.1 = e.val) := by
+          rw [hnil]; simp
+        refine ok_spec ?_
+        rw [hhf]
+        simp only [Bool.false_or]
+        exact (decide_eq_false hno).symm
   | succ m ih =>
     intro hit i hk
     rw [clauses.is_given_loop.eq_def]
@@ -809,42 +906,53 @@ theorem is_given_loop_spec (q : types.Plan) (e : Std.Usize) :
             exact ⟨(a.val, bb.val), List.mem_cons_self, by rw [heq]⟩
           simp only [bind_tc_ok]
           step as ⟨ i3, hi3 ⟩
-          refine WP.spec_mono (ih true i3 (by scalar_tac)) ?_
+          refine WP.spec_mono (ih true i3 (by omega)) ?_
           intro r hr
-          rw [hr, hhf, decide_eq_true hyes]
-          simp
+          refine hr.trans ?_
+          rw [hhf]
+          simp only [Bool.true_or, Bool.false_or]
+          exact (decide_eq_true hyes).symm
         · next hne =>
           have hane : ¬ (a.val = e.val) := by
             intro hc; exact hne (by scalar_tac)
-          have hiff : (∃ gn ∈ (SolverSpec.givens q).drop (i.val + 1), gn.1 = e.val)
+          simp only [bind_tc_ok]
+          step as ⟨ i3, hi3 ⟩
+          have hiff : (∃ gn ∈ (SolverSpec.givens q).drop i3.val, gn.1 = e.val)
               ↔ (∃ gn ∈ (SolverSpec.givens q).drop i.val, gn.1 = e.val) := by
-            rw [hcons]
+            rw [hi3, hcons]
             constructor
             · rintro ⟨x, hx, hx2⟩
               exact ⟨x, List.mem_cons_of_mem _ hx, hx2⟩
             · rintro ⟨x, hx, hx2⟩
               rcases List.mem_cons.mp hx with hx' | hx'
-              · exact absurd (hx' ▸ hx2) hane
+              · rw [hx'] at hx2; exact absurd hx2 hane
               · exact ⟨x, hx', hx2⟩
-          simp only [bind_tc_ok]
-          step as ⟨ i3, hi3 ⟩
-          have hi3' : i3.val = i.val + 1 := by scalar_tac
-          refine WP.spec_mono (ih false i3 (by scalar_tac)) ?_
+          refine WP.spec_mono (ih false i3 (by omega)) ?_
           intro r hr
-          rw [hr, hhf, hi3']
+          refine hr.trans ?_
+          rw [hhf]
           simp only [Bool.false_or]
           exact decide_eq_decide.mpr hiff
       · have hnil : (SolverSpec.givens q).drop i.val = [] :=
           List.drop_eq_nil_iff.mpr (by scalar_tac)
-        exact ok_spec (by rw [hhf, hnil]; simp)
+        have hno : ¬ (∃ gn ∈ (SolverSpec.givens q).drop i.val, gn.1 = e.val) := by
+          rw [hnil]; simp
+        refine ok_spec ?_
+        rw [hhf]
+        simp only [Bool.false_or]
+        exact (decide_eq_false hno).symm
 
 theorem is_given_spec (q : types.Plan) (e : Std.Usize) :
     clauses.is_given q e ⦃ r => r = decide (∃ gn ∈ SolverSpec.givens q, gn.1 = e.val) ⦄ := by
   have h := is_given_loop_spec q e (SolverSpec.givens q).length false 0#usize (by scalar_tac)
+  have hd0 : (SolverSpec.givens q).drop (0#usize).val = SolverSpec.givens q := List.drop_zero
+  have hiff : (∃ gn ∈ (SolverSpec.givens q).drop (0#usize).val, gn.1 = e.val)
+      ↔ (∃ gn ∈ SolverSpec.givens q, gn.1 = e.val) := by rw [hd0]
   refine WP.spec_mono h ?_
   intro r hr
-  rw [hr]
-  simp
+  refine hr.trans ?_
+  simp only [Bool.false_or]
+  exact decide_eq_decide.mpr hiff
 
 theorem provenance_at_loop_spec (q : types.Plan) (e : Std.Usize) :
     ∀ (m : Nat) (found : Bool) (i : Std.Usize), q.steps.val.length - i.val ≤ m →
@@ -866,7 +974,12 @@ theorem provenance_at_loop_spec (q : types.Plan) (e : Std.Usize) :
       · have hnil : (SolverSpec.steps q).drop i.val = [] := by
           refine List.drop_eq_nil_iff.mpr ?_
           rw [steps_length]; scalar_tac
-        exact ok_spec (by rw [hhf, hnil]; simp)
+        have hno : ¬ (∃ s' ∈ (SolverSpec.steps q).drop i.val, SolverSpec.Emits s' e.val) := by
+          rw [hnil]; simp
+        refine ok_spec ?_
+        rw [hhf]
+        simp only [Bool.false_or]
+        exact (decide_eq_false hno).symm
   | succ m ih =>
     intro found i hk
     rw [clauses.provenance_at_loop.eq_def]
@@ -886,40 +999,47 @@ theorem provenance_at_loop_spec (q : types.Plan) (e : Std.Usize) :
         simp only [bind_tc_ok]
         split
         · next hem =>
-          have hE : SolverSpec.Emits (SolverSpec.stepView (q.steps.val[i.val]'hi)) e.val := by
-            simpa using hem
+          have hE : SolverSpec.Emits (SolverSpec.stepView (q.steps.val[i.val]'hi)) e.val :=
+            of_decide_eq_true hem
           have hyes : ∃ s' ∈ (SolverSpec.steps q).drop i.val, SolverSpec.Emits s' e.val := by
             rw [hcons]
             exact ⟨_, List.mem_cons_self, hE⟩
           step as ⟨ i2, hi2 ⟩
-          refine WP.spec_mono (ih true i2 (by scalar_tac)) ?_
+          refine WP.spec_mono (ih true i2 (by omega)) ?_
           intro r hr
-          rw [hr, hhf, decide_eq_true hyes]
-          simp
+          refine hr.trans ?_
+          rw [hhf]
+          simp only [Bool.true_or, Bool.false_or]
+          exact (decide_eq_true hyes).symm
         · next hem =>
-          have hE : ¬ SolverSpec.Emits (SolverSpec.stepView (q.steps.val[i.val]'hi)) e.val := by
-            simpa using hem
-          have hiff : (∃ s' ∈ (SolverSpec.steps q).drop (i.val + 1), SolverSpec.Emits s' e.val)
+          have hE : ¬ SolverSpec.Emits (SolverSpec.stepView (q.steps.val[i.val]'hi)) e.val :=
+            fun hc => hem (decide_eq_true hc)
+          step as ⟨ i2, hi2 ⟩
+          have hiff : (∃ s' ∈ (SolverSpec.steps q).drop i2.val, SolverSpec.Emits s' e.val)
               ↔ (∃ s' ∈ (SolverSpec.steps q).drop i.val, SolverSpec.Emits s' e.val) := by
-            rw [hcons]
+            rw [hi2, hcons]
             constructor
             · rintro ⟨x, hx, hx2⟩
               exact ⟨x, List.mem_cons_of_mem _ hx, hx2⟩
             · rintro ⟨x, hx, hx2⟩
               rcases List.mem_cons.mp hx with hx' | hx'
-              · exact absurd (hx' ▸ hx2) hE
+              · rw [hx'] at hx2; exact absurd hx2 hE
               · exact ⟨x, hx', hx2⟩
-          step as ⟨ i2, hi2 ⟩
-          have hi2' : i2.val = i.val + 1 := by scalar_tac
-          refine WP.spec_mono (ih false i2 (by scalar_tac)) ?_
+          refine WP.spec_mono (ih false i2 (by omega)) ?_
           intro r hr
-          rw [hr, hhf, hi2']
+          refine hr.trans ?_
+          rw [hhf]
           simp only [Bool.false_or]
           exact decide_eq_decide.mpr hiff
       · have hnil : (SolverSpec.steps q).drop i.val = [] := by
           refine List.drop_eq_nil_iff.mpr ?_
           rw [steps_length]; scalar_tac
-        exact ok_spec (by rw [hhf, hnil]; simp)
+        have hno : ¬ (∃ s' ∈ (SolverSpec.steps q).drop i.val, SolverSpec.Emits s' e.val) := by
+          rw [hnil]; simp
+        refine ok_spec ?_
+        rw [hhf]
+        simp only [Bool.false_or]
+        exact (decide_eq_false hno).symm
 
 /-- The pointwise judgement, and the one place the disjuncts are commuted. The
 binding's endpoint is a PARAMETER: naming it in the proof would not do, because
@@ -946,24 +1066,17 @@ theorem provenance_at_spec (q : types.Plan) (si bi : Std.Usize) (a ee : Std.Usiz
       simp only [bind_tc_ok]
       have hloop := provenance_at_loop_spec q ee q.steps.val.length
         (decide (∃ gn ∈ SolverSpec.givens q, gn.1 = ee.val)) 0#usize (by scalar_tac)
+      have hd0 : (SolverSpec.steps q).drop (0#usize).val = SolverSpec.steps q := List.drop_zero
+      have hiff : ProvOK q ee.val
+          ↔ ((∃ gn ∈ SolverSpec.givens q, gn.1 = ee.val)
+              ∨ (∃ s' ∈ (SolverSpec.steps q).drop (0#usize).val,
+                  SolverSpec.Emits s' ee.val)) := by
+        rw [hd0]
+        exact Or.comm
       refine WP.spec_mono hloop ?_
       intro r hr
-      rw [hr]
-      simp only [show (0#usize : Std.Usize).val = 0 from rfl, List.drop_zero]
-      by_cases hg : ∃ gn ∈ SolverSpec.givens q, gn.1 = ee.val
-      · have hp : ProvOK q ee.val := Or.inr hg
-        rw [decide_eq_true hg, decide_eq_true hp]
-        simp
-      · have hiff : (∃ s' ∈ SolverSpec.steps q, SolverSpec.Emits s' ee.val)
-            ↔ ProvOK q ee.val := by
-          constructor
-          · exact fun h => Or.inl h
-          · rintro (h | h)
-            · exact h
-            · exact absurd h hg
-        rw [decide_eq_false hg]
-        simp only [Bool.false_or]
-        exact decide_eq_decide.mpr hiff
+      refine hr.trans ?_
+      exact decide_or_of_iff hiff
     · next h2 => exfalso; scalar_tac
   · next h1 => exfalso; scalar_tac
 
@@ -988,7 +1101,10 @@ theorem cl_provenance_inner_spec (q : types.Plan) (i : Std.Usize)
       · exfalso; scalar_tac
       · have hnil : used.drop j.val = [] := List.drop_eq_nil_iff.mpr (by scalar_tac)
         have hyes : ∀ b ∈ used.drop j.val, ProvOK q b.2 := by rw [hnil]; simp
-        exact ok_spec (by rw [hok, decide_eq_true hyes])
+        refine ok_spec ?_
+        rw [hok]
+        simp only [Bool.true_and]
+        exact (decide_eq_true hyes).symm
     · next hok =>
       have hf : ok1 = false := by simpa using hok
       exact ok_spec (by rw [hf]; simp)
@@ -1011,10 +1127,11 @@ theorem cl_provenance_inner_spec (q : types.Plan) (i : Std.Usize)
         simp only [bind_tc_ok]
         split
         · next hpv =>
-          have hP : ProvOK q ee.val := by simpa using hpv
-          have hiff : (∀ b ∈ used.drop (j.val + 1), ProvOK q b.2)
+          have hP : ProvOK q ee.val := of_decide_eq_true hpv
+          step as ⟨ j1, hj1 ⟩
+          have hiff : (∀ b ∈ used.drop j1.val, ProvOK q b.2)
               ↔ (∀ b ∈ used.drop j.val, ProvOK q b.2) := by
-            rw [hcons]
+            rw [hj1, hcons]
             constructor
             · intro h x hx
               rcases List.mem_cons.mp hx with hx' | hx'
@@ -1022,26 +1139,30 @@ theorem cl_provenance_inner_spec (q : types.Plan) (i : Std.Usize)
               · exact h x hx'
             · intro h x hx
               exact h x (List.mem_cons_of_mem _ hx)
-          step as ⟨ j1, hj1 ⟩
-          have hj1' : j1.val = j.val + 1 := by scalar_tac
-          refine WP.spec_mono (ih true j1 (by scalar_tac)) ?_
+          refine WP.spec_mono (ih true j1 (by omega)) ?_
           intro r hr
-          rw [hr, hj1', hok]
+          refine hr.trans ?_
+          rw [hok]
           simp only [Bool.true_and]
           exact decide_eq_decide.mpr hiff
         · next hpv =>
-          have hP : ¬ ProvOK q ee.val := by simpa using hpv
+          have hP : ¬ ProvOK q ee.val := fun hc => hpv (decide_eq_true hc)
           have hno : ¬ (∀ b ∈ used.drop j.val, ProvOK q b.2) := by
             intro h
             exact hP (h (a.val, ee.val) (by rw [hcons]; exact List.mem_cons_self))
           step as ⟨ j1, hj1 ⟩
-          refine WP.spec_mono (ih false j1 (by scalar_tac)) ?_
+          refine WP.spec_mono (ih false j1 (by omega)) ?_
           intro r hr
-          rw [hr, decide_eq_false hno]
-          simp
+          refine hr.trans ?_
+          rw [hok]
+          simp only [Bool.false_and, Bool.true_and]
+          exact (decide_eq_false hno).symm
       · have hnil : used.drop j.val = [] := List.drop_eq_nil_iff.mpr (by scalar_tac)
         have hyes : ∀ b ∈ used.drop j.val, ProvOK q b.2 := by rw [hnil]; simp
-        exact ok_spec (by rw [hok, decide_eq_true hyes])
+        refine ok_spec ?_
+        rw [hok]
+        simp only [Bool.true_and]
+        exact (decide_eq_true hyes).symm
     · next hok =>
       have hf : ok1 = false := by simpa using hok
       exact ok_spec (by rw [hf]; simp)
@@ -1066,7 +1187,10 @@ theorem cl_provenance_outer_spec (q : types.Plan) :
           rw [steps_length]; scalar_tac
         have hyes : ∀ s ∈ (SolverSpec.steps q).drop i.val, ∀ b ∈ s.used, ProvOK q b.2 := by
           rw [hnil]; simp
-        exact ok_spec (by rw [hok, decide_eq_true hyes])
+        refine ok_spec ?_
+        rw [hok]
+        simp only [Bool.true_and]
+        exact (decide_eq_true hyes).symm
     · next hok =>
       have hf : ok1 = false := by simpa using hok
       exact ok_spec (by rw [hf]; simp)
@@ -1087,39 +1211,35 @@ theorem cl_provenance_outer_spec (q : types.Plan) :
         rw [hin]
         simp only [bind_tc_ok]
         step as ⟨ i2, hi2 ⟩
-        have hi2' : i2.val = i.val + 1 := by scalar_tac
-        refine WP.spec_mono (ih _ i2 (by scalar_tac)) ?_
+        have hd0 : (SolverSpec.idPairs (q.steps.val[i.val]'hi).used).drop (0#usize).val
+            = SolverSpec.idPairs (q.steps.val[i.val]'hi).used := List.drop_zero
+        have hiff : (∀ s ∈ (SolverSpec.steps q).drop i.val, ∀ b ∈ s.used, ProvOK q b.2)
+            ↔ ((∀ b ∈ (SolverSpec.idPairs (q.steps.val[i.val]'hi).used).drop (0#usize).val,
+                  ProvOK q b.2)
+                ∧ (∀ s ∈ (SolverSpec.steps q).drop i2.val, ∀ b ∈ s.used, ProvOK q b.2)) := by
+          rw [hd0, hi2, hcons]
+          constructor
+          · intro h
+            exact ⟨h _ List.mem_cons_self, fun x hx => h x (List.mem_cons_of_mem _ hx)⟩
+          · rintro ⟨hA, hB⟩ x hx
+            rcases List.mem_cons.mp hx with hx' | hx'
+            · rw [hx']; exact hA
+            · exact hB x hx'
+        refine WP.spec_mono (ih _ i2 (by omega)) ?_
         intro r hr
-        rw [hr, hi2', hok]
-        by_cases hh : ∀ b ∈ SolverSpec.idPairs (q.steps.val[i.val]'hi).used, ProvOK q b.2
-        · have h0 : ∀ b ∈ (SolverSpec.idPairs (q.steps.val[i.val]'hi).used).drop (0#usize).val,
-              ProvOK q b.2 := by simpa using hh
-          have hiff : (∀ s ∈ (SolverSpec.steps q).drop (i.val + 1), ∀ b ∈ s.used, ProvOK q b.2)
-              ↔ (∀ s ∈ (SolverSpec.steps q).drop i.val, ∀ b ∈ s.used, ProvOK q b.2) := by
-            rw [hcons]
-            constructor
-            · intro h x hx
-              rcases List.mem_cons.mp hx with hx' | hx'
-              · rw [hx']; exact hh
-              · exact h x hx'
-            · intro h x hx
-              exact h x (List.mem_cons_of_mem _ hx)
-          rw [decide_eq_true h0]
-          simp only [Bool.true_and]
-          exact decide_eq_decide.mpr hiff
-        · have h0 : ¬ (∀ b ∈ (SolverSpec.idPairs (q.steps.val[i.val]'hi).used).drop (0#usize).val,
-              ProvOK q b.2) := by simpa using hh
-          have hno : ¬ (∀ s ∈ (SolverSpec.steps q).drop i.val, ∀ b ∈ s.used, ProvOK q b.2) := by
-            intro h
-            exact hh (h _ (by rw [hcons]; exact List.mem_cons_self))
-          rw [decide_eq_false h0, decide_eq_false hno]
-          simp
+        refine hr.trans ?_
+        rw [hok]
+        simp only [Bool.true_and]
+        exact decide_and_of_iff hiff
       · have hnil : (SolverSpec.steps q).drop i.val = [] := by
           refine List.drop_eq_nil_iff.mpr ?_
           rw [steps_length]; scalar_tac
         have hyes : ∀ s ∈ (SolverSpec.steps q).drop i.val, ∀ b ∈ s.used, ProvOK q b.2 := by
           rw [hnil]; simp
-        exact ok_spec (by rw [hok, decide_eq_true hyes])
+        refine ok_spec ?_
+        rw [hok]
+        simp only [Bool.true_and]
+        exact (decide_eq_true hyes).symm
     · next hok =>
       have hf : ok1 = false := by simpa using hok
       exact ok_spec (by rw [hf]; simp)
@@ -1131,10 +1251,17 @@ theorem cl_provenance_spec (q : types.Plan) :
         (∃ gn ∈ SolverSpec.givens q, gn.1 = b.2)) ⦄ := by
   rw [clauses.cl_provenance.eq_def]
   have h := cl_provenance_outer_spec q q.steps.val.length true 0#usize (by scalar_tac)
+  have hd0 : (SolverSpec.steps q).drop (0#usize).val = SolverSpec.steps q := List.drop_zero
+  have hiff : (∀ s ∈ (SolverSpec.steps q).drop (0#usize).val, ∀ b ∈ s.used, ProvOK q b.2)
+      ↔ (∀ s ∈ SolverSpec.steps q, ∀ b ∈ s.used,
+          (∃ s' ∈ SolverSpec.steps q, SolverSpec.Emits s' b.2) ∨
+          (∃ gn ∈ SolverSpec.givens q, gn.1 = b.2)) := by
+    rw [hd0]
   refine WP.spec_mono h ?_
   intro r hr
-  rw [hr]
-  simp
+  refine hr.trans ?_
+  simp only [Bool.true_and]
+  exact decide_eq_decide.mpr hiff
 
 /-! ## 8. schedulable -/
 
@@ -1170,7 +1297,7 @@ theorem schedulable_at_spec (q : types.Plan) (cj bi pi : Std.Usize) (a ee : Std.
         split
         · next hem =>
           have hE : SolverSpec.Emits sv ee.val := by
-            rw [← hsv]; simpa using hem
+            rw [← hsv]; exact of_decide_eq_true hem
           refine ok_spec (decide_eq_decide.mpr ?_)
           constructor
           · intro hlt _
@@ -1180,7 +1307,8 @@ theorem schedulable_at_spec (q : types.Plan) (cj bi pi : Std.Usize) (a ee : Std.
             scalar_tac
         · next hem =>
           have hE : ¬ SolverSpec.Emits sv ee.val := by
-            rw [← hsv]; simpa using hem
+            rw [← hsv]
+            exact fun hc => hem (decide_eq_true hc)
           exact ok_spec (decide_eq_true (fun hc => absurd hc hE)).symm
       · next h3 => exfalso; scalar_tac
     · next h2 => exfalso; scalar_tac
@@ -1210,7 +1338,10 @@ theorem cl_schedulable_inner_spec (q : types.Plan) (j b : Std.Usize) (a ee : Std
           rw [List.length_zipIdx, steps_length]; scalar_tac
         have hyes : ∀ x ∈ ((SolverSpec.steps q).zipIdx).drop i.val,
             SolverSpec.Emits x.1 ee.val → x.2 < j.val := by rw [hnil]; simp
-        exact ok_spec (by rw [hok, decide_eq_true hyes])
+        refine ok_spec ?_
+        rw [hok]
+        simp only [Bool.true_and]
+        exact (decide_eq_true hyes).symm
     · next hok =>
       have hf : ok1 = false := by simpa using hok
       exact ok_spec (by rw [hf]; simp)
@@ -1231,12 +1362,13 @@ theorem cl_schedulable_inner_spec (q : types.Plan) (j b : Std.Usize) (a ee : Std
         split
         · next hsa =>
           have hS : SolverSpec.Emits (SolverSpec.stepView (q.steps.val[i.val]'hi)) ee.val
-              → i.val < j.val := by simpa using hsa
-          have hiff : (∀ x ∈ ((SolverSpec.steps q).zipIdx).drop (i.val + 1),
+              → i.val < j.val := of_decide_eq_true hsa
+          step as ⟨ i2, hi2 ⟩
+          have hiff : (∀ x ∈ ((SolverSpec.steps q).zipIdx).drop i2.val,
                 SolverSpec.Emits x.1 ee.val → x.2 < j.val)
               ↔ (∀ x ∈ ((SolverSpec.steps q).zipIdx).drop i.val,
                 SolverSpec.Emits x.1 ee.val → x.2 < j.val) := by
-            rw [hcons]
+            rw [hi2, hcons]
             constructor
             · intro h x hx
               rcases List.mem_cons.mp hx with hx' | hx'
@@ -1244,31 +1376,35 @@ theorem cl_schedulable_inner_spec (q : types.Plan) (j b : Std.Usize) (a ee : Std
               · exact h x hx'
             · intro h x hx
               exact h x (List.mem_cons_of_mem _ hx)
-          step as ⟨ i2, hi2 ⟩
-          have hi2' : i2.val = i.val + 1 := by scalar_tac
-          refine WP.spec_mono (ih true i2 (by scalar_tac)) ?_
+          refine WP.spec_mono (ih true i2 (by omega)) ?_
           intro r hr
-          rw [hr, hi2', hok]
+          refine hr.trans ?_
+          rw [hok]
           simp only [Bool.true_and]
-          exact decide_eq_decide.mpr hiff
+          exact decide_eq_decide.mpr (by simpa only [SolverSpec.Emits, exists_imp, and_imp] using hiff)
         · next hsa =>
           have hS : ¬ (SolverSpec.Emits (SolverSpec.stepView (q.steps.val[i.val]'hi)) ee.val
-              → i.val < j.val) := by simpa using hsa
+              → i.val < j.val) := fun hc => hsa (decide_eq_true hc)
           have hno : ¬ (∀ x ∈ ((SolverSpec.steps q).zipIdx).drop i.val,
               SolverSpec.Emits x.1 ee.val → x.2 < j.val) := by
             intro h
             exact hS (h _ (by rw [hcons]; exact List.mem_cons_self))
           step as ⟨ i2, hi2 ⟩
-          refine WP.spec_mono (ih false i2 (by scalar_tac)) ?_
+          refine WP.spec_mono (ih false i2 (by omega)) ?_
           intro r hr
-          rw [hr, decide_eq_false hno]
-          simp
+          refine hr.trans ?_
+          rw [hok]
+          simp only [Bool.false_and, Bool.true_and]
+          exact (decide_eq_false (by simpa [SolverSpec.Emits] using hno)).symm
       · have hnil : ((SolverSpec.steps q).zipIdx).drop i.val = [] := by
           refine List.drop_eq_nil_iff.mpr ?_
           rw [List.length_zipIdx, steps_length]; scalar_tac
         have hyes : ∀ x ∈ ((SolverSpec.steps q).zipIdx).drop i.val,
             SolverSpec.Emits x.1 ee.val → x.2 < j.val := by rw [hnil]; simp
-        exact ok_spec (by rw [hok, decide_eq_true hyes])
+        refine ok_spec ?_
+        rw [hok]
+        simp only [Bool.true_and]
+        exact (decide_eq_true hyes).symm
     · next hok =>
       have hf : ok1 = false := by simpa using hok
       exact ok_spec (by rw [hf]; simp)
@@ -1297,7 +1433,10 @@ theorem cl_schedulable_middle_spec (q : types.Plan) (j : Std.Usize)
       · have hnil : used.drop b.val = [] := List.drop_eq_nil_iff.mpr (by scalar_tac)
         have hyes : ∀ bnd ∈ used.drop b.val, ∀ x ∈ (SolverSpec.steps q).zipIdx,
             SolverSpec.Emits x.1 bnd.2 → x.2 < j.val := by rw [hnil]; simp
-        exact ok_spec (by rw [hok, decide_eq_true hyes])
+        refine ok_spec ?_
+        rw [hok]
+        simp only [Bool.true_and]
+        exact (decide_eq_true hyes).symm
     · next hok =>
       have hf : ok1 = false := by simpa using hok
       exact ok_spec (by rw [hf]; simp)
@@ -1321,41 +1460,35 @@ theorem cl_schedulable_middle_spec (q : types.Plan) (j : Std.Usize)
         rw [hin]
         simp only [bind_tc_ok]
         step as ⟨ b1, hb1 ⟩
-        have hb1' : b1.val = b.val + 1 := by scalar_tac
-        refine WP.spec_mono (ih _ b1 (by scalar_tac)) ?_
+        have hd0 : ((SolverSpec.steps q).zipIdx).drop (0#usize).val
+            = (SolverSpec.steps q).zipIdx := List.drop_zero
+        have hiff : (∀ bnd ∈ used.drop b.val, ∀ x ∈ (SolverSpec.steps q).zipIdx,
+              SolverSpec.Emits x.1 bnd.2 → x.2 < j.val)
+            ↔ ((∀ x ∈ ((SolverSpec.steps q).zipIdx).drop (0#usize).val,
+                  SolverSpec.Emits x.1 ee.val → x.2 < j.val)
+                ∧ (∀ bnd ∈ used.drop b1.val, ∀ x ∈ (SolverSpec.steps q).zipIdx,
+                  SolverSpec.Emits x.1 bnd.2 → x.2 < j.val)) := by
+          rw [hd0, hb1, hcons]
+          constructor
+          · intro h
+            exact ⟨h _ List.mem_cons_self, fun y hy => h y (List.mem_cons_of_mem _ hy)⟩
+          · rintro ⟨hA, hB⟩ y hy
+            rcases List.mem_cons.mp hy with hy' | hy'
+            · rw [hy']; exact hA
+            · exact hB y hy'
+        refine WP.spec_mono (ih _ b1 (by omega)) ?_
         intro r hr
-        rw [hr, hb1', hok]
-        by_cases hh : ∀ x ∈ (SolverSpec.steps q).zipIdx,
-            SolverSpec.Emits x.1 ee.val → x.2 < j.val
-        · have h0 : ∀ x ∈ ((SolverSpec.steps q).zipIdx).drop (0#usize).val,
-              SolverSpec.Emits x.1 ee.val → x.2 < j.val := by simpa using hh
-          have hiff : (∀ bnd ∈ used.drop (b.val + 1), ∀ x ∈ (SolverSpec.steps q).zipIdx,
-                SolverSpec.Emits x.1 bnd.2 → x.2 < j.val)
-              ↔ (∀ bnd ∈ used.drop b.val, ∀ x ∈ (SolverSpec.steps q).zipIdx,
-                SolverSpec.Emits x.1 bnd.2 → x.2 < j.val) := by
-            rw [hcons]
-            constructor
-            · intro h y hy
-              rcases List.mem_cons.mp hy with hy' | hy'
-              · rw [hy']; exact hh
-              · exact h y hy'
-            · intro h y hy
-              exact h y (List.mem_cons_of_mem _ hy)
-          rw [decide_eq_true h0]
-          simp only [Bool.true_and]
-          exact decide_eq_decide.mpr hiff
-        · have h0 : ¬ (∀ x ∈ ((SolverSpec.steps q).zipIdx).drop (0#usize).val,
-              SolverSpec.Emits x.1 ee.val → x.2 < j.val) := by simpa using hh
-          have hno : ¬ (∀ bnd ∈ used.drop b.val, ∀ x ∈ (SolverSpec.steps q).zipIdx,
-              SolverSpec.Emits x.1 bnd.2 → x.2 < j.val) := by
-            intro h
-            exact hh (h (a.val, ee.val) (by rw [hcons]; exact List.mem_cons_self))
-          rw [decide_eq_false h0, decide_eq_false hno]
-          simp
+        refine hr.trans ?_
+        rw [hok]
+        simp only [Bool.true_and]
+        exact decide_and_of_iff (by simpa only [SolverSpec.Emits, exists_imp, and_imp] using hiff)
       · have hnil : used.drop b.val = [] := List.drop_eq_nil_iff.mpr (by scalar_tac)
         have hyes : ∀ bnd ∈ used.drop b.val, ∀ x ∈ (SolverSpec.steps q).zipIdx,
             SolverSpec.Emits x.1 bnd.2 → x.2 < j.val := by rw [hnil]; simp
-        exact ok_spec (by rw [hok, decide_eq_true hyes])
+        refine ok_spec ?_
+        rw [hok]
+        simp only [Bool.true_and]
+        exact (decide_eq_true hyes).symm
     · next hok =>
       have hf : ok1 = false := by simpa using hok
       exact ok_spec (by rw [hf]; simp)
@@ -1382,7 +1515,10 @@ theorem cl_schedulable_outer_spec (q : types.Plan) :
         have hyes : ∀ cj ∈ ((SolverSpec.steps q).zipIdx).drop j.val,
             ∀ bnd ∈ cj.1.used, ∀ x ∈ (SolverSpec.steps q).zipIdx,
               SolverSpec.Emits x.1 bnd.2 → x.2 < cj.2 := by rw [hnil]; simp
-        exact ok_spec (by rw [hok, decide_eq_true hyes])
+        refine ok_spec ?_
+        rw [hok]
+        simp only [Bool.true_and]
+        exact (decide_eq_true hyes).symm
     · next hok =>
       have hf : ok1 = false := by simpa using hok
       exact ok_spec (by rw [hf]; simp)
@@ -1403,49 +1539,41 @@ theorem cl_schedulable_outer_spec (q : types.Plan) :
         rw [hin]
         simp only [bind_tc_ok]
         step as ⟨ j1, hj1 ⟩
-        have hj1' : j1.val = j.val + 1 := by scalar_tac
-        refine WP.spec_mono (ih _ j1 (by scalar_tac)) ?_
-        intro r hr
-        rw [hr, hj1', hok]
-        by_cases hh : ∀ bnd ∈ SolverSpec.idPairs (q.steps.val[j.val]'hj).used,
-            ∀ x ∈ (SolverSpec.steps q).zipIdx, SolverSpec.Emits x.1 bnd.2 → x.2 < j.val
-        · have h0 : ∀ bnd ∈ (SolverSpec.idPairs (q.steps.val[j.val]'hj).used).drop (0#usize).val,
-              ∀ x ∈ (SolverSpec.steps q).zipIdx,
-                SolverSpec.Emits x.1 bnd.2 → x.2 < j.val := by simpa using hh
-          have hiff : (∀ cj ∈ ((SolverSpec.steps q).zipIdx).drop (j.val + 1),
-                ∀ bnd ∈ cj.1.used, ∀ x ∈ (SolverSpec.steps q).zipIdx,
-                  SolverSpec.Emits x.1 bnd.2 → x.2 < cj.2)
-              ↔ (∀ cj ∈ ((SolverSpec.steps q).zipIdx).drop j.val,
-                ∀ bnd ∈ cj.1.used, ∀ x ∈ (SolverSpec.steps q).zipIdx,
-                  SolverSpec.Emits x.1 bnd.2 → x.2 < cj.2) := by
-            rw [hcons]
-            constructor
-            · intro h y hy
-              rcases List.mem_cons.mp hy with hy' | hy'
-              · rw [hy']; exact hh
-              · exact h y hy'
-            · intro h y hy
-              exact h y (List.mem_cons_of_mem _ hy)
-          rw [decide_eq_true h0]
-          simp only [Bool.true_and]
-          exact decide_eq_decide.mpr hiff
-        · have h0 : ¬ (∀ bnd ∈ (SolverSpec.idPairs (q.steps.val[j.val]'hj).used).drop (0#usize).val,
-              ∀ x ∈ (SolverSpec.steps q).zipIdx,
-                SolverSpec.Emits x.1 bnd.2 → x.2 < j.val) := by simpa using hh
-          have hno : ¬ (∀ cj ∈ ((SolverSpec.steps q).zipIdx).drop j.val,
+        have hd0 : (SolverSpec.idPairs (q.steps.val[j.val]'hj).used).drop (0#usize).val
+            = SolverSpec.idPairs (q.steps.val[j.val]'hj).used := List.drop_zero
+        have hiff : (∀ cj ∈ ((SolverSpec.steps q).zipIdx).drop j.val,
               ∀ bnd ∈ cj.1.used, ∀ x ∈ (SolverSpec.steps q).zipIdx,
-                SolverSpec.Emits x.1 bnd.2 → x.2 < cj.2) := by
-            intro h
-            exact hh (h _ (by rw [hcons]; exact List.mem_cons_self))
-          rw [decide_eq_false h0, decide_eq_false hno]
-          simp
+                SolverSpec.Emits x.1 bnd.2 → x.2 < cj.2)
+            ↔ ((∀ bnd ∈ (SolverSpec.idPairs (q.steps.val[j.val]'hj).used).drop (0#usize).val,
+                  ∀ x ∈ (SolverSpec.steps q).zipIdx,
+                    SolverSpec.Emits x.1 bnd.2 → x.2 < j.val)
+                ∧ (∀ cj ∈ ((SolverSpec.steps q).zipIdx).drop j1.val,
+                  ∀ bnd ∈ cj.1.used, ∀ x ∈ (SolverSpec.steps q).zipIdx,
+                    SolverSpec.Emits x.1 bnd.2 → x.2 < cj.2)) := by
+          rw [hd0, hj1, hcons]
+          constructor
+          · intro h
+            exact ⟨h _ List.mem_cons_self, fun y hy => h y (List.mem_cons_of_mem _ hy)⟩
+          · rintro ⟨hA, hB⟩ y hy
+            rcases List.mem_cons.mp hy with hy' | hy'
+            · rw [hy']; exact hA
+            · exact hB y hy'
+        refine WP.spec_mono (ih _ j1 (by omega)) ?_
+        intro r hr
+        refine hr.trans ?_
+        rw [hok]
+        simp only [Bool.true_and]
+        exact decide_and_of_iff (by simpa only [SolverSpec.Emits, exists_imp, and_imp] using hiff)
       · have hnil : ((SolverSpec.steps q).zipIdx).drop j.val = [] := by
           refine List.drop_eq_nil_iff.mpr ?_
           rw [List.length_zipIdx, steps_length]; scalar_tac
         have hyes : ∀ cj ∈ ((SolverSpec.steps q).zipIdx).drop j.val,
             ∀ bnd ∈ cj.1.used, ∀ x ∈ (SolverSpec.steps q).zipIdx,
               SolverSpec.Emits x.1 bnd.2 → x.2 < cj.2 := by rw [hnil]; simp
-        exact ok_spec (by rw [hok, decide_eq_true hyes])
+        refine ok_spec ?_
+        rw [hok]
+        simp only [Bool.true_and]
+        exact (decide_eq_true hyes).symm
     · next hok =>
       have hf : ok1 = false := by simpa using hok
       exact ok_spec (by rw [hf]; simp)
@@ -1456,10 +1584,19 @@ theorem cl_schedulable_spec (q : types.Plan) :
         ∀ pi ∈ (SolverSpec.steps q).zipIdx, SolverSpec.Emits pi.1 b.2 → pi.2 < cj.2) ⦄ := by
   rw [clauses.cl_schedulable.eq_def]
   have h := cl_schedulable_outer_spec q q.steps.val.length true 0#usize (by scalar_tac)
+  have hd0 : ((SolverSpec.steps q).zipIdx).drop (0#usize).val
+      = (SolverSpec.steps q).zipIdx := List.drop_zero
+  have hiff : (∀ cj ∈ ((SolverSpec.steps q).zipIdx).drop (0#usize).val,
+        ∀ bnd ∈ cj.1.used, ∀ x ∈ (SolverSpec.steps q).zipIdx,
+          SolverSpec.Emits x.1 bnd.2 → x.2 < cj.2)
+      ↔ (∀ cj ∈ (SolverSpec.steps q).zipIdx, ∀ b ∈ cj.1.used,
+          ∀ pi ∈ (SolverSpec.steps q).zipIdx, SolverSpec.Emits pi.1 b.2 → pi.2 < cj.2) := by
+    rw [hd0]
   refine WP.spec_mono h ?_
   intro r hr
-  rw [hr]
-  simp
+  refine hr.trans ?_
+  simp only [Bool.true_and]
+  exact decide_eq_decide.mpr hiff
 
 #print axioms SolverProof.emits_spec
 #print axioms SolverProof.cl_target_spec
