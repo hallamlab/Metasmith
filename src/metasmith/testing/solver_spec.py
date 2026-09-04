@@ -69,7 +69,15 @@ def check_spec(request: dict, reply: dict) -> SpecCheck:
         res.violations.append(f"malformed/given-steps={len(given_steps)}")
         return res
     steps = [s for s in reply["steps"] if s["transform"] != given_tr]
-    givens = [(e, eps[e]["source_node"]) for g in given_steps[0]["produced"] for _, e in g]
+    # Deduplicated: two samples may share a structurally identical given -- two
+    # `read_metadata` endpoints with no lineage intern to one node -- and the
+    # given step then presents that one pair once per group.
+    givens: list[tuple[int, Any]] = []
+    for g in given_steps[0]["produced"]:
+        for _, e in g:
+            pair = (e, eps[e]["source_node"])
+            if pair not in givens:
+                givens.append(pair)
 
     _check_indexed(res, request, reply, nodes, eps, trs, givens, n_props)
     # Every clause below indexes with ids the reply supplied. An out-of-range one
@@ -232,10 +240,13 @@ def _check_givens(res, request, nodes, eps, givens) -> None:
     if len(ep_of) != len(givens) or len(node_of) != len(givens):
         res.violations.append("givens/not-injective")
         return
-    # The groups are per-sample alternatives. A plan drawing from two of them
-    # mixes samples and cannot be materialised, so one group must hold all of it.
-    if not any(node_of <= set(grp) for grp in request["given"]):
-        res.violations.append("givens/not-one-group")
+    # Membership in SOME declared group, never in one group only. The groups are
+    # one per sample and a plan legitimately spans all of them -- a multi-sample
+    # workflow processes every sample. What keeps a single step from mixing two
+    # samples is the lineage anchors in `conformance`, not group membership.
+    declared = {n for grp in request["given"] for n in grp}
+    for n in sorted(node_of - declared):
+        res.violations.append(f"givens/undeclared node={n}")
     e2n = dict(givens)
     n2e = {n: e for e, n in givens}
     for e, n in givens:

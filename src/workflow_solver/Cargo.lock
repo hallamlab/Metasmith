@@ -131,6 +131,7 @@ dependencies = [
  "serde",
  "serde_json",
  "solver_witness",
+ "solver_witness_audit",
 ]
 
 [[package]]
@@ -228,6 +229,13 @@ dependencies = [
 [[package]]
 name = "solver_witness"
 version = "0.1.0"
+
+[[package]]
+name = "solver_witness_audit"
+version = "0.1.0"
+dependencies = [
+ "solver_witness",
+]
 
 [[package]]
 name = "strsim"

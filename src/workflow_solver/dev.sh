@@ -35,14 +35,16 @@ in_container() {
     # to be called the same thing on both sides or every build invalidates the
     # last one's work.
     #
-    # `solver_witness` is mounted beside this crate because Cargo.toml depends on
-    # it by the relative path `../solver_witness`. Mounting this crate alone puts
-    # that path outside the container and cargo fails while resolving the
-    # dependency graph, before it compiles anything.
+    # The whole of `src/` is mounted, not this crate alone. Cargo.toml depends on
+    # sibling crates by relative path (`../solver_witness`,
+    # `../solver_witness_audit`), and mounting this crate by itself puts those
+    # outside the container -- cargo then fails while resolving the dependency
+    # graph, before it compiles anything. Mounting the parent covers every
+    # sibling without this list going stale the next time one is added, and the
+    # container paths are unchanged so cargo's fingerprints stay valid.
     docker run --rm \
         ${MSM_DOCKER_DNS:+--dns "$MSM_DOCKER_DNS"} \
-        --mount type=bind,source="$HERE",target="/root/src/workflow_solver"\
-        --mount type=bind,source="$HERE/../solver_witness",target="/root/src/solver_witness"\
+        --mount type=bind,source="$HERE/..",target="/root/src"\
         --mount type=bind,source="$CROSS_TARGET_DIR",target="$CROSS_TARGET_DIR"\
         --env CARGO_TARGET_DIR="$CROSS_TARGET_DIR" \
         --workdir /root/src/workflow_solver \
