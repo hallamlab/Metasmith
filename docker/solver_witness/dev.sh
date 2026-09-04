@@ -211,25 +211,100 @@ case "${1:---help}" in
         '
     ;;
     --lean-check)
-        # Copy the freshest extraction and the specification in, then build.
+        # Copy the freshest extraction and every hand-written Lean source in,
+        # then build and adjudicate.
+        #
+        # The build's status is CAPTURED, never piped. `lake build 2>&1 | tail`
+        # reports tail's status, so this command used to print a screen of Lean
+        # errors and then exit 0 -- the same defect the extraction gate exists to
+        # close, in the one place that would otherwise catch a proof that does
+        # not compile.
         in_lean '
             set -e
             export PATH=/root/leanhome/elan/bin:$PATH
             cd /root/leanhome/proj
             cp /root/src/docker/solver_witness/lakefile.lean .
+            # The source tree is REPLACED rather than overlaid. A proof file
+            # deleted upstream otherwise lingers here, keeps building, and keeps
+            # being counted as proved.
+            rm -rf SolverWitness
+            mkdir -p SolverWitness
             cp /root/out/Types.lean /root/out/Funs.lean SolverWitness/
-            cp /root/src/src/solver_witness/lean/Spec.lean SolverWitness/
-            lake build 2>&1 | tail -40
+            cp -r /root/src/src/solver_witness/lean/. SolverWitness/
+            rc=0
+            lake build > /root/leanhome/lean-check.log 2>&1 || rc=$?
+            tail -40 /root/leanhome/lean-check.log
             echo
             echo "== specification gate =="
-            n=$(grep -cE "\\bsorry\\b" SolverWitness/Spec.lean || true)
-            if [ "$n" != "0" ]; then
-                echo "OUTSTANDING: $n obligation(s) in Spec.lean stated with sorry:"
-                grep -nE "\\bsorry\\b" SolverWitness/Spec.lean | sed "s/^/    /"
+            fail=0
+            if [ "$rc" != "0" ]; then
+                echo "FAIL: lake build exited $rc (full log: lean-check.log in the lean home)"
+                fail=1
+            fi
+            # The hand-written sources are the specification and its proofs.
+            # Types/Funs are the extraction and are adjudicated by --gate, so a
+            # sorry there means a stale copy was staged and is reported apart.
+            hand=$(find SolverWitness -name "*.lean" ! -name Types.lean ! -name Funs.lean | sort)
+            if [ -z "$hand" ]; then
+                # Guard, not pedantry: an unguarded grep with no file arguments
+                # reads stdin and hangs the container forever.
+                echo "FAIL: no hand-written Lean source was staged at all"
+                fail=1
             else
-                echo "PASS: no sorry in the specification"
+                # Lean reports this per DECLARATION, and that is the thing that
+                # is actually unproved. A source grep cannot tell a hole from
+                # prose about holes: it read the explanation in this very
+                # Audit.lean as an outstanding obligation.
+                sorries=$(grep -E "^warning: SolverWitness/.*declaration uses" \
+                          /root/leanhome/lean-check.log || true)
+                if [ -n "$sorries" ]; then
+                    echo "FAIL: declaration(s) still using sorry:"
+                    echo "$sorries" | sed "s/^warning: /    /"
+                    fail=1
+                fi
+                # An `axiom` in a hand-written file is an assumption wearing the
+                # clothes of a proof. The extraction is allowed its core.*  and
+                # alloc.* ones; a proof is allowed none.
+                added=$(grep -nE "^[[:space:]]*axiom\\b" $hand 2>/dev/null || true)
+                if [ -n "$added" ]; then
+                    echo "FAIL: the proof rests on an added axiom:"
+                    echo "$added" | sed "s/^/    /"
+                    fail=1
+                fi
+            fi
+            # What the obligations ACTUALLY rest on. The scan above catches a
+            # sorry this project wrote; this catches one it DEPENDS on, and the
+            # difference is not hypothetical -- the Aeneas standard library itself
+            # ships two, in `core.slice.Slice.get_unchecked` and its spec lemma.
+            # `#print axioms` reports transitive dependence, so it is the only
+            # check here that can say "proved" rather than "looks proved".
+            audit=$(grep -E "depends on axioms" /root/leanhome/lean-check.log || true)
+            if [ -z "$audit" ]; then
+                echo "FAIL: no axiom audit in the build log -- SolverWitness/Audit.lean did not run"
+                fail=1
+            else
+                echo "-- axioms the obligations rest on:"
+                echo "$audit" | sed "s/^.*: .SolverSpec/    SolverSpec/"
+                bad=$(echo "$audit" | sed "s/.*\[//; s/\]//" | tr "," "\n" \
+                      | sed "s/ //g" | sort -u \
+                      | grep -vE "^(propext|Classical.choice|Quot.sound)$" || true)
+                if [ -n "$bad" ]; then
+                    echo "FAIL: an obligation rests on something outside the Lean core axioms:"
+                    echo "$bad" | sed "s/^/    /"
+                    fail=1
+                fi
+            fi
+            stale=$(grep -lE "\\bsorry\\b" SolverWitness/Types.lean SolverWitness/Funs.lean 2>/dev/null || true)
+            if [ -n "$stale" ]; then
+                echo "FAIL: the staged extraction carries a sorry -- re-run -x:"
+                echo "$stale" | sed "s/^/    /"
+                fail=1
+            fi
+            if [ "$fail" = 0 ]; then
+                echo "PASS: builds, no sorry, no added axiom"
             fi
             echo "LEAN-CHECK-DONE"
+            exit $fail
         '
     ;;
     -s)
