@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import threading
-import webbrowser
 from pathlib import Path
 from uuid import uuid4
 
@@ -189,6 +188,34 @@ def _is_loopback(host: str) -> bool:
         return False
 
 
+def _open_browser(url: str) -> None:
+    # Two separate reasons this is not a bare `webbrowser.open`.
+    #
+    # A launcher inherits our stderr, and it is a shell script that walks a
+    # candidate list: xdg-open prints a line per candidate it cannot exec, and
+    # one dangling `x-www-browser` alternative is enough to put that in the
+    # console of a machine that has a working browser. So the child gets its
+    # own discarded streams, which costs an interpreter start and buys silence
+    # under every launcher rather than the ones we know about.
+    #
+    # And on Linux/BSD with no display there is nothing to open onto, so the
+    # attempt can only fail; every GUI reached over ssh is this case.
+    import os
+    import subprocess
+    import sys
+
+    if sys.platform.startswith(("linux", "freebsd", "openbsd", "netbsd")) and not (
+        os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY")
+    ):
+        return
+    subprocess.Popen(
+        [sys.executable, "-c", "import sys, webbrowser; webbrowser.open(sys.argv[1])", url],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        start_new_session=True,
+    )
+
+
 def serve(
     project_root: Path | str = ".",
     host: str = "127.0.0.1",
@@ -225,7 +252,7 @@ def serve(
         )
     if open_browser:
         try:
-            webbrowser.open(url)
+            _open_browser(url)
         except Exception:
             pass
     try:

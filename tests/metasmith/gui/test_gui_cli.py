@@ -142,7 +142,7 @@ class TestServing:
     # case where the advice is real -- a bind address other machines can reach --
     # and says the thing that is actually true of this API.
 
-    def _serve(self, host="127.0.0.1"):
+    def _serve(self, host="127.0.0.1", open_browser=False):
         from metasmith.gui import app as gui_app
 
         server = mock.MagicMock()
@@ -151,7 +151,7 @@ class TestServing:
         app = mock.MagicMock()
         with mock.patch.object(gui_app, "create_app", return_value=app), \
              mock.patch("werkzeug.serving.make_server", return_value=server):
-            code = gui_app.serve(host=host, port=8090, open_browser=False)
+            code = gui_app.serve(host=host, port=8090, open_browser=open_browser)
         return code, server, app
 
     def test_it_says_where_it_is_serving_and_nothing_more(self, caplog):
@@ -194,3 +194,50 @@ class TestServing:
         from metasmith.gui.app import _is_loopback
 
         assert not _is_loopback(host)
+
+
+class TestOpeningTheBrowser:
+    # The launcher is a child process, and both halves of that matter: on a
+    # display-less host there is nothing to launch onto, and on every host a
+    # launcher that fails writes to the stderr it inherited -- one dangling
+    # `x-www-browser` alternative put `xdg-open: x-www-browser: not found` in
+    # the console of a machine whose browser worked fine.
+
+    def _open(self, platform, env):
+        from metasmith.gui.app import _open_browser
+
+        with mock.patch("sys.platform", platform), \
+             mock.patch.dict(os.environ, env, clear=True), \
+             mock.patch("subprocess.Popen") as popen:
+            _open_browser("http://127.0.0.1:8090")
+        return popen
+
+    def test_no_display_launches_nothing(self):
+        popen = self._open("linux", {})
+        popen.assert_not_called()
+
+    @pytest.mark.parametrize("env", [{"DISPLAY": ":0"}, {"WAYLAND_DISPLAY": "wayland-0"}])
+    def test_a_display_launches(self, env):
+        popen = self._open("linux", env)
+        popen.assert_called_once()
+        assert popen.call_args.args[0][-1] == "http://127.0.0.1:8090"
+
+    @pytest.mark.parametrize("platform", ["darwin", "win32"])
+    def test_a_platform_with_no_display_variable_still_launches(self, platform):
+        # DISPLAY is an X convention; asking for it anywhere else would turn
+        # the open off on the two platforms where it always works.
+        self._open(platform, {}).assert_called_once()
+
+    def test_the_child_keeps_its_output_to_itself(self):
+        import subprocess
+
+        popen = self._open("linux", {"DISPLAY": ":0"})
+        assert popen.call_args.kwargs["stdout"] == subprocess.DEVNULL
+        assert popen.call_args.kwargs["stderr"] == subprocess.DEVNULL
+
+    def test_serving_goes_through_it(self):
+        from metasmith.gui import app as gui_app
+
+        with mock.patch.object(gui_app, "_open_browser") as opened:
+            TestServing()._serve(open_browser=True)
+        opened.assert_called_once_with("http://127.0.0.1:8090")
