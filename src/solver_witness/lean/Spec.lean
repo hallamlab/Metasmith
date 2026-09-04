@@ -31,6 +31,14 @@ open solver_witness
 
 abbrev Ids := List Nat
 
+/- **Every `Prop`-valued definition below is `@[reducible]`, and that is load
+bearing rather than cosmetic.** `check_spec` is an equation against `decide`, so
+`Valid` must carry a `Decidable` instance -- and instance resolution does not
+unfold a plain `def`. Written without the attribute, every clause that reaches
+one reports "failed to synthesize Decidable", while the clauses written inline
+resolve fine, which makes the failure look like it is about the clause rather
+than about the definition it goes through. -/
+
 def nats (v : alloc.vec.Vec Std.Usize) : Ids :=
   v.val.map (fun x => x.val)
 
@@ -95,11 +103,11 @@ def steps (q : types.Plan) : List StepView := q.steps.val.map stepView
 /-- `IsA A B` -- "A is a B" -- when B's properties are contained in A's. More
 properties means more specific, so a subtype satisfies a supertype's demand and
 never the reverse. -/
-def IsA (a b : Ids) : Prop := ∀ x ∈ b, x ∈ a
+@[reducible] def IsA (a b : Ids) : Prop := ∀ x ∈ b, x ∈ a
 
 /-- Mutual inclusion. Property lists and slot lists are sets in everything but
 representation. -/
-def SameSet (a b : Ids) : Prop := (∀ x ∈ a, x ∈ b) ∧ (∀ x ∈ b, x ∈ a)
+@[reducible] def SameSet (a b : Ids) : Prop := (∀ x ∈ a, x ∈ b) ∧ (∀ x ∈ b, x ∈ a)
 
 /-! ## 2. Well-indexed -/
 
@@ -117,7 +125,7 @@ both tables parents-first, so a violation is a malformed reply.
 `Nodup` on `requires` is a well-formedness condition: a transform must have
 unique requirements. Two structurally identical ones intern to a single node id,
 and `Shape` would then accept one binding for two inputs. -/
-def WellIndexed (p : types.Problem) (q : types.Plan) : Prop :=
+@[reducible] def WellIndexed (p : types.Problem) (q : types.Plan) : Prop :=
   targetTr p < nTransforms p ∧ givenTr p < nTransforms p ∧
   (∀ g ∈ givenGroups p, ∀ n ∈ g, n < nNodes p) ∧
   (∀ gn ∈ givens q, gn.1 < nEndpoints q ∧ gn.2 < nNodes p) ∧
@@ -147,10 +155,27 @@ from another.
 The `m < e` guard is inside the definition rather than carried as a hypothesis.
 `Valid` must be decidable for the theorem below to typecheck, and `WellIndexed`
 is one of its own fields, so it cannot be assumed while deciding a sibling. Under
-`WellIndexed` the guard never fires. -/
-def Ancestor (q : types.Plan) : Nat → Nat → Prop
-  | e, f => e = f ∨ ∃ m ∈ epParents q e, m < e ∧ Ancestor q m f
-  decreasing_by all_goals omega
+`WellIndexed` the guard never fires, and a parent that does not decrease simply
+makes the relation false -- which fails closed.
+
+It is written as a `dite` so the proof `h : m < e` is in scope AT the recursive
+call. Stated as a plain conjunct, Lean cannot see the measure decrease and
+reports "Could not find a decreasing measure".
+
+**Stated as a computation, not as an inductive `Prop`.** `check_spec` below is an
+equation against `decide`, so every relation `Valid` mentions has to be decidable,
+and `Decidable` for a well-founded inductive relation is an obligation somebody
+has to discharge before the theorem can even be typed. This relation genuinely is
+computable -- the checker computes it -- so saying so in the definition is more
+honest than asserting a `Prop` and then proving what was true by construction.
+The previous specification asserted inductive relations and could decide nothing,
+which is part of why none of it was ever checked. -/
+def ancestorB (q : types.Plan) (e f : Nat) : Bool :=
+  e == f || (epParents q e).any (fun m => if h : m < e then ancestorB q m f else false)
+termination_by e
+decreasing_by exact h
+
+@[reducible] def Ancestor (q : types.Plan) (e f : Nat) : Prop := ancestorB q e f = true
 
 /-! ## 4. Instancing, and satisfaction -/
 
@@ -160,11 +185,20 @@ def boundTo : List (Nat × Nat) → Nat → Option Nat
   | [], _ => none
   | b :: rest, a => if b.1 = a then some b.2 else boundTo rest a
 
-/-- INSTANCING. A slot's anchors name other slots; `Inst` resolves each to the
-endpoint THIS step bound to it -- the instance, carrying full lineage -- rather
-than leaving it as the transform's declared output type. -/
-def Inst (p : types.Problem) (used : List (Nat × Nat)) (d : Nat) : List (Option Nat) :=
-  (nodeParents p d).map (boundTo used)
+/-- INSTANCING, one anchor at a time. The anchor names another slot; `boundTo`
+resolves it to the endpoint THIS step bound to that slot -- the instance,
+carrying full lineage -- rather than leaving it as the transform's declared
+output type. The filling endpoint must then descend from that very endpoint.
+
+Bool-valued, and the `Option` is matched here rather than in the `Prop` that uses
+it. Written as `∃ f, boundTo used a = some f ∧ Ancestor q e f`, the existential is
+unbounded and nothing can decide it -- and `check_spec` is an equation against
+`decide`. An anchor this step never bound is `none`, and no endpoint fills a slot
+whose anchor is unbound. -/
+def anchorOk (q : types.Plan) (used : List (Nat × Nat)) (e a : Nat) : Bool :=
+  match boundTo used a with
+  | some f => ancestorB q e f
+  | none => false
 
 /-- May endpoint `e` fill slot `d`, in a step whose bindings are `used`?
 Properties and lineage in one relation.
@@ -176,14 +210,14 @@ anchor bound to a different file, however alike the two files are.
 
 Non-recursive on the demand: the anchor's own properties and lineage are checked
 when THAT binding is checked, by this same clause over this same step. -/
-def Satisfies (p : types.Problem) (q : types.Plan)
+@[reducible] def Satisfies (p : types.Problem) (q : types.Plan)
     (used : List (Nat × Nat)) (e d : Nat) : Prop :=
   IsA (epProps q e) (nodeProps p d) ∧
-  ∀ o ∈ Inst p used d, ∃ f, o = some f ∧ Ancestor q e f
+  ∀ a ∈ nodeParents p d, anchorOk q used e a = true
 
 /-! ## 5. The remaining vocabulary -/
 
-def Emits (s : StepView) (e : Nat) : Prop := ∃ g ∈ s.produced, ∃ b ∈ g, b.2 = e
+@[reducible] def Emits (s : StepView) (e : Nat) : Prop := ∃ g ∈ s.produced, ∃ b ∈ g, b.2 = e
 
 def slotsOf (bs : List (Nat × Nat)) : Ids := bs.map Prod.fst
 
@@ -194,7 +228,7 @@ passes every clause below vacuously.
 No exemption for a given step, because there is no given step: the givens are a
 parameter and the adapter strips it. That removed four exemptions and a boundary
 conjunct, all of them case splits a completeness proof would have had to carry. -/
-def Shape (p : types.Problem) (s : StepView) : Prop :=
+@[reducible] def Shape (p : types.Problem) (s : StepView) : Prop :=
   (slotsOf s.used).Nodup ∧
   SameSet (slotsOf s.used) (requiresOf p s.transform) ∧
   s.produced.length = (producesOf p s.transform).length ∧
@@ -213,7 +247,7 @@ anchor it likes, which is a crossover written by hand rather than found by the
 search. This is what ties the declared lineage to the step graph, and it is what
 lets `Ancestor` read the declared closure alone instead of a union of two
 relations. -/
-def Derived (q : types.Plan) (used : List (Nat × Nat)) (e : Nat) : Prop :=
+@[reducible] def Derived (q : types.Plan) (used : List (Nat × Nat)) (e : Nat) : Prop :=
   SameSet (epParents q e) (Confers q used)
 
 /-! ## 6. A valid plan -/
@@ -260,6 +294,47 @@ structure Valid (p : types.Problem) (q : types.Plan) : Prop where
   which is why there is no separate `nonempty` clause. -/
   target         : ((steps q).filter (fun s => s.transform == targetTr p)).length = 1
 
+/-- The same ten conditions as a conjunction, which is what carries the
+`Decidable` instance: Lean derives nothing for a structure of `Prop`s, and
+`check_spec` cannot even be stated without it. Every quantifier below is bounded
+by a list or by a `Nat`, so the instance is found rather than written. -/
+@[reducible] def ValidC (p : types.Problem) (q : types.Plan) : Prop :=
+  WellIndexed p q ∧
+  (∀ s ∈ steps q, Shape p s) ∧
+  (∀ s ∈ steps q, ∀ b ∈ s.used, Satisfies p q s.used b.2 b.1) ∧
+  (∀ s ∈ steps q, ∀ g ∈ s.produced, ∀ b ∈ g, Satisfies p q s.used b.2 b.1) ∧
+  (∀ s ∈ steps q, ∀ g ∈ s.produced, ∀ b ∈ g, Derived q s.used b.2) ∧
+  (∀ e < nEndpoints q, ∀ i ∈ (steps q).zipIdx, ∀ j ∈ (steps q).zipIdx,
+      Emits i.1 e → Emits j.1 e → i.2 = j.2) ∧
+  (∀ s ∈ steps q, ∀ b ∈ s.used,
+      (∃ s' ∈ steps q, Emits s' b.2) ∨ (∃ gn ∈ givens q, gn.1 = b.2)) ∧
+  (((givens q).map Prod.fst).Nodup ∧ ((givens q).map Prod.snd).Nodup ∧
+      (∀ gn ∈ givens q, ∃ g ∈ givenGroups p, gn.2 ∈ g) ∧
+      (∀ gn ∈ givens q, SameSet (epProps q gn.1) (nodeProps p gn.2)) ∧
+      (∀ gn ∈ givens q, ∀ f ∈ epParents q gn.1,
+          ∃ hn ∈ givens q, hn.1 = f ∧ hn.2 ∈ nodeParents p gn.2) ∧
+      (∀ gn ∈ givens q, ∀ a ∈ nodeParents p gn.2,
+          ∃ hn ∈ givens q, hn.2 = a ∧ hn.1 ∈ epParents q gn.1)) ∧
+  (∀ cj ∈ (steps q).zipIdx, ∀ b ∈ cj.1.used,
+      ∀ pi ∈ (steps q).zipIdx, Emits pi.1 b.2 → pi.2 < cj.2) ∧
+  ((steps q).filter (fun s => s.transform == targetTr p)).length = 1
+
+theorem valid_iff_validC (p : types.Problem) (q : types.Plan) :
+    Valid p q ↔ ValidC p q :=
+  ⟨fun v => ⟨v.indexed, v.shape, v.conformance, v.emission, v.derived,
+             v.uniqueProducer, v.provenance, v.givens, v.schedulable, v.target⟩,
+   fun ⟨a, b, c, d, e, f, g, h, i, j⟩ => ⟨a, b, c, d, e, f, g, h, i, j⟩⟩
+
+-- The default instance-synthesis budget does not reach the bottom of a ten-way
+-- conjunction whose every conjunct is itself a nested bounded quantifier over
+-- reducible definitions. Each conjunct resolves on its own; only the whole does
+-- not, which makes the failure read as a missing instance rather than as a
+-- limit being hit.
+set_option synthInstance.maxSize 1000 in
+set_option synthInstance.maxHeartbeats 4000000 in
+instance (p : types.Problem) (q : types.Plan) : Decidable (Valid p q) :=
+  decidable_of_iff _ (valid_iff_validC p q).symm
+
 /-! ## 7. The obligation
 
   `solver_witness.check` is the extracted checker, so it arrives in Aeneas's
@@ -272,12 +347,12 @@ structure Valid (p : types.Problem) (q : types.Plan) : Prop where
   the clause-by-clause decomposition naturally produces.
 -/
 
--- theorem check_spec (p : types.Problem) (q : types.Plan) :
---     solver_witness.check p q = Result.ok (decide (Valid p q)) := by
---   sorry
+theorem check_spec (p : types.Problem) (q : types.Plan) :
+    solver_witness.check p q = Result.ok (decide (Valid p q)) := by
+  sorry
 
--- theorem check_correct (p : types.Problem) (q : types.Plan) :
---     solver_witness.check p q = Result.ok true ↔ Valid p q := by
---   rw [check_spec]; simp
+theorem check_correct (p : types.Problem) (q : types.Plan) :
+    solver_witness.check p q = Result.ok true ↔ Valid p q := by
+  rw [check_spec]; simp
 
 end SolverSpec

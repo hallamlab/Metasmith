@@ -164,16 +164,7 @@ case "${1:---help}" in
             mkdir -p /root/leanhome/proj/SolverWitness
             cd /root/leanhome/proj
             cp /root/leanhome/aeneas/lean-toolchain .
-            cat > lakefile.lean <<LAKE
-import Lake
-open Lake DSL
-
-require aeneas from "../aeneas"
-
-package «solverWitnessSpec» {}
-
-@[default_target] lean_lib SolverWitness {}
-LAKE
+            cp /root/src/docker/solver_witness/lakefile.lean .
             lake update || true
             lake exe cache get || echo "NOTE: mathlib cache miss; falling back to a source build"
             lake build aeneas
@@ -186,9 +177,19 @@ LAKE
             set -e
             export PATH=/root/leanhome/elan/bin:$PATH
             cd /root/leanhome/proj
+            cp /root/src/docker/solver_witness/lakefile.lean .
             cp /root/out/Types.lean /root/out/Funs.lean SolverWitness/
             cp /root/src/src/solver_witness/lean/Spec.lean SolverWitness/
             lake build 2>&1 | tail -40
+            echo
+            echo "== specification gate =="
+            n=$(grep -cE "\\bsorry\\b" SolverWitness/Spec.lean || true)
+            if [ "$n" != "0" ]; then
+                echo "OUTSTANDING: $n obligation(s) in Spec.lean stated with sorry:"
+                grep -nE "\\bsorry\\b" SolverWitness/Spec.lean | sed "s/^/    /"
+            else
+                echo "PASS: no sorry in the specification"
+            fi
             echo "LEAN-CHECK-DONE"
         '
     ;;
