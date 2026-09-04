@@ -14,17 +14,35 @@
 
   ## The recipe
 
-  Every one of these accessors is a nest of `if in-range then index else default`
-  over `alloc.vec.Vec`, so every proof is the same four moves:
+  Every accessor here is a nest of `if in-range then index else default` over
+  `alloc.vec.Vec`, so every proof is the same four moves:
 
-      unfold <accessor>; dsimp only    -- `dsimp`: the body opens with a `let`
-      split                            -- one `if` per index, outermost first
-      rw [index_eq …]; dsimp only      -- discharge the monadic index to `ok`
-      simp [<the spec-side bridge>]    -- and the two sides meet
+      unfold <accessor>; dsimp only        -- `dsimp`: the body opens with a `let`
+      split                                -- one `if` per index, outermost first
+      rw [index_eq …]                      -- the monadic index becomes `ok`
+      simp only [bind_tc_ok, <bridge>]     -- run the bind, rewrite the spec side
+      … and the innermost branch closes with one `simp`
+
+  `dsimp only` is what sees through the leading `let`, but it can be used ONLY
+  before the first `rw [index_eq …]`. Afterwards the goal carries `↑v[i]`, whose
+  coercion is not type-correct once `dsimp` unfolds `alloc.vec.Vec` -- `dsimp`
+  then reports "made no progress" rather than the type error underneath. That is
+  why every reduction after an index goes through `simp only [bind_tc_ok]`, which
+  runs the bind and the remaining `let` without unfolding the `Vec`.
 
   `index_eq` and the `_lt`/`_ge` bridges below are what make the last step one
   `simp` rather than a page: they say, once, what the checker's `Vec` index and
-  the specification's `getD` each come to on either side of the range test.
+  the specification's element lookup each come to on either side of the range
+  test.
+
+  ## Why the element lemmas read `l[i]?.getD NONE` and not `l.getD i NONE`
+
+  The two are definitionally equal, but `simp` normalises the second into the
+  first, so a bridge stated with `List.getD` stops matching the moment anything
+  else in the same `simp` call has already normalised the goal. That is not
+  hypothetical -- it is why `tr_group_slot`, the only accessor with two nested
+  lookups, was the one that would not close while the other fifteen did. Stating
+  every lookup in `simp`'s own normal form removes the ordering dependence.
 -/
 
 import SolverWitness.Types
@@ -52,62 +70,51 @@ theorem index_eq {α : Type} (v : alloc.vec.Vec α) (i : Std.Usize)
   rw [alloc.vec.Vec.index_slice_index]
   exact eq_of_spec (alloc.vec.Vec.index_usize_spec v i (by simpa using h))
 
-/-- `List.getD` is `getElem?` with a fallback, and every bridge below goes
-through that form because `getElem?` is where the range test lives. -/
-theorem getD_eq {α : Type} (l : List α) (i : Nat) (d : α) :
-    l.getD i d = (l[i]?).getD d := by
-  first
-  | rfl
-  | simp [List.getD]
-  | simp [List.getD_eq_getElem?_getD]
-
 theorem nats_length (v : alloc.vec.Vec Std.Usize) :
     (SolverSpec.nats v).length = v.val.length := by
   simp [SolverSpec.nats]
 
-theorem nats_getD_lt (v : alloc.vec.Vec Std.Usize) (i : Std.Usize)
+theorem nats_getElem?_lt (v : alloc.vec.Vec Std.Usize) (i : Std.Usize)
     (h : i.val < v.val.length) :
-    (SolverSpec.nats v).getD i.val access.NONE.val = (v.val[i.val]'h).val := by
-  simp [SolverSpec.nats, getD_eq, List.getElem?_map, List.getElem?_eq_getElem h]
+    (SolverSpec.nats v)[i.val]? = some (v.val[i.val]'h).val := by
+  simp [SolverSpec.nats, List.getElem?_map, List.getElem?_eq_getElem h]
 
-theorem nats_getD_ge (v : alloc.vec.Vec Std.Usize) (i : Std.Usize)
+theorem nats_getElem?_ge (v : alloc.vec.Vec Std.Usize) (i : Std.Usize)
     (h : ¬ i.val < v.val.length) :
-    (SolverSpec.nats v).getD i.val access.NONE.val = access.NONE.val := by
-  simp [SolverSpec.nats, getD_eq, List.getElem?_map,
+    (SolverSpec.nats v)[i.val]? = none := by
+  simp [SolverSpec.nats, List.getElem?_map,
         List.getElem?_eq_none (by omega : v.val.length ≤ i.val)]
 
 theorem idLists_length (v : alloc.vec.Vec (alloc.vec.Vec Std.Usize)) :
     (SolverSpec.idLists v).length = v.val.length := by
   simp [SolverSpec.idLists]
 
-theorem idLists_getD_lt (v : alloc.vec.Vec (alloc.vec.Vec Std.Usize)) (g : Std.Usize)
+theorem idLists_getElem?_lt (v : alloc.vec.Vec (alloc.vec.Vec Std.Usize)) (g : Std.Usize)
     (h : g.val < v.val.length) :
-    (SolverSpec.idLists v).getD g.val [] = SolverSpec.nats (v.val[g.val]'h) := by
-  simp [SolverSpec.idLists, getD_eq, List.getElem?_map, List.getElem?_eq_getElem h]
+    (SolverSpec.idLists v)[g.val]? = some (SolverSpec.nats (v.val[g.val]'h)) := by
+  simp [SolverSpec.idLists, List.getElem?_map, List.getElem?_eq_getElem h]
 
-theorem idLists_getD_ge (v : alloc.vec.Vec (alloc.vec.Vec Std.Usize)) (g : Std.Usize)
+theorem idLists_getElem?_ge (v : alloc.vec.Vec (alloc.vec.Vec Std.Usize)) (g : Std.Usize)
     (h : ¬ g.val < v.val.length) :
-    (SolverSpec.idLists v).getD g.val [] = [] := by
-  simp [SolverSpec.idLists, getD_eq, List.getElem?_map,
+    (SolverSpec.idLists v)[g.val]? = none := by
+  simp [SolverSpec.idLists, List.getElem?_map,
         List.getElem?_eq_none (by omega : v.val.length ≤ g.val)]
 
 theorem nd_eq (p : types.Problem) (d : Nat) (h : d < p.nodes.val.length) :
     SolverSpec.nd p d = p.nodes.val[d]'h := by
-  simp [SolverSpec.nd, getD_eq, List.getElem?_eq_getElem h]
+  simp [SolverSpec.nd, List.getElem?_eq_getElem h]
 
 theorem nd_ne (p : types.Problem) (d : Nat) (h : ¬ d < p.nodes.val.length) :
     SolverSpec.nd p d = SolverSpec.emptyNode := by
-  simp [SolverSpec.nd, getD_eq,
-        List.getElem?_eq_none (by omega : p.nodes.val.length ≤ d)]
+  simp [SolverSpec.nd, List.getElem?_eq_none (by omega : p.nodes.val.length ≤ d)]
 
 theorem ep_eq (q : types.Plan) (e : Nat) (h : e < q.endpoints.val.length) :
     SolverSpec.ep q e = q.endpoints.val[e]'h := by
-  simp [SolverSpec.ep, getD_eq, List.getElem?_eq_getElem h]
+  simp [SolverSpec.ep, List.getElem?_eq_getElem h]
 
 theorem ep_ne (q : types.Plan) (e : Nat) (h : ¬ e < q.endpoints.val.length) :
     SolverSpec.ep q e = SolverSpec.emptyEndpoint := by
-  simp [SolverSpec.ep, getD_eq,
-        List.getElem?_eq_none (by omega : q.endpoints.val.length ≤ e)]
+  simp [SolverSpec.ep, List.getElem?_eq_none (by omega : q.endpoints.val.length ≤ e)]
 
 theorem requiresOf_eq (p : types.Problem) (t : Nat) (h : t < p.transforms.val.length) :
     SolverSpec.requiresOf p t = SolverSpec.nats (p.transforms.val[t]'h).requires := by
@@ -161,27 +168,25 @@ theorem node_nprops_spec (p : types.Problem) (d : Std.Usize) :
 
 theorem node_prop_spec (p : types.Problem) (d i : Std.Usize) :
     access.node_prop p d i
-      ⦃ x => x.val = (SolverSpec.nodeProps p d.val).getD i.val access.NONE.val ⦄ := by
+      ⦃ x => x.val = ((SolverSpec.nodeProps p d.val)[i.val]?).getD access.NONE.val ⦄ := by
   unfold access.node_prop
   dsimp only
   split
   · next h =>
     have hd : d.val < p.nodes.val.length := by scalar_tac
     rw [index_eq p.nodes d hd]
-    dsimp only
-    simp only [SolverSpec.nodeProps, nd_eq p d.val hd]
+    simp only [bind_tc_ok, SolverSpec.nodeProps, nd_eq p d.val hd]
     split
     · next h2 =>
       have hi : i.val < (p.nodes.val[d.val]'hd).props.val.length := by scalar_tac
       rw [index_eq _ i hi]
-      simp [nats_getD_lt _ i hi]
+      simp [nats_getElem?_lt _ i hi]
     · next h2 =>
       have hi : ¬ i.val < (p.nodes.val[d.val]'hd).props.val.length := by scalar_tac
-      simp [nats_getD_ge _ i hi]
+      simp [nats_getElem?_ge _ i hi]
   · next h =>
     have hd : ¬ d.val < p.nodes.val.length := by scalar_tac
-    simp [SolverSpec.nodeProps, nd_ne p d.val hd, SolverSpec.emptyNode,
-          SolverSpec.nats, getD_eq]
+    simp [SolverSpec.nodeProps, nd_ne p d.val hd, SolverSpec.emptyNode, SolverSpec.nats]
 
 theorem node_nparents_spec (p : types.Problem) (d : Std.Usize) :
     access.node_nparents p d ⦃ n => n.val = (SolverSpec.nodeParents p d.val).length ⦄ := by
@@ -198,27 +203,25 @@ theorem node_nparents_spec (p : types.Problem) (d : Std.Usize) :
 
 theorem node_parent_spec (p : types.Problem) (d i : Std.Usize) :
     access.node_parent p d i
-      ⦃ x => x.val = (SolverSpec.nodeParents p d.val).getD i.val access.NONE.val ⦄ := by
+      ⦃ x => x.val = ((SolverSpec.nodeParents p d.val)[i.val]?).getD access.NONE.val ⦄ := by
   unfold access.node_parent
   dsimp only
   split
   · next h =>
     have hd : d.val < p.nodes.val.length := by scalar_tac
     rw [index_eq p.nodes d hd]
-    dsimp only
-    simp only [SolverSpec.nodeParents, nd_eq p d.val hd]
+    simp only [bind_tc_ok, SolverSpec.nodeParents, nd_eq p d.val hd]
     split
     · next h2 =>
       have hi : i.val < (p.nodes.val[d.val]'hd).parents.val.length := by scalar_tac
       rw [index_eq _ i hi]
-      simp [nats_getD_lt _ i hi]
+      simp [nats_getElem?_lt _ i hi]
     · next h2 =>
       have hi : ¬ i.val < (p.nodes.val[d.val]'hd).parents.val.length := by scalar_tac
-      simp [nats_getD_ge _ i hi]
+      simp [nats_getElem?_ge _ i hi]
   · next h =>
     have hd : ¬ d.val < p.nodes.val.length := by scalar_tac
-    simp [SolverSpec.nodeParents, nd_ne p d.val hd, SolverSpec.emptyNode,
-          SolverSpec.nats, getD_eq]
+    simp [SolverSpec.nodeParents, nd_ne p d.val hd, SolverSpec.emptyNode, SolverSpec.nats]
 
 /-! ## Endpoints -/
 
@@ -237,27 +240,25 @@ theorem ep_nprops_spec (q : types.Plan) (e : Std.Usize) :
 
 theorem ep_prop_spec (q : types.Plan) (e i : Std.Usize) :
     access.ep_prop q e i
-      ⦃ x => x.val = (SolverSpec.epProps q e.val).getD i.val access.NONE.val ⦄ := by
+      ⦃ x => x.val = ((SolverSpec.epProps q e.val)[i.val]?).getD access.NONE.val ⦄ := by
   unfold access.ep_prop
   dsimp only
   split
   · next h =>
     have he : e.val < q.endpoints.val.length := by scalar_tac
     rw [index_eq q.endpoints e he]
-    dsimp only
-    simp only [SolverSpec.epProps, ep_eq q e.val he]
+    simp only [bind_tc_ok, SolverSpec.epProps, ep_eq q e.val he]
     split
     · next h2 =>
       have hi : i.val < (q.endpoints.val[e.val]'he).props.val.length := by scalar_tac
       rw [index_eq _ i hi]
-      simp [nats_getD_lt _ i hi]
+      simp [nats_getElem?_lt _ i hi]
     · next h2 =>
       have hi : ¬ i.val < (q.endpoints.val[e.val]'he).props.val.length := by scalar_tac
-      simp [nats_getD_ge _ i hi]
+      simp [nats_getElem?_ge _ i hi]
   · next h =>
     have he : ¬ e.val < q.endpoints.val.length := by scalar_tac
-    simp [SolverSpec.epProps, ep_ne q e.val he, SolverSpec.emptyEndpoint,
-          SolverSpec.nats, getD_eq]
+    simp [SolverSpec.epProps, ep_ne q e.val he, SolverSpec.emptyEndpoint, SolverSpec.nats]
 
 theorem ep_nparents_spec (q : types.Plan) (e : Std.Usize) :
     access.ep_nparents q e ⦃ n => n.val = (SolverSpec.epParents q e.val).length ⦄ := by
@@ -274,27 +275,25 @@ theorem ep_nparents_spec (q : types.Plan) (e : Std.Usize) :
 
 theorem ep_parent_spec (q : types.Plan) (e i : Std.Usize) :
     access.ep_parent q e i
-      ⦃ x => x.val = (SolverSpec.epParents q e.val).getD i.val access.NONE.val ⦄ := by
+      ⦃ x => x.val = ((SolverSpec.epParents q e.val)[i.val]?).getD access.NONE.val ⦄ := by
   unfold access.ep_parent
   dsimp only
   split
   · next h =>
     have he : e.val < q.endpoints.val.length := by scalar_tac
     rw [index_eq q.endpoints e he]
-    dsimp only
-    simp only [SolverSpec.epParents, ep_eq q e.val he]
+    simp only [bind_tc_ok, SolverSpec.epParents, ep_eq q e.val he]
     split
     · next h2 =>
       have hi : i.val < (q.endpoints.val[e.val]'he).parents.val.length := by scalar_tac
       rw [index_eq _ i hi]
-      simp [nats_getD_lt _ i hi]
+      simp [nats_getElem?_lt _ i hi]
     · next h2 =>
       have hi : ¬ i.val < (q.endpoints.val[e.val]'he).parents.val.length := by scalar_tac
-      simp [nats_getD_ge _ i hi]
+      simp [nats_getElem?_ge _ i hi]
   · next h =>
     have he : ¬ e.val < q.endpoints.val.length := by scalar_tac
-    simp [SolverSpec.epParents, ep_ne q e.val he, SolverSpec.emptyEndpoint,
-          SolverSpec.nats, getD_eq]
+    simp [SolverSpec.epParents, ep_ne q e.val he, SolverSpec.emptyEndpoint, SolverSpec.nats]
 
 /-! ## Transforms -/
 
@@ -313,26 +312,25 @@ theorem tr_nrequires_spec (p : types.Problem) (t : Std.Usize) :
 
 theorem tr_require_spec (p : types.Problem) (t i : Std.Usize) :
     access.tr_require p t i
-      ⦃ x => x.val = (SolverSpec.requiresOf p t.val).getD i.val access.NONE.val ⦄ := by
+      ⦃ x => x.val = ((SolverSpec.requiresOf p t.val)[i.val]?).getD access.NONE.val ⦄ := by
   unfold access.tr_require
   dsimp only
   split
   · next h =>
     have ht : t.val < p.transforms.val.length := by scalar_tac
     rw [index_eq p.transforms t ht]
-    dsimp only
-    simp only [requiresOf_eq p t.val ht]
+    simp only [bind_tc_ok, requiresOf_eq p t.val ht]
     split
     · next h2 =>
       have hi : i.val < (p.transforms.val[t.val]'ht).requires.val.length := by scalar_tac
       rw [index_eq _ i hi]
-      simp [nats_getD_lt _ i hi]
+      simp [nats_getElem?_lt _ i hi]
     · next h2 =>
       have hi : ¬ i.val < (p.transforms.val[t.val]'ht).requires.val.length := by scalar_tac
-      simp [nats_getD_ge _ i hi]
+      simp [nats_getElem?_ge _ i hi]
   · next h =>
     have ht : ¬ t.val < p.transforms.val.length := by scalar_tac
-    simp [requiresOf_ne p t.val ht, getD_eq]
+    simp [requiresOf_ne p t.val ht]
 
 theorem tr_ngroups_spec (p : types.Problem) (t : Std.Usize) :
     access.tr_ngroups p t ⦃ n => n.val = (SolverSpec.producesOf p t.val).length ⦄ := by
@@ -349,64 +347,94 @@ theorem tr_ngroups_spec (p : types.Problem) (t : Std.Usize) :
 
 theorem tr_ngroup_slots_spec (p : types.Problem) (t g : Std.Usize) :
     access.tr_ngroup_slots p t g
-      ⦃ n => n.val = ((SolverSpec.producesOf p t.val).getD g.val []).length ⦄ := by
+      ⦃ n => n.val = (((SolverSpec.producesOf p t.val)[g.val]?).getD []).length ⦄ := by
   unfold access.tr_ngroup_slots
   dsimp only
   split
   · next h =>
     have ht : t.val < p.transforms.val.length := by scalar_tac
     rw [index_eq p.transforms t ht]
-    dsimp only
-    simp only [producesOf_eq p t.val ht]
+    simp only [bind_tc_ok, producesOf_eq p t.val ht]
     split
     · next h2 =>
       have hg : g.val < (p.transforms.val[t.val]'ht).produces.val.length := by scalar_tac
       rw [index_eq _ g hg]
-      simp [idLists_getD_lt _ g hg, nats_length]
+      simp [idLists_getElem?_lt _ g hg, nats_length]
     · next h2 =>
       have hg : ¬ g.val < (p.transforms.val[t.val]'ht).produces.val.length := by scalar_tac
-      simp [idLists_getD_ge _ g hg]
+      simp [idLists_getElem?_ge _ g hg]
   · next h =>
     have ht : ¬ t.val < p.transforms.val.length := by scalar_tac
-    simp [producesOf_ne p t.val ht, getD_eq]
+    simp [producesOf_ne p t.val ht]
 
 theorem tr_group_slot_spec (p : types.Problem) (t g i : Std.Usize) :
     access.tr_group_slot p t g i
       ⦃ x => x.val
-          = ((SolverSpec.producesOf p t.val).getD g.val []).getD i.val access.NONE.val ⦄ := by
+          = ((((SolverSpec.producesOf p t.val)[g.val]?).getD [])[i.val]?).getD access.NONE.val ⦄ := by
   unfold access.tr_group_slot
   dsimp only
   split
   · next h =>
     have ht : t.val < p.transforms.val.length := by scalar_tac
     rw [index_eq p.transforms t ht]
-    dsimp only
-    simp only [producesOf_eq p t.val ht]
+    simp only [bind_tc_ok, producesOf_eq p t.val ht]
     split
     · next h2 =>
       have hg : g.val < (p.transforms.val[t.val]'ht).produces.val.length := by scalar_tac
       rw [index_eq _ g hg]
-      dsimp only
-      simp only [idLists_getD_lt _ g hg]
+      simp only [bind_tc_ok, idLists_getElem?_lt _ g hg]
       split
       · next h3 =>
         have hi : i.val
             < ((p.transforms.val[t.val]'ht).produces.val[g.val]'hg).val.length := by
           scalar_tac
-        rw [index_eq _ g hg]
-        dsimp only
         rw [index_eq _ i hi]
-        simp [nats_getD_lt _ i hi]
+        simp [nats_getElem?_lt _ i hi]
       · next h3 =>
         have hi : ¬ i.val
             < ((p.transforms.val[t.val]'ht).produces.val[g.val]'hg).val.length := by
           scalar_tac
-        simp [nats_getD_ge _ i hi]
+        simp [nats_getElem?_ge _ i hi]
     · next h2 =>
       have hg : ¬ g.val < (p.transforms.val[t.val]'ht).produces.val.length := by scalar_tac
-      simp [idLists_getD_ge _ g hg, getD_eq]
+      simp [idLists_getElem?_ge _ g hg]
   · next h =>
     have ht : ¬ t.val < p.transforms.val.length := by scalar_tac
-    simp [producesOf_ne p t.val ht, getD_eq]
+    simp [producesOf_ne p t.val ht]
+
+/- Every obligation in this module, audited. `--lean-check` reads these lines
+   out of the build log: a proof that reaches a `sorry` through the Aeneas
+   standard library shows `sorryAx` here and nowhere else. -/
+#print axioms SolverProof.index_eq
+#print axioms SolverProof.nats_length
+#print axioms SolverProof.nats_getElem?_lt
+#print axioms SolverProof.nats_getElem?_ge
+#print axioms SolverProof.idLists_length
+#print axioms SolverProof.idLists_getElem?_lt
+#print axioms SolverProof.idLists_getElem?_ge
+#print axioms SolverProof.nd_eq
+#print axioms SolverProof.nd_ne
+#print axioms SolverProof.ep_eq
+#print axioms SolverProof.ep_ne
+#print axioms SolverProof.requiresOf_eq
+#print axioms SolverProof.requiresOf_ne
+#print axioms SolverProof.producesOf_eq
+#print axioms SolverProof.producesOf_ne
+#print axioms SolverProof.n_nodes_spec
+#print axioms SolverProof.n_transforms_spec
+#print axioms SolverProof.n_endpoints_spec
+#print axioms SolverProof.node_nprops_spec
+#print axioms SolverProof.node_prop_spec
+#print axioms SolverProof.node_nparents_spec
+#print axioms SolverProof.node_parent_spec
+#print axioms SolverProof.ep_nprops_spec
+#print axioms SolverProof.ep_prop_spec
+#print axioms SolverProof.ep_nparents_spec
+#print axioms SolverProof.ep_parent_spec
+#print axioms SolverProof.tr_nrequires_spec
+#print axioms SolverProof.tr_require_spec
+#print axioms SolverProof.tr_ngroups_spec
+#print axioms SolverProof.tr_ngroup_slots_spec
+#print axioms SolverProof.tr_group_slot_spec
 
 end SolverProof

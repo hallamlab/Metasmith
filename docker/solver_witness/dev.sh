@@ -258,11 +258,17 @@ case "${1:---help}" in
                 echo "FAIL: no hand-written Lean source was staged at all"
                 fail=1
             else
+                # Every grep over the log passes -a. lake writes bytes that
+                # make grep call the log binary, and a binary grep matches
+                # NOTHING -- which in a gate reads as "no sorries found" and
+                # reports a pass over an unproved tree. That is the exact
+                # failure this command exists to prevent.
+                #
                 # Lean reports this per DECLARATION, and that is the thing that
                 # is actually unproved. A source grep cannot tell a hole from
                 # prose about holes: it read the explanation in this very
                 # Audit.lean as an outstanding obligation.
-                sorries=$(grep -E "^warning: SolverWitness/.*declaration uses" \
+                sorries=$(grep -aE "^warning: SolverWitness/.*declaration uses" \
                           /root/leanhome/lean-check.log || true)
                 if [ -n "$sorries" ]; then
                     echo "FAIL: declaration(s) still using sorry:"
@@ -285,7 +291,7 @@ case "${1:---help}" in
             # ships two, in `core.slice.Slice.get_unchecked` and its spec lemma.
             # `#print axioms` reports transitive dependence, so it is the only
             # check here that can say "proved" rather than "looks proved".
-            audit=$(grep -E "depends on axioms" /root/leanhome/lean-check.log || true)
+            audit=$(grep -aE "depends on axioms" /root/leanhome/lean-check.log || true)
             if [ -z "$audit" ]; then
                 echo "FAIL: no axiom audit in the build log -- SolverWitness/Audit.lean did not run"
                 fail=1
@@ -355,7 +361,7 @@ case "${1:---help}" in
             lake build $mod > \$log 2>&1 || rc=\$?
             # The Aeneas dependency replays two sorry warnings of its own on
             # every build; they are not this tree and drown everything else.
-            grep -vE '^.[0-9 /]*.Replayed|^warning: Aeneas|^info: .*Replayed' \
+            grep -avE '^.[0-9 /]*.Replayed|^warning: Aeneas|^info: .*Replayed' \
                 \$log | tail -60
             rm -f \$log
             exit \$rc
