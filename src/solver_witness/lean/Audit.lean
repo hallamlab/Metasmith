@@ -16,7 +16,7 @@
   This file exists to be read by that gate. It declares nothing.
 -/
 
-import SolverWitness.Spec
+import SolverWitness.Proof.Compose
 
-#print axioms SolverSpec.check_spec
-#print axioms SolverSpec.check_correct
+#print axioms SolverProof.check_spec
+#print axioms SolverProof.check_correct
