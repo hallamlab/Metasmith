@@ -25,6 +25,49 @@ mkdir -p "$OUT_DIR"
 # whole question by using the resolver that is already known to work here.
 NET="${MSM_WITNESS_NET:---network=host}"
 
+# Adjudicate an extraction. Aeneas emits a hole rather than failing, and the
+# Lean still compiles, so nothing downstream notices that the function a proof is
+# about was never translated. This is the only thing standing between that and a
+# proof of nothing.
+#
+# `core.*` and `alloc.*` axioms are the external surface: functions Aeneas
+# deliberately does not model, whose meaning the caller supplies. An axiom naming
+# anything else is one of OUR functions that failed to lower, which is a hole
+# wearing the same clothes.
+gate() {
+    local out="$1" fail=0
+    echo
+    echo "== extraction gate =="
+    # Every grep below is guarded. `set -o pipefail` is on, and a grep that
+    # matches nothing exits 1 -- which under `set -e` aborts the gate silently,
+    # in exactly the case where it should be reporting a clean run.
+    local sorries
+    sorries=$(grep -nE '\bsorry\b' "$out"/*.lean 2>/dev/null || true)
+    if [ -n "$sorries" ]; then
+        echo "FAIL: sorry in the extracted output -- these functions did not translate:"
+        echo "$sorries" | sed 's/^/    /'
+        fail=1
+    fi
+    local holes
+    holes=$({ grep -hE '^\s*axiom\b' "$out"/*.lean 2>/dev/null || true; } \
+            | awk '{print $2}' | { grep -vE '^(core|alloc)\.' || true; } | sort -u)
+    if [ -n "$holes" ]; then
+        echo "FAIL: axiomatised crate functions -- lowered to nothing, not to Lean:"
+        echo "$holes" | sed 's/^/    /'
+        fail=1
+    fi
+    local external divergent
+    external=$({ grep -hE '^\s*axiom\b' "$out"/*.lean 2>/dev/null || true; } \
+               | awk '{print $2}' | { grep -cE '^(core|alloc)\.' || true; })
+    # Not a failure. Each one costs a fixpoint-unfolding lemma later, so the
+    # count is what you budget the proof against.
+    divergent=$({ grep -hocE '\bdivergent\b' "$out"/*.lean 2>/dev/null || true; } \
+                | awk '{n += $1} END {print n + 0}')
+    echo "external axioms (expected): $external    divergent defs: $divergent"
+    [ "$fail" = 0 ] && echo "PASS: no sorry, no axiomatised crate function"
+    return $fail
+}
+
 in_container() {
     docker run --rm -i $NET \
         --mount type=bind,source="$REPO",target=/root/src \
@@ -53,6 +96,11 @@ case "${1:---help}" in
         # container command: the nesting of quotes needed to expand one variable
         # in the outer shell and another in the inner one silently produced a
         # file called '$name.llbc' once already.
+        # Emptied first. `OUT_DIR` persists between runs, and a file left by an
+        # earlier extraction is read by the gate as if this run had emitted it --
+        # which counted every hole twice and would survive a crate that stopped
+        # producing them at all.
+        rm -f "$OUT_DIR"/*.lean "$OUT_DIR"/*.llbc
         docker run --rm -i $NET \
             --mount type=bind,source="$REPO",target=/root/src \
             --mount type=bind,source="$TARGET_DIR",target=/root/target \
@@ -68,6 +116,11 @@ case "${1:---help}" in
                 echo "extracted to $OUT_DIR:"
             '
         ls -la "$OUT_DIR"
+        gate "$OUT_DIR"
+    ;;
+    --gate)
+        shift
+        gate "${1:-$OUT_DIR}"
     ;;
     -s)
         shift
@@ -79,5 +132,6 @@ case "${1:---help}" in
         echo "  --versions  report the pinned toolchain versions"
         echo "  -x DIR      extract crate DIR to Lean, into $OUT_DIR"
         echo "  -s CMD      run CMD in the container"
+        echo "  --gate [DIR] adjudicate an extraction (default $OUT_DIR)"
     ;;
 esac
