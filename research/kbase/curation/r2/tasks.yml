@@ -1,0 +1,734 @@
+# The core task vocabulary -- curation round 2.
+#
+# A core task is the verb a KBase app performs. The vocabulary is closed: every
+# app in the catalog resolves to exactly one entry here or to one non_task
+# disposition below.
+#
+# `match` is a list of regular expressions searched against the app id. Rules are
+# applied in file order and the first hit wins, so a specific rule must precede
+# the general one it would otherwise be swallowed by. `exceptions` overrides both,
+# and carries every app whose id does not say what it does.
+#
+# `consumes` and `produces` are the PROPOSAL: the signature the curated task should
+# have, named in the roles of types.yml -- an entity, a family, or `any`. They are
+# not a transcription of what KBase declares. `task_io.py` derives that from the
+# apps themselves and reports where the two differ, which is the deliverable rather
+# than a defect: twelve verbs' most-used implementation declares no typed output at
+# all, and a role like `taxonomy` has no KBase workspace type behind it.
+#
+# `plumbing: true` marks a verb that moves objects without producing new science.
+# The workflow catalogue drops plumbing verbs before collapsing shapes, so this
+# flag is a design decision and belongs here rather than inside a script.
+
+version: r2
+
+groups:
+  reads: getting sequencing reads into a usable state
+  assembly: turning reads into contigs and judging the result
+  annotation: naming what is on a sequence
+  binning: separating a metagenome assembly into genomes
+  taxonomy: naming who is present
+  modelling: metabolic reconstruction and flux
+  alignment: mapping reads onto a reference and judging the result
+  expression: RNA-seq from alignment to differential expression
+  matrix: generic operations on an abundance or expression matrix
+  comparative: alignments, trees, pangenomes and genome comparison
+  virus: viral sequence identification
+  logistics: moving, grouping and exporting objects
+
+tasks:
+
+# -- reads ------------------------------------------------------------------
+- name: import_reads
+  group: reads
+  means: Bring a read library into the workspace from a URL, an SRA accession or staging.
+  consumes: []
+  produces: [reads]
+  plumbing: false
+  match:
+  - "import_sra_as_reads"
+  - "load_(paired|single)_end_reads"
+  - "import_fastq_(sra|interleaved|noninterleaved)_as_reads"
+  - "genome_transform/(sra_)?reads_to_(library|assembly)(_SE)?$"
+  - "genome_transform/rna_sample_set$"
+  - "upload_web_file"
+  - "unpack_staging_file"
+
+- name: qc_reads
+  group: reads
+  means: Measure read quality and report it. Produces no new data object.
+  consumes: [reads]
+  produces: [report]
+  plumbing: false
+  match:
+  - "runFastQC"
+  - "fastq_stats"
+  - "run_kb_nanoplot"
+  - "KButil_AddInsertLen_to_ReadsLibs"
+
+- name: clean_reads
+  group: reads
+  means: Trim, filter or error-correct a read library. Consumes reads and produces reads.
+  consumes: [reads]
+  produces: [reads]
+  plumbing: false
+  match:
+  - "run_trimmomatic"
+  - "run_kb_filtlong"
+  - "remove_adapters"
+  - "execReadLibraryPRINSEQ"
+  - "RQCFilter"
+  - "run_bfc"
+  - "run_dan_hoppLighter"
+  - "run_Fastq_Join"
+  - "KButil_Extract_Unpaired_Reads_and_Synchronize_Pairs"
+  - "KButil_Random_Subsample_Reads"
+  - "KButil_Fractionate_Reads_by_Contigs"
+
+- name: merge_reads
+  group: reads
+  means: Combine or divide read libraries without changing any read.
+  consumes: [reads]
+  produces: [reads]
+  plumbing: true
+  match:
+  - "KButil_Merge_MultipleReadsLibs_to_OneLibrary"
+  - "KButil_Split_Reads"
+  - "run_Fastq_Multx"
+  - "KButil_Generate_Microbiome_InSilico_Reads_From_Real_Reads"
+
+- name: convert_reads
+  group: reads
+  means: Rewrite a read library in another format or schema version.
+  consumes: [reads]
+  produces: [reads]
+  plumbing: true
+  match:
+  - "KButil_FASTQ_to_FASTA"
+  - "KButil_Translate_ReadsLibs_QualScores"
+  - "legacy_reads_conversion"
+
+# -- assembly ---------------------------------------------------------------
+- name: import_assembly
+  group: assembly
+  means: Bring contigs into the workspace from a FASTA file or an assembly file.
+  consumes: []
+  produces: [assembly]
+  plumbing: false
+  match:
+  - "import_fasta_as_assembly"
+  - "batch_import_assembly"
+  - "convert_annotation_file_to_contig_set"
+  - "genome_transform/fasta_to_contig$"
+
+- name: assemble
+  group: assembly
+  means: Build contigs from sequencing reads.
+  consumes: [reads]
+  produces: [assembly]
+  plumbing: false
+  match:
+  - "run_(hybrid|meta)?SPAdes"
+  - "run_megahit"
+  - "run_idba(_ud)?"
+  - "run_unicycler"
+  - "run_kb_flye"
+  - "run_velvet"
+  - "run_(a5|a6|arast|kiki|ray|masurca|miniasm|spades)$"
+  - "run_hipmer"
+  - "run_masurca_assembler"
+  - "assemble_contigset_from_reads"
+
+- name: polish_assembly
+  group: assembly
+  means: Correct an assembly using the reads it was built from.
+  consumes: [assembly, reads]
+  produces: [assembly]
+  plumbing: false
+  match:
+  - "run_kb_polypolish"
+
+- name: filter_assembly
+  group: assembly
+  means: Select a subset of contigs by length or by membership.
+  consumes: [assembly]
+  produces: [assembly]
+  plumbing: false
+  match:
+  - "run_filter_contigs_by_length"
+  - "run_fractionate_contigs"
+
+- name: qc_assembly
+  group: assembly
+  means: Measure assembly quality and report it.
+  consumes: [assembly]
+  produces: [report]
+  plumbing: false
+  match:
+  - "run_QUAST_app"
+  - "run_contig_distribution_compare"
+  - "run_benchmark_assemblies_against_genomes_with_MUMmer4"
+
+# -- annotation -------------------------------------------------------------
+- name: import_genome
+  group: annotation
+  means: Bring an annotated genome into the workspace from GenBank or GFF plus FASTA.
+  consumes: []
+  produces: [genome]
+  plumbing: false
+  match:
+  - "import_genbank_as_genome"
+  - "import_gff_fasta_as_genome"
+  - "import_genome_gbk"
+  - "batch_import_genome_from_staging"
+  - "genbank_to_genome"
+
+- name: annotate_domains
+  group: annotation
+  means: Assign protein domain families to a genome's features.
+  consumes: [genome]
+  produces: [annotation]
+  plumbing: false
+  match:
+  - "annotate_domains_in_(a_)?genome"
+  - "run_DomainAnnotation_Sets"
+
+- name: annotate
+  group: annotation
+  means: Call genes on a sequence and assign functions to them.
+  consumes: [assembly, genome]
+  produces: [genome]
+  plumbing: false
+  match:
+  - "annotate_genome_assembly"
+  - "annotate_contigsets?$"
+  - "annotate_contigs$"
+  - "annot_contigs$"
+  - "reannotate_microbial_genome"
+  - "annotate_metagenome"
+  - "bulk_annotate_genomes_assemblies"
+  - "run_kb_dram_annotate(_genome)?$"
+  - "annotate_plant_transcripts"
+  - "run_SnekmerLearn(Apply)?"
+  - "(import|import_bulk|merge)_(metabolic_)?annotations"
+  - "compare_metabolic_annotations"
+  - "compute_metagenome_annotation_set"
+
+- name: search_homologs
+  group: annotation
+  means: Find sequences resembling a query and return them as a feature set.
+  consumes: [genome, sequences]
+  produces: [feature_set]
+  plumbing: false
+  match:
+  - "BLAST[npx]_Search"
+  - "tBLAST[npx]_Search"
+  - "psiBLAST"
+  - "HMMER_"
+  - "run_curated_blast"
+  - "paperblast"
+  - "run_Fama(Genome|Read)?Profiling"
+  - "find_homologs_with_genome_context"
+  - "run_rwr_(cv|loe)"
+  - "find_genes_from_similar_reactions"
+
+# -- binning ----------------------------------------------------------------
+- name: bin
+  group: binning
+  means: Group a metagenome assembly's contigs into candidate genomes.
+  consumes: [assembly, reads]
+  produces: [bins]
+  plumbing: false
+  match:
+  - "run_metabat"
+  - "run_maxbin2"
+  - "run_kb_concoct"
+  - "run_kb_jorg"
+
+- name: refine_bins
+  group: binning
+  means: Combine or edit bin sets to improve them.
+  consumes: [bins]
+  produces: [bins]
+  plumbing: false
+  match:
+  - "run_kb_das_tool"
+  - "edit_(bins|contigs)_in_binned_contigs"
+  - "run_dereplicate"
+
+- name: qc_bins
+  group: binning
+  means: Score bin completeness and contamination, and optionally filter on the score.
+  consumes: [bins]
+  produces: [report, bins]
+  plumbing: false
+  match:
+  - "run_checkM_lineage_wf_withFilter"
+  - "run_checkM_lineage_wf"
+
+- name: extract_bins
+  group: binning
+  means: Publish each bin as a standalone assembly.
+  consumes: [bins]
+  produces: [assembly]
+  plumbing: false
+  match:
+  - "extract_bins_as_assemblies"
+  - "import_excel_as_binned_contigs"
+
+# -- taxonomy ---------------------------------------------------------------
+- name: classify_taxa
+  group: taxonomy
+  means: Assign taxonomy to reads, contigs, bins or genomes.
+  consumes: [reads, assembly, bins, genome]
+  produces: [taxonomy]
+  plumbing: false
+  match:
+  - "run_kb_gtdbtk(_classify_wf)?$"
+  - "run_kaiju"
+  - "run_gottcha2"
+  - "run_kraken2"
+  - "run_classify$"
+  - "run_TaxonomyAbundance"
+  - "run_StrainFinder"
+
+- name: profile_abundance
+  group: taxonomy
+  means: Reduce a community to a taxonomic or functional abundance matrix.
+  consumes: [metagenome]
+  produces: [matrix]
+  plumbing: false
+  match:
+  - "retrieve_(taxonomic|functional)_abundance_profile"
+  - "run_picrust2_pipeline"
+  - "faprotax"
+
+# -- modelling --------------------------------------------------------------
+- name: import_model
+  group: modelling
+  means: Bring a metabolic model into the workspace from SBML, TSV or Excel.
+  consumes: [genome]
+  produces: [model]
+  plumbing: false
+  match:
+  - "import_fbamodel"
+  - "import_file_as_fba_model"
+
+- name: import_media
+  group: modelling
+  means: Bring a growth medium into the workspace from a file.
+  consumes: []
+  produces: [media]
+  plumbing: false
+  match:
+  - "import_media"
+  - "import_tsv_excel_as_media"
+
+- name: import_phenotype
+  group: modelling
+  means: Bring a phenotype set into the workspace from a file.
+  consumes: [genome]
+  produces: [phenotype]
+  plumbing: false
+  match:
+  - "import_phenotypeset"
+  - "import_tsv_as_phenotype_set"
+
+- name: build_model
+  group: modelling
+  means: Reconstruct a metabolic model from an annotated genome or metagenome.
+  consumes: [genome, metagenome]
+  produces: [model]
+  plumbing: false
+  match:
+  - "build_(a_)?metabolic_models?$"
+  - "build_multiple_metabolic_models"
+  - "build_metagenome_model"
+  - "build_plant_metabolic_model"
+  - "reconstruct_plant_metabolism"
+  - "built_fungal_model"
+  - "merge_(metabolic_models_into_community_model|to_community_model)"
+  - "metagenome_annotation_to_models"
+  - "(propagate|translate)_model_to_new_genome"
+  - "characterize_genome_metabolism_using_model"
+
+- name: gapfill_model
+  group: modelling
+  means: Add reactions until a model grows on a medium.
+  consumes: [model, media]
+  produces: [model]
+  plumbing: false
+  match:
+  - "gapfill_(a_)?metabolic_models?$"
+
+- name: edit_model
+  group: modelling
+  means: Change a model's reactions or compounds by hand.
+  consumes: [model]
+  produces: [model]
+  plumbing: false
+  match:
+  - "edit_metabolic_model"
+  - "check_model_mass_balance"
+
+- name: edit_media
+  group: modelling
+  means: Change a growth medium's composition.
+  consumes: [media]
+  produces: [media]
+  plumbing: false
+  match:
+  - "edit_media"
+
+- name: run_fba
+  group: modelling
+  means: Solve a model for flux on a medium, with or without omics constraints.
+  consumes: [model, media]
+  produces: [fba]
+  plumbing: false
+  match:
+  - "run_flux_balance_analysis"
+  - "integrate_multiomics_data"
+  - "predict_metabolite_biosynthesis_pathway"
+  - "fit_exometabolite_data"
+  - "run_model_characterization"
+  - "compare_flux_with_expression"
+  - "integrate_abundances_with_metabolism"
+  - "run_flux_mutual_information_analysis"
+  - "predict_genome_auxotrophy"
+  - "run_kb_pathway_view"
+
+- name: predict_phenotype
+  group: modelling
+  means: Simulate growth of a model against a phenotype set.
+  consumes: [model, phenotype]
+  produces: [phenotype_simulation]
+  plumbing: false
+  match:
+  - "simulate_growth_on_(a_)?phenotype(_data|_set)?$"
+  - "decision_tree"
+
+- name: compare_models
+  group: modelling
+  means: Report the difference between two models or two flux solutions.
+  consumes: [model, fba]
+  produces: [report]
+  plumbing: false
+  match:
+  - "compare_fba_solutions"
+  - "compare_(two_metabolic_)?models(_generic)?$"
+  - "run_kb_model_analysis"
+  - "create_heatmap_analysis_template"
+
+# -- expression -------------------------------------------------------------
+- name: import_matrix
+  group: expression
+  means: Bring an expression, amplicon or abundance matrix into the workspace from a file.
+  consumes: []
+  produces: [matrix]
+  plumbing: false
+  match:
+  - "import_tsv_as_expression_matrix"
+  - "import_amplicon"
+  - "import_attribute_mapping"
+  - "import_fbamodel_attribute_mapping"
+  - "import_matrix"
+  - "genome_transform/tsv_to_exp$"
+
+- name: build_index
+  group: alignment
+  means: Build an aligner index over a reference genome.
+  consumes: [genome]
+  produces: [index]
+  plumbing: false
+  match:
+  - "build_bowtie2_index"
+
+- name: align_reads
+  group: alignment
+  means: Map reads onto a reference and produce an alignment.
+  consumes: [reads, genome]
+  produces: [alignment]
+  plumbing: false
+  match:
+  - "align_reads_using_(hisat2|bowtie2|tophat2?)"
+  - "map_reads_to_reference"
+
+- name: qc_alignment
+  group: alignment
+  means: Measure alignment quality and report it.
+  consumes: [alignment]
+  produces: [report]
+  plumbing: false
+  match:
+  - "run_QualiMap"
+
+- name: quantify_expression
+  group: expression
+  means: Turn alignments into per-feature expression values.
+  consumes: [alignment]
+  produces: [matrix]
+  plumbing: false
+  match:
+  - "run_stringtie"
+  - "assemble_transcripts_(using|with)_(cufflinks|stringtie)"
+  - "compute_average_expression_matrix"
+  - "create_expression_matrix"
+  - "expression_toolkit_reconnect_to_genome"
+
+- name: differential_expression
+  group: expression
+  means: Contrast expression between conditions.
+  consumes: [matrix]
+  produces: [matrix, feature_set]
+  plumbing: false
+  match:
+  - "run_DESeq2"
+  - "run_Cuffdiff"
+  - "run_ballgown_app"
+  - "identify_differential_expression_using_(cuffdiff|ballgown)"
+  - "upload_featureset_from_diff_expr"
+
+- name: cluster_expression
+  group: expression
+  means: Group features or conditions by expression similarity.
+  consumes: [matrix]
+  produces: [clusters]
+  plumbing: false
+  match:
+  - "expression_toolkit_cluster"
+  - "expression_toolkit_estimate_k"
+
+- name: enrichment
+  group: expression
+  means: Test a feature set for over-represented functions.
+  consumes: [feature_set]
+  produces: [report]
+  plumbing: false
+  match:
+  - "functional_enrichment"
+
+# -- matrix -----------------------------------------------------------------
+- name: transform_matrix
+  group: matrix
+  means: Filter, normalise, rarefy, impute or re-key a matrix. Consumes a matrix and produces a matrix.
+  consumes: [matrix]
+  produces: [matrix]
+  plumbing: false
+  match:
+  - "(filter|rarefy|standardize|collapse|transform|search|gen_graph)_matrix"
+  - "transform_matrix_variable_specific"
+  - "update_matrix_attribute_mapping"
+  - "expression_toolkit_(filter_expression|set_missing_values)"
+  - "expression_toolkit_set_missing_values"
+  - "filter_matrix_by_feature_set"
+  - "normalize_abundance_profile"
+  - "lookup_modelseed_ids"
+
+- name: correlate_matrix
+  group: matrix
+  means: Compute a correlation matrix within or between matrices.
+  consumes: [matrix]
+  produces: [correlation]
+  plumbing: false
+  match:
+  - "compute_(corr_matrix|matrices_corr)"
+
+- name: ordinate
+  group: matrix
+  means: Reduce a matrix to an ordination.
+  consumes: [matrix]
+  produces: [ordination]
+  plumbing: false
+  match:
+  - "perform_pca"
+  - "run_metaMDS"
+  - "pcoa_from_abundance_profile"
+
+- name: test_statistics
+  group: matrix
+  means: Run a statistical test over a matrix and its sample attributes.
+  consumes: [matrix]
+  produces: [report]
+  plumbing: false
+  match:
+  - "perform_(mantel_test|simper|variable_stats)"
+
+- name: build_network
+  group: matrix
+  means: Turn a correlation matrix into a network.
+  consumes: [correlation]
+  produces: [network]
+  plumbing: false
+  match:
+  - "build_network"
+
+# -- comparative ------------------------------------------------------------
+- name: align_sequences
+  group: comparative
+  means: Build or trim a multiple sequence alignment.
+  consumes: [sequences]
+  produces: [msa]
+  plumbing: false
+  match:
+  - "MUSCLE_(prot|nuc)"
+  - "run_Gblocks"
+  - "KButil_Concat_MSAs"
+
+- name: build_tree
+  group: comparative
+  means: Build a phylogeny, or place genomes into an existing one.
+  consumes: [genome, msa]
+  produces: [tree]
+  plumbing: false
+  match:
+  - "insert_(set_of_genomes|genomeset)_into_species_tree"
+  - "build_(microbial_speciestree|gene_tree|strain_tree)"
+  - "run_FastTree"
+  - "trim_(speciestree|genetree)_to_genomeset"
+  - "build_genome_set_from_tree"
+  - "build_pangenome_species_tree"
+
+- name: pangenome
+  group: comparative
+  means: Compute orthologous groups across a set of genomes.
+  consumes: [genome]
+  produces: [pangenome]
+  plumbing: false
+  match:
+  - "build_pangenome(_with_orthomcl)?$"
+  - "compute_pangenome"
+  - "run_kb_motupan"
+
+- name: compare_genomes
+  group: comparative
+  means: Report similarity between genomes or proteomes.
+  consumes: [genome, pangenome]
+  produces: [genome_comparison]
+  plumbing: false
+  match:
+  - "compare_(genomes|two_proteomes)(_generic)?$"
+  - "genome_comparison_from_pangenome"
+  - "fast_ani"
+  - "score_orthologs_evolutionary_rates"
+
+- name: call_variants
+  group: comparative
+  means: Call sequence variants of a population against a reference.
+  consumes: [reads, assembly]
+  produces: [variants]
+  plumbing: false
+  match:
+  - "call_snps"
+  - "calculate_population_statistics"
+
+# -- virus ------------------------------------------------------------------
+- name: identify_virus
+  group: virus
+  means: Find and characterise viral sequence in an assembly.
+  consumes: [assembly]
+  produces: [bins, genome]
+  plumbing: false
+  match:
+  - "run_VirSorter"
+  - "run_kb_virsorter2"
+  - "run_kb_virmatcher"
+  - "run_kb_dramv_annotate"
+  - "vcontact"
+
+# -- logistics --------------------------------------------------------------
+- name: build_set
+  group: logistics
+  means: Group objects into a set, or slice one. Produces no new science.
+  consumes: [any]
+  produces: [any]
+  plumbing: true
+  match:
+  - "KButil_(Build|Batch_Create|Add_Genomes_to|Remove_Genomes_from|Merge|Slice|Logical_Slice|Split|Localize)_"
+  - "create_sample_set"
+  - "describe_rnaseq_experiment"
+  - "build_feature_set"
+  - "filter_samplesets"
+  - "build_chemical_abundance_template"
+
+- name: manage_samples
+  group: logistics
+  means: Attach metadata or access control to a sample set.
+  consumes: [sample_set]
+  produces: [sample_set]
+  plumbing: true
+  match:
+  - "(batch_)?link_samples"
+  - "update_sample_set_acls"
+  - "generate_OTU_sheet"
+  - "import_samples(_igsn|_ncbi)?$"
+
+- name: import_other
+  group: logistics
+  means: Bring an object the vocabulary has no specific verb for into the workspace.
+  consumes: []
+  produces: [any]
+  plumbing: true
+  match:
+  - "^import_"
+  - "/import_"
+
+- name: export
+  group: logistics
+  means: Write an object out of the workspace.
+  consumes: [any]
+  produces: []
+  plumbing: true
+  match:
+  - "export_(to|json_to)_staging"
+  - "bulk_download"
+
+- name: view
+  group: logistics
+  means: Render an object as a report. Produces no data object.
+  consumes: [any]
+  produces: [report]
+  plumbing: true
+  match:
+  - "view_"
+  - "_report$"
+  - "run_CGViewAdvanced"
+  - "run_kb_circos"
+  - "generate_(cummerbund_plot2?|cummerbund_plots|interactive_heatmaps(_backup)?)"
+  - "heatmap_from_abundance_profile"
+  - "KButil_(Summarize|count_ws_objects|hide_ws_objects|unhide_ws_objects|update_genome_species_name)"
+  - "localize_DomainAnnotations"
+
+# Non-task dispositions. An app here is accounted for and deliberately carries no
+# verb, so the census reconciles without inventing a task the app does not perform.
+non_tasks:
+
+- name: object_shuffler
+  means: Copies or renames an object without changing it. Accepts so many types it is not a workflow step.
+  match:
+  - "KButil_copy_object"
+
+- name: test_harness
+  means: Runs the module's own tests.
+  match:
+  - "run_fba_tools_tests"
+
+- name: no_op
+  means: Declares neither a typed input nor a typed output nor a service method.
+  match:
+  - "metagenome_list$"
+  - "genome_transform/sra_reads_to_library$"
+
+# One app per line whose id does not say what it does, or which a rule above
+# would otherwise claim for the wrong verb.
+exceptions:
+  kb_gtdbtk/run_kb_gtdbtk: classify_taxa
+  kb_DRAM/run_kb_dramv_annotate: identify_virus
+  MetaAnnot/annot_contigs: annotate
+  Weka/decision_tree: predict_phenotype
+  GenericsAPI/gen_graph: transform_matrix
+  GenericsAPI/search_matrix: transform_matrix
+  kb_pickaxe/pickaxe: build_model
+  kb_reaction_gene_finder/find_genes_from_similar_reactions: search_homologs
+  kb_escher/run_kb_pathway_view: run_fba
+  kb_model_analysis/import_fbamodel_attribute_mapping_from_staging: import_matrix

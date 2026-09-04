@@ -1,0 +1,162 @@
+# Every KBase workspace type on the canonical grid -- curation round 2.
+#
+# One row per type referenced by any app spec, keyed by the workspace type name.
+# `entity` names an entry in `types.yml`; every other key is an axis value that
+# differs from that axis's default. A row carrying only an entity is the plain
+# case, and that is most of them.
+#
+# The list is authored rather than derived. A regex over type names would put
+# `KBaseSets.ExpressionSet` under expression and `KBaseRNASeq.RNASeqExpressionSet`
+# somewhere else, and the whole point of the round is that those are one thing.
+#
+# `map_types.py` joins this against `catalog/types.jsonl` and fails when the two
+# disagree, so a type added upstream cannot slip through unmapped.
+
+version: r2
+
+types:
+
+  "*": {entity: unknown}
+  KBaseMatrices: {entity: matrix}
+
+  Communities.Collection: {entity: metagenome, cardinality: set, provenance: legacy}
+  Communities.Metagenome: {entity: metagenome, provenance: legacy}
+  Communities.MetagenomeSet: {entity: metagenome, cardinality: set, provenance: legacy}
+  Communities.FunctionalMatrix: {entity: matrix, measures: functional, provenance: legacy}
+  Communities.FunctionalProfile: {entity: matrix, measures: functional, granularity: sample, provenance: legacy}
+  Communities.TaxonomicMatrix: {entity: matrix, measures: taxonomic, provenance: legacy}
+  Communities.TaxonomicProfile: {entity: matrix, measures: taxonomic, granularity: sample, provenance: legacy}
+  Communities.PCoA: {entity: ordination, provenance: legacy}
+  Communities.Heatmap: {entity: report, provenance: legacy}
+
+  GenomeComparison.ProteomeComparison: {entity: genome_comparison, content: comparison}
+  GenomeUtil.BlastOutput: {entity: report, provenance: legacy}
+
+  KBaseAssembly.AssemblyInput: {entity: reads, cardinality: set, provenance: legacy}
+  KBaseAssembly.AssemblyReport: {entity: report, provenance: legacy}
+  KBaseAssembly.PairedEndLibrary: {entity: reads, parity: paired, provenance: legacy}
+  KBaseAssembly.SingleEndLibrary: {entity: reads, parity: single, provenance: legacy}
+  KBaseAssembly.ReferenceAssembly: {entity: assembly, provenance: legacy}
+  KBaseFile.PairedEndLibrary: {entity: reads, parity: paired}
+  KBaseFile.SingleEndLibrary: {entity: reads, parity: single}
+  KBaseFile.AssemblyFile: {entity: assembly, form: file}
+  KBaseSets.ReadsSet: {entity: reads, cardinality: set}
+  KBaseRNASeq.RNASeqSample: {entity: reads, provenance: legacy}
+  KBaseRNASeq.RNASeqSampleSet: {entity: reads, cardinality: set, provenance: legacy}
+
+  KBaseGenomeAnnotations.Assembly: {entity: assembly}
+  KBaseGenomes.ContigSet: {entity: assembly, provenance: legacy}
+  KBaseSets.AssemblySet: {entity: assembly, cardinality: set}
+
+  KBaseGenomes.Genome: {entity: genome}
+  KBaseGenomeAnnotations.GenomeAnnotation: {entity: genome, provenance: legacy}
+  NewTempGenomes.Genome: {entity: genome, provenance: legacy}
+  KBaseMetagenomes.AnnotatedMetagenomeAssembly: {entity: genome, scope: metagenome}
+  KBaseMetagenomes.Genomes: {entity: genome, cardinality: set, scope: metagenome, provenance: legacy}
+  KBaseSets.GenomeSet: {entity: genome, cardinality: set}
+  KBaseSearch.GenomeSet: {entity: genome, cardinality: set, provenance: legacy}
+  KBaseCollections.GenomeSet: {entity: genome, cardinality: set, provenance: legacy}
+
+  KBaseMetagenomes.BinnedContigs: {entity: bins}
+
+  KBaseGenomes.Feature: {entity: feature}
+  KBaseCollections.FeatureSet: {entity: feature_set}
+  KBaseSets.FeatureSetSet: {entity: feature_set, cardinality: set}
+
+  KBaseGeneFamilies.DomainAnnotation: {entity: annotation, content: domains}
+  KBaseGenomes.GenomeDomainData: {entity: annotation, content: domains}
+  KBaseGenomes.MetagenomeAnnotation: {entity: annotation, content: metagenome, scope: metagenome}
+  KBaseGenomes.ProbabilisticAnnotation: {entity: annotation, content: probabilistic}
+  KBaseFBA.SubsystemAnnotation: {entity: annotation, content: subsystems}
+
+  KBaseSequences.SequenceSet: {entity: sequences, cardinality: set}
+  KBaseSequences.ProteinSequenceSet: {entity: sequences, cardinality: set, molecule: protein}
+  KBaseTrees.MSA: {entity: msa}
+  KBaseTrees.MSASet: {entity: msa, cardinality: set}
+  KBaseTrees.Tree: {entity: tree}
+
+  KBaseGenomes.Pangenome: {entity: pangenome}
+  KBaseGenomes.GenomeComparison: {entity: genome_comparison}
+
+  KBaseRNASeq.Bowtie2Indexes: {entity: index, provenance: legacy}
+  KBaseRNASeq.RNASeqAlignment: {entity: alignment, provenance: legacy}
+  KBaseRNASeq.RNASeqAlignmentSet: {entity: alignment, cardinality: set, provenance: legacy}
+  KBaseSets.ReadsAlignmentSet: {entity: alignment, cardinality: set}
+  KBaseGwasData.Variations: {entity: variants}
+
+  KBaseMatrices.ExpressionMatrix: {entity: matrix, measures: expression}
+  KBaseMatrices.DifferentialExpressionMatrix: {entity: matrix, measures: differential_expression}
+  KBaseMatrices.AmpliconMatrix: {entity: matrix, measures: amplicon}
+  KBaseMatrices.ChemicalAbundanceMatrix: {entity: matrix, measures: chemical_abundance}
+  KBaseMatrices.MetaboliteMatrix: {entity: matrix, measures: metabolite}
+  KBaseMatrices.FitnessMatrix: {entity: matrix, measures: fitness}
+  KBaseMatrices.TraitMatrix: {entity: matrix, measures: trait}
+  KBaseMatrices.ReactionMatrix: {entity: matrix, measures: reaction}
+  KBaseProfile.FunctionalProfile: {entity: matrix, measures: functional, granularity: sample}
+  KBaseFeatureValues.ExpressionMatrix: {entity: matrix, measures: expression, provenance: legacy}
+  KBaseFeatureValues.DifferentialExpressionMatrix: {entity: matrix, measures: differential_expression, provenance: legacy}
+  KBaseRNASeq.RNASeqExpression: {entity: matrix, measures: expression, provenance: legacy}
+  KBaseRNASeq.RNASeqExpressionSet: {entity: matrix, measures: expression, cardinality: set, provenance: legacy}
+  KBaseSets.ExpressionSet: {entity: matrix, measures: expression, cardinality: set}
+  KBaseRNASeq.RNASeqDifferentialExpression: {entity: matrix, measures: differential_expression, provenance: legacy}
+  KBaseSets.DifferentialExpressionMatrixSet: {entity: matrix, measures: differential_expression, cardinality: set}
+  KBaseRNASeq.DifferentialExpressionStat: {entity: matrix, measures: differential_expression, content: stats, provenance: legacy}
+  KBaseGwasData.differentialexpressionstat: {entity: matrix, measures: differential_expression, content: stats, provenance: legacy}
+  KBaseEnigmaMetals.GrowthMatrix: {entity: matrix, measures: growth, provenance: legacy}
+  KBaseEnigmaMetals.GrowthParameters: {entity: matrix, measures: growth_parameters, provenance: legacy}
+  KBaseEnigmaMetals.SamplePropertyMatrix: {entity: matrix, measures: sample_property, provenance: legacy}
+  KBaseEnigmaMetals.ChromatographyMatrix: {entity: matrix, measures: chromatography, provenance: legacy}
+
+  KBaseExperiments.AttributeMapping: {entity: attribute_mapping}
+  KBaseExperiments.ConditionSet: {entity: attribute_mapping, content: conditions, provenance: legacy}
+  KBaseExperiments.CorrelationMatrix: {entity: correlation}
+  KBaseExperiments.PCAMatrix: {entity: ordination}
+  KBaseExperiments.Network: {entity: network}
+  KBaseFeatureValues.FeatureClusters: {entity: clusters, provenance: legacy}
+  KBaseFeatureValues.EstimateKResult: {entity: clusters, content: k_estimate, provenance: legacy}
+
+  KBaseFBA.FBAModel: {entity: model}
+  KBaseFBA.FBAModelSet: {entity: model, cardinality: set}
+  KBaseCollections.FBAModelSet: {entity: model, cardinality: set, provenance: legacy}
+  KBaseCollections.FBAModelList: {entity: model, cardinality: set, provenance: legacy}
+  KBaseFBA.ModelComparison: {entity: model, content: comparison}
+  KBaseFBA.MissingRoleData: {entity: model, content: missing_roles}
+  KBaseFBA.PromConstraint: {entity: model, content: constraints}
+  KBaseFBA.ReactionProbabilities: {entity: model, content: reaction_probabilities}
+  KBaseFBA.ModelTemplate: {entity: model_template, provenance: legacy}
+  KBaseFBA.NewModelTemplate: {entity: model_template}
+
+  KBaseBiochem.Media: {entity: media}
+  KBaseBiochem.MediaSet: {entity: media, cardinality: set}
+
+  KBaseFBA.FBA: {entity: fba}
+  KBaseFBA.FBAComparison: {entity: fba, content: comparison}
+  KBaseFBA.FBAPathwayAnalysis: {entity: fba, content: pathway_analysis}
+  KBaseFBA.FBAPathwayAnalysisMultiple: {entity: fba, content: pathway_analysis, cardinality: set}
+  KBaseFBA.Gapfilling: {entity: fba, content: gapfilling}
+  KBaseFBA.Gapgeneration: {entity: fba, content: gapgeneration}
+  KBaseFBA.ReactionSensitivityAnalysis: {entity: fba, content: sensitivity}
+  KBaseFBA.ETC: {entity: fba, content: etc}
+
+  KBasePhenotypes.PhenotypeSet: {entity: phenotype}
+  KBasePhenotypes.PhenotypeSimulationSet: {entity: phenotype_simulation}
+
+  KBaseBiochem.Biochemistry: {entity: biochem}
+  KBaseBiochem.BiochemistryStructures: {entity: biochem, content: structures}
+  KBaseBiochem.CompoundSet: {entity: biochem, content: compounds, cardinality: set}
+  KBaseBiochem.MetabolicMap: {entity: biochem, content: map}
+  KBaseFBA.EscherMap: {entity: biochem, content: escher}
+
+  KBaseStructure.ProteinStructure: {entity: protein_structure}
+  KBaseStructure.ProteinStructures: {entity: protein_structure, cardinality: set}
+
+  KBaseOntology.OntologyDictionary: {entity: ontology}
+  KBaseOntology.OntologyTranslation: {entity: ontology, content: translation}
+
+  KBaseClassifier.GenomeCategorizer: {entity: classifier}
+  KBaseClassifier.GenomeClassifierTrainingSet: {entity: classifier, content: training_set}
+
+  KBaseSets.SampleSet: {entity: sample_set}
+
+  KBaseRNASeq.RNASeqAnalysis: {entity: report, provenance: legacy}
+  KBaseRNASeq.cummerbund_output: {entity: report, provenance: legacy}
