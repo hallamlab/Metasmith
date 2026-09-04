@@ -59,11 +59,15 @@ gate() {
     local external divergent
     external=$({ grep -hE '^\s*axiom\b' "$out"/*.lean 2>/dev/null || true; } \
                | awk '{print $2}' | { grep -cE '^(core|alloc)\.' || true; })
-    # Not a failure. Each one costs a fixpoint-unfolding lemma later, so the
-    # count is what you budget the proof against.
-    divergent=$({ grep -hocE '\bdivergent\b' "$out"/*.lean 2>/dev/null || true; } \
+    # Not failures. Each is a definition whose termination Lean did not get
+    # structurally, so reasoning about it needs the fixpoint's unfolding lemmas
+    # -- the count is what a proof over this extraction is budgeted against.
+    # Aeneas picks `partial_fixpoint` where older versions emitted `divergent`,
+    # so counting only the latter reports zero on an extraction full of them.
+    local nonstruct
+    nonstruct=$({ grep -hocE '\b(divergent|partial_fixpoint)\b' "$out"/*.lean 2>/dev/null || true; } \
                 | awk '{n += $1} END {print n + 0}')
-    echo "external axioms (expected): $external    divergent defs: $divergent"
+    echo "external axioms (expected): $external    non-structural recursions: $nonstruct"
     [ "$fail" = 0 ] && echo "PASS: no sorry, no axiomatised crate function"
     return $fail
 }
