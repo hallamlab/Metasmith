@@ -9,6 +9,9 @@ service     : KBaseFBAModeling.runfba
 Use Flux Balance Analysis (FBA) to predict metabolic fluxes in a metabolic
 model of an organism grown on a given media.
 
+Optional in KBase and therefore not a requirement here: input_media,
+expression_matrix.
+
 Stub: the model is the port, the body only touches its outputs. This does
 not run the KBase app. Regenerate with research/kbase/library/_generate.py.
 """
@@ -17,12 +20,10 @@ from metasmith.python_api import *
 
 lib   = TransformInstanceLibrary.ResolveParentLibrary(__file__)
 model = Transform()
-study             = model.AddRequirement(lib.GetType("kbase::study"))
-sample            = model.AddRequirement(lib.GetType("kbase::sample"), parents={study})
-input_model       = model.AddRequirement(lib.GetType("kbase::KBaseFBA_FBAModel"), parents={sample})
-input_media       = model.AddRequirement(lib.GetType("kbase::KBaseBiochem_Media"), parents={sample})  # optional in KBase
-expression_matrix = model.AddRequirement(lib.GetType("kbase::KBaseFeatureValues_ExpressionMatrix"), parents={sample})  # optional in KBase
-output_fba        = model.AddProduct(lib.GetType("kbase::KBaseFBA_FBA"))
+study       = model.AddRequirement(lib.GetType("kbase::study"))
+sample      = model.AddRequirement(lib.GetType("kbase::sample"), parents={study})
+input_model = model.AddRequirement(lib.GetType("kbase::KBaseFBA_FBAModel"), parents={sample})
+output_fba  = model.AddProduct(lib.GetType("kbase::KBaseFBA_FBA"))
 
 def protocol(context: ExecutionContext):
     made = {output_fba: context.Output(output_fba)}

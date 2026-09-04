@@ -9,6 +9,9 @@ service     : KBaseFBAModeling.gapfill_model
 Identify the minimal set of biochemical reactions to add to a draft metabolic
 model to enable it to produce biomass in a specified media.
 
+Optional in KBase and therefore not a requirement here: input_media,
+expression_matrix, source_model.
+
 Stub: the model is the port, the body only touches its outputs. This does
 not run the KBase app. Regenerate with research/kbase/library/_generate.py.
 """
@@ -17,13 +20,10 @@ from metasmith.python_api import *
 
 lib   = TransformInstanceLibrary.ResolveParentLibrary(__file__)
 model = Transform()
-study             = model.AddRequirement(lib.GetType("kbase::study"))
-sample            = model.AddRequirement(lib.GetType("kbase::sample"), parents={study})
-input_model       = model.AddRequirement(lib.GetType("kbase::KBaseFBA_FBAModel"), parents={sample})
-input_media       = model.AddRequirement(lib.GetType("kbase::KBaseBiochem_Media"), parents={sample})  # optional in KBase
-expression_matrix = model.AddRequirement(lib.GetType("kbase::KBaseFeatureValues_ExpressionMatrix"), parents={sample})  # optional in KBase
-source_model      = model.AddRequirement(lib.GetType("kbase::KBaseFBA_FBAModel"), parents={sample})  # optional in KBase
-output_model      = model.AddProduct(lib.GetType("kbase::KBaseFBA_FBAModel"))
+study        = model.AddRequirement(lib.GetType("kbase::study"))
+sample       = model.AddRequirement(lib.GetType("kbase::sample"), parents={study})
+input_model  = model.AddRequirement(lib.GetType("kbase::KBaseFBA_FBAModel"), parents={sample})
+output_model = model.AddProduct(lib.GetType("kbase::KBaseFBA_FBAModel"))
 
 def protocol(context: ExecutionContext):
     made = {output_model: context.Output(output_model)}

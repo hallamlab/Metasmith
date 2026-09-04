@@ -8,6 +8,9 @@ service     : kb_filtlong.run_kb_filtlong
 
 Filter long reads using Filtlong.
 
+Optional in KBase and therefore not a requirement here:
+input_short_paired_library.
+
 Stub: the model is the port, the body only touches its outputs. This does
 not run the KBase app. Regenerate with research/kbase/library/_generate.py.
 """
@@ -16,20 +19,19 @@ from metasmith.python_api import *
 
 lib   = TransformInstanceLibrary.ResolveParentLibrary(__file__)
 model = Transform()
-study                      = model.AddRequirement(lib.GetType("kbase::study"))
-sample                     = model.AddRequirement(lib.GetType("kbase::sample"), parents={study})
-input_reads_library        = model.AddRequirement(lib.GetType("kbase::accepts_05"), parents={sample})
-input_short_paired_library = model.AddRequirement(lib.GetType("kbase::accepts_12"), parents={sample})  # optional in KBase
-env                        = model.AddRequirement(lib.GetType("env::kb_filtlong.env"))
+study               = model.AddRequirement(lib.GetType("kbase::study"))
+sample              = model.AddRequirement(lib.GetType("kbase::sample"), parents={study})
+input_reads_library = model.AddRequirement(lib.GetType("kbase::accepts_05"), parents={sample})
+env                 = model.AddRequirement(lib.GetType("env::kb_filtlong.env"))
 # output_reads_name is one of 4 types; each is its own product branch
-output_reads_name          = model.AddProduct(lib.GetType("kbase::KBaseAssembly_PairedEndLibrary"))
+output_reads_name   = model.AddProduct(lib.GetType("kbase::KBaseAssembly_PairedEndLibrary"))
 model.NewProductGroup()
-output_reads_name_2        = model.AddProduct(lib.GetType("kbase::KBaseAssembly_SingleEndLibrary"))
+output_reads_name_2 = model.AddProduct(lib.GetType("kbase::KBaseAssembly_SingleEndLibrary"))
 model.NewProductGroup()
-output_reads_name_3        = model.AddProduct(lib.GetType("kbase::KBaseFile_PairedEndLibrary"))
+output_reads_name_3 = model.AddProduct(lib.GetType("kbase::KBaseFile_PairedEndLibrary"))
 model.NewProductGroup()
-output_reads_name_4        = model.AddProduct(lib.GetType("kbase::KBaseFile_SingleEndLibrary"))
-report_                    = model.AddProduct(lib.GetType("kbase::report"))
+output_reads_name_4 = model.AddProduct(lib.GetType("kbase::KBaseFile_SingleEndLibrary"))
+report_             = model.AddProduct(lib.GetType("kbase::report"))
 
 def protocol(context: ExecutionContext):
     made = {output_reads_name: context.Output(output_reads_name)}

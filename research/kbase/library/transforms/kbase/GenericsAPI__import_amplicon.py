@@ -9,6 +9,9 @@ service     : GenericsAPI.import_matrix_from_biom
 Import a TSV/FASTA file from your staging area into your Narrative as an
 AmpliconMatrix
 
+Optional in KBase and therefore not a requirement here: sample_set_ref,
+col_attributemapping_ref, row_attributemapping_ref, reads_set_ref.
+
 Stub: the model is the port, the body only touches its outputs. This does
 not run the KBase app. Regenerate with research/kbase/library/_generate.py.
 """
@@ -17,15 +20,11 @@ from metasmith.python_api import *
 
 lib   = TransformInstanceLibrary.ResolveParentLibrary(__file__)
 model = Transform()
-study                    = model.AddRequirement(lib.GetType("kbase::study"))
-sample                   = model.AddRequirement(lib.GetType("kbase::sample"), parents={study})
-sample_set_ref           = model.AddRequirement(lib.GetType("kbase::KBaseSets_SampleSet"), parents={sample})  # optional in KBase
-col_attributemapping_ref = model.AddRequirement(lib.GetType("kbase::KBaseExperiments_AttributeMapping"), parents={sample})  # optional in KBase
-row_attributemapping_ref = model.AddRequirement(lib.GetType("kbase::KBaseExperiments_AttributeMapping"), parents={sample})  # optional in KBase
-reads_set_ref            = model.AddRequirement(lib.GetType("kbase::KBaseSets_ReadsSet"), parents={sample})  # optional in KBase
-env                      = model.AddRequirement(lib.GetType("env::GenericsAPI.env"))
-matrix_name              = model.AddProduct(lib.GetType("kbase::KBaseMatrices_AmpliconMatrix"))
-report_                  = model.AddProduct(lib.GetType("kbase::report"))
+study       = model.AddRequirement(lib.GetType("kbase::study"))
+sample      = model.AddRequirement(lib.GetType("kbase::sample"), parents={study})
+env         = model.AddRequirement(lib.GetType("env::GenericsAPI.env"))
+matrix_name = model.AddProduct(lib.GetType("kbase::KBaseMatrices_AmpliconMatrix"))
+report_     = model.AddProduct(lib.GetType("kbase::report"))
 
 def protocol(context: ExecutionContext):
     made = {matrix_name: context.Output(matrix_name)}
@@ -40,7 +39,7 @@ def protocol(context: ExecutionContext):
 TransformInstance(
     protocol=protocol,
     model=model,
-    group_by=sample_set_ref,
+    group_by=sample,
     labels=['inactive'],
     resources=Resources(
         cpus=2,

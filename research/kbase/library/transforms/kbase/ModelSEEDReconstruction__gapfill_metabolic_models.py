@@ -9,6 +9,9 @@ service     : ModelSEEDReconstruction.gapfill_metabolic_models
 Identify the minimal set of biochemical reactions to add to draft metabolic
 models to enable them to produce a desired flux in a specified media.
 
+Optional in KBase and therefore not a requirement here: source_models,
+media_list, expression_refs.
+
 Stub: the model is the port, the body only touches its outputs. This does
 not run the KBase app. Regenerate with research/kbase/library/_generate.py.
 """
@@ -17,14 +20,11 @@ from metasmith.python_api import *
 
 lib   = TransformInstanceLibrary.ResolveParentLibrary(__file__)
 model = Transform()
-study           = model.AddRequirement(lib.GetType("kbase::study"))
-sample          = model.AddRequirement(lib.GetType("kbase::sample"), parents={study})
-model_list      = model.AddRequirement(lib.GetType("kbase::KBaseFBA_FBAModel"), parents={sample})
-source_models   = model.AddRequirement(lib.GetType("kbase::KBaseFBA_FBAModel"), parents={sample})  # optional in KBase
-media_list      = model.AddRequirement(lib.GetType("kbase::KBaseBiochem_Media"), parents={sample})  # optional in KBase
-expression_refs = model.AddRequirement(lib.GetType("kbase::KBaseFeatureValues_ExpressionMatrix"), parents={sample})  # optional in KBase
-env             = model.AddRequirement(lib.GetType("env::ModelSEEDReconstruction.env"))
-report_         = model.AddProduct(lib.GetType("kbase::report"))
+study      = model.AddRequirement(lib.GetType("kbase::study"))
+sample     = model.AddRequirement(lib.GetType("kbase::sample"), parents={study})
+model_list = model.AddRequirement(lib.GetType("kbase::KBaseFBA_FBAModel"), parents={sample})
+env        = model.AddRequirement(lib.GetType("env::ModelSEEDReconstruction.env"))
+report_    = model.AddProduct(lib.GetType("kbase::report"))
 
 def protocol(context: ExecutionContext):
     made = {report_: context.Output(report_)}

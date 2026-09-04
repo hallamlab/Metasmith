@@ -9,6 +9,8 @@ service     : RAST_SDK.annotate_genomes
 Annotate or re-annotate bacterial or archaeal genomes and/or genome sets using
 RASTtk (Rapid Annotations using Subsystems Technology toolkit).
 
+Optional in KBase and therefore not a requirement here: input_genomes.
+
 References workspace types the registry no longer serves:
 KBaseGenomeAnnotations.GenomeAnnotation. They are still declared, from the app
 spec's own naming.
@@ -23,7 +25,6 @@ lib   = TransformInstanceLibrary.ResolveParentLibrary(__file__)
 model = Transform()
 study         = model.AddRequirement(lib.GetType("kbase::study"))
 sample        = model.AddRequirement(lib.GetType("kbase::sample"), parents={study})
-input_genomes = model.AddRequirement(lib.GetType("kbase::accepts_48"), parents={sample})  # optional in KBase
 env           = model.AddRequirement(lib.GetType("env::RAST_SDK.env"))
 output_genome = model.AddProduct(lib.GetType("kbase::KBaseSearch_GenomeSet"))
 report_       = model.AddProduct(lib.GetType("kbase::report"))
@@ -41,7 +42,7 @@ def protocol(context: ExecutionContext):
 TransformInstance(
     protocol=protocol,
     model=model,
-    group_by=input_genomes,
+    group_by=sample,
     labels=[],
     resources=Resources(
         cpus=8,

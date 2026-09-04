@@ -8,6 +8,9 @@ service     : -.-
 
 Assemble a set of short DNA reads into a set of contigs.
 
+Optional in KBase and therefore not a requirement here: assembly_input,
+read_library, reference.
+
 Stub: the model is the port, the body only touches its outputs. This does
 not run the KBase app. Regenerate with research/kbase/library/_generate.py.
 """
@@ -18,9 +21,6 @@ lib   = TransformInstanceLibrary.ResolveParentLibrary(__file__)
 model = Transform()
 study            = model.AddRequirement(lib.GetType("kbase::study"))
 sample           = model.AddRequirement(lib.GetType("kbase::sample"), parents={study})
-assembly_input   = model.AddRequirement(lib.GetType("kbase::KBaseAssembly_AssemblyInput"), parents={sample})  # optional in KBase
-read_library     = model.AddRequirement(lib.GetType("kbase::accepts_05"), parents={sample})  # optional in KBase
-reference        = model.AddRequirement(lib.GetType("kbase::KBaseAssembly_ReferenceAssembly"), parents={sample})  # optional in KBase
 output_contigset = model.AddProduct(lib.GetType("kbase::KBaseGenomes_ContigSet"))
 
 def protocol(context: ExecutionContext):
@@ -35,7 +35,7 @@ def protocol(context: ExecutionContext):
 TransformInstance(
     protocol=protocol,
     model=model,
-    group_by=assembly_input,
+    group_by=sample,
     labels=['inactive'],
     resources=Resources(
         cpus=16,

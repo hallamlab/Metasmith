@@ -8,6 +8,8 @@ service     : fba_tools.build_multiple_metabolic_models
 
 Construct draft metabolic models based on annotated genomes.
 
+Optional in KBase and therefore not a requirement here: genome_ids, media_id.
+
 Stub: the model is the port, the body only touches its outputs. This does
 not run the KBase app. Regenerate with research/kbase/library/_generate.py.
 """
@@ -16,12 +18,10 @@ from metasmith.python_api import *
 
 lib   = TransformInstanceLibrary.ResolveParentLibrary(__file__)
 model = Transform()
-study      = model.AddRequirement(lib.GetType("kbase::study"))
-sample     = model.AddRequirement(lib.GetType("kbase::sample"), parents={study})
-genome_ids = model.AddRequirement(lib.GetType("kbase::accepts_52"), parents={sample})  # optional in KBase
-media_id   = model.AddRequirement(lib.GetType("kbase::KBaseBiochem_Media"), parents={sample})  # optional in KBase
-env        = model.AddRequirement(lib.GetType("env::fba_tools.env"))
-report_    = model.AddProduct(lib.GetType("kbase::report"))
+study   = model.AddRequirement(lib.GetType("kbase::study"))
+sample  = model.AddRequirement(lib.GetType("kbase::sample"), parents={study})
+env     = model.AddRequirement(lib.GetType("env::fba_tools.env"))
+report_ = model.AddProduct(lib.GetType("kbase::report"))
 
 def protocol(context: ExecutionContext):
     made = {report_: context.Output(report_)}
@@ -35,7 +35,7 @@ def protocol(context: ExecutionContext):
 TransformInstance(
     protocol=protocol,
     model=model,
-    group_by=genome_ids,
+    group_by=sample,
     labels=[],
     resources=Resources(
         cpus=4,

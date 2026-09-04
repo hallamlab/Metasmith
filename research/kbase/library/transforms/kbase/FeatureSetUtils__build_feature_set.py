@@ -8,6 +8,9 @@ service     : FeatureSetUtils.build_feature_set
 
 Create a new FeatureSet by selecting features from a Genome.
 
+Optional in KBase and therefore not a requirement here: input_genome,
+base_feature_sets.
+
 Stub: the model is the port, the body only touches its outputs. This does
 not run the KBase app. Regenerate with research/kbase/library/_generate.py.
 """
@@ -18,8 +21,6 @@ lib   = TransformInstanceLibrary.ResolveParentLibrary(__file__)
 model = Transform()
 study              = model.AddRequirement(lib.GetType("kbase::study"))
 sample             = model.AddRequirement(lib.GetType("kbase::sample"), parents={study})
-input_genome       = model.AddRequirement(lib.GetType("kbase::KBaseGenomes_Genome"), parents={sample})  # optional in KBase
-base_feature_sets  = model.AddRequirement(lib.GetType("kbase::KBaseCollections_FeatureSet"), parents={sample})  # optional in KBase
 env                = model.AddRequirement(lib.GetType("env::FeatureSetUtils.env"))
 output_feature_set = model.AddProduct(lib.GetType("kbase::KBaseCollections_FeatureSet"))
 report_            = model.AddProduct(lib.GetType("kbase::report"))
@@ -37,7 +38,7 @@ def protocol(context: ExecutionContext):
 TransformInstance(
     protocol=protocol,
     model=model,
-    group_by=input_genome,
+    group_by=sample,
     labels=[],
     resources=Resources(
         cpus=8,

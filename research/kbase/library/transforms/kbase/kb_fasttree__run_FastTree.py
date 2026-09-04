@@ -9,6 +9,8 @@ service     : kb_fasttree.run_FastTree
 Build a phylogenetic reconstruction from a Multiple Sequence Alignment (MSA)
 using FastTree2.
 
+Optional in KBase and therefore not a requirement here: input_ref, intree_ref.
+
 Stub: the model is the port, the body only touches its outputs. This does
 not run the KBase app. Regenerate with research/kbase/library/_generate.py.
 """
@@ -19,8 +21,6 @@ lib   = TransformInstanceLibrary.ResolveParentLibrary(__file__)
 model = Transform()
 study       = model.AddRequirement(lib.GetType("kbase::study"))
 sample      = model.AddRequirement(lib.GetType("kbase::sample"), parents={study})
-input_ref   = model.AddRequirement(lib.GetType("kbase::KBaseTrees_MSA"), parents={sample})  # optional in KBase
-intree_ref  = model.AddRequirement(lib.GetType("kbase::KBaseTrees_Tree"), parents={sample})  # optional in KBase
 env         = model.AddRequirement(lib.GetType("env::kb_fasttree.env"))
 output_name = model.AddProduct(lib.GetType("kbase::KBaseTrees_Tree"))
 report_     = model.AddProduct(lib.GetType("kbase::report"))
@@ -38,7 +38,7 @@ def protocol(context: ExecutionContext):
 TransformInstance(
     protocol=protocol,
     model=model,
-    group_by=input_ref,
+    group_by=sample,
     labels=[],
     resources=Resources(
         cpus=8,

@@ -9,6 +9,8 @@ service     : kb_djornl.run_rwr_loe
 RWRtools LOE (Lines of Evidence) uses RWR to rank genes in the network
 starting from a Feature Set.
 
+Optional in KBase and therefore not a requirement here: targets_feature_set.
+
 Stub: the model is the port, the body only touches its outputs. This does
 not run the KBase app. Regenerate with research/kbase/library/_generate.py.
 """
@@ -17,13 +19,12 @@ from metasmith.python_api import *
 
 lib   = TransformInstanceLibrary.ResolveParentLibrary(__file__)
 model = Transform()
-study               = model.AddRequirement(lib.GetType("kbase::study"))
-sample              = model.AddRequirement(lib.GetType("kbase::sample"), parents={study})
-seeds_feature_set   = model.AddRequirement(lib.GetType("kbase::KBaseCollections_FeatureSet"), parents={sample})
-targets_feature_set = model.AddRequirement(lib.GetType("kbase::KBaseCollections_FeatureSet"), parents={sample})  # optional in KBase
-env                 = model.AddRequirement(lib.GetType("env::kb_djornl.env"))
-output_name         = model.AddProduct(lib.GetType("kbase::KBaseCollections_FeatureSet"))
-report_             = model.AddProduct(lib.GetType("kbase::report"))
+study             = model.AddRequirement(lib.GetType("kbase::study"))
+sample            = model.AddRequirement(lib.GetType("kbase::sample"), parents={study})
+seeds_feature_set = model.AddRequirement(lib.GetType("kbase::KBaseCollections_FeatureSet"), parents={sample})
+env               = model.AddRequirement(lib.GetType("env::kb_djornl.env"))
+output_name       = model.AddProduct(lib.GetType("kbase::KBaseCollections_FeatureSet"))
+report_           = model.AddProduct(lib.GetType("kbase::report"))
 
 def protocol(context: ExecutionContext):
     made = {output_name: context.Output(output_name)}

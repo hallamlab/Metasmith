@@ -9,6 +9,9 @@ service     : fba_tools.run_flux_balance_analysis
 Use flux balance analysis to predict metabolic fluxes in a metabolic model of
 an organism grown on a given media.
 
+Optional in KBase and therefore not a requirement here: media_id,
+expseries_id.
+
 Stub: the model is the port, the body only touches its outputs. This does
 not run the KBase app. Regenerate with research/kbase/library/_generate.py.
 """
@@ -20,8 +23,6 @@ model = Transform()
 study         = model.AddRequirement(lib.GetType("kbase::study"))
 sample        = model.AddRequirement(lib.GetType("kbase::sample"), parents={study})
 fbamodel_id   = model.AddRequirement(lib.GetType("kbase::KBaseFBA_FBAModel"), parents={sample})
-media_id      = model.AddRequirement(lib.GetType("kbase::accepts_16"), parents={sample})  # optional in KBase
-expseries_id  = model.AddRequirement(lib.GetType("kbase::KBaseFeatureValues_ExpressionMatrix"), parents={sample})  # optional in KBase
 env           = model.AddRequirement(lib.GetType("env::fba_tools.env"))
 fba_output_id = model.AddProduct(lib.GetType("kbase::KBaseFBA_FBA"))
 report_       = model.AddProduct(lib.GetType("kbase::report"))

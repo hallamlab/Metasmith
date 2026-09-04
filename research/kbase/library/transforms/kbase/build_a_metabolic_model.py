@@ -8,6 +8,8 @@ service     : KBaseFBAModeling.genome_to_fbamodel
 
 Generate a draft metabolic model based on an annotated genome.
 
+Optional in KBase and therefore not a requirement here: template_model.
+
 Stub: the model is the port, the body only touches its outputs. This does
 not run the KBase app. Regenerate with research/kbase/library/_generate.py.
 """
@@ -16,11 +18,10 @@ from metasmith.python_api import *
 
 lib   = TransformInstanceLibrary.ResolveParentLibrary(__file__)
 model = Transform()
-study          = model.AddRequirement(lib.GetType("kbase::study"))
-sample         = model.AddRequirement(lib.GetType("kbase::sample"), parents={study})
-input_genome   = model.AddRequirement(lib.GetType("kbase::KBaseGenomes_Genome"), parents={sample})
-template_model = model.AddRequirement(lib.GetType("kbase::KBaseFBA_ModelTemplate"), parents={sample})  # optional in KBase
-output_model   = model.AddProduct(lib.GetType("kbase::KBaseFBA_FBAModel"))
+study        = model.AddRequirement(lib.GetType("kbase::study"))
+sample       = model.AddRequirement(lib.GetType("kbase::sample"), parents={study})
+input_genome = model.AddRequirement(lib.GetType("kbase::KBaseGenomes_Genome"), parents={sample})
+output_model = model.AddProduct(lib.GetType("kbase::KBaseFBA_FBAModel"))
 
 def protocol(context: ExecutionContext):
     made = {output_model: context.Output(output_model)}

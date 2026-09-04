@@ -8,6 +8,9 @@ service     : fba_tools.build_metagenome_metabolic_model
 
 Generate a draft metabolic model based on an annotated genome.
 
+Optional in KBase and therefore not a requirement here: custom_template_id,
+reads_refs, media_id.
+
 Stub: the model is the port, the body only touches its outputs. This does
 not run the KBase app. Regenerate with research/kbase/library/_generate.py.
 """
@@ -19,9 +22,6 @@ model = Transform()
 study              = model.AddRequirement(lib.GetType("kbase::study"))
 sample             = model.AddRequirement(lib.GetType("kbase::sample"), parents={study})
 input_ref          = model.AddRequirement(lib.GetType("kbase::KBaseMetagenomes_AnnotatedMetagenomeAssembly"), parents={sample})
-custom_template_id = model.AddRequirement(lib.GetType("kbase::KBaseFBA_NewModelTemplate"), parents={sample})  # optional in KBase
-reads_refs         = model.AddRequirement(lib.GetType("kbase::accepts_28"), parents={sample})  # optional in KBase
-media_id           = model.AddRequirement(lib.GetType("kbase::KBaseBiochem_Media"), parents={sample})  # optional in KBase
 env                = model.AddRequirement(lib.GetType("env::fba_tools.env"))
 fbamodel_output_id = model.AddProduct(lib.GetType("kbase::KBaseFBA_FBAModel"))
 report_            = model.AddProduct(lib.GetType("kbase::report"))

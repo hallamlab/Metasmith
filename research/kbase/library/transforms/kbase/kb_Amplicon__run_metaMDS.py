@@ -8,6 +8,9 @@ service     : kb_Amplicon.run_metaMDS
 
 Perform Non-metric Multidimensional Scaling Analysis on matrix data
 
+Optional in KBase and therefore not a requirement here:
+attribute_mapping_obj_ref.
+
 References workspace types the registry no longer serves: KBaseMatrices. They
 are still declared, from the app spec's own naming.
 
@@ -19,12 +22,11 @@ from metasmith.python_api import *
 
 lib   = TransformInstanceLibrary.ResolveParentLibrary(__file__)
 model = Transform()
-study                     = model.AddRequirement(lib.GetType("kbase::study"))
-sample                    = model.AddRequirement(lib.GetType("kbase::sample"), parents={study})
-attribute_mapping_obj_ref = model.AddRequirement(lib.GetType("kbase::KBaseExperiments_AttributeMapping"), parents={sample})  # optional in KBase
-env                       = model.AddRequirement(lib.GetType("env::kb_Amplicon.env"))
-mds_matrix_name           = model.AddProduct(lib.GetType("kbase::KBaseExperiments_PCAMatrix"))
-report_                   = model.AddProduct(lib.GetType("kbase::report"))
+study           = model.AddRequirement(lib.GetType("kbase::study"))
+sample          = model.AddRequirement(lib.GetType("kbase::sample"), parents={study})
+env             = model.AddRequirement(lib.GetType("env::kb_Amplicon.env"))
+mds_matrix_name = model.AddProduct(lib.GetType("kbase::KBaseExperiments_PCAMatrix"))
+report_         = model.AddProduct(lib.GetType("kbase::report"))
 
 def protocol(context: ExecutionContext):
     made = {mds_matrix_name: context.Output(mds_matrix_name)}
@@ -39,7 +41,7 @@ def protocol(context: ExecutionContext):
 TransformInstance(
     protocol=protocol,
     model=model,
-    group_by=attribute_mapping_obj_ref,
+    group_by=sample,
     labels=[],
     resources=Resources(
         cpus=4,

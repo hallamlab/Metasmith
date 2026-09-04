@@ -1,0 +1,43 @@
+name: single_end_library_from_any_paired_end_library_2
+description: load_single_end_reads_from_URL -> run_kb_filtlong -> annotate_contigs
+  -> KButil_Build_GenomeSet. Seen in 8 public narratives.
+sample_type: kbase::sample
+target_types:
+- kbase::KBaseAssembly_SingleEndLibrary
+- kbase::KBaseSearch_GenomeSet
+transform_libraries:
+- w_s0025
+resource_libraries:
+- env
+shared_input_paths: []
+input_library:
+  schema: v1
+  manifest:
+    /msm_deferred/0c0d68f7f92f48fbab2cbfaf62b19996:
+      type: kbase::sample
+      parents:
+        jLTRu26f3TIs@/msm_deferred/367a078c6e074d2e97316d806093a492: kbase::study
+      instance_id: 1e2027a91d340d2fb2c39600d9fc2e18faadcfdbfe14e59e3cbcd6f2805399e56720
+      origin: leaf
+    /msm_deferred/25c233ad4ce946e881263c177fb5d2b3:
+      type: kbase::accepts_12
+      parents:
+        jLTRu26f3TIs@/msm_deferred/0c0d68f7f92f48fbab2cbfaf62b19996: kbase::sample
+      instance_id: 1e2009da5e2c5801bef22713d0874ca0b31ad690f88af52b19256bc6d14c15aa1ed3
+      origin: leaf
+    /msm_deferred/367a078c6e074d2e97316d806093a492:
+      type: kbase::study
+      instance_id: 1e20b57144e82482c26705a3299a3efd2e3791f21c796cd3643e96409a7c4c951736
+      origin: leaf
+    /msm_deferred/508225de34944196bb159d0a452be107:
+      type: kbase::accepts_05
+      parents:
+        jLTRu26f3TIs@/msm_deferred/0c0d68f7f92f48fbab2cbfaf62b19996: kbase::sample
+      instance_id: 1e20f249bc13458035062e4cd9d701124108edce3e95d135f903c7e938443bb322f6
+      origin: leaf
+    /msm_deferred/de76d4ad800e4ec8b67277524f73936d:
+      type: kbase::accepts_40
+      parents:
+        jLTRu26f3TIs@/msm_deferred/0c0d68f7f92f48fbab2cbfaf62b19996: kbase::sample
+      instance_id: 1e204fc1846f7d343b7fcb7b9673164f27ad47d21bdd3cfbb057a8dceab317cd176c
+      origin: leaf

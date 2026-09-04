@@ -9,6 +9,8 @@ service     : kb_hmmer.HMMER_Local_MSA_Group_Search
 Search for matches to all MSAs that are within workspace using Hidden Markov
 Model (HMMER) Search.
 
+Optional in KBase and therefore not a requirement here: input_msa_refs.
+
 Stub: the model is the port, the body only touches its outputs. This does
 not run the KBase app. Regenerate with research/kbase/library/_generate.py.
 """
@@ -19,7 +21,6 @@ lib   = TransformInstanceLibrary.ResolveParentLibrary(__file__)
 model = Transform()
 study                = model.AddRequirement(lib.GetType("kbase::study"))
 sample               = model.AddRequirement(lib.GetType("kbase::sample"), parents={study})
-input_msa_refs       = model.AddRequirement(lib.GetType("kbase::KBaseTrees_MSA"), parents={sample})  # optional in KBase
 input_many_ref       = model.AddRequirement(lib.GetType("kbase::accepts_19"), parents={sample})
 env                  = model.AddRequirement(lib.GetType("env::kb_hmmer.env"))
 output_filtered_name = model.AddProduct(lib.GetType("kbase::KBaseCollections_FeatureSet"))
@@ -38,7 +39,7 @@ def protocol(context: ExecutionContext):
 TransformInstance(
     protocol=protocol,
     model=model,
-    group_by=input_msa_refs,
+    group_by=input_many_ref,
     labels=[],
     resources=Resources(
         cpus=4,

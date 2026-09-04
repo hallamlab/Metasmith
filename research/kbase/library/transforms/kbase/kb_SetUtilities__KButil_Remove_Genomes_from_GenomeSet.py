@@ -8,6 +8,8 @@ service     : kb_SetUtilities.KButil_Remove_Genomes_from_GenomeSet
 
 Allows user to remove Genome(s) from a GenomeSet
 
+Optional in KBase and therefore not a requirement here: input_genome_refs.
+
 Stub: the model is the port, the body only touches its outputs. This does
 not run the KBase app. Regenerate with research/kbase/library/_generate.py.
 """
@@ -18,7 +20,6 @@ lib   = TransformInstanceLibrary.ResolveParentLibrary(__file__)
 model = Transform()
 study               = model.AddRequirement(lib.GetType("kbase::study"))
 sample              = model.AddRequirement(lib.GetType("kbase::sample"), parents={study})
-input_genome_refs   = model.AddRequirement(lib.GetType("kbase::KBaseGenomes_Genome"), parents={sample})  # optional in KBase
 input_genomeset_ref = model.AddRequirement(lib.GetType("kbase::accepts_65"), parents={sample})
 env                 = model.AddRequirement(lib.GetType("env::kb_SetUtilities.env"))
 # output_name is one of 2 types; each is its own product branch
@@ -40,7 +41,7 @@ def protocol(context: ExecutionContext):
 TransformInstance(
     protocol=protocol,
     model=model,
-    group_by=input_genome_refs,
+    group_by=input_genomeset_ref,
     labels=[],
     resources=Resources(
         cpus=2,

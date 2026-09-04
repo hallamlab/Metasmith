@@ -9,6 +9,8 @@ service     : FeatureSetUtils.upload_featureset_from_diff_expr
 Create up/down regulated FeatureSet and ExpressionMatrix from differential
 expression data based on given cutoffs.
 
+Optional in KBase and therefore not a requirement here: expression_matrix_ref.
+
 Stub: the model is the port, the body only touches its outputs. This does
 not run the KBase app. Regenerate with research/kbase/library/_generate.py.
 """
@@ -17,12 +19,11 @@ from metasmith.python_api import *
 
 lib   = TransformInstanceLibrary.ResolveParentLibrary(__file__)
 model = Transform()
-study                 = model.AddRequirement(lib.GetType("kbase::study"))
-sample                = model.AddRequirement(lib.GetType("kbase::sample"), parents={study})
-diff_expression_ref   = model.AddRequirement(lib.GetType("kbase::KBaseSets_DifferentialExpressionMatrixSet"), parents={sample})
-expression_matrix_ref = model.AddRequirement(lib.GetType("kbase::KBaseFeatureValues_ExpressionMatrix"), parents={sample})  # optional in KBase
-env                   = model.AddRequirement(lib.GetType("env::FeatureSetUtils.env"))
-report_               = model.AddProduct(lib.GetType("kbase::report"))
+study               = model.AddRequirement(lib.GetType("kbase::study"))
+sample              = model.AddRequirement(lib.GetType("kbase::sample"), parents={study})
+diff_expression_ref = model.AddRequirement(lib.GetType("kbase::KBaseSets_DifferentialExpressionMatrixSet"), parents={sample})
+env                 = model.AddRequirement(lib.GetType("env::FeatureSetUtils.env"))
+report_             = model.AddProduct(lib.GetType("kbase::report"))
 
 def protocol(context: ExecutionContext):
     made = {report_: context.Output(report_)}

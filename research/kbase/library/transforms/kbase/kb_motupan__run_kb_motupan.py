@@ -8,6 +8,9 @@ service     : kb_motupan.run_kb_motupan
 
 Calculate pangenome for microbial genomes, including MAGs of varying quality
 
+Optional in KBase and therefore not a requirement here: pcp_input_genome_ref,
+pcp_input_compare_genome_refs, pcp_input_outgroup_genome_refs.
+
 Stub: the model is the port, the body only touches its outputs. This does
 not run the KBase app. Regenerate with research/kbase/library/_generate.py.
 """
@@ -16,15 +19,12 @@ from metasmith.python_api import *
 
 lib   = TransformInstanceLibrary.ResolveParentLibrary(__file__)
 model = Transform()
-study                          = model.AddRequirement(lib.GetType("kbase::study"))
-sample                         = model.AddRequirement(lib.GetType("kbase::sample"), parents={study})
-input_ref                      = model.AddRequirement(lib.GetType("kbase::accepts_66"), parents={sample})
-pcp_input_genome_ref           = model.AddRequirement(lib.GetType("kbase::KBaseGenomes_Genome"), parents={sample})  # optional in KBase
-pcp_input_compare_genome_refs  = model.AddRequirement(lib.GetType("kbase::KBaseGenomes_Genome"), parents={sample})  # optional in KBase
-pcp_input_outgroup_genome_refs = model.AddRequirement(lib.GetType("kbase::KBaseGenomes_Genome"), parents={sample})  # optional in KBase
-env                            = model.AddRequirement(lib.GetType("env::kb_motupan.env"))
-output_pangenome_name          = model.AddProduct(lib.GetType("kbase::KBaseGenomes_Pangenome"))
-report_                        = model.AddProduct(lib.GetType("kbase::report"))
+study                 = model.AddRequirement(lib.GetType("kbase::study"))
+sample                = model.AddRequirement(lib.GetType("kbase::sample"), parents={study})
+input_ref             = model.AddRequirement(lib.GetType("kbase::accepts_66"), parents={sample})
+env                   = model.AddRequirement(lib.GetType("env::kb_motupan.env"))
+output_pangenome_name = model.AddProduct(lib.GetType("kbase::KBaseGenomes_Pangenome"))
+report_               = model.AddProduct(lib.GetType("kbase::report"))
 
 def protocol(context: ExecutionContext):
     made = {output_pangenome_name: context.Output(output_pangenome_name)}

@@ -9,6 +9,9 @@ service     : kb_phylogenomics.localize_DomainAnnotations
 Point DomainAnnotation objects at all Genome copies that are local to the same
 Narrative
 
+Optional in KBase and therefore not a requirement here:
+input_DomainAnnotation_refs.
+
 Stub: the model is the port, the body only touches its outputs. This does
 not run the KBase app. Regenerate with research/kbase/library/_generate.py.
 """
@@ -17,11 +20,10 @@ from metasmith.python_api import *
 
 lib   = TransformInstanceLibrary.ResolveParentLibrary(__file__)
 model = Transform()
-study                       = model.AddRequirement(lib.GetType("kbase::study"))
-sample                      = model.AddRequirement(lib.GetType("kbase::sample"), parents={study})
-input_domainannotation_refs = model.AddRequirement(lib.GetType("kbase::KBaseGeneFamilies_DomainAnnotation"), parents={sample})  # optional in KBase
-env                         = model.AddRequirement(lib.GetType("env::kb_phylogenomics.env"))
-report_                     = model.AddProduct(lib.GetType("kbase::report"))
+study   = model.AddRequirement(lib.GetType("kbase::study"))
+sample  = model.AddRequirement(lib.GetType("kbase::sample"), parents={study})
+env     = model.AddRequirement(lib.GetType("env::kb_phylogenomics.env"))
+report_ = model.AddProduct(lib.GetType("kbase::report"))
 
 def protocol(context: ExecutionContext):
     made = {report_: context.Output(report_)}
@@ -35,7 +37,7 @@ def protocol(context: ExecutionContext):
 TransformInstance(
     protocol=protocol,
     model=model,
-    group_by=input_domainannotation_refs,
+    group_by=sample,
     labels=['inactive'],
     resources=Resources(
         cpus=4,

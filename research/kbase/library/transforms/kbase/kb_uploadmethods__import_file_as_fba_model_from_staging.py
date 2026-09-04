@@ -9,6 +9,8 @@ service     : kb_uploadmethods.import_file_as_fba_model_from_staging
 Import a file in TSV, XLS (Excel) or SBML format from your staging area into
 your Narrative as an FBAModel
 
+Optional in KBase and therefore not a requirement here: genome.
+
 Stub: the model is the port, the body only touches its outputs. This does
 not run the KBase app. Regenerate with research/kbase/library/_generate.py.
 """
@@ -19,7 +21,6 @@ lib   = TransformInstanceLibrary.ResolveParentLibrary(__file__)
 model = Transform()
 study      = model.AddRequirement(lib.GetType("kbase::study"))
 sample     = model.AddRequirement(lib.GetType("kbase::sample"), parents={study})
-genome     = model.AddRequirement(lib.GetType("kbase::KBaseGenomes_Genome"), parents={sample})  # optional in KBase
 env        = model.AddRequirement(lib.GetType("env::kb_uploadmethods.env"))
 model_name = model.AddProduct(lib.GetType("kbase::KBaseFBA_FBAModel"))
 report_    = model.AddProduct(lib.GetType("kbase::report"))
@@ -37,7 +38,7 @@ def protocol(context: ExecutionContext):
 TransformInstance(
     protocol=protocol,
     model=model,
-    group_by=genome,
+    group_by=sample,
     labels=['inactive'],
     resources=Resources(
         cpus=4,

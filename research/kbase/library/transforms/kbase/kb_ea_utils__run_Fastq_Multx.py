@@ -9,6 +9,8 @@ service     : kb_ea_utils.run_Fastq_Multx
 DEPRECATED - Run the fastq-multx program from ea-utils to demultiplex a reads
 library into reads sets.
 
+Optional in KBase and therefore not a requirement here: input_index_ref.
+
 Stub: the model is the port, the body only touches its outputs. This does
 not run the KBase app. Regenerate with research/kbase/library/_generate.py.
 """
@@ -20,7 +22,6 @@ model = Transform()
 study             = model.AddRequirement(lib.GetType("kbase::study"))
 sample            = model.AddRequirement(lib.GetType("kbase::sample"), parents={study})
 input_reads_ref   = model.AddRequirement(lib.GetType("kbase::accepts_28"), parents={sample})
-input_index_ref   = model.AddRequirement(lib.GetType("kbase::accepts_28"), parents={sample})  # optional in KBase
 env               = model.AddRequirement(lib.GetType("env::kb_ea_utils.env"))
 output_reads_name = model.AddProduct(lib.GetType("kbase::KBaseSets_ReadsSet"))
 report_           = model.AddProduct(lib.GetType("kbase::report"))

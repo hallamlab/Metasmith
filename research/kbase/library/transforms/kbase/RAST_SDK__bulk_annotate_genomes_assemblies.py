@@ -9,6 +9,9 @@ service     : RAST_SDK.rast_genomes_assemblies
 Annotate or re-annotate genomes/assemblies using RASTtk (Rapid Annotations
 using Subsystems Technology toolkit).
 
+Optional in KBase and therefore not a requirement here: input_genomeset,
+input_genomes, input_assemblies.
+
 References workspace types the registry no longer serves:
 KBaseGenomeAnnotations.GenomeAnnotation. They are still declared, from the app
 spec's own naming.
@@ -23,9 +26,6 @@ lib   = TransformInstanceLibrary.ResolveParentLibrary(__file__)
 model = Transform()
 study                 = model.AddRequirement(lib.GetType("kbase::study"))
 sample                = model.AddRequirement(lib.GetType("kbase::sample"), parents={study})
-input_genomeset       = model.AddRequirement(lib.GetType("kbase::KBaseSearch_GenomeSet"), parents={sample})  # optional in KBase
-input_genomes         = model.AddRequirement(lib.GetType("kbase::accepts_47"), parents={sample})  # optional in KBase
-input_assemblies      = model.AddRequirement(lib.GetType("kbase::accepts_34"), parents={sample})  # optional in KBase
 env                   = model.AddRequirement(lib.GetType("env::RAST_SDK.env"))
 output_genomeset_name = model.AddProduct(lib.GetType("kbase::KBaseSearch_GenomeSet"))
 report_               = model.AddProduct(lib.GetType("kbase::report"))
@@ -43,7 +43,7 @@ def protocol(context: ExecutionContext):
 TransformInstance(
     protocol=protocol,
     model=model,
-    group_by=input_genomeset,
+    group_by=sample,
     labels=[],
     resources=Resources(
         cpus=8,

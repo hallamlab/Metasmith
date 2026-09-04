@@ -8,6 +8,8 @@ service     : GenericsAPI.build_chemical_abundance_template
 
 Create a template file for Import Chemical Abundance Matrix app
 
+Optional in KBase and therefore not a requirement here: sample_set_ref.
+
 Stub: the model is the port, the body only touches its outputs. This does
 not run the KBase app. Regenerate with research/kbase/library/_generate.py.
 """
@@ -16,11 +18,10 @@ from metasmith.python_api import *
 
 lib   = TransformInstanceLibrary.ResolveParentLibrary(__file__)
 model = Transform()
-study          = model.AddRequirement(lib.GetType("kbase::study"))
-sample         = model.AddRequirement(lib.GetType("kbase::sample"), parents={study})
-sample_set_ref = model.AddRequirement(lib.GetType("kbase::KBaseSets_SampleSet"), parents={sample})  # optional in KBase
-env            = model.AddRequirement(lib.GetType("env::GenericsAPI.env"))
-report_        = model.AddProduct(lib.GetType("kbase::report"))
+study   = model.AddRequirement(lib.GetType("kbase::study"))
+sample  = model.AddRequirement(lib.GetType("kbase::sample"), parents={study})
+env     = model.AddRequirement(lib.GetType("env::GenericsAPI.env"))
+report_ = model.AddProduct(lib.GetType("kbase::report"))
 
 def protocol(context: ExecutionContext):
     made = {report_: context.Output(report_)}
@@ -34,7 +35,7 @@ def protocol(context: ExecutionContext):
 TransformInstance(
     protocol=protocol,
     model=model,
-    group_by=sample_set_ref,
+    group_by=sample,
     labels=[],
     resources=Resources(
         cpus=2,

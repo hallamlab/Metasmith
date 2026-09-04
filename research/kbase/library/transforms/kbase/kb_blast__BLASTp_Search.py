@@ -8,6 +8,8 @@ service     : kb_blast.BLASTp_Search
 
 Search for protein matches to an input protein sequence.
 
+Optional in KBase and therefore not a requirement here: input_one_ref.
+
 Stub: the model is the port, the body only touches its outputs. This does
 not run the KBase app. Regenerate with research/kbase/library/_generate.py.
 """
@@ -18,7 +20,6 @@ lib   = TransformInstanceLibrary.ResolveParentLibrary(__file__)
 model = Transform()
 study                = model.AddRequirement(lib.GetType("kbase::study"))
 sample               = model.AddRequirement(lib.GetType("kbase::sample"), parents={study})
-input_one_ref        = model.AddRequirement(lib.GetType("kbase::KBaseSequences_SequenceSet"), parents={sample})  # optional in KBase
 input_many_refs      = model.AddRequirement(lib.GetType("kbase::accepts_20"), parents={sample})
 env                  = model.AddRequirement(lib.GetType("env::kb_blast.env"))
 output_filtered_name = model.AddProduct(lib.GetType("kbase::KBaseCollections_FeatureSet"))
@@ -37,7 +38,7 @@ def protocol(context: ExecutionContext):
 TransformInstance(
     protocol=protocol,
     model=model,
-    group_by=input_one_ref,
+    group_by=input_many_refs,
     labels=[],
     resources=Resources(
         cpus=4,
