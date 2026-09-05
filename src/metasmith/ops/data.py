@@ -639,6 +639,7 @@ def import_item(
     cache_root: str | None = None,
     name: str | None = None,
     parents: list[str] | None = None,
+    tags: list[str] | None = None,
     type_library_paths: list[str] | None = None,
 ) -> dict:
     """Register a file or folder the user already has as a pool instance.
@@ -673,6 +674,7 @@ def import_item(
             parents=parent_ids,
             size=_shallow_size(target),
         )],
+        tags=tuple(tags or ()),
     )
     return {
         "cache_root": str(root),
@@ -682,6 +684,7 @@ def import_item(
         "instance_id": key_hex,
         "type_resolved": resolved,
         "parents": parent_ids,
+        "tags": sorted(set(tags or ())),
         "status": written.status,
     }
 

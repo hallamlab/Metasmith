@@ -159,6 +159,8 @@ def register(subs):
     _imp.add_argument("--parent", action="append", default=[], dest="parents",
                       help="an instance id, or the path of something already in "
                            "the pool; repeatable")
+    _imp.add_argument("--tag", action="append", default=[], dest="tags",
+                      help="a label of your own to group by later; repeatable")
     _imp.add_argument("--type-lib", action="append", default=[],
                       dest="type_library_paths",
                       metavar="[NS=]PATH",
@@ -167,7 +169,7 @@ def register(subs):
                            "stem); an unknown name is refused when one is given")
     _imp.set_defaults(func=lambda a: _ops.import_item(
         a.path, a.dtype, agent_home=a.agent_home, cache_root=a.cache_root,
-        name=a.name, parents=a.parents or None,
+        name=a.name, parents=a.parents or None, tags=a.tags or None,
         type_library_paths=a.type_library_paths or None,
     ))
 

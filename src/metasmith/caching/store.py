@@ -11,7 +11,7 @@ from .keys import CACHE_KEY_VERSION
 from ..logging import Log
 
 
-SCHEMA_VERSION = "1"
+SCHEMA_VERSION = "2"
 
 # Sqlite schema_meta keys — bumping CACHE_KEY_VERSION renders old shards
 # unreachable (their cache_keys no longer collide). The session counter feeds
@@ -37,8 +37,19 @@ _CREATE_SQL = [
         last_hit_at    INTEGER NOT NULL,
         hit_count      INTEGER NOT NULL DEFAULT 0,
         origin         TEXT NOT NULL,
-        tombstoned_at  INTEGER
+        tombstoned_at  INTEGER,
+        run            TEXT NOT NULL DEFAULT ''
     )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS entry_tags(
+        key BLOB NOT NULL,
+        tag TEXT NOT NULL,
+        PRIMARY KEY (key, tag)
+    )
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS idx_entry_tags_tag ON entry_tags(tag)
     """,
     """
     CREATE INDEX IF NOT EXISTS idx_entries_tomb
@@ -69,6 +80,11 @@ class CacheEntry:
     last_hit_at: int
     hit_count: int
     tombstoned_at: int | None
+    # The run that produced this entry, empty for anything the pool did not
+    # derive. With origin (the category) and created_at (arrival) these are the
+    # four things a store can be sorted or grouped by.
+    run: str = ""
+    tags: tuple = ()
 
 
 class CacheStore:
@@ -111,6 +127,25 @@ class CacheStore:
             "SELECT v FROM schema_meta WHERE k = ?",
             (CACHE_EPOCH_KEY,),
         ).fetchone()
+        # A schema change is not a key change: the table statements are all
+        # "if not exists", so an existing database gains no column that way and
+        # nothing here may bump the cache epoch. Taken under the epoch
+        # upgrade's own lock, because several tasks of one run open this store
+        # at once.
+        srow = conn.execute(
+            "SELECT v FROM schema_meta WHERE k = ?", ("schema_version",),
+        ).fetchone()
+        if srow is not None and int(srow[0]) < 2:
+            cols = {r[1] for r in conn.execute("PRAGMA table_info(entries)")}
+            if "run" not in cols:
+                conn.execute(
+                    "ALTER TABLE entries ADD COLUMN run TEXT NOT NULL DEFAULT ''"
+                )
+            conn.execute(
+                "UPDATE schema_meta SET v = ? WHERE k = ?",
+                (SCHEMA_VERSION, "schema_version"),
+            )
+
         stored = int(row[0]) if row is not None else 0
         if stored < CACHE_KEY_VERSION:
             # Every entry was keyed under the old epoch, so nothing will ever ask
@@ -166,19 +201,14 @@ class CacheStore:
         self.close()
 
 
-    def probe(self, key: bytes) -> CacheEntry | None:
-        row = self.conn.execute(
-            """
+    _SELECT = """
             SELECT key, transform_key, payload, output_root, size_bytes,
-                   origin, created_at, last_hit_at, hit_count, tombstoned_at
-            FROM entries WHERE key = ?
-            """,
-            (key,),
-        ).fetchone()
-        if row is None:
-            return None
-        if row[9] is not None:
-            return None
+                   origin, created_at, last_hit_at, hit_count, tombstoned_at,
+                   run
+            FROM entries
+    """
+
+    def _row_to_entry(self, row) -> CacheEntry:
         return CacheEntry(
             key=row[0],
             transform_key=row[1],
@@ -190,7 +220,19 @@ class CacheStore:
             last_hit_at=row[7],
             hit_count=row[8],
             tombstoned_at=row[9],
+            run=row[10] or "",
+            tags=self.tags_of(row[0]),
         )
+
+    def probe(self, key: bytes) -> CacheEntry | None:
+        row = self.conn.execute(
+            self._SELECT + " WHERE key = ?", (key,),
+        ).fetchone()
+        if row is None:
+            return None
+        if row[9] is not None:
+            return None
+        return self._row_to_entry(row)
 
     def files_exist(self, entry: CacheEntry) -> bool:
         return entry.output_root.is_dir()
@@ -217,6 +259,7 @@ class CacheStore:
         output_root: str,
         size_bytes: int,
         origin: str,
+        run: str = "",
     ) -> None:
         assert origin in {"lineage", "imported"}, (
             f"origin must be lineage or imported, got {origin!r}"
@@ -226,9 +269,9 @@ class CacheStore:
             """
             INSERT INTO entries(
                 key, transform_key, payload, output_root, size_bytes,
-                created_at, last_hit_at, hit_count, origin, tombstoned_at
+                created_at, last_hit_at, hit_count, origin, tombstoned_at, run
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, NULL)
+            VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, NULL, ?)
             ON CONFLICT(key) DO UPDATE SET
                 transform_key = excluded.transform_key,
                 payload       = excluded.payload,
@@ -236,11 +279,15 @@ class CacheStore:
                 size_bytes    = excluded.size_bytes,
                 last_hit_at   = excluded.last_hit_at,
                 origin        = excluded.origin,
-                tombstoned_at = NULL
+                tombstoned_at = NULL,
+                -- A re-index must not blank the run that first recorded this
+                -- entry: the second run to reach a key did not produce it.
+                run = CASE WHEN excluded.run != '' THEN excluded.run
+                           ELSE entries.run END
             """,
             (
                 key, transform_key, payload, output_root, size_bytes,
-                now, now, origin,
+                now, now, origin, run,
             ),
         )
         self.conn.commit()
@@ -254,27 +301,37 @@ class CacheStore:
         self.conn.commit()
 
     def iter_entries(self, *, include_tombstoned: bool = False) -> Iterable[CacheEntry]:
-        sql = """
-            SELECT key, transform_key, payload, output_root, size_bytes,
-                   origin, created_at, last_hit_at, hit_count, tombstoned_at
-            FROM entries
-        """
+        sql = self._SELECT
         if not include_tombstoned:
             sql += " WHERE tombstoned_at IS NULL"
         sql += " ORDER BY last_hit_at DESC"
-        for row in self.conn.execute(sql):
-            yield CacheEntry(
-                key=row[0],
-                transform_key=row[1],
-                payload=row[2],
-                output_root=self.cache_root / row[3],
-                size_bytes=row[4],
-                origin=row[5],
-                created_at=row[6],
-                last_hit_at=row[7],
-                hit_count=row[8],
-                tombstoned_at=row[9],
+        for row in self.conn.execute(sql).fetchall():
+            yield self._row_to_entry(row)
+
+    def tags_of(self, key: bytes) -> tuple:
+        return tuple(r[0] for r in self.conn.execute(
+            "SELECT tag FROM entry_tags WHERE key = ? ORDER BY tag", (key,),
+        ))
+
+    def set_tags(self, key: bytes, tags: Iterable[str]) -> None:
+        self.conn.execute("DELETE FROM entry_tags WHERE key = ?", (key,))
+        self.add_tags(key, tags)
+
+    def add_tags(self, key: bytes, tags: Iterable[str]) -> None:
+        rows = [(key, t.strip()) for t in tags if t and t.strip()]
+        if rows:
+            self.conn.executemany(
+                "INSERT OR IGNORE INTO entry_tags(key, tag) VALUES (?, ?)", rows,
             )
+        self.conn.commit()
+
+    def remove_tags(self, key: bytes, tags: Iterable[str]) -> None:
+        rows = [(key, t) for t in tags]
+        if rows:
+            self.conn.executemany(
+                "DELETE FROM entry_tags WHERE key = ? AND tag = ?", rows,
+            )
+        self.conn.commit()
 
 
 # A manifest is written in exactly one place, `caching.admission`. What used to

@@ -3,10 +3,16 @@
 # No real data: a fake `processed/` root with fake `.dvc` files is enough, because
 # nothing here reads a reference byte -- which is the property being tested.
 #
-# The one thing to be careful about: `dvc_leaf_id` is asserted against a literal.
+# The one thing to be careful about: `dvc_ref_id` is asserted against a literal.
 # That is not a tautology test. Changing the construction silently re-keys every
 # cached run that ever touched a reference, and a failure here is the reminder
 # that the change costs a cluster a round of recomputation.
+#
+# The literals moved once, deliberately, when reference registration stopped
+# minting its own ids and started calling the engine's `structural_import_id` --
+# one importer for a reference and for anything else the user already has. The
+# information hashed is the same three things it always was. References carrying
+# a published-provenance entry did not move: that path never derived an id.
 
 from __future__ import annotations
 
@@ -32,9 +38,12 @@ def _fake_root(tmp_path: Path) -> Path:
     return root
 
 
+MD5 = "59e24a1aeb8fdc243b698f42e50468d9.dir"
+
+
 def test_the_id_construction_is_exactly_this(tmp_path):
-    assert refs.dvc_leaf_id("59e24a1aeb8fdc243b698f42e50468d9.dir", "kofam_ref/profiles") == (
-        "1e2000670fe67f828fbe24cb42a96cdaaae9041284a9b4bb9a786a589421ceddb5ba"
+    assert refs.dvc_ref_id("ref::kofamscan_profiles", MD5, "kofam_ref/profiles") == (
+        "1e20ad3855670216a5869d0023ff41691f25f614e0e283a29e8b9083f7c01437dd37"
     )
 
 
@@ -44,8 +53,18 @@ def test_two_files_under_one_pin_get_distinct_ids(tmp_path):
     # Without it `kofam_ref/profiles` and `kofam_ref/ko_list.tsv` collapse to one
     # identity -- the same fan-out corruption `_mint_leaf_id` folds the path to
     # avoid.
-    md5 = "59e24a1aeb8fdc243b698f42e50468d9.dir"
-    assert refs.dvc_leaf_id(md5, "kofam_ref/profiles") != refs.dvc_leaf_id(md5, "kofam_ref/ko_list.tsv")
+    assert refs.dvc_ref_id("ref::a", MD5, "kofam_ref/profiles") != \
+        refs.dvc_ref_id("ref::a", MD5, "kofam_ref/ko_list.tsv")
+
+
+def test_a_re_pin_moves_the_id(tmp_path):
+    # The md5 is part of the declaration precisely so that changed reference
+    # data re-runs everything that consumed it.
+    assert refs.dvc_ref_id("ref::a", MD5, "x") != refs.dvc_ref_id("ref::a", "ff" * 16, "x")
+
+
+def test_the_type_is_part_of_the_declaration(tmp_path):
+    assert refs.dvc_ref_id("ref::a", MD5, "x") != refs.dvc_ref_id("ref::b", MD5, "x")
 
 
 def test_pinning_registers_only_what_a_pin_covers(tmp_path):
@@ -142,3 +161,31 @@ def _ids(out: Path) -> dict[str, str]:
 
     lib = DataInstanceLibrary.Load(out)
     return {d: lib.Get(p).instance_id for p, d, _ in lib.Iterate()}
+
+
+def test_pinning_can_register_the_references_in_a_pool(tmp_path):
+    # A reference is data the user already has under a declared type, which is
+    # what the pool's imported origin is. Registering it there is the same act
+    # `metasmith data import` performs, through the same door.
+    from metasmith.caching.admission import IMPORTED
+    from metasmith.caching.projection import project_store
+
+    root = _fake_root(tmp_path)
+    cache_root = tmp_path / "task_cache"
+    report = refs.pin_refs(root, tmp_path / "refs.xgdb", cache_root=cache_root)
+    assert report["admitted"]["admitted"] == len(report["added"])
+
+    ids = _ids(tmp_path / "refs.xgdb")
+    proj = project_store(cache_root, types=refs.load_pinned_refs(root, tmp_path / "refs.xgdb").types)
+    assert {it.instance_id for it in proj.items.values()} == set(ids.values())
+    assert {it.origin for it in proj.items.values()} == {IMPORTED}
+
+
+def test_the_pin_is_taken_after_admission(tmp_path):
+    # A pinned library refuses mutation, so admitting after the pin would read
+    # a library that has already been frozen. The order matters and is asserted
+    # by the fact that admission saw every entry.
+    root = _fake_root(tmp_path)
+    cache_root = tmp_path / "task_cache"
+    report = refs.pin_refs(root, tmp_path / "refs.xgdb", cache_root=cache_root)
+    assert report["pinned"] == report["admitted"]["admitted"]

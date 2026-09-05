@@ -181,3 +181,17 @@ class TestImportedProjection:
         )
         (path,) = proj.library.manifest
         assert proj.items[path].size_bytes == big.stat().st_size
+
+
+class TestGroupingByRun:
+    def test_a_product_names_the_run_that_made_it(self, tmp_path, virtual_runtime):
+        from metasmith.caching.store import CacheStore
+
+        _types, _samples, _tr = _run_a_pipeline(tmp_path / "a", virtual_runtime)
+        with CacheStore.open(virtual_runtime.home / CACHE_DIR_NAME) as s:
+            entries = list(s.iter_entries())
+        assert entries
+        runs = {e.run for e in entries}
+        assert len(runs) == 1 and "" not in runs, runs
+        # And it is the run as the agent names it on disk.
+        assert (virtual_runtime.home / "runs" / runs.pop()).is_dir()
