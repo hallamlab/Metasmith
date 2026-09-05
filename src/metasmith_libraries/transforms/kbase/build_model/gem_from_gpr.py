@@ -6,28 +6,40 @@ image   = model.AddRequirement(lib.GetType("env::cobra.env"))
 gpr     = model.AddRequirement(lib.GetType("annotation::gpr_table"))
 bridge  = model.AddRequirement(lib.GetType("ref::mnxr_lookup"))
 vocab   = model.AddRequirement(lib.GetType("ref::metabolism_vocab"))
+# The lookup answers "which MNXR" and the vocabulary answers "which of those the
+# bake knows"; neither carries a stoichiometry, and a reconstruction is exactly a
+# set of stoichiometries. reac_prop is where they live and chem_prop is where the
+# formulas of the metabolites they name live. Added in round 5, when the body was
+# written and the gap became unignorable.
+reac    = model.AddRequirement(lib.GetType("ref::mnx_reac_prop"))
+chem    = model.AddRequirement(lib.GetType("ref::mnx_chem_prop"))
+helpers = model.AddRequirement(lib.GetType("lib::modelling"))
 out     = model.AddProduct(lib.GetType("modelling::metabolic_model"))
 
 def protocol(context: ExecutionContext):
-    # STUB. The protocol this replaces: resolve every reaction the GPR table names through
-    # {ibridge} into a MetaNetX equation, parse it into a cobra reaction, and write the
-    # result as SBML. `fabfos/build_references/vs_gem/fba_scaffold.py` already carries
-    # `parse_mnx_equation` and `load_reac_prop`, which is what this reuses rather than
-    # standing up a ModelSEED reconstruction lane beside them.
-    #
-    # CAUTION `kbase/build_model/` has TWO producers of `modelling::metabolic_model`, this
-    # one and `fetch_bigg_model.py`, deliberately -- a draft and its curated baseline. A
-    # target downstream of the type is therefore ambiguous and must be pinned to one.
-    made = {out: context.Output(out)}
-    for key, path in made.items():
-        make = 'mkdir -p' if key in _DIRECTORY_PRODUCTS else 'touch'
-        context.external_shell.Exec(f'{make} {path.external}')
-    return ExecutionResult(
-        manifest=[{k: v.local for k, v in made.items()}],
-        success=all(v.local.exists() for v in made.values()),
-    )
+    igpr=context.Input(gpr)
+    ibridge=context.Input(bridge)
+    ivocab=context.Input(vocab)
+    ireac=context.Input(reac)
+    ichem=context.Input(chem)
+    ihelp=context.Input(helpers)
+    iout=context.Output(out)
 
-_DIRECTORY_PRODUCTS = set()
+    # CAUTION `kbase/build_model/` has TWO producers of `modelling::metabolic_model`,
+    # this one and `fetch_bigg_model.py`, deliberately -- a draft and its curated
+    # baseline. A target downstream of the type is therefore ambiguous and must be
+    # pinned to one.
+    _cmd = f"""\
+            python {ihelp.container}/gem_from_gpr.py \
+                {igpr.container} {ibridge.container} {ivocab.container} \
+                {ireac.container} {ichem.container} {iout.container}
+        """
+    context.ExecWithEnv().ifContainerDo(env=image, cmd=_cmd)
+
+    return ExecutionResult(
+        manifest=[{out: iout.local}],
+        success=iout.local.exists(),
+    )
 
 TransformInstance(
     protocol=protocol,
