@@ -125,14 +125,19 @@ def a3_finish_long_read_isolate():
     def inputs(lib):
         _types(lib, "sequences", "ref", "annotation")
         # ONE read_metadata node for the isolate, parenting BOTH read sets. Polishing
-        # joins a long-read assembly to a short-read library, and the only thing in this
-        # library that says "same sample" is a shared read_metadata ancestor -- there is
-        # no isolate- or run-level grouping type above it. Two metadata nodes, one per
-        # read set, leaves the assembly and the reads with no common ancestor and
-        # polypolish with no candidate pair.
+        # joins a long-read assembly to a short-read library, and what says "same
+        # sample" is a shared ancestor. Two metadata nodes, one per read set, leaves
+        # the assembly and the reads with no common ancestor and polypolish with no
+        # candidate pair.
+        #
+        # That ancestor is now `sequences::sample_name`, above the metadata rather than
+        # the metadata itself: round 5 recorded that the isolate was saying "same
+        # sample" by sharing a node that was never named for the job, and a name is
+        # what the job actually has.
+        name = lib.AddValue("sample_name.txt", "isolate_1", "sequences::sample_name")
         meta = lib.AddValue("read_metadata.json",
                             {"parity": "paired", "length_class": "hybrid"},
-                            "sequences::read_metadata")
+                            "sequences::read_metadata", parents={name})
         lib.AddItem(DEFERRED, "sequences::long_reads", parents={meta})
         pair = lib.AddValue("read_pair.txt", "isolate_1", "sequences::read_pair",
                             parents={meta})
@@ -188,9 +193,14 @@ def a4_mags_from_metagenome():
 def _survey_inputs(lib):
     _types(lib, "sequences", "ref", "taxonomy", "amplicon", "aspire")
     survey = lib.AddValue("survey.json", {"logistics": "survey"}, "amplicon::survey")
+    # The sample's own name, above its reads, so `kraken_abundance` can label a row
+    # by what the study calls the sample rather than by a staged file's stem.
+    # Deferred like `ncbi::genome_name`: nothing produces a name.
+    name = lib.AddValue("sample_name.txt", "sample_1", "sequences::sample_name",
+                        parents={survey})
     meta = lib.AddValue("read_metadata.json",
                         {"parity": "paired", "length_class": "short"},
-                        "sequences::read_metadata", parents={survey})
+                        "sequences::read_metadata", parents={name})
     pair = lib.AddValue("read_pair.txt", "sample_1", "sequences::read_pair",
                         parents={meta})
     lib.AddItem(DEFERRED, "sequences::zipped_forward_short_reads", parents={pair})

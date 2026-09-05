@@ -602,11 +602,21 @@ refactors:
 - name: Decide whether a bin is an assembly
   domain: binning
   closes: [extract_bins]
+  decided: round 6 -- NO, and derep_mag_ref now has a producer
   means: >-
     `sequences::bin_fasta` extends `putative_genome` and not `assembly`. One line either
     way, and it decides whether bin -> annotate -> build_model is walkable. Separately
     `binning::derep_mag_ref` is required by both instrain transforms and produced by
     nothing, which is a dangling requirement regardless of what is decided here.
+  outcome: >-
+    A bin is NOT an assembly. A bin is a mapping of contigs -- `binning::*_contig_to_bin_table`
+    is that mapping -- and the FASTA is a materialisation to be avoided where it can be;
+    annotation must not sit downstream of a bin, or every annotation is scoped to one
+    binner's grouping and has to be redone when the grouping changes. The reason is now
+    written at `bin_fasta` in `data_types/sequences.yml` and pointed at from the three
+    tests that assert the negative, which is what stopped this being re-raised each round.
+    `binning::derep_mag_ref` is produced by `binning/derep_mag_reference.py` as of the
+    same round: `skani_dedup` already made the cluster table it is built from.
 
 new_types:
   sequences::filtered_assembly:

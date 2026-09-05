@@ -7,7 +7,11 @@ img_brk = model.AddRequirement(lib.GetType("env::bracken.env"))
 img_bb  = model.AddRequirement(lib.GetType("env::bbtools.env"))
 img_pq  = model.AddRequirement(lib.GetType("env::python_for_data_science.env"))
 db      = model.AddRequirement(lib.GetType("ref::kraken2_db"))
-reads   = model.AddRequirement(lib.GetType("sequences::short_reads"))
+# Required and never read: this is how the sample's name enters the lineage of the
+# four reports, so a later step that pools them can ask which sample each came from.
+# `logistics/getNcbiAssembly.py` does the same with `ncbi::genome_name`.
+name    = model.AddRequirement(lib.GetType("sequences::sample_name"))
+reads   = model.AddRequirement(lib.GetType("sequences::short_reads"), parents={name})
 
 classif = model.AddProduct(lib.GetType("taxonomy::kraken2_classifications"))
 kreport = model.AddProduct(lib.GetType("taxonomy::kraken2_report"))
