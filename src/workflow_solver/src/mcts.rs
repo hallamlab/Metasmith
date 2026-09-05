@@ -17,7 +17,8 @@ use crate::det::{self, Map, Set};
 use crate::model::{DepId, EpId, EpSig, TransformId};
 use crate::problem::Problem;
 use crate::rectify::{get_order, order_steps, prune_steps, rectify};
-use crate::refine::{SELECTION_TOP_K, SELECTION_WEIGHTS, refine};
+use crate::policy::{Phase, Policy};
+use crate::refine::refine;
 use crate::rng::DecisionStream;
 use crate::search::{ApplId, ApplSig, Arena, Bindings, Group, generate_applications};
 
@@ -356,6 +357,7 @@ pub fn mcts(
     let mut solved: Option<SolverState> = None;
     let mut merged_endpoints: Vec<(EpSig, EpId, Vec<EpId>)> = Vec::new();
     let mut refiner_iterations: Vec<(i64, i64)> = Vec::new();
+    let mut policy = Policy::from_env(Phase::Mcts)?;
     let mut i: i64 = 0;
 
     while !frontier.is_empty() && (i as u32) < p.max_iter {
@@ -372,15 +374,12 @@ pub fn mcts(
                 .collect();
             eprintln!("IT {i} frontier=[{}]", f.join(","));
         }
-        let idx = {
-            let arm = rng.weighted_index(&SELECTION_WEIGHTS);
-            if arm < SELECTION_WEIGHTS.len() - 1 {
-                let scores: Vec<f64> = frontier.iter().map(|&a| ar.appl(a).score[arm]).collect();
-                rng.pick_top_k(&scores, SELECTION_TOP_K)
-            } else {
-                rng.bounded_int(frontier.len() as u64) as usize
-            }
-        };
+        let idx = policy.select(
+            rng,
+            frontier.len(),
+            |j| ar.appl(frontier[j]).score,
+            |j| ar.appl(frontier[j]).transform,
+        );
         let n = frontier.len() - 1;
         frontier.swap(idx, n);
         let node = frontier.pop().expect("checked non-empty");
