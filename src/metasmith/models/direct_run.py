@@ -10,6 +10,7 @@ from ..constants import AgentPaths
 from ..logging import Log
 from ..models.libraries import (
     DataInstance,
+    DataInstanceLibrary,
     ExecutionResult,
     TransformInstance,
     TransformInstanceLibrary,
@@ -52,20 +53,69 @@ def _resolve_transform(
     return lib, inst
 
 
+def _load_data_library(
+    data_library: Path | str | DataInstanceLibrary,
+) -> DataInstanceLibrary:
+    if isinstance(data_library, DataInstanceLibrary):
+        return data_library
+    location = Path(data_library)
+    if not location.exists():
+        raise ValueError(f"no data instance library at [{location}]")
+    try:
+        return DataInstanceLibrary.Load(location.resolve())
+    except AssertionError as e:
+        raise ValueError(f"[{location}] did not load as a data library: {e}")
+
+
+_ITEMS_SHOWN = 20
+
+
+def _resolve_item(lib: DataInstanceLibrary, item: str | Path) -> Path:
+    # Items are named by their key in the library's manifest. An absolute path
+    # that lands inside the library is accepted as the same name; anything else
+    # is a filesystem path, which this command deliberately does not take.
+    p = Path(item)
+    if p in lib.manifest:
+        return p
+    if p.is_absolute():
+        try:
+            rel = p.relative_to(lib.location)
+        except ValueError:
+            rel = None
+        if rel is not None and rel in lib.manifest:
+            return rel
+
+    known = sorted(str(k) for k in lib.manifest)
+    shown = known[:_ITEMS_SHOWN]
+    if len(known) > _ITEMS_SHOWN:
+        shown.append(f"... and {len(known) - _ITEMS_SHOWN} more")
+    outside = p.is_absolute() or os.sep in str(item)
+    lead = (
+        f"[{item}] is a filesystem path, and inputs name items in the data "
+        f"library [{lib.location}]"
+        if outside else
+        f"[{item}] is not an item in [{lib.location}]"
+    )
+    raise ValueError(
+        f"{lead}. Add the file with `metasmith data add-item` first, then bind "
+        f"it by the name it was added under. items are: {shown}"
+    )
+
+
 def _bind_inputs(
-    lib: TransformInstanceLibrary,
+    data_lib: DataInstanceLibrary,
     inst: TransformInstance,
-    inputs: list[tuple[str, Path]],
+    inputs: list[tuple[str, str | Path]],
 ) -> dict[Dependency, list[DataInstance]]:
     bindable = inst.BindableNames()
 
     grouped: dict[str, list[Path]] = {}
     order: list[str] = []
-    for name, path in inputs:
+    for name, item in inputs:
         if name not in grouped:
             grouped[name] = []
             order.append(name)
-        grouped[name].append(path)
+        grouped[name].append(item)
 
     for name in order:
         if name in bindable:
@@ -87,14 +137,11 @@ def _bind_inputs(
     dep_map: dict[Dependency, list[DataInstance]] = {}
     for name in order:
         dep = inst._dep_names[name]
+        # The item's own type and recorded parents come with it. Nothing here
+        # checks either against the slot -- the library's declaration is the
+        # statement of what the file is, and that is by design.
         dep_map[dep] = [
-            DataInstance(
-                path=Path(p).resolve(),
-                dtype=Endpoint(properties=set(dep.properties)),
-                dtype_name=name,
-                parent_lib=lib,
-            )
-            for p in grouped[name]
+            data_lib.Get(_resolve_item(data_lib, item)) for item in grouped[name]
         ]
 
     unbound = [n for n in bindable if n not in grouped]
@@ -140,7 +187,8 @@ def _build_dep2output(inst: TransformInstance) -> list[dict[Dependency, Endpoint
 
 def RunTransform(
     transform: Path,
-    inputs: list[tuple[str, Path]],
+    data_library: Path | str | DataInstanceLibrary,
+    inputs: list[tuple[str, str | Path]],
     work_dir: Path | None = None,
     agent_home: Path | None = None,
 ) -> ExecutionResult:
@@ -149,8 +197,9 @@ def RunTransform(
 
     agent = _load_agent(agent_home)
     lib, inst = _resolve_transform(transform)
+    data_lib = _load_data_library(data_library)
 
-    dep_map = _bind_inputs(lib, inst, inputs)
+    dep_map = _bind_inputs(data_lib, inst, inputs)
     for group in inst.model.produces:
         for dep in group:
             dep_map.setdefault(dep, [])
@@ -163,6 +212,15 @@ def RunTransform(
 
     requires = list(inst.model.requires)
     lineage = _build_lineage(dep_map, requires)
+    # The channel a slot arrived on is the bound item's own type, not the slot's
+    # -- the same convention nextflow_codegen and virtual_runtime write. Keying
+    # on the slot instead makes every slot look distinct, which is what lets
+    # bootstrap refuse a genuinely ambiguous provenance query.
+    slot_channels = {
+        dep.key: insts[0].dtype.key
+        for dep in requires
+        if (insts := dep_map.get(dep, []))
+    }
     input_by_dep = dict(dep_map)
     dep2output = _build_dep2output(inst)
 
@@ -190,6 +248,7 @@ def RunTransform(
                 # standard `output.local.exists()` idiom checks a /ws path that
                 # only exists inside the nextflow bootstrap container.
                 host_local=True,
+                slot_channels=slot_channels,
             )
     finally:
         os.chdir(original_cwd)
