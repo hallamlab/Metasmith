@@ -32,6 +32,19 @@ check. It was checked against `metagenomics/taxonomy/gtdbtk.py`, which runs the 
 with the same bind and the same `GTDBTK_DATA_PATH`, and whose `classify_wf` already runs
 the `identify` and `align` steps this one calls separately.
 
+## The three that already shipped
+
+`clean_reads/fastp.py`, `qc_reads/fastqc.py` and `qc_reads/nanoplot.py` arrived written,
+from `_disabled/`, and had never been run here either. Each depends on a binary that is not
+the tool it names — `gzip` in fastp's image, `unzip` in fastqc's, `tar` and `gzip` in
+nanoplot's — so each was run to find out whether the assumption held. It does, in all three.
+
+| transform | s | product | checked |
+|---|---:|---|---|
+| `clean_reads/fastp` | 78 | 205 KB fq.gz + json + html | 4,000 reads out of 4,000 in, gzipped by the image's own `gzip` |
+| `qc_reads/fastqc` | 127 | 10 KB json + html + zip | `{"reads": 80000, "bases": 12000000, "N50": 150}` — the fixture's own numbers |
+| `qc_reads/nanoplot` | 148 | json + html + gz | 500 reads, N50 10,152 bp against a fixture drawn 2–15 kb |
+
 ## The table bodies
 
 The algorithm is in `resources/lib/` and the protocol is one `python <script> <args>`

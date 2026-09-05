@@ -79,6 +79,12 @@ def a1_model_from_isolate_reads():
         lib.AddItem(DEFERRED, "ref::mnxr_lookup")
         lib.AddItem(DEFERRED, "ref::label_transfer_landmarks")
         lib.AddItem(DEFERRED, "ref::metabolism_vocab")
+        # Round 5 wrote the modelling bodies and found the lane had an id->MNXR
+        # bridge and no stoichiometry: reac_prop carries the equations, chem_prop
+        # the formulas, chem_xref the BiGG bridge MetBridge needs.
+        lib.AddItem(DEFERRED, "ref::mnx_reac_prop")
+        lib.AddItem(DEFERRED, "ref::mnx_chem_prop")
+        lib.AddItem(DEFERRED, "ref::mnx_chem_xref")
         lib.AddItem(DEFERRED, "modelling::media")
         lib.AddItem(DEFERRED, "ecspr::conditions")
     return Spec(
@@ -255,6 +261,10 @@ def _rnaseq_inputs(lib):
     lib.AddItem(DEFERRED, "sequences::zipped_reverse_short_reads", parents={pair})
     lib.AddItem(DEFERRED, "sequences::assembly", parents={exp})
     lib.AddItem(DEFERRED, "annotation::bakta_db")
+    # KBase ships four clustering apps here and round 5 made them one transform with
+    # a method knob, which is an input like any other -- the language has no optional
+    # requirement, so the knob is a one-line file a template defers.
+    lib.AddItem(DEFERRED, "transcriptomics::clustering_params")
 
 
 def a6_expression_response():

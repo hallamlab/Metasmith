@@ -55,8 +55,18 @@ engine picks by the global runtime. To add one:
    automatically and leaves its `HAND_WRITTEN` set alone
 4. rebuild; `dev/libraries.sh --create-envs` materialises the conda envs to test against
 
+**`provides` is a MATCHED PROPERTY SET, not documentation.** An env satisfies a requirement
+when the requirement's properties are a subset of the instance's, so listing one more tool
+makes that env a property-superset of every env offering a subset -- and each of their
+requirements becomes satisfiable by it too. Adding `py/polars` to `python_for_data_science`,
+which is TRUE of the 1.4.0 image, made it subsume `polars.env` and moved five of the eleven
+shipped template plans. List what an environment OFFERS, not what its image happens to
+contain, and re-solve the templates after touching a `provides` line.
+
 **Pin by digest and say what the digest is.** A tag is not stable and a digest is not
-readable, so a bare digest with no comment is a pin nobody can audit. This is not
+readable, so a bare digest with no comment is a pin nobody can audit. A tag can also stop
+resolving outright: `stringtie` was pinned to `2.2.3--h43eeafb_1`, which quay no longer
+serves at all, and the pull fails rather than fetching something else. This is not
 hypothetical: `python_for_data_science` was once pinned to a digest that resolved to
 an *older* image than its version number suggested and carried no polars at all —
 80 tasks in one run died on `ModuleNotFoundError` after their expensive work had
@@ -188,12 +198,12 @@ hand-edited, never committed. The hand-edited surface is `data_types/`, the
 `transforms/_template.py` is the minimal skeleton. Disabled transforms live in
 `transforms/*/_disabled/` or are renamed `<name>.py.disabled` so the build skips them.
 
-**Every body under `transforms/kbase/` is a stub.** That root is curation round 3's KBase
-parity set, one directory per KBase task verb, and each protocol touches its declared outputs
-and runs no tool. A plan routing through one of them is a plan that produces empty files, so
-the signature is the only part to trust there until a body lands.
-`research/kbase/curation/r3/proposals.yml` says what each one is meant to do, and
-`transforms/kbase/README.md` says the rest.
+**`transforms/kbase/` is the one group whose every body has been executed.** Curation round 5
+ran twenty of its twenty-one against real fixtures on one host and recorded what was checked
+in each product; `build_tree/gtdbtk_tree.py` is the exception, and its body says so. That is
+worth knowing when you change something they share, because it is also the only group where
+"did it still run?" is a question the repository can answer.
+`research/kbase/curation/r5/runs.md` is that record; `transforms/kbase/README.md` says the rest.
 
 **`transforms/aspire/` is generated and is the one exception to the hand-edited surface
 above.** `transforms/aspire/_generate.py` holds one row per transform and writes both the
