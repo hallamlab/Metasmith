@@ -29,9 +29,21 @@ def load(path) -> pd.DataFrame:
 
 def apply(model, table: pd.DataFrame, medium: str | None = None) -> dict[str, tuple[float, float]]:
     rows = table
-    if medium and "medium" in table.columns:
-        rows = table[table.medium.astype(str) == str(medium)]
-        assert len(rows), f"no rows in the media table for medium [{medium}]"
+    if "medium" in table.columns:
+        names = sorted({str(v) for v in table.medium})
+        if medium:
+            rows = table[table.medium.astype(str) == str(medium)]
+            assert len(rows), (
+                f"no rows in the media table for medium [{medium}]; it carries {names}"
+            )
+        else:
+            # Applying every row of a multi-medium table sets each exchange from
+            # whichever row happens to come last, which is not any of the media the
+            # file describes. The caller has to say which one.
+            assert len(names) == 1, (
+                f"this media table carries {len(names)} media {names} and no name was "
+                "given to choose between them"
+            )
 
     for reaction in model.exchanges:
         reaction.lower_bound = 0.0

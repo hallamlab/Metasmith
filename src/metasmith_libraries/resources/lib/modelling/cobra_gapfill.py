@@ -8,6 +8,10 @@ biological result. Every reaction added is labelled `gapfill` in its notes and
 gets `GAPFILL` in its id prefix, so a later reader can tell a gapfill from an
 annotation instead of having to diff two models.
 
+The media table must describe ONE medium: "which reactions make growth possible"
+has no answer until "on what" is settled, and `modelling::media` carries an optional
+`medium` column only so that a conditions table can select between rows.
+
 The universe is NOT all of MetaNetX. It is restricted to reactions whose
 metabolites the draft already carries, because a gapfill that is free to invent
 metabolites will always find a solution and the solution means nothing: the MILP
@@ -40,7 +44,11 @@ def main(argv: list[str]) -> int:
 
     table = media_mod.load(media_path)
     media_mod.apply(model, table)
+    # slim_optimize returns nan for an infeasible problem rather than raising, and
+    # nan compares False against every threshold -- so an infeasible model would
+    # sail past a `< 1e-6` test and be reported as needing no gapfill at all.
     before = model.slim_optimize()
+    grows = before is not None and before == before and before >= 1e-6
     print(f"objective [{biomass.id}] before gapfill: {before}")
 
     chem_prop = mnx.load_chem_prop(chem_prop_path)
@@ -57,6 +65,14 @@ def main(argv: list[str]) -> int:
             continue
         if str(prop.get("is_transport")).upper() in ("T", "TRUE", "1"):
             continue
+        # Only reactions MetaNetX flags balanced ("B"); 39,628 of its 83,796 carry
+        # no claim either way. The MILP minimises reaction COUNT, so an aggregate
+        # or unbalanced entry is the cheapest way to make anything feasible and is
+        # what it will reach for first: the first run of this body restored growth
+        # by adding `12 NADH + 3 succinate = 4 pyruvate + 12 NAD+`, one unflagged
+        # SABIO-RK lump that no organism runs as a single step.
+        if str(prop.get("is_balanced")).strip().upper() != "B":
+            continue
         stoich = mnx.parse_mnx_equation(prop.get("equation"))
         if stoich is None or not set(stoich).issubset(have):
             continue
@@ -71,7 +87,7 @@ def main(argv: list[str]) -> int:
     print(f"universe: {added} candidate reactions over metabolites the draft already has")
 
     filled = []
-    if before is None or before < 1e-6:
+    if not grows:
         try:
             solutions = gapfill(model, universe, demand_reactions=False, iterations=1)
             filled = list(solutions[0]) if solutions else []

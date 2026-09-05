@@ -28,6 +28,11 @@ def protocol(context: ExecutionContext):
     # biological result. Every reaction added is labelled, so a later reader can
     # tell a gapfill from an annotation.
     _cmd = f"""\
+            # cobra builds a Configuration at IMPORT and that constructor makes its
+            # cache directory. The container runs as the calling uid with no passwd
+            # entry, so $HOME is / and the mkdir fails before a single line of the
+            # entry point has run. XDG_CACHE_HOME is what platformdirs reads first.
+            export XDG_CACHE_HOME=$TMPDIR
             python {ihelp.container}/cobra_gapfill.py \
                 {idraft.container} {imedia.container} \
                 {ireac.container} {ichem.container} {ixref.container} \
