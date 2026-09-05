@@ -22,6 +22,7 @@ import pytest
 
 from metasmith.models.solver_backend import Backend
 from metasmith.models.solver_engine import EngineFor
+from metasmith.testing.solver_verification import check_plan
 from metasmith.testing.witness_sweep import UNHOSTABLE, sweep_problem, templates_corpus
 
 MLIB = Path(__file__).resolve().parents[3] / "src" / "metasmith_libraries"
@@ -89,3 +90,25 @@ def test_each_clause_rejects_a_broken_copy_of_a_real_plan(swept):
         ) == 0
     }
     assert not unhostable, f"no shipped template can host these decoys: {sorted(unhostable)}"
+
+
+@needs_engine
+@needs_library
+def test_no_shipped_template_produces_two_endpoints_with_one_signature():
+    """`check_plan(strict=True)`, which is the bar a refiner change must clear.
+
+    `rectify` keys its endpoint map by signature, so two steps emitting
+    signature-equal endpoints are merged onto one producer and every consumer is
+    rewired to whichever came last in `get_order`. That is a plan the search
+    never chose, and the wire the witness reads is already collapsed, so
+    `uniqueProducer` cannot see it. `strict` is the only place it is visible.
+
+    The eleven templates pass today. This exists so that a change which starts
+    minting endpoints under a swap cannot land silently.
+    """
+    refused = []
+    for name, problem, _fingerprint in templates_corpus(MLIB):
+        verdict = check_plan(problem, problem.solve(), strict=True)
+        if not verdict.ok:
+            refused.append(f"{name}: {verdict.violations[0]}")
+    assert not refused, "\n".join(refused)

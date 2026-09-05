@@ -34,7 +34,13 @@ solver internals:
   search, on purpose: verification is far simpler than search, and that
   asymmetry is the only reason it can judge output from an implementation we do
   not yet trust. A checker that imported solver internals would agree with the
-  solver's bugs.
+  solver's bugs. **Pass `strict=True` when the plan came from a
+  changed refiner.** It promotes the notes to violations and adds a
+  signature-uniqueness check over produced endpoints. `rectify` keys its
+  endpoint map by signature, so two steps emitting signature-equal endpoints are
+  merged onto one producer and every consumer is rewired to whichever came last
+  in `get_order`. The wire the witness reads is already collapsed, so
+  `uniqueProducer` cannot see it, and `strict` is the only place it is visible.
 - **`generate_problem`** — random problems with dials for cycles, lineage
   density, duplicate transforms, product groups and multiple given groups.
   These dials exist because nobody has a list of the solver's edge cases; the
