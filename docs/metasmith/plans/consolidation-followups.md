@@ -9,6 +9,20 @@ module already states belongs here either.
 
 ## Open bugs
 
+**A transform whose product extends the type it requires is a self-loop the solver walks.**
+`kbase/filter_assembly/seqkit_filter_contigs` requires `sequences::assembly` and produces
+`sequences::filtered_assembly`, which `extends assembly`; `kbase/polish_assembly/polypolish`
+does the same with `polished_assembly`. So each satisfies its own requirement, and a plan
+targeting a filtered assembly can chain them arbitrarily deep. Measured: the parity analysis
+`a4_mags_from_metagenome` solves through an ELEVEN-long filter/polish/filter ladder before
+`assembly_stats`, 19 steps where 13 do the job, and every product in the ladder is consumed by
+the next step so it is a real chain and not dead branches. It was five long before curation
+round 6; widening `alignment::bam` perturbed the search and lengthened it, which is how it was
+found. The language has no negation, so "an assembly that has not already been filtered" cannot
+be said as a requirement -- the first move is to decide whether these transforms should require
+a narrower type than the one they extend, or whether the refiner should reject a candidate that
+re-derives an ancestor of its own input.
+
 **A directory-typed given whose content changes below its top level keeps its leaf id, so the
 cache serves stale results as if they were this run's.** A leaf id is absolute path plus
 `mtime_ns` — no content, no size, no inode — and it stats the top-level directory only, so an
@@ -163,6 +177,13 @@ is the legitimate optional-branch case, so asserting there fails runs that are b
 correctly. The per-item guard catches the reported case earlier anyway.
 
 ## Validation gaps
+
+**No transform body has been run under the MAMBA runtime since the execution arms were
+collapsed.** Every check in curation round 6 was under DOCKER. The collapse means one command
+now serves both routes, and `_ExecInEnv` was already the sole executor for both arms, so the
+change is small -- but "small" is what the arms claimed too, and an arm that has never been run
+answers wrongly. `dev/libraries.sh --create-envs` builds the conda environments to run one
+against.
 
 **The caching and reentrancy path has never been run live through the sockeye relay.** The
 cross-host proof was assembled from separate hosts showing cache-key identity, not from one
