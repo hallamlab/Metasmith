@@ -25,12 +25,13 @@ and contig-, bin- and SSU-level taxonomy.
 # The duplication is not confined to the assemblers: every tool between the
 # assembly and a target runs once per leg, `prodigal` included.
 #
-# Ambiguity that wide is also what the search pays for, and on the Rust engine it
-# no longer merely costs. Unpinned, this target set was killed at an 8 GB cap and
-# had not returned after most of an hour at 24 GB; pinned, ~2 s. The earlier
-# ~190 s / 6 GB figure was the python solver and no longer holds. Measurements,
-# and a three-target case that reproduces the duplication in seconds, are in
-# data/metasmith/plans/07-the-witness-over-real-workflows.md.
+# What that ambiguity costs is NOT the search: unpinned, the search still finds
+# the plan in 0.8 s and 30 MB. It is the refiner, which scores 110,866 candidate
+# re-bindings of the unpinned plan per iteration against 755 for this one, keeps
+# every one of them, and returns the plan it was handed either way. Unpinned this
+# target set is 4 min 6 s and 16.7 GB; pinned, 1.6 s and 0.11 GB. The earlier
+# ~190 s / 6 GB figure was the python solver and no longer holds. Measurements in
+# data/metasmith/plans/08-where-the-unpinned-solve-goes.md.
 _MB, _SB, _CB = 13, 14, 15
 TARGETS = [
     "sequences::megahit_assembly",
