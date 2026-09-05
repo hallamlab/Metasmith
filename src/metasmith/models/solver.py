@@ -381,9 +381,14 @@ def solve_by_mcts(
     target: Transform,
     seed: int=42,
     max_iter: int=256,
-    max_refine: int=256,
+    max_refine: int|None=None,
 ) -> Solution:
-    from .solver_backend import _get_solver_class
+    # Resolved here and nowhere else. Every layer above forwards `None`, so the
+    # shipped budget cannot be pinned to a stale value by a signature default --
+    # which is exactly how `REFINER_BUDGET` came to be unreachable: it was wired
+    # into `Solver.Solve` while every caller kept passing its own 256.
+    from .solver_backend import REFINER_BUDGET, _get_solver_class
+    if max_refine is None: max_refine = REFINER_BUDGET
     _canonicalise_givens(given)
     return _get_solver_class()().Solve(
         given, transforms, target,

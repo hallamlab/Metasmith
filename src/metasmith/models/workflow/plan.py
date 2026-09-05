@@ -229,7 +229,7 @@ class WorkflowPlan:
         transforms: list[TransformInstanceLibrary|TransformInstanceLibraryView],
         target_names: list[str],
         target_model: Transform,
-        max_iter: int=256, max_refine: int=256, seed: int=42,
+        max_iter: int=256, max_refine: int|None=None, seed: int=42,
     ):
         given_map, given_endpoints, transform2inst, inst2trlib = CollectSolverInputs(
             given, transforms,

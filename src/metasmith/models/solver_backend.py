@@ -19,6 +19,23 @@ __all__ = [
     "_get_solver_class",
 ]
 
+#: Refiner iterations, the shipped default.
+#:
+#: 256 was never what made the refiner work. Its winner is found by iteration 3
+#: on every case that has one, and its frontier exhausts by 16 even when 256 is
+#: asked for -- 256 is only what let it run away on a plan whose state space does
+#: not exhaust. Re-derived after the lineage repair rather than carried forward:
+#: over 44 case-seed pairs, budgets of 4, 8 and 16 give plan fingerprints
+#: byte-identical to 256, and two pairs differ from a budget of 0, so 0 is not
+#: safe.
+#:
+#: **It has to be the only default.** Wiring it into `Solver.Solve` alone left it
+#: unreachable: every caller from `solve_by_mcts` upward kept its own literal 256
+#: and forwarded it, so the budget that shipped stayed 256 and nothing said so.
+#: Every layer above now forwards `None` and `solve_by_mcts` resolves it here.
+REFINER_BUDGET = 8
+
+
 class Solver:
     name: str = "?"
 
@@ -33,20 +50,9 @@ class Solver:
         target: Transform,
         seed: int=42,
         max_iter: int=256,
-        max_refine: int=256,
+        max_refine: int=REFINER_BUDGET,
     ) -> Solution:
         raise NotImplementedError
-
-#: Refiner iterations, the shipped default.
-#:
-#: 256 was never what made the refiner work. Its winner is found by iteration 3
-#: on every case that has one, and its frontier exhausts by 16 even when 256 is
-#: asked for -- 256 is only what let it run away on a plan whose state space does
-#: not exhaust. Re-derived after the lineage repair rather than carried forward:
-#: over 44 case-seed pairs, budgets of 4, 8 and 16 give plan fingerprints
-#: byte-identical to 256, and two pairs differ from a budget of 0, so 0 is not
-#: safe.
-REFINER_BUDGET = 8
 
 
 class PythonSolver(Solver):
