@@ -1,6 +1,6 @@
 """Why does the refiner reject every candidate, and how many are really admissible?
 
-    python research/metasmith/witness_sweep/profiling/relation_probe.py templates
+    python research/metasmith/witness_sweep/profiling/relation_probe.py templates 256 7,42,99
     python research/metasmith/witness_sweep/profiling/relation_probe.py arm unpinned 1
 
 `validate_node` decides ancestry over the step graph. A branched given application
@@ -13,9 +13,14 @@ and `solver_witness` decides.
 The instrumentation is applied to a *copy* of `src/`, never to the tree. The copy lands
 under `$CLAUDE_JOB_DIR/tmp` when that is set, else a temporary directory.
 
-**CAUTION** The declared-parents numbers are an upper bound on the feasible set. The
-relation is only sound once the generator mints truthful parents under a swap, so a
-candidate counted here can still fail for a reason this probe does not model.
+**CAUTION** Neither relation is usable alone, and they fail in opposite directions.
+The step graph is blind to given siblings, so it rejects every candidate on six of the
+eleven templates. Declared parents read the stale values `mock_produced` leaves on an
+intermediate candidate, so they refuse sound improvements: on
+`isolate_assembly_from_long_reads` at seeds 7 and 99, three of the four candidates the
+step graph accepts are refused by declared parents, and staleness is the cause of all
+three. The witness accepts the plans those candidates lead to. Mint truthful parents
+under the swap first, then change the relation. Either alone regresses.
 
 **CAUTION** The lineage loop is written twice -- `_lineage_ok` runs it and `_is_valid`
 runs it again after its scheduling check. This patches both. A fix that moves only one
@@ -132,6 +137,25 @@ PATCHES = [
                 st_ok = _structural_ok(target_appl)
                 if d_ok and st_ok: _probe("valid_declared")
                 _declared_flag[0] = bool(d_ok and st_ok)
+                if state.valid and not d_ok:
+                    # accepted by the step graph, refused by declared parents.
+                    _probe("stepgraph_ok_declared_no")
+                    fail = None
+                    for step in _iter_steps():
+                        for p, e in step.used.items():
+                            for pproto in p.parents:
+                                a = step.used[pproto] # type: ignore
+                                if fail is None and not _declared_has_ancestor(e, a):
+                                    fail = (e, a)
+                    e, _a = fail
+                    src = None
+                    for st in state.steps:
+                        for g in st.produced:
+                            if e in g.values(): src = st
+                    if src is None: _probe("stale_na_given")
+                    elif not set(src.used.values()).issubset(set(e.parents)):
+                        _probe("declared_no_because_stale")
+                    else: _probe("declared_no_other")
 """),
     # the best score an admissible candidate reaches, against the incumbent
     ("""            score = e_score*1000+lin_score
@@ -149,7 +173,8 @@ PATCHES = [
 ]
 
 COLUMNS = ("candidates", "valid_current", "valid_declared", "reject_anchor_is_given",
-           "reject_anchor_other", "reject_anchor_missing", "keyerror")
+           "reject_anchor_other", "reject_anchor_missing", "keyerror",
+           "stepgraph_ok_declared_no", "declared_no_because_stale", "declared_no_other")
 
 
 def build_tree() -> Path:
@@ -188,12 +213,14 @@ print(f"{'case':40s} " + " ".join(f"{k[:9]:>9s}" for k in COLUMNS) + f" {'gain':
 if mode == "templates":
     from metasmith.agents import Template
     refine = int(sys.argv[4])
+    seeds = [int(x) for x in sys.argv[5].split(",")] if len(sys.argv) > 5 else [42]
     tpl = {t.name: t for t in Template.Discover(ROOT / "src" / "metasmith_libraries")}
     for name in sorted(tpl):
-        with UsePythonSolver():
-            S.PROBE.clear()
-            tpl[name].spec.Solve(max_refine=refine)
-        row(name, S.PROBE)
+        for seed in seeds:
+            with UsePythonSolver():
+                S.PROBE.clear()
+                tpl[name].spec.Solve(max_refine=refine, seed=seed)
+            row(f"{name}@{seed}", S.PROBE)
 else:
     sys.path.insert(0, str(ROOT / "src" / "metasmith_libraries"))
     sys.path.insert(0, str(ROOT / "research/metasmith/witness_sweep"))
