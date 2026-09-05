@@ -3,6 +3,11 @@ from metasmith.python_api import *
 lib     = TransformInstanceLibrary.ResolveParentLibrary(__file__)
 model   = Transform()
 image   = model.AddRequirement(lib.GetType("env::polypolish.env"))
+# The alignments polypolish consumes are bwa's, and the polypolish image carries
+# polypolish alone. bwa comes in as a second environment rather than as its own
+# transform because `bwa mem -a` emits every alignment of every read -- gigabytes
+# of SAM that exist only to be filtered here, and that no other transform wants.
+bwa_env = model.AddRequirement(lib.GetType("env::bwa.env"))
 # The reads and the assembly are SIBLINGS, both descended from the isolate's read
 # metadata -- which is the idiom `assembly/assembly_stats.py` and `assembly/megahit.py`
 # already use to say "these came from the same sample". Hanging the reads off the

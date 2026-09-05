@@ -3,6 +3,10 @@ from metasmith.python_api import *
 lib     = TransformInstanceLibrary.ResolveParentLibrary(__file__)
 model   = Transform()
 image   = model.AddRequirement(lib.GetType("env::bowtie2.env"))
+# bowtie2 writes SAM and nothing in its image can sort one. Two containers cannot
+# share a pipe, so the sort is a second dispatch rather than the second half of
+# this one, and the SAM lands in the task directory in between.
+sam_env = model.AddRequirement(lib.GetType("env::samtools.env"))
 exp     = model.AddRequirement(lib.GetType("transcriptomics::experiment"))
 asm     = model.AddRequirement(lib.GetType("sequences::assembly"), parents={exp})
 reads   = model.AddRequirement(lib.GetType("sequences::clean_short_reads"), parents={exp})
