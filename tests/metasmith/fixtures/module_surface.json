@@ -3,7 +3,6 @@
   "modules": {
     "metasmith.models.libraries": [
       "AgentPaths",
-      "CONTAINER_ARM",
       "Callable",
       "ContainerDef",
       "ContextData",
@@ -18,7 +17,6 @@
       "Duration",
       "Endpoint",
       "Enum",
-      "EnvDispatch",
       "EnvScan",
       "Environment",
       "ExecutionContext",
@@ -50,7 +48,6 @@
       "TransformInstanceLibrary",
       "TransformInstanceLibraryView",
       "VERSION",
-      "VIRTUAL_ENV_ARM",
       "_RESERVED_EXPORTS",
       "_validate_exports",
       "annotations",
@@ -214,5 +211,16 @@
       "tempfile",
       "yaml"
     ]
+  },
+  "_removed_on_purpose": {
+    "curation round 6 (the ExecWithEnv arm collapse)": {
+      "module": "metasmith.models.libraries",
+      "names": [
+        "CONTAINER_ARM",
+        "EnvDispatch",
+        "VIRTUAL_ENV_ARM"
+      ],
+      "why": "The two-arm execution API is gone. A body launches a tool with one call, ExecWithEnv(env=, cmd=), and the agent's runtime decides how; EnvDispatch and the two arm-name constants had no callers left. Both arm names now live in metasmith.env.dispatch_scan._FORBIDDEN_CALLS, so an unmigrated body still fails by name."
+    }
   }
 }

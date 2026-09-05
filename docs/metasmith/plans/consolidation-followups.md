@@ -9,6 +9,23 @@ module already states belongs here either.
 
 ## Open bugs
 
+**The e2e docker cleanup chmods every pytest tmpdir on the host, and now times out doing it.**
+`tests/metasmith/e2e/docker/test_cache_real_nextflow.py::_bind_root` walks UP from the work
+directory until its parent is `/tmp`, which lands on `/tmp/pytest-of-tony` — the shared root of
+every pytest run this host has ever done — and then `docker run … chmod -R a+rw` that whole tree
+against a fixed 120s timeout. Measured: 57,030 files and 468 MB, none of it the test's own, and
+a bare `docker run … chmod` on an EMPTY directory takes 16.7s on this box. Two tests fail on the
+timeout. It is a feedback loop rather than bad luck: nextflow work directories are created
+root-owned inside containers, so pytest's own `rm_rf` cannot remove them
+(`PermissionError: Operation not permitted`) and leaves `garbage-*` trees behind — which is what
+the chmod exists to fix, and what makes it slower every run. The first move is to bind and chmod
+the test's own directory rather than the walked-up root.
+
+**`test_stage_real_libraries_clones_into_sandbox` asserts a `.git` its helper stopped writing.**
+`stage_real_libraries` moved to `shutil.copytree` plus a `STAGED_FROM` file naming the source and
+HEAD when the library stopped being a separate repository, and `src/metasmith_libraries` is a
+plain directory in the monorepo now. The assertion should read `STAGED_FROM`.
+
 **A transform whose product extends the type it requires is a self-loop the solver walks.**
 `kbase/filter_assembly/seqkit_filter_contigs` requires `sequences::assembly` and produces
 `sequences::filtered_assembly`, which `extends assembly`; `kbase/polish_assembly/polypolish`
