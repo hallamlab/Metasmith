@@ -15,7 +15,7 @@ extra = sys.argv[3:]
 root = H.worktree()
 worker = H.worker_name(root)
 
-print("re-scoring from clean before submitting...\n")
+print("re-scoring from clean before submitting...\n", flush=True)
 p = subprocess.run([str(Path(__file__).parent / "score")] + extra, cwd=root)
 if p.returncode != 0:
     print("\nSUBMIT REFUSED: score did not pass. Fix it and submit again.", file=sys.stderr)
