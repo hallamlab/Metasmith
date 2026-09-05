@@ -54,7 +54,13 @@ def t(kind, desc, **props):
 
 TYPE_SECTIONS: list[tuple[str, dict]] = [
     ("the run keystone: what every stage descends from", {
-        "run": t(VALUE, "one ASPIRE study; the grouping parent every stage descends from", ext="txt"),
+        "run": t(VALUE, "one ASPIRE study; the grouping parent every stage descends from", ext="txt",
+                 # r4: an ASPIRE run is a survey. Carrying `amplicon::survey`'s only property
+                 # makes this a property superset of it, so the six lifted ecology transforms
+                 # can require the generic grouping node and still be satisfied by a run.
+                 # A cross-file `extends:` would say this more plainly and is forbidden --
+                 # test_type_hierarchy.py::test_no_cross_file_extends.
+                 logistics="to group per-sample abundance profiles into one count table"),
         "sample_id": t(VALUE, "label for one sequenced sample within an ASPIRE run", ext="txt"),
     }),
     ("study-level inputs the .nf read out of its config", {
@@ -69,13 +75,10 @@ TYPE_SECTIONS: list[tuple[str, dict]] = [
         "qc_reads_rev": t(FILE, "fastp-trimmed reverse reads for one sample", ext="fastq.gz"),
         "fastp_report_json": t(FILE, "fastp QC report for one sample", ext="json"),
         "fastp_report_html": t(FILE, "fastp QC report rendering for one sample", ext="html"),
-        "merged_reads": t(FILE, "vsearch-merged read pair for one sample", ext="fastq.gz"),
         "filtered_fasta": t(FILE, "quality-filtered merged reads for one sample", ext="fasta.gz"),
     }),
     ("the run-level ASV spine", {
-        "concat_fasta": t(FILE, "all samples' filtered reads concatenated, for dereplication", ext="fasta.gz"),
         "concat_counts_fasta": t(FILE, "all samples' filtered reads concatenated with sample-relabelled headers, for counting", ext="fasta.gz"),
-        "derep_fasta": t(FILE, "dereplicated full-length sequences", ext="fasta.gz"),
         "centroids_fasta": t(FILE, "UNOISE denoised centroids", ext="fasta.gz"),
         "nochimera_fasta": t(FILE, "chimera-filtered centroids", ext="fasta.gz"),
         "asv_filtered_counts": t(FILE, "ASV count matrix after prevalence and depth filtering", ext="tsv"),
@@ -90,8 +93,6 @@ TYPE_SECTIONS: list[tuple[str, dict]] = [
         "taxonomy_stats": t(FILE, "taxonomy assignment summary statistics", ext="tsv"),
     }),
     ("mitochondrial screen and decontamination", {
-        "mito_blast_db": t(DIR, "BLAST database built from the mitochondrial reference"),
-        "contaminant_blast_db": t(DIR, "BLAST database built from the contaminant reference"),
         "mitomaster_table": t(FILE, "MitoMaster classification of each ASV", ext="tsv"),
         "mito_blast6": t(FILE, "ASV hits against the mitochondrial database", ext="tsv"),
         "contaminant_blast6": t(FILE, "ASV hits against the contaminant database", ext="tsv"),
@@ -131,6 +132,11 @@ TYPE_SECTIONS: list[tuple[str, dict]] = [
         "analysis_metadata": t(FILE, "the metadata table every downstream analysis reads, augmented or not", ext="tsv"),
         "stage_asv_meta": t(FILE, "the ASV metadata table after label augmentation and before batch correction", ext="tsv"),
         "analysis_asv_meta": t(FILE, "the ASV metadata table every downstream analysis reads, corrected or not", ext="tsv"),
+        # r4: deliberately NOT a property superset of `amplicon::asv_table`, and so
+        # deliberately not what the lifted ecology transforms read. Making it one would
+        # let `filter_table` -- which requires `amplicon::asv_table` -- consume its own
+        # descendant, which is the trap `asv_batch_correction` already documents below.
+        # See research/kbase/curation/r4/aspire_topology.md.
         "analysis_counts": t(FILE, "the ASV count matrix every downstream analysis reads, corrected or not", ext="tsv"),
     }),
     ("batch correction diagnostics", {
@@ -194,7 +200,6 @@ TYPE_SECTIONS: list[tuple[str, dict]] = [
         "sample_module_heatmaps": t(DIR, "sample by module score heatmap renderings"),
     }),
     ("master summary", {
-        "optional_outputs": t(DIR, "the master summary's optional-contributor slot; the .nf always passes it empty"),
         "master_long": t(FILE, "long-form master ASV table", ext="tsv"),
         "master_count_wide": t(FILE, "wide-form master count table", ext="tsv"),
         "master_source_manifest": t(FILE, "which stage contributed each master table column", ext="tsv"),
@@ -232,6 +237,18 @@ class T:
 
 RUN = ("run", "aspire::run", ())
 
+# r4, round 3's first refactor: the six community-ecology rows were gated on `run` and
+# read `aspire::analysis_counts`, so nothing outside this pipeline could reach any of
+# them -- five KBase verbs and 59 narrative copies locked in one namespace. They now hang
+# off the GENERIC grouping node instead. The gate is not deleted, it is generalised: a
+# fan-in needs a grouping parent its inputs descend from, and `aspire::run` carries
+# `amplicon::survey`'s property, so an ASPIRE run still satisfies it unchanged.
+SURVEY = ("survey", "amplicon::survey", ())
+
+LIFT_NOTE_2 = (
+    "r4 ecology lift (second pass): lifted off `aspire::run` onto the generic `amplicon::survey` grouping node so `spieceasi` and `graph_network` -- lifted in the first pass -- are actually REACHABLE from a bare `amplicon::asv_table`. Lifting a transform whose own inputs are still gated moves the gate, it does not remove it. See research/kbase/curation/r4/analyses.md."
+)
+
 
 def _r(var, dtype, *parents):
     return (var, dtype, tuple(parents))
@@ -248,22 +265,27 @@ TABLE: list[T] = [
        ("rjson", "aspire::fastp_report_json"), ("rhtml", "aspire::fastp_report_html")],
       "sid", cpus=4, hours=2),
 
-    T("merge_reads", "MERGE_READS", 3179,
+    T("merge_and_filter_reads", "FILTER_READS", 3221,
       [RUN, _r("sid", "aspire::sample_id", "run"),
        _r("fwd", "aspire::qc_reads_fwd", "sid"), _r("rev", "aspire::qc_reads_rev", "sid")],
-      [("merged", "aspire::merged_reads")], "sid", cpus=4, hours=2),
-
-    T("filter_reads", "FILTER_READS", 3221,
-      [RUN, _r("sid", "aspire::sample_id", "run"),
-       _r("merged", "aspire::merged_reads", "sid")],
-      [("filtered", "aspire::filtered_fasta")], "sid", cpus=2),
+      [("filtered", "aspire::filtered_fasta")], "sid", folds=("MERGE_READS@3179",),
+      note="r4 fold. Two vsearch calls on one sample, back to back: "
+           "--fastq_mergepairs then --fastq_filter. The merged pair had exactly one "
+           "consumer and is not a target anyone names -- what a reader wants from the "
+           "merge is its RATE, and GENERAL_STATS reports that, not this file.",
+      cpus=4, hours=2),
 
     T("concat_fastas", "CONCAT_FASTAS", 3274,
       [RUN, _r("sid", "aspire::sample_id", "run"),
        _r("filtered", "aspire::filtered_fasta", "sid")],
-      [("concat", "aspire::concat_fasta"), ("counts_fa", "aspire::concat_counts_fasta")],
+      [("counts_fa", "aspire::concat_counts_fasta")],
       "run", folds=("RELABEL_FILTERED@3248",),
-      note="the study fan-in: group_by=run collapses every sample's filtered "
+      note="r4 collapse: this emitted the same reads twice, differing only in whether "
+           "the headers carry the sample label, and vsearch --derep_fulllength does not "
+           "read headers -- so one file serves both consumers and `aspire::concat_fasta` "
+           "is gone. The row stays: it is the study fan-in, which is a structural event "
+           "and not staging. "
+           "The study fan-in: group_by=run collapses every sample's filtered "
            "reads into one task. RELABEL_FILTERED is folded in -- it is a "
            "header rewrite over a file this transform already reads, and "
            "keeping it separate and optional would add a third rebinding "
@@ -272,13 +294,14 @@ TABLE: list[T] = [
            "the position of the file in the group.",
       cpus=2, hours=2),
 
-    T("dereplicate", "DEREPLICATE", 3298,
-      [RUN, _r("concat", "aspire::concat_fasta", "run")],
-      [("derep", "aspire::derep_fasta")], "run", cpus=8, memory_gb=16, hours=4),
-
     T("denoise", "DENOISE", 3367,
-      [RUN, _r("derep", "aspire::derep_fasta", "run")],
-      [("centroids", "aspire::centroids_fasta")], "run", cpus=8, memory_gb=16, hours=4),
+      [RUN, _r("concat", "aspire::concat_counts_fasta", "run")],
+      [("centroids", "aspire::centroids_fasta")], "run", folds=("DEREPLICATE@3298",),
+      note="r4 fold. `vsearch --derep_fulllength` is a precondition of --cluster_unoise, "
+           "not a result: a dereplicated FASTA is a compression of its input and had one "
+           "consumer, which was this. The UNOISE centroids are the first thing in this "
+           "stretch a person asks for, and they stay a product.",
+      cpus=8, memory_gb=16, hours=4),
 
     T("chimera_check", "CHIMERA_CHECK", 3393,
       [RUN, _r("centroids", "aspire::centroids_fasta", "run")],
@@ -323,20 +346,20 @@ TABLE: list[T] = [
            "for transforms/logistics/downloadSilvaDB.",
       cpus=8, memory_gb=16, hours=6),
 
-    T("prepare_blast_databases", "PREPARE_BLAST_DATABASES", 3511,
-      [RUN, _r("mito_src", "aspire::mito_reference_source"),
-       _r("cont_src", "aspire::contaminant_reference_source")],
-      [("mito_db", "aspire::mito_blast_db"), ("cont_db", "aspire::contaminant_blast_db")],
-      "run", hours=2),
-
     T("mitomaster", "MITOMASTER", 3544,
       [RUN, _r("fcounts", "aspire::asv_filtered_counts", "run"),
        _r("fseqs", "aspire::asv_filtered_seqs", "run"),
-       _r("mito_db", "aspire::mito_blast_db", "run"),
-       _r("cont_db", "aspire::contaminant_blast_db", "run")],
+       _r("mito_src", "aspire::mito_reference_source"),
+       _r("cont_src", "aspire::contaminant_reference_source")],
       [("master", "aspire::mitomaster_table"), ("mhits", "aspire::mito_blast6"),
        ("chits", "aspire::contaminant_blast6")],
-      "run", cpus=8, memory_gb=16, hours=6),
+      "run", folds=("PREPARE_BLAST_DATABASES@3511",),
+      note="r4 fold. PREPARE_BLAST_DATABASES was two makeblastdb calls whose products "
+           "each had one consumer, which was this transform. The standard library "
+           "already treats that as inside-the-transform work -- "
+           "amplicon/blast_map_asvs.py runs makeblastdb and then blastn in one protocol "
+           "-- so the two reference FASTAs move up here.",
+      cpus=8, memory_gb=16, hours=6),
 
     T("mito_decontam", "MITO_DECONTAM", 3595,
       [RUN, _r("master", "aspire::mitomaster_table", "run"),
@@ -476,8 +499,10 @@ TABLE: list[T] = [
       [("out", "aspire::bubble_plots")], "run", cpus=2, memory_gb=8),
 
     T("umap_clustering", "UMAP_CLUSTERING", 4055,
-      [RUN, _r("am", "aspire::analysis_asv_meta", "run")],
-      [("out", "aspire::umap_plots")], "run", cpus=2, memory_gb=8),
+      [SURVEY, _r("counts", "amplicon::asv_table", "survey"),
+       _r("am", "aspire::analysis_asv_meta", "survey")],
+      [("out", "aspire::umap_plots")], "survey", cpus=2, memory_gb=8,
+      note="r4 ecology lift: requires the generic `amplicon::survey` grouping node and a bare `amplicon::asv_table` instead of `aspire::run` and `aspire::analysis_counts`, so it is reachable from any count table -- `kbase/profile_abundance/kraken_abundance.py` produces one from kraken2 reports. An ASPIRE run satisfies the survey requirement unchanged. See research/kbase/curation/r4/aspire_topology.md."),
 
     T("outlier_checker", "OUTLIER_CHECKER", 4316,
       [RUN, _r("clr", "aspire::asv_clr_selected", "run"),
@@ -493,14 +518,15 @@ TABLE: list[T] = [
       [("out", "aspire::collectors_outputs")], "run", cpus=2, memory_gb=8, hours=2),
 
     T("diversity_analysis", "DIVERSITY_ANALYSIS", 4399,
-      [RUN, _r("md", "aspire::analysis_metadata", "run"),
-       _r("counts", "aspire::analysis_counts", "run")],
-      [("out", "aspire::diversity_outputs")], "run", cpus=4, memory_gb=16, hours=3),
+      [SURVEY, _r("counts", "amplicon::asv_table", "survey"),
+       _r("md", "aspire::analysis_metadata", "survey")],
+      [("out", "aspire::diversity_outputs")], "survey", cpus=4, memory_gb=16, hours=3,
+      note="r4 ecology lift: requires the generic `amplicon::survey` grouping node and a bare `amplicon::asv_table` instead of `aspire::run` and `aspire::analysis_counts`, so it is reachable from any count table -- `kbase/profile_abundance/kraken_abundance.py` produces one from kraken2 reports. An ASPIRE run satisfies the survey requirement unchanged. See research/kbase/curation/r4/aspire_topology.md."),
 
     T("indicspecies", "INDICSPECIES", 4518,
-      [RUN, _r("policy", "aspire::indicspecies_on", "run"),
-       _r("md", "aspire::analysis_metadata", "run"),
-       _r("counts", "aspire::analysis_counts", "run")],
+      [SURVEY, _r("policy", "aspire::indicspecies_on", "survey"),
+       _r("md", "aspire::analysis_metadata", "survey"),
+       _r("counts", "amplicon::asv_table", "survey")],
       [("g1sum", "aspire::indicspecies_group1_summary"),
        ("g2sum", "aspire::indicspecies_group2_summary"),
        ("g1res", "aspire::indicspecies_group1_results"),
@@ -508,15 +534,15 @@ TABLE: list[T] = [
        ("tables", "aspire::indicspecies_tables"),
        ("plots", "aspire::indicspecies_plots"),
        ("aligned", "aspire::indicspecies_aligned_plots")],
-      "run", folds=("INDICSPECIES_PLOTS@4608", "INDICSPECIES_ALIGNED_PLOTS@4792"),
-      cpus=8, memory_gb=32, hours=12),
+      "survey", folds=("INDICSPECIES_PLOTS@4608", "INDICSPECIES_ALIGNED_PLOTS@4792"),
+      cpus=8, memory_gb=32, hours=12, note=LIFT_NOTE_2),
 
     T("indicspecies_absent", None, None,
-      [RUN, _r("policy", "aspire::indicspecies_off", "run")],
+      [SURVEY, _r("policy", "aspire::indicspecies_off", "survey")],
       [("tables", "aspire::indicspecies_tables"),
        ("g1sum", "aspire::indicspecies_group1_summary")],
-      "run",
-      note="the `off` arm. The .nf substitutes a zero-row placeholder at five "
+      "survey",
+      note=LIFT_NOTE_2 + " the `off` arm. The .nf substitutes a zero-row placeholder at five "
            "call sites (asv_pipeline.nf:2660, 2661, 2983, 2984, 3036); one "
            "producer covers all of them."),
 
@@ -527,10 +553,11 @@ TABLE: list[T] = [
       [("out", "aspire::voc_correlation_outputs")], "run", cpus=2, memory_gb=8),
 
     T("measurement_association", "MEASUREMENT_ASSOCIATION", 4875,
-      [RUN, _r("am", "aspire::analysis_asv_meta", "run"),
-       _r("md", "aspire::analysis_metadata", "run"),
-       _r("counts", "aspire::analysis_counts", "run")],
-      [("out", "aspire::measurement_association_outputs")], "run", cpus=2, memory_gb=8),
+      [SURVEY, _r("counts", "amplicon::asv_table", "survey"),
+       _r("am", "aspire::analysis_asv_meta", "survey"),
+       _r("md", "aspire::analysis_metadata", "survey")],
+      [("out", "aspire::measurement_association_outputs")], "survey", cpus=2, memory_gb=8,
+      note="r4 ecology lift: requires the generic `amplicon::survey` grouping node and a bare `amplicon::asv_table` instead of `aspire::run` and `aspire::analysis_counts`, so it is reachable from any count table -- `kbase/profile_abundance/kraken_abundance.py` produces one from kraken2 reports. An ASPIRE run satisfies the survey requirement unchanged. See research/kbase/curation/r4/aspire_topology.md."),
 
     T("group_power_analysis", "GROUP_POWER_ANALYSIS", 5030,
       [RUN, _r("am", "aspire::analysis_asv_meta", "run"),
@@ -549,10 +576,11 @@ TABLE: list[T] = [
       cpus=4, memory_gb=16, hours=4),
 
     T("paired_group_contrast", "PAIRED_GROUP_CONTRAST", 5234,
-      [RUN, _r("am", "aspire::analysis_asv_meta", "run"),
-       _r("counts", "aspire::analysis_counts", "run")],
-      [("out", "aspire::paired_group_contrast_outputs")], "run",
-      cpus=4, memory_gb=16, hours=4),
+      [SURVEY, _r("counts", "amplicon::asv_table", "survey"),
+       _r("am", "aspire::analysis_asv_meta", "survey")],
+      [("out", "aspire::paired_group_contrast_outputs")], "survey",
+      cpus=4, memory_gb=16, hours=4,
+      note="r4 ecology lift: requires the generic `amplicon::survey` grouping node and a bare `amplicon::asv_table` instead of `aspire::run` and `aspire::analysis_counts`, so it is reachable from any count table -- `kbase/profile_abundance/kraken_abundance.py` produces one from kraken2 reports. An ASPIRE run satisfies the survey requirement unchanged. See research/kbase/curation/r4/aspire_topology.md."),
 
     T("clustermaps", "CLUSTERMAPS", 5324,
       [RUN, _r("am", "aspire::analysis_asv_meta", "run"),
@@ -564,12 +592,13 @@ TABLE: list[T] = [
            "the real edge, so it is what is declared."),
 
     T("spieceasi", "SPIECEASI", 5452,
-      [RUN, _r("policy", "aspire::spieceasi_on", "run"),
-       _r("counts", "aspire::analysis_counts", "run"),
-       _r("keep", "aspire::indicspecies_group1_summary", "run")],
+      [SURVEY, _r("policy", "aspire::spieceasi_on", "survey"),
+       _r("counts", "amplicon::asv_table", "survey"),
+       _r("keep", "aspire::indicspecies_group1_summary", "survey")],
       [("all", "aspire::network_graph_all"), ("thr", "aspire::network_graph_thr"),
        ("nf", "aspire::network_node_features")],
-      "run", cpus=16, memory_gb=64, hours=24),
+      "survey", cpus=16, memory_gb=64, hours=24,
+      note="r4 ecology lift: requires the generic `amplicon::survey` grouping node and a bare `amplicon::asv_table` instead of `aspire::run` and `aspire::analysis_counts`, so it is reachable from any count table -- `kbase/profile_abundance/kraken_abundance.py` produces one from kraken2 reports. An ASPIRE run satisfies the survey requirement unchanged. See research/kbase/curation/r4/aspire_topology.md."),
 
     T("spieceasi_external", None, None,
       [RUN, _r("policy", "aspire::spieceasi_off", "run"),
@@ -584,19 +613,19 @@ TABLE: list[T] = [
            "graph files from disk, so the driver has to supply them."),
 
     T("network_modules", "NETWORK_MODULES", 5522,
-      [RUN, _r("policy", "aspire::network_modules_on", "run"),
-       _r("all", "aspire::network_graph_all", "run"),
-       _r("thr", "aspire::network_graph_thr", "run")],
+      [SURVEY, _r("policy", "aspire::network_modules_on", "survey"),
+       _r("all", "aspire::network_graph_all", "survey"),
+       _r("thr", "aspire::network_graph_thr", "survey")],
       [("sub", "aspire::network_modules_sub"), ("mall", "aspire::network_modules_all"),
        ("summary", "aspire::network_modules_summary"),
        ("runs", "aspire::network_modules_runs")],
-      "run", cpus=8, memory_gb=32, hours=6),
+      "survey", cpus=8, memory_gb=32, hours=6, note=LIFT_NOTE_2),
 
     T("network_modules_absent", None, None,
-      [RUN, _r("policy", "aspire::network_modules_off", "run")],
+      [SURVEY, _r("policy", "aspire::network_modules_off", "survey")],
       [("sub", "aspire::network_modules_sub"), ("mall", "aspire::network_modules_all")],
-      "run",
-      note="the `off` arm; asv_pipeline.nf:2726-2729 falls back to files on "
+      "survey",
+      note=LIFT_NOTE_2 + " the `off` arm; asv_pipeline.nf:2726-2729 falls back to files on "
            "disk if they exist and a zero-row placeholder if not."),
 
     T("asv_mag_link", "ASV_MAG_LINK", 5821,
@@ -609,23 +638,30 @@ TABLE: list[T] = [
            "the results directory the master summary scans. Both are declared."),
 
     T("asv_mag_link_absent", None, None,
-      [RUN, _r("policy", "aspire::asv_mag_link_off", "run")],
+      [SURVEY, _r("policy", "aspire::asv_mag_link_off", "survey")],
       [("pairing", "aspire::asv_mag_pairing"), ("out", "aspire::asv_mag_outputs")],
-      "run"),
+      "survey",
+      note=LIFT_NOTE_2 + " Only the OFF arm lifts. `asv_mag_link` itself reads "
+           "`aspire::asv_filtered_seqs`, which no transform outside the ASPIRE lane "
+           "produces, so linking ASVs to MAGs stays a pipeline capability while "
+           "declining to link them does not."),
 
     T("graph_network", "GRAPH_NETWORK", 5579,
-      [RUN, _r("policy", "aspire::graph_network_on", "run"),
-       _r("all", "aspire::network_graph_all", "run"),
-       _r("thr", "aspire::network_graph_thr", "run"),
-       _r("nf", "aspire::network_node_features", "run"),
-       _r("counts", "aspire::analysis_counts", "run"),
-       _r("md", "aspire::analysis_metadata", "run"),
-       _r("pairing", "aspire::asv_mag_pairing", "run"),
-       _r("tax", "amplicon::asv_taxonomy", "run"),
-       _r("tables", "aspire::indicspecies_tables", "run"),
-       _r("sub", "aspire::network_modules_sub", "run"),
-       _r("mall", "aspire::network_modules_all", "run")],
-      [("out", "aspire::network_outputs")], "run", cpus=8, memory_gb=32, hours=6),
+      [SURVEY, _r("policy", "aspire::graph_network_on", "survey"),
+       _r("all", "aspire::network_graph_all", "survey"),
+       _r("thr", "aspire::network_graph_thr", "survey"),
+       _r("nf", "aspire::network_node_features", "survey"),
+       _r("counts", "amplicon::asv_table", "survey"),
+       _r("md", "aspire::analysis_metadata", "survey"),
+       _r("pairing", "aspire::asv_mag_pairing", "survey"),
+       _r("tax", "amplicon::asv_taxonomy", "survey"),
+       _r("tables", "aspire::indicspecies_tables", "survey"),
+       _r("sub", "aspire::network_modules_sub", "survey"),
+       _r("mall", "aspire::network_modules_all", "survey")],
+      [("out", "aspire::network_outputs")], "survey", cpus=8, memory_gb=32, hours=6,
+      note="r4 ecology lift: requires the generic `amplicon::survey` grouping node and a bare `amplicon::asv_table` instead of `aspire::run` and `aspire::analysis_counts`, so it is reachable from any count table -- `kbase/profile_abundance/kraken_abundance.py` produces one from kraken2 reports. An ASPIRE run satisfies the survey requirement unchanged. See research/kbase/curation/r4/aspire_topology.md." + " Reachable in principle and expensive in practice: it renders a "
+           "co-occurrence network, so running it outside ASPIRE means supplying the "
+           "network. That is a property of what it does, not of the gate removed."),
 
     T("graph_network_absent", None, None,
       [RUN, _r("policy", "aspire::graph_network_off", "run")],
@@ -664,27 +700,18 @@ TABLE: list[T] = [
        _r("counts", "aspire::analysis_counts", "run"),
        _r("net", "aspire::network_outputs", "run"),
        _r("sankey", "aspire::sankey_outputs", "run"),
-       _r("magl", "aspire::asv_mag_outputs", "run"),
-       _r("opt", "aspire::optional_outputs", "run")],
+       _r("magl", "aspire::asv_mag_outputs", "run")],
       [("long", "aspire::master_long"), ("wide", "aspire::master_count_wide"),
        ("manifest", "aspire::master_source_manifest"),
        ("colmap", "aspire::master_column_mapping"),
        ("collisions", "aspire::master_column_collisions")],
       "run", cpus=4, memory_gb=32, hours=4,
-      note="four `.done` barriers plus a --data-dir scan, replaced by four "
+      note="r4: the fourth requirement is gone with MASTER_SUMMARY_OPTIONAL_SLOT. "
+           "Three `.done` barriers plus a --data-dir scan, replaced by three "
            "directory-typed requirements each with an off-arm producer. Which "
            "of the merged tables actually appear is decided at runtime by a "
            "config whitelist and stays a runtime parameter: modelling it in "
            "the type system would need one transform per subset."),
-
-    T("master_summary_optional_slot", None, None,
-      [RUN],
-      [("opt", "aspire::optional_outputs")], "run",
-      note="asv_pipeline.nf:2792 fills the master summary's optional-contributor "
-           "slot with an empty placeholder unconditionally -- there is no arm "
-           "that fills it with anything. Ported as a permanent stub so the "
-           "dead slot is visible in the DAG rather than hidden in a channel "
-           "assignment."),
 ]
 
 

@@ -32,3 +32,14 @@ types:
     properties:
       _: ASV taxonomy classifications
       ext: tsv
+
+  # curation round 3 -- KBase parity.
+  # NOT one of round 3's 26 proposed types. `kraken_abundance` makes ONE count matrix out
+  # of MANY per-sample profiles, and metasmith has exactly one idiom for that: a logistics
+  # grouping node the per-sample inputs descend from, so `InputGroup` has something to
+  # group by. `transcriptomics::experiment`, `pangenome::pangenome` and `fabfos::run` are
+  # the same thing in their own lanes; the amplicon lane borrowed `aspire::run` and so
+  # never needed its own until the ecology transforms were lifted off that gate.
+  survey:
+    properties:
+      logistics: to group per-sample abundance profiles into one count table

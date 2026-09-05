@@ -91,3 +91,14 @@ types:
       _: BLAST-based contamination check report
       Format: TSV
       ext: tsv
+
+  # --- curation round 3 -- KBase parity ---
+  bowtie2_bam:
+    properties:
+      _: unspliced RNA-seq alignment against a bacterial reference, coordinate sorted
+      ext: bam
+  expression_clusters:
+    properties:
+      _: gene clusters over a count table
+      Format: TSV
+      ext: tsv

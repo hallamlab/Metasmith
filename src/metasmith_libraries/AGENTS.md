@@ -162,9 +162,12 @@ ships in the wheel and nothing in that namespace runs during a pipeline.
 ## Drivers
 
 Template authors live here in the package. Everything under
-`research/metasmith_libraries/` runs against a real cluster, and
-`probe_planner.py` is the plan-only one — solve a target set and print which transforms
-were picked, nothing opened. It is the tool for "why did the planner add that step".
+`research/metasmith_libraries/` runs against a real cluster, except the probes, which solve
+and open nothing. `probe_ambiguity.py` takes library names and lists every requirement with
+more than one producer — the first question to ask of a solve that suddenly costs minutes.
+**CAUTION** `probe_planner.py` is not the generic "why did the planner add that step" tool
+its name suggests: it is bound to the deep-learning embedding target set through
+`_dl_embeddings`. Copy `probe_kbase_parity.py` for a new target set.
 
 - **Public-repo-safe config.** No hardcoded absolute paths, allocations, usernames or DB
   paths. Site-specific values come from env vars with `<placeholder>` defaults (`MSM_SRC`,
@@ -184,3 +187,19 @@ hand-edited, never committed. The hand-edited surface is `data_types/`, the
 `resources/*/` instance files, and the transform `.py` files themselves.
 `transforms/_template.py` is the minimal skeleton. Disabled transforms live in
 `transforms/*/_disabled/` or are renamed `<name>.py.disabled` so the build skips them.
+
+**Every body under `transforms/kbase/` is a stub.** That root is curation round 3's KBase
+parity set, one directory per KBase task verb, and each protocol touches its declared outputs
+and runs no tool. A plan routing through one of them is a plan that produces empty files, so
+the signature is the only part to trust there until a body lands.
+`research/kbase/curation/r3/proposals.yml` says what each one is meant to do, and
+`transforms/kbase/README.md` says the rest.
+
+**`transforms/aspire/` is generated and is the one exception to the hand-edited surface
+above.** `transforms/aspire/_generate.py` holds one row per transform and writes both the
+transform files and `data_types/aspire.yml`. Edit the row, regenerate, then run
+`_generate.py --lint`. A hand edit to a generated file survives until the next regenerate
+and no longer. Dropping a transform means dropping its types from the same table, because
+`aspire.yml` is rewritten from the table wholesale. **CAUTION** every body there is still a
+stub, which is the condition the generator's authority rests on. The first real protocol
+body ends it, and the generator's own docstring says so.

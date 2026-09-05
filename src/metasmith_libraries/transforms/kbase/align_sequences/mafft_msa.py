@@ -1,15 +1,15 @@
 from metasmith.python_api import *
 
-lib   = TransformInstanceLibrary.ResolveParentLibrary(__file__)
-model = Transform()
-run    = model.AddRequirement(lib.GetType("aspire::run"))
-concat = model.AddRequirement(lib.GetType("aspire::concat_fasta"), parents={run})
-derep  = model.AddProduct(lib.GetType("aspire::derep_fasta"))
+lib     = TransformInstanceLibrary.ResolveParentLibrary(__file__)
+model   = Transform()
+image   = model.AddRequirement(lib.GetType("env::mafft.env"))
+seqs    = model.AddRequirement(lib.GetType("sequences::orfs"))
+out     = model.AddProduct(lib.GetType("comparative::msa"))
 
 def protocol(context: ExecutionContext):
-    made = {
-        derep: context.Output(derep),
-    }
+    # STUB. The protocol this replaces:
+    #   mafft --auto --thread $cpus {iseqs.container} > {iout.container}
+    made = {out: context.Output(out)}
     for key, path in made.items():
         make = 'mkdir -p' if key in _DIRECTORY_PRODUCTS else 'touch'
         context.external_shell.Exec(f'{make} {path.external}')
@@ -23,9 +23,9 @@ _DIRECTORY_PRODUCTS = set()
 TransformInstance(
     protocol=protocol,
     model=model,
-    group_by=run,
+    group_by=seqs,
     resources=Resources(
-        cpus=8,
+        cpus=4,
         memory=Size.GB(16),
         duration=Duration(hours=4),
     ),

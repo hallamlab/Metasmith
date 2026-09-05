@@ -7,6 +7,11 @@ reads   = model.AddRequirement(lib.GetType("sequences::short_reads"))
 out             = model.AddProduct(lib.GetType("sequences::clean_short_reads"))
 report_json     = model.AddProduct(lib.GetType("sequences::fastp_json_report"))
 report_html     = model.AddProduct(lib.GetType("sequences::fastp_html_report"))
+# Curation round 3 proposed this signature with `sequences::discarded_short_reads` as the
+# third product. This file predates the proposal, it is written rather than a stub, and it
+# emits fastp's own before/after reports instead -- which is the thing bbduk cannot do and
+# the reason round 3 wanted fastp here at all. The file's signature stands; the proposal
+# was written from the KBase side and did not know it.
 
 def protocol(context: ExecutionContext):
     ireads=context.Input(reads)

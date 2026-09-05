@@ -52,6 +52,10 @@ The 245 that remain split 100 extended, 65 existing, 43 proposed, 27 refactor, 7
 own generated tree is `research/kbase/library/transforms/kbase/`, flat and named `Module__app.py`.
 The two are separate roots and neither loads the other.
 
+**They went there.** Round 4 declared them in that tree, lifted the ecology transforms out of
+the aspire gate, and planned real analyses through them: `../r4/README.md`. Every body is still
+a stub. This round's verdict stands as written.
+
 ## What each file owns
 
 | file | owns |
