@@ -22,7 +22,7 @@ from tests.metasmith.cache._cache_harness import (
 TYPE_NAMES = ("seed", "mid", "out")
 
 
-def _run_a_pipeline(root: Path, virtual_runtime):
+def _run_a_pipeline(root: Path, virtual_runtime, target: str = "out"):
     types_path = build_types_library(root, TYPE_NAMES)
     samples = build_samples_library(root, types_path, count=2, input_type="seed")
     tr_lib = build_transform_library(root / "tr", types_path, {
@@ -31,7 +31,7 @@ def _run_a_pipeline(root: Path, virtual_runtime):
     })
     task = build_workflow_task(
         samples, tr_lib, sample_type="seed",
-        target_specs=[("out_target", {"out"})],
+        target_specs=[(f"{target}_target", {target})],
     )
     capture_run(virtual_runtime, task)
     return types_path, samples, tr_lib
@@ -114,6 +114,31 @@ class TestProjection:
             target_model=target,
         )
         assert isinstance(plan, WorkflowPlan), f"did not converge: {plan!r}"
+
+    def test_a_spec_solves_from_a_projection(self, tmp_path, virtual_runtime):
+        # The same thing through the entry point a caller actually uses.
+        # `_as_data_lib` returns a DataInstanceLibrary unchanged, so a
+        # projection needs no branch of its own.
+        #
+        # The first run stops at `mid`, so the store holds a real intermediate
+        # and nothing downstream of it -- which is the case worth planning
+        # from, and the one a store-as-input exists to serve.
+        from metasmith.agents.spec import Spec
+
+        types_path, _samples, tr_lib = _run_a_pipeline(
+            tmp_path / "a", virtual_runtime, target="mid",
+        )
+        proj = _project(virtual_runtime, types_path)
+        assert sorted({n for _p, n, _e in proj.library.Iterate()}) == ["cf::mid"]
+
+        task = Spec(
+            input_library=proj.library,
+            target_types=["cf::out"],
+            transform_libraries=[tr_lib],
+            sample_type="cf::mid",
+        ).Solve()
+        assert task.ok, task.plan.dropped_targets
+        assert [s.transform.name for s in task.plan.steps] == ["trB"]
 
     def test_an_untyped_entry_is_reported_not_raised(self, tmp_path, virtual_runtime):
         types_path, _samples, _tr = _run_a_pipeline(tmp_path / "a", virtual_runtime)
