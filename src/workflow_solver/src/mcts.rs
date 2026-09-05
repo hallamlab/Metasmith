@@ -22,6 +22,46 @@ use crate::refine::refine;
 use crate::rng::DecisionStream;
 use crate::search::{ApplId, ApplSig, Arena, Bindings, Group, generate_applications};
 
+/// How close a state is to being able to apply the target.
+///
+/// The count of satisfied target requirements is the load-bearing term and the
+/// distance table is a fraction of one requirement underneath it as a tie-break.
+/// The count is what makes this usable as a reward at all: `candidates` only ever
+/// grows, so anything read off it alone rises monotonically along every path, and
+/// crediting an action by that would rank transforms by how late they are usually
+/// applied rather than by whether they got anywhere.
+///
+/// Both loops reduce to a count and a minimum, so neither takes an order from a
+/// map -- which is the rule this crate's `det` module exists to keep.
+fn progress_of(p: &Problem, st: &SolverState) -> f64 {
+    let reqs = &p.transforms[p.target_index as usize].requires;
+    let mut met = 0usize;
+    for &d in reqs {
+        let hit = st
+            .production
+            .iter()
+            .any(|(&prod, eps)| !eps.is_empty() && p.dep_is_a(prod, d));
+        if hit {
+            met += 1;
+        }
+    }
+    let mut closeness = 0.0f64;
+    if p.max_distance > 0 {
+        let mut best: Option<i64> = None;
+        for &tr in st.candidates.iter() {
+            if let Some(&dd) = p.distance.get(&tr) {
+                if best.is_none_or(|b| dd < b) {
+                    best = Some(dd);
+                }
+            }
+        }
+        if let Some(b) = best {
+            closeness = (1.0 - b as f64 / p.max_distance as f64).max(0.0);
+        }
+    }
+    (met as f64 + closeness) / (reqs.len() as f64 + 1.0)
+}
+
 pub struct SolverState {
     pub k: i64,
     pub steps: Vec<ApplId>,
@@ -358,6 +398,8 @@ pub fn mcts(
     let mut merged_endpoints: Vec<(EpSig, EpId, Vec<EpId>)> = Vec::new();
     let mut refiner_iterations: Vec<(i64, i64)> = Vec::new();
     let mut policy = Policy::from_env(Phase::Mcts)?;
+    let adaptive = policy.wants_observations();
+    let wants_rewards = policy.wants_rewards();
     let mut i: i64 = 0;
 
     while !frontier.is_empty() && (i as u32) < p.max_iter {
@@ -378,6 +420,7 @@ pub fn mcts(
             rng,
             frontier.len(),
             |j| ar.appl(frontier[j]).score,
+            |j| ar.appl(frontier[j]).score,
             |j| ar.appl(frontier[j]).transform,
         );
         let n = frontier.len() - 1;
@@ -391,7 +434,23 @@ pub fn mcts(
         let carry: Vec<SolverState> =
             timelines.iter().filter(|st| !live.contains(&st.k)).cloned().collect();
         let mut next: Vec<SolverState> = Vec::new();
-        for st in &sources { next.extend(s.expand(ar, &mut tl, st, node)); }
+        // `(source, range)` per expansion, so the reward can credit the best
+        // improvement a source made rather than the best state reached.
+        let mut groups: Vec<(usize, std::ops::Range<usize>)> = Vec::new();
+        for (si, st) in sources.iter().enumerate() {
+            let lo = next.len();
+            next.extend(s.expand(ar, &mut tl, st, node));
+            if adaptive && wants_rewards { groups.push((si, lo..next.len())); }
+        }
+        let n_next = next.len();
+        let node_tr = ar.appl(node).transform;
+        // Before `next` is consumed below. Only when a value is actually wanted:
+        // this walk is the one expensive thing an adaptive policy adds.
+        let progress: Vec<f64> = if adaptive && wants_rewards {
+            next.iter().map(|st| progress_of(p, st)).collect()
+        } else {
+            Vec::new()
+        };
 
         let mut remain: Vec<SolverState> = Vec::new();
         for mut st in next {
@@ -411,6 +470,25 @@ pub fn mcts(
                 Some(dst) => merge_states(p, ar, given_appl, dst, &st, &mut merged_endpoints)?,
                 None => solved = Some(st),
             }
+        }
+
+        if adaptive {
+            let solved_here = remain.len() < n_next;
+            let (mut best_before, mut best_after) = (0.0f64, 0.0f64);
+            if !solved_here && wants_rewards {
+                for (si, range) in &groups {
+                    let before = progress_of(p, &sources[*si]);
+                    for idx in range.clone() {
+                        let after = progress[idx];
+                        if after - before >= best_after - best_before {
+                            best_before = before;
+                            best_after = after;
+                        }
+                    }
+                }
+            }
+            let reward = policy.reward_for(solved_here, best_before, best_after);
+            policy.observe(node_tr, reward);
         }
 
         if remain.is_empty() && carry.is_empty() {
