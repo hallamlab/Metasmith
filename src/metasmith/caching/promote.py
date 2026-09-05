@@ -334,6 +334,9 @@ def record_run(*, workspace: Path, cache_root: Path, log: list | None = None) ->
     from .store import CacheStore
 
     log = log if log is not None else []
+    # The run a product belongs to, as the agent names it on disk: the driver
+    # is the only thing that knows, and a store must not go looking.
+    run_label = Path(workspace).name
     session_id = _read_session_id(workspace)
     trace_path = workspace / "_metasmith" / "trace.jsonl"
     trace_path.parent.mkdir(parents=True, exist_ok=True)
@@ -381,6 +384,7 @@ def record_run(*, workspace: Path, cache_root: Path, log: list | None = None) ->
                             shard=shard,
                             manifest=manifest,
                             transform_key=meta.transform_key if meta else "",
+                            run=run_label,
                         )
                         _copy_task_logs(rec_file.parent, shard)
                         promoted.append(key_hex)

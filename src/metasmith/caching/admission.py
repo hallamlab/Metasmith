@@ -277,6 +277,8 @@ def index_shard(
     shard: Path,
     manifest: dict,
     transform_key: str | None = None,
+    run: str = "",
+    tags: Sequence[str] = (),
 ) -> None:
     """The second half: the driver's row for a shard that is already on disk.
 
@@ -298,7 +300,10 @@ def index_shard(
         output_root=str(shard.relative_to(Path(cache_root))),
         size_bytes=manifest_size(manifest),
         origin=origin,
+        run=run,
     )
+    if tags:
+        store.add_tags(key, tags)
 
 
 def admit(
@@ -308,6 +313,8 @@ def admit(
     origin: str,
     files: Sequence[PoolFile],
     store=None,
+    run: str = "",
+    tags: Sequence[str] = (),
     **meta,
 ) -> ShardWrite:
     """Both halves, for a caller that is one process."""
@@ -326,6 +333,7 @@ def admit(
         index_shard(
             store, cache_root=cache_root, key=key, origin=origin,
             shard=written.shard, manifest=written.manifest,
+            run=run, tags=tags,
         )
     finally:
         if own:

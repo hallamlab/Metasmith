@@ -33,6 +33,8 @@ class ProjectedItem:
     last_hit_at: int
     hit_count: int
     instance_id: str
+    run: str = ""
+    tags: tuple = ()
 
 
 @dataclass
@@ -176,6 +178,8 @@ def project_store(
             last_hit_at=entry.last_hit_at,
             hit_count=entry.hit_count,
             instance_id=iid,
+            run=entry.run,
+            tags=entry.tags,
         )
 
     raw_manifest, items = _drop_unresolvable_types(

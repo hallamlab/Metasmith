@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import time
 from pathlib import Path
 
 import pytest
@@ -64,19 +63,44 @@ class TestIdentity:
         res = ops.import_item("/nowhere/at/all", "cf::seed", cache_root=str(store))
         assert res["instance_id"] == here
 
-    def test_a_folder_costs_what_a_file_costs(self, tmp_path, store):
+    def test_a_folder_costs_what_a_file_costs(self, tmp_path, store, monkeypatch):
+        # Not a stopwatch: a wall-clock bound measures the machine. What must
+        # hold is that the import does not scale with the file count, so count
+        # the calls. One stat on the folder itself, and nothing enumerated.
+        import os
+
         big = tmp_path / "refs"
         big.mkdir()
         for i in range(2000):
             (big / f"{i}.hmm").write_text("x")
-        started = time.monotonic()
+
+        seen: list[str] = []
+        real_stat = os.stat
+
+        def counting_stat(path, *a, **kw):
+            try:
+                s = os.fspath(path)
+            except TypeError:
+                s = ""
+            if isinstance(s, bytes):
+                s = s.decode("utf-8", "replace")
+            if s.startswith(str(big)):
+                seen.append(s)
+            return real_stat(path, *a, **kw)
+
+        def refuse(*a, **kw):
+            raise AssertionError("the import enumerated the folder")
+
+        monkeypatch.setattr(os, "stat", counting_stat)
+        monkeypatch.setattr(os, "scandir", refuse)
+        monkeypatch.setattr(os, "listdir", refuse)
+
         res = ops.import_item(str(big), "cf::seed", cache_root=str(store))
-        elapsed = time.monotonic() - started
         assert res["status"] == "promoted"
-        # A tree walk over 2000 files is not what this should be doing. The
-        # bound is loose on purpose: what it refuses is an implementation that
-        # scales with the file count, not a slow disk.
-        assert elapsed < 2.0, elapsed
+        # A couple of stats on the folder itself -- resolving it and asking its
+        # size -- and not one on anything inside it.
+        assert set(seen) == {str(big)}, sorted(set(seen))
+        monkeypatch.undo()
         assert not list((store / "imported").rglob("*.hmm"))
 
 
@@ -179,3 +203,70 @@ class TestStoreRoot:
         with pytest.raises(ValueError) as e:
             ops.resolve_store_root()
         assert "AGENT_HOME" in str(e.value)
+
+
+class TestGrouping:
+    def test_an_import_carries_its_tags_and_no_run(self, tmp_path, store):
+        from metasmith.caching.store import CacheStore
+
+        f = _file(tmp_path)
+        res = ops.import_item(
+            str(f), "cf::seed", cache_root=str(store), tags=["refs", "v2"],
+        )
+        with CacheStore.open(store) as s:
+            entry = s.probe(bytes.fromhex(res["instance_id"]))
+        assert entry.tags == ("refs", "v2")
+        assert entry.run == "", "nothing produced an import, so it names no run"
+        assert entry.created_at > 0
+
+    def test_tags_can_be_set_and_cleared(self, tmp_path, store):
+        from metasmith.caching.store import CacheStore
+
+        f = _file(tmp_path)
+        res = ops.import_item(str(f), "cf::seed", cache_root=str(store), tags=["a"])
+        key = bytes.fromhex(res["instance_id"])
+        with CacheStore.open(store) as s:
+            s.add_tags(key, ["b"])
+            assert s.probe(key).tags == ("a", "b")
+            s.remove_tags(key, ["a"])
+            assert s.probe(key).tags == ("b",)
+            s.set_tags(key, ["c", "d"])
+            assert s.probe(key).tags == ("c", "d")
+
+    def test_an_older_database_gains_the_run_column(self, tmp_path):
+        # The table statements are all "if not exists", so an existing database
+        # gains no column that way. The migration is what does it.
+        import sqlite3
+
+        root = tmp_path / "old_cache"
+        root.mkdir()
+        conn = sqlite3.connect(root / "cache.sqlite")
+        conn.execute("""
+            CREATE TABLE entries(
+                key BLOB PRIMARY KEY, transform_key TEXT NOT NULL,
+                payload BLOB NOT NULL, output_root TEXT NOT NULL,
+                size_bytes INTEGER NOT NULL, created_at INTEGER NOT NULL,
+                last_hit_at INTEGER NOT NULL, hit_count INTEGER NOT NULL DEFAULT 0,
+                origin TEXT NOT NULL, tombstoned_at INTEGER)
+        """)
+        conn.execute("CREATE TABLE schema_meta(k TEXT PRIMARY KEY, v TEXT)")
+        conn.execute("INSERT INTO schema_meta VALUES ('schema_version', '1')")
+        from metasmith.caching.keys import CACHE_KEY_VERSION
+        conn.execute(
+            "INSERT INTO schema_meta VALUES ('lineage_payload_version', ?)",
+            (str(CACHE_KEY_VERSION),),
+        )
+        conn.execute(
+            "INSERT INTO entries VALUES (?, 'tk', X'', 'x', 1, 1, 1, 0, 'lineage', NULL)",
+            (b"\x01" * 8,),
+        )
+        conn.commit()
+        conn.close()
+
+        from metasmith.caching.store import CacheStore
+
+        with CacheStore.open(root) as s:
+            entry = s.probe(b"\x01" * 8)
+            assert entry is not None, "the migration tombstoned an entry"
+            assert entry.run == ""
+            assert entry.tags == ()
