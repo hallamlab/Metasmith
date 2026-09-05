@@ -5,24 +5,26 @@ model   = Transform()
 image   = model.AddRequirement(lib.GetType("env::polars.env"))
 matrix  = model.AddRequirement(lib.GetType("pangenome::ppanggolin_matrix"))
 kofam   = model.AddRequirement(lib.GetType("annotation::kofamscan_descriptions"))
+script  = model.AddRequirement(lib.GetType("lib::ppanggolin_summary.py"))
 out     = model.AddProduct(lib.GetType("pangenome::ppanggolin_summary"))
 
 def protocol(context: ExecutionContext):
-    # STUB. The protocol this replaces: partition the ppanggolin matrix's families into
-    # core / accessory / unique by presence count, join each family's representative to
-    # {ikofam} for a function, and write one row per family. A readout on an existing
-    # product -- no new tool. The accessory fraction is where a lifestyle difference
-    # between strains shows.
-    made = {out: context.Output(out)}
-    for key, path in made.items():
-        make = 'mkdir -p' if key in _DIRECTORY_PRODUCTS else 'touch'
-        context.external_shell.Exec(f'{make} {path.external}')
-    return ExecutionResult(
-        manifest=[{k: v.local for k, v in made.items()}],
-        success=all(v.local.exists() for v in made.values()),
-    )
+    imatrix=context.Input(matrix)
+    ikofam=context.Input(kofam)
+    iscript=context.Input(script)
+    iout=context.Output(out)
 
-_DIRECTORY_PRODUCTS = set()
+    # A readout on an existing product -- no new tool. The accessory fraction is
+    # where a lifestyle difference between strains shows.
+    _cmd = f"""\
+            python {iscript.container} {imatrix.container} {ikofam.container} {iout.container}
+        """
+    context.ExecWithEnv().ifContainerDo(env=image, cmd=_cmd)
+
+    return ExecutionResult(
+        manifest=[{out: iout.local}],
+        success=iout.local.exists(),
+    )
 
 TransformInstance(
     protocol=protocol,

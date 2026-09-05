@@ -12,34 +12,54 @@ record  = model.AddProduct(lib.GetType("annotation::bakta_protein_json"))
 named   = model.AddProduct(lib.GetType("annotation::bakta_annotated_proteins"))
 
 def protocol(context: ExecutionContext):
-    # STUB. The protocol this replaces:
-    #   bakta_proteins --db /db/db-light --prefix bakta_cds --output bakta_out \
-    #       --threads $cpus {iorfs.container}
-    #   cp bakta_out/bakta_cds.tsv                  {ihits.local}
-    #   cp bakta_out/bakta_cds.inference.tsv        {iinfer.local}
-    #   cp bakta_out/bakta_cds.hypotheticals.tsv    {ihypo.local}
-    #   cp bakta_out/bakta_cds.json                 {irecord.local}
-    #   cp bakta_out/bakta_cds.faa                  {inamed.local}
-    #
+    iorfs=context.Input(orfs)
+    idb=context.Input(db)
+    ihits=context.Output(hits)
+    iinfer=context.Output(infer)
+    ihypo=context.Output(hypo)
+    irecord=context.Output(record)
+    inamed=context.Output(named)
+
+    threads = context.params.get('cpus')
+    threads = "" if threads is None else f"--threads {threads}"
     # `bakta_proteins` is a SEPARATE entry point beside `bakta` in the pinned 1.11.0 image
     # and takes a protein FASTA, so this is the CDS arm the shipped `bakta_noncoding.py`
     # skips with --skip-cds. The two are complementary, not alternatives.
-    made = {
-        hits:   context.Output(hits),
-        infer:  context.Output(infer),
-        hypo:   context.Output(hypo),
-        record: context.Output(record),
-        named:  context.Output(named),
-    }
-    for key, path in made.items():
-        make = 'mkdir -p' if key in _DIRECTORY_PRODUCTS else 'touch'
-        context.external_shell.Exec(f'{make} {path.external}')
-    return ExecutionResult(
-        manifest=[{k: v.local for k, v in made.items()}],
-        success=all(v.local.exists() for v in made.values()),
+    context.ExecWithEnv().ifContainerDo(
+        env=image,
+        binds=[(idb.external, "/db")],
+        cmd=f"""\
+            bakta_proteins --db /db/db-light {threads} \
+                --force --prefix bakta_cds --output bakta_out \
+                {iorfs.container}
+        """,
     )
 
-_DIRECTORY_PRODUCTS = set()
+    PREFIX = "bakta_out/bakta_cds"
+    for suffix, handle in [
+        ("tsv", ihits),
+        ("inference.tsv", iinfer),
+        ("hypotheticals.tsv", ihypo),
+        ("json", irecord),
+        ("faa", inamed),
+    ]:
+        context.LocalShell(f"cp {PREFIX}.{suffix} {handle.local}")
+
+    return ExecutionResult(
+        manifest=[
+            {
+                hits:   ihits.local,
+                infer:  iinfer.local,
+                hypo:   ihypo.local,
+                record: irecord.local,
+                named:  inamed.local,
+            },
+        ],
+        success=all(
+            h.local.exists()
+            for h in (ihits, iinfer, ihypo, irecord, inamed)
+        ),
+    )
 
 TransformInstance(
     protocol=protocol,

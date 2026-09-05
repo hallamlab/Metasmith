@@ -5,28 +5,32 @@ model   = Transform()
 image   = model.AddRequirement(lib.GetType("env::python_for_data_science.env"))
 clust   = model.AddRequirement(lib.GetType("lib::hierarchical_clustering.py"))
 local   = model.AddRequirement(lib.GetType("lib::local"))
+script  = model.AddRequirement(lib.GetType("lib::expression_clusters.py"))
 counts  = model.AddRequirement(lib.GetType("transcriptomics::gene_count_table"))
+# KBase ships four apps here -- hierarchical, k-means, WGCNA and an estimate of k.
+# That is one transform with a method knob, not four, so the knob is an input.
+params  = model.AddRequirement(lib.GetType("transcriptomics::clustering_params"))
 out     = model.AddProduct(lib.GetType("transcriptomics::expression_clusters"))
 
 def protocol(context: ExecutionContext):
-    # STUB. The protocol this replaces: correlate genes across the columns of {icounts} and
-    # cut the resulting dendrogram, using the `hierarchical_clustering.py` resource the
-    # pangenome heatmap already ships. Genes that move together are the operon and the
-    # regulon, which per-gene testing reports as unrelated hits.
-    #
-    # KBase's four apps here are hierarchical, k-means, WGCNA and an estimate of k. That is
-    # one transform with a method knob, not four -- so whoever writes this body adds the
-    # knob as a requirement rather than adding three more files.
-    made = {out: context.Output(out)}
-    for key, path in made.items():
-        make = 'mkdir -p' if key in _DIRECTORY_PRODUCTS else 'touch'
-        context.external_shell.Exec(f'{make} {path.external}')
-    return ExecutionResult(
-        manifest=[{k: v.local for k, v in made.items()}],
-        success=all(v.local.exists() for v in made.values()),
-    )
+    icounts=context.Input(counts)
+    iparams=context.Input(params)
+    iscript=context.Input(script)
+    iout=context.Output(out)
 
-_DIRECTORY_PRODUCTS = set()
+    # Genes that move together are the operon and the regulon, which per-gene
+    # testing reports as unrelated hits. The clustering itself is the resource the
+    # pangenome heatmap already ships.
+    _cmd = f"""\
+            export NUMBA_CACHE_DIR=$TMPDIR
+            python {iscript.container} {icounts.container} {iparams.container} {iout.container}
+        """
+    context.ExecWithEnv().ifContainerDo(env=image, cmd=_cmd)
+
+    return ExecutionResult(
+        manifest=[{out: iout.local}],
+        success=iout.local.exists(),
+    )
 
 TransformInstance(
     protocol=protocol,

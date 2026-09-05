@@ -20,27 +20,39 @@ reads   = model.AddRequirement(lib.GetType("sequences::clean_short_reads"), pare
 out     = model.AddProduct(lib.GetType("sequences::polished_assembly"))
 
 def protocol(context: ExecutionContext):
-    # STUB. The protocol this replaces:
-    #   bwa index {iasm.container}
-    #   bwa mem -a -t $cpus {iasm.container} R1.fastq > a1.sam
-    #   bwa mem -a -t $cpus {iasm.container} R2.fastq > a2.sam
-    #   polypolish filter --in1 a1.sam --in2 a2.sam --out1 f1.sam --out2 f2.sam
-    #   polypolish polish {iasm.container} f1.sam f2.sam > {iout.container}
-    #
-    # CAUTION polypolish needs ALL alignments per read (`bwa mem -a`), which is the whole
-    # point of it, and the biocontainer carries polypolish alone. Whoever writes this body
-    # decides whether bwa comes in as a second env requirement or the alignment step
-    # becomes its own transform.
-    made = {out: context.Output(out)}
-    for key, path in made.items():
-        make = 'mkdir -p' if key in _DIRECTORY_PRODUCTS else 'touch'
-        context.external_shell.Exec(f'{make} {path.external}')
-    return ExecutionResult(
-        manifest=[{k: v.local for k, v in made.items()}],
-        success=all(v.local.exists() for v in made.values()),
-    )
+    iasm=context.Input(asm)
+    ireads=context.Input(reads)
+    iout=context.Output(out)
 
-_DIRECTORY_PRODUCTS = set()
+    threads = context.params.get('cpus')
+    threads = 4 if threads is None else threads
+
+    # polypolish reads the two directions separately -- it corrects a position only
+    # where the two disagree with the assembly in the same way -- and this library's
+    # clean_short_reads are interleaved. `gzip -dcf` covers both the gzipped form
+    # fastp emits and a plain fastq. The assembly is copied before indexing because
+    # `bwa index` writes its five index files beside the fasta, which for a staged
+    # input is a directory shared with every other task reading it.
+    _cmd = f"""\
+            cp {iasm.container} ref.fa
+            gzip -dcf {ireads.container} \
+                | awk '{{ if (int((NR-1)/4) % 2 == 0) print > "r1.fastq"; else print > "r2.fastq" }}'
+            bwa index ref.fa
+            bwa mem -a -t {threads} ref.fa r1.fastq > a1.sam
+            bwa mem -a -t {threads} ref.fa r2.fastq > a2.sam
+        """
+    context.ExecWithEnv().ifContainerDo(env=bwa_env, cmd=_cmd)
+
+    _cmd = f"""\
+            polypolish filter --in1 a1.sam --in2 a2.sam --out1 f1.sam --out2 f2.sam
+            polypolish polish ref.fa f1.sam f2.sam > {iout.container}
+        """
+    context.ExecWithEnv().ifContainerDo(env=image, cmd=_cmd)
+
+    return ExecutionResult(
+        manifest=[{out: iout.local}],
+        success=iout.local.exists(),
+    )
 
 TransformInstance(
     protocol=protocol,

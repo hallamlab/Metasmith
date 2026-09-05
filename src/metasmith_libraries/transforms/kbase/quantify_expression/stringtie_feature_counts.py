@@ -8,23 +8,24 @@ gff     = model.AddRequirement(lib.GetType("annotation::bakta_gff"))
 out     = model.AddProduct(lib.GetType("transcriptomics::stringtie_quant_gtf"))
 
 def protocol(context: ExecutionContext):
-    # STUB. The protocol this replaces:
-    #   stringtie -e -B -p $cpus -G {igff.container} -o {iout.container} {ibam.container}
-    #
-    # This is `stringtie_quant.py` with a bacterial bam and a bacterial annotation in place
-    # of a STAR bam and a braker merged GTF, and it produces the SAME
-    # `transcriptomics::stringtie_quant_gtf` -- so `stringtie_count_matrix.py`, `deseq2.py`
-    # and `pydeseq2.py` serve it unchanged and no subread environment is needed.
-    made = {out: context.Output(out)}
-    for key, path in made.items():
-        make = 'mkdir -p' if key in _DIRECTORY_PRODUCTS else 'touch'
-        context.external_shell.Exec(f'{make} {path.external}')
-    return ExecutionResult(
-        manifest=[{k: v.local for k, v in made.items()}],
-        success=all(v.local.exists() for v in made.values()),
-    )
+    ibam=context.Input(bam)
+    igff=context.Input(gff)
+    iout=context.Output(out)
 
-_DIRECTORY_PRODUCTS = set()
+    threads = context.params.get('cpus')
+    threads = "" if threads is None else f"-p {threads}"
+    # -e restricts assembly to the reference transcripts, which is what makes the
+    # output a count table rather than a discovery run -- and it reports nothing at
+    # all without the -G those transcripts come from.
+    _cmd = f"""\
+            stringtie -e -B {threads} -G {igff.container} -o {iout.container} {ibam.container}
+        """
+    context.ExecWithEnv().ifContainerDo(env=image, cmd=_cmd)
+
+    return ExecutionResult(
+        manifest=[{out: iout.local}],
+        success=iout.local.exists(),
+    )
 
 TransformInstance(
     protocol=protocol,

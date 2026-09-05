@@ -102,3 +102,9 @@ types:
       _: gene clusters over a count table
       Format: TSV
       ext: tsv
+  clustering_params:
+    properties:
+      _: 'the method knob a gene clustering is run at -- method is hierarchical or kmeans, k is an int or null for estimate-by-silhouette'
+      arity: 1
+      Format: JSON
+      ext: json
