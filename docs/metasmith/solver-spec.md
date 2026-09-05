@@ -211,6 +211,60 @@ holes. `--gate` refuses any `sorry` and any `axiom` naming a crate function, and
 non-structural recursions a proof will have to pay for. Run it; do not trust the container's exit
 code alone.
 
+## The checker is proved
+
+`SolverProof.check_spec` states that `check` returns exactly `decide (Valid p q)`, for every problem
+and every plan. `check_correct` follows from it in one line. Both depend on `propext`,
+`Classical.choice` and `Quot.sound` and on nothing else. `dev.sh --lean-check` builds the tree and
+adjudicates it.
+
+The proof is one module per clause under `src/solver_witness/lean/Proof/`, over the DEFAULT
+extraction. A `partial_fixpoint` definition exposes its unfolding equation as `<name>.eq_def`, so
+termination is a theorem about each loop rather than a measure attached to it. Loop lemmas are Aeneas
+Hoare triples, because `spec` sends both `fail` and `div` to `False` and so already asserts
+termination. `Proof/Basis.lean` carries the recipe and the traps.
+
+**CAUTION** `-decreases-clauses` is a dead end on the pinned toolchain, and the earlier claim that
+`check_spec` required it is false. Its output fails to compile three ways: dotted tactic tokens Lean
+cannot resolve inside a quotation, `partial_fixpoint` emitted beside `termination_by`, and a
+dependent `if h:` inside a `do` block that Lean 4.31.0 rejects. Do not re-attempt it.
+
+## The clauses are not independent
+
+`lib.rs` says evaluating all ten with no early return keeps them independent. It keeps their
+*evaluation* independent. Five are equivalent to their specification conjuncts only under
+`WellIndexed`, for three unrelated reasons, each machine-checked in the module that found it.
+
+- **Conformance and Emission.** The conjunct is vacuously true off the endpoint table, because
+  `epProps` is empty out of range and `ancestorB` is reflexive everywhere. The checker fails closed
+  there instead, since `descends` reads a row that does not exist.
+- **Shape, Derived and Givens.** `same_slots`, `same_props` and `derived_at` compare dense bit sets
+  of a fixed width. An id at or beyond that width sets no bit on either side, so it is invisible. The
+  checker ACCEPTS where the specification rejects.
+- **Givens.** `given_node_of` and `given_ep_of` report absence with `NONE`, which is `usize::MAX` and
+  lives in the same space as the ids they return.
+
+`check` stays correct because it is the conjunction and `cl_indexed` rejects every witness. So
+`check_spec` case-splits on `WellIndexed`, which `cl_indexed_spec` being unconditional is what makes
+available.
+
+**CAUTION** The bit-width truncation is a hazard outside the conjunction, not only a proof
+obstacle. `same_slots` is correct only where `cl_indexed` already guards the width. Reusing it
+elsewhere, or reordering the clauses, breaks it silently. The repair is to reject an id at or beyond
+the compared width rather than ignore it.
+
+## Three facts the proof found and the code does not state
+
+- `cl_unique_producer` reads `seen != NONE` as "an emitter was already found", so a step list of
+  length `usize::MAX + 1` would admit a second producer. The `Vec` length bound retires it.
+  `cl_indexed` does not check this and could not.
+- `access::bound_to` returns `NONE` both for "unbound" and for "bound to endpoint `usize::MAX`".
+  The same bound retires it.
+- Three private helpers inside `cl_indexed` re-index before testing their counter, so they *fail*
+  out of range where every accessor in `access.rs` returns a zero reading. The clause's own guards
+  supply the range, and `solver_witness_audit` reaches only `pub fn cl_indexed`. Making one `pub` so
+  the audit crate can locate a violation inside it would break that.
+
 ## Where the contract was written down before
 
 The thesis proposal's methods section is the fullest source and carries both formal sentences, `Eqv`
