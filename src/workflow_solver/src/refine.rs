@@ -1,16 +1,25 @@
 //! The refiner: single-edge swaps against a found plan, looking for a better one.
 //!
 //! It dominates the solve on the shipped templates and changes the plan it was
-//! given on none of them: on a lineage-dense workflow every single-edge swap
-//! breaks a lineage constraint, so single-swap refinement structurally cannot
-//! improve one. It is not inert in general -- two branching tests do produce a
-//! plan-changing refinement.
+//! given on almost none of them.
+//!
+//! **CAUTION** That is a defect in `validate`, not a property of the problem.
+//! `validate` decides ancestry over the step graph. The step graph cannot see
+//! that two given endpoints of one sample are siblings, so every anchor bound to
+//! a given fails. That is every rejection measured, across the eleven templates
+//! and both metagenomics arms, with no other cause observed. Under the
+//! specification's relation -- the reflexive closure over declared parents, which
+//! `solver_witness` decides -- 40 of the unpinned workflow's 110,866 candidates
+//! are admissible, and `fosmid_inserts_from_pooled_reads` and
+//! `ecspr_survey_from_pooled_reads` each hold an improvement this relation
+//! discards.
 //!
 //! **The AND in `validate` is ordered, and the order is the optimisation.** Its
 //! terms are independent and side-effect-free, and the lineage term is both the
 //! cheapest and the one that rejects nearly everything, so it runs first. A
 //! `KeyError` from the prefilter means "cannot answer here", not "invalid", and
-//! falls through to the full check.
+//! falls through to the full check. That fallthrough is part of the same defect.
+//! It fires on no measured case, so it masks nothing today.
 //!
 //! **One defect is reproduced here rather than fixed, knowingly.** `expand_node`
 //! removes the step it is swapping by *signature*, which drops both members of a

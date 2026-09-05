@@ -240,6 +240,10 @@ fn satisfies_lineage(
 /// With `mock_produced`, lineage is not checked and the given products are
 /// reused rather than minted -- that is the refiner's mode, where the point is
 /// to try a different *binding* of the same step and rectify afterwards.
+///
+/// **CAUTION** The lineage check is the constraint, not an optimisation.
+/// Skipping it is why one refiner iteration enumerates 110,866 candidates on the
+/// unpinned metagenomics workflow where the specification admits 40.
 pub fn generate_applications(
     p: &Problem, ar: &mut Arena, timeline: i64, production: &Map<DepId, Vec<EpId>>,
     blacklist: &Set<ApplSig>, tr: TransformId, mock_produced: Option<&Vec<Group>>,

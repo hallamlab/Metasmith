@@ -122,12 +122,21 @@ space does not exhaust.
 Tested directly: **budgets of 4, 8 and 16 all give byte-identical plan fingerprints to 256 on all 55
 case-seed pairs** -- 11 templates by 4 seeds, plus 11 generated cases. Zero differences.
 
-On the metagenomics ladder `found_on` is 1 at every budget from 1 to 256, which is consistent with
-what the scope recorded from a different direction: the candidate generator is handed
-`mock_produced`, which switches its lineage check off, so the candidates it builds reuse produced
-endpoints whose declared parents describe inputs the candidate no longer consumes -- and `Derived` is
-exactly the clause that rejects those. On that workflow the refiner is not declining to improve the
-plan; it is generating candidates that cannot be accepted, and paying full price to score each one.
+On the metagenomics ladder `found_on` is 1 at every budget from 1 to 256.
+
+**CORRECTION, added after this report was published.** This paragraph originally attributed the
+rejections to `mock_produced` leaving stale parents on the candidates' produced endpoints. That is
+wrong. `validate_node` does not read `Endpoint.parents` at all. It walks a step graph rebuilt per
+state from each step's actual bindings, so a swapped step's outputs already carry the new ones.
+
+What rejects is that same step graph's blind spot. A branched given application carries `used == {}`,
+so a given endpoint has no parents in the step graph, and every requirement whose lineage anchor
+binds to a given fails. Measured on all eleven templates and both arms here, that is **every**
+rejection, with no other cause observed. Judged by the specification's relation -- the reflexive
+closure over declared parents -- **40** of the unpinned workflow's 110,866 candidates are admissible
+and **1** of the shipped workflow's 755. The stale-parents defect is real and narrow: `rectify`
+re-derives every product's parents before a plan leaves the refiner, so it reaches an emitted plan
+only through the `inherent_parents` term.
 
 ## What to do about it
 
@@ -149,12 +158,17 @@ contract.** Three options, in the order the evidence supports them:
 2. **Budget the refiner in candidates, not iterations.** `max_refine=256` means 190,000 candidate
    plans on one workflow and 20 million on another. A cap on states scored, or on bytes retained,
    would make the knob mean the same thing everywhere, and would turn the OOM into a worse answer.
-3. **Repair the generator's lineage handling** — `expand_node` passing `mock_produced` — which is
-   what would make the refiner able to accept a candidate at all. Already the top of this scope's
-   list, and this report is another argument for it: until it lands, every cycle the refiner spends
-   is spent producing candidates its own checker rejects.
+3. **Repoint `validate_node` at the specification's relation, and turn the generator prune back
+   on.** *Superseded reading: this item originally called for repairing the generator's lineage
+   handling.* The measurement above says the validator's relation is the defect and the prune at
+   `solver.py:620` is the cost. Together they take one iteration from 110,866 candidates to 40, and
+   they recover the +209 and +207 improvements on `fosmid_inserts_from_pooled_reads` and
+   `ecspr_survey_from_pooled_reads` that this scope recorded as generated and discarded.
 
 ## What this does not say
+
+**It no longer says why the candidates are rejected.** The paragraph that did has been corrected
+above. Read the cost findings here as sound and the cause finding as superseded.
 
 A budget of 8 is indistinguishable from 256 *on the cases measured here* -- 55 case-seed pairs over
 one library and one generator. That is not a proof that no workflow needs a deeper search; the honest

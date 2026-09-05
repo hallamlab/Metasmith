@@ -166,8 +166,14 @@ Ten clauses. `Spec.lean` is normative and this is the reading.
 `Derived` is equality rather than containment on purpose. A product free to declare extra parents
 can buy any anchor it likes, which is a crossover written by hand rather than found by the search.
 It is also what lets the ancestor walk read the declared lineage alone instead of a union of two
-relations, and it is what will catch the known generator defect: `expand_node` reuses produced
-endpoints whose parents describe inputs the candidate no longer consumes.
+relations.
+
+**CAUTION** `Derived` is not why the refiner rejects its own candidates. `expand_node` does reuse
+produced endpoints whose parents describe inputs the candidate no longer consumes, and that defect
+is real. It is also narrow: `rectify` re-derives every product's parents before a plan leaves the
+refiner, so the stale values reach an emitted plan only through the `inherent_parents` term. What
+rejects the candidates is `validate_node`, which decides ancestry over the step graph rather than
+over this specification's relation. See `.awm/context.md` for the measurement.
 
 There is no `Nonempty` clause. `Target` rules out the empty plan already.
 

@@ -19,6 +19,7 @@ high-call-count functions.
     refine_seeds.py                   the same over four seeds -- the one that found the answer
     refine_earns.py                   where the refiner earns its budget, and how much it needs
     refine_budget.py                  are budgets of 4/8/16 distinguishable from 256? (55 pairs)
+    relation_probe.py                 why each candidate is rejected, and how many are really admissible
 
 The arms come from `../duplicate_work.py`: `shipped`, `unpinned`, and the partial pins between them.
 
@@ -30,3 +31,11 @@ The arms come from `../duplicate_work.py`: `shipped`, `unpinned`, and the partia
 **CAUTION** `branching2.py`'s slot cross-product under-predicts what the generator actually
 enumerates — 335 against a measured 110,866 for the unpinned plan. The measurement is the authority;
 where the extra candidates come from is not settled, and anyone repairing the refiner needs to know.
+
+**The rejections have a measured cause, and it is not the one this directory first recorded.**
+`relation_probe.py` attributes every rejection on all eleven templates and both metagenomics arms to
+one thing: `validate_node` decides ancestry over the step graph, a branched given application carries
+`used == {}`, so every anchor bound to a given fails. No other cause appears. Under the relation the
+specification uses, 40 of the unpinned workflow's 110,866 candidates are admissible and 1 of the
+shipped workflow's 755, and the +209 and +207 improvements on `fosmid_inserts_from_pooled_reads` and
+`ecspr_survey_from_pooled_reads` come back.
