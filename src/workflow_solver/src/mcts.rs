@@ -399,6 +399,7 @@ pub fn mcts(
     let mut refiner_iterations: Vec<(i64, i64)> = Vec::new();
     let mut policy = Policy::from_env(Phase::Mcts)?;
     let adaptive = policy.wants_observations();
+    if policy.wants_structure() { policy.set_structure(&p.self_feed); }
     let wants_rewards = policy.wants_rewards();
     let mut i: i64 = 0;
 

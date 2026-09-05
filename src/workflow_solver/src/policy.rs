@@ -91,6 +91,20 @@ pub struct PuctConfig {
     /// At least one slot of every key survives, so this can never empty the
     /// frontier.
     pub cap: usize,
+    /// Weight of the structural prior channel: how much a self-feeding transform
+    /// is discounted before the softmax.
+    ///
+    /// `dup` and `cap` read the frontier's *population*, so they act only once
+    /// the runaway has already grown, and they cannot tell a runaway from a chain
+    /// that honestly offers the same transform three times. `Problem::self_feed`
+    /// is the same fact read off the transform's own signature, before the search
+    /// starts. The channel is subtracted in the same normalised space as the two
+    /// score channels, so the suppression a copy gets is `exp(-w2/temperature)`;
+    /// beating N copies of one transform takes `w2 > temperature * ln N`.
+    ///
+    /// 0.0 is off, and the channel is identically zero on every real workflow in
+    /// the corpus, so it is inert there at any weight.
+    pub w2: f64,
 }
 
 /// How a before/after progress pair becomes a reward.
@@ -125,6 +139,7 @@ impl Default for PuctConfig {
             dup: 0.0,
             dup_lin: 0.0,
             cap: 0,
+            w2: 0.0,
         }
     }
 }
@@ -167,13 +182,14 @@ impl PuctConfig {
                 "dup" => c.dup = num(v)?,
                 "dup_lin" => c.dup_lin = num(v)?,
                 "cap" => c.cap = num(v)?.max(0.0) as usize,
+                "w2" => c.w2 = num(v)?,
                 "w0" => c.channel_weights[0] = num(v)?,
                 "w1" => c.channel_weights[1] = num(v)?,
                 other => {
                     return Err(format!(
                         "{PUCT_ENV}: unknown key {other:?}; known: c_puct, temperature, fpu, \
                          top_k, epsilon_milli, decay, use_value, reward_mode, \
-                         reward_scale, dup, dup_lin, cap, w0, w1"
+                         reward_scale, dup, dup_lin, cap, w0, w1, w2"
                     ));
                 }
             }
@@ -209,6 +225,10 @@ pub struct Policy {
     /// which holds whole-frontier totals and must not be mutated underneath the
     /// `dup` split when both knobs are on.
     seen: Map<u32, f64>,
+    /// The `w2` channel, indexed by transform. Empty until the caller supplies
+    /// it, and read only where a key indexes into it -- the refiner's key for the
+    /// plan it was handed is `u32::MAX`, which never does.
+    structure: Vec<f64>,
 }
 
 impl Policy {
@@ -237,11 +257,25 @@ impl Policy {
         Ok(Self {
             kind, w: det::map(), n: det::map(), total: 0,
             scratch: Vec::new(), dups: det::map(), seen: det::map(),
+            structure: Vec::new(),
         })
     }
 
     pub fn kind(&self) -> Kind {
         self.kind
+    }
+
+    /// Whether this policy reads a structural channel, so a caller can skip
+    /// handing over a table nothing will look at.
+    pub fn wants_structure(&self) -> bool {
+        matches!(self.kind, Kind::Puct(c) if c.w2 != 0.0)
+    }
+
+    /// Supply the per-transform structural channel. Indexed by the same key
+    /// `select` is given.
+    pub fn set_structure(&mut self, table: &[f64]) {
+        self.structure.clear();
+        self.structure.extend_from_slice(table);
     }
 
     /// Does this policy consume `observe`? A policy that does not lets the caller
@@ -353,6 +387,17 @@ impl Policy {
             for i in 0..len {
                 let v = prior_of(i)[ch];
                 self.scratch[i] += w * if span > 0.0 { (v - lo) / span } else { 0.5 };
+            }
+        }
+        // The structural channel enters here, in the same normalised space as
+        // the two score channels and before the softmax, so it is a prior over
+        // transforms rather than a correction applied to the frontier afterwards.
+        if c.w2 != 0.0 && !self.structure.is_empty() {
+            for i in 0..len {
+                let k = key_of(i) as usize;
+                if let Some(&s) = self.structure.get(k) {
+                    self.scratch[i] -= c.w2 * s;
+                }
             }
         }
         let tau = if c.temperature > 0.0 { c.temperature } else { 1e-9 };
