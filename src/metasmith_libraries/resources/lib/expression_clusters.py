@@ -32,7 +32,14 @@ def correlation_distance(mat: np.ndarray) -> np.ndarray:
     # output still carries one line per input gene.
     with np.errstate(invalid="ignore", divide="ignore"):
         corr = np.corrcoef(mat)
-    return np.nan_to_num(1.0 - corr, nan=1.0)
+    dist = np.nan_to_num(1.0 - corr, nan=1.0)
+    # `squareform` rejects a matrix that is asymmetric by any amount at all, and
+    # np.corrcoef is symmetric only up to floating-point rounding. Averaging with
+    # the transpose is the standard repair; zeroing the diagonal is the other half
+    # of what it checks.
+    dist = (dist + dist.T) / 2.0
+    np.fill_diagonal(dist, 0.0)
+    return dist
 
 
 def choose_k(dist: np.ndarray, assign) -> int:

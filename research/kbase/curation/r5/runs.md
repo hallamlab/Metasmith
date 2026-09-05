@@ -31,3 +31,22 @@ the GTDB release, ~110 GB, which is not on this host and is out of proportion to
 check. It was checked against `metagenomics/taxonomy/gtdbtk.py`, which runs the same image
 with the same bind and the same `GTDBTK_DATA_PATH`, and whose `classify_wf` already runs
 the `identify` and `align` steps this one calls separately.
+
+## The table bodies
+
+The algorithm is in `resources/lib/` and the protocol is one `python <script> <args>`
+line, per the library's own rule. Each fixture was constructed so the answer was known
+before the transform ran.
+
+| transform | s | product | checked |
+|---|---:|---|---|
+| `profile_abundance/kraken_abundance` | 106 | 3x6 tsv | row sums 1000 / 600 / 1000, matching the three hand-written kreports exactly |
+| `compare_genomes/ppanggolin_summary` | 19 | 10-row tsv | 4 core, 4 accessory, 2 unique — the planted partition, and the KO join found all four families whose annotation carried one |
+| `enrichment/go_overrepresentation_analysis` | 66 | 4-row tsv | the planted term came back at p = 1.3690123882275552e-16, **equal to the last digit** to an independent `math.comb` computation of P(X>=15 | N=200, K=17, n=20) |
+| `cluster_expression/expression_clusters` | ~80 | 30-row tsv | three planted co-varying blocks of ten recovered as three clusters of ten, with no gene crossing |
+
+One defect was found by running them: `HierarchicalCluster(..., metric="precomputed")`
+feeds `scipy.spatial.distance.squareform`, which rejects a matrix asymmetric by any
+amount at all, and `np.corrcoef` is symmetric only up to floating-point rounding.
+`lib::expression_clusters.py` averages with the transpose and zeroes the diagonal before
+handing the matrix over. Nothing static would have caught it.

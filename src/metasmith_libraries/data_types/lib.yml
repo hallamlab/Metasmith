@@ -45,6 +45,10 @@ types:
     properties:
       src: expression_clusters
       usage: command line
+  modelling:
+    properties:
+      src: modelling
+      usage: command line
   extract_noncoding_chunks.py:
     properties:
       src: extract_noncoding_chunks
