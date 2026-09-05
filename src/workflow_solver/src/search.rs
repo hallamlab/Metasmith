@@ -268,7 +268,13 @@ pub fn generate_applications(
         ar.appls[a as usize].produced = produced;
         return Ok(vec![a]);
     }
-    let handle_lineage = mock_produced.is_none();
+    // The lineage prune runs on both paths. It used to be switched off whenever
+    // `mock_produced` was passed, which is the refiner, and that is the whole
+    // reason a refiner iteration enumerates 110,866 candidate plans on the
+    // unpinned metagenomics workflow where the specification admits 33.
+    // `mock_produced` still decides where a candidate's *products* come from; it
+    // no longer decides whether its *inputs* are checked.
+    let mint_from_transform = mock_produced.is_none();
 
     // Two passes: prefer given. Fall back to given+produced only when the
     // given-only pass could not reach a leaf *for lineage reasons* -- reaching a
@@ -296,7 +302,7 @@ pub fn generate_applications(
         while let Some((di, e, used)) = todo.pop() {
             let d = requires[di];
             let used = used.with(d, e);
-            if handle_lineage && !satisfies_lineage(p, ar, d, e, &used)? { continue; }
+            if !satisfies_lineage(p, ar, d, e, &used)? { continue; }
             if di + 1 < requires.len() {
                 let next = di + 1;
                 for &ne in &matches[&requires[next]] {
@@ -308,15 +314,16 @@ pub fn generate_applications(
             let sig = ar.sign(p, tr, &used);
             if blacklist.contains(&sig) { continue; }
             let a = ar.new_appl(p, timeline, tr, used);
-            let produced = if handle_lineage {
-                // The lineage a product inherits: every input, plus every input's
-                // own parents -- one flattened hop per step, which is why
-                // `is_ancestor` has to walk rather than test membership.
-                let inputs: Vec<EpId> = ar.appls[a as usize].used.values().collect();
-                let mut lin: Vec<EpId> = Vec::new();
-                for &i in &inputs { lin.extend_from_slice(ar.eps.parents(i)); }
-                lin.extend_from_slice(&inputs);
-                let lin = ar.ep_set(lin);
+            // The lineage a product inherits: every input, plus every input's
+            // own parents -- one flattened hop per step, which is why
+            // `is_ancestor` has to walk rather than test membership. Computed on
+            // both paths now, because a refiner candidate mints its products too.
+            let inputs: Vec<EpId> = ar.appls[a as usize].used.values().collect();
+            let mut lin: Vec<EpId> = Vec::new();
+            for &i in &inputs { lin.extend_from_slice(ar.eps.parents(i)); }
+            lin.extend_from_slice(&inputs);
+            let lin = ar.ep_set(lin);
+            let produced: Vec<Group> = if mint_from_transform {
                 p.transforms[tr as usize]
                     .produces
                     .clone()
@@ -328,15 +335,24 @@ pub fn generate_applications(
                     })
                     .collect()
             } else {
-                // `zip(tr.produces, mock_produced)` -- the shorter one wins, and
-                // it is the mock when a branched given application carries one
-                // group where its transform declares several.
-                let mock = mock_produced.unwrap();
+                // Mint rather than reuse. Reusing the mock leaves a product
+                // declaring the parents of inputs this candidate no longer
+                // consumes, which is what `derived` states the negation of. The
+                // mock still supplies the *slots*: `zip(tr.produces,
+                // mock_produced)` -- the shorter one wins, and it is the mock
+                // when a branched given application carries one group where its
+                // transform declares several.
+                let mock = mock_produced.unwrap().clone();
                 p.transforms[tr as usize]
                     .produces
+                    .clone()
                     .iter()
                     .zip(mock.iter())
-                    .map(|(_, m)| m.clone())
+                    .map(|(_, m)| {
+                        m.iter()
+                            .map(|&(d, _)| (d, ar.eps.new_endpoint(p.deps.ty(d), &lin)))
+                            .collect::<Group>()
+                    })
                     .collect()
             };
             ar.appls[a as usize].produced = produced;

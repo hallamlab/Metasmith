@@ -125,9 +125,12 @@ fn depth_walk(
         if depths.contains_key(n) { continue; }
         depths.insert(n, dd);
         if stop_at == Some(n) { return Ok(false); }
-        let (start, len) = pf.get(n).ok_or_else(|| {
-            format!("endpoint {n} is used but produced by no step")
-        })?;
+        // A node no step in this state produces is a given or an inherent
+        // parent, and the walk stops there. This used to be a hard error, and it
+        // is the twin of the unguarded `_product2producer` lookup in Python:
+        // harmless while almost no candidate survived long enough to walk this
+        // far, and fatal the moment the lineage repair let them.
+        let (start, len) = match pf.get(n) { Some(v) => v, None => continue };
         for i in start..start + len {
             todo.push((pf_flat[i as usize], dd + 1));
         }
