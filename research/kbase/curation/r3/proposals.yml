@@ -1,0 +1,697 @@
+# Curation round 3 -- the parity proposal.
+#
+# Round 2 named the vocabulary KBase actually uses: 54 core task verbs over 35
+# entities. This round asks a different question. For each verb, does
+# `src/metasmith_libraries` already do it, and if not, what transform would?
+#
+# `status` is the verdict on the STANDARD library, not on the generated KBase port:
+#   covered   -- a shipped transform performs the verb.
+#   deferred  -- the verb is an import, which metasmith models as a template input
+#                rather than as a transform. No transform is proposed.
+#   plumbing  -- the verb moves objects. metasmith fans out over samples instead of
+#                building set objects, so there is nothing to port.
+#   partial   -- a shipped transform performs part of the verb.
+#   missing   -- nothing performs it.
+#   declined  -- nothing performs it and nothing should. `reason` says why.
+#
+# A proposal is a TOOL WITH A JOB. A verb whose apps are a family of table
+# manipulations does not become five transforms named after the manipulations --
+# it becomes one line in `refactors`, or a `declined` entry. Round 3's first draft
+# failed that test on the whole `matrix` group and this file is the correction.
+#
+# `proposals` are named in metasmith's own type vocabulary, not in KBase's. A type
+# written `sequences::assembly` exists today. One marked in `new_types` does not.
+#
+# `domain` groups the work the way an analyst groups it, not the way KBase's
+# catalog does. `render.py` reports coverage per domain and overall.
+
+version: r3
+
+domains:
+  reads: Reads and their quality control.
+  assembly: Contigs, and judging them.
+  annotation: Naming what is on a sequence.
+  binning: Separating a metagenome assembly into genomes.
+  taxonomy: Naming who is present, and how much of them.
+  comparative: Trees, pangenomes and genome-to-genome comparison.
+  modelling: Metabolic reconstruction and flux.
+  transcriptomics: RNA-seq from reads to differential expression.
+  ecology: Community structure over an abundance table.
+  variants: Variation against a reference.
+
+verbs:
+
+# ================================================================= reads
+- verb: import_reads
+  domain: reads
+  status: deferred
+  note: >-
+    `logistics/getNcbiSra.py` and `dumpNcbiSra.py` cover the SRA route. Every other
+    KBase importer is a staged file, which a template declares as a deferred input.
+
+- verb: qc_reads
+  domain: reads
+  status: covered
+  note: >-
+    `assembly/seqkit_reads.py` produces `sequences::read_qc_stats`, which is what
+    downstream consumes. What is missing is the human-facing report, and both transforms
+    that produce one are already written and sitting in `_disabled/` with their product
+    types already declared. Optional: nothing is blocked without them.
+  proposals:
+  - name: kbase/qc_reads/fastqc.py
+    spec: Measures per-base quality, GC distribution, duplication and adapter content of a short-read library. Catches a failed run before it is assembled.
+    action: enable
+    optional: true
+    consumes: [sequences::short_reads, env::fastqc.env]
+    produces: [sequences::read_qc_stats, sequences::fastqc_html_report, sequences::fastqc_raw_report]
+  - name: kbase/qc_reads/nanoplot.py
+    spec: Measures the read length and quality distribution of a long-read run. Confirms the reads are long enough to span the repeats they were sequenced for.
+    action: enable
+    optional: true
+    consumes: [sequences::long_reads, env::nanoplot.env]
+    produces: [sequences::read_qc_stats, sequences::nanoplot_html_report, sequences::nanoplot_raw_report]
+
+- verb: clean_reads
+  domain: reads
+  status: covered
+  note: >-
+    bbduk answers every `clean_reads` target today. fastp is the closer match to KBase's
+    canonical trimmomatic, it is already written, and it reports its own before/after
+    stats -- which bbduk does not. Optional.
+  proposals:
+  - name: kbase/clean_reads/fastp.py
+    spec: Clips adapter and trims low-quality read ends to keep synthetic sequence and miscalled bases out of the assembly.
+    action: enable
+    optional: true
+    consumes: [sequences::short_reads, env::fastp.env]
+    produces: [sequences::clean_short_reads, sequences::discarded_short_reads]
+
+- verb: merge_reads
+  domain: reads
+  status: plumbing
+- verb: convert_reads
+  domain: reads
+  status: covered
+  note: "`ora2fastq` and `hifi/pbBam2fastq` are the two conversions this tree needs."
+
+# ================================================================= assembly
+- verb: import_assembly
+  domain: assembly
+  status: deferred
+  note: "`logistics/getNcbiAssembly.py` covers NCBI. A staged FASTA is a template input."
+- verb: assemble
+  domain: assembly
+  status: covered
+  note: spades, megahit, flye, hifiasm, hifiasm_meta, miniasm.
+- verb: qc_assembly
+  domain: assembly
+  status: covered
+  note: "`assembly/assembly_stats.py` is the QUAST equivalent and also emits coverage and a bam."
+
+- verb: filter_assembly
+  domain: assembly
+  status: missing
+  note: >-
+    `select_chromosomal_contigs.py` filters, but only a hifiasm_meta assembly, and only
+    by circularity. Length and coverage fractionation is generic and every metagenomics
+    workflow does it before binning.
+  proposals:
+  - name: kbase/filter_assembly/seqkit_filter_contigs.py
+    spec: Drops contigs below a length or coverage threshold so binning reads composition and coverage from contigs long enough to carry a stable signal.
+    action: write
+    consumes: [sequences::assembly, sequences::min_contig_length, env::seqkit.env]
+    produces: [sequences::filtered_assembly]
+
+- verb: polish_assembly
+  domain: assembly
+  status: missing
+  proposals:
+  - name: kbase/polish_assembly/polypolish.py
+    spec: Corrects residual base errors in a long-read assembly against accurate short reads. Stops homopolymer indels frameshifting real genes out of the annotation.
+    action: write
+    consumes: [sequences::assembly, sequences::clean_short_reads, env::polypolish.env]
+    produces: [sequences::polished_assembly]
+    note: >-
+      Zero narrative copies on the KBase side, and proposed anyway: short-read polishing
+      of a long-read assembly is the missing step in `isolate_assembly_from_long_reads`,
+      which is a shipped template.
+
+# ================================================================= annotation
+- verb: import_genome
+  domain: annotation
+  status: deferred
+  note: "`getNcbiAssembly.py` produces isolate_assembly, orfs, gff and gbk together."
+
+- verb: annotate
+  domain: annotation
+  status: missing
+  note: >-
+    The single largest gap, and it splits in two the way bakta itself does. cyanoverse
+    runs bakta on 2,462 genomes and always with `--skip-cds`, because its CDS naming is
+    the annotation palette -- InterProScan, eggNOG, DeepEC, PredicTF, BUSCO, antiSMASH,
+    each already a hit/definition pair in this library. So the non-coding arm ships and
+    under-declares, and the CDS arm has no transform at all. Both are needed: an ORF
+    caller cannot see a tRNA, and a non-coding run cannot name a protein.
+  proposals:
+  - name: kbase/annotate/bakta_cds.py
+    spec: Names every protein an ORF caller found, against bakta's curated hierarchy of identical proteins, then protein clusters, then HMMs. Turns a set of unlabelled reading frames into a genome you can ask questions of.
+    action: write
+    consumes: [sequences::orfs, annotation::bakta_db, env::bakta.env]
+    produces: [annotation::bakta_protein_hits, annotation::bakta_protein_inference,
+               annotation::bakta_hypotheticals, annotation::bakta_protein_json,
+               annotation::bakta_annotated_proteins]
+    note: >-
+      `bakta_proteins`, a separate entry point beside `bakta` in the pinned
+      1.11.0 image, verified present and taking a protein FASTA -- so the input is ORF
+      calls, as asked. It writes five files and all five are declared: `.tsv` is the
+      per-ORF hit table, `.inference.tsv` the evidence behind each call, and those two
+      are the hit/definition pair `gpr_4lane` uses. `.hypotheticals.tsv` carries the
+      Pfam and physicochemical analysis of what stayed unnamed, which is a real result
+      rather than a leftover.
+  - name: kbase/annotate/bakta_noncoding.py
+    spec: Calls tRNA, rRNA, ncRNA, tmRNA, CRISPR arrays and oriC on an assembly. These are the features an ORF caller cannot see, and they are what makes a genome record complete rather than a list of proteins.
+    action: extend
+    consumes: [sequences::assembly, annotation::bakta_db, env::bakta.env]
+    produces: [annotation::bakta_gff, annotation::bakta_tsv, sequences::gbk,
+               annotation::bakta_feature_nt, annotation::bakta_summary]
+    note: >-
+      The transform ships and runs at scale -- 2,462 samples and 46 GB in cyanoverse's
+      `W06rU63X`. It declares 2 of the 12 files bakta writes. Three of the other ten are
+      worth declaring: `.gbff` is the annotated genome record and is the interchange
+      format everything downstream of `annotate` reads, `.ffn` carries the non-coding
+      feature sequences, `.txt` is the per-genome summary. The remaining seven are
+      empty or duplicate the input under `--skip-cds`.
+
+- verb: annotate_domains
+  domain: annotation
+  status: covered
+  note: interproscan covers Pfam, TIGRFAM and the rest of the domain databases.
+
+- verb: search_homologs
+  domain: annotation
+  status: missing
+  note: >-
+    The library searches ORFs against FIXED reference databases -- uniref50, tcdb, card,
+    vfdb, each with its own transform and its own product type. It cannot search a user's
+    query against a user's subject, which is what all 19 of KBase's blast apps do.
+  proposals:
+  - name: kbase/search_homologs/blast_homolog_hits.py
+    spec: Searches a chosen query set against a chosen subject. Answers whether a named gene is present in a given genome, which a fixed reference database cannot.
+    action: write
+    consumes: [sequences::orfs, sequences::assembly, env::blast.env]
+    produces: [annotation::homolog_hits]
+    note: >-
+      Generalises `amplicon/blast_map_asvs.py`, which already runs makeblastdb then
+      blastn over a query and a subject and differs only in being typed to
+      `amplicon::asv_seqs` and `amplicon::asv_contig_map`. Same finding as the ecology
+      lane -- the capability ships, locked to one namespace.
+
+- verb: enrichment
+  domain: annotation
+  status: missing
+  note: KBase has exactly one app here, and it is GO term enrichment over a gene set.
+  proposals:
+  - name: kbase/enrichment/go_overrepresentation_analysis.py
+    spec: Tests which GO terms occur in a selected gene set more often than the annotated genome background gives. Turns several hundred differentially expressed genes into a statement about function.
+    action: write
+    consumes: [annotation::interproscan_results, annotation::gene_set, env::python_for_data_science.env]
+    produces: [annotation::go_overrepresentation]
+    note: >-
+      interproscan already emits the GO terms. The gene set is whatever selected the
+      genes -- a DE result, a bin, a blast hit list.
+
+# ================================================================= binning
+- verb: bin
+  domain: binning
+  status: covered
+  note: metabat2, semibin2 and comebin, each over an assembly and its bam.
+- verb: refine_bins
+  domain: binning
+  status: covered
+  note: "`binning/aggregator.py` is the DAS_Tool equivalent, and `skani_dedup.py` clusters what it keeps."
+- verb: qc_bins
+  domain: binning
+  status: covered
+  note: "`binning/checkm.py`, fanned out per binner by `metagenomics_from_paired_reads`."
+
+- verb: extract_bins
+  domain: binning
+  status: declined
+  reason: >-
+    The binning lane is complete for its own purpose: the shipped template targets three
+    binners' fastas, checkm and gtdbtk per binner, and the skani cluster table. What
+    `extract_bins` would buy is COMPOSITION -- `sequences::bin_fasta` extends
+    `putative_genome` but not `assembly`, so a bin reaches checkm, gtdbtk and fastani and
+    reaches no annotator. That is a question about one line of the type graph, not a
+    transform to write, and it belongs to whoever wants bin -> annotate -> build_model.
+    Recorded and not proposed.
+
+# ================================================================= taxonomy
+- verb: classify_taxa
+  domain: taxonomy
+  status: covered
+  note: gtdbtk, kraken2, metaphlan, sylph, ganon2, centrifuger, metabuli, phyloflash.
+
+- verb: profile_abundance
+  domain: taxonomy
+  status: missing
+  note: >-
+    Every classifier in the library dead-ends in its own report type. Nothing turns one
+    into a sample-by-taxon table, which is what the ecology domain consumes. This is the
+    bridge between two lanes that already exist, not a KBase-demand item -- KBase's own
+    two apps here are retired and carry zero narrative copies.
+  proposals:
+  - name: kbase/profile_abundance/kraken_abundance.py
+    spec: Reshapes per-sample kraken reports into one sample-by-taxon count table, the form every diversity, ordination and differential abundance method requires.
+    action: write
+    consumes: [taxonomy::kraken2_report, env::polars.env]
+    produces: [amplicon::asv_table]
+    note: >-
+      Produces the type the ecology lane already reads, rather than a new one. A
+      kraken2 report and an ASV table are the same shape: samples by taxa, counts.
+
+# ================================================================= comparative
+- verb: pangenome
+  domain: comparative
+  status: covered
+  note: ppanggolin, its presence/absence matrix and its heatmap.
+
+- verb: build_tree
+  domain: comparative
+  status: missing
+  note: >-
+    The library builds no tree of any kind. KBase's canonical is marker extraction,
+    alignment and inference over a genome set -- which is precisely GTDB-Tk's
+    `identify` / `align` / `infer`, and `taxonomy/gtdbtk.py` already runs the same
+    binary against the same reference with `classify_wf`.
+  proposals:
+  - name: kbase/build_tree/gtdbtk_tree.py
+    spec: Infers a tree from the concatenated marker protein alignment GTDB-Tk already builds. Resolves relationships too distant for whole-genome similarity to measure.
+    action: write
+    consumes: [sequences::putative_genome, ref::gtdb, env::gtdbtk.env]
+    produces: [taxonomy::gtdbtk_msa, taxonomy::gtdbtk_tree]
+    note: >-
+      Yes, it is the same tool. `taxonomy/gtdbtk.py` runs `classify_wf`, which already
+      performs identify and align, then keeps only `classify/*summary.tsv` -- the
+      concatenated marker MSA it wrote is discarded. Two changes rather than a new
+      pipeline: declare `gtdbtk_msa` as a product of the transform that already writes
+      it, and add `gtdbtk infer` over that MSA for the tree.
+
+- verb: align_sequences
+  domain: comparative
+  status: missing
+  note: >-
+    `gtdbtk_de_novo` covers the marker case, which is what the tree needs. A bare
+    alignment of a user's own sequences is a different job and a one-tool transform.
+  proposals:
+  - name: kbase/align_sequences/mafft_msa.py
+    spec: Aligns homologous sequences so each column holds one ancestral position, the precondition for any tree, conservation score or selection test.
+    action: write
+    consumes: [sequences::orfs, env::mafft.env]
+    produces: [comparative::msa]
+
+- verb: compare_genomes
+  domain: comparative
+  status: partial
+  note: >-
+    `taxonomy/fastani.py` answers "how close are these two". KBase's `compare_genomes`
+    answers "which gene families does each genome have, and what do they do" -- core,
+    accessory and unique gene content with functions attached. ppanggolin already
+    computes that matrix and nothing reads it out.
+  proposals:
+  - name: kbase/compare_genomes/ppanggolin_summary.py
+    spec: Partitions pangenome families into core, accessory and unique with their functions attached. The accessory fraction is where a lifestyle difference between strains shows.
+    action: write
+    consumes: [pangenome::ppanggolin_matrix, annotation::kofamscan_descriptions, env::polars.env]
+    produces: [pangenome::ppanggolin_summary]
+    note: A readout on an existing product. No new tool.
+
+# ================================================================= modelling
+- verb: import_model
+  domain: modelling
+  status: deferred
+- verb: import_media
+  domain: modelling
+  status: deferred
+- verb: import_phenotype
+  domain: modelling
+  status: deferred
+
+- verb: build_model
+  domain: modelling
+  status: missing
+  adopt_from: research/fabfos/benchmarks/laser/vs_gem/
+  note: >-
+    `metabolicModelling/` in the standard library is the metabolomics lane. It CONSUMES
+    `metabolomics::metabolic_model_sbml` in `fba_constraint.py` and nothing produces it.
+    The work is not absent from the repository, though -- the fabfos scope built the
+    whole bridge: `fba_scaffold.py` parses MetaNetX equations into cobra reactions,
+    `bridge.py` holds the curated per-host models, `env::cobra.env` already runs inside a
+    metasmith transform (`build_references/transforms/benchmark/host_gpr_gem.py`), and
+    `acquire/modelseed.py` pins the ModelSEED biochemistry. Adopt that, do not rebuild it.
+  proposals:
+  - name: kbase/build_model/gem_from_gpr.py
+    spec: Resolves a gene-to-reaction table into a mass-balanced network. Mass balance is what makes flux prediction possible from reaction content.
+    action: adopt
+    consumes: [annotation::gpr_table, ref::mnxr_lookup, ref::metabolism_vocab, env::cobra.env]
+    produces: [modelling::metabolic_model]
+    note: >-
+      The metasmith route from a genome to reaction content is the GPR table, which
+      `fabfos/gpr_4lane.py` and `gpr_7lane.py` already build from ORFs and annotations.
+      This closes it into a model, reusing `fba_scaffold.parse_mnx_equation` and
+      `load_reac_prop` rather than adding a ModelSEED reconstruction lane beside them.
+  - name: kbase/build_model/fetch_bigg_model.py
+    spec: Fetches a manually curated model from BiGG by accession. A curated biomass equation and curated gene-protein-reaction rules are the sound baseline to measure a draft reconstruction against.
+    action: adopt
+    consumes: [modelling::bigg_model_id, env::cobra.env]
+    produces: [modelling::metabolic_model]
+    note: >-
+      Source named explicitly: BiGG, `http://bigg.ucsd.edu/static/models/<id>.json`,
+      pinned by model id. The id is the accession, the way `ncbi::assembly_accession`
+      is, so the transform matches `getNcbiAssembly.py` in shape. fabfos's
+      `vs_gem/bridge.py` holds the per-host model set this generalises.
+
+- verb: run_fba
+  domain: modelling
+  status: missing
+  adopt_from: research/fabfos/benchmarks/laser/vs_gem/run_fba.py
+  proposals:
+  - name: kbase/run_fba/cobra_fba.py
+    spec: Solves for the flux distribution that maximises biomass under mass balance and the medium's uptake limits. Given a conditions table it solves one row per medium and knockout, which predicts gene essentiality and scores the model against observed growth.
+    action: adopt
+    consumes: [modelling::metabolic_model, modelling::media, ecspr::conditions, env::cobra.env]
+    produces: [modelling::fba_solution]
+    note: >-
+      `ecspr::conditions` is optional and it is what absorbs `predict_phenotype`: a
+      conditions table is one row per medium and mask, which is a KBase PhenotypeSet in
+      this repository's own idiom. Given terminals it solves once, given conditions it
+      solves every row -- the same shape ecspr's probes already use, deliberately.
+
+- verb: gapfill_model
+  domain: modelling
+  status: missing
+  adopt_from: research/fabfos/benchmarks/laser/vs_gem/fba_scaffold.py
+  proposals:
+  - name: kbase/gapfill_model/cobra_gapfill.py
+    spec: Adds the smallest set of universal reactions that lets the model grow on a medium, and labels every one it adds. Without it a missing annotation returns zero growth, which reads as a biological result.
+    action: adopt
+    consumes: [modelling::metabolic_model, modelling::media, ref::mnxr_lookup, env::cobra.env]
+    produces: [modelling::gapfilled_model]
+    note: >-
+      `fba_scaffold.build_scaffold` already inserts non-native reactions from the
+      MetaNetX universe into a cobra model, creating the metabolites they need and
+      guarding the unmappable ones. That is gapfilling, written and exercised. The
+      transform is that function with the medium as the feasibility target rather than
+      a benchmark panel.
+
+- verb: predict_phenotype
+  domain: modelling
+  status: declined
+  closed_by: metabolicModelling/run_fba.py
+  reason: >-
+    Folded into `run_fba`. KBase's app is one FBA per row of a PhenotypeSet plus a
+    confusion matrix against observed growth. The conditions-table arm of `run_fba` is
+    the first half, and the scoring half already exists as
+    `research/fabfos/benchmarks/laser/vs_gem/score.py`.
+
+- verb: edit_model
+  domain: modelling
+  status: declined
+  reason: >-
+    Not an automated step. A model edit is a curation decision, and ecspr already refuses
+    the same job for the same reason -- "there is no weight builder, no add/delete policy,
+    because each is an API for manipulating a network, and a network manipulation belongs
+    to whoever is designing the experiment".
+- verb: edit_media
+  domain: modelling
+  status: declined
+  reason: Not an automated step. A medium is an input a template declares, not a product.
+- verb: compare_models
+  domain: modelling
+  status: declined
+  reason: >-
+    A diff between two products, which the caller does over the results. Same argument
+    ecspr makes about the difference between two conditions.
+
+# ================================================================= transcriptomics
+- verb: build_index
+  domain: transcriptomics
+  status: covered
+  note: star_genome_index and salmon_index.
+
+- verb: align_reads
+  domain: transcriptomics
+  status: partial
+  note: >-
+    STAR is splice-aware and the lane around it is eukaryotic -- braker3 gene prediction,
+    organellar references, `genbank_to_reference`. KBase's expression lane is 140 copies
+    of hisat2 and 69 of bowtie2, and most of it is bacterial. There is no unspliced
+    aligner here, so there is no prokaryotic RNA-seq path at all.
+  proposals:
+  - name: kbase/align_reads/bowtie2_align.py
+    spec: Places RNA-seq reads on a bacterial reference without splitting a read across a gap. A bacterial transcript is colinear with the genome, so a spliced aligner invents introns to raise its own score.
+    action: write
+    consumes: [sequences::assembly, sequences::clean_short_reads, transcriptomics::experiment, env::bowtie2.env]
+    produces: [transcriptomics::bowtie2_bam]
+    note: >-
+      Pairs with the new `bakta.py`: assembly -> bakta gff -> bowtie2 -> counts is the
+      bacterial RNA-seq chain, and every step but this one and the next would then exist.
+
+- verb: quantify_expression
+  domain: transcriptomics
+  status: partial
+  note: stringtie and salmon both assume transcripts. Neither counts reads over a bacterial GFF.
+  proposals:
+  - name: kbase/quantify_expression/stringtie_feature_counts.py
+    spec: Counts the reads falling inside each feature the annotation names. Produces the count table differential expression is defined on.
+    action: write
+    consumes: [transcriptomics::bowtie2_bam, annotation::bakta_gff, env::stringtie.env]
+    produces: [transcriptomics::stringtie_quant_gtf]
+    note: >-
+      `stringtie -e -G` against the bakta GFF, which is `stringtie_quant.py` with a
+      bacterial bam and a bacterial annotation in place of a STAR bam and a braker
+      merged GTF. It produces the existing `stringtie_quant_gtf`, so
+      `stringtie_count_matrix.py`, `deseq2.py` and `pydeseq2.py` serve it unchanged and
+      no subread environment is needed.
+
+- verb: differential_expression
+  domain: transcriptomics
+  status: covered
+  note: >-
+    deseq2 and pydeseq2, both keyed on `transcriptomics::experiment`. They read
+    `gene_count_table`, so the new counting path feeds them unchanged.
+
+- verb: qc_alignment
+  domain: transcriptomics
+  status: missing
+  proposals:
+  - name: kbase/qc_alignment/samtools_stats.py
+    spec: Reports mapping rate, depth and insert size for an alignment. Separates a wrong reference from a wrong sample from a sample that is simply quiet.
+    action: write
+    consumes: [alignment::bam, env::samtools.env]
+    produces: [alignment::alignment_stats]
+    note: >-
+      Mapping rate, depth and insert size. Four narrative copies on the KBase side, and
+      it is the readout every alignment in this library currently has no way to report.
+
+- verb: cluster_expression
+  domain: transcriptomics
+  status: missing
+  proposals:
+  - name: kbase/cluster_expression/expression_clusters.py
+    spec: Groups genes whose expression moves together across conditions. Recovers the operon and the regulon, which per-gene testing reports as unrelated hits.
+    action: write
+    consumes: [transcriptomics::gene_count_table, lib::hierarchical_clustering.py, env::python_for_data_science.env]
+    produces: [transcriptomics::expression_clusters]
+    note: >-
+      The clustering script already ships as a `lib::` resource for the pangenome
+      heatmap. KBase's four apps here are hierarchical, k-means, WGCNA and an estimate
+      of k -- one transform with a method knob, not four.
+
+- verb: import_matrix
+  domain: transcriptomics
+  status: deferred
+
+# ================================================================= ecology
+- verb: transform_matrix
+  domain: ecology
+  status: declined
+  reason: See the `ecology` refactor. rarefy, collapse-to-rank and filter are aspire transforms wearing a KBase name.
+- verb: ordinate
+  domain: ecology
+  status: declined
+  reason: See the `ecology` refactor. PCA and metaMDS over a community table -- `aspire/umap_clustering.py` and the diversity outputs.
+- verb: correlate_matrix
+  domain: ecology
+  status: declined
+  reason: See the `ecology` refactor. `aspire/voc_correlation.py` and `measurement_association.py`.
+- verb: test_statistics
+  domain: ecology
+  status: declined
+  reason: >-
+    See the `ecology` refactor. SIMPER, Mantel and per-variable stats over a community
+    table -- `aspire/diversity_analysis.py` and `paired_group_contrast.py`.
+- verb: build_network
+  domain: ecology
+  status: declined
+  reason: See the `ecology` refactor. `aspire/spieceasi.py` and `graph_network.py`.
+
+# ================================================================= variants
+- verb: call_variants
+  domain: variants
+  status: missing
+  proposals:
+  - name: kbase/call_variants/bcftools_variants.py
+    spec: Calls the positions where aligned reads disagree with the reference. Recovers the strain variation an assembly consensus collapses to one base.
+    action: write
+    consumes: [alignment::bam, sequences::assembly, env::bcftools.env]
+    produces: [sequences::variant_calls]
+    note: One KBase app, one narrative copy. A specific tool with a specific job, and last in the order.
+
+# ================================================================= virus
+- verb: identify_virus
+  domain: annotation
+  status: covered
+  note: virsorter2, genomad and dramv.
+
+# ================================================================= logistics
+- verb: build_set
+  domain: reads
+  status: plumbing
+  note: metasmith fans a transform out over its inputs. There is no set object to build.
+- verb: manage_samples
+  domain: reads
+  status: plumbing
+- verb: import_other
+  domain: reads
+  status: plumbing
+- verb: export
+  domain: reads
+  status: plumbing
+  note: Export is a deployment concern, not a transform.
+- verb: view
+  domain: reads
+  status: plumbing
+  note: 144 apps, all viewers. A metasmith product is a file, and rendering it is the GUI's job.
+
+# ---------------------------------------------------------------------------
+# Work that is not a transform.
+refactors:
+- name: Lift the ecology transforms out of the aspire namespace
+  domain: ecology
+  closes: [transform_matrix, ordinate, correlate_matrix, test_statistics, build_network]
+  means: >-
+    `diversity_analysis`, `spieceasi`, `graph_network`, `umap_clustering`,
+    `measurement_association` and `paired_group_contrast` do every one of KBase's
+    community-ecology operations. Each is gated on `aspire::run` and
+    `aspire::analysis_counts`, so none can be reached from anything but that pipeline.
+    `aspire/filter_table.py` and `create_count_matrix.py` already cross the boundary in
+    both directions on `amplicon::asv_table`, which is the type to lift them onto.
+    Five KBase verbs and 59 narrative copies close on one refactor rather than five
+    transforms with no biological job.
+
+- name: Ship a transcriptomics template
+  domain: transcriptomics
+  closes: []
+  means: >-
+    Eleven templates ship and none is transcriptomics, so eighteen transforms in that
+    directory are exercised by nothing. `bowtie2_align` and `featurecounts` would make
+    a bacterial chain end to end -- reads, bakta, alignment, counts, deseq2, volcano --
+    which is the template to write and the thing that would prove the lane works.
+
+- name: Decide whether a bin is an assembly
+  domain: binning
+  closes: [extract_bins]
+  means: >-
+    `sequences::bin_fasta` extends `putative_genome` and not `assembly`. One line either
+    way, and it decides whether bin -> annotate -> build_model is walkable. Separately
+    `binning::derep_mag_ref` is required by both instrain transforms and produced by
+    nothing, which is a dangling requirement regardless of what is decided here.
+
+new_types:
+  sequences::filtered_assembly:
+    extends: [assembly]
+    means: Contigs surviving a length or coverage filter.
+  sequences::polished_assembly:
+    extends: [assembly]
+    means: Contigs corrected against short reads.
+  sequences::min_contig_length:
+    extends: []
+    means: A scalar knob, the way `clustering::min_identity` already is.
+  sequences::variant_calls:
+    extends: []
+    means: VCF against a named reference.
+  annotation::homolog_hits:
+    extends: []
+    means: Tabular hits of a query set against a subject.
+  annotation::gene_set:
+    extends: []
+    means: The gene identifiers an enrichment is computed over.
+  annotation::go_overrepresentation:
+    extends: []
+    means: Hypergeometric over-representation of GO terms in a gene set.
+  annotation::bakta_protein_hits:
+    extends: []
+    means: Per-ORF bakta calls -- locus, product, db_xrefs. The hit half of the pair.
+  annotation::bakta_protein_inference:
+    extends: []
+    means: The evidence behind each call -- which database and at what identity. The definition half.
+  annotation::bakta_hypotheticals:
+    extends: []
+    means: The ORFs bakta could not name, with their Pfam hits and physicochemical properties.
+  annotation::bakta_protein_json:
+    extends: []
+    means: The full annotation record, for a consumer that wants more than the two tables.
+  annotation::bakta_annotated_proteins:
+    extends: []
+    means: The input proteins re-emitted with bakta's names on their headers.
+  annotation::bakta_feature_nt:
+    extends: []
+    means: Nucleotide sequence of every non-coding feature bakta called.
+  annotation::bakta_summary:
+    extends: []
+    means: Per-genome feature counts and assembly statistics.
+  taxonomy::gtdbtk_msa:
+    extends: []
+    means: GTDB-Tk's concatenated marker protein alignment.
+  taxonomy::gtdbtk_tree:
+    extends: []
+    means: A newick phylogeny over the genomes GTDB-Tk aligned.
+  comparative::msa:
+    extends: []
+    means: A multiple sequence alignment of user sequences.
+  pangenome::ppanggolin_summary:
+    extends: []
+    means: Core, accessory and unique gene families with their functions.
+  modelling::bigg_model_id:
+    extends: []
+    means: A BiGG model accession, the way ncbi::assembly_accession is an accession.
+  transcriptomics::bowtie2_bam:
+    extends: []
+    means: Unspliced RNA-seq alignment against a bacterial reference.
+  transcriptomics::expression_clusters:
+    extends: []
+    means: Gene clusters over a count table.
+  modelling::metabolic_model:
+    extends: [metabolomics::metabolic_model_sbml]
+    means: >-
+      A genome-scale reconstruction. Extending the metabolomics type is what lets
+      `fba_constraint.py` consume it unchanged.
+  modelling::media:
+    extends: []
+    means: A growth medium as a compound table. A deferred template input.
+  modelling::gapfilled_model:
+    extends: [modelling::metabolic_model]
+    means: A model with universe reactions added until the medium supports growth.
+  alignment::alignment_stats:
+    extends: []
+    means: Mapping rate, depth and insert size for one bam.
+  modelling::fba_solution:
+    extends: []
+    means: A flux distribution and its objective value, one row per condition.
+
+new_envs:
+  env::mafft.env: mafft, for a bare multiple alignment.
+  env::polypolish.env: polypolish, for short-read polishing of a long-read assembly.
+  env::bcftools.env: bcftools, for variant calling.
+  env::bowtie2.env: bowtie2, for unspliced RNA-seq alignment.

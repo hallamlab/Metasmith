@@ -26,7 +26,7 @@ a KBase app.
 | `catalog/` | the distilled per-app, per-parameter and per-type tables, the census and the conversion ledger |
 | `library/` | a self-contained metasmith library root, and the generator that writes it |
 | `narratives/` | extracted app cells and the reconstructed dependency DAGs |
-| `curation/` | one numbered round per curation pass, `r1/`, `r2/` — a round never edits an earlier one |
+| `curation/` | one numbered round per curation pass, `r1/`, `r2/`, `r3/` — a round never edits an earlier one |
 | `templates/` | template author modules |
 | `reports/` | findings |
 
