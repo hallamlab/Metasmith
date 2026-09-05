@@ -563,7 +563,14 @@ def _solve_by_mcts_python(
             appl.produced = [{p:Endpoint(properties=p.properties) for p in pgroup} for pgroup in tr.produces]
             return [appl]
         
-        handle_lineage = mock_produced is None
+        # The lineage prune runs on both paths. It used to be switched off
+        # whenever `mock_produced` was passed, which is the refiner, and that is
+        # the whole reason a refiner iteration enumerates 110,866 candidate plans
+        # on the unpinned metagenomics workflow where the specification admits 33.
+        # `mock_produced` still decides where a candidate's *products* come from;
+        # it no longer decides whether its *inputs* are checked.
+        handle_lineage = True
+        mint_from_transform = mock_produced is None
 
         def _is_ancestor(target: Endpoint, e: Endpoint, seen: set[Endpoint]) -> bool:
             if target in e.parents:
@@ -624,7 +631,7 @@ def _solve_by_mcts_python(
                     if appl.Signature() in blacklist: continue
                     lineage: set = {ancestor for e in used.values() for ancestor in e.parents}
                     lineage.update(used.values())
-                    if handle_lineage:
+                    if mint_from_transform:
                         appl.produced = [{p:Endpoint(p.properties, parents=lineage) for p in pgroup} for pgroup in tr.produces]
                     else:
                         # Mint rather than reuse. Reusing the pre-swap objects
