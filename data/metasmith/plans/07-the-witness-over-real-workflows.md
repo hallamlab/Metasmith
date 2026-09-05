@@ -230,15 +230,16 @@ belief should not survive this report.
 **"The refiner is meant to fix this."** It is not implemented to. Nothing in the repository said so
 before, and `.awm/context.md` now does.
 
-**The unpinned full template is no longer a 6 GB, 190-second solve; it is not a solve at all here.**
-The comment above `metagenomics_from_paired_reads`'s targets records that cost, from the
-Python-solver era. On the Rust engine the same unpinned target set reached 8 GB and was killed by the
-cap, and at a 24 GB cap it was still climbing past 12 GB after most of an hour without returning, at
-which point it was stopped. The pinned template solves in 1.8 s. So the number in that comment is
-stale, and the lesson it draws is understated: pinning is not a tidiness preference, it is the
-difference between a solve and no answer. That is also why the reproduction in this report is the
-fifteen-step `minimal` arm rather than the full one -- a case nobody can re-run is not a
-reproduction.
+**The unpinned full template costs 4 min 6 s and 16.7 GB, not 190 s and 6 GB.** The comment above
+`metagenomics_from_paired_reads`'s targets records the older figure, from the Python-solver era. On
+the Rust engine the same unpinned target set peaks at 16.7 GB, which is why an 8 GB cap kills it. The
+pinned template is 1.56 s and 0.11 GB. Pinning is not a tidiness preference; it is a factor of 157 in
+time and 152 in memory.
+
+*(Superseded within the session. This section first read "still climbing past 12 GB after most of an
+hour", which was three sequential solves in `duplicate_work --refiner` under memory pressure, not one.
+`data/metasmith/plans/08-where-the-unpinned-solve-goes.md` measures a single solve directly and is the
+number to quote.)*
 
 ## Deviations
 
