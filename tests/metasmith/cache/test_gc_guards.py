@@ -85,8 +85,17 @@ class TestCollectionLeavesImportsAlone:
         store = tmp_path / "task_cache"
         f = tmp_path / "ref.fa"
         f.write_text(">x\n")
-        data_ops.import_item(str(f), "cf::seed", cache_root=str(store))
-        res = ops.gc_cache(str(store), older_than_seconds=0)
+        key = data_ops.import_item(str(f), "cf::seed", cache_root=str(store))
+        # Age the row rather than passing `older_than_seconds=0`: that cutoff is
+        # `now`, and whether a row written this second falls under it depends on
+        # which side of a second boundary the two calls landed.
+        with CacheStore.open(store) as s:
+            s.conn.execute(
+                "UPDATE entries SET last_hit_at = 0 WHERE key = ?",
+                (bytes.fromhex(key["instance_id"]),),
+            )
+            s.conn.commit()
+        res = ops.gc_cache(str(store), older_than_seconds=60)
         assert res["tombstoned"] == []
         assert res["kept_imports"] == 1
 
