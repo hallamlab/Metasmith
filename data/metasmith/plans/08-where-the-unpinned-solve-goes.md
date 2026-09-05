@@ -95,19 +95,39 @@ partial pin costs full price.
 
 ## Does the refiner ever earn its budget?
 
-No case has been found where it does.
+**Yes, and it needs three iterations to do it.** A first pass at this question compared
+`max_refine=256` against `0` at seed 42 only, found no difference on 11 templates and 11 generated
+cases, and concluded the refiner never does anything. That was a single-seed answer and it was wrong;
+the scope's own record already held a counterexample at another seed.
 
-- **Eleven shipped templates**: solved at `max_refine=256` and at `0`, plan fingerprints compared.
-  **0 of 11 change.** Total solve time 8.43 s against 5.46 s.
-- **Eleven generated cases** (`CORPUS` + `STRESS_CORPUS`): **0 of 11 change.**
-- `found_on = 1` on every arm of the metagenomics ladder, at every budget from 1 to 256.
+Across four seeds:
 
-That is consistent with what the scope already recorded from a different direction: the candidate
-generator is handed `mock_produced`, which switches its lineage check off, so the candidates it
-builds reuse produced endpoints whose declared parents describe inputs the candidate no longer
-consumes — and `Derived` is exactly the clause that rejects those. The refiner is not choosing not to
-improve the plan. It is generating candidates that cannot be accepted, and paying full price to score
-each one.
+| case | seed | steps at `max_refine=0` | at `256` | `found_on` | frontier empty at |
+|---|---|---|---|---|---|
+| `isolate_assembly_from_long_reads` | 7 | 13 | **11** | 3 | 16 |
+| `isolate_assembly_from_long_reads` | 99 | 13 | **9** | 3 | 16 |
+| every other template x seed (42 pairs) | | unchanged | | 1 | |
+| every generated case (11) | | unchanged | | 1 | |
+
+Two things fall out, and the second is the useful one.
+
+**The refiner is real.** It removes four steps from a thirteen-step plan at seed 99. Switching it off
+by default would cost that.
+
+**It finds its winner at iteration 3, and its frontier is empty by 16.** Asked for 256 it still stops
+at 16, because on a pinned plan the state space is small enough to exhaust. The shipped budget of 256
+is therefore not what makes the refiner work. It is only what lets it run away on a plan whose state
+space does not exhaust.
+
+Tested directly: **budgets of 4, 8 and 16 all give byte-identical plan fingerprints to 256 on all 55
+case-seed pairs** -- 11 templates by 4 seeds, plus 11 generated cases. Zero differences.
+
+On the metagenomics ladder `found_on` is 1 at every budget from 1 to 256, which is consistent with
+what the scope recorded from a different direction: the candidate generator is handed
+`mock_produced`, which switches its lineage check off, so the candidates it builds reuse produced
+endpoints whose declared parents describe inputs the candidate no longer consumes -- and `Derived` is
+exactly the clause that rejects those. On that workflow the refiner is not declining to improve the
+plan; it is generating candidates that cannot be accepted, and paying full price to score each one.
 
 ## What to do about it
 
@@ -117,11 +137,13 @@ about the shipped configuration should change.
 **The fix is upstream of the pins, and it is the user's call because it moves the decision
 contract.** Three options, in the order the evidence supports them:
 
-1. **Default `max_refine` to 0** until the generator's lineage handling is repaired. On the evidence
-   here it moves no plan on 22 cases, and it takes the unpinned template from 4 min 6 s / 16.7 GB to
-   0.83 s / 30 MB and the shipped one from 1.56 s to 0.06 s. **It is not a one-line change**: `refine`
-   draws from the same `DecisionStream` as the search, so skipping it shifts the stream. The plans
-   are identical on all 22 cases measured, but a default change of this kind needs
+1. **Cut the default `max_refine` from 256 to 8.** This is the whole fix and it costs nothing. Every
+   improvement the refiner has been observed to make is found by iteration 3, every frontier that
+   exhausts is empty by 16, and 4, 8 and 16 are byte-identical to 256 across 55 case-seed pairs. It
+   takes the unpinned template from **4 min 6 s / 16.7 GB to 11.5 s / 0.84 GB** and the shipped one
+   from 1.56 s to 0.17 s, while keeping the 13-step-to-9 improvement a default of 0 would throw away.
+   **It is still not a one-line change**: `refine` draws from the same `DecisionStream` as the search,
+   so a shorter budget shifts the stream, and a default change of this kind needs
    `SOLVER_RNG_VERSION` considered and `fingerprints.json` re-pinned deliberately rather than found
    to be unchanged.
 2. **Budget the refiner in candidates, not iterations.** `max_refine=256` means 190,000 candidate
@@ -134,11 +156,11 @@ contract.** Three options, in the order the evidence supports them:
 
 ## What this does not say
 
-The refiner has never been observed to improve a plan *here*. That is not the same as proving it
-cannot, and the case that motivated it — `fosmid_inserts_from_pooled_reads`, where a candidate scores
-209 above the input and is rejected — is still on the record as a case where a working refiner would
-have something to do. Switching the default off is a statement about the component as it stands, not
-a decision to delete it.
+A budget of 8 is indistinguishable from 256 *on the cases measured here* -- 55 case-seed pairs over
+one library and one generator. That is not a proof that no workflow needs a deeper search; the honest
+reading is that nothing in this corpus exhausts a frontier later than iteration 16, not that nothing
+could. A budget is also not a repair: `fosmid_inserts_from_pooled_reads` still scores a candidate 209
+above its input and still rejects it, and nothing here touches that.
 
 ## Reproducing
 
