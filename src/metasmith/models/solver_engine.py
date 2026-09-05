@@ -56,8 +56,8 @@ def _runnable_engine_path(path: Path) -> Path|None:
     except OSError as e:
         Log.Warn(
             f"solver engine at [{path}] is not executable and could not be"
-            f" staged to [{staged}]: {e}. Falling back to the python solver,"
-            " which is correct but roughly 15x slower."
+            f" staged to [{staged}]: {e}. There is no other solver, so"
+            " planning will fail until this is fixed."
         )
         return None
     Log.Info(f"staged a runnable copy of the solver engine at [{staged}]")
@@ -121,8 +121,8 @@ def probe_engine(path: Path) -> EngineInfo|None:
         Log.Warn(
             f"solver engine at [{path}] speaks wire v{info.wire_version}/rng"
             f" v{info.rng_version}; this metasmith speaks wire"
-            f" v{SOLVER_WIRE_VERSION}/rng v{SOLVER_RNG_VERSION}. Falling back to"
-            " the python solver. Rebuild the engine (./dev.sh -be) or reinstall."
+            f" v{SOLVER_WIRE_VERSION}/rng v{SOLVER_RNG_VERSION}. Rebuild the"
+            " engine (./dev/metasmith.sh -be) or reinstall."
         )
         return None
     return info

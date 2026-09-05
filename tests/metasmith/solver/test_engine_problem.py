@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import pytest
 
-from metasmith.models.solver_backend import Backend, UsePythonSolver
 from metasmith.models.solver_engine import (
     SOLVER_WIRE_VERSION,
     CallEngine,
@@ -42,47 +41,6 @@ _PROFILES = [
 ]
 
 
-def _cases():
-    for name, seed, dials in CORPUS:
-        yield f"corpus/{name}", generate_problem(seed, dials, name=name)
-    for name, dials in _PROFILES:
-        for seed in range(12):
-            yield f"{name}-{seed}", generate_problem(seed, dials, name=name)
-
-
-def _describe_python(problem, encoded):
-    with UsePythonSolver():
-        assert Backend("solve") == "python", "the reference side must be python"
-        solution = problem.solve()
-    h = solution._heuristics
-
-    node_index = {n: i for i, n in enumerate(encoded.nodes)}
-    tr_index = {id(t): i for i, t in enumerate(encoded.transforms)}
-    given_index = encoded.payload["given_index"]
-
-    unknown: set[int] = set()
-    def _tr(t) -> int:
-        i = tr_index.get(id(t))
-        if i is not None: return i
-        unknown.add(id(t))
-        return given_index
-
-    def _pairs(m, value):
-        return sorted((node_index[k], value(v)) for k, v in m.items())
-
-    out = {
-        "demand2product": _pairs(
-            h["demand2product"], lambda v: [node_index[x] for x in v]),
-        "demand2producer": _pairs(h["demand2producer"], lambda v: [_tr(x) for x in v]),
-        "product2consumer": _pairs(h["product2consumer"], lambda v: sorted(_tr(x) for x in v)),
-        "distance": sorted((_tr(k), v) for k, v in h["distance_scores"].items()),
-        "opportunity": sorted((_tr(k), v) for k, v in h["opportunity_scores"].items()),
-        "no_path_possible": bool(h.get("no_path_possible", False)),
-    }
-    assert len(unknown) <= 1, "more than one transform was not in the payload"
-    return out
-
-
 def _describe_engine(engine, encoded):
     reply = CallEngine(engine, "describe", encoded.payload)
     return {
@@ -95,19 +53,6 @@ def _describe_engine(engine, encoded):
     }
 
 
-@pytest.mark.python_solver
-@pytest.mark.parametrize("name,problem", list(_cases()), ids=lambda x: x if isinstance(x, str) else "")
-def test_the_engine_derives_what_the_solver_derives(engine, name, problem):
-    encoded = encode_problem(
-        problem.given, problem.transforms, problem.target,
-        seed=42, max_iter=256, max_refine=256, wire_version=SOLVER_WIRE_VERSION,
-    )
-    mine = _describe_python(problem, encoded)
-    theirs = _describe_engine(engine, encoded)
-    for key in mine:
-        assert theirs[key] == mine[key], f"{name}: {key} disagrees"
-
-
 def test_a_demand_with_several_producers_lists_them_in_rank_order(engine):
     problem = generate_problem(2, GeneratorDials(
         n_types=9, n_extra_transforms=7, n_duplicate_transforms=3, lineage_density=0.6))
@@ -115,10 +60,8 @@ def test_a_demand_with_several_producers_lists_them_in_rank_order(engine):
         problem.given, problem.transforms, problem.target,
         seed=42, max_iter=256, max_refine=256, wire_version=SOLVER_WIRE_VERSION,
     )
-    mine = _describe_python(problem, encoded)
-    theirs = _describe_engine(engine, encoded)
-    assert theirs["demand2producer"] == mine["demand2producer"]
-    multi = [v for _, v in mine["demand2producer"] if len(v) > 1]
+    described = _describe_engine(engine, encoded)
+    multi = [v for _, v in described["demand2producer"] if len(v) > 1]
     assert multi, "this problem no longer has a dependency with several producers"
     for v in multi:
         assert v == sorted(v), "producers are not in ascending rank order"
@@ -145,10 +88,16 @@ def test_the_engine_reads_the_shipped_templates(engine):
         )
         assert encoded.payload["n_properties"] > 64, \
             f"{template.name} has too few properties to be testing the striding"
-        mine = _describe_python(problem, encoded)
-        theirs = _describe_engine(engine, encoded)
-        for key in mine:
-            assert theirs[key] == mine[key], f"{template.name}: {key} disagrees"
+        described = _describe_engine(engine, encoded)
+        # A template that solves has a path to its target, and the striding bug
+        # this guards -- a property id past the first word of a dense bit set --
+        # shows up as an empty derivation rather than as an error.
+        assert not described["no_path_possible"], f"{template.name}: no path possible"
+        assert described["demand2producer"], f"{template.name}: nothing produces anything"
+        n_tr = len(encoded.transforms)
+        for k, producers in described["demand2producer"]:
+            for i in producers:
+                assert 0 <= i <= n_tr, f"{template.name}: producer {i} of {n_tr}"
         seen += 1
     # Every shipped template, not a count. The count was 4 when this was written and
     # is 10 since the scopes converged, and a template landing is not a reason for

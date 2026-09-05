@@ -39,7 +39,7 @@ from pathlib import Path
 MLIB = Path(__file__).resolve().parents[2] / "src" / "metasmith_libraries"
 sys.path.insert(0, str(MLIB))
 
-from metasmith.models.solver_backend import Backend, UsePythonSolver  # noqa: E402
+from metasmith.models.solver_backend import Backend  # noqa: E402
 from metasmith.python_api import Spec, TransformInstanceLibrary  # noqa: E402
 
 
@@ -73,7 +73,6 @@ def main() -> int:
     ap.add_argument("--lib-root", default="", help="resolve the template's libraries under this tree")
     ap.add_argument("--exclude", default="", help="comma-separated substrings; matching transforms are masked out")
     ap.add_argument("--budget", type=float, default=5.0, help="seconds; the solve is killed at this mark")
-    ap.add_argument("--python-solver", action="store_true", help="revert to the python search")
     ap.add_argument("--engine-dir", default="", help="stage msm_solver from here instead of the package")
     ap.add_argument("--label", default="")
     args = ap.parse_args()
@@ -85,7 +84,7 @@ def main() -> int:
 
     out = {"label": args.label or args.template, "template": args.template,
            "budget": args.budget,
-           "solver": "python" if args.python_solver else Backend("solve")}
+           "solver": Backend("solve")}
 
     t0 = time.perf_counter()
     spec: Spec = importlib.import_module(args.template).build_spec()
@@ -114,7 +113,7 @@ def main() -> int:
     signal.setitimer(signal.ITIMER_REAL, args.budget)
     t0 = time.perf_counter()
     try:
-        task = spec.Solve() if not args.python_solver else _python_solve(spec)
+        task = spec.Solve()
         signal.setitimer(signal.ITIMER_REAL, 0)
         dt = time.perf_counter() - t0
         out.update(solve_s=round(dt, 3), over_budget=dt > args.budget,
@@ -133,11 +132,6 @@ def main() -> int:
 
     print("SOLVE_BUDGET " + json.dumps(out))
     return 0 if out.get("ok") and not out["over_budget"] else 1
-
-
-def _python_solve(spec: Spec):
-    with UsePythonSolver():
-        return spec.Solve()
 
 
 if __name__ == "__main__":
