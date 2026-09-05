@@ -530,8 +530,9 @@ running the protocol does that, and a whole workflow is a slow way to find a typ
 :python:`msm run` executes one transform against files you supply. It skips the solver and
 Nextflow, and it uses the same code that runs a workflow step.
 
-Supply the inputs as files. A workflow would fetch the genomes through
-:python:`getNcbiAssembly`, so download two of them yourself for this test.
+Register the inputs first. ``-i`` names an item in a data instance library, not a path on disk. A
+workflow would fetch the genomes through :python:`getNcbiAssembly`, so download two of them
+yourself for this test.
 
 .. code-block:: bash
     :caption: Terminal
@@ -539,20 +540,31 @@ Supply the inputs as files. A workflow would fetch the genomes through
     $ echo "e coli" > pangenome.txt
     $ echo "docker://staphb/fastani:1.34" > fastani.oci
 
+    $ msm data create ./run_inputs.xgdb --type-lib ./ani_types.yml
+    $ msm data add-item ./run_inputs.xgdb --path ./pangenome.txt --dtype pangenome::pangenome
+    $ msm data add-item ./run_inputs.xgdb --path ./DH10b.fna --dtype ncbi::assembly
+    $ msm data add-item ./run_inputs.xgdb --path ./K12.fna --dtype ncbi::assembly
+    $ msm data add-item ./run_inputs.xgdb --path ./fastani.oci --dtype ani::fastani.oci
+
     $ msm run ani_transforms/fastani.py \
         --agent-home ./msm_home \
-        -i pan=./pangenome.txt \
-        -i asm=./DH10b.fna \
-        -i asm=./K12.fna \
-        -i image=./fastani.oci \
+        -d ./run_inputs.xgdb \
+        -i pan=pangenome.txt \
+        -i asm=DH10b.fna \
+        -i asm=K12.fna \
+        -i image=fastani.oci \
         -w ./fastani_out
 
 Each ``-i`` names the variable the requirement was assigned to in :python:`fastani.py`. That file
 declares :python:`pan`, :python:`asm` and :python:`image`. :python:`asm` is repeated because the
 protocol reads it with :python:`context.InputGroup`.
 
-Metasmith finds the library by walking up from the transform file to :python:`ani_transforms`. The
-agent supplies the container runtime, so deploy one first.
+The library is the same channel a generated workflow reads, which is why this test tells you
+something a bare path could not: an item carries the type you gave it and the parents you recorded,
+so a protocol asking :python:`context.SourceOf` gets the answer it will get in a DAG.
+
+Metasmith finds the transform library by walking up from the transform file to
+:python:`ani_transforms`. The agent supplies the container runtime, so deploy one first.
 
 Read the products at the end of the run, then edit the protocol and run it again. See
 `Transforms <../usage/transforms.html>`_ for the full description of this command.

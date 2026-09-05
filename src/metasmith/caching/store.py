@@ -240,9 +240,6 @@ class CacheStore:
             return None
         return self._row_to_entry(row)
 
-    def files_exist(self, entry: CacheEntry) -> bool:
-        return entry.output_root.is_dir()
-
     def touch(self, key: bytes) -> None:
         now = int(time.time())
         self.conn.execute(
