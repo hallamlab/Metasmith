@@ -1,0 +1,58 @@
+#!/usr/bin/env -S python3
+"""submit LABEL "one-line claim" -- re-score from clean, commit, and record the finding."""
+import json, subprocess, sys, time
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import harness as H
+
+if len(sys.argv) < 3:
+    print('usage: submit <label> "<one-line claim>" [--policy P] [--puct S]', file=sys.stderr)
+    sys.exit(64)
+label, claim = sys.argv[1], sys.argv[2]
+extra = sys.argv[3:]
+
+root = H.worktree()
+worker = H.worker_name(root)
+
+print("re-scoring from clean before submitting...\n")
+p = subprocess.run([str(Path(__file__).parent / "score")] + extra, cwd=root)
+if p.returncode != 0:
+    print("\nSUBMIT REFUSED: score did not pass. Fix it and submit again.", file=sys.stderr)
+    sys.exit(1)
+
+scratch = H.RATCHET / "scratch" / worker
+cand = json.loads((scratch / "cand.json").read_text())
+rows = cand["rows"]
+base = json.loads((H.RATCHET / "baseline.json").read_text())["rows"]
+cs, bs = H.summarise(rows, base), H.summarise(base, base)
+v = H.verdict(cs, bs)
+
+subprocess.run(["git", "add", "-A", "src/workflow_solver"], cwd=root, check=True)
+msg = (f"{label}: {claim}\n\n"
+       f"solved {cs['solved']}/{cs['total']} (baseline {bs['solved']}), "
+       f"steps {cs['steps']} (baseline {bs['steps']}), "
+       f"iters {cs['iters']} (baseline {bs['iters']}) over cases both solved.\n"
+       f"policy={cand['policy']} puct={cand['puct']}\n\n"
+       f"Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>\n")
+c = subprocess.run(["git", "commit", "-q", "-m", msg], cwd=root, capture_output=True, text=True)
+if c.returncode != 0 and "nothing to commit" not in (c.stdout + c.stderr):
+    print(c.stdout + c.stderr, file=sys.stderr)
+    sys.exit(1)
+sha = subprocess.run(["git", "rev-parse", "--short", "HEAD"], cwd=root,
+                     capture_output=True, text=True).stdout.strip()
+
+H.log_append(worker, {
+    "ts": time.strftime("%H:%M:%S"), "worker": worker, "kind": "submit",
+    "label": label, "claim": claim, "sha": sha, "policy": cand["policy"], "puct": cand["puct"],
+    "solved": cs["solved"], "total": cs["total"], "steps": cs["steps"], "iters": cs["iters"],
+    "verdict_base": v,
+    "md": f"\n### SUBMIT `{label}` — {worker} @ {sha}\n"
+          f"{claim}\n\n"
+          f"solved **{cs['solved']}/{cs['total']}** (baseline {bs['solved']}), "
+          f"steps **{cs['steps']}** (baseline {bs['steps']}), "
+          f"iters **{cs['iters']}** (baseline {bs['iters']}) — **{v}**\n"
+          f"policy=`{cand['policy']}` puct=`{cand['puct']}`\n\n",
+})
+print(f"\nSUBMITTED  {label}  @ {sha}  ({v} vs baseline)")
+print("Recorded in the shared log. You may keep iterating and submit again.")
