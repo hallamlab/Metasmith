@@ -16,6 +16,7 @@ from ..models.libraries import (
     TransformInstance,
     TransformInstanceLibrary,
 )
+from ..models.lineage import LinPayload
 from ..models.remote import Source
 from ..models.solver import Dependency, Endpoint
 from ..models.workflow import WorkflowStep
@@ -86,7 +87,7 @@ def _build_lineage(dep_map: dict[Dependency, list[DataInstance]], requires: list
         for insts in dep_map.values()
         for inst in insts
     }
-    return build_entry([
+    entry = build_entry([
         (
             dep_map[dep][0].dtype.key if dep_map[dep] else dep.key,
             [
@@ -96,6 +97,14 @@ def _build_lineage(dep_map: dict[Dependency, list[DataInstance]], requires: list
         )
         for dep in requires
     ])
+    # Every routed member carries KEY: the orchestrator stamps it before submission
+    # and `member_token` refuses an entry without one, so an output name cannot be
+    # minted here without it. A direct run has no orchestrator and no cache, so "-"
+    # is the honest value -- the same one an unkeyable member gets, which names
+    # products from the lineage index instead. `testing/transform_harness.py` does
+    # the same for the same reason.
+    entry[LinPayload.KEY_KEY] = "-"
+    return entry
 
 
 def _build_dep2output(inst: TransformInstance) -> list[dict[Dependency, Endpoint]]:
