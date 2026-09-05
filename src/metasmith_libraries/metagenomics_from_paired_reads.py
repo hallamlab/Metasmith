@@ -21,9 +21,16 @@ and contig-, bin- and SSU-level taxonomy.
 # `spades_assembly` joined `megahit_assembly` under `sequences::assembly`, an
 # unpinned target is satisfiable from either, so the planner is free to answer
 # each one from a different assembler -- it did, running BOTH and splitting the
-# downstream work across them (35 steps rather than 29). Ambiguity that wide is
-# also what the search pays for: unpinned, this template took ~190s and 6 GB to
-# solve and blocked every other job behind the GUI's plan lock; pinned, ~3s.
+# downstream work across them (35 steps rather than 29, when it last completed).
+# The duplication is not confined to the assemblers: every tool between the
+# assembly and a target runs once per leg, `prodigal` included.
+#
+# Ambiguity that wide is also what the search pays for, and on the Rust engine it
+# no longer merely costs. Unpinned, this target set was killed at an 8 GB cap and
+# had not returned after most of an hour at 24 GB; pinned, ~2 s. The earlier
+# ~190 s / 6 GB figure was the python solver and no longer holds. Measurements,
+# and a three-target case that reproduces the duplication in seconds, are in
+# data/metasmith/plans/07-the-witness-over-real-workflows.md.
 _MB, _SB, _CB = 13, 14, 15
 TARGETS = [
     "sequences::megahit_assembly",

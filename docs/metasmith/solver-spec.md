@@ -175,6 +175,13 @@ Three things this does not claim. It says nothing about completeness, so a rejec
 no sound plan exists. It says nothing about optimality. And it says nothing about whether the plan
 is the one the search should have found.
 
+**The optimality silence has a reproducible consequence, and a remedy that is the author's.** Ask for
+`sequences::orfs` and two annotation products with no anchor between them and the planner answers them
+from two different assemblers, putting two `prodigal` steps in one plan, each serving a different set
+of consumers. Every checker accepts it, correctly. A target-level anchor removes it, and every target
+that could diverge needs its own -- anchoring one of the two leaves the duplicate in place.
+`research/metasmith/witness_sweep/duplicate_work.py` is the case.
+
 ### Soundness is a claim about a finished plan
 
 The search returns a non-empty plan with no target step when its frontier runs out. `Target` rejects
