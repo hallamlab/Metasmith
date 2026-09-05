@@ -828,22 +828,31 @@ def _solve_by_mcts_python(
         _ceiling: float|None = None
     def refine_mcts(initial_solution: list[Application], max_iters: int):
         def validate_node(state: RefinerState):
-            produced_from: dict[Endpoint, list[Endpoint]] = {}
-            for appl in state.steps:
-                _from = list(appl.used.values())
-                for pgroup in appl.produced:
-                    for e in pgroup.values():
-                        produced_from[e] = _from
             def _has_ancestor(e: Endpoint, a: Endpoint):
+                """The specification's relation: reflexive closure over declared parents.
+
+                `solver_spec.py` and the proved Rust witness decide the same thing.
+                This used to walk the *step graph* instead -- each product mapped to
+                the inputs of the step that emitted it -- and that relation gives a
+                given endpoint no parents at all, because a branched given
+                application carries `used == {}`. Every anchor bound to a given
+                therefore failed, which was 100% of the rejections measured across
+                the eleven templates and both metagenomics arms.
+
+                Reading declared parents is only sound because `expand_node` now
+                rebuilds a swapped step's descendants. On an unpropagated candidate
+                those parents describe bindings the candidate no longer has.
+                """
                 todo = [e]
                 seen = {e}
                 while len(todo)>0:
                     e = todo.pop()
                     if e == a: return True
-                    for parent in produced_from[e]:
+                    for parent in e.parents:
                         if parent in seen: continue
                         todo.append(parent)
                         seen.add(parent)
+                return False
 
             def _iter_steps():
                 yield given_appl
@@ -874,13 +883,9 @@ def _solve_by_mcts_python(
                         have |= {e for pgroup in s.produced for e in pgroup.values()}
                     scheduled = {id(s) for s in ready}
                     pending = [s for s in pending if id(s) not in scheduled]
-
-
-                for step in _iter_steps():
-                    for p, e in step.used.items():
-                        for pproto in p.parents:
-                            lineage_constraint_e = step.used[pproto] # type: ignore
-                            if not _has_ancestor(e, lineage_constraint_e): return False
+                # The lineage loop used to be repeated here, after `_lineage_ok`
+                # had already run it and returned True. It decided the same thing
+                # both times.
                 return True
             def _lineage_ok():
                 for step in _iter_steps():
@@ -894,11 +899,10 @@ def _solve_by_mcts_python(
             if target_appl is None:
                 state.valid = False
             else:
-                try:
-                    rejected = not _lineage_ok()
-                except KeyError:
-                    rejected = False
-                state.valid = False if rejected else _is_valid(target_appl)
+                # No `KeyError` guard: every endpoint has `parents`. The guard
+                # here turned "the step graph cannot answer" into "not rejected",
+                # which is a hole that only ever pointed one way.
+                state.valid = False if not _lineage_ok() else _is_valid(target_appl)
 
                 
         _slot_cache: dict[Transform, list[tuple[Dependency, Dependency]]] = {}
