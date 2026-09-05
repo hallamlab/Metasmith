@@ -93,10 +93,25 @@ types:
       ext: tsv
 
   # --- curation round 3 -- KBase parity ---
+  # An `alignment::bam` by subsumption, not by `extends`: `extends` cannot name a type
+  # in another file (`test_no_cross_file_extends`) but matching never needed it -- a
+  # property SUPERSET satisfies. So `_` and `ext` are alignment::bam's, restated, and
+  # what this type is beyond a bam lives in `method:`. Putting the prose back into `_`
+  # is what kept the two apart for three rounds: `_` is a matched property, and a
+  # different value stops satisfying.
+  #
+  # The other three bams in this file deliberately do NOT join. `star_bam` and the
+  # `merged_bam` built from it descend from `sequences::assembly` through `star_index`,
+  # so the lineage constraint on metabat2/semibin2/comebin and bcftools_variants would
+  # NOT stop a splice-aware RNA aligner's output being read as coverage or as evidence
+  # for a variant call. Only the type does. `organellar_bam` is an alignment against an
+  # organelle, which is not the reference anything downstream of an `alignment::bam`
+  # believes it has. Curation round 6.
   bowtie2_bam:
     properties:
-      _: unspliced RNA-seq alignment against a bacterial reference, coordinate sorted
+      _: binary alignment map
       ext: bam
+      method: bowtie2
   expression_clusters:
     properties:
       _: gene clusters over a count table

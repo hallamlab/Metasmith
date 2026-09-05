@@ -193,6 +193,27 @@ types:
       ext: bam
 # -----------------------------------------
 # reports
+  # What the researcher calls one sample. Sits ABOVE `read_metadata` in lineage, so
+  # every read set, alignment and profile made from that sample inherits it, and any
+  # later step can ask which sample a given file descends from.
+  #
+  # `ncbi::genome_name`'s idiom one level down, and here for the same reason: a name is
+  # a fact about intent, and nothing inside a fastq is both unique and readable.
+  # `kraken_abundance` labelled its columns by the staged file's stem for want of this,
+  # and a hybrid isolate said "same sample" only by sharing a `read_metadata` node that
+  # was never named for the job. It lives beside `read_metadata` because that is where
+  # sample identity attaches -- not in `ncbi::`, which is about accessions.
+  #
+  # It has no producer, and that is the design: like `genome_name`, it is supplied as a
+  # deferred template input. Declaring it mandatory somewhere nothing produces it would
+  # take down every target in the spec, not just the one that wanted it -- round 5 saw
+  # that twice. Curation round 6.
+  sample_name:
+    properties:
+      Data: name for a sample, chosen by whoever asked for it
+      arity: 1
+      ext: txt
+
   read_metadata:
     properties:
       _: read metadata
@@ -359,6 +380,20 @@ types:
       ext: paths
 # -----------------------------------------
 # metagenomic bins (putative single-genome FASTAs from a binner)
+#
+# A BIN IS NOT AN ASSEMBLY, and this is a decision rather than an oversight. A bin is
+# really a MAPPING of contigs -- which of an assembly's contigs a binner grouped
+# together -- and `binning::*_contig_to_bin_table` is that mapping written down. The
+# FASTA is a materialisation of it, to be avoided wherever it can be: annotation must
+# not sit downstream of a bin, because then every annotation is scoped to one binner's
+# grouping and has to be redone when the grouping changes. Making `bin_fasta` an
+# `assembly` would put it in reach of every assembly consumer in the library, which is
+# exactly the routing this refuses.
+#
+# Rounds 3, 4 and 5 each re-raised the join because the three tests below asserted the
+# negative without saying why. This is why. `test_bin_fasta_not_isa_assembly`,
+# `test_metabat2_bin_fasta_not_isa_assembly` and
+# `test_chromosomal_contig_not_isa_assembly` hold the line; curation round 6 closed it.
   bin_fasta:
     extends:
     - putative_genome

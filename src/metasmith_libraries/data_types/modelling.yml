@@ -1,19 +1,23 @@
 # Genome-scale metabolic reconstruction and flux.
 # Added by curation round 3 -- see research/kbase/curation/r3/proposals.yml.
 #
-# CAUTION this namespace does NOT connect to `metabolomics::metabolic_model_sbml`.
-# Round 3 specified `modelling::metabolic_model` as extending that type, so that
-# `metabolicModelling/fba_constraint.py` would consume a reconstruction unchanged.
-# `test_type_hierarchy.py::test_no_cross_file_extends` asserts that no `extends`
-# names a type from another file, so the namespace is kept and the inheritance is
-# dropped. The two metabolic lanes therefore run beside each other and do not meet:
-# `metabolic_model_sbml` is still consumed by `fba_constraint.py` and produced by
-# nothing. Joining them is a converter transform, or reopening the cross-file
-# `extends` question on its own terms -- neither is decided here.
+# This namespace DOES connect to `metabolomics::metabolic_model_sbml`, as of curation
+# round 6. Rounds 3 to 5 read `test_type_hierarchy.py::test_no_cross_file_extends` --
+# no `extends` may name a type in another file -- as closing the question, and left
+# `fba_constraint.py` requiring a type nothing produced while two transforms produced
+# its twin. But matching never needed `extends`: a type satisfies another when its
+# property set is a SUPERSET, and that is cross-file capable. The two already agreed
+# on `Format` and `ext` and differed only in `_`, which is a matched property and not
+# a description. Aligning `_` is the whole join; the prose moved into this comment,
+# where it cannot stop a match. No converter transform, and `extends` stays in-file.
 types:
+  # A genome-scale metabolic reconstruction. Equal, as a property set, to
+  # `metabolomics::metabolic_model_sbml` -- deliberately, because they are the same
+  # artifact under two names, and equality is what lets `fetch_bigg_model` and
+  # `gem_from_gpr` feed `metabolicModelling/fba_constraint.py`.
   metabolic_model:
     properties:
-      _: a genome-scale metabolic reconstruction
+      _: SBML genome-scale metabolic model file
       Format: SBML
       ext: xml
   # a reconstruction with universe reactions added until the medium supports growth.
