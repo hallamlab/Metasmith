@@ -45,6 +45,38 @@ pub struct PuctConfig {
     /// accumulate but every arm's value stays at `fpu`, so selection is the
     /// prior under a visit-count penalty and nothing is learned.
     pub use_value: bool,
+    /// How hard to split a key's prior across its own copies in the frontier.
+    ///
+    /// A self-feeding transform -- one that consumes a property it also produces
+    /// -- re-enters the frontier every time it is applied, so its copies grow
+    /// without bound while the chain that actually reaches the target sits at one
+    /// copy. The prior is a distribution over *transforms*, but the softmax runs
+    /// over frontier slots, so 700 copies of one transform carry 700x the mass of
+    /// a rival with one. Dividing each copy's prior by `(1 + ln count)^dup`
+    /// restores the per-transform reading. 0.0 is off.
+    ///
+    /// The log is not cosmetic. A plain split by `count` -- `dup_lin` -- also
+    /// breaks the loop, but it cannot tell a runaway from a chain that
+    /// legitimately offers the same transform two or three times, and it costs
+    /// four late-solving cases to buy one. The log is nearly flat at small counts
+    /// and still worth ~7x at 700 copies.
+    pub dup: f64,
+    /// The plain-split form of `dup`: divide by `count^dup_lin`. Kept only so the
+    /// harsher curve stays reachable; it measured as a LOSS at every setting.
+    pub dup_lin: f64,
+    /// Progressive widening: how many frontier slots per transform are eligible.
+    ///
+    /// The runaway this exists for is not a transform that is slightly too
+    /// popular, it is one that re-enters the frontier every time it fires; by the
+    /// iteration cap 714 of 818 slots on `sink26-103` are the same transform. A
+    /// penalty proportional to the count has to be steep enough to beat 714,
+    /// which also punishes the chain that honestly offers three. A cap does not:
+    /// the first `cap` slots of every key compete on their merits and the rest
+    /// are simply not looked at. 0 is off.
+    ///
+    /// At least one slot of every key survives, so this can never empty the
+    /// frontier.
+    pub cap: usize,
 }
 
 impl Default for PuctConfig {
@@ -58,6 +90,9 @@ impl Default for PuctConfig {
             epsilon_milli: 0,
             decay: 1.0,
             use_value: true,
+            dup: 0.0,
+            dup_lin: 0.0,
+            cap: 0,
         }
     }
 }
@@ -85,12 +120,15 @@ impl PuctConfig {
                 "epsilon_milli" => c.epsilon_milli = num(v)?.max(0.0) as u64,
                 "decay" => c.decay = num(v)?,
                 "use_value" => c.use_value = matches!(v.trim(), "1" | "true" | "yes"),
+                "dup" => c.dup = num(v)?,
+                "dup_lin" => c.dup_lin = num(v)?,
+                "cap" => c.cap = num(v)?.max(0.0) as usize,
                 "w0" => c.channel_weights[0] = num(v)?,
                 "w1" => c.channel_weights[1] = num(v)?,
                 other => {
                     return Err(format!(
                         "{PUCT_ENV}: unknown key {other:?}; known: c_puct, temperature, fpu, \
-                         top_k, epsilon_milli, decay, use_value, w0, w1"
+                         top_k, epsilon_milli, decay, use_value, dup, dup_lin, cap, w0, w1"
                     ));
                 }
             }
@@ -119,6 +157,13 @@ pub struct Policy {
     n: Map<u32, f64>,
     total: u64,
     scratch: Vec<f64>,
+    /// How many frontier slots carry each key, for the `dup` split. Held on the
+    /// policy so the hot loop reuses one allocation across iterations.
+    dups: Map<u32, f64>,
+    /// Running per-key count as `cap` walks the frontier. Separate from `dups`,
+    /// which holds whole-frontier totals and must not be mutated underneath the
+    /// `dup` split when both knobs are on.
+    seen: Map<u32, f64>,
 }
 
 impl Policy {
@@ -144,7 +189,10 @@ impl Policy {
                 ));
             }
         };
-        Ok(Self { kind, w: det::map(), n: det::map(), total: 0, scratch: Vec::new() })
+        Ok(Self {
+            kind, w: det::map(), n: det::map(), total: 0,
+            scratch: Vec::new(), dups: det::map(), seen: det::map(),
+        })
     }
 
     pub fn kind(&self) -> Kind {
@@ -268,14 +316,39 @@ impl Policy {
             *v = ((*v - peak) / tau).exp();
             total += *v;
         }
+        let split = c.dup > 0.0 || c.dup_lin > 0.0;
+        if split {
+            self.dups.clear();
+            for i in 0..len {
+                *self.dups.entry(key_of(i)).or_insert(0.0) += 1.0;
+            }
+        }
+        if c.cap > 0 {
+            self.seen.clear();
+        }
         let uniform = 1.0 / len as f64;
         // sqrt(1 + total) rather than sqrt(total): at the first selection of a
         // phase the bonus would otherwise be identically zero for every arm,
         // collapsing the index onto the constant first-play value.
         let explore = (1.0 + self.total as f64).sqrt();
         for i in 0..len {
-            let p = if total > 0.0 { self.scratch[i] / total } else { uniform };
+            let mut p = if total > 0.0 { self.scratch[i] / total } else { uniform };
             let k = key_of(i);
+            if split {
+                let m = self.dups.get(&k).copied().unwrap_or(1.0);
+                if m > 1.0 {
+                    if c.dup_lin > 0.0 { p /= m.powf(c.dup_lin); }
+                    if c.dup > 0.0 { p /= (1.0 + m.ln()).powf(c.dup); }
+                }
+            }
+            if c.cap > 0 {
+                let seen = self.seen.entry(k).or_insert(0.0);
+                *seen += 1.0;
+                if *seen > c.cap as f64 {
+                    self.scratch[i] = f64::NEG_INFINITY;
+                    continue;
+                }
+            }
             let n = self.n.get(&k).copied().unwrap_or(0.0);
             let q = if n > 0.0 { self.w[&k] / n } else { c.fpu };
             self.scratch[i] = q + c.c_puct * p * explore / (1.0 + n);
