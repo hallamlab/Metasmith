@@ -35,7 +35,7 @@
 //! and hashed per state. That module carries the argument for why swapping a
 //! hash map for a flat array cannot move a plan.
 use crate::det::{self, Map, Set};
-use crate::model::{EpId, EpSig, Endpoints};
+use crate::model::{EpId, EpSig, Endpoints, TransformId};
 use crate::problem::Problem;
 use crate::policy::{Phase, Policy};
 use crate::rectify::{get_order, order_steps, rectify};
@@ -49,10 +49,10 @@ pub struct RefinerState {
     pub scores: [f64; 2],
     pub valid: bool,
     pub iteration: i64,
-    /// The application this candidate swapped in, or `u32::MAX` for the plan the
+    /// The transform this candidate swapped in, or `u32::MAX` for the plan the
     /// refiner was handed. A stateful policy keys its statistics on it, mirroring
     /// `state._swapped_in` on the Python side.
-    pub swapped_in: ApplSig,
+    pub swapped_in: TransformId,
 }
 
 pub struct RefinerResult {
@@ -479,6 +479,10 @@ pub fn refine(
     seen.insert(sig0);
 
     let mut policy = Policy::from_env(Phase::Refine)?;
+    let adaptive = policy.wants_observations();
+    // Mirrors Python's `incumbent`: the best valid score seen so far. The
+    // refiner's reward is whether this expansion beat it.
+    let mut incumbent = f64::NEG_INFINITY;
 
     let mut i: i64 = 0;
     while !frontier.is_empty() && (i as u32) < max_iters {
@@ -487,6 +491,13 @@ pub fn refine(
             rng,
             frontier.len(),
             |j| states[frontier[j]].scores,
+            // Not `scores`: channel 1 is `score * valid` over a score that is
+            // never positive, so an invalid state's 0.0 outranks every valid one.
+            // The shipped rule keeps that; a prior must not inherit it.
+            |j| {
+                let st = &states[frontier[j]];
+                [st.scores[0], if st.valid { 1.0 } else { 0.0 }]
+            },
             |j| states[frontier[j]].swapped_in,
         );
         let n = frontier.len() - 1;
@@ -494,6 +505,8 @@ pub fn refine(
         let k = frontier.pop().expect("checked non-empty");
         states[k].iteration = i;
         if states[k].valid { valids.push(k); }
+        let swapped = states[k].swapped_in;
+        let mut improved = false;
 
         // `expand_node`. Neither the current signatures nor the production map
         // depends on which step is being swapped, so both are built once.
@@ -535,13 +548,24 @@ pub fn refine(
                 if !seen.insert(sig) { continue; }
                 let mut child = RefinerState {
                     steps: child_steps, scores: [0.0, 0.0], valid: false, iteration: -1,
-                    swapped_in: ar.appl(a).sig,
+                    swapped_in: ar.appl(a).transform,
                 };
                 r.score(ar, &mut child, &mut sc)?;
+                if child.valid && child.scores[0] > incumbent {
+                    incumbent = child.scores[0];
+                    improved = true;
+                }
                 let ck = states.len();
                 states.push(child);
                 frontier.push(ck);
             }
+        }
+        if adaptive {
+            // Through `reward_for` like the mcts site rather than as a raw 0/1,
+            // or a policy configured not to estimate a value still accumulates
+            // one here and the two callers disagree about what one config means.
+            let reward = policy.reward_for(improved, 0.0, 0.0);
+            policy.observe(swapped, reward);
         }
     }
 
