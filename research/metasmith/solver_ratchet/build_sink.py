@@ -12,7 +12,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT / "src"))
 
-from metasmith.testing.solver_differential import SWEEP_PROFILES
+from metasmith.testing.solver_bench import SWEEP_PROFILES
 from metasmith.testing.solver_verification import generate_problem
 from metasmith.models.solver_wire import encode_problem
 from metasmith.models.solver_engine import SOLVER_WIRE_VERSION
