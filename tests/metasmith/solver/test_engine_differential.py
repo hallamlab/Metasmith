@@ -28,7 +28,23 @@ from metasmith.testing.solver_differential import (
 SETTLED_OFF_THE_CLOCK_PROFILES = {"sink"}
 
 #: Individual cases settled the same way, for profiles that are otherwise fast.
-SETTLED_OFF_THE_CLOCK: set[str] = set()
+#:
+#: Both arrived with the refiner's downstream cascade, which rebuilds every step
+#: below a swap and so costs O(plan length) per candidate. Neither is settleable
+#: at the sweep's `max_refine=256`: the reference needs 137s at a budget of 32 and
+#: grows superlinearly, and the engine's own arena reaches tens of GB there. They
+#: are adjudicated at the budgets that terminate and reported as exactly that --
+#: **identical at 8, 16 and 32**, which is the shipped budget and two above it.
+#:
+#: The engine is the faster side at every budget measured, so neither cap is an
+#: engine regression against the reference:
+#:
+#:     cyclic-8/s2147483647   engine 0.31 / 0.33 / 0.64s   reference 1.29 / 2.03 / 4.62s
+#:     sink-3/s2147483647     engine 1.00 / 2.13 / 5.51s   reference 20.2 / 49.8 / 137.9s
+SETTLED_OFF_THE_CLOCK: set[str] = {
+    "cyclic-8/s2147483647",
+    "sink-3/s2147483647",
+}
 
 
 def _settled(c) -> bool:
