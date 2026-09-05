@@ -14,10 +14,18 @@ high-call-count functions.
     cprofile_arm.py <arm> <refine>    the same arm on the python solver, under cProfile
     branching2.py <req> <rep> <name>  what one refiner iteration enumerates, per step
     objective.py <req> <rep> <name>   score_node's objective on a returned plan, from the wire alone
-    refine_matters.py                 every shipped template at max_refine 256 vs 0, by fingerprint
+    refine_matters.py                 every shipped template at max_refine 256 vs 0, seed 42 only
     refine_matters_gen.py             the same over CORPUS + STRESS_CORPUS
+    refine_seeds.py                   the same over four seeds -- the one that found the answer
+    refine_earns.py                   where the refiner earns its budget, and how much it needs
+    refine_budget.py                  are budgets of 4/8/16 distinguishable from 256? (55 pairs)
 
 The arms come from `../duplicate_work.py`: `shipped`, `unpinned`, and the partial pins between them.
+
+**CAUTION** Do not answer "does the refiner do anything" at one seed. `refine_matters.py` compares
+256 against 0 at seed 42, finds no difference on 22 cases, and is *wrong* as a general claim:
+`isolate_assembly_from_long_reads` goes 13 steps to 11 at seed 7 and to 9 at seed 99. Use
+`refine_seeds.py`.
 
 **CAUTION** `branching2.py`'s slot cross-product under-predicts what the generator actually
 enumerates — 335 against a measured 110,866 for the unpinned plan. The measurement is the authority;
