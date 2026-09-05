@@ -480,6 +480,7 @@ pub fn refine(
 
     let mut policy = Policy::from_env(Phase::Refine)?;
     let adaptive = policy.wants_observations();
+    if policy.wants_structure() { policy.set_structure(&p.self_feed); }
     // Mirrors Python's `incumbent`: the best valid score seen so far. The
     // refiner's reward is whether this expansion beat it.
     let mut incumbent = f64::NEG_INFINITY;
