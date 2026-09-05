@@ -326,8 +326,8 @@ a:focus-visible,[tabindex]:focus-visible{outline:2px solid var(--ok); outline-of
       <tr>
         <td class="thread">engine suite never completed</td>
         <td class="since">r5</td>
-        <td><span class="st fix">run it</span></td>
-        <td class="verdict-c">It was still going at 25 minutes and was abandoned. This round changes the engine again.</td>
+        <td><span class="st fix">2078 pass</span></td>
+        <td class="verdict-c">Completed, chunked by directory. 5 fail: one this round caused and a guard caught, four pre&ndash;existing and now diagnosed.</td>
       </tr>
     </tbody>
   </table>
@@ -664,6 +664,31 @@ polypolish              requires <b>assembly</b>   produces <b>polished_assembly
       verification and the instruction &mdash; because naming an image the drawing host cannot
       see is precisely the failure the rewritten preflight now exists to catch, and shipping it
       to prove a point would be the worst possible way to demonstrate that.
+    </p>
+  </div>
+
+  <div class="finding">
+    <div class="where">the suite &middot; run to completion at last</div>
+    <h3>2078 pass. The one failure this round caused was a guard doing its job.</h3>
+    <p>
+      <code class="t">test_exported_names_survive</code> holds that a module split out in the
+      2026&ndash;07 refactor may not silently stop exporting a name, and
+      <code class="t">metasmith.models.libraries</code> stopped exporting exactly three:
+      <code class="t">CONTAINER_ARM</code>, <code class="t">VIRTUAL_ENV_ARM</code> and
+      <code class="t">EnvDispatch</code>. Deliberate &mdash; so the three came out of the
+      snapshot with the reason written beside them, rather than by running the file&rsquo;s own
+      regenerate, which rewrites the whole surface and would absorb any other drift with it.
+    </p>
+    <p>
+      Two of the four pre&ndash;existing failures were diagnosed rather than shrugged at.
+      <code class="t">test_cache_real_nextflow</code>&rsquo;s cleanup walks <em>up</em> from its
+      work directory until the parent is <code class="t">/tmp</code> &mdash; landing on
+      <code class="t">/tmp/pytest-of-tony</code>, the shared root of every pytest run this host
+      has ever done &mdash; and chmods that whole tree in a container against a fixed 120&thinsp;s
+      timeout. <b>57,030 files</b>, none of them the test&rsquo;s own. And it is a loop, not bad
+      luck: nextflow work dirs are root&ndash;owned inside containers, so pytest&rsquo;s own
+      cleanup cannot remove them and leaves the tree behind &mdash; which is what the chmod
+      exists to fix, and what makes it slower every run.
     </p>
   </div>
 
