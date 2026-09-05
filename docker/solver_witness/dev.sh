@@ -144,12 +144,19 @@ case "${1:---help}" in
     -xd)
         # Extract with TERMINATION MEASURES instead of `partial_fixpoint`.
         #
-        # This is what `check_spec` needs and the default extraction cannot give.
-        # A `partial_fixpoint` definition comes with `fixpoint_induct`, which is
-        # Scott induction: it proves partial correctness -- if the function
-        # returns, the answer is right -- and says nothing about whether it
-        # returns. `check_spec` is an EQUATION, so it asserts totality, and no
-        # amount of Scott induction will produce it.
+        # DEAD END, kept only so the finding stays reproducible. `check_spec` was
+        # believed to need this, on the reasoning that a `partial_fixpoint` gives
+        # only `fixpoint_induct` -- Scott induction, which proves partial
+        # correctness and says nothing about whether the function returns. That
+        # much is true. What does not follow is that the equation is out of
+        # reach: a `partial_fixpoint` also exposes `<name>.eq_def`, so
+        # termination is proved by induction in the PROOF. check_spec is proved
+        # that way, over the default extraction.
+        #
+        # This output does not compile, three ways: its tactic tokens are dotted
+        # and Lean cannot resolve one inside a quotation; it emits
+        # `partial_fixpoint` beside `termination_by`; and it lowers conditionals
+        # to a dependent `if h:` inside a `do` block, which Lean 4.31.0 rejects.
         #
         # `-decreases-clauses` emits a `Clauses/Template.lean` of measures to
         # fill: one `_terminates` measure and one `_decreases` tactic per loop,
