@@ -45,6 +45,27 @@ pub struct PuctConfig {
     /// accumulate but every arm's value stays at `fpu`, so selection is the
     /// prior under a visit-count penalty and nothing is learned.
     pub use_value: bool,
+    /// How a caller's before/after progress pair becomes a reward. `Delta`
+    /// credits the improvement an action made; `Absolute` credits the state it
+    /// left behind. They are not equivalent: a state's satisfied-requirement
+    /// count only ever grows along a path, so absolute progress ranks a
+    /// transform by how late it tends to be applied.
+    pub reward_mode: RewardMode,
+    /// Gain applied to the progress reward before it is clamped into [0, 1].
+    ///
+    /// `progress_of` divides by `requires.len() + 1`, so one satisfied
+    /// requirement is worth 1/69 on the widest ladder rung while an unvisited
+    /// key sits at `fpu`. At that scale Q is a novelty bonus rather than a
+    /// ranking: every observed key falls to ~0 after one observation. Scaling
+    /// separates the two hypotheses.
+    pub reward_scale: f64,
+}
+
+/// How a before/after progress pair becomes a reward.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum RewardMode {
+    Delta,
+    Absolute,
 }
 
 impl Default for PuctConfig {
@@ -58,6 +79,8 @@ impl Default for PuctConfig {
             epsilon_milli: 0,
             decay: 1.0,
             use_value: true,
+            reward_mode: RewardMode::Delta,
+            reward_scale: 1.0,
         }
     }
 }
@@ -85,12 +108,25 @@ impl PuctConfig {
                 "epsilon_milli" => c.epsilon_milli = num(v)?.max(0.0) as u64,
                 "decay" => c.decay = num(v)?,
                 "use_value" => c.use_value = matches!(v.trim(), "1" | "true" | "yes"),
+                "reward_mode" => {
+                    c.reward_mode = match v.trim() {
+                        "delta" => RewardMode::Delta,
+                        "absolute" => RewardMode::Absolute,
+                        other => {
+                            return Err(format!(
+                                "{PUCT_ENV}: reward_mode: expected delta or absolute, got {other:?}"
+                            ));
+                        }
+                    }
+                }
+                "reward_scale" => c.reward_scale = num(v)?,
                 "w0" => c.channel_weights[0] = num(v)?,
                 "w1" => c.channel_weights[1] = num(v)?,
                 other => {
                     return Err(format!(
                         "{PUCT_ENV}: unknown key {other:?}; known: c_puct, temperature, fpu, \
-                         top_k, epsilon_milli, decay, use_value, w0, w1"
+                         top_k, epsilon_milli, decay, use_value, reward_mode, \
+                         reward_scale, w0, w1"
                     ));
                 }
             }
@@ -180,7 +216,11 @@ impl Policy {
                 } else if solved {
                     1.0
                 } else {
-                    (after - before).clamp(0.0, 1.0)
+                    let raw = match c.reward_mode {
+                        RewardMode::Delta => after - before,
+                        RewardMode::Absolute => after,
+                    };
+                    (raw * c.reward_scale).clamp(0.0, 1.0)
                 }
             }
         }
