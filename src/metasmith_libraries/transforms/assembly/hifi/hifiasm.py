@@ -15,7 +15,7 @@ def protocol(context: ExecutionContext):
     threads = context.params.get('cpus')
     threads = "" if threads is None else f"-t {threads}"
     assembly_prefix = "the_assembly"
-    context.ExecWithEnv().ifContainerDo(
+    context.ExecWithEnv(
         env = img_hfa,
         cmd = f"""
         hifiasm -o {assembly_prefix} {threads} -l0 {ireads.container}
@@ -24,7 +24,7 @@ def protocol(context: ExecutionContext):
 
     primary_gfa = f"{assembly_prefix}.bp.p_ctg.gfa"
     assert Path(primary_gfa).exists(), "failed to find the primary gfa"
-    context.ExecWithEnv().ifContainerDo(
+    context.ExecWithEnv(
         env = img_gft,
         cmd = f"""
         /gfatools-final-gt/gfatools gfa2fa {primary_gfa} >{iout.container}

@@ -82,7 +82,7 @@ pl.DataFrame(rows, schema={{"orf_id": pl.String, "kind": pl.String,
 """
 
     context.LocalShell("cat > _gather.py << 'PYEOF'\n" + script + "\nPYEOF\n")
-    context.ExecWithEnv().ifContainerDo(env=image, cmd="python3 _gather.py")
+    context.ExecWithEnv(env=image, cmd="python3 _gather.py")
 
     return ExecutionResult(
         manifest=[

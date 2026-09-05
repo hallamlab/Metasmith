@@ -28,17 +28,13 @@ def protocol(context: ExecutionContext):
                 {iref.container} {ir1.container} {ir2.container} \
                 > aligned.sam
         """
-    context.ExecWithEnv() \
-        .ifContainerDo(env=mm2_img, cmd=_cmd) \
-        .ifVirtualEnvDo(env=mm2_img, cmd=_cmd)
+    context.ExecWithEnv(env=mm2_img, cmd=_cmd)
 
     _cmd = f"""\
             samtools sort -@ {threads} -o {iout.container} aligned.sam && \
             samtools index {iout.container}
         """
-    context.ExecWithEnv() \
-        .ifContainerDo(env=sam_img, cmd=_cmd) \
-        .ifVirtualEnvDo(env=sam_img, cmd=_cmd)
+    context.ExecWithEnv(env=sam_img, cmd=_cmd)
 
     return ExecutionResult(
         manifest=[{out: iout.local}],

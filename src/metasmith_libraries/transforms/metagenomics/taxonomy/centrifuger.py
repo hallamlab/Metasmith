@@ -22,7 +22,7 @@ def protocol(context: ExecutionContext):
     threads = context.params.get('cpus')
     threads_arg = "" if threads is None else f"-t {threads}"
 
-    context.ExecWithEnv().ifContainerDo(
+    context.ExecWithEnv(
         env=img_bb,
         cmd=f"""
             reformat.sh in={ireads.container} \
@@ -30,7 +30,7 @@ def protocol(context: ExecutionContext):
         """
     )
 
-    context.ExecWithEnv().ifContainerDo(
+    context.ExecWithEnv(
         env=image,
         cmd=f"""
             pfx=$(ls {idb.container}/*.1.cfr 2>/dev/null | head -1)
@@ -47,7 +47,7 @@ def protocol(context: ExecutionContext):
         """
     )
 
-    context.ExecWithEnv().ifContainerDo(
+    context.ExecWithEnv(
         env=img_pq,
         cmd=f"""
             python <<'PY'

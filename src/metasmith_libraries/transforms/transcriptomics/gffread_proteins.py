@@ -14,9 +14,7 @@ def protocol(context: ExecutionContext):
     iout = context.Output(out)
 
     _cmd = f"gffread {igtf.container} -g {iasm.container} -y {iout.container}"
-    context.ExecWithEnv() \
-        .ifContainerDo(env=image, cmd=_cmd) \
-        .ifVirtualEnvDo(env=image, cmd=_cmd)
+    context.ExecWithEnv(env=image, cmd=_cmd)
     return ExecutionResult(
         manifest=[{out: iout.local}],
         success=iout.local.exists(),

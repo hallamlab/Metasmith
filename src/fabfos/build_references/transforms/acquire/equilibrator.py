@@ -63,9 +63,7 @@ PY
         ( cd $D && md5sum -c {CHECKSUMS} )
         rm -rf _eq_prime
     """
-    context.ExecWithEnv() \
-        .ifContainerDo(env=image, cmd=_cmd) \
-        .ifVirtualEnvDo(env=image, cmd=_cmd)
+    context.ExecWithEnv(env=image, cmd=_cmd)
 
     vers = sorted(p for p in iout.local.glob("*") if p.is_dir())
     wanted = ARTIFACTS + (CHECKSUMS,)

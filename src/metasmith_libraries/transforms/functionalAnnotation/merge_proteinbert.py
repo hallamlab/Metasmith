@@ -41,7 +41,7 @@ def protocol(context: ExecutionContext):
     manifest_path = Path("_pbert_manifest.json")
     manifest_path.write_text(json.dumps([str(e.container) for e in emb_chunks]))
 
-    context.ExecWithEnv().ifContainerDo(
+    context.ExecWithEnv(
         env=image_polars,
         cmd=f"python {script} {manifest_path} {oemb.container}",
     )

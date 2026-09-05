@@ -12,7 +12,7 @@ ZENODO_URL = ("https://zenodo.org/api/records/14192463/files/"
 def protocol(context: ExecutionContext):
     iref = context.Output(ref)
 
-    context.ExecWithEnv().ifContainerDo(
+    context.ExecWithEnv(
         env=image,
         cmd=f"""
             mkdir -p {iref.container}

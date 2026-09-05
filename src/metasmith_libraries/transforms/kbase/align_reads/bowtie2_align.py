@@ -27,13 +27,13 @@ def protocol(context: ExecutionContext):
             bowtie2-build --threads {threads} {iasm.container} ref
             bowtie2 -p {threads} -x ref -U {ireads.container} -S aligned.sam
         """
-    context.ExecWithEnv().ifContainerDo(env=image, cmd=_cmd)
+    context.ExecWithEnv(env=image, cmd=_cmd)
 
     _cmd = f"""\
             samtools sort -@ {threads} -o {iout.container} aligned.sam
             samtools index {iout.container}
         """
-    context.ExecWithEnv().ifContainerDo(env=sam_env, cmd=_cmd)
+    context.ExecWithEnv(env=sam_env, cmd=_cmd)
 
     return ExecutionResult(
         manifest=[{out: iout.local}],

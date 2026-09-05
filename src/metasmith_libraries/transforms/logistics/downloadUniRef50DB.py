@@ -22,9 +22,7 @@ def protocol(context: ExecutionContext):
         "diamond makedb --in uniref50.fasta.gz -d uniref50",
         f"mv uniref50.dmnd {idb.container}",
     ])
-    context.ExecWithEnv() \
-        .ifContainerDo(env=image, cmd=_cmd) \
-        .ifVirtualEnvDo(env=image, cmd=_cmd)
+    context.ExecWithEnv(env=image, cmd=_cmd)
 
     return ExecutionResult(
         manifest=[{db: idb.local}],

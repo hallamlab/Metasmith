@@ -31,7 +31,7 @@ def protocol(context: ExecutionContext):
 
     iout = context.Output(out)
     threads = context.params.get("cpus", 8)
-    context.ExecWithEnv().ifContainerDo(
+    context.ExecWithEnv(
         env=image,
         cmd=f"""
             diamond makedb --in pooled.faa -d pooled_db --threads {threads}

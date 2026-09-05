@@ -46,7 +46,7 @@ def protocol(context: ExecutionContext):
     temp_ws = Path("temp.ws")
     align_ws = Path("./gtdb_align")
     infer_ws = Path("./gtdb_infer")
-    context.ExecWithEnv().ifContainerDo(
+    context.ExecWithEnv(
         env=image,
         binds=[(iref.external, "/ref")],
         cmd=f"""\

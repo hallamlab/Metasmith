@@ -28,9 +28,7 @@ def protocol(context: ExecutionContext):
             echo "[chebi] $f $(stat -c%s $D/$f) bytes, gzip ok"
         done
     """
-    context.ExecWithEnv() \
-        .ifContainerDo(env=image, cmd=_cmd) \
-        .ifVirtualEnvDo(env=image, cmd=_cmd)
+    context.ExecWithEnv(env=image, cmd=_cmd)
 
     d = iout.local / RELEASE
     got = [f for f in FILES if (d / f).exists() and (d / f).stat().st_size > 0]

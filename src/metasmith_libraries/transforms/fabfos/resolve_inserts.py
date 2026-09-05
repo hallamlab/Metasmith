@@ -34,14 +34,10 @@ def protocol(context: ExecutionContext):
     tflag = "" if threads is None else f"--threads {threads}"
 
     def py(cmd):
-        context.ExecWithEnv() \
-            .ifContainerDo(env=img_pyds, cmd=cmd) \
-            .ifVirtualEnvDo(env=img_pyds, cmd=cmd)
+        context.ExecWithEnv(env=img_pyds, cmd=cmd)
 
     def blast(cmd):
-        context.ExecWithEnv() \
-            .ifContainerDo(env=img_blast, cmd=cmd) \
-            .ifVirtualEnvDo(env=img_blast, cmd=cmd)
+        context.ExecWithEnv(env=img_blast, cmd=cmd)
 
     R = f"python {context.Input(recovery).container}"
     bb = context.Input(backbone).container

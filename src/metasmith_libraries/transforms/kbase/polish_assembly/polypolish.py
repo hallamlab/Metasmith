@@ -41,13 +41,13 @@ def protocol(context: ExecutionContext):
             bwa mem -a -t {threads} ref.fa r1.fastq > a1.sam
             bwa mem -a -t {threads} ref.fa r2.fastq > a2.sam
         """
-    context.ExecWithEnv().ifContainerDo(env=bwa_env, cmd=_cmd)
+    context.ExecWithEnv(env=bwa_env, cmd=_cmd)
 
     _cmd = f"""\
             polypolish filter --in1 a1.sam --in2 a2.sam --out1 f1.sam --out2 f2.sam
             polypolish polish ref.fa f1.sam f2.sam > {iout.container}
         """
-    context.ExecWithEnv().ifContainerDo(env=image, cmd=_cmd)
+    context.ExecWithEnv(env=image, cmd=_cmd)
 
     return ExecutionResult(
         manifest=[{out: iout.local}],

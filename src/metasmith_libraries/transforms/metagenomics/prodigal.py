@@ -50,9 +50,7 @@ def protocol(context: ExecutionContext):
                 -f gff \
                 -o {igff.container}
             """
-    context.ExecWithEnv() \
-        .ifContainerDo(env=image, cmd=_cmd) \
-        .ifVirtualEnvDo(env=image, cmd=_cmd)
+    context.ExecWithEnv(env=image, cmd=_cmd)
     
     if not (icds.local.exists() and igff.local.exists()):
         return ExecutionResult(manifest=[{cds: icds.local, gff: igff.local}], success=False)

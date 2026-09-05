@@ -62,9 +62,7 @@ def protocol(context: ExecutionContext):
             --lane-set {LANE_SET} \
             --source {iorfs.local.stem}
     """
-    context.ExecWithEnv() \
-        .ifContainerDo(env=image, cmd=cmd) \
-        .ifVirtualEnvDo(env=image, cmd=cmd)
+    context.ExecWithEnv(env=image, cmd=cmd)
 
     return ExecutionResult(
         manifest=[{out_gpr: iout.local}],

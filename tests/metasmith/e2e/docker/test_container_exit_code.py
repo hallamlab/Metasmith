@@ -95,7 +95,7 @@ def container_case(tmp_path, monkeypatch, probe_image):
                     _environment=Runtime.DOCKER,
                 )
                 try:
-                    ctx.ExecWithEnv().ifContainerDo(env=image_dep, cmd=cmd)
+                    ctx.ExecWithEnv(env=image_dep, cmd=cmd)
                 except SystemExit as e:
                     raised = e
         finally:

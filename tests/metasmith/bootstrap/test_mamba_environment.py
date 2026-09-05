@@ -101,7 +101,7 @@ def test_mamba_exec_no_relay_identity_cwd(tmp_path, monkeypatch):
     assert model.container.binds == []
     assert Path(model.container.workdir) == real_cwd
 
-    ctx.ExecWithEnv().ifVirtualEnvDo(image_dep, "checkm version")
+    ctx.ExecWithEnv(image_dep, "checkm version")
 
     assert len(shell.calls) == 1
     run_cmd = shell.calls[0]

@@ -82,9 +82,15 @@ def protocol(context: ExecutionContext):
         weight_member=WEIGHT_MEMBER, min_bytes=MIN_WEIGHT_BYTES,
     )
     context.LocalShell("cat > _acquire_esm_c.py << 'PYEOF'\n" + driver + "\nPYEOF\n")
-    context.ExecWithEnv() \
-        .ifContainerDo(env=image, cmd="pip install --quiet huggingface_hub && python3 _acquire_esm_c.py") \
-        .ifVirtualEnvDo(env=image, cmd="python3 _acquire_esm_c.py")
+    # `huggingface_hub` is not in quay's python_for_data_science image, and that image is
+    # not built from this repository, so it cannot be put there from here. The conda side
+    # of the same env now declares it. An in-command install is the house idiom for the
+    # remaining gap -- six transforms under `logistics/` do the same -- and it is a no-op
+    # wherever the package is already present, which is what makes one command serve both.
+    context.ExecWithEnv(
+        env=image,
+        cmd="pip install --quiet --no-cache-dir huggingface_hub && python3 _acquire_esm_c.py",
+    )
 
     releases = [p for p in iout.local.iterdir() if p.is_dir() and p.name != STAGE] \
         if iout.local.exists() else []

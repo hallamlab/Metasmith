@@ -14,7 +14,7 @@ def protocol(context: ExecutionContext):
     ihelp    = context.Input(helpers)
     iout     = context.Output(out_ft)
 
-    context.ExecWithEnv().ifContainerDo(
+    context.ExecWithEnv(
         env=image,
         binds=[(idataset.external, "/jgi_data")],
         cmd=f"python {ihelp.container}/jgi_loader.py /jgi_data {iout.container}",

@@ -16,7 +16,7 @@ def protocol(context: ExecutionContext):
     threads = context.params.get('cpus')
     threads = "" if threads is None else f"-p {threads}"
 
-    context.ExecWithEnv().ifContainerDo(
+    context.ExecWithEnv(
         env=orad,
         cmd=f'''
         orad -q -c "{ir1.container}" > r1.fastq.gz
@@ -24,7 +24,7 @@ def protocol(context: ExecutionContext):
         '''
     )
 
-    context.ExecWithEnv().ifContainerDo(
+    context.ExecWithEnv(
         env=bbtools,
         cmd=f'''
         reformat.sh \

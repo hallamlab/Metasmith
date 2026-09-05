@@ -25,7 +25,7 @@ def protocol(context: ExecutionContext):
             export NUMBA_CACHE_DIR=$TMPDIR
             python {iscript.container} {icounts.container} {iparams.container} {iout.container}
         """
-    context.ExecWithEnv().ifContainerDo(env=image, cmd=_cmd)
+    context.ExecWithEnv(env=image, cmd=_cmd)
 
     return ExecutionResult(
         manifest=[{out: iout.local}],

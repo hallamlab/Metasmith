@@ -19,7 +19,7 @@ def protocol(context: ExecutionContext):
     threads = context.params.get("cpus", 16)
     dirs = " ".join(str(p.container) for p in iprofiles)
 
-    context.ExecWithEnv().ifContainerDo(
+    context.ExecWithEnv(
         env=image,
         binds=[(imagref.external, "/magref")],
         cmd=f"""

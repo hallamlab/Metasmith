@@ -35,16 +35,14 @@ def protocol(context: ExecutionContext):
             mkdir -p {workdir}
             run_comebin.sh -a {iasm.container} -o {workdir} -p {bam_dir} -t {threads} -b {batch_size}
         """
-    context.ExecWithEnv() \
-        .ifContainerDo(
+    context.ExecWithEnv(
             env=image,
             args=[
                 "--nv",
                 "--env", f"CUDA_VISIBLE_DEVICES={os.environ.get('CUDA_VISIBLE_DEVICES','')}",
             ],
             cmd=_cmd,
-        ) \
-        .ifVirtualEnvDo(env=image, cmd=_cmd)
+        )
 
     outputs = []
     bin_dir = f"{workdir}/comebin_res/comebin_res_bins"

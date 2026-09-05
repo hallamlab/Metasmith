@@ -64,9 +64,6 @@ def ResolveEnvImage(content: str, runtime: Runtime, source: str|Path="<env>") ->
         return str(value).strip()
     return content.strip()
 
-CONTAINER_ARM = "ifContainerDo"
-VIRTUAL_ENV_ARM = "ifVirtualEnvDo"
-
 _RESERVED_EXPORTS = frozenset({"PATH", "HOME", "LD_LIBRARY_PATH", "TMPDIR", "PWD"})
 
 def _validate_exports(exports: dict[str, "str|Path"]|None) -> dict[str, str]:
@@ -99,59 +96,6 @@ def _materialised_test(env: Environment) -> str:
             return f'( {ok_sif} || {ok_sandbox} )'
 
 
-class EnvDispatch:
-    def __init__(self, context: "ExecutionContext"):
-        self._context = context
-        self.declared: list[str] = []
-        self._matched: str|None = None
-
-    @property
-    def matched(self) -> str|None:
-        return self._matched
-
-    def _dispatch(self, arm: str, applies: bool, **kw):
-        self.declared.append(arm)
-        if not applies:
-            Log.Info(f"skipping [{arm}] (does not apply to this runtime)")
-            return self
-        assert self._matched is None, (
-            f"[{arm}] and [{self._matched}] both apply to this runtime; "
-            "an ExecWithEnv chain must have exactly one matching arm"
-        )
-        self._matched = arm
-        self._context._ExecInEnv(**kw)
-        return self
-
-    def ifContainerDo(
-        self,
-        env: Dependency,
-        cmd: str,
-        shell: str="bash",
-        binds: list[tuple[Path|str, Path|str]]|None=None,
-        args: list[str]|None=None,
-        exports: dict[str, str|Path]|None=None,
-        history: bool=True,
-    ) -> "EnvDispatch":
-        return self._dispatch(
-            CONTAINER_ARM, self._context._crosses_boundary,
-            image=env, cmd=cmd, shell=shell, binds=binds, args=args,
-            exports=exports, history=history,
-        )
-
-    def ifVirtualEnvDo(
-        self,
-        env: Dependency,
-        cmd: str,
-        shell: str="bash",
-        exports: dict[str, str|Path]|None=None,
-        history: bool=True,
-    ) -> "EnvDispatch":
-        return self._dispatch(
-            VIRTUAL_ENV_ARM, not self._context._crosses_boundary,
-            image=env, cmd=cmd, shell=shell, exports=exports, history=history,
-        )
-
-
 @dataclass
 class ExecutionContext:
     _inputs: list[dict[Dependency, ContextData]]
@@ -163,18 +107,12 @@ class ExecutionContext:
     params: dict = field(default_factory=dict)
     _batch_index: int = 0
     _detected_gpus: list|None = None
-    _env_dispatches: list["EnvDispatch"] = field(default_factory=list)
     _slot_keys: dict[Dependency, str] = field(default_factory=dict)
     _ambiguous_slots: set[str] = field(default_factory=set)
 
     def __post_init__(self):
         if isinstance(self._environment, Runtime):
             self._environment = Environment(image="", runtime=self._environment)
-
-    @property
-    def _crosses_boundary(self) -> bool:
-        assert isinstance(self._environment, Environment)
-        return self._environment.needs_relay
 
     def _tool_environment(self, image: str, **kw) -> Environment:
         container = replace(self._environment.container, **kw) if kw else self._environment.container
@@ -374,13 +312,26 @@ class ExecutionContext:
         env.extra_args = extra_args
         return env
 
-    def ExecWithEnv(self) -> "EnvDispatch":
-        d = EnvDispatch(self)
-        self._env_dispatches.append(d)
-        return d
+    def ExecWithEnv(
+        self,
+        env: Dependency,
+        cmd: str,
+        shell: str="bash",
+        binds: list[tuple[Path|str, Path|str]]|None=None,
+        args: list[str]|None=None,
+        exports: dict[str, str|Path]|None=None,
+        history: bool=True,
+    ):
+        """Run `cmd` in the tool environment `env` names, whatever the agent's runtime is.
 
-    def UnmatchedEnvDispatches(self) -> list["EnvDispatch"]:
-        return [d for d in self._env_dispatches if not d._matched]
+        The body says what to run and where; the runtime decides how. `GetContainerModel`
+        reads `container:` or `conda:` from the resource by runtime, and drops the mounts
+        where there is no mount namespace to put them in.
+        """
+        return self._ExecInEnv(
+            image=env, cmd=cmd, shell=shell, binds=binds, args=args,
+            exports=exports, history=history,
+        )
 
     def _ExecInEnv(self, image: Dependency, cmd: str, shell="bash", binds: list[tuple[Path|str, Path|str]]|None=None, args: list[str]|None=None, exports: dict[str, str|Path]|None=None, history: bool=True):
         env = self.GetContainerModel(image, binds, args)

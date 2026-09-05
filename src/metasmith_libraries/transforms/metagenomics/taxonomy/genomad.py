@@ -22,9 +22,7 @@ def protocol(context: ExecutionContext):
     threads = "" if threads is None else f"-t {threads}"
 
     _cmd = f"/usr/local/bin/_entrypoint.sh genomad end-to-end {iasm.container} genomad_output {idb.container} {threads} --cleanup"
-    context.ExecWithEnv() \
-        .ifContainerDo(env=image, cmd=_cmd) \
-        .ifVirtualEnvDo(env=image, cmd=_cmd)
+    context.ExecWithEnv(env=image, cmd=_cmd)
 
     prefix = Path(iasm.local).stem
     summary_dir = Path(f"genomad_output/{prefix}_summary")

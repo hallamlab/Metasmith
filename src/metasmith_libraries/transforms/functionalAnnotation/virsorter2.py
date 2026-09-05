@@ -22,7 +22,7 @@ def protocol(context: ExecutionContext):
     threads = context.params.get("cpus", 8)
     workdir = "vs2_out"
 
-    context.ExecWithEnv().ifContainerDo(
+    context.ExecWithEnv(
         env=image,
         binds=[(idb.external, "/db")],
         cmd=f"""

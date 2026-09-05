@@ -24,9 +24,7 @@ def protocol(context: ExecutionContext):
             jgi_summarize_bam_contig_depths --outputDepth {depth_file} {ibam.container}
             metabat2 -i {iasm.container} -a {depth_file} -o {bin_prefix} -t {threads}
         """
-    context.ExecWithEnv() \
-        .ifContainerDo(env=image, cmd=_cmd) \
-        .ifVirtualEnvDo(env=image, cmd=_cmd)
+    context.ExecWithEnv(env=image, cmd=_cmd)
 
     outputs = []
     bin_files = sorted(glob.glob(f"{bin_dir}/*.fa"))

@@ -10,7 +10,7 @@ SILVA_URL = "https://www.arb-silva.de/fileadmin/silva_databases/release_138.2/Ex
 def protocol(context: ExecutionContext):
     idb = context.Output(db)
 
-    context.ExecWithEnv().ifContainerDo(
+    context.ExecWithEnv(
         env=image,
         cmd=f"""\
             mkdir -p {idb.container}

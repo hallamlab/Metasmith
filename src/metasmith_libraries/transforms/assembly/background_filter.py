@@ -30,9 +30,7 @@ def protocol(context: ExecutionContext):
             minimap2 -a {sr_params} {threads_mm2} --secondary=no \
                 {ihost.container} {ireads.container} > temp.sam
         """
-    context.ExecWithEnv() \
-        .ifContainerDo(env=img_mm2, cmd=_cmd) \
-        .ifVirtualEnvDo(env=img_mm2, cmd=_cmd)
+    context.ExecWithEnv(env=img_mm2, cmd=_cmd)
     if parity == "paired":
         filter_cmd = (
             f"samtools view -u -e 'flag.unmap || flag.munmap' {threads_sam} temp.sam"
@@ -49,9 +47,7 @@ def protocol(context: ExecutionContext):
             | gzip > {iout.container}
             rm -f temp.sam
         """
-    context.ExecWithEnv() \
-        .ifContainerDo(env=img_sam, cmd=_cmd) \
-        .ifVirtualEnvDo(env=img_sam, cmd=_cmd)
+    context.ExecWithEnv(env=img_sam, cmd=_cmd)
 
     return ExecutionResult(
         manifest=[

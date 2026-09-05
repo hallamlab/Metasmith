@@ -23,7 +23,7 @@ def protocol(context: ExecutionContext):
             tblastn -query {iquery.container} -db subject_db {threads} \
                 -evalue 1e-5 -outfmt 6 -max_target_seqs 10000 -out {ihits.container}
         """
-    context.ExecWithEnv().ifContainerDo(env=image, cmd=_cmd)
+    context.ExecWithEnv(env=image, cmd=_cmd)
 
     return ExecutionResult(
         manifest=[{hits: ihits.local}],

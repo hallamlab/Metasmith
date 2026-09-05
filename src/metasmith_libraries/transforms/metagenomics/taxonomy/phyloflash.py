@@ -27,9 +27,7 @@ def protocol(context: ExecutionContext):
             reformat.sh in={ireads.container} \
                 out1=split_r1.fq.gz out2=split_r2.fq.gz
         """
-    context.ExecWithEnv() \
-        .ifContainerDo(env=img_bb, cmd=_cmd) \
-        .ifVirtualEnvDo(env=img_bb, cmd=_cmd)
+    context.ExecWithEnv(env=img_bb, cmd=_cmd)
 
     _cmd = f"""
             phyloFlash.pl -lib pf_out \
@@ -48,9 +46,7 @@ def protocol(context: ExecutionContext):
                 : > {issu.container}
             fi
         """
-    context.ExecWithEnv() \
-        .ifContainerDo(env=image, cmd=_cmd) \
-        .ifVirtualEnvDo(env=image, cmd=_cmd)
+    context.ExecWithEnv(env=image, cmd=_cmd)
 
     return ExecutionResult(
         manifest=[{

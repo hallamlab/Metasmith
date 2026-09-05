@@ -22,9 +22,7 @@ def protocol(context: ExecutionContext):
     _cmd = f"""
             fastANI {threads} --queryList {genomes} --refList {genomes} --output {iout.container} 
         """
-    context.ExecWithEnv() \
-        .ifContainerDo(env=image, cmd=_cmd) \
-        .ifVirtualEnvDo(env=image, cmd=_cmd)
+    context.ExecWithEnv(env=image, cmd=_cmd)
 
     return ExecutionResult(
         manifest=[

@@ -41,9 +41,7 @@ def protocol(context: ExecutionContext):
                 f"{PMC[3:]}&metadataPrefix=pmc",
     )
     context.LocalShell("cat > _bench_eydallin.py << 'PYEOF'\n" + driver + "\nPYEOF\n")
-    context.ExecWithEnv() \
-        .ifContainerDo(env=image, cmd="python3 _bench_eydallin.py") \
-        .ifVirtualEnvDo(env=image, cmd="python3 _bench_eydallin.py")
+    context.ExecWithEnv(env=image, cmd="python3 _bench_eydallin.py")
 
     want = ("eydallin2010_suppl_table_s1.pdf", "eydallin2010_fulltext.jats.xml")
     missing = [w for w in want if not (iout.local / w).exists()]

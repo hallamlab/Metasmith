@@ -14,7 +14,7 @@ def protocol(context: ExecutionContext):
     ihelp    = context.Input(helpers)
     iout = context.Output(out_dir)
 
-    context.ExecWithEnv().ifContainerDo(
+    context.ExecWithEnv(
         env=image,
         cmd=f"python {ihelp.container}/differential_analysis.py {ift.container} {iout.container}",
     )

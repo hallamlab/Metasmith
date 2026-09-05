@@ -35,9 +35,7 @@ def protocol(context: ExecutionContext):
                 --max-target-seqs 1 \
                 {threads}
         """
-    context.ExecWithEnv() \
-        .ifContainerDo(env=image, cmd=_cmd) \
-        .ifVirtualEnvDo(env=image, cmd=_cmd)
+    context.ExecWithEnv(env=image, cmd=_cmd)
 
     matched = {}
     with open(Path(HITS_TSV)) as f:

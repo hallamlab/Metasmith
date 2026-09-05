@@ -79,9 +79,9 @@ by what the interpreter has — the same module is imported outside any containe
 pyarrow is what exists. `pd.read_parquet` and `DataFrame.to_parquet` are pyarrow front
 ends and fail there, at module import, after the expensive lanes have already succeeded.
 
-`ExecWithContainer` is retired; the engine rejects it statically. Use
-`context.ExecWithEnv().ifContainerDo(env=, cmd=)`, and add `.ifVirtualEnvDo(env=, cmd=)`
-only for a conda arm you have actually run. See `docs/metasmith_libraries/ENV_PORT.md`.
+`ExecWithContainer` and the two `if*Do` arms are retired; the engine rejects all three
+statically. One call launches a tool — `context.ExecWithEnv(env=, cmd=)` — and the agent's
+runtime decides how. See `docs/metasmith_libraries/ENV_PORT.md`.
 
 ## Two rules that fail quietly
 

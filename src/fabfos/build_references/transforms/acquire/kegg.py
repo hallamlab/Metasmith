@@ -46,9 +46,7 @@ def protocol(context: ExecutionContext):
         grep -E '^\\s+(ko|reaction)\\s' $D/{INFO_FILE} || true
 {fetches}
     """
-    context.ExecWithEnv() \
-        .ifContainerDo(env=image, cmd=_cmd) \
-        .ifVirtualEnvDo(env=image, cmd=_cmd)
+    context.ExecWithEnv(env=image, cmd=_cmd)
 
     vers = sorted(p for p in iout.local.glob("*") if p.is_dir())
     wanted = list(ENDPOINTS) + [INFO_FILE]

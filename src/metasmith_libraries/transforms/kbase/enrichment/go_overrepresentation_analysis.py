@@ -21,7 +21,7 @@ def protocol(context: ExecutionContext):
     _cmd = f"""\
             python {iscript.container} {igenes.container} {iipr.container} {iout.container}
         """
-    context.ExecWithEnv().ifContainerDo(env=image, cmd=_cmd)
+    context.ExecWithEnv(env=image, cmd=_cmd)
 
     return ExecutionResult(
         manifest=[{out: iout.local}],

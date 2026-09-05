@@ -26,9 +26,7 @@ def protocol(context: ExecutionContext):
                 -o salmon_out \
                 -p {threads}
         """
-    context.ExecWithEnv() \
-        .ifContainerDo(env=image, cmd=_cmd) \
-        .ifVirtualEnvDo(env=image, cmd=_cmd)
+    context.ExecWithEnv(env=image, cmd=_cmd)
     context.LocalShell(f"cp salmon_out/quant.sf {iout.local}")
     return ExecutionResult(
         manifest=[

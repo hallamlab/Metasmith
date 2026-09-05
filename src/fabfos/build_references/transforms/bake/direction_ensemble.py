@@ -184,9 +184,7 @@ def protocol(context: ExecutionContext):
         mkdir -p {iev.container}
         cp -r _ev/. {iev.container}/
     """
-    context.ExecWithEnv() \
-        .ifContainerDo(env=image, cmd=cmd) \
-        .ifVirtualEnvDo(env=image, cmd=cmd)
+    context.ExecWithEnv(env=image, cmd=cmd)
 
     kept = [iev.local / t for t in ("metacyc_direction", "direction_calibration")]
     return ExecutionResult(

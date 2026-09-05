@@ -17,7 +17,7 @@ def protocol(context: ExecutionContext):
     # `profiles/` directory and kofamscan is handed a profile directory it does
     # not recurse into -- a nested level reads to it as zero profiles, which it
     # reports as zero annotations rather than as an error.
-    context.ExecWithEnv().ifContainerDo(
+    context.ExecWithEnv(
         env=image,
         cmd="\n".join([
             "set -e",

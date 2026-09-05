@@ -22,7 +22,7 @@ def protocol(context: ExecutionContext):
             bcftools mpileup {threads} -Ou -f ref.fa {ibam.container} \
                 | bcftools call {threads} -mv -Ov -o {iout.container}
         """
-    context.ExecWithEnv().ifContainerDo(env=image, cmd=_cmd)
+    context.ExecWithEnv(env=image, cmd=_cmd)
 
     return ExecutionResult(
         manifest=[{out: iout.local}],

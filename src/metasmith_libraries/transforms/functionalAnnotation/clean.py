@@ -243,7 +243,7 @@ def protocol(context: ExecutionContext):
     with open(script, "w") as f:
         f.write(WRAPPER)
 
-    context.ExecWithEnv().ifContainerDo(
+    context.ExecWithEnv(
         env=image,
         binds=[
             (context.external_cwd / "clean_ws", "/clean_ws"),

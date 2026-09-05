@@ -13,7 +13,7 @@ def protocol(context: ExecutionContext):
     isources = context.Input(sources)
     iout = context.Output(out_props)
 
-    context.ExecWithEnv().ifContainerDo(
+    context.ExecWithEnv(
         env=image,
         binds=[(isources.external, "/feast_sources")],
         cmd=f"""

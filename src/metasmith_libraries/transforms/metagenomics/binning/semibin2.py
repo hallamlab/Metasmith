@@ -28,9 +28,7 @@ def protocol(context: ExecutionContext):
                 --environment {environment} \
                 -t {threads}
         """
-    context.ExecWithEnv() \
-        .ifContainerDo(env=image, cmd=_cmd) \
-        .ifVirtualEnvDo(env=image, cmd=_cmd)
+    context.ExecWithEnv(env=image, cmd=_cmd)
 
     outputs = []
     bin_files = sorted(glob.glob(f"{workdir}/output_bins/*.fa.gz") + glob.glob(f"{workdir}/output_bins/*.fa"))

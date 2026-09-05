@@ -16,7 +16,7 @@ def protocol(context: ExecutionContext):
     isbml  = context.Input(sbml)
     iout   = context.Output(out_dir)
 
-    context.ExecWithEnv().ifContainerDo(
+    context.ExecWithEnv(
         env=image,
         binds=[
             (idiff.external, "/diff_data"),

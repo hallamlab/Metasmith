@@ -17,9 +17,7 @@ def protocol(context: ExecutionContext):
                 --source refseq --organism-group archaea bacteria \
                 --top 1 {threads_arg}
         """
-    context.ExecWithEnv() \
-        .ifContainerDo(env=image, cmd=_cmd) \
-        .ifVirtualEnvDo(env=image, cmd=_cmd)
+    context.ExecWithEnv(env=image, cmd=_cmd)
     return ExecutionResult(
         manifest=[{out: iout.local}],
         success=iout.local.exists(),
