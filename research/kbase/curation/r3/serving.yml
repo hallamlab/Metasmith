@@ -1,0 +1,92 @@
+# Which metasmith transforms serve each KBase task verb.
+#
+# `existing` names transforms that ship in src/metasmith_libraries today. `render.py`
+# asserts every path here resolves to a file, so this table cannot drift from the tree.
+# Proposed transforms are NOT listed here -- they come from proposals.yml.
+#
+# A verb with no `existing` and no proposal is answered by a template input, by a
+# refactor, or not at all. proposals.yml carries which.
+
+version: r3
+
+serving:
+  import_reads: [logistics/getNcbiSra.py, logistics/dumpNcbiSra.py]
+  qc_reads: [assembly/seqkit_reads.py]
+  clean_reads: [assembly/bbduk.py, assembly/filtlong.py, assembly/background_filter.py]
+  merge_reads: [logistics/interleave_short_reads.py, logistics/interleave_zipped_short_reads.py, aspire/merge_reads.py]
+  convert_reads: [logistics/ora2fastq.py, assembly/hifi/pbBam2fastq.py]
+
+  import_assembly: [logistics/getNcbiAssembly.py]
+  assemble: [assembly/spades.py, assembly/megahit.py, assembly/flye.py, assembly/flye_raw.py,
+             assembly/hifi/hifiasm.py, assembly/hifi/hifiasm_meta.py, assembly/hifi/miniasm.py]
+  filter_assembly: [assembly/select_chromosomal_contigs.py]
+  qc_assembly: [assembly/assembly_stats.py, functionalAnnotation/busco.py]
+  polish_assembly: []
+
+  import_genome: [logistics/getNcbiAssembly.py]
+  annotate: [metagenomics/prodigal.py, functionalAnnotation/bakta_noncoding.py]
+  annotate_domains: [functionalAnnotation/interproscan.py, functionalAnnotation/kofamscan.py,
+                     functionalAnnotation/eggnog_mapper.py, functionalAnnotation/antismash.py,
+                     functionalAnnotation/rgi.py, functionalAnnotation/amrfinderplus.py,
+                     functionalAnnotation/vfdb.py, functionalAnnotation/bacmet.py,
+                     functionalAnnotation/megares.py, functionalAnnotation/integronfinder.py,
+                     functionalAnnotation/mobileelementfinder.py, functionalAnnotation/pathofact.py,
+                     functionalAnnotation/promotech.py, functionalAnnotation/dram_annotate_genes.py]
+  search_homologs: [amplicon/blast_map_asvs.py, pangenome/diamond_all_vs_all.py,
+                    functionalAnnotation/diamond_uniref50.py, functionalAnnotation/diamond_tcdb.py]
+  enrichment: [metabolicModelling/pathway_enrichment.py]
+
+  bin: [metagenomics/binning/metabat2.py, metagenomics/binning/semibin2.py, metagenomics/binning/comebin.py]
+  refine_bins: [metagenomics/binning/aggregator.py, metagenomics/binning/skani_dedup.py]
+  qc_bins: [metagenomics/binning/checkm.py]
+  extract_bins: []
+
+  classify_taxa: [metagenomics/taxonomy/gtdbtk.py, metagenomics/taxonomy/kraken2.py,
+                  metagenomics/taxonomy/metaphlan.py, metagenomics/taxonomy/sylph.py,
+                  metagenomics/taxonomy/ganon2.py, metagenomics/taxonomy/centrifuger.py,
+                  metagenomics/taxonomy/metabuli.py, metagenomics/taxonomy/phyloflash.py,
+                  metagenomics/taxonomy/strainphlan.py, amplicon/qiime2_taxonomy.py]
+  profile_abundance: []
+
+  import_model: []
+  import_media: []
+  import_phenotype: []
+  build_model: []
+  gapfill_model: []
+  run_fba: [metabolicModelling/fba_constraint.py]
+  edit_model: []
+  edit_media: []
+  predict_phenotype: []
+  compare_models: []
+
+  build_index: [transcriptomics/star_genome_index.py, transcriptomics/salmon_index.py]
+  align_reads: [transcriptomics/star_align.py, transcriptomics/minimap2_rnaseq_align.py,
+                transcriptomics/salmon_quant.py, transcriptomics/merge_bams.py]
+  qc_alignment: []
+  quantify_expression: [transcriptomics/stringtie_quant.py, transcriptomics/stringtie_count_matrix.py,
+                        transcriptomics/salmon_count_table.py, transcriptomics/organellar_count_matrix.py,
+                        transcriptomics/stringtie_assemble.py, transcriptomics/stringtie_merge.py]
+  differential_expression: [transcriptomics/deseq2.py, transcriptomics/pydeseq2.py, transcriptomics/volcano_plot.py]
+  cluster_expression: []
+  import_matrix: []
+
+  transform_matrix: [aspire/filter_table.py, aspire/filter_counts.py, aspire/create_count_matrix.py]
+  correlate_matrix: [aspire/voc_correlation.py, aspire/measurement_association.py]
+  ordinate: [aspire/umap_clustering.py, aspire/diversity_analysis.py]
+  test_statistics: [aspire/diversity_analysis.py, aspire/paired_group_contrast.py, aspire/indicspecies.py]
+  build_network: [aspire/spieceasi.py, aspire/graph_network.py, aspire/network_modules.py]
+
+  align_sequences: [aspire/sina_trim.py]
+  build_tree: []
+  pangenome: [pangenome/ppanggolin.py, pangenome/diamond_all_vs_all.py, pangenome/bsr_histogram.py, pangenome/heatmap.py]
+  compare_genomes: [metagenomics/taxonomy/fastani.py]
+  call_variants: [metagenomics/instrain.py, metagenomics/instrain_compare.py]
+
+  identify_virus: [functionalAnnotation/virsorter2.py, functionalAnnotation/dramv.py,
+                   metagenomics/taxonomy/genomad.py]
+
+  build_set: []
+  manage_samples: []
+  import_other: []
+  export: []
+  view: []
