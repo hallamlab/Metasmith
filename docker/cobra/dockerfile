@@ -1,6 +1,6 @@
 # The cobra runtime: reading, gapfilling and solving genome-scale models.
 #
-# This exists because `resources/env/cobra.env` was, of 87 environment files, the only
+# This exists because `resources/env/cobra.env` was, of 90 environment files, the only
 # one with no `container:` line at all -- so the four modelling transforms could not run
 # under the DOCKER or APPTAINER runtimes at any point in curation rounds 3 and 4.
 #
