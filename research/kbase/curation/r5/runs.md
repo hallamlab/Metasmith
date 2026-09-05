@@ -50,3 +50,38 @@ feeds `scipy.spatial.distance.squareform`, which rejects a matrix asymmetric by 
 amount at all, and `np.corrcoef` is symmetric only up to floating-point rounding.
 `lib::expression_clusters.py` averages with the transpose and zeroes the diagonal before
 handing the matrix over. Nothing static would have caught it.
+
+## The modelling bodies
+
+`cobra.env` had no container at all before this round, so none of these four could run
+under DOCKER or APPTAINER at any point in rounds 3 and 4. They were run against the
+locally built `docker/cobra/` image (`cobra:local`, 506 MB), named in `cobra.env` for the
+duration of the runs and taken back out afterwards — the image is not pushed, and an
+env naming a registry entry that does not exist fails on whichever host draws the task.
+
+| transform | s | product | checked |
+|---|---:|---|---|
+| `build_model/fetch_bigg_model` | 34 | SBML | `e_coli_core`: 95 reactions, 72 metabolites, 137 genes — the published model's own counts |
+| `build_model/gem_from_gpr` | 95 | SBML | 15 reactions from 15 MNXR, 41 metabolites, 20 genes; 10 named directly by the GPR table and 5 recovered through `mnxr_lookup` from the one row that carried none |
+| `run_fba/cobra_fba` | 42 | 3-row csv | 0.8739 on minimal glucose — the canonical e_coli_core growth rate; **infeasible** with the carbon source closed; a `gpmA` knockout neutral, which is right, it has isozymes |
+| `gapfill_model/cobra_gapfill` | ~600 | SBML | e_coli_core with enolase deleted grows at 0.0; gapfill adds two reactions and it grows at 0.639 |
+
+Two things this found that a static gate could not.
+
+**cobra builds its `Configuration` at import, and that constructor makes a cache
+directory.** The container runs as the calling uid with no passwd entry, so `$HOME` is `/`
+and the mkdir fails before a line of the entry point runs. All four bodies export
+`XDG_CACHE_HOME=$TMPDIR`, which is what platformdirs reads first.
+
+**A gapfill over an unfiltered MetaNetX universe restores growth with reactions no
+organism runs.** The first run added a single entry — `12 NADH + 3 succinate = 4 pyruvate
++ 12 NAD+`, a SABIO-RK lump MetaNetX makes no balance claim about — because the MILP
+minimises reaction COUNT and one aggregate is always cheaper than the pathway it stands
+for. Restricting the universe to the 44,168 reactions MetaNetX flags `B` (of 83,796) cut
+the candidate set from 100 to 66 and returned two named enzymes instead:
+2-oxoglutarate:ferredoxin oxidoreductase running reductively, and citrate lyase. The
+objective went from 0.276 on the lump to 0.639 on the pair, against 0.874 intact.
+
+`slim_optimize` returns `nan` for an infeasible model rather than raising, and `nan`
+compares False against every threshold — so the first version of this body read an
+infeasible model as one that needed no gapfill at all and added nothing.

@@ -18,6 +18,11 @@ def protocol(context: ExecutionContext):
     # measured against, which is why the curated model is fetched rather than
     # rebuilt.
     _cmd = f"""\
+            # cobra builds a Configuration at IMPORT and that constructor makes its
+            # cache directory. The container runs as the calling uid with no passwd
+            # entry, so $HOME is / and the mkdir fails before a single line of the
+            # entry point has run. XDG_CACHE_HOME is what platformdirs reads first.
+            export XDG_CACHE_HOME=$TMPDIR
             python {ihelp.container}/fetch_bigg_model.py {iacc.container} {iout.container}
         """
     context.ExecWithEnv().ifContainerDo(env=image, cmd=_cmd)

@@ -30,6 +30,11 @@ def protocol(context: ExecutionContext):
     # how a built one is solved, and lib::modelling/cobra_fba.py names the ones it
     # ignored in its own output.
     _cmd = f"""\
+            # cobra builds a Configuration at IMPORT and that constructor makes its
+            # cache directory. The container runs as the calling uid with no passwd
+            # entry, so $HOME is / and the mkdir fails before a single line of the
+            # entry point has run. XDG_CACHE_HOME is what platformdirs reads first.
+            export XDG_CACHE_HOME=$TMPDIR
             python {ihelp.container}/cobra_fba.py \
                 {igem.container} {imedia.container} {iconds.container} {iout.container}
         """
