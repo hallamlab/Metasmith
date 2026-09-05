@@ -63,6 +63,13 @@ Plan fingerprints normally pin the decision contract, so any search change re-pi
 repair and the PUCT adoption both move every plan. Chasing parity between them re-pins twice and
 confounds the two, so fingerprints are held still until PUCT lands. Re-establish them once, then.
 
+PUCT has not landed as the default and the suspension therefore still holds. It exists in the engine
+as an opt-in policy behind `MSM_SOLVER_POLICY`, measured in
+`data/metasmith/plans/09-the-selection-ratchet.md`, and the default path is byte-identical to the
+engine that preceded it on all 81 payloads of `research/metasmith/solver_ratchet/`. Adoption is what
+re-pins: `tests/metasmith/solver/fingerprints.json` and `SOLVER_RNG_VERSION` move together, and the
+Python `solve_by_mcts` moves with them bit for bit or `test_engine_differential` goes red.
+
 In the interval a plan is judged by `solver_witness`, which is proved to decide exactly the written
 specification. A refiner that returns a different plan is not a regression. A refiner that returns a
 plan the witness rejects is.
