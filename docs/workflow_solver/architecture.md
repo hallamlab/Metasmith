@@ -57,6 +57,28 @@ covering two things that can move independently is how the last desync went unno
 binary also advertises `capabilities`, and the Python side falls back for anything not
 advertised, so the port could land one piece at a time with the delivery path proven first.
 
+## Plan-fingerprint parity is suspended, and the witness replaces it
+
+Plan fingerprints normally pin the decision contract, so any search change re-pins them. The refiner
+repair and the PUCT adoption both move every plan. Chasing parity between them re-pins twice and
+confounds the two, so fingerprints are held still until PUCT lands. Re-establish them once, then.
+
+In the interval a plan is judged by `solver_witness`, which is proved to decide exactly the written
+specification. A refiner that returns a different plan is not a regression. A refiner that returns a
+plan the witness rejects is.
+
+**CAUTION** This does not suspend `SOLVER_RNG_VERSION`. That constant does a different job. It stops
+a stale binary and a new Python planning differently while both advertise the same version. Bump it
+whenever the decision contract moves, parity suspended or not.
+
+**CAUTION** The witness is not a complete oracle on its own. `msm_solver solve` runs the same audit
+before it emits, so an accepted plan is weak evidence. Two independent halves carry the guarantee:
+`check_spec` agreeing on the same bytes, and the decoys. Two known holes let it accept what the
+specification rejects. `same_slots` and `same_props` compare dense bit sets of a fixed width, so an
+id at or beyond that width is invisible. `check_plan` records "equal to, not identical with" as a
+note rather than a violation, which hides two steps producing signature-equal endpoints that
+`rectify` then collapses onto one producer.
+
 ## The decision contract is one specification written twice
 
 `rng.rs` and `src/metasmith/models/solver_rng.py` are the two halves, and `rng.rs` is a
