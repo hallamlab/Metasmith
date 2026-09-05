@@ -23,9 +23,7 @@ def protocol(context: ExecutionContext):
             reformat.sh in={ireads.container} \
                 out1=split_r1.fq.gz out2=split_r2.fq.gz
         """
-    context.ExecWithEnv() \
-        .ifContainerDo(env=img_bb, cmd=_cmd) \
-        .ifVirtualEnvDo(env=img_bb, cmd=_cmd)
+    context.ExecWithEnv(env=img_bb, cmd=_cmd)
 
     _cmd = f"""
             ganon classify --db-prefix {idb.container} \
@@ -34,9 +32,7 @@ def protocol(context: ExecutionContext):
             mv ganon2_out.rep {iclass.container}
             mv ganon2_out.tre {irep.container}
         """
-    context.ExecWithEnv() \
-        .ifContainerDo(env=image, cmd=_cmd) \
-        .ifVirtualEnvDo(env=image, cmd=_cmd)
+    context.ExecWithEnv(env=image, cmd=_cmd)
 
     return ExecutionResult(
         manifest=[{

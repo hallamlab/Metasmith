@@ -18,9 +18,7 @@ def protocol(context: ExecutionContext):
             cd {iout.container}
             phyloFlash_makedb.pl --remote_dbsource={SILVA_RELEASE} {threads_arg}
         """
-    context.ExecWithEnv() \
-        .ifContainerDo(env=image, cmd=_cmd) \
-        .ifVirtualEnvDo(env=image, cmd=_cmd)
+    context.ExecWithEnv(env=image, cmd=_cmd)
     return ExecutionResult(
         manifest=[{out: iout.local}],
         success=iout.local.exists(),

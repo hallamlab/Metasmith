@@ -25,7 +25,7 @@ def protocol(context: ExecutionContext):
     threads = context.params.get('cpus')
     threads_arg = "" if threads is None else f"--threads {threads}"
 
-    context.ExecWithEnv().ifContainerDo(
+    context.ExecWithEnv(
         env=img_bb,
         cmd=f"""
             reformat.sh in={ireads.container} \
@@ -33,7 +33,7 @@ def protocol(context: ExecutionContext):
         """
     )
 
-    context.ExecWithEnv().ifContainerDo(
+    context.ExecWithEnv(
         env=img_k2,
         cmd=f"""
             kraken2 --paired --db {idb.container} {threads_arg} \
@@ -43,7 +43,7 @@ def protocol(context: ExecutionContext):
         """
     )
 
-    context.ExecWithEnv().ifContainerDo(
+    context.ExecWithEnv(
         env=img_brk,
         cmd=f"""
             bracken -d {idb.container} \
@@ -54,7 +54,7 @@ def protocol(context: ExecutionContext):
         """
     )
 
-    context.ExecWithEnv().ifContainerDo(
+    context.ExecWithEnv(
         env=img_pq,
         cmd=f"""
             python <<'PY'

@@ -25,7 +25,7 @@ def protocol(context: ExecutionContext):
             export XDG_CACHE_HOME=$TMPDIR
             python {ihelp.container}/fetch_bigg_model.py {iacc.container} {iout.container}
         """
-    context.ExecWithEnv().ifContainerDo(env=image, cmd=_cmd)
+    context.ExecWithEnv(env=image, cmd=_cmd)
 
     return ExecutionResult(
         manifest=[{out: iout.local}],

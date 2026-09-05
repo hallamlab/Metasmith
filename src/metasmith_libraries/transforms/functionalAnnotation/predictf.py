@@ -16,7 +16,7 @@ def protocol(context: ExecutionContext):
     otf   = context.Output(out_tf)
     opot  = context.Output(out_potential)
 
-    context.ExecWithEnv().ifContainerDo(
+    context.ExecWithEnv(
         env=image,
         binds=[(idb.external, "/predictf_db")],
         cmd=f"""

@@ -18,7 +18,7 @@ def protocol(context: ExecutionContext):
 
     threads = context.params.get('cpus')
     threads = "" if threads is None else f"--threads {threads}"
-    context.ExecWithEnv().ifContainerDo(
+    context.ExecWithEnv(
         env = image,
         cmd = f"""
             NanoPlot --tsv_stats --no_static --plots dot \

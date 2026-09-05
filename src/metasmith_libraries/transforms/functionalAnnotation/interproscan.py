@@ -76,7 +76,7 @@ def protocol(context: ExecutionContext):
 
     context.LocalShell(f"pigz -dc {idata.local} | tar xf -")
 
-    context.ExecWithEnv().ifContainerDo(
+    context.ExecWithEnv(
         env=image,
         binds=[(context.external_cwd/"data", "/opt/interproscan/data")],
         cmd=f"""

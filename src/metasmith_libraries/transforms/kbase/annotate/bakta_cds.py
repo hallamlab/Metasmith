@@ -25,7 +25,7 @@ def protocol(context: ExecutionContext):
     # `bakta_proteins` is a SEPARATE entry point beside `bakta` in the pinned 1.11.0 image
     # and takes a protein FASTA, so this is the CDS arm the shipped `bakta_noncoding.py`
     # skips with --skip-cds. The two are complementary, not alternatives.
-    context.ExecWithEnv().ifContainerDo(
+    context.ExecWithEnv(
         env=image,
         binds=[(idb.external, "/db")],
         cmd=f"""\

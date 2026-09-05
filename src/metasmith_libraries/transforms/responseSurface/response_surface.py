@@ -37,7 +37,7 @@ def protocol(context: ExecutionContext):
         mkdir -p ./fake_home/.pki
     """)
 
-    context.ExecWithEnv().ifContainerDo(
+    context.ExecWithEnv(
         env=image,
         binds=[
             ("$(pwd -P)/fake_home/.cache",  "$HOME/.cache"),

@@ -24,7 +24,7 @@ def protocol(context: ExecutionContext):
 
     threads = context.params.get("cpus", 16)
 
-    context.ExecWithEnv().ifContainerDo(
+    context.ExecWithEnv(
         env=image,
         binds=[(idb.external, "/pathofact_db")],
         cmd=f"""

@@ -12,7 +12,7 @@ def protocol(context: ExecutionContext):
 
     cpus = context.params.get("cpus", 4)
 
-    context.ExecWithEnv().ifContainerDo(
+    context.ExecWithEnv(
         env=image,
         cmd=f"""
             export HOME=/tmp

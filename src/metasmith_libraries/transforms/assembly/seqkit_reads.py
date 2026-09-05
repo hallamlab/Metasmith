@@ -22,9 +22,7 @@ def protocol(context: ExecutionContext):
             seqkit convert --dry-run {ireads.container} 2>&1 | tee {seqkit_guess_enc_file}
             seqkit stat {threads} --all --tabular {ireads.container} | tee {seqkit_stats_file}
         """
-    context.ExecWithEnv() \
-        .ifContainerDo(env=img_sqk, cmd=_cmd) \
-        .ifVirtualEnvDo(env=img_sqk, cmd=_cmd)
+    context.ExecWithEnv(env=img_sqk, cmd=_cmd)
     with open(seqkit_guess_enc_file) as f:
         K = "guessed quality encoding:"
         encoding = "sanger"

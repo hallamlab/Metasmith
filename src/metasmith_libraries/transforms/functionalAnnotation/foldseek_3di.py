@@ -50,7 +50,7 @@ def protocol(context: ExecutionContext):
     with open(collect, "w") as f:
         f.write(COLLECT)
 
-    context.ExecWithEnv().ifContainerDo(
+    context.ExecWithEnv(
         env=image,
         binds=[
             (context.external_cwd/"structures", "/in"),
@@ -63,7 +63,7 @@ def protocol(context: ExecutionContext):
         """,
     )
 
-    context.ExecWithEnv().ifContainerDo(
+    context.ExecWithEnv(
         env=image_py,
         cmd=f"""
             pip install --quiet --no-cache-dir pandas pyarrow

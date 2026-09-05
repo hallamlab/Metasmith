@@ -29,7 +29,7 @@ def protocol(context: ExecutionContext):
     offn = context.Output(out_ffn)
     otxt = context.Output(out_txt)
 
-    context.ExecWithEnv().ifContainerDo(
+    context.ExecWithEnv(
         env=image,
         binds=[(idb.external, "/db")],
         cmd=f"""
@@ -43,7 +43,7 @@ def protocol(context: ExecutionContext):
         """,
     )
 
-    context.ExecWithEnv().ifContainerDo(
+    context.ExecWithEnv(
         env=image,
         cmd=f"""
             pilercr -in {iasm.container} -out crispr_raw.txt -noinfo -quiet || true

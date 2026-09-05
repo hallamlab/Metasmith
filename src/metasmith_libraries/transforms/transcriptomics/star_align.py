@@ -26,9 +26,7 @@ def protocol(context: ExecutionContext):
                 --runThreadN {threads} \
                 --outFileNamePrefix star_out/
         """
-    context.ExecWithEnv() \
-        .ifContainerDo(env=image, cmd=_cmd) \
-        .ifVirtualEnvDo(env=image, cmd=_cmd)
+    context.ExecWithEnv(env=image, cmd=_cmd)
     context.LocalShell(f"mv star_out/Aligned.sortedByCoord.out.bam {iout.local}")
     return ExecutionResult(
         manifest=[

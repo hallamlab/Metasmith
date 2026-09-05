@@ -70,7 +70,7 @@ def protocol(context: ExecutionContext):
         threads_param = f"-p {cpus}"
 
 
-    context.ExecWithEnv().ifContainerDo(
+    context.ExecWithEnv(
         env = image,
         cmd = f"""
         du -shL {acc}

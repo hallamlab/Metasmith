@@ -45,14 +45,14 @@ change shape takes its templates down here, by name, rather than in someone's GU
 
 ## Environments
 
-One `.env` per tool declares an optional container image and an optional conda env, serving both
-worlds; the engine picks by the global runtime, and a transform never learns which it got.
-`ExecWithContainer` is retired and rejected **statically** by the engine's
-`dispatch_scan._FORBIDDEN_CALLS`, so a transform still calling it fails at scan time rather than
-at run time. `ENV_PORT.md` beside this file is the record of that port and the standing
-explanation of when a virtual-env arm is safe to add — an arm is a portability *claim*, and one
-that has never been run answers "can this tool run without a container?" wrongly.
-`venv_arms.py` beside it reproduces that analysis.
+One `.env` per tool declares a container image and a conda env, serving both worlds; the engine
+picks by the global runtime, and a transform never learns which it got. Declaring only one of
+the two is what makes a tool unrunnable on the other kind of agent, and the staging preflight
+refuses it there by name — in both directions.
+
+`ExecWithContainer` and the retired per-runtime arms are rejected **statically** by the engine's
+`dispatch_scan._FORBIDDEN_CALLS`, so a transform still calling one fails at scan time rather
+than at run time. `ENV_PORT.md` beside this file is the record of that collapse.
 
 **Pin container images by digest and say what the digest is.** A tag is not stable and a digest
 is not readable, so a bare digest with no comment is a pin nobody can audit. Not hypothetical:

@@ -312,7 +312,7 @@ def prepare_nextflow(task, context: NextflowGenContext):
             "step": step.order,
             "transform": str(step.transform.name),
             "process": process_name,
-            "arms": None if _scan is None else _scan.arms,
+            "runs": None if _scan is None else len(_scan.runs),
             "envs": _read_env_declarations(step),
         }
         duration_is_strict = res is not None and res.duration is not None and res.duration.strict

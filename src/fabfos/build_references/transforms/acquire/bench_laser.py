@@ -31,9 +31,7 @@ def protocol(context: ExecutionContext):
         rm -rf .git
         echo "[laser] {COMMIT} checked out; .git removed (this tree is annexed downstream)"
     """
-    context.ExecWithEnv() \
-        .ifContainerDo(env=image, cmd=_cmd) \
-        .ifVirtualEnvDo(env=image, cmd=_cmd)
+    context.ExecWithEnv(env=image, cmd=_cmd)
 
     missing = [e for e in EXPECTED if not (iout.local / e).exists()]
     if missing:

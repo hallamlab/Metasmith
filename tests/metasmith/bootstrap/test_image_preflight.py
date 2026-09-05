@@ -56,7 +56,7 @@ METAPHLAN = "docker://quay.io/biocontainers/metaphlan:4.1.1--pyhca03a8a_0"
 def _step(process, transform, envs):
     return {
         "step": 1, "transform": transform, "process": process,
-        "arms": ["ifContainerDo"], "envs": envs,
+        "runs": 1, "envs": envs,
     }
 
 
@@ -230,7 +230,7 @@ DIAMOND = "diamond-2.1"
 def _conda_step(process, transform, envs):
     return {
         "step": 1, "transform": transform, "process": process,
-        "arms": ["ifVirtualEnvDo"], "envs": envs,
+        "runs": 1, "envs": envs,
     }
 
 

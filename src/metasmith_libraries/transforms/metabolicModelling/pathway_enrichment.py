@@ -14,7 +14,7 @@ def protocol(context: ExecutionContext):
     ihelp    = context.Input(helpers)
     iout  = context.Output(out_dir)
 
-    context.ExecWithEnv().ifContainerDo(
+    context.ExecWithEnv(
         env=image,
         binds=[(idiff.external, "/diff_data")],
         cmd=f"python {ihelp.container}/pathway_enrichment.py /diff_data {iout.container}",

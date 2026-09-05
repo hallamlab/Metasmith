@@ -28,9 +28,7 @@ def protocol(context: ExecutionContext):
             --rhea {irhe.container} \
             --out {iout.container}
     """
-    context.ExecWithEnv() \
-        .ifContainerDo(env=image, cmd=cmd) \
-        .ifVirtualEnvDo(env=image, cmd=cmd)
+    context.ExecWithEnv(env=image, cmd=cmd)
 
     return ExecutionResult(
         manifest=[{bridge: iout.local}],

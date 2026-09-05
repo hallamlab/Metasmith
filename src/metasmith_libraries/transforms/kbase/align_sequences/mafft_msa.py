@@ -15,7 +15,7 @@ def protocol(context: ExecutionContext):
     _cmd = f"""\
             mafft --auto {threads} {iseqs.container} > {iout.container}
         """
-    context.ExecWithEnv().ifContainerDo(env=image, cmd=_cmd)
+    context.ExecWithEnv(env=image, cmd=_cmd)
 
     return ExecutionResult(
         manifest=[{out: iout.local}],

@@ -24,7 +24,7 @@ def protocol(context: ExecutionContext):
     ipred = context.Output(out_pred)
     context.LocalShell("mkdir -p ezpred_run")
 
-    context.ExecWithEnv().ifContainerDo(
+    context.ExecWithEnv(
         env=image,
         binds=[
             (context.external_cwd/"ezpred_run", "/work/ezpred_run"),

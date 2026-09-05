@@ -57,9 +57,7 @@ def protocol(context: ExecutionContext):
         rmdir $S
         echo "[kofam] $VER: $(du -sh $D | cut -f1), both archives verified as gzip"
     """
-    context.ExecWithEnv() \
-        .ifContainerDo(env=image, cmd=_cmd) \
-        .ifVirtualEnvDo(env=image, cmd=_cmd)
+    context.ExecWithEnv(env=image, cmd=_cmd)
 
     vers = sorted(p for p in iout.local.glob("*") if p.is_dir() and p.name != STAGE)
     got = [f for v in vers for f in FILES

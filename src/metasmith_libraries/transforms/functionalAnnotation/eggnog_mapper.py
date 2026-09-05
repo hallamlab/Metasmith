@@ -20,7 +20,7 @@ def protocol(context: ExecutionContext):
     local_data = Path("./eggnog_data")
     context.LocalShell(f"cp -r {idata.external} {local_data}")
 
-    context.ExecWithEnv().ifContainerDo(
+    context.ExecWithEnv(
         env=image,
         binds=[(local_data, "/eggnog_data")],
         cmd=f"""

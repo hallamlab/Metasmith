@@ -20,44 +20,40 @@ def _src(body: str) -> str:
     return "def protocol(context):\n" + "\n".join("    " + l for l in lines) + "\n"
 
 
-def test_scan_reads_both_arms_in_order():
-    scan = ScanSource(_src("""
-        context.ExecWithEnv() \\
-            .ifContainerDo(env=image, cmd="a") \\
-            .ifVirtualEnvDo(env=image, cmd="b")
-    """))
-    assert len(scan.chains) == 1
-    assert scan.chains[0].arms == ["ifContainerDo", "ifVirtualEnvDo"]
-    assert scan.chains[0].envs == ["image", "image"]
-    assert scan.chains[0].cmds == ["'a'", "'b'"]
-    assert scan.arms == ["ifContainerDo", "ifVirtualEnvDo"]
-
-
-def test_scan_reads_a_container_only_transform():
-    scan = ScanSource(_src('context.ExecWithEnv().ifContainerDo(env=image, cmd="a")'))
-    assert scan.arms == ["ifContainerDo"]
-    assert scan.empty_chains() == []
+def test_scan_reads_the_env_and_the_command():
+    scan = ScanSource(_src('context.ExecWithEnv(env=image, cmd="a")'))
+    assert len(scan.runs) == 1
+    assert scan.runs[0].env == "image"
+    assert scan.runs[0].cmd == "'a'"
 
 
 def test_scan_reads_positional_args():
-    scan = ScanSource(_src('context.ExecWithEnv().ifVirtualEnvDo(image, "a")'))
-    assert scan.chains[0].envs == ["image"]
-    assert scan.chains[0].cmds == ["'a'"]
+    scan = ScanSource(_src('context.ExecWithEnv(image, "a")'))
+    assert scan.runs[0].env == "image"
+    assert scan.runs[0].cmd == "'a'"
 
 
-def test_scan_finds_multiple_independent_chains():
+def test_scan_finds_every_independent_run_in_line_order():
     scan = ScanSource(_src("""
-        context.ExecWithEnv().ifContainerDo(env=a, cmd="one")
-        context.ExecWithEnv().ifContainerDo(env=b, cmd="two").ifVirtualEnvDo(env=b, cmd="three")
+        context.ExecWithEnv(env=a, cmd="one")
+        context.ExecWithEnv(env=b, cmd="two")
     """))
-    assert [c.arms for c in scan.chains] == [
-        ["ifContainerDo"], ["ifContainerDo", "ifVirtualEnvDo"],
-    ]
+    assert [r.env for r in scan.runs] == ["a", "b"]
 
 
-def test_scan_flags_an_armless_chain():
-    scan = ScanSource(_src("context.ExecWithEnv()"))
-    assert len(scan.empty_chains()) == 1
+def test_scan_records_an_env_that_is_not_a_plain_name_as_unknown():
+    # The env name is how the library recovers the module-level Dependency; an
+    # expression cannot be resolved that way, and is recorded as unknown rather
+    # than reported as absent.
+    scan = ScanSource(_src('context.ExecWithEnv(env=envs[0], cmd="a")'))
+    assert scan.runs[0].env is None
+    assert scan.runs[0].has_env is True
+    assert scan.incomplete() == []
+
+
+def test_scan_flags_a_run_that_can_never_run_anything():
+    scan = ScanSource(_src("context.ExecWithEnv(env=image)"))
+    assert len(scan.incomplete()) == 1
 
 
 def test_scan_flags_the_retired_entry_point():
@@ -65,19 +61,21 @@ def test_scan_flags_the_retired_entry_point():
     assert [n for n, _ in scan.forbidden] == ["ExecWithContainer"]
 
 
+def test_scan_flags_the_retired_arms_by_name():
+    # An unmigrated body must fail by name. The alternative is that the chain is
+    # simply not recognised, and its command silently never runs.
+    scan = ScanSource(_src("""
+        context.ExecWithEnv() \\
+            .ifContainerDo(env=image, cmd="a") \\
+            .ifVirtualEnvDo(env=image, cmd="b")
+    """))
+    assert sorted(n for n, _ in scan.forbidden) == ["ifContainerDo", "ifVirtualEnvDo"]
+
+
 def test_scan_notes_host_shell_calls():
     scan = ScanSource(_src('context.external_shell.Exec("hostname")'))
     assert len(scan.host_shell_calls) == 1
-    assert scan.chains == []
-
-
-def test_duplicate_command_is_detected_only_across_two_arms():
-    both = ScanSource(_src("""
-        context.ExecWithEnv().ifContainerDo(env=i, cmd=cmd).ifVirtualEnvDo(env=i, cmd=cmd)
-    """))
-    assert both.chains[0].duplicate_command is True
-    one = ScanSource(_src("context.ExecWithEnv().ifContainerDo(env=i, cmd=cmd)"))
-    assert one.chains[0].duplicate_command is False
+    assert scan.runs == []
 
 
 def test_validate_errors_on_the_retired_entry_point():
@@ -85,38 +83,30 @@ def test_validate_errors_on_the_retired_entry_point():
     assert res["errors"] and "ExecWithContainer" in res["errors"][0]
 
 
-def test_validate_errors_on_an_armless_chain():
-    res = check_env_declarations(_src("context.ExecWithEnv()"))
-    assert res["errors"] and "declares no arm" in res["errors"][0]
+def test_validate_errors_on_a_retired_arm():
+    res = check_env_declarations(
+        _src('context.ExecWithEnv().ifContainerDo(env=i, cmd="a")')
+    )
+    assert any("ifContainerDo" in e for e in res["errors"])
 
 
-def test_validate_errors_on_a_repeated_arm():
-    res = check_env_declarations(_src("""
-        context.ExecWithEnv().ifContainerDo(env=i, cmd="a").ifContainerDo(env=i, cmd="b")
-    """))
-    assert res["errors"] and "repeated arm" in res["errors"][0]
+def test_validate_errors_on_a_run_with_no_command():
+    res = check_env_declarations(_src("context.ExecWithEnv(env=i)"))
+    assert res["errors"] and "cmd" in res["errors"][0]
 
 
-def test_validate_warns_but_does_not_error_on_identical_commands():
-    res = check_env_declarations(_src("""
-        context.ExecWithEnv().ifContainerDo(env=i, cmd=cmd).ifVirtualEnvDo(env=i, cmd=cmd)
-    """))
+def test_validate_accepts_a_single_run():
+    res = check_env_declarations(_src('context.ExecWithEnv(env=i, cmd="a")'))
     assert res["errors"] == []
-    assert any("identical" in w for w in res["warnings"])
-
-
-def test_validate_accepts_a_container_only_transform():
-    res = check_env_declarations(_src('context.ExecWithEnv().ifContainerDo(env=i, cmd="a")'))
-    assert res["errors"] == []
-    assert res["arms"] == ["ifContainerDo"]
+    assert res["runs"] == [{"line": 2, "env": "i"}]
 
 
 def test_validate_says_it_is_syntactic_only():
     assert check_env_declarations(_src("pass"))["syntactic_only"] is True
 
 
-def _step(process: str, transform: str, arms, envs) -> dict:
-    return {"step": 1, "transform": transform, "process": process, "arms": arms, "envs": envs}
+def _step(process: str, transform: str, runs, envs) -> dict:
+    return {"step": 1, "transform": transform, "process": process, "runs": runs, "envs": envs}
 
 
 def _mamba() -> Environment:
@@ -127,35 +117,42 @@ def _docker() -> Environment:
     return Environment(image="docker://x", runtime=Runtime.DOCKER)
 
 
-BOTH_ARMS = ["ifContainerDo", "ifVirtualEnvDo"]
+# ------------------------------------------------ the preflight asks about the env
+#
+# Not about the body. A body says what to run and in what environment; the runtime
+# decides how. So the only way a step cannot run on this agent is that its
+# environment resource declares nothing for this agent's runtime.
 
 
 def test_preflight_passes_a_fully_portable_plan():
-    m = {"P1": _step("P1", "diamond", BOTH_ARMS, {"diamond.env": ["conda", "container"]})}
+    m = {"P1": _step("P1", "diamond", 1, {"diamond.env": ["conda", "container"]})}
     _check_env_portability(m, _mamba())
-
-
-def test_preflight_refuses_a_step_with_no_virtual_env_arm():
-    m = {"P1": _step("P1", "interproscan", ["ifContainerDo"], {"ipr.env": ["container"]})}
-    with pytest.raises(EnvPortabilityError) as e:
-        _check_env_portability(m, _mamba())
-    assert "interproscan" in str(e.value)
-    assert "ifVirtualEnvDo" in str(e.value)
+    _check_env_portability(m, _docker())
 
 
 def test_preflight_refuses_an_env_resource_with_no_conda_entry():
-    m = {"P1": _step("P1", "gtdbtk", BOTH_ARMS, {"gtdbtk.env": ["container"]})}
+    m = {"P1": _step("P1", "gtdbtk", 1, {"gtdbtk.env": ["container"]})}
     with pytest.raises(EnvPortabilityError) as e:
         _check_env_portability(m, _mamba())
     assert "gtdbtk.env" in str(e.value)
     assert "conda" in str(e.value)
 
 
+def test_preflight_refuses_an_env_resource_with_no_container_entry():
+    # The direction that was never checked, and what let `cobra.env` ship with a
+    # `conda:` line and nothing else -- unrunnable on the default agent runtime.
+    m = {"P1": _step("P1", "cobra_fba", 1, {"cobra.env": ["conda"]})}
+    with pytest.raises(EnvPortabilityError) as e:
+        _check_env_portability(m, _docker())
+    assert "cobra.env" in str(e.value)
+    assert "container" in str(e.value)
+
+
 def test_preflight_lists_every_offending_step_not_just_the_first():
     m = {
-        "P1": _step("P1", "alpha", ["ifContainerDo"], {}),
-        "P2": _step("P2", "beta", BOTH_ARMS, {"b.env": ["container"]}),
-        "P3": _step("P3", "gamma", BOTH_ARMS, {"c.env": ["conda"]}),
+        "P1": _step("P1", "alpha", 1, {"a.env": ["container"]}),
+        "P2": _step("P2", "beta", 1, {"b.env": ["container"]}),
+        "P3": _step("P3", "gamma", 1, {"c.env": ["conda"]}),
     }
     with pytest.raises(EnvPortabilityError) as e:
         _check_env_portability(m, _mamba())
@@ -163,9 +160,9 @@ def test_preflight_lists_every_offending_step_not_just_the_first():
     assert "alpha" in msg and "beta" in msg and "gamma" not in msg
 
 
-def test_preflight_is_a_no_op_under_a_container_runtime():
-    m = {"P1": _step("P1", "interproscan", ["ifContainerDo"], {"ipr.env": ["container"]})}
-    _check_env_portability(m, _docker())
+def test_preflight_ignores_a_step_that_launches_no_tool():
+    m = {"P1": _step("P1", "pure_python", 0, {"x.env": ["container"]})}
+    _check_env_portability(m, _mamba())
 
 
 def test_preflight_treats_an_unscannable_transform_as_unknown_not_absent():
@@ -173,9 +170,19 @@ def test_preflight_treats_an_unscannable_transform_as_unknown_not_absent():
     _check_env_portability(m, _mamba())
 
 
-def test_preflight_treats_an_unreadable_resource_as_unknown_not_absent():
-    m = {"P1": _step("P1", "mystery", BOTH_ARMS, {"x.env": None})}
+def test_preflight_treats_a_manifest_from_an_older_metasmith_as_unknown():
+    # No `runs` key at all: staged before the arms were collapsed. Indistinguishable
+    # from "nothing to check", and treated as such -- otherwise every already-staged
+    # workspace starts failing at run.
+    m = {"P1": {"step": 1, "transform": "old", "process": "P1",
+                "arms": ["ifContainerDo"], "envs": {"x.env": ["container"]}}}
     _check_env_portability(m, _mamba())
+
+
+def test_preflight_treats_an_unreadable_resource_as_unknown_not_absent():
+    m = {"P1": _step("P1", "mystery", 1, {"x.env": None})}
+    _check_env_portability(m, _mamba())
+    _check_env_portability(m, _docker())
 
 
 def test_preflight_is_a_no_op_with_no_manifest():
@@ -194,7 +201,7 @@ class _CatShell:
 
 
 def test_manifest_read_returns_the_steps():
-    payload = json.dumps({"schema": 1, "steps": {"P1": _step("P1", "a", ["ifContainerDo"], {})}})
+    payload = json.dumps({"schema": 1, "steps": {"P1": _step("P1", "a", 1, {})}})
     steps = _read_env_manifest(_CatShell(payload), Path("/ws"))
     assert list(steps) == ["P1"]
 
@@ -282,8 +289,8 @@ def test_unreadable_resource_stays_unknown(tmp_path):
 
 
 def test_preflight_reads_both_manifest_generations(tmp_path):
-    old = {"P1": _step("P1", "gtdbtk", BOTH_ARMS, {"gtdbtk.env": ["container"]})}
-    new = {"P1": _step("P1", "gtdbtk", BOTH_ARMS, {"gtdbtk.env": {"container": "docker://x"}})}
+    old = {"P1": _step("P1", "gtdbtk", 1, {"gtdbtk.env": ["container"]})}
+    new = {"P1": _step("P1", "gtdbtk", 1, {"gtdbtk.env": {"container": "docker://x"}})}
     for manifest in (old, new):
         with pytest.raises(EnvPortabilityError, match="conda"):
             _check_env_portability(manifest, _mamba())

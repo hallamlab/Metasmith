@@ -78,7 +78,7 @@ def protocol(context: ExecutionContext):
     with open(script, "w") as f:
         f.write(SHARDER)
 
-    context.ExecWithEnv().ifContainerDo(
+    context.ExecWithEnv(
         env=image,
         cmd=f"python {script} --fasta {iorfs.container} "
             f"--out-dir {staging} --shard-size {shard_size}",

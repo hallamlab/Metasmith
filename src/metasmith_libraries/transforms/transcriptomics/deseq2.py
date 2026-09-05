@@ -16,9 +16,7 @@ def protocol(context: ExecutionContext):
     cpus    = 4 if cpus is None else cpus
 
     _cmd = f"python {ihelp.container}/deseq2.py {icounts.container} {iout.container} {cpus}"
-    context.ExecWithEnv() \
-        .ifContainerDo(env=image, cmd=_cmd) \
-        .ifVirtualEnvDo(env=image, cmd=_cmd)
+    context.ExecWithEnv(env=image, cmd=_cmd)
     return ExecutionResult(
         manifest=[{out: iout.local}],
         success=iout.local.exists(),

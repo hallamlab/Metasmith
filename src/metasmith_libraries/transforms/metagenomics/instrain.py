@@ -25,7 +25,7 @@ def protocol(context: ExecutionContext):
     sample_slug = re.sub(r"[^A-Za-z0-9]+", "_", Path(ireads.container).name).strip("_") or "sample"
     bam = f"{sample_slug}.bam"
 
-    context.ExecWithEnv().ifContainerDo(
+    context.ExecWithEnv(
         env=img_mm2,
         binds=[(imagref.external, "/magref")],
         cmd=f"""
@@ -36,7 +36,7 @@ def protocol(context: ExecutionContext):
         """,
     )
 
-    context.ExecWithEnv().ifContainerDo(
+    context.ExecWithEnv(
         env=img_sam,
         cmd=f"""
             samtools view -@ {threads} -b temp.sam \
@@ -46,7 +46,7 @@ def protocol(context: ExecutionContext):
         """,
     )
 
-    context.ExecWithEnv().ifContainerDo(
+    context.ExecWithEnv(
         env=img_is,
         binds=[(imagref.external, "/magref")],
         cmd=f"""

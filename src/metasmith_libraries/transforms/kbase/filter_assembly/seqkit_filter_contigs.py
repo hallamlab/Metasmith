@@ -18,7 +18,7 @@ def protocol(context: ExecutionContext):
     _cmd = f"""\
             seqkit seq --min-len {min_len} {iasm.container} > {iout.container}
         """
-    context.ExecWithEnv().ifContainerDo(env=image, cmd=_cmd)
+    context.ExecWithEnv(env=image, cmd=_cmd)
 
     return ExecutionResult(
         manifest=[{out: iout.local}],

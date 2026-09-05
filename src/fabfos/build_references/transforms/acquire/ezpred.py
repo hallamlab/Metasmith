@@ -45,9 +45,7 @@ def protocol(context: ExecutionContext):
         echo "[ezpred] release {release}"
         ls -l $D
     """
-    context.ExecWithEnv() \
-        .ifContainerDo(env=image, cmd=_cmd) \
-        .ifVirtualEnvDo(env=image, cmd=_cmd)
+    context.ExecWithEnv(env=image, cmd=_cmd)
 
     d = iout.local / release
     return ExecutionResult(

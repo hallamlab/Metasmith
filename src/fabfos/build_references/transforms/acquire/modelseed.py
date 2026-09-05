@@ -30,9 +30,7 @@ def protocol(context: ExecutionContext):
         done
         echo "{COMMIT}" > $D/COMMIT
     """
-    context.ExecWithEnv() \
-        .ifContainerDo(env=image, cmd=_cmd) \
-        .ifVirtualEnvDo(env=image, cmd=_cmd)
+    context.ExecWithEnv(env=image, cmd=_cmd)
 
     d = iout.local / COMMIT
     got = [f for f in FILES if (d / f).exists() and (d / f).stat().st_size > 0]

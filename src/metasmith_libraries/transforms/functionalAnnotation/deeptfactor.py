@@ -12,7 +12,7 @@ def protocol(context: ExecutionContext):
     iorfs = context.Input(orfs)
     iout  = context.Output(out_results)
 
-    context.ExecWithEnv().ifContainerDo(
+    context.ExecWithEnv(
         env=image,
         cmd=f"""
             sed '/^[^>]/s/\\*//g' {iorfs.container} > /ws/clean.faa

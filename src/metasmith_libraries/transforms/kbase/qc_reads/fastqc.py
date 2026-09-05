@@ -20,7 +20,7 @@ def protocol(context: ExecutionContext):
     threads = "" if threads is None else f"-t {threads}"
                 
     rname = ireads.container.name.replace(".fq.gz", "")
-    context.ExecWithEnv().ifContainerDo(
+    context.ExecWithEnv(
         env = image,
         cmd = f"""
             mkdir fastqc_out

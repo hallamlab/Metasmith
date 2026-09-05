@@ -12,9 +12,7 @@ def protocol(context: ExecutionContext):
     idb = context.Output(ref)
 
     _cmd = "metabuli databases GTDB . tmp"
-    context.ExecWithEnv() \
-        .ifContainerDo(env=image, cmd=_cmd) \
-        .ifVirtualEnvDo(env=image, cmd=_cmd)
+    context.ExecWithEnv(env=image, cmd=_cmd)
     Path("gtdb").rename(idb.local)
 
     return ExecutionResult(

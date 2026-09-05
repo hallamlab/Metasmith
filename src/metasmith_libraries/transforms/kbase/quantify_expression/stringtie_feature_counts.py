@@ -20,7 +20,7 @@ def protocol(context: ExecutionContext):
     _cmd = f"""\
             stringtie -e -B {threads} -G {igff.container} -o {iout.container} {ibam.container}
         """
-    context.ExecWithEnv().ifContainerDo(env=image, cmd=_cmd)
+    context.ExecWithEnv(env=image, cmd=_cmd)
 
     return ExecutionResult(
         manifest=[{out: iout.local}],

@@ -27,7 +27,7 @@ def protocol(context: ExecutionContext):
     _cmd = f"""\
             python {iscript.container} {iout.container} {RANK} {samples}
         """
-    context.ExecWithEnv().ifContainerDo(env=image, cmd=_cmd)
+    context.ExecWithEnv(env=image, cmd=_cmd)
 
     return ExecutionResult(
         manifest=[{counts: iout.local}],

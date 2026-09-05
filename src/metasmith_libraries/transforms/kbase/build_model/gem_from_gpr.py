@@ -39,7 +39,7 @@ def protocol(context: ExecutionContext):
                 {igpr.container} {ibridge.container} {ivocab.container} \
                 {ireac.container} {ichem.container} {iout.container}
         """
-    context.ExecWithEnv().ifContainerDo(env=image, cmd=_cmd)
+    context.ExecWithEnv(env=image, cmd=_cmd)
 
     return ExecutionResult(
         manifest=[{out: iout.local}],
