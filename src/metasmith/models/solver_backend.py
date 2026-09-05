@@ -37,6 +37,18 @@ class Solver:
     ) -> Solution:
         raise NotImplementedError
 
+#: Refiner iterations, the shipped default.
+#:
+#: 256 was never what made the refiner work. Its winner is found by iteration 3
+#: on every case that has one, and its frontier exhausts by 16 even when 256 is
+#: asked for -- 256 is only what let it run away on a plan whose state space does
+#: not exhaust. Re-derived after the lineage repair rather than carried forward:
+#: over 44 case-seed pairs, budgets of 4, 8 and 16 give plan fingerprints
+#: byte-identical to 256, and two pairs differ from a budget of 0, so 0 is not
+#: safe.
+REFINER_BUDGET = 8
+
+
 class PythonSolver(Solver):
     name = "python"
 
@@ -44,7 +56,7 @@ class PythonSolver(Solver):
     def Available(cls) -> bool:
         return True
 
-    def Solve(self, given, transforms, target, seed=42, max_iter=256, max_refine=256):
+    def Solve(self, given, transforms, target, seed=42, max_iter=256, max_refine=REFINER_BUDGET):
         # Imported here, not at module scope: `solver.py` reaches back into this
         # module for the dispatch, so an eager import at either end is a cycle.
         from .solver import _solve_by_mcts_python
@@ -61,7 +73,7 @@ class RustSolver(Solver):
         from .solver_engine import EngineFor
         return EngineFor("solve") is not None
 
-    def Solve(self, given, transforms, target, seed=42, max_iter=256, max_refine=256):
+    def Solve(self, given, transforms, target, seed=42, max_iter=256, max_refine=REFINER_BUDGET):
         from .solver_engine import EngineError, EngineFor
         from .solver_wire import solve_via_engine
         info = EngineFor("solve")
