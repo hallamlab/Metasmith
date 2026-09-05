@@ -105,6 +105,56 @@ pub struct PuctConfig {
     /// 0.0 is off, and the channel is identically zero on every real workflow in
     /// the corpus, so it is inert there at any weight.
     pub w2: f64,
+    /// Magnitude of the reward charged to an expansion that made no progress.
+    ///
+    /// `reward_for` clamps at 0, so a self-feeding transform -- one that consumes
+    /// a property it also produces, and so re-enters the frontier every time it
+    /// fires -- earns exactly what a merely unlucky transform earns. Once every
+    /// key has been visited once, every Q is 0 and selection degenerates to the
+    /// prior, which is the distribution the runaway dominates. A negative reward
+    /// is the only channel by which "this transform actively wastes iterations"
+    /// can be said. 0.0 is off, and off is the default.
+    pub no_progress: f64,
+    /// Added to `no_progress` per decayed prior no-progress observation of the
+    /// same key, so a repeat offender is charged more than a first offender.
+    ///
+    /// The count decays with `decay` like `w` and `n` do, so it saturates at
+    /// `1/(1 - decay)` -- 67 at the default 0.985. Useful settings are therefore
+    /// two orders of magnitude below `no_progress`.
+    pub np_ramp: f64,
+    /// Floor on the penalised reward. Q is a decayed mean, so with a flat penalty
+    /// it saturates at `-no_progress`; this bounds how far below the `fpu` gap a
+    /// key can be driven however the ramp accumulates.
+    pub np_floor: f64,
+    /// Which phase charges the penalty. The two phases mean different things by
+    /// no progress: in mcts it is a wasted expansion, in the refiner it is merely
+    /// a candidate that did not beat the incumbent -- which is the common case
+    /// for a healthy search, and the refiner is where real plan length is set.
+    pub np_phase: NpPhase,
+    /// The inverse of `dup`: multiply a key's per-slot prior by
+    /// `(1 + ln count)^widen`.
+    ///
+    /// `dup` exists because a self-feeding transform floods the frontier, on the
+    /// reading that the flood is what starves the chain to the target. Tracing
+    /// `sink26-103` says otherwise: with PUCT the flooding transform takes 17 of
+    /// 256 selections, not 714 -- the statistics are keyed per transform, so 774
+    /// distinct frontier slots share one visit count and one `1/(1 + n)` penalty
+    /// with a rival that offers one slot, and selection round-robins over
+    /// transform identity. The unsolved cases need the same transform applied
+    /// many times under different bindings, which is exactly what that
+    /// round-robin forbids. `epsilon_milli` reaches them by accident: a uniform
+    /// draw over a frontier that is 87% one transform is a draw for that
+    /// transform. This is the targeted form of the same move, and it costs no
+    /// randomness anywhere else. 0.0 is off.
+    pub widen: f64,
+}
+
+/// Which phase charges the no-progress penalty.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum NpPhase {
+    Both,
+    Mcts,
+    Refine,
 }
 
 /// How a before/after progress pair becomes a reward.
@@ -139,7 +189,17 @@ impl Default for PuctConfig {
             dup: 0.0,
             dup_lin: 0.0,
             cap: 0,
-            w2: 0.0,
+            // Solves the three cases nothing else reaches, and cannot cost a real
+            // workflow anything: the flag is identically 0 on all 17 real payloads
+            // in the corpus and 1-5 on every generated one. A broad plateau --
+            // 0.9 through 1.2 all reach 81/81 at the same real-plan length -- so
+            // this is not a tuned ridge.
+            w2: 0.95,
+            no_progress: 0.0,
+            np_ramp: 0.0,
+            np_floor: -1.0,
+            np_phase: NpPhase::Both,
+            widen: 0.0,
         }
     }
 }
@@ -183,13 +243,30 @@ impl PuctConfig {
                 "dup_lin" => c.dup_lin = num(v)?,
                 "cap" => c.cap = num(v)?.max(0.0) as usize,
                 "w2" => c.w2 = num(v)?,
+                "no_progress" => c.no_progress = num(v)?,
+                "np_ramp" => c.np_ramp = num(v)?,
+                "widen" => c.widen = num(v)?,
+                "np_floor" => c.np_floor = num(v)?,
+                "np_phase" => {
+                    c.np_phase = match v.trim() {
+                        "both" => NpPhase::Both,
+                        "mcts" => NpPhase::Mcts,
+                        "refine" => NpPhase::Refine,
+                        other => {
+                            return Err(format!(
+                                "{PUCT_ENV}: np_phase: expected both, mcts or refine, got {other:?}"
+                            ));
+                        }
+                    }
+                }
                 "w0" => c.channel_weights[0] = num(v)?,
                 "w1" => c.channel_weights[1] = num(v)?,
                 other => {
                     return Err(format!(
                         "{PUCT_ENV}: unknown key {other:?}; known: c_puct, temperature, fpu, \
                          top_k, epsilon_milli, decay, use_value, reward_mode, \
-                         reward_scale, dup, dup_lin, cap, w0, w1, w2"
+                         reward_scale, dup, dup_lin, cap, w0, w1, w2, \
+                         no_progress, np_ramp, np_floor, np_phase, widen"
                     ));
                 }
             }
@@ -214,6 +291,7 @@ pub enum Phase {
 
 pub struct Policy {
     kind: Kind,
+    phase: Phase,
     w: Map<u32, f64>,
     n: Map<u32, f64>,
     total: u64,
@@ -229,6 +307,10 @@ pub struct Policy {
     /// it, and read only where a key indexes into it -- the refiner's key for the
     /// plan it was handed is `u32::MAX`, which never does.
     structure: Vec<f64>,
+    /// Decayed count of no-progress observations per key, for `np_ramp`. Held
+    /// apart from `n` because `n` counts every observation, and the ramp has to
+    /// read how often *this* key wasted an iteration.
+    fails: Map<u32, f64>,
 }
 
 impl Policy {
@@ -237,7 +319,7 @@ impl Policy {
     /// An unset variable is the shipped rule, and an unrecognised one is refused
     /// rather than defaulted: a typo that silently selected the incumbent would
     /// report a measurement of the incumbent under the challenger's name.
-    pub fn from_env(_phase: Phase) -> Result<Self, String> {
+    pub fn from_env(phase: Phase) -> Result<Self, String> {
         let kind = match std::env::var(POLICY_ENV) {
             Err(_) => Kind::Weighted,
             Ok(s) if s.is_empty() || s == "weighted" => Kind::Weighted,
@@ -255,9 +337,9 @@ impl Policy {
             }
         };
         Ok(Self {
-            kind, w: det::map(), n: det::map(), total: 0,
+            kind, phase, w: det::map(), n: det::map(), total: 0,
             scratch: Vec::new(), dups: det::map(), seen: det::map(),
-            structure: Vec::new(),
+            structure: Vec::new(), fails: det::map(),
         })
     }
 
@@ -410,7 +492,7 @@ impl Policy {
             *v = ((*v - peak) / tau).exp();
             total += *v;
         }
-        let split = c.dup > 0.0 || c.dup_lin > 0.0;
+        let split = c.dup > 0.0 || c.dup_lin > 0.0 || c.widen > 0.0;
         if split {
             self.dups.clear();
             for i in 0..len {
@@ -433,6 +515,7 @@ impl Policy {
                 if m > 1.0 {
                     if c.dup_lin > 0.0 { p /= m.powf(c.dup_lin); }
                     if c.dup > 0.0 { p /= (1.0 + m.ln()).powf(c.dup); }
+                    if c.widen > 0.0 { p *= (1.0 + m.ln()).powf(c.widen); }
                 }
             }
             if c.cap > 0 {
@@ -449,12 +532,34 @@ impl Policy {
         }
     }
 
+    /// Does this phase charge the no-progress penalty?
+    fn np_here(&self, c: PuctConfig) -> bool {
+        match c.np_phase {
+            NpPhase::Both => true,
+            NpPhase::Mcts => self.phase == Phase::Mcts,
+            NpPhase::Refine => self.phase == Phase::Refine,
+        }
+    }
+
     /// Report the outcome of a selection. A stateless policy discards it.
+    ///
+    /// A reward of 0 is not merely a low reward: `reward_for` clamps there, and
+    /// both call sites reach it only when the expansion satisfied nothing new. So
+    /// zero is where the no-progress penalty is applied, and it is applied here
+    /// rather than in `reward_for` because the charge is a function of the key's
+    /// own history, which the caller does not have.
     pub fn observe(&mut self, key: u32, reward: f64) {
         let c = match self.kind {
             Kind::Weighted => return,
             Kind::Puct(c) => c,
         };
+        let mut reward = reward;
+        if c.no_progress > 0.0 && c.use_value && reward <= 0.0 && self.np_here(c) {
+            let f = self.fails.get(&key).copied().unwrap_or(0.0);
+            reward = (-(c.no_progress + c.np_ramp * f)).max(c.np_floor);
+            let e = self.fails.entry(key).or_insert(0.0);
+            *e = if c.decay >= 1.0 { *e + 1.0 } else { *e * c.decay + 1.0 };
+        }
         if c.decay >= 1.0 {
             *self.w.entry(key).or_insert(0.0) += reward;
             *self.n.entry(key).or_insert(0.0) += 1.0;
