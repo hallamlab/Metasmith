@@ -1,9 +1,12 @@
 import { api } from './api.svelte.js'
 
 export const SECTIONS = [
-  // in setup order: you need a host before an agent, an agent before a run
+  // in setup order: you need a host before an agent, an agent before a run.
+  // Data sits after Agents because a store belongs to one -- it is the same
+  // pool a run's products land in, read as instances rather than as cache.
   { id: 'ssh', label: 'SSH' },
   { id: 'agents', label: 'Agents' },
+  { id: 'data', label: 'Data' },
   { id: 'workflows', label: 'Workflows' },
   { id: 'runs', label: 'Runs' },
 ]
@@ -37,7 +40,7 @@ const fromUrl = parseHash()
 export const app = $state({
   section: fromUrl.section,
   // one remembered selection per section, so switching tabs does not lose your place
-  selected: { ssh: null, agents: null, workflows: null, runs: null, [fromUrl.section]: fromUrl.id },
+  selected: { ssh: null, agents: null, data: null, workflows: null, runs: null, [fromUrl.section]: fromUrl.id },
   showArchived: false,
   project: null,
   hosts: [],
@@ -54,7 +57,7 @@ export const app = $state({
 })
 
 // -- the left rail's width -------------------------------------------------
-// One value for all four sections: the rail is the same furniture whichever tab
+// One value for every section: the rail is the same furniture whichever tab
 // you are on, and a width that changed under you when you switched would read as
 // a glitch. Kept out of `app` because nothing reloads it from the server.
 
@@ -484,7 +487,8 @@ export async function refresh(section = app.section) {
   app.loading = true
   try {
     if (section === 'ssh') await loadSsh()
-    if (section === 'agents') await loadAgents()
+    // Data's rail is the agent list too, because a store belongs to an agent.
+    if (section === 'agents' || section === 'data') await loadAgents()
     if (section === 'workflows') await loadWorkflows()
     // the Runs rail needs agents to offer a launch target, and Workflows shows
     // run counts, so these two are always loaded together
