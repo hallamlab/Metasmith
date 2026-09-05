@@ -129,21 +129,32 @@ def test_refinement_does_not_introduce_a_cycle():
     assert not any(_production_cycle(steps) for steps in stages["rectify_in"])
 
 
-def test_the_anchor_still_puts_cyclic_states_in_front_of_the_refiner():
+def test_no_cyclic_state_reaches_the_refiner_and_none_would_be_accepted():
+    """The prune prevents what this used to catch, so the premise moved.
+
+    This asserted that `sink-9396` still handed the refiner at least one cyclic
+    candidate, so that the rejection below was exercised by something real. Since
+    the lineage prune runs on the refiner path, no cyclic candidate is generated
+    at all: **0 of 6,256** validated states across the eleven templates at three
+    seeds, and none from this generator either.
+
+    That assertion is therefore gone rather than re-anchored -- a sweep for a new
+    anchor is a search for something the prune has removed. What remains is the
+    half that still means something: if a cyclic state ever does reach the
+    validator it must be rejected, and something must stay valid for the refiner
+    to choose between. `_is_valid`'s `# looped` branch is now defence in depth
+    rather than a live path, and `test_the_loop_rejection_branch_is_reachable`
+    is what keeps it from being deleted as dead.
+    """
     seed, dials = ANCHOR_CASE
     verdicts = _trace_validations(generate_problem(seed, dials, name=ANCHOR))
     assert verdicts, "validate_node never ran"
     cyclic = [valid for valid, has_cycle in verdicts if has_cycle]
-    assert cyclic, (
-        f"{ANCHOR} no longer produces a single cyclic candidate, so nothing here "
-        "exercises the rejection -- re-anchor from a fresh sweep"
-    )
     assert not any(cyclic), (
         f"{sum(cyclic)} of {len(cyclic)} cyclic states were accepted as valid"
     )
     assert any(valid for valid, _ in verdicts), (
-        "every state was rejected, so the refiner has nothing to choose between "
-        "and the rejection above proves less than it looks like it does"
+        "every state was rejected, so the refiner has nothing to choose between"
     )
 
 
