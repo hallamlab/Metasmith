@@ -8,23 +8,26 @@ bam     = model.AddRequirement(lib.GetType("alignment::bam"), parents={asm})
 out     = model.AddProduct(lib.GetType("sequences::variant_calls"))
 
 def protocol(context: ExecutionContext):
-    # STUB. The protocol this replaces:
-    #   bcftools mpileup -f {iasm.container} {ibam.container} \
-    #     | bcftools call -mv -Ov -o {iout.container}
-    #
-    # Recovers the strain variation an assembly consensus collapses to one base. The bam is
-    # required to descend from the assembly it was called against -- a VCF is meaningless
-    # without knowing which reference its coordinates are in.
-    made = {out: context.Output(out)}
-    for key, path in made.items():
-        make = 'mkdir -p' if key in _DIRECTORY_PRODUCTS else 'touch'
-        context.external_shell.Exec(f'{make} {path.external}')
-    return ExecutionResult(
-        manifest=[{k: v.local for k, v in made.items()}],
-        success=all(v.local.exists() for v in made.values()),
-    )
+    iasm=context.Input(asm)
+    ibam=context.Input(bam)
+    iout=context.Output(out)
 
-_DIRECTORY_PRODUCTS = set()
+    threads = context.params.get('cpus')
+    threads = "" if threads is None else f"--threads {threads}"
+    # mpileup faidx-es its reference and writes the .fai beside it. The reference
+    # here is a staged input, shared with every other task reading it, so the copy
+    # is what keeps two concurrent callers from racing on one index file.
+    _cmd = f"""\
+            cp {iasm.container} ref.fa
+            bcftools mpileup {threads} -Ou -f ref.fa {ibam.container} \
+                | bcftools call {threads} -mv -Ov -o {iout.container}
+        """
+    context.ExecWithEnv().ifContainerDo(env=image, cmd=_cmd)
+
+    return ExecutionResult(
+        manifest=[{out: iout.local}],
+        success=iout.local.exists(),
+    )
 
 TransformInstance(
     protocol=protocol,

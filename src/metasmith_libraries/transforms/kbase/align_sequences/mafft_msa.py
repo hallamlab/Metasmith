@@ -7,18 +7,20 @@ seqs    = model.AddRequirement(lib.GetType("sequences::orfs"))
 out     = model.AddProduct(lib.GetType("comparative::msa"))
 
 def protocol(context: ExecutionContext):
-    # STUB. The protocol this replaces:
-    #   mafft --auto --thread $cpus {iseqs.container} > {iout.container}
-    made = {out: context.Output(out)}
-    for key, path in made.items():
-        make = 'mkdir -p' if key in _DIRECTORY_PRODUCTS else 'touch'
-        context.external_shell.Exec(f'{make} {path.external}')
-    return ExecutionResult(
-        manifest=[{k: v.local for k, v in made.items()}],
-        success=all(v.local.exists() for v in made.values()),
-    )
+    iseqs=context.Input(seqs)
+    iout=context.Output(out)
 
-_DIRECTORY_PRODUCTS = set()
+    threads = context.params.get('cpus')
+    threads = "" if threads is None else f"--thread {threads}"
+    _cmd = f"""\
+            mafft --auto {threads} {iseqs.container} > {iout.container}
+        """
+    context.ExecWithEnv().ifContainerDo(env=image, cmd=_cmd)
+
+    return ExecutionResult(
+        manifest=[{out: iout.local}],
+        success=iout.local.exists(),
+    )
 
 TransformInstance(
     protocol=protocol,

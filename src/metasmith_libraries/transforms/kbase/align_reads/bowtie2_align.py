@@ -13,23 +13,32 @@ reads   = model.AddRequirement(lib.GetType("sequences::clean_short_reads"), pare
 out     = model.AddProduct(lib.GetType("transcriptomics::bowtie2_bam"))
 
 def protocol(context: ExecutionContext):
-    # STUB. The protocol this replaces:
-    #   bowtie2-build {iasm.container} ref
-    #   bowtie2 -p $cpus -x ref -U {ireads.container} | samtools sort -o {iout.container}
-    #
+    iasm=context.Input(asm)
+    ireads=context.Input(reads)
+    iout=context.Output(out)
+
+    threads = context.params.get('cpus')
+    threads = 4 if threads is None else threads
+
     # A bacterial transcript is colinear with the genome, so a spliced aligner invents
     # introns to raise its own score. That is why this exists beside `star_align.py`
     # rather than reusing it.
-    made = {out: context.Output(out)}
-    for key, path in made.items():
-        make = 'mkdir -p' if key in _DIRECTORY_PRODUCTS else 'touch'
-        context.external_shell.Exec(f'{make} {path.external}')
-    return ExecutionResult(
-        manifest=[{k: v.local for k, v in made.items()}],
-        success=all(v.local.exists() for v in made.values()),
-    )
+    _cmd = f"""\
+            bowtie2-build --threads {threads} {iasm.container} ref
+            bowtie2 -p {threads} -x ref -U {ireads.container} -S aligned.sam
+        """
+    context.ExecWithEnv().ifContainerDo(env=image, cmd=_cmd)
 
-_DIRECTORY_PRODUCTS = set()
+    _cmd = f"""\
+            samtools sort -@ {threads} -o {iout.container} aligned.sam
+            samtools index {iout.container}
+        """
+    context.ExecWithEnv().ifContainerDo(env=sam_env, cmd=_cmd)
+
+    return ExecutionResult(
+        manifest=[{out: iout.local}],
+        success=iout.local.exists(),
+    )
 
 TransformInstance(
     protocol=protocol,

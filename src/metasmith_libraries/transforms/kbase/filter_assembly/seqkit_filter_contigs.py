@@ -8,19 +8,22 @@ minlen  = model.AddRequirement(lib.GetType("sequences::min_contig_length"))
 out     = model.AddProduct(lib.GetType("sequences::filtered_assembly"))
 
 def protocol(context: ExecutionContext):
-    # STUB. The protocol this replaces:
-    #   m=$(cat {iminlen.container})
-    #   seqkit seq --min-len $m {iasm.container} > {iout.container}
-    made = {out: context.Output(out)}
-    for key, path in made.items():
-        make = 'mkdir -p' if key in _DIRECTORY_PRODUCTS else 'touch'
-        context.external_shell.Exec(f'{make} {path.external}')
-    return ExecutionResult(
-        manifest=[{k: v.local for k, v in made.items()}],
-        success=all(v.local.exists() for v in made.values()),
-    )
+    iasm=context.Input(asm)
+    iminlen=context.Input(minlen)
+    iout=context.Output(out)
 
-_DIRECTORY_PRODUCTS = set()
+    with open(iminlen.local) as f:
+        min_len = int(f.read().strip())
+
+    _cmd = f"""\
+            seqkit seq --min-len {min_len} {iasm.container} > {iout.container}
+        """
+    context.ExecWithEnv().ifContainerDo(env=image, cmd=_cmd)
+
+    return ExecutionResult(
+        manifest=[{out: iout.local}],
+        success=iout.local.exists(),
+    )
 
 TransformInstance(
     protocol=protocol,
