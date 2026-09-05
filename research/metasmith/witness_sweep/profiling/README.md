@@ -36,6 +36,11 @@ where the extra candidates come from is not settled, and anyone repairing the re
 `relation_probe.py` attributes every rejection on all eleven templates and both metagenomics arms to
 one thing: `validate_node` decides ancestry over the step graph, a branched given application carries
 `used == {}`, so every anchor bound to a given fails. No other cause appears. Under the relation the
-specification uses, 40 of the unpinned workflow's 110,866 candidates are admissible and 1 of the
-shipped workflow's 755, and the +209 and +207 improvements on `fosmid_inserts_from_pooled_reads` and
-`ecspr_survey_from_pooled_reads` come back.
+specification uses, the feasible set is far smaller than the enumeration.
+
+**CAUTION** Read the admissible column only when a swap's consequences are propagated downstream.
+A candidate that reuses the pre-swap products leaves every *downstream* lineage check reading the
+original plan's parents, where it is vacuously true. Measured that way the two fabfos templates
+appear to hold improvements of +209.150 and +207.629, which is where this scope's recorded +209 and
++207 came from -- `refiner_needed.py` shares the same gap, which is why the two agree to three
+decimals. Propagated, both candidates are inadmissible and the feasible set is a singleton.

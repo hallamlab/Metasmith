@@ -132,11 +132,15 @@ state from each step's actual bindings, so a swapped step's outputs already carr
 What rejects is that same step graph's blind spot. A branched given application carries `used == {}`,
 so a given endpoint has no parents in the step graph, and every requirement whose lineage anchor
 binds to a given fails. Measured on all eleven templates and both arms here, that is **every**
-rejection, with no other cause observed. Judged by the specification's relation -- the reflexive
-closure over declared parents -- **40** of the unpinned workflow's 110,866 candidates are admissible
-and **1** of the shipped workflow's 755. The stale-parents defect is real and narrow: `rectify`
-re-derives every product's parents before a plan leaves the refiner, so it reaches an emitted plan
-only through the `inherent_parents` term.
+rejection, with no other cause observed.
+
+**The right reason usually holds too.** Judging the same candidates by the specification's relation
+only means something once a swap's consequences are propagated downstream, so that each product's
+parents equal the inputs of the step that emitted it. Without that, every *downstream* lineage check
+reads the original plan's parents and is vacuously true. With it, the feasible set on the two fabfos
+templates is **1**, not the 12 of 20 and 29 of 37 the unpropagated measurement reports. So this
+paragraph's original claim was wrong in one direction and its replacement must not overshoot in the
+other: `validate_node` rejects for the wrong reason, and fixing that alone unlocks nothing here.
 
 ## What to do about it
 
@@ -158,12 +162,12 @@ contract.** Three options, in the order the evidence supports them:
 2. **Budget the refiner in candidates, not iterations.** `max_refine=256` means 190,000 candidate
    plans on one workflow and 20 million on another. A cap on states scored, or on bytes retained,
    would make the knob mean the same thing everywhere, and would turn the OOM into a worse answer.
-3. **Repoint `validate_node` at the specification's relation, and turn the generator prune back
-   on.** *Superseded reading: this item originally called for repairing the generator's lineage
-   handling.* The measurement above says the validator's relation is the defect and the prune at
-   `solver.py:620` is the cost. Together they take one iteration from 110,866 candidates to 40, and
-   they recover the +209 and +207 improvements on `fosmid_inserts_from_pooled_reads` and
-   `ecspr_survey_from_pooled_reads` that this scope recorded as generated and discarded.
+3. **Propagate a swap's consequences downstream, then repoint `validate_node` at the
+   specification's relation.** The order is forced and neither half is optional. Propagation alone
+   keeps the one improvement the refiner makes and makes the lineage model agree with `derived`.
+   The relation change alone loses that improvement, because the declared parents of an
+   unpropagated candidate are stale. Expect no new improvements from either: the feasible set on
+   the two fabfos templates is a singleton once lineage is propagated.
 
 ## What this does not say
 

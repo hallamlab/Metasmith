@@ -622,12 +622,22 @@ def _solve_by_mcts_python(
                     reached_leaf = True
                     appl = Application(initial_timeline=state_k, transform=tr, used=used, produced=[{}])
                     if appl.Signature() in blacklist: continue
+                    lineage: set = {ancestor for e in used.values() for ancestor in e.parents}
+                    lineage.update(used.values())
                     if handle_lineage:
-                        lineage: set = {ancestor for e in used.values() for ancestor in e.parents}
-                        lineage.update(used.values())
                         appl.produced = [{p:Endpoint(p.properties, parents=lineage) for p in pgroup} for pgroup in tr.produces]
                     else:
-                        appl.produced = [mock for _, mock in zip(tr.produces, mock_produced)]
+                        # Mint rather than reuse. Reusing the pre-swap objects
+                        # leaves a product declaring the parents of inputs this
+                        # candidate no longer consumes, which is what `derived`
+                        # states the negation of. The group's own slots are
+                        # iterated, not the transform's: a branched given carries
+                        # one group where its transform declares several, which is
+                        # what the `zip` is for.
+                        appl.produced = [
+                            {p:Endpoint(p.properties, parents=lineage) for p in mock}
+                            for _, mock in zip(tr.produces, mock_produced)
+                        ]
                     viable_input_sets.append(appl)
                     continue
                 next_i = p_i+1
@@ -950,8 +960,15 @@ def _solve_by_mcts_python(
                     if n in depths: continue
                     depths[n] = d
                     nd = d+1
-                    for pe in p2p[n].used.values():
-                        todo.append((pe.hash, nd))
+                    # A node no step in this state produces is a given or an
+                    # inherent parent, and the walk simply stops there. Reading
+                    # `p2p[n]` unguarded raised instead, which went unnoticed only
+                    # because so few candidates used to survive long enough to
+                    # walk that far.
+                    producer = p2p.get(n)
+                    if producer is not None:
+                        for pe in producer.used.values():
+                            todo.append((pe.hash, nd))
                     if n == ak: return d
                 del _depth_walks[ek]
                 return -1
@@ -994,9 +1011,70 @@ def _solve_by_mcts_python(
                 for pgroup in step.produced:
                     for p, e in pgroup.items():
                         production[p] = production.get(p, [])+[e]
+            # One topological order for the whole expansion. Every candidate here
+            # differs from `state.steps` by one step, so the order over the rest
+            # is the same for all of them and computing it per candidate is
+            # quadratic work for one answer.
+            ordered = order_steps(get_order(state.steps), state.steps)
+
+            def _relineage(step: Application, appl: Application) -> list[Application]:
+                """`state.steps` with `step` swapped for `appl`, descendants rebuilt.
+
+                A product's parents are the inputs of the step that emitted it, so
+                rebinding one step invalidates the declared lineage of everything
+                downstream of it. Rebuilding is therefore not optional -- `derived`
+                is an equality, and a stale product fails it.
+
+                Nothing in `state.steps` is mutated. Those objects belong to the
+                parent state and to every sibling candidate of this expansion, and
+                writing through them corrupts both with no error to show for it.
+
+                **CAUTION** Under a cyclic candidate `ordered` is not a real
+                topological order -- `get_order` gives up and dumps the stragglers
+                at `max_depth` -- so a descendant can be visited before its
+                producer and keep its old inputs. That is deliberate. `validate_node`
+                rejects the cycle, and the cascade must not be what decides it.
+                """
+                remap: dict[Endpoint, Endpoint] = {}
+                for old_group, new_group in zip(step.produced, appl.produced):
+                    for dep, old_e in old_group.items():
+                        new_e = new_group.get(dep)
+                        if new_e is not None: remap[old_e] = new_e
+                # By signature, not identity: a colliding pair drops both, which is
+                # what this did before the cascade existed.
+                dropped = step.Signature()
+                current = [s for s in ordered if s.Signature() != dropped]
+                # To a fixpoint, not in one pass. `ordered` is a depth map over the
+                # graph *before* the swap, and the swap moves it, so a descendant
+                # can sit ahead of its own producer. A single pass then leaves that
+                # descendant holding an endpoint nothing in the candidate emits,
+                # and the dangling reference surfaces much later as a `KeyError`
+                # inside the ancestry walk. Each pass strictly consumes remap
+                # entries, so the bound is only a guard.
+                for _ in range(len(current)+1):
+                    if not remap: break
+                    moved = False
+                    for i, s in enumerate(current):
+                        if not any(e in remap for e in s.used.values()): continue
+                        new_used = {d: remap.get(e, e) for d, e in s.used.items()}
+                        lineage: set = {a for e in new_used.values() for a in e.parents}
+                        lineage.update(new_used.values())
+                        new_produced: list[dict[Dependency, Endpoint]] = []
+                        for group in s.produced:
+                            rebuilt = {d: Endpoint(d.properties, parents=lineage) for d in group}
+                            for d, old_e in group.items(): remap[old_e] = rebuilt[d]
+                            new_produced.append(rebuilt)
+                        current[i] = Application(
+                            initial_timeline=s.initial_timeline, transform=s.transform,
+                            used=new_used, produced=new_produced,
+                            score=s.score, _iteration=s._iteration,
+                        )
+                        moved = True
+                    if not moved: break
+                current.append(appl)
+                return current
+
             for step in state.steps:
-                base = [s for s in state.steps if s.Signature() != step.Signature()]
-                base_sigs = sorted(s.Signature() for s in base)
                 for appl in generate_applications_of_transform(
                     state_k=step.initial_timeline,
                     production=production,
@@ -1005,7 +1083,12 @@ def _solve_by_mcts_python(
                     mock_produced=step.produced,
                 ):
                     appl._iteration = step._iteration
-                    yield "".join(sorted(base_sigs+[appl.Signature()])), base, appl
+                    steps = _relineage(step, appl)
+                    # After the cascade, not before: a downstream signature moves
+                    # when its inputs are rebound, so a key built from the old ones
+                    # collides two candidates that differ downstream and silently
+                    # drops one.
+                    yield "".join(sorted(s.Signature() for s in steps)), steps, appl
 
         def _ceiling_for(steps: list[Application]) -> float:
             production: dict[Dependency, list[Endpoint]] = {}
@@ -1067,10 +1150,10 @@ def _solve_by_mcts_python(
             if state.valid:
                 valids.append(state)
             improved = 0.0
-            for sig, base, appl in expand_node(state):
+            for sig, steps, appl in expand_node(state):
                 if sig in seen: continue
                 seen.add(sig)
-                child = RefinerState(steps=base+[appl], _sig=sig)
+                child = RefinerState(steps=steps, _sig=sig)
                 score_node(child)
                 child._swapped_in = appl.transform
                 if child.valid and child.scores[0] > incumbent:

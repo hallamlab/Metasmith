@@ -3,16 +3,23 @@
 //! It dominates the solve on the shipped templates and changes the plan it was
 //! given on almost none of them.
 //!
-//! **CAUTION** That is a defect in `validate`, not a property of the problem.
-//! `validate` decides ancestry over the step graph. The step graph cannot see
+//! **CAUTION** `validate` rejects for the wrong reason, and the right reason
+//! usually also holds. It decides ancestry over the step graph, which cannot see
 //! that two given endpoints of one sample are siblings, so every anchor bound to
-//! a given fails. That is every rejection measured, across the eleven templates
-//! and both metagenomics arms, with no other cause observed. Under the
-//! specification's relation -- the reflexive closure over declared parents, which
-//! `solver_witness` decides -- 40 of the unpinned workflow's 110,866 candidates
-//! are admissible, and `fosmid_inserts_from_pooled_reads` and
-//! `ecspr_survey_from_pooled_reads` each hold an improvement this relation
-//! discards.
+//! a given fails -- that is every rejection measured, across the eleven templates
+//! and both metagenomics arms, with no other cause observed. But once a swap's
+//! consequences are propagated downstream, so that each product's parents equal
+//! the inputs of the step that emitted it, almost every candidate is inadmissible
+//! anyway: the feasible set is 1 of 26 on `fosmid_inserts_from_pooled_reads` and
+//! 1 of 37 on `ecspr_survey_from_pooled_reads`. Fixing the relation alone unlocks
+//! nothing there.
+//!
+//! **CAUTION** Do not measure a candidate's admissibility without propagating.
+//! A candidate that reuses the pre-swap products leaves every *downstream* lineage
+//! check reading the original plan's parents, where it is vacuously true. Two
+//! separate measurements in this scope reported improvements of +209 and +207 on
+//! those two templates from exactly that gap, and agreed with each other to three
+//! decimals because they shared it.
 //!
 //! **The AND in `validate` is ordered, and the order is the optimisation.** Its
 //! terms are independent and side-effect-free, and the lineage term is both the
