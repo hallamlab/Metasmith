@@ -23,6 +23,7 @@
 mod det;
 mod mcts;
 mod model;
+mod policy;
 mod problem;
 mod rectify;
 mod refine;

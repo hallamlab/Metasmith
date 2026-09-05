@@ -37,22 +37,22 @@
 use crate::det::{self, Map, Set};
 use crate::model::{EpId, EpSig, Endpoints};
 use crate::problem::Problem;
+use crate::policy::{Phase, Policy};
 use crate::rectify::{get_order, order_steps, rectify};
 use crate::rng::{DecisionStream, argmax_index};
 use crate::scratch::{Scratch, SigMap, SigSet};
 use crate::search::{ApplId, ApplSig, Arena, Group, StateSig, generate_applications};
 use crate::smath::entropy;
 
-/// Both phases weight the same three moves: two exploit arms and one explore
-/// arm. Shared so the refiner and the mcts phase cannot drift apart.
-pub const SELECTION_WEIGHTS: [i64; 3] = [75, 20, 5];
-pub const SELECTION_TOP_K: usize = 1;
-
 pub struct RefinerState {
     pub steps: Vec<ApplId>,
     pub scores: [f64; 2],
     pub valid: bool,
     pub iteration: i64,
+    /// The application this candidate swapped in, or `u32::MAX` for the plan the
+    /// refiner was handed. A stateful policy keys its statistics on it, mirroring
+    /// `state._swapped_in` on the Python side.
+    pub swapped_in: ApplSig,
 }
 
 pub struct RefinerResult {
@@ -461,6 +461,7 @@ pub fn refine(
     let r = Refiner { p, given_appl };
     let mut states: Vec<RefinerState> = vec![RefinerState {
         steps: initial.to_vec(), scores: [0.0, 0.0], valid: true, iteration: -1,
+        swapped_in: u32::MAX,
     }];
     let mut sc = Scratch::default();
     r.score(ar, &mut states[0], &mut sc)?;
@@ -477,18 +478,17 @@ pub fn refine(
     let mut seen: Set<StateSig> = det::set();
     seen.insert(sig0);
 
+    let mut policy = Policy::from_env(Phase::Refine)?;
+
     let mut i: i64 = 0;
     while !frontier.is_empty() && (i as u32) < max_iters {
         i += 1;
-        let idx = {
-            let arm = rng.weighted_index(&SELECTION_WEIGHTS);
-            if arm < SELECTION_WEIGHTS.len() - 1 {
-                let scores: Vec<f64> = frontier.iter().map(|&k| states[k].scores[arm]).collect();
-                rng.pick_top_k(&scores, SELECTION_TOP_K)
-            } else {
-                rng.bounded_int(frontier.len() as u64) as usize
-            }
-        };
+        let idx = policy.select(
+            rng,
+            frontier.len(),
+            |j| states[frontier[j]].scores,
+            |j| states[frontier[j]].swapped_in,
+        );
         let n = frontier.len() - 1;
         frontier.swap(idx, n);
         let k = frontier.pop().expect("checked non-empty");
@@ -535,6 +535,7 @@ pub fn refine(
                 if !seen.insert(sig) { continue; }
                 let mut child = RefinerState {
                     steps: child_steps, scores: [0.0, 0.0], valid: false, iteration: -1,
+                    swapped_in: ar.appl(a).sig,
                 };
                 r.score(ar, &mut child, &mut sc)?;
                 let ck = states.len();
