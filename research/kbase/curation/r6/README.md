@@ -23,6 +23,32 @@ restatement and works the rest.
 - **The cobra image is pushed and verified**, and all four modelling transforms re-run
   against it reproduce round 5's numbers exactly.
 
+## The suite, run to completion
+
+It had not completed since the engine changed, and this round changed the engine again. Run one
+directory at a time, each capped at 12G — a single un-chunked run was OOM-killed at 60 minutes
+by a box under load, and piping it through `tail` meant that hour left a 10-byte file.
+
+**2078 passed, 5 failed, 312 skipped, 5 xfailed.** `suite.log` is the record.
+
+One of the five is round 6's own, and the guard was right to catch it:
+`test_module_surface.py::test_exported_names_survive` holds that a split module may not silently
+stop exporting a name. `metasmith.models.libraries` stopped exporting `CONTAINER_ARM`,
+`VIRTUAL_ENV_ARM` and `EnvDispatch` — deliberately, they have no callers left — so those three
+were removed from `fixtures/module_surface.json` with the reason recorded beside them, rather
+than the snapshot being regenerated wholesale, which would have absorbed any other drift too.
+
+The other four are pre-existing and none is caused by this round:
+
+- **Two `test_cache_real_nextflow` timeouts.** Not flakiness. Its cleanup walks up from the work
+  dir to `/tmp/pytest-of-tony` and chmods that whole tree inside a container against a 120s
+  timeout; the tree holds 57,030 files that belong to every other pytest run on the box. Written
+  up in `docs/metasmith/plans/consolidation-followups.md`.
+- **`test_stage_real_libraries_clones_into_sandbox`** asserts a `.git` its helper stopped
+  writing when the library stopped being a separate repository.
+- **`test_an_engine_is_staged_for_this_platform`** — no `msm_solver` built for this scope. It is
+  a per-scope build artifact, and it is also why 237 of the solver tests skip.
+
 ## What is in this directory
 
 | file | what it holds |
@@ -31,6 +57,7 @@ restatement and works the rest.
 | `verify_migration.py` | compares every migrated call site against its pre-migration source in git |
 | `anon_pull.py` | asks each registry whether an ANONYMOUS pull resolves each env's image |
 | `anon_pull.txt` | that sweep's output: 90 files, 9 unresolvable, 1 with no `container:` |
+| `suite.log` | `tests/metasmith` run to completion, one directory at a time |
 
 ## The insight both type joins turn on
 

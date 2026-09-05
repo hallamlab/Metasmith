@@ -1,0 +1,664 @@
+=== tests/metasmith/audit
+============================= test session starts ==============================
+platform linux -- Python 3.12.13, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/tony/agentic_workspace/projects/metasmith/kbase/dev
+configfile: pyproject.toml
+plugins: anyio-4.14.2
+collected 7 items
+
+tests/metasmith/audit/test_quadrant_probe.py .                           [ 14%]
+tests/metasmith/audit/test_sample_membership.py ....                     [ 71%]
+tests/metasmith/audit/test_trio_cache_reuse.py ..                        [100%]
+
+=============================== warnings summary ===============================
+tests/metasmith/audit/test_sample_membership.py::TestASampleReturnsInADifferentRun::test_a_hits_along_its_whole_chain
+tests/metasmith/audit/test_sample_membership.py::TestASampleReturnsInADifferentRun::test_a_hits_along_its_whole_chain
+tests/metasmith/audit/test_sample_membership.py::TestASampleReturnsInADifferentRun::test_a_modified_transform_misses_from_there_down
+tests/metasmith/audit/test_trio_cache_reuse.py::test_a_second_run_of_the_same_task_executes_nothing
+tests/metasmith/audit/test_trio_cache_reuse.py::test_a_resolve_of_the_same_recipe_keeps_the_cache
+tests/metasmith/audit/test_trio_cache_reuse.py::test_a_resolve_of_the_same_recipe_keeps_the_cache
+  /home/tony/agentic_workspace/projects/metasmith/kbase/dev/src/metasmith_libraries/transforms/functionalAnnotation/interproscan.py:97: SyntaxWarning: invalid escape sequence '\*'
+    gff_files = list(Path("output").glob("*.gff3"))
+
+tests/metasmith/audit/test_sample_membership.py::TestASampleReturnsInADifferentRun::test_a_hits_along_its_whole_chain
+tests/metasmith/audit/test_sample_membership.py::TestASampleReturnsInADifferentRun::test_a_hits_along_its_whole_chain
+tests/metasmith/audit/test_sample_membership.py::TestASampleReturnsInADifferentRun::test_a_hits_along_its_whole_chain
+  /tmp/pytest-of-tony/pytest-189/test_a_hits_along_its_whole_ch0/virtual_rt/agent_home/runs/Dg9pldKT/_metasmith/task/transforms/NGcHvM29bVjd/interproscan.py:97: SyntaxWarning: invalid escape sequence '\*'
+    gff_files = list(Path("output").glob("*.gff3"))
+
+tests/metasmith/audit/test_sample_membership.py::TestASampleReturnsInADifferentRun::test_a_modified_transform_misses_from_there_down
+tests/metasmith/audit/test_sample_membership.py::TestASampleReturnsInADifferentRun::test_a_modified_transform_misses_from_there_down
+tests/metasmith/audit/test_sample_membership.py::TestASampleReturnsInADifferentRun::test_a_modified_transform_misses_from_there_down
+  /tmp/pytest-of-tony/pytest-189/test_a_modified_transform_miss0/virtual_rt/agent_home/runs/1Ln4IuPZ/_metasmith/task/transforms/NGcHvM29bVjd/interproscan.py:97: SyntaxWarning: invalid escape sequence '\*'
+    gff_files = list(Path("output").glob("*.gff3"))
+
+tests/metasmith/audit/test_sample_membership.py::TestASampleReturnsInADifferentRun::test_a_modified_transform_misses_from_there_down
+  /tmp/pytest-of-tony/pytest-189/test_a_modified_transform_miss0/functionalAnnotation/interproscan.py:97: SyntaxWarning: invalid escape sequence '\*'
+    gff_files = list(Path("output").glob("*.gff3"))
+
+tests/metasmith/audit/test_trio_cache_reuse.py::test_a_second_run_of_the_same_task_executes_nothing
+tests/metasmith/audit/test_trio_cache_reuse.py::test_a_second_run_of_the_same_task_executes_nothing
+tests/metasmith/audit/test_trio_cache_reuse.py::test_a_second_run_of_the_same_task_executes_nothing
+tests/metasmith/audit/test_trio_cache_reuse.py::test_a_second_run_of_the_same_task_executes_nothing
+tests/metasmith/audit/test_trio_cache_reuse.py::test_a_second_run_of_the_same_task_executes_nothing
+  /tmp/pytest-of-tony/pytest-189/test_a_second_run_of_the_same_0/virtual_rt/agent_home/runs/d8pdf9ku/_metasmith/task/transforms/NGcHvM29bVjd/interproscan.py:97: SyntaxWarning: invalid escape sequence '\*'
+    gff_files = list(Path("output").glob("*.gff3"))
+
+tests/metasmith/audit/test_trio_cache_reuse.py::test_a_resolve_of_the_same_recipe_keeps_the_cache
+tests/metasmith/audit/test_trio_cache_reuse.py::test_a_resolve_of_the_same_recipe_keeps_the_cache
+tests/metasmith/audit/test_trio_cache_reuse.py::test_a_resolve_of_the_same_recipe_keeps_the_cache
+tests/metasmith/audit/test_trio_cache_reuse.py::test_a_resolve_of_the_same_recipe_keeps_the_cache
+tests/metasmith/audit/test_trio_cache_reuse.py::test_a_resolve_of_the_same_recipe_keeps_the_cache
+  /tmp/pytest-of-tony/pytest-189/test_a_resolve_of_the_same_rec0/virtual_rt/agent_home/runs/HPofyja7/_metasmith/task/transforms/NGcHvM29bVjd/interproscan.py:97: SyntaxWarning: invalid escape sequence '\*'
+    gff_files = list(Path("output").glob("*.gff3"))
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+================== 7 passed, 23 warnings in 524.67s (0:08:44) ==================
+--- exit 0 for audit
+=== tests/metasmith/bootstrap
+============================= test session starts ==============================
+platform linux -- Python 3.12.13, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/tony/agentic_workspace/projects/metasmith/kbase/dev
+configfile: pyproject.toml
+plugins: anyio-4.14.2
+collected 304 items
+
+tests/metasmith/bootstrap/test_container_binds.py .......                [  2%]
+tests/metasmith/bootstrap/test_container_extra_args.py ....              [  3%]
+tests/metasmith/bootstrap/test_container_golden.py ..................... [ 10%]
+.......                                                                  [ 12%]
+tests/metasmith/bootstrap/test_container_integrity.py .................. [ 18%]
+.....                                                                    [ 20%]
+tests/metasmith/bootstrap/test_container_sandbox.py ..........           [ 23%]
+tests/metasmith/bootstrap/test_deploy_from_container_relay_check.py .... [ 25%]
+...                                                                      [ 25%]
+tests/metasmith/bootstrap/test_env_deploy_scripts.py ................... [ 32%]
+                                                                         [ 32%]
+tests/metasmith/bootstrap/test_env_image_resolution.py ......            [ 34%]
+tests/metasmith/bootstrap/test_env_portability.py ...................... [ 41%]
+..........                                                               [ 44%]
+tests/metasmith/bootstrap/test_exec_with_env_contract.py ............    [ 48%]
+tests/metasmith/bootstrap/test_gpu_resources.py ........................ [ 56%]
+..............                                                           [ 61%]
+tests/metasmith/bootstrap/test_gpu_runtime_visibility.py ............... [ 66%]
+...                                                                      [ 67%]
+tests/metasmith/bootstrap/test_image_preflight.py ...................... [ 74%]
+........                                                                 [ 76%]
+tests/metasmith/bootstrap/test_libraries.py ............................ [ 86%]
+..                                                                       [ 86%]
+tests/metasmith/bootstrap/test_library_unpack.py ..                      [ 87%]
+tests/metasmith/bootstrap/test_mamba_environment.py ........             [ 90%]
+tests/metasmith/bootstrap/test_run_lifecycle_contract.py ...........     [ 93%]
+tests/metasmith/bootstrap/test_stage_prune.py .............              [ 98%]
+tests/metasmith/bootstrap/test_staging_key_stability.py ...              [ 99%]
+tests/metasmith/bootstrap/test_yaml_safe_load_retry.py ...               [100%]
+
+============================= 304 passed in 4.38s ==============================
+--- exit 0 for bootstrap
+=== tests/metasmith/cache
+============================= test session starts ==============================
+platform linux -- Python 3.12.13, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/tony/agentic_workspace/projects/metasmith/kbase/dev
+configfile: pyproject.toml
+plugins: anyio-4.14.2
+collected 126 items
+
+tests/metasmith/cache/test_codegen.py ........                           [  6%]
+tests/metasmith/cache/test_cross_run.py .....                            [ 10%]
+tests/metasmith/cache/test_cross_task.py ...                             [ 12%]
+tests/metasmith/cache/test_cross_workflow.py ...                         [ 15%]
+tests/metasmith/cache/test_empty_index.py ....                           [ 18%]
+tests/metasmith/cache/test_fork_busts_cache.py .                         [ 19%]
+tests/metasmith/cache/test_hit_lineage.py ....                           [ 22%]
+tests/metasmith/cache/test_hit_miss.py ......                            [ 26%]
+tests/metasmith/cache/test_identity.py ............                      [ 36%]
+tests/metasmith/cache/test_identity_through_edits.py ....                [ 39%]
+tests/metasmith/cache/test_incomplete_shard.py .....                     [ 43%]
+tests/metasmith/cache/test_invalidate.py ......                          [ 48%]
+tests/metasmith/cache/test_kill_switch.py ..                             [ 50%]
+tests/metasmith/cache/test_member_key.py ........                        [ 56%]
+tests/metasmith/cache/test_promote.py .......                            [ 61%]
+tests/metasmith/cache/test_protocol_identity.py ..                       [ 63%]
+tests/metasmith/cache/test_record_container_paths.py ....                [ 66%]
+tests/metasmith/cache/test_sample_addition.py ...                        [ 69%]
+tests/metasmith/cache/test_stat_identity.py ......................       [ 86%]
+tests/metasmith/cache/test_store_meta.py ......                          [ 91%]
+tests/metasmith/cache/test_structural_identity.py ..                     [ 92%]
+tests/metasmith/cache/test_trace.py ..                                   [ 94%]
+tests/metasmith/cache/test_wire_version_sync.py .......                  [100%]
+
+=============================== warnings summary ===============================
+tests/metasmith/cache/test_sample_addition.py::test_a_per_sample_merge_keeps_its_keys_too
+tests/metasmith/cache/test_sample_addition.py::test_a_per_sample_merge_keeps_its_keys_too
+tests/metasmith/cache/test_sample_addition.py::test_a_database_step_is_untouched_by_the_sample_count
+tests/metasmith/cache/test_sample_addition.py::test_a_database_step_is_untouched_by_the_sample_count
+  /home/tony/agentic_workspace/projects/metasmith/kbase/dev/src/metasmith_libraries/transforms/functionalAnnotation/interproscan.py:97: SyntaxWarning: invalid escape sequence '\*'
+    gff_files = list(Path("output").glob("*.gff3"))
+
+tests/metasmith/cache/test_sample_addition.py::test_a_per_sample_merge_keeps_its_keys_too
+tests/metasmith/cache/test_sample_addition.py::test_a_per_sample_merge_keeps_its_keys_too
+tests/metasmith/cache/test_sample_addition.py::test_a_per_sample_merge_keeps_its_keys_too
+  /tmp/pytest-of-tony/pytest-191/test_a_per_sample_merge_keeps_0/virtual_rt/agent_home/runs/SUXkSEUK/_metasmith/task/transforms/NGcHvM29bVjd/interproscan.py:97: SyntaxWarning: invalid escape sequence '\*'
+    gff_files = list(Path("output").glob("*.gff3"))
+
+tests/metasmith/cache/test_sample_addition.py::test_a_per_sample_merge_keeps_its_keys_too
+tests/metasmith/cache/test_sample_addition.py::test_a_per_sample_merge_keeps_its_keys_too
+tests/metasmith/cache/test_sample_addition.py::test_a_per_sample_merge_keeps_its_keys_too
+  /tmp/pytest-of-tony/pytest-191/test_a_per_sample_merge_keeps_0/virtual_rt/agent_home/runs/ype4Ptxf/_metasmith/task/transforms/NGcHvM29bVjd/interproscan.py:97: SyntaxWarning: invalid escape sequence '\*'
+    gff_files = list(Path("output").glob("*.gff3"))
+
+tests/metasmith/cache/test_sample_addition.py::test_a_database_step_is_untouched_by_the_sample_count
+tests/metasmith/cache/test_sample_addition.py::test_a_database_step_is_untouched_by_the_sample_count
+tests/metasmith/cache/test_sample_addition.py::test_a_database_step_is_untouched_by_the_sample_count
+  /tmp/pytest-of-tony/pytest-191/test_a_database_step_is_untouc0/virtual_rt/agent_home/runs/YjiiaOr6/_metasmith/task/transforms/NGcHvM29bVjd/interproscan.py:97: SyntaxWarning: invalid escape sequence '\*'
+    gff_files = list(Path("output").glob("*.gff3"))
+
+tests/metasmith/cache/test_sample_addition.py::test_a_database_step_is_untouched_by_the_sample_count
+tests/metasmith/cache/test_sample_addition.py::test_a_database_step_is_untouched_by_the_sample_count
+tests/metasmith/cache/test_sample_addition.py::test_a_database_step_is_untouched_by_the_sample_count
+  /tmp/pytest-of-tony/pytest-191/test_a_database_step_is_untouc0/virtual_rt/agent_home/runs/RVgYc5Br/_metasmith/task/transforms/NGcHvM29bVjd/interproscan.py:97: SyntaxWarning: invalid escape sequence '\*'
+    gff_files = list(Path("output").glob("*.gff3"))
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+================= 126 passed, 16 warnings in 624.37s (0:10:24) =================
+--- exit 0 for cache
+=== tests/metasmith/deploy
+============================= test session starts ==============================
+platform linux -- Python 3.12.13, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/tony/agentic_workspace/projects/metasmith/kbase/dev
+configfile: pyproject.toml
+plugins: anyio-4.14.2
+collected 21 items
+
+tests/metasmith/deploy/test_deploy_sandbox_step.py ......                [ 28%]
+tests/metasmith/deploy/test_deploy_skip_marker.py ....                   [ 47%]
+tests/metasmith/deploy/test_sandbox_unit.py ...sssss                     [ 85%]
+tests/metasmith/deploy/test_ssh_localhost.py sss                         [100%]
+
+======================== 13 passed, 8 skipped in 1.41s =========================
+--- exit 0 for deploy
+=== tests/metasmith/e2e
+============================= test session starts ==============================
+platform linux -- Python 3.12.13, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/tony/agentic_workspace/projects/metasmith/kbase/dev
+configfile: pyproject.toml
+plugins: anyio-4.14.2
+collected 378 items
+
+tests/metasmith/e2e/agentic/_harness/test_drivers.py ................... [  5%]
+                                                                         [  5%]
+tests/metasmith/e2e/agentic/_harness/test_harness_smoke.py ............. [  8%]
+..............                                                           [ 12%]
+tests/metasmith/e2e/agentic/_harness/test_harness_smoke_live.py s        [ 12%]
+tests/metasmith/e2e/agentic/test_agent_stories.py ssssssss               [ 14%]
+tests/metasmith/e2e/agentic/test_arms.py ..........                      [ 17%]
+tests/metasmith/e2e/agentic/test_benchmark_live.py sssssssssssssssssssss [ 22%]
+sssssssss                                                                [ 25%]
+tests/metasmith/e2e/agentic/test_benchmark_scenarios.py ..........       [ 27%]
+tests/metasmith/e2e/agentic/test_deploy.py ss                            [ 28%]
+tests/metasmith/e2e/agentic/test_golden_oracle.py .........              [ 30%]
+tests/metasmith/e2e/agentic/test_install.py s                            [ 30%]
+tests/metasmith/e2e/agentic/test_jail.py ..............                  [ 34%]
+tests/metasmith/e2e/agentic/test_loop.py ..                              [ 35%]
+tests/metasmith/e2e/agentic/test_recover.py ss                           [ 35%]
+tests/metasmith/e2e/agentic/test_run_cell.py sss....                     [ 37%]
+tests/metasmith/e2e/agentic/test_stage_real_libraries.py F               [ 37%]
+tests/metasmith/e2e/agentic/test_submit_checker.py .................     [ 42%]
+tests/metasmith/e2e/docker/test_cache_real_nextflow.py FF..              [ 43%]
+tests/metasmith/e2e/docker/test_container_exit_code.py .....             [ 44%]
+tests/metasmith/e2e/docker/test_direct_run.py ...                        [ 45%]
+tests/metasmith/e2e/docker/test_e2e_full_pipeline.py ...........         [ 48%]
+tests/metasmith/e2e/docker/test_e2e_gui_run.py .s.                       [ 49%]
+tests/metasmith/e2e/docker/test_e2e_run_lifecycle.py sss                 [ 50%]
+tests/metasmith/e2e/docker/test_e2e_trace.py .......................     [ 56%]
+tests/metasmith/e2e/docker/test_e2e_transform_isolation.py ............  [ 59%]
+tests/metasmith/e2e/docker/test_e2e_workflow_execution.py .............. [ 62%]
+.......                                                                  [ 64%]
+tests/metasmith/e2e/docker/test_group_buffering.py .                     [ 65%]
+tests/metasmith/e2e/docker/test_group_cases.py ......................... [ 71%]
+...                                                                      [ 72%]
+tests/metasmith/e2e/docker/test_mamba_executor_e2e.py .s                 [ 73%]
+tests/metasmith/e2e/docker/test_member_key_agreement.py .                [ 73%]
+tests/metasmith/e2e/docker/test_multicontainer_groupby.py .....          [ 74%]
+tests/metasmith/e2e/docker/test_orchestrator_exec.py ................... [ 79%]
+............                                                             [ 82%]
+tests/metasmith/e2e/docker/test_overlay_staging_logic.py .               [ 83%]
+tests/metasmith/e2e/docker/test_publish_intermediates.py ....            [ 84%]
+tests/metasmith/e2e/docker/test_resource_cap_groovy.py ..                [ 84%]
+tests/metasmith/e2e/docker/test_scratch_metadata.py ...                  [ 85%]
+tests/metasmith/e2e/docker/test_start_jitter_backoff.py ...              [ 86%]
+tests/metasmith/e2e/docker/test_telemetry_e2e.py .............           [ 89%]
+tests/metasmith/e2e/docker/test_tutorial_replay.py ............          [ 92%]
+tests/metasmith/e2e/virtual/test_cache_baseline.py ......                [ 94%]
+tests/metasmith/e2e/virtual/test_cache_e2e.py .                          [ 94%]
+tests/metasmith/e2e/virtual/test_contract_smoke.py ...                   [ 95%]
+tests/metasmith/e2e/virtual/test_gpu_staging.py .....                    [ 96%]
+tests/metasmith/e2e/virtual/test_ignored_step_is_surfaced.py ...         [ 97%]
+tests/metasmith/e2e/virtual/test_rootfs_staging.py .....                 [ 98%]
+tests/metasmith/e2e/virtual/test_virtual_multicontainer.py .             [ 99%]
+tests/metasmith/e2e/virtual/test_virtual_pipeline.py ...                 [100%]
+
+=================================== FAILURES ===================================
+________________ test_stage_real_libraries_clones_into_sandbox _________________
+tests/metasmith/e2e/agentic/test_stage_real_libraries.py:24: in test_stage_real_libraries_clones_into_sandbox
+    assert (dest / ".git").exists(), "sandbox checkout should preserve .git provenance"
+E   AssertionError: sandbox checkout should preserve .git provenance
+E   assert False
+E    +  where False = exists()
+E    +    where exists = (PosixPath('/tmp/pytest-of-tony/pytest-194/test_stage_real_libraries_clon0/MetasmithLibraries') / '.git').exists
+___________ TestCacheHitPublishesResults.test_second_run_is_all_hits ___________
+tests/metasmith/e2e/docker/test_cache_real_nextflow.py:175: in test_second_run_is_all_hits
+    run_cached_stub(simple_workflow_task, run1, home, docker_image)
+tests/metasmith/e2e/docker/test_cache_real_nextflow.py:103: in run_cached_stub
+    subprocess.run(
+/home/tony/lib/miniforge3/envs/msm/lib/python3.12/subprocess.py:550: in run
+    stdout, stderr = process.communicate(input, timeout=timeout)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/home/tony/lib/miniforge3/envs/msm/lib/python3.12/subprocess.py:1209: in communicate
+    stdout, stderr = self._communicate(input, endtime, timeout)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/home/tony/lib/miniforge3/envs/msm/lib/python3.12/subprocess.py:2116: in _communicate
+    self._check_timeout(endtime, orig_timeout, stdout, stderr)
+/home/tony/lib/miniforge3/envs/msm/lib/python3.12/subprocess.py:1253: in _check_timeout
+    raise TimeoutExpired(
+E   subprocess.TimeoutExpired: Command '['docker', 'run', '--rm', '-v', '/tmp/pytest-of-tony:/tmp/pytest-of-tony', 'quay.io/hallamlab/metasmith:0.22.1', 'chmod', '-R', 'a+rw', '/tmp/pytest-of-tony']' timed out after 120 seconds
+---------------------------- Captured stdout setup -----------------------------
+2026-09-05_02-29-23  | solving plan for [3] samples as [1] unique case
+2026-09-05_02-29-23 W| solving with the python implementation because no [msm_solver] is staged for [x86_64-linux] -- build one with [./dev/metasmith.sh -bel], or [./dev/metasmith.sh -be] to cross-build all four. The plans are the same either way; the search is roughly 15x slower.
+------------------------------ Captured log setup ------------------------------
+         metasmith.logging:logging.py:135 solving plan for [3] samples as [1] unique case
+W        metasmith.logging:logging.py:143 solving with the python implementation because no [msm_solver] is staged for [x86_64-linux] -- build one with [./dev/metasmith.sh -bel], or [./dev/metasmith.sh -be] to cross-build all four. The plans are the same either way; the search is roughly 15x slower.
+__ TestCacheHitPublishesResults.test_cached_rerun_publishes_the_same_results ___
+tests/metasmith/e2e/docker/test_cache_real_nextflow.py:187: in test_cached_rerun_publishes_the_same_results
+    first = run_cached_stub(
+tests/metasmith/e2e/docker/test_cache_real_nextflow.py:103: in run_cached_stub
+    subprocess.run(
+/home/tony/lib/miniforge3/envs/msm/lib/python3.12/subprocess.py:550: in run
+    stdout, stderr = process.communicate(input, timeout=timeout)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/home/tony/lib/miniforge3/envs/msm/lib/python3.12/subprocess.py:1209: in communicate
+    stdout, stderr = self._communicate(input, endtime, timeout)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/home/tony/lib/miniforge3/envs/msm/lib/python3.12/subprocess.py:2116: in _communicate
+    self._check_timeout(endtime, orig_timeout, stdout, stderr)
+/home/tony/lib/miniforge3/envs/msm/lib/python3.12/subprocess.py:1253: in _check_timeout
+    raise TimeoutExpired(
+E   subprocess.TimeoutExpired: Command '['docker', 'run', '--rm', '-v', '/tmp/pytest-of-tony:/tmp/pytest-of-tony', 'quay.io/hallamlab/metasmith:0.22.1', 'chmod', '-R', 'a+rw', '/tmp/pytest-of-tony']' timed out after 120 seconds
+---------------------------- Captured stdout setup -----------------------------
+2026-09-05_02-32-09  | solving plan for [3] samples as [1] unique case
+------------------------------ Captured log setup ------------------------------
+         metasmith.logging:logging.py:135 solving plan for [3] samples as [1] unique case
+=========================== short test summary info ============================
+FAILED tests/metasmith/e2e/agentic/test_stage_real_libraries.py::test_stage_real_libraries_clones_into_sandbox - AssertionError: sandbox checkout should preserve .git provenance
+FAILED tests/metasmith/e2e/docker/test_cache_real_nextflow.py::TestCacheHitPublishesResults::test_second_run_is_all_hits - subprocess.TimeoutExpired: Command '['docker', 'run', '--rm', '-v', '/tmp/p...
+FAILED tests/metasmith/e2e/docker/test_cache_real_nextflow.py::TestCacheHitPublishesResults::test_cached_rerun_publishes_the_same_results - subprocess.TimeoutExpired: Command '['docker', 'run', '--rm', '-v', '/tmp/p...
+============ 3 failed, 323 passed, 52 skipped in 3621.36s (1:00:21) ============
+--- exit 1 for e2e
+=== tests/metasmith/flow
+============================= test session starts ==============================
+platform linux -- Python 3.12.13, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/tony/agentic_workspace/projects/metasmith/kbase/dev
+configfile: pyproject.toml
+plugins: anyio-4.14.2
+collected 156 items
+
+tests/metasmith/flow/repro/repro_139_batched_lineage.py ..               [  1%]
+tests/metasmith/flow/repro/repro_16_group_buffering.py .                 [  1%]
+tests/metasmith/flow/repro/repro_s4a_instance_id_encoding.py ..          [  3%]
+tests/metasmith/flow/test_as_samples.py ...                              [  5%]
+tests/metasmith/flow/test_batching.py ..........                         [ 11%]
+tests/metasmith/flow/test_binning_dag.py ..........                      [ 17%]
+tests/metasmith/flow/test_boundary.py ...xx.                             [ 21%]
+tests/metasmith/flow/test_branching.py ....x.                            [ 25%]
+tests/metasmith/flow/test_cacheability_mix.py ...                        [ 27%]
+tests/metasmith/flow/test_concurrency.py ...x                            [ 30%]
+tests/metasmith/flow/test_conftest_smoke.py ..............               [ 39%]
+tests/metasmith/flow/test_deferred_inputs.py .....                       [ 42%]
+tests/metasmith/flow/test_download_steps_reported.py ...                 [ 44%]
+tests/metasmith/flow/test_fan_out.py .........                           [ 50%]
+tests/metasmith/flow/test_group_to_split.py .s.                          [ 51%]
+tests/metasmith/flow/test_grouped_provenance.py ....                     [ 54%]
+tests/metasmith/flow/test_launcher_params_fallback.py ...                [ 56%]
+tests/metasmith/flow/test_lineage_parents.py ....                        [ 58%]
+tests/metasmith/flow/test_lineage_roundtrip.py .....s                    [ 62%]
+tests/metasmith/flow/test_linear.py ....                                 [ 65%]
+tests/metasmith/flow/test_plan_hints.py .......                          [ 69%]
+tests/metasmith/flow/test_spec.py .......                                [ 74%]
+tests/metasmith/flow/test_target_builder_lineage.py ......               [ 78%]
+tests/metasmith/flow/test_telemetry.py ...........s                      [ 85%]
+tests/metasmith/flow/test_templates.py .........                         [ 91%]
+tests/metasmith/flow/test_workflow.py ...........                        [ 98%]
+tests/metasmith/flow/test_workflow_nf_compile.py ..                      [100%]
+
+=============================== warnings summary ===============================
+tests/metasmith/flow/test_boundary.py:44
+  /home/tony/agentic_workspace/projects/metasmith/kbase/dev/tests/metasmith/flow/test_boundary.py:44: PytestUnknownMarkWarning: Unknown pytest.mark.timeout - is this a typo?  You can register custom marks to avoid this warning - for details, see https://docs.pytest.org/en/stable/how-to/mark.html
+    @pytest.mark.timeout(60)
+
+tests/metasmith/flow/test_boundary.py:64
+  /home/tony/agentic_workspace/projects/metasmith/kbase/dev/tests/metasmith/flow/test_boundary.py:64: PytestUnknownMarkWarning: Unknown pytest.mark.timeout - is this a typo?  You can register custom marks to avoid this warning - for details, see https://docs.pytest.org/en/stable/how-to/mark.html
+    @pytest.mark.timeout(60)
+
+tests/metasmith/flow/test_download_steps_reported.py: 1 warning
+tests/metasmith/flow/test_templates.py: 14 warnings
+  /home/tony/agentic_workspace/projects/metasmith/kbase/dev/src/metasmith_libraries/transforms/functionalAnnotation/interproscan.py:97: SyntaxWarning: invalid escape sequence '\*'
+    gff_files = list(Path("output").glob("*.gff3"))
+
+../../../../../lib/miniforge3/envs/msm/lib/python3.12/site-packages/_pytest/pathlib.py:102
+  /home/tony/lib/miniforge3/envs/msm/lib/python3.12/site-packages/_pytest/pathlib.py:102: PytestWarning: (rm_rf) unknown function <built-in function scandir> when removing /tmp/pytest-of-tony/garbage-a656b968-9434-466c-802a-672b4aa56264/test_c06_descendant_multi_bs1_0/nxf_test/.nextflow:
+  <class 'PermissionError'>: [Errno 1] Operation not permitted: '/tmp/pytest-of-tony/garbage-a656b968-9434-466c-802a-672b4aa56264/test_c06_descendant_multi_bs1_0/nxf_test/.nextflow'
+    warnings.warn(
+
+../../../../../lib/miniforge3/envs/msm/lib/python3.12/site-packages/_pytest/pathlib.py:95
+  /home/tony/lib/miniforge3/envs/msm/lib/python3.12/site-packages/_pytest/pathlib.py:95: PytestWarning: (rm_rf) error removing /tmp/pytest-of-tony/garbage-a656b968-9434-466c-802a-672b4aa56264/test_c06_descendant_multi_bs1_0/nxf_test/.nextflow
+  <class 'OSError'>: [Errno 39] Directory not empty: '/tmp/pytest-of-tony/garbage-a656b968-9434-466c-802a-672b4aa56264/test_c06_descendant_multi_bs1_0/nxf_test/.nextflow'
+    warnings.warn(
+
+../../../../../lib/miniforge3/envs/msm/lib/python3.12/site-packages/_pytest/pathlib.py:95
+  /home/tony/lib/miniforge3/envs/msm/lib/python3.12/site-packages/_pytest/pathlib.py:95: PytestWarning: (rm_rf) error removing /tmp/pytest-of-tony/garbage-a656b968-9434-466c-802a-672b4aa56264/test_c06_descendant_multi_bs1_0/nxf_test
+  <class 'OSError'>: [Errno 39] Directory not empty: '/tmp/pytest-of-tony/garbage-a656b968-9434-466c-802a-672b4aa56264/test_c06_descendant_multi_bs1_0/nxf_test'
+    warnings.warn(
+
+../../../../../lib/miniforge3/envs/msm/lib/python3.12/site-packages/_pytest/pathlib.py:95
+  /home/tony/lib/miniforge3/envs/msm/lib/python3.12/site-packages/_pytest/pathlib.py:95: PytestWarning: (rm_rf) error removing /tmp/pytest-of-tony/garbage-a656b968-9434-466c-802a-672b4aa56264/test_c06_descendant_multi_bs1_0
+  <class 'OSError'>: [Errno 39] Directory not empty: '/tmp/pytest-of-tony/garbage-a656b968-9434-466c-802a-672b4aa56264/test_c06_descendant_multi_bs1_0'
+    warnings.warn(
+
+../../../../../lib/miniforge3/envs/msm/lib/python3.12/site-packages/_pytest/pathlib.py:102
+  /home/tony/lib/miniforge3/envs/msm/lib/python3.12/site-packages/_pytest/pathlib.py:102: PytestWarning: (rm_rf) unknown function <built-in function scandir> when removing /tmp/pytest-of-tony/garbage-a656b968-9434-466c-802a-672b4aa56264/test_batch_debatch_roundtrip0/nxf_test/work/bf/3fe45bc2614dd33efd9ea8ff1ee694:
+  <class 'PermissionError'>: [Errno 1] Operation not permitted: '/tmp/pytest-of-tony/garbage-a656b968-9434-466c-802a-672b4aa56264/test_batch_debatch_roundtrip0/nxf_test/work/bf/3fe45bc2614dd33efd9ea8ff1ee694'
+    warnings.warn(
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+====== 149 passed, 3 skipped, 4 xfailed, 22 warnings in 536.42s (0:08:56) ======
+--- exit 0 for flow
+=== tests/metasmith/gui
+============================= test session starts ==============================
+platform linux -- Python 3.12.13, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/tony/agentic_workspace/projects/metasmith/kbase/dev
+configfile: pyproject.toml
+plugins: anyio-4.14.2
+collected 360 items
+
+tests/metasmith/gui/test_dev_sh_gui_guard.py ....                        [  1%]
+tests/metasmith/gui/test_fork_identity.py .....................          [  6%]
+tests/metasmith/gui/test_gui_backend.py ................................ [ 15%]
+........................................................................ [ 35%]
+........................................................................ [ 55%]
+...................................................................      [ 74%]
+tests/metasmith/gui/test_gui_cli.py .............................        [ 82%]
+tests/metasmith/gui/test_gui_ssh.py .................................... [ 92%]
+...........................                                              [100%]
+
+=============================== warnings summary ===============================
+../../../../../lib/miniforge3/envs/msm/lib/python3.12/site-packages/_pytest/pathlib.py:102
+  /home/tony/lib/miniforge3/envs/msm/lib/python3.12/site-packages/_pytest/pathlib.py:102: PytestWarning: (rm_rf) unknown function <built-in function scandir> when removing /tmp/pytest-of-tony/garbage-e190cb2e-dd5d-4538-9099-ae55ce4e702e/test_c06_descendant_multi_bs1_0/nxf_test/.nextflow:
+  <class 'PermissionError'>: [Errno 1] Operation not permitted: '/tmp/pytest-of-tony/garbage-e190cb2e-dd5d-4538-9099-ae55ce4e702e/test_c06_descendant_multi_bs1_0/nxf_test/.nextflow'
+    warnings.warn(
+
+../../../../../lib/miniforge3/envs/msm/lib/python3.12/site-packages/_pytest/pathlib.py:95
+  /home/tony/lib/miniforge3/envs/msm/lib/python3.12/site-packages/_pytest/pathlib.py:95: PytestWarning: (rm_rf) error removing /tmp/pytest-of-tony/garbage-e190cb2e-dd5d-4538-9099-ae55ce4e702e/test_c06_descendant_multi_bs1_0/nxf_test/.nextflow
+  <class 'OSError'>: [Errno 39] Directory not empty: '/tmp/pytest-of-tony/garbage-e190cb2e-dd5d-4538-9099-ae55ce4e702e/test_c06_descendant_multi_bs1_0/nxf_test/.nextflow'
+    warnings.warn(
+
+../../../../../lib/miniforge3/envs/msm/lib/python3.12/site-packages/_pytest/pathlib.py:95
+  /home/tony/lib/miniforge3/envs/msm/lib/python3.12/site-packages/_pytest/pathlib.py:95: PytestWarning: (rm_rf) error removing /tmp/pytest-of-tony/garbage-e190cb2e-dd5d-4538-9099-ae55ce4e702e/test_c06_descendant_multi_bs1_0/nxf_test
+  <class 'OSError'>: [Errno 39] Directory not empty: '/tmp/pytest-of-tony/garbage-e190cb2e-dd5d-4538-9099-ae55ce4e702e/test_c06_descendant_multi_bs1_0/nxf_test'
+    warnings.warn(
+
+../../../../../lib/miniforge3/envs/msm/lib/python3.12/site-packages/_pytest/pathlib.py:95
+  /home/tony/lib/miniforge3/envs/msm/lib/python3.12/site-packages/_pytest/pathlib.py:95: PytestWarning: (rm_rf) error removing /tmp/pytest-of-tony/garbage-e190cb2e-dd5d-4538-9099-ae55ce4e702e/test_c06_descendant_multi_bs1_0
+  <class 'OSError'>: [Errno 39] Directory not empty: '/tmp/pytest-of-tony/garbage-e190cb2e-dd5d-4538-9099-ae55ce4e702e/test_c06_descendant_multi_bs1_0'
+    warnings.warn(
+
+../../../../../lib/miniforge3/envs/msm/lib/python3.12/site-packages/_pytest/pathlib.py:102
+  /home/tony/lib/miniforge3/envs/msm/lib/python3.12/site-packages/_pytest/pathlib.py:102: PytestWarning: (rm_rf) unknown function <built-in function scandir> when removing /tmp/pytest-of-tony/garbage-e190cb2e-dd5d-4538-9099-ae55ce4e702e/test_batch_debatch_roundtrip0/nxf_test/work/bf/3fe45bc2614dd33efd9ea8ff1ee694:
+  <class 'PermissionError'>: [Errno 1] Operation not permitted: '/tmp/pytest-of-tony/garbage-e190cb2e-dd5d-4538-9099-ae55ce4e702e/test_batch_debatch_roundtrip0/nxf_test/work/bf/3fe45bc2614dd33efd9ea8ff1ee694'
+    warnings.warn(
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+======================= 360 passed, 5 warnings in 56.93s =======================
+--- exit 0 for gui
+=== tests/metasmith/lifecycle
+============================= test session starts ==============================
+platform linux -- Python 3.12.13, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/tony/agentic_workspace/projects/metasmith/kbase/dev
+configfile: pyproject.toml
+plugins: anyio-4.14.2
+collected 12 items
+
+tests/metasmith/lifecycle/test_kill_ladder.py ....                       [ 33%]
+tests/metasmith/lifecycle/test_relay_lifecycle.py sssss                  [ 75%]
+tests/metasmith/lifecycle/test_run_group.py ...                          [100%]
+
+=============================== warnings summary ===============================
+../../../../../lib/miniforge3/envs/msm/lib/python3.12/site-packages/_pytest/pathlib.py:102
+  /home/tony/lib/miniforge3/envs/msm/lib/python3.12/site-packages/_pytest/pathlib.py:102: PytestWarning: (rm_rf) unknown function <built-in function scandir> when removing /tmp/pytest-of-tony/garbage-0d98a871-2006-4944-9ebb-d0152423c028/test_c06_descendant_multi_bs1_0/nxf_test/.nextflow:
+  <class 'PermissionError'>: [Errno 1] Operation not permitted: '/tmp/pytest-of-tony/garbage-0d98a871-2006-4944-9ebb-d0152423c028/test_c06_descendant_multi_bs1_0/nxf_test/.nextflow'
+    warnings.warn(
+
+../../../../../lib/miniforge3/envs/msm/lib/python3.12/site-packages/_pytest/pathlib.py:95
+  /home/tony/lib/miniforge3/envs/msm/lib/python3.12/site-packages/_pytest/pathlib.py:95: PytestWarning: (rm_rf) error removing /tmp/pytest-of-tony/garbage-0d98a871-2006-4944-9ebb-d0152423c028/test_c06_descendant_multi_bs1_0/nxf_test/.nextflow
+  <class 'OSError'>: [Errno 39] Directory not empty: '/tmp/pytest-of-tony/garbage-0d98a871-2006-4944-9ebb-d0152423c028/test_c06_descendant_multi_bs1_0/nxf_test/.nextflow'
+    warnings.warn(
+
+../../../../../lib/miniforge3/envs/msm/lib/python3.12/site-packages/_pytest/pathlib.py:95
+  /home/tony/lib/miniforge3/envs/msm/lib/python3.12/site-packages/_pytest/pathlib.py:95: PytestWarning: (rm_rf) error removing /tmp/pytest-of-tony/garbage-0d98a871-2006-4944-9ebb-d0152423c028/test_c06_descendant_multi_bs1_0/nxf_test
+  <class 'OSError'>: [Errno 39] Directory not empty: '/tmp/pytest-of-tony/garbage-0d98a871-2006-4944-9ebb-d0152423c028/test_c06_descendant_multi_bs1_0/nxf_test'
+    warnings.warn(
+
+../../../../../lib/miniforge3/envs/msm/lib/python3.12/site-packages/_pytest/pathlib.py:95
+  /home/tony/lib/miniforge3/envs/msm/lib/python3.12/site-packages/_pytest/pathlib.py:95: PytestWarning: (rm_rf) error removing /tmp/pytest-of-tony/garbage-0d98a871-2006-4944-9ebb-d0152423c028/test_c06_descendant_multi_bs1_0
+  <class 'OSError'>: [Errno 39] Directory not empty: '/tmp/pytest-of-tony/garbage-0d98a871-2006-4944-9ebb-d0152423c028/test_c06_descendant_multi_bs1_0'
+    warnings.warn(
+
+../../../../../lib/miniforge3/envs/msm/lib/python3.12/site-packages/_pytest/pathlib.py:102
+  /home/tony/lib/miniforge3/envs/msm/lib/python3.12/site-packages/_pytest/pathlib.py:102: PytestWarning: (rm_rf) unknown function <built-in function scandir> when removing /tmp/pytest-of-tony/garbage-0d98a871-2006-4944-9ebb-d0152423c028/test_batch_debatch_roundtrip0/nxf_test/work/bf/3fe45bc2614dd33efd9ea8ff1ee694:
+  <class 'PermissionError'>: [Errno 1] Operation not permitted: '/tmp/pytest-of-tony/garbage-0d98a871-2006-4944-9ebb-d0152423c028/test_batch_debatch_roundtrip0/nxf_test/work/bf/3fe45bc2614dd33efd9ea8ff1ee694'
+    warnings.warn(
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=================== 7 passed, 5 skipped, 5 warnings in 5.51s ===================
+--- exit 0 for lifecycle
+=== tests/metasmith/perf
+============================= test session starts ==============================
+platform linux -- Python 3.12.13, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/tony/agentic_workspace/projects/metasmith/kbase/dev
+configfile: pyproject.toml
+plugins: anyio-4.14.2
+collected 13 items
+
+tests/metasmith/perf/test_library_scale.py .......                       [ 53%]
+tests/metasmith/perf/test_solver_benchmark.py ...                        [ 76%]
+tests/metasmith/perf/test_solver_differential.py sss                     [100%]
+
+=============================== warnings summary ===============================
+tests/metasmith/perf/test_library_scale.py:11
+  /home/tony/agentic_workspace/projects/metasmith/kbase/dev/tests/metasmith/perf/test_library_scale.py:11: PytestUnknownMarkWarning: Unknown pytest.mark.timeout - is this a typo?  You can register custom marks to avoid this warning - for details, see https://docs.pytest.org/en/stable/how-to/mark.html
+    @pytest.mark.timeout(180)
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+============= 10 passed, 3 skipped, 1 warning in 409.07s (0:06:49) =============
+--- exit 0 for perf
+=== tests/metasmith/solver
+============================= test session starts ==============================
+platform linux -- Python 3.12.13, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/tony/agentic_workspace/projects/metasmith/kbase/dev
+configfile: pyproject.toml
+plugins: anyio-4.14.2
+collected 379 items
+
+tests/metasmith/solver/test_completeness.py ..                           [  0%]
+tests/metasmith/solver/test_corpus_pin.py ..........                     [  3%]
+tests/metasmith/solver/test_distance_walk.py .s                          [  3%]
+tests/metasmith/solver/test_engine_differential.py ssss                  [  4%]
+tests/metasmith/solver/test_engine_problem.py ssssssssssssssssssssssssss [ 11%]
+ssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssss     [ 29%]
+tests/metasmith/solver/test_engine_solve.py ssssssssssssssssssssssssssss [ 36%]
+ssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssss [ 55%]
+ssssssssss                                                               [ 58%]
+tests/metasmith/solver/test_iteration_order.py sssssssss                 [ 60%]
+tests/metasmith/solver/test_known_unsound.py ........                    [ 63%]
+tests/metasmith/solver/test_refiner_validity.py sssssss                  [ 64%]
+tests/metasmith/solver/test_rng_contract.py ..........................   [ 71%]
+tests/metasmith/solver/test_scratch_scenarios.py ........                [ 73%]
+tests/metasmith/solver/test_solver.py ......x..............              [ 79%]
+tests/metasmith/solver/test_solver_engine.py ..............ssssssssssss  [ 86%]
+tests/metasmith/solver/test_solver_scaling_cyanoverse.py .               [ 86%]
+tests/metasmith/solver/test_verification_harness.py .................... [ 91%]
+...............................                                          [100%]
+
+=============================== warnings summary ===============================
+../../../../../lib/miniforge3/envs/msm/lib/python3.12/site-packages/_pytest/pathlib.py:102
+  /home/tony/lib/miniforge3/envs/msm/lib/python3.12/site-packages/_pytest/pathlib.py:102: PytestWarning: (rm_rf) unknown function <built-in function scandir> when removing /tmp/pytest-of-tony/garbage-9299ed38-462d-47d7-ac34-d68afd68bc3c/test_c06_descendant_multi_bs1_0/nxf_test/.nextflow:
+  <class 'PermissionError'>: [Errno 1] Operation not permitted: '/tmp/pytest-of-tony/garbage-9299ed38-462d-47d7-ac34-d68afd68bc3c/test_c06_descendant_multi_bs1_0/nxf_test/.nextflow'
+    warnings.warn(
+
+../../../../../lib/miniforge3/envs/msm/lib/python3.12/site-packages/_pytest/pathlib.py:95
+  /home/tony/lib/miniforge3/envs/msm/lib/python3.12/site-packages/_pytest/pathlib.py:95: PytestWarning: (rm_rf) error removing /tmp/pytest-of-tony/garbage-9299ed38-462d-47d7-ac34-d68afd68bc3c/test_c06_descendant_multi_bs1_0/nxf_test/.nextflow
+  <class 'OSError'>: [Errno 39] Directory not empty: '/tmp/pytest-of-tony/garbage-9299ed38-462d-47d7-ac34-d68afd68bc3c/test_c06_descendant_multi_bs1_0/nxf_test/.nextflow'
+    warnings.warn(
+
+../../../../../lib/miniforge3/envs/msm/lib/python3.12/site-packages/_pytest/pathlib.py:95
+  /home/tony/lib/miniforge3/envs/msm/lib/python3.12/site-packages/_pytest/pathlib.py:95: PytestWarning: (rm_rf) error removing /tmp/pytest-of-tony/garbage-9299ed38-462d-47d7-ac34-d68afd68bc3c/test_c06_descendant_multi_bs1_0/nxf_test
+  <class 'OSError'>: [Errno 39] Directory not empty: '/tmp/pytest-of-tony/garbage-9299ed38-462d-47d7-ac34-d68afd68bc3c/test_c06_descendant_multi_bs1_0/nxf_test'
+    warnings.warn(
+
+../../../../../lib/miniforge3/envs/msm/lib/python3.12/site-packages/_pytest/pathlib.py:95
+  /home/tony/lib/miniforge3/envs/msm/lib/python3.12/site-packages/_pytest/pathlib.py:95: PytestWarning: (rm_rf) error removing /tmp/pytest-of-tony/garbage-9299ed38-462d-47d7-ac34-d68afd68bc3c/test_c06_descendant_multi_bs1_0
+  <class 'OSError'>: [Errno 39] Directory not empty: '/tmp/pytest-of-tony/garbage-9299ed38-462d-47d7-ac34-d68afd68bc3c/test_c06_descendant_multi_bs1_0'
+    warnings.warn(
+
+../../../../../lib/miniforge3/envs/msm/lib/python3.12/site-packages/_pytest/pathlib.py:102
+  /home/tony/lib/miniforge3/envs/msm/lib/python3.12/site-packages/_pytest/pathlib.py:102: PytestWarning: (rm_rf) unknown function <built-in function scandir> when removing /tmp/pytest-of-tony/garbage-9299ed38-462d-47d7-ac34-d68afd68bc3c/test_batch_debatch_roundtrip0/nxf_test/work/bf/3fe45bc2614dd33efd9ea8ff1ee694:
+  <class 'PermissionError'>: [Errno 1] Operation not permitted: '/tmp/pytest-of-tony/garbage-9299ed38-462d-47d7-ac34-d68afd68bc3c/test_batch_debatch_roundtrip0/nxf_test/work/bf/3fe45bc2614dd33efd9ea8ff1ee694'
+    warnings.warn(
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+===== 141 passed, 237 skipped, 1 xfailed, 5 warnings in 586.06s (0:09:46) ======
+--- exit 0 for solver
+=== tests/metasmith/unit
+============================= test session starts ==============================
+platform linux -- Python 3.12.13, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/tony/agentic_workspace/projects/metasmith/kbase/dev
+configfile: pyproject.toml
+plugins: anyio-4.14.2
+collected 644 items
+
+tests/metasmith/unit/test_agent_yml_legacy.py ...........                [  1%]
+tests/metasmith/unit/test_agentic_runs_dir_is_ignored.py ..              [  2%]
+tests/metasmith/unit/test_api_exit_codes.py ...                          [  2%]
+tests/metasmith/unit/test_bind_path_validation.py .........              [  3%]
+tests/metasmith/unit/test_build_decomposition.py .........               [  5%]
+tests/metasmith/unit/test_build_pip_version_split.py ..                  [  5%]
+tests/metasmith/unit/test_cli.py ......                                  [  6%]
+tests/metasmith/unit/test_container_tag.py ........                      [  7%]
+tests/metasmith/unit/test_context_provenance.py .........                [  9%]
+tests/metasmith/unit/test_dag_blacklist_defaults.py ....                 [  9%]
+tests/metasmith/unit/test_dag_colour.py ..................               [ 12%]
+tests/metasmith/unit/test_dag_geometry_wire.py ........                  [ 13%]
+tests/metasmith/unit/test_dag_layout.py ................................ [ 18%]
+.......                                                                  [ 19%]
+tests/metasmith/unit/test_dag_renderer.py .............................. [ 24%]
+...................................                                      [ 29%]
+tests/metasmith/unit/test_dag_stress.py ..................               [ 32%]
+tests/metasmith/unit/test_database_downloads.py ....                     [ 33%]
+tests/metasmith/unit/test_deferred_paths.py ...........                  [ 35%]
+tests/metasmith/unit/test_dev_sh_dist_guard.py ....                      [ 35%]
+tests/metasmith/unit/test_dev_sh_tag.py .                                [ 35%]
+tests/metasmith/unit/test_emitted_address_contract.py ...........        [ 37%]
+tests/metasmith/unit/test_fork_roundtrip.py ..                           [ 37%]
+tests/metasmith/unit/test_grouping_contract.py ..                        [ 38%]
+tests/metasmith/unit/test_input_rows.py ................................ [ 43%]
+...................                                                      [ 46%]
+tests/metasmith/unit/test_library_view_ordering.py ..                    [ 46%]
+tests/metasmith/unit/test_lineage_schema.py ............                 [ 48%]
+tests/metasmith/unit/test_live_shell.py ................................ [ 53%]
+.........sss....                                                         [ 55%]
+tests/metasmith/unit/test_local_transfer.py ............................ [ 60%]
+...                                                                      [ 60%]
+tests/metasmith/unit/test_log_capture.py ..                              [ 60%]
+tests/metasmith/unit/test_marker_taxonomy.py ....                        [ 61%]
+tests/metasmith/unit/test_module_surface.py .F..                         [ 62%]
+tests/metasmith/unit/test_no_import_cycles.py ...                        [ 62%]
+tests/metasmith/unit/test_nxf_task_metadata.py .....                     [ 63%]
+tests/metasmith/unit/test_ops.py ....................................... [ 69%]
+.............                                                            [ 71%]
+tests/metasmith/unit/test_package_data_covers_shipped_files.py .         [ 71%]
+tests/metasmith/unit/test_parse_path_apptainer_relative.py .             [ 71%]
+tests/metasmith/unit/test_parse_path_symlinks.py ..                      [ 72%]
+tests/metasmith/unit/test_paths.py ..................................... [ 77%]
+...........                                                              [ 79%]
+tests/metasmith/unit/test_pinned_library.py .....................        [ 82%]
+tests/metasmith/unit/test_prune_types.py .....                           [ 83%]
+tests/metasmith/unit/test_renamed_symbols_are_gone.py .                  [ 83%]
+tests/metasmith/unit/test_replace_path_overlap.py ..                     [ 84%]
+tests/metasmith/unit/test_repo_root_anchors.py .                         [ 84%]
+tests/metasmith/unit/test_resource_ceiling_preflight.py ....             [ 84%]
+tests/metasmith/unit/test_run_heartbeat.py ......                        [ 85%]
+tests/metasmith/unit/test_run_workflow_gpu_preflight.py .........        [ 87%]
+tests/metasmith/unit/test_sample_tables.py .........................     [ 90%]
+tests/metasmith/unit/test_sbatch_array_phantom_guard.py .....            [ 91%]
+tests/metasmith/unit/test_sbatch_dir_named_ws.py ..                      [ 92%]
+tests/metasmith/unit/test_sbatch_home_root_cwd.py ....                   [ 92%]
+tests/metasmith/unit/test_setup_environment.py ......                    [ 93%]
+tests/metasmith/unit/test_solver_engine_packaging.py ...........Fs       [ 95%]
+tests/metasmith/unit/test_source_parse.py ..........                     [ 97%]
+tests/metasmith/unit/test_str_replace_path_overlap.py .                  [ 97%]
+tests/metasmith/unit/test_transform_load_is_serialised.py ..             [ 97%]
+tests/metasmith/unit/test_unlimited_duration.py ......                   [ 98%]
+tests/metasmith/unit/test_vendor_library_metadata.py ....                [ 99%]
+tests/metasmith/unit/test_wait_for_workflow.py .....                     [100%]
+
+=================================== FAILURES ===================================
+___________ test_exported_names_survive[metasmith.models.libraries] ____________
+tests/metasmith/unit/test_module_surface.py:40: in test_exported_names_survive
+    assert not missing, (
+E   AssertionError: metasmith.models.libraries no longer exports 3 name(s) it exported before the split:
+E       CONTAINER_ARM
+E       EnvDispatch
+E       VIRTUAL_ENV_ARM
+E     
+E     Re-export them from the package __init__. If a name was removed on purpose, say so in the commit and regenerate the snapshot.
+E   assert not ['CONTAINER_ARM', 'EnvDispatch', 'VIRTUAL_ENV_ARM']
+__________________ test_an_engine_is_staged_for_this_platform __________________
+tests/metasmith/unit/test_solver_engine_packaging.py:101: in test_an_engine_is_staged_for_this_platform
+    assert found is not None, (
+E   AssertionError: no msm_solver staged for this platform in /home/tony/agentic_workspace/projects/metasmith/kbase/dev/src/metasmith/engine. It is a per-scope build artifact -- build it with:
+E         ./dev/metasmith.sh -bec   # one time: pull the cross-compile container
+E         ./dev/metasmith.sh -be    # build all 4 targets and stage them
+E       or ./dev/metasmith.sh -bel  # host-only, seconds, not shippable
+E   assert None is not None
+=============================== warnings summary ===============================
+../../../../../lib/miniforge3/envs/msm/lib/python3.12/site-packages/_pytest/pathlib.py:102
+  /home/tony/lib/miniforge3/envs/msm/lib/python3.12/site-packages/_pytest/pathlib.py:102: PytestWarning: (rm_rf) unknown function <built-in function scandir> when removing /tmp/pytest-of-tony/garbage-ece1b96f-c842-4ad8-8860-dd6291a42ff4/test_c06_descendant_multi_bs1_0/nxf_test/.nextflow:
+  <class 'PermissionError'>: [Errno 1] Operation not permitted: '/tmp/pytest-of-tony/garbage-ece1b96f-c842-4ad8-8860-dd6291a42ff4/test_c06_descendant_multi_bs1_0/nxf_test/.nextflow'
+    warnings.warn(
+
+../../../../../lib/miniforge3/envs/msm/lib/python3.12/site-packages/_pytest/pathlib.py:95
+  /home/tony/lib/miniforge3/envs/msm/lib/python3.12/site-packages/_pytest/pathlib.py:95: PytestWarning: (rm_rf) error removing /tmp/pytest-of-tony/garbage-ece1b96f-c842-4ad8-8860-dd6291a42ff4/test_c06_descendant_multi_bs1_0/nxf_test/.nextflow
+  <class 'OSError'>: [Errno 39] Directory not empty: '/tmp/pytest-of-tony/garbage-ece1b96f-c842-4ad8-8860-dd6291a42ff4/test_c06_descendant_multi_bs1_0/nxf_test/.nextflow'
+    warnings.warn(
+
+../../../../../lib/miniforge3/envs/msm/lib/python3.12/site-packages/_pytest/pathlib.py:95
+  /home/tony/lib/miniforge3/envs/msm/lib/python3.12/site-packages/_pytest/pathlib.py:95: PytestWarning: (rm_rf) error removing /tmp/pytest-of-tony/garbage-ece1b96f-c842-4ad8-8860-dd6291a42ff4/test_c06_descendant_multi_bs1_0/nxf_test
+  <class 'OSError'>: [Errno 39] Directory not empty: '/tmp/pytest-of-tony/garbage-ece1b96f-c842-4ad8-8860-dd6291a42ff4/test_c06_descendant_multi_bs1_0/nxf_test'
+    warnings.warn(
+
+../../../../../lib/miniforge3/envs/msm/lib/python3.12/site-packages/_pytest/pathlib.py:95
+  /home/tony/lib/miniforge3/envs/msm/lib/python3.12/site-packages/_pytest/pathlib.py:95: PytestWarning: (rm_rf) error removing /tmp/pytest-of-tony/garbage-ece1b96f-c842-4ad8-8860-dd6291a42ff4/test_c06_descendant_multi_bs1_0
+  <class 'OSError'>: [Errno 39] Directory not empty: '/tmp/pytest-of-tony/garbage-ece1b96f-c842-4ad8-8860-dd6291a42ff4/test_c06_descendant_multi_bs1_0'
+    warnings.warn(
+
+../../../../../lib/miniforge3/envs/msm/lib/python3.12/site-packages/_pytest/pathlib.py:102
+  /home/tony/lib/miniforge3/envs/msm/lib/python3.12/site-packages/_pytest/pathlib.py:102: PytestWarning: (rm_rf) unknown function <built-in function scandir> when removing /tmp/pytest-of-tony/garbage-ece1b96f-c842-4ad8-8860-dd6291a42ff4/test_batch_debatch_roundtrip0/nxf_test/work/bf/3fe45bc2614dd33efd9ea8ff1ee694:
+  <class 'PermissionError'>: [Errno 1] Operation not permitted: '/tmp/pytest-of-tony/garbage-ece1b96f-c842-4ad8-8860-dd6291a42ff4/test_batch_debatch_roundtrip0/nxf_test/work/bf/3fe45bc2614dd33efd9ea8ff1ee694'
+    warnings.warn(
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/metasmith/unit/test_module_surface.py::test_exported_names_survive[metasmith.models.libraries] - AssertionError: metasmith.models.libraries no longer exports 3 name(s) it e...
+FAILED tests/metasmith/unit/test_solver_engine_packaging.py::test_an_engine_is_staged_for_this_platform - AssertionError: no msm_solver staged for this platform in /home/tony/agenti...
+======= 2 failed, 638 passed, 4 skipped, 5 warnings in 94.52s (0:01:34) ========
+--- exit 1 for unit
+=== SUITE DONE
