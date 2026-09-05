@@ -1,0 +1,42 @@
+# Genome-scale metabolic reconstruction and flux.
+# Added by curation round 3 -- see research/kbase/curation/r3/proposals.yml.
+#
+# CAUTION this namespace does NOT connect to `metabolomics::metabolic_model_sbml`.
+# Round 3 specified `modelling::metabolic_model` as extending that type, so that
+# `metabolicModelling/fba_constraint.py` would consume a reconstruction unchanged.
+# `test_type_hierarchy.py::test_no_cross_file_extends` asserts that no `extends`
+# names a type from another file, so the namespace is kept and the inheritance is
+# dropped. The two metabolic lanes therefore run beside each other and do not meet:
+# `metabolic_model_sbml` is still consumed by `fba_constraint.py` and produced by
+# nothing. Joining them is a converter transform, or reopening the cross-file
+# `extends` question on its own terms -- neither is decided here.
+types:
+  metabolic_model:
+    properties:
+      _: a genome-scale metabolic reconstruction
+      Format: SBML
+      ext: xml
+  # a reconstruction with universe reactions added until the medium supports growth.
+  # The prose is a COMMENT and not a `_` property on purpose: `extends` is a key-wise
+  # merge in which the child wins, so a child that restates `_` overwrites the parent's
+  # description and stops satisfying the parent it extends.
+  gapfilled_model:
+    extends:
+    - metabolic_model
+    properties:
+      gapfilled: true
+  media:
+    properties:
+      _: a growth medium as a compound table; a deferred template input
+      Format: TSV
+      ext: tsv
+  fba_solution:
+    properties:
+      _: a flux distribution and its objective value, one row per condition
+      Format: CSV
+      ext: csv
+  bigg_model_id:
+    properties:
+      _: a BiGG model accession, the way ncbi::assembly_accession is an accession
+      arity: 1
+      ext: txt

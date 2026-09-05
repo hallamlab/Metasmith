@@ -212,6 +212,19 @@ types:
       - N50
       - GC
       ext: json
+  # fastp's own before/after reports. NOT among curation round 3's 26 proposed types:
+  # round 3 wrote the fastp proposal from the KBase side and gave it
+  # `discarded_short_reads` as its third product, not knowing that the transform was
+  # already written and emits these instead. The written file's signature stands, and it
+  # needs these two declared -- fastp.py sat in `_disabled/` from before they existed.
+  fastp_json_report:
+    properties:
+      _: fastp before/after QC report
+      ext: json
+  fastp_html_report:
+    properties:
+      _: fastp before/after QC report rendering
+      ext: html
   fastqc_html_report:
     properties:
       _: fastqc html report
@@ -417,3 +430,27 @@ types:
       _: Boltz-2 predicted structures (tar of mmCIF files)
       Format: mmCIF
       ext: tar.gz
+# -----------------------------------------
+# curation round 3 -- KBase parity. See research/kbase/curation/r3/proposals.yml.
+  filtered_assembly:
+    extends:
+    - assembly
+    properties:
+      _: contigs surviving a length or coverage filter
+      filter: length_or_coverage
+  polished_assembly:
+    extends:
+    - assembly
+    properties:
+      _: long-read contigs corrected against a short-read library
+      polish: short_read
+  min_contig_length:
+    properties:
+      _: minimum contig length in bp, the knob a contig filter is run at
+      arity: 1
+      ext: txt
+  variant_calls:
+    properties:
+      _: variant calls against a named reference
+      Format: VCF
+      ext: vcf

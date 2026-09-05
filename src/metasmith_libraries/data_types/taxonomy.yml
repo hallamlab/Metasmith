@@ -117,3 +117,16 @@ types:
     properties:
       _: phyloFlash SPAdes-reconstructed full-length SSU rRNA sequences (<lib>.spades_rRNAs.final.fasta)
       ext: fasta
+
+  # curation round 3 -- KBase parity. classify_wf already performs identify and align
+  # and the shipped transform globs only the summary; `gtdbtk infer` builds the tree.
+  gtdbtk_msa:
+    properties:
+      _: GTDB-Tk concatenated marker protein alignment over the user genomes
+      Format: FASTA
+      ext: fasta
+  gtdbtk_tree:
+    properties:
+      _: newick phylogeny over the genomes GTDB-Tk aligned
+      Format: newick
+      ext: tree

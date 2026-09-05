@@ -1,0 +1,110 @@
+Running as unit: run-r6d61d4a58bd740a598627004597a14d6.scope; invocation ID: 2a0d26b18b394547a5acc2b0532eb9e7
+[pangenome_heatmap_from_assembly]
+2026-09-04_19-49-30  | [pangenome::heatmap] resolved by [...metasmith_libraries/transforms/pangenome]
+2026-09-04_19-49-31  | solving plan for [1] sample as [1] unique case
+2026-09-04_19-49-31 W| solving with the python implementation because no [msm_solver] is staged for [x86_64-linux] -- build one with [./dev/metasmith.sh -bel], or [./dev/metasmith.sh -be] to cross-build all four. The plans are the same either way; the search is roughly 15x slower.
+  pangenome_heatmap_from_assembly: 3 steps
+[metagenomics_from_paired_reads]
+2026-09-04_19-49-31  | [sequences::megahit_assembly] resolved by [...metasmith_libraries/transforms/assembly]
+2026-09-04_19-49-31  | [sequences::read_qc_stats] resolved by [...metasmith_libraries/transforms/assembly]
+2026-09-04_19-49-31  | [sequences::orfs] resolved by [...metasmith_libraries/transforms/logistics]
+2026-09-04_19-49-31  | [sequences::assembly_stats] resolved by [...metasmith_libraries/transforms/assembly]
+2026-09-04_19-49-31  | [sequences::assembly_per_contig_coverage] resolved by [...metasmith_libraries/transforms/assembly]
+2026-09-04_19-49-31  | [sequences::assembly_per_bp_coverage] resolved by [...metasmith_libraries/transforms/assembly]
+2026-09-04_19-49-31  | [annotation::diamond_uniref50_results] resolved by [...metasmith_libraries/transforms/functionalAnnotation]
+2026-09-04_19-49-31  | [annotation::diamond_uniref50_descriptions] resolved by [...metasmith_libraries/transforms/functionalAnnotation]
+2026-09-04_19-49-31  | [annotation::kofamscan_results] resolved by [...metasmith_libraries/transforms/functionalAnnotation]
+2026-09-04_19-49-31  | [annotation::kofamscan_descriptions] resolved by [...metasmith_libraries/transforms/functionalAnnotation]
+2026-09-04_19-49-31  | [taxonomy::metabuli] resolved by [...metasmith_libraries/transforms/metagenomics]
+2026-09-04_19-49-31  | [taxonomy::phyloflash_summary] resolved by [...metasmith_libraries/transforms/metagenomics]
+2026-09-04_19-49-31  | [binning_local::cluster_table] resolved by [...metasmith_libraries/transforms/metagenomics]
+2026-09-04_19-49-31  | [sequences::metabat2_bin_fasta] resolved by [...metasmith_libraries/transforms/metagenomics]
+2026-09-04_19-49-31  | [sequences::semibin2_bin_fasta] resolved by [...metasmith_libraries/transforms/metagenomics]
+2026-09-04_19-49-31  | [sequences::comebin_bin_fasta] resolved by [...metasmith_libraries/transforms/metagenomics]
+2026-09-04_19-49-31  | [taxonomy::checkm_stats] resolved by [...metasmith_libraries/transforms/metagenomics]
+2026-09-04_19-49-31  | [taxonomy::gtdbtk] resolved by [...metasmith_libraries/transforms/metagenomics]
+2026-09-04_19-49-31  | [taxonomy::checkm_stats] resolved by [...metasmith_libraries/transforms/metagenomics]
+2026-09-04_19-49-31  | [taxonomy::gtdbtk] resolved by [...metasmith_libraries/transforms/metagenomics]
+2026-09-04_19-49-31  | [taxonomy::checkm_stats] resolved by [...metasmith_libraries/transforms/metagenomics]
+2026-09-04_19-49-31  | [taxonomy::gtdbtk] resolved by [...metasmith_libraries/transforms/metagenomics]
+2026-09-04_19-49-31  | [binning::metabat2_contig_to_bin_table] resolved by [...metasmith_libraries/transforms/metagenomics]
+2026-09-04_19-49-31  | [binning::semibin2_contig_to_bin_table] resolved by [...metasmith_libraries/transforms/metagenomics]
+2026-09-04_19-49-31  | [binning::comebin_contig_to_bin_table] resolved by [...metasmith_libraries/transforms/metagenomics]
+2026-09-04_19-49-31  | solving plan for [1] sample as [1] unique case
+  metagenomics_from_paired_reads: 29 steps
+[isolate_assembly_from_long_reads]
+2026-09-04_19-49-52  | [sequences::hifiasm_meta_assembly] resolved by [...metasmith_libraries/transforms/assembly]
+2026-09-04_19-49-52  | [annotation::diamond_uniref50_results] resolved by [...metasmith_libraries/transforms/functionalAnnotation]
+2026-09-04_19-49-52  | [annotation::diamond_uniref50_descriptions] resolved by [...metasmith_libraries/transforms/functionalAnnotation]
+2026-09-04_19-49-52  | [annotation::kofamscan_results] resolved by [...metasmith_libraries/transforms/functionalAnnotation]
+2026-09-04_19-49-52  | [annotation::kofamscan_descriptions] resolved by [...metasmith_libraries/transforms/functionalAnnotation]
+2026-09-04_19-49-53  | solving plan for [1] sample as [1] unique case
+  isolate_assembly_from_long_reads: 12 steps
+[annotation_palette_from_assembly]
+2026-09-04_19-49-53  | [annotation::kofamscan_results] resolved by [...metasmith_libraries/transforms/functionalAnnotation]
+2026-09-04_19-49-53  | [annotation::kofamscan_descriptions] resolved by [...metasmith_libraries/transforms/functionalAnnotation]
+2026-09-04_19-49-53  | [annotation::diamond_uniref50_results] resolved by [...metasmith_libraries/transforms/functionalAnnotation]
+2026-09-04_19-49-53  | [annotation::diamond_uniref50_descriptions] resolved by [...metasmith_libraries/transforms/functionalAnnotation]
+2026-09-04_19-49-53  | [annotation::eggnog_results] resolved by [...metasmith_libraries/transforms/functionalAnnotation]
+2026-09-04_19-49-53  | [annotation::proteinbert_embeddings] resolved by [...metasmith_libraries/transforms/functionalAnnotation]
+2026-09-04_19-49-53  | [taxonomy::metabuli] resolved by [...metasmith_libraries/transforms/metagenomics]
+2026-09-04_19-49-53  | solving plan for [1] sample as [1] unique case
+  annotation_palette_from_assembly: 15 steps
+[annotation_trio_from_assembly]
+2026-09-04_19-49-53  | [annotation::kofamscan_results] resolved by [...metasmith_libraries/transforms/functionalAnnotation]
+2026-09-04_19-49-53  | [annotation::kofamscan_descriptions] resolved by [...metasmith_libraries/transforms/functionalAnnotation]
+2026-09-04_19-49-53  | [annotation::diamond_uniref50_results] resolved by [...metasmith_libraries/transforms/functionalAnnotation]
+2026-09-04_19-49-53  | [annotation::diamond_uniref50_descriptions] resolved by [...metasmith_libraries/transforms/functionalAnnotation]
+2026-09-04_19-49-53  | [annotation::interproscan_results] resolved by [...metasmith_libraries/transforms/functionalAnnotation]
+2026-09-04_19-49-53  | [annotation::interproscan_descriptions] resolved by [...metasmith_libraries/transforms/functionalAnnotation]
+2026-09-04_19-49-54  | solving plan for [1] sample as [1] unique case
+  annotation_trio_from_assembly: 11 steps
+[fosmid_inserts_from_pooled_reads]
+2026-09-04_19-49-54  | [fabfos::putative_inserts] resolved by [...metasmith_libraries/transforms/fabfos]
+2026-09-04_19-49-54  | [fabfos::insert_metadata] resolved by [...metasmith_libraries/transforms/fabfos]
+2026-09-04_19-49-54  | [sequences::assembly_stats] resolved by [...metasmith_libraries/transforms/assembly]
+2026-09-04_19-49-54  | solving plan for [1] sample as [1] unique case
+  fosmid_inserts_from_pooled_reads: 7 steps
+[amplicon_asv_study_from_paired_reads]
+2026-09-04_19-49-54  | [amplicon::asv_taxonomy] resolved by [...metasmith_libraries/transforms/aspire]
+2026-09-04_19-49-54  | [aspire::counts_filtered] resolved by [...metasmith_libraries/transforms/aspire]
+2026-09-04_19-49-54  | [aspire::sankey_outputs] resolved by [...metasmith_libraries/transforms/aspire]
+2026-09-04_19-49-54  | solving plan for [1] sample as [1] unique case
+  amplicon_asv_study_from_paired_reads: 15 steps
+[viromics_survey_from_assembly]
+2026-09-04_19-49-55  | [annotation::virsorter2_viral_sequences] resolved by [...metasmith_libraries/transforms/functionalAnnotation]
+2026-09-04_19-49-55  | [taxonomy::genomad_virus_summary] resolved by [...metasmith_libraries/transforms/metagenomics]
+2026-09-04_19-49-55  | [taxonomy::genomad_plasmid_summary] resolved by [...metasmith_libraries/transforms/metagenomics]
+2026-09-04_19-49-55  | [annotation::dramv_distill] resolved by [...metasmith_libraries/transforms/functionalAnnotation]
+2026-09-04_19-49-55  | [annotation::crassphage_coverage] resolved by [...metasmith_libraries/transforms/metagenomics]
+2026-09-04_19-49-55  | solving plan for [1] sample as [1] unique case
+  viromics_survey_from_assembly: 9 steps
+[gpr_table_from_assembly]
+2026-09-04_19-49-55  | [annotation::gpr_table] resolved by [...metasmith_libraries/transforms/fabfos]
+2026-09-04_19-49-56  | solving plan for [1] sample as [1] unique case
+  gpr_table_from_assembly: 12 steps
+[ecspr_results_from_gpr_table]
+2026-09-04_19-49-56  | [ecspr::results] resolved by [...metasmith_libraries/transforms/fabfos]
+2026-09-04_19-49-56  | solving plan for [1] sample as [1] unique case
+  ecspr_results_from_gpr_table: 1 steps
+[ecspr_survey_from_pooled_reads]
+2026-09-04_19-49-56  | [fabfos::putative_inserts] resolved by [...metasmith_libraries/transforms/fabfos]
+2026-09-04_19-49-56  | [fabfos::insert_metadata] resolved by [...metasmith_libraries/transforms/fabfos]
+2026-09-04_19-49-56  | [sequences::assembly_stats] resolved by [...metasmith_libraries/transforms/assembly]
+2026-09-04_19-49-56  | [annotation::kofamscan_results] resolved by [...metasmith_libraries/transforms/functionalAnnotation]
+2026-09-04_19-49-56  | [annotation::kofamscan_descriptions] resolved by [...metasmith_libraries/transforms/functionalAnnotation]
+2026-09-04_19-49-56  | [annotation::clean_predictions] resolved by [...metasmith_libraries/transforms/functionalAnnotation]
+2026-09-04_19-49-56  | [annotation::diamond_uniref50_results] resolved by [...metasmith_libraries/transforms/functionalAnnotation]
+2026-09-04_19-49-56  | [annotation::diamond_uniref50_descriptions] resolved by [...metasmith_libraries/transforms/functionalAnnotation]
+2026-09-04_19-49-56  | [annotation::proteinbert_embeddings] resolved by [...metasmith_libraries/transforms/functionalAnnotation]
+2026-09-04_19-49-56  | [annotation::gpr_table] resolved by [...metasmith_libraries/transforms/fabfos]
+2026-09-04_19-49-56  | [ecspr::results] resolved by [...metasmith_libraries/transforms/fabfos]
+2026-09-04_19-49-56  | solving plan for [1] sample as [1] unique case
+  ecspr_survey_from_pooled_reads: 20 steps
+[dl_embeddings_from_orfs] SKIPPED: every embedding transform consumes sequences::orfs_shard, whose only producer (transforms/logistics/shardFasta.py) is disabled -- re-enable it and move this name into AUTHORS
+
+11/11 templates built, 1 blocked
+
+real	0m27.315s
+user	0m28.067s
+sys	0m0.524s
