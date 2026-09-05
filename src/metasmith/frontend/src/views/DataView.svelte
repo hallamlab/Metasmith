@@ -175,7 +175,9 @@
     {#each groups as [label, rows]}
       <section>
         <h3 class="small">
-          {label}
+          <!-- A run key is case-sensitive and gets typed back into
+               `cache list --run`, so the global h3 uppercase is wrong here. -->
+          <span class="label mono">{label}</span>
           <span class="muted">
             {rows.length} · {human(rows.reduce((a, r) => a + r.size_bytes, 0))}
           </span>
@@ -230,7 +232,8 @@
   .bar { display: flex; align-items: flex-start; gap: 12px; }
   .grow { flex: 1 1 auto; min-width: 0; }
   h2 { margin: 0; font-size: 15px; }
-  h3 { margin: 14px 0 4px; display: flex; gap: 8px; }
+  h3 { margin: 14px 0 4px; display: flex; gap: 8px; align-items: baseline; }
+  h3 .label { text-transform: none; letter-spacing: 0; color: var(--fg); }
   .controls { display: flex; gap: 14px; align-items: center; margin: 10px 0; flex-wrap: wrap; }
   .import { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; margin: 10px 0; }
   table { width: 100%; border-collapse: collapse; }
