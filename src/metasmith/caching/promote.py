@@ -462,7 +462,10 @@ def record_run(*, workspace: Path, cache_root: Path, log: list | None = None) ->
     return {"promoted": promoted, "hits": hits}
 
 
-def tombstone_shard(cache_root: Path, key_hex: str) -> None:
-    shard = shard_for(cache_root, key_hex, "lineage")
+def tombstone_shard(cache_root: Path, key_hex: str, origin: str = "lineage") -> None:
+    # The origin decides the namespace: products and imports shard under
+    # different rules, and a tombstone written to the wrong one marks the row
+    # and never the disk.
+    shard = shard_for(cache_root, key_hex, origin)
     if shard.is_dir():
         (shard / TOMBSTONE_NAME).touch()

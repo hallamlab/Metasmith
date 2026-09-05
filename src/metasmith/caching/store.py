@@ -157,8 +157,14 @@ class CacheStore:
             # that is already reading a shard finish; a shard whose key can no
             # longer be minted has no such reader, and a `now` stamp would hold
             # the disk for a day after the warning told the user how to free it.
+            #
+            # And only derivation keys. An imported entry's key is minted from
+            # what it declares, deliberately outside the epoch, so a bump
+            # invalidates nothing about it -- sweeping it would tombstone what
+            # may be the user's only copy on an unrelated schedule.
             cur = conn.execute(
-                "UPDATE entries SET tombstoned_at = 0 WHERE tombstoned_at IS NULL"
+                "UPDATE entries SET tombstoned_at = 0 "
+                "WHERE tombstoned_at IS NULL AND origin != 'imported'"
             )
             stranded = max(cur.rowcount, 0)
             Log.Warn(
