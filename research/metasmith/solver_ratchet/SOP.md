@@ -47,17 +47,23 @@ report a measurement of the incumbent under your name.
 
 ## How you are ranked
 
-Over 81 frozen wire payloads — 4 real metagenomics arms, 64 generated `sink` cases, 13 rungs
-of a real target ladder from 3 to 68 targets:
+Over 81 frozen wire payloads, in **two families that are not interchangeable**:
 
-1. **solved** — how many complete. The shipped rule solves 57 of 81; the other 24 hit the
-   iteration cap. Solving one more is the strongest possible result.
-2. **steps** — total plan length, over cases *both* arms solved. Shorter is better: plan
-   length is what the refiner converts superlinearly into wall clock.
-3. **iterations** — search effort over the same joint set. Lowest priority.
+- **real** (17) — 13 rungs of a real metagenomics workflow from 3 to 68 targets, plus 4 real
+  metagenomics arms. This is what ships.
+- **sink** (64) — generated pathologies. A stress signal, not the objective.
 
-`score` prints WIN / TIE / LOSS against the baseline and against the current ratchet head,
-and lists exactly which payloads moved.
+The keys, in order:
+
+1. **real-workflow steps must not regress.** A config that lengthens real plans is a LOSS
+   however many generated cases it buys. Round 1 found exactly that trade — `epsilon_milli=200`
+   solves one more `sink` case and costs 9 ladder steps and 6 metagenomics steps — and it is
+   not a win. Plan length is what the refiner turns superlinearly into wall clock.
+2. **real-workflow steps lower** is a WIN outright.
+3. then **total solved**, then total steps, then iterations.
+
+`score` prints both families in separate columns and gives WIN / TIE / LOSS against the baseline
+and the current ratchet head, plus exactly which payloads moved.
 
 ## The gates
 
