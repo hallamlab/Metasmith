@@ -24,7 +24,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Sequence
 
-from .keys import canonical_cbor
+from .keys import canonical_cbor, multihash_key
 from .layout import (
     MANIFEST_NAME,
     imported_shard_dir,
@@ -136,6 +136,29 @@ class ShardWrite:
     shard: Path
     manifest: dict
     size: int
+
+
+IMPORT_KIND = "import"
+
+
+def structural_import_id(dtype_name: str, name: str) -> str:
+    """The identity of an imported item: its type, and the name it is given.
+
+    The same shape as `structural_slot_id` and for the same reason. A product's
+    id folds what derived it; an import was derived by nothing, so what it
+    declares is all there is. Neither reads a byte or stats a path, which is
+    what makes importing a folder of six hundred thousand files cost what
+    importing one file costs -- and is the same reason the type carries the
+    trust, since the type IS the structural input and validating the bytes
+    would answer a question the identity never asked.
+
+    Deliberately does NOT fold the cache epoch. A product is re-derivable, so an
+    epoch bump may strand it; an import may be the user's only copy, and an id
+    that moved with the epoch would strand one on every bump.
+    """
+    return multihash_key(
+        canonical_cbor({"kind": IMPORT_KIND, "dtype": dtype_name, "name": name})
+    ).hex()
 
 
 def shard_for(cache_root: Path, key_hex: str, origin: str) -> Path:

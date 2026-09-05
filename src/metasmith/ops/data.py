@@ -577,6 +577,208 @@ def _shallow_size(path: Path) -> int:
         return 0
 
 
+def resolve_store_root(
+    agent_home: str | None = None, cache_root: str | None = None,
+) -> Path:
+    """Which pool a store verb acts on.
+
+    The pool lives at an agent's home, because that is where a run's products
+    land. An explicit root wins; otherwise the named agent's, otherwise
+    $AGENT_HOME's.
+    """
+    from ..caching.layout import default_cache_root
+
+    if cache_root is not None:
+        return Path(cache_root).resolve()
+    home = agent_home or os.environ.get("AGENT_HOME")
+    if not home:
+        raise ValueError(
+            "no store: pass --agent-home or --cache-root, or set AGENT_HOME. "
+            "The pool lives at an agent's home."
+        )
+    return default_cache_root(Path(home).resolve())
+
+
+def _resolve_dtype(dtype: str, type_library_paths: list[str] | None):
+    """The endpoint a type name refers to, when anything here can say.
+
+    Given type libraries, an unresolvable name is refused: the caller asked for
+    the check. Given none, the name is taken as declared -- the type is the
+    user's statement of what the file is, and this command never opens the file
+    to second-guess it.
+    """
+    from ..models.libraries import DataTypeLibrary
+
+    if not type_library_paths:
+        return None, False
+    libs = {}
+    for raw in type_library_paths:
+        ns, _sep, tp = str(raw).partition("=")
+        if not tp:
+            ns, tp = "", ns
+        tp = Path(tp).resolve()
+        libs[ns or tp.stem] = DataTypeLibrary.Load(tp)
+    if "::" not in dtype:
+        raise ValueError(f"[{dtype}] is not in the format <namespace>::<type>")
+    ns, name = dtype.split("::", 1)
+    if ns not in libs:
+        raise ValueError(
+            f"namespace [{ns}] is not among the type libraries given: "
+            f"{sorted(libs)}"
+        )
+    if name not in libs[ns]:
+        raise ValueError(f"type [{name}] is not in [{ns}]")
+    return libs[ns][name], True
+
+
+def import_item(
+    path: str,
+    dtype: str,
+    *,
+    agent_home: str | None = None,
+    cache_root: str | None = None,
+    name: str | None = None,
+    parents: list[str] | None = None,
+    type_library_paths: list[str] | None = None,
+) -> dict:
+    """Register a file or folder the user already has as a pool instance.
+
+    Nothing is copied, moved or read. The item keeps its bytes where they are
+    and the pool records what it is: an identity minted from the type and the
+    name, the type's own name, where it sits, and what it descends from -- the
+    same four things a run records for a product.
+
+    The identity is structural, so importing the same path under the same type
+    twice yields one entry. Importing it under a different type, or under a
+    different --name, is a different declaration and therefore a second entry.
+    """
+    from ..caching.admission import IMPORTED, PoolFile, admit, structural_import_id
+
+    root = resolve_store_root(agent_home, cache_root)
+    target = Path(path).expanduser().resolve()
+    endpoint, resolved = _resolve_dtype(dtype, type_library_paths)
+    label = name if name is not None else str(target)
+    key_hex = structural_import_id(dtype, label)
+
+    parent_ids = _resolve_parent_ids(root, parents or [])
+    written = admit(
+        cache_root=root,
+        key=bytes.fromhex(key_hex),
+        origin=IMPORTED,
+        files=[PoolFile(
+            dtype_name=dtype,
+            dtype_key=endpoint.key if endpoint is not None else "",
+            abspath=str(target),
+            slot_id=key_hex,
+            parents=parent_ids,
+            size=_shallow_size(target),
+        )],
+    )
+    return {
+        "cache_root": str(root),
+        "path": str(target),
+        "dtype": dtype,
+        "name": label,
+        "instance_id": key_hex,
+        "type_resolved": resolved,
+        "parents": parent_ids,
+        "status": written.status,
+    }
+
+
+def _resolve_parent_ids(cache_root: Path, parents: list[str]) -> list[str]:
+    """Parents named by instance id, or by a path already in the store."""
+    if not parents:
+        return []
+    by_path = store_ids_by_path(cache_root)
+    known = set(by_path.values())
+    out = []
+    for p in parents:
+        if p in known:
+            out.append(p)
+            continue
+        resolved = by_path.get(str(Path(p).expanduser().resolve()))
+        if resolved is None:
+            raise ValueError(
+                f"[{p}] is neither an instance id nor a path in the store at "
+                f"[{cache_root}]. A parent must already be in the pool, or the "
+                "edge it records points at nothing."
+            )
+        out.append(resolved)
+    return sorted(set(out))
+
+
+def store_ids_by_path(cache_root: Path) -> dict:
+    """Every file the store indexes, by where it sits. Needs no type library."""
+    from ..caching.admission import manifest_files
+    from ..caching.store import CacheStore, decode_manifest
+
+    root = Path(cache_root)
+    if not (root / "cache.sqlite").exists():
+        return {}
+    store = CacheStore.open(root)
+    try:
+        out = {}
+        for entry in store.iter_entries():
+            try:
+                manifest = decode_manifest(entry.payload)
+            except Exception:
+                continue
+            for f in manifest_files(manifest):
+                out[str(f.Resolve(entry.output_root))] = f.InstanceId()
+        return out
+    finally:
+        store.close()
+
+
+def forget_item(
+    instance_id: str,
+    *,
+    agent_home: str | None = None,
+    cache_root: str | None = None,
+    delete: bool = False,
+) -> dict:
+    """Drop an imported entry from the pool.
+
+    Only the entry. The bytes were never the pool's -- an import indexes a file
+    where the user put it -- so there is nothing here that could delete them,
+    and `--delete` removes the shard, which holds only the manifest.
+    """
+    import shutil as _shutil
+
+    from ..caching.admission import IMPORTED, shard_for
+    from ..caching.store import CacheStore
+
+    root = resolve_store_root(agent_home, cache_root)
+    key = bytes.fromhex(instance_id)
+    store = CacheStore.open(root)
+    try:
+        entry = store.probe(key)
+        if entry is None:
+            return {"cache_root": str(root), "key": instance_id, "found": False}
+        if entry.origin != IMPORTED:
+            raise ValueError(
+                f"[{instance_id}] is a product, not an import. A product is "
+                "reclaimed by `metasmith cache gc`, which knows it can be "
+                "re-derived."
+            )
+        store.tombstone(key)
+        shard = shard_for(root, instance_id, IMPORTED)
+        removed = False
+        if delete and shard.is_dir() and shard.is_relative_to(root):
+            _shutil.rmtree(shard)
+            removed = True
+    finally:
+        store.close()
+    return {
+        "cache_root": str(root),
+        "key": instance_id,
+        "found": True,
+        "tombstoned": True,
+        "shard_removed": removed,
+    }
+
+
 def show_item_lineage(
     library_path: str,
     item_path: str,
