@@ -277,30 +277,10 @@ class CacheStore:
             )
 
 
-def encode_manifest(
-    *,
-    cache_key: bytes,
-    transform_key: str,
-    signature: str,
-    lineage_payload: bytes,
-    output_files: list[dict],
-    out_identities: dict[str, str],
-    index_payload: list[dict],
-) -> bytes:
-    from .keys import canonical_cbor
-
-    return canonical_cbor(
-        {
-            "v": 1,
-            "key": cache_key,
-            "tk": transform_key,
-            "sig": signature,
-            "lineage": lineage_payload,
-            "files": output_files,
-            "ids": out_identities,
-            "index": index_payload,
-        }
-    )
+# A manifest is written in exactly one place, `caching.admission`. What used to
+# be a second shape written from here is gone; `admission.manifest_files`,
+# `manifest_lineage` and `manifest_size` read every version an existing pool may
+# hold.
 
 
 def decode_manifest(blob: bytes) -> dict:

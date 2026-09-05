@@ -175,6 +175,23 @@ def DownloadSteps(plan) -> list:
     return found
 
 
+def _dep_type_name(step, dep) -> str:
+    """The declared name of a slot's type, for the branch that has no instance.
+
+    get_io_signature indexes dependency_map directly, so a produced slot always
+    has one by the time this runs; this is the belt to that brace. A dep that
+    carries lineage signs differently from the bare type it was declared from
+    and will not be found, which is a missing name rather than an error.
+    """
+    lib = getattr(step, "transform_library", None)
+    if lib is None:
+        return ""
+    try:
+        return lib.GetName(dep)
+    except KeyError:
+        return ""
+
+
 def prepare_nextflow(task, context: NextflowGenContext):
     TAB = "\t"
     downloads = DownloadSteps(task.plan)
@@ -377,15 +394,22 @@ def prepare_nextflow(task, context: NextflowGenContext):
                         insts = step.dependency_map.get(dep, [])
                         if insts:
                             dtype_key = insts[0].dtype.key
+                            dtype_name = insts[0].dtype_name
                             ext = (
                                 insts[0].dtype.GetPreferredFileExtension()
                                 or ""
                             )
                         else:
                             dtype_key = dep.key
+                            dtype_name = _dep_type_name(step, dep)
                             ext = dep.GetPreferredFileExtension() or ""
                         slot_files.append({
                             "dtype_key": dtype_key,
+                            # The name is what makes a promoted product
+                            # describable as a data instance later. The key is
+                            # a property-set fingerprint and cannot be turned
+                            # back into a type, so it has to travel separately.
+                            "dtype_name": dtype_name,
                             "ext": ext,
                             "branch_idx": branch_idx,
                             "slot_id": slot_id,

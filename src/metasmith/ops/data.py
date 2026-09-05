@@ -474,30 +474,54 @@ def import_library(
     dest = Path(dest_path).resolve()
     lib = DataInstanceLibrary.LoadFrom(src, dest, as_image, on_exist)
 
-    from ..caching.layout import (
-        MANIFEST_NAME,
-        default_cache_root,
-        imported_shard_dir,
-    )
+    from ..caching.layout import default_cache_root
 
     if cache_root is None:
         cache_root_path = default_cache_root(dest.parent)
     else:
         cache_root_path = Path(cache_root).resolve()
-    cache_root_path.mkdir(parents=True, exist_ok=True)
 
-    from ..caching.store import CacheStore, encode_manifest
+    admitted = admit_library_items(lib, cache_root_path)
+    return {
+        "library": str(lib.location),
+        "src": src_uri,
+        "item_count": len(lib.manifest),
+        "imported_cache_entries": admitted["admitted"],
+        "skipped_leaf_entries": admitted["skipped_leaf"],
+        "cache_root": str(cache_root_path),
+    }
 
-    store = CacheStore.open(cache_root_path)
+
+def admit_library_items(
+    lib: DataInstanceLibrary,
+    cache_root: Path,
+    *,
+    paths: list[Path] | None = None,
+    include_leaves: bool = False,
+) -> dict:
+    """Register a library's items in the pool, through the pool's write door.
+
+    The item keeps its bytes where they are. What enters the store is the
+    entry: the item's identity, the name of its type, where it sits, and the
+    identities it descends from. Nothing is stat'd beyond the one call that
+    asks how big it is, and nothing is walked -- a folder of six hundred
+    thousand files costs what a single file costs.
+    """
+    from ..caching.admission import IMPORTED, PoolFile, admit
+    from ..caching.store import CacheStore
+
+    cache_root = Path(cache_root)
+    cache_root.mkdir(parents=True, exist_ok=True)
+    store = CacheStore.open(cache_root)
     try:
-        upserts = 0
+        admitted = 0
         skipped_leaf = 0
-        for path in lib.manifest:
+        for path in (paths if paths is not None else list(lib.manifest)):
             meta = lib.instance_meta.get(path)
             if meta is None:
                 continue
             origin = meta.get("origin", "leaf")
-            if origin == "leaf":
+            if origin == "leaf" and not include_leaves:
                 skipped_leaf += 1
                 continue
             instance_id_hex = meta.get("instance_id")
@@ -507,45 +531,50 @@ def import_library(
                 key = bytes.fromhex(instance_id_hex)
             except ValueError:
                 continue
-            lineage_payload = meta.get("lineage_payload") or b""
-            output_dir = imported_shard_dir(cache_root_path, instance_id_hex)
-            output_root_rel = str(output_dir.relative_to(cache_root_path))
-            output_dir.mkdir(parents=True, exist_ok=True)
-            payload = encode_manifest(
-                cache_key=key,
-                transform_key="",
-                signature="",
-                lineage_payload=lineage_payload,
-                output_files=[{"relpath": str(path)}],
-                out_identities={},
-                index_payload=[],
-            )
-            (output_dir / MANIFEST_NAME).write_bytes(payload)
-            size_bytes = 0
-            try:
-                size_bytes = (lib.location / path).stat().st_size
-            except OSError:
-                pass
-            store.upsert(
+            inst = lib.Get(path)
+            written = admit(
+                cache_root=cache_root,
                 key=key,
-                transform_key="",
-                payload=payload,
-                output_root=output_root_rel,
-                size_bytes=size_bytes,
-                origin="imported",
+                origin=IMPORTED,
+                files=[PoolFile(
+                    dtype_name=inst.dtype_name,
+                    dtype_key=inst.dtype.key,
+                    abspath=str(inst.ResolvePath()),
+                    slot_id=instance_id_hex,
+                    parents=_parent_ids(lib, path),
+                    size=_shallow_size(inst.ResolvePath()),
+                )],
+                lineage_payload=meta.get("lineage_payload") or b"",
+                store=store,
             )
-            upserts += 1
+            if written.status != "failed":
+                admitted += 1
     finally:
         store.close()
-
     return {
-        "library": str(lib.location),
-        "src": src_uri,
-        "item_count": len(lib.manifest),
-        "imported_cache_entries": upserts,
-        "skipped_leaf_entries": skipped_leaf,
-        "cache_root": str(cache_root_path),
+        "cache_root": str(cache_root),
+        "admitted": admitted,
+        "skipped_leaf": skipped_leaf,
     }
+
+
+def _parent_ids(lib: DataInstanceLibrary, path: Path) -> list[str]:
+    ids = []
+    for pm in lib.parents.get(path, []):
+        if pm.path not in lib.manifest:
+            continue
+        ids.append(lib.Get(pm.path).instance_id)
+    return sorted(set(ids))
+
+
+def _shallow_size(path: Path) -> int:
+    # One stat, never a walk. A directory reports its own entry size, which is
+    # not what it holds -- the alternative is a tree walk on every import, and
+    # that is the cost this whole design exists to refuse.
+    try:
+        return int(Path(path).stat().st_size)
+    except OSError:
+        return 0
 
 
 def show_item_lineage(
