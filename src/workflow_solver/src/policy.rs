@@ -106,13 +106,22 @@ impl Default for PuctConfig {
             c_puct: 1.5,
             channel_weights: [75.0 / 95.0, 20.0 / 95.0],
             temperature: 0.5,
-            fpu: 0.5,
+            // Above every attainable reward, on purpose. `progress_of` divides by
+            // `requires.len() + 1`, so one satisfied requirement is worth 1/69 on
+            // the widest ladder rung: Q is a novelty signal, not a ranking, and an
+            // unvisited key has to outrank a visited one for that signal to exist.
+            // Scaling the reward into a real ranking instead was measured and is
+            // worse -- x5 costs three solves, x69 costs five.
+            fpu: 1.5,
             top_k: 1,
             epsilon_milli: 0,
-            decay: 1.0,
+            // Stale evidence decays out. The win is a plateau over 0.982-0.99 and
+            // falls away below 0.98, so it is the recency that matters rather than
+            // this particular number.
+            decay: 0.985,
             use_value: true,
             reward_mode: RewardMode::Delta,
-            reward_scale: 1.0,
+            reward_scale: 2.0,
             dup: 0.0,
             dup_lin: 0.0,
             cap: 0,

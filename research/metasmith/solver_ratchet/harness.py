@@ -103,6 +103,20 @@ def gate_witness(rows, replies, which):
     return bad
 
 
+def family(name):
+    """Real workflows versus generated stress cases.
+
+    `ladder-*` are rungs of a real metagenomics workflow from 3 to 68 targets and
+    the four named arms are real metagenomics plans; `sink-*` are generated
+    pathologies. They are not interchangeable, and round 1 found a config that
+    solves one more generated case by lengthening every real plan. Keeping the
+    columns apart is what makes that visible instead of averaged away.
+    """
+    if name.startswith("sink"):
+        return "sink"
+    return "real"
+
+
 def summarise(rows, ref=None):
     """Solved count, plus steps/iterations over cases solved by BOTH arms.
 
@@ -111,18 +125,37 @@ def summarise(rows, ref=None):
     """
     solved = {k for k, v in rows.items() if v.get("complete")}
     joint = solved if ref is None else solved & {k for k, v in ref.items() if v.get("complete")}
+    real = [k for k in joint if family(k) == "real"]
+    real_all = [k for k in rows if family(k) == "real"]
     return {
         "solved": len(solved),
         "total": len(rows),
         "steps": sum(rows[k]["steps"] for k in joint),
         "iters": sum(rows[k]["iterations"] or 0 for k in joint),
         "joint": len(joint),
+        "real_solved": sum(1 for k in real_all if rows[k].get("complete")),
+        "real_total": len(real_all),
+        "real_steps": sum(rows[k]["steps"] for k in real),
+        "sink_solved": len(solved) - sum(1 for k in real_all if rows[k].get("complete")),
         "wall": round(sum(v["wall"] for v in rows.values()), 2),
     }
 
 
 def verdict(cur, base):
-    """WIN / TIE / LOSS. Solved is a gate; steps then iterations break the tie."""
+    """WIN / TIE / LOSS.
+
+    A regression on real-workflow plan length is a LOSS however many generated
+    cases it buys. Round 1 measured exactly that trade -- `epsilon_milli=200`
+    solves one more `sink` case and adds 9 steps to the ladder and 6 to the
+    metagenomics arms -- and the real workflows are what ships. Solved count is
+    the next key, then total steps, then iterations.
+    """
+    if cur["real_solved"] < base["real_solved"]:
+        return "LOSS"
+    if cur["real_steps"] > base["real_steps"]:
+        return "LOSS"
+    if cur["real_steps"] < base["real_steps"]:
+        return "WIN"
     c, b = cur["solved"], base["solved"]
     if c != b:
         return "WIN" if c > b else "LOSS"
@@ -137,16 +170,18 @@ def table(cur_rows, base_rows, head_rows):
     out = []
     cs = summarise(cur_rows, base_rows)
     bs = summarise(base_rows, base_rows)
-    out.append(f"{'':14s} {'solved':>12s} {'steps':>10s} {'iters':>10s}   (steps/iters over cases both solved)")
-    out.append(f"{'baseline':14s} {bs['solved']:>7d}/{bs['total']:<4d} {bs['steps']:>10d} {bs['iters']:>10d}")
-    out.append(f"{'candidate':14s} {cs['solved']:>7d}/{cs['total']:<4d} {cs['steps']:>10d} {cs['iters']:>10d}"
-               f"   {verdict(cs, bs)} vs baseline")
+    def row(tag, d, suffix=""):
+        return (f"{tag:14s} {d['solved']:>3d}/{d['total']:<3d} {d['real_solved']:>3d}/{d['real_total']:<3d}"
+                f" {d['real_steps']:>10d} {d['steps']:>8d} {d['iters']:>9d}{suffix}")
+    out.append(f"{'':14s} {'solved':>7s} {'real':>7s} {'REAL steps':>10s} {'steps':>8s} {'iters':>9s}")
+    out.append(row("baseline", bs))
+    out.append(row("candidate", cs, f"   {verdict(cs, bs)} vs baseline"))
     if head_rows:
         hs = summarise(head_rows, base_rows)
         cs_h = summarise(cur_rows, head_rows)
         hs_h = summarise(head_rows, head_rows)
-        out.append(f"{'ratchet head':14s} {hs['solved']:>7d}/{hs['total']:<4d} {hs['steps']:>10d} {hs['iters']:>10d}")
-        out.append(f"{'':14s} {'':12s} {'':10s} {'':10s}   {verdict(cs_h, hs_h)} vs head")
+        out.append(row("ratchet head", hs))
+        out.append(f"{'':14s} {'':7s} {'':7s} {'':10s} {'':8s} {'':9s}   {verdict(cs_h, hs_h)} vs head")
     return "\n".join(out)
 
 
