@@ -5,10 +5,18 @@ KBase catalog against this library and named the verbs nothing here performed;
 `research/kbase/curation/r3/proposals.yml` carries the proposal each of these files was
 written from -- its signature, the tool it runs, and what running it buys.
 
-**Every body in this directory is a stub.** It touches the files it declares and runs no tool.
-The real command is in a comment at the top of each protocol, taken from the proposal. The
-signatures are load-bearing and the bodies are not: this directory exists so the planner can
-route through these steps before any of them is implemented.
+**Every body here runs its tool, and twenty of the twenty-one have been executed.** Curation
+round 5 wrote them; `research/kbase/curation/r5/runs.md` is the record of what each run
+produced and what was checked in it, and `fixtures.md` beside it is the recipe for rebuilding
+the inputs. `build_tree/gtdbtk_tree.py` is the exception and says so in its own body: its
+reference is the GTDB release, ~110 GB, and it was checked by reading
+`metagenomics/taxonomy/gtdbtk.py` -- same image, same bind, same `GTDBTK_DATA_PATH` -- rather
+than by running.
+
+Eight of these are an algorithm rather than a shell command, so the algorithm lives under
+`resources/lib/` and the protocol is one `python <script> <args>` line. `lib::modelling` is
+the largest: the four metabolic bodies plus the MetaNetX helpers lifted out of
+`research/fabfos/benchmarks/laser/vs_gem/`.
 
 This is a library ROOT, not a group -- `transforms/*/` enumerates roots and each root globs
 itself recursively, so the verb directories below are ordinary subdirectories and

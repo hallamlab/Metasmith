@@ -308,7 +308,7 @@
     "image": "quay.io/hallamlab/ecspr_bake:dgbyg",
     "conda": "build-refs-dgbyg",
     "compressed_bytes": null,
-    "note": "HTTPError: HTTP Error 401: Unauthorized",
+    "note": "HTTPError: HTTP Error 401: UNAUTHORIZED",
     "provides": [
       "dgbyg"
     ],
@@ -803,7 +803,7 @@
     "image": "quay.io/hallamlab/external_mobileelementfinder:1.1.2",
     "conda": null,
     "compressed_bytes": null,
-    "note": "HTTPError: HTTP Error 401: Unauthorized",
+    "note": "HTTPError: HTTP Error 401: UNAUTHORIZED",
     "provides": [
       "mefinder"
     ],
@@ -868,7 +868,7 @@
     "image": "quay.io/txyliu/pathologic:latest",
     "conda": null,
     "compressed_bytes": null,
-    "note": "HTTPError: HTTP Error 401: Unauthorized",
+    "note": "HTTPError: HTTP Error 401: UNAUTHORIZED",
     "provides": [
       "pathologic",
       "dump_pgdb_csvs"
@@ -1032,8 +1032,7 @@
       "py/xmltodict",
       "py/plotly",
       "py/matplotlib",
-      "py/biopython",
-      "py/polars"
+      "py/biopython"
     ],
     "required_by": [
       "fabfos/gpr_4lane",
