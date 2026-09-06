@@ -18,7 +18,7 @@
 //! holds a value only while its stamp is the current generation, so `clear` is
 //! an increment.
 
-use crate::model::EpSig;
+use crate::model::{EpId, EpSig};
 use crate::search::ApplId;
 
 /// A `Set<EpSig>` as a stamp array.
@@ -119,8 +119,8 @@ impl<V: Copy + Default> SigMap<V> {
 /// Every table `score` builds, allocated once for the whole refine and reused.
 ///
 /// Field-by-field rather than behind accessors because the borrow checker has
-/// to see the pieces as disjoint: `has_ancestor` reads `produced_from` while
-/// writing its own `seen` set, and that is one `&mut Scratch` split two ways.
+/// to see the pieces as disjoint: `depth_walk` reads `produced_from` while
+/// writing a pooled depth map, and that is one `&mut Scratch` split two ways.
 #[derive(Default)]
 pub struct Scratch {
     /// `produced_from` -- for a produced signature, the inputs of the step that
@@ -129,9 +129,11 @@ pub struct Scratch {
     pub pf_flat: Vec<EpSig>,
     /// `have` -- what is schedulable so far, in `is_valid`.
     pub have: SigSet,
-    /// `seen` and the stack of one `has_ancestor` walk.
+    /// One `has_ancestor` walk: `seen` is keyed by signature, the stack holds
+    /// identities, because the parent relation is over identities and Python's
+    /// endpoint equality is over signatures.
     pub anc_seen: SigSet,
-    pub anc_todo: Vec<EpSig>,
+    pub anc_todo: Vec<EpId>,
     /// `used_as_lineage`.
     pub lin_used: SigSet,
     /// `depth_maps` -- one depth table per distinct walk source, pooled by

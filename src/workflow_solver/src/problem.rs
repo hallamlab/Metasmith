@@ -96,6 +96,9 @@ pub struct Problem {
     pub free_transforms: Vec<TransformId>,
     /// No route from the givens to the target; the search never starts.
     pub no_path_possible: bool,
+    /// Per transform: 1.0 when applying it can re-enable itself with nothing
+    /// gained. See `derive`.
+    pub self_feed: Vec<f64>,
 }
 
 impl Problem {
@@ -229,6 +232,7 @@ impl Problem {
             relevant_transforms: Vec::new(),
             free_transforms: Vec::new(),
             no_path_possible: false,
+            self_feed: Vec::new(),
         };
         p.derive();
         Ok((p, endpoints))
@@ -248,6 +252,33 @@ impl Problem {
 
     fn derive(&mut self) {
         let n = self.transforms.len();
+
+        // Which transforms can feed themselves forever.
+        //
+        // A transform whose product satisfies one of its own requirements
+        // re-enters the frontier every time it is applied, so its copies grow
+        // without bound while the chain that reaches the target sits at one copy.
+        // `product2consumer` cannot see this: it skips `parent == child` because
+        // Python's does.
+        //
+        // The test is type *equality*, not `is_a`. A product that is a strict
+        // superset of the requirement also re-enables the transform, but it adds
+        // a property each time, so the state signature moves and the search
+        // terminates on its own -- that is an enrichment step, and the shipped
+        // metagenomics workflow has exactly one. A product of the same type adds
+        // nothing: the loop is the whole of what it does. Across the ratchet
+        // corpus the equality test is 0 on all 17 real payloads and 1-5 on every
+        // generated one, so a policy that reads it cannot move a real plan.
+        self.self_feed = vec![0.0; n];
+        for t in 0..n {
+            let looped = self.transforms[t].produces.iter().flatten().any(|&prod| {
+                self.transforms[t]
+                    .requires
+                    .iter()
+                    .any(|&req| self.dep_is_a(prod, req) && self.dep_is_a(req, prod))
+            });
+            if looped { self.self_feed[t] = 1.0; }
+        }
         // Pairwise, as Python does it: an index built to avoid the quadratic
         // loop would still have to reproduce this answer for the pathological
         // cases.

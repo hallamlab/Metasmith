@@ -1,0 +1,4 @@
+12fe650f009f78f8dddcac7a907e91d28db62a422fb6cffb6d670c3c7abd00f7  src/solver_witness + src/solver_witness_audit
+# recorded when the proof was last adjudicated by docker/solver_witness/dev.sh --lean-check.
+# `score` refuses to report a number if this moves: a round that changes the judge
+# has measured nothing. Re-run the lean gate, then re-record.

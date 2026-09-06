@@ -4,8 +4,16 @@ import pytest
 import time
 from collections import Counter
 
-from metasmith.models.solver_backend import UsePythonSolver
+from metasmith.models.solver_engine import EngineFor
 from metasmith.testing.solver_verification import GeneratorDials, generate_problem
+
+
+@pytest.fixture(scope="module")
+def engine():
+    info = EngineFor("solve")
+    if info is None:
+        pytest.skip("no msm_solver advertising `solve` (./dev/metasmith.sh -bel)")
+    return info
 
 _DENSE_CYCLES = GeneratorDials(
     n_types=12, n_extra_transforms=24, cycle_density=1.0, max_requirements=3
@@ -29,15 +37,20 @@ def test_a_densely_cyclic_universe_does_not_stall_the_preamble():
     )
 
 
-@pytest.mark.python_solver
-def test_transforms_sharing_a_key_each_keep_their_own_distance():
-    problem = generate_problem(11, _DUPLICATES, name="dupes")
-    with UsePythonSolver():
-        solution = problem.solve()
-    distances = (solution._heuristics or {}).get("distance_scores")
-    assert distances, "the python solver stopped reporting distance_scores"
+def test_transforms_sharing_a_key_each_keep_their_own_distance(engine):
+    from metasmith.models.solver_engine import CallEngine, SOLVER_WIRE_VERSION
+    from metasmith.models.solver_wire import encode_problem
 
-    by_key = Counter(tr.key for tr in distances)
+    problem = generate_problem(11, _DUPLICATES, name="dupes")
+    encoded = encode_problem(
+        problem.given, problem.transforms, problem.target,
+        seed=42, max_iter=256, max_refine=0, wire_version=SOLVER_WIRE_VERSION,
+    )
+    reply = CallEngine(engine, "describe", encoded.payload)
+    distances = dict(reply["distance"])
+    assert distances, "the engine stopped reporting distances"
+
+    by_key = Counter(encoded.transforms[i].key for i in distances)
     shared = sorted(k for k, n in by_key.items() if n > 1)
     assert shared, (
         "every key in the distance table is unique, so either the memo went back"
