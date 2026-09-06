@@ -33,49 +33,7 @@ _DIR_MARKERS: list[tuple[str, list[str]]] = [
 ]
 
 
-def pytest_addoption(parser):
-    parser.addoption(
-        "--solver", action="store", default="auto",
-        choices=["auto", "python", "rust"],
-        help="solver implementation for this session (default: auto)",
-    )
-    parser.addoption(
-        "--python-solver", action="store_true", default=False,
-        help="also run the tests that need the python solver (see the"
-             " `python_solver` marker); off by default, including in the"
-             " release suite",
-    )
-
-
-@pytest.fixture(scope="session", autouse=True)
-def _solver_selection(request):
-    from metasmith.models.solver_backend import (
-        PythonSolver, RustSolver, _set_solver_class,
-    )
-    choice = request.config.getoption("--solver")
-    if choice == "auto":
-        yield
-        return
-    if choice == "rust" and not RustSolver.Available():
-        pytest.fail(
-            "--solver=rust, but no msm_solver advertising `solve` is staged for"
-            " this platform (./dev.sh -bel). Refusing to run the python solver"
-            " under a rust label."
-        )
-    previous = _set_solver_class(PythonSolver if choice == "python" else RustSolver)
-    yield
-    _set_solver_class(previous)
-
-
 def pytest_collection_modifyitems(config, items):
-    if not config.getoption("--python-solver"):
-        skip_python_solver = pytest.mark.skip(
-            reason="needs the python solver; pass --python-solver to run it"
-        )
-        for item in items:
-            if "python_solver" in item.keywords:
-                item.add_marker(skip_python_solver)
-
     unclaimed: list[str] = []
     for item in items:
         rel = Path(item.fspath).resolve().relative_to(_TESTS_ROOT)

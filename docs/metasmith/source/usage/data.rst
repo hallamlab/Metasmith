@@ -34,8 +34,10 @@ Definitions
 Metasmith describes data types using set of properties, which enables
 comparions between data to leverage set operations. For example, if we have two types: A = {1, 2} and 
 B = {1, 2, 3}, then B may replace A since B can provide all properties that A can provide. Formally,
-if A is a subset of B (A ⊆ B), then A is substitutable by B. Practically, if the properties of an output A
-is a subset of the properties of required input B, then A can be used as the input B.
+if A is a subset of B (A ⊆ B), then A is substitutable by B. Practically, an output can be used where an
+input is required when the *input's* properties are a subset of the *output's* — the output carries at
+least everything the input demands, and may carry more. The direction is not symmetric, and reversing it
+yields a planner that appears to work while building wrong chains.
 
 Data type objects within the Metasmith API are called Endpoints to avoid conflicts with python types and because they
 exist at either end of `transforms <transforms.html>`_.

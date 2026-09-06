@@ -1,0 +1,1168 @@
+{
+  "fast": [
+    {
+      "name": "shipped",
+      "file": "shipped.json",
+      "iter": 256,
+      "refine": 8,
+      "timeout": 120
+    },
+    {
+      "name": "unpinned",
+      "file": "unpinned.json",
+      "iter": 256,
+      "refine": 8,
+      "timeout": 120
+    },
+    {
+      "name": "orfs_only",
+      "file": "orfs_only.json",
+      "iter": 256,
+      "refine": 8,
+      "timeout": 120
+    },
+    {
+      "name": "bins_only",
+      "file": "bins_only.json",
+      "iter": 256,
+      "refine": 8,
+      "timeout": 120
+    },
+    {
+      "name": "sink16-100",
+      "file": "sink16-100.json",
+      "iter": 256,
+      "refine": 8,
+      "timeout": 60
+    },
+    {
+      "name": "sink16-101",
+      "file": "sink16-101.json",
+      "iter": 256,
+      "refine": 8,
+      "timeout": 60
+    },
+    {
+      "name": "sink16-102",
+      "file": "sink16-102.json",
+      "iter": 256,
+      "refine": 8,
+      "timeout": 60
+    },
+    {
+      "name": "sink16-103",
+      "file": "sink16-103.json",
+      "iter": 256,
+      "refine": 8,
+      "timeout": 60
+    },
+    {
+      "name": "sink16-104",
+      "file": "sink16-104.json",
+      "iter": 256,
+      "refine": 8,
+      "timeout": 60
+    },
+    {
+      "name": "sink16-105",
+      "file": "sink16-105.json",
+      "iter": 256,
+      "refine": 8,
+      "timeout": 60
+    },
+    {
+      "name": "sink16-106",
+      "file": "sink16-106.json",
+      "iter": 256,
+      "refine": 8,
+      "timeout": 60
+    },
+    {
+      "name": "sink16-107",
+      "file": "sink16-107.json",
+      "iter": 256,
+      "refine": 8,
+      "timeout": 60
+    },
+    {
+      "name": "sink16-108",
+      "file": "sink16-108.json",
+      "iter": 256,
+      "refine": 8,
+      "timeout": 60
+    },
+    {
+      "name": "sink16-109",
+      "file": "sink16-109.json",
+      "iter": 256,
+      "refine": 8,
+      "timeout": 60
+    },
+    {
+      "name": "sink16-110",
+      "file": "sink16-110.json",
+      "iter": 256,
+      "refine": 8,
+      "timeout": 60
+    },
+    {
+      "name": "sink16-111",
+      "file": "sink16-111.json",
+      "iter": 256,
+      "refine": 8,
+      "timeout": 60
+    },
+    {
+      "name": "sink16-112",
+      "file": "sink16-112.json",
+      "iter": 256,
+      "refine": 8,
+      "timeout": 60
+    },
+    {
+      "name": "sink16-113",
+      "file": "sink16-113.json",
+      "iter": 256,
+      "refine": 8,
+      "timeout": 60
+    },
+    {
+      "name": "sink16-114",
+      "file": "sink16-114.json",
+      "iter": 256,
+      "refine": 8,
+      "timeout": 60
+    },
+    {
+      "name": "sink16-115",
+      "file": "sink16-115.json",
+      "iter": 256,
+      "refine": 8,
+      "timeout": 60
+    },
+    {
+      "name": "sink26-100",
+      "file": "sink26-100.json",
+      "iter": 256,
+      "refine": 8,
+      "timeout": 60
+    },
+    {
+      "name": "sink26-101",
+      "file": "sink26-101.json",
+      "iter": 256,
+      "refine": 8,
+      "timeout": 60
+    },
+    {
+      "name": "sink26-102",
+      "file": "sink26-102.json",
+      "iter": 256,
+      "refine": 8,
+      "timeout": 60
+    },
+    {
+      "name": "sink26-103",
+      "file": "sink26-103.json",
+      "iter": 256,
+      "refine": 8,
+      "timeout": 60
+    },
+    {
+      "name": "sink26-104",
+      "file": "sink26-104.json",
+      "iter": 256,
+      "refine": 8,
+      "timeout": 60
+    },
+    {
+      "name": "sink26-105",
+      "file": "sink26-105.json",
+      "iter": 256,
+      "refine": 8,
+      "timeout": 60
+    },
+    {
+      "name": "sink26-106",
+      "file": "sink26-106.json",
+      "iter": 256,
+      "refine": 8,
+      "timeout": 60
+    },
+    {
+      "name": "sink26-107",
+      "file": "sink26-107.json",
+      "iter": 256,
+      "refine": 8,
+      "timeout": 60
+    },
+    {
+      "name": "sink26-108",
+      "file": "sink26-108.json",
+      "iter": 256,
+      "refine": 8,
+      "timeout": 60
+    },
+    {
+      "name": "sink26-109",
+      "file": "sink26-109.json",
+      "iter": 256,
+      "refine": 8,
+      "timeout": 60
+    },
+    {
+      "name": "sink26-110",
+      "file": "sink26-110.json",
+      "iter": 256,
+      "refine": 8,
+      "timeout": 60
+    },
+    {
+      "name": "sink26-111",
+      "file": "sink26-111.json",
+      "iter": 256,
+      "refine": 8,
+      "timeout": 60
+    },
+    {
+      "name": "sink26-112",
+      "file": "sink26-112.json",
+      "iter": 256,
+      "refine": 8,
+      "timeout": 60
+    },
+    {
+      "name": "sink26-113",
+      "file": "sink26-113.json",
+      "iter": 256,
+      "refine": 8,
+      "timeout": 60
+    },
+    {
+      "name": "sink26-114",
+      "file": "sink26-114.json",
+      "iter": 256,
+      "refine": 8,
+      "timeout": 60
+    },
+    {
+      "name": "sink26-115",
+      "file": "sink26-115.json",
+      "iter": 256,
+      "refine": 8,
+      "timeout": 60
+    },
+    {
+      "name": "sink40-100",
+      "file": "sink40-100.json",
+      "iter": 256,
+      "refine": 8,
+      "timeout": 60
+    },
+    {
+      "name": "sink40-101",
+      "file": "sink40-101.json",
+      "iter": 256,
+      "refine": 8,
+      "timeout": 60
+    },
+    {
+      "name": "sink40-102",
+      "file": "sink40-102.json",
+      "iter": 256,
+      "refine": 8,
+      "timeout": 60
+    },
+    {
+      "name": "sink40-103",
+      "file": "sink40-103.json",
+      "iter": 256,
+      "refine": 8,
+      "timeout": 60
+    },
+    {
+      "name": "sink40-104",
+      "file": "sink40-104.json",
+      "iter": 256,
+      "refine": 8,
+      "timeout": 60
+    },
+    {
+      "name": "sink40-105",
+      "file": "sink40-105.json",
+      "iter": 256,
+      "refine": 8,
+      "timeout": 60
+    },
+    {
+      "name": "sink40-106",
+      "file": "sink40-106.json",
+      "iter": 256,
+      "refine": 8,
+      "timeout": 60
+    },
+    {
+      "name": "sink40-107",
+      "file": "sink40-107.json",
+      "iter": 256,
+      "refine": 8,
+      "timeout": 60
+    },
+    {
+      "name": "sink40-108",
+      "file": "sink40-108.json",
+      "iter": 256,
+      "refine": 8,
+      "timeout": 60
+    },
+    {
+      "name": "sink40-109",
+      "file": "sink40-109.json",
+      "iter": 256,
+      "refine": 8,
+      "timeout": 60
+    },
+    {
+      "name": "sink40-110",
+      "file": "sink40-110.json",
+      "iter": 256,
+      "refine": 8,
+      "timeout": 60
+    },
+    {
+      "name": "sink40-111",
+      "file": "sink40-111.json",
+      "iter": 256,
+      "refine": 8,
+      "timeout": 60
+    },
+    {
+      "name": "sink40-112",
+      "file": "sink40-112.json",
+      "iter": 256,
+      "refine": 8,
+      "timeout": 60
+    },
+    {
+      "name": "sink40-113",
+      "file": "sink40-113.json",
+      "iter": 256,
+      "refine": 8,
+      "timeout": 60
+    },
+    {
+      "name": "sink40-114",
+      "file": "sink40-114.json",
+      "iter": 256,
+      "refine": 8,
+      "timeout": 60
+    },
+    {
+      "name": "sink40-115",
+      "file": "sink40-115.json",
+      "iter": 256,
+      "refine": 8,
+      "timeout": 60
+    },
+    {
+      "name": "sink55-100",
+      "file": "sink55-100.json",
+      "iter": 256,
+      "refine": 8,
+      "timeout": 60
+    },
+    {
+      "name": "sink55-101",
+      "file": "sink55-101.json",
+      "iter": 256,
+      "refine": 8,
+      "timeout": 60
+    },
+    {
+      "name": "sink55-102",
+      "file": "sink55-102.json",
+      "iter": 256,
+      "refine": 8,
+      "timeout": 60
+    },
+    {
+      "name": "sink55-103",
+      "file": "sink55-103.json",
+      "iter": 256,
+      "refine": 8,
+      "timeout": 60
+    },
+    {
+      "name": "sink55-104",
+      "file": "sink55-104.json",
+      "iter": 256,
+      "refine": 8,
+      "timeout": 60
+    },
+    {
+      "name": "sink55-105",
+      "file": "sink55-105.json",
+      "iter": 256,
+      "refine": 8,
+      "timeout": 60
+    },
+    {
+      "name": "sink55-106",
+      "file": "sink55-106.json",
+      "iter": 256,
+      "refine": 8,
+      "timeout": 60
+    },
+    {
+      "name": "sink55-107",
+      "file": "sink55-107.json",
+      "iter": 256,
+      "refine": 8,
+      "timeout": 60
+    },
+    {
+      "name": "sink55-108",
+      "file": "sink55-108.json",
+      "iter": 256,
+      "refine": 8,
+      "timeout": 60
+    },
+    {
+      "name": "sink55-109",
+      "file": "sink55-109.json",
+      "iter": 256,
+      "refine": 8,
+      "timeout": 60
+    },
+    {
+      "name": "sink55-110",
+      "file": "sink55-110.json",
+      "iter": 256,
+      "refine": 8,
+      "timeout": 60
+    },
+    {
+      "name": "sink55-111",
+      "file": "sink55-111.json",
+      "iter": 256,
+      "refine": 8,
+      "timeout": 60
+    },
+    {
+      "name": "sink55-112",
+      "file": "sink55-112.json",
+      "iter": 256,
+      "refine": 8,
+      "timeout": 60
+    },
+    {
+      "name": "sink55-113",
+      "file": "sink55-113.json",
+      "iter": 256,
+      "refine": 8,
+      "timeout": 60
+    },
+    {
+      "name": "sink55-114",
+      "file": "sink55-114.json",
+      "iter": 256,
+      "refine": 8,
+      "timeout": 60
+    },
+    {
+      "name": "sink55-115",
+      "file": "sink55-115.json",
+      "iter": 256,
+      "refine": 8,
+      "timeout": 60
+    },
+    {
+      "name": "ladder-3",
+      "file": "ladder-3.json",
+      "iter": 256,
+      "refine": 8,
+      "timeout": 120
+    },
+    {
+      "name": "ladder-10",
+      "file": "ladder-10.json",
+      "iter": 256,
+      "refine": 8,
+      "timeout": 120
+    },
+    {
+      "name": "ladder-15",
+      "file": "ladder-15.json",
+      "iter": 256,
+      "refine": 8,
+      "timeout": 120
+    },
+    {
+      "name": "ladder-20",
+      "file": "ladder-20.json",
+      "iter": 256,
+      "refine": 8,
+      "timeout": 120
+    },
+    {
+      "name": "ladder-25",
+      "file": "ladder-25.json",
+      "iter": 256,
+      "refine": 8,
+      "timeout": 120
+    },
+    {
+      "name": "ladder-26",
+      "file": "ladder-26.json",
+      "iter": 256,
+      "refine": 8,
+      "timeout": 120
+    },
+    {
+      "name": "ladder-28",
+      "file": "ladder-28.json",
+      "iter": 256,
+      "refine": 8,
+      "timeout": 120
+    },
+    {
+      "name": "ladder-32",
+      "file": "ladder-32.json",
+      "iter": 256,
+      "refine": 8,
+      "timeout": 120
+    },
+    {
+      "name": "ladder-33",
+      "file": "ladder-33.json",
+      "iter": 256,
+      "refine": 8,
+      "timeout": 120
+    },
+    {
+      "name": "ladder-43",
+      "file": "ladder-43.json",
+      "iter": 256,
+      "refine": 8,
+      "timeout": 120
+    },
+    {
+      "name": "ladder-53",
+      "file": "ladder-53.json",
+      "iter": 256,
+      "refine": 8,
+      "timeout": 120
+    },
+    {
+      "name": "ladder-62",
+      "file": "ladder-62.json",
+      "iter": 256,
+      "refine": 8,
+      "timeout": 120
+    },
+    {
+      "name": "ladder-68",
+      "file": "ladder-68.json",
+      "iter": 256,
+      "refine": 8,
+      "timeout": 120
+    }
+  ],
+  "full": [
+    {
+      "name": "shipped",
+      "file": "shipped.json",
+      "iter": 256,
+      "refine": 8,
+      "timeout": 120
+    },
+    {
+      "name": "unpinned",
+      "file": "unpinned.json",
+      "iter": 256,
+      "refine": 8,
+      "timeout": 120
+    },
+    {
+      "name": "orfs_only",
+      "file": "orfs_only.json",
+      "iter": 256,
+      "refine": 8,
+      "timeout": 120
+    },
+    {
+      "name": "bins_only",
+      "file": "bins_only.json",
+      "iter": 256,
+      "refine": 8,
+      "timeout": 120
+    },
+    {
+      "name": "sink16-100",
+      "file": "sink16-100.json",
+      "iter": 256,
+      "refine": 8,
+      "timeout": 60
+    },
+    {
+      "name": "sink16-101",
+      "file": "sink16-101.json",
+      "iter": 256,
+      "refine": 8,
+      "timeout": 60
+    },
+    {
+      "name": "sink16-102",
+      "file": "sink16-102.json",
+      "iter": 256,
+      "refine": 8,
+      "timeout": 60
+    },
+    {
+      "name": "sink16-103",
+      "file": "sink16-103.json",
+      "iter": 256,
+      "refine": 8,
+      "timeout": 60
+    },
+    {
+      "name": "sink16-104",
+      "file": "sink16-104.json",
+      "iter": 256,
+      "refine": 8,
+      "timeout": 60
+    },
+    {
+      "name": "sink16-105",
+      "file": "sink16-105.json",
+      "iter": 256,
+      "refine": 8,
+      "timeout": 60
+    },
+    {
+      "name": "sink16-106",
+      "file": "sink16-106.json",
+      "iter": 256,
+      "refine": 8,
+      "timeout": 60
+    },
+    {
+      "name": "sink16-107",
+      "file": "sink16-107.json",
+      "iter": 256,
+      "refine": 8,
+      "timeout": 60
+    },
+    {
+      "name": "sink16-108",
+      "file": "sink16-108.json",
+      "iter": 256,
+      "refine": 8,
+      "timeout": 60
+    },
+    {
+      "name": "sink16-109",
+      "file": "sink16-109.json",
+      "iter": 256,
+      "refine": 8,
+      "timeout": 60
+    },
+    {
+      "name": "sink16-110",
+      "file": "sink16-110.json",
+      "iter": 256,
+      "refine": 8,
+      "timeout": 60
+    },
+    {
+      "name": "sink16-111",
+      "file": "sink16-111.json",
+      "iter": 256,
+      "refine": 8,
+      "timeout": 60
+    },
+    {
+      "name": "sink16-112",
+      "file": "sink16-112.json",
+      "iter": 256,
+      "refine": 8,
+      "timeout": 60
+    },
+    {
+      "name": "sink16-113",
+      "file": "sink16-113.json",
+      "iter": 256,
+      "refine": 8,
+      "timeout": 60
+    },
+    {
+      "name": "sink16-114",
+      "file": "sink16-114.json",
+      "iter": 256,
+      "refine": 8,
+      "timeout": 60
+    },
+    {
+      "name": "sink16-115",
+      "file": "sink16-115.json",
+      "iter": 256,
+      "refine": 8,
+      "timeout": 60
+    },
+    {
+      "name": "sink26-100",
+      "file": "sink26-100.json",
+      "iter": 256,
+      "refine": 8,
+      "timeout": 60
+    },
+    {
+      "name": "sink26-101",
+      "file": "sink26-101.json",
+      "iter": 256,
+      "refine": 8,
+      "timeout": 60
+    },
+    {
+      "name": "sink26-102",
+      "file": "sink26-102.json",
+      "iter": 256,
+      "refine": 8,
+      "timeout": 60
+    },
+    {
+      "name": "sink26-103",
+      "file": "sink26-103.json",
+      "iter": 256,
+      "refine": 8,
+      "timeout": 60
+    },
+    {
+      "name": "sink26-104",
+      "file": "sink26-104.json",
+      "iter": 256,
+      "refine": 8,
+      "timeout": 60
+    },
+    {
+      "name": "sink26-105",
+      "file": "sink26-105.json",
+      "iter": 256,
+      "refine": 8,
+      "timeout": 60
+    },
+    {
+      "name": "sink26-106",
+      "file": "sink26-106.json",
+      "iter": 256,
+      "refine": 8,
+      "timeout": 60
+    },
+    {
+      "name": "sink26-107",
+      "file": "sink26-107.json",
+      "iter": 256,
+      "refine": 8,
+      "timeout": 60
+    },
+    {
+      "name": "sink26-108",
+      "file": "sink26-108.json",
+      "iter": 256,
+      "refine": 8,
+      "timeout": 60
+    },
+    {
+      "name": "sink26-109",
+      "file": "sink26-109.json",
+      "iter": 256,
+      "refine": 8,
+      "timeout": 60
+    },
+    {
+      "name": "sink26-110",
+      "file": "sink26-110.json",
+      "iter": 256,
+      "refine": 8,
+      "timeout": 60
+    },
+    {
+      "name": "sink26-111",
+      "file": "sink26-111.json",
+      "iter": 256,
+      "refine": 8,
+      "timeout": 60
+    },
+    {
+      "name": "sink26-112",
+      "file": "sink26-112.json",
+      "iter": 256,
+      "refine": 8,
+      "timeout": 60
+    },
+    {
+      "name": "sink26-113",
+      "file": "sink26-113.json",
+      "iter": 256,
+      "refine": 8,
+      "timeout": 60
+    },
+    {
+      "name": "sink26-114",
+      "file": "sink26-114.json",
+      "iter": 256,
+      "refine": 8,
+      "timeout": 60
+    },
+    {
+      "name": "sink26-115",
+      "file": "sink26-115.json",
+      "iter": 256,
+      "refine": 8,
+      "timeout": 60
+    },
+    {
+      "name": "sink40-100",
+      "file": "sink40-100.json",
+      "iter": 256,
+      "refine": 8,
+      "timeout": 60
+    },
+    {
+      "name": "sink40-101",
+      "file": "sink40-101.json",
+      "iter": 256,
+      "refine": 8,
+      "timeout": 60
+    },
+    {
+      "name": "sink40-102",
+      "file": "sink40-102.json",
+      "iter": 256,
+      "refine": 8,
+      "timeout": 60
+    },
+    {
+      "name": "sink40-103",
+      "file": "sink40-103.json",
+      "iter": 256,
+      "refine": 8,
+      "timeout": 60
+    },
+    {
+      "name": "sink40-104",
+      "file": "sink40-104.json",
+      "iter": 256,
+      "refine": 8,
+      "timeout": 60
+    },
+    {
+      "name": "sink40-105",
+      "file": "sink40-105.json",
+      "iter": 256,
+      "refine": 8,
+      "timeout": 60
+    },
+    {
+      "name": "sink40-106",
+      "file": "sink40-106.json",
+      "iter": 256,
+      "refine": 8,
+      "timeout": 60
+    },
+    {
+      "name": "sink40-107",
+      "file": "sink40-107.json",
+      "iter": 256,
+      "refine": 8,
+      "timeout": 60
+    },
+    {
+      "name": "sink40-108",
+      "file": "sink40-108.json",
+      "iter": 256,
+      "refine": 8,
+      "timeout": 60
+    },
+    {
+      "name": "sink40-109",
+      "file": "sink40-109.json",
+      "iter": 256,
+      "refine": 8,
+      "timeout": 60
+    },
+    {
+      "name": "sink40-110",
+      "file": "sink40-110.json",
+      "iter": 256,
+      "refine": 8,
+      "timeout": 60
+    },
+    {
+      "name": "sink40-111",
+      "file": "sink40-111.json",
+      "iter": 256,
+      "refine": 8,
+      "timeout": 60
+    },
+    {
+      "name": "sink40-112",
+      "file": "sink40-112.json",
+      "iter": 256,
+      "refine": 8,
+      "timeout": 60
+    },
+    {
+      "name": "sink40-113",
+      "file": "sink40-113.json",
+      "iter": 256,
+      "refine": 8,
+      "timeout": 60
+    },
+    {
+      "name": "sink40-114",
+      "file": "sink40-114.json",
+      "iter": 256,
+      "refine": 8,
+      "timeout": 60
+    },
+    {
+      "name": "sink40-115",
+      "file": "sink40-115.json",
+      "iter": 256,
+      "refine": 8,
+      "timeout": 60
+    },
+    {
+      "name": "sink55-100",
+      "file": "sink55-100.json",
+      "iter": 256,
+      "refine": 8,
+      "timeout": 60
+    },
+    {
+      "name": "sink55-101",
+      "file": "sink55-101.json",
+      "iter": 256,
+      "refine": 8,
+      "timeout": 60
+    },
+    {
+      "name": "sink55-102",
+      "file": "sink55-102.json",
+      "iter": 256,
+      "refine": 8,
+      "timeout": 60
+    },
+    {
+      "name": "sink55-103",
+      "file": "sink55-103.json",
+      "iter": 256,
+      "refine": 8,
+      "timeout": 60
+    },
+    {
+      "name": "sink55-104",
+      "file": "sink55-104.json",
+      "iter": 256,
+      "refine": 8,
+      "timeout": 60
+    },
+    {
+      "name": "sink55-105",
+      "file": "sink55-105.json",
+      "iter": 256,
+      "refine": 8,
+      "timeout": 60
+    },
+    {
+      "name": "sink55-106",
+      "file": "sink55-106.json",
+      "iter": 256,
+      "refine": 8,
+      "timeout": 60
+    },
+    {
+      "name": "sink55-107",
+      "file": "sink55-107.json",
+      "iter": 256,
+      "refine": 8,
+      "timeout": 60
+    },
+    {
+      "name": "sink55-108",
+      "file": "sink55-108.json",
+      "iter": 256,
+      "refine": 8,
+      "timeout": 60
+    },
+    {
+      "name": "sink55-109",
+      "file": "sink55-109.json",
+      "iter": 256,
+      "refine": 8,
+      "timeout": 60
+    },
+    {
+      "name": "sink55-110",
+      "file": "sink55-110.json",
+      "iter": 256,
+      "refine": 8,
+      "timeout": 60
+    },
+    {
+      "name": "sink55-111",
+      "file": "sink55-111.json",
+      "iter": 256,
+      "refine": 8,
+      "timeout": 60
+    },
+    {
+      "name": "sink55-112",
+      "file": "sink55-112.json",
+      "iter": 256,
+      "refine": 8,
+      "timeout": 60
+    },
+    {
+      "name": "sink55-113",
+      "file": "sink55-113.json",
+      "iter": 256,
+      "refine": 8,
+      "timeout": 60
+    },
+    {
+      "name": "sink55-114",
+      "file": "sink55-114.json",
+      "iter": 256,
+      "refine": 8,
+      "timeout": 60
+    },
+    {
+      "name": "sink55-115",
+      "file": "sink55-115.json",
+      "iter": 256,
+      "refine": 8,
+      "timeout": 60
+    },
+    {
+      "name": "ladder-3",
+      "file": "ladder-3.json",
+      "iter": 256,
+      "refine": 8,
+      "timeout": 120
+    },
+    {
+      "name": "ladder-10",
+      "file": "ladder-10.json",
+      "iter": 256,
+      "refine": 8,
+      "timeout": 120
+    },
+    {
+      "name": "ladder-15",
+      "file": "ladder-15.json",
+      "iter": 256,
+      "refine": 8,
+      "timeout": 120
+    },
+    {
+      "name": "ladder-20",
+      "file": "ladder-20.json",
+      "iter": 256,
+      "refine": 8,
+      "timeout": 120
+    },
+    {
+      "name": "ladder-25",
+      "file": "ladder-25.json",
+      "iter": 256,
+      "refine": 8,
+      "timeout": 120
+    },
+    {
+      "name": "ladder-26",
+      "file": "ladder-26.json",
+      "iter": 256,
+      "refine": 8,
+      "timeout": 120
+    },
+    {
+      "name": "ladder-28",
+      "file": "ladder-28.json",
+      "iter": 256,
+      "refine": 8,
+      "timeout": 120
+    },
+    {
+      "name": "ladder-32",
+      "file": "ladder-32.json",
+      "iter": 256,
+      "refine": 8,
+      "timeout": 120
+    },
+    {
+      "name": "ladder-33",
+      "file": "ladder-33.json",
+      "iter": 256,
+      "refine": 8,
+      "timeout": 120
+    },
+    {
+      "name": "ladder-43",
+      "file": "ladder-43.json",
+      "iter": 256,
+      "refine": 8,
+      "timeout": 120
+    },
+    {
+      "name": "ladder-53",
+      "file": "ladder-53.json",
+      "iter": 256,
+      "refine": 8,
+      "timeout": 120
+    },
+    {
+      "name": "ladder-62",
+      "file": "ladder-62.json",
+      "iter": 256,
+      "refine": 8,
+      "timeout": 120
+    },
+    {
+      "name": "ladder-68",
+      "file": "ladder-68.json",
+      "iter": 256,
+      "refine": 8,
+      "timeout": 120
+    },
+    {
+      "name": "ladder-43-r32",
+      "file": "ladder-43.json",
+      "iter": 256,
+      "refine": 32,
+      "timeout": 900
+    },
+    {
+      "name": "ladder-53-r32",
+      "file": "ladder-53.json",
+      "iter": 256,
+      "refine": 32,
+      "timeout": 900
+    },
+    {
+      "name": "ladder-62-r32",
+      "file": "ladder-62.json",
+      "iter": 256,
+      "refine": 32,
+      "timeout": 900
+    },
+    {
+      "name": "ladder-68-r32",
+      "file": "ladder-68.json",
+      "iter": 256,
+      "refine": 32,
+      "timeout": 900
+    }
+  ]
+}

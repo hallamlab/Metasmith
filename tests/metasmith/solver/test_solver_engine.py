@@ -7,13 +7,7 @@ import sys
 import pytest
 
 from metasmith.models import solver_engine as engine_module
-from metasmith.models.solver_backend import (
-    Backend,
-    PythonSolver,
-    ResetSolverSelection,
-    RustSolver,
-    _set_solver_class,
-)
+from metasmith.models.solver_backend import Backend, solve_with_engine
 from metasmith.models.solver_engine import (
     ENGINE_NAME,
     SOLVER_WIRE_VERSION,
@@ -32,11 +26,8 @@ from metasmith.testing.rng_trace import execute_ops, execute_ops_via_engine, gen
 
 @pytest.fixture(autouse=True)
 def _isolate_engine_cache():
-    previous = _set_solver_class(None)
     ResetEngineCache()
-    ResetSolverSelection()
     yield
-    _set_solver_class(previous)
     ResetEngineCache()
 
 
@@ -81,28 +72,7 @@ def test_a_missing_binary_is_the_normal_case(tmp_path, monkeypatch):
     monkeypatch.setattr(engine_module, "ENGINE_DIR", tmp_path)
     assert packaged_engine_path(tmp_path) is None
     assert GetEngine() is None
-    assert Backend("rng") == "python"
-
-
-def test_the_class_pin_forces_the_python_path(tmp_path, monkeypatch):
-    _staged(tmp_path, monkeypatch, _handshake(capabilities=["rng", "solve"]))
-    assert GetEngine() is not None
-    assert Backend("solve") == "rust"
-
-    _set_solver_class(PythonSolver)
-    assert Backend("solve") == "python"
-    assert Backend("rng") == "python"
-    assert GetEngine() is not None, "a pin selects an implementation, it does not unstage one"
-
-    _set_solver_class(None)
-    assert Backend("solve") == "rust", "None restores automatic detection"
-
-
-def test_the_pin_hands_back_what_it_replaced(tmp_path, monkeypatch):
-    _staged(tmp_path, monkeypatch, _handshake(capabilities=["rng", "solve"]))
-    assert _set_solver_class(RustSolver) is None
-    assert _set_solver_class(PythonSolver) is RustSolver
-    assert _set_solver_class(None) is PythonSolver
+    assert Backend("rng") == "none"
 
 
 @pytest.mark.parametrize(
@@ -132,11 +102,11 @@ def test_a_broken_binary_is_refused_rather_than_trusted(tmp_path, body, ids):
     assert probe_engine(_fake_engine(tmp_path, body)) is None
 
 
-def test_a_capability_it_does_not_advertise_falls_back(tmp_path, monkeypatch):
+def test_a_capability_it_does_not_advertise_is_not_claimed(tmp_path, monkeypatch):
     _staged(tmp_path, monkeypatch, _handshake())
     assert EngineFor("rng") is not None
     assert EngineFor("solve") is None
-    assert Backend("solve") == "python"
+    assert Backend("solve") == "none"
 
 
 def test_a_believed_engine_that_then_fails_raises(tmp_path, monkeypatch):
@@ -158,31 +128,18 @@ def test_a_believed_engine_round_trips_a_payload(tmp_path, monkeypatch):
     assert CallEngine(info, "rng-trace", {"seed": 7}) == {"echo": {"seed": 7}}
 
 
-def test_the_rust_solver_refuses_rather_than_serving_the_other_one(tmp_path, monkeypatch):
+def test_a_solve_with_no_usable_engine_raises(tmp_path, monkeypatch):
+    # There is no second implementation to quietly serve instead, so the only
+    # honest answer is the refusal plus which of the three things went wrong.
     _staged(tmp_path, monkeypatch, _handshake())
-    _set_solver_class(RustSolver)
-    with pytest.raises(EngineError):
-        RustSolver().Solve([set()], [], None)
+    with pytest.raises(EngineError, match="does not advertise"):
+        solve_with_engine([set()], [], None)
 
 
 def test_the_search_runs_on_the_engine_when_there_is_one():
     if packaged_engine_path() is None:
         pytest.skip("no msm_solver staged for this platform")
     assert Backend("solve") == "rust"
-
-
-@pytest.mark.python_solver
-def test_a_solve_is_identical_with_the_python_solver_pinned():
-    from metasmith.testing.solver_bench import CORPUS
-    from metasmith.testing.solver_verification import generate_problem, plan_fingerprint
-
-    seed, dials = CORPUS[0][1], CORPUS[0][2]
-    problem = generate_problem(seed, dials, name=CORPUS[0][0])
-
-    by_default = plan_fingerprint(problem.solve())
-    _set_solver_class(PythonSolver)
-    assert Backend("solve") == "python"
-    assert plan_fingerprint(problem.solve()) == by_default
 
 
 @pytest.fixture(scope="module")
