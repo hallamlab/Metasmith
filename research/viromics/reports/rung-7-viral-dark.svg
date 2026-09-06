@@ -157,433 +157,326 @@
 </g>
 <g><title>given</title>
 <polygon points="340.6,32.1 351.3,32.1 345.9,41.3" fill="#1B1E24" stroke="#636EFA" stroke-width="1.5" stroke-linejoin="round"/>
-<text x="358.4" y="41.4" font-family="Arial" font-size="13" fill="#8D97A8" text-anchor="start">given</text></g>
+<text x="358.4" y="41.4" font-family="Arial" font-size="13" fill="#E4EAEC" text-anchor="start">given</text></g>
 <g><title>viromics::contig_study</title>
 <circle cx="345.9" cy="71.2" r="5.3" fill="#1B1E24" stroke="#636EFA" stroke-width="1.5"/>
-<text x="358.4" y="65.7" font-family="Arial" font-size="6.5" fill="#6B7484" text-anchor="start">viromics</text>
-<text x="358.4" y="75.9" font-family="Arial" font-size="13" fill="#DFE3EA" text-anchor="start">contig_study</text></g>
+<text x="358.4" y="75.9" font-family="Arial" font-size="13" fill="#6E828B" text-anchor="start">contig_study</text></g>
 <g><title>sequences::read_metadata</title>
 <circle cx="345.9" cy="105.6" r="5.3" fill="#1B1E24" stroke="#636EFA" stroke-width="1.5"/>
-<text x="358.4" y="100.2" font-family="Arial" font-size="6.5" fill="#6B7484" text-anchor="start">sequences</text>
-<text x="358.4" y="110.3" font-family="Arial" font-size="13" fill="#DFE3EA" text-anchor="start">read_metadata</text></g>
+<text x="358.4" y="110.3" font-family="Arial" font-size="13" fill="#6E828B" text-anchor="start">read_metadata</text></g>
 <g><title>sequences::read_pair</title>
 <circle cx="345.9" cy="140.1" r="5.3" fill="#1B1E24" stroke="#636EFA" stroke-width="1.5"/>
-<text x="358.4" y="134.6" font-family="Arial" font-size="6.5" fill="#6B7484" text-anchor="start">sequences</text>
-<text x="358.4" y="144.8" font-family="Arial" font-size="13" fill="#DFE3EA" text-anchor="start">read_pair</text></g>
+<text x="358.4" y="144.8" font-family="Arial" font-size="13" fill="#6E828B" text-anchor="start">read_pair</text></g>
 <g><title>sequences::zipped_forward_short_reads</title>
 <circle cx="345.9" cy="174.5" r="5.3" fill="#1B1E24" stroke="#636EFA" stroke-width="1.5"/>
-<text x="358.4" y="169.1" font-family="Arial" font-size="6.5" fill="#6B7484" text-anchor="start">sequences</text>
-<text x="358.4" y="179.2" font-family="Arial" font-size="13" fill="#DFE3EA" text-anchor="start">zipped_forward_short_reads</text></g>
+<text x="358.4" y="179.2" font-family="Arial" font-size="13" fill="#6E828B" text-anchor="start">zipped_forward_short_reads</text></g>
 <g><title>sequences::zipped_reverse_short_reads</title>
 <circle cx="312.1" cy="209.0" r="5.3" fill="#1B1E24" stroke="#636EFA" stroke-width="1.5"/>
-<text x="358.4" y="203.5" font-family="Arial" font-size="6.5" fill="#6B7484" text-anchor="start">sequences</text>
-<text x="358.4" y="213.7" font-family="Arial" font-size="13" fill="#DFE3EA" text-anchor="start">zipped_reverse_short_reads</text></g>
+<text x="358.4" y="213.7" font-family="Arial" font-size="13" fill="#6E828B" text-anchor="start">zipped_reverse_short_reads</text></g>
 <g><title>7 interleave_zipped_short_reads</title>
 <polygon points="340.6,238.8 351.3,238.8 345.9,248.0" fill="#1B1E24" stroke="#EF553B" stroke-width="1.5" stroke-linejoin="round"/>
-<text x="358.4" y="238.0" font-family="Arial" font-size="6.5" fill="#5F6877" text-anchor="start">step 7</text>
-<text x="358.4" y="248.1" font-family="Arial" font-size="13" fill="#8D97A8" text-anchor="start">interleave_zipped_short_reads</text></g>
+<text x="358.4" y="248.1" font-family="Arial" font-size="13" fill="#E4EAEC" text-anchor="start">interleave_zipped_short_reads</text></g>
 <g><title>sequences::short_reads</title>
 <circle cx="345.9" cy="277.9" r="5.3" fill="#1B1E24" stroke="#636EFA" stroke-width="1.5"/>
-<text x="358.4" y="272.4" font-family="Arial" font-size="6.5" fill="#6B7484" text-anchor="start">sequences</text>
-<text x="358.4" y="282.6" font-family="Arial" font-size="13" fill="#DFE3EA" text-anchor="start">short_reads</text></g>
+<text x="358.4" y="282.6" font-family="Arial" font-size="13" fill="#6E828B" text-anchor="start">short_reads</text></g>
 <g><title>8 seqkit_reads</title>
 <polygon points="340.6,307.7 351.3,307.7 345.9,316.9" fill="#1B1E24" stroke="#636EFA" stroke-width="1.5" stroke-linejoin="round"/>
-<text x="358.4" y="306.9" font-family="Arial" font-size="6.5" fill="#5F6877" text-anchor="start">step 8</text>
-<text x="358.4" y="317.0" font-family="Arial" font-size="13" fill="#8D97A8" text-anchor="start">seqkit_reads</text></g>
+<text x="358.4" y="317.0" font-family="Arial" font-size="13" fill="#E4EAEC" text-anchor="start">seqkit_reads</text></g>
 <g><title>sequences::read_qc_stats</title>
 <circle cx="345.9" cy="346.8" r="5.3" fill="#1B1E24" stroke="#636EFA" stroke-width="1.5"/>
-<text x="358.4" y="341.3" font-family="Arial" font-size="6.5" fill="#6B7484" text-anchor="start">sequences</text>
-<text x="358.4" y="351.5" font-family="Arial" font-size="13" fill="#DFE3EA" text-anchor="start">read_qc_stats</text></g>
+<text x="358.4" y="351.5" font-family="Arial" font-size="13" fill="#6E828B" text-anchor="start">read_qc_stats</text></g>
 <g><title>9 bbduk</title>
 <polygon points="340.6,376.6 351.3,376.6 345.9,385.8" fill="#1B1E24" stroke="#EF553B" stroke-width="1.5" stroke-linejoin="round"/>
-<text x="358.4" y="375.8" font-family="Arial" font-size="6.5" fill="#5F6877" text-anchor="start">step 9</text>
-<text x="358.4" y="385.9" font-family="Arial" font-size="13" fill="#8D97A8" text-anchor="start">bbduk</text></g>
+<text x="358.4" y="385.9" font-family="Arial" font-size="13" fill="#E4EAEC" text-anchor="start">bbduk</text></g>
 <g><title>sequences::discarded_short_reads</title>
 <circle cx="329.0" cy="415.7" r="5.3" fill="#1B1E24" stroke="#EF553B" stroke-width="1.5"/>
-<text x="358.4" y="410.2" font-family="Arial" font-size="6.5" fill="#6B7484" text-anchor="start">sequences</text>
-<text x="358.4" y="420.4" font-family="Arial" font-size="13" fill="#DFE3EA" text-anchor="start">discarded_short_reads</text></g>
+<text x="358.4" y="420.4" font-family="Arial" font-size="13" fill="#6E828B" text-anchor="start">discarded_short_reads</text></g>
 <g><title>sequences::clean_short_reads</title>
 <circle cx="345.9" cy="450.1" r="5.3" fill="#1B1E24" stroke="#EF553B" stroke-width="1.5"/>
-<text x="358.4" y="444.7" font-family="Arial" font-size="6.5" fill="#6B7484" text-anchor="start">sequences</text>
-<text x="358.4" y="454.8" font-family="Arial" font-size="13" fill="#DFE3EA" text-anchor="start">clean_short_reads</text></g>
+<text x="358.4" y="454.8" font-family="Arial" font-size="13" fill="#6E828B" text-anchor="start">clean_short_reads</text></g>
 <g><title>10 megahit</title>
 <polygon points="340.6,480.0 351.3,480.0 345.9,489.2" fill="#1B1E24" stroke="#00CC96" stroke-width="1.5" stroke-linejoin="round"/>
-<text x="358.4" y="479.1" font-family="Arial" font-size="6.5" fill="#5F6877" text-anchor="start">step 10</text>
-<text x="358.4" y="489.3" font-family="Arial" font-size="13" fill="#8D97A8" text-anchor="start">megahit</text></g>
+<text x="358.4" y="489.3" font-family="Arial" font-size="13" fill="#E4EAEC" text-anchor="start">megahit</text></g>
 <g><title>sequences::megahit_assembly_graph</title>
 <circle cx="329.0" cy="519.0" r="5.3" fill="#1B1E24" stroke="#00CC96" stroke-width="1.5"/>
-<text x="358.4" y="513.6" font-family="Arial" font-size="6.5" fill="#6B7484" text-anchor="start">sequences</text>
-<text x="358.4" y="523.7" font-family="Arial" font-size="13" fill="#DFE3EA" text-anchor="start">megahit_assembly_graph</text></g>
+<text x="358.4" y="523.7" font-family="Arial" font-size="13" fill="#6E828B" text-anchor="start">megahit_assembly_graph</text></g>
 <g><title>sequences::megahit_assembly</title>
 <circle cx="345.9" cy="553.5" r="5.3" fill="#636EFA" stroke="#DFE3EA" stroke-width="3.0"/>
-<text x="358.4" y="548.0" font-family="Arial" font-size="6.5" fill="#6B7484" text-anchor="start">sequences</text>
-<text x="358.4" y="558.2" font-family="Arial" font-size="13" fill="#DFE3EA" text-anchor="start">megahit_assembly</text></g>
+<text x="358.4" y="558.2" font-family="Arial" font-size="13" fill="#9FB1B9" text-anchor="start">megahit_assembly</text></g>
 <g><title>14 assembly_stats</title>
 <polygon points="340.6,583.3 351.3,583.3 345.9,592.5" fill="#1B1E24" stroke="#EF553B" stroke-width="1.5" stroke-linejoin="round"/>
-<text x="358.4" y="582.5" font-family="Arial" font-size="6.5" fill="#5F6877" text-anchor="start">step 14</text>
-<text x="358.4" y="592.6" font-family="Arial" font-size="13" fill="#8D97A8" text-anchor="start">assembly_stats</text></g>
+<text x="358.4" y="592.6" font-family="Arial" font-size="13" fill="#E4EAEC" text-anchor="start">assembly_stats</text></g>
 <g><title>sequences::assembly_per_bp_coverage</title>
 <circle cx="295.2" cy="622.4" r="5.3" fill="#1B1E24" stroke="#EF553B" stroke-width="1.5"/>
-<text x="358.4" y="616.9" font-family="Arial" font-size="6.5" fill="#6B7484" text-anchor="start">sequences</text>
-<text x="358.4" y="627.1" font-family="Arial" font-size="13" fill="#DFE3EA" text-anchor="start">assembly_per_bp_coverage</text></g>
+<text x="358.4" y="627.1" font-family="Arial" font-size="13" fill="#6E828B" text-anchor="start">assembly_per_bp_coverage</text></g>
 <g><title>sequences::assembly_per_contig_coverage</title>
 <circle cx="278.3" cy="656.8" r="5.3" fill="#1B1E24" stroke="#EF553B" stroke-width="1.5"/>
-<text x="358.4" y="651.4" font-family="Arial" font-size="6.5" fill="#6B7484" text-anchor="start">sequences</text>
-<text x="358.4" y="661.5" font-family="Arial" font-size="13" fill="#DFE3EA" text-anchor="start">assembly_per_contig_coverage</text></g>
+<text x="358.4" y="661.5" font-family="Arial" font-size="13" fill="#6E828B" text-anchor="start">assembly_per_contig_coverage</text></g>
 <g><title>sequences::assembly_stats</title>
 <circle cx="193.8" cy="691.3" r="5.3" fill="#EF553B" stroke="#DFE3EA" stroke-width="3.0"/>
-<text x="358.4" y="685.8" font-family="Arial" font-size="6.5" fill="#6B7484" text-anchor="start">sequences</text>
-<text x="358.4" y="696.0" font-family="Arial" font-size="13" fill="#DFE3EA" text-anchor="start">assembly_stats</text></g>
+<text x="358.4" y="696.0" font-family="Arial" font-size="13" fill="#9FB1B9" text-anchor="start">assembly_stats</text></g>
 <g><title>alignment::bam</title>
 <circle cx="345.9" cy="725.7" r="5.3" fill="#1B1E24" stroke="#EF553B" stroke-width="1.5"/>
-<text x="358.4" y="720.3" font-family="Arial" font-size="6.5" fill="#6B7484" text-anchor="start">alignment</text>
-<text x="358.4" y="730.4" font-family="Arial" font-size="13" fill="#DFE3EA" text-anchor="start">bam</text></g>
+<text x="358.4" y="730.4" font-family="Arial" font-size="13" fill="#6E828B" text-anchor="start">bam</text></g>
 <g><title>3 downloadGtdbDB</title>
 <polygon points="188.5,755.6 199.2,755.6 193.8,764.8" fill="#1B1E24" stroke="#8A8A8A" stroke-width="1.5" stroke-linejoin="round"/>
-<text x="358.4" y="754.7" font-family="Arial" font-size="6.5" fill="#5F6877" text-anchor="start">step 3</text>
-<text x="358.4" y="764.9" font-family="Arial" font-size="13" fill="#8D97A8" text-anchor="start">downloadGtdbDB</text></g>
+<text x="358.4" y="764.9" font-family="Arial" font-size="13" fill="#E4EAEC" text-anchor="start">downloadGtdbDB</text></g>
 <g><title>ref::gtdb</title>
 <circle cx="193.8" cy="794.6" r="5.3" fill="#1B1E24" stroke="#8A8A8A" stroke-width="1.5"/>
-<text x="358.4" y="789.2" font-family="Arial" font-size="6.5" fill="#6B7484" text-anchor="start">ref</text>
-<text x="358.4" y="799.3" font-family="Arial" font-size="13" fill="#DFE3EA" text-anchor="start">gtdb</text></g>
+<text x="358.4" y="799.3" font-family="Arial" font-size="13" fill="#6E828B" text-anchor="start">gtdb</text></g>
 <g><title>18 comebin</title>
 <polygon points="340.6,824.5 351.3,824.5 345.9,833.7" fill="#1B1E24" stroke="#00CC96" stroke-width="1.5" stroke-linejoin="round"/>
-<text x="358.4" y="823.6" font-family="Arial" font-size="6.5" fill="#5F6877" text-anchor="start">step 18</text>
-<text x="358.4" y="833.8" font-family="Arial" font-size="13" fill="#8D97A8" text-anchor="start">comebin</text></g>
+<text x="358.4" y="833.8" font-family="Arial" font-size="13" fill="#E4EAEC" text-anchor="start">comebin</text></g>
 <g><title>binning::comebin_contig_to_bin_table</title>
 <circle cx="329.0" cy="863.5" r="5.3" fill="#1B1E24" stroke="#00CC96" stroke-width="1.5"/>
-<text x="358.4" y="858.1" font-family="Arial" font-size="6.5" fill="#6B7484" text-anchor="start">binning</text>
-<text x="358.4" y="868.2" font-family="Arial" font-size="13" fill="#DFE3EA" text-anchor="start">comebin_contig_to_bin_table</text></g>
+<text x="358.4" y="868.2" font-family="Arial" font-size="13" fill="#6E828B" text-anchor="start">comebin_contig_to_bin_table</text></g>
 <g><title>sequences::comebin_bin_fasta</title>
 <circle cx="345.9" cy="898.0" r="5.3" fill="#1B1E24" stroke="#00CC96" stroke-width="1.5"/>
-<text x="358.4" y="892.5" font-family="Arial" font-size="6.5" fill="#6B7484" text-anchor="start">sequences</text>
-<text x="358.4" y="902.7" font-family="Arial" font-size="13" fill="#DFE3EA" text-anchor="start">comebin_bin_fasta</text></g>
+<text x="358.4" y="902.7" font-family="Arial" font-size="13" fill="#6E828B" text-anchor="start">comebin_bin_fasta</text></g>
 <g><title>23 checkm</title>
 <polygon points="340.6,927.8 351.3,927.8 345.9,937.0" fill="#1B1E24" stroke="#00CC96" stroke-width="1.5" stroke-linejoin="round"/>
-<text x="358.4" y="927.0" font-family="Arial" font-size="6.5" fill="#5F6877" text-anchor="start">step 23</text>
-<text x="358.4" y="937.1" font-family="Arial" font-size="13" fill="#8D97A8" text-anchor="start">checkm</text></g>
+<text x="358.4" y="937.1" font-family="Arial" font-size="13" fill="#E4EAEC" text-anchor="start">checkm</text></g>
 <g><title>28 gtdbtk</title>
 <polygon points="323.7,962.3 334.4,962.3 329.0,971.5" fill="#1B1E24" stroke="#8A8A8A" stroke-width="1.5" stroke-linejoin="round"/>
-<text x="358.4" y="961.4" font-family="Arial" font-size="6.5" fill="#5F6877" text-anchor="start">step 28</text>
-<text x="358.4" y="971.6" font-family="Arial" font-size="13" fill="#8D97A8" text-anchor="start">gtdbtk</text></g>
+<text x="358.4" y="971.6" font-family="Arial" font-size="13" fill="#E4EAEC" text-anchor="start">gtdbtk</text></g>
 <g><title>19 semibin2</title>
 <polygon points="306.8,996.7 317.5,996.7 312.1,1005.9" fill="#1B1E24" stroke="#00CC96" stroke-width="1.5" stroke-linejoin="round"/>
-<text x="358.4" y="995.9" font-family="Arial" font-size="6.5" fill="#5F6877" text-anchor="start">step 19</text>
-<text x="358.4" y="1006.0" font-family="Arial" font-size="13" fill="#8D97A8" text-anchor="start">semibin2</text></g>
+<text x="358.4" y="1006.0" font-family="Arial" font-size="13" fill="#E4EAEC" text-anchor="start">semibin2</text></g>
 <g><title>binning::semibin2_contig_to_bin_table</title>
 <circle cx="295.2" cy="1035.8" r="5.3" fill="#1B1E24" stroke="#00CC96" stroke-width="1.5"/>
-<text x="358.4" y="1030.3" font-family="Arial" font-size="6.5" fill="#6B7484" text-anchor="start">binning</text>
-<text x="358.4" y="1040.5" font-family="Arial" font-size="13" fill="#DFE3EA" text-anchor="start">semibin2_contig_to_bin_table</text></g>
+<text x="358.4" y="1040.5" font-family="Arial" font-size="13" fill="#6E828B" text-anchor="start">semibin2_contig_to_bin_table</text></g>
 <g><title>sequences::semibin2_bin_fasta</title>
 <circle cx="312.1" cy="1070.2" r="5.3" fill="#1B1E24" stroke="#00CC96" stroke-width="1.5"/>
-<text x="358.4" y="1064.8" font-family="Arial" font-size="6.5" fill="#6B7484" text-anchor="start">sequences</text>
-<text x="358.4" y="1074.9" font-family="Arial" font-size="13" fill="#DFE3EA" text-anchor="start">semibin2_bin_fasta</text></g>
+<text x="358.4" y="1074.9" font-family="Arial" font-size="13" fill="#6E828B" text-anchor="start">semibin2_bin_fasta</text></g>
 <g><title>24 checkm</title>
 <polygon points="306.8,1100.1 317.5,1100.1 312.1,1109.3" fill="#1B1E24" stroke="#00CC96" stroke-width="1.5" stroke-linejoin="round"/>
-<text x="358.4" y="1099.2" font-family="Arial" font-size="6.5" fill="#5F6877" text-anchor="start">step 24</text>
-<text x="358.4" y="1109.4" font-family="Arial" font-size="13" fill="#8D97A8" text-anchor="start">checkm</text></g>
+<text x="358.4" y="1109.4" font-family="Arial" font-size="13" fill="#E4EAEC" text-anchor="start">checkm</text></g>
 <g><title>29 gtdbtk</title>
 <polygon points="289.9,1134.5 300.6,1134.5 295.2,1143.7" fill="#1B1E24" stroke="#8A8A8A" stroke-width="1.5" stroke-linejoin="round"/>
-<text x="358.4" y="1133.7" font-family="Arial" font-size="6.5" fill="#5F6877" text-anchor="start">step 29</text>
-<text x="358.4" y="1143.8" font-family="Arial" font-size="13" fill="#8D97A8" text-anchor="start">gtdbtk</text></g>
+<text x="358.4" y="1143.8" font-family="Arial" font-size="13" fill="#E4EAEC" text-anchor="start">gtdbtk</text></g>
 <g><title>20 metabat2</title>
 <polygon points="273.0,1169.0 283.7,1169.0 278.3,1178.2" fill="#1B1E24" stroke="#00CC96" stroke-width="1.5" stroke-linejoin="round"/>
-<text x="358.4" y="1168.1" font-family="Arial" font-size="6.5" fill="#5F6877" text-anchor="start">step 20</text>
-<text x="358.4" y="1178.3" font-family="Arial" font-size="13" fill="#8D97A8" text-anchor="start">metabat2</text></g>
+<text x="358.4" y="1178.3" font-family="Arial" font-size="13" fill="#E4EAEC" text-anchor="start">metabat2</text></g>
 <g><title>binning::metabat2_contig_to_bin_table</title>
 <circle cx="210.7" cy="1208.0" r="5.3" fill="#1B1E24" stroke="#00CC96" stroke-width="1.5"/>
-<text x="358.4" y="1202.6" font-family="Arial" font-size="6.5" fill="#6B7484" text-anchor="start">binning</text>
-<text x="358.4" y="1212.7" font-family="Arial" font-size="13" fill="#DFE3EA" text-anchor="start">metabat2_contig_to_bin_table</text></g>
+<text x="358.4" y="1212.7" font-family="Arial" font-size="13" fill="#6E828B" text-anchor="start">metabat2_contig_to_bin_table</text></g>
 <g><title>sequences::metabat2_bin_fasta</title>
 <circle cx="278.3" cy="1242.5" r="5.3" fill="#1B1E24" stroke="#00CC96" stroke-width="1.5"/>
-<text x="358.4" y="1237.0" font-family="Arial" font-size="6.5" fill="#6B7484" text-anchor="start">sequences</text>
-<text x="358.4" y="1247.2" font-family="Arial" font-size="13" fill="#DFE3EA" text-anchor="start">metabat2_bin_fasta</text></g>
+<text x="358.4" y="1247.2" font-family="Arial" font-size="13" fill="#6E828B" text-anchor="start">metabat2_bin_fasta</text></g>
 <g><title>25 checkm</title>
 <polygon points="273.0,1272.3 283.7,1272.3 278.3,1281.5" fill="#1B1E24" stroke="#00CC96" stroke-width="1.5" stroke-linejoin="round"/>
-<text x="358.4" y="1271.5" font-family="Arial" font-size="6.5" fill="#5F6877" text-anchor="start">step 25</text>
-<text x="358.4" y="1281.6" font-family="Arial" font-size="13" fill="#8D97A8" text-anchor="start">checkm</text></g>
+<text x="358.4" y="1281.6" font-family="Arial" font-size="13" fill="#E4EAEC" text-anchor="start">checkm</text></g>
 <g><title>30 gtdbtk</title>
 <polygon points="205.4,1306.8 216.1,1306.8 210.7,1316.0" fill="#1B1E24" stroke="#8A8A8A" stroke-width="1.5" stroke-linejoin="round"/>
-<text x="358.4" y="1305.9" font-family="Arial" font-size="6.5" fill="#5F6877" text-anchor="start">step 30</text>
-<text x="358.4" y="1316.1" font-family="Arial" font-size="13" fill="#8D97A8" text-anchor="start">gtdbtk</text></g>
+<text x="358.4" y="1316.1" font-family="Arial" font-size="13" fill="#E4EAEC" text-anchor="start">gtdbtk</text></g>
 <g><title>taxonomy::checkm_stats</title>
 <circle cx="345.9" cy="1345.8" r="5.3" fill="#1B1E24" stroke="#636EFA" stroke-width="1.5"/>
-<text x="358.4" y="1340.4" font-family="Arial" font-size="6.5" fill="#6B7484" text-anchor="start">taxonomy</text>
-<text x="358.4" y="1350.5" font-family="Arial" font-size="13" fill="#DFE3EA" text-anchor="start">checkm_stats</text></g>
+<text x="358.4" y="1350.5" font-family="Arial" font-size="13" fill="#6E828B" text-anchor="start">checkm_stats</text></g>
 <g><title>taxonomy::gtdbtk</title>
 <circle cx="329.0" cy="1380.3" r="5.3" fill="#1B1E24" stroke="#8A8A8A" stroke-width="1.5"/>
-<text x="358.4" y="1374.8" font-family="Arial" font-size="6.5" fill="#6B7484" text-anchor="start">taxonomy</text>
-<text x="358.4" y="1385.0" font-family="Arial" font-size="13" fill="#DFE3EA" text-anchor="start">gtdbtk</text></g>
+<text x="358.4" y="1385.0" font-family="Arial" font-size="13" fill="#6E828B" text-anchor="start">gtdbtk</text></g>
 <g><title>36 aggregator</title>
 <polygon points="340.6,1410.1 351.3,1410.1 345.9,1419.3" fill="#1B1E24" stroke="#8A8A8A" stroke-width="1.5" stroke-linejoin="round"/>
-<text x="358.4" y="1409.3" font-family="Arial" font-size="6.5" fill="#5F6877" text-anchor="start">step 36</text>
-<text x="358.4" y="1419.4" font-family="Arial" font-size="13" fill="#8D97A8" text-anchor="start">aggregator</text></g>
+<text x="358.4" y="1419.4" font-family="Arial" font-size="13" fill="#E4EAEC" text-anchor="start">aggregator</text></g>
 <g><title>binning_local::quality_bin_fasta</title>
 <circle cx="345.9" cy="1449.2" r="5.3" fill="#1B1E24" stroke="#8A8A8A" stroke-width="1.5"/>
-<text x="358.4" y="1443.7" font-family="Arial" font-size="6.5" fill="#6B7484" text-anchor="start">binning_local</text>
-<text x="358.4" y="1453.9" font-family="Arial" font-size="13" fill="#DFE3EA" text-anchor="start">quality_bin_fasta</text></g>
+<text x="358.4" y="1453.9" font-family="Arial" font-size="13" fill="#6E828B" text-anchor="start">quality_bin_fasta</text></g>
 <g><title>37 skani_dedup</title>
 <polygon points="340.6,1479.0 351.3,1479.0 345.9,1488.2" fill="#1B1E24" stroke="#8A8A8A" stroke-width="1.5" stroke-linejoin="round"/>
-<text x="358.4" y="1478.2" font-family="Arial" font-size="6.5" fill="#5F6877" text-anchor="start">step 37</text>
-<text x="358.4" y="1488.3" font-family="Arial" font-size="13" fill="#8D97A8" text-anchor="start">skani_dedup</text></g>
+<text x="358.4" y="1488.3" font-family="Arial" font-size="13" fill="#E4EAEC" text-anchor="start">skani_dedup</text></g>
 <g><title>binning_local::cluster_table</title>
 <circle cx="345.9" cy="1518.1" r="5.3" fill="#8A8A8A" stroke="#DFE3EA" stroke-width="3.0"/>
-<text x="358.4" y="1512.6" font-family="Arial" font-size="6.5" fill="#6B7484" text-anchor="start">binning_local</text>
-<text x="358.4" y="1522.8" font-family="Arial" font-size="13" fill="#DFE3EA" text-anchor="start">cluster_table</text></g>
+<text x="358.4" y="1522.8" font-family="Arial" font-size="13" fill="#9FB1B9" text-anchor="start">cluster_table</text></g>
 <g><title>6 downloadMetabuliDB</title>
 <polygon points="340.6,1547.9 351.3,1547.9 345.9,1557.1" fill="#1B1E24" stroke="#8A8A8A" stroke-width="1.5" stroke-linejoin="round"/>
-<text x="358.4" y="1547.1" font-family="Arial" font-size="6.5" fill="#5F6877" text-anchor="start">step 6</text>
-<text x="358.4" y="1557.2" font-family="Arial" font-size="13" fill="#8D97A8" text-anchor="start">downloadMetabuliDB</text></g>
+<text x="358.4" y="1557.2" font-family="Arial" font-size="13" fill="#E4EAEC" text-anchor="start">downloadMetabuliDB</text></g>
 <g><title>ref::metabuli_ref</title>
 <circle cx="345.9" cy="1587.0" r="5.3" fill="#1B1E24" stroke="#8A8A8A" stroke-width="1.5"/>
-<text x="358.4" y="1581.5" font-family="Arial" font-size="6.5" fill="#6B7484" text-anchor="start">ref</text>
-<text x="358.4" y="1591.7" font-family="Arial" font-size="13" fill="#DFE3EA" text-anchor="start">metabuli_ref</text></g>
+<text x="358.4" y="1591.7" font-family="Arial" font-size="13" fill="#6E828B" text-anchor="start">metabuli_ref</text></g>
 <g><title>13 metabuli</title>
 <polygon points="340.6,1616.8 351.3,1616.8 345.9,1626.0" fill="#1B1E24" stroke="#EF553B" stroke-width="1.5" stroke-linejoin="round"/>
-<text x="358.4" y="1616.0" font-family="Arial" font-size="6.5" fill="#5F6877" text-anchor="start">step 13</text>
-<text x="358.4" y="1626.1" font-family="Arial" font-size="13" fill="#8D97A8" text-anchor="start">metabuli</text></g>
+<text x="358.4" y="1626.1" font-family="Arial" font-size="13" fill="#E4EAEC" text-anchor="start">metabuli</text></g>
 <g><title>taxonomy::metabuli</title>
 <circle cx="345.9" cy="1655.9" r="5.3" fill="#EF553B" stroke="#DFE3EA" stroke-width="3.0"/>
-<text x="358.4" y="1650.4" font-family="Arial" font-size="6.5" fill="#6B7484" text-anchor="start">taxonomy</text>
-<text x="358.4" y="1660.6" font-family="Arial" font-size="13" fill="#DFE3EA" text-anchor="start">metabuli</text></g>
+<text x="358.4" y="1660.6" font-family="Arial" font-size="13" fill="#9FB1B9" text-anchor="start">metabuli</text></g>
 <g><title>taxonomy::metabuli_krona</title>
 <circle cx="329.0" cy="1690.3" r="5.3" fill="#1B1E24" stroke="#EF553B" stroke-width="1.5"/>
-<text x="358.4" y="1684.9" font-family="Arial" font-size="6.5" fill="#6B7484" text-anchor="start">taxonomy</text>
-<text x="358.4" y="1695.0" font-family="Arial" font-size="13" fill="#DFE3EA" text-anchor="start">metabuli_krona</text></g>
+<text x="358.4" y="1695.0" font-family="Arial" font-size="13" fill="#6E828B" text-anchor="start">metabuli_krona</text></g>
 <g><title>taxonomy::metabuli_report</title>
 <circle cx="312.1" cy="1724.8" r="5.3" fill="#1B1E24" stroke="#EF553B" stroke-width="1.5"/>
-<text x="358.4" y="1719.3" font-family="Arial" font-size="6.5" fill="#6B7484" text-anchor="start">taxonomy</text>
-<text x="358.4" y="1729.5" font-family="Arial" font-size="13" fill="#DFE3EA" text-anchor="start">metabuli_report</text></g>
+<text x="358.4" y="1729.5" font-family="Arial" font-size="13" fill="#6E828B" text-anchor="start">metabuli_report</text></g>
 <g><title>11 splitContigsForAmr</title>
 <polygon points="104.0,1754.6 114.7,1754.6 109.3,1763.8" fill="#1B1E24" stroke="#EF553B" stroke-width="1.5" stroke-linejoin="round"/>
-<text x="358.4" y="1753.8" font-family="Arial" font-size="6.5" fill="#5F6877" text-anchor="start">step 11</text>
-<text x="358.4" y="1763.9" font-family="Arial" font-size="13" fill="#8D97A8" text-anchor="start">splitContigsForAmr</text></g>
+<text x="358.4" y="1763.9" font-family="Arial" font-size="13" fill="#E4EAEC" text-anchor="start">splitContigsForAmr</text></g>
 <g><title>sequences::contig_batch</title>
 <circle cx="109.3" cy="1793.7" r="5.3" fill="#1B1E24" stroke="#636EFA" stroke-width="1.5"/>
-<text x="358.4" y="1788.2" font-family="Arial" font-size="6.5" fill="#6B7484" text-anchor="start">sequences</text>
-<text x="358.4" y="1798.4" font-family="Arial" font-size="13" fill="#DFE3EA" text-anchor="start">contig_batch</text></g>
+<text x="358.4" y="1798.4" font-family="Arial" font-size="13" fill="#6E828B" text-anchor="start">contig_batch</text></g>
 <g><title>15 vibrant</title>
 <polygon points="104.0,1823.5 114.7,1823.5 109.3,1832.7" fill="#1B1E24" stroke="#EF553B" stroke-width="1.5" stroke-linejoin="round"/>
-<text x="358.4" y="1822.7" font-family="Arial" font-size="6.5" fill="#5F6877" text-anchor="start">step 15</text>
-<text x="358.4" y="1832.8" font-family="Arial" font-size="13" fill="#8D97A8" text-anchor="start">vibrant</text></g>
+<text x="358.4" y="1832.8" font-family="Arial" font-size="13" fill="#E4EAEC" text-anchor="start">vibrant</text></g>
 <g><title>viromics::vibrant_amgs</title>
 <circle cx="295.2" cy="1862.6" r="5.3" fill="#1B1E24" stroke="#EF553B" stroke-width="1.5"/>
-<text x="358.4" y="1857.1" font-family="Arial" font-size="6.5" fill="#6B7484" text-anchor="start">viromics</text>
-<text x="358.4" y="1867.3" font-family="Arial" font-size="13" fill="#DFE3EA" text-anchor="start">vibrant_amgs</text></g>
+<text x="358.4" y="1867.3" font-family="Arial" font-size="13" fill="#6E828B" text-anchor="start">vibrant_amgs</text></g>
 <g><title>viromics::vibrant_genome_quality</title>
 <circle cx="278.3" cy="1897.0" r="5.3" fill="#1B1E24" stroke="#EF553B" stroke-width="1.5"/>
-<text x="358.4" y="1891.6" font-family="Arial" font-size="6.5" fill="#6B7484" text-anchor="start">viromics</text>
-<text x="358.4" y="1901.7" font-family="Arial" font-size="13" fill="#DFE3EA" text-anchor="start">vibrant_genome_quality</text></g>
+<text x="358.4" y="1901.7" font-family="Arial" font-size="13" fill="#6E828B" text-anchor="start">vibrant_genome_quality</text></g>
 <g><title>viromics::vibrant_lifestyle_table</title>
 <circle cx="210.7" cy="1931.5" r="5.3" fill="#1B1E24" stroke="#EF553B" stroke-width="1.5"/>
-<text x="358.4" y="1926.0" font-family="Arial" font-size="6.5" fill="#6B7484" text-anchor="start">viromics</text>
-<text x="358.4" y="1936.2" font-family="Arial" font-size="13" fill="#DFE3EA" text-anchor="start">vibrant_lifestyle_table</text></g>
+<text x="358.4" y="1936.2" font-family="Arial" font-size="13" fill="#6E828B" text-anchor="start">vibrant_lifestyle_table</text></g>
 <g><title>viromics::vibrant_candidate_virus</title>
 <circle cx="109.3" cy="1965.9" r="5.3" fill="#1B1E24" stroke="#EF553B" stroke-width="1.5"/>
-<text x="358.4" y="1960.5" font-family="Arial" font-size="6.5" fill="#6B7484" text-anchor="start">viromics</text>
-<text x="358.4" y="1970.6" font-family="Arial" font-size="13" fill="#DFE3EA" text-anchor="start">vibrant_candidate_virus</text></g>
+<text x="358.4" y="1970.6" font-family="Arial" font-size="13" fill="#6E828B" text-anchor="start">vibrant_candidate_virus</text></g>
 <g><title>5 ref_genomad</title>
 <polygon points="289.9,1995.8 300.6,1995.8 295.2,2005.0" fill="#1B1E24" stroke="#8A8A8A" stroke-width="1.5" stroke-linejoin="round"/>
-<text x="358.4" y="1994.9" font-family="Arial" font-size="6.5" fill="#5F6877" text-anchor="start">step 5</text>
-<text x="358.4" y="2005.1" font-family="Arial" font-size="13" fill="#8D97A8" text-anchor="start">ref_genomad</text></g>
+<text x="358.4" y="2005.1" font-family="Arial" font-size="13" fill="#E4EAEC" text-anchor="start">ref_genomad</text></g>
 <g><title>ref::genomad</title>
 <circle cx="295.2" cy="2034.8" r="5.3" fill="#1B1E24" stroke="#8A8A8A" stroke-width="1.5"/>
-<text x="358.4" y="2029.4" font-family="Arial" font-size="6.5" fill="#6B7484" text-anchor="start">ref</text>
-<text x="358.4" y="2039.5" font-family="Arial" font-size="13" fill="#DFE3EA" text-anchor="start">genomad</text></g>
+<text x="358.4" y="2039.5" font-family="Arial" font-size="13" fill="#6E828B" text-anchor="start">genomad</text></g>
 <g><title>4 downloadVirsorter2DB</title>
 <polygon points="273.0,2064.7 283.7,2064.7 278.3,2073.9" fill="#1B1E24" stroke="#8A8A8A" stroke-width="1.5" stroke-linejoin="round"/>
-<text x="358.4" y="2063.8" font-family="Arial" font-size="6.5" fill="#5F6877" text-anchor="start">step 4</text>
-<text x="358.4" y="2074.0" font-family="Arial" font-size="13" fill="#8D97A8" text-anchor="start">downloadVirsorter2DB</text></g>
+<text x="358.4" y="2074.0" font-family="Arial" font-size="13" fill="#E4EAEC" text-anchor="start">downloadVirsorter2DB</text></g>
 <g><title>annotation::virsorter2_db</title>
 <circle cx="278.3" cy="2103.7" r="5.3" fill="#1B1E24" stroke="#8A8A8A" stroke-width="1.5"/>
-<text x="358.4" y="2098.3" font-family="Arial" font-size="6.5" fill="#6B7484" text-anchor="start">annotation</text>
-<text x="358.4" y="2108.4" font-family="Arial" font-size="13" fill="#DFE3EA" text-anchor="start">virsorter2_db</text></g>
+<text x="358.4" y="2108.4" font-family="Arial" font-size="13" fill="#6E828B" text-anchor="start">virsorter2_db</text></g>
 <g><title>21 virsorter2</title>
 <polygon points="340.6,2133.6 351.3,2133.6 345.9,2142.8" fill="#1B1E24" stroke="#EF553B" stroke-width="1.5" stroke-linejoin="round"/>
-<text x="358.4" y="2132.7" font-family="Arial" font-size="6.5" fill="#5F6877" text-anchor="start">step 21</text>
-<text x="358.4" y="2142.9" font-family="Arial" font-size="13" fill="#8D97A8" text-anchor="start">virsorter2</text></g>
+<text x="358.4" y="2142.9" font-family="Arial" font-size="13" fill="#E4EAEC" text-anchor="start">virsorter2</text></g>
 <g><title>annotation::virsorter2_affi_contigs</title>
 <circle cx="278.3" cy="2172.6" r="5.3" fill="#1B1E24" stroke="#EF553B" stroke-width="1.5"/>
-<text x="358.4" y="2167.2" font-family="Arial" font-size="6.5" fill="#6B7484" text-anchor="start">annotation</text>
-<text x="358.4" y="2177.3" font-family="Arial" font-size="13" fill="#DFE3EA" text-anchor="start">virsorter2_affi_contigs</text></g>
+<text x="358.4" y="2177.3" font-family="Arial" font-size="13" fill="#6E828B" text-anchor="start">virsorter2_affi_contigs</text></g>
 <g><title>annotation::virsorter2_boundary</title>
 <circle cx="210.7" cy="2207.1" r="5.3" fill="#1B1E24" stroke="#EF553B" stroke-width="1.5"/>
-<text x="358.4" y="2201.6" font-family="Arial" font-size="6.5" fill="#6B7484" text-anchor="start">annotation</text>
-<text x="358.4" y="2211.8" font-family="Arial" font-size="13" fill="#DFE3EA" text-anchor="start">virsorter2_boundary</text></g>
+<text x="358.4" y="2211.8" font-family="Arial" font-size="13" fill="#6E828B" text-anchor="start">virsorter2_boundary</text></g>
 <g><title>annotation::virsorter2_scores</title>
 <circle cx="193.8" cy="2241.5" r="5.3" fill="#1B1E24" stroke="#EF553B" stroke-width="1.5"/>
-<text x="358.4" y="2236.1" font-family="Arial" font-size="6.5" fill="#6B7484" text-anchor="start">annotation</text>
-<text x="358.4" y="2246.2" font-family="Arial" font-size="13" fill="#DFE3EA" text-anchor="start">virsorter2_scores</text></g>
+<text x="358.4" y="2246.2" font-family="Arial" font-size="13" fill="#6E828B" text-anchor="start">virsorter2_scores</text></g>
 <g><title>annotation::virsorter2_viral_sequences</title>
 <circle cx="176.9" cy="2276.0" r="5.3" fill="#1B1E24" stroke="#EF553B" stroke-width="1.5"/>
-<text x="358.4" y="2270.5" font-family="Arial" font-size="6.5" fill="#6B7484" text-anchor="start">annotation</text>
-<text x="358.4" y="2280.7" font-family="Arial" font-size="13" fill="#DFE3EA" text-anchor="start">virsorter2_viral_sequences</text></g>
+<text x="358.4" y="2280.7" font-family="Arial" font-size="13" fill="#6E828B" text-anchor="start">virsorter2_viral_sequences</text></g>
 <g><title>viromics::virsorter2_candidate_virus</title>
 <circle cx="345.9" cy="2310.4" r="5.3" fill="#1B1E24" stroke="#EF553B" stroke-width="1.5"/>
-<text x="358.4" y="2305.0" font-family="Arial" font-size="6.5" fill="#6B7484" text-anchor="start">viromics</text>
-<text x="358.4" y="2315.1" font-family="Arial" font-size="13" fill="#DFE3EA" text-anchor="start">virsorter2_candidate_virus</text></g>
+<text x="358.4" y="2315.1" font-family="Arial" font-size="13" fill="#6E828B" text-anchor="start">virsorter2_candidate_virus</text></g>
 <g><title>22 genomad</title>
 <polygon points="323.7,2340.3 334.4,2340.3 329.0,2349.5" fill="#1B1E24" stroke="#EF553B" stroke-width="1.5" stroke-linejoin="round"/>
-<text x="358.4" y="2339.4" font-family="Arial" font-size="6.5" fill="#5F6877" text-anchor="start">step 22</text>
-<text x="358.4" y="2349.6" font-family="Arial" font-size="13" fill="#8D97A8" text-anchor="start">genomad</text></g>
+<text x="358.4" y="2349.6" font-family="Arial" font-size="13" fill="#E4EAEC" text-anchor="start">genomad</text></g>
 <g><title>taxonomy::genomad_plasmid_summary</title>
 <circle cx="295.2" cy="2379.3" r="5.3" fill="#1B1E24" stroke="#EF553B" stroke-width="1.5"/>
-<text x="358.4" y="2373.9" font-family="Arial" font-size="6.5" fill="#6B7484" text-anchor="start">taxonomy</text>
-<text x="358.4" y="2384.0" font-family="Arial" font-size="13" fill="#DFE3EA" text-anchor="start">genomad_plasmid_summary</text></g>
+<text x="358.4" y="2384.0" font-family="Arial" font-size="13" fill="#6E828B" text-anchor="start">genomad_plasmid_summary</text></g>
 <g><title>taxonomy::genomad_taxonomy</title>
 <circle cx="278.3" cy="2413.8" r="5.3" fill="#1B1E24" stroke="#EF553B" stroke-width="1.5"/>
-<text x="358.4" y="2408.3" font-family="Arial" font-size="6.5" fill="#6B7484" text-anchor="start">taxonomy</text>
-<text x="358.4" y="2418.5" font-family="Arial" font-size="13" fill="#DFE3EA" text-anchor="start">genomad_taxonomy</text></g>
+<text x="358.4" y="2418.5" font-family="Arial" font-size="13" fill="#6E828B" text-anchor="start">genomad_taxonomy</text></g>
 <g><title>taxonomy::genomad_virus_genes</title>
 <circle cx="210.7" cy="2448.2" r="5.3" fill="#1B1E24" stroke="#EF553B" stroke-width="1.5"/>
-<text x="358.4" y="2442.8" font-family="Arial" font-size="6.5" fill="#6B7484" text-anchor="start">taxonomy</text>
-<text x="358.4" y="2452.9" font-family="Arial" font-size="13" fill="#DFE3EA" text-anchor="start">genomad_virus_genes</text></g>
+<text x="358.4" y="2452.9" font-family="Arial" font-size="13" fill="#6E828B" text-anchor="start">genomad_virus_genes</text></g>
 <g><title>taxonomy::genomad_virus_summary</title>
 <circle cx="193.8" cy="2482.7" r="5.3" fill="#1B1E24" stroke="#EF553B" stroke-width="1.5"/>
-<text x="358.4" y="2477.2" font-family="Arial" font-size="6.5" fill="#6B7484" text-anchor="start">taxonomy</text>
-<text x="358.4" y="2487.4" font-family="Arial" font-size="13" fill="#DFE3EA" text-anchor="start">genomad_virus_summary</text></g>
+<text x="358.4" y="2487.4" font-family="Arial" font-size="13" fill="#6E828B" text-anchor="start">genomad_virus_summary</text></g>
 <g><title>viromics::genomad_candidate_virus</title>
 <circle cx="329.0" cy="2517.1" r="5.3" fill="#1B1E24" stroke="#EF553B" stroke-width="1.5"/>
-<text x="358.4" y="2511.7" font-family="Arial" font-size="6.5" fill="#6B7484" text-anchor="start">viromics</text>
-<text x="358.4" y="2521.8" font-family="Arial" font-size="13" fill="#DFE3EA" text-anchor="start">genomad_candidate_virus</text></g>
+<text x="358.4" y="2521.8" font-family="Arial" font-size="13" fill="#6E828B" text-anchor="start">genomad_candidate_virus</text></g>
 <g><title>32 merge_candidate_calls</title>
 <polygon points="340.6,2547.0 351.3,2547.0 345.9,2556.2" fill="#1B1E24" stroke="#00CC96" stroke-width="1.5" stroke-linejoin="round"/>
-<text x="358.4" y="2546.1" font-family="Arial" font-size="6.5" fill="#5F6877" text-anchor="start">step 32</text>
-<text x="358.4" y="2556.3" font-family="Arial" font-size="13" fill="#8D97A8" text-anchor="start">merge_candidate_calls</text></g>
+<text x="358.4" y="2556.3" font-family="Arial" font-size="13" fill="#E4EAEC" text-anchor="start">merge_candidate_calls</text></g>
 <g><title>viromics::candidate_call_provenance</title>
 <circle cx="345.9" cy="2586.0" r="5.3" fill="#1B1E24" stroke="#00CC96" stroke-width="1.5"/>
-<text x="358.4" y="2580.6" font-family="Arial" font-size="6.5" fill="#6B7484" text-anchor="start">viromics</text>
-<text x="358.4" y="2590.7" font-family="Arial" font-size="13" fill="#DFE3EA" text-anchor="start">candidate_call_provenance</text></g>
+<text x="358.4" y="2590.7" font-family="Arial" font-size="13" fill="#6E828B" text-anchor="start">candidate_call_provenance</text></g>
 <g><title>viromics::dereplicated_candidate_virus</title>
 <circle cx="329.0" cy="2620.5" r="5.3" fill="#00CC96" stroke="#DFE3EA" stroke-width="3.0"/>
-<text x="358.4" y="2615.0" font-family="Arial" font-size="6.5" fill="#6B7484" text-anchor="start">viromics</text>
-<text x="358.4" y="2625.2" font-family="Arial" font-size="13" fill="#DFE3EA" text-anchor="start">dereplicated_candidate_virus</text></g>
+<text x="358.4" y="2625.2" font-family="Arial" font-size="13" fill="#9FB1B9" text-anchor="start">dereplicated_candidate_virus</text></g>
 <g><title>12 prodigal</title>
 <polygon points="70.2,2650.3 80.9,2650.3 75.5,2659.5" fill="#1B1E24" stroke="#EF553B" stroke-width="1.5" stroke-linejoin="round"/>
-<text x="358.4" y="2649.5" font-family="Arial" font-size="6.5" fill="#5F6877" text-anchor="start">step 12</text>
-<text x="358.4" y="2659.6" font-family="Arial" font-size="13" fill="#8D97A8" text-anchor="start">prodigal</text></g>
+<text x="358.4" y="2659.6" font-family="Arial" font-size="13" fill="#E4EAEC" text-anchor="start">prodigal</text></g>
 <g><title>sequences::gff</title>
 <circle cx="345.9" cy="2689.4" r="5.3" fill="#1B1E24" stroke="#EF553B" stroke-width="1.5"/>
-<text x="358.4" y="2683.9" font-family="Arial" font-size="6.5" fill="#6B7484" text-anchor="start">sequences</text>
-<text x="358.4" y="2694.1" font-family="Arial" font-size="13" fill="#DFE3EA" text-anchor="start">gff</text></g>
+<text x="358.4" y="2694.1" font-family="Arial" font-size="13" fill="#6E828B" text-anchor="start">gff</text></g>
 <g><title>sequences::orfs</title>
 <circle cx="75.5" cy="2723.8" r="5.3" fill="#1B1E24" stroke="#636EFA" stroke-width="1.5"/>
-<text x="358.4" y="2718.4" font-family="Arial" font-size="6.5" fill="#6B7484" text-anchor="start">sequences</text>
-<text x="358.4" y="2728.5" font-family="Arial" font-size="13" fill="#DFE3EA" text-anchor="start">orfs</text></g>
+<text x="358.4" y="2728.5" font-family="Arial" font-size="13" fill="#6E828B" text-anchor="start">orfs</text></g>
 <g><title>17 clean</title>
 <polygon points="340.6,2753.7 351.3,2753.7 345.9,2762.9" fill="#1B1E24" stroke="#636EFA" stroke-width="1.5" stroke-linejoin="round"/>
-<text x="358.4" y="2752.8" font-family="Arial" font-size="6.5" fill="#5F6877" text-anchor="start">step 17</text>
-<text x="358.4" y="2763.0" font-family="Arial" font-size="13" fill="#8D97A8" text-anchor="start">clean</text></g>
+<text x="358.4" y="2763.0" font-family="Arial" font-size="13" fill="#E4EAEC" text-anchor="start">clean</text></g>
 <g><title>annotation::clean_predictions</title>
 <circle cx="345.9" cy="2792.7" r="5.3" fill="#1B1E24" stroke="#636EFA" stroke-width="1.5"/>
-<text x="358.4" y="2787.3" font-family="Arial" font-size="6.5" fill="#6B7484" text-anchor="start">annotation</text>
-<text x="358.4" y="2797.4" font-family="Arial" font-size="13" fill="#DFE3EA" text-anchor="start">clean_predictions</text></g>
+<text x="358.4" y="2797.4" font-family="Arial" font-size="13" fill="#6E828B" text-anchor="start">clean_predictions</text></g>
 <g><title>16 chunkOrfsForAnnotation</title>
 <polygon points="70.2,2822.6 80.9,2822.6 75.5,2831.8" fill="#1B1E24" stroke="#EF553B" stroke-width="1.5" stroke-linejoin="round"/>
-<text x="358.4" y="2821.7" font-family="Arial" font-size="6.5" fill="#5F6877" text-anchor="start">step 16</text>
-<text x="358.4" y="2831.9" font-family="Arial" font-size="13" fill="#8D97A8" text-anchor="start">chunkOrfsForAnnotation</text></g>
+<text x="358.4" y="2831.9" font-family="Arial" font-size="13" fill="#E4EAEC" text-anchor="start">chunkOrfsForAnnotation</text></g>
 <g><title>sequences::orf_chunk</title>
 <circle cx="75.5" cy="2861.6" r="5.3" fill="#1B1E24" stroke="#00CC96" stroke-width="1.5"/>
-<text x="358.4" y="2856.2" font-family="Arial" font-size="6.5" fill="#6B7484" text-anchor="start">sequences</text>
-<text x="358.4" y="2866.3" font-family="Arial" font-size="13" fill="#DFE3EA" text-anchor="start">orf_chunk</text></g>
+<text x="358.4" y="2866.3" font-family="Arial" font-size="13" fill="#6E828B" text-anchor="start">orf_chunk</text></g>
 <g><title>26 proteinbert</title>
 <polygon points="70.2,2891.5 80.9,2891.5 75.5,2900.7" fill="#1B1E24" stroke="#00CC96" stroke-width="1.5" stroke-linejoin="round"/>
-<text x="358.4" y="2890.6" font-family="Arial" font-size="6.5" fill="#5F6877" text-anchor="start">step 26</text>
-<text x="358.4" y="2900.8" font-family="Arial" font-size="13" fill="#8D97A8" text-anchor="start">proteinbert</text></g>
+<text x="358.4" y="2900.8" font-family="Arial" font-size="13" fill="#E4EAEC" text-anchor="start">proteinbert</text></g>
 <g><title>annotation::proteinbert_embeddings_chunk</title>
 <circle cx="75.5" cy="2930.5" r="5.3" fill="#1B1E24" stroke="#00CC96" stroke-width="1.5"/>
-<text x="358.4" y="2925.1" font-family="Arial" font-size="6.5" fill="#6B7484" text-anchor="start">annotation</text>
-<text x="358.4" y="2935.2" font-family="Arial" font-size="13" fill="#DFE3EA" text-anchor="start">proteinbert_embeddings_chunk</text></g>
+<text x="358.4" y="2935.2" font-family="Arial" font-size="13" fill="#6E828B" text-anchor="start">proteinbert_embeddings_chunk</text></g>
 <g><title>33 merge_proteinbert</title>
 <polygon points="323.7,2960.4 334.4,2960.4 329.0,2969.6" fill="#1B1E24" stroke="#636EFA" stroke-width="1.5" stroke-linejoin="round"/>
-<text x="358.4" y="2959.5" font-family="Arial" font-size="6.5" fill="#5F6877" text-anchor="start">step 33</text>
-<text x="358.4" y="2969.7" font-family="Arial" font-size="13" fill="#8D97A8" text-anchor="start">merge_proteinbert</text></g>
+<text x="358.4" y="2969.7" font-family="Arial" font-size="13" fill="#E4EAEC" text-anchor="start">merge_proteinbert</text></g>
 <g><title>annotation::proteinbert_embeddings</title>
 <circle cx="329.0" cy="2999.4" r="5.3" fill="#1B1E24" stroke="#636EFA" stroke-width="1.5"/>
-<text x="358.4" y="2994.0" font-family="Arial" font-size="6.5" fill="#6B7484" text-anchor="start">annotation</text>
-<text x="358.4" y="3004.1" font-family="Arial" font-size="13" fill="#DFE3EA" text-anchor="start">proteinbert_embeddings</text></g>
+<text x="358.4" y="3004.1" font-family="Arial" font-size="13" fill="#6E828B" text-anchor="start">proteinbert_embeddings</text></g>
 <g><title>1 downloadUniRef50DB</title>
 <polygon points="188.5,3029.3 199.2,3029.3 193.8,3038.5" fill="#1B1E24" stroke="#8A8A8A" stroke-width="1.5" stroke-linejoin="round"/>
-<text x="358.4" y="3028.4" font-family="Arial" font-size="6.5" fill="#5F6877" text-anchor="start">step 1</text>
-<text x="358.4" y="3038.6" font-family="Arial" font-size="13" fill="#8D97A8" text-anchor="start">downloadUniRef50DB</text></g>
+<text x="358.4" y="3038.6" font-family="Arial" font-size="13" fill="#E4EAEC" text-anchor="start">downloadUniRef50DB</text></g>
 <g><title>ref::uniref50_diamond_db</title>
 <circle cx="193.8" cy="3068.3" r="5.3" fill="#1B1E24" stroke="#8A8A8A" stroke-width="1.5"/>
-<text x="358.4" y="3062.9" font-family="Arial" font-size="6.5" fill="#6B7484" text-anchor="start">ref</text>
-<text x="358.4" y="3073.0" font-family="Arial" font-size="13" fill="#DFE3EA" text-anchor="start">uniref50_diamond_db</text></g>
+<text x="358.4" y="3073.0" font-family="Arial" font-size="13" fill="#6E828B" text-anchor="start">uniref50_diamond_db</text></g>
 <g><title>27 diamond_uniref50</title>
 <polygon points="222.3,3098.2 233.0,3098.2 227.6,3107.4" fill="#1B1E24" stroke="#636EFA" stroke-width="1.5" stroke-linejoin="round"/>
-<text x="358.4" y="3097.3" font-family="Arial" font-size="6.5" fill="#5F6877" text-anchor="start">step 27</text>
-<text x="358.4" y="3107.5" font-family="Arial" font-size="13" fill="#8D97A8" text-anchor="start">diamond_uniref50</text></g>
+<text x="358.4" y="3107.5" font-family="Arial" font-size="13" fill="#E4EAEC" text-anchor="start">diamond_uniref50</text></g>
 <g><title>annotation::diamond_uniref50_descriptions_chunk</title>
 <circle cx="227.6" cy="3137.2" r="5.3" fill="#1B1E24" stroke="#636EFA" stroke-width="1.5"/>
-<text x="358.4" y="3131.8" font-family="Arial" font-size="6.5" fill="#6B7484" text-anchor="start">annotation</text>
-<text x="358.4" y="3141.9" font-family="Arial" font-size="13" fill="#DFE3EA" text-anchor="start">diamond_uniref50_descriptions_c…</text></g>
+<text x="358.4" y="3141.9" font-family="Arial" font-size="13" fill="#6E828B" text-anchor="start">diamond_uniref50_descriptions_c…</text></g>
 <g><title>annotation::diamond_uniref50_results_chunk</title>
 <circle cx="193.8" cy="3171.7" r="5.3" fill="#1B1E24" stroke="#636EFA" stroke-width="1.5"/>
-<text x="358.4" y="3166.2" font-family="Arial" font-size="6.5" fill="#6B7484" text-anchor="start">annotation</text>
-<text x="358.4" y="3176.4" font-family="Arial" font-size="13" fill="#DFE3EA" text-anchor="start">diamond_uniref50_results_chunk</text></g>
+<text x="358.4" y="3176.4" font-family="Arial" font-size="13" fill="#6E828B" text-anchor="start">diamond_uniref50_results_chunk</text></g>
 <g><title>34 merge_diamond_uniref50</title>
 <polygon points="306.8,3201.5 317.5,3201.5 312.1,3210.7" fill="#1B1E24" stroke="#EF553B" stroke-width="1.5" stroke-linejoin="round"/>
-<text x="358.4" y="3200.7" font-family="Arial" font-size="6.5" fill="#5F6877" text-anchor="start">step 34</text>
-<text x="358.4" y="3210.8" font-family="Arial" font-size="13" fill="#8D97A8" text-anchor="start">merge_diamond_uniref50</text></g>
+<text x="358.4" y="3210.8" font-family="Arial" font-size="13" fill="#E4EAEC" text-anchor="start">merge_diamond_uniref50</text></g>
 <g><title>annotation::diamond_uniref50_descriptions</title>
 <circle cx="312.1" cy="3240.6" r="5.3" fill="#1B1E24" stroke="#EF553B" stroke-width="1.5"/>
-<text x="358.4" y="3235.1" font-family="Arial" font-size="6.5" fill="#6B7484" text-anchor="start">annotation</text>
-<text x="358.4" y="3245.3" font-family="Arial" font-size="13" fill="#DFE3EA" text-anchor="start">diamond_uniref50_descriptions</text></g>
+<text x="358.4" y="3245.3" font-family="Arial" font-size="13" fill="#6E828B" text-anchor="start">diamond_uniref50_descriptions</text></g>
 <g><title>annotation::diamond_uniref50_results</title>
 <circle cx="227.6" cy="3275.0" r="5.3" fill="#1B1E24" stroke="#EF553B" stroke-width="1.5"/>
-<text x="358.4" y="3269.6" font-family="Arial" font-size="6.5" fill="#6B7484" text-anchor="start">annotation</text>
-<text x="358.4" y="3279.7" font-family="Arial" font-size="13" fill="#DFE3EA" text-anchor="start">diamond_uniref50_results</text></g>
+<text x="358.4" y="3279.7" font-family="Arial" font-size="13" fill="#6E828B" text-anchor="start">diamond_uniref50_results</text></g>
 <g><title>2 downloadKofamDB</title>
 <polygon points="188.5,3304.9 199.2,3304.9 193.8,3314.1" fill="#1B1E24" stroke="#636EFA" stroke-width="1.5" stroke-linejoin="round"/>
-<text x="358.4" y="3304.0" font-family="Arial" font-size="6.5" fill="#5F6877" text-anchor="start">step 2</text>
-<text x="358.4" y="3314.2" font-family="Arial" font-size="13" fill="#8D97A8" text-anchor="start">downloadKofamDB</text></g>
+<text x="358.4" y="3314.2" font-family="Arial" font-size="13" fill="#E4EAEC" text-anchor="start">downloadKofamDB</text></g>
 <g><title>ref::kofamscan_ko_list</title>
 <circle cx="193.8" cy="3343.9" r="5.3" fill="#1B1E24" stroke="#636EFA" stroke-width="1.5"/>
-<text x="358.4" y="3338.5" font-family="Arial" font-size="6.5" fill="#6B7484" text-anchor="start">ref</text>
-<text x="358.4" y="3348.6" font-family="Arial" font-size="13" fill="#DFE3EA" text-anchor="start">kofamscan_ko_list</text></g>
+<text x="358.4" y="3348.6" font-family="Arial" font-size="13" fill="#6E828B" text-anchor="start">kofamscan_ko_list</text></g>
 <g><title>ref::kofamscan_profiles</title>
 <circle cx="176.9" cy="3378.4" r="5.3" fill="#1B1E24" stroke="#636EFA" stroke-width="1.5"/>
-<text x="358.4" y="3372.9" font-family="Arial" font-size="6.5" fill="#6B7484" text-anchor="start">ref</text>
-<text x="358.4" y="3383.1" font-family="Arial" font-size="13" fill="#DFE3EA" text-anchor="start">kofamscan_profiles</text></g>
+<text x="358.4" y="3383.1" font-family="Arial" font-size="13" fill="#6E828B" text-anchor="start">kofamscan_profiles</text></g>
 <g><title>31 kofamscan</title>
 <polygon points="205.4,3408.2 216.1,3408.2 210.7,3417.4" fill="#1B1E24" stroke="#EF553B" stroke-width="1.5" stroke-linejoin="round"/>
-<text x="358.4" y="3407.4" font-family="Arial" font-size="6.5" fill="#5F6877" text-anchor="start">step 31</text>
-<text x="358.4" y="3417.5" font-family="Arial" font-size="13" fill="#8D97A8" text-anchor="start">kofamscan</text></g>
+<text x="358.4" y="3417.5" font-family="Arial" font-size="13" fill="#E4EAEC" text-anchor="start">kofamscan</text></g>
 <g><title>annotation::kofamscan_descriptions_chunk</title>
 <circle cx="210.7" cy="3447.3" r="5.3" fill="#1B1E24" stroke="#EF553B" stroke-width="1.5"/>
-<text x="358.4" y="3441.8" font-family="Arial" font-size="6.5" fill="#6B7484" text-anchor="start">annotation</text>
-<text x="358.4" y="3452.0" font-family="Arial" font-size="13" fill="#DFE3EA" text-anchor="start">kofamscan_descriptions_chunk</text></g>
+<text x="358.4" y="3452.0" font-family="Arial" font-size="13" fill="#6E828B" text-anchor="start">kofamscan_descriptions_chunk</text></g>
 <g><title>annotation::kofamscan_results_chunk</title>
 <circle cx="193.8" cy="3481.7" r="5.3" fill="#1B1E24" stroke="#EF553B" stroke-width="1.5"/>
-<text x="358.4" y="3476.3" font-family="Arial" font-size="6.5" fill="#6B7484" text-anchor="start">annotation</text>
-<text x="358.4" y="3486.4" font-family="Arial" font-size="13" fill="#DFE3EA" text-anchor="start">kofamscan_results_chunk</text></g>
+<text x="358.4" y="3486.4" font-family="Arial" font-size="13" fill="#6E828B" text-anchor="start">kofamscan_results_chunk</text></g>
 <g><title>35 merge_kofamscan</title>
 <polygon points="289.9,3511.6 300.6,3511.6 295.2,3520.8" fill="#1B1E24" stroke="#00CC96" stroke-width="1.5" stroke-linejoin="round"/>
-<text x="358.4" y="3510.7" font-family="Arial" font-size="6.5" fill="#5F6877" text-anchor="start">step 35</text>
-<text x="358.4" y="3520.9" font-family="Arial" font-size="13" fill="#8D97A8" text-anchor="start">merge_kofamscan</text></g>
+<text x="358.4" y="3520.9" font-family="Arial" font-size="13" fill="#E4EAEC" text-anchor="start">merge_kofamscan</text></g>
 <g><title>annotation::kofamscan_descriptions</title>
 <circle cx="210.7" cy="3550.6" r="5.3" fill="#1B1E24" stroke="#00CC96" stroke-width="1.5"/>
-<text x="358.4" y="3545.2" font-family="Arial" font-size="6.5" fill="#6B7484" text-anchor="start">annotation</text>
-<text x="358.4" y="3555.3" font-family="Arial" font-size="13" fill="#DFE3EA" text-anchor="start">kofamscan_descriptions</text></g>
+<text x="358.4" y="3555.3" font-family="Arial" font-size="13" fill="#6E828B" text-anchor="start">kofamscan_descriptions</text></g>
 <g><title>annotation::kofamscan_results</title>
 <circle cx="295.2" cy="3585.1" r="5.3" fill="#1B1E24" stroke="#00CC96" stroke-width="1.5"/>
-<text x="358.4" y="3579.6" font-family="Arial" font-size="6.5" fill="#6B7484" text-anchor="start">annotation</text>
-<text x="358.4" y="3589.8" font-family="Arial" font-size="13" fill="#DFE3EA" text-anchor="start">kofamscan_results</text></g>
+<text x="358.4" y="3589.8" font-family="Arial" font-size="13" fill="#6E828B" text-anchor="start">kofamscan_results</text></g>
 <g><title>ref::label_transfer_landmarks</title>
 <circle cx="261.4" cy="3619.5" r="5.3" fill="#1B1E24" stroke="#636EFA" stroke-width="1.5"/>
-<text x="358.4" y="3614.1" font-family="Arial" font-size="6.5" fill="#6B7484" text-anchor="start">ref</text>
-<text x="358.4" y="3624.2" font-family="Arial" font-size="13" fill="#DFE3EA" text-anchor="start">label_transfer_landmarks</text></g>
+<text x="358.4" y="3624.2" font-family="Arial" font-size="13" fill="#6E828B" text-anchor="start">label_transfer_landmarks</text></g>
 <g><title>ref::mnxr_lookup</title>
 <circle cx="244.5" cy="3654.0" r="5.3" fill="#1B1E24" stroke="#636EFA" stroke-width="1.5"/>
-<text x="358.4" y="3648.5" font-family="Arial" font-size="6.5" fill="#6B7484" text-anchor="start">ref</text>
-<text x="358.4" y="3658.7" font-family="Arial" font-size="13" fill="#DFE3EA" text-anchor="start">mnxr_lookup</text></g>
+<text x="358.4" y="3658.7" font-family="Arial" font-size="13" fill="#6E828B" text-anchor="start">mnxr_lookup</text></g>
 <g><title>38 gpr_4lane</title>
 <polygon points="340.6,3683.8 351.3,3683.8 345.9,3693.0" fill="#1B1E24" stroke="#8A8A8A" stroke-width="1.5" stroke-linejoin="round"/>
-<text x="358.4" y="3683.0" font-family="Arial" font-size="6.5" fill="#5F6877" text-anchor="start">step 38</text>
-<text x="358.4" y="3693.1" font-family="Arial" font-size="13" fill="#8D97A8" text-anchor="start">gpr_4lane</text></g>
+<text x="358.4" y="3693.1" font-family="Arial" font-size="13" fill="#E4EAEC" text-anchor="start">gpr_4lane</text></g>
 <g><title>annotation::gpr_table</title>
 <circle cx="345.9" cy="3722.9" r="5.3" fill="#8A8A8A" stroke="#DFE3EA" stroke-width="3.0"/>
-<text x="358.4" y="3717.4" font-family="Arial" font-size="6.5" fill="#6B7484" text-anchor="start">annotation</text>
-<text x="358.4" y="3727.6" font-family="Arial" font-size="13" fill="#DFE3EA" text-anchor="start">gpr_table</text></g>
+<text x="358.4" y="3727.6" font-family="Arial" font-size="13" fill="#9FB1B9" text-anchor="start">gpr_table</text></g>
 </svg>

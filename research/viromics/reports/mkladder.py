@@ -35,6 +35,39 @@ sys.path.insert(0, str(MLIB))
 import _authoring as A                                                # noqa: E402
 from metasmith.python_api import (DEFERRED, Spec,                     # noqa: E402
                                   TransformInstanceLibrary)
+from dataclasses import replace                                       # noqa: E402
+from metasmith.models.dag_renderer import NodeKind                    # noqa: E402
+
+# The steps are the subject of these pictures, so they carry the ink and the data
+# recedes -- the engine's default is the other way round, because elsewhere the
+# reader is chasing a type. Applied to the renderer rather than to
+# `dag_renderer.STYLES`, which is shared with the GUI and every other report.
+_EMPHASIS = {
+    "light": {NodeKind.TRANSFORM: "#0E141A",
+              NodeKind.DATA:      "#7C8B92",
+              NodeKind.TARGET:    "#48575E"},
+    "dark":  {NodeKind.TRANSFORM: "#E4EAEC",
+              NodeKind.DATA:      "#6E828B",
+              NodeKind.TARGET:    "#9FB1B9"},
+}
+
+
+def emphasise_steps(r, theme: str):
+    """Put the ink on the transforms, and drop the line above every label.
+
+    The namespace line is emitted only for a `Label` that has one, and a node
+    with no explicit label gets `default_label`, which derives a namespace from
+    the node id -- so every node needs an explicit blank-namespace label, not
+    just the ones already carrying one. `full` is preserved, so the SVG `<title>`
+    tooltip still gives the qualified name.
+    """
+    for name, lab in r.labels.items():
+        r._labels[name] = replace(lab, namespace="")
+    r._theme = replace(r._theme, styles={
+        kind: replace(st, text=_EMPHASIS[theme][kind])
+        for kind, st in r._theme.styles.items()
+    })
+    return r
 
 TYPE_LIBS = ("sequences.yml", "alignment.yml", "ref.yml", "annotation.yml",
              "taxonomy.yml", "binning.yml", "binning_local.yml", "viromics.yml")
@@ -221,6 +254,7 @@ def main() -> int:
         for theme in ("light", "dark"):
             r = plan.BuildDAG(colour="module", theme=theme, background=False,
                               show_step_order=True)
+            emphasise_steps(r, theme)
             out = Path(r.render(str(HERE / f"rung-{rung['key']}-{theme}"), "svg"))
             m = re.search(r'width="(\d+)" height="(\d+)"', out.read_text()[:400])
             sizes[theme] = (int(m.group(1)), int(m.group(2)))
