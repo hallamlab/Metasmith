@@ -14,37 +14,29 @@
 </g>
 <g><title>given</title>
 <polygon points="70.2,32.1 80.9,32.1 75.5,41.3" fill="#1B1E24" stroke="#636EFA" stroke-width="1.5" stroke-linejoin="round"/>
-<text x="88.0" y="41.4" font-family="Arial" font-size="13" fill="#8D97A8" text-anchor="start">given</text></g>
+<text x="88.0" y="41.4" font-family="Arial" font-size="13" fill="#E4EAEC" text-anchor="start">given</text></g>
 <g><title>sequences::long_reads</title>
 <circle cx="75.5" cy="71.2" r="5.3" fill="#1B1E24" stroke="#EF553B" stroke-width="1.5"/>
-<text x="88.0" y="65.7" font-family="Arial" font-size="6.5" fill="#6B7484" text-anchor="start">sequences</text>
-<text x="88.0" y="75.9" font-family="Arial" font-size="13" fill="#DFE3EA" text-anchor="start">long_reads</text></g>
+<text x="88.0" y="75.9" font-family="Arial" font-size="13" fill="#6E828B" text-anchor="start">long_reads</text></g>
 <g><title>2 filtlong</title>
 <polygon points="70.2,101.0 80.9,101.0 75.5,110.2" fill="#1B1E24" stroke="#636EFA" stroke-width="1.5" stroke-linejoin="round"/>
-<text x="88.0" y="100.2" font-family="Arial" font-size="6.5" fill="#5F6877" text-anchor="start">step 2</text>
-<text x="88.0" y="110.3" font-family="Arial" font-size="13" fill="#8D97A8" text-anchor="start">filtlong</text></g>
+<text x="88.0" y="110.3" font-family="Arial" font-size="13" fill="#E4EAEC" text-anchor="start">filtlong</text></g>
 <g><title>sequences::discarded_long_reads</title>
 <circle cx="24.8" cy="140.1" r="5.3" fill="#1B1E24" stroke="#636EFA" stroke-width="1.5"/>
-<text x="88.0" y="134.6" font-family="Arial" font-size="6.5" fill="#6B7484" text-anchor="start">sequences</text>
-<text x="88.0" y="144.8" font-family="Arial" font-size="13" fill="#DFE3EA" text-anchor="start">discarded_long_reads</text></g>
+<text x="88.0" y="144.8" font-family="Arial" font-size="13" fill="#6E828B" text-anchor="start">discarded_long_reads</text></g>
 <g><title>sequences::clean_long_reads</title>
 <circle cx="75.5" cy="174.5" r="5.3" fill="#1B1E24" stroke="#636EFA" stroke-width="1.5"/>
-<text x="88.0" y="169.1" font-family="Arial" font-size="6.5" fill="#6B7484" text-anchor="start">sequences</text>
-<text x="88.0" y="179.2" font-family="Arial" font-size="13" fill="#DFE3EA" text-anchor="start">clean_long_reads</text></g>
+<text x="88.0" y="179.2" font-family="Arial" font-size="13" fill="#6E828B" text-anchor="start">clean_long_reads</text></g>
 <g><title>1 seqkit_reads</title>
 <polygon points="53.3,204.4 64.0,204.4 58.6,213.6" fill="#1B1E24" stroke="#EF553B" stroke-width="1.5" stroke-linejoin="round"/>
-<text x="88.0" y="203.5" font-family="Arial" font-size="6.5" fill="#5F6877" text-anchor="start">step 1</text>
-<text x="88.0" y="213.7" font-family="Arial" font-size="13" fill="#8D97A8" text-anchor="start">seqkit_reads</text></g>
+<text x="88.0" y="213.7" font-family="Arial" font-size="13" fill="#E4EAEC" text-anchor="start">seqkit_reads</text></g>
 <g><title>sequences::read_qc_stats</title>
 <circle cx="58.6" cy="243.4" r="5.3" fill="#1B1E24" stroke="#EF553B" stroke-width="1.5"/>
-<text x="88.0" y="238.0" font-family="Arial" font-size="6.5" fill="#6B7484" text-anchor="start">sequences</text>
-<text x="88.0" y="248.1" font-family="Arial" font-size="13" fill="#DFE3EA" text-anchor="start">read_qc_stats</text></g>
+<text x="88.0" y="248.1" font-family="Arial" font-size="13" fill="#6E828B" text-anchor="start">read_qc_stats</text></g>
 <g><title>3 flye</title>
 <polygon points="70.2,273.3 80.9,273.3 75.5,282.5" fill="#1B1E24" stroke="#EF553B" stroke-width="1.5" stroke-linejoin="round"/>
-<text x="88.0" y="272.4" font-family="Arial" font-size="6.5" fill="#5F6877" text-anchor="start">step 3</text>
-<text x="88.0" y="282.6" font-family="Arial" font-size="13" fill="#8D97A8" text-anchor="start">flye</text></g>
+<text x="88.0" y="282.6" font-family="Arial" font-size="13" fill="#E4EAEC" text-anchor="start">flye</text></g>
 <g><title>sequences::flye_assembly</title>
 <circle cx="75.5" cy="312.3" r="5.3" fill="#EF553B" stroke="#DFE3EA" stroke-width="3.0"/>
-<text x="88.0" y="306.9" font-family="Arial" font-size="6.5" fill="#6B7484" text-anchor="start">sequences</text>
-<text x="88.0" y="317.0" font-family="Arial" font-size="13" fill="#DFE3EA" text-anchor="start">flye_assembly</text></g>
+<text x="88.0" y="317.0" font-family="Arial" font-size="13" fill="#9FB1B9" text-anchor="start">flye_assembly</text></g>
 </svg>

@@ -27,7 +27,7 @@ def plate(key: str, theme: str) -> str:
     return svg.replace("<svg ", f'<svg class="dag dag-{theme}" ', 1)
 
 
-HEAD = """<title>Fifty-Three Steps</title>
+HEAD = """<title>Eight Solves</title>
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?\
 family=Archivo:wdth,wght@62..125,400..800&family=JetBrains+Mono:wght@400;500;700&display=swap">
@@ -105,7 +105,10 @@ h1{margin:0; font-size:clamp(40px,7vw,86px); line-height:.95; font-weight:800;
 .rung{scroll-margin-top:0}
 .label{position:sticky; top:0; z-index:5; background:var(--paper);
   border-bottom:1px solid var(--ink); padding:14px 0 11px;
-  display:grid; grid-template-columns:auto minmax(0,1fr) auto; gap:18px; align-items:baseline}
+  display:grid; grid-template-columns:auto minmax(0,1fr) auto auto; gap:18px;
+  align-items:baseline}
+@media (max-width:620px){.label{grid-template-columns:auto minmax(0,1fr) auto}
+  .label .copy{grid-column:2/4; justify-self:start; margin-top:8px}}
 .label .o{font-family:"JetBrains Mono",monospace; font-size:12px; font-weight:700;
   color:var(--accent); letter-spacing:.1em; font-variant-numeric:tabular-nums}
 .label h2{margin:0; font-size:clamp(19px,2.6vw,27px); font-weight:700;
@@ -119,6 +122,14 @@ h1{margin:0; font-size:clamp(40px,7vw,86px); line-height:.95; font-weight:800;
 .label .ct b{display:block; font-family:"Archivo",sans-serif; font-size:30px;
   font-weight:700; font-variation-settings:"wdth" 120,"wght" 700; color:var(--ink);
   line-height:1; letter-spacing:-.02em}
+
+.label .copy{font-family:"JetBrains Mono",monospace; font-size:11px; letter-spacing:.06em;
+  color:var(--ink-2); background:transparent; border:1px solid var(--rule);
+  border-radius:2px; padding:6px 11px; cursor:pointer; white-space:nowrap;
+  transition:border-color .12s ease, color .12s ease}
+.label .copy:hover{border-color:var(--accent); color:var(--accent)}
+.label .copy[data-state="done"]{border-color:var(--accent); color:var(--accent)}
+.label .copy[data-state="fail"]{border-color:var(--ink-3); color:var(--ink-3)}
 
 .plate{background:var(--plate); border:1px solid var(--rule); border-top:0;
   overflow-x:auto; padding:30px 20px 36px}
@@ -147,6 +158,42 @@ footer{margin-top:56px; padding-top:20px; border-top:1px solid var(--rule);
 """
 
 
+SCRIPT = """
+<script>
+// The viewer sandbox makes a download inert, so the copy is the way a plate
+// leaves the page. Serialise whichever theme's SVG is actually on screen.
+document.querySelectorAll('.rung').forEach(function (section) {
+  var btn = section.querySelector('.copy');
+  if (!btn) return;
+  btn.addEventListener('click', function () {
+    var svg = Array.prototype.find.call(
+      section.querySelectorAll('.plate svg'),
+      function (el) { return el.getClientRects().length > 0; }
+    );
+    if (!svg) return;
+    var markup = '<?xml version="1.0" encoding="UTF-8" standalone="no"?>\\n'
+               + new XMLSerializer().serializeToString(svg);
+    var settle = function (label, state) {
+      btn.textContent = label;
+      btn.setAttribute('data-state', state);
+      setTimeout(function () {
+        btn.textContent = 'copy svg';
+        btn.removeAttribute('data-state');
+      }, 1600);
+    };
+    try {
+      navigator.clipboard.writeText(markup).then(
+        function () { settle('copied', 'done'); },
+        function () { settle('copy blocked', 'fail'); }
+      );
+    } catch (e) {
+      settle('copy blocked', 'fail');
+    }
+  });
+});
+</script>
+"""
+
 def build() -> str:
     rungs = json.loads((HERE / "ladder-index.json").read_text())
     top = max(r["steps"] for r in rungs)
@@ -169,7 +216,8 @@ def build() -> str:
             f'<h2>{r["title"]}<span class="cap">{r["caption"]}</span></h2>'
             f'<span class="ct"><b>{r["steps"]}</b>'
             f'{"step" if r["steps"] == 1 else "steps"} &middot; '
-            f'{r["targets"]} target{"" if r["targets"] == 1 else "s"}</span></div>'
+            f'{r["targets"]} target{"" if r["targets"] == 1 else "s"}</span>'
+            f'<button class="copy" type="button">copy svg</button></div>'
             f'<div class="plate">{plate(r["key"], "light")}{plate(r["key"], "dark")}</div>'
             f'</section>'
         )
@@ -190,7 +238,7 @@ def build() -> str:
         HEAD
         + '<div class="sheet">'
         + '<header class="top"><p class="slug">metasmith &middot; viromics &middot; '
-          'eight solves</p><h1>Fifty-Three<br>Steps</h1>'
+          'one plan at a time</p><h1>Eight<br>Solves</h1>'
           '<p class="sub">Eight separate plans, each solved on its own. Every rung '
           'changes <b>the inputs and the targets</b> &mdash; never the steps. '
           'What appears in each picture, the planner chose.</p>'
@@ -200,6 +248,7 @@ def build() -> str:
         + key
         + '</header>'
         + "".join(body)
+        + SCRIPT
         + '<footer><span>research/viromics/reports/mkladder.py</span>'
           '<span>solver: rust, seed 42</span>'
           '<span>rung 8 is the shipped template</span></footer>'
