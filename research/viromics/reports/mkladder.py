@@ -102,8 +102,9 @@ _MAG = [
     {"type": "sequences::assembly_stats", "parents": [0]},              # 1
     {"type": "binning_local::cluster_table", "parents": [0]},           # 2
     {"type": "taxonomy::metabuli", "parents": [0]},                     # 3
-    {"type": "sequences::semibin2_bin_fasta", "parents": [0]},          # 4
-    {"type": "taxonomy::gtdbtk", "parents": [4]},                       # 5
+    # GTDB-Tk is not named. `cluster_table` reaches the aggregator, and the
+    # aggregator requires one gtdbtk per bin set, so all three arrive as its
+    # dependencies -- which is the rung's whole point.
 ]
 _GPR = [{"type": "annotation::gpr_table", "parents": [0]}]
 
@@ -154,7 +155,7 @@ RUNGS = [
          targets=["sequences::flye_assembly"],
          libs=lambda: list(A.transforms(*_STD))),
     dict(key="5-binning", n=5, title="Genome recovery and taxonomy",
-         caption="one target pulls three binners, CheckM2, the aggregator and skANI",
+         caption="one target pulls three binners, CheckM2, GTDB-Tk and skANI",
          inputs=_zipped_pair, sample="sequences::read_metadata",
          targets=_MAG,
          libs=lambda: [_no_spades()] + list(A.transforms(*_MASKED))),
