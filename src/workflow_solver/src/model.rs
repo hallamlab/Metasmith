@@ -164,19 +164,6 @@ impl Endpoints {
         e
     }
 
-    /// Add parents and recompute the signature. Every reference to this
-    /// endpoint now sees the wider lineage, matching Python's in-place mutation
-    /// -- which is why endpoints cannot be interned values.
-    pub fn extend_parents(&mut self, e: EpId, extra: &[EpId]) {
-        let mut ps = std::mem::take(&mut self.parents[e as usize]);
-        ps.extend_from_slice(extra);
-        ps.sort_unstable();
-        ps.dedup();
-        let ty = self.types[e as usize];
-        let sig = self.compute_sig(ty, &ps);
-        self.parents[e as usize] = ps;
-        self.sig[e as usize] = sig;
-    }
 
     /// Is `ancestor` reachable from `e` through parents, comparing by equality?
     ///

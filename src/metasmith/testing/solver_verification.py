@@ -183,8 +183,18 @@ class PlanCheck:
         return "; ".join(self.violations)
 
 
-def check_plan(problem: SolverProblem, solution: Solution) -> PlanCheck:
+def check_plan(
+    problem: SolverProblem, solution: Solution, *, strict: bool = False
+) -> PlanCheck:
+    """Adjudicate a finished plan against the specification.
+
+    `strict` promotes the notes to violations and adds the signature-uniqueness
+    check below. Use it on a plan a refiner produced. The default is loose
+    because a merged timeline legitimately emits an endpoint from a slot whose
+    properties differ, and the shipped corpus relies on that staying a note.
+    """
     res = PlanCheck()
+    _strict = strict
     steps = list(solution.dependency_plan)
     if not steps:
         res.violations.append("plan has no steps")
@@ -211,10 +221,18 @@ def check_plan(problem: SolverProblem, solution: Solution) -> PlanCheck:
         for d, e in s.used.items():
             if id(e) not in produced_ids:
                 if e in produced_eq:
-                    res.notes.append(
+                    msg = (
                         f"step {i} ({s.transform.key}) consumes an endpoint that is "
                         "only equal to, not identical with, a produced one"
                     )
+                    # CAUTION Under `strict` this is a violation, not a note. Two
+                    # steps emitting signature-equal endpoints are collapsed onto
+                    # one producer by `rectify`, and every consumer is rewired to
+                    # whichever came last in `get_order` -- a plan the search never
+                    # chose. The wire the witness reads is already collapsed, so
+                    # `uniqueProducer` cannot see it. This is the only place it is
+                    # visible.
+                    (res.violations if _strict else res.notes).append(msg)
                 else:
                     res.violations.append(
                         f"step {i} ({s.transform.key}) consumes an endpoint "
@@ -232,7 +250,7 @@ def check_plan(problem: SolverProblem, solution: Solution) -> PlanCheck:
                     continue
                 if is_given_step:
                     if any(e.properties == g.properties for grp in problem.given for g in grp):
-                        res.notes.append(
+                        (res.violations if _strict else res.notes).append(
                             f"step {i} emits {sorted(e.properties)} from a slot "
                             f"declaring {sorted(d.properties)} -- merged timelines"
                         )
@@ -317,6 +335,25 @@ def check_plan(problem: SolverProblem, solution: Solution) -> PlanCheck:
                         f"descended from its declared lineage constraint "
                         f"{sorted(constraint.properties)}"
                     )
+
+    if _strict:
+        # One logical object, one producer -- by SIGNATURE, not by identity.
+        # `uniqueProducer` on the wire cannot decide this: `rectify` keys its
+        # endpoint map by signature and has already merged the pair by the time
+        # a wire exists, so the witness adjudicates a plan with one producer
+        # that the search never chose.
+        by_sig: dict[str, int] = {}
+        for i, s_ in enumerate(steps):
+            for group in s_.produced:
+                for e in group.values():
+                    sig = e.Signature()
+                    if by_sig.get(sig, i) != i:
+                        res.violations.append(
+                            f"steps {by_sig[sig]} and {i} both produce an endpoint "
+                            f"with signature {sig[:16]} -- rectify will collapse them "
+                            "onto one producer"
+                        )
+                    by_sig[sig] = i
     return res
 
 

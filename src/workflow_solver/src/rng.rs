@@ -22,7 +22,7 @@ use rand_chacha::rand_core::{Rng, SeedableRng};
 /// Bump in lockstep with `SOLVER_RNG_VERSION` in `solver_rng.py`. A plan solved
 /// under one version is not reproducible under another; the two sides exchange
 /// this so a desync is loud rather than a quiet divergence in results.
-pub const SOLVER_RNG_VERSION: u32 = 1;
+pub const SOLVER_RNG_VERSION: u32 = 3;
 
 const TWO_32: u64 = 1 << 32;
 

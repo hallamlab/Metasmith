@@ -17,11 +17,10 @@ recorded as a first-class outcome, not swallowed.
 
 from __future__ import annotations
 
-import multiprocessing
 import time
 from dataclasses import dataclass
 
-from metasmith.models.solver_backend import Backend, UsePythonSolver
+from metasmith.models.solver_backend import Backend
 from metasmith.testing.solver_verification import SolverProblem, check_plan
 
 #: Generous relative to the ~0.1s / ~0.01s typical solves seen on this
@@ -41,96 +40,25 @@ class MetasmithResult:
     timed_out: bool = False
 
 
-def _solve_and_check(problem: SolverProblem, *, seed: int, max_iter: int, max_refine: int, expect_backend: str) -> MetasmithResult:
+def _solve_and_check(problem: SolverProblem, *, seed: int, max_iter: int, max_refine: int) -> MetasmithResult:
     t0 = time.perf_counter()
-    if expect_backend == "python":
-        with UsePythonSolver():
-            sol = problem.solve(seed=seed, max_iter=max_iter, max_refine=max_refine)
-            actual_backend = Backend("solve")
-    else:
-        sol = problem.solve(seed=seed, max_iter=max_iter, max_refine=max_refine)
-        actual_backend = Backend("solve")
+    sol = problem.solve(seed=seed, max_iter=max_iter, max_refine=max_refine)
+    backend = Backend("solve")
     wall = time.perf_counter() - t0
-    if actual_backend != expect_backend:
-        raise RuntimeError(
-            f"[{problem.name}] expected backend={expect_backend!r} but "
-            f"Backend('solve')={actual_backend!r} -- a claimed-Rust run would "
-            "silently be a Python one"
-        )
+    if backend != "rust":
+        raise RuntimeError(f"[{problem.name}] Backend('solve')={backend!r}")
     check = check_plan(problem, sol) if sol.complete else None
     return MetasmithResult(
-        backend=actual_backend,
-        solved=sol.complete,
-        checked_ok=bool(check) if check is not None else False,
-        check_detail=str(check) if check is not None else "not solved, not checked",
-        plan_length=len(sol.dependency_plan),
+        backend=backend,
+        solved=bool(sol.complete),
+        checked_ok=bool(check.ok) if check is not None else False,
+        check_detail="" if check is None or check.ok else str(check.violations),
+        plan_length=len(sol.dependency_plan) if sol.complete else -1,
         wall_seconds=wall,
-    )
-
-
-def _worker(problem, kwargs, conn):
-    try:
-        conn.send(("ok", _solve_and_check(problem, **kwargs)))
-    except Exception as e:  # noqa: BLE001 -- reported to the parent, not raised in the worker
-        conn.send(("err", f"{type(e).__name__}: {e}"))
-    finally:
-        conn.close()
-
-
-def _solve_with_timeout(problem: SolverProblem, *, expect_backend: str, seed: int, max_iter: int, max_refine: int, timeout_s: float) -> MetasmithResult:
-    ctx = multiprocessing.get_context("spawn")
-    parent_conn, child_conn = ctx.Pipe(duplex=False)
-    kwargs = dict(seed=seed, max_iter=max_iter, max_refine=max_refine, expect_backend=expect_backend)
-    proc = ctx.Process(target=_worker, args=(problem, kwargs, child_conn))
-    t0 = time.perf_counter()
-    proc.start()
-    child_conn.close()
-    proc.join(timeout_s)
-    wall = time.perf_counter() - t0
-    if proc.is_alive():
-        proc.terminate()
-        proc.join(5)
-        if proc.is_alive():
-            proc.kill()
-            proc.join()
-        return MetasmithResult(
-            backend=expect_backend, solved=False, checked_ok=False,
-            check_detail=f"timed out after {timeout_s}s (cyclic-graph blowup in solve_by_mcts)",
-            plan_length=-1, wall_seconds=wall, timed_out=True,
-        )
-    if parent_conn.poll():
-        status, payload = parent_conn.recv()
-        if status == "ok":
-            return payload
-        return MetasmithResult(
-            backend=expect_backend, solved=False, checked_ok=False,
-            check_detail=f"worker error: {payload}", plan_length=-1, wall_seconds=wall,
-        )
-    return MetasmithResult(
-        backend=expect_backend, solved=False, checked_ok=False,
-        check_detail=f"worker exited with no result (code {proc.exitcode})",
-        plan_length=-1, wall_seconds=wall,
-    )
-
-
-def solve_with_metasmith_python(
-    problem: SolverProblem, *, seed: int = 1, max_iter: int = 1024, max_refine: int = 1024, timeout_s: float = DEFAULT_TIMEOUT_S
-) -> MetasmithResult:
-    return _solve_with_timeout(
-        problem, expect_backend="python", seed=seed, max_iter=max_iter, max_refine=max_refine, timeout_s=timeout_s
     )
 
 
 def solve_with_metasmith_rust(
     problem: SolverProblem, *, seed: int = 1, max_iter: int = 1024, max_refine: int = 1024
 ) -> MetasmithResult:
-    """No subprocess-wrapping timeout here: the cyclic-graph blowup lives
-    entirely in the Python fallback's backward distance walk (confirmed absent
-    from `src/workflow_solver/src/*.rs`), so the Rust path
-    doesn't need the same guard -- and wrapping it in a spawned Python
-    interpreter just to shell out to a Rust binary that's already its own
-    subprocess was pure overhead (a full interpreter start per instance).
-    """
-    return _solve_and_check(
-        problem, seed=seed, max_iter=max_iter, max_refine=max_refine, expect_backend="rust"
-    )
+    return _solve_and_check(problem, seed=seed, max_iter=max_iter, max_refine=max_refine)

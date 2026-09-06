@@ -73,8 +73,9 @@ products stay in one timeline (A *and* B). The solver discriminates on whether t
 application's transform is the given one. Getting it wrong stops a multi-output tool's products
 co-existing.
 
-**What the solver does.** It works backwards from the target carrying `SolverState` of what it
-has and which transforms remain candidates. An `Application` is one use of one transform — a
+**What the solver does.** It works backwards from the target, carrying what it has and which
+transforms remain candidates. The search itself is `src/workflow_solver/` — `msm_solver`, the only
+implementation, reached through `solve_by_mcts`. An `Application` is one use of one transform — a
 `{Dependency: Endpoint}` map of what filled each slot and what it produced — signed by the
 transform key paired with each slot's filling endpoint. One transform on different inputs is a
 different application; on the same inputs it dedupes.

@@ -186,10 +186,12 @@ and stages the binaries into `src/metasmith/engine/`. That directory is
 generated, never committed, and shipped as package data — because unlike the
 relay, the solver runs **locally at plan time** in whatever process is planning,
 so the agent-deploy path never sees it. `-bp` and `-bc` refuse to run without
-all four. The refusal matters more here than for the relay: a wheel with no
-engine still plans, on the Python solver, just slower — so the failure is
-invisible unless something checks. "Just slower" is now literal and large:
-7.5s versus 1.1s on `metagenomics_from_paired_reads`, for the same plan. `-bel` is the dev-loop build (host toolchain,
+all four, and that refusal is now the only thing between a packaging slip and a
+wheel that cannot plan at all. There used to be a Python solver behind it, so a
+missing engine meant "correct and about 7x slower" and the failure was invisible
+unless something checked. The Python solver is gone: a missing engine now raises.
+
+`-bel` is the dev-loop build (host toolchain,
 host target only); it writes a `BUILD_KIND` marker the guard reads, because
 nothing about a Linux ELF says whether it was linked against musl or against the
 build machine's glibc.
@@ -198,7 +200,9 @@ build machine's glibc.
 It was DVC-tracked briefly so sibling worktrees could share one cross-build. DVC
 materialises outputs as read-only hardlinks and does not carry the exec bit, so
 the binaries checked out mode 444, the handshake failed with a permission error,
-and every plan in every worktree fell back to the Python solver. The mode is not
+and every plan in every worktree fell back to the Python solver — which is one of
+the reasons that fallback no longer exists. The same accident today stops the
+planner instead of silently slowing it. The mode is not
 repaired by packaging either: 444 survives an sdist unchanged and normalises to
 644 in a wheel. `_assert_solver_engine` now checks the exec bit, and each scope
 builds its own stage; `MSM_SOLVER_TARGET_DIR` (default

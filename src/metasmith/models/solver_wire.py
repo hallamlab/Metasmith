@@ -153,19 +153,10 @@ def decode_plan(encoded: EncodedProblem, reply: dict) -> Solution:
         complete=reply["complete"],
         dependency_plan=steps,
         merged_endpoints={eps[k]: {eps[x] for x in v} for k, v in reply["merged"]},
-        _frontier=[],
-        _history=[],
-        _refiner_histories=[],
-        _heuristics={"engine": ENGINE_HEURISTICS_NOTE},
         _iterations=reply["iterations"],
         _refiner_iterations=[(a, b) for a, b in reply["refiner_iterations"]],
         _relavent_transforms=[encoded.transforms[i] for i in reply["relevant_transforms"]],
     )
-
-ENGINE_HEURISTICS_NOTE = (
-    "solved by msm_solver; the python solver's telemetry maps are not carried"
-    " across the wire because nothing reads them"
-)
 
 def solve_via_engine(
     info,

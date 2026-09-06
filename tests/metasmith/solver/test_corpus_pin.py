@@ -35,16 +35,29 @@ def test_corpus_case_still_yields_the_recorded_plan(name, seed, dials):
     )
 
 
-def test_the_corpus_spans_both_sides_of_rng_sensitivity():
-    stable, sensitive = [], []
+def test_the_solve_seed_no_longer_reaches_the_plan():
+    """PUCT ranks; it does not sample, so the seed is inert on every corpus case.
+
+    This test used to demand the corpus keep at least one rng-*sensitive* case, so
+    that a PRNG swap could not pass unnoticed. That premise died with the weighted
+    rule: selection's only remaining draw is `bounded_int` over the top-k set, k is
+    1, and a one-element choice consumes nothing. A swapped PRNG is caught by
+    `test_rng_contract.py`, which drives the stream directly through `rng-trace`
+    rather than hoping a plan happens to depend on it.
+
+    What is worth pinning instead is the inertness itself: a change that puts
+    sampling back on the selection path makes every plan seed-dependent again, and
+    that should be a decision rather than a discovery.
+    """
     for name, seed, dials in CORPUS:
         prints = {
             plan_fingerprint(generate_problem(seed, dials).solve(seed=s))
             for s in (42, 7, 1234)
         }
-        (stable if len(prints) == 1 else sensitive).append(name)
-    assert stable, "no rng-stable case left -- nothing pins a change as non-noise"
-    assert sensitive, "no rng-sensitive case left -- a PRNG swap would go unseen"
+        assert len(prints) == 1, (
+            f"{name} moved with the solve seed -- something reintroduced a draw"
+            " into node selection"
+        )
 
 
 def test_the_pin_covers_the_whole_corpus():

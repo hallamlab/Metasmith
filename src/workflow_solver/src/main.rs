@@ -23,6 +23,7 @@
 mod det;
 mod mcts;
 mod model;
+mod policy;
 mod problem;
 mod rectify;
 mod refine;
@@ -32,6 +33,7 @@ mod search;
 mod rng;
 mod smath;
 mod wire;
+mod witness;
 
 use clap::{Parser, Subcommand};
 use std::io::{self, Read, Write};
@@ -61,6 +63,10 @@ enum Commands {
     Describe,
     /// Solve a problem and return the plan. The capability that matters.
     Solve,
+    /// Adjudicate a `{request, reply}` pair from stdin against the plan
+    /// specification, and name every violated clause. Exits non-zero when the
+    /// plan is unsound, so a shell caller can gate on it directly.
+    Check,
 }
 
 fn main() {
@@ -70,6 +76,7 @@ fn main() {
         Commands::RngTrace => cmd_rng_trace(),
         Commands::Describe => cmd_describe(),
         Commands::Solve => cmd_solve(),
+        Commands::Check => cmd_check(),
     };
     if let Err(e) = result {
         eprintln!("msm_solver: {e}");
@@ -185,6 +192,58 @@ fn cmd_describe() -> Result<(), String> {
     })
 }
 
+#[derive(serde::Deserialize)]
+struct CheckRequest {
+    request: problem::EncodedProblem,
+    reply: reply::SolveReply,
+}
+
+/// Adjudicate a plan the engine did not necessarily produce.
+///
+/// Deliberately does *not* re-solve. The witness shares no code with the search,
+/// which is the only reason it can judge output from an implementation nobody
+/// has proved yet.
+fn cmd_check() -> Result<(), String> {
+    let mut raw = String::new();
+    io::stdin().read_to_string(&mut raw).map_err(|e| e.to_string())?;
+    let req: CheckRequest = serde_json::from_str(&raw).map_err(|e| e.to_string())?;
+    if req.request.wire_version != WIRE_VERSION {
+        return Err(format!(
+            "wire version mismatch: request {} vs engine {WIRE_VERSION}",
+            req.request.wire_version
+        ));
+    }
+    let p = witness::problem_of(&req.request);
+    let q = witness::plan_of(&req.request, &req.reply)?;
+    // `ok` is the proved function's answer; the violation list is the audit's
+    // account of it. Reporting the audit's own verdict would put the half nothing
+    // is proved about in the position of the judge -- the same inversion the
+    // solve gate had.
+    let ok = solver_witness::check(&p, &q);
+    let verdict = solver_witness_audit::audit(&p, &q);
+
+    emit(&wire::CheckReply {
+        wire_version: WIRE_VERSION,
+        ok,
+        complete: req.reply.complete,
+        violations: verdict
+            .violations
+            .iter()
+            .map(|x| wire::EncodedViolation {
+                clause: solver_witness_audit::name(x.clause).to_string(),
+                step: x.step as u32,
+                slot: x.slot as u32,
+                endpoint: x.endpoint as u32,
+            })
+            .collect(),
+    })?;
+    if !ok {
+        eprint!("{}", witness::render(&verdict));
+        std::process::exit(2);
+    }
+    Ok(())
+}
+
 /// Read a problem from stdin, search, and hand back the plan.
 fn cmd_solve() -> Result<(), String> {
     let mut raw = String::new();
@@ -222,8 +281,37 @@ fn cmd_solve() -> Result<(), String> {
     let given_appl = mcts::build_given_appl(&p, &mut ar)?;
     let mut stream = DecisionStream::new(p.seed);
     let result = mcts::mcts(&p, &mut ar, &mut stream, given_appl)?;
-    emit(&reply::encode_plan(
+    let plan = reply::encode_plan(
         &p, &ar, &result.steps, &result.merged, &node_of, result.complete,
         result.iterations, result.refiner_iterations, WIRE_VERSION,
-    ))
+    );
+
+    // The gate. This is what takes the search out of the trusted computing base:
+    // whatever it explored, the bytes about to leave this process have been
+    // adjudicated against the specification by code that shares nothing with it.
+    //
+    // The condition is `complete -> sound`, NOT `sound`. The search returns a
+    // non-empty plan with no target step when its frontier runs out, and that is
+    // a search that gave up rather than a wrong answer -- `test_known_unsound`
+    // pins exactly that behaviour, and a gate that refused it would break the
+    // regression while looking like it had found something.
+    if plan.complete {
+        let wp = witness::problem_of(&enc);
+        let wq = witness::plan_of(&enc, &plan)?;
+        // The verdict comes from `check`, which is the function `SolverProof
+        // .check_spec` is about. `audit` re-implements the same judgement as
+        // loops that can name a coordinate, and the two are tied only by a
+        // `debug_assert_eq!` that `[profile.release]` compiles out -- so gating
+        // on the audit meant the shipped binary was gated by the half nothing is
+        // proved about. It is called here only to say which clause failed.
+        if !solver_witness::check(&wp, &wq) {
+            eprint!("{}", witness::render(&solver_witness_audit::audit(&wp, &wq)));
+            return Err(
+                "the plan this search produced does not satisfy the specification; \
+                 refusing to emit it (see the clauses above)"
+                    .to_string(),
+            );
+        }
+    }
+    emit(&plan)
 }
