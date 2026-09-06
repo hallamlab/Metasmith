@@ -7,15 +7,18 @@ real sequence of solves, and every step in a picture was chosen by the planner
 rather than placed by hand.
 
     1  spades only              1 step    a target is a type
-    2  + read and assembly QC   4         remove an input, QC appears
-    3  megahit, interleaved     5         the target names the assembler
+    2  + read and assembly QC   5         remove an input, pairing and QC appear
+    3  megahit, one read file   4         the target names the assembler
     4  flye, long reads         3         a different input type, a different lane
-    5  + binning and taxonomy  17         one target, a whole subgraph
-    6  + functional panel      29         one target, four annotator lanes
-    7  + viral identification  36         three callers, one frozen object
-    8  + viral post-processing 53         the shipped template
+    5  + binning and taxonomy  19         one target, a whole subgraph
+    6  + functional panel      31         one target, four annotator lanes
+    7  + viral identification  38         three callers, one frozen object
+    8  + viral post-processing 51         the shipped template
 
-    PYTHONPATH=src python research/viromics/reports/mkladder.py
+    PYTHONPATH=src python research/viromics/reports/mkladder.py [rung ...]
+
+Naming rungs (by key or number) solves only those and merges them into the
+existing index; naming none solves all eight.
 
 Keep the basename free of dots: `render()` reads a suffix as the output format.
 """
@@ -171,14 +174,14 @@ RUNGS = [
          targets=["sequences::spades_assembly"],
          libs=lambda: list(A.transforms(*_STD))),
     dict(key="2-qc", n=2, title="Quality control, unasked for",
-         caption="the same target on raw reads",
-         inputs=_raw_short, sample="sequences::read_metadata",
+         caption="forward and reverse reads in, pairing and QC unasked for",
+         inputs=_zipped_pair, sample="sequences::read_metadata",
          targets=["sequences::spades_assembly",
                   {"type": "sequences::assembly_stats", "parents": [0]}],
          libs=lambda: list(A.transforms(*_STD))),
     dict(key="3-megahit", n=3, title="A different assembler",
-         caption="zipped pairs in, megahit named instead of spades",
-         inputs=_zipped_pair, sample="sequences::read_metadata",
+         caption="megahit named instead of spades, one file in place of a pair",
+         inputs=_raw_short, sample="sequences::read_metadata",
          targets=["sequences::megahit_assembly",
                   {"type": "sequences::assembly_stats", "parents": [0]}],
          libs=lambda: list(A.transforms(*_STD))),
@@ -246,9 +249,16 @@ def solve(rung: dict):
     return plan
 
 
-def main() -> int:
-    index = []
+def main(only: list[str]) -> int:
+    # Solving all eight is minutes and gigabytes, and tweaking is done a rung at
+    # a time -- so a filter, with the index merged rather than rewritten, keeps
+    # the page buildable after a partial run.
+    index = {e["key"]: e for e in
+             (json.loads((HERE / "ladder-index.json").read_text())
+              if (HERE / "ladder-index.json").exists() else [])}
     for rung in RUNGS:
+        if only and rung["key"] not in only and str(rung["n"]) not in only:
+            continue
         plan = solve(rung)
         sizes = {}
         for theme in ("light", "dark"):
@@ -259,15 +269,17 @@ def main() -> int:
             m = re.search(r'width="(\d+)" height="(\d+)"', out.read_text()[:400])
             sizes[theme] = (int(m.group(1)), int(m.group(2)))
         w, h = sizes["light"]
-        index.append(dict(key=rung["key"], n=rung["n"], title=rung["title"],
-                          caption=rung["caption"], steps=len(plan.steps),
-                          targets=len(rung["targets"]), width=w, height=h,
-                          tools=[Path(s.transform._path).stem for s in plan.steps]))
+        index[rung["key"]] = dict(
+            key=rung["key"], n=rung["n"], title=rung["title"],
+            caption=rung["caption"], steps=len(plan.steps),
+            targets=len(rung["targets"]), width=w, height=h,
+            tools=[Path(s.transform._path).stem for s in plan.steps])
         print(f"  rung {rung['n']} {rung['title']:<32} {len(plan.steps):>2} steps  {w}x{h}")
 
-    (HERE / "ladder-index.json").write_text(json.dumps(index, indent=1))
+    ordered = [index[r["key"]] for r in RUNGS if r["key"] in index]
+    (HERE / "ladder-index.json").write_text(json.dumps(ordered, indent=1))
     return 0
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(main(sys.argv[1:]))
