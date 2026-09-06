@@ -672,10 +672,17 @@ class DataInstanceLibrary(_LeafIdentity, _StoreTransfer, _PinnedLibrary, _Teleme
             frozenset(x.properties)
             for x in whitelist if not isinstance(x, str)
         }
+        # Subset, not equality: a type is satisfied by any type holding at least
+        # its properties, so every ancestor of a declared type is a name this
+        # library can still answer for. Equality dropped them, and a target may
+        # only name a type the library carries -- which made the documented
+        # "write the shared ancestor as target 0" pattern resolve only when some
+        # unrelated transform happened to declare that ancestor by hand.
         for namespace, lib in list(self.types.items()):
             keep = {
                 k for k, v in lib.types.items()
-                if f"{namespace}::{k}" in used_type_names or frozenset(v.properties) in wl_props
+                if f"{namespace}::{k}" in used_type_names
+                or any(frozenset(v.properties) <= w for w in wl_props)
             }
             if len(keep) == 0:
                 del self.types[namespace]
