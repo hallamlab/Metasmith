@@ -5,10 +5,9 @@
 
 ## What goes in this file
 
-How the Rust solver ships, and the contracts it shares with the Python implementation — the
-version constants, the wire envelope, the decision rules that must agree bit for bit. The code
-itself is the description of the search; what belongs here is what one side cannot see about
-the other.
+How the Rust solver ships, what happens when it cannot, and the two contracts it still shares
+with the Python half that drives it — the wire envelope and the RNG stream. The code is the
+description of the search; what belongs here is what one file cannot see about another.
 
 ## How it ships, and why that differs from the relay
 
@@ -22,31 +21,21 @@ wheel and sdist.
 resolves too — so nothing is added to `PATH` and there is one lookup rather than three. Run
 `-bel` once and source runs use the engine.
 
-**Presence means use it; absence means the Python solver runs instead.** That is recoverable but
-not free: a wheel with no engine plans correctly and slowly, and nothing fails. Hence the guard
-on every shipping build (`_assert_solver_engine`), which also refuses a host-built `-bel` binary
-via a `BUILD_KIND` marker, since nothing about a Linux ELF says musl versus the build machine's
-glibc.
+**Absence is now a hard failure.** There is one solver, so a missing, unreadable or
+version-mismatched binary raises an `EngineError` naming which of the three it was, rather than
+falling back. That is a deliberate trade: the fallback was correct and roughly an order of
+magnitude slower (1.1s against 7.5s on `metagenomics_from_paired_reads`), which made a checkout
+that forgot to stage a binary *look* fine — and once, when DVC checked the binaries out mode 444,
+every plan in every worktree took that path with nothing but a warning to say so. The guard on
+every shipping build (`_assert_solver_engine`) is therefore load-bearing rather than advisory. It
+also refuses a host-built `-bel` binary via a `BUILD_KIND` marker, since nothing about a Linux ELF
+says musl versus the build machine's glibc.
 
-## The engine is the default, and reversion is explicit
+The cost of the trade is that a host outside the four staged targets — x86_64 and arm64 crossed
+with linux and darwin — cannot plan at all.
 
-The Rust engine runs whenever a usable binary is staged, with nothing set and nothing passed.
-The Python solver is a **reversion**, reachable only by saying so — `_set_solver_class`,
-`UsePythonSolver()`, or `pytest --solver=python` — and never by an environment variable. An
-*unasked-for* fallback warns once per process, because the two produce the same plans and differ
-by roughly an order of magnitude in wall clock (1.1s against 7.5s on
-`metagenomics_from_paired_reads`), so a checkout that forgot to stage a binary is correct and
-slow, which is exactly the defect nobody notices.
-
-Selection is an object rather than an environment read because the callers sit on core execution
-paths: a planning call must be able to state which implementation it wants and put the previous
-choice back afterwards. A differential test needs a reference, and a test whose subject is the
-Python implementation stops testing anything the moment the search runs elsewhere. An environment
-variable cannot be scoped, cannot be restored, and is invisible at the call site.
-
-`solver_backend.py` answers *which implementation runs* and is the only one of the pair anything
-outside the solver should import; `solver_engine.py` separately answers *is this binary
-trustworthy* — where it lives, what it said about itself, whether its versions match.
+`solver_backend.py` holds the entrypoint and the refiner budget; `solver_engine.py` answers *is
+this binary trustworthy* — where it lives, what it said about itself, whether its versions match.
 
 ## Two version constants, because they move for different reasons
 
@@ -54,31 +43,36 @@ trustworthy* — where it lives, what it said about itself, whether its versions
 `SOLVER_RNG_VERSION` covers the decision contract. Both are carried from the first commit rather
 than added at the first break, and the scar tissue is `LIN_PAYLOAD_VERSION`: a *single* constant
 covering two things that can move independently is how the last desync went unnoticed. The
-binary also advertises `capabilities`, and the Python side falls back for anything not
-advertised, so the port could land one piece at a time with the delivery path proven first.
+binary also advertises `capabilities`; a capability it does not claim is simply unavailable.
 
-## Plan-fingerprint parity is suspended, and the witness replaces it
+`SOLVER_RNG_VERSION` is 3. It went to 3 when PUCT became the selection rule — the envelope did
+not move, and that is exactly the independence the two constants exist to express.
 
-Plan fingerprints normally pin the decision contract, so any search change re-pins them. The refiner
-repair and the PUCT adoption both move every plan. Chasing parity between them re-pins twice and
-confounds the two, so fingerprints are held still until PUCT lands. Re-establish them once, then.
+## Plan-fingerprint parity has been re-established
 
-PUCT has not landed as the default and the suspension therefore still holds. It exists in the engine
-as an opt-in policy behind `MSM_SOLVER_POLICY`, measured in
-`data/metasmith/plans/09-the-selection-ratchet.md`, and the default path is byte-identical to the
-engine that preceded it on all 81 payloads of `research/metasmith/solver_ratchet/`. Adoption is what
-re-pins: `tests/metasmith/solver/fingerprints.json` and `SOLVER_RNG_VERSION` move together, and the
-Python `solve_by_mcts` moves with them bit for bit or `test_engine_differential` goes red.
+Fingerprints pin the decision contract, so any search change re-pins them. They were held still
+through the refiner repair and the PUCT adoption, because chasing parity between the two would have
+re-pinned twice and confounded them. PUCT has now landed as the only rule, and
+`tests/metasmith/solver/fingerprints.json` was re-recorded against it with `SOLVER_RNG_VERSION`
+moving in the same commit. The suspension is over: a search change re-pins again.
 
-In the interval a plan is judged by `solver_witness`, which is proved to decide exactly the written
-specification. A refiner that returns a different plan is not a regression. A refiner that returns a
-plan the witness rejects is.
+What the fingerprints can and cannot do is worth stating, because the corpus they cover solves in
+7–13 iterations against a budget of 256. They are a tripwire against a search that moves *quietly*.
+They are not evidence about a search change, and a green re-pin says nothing about whether the
+change was good. That question is `research/metasmith/solver_ratchet/`.
 
-**CAUTION** This does not suspend `SOLVER_RNG_VERSION`. That constant does a different job. It stops
-a stale binary and a new Python planning differently while both advertise the same version. Bump it
-whenever the decision contract moves, parity suspended or not.
+The soundness criterion is separate and did not move: a plan is judged by `solver_witness`, which is
+proved to decide exactly the written specification. A search that returns a different plan is not a
+regression. A search that returns a plan the witness rejects is.
 
-**CAUTION** The witness is not a complete oracle on its own. `msm_solver solve` runs the same audit
+**The gate runs `check`, not `audit`.** `solver_witness::check` is the function
+`SolverProof.check_spec` is about. `solver_witness_audit::audit` re-implements the same judgement
+as loops that can name a coordinate, and the two are tied only by a `debug_assert_eq!` that
+`[profile.release]` compiles out — so a release binary that gated on the audit was gated by the
+half nothing is proved about. `cmd_solve` and `cmd_check` both take their verdict from `check` and
+call `audit` only to say which clause failed.
+
+**CAUTION** The witness is not a complete oracle on its own. `msm_solver solve` runs the same check
 before it emits, so an accepted plan is weak evidence. Two independent halves carry the guarantee:
 `check_spec` agreeing on the same bytes, and the decoys. Two known holes let it accept what the
 specification rejects. `same_slots` and `same_props` compare dense bit sets of a fixed width, so an
@@ -86,12 +80,24 @@ id at or beyond that width is invisible. `check_plan` records "equal to, not ide
 note rather than a violation, which hides two steps producing signature-equal endpoints that
 `rectify` then collapses onto one producer.
 
-## The decision contract is one specification written twice
+## The RNG stream is the one contract still written twice
 
 `rng.rs` and `src/metasmith/models/solver_rng.py` are the two halves, and `rng.rs` is a
 deliberately literal transcription — same rules, same order of operations, same shortcuts.
 **Where a line looks like it could be simplified, the simplification is what would make the two
 streams diverge.**
+
+The python half outlived the python solver on purpose. It is no longer a second implementation of
+anything; it is an executable statement of the stream that `test_rng_contract.py` drives the
+binary against through `rng-trace`, which is the only cross-language differential left and the
+only thing that would catch `rand_chacha` changing under us.
+
+**Selection no longer samples.** PUCT ranks, `top_k` is 1, and a one-element choice consumes
+nothing — so the solve seed does not reach the plan on any of 72 corpus and profile cases. The
+stream is still drawn on ties and still has to agree, which is why the contract stays; but a test
+that hoped to notice a PRNG swap by watching a plan move would now notice nothing.
+`test_corpus_pin.py` pins the inertness instead, so putting sampling back is a decision rather
+than a discovery.
 
 The stream is ChaCha8 in its reference form: key = the seed as eight little-endian bytes followed
 by 24 zero bytes, 96-bit zero nonce, block counter from 0, the sixteen words of each block

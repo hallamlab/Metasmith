@@ -15,7 +15,6 @@ def run_one(binary, payload_file, max_iter, max_refine, mem, timeout, env, reply
     cmd = ["systemd-run", "--user", "--scope", "-q", "-p", f"MemoryMax={mem}",
            str(binary), "solve"]
     e = dict(os.environ)
-    e.pop("MSM_SOLVER_POLICY", None)
     e.pop("MSM_SOLVER_PUCT", None)
     e.update(env)
     t0 = time.monotonic()
@@ -46,7 +45,6 @@ def main():
     ap.add_argument("--set", default="fast")
     ap.add_argument("--out", required=True)
     ap.add_argument("--replies", default=None)
-    ap.add_argument("--policy", default=None)
     ap.add_argument("--puct", default=None)
     ap.add_argument("--mem", default="8G")
     a = ap.parse_args()
@@ -55,8 +53,6 @@ def main():
     manifest = json.loads((pdir / "manifest.json").read_text())
     entries = manifest[a.set]
     env = {}
-    if a.policy:
-        env["MSM_SOLVER_POLICY"] = a.policy
     if a.puct:
         env["MSM_SOLVER_PUCT"] = a.puct
     if a.replies:
@@ -68,7 +64,7 @@ def main():
         reply_out = str(Path(a.replies) / f"{name}.reply.json") if a.replies else None
         rows[name] = run_one(a.bin, pdir / ent["file"], ent["iter"], ent["refine"],
                              a.mem, ent["timeout"], env, reply_out)
-    doc = {"set": a.set, "policy": a.policy, "puct": a.puct, "rows": rows}
+    doc = {"set": a.set, "puct": a.puct, "rows": rows}
     Path(a.out).write_text(json.dumps(doc, indent=2))
     print(json.dumps(doc["rows"], indent=2))
 

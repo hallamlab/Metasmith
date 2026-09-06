@@ -398,7 +398,6 @@ pub fn mcts(
     let mut merged_endpoints: Vec<(EpSig, EpId, Vec<EpId>)> = Vec::new();
     let mut refiner_iterations: Vec<(i64, i64)> = Vec::new();
     let mut policy = Policy::from_env(Phase::Mcts)?;
-    let adaptive = policy.wants_observations();
     if policy.wants_structure() { policy.set_structure(&p.self_feed); }
     let wants_rewards = policy.wants_rewards();
     let mut i: i64 = 0;
@@ -421,7 +420,6 @@ pub fn mcts(
             rng,
             frontier.len(),
             |j| ar.appl(frontier[j]).score,
-            |j| ar.appl(frontier[j]).score,
             |j| ar.appl(frontier[j]).transform,
         );
         let n = frontier.len() - 1;
@@ -441,13 +439,13 @@ pub fn mcts(
         for (si, st) in sources.iter().enumerate() {
             let lo = next.len();
             next.extend(s.expand(ar, &mut tl, st, node));
-            if adaptive && wants_rewards { groups.push((si, lo..next.len())); }
+            if wants_rewards { groups.push((si, lo..next.len())); }
         }
         let n_next = next.len();
         let node_tr = ar.appl(node).transform;
         // Before `next` is consumed below. Only when a value is actually wanted:
-        // this walk is the one expensive thing an adaptive policy adds.
-        let progress: Vec<f64> = if adaptive && wants_rewards {
+        // this walk is the one expensive thing the policy adds.
+        let progress: Vec<f64> = if wants_rewards {
             next.iter().map(|st| progress_of(p, st)).collect()
         } else {
             Vec::new()
@@ -473,7 +471,7 @@ pub fn mcts(
             }
         }
 
-        if adaptive {
+        {
             let solved_here = remain.len() < n_next;
             let (mut best_before, mut best_after) = (0.0f64, 0.0f64);
             if !solved_here && wants_rewards {

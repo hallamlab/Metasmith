@@ -6,20 +6,44 @@ happens here so that a worker never touches cargo, docker, git or pytest.
 Two gates, in this order, because the first is cheap and catches the mistake that
 would invalidate every number after it:
 
-  default-path -- with MSM_SOLVER_POLICY unset the reply must be byte-identical to
-      the recorded baseline on every payload. A change that moves the shipped rule
-      is not a candidate policy, it is a regression.
+  adjudicator -- the two witness crates must be byte-identical to what the Lean
+      proof was last run against. A round that changes the judge has not measured
+      anything. This replaced a default-path gate that became vacuous when PUCT
+      stopped being opt-in.
   witness -- every complete plan the candidate emits is adjudicated by the
       REFERENCE binary's `check`, not the candidate's own. A worker that breaks the
       witness must not also get to be its own judge.
 """
-import argparse, json, os, subprocess, sys, time
+import argparse, hashlib, json, os, subprocess, sys, time
 from pathlib import Path
 
-RATCHET = Path(os.environ.get("RATCHET", "/home/tony/.claude/jobs/0f8a7346/tmp/ratchet"))
+HERE = Path(__file__).resolve().parent
+#: Everything the harness reads is committed beside it, so a later session gets a
+#: working harness from the checkout alone. The original run kept these in a job
+#: directory, which is why the first attempt to re-run it found no payloads.
+RATCHET = Path(os.environ.get("RATCHET", HERE))
 PAYLOADS = RATCHET / "payloads"
-REF_BIN = RATCHET / "ref" / "msm_solver"
-LOG = RATCHET / "log"
+RESULTS = RATCHET / "results"
+LOG = Path(os.environ.get("RATCHET_LOG", RESULTS))
+
+#: The binary that adjudicates. It used to be a pristine pre-change build, so a
+#: candidate could not be its own judge. That is now `witness_unchanged` instead:
+#: a selection round never touches the witness crates, and checking that they are
+#: byte-identical to what was proved is a stronger guarantee than a binary whose
+#: provenance nobody can see. Point this at another build to override.
+REF_BIN = Path(os.environ.get(
+    "RATCHET_REF_BIN",
+    HERE.parents[2] / "src" / "metasmith" / "engine" / "msm_solver.x86_64-linux",
+))
+
+#: sha256 over the two witness crates' sources, recorded when the proof was last
+#: adjudicated by `docker/solver_witness/dev.sh --lean-check`.
+WITNESS_DIGEST_FILE = RESULTS / "witness-digest.txt"
+
+#: Build and reply scratch. Outside the checkout on purpose -- an earlier version
+#: defaulted it beside the harness and `git add -A` swept 81 reply files in.
+SCRATCH = Path(os.environ.get(
+    "RATCHET_SCRATCH", Path(os.environ.get("TMPDIR", "/tmp")) / "msm-ratchet"))
 CARGO_ENV = {
     "CARGO_PROFILE_RELEASE_LTO": "false",
     "CARGO_PROFILE_RELEASE_CODEGEN_UNITS": "16",
@@ -70,9 +94,37 @@ def run_set(binary, which, policy, puct, out, replies):
     return json.loads(Path(out).read_text())["rows"]
 
 
-def gate_default(rows, base):
-    bad = [k for k in base if k in rows and rows[k]["digest"] != base[k]["digest"]]
-    return bad
+def witness_digest(root):
+    """sha256 over every source file of the two witness crates, in path order."""
+    h = hashlib.sha256()
+    for crate in ("solver_witness", "solver_witness_audit"):
+        base = root / "src" / crate
+        for f in sorted(base.rglob("*")):
+            if not f.is_file() or "target" in f.parts:
+                continue
+            h.update(str(f.relative_to(base)).encode())
+            h.update(f.read_bytes())
+    return h.hexdigest()
+
+
+def witness_unchanged(root):
+    """Has the adjudicator moved? Returns None when it has not, else a message.
+
+    This replaced the old first gate. That gate said "with the policy env var
+    unset the replies are byte-identical to the baseline", which was the right
+    shape while PUCT was opt-in and became vacuous the moment it shipped as the
+    only rule. What still needs guarding is that the thing doing the judging is
+    the thing that was proved.
+    """
+    if not WITNESS_DIGEST_FILE.exists():
+        return f"no recorded witness digest at {WITNESS_DIGEST_FILE}"
+    want = WITNESS_DIGEST_FILE.read_text().split()[0]
+    got = witness_digest(root)
+    if got != want:
+        return (f"the witness crates changed ({got[:12]} vs recorded {want[:12]})."
+                " Re-run docker/solver_witness/dev.sh --lean-check and record the"
+                " new digest before trusting any verdict below.")
+    return None
 
 
 def gate_witness(rows, replies, which):

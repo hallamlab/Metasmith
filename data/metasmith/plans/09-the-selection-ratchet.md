@@ -1,5 +1,9 @@
 # The selection ratchet: PUCT on the engine, and the trade it took two rounds to break
 
+> **Superseded on adoption.** PUCT shipped as the only selection rule; what that cost, and the two
+> things it revealed, are `10-adopting-puct.md`. Everything below describes the measurement, and
+> the wall-clock ratio here is over a seven-payload subset — quote the payload set with the ratio.
+
 ## Context
 
 `docs/metasmith/solver-spec.md` licensed this. The plan witness is proved to agree with the written

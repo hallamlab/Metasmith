@@ -6,13 +6,14 @@ does the planner choose a set of transform applications that is *sound*?
 **This is not `tests/flow`.** Flow asks what the runtime does with a plan it is
 handed. This axis asks whether the plan should ever have been handed over.
 
-**The engine is the subject; the python solver is not.** Roughly a third of the
-files here were written to hold a new port against the implementation it
-replaced, and that job is done — they now carry `@pytest.mark.python_solver` and
-skip unless `--python-solver` is passed. A new test belongs on the default path,
-which means adjudicating the engine's answer with `check_plan` rather than
-comparing it to a second solver's. If you cannot state what a test asserts
-without naming the python implementation, it is a port test, not a solver test.
+**There is one solver.** Roughly a third of the files here once held the Rust
+port against the Python implementation it replaced. Those are gone, along with
+the implementation. A test here adjudicates the engine's answer with `check_plan`
+or the witness; there is no second solver to compare against and no `--solver=`
+to pick one. Where a property was real and only the counterparty was Python, it
+is asserted about the engine directly — `test_distance_walk.py` reads the
+distance table out of `msm_solver describe` rather than out of a Python
+solution's telemetry.
 
 ## What goes in this file
 
@@ -66,21 +67,22 @@ somewhere the Rust port silently disagrees. Changing the guiding heuristic moves
 anchors the same way, and can take one out of reach of the search entirely, so
 the same rule applies to it.
 
-**Container layout is not allowed to reach the plan.** The solver iterates sets
-in places where order decides which application lands on the frontier first,
-and CPython's hash-table order is portable to nothing. Every such iteration now
-goes through an explicit rank; `test_iteration_order.py` salts `Node.__hash__`
-— leaving signatures, keys and equality untouched — and demands the plan not
-move. Any new set iteration in the search needs a stated order or that test
-will find it.
+**Container layout is not allowed to reach the plan.** The search iterates sets
+in places where order decides which application lands on the frontier first, and
+a hash map's order is portable to nothing. Every such iteration goes through an
+explicit rank, and `det::Map` is what the engine uses so that a `HashMap`'s
+iteration order cannot be picked up by accident. The test that guarded this by
+salting CPython's `Node.__hash__` went with the Python solver, so there is now no
+automated tripwire for it — a new set iteration in the search has to be given a
+stated order by whoever writes it.
 
-**Asserting "the solver handled cycles" proves almost nothing.** The rejection
-in `refine_mcts._is_valid` fires on none of the shipped templates and none of
-the pre-existing tests; it takes a generated cyclic instance to reach it at all.
-A cycle test that does not assert *which* rejection fired is the test that was
-already here and already protected nothing. `test_refiner_validity.py` pins each
-link, including that the anchor still *produces* cyclic candidates — otherwise
-"none reached `rectify`" would pass for the wrong reason.
+**Asserting "the solver handled cycles" proves almost nothing.** It takes a
+generated cyclic instance to reach the refiner's validity rejection at all, and a
+cycle test that does not assert *which* rejection fired protects nothing. The
+test that pinned each link counted branches of the Python refiner and went with
+it; `test_known_unsound.py` is what remains, and it asserts the outcome — a
+cyclic transform graph yields a plan `check_plan` accepts — rather than the
+mechanism.
 
 **Validity means schedulable, and the near-miss is instructive.** `_is_valid`
 asks whether every step becomes runnable with *all* of its inputs available,
@@ -106,46 +108,40 @@ occur solving the metagenomics template. Anything that treats a signature as an
 identity (dedup, removal, memoization) is a correctness risk, not an
 optimization.
 
-**A green run does not tell you which solver ran it.** `msm_solver` is the
-default and the Python solver is the reversion, but both answer the same
-`solve_by_mcts` — so this axis passes either way and would go on passing if the
-Rust side quietly stopped being reached. `test_solver_engine.py` is where that is
-made visible: `Backend(capability)` says which one, and the resolution branches
-are driven with fake binaries staged into a patched `ENGINE_DIR`, so the refusals
-fire on every machine rather than only on one that shipped a bad build.
-`pytest --solver=python|rust` runs the whole axis on a stated implementation, and
-`--solver=rust` *fails* rather than falling back when no binary is staged —
-asking for one thing and silently getting the other is the bug, not the
-workaround. Run it both ways when touching either implementation.
+**A green run can still be a run that solved nothing.** Every test here that
+needs the engine skips when no binary is staged, so a checkout that forgot
+`dev/metasmith.sh -bel` reports a tidy pass over an axis it never exercised.
+`test_solver_engine.py` is where the resolution itself is the subject:
+`Backend(capability)` answers "rust" or "none", and the branches are driven with
+fake binaries staged into a patched `ENGINE_DIR`, so the refusals fire on every
+machine rather than only on one that shipped a bad build. A solve with no usable
+engine raises; it does not fall back, because there is nothing to fall back to.
 
 **Two version constants, and they are not interchangeable.**
 `SOLVER_RNG_VERSION` covers the decision contract, `SOLVER_WIRE_VERSION` the
 envelope. They move for different reasons, and folding them into one is how the
 last cross-language desync in this repo went unnoticed while the fast suite
-stayed green. A binary whose either version disagrees is refused, loudly, and
-metasmith falls back rather than solving with rules it does not share.
+stayed green. A binary whose either version disagrees is refused, loudly, and the
+solve raises rather than proceeding under rules the two sides do not share. Bump
+the Python constant and forget to rebuild and the whole axis skips —
+`test_the_staged_engine_agrees_about_the_contract` is what says why.
 
-**A reference that isn't a reference.** Both implementations are reached through
-the same `problem.solve()`, so once the engine advertises `solve` a differential
-test compares the engine against itself unless something stops it. Wrap the
-reference side in `UsePythonSolver()` and *assert* `Backend("solve") == "python"`
-inside it — the failure mode is a green run, and a green run is not something you
-go looking at. `solver_differential._reference` is the only place the sweep
-solves, for exactly this reason. The same applies to any test whose subject is
-the Python implementation rather than the answer: `test_iteration_order.py` salts
-CPython's hash layout and `test_refiner_validity.py` counts how often a branch of
-the Python refiner fires, and neither means anything with the search running
-elsewhere. Both pin the whole file. A test that instead asserts the *default* —
-engine staged, nothing said, engine runs — has to unpin for its own duration, or
-it reports on `--solver=` rather than on the code.
+**An arm that is not an arm.** The lesson the differential harness left behind
+outlives it: when a test means to compare two configurations, assert that the two
+were actually different before believing the comparison. An unset environment
+variable comparing the engine against itself produced a published wall-clock
+claim here that had to be retracted, and it looked exactly like a real result.
+`test_selection_policy.py` now pins the inverse property — no environment
+variable selects a different rule — so the confusion cannot come back the same
+way.
 
-**One seed per problem hides a whole regime.** The stream decides how big a plan
-the search settles on, and the refiner's cost climbs steeply with plan size:
-`sink` at problem seed 24 solves to 7 steps in 0.15s under seed 42 and to 57
-steps in 53s under 2³¹−1. A sweep that fixes the seed reports a corpus that is
-uniformly cheap and never visits the regime where either implementation is under
-load. `solver_differential` runs every problem under `SOLVE_SEEDS` for that
-reason.
+**The solve seed no longer reaches the plan.** It used to decide how big a plan
+the search settled on, and the refiner's cost climbs steeply with plan size, so a
+sweep that fixed the seed reported a corpus that was uniformly cheap. PUCT ranks
+rather than samples and `top_k` is 1, so selection draws nothing on 72 of 72
+corpus and profile cases. `SOLVE_SEEDS` still exists and sweeping it is still
+free, but it no longer buys coverage; what varies a problem's size now is the
+*problem* seed and the generator dials.
 
 **A cap is not a verdict.** Because the expensive cases are expensive for *both*
 sides, a differential sweep needs a time limit, and the tempting shape — skip the
@@ -167,8 +163,8 @@ that arrays are faster; it is that `produced_from`, `have`, `used_as_lineage`,
 is never iterated has no order to leak, so neither the map nor the array can
 reach the plan. Anything that starts iterating one of them — a debug dump, a
 "while we're here" summary — puts a container layout back on the path to the
-plan, and `test_iteration_order.py` will not see it, because that test salts
-*CPython's* hashing and this is the other implementation.
+plan, and nothing will see it: the test that salted a hash layout was CPython's
+and went with the Python solver.
 
 **`generate_child_nodes` is a generator, and that is load-bearing.** Its caller
 adds each child's signature to `frontier_signatures` as it consumes them, so a
