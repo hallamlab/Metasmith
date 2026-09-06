@@ -7,14 +7,26 @@ model = Transform()
 
 asm   = model.AddRequirement(lib.GetType("sequences::assembly"))
 
+# One `checkm_stats` and one `gtdbtk` per bin set, each parented to that set. The
+# parent is what forks the fan-out: an unparented requirement is answered once,
+# from whichever binner the planner likes, and the other two binners' bins reach
+# no instance at all. The pool this transform emits is what iphop_add_to_db and
+# cctyper consume downstream, so taxonomy has to cover every binner that can
+# contribute to it -- with gtdbtk named only by a downstream target it ran on
+# SemiBin2's bins alone, and metabat2's and comebin's kept bins joined to nothing.
+# The protocol reads checkm and not gtdbtk: quality is what selects a bin, while
+# these requirements exist to make the assignment exist for every bin selected.
 mb_bin = model.AddRequirement(lib.GetType("sequences::metabat2_bin_fasta"), parents={asm})
 mb_ck  = model.AddRequirement(lib.GetType("taxonomy::checkm_stats"), parents={mb_bin})
+mb_tax = model.AddRequirement(lib.GetType("taxonomy::gtdbtk"), parents={mb_bin})
 
 sb_bin = model.AddRequirement(lib.GetType("sequences::semibin2_bin_fasta"), parents={asm})
 sb_ck  = model.AddRequirement(lib.GetType("taxonomy::checkm_stats"), parents={sb_bin})
+sb_tax = model.AddRequirement(lib.GetType("taxonomy::gtdbtk"), parents={sb_bin})
 
 cb_bin = model.AddRequirement(lib.GetType("sequences::comebin_bin_fasta"), parents={asm})
 cb_ck  = model.AddRequirement(lib.GetType("taxonomy::checkm_stats"), parents={cb_bin})
+cb_tax = model.AddRequirement(lib.GetType("taxonomy::gtdbtk"), parents={cb_bin})
 
 out    = model.AddProduct(lib.GetType("binning_local::quality_bin_fasta"))
 
