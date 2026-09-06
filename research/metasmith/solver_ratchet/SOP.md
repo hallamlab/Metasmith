@@ -8,20 +8,22 @@ You are one arm of a parallel ratchet. Read this once, then work.
 node from a frontier: once in the MCTS phase, once in the refiner. That choice is the only
 thing you may change. It lives in **`src/workflow_solver/src/policy.rs`** and nowhere else.
 
-The shipped rule draws one of three arms — two exploit arms reading a score channel, one
-uniform explore arm — and takes the top-scoring node. It is `Kind::Weighted`.
+The shipped rule is PUCT: a softmax prior over two min-max normalised score channels plus a
+structural one, an exploration term over per-transform visit counts, and a value estimate that
+earns its cost as first-play urgency rather than as a ranking. `PuctConfig`'s comments carry the
+measured reason for every default, including the several that are inert on purpose.
 
 ## The two commands
 
     score                 build, gate, measure, print a table, log the result
     submit <label> "<one-line claim>"    re-score from clean, commit, record the finding
 
-`score` takes about ten seconds. Run it as often as you like — it is the fastest way to
+`score` takes about fifteen seconds. Run it as often as you like — it is the fastest way to
 learn anything here. It handles the build, the correctness gates, the benchmark and the log.
 Nothing else is your problem.
 
-Useful flags: `score --policy weighted` (sanity check: must print TIE), `score --puct
-"c_puct=2.0,fpu=0.3"` to pass configuration, `score --set full` for the expensive set (only
+Useful flags: `score` with no arguments (sanity check on a clean tree: must print TIE), `score
+--puct "c_puct=2.0,fpu=0.3"` to pass configuration, `score --set full` for the expensive set (only
 when asked — it is slow).
 
 ## What you must never do
@@ -30,20 +32,27 @@ when asked — it is slow).
   build will not match what is measured.
 - **Do not edit anything outside `src/workflow_solver/src/`.** Not the tests, not the
   harness, not the payloads, not another worktree.
-- **Do not change behaviour when `MSM_SOLVER_POLICY` is unset.** That is gate 1 and it fails
-  hard. Your work must be reachable only through the policy env var.
+- **Do not touch `src/solver_witness/` or `src/solver_witness_audit/`.** They adjudicate your
+  work. `score` hashes them and refuses to report a number if they moved, because a round that
+  changes the judge has measured nothing.
 - **Do not measure wall clock or tune toward it.** Three of you share this box; timings are
   meaningless here. `score` ranks you on deterministic counts and the supervisor re-times the
   winner alone afterwards.
 
 ## The env-var contract — identical for every arm
 
-> `MSM_SOLVER_POLICY` selects the rule: `weighted` (default, unchanged behaviour) or `puct`.
-> `MSM_SOLVER_PUCT` optionally carries `c_puct`, `temperature`, `fpu`, `use_value` as
-> comma-separated `k=v`. Unset means the binary behaves exactly as it does today.
+> `MSM_SOLVER_PUCT` carries the configuration as comma-separated `k=v` — `c_puct`,
+> `temperature`, `fpu`, `use_value` and the rest of `PuctConfig`. Unset is the shipped
+> configuration.
 
-An unrecognised policy name is refused rather than defaulted, so a typo cannot silently
-report a measurement of the incumbent under your name.
+A malformed spec is refused rather than defaulted, so a typo cannot silently report a
+measurement of the incumbent under your name.
+
+There is no policy selector. PUCT is the only rule, and `MSM_SOLVER_POLICY` was deleted
+when it shipped — a switch whose default is one of the arms is how a measurement of the
+incumbent got published under the challenger's name here once. A config change that a
+worker cannot reach through `MSM_SOLVER_PUCT` is an edit to `PuctConfig::default()`, and
+it moves every plan, so say so in the submit claim.
 
 ## How you are ranked
 

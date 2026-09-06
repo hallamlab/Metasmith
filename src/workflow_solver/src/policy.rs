@@ -1,28 +1,21 @@
-//! The node-selection seam, and the policies that fill it.
+//! The node-selection seam, and the PUCT rule that fills it.
 //!
 //! Both phases pop one node from a frontier per iteration, by the same rule. The
 //! rule is isolated here so an alternative can be measured against it without
 //! either phase's code moving, and so the two cannot drift apart.
 //!
-//! `select` takes accessors rather than slices because the default rule reads one
-//! score channel and only in the 95% of iterations that do not take the explore
-//! arm. Passing a materialised [f64; 2] per node would double the memory traffic
-//! of the hot loop to serve a policy that may not be selected.
-//!
 //! Nothing is revisited -- the frontier is a plain vector popped by swap-remove --
-//! so per-node statistics are impossible. `key_of` is the coarser identity a
-//! stateful policy accumulates against: the transform, in both phases, which is
-//! what `solver_policy.PuctSelection` keys on too.
+//! so per-node statistics are impossible. `key_of` is the coarser identity the
+//! policy accumulates against: the transform in the mcts phase, the transform a
+//! candidate swapped in in the refiner.
+//!
+//! `MSM_SOLVER_PUCT` overrides the configuration, `k=v` comma-separated. Several
+//! fields are inert at their defaults and exist so a measurement can reach the
+//! directions the ratchet scored and rejected without a rebuild.
 
 use crate::det::{self, Map};
 use crate::rng::DecisionStream;
 
-/// Both phases weight the same three moves: two exploit arms and one explore
-/// arm. Shared so the refiner and the mcts phase cannot drift apart.
-pub const SELECTION_WEIGHTS: [i64; 3] = [75, 20, 5];
-pub const SELECTION_TOP_K: usize = 1;
-
-pub const POLICY_ENV: &str = "MSM_SOLVER_POLICY";
 pub const PUCT_ENV: &str = "MSM_SOLVER_PUCT";
 
 #[derive(Clone, Copy, Debug)]
@@ -275,12 +268,6 @@ impl PuctConfig {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
-pub enum Kind {
-    Weighted,
-    Puct(PuctConfig),
-}
-
 /// Which phase a policy instance is driving. A stateful policy keys its
 /// statistics per phase, so it is told rather than left to infer.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -290,7 +277,7 @@ pub enum Phase {
 }
 
 pub struct Policy {
-    kind: Kind,
+    c: PuctConfig,
     phase: Phase,
     w: Map<u32, f64>,
     n: Map<u32, f64>,
@@ -316,41 +303,25 @@ pub struct Policy {
 impl Policy {
     /// Resolve the policy for one phase from the environment.
     ///
-    /// An unset variable is the shipped rule, and an unrecognised one is refused
-    /// rather than defaulted: a typo that silently selected the incumbent would
-    /// report a measurement of the incumbent under the challenger's name.
+    /// A malformed override is refused rather than defaulted: a typo that
+    /// silently selected the shipped configuration would report a measurement of
+    /// the incumbent under the challenger's name.
     pub fn from_env(phase: Phase) -> Result<Self, String> {
-        let kind = match std::env::var(POLICY_ENV) {
-            Err(_) => Kind::Weighted,
-            Ok(s) if s.is_empty() || s == "weighted" => Kind::Weighted,
-            Ok(s) if s == "puct" => {
-                let cfg = match std::env::var(PUCT_ENV) {
-                    Ok(spec) => PuctConfig::parse(&spec)?,
-                    Err(_) => PuctConfig::default(),
-                };
-                Kind::Puct(cfg)
-            }
-            Ok(s) => {
-                return Err(format!(
-                    "unknown {POLICY_ENV}={s:?}; known policies: weighted, puct"
-                ));
-            }
+        let c = match std::env::var(PUCT_ENV) {
+            Ok(spec) => PuctConfig::parse(&spec)?,
+            Err(_) => PuctConfig::default(),
         };
         Ok(Self {
-            kind, phase, w: det::map(), n: det::map(), total: 0,
+            c, phase, w: det::map(), n: det::map(), total: 0,
             scratch: Vec::new(), dups: det::map(), seen: det::map(),
             structure: Vec::new(), fails: det::map(),
         })
     }
 
-    pub fn kind(&self) -> Kind {
-        self.kind
-    }
-
     /// Whether this policy reads a structural channel, so a caller can skip
     /// handing over a table nothing will look at.
     pub fn wants_structure(&self) -> bool {
-        matches!(self.kind, Kind::Puct(c) if c.w2 != 0.0)
+        self.c.w2 != 0.0
     }
 
     /// Supply the per-transform structural channel. Indexed by the same key
@@ -360,20 +331,11 @@ impl Policy {
         self.structure.extend_from_slice(table);
     }
 
-    /// Does this policy consume `observe`? A policy that does not lets the caller
-    /// skip computing a reward it would throw away.
-    pub fn wants_observations(&self) -> bool {
-        matches!(self.kind, Kind::Puct(_))
-    }
-
     /// Whether the caller should compute the progress pair `observe` needs.
-    /// Separate from `wants_observations`: counting visits is free, the progress
-    /// walk that produces the reward is not.
+    /// Counting visits is free; the progress walk that produces the reward is
+    /// not, and `use_value=false` is a configuration the ratchet still reaches.
     pub fn wants_rewards(&self) -> bool {
-        match self.kind {
-            Kind::Weighted => false,
-            Kind::Puct(c) => c.use_value,
-        }
+        self.c.use_value
     }
 
     /// Turn a caller's outcome into a reward. `delta` credits the improvement an
@@ -381,67 +343,44 @@ impl Policy {
     /// set only ever grows, so absolute progress rises along every path and Q
     /// would rank transforms by how late they are applied.
     pub fn reward_for(&self, solved: bool, before: f64, after: f64) -> f64 {
-        match self.kind {
-            Kind::Weighted => 0.0,
-            Kind::Puct(c) => {
-                if !c.use_value {
-                    c.fpu
-                } else if solved {
-                    1.0
-                } else {
-                    let raw = match c.reward_mode {
-                        RewardMode::Delta => after - before,
-                        RewardMode::Absolute => after,
-                    };
-                    (raw * c.reward_scale).clamp(0.0, 1.0)
-                }
-            }
+        let c = self.c;
+        if !c.use_value {
+            c.fpu
+        } else if solved {
+            1.0
+        } else {
+            let raw = match c.reward_mode {
+                RewardMode::Delta => after - before,
+                RewardMode::Absolute => after,
+            };
+            (raw * c.reward_scale).clamp(0.0, 1.0)
         }
     }
 
     /// Choose one index in `0..len`.
     ///
-    /// `score_of` yields the two channels the shipped rule ranks on, and those
-    /// are not negotiable -- they are exactly what the decision contract names.
-    /// `prior_of` yields the channels a *new* policy should build a prior from,
-    /// which are not always the same: the refiner's second channel is
+    /// `prior_of` yields the two channels the prior is built from. They are not
+    /// always a node's own score channels: the refiner's channel 1 is
     /// `score * valid` over a score that is never positive, so an invalid state's
-    /// 0.0 outranks every valid one. The shipped rule keeps that, bug and all,
-    /// because reproducing it is the point; nothing new should inherit it by
-    /// accident.
-    pub fn select<S, P, K>(
+    /// 0.0 outranks every valid one. The retired rule ranked on that, bug and all;
+    /// nothing here inherits it, which is part of why the plans moved.
+    pub fn select<P, K>(
         &mut self,
         rng: &mut DecisionStream,
         len: usize,
-        score_of: S,
         prior_of: P,
         key_of: K,
     ) -> usize
     where
-        S: Fn(usize) -> [f64; 2],
         P: Fn(usize) -> [f64; 2],
         K: Fn(usize) -> u32,
     {
-        match self.kind {
-            Kind::Weighted => {
-                let _ = (&prior_of, &key_of);
-                let arm = rng.weighted_index(&SELECTION_WEIGHTS);
-                if arm < SELECTION_WEIGHTS.len() - 1 {
-                    let scores: Vec<f64> = (0..len).map(|i| score_of(i)[arm]).collect();
-                    rng.pick_top_k(&scores, SELECTION_TOP_K)
-                } else {
-                    rng.bounded_int(len as u64) as usize
-                }
-            }
-            Kind::Puct(c) => {
-                let _ = &score_of;
-                if c.epsilon_milli > 0 && rng.bounded_int(1000) < c.epsilon_milli {
-                    return rng.bounded_int(len as u64) as usize;
-                }
-                self.puct_index(len, &prior_of, &key_of, c);
-                rng.pick_top_k(&self.scratch, c.top_k)
-            }
+        let c = self.c;
+        if c.epsilon_milli > 0 && rng.bounded_int(1000) < c.epsilon_milli {
+            return rng.bounded_int(len as u64) as usize;
         }
+        self.puct_index(len, &prior_of, &key_of, c);
+        rng.pick_top_k(&self.scratch, c.top_k)
     }
 
     /// Min-max each prior channel across the frontier, weight, then softmax.
@@ -549,10 +488,7 @@ impl Policy {
     /// rather than in `reward_for` because the charge is a function of the key's
     /// own history, which the caller does not have.
     pub fn observe(&mut self, key: u32, reward: f64) {
-        let c = match self.kind {
-            Kind::Weighted => return,
-            Kind::Puct(c) => c,
-        };
+        let c = self.c;
         let mut reward = reward;
         if c.no_progress > 0.0 && c.use_value && reward <= 0.0 && self.np_here(c) {
             let f = self.fails.get(&key).copied().unwrap_or(0.0);

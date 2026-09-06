@@ -7,7 +7,7 @@ from typing import Sequence
 # version it implements so a desync is loud rather than a quiet divergence in
 # results. This repo has scar tissue from a version constant that drifted from
 # its second implementation and failed silently.
-SOLVER_RNG_VERSION = 2
+SOLVER_RNG_VERSION = 3
 
 # What the two implementations promise each other, and it is NOT bit equality.
 # The draw stream is exact: same seed, same ops, same draw counts, same

@@ -17,7 +17,7 @@ the mechanism and the measured reason for every default.
     score                              build, gate, measure, print a table, append to the log
     submit <label> "<one-line claim>"  re-score from clean, commit, record the finding
 
-`score` takes about twelve seconds. It builds the engine, runs both gates, measures 81 frozen wire
+`score` takes about fifteen seconds. It builds the engine, runs both gates, measures 81 frozen wire
 payloads, ranks the result against the baseline and the current head, and names the payloads that
 moved. `SOP.md` is the one page a worker reads.
 
@@ -31,10 +31,18 @@ against a `dev/metasmith.sh -be` build.
 
 Both run inside `score`, before any number is reported.
 
-1. **Default path.** With `MSM_SOLVER_POLICY` unset every reply is byte-identical to
-   `results/baseline.json`. A change that moves the shipped rule is a regression, not a candidate.
-2. **Witness.** Every complete plan is adjudicated by the *reference* binary's proved witness. A
-   candidate does not get to be its own judge.
+1. **The adjudicator has not moved.** `src/solver_witness/` and `src/solver_witness_audit/` hash
+   to `results/witness-digest.txt`, which was recorded when the Lean proof was last adjudicated.
+   A round that changes the judge has measured nothing. This replaced a gate that demanded the
+   default path stay byte-identical, which was the right shape while PUCT was opt-in behind an
+   env var and became vacuous the moment it shipped as the only rule.
+2. **Witness.** Every complete plan is adjudicated by `msm_solver check`. Gate 1 is what makes it
+   safe for the candidate to run its own checker.
+
+**CAUTION** `results/baseline.json` now records the *shipped* engine, so a fresh `score` reads
+TIE. `results/pre-adoption-weighted.json` is the retired weighted rule on the same 81 payloads —
+57 solved, 700 real steps — kept because it is the only machine-readable record of what adoption
+was measured against.
 
 ## The corpus
 
@@ -45,7 +53,7 @@ Both run inside `score`, before any number is reported.
   ladder reproduces `data/metasmith/plans/04-puct-on-large-workflows.md` step for step at every
   shared rung, which is the evidence it is the same ladder.
 - **sink (64)** -- generated pathologies from `build_sink.py`, held-out problem seeds 100-115. The
-  shipped rule fails 24 of them.
+  retired weighted rule failed 24 of them; the shipped rule solves all 64.
 
 **CAUTION** Rank real-workflow plan length first. A policy that solves more generated cases by
 lengthening real plans measured as a WIN under a solved-count-first rule and is not one -- the real

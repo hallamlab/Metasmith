@@ -479,7 +479,6 @@ pub fn refine(
     seen.insert(sig0);
 
     let mut policy = Policy::from_env(Phase::Refine)?;
-    let adaptive = policy.wants_observations();
     if policy.wants_structure() { policy.set_structure(&p.self_feed); }
     // Mirrors Python's `incumbent`: the best valid score seen so far. The
     // refiner's reward is whether this expansion beat it.
@@ -491,10 +490,9 @@ pub fn refine(
         let idx = policy.select(
             rng,
             frontier.len(),
-            |j| states[frontier[j]].scores,
             // Not `scores`: channel 1 is `score * valid` over a score that is
             // never positive, so an invalid state's 0.0 outranks every valid one.
-            // The shipped rule keeps that; a prior must not inherit it.
+            // The retired rule ranked on that; the prior must not inherit it.
             |j| {
                 let st = &states[frontier[j]];
                 [st.scores[0], if st.valid { 1.0 } else { 0.0 }]
@@ -561,7 +559,7 @@ pub fn refine(
                 frontier.push(ck);
             }
         }
-        if adaptive {
+        {
             // Through `reward_for` like the mcts site rather than as a raw 0/1,
             // or a policy configured not to estimate a value still accumulates
             // one here and the two callers disagree about what one config means.

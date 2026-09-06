@@ -1,14 +1,12 @@
 #!/usr/bin/env -S python3
 """score -- build the engine, gate it, measure it, log it. The only command a worker needs."""
 import argparse, json, os, sys, time
-from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import harness as H
 
 ap = argparse.ArgumentParser()
-ap.add_argument("--policy", default="puct", help="value for MSM_SOLVER_POLICY (default: puct)")
 ap.add_argument("--puct", default=None, help="value for MSM_SOLVER_PUCT, e.g. c_puct=1.5,fpu=0.5")
 ap.add_argument("--set", default="fast", choices=["fast", "full"])
 ap.add_argument("--quiet", action="store_true")
@@ -16,35 +14,25 @@ a = ap.parse_args()
 
 root = H.worktree()
 worker = H.worker_name(root)
-scratch = H.RATCHET / "scratch" / worker
+scratch = H.SCRATCH / "scratch" / worker
 scratch.mkdir(parents=True, exist_ok=True)
 
 t0 = time.monotonic()
-binary, build_s = H.build(root, H.RATCHET / f"target-{worker}")
+binary, build_s = H.build(root, H.SCRATCH / f"target-{worker}")
 print(f"build   {build_s:.1f}s")
 
-base = json.loads((H.RATCHET / "baseline.json").read_text())["rows"]
-head_f = H.RATCHET / "head.json"
+base = json.loads((H.RESULTS / "baseline.json").read_text())["rows"]
+head_f = H.RESULTS / "head.json"
 head = json.loads(head_f.read_text())["rows"] if head_f.exists() else None
 
-# The two passes are independent processes; running them together halves the wall
-# clock and cannot affect the counts, which are what the ranking reads.
-with ThreadPoolExecutor(2) as ex:
-    fa = ex.submit(H.run_set, binary, a.set, None, None,
-                   scratch / "default.json", scratch / "default-replies")
-    fb = ex.submit(H.run_set, binary, a.set, a.policy, a.puct,
-                   scratch / "cand.json", scratch / "cand-replies")
-    default_rows, cand_rows = fa.result(), fb.result()
-
-bad = H.gate_default(default_rows, base)
-if bad:
-    print(f"\nGATE 1 FAILED (default path moved): {len(bad)} payloads differ from baseline "
-          f"with {H.POLICY_ENV if hasattr(H,'POLICY_ENV') else 'MSM_SOLVER_POLICY'} unset")
-    print("  " + ", ".join(bad[:12]))
-    print("\nThe shipped rule must be untouched. Your change must be reachable only "
-          "through the policy env var.")
+why = H.witness_unchanged(root)
+if why:
+    print(f"\nGATE 1 FAILED (the adjudicator moved): {why}")
     sys.exit(1)
-print(f"gate 1  ok   default path byte-identical on {len(base)} payloads")
+print("gate 1  ok   witness crates byte-identical to what the proof was run against")
+
+cand_rows = H.run_set(binary, a.set, None, a.puct,
+                      scratch / "cand.json", scratch / "cand-replies")
 
 # Before the witness: a crashed run has no plans to adjudicate, and reporting
 # "accepted all 0 plans" ahead of the real cause reads as a pass.
@@ -84,10 +72,10 @@ print(f"\nscore   {total:.1f}s   verdict {v_base} vs baseline"
 
 H.log_append(worker, {
     "ts": time.strftime("%H:%M:%S"), "worker": worker, "kind": "score",
-    "policy": a.policy, "puct": a.puct, "set": a.set,
+    "puct": a.puct, "set": a.set,
     "solved": cs["solved"], "total": cs["total"], "steps": cs["steps"], "iters": cs["iters"],
     "verdict_base": v_base, "verdict_head": v_head, "moved": n, "seconds": round(total, 1),
-    "md": f"- `{time.strftime('%H:%M:%S')}` **{worker}** score `{a.policy}`"
+    "md": f"- `{time.strftime('%H:%M:%S')}` **{worker}** score"
           f"{' `'+a.puct+'`' if a.puct else ''} -> solved {cs['solved']}/{cs['total']}, "
           f"steps {cs['steps']}, iters {cs['iters']}, moved {n} — **{v_base}** vs baseline"
           + (f", **{v_head}** vs head" if v_head else "") + "\n",

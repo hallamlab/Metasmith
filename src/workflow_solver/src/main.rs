@@ -215,11 +215,16 @@ fn cmd_check() -> Result<(), String> {
     }
     let p = witness::problem_of(&req.request);
     let q = witness::plan_of(&req.request, &req.reply)?;
+    // `ok` is the proved function's answer; the violation list is the audit's
+    // account of it. Reporting the audit's own verdict would put the half nothing
+    // is proved about in the position of the judge -- the same inversion the
+    // solve gate had.
+    let ok = solver_witness::check(&p, &q);
     let verdict = solver_witness_audit::audit(&p, &q);
 
     emit(&wire::CheckReply {
         wire_version: WIRE_VERSION,
-        ok: verdict.ok(),
+        ok,
         complete: req.reply.complete,
         violations: verdict
             .violations
@@ -232,7 +237,7 @@ fn cmd_check() -> Result<(), String> {
             })
             .collect(),
     })?;
-    if !verdict.ok() {
+    if !ok {
         eprint!("{}", witness::render(&verdict));
         std::process::exit(2);
     }
@@ -293,9 +298,14 @@ fn cmd_solve() -> Result<(), String> {
     if plan.complete {
         let wp = witness::problem_of(&enc);
         let wq = witness::plan_of(&enc, &plan)?;
-        let verdict = solver_witness_audit::audit(&wp, &wq);
-        if !verdict.ok() {
-            eprint!("{}", witness::render(&verdict));
+        // The verdict comes from `check`, which is the function `SolverProof
+        // .check_spec` is about. `audit` re-implements the same judgement as
+        // loops that can name a coordinate, and the two are tied only by a
+        // `debug_assert_eq!` that `[profile.release]` compiles out -- so gating
+        // on the audit meant the shipped binary was gated by the half nothing is
+        // proved about. It is called here only to say which clause failed.
+        if !solver_witness::check(&wp, &wq) {
+            eprint!("{}", witness::render(&solver_witness_audit::audit(&wp, &wq)));
             return Err(
                 "the plan this search produced does not satisfy the specification; \
                  refusing to emit it (see the clauses above)"
