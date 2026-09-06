@@ -41,6 +41,14 @@ Two invariants the build enforces, both by failing:
 and one it enforces by solving: a transform whose products change shape takes its
 templates down here, by name, rather than in someone's GUI a week later.
 
+**A library's target vocabulary is its declared types plus their ancestors.** A target
+names a type, and a type is nameable only if some loaded transform library carries it.
+`_metadata/types/` therefore keeps every type a transform declares *and* every type those
+declarations satisfy -- `sequences::reads` survives in `logistics` because `long_reads`
+extends it, though nothing there names `reads` outright. Load the library that produces
+the thing you are asking for and the ancestor is nameable; the failure otherwise reads
+`no transform library declares [ns::type]`.
+
 ## Environments
 
 `resources/env/<tool>.env` declares a tool's environment generically: an optional
