@@ -34,7 +34,47 @@ from .solver_verification import (
     problem_of_plan,
 )
 
-__all__ = ["CORPUS", "run_generated", "run_templates", "run_all", "diff"]
+__all__ = ["CORPUS", "SWEEP_PROFILES", "run_generated", "run_templates", "run_all", "diff"]
+
+
+#: Problem shapes the generated sweeps draw from, and the solve seeds they draw
+#: under. `sink` is the only profile that reaches the iteration cap, and one seed
+#: is not a corpus: the same problem settles on a 7-step plan under seed 42 and a
+#: 57-step one under 2**31-1, and only the second regime puts the refiner under
+#: load.
+SWEEP_PROFILES: list[tuple[str, GeneratorDials]] = [
+    ("plain", GeneratorDials(n_types=6, n_extra_transforms=3)),
+    ("cyclic", GeneratorDials(n_types=7, n_extra_transforms=5, cycle_density=0.8)),
+    (
+        "lineage",
+        GeneratorDials(
+            n_types=7, n_extra_transforms=5, lineage_density=0.9, target_lineage=1.0
+        ),
+    ),
+    ("dupes", GeneratorDials(n_types=7, n_extra_transforms=3, n_duplicate_transforms=5)),
+    ("pgroups", GeneratorDials(n_types=7, n_extra_transforms=4, product_group_density=0.9)),
+    ("multi", GeneratorDials(n_types=7, n_given=2, n_given_groups=3, n_extra_transforms=4)),
+    (
+        "tiny",
+        GeneratorDials(n_types=4, n_extra_transforms=2, lineage_density=0.6, target_lineage=0.6),
+    ),
+    (
+        "sink",
+        GeneratorDials(
+            n_types=9,
+            n_given=2,
+            n_given_groups=2,
+            n_extra_transforms=6,
+            cycle_density=0.4,
+            lineage_density=0.7,
+            n_duplicate_transforms=2,
+            product_group_density=0.5,
+            target_lineage=0.8,
+        ),
+    ),
+]
+
+SOLVE_SEEDS: tuple[int, ...] = (42, 7, 1234, 2**31 - 1)
 
 
 CORPUS: list[tuple[str, int, GeneratorDials]] = [

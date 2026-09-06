@@ -1,46 +1,58 @@
 //! The refiner: single-edge swaps against a found plan, looking for a better one.
 //!
-//! It dominates the solve on the shipped templates and changes the plan it was
-//! given on none of them: on a lineage-dense workflow every single-edge swap
-//! breaks a lineage constraint, so single-swap refinement structurally cannot
-//! improve one. It is not inert in general -- two branching tests do produce a
-//! plan-changing refinement.
+//! It changes the plan it was given on almost none of the shipped templates.
+//!
+//! **CAUTION** Do not measure a candidate's admissibility without propagating the
+//! swap downstream. A candidate that reuses the pre-swap products leaves every
+//! *downstream* lineage check reading the original plan's parents, where it is
+//! vacuously true. Two separate measurements in this scope reported improvements
+//! of +209 and +207 on the two fabfos templates from exactly that gap, and agreed
+//! with each other to three decimals because they shared it. `relineage` is what
+//! closes it, and `validate` is only sound because it runs.
 //!
 //! **The AND in `validate` is ordered, and the order is the optimisation.** Its
 //! terms are independent and side-effect-free, and the lineage term is both the
-//! cheapest and the one that rejects nearly everything, so it runs first. A
-//! `KeyError` from the prefilter means "cannot answer here", not "invalid", and
-//! falls through to the full check.
+//! cheapest and the one that rejects nearly everything, so it runs first.
 //!
-//! **One defect is reproduced here rather than fixed, knowingly.** `expand_node`
+//! **One defect is reproduced here rather than fixed, knowingly.** The expansion
 //! removes the step it is swapping by *signature*, which drops both members of a
 //! colliding pair. This is a port, and a port that fixes things cannot be checked
 //! against what it replaced.
+//!
+//! **The cascade is what a wide plan pays for, and the budget is the mitigation.**
+//! `relineage` rebuilds every step downstream of a swap, so a candidate costs
+//! O(steps) arena entries where it used to cost one, and nothing is released
+//! until the solve ends. On the real workflows that is free: the unpinned
+//! `metagenomics_from_paired_reads` arm is 0.83 s at `max_refine` 8 either way,
+//! and 1.31 s against 1.60 s at 256, for a plan two steps shorter. On a wide
+//! cyclic generated instance it is not: `sink-6807` enumerates 33,062 candidates
+//! and 169,332 rebuilds, which is 4.2 s at a budget of 8 and roughly 70 GB at
+//! 256. `REFINER_BUDGET` is why that is survivable, so read a budget above it as
+//! a memory decision rather than a quality one.
 //!
 //! `score` runs once per expanded state and is nearly the whole cost of a solve,
 //! so every table it needs comes out of `scratch.rs` rather than being allocated
 //! and hashed per state. That module carries the argument for why swapping a
 //! hash map for a flat array cannot move a plan.
-
 use crate::det::{self, Map, Set};
-use crate::model::EpSig;
+use crate::model::{EpId, EpSig, Endpoints, TransformId};
 use crate::problem::Problem;
-use crate::rectify::rectify;
+use crate::policy::{Phase, Policy};
+use crate::rectify::{get_order, order_steps, rectify};
 use crate::rng::{DecisionStream, argmax_index};
 use crate::scratch::{Scratch, SigMap, SigSet};
-use crate::search::{ApplId, ApplSig, Arena, StateSig, generate_applications};
+use crate::search::{ApplId, ApplSig, Arena, Group, StateSig, generate_applications};
 use crate::smath::entropy;
-
-/// Both phases weight the same three moves: two exploit arms and one explore
-/// arm. Shared so the refiner and the mcts phase cannot drift apart.
-pub const SELECTION_WEIGHTS: [i64; 3] = [75, 20, 5];
-pub const SELECTION_TOP_K: usize = 1;
 
 pub struct RefinerState {
     pub steps: Vec<ApplId>,
     pub scores: [f64; 2],
     pub valid: bool,
     pub iteration: i64,
+    /// The transform this candidate swapped in, or `u32::MAX` for the plan the
+    /// refiner was handed. A stateful policy keys its statistics on it, mirroring
+    /// `state._swapped_in` on the Python side.
+    pub swapped_in: TransformId,
 }
 
 pub struct RefinerResult {
@@ -49,33 +61,38 @@ pub struct RefinerResult {
     pub found_on: i64,
 }
 
-/// `_has_ancestor`, with the missing-producer case named instead of raised.
+/// `_has_ancestor`: the specification's relation, and the one the proof is
+/// about -- the reflexive transitive closure over an endpoint's *declared*
+/// parents.
 ///
-/// `None` is Python's `KeyError`: `produced_from` is indexed unguarded, and a
-/// state the loop walk would have rejected first can reach here without one.
+/// It used to walk the step graph instead, mapping each product to the inputs
+/// of the step that emitted it. That relation gives a given endpoint no parents
+/// at all, because a branched given application carries `used == {}`, so every
+/// anchor bound to a given failed.
 ///
-/// The tables come in as separate borrows rather than as a `&mut Scratch`
-/// because this reads `produced_from` while writing its own `seen` -- two
-/// disjoint fields of the same scratch, which the borrow checker will allow
-/// only if it can see them apart.
+/// **The two spaces are both needed and neither is the other.** The walk moves
+/// over `EpId`, because `parents` is an identity relation; membership and the
+/// hit test are over `EpSig`, because Python compares endpoints with `==`, which
+/// is signature equality, and its `seen` is a `set[Endpoint]`.
+///
+/// Reading declared parents is sound only because `refine` rebuilds a swapped
+/// step's descendants. On an unpropagated candidate those parents describe
+/// bindings the candidate no longer has.
 fn has_ancestor(
-    pf: &SigMap<(u32, u32)>, pf_flat: &[EpSig],
-    seen: &mut SigSet, todo: &mut Vec<EpSig>, n_sigs: usize,
-    e: EpSig, a: EpSig,
-) -> Option<bool> {
+    eps: &Endpoints, seen: &mut SigSet, todo: &mut Vec<EpId>, n_sigs: usize,
+    e: EpId, a: EpSig,
+) -> bool {
     todo.clear();
     todo.push(e);
     seen.clear(n_sigs);
-    seen.insert(e);
+    seen.insert(eps.sig(e));
     while let Some(x) = todo.pop() {
-        if x == a { return Some(true); }
-        let (start, len) = pf.get(x)?;
-        for i in start..start + len {
-            let parent = pf_flat[i as usize];
-            if seen.insert(parent) { todo.push(parent); }
+        if eps.sig(x) == a { return true; }
+        for &parent in eps.parents(x) {
+            if seen.insert(eps.sig(parent)) { todo.push(parent); }
         }
     }
-    Some(false)
+    false
 }
 
 /// One backward walk from `src`, filling `depths`.
@@ -109,14 +126,110 @@ fn depth_walk(
         if depths.contains_key(n) { continue; }
         depths.insert(n, dd);
         if stop_at == Some(n) { return Ok(false); }
-        let (start, len) = pf.get(n).ok_or_else(|| {
-            format!("endpoint {n} is used but produced by no step")
-        })?;
+        // A node no step in this state produces is a given or an inherent
+        // parent, and the walk stops there. This used to be a hard error, and it
+        // is the twin of the unguarded `_product2producer` lookup in Python:
+        // harmless while almost no candidate survived long enough to walk this
+        // far, and fatal the moment the lineage repair let them.
+        let (start, len) = match pf.get(n) { Some(v) => v, None => continue };
         for i in start..start + len {
             todo.push((pf_flat[i as usize], dd + 1));
         }
     }
     Ok(true)
+}
+
+/// `state.steps` with `step` swapped for `appl`, every descendant rebuilt.
+/// `_relineage`.
+///
+/// A product's parents are the inputs of the step that emitted it, so rebinding
+/// one step invalidates the declared lineage of everything downstream of it.
+/// Rebuilding is not an optimisation -- `derived` is an equality, and a stale
+/// product fails it. Worse, it fails it invisibly: a candidate that keeps the
+/// pre-swap endpoints leaves every downstream lineage check reading the original
+/// plan's parents, where it is vacuously true.
+///
+/// **To a fixpoint, not in one pass.** `ordered` is a depth map over the graph
+/// *before* the swap, and the swap moves it, so a descendant can sit ahead of
+/// its own producer. A single pass then leaves that descendant holding an
+/// endpoint nothing in the candidate emits. Each pass strictly consumes remap
+/// entries, so the bound is a guard rather than the mechanism.
+///
+/// **CAUTION** Under a cyclic candidate `ordered` is not a topological order at
+/// all -- `get_order` gives up and dumps the stragglers at `max_depth` -- so a
+/// descendant can be visited before its producer and keep its old inputs. That
+/// is deliberate. `validate` rejects the cycle, and the cascade must not be what
+/// decides it.
+///
+/// Nothing in `ordered` is mutated. Those applications belong to the parent
+/// state and to every sibling candidate of the same expansion, and writing
+/// through one corrupts both with nothing to show for it -- hence a new arena
+/// entry per rebuilt step rather than an edit in place.
+fn relineage(
+    p: &Problem, ar: &mut Arena, ordered: &[ApplId], step: ApplId, appl: ApplId,
+) -> Vec<ApplId> {
+    // Keyed by signature, because Python's `remap` is a `dict[Endpoint, ...]`
+    // and endpoint hashing is signature hashing. Never iterated.
+    let mut remap: Map<EpSig, EpId> = det::map();
+    let (old_groups, new_groups) = (ar.appl(step).produced.clone(), ar.appl(appl).produced.clone());
+    for (og, ng) in old_groups.iter().zip(new_groups.iter()) {
+        for &(dep, old_e) in og {
+            if let Some(&(_, new_e)) = ng.iter().find(|(d, _)| *d == dep) {
+                remap.insert(ar.eps.sig(old_e), new_e);
+            }
+        }
+    }
+
+    // By signature, not identity: a colliding pair drops both, which is what
+    // this did before the cascade existed, and it is a port.
+    let dropped = ar.appl(step).sig;
+    let mut current: Vec<ApplId> =
+        ordered.iter().copied().filter(|&s| ar.appl(s).sig != dropped).collect();
+
+    for _ in 0..current.len() + 1 {
+        if remap.is_empty() { break; }
+        let mut moved = false;
+        for i in 0..current.len() {
+            let s = current[i];
+            let mut new_used = ar.appl(s).used.clone();
+            if !new_used.values().any(|e| remap.contains_key(&ar.eps.sig(e))) { continue; }
+            for slot in new_used.0.iter_mut() {
+                if let Some(&ne) = remap.get(&ar.eps.sig(slot.1)) { slot.1 = ne; }
+            }
+            // The lineage a product inherits, as `search.rs` mints it: every
+            // input, plus every input's own parents, one flattened hop.
+            let inputs: Vec<EpId> = new_used.values().collect();
+            let mut lin: Vec<EpId> = Vec::new();
+            for &e in &inputs { lin.extend_from_slice(ar.eps.parents(e)); }
+            lin.extend_from_slice(&inputs);
+            let lin = ar.ep_set(lin);
+
+            let (timeline, transform, score, iteration) = {
+                let a = ar.appl(s);
+                (a.timeline, a.transform, a.score, a.iteration)
+            };
+            let groups = ar.appl(s).produced.clone();
+            let rebuilt = ar.new_appl(p, timeline, transform, new_used);
+            let mut produced: Vec<Group> = Vec::with_capacity(groups.len());
+            for g in &groups {
+                let mut ng: Group = Vec::with_capacity(g.len());
+                for &(d, old_e) in g {
+                    let ne = ar.eps.new_endpoint(p.deps.ty(d), &lin);
+                    ng.push((d, ne));
+                    remap.insert(ar.eps.sig(old_e), ne);
+                }
+                produced.push(ng);
+            }
+            ar.appls[rebuilt as usize].produced = produced;
+            ar.appls[rebuilt as usize].score = score;
+            ar.appls[rebuilt as usize].iteration = iteration;
+            current[i] = rebuilt;
+            moved = true;
+        }
+        if !moved { break; }
+    }
+    current.push(appl);
+    current
 }
 
 pub struct Refiner<'a> {
@@ -129,20 +242,28 @@ impl<'a> Refiner<'a> {
     /// dependency's lineage constraint was bound to.
     fn lineage_ok(
         &self, ar: &Arena, steps: &[ApplId], sc: &mut Scratch, n_sigs: usize,
-    ) -> Option<bool> {
+    ) -> Result<bool, String> {
         for &s in std::iter::once(&self.given_appl).chain(steps.iter()) {
             let used = &ar.appl(s).used;
             for &(d, e) in &used.0 {
                 for &parent in &self.p.dep_parents_ranked[d as usize] {
-                    let constraint = used.get(parent)?;
-                    let ok = has_ancestor(
-                        &sc.pf, &sc.pf_flat, &mut sc.anc_seen, &mut sc.anc_todo, n_sigs,
-                        ar.eps.sig(e), ar.eps.sig(constraint))?;
-                    if !ok { return Some(false); }
+                    // Python indexes `step.used[pproto]` and raises, and it means
+                    // a malformed transform rather than an invalid candidate.
+                    // Reporting it as "not rejected" was a hole that only ever
+                    // pointed one way.
+                    let constraint = used.get(parent).ok_or_else(|| {
+                        format!("lineage constraint {parent} of requirement {d} is unbound")
+                    })?;
+                    if !has_ancestor(
+                        &ar.eps, &mut sc.anc_seen, &mut sc.anc_todo, n_sigs,
+                        e, ar.eps.sig(constraint))
+                    {
+                        return Ok(false);
+                    }
                 }
             }
         }
-        Some(true)
+        Ok(true)
     }
 
     /// The full check: every step is schedulable from the givens, and lineage
@@ -167,7 +288,7 @@ impl<'a> Refiner<'a> {
     /// contract.
     fn is_valid(
         &self, ar: &Arena, steps: &[ApplId], sc: &mut Scratch, n_sigs: usize,
-    ) -> Option<bool> {
+    ) -> bool {
         sc.have.clear(n_sigs);
         for e in ar.appl(self.given_appl).products() { sc.have.insert(ar.eps.sig(e)); }
         sc.pending.clear();
@@ -183,21 +304,26 @@ impl<'a> Refiner<'a> {
                     sc.rest.push(s);
                 }
             }
-            if sc.ready.is_empty() { return Some(false); } // looped, or an input nothing makes
+            if sc.ready.is_empty() { return false; } // looped, or an input nothing makes
             for i in 0..sc.ready.len() {
                 let s = sc.ready[i];
                 for e in ar.appl(s).products() { sc.have.insert(ar.eps.sig(e)); }
             }
             std::mem::swap(&mut sc.pending, &mut sc.rest);
         }
-        self.lineage_ok(ar, steps, sc, n_sigs)
+        // The lineage loop was repeated here, after `validate` had already run
+        // it and returned early on a rejection. Both copies decided the same
+        // question, so changing one moved nothing.
+        true
     }
 
     fn validate(
         &self, ar: &Arena, steps: &[ApplId], sc: &mut Scratch, n_sigs: usize,
-    ) -> Option<bool> {
+    ) -> Result<bool, String> {
         // `produced_from`, as one flat buffer of every step's inputs plus a
-        // range per product.
+        // range per product. Unconditionally and before the early returns: the
+        // lineage relation no longer reads it, but `score`'s depth walk does,
+        // and that walk runs whatever this decides.
         sc.pf.clear(n_sigs);
         sc.pf_flat.clear();
         for &s in steps {
@@ -207,12 +333,12 @@ impl<'a> Refiner<'a> {
             for e in ar.appl(s).products() { sc.pf.insert(ar.eps.sig(e), (start, len)); }
         }
         if !steps.iter().any(|&s| ar.appl(s).is_terminal()) {
-            return Some(false);
+            return Ok(false);
         }
-        // Cheap term first; a `KeyError` here answers nothing, so fall through.
-        let rejected = matches!(self.lineage_ok(ar, steps, sc, n_sigs), Some(false));
-        if rejected { return Some(false); }
-        self.is_valid(ar, steps, sc, n_sigs)
+        // Cheap term first: the two are independent and side-effect-free, and
+        // this one rejects nearly everything.
+        if !self.lineage_ok(ar, steps, sc, n_sigs)? { return Ok(false); }
+        Ok(self.is_valid(ar, steps, sc, n_sigs))
     }
 
     pub fn score(
@@ -224,11 +350,7 @@ impl<'a> Refiner<'a> {
         let n_sigs = ar.eps.n_sigs();
         sc.begin(n_sigs);
 
-        // One deliberate difference from Python, in *failure* rather than in
-        // answer: the same lookup inside `_is_valid` is unguarded there, so a
-        // state using an endpoint no step produces crashes the Python solve.
-        // Here it is simply invalid.
-        state.valid = self.validate(ar, &state.steps, sc, n_sigs).unwrap_or(false);
+        state.valid = self.validate(ar, &state.steps, sc, n_sigs)?;
         let steps = &state.steps;
 
         for &s in steps {
@@ -339,6 +461,7 @@ pub fn refine(
     let r = Refiner { p, given_appl };
     let mut states: Vec<RefinerState> = vec![RefinerState {
         steps: initial.to_vec(), scores: [0.0, 0.0], valid: true, iteration: -1,
+        swapped_in: u32::MAX,
     }];
     let mut sc = Scratch::default();
     r.score(ar, &mut states[0], &mut sc)?;
@@ -355,23 +478,34 @@ pub fn refine(
     let mut seen: Set<StateSig> = det::set();
     seen.insert(sig0);
 
+    let mut policy = Policy::from_env(Phase::Refine)?;
+    if policy.wants_structure() { policy.set_structure(&p.self_feed); }
+    // Mirrors Python's `incumbent`: the best valid score seen so far. The
+    // refiner's reward is whether this expansion beat it.
+    let mut incumbent = f64::NEG_INFINITY;
+
     let mut i: i64 = 0;
     while !frontier.is_empty() && (i as u32) < max_iters {
         i += 1;
-        let idx = {
-            let arm = rng.weighted_index(&SELECTION_WEIGHTS);
-            if arm < SELECTION_WEIGHTS.len() - 1 {
-                let scores: Vec<f64> = frontier.iter().map(|&k| states[k].scores[arm]).collect();
-                rng.pick_top_k(&scores, SELECTION_TOP_K)
-            } else {
-                rng.bounded_int(frontier.len() as u64) as usize
-            }
-        };
+        let idx = policy.select(
+            rng,
+            frontier.len(),
+            // Not `scores`: channel 1 is `score * valid` over a score that is
+            // never positive, so an invalid state's 0.0 outranks every valid one.
+            // The retired rule ranked on that; the prior must not inherit it.
+            |j| {
+                let st = &states[frontier[j]];
+                [st.scores[0], if st.valid { 1.0 } else { 0.0 }]
+            },
+            |j| states[frontier[j]].swapped_in,
+        );
         let n = frontier.len() - 1;
         frontier.swap(idx, n);
         let k = frontier.pop().expect("checked non-empty");
         states[k].iteration = i;
         if states[k].valid { valids.push(k); }
+        let swapped = states[k].swapped_in;
+        let mut improved = false;
 
         // `expand_node`. Neither the current signatures nor the production map
         // depends on which step is being swapped, so both are built once.
@@ -383,36 +517,54 @@ pub fn refine(
                 for &(d, e) in g { production.entry(d).or_default().push(e); }
             }
         }
+        // One topological order for the whole expansion. Every candidate here
+        // differs from `steps` by one step, so the order over the rest is the
+        // same for all of them and computing it per candidate is quadratic work
+        // for one answer.
+        let ordered = {
+            let order = get_order(ar, &steps);
+            order_steps(ar, &order, &steps)
+        };
         for si in 0..steps.len() {
             let step = steps[si];
-            let (step_sig, timeline, transform, iteration) = {
+            let (timeline, transform, iteration) = {
                 let a = ar.appl(step);
-                (a.sig, a.timeline, a.transform, a.iteration)
+                (a.timeline, a.transform, a.iteration)
             };
-            // NOTE: this drops *both* members of a colliding pair, which is a
-            // latent defect. Preserved verbatim: this is a port.
-            let base: Vec<ApplId> =
-                steps.iter().copied().filter(|&s| ar.appl(s).sig != step_sig).collect();
-            let base_sigs: Vec<ApplSig> = base.iter().map(|&s| ar.appl(s).sig).collect();
             let mock = ar.appl(step).produced.clone();
             let children = generate_applications(
                 p, ar, timeline, &production, &current, transform, Some(&mock))?;
             for a in children {
                 ar.appls[a as usize].iteration = iteration;
-                let mut sigs = base_sigs.clone();
-                sigs.push(ar.appl(a).sig);
+                let child_steps = relineage(p, ar, &ordered, step, a);
+                // After the cascade, not before: a downstream signature moves
+                // when its inputs are rebound, so a key built from the old ones
+                // collides two candidates that differ downstream and silently
+                // drops one.
+                let sigs: Vec<ApplSig> =
+                    child_steps.iter().map(|&s| ar.appl(s).sig).collect();
                 let sig = ar.state_sig(&sigs);
                 if !seen.insert(sig) { continue; }
-                let mut child_steps = base.clone();
-                child_steps.push(a);
                 let mut child = RefinerState {
                     steps: child_steps, scores: [0.0, 0.0], valid: false, iteration: -1,
+                    swapped_in: ar.appl(a).transform,
                 };
                 r.score(ar, &mut child, &mut sc)?;
+                if child.valid && child.scores[0] > incumbent {
+                    incumbent = child.scores[0];
+                    improved = true;
+                }
                 let ck = states.len();
                 states.push(child);
                 frontier.push(ck);
             }
+        }
+        {
+            // Through `reward_for` like the mcts site rather than as a raw 0/1,
+            // or a policy configured not to estimate a value still accumulates
+            // one here and the two callers disagree about what one config means.
+            let reward = policy.reward_for(improved, 0.0, 0.0);
+            policy.observe(swapped, reward);
         }
     }
 

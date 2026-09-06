@@ -1,0 +1,17 @@
+# Charon builds against a specific rustc nightly and reads the compiler's
+# internals, so the crate it extracts has to be compiled by that same nightly.
+# This file is what makes `charon` work in this directory: the extraction image
+# installs rustup with no default toolchain, deliberately, so that nothing picks
+# a toolchain by accident.
+#
+# It must equal the `channel` in charon's own `rust-toolchain` at the commit
+# pinned in `docker/solver_witness/Dockerfile`. Those two and aeneas's
+# `charon-pin` move together or not at all.
+#
+# It does not affect the shipping build. `msm_solver` is edition 2024 and is
+# built by the cross image in `src/workflow_solver/dev.sh`, which compiles this
+# crate as a path dependency using its own stable toolchain -- cargo reads
+# `rust-toolchain` from the *invoked* directory, not from a dependency's.
+[toolchain]
+channel = "nightly-2026-08-18"
+components = [ "rustc-dev", "llvm-tools", "rust-src" ]
