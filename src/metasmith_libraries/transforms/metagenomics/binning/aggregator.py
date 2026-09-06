@@ -7,14 +7,22 @@ model = Transform()
 
 asm   = model.AddRequirement(lib.GetType("sequences::assembly"))
 
+# The checkm and gtdbtk slots are declared once per binner under distinct parents, which is what
+# makes one `binning_local::cluster_table` target plan all three binners and scored bins for each.
+# A single slot of either type would be satisfiable from whichever binner the search reached first.
+# The gtdbtk slots are never read here -- they exist solely to shape the plan, the way
+# `getNcbiAssembly` requires a name it never opens.
 mb_bin = model.AddRequirement(lib.GetType("sequences::metabat2_bin_fasta"), parents={asm})
 mb_ck  = model.AddRequirement(lib.GetType("taxonomy::checkm_stats"), parents={mb_bin})
+mb_tax = model.AddRequirement(lib.GetType("taxonomy::gtdbtk"), parents={mb_bin})
 
 sb_bin = model.AddRequirement(lib.GetType("sequences::semibin2_bin_fasta"), parents={asm})
 sb_ck  = model.AddRequirement(lib.GetType("taxonomy::checkm_stats"), parents={sb_bin})
+sb_tax = model.AddRequirement(lib.GetType("taxonomy::gtdbtk"), parents={sb_bin})
 
 cb_bin = model.AddRequirement(lib.GetType("sequences::comebin_bin_fasta"), parents={asm})
 cb_ck  = model.AddRequirement(lib.GetType("taxonomy::checkm_stats"), parents={cb_bin})
+cb_tax = model.AddRequirement(lib.GetType("taxonomy::gtdbtk"), parents={cb_bin})
 
 out    = model.AddProduct(lib.GetType("binning_local::quality_bin_fasta"))
 

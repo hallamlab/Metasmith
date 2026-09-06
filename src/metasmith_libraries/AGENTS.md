@@ -184,6 +184,16 @@ were picked, nothing opened. It is the tool for "why did the planner add that st
   `shared_input_paths`.
 - To force all sibling transforms (e.g. all three binners), target a downstream that requires
   them all (`binning_local::cluster_table`), or give each sibling's target a distinct parent.
+  `cluster_table` reaches `aggregator`, which requires checkm and gtdbtk once per binner under
+  distinct parents. That one target therefore plans three binners, three CheckM runs and three
+  GTDB-Tk runs, and adds `downloadGtdbDB` and its ~179 GB reference when no `ref::gtdb` is given.
+  An *unpinned* `taxonomy::gtdbtk` target is the trap it replaces: it binds to whichever single bin
+  type the search reaches first, and under an ambiguous `sequences::assembly` that is a second
+  assembler leg the aggregator never sees.
+- **The aggregator's own output cannot be scored.** `binning_local::quality_bin_fasta` carries no
+  `genome_scope`, so it does not satisfy `sequences::putative_genome`. CheckM and GTDB-Tk therefore
+  never run on the pooled quality MAGs, only on each binner's raw bins. `skani_dedup` is the sole
+  consumer of that type.
 
 ## Layout
 
