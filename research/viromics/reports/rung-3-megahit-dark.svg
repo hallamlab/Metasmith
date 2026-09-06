@@ -1,95 +1,75 @@
 <?xml version="1.0" encoding="UTF-8" standalone="no"?>
-<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="377" height="728" viewBox="0 0 377 728">
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="352" height="590" viewBox="0 0 352 590">
 <g fill="none" stroke="#8D97A8" stroke-width="1.4" stroke-linejoin="round" stroke-linecap="round">
-<path d="M 126.2,41.3 L 126.2,65.8" stroke="#636EFA"/>
-<path d="M 126.2,41.3 L 126.2,42.1 A 8.4,8.4 0 0 1 117.8,50.5 A 8.4,8.4 0 0 0 109.3,59.0 L 109.3,83.4 A 8.4,8.4 0 0 0 117.8,91.8 A 8.4,8.4 0 0 1 126.2,100.3 L 126.2,100.3" stroke="#636EFA"/>
-<path d="M 126.2,41.3 L 126.2,42.1 A 8.5,8.5 0 0 1 117.8,50.5 L 100.9,50.5 A 8.5,8.5 0 0 0 92.4,59.0 L 92.4,117.8 A 8.5,8.5 0 0 0 100.9,126.3 L 117.8,126.3 A 8.4,8.4 0 0 1 126.2,134.7 L 126.2,134.7" stroke="#636EFA"/>
-<path d="M 126.2,41.3 L 126.2,42.1 A 8.5,8.5 0 0 1 117.8,50.5 L 84.0,50.5 A 8.5,8.5 0 0 0 75.5,59.0 L 75.5,152.3 A 8.5,8.5 0 0 0 84.0,160.7 L 84.0,160.7 A 8.4,8.4 0 0 1 92.4,169.2 L 92.4,169.2" stroke="#636EFA"/>
-<path d="M 126.2,76.5 L 126.2,100.3" stroke="#636EFA"/>
-<path d="M 126.2,76.5 L 126.2,76.5 A 8.4,8.4 0 0 1 117.8,85.0 A 8.4,8.4 0 0 0 109.3,93.4 L 109.3,324.5 A 8.4,8.4 0 0 0 117.8,333.0 A 8.4,8.4 0 0 1 126.2,341.4 L 126.2,342.2" stroke="#636EFA"/>
-<path d="M 126.2,76.5 A 8.5,8.5 0 0 1 117.8,85.0 L 67.1,85.0 A 8.5,8.5 0 0 0 58.6,93.4 L 58.6,427.9 A 8.5,8.5 0 0 0 67.1,436.3 L 117.8,436.3 A 8.5,8.5 0 0 1 126.2,444.8 L 126.2,445.5" stroke="#636EFA"/>
-<path d="M 126.2,76.5 A 8.5,8.5 0 0 1 117.8,85.0 L 50.2,85.0 A 8.5,8.5 0 0 0 41.7,93.4 L 41.7,531.2 A 8.5,8.5 0 0 0 50.2,539.7 L 117.8,539.7 A 8.5,8.5 0 0 1 126.2,548.1 L 126.2,548.9" stroke="#636EFA"/>
-<path d="M 126.2,111.0 L 126.2,134.7" stroke="#636EFA"/>
-<path d="M 126.2,111.0 A 8.5,8.5 0 0 1 117.8,119.4 L 100.9,119.4 A 8.5,8.5 0 0 0 92.4,127.9 L 92.4,169.2" stroke="#636EFA"/>
-<path d="M 126.2,111.0 A 8.5,8.5 0 0 1 117.8,119.4 L 33.3,119.4 A 8.5,8.5 0 0 0 24.8,127.9 L 24.8,186.7 A 8.5,8.5 0 0 0 33.3,195.2 L 117.8,195.2 A 8.5,8.5 0 0 1 126.2,203.6 L 126.2,204.4" stroke="#636EFA"/>
-<path d="M 126.2,145.4 L 126.2,204.4" stroke="#636EFA"/>
-<path d="M 92.4,179.9 L 92.4,186.7 A 8.5,8.5 0 0 0 100.9,195.2 L 117.8,195.2 A 8.5,8.5 0 0 1 126.2,203.6 L 126.2,204.4" stroke="#636EFA"/>
-<path d="M 126.2,213.6 L 126.2,238.1" stroke="#EF553B"/>
-<path d="M 126.2,248.8 L 126.2,273.3" stroke="#636EFA"/>
-<path d="M 126.2,248.8 L 126.2,248.8 A 8.5,8.5 0 0 1 117.8,257.2 L 100.9,257.2 A 8.5,8.5 0 0 0 92.4,265.7 L 92.4,324.5 A 8.5,8.5 0 0 0 100.9,333.0 L 117.8,333.0 A 8.5,8.5 0 0 1 126.2,341.4 L 126.2,342.2" stroke="#636EFA"/>
-<path d="M 126.2,248.8 L 126.2,248.8 A 8.5,8.5 0 0 1 117.8,257.2 L 84.0,257.2 A 8.5,8.5 0 0 0 75.5,265.7 L 75.5,531.2 A 8.5,8.5 0 0 0 84.0,539.7 L 117.8,539.7 A 8.5,8.5 0 0 1 126.2,548.1 L 126.2,548.9" stroke="#636EFA"/>
-<path d="M 126.2,282.5 L 126.2,307.0" stroke="#636EFA"/>
-<path d="M 126.2,317.7 L 126.2,342.2" stroke="#636EFA"/>
-<path d="M 126.2,317.7 A 8.4,8.4 0 0 1 117.8,326.1 A 8.5,8.5 0 0 0 109.3,334.6 L 109.3,531.2 A 8.4,8.4 0 0 0 117.8,539.7 A 8.4,8.4 0 0 1 126.2,548.1 L 126.2,548.9" stroke="#636EFA"/>
-<path d="M 126.2,351.4 L 126.2,410.3" stroke="#EF553B"/>
-<path d="M 126.2,351.4 L 126.2,352.1 A 8.5,8.5 0 0 1 117.8,360.6 L 100.9,360.6 A 8.5,8.5 0 0 0 92.4,369.0 L 92.4,375.9" stroke="#EF553B"/>
-<path d="M 126.2,421.0 L 126.2,445.5" stroke="#EF553B"/>
-<path d="M 126.2,454.7 L 126.2,513.7" stroke="#00CC96"/>
-<path d="M 126.2,454.7 L 126.2,455.5 A 8.5,8.5 0 0 1 117.8,463.9 L 100.9,463.9 A 8.5,8.5 0 0 0 92.4,472.4 L 92.4,479.2" stroke="#00CC96"/>
-<path d="M 126.2,524.4 L 126.2,548.9" stroke="#00CC96"/>
-<path d="M 126.2,558.1 L 126.2,582.6" stroke="#EF553B"/>
-<path d="M 126.2,558.1 L 126.2,558.8 A 8.4,8.4 0 0 1 117.8,567.3 A 8.4,8.4 0 0 0 109.3,575.7 L 109.3,617.0" stroke="#EF553B"/>
-<path d="M 126.2,558.1 L 126.2,558.8 A 8.5,8.5 0 0 1 117.8,567.3 L 100.9,567.3 A 8.5,8.5 0 0 0 92.4,575.7 L 92.4,651.5" stroke="#EF553B"/>
-<path d="M 126.2,558.1 L 126.2,558.8 A 8.5,8.5 0 0 1 117.8,567.3 L 84.0,567.3 A 8.5,8.5 0 0 0 75.5,575.7 L 75.5,685.9" stroke="#EF553B"/>
+<path d="M 109.3,41.3 L 109.3,65.8" stroke="#636EFA"/>
+<path d="M 109.3,41.3 L 109.3,42.1 A 8.5,8.5 0 0 1 100.9,50.5 A 8.5,8.5 0 0 0 92.4,59.0 L 92.4,83.4 A 8.5,8.5 0 0 0 100.9,91.8 A 8.5,8.5 0 0 1 109.3,100.3 L 109.3,100.3" stroke="#636EFA"/>
+<path d="M 109.3,76.5 L 109.3,100.3" stroke="#636EFA"/>
+<path d="M 109.3,76.5 A 8.5,8.5 0 0 1 100.9,85.0 A 8.5,8.5 0 0 0 92.4,93.4 L 92.4,186.7 A 8.5,8.5 0 0 0 100.9,195.2 A 8.5,8.5 0 0 1 109.3,203.6 L 109.3,204.4" stroke="#636EFA"/>
+<path d="M 109.3,76.5 A 8.5,8.5 0 0 1 100.9,85.0 L 84.0,85.0 A 8.5,8.5 0 0 0 75.5,93.4 L 75.5,290.1 A 8.5,8.5 0 0 0 84.0,298.5 L 100.9,298.5 A 8.5,8.5 0 0 1 109.3,307.0 L 109.3,307.7" stroke="#636EFA"/>
+<path d="M 109.3,76.5 A 8.5,8.5 0 0 1 100.9,85.0 L 67.1,85.0 A 8.5,8.5 0 0 0 58.6,93.4 L 58.6,393.4 A 8.5,8.5 0 0 0 67.1,401.9 L 100.9,401.9 A 8.5,8.5 0 0 1 109.3,410.3 L 109.3,411.1" stroke="#636EFA"/>
+<path d="M 109.3,111.0 L 109.3,135.5" stroke="#EF553B"/>
+<path d="M 109.3,111.0 A 8.5,8.5 0 0 1 100.9,119.4 L 50.2,119.4 A 8.5,8.5 0 0 0 41.7,127.9 L 41.7,186.7 A 8.5,8.5 0 0 0 50.2,195.2 L 100.9,195.2 A 8.5,8.5 0 0 1 109.3,203.6 L 109.3,204.4" stroke="#EF553B"/>
+<path d="M 109.3,111.0 A 8.5,8.5 0 0 1 100.9,119.4 L 33.3,119.4 A 8.5,8.5 0 0 0 24.8,127.9 L 24.8,393.4 A 8.5,8.5 0 0 0 33.3,401.9 L 100.9,401.9 A 8.5,8.5 0 0 1 109.3,410.3 L 109.3,411.1" stroke="#EF553B"/>
+<path d="M 109.3,144.7 L 109.3,169.2" stroke="#EF553B"/>
+<path d="M 109.3,179.9 L 109.3,204.4" stroke="#EF553B"/>
+<path d="M 109.3,179.9 A 8.4,8.4 0 0 1 100.9,188.3 L 100.9,188.3 A 8.5,8.5 0 0 0 92.4,196.8 L 92.4,393.4 A 8.5,8.5 0 0 0 100.9,401.9 A 8.5,8.5 0 0 1 109.3,410.3 L 109.3,411.1" stroke="#EF553B"/>
+<path d="M 109.3,213.6 L 109.3,272.5" stroke="#00CC96"/>
+<path d="M 109.3,213.6 L 109.3,214.3 A 8.5,8.5 0 0 1 100.9,222.8 L 50.2,222.8 A 8.5,8.5 0 0 0 41.7,231.2 L 41.7,238.1" stroke="#00CC96"/>
+<path d="M 109.3,283.2 L 109.3,307.7" stroke="#00CC96"/>
+<path d="M 109.3,316.9 L 109.3,375.9" stroke="#EF553B"/>
+<path d="M 109.3,316.9 L 109.3,317.7 A 8.5,8.5 0 0 1 100.9,326.1 L 84.0,326.1 A 8.5,8.5 0 0 0 75.5,334.6 L 75.5,341.4" stroke="#EF553B"/>
+<path d="M 109.3,386.6 L 109.3,411.1" stroke="#EF553B"/>
+<path d="M 109.3,420.3 L 109.3,444.8" stroke="#00CC96"/>
+<path d="M 109.3,420.3 L 109.3,421.0 A 8.5,8.5 0 0 1 100.9,429.5 A 8.5,8.5 0 0 0 92.4,437.9 L 92.4,479.2" stroke="#00CC96"/>
+<path d="M 109.3,420.3 L 109.3,421.0 A 8.5,8.5 0 0 1 100.9,429.5 L 84.0,429.5 A 8.5,8.5 0 0 0 75.5,437.9 L 75.5,513.7" stroke="#00CC96"/>
+<path d="M 109.3,420.3 L 109.3,421.0 A 8.5,8.5 0 0 1 100.9,429.5 L 67.1,429.5 A 8.5,8.5 0 0 0 58.6,437.9 L 58.6,548.1" stroke="#00CC96"/>
 </g>
 <g><title>given</title>
-<polygon points="120.9,32.1 131.6,32.1 126.2,41.3" fill="#1B1E24" stroke="#636EFA" stroke-width="1.5" stroke-linejoin="round"/>
-<text x="138.7" y="41.4" font-family="Arial" font-size="13" fill="#E4EAEC" text-anchor="start">given</text></g>
+<polygon points="104.0,32.1 114.7,32.1 109.3,41.3" fill="#1B1E24" stroke="#636EFA" stroke-width="1.5" stroke-linejoin="round"/>
+<text x="121.8" y="41.4" font-family="Arial" font-size="13" fill="#E4EAEC" text-anchor="start">given</text></g>
 <g><title>sequences::read_metadata</title>
-<circle cx="126.2" cy="71.2" r="5.3" fill="#1B1E24" stroke="#636EFA" stroke-width="1.5"/>
-<text x="138.7" y="75.9" font-family="Arial" font-size="13" fill="#6E828B" text-anchor="start">read_metadata</text></g>
-<g><title>sequences::read_pair</title>
-<circle cx="126.2" cy="105.6" r="5.3" fill="#1B1E24" stroke="#636EFA" stroke-width="1.5"/>
-<text x="138.7" y="110.3" font-family="Arial" font-size="13" fill="#6E828B" text-anchor="start">read_pair</text></g>
-<g><title>sequences::zipped_forward_short_reads</title>
-<circle cx="126.2" cy="140.1" r="5.3" fill="#1B1E24" stroke="#636EFA" stroke-width="1.5"/>
-<text x="138.7" y="144.8" font-family="Arial" font-size="13" fill="#6E828B" text-anchor="start">zipped_forward_short_reads</text></g>
-<g><title>sequences::zipped_reverse_short_reads</title>
-<circle cx="92.4" cy="174.5" r="5.3" fill="#1B1E24" stroke="#636EFA" stroke-width="1.5"/>
-<text x="138.7" y="179.2" font-family="Arial" font-size="13" fill="#6E828B" text-anchor="start">zipped_reverse_short_reads</text></g>
-<g><title>1 interleave_zipped_short_reads</title>
-<polygon points="120.9,204.4 131.6,204.4 126.2,213.6" fill="#1B1E24" stroke="#EF553B" stroke-width="1.5" stroke-linejoin="round"/>
-<text x="138.7" y="213.7" font-family="Arial" font-size="13" fill="#E4EAEC" text-anchor="start">interleave_zipped_short_reads</text></g>
+<circle cx="109.3" cy="71.2" r="5.3" fill="#1B1E24" stroke="#636EFA" stroke-width="1.5"/>
+<text x="121.8" y="75.9" font-family="Arial" font-size="13" fill="#6E828B" text-anchor="start">read_metadata</text></g>
 <g><title>sequences::short_reads</title>
-<circle cx="126.2" cy="243.4" r="5.3" fill="#1B1E24" stroke="#636EFA" stroke-width="1.5"/>
-<text x="138.7" y="248.1" font-family="Arial" font-size="13" fill="#6E828B" text-anchor="start">short_reads</text></g>
-<g><title>2 seqkit_reads</title>
-<polygon points="120.9,273.3 131.6,273.3 126.2,282.5" fill="#1B1E24" stroke="#636EFA" stroke-width="1.5" stroke-linejoin="round"/>
-<text x="138.7" y="282.6" font-family="Arial" font-size="13" fill="#E4EAEC" text-anchor="start">seqkit_reads</text></g>
+<circle cx="109.3" cy="105.6" r="5.3" fill="#1B1E24" stroke="#EF553B" stroke-width="1.5"/>
+<text x="121.8" y="110.3" font-family="Arial" font-size="13" fill="#6E828B" text-anchor="start">short_reads</text></g>
+<g><title>1 seqkit_reads</title>
+<polygon points="104.0,135.5 114.7,135.5 109.3,144.7" fill="#1B1E24" stroke="#EF553B" stroke-width="1.5" stroke-linejoin="round"/>
+<text x="121.8" y="144.8" font-family="Arial" font-size="13" fill="#E4EAEC" text-anchor="start">seqkit_reads</text></g>
 <g><title>sequences::read_qc_stats</title>
-<circle cx="126.2" cy="312.3" r="5.3" fill="#1B1E24" stroke="#636EFA" stroke-width="1.5"/>
-<text x="138.7" y="317.0" font-family="Arial" font-size="13" fill="#6E828B" text-anchor="start">read_qc_stats</text></g>
-<g><title>3 bbduk</title>
-<polygon points="120.9,342.2 131.6,342.2 126.2,351.4" fill="#1B1E24" stroke="#EF553B" stroke-width="1.5" stroke-linejoin="round"/>
-<text x="138.7" y="351.5" font-family="Arial" font-size="13" fill="#E4EAEC" text-anchor="start">bbduk</text></g>
+<circle cx="109.3" cy="174.5" r="5.3" fill="#1B1E24" stroke="#EF553B" stroke-width="1.5"/>
+<text x="121.8" y="179.2" font-family="Arial" font-size="13" fill="#6E828B" text-anchor="start">read_qc_stats</text></g>
+<g><title>2 bbduk</title>
+<polygon points="104.0,204.4 114.7,204.4 109.3,213.6" fill="#1B1E24" stroke="#00CC96" stroke-width="1.5" stroke-linejoin="round"/>
+<text x="121.8" y="213.7" font-family="Arial" font-size="13" fill="#E4EAEC" text-anchor="start">bbduk</text></g>
 <g><title>sequences::discarded_short_reads</title>
-<circle cx="92.4" cy="381.2" r="5.3" fill="#1B1E24" stroke="#EF553B" stroke-width="1.5"/>
-<text x="138.7" y="385.9" font-family="Arial" font-size="13" fill="#6E828B" text-anchor="start">discarded_short_reads</text></g>
+<circle cx="41.7" cy="243.4" r="5.3" fill="#1B1E24" stroke="#00CC96" stroke-width="1.5"/>
+<text x="121.8" y="248.1" font-family="Arial" font-size="13" fill="#6E828B" text-anchor="start">discarded_short_reads</text></g>
 <g><title>sequences::clean_short_reads</title>
-<circle cx="126.2" cy="415.7" r="5.3" fill="#1B1E24" stroke="#EF553B" stroke-width="1.5"/>
-<text x="138.7" y="420.4" font-family="Arial" font-size="13" fill="#6E828B" text-anchor="start">clean_short_reads</text></g>
-<g><title>4 megahit</title>
-<polygon points="120.9,445.5 131.6,445.5 126.2,454.7" fill="#1B1E24" stroke="#00CC96" stroke-width="1.5" stroke-linejoin="round"/>
-<text x="138.7" y="454.8" font-family="Arial" font-size="13" fill="#E4EAEC" text-anchor="start">megahit</text></g>
+<circle cx="109.3" cy="277.9" r="5.3" fill="#1B1E24" stroke="#00CC96" stroke-width="1.5"/>
+<text x="121.8" y="282.6" font-family="Arial" font-size="13" fill="#6E828B" text-anchor="start">clean_short_reads</text></g>
+<g><title>3 megahit</title>
+<polygon points="104.0,307.7 114.7,307.7 109.3,316.9" fill="#1B1E24" stroke="#EF553B" stroke-width="1.5" stroke-linejoin="round"/>
+<text x="121.8" y="317.0" font-family="Arial" font-size="13" fill="#E4EAEC" text-anchor="start">megahit</text></g>
 <g><title>sequences::megahit_assembly_graph</title>
-<circle cx="92.4" cy="484.6" r="5.3" fill="#1B1E24" stroke="#00CC96" stroke-width="1.5"/>
-<text x="138.7" y="489.3" font-family="Arial" font-size="13" fill="#6E828B" text-anchor="start">megahit_assembly_graph</text></g>
+<circle cx="75.5" cy="346.8" r="5.3" fill="#1B1E24" stroke="#EF553B" stroke-width="1.5"/>
+<text x="121.8" y="351.5" font-family="Arial" font-size="13" fill="#6E828B" text-anchor="start">megahit_assembly_graph</text></g>
 <g><title>sequences::megahit_assembly</title>
-<circle cx="126.2" cy="519.0" r="5.3" fill="#00CC96" stroke="#DFE3EA" stroke-width="3.0"/>
-<text x="138.7" y="523.7" font-family="Arial" font-size="13" fill="#9FB1B9" text-anchor="start">megahit_assembly</text></g>
-<g><title>5 assembly_stats</title>
-<polygon points="120.9,548.9 131.6,548.9 126.2,558.1" fill="#1B1E24" stroke="#EF553B" stroke-width="1.5" stroke-linejoin="round"/>
-<text x="138.7" y="558.2" font-family="Arial" font-size="13" fill="#E4EAEC" text-anchor="start">assembly_stats</text></g>
+<circle cx="109.3" cy="381.2" r="5.3" fill="#EF553B" stroke="#DFE3EA" stroke-width="3.0"/>
+<text x="121.8" y="385.9" font-family="Arial" font-size="13" fill="#9FB1B9" text-anchor="start">megahit_assembly</text></g>
+<g><title>4 assembly_stats</title>
+<polygon points="104.0,411.1 114.7,411.1 109.3,420.3" fill="#1B1E24" stroke="#00CC96" stroke-width="1.5" stroke-linejoin="round"/>
+<text x="121.8" y="420.4" font-family="Arial" font-size="13" fill="#E4EAEC" text-anchor="start">assembly_stats</text></g>
 <g><title>alignment::bam</title>
-<circle cx="126.2" cy="587.9" r="5.3" fill="#1B1E24" stroke="#EF553B" stroke-width="1.5"/>
-<text x="138.7" y="592.6" font-family="Arial" font-size="13" fill="#6E828B" text-anchor="start">bam</text></g>
+<circle cx="109.3" cy="450.1" r="5.3" fill="#1B1E24" stroke="#00CC96" stroke-width="1.5"/>
+<text x="121.8" y="454.8" font-family="Arial" font-size="13" fill="#6E828B" text-anchor="start">bam</text></g>
 <g><title>sequences::assembly_per_bp_coverage</title>
-<circle cx="109.3" cy="622.4" r="5.3" fill="#1B1E24" stroke="#EF553B" stroke-width="1.5"/>
-<text x="138.7" y="627.1" font-family="Arial" font-size="13" fill="#6E828B" text-anchor="start">assembly_per_bp_coverage</text></g>
+<circle cx="92.4" cy="484.6" r="5.3" fill="#1B1E24" stroke="#00CC96" stroke-width="1.5"/>
+<text x="121.8" y="489.3" font-family="Arial" font-size="13" fill="#6E828B" text-anchor="start">assembly_per_bp_coverage</text></g>
 <g><title>sequences::assembly_per_contig_coverage</title>
-<circle cx="92.4" cy="656.8" r="5.3" fill="#1B1E24" stroke="#EF553B" stroke-width="1.5"/>
-<text x="138.7" y="661.5" font-family="Arial" font-size="13" fill="#6E828B" text-anchor="start">assembly_per_contig_coverage</text></g>
+<circle cx="75.5" cy="519.0" r="5.3" fill="#1B1E24" stroke="#00CC96" stroke-width="1.5"/>
+<text x="121.8" y="523.7" font-family="Arial" font-size="13" fill="#6E828B" text-anchor="start">assembly_per_contig_coverage</text></g>
 <g><title>sequences::assembly_stats</title>
-<circle cx="75.5" cy="691.3" r="5.3" fill="#EF553B" stroke="#DFE3EA" stroke-width="3.0"/>
-<text x="138.7" y="696.0" font-family="Arial" font-size="13" fill="#9FB1B9" text-anchor="start">assembly_stats</text></g>
+<circle cx="58.6" cy="553.5" r="5.3" fill="#00CC96" stroke="#DFE3EA" stroke-width="3.0"/>
+<text x="121.8" y="558.2" font-family="Arial" font-size="13" fill="#9FB1B9" text-anchor="start">assembly_stats</text></g>
 </svg>
