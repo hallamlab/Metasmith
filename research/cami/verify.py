@@ -14,6 +14,16 @@ from pathlib import Path
 NO_CHECKSUM_DATASETS = {"cami2_toy_mousegut", "cami1"}
 
 
+def is_multipart_etag(checksum: str) -> bool:
+    """A Swift/S3 hash like '7c4ff473...-1' is an ETag over concatenated part hashes.
+
+    It is not the file's MD5 and cannot be reproduced without the uploader's part
+    size, so comparing it to one reports every object as corrupt. 167 of CAMI III's
+    173 checksums are this shape.
+    """
+    return "-" in checksum
+
+
 def md5sum(path: Path, chunk: int = 8 << 20) -> str:
     h = hashlib.md5()
     with path.open("rb") as f:
@@ -37,7 +47,7 @@ def main() -> None:
                 if i % args.shards == args.shard]
 
     args.out.parent.mkdir(parents=True, exist_ok=True)
-    problems = checked = 0
+    problems = checked = unverifiable = 0
     with args.out.open("w") as out:
         out.write("problem\tdataset\trelpath\texpected\tactual\n")
         for r in rows:
@@ -55,14 +65,17 @@ def main() -> None:
             checked += 1
             if args.size_only or not r["md5"] or r["dataset"] in NO_CHECKSUM_DATASETS:
                 continue
+            if is_multipart_etag(r["md5"]):
+                unverifiable += 1
+                continue
             actual = md5sum(path)
             if actual != r["md5"]:
                 out.write(f"md5\t{r['dataset']}\t{r['relpath']}\t{r['md5']}\t{actual}\n")
                 problems += 1
         out.flush()
 
-    sys.stderr.write(f"shard {args.shard}/{args.shards}: {checked} ok, {problems} problems"
-                     f" -> {args.out}\n")
+    sys.stderr.write(f"shard {args.shard}/{args.shards}: {checked} ok, {problems} problems,"
+                     f" {unverifiable} size-only (multipart etag) -> {args.out}\n")
 
 
 if __name__ == "__main__":
