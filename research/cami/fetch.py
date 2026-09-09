@@ -53,6 +53,11 @@ def fetch_one(row: dict, root: Path, staging: Path, retries: int = 3) -> tuple[s
         if rc.returncode == 33 and want > 0 and got == want:
             os.replace(part, dest)
             return ("got", str(dest))
+        # Overshoot means the range was ignored and the body was appended onto the
+        # partial. Resuming again appends again, so the partial has to go.
+        if want > 0 and got > want:
+            part.unlink(missing_ok=True)
+            continue
         if attempt == retries - 1:
             return ("FAIL", f"{row['url']} rc={rc.returncode} got={got} want={want} {rc.stderr.strip()[:200]}")
     return ("FAIL", row["url"])
