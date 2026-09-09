@@ -9,7 +9,7 @@ cami1	PROCESSED_NCBI.tar	https://s3.ap-northeast-1.wasabisys.com/gigadb-datasets
 cami1	camiClient_taxdb.tar.gz	https://s3.ap-northeast-1.wasabisys.com/gigadb-datasets/live/pub/10.5524/100001_101000/100344/databases.dir/camiClient_taxdb.tar.gz	94649168		0
 cami1	ftp.arb-silva.de.tar.gz	https://s3.ap-northeast-1.wasabisys.com/gigadb-datasets/live/pub/10.5524/100001_101000/100344/databases.dir/ftp.arb-silva.de.tar.gz	8193807270		0
 cami1	program_results.tar.gz	https://s3.ap-northeast-1.wasabisys.com/gigadb-datasets/live/pub/10.5524/100001_101000/100344/program_results.tar.gz	12732936745		0
-cami1	readme_100344.txt	https://s3.ap-northeast-1.wasabisys.com/gigadb-datasets/live/pub/10.5524/100001_101000/100344/readme_100344.txt	5718		0
+cami1	readme_100344.txt	https://s3.ap-northeast-1.wasabisys.com/gigadb-datasets/live/pub/10.5524/100001_101000/100344/readme_100344.txt	5773		0
 cami1	taxonomy.tar.gz	https://s3.ap-northeast-1.wasabisys.com/gigadb-datasets/live/pub/10.5524/100001_101000/100344/databases.dir/taxonomy.tar.gz	26465030		0
 cami2_challenge	marine/hybrid/marmgCAMI2_hybrid_pooled.tar.gz	https://frl.publisso.de/data/frl:6425521/marine/hybrid/marmgCAMI2_hybrid_pooled.tar.gz	113657004672	0b685f9feb6667ebaa3ae0f08d18fd3e	2
 cami2_challenge	marine/hybrid/marmgCAMI2_hybrid_sample_0.tar.gz	https://frl.publisso.de/data/frl:6425521/marine/hybrid/marmgCAMI2_hybrid_sample_0.tar.gz	11869023316	554717d18d4c9a3e1a8aef4a142773d6	2

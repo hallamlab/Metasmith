@@ -57,9 +57,9 @@ def load_size_cache(path: Path) -> None:
     sys.stderr.write(f"size cache: {len(_SIZE_CACHE)} entries from {path}\n")
 
 
-def _size(url: str, retries: int = 4) -> int:
+def _size(url: str, retries: int = 4, use_cache: bool = True) -> int:
     """Exact Content-Length. HEAD, because the payload is gigabytes."""
-    if url in _SIZE_CACHE:
+    if use_cache and url in _SIZE_CACHE:
         return _SIZE_CACHE[url]
     req = urllib.request.Request(url, method="HEAD")
     for attempt in range(retries):
@@ -126,7 +126,7 @@ def collect() -> list[dict]:
     sys.stderr.write(f"listing {dataset} ...\n")
     for o in json.loads(_get(url).decode())["data"]["data"]:
         rows.append(dict(dataset=dataset, relpath=o["file_name"], url=o["url"],
-                         bytes=int(o["file_size"] or 0),
+                         bytes=_size(o["url"], use_cache=False) or int(o["file_size"] or 0),
                          md5=(o.get("file_attributes") or {}).get("MD5 checksum", ""),
                          drop=0))
     return rows
