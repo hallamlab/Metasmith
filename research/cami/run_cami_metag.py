@@ -52,7 +52,7 @@ DB_PATHS = {
 }
 
 AGENT_IMAGE = os.environ.get(
-    "MSM_AGENT_IMAGE", "docker://quay.io/hallamlab/metasmith:0.20.1-bf54d6f")
+    "MSM_AGENT_IMAGE", "docker://quay.io/hallamlab/metasmith:0.22.1")
 
 CONTAINERS = [
     "seqkit", "bbtools", "megahit", "samtools", "minimap2", "bedtools",
@@ -186,9 +186,23 @@ def make_slurm_config(comebin_device="cpu", comebin_time="8h"):
             f"        time = '{comebin_time}'",
             f'        clusterOptions = "--nodes=1 --ntasks=1 --account={SLURM_ACCOUNT}"',
         ]
+    # Two appended blocks, and the second is a workaround rather than a preference.
+    #
+    # queueSize and array themselves go through params, not raw config: the preset
+    # reads params.process.array and exempts its `xlocalx` label, and a top-level
+    # `process { array = N }` overrides that exemption.
+    #
+    # That exemption is not enough on its own. Every cacheable step compiles to a
+    # sibling `<name>_cached` process that declares `executor 'local'` inline and
+    # carries no label, so the preset's label-keyed exemption never reaches it while
+    # the global array directive does. Nextflow then refuses at process-construction
+    # time with "Executor 'local' does not support job arrays", which aborts the whole
+    # run before a single task is submitted -- and metasmith still prints `run
+    # completed` with zero outputs. Exempting them by name is the narrow fix; the
+    # broad one belongs in nextflow_config/slurm.nf.
     text = base + "\n" + "\n".join(
         ["", "process {", "    withName: '.*__comebin' {", *body, "    }", "}", "",
-         "executor { queueSize = 500 }", "process { array = 25 }", ""])
+         "process {", "    withName: '.*_cached' {", "        array = 0", "    }", "}", ""])
     CACHE_DIR.mkdir(parents=True, exist_ok=True)
     out = CACHE_DIR / f"fir_slurm_cami_{comebin_device}comebin.config"
     out.write_text(text)
@@ -306,7 +320,9 @@ def cmd_run(args):
     print(f"Submitting to SLURM (config: {config})...")
     smith.RunWorkflow(
         task=task, config_file=config,
-        params=dict(slurmAccount=SLURM_ACCOUNT, process=dict(tries=4)),
+        params=dict(slurmAccount=SLURM_ACCOUNT,
+                    executor=dict(queueSize=500),
+                    process=dict(tries=4, array=25)),
         resource_overrides={
             "bbduk":   Resources(memory=Size.GB(64), cpus=16),
             "megahit": Resources(memory=Size.GB(128), cpus=32,
