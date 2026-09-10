@@ -7,6 +7,11 @@ model = Transform()
 image = model.AddRequirement(lib.GetType("env::vibrant.env"))
 db    = model.AddProduct(lib.GetType("ref::vibrant_db"))
 
+# Where the image keeps its half of the reference. A literal, because the image's
+# own environment variable for it is unreachable from a non-login shell and the
+# env file's digest is what holds this path still.
+VIBRANT_DATA_PATH = "/usr/local/share/vibrant-1.2.1/db"
+
 
 def protocol(context: ExecutionContext):
     idb = context.Output(db)
@@ -21,7 +26,18 @@ def protocol(context: ExecutionContext):
     #
     # The fetch is the expensive half: KEGG, Pfam and VOG from three third-party
     # mirrors of 2019-era archives, roughly 20 GB of working space for 11 GB kept.
-    _cmd = "download-db.sh ./vibrant_db"
+    # VIBRANT_DATA_PATH must be exported here, and this is not belt-and-braces.
+    # download-db.sh opens with `cp -r $VIBRANT_DATA_PATH/* $1/`, and the image
+    # sets that variable through a conda activate.d hook that only a LOGIN shell
+    # sources. The container exec is not one, so unset it expands to `cp -r /*`
+    # and the script copies the entire container root -- including every bind
+    # mount, so the repo and its DVC data get recursively copied into the output
+    # until the filesystem fills. Observed, not theorised.
+    _cmd = f"""
+        export VIBRANT_DATA_PATH={VIBRANT_DATA_PATH}
+        test -d "$VIBRANT_DATA_PATH/files" || {{ echo "VIBRANT files/ absent at $VIBRANT_DATA_PATH" >&2; exit 3; }}
+        download-db.sh ./vibrant_db
+    """
     context.ExecWithEnv() \
         .ifContainerDo(env=image, cmd=_cmd) \
         .ifVirtualEnvDo(env=image, cmd=_cmd)
