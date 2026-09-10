@@ -305,8 +305,16 @@ def ExecuteStep(
                 insts = step.dependency_map.get(d, [])
                 inst_names = {x.dtype_name for x in insts}
                 iname = '/'.join(inst_names) if len(inst_names)>0 else "no expected instances"
-                dmeta = context.Output(d)
-                mg.append(f"    X branch [{i+1}] [{dmeta.local}] [{iname}]")
+                # Naming the missing file can itself fail -- context.Output routes
+                # through the lineage entry, which is exactly what is broken when a
+                # member was never routed. This runs from the `except` arm, so a
+                # raise here replaces the transform's real error with this one and
+                # the log says only "failed with error".
+                try:
+                    where = str(context.Output(d).local)
+                except Exception as _e:
+                    where = f"<could not name output: {_e}>"
+                mg.append(f"    X branch [{i+1}] [{where}] [{iname}]")
             if seen: missings.append(mg)
         if any(len(g)>0 for g in missings):
             Log.Info(f"missing outputs:")
