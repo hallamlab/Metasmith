@@ -1,0 +1,6 @@
+name: metawrap
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - metawrap-mg=1.3.0
