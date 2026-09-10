@@ -27,9 +27,16 @@ types:
   # on a contig: geNomad appends |provirus_S_E, VirSorter2 appends ||full or
   # ||partial, VIBRANT uses _fragment_N. Each caller's transform reduces its own
   # output to this one shape, and the merge works only in this shape.
+  # Intervals are 1-BASED INCLUSIVE, and that is settled rather than incidental.
+  # geNomad reports `coordinates` that way natively and its adapter passes them
+  # through, and `seqkit subseq -r start:end` reads the same convention, so the
+  # number a caller writes is the number the extractor cuts on and no arithmetic
+  # sits between them. A half-open convention would put one conversion at each
+  # end of the chain, where an off-by-one is silent and shortens every contig by
+  # a base.
   candidate_virus:
     properties:
-      _: normalised viral call -- one row per called interval, in the original assembly's contig coordinates
+      _: normalised viral call -- one row per called interval, 1-based inclusive, in the original assembly's contig coordinates
       Format: TSV
       fields:
       - contig_id
