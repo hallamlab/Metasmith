@@ -1,0 +1,206 @@
+# The viral half of Antonio Castellano-Hinojosa's lake survey.
+#
+# The shape this file encodes is the whole point of it: exactly ONE type here
+# carries sequence -- dereplicated_candidate_virus, the frozen candidate set --
+# and every other type is a table keyed on that set's contig ids. Nothing in the
+# DAG consumes those tables; the size cuts, the gene-content rules, the
+# mobile-element rules and the vOTU slice are a join someone runs afterwards.
+# Adding a second sequence-carrying type here is how the filter chain Antonio ran
+# by hand grows back, so don't.
+#
+# Corollary: resist naming a type after a filter outcome (`votu_min10kb` and
+# friends). Two such types related by extends are property supersets of one
+# another, so the narrower one silently satisfies a requirement for the wider,
+# and the two collapse.
+types:
+  # Contentless root, the pangenome::pangenome shape: it exists so the per-sample
+  # viral calls have a common ancestor to be grouped under, and so the driver can
+  # declare it as a shared input.
+  contig_study:
+    properties:
+      logistics: to pool per-sample viral calls into one study
+
+  # ---------------------------------------------------------------------------
+  # viral calling -> the frozen set
+  #
+  # The three callers disagree about everything except that a call is an interval
+  # on a contig: geNomad appends |provirus_S_E, VirSorter2 appends ||full or
+  # ||partial, VIBRANT uses _fragment_N. Each caller's transform reduces its own
+  # output to this one shape, and the merge works only in this shape.
+  candidate_virus:
+    properties:
+      _: normalised viral call -- one row per called interval, in the original assembly's contig coordinates
+      Format: TSV
+      fields:
+      - contig_id
+      - start
+      - end
+      - caller
+      - score
+      ext: tsv
+
+  # Three per-caller subtypes rather than one type with three producers, and the
+  # reason is mechanical: a Dependency hashes over its properties and its parents,
+  # so three requirements built from one type on one transform are one dict key
+  # and collapse into a single slot. The `caller` discriminator is what keeps them
+  # three, which is also what puts all three callers in the DAG by data dependency
+  # instead of by the driver remembering to target them.
+  genomad_candidate_virus:
+    extends:
+    - candidate_virus
+    properties:
+      caller: genomad
+  virsorter2_candidate_virus:
+    extends:
+    - candidate_virus
+    properties:
+      caller: virsorter2
+  vibrant_candidate_virus:
+    extends:
+    - candidate_virus
+    properties:
+      caller: vibrant
+
+  # The frozen reference, and the only FASTA written after assembly.
+  #
+  # It deliberately satisfies NO general contig contract. Every consumer names
+  # this type, and that is what makes the freeze one-way: a per-contig annotator
+  # cannot be routed onto it by accident. It matters more than it looks. The
+  # frozen set descends from every contig batch that fed the merge, so lineage
+  # constraints -- which are ancestral, not immediate -- cannot separate a
+  # per-sample run from a frozen-set one. Give a caller a requirement this
+  # satisfies and its calls become eligible to feed the very merge that produced
+  # this, and the planner pays to discover the cycle. Measured: with two callers
+  # reachable on the frozen set the survey stopped solving at all.
+  dereplicated_candidate_virus:
+    properties:
+      _: the frozen candidate viral contig set -- every caller's calls deduplicated and unioned earliest-start to latest-end, extracted, sample-prefixed and pooled across samples
+      Format: FASTA
+      Data: nucleic acid sequence
+      ext: fna
+  candidate_call_provenance:
+    properties:
+      _: one row per frozen contig -- source sample, source assembly contig, merged interval, and which callers claimed it; the join key back to per-sample contig coverage
+      Format: TSV
+      ext: tsv
+
+  # ---------------------------------------------------------------------------
+  # descriptive tables on the frozen set
+  contig_length_table:
+    properties:
+      _: length and GC per frozen contig; Antonio's 1 kb, 5 kb and 10 kb cuts are a predicate over this column rather than three FASTAs
+      Format: TSV
+      ext: tsv
+  precluster_table:
+    properties:
+      _: MMseqs2 95/80 cov-mode 0 membership -- cluster representative per frozen contig
+      Format: TSV
+      ext: tsv
+  votu_cluster_table:
+    properties:
+      _: MMseqs2 95/80 cov-mode 1 membership; this table IS the vOTU definition, and no representative FASTA is cut from it
+      Format: TSV
+      ext: tsv
+
+  checkv_contamination:
+    properties:
+      _: CheckV host/viral boundary calls -- region_coords_bp and region_coords_genes per contig, so a provirus trim is coordinates and nothing is removed from the frozen set
+      Format: TSV
+      ext: tsv
+  checkv_quality_summary:
+    properties:
+      _: CheckV completeness, contamination and quality tier per frozen contig
+      Format: TSV
+      ext: tsv
+  checkv_completeness:
+    properties:
+      _: CheckV AAI- and HMM-based completeness estimates per frozen contig
+      Format: TSV
+      ext: tsv
+  checkv_complete_genomes:
+    properties:
+      _: CheckV complete-genome calls with the evidence (DTR, ITR, provirus) behind each
+      Format: TSV
+      ext: tsv
+
+  vibrant_genome_quality:
+    properties:
+      _: VIBRANT genome quality per called viral sequence
+      Format: TSV
+      ext: tsv
+  vibrant_lifestyle_table:
+    properties:
+      _: VIBRANT lytic/lysogenic call per called viral sequence
+      Format: TSV
+      ext: tsv
+  vibrant_amgs:
+    properties:
+      _: VIBRANT auxiliary metabolic gene assignments with KO and pathway
+      Format: TSV
+      ext: tsv
+
+  # ---------------------------------------------------------------------------
+  # taxonomy and gene sharing
+  vcontact3_assignments:
+    properties:
+      _: vConTACT3 final_assignments.csv -- genus/family-level cluster and taxonomy per frozen contig
+      Format: CSV
+      ext: csv
+  vcontact3_network:
+    properties:
+      _: vConTACT3 gene-sharing network as nodes.csv plus edges.csv
+      Format: DIRECTORY
+  vcontact3_ani:
+    properties:
+      _: vConTACT3 ani_summary.tsv; absent when the run supplies its own proteins
+      Format: TSV
+      ext: tsv
+
+  # ---------------------------------------------------------------------------
+  # host prediction -- the cross-link between the viral and MAG catalogues
+  #
+  # Not a ref:: type: ref:: in this library means something a download transform
+  # fetches once with labels=["local"], and this is built in-DAG from the survey's
+  # own dereplicated MAGs.
+  iphop_augmented_db:
+    properties:
+      _: the iPHoP host database with this survey's dereplicated MAGs added; iphop predict requires this product rather than the shipped database, which is what orders add_to_db before predict
+      Format: DIRECTORY
+  host_prediction_genus:
+    properties:
+      _: iPHoP genus-level host call per frozen contig, with confidence score
+      Format: CSV
+      ext: csv
+  host_prediction_genome:
+    properties:
+      _: iPHoP genome-level host call per frozen contig
+      Format: CSV
+      ext: csv
+  host_prediction_detail:
+    properties:
+      _: iPHoP per-method evidence behind each host call
+      Format: CSV
+      ext: csv
+
+  crispr_arrays:
+    properties:
+      _: CCTyper CRISPR arrays found in the survey's MAGs
+      Format: TSV
+      ext: tsv
+  cas_operons:
+    properties:
+      _: CCTyper cas operon calls and subtype per MAG
+      Format: TSV
+      ext: tsv
+  crispr_spacers:
+    properties:
+      _: spacer sequences extracted from the survey's CRISPR arrays, one record per spacer, header-tagged with its array and MAG
+      Format: FASTA
+      Data: nucleic acid sequence
+      content: crispr spacers
+      ext: fna
+  spacer_host_links:
+    properties:
+      _: BLASTn hits of the survey's own spacers against the frozen contigs -- the within-survey half of host prediction, joined to iPHoP afterwards
+      Format: TSV
+      ext: tsv
