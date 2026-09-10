@@ -38,19 +38,16 @@
   skani_dedup                      -> binning_local::cluster_table
 
 [isolate_assembly_from_long_reads]
-  steps=12
+  steps=9
   chunkOrfsForAnnotation           -> sequences::orf_chunk
   diamond_uniref50                 -> annotation::diamond_uniref50_descriptions_chunk, annotation::diamond_uniref50_results_chunk
   downloadKofamDB                  -> ref::kofamscan_ko_list, ref::kofamscan_profiles
   downloadUniRef50DB               -> ref::uniref50_diamond_db
-  filtlong                         -> sequences::clean_long_reads, sequences::discarded_long_reads
-  flye                             -> sequences::flye_assembly
   hifiasm_meta                     -> sequences::hifiasm_meta_assembly
   kofamscan                        -> annotation::kofamscan_descriptions_chunk, annotation::kofamscan_results_chunk
   merge_diamond_uniref50           -> annotation::diamond_uniref50_descriptions, annotation::diamond_uniref50_results
   merge_kofamscan                  -> annotation::kofamscan_descriptions, annotation::kofamscan_results
   prodigal                         -> sequences::gff, sequences::orfs
-  seqkit_reads                     -> sequences::read_qc_stats
 
 [annotation_palette_from_assembly]
   steps=15
@@ -94,6 +91,35 @@
   seqkit_reads                     -> sequences::read_qc_stats
   spades                           -> sequences::spades_assembly, sequences::spades_assembly_graph, sequences::spades_contig_paths
 
+[binning_and_gpr_from_assembly]
+  steps=26
+  aggregator                       -> binning_local::quality_bin_fasta
+  assembly_stats                   -> alignment::bam, sequences::assembly_per_bp_coverage, sequences::assembly_per_contig_coverage, sequences::assembly_stats
+  checkm                           -> taxonomy::checkm_stats
+  checkm                           -> taxonomy::checkm_stats
+  checkm                           -> taxonomy::checkm_stats
+  chunkOrfsForAnnotation           -> sequences::orf_chunk
+  clean                            -> annotation::clean_predictions
+  comebin                          -> binning::comebin_contig_to_bin_table, sequences::comebin_bin_fasta
+  diamond_uniref50                 -> annotation::diamond_uniref50_descriptions_chunk, annotation::diamond_uniref50_results_chunk
+  downloadGtdbDB                   -> ref::gtdb
+  downloadKofamDB                  -> ref::kofamscan_ko_list, ref::kofamscan_profiles
+  downloadUniRef50DB               -> ref::uniref50_diamond_db
+  gpr_4lane                        -> annotation::gpr_table
+  gtdbtk                           -> taxonomy::gtdbtk
+  gtdbtk                           -> taxonomy::gtdbtk
+  gtdbtk                           -> taxonomy::gtdbtk
+  kofamscan                        -> annotation::kofamscan_descriptions_chunk, annotation::kofamscan_results_chunk
+  merge_diamond_uniref50           -> annotation::diamond_uniref50_descriptions, annotation::diamond_uniref50_results
+  merge_kofamscan                  -> annotation::kofamscan_descriptions, annotation::kofamscan_results
+  merge_proteinbert                -> annotation::proteinbert_embeddings
+  metabat2                         -> binning::metabat2_contig_to_bin_table, sequences::metabat2_bin_fasta
+  prodigal                         -> sequences::gff, sequences::orfs
+  proteinbert                      -> annotation::proteinbert_embeddings_chunk
+  semibin2                         -> binning::semibin2_contig_to_bin_table, sequences::semibin2_bin_fasta
+  seqkit_reads                     -> sequences::read_qc_stats
+  skani_dedup                      -> binning_local::cluster_table
+
 [amplicon_asv_study_from_paired_reads]
   steps=18
   chimera_check                    -> aspire::nochimera_fasta
@@ -122,10 +148,10 @@
   downloadDramDB                   -> annotation::dram_db
   downloadVirsorter2DB             -> annotation::virsorter2_db
   dramv                            -> annotation::dramv_annotations, annotation::dramv_distill
-  genomad                          -> taxonomy::genomad_plasmid_summary, taxonomy::genomad_virus_summary
+  genomad                          -> taxonomy::genomad_plasmid_summary, taxonomy::genomad_taxonomy, taxonomy::genomad_virus_genes, taxonomy::genomad_virus_summary, viromics::genomad_candidate_virus
   ref_genomad                      -> ref::genomad
   splitContigsForAmr               -> sequences::contig_batch
-  virsorter2                       -> annotation::virsorter2_affi_contigs, annotation::virsorter2_boundary, annotation::virsorter2_scores, annotation::virsorter2_viral_sequences
+  virsorter2                       -> annotation::virsorter2_affi_contigs, annotation::virsorter2_boundary, annotation::virsorter2_scores, annotation::virsorter2_viral_sequences, viromics::virsorter2_candidate_virus
 
 [gpr_table_from_assembly]
   steps=12

@@ -49,8 +49,13 @@ def protocol(context: ExecutionContext):
     )
 
     threads = context.params.get("cpus", 8)
+    # `params["memory"]` is a count of GIGABYTES, which is also what MetaWRAP's
+    # -m wants, so this scales rather than converts. megahit.py multiplies the
+    # same value by 1024**3 because its own flag takes bytes. A direct run passes
+    # memory=1, and MetaWRAP reads -m 0 as "no memory" and dies inside MaxBin2,
+    # so the floor is not decoration.
     mem_gb = context.params.get("memory")
-    mem = int(mem_gb / 1024**3 * 0.85) if mem_gb else 16
+    mem = max(int(mem_gb * 0.85), 4) if mem_gb else 16
 
     # MetaWRAP refuses anything but two uncompressed files named `*_1.fastq` and
     # `*_2.fastq`, and the library's clean reads are one gzipped interleaved
