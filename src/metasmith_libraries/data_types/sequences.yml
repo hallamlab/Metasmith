@@ -366,6 +366,11 @@ types:
     - bin_fasta
     properties:
       method: comebin
+  metawrap_bin_fasta:
+    extends:
+    - bin_fasta
+    properties:
+      method: metawrap
 # -----------------------------------------
 # protein
   orfs:
