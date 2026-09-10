@@ -155,12 +155,8 @@ types:
       ext: csv
   vcontact3_network:
     properties:
-      _: vConTACT3 gene-sharing network as nodes.csv plus edges.csv
+      _: vConTACT3 gene-sharing network -- the cosmograph export's node and edge tables, whose names the tool builds from its own output prefix rather than calling them nodes.csv and edges.csv
       Format: DIRECTORY
-  vcontact3_ani:
-    properties:
-      _: vConTACT3 ani_summary.tsv; absent when the run supplies its own proteins
-      Format: TSV
       ext: tsv
 
   # ---------------------------------------------------------------------------

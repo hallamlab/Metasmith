@@ -161,7 +161,7 @@ CHUNKS = {
             "taxonomy::metabuli_report",
             "sequences::contig_batch", "ref::genomad", "taxonomy::genomad_taxonomy",
             "viromics::dereplicated_candidate_virus",
-            "viromics::vcontact3_ani", "viromics::vcontact3_assignments",
+            "viromics::vcontact3_assignments",
             "viromics::vcontact3_network",
             "sequences::semibin2_bin_fasta", "ref::gtdb", "taxonomy::gtdbtk",
         ],
