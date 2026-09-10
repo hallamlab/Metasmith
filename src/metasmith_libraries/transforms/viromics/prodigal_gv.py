@@ -1,6 +1,3 @@
-# MOCK -- model only. Requirements, products and grouping are real; the protocol
-# touches its outputs and runs no tool.
-#
 # Gene calling on the frozen viral set, and the whole reason step 25 needs no new
 # annotation transform: it produces sequences::orfs, so the library's existing
 # chunkOrfsForAnnotation -> kofamscan -> merge_kofamscan chain runs on the viral
@@ -17,21 +14,38 @@ from metasmith.python_api import *
 lib   = TransformInstanceLibrary.ResolveParentLibrary(__file__)
 model = Transform()
 
+# checkv.env, not a prodigal-gv env of its own: that image already ships
+# /usr/local/bin/prodigal-gv at the same upstream 2.11.0-gv build, so this is
+# one fewer image to pull, cache and stage on every host.
+image  = model.AddRequirement(lib.GetType("env::checkv.env"))
+
 frozen = model.AddRequirement(lib.GetType("viromics::dereplicated_candidate_virus"))
 cds    = model.AddProduct(lib.GetType("sequences::orfs"))
 gff    = model.AddProduct(lib.GetType("sequences::gff"))
 
 
 def protocol(context: ExecutionContext):
-    context.Input(frozen)
+    ifrozen = context.Input(frozen)
     outs = {p: context.Output(p) for p in (cds, gff)}
-    for o in outs.values():
-        context.external_shell.Exec(f"touch {o.external}")
+
+    # -p meta because the frozen set is many unrelated genomes, not one. -a takes
+    # the protein FASTA and -o the annotation, whose format -f selects; prodigal
+    # writes nucleotide CDS only with -d, which nothing here consumes.
+    _cmd = f"""
+        prodigal-gv -p meta -i {ifrozen.container} \
+            -a viral_orfs.faa -f gff -o viral_orfs.gff
+    """
+    context.ExecWithEnv() \
+        .ifContainerDo(env=image, cmd=_cmd) \
+        .ifVirtualEnvDo(env=image, cmd=_cmd)
+
+    context.LocalShell(f"cp viral_orfs.faa {outs[cds].local}")
+    context.LocalShell(f"cp viral_orfs.gff {outs[gff].local}")
+
     return ExecutionResult(
         manifest=[{p: o.local for p, o in outs.items()}],
         success=all(o.local.exists() for o in outs.values()),
     )
-
 
 TransformInstance(
     protocol=protocol,
