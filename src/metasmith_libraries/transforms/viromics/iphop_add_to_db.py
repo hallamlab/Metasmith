@@ -18,7 +18,10 @@ model = Transform()
 study   = model.AddRequirement(lib.GetType("viromics::contig_study"))
 bin     = model.AddRequirement(lib.GetType("binning_local::quality_bin_fasta"), parents={study})
 cluster = model.AddRequirement(lib.GetType("binning_local::cluster_table"), parents={study})
-tax     = model.AddRequirement(lib.GetType("taxonomy::gtdbtk"), parents={study})
+# gtdbtk_raw, not gtdbtk: add_to_db wants the DECORATED TREES, which only
+# de_novo_wf writes. The classification TSV that `taxonomy::gtdbtk` carries is a
+# different artifact and add_to_db never looks at it.
+tax     = model.AddRequirement(lib.GetType("taxonomy::gtdbtk_raw"), parents={study})
 
 out_db  = model.AddProduct(lib.GetType("viromics::iphop_augmented_db"))
 
