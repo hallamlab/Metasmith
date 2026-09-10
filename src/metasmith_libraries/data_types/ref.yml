@@ -280,3 +280,28 @@ types:
     - protein_model_weights
     properties:
       _: EZpred DL-only EC-head model bundle (kad-ecoli/EZpred predict.py + MLP heads)
+
+  # -------------------------------------------------
+  # viromics. CCTyper is deliberately absent: its 705-profile database ships
+  # inside the image with $CCTYPER_DB pointing at it, so that transform takes no
+  # ref:: requirement and passes no --db.
+  checkv_db:
+    extends:
+    - reference_data
+    properties:
+      _: CheckV database directory -- the checkv-db-vX.Y tree, passed whole to -d
+  vibrant_db:
+    extends:
+    - reference_data
+    properties:
+      _: VIBRANT reference directory holding BOTH databases/ (the -d argument) and files/ (the -m argument) -- download-db.sh copies files/ out of the image and fetches only the HMMs, so one directory carries both
+  vcontact3_db:
+    extends:
+    - reference_data
+    properties:
+      _: vConTACT3 reference directory, staged by `vcontact3 prepare_databases` from inside the same image whose version will read it
+  iphop_db:
+    extends:
+    - reference_data
+    properties:
+      _: iPHoP host database -- the shipped one, before this survey's own MAGs are added; viromics::iphop_augmented_db is what predict consumes
