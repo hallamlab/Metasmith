@@ -3,9 +3,15 @@ from __future__ import annotations
 import re, sys
 from pathlib import Path
 
-REPO = Path(__file__).resolve().parent.parent
-ENV_DIR = REPO / "resources" / "env"
-RECIPE_DIR = REPO / "envs" / "tools"
+# Both directories are addressed from the repo root, not from this file's parent.
+# The monorepo split them: the library's content lives under src/ and its conda
+# recipes under envs/, where this script sits. The pre-monorepo paths resolved to
+# envs/resources/env and envs/envs/tools -- neither exists, so the script found
+# zero sources and printed "portable (0)" instead of failing.
+HERE = Path(__file__).resolve().parent
+REPO = HERE.parent.parent
+ENV_DIR = REPO / "src" / "metasmith_libraries" / "resources" / "env"
+RECIPE_DIR = HERE / "tools"
 
 CURATED = {
     "bbtools": "bbmap=39.49",
@@ -50,6 +56,44 @@ def read_uri(p: Path) -> str:
     return text
 
 
+def read_conda(p: Path) -> str | None:
+    """An existing `conda:` line, which this script must not delete.
+
+    `derive_spec` only knows biocontainer URIs and its own CURATED table. Every
+    other env -- the hallamlab images, anything hand-built -- returns None, and
+    without this the rewrite drops a conda arm somebody wrote by hand. That is not
+    a regeneration, it is a deletion, and it is silent.
+    """
+    if not p.exists():
+        return None
+    for line in p.read_text().splitlines():
+        if line.strip().startswith("conda:"):
+            return line.split(":", 1)[1].strip()
+    return None
+
+
+def read_header(p: Path) -> list[str]:
+    """The leading `#` block of an env file, which this script must not eat.
+
+    AGENTS.md requires a pin to carry a comment naming the tag, the date and what
+    was verified inside the image -- a bare digest is a pin nobody can audit. This
+    script rewrites every env file from two computed lines, so without this it
+    deletes exactly the comments that rule mandates, on every run, silently.
+    Only the leading block is kept: anything after `container:` is regenerated.
+    """
+    if not p.exists():
+        return []
+    header: list[str] = []
+    for line in p.read_text().splitlines():
+        if line.startswith("#") or (not line.strip() and header):
+            header.append(line)
+            continue
+        break
+    while header and not header[-1].strip():
+        header.pop()
+    return header
+
+
 def main() -> int:
     RECIPE_DIR.mkdir(parents=True, exist_ok=True)
     sources = sorted(list(ENV_DIR.glob("*.oci")) + list(ENV_DIR.glob("*.env")))
@@ -72,8 +116,13 @@ def main() -> int:
                 f"dependencies:\n  - {spec}\n"
             )
         else:
-            container_only.append(stem)
-        env_path.write_text("\n".join(lines) + "\n")
+            existing = read_conda(env_path)
+            if existing:
+                lines.append(f"conda: {existing}")
+                portable.append((stem, f"{existing} (kept; not derivable)"))
+            else:
+                container_only.append(stem)
+        env_path.write_text("\n".join(read_header(env_path) + lines) + "\n")
         if src.suffix == ".oci":
             src.unlink()
 
