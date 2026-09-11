@@ -139,6 +139,45 @@ exists.** `TargetBuilder` refuses the same target type with the same *parents*, 
 type — and the same file exercises the same-type-different-parents shape the harness says is
 impossible. Whether it collapses to one plan is a library-design call.
 
+**A corrupt product is promoted into the cache and served as a hit.** A shard's manifest
+attests that a file exists, never that it is whole. Measured on fir: metaSPAdes exited zero,
+`reformat.sh` reported 86,744 records and 81,336,020 bases written, and the product on disk held
+505,012 records and 59,091,548 bases, began mid-sequence, and carried 251 lines with embedded
+nulls. The first null byte sits at offset 1,236,201, which is exactly the length of NODE_1 as
+its own `.paths` product names it — a size-correct file with unflushed holes, read before the
+writeback landed. The companion `.gfa` from the same task begins at `S 3` rather than a header.
+The shard was promoted from the task's own work directory and survived a re-run byte-identical,
+so the damage predates publishing and the copy is faithful. The transform's success predicate
+was a non-emptiness test, which a file with a good first megabyte passes. The first move is to
+decide what a shard attests: a record count the tool already prints costs one number and is the
+only check here that would have caught it.
+
+**Staging does not check that the agent's engine can run the library it is handed.** The
+library and the agent image are version-locked by the tool-environment dispatch API, and nothing
+verifies the lock. A library on the collapsed one-call API staged against a 0.22.1 agent solves
+cleanly, stages cleanly, launches, submits, and then dies in every task with
+`ExecutionContext.ExecWithEnv() got an unexpected keyword argument 'env'` — a Python
+`TypeError` inside a container on a compute node, as far from the cause as a failure can get,
+and reading as a library problem rather than an image problem. At campaign scale that is a whole
+submission. `env/dispatch_scan.py` already knows both arm names; the first move is a
+staging-time check that refuses at the client and names the image version required.
+
+**An unsatisfiable requirement is reported against every target except the one that caused it.**
+A driver that supplies only `resources/env` and never `resources/lib` leaves
+`lib::cami_gold_standard.py` with no producer. The planner explores the whole library and then
+dead-ends at unrelated targets — `ncbi::genome_name` and `sequences::background_genome` — so one
+missing resource library reads as a comprehensively broken driver and sends the reader to edit
+targets that were never wrong. Confidently wrong attribution costs more than no message. The
+first move is to report the requirement that no transform produces, rather than the frontier the
+search happened to end on.
+
+**Publish is forced to copy when one directory is bind-mounted twice.** Metasmith reads a single
+Lustre directory bound at two paths as two mounts, so it cannot hardlink and copies instead.
+Measured: a cache hit on a cleaned-reads step took 45.6s rather than milliseconds, because a hit
+still copies the shard's outputs into the task work directory and those outputs are gigabytes.
+Reuse is near-free in compute and not free in I/O. The first move is to compare device and inode
+rather than path when deciding whether two binds are the same filesystem.
+
 ## Accepted risks
 
 **An external mtime-touching event makes the next run cold, and one file is enough.** Stat
