@@ -41,13 +41,27 @@ NAME=$(printf "%s.tar.gz.%02d" "$DBV" "$SLURM_ARRAY_TASK_ID")
 WANT=$(awk -v n="$NAME" '$2 == n {print $1}' "$DBV.tar.gz.md5")
 test -n "$WANT"
 
-for attempt in 1 2 3 4; do
+# --http1.1 is not a preference. Over HTTP/2 the portal drops the stream part way into a
+# 10 GiB object -- `curl (92) HTTP/2 stream 1 was not closed cleanly: INTERNAL_ERROR` --
+# every time, so all six tasks of the first array burnt three quarters of an hour each and
+# failed. Forcing 1.1 is what makes the transfer finish.
+#
+# The loop is the transfer rather than a fallback around it: each attempt resumes where the
+# last was cut, and a fixed handful of attempts is nowhere near enough. Run until the chunk
+# is whole or the wall is nearly spent, and let the resubmission take it from there.
+DEADLINE=$(( $(date +%s) + 11 * 3600 ))
+attempt=0
+while [ "$(date +%s)" -lt "$DEADLINE" ]; do
     if [ -s "$NAME" ] && [ "$(md5sum "$NAME" | cut -d' ' -f1)" = "$WANT" ]; then
-        echo "ok $NAME"
+        echo "ok $NAME after $attempt attempts"
         exit 0
     fi
-    echo "attempt $attempt on $NAME"
-    curl -sS -C - --retry 5 --retry-delay 30 -o "$NAME" "$BASE/$NAME" || true
+    attempt=$((attempt + 1))
+    before=$(stat -c%s "$NAME" 2>/dev/null || echo 0)
+    curl -sS --http1.1 -C - --retry 5 --retry-delay 30 -o "$NAME" "$BASE/$NAME" || true
+    after=$(stat -c%s "$NAME" 2>/dev/null || echo 0)
+    echo "attempt $attempt on $NAME: $before -> $after"
+    [ "$after" = "$before" ] && sleep 60
 done
-echo "FAILED $NAME"
+echo "INCOMPLETE $NAME at $(stat -c%s "$NAME" 2>/dev/null || echo 0)"
 exit 1
