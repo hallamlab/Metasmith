@@ -1,15 +1,25 @@
 #!/usr/bin/env python3
-"""Assembly, binning and functional annotation over CAMI samples on fir.
+"""Assembly, binning and functional annotation over CAMI or Pratama 2026 samples on fir.
 
-The CAMI reads arrive interleaved in one anonymous_reads.fq.gz per sample, which the
-library takes directly: short_reads_pe extends the short_reads that bbduk requires, so
-nothing deinterleaves. The metadata parity must still read "paired" -- bbduk asserts on
+Two corpora, selected by --corpus, share this one driver.
+
+CAMI reads arrive interleaved in one anonymous_reads.fq.gz per sample, which the library
+takes directly: short_reads_pe extends the short_reads that bbduk requires, so nothing
+deinterleaves. The metadata parity must still read "paired" -- bbduk asserts on
 {single, paired} and turns "paired" into its int=t flag.
+
+Pratama arrives as two files (_1.fastq.gz/_2.fastq.gz) per run, so it goes through the
+library's read_pair -> zipped_forward/reverse_short_reads -> interleave_zipped_short_reads
+chain instead, and additionally carries a viral survey (research/viromics's own template)
+pinned to metaSPAdes rather than MEGAHIT. That survey's cross-sample tools pool under one
+shared viromics::contig_study root -- see build_inputs_pratama's docstring for what that
+does to sample enumeration, because it is not what CAMI's per-sample shape would suggest.
 
 Subcommands: list-samples, check-dbs, setup, run [--dry-run], status.
 """
 
 import argparse
+import csv
 import json
 import os
 import re
@@ -22,7 +32,7 @@ os.environ["PATH"] = f"{Path(sys.executable).parent}:{os.environ.get('PATH', '')
 from metasmith.python_api import (  # noqa: E402
     Agent, Source, SshSource,
     DataInstanceLibrary, TransformInstanceLibrary,
-    TargetBuilder, Runtime,
+    TargetBuilder, Runtime, DEFERRED,
     Resources, Size, Duration,
 )
 
@@ -38,11 +48,20 @@ SETUP_COMMANDS = ["module load apptainer"]
 
 CAMI_ROOT    = Path(os.environ.get("CAMI_ROOT", "/scratch/phyberos/cami"))
 HPC_MSM_HOME = Path(os.environ.get("MSM_AGENT_HOME", str(CAMI_ROOT / "metasmith")))
-# One directory per CAMI subtree that has been unpacked into per-sample reads.
-READS_GLOB = os.environ.get(
-    "CAMI_READS_GLOB",
-    str(CAMI_ROOT / "work" / "marine_short_read" / "simulation_short_read"
-        / "*" / "reads" / "anonymous_reads.fq.gz"))
+# The tracked manifest (229 rows across six datasets), not a directory glob: the
+# subtrees do not share a shape -- marine nests under
+# .../simulation_short_read/*/reads/, strain under .../short_read/*/reads/,
+# gastrooral directly under .../*/reads/ -- so no single glob reaches all of
+# them. CAMI_READS_GLOB is kept only as an override, for if the manifest ever
+# goes stale relative to what is actually unpacked on the cluster.
+CAMI_SAMPLES_TSV = Path(os.environ.get("CAMI_SAMPLES_TSV", str(ROOT / "samples.tsv")))
+READS_GLOB = os.environ.get("CAMI_READS_GLOB")
+
+PRATAMA_ROOT = Path(os.environ.get("PRATAMA_ROOT", "/scratch/phyberos/pratama2026"))
+# The tracked metadata table, not a directory listing -- library_layout and the run/sample
+# split live only here, and the fetch that populates PRATAMA_ROOT is a separate, ongoing job.
+PRATAMA_RUNS_TSV = Path(os.environ.get(
+    "PRATAMA_RUNS_TSV", str(ROOT.parent / "pratama2026" / "runs.tsv")))
 
 DB_ROOT = Path("/home/phyberos/project-rpp/lib")
 DB_PATHS = {
@@ -74,9 +93,25 @@ def ssh_cmd(cmd, timeout=180, check=True):
     return r.stdout.strip(), r.returncode
 
 
-def get_agent():
+# One agent home for the whole campaign, both corpora, all four runs -- NOT one
+# per corpus. The cache lives at <home>/task_cache, and the campaign's headline
+# number is the reuse between batch 1 and batch 2, so a second home would put the
+# two halves of that measurement in two trees that cannot see each other. Three
+# more things are per-home and would each have to be done twice: the relay, the
+# Deploy, and the dev overlay that binds the pinned engine over the published
+# image (research/cami/ops/push_dev_overlay.sh pushes to exactly one home).
+#
+# The override exists because the home is the operator's call, not because two
+# homes are a supported shape here. If you do split them, push the overlay to
+# both or every task in the second one dies on the collapsed dispatch API.
+HPC_MSM_HOME_PRATAMA = Path(os.environ.get(
+    "MSM_AGENT_HOME_PRATAMA", str(HPC_MSM_HOME)))
+
+
+def get_agent(corpus="cami"):
+    home = HPC_MSM_HOME if corpus == "cami" else HPC_MSM_HOME_PRATAMA
     return Agent(
-        home=SshSource(host=HPC_HOST, path=HPC_MSM_HOME).AsSource(),
+        home=SshSource(host=HPC_HOST, path=home).AsSource(),
         container=AGENT_IMAGE,
         runtime=Runtime.APPTAINER,
         setup_commands=SETUP_COMMANDS,
@@ -84,16 +119,41 @@ def get_agent():
 
 
 def enumerate_samples():
-    """(sample_id, remote reads path), read off the cluster rather than guessed."""
-    out, _ = ssh_cmd(f"ls {READS_GLOB} 2>/dev/null || true")
-    samples = []
-    for line in sorted(p.strip() for p in out.splitlines() if p.strip()):
-        # .../<timestamp>_sample_N/reads/anonymous_reads.fq.gz -> sample_N
-        stem = Path(line).parent.parent.name
-        m = re.search(r"(sample_\d+)$", stem)
-        sid = m.group(1) if m else stem
-        samples.append((sid, Path(line)))
-    return samples
+    """(sample_id, remote reads path) for every CAMI sample.
+
+    Read from the tracked manifest research/cami/samples.tsv (229 rows across six
+    datasets: marine, strain, toy_mousegut, toy_hmp_airskinurogenital,
+    plant_associated, toy_hmp_gastrooral) rather than a directory glob -- a glob
+    matching only marine's own nesting silently limited every downstream driver
+    to 10 of the 229 samples, with no error, because the other five subtrees
+    nest reads differently and a glob that finds nothing is not a glob that
+    fails. `sample_id` is unique only WITHIN a dataset ("sample_0" recurs in
+    several), so the id returned here is namespaced with the dataset -- without
+    that, two different datasets' samples collide on one `_stable_id`.
+
+    Every row here has has_truth=1 (spot-checked on fir across the strain and
+    gastrooral subtrees too), so cami_contig_truth's bridge reaches every
+    sample. Only 110 of 229 have has_binning_gs=1 -- 119 samples have no
+    gold-standard bin file at all, which is why AMBER scores through the
+    read-truth bridge rather than through binning_gs.tsv directly.
+
+    Set CAMI_READS_GLOB to fall back to the old single-glob enumeration instead,
+    for the (documented, not expected) case where the manifest has gone stale
+    relative to what is actually unpacked on the cluster.
+    """
+    if READS_GLOB:
+        out, _ = ssh_cmd(f"ls {READS_GLOB} 2>/dev/null || true")
+        samples = []
+        for line in sorted(p.strip() for p in out.splitlines() if p.strip()):
+            # .../<timestamp>_sample_N/reads/anonymous_reads.fq.gz -> sample_N
+            stem = Path(line).parent.parent.name
+            m = re.search(r"(sample_\d+)$", stem)
+            sid = m.group(1) if m else stem
+            samples.append((sid, Path(line)))
+        return samples
+
+    rows = list(csv.DictReader(CAMI_SAMPLES_TSV.open(), delimiter="\t"))
+    return [(f"{r['dataset']}_{r['sample_id']}", Path(r["reads_path"])) for r in rows]
 
 
 def select(samples, args):
@@ -110,7 +170,7 @@ def select(samples, args):
     return samples
 
 
-def _stable_id(*parts: str) -> str:
+def _stable_id(corpus: str, *parts: str) -> str:
     """A leaf id that survives a re-plan, which AddItem's does not.
 
     `AddItem` mints a leaf id by stat-ing the file, and returns a fresh uuid4 when
@@ -123,9 +183,13 @@ def _stable_id(*parts: str) -> str:
     RegisterItem is the sanctioned way to supply the id instead. Metasmith still
     re-derives the honest identity at staging time on the host that owns the file,
     so pinning it here only fixes what the key is hashed over.
+
+    `corpus` is the caller's namespace ("cami" or "pratama"), not a hardcoded
+    literal -- two corpora hashing the same parts under the same prefix could
+    collide on one id.
     """
     from metasmith.caching.keys import multihash_key
-    return multihash_key("\x00".join(("cami",) + parts).encode("utf-8")).hex()
+    return multihash_key("\x00".join((corpus,) + parts).encode("utf-8")).hex()
 
 
 def build_inputs(samples):
@@ -145,11 +209,11 @@ def build_inputs(samples):
         meta = inputs.RegisterItem(
             meta_name, "sequences::read_metadata",
             # Over the content, so editing the metadata does retire the old plan.
-            instance_id=_stable_id("read_metadata", sid, meta_value),
+            instance_id=_stable_id("cami", "read_metadata", sid, meta_value),
         )
         inputs.RegisterItem(
             reads, "sequences::short_reads_pe", parents={meta},
-            instance_id=_stable_id("short_reads_pe", sid, str(reads)),
+            instance_id=_stable_id("cami", "short_reads_pe", sid, str(reads)),
         )
         # CAMISIM's per-read truth, sitting beside the reads. NOT
         # binning_gs.tsv: that keys on the CAMI-provided gold-standard-assembly's
@@ -158,11 +222,11 @@ def build_inputs(samples):
         truth = reads.parent / "reads_mapping.tsv.gz"
         inputs.RegisterItem(
             truth, "binning::cami_read_truth", parents={meta},
-            instance_id=_stable_id("cami_read_truth", sid, str(truth)),
+            instance_id=_stable_id("cami", "cami_read_truth", sid, str(truth)),
         )
 
     for dtype, path in DB_PATHS.items():
-        inputs.RegisterItem(path, dtype, instance_id=_stable_id("ref", dtype, str(path)))
+        inputs.RegisterItem(path, dtype, instance_id=_stable_id("cami", "ref", dtype, str(path)))
 
     inputs.Save()
     return inputs
@@ -238,6 +302,229 @@ def build_transforms_for(variant="core"):
         TransformInstanceLibrary.Load(MLIB / "transforms" / "logistics"),
         _assembly_without(other),
         TransformInstanceLibrary.Load(MLIB / "transforms" / "metagenomics"),
+    ]
+
+
+# -- Pratama 2026 ------------------------------------------------------------
+#
+# Reads arrive as two files per run rather than CAMI's one interleaved file, so
+# sample enumeration below reads research/pratama2026/runs.tsv for the
+# accession/layout truth and then checks the cluster for what is actually on
+# disk, rather than trusting either alone: the tsv does not know what a
+# still-running fetch job has landed, and a directory listing does not know
+# which runs are short-read at all.
+
+def enumerate_pratama_runs():
+    """(run_accession, dataset, remote fwd path, remote rev path) for every PAIRED
+    run with BOTH mates present on disk right now, plus a report of what was
+    skipped and why.
+
+    Filters out the 6 SINGLE (MinION long-read) runs -- this target set is
+    short-read only -- and any PAIRED run missing one or both mates, which a
+    still-running fetch job can do at any moment. Reported rather than silently
+    dropped, because an incomplete download otherwise reads as a smaller corpus
+    rather than as a fetch still in flight.
+
+    The unit of work is the sequencing RUN, not the well or sample: several runs
+    here are replicates of one well and filter fraction, and per-run is kept
+    deliberately. Pooling across replicates would throw away the structure the
+    paper's own comparison needs, and the cross-sample viral tools below pool
+    across every run anyway -- collapsing replicates here would only lose
+    information, not gain anything downstream.
+    """
+    rows = list(csv.DictReader(PRATAMA_RUNS_TSV.open(), delimiter="\t"))
+    paired = [r for r in rows if r["library_layout"] == "PAIRED"]
+    n_single = len(rows) - len(paired)
+
+    tokens = " ".join(f"{r['dataset']}:{r['run_accession']}" for r in paired)
+    cmd = (
+        f'ROOT={PRATAMA_ROOT}; for e in {tokens}; do '
+        'd=${e%%:*}; r=${e##*:}; '
+        'f1="$ROOT/$d/$r/${r}_1.fastq.gz"; f2="$ROOT/$d/$r/${r}_2.fastq.gz"; '
+        's1=0; s2=0; [ -s "$f1" ] && s1=1; [ -s "$f2" ] && s2=1; '
+        'echo "$r $s1 $s2"; done'
+    )
+    out, _ = ssh_cmd(cmd, timeout=120)
+    have = {}
+    for line in out.splitlines():
+        run, s1, s2 = line.split()
+        have[run] = (s1 == "1", s2 == "1")
+
+    kept, n_missing, n_partial = [], 0, 0
+    for r in paired:
+        run = r["run_accession"]
+        s1, s2 = have.get(run, (False, False))
+        if s1 and s2:
+            base = PRATAMA_ROOT / r["dataset"] / run / run
+            kept.append((run, r["dataset"],
+                        Path(f"{base}_1.fastq.gz"), Path(f"{base}_2.fastq.gz")))
+        elif s1 or s2:
+            n_partial += 1
+        else:
+            n_missing += 1
+
+    report = (f"{len(rows)} runs in runs.tsv: {n_single} SINGLE (MinION, excluded), "
+             f"{len(paired)} PAIRED of which {len(kept)} have both mates on disk, "
+             f"{n_partial} have one mate (fetch in progress), {n_missing} have neither")
+    return kept, report
+
+
+def build_inputs_pratama(runs, with_gpr_panel=False):
+    """Register every run's reads through the library's paired-reads chain, plus
+    one shared viromics::contig_study root the viral survey's cross-sample tools
+    pool under.
+
+    `sequences::read_pair` -> `zipped_forward/reverse_short_reads` ->
+    `interleave_zipped_short_reads` -> `sequences::short_reads` is the chain
+    bbduk needs; CAMI's single interleaved file skips it entirely, which is why
+    that driver never needed it.
+
+    Parenting every run's read_metadata under `study` is not optional set
+    dressing: `merge_candidate_calls` (the viral lane's pooling step) requires
+    its own `read_pair` slot with `parents={study}`, so nothing merges unless
+    the lineage is actually there. The consequence, measured directly rather
+    than assumed: `DataInstanceLibrary.AsSamples("sequences::read_metadata")`
+    masks each sample to `{path} | ancestors | siblings`, and once every run's
+    ancestors set is `{study}`, every run is also every other run's sibling --
+    so AsSamples yields exactly ONE view spanning all runs, not one per run.
+    That collapse is the expected shape here, not a bug: `WorkflowPlan.Generate`
+    pools items into its `given_map` by structural type/lineage endpoint
+    regardless of how many given-groups they arrived through, so a collecting
+    transform (the merge) still gathers every run's calls, and a regular
+    transform (QC, assembly, binning) still gets one instance per run at
+    Nextflow-compile time. What actually changes is the solver's own
+    bookkeeping: it plans this as "1 sample, 1 unique case" rather than the "N
+    samples" CAMI's unshared runs give it, because it is validating that ONE
+    chain of types exists, not enumerating N physical chains. See the driver's
+    module docstring and the campaign report for the measurement this rests on.
+    """
+    CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    inputs = DataInstanceLibrary(CACHE_DIR / "pratama_inputs.xgdb")
+    inputs.Purge()
+
+    for tl in ["sequences.yml", "alignment.yml", "ref.yml", "annotation.yml",
+               "taxonomy.yml", "binning.yml", "binning_local.yml", "env.yml",
+               "viromics.yml"]:
+        inputs.AddTypeLibrary(MLIB / "data_types" / tl)
+
+    study_value = json.dumps({"logistics": "contig study"})
+    (inputs.location / "contig_study.json").write_text(study_value)
+    study = inputs.RegisterItem(
+        "contig_study.json", "viromics::contig_study",
+        instance_id=_stable_id("pratama", "contig_study", study_value),
+    )
+
+    for run, dataset, fwd, rev in runs:
+        meta_value = json.dumps({"parity": "paired", "length_class": "short"})
+        meta_name = f"{run}_read_metadata.json"
+        (inputs.location / meta_name).write_text(meta_value)
+        meta = inputs.RegisterItem(
+            meta_name, "sequences::read_metadata", parents={study},
+            instance_id=_stable_id("pratama", "read_metadata", run, meta_value),
+        )
+        pair_value = run
+        pair_name = f"{run}_read_pair.txt"
+        (inputs.location / pair_name).write_text(pair_value)
+        pair = inputs.RegisterItem(
+            pair_name, "sequences::read_pair", parents={meta},
+            instance_id=_stable_id("pratama", "read_pair", run, pair_value),
+        )
+        inputs.RegisterItem(
+            fwd, "sequences::zipped_forward_short_reads", parents={pair},
+            instance_id=_stable_id("pratama", "zipped_forward_short_reads", run, str(fwd)),
+        )
+        inputs.RegisterItem(
+            rev, "sequences::zipped_reverse_short_reads", parents={pair},
+            instance_id=_stable_id("pratama", "zipped_reverse_short_reads", run, str(rev)),
+        )
+
+    for dtype, path in DB_PATHS.items():
+        inputs.RegisterItem(path, dtype, instance_id=_stable_id("pratama", "ref", dtype, str(path)))
+
+    # annotation::gpr_table's two study-wide references, registered only when the
+    # panel is asked for. DEFERRED because no location for either was sourced on
+    # fir, which is exactly why the panel is off by default: StageWorkflow calls
+    # RefuseIfDeferred and names both rows rather than staging a hole, so this
+    # cannot be discovered three days into a run.
+    #
+    # The coupling runs the other way too. Register them with the panel OFF and
+    # they are parentless deferred inputs that belong to no sample, which the
+    # solver never sees; register neither with the panel ON and gpr_table
+    # dead-ends with no producer, and per the planner's own reporting quirk that
+    # one unsatisfiable chain poisons every other target in the same solve. Both
+    # switch together or neither does.
+    if with_gpr_panel:
+        inputs.AddItem(DEFERRED, "ref::mnxr_lookup")
+        inputs.AddItem(DEFERRED, "ref::label_transfer_landmarks")
+
+    inputs.Save()
+    return inputs
+
+
+def build_targets_pratama(with_gpr_panel=False):
+    """metaSPAdes (JGI protocol) + MetaWRAP + CheckM2, plus the viral survey.
+
+    The viral block is copied from research/viromics/viromics_survey_from_paired_reads.py's
+    TARGETS[2:] (2026-09-11) with the assembler re-pointed: that driver pins
+    `sequences::megahit_assembly` as target 0 and masks spades out; this campaign's run 2
+    is the reverse. See that file's own comment for why each target is pinned to the
+    assembly (`_ASM`) or the frozen candidate set (`_FROZEN`) the way it is -- the
+    reasoning is unchanged, only the pin.
+
+    No AMBER and no cami_contig_truth: Pratama is real data with no simulated ground
+    truth to score bins against.
+
+    `annotation::gpr_table` is OFF by default, and that is a campaign decision rather
+    than a technical one. It pulls the whole chosen-4 panel in behind it -- KOfamScan,
+    CLEAN, DIAMOND UniRef50 and ProteinBERT, each chunked and merged -- which is six
+    steps and, measured on the last ten-sample run, 85% of the task-hours and 96% of
+    the tasks. Batch 1 is a citable core pipeline and deliberately carries no
+    functional annotation lane; the panel also goes beyond what Pratama published,
+    which used DRAM. Measured here over 58 runs: 56 steps with it, 50 without.
+
+    It is also the only thing in this target set that needs `ref::mnxr_lookup` and
+    `ref::label_transfer_landmarks`, neither of which has a sourced path on fir, so
+    turning it on requires finding those two files first -- StageWorkflow refuses a
+    deferred input rather than staging a hole.
+    """
+    t = TargetBuilder()
+    asm = t.Add("sequences::spades_assembly")
+    frozen = t.Add("viromics::dereplicated_candidate_virus")
+
+    # cross-sample tools, pooled on the frozen set (viromics TARGETS[2:9])
+    for dtype in ("viromics::contig_length_table", "viromics::precluster_table",
+                  "viromics::votu_cluster_table", "viromics::checkv_contamination",
+                  "viromics::vcontact3_network", "annotation::kofamscan_descriptions",
+                  "viromics::host_prediction_genome", "viromics::spacer_host_links"):
+        t.Add(dtype, parents=[frozen])
+    # per-sample viral work that nothing above reaches (viromics TARGETS[10:13])
+    per_sample = ["annotation::dramv_distill", "taxonomy::metabuli",
+                  "annotation::dram_annotations"]
+    if with_gpr_panel:
+        per_sample.append("annotation::gpr_table")
+    for dtype in per_sample:
+        t.Add(dtype, parents=[asm])
+
+    # run 2's own core lane: metaSPAdes + MetaWRAP + CheckM2, mirroring
+    # build_targets(variant="core") minus AMBER/cami_read_truth.
+    t.Add("sequences::read_qc_stats")
+    for dtype in ("sequences::orfs", "sequences::gff", "sequences::assembly_stats",
+                  "sequences::assembly_per_contig_coverage", "alignment::bam"):
+        t.Add(dtype, parents=[asm])
+    mw_bin = t.Add("sequences::metawrap_bin_fasta", parents=[asm])
+    t.Add("binning::metawrap_contig_to_bin_table", parents=[asm])
+    t.Add("taxonomy::checkm_stats", parents=[mw_bin])
+    return t
+
+
+def build_transforms_for_pratama():
+    return [
+        TransformInstanceLibrary.Load(MLIB / "transforms" / "logistics"),
+        _assembly_without("megahit"),
+        TransformInstanceLibrary.Load(MLIB / "transforms" / "metagenomics"),
+        TransformInstanceLibrary.Load(MLIB / "transforms" / "functionalAnnotation"),
+        TransformInstanceLibrary.Load(MLIB / "transforms" / "viromics"),
+        TransformInstanceLibrary.Load(MLIB / "transforms" / "fabfos"),
     ]
 
 
@@ -323,6 +610,12 @@ def _report_plan_failure(task):
 
 
 def cmd_list_samples(args):
+    if args.corpus == "pratama":
+        kept, report = enumerate_pratama_runs()
+        print(report)
+        for run, dataset, fwd, rev in kept:
+            print(f"{run:14s} {dataset:10s} {fwd}")
+        return 0
     for sid, reads in enumerate_samples():
         print(f"{sid:12s} {reads}")
     return 0
@@ -374,6 +667,75 @@ def cmd_setup(args):
 
 
 def cmd_run(args):
+    if args.corpus == "pratama":
+        if args.variant != "core":
+            print("ERROR: --corpus pratama only implements --variant core "
+                  "(metaSPAdes + MetaWRAP + CheckM2 + viral survey); "
+                  "the MEGAHIT/three-binner variant was never asked for and is "
+                  "not wired up.", file=sys.stderr)
+            return 1
+        kept, report = enumerate_pratama_runs()
+        print(report)
+        samples = select(kept, args)
+        if not samples:
+            print("ERROR: no runs found; run list-samples --corpus pratama", file=sys.stderr)
+            return 1
+        print(f"{len(samples)} run(s) selected: {', '.join(s[0] for s in samples)}")
+
+        inputs = build_inputs_pratama(samples, with_gpr_panel=args.with_gpr_panel)
+        containers = DataInstanceLibrary.Load(MLIB / "resources" / "env")
+        resource_lib = DataInstanceLibrary.Load(MLIB / "resources" / "lib")
+        targets = build_targets_pratama(with_gpr_panel=args.with_gpr_panel)
+
+        smith = (Agent(home=Source.FromLocal(CACHE_DIR / "dryrun_home_pratama"), runtime=Runtime.APPTAINER)
+                 if args.dry_run else get_agent("pratama"))
+
+        print("Planning workflow...")
+        sample_views = list(inputs.AsSamples("sequences::read_metadata"))
+        # Expected to be [1], not len(samples) -- every run's read_metadata is
+        # parented to the shared viromics::contig_study root the viral survey
+        # pools under, which collapses AsSamples to one view spanning every
+        # run. See build_inputs_pratama's docstring.
+        print(f"AsSamples: {len(samples)} run(s) -> {len(sample_views)} solver "
+              f"sample-view(s) (pooled under viromics::contig_study)")
+        task = smith.GenerateWorkflow(
+            samples=sample_views,
+            resources=[containers, resource_lib, inputs],
+            transforms=build_transforms_for_pratama(),
+            targets=targets,
+        )
+        if not task.ok:
+            _report_plan_failure(task)
+
+        steps = task.plan.steps
+        print(f"Plan OK -- {len(steps)} steps over {len(samples)} runs, key={task.GetKey()}")
+        for s in steps:
+            prods = sorted({i.dtype_name for g in s.produces for i in g})
+            print(f"  {s.order:>2}. {Path(s.transform._path).stem:28s} -> {prods}")
+        if task.plan.dropped_targets:
+            print(f"\ndropped: {sorted(task.plan.dropped_targets)}")
+            for h in (task.plan.hints or []):
+                print(f"  hint: {getattr(h, 'kind', '?')} target={getattr(h, 'target', '?')}"
+                      f" msg={getattr(h, 'message', '')}")
+
+        if args.dry_run:
+            print("\n(dry-run; nothing staged or submitted)")
+            return 0
+
+        keys_file = CACHE_DIR / "task_keys.json"
+        keys = json.loads(keys_file.read_text()) if keys_file.exists() else {}
+        keys[args.tag or f"pratama_{len(samples)}runs"] = task.GetKey()
+        keys_file.write_text(json.dumps(keys, indent=2))
+
+        print(f"Staging workflow to {HPC_HOST}...")
+        smith.StageWorkflow(task, on_exist=args.on_exist, verify_external_paths=False)
+        if args.stage_only:
+            print(f"\n(stage-only; staged as {task.GetKey()})")
+            return 0
+        print("ERROR: submission for pratama is not wired up past staging; "
+              "pass --stage-only", file=sys.stderr)
+        return 1
+
     samples = select(enumerate_samples(), args)
     if not samples:
         print("ERROR: no samples found; run list-samples", file=sys.stderr)
@@ -464,7 +826,10 @@ def main():
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="cmd", required=True)
 
-    sub.add_parser("list-samples").set_defaults(fn=cmd_list_samples)
+    p = sub.add_parser("list-samples")
+    p.add_argument("--corpus", default="cami", choices=["cami", "pratama"])
+    p.set_defaults(fn=cmd_list_samples)
+
     sub.add_parser("check-dbs").set_defaults(fn=cmd_check_dbs)
 
     p = sub.add_parser("setup", help="pull the container images onto the cluster")
@@ -472,6 +837,7 @@ def main():
     p.set_defaults(fn=cmd_setup)
 
     p = sub.add_parser("run")
+    p.add_argument("--corpus", default="cami", choices=["cami", "pratama"])
     p.add_argument("--sample", nargs="*")
     p.add_argument("--limit", type=int)
     p.add_argument("--dry-run", action="store_true")
@@ -492,6 +858,11 @@ def main():
     # a GPU request that failed. The wall is the fix.
     p.add_argument("--variant", default="core", choices=["core", "variant"],
                    help="core: metaSPAdes + MetaWRAP + AMBER. variant: MEGAHIT + three binners + skANI.")
+    p.add_argument("--with-gpr-panel", action="store_true",
+                   help="pratama only: add annotation::gpr_table, which pulls KOfamScan, "
+                        "CLEAN, DIAMOND UniRef50 and ProteinBERT in behind it (56 steps "
+                        "instead of 50) and needs ref::mnxr_lookup and "
+                        "ref::label_transfer_landmarks, neither of which is sourced yet.")
     p.add_argument("--comebin-device", default="cpu", choices=["cpu", "gpu"])
     p.add_argument("--comebin-time", default="3d")
     p.add_argument("--comebin-cpus", type=int, default=48)
