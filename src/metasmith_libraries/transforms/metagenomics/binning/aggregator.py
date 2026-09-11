@@ -15,7 +15,8 @@ asm   = model.AddRequirement(lib.GetType("sequences::assembly"))
 # contribute to it -- with gtdbtk named only by a downstream target it ran on
 # SemiBin2's bins alone, and metabat2's and comebin's kept bins joined to nothing.
 # The protocol reads checkm and not gtdbtk: quality is what selects a bin, while
-# these requirements exist to make the assignment exist for every bin selected.
+# the gtdbtk slots exist solely to shape the plan, the way `getNcbiAssembly`
+# requires a name it never opens.
 mb_bin = model.AddRequirement(lib.GetType("sequences::metabat2_bin_fasta"), parents={asm})
 mb_ck  = model.AddRequirement(lib.GetType("taxonomy::checkm_stats"), parents={mb_bin})
 mb_tax = model.AddRequirement(lib.GetType("taxonomy::gtdbtk"), parents={mb_bin})

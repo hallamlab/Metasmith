@@ -41,6 +41,14 @@ Two invariants the build enforces, both by failing:
 and one it enforces by solving: a transform whose products change shape takes its
 templates down here, by name, rather than in someone's GUI a week later.
 
+**A library's target vocabulary is its declared types plus their ancestors.** A target
+names a type, and a type is nameable only if some loaded transform library carries it.
+`_metadata/types/` therefore keeps every type a transform declares *and* every type those
+declarations satisfy -- `sequences::reads` survives in `logistics` because `long_reads`
+extends it, though nothing there names `reads` outright. Load the library that produces
+the thing you are asking for and the ancestor is nameable; the failure otherwise reads
+`no transform library declares [ns::type]`.
+
 ## Environments
 
 `resources/env/<tool>.env` declares a tool's environment generically: an optional
@@ -192,6 +200,16 @@ its name suggests: it is bound to the deep-learning embedding target set through
   fall back to and an invisible one takes the whole plan down.
 - To force all sibling transforms (e.g. all three binners), target a downstream that requires
   them all (`binning_local::cluster_table`), or give each sibling's target a distinct parent.
+  `cluster_table` reaches `aggregator`, which requires checkm and gtdbtk once per binner under
+  distinct parents. That one target therefore plans three binners, three CheckM runs and three
+  GTDB-Tk runs, and adds `downloadGtdbDB` and its ~179 GB reference when no `ref::gtdb` is given.
+  An *unpinned* `taxonomy::gtdbtk` target is the trap it replaces: it binds to whichever single bin
+  type the search reaches first, and under an ambiguous `sequences::assembly` that is a second
+  assembler leg the aggregator never sees.
+- **The aggregator's own output cannot be scored.** `binning_local::quality_bin_fasta` carries no
+  `genome_scope`, so it does not satisfy `sequences::putative_genome`. CheckM and GTDB-Tk therefore
+  never run on the pooled quality MAGs, only on each binner's raw bins. `skani_dedup` is the sole
+  consumer of that type.
 
 ## Layout
 
