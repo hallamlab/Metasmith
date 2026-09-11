@@ -9,7 +9,7 @@
 # Hashing terabytes is IO-bound, so many small tasks beat a few fat ones.
 set -euo pipefail
 ROOT=${CAMI_ROOT:-/scratch/phyberos/cami}
-python3 "$(dirname "$0")/verify.py" \
+python3 "$ROOT/verify.py" \
     --manifest "$ROOT/manifest.tsv" \
     --root "$ROOT" \
     --out "$ROOT/_verify/report.${SLURM_ARRAY_TASK_ID}.tsv" \
