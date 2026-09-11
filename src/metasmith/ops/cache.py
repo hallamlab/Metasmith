@@ -52,7 +52,7 @@ def _entry_rows(store, *, include_tombstoned: bool) -> list[dict]:
     A step with two products is one entry and two instances, and the thing a
     user sorts, groups and tags against is the instance.
     """
-    from ..caching.admission import manifest_files
+    from ..caching.admission import manifest_files, manifest_lineage
 
     rows: list[dict] = []
     for e in store.iter_entries(include_tombstoned=include_tombstoned):
@@ -82,6 +82,7 @@ def _entry_rows(store, *, include_tombstoned: bool) -> list[dict]:
                 "instance_id": "",
                 "path": "",
                 "dtype": "",
+                "parents": [],
             }
             if f is not None:
                 row.update({
@@ -89,7 +90,17 @@ def _entry_rows(store, *, include_tombstoned: bool) -> list[dict]:
                     "path": str(f.Resolve(e.output_root)),
                     "dtype": f.dtype_name,
                     "size_bytes": f.size or e.size_bytes,
+                    # The ancestry, as identities. A reader that holds the other
+                    # rows can turn these into paths; one that does not would be
+                    # given edges pointing at nothing.
+                    "parents": list(f.parents),
                 })
+                # Only where there is one, so a listing of imports stays
+                # readable -- a product's payload is a hex blob and every
+                # import's is empty.
+                _index, payload = manifest_lineage(manifest)
+                if payload:
+                    row["lineage_payload"] = bytes(payload).hex()
             rows.append(row)
     return rows
 

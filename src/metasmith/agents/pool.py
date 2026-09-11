@@ -145,3 +145,62 @@ class _PoolAccess:
                 f"so name the one you mean by id: {ids}"
             )
         return out
+
+    def GivenLibrary(
+        self,
+        refs,
+        *,
+        location,
+        types: dict | None = None,
+        type_library_paths: list | None = None,
+        entries: list | None = None,
+    ):
+        """A given library holding exactly the pool entries named, in order.
+
+        The instances carry the pool's identities, so a plan built twice from
+        the same references keys the same both times. That is the whole point:
+        an identity assigned at import cannot move, where one derived from a
+        path and an mtime moved on every submission and took the run directory
+        with it.
+
+        Nothing here reads the data. The paths are the agent's, the types come
+        from the libraries the caller attaches, and the ancestry is the edges
+        the pool recorded -- an edge to an entry not among the references is
+        dropped, because a parent the library has no item for is a path
+        `Unpack` would walk into and not find.
+        """
+        from ..models.libraries import DataInstanceLibrary, DataTypeLibrary
+
+        dtypes: dict = dict(types or {})
+        for p in type_library_paths or []:
+            p = Path(p)
+            dtypes.setdefault(p.stem, DataTypeLibrary.Load(p))
+
+        rows = self.ResolvePoolRefs(refs, entries=entries)
+        dtype_by_id = {r["instance_id"]: r["dtype"] for r in rows}
+        path_by_id = {r["instance_id"]: r["path"] for r in rows}
+
+        manifest: dict = {}
+        for r in rows:
+            packed = {
+                "type": r["dtype"],
+                "instance_id": r["instance_id"],
+                "origin": r.get("origin", "imported"),
+            }
+            if r.get("lineage_payload"):
+                packed["lineage_payload"] = r["lineage_payload"]
+            parents = {
+                f"pool@{path_by_id[pid]}": dtype_by_id[pid]
+                for pid in r.get("parents", []) if pid in path_by_id
+            }
+            if parents:
+                packed["parents"] = parents
+            manifest[r["path"]] = packed
+
+        lib = DataInstanceLibrary.Unpack(
+            location=Path(location),
+            raw={"schema": DataInstanceLibrary.schema, "manifest": manifest},
+            dtypes=dtypes,
+        )
+        lib.types = dtypes
+        return lib

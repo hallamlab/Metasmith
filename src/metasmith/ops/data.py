@@ -7,6 +7,7 @@ import time
 from pathlib import Path
 
 from ..hashing import KeyGenerator
+from ..logging import Log
 from ..models.libraries import DataInstanceLibrary
 from ..models.paths import DEFERRED
 from ..models.remote import Source
@@ -632,6 +633,40 @@ def _resolve_dtype(dtype: str, type_library_paths: list[str] | None):
     return libs[ns][name], True
 
 
+# Path segments that name storage a site expects to delete. A pool under one of
+# them is a delete scheduled against the meaning of every shard built on it.
+_IMPERMANENT = ("scratch", "tmp", "temp")
+
+
+def pool_retention_warning(root: Path) -> str | None:
+    """What an operator needs to hear before the pool is worth anything.
+
+    An imported identity is assigned, so losing the pool loses the only record
+    of what every shard keyed on an import refers to. The pool is not a cache of
+    a calculation and cannot be rebuilt by re-importing: a re-import is a new
+    act and mints new identities, which match nothing that survived.
+
+    So the pool has to outlive the shards, and that makes WHERE it lives a
+    correctness question rather than an operational preference. Scratch
+    filesystems delete on age since creation, not since access, so a pool under
+    one has a delete already scheduled against it -- and the failure is silent
+    and arrives long after the mistake, which is the reason this speaks up at
+    the moment the first thing is imported rather than in a document.
+    """
+    parts = {p.lower() for p in Path(root).parts}
+    hit = sorted(parts & set(_IMPERMANENT))
+    if not hit:
+        return None
+    return (
+        f"the pool at [{root}] sits under [{'/'.join(hit)}]. An imported "
+        "identity is assigned, not derived, so it cannot be rebuilt: if this "
+        "path is purged, every shard keyed on an import here becomes "
+        "unreadable and re-importing mints identities that match none of them. "
+        "Put the agent home on storage that is not swept, or accept that this "
+        "campaign's reuse ends when the path does."
+    )
+
+
 def import_item(
     path: str,
     dtype: str,
@@ -672,6 +707,11 @@ def import_item(
     label = name if name is not None else str(target)
     key_hex = mint_import_id(dtype, label)
     arrival_ns = time.time_ns()
+    # Once per pool, at the act that first gives it something to lose.
+    if not (root / "cache.sqlite").exists():
+        warning = pool_retention_warning(root)
+        if warning:
+            Log.Warn(warning)
 
     parent_ids = _resolve_parent_ids(root, parents or [])
     written = admit(
