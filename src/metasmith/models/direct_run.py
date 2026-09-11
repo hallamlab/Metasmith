@@ -176,18 +176,36 @@ def _build_lineage(dep_map: dict[Dependency, list[DataInstance]], requires: list
     # the same for the same reason.
     entry[LinPayload.KEY_KEY] = "-"
 
-    # Every supplied input is an ancestor of every other. `given_index` files each item
-    # under its own dtype alone, which is right in a workflow -- the orchestrator knows
-    # the real ancestry -- but leaves a direct run unable to answer `SourceOf` at all,
-    # since no call table would name the read pair it came from. A direct run IS one
-    # coherent sample by construction, so the union is the honest reading of it, and a
-    # slot given more than one item still raises AmbiguousProvenance rather than guessing.
+    # Provenance per item, so `SourceOf` can answer at all. Recorded ancestry wins
+    # whenever there is any: `given_index` carries the one hop of parents the data
+    # library knows about, which is a statement about these particular files rather
+    # than an inference from them being in the same run.
+    #
+    # The union is the fallback for a library that records no parents at all. A direct
+    # run IS one coherent sample by construction, so with nothing recorded every other
+    # input is the honest answer, and it is the difference between a collecting
+    # transform being runnable outside Nextflow and not.
+    #
+    # The choice is made once for the whole entry, never per item. A root item has a
+    # one-key index by definition, so falling back on it individually would hand every
+    # root the union while its descendants kept the real ancestry -- and two roots each
+    # claiming to be every descendant's parent is exactly the AmbiguousProvenance the
+    # recorded ancestry exists to avoid.
+    indices = {
+        inst.ResolvePath(): given_index(inst, given_by_path)
+        for insts in dep_map.values() for inst in insts
+    }
+    recorded = any(len(ix) > 1 for ix in indices.values())
     union = {
         k: v for k, v in entry.items()
         if k not in (LinPayload.FILES_KEY, LinPayload.PROV_KEY, LinPayload.KEY_KEY)
     }
     entry[LinPayload.PROV_KEY] = [
-        [dict(union) for _ in dep_map[dep]] for dep in requires
+        [
+            indices[inst.ResolvePath()] if recorded else dict(union)
+            for inst in dep_map[dep]
+        ]
+        for dep in requires
     ]
     return entry
 
