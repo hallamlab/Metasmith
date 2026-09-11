@@ -182,3 +182,85 @@ class TestALocalHomeIsReadInProcess:
         entries = _Local(home).ReadPool()["entries"]
         assert [e["instance_id"] for e in entries] == [res["instance_id"]]
         assert entries[0]["name"] == "batch1/reads"
+
+
+class TestAGivenLibraryFromPoolReferences:
+    """The plan key is what this is for: a reference keys the same every time."""
+
+    @pytest.fixture
+    def types(self, tmp_path):
+        from tests.metasmith.cache._cache_harness import build_types_library
+
+        return build_types_library(tmp_path / "types", ("reads", "meta"))
+
+    def _agent(self, rows):
+        return _SshAgent(rows)
+
+    def test_the_instances_carry_the_pools_identities(self, tmp_path, types):
+        from metasmith.models.libraries import DataTypeLibrary
+
+        iid = "aa" * 34
+        agent = self._agent([_row("batch1/reads", iid, dtype="cf::reads")])
+        lib = agent.GivenLibrary(
+            ["batch1/reads"], location=tmp_path / "given",
+            types={"cf": DataTypeLibrary.Load(types)},
+        )
+        path = Path(f"{REMOTE_DATA}/batch1/reads")
+        assert list(lib.manifest) == [path]
+        assert lib.Get(path).instance_id == iid
+
+    def test_two_builds_of_one_reference_key_the_same(self, tmp_path, types):
+        from metasmith.models.libraries import DataTypeLibrary
+
+        rows = [_row("batch1/reads", "aa" * 34, dtype="cf::reads")]
+        ids = []
+        for i in (1, 2):
+            agent = self._agent(rows)
+            lib = agent.GivenLibrary(
+                ["batch1/reads"], location=tmp_path / f"given{i}",
+                types={"cf": DataTypeLibrary.Load(types)},
+            )
+            ids.append(lib.Get(Path(f"{REMOTE_DATA}/batch1/reads")).instance_id)
+        assert ids[0] == ids[1]
+
+    def test_recorded_ancestry_becomes_a_parent_edge(self, tmp_path, types):
+        from metasmith.models.libraries import DataTypeLibrary
+
+        parent = _row("batch1/meta", "bb" * 34, dtype="cf::meta")
+        child = _row("batch1/reads", "aa" * 34, dtype="cf::reads")
+        child["parents"] = [parent["instance_id"]]
+        agent = self._agent([parent, child])
+        lib = agent.GivenLibrary(
+            ["batch1/meta", "batch1/reads"], location=tmp_path / "given",
+            types={"cf": DataTypeLibrary.Load(types)},
+        )
+        kid = Path(f"{REMOTE_DATA}/batch1/reads")
+        assert [pm.name for pm in lib.parents.get(kid, [])] == ["cf::meta"]
+
+    def test_an_edge_to_something_unreferenced_is_dropped(self, tmp_path, types):
+        # Unpack walks a parent by path, so an edge to an entry the library has
+        # no item for is a walk into nothing.
+        from metasmith.models.libraries import DataTypeLibrary
+
+        parent = _row("batch1/meta", "bb" * 34, dtype="cf::meta")
+        child = _row("batch1/reads", "aa" * 34, dtype="cf::reads")
+        child["parents"] = [parent["instance_id"]]
+        agent = self._agent([parent, child])
+        lib = agent.GivenLibrary(
+            ["batch1/reads"], location=tmp_path / "given",
+            types={"cf": DataTypeLibrary.Load(types)},
+        )
+        assert lib.parents == {}
+
+    def test_an_unknown_reference_refuses_before_a_library_exists(
+        self, tmp_path, types,
+    ):
+        from metasmith.models.libraries import DataTypeLibrary
+
+        agent = self._agent([_row("batch1/reads", "aa" * 34, dtype="cf::reads")])
+        with pytest.raises(ValueError) as e:
+            agent.GivenLibrary(
+                ["batch9/reads"], location=tmp_path / "given",
+                types={"cf": DataTypeLibrary.Load(types)},
+            )
+        assert "metasmith data import" in str(e.value)

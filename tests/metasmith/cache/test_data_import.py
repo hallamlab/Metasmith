@@ -331,3 +331,43 @@ class TestGrouping:
             assert entry is not None, "the migration tombstoned an entry"
             assert entry.run == ""
             assert entry.tags == ()
+
+
+class TestPoolRetention:
+    """The pool is state, so where it lives is a correctness question.
+
+    An assigned identity cannot be rebuilt. A pool on storage the site sweeps
+    has a delete scheduled against the meaning of every shard keyed on it, and
+    the failure arrives months after the mistake with nothing to diagnose.
+    """
+
+    def test_a_pool_under_a_swept_path_says_so_at_the_first_import(
+        self, tmp_path, caplog,
+    ):
+        home = tmp_path / "scratch" / "someone" / "campaign"
+        home.mkdir(parents=True)
+        f = _file(tmp_path)
+        ops.import_item(str(f), "cf::seed", agent_home=str(home))
+        assert "unreadable" in caplog.text
+        assert "scratch" in caplog.text
+
+    def test_a_pool_on_ordinary_storage_says_nothing(self):
+        # Asked of the classifier rather than of an import, because pytest's
+        # own tmp_path lives under /tmp -- which is a swept path, so an import
+        # there correctly warns and could never show the quiet case.
+        assert ops.pool_retention_warning(
+            Path("/project/def-someone/campaign/task_cache")
+        ) is None
+
+    def test_a_swept_path_is_named_wherever_it_sits(self):
+        msg = ops.pool_retention_warning(Path("/scratch/someone/campaign"))
+        assert msg is not None and "scratch" in msg
+
+    def test_it_is_said_once_and_not_on_every_import(self, tmp_path, caplog):
+        home = tmp_path / "scratch" / "campaign"
+        home.mkdir(parents=True)
+        f = _file(tmp_path)
+        ops.import_item(str(f), "cf::seed", agent_home=str(home))
+        caplog.clear()
+        ops.import_item(str(f), "cf::mid", agent_home=str(home))
+        assert "unreadable" not in caplog.text
