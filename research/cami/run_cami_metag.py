@@ -47,7 +47,11 @@ READS_GLOB = os.environ.get(
 DB_ROOT = Path("/home/phyberos/project-rpp/lib")
 DB_PATHS = {
     "ref::uniref50_diamond_db": DB_ROOT / "diamond" / "uniref50.dmnd",
-    "ref::kofamscan_profiles":  DB_ROOT / "kofamscan" / "profiles.tgz",
+    # The unpacked directory, not the tarball beside it. kofamscan asserts on the
+    # staged path being a directory and fails every chunk instantly with a message
+    # naming both producers, so 135 chunks x 4 retries cost nothing but read as a
+    # tool failure rather than a wiring mistake.
+    "ref::kofamscan_profiles":  DB_ROOT / "kofamscan" / "profiles",
     "ref::kofamscan_ko_list":   DB_ROOT / "kofamscan" / "ko_list.tsv",
 }
 
@@ -106,6 +110,24 @@ def select(samples, args):
     return samples
 
 
+def _stable_id(*parts: str) -> str:
+    """A leaf id that survives a re-plan, which AddItem's does not.
+
+    `AddItem` mints a leaf id by stat-ing the file, and returns a fresh uuid4 when
+    it cannot -- which is every input here, because the reads and the reference
+    databases live on the cluster and this driver runs on a workstation. The plan
+    key hashes the given instances' ids, so two identical submissions minutes apart
+    plan to different keys, Nextflow sees a project it has never run, and `-resume`
+    is discarded. Measured: `daqL9cFU` then `WwhBaN3k` from back-to-back dry runs.
+
+    RegisterItem is the sanctioned way to supply the id instead. Metasmith still
+    re-derives the honest identity at staging time on the host that owns the file,
+    so pinning it here only fixes what the key is hashed over.
+    """
+    from metasmith.caching.keys import multihash_key
+    return multihash_key("\x00".join(("cami",) + parts).encode("utf-8")).hex()
+
+
 def build_inputs(samples):
     CACHE_DIR.mkdir(parents=True, exist_ok=True)
     inputs = DataInstanceLibrary(CACHE_DIR / "cami_inputs.xgdb")
@@ -116,16 +138,22 @@ def build_inputs(samples):
         inputs.AddTypeLibrary(MLIB / "data_types" / tl)
 
     for sid, reads in samples:
-        meta = inputs.AddValue(
-            f"{sid}_read_metadata.json",
-            # "paired", not "interleaved": bbduk asserts on {single, paired}.
-            {"parity": "paired", "length_class": "short"},
-            "sequences::read_metadata",
+        # "paired", not "interleaved": bbduk asserts on {single, paired}.
+        meta_value = json.dumps({"parity": "paired", "length_class": "short"})
+        meta_name = f"{sid}_read_metadata.json"
+        (inputs.location / meta_name).write_text(meta_value)
+        meta = inputs.RegisterItem(
+            meta_name, "sequences::read_metadata",
+            # Over the content, so editing the metadata does retire the old plan.
+            instance_id=_stable_id("read_metadata", sid, meta_value),
         )
-        inputs.AddItem(reads, "sequences::short_reads_pe", parents={meta})
+        inputs.RegisterItem(
+            reads, "sequences::short_reads_pe", parents={meta},
+            instance_id=_stable_id("short_reads_pe", sid, str(reads)),
+        )
 
     for dtype, path in DB_PATHS.items():
-        inputs.AddItem(path, dtype)
+        inputs.RegisterItem(path, dtype, instance_id=_stable_id("ref", dtype, str(path)))
 
     inputs.Save()
     return inputs
@@ -171,18 +199,50 @@ def build_targets(with_dedup=True):
     return t
 
 
-def make_slurm_config(comebin_device="cpu", comebin_time="8h"):
+def make_slurm_config(comebin_device="cpu", comebin_time="3d", comebin_cpus=48):
     smith = get_agent()
     base = Path(smith.GetNxfConfigPresets()["slurm"]).read_text()
     if comebin_device == "gpu":
+        # A MIG slice, not `--gpus=1`. COMEBin's contrastive net is small -- 20 GB is
+        # ample -- and a whole H100 queues far longer than a slice does. The slice's
+        # CUDA_VISIBLE_DEVICES is a `MIG-<uuid>` handle rather than an index, which is
+        # why it has to be forwarded verbatim and cannot be re-derived in the container.
+        #
+        # 16 CPUs, not 64. Only coverage and the Leiden sweep are CPU-bound, and the
+        # sweep is where every large CPU-only run deadlocked: cluster.py forks a Pool
+        # from a parent that k-means already left threaded, so a smaller pool is a
+        # smaller target. See research/aspire/campaigns/r1/gapfill/STATE.md.
         body = [
-            f'        clusterOptions = "--nodes=1 --ntasks=1 --account={GPU_ACCOUNT} --gpus=1"',
+            "        cpus = 16",
+            "        memory = '48 GB'",
+            f"        time = '{comebin_time}'",
+            f'        clusterOptions = "--nodes=1 --ntasks=1 --account={GPU_ACCOUNT}'
+            ' --gres=gpu:nvidia_h100_80gb_hbm3_2g.20gb:1"',
             "        beforeScript = 'export APPTAINERENV_CUDA_VISIBLE_DEVICES=$CUDA_VISIBLE_DEVICES'",
         ]
     else:
+        # A quarter of a fir compute node. They are 192-core AMD Turin (8 sockets of 24,
+        # one thread per core) with 768 GB, and the `cpubase_bycore_*` partitions
+        # schedule partial nodes, so this queues like a normal job. Memory is 4 GB per
+        # core by entitlement, so 96 GB is free headroom rather than a larger ask.
+        #
+        # 48 rather than 96 because comebin's training is Amdahl-limited and the
+        # allocation, not the wall, is the scarce thing. Halving the cores costs well
+        # under double the wall and saves real core-hours.
+        #
+        # 3d, not 24h, and this is the load-bearing setting. Ten marine samples at 96
+        # cores ranged 6 h 28 m to over 11 h 44 m -- a 1.8x spread driven by community
+        # complexity, not by anything the driver controls. Halve the cores and the slow
+        # tail lands near 20 h, which is too close to a 24 h wall to bet a full re-run
+        # on. Under the original 8 h wall this step reached 191, 195 and 28 epochs of
+        # 200 across three attempts and never once finished. The 3d band reaches 380 of
+        # fir's 519 by-core nodes against 432 at 24h, which is a cheap hedge.
+        #
+        # The r1 fork-after-threads deadlock in the Leiden sweep has not reproduced
+        # here: the sweep finished in 16 m at 16 cores and 7 m 43 s at 96.
         body = [
-            "        cpus = 64",
-            "        memory = '48 GB'",
+            f"        cpus = {comebin_cpus}",
+            "        memory = '96 GB'",
             f"        time = '{comebin_time}'",
             f'        clusterOptions = "--nodes=1 --ntasks=1 --account={SLURM_ACCOUNT}"',
         ]
@@ -316,7 +376,9 @@ def cmd_run(args):
         print(f"\n(stage-only; staged as {task.GetKey()})")
         return 0
 
-    config = make_slurm_config(comebin_device=args.comebin_device)
+    config = make_slurm_config(comebin_device=args.comebin_device,
+                              comebin_time=args.comebin_time,
+                              comebin_cpus=args.comebin_cpus)
     print(f"Submitting to SLURM (config: {config})...")
     smith.RunWorkflow(
         task=task, config_file=config,
@@ -367,7 +429,21 @@ def main():
     p.add_argument("--stage-only", action="store_true")
     p.add_argument("--no-dedup", action="store_true")
     p.add_argument("--on-exist", default="update", choices=["update", "clear"])
+    # cpu by request, with the GPU lane one flag away. Measured on a marine sample,
+    # 200 epochs of 70 iterations: 25.0 s/epoch on a 20 GB MIG slice against 145 s/epoch
+    # on 64 cores, so the card is worth 5.8x and finishes the whole step in 2 h 20 m
+    # against roughly 9 h. It is not worth more than that because the shipped COMEBin
+    # image's PyTorch has no sm_90 cubin and JIT-compiles every kernel forward from
+    # compute_50 PTX on fir's H100s.
+    #
+    # 24h, and that is the load-bearing part. Under the old 8 h wall the CPU lane
+    # reached 191, 195 and 28 epochs of 200 across three attempts and never once
+    # finished -- twice missing by about twenty minutes. `--nv` with no card present
+    # warns once and trains on the CPU anyway, so an under-timed CPU request reads as
+    # a GPU request that failed. The wall is the fix.
     p.add_argument("--comebin-device", default="cpu", choices=["cpu", "gpu"])
+    p.add_argument("--comebin-time", default="3d")
+    p.add_argument("--comebin-cpus", type=int, default=48)
     p.add_argument("--tag")
     p.set_defaults(fn=cmd_run)
 
