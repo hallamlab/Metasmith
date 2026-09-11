@@ -1,0 +1,12 @@
+[Unit]
+Description=metasmith driver liveness check (T7 FIX 1) -- sweeps runs/* for a
+Description=Slurm-wrapped driver whose job ended with no completion sentinel.
+
+[Service]
+Type=oneshot
+# One pass over every staged run; each is independent so one stale/removed
+# run directory does not stop the sweep. `%h` is the user's home, matching
+# the systemd --user convention; the actual runs live on scratch.
+ExecStart=/bin/bash -c 'for d in /scratch/phyberos/cami/metasmith/runs/*/; do \
+  /scratch/phyberos/cami/metasmith/ops/driver_watchdog.sh "${d%/}" 3600 || true; \
+done'

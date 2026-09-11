@@ -9,6 +9,23 @@ sorted, so two runs diff cleanly.
 
 Wall clock on this host is not comparable between runs; the names and counts are.
 
+**What an identical fingerprint does NOT mean.** It says the plan SHAPE is unchanged.
+It does not say the library is. A transform whose name and product types stay put can
+be rewritten entirely -- different tool, different flags, different science -- and this
+prints byte-identical output, because nothing here reaches inside a transform. That is
+the more common kind of change and it is the kind that retires cache shards, since a
+transform's identity hashes its whole source file.
+
+The worked example, 2026-09-11: `transforms/assembly/spades.py` went from a hand-rolled
+metaSPAdes call to the DOE JGI Metagenome Workflow -- bbcms error correction added,
+kmers fixed, a 200 bp contig floor imposed. Every template naming `spades_assembly`
+changed meaning, `ecspr_survey_from_pooled_reads` included, and this tool reported no
+difference at all. Correctly: no step re-routed.
+
+So use it for what it is. A clean diff here plus a changed transform file means the
+change landed without disturbing anything else, which is the useful thing to know. A
+clean diff on its own is not evidence that nothing changed -- for that, read the diff.
+
     python research/metasmith_libraries/template_fingerprint.py [name ...]
 """
 

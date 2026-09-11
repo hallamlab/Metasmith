@@ -1,0 +1,9 @@
+[Unit]
+Description=COMEBin Leiden-sweep hang watchdog (T7 FIX 2) -- scancels a task
+Description=that has written no new sweep .tsv within an hour of clustering start.
+
+[Service]
+Type=oneshot
+ExecStart=/bin/bash -c 'for d in /scratch/phyberos/cami/metasmith/runs/*/; do \
+  /scratch/phyberos/cami/metasmith/ops/comebin_watchdog.sh "${d%/}" 3600 || true; \
+done'
