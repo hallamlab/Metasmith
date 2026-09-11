@@ -67,15 +67,24 @@ def protocol(context: ExecutionContext):
     threads = context.params.get("cpus", 8)
     workdir = "vs2_out"
 
+    # `--db-dir /db`, not `/db/db`. downloadVirsorter2DB renames `virsorter setup`'s
+    # own output directory to the product, so the product IS the database: `group/`,
+    # `hmm/` and `rbs/` sit at its top with no wrapping `db/`. A nested path here reads
+    # as a setup that never ran.
+    #
+    # HOME points into the work directory rather than /tmp: virsorter writes a config
+    # under $HOME/.virsorter, and on a host whose /tmp is a small shared tmpfs that is
+    # the wrong place for it.
+
     context.ExecWithEnv().ifContainerDo(
         env=image,
         binds=[(idb.external, "/db")],
         cmd=f"""
-            export HOME=/tmp
+            export HOME="$PWD"
 
             virsorter run \
                 --seqfile {iasm.container} \
-                --db-dir /db/db \
+                --db-dir /db \
                 --working-dir {workdir} \
                 --jobs {threads} \
                 --include-groups dsDNAphage,NCLDV,RNA,ssDNA,lavidaviridae \
@@ -102,6 +111,14 @@ def protocol(context: ExecutionContext):
     )
 
     context.LocalShell(f"rm -rf {workdir} 2>/dev/null || true")
+
+    # Every copy above falls back to `touch`, so a run that died still leaves five files
+    # and an exit code of zero. The boundary table is the one that cannot be empty: a
+    # completed run writes it with a header even when nothing scored, so an empty one
+    # means the tool never got there.
+    assert iboundary.local.stat().st_size > 0, (
+        "virsorter wrote no final-viral-boundary.tsv; the run did not complete"
+    )
     _write_calls(iboundary.local, icalls.local)
 
     return ExecutionResult(

@@ -28,6 +28,12 @@ def register(subs):
                         "defaults to $AGENT_HOME or a host-local stub")
     p.add_argument("--host", default=None,
                    help="relay host name (reserved for relay-bounce wiring)")
+    p.add_argument("--cpus", type=int, default=1,
+                   help="cpus offered to the protocol as params[\"cpus\"]")
+    p.add_argument("--memory", type=int, default=1,
+                   help="gigabytes offered to the protocol as params[\"memory\"]")
+    p.add_argument("--attempt", type=int, default=1,
+                   help="retry number offered to the protocol as params[\"attempt\"]")
     p.set_defaults(func=_cmd_run)
 
 
@@ -47,5 +53,8 @@ def _cmd_run(args) -> None:
         work_dir=args.work_dir,
         host=args.host,
         agent_home=args.agent_home,
+        cpus=args.cpus,
+        memory=args.memory,
+        attempt=args.attempt,
     )
     sys.exit(0 if result.success else 1)

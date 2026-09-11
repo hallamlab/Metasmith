@@ -3,7 +3,7 @@ from pathlib import Path
 
 from metasmith.coms.cli import main as cli_main
 from metasmith.models.direct_run import RunTransform
-from metasmith.testing.mock_transforms import alignment_transform
+from metasmith.testing.mock_transforms import alignment_transform, params_transform
 
 from .conftest import create_transform_library
 
@@ -86,3 +86,46 @@ class TestRunTransformCli:
             cli_main()
         assert excinfo.value.code == 0
         assert (work / "aligned.bam").exists()
+
+
+# A direct run's machine is the caller's to state, and the default is the smallest
+# legal one rather than a useful one.
+class TestRunTransformParams:
+    def test_defaults_are_one(self, mock_samples, mock_types, temp_dir):
+        tr_lib = create_transform_library(
+            temp_dir / "tr_params_default", mock_types, params_transform(),
+        )
+        reads, asm = _alignment_inputs(mock_samples)
+        work = temp_dir / "work_params_default"
+
+        result = RunTransform(
+            transform_lib=tr_lib.location,
+            transform="params_echo.py",
+            inputs=[("mock::reads", reads), ("mock::assembly", asm)],
+            work_dir=work,
+        )
+        assert result.success
+        assert (work / "aligned.bam").read_text() == "cpus=1 memory=1 attempt=1"
+
+    def test_cli_flags_reach_the_protocol(self, mock_samples, mock_types, temp_dir, monkeypatch):
+        tr_lib = create_transform_library(
+            temp_dir / "tr_params_cli", mock_types, params_transform(),
+        )
+        reads, asm = _alignment_inputs(mock_samples)
+        work = temp_dir / "work_params_cli"
+
+        argv = [
+            "metasmith", "run",
+            "-l", str(tr_lib.location),
+            "-t", "params_echo.py",
+            "-i", f"mock::reads={reads}",
+            "-i", f"mock::assembly={asm}",
+            "-w", str(work),
+            "--cpus", "12", "--memory", "48", "--attempt", "3",
+        ]
+        monkeypatch.setattr("sys.argv", argv)
+
+        with pytest.raises(SystemExit) as excinfo:
+            cli_main()
+        assert excinfo.value.code == 0
+        assert (work / "aligned.bam").read_text() == "cpus=12 memory=48 attempt=3"
