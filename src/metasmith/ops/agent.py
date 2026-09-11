@@ -144,3 +144,29 @@ def deploy(agent_path: str, assertive: bool = False, on_phase=None) -> dict:
         "home": agent.home.address,
         "real_path": str(agent.real_path) if agent.real_path else None,
     }
+
+
+def read_pool(
+    agent_path: str,
+    *,
+    origin: str | None = None,
+    dtype: str | None = None,
+    tag: str | None = None,
+    name: str | None = None,
+    refs: list[str] | None = None,
+    timeout: int = 120,
+) -> dict:
+    """The agent's pool, read where it sits.
+
+    With `refs`, the entries those names or ids point at, in the order asked,
+    and a refusal naming the import call for anything the pool does not hold.
+    """
+    agent = Agent.Load(Path(agent_path))
+    out = agent.ReadPool(
+        origin=origin, dtype=dtype, tag=tag, name=name, timeout=timeout,
+    )
+    if refs:
+        out = dict(out)
+        out["entries"] = agent.ResolvePoolRefs(refs, entries=out["entries"])
+        out["refs"] = list(refs)
+    return out

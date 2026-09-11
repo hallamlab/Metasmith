@@ -19,13 +19,15 @@ def register(subs):
     _list.add_argument("--run", default=None, help="only what this run produced")
     _list.add_argument("--tag", default=None, help="only entries carrying this tag")
     _list.add_argument("--dtype", default=None, metavar="NS::TYPE")
+    _list.add_argument("--name", default=None,
+                       help="only entries an import recorded under this name")
     _list.add_argument("--group-by", choices=list(_ops.GROUPINGS), default=None)
     _list.add_argument("--sort-by", choices=list(_ops.SORTS), default="created_at")
     _list.add_argument("--ascending", action="store_true")
     _list.set_defaults(func=lambda a: _ops.list_cache(
         a.cache_root, agent_home=a.agent_home,
         include_tombstoned=a.include_tombstoned,
-        origin=a.origin, run=a.run, tag=a.tag, dtype=a.dtype,
+        origin=a.origin, run=a.run, tag=a.tag, dtype=a.dtype, name=a.name,
         group_by=a.group_by, sort_by=a.sort_by, descending=not a.ascending,
     ))
 

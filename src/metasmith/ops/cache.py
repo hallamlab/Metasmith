@@ -103,6 +103,7 @@ def list_cache(
     run: str | None = None,
     tag: str | None = None,
     dtype: str | None = None,
+    name: str | None = None,
     group_by: str | None = None,
     sort_by: str = "created_at",
     descending: bool = True,
@@ -136,6 +137,8 @@ def list_cache(
         rows = [r for r in rows if tag in r["tags"]]
     if dtype is not None:
         rows = [r for r in rows if r["dtype"] == dtype]
+    if name is not None:
+        rows = [r for r in rows if r["name"] == name]
     rows.sort(key=lambda r: r[sort_by], reverse=descending)
 
     out = {"cache_root": str(root), "entries": rows}
