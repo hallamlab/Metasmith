@@ -17,9 +17,6 @@ types:
     extends: accession
     properties:
       database: SRA
-  sra_cache:
-    properties:
-      _: sra prefetch cache
   # What the user calls the thing an accession fetches. Sits ABOVE the accession
   # in lineage, so everything downloaded from it inherits the name and any later
   # step can ask which name a file descends from. It lives here rather than in
