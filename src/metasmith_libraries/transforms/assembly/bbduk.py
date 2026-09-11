@@ -55,9 +55,7 @@ def protocol(context: ExecutionContext):
             sleep 1
             [[ $(zcat temp.{iout.container.name} | wc -c) -ne 0 ]] && mv temp.{iout.container.name} {iout.container} || echo "filtered reads were empty"
         """
-    context.ExecWithEnv() \
-        .ifContainerDo(env=image, cmd=_cmd) \
-        .ifVirtualEnvDo(env=image, cmd=_cmd)
+    context.ExecWithEnv(env=image, cmd=_cmd)
     
     return ExecutionResult(
         manifest=[

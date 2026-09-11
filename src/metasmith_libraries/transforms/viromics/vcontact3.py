@@ -50,9 +50,7 @@ def protocol(context: ExecutionContext):
             --db-path {iref.container} -t {threads} \
             -e cosmograph
     """
-    context.ExecWithEnv() \
-        .ifContainerDo(env=image, cmd=_cmd) \
-        .ifVirtualEnvDo(env=image, cmd=_cmd)
+    context.ExecWithEnv(env=image, cmd=_cmd)
 
     # A frozen contig whose id collides with a genome already in the reference is
     # dropped with a per-record WARNING, and if every one collides the run dies

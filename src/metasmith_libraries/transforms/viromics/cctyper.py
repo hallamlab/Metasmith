@@ -46,9 +46,7 @@ def protocol(context: ExecutionContext):
             cctyper {ibin.container} {work} --db {CCTYPER_DB} \
                 --prodigal meta -t {threads} --no_plot || true
         """
-        context.ExecWithEnv() \
-            .ifContainerDo(env=image, cmd=_cmd) \
-            .ifVirtualEnvDo(env=image, cmd=_cmd)
+        context.ExecWithEnv(env=image, cmd=_cmd)
 
         w = Path(work)
         for prod, name in ((out_arrays, "crisprs_all.tab"), (out_operons, "cas_operons.tab")):

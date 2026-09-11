@@ -33,9 +33,7 @@ def protocol(context: ExecutionContext):
             --hosts-gem {context.Input(hosts_gem).container} \
             --out {iout.container}
     """
-    context.ExecWithEnv() \
-        .ifContainerDo(env=image, cmd=cmd) \
-        .ifVirtualEnvDo(env=image, cmd=cmd)
+    context.ExecWithEnv(env=image, cmd=cmd)
     return ExecutionResult(
         manifest=[{out: iout.local}],
         success=iout.local.exists() and iout.local.stat().st_size > 0,

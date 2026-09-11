@@ -43,9 +43,7 @@ def protocol(context: ExecutionContext):
             minimap2 {preset} {cpus_string} \
                 {ireads.container} {ireads.container} | gzip -1 >{temp_mapping_path}
         """
-    context.ExecWithEnv() \
-        .ifContainerDo(env=img_mm2, cmd=_cmd) \
-        .ifVirtualEnvDo(env=img_mm2, cmd=_cmd)
+    context.ExecWithEnv(env=img_mm2, cmd=_cmd)
 
     Log.Info("miniasm")
     _cmd = f"""
@@ -53,9 +51,7 @@ def protocol(context: ExecutionContext):
                 -f {ireads.container} {temp_mapping_path} \
                 >{iout_asm.container}
         """
-    context.ExecWithEnv() \
-        .ifContainerDo(env=img_mam, cmd=_cmd) \
-        .ifVirtualEnvDo(env=img_mam, cmd=_cmd)
+    context.ExecWithEnv(env=img_mam, cmd=_cmd)
 
     return ExecutionResult(
         manifest=[{

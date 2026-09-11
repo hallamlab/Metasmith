@@ -16,6 +16,7 @@
 #   kegg_ko_reactions   one urllib call, one pandas join
 #   host_gem            wget a BiGG model JSON
 #   metacyc_licensed    verifies a drop-in and splits two flat-files with pandas
+#   esm_c               resolves an HF revision and downloads the release
 #
 # NOT an attempt to reproduce quay.io/hallamlab/python_for_data_science:1.2.5 package for
 # package. It is the smaller claim that these five transforms run: matching an image's
@@ -35,3 +36,5 @@ dependencies:
   - git
   - wget
   - unzip
+  # `acquire/esm_c` resolves and downloads the ESM-C release through the hub client.
+  - huggingface_hub

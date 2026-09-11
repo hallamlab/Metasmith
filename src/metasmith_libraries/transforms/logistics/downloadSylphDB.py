@@ -10,7 +10,7 @@ SYLPH_DB_URL = "http://faust.compbio.cs.cmu.edu/sylph-stuff/gtdb-r220-c200-dbv1.
 
 def protocol(context: ExecutionContext):
     iout = context.Output(out)
-    context.ExecWithEnv().ifContainerDo(
+    context.ExecWithEnv(
         env=image,
         cmd=f"""
             wget -q {SYLPH_DB_URL} -O {iout.container}

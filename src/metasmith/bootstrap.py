@@ -322,15 +322,6 @@ def ExecuteStep(
                 Log.Info(m)
     try:
         results = step.transform.protocol(context)
-        unmatched = context.UnmatchedEnvDispatches()
-        if unmatched:
-            runtime = agent.runtime.name
-            declared = sorted({a for d in unmatched for a in d.declared})
-            raise AssertionError(
-                f"transform [{step_name}] reached [{len(unmatched)}] ExecWithEnv "
-                f"declaration(s) with no arm for runtime [{runtime}]; "
-                f"arms declared: {declared or ['<none>']}"
-            )
         if not isinstance(results, list):
             results = [results]
         for i, result in enumerate(results):

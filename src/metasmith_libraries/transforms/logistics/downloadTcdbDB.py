@@ -11,7 +11,7 @@ TCDB_URL = "https://tcdb.org/public/tcdb"
 def protocol(context: ExecutionContext):
     idb = context.Output(db)
 
-    context.ExecWithEnv().ifContainerDo(
+    context.ExecWithEnv(
         env=image,
         cmd=f"""
             wget -q --no-check-certificate {TCDB_URL} -O tcdb.fasta

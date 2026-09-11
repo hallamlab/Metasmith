@@ -1,0 +1,30 @@
+name: fba_from_any_assembly
+description: annotate_genome_assembly -> build_metabolic_model -> run_flux_balance_analysis.
+  Seen in 7 public narratives.
+sample_type: kbase::sample
+target_types:
+- kbase::KBaseFBA_FBA
+transform_libraries:
+- w_s0028
+resource_libraries:
+- env
+shared_input_paths: []
+input_library:
+  schema: v1
+  manifest:
+    /msm_deferred/214e40addc2b46b6bce495a00a32a646:
+      type: kbase::accepts_33
+      parents:
+        js04vN8Ujjaj@/msm_deferred/fec4d51722fe4fb98d1a0c057365959d: kbase::sample
+      instance_id: 1e2016fe4db82d320a5a4cb86734648673a5e13a7cf123f9d75023651567d6cc09a9
+      origin: leaf
+    /msm_deferred/749079129f264e72a120797516443b67:
+      type: kbase::study
+      instance_id: 1e205f21b193b71102f1a8c74adbc118b7524ea5a143b2853b3f11e741d9980cb640
+      origin: leaf
+    /msm_deferred/fec4d51722fe4fb98d1a0c057365959d:
+      type: kbase::sample
+      parents:
+        js04vN8Ujjaj@/msm_deferred/749079129f264e72a120797516443b67: kbase::study
+      instance_id: 1e206b49fb2f7e147b403b857a8cd3e1f98e32edb26f1ce3f2221dfb848a283a7bd4
+      origin: leaf

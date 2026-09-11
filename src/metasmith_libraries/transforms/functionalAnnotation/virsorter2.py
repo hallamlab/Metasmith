@@ -76,7 +76,7 @@ def protocol(context: ExecutionContext):
     # under $HOME/.virsorter, and on a host whose /tmp is a small shared tmpfs that is
     # the wrong place for it.
 
-    context.ExecWithEnv().ifContainerDo(
+    context.ExecWithEnv(
         env=image,
         binds=[(idb.external, "/db")],
         cmd=f"""

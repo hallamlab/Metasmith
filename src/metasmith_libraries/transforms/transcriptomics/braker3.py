@@ -23,7 +23,7 @@ def protocol(context: ExecutionContext):
     # contig names (accession only), causing filterIntronsFindStrand.pl to find
     # no matching sequences and produce an empty hints file.  Truncating headers
     # at the first whitespace before passing to braker3 prevents this mismatch.
-    context.ExecWithEnv().ifContainerDo(
+    context.ExecWithEnv(
         env=image,
         cmd=f"""\
             cp -r $AUGUSTUS_CONFIG_PATH augustus_config

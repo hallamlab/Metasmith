@@ -145,7 +145,7 @@ def protocol(context: ExecutionContext):
     combiner = Path("combine_embeddings.py")
     combiner.write_text(COMBINE)
 
-    context.ExecWithEnv().ifContainerDo(
+    context.ExecWithEnv(
         env=image_pbert,
         cmd=f"""
             python3 {sanitize.name} {iorfs.container} _orfs_tokenisable.faa && \
@@ -159,7 +159,7 @@ def protocol(context: ExecutionContext):
         """,
     )
 
-    context.ExecWithEnv().ifContainerDo(
+    context.ExecWithEnv(
         env=image_polars,
         cmd=f"python {combiner.name} pbert_output _orfs_tokenisable.faa {iemb.container}",
     )

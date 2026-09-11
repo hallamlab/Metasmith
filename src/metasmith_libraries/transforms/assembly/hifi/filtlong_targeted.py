@@ -28,9 +28,7 @@ def protocol(context: ExecutionContext):
     _cmd = f"""\
             filtlong --min_length 1000 --target_bases $(< {n_bases_file}) {ireads.container} >{temp_unzipped}
         """
-    context.ExecWithEnv() \
-        .ifContainerDo(env=image, cmd=_cmd) \
-        .ifVirtualEnvDo(env=image, cmd=_cmd)
+    context.ExecWithEnv(env=image, cmd=_cmd)
 
 
     threads = context.params.get('cpus')

@@ -12,7 +12,7 @@ REQUIRED = ["FEAST_otus.csv", "FEAST_metadata_final.csv"]
 def protocol(context: ExecutionContext):
     iref = context.Output(ref)
 
-    context.ExecWithEnv().ifContainerDo(
+    context.ExecWithEnv(
         env=image,
         cmd=f"""
             mkdir -p {iref.container}

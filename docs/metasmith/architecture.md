@@ -123,15 +123,16 @@ A transform is one Python file in three parts — contract, protocol, instance. 
 slot rather than as a set of types: bbduk does not want three files, it wants the reads
 belonging to *this* metadata.
 
-**A transform never learns which runtime it is on, and does not need to.** It declares an arm
-per world (`ifContainerDo` / `ifVirtualEnvDo`, either omissible) and the `env` package owns
-every per-runtime difference: bind dialect, whether a container boundary exists, GPU flags.
+**A transform never learns which runtime it is on, and does not need to.** It makes one call,
+`ExecWithEnv(env=, cmd=)`, naming what to run and the environment to run it in; the `env`
+package owns every per-runtime difference: which key of the environment resource is read,
+bind dialect, whether a container boundary exists, GPU flags.
 Code branching on the runtime is a bug — declare the need instead. That holds inside `env` too:
 `MakeBindsParam` is the only place a mount is spelled, and rendered shell templates must
 interpolate it rather than hand-write a flag, since a literal reads correctly under the runtime
 its author had in mind and is silently wrong under the other.
 `test_env_deploy_scripts.py::TestBindDialectPurity` holds that line by scanning each rendered
-script for the other dialect's tokens. `ifContainerDo(args=[...])` appends verbatim runtime
+script for the other dialect's tokens. `ExecWithEnv(args=[...])` appends verbatim runtime
 flags just before the image, so a flag passed there beats the framework default of the same
 name — but the dialect is the caller's problem, and mounts go through the typed `binds=`.
 

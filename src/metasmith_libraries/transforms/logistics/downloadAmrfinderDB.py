@@ -10,7 +10,7 @@ db    = model.AddProduct(lib.GetType("annotation::amrfinderplus_db"))
 def protocol(context: ExecutionContext):
     idb = context.Output(db)
 
-    context.ExecWithEnv().ifContainerDo(
+    context.ExecWithEnv(
         env=image,
         cmd="""
             mkdir -p amrfinderdb

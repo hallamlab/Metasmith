@@ -27,7 +27,7 @@ def protocol(context: ExecutionContext):
     annot_dir = "dramv_annot"
     distill_dir = "dramv_distill"
 
-    context.ExecWithEnv().ifContainerDo(
+    context.ExecWithEnv(
         env=image,
         binds=[(idb.external, "/db")],
         cmd=f"""

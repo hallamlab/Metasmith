@@ -1,0 +1,713 @@
+<title>The Harness Already Knew</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@400;500;600;700&family=IBM+Plex+Serif:ital,wght@0,400;0,500;1,400&display=swap">
+<style>
+:root{
+  --ground:#F6F7F4; --surface:#FFFFFF; --sunk:#EEF1EC;
+  --ink:#141A18; --ink-2:#3A433F; --muted:#68726D;
+  --rule:#D8DED7; --rule-soft:#E6EAE4;
+  --new:#7A3E6B; --new-bg:#F4EAF1; --new-rule:#D9BCD1;
+  --lift:#1F6E8C; --lift-bg:#E6F1F5; --lift-rule:#AFCEDB;
+  --ext:#8C5A16; --ext-bg:#F6EEE0;
+  --ok:#0E6B54; --ok-bg:#E6F2ED;
+  --flag:#9A4527; --flag-bg:#F7EBE5;
+  --shadow:0 1px 0 rgba(20,26,24,.04);
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --ground:#0E1211; --surface:#161B19; --sunk:#111615;
+    --ink:#E9EEEA; --ink-2:#C2CBC6; --muted:#8B958F;
+    --rule:#28302D; --rule-soft:#1F2624;
+    --new:#C58CB4; --new-bg:#241A21; --new-rule:#4A3243;
+    --lift:#7FBBD4; --lift-bg:#132126; --lift-rule:#294653;
+    --ext:#DDA95C; --ext-bg:#2A2013;
+    --ok:#5CC5A2; --ok-bg:#0F2620;
+    --flag:#E29070; --flag-bg:#2A1913;
+    --shadow:none;
+  }
+}
+:root[data-theme="dark"]{
+  --ground:#0E1211; --surface:#161B19; --sunk:#111615;
+  --ink:#E9EEEA; --ink-2:#C2CBC6; --muted:#8B958F;
+  --rule:#28302D; --rule-soft:#1F2624;
+  --new:#C58CB4; --new-bg:#241A21; --new-rule:#4A3243;
+  --lift:#7FBBD4; --lift-bg:#132126; --lift-rule:#294653;
+  --ext:#DDA95C; --ext-bg:#2A2013;
+  --ok:#5CC5A2; --ok-bg:#0F2620;
+  --flag:#E29070; --flag-bg:#2A1913;
+  --shadow:none;
+}
+*{box-sizing:border-box}
+body{
+  background:var(--ground); color:var(--ink);
+  font-family:"IBM Plex Sans Condensed","Helvetica Neue",Arial,sans-serif;
+  font-size:16px; line-height:1.5; -webkit-font-smoothing:antialiased;
+}
+.wrap{max-width:1060px; margin:0 auto; padding:0 28px 96px}
+
+header.mast{padding:56px 0 0}
+.eyebrow{
+  font-family:"IBM Plex Mono",ui-monospace,monospace; font-size:11.5px; font-weight:500;
+  letter-spacing:.14em; text-transform:uppercase; color:var(--muted);
+}
+h1{
+  font-weight:700; font-size:clamp(2.6rem,6.4vw,4.1rem); line-height:1.02;
+  letter-spacing:-.015em; margin:14px 0 0; text-wrap:balance;
+}
+.standfirst{
+  font-family:"IBM Plex Serif",Georgia,serif; font-size:1.075rem; line-height:1.62;
+  color:var(--ink-2); max-width:64ch; margin:20px 0 0;
+}
+.standfirst em{color:var(--ink); font-style:italic}
+.figures{
+  display:flex; flex-wrap:wrap; margin:34px 0 0;
+  border-top:1px solid var(--rule); border-bottom:1px solid var(--rule);
+}
+.fig{flex:1 1 140px; padding:14px 20px 15px; border-left:1px solid var(--rule-soft)}
+.fig:first-child{border-left:0; padding-left:0}
+.fig b{
+  display:block; font-family:"IBM Plex Mono",monospace; font-weight:600;
+  font-size:1.55rem; letter-spacing:-.02em; font-variant-numeric:tabular-nums;
+}
+.fig span{
+  display:block; font-size:12px; letter-spacing:.06em; text-transform:uppercase;
+  color:var(--muted); margin-top:3px;
+}
+
+h2.sec{font-size:1.5rem; font-weight:700; letter-spacing:-.01em; margin:0 0 6px}
+section.block{margin:60px 0 0; padding-top:32px; border-top:2px solid var(--ink)}
+section.block > p.intro{
+  font-family:"IBM Plex Serif",Georgia,serif; color:var(--ink-2);
+  max-width:66ch; margin:0 0 26px; font-size:1rem; line-height:1.62;
+}
+
+/* --- the ledger --- */
+.ledger-scroll{overflow-x:auto}
+table.ledger{
+  border-collapse:collapse; width:100%; min-width:660px; font-size:13px;
+  background:var(--surface); border:1px solid var(--rule);
+}
+table.ledger th{
+  font-size:10.5px; font-weight:700; letter-spacing:.11em; text-transform:uppercase;
+  color:var(--muted); text-align:left; padding:9px 12px;
+  border-bottom:1px solid var(--rule); white-space:nowrap;
+}
+table.ledger td{
+  padding:10px 12px; border-bottom:1px solid var(--rule-soft); vertical-align:top;
+  line-height:1.5;
+}
+table.ledger tr:last-child td{border-bottom:0}
+td.thread{
+  font-family:"IBM Plex Mono",monospace; font-size:12.5px; color:var(--ink);
+}
+td.since{
+  font-family:"IBM Plex Mono",monospace; font-size:11.5px; color:var(--muted);
+  white-space:nowrap; font-variant-numeric:tabular-nums;
+}
+td.verdict-c{
+  font-family:"IBM Plex Serif",Georgia,serif; font-size:13.5px; color:var(--ink-2);
+}
+.st{
+  display:inline-block; font-family:"IBM Plex Mono",monospace; font-size:10px;
+  font-weight:600; letter-spacing:.1em; text-transform:uppercase;
+  padding:2px 7px; white-space:nowrap; border:1px solid currentColor;
+}
+.st.gone{color:var(--flag); background:var(--flag-bg)}
+.st.fix{color:var(--new); background:var(--new-bg)}
+.st.shut{color:var(--ok); background:var(--ok-bg)}
+.st.measure{color:var(--lift); background:var(--lift-bg)}
+
+/* --- findings, inherited --- */
+.finding{padding:22px 0 4px; border-top:1px solid var(--rule-soft)}
+.finding:first-of-type{border-top:0; padding-top:0}
+.finding h3{font-size:1.06rem; font-weight:600; margin:0 0 4px}
+.finding .where{
+  font-family:"IBM Plex Mono",monospace; font-size:11.5px; color:var(--flag);
+  letter-spacing:.04em; text-transform:uppercase; font-weight:600; margin:0 0 9px;
+}
+.finding .where.calm{color:var(--lift)}
+.finding p{
+  font-family:"IBM Plex Serif",Georgia,serif; font-size:15.5px; line-height:1.66;
+  color:var(--ink-2); margin:0 0 11px; max-width:68ch;
+}
+.finding p:last-child{margin-bottom:0}
+.finding code, code.t{
+  font-family:"IBM Plex Mono",monospace; font-size:.88em; color:var(--ink);
+  background:var(--sunk); padding:1px 4px;
+}
+pre.code{
+  font-family:"IBM Plex Mono",monospace; font-size:12.5px; line-height:1.6;
+  background:var(--surface); border:1px solid var(--rule); padding:12px 14px;
+  overflow-x:auto; margin:0 0 12px; color:var(--ink-2);
+}
+pre.code b{color:var(--flag); font-weight:600}
+pre.code i{color:var(--ok); font-style:normal; font-weight:600}
+pre.code s{color:var(--muted); text-decoration-color:var(--flag)}
+
+/* --- the census bar --- */
+.census{
+  display:flex; width:100%; height:44px; margin:0 0 10px;
+  border:1px solid var(--rule); background:var(--surface); overflow:hidden;
+}
+.census div{
+  display:flex; align-items:center; justify-content:center;
+  font-family:"IBM Plex Mono",monospace; font-size:12px; font-weight:600;
+  border-left:1px solid var(--rule); color:var(--ink-2);
+}
+.census div:first-child{border-left:0}
+.census .c-same{background:var(--sunk); flex:121 1 0}
+.census .c-one{background:var(--flag-bg); color:var(--flag); flex:137 1 0}
+.census .c-diff{background:var(--ok-bg); color:var(--ok); flex:1 1 34px; font-size:10px}
+.census-key{
+  display:flex; flex-wrap:wrap; gap:6px 26px; font-size:12.5px; color:var(--muted);
+  font-family:"IBM Plex Mono",monospace; margin:0 0 24px;
+}
+.census-key b{color:var(--ink); font-weight:600}
+
+figure{margin:0 0 26px}
+figure svg{
+  display:block; width:100%; height:auto; background:var(--surface);
+  border:1px solid var(--rule);
+}
+figcaption{
+  font-family:"IBM Plex Serif",Georgia,serif; font-size:13.5px; color:var(--muted);
+  line-height:1.55; margin-top:11px; max-width:70ch;
+}
+.svg-b{fill:var(--surface); stroke:var(--rule)}
+.svg-t{font-family:"IBM Plex Mono",monospace; font-size:12px; fill:var(--ink-2)}
+.svg-t.lbl{font-size:10.5px; fill:var(--muted)}
+.svg-t.hd{font-family:"IBM Plex Sans Condensed",sans-serif; font-size:11px;
+  font-weight:700; letter-spacing:.12em; fill:var(--muted)}
+.svg-gate{fill:var(--flag-bg); stroke:var(--flag)}
+.svg-gate-t{font-family:"IBM Plex Mono",monospace; font-size:12px; fill:var(--flag)}
+.svg-new{fill:var(--new-bg); stroke:var(--new-rule)}
+.svg-new-t{font-family:"IBM Plex Mono",monospace; font-size:12px; fill:var(--new)}
+.svg-line{stroke:var(--muted); fill:none}
+
+/* --- paired type cards --- */
+.pair{
+  display:grid; grid-template-columns:1fr 1fr; gap:0;
+  border:1px solid var(--rule); background:var(--surface); margin:0 0 12px;
+}
+.pair > div{padding:14px 16px; border-left:1px solid var(--rule-soft)}
+.pair > div:first-child{border-left:0}
+.pair h4{
+  font-family:"IBM Plex Mono",monospace; font-size:12px; font-weight:600;
+  margin:0 0 8px; color:var(--ink); letter-spacing:-.01em;
+}
+.pair dl{margin:0; font-family:"IBM Plex Mono",monospace; font-size:12px}
+.pair dl div{display:flex; gap:8px; padding:2px 0; line-height:1.45}
+.pair dt{color:var(--muted); min-width:4.4em; flex:0 0 auto}
+.pair dd{margin:0; color:var(--ink-2)}
+.pair .clash dd{color:var(--flag); font-weight:500}
+.pair .agree dd{color:var(--ok)}
+
+footer.colophon{
+  margin-top:56px; padding-top:18px; border-top:1px solid var(--rule);
+  font-family:"IBM Plex Mono",monospace; font-size:11.5px; color:var(--muted);
+  line-height:1.75;
+}
+@media (max-width:820px){
+  .wrap{padding:0 18px 64px}
+  .pair{grid-template-columns:1fr}
+  .pair > div{border-left:0; border-top:1px solid var(--rule-soft)}
+  .pair > div:first-child{border-top:0}
+}
+@media (prefers-reduced-motion:reduce){*{animation:none!important; transition:none!important}}
+a{color:inherit}
+a:focus-visible,[tabindex]:focus-visible{outline:2px solid var(--ok); outline-offset:2px}
+</style>
+
+<div class="wrap">
+
+<header class="mast">
+  <div class="eyebrow">metasmith &middot; kbase port &middot; round 6 &middot; the punch list, worked</div>
+  <h1>The Harness Already Knew</h1>
+  <p class="standfirst">
+    Round 5 wrote and ran every KBase parity transform, and handed forward a list rather than a
+    clean tree. This page is that list, audited and then worked. The headline item was one line
+    of engine code repeated in two hundred and fifty&ndash;nine places: a transform body had to
+    declare one execution arm per runtime, and across the whole repository
+    <em>121 of the 122 bodies that declared both passed the same command to each.</em>
+    The engine was already choosing. The author was being asked to restate the choice. Every
+    thread below is now either fixed or decided, bar the two the last section names.
+  </p>
+  <div class="figures">
+    <div class="fig"><b>259</b><span>chains audited</span></div>
+    <div class="fig"><b>121</b><span>say it twice</span></div>
+    <div class="fig"><b>1</b><span>genuinely differs</span></div>
+    <div class="fig"><b>137</b><span>had no mamba form</span></div>
+    <div class="fig"><b>12</b><span>threads on the ledger</span></div>
+  </div>
+</header>
+
+<section class="block">
+  <h2 class="sec">The ledger</h2>
+  <p class="intro">
+    Twelve threads, each carried by at least one round and some by three. The column that
+    matters is the last one: a thread closes either because it was fixed or because somebody
+    decided it, and a thread that is merely re&ndash;described has not moved. Two closed here by
+    being checked rather than by being worked &mdash; the reason recorded for one of them did
+    not survive contact with the code.
+  </p>
+  <div class="ledger-scroll">
+  <table class="ledger">
+    <thead>
+      <tr><th>Thread</th><th>Carried since</th><th>Disposition</th><th>What settles it</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td class="thread">two execution arms per body</td>
+        <td class="since">r5</td>
+        <td><span class="st gone">delete</span></td>
+        <td class="verdict-c">One call. <code class="t">ExecWithEnv(env, cmd)</code> runs; the harness picks the runtime, as it already did.</td>
+      </tr>
+      <tr>
+        <td class="thread">137 chains have no mamba form</td>
+        <td class="since">r5</td>
+        <td><span class="st gone">dissolves</span></td>
+        <td class="verdict-c">The failure mode ceases to exist when the arm does. Nothing to migrate but the call site.</td>
+      </tr>
+      <tr>
+        <td class="thread">preflight asks about arms</td>
+        <td class="since">unnamed</td>
+        <td><span class="st fix">rewrite</span></td>
+        <td class="verdict-c">Ask the environment file for the key its runtime needs, which is the real question.</td>
+      </tr>
+      <tr>
+        <td class="thread">no check for a missing <code class="t">container:</code></td>
+        <td class="since">unnamed</td>
+        <td><span class="st fix">add</span></td>
+        <td class="verdict-c">The hole that let <code class="t">cobra.env</code> ship unrunnable on the default runtime.</td>
+      </tr>
+      <tr>
+        <td class="thread"><code class="t">bowtie2_bam</code> is not a <code class="t">bam</code></td>
+        <td class="since">r4</td>
+        <td><span class="st fix">subsume</span></td>
+        <td class="verdict-c">Align one property. The recorded reason for keeping them apart was checked and does not hold.</td>
+      </tr>
+      <tr>
+        <td class="thread">modelling and metabolomics never meet</td>
+        <td class="since">r3</td>
+        <td><span class="st fix">subsume</span></td>
+        <td class="verdict-c">The same move, and here it is nearly free: the two types are one string apart.</td>
+      </tr>
+      <tr>
+        <td class="thread">nothing names a sample above reads</td>
+        <td class="since">r4</td>
+        <td><span class="st fix">declare</span></td>
+        <td class="verdict-c">A <code class="t">sequences::sample_name</code> on <code class="t">ncbi::genome_name</code>'s idiom. Two sites wired, the lane not retrofitted.</td>
+      </tr>
+      <tr>
+        <td class="thread"><code class="t">derep_mag_ref</code> produced by nothing</td>
+        <td class="since">r3</td>
+        <td><span class="st fix">produced</span></td>
+        <td class="verdict-c">Its comment said "built outside the DAG" &mdash; but <code class="t">skani_dedup</code> already made the table it is built from, so it was one transform away.</td>
+      </tr>
+      <tr>
+        <td class="thread">a bin is not an assembly</td>
+        <td class="since">r3</td>
+        <td><span class="st shut">decided</span></td>
+        <td class="verdict-c">Bins are a mapping of contigs; annotation must not sit downstream of one. Written where the tests can point at it.</td>
+      </tr>
+      <tr>
+        <td class="thread">cobra image built, not pushed</td>
+        <td class="since">r5</td>
+        <td><span class="st fix">pushed</span></td>
+        <td class="verdict-c">The public cobrapy image was tested and lacks <code class="t">requests</code>. Ours is pushed and re&ndash;verified; one click of repo visibility remains.</td>
+      </tr>
+      <tr>
+        <td class="thread">nine images 401 anonymously</td>
+        <td class="since">r5</td>
+        <td><span class="st fix">annotate</span></td>
+        <td class="verdict-c">All nine get a dated comment. The three "unused" ones turned out to be required by 21 transforms &mdash; see below.</td>
+      </tr>
+      <tr>
+        <td class="thread">engine suite never completed</td>
+        <td class="since">r5</td>
+        <td><span class="st fix">2078 pass</span></td>
+        <td class="verdict-c">Completed, chunked by directory. 5 fail: one this round caused and a guard caught, four pre&ndash;existing and now diagnosed.</td>
+      </tr>
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<section class="block">
+  <h2 class="sec">The arms, counted</h2>
+  <p class="intro">
+    Measured with the engine's own AST scanner over four transform roots, so this is what is in
+    the tree rather than what the documentation claims. Every chain falls into exactly one of
+    three states, and the middle bar is the whole argument: those bodies branch on the runtime
+    and then hand both branches the identical string.
+  </p>
+  <div class="census" role="img" aria-label="259 chains: 137 declare only a container arm, 121 declare both arms with an identical command, 1 declares both arms with commands that genuinely differ.">
+    <div class="c-one">137 &mdash; one arm only</div>
+    <div class="c-same">121 &mdash; both arms, same command</div>
+    <div class="c-diff">1</div>
+  </div>
+  <div class="census-key">
+    <span><b>137</b> cannot run under MAMBA at all</span>
+    <span><b>121</b> restate the command</span>
+    <span><b>1</b> actually differs</span>
+  </div>
+
+  <p class="intro">
+    The 137 decompose further, and the decomposition is the reason the two-arm design felt
+    necessary: <b>72</b> could gain a second arm mechanically, <b>44</b> pass mounts into the
+    container, and <b>19</b> name an environment with no conda form at all. Under the collapse
+    none of those three needs an author to say anything. The 72 simply work. The 44 already meet
+    an assertion in <code class="t">GetContainerModel</code> that reads <em>&ldquo;binds are
+    meaningless without a container boundary&rdquo;</em> and names the runtime. The 19 already
+    meet an assertion in <code class="t">ResolveEnvImage</code> that names the file and the key
+    it wanted. Both were written before the arms existed.
+  </p>
+
+  <figure>
+    <svg viewBox="0 0 980 316" role="img" aria-label="Before: a transform body declares two arms which immediately converge on one executor, which then selects the conda or container entry from the environment file by runtime. After: the body makes one call to the same executor, and the same selection happens in the same place.">
+      <defs>
+        <marker id="ar6" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto">
+          <polygon points="0,1 8,4 0,7" fill="currentColor"/>
+        </marker>
+      </defs>
+      <g class="svg-line" color="var(--muted)">
+      <text x="24" y="30" class="svg-t hd">BEFORE</text>
+
+      <rect x="24" y="46" width="150" height="66" rx="2" class="svg-b" stroke-width="1"/>
+      <text x="99" y="77" class="svg-t" text-anchor="middle">transform</text>
+      <text x="99" y="95" class="svg-t" text-anchor="middle">body</text>
+
+      <path d="M174 66 L 206 66 L 218 62" stroke-width="1.2" marker-end="url(#ar6)"/>
+      <path d="M174 92 L 206 92 L 218 96" stroke-width="1.2" marker-end="url(#ar6)"/>
+
+      <rect x="226" y="42" width="186" height="34" rx="2" class="svg-gate" stroke-width="1.3"/>
+      <text x="319" y="64" class="svg-gate-t" text-anchor="middle">ifContainerDo(env, cmd)</text>
+      <rect x="226" y="84" width="186" height="34" rx="2" class="svg-gate" stroke-width="1.3"/>
+      <text x="319" y="106" class="svg-gate-t" text-anchor="middle">ifVirtualEnvDo(env, cmd)</text>
+
+      <path d="M412 59 L 442 59 L 454 74" stroke-width="1.2" marker-end="url(#ar6)"/>
+      <path d="M412 101 L 442 101 L 454 86" stroke-width="1.2" marker-end="url(#ar6)"/>
+
+      <rect x="462" y="62" width="140" height="36" rx="2" class="svg-b" stroke-width="1"/>
+      <text x="532" y="85" class="svg-t" text-anchor="middle">_ExecInEnv</text>
+
+      <line x1="602" y1="80" x2="656" y2="80" stroke-width="1.2" marker-end="url(#ar6)"/>
+
+      <rect x="664" y="52" width="248" height="56" rx="2" class="svg-b" stroke-width="1"/>
+      <text x="788" y="74" class="svg-t" text-anchor="middle">tool.env</text>
+      <text x="788" y="93" class="svg-t lbl" text-anchor="middle">runtime picks container: or conda:</text>
+
+      <text x="226" y="138" class="svg-t lbl" fill="var(--flag)">121 of 122 hand both the same string</text>
+
+      <line x1="24" y1="164" x2="956" y2="164" stroke="var(--rule)" stroke-width="1"/>
+
+      <text x="24" y="198" class="svg-t hd">AFTER</text>
+
+      <rect x="24" y="214" width="150" height="56" rx="2" class="svg-b" stroke-width="1"/>
+      <text x="99" y="238" class="svg-t" text-anchor="middle">transform</text>
+      <text x="99" y="256" class="svg-t" text-anchor="middle">body</text>
+
+      <line x1="174" y1="242" x2="218" y2="242" stroke-width="1.2" marker-end="url(#ar6)"/>
+
+      <rect x="226" y="224" width="186" height="36" rx="2" class="svg-new" stroke-width="1.4"/>
+      <text x="319" y="247" class="svg-new-t" text-anchor="middle">ExecWithEnv(env, cmd)</text>
+
+      <line x1="412" y1="242" x2="454" y2="242" stroke-width="1.2" marker-end="url(#ar6)"/>
+
+      <rect x="462" y="224" width="140" height="36" rx="2" class="svg-b" stroke-width="1"/>
+      <text x="532" y="247" class="svg-t" text-anchor="middle">_ExecInEnv</text>
+
+      <line x1="602" y1="242" x2="656" y2="242" stroke-width="1.2" marker-end="url(#ar6)"/>
+
+      <rect x="664" y="214" width="248" height="56" rx="2" class="svg-b" stroke-width="1"/>
+      <text x="788" y="236" class="svg-t" text-anchor="middle">tool.env</text>
+      <text x="788" y="255" class="svg-t lbl" text-anchor="middle">runtime picks container: or conda:</text>
+
+      <text x="226" y="290" class="svg-t lbl">the branch was always downstream, and stays exactly where it was</text>
+      </g>
+    </svg>
+    <figcaption>
+      Nothing to the right of the body changes. <code class="t">_ExecInEnv</code> was already the
+      sole executor for both arms and was already runtime&ndash;agnostic; the conda-or-container
+      selection was already a key lookup keyed on the runtime. What is removed is a branch that
+      converged one step after it opened.
+    </figcaption>
+  </figure>
+
+  <div class="finding">
+    <div class="where calm">the one that actually differs</div>
+    <h3>An image defect wearing a body's clothes</h3>
+    <pre class="code">acquire/esm_c.py:85
+  ifContainerDo   <b>pip install --quiet huggingface_hub &amp;&amp;</b> python3 _acquire_esm_c.py
+  ifVirtualEnvDo                                        python3 _acquire_esm_c.py</pre>
+    <p>
+      One chain in 259 gives its two arms genuinely different commands, and the difference is a
+      package the container lacks and the conda environment has. That is not a portability
+      decision the author needed a language for &mdash; it is a missing dependency, recorded in
+      the wrong file. It gets fixed where it belongs, and then one command serves both routes.
+    </p>
+  </div>
+</section>
+
+<section class="block">
+  <h2 class="sec">Two types, one string apart</h2>
+  <p class="intro">
+    Two of the oldest threads look like they need something the language forbids. Round 3 wanted
+    <code class="t">modelling::metabolic_model</code> to extend a type in another file, and
+    <code class="t">test_no_cross_file_extends</code> refuses that; round 4 wanted the same for the
+    bam types and did not try. But <code class="t">extends</code> is only a build&ndash;time
+    key&ndash;wise merge. <em>Matching is pure property subsumption, and subsumption never needed
+    <code class="t">extends</code> at all.</em> Each pair already agrees on everything except the
+    one property that carries its prose.
+  </p>
+
+  <div class="pair">
+    <div>
+      <h4>alignment::bam</h4>
+      <dl>
+        <div class="clash"><dt>_</dt><dd>binary alignment map</dd></div>
+        <div class="agree"><dt>ext</dt><dd>bam</dd></div>
+      </dl>
+    </div>
+    <div>
+      <h4>transcriptomics::bowtie2_bam</h4>
+      <dl>
+        <div class="clash"><dt>_</dt><dd>unspliced RNA-seq alignment against a bacterial reference, coordinate sorted</dd></div>
+        <div class="agree"><dt>ext</dt><dd>bam</dd></div>
+      </dl>
+    </div>
+  </div>
+
+  <div class="pair">
+    <div>
+      <h4>metabolomics::metabolic_model_sbml</h4>
+      <dl>
+        <div class="clash"><dt>_</dt><dd>SBML genome-scale metabolic model file</dd></div>
+        <div class="agree"><dt>Format</dt><dd>SBML</dd></div>
+        <div class="agree"><dt>ext</dt><dd>xml</dd></div>
+      </dl>
+    </div>
+    <div>
+      <h4>modelling::metabolic_model</h4>
+      <dl>
+        <div class="clash"><dt>_</dt><dd>a genome-scale metabolic reconstruction</dd></div>
+        <div class="agree"><dt>Format</dt><dd>SBML</dd></div>
+        <div class="agree"><dt>ext</dt><dd>xml</dd></div>
+      </dl>
+    </div>
+  </div>
+
+  <p class="intro" style="margin-top:20px">
+    <code class="t">_</code> is a matched property, not a comment &mdash; the port already
+    documents that, and round 5 was bitten by its environment&ndash;file twin when a
+    <em>true</em> line added to a <code class="t">provides</code> list silently rewrote five
+    template plans. So the fix is to align the matched property and move the prose into a
+    <code class="t">#</code> comment, in each case adding a property that keeps the child
+    distinguishable. No cross&ndash;file edge, no test weakened, and
+    <code class="t">fba_constraint.py</code> gains two candidate producers for a requirement that
+    has had none since it was written.
+  </p>
+</section>
+
+<section class="block">
+  <h2 class="sec">What checking changed</h2>
+  <p class="intro">
+    Three items came off this list without being worked on, because reading the code said
+    something different from what the journals said. Two of the three are cheaper than the fix
+    they would have justified.
+  </p>
+
+  <div class="finding">
+    <div class="where">recorded reason &middot; does not hold</div>
+    <h3>No shipped template can see the transform the rule was protecting them from</h3>
+    <p>
+      The stated cost of joining <code class="t">bowtie2_bam</code> to
+      <code class="t">alignment::bam</code> was that an RNA aligner would become a candidate
+      producer for metabat2's bam requirement <em>in a shipped template</em>. All eleven shipped
+      authors were read: not one names <code class="t">kbase</code> in its
+      <code class="t">A.transforms(...)</code> list, and <code class="t">bowtie2_align</code>
+      lives nowhere else.
+    </p>
+    <p>
+      The ambiguity is real, but it lives only where both libraries are loaded together, which is
+      the parity probe &mdash; and that gets re&ndash;solved either way. A second brake was
+      already there and unremarked: <code class="t">bowtie2_align</code> also requires a
+      <code class="t">transcriptomics::experiment</code>, so it cannot instantiate in a spec that
+      declares none.
+    </p>
+  </div>
+
+  <div class="finding">
+    <div class="where calm">dangling requirement &middot; by design, half</div>
+    <h3>The producer is one transform from something already produced</h3>
+    <p>
+      <code class="t">binning::derep_mag_ref</code> has been carried as &ldquo;required by two
+      transforms and produced by nothing&rdquo; since round 3. Its own type comment says why:
+      it is built once outside the DAG and handed to the driver as an input. So the dangling
+      requirement is a design, not a defect &mdash; and the comment also says it is built from the
+      <code class="t">is_centroid_95</code> rows of <code class="t">binning/cluster_table.tsv</code>,
+      which <code class="t">skani_dedup</code> already produces.
+    </p>
+    <p>
+      Concatenate the representative bins with scaffold names namespaced by bin id, write the
+      scaffold&ndash;to&ndash;genome table, build the index. Both consumers bind the result at a
+      fixed mount and read three fixed filenames, so the product's shape is already specified by
+      the code that reads it.
+    </p>
+  </div>
+
+  <div class="finding">
+    <div class="where calm">decided, not deferred</div>
+    <h3>A bin is a mapping of contigs</h3>
+    <p>
+      Three tests assert that <code class="t">bin_fasta</code> is not an
+      <code class="t">assembly</code>, and none of them says why &mdash; which is why rounds 3, 4
+      and 5 each re&ndash;raised it as an open question with 26 downstream requirements hanging on
+      the answer. The answer is that annotation must not sit downstream of a bin, and the FASTA
+      is a materialisation to be avoided where it can be.
+    </p>
+    <p>
+      That is a position, and it closes the thread. It goes beside the type and beside the tests,
+      so the next round finds a reason where it currently finds three bare assertions.
+    </p>
+  </div>
+</section>
+
+<section class="block">
+  <h2 class="sec">Ninety environments, and the ones that cannot be reached</h2>
+  <p class="intro">
+    <code class="t">cobra.env</code> is the only one of ninety with no <code class="t">container:</code>
+    line, and it says so in eleven lines of comment explaining that naming an unpushed image is
+    worse than naming none. That is correct and it is also why the four modelling transforms run
+    on exactly one host. Nine further environments name an image that an anonymous pull cannot
+    see, and nothing in any of those files mentions it.
+  </p>
+
+  <div class="finding">
+    <div class="where calm">cobra &middot; is there something to just use?</div>
+    <h3>There is a published cobrapy image. It was tested, and it does not serve.</h3>
+    <pre class="code">quay.io/biocontainers/cobra   newest tag <b>0.29.1</b>   built 2024-12-03   216 MB
+bioconda recipe               newest      <b>0.21.0</b>   (cobrapy moved to conda-forge)
+docker/cobra/env.yml          pins        <i>0.31.*</i>   from conda-forge, verified at build</pre>
+    <p>
+      The image exists, is public, and is genuinely cobrapy despite sharing a name with an
+      unrelated metagenomic assembler. Its LP solver returns the right objective. But it carries
+      neither <code class="t">requests</code> nor <code class="t">scipy</code>, and
+      <code class="t">lib::modelling</code> fetches BiGG models with requests &mdash; so it was
+      checked and rejected on evidence rather than on preference. Ours is pushed as
+      <code class="t">quay.io/hallamlab/cobra:0.31.1</code>, and all four modelling transforms
+      re&ndash;run against it reproduce round 5's numbers exactly: 0.8739 on minimal glucose,
+      infeasible with the carbon source shut, 95/72/137 for e_coli_core, and a gapfill from 0.0
+      to 0.639. The <code class="t">container:</code> line is written and commented out for one
+      reason only: quay creates a repository private, and naming an image the drawing host
+      cannot see is the failure this round exists to stop.
+    </p>
+  </div>
+
+  <div class="finding">
+    <div class="where">nine images &middot; 401 on an anonymous pull</div>
+    <h3>Three of the nine were called unused. They are required by 21 transforms.</h3>
+    <p>
+      Six are lab images that a credentialed host pulls and nobody else does, and the fix is a
+      dated comment above the <code class="t">container:</code> line &mdash; the house style
+      three files already use for a digest. One of those six names
+      <code class="t">:latest</code>, the only floating tag in ninety files, in a
+      <em>personal</em> namespace rather than the lab's: two independent problems on one line.
+      Six of the nine also carry no <code class="t">conda:</code> line, which the preflight
+      rewritten this round now refuses by name under MAMBA rather than at run.
+    </p>
+    <p>
+      The other three are <code class="t">ecspr_bake</code> tags and they are 401 <em>by
+      design</em>: synced to the cluster as SIFs and never pulled, so the URI is a name rather
+      than a promise. They were also carried forward as required by no transform, and proposed
+      for deletion on that basis. <b>That count was taken over the standard library alone.</b>
+      Across <code class="t">src/fabfos/build_references</code> they are required by 16, 4 and 1
+      transforms &mdash; the whole AAM and direction lanes. Nothing was deleted, and the lesson
+      is the one this page keeps finding: the recorded reason is worth re&ndash;measuring.
+    </p>
+  </div>
+</section>
+
+<section class="block">
+  <h2 class="sec">What the round did not close</h2>
+  <p class="intro">
+    Two items, both found by doing the work rather than by planning it, and both left named
+    rather than quietly absorbed.
+  </p>
+
+  <div class="finding">
+    <div class="where">solver &middot; found while re&ndash;gating</div>
+    <h3>A transform whose product extends the type it requires is a self&ndash;loop</h3>
+    <pre class="code">seqkit_filter_contigs   requires <b>assembly</b>   produces <b>filtered_assembly</b>  (extends assembly)
+polypolish              requires <b>assembly</b>   produces <b>polished_assembly</b>  (extends assembly)</pre>
+    <p>
+      Each satisfies its own requirement, so a plan wanting a filtered assembly can chain them
+      arbitrarily deep. The parity analysis <code class="t">a4</code> solves through an
+      <b>eleven&ndash;long</b> filter &rarr; polish &rarr; filter ladder before
+      <code class="t">assembly_stats</code>: nineteen steps where thirteen do the job, and every
+      product in the ladder is consumed by the next, so it is a real chain and not dead branches.
+      It was five long before this round; widening <code class="t">alignment::bam</code>
+      perturbed the search and lengthened it, which is how it was found. The language has no
+      negation, so &ldquo;an assembly not already filtered&rdquo; cannot be stated as a
+      requirement. That is a solver and modelling question, not a type one.
+    </p>
+  </div>
+
+  <div class="finding">
+    <div class="where calm">cobra &middot; one click</div>
+    <h3>The image is pushed. The repository is private.</h3>
+    <p>
+      Quay creates a new repository private, and the changevisibility API needs an OAuth token,
+      which a docker push credential is not. So <code class="t">cobra.env</code> carries the
+      <code class="t">container:</code> line commented out, with the URL, the one&ndash;line
+      verification and the instruction &mdash; because naming an image the drawing host cannot
+      see is precisely the failure the rewritten preflight now exists to catch, and shipping it
+      to prove a point would be the worst possible way to demonstrate that.
+    </p>
+  </div>
+
+  <div class="finding">
+    <div class="where">the suite &middot; run to completion at last</div>
+    <h3>2078 pass. The one failure this round caused was a guard doing its job.</h3>
+    <p>
+      <code class="t">test_exported_names_survive</code> holds that a module split out in the
+      2026&ndash;07 refactor may not silently stop exporting a name, and
+      <code class="t">metasmith.models.libraries</code> stopped exporting exactly three:
+      <code class="t">CONTAINER_ARM</code>, <code class="t">VIRTUAL_ENV_ARM</code> and
+      <code class="t">EnvDispatch</code>. Deliberate &mdash; so the three came out of the
+      snapshot with the reason written beside them, rather than by running the file&rsquo;s own
+      regenerate, which rewrites the whole surface and would absorb any other drift with it.
+    </p>
+    <p>
+      Two of the four pre&ndash;existing failures were diagnosed rather than shrugged at.
+      <code class="t">test_cache_real_nextflow</code>&rsquo;s cleanup walks <em>up</em> from its
+      work directory until the parent is <code class="t">/tmp</code> &mdash; landing on
+      <code class="t">/tmp/pytest-of-tony</code>, the shared root of every pytest run this host
+      has ever done &mdash; and chmods that whole tree in a container against a fixed 120&thinsp;s
+      timeout. <b>57,030 files</b>, none of them the test&rsquo;s own. And it is a loop, not bad
+      luck: nextflow work dirs are root&ndash;owned inside containers, so pytest&rsquo;s own
+      cleanup cannot remove them and leaves the tree behind &mdash; which is what the chmod
+      exists to fix, and what makes it slower every run.
+    </p>
+  </div>
+
+  <p class="intro">
+    Also standing: <code class="t">pathologic.env</code>&rsquo;s floating tag in a personal
+    namespace; six environments with no <code class="t">conda:</code> line, now refused by name
+    at staging rather than at run; thirteen transforms still grouping on
+    <code class="t">read_metadata</code> that were not retrofitted onto the new sample name; and
+    no transform body run under MAMBA since the arms were collapsed &mdash; every check here was
+    under DOCKER, which is the same shape of gap the arms themselves were.
+  </p>
+</section>
+
+<footer class="colophon">
+  metasmith &middot; kbase/dev &middot; round 6 &middot; the state of the punch list<br>
+  fourth in the series, after r2, r3 and r4 &mdash; same identity, different object: this one is a ledger, not a set of chains<br>
+  arm census from metasmith.env.dispatch_scan.ScanFile over transforms/, build_references/transforms/, examples/<br>
+  every migrated call site compared against its pre-migration source: 258 byte-identical, 1 deliberate<br>
+  threads carried from research/kbase/curation/{r3,r4,r5} and the scope journal
+</footer>
+
+</div>

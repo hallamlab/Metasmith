@@ -71,7 +71,7 @@ def protocol(context: ExecutionContext):
     # with --use-conda, and while the environments land under --conda-prefix the
     # package cache follows HOME. On a host whose /tmp is a small shared tmpfs that
     # is how you fill it.
-    context.ExecWithEnv().ifContainerDo(
+    context.ExecWithEnv(
         env=image,
         cmd=f"""
             export HOME="$PWD"

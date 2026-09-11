@@ -13,9 +13,7 @@ def protocol(context: ExecutionContext):
             mkdir -p {iout.container}
             download-antismash-databases --database-dir {iout.container}
         """
-    context.ExecWithEnv() \
-        .ifContainerDo(env=image, cmd=_cmd) \
-        .ifVirtualEnvDo(env=image, cmd=_cmd)
+    context.ExecWithEnv(env=image, cmd=_cmd)
 
     return ExecutionResult(
         manifest=[{out: iout.local}],

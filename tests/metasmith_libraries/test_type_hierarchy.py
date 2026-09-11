@@ -79,6 +79,12 @@ def test_bin_fasta_isa_putative_genome(sequences):
     assert sequences["bin_fasta"].IsA(sequences["putative_genome"])
 
 
+# The next three assert a NEGATIVE, and the reason is at `bin_fasta` in
+# `data_types/sequences.yml`: a bin is a mapping of contigs, annotation must not sit
+# downstream of one, and the FASTA is a materialisation to be avoided where it can be.
+# Read that before proposing the join again -- three rounds proposed it.
+
+
 def test_bin_fasta_not_isa_assembly(sequences):
     assert not sequences["bin_fasta"].IsA(sequences["assembly"])
 

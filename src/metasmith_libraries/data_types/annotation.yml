@@ -682,3 +682,58 @@ types:
   instrain_compare:
     properties:
       _: inStrain compare output (cross-sample popANI / strain sharing over the shared derep-MAG ref)
+
+# -----------------------------------------
+# curation round 3 -- KBase parity. See research/kbase/curation/r3/proposals.yml.
+  homolog_hits:
+    properties:
+      _: tabular hits of a query sequence set against a subject database (blast tabular 6)
+      Format: TSV
+      ext: tsv
+  gene_set:
+    properties:
+      _: the gene identifiers an enrichment is computed over, one per line
+      ext: txt
+  go_overrepresentation:
+    properties:
+      _: hypergeometric over-representation of GO terms in a gene set
+      Format: TSV
+      ext: tsv
+
+  # bakta's CDS arm. `bakta_proteins` is a separate entry point beside `bakta` in the
+  # same image and takes a protein FASTA; the shipped non-coding transform runs the
+  # nucleotide arm with --skip-cds and declares none of these.
+  bakta_protein_hits:
+    properties:
+      _: per-ORF bakta calls -- locus, product, db_xrefs
+      Format: TSV
+      ext: tsv
+  bakta_protein_inference:
+    properties:
+      _: the evidence behind each bakta call -- which database, at what identity
+      Format: TSV
+      ext: tsv
+  bakta_hypotheticals:
+    properties:
+      _: the ORFs bakta could not name, with their Pfam hits and physicochemical properties
+      Format: TSV
+      ext: tsv
+  bakta_protein_json:
+    properties:
+      _: the full bakta annotation record, for a consumer that wants more than the two tables
+      Format: JSON
+      ext: json
+  bakta_annotated_proteins:
+    properties:
+      _: the input proteins re-emitted with bakta's names on their headers
+      Format: FASTA
+      ext: faa
+  bakta_feature_nt:
+    properties:
+      _: nucleotide sequence of every feature bakta called
+      Format: FASTA
+      ext: ffn
+  bakta_summary:
+    properties:
+      _: per-genome feature counts and assembly statistics
+      ext: txt

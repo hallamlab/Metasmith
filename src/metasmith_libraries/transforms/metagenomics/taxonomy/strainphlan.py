@@ -21,7 +21,7 @@ def protocol(context: ExecutionContext):
 
     threads = context.params.get("cpus", 8)
 
-    context.ExecWithEnv().ifContainerDo(
+    context.ExecWithEnv(
         env=image,
         binds=[(idb.external, "/mpa_db")],
         cmd=f"""

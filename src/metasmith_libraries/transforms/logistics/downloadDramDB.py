@@ -10,7 +10,7 @@ def protocol(context: ExecutionContext):
     idb = context.Output(db)
     threads = context.params.get("cpus", 8)
 
-    context.ExecWithEnv().ifContainerDo(
+    context.ExecWithEnv(
         env=image,
         cmd=f"""
             export HOME=/tmp

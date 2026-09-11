@@ -40,9 +40,7 @@ def protocol(context: ExecutionContext):
             out=stdout.fq \
         | pigz {threads} > {iout.container}
         '''
-    context.ExecWithEnv() \
-        .ifContainerDo(env=image, cmd=_cmd) \
-        .ifVirtualEnvDo(env=image, cmd=_cmd)
+    context.ExecWithEnv(env=image, cmd=_cmd)
     return ExecutionResult(
         manifest=[{
             out: iout.local

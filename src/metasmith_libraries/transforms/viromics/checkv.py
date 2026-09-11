@@ -36,9 +36,7 @@ def protocol(context: ExecutionContext):
     _cmd = f"""
         checkv end_to_end {ifrozen.container} {work} -d {idb.container} -t {threads}
     """
-    context.ExecWithEnv() \
-        .ifContainerDo(env=image, cmd=_cmd) \
-        .ifVirtualEnvDo(env=image, cmd=_cmd)
+    context.ExecWithEnv(env=image, cmd=_cmd)
 
     wanted = {
         out_contamination: "contamination.tsv",

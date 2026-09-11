@@ -68,7 +68,7 @@ def protocol(context: ExecutionContext):
         mem_gb = int(float(mem))
         block_size = max(1.0, min(12.0, (mem_gb - 4) / 6))
 
-    context.ExecWithEnv().ifContainerDo(
+    context.ExecWithEnv(
         binds=[(idb.external.parent, "/db")],
         env=image,
         cmd=f"""

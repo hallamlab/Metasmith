@@ -219,6 +219,31 @@ types:
     properties:
       _: Int-code vocabulary for the compiled metabolism tables (kind, code, symbol; met and rxn densely coded within kind)
       ext: parquet
+
+  # MetaNetX 4.5, one type per upstream FILE rather than per download bundle --
+  # the same granularity `fabfos::raw` uses, and for the same reason: a
+  # reconstruction needs reac_prop and chem_prop, a metabolite bridge needs
+  # chem_xref, and typing the bundle would make every consumer depend on all of
+  # it. Curation round 5 added these because the reconstruction lane had the
+  # id->MNXR bridge and no stoichiometry to go with it.
+  mnx_reac_prop:
+    extends:
+    - reference_data
+    properties:
+      _: MetaNetX reaction properties (mnxr, equation, reference, classifs, is_balanced, is_transport); headerless, # comments
+      ext: tsv
+  mnx_chem_prop:
+    extends:
+    - reference_data
+    properties:
+      _: MetaNetX metabolite properties (mnxm, name, reference, formula, charge, mass, inchi, inchikey, smiles); headerless, # comments
+      ext: tsv
+  mnx_chem_xref:
+    extends:
+    - reference_data
+    properties:
+      _: MetaNetX metabolite cross-references (source-prefixed id, mnxm, description); the biggM rows are the BiGG bridge
+      ext: tsv
   atom_pairs:
     extends:
     - reference_data

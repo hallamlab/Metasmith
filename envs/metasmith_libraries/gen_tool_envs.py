@@ -32,6 +32,7 @@ CURATED = {
     "checkm": "checkm2=1.1.0",
     "antismash": "antismash=7.1.0",
     "genomad": "genomad=1.11.0",
+    "bwa": "bwa=0.7.19",
 }
 
 BIOCONTAINERS = re.compile(r"quay\.io/biocontainers/([^:/]+):([^-\s]+)")

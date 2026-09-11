@@ -16,7 +16,7 @@ def protocol(context: ExecutionContext):
     iclassifier = context.Input(classifier)
     itax        = context.Output(tax)
 
-    context.ExecWithEnv().ifContainerDo(
+    context.ExecWithEnv(
         env=image,
         cmd=f"""\
 set -e

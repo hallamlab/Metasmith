@@ -5,7 +5,7 @@ from pathlib import Path
 
 from ..coms.terminals import LiveShell
 from ..constants import AgentPaths
-from ..env import Environment
+from ..env import Environment, Runtime
 from ..models.remote import Source
 
 class EnvPortabilityError(Exception):
@@ -33,26 +33,37 @@ def _read_env_manifest_doc(shell: LiveShell, workspace: Path) -> dict:
         ) from e
 
 def _check_env_portability(manifest: dict[str, dict], env: Environment) -> None:
-    if not manifest or env.needs_relay: return
-    ARM, FIELD = "ifVirtualEnvDo", "conda"
+    # The question is about the environment resource, not about the transform body:
+    # a body says what to run and in what environment, and the runtime decides how.
+    # So the only way a step cannot run here is that its environment declares
+    # nothing for this runtime -- no `conda:` where there is no container, no
+    # `container:` where the tool is launched into one.
+    if not manifest: return
+    FIELD = "conda" if env.runtime == Runtime.MAMBA else "container"
     offenders: list[str] = []
     for _, v in sorted(manifest.items()):
         who = f"{v.get('transform')} (step {v.get('step')})"
-        arms = v.get("arms")
-        if arms is None:
-            continue
-        if not arms:
-            continue
-        if ARM not in arms:
-            offenders.append(f"{who}: declares no {ARM} arm (has {arms or ['no arms']})")
+        # `runs` absent means a workspace staged by an older metasmith, which is
+        # indistinguishable from "nothing to check"; zero runs means a body that
+        # launches no tool at all.
+        runs = v.get("runs")
+        if not runs:
             continue
         for name, fields in sorted((v.get("envs") or {}).items()):
+            # An unreadable resource is UNKNOWN, not absent.
             if fields is None: continue
             if FIELD not in fields:
-                offenders.append(f"{who}: env resource [{name}] has no '{FIELD}:' entry (has {sorted(fields) or ['nothing']})")
+                offenders.append(
+                    f"{who}: env resource [{name}] has no '{FIELD}:' entry"
+                    f" (has {sorted(fields) or ['nothing']})"
+                )
     if offenders:
+        where = (
+            "runs tools without a container" if env.runtime == Runtime.MAMBA
+            else "launches tools into a container"
+        )
         raise EnvPortabilityError(
-            f"agent runtime [{env.runtime.name}] runs tools without a container, but"
+            f"agent runtime [{env.runtime.name}] {where}, but"
             f" [{len(offenders)}] step(s) have no form it can execute:\n  "
             + "\n  ".join(offenders)
         )

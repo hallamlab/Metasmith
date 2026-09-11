@@ -65,7 +65,7 @@ def test_mamba_runs_real_tool_no_relay(tmp_path, monkeypatch):
 
     with ctx.external_shell as shell:
         ctx.external_shell = shell
-        ctx.ExecWithEnv().ifVirtualEnvDo(env_dep, f"cp {src} {dst}")
+        ctx.ExecWithEnv(env_dep, f"cp {src} {dst}")
 
     assert dst.exists(), "mamba-run tool did not produce its output"
     assert dst.read_text() == src.read_text()
@@ -117,6 +117,6 @@ def test_mamba_inherits_the_hosts_gpu(tmp_path, monkeypatch):
         assert cmd == f"mamba run -n {ENV_NAME}"
 
         out = tmp_path / "gpu.txt"
-        ctx.ExecWithEnv().ifVirtualEnvDo(env_dep, f"nvidia-smi -L > {out}")
+        ctx.ExecWithEnv(env_dep, f"nvidia-smi -L > {out}")
     assert out.exists()
     assert "GPU 0" in out.read_text(), out.read_text()

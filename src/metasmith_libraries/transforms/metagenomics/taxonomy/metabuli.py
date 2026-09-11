@@ -36,9 +36,7 @@ def protocol(context: ExecutionContext):
             mv ./*report.tsv {irep.container}
             mv ./*krona.html {ihtml.container}
         """
-    context.ExecWithEnv() \
-        .ifContainerDo(env=image, cmd=_cmd) \
-        .ifVirtualEnvDo(env=image, cmd=_cmd)
+    context.ExecWithEnv(env=image, cmd=_cmd)
     
     return ExecutionResult(
         manifest=[

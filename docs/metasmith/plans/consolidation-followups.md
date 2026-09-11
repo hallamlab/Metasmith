@@ -9,6 +9,37 @@ module already states belongs here either.
 
 ## Open bugs
 
+**The e2e docker cleanup chmods every pytest tmpdir on the host, and now times out doing it.**
+`tests/metasmith/e2e/docker/test_cache_real_nextflow.py::_bind_root` walks UP from the work
+directory until its parent is `/tmp`, which lands on `/tmp/pytest-of-tony` — the shared root of
+every pytest run this host has ever done — and then `docker run … chmod -R a+rw` that whole tree
+against a fixed 120s timeout. Measured: 57,030 files and 468 MB, none of it the test's own, and
+a bare `docker run … chmod` on an EMPTY directory takes 16.7s on this box. Two tests fail on the
+timeout. It is a feedback loop rather than bad luck: nextflow work directories are created
+root-owned inside containers, so pytest's own `rm_rf` cannot remove them
+(`PermissionError: Operation not permitted`) and leaves `garbage-*` trees behind — which is what
+the chmod exists to fix, and what makes it slower every run. The first move is to bind and chmod
+the test's own directory rather than the walked-up root.
+
+**`test_stage_real_libraries_clones_into_sandbox` asserts a `.git` its helper stopped writing.**
+`stage_real_libraries` moved to `shutil.copytree` plus a `STAGED_FROM` file naming the source and
+HEAD when the library stopped being a separate repository, and `src/metasmith_libraries` is a
+plain directory in the monorepo now. The assertion should read `STAGED_FROM`.
+
+**A transform whose product extends the type it requires is a self-loop the solver walks.**
+`kbase/filter_assembly/seqkit_filter_contigs` requires `sequences::assembly` and produces
+`sequences::filtered_assembly`, which `extends assembly`; `kbase/polish_assembly/polypolish`
+does the same with `polished_assembly`. So each satisfies its own requirement, and a plan
+targeting a filtered assembly can chain them arbitrarily deep. Measured: the parity analysis
+`a4_mags_from_metagenome` solves through an ELEVEN-long filter/polish/filter ladder before
+`assembly_stats`, 19 steps where 13 do the job, and every product in the ladder is consumed by
+the next step so it is a real chain and not dead branches. It was five long before curation
+round 6; widening `alignment::bam` perturbed the search and lengthened it, which is how it was
+found. The language has no negation, so "an assembly that has not already been filtered" cannot
+be said as a requirement -- the first move is to decide whether these transforms should require
+a narrower type than the one they extend, or whether the refiner should reject a candidate that
+re-derives an ancestor of its own input.
+
 **A directory-typed given whose content changes below its top level keeps its leaf id, so the
 cache serves stale results as if they were this run's.** A leaf id is absolute path plus
 `mtime_ns` — no content, no size, no inode — and it stats the top-level directory only, so an
@@ -163,6 +194,13 @@ is the legitimate optional-branch case, so asserting there fails runs that are b
 correctly. The per-item guard catches the reported case earlier anyway.
 
 ## Validation gaps
+
+**No transform body has been run under the MAMBA runtime since the execution arms were
+collapsed.** Every check in curation round 6 was under DOCKER. The collapse means one command
+now serves both routes, and `_ExecInEnv` was already the sole executor for both arms, so the
+change is small -- but "small" is what the arms claimed too, and an arm that has never been run
+answers wrongly. `dev/libraries.sh --create-envs` builds the conda environments to run one
+against.
 
 **The caching and reentrancy path has never been run live through the sockeye relay.** The
 cross-host proof was assembled from separate hosts showing cache-key identity, not from one

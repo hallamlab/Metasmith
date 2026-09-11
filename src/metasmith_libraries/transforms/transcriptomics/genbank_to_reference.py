@@ -14,7 +14,7 @@ def protocol(context: ExecutionContext):
     ifasta = context.Output(fasta)
     igff   = context.Output(gff)
 
-    context.ExecWithEnv().ifContainerDo(
+    context.ExecWithEnv(
         env=image,
         cmd=f"python {ihelp.container}/genbank_to_reference.py {igbk.container} {ifasta.container} {igff.container}",
     )

@@ -35,9 +35,7 @@ def protocol(context: ExecutionContext):
         prodigal-gv -p meta -i {ifrozen.container} \
             -a viral_orfs.faa -f gff -o viral_orfs.gff
     """
-    context.ExecWithEnv() \
-        .ifContainerDo(env=image, cmd=_cmd) \
-        .ifVirtualEnvDo(env=image, cmd=_cmd)
+    context.ExecWithEnv(env=image, cmd=_cmd)
 
     context.LocalShell(f"cp viral_orfs.faa {outs[cds].local}")
     context.LocalShell(f"cp viral_orfs.gff {outs[gff].local}")

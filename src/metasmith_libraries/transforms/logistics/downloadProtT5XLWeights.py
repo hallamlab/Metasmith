@@ -10,7 +10,7 @@ HF_REPO  = "Rostlab/prot_t5_xl_uniref50"
 def protocol(context: ExecutionContext):
     iweights = context.Output(weights)
 
-    context.ExecWithEnv().ifContainerDo(
+    context.ExecWithEnv(
         env=image,
         cmd=f"""
             pip install --quiet --no-cache-dir huggingface_hub

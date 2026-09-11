@@ -11,9 +11,7 @@ def protocol(context: ExecutionContext):
     name_path = context.Input(name)
     out_path = context.Output(out)
     cmd = f'echo "hello $(cat {name_path.container})" > {out_path.container}'
-    context.ExecWithEnv() \
-        .ifContainerDo(env=image, cmd=cmd) \
-        .ifVirtualEnvDo(env=image, cmd=cmd)
+    context.ExecWithEnv(env=image, cmd=cmd)
     return ExecutionResult(
         manifest=[{out: out_path.local}],
         success=out_path.local.exists(),

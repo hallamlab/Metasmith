@@ -13,7 +13,12 @@ out_descriptions = model.AddProduct(lib.GetType("annotation::interproscan_descri
 
 
 def parse_interpro_gff(input_path, output_path, descriptions_path):
-    headers = ["orf", "start", "stop", "score", "database", "Name", "Dbxref"]
+    # Ontology_term is InterProScan's own GO annotation, pipe-joined. It was
+    # dropped by this parse until curation round 5, which left
+    # `kbase/enrichment/go_overrepresentation_analysis.py` -- whose whole input
+    # is these terms -- with nothing to read. The merge carries whatever header
+    # a chunk has, so the column is additive.
+    headers = ["orf", "start", "stop", "score", "database", "Name", "Dbxref", "Ontology_term"]
     descriptions = {}
     with open(input_path, 'r') as gff_file, open(output_path, 'w', newline='') as csv_file:
         writer = csv.DictWriter(csv_file, fieldnames=headers)
@@ -47,6 +52,7 @@ def parse_interpro_gff(input_path, output_path, descriptions_path):
                 "database": parts[1],
                 "Name": name,
                 "Dbxref": dbxref,
+                "Ontology_term": attrs.get("Ontology_term", "").replace('"', ""),
             })
     write_descriptions(descriptions, descriptions_path)
 
@@ -70,7 +76,7 @@ def protocol(context: ExecutionContext):
 
     context.LocalShell(f"pigz -dc {idata.local} | tar xf -")
 
-    context.ExecWithEnv().ifContainerDo(
+    context.ExecWithEnv(
         env=image,
         binds=[(context.external_cwd/"data", "/opt/interproscan/data")],
         cmd=f"""

@@ -88,9 +88,7 @@ def protocol(context: ExecutionContext):
         heads=repr(HEADS), members=ENSEMBLE_MEMBERS, ia_tables=repr(IA_TABLES),
     )
     context.LocalShell("cat > _ezpred_model.py << 'PYEOF'\n" + driver + "\nPYEOF\n")
-    context.ExecWithEnv() \
-        .ifContainerDo(env=image, cmd="python3 _ezpred_model.py") \
-        .ifVirtualEnvDo(env=image, cmd="python3 _ezpred_model.py")
+    context.ExecWithEnv(env=image, cmd="python3 _ezpred_model.py")
 
     ok = ((iout.local / "predict.py").exists()
           and all((iout.local / "models" / h).is_dir() for h in HEADS))

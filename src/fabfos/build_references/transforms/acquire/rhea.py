@@ -45,9 +45,7 @@ def protocol(context: ExecutionContext):
         echo "[rhea] $REL complete; archives are permanently re-fetchable at"
         echo "       {BASE_URL}/old_releases/$REL.tar.bz2"
     """
-    context.ExecWithEnv() \
-        .ifContainerDo(env=image, cmd=_cmd) \
-        .ifVirtualEnvDo(env=image, cmd=_cmd)
+    context.ExecWithEnv(env=image, cmd=_cmd)
 
     rels = [p for p in iout.local.glob("*") if p.is_dir()]
     n = sum(1 for r in rels for f in TSV if (r / "tsv" / f).exists())

@@ -17,9 +17,7 @@ def protocol(context: ExecutionContext):
                 --download_path ./busco_downloads
             mv ./busco_downloads/lineages/{LINEAGE} {iout.container}
         """
-    context.ExecWithEnv() \
-        .ifContainerDo(env=image, cmd=_cmd) \
-        .ifVirtualEnvDo(env=image, cmd=_cmd)
+    context.ExecWithEnv(env=image, cmd=_cmd)
 
     return ExecutionResult(
         manifest=[{out: iout.local}],

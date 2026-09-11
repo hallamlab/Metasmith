@@ -121,9 +121,7 @@ def protocol(context: ExecutionContext):
             -t {threads} -no_plot \
             -d {iref.container}/databases -m {iref.container}/files
     """
-    context.ExecWithEnv() \
-        .ifContainerDo(env=image, cmd=_cmd) \
-        .ifVirtualEnvDo(env=image, cmd=_cmd)
+    context.ExecWithEnv(env=image, cmd=_cmd)
 
     stem = Path(ictg.local).stem
     root = Path("vibrant_out")/f"VIBRANT_{stem}"

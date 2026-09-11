@@ -13,7 +13,7 @@ def protocol(context: ExecutionContext):
     ibase  = context.Output(w_base)
     ilarge = context.Output(w_large)
 
-    context.ExecWithEnv().ifContainerDo(
+    context.ExecWithEnv(
         env=image,
         cmd=f"""
             pip install --quiet --no-cache-dir huggingface_hub

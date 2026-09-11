@@ -9,6 +9,7 @@ types:
     properties:
       _: one ASPIRE study; the grouping parent every stage descends from
       ext: txt
+      logistics: to group per-sample abundance profiles into one count table
   sample_id:
     properties:
       _: label for one sequenced sample within an ASPIRE run
@@ -51,26 +52,14 @@ types:
     properties:
       _: fastp QC report rendering for one sample
       ext: html
-  merged_reads:
-    properties:
-      _: vsearch-merged read pair for one sample
-      ext: fastq.gz
   filtered_fasta:
     properties:
       _: quality-filtered merged reads for one sample
       ext: fasta.gz
 # -- the run-level ASV spine --
-  concat_fasta:
-    properties:
-      _: all samples' filtered reads concatenated, for dereplication
-      ext: fasta.gz
   concat_counts_fasta:
     properties:
       _: all samples' filtered reads concatenated with sample-relabelled headers, for counting
-      ext: fasta.gz
-  derep_fasta:
-    properties:
-      _: dereplicated full-length sequences
       ext: fasta.gz
   centroids_fasta:
     properties:
@@ -114,14 +103,6 @@ types:
       _: taxonomy assignment summary statistics
       ext: tsv
 # -- mitochondrial screen and decontamination --
-  mito_blast_db:
-    properties:
-      _: BLAST database built from the mitochondrial reference
-      Data: directory
-  contaminant_blast_db:
-    properties:
-      _: BLAST database built from the contaminant reference
-      Data: directory
   mitomaster_table:
     properties:
       _: MitoMaster classification of each ASV
@@ -453,10 +434,6 @@ types:
       _: sample by module score heatmap renderings
       Data: directory
 # -- master summary --
-  optional_outputs:
-    properties:
-      _: the master summary's optional-contributor slot; the .nf always passes it empty
-      Data: directory
   master_long:
     properties:
       _: long-form master ASV table

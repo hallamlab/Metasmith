@@ -52,9 +52,7 @@ def protocol(context: ExecutionContext):
                 echo "no intermediate_contigs and/or no contigs -- graph not reconstructed"
             fi
         """
-    context.ExecWithEnv() \
-        .ifContainerDo(env=image, cmd=_cmd) \
-        .ifVirtualEnvDo(env=image, cmd=_cmd)
+    context.ExecWithEnv(env=image, cmd=_cmd)
 
     return ExecutionResult(
         manifest=[
