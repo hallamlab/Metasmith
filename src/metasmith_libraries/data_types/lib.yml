@@ -1,4 +1,8 @@
 types:
+  cami_gold_standard.py:
+    properties:
+      src: cami_gold_standard
+      usage: command line
   hierarchical_clustering.py:
     properties:
       src: hierarchical_clustering

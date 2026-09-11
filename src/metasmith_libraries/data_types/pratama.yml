@@ -1,0 +1,29 @@
+# Pratama et al. 2026's published groundwater virome products (Zenodo,
+# data/docs/pratama2026/zenodo/), used as the recovery-table ground truth for
+# our own reproduction of that pipeline. Study-wide like a reference database
+# -- built once outside the DAG by unzipping the Zenodo archive, not produced
+# by any transform -- and registered the same way ref::checkv_db etc. are.
+types:
+  published_mags:
+    properties:
+      _: Pratama et al. 2026's 1275 dereplicated MAGs (Filtered_dereplicated_genomes_part1-3.zip, unzipped and pooled into one directory, one FASTA per MAG)
+
+  published_votus:
+    properties:
+      _: Pratama et al. 2026's published vOTU catalogue, >=5kb (Groundwater-votu-5k.fasta.zip, unzipped)
+      Format: FASTA
+      Data: nucleic acid sequence
+      ext: fasta
+
+  # skani dist between one of our own recovered sets and the matching published
+  # set. Recovery, not identity: a published genome/vOTU with no row here was
+  # not recovered above --min-af at all, rather than recovered imperfectly.
+  mag_recovery_table:
+    properties:
+      _: skani dist of Pratama's published MAGs (query) against our own binning::derep_mag_ref (reference) -- ANI and aligned-fraction per recovered MAG
+      ext: tsv
+
+  votu_recovery_table:
+    properties:
+      _: skani dist --qi/--ri of Pratama's published vOTUs (query) against our own viromics::dereplicated_candidate_virus (reference), one row per recovered contig pair -- ANI and aligned-fraction per recovered vOTU
+      ext: tsv

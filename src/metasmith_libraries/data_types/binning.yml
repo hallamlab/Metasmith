@@ -44,6 +44,47 @@ types:
       _: MetaWRAP bin_refinement quality table -- completion, contamination and GC per consolidated bin, from CheckM1
       ext: tsv
 
+  # CAMISIM's own per-read truth table (reads_mapping.tsv.gz: anonymous_read_id,
+  # genome_id, tax_id, read_id), registered as a given parented to the sample like
+  # the reads themselves. NOT CAMI's own binning_gs.tsv/gsa_mapping.tsv.gz -- those
+  # key on the CAMI-provided gold-standard-assembly's own contig ids
+  # (e.g. S9C933009), which share no id space with a participant's own assembly
+  # (e.g. megahit's k141_N). Scoring a self-assembled binning therefore needs this
+  # read-level table joined against the sample's own alignment::bam, not the
+  # GSA-keyed table -- see cami_contig_truth.py.
+  cami_read_truth:
+    properties:
+      _: CAMISIM per-read genome-of-origin ground truth for one sample (gzipped tsv, header "#anonymous_read_id genome_id tax_id read_id")
+      ext: tsv.gz
+
+  gold_standard_table:
+    properties:
+      _: CAMI/AMBER Bioboxes-format binning ground truth (SEQUENCEID/BINID/TAXID[/_LENGTH])
+      ext: tsv
+
+  # Built by cami_contig_truth.py: cami_read_truth's per-read genome votes,
+  # majority-voted per contig of the SAME assembly a contig_to_bin_table
+  # descends from, so its SEQUENCEIDs are our own contig ids and line up with
+  # metabat2_contig_to_bin_table etc. for amber.py.
+  contig_gold_standard_table:
+    extends:
+    - gold_standard_table
+    properties:
+      method: cami_read_truth_majority_vote
+
+  # amber.py's per-tool summary (results.tsv) -- one row of
+  # completeness/purity/accuracy/rand-index columns per scored binner.
+  amber_results:
+    properties:
+      _: AMBER genome-binning assessment summary (results.tsv) for one contig_to_bin_table scored against a contig_gold_standard_table
+      ext: tsv
+
+  # amber.py's per-bin detail (genome/<label>/metrics_per_bin.tsv).
+  amber_bin_metrics:
+    properties:
+      _: AMBER per-bin purity/completeness detail (metrics_per_bin.tsv) for one contig_to_bin_table
+      ext: tsv
+
   # Dereplicated representative-MAG reference for inStrain option (b): the
   # is_centroid_95==1 bins of a `binning_local::cluster_table`, their contigs
   # concatenated into one FASTA with scaffold names namespaced by bin_id
