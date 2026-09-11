@@ -368,6 +368,41 @@ def _promote(cache_meta, lineages: list, results: list) -> None:
     for r in records:
         Log.Info(f"cache [{r['status']}] member [{r['member'] + 1}] key [{r['key'][:12]}]")
 
+def resolve_step_inputs(step, dep_in_raw: dict, inst_lookup: dict, sar: dict):
+    """Turn the instance ids the compiler wrote into `din` back into instances.
+
+    The two sides speak different id spaces and only sometimes notice. `din` is written
+    AFTER the cache pass rewrites each instance's id into its cache SLOT id; the plan this
+    agent reloads from disk was serialised BEFORE that pass. `inst_lookup` is therefore
+    keyed on archetype ids, and for a step whose input was produced by another step in the
+    same plan the two sets never intersect.
+
+    The step's own dependency map is the list the compiler built `din` from, so it is the
+    right answer whenever the ids do not resolve -- and the arity check still holds by
+    construction, because it is the same list the arity was measured on. The `produces`
+    path has always fallen back this way for the mirror-image mismatch; this is the same
+    fallback on the side that used to raise instead.
+    """
+    input_by_dep: dict = {}
+    for dep in step.transform.model.requires:
+        ids = dep_in_raw.get(dep.key, [])
+        resolved = [inst_lookup[k] for k in ids if k in inst_lookup]
+        if not resolved and ids:
+            resolved = list(step.dependency_map.get(dep, []))
+        if not resolved and ids:
+            raise MissingInstanceError(
+                instance_id=ids[0] if ids else None,
+                dep_key=dep.key,
+            )
+        if dep.key in sar and len(resolved) != sar[dep.key]:
+            raise ArityMismatchError(
+                expected=sar[dep.key],
+                actual=len(resolved),
+                dep_key=dep.key,
+            )
+        input_by_dep[dep] = resolved
+    return input_by_dep
+
 
 def StageAndRunTransform(workspace: Path, step_index: int, host: str, stage_root: Path|None=None):
     Log.Info(f"cwd [{os.getcwd()}]")
@@ -508,21 +543,7 @@ def StageAndRunTransform(workspace: Path, step_index: int, host: str, stage_root
 
         input_by_dep: dict[Dependency, list[DataInstance]] = {}
         if fmt >= 2:
-            for dep in step.transform.model.requires:
-                ids = dep_in_raw.get(dep.key, [])
-                resolved = [inst_lookup[k] for k in ids if k in inst_lookup]
-                if not resolved and ids:
-                    raise MissingInstanceError(
-                        instance_id=ids[0] if ids else None,
-                        dep_key=dep.key,
-                    )
-                if dep.key in sar and len(resolved) != sar[dep.key]:
-                    raise ArityMismatchError(
-                        expected=sar[dep.key],
-                        actual=len(resolved),
-                        dep_key=dep.key,
-                    )
-                input_by_dep[dep] = resolved
+            input_by_dep = resolve_step_inputs(step, dep_in_raw, inst_lookup, sar)
         else:
             inp_keys = [x for x in raw_meta.get("inp", "").split(",") if len(x)>0]
             for dep, k in zip(step.transform.model.requires, inp_keys):
