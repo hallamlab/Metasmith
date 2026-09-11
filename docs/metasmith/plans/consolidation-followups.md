@@ -178,6 +178,17 @@ still copies the shard's outputs into the task work directory and those outputs 
 Reuse is near-free in compute and not free in I/O. The first move is to compare device and inode
 rather than path when deciding whether two binds are the same filesystem.
 
+**The dev overlay is a supported mechanism with nothing in the engine that populates it.**
+`agent.py` renders both the `msm` wrapper and `lib/msm_bootstrap` with a conditional bind of
+`$AGENT_HOME/dev/metasmith` over the image's installed package, and the bootstrap stages it
+per node through a flock and a node-local tarball. It works: a 229-sample campaign ran a
+pinned source tree, two API-breaking commits ahead of the image, inside the published 0.22.1
+image, with the collapsed dispatch call executing on a compute node. But every user of it
+hand-rolls the rsync and the tar, and the two can disagree. A tarball that does not match the
+tree beside it fails open to the Lustre read that produced 93 incomplete copies out of 97. The
+first move is a deploy-side verb that writes the tree and its tarball together, so the
+integrity check has something that was built to satisfy it.
+
 ## Accepted risks
 
 **An external mtime-touching event makes the next run cold, and one file is enough.** Stat
