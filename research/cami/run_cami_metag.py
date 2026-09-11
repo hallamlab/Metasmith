@@ -168,54 +168,77 @@ def build_inputs(samples):
     return inputs
 
 
-def build_transforms():
-    return [
-        TransformInstanceLibrary.Load(MLIB / "transforms" / "logistics"),
-        TransformInstanceLibrary.Load(MLIB / "transforms" / "assembly"),
-        TransformInstanceLibrary.Load(MLIB / "transforms" / "metagenomics"),
-        TransformInstanceLibrary.Load(MLIB / "transforms" / "functionalAnnotation"),
-    ]
+def build_targets(with_dedup=True, variant="core"):
+    """The batch-1 core, or the batch-2 variant, from one definition.
 
+    core    metaSPAdes under the JGI protocol, MetaWRAP for binning and refinement,
+            CheckM2, and an AMBER score. No functional annotation: DIAMOND and
+            KOfamScan were 85% of the task-hours and 96% of the tasks on the last
+            ten-sample run and tell a binning benchmark nothing.
+    variant the same spine with the assembler and binners swapped -- MEGAHIT, the
+            three binners under the aggregator, skANI dereplication.
 
-def build_targets(with_dedup=True):
-    """Assembly, binning and annotation only: the taxonomy lane is deliberately absent.
-
-    Every assembly-derived target is pinned to the megahit assembly. Unpinned, spades
-    also satisfies `sequences::assembly` and the planner may answer each target from a
-    different assembler, running both; the cost lands on the refiner rather than the
-    search. See the comment in metagenomics_from_paired_reads.py for the measurements.
+    NAME THE ASSEMBLER, NEVER `sequences::assembly`. Both assemblers satisfy the
+    supertype, so an unpinned slot lets the planner answer targets from different
+    assemblers and assemble every sample twice. Pinning the named targets is
+    necessary and NOT sufficient: metabat2, comebin, prodigal and metawrap all
+    require the bare supertype themselves, and lineage matching is ancestral, so
+    "descends from this assembly" cannot be told from "descends from that one".
+    `_assembly_without()` masks the other assembler out of the planner's view,
+    which is what actually settles those interior slots.
     """
+    assembler = "spades" if variant == "core" else "megahit"
     t = TargetBuilder()
-    asm = t.Add("sequences::megahit_assembly")
+    asm = t.Add(f"sequences::{assembler}_assembly")
     t.Add("sequences::read_qc_stats")
     for dtype in ("sequences::orfs",
                   "sequences::gff",
                   "sequences::assembly_stats",
                   "sequences::assembly_per_contig_coverage",
-                  "alignment::bam",
-                  "annotation::kofamscan_results",
-                  "annotation::diamond_uniref50_results"):
+                  "alignment::bam"):
         t.Add(dtype, parents=[asm])
 
-    bins = [t.Add(f"sequences::{b}_bin_fasta", parents=[asm])
-            for b in ("metabat2", "semibin2", "comebin")]
-    tables = [t.Add(f"binning::{b}_contig_to_bin_table", parents=[asm])
-              for b in ("metabat2", "semibin2", "comebin")]
+    if variant == "core":
+        binners = ("metawrap",)
+    else:
+        binners = ("metabat2", "semibin2", "comebin")
+
+    bins = [t.Add(f"sequences::{b}_bin_fasta", parents=[asm]) for b in binners]
+    tables = [t.Add(f"binning::{b}_contig_to_bin_table", parents=[asm]) for b in binners]
     for b in bins:
         t.Add("taxonomy::checkm_stats", parents=[b])
-    # binning::contig_to_bin_table is the shared supertype of the three binners'
-    # own tables, so this one target is ambiguous on purpose -- amber.py runs
-    # once per binner that has a table, same as checkm_stats above.
     # One amber target per binner, pinned to that binner's own table, exactly as
-    # checkm_stats is pinned per bin set above. Pinned to the assembly instead,
-    # the planner satisfies the slot once and scores ONE binner -- a solve that
-    # succeeds and silently answers a third of the question. Naming
-    # amber_bin_metrics too is redundant: amber emits both products in one step.
+    # checkm_stats is pinned per bin set. Pinned to the assembly instead, the
+    # planner satisfies the slot once and scores ONE binner -- a solve that
+    # succeeds and silently answers a fraction of the question. amber emits both
+    # its products in one step, so naming amber_bin_metrics too would buy nothing
+    # and cost a slot.
     for tb in tables:
         t.Add("binning::amber_results", parents=[tb])
-    if with_dedup:
+    if with_dedup and variant != "core":
         t.Add("binning_local::cluster_table", parents=[asm])
     return t
+
+
+def _assembly_without(*masked: str):
+    """The assembly library with the other assembler hidden from the planner.
+
+    A target pin fixes the targets. It does not reach an interior slot that no
+    target names, and metabat2, comebin, prodigal and metawrap all require the
+    bare `sequences::assembly`. Hiding the file is what settles those.
+    """
+    from pathlib import Path as _P
+    lib = TransformInstanceLibrary.Load(MLIB / "transforms" / "assembly")
+    return lib.AsView({_P(f"{m}.py") for m in masked}, invert=True)
+
+
+def build_transforms_for(variant="core"):
+    other = "megahit" if variant == "core" else "spades"
+    return [
+        TransformInstanceLibrary.Load(MLIB / "transforms" / "logistics"),
+        _assembly_without(other),
+        TransformInstanceLibrary.Load(MLIB / "transforms" / "metagenomics"),
+    ]
 
 
 def make_slurm_config(comebin_device="cpu", comebin_time="3d", comebin_cpus=48):
@@ -366,7 +389,7 @@ def cmd_run(args):
     # ncbi::genome_name and sequences::background_genome. One missing resource
     # library reads as a broken driver.
     resource_lib = DataInstanceLibrary.Load(MLIB / "resources" / "lib")
-    targets = build_targets(with_dedup=not args.no_dedup)
+    targets = build_targets(with_dedup=not args.no_dedup, variant=args.variant)
 
     smith = (Agent(home=Source.FromLocal(CACHE_DIR / "dryrun_home"), runtime=Runtime.APPTAINER)
              if args.dry_run else get_agent())
@@ -375,7 +398,7 @@ def cmd_run(args):
     task = smith.GenerateWorkflow(
         samples=list(inputs.AsSamples("sequences::read_metadata")),
         resources=[containers, resource_lib, inputs],
-        transforms=build_transforms(),
+        transforms=build_transforms_for(args.variant),
         targets=targets,
     )
     if not task.ok:
@@ -467,6 +490,8 @@ def main():
     # finished -- twice missing by about twenty minutes. `--nv` with no card present
     # warns once and trains on the CPU anyway, so an under-timed CPU request reads as
     # a GPU request that failed. The wall is the fix.
+    p.add_argument("--variant", default="core", choices=["core", "variant"],
+                   help="core: metaSPAdes + MetaWRAP + AMBER. variant: MEGAHIT + three binners + skANI.")
     p.add_argument("--comebin-device", default="cpu", choices=["cpu", "gpu"])
     p.add_argument("--comebin-time", default="3d")
     p.add_argument("--comebin-cpus", type=int, default=48)

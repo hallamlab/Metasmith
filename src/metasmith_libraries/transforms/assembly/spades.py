@@ -131,6 +131,39 @@ def protocol(context: ExecutionContext):
     context.ExecWithEnv(env=img_bbt, cmd=_filter_cmd)
 
 
+    # A product check, not an existence check. On 2026-09-11 this transform
+    # produced a published assembly of the right SIZE whose content was wrong:
+    # reformat.sh reported 86,744 records and 81,336,020 bases, and the file
+    # carried 505,012 records and 59,091,548 bases, opening mid-sequence with a
+    # hole at byte 1,236,201 -- exactly the length of NODE_1. Unflushed
+    # writeback, read before the data landed.
+    #
+    # Everything passed. SPAdes exited 0, reformat.sh printed correct numbers,
+    # and the old predicate here asked only whether the first few lines were
+    # non-empty, which a file with a good first megabyte satisfies. The damage
+    # was then promoted into the cache as a shard a later run would have HIT.
+    #
+    # So: assert wholeness, cheaply. A FASTA opens with '>' and contains no NUL.
+    # Either check alone would have caught that file.
+    def _whole(path, label):
+        with open(path, "rb") as fh:
+            if fh.read(1) != b">":
+                return f"{label} does not open with '>' -- truncated or offset"
+            fh.seek(0)
+            n = 0
+            while True:
+                b = fh.read(1 << 20)
+                if not b:
+                    break
+                if b"\x00" in b:
+                    return f"{label} contains NUL at ~{n + b.index(b"\x00")} -- incomplete writeback"
+                n += len(b)
+        return None
+
+    problems = [m for m in (_whole(iout.local, "assembly"),) if m]
+    for m in problems:
+        Log.Error(m)
+
     return ExecutionResult(
         manifest=[
             {
@@ -139,7 +172,8 @@ def protocol(context: ExecutionContext):
                 paths: ipaths.local,
             },
         ],
-        success=iout.local.exists() and igraph.local.exists() and ipaths.local.exists(),
+        success=(not problems
+                 and iout.local.exists() and igraph.local.exists() and ipaths.local.exists()),
     )
 
 TransformInstance(
