@@ -36,6 +36,10 @@ stats     = model.AddProduct(lib.GetType("binning::metawrap_bin_stats"))
 MIN_COMPLETION = 50
 MAX_CONTAMINATION = 10
 
+# CheckM's own floor for its full reference tree, and the number bin_refinement
+# divides -m by to size pplacer.
+CHECKM_FULL_TREE_GB = 40
+
 
 def protocol(context: ExecutionContext):
     ireads = context.Input(reads)
@@ -57,6 +61,26 @@ def protocol(context: ExecutionContext):
     mem_gb = context.params.get("memory")
     mem = max(int(mem_gb * 0.85), 4) if mem_gb else 16
 
+    # bin_refinement turns -m into a placement thread count by integer division:
+    # `ram_max=$((mem / 40))`, then pplacer gets min(ram_max, threads). So every
+    # value below 40 asks CheckM for ZERO placement threads, which is not a slow
+    # run, it is a broken argument -- and the floor above guarantees it on any
+    # direct run that does not say otherwise.
+    #
+    # Below CheckM's own stated 40 GB, the supported answer is its reduced
+    # reference tree, which is what --quick passes. That is a real fork rather
+    # than a tuning knob: the reduced tree places against a subset of the
+    # reference, so completeness and contamination shift slightly and bins near
+    # the thresholds can cross them. Whichever side this lands on is worth
+    # knowing, so it is logged rather than inferred.
+    quick = mem < CHECKM_FULL_TREE_GB
+    if quick:
+        Log.Warn(
+            f"only {mem} GB for bin_refinement, below CheckM's {CHECKM_FULL_TREE_GB} GB"
+            " floor: using --quick (reduced reference tree), so completeness and"
+            " contamination will differ slightly from a full-tree run"
+        )
+
     # MetaWRAP refuses anything but two uncompressed files named `*_1.fastq` and
     # `*_2.fastq`, and the library's clean reads are one gzipped interleaved
     # file, so the split happens here. It is written into the work directory
@@ -70,7 +94,7 @@ def protocol(context: ExecutionContext):
         metawrap binning -o binning -t {threads} -m {mem} -a {iasm.container} \
             --metabat2 --maxbin2 --concoct reads_1.fastq reads_2.fastq
 
-        metawrap bin_refinement -o refinement -t {threads} -m {mem} \
+        metawrap bin_refinement -o refinement -t {threads} -m {mem} {"--quick" if quick else ""} \
             -A binning/metabat2_bins -B binning/maxbin2_bins -C binning/concoct_bins \
             -c {MIN_COMPLETION} -x {MAX_CONTAMINATION}
     """

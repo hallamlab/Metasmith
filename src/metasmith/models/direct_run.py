@@ -123,6 +123,9 @@ def RunTransform(
     work_dir: Path | None = None,
     host: str | None = None,
     agent_home: Path | None = None,
+    cpus: int = 1,
+    memory: int = 1,
+    attempt: int = 1,
 ) -> ExecutionResult:
     _ = host
     work_dir = (work_dir or Path.cwd()).resolve()
@@ -172,7 +175,13 @@ def RunTransform(
                 lineages=[lineage],
                 input_by_dep=input_by_dep,
                 dep2output=dep2output,
-                params={"cpus": 1, "memory": 1, "attempt": 1},
+                # Nextflow would hand these down from the transform's Resources();
+                # here they are the caller's to state, because the caller is the
+                # only thing that knows what machine this is. The defaults are the
+                # smallest legal machine rather than a useful one, so a transform
+                # that sizes work off params has to be told, and `memory` is a
+                # count of gigabytes to match the codegen side.
+                params={"cpus": cpus, "memory": memory, "attempt": attempt},
                 # direct-run is host-local: no bootstrap container, nothing bound
                 # at /ws. Without this every containerized transform reports
                 # success=False despite having produced its outputs, because the
