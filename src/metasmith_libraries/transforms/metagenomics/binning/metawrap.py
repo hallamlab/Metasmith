@@ -80,6 +80,14 @@ def protocol(context: ExecutionContext):
             " floor: using --quick (reduced reference tree), so completeness and"
             " contamination will differ slightly from a full-tree run"
         )
+    # bin_refinement's -m is NOT a memory cap. The only thing its source does with the
+    # number is `ram_max=$((mem / 40))`, and pplacer then gets min(ram_max, threads) -- so
+    # an honest small value asks CheckM for ZERO placement threads, and --quick does not
+    # fix that, it only adds --reduced_tree. Passing the floor buys exactly one thread,
+    # and the reduced tree costs around 16 GB per thread rather than 40, so one thread
+    # fits on the machine that could not afford the full tree. The binning module's -m
+    # below IS a real cap and stays honest.
+    refine_mem = max(mem, CHECKM_FULL_TREE_GB)
 
     # MetaWRAP refuses anything but two uncompressed files named `*_1.fastq` and
     # `*_2.fastq`, and the library's clean reads are one gzipped interleaved
@@ -94,7 +102,7 @@ def protocol(context: ExecutionContext):
         metawrap binning -o binning -t {threads} -m {mem} -a {iasm.container} \
             --metabat2 --maxbin2 --concoct reads_1.fastq reads_2.fastq
 
-        metawrap bin_refinement -o refinement -t {threads} -m {mem} {"--quick" if quick else ""} \
+        metawrap bin_refinement -o refinement -t {threads} -m {refine_mem} {"--quick" if quick else ""} \
             -A binning/metabat2_bins -B binning/maxbin2_bins -C binning/concoct_bins \
             -c {MIN_COMPLETION} -x {MAX_CONTAMINATION}
     """

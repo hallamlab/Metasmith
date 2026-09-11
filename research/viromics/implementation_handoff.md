@@ -80,20 +80,27 @@ derive the table here. And VIBRANT's `_fragment_N` suffix has to be stripped and
 the results deduplicated, which is the same id-normalisation the candidate
 adapter does.
 
-### geNomad and VirSorter2 — already real
+### geNomad and VirSorter2 — confirmed 2026-09-10
 
-`metagenomics/taxonomy/genomad.py` and `functionalAnnotation/virsorter2.py` are
-not mocks. Their `candidate_virus` adapters are written and read their source
-tables by column name, asserting with the observed header rather than falling
-back to an index. **Both column sets are the part of this work least verified
-against a real run** — no geNomad or VirSorter2 image was available locally — so
-the first real run is where they get confirmed:
+`metagenomics/taxonomy/genomad.py` and `functionalAnnotation/virsorter2.py` read
+their source tables by column name, asserting with the observed header rather
+than falling back to an index. Both column sets are now confirmed against real
+output rather than inferred:
 
 - geNomad reads `seq_name`, `length`, `coordinates`, `virus_score` from
-  `<prefix>_virus_summary.tsv`.
+  `<prefix>_virus_summary.tsv`. All four appear. Both branches of the
+  `coordinates` fork have a run behind them — three phage genomes give `NA` and
+  the whole contig, and E. coli K-12 gives five prophages with real 1-based
+  intervals.
 - VirSorter2 reads the first present of `seqname`/`seqname_new`,
   `trim_bp_start`/`full_bp_start`, `trim_bp_end`/`full_bp_end`, and
   `max_score`/`trim_pr_max`/`trim_pr`/`pr_full` from `final-viral-boundary.tsv`.
+  2.2.4 writes the first name in each set.
+
+**CAUTION** VirSorter2's image carries no downloader. `virsorter setup` shells
+out to `wget`, which is absent, as is curl, so every download rule failed and
+snakemake reported it as a rule error rather than a missing dependency.
+`downloadVirsorter2DB.py` answers `wget` with a python shim.
 
 `genomad.py` also now copies `<prefix>_annotate/<prefix>_taxonomy.tsv`. That file
 is NOT in the summary directory, and `--cleanup` does not remove it — cleanup

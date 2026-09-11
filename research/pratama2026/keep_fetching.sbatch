@@ -38,7 +38,7 @@ if [ "$ROUND" -ge "$MAX_ROUNDS" ]; then
     exit 1
 fi
 
-A=$(sbatch --parsable --array=0-$((N - 1))%18 fetch_array.sbatch)
+A=$(sbatch --parsable --array=0-$((N - 1))%4 fetch_array.sbatch)
 echo "round $ROUND submitted array $A"
 ROUND=$((ROUND + 1)) DATASETS="$DATASETS" MAX_ROUNDS="$MAX_ROUNDS" \
     sbatch --dependency=afterany:$A keep_fetching.sbatch
