@@ -7,7 +7,7 @@ types:
       origin: assembler
   contig_batch:
     properties:
-      _: Fixed-size (~5 Mbp) batch of a per-sample contig FASTA; fans out contig-level annotators (genomad, virsorter2, integron_finder). Distinct sibling of assembly (NOT a subtype, like orf_chunk to orfs) so the solver routes batches only to batch-consuming contig tools, never to whole-assembly consumers. Headers are reversibly sample-prefixed (SG<id>~k141_N) by w4_rebatch.py; w4_recompile.py strips the prefix + regroups results per sample.
+      _: Fixed-size (~5 Mbp) batch of a per-sample contig FASTA; fans out contig-level annotators (genomad, virsorter2, vibrant, dramv, integron_finder). Distinct sibling of assembly (NOT a subtype, like orf_chunk to orfs) so the solver routes batches only to batch-consuming contig tools, never to whole-assembly consumers. Headers are reversibly sample-prefixed (SG<id>~k141_N) by w4_rebatch.py; w4_recompile.py strips the prefix + regroups results per sample. Naming it -- rather than sequences::assembly -- is also what pairs a contig annotator's output with the exact contig set it ran on, which matters once a tool runs on more than one.
       Format: FASTA
       Data: nucleic acid sequence
       granularity: batch
@@ -366,6 +366,11 @@ types:
     - bin_fasta
     properties:
       method: comebin
+  metawrap_bin_fasta:
+    extends:
+    - bin_fasta
+    properties:
+      method: metawrap
 # -----------------------------------------
 # protein
   orfs:

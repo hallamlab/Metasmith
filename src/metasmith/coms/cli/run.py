@@ -30,6 +30,12 @@ def register(subs):
     p.add_argument("--agent-home", type=Path, default=None,
                    help="deployed agent home (containing lib/agent.yml); "
                         "defaults to $AGENT_HOME")
+    p.add_argument("--cpus", type=int, default=1,
+                   help="cpus offered to the protocol as params[\"cpus\"]")
+    p.add_argument("--memory", type=int, default=1,
+                   help="gigabytes offered to the protocol as params[\"memory\"]")
+    p.add_argument("--attempt", type=int, default=1,
+                   help="retry number offered to the protocol as params[\"attempt\"]")
     p.set_defaults(func=_cmd_run)
 
 
@@ -49,6 +55,9 @@ def _cmd_run(args) -> None:
             inputs=inputs,
             work_dir=args.work_dir,
             agent_home=args.agent_home,
+            cpus=args.cpus,
+            memory=args.memory,
+            attempt=args.attempt,
         )
     except ValueError as e:
         print(e, file=sys.stderr)

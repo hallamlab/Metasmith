@@ -1,0 +1,6 @@
+name: iphop
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - iphop=1.3.3

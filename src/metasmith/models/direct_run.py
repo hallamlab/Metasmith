@@ -18,6 +18,7 @@ from ..models.libraries import (
 from ..models.lineage import LinPayload
 from ..models.solver import Dependency, Endpoint
 from ..models.workflow import WorkflowStep
+from ..models.lineage import LinPayload
 from ..models.workflow.payload import build_entry, given_index
 
 
@@ -168,11 +169,42 @@ def _build_lineage(dep_map: dict[Dependency, list[DataInstance]], requires: list
         )
         for dep in requires
     ])
-    # No orchestrator routed this member and nothing promotes it to the cache,
-    # so it has no member key. "-" is how the sibling harnesses say that, and it
-    # sends member_token to the lineage-derived token instead of raising.
+    # `member_token` refuses an entry with no KEY, because in a workflow the
+    # orchestrator stamps one before submission. A direct run has no orchestrator
+    # and no cache, so "-" is the honest value: it names products from the lineage
+    # index instead of from a member key. testing/transform_harness.py does the
+    # same for the same reason.
     entry[LinPayload.KEY_KEY] = "-"
+
+    # Every supplied input is an ancestor of every other. `given_index` files each item
+    # under its own dtype alone, which is right in a workflow -- the orchestrator knows
+    # the real ancestry -- but leaves a direct run unable to answer `SourceOf` at all,
+    # since no call table would name the read pair it came from. A direct run IS one
+    # coherent sample by construction, so the union is the honest reading of it, and a
+    # slot given more than one item still raises AmbiguousProvenance rather than guessing.
+    union = {
+        k: v for k, v in entry.items()
+        if k not in (LinPayload.FILES_KEY, LinPayload.PROV_KEY, LinPayload.KEY_KEY)
+    }
+    entry[LinPayload.PROV_KEY] = [
+        [dict(union) for _ in dep_map[dep]] for dep in requires
+    ]
     return entry
+
+
+# The channel a slot's provenance is filed under. In a compiled workflow this is the
+# Nextflow channel name and the compiler writes it into the step meta as `slk`; a direct
+# run has no compiler, so the same role falls to the dtype key -- which is exactly what
+# `_build_lineage` files each slot's index under, so the two sides agree by construction.
+# Without it `context.SourceOf` raises, and every collecting transform that recovers a
+# sample label from its inputs is unrunnable outside Nextflow.
+def _build_slot_channels(
+    dep_map: dict[Dependency, list[DataInstance]], requires: list[Dependency]
+) -> dict[str, str]:
+    return {
+        dep.key: (dep_map[dep][0].dtype.key if dep_map.get(dep) else dep.key)
+        for dep in requires
+    }
 
 
 def _build_dep2output(inst: TransformInstance) -> list[dict[Dependency, Endpoint]]:
@@ -191,6 +223,9 @@ def RunTransform(
     inputs: list[tuple[str, str | Path]],
     work_dir: Path | None = None,
     agent_home: Path | None = None,
+    cpus: int = 1,
+    memory: int = 1,
+    attempt: int = 1,
 ) -> ExecutionResult:
     work_dir = (work_dir or Path.cwd()).resolve()
     work_dir.mkdir(parents=True, exist_ok=True)
@@ -212,15 +247,7 @@ def RunTransform(
 
     requires = list(inst.model.requires)
     lineage = _build_lineage(dep_map, requires)
-    # The channel a slot arrived on is the bound item's own type, not the slot's
-    # -- the same convention nextflow_codegen and virtual_runtime write. Keying
-    # on the slot instead makes every slot look distinct, which is what lets
-    # bootstrap refuse a genuinely ambiguous provenance query.
-    slot_channels = {
-        dep.key: insts[0].dtype.key
-        for dep in requires
-        if (insts := dep_map.get(dep, []))
-    }
+    slot_channels = _build_slot_channels(dep_map, requires)
     input_by_dep = dict(dep_map)
     dep2output = _build_dep2output(inst)
 
@@ -241,7 +268,13 @@ def RunTransform(
                 lineages=[lineage],
                 input_by_dep=input_by_dep,
                 dep2output=dep2output,
-                params={"cpus": 1, "memory": 1, "attempt": 1},
+                # Nextflow would hand these down from the transform's Resources();
+                # here they are the caller's to state, because the caller is the
+                # only thing that knows what machine this is. The defaults are the
+                # smallest legal machine rather than a useful one, so a transform
+                # that sizes work off params has to be told, and `memory` is a
+                # count of gigabytes to match the codegen side.
+                params={"cpus": cpus, "memory": memory, "attempt": attempt},
                 # direct-run is host-local: no bootstrap container, nothing bound
                 # at /ws. Without this every containerized transform reports
                 # success=False despite having produced its outputs, because the
