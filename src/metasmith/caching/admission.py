@@ -33,7 +33,10 @@ from .layout import (
 )
 
 
-MANIFEST_VERSION = 3
+# v4 adds `name`: an import's identity is minted rather than derived from
+# what the caller declared, so the declaration is no longer recoverable from
+# the key and has to be written down.
+MANIFEST_VERSION = 4
 
 # The two origins a pool entry can have. A product is re-derivable, so it is
 # keyed under the cache epoch and an epoch bump may strand it. An import may be
@@ -141,20 +144,66 @@ class ShardWrite:
 IMPORT_KIND = "import"
 
 
-def structural_import_id(dtype_name: str, name: str) -> str:
-    """The identity of an imported item: its type, and the name it is given.
+def mint_import_id(dtype_name: str, name: str) -> str:
+    """A fresh identity for one import act. Never the same answer twice.
 
-    The same shape as `structural_slot_id` and for the same reason. A product's
-    id folds what derived it; an import was derived by nothing, so what it
-    declares is all there is. Neither reads a byte or stats a path, which is
-    what makes importing a folder of six hundred thousand files cost what
-    importing one file costs -- and is the same reason the type carries the
-    trust, since the type IS the structural input and validating the bytes
-    would answer a question the identity never asked.
+    An import ASSIGNS an identity rather than deriving one, which reverses the
+    rule this module shipped with. The old rule minted from the type and the
+    name alone, so importing one path twice was one entry, and it is worth
+    saying why that was wrong rather than only that it changed.
+
+    A derived identity answers "what is this data", and no honest derivation of
+    that exists here. The type and the name are what a caller SPELLED, not what
+    the bytes are, so two physically separate files handed the same name
+    collapsed into one entry and a caller had no way to say they were two
+    things. Reading the bytes instead is the answer the pool refuses on purpose:
+    a reference is 17 GB and a folder is six hundred thousand files, and an
+    import that hashes them costs what the import was built to avoid.
+
+    So the question changes. An entry's identity is now the ACT that created it,
+    which is a fact the pool observes rather than a property it infers. Two acts
+    are two entries whatever they are called, and re-importing one path is how a
+    caller says this declaration is a new thing.
+
+    What that costs, said out loud: an assigned identity cannot be recomputed.
+    The pool is authoritative state, not a cache of a calculation, and every
+    shard keyed on an import dies with the pool that holds it. See the agent
+    home's documentation for the lifetime that follows from this.
+
+    The digest is over the declaration and a nonce, so the key keeps the
+    multihash shape every other key in the store has and stays a real digest of
+    a real preimage. The nonce is what makes it fresh; the declaration is in
+    there so the preimage says what the act was.
 
     Deliberately does NOT fold the cache epoch. A product is re-derivable, so an
-    epoch bump may strand it; an import may be the user's only copy, and an id
-    that moved with the epoch would strand one on every bump.
+    epoch bump may strand it. An import cannot be re-derived at all, so an id
+    that moved with the epoch would strand the user's only copy on every bump.
+    """
+    return multihash_key(
+        canonical_cbor({
+            "kind": IMPORT_KIND,
+            "dtype": dtype_name,
+            "name": name,
+            "nonce": os.urandom(32),
+        })
+    ).hex()
+
+
+def pinned_import_id(dtype_name: str, name: str) -> str:
+    """The identity of data whose name IS a content pin.
+
+    Not the import act's mint, and not reachable from `import_item`. This is for
+    one caller: fabfos's reference layer, whose names carry a DVC md5 that DVC
+    computed over the real bytes. That is a content-addressed identity, agreed
+    on by every host that checks out the same pin, so deriving it is sound where
+    deriving an ordinary import's is not.
+
+    Reads no byte and stats no path, which is what lets a 17 GB reference cost
+    what one file costs -- the pin already did the reading.
+
+    The payload is frozen. Changing it re-keys every cached run that ever
+    touched a reference, and `tests/fabfos/test_refs_pin.py` asserts the
+    literals for that reason.
     """
     return multihash_key(
         canonical_cbor({"kind": IMPORT_KIND, "dtype": dtype_name, "name": name})
@@ -176,6 +225,8 @@ def build_manifest(
     transform_key: str = "",
     signature: str = "",
     step_name: str = "",
+    name: str = "",
+    imported_at: int = 0,
     consumes: dict | None = None,
     lineage: dict | None = None,
     lineage_payload: bytes = b"",
@@ -187,6 +238,16 @@ def build_manifest(
         "tk": transform_key,
         "sig": signature,
         "step_name": step_name,
+        # What the caller called this, and when the act happened. An import's
+        # key is minted, so this is the only place the declaration survives,
+        # and the only thing a reference by name can match against.
+        #
+        # Nanoseconds, where the store's `created_at` is whole seconds. Two
+        # imports of one path inside the same second are ordinary, and the
+        # later one supersedes the earlier, so the record has to be able to say
+        # which came second.
+        "name": name,
+        "imported_at": int(imported_at),
         "files": [f.Pack() for f in files],
         "consumes": dict(consumes or {}),
         # The lineage index, keyed by channel. Distinct from `lineage_payload`,
@@ -211,6 +272,17 @@ def manifest_lineage(manifest: dict) -> tuple[dict, bytes]:
     return dict(raw or {}), bytes(payload)
 
 
+def manifest_arrival_ns(manifest: dict, created_at: int) -> int:
+    """When this entry arrived, in nanoseconds, however its writer recorded it.
+
+    An import stamps `imported_at` because whole seconds cannot order two
+    declarations of one path. Anything older, and every product, has only the
+    store's whole-second `created_at`.
+    """
+    stamped = int(manifest.get("imported_at", 0) or 0)
+    return stamped or int(created_at) * 1_000_000_000
+
+
 def manifest_size(manifest: dict) -> int:
     size = manifest.get("size")
     if size is not None:
@@ -229,6 +301,8 @@ def write_shard(
     transform_key: str = "",
     signature: str = "",
     step_name: str = "",
+    name: str = "",
+    imported_at: int = 0,
     consumes: dict | None = None,
     lineage: dict | None = None,
     lineage_payload: bytes = b"",
@@ -242,7 +316,8 @@ def write_shard(
     key_hex = key.hex()
     manifest = build_manifest(
         key=key, origin=origin, files=files, transform_key=transform_key,
-        signature=signature, step_name=step_name, consumes=consumes,
+        signature=signature, step_name=step_name, name=name,
+        imported_at=imported_at, consumes=consumes,
         lineage=lineage, lineage_payload=lineage_payload,
     )
     final = shard_for(cache_root, key_hex, origin)

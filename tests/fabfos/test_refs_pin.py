@@ -9,10 +9,14 @@
 # that the change costs a cluster a round of recomputation.
 #
 # The literals moved once, deliberately, when reference registration stopped
-# minting its own ids and started calling the engine's `structural_import_id` --
-# one importer for a reference and for anything else the user already has. The
+# minting its own ids and started calling the engine's derived import id. The
 # information hashed is the same three things it always was. References carrying
 # a published-provenance entry did not move: that path never derived an id.
+#
+# They did NOT move when an ordinary import began assigning a fresh identity per
+# act: a pin is a content address and stays derived, so `pinned_import_id` kept
+# the payload the renamed `structural_import_id` had. A failure here after that
+# change means the pinned path was migrated by accident.
 
 from __future__ import annotations
 

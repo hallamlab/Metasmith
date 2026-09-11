@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import shutil
 import tempfile
+import time
 from pathlib import Path
 
 from ..hashing import KeyGenerator
@@ -645,21 +646,32 @@ def import_item(
     """Register a file or folder the user already has as a pool instance.
 
     Nothing is copied, moved or read. The item keeps its bytes where they are
-    and the pool records what it is: an identity minted from the type and the
-    name, the type's own name, where it sits, and what it descends from -- the
-    same four things a run records for a product.
+    and the pool records what it is: a freshly minted identity, the type, the
+    name it was given, where it sits, and what it descends from.
 
-    The identity is structural, so importing the same path under the same type
-    twice yields one entry. Importing it under a different type, or under a
-    different --name, is a different declaration and therefore a second entry.
+    Every call is a separate act and mints a separate identity. Importing one
+    path twice is therefore two entries, which is how a caller says a second
+    declaration is a second thing, and two files handed the same name stay two
+    things rather than collapsing into one. `mint_import_id` carries the whole
+    argument; it reverses what this function used to do.
+
+    An import is a setup act, performed once against a pool. A driver
+    references what is already there and never calls this, which is why an
+    assigned identity costs nothing in cache hits.
+
+    The pool's lifetime is its campaign's. A minted identity cannot be rebuilt,
+    so every shard keyed on this import dies when the pool does, reuse never
+    crosses a campaign boundary, and a measurement comparing two batches needs
+    both of them inside the agent home's retention window.
     """
-    from ..caching.admission import IMPORTED, PoolFile, admit, structural_import_id
+    from ..caching.admission import IMPORTED, PoolFile, admit, mint_import_id
 
     root = resolve_store_root(agent_home, cache_root)
     target = Path(path).expanduser().resolve()
     endpoint, resolved = _resolve_dtype(dtype, type_library_paths)
     label = name if name is not None else str(target)
-    key_hex = structural_import_id(dtype, label)
+    key_hex = mint_import_id(dtype, label)
+    arrival_ns = time.time_ns()
 
     parent_ids = _resolve_parent_ids(root, parents or [])
     written = admit(
@@ -674,6 +686,8 @@ def import_item(
             parents=parent_ids,
             size=_shallow_size(target),
         )],
+        name=label,
+        imported_at=arrival_ns,
         tags=tuple(tags or ()),
     )
     return {
@@ -690,7 +704,12 @@ def import_item(
 
 
 def _resolve_parent_ids(cache_root: Path, parents: list[str]) -> list[str]:
-    """Parents named by instance id, or by a path already in the store."""
+    """Parents named by instance id, or by a path already in the store.
+
+    A path names the newest entry that claims it, because an import of a path
+    already imported supersedes the earlier declaration. Name the id to reach
+    an older one.
+    """
     if not parents:
         return []
     by_path = store_ids_by_path(cache_root)
@@ -712,8 +731,13 @@ def _resolve_parent_ids(cache_root: Path, parents: list[str]) -> list[str]:
 
 
 def store_ids_by_path(cache_root: Path) -> dict:
-    """Every file the store indexes, by where it sits. Needs no type library."""
-    from ..caching.admission import manifest_files
+    """Every file the store indexes, by where it sits. Needs no type library.
+
+    One path can be claimed by several entries now that an import mints a fresh
+    identity each time, so the newest claim wins -- the same rule the projection
+    applies, for the same reason.
+    """
+    from ..caching.admission import manifest_arrival_ns, manifest_files
     from ..caching.store import CacheStore, decode_manifest
 
     root = Path(cache_root)
@@ -721,15 +745,20 @@ def store_ids_by_path(cache_root: Path) -> dict:
         return {}
     store = CacheStore.open(root)
     try:
-        out = {}
+        best: dict[str, tuple] = {}
         for entry in store.iter_entries():
             try:
                 manifest = decode_manifest(entry.payload)
             except Exception:
                 continue
+            arrival = manifest_arrival_ns(manifest, entry.created_at)
             for f in manifest_files(manifest):
-                out[str(f.Resolve(entry.output_root))] = f.InstanceId()
-        return out
+                iid = f.InstanceId()
+                rank = (arrival, iid)
+                path = str(f.Resolve(entry.output_root))
+                if path not in best or rank > best[path][0]:
+                    best[path] = (rank, iid)
+        return {path: iid for path, (_rank, iid) in best.items()}
     finally:
         store.close()
 

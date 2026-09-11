@@ -17,7 +17,13 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from .admission import IMPORTED, PRODUCT, manifest_files, manifest_lineage
+from .admission import (
+    IMPORTED,
+    PRODUCT,
+    manifest_arrival_ns,
+    manifest_files,
+    manifest_lineage,
+)
 from .store import CacheStore, decode_manifest
 
 
@@ -33,6 +39,7 @@ class ProjectedItem:
     last_hit_at: int
     hit_count: int
     instance_id: str
+    name: str = ""
     run: str = ""
     tags: tuple = ()
 
@@ -122,22 +129,37 @@ def project_store(
                     "payload": payload,
                     "entry": entry,
                     "step_name": str(manifest.get("step_name", "")),
+                    "name": str(manifest.get("name", "")),
+                    "arrival": manifest_arrival_ns(manifest, entry.created_at),
                 }
                 order.append(iid)
     finally:
         store.close()
 
-    # Pass two: identities to paths, refusing a second claim on one path rather
-    # than letting the later entry silently win.
+    # Pass two: identities to paths, one entry per path, because a library
+    # manifest is keyed by path and cannot hold two instances at one.
+    #
+    # The newest claim wins. An import mints a fresh identity per act, so
+    # importing a path already imported is a caller saying this declaration
+    # supersedes the last one -- and a projection that kept the first would
+    # make the new identity unreachable while leaving it in the store. The
+    # displaced entry is not deleted: shards keyed on it stay valid, and it is
+    # still reachable by id.
     path_of: dict[str, Path] = {}
     claimed: dict[Path, str] = {}
+    rank: dict[Path, tuple] = {}
     for iid in order:
         rec = by_id[iid]
         path = rec["path"]
-        if path in claimed:
+        here = (rec["arrival"], iid)
+        if path in claimed and rank[path] >= here:
             _skip("path already claimed", rec["entry"].key.hex())
             continue
+        if path in claimed:
+            _skip("path already claimed", by_id[claimed[path]]["entry"].key.hex())
+            path_of.pop(claimed[path], None)
         claimed[path] = iid
+        rank[path] = here
         path_of[iid] = path
 
     parents_of = {
@@ -178,6 +200,7 @@ def project_store(
             last_hit_at=entry.last_hit_at,
             hit_count=entry.hit_count,
             instance_id=iid,
+            name=rec["name"],
             run=entry.run,
             tags=entry.tags,
         )
