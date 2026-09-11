@@ -103,7 +103,36 @@ def _build_lineage(dep_map: dict[Dependency, list[DataInstance]], requires: list
     # index instead of from a member key. testing/transform_harness.py does the
     # same for the same reason.
     entry[LinPayload.KEY_KEY] = "-"
+
+    # Every supplied input is an ancestor of every other. `given_index` files each item
+    # under its own dtype alone, which is right in a workflow -- the orchestrator knows
+    # the real ancestry -- but leaves a direct run unable to answer `SourceOf` at all,
+    # since no call table would name the read pair it came from. A direct run IS one
+    # coherent sample by construction, so the union is the honest reading of it, and a
+    # slot given more than one item still raises AmbiguousProvenance rather than guessing.
+    union = {
+        k: v for k, v in entry.items()
+        if k not in (LinPayload.FILES_KEY, LinPayload.PROV_KEY, LinPayload.KEY_KEY)
+    }
+    entry[LinPayload.PROV_KEY] = [
+        [dict(union) for _ in dep_map[dep]] for dep in requires
+    ]
     return entry
+
+
+# The channel a slot's provenance is filed under. In a compiled workflow this is the
+# Nextflow channel name and the compiler writes it into the step meta as `slk`; a direct
+# run has no compiler, so the same role falls to the dtype key -- which is exactly what
+# `_build_lineage` files each slot's index under, so the two sides agree by construction.
+# Without it `context.SourceOf` raises, and every collecting transform that recovers a
+# sample label from its inputs is unrunnable outside Nextflow.
+def _build_slot_channels(
+    dep_map: dict[Dependency, list[DataInstance]], requires: list[Dependency]
+) -> dict[str, str]:
+    return {
+        dep.key: (dep_map[dep][0].dtype.key if dep_map.get(dep) else dep.key)
+        for dep in requires
+    }
 
 
 def _build_dep2output(inst: TransformInstance) -> list[dict[Dependency, Endpoint]]:
@@ -153,6 +182,7 @@ def RunTransform(
 
     requires = list(inst.model.requires)
     lineage = _build_lineage(dep_map, requires)
+    slot_channels = _build_slot_channels(dep_map, requires)
     input_by_dep = dict(dep_map)
     dep2output = _build_dep2output(inst)
 
@@ -188,6 +218,7 @@ def RunTransform(
                 # standard `output.local.exists()` idiom checks a /ws path that
                 # only exists inside the nextflow bootstrap container.
                 host_local=True,
+                slot_channels=slot_channels,
             )
     finally:
         os.chdir(original_cwd)
