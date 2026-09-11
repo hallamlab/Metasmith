@@ -11,15 +11,20 @@
 # is the ceiling, so twelve workers on one node and one worker on twelve nodes are not the
 # same transfer.
 #
-# Submit it WIDE -- `--array=0-N%18` -- because ENA throttles per stream rather than in
-# aggregate. A single stream, measured from a login node with nothing else running, gave
-# 215 KB/s; the earlier twenty-four-worker run aggregated 57 MiB/s. So concurrency is the
-# only lever, and the ceiling is ENA's tolerance, not bandwidth: forty-eight streams got
-# every connection refused within 150 ms, twenty-four held for the 2019 project and started
-# closing transfers mid-stream on this one.
+# Submit it NARROW -- `--array=0-N%4`. The temptation is the opposite, because ENA throttles
+# per stream and the earlier twenty-four-worker run on the 2019 project aggregated 57 MiB/s.
+# On this project it does not hold. At eighteen concurrent tasks ENA answered with
+# `curl (7) Failed to connect ... port 443 after 145 ms` on seventeen of them -- a refusal,
+# not a timeout, and the same 150 ms signature that forty-eight streams produced before.
+# The refusal outlives the run that caused it, so each impatient resubmission makes the next
+# one worse.
 #
-# This is the opposite of the NERSC fetch in research/viromics/cluster/, which is capped by
-# compute-node egress and wants FEWER streams. Do not copy a concurrency number between them.
+# Read a wall of refusals as "back off and wait". Four streams and a keeper that re-arms
+# patiently finishes sooner than eighteen that get turned away.
+#
+# This is also the opposite of the NERSC fetch in research/viromics/cluster/, which is
+# capped by compute-node egress rather than by the server's tolerance. The two numbers are
+# unrelated; do not copy one to the other.
 #
 # The worklist is built at submission time by build_worklist.py and is whatever was still
 # incomplete then. Each task is idempotent: it verifies the published MD5 and promotes out
@@ -47,21 +52,33 @@ fi
 # where the last was cut, and a handful of attempts is nowhere near enough -- a five-attempt
 # loop moved 38 MB of an 11 GB object before giving up. Run until the object is whole or
 # the wall is nearly spent, and let the resubmission take it from there.
+# FTP is five times faster where it is reachable -- measured against the same object from
+# a login node with nothing else running, ftp:// 8.8 MB/s against https:// 1.8 MB/s, so
+# ENA's TLS front end is the slow half. But COMPUTE NODES HERE CANNOT REACH PORT 21: the
+# connection times out after 135 s. So probe once and commit, rather than alternating and
+# spending three quarters of every task on timeouts.
+FTP_URL=${URL/https:\/\//ftp:\/\/}
+if curl -sS --max-time 25 -r 0-1 -o /dev/null "$FTP_URL" 2>/dev/null; then
+    echo "ftp reachable"
+else
+    echo "ftp unreachable, using https"
+    FTP_URL=$URL
+fi
+
 DEADLINE=$(( $(date +%s) + 11 * 3600 ))
 attempt=0
 while [ "$(date +%s)" -lt "$DEADLINE" ]; do
     attempt=$((attempt + 1))
     before=$(stat -c%s "$STAGE" 2>/dev/null || echo 0)
-    curl -sS -C - --retry 3 --retry-delay 30 -o "$STAGE" "$URL" || true
+    curl -sS -C - --retry 3 --retry-delay 30 -o "$STAGE" "$FTP_URL" || true
     got=$(stat -c%s "$STAGE" 2>/dev/null || echo 0)
     if [ "$got" != "$BYTES" ]; then
         echo "attempt $attempt: $before -> $got of $BYTES"
-        # A stalled resume means the partial is unusable rather than slow; start over
-        # rather than sleeping against a server that will not extend it.
-        if [ "$got" = "$before" ] && [ "$attempt" -gt 3 ]; then
-            echo "no progress, restarting $RELPATH"
-            rm -f "$STAGE"
-        fi
+        # Never discard a partial for being slow. An attempt that moves nothing is the
+        # normal shape of this transfer when ENA is busy, and an earlier version that
+        # restarted after three such attempts threw away 27 GB of good bytes. The only
+        # thing that justifies deleting a partial is the MD5 check below, which is the
+        # one place corruption is actually detectable.
         sleep 60
         continue
     fi

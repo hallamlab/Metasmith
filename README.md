@@ -106,21 +106,27 @@ Every transform under `src/metasmith_libraries/transforms/viromics/` runs its to
 Each declares an `env::` requirement, and each tool needing a reference declares that
 too. A solved plan now stands for work that would happen.
 
-Nine of the twelve ran against real input with their products read: CheckV, CCTyper,
-the spacer BLAST, both MMseqs2 clusterings, prodigal-gv, the length table, the merge,
-VIBRANT and vConTACT3.
+All twelve have run against real input with their products read back. So have the two
+candidate callers that feed this lane from other libraries, `genomad.py` and
+`virsorter2.py`, whose column names are now confirmed against real output rather than
+asserted against a guess.
 
-Three did not run, for reasons outside the code:
+Two of them run against a stand-in rather than the real reference, and the substitution
+is recorded here because nothing in the code says so:
 
-- `iphop_add_to_db` and `iphop_predict` need iPHoP's host database. `iPHoP_db_Aug23_rw`
-  arrives as seventeen 10 GiB chunks, joins into one tarball, then unpacks in place.
-  Peak disk is three times the download. Stage it on cluster scratch.
-- `metagenomics/taxonomy/gtdbtk_de_novo.py` never executed. It exists because
-  `iphop add_to_db` reads decorated trees, which only `de_novo_wf` writes.
+- The host predictor runs against iPHoP's published test database,
+  `iPHoP_db_rw_for-test`. The full `iPHoP_db_Aug23_rw` is 170 GB in seventeen chunks and
+  stages on cluster scratch through `research/viromics/cluster/`.
+  **CAUTION** the tool's own `--help` names a test database, `iPHoP_db_for-test`, that no
+  longer exists, and its downloader answers a 404 by printing a version-not-found message
+  and exiting 0.
+- `iphop_add_to_db` ran against a synthesised GTDB-Tk directory built by
+  `research/viromics/fixtures/make_add_to_db_fixture.py`, because the real one takes days.
+  That verifies the transform's own merging and output handling, not a scientific result.
 
-The adapters on `genomad.py` and `virsorter2.py` remain the least verified part. No
-image for either was available locally, so their column names resolve by name with a
-loud assert rather than by confirmation.
+`metagenomics/taxonomy/gtdbtk_de_novo.py` runs on the cluster rather than here. Its
+identify and align stages complete in three minutes against release 232; the bacterial
+inference is a FastTree over 189,805 taxa and runs for days.
 
 **CAUTION**: a tool's own source does not list the files it writes. vConTACT3 carries
 the strings `nodes.csv`, `edges.csv` and `ani_summary.tsv` in a docstring and in
@@ -151,6 +157,12 @@ any change to a shared transform. `research/metasmith_libraries/template_fingerp
 prints step count *plus the transform behind every step*, which is what catches a
 re-route that leaves the count unchanged. The reference is
 `research/viromics/results/template_baseline.txt`.
+
+A single transform runs without Nextflow through `python -m metasmith run`. Give it
+`--cpus` and `--memory` when the tool sizes real work from them. `--memory` is a count of
+GIGABYTES, and the default of 1 is the smallest legal machine rather than a useful one --
+MetaWRAP divides it by 40 to pick a placement thread count, so the default asks CheckM for
+zero threads.
 
 **CAUTION**: `src/metasmith/engine/` is an untracked build product. A fresh worktree
 holds no `msm_solver` and falls back to the python solver, which answers with a

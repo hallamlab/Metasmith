@@ -15,6 +15,16 @@
 # the same out_dir. An empty domain is survivable and expected: a survey with no
 # archaeal MAG produces no ar53 tree, and iPHoP's glob finds the bacterial one and
 # carries on -- its only hard stop is neither tree existing.
+#
+# Budget for that honestly, because the two runs are not two halves of the work.
+# Observed on fir against the r232 reference with three genomes: `align` processes
+# BOTH domains regardless of which one was asked for, so the second invocation
+# repeats it, and only then does the domain flag select a tree to infer. The
+# bacterial inference is the wall: FastTree over 189,805 taxa, which is the whole
+# reference set plus the user's genomes. Identify and align together took three
+# minutes; the inference runs for days. The 48 hour wall below is a floor rather
+# than an estimate, and a survey with archaea may get only the bacterial tree
+# before it expires -- which iPHoP accepts.
 from pathlib import Path
 from metasmith.python_api import *
 
