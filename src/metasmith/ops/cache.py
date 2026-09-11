@@ -62,9 +62,13 @@ def _entry_rows(store, *, include_tombstoned: bool) -> list[dict]:
             manifest = {}
         files = manifest_files(manifest)
         step_name = str(manifest.get("step_name", ""))
+        # An import's key is minted, so two rows for one path are ordinary and
+        # the name is the only thing that tells them apart.
+        name = str(manifest.get("name", ""))
         for f in files or [None]:
             row = {
                 "key": e.key.hex(),
+                "name": name,
                 "origin": e.origin,
                 "run": e.run,
                 "tags": list(e.tags),

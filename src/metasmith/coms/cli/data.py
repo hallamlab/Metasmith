@@ -138,11 +138,13 @@ def register(subs):
         "import",
         help="register a file or folder you already have as a pool instance",
         description="Register data into an agent's pool: nothing is copied, "
-                    "moved or read. The identity is minted from the type and "
-                    "the name, so importing the same path under the same type "
-                    "twice is one entry, and importing it under a different "
-                    "type or --name is a second one. Not `import-library`, "
-                    "which fetches a whole library and indexes it.",
+                    "moved or read. Every import is a separate act and gets its "
+                    "own identity, so importing the same path twice gives two "
+                    "entries -- that is how you say a re-declaration is a "
+                    "different thing. An identity cannot be recomputed, so it "
+                    "lives and dies with the pool that holds it. Not "
+                    "`import-library`, which fetches a whole library and "
+                    "indexes it.",
     )
     _imp.add_argument("path", help="the file or folder, left where it is")
     _imp.add_argument("--dtype", required=True, metavar="NS::TYPE",
@@ -153,9 +155,11 @@ def register(subs):
     _imp.add_argument("--cache-root", default=None,
                       help="the pool directly, instead of an agent's")
     _imp.add_argument("--name", default=None,
-                      help="the name the identity is minted from (default: the "
-                           "absolute path). Give one to keep an identity across "
-                           "a move.")
+                      help="what to call this, recorded alongside the entry "
+                           "(default: the absolute path). It is what a later "
+                           "reference matches on; it does not decide the "
+                           "identity, and two imports sharing it stay two "
+                           "entries.")
     _imp.add_argument("--parent", action="append", default=[], dest="parents",
                       help="an instance id, or the path of something already in "
                            "the pool; repeatable")
