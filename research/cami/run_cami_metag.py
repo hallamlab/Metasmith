@@ -61,7 +61,7 @@ AGENT_IMAGE = os.environ.get(
 CONTAINERS = [
     "seqkit", "bbtools", "megahit", "samtools", "minimap2", "bedtools",
     "pprodigal", "diamond", "kofamscan", "polars", "python_for_data_science",
-    "metabat2", "semibin", "comebin", "checkm", "skani",
+    "metabat2", "semibin", "comebin", "checkm", "skani", "amber",
 ]
 
 
@@ -151,6 +151,15 @@ def build_inputs(samples):
             reads, "sequences::short_reads_pe", parents={meta},
             instance_id=_stable_id("short_reads_pe", sid, str(reads)),
         )
+        # CAMISIM's per-read truth, sitting beside the reads. NOT
+        # binning_gs.tsv: that keys on the CAMI-provided gold-standard-assembly's
+        # own contig ids, which our own megahit assembly does not share, so it
+        # cannot score our bins directly. See cami_contig_truth.py.
+        truth = reads.parent / "reads_mapping.tsv.gz"
+        inputs.RegisterItem(
+            truth, "binning::cami_read_truth", parents={meta},
+            instance_id=_stable_id("cami_read_truth", sid, str(truth)),
+        )
 
     for dtype, path in DB_PATHS.items():
         inputs.RegisterItem(path, dtype, instance_id=_stable_id("ref", dtype, str(path)))
@@ -190,10 +199,20 @@ def build_targets(with_dedup=True):
 
     bins = [t.Add(f"sequences::{b}_bin_fasta", parents=[asm])
             for b in ("metabat2", "semibin2", "comebin")]
-    for b in ("metabat2", "semibin2", "comebin"):
-        t.Add(f"binning::{b}_contig_to_bin_table", parents=[asm])
+    tables = [t.Add(f"binning::{b}_contig_to_bin_table", parents=[asm])
+              for b in ("metabat2", "semibin2", "comebin")]
     for b in bins:
         t.Add("taxonomy::checkm_stats", parents=[b])
+    # binning::contig_to_bin_table is the shared supertype of the three binners'
+    # own tables, so this one target is ambiguous on purpose -- amber.py runs
+    # once per binner that has a table, same as checkm_stats above.
+    # One amber target per binner, pinned to that binner's own table, exactly as
+    # checkm_stats is pinned per bin set above. Pinned to the assembly instead,
+    # the planner satisfies the slot once and scores ONE binner -- a solve that
+    # succeeds and silently answers a third of the question. Naming
+    # amber_bin_metrics too is redundant: amber emits both products in one step.
+    for tb in tables:
+        t.Add("binning::amber_results", parents=[tb])
     if with_dedup:
         t.Add("binning_local::cluster_table", parents=[asm])
     return t
@@ -340,6 +359,13 @@ def cmd_run(args):
 
     inputs = build_inputs(samples)
     containers = DataInstanceLibrary.Load(MLIB / "resources" / "env")
+    # cami_contig_truth.py requires lib::cami_gold_standard.py, so the resource
+    # library has to be given as well as the env one. Without it the chain is
+    # unsatisfiable, and the planner does not report that: it explores the whole
+    # library and then blames every unrelated target instead, dead-ending at
+    # ncbi::genome_name and sequences::background_genome. One missing resource
+    # library reads as a broken driver.
+    resource_lib = DataInstanceLibrary.Load(MLIB / "resources" / "lib")
     targets = build_targets(with_dedup=not args.no_dedup)
 
     smith = (Agent(home=Source.FromLocal(CACHE_DIR / "dryrun_home"), runtime=Runtime.APPTAINER)
@@ -348,7 +374,7 @@ def cmd_run(args):
     print("Planning workflow...")
     task = smith.GenerateWorkflow(
         samples=list(inputs.AsSamples("sequences::read_metadata")),
-        resources=[containers, inputs],
+        resources=[containers, resource_lib, inputs],
         transforms=build_transforms(),
         targets=targets,
     )

@@ -27,10 +27,10 @@ from metasmith.python_api import (
 )
 
 
-def probe_targets(binner: str):
+def probe_targets(binner: str, assembler: str = "megahit"):
     """The shortest plan that still crosses QC, assembly, coverage and a binner."""
     t = TargetBuilder()
-    asm = t.Add("sequences::megahit_assembly")
+    asm = t.Add(f"sequences::{assembler}_assembly")
     t.Add(f"sequences::{binner}_bin_fasta", parents=[asm])
     t.Add(f"binning::{binner}_contig_to_bin_table", parents=[asm])
     return t
@@ -39,6 +39,8 @@ def probe_targets(binner: str):
 def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--binner", required=True, choices=["metabat2", "semibin2"])
+    p.add_argument("--assembler", default="megahit", choices=["megahit", "spades"],
+                   help="spades is the JGI-protocol route: bbcms, fixed kmers, 200bp floor")
     p.add_argument("--sample", default=None, help="default: the first enumerated")
     p.add_argument("--dry-run", action="store_true")
     p.add_argument("--stage-only", action="store_true")
@@ -66,13 +68,13 @@ def main():
         samples=list(inputs.AsSamples("sequences::read_metadata")),
         resources=[containers, inputs],
         transforms=D.build_transforms(),
-        targets=probe_targets(a.binner),
+        targets=probe_targets(a.binner, a.assembler),
     )
     if not task.ok:
         D._report_plan_failure(task)
 
     key = task.GetKey()
-    print(f"arm={a.binner} sample={sid} key={key} steps={len(task.plan.steps)}")
+    print(f"arm={a.assembler}/{a.binner} sample={sid} key={key} steps={len(task.plan.steps)}")
     for s in task.plan.steps:
         print(f"  {s.order:>2}. {Path(s.transform._path).stem}")
 
