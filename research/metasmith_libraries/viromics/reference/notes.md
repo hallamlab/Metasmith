@@ -31,7 +31,12 @@ email/2026-05-13_globus-id/             1 file    from Gmail 19e2380efcabe6c5
 email/2026-05-15_viral-workflow-update/ 16 files  from Gmail 19e2c9186dd0fb91
 email/2026-05-25_metadata-workflow-table/ 3 files from Gmail 19e607a7ce5b20a5
 email/2026-05-28_metadata-update/       1 file    from Gmail 19e708064e2a65b4
+email/2026-06-10_viromics-workflow-table/ 1 file  from Gmail message-id
+                                                  <YT1PR01MB9209CDEA263900F7C5D5F003E71A2@…>
 ```
+
+Retrieved 2026-09-01: `Viromics_workflow_table.xlsx` (12117 B). See
+[the 2026-06-10 email](#2026-06-10--viromics-workflow-table) below.
 
 Byte-comparisons between copies that share a filename:
 
@@ -380,6 +385,41 @@ From `antonio.castellanohinojosa@ubc.ca`; to `contacttonyliu@gmail.com`,
 > Best,
 > Antonio
 
+### 2026-06-10 — Viromics workflow table
+
+Message-id `<YT1PR01MB9209CDEA263900F7C5D5F003E71A2@YT1PR01MB9209.CANPRD01.PROD.OUTLOOK.COM>`,
+in the "Viral workflows" thread started by `shallam@mail.ubc.ca` on 2026-05-08.
+From `antonio.castellanohinojosa@ubc.ca`. 2 attachments.
+
+This is the table Antonio announced in Slack on 2026-06-09 ("a large summary table with
+all the viromics workflow tools, versions and parameters"). It is the single most
+complete statement of the pipeline on record: 40 numbered rows, each giving functional
+group, tool, version, key parameters, inputs and outputs. The `01_`..`15_` shell scripts
+cover rows 1-15 only.
+
+> Hi all,
+>
+> Attached is the summary table of the full viromics analysis I ran on my samples. It
+> lays out every step of the pipeline — tool, version, key parameters, inputs and outputs
+> — from read QC and assembly through viral identification, abundance, microdiversity,
+> taxonomy, host prediction and AMG annotation, plus the associated MAG recovery.
+>
+> The idea is to use this as the blueprint to automate the workflow with Metasmith over
+> the next few weeks/months. With Tony's help we could give it a try at some point, test
+> it against the samples we have, and — once it's solid — have it available as a reusable
+> pipeline for future viromics studies.
+>
+> Any feedback on the table is  welcome.
+>
+> Thanks,
+> Antonio
+
+The eight functional groups, with the row numbers in each: A. read preprocessing (1-2),
+B. assembly (3-4), C. viral identification and curation (5-15), D. viral read mapping,
+abundance and microdiversity (16-18), E. viral taxonomy (19-20), F. host prediction and
+virus-host interactions (21-23), G. auxiliary metabolic genes (24-25), H. MAG recovery
+(26-40).
+
 ### 2026-05-27 / 2026-05-28 — "Metasmith on Sockeye"
 
 Thread `19e6ae76a379607f`. Messages from `antonio.castellanohinojosa@ubc.ca` dated
@@ -461,6 +501,16 @@ Filenames exactly as they appear in the source messages.
 
 One attachment: `Metadata.xlsx` (22575 B), stored in `email/2026-05-28_metadata-update/`.
 
+### Gmail, 2026-06-10, message-id `<YT1PR01MB9209CDEA263900F7C5D5F003E71A2@YT1PR01MB9209.CANPRD01.PROD.OUTLOOK.COM>` — 2 files
+
+| Filename | MIME | Size |
+|---|---|---|
+| `image.png` | image/png | 231459 B |
+| `Viromics_workflow_table.xlsx` | xlsx | 12117 B |
+
+Only the xlsx was retrieved; `image.png` is the inline pipeline screenshot quoted from
+Tony's 2026-05-08 message further down the same thread.
+
 ### Slack `D0B2RFTMAAG`, ts `1781645014.211319` (2026-06-16) — 3 files
 
 `07_filtering2.sh`, `10_filtering_3.sh`, `15_filter_vOTU_10kb.sh` — URLs in the
@@ -532,11 +582,6 @@ scope's messages for the diagnosis.
 
 ## Material not located
 
-The email Antonio described in Slack on 2026-06-09 — the "large summary table with all
-the viromics workflow tools, versions and parameters", to be sent "tomorrow by email, cc
-Steven and Alvaro" — was not found. `from:antonio has:attachment` returns four threads,
-the most recent dated 2026-05-28.
-
 Full message bodies of Gmail threads `19e6ae76a379607f` ("Metasmith on Sockeye") and
 `19ef0cc5fbb95aa1` ("Draft manuscript Multi-niche metagenomics Sierra Nevada") were not
 fetched; only the snippets quoted above, plus the one attachment from
@@ -559,3 +604,19 @@ was consulted.
 
 Gmail threads `19e6ae76a379607f` and `19ef0cc5fbb95aa1` were identified by search but
 their message bodies were not fetched; only the snippets quoted above are on record here.
+
+Re-run 2026-09-01, to check for material added since:
+
+| Surface | Query | Result |
+|---|---|---|
+| `social` slack | `viromics` | 14 messages — the same set, nothing newer |
+| Gmail | `from:antonio has:attachment` | 4 threads, one of them the 2026-06-10 workflow table |
+
+The 2026-06-10 message did not surface in August because the `viromics OR virome OR vOTU`
+query was run against threads and this one sits inside "Viral workflows", whose subject
+and originating message contain neither word. `from:antonio has:attachment` did return
+it; the August pass read that result as "the most recent dated 2026-05-28", which was
+the date of a different thread in the same four.
+
+`social(verb="download_attachments")` against Gmail now works and was used directly for
+this file, so the IMAP workaround described above is no longer needed.

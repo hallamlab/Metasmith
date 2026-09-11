@@ -26,6 +26,24 @@ types:
     properties:
       method: comebin
 
+  # MetaWRAP is one step, not three: its bin_refinement consolidates MetaBAT2,
+  # MaxBin2 and CONCOCT into a single set, and that consolidated set is what is
+  # used. The three raw bin sets are not products here.
+  metawrap_contig_to_bin_table:
+    extends:
+    - contig_to_bin_table
+    properties:
+      method: metawrap
+
+  # bin_refinement's own CheckM1 table, which comes free with the refinement and
+  # is NOT taxonomy::checkm_stats. Two producers of one type cannot be told apart
+  # by targets or by lineage, and this table is CheckM1 while that one is CheckM2
+  # -- different columns, different completeness estimates.
+  metawrap_bin_stats:
+    properties:
+      _: MetaWRAP bin_refinement quality table -- completion, contamination and GC per consolidated bin, from CheckM1
+      ext: tsv
+
   # Project-level dereplicated representative-MAG reference for inStrain option (b).
   # Built ONCE (outside the DAG) from the is_centroid_95==1 bins in
   # binning/cluster_table.tsv: their contigs concatenated into a single FASTA with

@@ -519,3 +519,77 @@ def protocol(context: ExecutionContext):
 TransformInstance(protocol=protocol, model=model, group_by=root)
 ''',
     }
+
+
+# Writes back what the caller said the machine was, so a test can read the
+# parameters a protocol actually received rather than the ones it was passed.
+def params_transform() -> dict[str, str]:
+    return {
+        "params_echo": '''
+from pathlib import Path
+from metasmith.models.libraries import (
+    TransformInstanceLibrary,
+    TransformInstance,
+    ExecutionContext,
+    ExecutionResult,
+)
+from metasmith.models.solver import Transform
+
+lib = TransformInstanceLibrary.ResolveParentLibrary(__file__)
+model = Transform()
+reads = model.AddRequirement(lib.GetType("mock::reads"))
+asm = model.AddRequirement(lib.GetType("mock::assembly"), parents={reads})
+out = model.AddProduct(lib.GetType("mock::bam"))
+
+def protocol(context: ExecutionContext):
+    out_path = Path("aligned.bam")
+    out_path.write_text(
+        f"cpus={context.params.get(\'cpus\')} "
+        f"memory={context.params.get(\'memory\')} "
+        f"attempt={context.params.get(\'attempt\')}"
+    )
+    return ExecutionResult(manifest=[{out: out_path}], success=True)
+
+TransformInstance(
+    protocol=protocol,
+    model=model,
+    group_by=asm,
+)
+'''
+    }
+
+
+# Asks which input its assembly descends from, which is what a collecting transform does
+# to recover a sample label. It needs the slot channels and the per-item provenance that a
+# compiled workflow gets from the orchestrator and a direct run has to synthesise.
+def provenance_transform() -> dict[str, str]:
+    return {
+        "provenance_echo": '''
+from pathlib import Path
+from metasmith.models.libraries import (
+    TransformInstanceLibrary,
+    TransformInstance,
+    ExecutionContext,
+    ExecutionResult,
+)
+from metasmith.models.solver import Transform
+
+lib = TransformInstanceLibrary.ResolveParentLibrary(__file__)
+model = Transform()
+reads = model.AddRequirement(lib.GetType("mock::reads"))
+asm = model.AddRequirement(lib.GetType("mock::assembly"), parents={reads})
+out = model.AddProduct(lib.GetType("mock::bam"))
+
+def protocol(context: ExecutionContext):
+    src = context.SourceOf(context.Input(asm), reads)
+    out_path = Path("aligned.bam")
+    out_path.write_text("NONE" if src is None else src.local.name)
+    return ExecutionResult(manifest=[{out: out_path}], success=True)
+
+TransformInstance(
+    protocol=protocol,
+    model=model,
+    group_by=asm,
+)
+'''
+    }

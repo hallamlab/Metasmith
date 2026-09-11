@@ -6,7 +6,11 @@ from metasmith.coms.cli import main as cli_main
 from metasmith.env import Runtime
 from metasmith.models.direct_run import RunTransform
 from metasmith.models.remote import Source
-from metasmith.testing.mock_transforms import alignment_transform
+from metasmith.testing.mock_transforms import (
+    alignment_transform,
+    params_transform,
+    provenance_transform,
+)
 
 from .conftest import create_transform_library
 
@@ -382,3 +386,76 @@ class TestRunTransformBinding:
         )
         assert result.success
         assert (work / "aligned.bam").exists()
+
+
+# A direct run's machine is the caller's to state, and the default is the smallest
+# legal one rather than a useful one.
+class TestRunTransformParams:
+    def test_defaults_are_one(self, mock_samples, mock_types, temp_dir, agent_home):
+        tr_lib = create_transform_library(
+            temp_dir / "tr_params_default", mock_types, params_transform(),
+        )
+        reads, asm = _alignment_inputs(mock_samples)
+        work = temp_dir / "work_params_default"
+
+        result = RunTransform(
+            data_library=mock_samples,
+            transform=tr_lib.location / "params_echo.py",
+            inputs=[("reads", reads), ("asm", asm)],
+            work_dir=work,
+            agent_home=agent_home,
+        )
+        assert result.success
+        assert (work / "aligned.bam").read_text() == "cpus=1 memory=1 attempt=1"
+
+    def test_cli_flags_reach_the_protocol(
+        self, mock_samples, mock_types, temp_dir, agent_home, monkeypatch,
+    ):
+        tr_lib = create_transform_library(
+            temp_dir / "tr_params_cli", mock_types, params_transform(),
+        )
+        reads, asm = _alignment_inputs(mock_samples)
+        work = temp_dir / "work_params_cli"
+
+        argv = [
+            "metasmith", "run",
+            str(tr_lib.location / "params_echo.py"),
+            "-d", str(mock_samples.location),
+            "-i", f"reads={reads}",
+            "-i", f"asm={asm}",
+            "-w", str(work),
+            "--agent-home", str(agent_home),
+            "--cpus", "12", "--memory", "48", "--attempt", "3",
+        ]
+        monkeypatch.setattr("sys.argv", argv)
+
+        with pytest.raises(SystemExit) as excinfo:
+            cli_main()
+        assert excinfo.value.code == 0
+        assert (work / "aligned.bam").read_text() == "cpus=12 memory=48 attempt=3"
+
+
+# A direct run is one coherent sample, so every supplied input is an ancestor of every
+# other and `SourceOf` has to answer rather than raise. Without this the whole class of
+# collecting transforms -- anything that recovers a sample label from its inputs -- is
+# unrunnable outside Nextflow.
+class TestRunTransformSiblingProvenance:
+    def test_source_of_resolves_a_sibling_slot(
+        self, mock_samples, mock_types, temp_dir, agent_home,
+    ):
+        tr_lib = create_transform_library(
+            temp_dir / "tr_sibling", mock_types, provenance_transform(),
+        )
+        reads, asm = _alignment_inputs(mock_samples)
+        work = temp_dir / "work_sibling"
+
+        result = RunTransform(
+            data_library=mock_samples,
+            transform=tr_lib.location / "provenance_echo.py",
+            inputs=[("reads", reads), ("asm", asm)],
+            work_dir=work,
+            agent_home=agent_home,
+        )
+        assert result.success
+        assert (work / "aligned.bam").read_text() == Path(reads).name
+
