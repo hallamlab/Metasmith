@@ -12,9 +12,7 @@ def protocol(context: ExecutionContext):
     idb = context.Output(ref)
 
     _cmd = "/usr/local/bin/_entrypoint.sh genomad download-database ."
-    context.ExecWithEnv() \
-        .ifContainerDo(env=image, cmd=_cmd) \
-        .ifVirtualEnvDo(env=image, cmd=_cmd)
+    context.ExecWithEnv(env=image, cmd=_cmd)
     Path("genomad_db").rename(idb.local)
 
     return ExecutionResult(

@@ -17,7 +17,7 @@ def protocol(context: ExecutionContext):
         acc_value = f.readline()
     Log.Info(f"recieved SRA accession was [{acc_value}]")
 
-    context.ExecWithEnv().ifContainerDo(
+    context.ExecWithEnv(
         env = image,
         cmd = f"""
         echo "downloading"

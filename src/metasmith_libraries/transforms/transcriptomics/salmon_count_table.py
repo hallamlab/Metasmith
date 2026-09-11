@@ -20,7 +20,7 @@ def protocol(context: ExecutionContext):
             sample_name = p.local.parent.name if p.local.parent.name != "." else f"sample_{i}"
             f.write(f"{sample_name}\t{p.container}\n")
 
-    context.ExecWithEnv().ifContainerDo(
+    context.ExecWithEnv(
         env=image,
         cmd=f"python {ihelp.container}/salmon_count_table.py {manifest} {iout.container}",
     )

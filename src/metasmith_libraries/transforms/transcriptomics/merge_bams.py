@@ -24,9 +24,7 @@ def protocol(context: ExecutionContext):
             samtools sort -@ {threads} -o sorted.bam merged.bam
             samtools index sorted.bam
         """
-    context.ExecWithEnv() \
-        .ifContainerDo(env=image, cmd=_cmd) \
-        .ifVirtualEnvDo(env=image, cmd=_cmd)
+    context.ExecWithEnv(env=image, cmd=_cmd)
     context.LocalShell(f"mv sorted.bam {iout.local}")
     return ExecutionResult(
         manifest=[{out: iout.local}],

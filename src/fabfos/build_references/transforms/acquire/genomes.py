@@ -58,9 +58,7 @@ def protocol(context: ExecutionContext):
     """ for host, acc in sorted(HOSTS.items()))
     fetch = f"FTP_ROOT={FTP}\n{fetch}"
 
-    context.ExecWithEnv() \
-        .ifContainerDo(env=py_env, cmd=f"set -e\n{fetch}") \
-        .ifVirtualEnvDo(env=py_env, cmd=f"set -e\n{fetch}")
+    context.ExecWithEnv(env=py_env, cmd=f"set -e\n{fetch}")
 
     gems = "\n".join(f"""
         mkdir -p {iout.container}/{host}/GEM
@@ -68,9 +66,7 @@ def protocol(context: ExecutionContext):
         echo "[genomes] {host} GEM -> {m}"
     """ for host, m in sorted(GEM_FOR_HOST.items()))
 
-    context.ExecWithEnv() \
-        .ifContainerDo(env=py_env, cmd=f"set -e\n{gems}") \
-        .ifVirtualEnvDo(env=py_env, cmd=f"set -e\n{gems}")
+    context.ExecWithEnv(env=py_env, cmd=f"set -e\n{gems}")
 
     ok_g = [h for h in HOSTS
             if len(list((iout.local / h / "genome").glob("*"))) == 3]

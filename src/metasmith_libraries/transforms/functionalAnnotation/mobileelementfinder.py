@@ -23,7 +23,7 @@ def protocol(context: ExecutionContext):
         "/opt/conda/envs/external_mobileelementfinder_env"
         "/lib/python3.9/site-packages/me_finder/tools/blast.py"
     )
-    context.ExecWithEnv().ifContainerDo(
+    context.ExecWithEnv(
         env=image,
         binds=[(MEF_BLAST_PATCH, MEF_BLAST_INCONTAINER)],
         cmd=f"""

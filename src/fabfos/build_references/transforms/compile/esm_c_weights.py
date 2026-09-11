@@ -65,9 +65,7 @@ def protocol(context: ExecutionContext):
                            archive=ARCHIVE, weight_member=WEIGHT_MEMBER,
                            min_bytes=MIN_WEIGHT_BYTES)
     context.LocalShell("cat > _esm_c_weights.py << 'PYEOF'\n" + driver + "\nPYEOF\n")
-    context.ExecWithEnv() \
-        .ifContainerDo(env=image, cmd="python3 _esm_c_weights.py") \
-        .ifVirtualEnvDo(env=image, cmd="python3 _esm_c_weights.py")
+    context.ExecWithEnv(env=image, cmd="python3 _esm_c_weights.py")
 
     return ExecutionResult(
         manifest=[{weights: iout.local}],

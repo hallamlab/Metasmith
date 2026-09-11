@@ -114,7 +114,7 @@ def protocol(context: ExecutionContext):
         print(f"[kofamscan] closed gaps in {len(gapped):,} sequence(s): {shown}",
               flush=True)
 
-    context.ExecWithEnv().ifContainerDo(
+    context.ExecWithEnv(
         env=image,
         binds=[
             (iprofiles.external, "/profiles"),

@@ -11,7 +11,7 @@ VFDB_URL = "http://www.mgc.ac.cn/VFs/Down/VFDB_setB_pro.fas.gz"
 def protocol(context: ExecutionContext):
     idb = context.Output(db)
 
-    context.ExecWithEnv().ifContainerDo(
+    context.ExecWithEnv(
         env=image,
         cmd=f"""
             wget -q --no-check-certificate {VFDB_URL} -O vfdb.fasta.gz

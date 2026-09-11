@@ -301,15 +301,13 @@ def protocol(context: ExecutionContext):
                            fasta_file=FASTA_FILE, reldate_file=RELDATE_FILE,
                            id_source=POOL_ID_SOURCE, evidence=POOL_EVIDENCE)
     context.LocalShell("cat > _pool_select.py << 'PYEOF'\n" + select + "\nPYEOF\n")
-    context.ExecWithEnv() \
-        .ifContainerDo(env=image, cmd="python3 _pool_select.py") \
-        .ifVirtualEnvDo(env=image, cmd="python3 _pool_select.py")
+    context.ExecWithEnv(env=image, cmd="python3 _pool_select.py")
 
     context.LocalShell(f"mkdir -p weights && tar -xzf {iw.local} -C weights")
 
     with open("_pool_embed.py", "w") as f:
         f.write(EMBED)
-    context.ExecWithEnv().ifContainerDo(
+    context.ExecWithEnv(
         env=image,
         binds=[
             (context.external_cwd/"weights", "/weights"),
@@ -331,9 +329,7 @@ def protocol(context: ExecutionContext):
     assemble = ASSEMBLE.format(pool=ipool.container, table_name=TABLE_NAME,
                                source_name=SOURCE_NAME)
     context.LocalShell("cat > _pool_assemble.py << 'PYEOF'\n" + assemble + "\nPYEOF\n")
-    context.ExecWithEnv() \
-        .ifContainerDo(env=image, cmd="python3 _pool_assemble.py") \
-        .ifVirtualEnvDo(env=image, cmd="python3 _pool_assemble.py")
+    context.ExecWithEnv(env=image, cmd="python3 _pool_assemble.py")
 
     ok = all((ipool.local / n).exists() for n in (TABLE_NAME, SOURCE_NAME))
     return ExecutionResult(

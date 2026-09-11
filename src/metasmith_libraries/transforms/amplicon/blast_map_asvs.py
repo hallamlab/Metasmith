@@ -30,9 +30,7 @@ def protocol(context: ExecutionContext):
                 -max_target_seqs 10000 \
                 -out {ihits.container}
         """
-    context.ExecWithEnv() \
-        .ifContainerDo(env=image, cmd=_cmd) \
-        .ifVirtualEnvDo(env=image, cmd=_cmd)
+    context.ExecWithEnv(env=image, cmd=_cmd)
 
     return ExecutionResult(
         manifest=[

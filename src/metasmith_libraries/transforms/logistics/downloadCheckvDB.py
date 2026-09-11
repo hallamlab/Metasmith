@@ -17,9 +17,7 @@ def protocol(context: ExecutionContext):
     # predict. Glob for it rather than hard-coding v1.5 -- a pinned name is a
     # rename away from a download that succeeds and a product that is missing.
     _cmd = "checkv download_database ."
-    context.ExecWithEnv() \
-        .ifContainerDo(env=image, cmd=_cmd) \
-        .ifVirtualEnvDo(env=image, cmd=_cmd)
+    context.ExecWithEnv(env=image, cmd=_cmd)
 
     found = sorted(Path(".").glob("checkv-db-v*"))
     assert len(found) == 1, f"expected one checkv-db-v* directory, got {found}"

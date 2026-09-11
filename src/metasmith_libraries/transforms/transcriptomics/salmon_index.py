@@ -10,9 +10,7 @@ def protocol(context: ExecutionContext):
     iasm=context.Input(asm)
     iout=context.Output(out)
     _cmd = f"salmon index -t {iasm.container} -i salmon_idx -k 31"
-    context.ExecWithEnv() \
-        .ifContainerDo(env=image, cmd=_cmd) \
-        .ifVirtualEnvDo(env=image, cmd=_cmd)
+    context.ExecWithEnv(env=image, cmd=_cmd)
     context.LocalShell(f"mv salmon_idx {iout.local}")
     return ExecutionResult(
         manifest=[

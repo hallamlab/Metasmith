@@ -10,7 +10,7 @@ from .transforms import (
     TransformInstance, TransformInstanceLibrary, TransformInstanceLibraryView,
 )
 from .execution import (
-    CONTAINER_ARM, VIRTUAL_ENV_ARM, ContextData, EnvDispatch, ExecutionContext,
+    ContextData, ExecutionContext,
     ExecutionFailed, ExecutionResult, ResolveEnvImage,
     _RESERVED_EXPORTS, _validate_exports,
 )

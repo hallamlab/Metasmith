@@ -55,8 +55,18 @@ engine picks by the global runtime. To add one:
    automatically and leaves its `HAND_WRITTEN` set alone
 4. rebuild; `dev/libraries.sh --create-envs` materialises the conda envs to test against
 
+**`provides` is a MATCHED PROPERTY SET, not documentation.** An env satisfies a requirement
+when the requirement's properties are a subset of the instance's, so listing one more tool
+makes that env a property-superset of every env offering a subset -- and each of their
+requirements becomes satisfiable by it too. Adding `py/polars` to `python_for_data_science`,
+which is TRUE of the 1.4.0 image, made it subsume `polars.env` and moved five of the eleven
+shipped template plans. List what an environment OFFERS, not what its image happens to
+contain, and re-solve the templates after touching a `provides` line.
+
 **Pin by digest and say what the digest is.** A tag is not stable and a digest is not
-readable, so a bare digest with no comment is a pin nobody can audit. This is not
+readable, so a bare digest with no comment is a pin nobody can audit. A tag can also stop
+resolving outright: `stringtie` was pinned to `2.2.3--h43eeafb_1`, which quay no longer
+serves at all, and the pull fails rather than fetching something else. This is not
 hypothetical: `python_for_data_science` was once pinned to a digest that resolved to
 an *older* image than its version number suggested and carried no polars at all —
 80 tasks in one run died on `ModuleNotFoundError` after their expensive work had
@@ -69,9 +79,9 @@ by what the interpreter has — the same module is imported outside any containe
 pyarrow is what exists. `pd.read_parquet` and `DataFrame.to_parquet` are pyarrow front
 ends and fail there, at module import, after the expensive lanes have already succeeded.
 
-`ExecWithContainer` is retired; the engine rejects it statically. Use
-`context.ExecWithEnv().ifContainerDo(env=, cmd=)`, and add `.ifVirtualEnvDo(env=, cmd=)`
-only for a conda arm you have actually run. See `docs/metasmith_libraries/ENV_PORT.md`.
+`ExecWithContainer` and the two `if*Do` arms are retired; the engine rejects all three
+statically. One call launches a tool — `context.ExecWithEnv(env=, cmd=)` — and the agent's
+runtime decides how. See `docs/metasmith_libraries/ENV_PORT.md`.
 
 ## Two rules that fail quietly
 
@@ -162,9 +172,12 @@ ships in the wheel and nothing in that namespace runs during a pipeline.
 ## Drivers
 
 Template authors live here in the package. Everything under
-`research/metasmith_libraries/` runs against a real cluster, and
-`probe_planner.py` is the plan-only one — solve a target set and print which transforms
-were picked, nothing opened. It is the tool for "why did the planner add that step".
+`research/metasmith_libraries/` runs against a real cluster, except the probes, which solve
+and open nothing. `probe_ambiguity.py` takes library names and lists every requirement with
+more than one producer — the first question to ask of a solve that suddenly costs minutes.
+**CAUTION** `probe_planner.py` is not the generic "why did the planner add that step" tool
+its name suggests: it is bound to the deep-learning embedding target set through
+`_dl_embeddings`. Copy `probe_kbase_parity.py` for a new target set.
 
 - **Public-repo-safe config.** No hardcoded absolute paths, allocations, usernames or DB
   paths. Site-specific values come from env vars with `<placeholder>` defaults (`MSM_SRC`,
@@ -187,3 +200,19 @@ hand-edited, never committed. The hand-edited surface is `data_types/`, the
 `resources/*/` instance files, and the transform `.py` files themselves.
 `transforms/_template.py` is the minimal skeleton. Disabled transforms live in
 `transforms/*/_disabled/` or are renamed `<name>.py.disabled` so the build skips them.
+
+**`transforms/kbase/` is the one group whose every body has been executed.** Curation round 5
+ran twenty of its twenty-one against real fixtures on one host and recorded what was checked
+in each product; `build_tree/gtdbtk_tree.py` is the exception, and its body says so. That is
+worth knowing when you change something they share, because it is also the only group where
+"did it still run?" is a question the repository can answer.
+`research/kbase/curation/r5/runs.md` is that record; `transforms/kbase/README.md` says the rest.
+
+**`transforms/aspire/` is generated and is the one exception to the hand-edited surface
+above.** `transforms/aspire/_generate.py` holds one row per transform and writes both the
+transform files and `data_types/aspire.yml`. Edit the row, regenerate, then run
+`_generate.py --lint`. A hand edit to a generated file survives until the next regenerate
+and no longer. Dropping a transform means dropping its types from the same table, because
+`aspire.yml` is rewritten from the table wholesale. **CAUTION** every body there is still a
+stub, which is the condition the generator's authority rests on. The first real protocol
+body ends it, and the generator's own docstring says so.

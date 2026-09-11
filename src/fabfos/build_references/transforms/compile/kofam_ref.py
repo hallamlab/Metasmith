@@ -33,9 +33,7 @@ def protocol(context: ExecutionContext):
         tar -xzf $REL/{ARCHIVE} -C {iprof.container} --strip-components=1
         gunzip -c $REL/{KO_LIST_GZ} > {iko.container}
     """
-    context.ExecWithEnv() \
-        .ifContainerDo(env=image, cmd=_cmd) \
-        .ifVirtualEnvDo(env=image, cmd=_cmd)
+    context.ExecWithEnv(env=image, cmd=_cmd)
 
     n_hmm = len(list(iprof.local.glob("*.hmm"))) if iprof.local.is_dir() else 0
     n_ko = 0

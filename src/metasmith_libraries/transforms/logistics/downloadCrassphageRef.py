@@ -14,7 +14,7 @@ EFETCH_URL = (
 def protocol(context: ExecutionContext):
     iref = context.Output(ref)
 
-    context.ExecWithEnv().ifContainerDo(
+    context.ExecWithEnv(
         env=image,
         cmd=f"""
             wget -q --no-check-certificate "{EFETCH_URL}" -O {iref.container}

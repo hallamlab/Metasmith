@@ -106,9 +106,7 @@ def protocol(context: ExecutionContext):
             -A binning/metabat2_bins -B binning/maxbin2_bins -C binning/concoct_bins \
             -c {MIN_COMPLETION} -x {MAX_CONTAMINATION}
     """
-    context.ExecWithEnv() \
-        .ifContainerDo(env=image, cmd=_cmd) \
-        .ifVirtualEnvDo(env=image, cmd=_cmd)
+    context.ExecWithEnv(env=image, cmd=_cmd)
 
     refined = Path(f"refinement/metawrap_{MIN_COMPLETION}_{MAX_CONTAMINATION}_bins")
     stats_file = Path(f"{refined}.stats")

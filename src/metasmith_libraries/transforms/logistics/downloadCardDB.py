@@ -12,7 +12,7 @@ CARD_URL = "https://card.mcmaster.ca/latest/data"
 def protocol(context: ExecutionContext):
     idb = context.Output(db)
 
-    context.ExecWithEnv().ifContainerDo(
+    context.ExecWithEnv(
         env=image,
         cmd=f"""
             wget -q --no-check-certificate {CARD_URL} -O card-data.tar.bz2

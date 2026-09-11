@@ -1,0 +1,42 @@
+name: fba_model_from_genome_2
+description: annotate_genome_assembly -> build_metabolic_model. Seen in 10 public
+  narratives.
+sample_type: kbase::sample
+target_types:
+- kbase::KBaseFBA_FBAModel
+transform_libraries:
+- w_s0017
+resource_libraries:
+- env
+shared_input_paths: []
+input_library:
+  schema: v1
+  manifest:
+    /msm_deferred/1fa6ac271e31403d8161011e7143885e:
+      type: kbase::KBaseBiochem_Media
+      parents:
+        yj1tuGcW5ZuP@/msm_deferred/adc8180351c34aa69d064b3d615dd56e: kbase::sample
+      instance_id: 1e202595a34e4163cf3f645d94befd3fee40814c4bd2aa0791eab0037c457c104c63
+      origin: leaf
+    /msm_deferred/1fc3e03d060c47c6a0fd26cf7a3a3f93:
+      type: kbase::study
+      instance_id: 1e20a476d92998764ee3a75f44f9b2c85e4d5589b6ca5538e85ce032eab3e950362a
+      origin: leaf
+    /msm_deferred/adc8180351c34aa69d064b3d615dd56e:
+      type: kbase::sample
+      parents:
+        yj1tuGcW5ZuP@/msm_deferred/1fc3e03d060c47c6a0fd26cf7a3a3f93: kbase::study
+      instance_id: 1e20c8226158ef47bff943c346ffe22d779d10cd2d4623b4be4b0b0f01c1dafb5e04
+      origin: leaf
+    /msm_deferred/dae37f5ec4d34978910ae441e1826d9b:
+      type: kbase::accepts_33
+      parents:
+        yj1tuGcW5ZuP@/msm_deferred/adc8180351c34aa69d064b3d615dd56e: kbase::sample
+      instance_id: 1e20c4572728be16d3f7f9f2916729dbf19019b327c3d0738a9ca114d6e41f657b0a
+      origin: leaf
+    /msm_deferred/e4495bc2d3c94cfe8f2cfe6d277bbefb:
+      type: kbase::KBaseGenomes_Genome
+      parents:
+        yj1tuGcW5ZuP@/msm_deferred/adc8180351c34aa69d064b3d615dd56e: kbase::sample
+      instance_id: 1e2048aa84cee64ae3973d21a2b98b15b982bbcdec477492dde8195553743abdce27
+      origin: leaf

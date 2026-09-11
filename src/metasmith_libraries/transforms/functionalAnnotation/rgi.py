@@ -17,7 +17,7 @@ def protocol(context: ExecutionContext):
     threads = context.params.get("cpus", 8)
 
     context.LocalShell(f"cp -r {icard.external} ./localDB")
-    context.ExecWithEnv().ifContainerDo(
+    context.ExecWithEnv(
         env=image,
         cmd=f"""
             rgi main \

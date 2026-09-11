@@ -187,9 +187,7 @@ def protocol(context: ExecutionContext):
         f"--db_dir {ibase.container} --out_dir ./iphop_augmented -t {threads}\n"
         f"{backfill}\n"
     )
-    context.ExecWithEnv() \
-        .ifContainerDo(env=image, cmd=_cmd) \
-        .ifVirtualEnvDo(env=image, cmd=_cmd)
+    context.ExecWithEnv(env=image, cmd=_cmd)
 
     staged = Path("iphop_augmented")
     for half in ("db", "db_infos", "db/wish_data"):

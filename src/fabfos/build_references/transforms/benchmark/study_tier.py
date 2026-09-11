@@ -113,9 +113,7 @@ def protocol(context: ExecutionContext):
             --lane-set {LANE_SET} \
             --out {iout.container}
     """
-    context.ExecWithEnv() \
-        .ifContainerDo(env=image, cmd=cmd) \
-        .ifVirtualEnvDo(env=image, cmd=cmd)
+    context.ExecWithEnv(env=image, cmd=cmd)
 
     WANT = {"extraction.tsv", "gpr_manual.parquet", "conditions.tsv", "README.md", "Y"}
     problems = []

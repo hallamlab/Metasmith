@@ -15,7 +15,7 @@ def protocol(context: ExecutionContext):
     iout   = context.Output(out)
     ioutpng = context.Output(outpng)
 
-    context.ExecWithEnv().ifContainerDo(
+    context.ExecWithEnv(
         env=image,
         cmd=f"python {ihelp.container}/volcano_plot.py {ide.container} {iout.container} {ioutpng.container}",
     )

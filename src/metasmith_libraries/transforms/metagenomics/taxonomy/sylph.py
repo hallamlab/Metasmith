@@ -21,9 +21,7 @@ def protocol(context: ExecutionContext):
             reformat.sh in={ireads.container} \
                 out1=split_r1.fq.gz out2=split_r2.fq.gz
         """
-    context.ExecWithEnv() \
-        .ifContainerDo(env=img_bb, cmd=_cmd) \
-        .ifVirtualEnvDo(env=img_bb, cmd=_cmd)
+    context.ExecWithEnv(env=img_bb, cmd=_cmd)
 
     _cmd = f"""
             sylph profile {idb.container} \
@@ -31,9 +29,7 @@ def protocol(context: ExecutionContext):
                 {threads_arg} \
                 -o {iprof.container}
         """
-    context.ExecWithEnv() \
-        .ifContainerDo(env=image, cmd=_cmd) \
-        .ifVirtualEnvDo(env=image, cmd=_cmd)
+    context.ExecWithEnv(env=image, cmd=_cmd)
 
     return ExecutionResult(
         manifest=[{

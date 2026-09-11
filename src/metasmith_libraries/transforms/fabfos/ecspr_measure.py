@@ -35,9 +35,7 @@ def protocol(context: ExecutionContext):
             --log ecspr.log \
             --out {iout.container}
     """
-    context.ExecWithEnv() \
-        .ifContainerDo(env=img_ecspr, cmd=cmd) \
-        .ifVirtualEnvDo(env=img_ecspr, cmd=cmd)
+    context.ExecWithEnv(env=img_ecspr, cmd=cmd)
 
     return ExecutionResult(
         manifest=[{out: iout.local}],

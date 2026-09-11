@@ -2,3 +2,4 @@
 # `nostoc_ecspr_measure.py`), and what is worth keeping is copied into a DVC chunk and
 # pinned. Nothing here is an artifact.
 /scratch/
+/kbase

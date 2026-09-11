@@ -31,9 +31,7 @@ def protocol(context: ExecutionContext):
             echo "[metanetx] $f verified $have"
         done
     """
-    context.ExecWithEnv() \
-        .ifContainerDo(env=image, cmd=_cmd) \
-        .ifVirtualEnvDo(env=image, cmd=_cmd)
+    context.ExecWithEnv(env=image, cmd=_cmd)
 
     d = iout.local / VERSION
     got = [f for f in FILES if (d / f).exists() and (d / f).stat().st_size > 0]

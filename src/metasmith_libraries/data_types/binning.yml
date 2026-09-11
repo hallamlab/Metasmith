@@ -44,13 +44,20 @@ types:
       _: MetaWRAP bin_refinement quality table -- completion, contamination and GC per consolidated bin, from CheckM1
       ext: tsv
 
-  # Project-level dereplicated representative-MAG reference for inStrain option (b).
-  # Built ONCE (outside the DAG) from the is_centroid_95==1 bins in
-  # binning/cluster_table.tsv: their contigs concatenated into a single FASTA with
-  # scaffold names namespaced by bin_id (<bin_id>~k141_N — bare k141_N collide
-  # across samples/bins), plus a scaffold->genome table (.stb) and a minimap2
-  # index (.mmi). Staged like a reference DB and provided to the driver as an
-  # input; inStrain maps every sample's reads to it, then compares across samples.
+  # Dereplicated representative-MAG reference for inStrain option (b): the
+  # is_centroid_95==1 bins of a `binning_local::cluster_table`, their contigs
+  # concatenated into one FASTA with scaffold names namespaced by bin_id
+  # (<bin_id>~k141_N -- bare k141_N collide across bins), plus a scaffold->genome
+  # table (.stb) and a minimap2 index (.mmi). inStrain maps every sample's reads
+  # to it, then compares across samples.
+  #
+  # Rounds 3 to 5 recorded this as built ONCE outside the DAG and handed to the
+  # driver as an input, and so it had no producer while both inStrain transforms
+  # required it. But `binning/skani_dedup.py` already produces the cluster table it
+  # is built from, so the reference was one transform away, and that transform is
+  # `binning/derep_mag_reference.py` as of curation round 6. The three filenames are
+  # fixed by the consumers; see the note in that file before renaming any of them.
+
   derep_mag_ref:
     properties:
       _: dereplicated representative-MAG reference dir (mag_ref.fna + mag_ref.stb + mag_ref.mmi)

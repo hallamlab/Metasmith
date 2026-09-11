@@ -1,0 +1,167 @@
+# libraries: logistics, assembly, metagenomics, functionalAnnotation, kbase, transcriptomics, pangenome
+# 180 transforms, 237 distinct requirements, 12 ambiguous
+
+9 producers  <-  sequences::assembly   (23 demanders)
+      produced by  assembly/flye.py
+      produced by  assembly/flye_raw.py
+      produced by  assembly/hifi/hifiasm.py
+      produced by  assembly/hifi/hifiasm_meta.py
+      produced by  assembly/megahit.py
+      produced by  assembly/spades.py
+      produced by  kbase/filter_assembly/seqkit_filter_contigs.py
+      produced by  kbase/polish_assembly/polypolish.py
+      produced by  logistics/getNcbiAssembly.py
+      demanded by  assembly/assembly_stats.py
+      demanded by  functionalAnnotation/antismash.py
+      demanded by  functionalAnnotation/bakta_noncoding.py
+      demanded by  functionalAnnotation/dramv.py
+      demanded by  functionalAnnotation/promotech.py
+      demanded by  kbase/align_reads/bowtie2_align.py
+      demanded by  kbase/call_variants/bcftools_variants.py
+      demanded by  kbase/filter_assembly/seqkit_filter_contigs.py
+      demanded by  kbase/polish_assembly/polypolish.py
+      demanded by  kbase/search_homologs/blast_homolog_hits.py
+      demanded by  logistics/splitContigsForAmr.py
+      demanded by  metagenomics/binning/aggregator.py
+      demanded by  metagenomics/binning/comebin.py
+      demanded by  metagenomics/binning/metabat2.py
+      demanded by  metagenomics/binning/semibin2.py
+      demanded by  metagenomics/binning/skani_dedup.py
+      demanded by  metagenomics/prodigal.py
+      demanded by  metagenomics/taxonomy/metabuli.py
+      demanded by  transcriptomics/blast_contamination_check.py
+      demanded by  transcriptomics/braker3.py
+      demanded by  transcriptomics/gffread_proteins.py
+      demanded by  transcriptomics/salmon_index.py
+      demanded by  transcriptomics/star_genome_index.py
+
+6 producers  <-  sequences::putative_genome   (4 demanders)
+      produced by  assembly/hifi/hifiasm.py
+      produced by  assembly/select_chromosomal_contigs.py
+      produced by  logistics/getNcbiAssembly.py
+      produced by  metagenomics/binning/comebin.py
+      produced by  metagenomics/binning/metabat2.py
+      produced by  metagenomics/binning/semibin2.py
+      demanded by  kbase/build_tree/gtdbtk_tree.py
+      demanded by  metagenomics/binning/checkm.py
+      demanded by  metagenomics/taxonomy/fastani.py
+      demanded by  metagenomics/taxonomy/gtdbtk.py
+
+5 producers  <-  sequences::reads   (2 demanders)
+      produced by  assembly/hifi/pbBam2fastq.py
+      produced by  logistics/dumpNcbiSra.py
+      produced by  logistics/interleave_short_reads.py
+      produced by  logistics/interleave_zipped_short_reads.py
+      produced by  logistics/ora2fastq.py
+      demanded by  assembly/assembly_stats.py
+      demanded by  assembly/seqkit_reads.py
+
+4 producers  <-  sequences::short_reads   (9 demanders)
+      produced by  logistics/dumpNcbiSra.py
+      produced by  logistics/interleave_short_reads.py
+      produced by  logistics/interleave_zipped_short_reads.py
+      produced by  logistics/ora2fastq.py
+      demanded by  assembly/bbduk.py
+      demanded by  kbase/clean_reads/fastp.py
+      demanded by  kbase/qc_reads/fastqc.py
+      demanded by  metagenomics/taxonomy/centrifuger.py
+      demanded by  metagenomics/taxonomy/ganon2.py
+      demanded by  metagenomics/taxonomy/kraken2.py
+      demanded by  metagenomics/taxonomy/metaphlan.py
+      demanded by  metagenomics/taxonomy/phyloflash.py
+      demanded by  metagenomics/taxonomy/sylph.py
+
+3 producers  <-  sequences::orfs   (31 demanders)
+      produced by  logistics/getNcbiAssembly.py
+      produced by  metagenomics/prodigal.py
+      produced by  transcriptomics/gffread_proteins.py
+      demanded by  functionalAnnotation/add_orfs_to_centroids.py
+      demanded by  functionalAnnotation/busco.py
+      demanded by  functionalAnnotation/clean.py
+      demanded by  functionalAnnotation/diamond_linclust.py
+      demanded by  functionalAnnotation/diamond_tcdb2.py
+      demanded by  functionalAnnotation/esm_c.py
+      demanded by  functionalAnnotation/ezpred.py
+      demanded by  functionalAnnotation/merge_amrfinderplus.py
+      demanded by  functionalAnnotation/merge_bacmet.py
+      demanded by  functionalAnnotation/merge_busco_full_table.py
+      demanded by  functionalAnnotation/merge_deepec.py
+      demanded by  functionalAnnotation/merge_deeptfactor.py
+      demanded by  functionalAnnotation/merge_diamond_tcdb.py
+      demanded by  functionalAnnotation/merge_diamond_uniref50.py
+      demanded by  functionalAnnotation/merge_dram_annotate_genes.py
+      demanded by  functionalAnnotation/merge_eggnog_mapper.py
+      demanded by  functionalAnnotation/merge_interproscan.py
+      demanded by  functionalAnnotation/merge_kofamscan.py
+      demanded by  functionalAnnotation/merge_megares.py
+      demanded by  functionalAnnotation/merge_predictf.py
+      demanded by  functionalAnnotation/merge_proteinbert.py
+      demanded by  functionalAnnotation/merge_rgi.py
+      demanded by  functionalAnnotation/merge_vfdb.py
+      demanded by  functionalAnnotation/pathologic.py
+      demanded by  functionalAnnotation/ptools_annotation_gather.py
+      demanded by  kbase/align_sequences/mafft_msa.py
+      demanded by  kbase/annotate/bakta_cds.py
+      demanded by  kbase/search_homologs/blast_homolog_hits.py
+      demanded by  logistics/chunkOrfsForAnnotation.py
+      demanded by  logistics/splitOrfsForAmr.py
+      demanded by  pangenome/diamond_all_vs_all.py
+
+3 producers  <-  sequences::read_qc_stats   (5 demanders)
+      produced by  assembly/seqkit_reads.py
+      produced by  kbase/qc_reads/fastqc.py
+      produced by  kbase/qc_reads/nanoplot.py
+      demanded by  assembly/assembly_stats.py
+      demanded by  assembly/bbduk.py
+      demanded by  assembly/flye.py
+      demanded by  assembly/flye_raw.py
+      demanded by  assembly/hifi/miniasm.py
+
+3 producers  <-  sequences::clean_short_reads   (8 demanders)
+      produced by  assembly/background_filter.py
+      produced by  assembly/bbduk.py
+      produced by  kbase/clean_reads/fastp.py
+      demanded by  assembly/background_filter.py
+      demanded by  assembly/megahit.py
+      demanded by  assembly/spades.py
+      demanded by  kbase/align_reads/bowtie2_align.py
+      demanded by  kbase/polish_assembly/polypolish.py
+      demanded by  metagenomics/crassphage.py
+      demanded by  metagenomics/instrain.py
+      demanded by  metagenomics/taxonomy/strainphlan.py
+
+3 producers  <-  modelling::metabolic_model   (2 demanders)
+      produced by  kbase/build_model/fetch_bigg_model.py
+      produced by  kbase/build_model/gem_from_gpr.py
+      produced by  kbase/gapfill_model/cobra_gapfill.py
+      demanded by  kbase/gapfill_model/cobra_gapfill.py
+      demanded by  kbase/run_fba/cobra_fba.py
+
+2 producers  <-  sequences::long_reads   (7 demanders)
+      produced by  assembly/hifi/pbBam2fastq.py
+      produced by  logistics/dumpNcbiSra.py
+      demanded by  assembly/filtlong.py
+      demanded by  assembly/flye.py
+      demanded by  assembly/flye_raw.py
+      demanded by  assembly/hifi/filtlong_targeted.py
+      demanded by  assembly/hifi/hifiasm_meta.py
+      demanded by  assembly/hifi/miniasm.py
+      demanded by  kbase/qc_reads/nanoplot.py
+
+2 producers  <-  sequences::gff   (1 demanders)
+      produced by  logistics/getNcbiAssembly.py
+      produced by  metagenomics/prodigal.py
+      demanded by  functionalAnnotation/promotech.py
+
+2 producers  <-  sequences::gbk   (2 demanders)
+      produced by  functionalAnnotation/bakta_noncoding.py
+      produced by  logistics/getNcbiAssembly.py
+      demanded by  pangenome/ppanggolin.py
+      demanded by  transcriptomics/genbank_to_reference.py
+
+2 producers  <-  transcriptomics::stringtie_quant_gtf   (2 demanders)
+      produced by  kbase/quantify_expression/stringtie_feature_counts.py
+      produced by  transcriptomics/stringtie_quant.py
+      demanded by  transcriptomics/pydeseq2.py
+      demanded by  transcriptomics/stringtie_count_matrix.py
+

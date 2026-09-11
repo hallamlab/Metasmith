@@ -63,7 +63,7 @@ def protocol(context: ExecutionContext):
     with open(script, "w") as f:
         f.write(CHUNKER)
 
-    context.ExecWithEnv().ifContainerDo(
+    context.ExecWithEnv(
         env=image,
         cmd=f"python {script} --fasta {iorfs.container} "
             f"--out-dir {staging} --chunk-size {chunk_size}",

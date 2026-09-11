@@ -110,12 +110,11 @@ class TransformInstance:
                 tr._env_scan = None
             if tr._env_scan is not None:
                 seen: list[Dependency] = []
-                for chain in tr._env_scan.chains:
-                    for name in chain.envs:
-                        if name is None: continue
-                        d = getattr(m, name, None)
-                        if isinstance(d, Dependency) and d not in seen:
-                            seen.append(d)
+                for run in tr._env_scan.runs:
+                    if run.env is None: continue
+                    d = getattr(m, run.env, None)
+                    if isinstance(d, Dependency) and d not in seen:
+                        seen.append(d)
                 tr._env_deps = seen
             tr._dep_names, tr._ambiguous_dep_names = _collect_dep_names(m, tr.model)
             tr._hash, tr._key = tr.model.hash, tr.model.key

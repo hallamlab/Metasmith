@@ -82,11 +82,11 @@ def protocol(context: ExecutionContext):
         mkdir -p {out_raw}
         {domain_cmds}
     """
-    context.ExecWithEnv().ifContainerDo(
-        binds=[(iref.external, "/ref")],
+    context.ExecWithEnv(
         env=image,
+        binds=[(iref.external, "/ref")],
         cmd=_cmd,
-    ).ifVirtualEnvDo(env=image, cmd=_cmd)
+    )
 
     trees = sorted(out_raw.glob("gtdbtk.*.decorated.tree")) + \
             sorted(out_raw.glob("infer/gtdbtk.*.decorated.tree"))

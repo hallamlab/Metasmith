@@ -34,9 +34,7 @@ def protocol(context: ExecutionContext):
                 --approx-id {min_id} \
                 --member-cover 80
         """
-    context.ExecWithEnv() \
-        .ifContainerDo(env=image, cmd=_cmd) \
-        .ifVirtualEnvDo(env=image, cmd=_cmd)
+    context.ExecWithEnv(env=image, cmd=_cmd)
 
     centroid_ids = set()
     with open(Path(CLUSTERS_TSV)) as f:

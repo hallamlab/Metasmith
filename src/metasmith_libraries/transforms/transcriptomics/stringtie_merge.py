@@ -28,9 +28,7 @@ def protocol(context: ExecutionContext):
                 -p {threads} \
                 {gtf_list}
         """
-    context.ExecWithEnv() \
-        .ifContainerDo(env=image, cmd=_cmd) \
-        .ifVirtualEnvDo(env=image, cmd=_cmd)
+    context.ExecWithEnv(env=image, cmd=_cmd)
     context.LocalShell(f"mv merged.gtf {iout.local}")
     return ExecutionResult(
         manifest=[

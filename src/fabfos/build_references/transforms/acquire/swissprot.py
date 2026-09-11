@@ -92,9 +92,7 @@ def protocol(context: ExecutionContext):
         gzip -t $D/{DATA_FILE}
         echo "[swissprot] $(zcat $D/{DATA_FILE} | grep -c '^>') reviewed sequences, md5 verified"
     """
-    context.ExecWithEnv() \
-        .ifContainerDo(env=image, cmd=_cmd) \
-        .ifVirtualEnvDo(env=image, cmd=_cmd)
+    context.ExecWithEnv(env=image, cmd=_cmd)
 
     vers = sorted(p for p in iout.local.glob("*") if p.is_dir())
     wanted = (DATA_FILE, RELDATE, METALINK)

@@ -35,9 +35,7 @@ def protocol(context: ExecutionContext):
         mmseqs easy-cluster {ifrozen.container} cl mmseqs_tmp \\
             --min-seq-id 0.95 -c 0.80 --cov-mode 0 --threads {threads}
     """
-    context.ExecWithEnv() \
-        .ifContainerDo(env=image, cmd=_cmd) \
-        .ifVirtualEnvDo(env=image, cmd=_cmd)
+    context.ExecWithEnv(env=image, cmd=_cmd)
 
     context.LocalShell(f"cp cl_cluster.tsv {o.local}")
 

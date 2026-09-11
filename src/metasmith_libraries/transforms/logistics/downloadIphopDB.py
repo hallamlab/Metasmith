@@ -49,9 +49,7 @@ def protocol(context: ExecutionContext):
         mkdir -p ./iphop_db
         iphop download --db_dir ./iphop_db -dbv {DB_VERSION} --split --no_prompt
     """
-    context.ExecWithEnv() \
-        .ifContainerDo(env=image, cmd=_cmd) \
-        .ifVirtualEnvDo(env=image, cmd=_cmd)
+    context.ExecWithEnv(env=image, cmd=_cmd)
 
     staged = Path("iphop_db")
     assert staged.is_dir() and any(staged.iterdir()), "iphop staged nothing"

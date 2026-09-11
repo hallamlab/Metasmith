@@ -12,18 +12,18 @@ MEGARES_URL = "https://www.meglab.org/downloads/megares_v3.00/megares_database_v
 def protocol(context: ExecutionContext):
     idb = context.Output(db)
 
-    context.ExecWithEnv().ifContainerDo(
+    context.ExecWithEnv(
         env=image,
         cmd=f"wget -q --no-check-certificate {MEGARES_URL} -O megares.fasta",
     )
 
-    context.ExecWithEnv().ifContainerDo(
+    context.ExecWithEnv(
         env=img_sqk,
         cmd="seqkit translate --frame 1 --transl-table 1 --clean --trim "
             "megares.fasta -o megares_prot.fasta",
     )
 
-    context.ExecWithEnv().ifContainerDo(
+    context.ExecWithEnv(
         env=image,
         cmd=f"""
             diamond makedb --in megares_prot.fasta -d megares

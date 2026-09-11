@@ -49,9 +49,7 @@ def protocol(context: ExecutionContext):
             --source {iorfs.local.stem} \
             --threads {THREADS}
     """
-    context.ExecWithEnv() \
-        .ifContainerDo(env=image, cmd=cmd) \
-        .ifVirtualEnvDo(env=image, cmd=cmd)
+    context.ExecWithEnv(env=image, cmd=cmd)
 
     return ExecutionResult(
         manifest=[{out_gpr: iout.local}],

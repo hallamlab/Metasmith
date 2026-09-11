@@ -1,0 +1,92 @@
+ 200  amrfinderplus.env                  docker://quay.io/biocontainers/ncbi-amrfinderplus:4.2.7--hf69ffd2_0
+ 200  ankh.env                           docker://quay.io/hallamlab/external_ankh:2026.05.19
+ 200  antismash.env                      docker://antismash/standalone:7.1.0
+ 200  bakta.env                          docker://quay.io/biocontainers/bakta:1.11.0--pyhdfd78af_0
+ 200  bam2fastx.env                      docker://quay.io/biocontainers/pbtk:3.1.1--h9ee0642_0
+ 200  bbtools.env                        docker://staphb/bbtools:39.49
+ 200  bcftools.env                       docker://quay.io/biocontainers/bcftools:1.24--h118bc1c_2
+ 200  bedtools.env                       docker://biocontainers/bedtools:v2.27.1dfsg-4-deb_cv1
+ 200  blast.env                          docker://quay.io/biocontainers/blast:2.16.0--hc155240_2
+ 200  bowtie2.env                        docker://quay.io/biocontainers/bowtie2:2.5.5--ha27dd3b_0
+ 200  bracken.env                        docker://quay.io/biocontainers/bracken:3.0--h9948957_2
+ 200  braker3.env                        docker://teambraker/braker3:v3.0.7.4
+ 200  busco.env                          docker://quay.io/biocontainers/busco:5.8.3--pyhdfd78af_0
+ 200  bwa.env                            docker://staphb/bwa:0.7.19
+ 200  centrifuger.env                    docker://quay.io/biocontainers/centrifuger:1.1.1--h3be2455_0
+ 200  checkm.env                         docker://quay.io/hallamlab/external_checkm2:1.1.0
+ 200  clean.env                          docker://quay.io/hallamlab/external_clean:2026.06.14
+   -  cobra.env                          no container: line
+ 200  comebin.env                        docker://quay.io/hallamlab/external_comebin:gpu-1.0.4
+ 200  deepec.env                         docker://quay.io/hallamlab/external_deepec:0.4.1
+ 200  deeptfactor.env                    docker://quay.io/hallamlab/external_deeptfactor:1.0
+ 401  dgbyg.env                          docker://quay.io/hallamlab/ecspr_bake:dgbyg   <<<
+ 200  diamond.env                        docker://quay.io/biocontainers/diamond:2.1.8--h43eeafb_0
+ 200  dram.env                           docker://quay.io/biocontainers/dram:1.5.0--pyhdfd78af_0
+ 200  ecspr.env                          docker://quay.io/hallamlab/ecspr:2026.07.14
+ 200  eggnog-mapper.env                  docker://quay.io/biocontainers/eggnog-mapper:2.1.12--pyhdfd78af_0
+ 401  equilibrator.env                   docker://quay.io/hallamlab/ecspr_bake:direction   <<<
+ 200  esmc.env                           docker://quay.io/hallamlab/external_esmc:2026.05.19
+ 200  esmfold.env                        docker://quay.io/hallamlab/external_esmfold:2026.05.19
+ 200  ezpred.env                         docker://quay.io/hallamlab/external_esmc:2026.05.19
+ 200  fastani.env                        docker://staphb/fastani:1.34
+ 200  fastp.env                          docker://staphb/fastp:1.0.1
+ 200  fastqc.env                         docker://biocontainers/fastqc:v0.11.9_cv8
+ 401  feast.env                          docker://quay.io/hallamlab/external_feast:1.0   <<<
+ 200  filtlong.env                       docker://staphb/filtlong:0.3.1
+ 200  flye.env                           docker://staphb/flye:2.9.6
+ 401  foldseek.env                       docker://quay.io/hallamlab/external_foldseek:2026.05.18   <<<
+ 200  ganon.env                          docker://quay.io/biocontainers/ganon:2.4.1--py312h88d62d1_0
+ 200  genomad.env                        docker://antoniopcamargo/genomad:1.11.0
+ 200  gfatools.env                       docker://dnalinux/gfatools:final-gt
+ 200  gffread.env                        docker://quay.io/biocontainers/gffread:0.12.7--hdcf5f25_4
+ 200  gtdbtk.env                         docker://quay.io/biocontainers/gtdbtk:2.6.1--pyh1f0d9b5_2
+ 200  hifiasm-meta.env                   docker://quay.io/biocontainers/hifiasm_meta:hamtv0.3.5--h5ca1c30_0
+ 200  hifiasm.env                        docker://quay.io/biocontainers/hifiasm:0.25.0--h5ca1c30_0
+ 200  instrain.env                       docker://quay.io/biocontainers/instrain:1.10.0--pyhdfd78af_0
+ 200  integronfinder.env                 docker://quay.io/biocontainers/integron_finder:2.0.6--pyhdfd78af_0
+ 200  interproscan.env                   docker://interpro/interproscan:5.67-99.0
+ 200  kofamscan.env                      docker://quay.io/biocontainers/kofamscan:1.3.0--hdfd78af_2
+ 200  kraken2.env                        docker://quay.io/biocontainers/kraken2:2.1.6--pl5321h077b44d_0
+ 200  mafft.env                          docker://quay.io/biocontainers/mafft:7.525--h031d066_1
+ 200  megahit.env                        docker://biocontainers/megahit:1.2.9_cv1
+ 200  metabat2.env                       docker://quay.io/biocontainers/metabat2:2.17--h6f16272_1
+ 401  metabolomics-python.env            docker://quay.io/hallamlab/metabolomics-python:0.1.0   <<<
+ 200  metabuli.env                       docker://quay.io/biocontainers/metabuli:1.2.0--pl5321h0bb26bb_0
+ 200  metaphlan.env                      docker://quay.io/biocontainers/metaphlan:4.2.4--pyhdfd78af_0
+ 200  miniasm.env                        docker://quay.io/biocontainers/miniasm:0.2_r168--ha92aebf_3
+ 200  minimap2.env                       docker://biocontainers/minimap2:v2.15dfsg-1-deb_cv1
+ 401  mobileelementfinder.env            docker://quay.io/hallamlab/external_mobileelementfinder:1.1.2   <<<
+ 200  nanoplot.env                       docker://nanozoo/nanoplot:1.42.0--547049c
+ 200  ncbi-datasets.env                  docker://staphb/ncbi-datasets:18.9.0
+ 200  orad.env                           docker://quay.io/hallamlab/illumina-dragen-orad:2.7.0
+ 401  pathofact.env                      docker://quay.io/hallamlab/external_pathofact:2.0   <<<
+ 401  pathologic.env                     docker://quay.io/txyliu/pathologic:latest   <<<
+ 200  phyloflash.env                     docker://quay.io/biocontainers/phyloflash:3.4.2--hdfd78af_0
+ 200  polars.env                         docker://quay.io/hallamlab/polars:1.38.1
+ 200  polypolish.env                     docker://quay.io/biocontainers/polypolish:0.7.1--hec9b1f2_0
+ 200  ppanggolin.env                     docker://staphb/ppanggolin:2.2.5
+ 200  pprodigal.env                      docker://quay.io/biocontainers/pprodigal:1.0.1--pyhdfd78af_0
+ 200  predictf.env                       docker://quay.io/hallamlab/external_predictf:1.0
+ 200  promotech.env                      docker://quay.io/hallamlab/external_promotech:1.0
+ 200  proteinbert.env                    docker://quay.io/hallamlab/external_proteinbert:2024.03.28
+ 200  prott5.env                         docker://quay.io/hallamlab/external_prott5:2026.05.19
+ 200  pydeseq2.env                       docker://quay.io/biocontainers/pydeseq2:0.5.4--pyhdfd78af_0
+ 200  python_for_data_science.env        docker://quay.io/hallamlab/python_for_data_science:1.4.0
+ 200  qiime2.env                         docker://quay.io/qiime2/metagenome:2024.10
+ 401  rdkit.env                          docker://quay.io/hallamlab/ecspr_bake:aam   <<<
+ 200  rgi.env                            docker://quay.io/biocontainers/rgi:6.0.8--pyh05cac1d_0
+ 200  salmon.env                         docker://quay.io/biocontainers/salmon:1.10.3--h45fbf2d_5
+ 200  samtools.env                       docker://staphb/samtools:1.23
+ 200  saprot.env                         docker://quay.io/hallamlab/external_saprot:2026.05.19
+ 200  semibin.env                        docker://quay.io/biocontainers/semibin:2.1.0--pyhdfd78af_0
+ 200  seqkit.env                         docker://staphb/seqkit:2.13.0
+ 200  skani.env                          docker://staphb/skani:0.2.2
+ 200  spades.env                         docker://quay.io/biocontainers/spades:3.15.5--h95f258a_1
+ 200  sra-tools.env                      docker://quay.io/hallamlab/sra-tools
+ 200  star.env                           docker://quay.io/biocontainers/star:2.7.11b--h5ca1c30_8
+ 200  stringtie.env                      docker://quay.io/biocontainers/stringtie:2.2.3--h29c0135_1
+ 200  sylph.env                          docker://quay.io/biocontainers/sylph:0.8.0--ha6fb395_0
+ 200  virsorter2.env                     docker://quay.io/biocontainers/virsorter:2.2.4--pyhdfd78af_2
+ 200  vsearch.env                        docker://quay.io/biocontainers/vsearch:2.28.1--h6a68c12_1
+
+90 env files, 1 with no container:, 9 an anonymous pull cannot resolve

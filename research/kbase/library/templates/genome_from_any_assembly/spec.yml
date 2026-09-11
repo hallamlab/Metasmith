@@ -1,0 +1,29 @@
+name: genome_from_any_assembly
+description: annotate_contigs -> reannotate_microbial_genome. Seen in 30 public narratives.
+sample_type: kbase::sample
+target_types:
+- kbase::KBaseGenomes_Genome
+transform_libraries:
+- w_s0003
+resource_libraries:
+- env
+shared_input_paths: []
+input_library:
+  schema: v1
+  manifest:
+    /msm_deferred/09a4e0220a2d4f79b56f358faf69a3b5:
+      type: kbase::study
+      instance_id: 1e201fa050775b485195b4ebf9c5303b59bcdcdc969e1e27764b15d3d82dfdf43cf7
+      origin: leaf
+    /msm_deferred/a1609a9f4d1442e9a60df89017113459:
+      type: kbase::accepts_40
+      parents:
+        5P51jm3DagFn@/msm_deferred/cd3c7175927c4f16a1b0ca4cdf032743: kbase::sample
+      instance_id: 1e2041c5f56987779d0b9ced8d1044bb039fe55cd4d28e6281a97480526aee2ba0cb
+      origin: leaf
+    /msm_deferred/cd3c7175927c4f16a1b0ca4cdf032743:
+      type: kbase::sample
+      parents:
+        5P51jm3DagFn@/msm_deferred/09a4e0220a2d4f79b56f358faf69a3b5: kbase::study
+      instance_id: 1e2079ac4ad3db238094c79f9b2bef6388d90c2906f712343ef9c6e583ee75f71d59
+      origin: leaf

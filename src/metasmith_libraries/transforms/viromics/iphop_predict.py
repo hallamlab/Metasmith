@@ -32,9 +32,7 @@ def protocol(context: ExecutionContext):
         iphop predict --fa_file {ifrozen.container} --out_dir {out_dir} \
             --db_dir {idb.container} -t {threads} -m {MIN_SCORE}
     """
-    context.ExecWithEnv() \
-        .ifContainerDo(env=image, cmd=_cmd) \
-        .ifVirtualEnvDo(env=image, cmd=_cmd)
+    context.ExecWithEnv(env=image, cmd=_cmd)
 
     produced = {
         out_genus:  out_dir/f"Host_prediction_to_genus_m{MIN_SCORE}.csv",

@@ -18,7 +18,7 @@ def protocol(context: ExecutionContext):
 
     threads = context.params.get("cpus", 8)
 
-    context.ExecWithEnv().ifContainerDo(
+    context.ExecWithEnv(
         env=image,
         cmd=f"""
             integron_finder \

@@ -17,9 +17,7 @@ def protocol(context: ExecutionContext):
         pbindex /ws/input.bam
         bam2fastq -o {temp_prefix} /ws/input.bam
         """
-    context.ExecWithEnv() \
-        .ifContainerDo(env=img, cmd=_cmd) \
-        .ifVirtualEnvDo(env=img, cmd=_cmd)
+    context.ExecWithEnv(env=img, cmd=_cmd)
 
     threads = context.params.get('cpus')
     threads = "" if threads is None else f"-p {threads}"

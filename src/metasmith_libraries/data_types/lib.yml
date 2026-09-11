@@ -27,6 +27,28 @@ types:
     properties:
       src: pangenome_heatmap
       usage: command line
+
+  # curation round 5 -- the KBase parity transforms whose body is an algorithm
+  kraken_abundance.py:
+    properties:
+      src: kraken_abundance
+      usage: command line
+  ppanggolin_summary.py:
+    properties:
+      src: ppanggolin_summary
+      usage: command line
+  go_overrepresentation.py:
+    properties:
+      src: go_overrepresentation
+      usage: command line
+  expression_clusters.py:
+    properties:
+      src: expression_clusters
+      usage: command line
+  modelling:
+    properties:
+      src: modelling
+      usage: command line
   extract_noncoding_chunks.py:
     properties:
       src: extract_noncoding_chunks

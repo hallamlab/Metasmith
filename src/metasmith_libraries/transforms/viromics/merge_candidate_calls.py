@@ -189,9 +189,7 @@ def _extract(context, contigs_path: Path, regions: Path, k: int) -> dict:
     _cmd = f"""
         seqkit subseq --bed {regions} {contigs_path} > {out_fa}
     """
-    context.ExecWithEnv() \
-        .ifContainerDo(env=image, cmd=_cmd) \
-        .ifVirtualEnvDo(env=image, cmd=_cmd)
+    context.ExecWithEnv(env=image, cmd=_cmd)
 
     # seqkit names each cut `<contig>_<start>-<end>:<strand>` with the interval
     # already converted BACK to 1-based inclusive, so the header is the key and

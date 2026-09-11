@@ -11,7 +11,7 @@ IPRSCAN_DATA_URL = "https://ftp.ebi.ac.uk/pub/databases/interpro/iprscan/5/5.67-
 def protocol(context: ExecutionContext):
     idata = context.Output(data)
 
-    context.ExecWithEnv().ifContainerDo(
+    context.ExecWithEnv(
         env=image,
         cmd="\n".join([
             FetchCommand(IPRSCAN_DATA_URL, "interproscan-data.tar.gz"),
@@ -25,7 +25,7 @@ def protocol(context: ExecutionContext):
     # so the indexing has to run from there. The downloaded `data/` is bound over
     # the image's missing one, so what runs is the installed tool indexing the
     # models we just fetched.
-    context.ExecWithEnv().ifContainerDo(
+    context.ExecWithEnv(
         env=img_ipr,
         binds=[(context.external_cwd/"ipr_data/data", "/opt/interproscan/data")],
         cmd=f"""

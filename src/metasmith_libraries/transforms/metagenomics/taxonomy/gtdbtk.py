@@ -37,7 +37,7 @@ def protocol(context: ExecutionContext):
     TEMP_PREFIX = "temp"
     temp_ws = Path(f"{TEMP_PREFIX}.ws")
     out_raw = Path("./gtdb_raw")
-    context.ExecWithEnv().ifContainerDo(
+    context.ExecWithEnv(
         binds=[
             (iref.external, "/ref"),
         ],

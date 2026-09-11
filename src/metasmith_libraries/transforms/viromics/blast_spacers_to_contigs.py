@@ -63,9 +63,7 @@ def protocol(context: ExecutionContext):
             -outfmt "6 qseqid sseqid pident length mismatch qlen qstart qend sstart send evalue bitscore qcovs" \
             -out hits.raw.tsv
     """
-    context.ExecWithEnv() \
-        .ifContainerDo(env=image, cmd=_cmd) \
-        .ifVirtualEnvDo(env=image, cmd=_cmd)
+    context.ExecWithEnv(env=image, cmd=_cmd)
 
     raw = Path("hits.raw.tsv")
     rows = raw.read_text() if raw.exists() else ""

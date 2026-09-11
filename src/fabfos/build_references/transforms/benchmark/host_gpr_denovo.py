@@ -41,9 +41,7 @@ def protocol(context: ExecutionContext):
             --lane-set {LANE_SET} \
             --extensions '{repr(list(EXTENSIONS))}'
     """
-    context.ExecWithEnv() \
-        .ifContainerDo(env=image, cmd=cmd) \
-        .ifVirtualEnvDo(env=image, cmd=cmd)
+    context.ExecWithEnv(env=image, cmd=cmd)
 
     made = sorted((iout.local / "hosts").glob("*/gpr_denovo.parquet")) \
         if (iout.local / "hosts").exists() else []

@@ -29,9 +29,7 @@ def protocol(context: ExecutionContext):
         diamond makedb --in $REL/{FASTA} -d uniref50 --threads ${{SLURM_CPUS_PER_TASK:-8}}
         mv uniref50.dmnd {idb.container}
     """
-    context.ExecWithEnv() \
-        .ifContainerDo(env=image, cmd=_cmd) \
-        .ifVirtualEnvDo(env=image, cmd=_cmd)
+    context.ExecWithEnv(env=image, cmd=_cmd)
 
     size = idb.local.stat().st_size if idb.local.exists() else 0
     Log.Info(f"uniref50.dmnd {size/1e9:.1f} GB")

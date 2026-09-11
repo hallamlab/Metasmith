@@ -1,0 +1,270 @@
+# The canonical data type ontology -- curation round 2.
+#
+# KBase names 121 workspace types. Most of the count is spelling: one concept
+# appears once per era (`KBaseAssembly.PairedEndLibrary` beside
+# `KBaseFile.PairedEndLibrary`), once per container (`KBaseGenomes.Genome` beside
+# four kinds of GenomeSet) and once per measurement (eight KBaseMatrices types
+# that differ only in what the cells hold).
+#
+# This file replaces that with an entity crossed with property axes, which is the
+# shape `src/metasmith_libraries/data_types/sequences.yml` already uses: one
+# `reads` type carrying `qc`, `parity` and `read_length` rather than one type name
+# per combination. A metasmith type is a set of matched properties and subtyping
+# is subset-of-properties, so an axis is a real subtyping relation rather than a
+# label.
+#
+# `type_map.yml` places every workspace type on this grid. Nothing here is a
+# metasmith type yet -- a later round generates concrete types from the (entity,
+# axis values) tuples this mapping actually produces.
+#
+# CAUTION `_` is a matched property, not a comment. A generated type may carry a
+# description in `_` only when every subtype carries the same one. The port
+# already recorded what happens otherwise: a union whose `_` no member carries is
+# satisfied by nothing, and every solve using it returns no plan.
+
+version: r2
+
+# The axes. An axis is present on an entity only when some KBase type varies
+# along it. `default` is what an entity carries when no type says otherwise.
+axes:
+
+  cardinality:
+    means: How many of the entity the object holds. This is the layout axis, and it is what folds KBase's eleven `*Set` types into a property.
+    values: [one, set]
+    default: one
+
+  provenance:
+    means: Which era of the KBase schema declared the type. `legacy` and `current` name the same concept and are interchangeable to a workflow.
+    values: [current, legacy]
+    default: current
+
+  parity:
+    means: Whether a read library is paired or single ended.
+    values: [paired, single, any]
+    default: any
+
+  qc:
+    means: What quality control the object has been through. Separating `raw` from `filtered` is what stops an importer answering a target that sits downstream of trimming.
+    values: [raw, filtered, scored]
+    default: raw
+
+  scope:
+    means: Whether the object describes one organism or a community.
+    values: [isolate, metagenome, community]
+    default: isolate
+
+  measures:
+    means: What a matrix's cells hold. Eight KBaseMatrices types and six older ones differ along this axis and nothing else.
+    values: [expression, differential_expression, amplicon, chemical_abundance, metabolite, fitness, trait, reaction, taxonomic, functional, growth, growth_parameters, sample_property, chromatography]
+    default: null
+
+  granularity:
+    means: Whether a matrix covers a study or one sample. KBase spells the second one `Profile`.
+    values: [study, sample]
+    default: study
+
+  content:
+    means: Which product of a family the object is, where the family shares an entity. `KBaseFBA.Gapfilling` and `KBaseFBA.FBA` are both flux results and differ only here.
+    values: [null, structures, compounds, map, escher, training_set, conditions, domains, subsystems, probabilistic, metagenome, comparison, pathway_analysis, gapfilling, gapgeneration, sensitivity, constraints, reaction_probabilities, missing_roles, stats, k_estimate, translation, etc]
+    default: null
+
+  molecule:
+    means: Which alphabet a sequence object holds.
+    values: [nucleotide, protein, any]
+    default: any
+
+  form:
+    means: Whether the object is a workspace object or a handle to a file staged beside it.
+    values: [object, file]
+    default: object
+
+  status:
+    means: Whether KBase still resolves the type. Recorded so a retired type stays in the denominator instead of vanishing from it.
+    values: [resolved, retired_type, retired_module, malformed_reference]
+    default: resolved
+
+# Families. A family is a property token several entities also carry, which is how
+# metasmith spells an abstract supertype: subtyping is subset-of-properties, so an
+# entity may sit in several families at once and nothing has to be a tree.
+#
+# A family earns its place by collapsing a union the entity grid cannot. Twenty
+# seven of KBase's 67 parameter unions span entities, and most of those are one
+# pattern -- a slot that accepts an assembly or a genome or a bin set, because the
+# tool reads sequence and does not care which object carries it.
+families:
+
+  sequence_data:
+    means: The payload is sequence. Anything a read mapper, an assembler or a homology search can be pointed at.
+    entities: [reads, sequences, assembly, genome, bins, metagenome, msa]
+
+  sequence_object:
+    means: Assembled sequence with stable identity, as opposed to reads. The slot an annotator, a binner or a classifier accepts.
+    entities: [assembly, genome, bins, metagenome]
+
+  feature_container:
+    means: Names genomic features. The slot a feature set operation or an enrichment accepts.
+    entities: [genome, feature, feature_set, annotation, pangenome]
+
+  modelling_object:
+    means: Part of a metabolic reconstruction. The slot a modelling utility or an exporter accepts.
+    entities: [model, model_template, media, fba, phenotype, phenotype_simulation, biochem]
+
+  genome_group:
+    means: A named collection of genomes, or a structure derived from one that implies it. The phylogenomics tools accept a GenomeSet or the Tree built from it interchangeably.
+    entities: [genome, genome_comparison, tree, pangenome, feature_set]
+
+  query_source:
+    means: Somewhere a homology search or an aligner can read query sequences from, whatever object holds them.
+    entities: [feature, feature_set, sequences, reads, msa, genome]
+
+  table_object:
+    means: A table with sample and feature axes, or something derived from one.
+    entities: [matrix, correlation, ordination, network, clusters, attribute_mapping]
+
+# The entities. `axes` lists the axes that vary for this entity across the
+# catalog; every entity also carries `cardinality`, `provenance` and `status`.
+entities:
+
+  reads:
+    means: Sequencing reads from one library or a set of them.
+    axes: [parity, qc]
+
+  assembly:
+    means: Contigs, with no gene calls on them.
+    axes: [qc, form, scope]
+
+  genome:
+    means: An assembly with features called and functions assigned.
+    axes: [scope]
+
+  bins:
+    means: A metagenome assembly's contigs grouped into candidate genomes.
+    axes: [qc]
+
+  metagenome:
+    means: A community sample as MG-RAST described it, before KBase's own metagenome types existed.
+    axes: []
+
+  annotation:
+    means: A layer of calls over a genome's features, held separately from the genome.
+    axes: [content, scope]
+
+  feature:
+    means: One genomic feature.
+    axes: []
+
+  feature_set:
+    means: A named collection of features, which is what every homology search returns.
+    axes: []
+
+  sequences:
+    means: Raw sequence records outside any assembly or genome.
+    axes: [molecule]
+
+  msa:
+    means: A multiple sequence alignment.
+    axes: [molecule]
+
+  tree:
+    means: A phylogeny over genomes or genes.
+    axes: []
+
+  pangenome:
+    means: Orthologous groups across a set of genomes.
+    axes: []
+
+  genome_comparison:
+    means: A pairwise or set-wise comparison of genomes or proteomes.
+    axes: [content]
+
+  alignment:
+    means: Reads mapped onto a reference.
+    axes: []
+
+  index:
+    means: An aligner's index over a reference.
+    axes: []
+
+  variants:
+    means: Sequence variants called against a reference.
+    axes: []
+
+  taxonomy:
+    means: A taxonomic assignment over reads, contigs, bins or genomes. NO KBase workspace type carries this -- every classifier declares a report and nothing else -- which is why a classification cannot be named as a target.
+    axes: [scope]
+
+  matrix:
+    means: A two-dimensional table of measurements with sample and feature axes.
+    axes: [measures, granularity, content]
+
+  attribute_mapping:
+    means: The metadata attached to a matrix's rows or columns.
+    axes: [content]
+
+  correlation:
+    means: A matrix of pairwise correlations.
+    axes: []
+
+  ordination:
+    means: A low-dimensional embedding of a matrix.
+    axes: []
+
+  network:
+    means: A graph over a matrix's features.
+    axes: []
+
+  clusters:
+    means: A grouping of a matrix's features or conditions.
+    axes: [content]
+
+  model:
+    means: A genome-scale metabolic model.
+    axes: [scope, content]
+
+  model_template:
+    means: The reaction template a model is reconstructed against.
+    axes: []
+
+  media:
+    means: A growth medium.
+    axes: []
+
+  fba:
+    means: A flux solution or an analysis derived from one.
+    axes: [content]
+
+  phenotype:
+    means: A set of observed growth phenotypes.
+    axes: []
+
+  phenotype_simulation:
+    means: A model's predicted growth against a phenotype set.
+    axes: []
+
+  biochem:
+    means: Reference biochemistry -- compounds, reactions, structures and maps.
+    axes: [content]
+
+  protein_structure:
+    means: A protein structure.
+    axes: []
+
+  ontology:
+    means: A controlled vocabulary or a translation between two.
+    axes: [content]
+
+  classifier:
+    means: A trained genome classifier or its training set.
+    axes: [content]
+
+  sample_set:
+    means: A set of physical samples with their metadata.
+    axes: []
+
+  report:
+    means: The html and file summary a KBase app emits beside its typed products.
+    axes: []
+
+  unknown:
+    means: The referenced name is not a workspace type. Kept so the denominator does not move.
+    axes: []

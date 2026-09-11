@@ -21,9 +21,7 @@ def protocol(context: ExecutionContext):
     # seqkit writes no header, so one is prepended here rather than left for every
     # consumer to guess at.
     _cmd = f"seqkit fx2tab -n -l -g {ifrozen.container} > lengths.raw.tsv"
-    context.ExecWithEnv() \
-        .ifContainerDo(env=image, cmd=_cmd) \
-        .ifVirtualEnvDo(env=image, cmd=_cmd)
+    context.ExecWithEnv(env=image, cmd=_cmd)
 
     with open("lengths.raw.tsv") as src, open(o.local, "w") as dst:
         dst.write("contig_id\tlength_bp\tgc_percent\n")

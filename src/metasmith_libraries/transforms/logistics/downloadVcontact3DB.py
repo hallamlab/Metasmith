@@ -44,9 +44,7 @@ def protocol(context: ExecutionContext):
         export PATH="$PWD/{shim_dir}:$PATH"
         vcontact3 prepare_databases --get-version "latest" --set-location ./vcontact3_db
     """
-    context.ExecWithEnv() \
-        .ifContainerDo(env=image, cmd=_cmd) \
-        .ifVirtualEnvDo(env=image, cmd=_cmd)
+    context.ExecWithEnv(env=image, cmd=_cmd)
 
     staged = Path("vcontact3_db")
     # The tool unpacks beside the archive and leaves it there, so keeping it

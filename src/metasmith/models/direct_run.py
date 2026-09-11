@@ -18,7 +18,6 @@ from ..models.libraries import (
 from ..models.lineage import LinPayload
 from ..models.solver import Dependency, Endpoint
 from ..models.workflow import WorkflowStep
-from ..models.lineage import LinPayload
 from ..models.workflow.payload import build_entry, given_index
 
 
@@ -169,11 +168,12 @@ def _build_lineage(dep_map: dict[Dependency, list[DataInstance]], requires: list
         )
         for dep in requires
     ])
-    # `member_token` refuses an entry with no KEY, because in a workflow the
-    # orchestrator stamps one before submission. A direct run has no orchestrator
-    # and no cache, so "-" is the honest value: it names products from the lineage
-    # index instead of from a member key. testing/transform_harness.py does the
-    # same for the same reason.
+    # Every routed member carries KEY: the orchestrator stamps it before submission
+    # and `member_token` refuses an entry without one, so an output name cannot be
+    # minted here without it. A direct run has no orchestrator and no cache, so "-"
+    # is the honest value -- the same one an unkeyable member gets, which names
+    # products from the lineage index instead. `testing/transform_harness.py` does
+    # the same for the same reason.
     entry[LinPayload.KEY_KEY] = "-"
 
     # Every supplied input is an ancestor of every other. `given_index` files each item

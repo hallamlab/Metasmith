@@ -38,9 +38,7 @@ def protocol(context: ExecutionContext):
         test -d "$VIBRANT_DATA_PATH/files" || {{ echo "VIBRANT files/ absent at $VIBRANT_DATA_PATH" >&2; exit 3; }}
         download-db.sh ./vibrant_db
     """
-    context.ExecWithEnv() \
-        .ifContainerDo(env=image, cmd=_cmd) \
-        .ifVirtualEnvDo(env=image, cmd=_cmd)
+    context.ExecWithEnv(env=image, cmd=_cmd)
 
     staged = Path("vibrant_db")
     for half in ("databases", "files"):

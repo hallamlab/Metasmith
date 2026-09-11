@@ -87,9 +87,7 @@ def protocol(context: ExecutionContext):
     for name, o in outs.items():
         _cmd += f"\n        mv _lookups/{name}.parquet {o.container}"
 
-    context.ExecWithEnv() \
-        .ifContainerDo(env=image, cmd=_cmd) \
-        .ifVirtualEnvDo(env=image, cmd=_cmd)
+    context.ExecWithEnv(env=image, cmd=_cmd)
 
     ok = all(o.local.exists() and o.local.stat().st_size > 0 for o in outs.values())
     return ExecutionResult(
