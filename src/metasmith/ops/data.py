@@ -474,30 +474,54 @@ def import_library(
     dest = Path(dest_path).resolve()
     lib = DataInstanceLibrary.LoadFrom(src, dest, as_image, on_exist)
 
-    from ..caching.layout import (
-        MANIFEST_NAME,
-        default_cache_root,
-        imported_shard_dir,
-    )
+    from ..caching.layout import default_cache_root
 
     if cache_root is None:
         cache_root_path = default_cache_root(dest.parent)
     else:
         cache_root_path = Path(cache_root).resolve()
-    cache_root_path.mkdir(parents=True, exist_ok=True)
 
-    from ..caching.store import CacheStore, encode_manifest
+    admitted = admit_library_items(lib, cache_root_path)
+    return {
+        "library": str(lib.location),
+        "src": src_uri,
+        "item_count": len(lib.manifest),
+        "imported_cache_entries": admitted["admitted"],
+        "skipped_leaf_entries": admitted["skipped_leaf"],
+        "cache_root": str(cache_root_path),
+    }
 
-    store = CacheStore.open(cache_root_path)
+
+def admit_library_items(
+    lib: DataInstanceLibrary,
+    cache_root: Path,
+    *,
+    paths: list[Path] | None = None,
+    include_leaves: bool = False,
+) -> dict:
+    """Register a library's items in the pool, through the pool's write door.
+
+    The item keeps its bytes where they are. What enters the store is the
+    entry: the item's identity, the name of its type, where it sits, and the
+    identities it descends from. Nothing is stat'd beyond the one call that
+    asks how big it is, and nothing is walked -- a folder of six hundred
+    thousand files costs what a single file costs.
+    """
+    from ..caching.admission import IMPORTED, PoolFile, admit
+    from ..caching.store import CacheStore
+
+    cache_root = Path(cache_root)
+    cache_root.mkdir(parents=True, exist_ok=True)
+    store = CacheStore.open(cache_root)
     try:
-        upserts = 0
+        admitted = 0
         skipped_leaf = 0
-        for path in lib.manifest:
+        for path in (paths if paths is not None else list(lib.manifest)):
             meta = lib.instance_meta.get(path)
             if meta is None:
                 continue
             origin = meta.get("origin", "leaf")
-            if origin == "leaf":
+            if origin == "leaf" and not include_leaves:
                 skipped_leaf += 1
                 continue
             instance_id_hex = meta.get("instance_id")
@@ -507,44 +531,254 @@ def import_library(
                 key = bytes.fromhex(instance_id_hex)
             except ValueError:
                 continue
-            lineage_payload = meta.get("lineage_payload") or b""
-            output_dir = imported_shard_dir(cache_root_path, instance_id_hex)
-            output_root_rel = str(output_dir.relative_to(cache_root_path))
-            output_dir.mkdir(parents=True, exist_ok=True)
-            payload = encode_manifest(
-                cache_key=key,
-                transform_key="",
-                signature="",
-                lineage_payload=lineage_payload,
-                output_files=[{"relpath": str(path)}],
-                out_identities={},
-                index_payload=[],
-            )
-            (output_dir / MANIFEST_NAME).write_bytes(payload)
-            size_bytes = 0
-            try:
-                size_bytes = (lib.location / path).stat().st_size
-            except OSError:
-                pass
-            store.upsert(
+            inst = lib.Get(path)
+            written = admit(
+                cache_root=cache_root,
                 key=key,
-                transform_key="",
-                payload=payload,
-                output_root=output_root_rel,
-                size_bytes=size_bytes,
-                origin="imported",
+                origin=IMPORTED,
+                files=[PoolFile(
+                    dtype_name=inst.dtype_name,
+                    dtype_key=inst.dtype.key,
+                    abspath=str(inst.ResolvePath()),
+                    slot_id=instance_id_hex,
+                    parents=_parent_ids(lib, path),
+                    size=_shallow_size(inst.ResolvePath()),
+                )],
+                lineage_payload=meta.get("lineage_payload") or b"",
+                store=store,
             )
-            upserts += 1
+            if written.status != "failed":
+                admitted += 1
+    finally:
+        store.close()
+    return {
+        "cache_root": str(cache_root),
+        "admitted": admitted,
+        "skipped_leaf": skipped_leaf,
+    }
+
+
+def _parent_ids(lib: DataInstanceLibrary, path: Path) -> list[str]:
+    ids = []
+    for pm in lib.parents.get(path, []):
+        if pm.path not in lib.manifest:
+            continue
+        ids.append(lib.Get(pm.path).instance_id)
+    return sorted(set(ids))
+
+
+def _shallow_size(path: Path) -> int:
+    # One stat, never a walk. A directory reports its own entry size, which is
+    # not what it holds -- the alternative is a tree walk on every import, and
+    # that is the cost this whole design exists to refuse.
+    try:
+        return int(Path(path).stat().st_size)
+    except OSError:
+        return 0
+
+
+def resolve_store_root(
+    agent_home: str | None = None, cache_root: str | None = None,
+) -> Path:
+    """Which pool a store verb acts on.
+
+    The pool lives at an agent's home, because that is where a run's products
+    land. An explicit root wins; otherwise the named agent's, otherwise
+    $AGENT_HOME's.
+    """
+    from ..caching.layout import default_cache_root
+
+    if cache_root is not None:
+        return Path(cache_root).resolve()
+    home = agent_home or os.environ.get("AGENT_HOME")
+    if not home:
+        raise ValueError(
+            "no store: pass --agent-home or --cache-root, or set AGENT_HOME. "
+            "The pool lives at an agent's home."
+        )
+    return default_cache_root(Path(home).resolve())
+
+
+def _resolve_dtype(dtype: str, type_library_paths: list[str] | None):
+    """The endpoint a type name refers to, when anything here can say.
+
+    Given type libraries, an unresolvable name is refused: the caller asked for
+    the check. Given none, the name is taken as declared -- the type is the
+    user's statement of what the file is, and this command never opens the file
+    to second-guess it.
+    """
+    from ..models.libraries import DataTypeLibrary
+
+    if not type_library_paths:
+        return None, False
+    libs = {}
+    for raw in type_library_paths:
+        ns, _sep, tp = str(raw).partition("=")
+        if not tp:
+            ns, tp = "", ns
+        tp = Path(tp).resolve()
+        libs[ns or tp.stem] = DataTypeLibrary.Load(tp)
+    if "::" not in dtype:
+        raise ValueError(f"[{dtype}] is not in the format <namespace>::<type>")
+    ns, name = dtype.split("::", 1)
+    if ns not in libs:
+        raise ValueError(
+            f"namespace [{ns}] is not among the type libraries given: "
+            f"{sorted(libs)}"
+        )
+    if name not in libs[ns]:
+        raise ValueError(f"type [{name}] is not in [{ns}]")
+    return libs[ns][name], True
+
+
+def import_item(
+    path: str,
+    dtype: str,
+    *,
+    agent_home: str | None = None,
+    cache_root: str | None = None,
+    name: str | None = None,
+    parents: list[str] | None = None,
+    tags: list[str] | None = None,
+    type_library_paths: list[str] | None = None,
+) -> dict:
+    """Register a file or folder the user already has as a pool instance.
+
+    Nothing is copied, moved or read. The item keeps its bytes where they are
+    and the pool records what it is: an identity minted from the type and the
+    name, the type's own name, where it sits, and what it descends from -- the
+    same four things a run records for a product.
+
+    The identity is structural, so importing the same path under the same type
+    twice yields one entry. Importing it under a different type, or under a
+    different --name, is a different declaration and therefore a second entry.
+    """
+    from ..caching.admission import IMPORTED, PoolFile, admit, structural_import_id
+
+    root = resolve_store_root(agent_home, cache_root)
+    target = Path(path).expanduser().resolve()
+    endpoint, resolved = _resolve_dtype(dtype, type_library_paths)
+    label = name if name is not None else str(target)
+    key_hex = structural_import_id(dtype, label)
+
+    parent_ids = _resolve_parent_ids(root, parents or [])
+    written = admit(
+        cache_root=root,
+        key=bytes.fromhex(key_hex),
+        origin=IMPORTED,
+        files=[PoolFile(
+            dtype_name=dtype,
+            dtype_key=endpoint.key if endpoint is not None else "",
+            abspath=str(target),
+            slot_id=key_hex,
+            parents=parent_ids,
+            size=_shallow_size(target),
+        )],
+        tags=tuple(tags or ()),
+    )
+    return {
+        "cache_root": str(root),
+        "path": str(target),
+        "dtype": dtype,
+        "name": label,
+        "instance_id": key_hex,
+        "type_resolved": resolved,
+        "parents": parent_ids,
+        "tags": sorted(set(tags or ())),
+        "status": written.status,
+    }
+
+
+def _resolve_parent_ids(cache_root: Path, parents: list[str]) -> list[str]:
+    """Parents named by instance id, or by a path already in the store."""
+    if not parents:
+        return []
+    by_path = store_ids_by_path(cache_root)
+    known = set(by_path.values())
+    out = []
+    for p in parents:
+        if p in known:
+            out.append(p)
+            continue
+        resolved = by_path.get(str(Path(p).expanduser().resolve()))
+        if resolved is None:
+            raise ValueError(
+                f"[{p}] is neither an instance id nor a path in the store at "
+                f"[{cache_root}]. A parent must already be in the pool, or the "
+                "edge it records points at nothing."
+            )
+        out.append(resolved)
+    return sorted(set(out))
+
+
+def store_ids_by_path(cache_root: Path) -> dict:
+    """Every file the store indexes, by where it sits. Needs no type library."""
+    from ..caching.admission import manifest_files
+    from ..caching.store import CacheStore, decode_manifest
+
+    root = Path(cache_root)
+    if not (root / "cache.sqlite").exists():
+        return {}
+    store = CacheStore.open(root)
+    try:
+        out = {}
+        for entry in store.iter_entries():
+            try:
+                manifest = decode_manifest(entry.payload)
+            except Exception:
+                continue
+            for f in manifest_files(manifest):
+                out[str(f.Resolve(entry.output_root))] = f.InstanceId()
+        return out
     finally:
         store.close()
 
+
+def forget_item(
+    instance_id: str,
+    *,
+    agent_home: str | None = None,
+    cache_root: str | None = None,
+    delete: bool = False,
+) -> dict:
+    """Drop an imported entry from the pool.
+
+    Only the entry. The bytes were never the pool's -- an import indexes a file
+    where the user put it -- so there is nothing here that could delete them,
+    and `--delete` removes the shard, which holds only the manifest.
+    """
+    import shutil as _shutil
+
+    from ..caching.admission import IMPORTED, shard_for
+    from ..caching.store import CacheStore
+
+    root = resolve_store_root(agent_home, cache_root)
+    key = bytes.fromhex(instance_id)
+    store = CacheStore.open(root)
+    try:
+        entry = store.probe(key)
+        if entry is None:
+            return {"cache_root": str(root), "key": instance_id, "found": False}
+        if entry.origin != IMPORTED:
+            raise ValueError(
+                f"[{instance_id}] is a product, not an import. A product is "
+                "reclaimed by `metasmith cache gc`, which knows it can be "
+                "re-derived."
+            )
+        store.tombstone(key)
+        shard = shard_for(root, instance_id, IMPORTED)
+        removed = False
+        if delete and shard.is_dir() and shard.is_relative_to(root):
+            _shutil.rmtree(shard)
+            removed = True
+    finally:
+        store.close()
     return {
-        "library": str(lib.location),
-        "src": src_uri,
-        "item_count": len(lib.manifest),
-        "imported_cache_entries": upserts,
-        "skipped_leaf_entries": skipped_leaf,
-        "cache_root": str(cache_root_path),
+        "cache_root": str(root),
+        "key": instance_id,
+        "found": True,
+        "tombstoned": True,
+        "shard_removed": removed,
     }
 
 

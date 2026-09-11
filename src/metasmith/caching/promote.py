@@ -13,24 +13,15 @@ member to the trace, and brings the sqlite index up to date.
 from __future__ import annotations
 
 import json
-import os
 import re
 import shutil
-import socket
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from .admission import PoolFile, index_shard, shard_for, write_shard
 from .invocation import KEY_KEY, TOMBSTONE_NAME, consumed_of, read_manifest
-from .keys import canonical_cbor
-from .layout import (
-    MANIFEST_NAME,
-    logs_dir as _logs_dir,
-    out_dir as _out_dir,
-    shard_dir as _shard_dir,
-)
+from .layout import logs_dir as _logs_dir
 
-
-MANIFEST_VERSION = 2
 CACHE_RECORD_FILE = ".command.cache"
 CACHE_HITS_LOG = Path("_metasmith") / "cache_hits.jsonl"
 CANONICAL_OUTPUT_PREFIX = re.compile(r"^(\d+)-(\d+)-(\d+)\.")
@@ -155,18 +146,6 @@ def match_output_slot(name: str, slot_files: list[dict]) -> dict | None:
     return None
 
 
-def _place(src: Path, dest: Path) -> None:
-    if src.is_dir():
-        if dest.exists():
-            shutil.rmtree(dest)
-        shutil.copytree(src, dest, symlinks=True)
-        return
-    try:
-        os.link(src, dest)
-    except OSError:
-        shutil.copy2(src, dest)
-
-
 def member_outputs(cwd: Path, position: int) -> list[Path]:
     """The products in `cwd` that the member at `position` (1-based) wrote."""
     out: list[Path] = []
@@ -219,6 +198,10 @@ def promote_members(
                 "relpath": f"out/{LinPayload.canonical_output_name(src.name)}",
                 "slot_id": matched.get("slot_id", ""),
                 "dtype_key": matched.get("dtype_key", ""),
+                # The name the slot's type was declared under. Carried so a
+                # promoted file can be read back as a data instance; a record
+                # written before the compiler wrote it has no name.
+                "dtype_name": matched.get("dtype_name", ""),
                 "branch_idx": int(matched.get("branch_idx", 0)),
                 "parents": direct_parents(payload, channels, member),
                 "size": _entry_size(src),
@@ -262,38 +245,30 @@ def promote_members(
 def _promote_one(
     cache_root: Path, key_hex: str, meta: StepCacheMeta, files: list[dict], record: dict,
 ) -> tuple[str, str]:
-    final = _shard_dir(cache_root, key_hex)
-    if final.exists():
-        return "exists", str(final)
-    tmp = cache_root / f"{key_hex}.{socket.gethostname()}.{os.getpid()}.tmp"
-    if tmp.exists():
-        shutil.rmtree(tmp)
-    out = _out_dir(tmp)
-    out.mkdir(parents=True)
-    total = 0
-    for f in files:
-        dest = tmp / f["relpath"]
-        _place(Path(f["src"]), dest)
-        total += int(f["size"])
-    manifest = {
-        "v": MANIFEST_VERSION,
-        "key": bytes.fromhex(key_hex),
-        "tk": meta.transform_key,
-        "sig": meta.signature,
-        "step_name": meta.step_name,
-        "files": [{k: v for k, v in f.items() if k != "src"} for f in files],
-        "consumes": record["consumes"],
-        "lineage": record["lineage"],
-        "size": total,
-    }
-    (tmp / MANIFEST_NAME).write_bytes(canonical_cbor(manifest))
-    final.parent.mkdir(parents=True, exist_ok=True)
-    try:
-        tmp.rename(final)
-    except OSError:
-        shutil.rmtree(tmp, ignore_errors=True)
-        return ("exists" if final.exists() else "failed"), str(final)
-    return "promoted", str(final)
+    written = write_shard(
+        cache_root=cache_root,
+        key=bytes.fromhex(key_hex),
+        origin="lineage",
+        files=[
+            PoolFile(
+                dtype_name=f.get("dtype_name", ""),
+                dtype_key=f.get("dtype_key", ""),
+                relpath=f["relpath"],
+                slot_id=f.get("slot_id", ""),
+                branch_idx=int(f.get("branch_idx", 0)),
+                parents=list(f.get("parents") or []),
+                size=int(f.get("size", 0)),
+                src=f["src"],
+            )
+            for f in files
+        ],
+        transform_key=meta.transform_key,
+        signature=meta.signature,
+        step_name=meta.step_name,
+        consumes=record["consumes"],
+        lineage=record["lineage"],
+    )
+    return written.status, str(written.shard)
 
 
 def _read_session_id(workspace: Path) -> int:
@@ -353,31 +328,15 @@ def _copy_task_logs(task_dir: Path, shard: Path) -> None:
             continue
 
 
-def _resolve_shard(cache_root: Path, key_hex: str, recorded) -> Path:
-    """This key's shard, as seen from here.
-
-    A task writes its record inside its own container, so the path it names is
-    the container's view of the cache root -- `/msm_home/task_cache/...` where
-    the driver sees the agent home. The key determines the shard, so derive it
-    and fall back to the recorded path only when the key names nothing.
-    """
-    if key_hex and key_hex != "-":
-        derived = _shard_dir(cache_root, key_hex)
-        if derived.is_dir():
-            return derived
-    return Path(recorded) if recorded else _shard_dir(cache_root, key_hex)
-
-
-def _output_root(shard: Path, cache_root: Path) -> str:
-    return str(shard.relative_to(cache_root)) if shard.is_relative_to(cache_root) else str(shard)
-
-
 def record_run(*, workspace: Path, cache_root: Path, log: list | None = None) -> dict:
     """Append this run's member events to the trace and index its shards."""
     from ..models.lineage import InvocationEvent, append_invocation_event
     from .store import CacheStore
 
     log = log if log is not None else []
+    # The run a product belongs to, as the agent names it on disk: the driver
+    # is the only thing that knows, and a store must not go looking.
+    run_label = Path(workspace).name
     session_id = _read_session_id(workspace)
     trace_path = workspace / "_metasmith" / "trace.jsonl"
     trace_path.parent.mkdir(parents=True, exist_ok=True)
@@ -415,15 +374,17 @@ def record_run(*, workspace: Path, cache_root: Path, log: list | None = None) ->
                     status = rec.get("status", "")
                     key_hex = str(rec.get("key", "-"))
                     if status == "promoted":
-                        shard = _resolve_shard(cache_root, key_hex, rec.get("shard"))
+                        shard = shard_for(cache_root, key_hex, "lineage")
                         manifest = read_manifest(shard) or {}
-                        store.upsert(
+                        index_shard(
+                            store,
+                            cache_root=cache_root,
                             key=bytes.fromhex(key_hex),
-                            transform_key=meta.transform_key if meta else "",
-                            payload=canonical_cbor(manifest) if manifest else b"",
-                            output_root=_output_root(shard, cache_root),
-                            size_bytes=int(manifest.get("size", 0)),
                             origin="lineage",
+                            shard=shard,
+                            manifest=manifest,
+                            transform_key=meta.transform_key if meta else "",
+                            run=run_label,
                         )
                         _copy_task_logs(rec_file.parent, shard)
                         promoted.append(key_hex)
@@ -462,7 +423,7 @@ def record_run(*, workspace: Path, cache_root: Path, log: list | None = None) ->
                     log.append(("warn", "unreadable line in the cache hit log"))
                     continue
                 key_hex = str(hit.get("key", ""))
-                shard = _resolve_shard(cache_root, key_hex, hit.get("shard"))
+                shard = shard_for(cache_root, key_hex, "lineage")
                 manifest = read_manifest(shard)
                 if not key_hex or manifest is None:
                     log.append(("warn", f"hit {key_hex[:8]} has no readable shard"))
@@ -472,13 +433,13 @@ def record_run(*, workspace: Path, cache_root: Path, log: list | None = None) ->
                     entry = hit.get("entry") or {}
                     consumed = consumed_of(entry, meta.channels) if meta else None
                     if store.probe(bytes.fromhex(key_hex)) is None:
-                        store.upsert(
+                        index_shard(
+                            store,
+                            cache_root=cache_root,
                             key=bytes.fromhex(key_hex),
-                            transform_key=str(manifest.get("tk", "")),
-                            payload=canonical_cbor(manifest),
-                            output_root=_output_root(shard, cache_root),
-                            size_bytes=int(manifest.get("size", 0)),
                             origin="lineage",
+                            shard=shard,
+                            manifest=manifest,
                         )
                     store.touch(bytes.fromhex(key_hex))
                     hits.append(key_hex)
@@ -501,7 +462,10 @@ def record_run(*, workspace: Path, cache_root: Path, log: list | None = None) ->
     return {"promoted": promoted, "hits": hits}
 
 
-def tombstone_shard(cache_root: Path, key_hex: str) -> None:
-    shard = _shard_dir(cache_root, key_hex)
+def tombstone_shard(cache_root: Path, key_hex: str, origin: str = "lineage") -> None:
+    # The origin decides the namespace: products and imports shard under
+    # different rules, and a tombstone written to the wrong one marks the row
+    # and never the disk.
+    shard = shard_for(cache_root, key_hex, origin)
     if shard.is_dir():
         (shard / TOMBSTONE_NAME).touch()

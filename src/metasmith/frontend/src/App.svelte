@@ -34,6 +34,7 @@
   import SshEditor from './views/SshEditor.svelte'
   import SshNew from './views/SshNew.svelte'
   import AgentView from './views/AgentView.svelte'
+  import DataView from './views/DataView.svelte'
   import WorkflowView from './views/WorkflowView.svelte'
   import RunView from './views/RunView.svelte'
   // The wordmark's own M *is* the logo mark, so this replaces the whole word
@@ -407,6 +408,29 @@
           </div>
         {/snippet}
       </Rail>
+    {:else if app.section === 'data'}
+      <!-- The same agents as the tab before it, because a store is an agent's.
+           Deliberately not a second list to keep in step: one rail of agents,
+           read here for what each one holds. -->
+      <Rail
+        title="stores"
+        items={agentItems}
+        selected={sel}
+        onselect={(id) => select('data', id)}
+        empty="deploy an agent and its store appears here"
+      >
+        {#snippet row(item)}
+          <div class="spread">
+            <div class="grow truncate">
+              {item.agent.sort_name || item.agent.name}
+              <div class="small muted mono truncate" title={item.agent.home}>
+                {item.agent.home}
+              </div>
+            </div>
+            {#if item.agent.home_type !== 'DIRECT'}<span class="tag">remote</span>{/if}
+          </div>
+        {/snippet}
+      </Rail>
     {:else if app.section === 'workflows'}
       <Rail
         title="workflows"
@@ -503,7 +527,7 @@
          scroll container and becomes a plain row -- the view scrolls its own
          column, the panel scrolls its own list. Every other view is unchanged. -->
     <main class:flush={PANELLED.has(app.section) && sel}>
-      <!-- Nothing selected draws nothing. Each of these four held a heading, a
+      <!-- Nothing selected draws nothing. Each of these held a heading, a
            paragraph of prose about what the section is for, and two of them a
            second `new` button beside the one already in the rail's header. It
            is the screen you see for a moment on the way to a selection, so
@@ -521,6 +545,10 @@
       {:else if app.section === 'agents'}
         {#if sel}
           {#key sel}<AgentView name={sel} />{/key}
+        {/if}
+      {:else if app.section === 'data'}
+        {#if sel}
+          {#key sel}<DataView name={sel} />{/key}
         {/if}
       {:else if app.section === 'workflows'}
         {#if sel}

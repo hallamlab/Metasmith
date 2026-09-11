@@ -9,14 +9,15 @@ these are the entries under which the most downstream cache sits.
 Every one of these chunks is DVC-pinned, and a `.dvc` file records an md5 that
 DVC computed over the real bytes. That is a better identity than anything this
 code could derive: agreed on by every host that checks out the same pin, and
-indifferent to when the bytes last landed. So an id here is
+indifferent to when the bytes last landed.
 
-    multihash_key(b"dvc\\0" + md5 + relpath)
-
-mirroring `_fir.pin_external_leaf_ids`' construction for a remote path. The
-relative path is folded in for the same reason `_mint_leaf_id` folds it: one pin
-covers a whole chunk, so `kofam_ref/profiles` and `kofam_ref/ko_list.tsv` share
-an md5 and would otherwise collapse to one identity.
+A reference is therefore data the user already has, registered under a declared
+type -- which is what `metasmith data import` is, so the id comes from the
+engine's `structural_import_id` and nothing here mints one. What this module
+supplies is the declaration: the type, the pin md5, and the relative path. The
+md5 keeps a re-pin moving the id; the relative path is folded in for the same
+reason `_mint_leaf_id` folds it, since one pin covers a whole chunk and
+`kofam_ref/profiles` and `kofam_ref/ko_list.tsv` share an md5.
 
 **Pin granularity is chunk-level, and that over-invalidates.** Editing
 `ko_list.tsv` moves the `kofam_ref` md5, which moves the id of `profiles` too.
@@ -69,7 +70,7 @@ import yaml
 
 from metasmith.models.libraries.pinned import PinnedLibraryError
 from metasmith.python_api import DataInstanceLibrary
-from metasmith.caching.keys import multihash_key
+from metasmith.caching.admission import structural_import_id
 
 from .constants import RefPaths
 
@@ -131,8 +132,20 @@ def dvc_pin_for(refs_root: Path, rel: str) -> tuple[Path, str] | None:
     return pin, str(md5)
 
 
-def dvc_leaf_id(md5: str, rel: str) -> str:
-    return multihash_key(b"dvc\x00" + md5.encode("utf-8") + rel.encode("utf-8")).hex()
+def dvc_ref_id(dtype: str, md5: str, rel: str) -> str:
+    """A reference's identity: what it is, where it sits, and which pin covers it.
+
+    Minted by the engine's one importer, not here. A reference is data the user
+    already has, registered under a declared type -- the same act
+    `metasmith data import` performs -- and there is one function in the tree
+    that mints that identity.
+
+    The pin md5 is part of the declaration, so re-pinning changed reference
+    data moves the id and every run that consumed it re-runs. The relative path
+    is part of it too: one `.dvc` covers a whole chunk, and without the path
+    `kofam_ref/profiles` and `kofam_ref/ko_list.tsv` collapse into one identity.
+    """
+    return structural_import_id(dtype, f"dvc:{md5}:{rel}")
 
 
 #: Where a publish step records the identity its product ALREADY had.
@@ -197,6 +210,7 @@ def pin_refs(
     out: Path | None = None,
     *,
     types: Iterable[str] | None = None,
+    cache_root: Path | None = None,
 ) -> dict:
     refs_root = Path(refs_root).expanduser().resolve()
     out = Path(out).expanduser().resolve() if out else refs_library_path(refs_root)
@@ -235,7 +249,9 @@ def pin_refs(
             continue
         pin_path, md5 = pin
         published = recorded.get(rel)
-        instance_id = published["instance_id"] if published else dvc_leaf_id(md5, rel)
+        instance_id = (
+            published["instance_id"] if published else dvc_ref_id(dtype, md5, rel)
+        )
         origin = published.get("origin", "lineage") if published else "leaf"
         try:
             lib.RegisterItem(target, dtype, instance_id=instance_id, origin=origin)
@@ -252,8 +268,22 @@ def pin_refs(
             provenance[target]["run"] = published["run"]
         added[dtype] = str(target)
 
+    if cache_root is not None:
+        # Before the pin, not after: a pinned library refuses mutation and
+        # returns its recorded entries verbatim, and admission reads the same
+        # entries the pin is about to freeze.
+        from metasmith.ops.data import admit_library_items
+
+        report_admit = admit_library_items(
+            lib, Path(cache_root), include_leaves=True,
+        )
+    else:
+        report_admit = None
+
     report = lib.Pin(provenance=provenance)
     report.update(added=added, skipped=skipped, refs_root=str(refs_root))
+    if report_admit is not None:
+        report["admitted"] = report_admit
     return report
 
 
@@ -345,16 +375,26 @@ def main(argv: list[str] | None = None) -> int:
         s.add_argument("--out", default=None,
                        help="the pinned library to write"
                             " (default: $FABFOS_REFS_XGDB, else refs.xgdb beside --refs-root)")
+        if verb == "pin":
+            s.add_argument("--cache-root", default=None,
+                           help="also register each reference in this pool, so"
+                                " it is visible beside everything else stored"
+                                " there; reads no data")
     args = ap.parse_args(argv)
 
     root = Path(args.refs_root)
     if args.verb == "pin":
-        report = pin_refs(root, args.out)
+        report = pin_refs(root, args.out, cache_root=(
+            Path(args.cache_root) if args.cache_root else None
+        ))
         for dtype, path in sorted(report["added"].items()):
             print(f"  pinned  {dtype:34s} {path}")
         for dtype, why in sorted(report["skipped"].items()):
             print(f"  skipped {dtype:34s} {why}")
         print(f"\n{report['pinned']} entries at {report['location']}")
+        if report.get("admitted"):
+            a = report["admitted"]
+            print(f"{a['admitted']} registered in the pool at {a['cache_root']}")
         return 0
     if args.verb == "unpin":
         report = unpin_refs(root, args.out)

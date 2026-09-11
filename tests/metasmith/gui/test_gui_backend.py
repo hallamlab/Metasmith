@@ -2775,3 +2775,77 @@ class TestValueRowFields:
             mload.return_value.ListWorkflowRuns.return_value = []
             r = client.post("/api/runs", json={"workflow": name, "agent": "smith"})
         assert r.status_code == 202, r.get_json()
+
+
+class TestAgentStore:
+    """The Data tab's backend. Every route hands straight to `ops/`, so what is
+    checked here is that the tab can ask the four questions and nothing more."""
+
+    def _agent(self, client, tmp_path, name="smith"):
+        home = tmp_path / "home"
+        home.mkdir(parents=True, exist_ok=True)
+        client.post("/api/agents", json={"name": name, "home": str(home)})
+        return home
+
+    def test_an_empty_store_is_not_an_error(self, client, tmp_path):
+        self._agent(client, tmp_path)
+        body = client.get("/api/agents/smith/store").get_json()
+        assert body["entries"] == []
+
+    def test_import_then_list_group_and_tag(self, client, tmp_path):
+        self._agent(client, tmp_path)
+        f = tmp_path / "ref.fa"
+        f.write_text(">x\n")
+
+        r = client.post("/api/agents/smith/store/import", json={
+            "path": str(f), "dtype": "cf::seed", "tags": ["refs"],
+        })
+        assert r.status_code == 200, r.get_json()
+        key = r.get_json()["instance_id"]
+
+        body = client.get("/api/agents/smith/store?group_by=run").get_json()
+        assert [e["path"] for e in body["entries"]] == [str(f)]
+        assert list(body["groups"]) == ["(imported)"]
+        assert body["entries"][0]["tags"] == ["refs"]
+
+        r = client.post(
+            f"/api/agents/smith/store/entries/{key}/tags",
+            json={"tags": ["v2"], "replace": True},
+        )
+        assert r.get_json()["tags"] == ["v2"]
+
+        filtered = client.get("/api/agents/smith/store?tag=v2").get_json()
+        assert len(filtered["entries"]) == 1
+        assert client.get("/api/agents/smith/store?tag=refs").get_json()["entries"] == []
+
+    def test_forget_leaves_the_data_alone(self, client, tmp_path):
+        self._agent(client, tmp_path)
+        f = tmp_path / "ref.fa"
+        f.write_text(">x\n")
+        key = client.post("/api/agents/smith/store/import", json={
+            "path": str(f), "dtype": "cf::seed",
+        }).get_json()["instance_id"]
+
+        r = client.delete(f"/api/agents/smith/store/entries/{key}?delete=1")
+        assert r.get_json()["tombstoned"]
+        assert f.read_text() == ">x\n"
+        assert client.get("/api/agents/smith/store").get_json()["entries"] == []
+
+    def test_an_import_without_a_type_is_refused(self, client, tmp_path):
+        self._agent(client, tmp_path)
+        r = client.post("/api/agents/smith/store/import", json={"path": "/tmp/x"})
+        assert r.status_code >= 400
+        assert "type" in r.get_json()["error"]
+
+    def test_a_remote_agents_store_is_read_where_it_sits(self, client, tmp_path):
+        client.post("/api/agents", json={
+            "name": "far", "home": "ssh://elsewhere:/home/msm",
+        })
+        r = client.get("/api/agents/far/store")
+        assert r.status_code >= 400
+        assert "another host" in r.get_json()["error"]
+
+    def test_an_unknown_agent_says_so(self, client):
+        r = client.get("/api/agents/nobody/store")
+        assert r.status_code >= 400
+        assert "no agent" in r.get_json()["error"]

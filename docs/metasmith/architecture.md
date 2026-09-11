@@ -514,8 +514,8 @@ writes the plan back to `task.yml`: the client that registered an input living o
 cannot stat it, and `CollectResults` later joins the trace against that same plan. Re-submitting
 unmodified files at the same paths hits the same shards; two hosts holding identical bytes at
 different paths do not agree, and a same-mtime in-place edit is invisible. A path nothing can stat
-keeps a random per-call id and gets no reuse. `fabfos/refs.py` substitutes the DVC pin's own md5,
-which survives the re-materialisation that moves an mtime. A change below the top node is
+keeps a random per-call id and gets no reuse. `fabfos/refs.py` declares the DVC pin's own md5
+instead, which survives the re-materialisation that moves an mtime. A change below the top node is
 invisible by construction, and `msm data invalidate` is the lever for it: it moves the mtime
 forward and re-mints through the same formula, so client and agent still agree.
 
@@ -570,27 +570,62 @@ member takes in a batch. Nothing on the promote or the hit path may branch on th
 extension to decide file from directory: `GetPreferredFileExtension` answers `""` for plenty of
 file types, and a directory type can carry one.
 
-**A task promotes its own members, and the driver records the run afterwards.** After the
-protocol, `promote_members` writes one shard per successful member: the products renamed to
-position `1`, linked on the same filesystem and copied otherwise, and a `manifest.cbor` with each
-file's slot id, dtype, `parents` from that member's `PROV`, and the member's `consumes`. The shard
-is staged as `<key>.<host>.<pid>.tmp` and renamed onto its final name. An existing shard wins. A
-member whose required branch produced nothing mints no shard. The task then writes one
-`.command.cache` record beside `.command.metadata`, one JSON line per member, and never opens
-sqlite. A hit is decided by the probe alone: a manifest, every listed file present, and no
-`tombstone` marker. After Nextflow exits, `record_run` reads every `.command.cache` of the run's
-session and `_metasmith/cache_hits.jsonl`, appends one trace event per member, upserts one sqlite
-row per shard, and copies the producing task's `.command.*` into the shard's `logs/`. Sqlite is
-bookkeeping for `msm cache ls` and `gc`, never the hit authority. Every on-disk name in this
-paragraph is defined once, in `caching/layout.py` and `caching/invocation.py`.
+**One function writes a pool entry, and it has two halves because a promotion is two writes on
+two machines.** `caching/admission.py` is the only code in the tree that resolves a shard, writes
+a manifest or computes a size. `write_shard` runs inside the task, on a cluster node with no
+business opening the driver's sqlite; `index_shard` runs in the driver once Nextflow has exited;
+`admit` is both, for a caller that is one process. A shard is staged as `<key>.<host>.<pid>.tmp`
+and renamed onto its final name, and an existing shard wins — two tasks that reached the same key
+produced the same thing, and the first one there has readers.
 
-**CAUTION** A record names its shard as the container saw it. The task writes `.command.cache`
-inside its own container, where the cache root is `/msm_home/task_cache`, and the driver reads
-that record on the host, where the same directory sits under the agent home. `record_run`
-therefore derives every shard from the member key and treats the recorded path as a fallback.
-It also indexes each record and each hit on its own, because this pass is the sole writer of the
-run's member events and it runs after Nextflow has exited: one unreadable record must cost one
-record, not the run's whole bookkeeping behind a single warning.
+**A shard is always derived from the key and the origin, never from a path a task recorded.** The
+two shard rules are both correct and stay distinct: a product shards under a key that folds
+`CACHE_KEY_VERSION`, because it is re-derivable and an epoch bump may strand it; an import shards
+under `imported/`, outside the epoch, because it may be the user's only copy. Collapsing them
+makes an epoch bump destroy imports. Deriving from the key is what removed a real escape: a task
+writes `.command.cache` inside its own container, where the cache root is `/msm_home/task_cache`,
+and the driver reads that record on the host — so a recorded path stored as `output_root` resolved
+absolute, won the join that read it back, and put collection outside the store.
+
+**After the protocol, `promote_members` writes one shard per successful member** — the products
+renamed to position `1`, and a manifest with each file's slot id, dtype key, dtype *name*,
+`parents` from that member's `PROV`, and the member's `consumes`. A member whose required branch
+produced nothing mints no shard. The task then writes one `.command.cache` record beside
+`.command.metadata`, one JSON line per member. A hit is decided by the probe alone: a manifest,
+every listed file present, and no `tombstone` marker. `record_run` then reads every
+`.command.cache` of the run's session and `_metasmith/cache_hits.jsonl`, appends one trace event
+per member, indexes one sqlite row per shard, and copies the producing task's `.command.*` into
+the shard's `logs/`. Sqlite is bookkeeping for `msm cache list` and `gc`, never the hit authority.
+It indexes each record and each hit on its own, because this pass is the sole writer of the run's
+member events and runs after Nextflow has exited: one unreadable record must cost one record, not
+the run's whole bookkeeping behind a single warning. Every on-disk name here is defined once, in
+`caching/layout.py` and `caching/invocation.py`.
+
+**A pool entry is a data instance, so the store is also the index.** It has a path, a type name,
+an identity and the identities it descends from, which is the whole of what a
+`DataInstanceLibrary` holds — so `caching/projection.py` reads the entries and hands `Unpack` the
+same packed shape `index.yml` uses, and the planner takes the result with no branch added to
+`_as_data_lib`. Masking is `AsView`, so scoping by origin, run, tag or type is a set of paths. The
+type *name* is what makes this possible and is the one field the compiler had in hand and dropped:
+a dtype key is a property-set fingerprint and cannot be read back as a type. A projection is a
+live view, not a portable image — its paths are absolute and `MaterializeImage` drops absolute
+entries — so staging a store to a remote agent is a separate and larger job.
+
+**An import is registered by the same act, with a structural identity.** `structural_import_id`
+hashes what the item declares: its type and the name it is given, defaulting to its absolute path.
+Nothing is stat'd, walked, or read, which is why importing a folder of six hundred thousand files
+costs what importing one costs — and is the same reason the type carries the trust, since the type
+*is* the structural input and opening the bytes would answer a question the identity never asked.
+The id deliberately does not fold `CACHE_KEY_VERSION`. Two imports of one path under one type are
+one entry; under a different type or name they are two, because they are two declarations.
+`fabfos/refs.py` supplies its own declaration — the type, the DVC pin md5, and the relative path —
+and mints through this function rather than one of its own.
+
+**Collection removes only what it can get back, and only its own.** `gc` refuses a path outside
+the cache root and says which rows it refused. It leaves imports alone entirely: `msm data forget`
+is the only thing that drops one, and even that removes just the entry and the shard's manifest,
+because the pool never held the bytes. The epoch sweep is scoped to derivation keys for the same
+reason.
 
 **`trace.jsonl` is the canonical event log, and it records banked work, not run work.** It
 rotates on compile and is never truncated. A `SessionStart` sentinel leads every fresh file, and
@@ -632,7 +667,9 @@ cache shard.
 member carries `KEY`. They were one constant once, and bumping it for a key-epoch reason desynced
 the emitter and failed every containerized step with a masked exit 1 that no fast test could see.
 `SHARD_LAYOUT_VERSION` tracks the shard's own layout: the manifest shape and the log capture that
-makes a shard's stdout resolve after `rm -rf work/`.
+makes a shard's stdout resolve after `rm -rf work/`. The manifest is written in one place and read
+by version — a pool holds every shape it was ever written with, and a reader that refuses an old
+one turns an upgrade into a cache wipe.
 
 Open weaknesses in this subsystem are tracked in `plans/consolidation-followups.md`.
 
@@ -674,8 +711,9 @@ checkout's own source rather than whatever an ambient `PYTHONPATH` resolves, use
 ## Web GUI
 
 `msm gui` serves a localhost page covering the same run path as the notebook — ssh host, agent,
-inputs, plan, run, results — without writing Python. Transform *authoring* is deliberately
-absent. Frontend source is `src/metasmith/frontend/` (Svelte 5 + Vite); the bundle it emits is
+data, plan, run, results — without writing Python. Transform *authoring* is deliberately absent.
+The Data tab is scoped to an agent because the pool is, and its rail is the agent list itself
+rather than a second list to keep in step. Frontend source is `src/metasmith/frontend/` (Svelte 5 + Vite); the bundle it emits is
 generated by `./dev/metasmith.sh --build-gui`, **never committed**, and node is a build
 dependency deliberately kept out of the conda env. Brand marks are reached through a vite alias
 rather than copied, and ship only because vite emits them into the bundle — an icon referenced by
@@ -749,6 +787,9 @@ behaviour are readable in `src/metasmith/gui/` and `src/metasmith/frontend/`.
 - **A type name is split in one place and it cuts where the engine cuts** — at the *first* `::`,
   matching `dag_draw.default_label`. The half the page prints is the *name*: a namespace is shared
   by every type in a library, so it never tells two rows apart.
+- **A section id is spelled in three places**: `SECTIONS`, the per-section key in `app.selected`,
+  and — through `SECTIONS` — what the url hash is validated against. An id added to only the first
+  falls back to the first tab on reload, with nothing to say why.
 
 ## DAG rendering
 

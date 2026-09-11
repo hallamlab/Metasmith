@@ -197,6 +197,74 @@ obtained from studying its `documentation <https://www.ncbi.nlm.nih.gov/books/NB
         },
     )
 
+Running one transform
+===========================================================
+
+Run a single transform against files you already have. The solver does not plan a workflow.
+Nextflow does not run. The protocol executes through the same code that runs a workflow step, so a
+transform that works here works in a generated workflow.
+
+Use this to check a protocol while you write it. A full workflow is the slower way to learn that a
+command line is wrong.
+
+Three things must exist first.
+
+1. The transform's library is compiled. :python:`TransformInstanceLibrary.Save` compiles it, and so
+   does ``msm build``. A library with no compiled :python:`_metadata/` cannot be loaded at all.
+2. An agent is deployed. The agent supplies the runtime that the protocol's tool environment needs.
+3. Your inputs are registered in a `data instance library <./data.html>`_. ``-i`` names an item in
+   that library, never a filesystem path.
+
+.. code-block:: bash
+    :caption: Terminal
+
+    $ msm run simple_genomics/prodigal.py \
+        -d ./inputs.xgdb \
+        -i contigs=sample_00/contigs.fna \
+        -i image=prodigal.env \
+        -w ./prodigal_out
+
+Metasmith finds the transform library by walking up from the transform file. It takes the nearest
+parent directory that holds a compiled :python:`_metadata/`.
+
+Name each input after the variable it was assigned to in the transform. The prodigal transform
+above declares :python:`contigs` and :python:`image`, so those are the names ``-i`` accepts. A
+product is not an input and cannot be bound. Repeat one name to give that input several items,
+which is what :python:`context.InputGroup` reads.
+
+.. code-block:: bash
+    :caption: Terminal
+
+    $ msm run ani_transforms/fastani.py \
+        -d ./inputs.xgdb \
+        -i pan=pangenome.txt \
+        -i asm=genome_1.fna \
+        -i asm=genome_2.fna \
+        -i image=fastani.env
+
+Name the agent with ``--agent-home``, or set ``AGENT_HOME``. A run inside an agent's own shell
+finds it already set.
+
+Products land in the working directory. Metasmith names each product from its lineage and lists
+every one at the end of the run.
+
+The library is not paperwork. It is the channel a generated workflow uses, and binding through it
+is what makes the two paths agree: an item carries the type you declared for it and the parents you
+recorded, so :python:`context.SourceOf` answers here exactly as it does in a DAG. Binding bare paths
+gave every input an empty ancestry, and a collecting transform asking which sample a file came from
+got nothing back.
+
+.. caution::
+
+    Nothing checks the item against the slot. The type you declared **is** the statement of what
+    the file is, and Metasmith never opens the data to second-guess it — verifying that a folder of
+    600,000 profiles really is a profile database is not tractable, which is the whole reason types
+    are declarations here.
+
+This path keeps no cache and reuses no earlier result. Every run executes the protocol. Once the
+transform behaves, generate a workflow to run it at scale over many samples. See
+`Workflow generation <./workflow_generation.html>`_.
+
 References
 ===========================================================
 
