@@ -128,6 +128,12 @@ is recorded here because nothing in the code says so:
 identify and align stages complete in three minutes against release 232; the bacterial
 inference is a FastTree over 189,805 taxa and runs for days.
 
+`metagenomics/binning/metawrap.py` belongs to the MAG lane rather than this one, and is
+verified: 84,992 contigs of a 2019 groundwater assembly and ten million read pairs give
+52, 143 and 87 bins from the three binners, consolidating to 34 at 50% completion and 10%
+contamination. The whole run takes about three hours on sixteen cores, and the refinement
+is two of those.
+
 **CAUTION**: a tool's own source does not list the files it writes. vConTACT3 carries
 the strings `nodes.csv`, `edges.csv` and `ani_summary.tsv` in a docstring and in
 comments, and writes none of them. Collect an output by pattern after a real run.
