@@ -18,6 +18,7 @@ from ..models.dag_renderer import THEMES
 from ..models.paths import is_deferred
 from ..models.workflow import NextflowProcessName
 from ..ops import agent as op_agent
+from ..ops import cache as op_cache
 from ..ops import data as op_data
 from ..ops import runtime as op_runtime
 from ..ops import inputs as op_inputs
@@ -1999,6 +2000,81 @@ def agent_presets(name):
     if not p.agent_exists(name):
         raise ProjectError(f"no agent named [{name}]")
     return jsonify(op_runtime.list_presets(str(p.agent_path(name))))
+
+
+# -- an agent's store ------------------------------------------------------
+#
+# The pool lives at an agent's home, so the tab is scoped to an agent the same
+# way. Every route here hands straight to `ops/`: the tab is a view of the
+# backend, and there is nothing it can do that the CLI cannot.
+
+
+def _agent_store_home(name: str) -> str:
+    p = _project()
+    if not p.agent_exists(name):
+        raise ProjectError(f"no agent named [{name}]")
+    info = _agent_payload(p, name)
+    if info.get("home_type") != "DIRECT":
+        raise ProjectError(
+            f"[{name}] keeps its home on another host, and a store is read "
+            "where it sits. Run the store commands there."
+        )
+    home = info.get("real_path") or info.get("home")
+    if not home:
+        raise ProjectError(f"[{name}] has no home to read a store from")
+    return str(home)
+
+
+@bp.get("/agents/<name>/store")
+def agent_store(name):
+    q = request.args
+    return jsonify(op_cache.list_cache(
+        agent_home=_agent_store_home(name),
+        origin=q.get("origin") or None,
+        run=q.get("run") or None,
+        tag=q.get("tag") or None,
+        dtype=q.get("dtype") or None,
+        group_by=q.get("group_by") or None,
+        sort_by=q.get("sort_by") or "created_at",
+        descending=q.get("order", "desc") != "asc",
+        include_tombstoned=q.get("include_tombstoned") == "1",
+    ))
+
+
+@bp.post("/agents/<name>/store/import")
+def agent_store_import(name):
+    b = _body()
+    path = (b.get("path") or "").strip()
+    dtype = (b.get("dtype") or "").strip()
+    assert path, "a path is required"
+    assert dtype, "a type is required -- the declaration is what identifies it"
+    return jsonify(op_data.import_item(
+        path, dtype,
+        agent_home=_agent_store_home(name),
+        name=(b.get("name") or None),
+        parents=(b.get("parents") or None),
+        tags=(b.get("tags") or None),
+    ))
+
+
+@bp.post("/agents/<name>/store/entries/<key>/tags")
+def agent_store_tags(name, key):
+    b = _body()
+    return jsonify(op_cache.set_entry_tags(
+        key, list(b.get("tags") or []),
+        agent_home=_agent_store_home(name),
+        replace=bool(b.get("replace")),
+        remove=bool(b.get("remove")),
+    ))
+
+
+@bp.delete("/agents/<name>/store/entries/<key>")
+def agent_store_forget(name, key):
+    return jsonify(op_data.forget_item(
+        key,
+        agent_home=_agent_store_home(name),
+        delete=request.args.get("delete") == "1",
+    ))
 
 
 @bp.post("/share/export")

@@ -264,7 +264,7 @@ def ExecuteStep(
         external_agent_home=Path(agent_home),
         _environment=Environment(
             image="", runtime=agent.runtime, gpu_args=list(agent.gpu_args),
-            rootfs=_rootfs,
+            rootfs=_rootfs, native=agent.native,
         ),
         params=params,
         _slot_keys=slot_keys,

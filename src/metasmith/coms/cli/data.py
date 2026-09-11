@@ -134,6 +134,59 @@ def register(subs):
         a.src_uri, a.dest, a.cache_root, a.on_exist, not a.no_image,
     ))
 
+    _imp = sp.add_parser(
+        "import",
+        help="register a file or folder you already have as a pool instance",
+        description="Register data into an agent's pool: nothing is copied, "
+                    "moved or read. The identity is minted from the type and "
+                    "the name, so importing the same path under the same type "
+                    "twice is one entry, and importing it under a different "
+                    "type or --name is a second one. Not `import-library`, "
+                    "which fetches a whole library and indexes it.",
+    )
+    _imp.add_argument("path", help="the file or folder, left where it is")
+    _imp.add_argument("--dtype", required=True, metavar="NS::TYPE",
+                      help="what it is; this declaration is the trust, and "
+                           "nothing here opens the data to check it")
+    _imp.add_argument("--agent-home", default=None,
+                      help="agent whose pool to import into; defaults to $AGENT_HOME")
+    _imp.add_argument("--cache-root", default=None,
+                      help="the pool directly, instead of an agent's")
+    _imp.add_argument("--name", default=None,
+                      help="the name the identity is minted from (default: the "
+                           "absolute path). Give one to keep an identity across "
+                           "a move.")
+    _imp.add_argument("--parent", action="append", default=[], dest="parents",
+                      help="an instance id, or the path of something already in "
+                           "the pool; repeatable")
+    _imp.add_argument("--tag", action="append", default=[], dest="tags",
+                      help="a label of your own to group by later; repeatable")
+    _imp.add_argument("--type-lib", action="append", default=[],
+                      dest="type_library_paths",
+                      metavar="[NS=]PATH",
+                      help="type library to resolve --dtype against, as "
+                           "NS=PATH or PATH (namespace defaults to the file "
+                           "stem); an unknown name is refused when one is given")
+    _imp.set_defaults(func=lambda a: _ops.import_item(
+        a.path, a.dtype, agent_home=a.agent_home, cache_root=a.cache_root,
+        name=a.name, parents=a.parents or None, tags=a.tags or None,
+        type_library_paths=a.type_library_paths or None,
+    ))
+
+    _fg = sp.add_parser(
+        "forget",
+        help="drop an imported entry from the pool (the data is untouched)",
+    )
+    _fg.add_argument("instance_id")
+    _fg.add_argument("--agent-home", default=None)
+    _fg.add_argument("--cache-root", default=None)
+    _fg.add_argument("--delete", action="store_true",
+                     help="also remove the shard, which holds only the manifest")
+    _fg.set_defaults(func=lambda a: _ops.forget_item(
+        a.instance_id, agent_home=a.agent_home, cache_root=a.cache_root,
+        delete=a.delete,
+    ))
+
     _pn = sp.add_parser("pin", help="trust this library's recorded ids; refuse mutation")
     _pn.add_argument("library")
     _pn.add_argument("--deep", action="store_true",

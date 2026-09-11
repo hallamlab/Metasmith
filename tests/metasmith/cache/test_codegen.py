@@ -159,6 +159,9 @@ def test_the_step_meta_carries_what_the_task_promotes_with(tmp_path):
         assert meta is not None, mp
         assert meta.transform_key and meta.signature and meta.step_name
         assert meta.slot_files and all(sf["slot_id"] for sf in meta.slot_files)
+        # The key is a property-set fingerprint and cannot be read back as a
+        # type. The name is what makes a promoted product describable.
+        assert all(sf["dtype_name"] for sf in meta.slot_files), meta.slot_files
         assert meta.slot_channels
         text = mp.read_text()
         for gone in ("cache_key ", "batches ", "sorted_inputs ", "out_identities "):
