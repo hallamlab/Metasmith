@@ -3,7 +3,11 @@ from pathlib import Path
 
 from metasmith.coms.cli import main as cli_main
 from metasmith.models.direct_run import RunTransform
-from metasmith.testing.mock_transforms import alignment_transform, params_transform
+from metasmith.testing.mock_transforms import (
+    alignment_transform,
+    params_transform,
+    provenance_transform,
+)
 
 from .conftest import create_transform_library
 
@@ -129,3 +133,25 @@ class TestRunTransformParams:
             cli_main()
         assert excinfo.value.code == 0
         assert (work / "aligned.bam").read_text() == "cpus=12 memory=48 attempt=3"
+
+
+# A direct run is one coherent sample, so every supplied input is an ancestor of every
+# other and `SourceOf` has to answer rather than raise. Without this the whole class of
+# collecting transforms -- anything that recovers a sample label from its inputs -- is
+# unrunnable outside Nextflow.
+class TestRunTransformProvenance:
+    def test_source_of_resolves_a_sibling_slot(self, mock_samples, mock_types, temp_dir):
+        tr_lib = create_transform_library(
+            temp_dir / "tr_prov", mock_types, provenance_transform(),
+        )
+        reads, asm = _alignment_inputs(mock_samples)
+        work = temp_dir / "work_prov"
+
+        result = RunTransform(
+            transform_lib=tr_lib.location,
+            transform="provenance_echo.py",
+            inputs=[("mock::reads", reads), ("mock::assembly", asm)],
+            work_dir=work,
+        )
+        assert result.success
+        assert (work / "aligned.bam").read_text() == reads.name
