@@ -8,27 +8,29 @@ from ..install_mock.verify_local_artifacts import InstallContext
 from ..harness.sandbox import SandboxLayout
 from .base import PromptContext, VerifyContext, _self_report_failures, _artifact_failures
 from ._fixture_utils import (
-    TypeSpec, TransformSpec,
-    build_type_lib_dir, build_transform_lib, write_text_file,
+    TypeSpec, TransformSpec, DataItemSpec,
+    build_type_lib_dir, build_transform_lib, build_data_lib,
 )
 
 
 _PROMPT = """\
 You are a synthetic user evaluating metasmith {VERSION}.
 
-A transform library and a concrete input file have been pre-staged for
-you:
+A transform library and a data instance library have been pre-staged
+for you:
 
   type lib:      {SANDBOX}/workspace/types/myproj.yml
   transform lib: {SANDBOX}/workspace/transforms/   (contains transform `copy`)
-  input file:    {SANDBOX}/workspace/input.txt     (type `myproj::input_text`)
+  data lib:      {SANDBOX}/workspace/data.xgdb     (holds one `myproj::input_text` item)
 
 Your task: use the `metasmith run` command (NOT `metasmith plan`) to
-execute the `copy` transform directly against the input file, writing
-outputs under {SANDBOX}/workspace/run_output/.
+execute the `copy` transform directly against the item in the data
+library, writing outputs under {SANDBOX}/workspace/run_output/.
 
-`metasmith run --help` documents the exact flag layout (transform-lib,
-transform, input bindings of the form TYPE=PATH, work-dir).
+`metasmith run --help` documents the exact flag layout. An input binding
+names the variable the requirement was assigned to in the transform and
+an item in the data library, never a filesystem path. `metasmith data
+list` shows what the library holds.
 
 When the run completes and `workspace/run_output/` contains at least one
 file produced by the transform, write {SANDBOX}/workspace/ANSWER.txt —
@@ -76,7 +78,13 @@ class StoryRunDirectScenario:
                           inputs=["myproj::input_text"],
                           outputs=["myproj::output_text"]),
         ])
-        write_text_file(ws / "input.txt", "hello\n")
+        build_data_lib(layout, ws / "data.xgdb", types_dir / "myproj.yml", [
+            DataItemSpec(
+                name="example_input",
+                dtype="myproj::input_text",
+                value="hello",
+            ),
+        ])
 
     def build_prompt(self, ctx: PromptContext) -> str:
         return _PROMPT.format(SANDBOX=str(ctx.sandbox), VERSION=ctx.version)
