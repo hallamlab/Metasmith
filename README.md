@@ -102,20 +102,34 @@ not.
 
 ## State
 
-Every transform under `src/metasmith_libraries/transforms/viromics/` is a **mock**:
-the model — requirements, products, `parents`, `group_by`, `output_signature` — is
-written for real, and the protocol touches its outputs and runs no tool. A solved
-plan therefore proves the types line up and the planner reaches every target. It
-proves nothing about whether CheckV likes the input.
+Every transform under `src/metasmith_libraries/transforms/viromics/` runs its tool.
+Each declares an `env::` requirement, and each tool needing a reference declares that
+too. A solved plan now stands for work that would happen.
 
-`implementation_handoff.md` is what the next session needs: per mock, the command,
-the outputs to copy out, the container, and the filename trap already known about
-it. `tool_probe_notes.md` is the journal of running each tool to establish those
-file shapes. `pipeline_steps.yml` maps all forty rows to a transform and a status.
+Nine of the twelve ran against real input with their products read: CheckV, CCTyper,
+the spacer BLAST, both MMseqs2 clusterings, prodigal-gv, the length table, the merge,
+VIBRANT and vConTACT3.
 
-The adapters on `genomad.py` and `virsorter2.py` are real code, not mocks, and are
-the least verified part — no image for either was available locally, so their
-column names are resolved by name with a loud assert rather than confirmed.
+Three did not run, for reasons outside the code:
+
+- `iphop_add_to_db` and `iphop_predict` need iPHoP's host database. `iPHoP_db_Aug23_rw`
+  arrives as seventeen 10 GiB chunks, joins into one tarball, then unpacks in place.
+  Peak disk is three times the download. Stage it on cluster scratch.
+- `metagenomics/taxonomy/gtdbtk_de_novo.py` never executed. It exists because
+  `iphop add_to_db` reads decorated trees, which only `de_novo_wf` writes.
+
+The adapters on `genomad.py` and `virsorter2.py` remain the least verified part. No
+image for either was available locally, so their column names resolve by name with a
+loud assert rather than by confirmation.
+
+**CAUTION**: a tool's own source does not list the files it writes. vConTACT3 carries
+the strings `nodes.csv`, `edges.csv` and `ani_summary.tsv` in a docstring and in
+comments, and writes none of them. Collect an output by pattern after a real run.
+
+`implementation_handoff.md` gives the command, the container and the expected output
+paths per transform, and calls each path a claim to check. `tool_probe_notes.md` is the
+journal behind those claims. `pipeline_steps.yml` maps all forty rows to a transform and
+a status.
 
 ## Antonio's material
 
@@ -132,11 +146,16 @@ https://www.nature.com/articles/s41467-026-68914-2#Sec10.
 
     PYTHONPATH="$PWD/src" mamba run -n msm bash dev/libraries.sh -bm
 
-`dev/libraries.sh -b` adds a solve of all eleven shipped templates — the gate on
+`dev/libraries.sh -b` adds a solve of every shipped template — the gate on
 any change to a shared transform. `research/metasmith_libraries/template_fingerprint.py`
 prints step count *plus the transform behind every step*, which is what catches a
-re-route that leaves the count unchanged; the pre-change reference is
+re-route that leaves the count unchanged. The reference is
 `research/viromics/results/template_baseline.txt`.
+
+**CAUTION**: `src/metasmith/engine/` is an untracked build product. A fresh worktree
+holds no `msm_solver` and falls back to the python solver, which answers with a
+different plan. Copy `src/metasmith/engine/*` into a worktree before comparing
+fingerprints across commits.
 
 Plan search runs ~15x faster with the Rust solver staged
 (`src/workflow_solver/dev.sh --stage`, or `dev/metasmith.sh -bel` to build it).
