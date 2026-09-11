@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import re
 import shutil
 import tempfile
@@ -546,10 +547,79 @@ class _WorkflowOps:
                 idle_timeout=PROBE_TIMEOUT, what="checking the launcher",
             )
             assert "launcher-present" in res.out, f"launcher missing at [{launcher}]; re-stage the task"
-            sh_remote.Exec(
-                f"{launcher} {stub_delay:0.3f}",
-                idle_timeout=IDLE_TIMEOUT, what="launching the run",
-            )
+
+            # Opt-in: a run whose driver must outlive a login-node session.
+            #
+            # A ten-sample run's driver vanished after 29 hours on a fir login
+            # node while polling normally, orphaning its Slurm jobs and leaving
+            # ready steps undispatched with no failure row anywhere. WHY is not
+            # known. It was not the cgroup: `oom_kill` and `oom` are both 0 on
+            # that user slice, and the 99% `memory.current` it sat at is 14.6
+            # GiB of reclaimable page cache against 27 MB of anon, with
+            # `max` counting reclaim events rather than kills.
+            #
+            # The argument for this branch does not depend on knowing. A driver
+            # on a login node has no supervision, no wall, and no record, so
+            # when it dies nobody can reconstruct what happened. In a Slurm job
+            # it has all three, and `RUN.slurmjob` gives a watchdog something
+            # to ask about. Resist the temptation to name a mechanism here: a
+            # specific cause invites someone to address that cause and consider
+            # the class handled.
+            #
+            # Off by default; every other caller is unaffected.
+            slurm_wrap = os.environ.get("METASMITH_DRIVER_SLURM")
+            if slurm_wrap:
+                from .runner import RenderLauncher
+                bres = sh_remote.Exec(
+                    f"grep '^export BINDS=' {launcher} | head -1", history=True, quiet=True,
+                    idle_timeout=PROBE_TIMEOUT, what="reading the launcher's bind spec",
+                )
+                bind_line = next((ln for ln in bres.out if ln.strip()), 'export BINDS=""')
+                binds = bind_line.split("=", 1)[1].strip().strip('"')
+                fg_script = RenderLauncher(
+                    task_key, self.setup_commands, binds, background=False,
+                    workdir=str(workspace),
+                )
+                slurm_launcher = workspace / "start.slurm.sh"
+                tag = "MSM_SLURM_LAUNCHER"
+                sh_remote.Exec(
+                    f"cat > {slurm_launcher} <<'{tag}'\n{fg_script}\n{tag}\n"
+                    f"chmod +x {slurm_launcher}",
+                    history=True, quiet=True,
+                    idle_timeout=PROBE_TIMEOUT, what="writing the Slurm driver launcher",
+                )
+                mem = os.environ.get("METASMITH_DRIVER_SLURM_MEM", "8G")
+                cpus = os.environ.get("METASMITH_DRIVER_SLURM_CPUS", "2")
+                wall = os.environ.get("METASMITH_DRIVER_SLURM_TIME", "7-00:00:00")
+                account = os.environ.get("METASMITH_DRIVER_SLURM_ACCOUNT", "")
+                acct_flag = f"--account={account} " if account else ""
+                sbatch_cmd = (
+                    f"sbatch --parsable -J msm-driver-{task_key} --chdir={workspace} "
+                    f"--time={wall} --mem={mem} --cpus-per-task={cpus} {acct_flag}"
+                    f"--output={workspace}/{AgentPaths.INTERNALS}/driver_slurm.%j.out "
+                    f"{slurm_launcher} {stub_delay:0.3f}"
+                )
+                sres = sh_remote.Exec(
+                    sbatch_cmd, history=True, quiet=True,
+                    idle_timeout=PROBE_TIMEOUT, what="submitting the driver as a Slurm job",
+                )
+                job_id = next((ln.strip() for ln in sres.out if ln.strip().isdigit()), None)
+                assert job_id, f"sbatch did not return a job id; output was {sres.out!r}"
+                sh_remote.Exec(
+                    f"echo {job_id} > {workspace}/RUN.slurmjob", history=True, quiet=True,
+                    idle_timeout=PROBE_TIMEOUT, what="recording the driver's Slurm job id",
+                )
+                Log.Info(
+                    f"driver for [{task_key}] submitted as Slurm job [{job_id}]; it runs on"
+                    f" an allocated compute node rather than this login-node session -- use"
+                    f" squeue/sacct on job [{job_id}], not this agent's PID-based tools, to"
+                    f" check on it"
+                )
+            else:
+                sh_remote.Exec(
+                    f"{launcher} {stub_delay:0.3f}",
+                    idle_timeout=IDLE_TIMEOUT, what="launching the run",
+                )
 
     def CheckWorkflow(self, task: WorkflowTask|str, run: int|None=None):
         key = task._key if isinstance(task, WorkflowTask) else str(task)

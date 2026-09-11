@@ -43,12 +43,63 @@ def _rewrite_staged_plan(task_path: Path, task: WorkflowTask):
 # process exit.
 NXF_SHUTDOWN_GRACE_S = 60
 
-def RenderLauncher(task_key: str, setup_commands: list[str], binds: str) -> str:
+def RenderLauncher(
+    task_key: str, setup_commands: list[str], binds: str, background: bool = True,
+    workdir: str | None = None,
+) -> str:
     # start.sh: the root of a run. Everything the run consists of descends from
     # the process it backgrounds, and carries the token it exports.
+    #
+    # `background=False` is for a caller that is itself already a durable host
+    # for the run -- a Slurm batch job's own script, not a login-node SSH
+    # session -- so there is nothing to free by backgrounding and returning.
+    # It runs the driver in the foreground instead, so the job's own wall is
+    # what keeps it alive rather than a login-node session that supervises
+    # nothing and records nothing. `$$` under `set -m` is this script's own
+    # pgid, the same handle a backgrounded job's `$!` would have given, so
+    # RUN.pgid still names something signalable on whichever host ran it.
+    #
+    # Note RUN.pgid is not sufficient on its own: a run's JVM gets reparented
+    # to init and then survives a kill of that process group, still holding its
+    # heap and still submitting work. An empty `squeue` does not mean a run has
+    # stopped either. RUN.slurmjob, written by the caller, is the handle that
+    # actually answers whether the driver is alive.
+    # Foreground mode writes RUN.pgid and the token/pgid echo *before* the
+    # (possibly days-long) run, since there is no backgrounding step to hand
+    # back a `$!` afterwards -- written after, both would sit undone for the
+    # run's whole duration, which is exactly the file the recovery path reads.
+    if background:
+        tail = [
+            f'nohup ../../msm api run_workflow -a key={task_key} host=$(hostname) log_dir=$LOG_DIR stub_delay=${{1:-0}} </dev/null >$LOG_DIR/agent.log 2>&1 &',
+            f'RUN_PGID=$!',
+            f'set +m',
+            f'echo "$RUN_PGID" > ./{AgentPaths.RUN_PGID_FILE}',
+            f'echo "run token is [${AgentPaths.RUN_TOKEN_ENV}], run pgid is [$RUN_PGID]"',
+        ]
+    else:
+        tail = [
+            f'RUN_PGID=$$',
+            f'set +m',
+            f'echo "$RUN_PGID" > ./{AgentPaths.RUN_PGID_FILE}',
+            f'echo "run token is [${AgentPaths.RUN_TOKEN_ENV}], run pgid is [$RUN_PGID]"',
+            f'../../msm api run_workflow -a key={task_key} host=$(hostname) log_dir=$LOG_DIR stub_delay=${{1:-0}} >$LOG_DIR/agent.log 2>&1',
+        ]
+    # `$BASH_SOURCE`-relative `cd` resolves the *staged* script's own path --
+    # right for an interactive exec, wrong under sbatch, which copies the
+    # script to a per-job spool directory first (the same trap recorded
+    # against `verify.sbatch`: `$(dirname "$0")` resolves to nothing useful
+    # there). `--chdir` on the submission already lands the job in the run's
+    # workspace, so the foreground variant takes that literal path instead of
+    # re-deriving it from a location that is about to be someone else's spool
+    # dir.
+    cd_line = (
+        'cd $( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )'
+        if background else
+        f'cd "{workdir}"'
+    )
     return "\n".join([
         f'#!/bin/bash',
-        'cd $( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )',
+        cd_line,
         "# >>> agent setup commands",
     ]+list(setup_commands)+[
         "# <<<",
@@ -72,12 +123,7 @@ def RenderLauncher(task_key: str, setup_commands: list[str], binds: str) -> str:
         f'export {AgentPaths.RUN_TOKEN_ENV}="{task_key}.$TIMESTAMP"',
         f'echo "${AgentPaths.RUN_TOKEN_ENV}" > ./{AgentPaths.RUN_TOKEN_FILE}',
         f'set -m',
-        f'nohup ../../msm api run_workflow -a key={task_key} host=$(hostname) log_dir=$LOG_DIR stub_delay=${{1:-0}} </dev/null >$LOG_DIR/agent.log 2>&1 &',
-        f'RUN_PGID=$!',
-        f'set +m',
-        f'echo "$RUN_PGID" > ./{AgentPaths.RUN_PGID_FILE}',
-        f'echo "run token is [${AgentPaths.RUN_TOKEN_ENV}], run pgid is [$RUN_PGID]"',
-    ])
+    ]+tail)
 
 
 def RenderNextflowScript(
