@@ -1,16 +1,22 @@
-# amber.py fans out over the shared binning::contig_to_bin_table supertype on
-# purpose, so it scores metabat2, semibin2 and comebin alike. That same
+# amber.py fanned out over the shared binning::contig_to_bin_table supertype
+# on purpose, so it scores metabat2, semibin2 and comebin alike. That same
 # breadth is what makes it unreachable for DAS Tool's pooled table alone: DAS
 # Tool's table also satisfies contig_to_bin_table, and lineage matching in
 # this planner is ancestral, so a target pinned to "the amber slot descending
 # from the pooled table" cannot be told apart from "descending from the raw
 # tables the pooled table itself descends from" -- the slot stays ambiguous
 # and the target is dropped rather than narrowed. Confirmed the hard way in
-# research/cami/run_cami_metag.py's `_build_binning_targets`: pinning amber's
-# existing table requirement to the DAS Tool table drops the target outright,
-# and masking the other binners out of the library so only that table remains
+# research/cami/run_cami_metag.py's `build_targets`: pinning amber's existing
+# table requirement to the DAS Tool table drops the target outright, and
+# masking the other binners out of the library so only that table remains
 # still fails, which is what shows amber cannot consume it through that
 # requirement at all rather than merely preferring another producer.
+# amber.py's own requirement is now narrower still (binning::
+# raw_contig_to_bin_table, which das_tool_contig_to_bin_table deliberately
+# does not extend -- see binning.yml), because the SAME ambiguity bites from
+# the other side too: an unpinned amber.py could satisfy a per-binner AMBER
+# target from DAS Tool's pooled table just as easily as from that binner's
+# own, since the pool descends from every table it consolidates.
 #
 # This transform requires the CONCRETE das_tool_contig_to_bin_table instead of
 # the shared supertype. Exactly one transform (das_tool.py) produces that

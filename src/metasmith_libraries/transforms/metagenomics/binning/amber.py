@@ -1,8 +1,18 @@
 # The scorer CAMI's own challenge uses (github.com/CAMI-challenge/AMBER).
-# Requiring the shared binning::contig_to_bin_table rather than any one
+# Requiring the shared binning::raw_contig_to_bin_table rather than any one
 # binner's subtype means this one transform matches metabat2, semibin2 and
 # comebin alike, fanning out per binner (and per sample) for free -- the same
 # trick checkm.py plays on sequences::putative_genome.
+#
+# raw_contig_to_bin_table, NOT the broader contig_to_bin_table: DAS Tool's
+# pooled table also extends contig_to_bin_table, and lineage matching is
+# ancestral, so a per-binner AMBER target pinned to "descends from binner B's
+# table" cannot be told apart from "is the pool B's table itself descends
+# from" -- the pooled table re-qualifies its own producers. Widening this back
+# to contig_to_bin_table silently re-routes one per-binner AMBER slot onto
+# DAS Tool's table instead of that binner's own (see binning.yml's comment on
+# raw_contig_to_bin_table and amber_das_tool.py, which is the same trap from
+# the other side).
 #
 # --skip_gs drops AMBER's own gold-standard-vs-itself sanity row: with one
 # tool scored per task instance there is nothing to compare it against, so it
@@ -22,7 +32,7 @@ model = Transform()
 
 image = model.AddRequirement(lib.GetType("env::amber.env"))
 asm   = model.AddRequirement(lib.GetType("sequences::assembly"))
-table = model.AddRequirement(lib.GetType("binning::contig_to_bin_table"), parents={asm})
+table = model.AddRequirement(lib.GetType("binning::raw_contig_to_bin_table"), parents={asm})
 gold  = model.AddRequirement(lib.GetType("binning::contig_gold_standard_table"), parents={asm})
 
 out_results     = model.AddProduct(lib.GetType("binning::amber_results"))

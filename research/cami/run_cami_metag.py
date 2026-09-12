@@ -25,6 +25,7 @@ import os
 import re
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 os.environ["PATH"] = f"{Path(sys.executable).parent}:{os.environ.get('PATH', '')}"
@@ -95,6 +96,12 @@ STAGED_REFS = {
 AGENT_IMAGE = os.environ.get(
     "MSM_AGENT_IMAGE", "docker://quay.io/hallamlab/metasmith:0.22.1")
 
+# 768000 MB / 192 cores on every fir cpubase_* partition, measured with
+# `sinfo -o "%P %c %m"` 2026-09-12 -- see make_slurm_config's comment for why this
+# replaced a flat memory literal that drifted out of sync with the cpu count it was
+# meant to track.
+FIR_MEM_MB_PER_CPU = 4000
+
 CONTAINERS = [
     "seqkit", "bbtools", "megahit", "samtools", "minimap2", "bedtools",
     "pprodigal", "diamond", "kofamscan", "polars", "python_for_data_science",
@@ -102,13 +109,50 @@ CONTAINERS = [
 ]
 
 
-def ssh_cmd(cmd, timeout=180, check=True):
-    r = subprocess.run(["ssh", HPC_HOST, cmd], capture_output=True, text=True,
-                       timeout=timeout)
-    if check and r.returncode != 0:
-        print(f"ssh stderr: {r.stderr}", file=sys.stderr)
-        raise RuntimeError(f"ssh command failed: {cmd}")
-    return r.stdout.strip(), r.returncode
+# Substrings of a transport-level failure on the shared awm ssh ControlMaster --
+# NOT the cluster being down. Four-plus driver launches (Pratama, CAMI short read,
+# CAMI long read, the orchestrator's own checks) share one ControlMaster on this
+# workstation, and its MaxSessions cap (openssh default 10) is what actually
+# refuses a session under concurrency; fir itself was up and healthy throughout
+# every occurrence measured so far. It clears on its own -- attempt 4 of 5 at a
+# 6 s backoff cleared it once -- which is why ssh_cmd retries these rather than
+# raising on the first hit. Deliberately narrow: an auth failure or a host held
+# for operator approval is not this condition and must fail fast, never retry,
+# because a retry path must ride the existing master and never re-establish a
+# fresh direct connection -- that fires a new Duo/MFA attempt, and ten
+# consecutive failures locked this account once (2026-07-02).
+_SSH_TRANSPORT_RETRY_SUBSTRINGS = (
+    "session open refused",
+    "mux_client_request_session",
+    "connection reset",
+    "connection timed out",
+    "broken pipe",
+    "kex_exchange_identification",
+)
+
+
+def ssh_cmd(cmd, timeout=180, check=True, retries=5, backoff=6):
+    last = None
+    for attempt in range(1, retries + 1):
+        r = subprocess.run(["ssh", HPC_HOST, cmd], capture_output=True, text=True,
+                           timeout=timeout)
+        transport_failure = (
+            r.returncode == 255
+            and any(p in r.stderr.lower() for p in _SSH_TRANSPORT_RETRY_SUBSTRINGS)
+        )
+        if not transport_failure:
+            if check and r.returncode != 0:
+                print(f"ssh stderr: {r.stderr}", file=sys.stderr)
+                raise RuntimeError(
+                    f"ssh command returned non-zero (exit {r.returncode}): {cmd}")
+            return r.stdout.strip(), r.returncode
+        last = r
+        if attempt < retries:
+            time.sleep(backoff)
+    print(f"ssh stderr: {last.stderr}", file=sys.stderr)
+    raise RuntimeError(
+        f"ssh transport failed after {retries} attempts -- looks like a saturated "
+        f"shared ControlMaster, not a failed command: {cmd}")
 
 
 # One agent home for the whole campaign, both corpora, all four runs -- NOT one
@@ -125,9 +169,29 @@ def ssh_cmd(cmd, timeout=180, check=True):
 HPC_MSM_HOME_PRATAMA = Path(os.environ.get(
     "MSM_AGENT_HOME_PRATAMA", str(HPC_MSM_HOME)))
 
+# Same override pattern as HPC_MSM_HOME_PRATAMA, and the same default (share
+# unless the operator opts out): added for the long-read arm, which is its own
+# separate launch (`run --with-long-read`), not a variant folded into the
+# existing CAMI corpus= "cami" invocation. Without this, `get_agent("cami_long")`
+# would have had to fall back to the SAME two-way cami-vs-pratama dispatch below,
+# and a corpus string that is neither literal "cami" nor "pratama" would have
+# silently landed on HPC_MSM_HOME_PRATAMA -- colliding the long-read launch with
+# a concurrently-running Pratama launch rather than with CAMI short read, which
+# is a worse collision than the one this env var exists to avoid. See the wave
+# report for why the default (full sharing) was judged sufficient rather than
+# forcing a split.
+HPC_MSM_HOME_CAMI_LONG = Path(os.environ.get(
+    "MSM_AGENT_HOME_CAMI_LONG", str(HPC_MSM_HOME)))
+
+_AGENT_HOMES = {
+    "cami": HPC_MSM_HOME,
+    "cami_long": HPC_MSM_HOME_CAMI_LONG,
+    "pratama": HPC_MSM_HOME_PRATAMA,
+}
+
 
 def get_agent(corpus="cami"):
-    home = HPC_MSM_HOME if corpus == "cami" else HPC_MSM_HOME_PRATAMA
+    home = _AGENT_HOMES.get(corpus, HPC_MSM_HOME_PRATAMA)
     return Agent(
         home=SshSource(host=HPC_HOST, path=home).AsSource(),
         container=AGENT_IMAGE,
@@ -136,16 +200,30 @@ def get_agent(corpus="cami"):
     )
 
 
-def enumerate_samples():
-    """(sample_id, remote reads path) for every CAMI sample.
+# The six CAMI II short-read datasets the core/variant arms have always run
+# against. Kept as an explicit allowlist rather than every samples.tsv row with
+# `read_type == "short"`, because build_samples.py now ALSO discovers
+# toy_humangut's short-read half (added alongside its long-read half purely so
+# the long-read arm can pair them under one read_metadata -- see
+# enumerate_paired_toy_humangut_samples). Filtering on read_type alone would
+# silently grow the core/variant corpus by 20 samples the moment that pairing
+# landed; this allowlist is what keeps those two arms' sample sets exactly what
+# they were before the long-read arm existed.
+_CORE_SHORT_READ_DATASETS = {
+    "marine", "strain", "toy_mousegut", "toy_hmp_airskinurogenital",
+    "toy_hmp_gastrooral", "plant_associated",
+}
 
-    Read from the tracked manifest research/cami/samples.tsv (229 rows across six
-    datasets: marine, strain, toy_mousegut, toy_hmp_airskinurogenital,
-    plant_associated, toy_hmp_gastrooral) rather than a directory glob -- a glob
-    matching only marine's own nesting silently limited every downstream driver
-    to 10 of the 229 samples, with no error, because the other five subtrees
-    nest reads differently and a glob that finds nothing is not a glob that
-    fails. `sample_id` is unique only WITHIN a dataset ("sample_0" recurs in
+
+def enumerate_samples():
+    """(sample_id, remote reads path) for every CAMI core/variant short-read sample.
+
+    Read from the tracked manifest research/cami/samples.tsv (229 rows across the
+    six datasets in `_CORE_SHORT_READ_DATASETS`) rather than a directory glob -- a
+    glob matching only marine's own nesting silently limited every downstream
+    driver to 10 of the 229 samples, with no error, because the other five
+    subtrees nest reads differently and a glob that finds nothing is not a glob
+    that fails. `sample_id` is unique only WITHIN a dataset ("sample_0" recurs in
     several), so the id returned here is namespaced with the dataset -- without
     that, two different datasets' samples collide on one `_stable_id`.
 
@@ -154,6 +232,11 @@ def enumerate_samples():
     sample. Only 110 of 229 have has_binning_gs=1 -- 119 samples have no
     gold-standard bin file at all, which is why AMBER scores through the
     read-truth bridge rather than through binning_gs.tsv directly.
+
+    samples.tsv now also carries long-read and CAMI III rows (`read_type` column);
+    this function deliberately excludes all of them -- see
+    enumerate_long_read_samples and enumerate_paired_toy_humangut_samples for
+    those.
 
     Set CAMI_READS_GLOB to fall back to the old single-glob enumeration instead,
     for the (documented, not expected) case where the manifest has gone stale
@@ -171,7 +254,68 @@ def enumerate_samples():
         return samples
 
     rows = list(csv.DictReader(CAMI_SAMPLES_TSV.open(), delimiter="\t"))
-    return [(f"{r['dataset']}_{r['sample_id']}", Path(r["reads_path"])) for r in rows]
+    return [(f"{r['dataset']}_{r['sample_id']}", Path(r["reads_path"]))
+            for r in rows if r["dataset"] in _CORE_SHORT_READ_DATASETS]
+
+
+def enumerate_paired_toy_humangut_samples():
+    """(sample_num, remote short-reads path, remote long-reads path, remote long
+    truth path or None) for every toy_humangut sample_id present in BOTH the
+    `toy_humangut` (short) and `toy_humangut_long` (long) rows of samples.tsv.
+
+    toy_humangut is CAMI III's one community CAMISIM sequenced both ways, and
+    pairing its two halves under a SHARED read_metadata is what the long-read
+    arm's ancestry-separation test actually needs: a fully independent
+    long-read-only sample can never exercise it, because metabat2, comebin,
+    prodigal and metawrap's bare `sequences::assembly` interior requirement (and
+    assembly_stats.py's bare `sequences::reads` one) only has a second candidate
+    to confuse it with when both a short and a long assembly descend from the
+    SAME sample. See build_targets_long_read's docstring for what the test is
+    and build_inputs_long_read for how the shared parent is registered.
+
+    `long truth path` is read_type long's own `has_truth`, never assumed --
+    CAMI III's toy_humangut_long ships `reads_mapping.tsv.gz` (checked
+    2026-09-12); the other four CAMI II long-read subtrees this table also now
+    carries do too, per samples.tsv's own has_truth column, which contradicts
+    this campaign's recorded assumption that they ship none. See this module's
+    docstring and the wave report for that discrepancy -- it is left
+    unresolved here on purpose: build_targets_long_read still does not add
+    AMBER for the CAMI II long-read lane, because that is a scope decision for
+    the orchestrator, not something to flip unilaterally off one honest column.
+    """
+    rows = list(csv.DictReader(CAMI_SAMPLES_TSV.open(), delimiter="\t"))
+    short = {r["sample_id"]: r for r in rows if r["dataset"] == "toy_humangut"}
+    long_ = {r["sample_id"]: r for r in rows if r["dataset"] == "toy_humangut_long"}
+    out = []
+    for sid in sorted(set(short) & set(long_),
+                      key=lambda s: int(re.search(r"\d+", s).group())):
+        s, lg = short[sid], long_[sid]
+        long_reads = Path(lg["reads_path"])
+        truth = long_reads.parent / "reads_mapping.tsv.gz" if int(lg["has_truth"]) else None
+        out.append((sid, Path(s["reads_path"]), long_reads, truth))
+    return out
+
+
+def enumerate_long_read_samples():
+    """(sample_id, remote long-reads path, remote truth path or None, dataset) for
+    every long-read row in samples.tsv (`read_type == "long"`), independent of
+    whether a short-read pair exists.
+
+    Present for completeness/reporting (`list-samples --corpus cami
+    --long-read`) and for a possible future long-read-only arm; the long-read
+    arm actually wired into `run` today only uses the toy_humangut pairing from
+    enumerate_paired_toy_humangut_samples, for the reason given there.
+    """
+    rows = list(csv.DictReader(CAMI_SAMPLES_TSV.open(), delimiter="\t"))
+    out = []
+    for r in rows:
+        if r.get("read_type") != "long":
+            continue
+        sid = f"{r['dataset']}_{r['sample_id']}"
+        reads = Path(r["reads_path"])
+        truth = reads.parent / "reads_mapping.tsv.gz" if int(r["has_truth"]) else None
+        out.append((sid, reads, truth, r["dataset"]))
+    return out
 
 
 def select(samples, args):
@@ -250,6 +394,29 @@ def build_inputs(samples):
 
     inputs.Save()
     return inputs
+
+
+def build_globals():
+    """Study-wide references ONLY (DB_PATHS, STAGED_REFS), for `resources=`
+    INSTEAD OF the full per-sample `inputs` library -- see
+    build_globals_long_read's docstring for the mechanism this guards
+    against. Latent here today, same as build_inputs_pratama's: every
+    core/variant sample carries the identical short_reads_pe + read_metadata
+    + cami_read_truth shape, so `resources=[..., inputs]` has never yet
+    unioned away a second shape the way it did for the metaGEM driver. Fixed
+    anyway rather than left for the day this corpus stops being one shape.
+    """
+    CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    lib = DataInstanceLibrary(CACHE_DIR / "cami_globals.xgdb")
+    lib.Purge()
+    for tl in ["ref.yml", "env.yml"]:
+        lib.AddTypeLibrary(MLIB / "data_types" / tl)
+    for dtype, path in DB_PATHS.items():
+        lib.RegisterItem(path, dtype, instance_id=_stable_id("cami", "ref", dtype, str(path)))
+    for dtype, path in STAGED_REFS.items():
+        lib.RegisterItem(path, dtype, instance_id=_stable_id("cami", "ref", dtype, str(path)))
+    lib.Save()
+    return lib
 
 
 def build_targets(with_dedup=True, variant="core"):
@@ -334,6 +501,22 @@ def build_targets(with_dedup=True, variant="core"):
         # aggregator pulls it in either way) and costs no step.
         t.Add("binning::das_tool_contig_to_bin_table", parents=[asm])
         t.Add("binning::das_tool_amber_results")
+        # The refined bin set DAS Tool actually selects, published and
+        # CheckM2-scored like the three raw binners' sets above -- otherwise
+        # it is built (das_tool.py already runs for the table above) and
+        # thrown away, and the reference pipeline this campaign compares
+        # against is pinned to score refined bins only. No collision with the
+        # three raw-bin checkm_stats targets above: das_tool_bin_fasta shares
+        # no ancestry with metabat2_bin_fasta/semibin2_bin_fasta/
+        # comebin_bin_fasta (das_tool.py takes each binner's TABLE and the
+        # assembly, not their bin FASTAs, and cuts its own bins straight out
+        # of the assembly -- see das_tool.py's own comment), so this is a
+        # fourth, distinct fan-out slot for checkm.py's existing
+        # sequences::putative_genome supertype match, not a fifth ambiguous
+        # producer of one already-claimed slot the way das_tool's pooled
+        # TABLE is for amber.py.
+        das_tool_bin = t.Add("sequences::das_tool_bin_fasta", parents=[asm])
+        t.Add("taxonomy::checkm_stats", parents=[das_tool_bin])
     if with_dedup and variant != "core":
         t.Add("binning_local::cluster_table", parents=[asm])
     return t
@@ -356,6 +539,311 @@ def build_transforms_for(variant="core"):
     return [
         TransformInstanceLibrary.Load(MLIB / "transforms" / "logistics"),
         _assembly_without(other),
+        TransformInstanceLibrary.Load(MLIB / "transforms" / "metagenomics"),
+    ]
+
+
+# -- Long-read arm ------------------------------------------------------------
+#
+# One flye_raw_assembly branch alongside the existing short-read spine, both
+# requested against toy_humangut's short+long pairing (enumerate_paired_toy_
+# humangut_samples) so the two assemblies share a common read_metadata ancestor.
+# That shared parentage is the whole point: it is what actually tests whether
+# the planner needs `_assembly_without()` to keep flye_raw separate from the
+# short-read assembler, the way spades needs it kept separate from megahit --
+# see build_targets_long_read's docstring for the prediction and
+# run_cami_metag.py's module docstring / the wave report for which way solving
+# it went.
+
+def enumerate_long_only_sample(dataset="marine_long", sample_id="sample_0"):
+    """One long-read-only sample (no short-read pair), added purely so
+    `list-samples --long-read` and this arm's corpus are not limited to
+    toy_humangut alone -- see the call site in cmd_run's --with-long-read
+    branch.
+
+    This does NOT give the long-read arm's solve shape heterogeneity, and an
+    earlier revision of this docstring claimed the opposite. It cannot:
+    build_inputs_long_read registers every sample, paired or long-only, under
+    the identical "long_reads + its own read_metadata [+ cami_read_truth]"
+    shape -- it never registers a paired sample's short_reads_pe at all (see
+    that function's own docstring for why). So every sample this arm plans
+    against presents the SAME shape to the solver regardless of this
+    function, "solving plan for [21] samples as [1] unique case" is the
+    CORRECT log line, and mixing this sample in exercises no case-collapse
+    check. `_assert_given_counts` (see cmd_run) is the check that actually
+    catches a collapse, because it counts registered instances directly
+    rather than reading the solver's own "unique case" bookkeeping, which is
+    right either way here and so proves nothing about it.
+    """
+    rows = list(csv.DictReader(CAMI_SAMPLES_TSV.open(), delimiter="\t"))
+    for r in rows:
+        if r["dataset"] == dataset and r["sample_id"] == sample_id:
+            reads = Path(r["reads_path"])
+            truth = reads.parent / "reads_mapping.tsv.gz" if int(r["has_truth"]) else None
+            return (f"{dataset}_{sample_id}", reads, truth)
+    raise ValueError(f"no such long-read sample tracked in samples.tsv: {dataset}/{sample_id}")
+
+
+def build_globals_long_read():
+    """Study-wide references ONLY (DB_PATHS, STAGED_REFS) -- never per-sample
+    reads or metadata -- in a library of its own, to be passed as a
+    `resources=` entry INSTEAD OF the full per-sample `inputs` library.
+
+    This split exists because of a real, confirmed bug: `Spec.SolveViews`
+    builds each solver "case" as `[sample_view] + resource_views` (see
+    src/metasmith/agents/spec.py), and `CollectSolverInputs`
+    (src/metasmith/models/workflow/plan.py) unions each group's endpoint types
+    to decide whether two groups are the "same case". A resource view of the
+    WHOLE per-sample `inputs` library contributes the union of every type
+    registered ANYWHERE in it -- every sample's read type included -- to EVERY
+    group, identically. Once that union is a superset of whatever actually
+    differs between two genuinely different sample shapes, every group's
+    endpoint set comes out equal and the solver silently collapses them to one
+    case, taking the cheapest path to the union and dropping the other shape's
+    steps with `dropped_targets` staying EMPTY and the plan reporting OK. CAMI
+    core/variant have never tripped this because every one of their samples
+    shares one shape; the long-read arm is the first corpus in this driver
+    with two, which is exactly why it needs this split and they do not (yet --
+    see the wave report for the same latent risk in build_inputs/
+    build_inputs_pratama, left unfixed there since it is not live today and
+    both arms are pinned reference plans this wave).
+    """
+    CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    lib = DataInstanceLibrary(CACHE_DIR / "cami_long_read_globals.xgdb")
+    lib.Purge()
+    for tl in ["ref.yml", "env.yml"]:
+        lib.AddTypeLibrary(MLIB / "data_types" / tl)
+    for dtype, path in DB_PATHS.items():
+        lib.RegisterItem(path, dtype, instance_id=_stable_id("cami_long", "ref", dtype, str(path)))
+    for dtype, path in STAGED_REFS.items():
+        lib.RegisterItem(path, dtype, instance_id=_stable_id("cami_long", "ref", dtype, str(path)))
+    lib.Save()
+    return lib
+
+
+def build_inputs_long_read(samples):
+    """Register every given long-read sample -- normally the full corpus from
+    enumerate_long_read_samples(), or any --sample/--limit-selected subset of
+    it -- EACH under its own independent read_metadata. `samples` is a list of
+    (sample_id, remote long-reads path, remote truth path or None, dataset)
+    tuples, matching enumerate_long_read_samples()'s return shape exactly;
+    `dataset` is accepted but unused here (registration does not care which
+    CAMI II subtree or CAMI III a sample came from -- see below for why mixing
+    them is safe). No `sequences::short_reads_pe` is registered anywhere in
+    this library, and that is deliberate, not an oversight.
+
+    Was scoped to just the CAMI III toy_humangut pairing (20 samples) plus one
+    marine_long sample in an earlier revision, which left 151 of the
+    campaign's 152 CAMI II long-read samples structurally unreachable by this
+    arm -- a scope gap, not a defect, but one that defeated the point of
+    reversing the "CAMI II long-read cannot be AMBER-scored" decision. That
+    scoping existed to test one thing (does ancestry alone separate flye_raw
+    from a short-read assembler, no mask, when both shared one meta?), which
+    ran and is settled; nothing here still depends on the toy_humangut pairing
+    specifically. See build_targets_long_read and the wave report for the
+    verification that mixing CAMI II's read-type-only samples with CAMI III's
+    (which happen to also have a short-read sibling elsewhere, never
+    registered here) is still one shape at the full 172-sample corpus size --
+    every sample gets its own independent meta with ONLY long_reads under it,
+    so nothing about a sample's dataset of origin varies what gets registered.
+
+    This used to also register a pair's short_reads_pe under the SAME meta as
+    its long_reads, specifically to test whether the planner separates
+    spades/megahit from flye_raw by ancestry alone without
+    `_assembly_without()`. That test ran and the ASSEMBLY CHOICE resolved
+    correctly in every configuration tried -- spades_assembly and
+    flye_raw_assembly, named as distinct concrete types, never bound to the
+    wrong one. But two OTHER transforms have a bare interior requirement
+    parented only to `sequences::read_metadata`, not to a specific assembly's
+    own reads, and solving with both lineages under one shared meta got BOTH
+    of them wrong:
+
+      - assembly_stats.py's bare `sequences::reads` requirement. Solved with a
+        shared meta, one run bound `short_reads_pe` to the flye_raw_assembly
+        branch (minimap2 aligning SHORT reads against a LONG-read assembly)
+        and never bound `long_reads` to it at all in that run.
+      - cami_contig_truth.py's bare `binning::cami_read_truth` requirement.
+        With both a short and a long truth table registered under one meta,
+        BOTH got bound to the single truth slot of one `cami_contig_truth`
+        step simultaneously, for both lineages' steps.
+
+    Both failure shapes are silent and exit-zero-shaped -- exactly what "check
+    products, not exit codes" exists to catch -- not solver errors: `task.ok`
+    was True, `dropped_targets` was empty, and the step list looked identical
+    to a correct one. See the wave report for the full step-by-step evidence
+    (`s.uses` on the actual WorkflowStep objects, not just step names/counts,
+    which is what surfaced this).
+
+    The fix is this: give every read type its own meta, with nothing shared,
+    so no bare-parented-to-meta dependency can ever see another lineage's
+    sibling at all. That closes the ambiguity by construction. The cost is
+    that a short-read assembly and this arm's flye_raw_assembly can no longer
+    be jointly requested in ONE solve -- confirmed separately: doing so, even
+    with two independent metas and no ambiguous dependency at all, fails
+    outright (a target reachable from one sample-view and a second target
+    reachable only from an unrelated sample-view cannot both be satisfied in
+    the same solve). This arm never needed that anyway -- it is a long-read
+    arm, not a joint short+long one.
+
+    No `binning::cami_read_truth` is registered for a sample unless one is
+    genuinely on disk (has_truth read honestly per row -- see
+    build_samples.py); `truth` may be None for a caller that has not checked.
+    """
+    CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    inputs = DataInstanceLibrary(CACHE_DIR / "cami_long_read_inputs.xgdb")
+    inputs.Purge()
+
+    for tl in ["sequences.yml", "alignment.yml", "binning.yml", "binning_local.yml"]:
+        inputs.AddTypeLibrary(MLIB / "data_types" / tl)
+
+    def _register(sid, long_reads, truth):
+        meta_value = json.dumps({"parity": "single", "length_class": "long"})
+        meta_name = f"{sid}_read_metadata.json"
+        (inputs.location / meta_name).write_text(meta_value)
+        meta = inputs.RegisterItem(
+            meta_name, "sequences::read_metadata",
+            instance_id=_stable_id("cami_long", "read_metadata", sid, meta_value),
+        )
+        inputs.RegisterItem(
+            long_reads, "sequences::long_reads", parents={meta},
+            instance_id=_stable_id("cami_long", "long_reads", sid, str(long_reads)),
+        )
+        if truth is not None:
+            inputs.RegisterItem(
+                truth, "binning::cami_read_truth", parents={meta},
+                instance_id=_stable_id("cami_long", "cami_read_truth", sid, str(truth)),
+            )
+
+    for sid, long_reads, truth, _dataset in samples:
+        _register(sid, long_reads, truth)
+
+    inputs.Save()
+    return inputs
+
+
+def build_targets_long_read():
+    """The raw-Flye long-read arm, on its own: flye_raw_assembly,
+    assembly_stats (which also yields alignment::bam), gff and
+    assembly_per_contig_coverage (matching build_targets' short-read
+    treatment), a three-binner tail (metabat2/semibin2/comebin), checkm per
+    raw bin set, AMBER scoring each of the three per-binner tables, DAS Tool
+    consolidating them into a published, CheckM2-scored refined bin set, and
+    AMBER scoring DAS Tool's own pooled table too. Verified at N=1, N=2 and
+    the full N=21 corpus -- 17 steps, `dropped_targets` empty, `task.ok`
+    True, every step correctly scoped to a single flye_raw_assembly lineage
+    with no cross-contamination (checked by dumping `s.uses`, not by step
+    count or position). That last part depends on
+    `build_transforms_for_long_read` masking `hifi/hifiasm_meta.py` as well
+    as `flye.py` -- see its own comment for a second, worse-shaped case of
+    this same bug: left unmasked, hifiasm_meta.py silently pulled in a
+    second flye_raw_assembly and, from there, a table amber_das_tool could
+    bind DAS Tool's slot to instead of the assembly this arm actually wants
+    scored.
+
+    DO NOT ALSO NAME `sequences::orfs` AS AN EXPLICIT TARGET HERE (gff is
+    fine, and is named above), even though this is no longer the hard
+    failure an earlier revision of this docstring described. That revision
+    measured (at N=1, before amber.py was narrowed to
+    `raw_contig_to_bin_table`) that naming
+    `orfs` dropped one target and re-routed a second per-binner AMBER slot
+    onto DAS Tool's pooled table -- and, before that, an even earlier
+    revision overstated it as "the ENTIRE plan fails outright, every target
+    dead-ends", which was never true. Re-measured now, with amber.py's fix in
+    place: naming `orfs` (parented to `asm_lr`) solves cleanly, `ok=True`,
+    `dropped_targets` empty, and all four AMBER-family steps still bind their
+    correct, distinct tables. It is still not free, though: it adds a second,
+    unrelated `prodigal` step bound to `sequences::isolate_assembly` by way
+    of `logistics/getNcbiAssembly.py` -- the `ncbi::genome_name` hint chain
+    already flagged elsewhere in this module as reporting noise, not a
+    failure cause. That branch is orphaned (nothing here consumes an
+    isolate_assembly-derived anything), so naming `orfs` costs a wasted step
+    for no benefit rather than breaking the plan. Leaving it untargeted does
+    not lose the data either way -- das_tool.py requires `sequences::orfs`
+    internally (parented to its own asm, prodigal's own output format), so
+    DAS Tool alone still pulls prodigal into the plan, see step 3 in the
+    verified step list -- but it is never PUBLISHED this way: nothing here
+    names `sequences::orfs` as an output, so a caller wanting the gene calls
+    as their own artifact will not get them back.
+
+    Always the three-binner tail, never MetaWRAP: MetaWRAP requires
+    `sequences::clean_short_reads`, which this arm's inputs never register
+    (see build_inputs_long_read), so it is a short-read-only binner. This is
+    also why this function takes no `variant` parameter -- there is no
+    short-read assembler choice left to make in a pure long-read arm.
+
+    NAME `sequences::flye_raw_assembly`, never the shared supertype -- for the
+    same reason build_targets names spades/megahit. Confirmed by solving that
+    this concrete-type naming is sufficient on its own for the ASSEMBLY
+    choice (no `_assembly_without()` mask needed between flye_raw and a
+    short-read assembler, because they descend from different immediate
+    ancestors) -- but see build_inputs_long_read's docstring for why that
+    result alone was not enough to make a shared read_metadata safe, and why
+    this arm's inputs give the long lineage no shared metadata to be ambiguous
+    about at all.
+
+    Requesting `binning::amber_results` / `binning::das_tool_amber_results` is
+    what pulls cami_contig_truth in automatically -- neither
+    `binning::contig_gold_standard_table` nor cami_contig_truth is named as an
+    explicit target here, matching build_targets, which never names it either
+    for the short-read lineage.
+    """
+    t = TargetBuilder()
+    asm_lr = t.Add("sequences::flye_raw_assembly")
+    t.Add("sequences::assembly_stats", parents=[asm_lr])
+    # gff and assembly_per_contig_coverage published here too, matching
+    # build_targets' short-read treatment -- both used to be orphaned in this
+    # arm (produced as manifest side-products of prodigal/assembly_stats but
+    # never named, so never collected) while the short-read arm always named
+    # them. sequences::orfs stays deliberately unnamed; see this function's
+    # own docstring for why.
+    t.Add("sequences::gff", parents=[asm_lr])
+    t.Add("sequences::assembly_per_contig_coverage", parents=[asm_lr])
+    binners = ("metabat2", "semibin2", "comebin")
+    bins = [t.Add(f"sequences::{b}_bin_fasta", parents=[asm_lr]) for b in binners]
+    tables = [t.Add(f"binning::{b}_contig_to_bin_table", parents=[asm_lr]) for b in binners]
+    for b in bins:
+        t.Add("taxonomy::checkm_stats", parents=[b])
+    for tb in tables:
+        t.Add("binning::amber_results", parents=[tb])
+    t.Add("binning::das_tool_contig_to_bin_table", parents=[asm_lr])
+    t.Add("binning::das_tool_amber_results")
+    # Refined bins, published and CheckM2-scored -- see build_targets' identical
+    # addition for why this does not collide with the three raw-bin checkm
+    # targets above.
+    das_tool_bin_lr = t.Add("sequences::das_tool_bin_fasta", parents=[asm_lr])
+    t.Add("taxonomy::checkm_stats", parents=[das_tool_bin_lr])
+    return t
+
+
+def build_transforms_for_long_read():
+    return [
+        TransformInstanceLibrary.Load(MLIB / "transforms" / "logistics"),
+        # flye.py (the clean-reads variant, fed by filtlong) masked out: it and
+        # flye_raw.py share long_reads as their common ancestor (via
+        # filtlong's clean_long_reads for flye.py), which is the "same reads,
+        # two assemblers" case build_transforms_for's own _assembly_without
+        # call guards against for spades/megahit. spades.py and megahit.py
+        # need no masking here -- nothing in this arm's inputs ever registers
+        # short_reads_pe/short_reads, so they are simply unreachable, not
+        # ambiguous.
+        #
+        # hifi/hifiasm_meta.py masked out for the identical reason: it requires
+        # bare `sequences::long_reads` with no parent pin at all (not even
+        # read_qc_stats), so it is a second, unpinned producer over this arm's
+        # only registered read type. Left unmasked it silently pulls in a whole
+        # SECOND assembly-to-DAS-Tool branch off `hifiasm_meta_assembly` -- 24
+        # steps instead of 17, metabat2/semibin2/comebin/das_tool all rerun --
+        # and das_tool.py's own bare `asm` requirement (needed so it can run
+        # against EITHER assembly) is what then lets `amber_das_tool` bind to
+        # the WRONG one: das_tool_contig_to_bin_table gets two producers, one
+        # per assembly, and the flye_raw-descended one -- the one this arm
+        # actually wants scored -- comes out orphaned instead. Confirmed by
+        # dumping `s.uses`: the other hifi/*.py transforms (hifiasm.py,
+        # miniasm.py, filtlong_targeted.py, pbBam2fastq.py) all require a
+        # narrower type this arm's inputs never register
+        # (100x_long_reads/miniasm_gfa/pacbio_hifi_bam), so they are
+        # unreachable rather than ambiguous and need no masking.
+        _assembly_without("flye", "hifi/hifiasm_meta"),
         TransformInstanceLibrary.Load(MLIB / "transforms" / "metagenomics"),
     ]
 
@@ -386,6 +874,14 @@ def enumerate_pratama_runs():
     paper's own comparison needs, and the cross-sample viral tools below pool
     across every run anyway -- collapsing replicates here would only lose
     information, not gain anything downstream.
+
+    HARD-DEPENDS ON THE CLUSTER BEING REACHABLE, including for `--dry-run`: mate
+    presence is a fetch-in-progress fact that has to be measured on fir right now
+    via `ssh_cmd`, not assumed from a static manifest, so there is no offline path
+    through this function at all. A saturated shared ControlMaster surfaces here
+    as a traceback out of `ssh_cmd` before dry-run even reaches the planner --
+    that is a transport hiccup, not evidence the Pratama corpus or the cluster is
+    broken. See `ssh_cmd`'s own retry/backoff for the same reason it exists.
     """
     rows = list(csv.DictReader(PRATAMA_RUNS_TSV.open(), delimiter="\t"))
     paired = [r for r in rows if r["library_layout"] == "PAIRED"]
@@ -535,7 +1031,46 @@ def build_inputs_pratama(runs, with_gpr_panel=False, with_zenodo_comparison=Fals
     return inputs
 
 
-def build_targets_pratama(with_gpr_panel=False, with_zenodo_comparison=False):
+def build_globals_pratama(with_gpr_panel=False, with_zenodo_comparison=False):
+    """Study-wide references ONLY (DB_PATHS, STAGED_REFS, and the two
+    DEFERRED pairs when their flag is on), for `resources=` INSTEAD OF the
+    full per-sample `inputs` library -- see build_globals_long_read's
+    docstring for the mechanism this guards against.
+
+    The two DEFERRED pairs have to be carried here rather than dropped: they
+    are parentless (see build_inputs_pratama), so `AsSamples` never reaches
+    them either way, and they were ONLY ever visible to the solver by riding
+    along inside the `resources=[..., inputs]` list this function replaces.
+    Registering them under a fresh corpus namespace ("pratama_globals", not
+    "pratama") is fine -- DEFERRED items have no path to hash and no sample
+    lineage to collide with; the type name alone identifies the slot.
+
+    Latent otherwise, same as build_globals's docstring: every Pratama run
+    carries the identical read_pair + read_metadata + zipped_forward/reverse
+    shape today, parented under the one shared `contig_study` root, so
+    `resources=[..., inputs]` has not yet unioned away a second run shape.
+    """
+    CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    lib = DataInstanceLibrary(CACHE_DIR / "pratama_globals.xgdb")
+    lib.Purge()
+    for tl in ["ref.yml", "env.yml", "pratama.yml"]:
+        lib.AddTypeLibrary(MLIB / "data_types" / tl)
+    for dtype, path in DB_PATHS.items():
+        lib.RegisterItem(path, dtype, instance_id=_stable_id("pratama_globals", "ref", dtype, str(path)))
+    for dtype, path in STAGED_REFS.items():
+        lib.RegisterItem(path, dtype, instance_id=_stable_id("pratama_globals", "ref", dtype, str(path)))
+    if with_gpr_panel:
+        lib.AddItem(DEFERRED, "ref::mnxr_lookup")
+        lib.AddItem(DEFERRED, "ref::label_transfer_landmarks")
+    if with_zenodo_comparison:
+        lib.AddItem(DEFERRED, "pratama::published_mags")
+        lib.AddItem(DEFERRED, "pratama::published_votus")
+    lib.Save()
+    return lib
+
+
+def build_targets_pratama(with_gpr_panel=False, with_zenodo_comparison=False,
+                          with_host_prediction=False):
     """MEGAHIT + MetaWRAP + CheckM2, plus the viral survey.
 
     The viral block WAS a blind copy of research/viromics/viromics_survey_from_paired_reads.py's
@@ -599,13 +1134,47 @@ def build_targets_pratama(with_gpr_panel=False, with_zenodo_comparison=False):
     asm = t.Add("sequences::megahit_assembly")
     frozen = t.Add("viromics::dereplicated_candidate_virus")
 
+    # This plan has TWO producers of `sequences::orfs` -- prodigal.py on the
+    # whole assembly (line ~1137 below, das_tool's own) and prodigal_gv.py on
+    # `frozen`, the viral set -- and nothing here pins which one the per_sample
+    # annotation targets below (dramv_distill/dram_annotations/gpr_table) get:
+    # they all have a bare `sequences::orfs` requirement, satisfied ancestrally
+    # by whichever producer descends from the same asm/frozen ancestor the
+    # rest of their own dependency chain does. Verified correct by dumping
+    # `s.uses` on a real 47-step plan -- DAS Tool binds prodigal's, the
+    # annotation chain binds prodigal_gv's -- but both descend from the same
+    # assembly, ancestral matching cannot tell them apart in principle, and
+    # nothing here would notice if a future target-set change flipped the
+    # annotation chain onto the whole-assembly ORFs silently. Cheap to verify
+    # again after any change near here; not cheap to pin outright without
+    # narrowing one of the two `sequences::orfs` consumers the way amber.py
+    # was narrowed to `raw_contig_to_bin_table` (see binning.yml), which is
+    # out of scope for this pass.
+    #
     # cross-sample tools, pooled on the frozen set (viromics TARGETS[2:9] minus
     # kofamscan_descriptions -- see the docstring)
-    for dtype in ("viromics::contig_length_table", "viromics::precluster_table",
-                  "viromics::votu_cluster_table", "viromics::checkv_contamination",
-                  "viromics::vcontact3_network",
-                  "viromics::host_prediction_genome", "viromics::spacer_host_links"):
+    cross_sample = ["viromics::contig_length_table", "viromics::precluster_table",
+                    "viromics::votu_cluster_table", "viromics::checkv_contamination",
+                    "viromics::vcontact3_network", "viromics::spacer_host_links"]
+    # host_prediction_genome is OPT-IN, and dropping it is the single largest cost
+    # saving in this arm. Naming it pulls `gtdbtk_de_novo` (32 cpus, 240 GB, a 48 h
+    # wall over 189,805 taxa) plus iphop_add_to_db/iphop_predict and their ~0.5 TB
+    # database in behind it, and acceptance criterion 2 asks for a vOTU catalogue,
+    # MAGs and AMG calls -- host prediction is not among them.
+    #
+    # CAUTION, and this is why the line below exists: host_prediction_genome was
+    # ALSO the only thing reaching the MAG chain. It pulls the three-binner
+    # ensemble + aggregator + skani_dedup in behind it, and `aggregator` HARD
+    # REQUIRES taxonomy::gtdbtk per binner, so that chain is where criterion 2's
+    # MAG comparison actually comes from -- NOT the MetaWRAP lane. Dropping host
+    # prediction without naming the dereplication output directly would silently
+    # delete the thing being compared to Pratama's published MAGs.
+    if with_host_prediction:
+        cross_sample.append("viromics::host_prediction_genome")
+    for dtype in cross_sample:
         t.Add(dtype, parents=[frozen])
+    # The MAG chain, named directly rather than inherited from host prediction.
+    t.Add("binning_local::cluster_table", parents=[asm])
     if with_zenodo_comparison:
         t.Add("pratama::votu_recovery_table", parents=[frozen])
     # per-sample viral work that nothing above reaches (viromics TARGETS[10], [12])
@@ -668,14 +1237,36 @@ def make_slurm_config(comebin_device="cpu", comebin_time="3d", comebin_cpus=48):
             "        beforeScript = 'export APPTAINERENV_CUDA_VISIBLE_DEVICES=$CUDA_VISIBLE_DEVICES'",
         ]
     else:
-        # A quarter of a fir compute node. They are 192-core AMD Turin (8 sockets of 24,
-        # one thread per core) with 768 GB, and the `cpubase_bycore_*` partitions
-        # schedule partial nodes, so this queues like a normal job. Memory is 4 GB per
-        # core by entitlement, so 96 GB is free headroom rather than a larger ask.
+        # A quarter (at the 48-cpu default) of a fir compute node: 2x AMD EPYC 9655
+        # (Zen 5), 192 cores, 768000 MB per node -- measured directly with
+        # `sinfo -o "%P %c %m"` on fir 2026-09-12 against every cpubase_* partition,
+        # because the prior comment's "96 GB is free headroom by entitlement" was
+        # never checked against that command and was wrong: entitlement is exactly
+        # 768000/192 = 4000 MB/core, so a flat 96 GB is headroom only up to 24 cpus,
+        # and at the 96 cpus this used to hardcode it is 288 GB short of entitlement,
+        # not over it. That gap is why two of ten tasks were OOM-killed -- measured
+        # RSS ran 72-96 GiB, i.e. already pinned against the flat cap.
+        #
+        # Memory is DERIVED from comebin_cpus below, not a second literal, so the
+        # two can no longer drift apart the way they just did. At the 48-cpu default
+        # that is 48 * 4000 MB = 192 GB -- comfortably above the 72-96 GiB observed
+        # at double the cores, since comebin's memory floor is set mostly by the
+        # contig/k-mer data rather than by thread count.
+        #
+        # CAUTION: cpus is not a pure resource knob here. comebin.py reads
+        # context.params.get('cpus', 8) and passes it straight to
+        # `run_comebin.sh -t {threads}`, which is COMEBin's own thread count for its
+        # torch contrastive-learning step -- the container's hardcoded single-thread
+        # OpenMP setting does not throttle that. So this value simultaneously sizes
+        # the Slurm allocation AND how many threads COMEBin itself spins up.
         #
         # 48 rather than 96 because comebin's training is Amdahl-limited and the
         # allocation, not the wall, is the scarce thing. Halving the cores costs well
-        # under double the wall and saves real core-hours.
+        # under double the wall and saves real core-hours. Calibration from a sibling
+        # project: 73k contigs at 64 threads finished in 12 min with a 5.2 GB peak,
+        # and the Leiden sweep itself finished in 16 m at 16 cores against 7 m 43 s at
+        # 96 -- its training is Amdahl-limited, which is the same reason 48 beats 96
+        # here rather than just costing less.
         #
         # 3d, not 24h, and this is the load-bearing setting. Ten marine samples at 96
         # cores ranged 6 h 28 m to over 11 h 44 m -- a 1.8x spread driven by community
@@ -687,9 +1278,10 @@ def make_slurm_config(comebin_device="cpu", comebin_time="3d", comebin_cpus=48):
         #
         # The r1 fork-after-threads deadlock in the Leiden sweep has not reproduced
         # here: the sweep finished in 16 m at 16 cores and 7 m 43 s at 96.
+        mem_gb = comebin_cpus * FIR_MEM_MB_PER_CPU // 1000
         body = [
             f"        cpus = {comebin_cpus}",
-            "        memory = '96 GB'",
+            f"        memory = '{mem_gb} GB'",
             f"        time = '{comebin_time}'",
             f'        clusterOptions = "--nodes=1 --ntasks=1 --account={SLURM_ACCOUNT}"',
         ]
@@ -727,6 +1319,39 @@ def _report_plan_failure(task):
     sys.exit(1)
 
 
+def _assert_given_counts(task, expected: dict):
+    """Refuse to proceed unless every registered read leaf appears in
+    `task.plan.given` at exactly the count it was registered.
+
+    `task.ok` and an empty `dropped_targets` are not enough: the metaGEM
+    driver reported both while `CollectSolverInputs` had silently planned a
+    whole study's reads out of existence -- 491 metadata nodes coexisted with
+    443 of each read type and zero single-end reads, no error raised
+    anywhere. The solver's own "solving plan for [N] samples as [K] unique
+    cases" log line does not catch this either -- see
+    enumerate_long_only_sample's docstring for a case where that line is
+    correct either way and so proves nothing.
+    `Counter(i.dtype_name for i in task.plan.given)` does, because it counts
+    the actual given instances the plan carries rather than the solver's
+    bookkeeping about them: any driver that registers per-sample reads should
+    call this right after `GenerateWorkflow` with the count it just
+    registered for each read-bearing type.
+    """
+    from collections import Counter
+    got = Counter(i.dtype_name for i in task.plan.given)
+    problems = [
+        f"{dtype_name}: expected {want}, plan.given has {got.get(dtype_name, 0)}"
+        for dtype_name, want in expected.items() if got.get(dtype_name, 0) != want
+    ]
+    if problems:
+        print("ERROR: given-instance count mismatch -- refusing to proceed "
+              "(a plan can report ok=True and dropped_targets=[] while still "
+              "having silently planned reads out of existence):", file=sys.stderr)
+        for p in problems:
+            print(f"  {p}", file=sys.stderr)
+        sys.exit(1)
+
+
 def cmd_list_samples(args):
     if args.corpus == "pratama":
         kept, report = enumerate_pratama_runs()
@@ -749,6 +1374,15 @@ def cmd_list_samples(args):
             return 1
         for run, dataset, fwd, rev in kept:
             print(f"{run:14s} {dataset:10s} {fwd}")
+        return 0
+    if getattr(args, "long_read", False):
+        for sid, short_reads, long_reads, truth in enumerate_paired_toy_humangut_samples():
+            print(f"{sid:24s} paired  short={short_reads} long={long_reads} "
+                  f"has_truth={1 if truth else 0}")
+        for sid, reads, truth, dataset in enumerate_long_read_samples():
+            if dataset in ("toy_humangut_long",):
+                continue  # already listed above, paired
+            print(f"{sid:24s} long-only  reads={reads} has_truth={1 if truth else 0}")
         return 0
     for sid, reads in enumerate_samples():
         print(f"{sid:12s} {reads}")
@@ -821,7 +1455,8 @@ def cmd_run(args):
         containers = DataInstanceLibrary.Load(MLIB / "resources" / "env")
         resource_lib = DataInstanceLibrary.Load(MLIB / "resources" / "lib")
         targets = build_targets_pratama(with_gpr_panel=args.with_gpr_panel,
-                                        with_zenodo_comparison=args.with_zenodo_comparison)
+                                        with_zenodo_comparison=args.with_zenodo_comparison,
+                                        with_host_prediction=args.with_host_prediction)
 
         smith = (Agent(home=Source.FromLocal(CACHE_DIR / "dryrun_home_pratama"), runtime=Runtime.APPTAINER)
                  if args.dry_run else get_agent("pratama"))
@@ -836,12 +1471,20 @@ def cmd_run(args):
               f"sample-view(s) (pooled under viromics::contig_study)")
         task = smith.GenerateWorkflow(
             samples=sample_views,
-            resources=[containers, resource_lib, inputs],
+            resources=[containers, resource_lib,
+                      build_globals_pratama(with_gpr_panel=args.with_gpr_panel,
+                                            with_zenodo_comparison=args.with_zenodo_comparison)],
             transforms=build_transforms_for_pratama(),
             targets=targets,
         )
         if not task.ok:
             _report_plan_failure(task)
+        _assert_given_counts(task, {
+            "sequences::read_metadata": len(samples),
+            "sequences::read_pair": len(samples),
+            "sequences::zipped_forward_short_reads": len(samples),
+            "sequences::zipped_reverse_short_reads": len(samples),
+        })
 
         steps = task.plan.steps
         print(f"Plan OK -- {len(steps)} steps over {len(samples)} runs, key={task.GetKey()}")
@@ -861,6 +1504,112 @@ def cmd_run(args):
         keys_file = CACHE_DIR / "task_keys.json"
         keys = json.loads(keys_file.read_text()) if keys_file.exists() else {}
         keys[args.tag or f"pratama_{len(samples)}runs"] = task.GetKey()
+        keys_file.write_text(json.dumps(keys, indent=2))
+
+        print(f"Staging workflow to {HPC_HOST}...")
+        smith.StageWorkflow(task, on_exist=args.on_exist, verify_external_paths=False)
+        if args.stage_only:
+            print(f"\n(stage-only; staged as {task.GetKey()})")
+            return 0
+
+        config = make_slurm_config(comebin_device=args.comebin_device,
+                                  comebin_time=args.comebin_time,
+                                  comebin_cpus=args.comebin_cpus)
+        print(f"Submitting to SLURM (config: {config})...")
+        smith.RunWorkflow(
+            task=task, config_file=config,
+            params=dict(slurmAccount=SLURM_ACCOUNT,
+                        executor=dict(queueSize=500),
+                        process=dict(tries=4, array=25)),
+            resource_overrides={
+                "bbduk":   Resources(memory=Size.GB(64), cpus=16),
+                "megahit": Resources(memory=Size.GB(128), cpus=32,
+                                     duration=Duration(hours=12)),
+            },
+        )
+        print(f"Submitted: {task.GetKey()}")
+        return 0
+
+    if args.with_long_read:
+        # A SEPARATE launch from the plain CAMI short-read run above, not a mode
+        # folded into it -- see get_agent's HPC_MSM_HOME_CAMI_LONG comment and
+        # build_inputs_long_read's docstring for why (every lineage gets its
+        # own read_metadata; there is no shared-sample mode left to fold into
+        # a short-read run). --variant is not used by this arm --
+        # build_targets_long_read always runs the three-binner + DAS Tool tail,
+        # since MetaWRAP needs short reads this arm never has.
+        #
+        # The FULL long-read corpus (enumerate_long_read_samples), not just
+        # the toy_humangut pairing -- that pairing was scoped to a now-settled
+        # question (does ancestry alone separate flye_raw from a short-read
+        # assembler with no mask? yes, confirmed) and leaving the arm scoped
+        # to it left 151 of 152 CAMI II long-read samples unreachable, which
+        # defeated the point of the orchestrator's AMBER reversal. --sample/
+        # --limit govern how much of the 172-sample corpus (152 CAMI II +
+        # 20 CAMI III toy_humangut_long) actually runs; the arm itself must
+        # only be able to reach all of it.
+        samples = select(enumerate_long_read_samples(), args)
+        if not samples:
+            print("ERROR: no long-read samples found; "
+                  "run list-samples --corpus cami --long-read", file=sys.stderr)
+            return 1
+        print(f"{len(samples)} long-read sample(s): "
+              f"{', '.join(s[0] for s in samples)}")
+
+        inputs = build_inputs_long_read(samples)
+        containers = DataInstanceLibrary.Load(MLIB / "resources" / "env")
+        resource_lib = DataInstanceLibrary.Load(MLIB / "resources" / "lib")
+        targets = build_targets_long_read()
+
+        smith = (Agent(home=Source.FromLocal(CACHE_DIR / "dryrun_home_cami_long"),
+                       runtime=Runtime.APPTAINER)
+                 if args.dry_run else get_agent("cami_long"))
+
+        print("Planning workflow...")
+        # resources carries build_globals_long_read(), NOT `inputs` -- passing the
+        # whole per-sample library here is the case-collapse bug documented on
+        # build_globals_long_read. Getting this wrong would not show up as an
+        # error: the plan would still report OK with dropped_targets empty, just
+        # silently missing one shape's steps. Every sample here is independently
+        # registered (its own meta, only long_reads under it -- see
+        # build_inputs_long_read), so mixing CAMI II's read-type-only samples
+        # with CAMI III's toy_humangut ones (which also happen to have a
+        # short-read sibling elsewhere, never registered here) is still ONE
+        # shape; verified by solving at full corpus size, not assumed.
+        task = smith.GenerateWorkflow(
+            samples=list(inputs.AsSamples("sequences::read_metadata")),
+            resources=[containers, resource_lib, build_globals_long_read()],
+            transforms=build_transforms_for_long_read(),
+            targets=targets,
+        )
+        if not task.ok:
+            _report_plan_failure(task)
+        n_truth = sum(1 for _, _, truth, _dataset in samples if truth is not None)
+        _assert_given_counts(task, {
+            "sequences::long_reads": len(samples),
+            "sequences::read_metadata": len(samples),
+            "binning::cami_read_truth": n_truth,
+        })
+
+        steps = task.plan.steps
+        print(f"Plan OK -- {len(steps)} steps across {len(samples)} "
+              f"samples, key={task.GetKey()}")
+        for s in steps:
+            prods = sorted({i.dtype_name for g in s.produces for i in g})
+            print(f"  {s.order:>2}. {Path(s.transform._path).stem:28s} -> {prods}")
+        if task.plan.dropped_targets:
+            print(f"\ndropped: {sorted(task.plan.dropped_targets)}")
+            for h in (task.plan.hints or []):
+                print(f"  hint: {getattr(h, 'kind', '?')} target={getattr(h, 'target', '?')}"
+                      f" msg={getattr(h, 'message', '')}")
+
+        if args.dry_run:
+            print("\n(dry-run; nothing staged or submitted)")
+            return 0
+
+        keys_file = CACHE_DIR / "task_keys.json"
+        keys = json.loads(keys_file.read_text()) if keys_file.exists() else {}
+        keys[args.tag or f"cami_long_{len(samples)}samples"] = task.GetKey()
         keys_file.write_text(json.dumps(keys, indent=2))
 
         print(f"Staging workflow to {HPC_HOST}...")
@@ -910,12 +1659,17 @@ def cmd_run(args):
     print("Planning workflow...")
     task = smith.GenerateWorkflow(
         samples=list(inputs.AsSamples("sequences::read_metadata")),
-        resources=[containers, resource_lib, inputs],
+        resources=[containers, resource_lib, build_globals()],
         transforms=build_transforms_for(args.variant),
         targets=targets,
     )
     if not task.ok:
         _report_plan_failure(task)
+    _assert_given_counts(task, {
+        "sequences::short_reads_pe": len(samples),
+        "sequences::read_metadata": len(samples),
+        "binning::cami_read_truth": len(samples),
+    })
 
     steps = task.plan.steps
     print(f"Plan OK -- {len(steps)} steps across {len(samples)} samples, key={task.GetKey()}")
@@ -982,6 +1736,10 @@ def main():
     p.add_argument("--dry-run", action="store_true")
     p.add_argument("--stage-only", action="store_true")
     p.add_argument("--allow-partial", action="store_true")
+    p.add_argument("--long-read", action="store_true",
+                   help="cami only: list the long-read arm's samples (toy_humangut "
+                        "short+long pairs, then long-read-only rows) instead of the "
+                        "normal short-read core/variant corpus.")
     p.set_defaults(fn=cmd_list_samples)
 
     sub.add_parser("check-dbs").set_defaults(fn=cmd_check_dbs)
@@ -1028,6 +1786,21 @@ def main():
                         "pratama::published_mags and pratama::published_votus, neither "
                         "of which is unzipped anywhere yet -- the Zenodo record is on "
                         "fir only as the zips it arrived in.")
+    p.add_argument("--with-host-prediction", action="store_true",
+                   help="pratama only: add viromics::host_prediction_genome, which "
+                        "pulls gtdbtk_de_novo (32 cpus, 240 GB, a 48 h wall over "
+                        "189,805 taxa) and the iPHoP chain plus its ~0.5 TB database "
+                        "in behind it. OFF by default: acceptance criterion 2 asks "
+                        "for a vOTU catalogue, MAGs and AMG calls, and host "
+                        "prediction is not among them. The MAG chain it used to "
+                        "reach is now named directly, so turning this off no longer "
+                        "removes the MAG comparison -- see build_targets_pratama.")
+    p.add_argument("--with-long-read", action="store_true",
+                   help="cami only: a SEPARATE launch (own agent home, own task) "
+                        "that plans a raw-Flye long-read arm against toy_humangut's "
+                        "short+long pairing plus one long-read-only sample, instead "
+                        "of the normal short-read core/variant run. Not scored -- "
+                        "see build_targets_long_read.")
     p.add_argument("--comebin-device", default="cpu", choices=["cpu", "gpu"])
     p.add_argument("--comebin-time", default="3d")
     p.add_argument("--comebin-cpus", type=int, default=48)

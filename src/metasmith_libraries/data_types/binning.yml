@@ -8,30 +8,47 @@ types:
       _: contig to bin assignment table
       ext: tsv
 
-  metabat2_contig_to_bin_table:
+  # amber.py's own requirement type -- see its comment. Every table a single
+  # binner produces directly extends this; a POOLED table that consolidates
+  # several binners' tables (das_tool_contig_to_bin_table) deliberately does
+  # NOT, even though it also extends contig_to_bin_table. Ancestral lineage
+  # matching cannot tell "descends from binner B's table" apart from "is a
+  # pool that B's table itself descends from" -- ONLY the type system can, so
+  # this is the type-level fence amber.py's fan-out requirement stands behind
+  # instead of the shared, broader contig_to_bin_table. Extend this on any
+  # future single-binner table; never extend it on a consolidator's.
+  raw_contig_to_bin_table:
     extends:
     - contig_to_bin_table
+    properties:
+      _: contig to bin assignment table produced by exactly one binner, prior to any cross-binner consolidation
+
+  metabat2_contig_to_bin_table:
+    extends:
+    - raw_contig_to_bin_table
     properties:
       method: metabat2
 
   semibin2_contig_to_bin_table:
     extends:
-    - contig_to_bin_table
+    - raw_contig_to_bin_table
     properties:
       method: semibin2
 
   comebin_contig_to_bin_table:
     extends:
-    - contig_to_bin_table
+    - raw_contig_to_bin_table
     properties:
       method: comebin
 
   # MetaWRAP is one step, not three: its bin_refinement consolidates MetaBAT2,
   # MaxBin2 and CONCOCT into a single set, and that consolidated set is what is
-  # used. The three raw bin sets are not products here.
+  # used. The three raw bin sets are not products here -- so unlike DAS Tool,
+  # this table extends raw_contig_to_bin_table too: it is the only table batch
+  # 1 ever produces, and amber.py must still be able to fan out onto it.
   metawrap_contig_to_bin_table:
     extends:
-    - contig_to_bin_table
+    - raw_contig_to_bin_table
     properties:
       method: metawrap
 

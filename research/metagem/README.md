@@ -76,10 +76,24 @@ metaGEM's stated counts, and immaterial to the total either way.
   full 5.21 TB corpus would consume essentially all of that headroom if fir were used as
   a staging hop rather than streaming straight to chinook — worth knowing since it means
   fir scratch is not a comfortable fallback for a full-corpus transfer either.
-- **Against ENA's measured throughput ceiling** (57 MiB/s at 24 parallel workers, per
-  `.awm` history): 5.21 TB at that rate is **~26–27 hours of continuous, uninterrupted
-  fetch**, before the Globus push to chinook is counted at all. Tara Oceans alone is
-  ~22 hours of that.
+- **Against throughput, which on fir is a property of the NODE and not of the source.**
+  Measured 2026-09-12: every compute node tried — sixteen, spread over three racks — moved
+  0.02–0.25 MB/s to ENA, to AWS S3 and to cdn.kernel.org alike, and concurrency does not
+  recover it (ENA HTTPS aggregated 0.04 MB/s at one stream and at sixteen). A login node on
+  the same cluster moved 1.9 MB/s per stream from ENA, 26 MB/s at sixteen, and 32–36 MB/s
+  per stream from the AWS Open Data SRA mirror, 550 MB/s at sixteen. So no Slurm array
+  finishes this corpus at any width or on any transport, and the earlier 57 MiB/s figure
+  in `.awm` history was a login-node number. `cluster/` is built around that split: the
+  fetch is a bounded login-node pass (`fetch_sra.sh`, 714 GB of `.sra` for the four
+  non-Tara studies, ~1 h at the measured rate) and only the conversion runs in the queue.
+- **Against the manifest's md5, which the fast route forfeits.** The AWS mirror serves
+  NCBI's run-level `.sra`, not ENA's generated fastq, and `fasterq-dump` reproduces the
+  sequence and quality streams byte-for-byte while writing a different read header
+  (` length=82` where ENA writes `/1`) — so the gzip differs and the products run 6–8%
+  larger than the manifest's bytes. `verify_sra.py` gates on what survives that: the
+  `.sra`'s own published md5, `vdb-validate`, and ENA's published read_count and
+  base_count per run. Use the ENA path in `cluster/fetch_array.sbatch` if byte-exact ENA
+  files are required, and budget ~10 h of login-node transfer for it.
 
 **Bottom line:** the full 483-sample corpus is real (not a Tara-Oceans-scale
 overestimate — Tara actually is 82% of it) and technically fetchable only as a long
@@ -87,3 +101,37 @@ streaming job, but it is not a "just go" size. If a subset would serve the purpo
 better, the natural cut is Tara Oceans out (drops the total to 920 GB, ~9 batch cycles,
 under 4 hours of fetch time) or Tara Oceans alone as its own separately-scoped job later.
 That choice is Tony's per the brief — nothing has been subset here.
+
+## Published per-study results (comparison targets, not inputs)
+
+Everything above is the read *input* corpus. metaGEM's own published *outputs* —
+assemblies, MAGs, ORF-annotated protein bins and GEMs, one per study — are a separate
+Zenodo record apiece, named by the companion repo `franciscozorrilla/metaGEM_paper`'s
+README rather than by `metaGEM` itself (neither the tool repo nor its wiki names them).
+These are what run R4 scores against; without them R4 has nothing to compare to.
+
+| dataset (manifest) | metaGEM_paper name | Zenodo record | files | bytes |
+|---|---|---|---|---|
+| `li2019` | Plant associated | [5596948](https://zenodo.org/record/5596948) | 9 | 1.50 GB |
+| `korem2015` | Lab culture | [5593111](https://zenodo.org/record/5593111) | 9 | 0.45 GB |
+| `karlsson2013` | Human gut | [5593224](https://zenodo.org/record/5593224) | 12 | 19.15 GB |
+| `bissett_base` | Bulk soil | [5596972](https://zenodo.org/record/5596972) | 8 | 17.20 GB |
+| `sunagawa2015` | TARA oceans | [5597227](https://zenodo.org/record/5597227) + [5599412](https://zenodo.org/record/5599412) (2 records) | 8 | 57.83 GB |
+| **TOTAL** | | | **46** | **96.13 GB** |
+
+An all-GEMs-only mirror also exists (Zenodo [4407746](https://zenodo.org/record/4407746)) —
+not fetched, since the per-study records already carry each study's GEMs alongside its
+MAGs and assemblies.
+
+Fetched to `/scratch/phyberos/metagem/published/<study>/<filename>`, in R4's own study
+order (`li2019` → `karlsson2013`+`korem2015` → `bissett_base` → `sunagawa2015`) so a
+session that stops partway still lands the studies wave 3 reaches first. Same login-node
+shape as the reads corpus — Zenodo showed the same per-compute-node throttling as ENA and
+S3 — via `cluster/fetch_zenodo_published.sh cluster/published_manifest.tsv
+/scratch/phyberos/metagem/published <study>...`. Zenodo's file API publishes a real MD5
+per file (no multipart-ETag case here), so the fetch script gates on it directly rather
+than needing a separate verify pass.
+
+`published_manifest.tsv` lives in `cluster/`, not in the top-level `manifest.tsv` above:
+its rows are a different kind of thing (a Zenodo record + relpath, not a BioProject run)
+and the shapes didn't warrant forcing them into the reads schema.
