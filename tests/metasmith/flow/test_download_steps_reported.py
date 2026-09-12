@@ -18,6 +18,7 @@ from metasmith.logging import Log
 from metasmith.models.workflow import NextflowGenContext
 
 from ..fixtures.trio import build_inputs, solve_trio
+from metasmith.testing.pool_fixtures import pool_backed
 
 
 DOWNLOADERS = {"downloadUniRef50DB", "downloadKofamDB"}
@@ -43,6 +44,7 @@ def _inputs(lib_root: Path, at: Path, with_databases: bool):
         profiles.mkdir(exist_ok=True)
         (profiles / "K00001.hmm").write_text("HMMER3/f\n")
         lib.AddItem(Path("profiles"), "ref::kofamscan_profiles")
+    pool_backed(lib)
     lib.Save()
     return lib
 

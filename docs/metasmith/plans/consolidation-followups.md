@@ -189,6 +189,17 @@ tree beside it fails open to the Lustre read that produced 93 incomplete copies 
 first move is a deploy-side verb that writes the tree and its tarball together, so the
 integrity check has something that was built to satisfy it.
 
+**A driver put on a compute node by `METASMITH_DRIVER_SLURM` finds no relay there, and the run
+neither fails nor progresses.** `src/metasmith/bin/sbatch` submits through
+`RemoteShell(AgentPaths.to_local_relay_coms())`, and that path is keyed on the node's own
+hostname. On a compute node it looks for a relay socket named after that node while only the
+login nodes' sockets exist, so every submission is dropped. Nextflow logs `Error submitting ...
+Error is ignored`, the driver stays RUNNING, and nothing reports a failure -- the same silent
+undispatch the resource-ceiling work was written to prevent, one level up. Measured on fir: two
+single-sample calibration drivers sat submitting nothing, and both ran normally when relaunched
+from a login node. The first move is to start `msm_relay` on the node inside `RenderLauncher`'s
+foreground branch, before it calls `msm api run_workflow`.
+
 ## Accepted risks
 
 **An external mtime-touching event makes the next run cold, and one file is enough.** Stat

@@ -22,7 +22,9 @@ def test_forked_library_misses_a_cache_its_twin_would_hit(tmp_path, virtual_runt
     # with the fork -- the control has to be the same files in the same place.
     root = tmp_path / "a"
     types_path = build_types_library(root, TYPE_NAMES)
-    samples = build_samples_library(root, types_path, count=2, input_type="seed")
+    samples = build_samples_library(
+        root, types_path, count=2, input_type="seed", pooled=False,
+    )
     tr_lib = build_transform_library(
         root / "tr",
         types_path,

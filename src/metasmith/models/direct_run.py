@@ -97,8 +97,11 @@ def _resolve_item(lib: DataInstanceLibrary, item: str | Path) -> Path:
         f"[{item}] is not an item in [{lib.location}]"
     )
     raise ValueError(
-        f"{lead}. Add the file with `metasmith data add-item` first, then bind "
-        f"it by the name it was added under. items are: {shown}"
+        f"{lead}. Data enters by import and is bound by the name it was "
+        f"imported under:\n"
+        f"  metasmith data import <path> --dtype <NS::TYPE> --name <name> "
+        f"--agent-home <home>\n"
+        f"then build the library from that entry. items are: {shown}"
     )
 
 
