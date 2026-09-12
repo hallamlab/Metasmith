@@ -369,7 +369,7 @@ def enumerate_pratama_runs():
     return kept, report
 
 
-def build_inputs_pratama(runs, with_gpr_panel=False):
+def build_inputs_pratama(runs, with_gpr_panel=False, with_zenodo_comparison=False):
     """Register every run's reads through the library's paired-reads chain, plus
     one shared viromics::contig_study root the viral survey's cross-sample tools
     pool under.
@@ -404,7 +404,7 @@ def build_inputs_pratama(runs, with_gpr_panel=False):
 
     for tl in ["sequences.yml", "alignment.yml", "ref.yml", "annotation.yml",
                "taxonomy.yml", "binning.yml", "binning_local.yml", "env.yml",
-               "viromics.yml"]:
+               "viromics.yml", "pratama.yml"]:
         inputs.AddTypeLibrary(MLIB / "data_types" / tl)
 
     study_value = json.dumps({"logistics": "contig study"})
@@ -457,22 +457,62 @@ def build_inputs_pratama(runs, with_gpr_panel=False):
         inputs.AddItem(DEFERRED, "ref::mnxr_lookup")
         inputs.AddItem(DEFERRED, "ref::label_transfer_landmarks")
 
+    # T17's ground truth, same coupling as the GPR panel above and for the same
+    # reason: DEFERRED because neither is sourced yet. The Zenodo record is on fir
+    # (/scratch/phyberos/pratama2026/zenodo_17897233/) but still as the three
+    # Filtered_dereplicated_genomes_part{1,2,3}.zip and Groundwater-votu-5k.fasta.zip
+    # themselves -- pratama_mag_recovery.py and pratama_votu_recovery.py both want
+    # them unzipped (the three MAG parts pooled into one directory of one FASTA per
+    # MAG; the vOTU zip unpacked to a directory or a single multi-fasta). Nobody has
+    # done that yet, and this driver does not reach onto the cluster to do it either
+    # -- see the campaign report. Registering only when asked mirrors the GPR
+    # panel's reasoning exactly: on with nothing sourced is a DEFERRED the solver can
+    # still plan around; off is silent and correct until someone unzips the archive
+    # and this driver's `DB_PATHS` grows a `PRATAMA_ZENODO_*`-style override pointing
+    # a real RegisterItem at the unzipped location instead of this DEFERRED stand-in.
+    if with_zenodo_comparison:
+        inputs.AddItem(DEFERRED, "pratama::published_mags")
+        inputs.AddItem(DEFERRED, "pratama::published_votus")
+
     inputs.Save()
     return inputs
 
 
-def build_targets_pratama(with_gpr_panel=False):
+def build_targets_pratama(with_gpr_panel=False, with_zenodo_comparison=False):
     """metaSPAdes (JGI protocol) + MetaWRAP + CheckM2, plus the viral survey.
 
-    The viral block is copied from research/viromics/viromics_survey_from_paired_reads.py's
-    TARGETS[2:] (2026-09-11) with the assembler re-pointed: that driver pins
+    The viral block WAS a blind copy of research/viromics/viromics_survey_from_paired_reads.py's
+    TARGETS[2:] (2026-09-11) with the assembler re-pointed -- that driver pins
     `sequences::megahit_assembly` as target 0 and masks spades out; this campaign's run 2
-    is the reverse. See that file's own comment for why each target is pinned to the
-    assembly (`_ASM`) or the frozen candidate set (`_FROZEN`) the way it is -- the
-    reasoning is unchanged, only the pin.
+    is the reverse. Checked against Pratama's own Virus_bioinformatics.md
+    (data/docs/pratama2026/Groundwater_virome/Workflows/) for the first time in this
+    revision (research/pratama2026/reproduction_map.md is the row-by-row account) and
+    trimmed of two targets that were never part of Pratama's workflow at all --
+    `annotation::kofamscan_descriptions` (Antonio's KEGG-Mapper substitute; Pratama's
+    AMG calls are DRAM-v's, already covered by `annotation::dramv_distill` below) and
+    `taxonomy::metabuli` (answers no row in either workflow). Everything else survives
+    the check: geNomad, VirSorter2, VIBRANT, MMseqs2, CheckV, vConTACT3, iPHoP and the
+    CRISPR spacer BLAST are all really Pratama's own tools too, not just Antonio's.
 
     No AMBER and no cami_contig_truth: Pratama is real data with no simulated ground
     truth to score bins against.
+
+    THE ASSEMBLY CONFLICT, surfaced rather than resolved: Pratama's own metaSPAdes call
+    is `spades.py --meta -k 21,33,55,77 -m 190`, no error-correction pass. `asm` here is
+    the ONE spades transform this library carries, and it runs the DOE JGI protocol
+    instead -- bbcms error correction, `--only-assembler -k 33,55,77,99,127`, a 200 bp
+    seqkit filter -- because that is what batch 1's citable-core framing requires and a
+    second spades transform was rejected before (src/metasmith_libraries/AGENTS.md).
+    Faithful-to-Pratama and citable-core cannot both hold for this step; batch 1 keeps
+    the JGI protocol and the gap is Pratama's real assembly parameters, not a detail.
+
+    A SECOND, narrower gap in the same spot: Pratama's virus identification runs on
+    contigs from metaSPAdes AND a second MEGAHIT assembly of the same reads ("different
+    assemblers can yield complementary viral contigs"), then calls on both feed the same
+    curation. `merge_candidate_calls.py` pins its callers to ONE `sequences::assembly`
+    ancestor per contig study, so pooling both assemblers' calls into one frozen set
+    would need that transform's model changed, not a target-set change -- left as a
+    reported gap, not attempted here.
 
     `annotation::gpr_table` is OFF by default, and that is a campaign decision rather
     than a technical one. It pulls the whole chosen-4 panel in behind it -- KOfamScan,
@@ -480,26 +520,41 @@ def build_targets_pratama(with_gpr_panel=False):
     steps and, measured on the last ten-sample run, 85% of the task-hours and 96% of
     the tasks. Batch 1 is a citable core pipeline and deliberately carries no
     functional annotation lane; the panel also goes beyond what Pratama published,
-    which used DRAM. Measured here over 58 runs: 56 steps with it, 50 without.
+    which used DRAM. It is also the only thing in this target set that needs
+    `ref::mnxr_lookup` and `ref::label_transfer_landmarks`, neither of which has a
+    sourced path on fir, so turning it on requires finding those two files first --
+    StageWorkflow refuses a deferred input rather than staging a hole.
 
-    It is also the only thing in this target set that needs `ref::mnxr_lookup` and
-    `ref::label_transfer_landmarks`, neither of which has a sourced path on fir, so
-    turning it on requires finding those two files first -- StageWorkflow refuses a
-    deferred input rather than staging a hole.
+    `with_zenodo_comparison` is OFF for the identical reason and by the identical
+    mechanism: `pratama::mag_recovery_table` and `pratama::votu_recovery_table` are
+    T17's own comparison against Pratama's Zenodo products, and both transforms
+    (viromics/pratama_votu_recovery.py, metagenomics/binning/pratama_mag_recovery.py)
+    are themselves marked DESIGNED, NOT YET RUN. The MAG side costs nothing extra to
+    reach: `viromics::host_prediction_genome` above already pulls the three-binner
+    (MetaBAT2/SemiBin2/COMEBin) + aggregator + skani_dedup + GTDB-Tk de novo + iPHoP
+    chain in behind it for host prediction, which is exactly what
+    `binning::derep_mag_ref` needs -- so run 2 already runs a SECOND, undocumented
+    binning ensemble beside its own MetaWRAP lane just to answer host_prediction_genome,
+    and pinning `pratama::mag_recovery_table` to that same assembly is one more cheap
+    step (derep_mag_reference.py) on top of work already being done. See the campaign
+    report for why that second ensemble -- not MetaWRAP -- is what actually gets
+    compared to Pratama's 1275 published MAGs.
     """
     t = TargetBuilder()
     asm = t.Add("sequences::spades_assembly")
     frozen = t.Add("viromics::dereplicated_candidate_virus")
 
-    # cross-sample tools, pooled on the frozen set (viromics TARGETS[2:9])
+    # cross-sample tools, pooled on the frozen set (viromics TARGETS[2:9] minus
+    # kofamscan_descriptions -- see the docstring)
     for dtype in ("viromics::contig_length_table", "viromics::precluster_table",
                   "viromics::votu_cluster_table", "viromics::checkv_contamination",
-                  "viromics::vcontact3_network", "annotation::kofamscan_descriptions",
+                  "viromics::vcontact3_network",
                   "viromics::host_prediction_genome", "viromics::spacer_host_links"):
         t.Add(dtype, parents=[frozen])
-    # per-sample viral work that nothing above reaches (viromics TARGETS[10:13])
-    per_sample = ["annotation::dramv_distill", "taxonomy::metabuli",
-                  "annotation::dram_annotations"]
+    if with_zenodo_comparison:
+        t.Add("pratama::votu_recovery_table", parents=[frozen])
+    # per-sample viral work that nothing above reaches (viromics TARGETS[10], [12])
+    per_sample = ["annotation::dramv_distill", "annotation::dram_annotations"]
     if with_gpr_panel:
         per_sample.append("annotation::gpr_table")
     for dtype in per_sample:
@@ -514,6 +569,14 @@ def build_targets_pratama(with_gpr_panel=False):
     mw_bin = t.Add("sequences::metawrap_bin_fasta", parents=[asm])
     t.Add("binning::metawrap_contig_to_bin_table", parents=[asm])
     t.Add("taxonomy::checkm_stats", parents=[mw_bin])
+
+    # T17's MAG-side comparison. Parented to `asm`, not `frozen`: derep_mag_ref
+    # descends from the aggregator/skani_dedup chain off the SAME assembly, not from
+    # the frozen viral set, and lineage matching is ancestral -- pinning this to
+    # `frozen` would ask the solver to find a MAG reference descended from a viral
+    # FASTA, which it is not.
+    if with_zenodo_comparison:
+        t.Add("pratama::mag_recovery_table", parents=[asm])
     return t
 
 
@@ -682,10 +745,12 @@ def cmd_run(args):
             return 1
         print(f"{len(samples)} run(s) selected: {', '.join(s[0] for s in samples)}")
 
-        inputs = build_inputs_pratama(samples, with_gpr_panel=args.with_gpr_panel)
+        inputs = build_inputs_pratama(samples, with_gpr_panel=args.with_gpr_panel,
+                                      with_zenodo_comparison=args.with_zenodo_comparison)
         containers = DataInstanceLibrary.Load(MLIB / "resources" / "env")
         resource_lib = DataInstanceLibrary.Load(MLIB / "resources" / "lib")
-        targets = build_targets_pratama(with_gpr_panel=args.with_gpr_panel)
+        targets = build_targets_pratama(with_gpr_panel=args.with_gpr_panel,
+                                        with_zenodo_comparison=args.with_zenodo_comparison)
 
         smith = (Agent(home=Source.FromLocal(CACHE_DIR / "dryrun_home_pratama"), runtime=Runtime.APPTAINER)
                  if args.dry_run else get_agent("pratama"))
@@ -860,9 +925,16 @@ def main():
                    help="core: metaSPAdes + MetaWRAP + AMBER. variant: MEGAHIT + three binners + skANI.")
     p.add_argument("--with-gpr-panel", action="store_true",
                    help="pratama only: add annotation::gpr_table, which pulls KOfamScan, "
-                        "CLEAN, DIAMOND UniRef50 and ProteinBERT in behind it (56 steps "
-                        "instead of 50) and needs ref::mnxr_lookup and "
-                        "ref::label_transfer_landmarks, neither of which is sourced yet.")
+                        "CLEAN, DIAMOND UniRef50 and ProteinBERT in behind it and needs "
+                        "ref::mnxr_lookup and ref::label_transfer_landmarks, neither of "
+                        "which is sourced yet.")
+    p.add_argument("--with-zenodo-comparison", action="store_true",
+                   help="pratama only: add pratama::mag_recovery_table and "
+                        "pratama::votu_recovery_table (T17's skani-dist comparison "
+                        "against Pratama's published MAGs and vOTU catalogue). Needs "
+                        "pratama::published_mags and pratama::published_votus, neither "
+                        "of which is unzipped anywhere yet -- the Zenodo record is on "
+                        "fir only as the zips it arrived in.")
     p.add_argument("--comebin-device", default="cpu", choices=["cpu", "gpu"])
     p.add_argument("--comebin-time", default="3d")
     p.add_argument("--comebin-cpus", type=int, default=48)
