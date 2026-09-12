@@ -26,5 +26,6 @@ from .logging import Log
 from .coms.terminals import LiveShell
 from .env import RemoteShell, Environment, Runtime
 from .agents import Agent, AgentPaths, Spec, TargetBuilder, Template
+from .ops.data import record_library
 from .constants import VERSION as METASMITH_VERSION
 from .coms.jupyter import ipynbButtonLink

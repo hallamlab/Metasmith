@@ -667,6 +667,25 @@ def pool_retention_warning(root: Path) -> str | None:
     )
 
 
+def record_library(lib):
+    """Write a library down and read it back, so its ids become a record.
+
+    A plan refuses a given whose identity the calling process minted, because
+    an invented identity moves on every submission and takes the run directory
+    with it. Saving and loading is what turns a declaration into a record.
+
+    Right for a declaration that is authored once and whose ids nothing will
+    ever reuse: a template's placeholders, a diagram's synthetic inputs, a
+    probe. **Wrong for a campaign's real inputs** -- it will not stop the ids
+    moving the next time the declaration is rebuilt, because nothing outside
+    the file remembers them. Those belong in a pool: see `Agent.PoolGivens`.
+    """
+    from ..models.libraries import DataInstanceLibrary
+
+    lib.Save()
+    return DataInstanceLibrary.Load(lib.location)
+
+
 def import_item(
     path: str,
     dtype: str,

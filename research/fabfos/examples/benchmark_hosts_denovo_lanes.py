@@ -57,7 +57,8 @@ from metasmith.python_api import (                                      # noqa: 
 )
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from _driver import (                                                   # noqa: E402
+from _driver import (
+    pin_external_leaf_ids,                                                   # noqa: E402
     SOCKEYE_ACCOUNT, SOCKEYE_GPU, SOCKEYE_GPU_ACCOUNT, SOCKEYE_HOST, SOCKEYE_IMAGE_STORE,
     check_schedulable, check_staged_executor, check_walltimes, envs_from_plan,
     landed_products, local_agent, preflight, provision_dev_overlay_local,
@@ -200,6 +201,7 @@ def build_inputs(work: Path, lanes: list[str], site: dict) -> DataInstanceLibrar
             print(f"    {dtype:32s} {at}")
             inputs.AddItem(at, dtype)
 
+    pin_external_leaf_ids(inputs)
     inputs.Save()
     return inputs
 

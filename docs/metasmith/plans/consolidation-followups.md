@@ -200,6 +200,16 @@ single-sample calibration drivers sat submitting nothing, and both ran normally 
 from a login node. The first move is to start `msm_relay` on the node inside `RenderLauncher`'s
 foreground branch, before it calls `msm api run_workflow`.
 
+**A driver that overrides identity after a pipeline has imported leaves pool entries nobody
+cites.** fabfos's pipelines now declare their givens through `Agent.PoolGivens`, which imports
+whatever the pool lacks. A driver may then replace those identities through the `on_inputs` hook,
+which is what `cyanoverse_gpr`, `scadc_gpr` and the `nostoc_*` drivers do: they keep
+`pin_external_leaf_ids` so the benchmarks they record stay reproducible rather than having every
+id move once. The import still happened, so the agent's pool accumulates an entry per input that
+no plan ever references. Harmless and confusing. The first move is a `pool=False` on the
+pipelines' `build_inputs`, so a driver that owns its identities says so before the write rather
+than after it.
+
 ## Accepted risks
 
 **An external mtime-touching event makes the next run cold, and one file is enough.** Stat

@@ -9,6 +9,7 @@ from metasmith.python_api import (
     DataInstanceLibrary, TransformInstanceLibrary,
     TargetBuilder,
 )
+from metasmith.python_api import record_library
 
 def _find_mlib() -> Path:
     for d in Path(__file__).resolve().parents:
@@ -90,7 +91,9 @@ os.environ["PATH"] = f"{Path(sys.executable).parent}:{os.environ.get('PATH', '')
 viromics = new_inputs("viromics")
 asm = viromics.AddItem(mock("sample.fna"), "sequences::assembly")
 viromics.AddItem(mock("sample.clean.fq.gz"), "sequences::clean_short_reads", parents={asm})
-viromics.Save()
+# Synthetic placeholders, authored here and used nowhere else, so
+# writing them down is the whole of their record.
+viromics = record_library(viromics)
 
 TARGETS = [
     "annotation::virsorter2_viral_sequences",
