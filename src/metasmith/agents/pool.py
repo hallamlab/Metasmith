@@ -152,16 +152,9 @@ class _PoolAccess:
             flags.append(f"--parent {shlex.quote(str(p))}")
         for t in tags:
             flags.append(f"--tag {shlex.quote(t)}")
-        res = self._remote_oneshot(
-            self._pool_command("data import", flags), timeout=timeout,
+        return self._pool_answer(
+            "data import", flags, timeout, f"import [{path}]",
         )
-        try:
-            return first_json(res.out)
-        except ValueError as e:
-            raise ValueError(
-                f"could not import [{path}] into the pool at "
-                f"[{self._pool_root()}] on [{self.home.address}]: {e}"
-            ) from None
 
     def WriteImportable(self, relpath, content: str, *, timeout: int = 120) -> Path:
         """Put a small file this process authored where the pool can name it.
@@ -201,6 +194,57 @@ class _PoolAccess:
         parts = list(self.setup_commands) + [script]
         self._remote_oneshot(" ; ".join(parts), timeout=timeout)
         return target
+
+    def TagPoolEntry(self, key_hex: str, tags, *, replace: bool = False,
+                     remove: bool = False, timeout: int = 120) -> dict:
+        """Label an entry in the agent's pool, wherever that pool sits."""
+        from ..ops import cache as op_cache
+
+        tags = [str(t) for t in tags]
+        if not self._is_ssh():
+            return op_cache.set_entry_tags(
+                key_hex, tags, agent_home=str(self.home.GetPath()),
+                replace=replace, remove=remove,
+            )
+        flags = [
+            shlex.quote(key_hex),
+            f"--cache-root {shlex.quote(str(self._pool_root()))}",
+        ]
+        if replace:
+            flags.append("--replace")
+        if remove:
+            flags.append("--remove")
+        flags += [shlex.quote(t) for t in tags]
+        return self._pool_answer("cache tag", flags, timeout, f"tag [{key_hex}]")
+
+    def ForgetPoolEntry(self, instance_id: str, *, delete: bool = False,
+                        timeout: int = 120) -> dict:
+        """Drop an imported entry. The data itself is never touched."""
+        from ..ops import data as op_data
+
+        if not self._is_ssh():
+            return op_data.forget_item(
+                instance_id, agent_home=str(self.home.GetPath()), delete=delete,
+            )
+        flags = [
+            shlex.quote(instance_id),
+            f"--cache-root {shlex.quote(str(self._pool_root()))}",
+        ]
+        if delete:
+            flags.append("--delete")
+        return self._pool_answer(
+            "data forget", flags, timeout, f"forget [{instance_id}]",
+        )
+
+    def _pool_answer(self, verb: str, flags: list, timeout: int, what: str) -> dict:
+        res = self._remote_oneshot(self._pool_command(verb, flags), timeout=timeout)
+        try:
+            return first_json(res.out)
+        except ValueError as e:
+            raise ValueError(
+                f"could not {what} in the pool at [{self._pool_root()}] on "
+                f"[{self.home.address}]: {e}"
+            ) from None
 
     def EnsurePoolEntries(self, items, *, timeout: int = 300) -> dict:
         """Make sure the pool holds an entry under each name, and say which.

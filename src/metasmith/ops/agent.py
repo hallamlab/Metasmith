@@ -170,3 +170,56 @@ def read_pool(
         out["entries"] = agent.ResolvePoolRefs(refs, entries=out["entries"])
         out["refs"] = list(refs)
     return out
+
+
+def import_to_pool(
+    agent_path: str,
+    path: str,
+    dtype: str,
+    *,
+    name: str | None = None,
+    parents: list[str] | None = None,
+    tags: list[str] | None = None,
+    timeout: int = 300,
+) -> dict:
+    """Record one item in the agent's pool, where that item already sits."""
+    return Agent.Load(Path(agent_path)).ImportToPool(
+        path, dtype, name=name, parents=parents, tags=tags, timeout=timeout,
+    )
+
+
+def tag_pool_entry(
+    agent_path: str,
+    key_hex: str,
+    tags: list[str],
+    *,
+    replace: bool = False,
+    remove: bool = False,
+    timeout: int = 120,
+) -> dict:
+    return Agent.Load(Path(agent_path)).TagPoolEntry(
+        key_hex, tags, replace=replace, remove=remove, timeout=timeout,
+    )
+
+
+def forget_pool_entry(
+    agent_path: str,
+    instance_id: str,
+    *,
+    delete: bool = False,
+    timeout: int = 120,
+) -> dict:
+    return Agent.Load(Path(agent_path)).ForgetPoolEntry(
+        instance_id, delete=delete, timeout=timeout,
+    )
+
+
+def resolve_pool_refs(
+    agent_path: str, refs: list[str], *, entries: list | None = None,
+) -> list[dict]:
+    """The entries those names or ids point at, in the order asked.
+
+    `entries` is a pool listing the caller already has, which is how a caller
+    resolving many references pays for one read rather than one per reference.
+    """
+    return Agent.Load(Path(agent_path)).ResolvePoolRefs(refs, entries=entries)
