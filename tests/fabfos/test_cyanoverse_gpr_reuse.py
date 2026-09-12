@@ -10,6 +10,7 @@ from metasmith.python_api import Runtime                              # noqa: E4
 
 from fabfos.pipelines import annotation, common                       # noqa: E402
 import cyanoverse_gpr as cv                                           # noqa: E402
+from metasmith.testing.pool_fixtures import pool_backed
 
 SHARDS = ["shard_0000", "shard_0001", "shard_0002"]
 
@@ -63,6 +64,7 @@ def test_an_unparented_given_does_not_satisfy_the_mapper(tmp_path):
         for shard in shards_seen:
             for dtype, pat in cv.REUSED.items():
                 inputs.AddItem(f"{cv.LANES_DIR}/{pat.format(shard=shard)}", dtype)
+        pool_backed(inputs)
         inputs.Save()
 
     _agent, task, _ = _plan(tmp_path, unparented)

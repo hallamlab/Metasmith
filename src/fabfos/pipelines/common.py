@@ -20,17 +20,23 @@ DATA_PROCESSED = RefPaths.REFS_ROOT
 resolve_library_root = RefPaths.library_root
 
 
-def stage_ref(inputs: DataInstanceLibrary, staging: Path, dtype: str, *,
+def stage_ref(givens, staging: Path, dtype: str, *,
               given: "str | Path | None" = None,
               default: "str | Path | None" = None,
               parents=None, verify: bool = True) -> tuple["Path | str", bool]:
-    # `verify=False` stages the path verbatim, with no local existence check and
-    # no stub fallback: that is what a reference on a remote agent's filesystem
-    # needs, since probing it here finds nothing and quietly substitutes an empty
-    # file. It is also why the no-path case is a hard error rather than a stub --
-    # an empty database makes most lanes produce an empty output and *succeed*,
-    # which `validate_gpr` catches one whole run too late. The caller that turns
-    # verification off owns proving the reference exists.
+    # `verify=False` declares the path verbatim, with no local existence check
+    # and no stub fallback: that is what a reference on a remote agent's
+    # filesystem needs, since probing it here finds nothing and quietly
+    # substitutes an empty file. It is also why the no-path case is a hard
+    # error rather than a stub -- an empty database makes most lanes produce an
+    # empty output and *succeed*, which `validate_gpr` catches one whole run
+    # too late. The caller that turns verification off owns proving the
+    # reference exists.
+    #
+    # The name is the type. A reference is one thing per pipeline, the pool
+    # holds one entry for it, and every run after the first cites that entry
+    # rather than importing the database again.
+    name = f"ref/{dtype.replace('::', '__')}"
     if not verify:
         target = given if given is not None else default
         if target is None:
@@ -38,20 +44,23 @@ def stage_ref(inputs: DataInstanceLibrary, staging: Path, dtype: str, *,
                 f"stage_ref({dtype}, verify=False) with no path: there is nothing "
                 f"to stage and a stub is not an option -- an empty reference makes "
                 f"the lane succeed with an empty output.")
-        inputs.AddItem(str(target), dtype, parents=parents or set())
+        givens.Add(str(target), dtype, name=name, parents=parents or ())
         return str(target), True
 
     candidate = Path(given).expanduser().resolve() if given else (
         Path(default).expanduser().resolve() if default else None
     )
     if candidate is not None and candidate.exists():
-        inputs.AddItem(candidate, dtype, parents=parents or set())
+        givens.Add(candidate, dtype, name=name, parents=parents or ())
         return candidate, True
 
     stub = staging / "stubs" / dtype.replace("::", "__")
     stub.parent.mkdir(parents=True, exist_ok=True)
     stub.touch()
-    inputs.AddItem(stub, dtype, parents=parents or set())
+    # A stub is a different thing from the reference it stands in for, so it
+    # gets a name that says so. Planning against a stub and then against the
+    # real database must not look like one reference that moved.
+    givens.Add(stub, dtype, name=f"{name}/stub", parents=parents or ())
     return stub, False
 
 

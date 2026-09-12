@@ -124,3 +124,62 @@ def test_a_second_import_is_a_second_given_and_a_different_key(rig):
         target_model=_make_target_model([_MOCK_TYPE_PROPERTIES["bam"]]),
     )
     assert first._key != second._key
+
+
+class TestTheDriverFacingForm:
+    """`PoolGivens`, which is what a driver writes instead of `AddItem`."""
+
+    def _declared(self, agent, tmp_path, types_path, location, *, ensure=True):
+        givens = agent.PoolGivens()
+        meta = givens.Value(
+            "run1/sample/metadata",
+            {"parity": "paired"},
+            "mock::sample_metadata",
+        )
+        givens.Add(
+            tmp_path / "data" / "sample.txt", "mock::assembly",
+            name="run1/sample/assembly", parents=[meta], tags=["run1"],
+        )
+        return givens.Build(
+            location,
+            types={"mock": DataTypeLibrary.Load(types_path)},
+            ensure=ensure,
+        )
+
+    def test_a_declaration_plans_and_keys_the_same_twice(self, rig):
+        agent, types_path, tr_lib, _imported, tmp_path = rig
+        first = self._declared(agent, tmp_path, types_path, tmp_path / "g1")
+        second = self._declared(agent, tmp_path, types_path, tmp_path / "g2")
+        assert {str(p) for p in first.manifest} == {str(p) for p in second.manifest}
+        assert [first.Get(p).instance_id for p in sorted(first.manifest)] == [
+            second.Get(p).instance_id for p in sorted(second.manifest)
+        ]
+
+    def test_an_authored_value_lands_on_the_agent_not_beside_the_driver(self, rig):
+        agent, types_path, _tr_lib, _imported, tmp_path = rig
+        lib = self._declared(agent, tmp_path, types_path, tmp_path / "g1")
+        authored = [
+            p for p in lib.manifest if "metadata" in str(p)
+        ]
+        assert authored, "the authored document is not in the library"
+        assert Path(authored[0]).is_relative_to(agent.home.GetPath())
+
+    def test_citing_without_importing_refuses_by_name(self, rig):
+        agent, types_path, _tr_lib, _imported, tmp_path = rig
+        with pytest.raises(ValueError) as excinfo:
+            self._declared(
+                agent, tmp_path, types_path, tmp_path / "g1", ensure=False,
+            )
+        assert "metasmith data import" in str(excinfo.value)
+
+    def test_the_plan_takes_it(self, rig):
+        agent, types_path, tr_lib, _imported, tmp_path = rig
+        given = self._declared(agent, tmp_path, types_path, tmp_path / "g1")
+        plan = WorkflowPlan.Generate(
+            given=[[DataInstanceLibraryView(given)]],
+            transforms=[tr_lib],
+            target_names=["bam"],
+            target_model=_make_target_model([_MOCK_TYPE_PROPERTIES["bam"]]),
+        )
+        assert isinstance(plan, WorkflowPlan)
+        assert all(inst.origin == "imported" for inst in plan.given)

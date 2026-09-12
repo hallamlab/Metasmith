@@ -51,35 +51,46 @@ from . import common
 DOMAINS = ["assembly", "fabfos"]
 
 
-def build_inputs(work: Path, *, experiment: str, reads: list[Path], parity: str,
-                  host: Path, pcc1: Path, recovery_lib: Path | None) -> tuple[DataInstanceLibrary, dict[str, Path]]:
+NAMESPACES = ("sequences", "fabfos", "algorithm")
+
+
+def build_inputs(agent, work: Path, *, experiment: str, reads: list[Path],
+                 parity: str, host: Path, pcc1: Path,
+                 recovery_lib: Path | None) -> tuple[DataInstanceLibrary, dict[str, Path]]:
+    # The identities come from the agent's pool rather than from a stat of each
+    # file, so a re-run of the same experiment plans to the same key even when
+    # the reads live on a host this process cannot see.
     lib = common.resolve_library_root()
+    givens = agent.PoolGivens()
 
-    inputs = DataInstanceLibrary(work / "inputs.xgdb")
-    inputs.Purge()
-    for ns in ("sequences", "fabfos", "algorithm"):
-        inputs.AddTypeLibrary(lib / "data_types" / f"{ns}.yml")
-
-    exp = inputs.AddValue("experiment.txt", experiment, "fabfos::experiment")
+    exp = givens.Value(f"{experiment}/experiment", experiment, "fabfos::experiment")
 
     read_type = "sequences::short_reads_pe" if parity == "paired" else "sequences::short_reads_se"
     for i, r in enumerate(reads):
-        meta = inputs.AddValue(
-            f"read_metadata_{i}.json",
+        meta = givens.Value(
+            f"{experiment}/read_metadata_{i}",
             {"parity": parity, "length_class": "short"},
             "sequences::read_metadata",
-            parents={exp},
+            parents=[exp],
         )
-        inputs.AddItem(Path(r).expanduser().resolve(), read_type, parents={meta})
+        givens.Add(Path(r).expanduser().resolve(), read_type,
+                   name=f"{experiment}/reads_{i}", parents=[meta])
 
-    inputs.AddItem(Path(host).expanduser().resolve(), "sequences::background_genome", parents={exp})
-    inputs.AddItem(Path(pcc1).expanduser().resolve(), "fabfos::vector_backbone", parents={exp})
+    givens.Add(Path(host).expanduser().resolve(), "sequences::background_genome",
+               name=f"{experiment}/background_genome", parents=[exp])
+    givens.Add(Path(pcc1).expanduser().resolve(), "fabfos::vector_backbone",
+               name=f"{experiment}/vector_backbone", parents=[exp])
 
     stubs: dict[str, Path] = {}
-    _, real = common.stage_ref(inputs, work, "algorithm::fabfos_recovery.py", given=recovery_lib)
+    _, real = common.stage_ref(givens, work, "algorithm::fabfos_recovery.py",
+                               given=recovery_lib)
     if not real:
         stubs["algorithm::fabfos_recovery.py"] = work / "stubs" / "algorithm__fabfos_recovery.py"
 
+    inputs = givens.Build(
+        work / "inputs.xgdb",
+        type_library_paths=[lib / "data_types" / f"{ns}.yml" for ns in NAMESPACES],
+    )
     inputs.Save()
     return inputs, stubs
 
@@ -88,8 +99,9 @@ def generate_workflow(work: Path, *, experiment: str, reads: list[Path], parity:
                        host: Path, pcc1: Path, recovery_lib: Path | None,
                        runtime: Runtime, agent_env: str | None = None):
     lib = common.resolve_library_root()
+    agent = common.make_agent(work, runtime, container=agent_env)
     inputs, stubs = build_inputs(
-        work, experiment=experiment, reads=reads, parity=parity,
+        agent, work, experiment=experiment, reads=reads, parity=parity,
         host=host, pcc1=pcc1, recovery_lib=recovery_lib,
     )
 
@@ -105,7 +117,6 @@ def generate_workflow(work: Path, *, experiment: str, reads: list[Path], parity:
     targets.Add("fabfos::insert_metadata")
     targets.Add("sequences::assembly_stats", parents={ins})
 
-    agent = common.make_agent(work, runtime, container=agent_env)
     task = agent.GenerateWorkflow(
         samples=list(inputs.AsSamples("fabfos::experiment")),
         resources=resources,

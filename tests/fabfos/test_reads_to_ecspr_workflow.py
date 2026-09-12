@@ -11,6 +11,7 @@ from metasmith.python_api import (
     TransformInstanceLibrary,
     TargetBuilder,
 )
+from metasmith.testing.pool_fixtures import pool_backed
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 MLIB = REPO_ROOT / "src" / "metasmith_libraries"
@@ -104,6 +105,7 @@ def _plan_reads_to_ecspr(work: Path):
     conditions = work / "conditions.parquet"
     conditions.touch()
     inputs.AddItem(conditions, "ecspr::conditions", parents={exp})
+    pool_backed(inputs)
     inputs.Save()
 
     resources = [

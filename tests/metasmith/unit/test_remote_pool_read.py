@@ -264,3 +264,144 @@ class TestAGivenLibraryFromPoolReferences:
                 types={"cf": DataTypeLibrary.Load(types)},
             )
         assert "metasmith data import" in str(e.value)
+
+
+class _ImportingAgent(_SshAgent):
+    """An agent that records what it was asked to import, and grows a pool."""
+
+    def _remote_oneshot(self, cmd, timeout=30):
+        self.sent.append(cmd)
+        if "data import" not in cmd:
+            return super()._remote_oneshot(cmd, timeout=timeout)
+        flags = cmd.rsplit("data import ", 1)[1].split()
+        path = flags[0]
+        name = flags[flags.index("--name") + 1] if "--name" in flags else path
+        dtype = flags[flags.index("--dtype") + 1]
+        iid = f"{len(self.rows):02x}" * 34
+        self.rows.append(_row(name, iid, dtype=dtype, path=path))
+        body = json.dumps({"name": name, "instance_id": iid, "path": path})
+        return type("R", (), {"out": ["binds [...]", body], "err": []})()
+
+
+class TestImportingIntoARemotePool:
+    def test_the_command_names_the_pool_and_the_declaration(self):
+        agent = _ImportingAgent([])
+        agent.ImportToPool(
+            f"{REMOTE_DATA}/s1.fq", "cami::reads",
+            name="batch1/s1/reads", tags=["batch1"],
+        )
+        sent = agent.sent[-1]
+        assert f"{REMOTE_HOME}/task_cache" in sent
+        assert "--dtype cami::reads" in sent
+        assert "--name batch1/s1/reads" in sent
+        assert "--tag batch1" in sent
+
+    def test_the_setup_commands_come_first(self):
+        agent = _ImportingAgent([], setup_commands=["module load apptainer"])
+        agent.ImportToPool(f"{REMOTE_DATA}/s1.fq", "cami::reads")
+        assert agent.sent[-1].startswith("module load apptainer ; ")
+
+    def test_a_name_the_pool_holds_is_referenced_rather_than_imported(self):
+        agent = _ImportingAgent([_row("batch1/s1/reads", "aa" * 34)])
+        found = agent.EnsurePoolEntries([
+            {"path": f"{REMOTE_DATA}/s1.fq", "dtype": "cami::reads",
+             "name": "batch1/s1/reads"},
+        ])
+        assert found == {"batch1/s1/reads": "aa" * 34}
+        assert not any("data import" in c for c in agent.sent)
+
+    def test_setup_run_twice_gives_the_same_identities(self):
+        items = [
+            {"path": f"{REMOTE_DATA}/s1.fq", "dtype": "cami::reads",
+             "name": "batch1/s1/reads"},
+            {"path": f"{REMOTE_DATA}/s2.fq", "dtype": "cami::reads",
+             "name": "batch1/s2/reads"},
+        ]
+        agent = _ImportingAgent([])
+        first = agent.EnsurePoolEntries(items)
+        second = agent.EnsurePoolEntries(items)
+        assert first == second
+        assert len(first) == 2
+        assert sum("data import" in c for c in agent.sent) == 2
+
+    def test_a_parent_named_earlier_in_the_list_resolves_to_its_identity(self):
+        agent = _ImportingAgent([])
+        found = agent.EnsurePoolEntries([
+            {"path": f"{REMOTE_DATA}/meta.json", "dtype": "cami::meta",
+             "name": "batch1/s1/meta"},
+            {"path": f"{REMOTE_DATA}/s1.fq", "dtype": "cami::reads",
+             "name": "batch1/s1/reads", "parents": ["batch1/s1/meta"]},
+        ])
+        reads_cmd = [c for c in agent.sent if "s1.fq" in c][-1]
+        assert f"--parent {found['batch1/s1/meta']}" in reads_cmd
+
+    def test_nothing_here_touches_the_agents_filesystem(self):
+        agent = _ImportingAgent([])
+        agent.EnsurePoolEntries([
+            {"path": f"{REMOTE_DATA}/s1.fq", "dtype": "cami::reads",
+             "name": "batch1/s1/reads"},
+        ])
+        assert not Path(REMOTE_DATA).exists()
+
+
+class _WritingAgent(_ImportingAgent):
+    """An agent whose home is a real directory, so an authored file lands."""
+
+    def __init__(self, home: Path, rows=None):
+        super().__init__(list(rows or []))
+        self.home = Source(address=str(home), type=SourceType.DIRECT)
+        self.written: list[str] = []
+
+    def _is_ssh(self) -> bool:
+        return False
+
+
+class TestAnAuthoredFileIsWrittenWhereThePoolCanNameIt:
+    def test_it_lands_under_the_agents_home(self, tmp_path):
+        agent = _WritingAgent(tmp_path / "home")
+        out = agent.WriteImportable("cami/s1/meta.json", '{"parity": "paired"}')
+        assert out.read_text() == '{"parity": "paired"}'
+        assert out.is_relative_to(tmp_path / "home")
+
+    def test_writing_the_same_content_again_changes_nothing(self, tmp_path):
+        agent = _WritingAgent(tmp_path / "home")
+        out = agent.WriteImportable("meta.json", "same")
+        before = out.stat().st_mtime_ns
+        agent.WriteImportable("meta.json", "same")
+        assert out.stat().st_mtime_ns == before
+
+    def test_the_remote_form_never_pastes_the_content_into_the_command(self, tmp_path):
+        agent = _ImportingAgent([])
+        agent.WriteImportable("meta.json", "parity: 'paired' && rm -rf /")
+        sent = agent.sent[-1]
+        assert "rm -rf /" not in sent
+        assert "base64 -d" in sent
+
+
+class TestDeclaringGivensThroughTheCollector:
+    def test_a_declaration_becomes_a_pool_entry_and_a_library_item(self, tmp_path):
+        agent = _WritingAgent(tmp_path / "home")
+        givens = agent.PoolGivens()
+        meta = givens.Value(
+            "cami/s1/meta.json", {"parity": "paired"}, "cami::meta",
+        )
+        givens.Add(f"{REMOTE_DATA}/s1.fq", "cami::reads",
+                   name="cami/s1/reads", parents=[meta])
+
+        assert [i["name"] for i in givens.items] == [
+            "cami/s1/meta.json", "cami/s1/reads",
+        ]
+        found = agent.EnsurePoolEntries(givens.items)
+        assert len(found) == 2
+        assert len(set(found.values())) == 2
+
+    def test_declaring_twice_cites_the_same_identities(self, tmp_path):
+        agent = _WritingAgent(tmp_path / "home")
+        first = agent.PoolGivens()
+        first.Add(f"{REMOTE_DATA}/s1.fq", "cami::reads", name="cami/s1/reads")
+        a = agent.EnsurePoolEntries(first.items)
+
+        second = agent.PoolGivens()
+        second.Add(f"{REMOTE_DATA}/s1.fq", "cami::reads", name="cami/s1/reads")
+        b = agent.EnsurePoolEntries(second.items)
+        assert a == b
