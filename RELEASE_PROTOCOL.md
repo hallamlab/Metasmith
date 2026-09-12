@@ -252,11 +252,18 @@ Then:
 
 1. Push `release` (and `dev`) and the annotated version tag to **origin** (the
    fork): `git push origin release dev && git push origin vX.Y.Z`.
-2. Open a **new PR** from the fork's `release` into `hallamlab:release`, titled
-   for the version. A maintainer with upstream write access merges it. There is
-   no standing PR to reuse: each one closes on merge (#63 → 0.17.1, #64 →
-   0.18.3, #65 → 0.18.8), and treating the last one as still open is how 0.20.0
-   and 0.20.1 shipped to quay and anaconda without ever reaching upstream.
+2. Check `gh pr list --repo hallamlab/Metasmith --state open` first, then open a
+   **new PR** from the fork's `release` into `hallamlab:release`, titled for the
+   version. A maintainer with upstream write access merges it. A merged PR
+   closes, so a *closed* one is never reusable (#63 → 0.17.1, #64 → 0.18.3,
+   #65 → 0.18.8), and treating a closed one as still open is how 0.20.0 and
+   0.20.1 shipped to quay and anaconda without ever reaching upstream.
+
+   **CAUTION** An *unmerged* PR from `release` stays open across releases, and
+   GitHub refuses a second PR for the same head and base. Pushing the branch
+   silently moves that PR onto the new commits. Retitle it and rewrite its body
+   for the version now shipping, and say in the body which earlier version it
+   also still carries. 0.23.0 met #68 open at 0.22.1 this way.
 3. Drive both published artifacts as a **consumer**, not as the builder. Every
    guard above reads the local build — `-uc` installs from `file://conda_build`
    and `-ud` inspects the image docker already holds — so nothing so far has
