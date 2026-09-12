@@ -1,0 +1,23 @@
+#	LASER carbon-source token -> resolution override. Same two classes as
+#	target_overrides.tsv. `amino_acids` expands to the 20 proteinogenic amino
+#	acids and is merged into ONE ECSPr terminal, because in FBA "amino acids as
+#	sole carbon" is necessarily ~20 open exchanges -- modelling ECSPr as a single
+#	node while FBA sees twenty makes the two arms answer different questions.
+#	The single-glutamate proxy runs as a declared sensitivity, not as the default.
+token	kind	value	reviewer	note
+Amino acids	status	amino_acids	opal	merged 20-AA terminal / 20 open exchanges
+Amino Acids	status	amino_acids	opal	merged 20-AA terminal / 20 open exchanges
+N15 labeling	status	not_a_carbon_source	opal	isotope label, not a substrate
+Glyercol	name	glycerol	opal	typo in source
+Crude glycerol	name	glycerol	opal	crude feedstock modelled as glycerol
+starch	name	starch	opal	polymer; expected to fall off-universe
+Glucose	name	D-glucose	opal	L-glucose is not a biological substrate here
+glucose	name	D-glucose	opal	L-glucose is not a biological substrate here
+Xylose	name	D-xylose	opal	D unless the paper says otherwise
+xylose	name	D-xylose	opal	D unless the paper says otherwise
+Lactate	name	(S)-lactate	opal	L-lactate is the fermentable enantiomer
+Gluconate	name	D-gluconate	opal	D unless the paper says otherwise
+Mannose	name	D-mannose	opal	D unless the paper says otherwise
+Fructose	name	D-fructose	opal	D unless the paper says otherwise
+Sorbitol	name	D-sorbitol	opal	D unless the paper says otherwise
+cellobionic acid	status	unresolved	opal	absent from MetaNetX 4.5 name space under any spelling tried

@@ -1,0 +1,1226 @@
+import json
+import subprocess
+import shutil
+import sys
+import pytest
+from pathlib import Path
+
+from metasmith.constants import MODULE_PATH
+
+pytestmark = [pytest.mark.docker, pytest.mark.nextflow, pytest.mark.slow]
+
+ORCHESTRATOR_SRC = MODULE_PATH / "nextflow_config/Orchestrator.groovy"
+
+
+class NxfTestRunner:
+    def __init__(self, work_dir: Path, docker_image: str):
+        self.work_dir = work_dir
+        self.docker_image = docker_image
+        self.work_dir.mkdir(parents=True, exist_ok=True)
+
+        lib_dir = self.work_dir / "lib"
+        lib_dir.mkdir(exist_ok=True)
+        shutil.copy(ORCHESTRATOR_SRC, lib_dir / "Orchestrator.groovy")
+
+    def run(
+        self,
+        nxf_script: str,
+        timeout: int = 120,
+        extra_lib: dict = None,
+        extra_args: list = None,
+    ) -> subprocess.CompletedProcess:
+        for name, source in (extra_lib or {}).items():
+            (self.work_dir / "lib" / name).write_text(source)
+        script_path = self.work_dir / "test.nf"
+        script_path.write_text(nxf_script)
+
+        result = subprocess.run(
+            [
+                "docker", "run", "--rm",
+                "-v", f"{self.work_dir}:/ws",
+                "-w", "/ws",
+                self.docker_image,
+                "nextflow", "run", "test.nf",
+                "-lib", "./lib",
+                "-ansi-log", "false",
+                *(extra_args or []),
+            ],
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+        return result
+
+    @staticmethod
+    def assert_nxf_ok(result: subprocess.CompletedProcess):
+        nxf_duration_bug = (
+            "Duration unit cannot be a negative number" in result.stdout
+            or "Duration unit cannot be a negative number" in (result.stderr or "")
+        )
+        if result.returncode != 0 and nxf_duration_bug:
+            print(
+                "WARN: tolerated upstream nextflow-io/nextflow#6757 (negative Duration "
+                "assertion); workflow body completed, optional report/timeline/trace "
+                "artifacts may be missing.",
+                file=sys.stderr,
+            )
+            return
+        assert result.returncode == 0, f"NXF failed: {result.stderr}"
+
+
+@pytest.fixture
+def nxf_runner(tmp_path, docker_image):
+    return NxfTestRunner(tmp_path / "nxf_test", docker_image)
+
+
+class TestOrchestratorPost:
+    def test_post_produces_output(self, nxf_runner):
+        result = nxf_runner.run('''
+
+
+workflow {
+    o = new Orchestrator(Channel.fromList([null]))
+
+    ch = Channel.fromList([
+        [["a": [1]], file("${projectDir}/test.nf")],
+        [["a": [2]], file("${projectDir}/lib/Orchestrator.groovy")],
+    ])
+
+    def out = (o.post([ch], ["result"]))[0]
+    def (name, stream) = out
+    stream.view { idx, item -> "POST: ${groovy.json.JsonOutput.toJson(idx)} ${item.name}" }
+}
+''')
+        NxfTestRunner.assert_nxf_ok(result)
+        assert "POST:" in result.stdout
+
+    def test_postin_processes_inputs(self, nxf_runner):
+        for i in range(3):
+            (nxf_runner.work_dir / f"input_{i}.txt").write_text(f"data {i}")
+
+        result = nxf_runner.run('''
+
+
+workflow {
+    o = new Orchestrator(Channel.fromList([null]))
+
+    ch = Channel.fromList([
+        [[:], file("${projectDir}/input_0.txt")],
+        [[:], file("${projectDir}/input_1.txt")],
+        [[:], file("${projectDir}/input_2.txt")],
+    ])
+
+    def out = (o.postIn([ch], ["inp"]))[0]
+    def (name, stream) = out
+    stream.view { idx, item -> "POSTIN: ${groovy.json.JsonOutput.toJson(idx)} ${item.name}" }
+}
+''')
+        NxfTestRunner.assert_nxf_ok(result)
+        lines = [l for l in result.stdout.split("\n") if l.startswith("POSTIN:")]
+        assert len(lines) == 3
+
+        for line in lines:
+            idx_str = line.split(" ", 1)[1].split(" ")[0]
+            idx = json.loads(idx_str)
+            assert "inp" in idx
+
+    def test_post_id_is_md5_composite(self, nxf_runner):
+        import hashlib
+
+        result = nxf_runner.run('''
+
+
+workflow {
+    o = new Orchestrator(Channel.fromList([null]))
+
+    ch = Channel.fromList([
+        [[:], file("${projectDir}/test.nf")],
+    ])
+
+    def out = (o.post([ch], ["x"]))[0]
+    def (name, stream) = out
+    stream.view { idx, item ->
+        def hash_val = idx["x"][0]
+        "HASH: ${hash_val} type=${hash_val.getClass().name}"
+    }
+}
+''')
+        NxfTestRunner.assert_nxf_ok(result)
+        lines = [l for l in result.stdout.split("\n") if l.startswith("HASH:")]
+        assert len(lines) == 1
+        assert "String" in lines[0]
+        expected = hashlib.md5(b"x::test.nf").hexdigest()
+        assert expected in lines[0], f"expected {expected} in {lines[0]}"
+
+    def test_post_id_uses_slot_id_when_supplied(self, nxf_runner):
+        import hashlib
+
+        result = nxf_runner.run('''
+
+
+workflow {
+    o = new Orchestrator(Channel.fromList([null]))
+
+    ch = Channel.fromList([
+        [[:], file("${projectDir}/test.nf")],
+    ])
+
+    def out = (o.post([ch], ["x"], ["deadbeef"]))[0]
+    def (name, stream) = out
+    stream.view { idx, item -> "HASH: ${idx["x"][0]}" }
+}
+''')
+        NxfTestRunner.assert_nxf_ok(result)
+        lines = [l for l in result.stdout.split("\n") if l.startswith("HASH:")]
+        assert len(lines) == 1
+        expected = hashlib.md5(b"deadbeef::test.nf").hexdigest()
+        assert expected in lines[0], f"expected {expected} in {lines[0]}"
+
+
+class TestOrchestratorGroup:
+    def test_group_single_stream(self, nxf_runner):
+        for i in range(4):
+            (nxf_runner.work_dir / f"item_{i}.txt").write_text(f"item {i}")
+
+        result = nxf_runner.run('''
+
+
+workflow {
+    o = new Orchestrator(Channel.fromList([null]))
+
+    // Use postIn to register items (sets up index_history)
+    ch_a_raw = Channel.fromList([
+        [[:], file("${projectDir}/item_0.txt")],
+        [[:], file("${projectDir}/item_1.txt")],
+    ])
+    ch_b_raw = Channel.fromList([
+        [[:], file("${projectDir}/item_2.txt")],
+        [[:], file("${projectDir}/item_3.txt")],
+    ])
+
+    def posted_a = (o.postIn([ch_a_raw], ["a"]))[0]
+    def posted_b = (o.postIn([ch_b_raw], ["b"]))[0]
+
+    def grouped = o.group("a", [posted_a, posted_b], ["target"], 1)
+    grouped.view { "GROUP: ${it[0]}" }
+}
+''')
+        NxfTestRunner.assert_nxf_ok(result)
+        lines = [l for l in result.stdout.split("\n") if l.startswith("GROUP:")]
+        assert len(lines) >= 1
+
+    def test_group_does_not_split_single_key_across_mixed_streams(self, nxf_runner):
+        (nxf_runner.work_dir / "a.txt").write_text("a")
+        for i in range(9):
+            (nxf_runner.work_dir / f"b_{i}.txt").write_text(f"b {i}")
+
+        result = nxf_runner.run('''
+workflow {
+    o = new Orchestrator(Channel.fromList([null]))
+
+    ch_a_raw = Channel.fromList([
+        [[:], file("${projectDir}/a.txt")],
+    ])
+
+    ch_b_raw_early = Channel.fromList([
+        [[:], file("${projectDir}/b_0.txt")],
+        [[:], file("${projectDir}/b_1.txt")],
+        [[:], file("${projectDir}/b_2.txt")],
+    ])
+
+    ch_b_raw_late = Channel.fromList([
+        [[:], file("${projectDir}/b_3.txt")],
+        [[:], file("${projectDir}/b_4.txt")],
+        [[:], file("${projectDir}/b_5.txt")],
+        [[:], file("${projectDir}/b_6.txt")],
+        [[:], file("${projectDir}/b_7.txt")],
+        [[:], file("${projectDir}/b_8.txt")],
+    ]).map { x ->
+        sleep 100
+        return x
+    }
+
+    def posted_a = (o.postIn([ch_a_raw], ["a"]))[0]
+    def posted_b_early = (o.postIn([ch_b_raw_early], ["b"]))[0]
+    def posted_b_late = (o.postIn([ch_b_raw_late], ["b"]))[0]
+    def mixed_b = o.mix([posted_b_early, posted_b_late])
+
+    def grouped = o.group("a", [posted_a, mixed_b], ["target"], 1)
+    grouped.view { indexes, a_vals, b_vals ->
+        "GROUP_MIX: idx=${indexes.size()} a=${a_vals.size()} b=${b_vals.size()}"
+    }
+}
+''', timeout=180)
+        NxfTestRunner.assert_nxf_ok(result)
+        lines = [l for l in result.stdout.split("\n") if l.startswith("GROUP_MIX:")]
+        assert len(lines) == 1, f"Expected 1 grouped emission, got {len(lines)}: {lines}"
+        assert "idx=1" in lines[0]
+        assert "a=1" in lines[0]
+        assert "b=9" in lines[0]
+
+
+    @staticmethod
+    def _collection_case(
+        nxf_runner: "NxfTestRunner",
+        n_keys: int,
+        n_outs: int,
+        batch_size: int,
+    ) -> list[list[list[str]]]:
+        for i in range(n_keys):
+            (nxf_runner.work_dir / f"seed_{i}.txt").write_text(f"seed {i}\n")
+
+        seeds = ",\n        ".join(
+            f'[[:], file("${{projectDir}}/seed_{i}.txt")]' for i in range(n_keys)
+        )
+        touches = " ".join(f"1-${{stem}}{chr(ord('a') + j)}-out1.txt" for j in range(n_outs))
+
+        result = nxf_runner.run(f'''
+process step1 {{
+    input:
+        tuple val(index), path(_01)
+    output:
+        tuple val(index), path("*-out1.txt")
+    script:
+    def stem = index[0].seed[0]
+    """
+    touch {touches}
+    """
+}}
+
+workflow {{
+    o = new Orchestrator(Channel.fromList([null]))
+
+    // Two independent postIn calls over the same files: Nextflow channels are
+    // single-consumer, and the real generator forks shared streams with
+    // multiMap. postIn's fallback id is md5 of the path, so both copies carry
+    // identical seed hashes.
+    def seed_fanout = (o.postIn([Channel.fromList([
+        {seeds},
+    ])], ["seed"]))[0]
+    def seed_collect = (o.postIn([Channel.fromList([
+        {seeds},
+    ])], ["seed"]))[0]
+
+    def k1 = ["out1"]
+    def _out1 = (o.post(o.asStreams(step1(o.group("seed", [seed_fanout], k1, 1))), k1))[0]
+
+    def collected = o.group("seed", [seed_collect, _out1], ["out2"], {batch_size})
+    collected.view {{ indexes, seed_vals, out1_vals ->
+        // FILES is written per batch member by `_collateBatch`, positionally
+        // per stream in the order they were passed to group(): [seed, out1].
+        def per_member = indexes.collect {{ m -> m.FILES[1].collect {{ p -> p.split("/")[-1] }} }}
+        "TASK: " + groovy.json.JsonOutput.toJson(per_member)
+    }}
+}}
+''', timeout=180)
+        NxfTestRunner.assert_nxf_ok(result)
+        return [
+            json.loads(l.split("TASK: ", 1)[1])
+            for l in result.stdout.split("\n")
+            if l.startswith("TASK:")
+        ]
+
+    def test_one_key_collects_all_its_descendants(self, nxf_runner):
+        tasks = self._collection_case(nxf_runner, n_keys=1, n_outs=3, batch_size=1)
+        assert len(tasks) == 1, (
+            f"expected the whole group in one task, got {len(tasks)} tasks: {tasks}"
+        )
+        assert len(tasks[0]) == 1, f"batch_size=1 means one member per task: {tasks}"
+        assert len(tasks[0][0]) == 3, (
+            f"the single member must carry all 3 descendants, got {tasks[0][0]}"
+        )
+
+    def test_each_key_collects_only_its_own_descendants(self, nxf_runner):
+        tasks = self._collection_case(nxf_runner, n_keys=2, n_outs=2, batch_size=1)
+        assert len(tasks) == 2, f"expected one task per key, got {len(tasks)}: {tasks}"
+        groups = []
+        for t in tasks:
+            assert len(t) == 1, f"batch_size=1 means one member per task: {tasks}"
+            assert len(t[0]) == 2, f"each key must collect both its files: {tasks}"
+            groups.append(set(t[0]))
+        assert groups[0].isdisjoint(groups[1]), (
+            f"keys leaked descendants into each other: {groups}"
+        )
+
+    @staticmethod
+    def _provenance_case(nxf_runner: "NxfTestRunner", n_keys: int, n_outs: int):
+        for i in range(n_keys):
+            (nxf_runner.work_dir / f"seed_{i}.txt").write_text(f"seed {i}\n")
+        seeds = ",\n        ".join(
+            f'[[:], file("${{projectDir}}/seed_{i}.txt")]' for i in range(n_keys)
+        )
+        touches = " ".join(
+            f"1-${{stem}}{chr(ord('a') + j)}-out1.txt" for j in range(n_outs)
+        )
+        result = nxf_runner.run(f'''
+process step1 {{
+    input:
+        tuple val(index), path(_01)
+    output:
+        tuple val(index), path("*-out1.txt")
+    script:
+    def stem = index[0].seed[0]
+    """
+    touch {touches}
+    """
+}}
+
+workflow {{
+    o = new Orchestrator(Channel.fromList([null]))
+    def seed_fanout = (o.postIn([Channel.fromList([
+        {seeds},
+    ])], ["seed"]))[0]
+    def seed_collect = (o.postIn([Channel.fromList([
+        {seeds},
+    ])], ["seed"]))[0]
+    def k1 = ["out1"]
+    def _out1 = (o.post(o.asStreams(step1(o.group("seed", [seed_fanout], k1, 1))), k1))[0]
+    def collected = o.group("seed", [seed_collect, _out1], ["out2"], 1)
+    collected.view {{ indexes, seed_vals, out1_vals ->
+        def m = indexes[0]
+        def payload = [
+            seed: m.PROV[0].collect {{ ix -> ix.seed }},
+            out1: m.PROV[1].collect {{ ix -> ix.seed }},
+            n_seed_files: m.FILES[0].size(),
+            n_out1_files: m.FILES[1].size(),
+        ]
+        "PROV: " + groovy.json.JsonOutput.toJson(payload)
+    }}
+}}
+''', timeout=180)
+        NxfTestRunner.assert_nxf_ok(result)
+        return [
+            json.loads(l.split("PROV: ", 1)[1])
+            for l in result.stdout.split("\n")
+            if l.startswith("PROV:")
+        ]
+
+    def test_collected_items_carry_their_own_provenance(self, nxf_runner):
+        tasks = self._provenance_case(nxf_runner, n_keys=1, n_outs=3)
+        assert len(tasks) == 1, tasks
+        t = tasks[0]
+        assert t["n_out1_files"] == 3 and t["n_seed_files"] == 1
+        assert len(t["out1"]) == 3, f"PROV was flattened or unioned: {t}"
+        assert len(t["seed"]) == 1, t
+        (seed_id,) = t["seed"]
+        assert all(ix == seed_id for ix in t["out1"]), (
+            f"an output carries an ancestry that is not its seed's: {t}"
+        )
+
+    def test_provenance_does_not_merge_across_keys(self, nxf_runner):
+        tasks = self._provenance_case(nxf_runner, n_keys=2, n_outs=2)
+        assert len(tasks) == 2, tasks
+        seen = []
+        for t in tasks:
+            assert len(t["out1"]) == 2, f"PROV not per-item: {t}"
+            (seed_id,) = t["seed"]
+            assert all(ix == seed_id for ix in t["out1"]), t
+            seen.append(seed_id)
+        assert seen[0] != seen[1], f"both tasks claim one seed: {seen}"
+
+    def test_batch_size_folds_whole_keys_never_shards_one(self, nxf_runner):
+        tasks = self._collection_case(nxf_runner, n_keys=2, n_outs=2, batch_size=2)
+        assert len(tasks) == 1, (
+            f"ceil(2 keys / batch_size 2) == 1 task, got {len(tasks)}: {tasks}"
+        )
+        assert len(tasks[0]) == 2, f"expected 2 batch members, got {tasks[0]}"
+        for member in tasks[0]:
+            assert len(member) == 2, f"each member keeps its whole group: {tasks[0]}"
+
+    def test_channel_reuse_across_group_calls(self, nxf_runner):
+        (nxf_runner.work_dir / "a.txt").write_text("a")
+
+        result = nxf_runner.run('''
+workflow {
+    o = new Orchestrator(Channel.fromList([null]))
+
+    ch = Channel.fromList([
+        [[:], file("${projectDir}/a.txt")],
+    ])
+
+    def posted = (o.postIn([ch], ["x"]))[0]
+
+    // Pass the same posted stream to two group() calls
+    def g1 = o.group("x", [posted], ["t1"], 1)
+    def g2 = o.group("x", [posted], ["t2"], 1)
+
+    g1.view { "G1: ${it[0]}" }
+    g2.view { "G2: ${it[0]}" }
+}
+''', timeout=60)
+        NxfTestRunner.assert_nxf_ok(result)
+        g1_lines = [l for l in result.stdout.split("\n") if l.startswith("G1:")]
+        g2_lines = [l for l in result.stdout.split("\n") if l.startswith("G2:")]
+        assert len(g1_lines) >= 1, "G1 should have output"
+        assert len(g2_lines) >= 1, "G2 should have output (fails if channel was consumed by G1)"
+
+    def test_stream_reuse_works_in_orchestrator(self, nxf_runner):
+        for i in range(9):
+            (nxf_runner.work_dir / f"sample_{i}.txt").write_text(f"sample {i}")
+        (nxf_runner.work_dir / "exp.txt").write_text("experiment")
+        (nxf_runner.work_dir / "container.txt").write_text("container")
+
+        result = nxf_runner.run('''
+process p01_per_sample {
+    input:
+        tuple val(index), path("input.txt"), path("exp.txt"), path("container.txt")
+    output:
+        tuple val(index), path("1-out.txt")
+    script:
+    """
+    echo "p01 done" > 1-out.txt
+    """
+}
+
+process p02_per_exp {
+    input:
+        tuple val(index), path("exp.txt"), path("container.txt")
+    output:
+        tuple val(index), path("1-out.txt")
+    script:
+    """
+    echo "p02 done" > 1-out.txt
+    """
+}
+
+process p03_merge {
+    input:
+        tuple val(index), path("p01_results"), path("p02_result"), path("exp.txt"), path("container.txt")
+    output:
+        tuple val(index), path("1-out.txt")
+    script:
+    """
+    echo "p03 done" > 1-out.txt
+    """
+}
+
+workflow {
+    o = new Orchestrator(Channel.fromList([null]))
+
+    // Create 9 sample streams
+    sample_items = []
+    (0..8).each { i ->
+        sample_items.add([[:], file("${projectDir}/sample_${i}.txt")])
+    }
+    ch_samples = Channel.fromList(sample_items)
+
+    // Shared streams: exp and container
+    ch_exp = Channel.fromList([[[:], file("${projectDir}/exp.txt")]])
+    ch_container = Channel.fromList([[[:], file("${projectDir}/container.txt")]])
+
+    // Post all inputs
+    def posted_samples = (o.postIn([ch_samples], ["sample"]))[0]
+    def posted_exp = (o.postIn([ch_exp], ["exp"]))[0]
+    def posted_container = (o.postIn([ch_container], ["container"]))[0]
+
+    // p01: groups by sample, also needs exp + container
+    def g1 = o.group("sample", [posted_samples, posted_exp, posted_container], ["p01_out"], 1)
+    def p01_result = p01_per_sample(g1)
+    def p01_posted = (o.post([p01_result], ["p01_out"]))[0]
+
+    // p02: groups by exp, needs container
+    // posted_exp and posted_container are reused — shared across g1, g2, g3
+    def g2 = o.group("exp", [posted_exp, posted_container], ["p02_out"], 1)
+    def p02_result = p02_per_exp(g2)
+    def p02_posted = (o.post([p02_result], ["p02_out"]))[0]
+
+    // p03: groups by exp, needs p01 + p02 outputs + exp + container
+    def g3 = o.group("exp", [p01_posted, p02_posted, posted_exp, posted_container], ["p03_out"], 1)
+    def p03_result = p03_merge(g3)
+
+    // Render the file name (a String) rather than the index Map. Iterating
+    // an index Map via Groovy's FormatHelper races with concurrent operators
+    // sharing the same Map reference (verified empirically against 25.10.0
+    // and 26.04.1) and surfaces as a `ConcurrentModificationException` from
+    // `FormatHelper.formatMap` inside the view closure. Production-generated
+    // workflows don't render index Maps via view, so this is test-side only.
+    p01_result.view { "P01: ${it[1].name}" }
+    p02_result.view { "P02: ${it[1].name}" }
+    p03_result.view { "P03: ${it[1].name}" }
+}
+''', timeout=120)
+        p03_lines = [l for l in result.stdout.split("\n") if l.startswith("P03:")]
+        nxf_ok = result.returncode == 0 or (
+            "Duration unit cannot be a negative number" in result.stdout
+        )
+        assert nxf_ok and len(p03_lines) >= 1, (
+            f"Workflow failed or p03 got no output (got {len(p03_lines)} lines, "
+            f"rc={result.returncode}).\n"
+            f"stdout:\n{result.stdout[-500:]}"
+        )
+
+
+class TestOrchestratorBatch:
+    def test_batch_collates_correctly(self, nxf_runner):
+        for i in range(6):
+            (nxf_runner.work_dir / f"b_{i}.txt").write_text(f"batch {i}")
+
+        result = nxf_runner.run('''
+workflow {
+    o = new Orchestrator(Channel.fromList([null]))
+
+    ch = Channel.fromList([
+        [["k": [1]], file("${projectDir}/b_0.txt")],
+        [["k": [2]], file("${projectDir}/b_1.txt")],
+        [["k": [3]], file("${projectDir}/b_2.txt")],
+        [["k": [4]], file("${projectDir}/b_3.txt")],
+        [["k": [5]], file("${projectDir}/b_4.txt")],
+        [["k": [6]], file("${projectDir}/b_5.txt")],
+    ])
+
+    def batched = o._batch(3, ch)
+    batched.view { "BATCH: indexes=${it[0].size()} files=${it[1].size()}" }
+}
+''')
+        NxfTestRunner.assert_nxf_ok(result)
+        lines = [l for l in result.stdout.split("\n") if l.startswith("BATCH:")]
+        assert len(lines) == 2
+
+    def test_batch_adds_files_key(self, nxf_runner):
+        for i in range(3):
+            (nxf_runner.work_dir / f"f_{i}.txt").write_text(f"file {i}")
+
+        result = nxf_runner.run('''
+
+
+workflow {
+    o = new Orchestrator(Channel.fromList([null]))
+
+    ch = Channel.fromList([
+        [["k": [1]], file("${projectDir}/f_0.txt")],
+        [["k": [2]], file("${projectDir}/f_1.txt")],
+        [["k": [3]], file("${projectDir}/f_2.txt")],
+    ])
+
+    def batched = o._batch(3, ch)
+    batched.view { "FILES: ${it[0].collect { i -> i.containsKey('FILES') }}" }
+}
+''')
+        NxfTestRunner.assert_nxf_ok(result)
+        lines = [l for l in result.stdout.split("\n") if l.startswith("FILES:")]
+        assert len(lines) >= 1
+        assert "true" in lines[0].lower()
+
+    @staticmethod
+    def _run_two_step_files_check(nxf_runner: "NxfTestRunner", batch_size: int) -> list[str]:
+        for i in range(3):
+            (nxf_runner.work_dir / f"seed_{i}.txt").write_text(f"seed {i}\n")
+
+        result = nxf_runner.run(f'''
+
+
+process step1 {{
+    input:
+        tuple val(index), path(_01)
+    output:
+        tuple val(index), path("*-1.*-out1.txt")
+    script:
+    """
+    touch 1-1-1.HASH${{index.seed[0]}}-out1.txt
+    """
+}}
+
+process step2 {{
+    input:
+        tuple val(index), path(_01)
+    output:
+        path "index.json"
+    script:
+    """
+    echo '${{Orchestrator.JsonforEcho(index)}}' > index.json
+    """
+}}
+
+workflow {{
+    o = new Orchestrator(Channel.fromList([null]))
+
+    seed_raw = Channel.fromList([
+        [["seed": [1L]], file("${{projectDir}}/seed_0.txt")],
+        [["seed": [2L]], file("${{projectDir}}/seed_1.txt")],
+        [["seed": [3L]], file("${{projectDir}}/seed_2.txt")],
+    ])
+    seed = new Tuple2("seed", seed_raw)
+
+    k1 = ["out1"]
+    (_out1) = o.post(o.asStreams(step1(o.group("seed", [seed], k1, 1))), k1)
+
+    k2 = ["out2"]
+    step2(o.group("out1", [_out1], k2, {batch_size}))
+}}
+''')
+        NxfTestRunner.assert_nxf_ok(result)
+        index_files = sorted(nxf_runner.work_dir.rglob("work/*/*/index.json"))
+        assert index_files, (
+            f"step2 produced no index.json with batch_size={batch_size}; "
+            f"stdout tail:\n{result.stdout[-1500:]}"
+        )
+        observed: list[str] = []
+        for ip in index_files:
+            raw = ip.read_text().strip()
+            parsed = json.loads(raw.replace('\\"', '"'))
+            if not isinstance(parsed, list):
+                parsed = [parsed]
+            for idx in parsed:
+                for group in idx.get("FILES", []):
+                    for p in group:
+                        observed.append(p)
+        return observed
+
+    @staticmethod
+    def _assert_files_resolve(files: list[str]) -> None:
+        from pathlib import Path
+
+        from metasmith.bootstrap import _parse_path
+        from metasmith.constants import AgentPaths
+
+        assert files, "no FILES paths to verify"
+        task_key = "TEST"
+        for p in files:
+            parsed = _parse_path(
+                Path(p),
+                agent_home="/host/scratch/agent",
+                external_cwd=Path("/ws"),
+                task_key=task_key,
+            )
+            assert parsed.local.is_absolute() and parsed.local.is_relative_to(
+                AgentPaths.HOME_ROOT
+            ), f"_parse_path did not canonicalize {p!r}: local={parsed.local}"
+            assert f"runs/{task_key}/" in str(parsed.local), (
+                f"_parse_path lost the task_key in {parsed.local} (from {p!r})"
+            )
+            assert not str(parsed.local).startswith(str(AgentPaths.WORK_ROOT) + "/"), (
+                f"_parse_path left /ws prefix in {parsed.local} (from {p!r})"
+            )
+
+    def test_batched_files_resolve_through_parse_path(self, nxf_runner):
+        files = self._run_two_step_files_check(nxf_runner, batch_size=2)
+        self._assert_files_resolve(files)
+
+    def test_unbatched_files_resolve_through_parse_path(self, nxf_runner):
+        files = self._run_two_step_files_check(nxf_runner, batch_size=1)
+        self._assert_files_resolve(files)
+
+    def test_batch_debatch_roundtrip(self, nxf_runner):
+        for i in range(4):
+            (nxf_runner.work_dir / f"r_{i}.txt").write_text(f"roundtrip {i}")
+
+        result = nxf_runner.run('''
+
+
+process passthrough {
+    input:
+        tuple val(index), path("*")
+    output:
+        tuple val(index), path("*.out")
+    script:
+    """
+    i=1; for f in *.txt; do cp "\\$f" "\\${i}-copy.out"; i=\\$((i+1)); done
+    """
+}
+
+workflow {
+    o = new Orchestrator(Channel.fromList([null]))
+
+    ch = Channel.fromList([
+        [["k": [1]], file("${projectDir}/r_0.txt")],
+        [["k": [2]], file("${projectDir}/r_1.txt")],
+        [["k": [3]], file("${projectDir}/r_2.txt")],
+        [["k": [4]], file("${projectDir}/r_3.txt")],
+    ])
+
+    def batched = o._batch(2, ch)
+    def debatched = o._debatch(o.asStreams(passthrough(batched)))
+    debatched[0].view { idx, item -> "ROUNDTRIP: ${groovy.json.JsonOutput.toJson(idx)}" }
+}
+''')
+        NxfTestRunner.assert_nxf_ok(result)
+        lines = [l for l in result.stdout.split("\n") if l.startswith("ROUNDTRIP:")]
+        for line in lines:
+            idx_str = line.split(": ", 1)[1]
+            idx = json.loads(idx_str)
+            assert "FILES" not in idx
+
+
+class TestLinWire:
+    def test_batched_task_puts_every_member_on_the_wire(self, nxf_runner):
+        from metasmith.models.lineage import LinPayload
+        from metasmith.models.workflow.nextflow_codegen import LIN_ECHO_EXPR
+
+        n = 3
+        for i in range(n):
+            (nxf_runner.work_dir / f"seed_{i}.txt").write_text(f"seed {i}\n")
+        seeds = ",\n        ".join(
+            f'[[:], file("${{projectDir}}/seed_{i}.txt")]' for i in range(n)
+        )
+
+        result = nxf_runner.run(f'''
+process step1 {{
+    input:
+        tuple val(index), path(_01)
+    output:
+        tuple val(index), path("*-out1.txt")
+    script:
+    def stem = index[0].seed[0]
+    """
+    touch 1-${{stem}}-out1.txt
+    """
+}}
+
+process step2 {{
+    input:
+        tuple val(index), path(_01)
+    output:
+        path "lin.json"
+    script:
+    """
+    echo "{LIN_ECHO_EXPR}" > lin.json
+    """
+}}
+
+workflow {{
+    o = new Orchestrator(Channel.fromList([null]))
+
+    def seed = (o.postIn([Channel.fromList([
+        {seeds},
+    ])], ["seed"]))[0]
+
+    def k1 = ["out1"]
+    def _out1 = (o.post(o.asStreams(step1(o.group("seed", [seed], k1, 1))), k1))[0]
+
+    step2(o.group("out1", [_out1], ["out2"], {n}))
+}}
+''', timeout=180)
+        NxfTestRunner.assert_nxf_ok(result)
+
+        lin_files = sorted(nxf_runner.work_dir.rglob("work/*/*/lin.json"))
+        assert len(lin_files) == 1, (
+            f"expected {n} keys at batch_size={n} to fold into one task, "
+            f"got {len(lin_files)}"
+        )
+        raw = lin_files[0].read_text().strip().replace('\\"', '"')
+        payload = LinPayload.from_json(raw)
+        assert isinstance(payload.entries, list), (
+            f"the wire must carry a list of per-member maps, got "
+            f"{type(payload.entries).__name__}: {raw}"
+        )
+        assert len(payload.entries) == n, (
+            f"batch of {n} members put {len(payload.entries)} lineage map(s) "
+            f"on the wire: {raw}"
+        )
+        groups = [m.get(LinPayload.FILES_KEY) for m in payload.entries]
+        assert all(g for g in groups), f"a member carried no FILES: {groups}"
+        assert len({json.dumps(g) for g in groups}) == n, (
+            f"members must carry their own inputs, got duplicates: {groups}"
+        )
+
+
+class TestOrchestratorMix:
+    def test_mix_merges_streams(self, nxf_runner):
+        result = nxf_runner.run('''
+workflow {
+    o = new Orchestrator(Channel.fromList([null]))
+
+    ch_a = Channel.fromList([
+        [["a": [1]], file("${projectDir}/test.nf")],
+    ])
+    ch_b = Channel.fromList([
+        [["a": [2]], file("${projectDir}/test.nf")],
+    ])
+
+    def mixed = o.mix([["x", ch_a], ["x", ch_b]])
+    def (name, stream) = mixed
+    stream.view { "MIX: ${it[0]}" }
+}
+''')
+        NxfTestRunner.assert_nxf_ok(result)
+        lines = [l for l in result.stdout.split("\n") if l.startswith("MIX:")]
+        assert len(lines) == 2
+
+    def test_mix_preserves_name(self, nxf_runner):
+        result = nxf_runner.run('''
+workflow {
+    o = new Orchestrator(Channel.fromList([null]))
+
+    ch_a = Channel.fromList([
+        [[:], file("${projectDir}/test.nf")],
+    ])
+    ch_b = Channel.fromList([
+        [[:], file("${projectDir}/test.nf")],
+    ])
+
+    def mixed = o.mix([["first_name", ch_a], ["second_name", ch_b]])
+    def (name, stream) = mixed
+    println "NAME: ${name}"
+}
+''')
+        NxfTestRunner.assert_nxf_ok(result)
+        assert "NAME: first_name" in result.stdout
+
+
+class TestOrchestratorPublish:
+    def test_publish_outputs_json_index(self, nxf_runner):
+        result = nxf_runner.run('''
+workflow {
+    o = new Orchestrator(Channel.fromList([null]))
+
+    ch = Channel.fromList([
+        [["a": [1], "b": [2]], file("${projectDir}/test.nf")],
+    ])
+
+    def published = o.publish(["x", ch])
+    published.view { json_idx, item -> "PUB: ${json_idx}" }
+}
+''')
+        NxfTestRunner.assert_nxf_ok(result)
+        lines = [l for l in result.stdout.split("\n") if l.startswith("PUB:")]
+        assert len(lines) == 1
+        json_str = lines[0].split("PUB: ")[1]
+        parsed = json.loads(json_str)
+        assert "a" in parsed
+        assert "b" in parsed
+
+
+class TestPathStringification:
+    def test_docker_emits_absolute_ws_prefix(self, nxf_runner):
+        result = nxf_runner.run('''
+process produce {
+    output:
+        path "out.txt"
+    script:
+    """
+    echo hello > out.txt
+    """
+}
+
+workflow {
+    produce()
+    produce.out.view { p -> "STRSHAPE: ${p.toString()}" }
+}
+''')
+        NxfTestRunner.assert_nxf_ok(result)
+        lines = [l for l in result.stdout.split("\n") if l.startswith("STRSHAPE:")]
+        assert len(lines) == 1, f"expected exactly one STRSHAPE line, got: {lines}"
+        rendered = lines[0].split("STRSHAPE: ", 1)[1]
+        assert rendered.startswith("/ws/"), (
+            f"Docker emitted unexpected toString shape: {rendered!r}. "
+            f"If this changes, `bootstrap._parse_path` case-1 (the inbox "
+            f"#139 fix) needs to be re-validated."
+        )
+        assert ".." not in rendered.split("/"), (
+            f"Docker emitted `..` segment unexpectedly: {rendered!r}."
+        )
+
+
+class TestCacheHitLineage:
+    _SCRIPT = '''
+workflow {{
+    o = new Orchestrator(Channel.fromList([null]))
+    o.seedParents(["seed": ["root"], "step_a": ["seed"]])
+
+    ch_root = Channel.fromList([
+        [[(Orchestrator.SELF_ID_KEY): ["ROOT1"]], file("${{projectDir}}/root.txt")],
+    ])
+    def _root = (o.postIn([ch_root], ["root"]))[0]
+
+    // Exactly what codegen emits for a cache hit, modulo the index.
+    ch_a = Channel.of(
+        [{index}, file("${{projectDir}}/a0.txt")],
+        [{index}, file("${{projectDir}}/a1.txt")],
+    )
+    def _step_a = (o.post([ch_a], ["step_a"], ["SLOT_A"]))[0]
+
+    def grouped = o.group("root", [_root, _step_a], ["step_b"], 1)
+    grouped.view {{ it ->
+        def files = it[1..-1].collect {{ g -> g.collect {{ f -> f.name }}.sort().join("+") }}
+        return "G:" + files.join("|")
+    }}
+    workflow.onComplete {{
+        println "DISPATCH:" + groovy.json.JsonOutput.toJson(o.getDispatchLog())
+    }}
+}}
+'''
+
+    def _run(self, nxf_runner, index_literal, expect_ok=True):
+        for n in ("root", "a0", "a1"):
+            (nxf_runner.work_dir / f"{n}.txt").write_text(n)
+        result = nxf_runner.run(self._SCRIPT.format(index=index_literal))
+        if expect_ok:
+            NxfTestRunner.assert_nxf_ok(result)
+        emits = [l for l in result.stdout.splitlines() if l.startswith("G:")]
+        dispatch = [l for l in result.stdout.splitlines() if l.startswith("DISPATCH:")]
+        return emits, "".join(dispatch), result
+
+    def test_empty_index_stops_the_run(self, nxf_runner):
+        emits, dispatch, result = self._run(nxf_runner, "[:]", expect_ok=False)
+        assert result.returncode != 0, (
+            "an empty replayed index must stop the run, not drop the item; "
+            f"exit was {result.returncode}, emissions: {emits}"
+        )
+        assert "declared descendant" in (result.stdout or "") + (result.stderr or ""), (
+            f"expected the lineage-violation message; stdout tail: "
+            f"{(result.stdout or '')[-1500:]}"
+        )
+        assert "LINEAGE_VIOLATION" in dispatch, (
+            f"expected the violation to still be logged; dispatch log: {dispatch}"
+        )
+        assert emits == [], f"nothing should have been grouped; emissions: {emits}"
+
+    def test_ancestor_bearing_index_reaches_the_group(self, nxf_runner):
+        emits, dispatch, result = self._run(nxf_runner, '["root": ["ROOT1"]]')
+        assert "LINEAGE_VIOLATION" not in dispatch, dispatch
+        assert emits == ["G:root.txt|a0.txt+a1.txt"], (
+            f"expected one whole group carrying both cached files, got {emits}"
+        )
+
+
+STRIP_RESERVED_PROBE = '''
+class Probe {
+
+    private static final List LINEAGE = ["k0", "k1", "k2", "k3"]
+
+    // One task's output index as _collateBatch builds it: lineage keys plus
+    // the two reserved bookkeeping entries the task reads.
+    private static Map freshIndex() {
+        def index = [:]
+        LINEAGE.each { index[it] = ["h_" + it] }
+        index[Orchestrator.PROV_KEY] = [[[:]]]
+        index[Orchestrator.FILES_KEY] = [["/work/staged/path"]]
+        return index
+    }
+
+    // F1a: the strip must not write to the map it is handed.
+    static String f1a() {
+        def index = freshIndex()
+        def snapshot = [:] + index
+        def returned = Orchestrator.stripReserved(index)
+        def caller_unchanged = (index == snapshot)
+        def returned_stripped = !returned.containsKey(Orchestrator.FILES_KEY) &&
+                                !returned.containsKey(Orchestrator.PROV_KEY)
+        def returned_keeps_lineage = LINEAGE.every { returned.containsKey(it) }
+        return "F1A caller_unchanged=${caller_unchanged}" +
+               " returned_stripped=${returned_stripped}" +
+               " returned_keeps_lineage=${returned_keeps_lineage}"
+    }
+
+    // F1b: a process declaring N output tuples binds the same index object to
+    // all N channels, so _debatch runs the strip over it on N operator threads
+    // and _post then copies the result. Count the copies that came out with
+    // their ancestry missing.
+    static String f1b(int streams, int rounds) {
+        int lost = 0
+        for (int r = 0; r < rounds; r++) {
+            def shared = freshIndex()
+            def copies = Collections.synchronizedList([])
+            def start = new java.util.concurrent.CountDownLatch(1)
+            def done = new java.util.concurrent.CountDownLatch(streams)
+            for (int s = 0; s < streams; s++) {
+                Thread.start {
+                    start.await()
+                    def stripped = Orchestrator.stripReserved(shared)
+                    copies.add([:] + stripped)
+                    done.countDown()
+                }
+            }
+            start.countDown()
+            done.await()
+            copies.each { copy ->
+                if (LINEAGE.any { !copy.containsKey(it) }) lost++
+            }
+        }
+        return "F1B streams=${streams} rounds=${rounds}" +
+               " copies=${streams * rounds} lost=${lost}"
+    }
+}
+'''
+
+
+class TestSharedIndexIsNeverWritten:
+    def _probe(self, nxf_runner, call, timeout=120):
+        result = nxf_runner.run(
+            "workflow {\n    println %s\n}\n" % call,
+            timeout=timeout,
+            extra_lib={"Probe.groovy": STRIP_RESERVED_PROBE},
+        )
+        NxfTestRunner.assert_nxf_ok(result)
+        return result.stdout
+
+    def test_strip_does_not_write_to_its_argument(self, nxf_runner):
+        out = self._probe(nxf_runner, "Probe.f1a()")
+        assert "F1A caller_unchanged=true" in out, (
+            "stripReserved wrote to the map it was handed; that map is shared "
+            f"across every output channel of the task. Probe said: {out}"
+        )
+        assert "returned_stripped=true" in out, out
+        assert "returned_keeps_lineage=true" in out, out
+
+    @pytest.mark.parametrize("streams", [2, 3])
+    def test_concurrent_strips_lose_no_lineage(self, nxf_runner, streams):
+        out = self._probe(
+            nxf_runner, f"Probe.f1b({streams}, 20000)", timeout=600
+        )
+        line = next(
+            (ln for ln in out.splitlines() if ln.startswith("F1B ")), None
+        )
+        assert line is not None, f"probe produced no F1B line: {out}"
+        assert line.endswith("lost=0"), (
+            "concurrent strips dropped lineage from the shared index; every "
+            f"such copy is a product that gets dropped downstream. {line}"
+        )
+
+
+OWNERSHIP_PROBE = '''
+class Ownership {
+    static String tag(String label, def idx) {
+        def m = (idx instanceof List) ? idx[0] : idx
+        return label + " id=" + System.identityHashCode(m) +
+               " keys=" + Orchestrator.stripReserved(m).keySet()
+    }
+}
+'''
+
+
+class TestMultiOutputProcess:
+    _PROCESSES = '''
+process two_out {
+    input:
+    tuple val(index), path(_01)
+    output:
+    tuple val(index), path("*-1.*-A.txt")
+    tuple val(index), path("*-1.*-B.txt")
+    script:
+    def h = "${index}".md5()[0..7]
+    """
+    touch 1-1-1.${h}-A.txt
+    touch 1-1-1.${h}-B.txt
+    """
+}
+
+process merge_both {
+    input:
+    tuple val(index), path(_01), path(_02), path(_03)
+    output:
+    tuple val(index), path("*-1.*-M.txt")
+    script:
+    def h = "${index}".md5()[0..7]
+    """
+    touch 1-1-1.${h}-M.txt
+    """
+}
+'''
+
+    _SCRIPT = _PROCESSES + '''
+workflow {
+    o = new Orchestrator(Channel.fromList([null]))
+
+    ch = Channel.fromList([
+        [[:], file("${projectDir}/g0.txt")],
+        [[:], file("${projectDir}/g1.txt")],
+    ])
+    def _g = (o.postIn([ch], ["g"]))[0]
+
+    def k = ["A", "B"]
+    def (_A, _B) = o.post(o.asStreams(two_out(o.group("g", [_g], k, 1, [:]))), k, ["sA", "sB"])
+
+    _A[1].view { idx, item -> "IDX_A:" + groovy.json.JsonOutput.toJson(idx) }
+    _B[1].view { idx, item -> "IDX_B:" + groovy.json.JsonOutput.toJson(idx) }
+
+    k = ["M"]
+    def _M = (o.post(o.asStreams(merge_both(o.group("g", [_g, _A, _B], k, 1, [:]))), k, ["sM"]))[0]
+    _M[1].view { idx, item -> "OUT_M:" + item.name }
+}
+'''
+
+    _PIN_SCRIPT = _PROCESSES + '''
+workflow {
+    o = new Orchestrator(Channel.fromList([null]))
+
+    ch = Channel.fromList([[[:], file("${projectDir}/g0.txt")]])
+    def _g = (o.postIn([ch], ["g"]))[0]
+
+    def k = ["A", "B"]
+    def raw = o.asStreams(two_out(o.group("g", [_g], k, 1, [:])))
+    raw[0].view { idx, item -> Ownership.tag("RAW_A", idx) }
+    raw[1].view { idx, item -> Ownership.tag("RAW_B", idx) }
+
+    def (_A, _B) = o.post(raw, k, ["sA", "sB"])
+    _A[1].view { idx, item -> Ownership.tag("POST_A", idx) }
+    _B[1].view { idx, item -> Ownership.tag("POST_B", idx) }
+}
+'''
+
+    def _run(self, nxf_runner, script=None, inputs=("g0", "g1"), **kwargs):
+        for n in inputs:
+            (nxf_runner.work_dir / f"{n}.txt").write_text(n)
+        result = nxf_runner.run(script or self._SCRIPT, **kwargs)
+        NxfTestRunner.assert_nxf_ok(result)
+        return result
+
+    def test_each_output_keeps_its_task_index(self, nxf_runner):
+        result = self._run(nxf_runner)
+        for stream in ("A", "B"):
+            lines = [
+                l for l in result.stdout.splitlines()
+                if l.startswith(f"IDX_{stream}:")
+            ]
+            assert len(lines) == 2, (
+                f"expected 2 items on stream {stream}, got {len(lines)}: "
+                f"{lines}"
+            )
+            for line in lines:
+                idx = json.loads(line.split(":", 1)[1])
+                assert "g" in idx, (
+                    f"output {stream} lost its input lineage: {idx}"
+                )
+                assert stream in idx, (
+                    f"output {stream} is missing its own key: {idx}"
+                )
+
+    def test_both_outputs_join_one_downstream_group(self, nxf_runner):
+        result = self._run(nxf_runner)
+        emits = [l for l in result.stdout.splitlines() if l.startswith("OUT_M:")]
+        assert len(emits) == 2, (
+            "the merge step must run once per group key; got "
+            f"{len(emits)} emission(s): {emits}"
+        )
+
+    def test_the_streams_own_their_index_only_after_post(self, nxf_runner):
+        result = self._run(
+            nxf_runner,
+            script=self._PIN_SCRIPT,
+            inputs=("g0",),
+            extra_lib={"Ownership.groovy": OWNERSHIP_PROBE},
+        )
+        tags = {}
+        for line in result.stdout.splitlines():
+            for label in ("RAW_A", "RAW_B", "POST_A", "POST_B"):
+                if line.startswith(label + " id="):
+                    tags.setdefault(label, []).append(
+                        line.split("id=")[1].split(" ")[0]
+                    )
+        missing = [l for l in ("RAW_A", "RAW_B", "POST_A", "POST_B") if l not in tags]
+        assert not missing, (
+            f"the probe never tagged {missing}; stdout tail: "
+            f"{result.stdout[-2000:]}"
+        )
+        assert all(len(v) == 1 for v in tags.values()), (
+            f"one input should give one item per stream, got {tags}"
+        )
+
+        assert tags["RAW_A"] == tags["RAW_B"], (
+            "the two output channels of one process no longer share an index "
+            "object. That is Nextflow behaviour changing under us, and it is "
+            "the premise `stripReserved` and `asStreams` are written against: "
+            "re-read both comments before relaxing this. "
+            f"raw ids were {tags['RAW_A']} and {tags['RAW_B']}"
+        )
+        assert tags["POST_A"] != tags["POST_B"], (
+            "both streams left post() holding ONE index map, so a write on "
+            "either is a write on both and the sharing is no longer confined "
+            f"to the pre-post span. post ids were {tags['POST_A']} and "
+            f"{tags['POST_B']}"
+        )
+        assert tags["RAW_A"] != tags["POST_A"], (
+            "post() handed back the very map the process bound, rather than "
+            f"the copy `_post` makes. ids: raw {tags['RAW_A']}, post "
+            f"{tags['POST_A']}"
+        )

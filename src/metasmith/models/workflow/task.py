@@ -1,18 +1,7 @@
-"""A plan plus the libraries it needs, and the bundle that gets staged.
-
-`WorkflowTask` is what a run is launched from: identity (its key is the plan's),
-the input folders that have to be bound, and Pack/SaveAs/Load for the bundle.
-
-The three heaviest things it used to do live next door now -- compiling the
-Nextflow (`nextflow_codegen`), deciding which steps are already cached
-(`cache_decisions`), and picking the publishDir strategy. They stay reachable as
-methods because that is how every caller spells them; the methods below are
-delegation, not logic.
-"""
-
 from __future__ import annotations
 
 import os
+import shutil
 from dataclasses import dataclass, field
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -20,7 +9,11 @@ from typing import Iterable, Literal
 
 import yaml
 
-from ..libraries import DataInstance, DataInstanceLibrary, TransformInstanceLibrary
+from ...hashing import KeyGenerator
+from ..libraries import (
+    DataInstance, DataInstanceLibrary, DataInstanceLibraryView,
+    TransformInstanceLibrary,
+)
 from ..paths import DeferredPathError, is_deferred
 from ..remote import Logistics, Source, SourceType
 from .cache_decisions import compute_cache_decisions
@@ -39,7 +32,6 @@ class WorkflowTask:
         self._update_hash()
 
     def _update_hash(self):
-        # self._hash, self._key = KeyGenerator.FromStr("".join(p._key for g in self.plans for p in g), l=8)
         self._hash, self._key = self.plan._hash, self.plan._key
 
     def GetKey(self):
@@ -78,9 +70,6 @@ class WorkflowTask:
         return [Path(p) for p in roots]
 
     def GetCommonInputFolders(self, method="external"):
-        """
-        @method is: external | internal | all
-        """
         assert method in {"external", "internal", "all"}
         def should_keep(inst: DataInstance):
             match(method):
@@ -94,23 +83,9 @@ class WorkflowTask:
         return self._get_common_folders(given)
 
     def DeferredInputs(self) -> list[DataInstance]:
-        """The inputs whose path is still DEFERRED.
-
-        A plan over these is legitimate -- solving needs types and lineage, not
-        files -- so this is not asked during planning. It is asked once, at the
-        boundary where a real file starts to matter.
-        """
         return [inst for inst in self.plan.given if is_deferred(inst.path)]
 
     def RefuseIfDeferred(self) -> None:
-        """Raise unless every input has a real path.
-
-        Called at the *top* of both staging entry points, ahead of anything that
-        walks instance paths: `_get_mock_container` -> `GetCommonInputFolders`
-        reads `is_absolute()` on every instance and would happily bind
-        `/msm_deferred/...` into the remote container, turning a message into a
-        mount failure on the far host.
-        """
         deferred = self.DeferredInputs()
         if not deferred:
             return
@@ -127,12 +102,66 @@ class WorkflowTask:
     def Pack(self):
         return dict(
             ok=self.ok,
+            key=self._key,
             data_libraries=[lib.GetKey() for lib in self.data_libraries],
             transform_libraries=[lib.GetKey() for lib in self.transform_libraries],
         )
 
-    def SaveAs(self, dest: Source, partial: str|Literal[False]=False):
+    def LibraryMasks(self) -> dict[str, set[Path]]:
+        # Per library key, the manifest entries this plan resolved against.
+        # `plan.given` is already narrowed to the endpoints the plan consumes,
+        # which is what makes this worth asking.
+        masks: dict[str, set[Path]] = {}
+        def note(lib, path):
+            if lib is None or path is None: return
+            masks.setdefault(lib.GetKey(), set()).add(Path(path))
+
+        for step in self.plan.steps:
+            note(step.transform_library, step.transform._path)
+            for group in step.dependency_map.values():
+                for inst in group:
+                    note(inst.parent_lib, inst.path)
+        for inst in self.plan.given:
+            note(inst.parent_lib, inst.path)
+        for target in self.plan.targets:
+            note(target.instance.parent_lib, target.instance.path)
+
+        libraries = {lib.GetKey(): lib for lib in self.data_libraries + self.transform_libraries}
+        for key, lib in libraries.items():
+            masks[key] = masks.get(key, set()) & set(lib.manifest)
+
+        # Codegen dereferences a kept instance's ancestors unguarded, and an
+        # ancestor may live in another library -- so the closure crosses keys.
+        # Iterated to a fixpoint: `parents` is only guaranteed transitively
+        # flattened on a library that came back through Load.
+        changed = True
+        while changed:
+            changed = False
+            for key, lib in libraries.items():
+                for path in list(masks.get(key, set())):
+                    for pm in lib.parents.get(path, []):
+                        target = libraries.get(pm.library_key)
+                        if target is None or pm.path not in target.manifest: continue
+                        seen = masks.setdefault(pm.library_key, set())
+                        if pm.path in seen: continue
+                        seen.add(pm.path)
+                        changed = True
+        return masks
+
+    def _to_stage(self, lib, masks: dict[str, set[Path]], prune: bool):
+        if not prune:
+            return lib
+        mask = masks.get(lib.GetKey())
+        if mask is None:
+            return lib
+        if isinstance(lib, DataInstanceLibraryView):
+            mask = mask & lib._mask
+            lib = lib._original
+        return lib.AsView(mask)
+
+    def SaveAs(self, dest: Source, partial: str|Literal[False]=False, prune: bool=True):
         assert partial in {"data_only", "transforms_only", False}
+        masks = self.LibraryMasks() if prune else {}
         with TemporaryDirectory() as temp_dir:
             temp_dir = Path(temp_dir)
             _task_path = temp_dir/"task.yml"
@@ -141,20 +170,31 @@ class WorkflowTask:
                     task=self.Pack(),
                     plan=self.plan.Pack(),
                 ), f)
+            _images = temp_dir.parent/f"{temp_dir.name}.images"
             _mover = Logistics()
             _mover.QueueTransfer(
                 src=Source(address=str(temp_dir), type=SourceType.DIRECT),
                 dest=dest,
             )
-            if partial != "transforms_only":
-                for lib in self.data_libraries:
-                    _temp_mover = lib.PrepTransfer(dest/f"data/{lib.GetKey()}")
+            def _queue(libs, kind: str):
+                for lib in libs:
+                    key = lib.GetKey()
+                    staged = self._to_stage(lib, masks, prune)
+                    if isinstance(staged, DataInstanceLibraryView):
+                        _temp_mover = staged.PrepTransfer(
+                            dest/f"{kind}/{key}", image_root=_images/kind/key,
+                        )
+                    else:
+                        _temp_mover = staged.PrepTransfer(dest/f"{kind}/{key}")
                     _mover._queue.extend(_temp_mover._queue)
-            if partial != "data_only":
-                for lib in self.transform_libraries:
-                    _temp_mover = lib.PrepTransfer(dest/f"transforms/{lib.GetKey()}")
-                    _mover._queue.extend(_temp_mover._queue)
-            res = _mover.ExecuteTransfers(wait_for_complete=True)
+            try:
+                if partial != "transforms_only":
+                    _queue(self.data_libraries, "data")
+                if partial != "data_only":
+                    _queue(self.transform_libraries, "transforms")
+                res = _mover.ExecuteTransfers(wait_for_complete=True)
+            finally:
+                shutil.rmtree(_images, ignore_errors=True)
             return res
 
     @classmethod
@@ -166,7 +206,7 @@ class WorkflowTask:
         raw_plan = d["plan"]
 
         _data_lib_paths = [Path(p) for p in alt_data_paths] if alt_data_paths else []
-        _data_lib_paths += [path/"data"] # prefer alts first
+        _data_lib_paths += [path/"data"]
         def load_lib(lib_key: str):
             for d in _data_lib_paths:
                 p = d/lib_key
@@ -176,10 +216,32 @@ class WorkflowTask:
         data_libs = {n: load_lib(n) for n in raw_task["data_libraries"]}
         tr_libs = {n: TransformInstanceLibrary.Load(path/f"transforms/{n}") for n in raw_task["transform_libraries"]}
         _libraries: dict[str, DataInstanceLibrary] = data_libs|tr_libs
+        # A library key names the directory this bundle staged it into, so -- as
+        # with the task key below -- it is a fact about the bundle rather than
+        # something to re-derive. A library whose manifest names its own key
+        # (an entry with a parent in the same library) cannot re-derive it: the
+        # key is a hash of a manifest that contains the key. `DataInstance.Pack`
+        # asks the library for its key, so a plan rewritten after a load would
+        # otherwise name a library this task has never heard of.
+        for _recorded, _lib in _libraries.items():
+            _lib._hash, _ = KeyGenerator.FromStr(_recorded, l=12)
+            _lib._key = _recorded
         plan =  WorkflowPlan.Unpack(raw_plan, _libraries)
-        return cls(
+        task = cls(
             ok=raw_task["ok"],
             plan=plan,
             data_libraries=[data_libs[n] for n in raw_task["data_libraries"]],
             transform_libraries=[tr_libs[n] for n in raw_task["transform_libraries"]],
         )
+        # The key names the staged directory, so it is a fact about this bundle
+        # rather than something to re-derive. `WorkflowPlan._update_hash` folds
+        # the given ids in, and staging re-mints those from the host's own view
+        # of the files -- without this, reloading a re-staged task would answer
+        # with a key that no directory is called. Bundles written before the key
+        # was recorded still recompute it, unchanged.
+        pinned = raw_task.get("key")
+        if pinned:
+            plan._hash, _ = KeyGenerator.FromStr(pinned, l=8)
+            plan._key = pinned
+            task._update_hash()
+        return task

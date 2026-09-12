@@ -1,0 +1,332 @@
+types:
+  reference_data:
+    properties:
+      _: reference database
+  genomad:
+    extends:
+    - reference_data
+    properties:
+      _: for geNomad
+  uniref50_diamond_db:
+    extends:
+    - reference_data
+    properties:
+      _: DIAMOND-formatted UniRef50 database
+      ext: dmnd
+  # A DIRECTORY of .hmm files -- not an archive, and it carried `ext: tgz` while being
+  # one, which is exactly the quiet lie that had kofamscan trying to untar it.
+  # compile/kofam_ref.py unpacks with --strip-components=1 because kofamscan is handed
+  # a profile directory and does not recurse.
+  kofamscan_profiles:
+    extends:
+    - reference_data
+    properties:
+      _: KofamScan HMM profile directory -- .hmm files directly under it, unpacked
+  kofamscan_ko_list:
+    extends:
+    - reference_data
+    properties:
+      _: KofamScan KO list file
+      ext: tsv
+  interproscan_data:
+    extends:
+    - reference_data
+    properties:
+      _: InterProScan data directory
+      ext: tgz
+  metabuli_ref:
+    extends:
+    - reference_data
+    properties:
+      _: metabuli reference database
+  gtdb:
+    extends:
+    - reference_data
+    properties:
+      _: genome taxonomy database
+  kraken2_db:
+    extends:
+    - reference_data
+    properties:
+      _: Kraken2 database directory (hash.k2d + Bracken kmer_distrib)
+  centrifuger_db:
+    extends:
+    - reference_data
+    properties:
+      _: Centrifuger FM-index prefix (.1.cfr .. .4.cfr files share a common prefix)
+  sylph_db:
+    extends:
+    - reference_data
+    properties:
+      _: sylph sketch database (single .syldb file)
+      ext: syldb
+  ganon2_db:
+    extends:
+    - reference_data
+    properties:
+      _: ganon2 database prefix (.hibf + .tax files share a common prefix)
+  metaphlan_db:
+    extends:
+    - reference_data
+    properties:
+      _: MetaPhlAn 4 database directory (bowtie2 + .pkl + .nwk)
+  phyloflash_db:
+    extends:
+    - reference_data
+    properties:
+      _: phyloFlash SILVA SSU DB dir (bbmap + UDB + tax tree)
+  antismash:
+    extends:
+    - reference_data
+    properties:
+      _: for antiSMASH
+
+  # Deep-learning model weights (swappable inputs to embedding transforms)
+  protein_model_weights:
+    extends:
+    - reference_data
+    properties:
+      _: Weights bundle for a protein deep-learning model
+  prott5_xl_uniref50_weights:
+    extends:
+    - protein_model_weights
+    properties:
+      _: ProtT5-XL UniRef50 encoder weights (Rostlab/prot_t5_xl_uniref50)
+      ext: tgz
+  esm_c_300m_weights:
+    extends:
+    - protein_model_weights
+    properties:
+      _: ESM-C 300M weights (EvolutionaryScale/esmc-300m)
+      ext: tgz
+  esm_c_600m_weights:
+    extends:
+    - protein_model_weights
+    properties:
+      _: ESM-C 600M weights (EvolutionaryScale/esmc-600m)
+      ext: tgz
+  ankh_base_weights:
+    extends:
+    - protein_model_weights
+    properties:
+      _: Ankh-base weights (ElnaggarLab/ankh-base)
+      ext: tgz
+  ankh_large_weights:
+    extends:
+    - protein_model_weights
+    properties:
+      _: Ankh-large weights (ElnaggarLab/ankh-large)
+      ext: tgz
+  saprot_650m_weights:
+    extends:
+    - protein_model_weights
+    properties:
+      _: SaProt 650M AF2 weights (westlake-repl/SaProt_650M_AF2)
+      ext: tgz
+  esmfold_weights:
+    extends:
+    - protein_model_weights
+    properties:
+      _: ESMFold v1 weights (facebook/esmfold_v1)
+      ext: tgz
+  boltz2_weights:
+    extends:
+    - protein_model_weights
+    properties:
+      _: Boltz-2 weights (boltz-community/boltz-2)
+      ext: tgz
+  boltz_msa_db:
+    extends:
+    - reference_data
+    properties:
+      _: ColabFold MSA databases for Boltz-2 (~2 TB; unused stub)
+
+  # -------------------------------------------------
+  # The GPR-mapper bridge: intermediate id -> MetaNetX reaction.
+  #
+  # ONE table, replacing the former ko_to_mnxr / ec_to_mnxr / uniprot_to_mnxr trio.
+  # Measured 2026-07-25 before consolidating: the three id spaces share NO ids, so a
+  # single `id` column is unambiguous and `id_source` is a label rather than a
+  # disambiguator; deduping to distinct (id, mnxr) took 35,762,706 rows to 30,467,712
+  # and is behaviour-preserving, because the consumer already ran that dedup after the
+  # join and the duplicate rows differed only in columns nothing downstream reads.
+  # 82.5 MB against 251.5 MB across the three files, with per-lane filtered reads the
+  # same or faster.
+  #
+  # `id_source` is NOT `projection_via`. The old uniprot table's `dr_source` was
+  # constant "rhea" and is written per row into the output's `projection_via`;
+  # id_source='uniprot' is not a substitute for it. Each lane declares its own
+  # projection_via.
+  mnxr_lookup:
+    extends:
+    - reference_data
+    properties:
+      _: Consolidated intermediate-id -> MNXR bridge (id, id_source in {ko,ec,uniprot}, mnxr, evidence_quality); the three id spaces are disjoint, so id alone is unambiguous and id_source is a label
+      ext: parquet
+
+  # -------------------------------------------------
+  # The pre-consolidation trio. Superseded by mnxr_lookup for the GPR mappers;
+  # still typed because build-mnxr-lookup reads them.
+  ko_to_mnxr:
+    extends:
+    - reference_data
+    properties:
+      _: KO -> MNXR fan-out bridge table (tab-separated; columns ko, mnxr)
+      ext: tsv
+  ec_to_mnxr:
+    extends:
+    - reference_data
+    properties:
+      _: EC -> MNXR fan-out bridge table (tab-separated; columns ec, mnxr)
+      ext: tsv
+  uniprot_to_mnxr:
+    extends:
+    - reference_data
+    properties:
+      _: UniProt -> MNXR bridge via Rhea DR (parquet; uniprot_accession, dr_source, mnxr)
+      ext: parquet
+  # The labelled references the kNN transfer lane votes against -- NOT the label
+  # universe. One parquet: accession, its MNXR labels and its embedding in the same
+  # row, so there is no ordering for a consumer to get wrong. It replaces the
+  # retired `reference_label_pool`, which was an index parquet beside an .npy stack
+  # addressed by row; two files assembled through two independent `sorted(glob())`
+  # calls that did not agree, which labelled every reference with another protein's
+  # reactions and raised nothing.
+  label_transfer_landmarks:
+    extends:
+    - reference_data
+    properties:
+      _: Reference ProteinBERT embeddings beside their MNXR labels, one row per accession (landmarks.parquet + source.txt)
+  # The SAME landmarks -- same bridge cut, same Swiss-Prot release, same accessions --
+  # embedded with ESM-C instead of ProteinBERT. A separate artifact because the two are
+  # written by two transforms under two images, one of which needs a GPU.
+  label_transfer_landmarks_esmc:
+    extends:
+    - reference_data
+    properties:
+      _: Reference ESM-C embeddings beside their MNXR labels, one row per accession (landmarks.parquet + source.txt)
+
+  # -------------------------------------------------
+  # Compiled metabolism tables (build_references/bake_metabolism.py).
+  # The three are ONE artifact in three files: each carries identical bake-identity
+  # metadata (vocab sha256, bit widths, element order, source hashes) in its parquet
+  # file-level key-value block, and refs.assert_same_bake() refuses a mismatched set.
+  # Loading atom_pairs against a different bake's vocab would decode node codes to the
+  # wrong metabolites silently.
+  metabolism_vocab:
+    extends:
+    - reference_data
+    properties:
+      _: Int-code vocabulary for the compiled metabolism tables (kind, code, symbol; met and rxn densely coded within kind)
+      ext: parquet
+
+  # MetaNetX 4.5, one type per upstream FILE rather than per download bundle --
+  # the same granularity `fabfos::raw` uses, and for the same reason: a
+  # reconstruction needs reac_prop and chem_prop, a metabolite bridge needs
+  # chem_xref, and typing the bundle would make every consumer depend on all of
+  # it. Curation round 5 added these because the reconstruction lane had the
+  # id->MNXR bridge and no stoichiometry to go with it.
+  mnx_reac_prop:
+    extends:
+    - reference_data
+    properties:
+      _: MetaNetX reaction properties (mnxr, equation, reference, classifs, is_balanced, is_transport); headerless, # comments
+      ext: tsv
+  mnx_chem_prop:
+    extends:
+    - reference_data
+    properties:
+      _: MetaNetX metabolite properties (mnxm, name, reference, formula, charge, mass, inchi, inchikey, smiles); headerless, # comments
+      ext: tsv
+  mnx_chem_xref:
+    extends:
+    - reference_data
+    properties:
+      _: MetaNetX metabolite cross-references (source-prefixed id, mnxm, description); the biggM rows are the BiGG bridge
+      ext: tsv
+  atom_pairs:
+    extends:
+    - reference_data
+    properties:
+      _: Compiled atom-atom mapping, one row per single atom correspondence (element, rxn, tail_node, head_node packed as met_code<<rank_bits|atom_rank, pair_w); orientation stored as written
+      ext: parquet
+  direction_ratios:
+    extends:
+    - reference_data
+    properties:
+      _: Per-reaction directionality (rxn, ratio = g_rev/g_fwd = exp(dG'/RT), dir_tier); ratio > 1 FLIPS the edge, it does not amplify it
+      ext: parquet
+
+  # -------------------------------------------------
+  # Per-host gene -> reaction tables. Two independent lines of evidence, deliberately
+  # separate files so they can be compared rather than conflated.
+  # A DIRECTORY keyed by host, `<host>/gpr_{gem,denovo}.parquet`, not one file. The
+  # host set is a fact in acquire/genomes.py and arrives as ONE source folder, so a
+  # per-host product would need the planner to fan a folder out into three givens --
+  # and a requirement binds ONE concrete type, so sibling per-host subtypes silently
+  # collapse to whichever the planner picked while the task count still reads right.
+  # Keying inside the product instead makes the host set the transform's business,
+  # which is where it already lives.
+  gpr_table_gem:
+    extends:
+    - reference_data
+    properties:
+      _: Per-host GPR tables asserted by a curated genome-scale model, hosts/<host>/gpr_gem.parquet (long-format, one row per gene x MNXR; uniform raw_score)
+      Format: DIRECTORY
+  gpr_table_denovo:
+    extends:
+    - reference_data
+    properties:
+      _: Per-host GPR tables inferred from each host's own annotation lanes, hosts/<host>/gpr_denovo.parquet (long-format, one row per ORF x channel x MNXR)
+      Format: DIRECTORY
+
+  # KO -> KEGG reaction, lifted out of the KEGG flat-files once so the sibling project's
+  # request cache is a recorded provenance source rather than a runtime dependency.
+  ko_to_kegg_r:
+    extends:
+    - reference_data
+    properties:
+      _: KO -> KEGG reaction links from each KO's flat-file REACTION block (tab-separated; columns ko, kegg_r)
+      ext: tsv
+
+  # The measurement behind EPI300 sharing DH10B's curated model. Declared because the
+  # claim it carries is what makes two hosts' GEM tables legitimately identical.
+  host_gem_identity_report:
+    extends:
+    - reference_data
+    properties:
+      _: Re-measured delta between a host and the host whose curated model it borrows
+      ext: md
+
+  # EZpred DL-only EC-head model bundle: vendored EZpred tree + the enzyme /
+  # non-enzyme MLP ensembles. No ESM-C weights -- embeddings come from esm_c.
+  ezpred_model:
+    extends:
+    - protein_model_weights
+    properties:
+      _: EZpred DL-only EC-head model bundle (kad-ecoli/EZpred predict.py + MLP heads)
+
+  # -------------------------------------------------
+  # viromics. CCTyper is deliberately absent: its 705-profile database ships
+  # inside the image with $CCTYPER_DB pointing at it, so that transform takes no
+  # ref:: requirement and passes no --db.
+  checkv_db:
+    extends:
+    - reference_data
+    properties:
+      _: CheckV database directory -- the checkv-db-vX.Y tree, passed whole to -d
+  vibrant_db:
+    extends:
+    - reference_data
+    properties:
+      _: VIBRANT reference directory holding BOTH databases/ (the -d argument) and files/ (the -m argument) -- download-db.sh copies files/ out of the image and fetches only the HMMs, so one directory carries both
+  vcontact3_db:
+    extends:
+    - reference_data
+    properties:
+      _: vConTACT3 reference directory, staged by `vcontact3 prepare_databases` from inside the same image whose version will read it
+  iphop_db:
+    extends:
+    - reference_data
+    properties:
+      _: iPHoP host database -- the shipped one, before this survey's own MAGs are added; viromics::iphop_augmented_db is what predict consumes

@@ -10,7 +10,6 @@ def ipynbButtonLink(url, text: str|None=None, color: str="#1976D2", on_hover_col
         if text is None:
             text = url
 
-    # font-weight: bold;
     html_button = f"""
     <style>
         .custom-button {{

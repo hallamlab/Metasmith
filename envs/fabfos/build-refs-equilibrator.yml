@@ -1,0 +1,43 @@
+# build-refs-equilibrator -- the direction ensemble's environment.
+#
+# Named by src/metasmith_libraries/resources/env/equilibrator.env
+# (`conda: build-refs-equilibrator`) and used by
+# build_references/transforms/compile/direction_ensemble.py.
+#
+# ONE member lives here now. This file used to carry both, and the dGbyG line said
+# "installed from source, weights included" -- which was false in a way that took a year
+# to notice, because the failure is silent from the outside:
+#
+#   * `pip install git+https://github.com/f-wc/dGbyG.git` installs 344 KB of python and
+#     NO weights. The 100 pre-trained heads are at the REPOSITORY root, outside
+#     `src/dGbyG/`, and no packaging declares them.
+#   * `api.py` then looks for them at `__file__.split('src')[0] + 'models/...'`, which
+#     only resolves from a source checkout.
+#   * And under this env's python 3.11 the package does not even parse: its source uses
+#     a same-quote nested f-string, legal from 3.12.
+#
+# So dGbyG moved to `envs/build-refs-dgbyg.yml` (python 3.12) and is CLONED rather than
+# pip-installed. See docker/ecspr_bake/load/install_dgbyg.sh for both reasons and the
+# assertion that the heads actually load.
+#
+# rdkit stays here: it is what the eQuilibrator lane's wildcard abstention reads.
+#
+# The eQuilibrator compound cache is NOT installed here -- it is `raw::equilibrator_cache`,
+# acquired by acquire/equilibrator_cache.py and passed in, so a build is not silently
+# dependent on the package's first-use fetch.
+name: build-refs-equilibrator
+channels:
+  - conda-forge
+dependencies:
+  - python=3.11
+  - rdkit=2026.03.*
+  - pandas=2.3.*
+  - pyarrow>=24
+  - scipy=1.17.*
+  - sqlalchemy
+  - requests
+  - pip
+  - pip:
+      - equilibrator-api==0.7.0
+      - equilibrator-cache==0.7.1
+      - component-contribution==0.7.0

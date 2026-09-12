@@ -1,0 +1,12 @@
+name: asv_controller
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - jq
+  - nextflow
+  - mamba
+  - openjdk>=17,<27
+  - pandas
+  - pyyaml
+  - yq

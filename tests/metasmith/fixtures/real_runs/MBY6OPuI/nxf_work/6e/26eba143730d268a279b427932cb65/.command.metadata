@@ -1,0 +1,18 @@
+res 1/1 GB/1
+lin {"v":4,"entries":[{"6QsbBrxh":["1e20e37a4f87840248f1c7ed6356348bfc4d612ed10b12d681f1b466034d8b41fd99"],"ARWqCCPQ":["1e20129acd572a45f14ee9937e7556119488ac29286b8ac7118cd781100ce4c6fae6"],"vKaXxP7s":["1e208f71bc0f3ecb0aafd35d97dbfbd6e045b4fa4313268d66bdcf71ee3cce072a27"],"PROV":[[{"6QsbBrxh":["1e20e37a4f87840248f1c7ed6356348bfc4d612ed10b12d681f1b466034d8b41fd99"]}],[{"6QsbBrxh":["1e20e37a4f87840248f1c7ed6356348bfc4d612ed10b12d681f1b466034d8b41fd99"],"ARWqCCPQ":["1e20129acd572a45f14ee9937e7556119488ac29286b8ac7118cd781100ce4c6fae6"]}],[{"vKaXxP7s":["1e208f71bc0f3ecb0aafd35d97dbfbd6e045b4fa4313268d66bdcf71ee3cce072a27"]}]],"FILES":[["/msm_home/runs/MBY6OPuI/_metasmith/task/data/wN6HaNFM4NWT/GCF_000005845.name"],["/msm_home/runs/MBY6OPuI/_metasmith/task/data/wN6HaNFM4NWT/GCF_000005845.acc"],["/msm_home/runs/MBY6OPuI/_metasmith/task/data/I7hIwKCXX1B8/ncbi-datasets.env"]]}]}
+fmt 2
+din {"6QsbBrxh":["1e20e37a4f87840248f1c7ed6356348bfc4d612ed10b12d681f1b466034d8b41fd99"],"ARWqCCPQ":["1e20129acd572a45f14ee9937e7556119488ac29286b8ac7118cd781100ce4c6fae6"],"vKaXxP7s":["1e208f71bc0f3ecb0aafd35d97dbfbd6e045b4fa4313268d66bdcf71ee3cce072a27"]}
+dot [{"EkgBmJ4c":["1e2021f5b88cb11421cb85a051b990bfb9dacd473fb16fe83c3fd2fbc536df7a077c"],"0PlvGw74":["1e201a180d8df5df3a5dc437801b423a1535446e57d5f7787097f0ab7f7c01db7807"],"XUW6pNyF":["1e202a1420e5b4e5fb29294e9d654112ef2f309d196da0c846d23702a18604ce7372"],"pNMFeMM2":["1e20c0d5dd6a401de5ff8fefe4afd022e12f2ffc76506c2e3bbaf746cda578b8c1d7"]}]
+sar {"6QsbBrxh":1,"ARWqCCPQ":1,"vKaXxP7s":1,"EkgBmJ4c":1,"0PlvGw74":1,"XUW6pNyF":1,"pNMFeMM2":1}
+slk {"6QsbBrxh":"6QsbBrxh","ARWqCCPQ":"ARWqCCPQ","vKaXxP7s":"vKaXxP7s"}
+par 1
+cache_key 1e20c24c9b13def7e472f7bdaf71ee5929a8c3ad6627a1f7604366498faa93a3a5df
+out_identities {"EkgBmJ4c::0":"1e2021f5b88cb11421cb85a051b990bfb9dacd473fb16fe83c3fd2fbc536df7a077c","0PlvGw74::0":"1e201a180d8df5df3a5dc437801b423a1535446e57d5f7787097f0ab7f7c01db7807","XUW6pNyF::0":"1e202a1420e5b4e5fb29294e9d654112ef2f309d196da0c846d23702a18604ce7372","pNMFeMM2::0":"1e20c0d5dd6a401de5ff8fefe4afd022e12f2ffc76506c2e3bbaf746cda578b8c1d7"}
+cacheable true
+transform_key itwEk8vr
+step_name getNcbiAssembly
+sorted_inputs [["6QsbBrxh",["1e20e37a4f87840248f1c7ed6356348bfc4d612ed10b12d681f1b466034d8b41fd99"]],["ARWqCCPQ",["1e20129acd572a45f14ee9937e7556119488ac29286b8ac7118cd781100ce4c6fae6"]],["vKaXxP7s",["1e208f71bc0f3ecb0aafd35d97dbfbd6e045b4fa4313268d66bdcf71ee3cce072a27"]]]
+slot_files [{"dtype_key":"xhJxsmvT","ext":".fna","branch_idx":0,"slot_id":"1e2021f5b88cb11421cb85a051b990bfb9dacd473fb16fe83c3fd2fbc536df7a077c"},{"dtype_key":"r29AenmT","ext":".faa","branch_idx":0,"slot_id":"1e201a180d8df5df3a5dc437801b423a1535446e57d5f7787097f0ab7f7c01db7807"},{"dtype_key":"INe0ozcd","ext":".gff","branch_idx":0,"slot_id":"1e202a1420e5b4e5fb29294e9d654112ef2f309d196da0c846d23702a18604ce7372"},{"dtype_key":"Un1fiNqA","ext":".gbk","branch_idx":0,"slot_id":"1e20c0d5dd6a401de5ff8fefe4afd022e12f2ffc76506c2e3bbaf746cda578b8c1d7"}]
+batches [{"batch_idx":0,"start":0,"end":1,"sorted_inputs":[["6QsbBrxh",["1e20e37a4f87840248f1c7ed6356348bfc4d612ed10b12d681f1b466034d8b41fd99"]],["ARWqCCPQ",["1e20129acd572a45f14ee9937e7556119488ac29286b8ac7118cd781100ce4c6fae6"]],["vKaXxP7s",["1e208f71bc0f3ecb0aafd35d97dbfbd6e045b4fa4313268d66bdcf71ee3cce072a27"]]]}]
+inp 6QsbBrxh,ARWqCCPQ,vKaXxP7s
+out xhJxsmvT,r29AenmT,INe0ozcd,Un1fiNqA

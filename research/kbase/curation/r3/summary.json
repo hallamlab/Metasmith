@@ -1,0 +1,106 @@
+{
+  "verbs": 54,
+  "apps": 493,
+  "app_disposition": {
+    "existing": 65,
+    "extended": 100,
+    "plumbing": 197,
+    "proposed": 43,
+    "refactor": 27,
+    "deferred": 48,
+    "folded": 3,
+    "declined": 7,
+    "non_task": 3
+  },
+  "existing_transforms_cited": 97,
+  "proposals": 22,
+  "refactors": 3,
+  "new_types": 26,
+  "new_envs": 4,
+  "status": {
+    "deferred": 7,
+    "covered": 14,
+    "plumbing": 6,
+    "missing": 14,
+    "declined": 10,
+    "partial": 3
+  },
+  "workflows": 631,
+  "copies": 2407,
+  "ladder": [
+    {
+      "stage": "today",
+      "workflows": 64,
+      "copies": 373
+    },
+    {
+      "stage": "+ proposals",
+      "workflows": 400,
+      "copies": 1657
+    },
+    {
+      "stage": "+ refactors",
+      "workflows": 574,
+      "copies": 2262
+    }
+  ],
+  "residual": {
+    "edit_media": 97,
+    "edit_model": 66
+  },
+  "per_domain": {
+    "reads": {
+      "deferred": 1,
+      "covered": 3,
+      "plumbing": 6,
+      "transforms": 3
+    },
+    "assembly": {
+      "deferred": 1,
+      "covered": 2,
+      "missing": 2,
+      "transforms": 2
+    },
+    "annotation": {
+      "deferred": 1,
+      "missing": 3,
+      "covered": 2,
+      "transforms": 4
+    },
+    "binning": {
+      "covered": 3,
+      "declined": 1
+    },
+    "taxonomy": {
+      "covered": 1,
+      "missing": 1,
+      "transforms": 1
+    },
+    "comparative": {
+      "covered": 1,
+      "missing": 2,
+      "partial": 1,
+      "transforms": 3
+    },
+    "modelling": {
+      "deferred": 3,
+      "missing": 3,
+      "declined": 4,
+      "transforms": 4
+    },
+    "transcriptomics": {
+      "covered": 2,
+      "partial": 2,
+      "missing": 2,
+      "deferred": 1,
+      "transforms": 4
+    },
+    "ecology": {
+      "declined": 5
+    },
+    "variants": {
+      "missing": 1,
+      "transforms": 1
+    }
+  }
+}

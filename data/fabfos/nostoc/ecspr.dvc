@@ -1,0 +1,6 @@
+outs:
+- md5: 520a9f158dc56c8969aab5064711ca7e.dir
+  size: 56020836
+  nfiles: 132
+  hash: md5
+  path: ecspr

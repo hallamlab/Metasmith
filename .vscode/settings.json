@@ -1,17 +1,17 @@
 {
     "python.autoComplete.extraPaths": [
-        "${workspaceFolder}/lib",
+        "${workspaceFolder}/src/metasmith/lib",
         "${workspaceFolder}/src",
     ],
     "python.analysis.extraPaths": [
-        "${workspaceFolder}/lib",
+        "${workspaceFolder}/src/metasmith/lib",
         "${workspaceFolder}/src",
     ],
     "python.analysis.exclude": [
         "**/cache",
     ],
     "terminal.integrated.env.linux": {
-        "PYTHONPATH": "${workspaceFolder}/lib:${workspaceFolder}/src",
+        "PYTHONPATH": "${workspaceFolder}/src/metasmith/lib:${workspaceFolder}/src",
         "ws": "${workspaceFolder}",
     },
     "esbonio.server.enabled": false,

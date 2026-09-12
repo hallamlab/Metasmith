@@ -1,4 +1,3 @@
-"""Agent loading, saving, info, ping, deploy."""
 from __future__ import annotations
 
 from pathlib import Path
@@ -27,45 +26,30 @@ def _agent_info(name: str, agent: Agent) -> dict:
         "real_path": str(agent.real_path) if agent.real_path else None,
         "setup_commands": list(agent.setup_commands),
         "config_presets": presets,
-        # which of `config_presets` a run uses when the caller names none;
-        # `None` is the built-in `local`
         "default_preset": agent.default_preset,
-        # params every run on this agent starts from -- where a scheduler preset
-        # gets the account it needs
         "default_params": dict(agent.default_params),
     }
 
 
 def runtimes() -> list[str]:
-    """The runtimes an agent may be given, as the wire names `save_agent` takes.
-
-    Read off the enum rather than written out again, so a runtime added to
-    `env.Runtime` reaches every caller -- the CLI, the GUI's dropdown -- with
-    nothing else to update.
-    """
     return [r.name for r in Runtime]
 
 
 def default_container() -> str:
-    """The image an agent runs metasmith from when it names none.
-
-    Read off the dataclass rather than rebuilt from the version, so it cannot
-    drift from what an agent created without one actually gets.
-    """
     return Agent.__dataclass_fields__["container"].default
 
 
 def config_presets() -> list[str]:
-    """The nextflow config presets an agent may declare, by name.
-
-    Same shape and same reason as `runtimes()`: a fixed list read off what
-    metasmith ships, so a preset added to the package folder reaches the CLI's
-    `--preset` and the page's dropdown with nothing else to update.
-    """
     try:
         return sorted(GetNxfConfigPresets())
     except Exception:
         return []
+
+
+def preset_content(name: str) -> str:
+    presets = GetNxfConfigPresets()
+    assert name in presets, f"unknown nextflow preset [{name}]; expected one of {sorted(presets)}"
+    return Path(presets[name]).read_text()
 
 
 def load_agent(agent_path: str) -> Agent:
@@ -73,7 +57,6 @@ def load_agent(agent_path: str) -> Agent:
 
 
 def list_agents(agent_paths: list[str]) -> list[dict]:
-    """List the given agent YAMLs with summary info."""
     results = []
     for p in agent_paths:
         try:
@@ -109,32 +92,6 @@ def save_agent(
     id: str | None = None,
     rootfs: str | None = None,
 ) -> dict:
-    """Write an agent YAML to disk.
-
-    An agent that is already there is *edited*, not rebuilt: the fields below
-    are set and everything else the file carries is kept. That matters for
-    `real_path`, resolved at deploy time: building a fresh Agent here silently
-    reverted it on the next save.
-
-    `native`, `gpu_args` and `rootfs` are host facts no editor draws. They are kept when
-    not given, which is what an editor saving a form wants, and set when they
-    are, which is what an importer wants: an agent arriving from a colleague has
-    no file on this side to preserve them from.
-
-    `renaming_host` says the home changed only in how its host is *spelled* --
-    the caller renamed an ssh alias and is bringing the agents on it along. The
-    machine and the directory are the same, so the resolution the agent already
-    has still holds; clearing it would make a cosmetic rename cost a redeploy.
-
-    `id` is only ever honoured the one time it matters: when there is no file
-    here yet. An agent that already exists keeps whatever id `Agent.Load` gave
-    it -- the whole point of the id is that nothing after creation can move it.
-
-    The named fields *are* set, including to nothing: omitting `globus_uuid` or
-    `default_preset` clears it. That is the contract a save-the-whole-object
-    caller wants, and it is why the two lists above are worth reading -- what is
-    preserved is what is not named here.
-    """
     p = Path(path).resolve()
     p.parent.mkdir(parents=True, exist_ok=True)
     assert home_uri and home_uri.strip(), "a home directory is required"
@@ -146,9 +103,6 @@ def save_agent(
         agent = Agent.Load(p)
     else:
         agent = Agent(home=home, id=id) if id else Agent(home=home)
-    # `real_path` is what the *old* home resolved to on the host; carrying it
-    # across a re-point would have the agent claim a directory it no longer
-    # names. The next deploy resolves it again.
     if agent.home.address != home.address and not renaming_host:
         agent.real_path = None
     agent.home = home
@@ -180,13 +134,9 @@ def ping(agent_path: str, timeout_s: int = 15) -> dict:
     }
 
 
-def deploy(agent_path: str, assertive: bool = False) -> dict:
+def deploy(agent_path: str, assertive: bool = False, on_phase=None) -> dict:
     agent = load_agent(agent_path)
-    agent.Deploy(assertive)
-    # Saved back, because the deploy resolved something the file did not know:
-    # `real_path`. Without this the record is indistinguishable from one that
-    # was never deployed, and that distinction is what the launch route needs
-    # in order to refuse a run rather than fail inside staging minutes later.
+    agent.Deploy(assertive, on_phase=on_phase)
     agent.Save(Path(agent_path))
     return {
         "status": "deployed",
@@ -194,3 +144,82 @@ def deploy(agent_path: str, assertive: bool = False) -> dict:
         "home": agent.home.address,
         "real_path": str(agent.real_path) if agent.real_path else None,
     }
+
+
+def read_pool(
+    agent_path: str,
+    *,
+    origin: str | None = None,
+    dtype: str | None = None,
+    tag: str | None = None,
+    name: str | None = None,
+    refs: list[str] | None = None,
+    timeout: int = 120,
+) -> dict:
+    """The agent's pool, read where it sits.
+
+    With `refs`, the entries those names or ids point at, in the order asked,
+    and a refusal naming the import call for anything the pool does not hold.
+    """
+    agent = Agent.Load(Path(agent_path))
+    out = agent.ReadPool(
+        origin=origin, dtype=dtype, tag=tag, name=name, timeout=timeout,
+    )
+    if refs:
+        out = dict(out)
+        out["entries"] = agent.ResolvePoolRefs(refs, entries=out["entries"])
+        out["refs"] = list(refs)
+    return out
+
+
+def import_to_pool(
+    agent_path: str,
+    path: str,
+    dtype: str,
+    *,
+    name: str | None = None,
+    parents: list[str] | None = None,
+    tags: list[str] | None = None,
+    timeout: int = 300,
+) -> dict:
+    """Record one item in the agent's pool, where that item already sits."""
+    return Agent.Load(Path(agent_path)).ImportToPool(
+        path, dtype, name=name, parents=parents, tags=tags, timeout=timeout,
+    )
+
+
+def tag_pool_entry(
+    agent_path: str,
+    key_hex: str,
+    tags: list[str],
+    *,
+    replace: bool = False,
+    remove: bool = False,
+    timeout: int = 120,
+) -> dict:
+    return Agent.Load(Path(agent_path)).TagPoolEntry(
+        key_hex, tags, replace=replace, remove=remove, timeout=timeout,
+    )
+
+
+def forget_pool_entry(
+    agent_path: str,
+    instance_id: str,
+    *,
+    delete: bool = False,
+    timeout: int = 120,
+) -> dict:
+    return Agent.Load(Path(agent_path)).ForgetPoolEntry(
+        instance_id, delete=delete, timeout=timeout,
+    )
+
+
+def resolve_pool_refs(
+    agent_path: str, refs: list[str], *, entries: list | None = None,
+) -> list[dict]:
+    """The entries those names or ids point at, in the order asked.
+
+    `entries` is a pool listing the caller already has, which is how a caller
+    resolving many references pays for one read rather than one per reference.
+    """
+    return Agent.Load(Path(agent_path)).ResolvePoolRefs(refs, entries=entries)

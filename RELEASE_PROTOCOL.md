@@ -6,7 +6,7 @@ publish them. Keep this followable end-to-end without re-deriving the steps.
 All commands run from the repo root in the `msm` conda env:
 
 ```
-mamba run -n msm ./dev.sh <flag>
+mamba run -n msm ./dev/metasmith.sh <flag>
 ```
 
 ---
@@ -19,7 +19,7 @@ have been exercised. Focus the verification on what a release actually changes.
 ### Run the suite
 
 ```
-PYTHONPATH="$PWD/src" mamba run -n msm python -m pytest tests/ \
+PYTHONPATH="$PWD/src" mamba run -n msm python -m pytest tests/metasmith \
     -m "not docker and not e2e_docker and not e2e_agentic and not nextflow \
         and not network and not requires_docker and not requires_apptainer \
         and not requires_ssh_localhost and not requires_docker_dev_image"
@@ -37,7 +37,17 @@ containers).
 
 Note this does **not** exclude `slow` — the `perf` axis (10k-item libraries) is
 a few minutes and belongs in a release gate. For the minute-by-minute dev loop
-use `-m fast`, and `./dev.sh -tg` for the GUI alone.
+use `-m fast`, and `./dev/metasmith.sh -tg` for the GUI alone.
+
+**Budget 30 minutes.** Measured 2026-08-30 on a 16-core box: 2088 selected, 311
+deselected, 27–29 min wall. `perf` and `flow` dominate, so run them last if you
+need to cut the sweep short. `pytest-timeout` is not in `msm`, so every
+`@pytest.mark.timeout` in the tree is inert and nothing bounds a hung test. Wrap
+the run in `timeout` if you are leaving it unattended.
+
+Do not run a build or another lane beside it. The perf axis asserts wall clock,
+and `test_save_load_roundtrip_10k` fails at 62.7s against its 60s limit under a
+concurrent docker build while passing well inside it on a quiet box.
 
 ### Exercise the gated tiers when relevant
 
@@ -49,10 +59,39 @@ infrastructure the dev box may lack. Run the ones a release touches:
   workflow generation.
 - **`network`** — remote-shell paths; needs `LIVESHELL_REMOTE_HOST`.
 - **`e2e_agentic`** — live agent-driven scenarios; opt-in, needs an API key and a
-  MetasmithLibraries checkout.
+  compiled standard library (`dev/libraries.sh -b`).
+
+### Collect the shipped library before you gate it
+
+The engine ships `src/metasmith_libraries/`, but the release branch merges only
+the engine's own line. A library fix authored on a product branch reaches no
+release until somebody carries it, and nothing warns.
+
+Before gating, ask each product branch what it has that `release` does not:
+
+```
+git log --oneline release..<branch> -- src/metasmith_libraries/
+```
+
+Run it for `fabfos/dev` and `libraries/mono` at least, and read the answer as
+content rather than as commits — cherry-picks land under new SHAs, so a picked
+commit still lists here forever. Diff the paths to confirm.
+
+**CAUTION** Check the direction before merging anything. `release` is usually
+*ahead* on the same files, so a plain `git diff release <branch>` shows the
+engine's own work as a deletion. The commit list above is the reliable question.
+
+0.22.0 nearly shipped two library bugs this way: a regex anchored on a trailing
+number that made every ProteinBERT run exit at the embedder, and an env pinned
+to an image with no pyarrow without the change that stops parquet going through
+it.
 
 ### Focus areas
 
+- **Run the docker lane, not only the dependency-free tier.** It is where the
+  Groovy, the cached twin, publish and the trace actually run. Skipping it for a
+  few releases let three test-harness assumptions rot silently, and the first
+  run after the cache rewrite failed 5 of 191.
 - **Scope the depth to the change.** When `src/metasmith/` is unchanged from the
   last release, the version→tag chain tests (`test_container_tag`,
   `test_dev_sh_tag`, `test_build_pip_version_split`, all under `tests/unit/`)
@@ -67,7 +106,7 @@ infrastructure the dev box may lack. Run the ones a release touches:
   the release affects actually run a real tool end-to-end.
 - **Apptainer is host-specific.** SIF-vs-sandbox behavior, userns permissions,
   and module availability differ per HPC host; validate on a real target host
-  (`main/local_mock/smoke_hpc_deploy.py`) rather than assuming the dev box
+  (`research/metasmith/local_mock/smoke_hpc_deploy.py`) rather than assuming the dev box
   generalizes.
 
 ---
@@ -76,7 +115,7 @@ infrastructure the dev box may lack. Run the ones a release touches:
 
 The version lives in one file: `src/metasmith/version.txt`, a bare PEP 440
 release segment (e.g. `0.19.0`) — no `+` or `-`. Everything downstream
-(`constants.VERSION`/`FULL_VERSION`/`CONTAINER_TAG`, `setup.py`, the `dev.sh`
+(`constants.VERSION`/`FULL_VERSION`/`CONTAINER_TAG`, `setup.py`, the `dev/metasmith.sh`
 docker tag, the default agent container) derives from it. `build_hash.txt` is a
 short hash over the source tree, stamped automatically at build time.
 
@@ -105,19 +144,33 @@ metasmith from the shell environment.
 ```
 unset PYTHONPATH
 
-./dev.sh -brc        # one-time: fetch the rust cross-compile container
-./dev.sh -br         # build the relay binaries (all four arch/os targets)
-./dev.sh -be         # build the solver engine (same four targets) + stage it
-./dev.sh --build-gui # build the frontend bundle (needs node; see below)
-./dev.sh -bp         # build the pip wheel + sdist  (stamps build_hash.txt)
-./dev.sh -bd         # build the docker image, tagged <version>-<hash>
-./dev.sh -bs         # build the apptainer .sif from the local docker image
-./dev.sh -bc         # build the conda package from the wheel
+./dev/metasmith.sh -brc        # one-time: fetch the rust cross-compile container
+./dev/metasmith.sh -br         # build the relay binaries (all four arch/os targets)
+./dev/metasmith.sh -be         # build the solver engine (same four targets) + stage it
+./dev/metasmith.sh --build-gui # build the frontend bundle (needs node; see below)
+./dev/metasmith.sh --vendor-library # stage the standard library into the package
+./dev/metasmith.sh -bp         # build the pip wheel + sdist  (stamps build_hash.txt)
+./dev/metasmith.sh -bd         # build the docker image, tagged <version>-<hash>
+./dev/metasmith.sh -bs         # build the apptainer .sif from the local docker image
+./dev/metasmith.sh -bc         # build the conda package from the wheel
 ```
 
 `-brc`/`-br` produce the relay binaries that get baked into the docker image;
 build them before `-bd`. `-bp` stamps `build_hash.txt`, which fixes the build
 hash that ties the wheel, image tag, and SIF to the exact source state.
+
+The order is only load-bearing where one step consumes another's output. The
+four producers above `-bp` — relays, solver engine, GUI bundle, vendored library
+— are independent of each other and can run concurrently; so can `-bd` and `-bc`
+below it, which read the same frozen `dist/` sdist and write to disjoint places.
+
+`--vendor-library` re-stages `src/metasmith_libraries/` into
+`src/metasmith/vendor/`, which is inside the tree `_build_hash` walks — so it
+must land before `-bp` stamps the hash, or the wheel ships a library the version
+does not describe. **Re-stage it every release rather than trusting the bundle a
+previous build left behind**: `_assert_library_bundle` checks that the bundle
+exists, not that it is current, so a library edit since the last build is
+shipped stale and nothing says so.
 
 The cross-compile container is an **upstream** image
 (`joseluisq/rust-linux-darwin-builder`) and `-brc` now pulls it. It used to
@@ -127,30 +180,45 @@ osxcross toolchain with a plain rust image; `-br` then failed both
 `_assert_real_relays` catches that at `-bs`/`-ud`, not at `-bd` — so if `-br`
 reports a compile error, stop and fix it rather than continuing to `-bd`.
 
-`-be` cross-compiles `main/solver_engine/` to the same four targets, using the
+`-be` cross-compiles `src/workflow_solver/` to the same four targets, using the
 same upstream container (`-bec` pulls it, and is interchangeable with `-brc`),
 and stages the binaries into `src/metasmith/engine/`. That directory is
 generated, never committed, and shipped as package data — because unlike the
 relay, the solver runs **locally at plan time** in whatever process is planning,
 so the agent-deploy path never sees it. `-bp` and `-bc` refuse to run without
-all four. The refusal matters more here than for the relay: a wheel with no
-engine still plans, on the Python solver, just slower — so the failure is
-invisible unless something checks. "Just slower" is now literal and large:
-7.5s versus 1.1s on `metagenomics_from_paired_reads`, for the same plan. `-bel` is the dev-loop build (host toolchain,
+all four, and that refusal is now the only thing between a packaging slip and a
+wheel that cannot plan at all. There used to be a Python solver behind it, so a
+missing engine meant "correct and about 7x slower" and the failure was invisible
+unless something checked. The Python solver is gone: a missing engine now raises.
+
+`-bel` is the dev-loop build (host toolchain,
 host target only); it writes a `BUILD_KIND` marker the guard reads, because
 nothing about a Linux ELF says whether it was linked against musl or against the
 build machine's glibc.
+
+**Do not put that directory under version control of any kind, including DVC.**
+It was DVC-tracked briefly so sibling worktrees could share one cross-build. DVC
+materialises outputs as read-only hardlinks and does not carry the exec bit, so
+the binaries checked out mode 444, the handshake failed with a permission error,
+and every plan in every worktree fell back to the Python solver — which is one of
+the reasons that fallback no longer exists. The same accident today stops the
+planner instead of silently slowing it. The mode is not
+repaired by packaging either: 444 survives an sdist unchanged and normalises to
+644 in a wheel. `_assert_solver_engine` now checks the exec bit, and each scope
+builds its own stage; `MSM_SOLVER_TARGET_DIR` (default
+`~/.cache/metasmith/solver-target`) shares the cargo build directory across
+scopes so only the first build is cold.
 
 `--build-gui` compiles the web GUI into `src/metasmith/gui/static/`. That
 directory is generated and never committed, so a fresh checkout has none, and
 without it the package would ship an empty static directory — a failure nobody
 notices until someone opens the page. `-bp` and `-bd` refuse to run when it is
 missing. It needs node, which is a build dependency only and deliberately absent
-from `envs/base.yml`:
+from `envs/metasmith/base.yml`:
 
 ```
 mamba create -n msm_node -c conda-forge nodejs
-mamba run -n msm_node ./dev.sh --build-gui
+mamba run -n msm_node ./dev/metasmith.sh --build-gui
 ```
 
 ---
@@ -161,16 +229,24 @@ The account has no write access to the upstream (`hallamlab`) repo, so releases
 go out through the fork and a pull request per release.
 
 ```
-./dev.sh -ud    # push the docker image to quay.io/hallamlab/metasmith
-./dev.sh -uc    # upload the conda package to anaconda.org/hallamlab
+./dev/metasmith.sh -ud    # push the docker image to quay.io/hallamlab/metasmith
+./dev/metasmith.sh -uc    # upload the conda package to anaconda.org/hallamlab
 ```
 
-The anaconda-client token persists at `~/.config/binstar/*.token` and lasts a
-year, so `anaconda login` is rarely needed — check with `anaconda whoami` /
-`anaconda auth --list` before assuming you're logged out. If you do need to
-re-auth, it must run on a real TTY: `conda run`/`mamba run` swallow stdin, so
-the `Username:` prompt dies on `[ERROR] EOF when reading a line`. Pass
-`--no-capture-output`, or invoke the env's `bin/anaconda` directly.
+Both refuse to publish an artifact whose solver engine will not run there — `-ud`
+inspects the image, `-uc` installs the built package into a throwaway env — and
+that is the last gate, because packaging damage to the engine is invisible at
+build, install and import time. `-ud` also moves the `latest` and bare-version
+tags. Expect `-uc` to spend a minute on the clean-room install.
+
+The anaconda-client token is a **per-host** file at `~/.config/binstar/*.token`
+and lasts a year, so a host that has never published has none and the cheapest
+fix is to copy the file from one that has. Check with `anaconda org whoami`, not
+`anaconda whoami`: anaconda-client 1.14 split anaconda.com from anaconda.org, and
+the bare subcommands prompt for a destination and die on a non-TTY with
+`Inappropriate ioctl for device` — which reads as an auth failure and is not one.
+A real `anaconda org login` needs a real TTY; `conda run`/`mamba run` swallow
+stdin, so invoke the env's `bin/anaconda` directly.
 
 Then:
 
@@ -181,50 +257,38 @@ Then:
    no standing PR to reuse: each one closes on merge (#63 → 0.17.1, #64 →
    0.18.3, #65 → 0.18.8), and treating the last one as still open is how 0.20.0
    and 0.20.1 shipped to quay and anaconda without ever reaching upstream.
-3. Retag quay **`latest`** (and the bare `X.Y.Z`) onto the new image. There is no
-   dev.sh step, but it needs no web UI either — `docker tag <image>:<version>-<hash>
-   <image>:latest && docker push <image>:latest`, same for the bare version.
-4. Install the published conda package into a throwaway env and confirm the
-   solver engine actually runs there (see below).
+3. Drive both published artifacts as a **consumer**, not as the builder. Every
+   guard above reads the local build — `-uc` installs from `file://conda_build`
+   and `-ud` inspects the image docker already holds — so nothing so far has
+   touched what anaconda.org and quay actually serve. Two lanes, both from
+   outside every worktree and with `env -u PYTHONPATH`, since an ambient
+   `PYTHONPATH` resolves `metasmith` to a checkout and the run proves nothing:
 
-### Verify the package a user would get
+   ```
+   mamba create -y -n msm_gate -c hallamlab -c bioconda -c conda-forge metasmith=X.Y.Z
+   docker rmi quay.io/hallamlab/metasmith:X.Y.Z{,-<hash>} :latest && docker pull …:X.Y.Z-<hash>
+   ```
 
-The build-time guards check the *staging directory*, so they cannot see what
-packaging does to a file afterwards. `binary_relocation`/`detect_binary_files_with_prefix`
-are off in the recipe for exactly this reason — with them on, conda-build treats
-the cross-built `msm_solver` ELFs as libraries of the build host, patchelfs them,
-and the x86_64-linux binary segfaults on exec. Nothing fails at build, install,
-or import; the planner just quietly falls back to the 15x slower python search.
-So the only honest check is a clean-room install:
+   In each: `msm --help`, `Backend("solve") == "rust"`, `clone_stdlib` into an
+   empty directory, and every shipped template solved. The `docker rmi` is the
+   load-bearing half — without it the locally built image is what gets tested,
+   which is the thing this step exists to avoid. The library stamp
+   (`stdlib.discover(root)["commit"]`) must agree between the two artifacts;
+   they are built from one vendored tree and a disagreement means one of them
+   was staged from something else.
+4. Then **run something**. Everything above proves the release plans; none of it
+   executes a workflow, and that is where 0.22.0's defect was — it shipped
+   solving eleven templates cleanly while failing the case it was cut for. Drive
+   whatever scenario the release claims to fix, on the published artifacts, and
+   pair it with a control that should behave the *opposite* way. A single run
+   that misses tells you nothing: it could be a broken cache or a correct miss.
+   The 0.22.0 pass was three trio runs — cold, add-a-sample, re-run-unchanged —
+   and only the third one turned the second from an observation into a
+   diagnosis. Budget hours, not minutes.
 
-```
-env -u PYTHONPATH mamba create -n vXYZ -c hallamlab -c bioconda -c conda-forge metasmith=X.Y.Z
-env -u PYTHONPATH mamba run -n vXYZ python -c \
-  "from metasmith.models.solver_backend import Backend; print(Backend('solve'))"
-```
+## What goes in this file
 
-`rust`, not `python`. Clearing `PYTHONPATH` is load-bearing — the workspace
-checkout otherwise shadows the install and the test proves nothing.
-
----
-
-## Quick reference
-
-| Step | Command | Produces |
-|------|---------|----------|
-| Test | `pytest -m "not docker and not e2e_docker and not e2e_agentic and not nextflow and not network and not requires_*"` | green gate |
-| Bump | edit `src/metasmith/version.txt` + commit | new version |
-| Relay | `./dev.sh -brc` (pull) then `./dev.sh -br` | relay binaries — 4 targets, none stubs |
-| Solver | `./dev.sh -bec` (pull) then `./dev.sh -be` | `src/metasmith/engine/` — 4 targets, shipped in the wheel |
-| GUI | `./dev.sh --build-gui` (needs node) | `src/metasmith/gui/static/` |
-| Wheel | `./dev.sh -bp` | pip wheel + sdist, build hash |
-| Docker | `./dev.sh -bd` | local image `<version>-<hash>` |
-| SIF | `./dev.sh -bs` | `metasmith.sif` |
-| Conda | `./dev.sh -bc` | conda package |
-| Publish image | `./dev.sh -ud` | image on quay.io |
-| Publish conda | `./dev.sh -uc` | package on anaconda.org |
-| Retag quay | `docker tag`/`docker push` for `latest` + bare `X.Y.Z` | movable tags on quay.io |
-| Tags/branches | `git push origin release dev vX.Y.Z` | release on the fork |
-| Upstream | a **new** PR `release` → `hallamlab:release` | release upstream |
-
-> The env is `msm`. Run `dev.sh` and tests through `mamba run -n msm`.
+The followable sequence for cutting a release, and the order constraints inside it — which
+artifact must exist before which, and which guard refuses a build that skips one. What a flag
+does is `dev/metasmith.sh --help`; what a step produces is the step. Neither is transcribed
+here, and nothing is duplicated between sections.

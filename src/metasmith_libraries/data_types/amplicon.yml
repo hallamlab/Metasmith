@@ -1,0 +1,45 @@
+types:
+  asv_seqs:
+    properties:
+      _: ASV sequences
+      Format: FASTA
+      Data: 16S rRNA amplicon sequence variants
+      ext: fasta
+  asv_table:
+    properties:
+      _: ASV abundance table
+      Data: sample by ASV count matrix
+      ext: tsv
+  asv_contig_map:
+    properties:
+      _: ASV to contig mapping via BLASTn
+      Format: BLAST6
+      ext: tsv
+  blast_identity_threshold:
+    properties:
+      _: Minimum percent identity for BLAST mapping (e.g., 97 or 100)
+  silva_source:
+    properties:
+      _: SILVA SSURef NR99 database source URL
+  silva_db:
+    properties:
+      _: SILVA SSURef NR99 reference database formatted for VSEARCH
+  silva_nb_classifier:
+    properties:
+      _: Pre-trained QIIME2 naive Bayes classifier for SILVA
+      ext: qza
+  asv_taxonomy:
+    properties:
+      _: ASV taxonomy classifications
+      ext: tsv
+
+  # curation round 3 -- KBase parity.
+  # NOT one of round 3's 26 proposed types. `kraken_abundance` makes ONE count matrix out
+  # of MANY per-sample profiles, and metasmith has exactly one idiom for that: a logistics
+  # grouping node the per-sample inputs descend from, so `InputGroup` has something to
+  # group by. `transcriptomics::experiment`, `pangenome::pangenome` and `fabfos::run` are
+  # the same thing in their own lanes; the amplicon lane borrowed `aspire::run` and so
+  # never needed its own until the ecology transforms were lifted off that gate.
+  survey:
+    properties:
+      logistics: to group per-sample abundance profiles into one count table

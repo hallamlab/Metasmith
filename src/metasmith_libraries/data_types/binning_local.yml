@@ -1,0 +1,12 @@
+types:
+  quality_bin_fasta:
+    properties:
+      _: bin passing quality threshold (post-aggregator pool from all binners)
+      Format: FASTA
+      Data: nucleic acid sequence
+      ext: fna
+      origin: aggregator_pool
+  cluster_table:
+    properties:
+      _: skani-derived clustering table; rows are bins, marks medoid centroid per cluster
+      ext: tsv

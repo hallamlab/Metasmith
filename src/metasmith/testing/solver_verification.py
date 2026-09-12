@@ -1,38 +1,3 @@
-"""Verification harness for the workflow solver.
-
-Four independent pieces, in the order a change to the solver meets them:
-
-1. `plan_fingerprint` — a canonical form for a solved plan, so "did this change
-   the answer?" is a string comparison instead of a reading exercise. It
-   canonicalizes by colour refinement over the step/endpoint bipartite DAG, so
-   two plans that differ only in step ordering or in which `Endpoint` object
-   carries a value fingerprint the same. **It never reads `instance_id`** —
-   leaf ids fall back to a random per-call value for absent inputs, so any
-   fingerprint touching them reports changes that aren't there.
-
-2. `check_plan` — is this plan *semantically sound*, independent of how it was
-   found. Deliberately shares no code with the search: verification is far
-   simpler than search, and that asymmetry is the only reason this can
-   adjudicate output from an implementation we do not yet trust. It re-derives
-   subset typing, production, ancestry and acyclicity from the data model
-   alone.
-
-3. `generate_problem` — random solver problems with dials for the pressures the
-   known bugs live under: cycles, lineage constraints, duplicate transform use,
-   and `Application.Signature()` collisions.
-
-4. `forward_closure_solvable` / `exhaustive_solvable` — oracles. The first is
-   exact for lineage-free single-group problems and cheap enough for thousands
-   of instances; the second is a bounded exhaustive search that handles lineage
-   and answers `None` when it hits its cap rather than guessing.
-
-The checker's ancestry relation is the *union* of the two the solver itself
-uses — production-graph ancestry (`validate_node._has_ancestor`) and declared
-`Endpoint.parents` ancestry (`generate_applications_of_transform._is_ancestor`).
-A plan the solver accepted satisfies at least one of them, so the union is the
-relation that admits exactly the plans the solver considers lineage-clean.
-"""
-
 from __future__ import annotations
 
 import hashlib
@@ -70,11 +35,6 @@ def _h(*parts: object) -> str:
     return m.hexdigest()
 
 
-# ---------------------------------------------------------------------------
-# 1. Topological fingerprint
-# ---------------------------------------------------------------------------
-
-
 def _steps_of(plan: Solution | Iterable[Application]) -> list[Application]:
     if isinstance(plan, Solution):
         return list(plan.dependency_plan)
@@ -82,23 +42,10 @@ def _steps_of(plan: Solution | Iterable[Application]) -> list[Application]:
 
 
 def plan_fingerprint(plan: Solution | Iterable[Application], *, rounds: int = 24) -> str:
-    """Canonical hex digest of a plan's topology.
-
-    Colour refinement over the bipartite (step, endpoint) DAG. Steps seed from
-    their transform key; endpoints seed from their property set only — lineage
-    is recovered by the refinement, not by the seed, so two endpoints that
-    differ only in which object they are still separate iff the topology
-    separates them.
-
-    Slot identity is carried on the edges (`Dependency.key`, plus the product
-    group index), so swapping which input fills which slot changes the
-    fingerprint.
-    """
     return _fingerprint_detail(plan, rounds=rounds)[0]
 
 
 def plan_shape(plan: Solution | Iterable[Application]) -> dict[str, Any]:
-    """Coarse, human-readable companion to the fingerprint."""
     steps = _steps_of(plan)
     endpoints: set[int] = set()
     for s in steps:
@@ -180,25 +127,11 @@ def _fingerprint_detail(
     return _h(tuple(sorted(colour.values()))), colour
 
 
-# ---------------------------------------------------------------------------
-# 2. Semantic checker
-# ---------------------------------------------------------------------------
-
-
 def _conforms(dep: Dependency, ep: Endpoint) -> bool:
-    """`ep.IsA(dep)` re-derived: a dependency is met by any superset of it."""
     return set(dep.properties).issubset(set(ep.properties))
 
 
 class _Ancestry:
-    """Production-graph plus declared-parents ancestry over one plan.
-
-    Endpoints are keyed by object identity. `Node.__eq__` compares a hash of
-    (properties, parent keys), so two structurally identical endpoints from
-    different steps are `==` without being the same value — keying on equality
-    would silently merge them.
-    """
-
     def __init__(self, steps: list[Application]) -> None:
         self.producers: dict[int, list[Application]] = {}
         self.by_id: dict[int, Endpoint] = {}
@@ -250,21 +183,18 @@ class PlanCheck:
         return "; ".join(self.violations)
 
 
-def check_plan(problem: SolverProblem, solution: Solution) -> PlanCheck:
-    """Adjudicate a solved plan against the problem it claims to solve.
+def check_plan(
+    problem: SolverProblem, solution: Solution, *, strict: bool = False
+) -> PlanCheck:
+    """Adjudicate a finished plan against the specification.
 
-    Shares no code with the search. Checks, in order:
-
-    * every consumed endpoint is produced by some step (givens are produced by
-      the synthetic zero-requirement step the solver prepends);
-    * every binding is type-conformant (`dep.properties ⊆ ep.properties`);
-    * the step graph is acyclic;
-    * `dependency_plan` is in topological order;
-    * exactly one step applies the target transform, with every requirement
-      bound;
-    * every declared per-slot lineage constraint holds.
+    `strict` promotes the notes to violations and adds the signature-uniqueness
+    check below. Use it on a plan a refiner produced. The default is loose
+    because a merged timeline legitimately emits an endpoint from a slot whose
+    properties differ, and the shipped corpus relies on that staying a note.
     """
     res = PlanCheck()
+    _strict = strict
     steps = list(solution.dependency_plan)
     if not steps:
         res.violations.append("plan has no steps")
@@ -287,15 +217,22 @@ def check_plan(problem: SolverProblem, solution: Solution) -> PlanCheck:
     produced_ids = set(anc.producers)
     produced_eq = {e for k, e in anc.by_id.items() if k in produced_ids}
 
-    # -- production and typing -------------------------------------------
     for i, s in enumerate(steps):
         for d, e in s.used.items():
             if id(e) not in produced_ids:
                 if e in produced_eq:
-                    res.notes.append(
+                    msg = (
                         f"step {i} ({s.transform.key}) consumes an endpoint that is "
                         "only equal to, not identical with, a produced one"
                     )
+                    # CAUTION Under `strict` this is a violation, not a note. Two
+                    # steps emitting signature-equal endpoints are collapsed onto
+                    # one producer by `rectify`, and every consumer is rewired to
+                    # whichever came last in `get_order` -- a plan the search never
+                    # chose. The wire the witness reads is already collapsed, so
+                    # `uniqueProducer` cannot see it. This is the only place it is
+                    # visible.
+                    (res.violations if _strict else res.notes).append(msg)
                 else:
                     res.violations.append(
                         f"step {i} ({s.transform.key}) consumes an endpoint "
@@ -312,14 +249,8 @@ def check_plan(problem: SolverProblem, solution: Solution) -> PlanCheck:
                 if _conforms(d, e):
                     continue
                 if is_given_step:
-                    # Multi-sample plans merge one timeline's endpoints into
-                    # another's, and the representative keeps *one* sample's
-                    # properties -- so the given step legitimately emits a
-                    # `read_length:long` endpoint from the slot that stood for
-                    # the short-read sample. What must hold is that it emits
-                    # something the problem actually gave.
                     if any(e.properties == g.properties for grp in problem.given for g in grp):
-                        res.notes.append(
+                        (res.violations if _strict else res.notes).append(
                             f"step {i} emits {sorted(e.properties)} from a slot "
                             f"declaring {sorted(d.properties)} -- merged timelines"
                         )
@@ -334,7 +265,6 @@ def check_plan(problem: SolverProblem, solution: Solution) -> PlanCheck:
                     f"from a product slot declaring {sorted(d.properties)}"
                 )
 
-    # -- acyclicity and topological order ---------------------------------
     step_index = {id(s): i for i, s in enumerate(steps)}
     edges: dict[int, set[int]] = {id(s): set() for s in steps}
     for s in steps:
@@ -374,7 +304,6 @@ def check_plan(problem: SolverProblem, solution: Solution) -> PlanCheck:
                 elif colour[nxt] == WHITE:
                     stack.append((nxt, False))
 
-    # -- the target --------------------------------------------------------
     target_steps = [s for s in steps if s.transform is problem.target]
     if len(target_steps) != 1:
         res.violations.append(
@@ -388,7 +317,6 @@ def check_plan(problem: SolverProblem, solution: Solution) -> PlanCheck:
                     f"target requirement {sorted(d.properties)} is unbound"
                 )
 
-    # -- lineage -----------------------------------------------------------
     for i, s in enumerate(steps):
         for d, e in s.used.items():
             for proto in d.parents:
@@ -407,46 +335,44 @@ def check_plan(problem: SolverProblem, solution: Solution) -> PlanCheck:
                         f"descended from its declared lineage constraint "
                         f"{sorted(constraint.properties)}"
                     )
+
+    if _strict:
+        # One logical object, one producer -- by SIGNATURE, not by identity.
+        # `uniqueProducer` on the wire cannot decide this: `rectify` keys its
+        # endpoint map by signature and has already merged the pair by the time
+        # a wire exists, so the witness adjudicates a plan with one producer
+        # that the search never chose.
+        by_sig: dict[str, int] = {}
+        for i, s_ in enumerate(steps):
+            for group in s_.produced:
+                for e in group.values():
+                    sig = e.Signature()
+                    if by_sig.get(sig, i) != i:
+                        res.violations.append(
+                            f"steps {by_sig[sig]} and {i} both produce an endpoint "
+                            f"with signature {sig[:16]} -- rectify will collapse them "
+                            "onto one producer"
+                        )
+                    by_sig[sig] = i
     return res
-
-
-# ---------------------------------------------------------------------------
-# 3. Problem generator
-# ---------------------------------------------------------------------------
 
 
 @dataclass
 class GeneratorDials:
-    """Knobs on the pressures the known solver bugs live under.
-
-    Defaults describe a small, lineage-free, acyclic chain — the shape the
-    existing tests already cover. Everything interesting is a dial away.
-    """
-
     n_types: int = 6
     n_given: int = 1
     n_given_groups: int = 1
     n_extra_transforms: int = 3
-    #: fraction of extra transforms whose requirement points *forward*, so the
-    #: transform graph carries a cycle the solver must not walk into
     cycle_density: float = 0.0
-    #: chance a multi-requirement transform declares slot 1 descended from slot 0
     lineage_density: float = 0.0
-    #: exact clones of an existing transform — same `str()`, so the same
-    #: `Transform.key`, so `Application.Signature()` can collide across two
-    #: distinct transform objects
     n_duplicate_transforms: int = 0
-    #: chance a transform declares a second product group (co-produced outputs)
     product_group_density: float = 0.0
-    #: chance the target carries a lineage constraint of its own
     target_lineage: float = 0.0
     max_requirements: int = 2
 
 
 @dataclass
 class SolverProblem:
-    """A solver problem plus the metadata needed to adjudicate its answer."""
-
     given: list[set[Endpoint]]
     transforms: list[Transform]
     target: Transform
@@ -463,13 +389,6 @@ class SolverProblem:
 
 
 def problem_of_plan(plan, *, name: str = "template") -> SolverProblem | None:
-    """The problem a `WorkflowPlan` was solved from, ready to adjudicate.
-
-    `WorkflowPlan.Generate` stashes the triple it handed `solve_by_mcts` on the
-    plan; this just re-labels it. Returns `None` for a plan that predates the
-    stash or came off the wire, since a plan without its problem cannot be
-    graded and silently grading it against a guess is worse than declining.
-    """
     inputs = getattr(plan, "_solver_inputs", None)
     if inputs is None:
         return None
@@ -489,18 +408,10 @@ def _type_props(i: int) -> set[str]:
 def generate_problem(
     seed: int, dials: GeneratorDials | None = None, *, name: str | None = None
 ) -> SolverProblem:
-    """Build a random, reproducible solver problem.
-
-    The skeleton is a guaranteed chain `t_{n_given-1} → ... → t_{n_types-1}`, so
-    the lineage-free instance is always solvable and a failure to solve is a
-    real finding rather than an unlucky draw. Everything the dials add is noise
-    layered on that chain.
-    """
     d = dials or GeneratorDials()
     rng = random.Random(seed)
     transforms: list[Transform] = []
 
-    # -- the guaranteed spine ---------------------------------------------
     for j in range(d.n_given - 1, d.n_types - 1):
         tr = Transform()
         tr.AddRequirement(properties=_type_props(j))
@@ -508,25 +419,19 @@ def generate_problem(
         transforms.append(tr)
     spine = len(transforms)
 
-    # -- noise -------------------------------------------------------------
     for _ in range(d.n_extra_transforms):
         tr = Transform()
         n_req = rng.randint(1, max(1, d.max_requirements))
-        # draw requirements from the spine so lineage constraints stay
-        # satisfiable; sorted so slot 0 is always the shallower type
         pool = list(range(0, d.n_types - 1))
         n_req = min(n_req, len(pool))
         picks = sorted(rng.sample(pool, n_req))
         reqs: list[Dependency] = [tr.AddRequirement(properties=_type_props(i)) for i in picks]
         if len(reqs) >= 2 and rng.random() < d.lineage_density:
-            # rebuild with the constraint declared -- parents must reference an
-            # already-added requirement, so declare it on the deeper slot
             tr = Transform()
             first = tr.AddRequirement(properties=_type_props(picks[0]))
             for i in picks[1:]:
                 tr.AddRequirement(properties=_type_props(i), parents={first})
         if rng.random() < d.cycle_density:
-            # a product that feeds back into an already-consumed type
             tr.AddProduct(properties=_type_props(picks[0]))
         else:
             hi = rng.randint(min(picks[-1] + 1, d.n_types - 1), d.n_types - 1)
@@ -536,7 +441,6 @@ def generate_problem(
             tr.AddProduct(properties=_type_props(rng.randint(1, d.n_types - 1)))
         transforms.append(tr)
 
-    # -- exact clones -------------------------------------------------------
     for _ in range(d.n_duplicate_transforms):
         if not transforms:
             break
@@ -555,12 +459,10 @@ def generate_problem(
                 clone.AddProduct(properties=set(p.properties))
         transforms.append(clone)
 
-    # -- givens -------------------------------------------------------------
     given: list[set[Endpoint]] = []
     for _ in range(max(1, d.n_given_groups)):
         given.append({Endpoint(properties=_type_props(i)) for i in range(d.n_given)})
 
-    # -- target -------------------------------------------------------------
     target = Transform()
     top = d.n_types - 1
     if rng.random() < d.target_lineage and top >= 2:
@@ -578,19 +480,7 @@ def generate_problem(
     )
 
 
-# ---------------------------------------------------------------------------
-# 4. Oracles
-# ---------------------------------------------------------------------------
-
-
 def forward_closure_solvable(problem: SolverProblem) -> bool:
-    """Exact "is there any plan?" for lineage-free problems.
-
-    Forward closure over property sets terminates because the set of producible
-    property sets is finite and grows monotonically — so unlike the search this
-    needs no iteration cap and cannot answer "don't know". It ignores lineage,
-    which makes it an upper bound on solvability once constraints are declared.
-    """
     have: list[set[str]] = [set(e.properties) for group in problem.given for e in group]
 
     def _met(dep: Dependency) -> bool:
@@ -613,8 +503,6 @@ def forward_closure_solvable(problem: SolverProblem) -> bool:
 
 @dataclass(frozen=True)
 class _Ep:
-    """Immutable stand-in for an `Endpoint` inside the exhaustive oracle."""
-
     props: frozenset[str]
     parents: frozenset["_Ep"]
 
@@ -636,13 +524,6 @@ def exhaustive_solvable(
     max_applications: int = 6,
     node_cap: int = 200_000,
 ) -> bool | None:
-    """Bounded exhaustive search, lineage included.
-
-    Returns `True`/`False`, or `None` when the cap was reached before the space
-    was exhausted — an honest "don't know" rather than a guess. Mirrors the
-    solver's lineage semantics: a produced endpoint's parents are the endpoints
-    consumed by its step together with those endpoints' direct parents.
-    """
     if len(problem.transforms) > 8:
         return None
 

@@ -1,10 +1,3 @@
-"""Docker image build infrastructure aligned with constants.FULL_VERSION.
-
-version.txt holds the PEP 440 release segment; build_hash.txt holds a
-content hash of src/metasmith/. Together they form FULL_VERSION; the
-docker tag is FULL_VERSION rendered for Docker ('+' → '-').
-"""
-
 import subprocess
 import shutil
 import sys
@@ -14,41 +7,27 @@ from pathlib import Path
 from ..logging import Log
 from .._build_hash import write_build_hash
 
-REPO_ROOT = Path(__file__).resolve().parents[3]  # src/metasmith/testing -> repo root
+REPO_ROOT = Path(__file__).resolve().parents[3]
 
 
 def get_full_version() -> str:
-    """Return FULL_VERSION (canonical, PEP 440 local form) by re-reading
-    version.txt + build_hash.txt. We do not import constants.FULL_VERSION
-    directly so callers that just wrote build_hash.txt see the new value
-    without a module reload."""
     semver = (REPO_ROOT / "src/metasmith/version.txt").read_text().strip()
     bh_path = REPO_ROOT / "src/metasmith/build_hash.txt"
     bh = bh_path.read_text().strip() if bh_path.exists() else ""
     return f"{semver}+{bh}" if bh else semver
 
 
-# Back-compat alias: pre-refactor name, still used by tests/test_container_tag.py.
 def get_git_version() -> str:
     return get_full_version()
 
 
 def get_docker_tag(version: str|None = None) -> str:
-    """Full image tag (e.g. ``quay.io/hallamlab/metasmith:0.18.2-abc1234``)."""
     if version is None:
         version = get_full_version()
     return f"quay.io/hallamlab/metasmith:{version.replace('+', '-')}"
 
 
 def image_exists(tag: str) -> bool:
-    """Check if a Docker image exists locally.
-
-    Args:
-        tag: Full image tag to check.
-
-    Returns:
-        True if image exists locally.
-    """
     result = subprocess.run(
         ["docker", "image", "inspect", tag],
         capture_output=True, timeout=10,
@@ -57,17 +36,6 @@ def image_exists(tag: str) -> bool:
 
 
 def build_pip_package(version: str|None = None) -> Path:
-    """Build pip package, optionally with a custom version.
-
-    Stamps build_hash.txt before building so the wheel filename embeds
-    FULL_VERSION (semver + build hash). Optionally overrides version.txt
-    for the duration of the build (restored on exit).
-
-    ``version`` is interpreted as the bare semver written to version.txt.
-    A FULL_VERSION-shaped string (``<semver>+<local>``) is accepted and
-    stripped — otherwise the local segment would be duplicated when
-    setup.py composes ``version.txt + '+' + build_hash.txt``.
-    """
     version_file = REPO_ROOT / "src/metasmith/version.txt"
     original_version = version_file.read_text()
 
@@ -76,19 +44,14 @@ def build_pip_package(version: str|None = None) -> Path:
 
     try:
         if version is not None:
-            # version.txt holds the bare release segment only; the local
-            # build-hash segment is owned by build_hash.txt and gets
-            # composed in constants.FULL_VERSION at import time.
             semver = version.split("+", 1)[0]
             version_file.write_text(semver)
 
-        # Clean previous builds
         if build_dir.exists():
             shutil.rmtree(build_dir)
         if dist_dir.exists():
             shutil.rmtree(dist_dir)
 
-        # Stamp build hash so setup.py picks up FULL_VERSION.
         write_build_hash(REPO_ROOT / "src/metasmith")
 
         Log.Info(f"building pip package")
@@ -100,25 +63,15 @@ def build_pip_package(version: str|None = None) -> Path:
         if result.returncode != 0:
             raise RuntimeError(f"pip build failed:\n{result.stderr}")
     finally:
-        # Always restore original version
         version_file.write_text(original_version)
 
     return dist_dir
 
 
 def ensure_lib_prerequisites() -> Path:
-    """Download tini and nextflow, create stub globus dir.
-
-    Downloads prerequisites matching dev.sh -bd logic into lib/.
-    Creates stub relay binaries (sufficient for stub/mock runs).
-
-    Returns:
-        Path to the lib/ directory.
-    """
     lib_dir = REPO_ROOT / "lib"
     lib_dir.mkdir(exist_ok=True)
 
-    # tini
     tini_path = lib_dir / "tini"
     if not tini_path.exists():
         tini_version = "v0.19.0"
@@ -130,7 +83,6 @@ def ensure_lib_prerequisites() -> Path:
         )
         os.chmod(tini_path, 0o755)
 
-    # nextflow version from envs/base.yml
     nxf_version = None
     base_yml = REPO_ROOT / "envs/base.yml"
     if base_yml.exists():
@@ -151,14 +103,12 @@ def ensure_lib_prerequisites() -> Path:
         )
         os.chmod(nxf_path, 0o755)
 
-    # globus stub
     globus_dir = lib_dir / "globusconnectpersonal-latest"
     if not globus_dir.exists():
         globus_dir.mkdir()
         (globus_dir / "README").write_text("stub for testing")
 
-    # relay binary stubs (sufficient for -stub runs)
-    relay_base = REPO_ROOT / "main/relay_agent/target"
+    relay_base = REPO_ROOT / "src/bash_relay/target"
     for platform in [
         "x86_64-unknown-linux-musl",
         "aarch64-unknown-linux-musl",
@@ -176,17 +126,6 @@ def ensure_lib_prerequisites() -> Path:
 
 
 def build_docker_image(tag: str|None = None, version: str|None = None) -> str:
-    """Build Docker image matching dev.sh -bd logic.
-
-    Args:
-        tag: Full image tag. Auto-generated from version if None.
-        version: Version for pip package. Uses get_git_version() if None.
-
-    Returns:
-        The image tag that was built.
-    """
-    # Stamp build hash first so we can resolve the tag without doing the
-    # full pip build; then short-circuit if the image is already cached.
     write_build_hash(REPO_ROOT / "src/metasmith")
     if version is None:
         version = get_full_version()
@@ -199,14 +138,14 @@ def build_docker_image(tag: str|None = None, version: str|None = None) -> str:
 
     Log.Info(f"building Docker image [{tag}]")
 
-    # Prerequisites
     ensure_lib_prerequisites()
     build_pip_package(version)
 
-    # Build
     result = subprocess.run(
         [
             "docker", "build",
+            # The build context is the repo root; the Dockerfile is not.
+            "-f", str(REPO_ROOT / "docker/metasmith/Dockerfile"),
             "--build-arg", "CONDA_ENV=metasmith_env",
             "--build-arg", "PACKAGE=metasmith",
             "--build-arg", f"VERSION={version}",
@@ -216,7 +155,9 @@ def build_docker_image(tag: str|None = None, version: str|None = None) -> str:
         ],
         cwd=REPO_ROOT,
         capture_output=True, text=True,
-        timeout=600,
+        # A cold conda solve is the slow part; 10 minutes was not enough for it
+        # on a busy machine, and a killed build looks exactly like a broken one.
+        timeout=3600,
     )
     if result.returncode != 0:
         raise RuntimeError(f"Docker build failed:\n{result.stderr}")

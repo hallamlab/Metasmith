@@ -1,0 +1,41 @@
+# ecspr_bake:direction -- the eQuilibrator member and the direction combiner.
+#
+# The container form of envs/build-refs-equilibrator.yml, MINUS dGbyG -- which now has
+# its own image (`:dgbyg`, load/env_dgbyg.yml) rather than being deferred.
+#
+# WHY THE SUBTRACTION, stated correctly. It is not the numpy bound: that separates :aam
+# from this image, since torch 2.2.1 is a numpy 1.x build and equilibrator-cache 0.7.1
+# floors numpy at 2 -- but dGbyG's torch 2.8 is itself a numpy 2 build, so it does not
+# conflict here. What conflicts is PYTHON: dGbyG's source uses a same-quote nested
+# f-string and needs 3.12 to parse, while this image is 3.11 for the eQuilibrator stack.
+# The two thermodynamic members could share one image at 3.12; they do not, because
+# keeping torch out of this one keeps it ~1.5 GB against the AAM image's ~5 GB.
+#
+# NO COMPOUND CACHE IS BAKED IN. `compounds.sqlite` is 1.3 GB and is `fabfos_data::
+# equilibrator`, staged as an input. It is found through XDG_CACHE_HOME and nothing
+# else: `equilibrator_cache.zenodo.get_cached_filepath` resolves with
+# `pooch.os_cache("equilibrator")`, and EQUILIBRATOR_CACHE_DIR is read by no part of
+# pooch, equilibrator_cache or component_contribution.
+#
+# PYTHON 3.11, matching envs/build-refs-equilibrator.yml.
+name: ecspr_bake_env
+channels:
+  - conda-forge
+dependencies:
+  - python=3.11
+  # rdkit is here for the wildcard ABSTENTION check, not for atom identity: dGbyG and
+  # component-contribution both return a confident number for an R-group `*`, because
+  # rdkit hands `*` a perfectly valid feature vector. Same pin as the AAM image so the
+  # two lanes cannot disagree about what a molecule is.
+  - rdkit=2026.03.*
+  - pandas=2.3.*
+  - pyarrow>=24
+  - scipy=1.17.*
+  - numpy>=2
+  - sqlalchemy
+  - requests
+  - pip
+  - pip:
+      - equilibrator-api==0.7.0
+      - equilibrator-cache==0.7.1
+      - component-contribution==0.7.0

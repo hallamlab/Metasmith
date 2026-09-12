@@ -1,0 +1,49 @@
+package:
+  name: <NAME>
+  version: <VERSION>
+
+source:
+  path: ../../src/ecspr
+
+build:
+  noarch: python
+  number: 0
+  string: <BUILD_STRING>
+  script: {{ PYTHON }} -m pip install . -v --no-deps
+  entry_points:
+<ENTRY>
+
+test:
+  imports:
+    - <NAME>
+  commands:
+    # `selftest` is the check that matters, and it is the same one the image
+    # build runs. The three below import nothing heavy by design -- the CLI
+    # defers scipy and pyarrow so `--where` answers on a broken env -- so an
+    # `<NAME>`-only test block would pass on a package that cannot measure.
+    #
+    # NO `pip check`. conda-forge builds scikit-sparse 0.5.0 AGAINST numpy 1.26
+    # -- that is its conda-level dependency -- but ships upstream's unpatched
+    # wheel metadata saying `numpy>2.0`. pip check reads the metadata, not the
+    # solve, so it fails on a claim conda-forge has already overruled. A real
+    # CHOLMOD solve is what settles it, and that is what selftest does.
+    - <NAME> --help
+    - <NAME> --where
+    - <NAME> --version
+    - <NAME> selftest
+  requires:
+    - pip
+
+requirements:
+  host:
+    - pip
+<PYTHON>
+
+  run:
+<REQUIREMENTS>
+
+about:
+  home: https://github.com/<USER>/<NAME>
+  summary: <SHORT_SUMMARY>
+  license: 'gpl-v3'
+  license_file: ../../LICENSE

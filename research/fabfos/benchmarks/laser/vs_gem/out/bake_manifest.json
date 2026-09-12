@@ -1,0 +1,14 @@
+{
+ "atom_pairs_v1": "data/benchmark/reference_tier4/atom_pairs_tier4.parquet",
+ "atom_pairs_v1_sha256": "7b3b217f91373f3141404767f9be3ad20a87be10d756ccef6a7ecdb1311abe93",
+ "atom_pairs_v1_sha256_frozen": "7b3b217f91373f3141404767f9be3ad20a87be10d756ccef6a7ecdb1311abe93",
+ "bake_v2_dir": "data/processed/metabolism_bake",
+ "n_shared_reactions": 60988,
+ "n_v1_pairs_shared_rxn": 282983,
+ "n_v1_only_pairs": 25338,
+ "n_reversed_in_v2": 3,
+ "reversed_fraction": 0.00011839924224484963,
+ "max_reversed_fraction": 0.01,
+ "n_direction_ratios": 83795,
+ "n_ratio_gt_1": 15551
+}

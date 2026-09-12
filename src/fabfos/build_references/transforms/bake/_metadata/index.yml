@@ -1,0 +1,78 @@
+manifest:
+  aam_algebra.py:
+    instance_id: 1e20b81af69433822587c04e802e353fe1e380896d901d4b0b4b252cb06eb2b9d674
+    origin: leaf
+    type: transforms::transform
+  aam_blockers.py:
+    instance_id: 1e209759af0bfdd2b310999fdcf336927ad9d295de24485888ee6ad9fe7066d1753b
+    origin: leaf
+    type: transforms::transform
+  aam_forecast.py:
+    instance_id: 1e20887db6b8089e53cf8bf3164387eaebff1c0457bb027498409377d0d53a18c0f7
+    origin: leaf
+    type: transforms::transform
+  aam_nametwin.py:
+    instance_id: 1e20f5a390032fb29bf7c8f78b5ad35504e63793ac27e2e39ced5833026864ef72db
+    origin: leaf
+    type: transforms::transform
+  aam_partial.py:
+    instance_id: 1e200dbb80e14ae2e2d3f9de94b563e0b983bedc9e1477fe9a813dda859828fe09a2
+    origin: leaf
+    type: transforms::transform
+  aam_recount.py:
+    instance_id: 1e20c009122f7b0fbbd6402461e9cafb2107fec08f7adac38c8f7dec73bb1d033fba
+    origin: leaf
+    type: transforms::transform
+  aam_redox.py:
+    instance_id: 1e20afdcb4fbf2a51d1867b4361e7a3733a49cb5fcae827721e4accccf476de49ac0
+    origin: leaf
+    type: transforms::transform
+  aam_reference.py:
+    instance_id: 1e20ac07417b2dee9e4683520092d08e2a891d10a90febd2ea4fea43de2d462d5e7e
+    origin: leaf
+    type: transforms::transform
+  aam_rescue.py:
+    instance_id: 1e20d930dd314d8e547e222b6d66f488cdd3ffd7f7e71754f82bedf3ab9f47cb64f4
+    origin: leaf
+    type: transforms::transform
+  aam_stack.py:
+    instance_id: 1e204996dc6de7ae9c35268e39eca0f3a1093d757c3c5506a764c336a1bd2083c7c3
+    origin: leaf
+    type: transforms::transform
+  aam_universe.py:
+    instance_id: 1e201c29f80a14f4c5ce2d6e92fa55b6a5a7e109782ed065968838836fcd1c9d5572
+    origin: leaf
+    type: transforms::transform
+  aam_worklist.py:
+    instance_id: 1e207b2b58df634380a11463f008118308f662ab375aa4706c258abf998adaa534b5
+    origin: leaf
+    type: transforms::transform
+  dgbyg.py:
+    instance_id: 1e20e3fd32d8065693de59b83ebc7d544a3ab527c7fd001758cc45dd33ab7eff72d4
+    origin: leaf
+    type: transforms::transform
+  direction_bake.py:
+    instance_id: 1e2007c9b7b5755ba4d60e2817482303579114a865d6b110bdf67eb55123276076c3
+    origin: leaf
+    type: transforms::transform
+  direction_ensemble.py:
+    instance_id: 1e2056c7f8d17aa5ab32e264b6e28236415333ec197e9d6e91956b7220f7fc82e782
+    origin: leaf
+    type: transforms::transform
+  equilibrator.py:
+    instance_id: 1e20259a168256ef892afa263e2f802590a4ce5369ef1911a4a4065d87a3b0fc4aeb
+    origin: leaf
+    type: transforms::transform
+  indigo.py:
+    instance_id: 1e20fd3b3d10871608c94dab962b6dc0910d9833222ef69b8cf22c01f427cc286a3b
+    origin: leaf
+    type: transforms::transform
+  localmapper.py:
+    instance_id: 1e20934ea69be48451cf007c80c666ed57cc06d4cefce726314b2fe520cdabf20556
+    origin: leaf
+    type: transforms::transform
+  rxnmapper.py:
+    instance_id: 1e20470e52305db75e7f20c1e62754b4d6609437c7f624bdd36745777316657a4f54
+    origin: leaf
+    type: transforms::transform
+schema: v1

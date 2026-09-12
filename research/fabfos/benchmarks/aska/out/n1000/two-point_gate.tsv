@@ -1,0 +1,8 @@
+probe	orientation	element	readout	n_controls	control_sd	control_max_abs	null_n	null_sd	null_over_control
+two-point	as_written	C	total	33	0.0	0.0	3000	0.04937942254970234	
+two-point	as_written	C	MNXM402	33	0.0	0.0	3000	0.0010270969464145731	
+two-point	as_written	C	MNXM314	33	0.0	0.0	3000	0.0014433900539319736	
+two-point	as_written	C	MNXM108	33	0.0	0.0	3000	0.0010383622714636288	
+two-point	as_written	C	MNXM1107900	33	0.0	0.0	3000	0.0009674662441210935	
+two-point	as_written	C	MNXM236	33	0.0	0.0	3000	0.000554065951199977	
+two-point	as_written	C	MNXM1364393	33	0.0	0.0	3000	0.002344452599410312	

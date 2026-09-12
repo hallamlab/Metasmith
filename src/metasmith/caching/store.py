@@ -1,20 +1,3 @@
-"""SQLite-backed cache store for lineage-addressed entries (S5).
-
-One table, ``entries``, keyed by the multihash-prefixed cache key.
-Schema mirrors the one named in the plan; columns are kept narrow so
-that an entry row is everything `msm cache explain` needs without a
-second lookup.
-
-The probe/upsert surface is small on purpose. Callers do:
-    store = CacheStore.open(cache_root)
-    hit = store.probe(key)           # → CacheEntry | None
-    store.upsert(key, payload, output_root, origin, size_bytes)
-    store.touch(key)                 # update last_hit_at + hit_count
-
-A 'hit' must also verify the on-disk output dir still exists — the
-probe routine does this for callers via .files_exist().
-"""
-
 from __future__ import annotations
 
 import json
@@ -28,7 +11,7 @@ from .keys import CACHE_KEY_VERSION
 from ..logging import Log
 
 
-SCHEMA_VERSION = "1"
+SCHEMA_VERSION = "2"
 
 # Sqlite schema_meta keys — bumping CACHE_KEY_VERSION renders old shards
 # unreachable (their cache_keys no longer collide). The session counter feeds
@@ -39,7 +22,7 @@ SCHEMA_VERSION = "1"
 CACHE_EPOCH_KEY = "lineage_payload_version"
 TRACE_SESSION_COUNTER_KEY = "trace_session_counter"
 SHARD_LAYOUT_VERSION_KEY = "shard_layout_version"
-SHARD_LAYOUT_VERSION = 2  # v2: <shard>/logs/.command.{sh,out,err,log} captured
+SHARD_LAYOUT_VERSION = 3
 
 
 _CREATE_SQL = [
@@ -54,8 +37,19 @@ _CREATE_SQL = [
         last_hit_at    INTEGER NOT NULL,
         hit_count      INTEGER NOT NULL DEFAULT 0,
         origin         TEXT NOT NULL,
-        tombstoned_at  INTEGER
+        tombstoned_at  INTEGER,
+        run            TEXT NOT NULL DEFAULT ''
     )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS entry_tags(
+        key BLOB NOT NULL,
+        tag TEXT NOT NULL,
+        PRIMARY KEY (key, tag)
+    )
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS idx_entry_tags_tag ON entry_tags(tag)
     """,
     """
     CREATE INDEX IF NOT EXISTS idx_entries_tomb
@@ -86,16 +80,14 @@ class CacheEntry:
     last_hit_at: int
     hit_count: int
     tombstoned_at: int | None
+    # The run that produced this entry, empty for anything the pool did not
+    # derive. With origin (the category) and created_at (arrival) these are the
+    # four things a store can be sorted or grouped by.
+    run: str = ""
+    tags: tuple = ()
 
 
 class CacheStore:
-    """A thin wrapper around the cache SQLite DB + on-disk cache root.
-
-    Constructed via `CacheStore.open(cache_root)`; that ensures the
-    directory exists, opens / initializes the DB at
-    ``<cache_root>/cache.sqlite``, and stamps schema version metadata.
-    """
-
     def __init__(self, cache_root: Path, conn: sqlite3.Connection) -> None:
         self.cache_root = cache_root
         self.conn = conn
@@ -112,9 +104,6 @@ class CacheStore:
             "INSERT OR IGNORE INTO schema_meta(k, v) VALUES (?, ?)",
             ("schema_version", SCHEMA_VERSION),
         )
-        # Stamp the lineage-payload + shard-layout versions, and seed the
-        # session counter on first open. Existing DBs keep their stored
-        # value; the warn below fires when the stored value is older.
         conn.execute(
             "INSERT OR IGNORE INTO schema_meta(k, v) VALUES (?, ?)",
             (CACHE_EPOCH_KEY, str(CACHE_KEY_VERSION)),
@@ -127,16 +116,62 @@ class CacheStore:
             "INSERT OR IGNORE INTO schema_meta(k, v) VALUES (?, ?)",
             (TRACE_SESSION_COUNTER_KEY, "0"),
         )
+        # Read-and-upgrade under a write lock. Several tasks of one run open this
+        # store at once, and without the lock two of them can both read the old
+        # epoch -- at which point the second one's tombstone sweep takes the
+        # first one's freshly promoted shards with it, and the next run misses
+        # results it just computed.
+        conn.commit()
+        conn.execute("BEGIN IMMEDIATE")
         row = conn.execute(
             "SELECT v FROM schema_meta WHERE k = ?",
             (CACHE_EPOCH_KEY,),
         ).fetchone()
+        # A schema change is not a key change: the table statements are all
+        # "if not exists", so an existing database gains no column that way and
+        # nothing here may bump the cache epoch. Taken under the epoch
+        # upgrade's own lock, because several tasks of one run open this store
+        # at once.
+        srow = conn.execute(
+            "SELECT v FROM schema_meta WHERE k = ?", ("schema_version",),
+        ).fetchone()
+        if srow is not None and int(srow[0]) < 2:
+            cols = {r[1] for r in conn.execute("PRAGMA table_info(entries)")}
+            if "run" not in cols:
+                conn.execute(
+                    "ALTER TABLE entries ADD COLUMN run TEXT NOT NULL DEFAULT ''"
+                )
+            conn.execute(
+                "UPDATE schema_meta SET v = ? WHERE k = ?",
+                (SCHEMA_VERSION, "schema_version"),
+            )
+
         stored = int(row[0]) if row is not None else 0
         if stored < CACHE_KEY_VERSION:
+            # Every entry was keyed under the old epoch, so nothing will ever ask
+            # for one again. Tombstone them here or the command this warning
+            # names reclaims nothing: `gc --delete` only unlinks rows that are
+            # already tombstoned, and an epoch bump tombstones none of them.
+            #
+            # The stamp is 0, not `now`. The grace period exists to let a run
+            # that is already reading a shard finish; a shard whose key can no
+            # longer be minted has no such reader, and a `now` stamp would hold
+            # the disk for a day after the warning told the user how to free it.
+            #
+            # And only derivation keys. An imported entry's key is assigned at
+            # the moment of import, not derived from anything, so no epoch can
+            # reach it and a bump invalidates nothing about it -- sweeping it
+            # would tombstone what may be the user's only copy on an unrelated
+            # schedule, and nothing could mint that key again.
+            cur = conn.execute(
+                "UPDATE entries SET tombstoned_at = 0 "
+                "WHERE tombstoned_at IS NULL AND origin != 'imported'"
+            )
+            stranded = max(cur.rowcount, 0)
             Log.Warn(
                 f"cache epoch v{CACHE_KEY_VERSION} supersedes v{stored}; "
-                f"old shards at {cache_root} are unreachable. "
-                f"Run `msm cache gc --delete` to reclaim."
+                f"[{stranded}] shard(s) at {cache_root} are unreachable and have "
+                f"been tombstoned. Run `msm cache gc --delete` to reclaim."
             )
             conn.execute(
                 "UPDATE schema_meta SET v = ? WHERE k = ?",
@@ -146,12 +181,6 @@ class CacheStore:
         return cls(cache_root, conn)
 
     def allocate_session_id(self) -> int:
-        """Atomic-increment + return the trace-session counter.
-
-        The trace.jsonl rotator calls this on every compile to stamp a
-        fresh `SessionStart` row and tag every `InvocationEvent` of the
-        run. Monotonic; survives across runs (sqlite-persisted).
-        """
         with self.conn:
             cur = self.conn.execute(
                 "UPDATE schema_meta SET v = CAST(CAST(v AS INTEGER) + 1 AS TEXT) "
@@ -159,7 +188,6 @@ class CacheStore:
                 (TRACE_SESSION_COUNTER_KEY,),
             )
             if cur.rowcount == 0:
-                # First call on a DB that pre-dates the counter row.
                 self.conn.execute(
                     "INSERT INTO schema_meta(k, v) VALUES (?, ?)",
                     (TRACE_SESSION_COUNTER_KEY, "1"),
@@ -179,23 +207,15 @@ class CacheStore:
     def __exit__(self, *args) -> None:
         self.close()
 
-    # ------------------------------------------------------------------
-    # Probe / read
 
-    def probe(self, key: bytes) -> CacheEntry | None:
-        """Return the entry for `key` if it exists and is not tombstoned."""
-        row = self.conn.execute(
-            """
+    _SELECT = """
             SELECT key, transform_key, payload, output_root, size_bytes,
-                   origin, created_at, last_hit_at, hit_count, tombstoned_at
-            FROM entries WHERE key = ?
-            """,
-            (key,),
-        ).fetchone()
-        if row is None:
-            return None
-        if row[9] is not None:
-            return None
+                   origin, created_at, last_hit_at, hit_count, tombstoned_at,
+                   run
+            FROM entries
+    """
+
+    def _row_to_entry(self, row) -> CacheEntry:
         return CacheEntry(
             key=row[0],
             transform_key=row[1],
@@ -207,11 +227,19 @@ class CacheStore:
             last_hit_at=row[7],
             hit_count=row[8],
             tombstoned_at=row[9],
+            run=row[10] or "",
+            tags=self.tags_of(row[0]),
         )
 
-    def files_exist(self, entry: CacheEntry) -> bool:
-        """Return True iff the entry's output_root dir is on disk."""
-        return entry.output_root.is_dir()
+    def probe(self, key: bytes) -> CacheEntry | None:
+        row = self.conn.execute(
+            self._SELECT + " WHERE key = ?", (key,),
+        ).fetchone()
+        if row is None:
+            return None
+        if row[9] is not None:
+            return None
+        return self._row_to_entry(row)
 
     def touch(self, key: bytes) -> None:
         now = int(time.time())
@@ -225,8 +253,6 @@ class CacheStore:
         )
         self.conn.commit()
 
-    # ------------------------------------------------------------------
-    # Write
 
     def upsert(
         self,
@@ -237,12 +263,8 @@ class CacheStore:
         output_root: str,
         size_bytes: int,
         origin: str,
+        run: str = "",
     ) -> None:
-        """Insert or replace an entry.
-
-        `output_root` is relative to self.cache_root (the on-disk dir
-        name; e.g. the hex key plus a 1-char shard prefix).
-        """
         assert origin in {"lineage", "imported"}, (
             f"origin must be lineage or imported, got {origin!r}"
         )
@@ -251,9 +273,9 @@ class CacheStore:
             """
             INSERT INTO entries(
                 key, transform_key, payload, output_root, size_bytes,
-                created_at, last_hit_at, hit_count, origin, tombstoned_at
+                created_at, last_hit_at, hit_count, origin, tombstoned_at, run
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, NULL)
+            VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, NULL, ?)
             ON CONFLICT(key) DO UPDATE SET
                 transform_key = excluded.transform_key,
                 payload       = excluded.payload,
@@ -261,11 +283,15 @@ class CacheStore:
                 size_bytes    = excluded.size_bytes,
                 last_hit_at   = excluded.last_hit_at,
                 origin        = excluded.origin,
-                tombstoned_at = NULL
+                tombstoned_at = NULL,
+                -- A re-index must not blank the run that first recorded this
+                -- entry: the second run to reach a key did not produce it.
+                run = CASE WHEN excluded.run != '' THEN excluded.run
+                           ELSE entries.run END
             """,
             (
                 key, transform_key, payload, output_root, size_bytes,
-                now, now, origin,
+                now, now, origin, run,
             ),
         )
         self.conn.commit()
@@ -279,73 +305,46 @@ class CacheStore:
         self.conn.commit()
 
     def iter_entries(self, *, include_tombstoned: bool = False) -> Iterable[CacheEntry]:
-        sql = """
-            SELECT key, transform_key, payload, output_root, size_bytes,
-                   origin, created_at, last_hit_at, hit_count, tombstoned_at
-            FROM entries
-        """
+        sql = self._SELECT
         if not include_tombstoned:
             sql += " WHERE tombstoned_at IS NULL"
         sql += " ORDER BY last_hit_at DESC"
-        for row in self.conn.execute(sql):
-            yield CacheEntry(
-                key=row[0],
-                transform_key=row[1],
-                payload=row[2],
-                output_root=self.cache_root / row[3],
-                size_bytes=row[4],
-                origin=row[5],
-                created_at=row[6],
-                last_hit_at=row[7],
-                hit_count=row[8],
-                tombstoned_at=row[9],
+        for row in self.conn.execute(sql).fetchall():
+            yield self._row_to_entry(row)
+
+    def tags_of(self, key: bytes) -> tuple:
+        return tuple(r[0] for r in self.conn.execute(
+            "SELECT tag FROM entry_tags WHERE key = ? ORDER BY tag", (key,),
+        ))
+
+    def set_tags(self, key: bytes, tags: Iterable[str]) -> None:
+        self.conn.execute("DELETE FROM entry_tags WHERE key = ?", (key,))
+        self.add_tags(key, tags)
+
+    def add_tags(self, key: bytes, tags: Iterable[str]) -> None:
+        rows = [(key, t.strip()) for t in tags if t and t.strip()]
+        if rows:
+            self.conn.executemany(
+                "INSERT OR IGNORE INTO entry_tags(key, tag) VALUES (?, ?)", rows,
             )
+        self.conn.commit()
+
+    def remove_tags(self, key: bytes, tags: Iterable[str]) -> None:
+        rows = [(key, t) for t in tags]
+        if rows:
+            self.conn.executemany(
+                "DELETE FROM entry_tags WHERE key = ? AND tag = ?", rows,
+            )
+        self.conn.commit()
 
 
-# ---------------------------------------------------------------------------
-# Manifest format (CBOR sidecar in <cache_root>/<dir>/manifest.cbor)
-
-
-def encode_manifest(
-    *,
-    cache_key: bytes,
-    transform_key: str,
-    signature: str,
-    lineage_payload: bytes,
-    output_files: list[dict],
-    out_identities: dict[str, str],
-    index_payload: list[dict],
-) -> bytes:
-    """Encode the per-entry manifest as canonical CBOR.
-
-    `output_files` is a list of `{slot_key, branch, dtype_key, relpath}`
-    dicts (relpath relative to the entry's output_root). `out_identities`
-    maps dep_key → instance_id (hex). `index_payload` is a list of
-    `{relpath, index}` — the on-channel lineage index each output file
-    travelled with, so a hit's synthetic channel reproduces the ancestry a
-    real run puts on the wire. Without it a downstream `o.group` keyed on an
-    ancestor drops the tuple; with it a hit is indistinguishable from a miss
-    to everything downstream. An empty list means the shard predates the
-    capture and a hit on it is demoted to a re-run.
-    """
-    from .keys import canonical_cbor
-
-    return canonical_cbor(
-        {
-            "v": 1,
-            "key": cache_key,
-            "tk": transform_key,
-            "sig": signature,
-            "lineage": lineage_payload,
-            "files": output_files,
-            "ids": out_identities,
-            "index": index_payload,
-        }
-    )
+# A manifest is written in exactly one place, `caching.admission`. What used to
+# be a second shape written from here is gone; `admission.manifest_files`,
+# `manifest_lineage` and `manifest_size` read every version an existing pool may
+# hold.
 
 
 def decode_manifest(blob: bytes) -> dict:
-    """Decode a CBOR manifest previously written by encode_manifest."""
     import cbor2
 
     return cbor2.loads(blob)

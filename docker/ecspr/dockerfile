@@ -1,0 +1,43 @@
+# The ECSPr runtime: the measuring instrument and nothing else.
+#
+# Deliberately not docker/fabfos. That image carries the assembly and annotation
+# CLI tools because it is the whole pipeline's runtime; this one carries a numeric
+# stack and one package, so it stays small enough to convert and cheap enough to
+# rebuild on every engine change. The two do share a numpy<2 constraint, and for
+# the same reason -- see src/ecspr/env.yml.
+#
+# THE ENV SPEC IS NOT COPIED, IT IS THE SAME FILE. The build context is the REPO
+# ROOT (see dev.sh), so this reads src/ecspr/env.yml directly rather than a copy
+# under docker/ that would drift.
+#
+# Base is version-pinned, not :latest: an image whose base moves under it is not a
+# reproducible image. This is a TAG pin, not a digest -- upstream could in
+# principle repush it, which is the residual risk of not carrying a sha256 here.
+FROM condaforge/miniforge3:25.3.0-3 AS build-env
+
+COPY src/ecspr/env.yml /opt/ecspr_env.yml
+RUN --mount=type=cache,target=/opt/conda/pkgs \
+    mamba env create -n ecspr -f /opt/ecspr_env.yml
+ENV PATH=/opt/conda/envs/ecspr/bin:$PATH
+
+# The package is installed FROM SOURCE even though it is also on the hallamlab
+# channel: installing the tree the image was built from is what makes the
+# image's version answer for the source it holds, which dev.sh --check then
+# asserts. Pulling the channel build instead would let the tag and the contents
+# drift by one publish.
+#
+# build_hash.txt rides along inside src/ecspr (it is gitignored, not
+# context-ignored, and dev.sh stamps it immediately before this build) -- which
+# is how the installed package reports 0.1.0+<hash> rather than bare 0.1.0.
+COPY src/ecspr /opt/ecspr
+COPY tests/ecspr /opt/tests/ecspr
+RUN pip install --no-deps /opt/ecspr
+
+FROM build-env AS final
+# Fail the BUILD, not a queued job hours later, if a pin regressed: the install
+# selftest, then the package's own suite.
+RUN ecspr selftest && python -m pytest -q /opt/tests/ecspr
+
+ADD docker/ecspr/load/tini /tini
+RUN chmod +x /tini
+ENTRYPOINT ["/tini", "-s", "-g", "--"]

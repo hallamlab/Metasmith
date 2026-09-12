@@ -21,16 +21,11 @@ class Api:
         assert step_index, "[step_index] is required"
         host = body.get("host")
         assert host, "[host] is required"
-        stage_root = body.get("stage_root") or None      # empty string → shared read
+        stage_root = body.get("stage_root") or None
         res = StageAndRunTransform(
             Path(workspace), int(step_index), host,
             stage_root=Path(stage_root) if stage_root else None,
         )
-        # `exit(True)` is exit status 1 -- success reported failure and failure
-        # reported success. Invisible under a container runtime, where this call
-        # sits mid-script in msm_bootstrap and the relay teardown supplies the
-        # script's status; on the relay-free path it IS the last command, so the
-        # inversion made every successful mamba step a failed nextflow task.
         exit(0 if res.success else 1)
 
     def stage_workflow(self, body: dict):
@@ -39,9 +34,6 @@ class Api:
         verify = body.get("verify", "False").strip().title()=="True"
         host = body.get("host")
         assert host, "[host] is required"
-        # Absent means "no override" -- the agent's own tendency stands. Parsed
-        # here rather than defaulted, so a typo fails loudly instead of quietly
-        # staging with the mode the caller was trying to move away from.
         rootfs = body.get("rootfs")
         rootfs = Rootfs.Parse(rootfs) if rootfs else None
         StageWorkflow(task_key, verify, host, rootfs=rootfs)

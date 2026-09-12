@@ -1,4 +1,3 @@
-"""`metasmith agent ...` subcommands."""
 from __future__ import annotations
 
 import json
@@ -7,12 +6,6 @@ from ...ops import agent as _ops
 
 
 def _parse_params(entries: list[str]) -> dict | None:
-    """`NAME=VALUE` pairs, with VALUE given the type it looks like.
-
-    The same rule the web form uses: a value that reads as a JSON scalar
-    becomes that scalar and anything else stays a string, so `tries=3` is a
-    number and `partition=gpu` is not.
-    """
     if not entries: return None
     out = {}
     for e in entries:
@@ -66,6 +59,29 @@ def register(subs):
     _ping.add_argument("agent_path")
     _ping.add_argument("--timeout", type=int, default=15)
     _ping.set_defaults(func=lambda a: _ops.ping(a.agent_path, a.timeout))
+
+    _pool = sp.add_parser(
+        "pool",
+        help="list the pool in an agent's home, wherever that home is",
+        description="Read the agent's own pool through the agent, so a home on "
+                    "a cluster answers without the data being reachable from "
+                    "here. Nothing is fetched: an entry is a name, a type and "
+                    "an identity, and the path it reports is a path on that "
+                    "host.",
+    )
+    _pool.add_argument("agent_path")
+    _pool.add_argument("--origin", choices=["lineage", "imported"], default=None)
+    _pool.add_argument("--dtype", default=None, metavar="NS::TYPE")
+    _pool.add_argument("--tag", default=None)
+    _pool.add_argument("--name", default=None)
+    _pool.add_argument("--ref", action="append", default=[], dest="refs",
+                       help="resolve this name or instance id to one entry, "
+                            "instead of listing; repeatable")
+    _pool.add_argument("--timeout", type=int, default=120)
+    _pool.set_defaults(func=lambda a: _ops.read_pool(
+        a.agent_path, origin=a.origin, dtype=a.dtype, tag=a.tag, name=a.name,
+        refs=a.refs or None, timeout=a.timeout,
+    ))
 
     _dep = sp.add_parser("deploy", help="deploy an agent to its home location")
     _dep.add_argument("agent_path")

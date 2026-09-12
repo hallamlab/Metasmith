@@ -2,6 +2,7 @@ from __future__ import annotations
 import os
 import re
 import secrets
+import signal
 import time
 from contextlib import contextmanager
 from typing import IO, Callable
@@ -23,15 +24,8 @@ def _env_seconds(name: str, default: float) -> float:
         Log.Warn(f"ignoring [{name}={raw}]: not a number of seconds")
         return default
 
-# How long an operation on an agent may say *nothing* before we call it wedged.
-# Silence, not elapsed time: a working stage emits log lines or rsync progress
-# the whole way, so these only have to cover the longest stretch a healthy one
-# is quiet -- the DAG compile, which is CPU-bound and mute while it runs. A
-# false timeout is worse than a slow failure, so they err high.
-IDLE_TIMEOUT = _env_seconds("METASMITH_IDLE_TIMEOUT", 300)      # compile, transfers
-PROBE_TIMEOUT = _env_seconds("METASMITH_PROBE_TIMEOUT", 60)     # cd, test -e, relay check
-# Not a shell bound: one on the connect would also cut off someone typing a key
-# passphrase, which the connect deliberately allows. This bounds the handshake.
+IDLE_TIMEOUT = _env_seconds("METASMITH_IDLE_TIMEOUT", 300)
+PROBE_TIMEOUT = _env_seconds("METASMITH_PROBE_TIMEOUT", 60)
 SSH_CONNECT_TIMEOUT = _env_seconds("METASMITH_SSH_CONNECT_TIMEOUT", 15)
 
 @dataclass
@@ -40,12 +34,15 @@ class ShellResult:
     err: list[str]
     exit_code: int | None = None
 
+class ShellDiedError(ConnectionError):
+    def __init__(self, message: str, exit_code: int | None = None, tail: str | None = None):
+        if tail:
+            message = f"{message}; last output:\n{tail}"
+        super().__init__(message)
+        self.exit_code = exit_code
+        self.tail = tail
+
 class TerminalProcess:
-    """
-    Owns: 1 bash subprocess, 4 pty FDs (out/err master+slave), and two
-    NonBlockingReader threads. All allocation is guarded so a partial init
-    leaks nothing.
-    """
     class Pipe:
         def __init__(self, io:IO[bytes], lock: Condition|None = None) -> None:
             self.IO = io
@@ -58,15 +55,22 @@ class TerminalProcess:
         def __exit__(self, exc_type, exc_val, exc_tb):
             self.Lock.release()
 
-    def __init__(self, extra_pass_fds: tuple[int, ...] = ()) -> None:
-        # extra_pass_fds kept as a back-compat parameter; no current caller
-        # uses it. Defaults to () so behaviour is identical for everyone.
+    # TERM -> KILL window for the shell (and its group, when we own one).
+    _STOP_GRACE_S = 2.0
+
+    def __init__(
+        self, extra_pass_fds: tuple[int, ...] = (), new_session: bool = True,
+    ) -> None:
+        # `new_session` makes this bash a session and process-group leader, so
+        # Dispose can signal the whole group. Pass False to leave it in the
+        # caller's group -- for a shell that is meant to die with the run that
+        # started it, where signalling the group would signal the caller too.
         self._fds: list[int] = []
+        self._owns_group = new_session
         self._console: subprocess.Popen | None = None
         self._err_reader: NonBlockingReader | None = None
         self._out_reader: NonBlockingReader | None = None
         try:
-            # https://stackoverflow.com/questions/41542960/run-interactive-bash-with-popen-and-a-dedicated-tty-python
             out_master, out_slave = pty.openpty()
             self._fds += [out_master, out_slave]
             err_master, err_slave = pty.openpty()
@@ -79,7 +83,7 @@ class TerminalProcess:
                 stderr=err_slave,
                 pass_fds=extra_pass_fds,
                 close_fds=True,
-                start_new_session=True, # nextflow needs this
+                start_new_session=new_session,
             )
 
             self.ENCODING = "utf-8"
@@ -99,52 +103,64 @@ class TerminalProcess:
             if r is not None:
                 try: r.Dispose()
                 except Exception: pass
-        if self._console is not None:
-            try:
-                self._console.terminate()
-                try: self._console.wait(timeout=2)
-                except subprocess.TimeoutExpired:
-                    self._console.kill()
-                    try: self._console.wait(timeout=2)
-                    except subprocess.TimeoutExpired: pass
-            except Exception: pass
+        try: self._stop_console()
+        except Exception: pass
         for fd in self._fds:
             try: os.close(fd)
             except OSError: pass
         self._fds = []
 
+    def _signal_console(self, sig: int):
+        console = self._console
+        if console is None: return
+        try:
+            if self._owns_group:
+                # Signalled even once bash itself has exited: a process group
+                # outlives its leader, and that survivor is exactly the orphan
+                # a leader-only signal leaves behind.
+                os.killpg(console.pid, sig)
+            elif console.returncode is None:
+                console.send_signal(sig)
+        except (ProcessLookupError, PermissionError):
+            pass
+
+    def _stop_console(self):
+        console = self._console
+        if console is None: return
+        self._signal_console(signal.SIGTERM)
+        try: console.wait(timeout=self._STOP_GRACE_S)
+        except subprocess.TimeoutExpired: pass
+        self._signal_console(signal.SIGKILL)
+        try: console.wait(timeout=self._STOP_GRACE_S)
+        except subprocess.TimeoutExpired:
+            Log.Error("TerminalProcess: shell did not exit")
+
     def Send(self, payload: bytes):
         if self._closed: raise ConnectionError("terminal disposed")
+        if not self.IsAlive():
+            raise ShellDiedError("shell process exited before this command could be written", exit_code=self.ExitCode())
         stdin = self._in
         with self._in:
-            stdin.IO.write(payload)
-            stdin.IO.flush()
+            try:
+                stdin.IO.write(payload)
+                stdin.IO.flush()
+            except (BrokenPipeError, OSError, ValueError) as e:
+                raise ShellDiedError(
+                    f"shell process exited while writing ({e})", exit_code=self.ExitCode(),
+                ) from e
 
     def Decode(self, payload: bytes):
         return payload.decode(encoding=self.ENCODING)
 
     def IsAlive(self) -> bool:
-        """True iff the bash subprocess exists and has not yet exited.
-
-        Wraps Popen.poll() (non-blocking): poll() returns None while the
-        child runs and the exit code once it has exited, reaping it. Never
-        call wait() here — it would block.
-        """
         if self._console is None: return False
         return self._console.poll() is None
 
     def ExitCode(self) -> int | None:
-        """Exit code if the subprocess has exited, else None (still running
-        or never started)."""
         if self._console is None: return None
         return self._console.poll()
 
     def SecondsSinceRead(self) -> float:
-        """Seconds since either stream last produced bytes.
-
-        The shorter of the two marks: a command talking on stdout alone is
-        still talking.
-        """
         marks = [
             r.SecondsSinceRead()
             for r in (self._out_reader, self._err_reader) if r is not None
@@ -185,17 +201,10 @@ class TerminalProcess:
         if self._out_reader is not None:
             try: self._out_reader.Dispose()
             except Exception as e: Log.Error(f"TerminalProcess.Dispose() out_reader [{e}]")
-        if self._console is not None:
-            try:
-                self._console.terminate()
-                try: self._console.wait(timeout=2)
-                except subprocess.TimeoutExpired:
-                    self._console.kill()
-                    try: self._console.wait(timeout=2)
-                    except subprocess.TimeoutExpired:
-                        Log.Error(f"TerminalProcess.Dispose() subprocess did not exit")
-            except Exception as e:
-                Log.Error(f"TerminalProcess.Dispose() console [{e}]")
+        try:
+            self._stop_console()
+        except Exception as e:
+            Log.Error(f"TerminalProcess.Dispose() console [{e}]")
         for i, fd in enumerate(self._fds):
             try:
                 os.close(fd)
@@ -205,55 +214,6 @@ class TerminalProcess:
         self._fds = []
 
 class LiveShell:
-    """
-    Bash session wrapper with completion signalled by an inline marker pair.
-
-    Per Exec, two top-level statements are written to bash's stdin after
-    the user command:
-
-        <user_cmd>
-        __rc=$?; printf '\x1eMSM_END_<TOKEN>_<NONCE> %s\x1e\n' "$__rc"; \
-                 printf '\x1eMSM_ERR_<TOKEN>_<NONCE>\x1e\n' >&2
-
-    The marker is just bytes — whichever shell is parsing bash's stdin when
-    the line is reached emits the marker, and ssh / nested bash / docker
-    exec / bash -c forward the bytes back unchanged. This makes Exec work
-    uniformly across local bash AND any sub-shell entered via plain
-    Exec("ssh host") / Exec("bash -c '...'") / etc., with no setup-in-
-    sub-shell required.
-
-    Marker shape rationale:
-      - \x1e (ASCII RS) brackets ⇒ invisible, never in natural output.
-      - Per-LiveShell 128-bit token ⇒ cheap session filter.
-      - Per-Exec random nonce ⇒ identifies which pending Exec.
-      - The 'strip from delivery' rule only fires when the parsed nonce is
-        in self._pending or equals self._INIT_NONCE. A user echoing the
-        marker shape with an unknown nonce passes through verbatim, so user
-        output is byte-faithful unless they happen to also know our token
-        + a currently-pending nonce (statistically zero).
-
-    stdin isolation (default):
-      User cmds run inside `{ ...; } </dev/null` so children cannot greedily
-      consume the marker emission line off bash's stdin pipe. Without this,
-      `Exec("ssh host cmd")` would wedge: ssh inherits the pipe, reads the
-      marker line meant for local bash, and forwards it to the remote where
-      it's discarded. The brace group preserves env mutations in the parent
-      shell (unlike `(...)` subshells) and propagates $? unchanged.
-
-      For cmds that legitimately need bash's real stdin — sub-shell entries
-      (ssh host, bash -c interactive, docker exec -i ...) whose marker is
-      meant to travel through to the inner shell — pass inherit_stdin=True
-      to Exec / ExecAsync. SubShell.__enter__ does this automatically.
-
-    Known residual limitations (in-band approach inherent):
-      - Exec("exec something") replaces bash; no in-band approach survives.
-      - Exec("exec 2>/tmp/log") sends the stderr marker to the file forever.
-      - User cmd that itself reads stdin (e.g. cat, read x) gets immediate
-        EOF from the default /dev/null redirect, which is the right batch
-        behavior. Pass inherit_stdin=True only if the cmd is a sub-shell
-        entry.
-    """
-
     _INIT_NONCE = "__msm_init__"
     # FAR backstop for a WEDGED-but-alive bash, measured as absolute elapsed
     # from the start of _wait_for_init. This is NOT the operative limit:
@@ -264,38 +224,32 @@ class LiveShell:
     # realistic reader-thread starvation under load. Env-overridable for the
     # truly pathological host.
     _INIT_TIMEOUT = float(os.environ.get("METASMITH_LIVESHELL_INIT_TIMEOUT", "300.0"))
-    # Re-sample cadence for the liveness poll while waiting. Only matters on
-    # the slow/failure path; the healthy path wakes on the marker's
-    # notify_all and exits immediately.
     _INIT_POLL_INTERVAL = 0.05
 
     _RS = "\x1e"
-    # Matches one marker line on either stream. Token is captured for filter;
-    # nonce identifies the pending Exec; rc is present only on END markers.
     _MARKER_RE = re.compile(
         r"\x1eMSM_(?P<kind>END|ERR)_(?P<token>[0-9a-f]+)_(?P<nonce>[A-Za-z0-9_]+)"
         r"(?: (?P<rc>-?\d+))?\x1e"
     )
 
-    # Test seam: when True, the first marker write in _pop is replaced with a
-    # nonce nothing matches, forcing the retry path. Production default False.
     _pop_drop_first_marker = False
 
-    def __init__(self) -> None:
+    def __init__(self, new_session: bool = True) -> None:
+        self._new_session = new_session
         self._err_callbacks: list[Callable[[str], None]] = []
         self._out_callbacks: list[Callable[[str], None]] = []
         self._results: dict[str, int] = {}
         self._pending: set[str] = set()
-        self._sync_received: dict[str, set[str]] = {}  # nonce -> {"out","err"}
+        self._sync_received: dict[str, set[str]] = {}
         self._cond = Condition()
         self._shell: TerminalProcess | None = None
         self._closed = False
-        self._token = secrets.token_hex(16)  # 128-bit session id
+        self._token = secrets.token_hex(16)
         self._last_byte_time = time.monotonic()
-        self._depth = 0  # bookkeeping for SubShell nesting; diagnostics only
+        self._depth = 0
 
         try:
-            self._shell = TerminalProcess()
+            self._shell = TerminalProcess(new_session=self._new_session)
 
             # Tee callbacks on each stream:
             #  - parse marker lines and route to _results / _sync_received
@@ -318,7 +272,6 @@ class LiveShell:
             self._dispose_unsafe()
             raise
 
-    # --- marker plumbing ----------------------------------------------------
 
     def _marker_emission_bash(self, nonce: str) -> str:
         # Two top-level statements as a single line (joined by ';'); bash
@@ -337,8 +290,6 @@ class LiveShell:
             if self._shell is None: return
             msg = RemoveTrailingNewline(self._shell.Decode(x))
             if len(msg) == 0: return
-            # Channel-activity timestamp: updated on every non-empty chunk,
-            # including marker lines. Read by _pop to detect quiescence.
             self._last_byte_time = time.monotonic()
             m = self._MARKER_RE.search(msg)
             if m and m.group("token") == self._token:
@@ -347,24 +298,15 @@ class LiveShell:
                     is_ours = nonce in self._pending or nonce == self._INIT_NONCE
                     if is_ours:
                         kind = m.group("kind")
-                        # END markers (stdout) carry the exit code; ERR markers
-                        # only signal stderr drain. Either populates _results
-                        # if we can parse rc — both streams agree on the value.
                         if kind == "END":
                             rc = m.group("rc")
                             if rc is not None:
                                 self._results[nonce] = int(rc)
                         else:
-                            # ERR marker — populate _results too if we haven't
-                            # already, so the predicate fires even when stdout
-                            # tee is delayed (e.g. heavy stdout buffering).
-                            # Use a sentinel only when truly absent.
                             self._results.setdefault(nonce, 0)
                         self._sync_received.setdefault(nonce, set()).add(stream_name)
                         self._cond.notify_all()
-                        return  # strip marker line from user delivery
-                # Fall through if not ours: user output that happens to match
-                # the marker shape with an unknown nonce stays in the stream.
+                        return
             for f in list(cb_lst):
                 try: f(msg)
                 except Exception as e:
@@ -372,35 +314,15 @@ class LiveShell:
         return _cb
 
     def _wait_for_init(self):
-        # Liveness-governed handshake. The OPERATIVE gate is whether bash is
-        # actually alive, not a clock: a slow-but-alive bash (heavy rc, a
-        # loaded host, reader threads starved under load so the already-
-        # emitted marker sits unread) is tolerated for as long as it stays
-        # alive. We fail fast only when bash has truly exited, and fall back
-        # to a far absolute backstop only for a wedged-but-alive shell.
-        #
-        # This is the fix for the deploy false positive: the old code used a
-        # flat 5s deadline with no liveness check, so under load a live bash
-        # whose marker hadn't been parsed yet was wrongly declared dead.
-        # poll() (waitpid WNOHANG) can never report a running process as
-        # exited, so liveness is a safe gate.
         start = time.monotonic()
         with self._cond:
             while True:
-                # 1. Sync wins first: an already-arrived marker beats any
-                #    concurrent liveness/backstop verdict.
                 if self._is_fully_synced(self._INIT_NONCE):
-                    break  # both markers in — success
-                # 2. Shell disposed mid-init.
+                    break
                 if self._closed:
                     raise RuntimeError(
                         "LiveShell init: shell closed before bash responded"
                     )
-                # 3. Liveness gate — fail fast iff bash actually exited. Re-
-                #    check sync once more first, defending against an emit-
-                #    then-exit race (bash answered, then exited with the bytes
-                #    still unread). The init shell is persistent so this is
-                #    belt-and-suspenders, but cheap and correct.
                 if self._shell is None or not self._shell.IsAlive():
                     if self._is_fully_synced(self._INIT_NONCE):
                         break
@@ -408,24 +330,17 @@ class LiveShell:
                     raise RuntimeError(
                         f"LiveShell init: bash exited (rc={rc}) before responding"
                     )
-                # 4. Far backstop — only reachable while bash is alive, so it
-                #    fires solely for a wedged-but-alive shell, never for a
-                #    merely slow/loaded one.
                 if time.monotonic() - start >= self._INIT_TIMEOUT:
                     raise RuntimeError(
                         f"LiveShell init: bash alive but unresponsive for "
                         f"{self._INIT_TIMEOUT}s"
                     )
-                # 5. Wake on the marker's notify_all, else re-sample liveness
-                #    every poll interval.
                 self._cond.wait(timeout=self._INIT_POLL_INTERVAL)
-        # Reap init bookkeeping so it doesn't linger.
         with self._cond:
             self._results.pop(self._INIT_NONCE, None)
             self._sync_received.pop(self._INIT_NONCE, None)
             self._pending.discard(self._INIT_NONCE)
 
-    # --- lifecycle ----------------------------------------------------------
 
     def __enter__(self):
         return self
@@ -439,7 +354,6 @@ class LiveShell:
         self._dispose_unsafe()
 
     def _dispose_unsafe(self):
-        # Called from Dispose or from a partial __init__. Idempotent.
         if self._shell is not None:
             try: self._shell.Dispose()
             except Exception as e: Log.Error(f"LiveShell shell dispose [{e}]")
@@ -449,7 +363,11 @@ class LiveShell:
         with self._cond:
             self._cond.notify_all()
 
-    # --- user callbacks -----------------------------------------------------
+
+    def SecondsSinceRead(self) -> float:
+        """How long the command has been silent, or 0 with no shell to ask."""
+        if self._shell is None: return 0.0
+        return self._shell.SecondsSinceRead()
 
     def RegisterOnOut(self, callback: Callable[[str], None]):
         self._out_callbacks.append(callback)
@@ -463,18 +381,8 @@ class LiveShell:
     def RemoveOnErr(self, callback: Callable[[str], None]):
         if callback in self._err_callbacks: self._err_callbacks.remove(callback)
 
-    # --- exec ---------------------------------------------------------------
 
     def ExecAsync(self, cmd: str, inherit_stdin: bool = False):
-        """Send a command + inline marker emission. Returns the per-Exec nonce.
-
-        inherit_stdin: when False (default), the user cmd runs inside a brace
-        group with stdin redirected to /dev/null, so children like one-shot
-        ssh, cat, read, or sudo (no -n) cannot greedily consume the marker
-        emission line off bash's stdin pipe. Set True only for cmds that
-        deliberately enter a long-lived sub-shell (e.g. SubShell entry),
-        where the marker is supposed to travel through to the inner shell.
-        """
         if self._shell is None: return None
         nonce = GenerateId()
         with self._cond:
@@ -484,26 +392,11 @@ class LiveShell:
         if inherit_stdin:
             self._shell.Write(body)
         else:
-            # Brace group preserves env mutations in the parent shell (unlike
-            # subshell parens). Explicit '\n' before '}' guarantees the
-            # closing brace is its own token regardless of how `cmd` ended.
-            # `__rc=$?` on the next written line still captures this group's
-            # exit code, which equals the user cmd's exit code.
-            #
-            # The leading `:` is what makes a *comment* a legal command. Bash
-            # requires at least one command inside `{ }`, so `{\n# a note\n}`
-            # is a syntax error -- and a non-interactive bash exits on one,
-            # taking the shell down and hanging every Exec after it. A setup
-            # block whose first line is `#!/bin/bash` is exactly that, which
-            # is not exotic: it is what the GUI puts in the box by default.
-            # `:` cannot change the reported status, because whatever the user
-            # wrote runs after it and is what `$?` ends up holding.
             self._shell.Write("{\n:\n" + body + "\n} </dev/null")
         self._shell.Write(self._marker_emission_bash(nonce))
         return nonce
 
     def _is_fully_synced(self, target: str) -> bool:
-        """Both stdout and stderr markers have arrived for this nonce."""
         if target not in self._results: return False
         seen = self._sync_received.get(target, set())
         return "out" in seen and "err" in seen
@@ -514,41 +407,16 @@ class LiveShell:
         idle_timeout: int|float|None = None,
         what: str|None = None,
     ) -> int|None:
-        """
-        Block until the command for `_hash` is fully synchronized — both
-        stdout and stderr marker lines received. Returns the user command's
-        exit code, or None on timeout / shell closed.
-
-        For a batched ExecAsync fan-out on the same shell, wait on the LAST
-        enqueued nonce: bash runs commands sequentially, and both stream
-        readers process bytes in order, so the last marker arriving implies
-        all prior commands also fully synced.
-
-        `timeout` is a stopwatch and answers None when it runs out, which is
-        the historical behaviour and is why almost nobody passes one -- a
-        legitimate stage of a large library takes as long as it takes.
-        `idle_timeout` asks a different question: has the far end said anything
-        recently. It is measured from the last *byte* off either stream, so a
-        transfer redrawing an rsync progress line counts as alive, and it
-        raises rather than answering None -- a bound nobody notices tripping is
-        worse than no bound. The two compose; a caller may set either or both.
-        """
-        # Liveness is a gate here for the same reason it is in `_wait_for_init`,
-        # and for one more: most callers pass no timeout at all. `Agent.Deploy`
-        # does, so a bash that has exited -- on a syntax error, on `exit`, on a
-        # kill -- turns "wait for the marker" into "wait forever", and the only
-        # visible symptom is a job that never finishes and never says why.
-        # Sync is re-checked after the liveness verdict, because a shell can
-        # answer and *then* exit with its bytes still unread.
         started = time.monotonic()
         deadline = None if timeout is None else started + timeout
         went_silent = False
+        shell_died = False
         with self._cond:
             while not self._is_fully_synced(_hash) and not self._closed:
                 if self._shell is None or not self._shell.IsAlive():
                     if not self._is_fully_synced(_hash):
-                        # one poll interval of grace for bytes already in flight
                         self._cond.wait(timeout=self._INIT_POLL_INTERVAL)
+                        shell_died = not self._is_fully_synced(_hash)
                     break
                 remaining = self._INIT_POLL_INTERVAL
                 if deadline is not None:
@@ -557,9 +425,6 @@ class LiveShell:
                         break
                     remaining = min(remaining, left)
                 if idle_timeout is not None:
-                    # Bounded by our own start as well as the reader's mark: a
-                    # shell that sat unused for an hour before this command is
-                    # not a command that has been silent for an hour.
                     silent = min(
                         self._shell.SecondsSinceRead(),
                         time.monotonic() - started,
@@ -570,17 +435,20 @@ class LiveShell:
                     remaining = min(remaining, idle_timeout - silent)
                 self._cond.wait(timeout=remaining)
             exit_code = self._results.pop(_hash, None)
+            exit_status = self._shell.ExitCode() if self._shell is not None else None
             self._pending.discard(_hash)
             self._sync_received.pop(_hash, None)
         if went_silent:
-            # The command is still running on the far end and its marker will
-            # never be claimed, so this shell is spent -- callers dispose it.
             raise TimeoutError(
                 f"[{what or 'command'}] produced no output for {idle_timeout:g}s"
             )
+        if shell_died and not self._closed:
+            raise ShellDiedError(
+                f"shell exited (rc={exit_status}) while running [{what or 'command'}]",
+                exit_code=exit_status,
+            )
         return exit_code
 
-    # --- shell-boundary crossing --------------------------------------------
 
     @contextmanager
     def SubShell(self, entry_cmd: str, *,
@@ -588,26 +456,6 @@ class LiveShell:
                  pop_idle_samples: int = 3,
                  pop_timeout: float = 5.0,
                  pop_retries: int = 1):
-        """
-        Cross into and back out of a sub-shell (ssh, nested bash, docker exec, ...).
-
-        Enter: writes entry_cmd via plain Exec — the marker arrives from the
-        sub-shell over its forwarded stdout/stderr, so we know we're in.
-
-        Exit: writes 'exit', waits for output to quiesce (multi-sample idle
-        window), then writes a fresh marker-emission line that lands on the
-        parent shell. If the first marker is lost (sub-shell still draining
-        when written), retries up to `pop_retries` times.
-
-        Use this whenever the entry_cmd transitions to a different shell layer
-        that you intend to leave again. Plain Exec("ssh host 'cmd'") one-shot
-        commands do NOT need SubShell — they return on their own.
-        """
-        # inherit_stdin=True: the entry_cmd (ssh / nested bash / ...) is
-        # supposed to consume the marker emission line off our stdin pipe
-        # and forward it to the inner shell, which executes the printf and
-        # the marker travels back to us via stdout/stderr. The default
-        # </dev/null wrap would break that mechanism.
         self.Exec(entry_cmd, timeout=pop_timeout, inherit_stdin=True)
         self._depth += 1
         try:
@@ -625,19 +473,6 @@ class LiveShell:
 
     def _pop(self, *, quiescence_ms: int, idle_samples: int,
              timeout: float, retries: int) -> int | None:
-        """
-        Write `exit` and synchronize with the parent shell.
-
-        Phase 1: wait for true output quiescence — idle_samples consecutive
-        sample windows where (now - _last_byte_time) >= quiescence_ms. A
-        floor ensures at least one full quiescence_ms passes even if no
-        output ever arrives (silent sub-shells).
-
-        Phase 2: write a fresh marker-emission line and AwaitDone. If the
-        marker doesn't return within a short window, retry. The retry is
-        safe — a lost marker is a no-op on the dead sub-shell; the new
-        marker lands on whichever shell now holds stdin.
-        """
         if self._shell is None: return None
         self._shell.Write("exit")
         sample_interval = max(quiescence_ms / 1000.0 / idle_samples, 0.020)
@@ -655,16 +490,12 @@ class LiveShell:
                     break
             else:
                 consecutive_idle = 0
-        # Phase 2: send fresh marker; one retry covers a lost first attempt.
         for attempt in range(retries + 1):
             nonce = GenerateId()
             with self._cond:
                 self._pending.add(nonce)
                 self._sync_received[nonce] = set()
             if attempt == 0 and self._pop_drop_first_marker:
-                # Test seam: emit a marker that nothing matches so the retry
-                # path is exercised. Use a fresh token so it can't be parsed
-                # as ours even by accident.
                 bogus = self._marker_emission_bash(nonce).replace(
                     self._token, "0" * len(self._token)
                 )
@@ -682,8 +513,6 @@ class LiveShell:
         quiet: bool=False, inherit_stdin: bool = False,
         idle_timeout: float|None = None, what: str|None = None,
     ) -> ShellResult:
-        """`idle_timeout` raises TimeoutError if the command goes silent; see
-        AwaitDone. `what` names the step in that message."""
         _out, _err = [], []
         _log_out = _out.append
         _log_err = _err.append

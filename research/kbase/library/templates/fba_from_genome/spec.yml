@@ -1,0 +1,36 @@
+name: fba_from_genome
+description: build_metabolic_model -> run_flux_balance_analysis -> run_flux_balance_analysis.
+  Seen in 28 public narratives.
+sample_type: kbase::sample
+target_types:
+- kbase::KBaseFBA_FBA
+transform_libraries:
+- w_s0004
+resource_libraries:
+- env
+shared_input_paths: []
+input_library:
+  schema: v1
+  manifest:
+    /msm_deferred/2df938bf45ca477987f49fb41b52a1d2:
+      type: kbase::sample
+      parents:
+        eYToLkutcx2o@/msm_deferred/e3f18e26eb224407aca903ee6b80c8a4: kbase::study
+      instance_id: 1e20cb5fda49a4291b0f50c0682ff273c74991d7c983c9eef59df83e40ae45c437fc
+      origin: leaf
+    /msm_deferred/da5471da4f484d96b71de06c0e925045:
+      type: kbase::KBaseGenomes_Genome
+      parents:
+        eYToLkutcx2o@/msm_deferred/2df938bf45ca477987f49fb41b52a1d2: kbase::sample
+      instance_id: 1e207d074db3a462c728d353e45bcbfa9ac64d539ddfbb4920562ab6465d50cf476f
+      origin: leaf
+    /msm_deferred/e3f18e26eb224407aca903ee6b80c8a4:
+      type: kbase::study
+      instance_id: 1e20e4e4f86e40b3a4022a0a0d1a203bfcd930466e6f3ec175a99de3d5de0208836e
+      origin: leaf
+    /msm_deferred/e4cca907d8f448c38a60e2ffdca46646:
+      type: kbase::KBaseBiochem_Media
+      parents:
+        eYToLkutcx2o@/msm_deferred/2df938bf45ca477987f49fb41b52a1d2: kbase::sample
+      instance_id: 1e2026dd23bbfca319cd5701b595678d96eb61654913914133805ca415af52bdc68c
+      origin: leaf

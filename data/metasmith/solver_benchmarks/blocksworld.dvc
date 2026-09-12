@@ -1,0 +1,6 @@
+outs:
+- md5: 2ac8b7a6cba419ed845924eb57e3ac56.dir
+  size: 35730
+  nfiles: 122
+  hash: md5
+  path: blocksworld

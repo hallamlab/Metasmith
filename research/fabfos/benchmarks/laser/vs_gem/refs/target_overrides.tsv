@@ -1,0 +1,82 @@
+#	LASER target string -> resolution override. Two visibly separate classes:
+#
+#	kind=status   a JUDGEMENT about whether the string names a scoreable product
+#	              at all. This is where the user's "remove those that dont name a
+#	              specific output product" filter is implemented, so every row is
+#	              reviewable in one place. Allowed values: biomass, class_noun,
+#	              non_metabolite, polymer, no_scoreable_element, ambiguous,
+#	              unresolved.
+#	kind=name     a pure LEXICON entry: the MetaNetX name this LASER string means.
+#	              No judgement -- anyone can check it by resolving `value`. The
+#	              builder re-resolves every one of these and fails if it stops
+#	              matching, so the table cannot rot.
+#
+#	The builder also fails on any row whose `token` no longer appears in the
+#	extraction, so a stale override is loud rather than silent.
+token	kind	value	reviewer	note
+Biomass	status	biomass	opal	own panel, not a product
+biomass	status	biomass	opal	own panel, not a product
+Fatty Acids	status	class_noun	opal	names a class; MNXM728577 is the generic entry
+Fatty acids	status	class_noun	opal	names a class; MNXM728577 is the generic entry
+fatty alcohols	status	class_noun	opal	names a class
+Carboxylic acids	status	class_noun	opal	names a class
+Carotenoids	status	class_noun	opal	names a class
+Flavonoids	status	class_noun	opal	names a class despite an exact MetaNetX hit
+taxanes	status	class_noun	opal	names a class
+omega-hydroxyacids	status	class_noun	opal	names a class
+glycoglycerolipids	status	class_noun	opal	names a class
+methyl ketones	status	class_noun	opal	names a class despite an exact MetaNetX hit
+phosphatidylethanolamine	status	class_noun	opal	lipid class; candidates differ in acyl chain
+phosphatidylglycerol	status	class_noun	opal	lipid class; candidates differ in acyl chain
+Protein	status	non_metabolite	opal	not a metabolite
+membrane protein	status	non_metabolite	opal	not a metabolite
+Serine-rich proteins	status	non_metabolite	opal	not a metabolite
+Cytoplasmic disulfide-bonded proteins	status	non_metabolite	opal	a folding state, not a product
+Protein-Glycosylation	status	non_metabolite	opal	a modification, not a product
+GFP	status	non_metabolite	opal	reporter protein
+pDNA	status	non_metabolite	opal	nucleic acid product
+plasmidDNA	status	non_metabolite	opal	nucleic acid product
+Silk	status	polymer	opal	polymer, no single MNXM
+PHA	status	polymer	opal	polymer, no single MNXM
+PHB	status	polymer	opal	polymer; the monomer (R)-3HB is a separate target string
+poly (3-hydroxybutyrate-co-3-hydroxypropionate)	status	polymer	opal	copolymer, no single MNXM
+H2	status	no_scoreable_element	opal	no carbon; scoreable on no element this benchmark builds
+h2	status	no_scoreable_element	opal	no carbon; scoreable on no element this benchmark builds
+octadec-2-enoyl-ACP C18:1	status	ambiguous	opal	two MetaNetX entries, neither carrying structure
+cardiolipin C16:0	status	ambiguous	opal	three MetaNetX entries differing in acyl chain
+R-3HV	status	unresolved	opal	3-hydroxyvalerate absent from MetaNetX 4.5 name space
+S-3HV	status	unresolved	opal	3-hydroxyvalerate absent from MetaNetX 4.5 name space
+3-hydroxy-gamma-butyrolactone	status	unresolved	opal	absent from MetaNetX 4.5 name space
+1_2-Propanediol	name	propane-1,2-diol	opal	underscore is LASER's comma
+1_2-propanediol	name	propane-1,2-diol	opal	underscore is LASER's comma
+1_4-butanediol	name	butane-1,4-diol	opal	underscore is LASER's comma
+rr-2_3-BDO	name	(R,R)-butane-2,3-diol	opal	abbreviation
+3-HP	name	3-hydroxypropanoate	opal	abbreviation
+3-methyl-1-butanol	name	isoamyl alcohol	opal	synonym
+isopentanol	name	isoamyl alcohol	opal	synonym
+n-butanol	name	butan-1-ol	opal	synonym
+isopropanol	name	propan-2-ol	opal	synonym
+acetalaldehyde	name	acetaldehyde	opal	typo in source
+B-ALANINE	name	beta-alanine	opal	ASCII greek
+Adipic Acid	name	adipate	opal	acid/conjugate-base naming
+Fumaric acid	name	fumarate	opal	acid/conjugate-base naming
+L-fumarate	name	fumarate	opal	fumarate is achiral; the L- prefix is spurious
+glutaric acid	name	glutarate	opal	acid/conjugate-base naming
+rosmarinate	name	rosmarinic acid	opal	acid/conjugate-base naming
+glucose-6P	name	D-glucose 6-phosphate	opal	abbreviation
+mevalonate_phosphate	name	(R)-5-phosphomevalonate	opal	abbreviation
+R-3HB	name	(R)-3-hydroxybutanoate	opal	abbreviation
+S-3HB	name	(S)-3-hydroxybutanoate	opal	abbreviation
+isoprenol	name	isopentenol	opal	synonym
+Taxadiene	name	taxa-4(5),11(12)-diene	opal	systematic name
+amorphadiene	name	amorpha-4,11-diene	opal	systematic name
+astragalin	name	kaempferol 3-O-beta-D-glucoside	opal	systematic name
+quercetin 3-O-xyloside	name	quercetin 3-O-beta-D-xylopyranoside	opal	systematic name
+Ethyl butyrate	name	ethyl butanoate	opal	systematic name
+Alanine-Glutamine	name	L-alanyl-L-glutamine	opal	dipeptide written as two residues
+palmitoyl-ACP C16:0	name	palmitoyl-[acp]	opal	ACP thioester notation
+hexadec-2-enoyl-ACP C16:1	name	(2E)-hexadecenoyl-[acp]	opal	ACP thioester notation
+PE(16:1)	name	phosphatidylethanolamine (16:1)	opal	lipid shorthand
+PG(16:0) dipalmitoyl	name	phosphatidylglycerol (16:0)	opal	lipid shorthand
+phosphatidylglycerol C16:0	name	phosphatidylglycerol (16:0)	opal	lipid shorthand
+PG(16:1) palmitoleoyl	name	phosphatidylglycerol (16:1)	opal	lipid shorthand

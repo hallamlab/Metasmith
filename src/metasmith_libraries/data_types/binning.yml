@@ -1,0 +1,104 @@
+types:
+  metagenome_sample:
+    properties:
+      _: a metagenome sample identifier for binning
+
+  contig_to_bin_table:
+    properties:
+      _: contig to bin assignment table
+      ext: tsv
+
+  metabat2_contig_to_bin_table:
+    extends:
+    - contig_to_bin_table
+    properties:
+      method: metabat2
+
+  semibin2_contig_to_bin_table:
+    extends:
+    - contig_to_bin_table
+    properties:
+      method: semibin2
+
+  comebin_contig_to_bin_table:
+    extends:
+    - contig_to_bin_table
+    properties:
+      method: comebin
+
+  # MetaWRAP is one step, not three: its bin_refinement consolidates MetaBAT2,
+  # MaxBin2 and CONCOCT into a single set, and that consolidated set is what is
+  # used. The three raw bin sets are not products here.
+  metawrap_contig_to_bin_table:
+    extends:
+    - contig_to_bin_table
+    properties:
+      method: metawrap
+
+  # bin_refinement's own CheckM1 table, which comes free with the refinement and
+  # is NOT taxonomy::checkm_stats. Two producers of one type cannot be told apart
+  # by targets or by lineage, and this table is CheckM1 while that one is CheckM2
+  # -- different columns, different completeness estimates.
+  metawrap_bin_stats:
+    properties:
+      _: MetaWRAP bin_refinement quality table -- completion, contamination and GC per consolidated bin, from CheckM1
+      ext: tsv
+
+  # CAMISIM's own per-read truth table (reads_mapping.tsv.gz: anonymous_read_id,
+  # genome_id, tax_id, read_id), registered as a given parented to the sample like
+  # the reads themselves. NOT CAMI's own binning_gs.tsv/gsa_mapping.tsv.gz -- those
+  # key on the CAMI-provided gold-standard-assembly's own contig ids
+  # (e.g. S9C933009), which share no id space with a participant's own assembly
+  # (e.g. megahit's k141_N). Scoring a self-assembled binning therefore needs this
+  # read-level table joined against the sample's own alignment::bam, not the
+  # GSA-keyed table -- see cami_contig_truth.py.
+  cami_read_truth:
+    properties:
+      _: CAMISIM per-read genome-of-origin ground truth for one sample (gzipped tsv, header "#anonymous_read_id genome_id tax_id read_id")
+      ext: tsv.gz
+
+  gold_standard_table:
+    properties:
+      _: CAMI/AMBER Bioboxes-format binning ground truth (SEQUENCEID/BINID/TAXID[/_LENGTH])
+      ext: tsv
+
+  # Built by cami_contig_truth.py: cami_read_truth's per-read genome votes,
+  # majority-voted per contig of the SAME assembly a contig_to_bin_table
+  # descends from, so its SEQUENCEIDs are our own contig ids and line up with
+  # metabat2_contig_to_bin_table etc. for amber.py.
+  contig_gold_standard_table:
+    extends:
+    - gold_standard_table
+    properties:
+      method: cami_read_truth_majority_vote
+
+  # amber.py's per-tool summary (results.tsv) -- one row of
+  # completeness/purity/accuracy/rand-index columns per scored binner.
+  amber_results:
+    properties:
+      _: AMBER genome-binning assessment summary (results.tsv) for one contig_to_bin_table scored against a contig_gold_standard_table
+      ext: tsv
+
+  # amber.py's per-bin detail (genome/<label>/metrics_per_bin.tsv).
+  amber_bin_metrics:
+    properties:
+      _: AMBER per-bin purity/completeness detail (metrics_per_bin.tsv) for one contig_to_bin_table
+      ext: tsv
+
+  # Dereplicated representative-MAG reference for inStrain option (b): the
+  # is_centroid_95==1 bins of a `binning_local::cluster_table`, their contigs
+  # concatenated into one FASTA with scaffold names namespaced by bin_id
+  # (<bin_id>~k141_N -- bare k141_N collide across bins), plus a scaffold->genome
+  # table (.stb) and a minimap2 index (.mmi). inStrain maps every sample's reads
+  # to it, then compares across samples.
+  #
+  # Rounds 3 to 5 recorded this as built ONCE outside the DAG and handed to the
+  # driver as an input, and so it had no producer while both inStrain transforms
+  # required it. But `binning/skani_dedup.py` already produces the cluster table it
+  # is built from, so the reference was one transform away, and that transform is
+  # `binning/derep_mag_reference.py` as of curation round 6. The three filenames are
+  # fixed by the consumers; see the note in that file before renaming any of them.
+
+  derep_mag_ref:
+    properties:
+      _: dereplicated representative-MAG reference dir (mag_ref.fna + mag_ref.stb + mag_ref.mmi)

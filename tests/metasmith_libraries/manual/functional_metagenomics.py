@@ -1,0 +1,102 @@
+import os, sys
+from pathlib import Path
+from metasmith.python_api import Agent, Source, SshSource, DataInstanceLibrary, TransformInstanceLibrary, DataTypeLibrary
+from metasmith.python_api import Resources, Size, Duration, TargetBuilder
+from metasmith.python_api import Runtime
+from metasmith.hashing import KeyGenerator
+
+base_dir = Path("./cache")
+
+
+agent_home = SshSource(host="sockeye", path=Path("/scratch/st-shallam-1/pwy_group/metasmith")).AsSource()
+smith = Agent(
+    home = agent_home,
+    runtime=Runtime.APPTAINER,
+    setup_commands=[
+        'module load gcc/9.4.0',
+        'module load apptainer/1.3.1',
+    ]
+)
+
+notebook_name = Path(__file__).stem
+
+input_raw = [
+
+
+    (Path(f"/scratch/st-shallam-1/pwy_group/staging/Ana_PS.fastq.gz"), "sequences::long_reads", dict(parity="single", length_class="long")),
+
+]
+_, _hash = KeyGenerator.FromStr("".join(str(p) for p, t, m in input_raw))
+in_dir = base_dir/f"{notebook_name}/inputs.{_hash}.xgdb"
+print(in_dir)
+todo = {}
+for p, t, m in input_raw:
+    if isinstance(p, Path):
+        meta = Path(f"{p.name}.json")
+        reads = p
+    else:
+        k = p
+        meta = Path(f"{p}.json")
+        reads = Path(f"{p}.acc")
+    todo[p] = {meta, reads}
+
+if in_dir.exists():
+    inputs = DataInstanceLibrary.Load(in_dir)
+else:
+    inputs = DataInstanceLibrary(in_dir)
+    inputs.Purge()
+    inputs.AddTypeLibrary(namespace="sequences", lib=DataTypeLibrary.Load("../data_types/sequences.yml"))
+    inputs.AddTypeLibrary(namespace="ncbi", lib=DataTypeLibrary.Load("../data_types/ncbi.yml"))
+    for p, t, m in input_raw:
+        if isinstance(p, Path):
+            m["acc"] = p.name.split(".")[0].split("_")[0]
+            meta = inputs.AddValue(f"{p.name}.json", m, "sequences::read_metadata")
+            reads = inputs.AddItem(p, t, parents={meta})
+        else:
+            k = p
+            meta = inputs.AddValue(f"{p}.json", m, "sequences::read_metadata")
+            reads = inputs.AddValue(f"{p}.acc", p, t, parents={meta})
+    inputs.Save()
+
+
+resources = [
+    DataInstanceLibrary.Load(f"../resources/{n}")
+    for n in [
+        "env",
+    ]
+]
+
+transforms = [
+    TransformInstanceLibrary.Load(f"../transforms/{n}")
+    for n in [
+        "logistics",
+        "assembly",
+    ]
+]
+
+task = smith.GenerateWorkflow(
+    samples=[inputs.AsView(mask=v) for k, v in todo.items()],
+    resources=resources,
+    transforms=transforms,
+    targets=[
+        "sequences::miniasm_gfa",
+
+    ],
+)
+p = task.plan.RenderDAG(base_dir/f"{notebook_name}/dag")
+print(task.ok, len(task.plan.steps))
+print(p)
+print(f"task: {task.GetKey()}, input {in_dir}")
+
+smith.StageWorkflow(task, on_exist="clear", verify_external_paths=False)
+
+with open("../secrets/slurm_account_sockeye") as f:
+    SLURM_ACCOUNT = f.readline()
+params = dict(
+    slurmAccount=SLURM_ACCOUNT,
+)
+smith.RunWorkflow(
+    task=task,
+    config_file=smith.GetNxfConfigPresets()["slurm"],
+    params=params,
+)

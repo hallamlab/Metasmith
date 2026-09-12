@@ -1,0 +1,621 @@
+<title>KBase in Fifty-Four Verbs</title>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@600;700&family=IBM+Plex+Serif:ital,wght@0,400;0,500;1,400&display=swap">
+<style>
+:root {
+  --ground:#F6F8F6; --surface:#FFFFFF; --raised:#EEF2EF;
+  --ink:#171C1A; --ink2:#4A5651; --ink3:#78857F;
+  --rule:#DCE3DF; --rule-strong:#C3CEC8;
+  --entity:#017A5B; --family:#3FB08D; --warn:#B85E12;
+  --seq-0:#E4F0EB; --seq-1:#B7DACC; --seq-2:#79C0A8; --seq-3:#2F9E7C; --seq-4:#017A5B;
+  --sans:"IBM Plex Sans Condensed",'Helvetica Neue',Arial,sans-serif;
+  --serif:"IBM Plex Serif",Georgia,'Times New Roman',serif;
+  --mono:"IBM Plex Mono",ui-monospace,'SFMono-Regular',Menlo,monospace;
+  --measure:68ch; --wide:1080px;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --ground:#101412; --surface:#171D1A; --raised:#1E2622;
+    --ink:#E8EDEA; --ink2:#A5B2AC; --ink3:#7A8781;
+    --rule:#28322E; --rule-strong:#3A4742;
+    --entity:#35CBA2; --family:#17836B; --warn:#E5964A;
+    --seq-0:#1B2420; --seq-1:#234237; --seq-2:#1D6551; --seq-3:#25A483; --seq-4:#4FD9B2;
+  }
+}
+:root[data-theme="dark"] {
+  --ground:#101412; --surface:#171D1A; --raised:#1E2622;
+  --ink:#E8EDEA; --ink2:#A5B2AC; --ink3:#7A8781;
+  --rule:#28322E; --rule-strong:#3A4742;
+  --entity:#35CBA2; --family:#17836B; --warn:#E5964A;
+  --seq-0:#1B2420; --seq-1:#234237; --seq-2:#1D6551; --seq-3:#25A483; --seq-4:#4FD9B2;
+}
+
+* { box-sizing:border-box; }
+body {
+  background:var(--ground); color:var(--ink);
+  font-family:var(--serif); font-size:16.5px; line-height:1.62;
+  -webkit-font-smoothing:antialiased;
+}
+.page { max-width:var(--wide); margin:0 auto; padding:0 24px 96px; }
+.col { max-width:var(--measure); }
+p { margin:0 0 1em; }
+a { color:var(--entity); text-underline-offset:2px; }
+code, .mono { font-family:var(--mono); font-size:.86em; }
+h1,h2,h3 { font-family:var(--sans); font-weight:700; text-wrap:balance; margin:0; line-height:1.15; }
+h2 { font-size:1.62rem; letter-spacing:-.01em; }
+h3 { font-size:1.06rem; font-weight:600; letter-spacing:.01em; }
+.eyebrow {
+  font-family:var(--sans); font-weight:600; font-size:.72rem; letter-spacing:.14em;
+  text-transform:uppercase; color:var(--ink3);
+}
+.num { font-variant-numeric:tabular-nums; }
+
+/* ---- masthead ---- */
+header.masthead { padding:60px 0 34px; border-bottom:2px solid var(--ink); }
+header.masthead h1 {
+  font-size:clamp(2.4rem,6.4vw,3.9rem); letter-spacing:-.025em; margin:.24em 0 .32em;
+}
+.dek { font-size:1.16rem; color:var(--ink2); max-width:60ch; }
+.byline {
+  display:flex; flex-wrap:wrap; gap:8px 22px; margin-top:26px;
+  font-family:var(--sans); font-size:.8rem; letter-spacing:.05em;
+  text-transform:uppercase; color:var(--ink3);
+}
+
+/* ---- sections ---- */
+section { padding-top:56px; }
+#claim { padding-top:26px; }
+.sechead { display:flex; align-items:baseline; gap:14px; flex-wrap:wrap; margin-bottom:6px; }
+.sechead .eyebrow { padding-top:.2em; }
+.lede { font-size:1.05rem; color:var(--ink2); margin:14px 0 26px; max-width:var(--measure); }
+
+/* ---- claim ---- */
+.claims { margin:38px 0 8px; display:grid; gap:0; }
+.claim {
+  display:grid; grid-template-columns:2.1rem 1fr; gap:0 18px;
+  padding:18px 0; border-top:1px solid var(--rule);
+}
+.claim:last-child { border-bottom:1px solid var(--rule); }
+.claim .k {
+  font-family:var(--mono); font-size:.78rem; color:var(--ink3);
+  padding-top:.42em; letter-spacing:.02em;
+}
+.claim p { margin:0; max-width:64ch; }
+.claim strong { font-weight:500; background:linear-gradient(transparent 62%, var(--seq-1) 62%); }
+
+/* ---- figure shell ---- */
+figure { margin:0 0 8px; }
+.fig {
+  background:var(--surface); border:1px solid var(--rule);
+  padding:26px 26px 20px; margin:8px 0 10px;
+}
+figcaption {
+  font-family:var(--sans); font-size:.78rem; color:var(--ink3);
+  letter-spacing:.02em; margin-top:2px; max-width:76ch;
+}
+figcaption b { color:var(--ink2); font-weight:600; }
+
+/* ---- collapse bars ---- */
+.collapse { display:grid; gap:0; }
+.crow { display:grid; grid-template-columns:96px 1fr; gap:0 20px; padding:15px 0; border-top:1px solid var(--rule); }
+.crow:first-child { border-top:none; padding-top:2px; }
+.crow > .axis { font-family:var(--sans); font-weight:700; font-size:.95rem; padding-top:.1em; }
+.ctrack { position:relative; }
+.cbar { position:relative; height:26px; background:var(--seq-0); }
+.cbar .fill { position:absolute; inset:0 auto 0 0; background:var(--entity); min-width:3px; }
+.clabels { display:flex; justify-content:space-between; gap:12px; margin-top:7px; align-items:baseline; }
+.clabels .before, .clabels .after { font-family:var(--sans); font-size:.82rem; color:var(--ink2); }
+.clabels .after { color:var(--entity); font-weight:600; }
+.ratio {
+  font-family:var(--mono); font-size:.78rem; color:var(--ink3);
+  position:absolute; right:8px; top:4px;
+}
+.cnote { font-size:.85rem; color:var(--ink3); margin-top:2px; font-family:var(--sans); }
+
+/* ---- tables ---- */
+.tablewrap { overflow-x:auto; border:1px solid var(--rule); background:var(--surface); margin:10px 0; }
+table { border-collapse:collapse; width:100%; font-size:.86rem; }
+th, td { text-align:left; padding:7px 12px; border-bottom:1px solid var(--rule); vertical-align:top; }
+thead th {
+  font-family:var(--sans); font-size:.72rem; letter-spacing:.09em; text-transform:uppercase;
+  color:var(--ink3); font-weight:600; border-bottom:1px solid var(--rule-strong);
+  position:sticky; top:0; background:var(--surface); z-index:1;
+}
+tbody tr:last-child td { border-bottom:none; }
+td.n, th.n { text-align:right; font-variant-numeric:tabular-nums; font-family:var(--mono); font-size:.8rem; }
+td.id { font-family:var(--mono); font-size:.76rem; color:var(--ink2); }
+td.verb { font-family:var(--mono); font-size:.82rem; font-weight:500; white-space:nowrap; }
+tr.grouphead td {
+  font-family:var(--sans); font-weight:700; font-size:.74rem; letter-spacing:.11em;
+  text-transform:uppercase; color:var(--ink3);
+  background:var(--raised); border-bottom:1px solid var(--rule-strong); padding:7px 12px;
+}
+.io { font-family:var(--mono); font-size:.76rem; color:var(--ink2); white-space:nowrap; }
+.io .arrow { color:var(--ink3); padding:0 6px; }
+td.verb .tag { margin-top:3px; }
+
+.tag {
+  display:inline-block; font-family:var(--sans); font-size:.66rem; font-weight:600;
+  letter-spacing:.07em; text-transform:uppercase; padding:1px 6px; white-space:nowrap;
+}
+.tag.untyped { color:var(--warn); border:1px solid var(--warn); }
+.tag.plumb { color:var(--ink3); border:1px solid var(--rule-strong); }
+
+/* magnitude bar inside a cell */
+.magcell { min-width:150px; }
+.mag { height:9px; background:var(--seq-0); position:relative; }
+.mag > i { position:absolute; inset:0 auto 0 0; background:var(--seq-3); display:block; }
+
+/* ---- stacked union bar ---- */
+.stack { display:flex; height:38px; gap:2px; }
+.stack > span { display:block; }
+.stackkey { display:flex; flex-wrap:wrap; gap:6px 24px; margin-top:14px; }
+.stackkey div { display:flex; gap:8px; align-items:baseline; font-family:var(--sans); font-size:.84rem; color:var(--ink2); }
+.swatch { width:11px; height:11px; flex:none; position:relative; top:1px; }
+
+/* ---- chart ---- */
+.chartwrap { position:relative; }
+svg { display:block; width:100%; height:auto; overflow:visible; }
+.tip {
+  position:absolute; pointer-events:none; opacity:0; transition:opacity .09s;
+  background:var(--ink); color:var(--ground); padding:6px 9px;
+  font-family:var(--mono); font-size:.74rem; line-height:1.35; white-space:nowrap; z-index:3;
+}
+.tip.on { opacity:1; }
+
+/* ---- gap list ---- */
+.gaps { display:grid; grid-template-columns:repeat(auto-fill,minmax(228px,1fr)); gap:0 0; border-top:1px solid var(--rule); }
+.gap { border-bottom:1px solid var(--rule); border-right:1px solid var(--rule); padding:13px 16px; }
+.gap .verb { font-family:var(--mono); font-size:.86rem; font-weight:500; color:var(--warn); }
+.gap .who { font-family:var(--mono); font-size:.72rem; color:var(--ink3); display:block; margin-top:3px; word-break:break-all; }
+
+/* ---- shape list ---- */
+ul.plain { margin:0 0 1em; padding-left:1.15em; }
+ul.plain li { margin-bottom:.5em; max-width:64ch; }
+
+footer.end { margin-top:72px; padding-top:26px; border-top:2px solid var(--ink); }
+footer.end .col { font-size:.92rem; color:var(--ink2); }
+.filelist { display:grid; gap:0; margin:14px 0 0; }
+.filerow { display:grid; grid-template-columns:230px 1fr; gap:0 18px; padding:7px 0; border-top:1px solid var(--rule); font-size:.86rem; }
+.filerow .f { font-family:var(--mono); font-size:.78rem; color:var(--ink); }
+.filerow .d { color:var(--ink3); font-family:var(--sans); font-size:.84rem; }
+
+@media (max-width:640px) {
+  .crow { grid-template-columns:1fr; gap:6px; }
+  .filerow { grid-template-columns:1fr; gap:2px; }
+  .claim { grid-template-columns:1fr; gap:4px; }
+}
+@media (prefers-reduced-motion: reduce) { * { transition:none !important; } }
+</style>
+
+<div class="page">
+
+<header class="masthead">
+  <div class="eyebrow">DOE KBase &middot; metasmith port &middot; curation round 2</div>
+  <h1>KBase in Fifty-Four Verbs</h1>
+  <p class="dek">The KBase catalog publishes 493 apps over 121 workspace types with 2,758
+  declared parameters, and its users have left 1,633 distinct workflows behind. This round asks
+  how many distinct <em>things</em> that actually is, and proposes the vocabulary a curated
+  metasmith library would be built from.</p>
+  <div class="byline">
+    <span>Catalog fetched <span id="fetched" class="num"></span></span>
+    <span>Proposal only &mdash; nothing is built</span>
+    <span>22 reconciliation checks pass</span>
+  </div>
+</header>
+
+<section id="claim">
+  <div class="claims">
+    <div class="claim"><span class="k">01</span><p>KBase&rsquo;s redundancy is in its
+      <strong>vocabulary, not its science</strong>. 493 apps do 54 distinct things, 121 workspace
+      types name 35 distinct kinds of object, and 2,758 declared parameters leave 262 real
+      knobs.</p></div>
+    <div class="claim"><span class="k">02</span><p>That redundancy is <strong>mechanical, so a
+      property grid removes it without judgment calls</strong>. Four names for a read library,
+      <code>min_contig_len</code> beside <code>min_contig_length</code>, sixty-seven anonymous
+      unions that are one entity with an axis left free. 64 of the 67 unions disappear, and the
+      three survivors all belong to apps that accept any object by design.</p></div>
+    <div class="claim"><span class="k">03</span><p>What does <strong>not</strong> collapse is
+      composition. 1,633 workflow shapes reduce only to 631, because a small vocabulary generates
+      a long tail. But <strong>the head is short: 39 workflows cover half</strong> of everything
+      anyone ran.</p></div>
+    <div class="claim"><span class="k">04</span><p>The blocker for a curated library is not
+      vocabulary. <strong>Thirteen of the 54 verbs&rsquo; most-used implementation declares no
+      typed output at all</strong>, and taxonomic classification has no workspace type anywhere in
+      KBase. That is what stops a chain being asked for, and curation does not fix it.</p></div>
+  </div>
+</section>
+
+<section id="collapses">
+  <div class="sechead"><span class="eyebrow">The four axes</span></div>
+  <h2>Where the count goes</h2>
+  <p class="lede">Each row is one axis of the catalog, measured before and after the
+  normalisation this round proposes. The bars are scaled within their own row, because the
+  four totals are not comparable to one another &mdash; the ratio is the reading.</p>
+  <figure>
+    <div class="fig"><div class="collapse" id="collapse"></div></div>
+    <figcaption>Read from <b>app_tasks.jsonl</b>, <b>type_map.jsonl</b>, <b>param_map.jsonl</b> and
+    <b>workflows.jsonl</b>. The workflow row is the weakest collapse in the set, and that is the
+    finding rather than a shortfall: the vocabulary is small, its compositions are not.</figcaption>
+  </figure>
+</section>
+
+<section id="verbs">
+  <div class="sechead"><span class="eyebrow">Apps</span></div>
+  <h2>The core task vocabulary</h2>
+  <p class="lede">A core task is the verb an app performs. Every one of the 493 catalog apps
+  resolves to exactly one of these or to a named non-task, and the canonical method is the
+  implementation the public narratives actually ran &mdash; the corpus picks it, not taste.
+  <span class="mono">consumes &rarr; produces</span> is the proposal; where KBase&rsquo;s own
+  canonical app declares no typed product the row is flagged.</p>
+  <div class="tablewrap"><table id="verbtable"></table></div>
+  <figcaption>Read from <b>tasks.yml</b>, <b>app_tasks.jsonl</b>, <b>task_io.jsonl</b> and
+  <b>param_map.jsonl</b>. <span class="tag plumb">plumbing</span> marks a verb that moves objects
+  without producing new science; <span class="tag untyped">no typed output</span> marks one whose
+  canonical method declares only a report.</figcaption>
+  <div class="col" style="margin-top:20px">
+    <h3 style="margin-bottom:8px">Three apps carry no verb</h3>
+    <div id="nontasks"></div>
+  </div>
+</section>
+
+<section id="types">
+  <div class="sechead"><span class="eyebrow">Types</span></div>
+  <h2>One grid instead of 121 names</h2>
+  <p class="lede">KBase names a concept once per era, once per container and once per
+  measurement: <code>KBaseAssembly.PairedEndLibrary</code> beside
+  <code>KBaseFile.PairedEndLibrary</code>, one <code>Genome</code> beside four kinds of
+  <code>GenomeSet</code>, eight <code>KBaseMatrices</code> types that differ only in what the
+  cells hold. Replacing that with an entity crossed with property axes is the shape
+  <code>src/metasmith_libraries/data_types/sequences.yml</code> already uses.</p>
+  <figure>
+    <div class="fig">
+      <h3 style="margin-bottom:14px">Workspace types absorbed per entity</h3>
+      <div class="tablewrap" style="border:none;margin:0"><table id="entitytable"></table></div>
+    </div>
+    <figcaption>Entities absorbing more than one workspace type. <span id="naxes"></span> axes &mdash;
+    <code>cardinality</code> folds the eleven <code>*Set</code> types, <code>qc</code> separates a
+    cleaned read library from the dirty one it came from &mdash; recover the distinctions the names
+    were carrying. Read from <b>type_map.jsonl</b>.</figcaption>
+  </figure>
+  <figure>
+    <div class="fig">
+      <h3 style="margin-bottom:14px">What happens to the 67 parameter unions</h3>
+      <div class="stack" id="unionstack"></div>
+      <div class="stackkey" id="unionkey"></div>
+    </div>
+    <figcaption>A union is a parameter accepting several workspace types. It disappears when its
+    members share an entity and differ only along an axis, or when they share one of the seven
+    declared families. Read from <b>type_map.jsonl</b>.</figcaption>
+  </figure>
+  <div class="col">
+    <p>The three survivors are not a modelling gap. Each belongs to an app that accepts every
+    object type by design &mdash; <code>KButil_copy_object</code>, the staging exporter, and one
+    viewer &mdash; so the rule falls out clean: <strong>every union that belongs to a science verb
+    collapses.</strong></p>
+    <div id="families"></div>
+  </div>
+</section>
+
+<section id="config">
+  <div class="sechead"><span class="eyebrow">Config</span></div>
+  <h2>Most parameters are not knobs</h2>
+  <p class="lede">Metasmith has no parameter primitive. A knob reaches a transform as a typed data
+  item whose content is a config blob, so proposing a configuration ontology means proposing one
+  config type per task and saying which of the 2,758 declared parameters belong in it. Most do
+  not, and each of the others has a better home than a config blob.</p>
+  <div class="tablewrap"><table id="disptable"></table></div>
+  <figcaption>Read from <b>config.yml</b> and <b>param_map.jsonl</b>. Bars are shares of the 2,758
+  declared parameters.</figcaption>
+  <div class="col" style="margin-top:26px">
+    <p id="configsum"></p>
+    <h3 style="margin:22px 0 8px">The shared vocabulary</h3>
+    <p style="font-size:.95rem;color:var(--ink2)">A knob earns a place here by being declared by at
+    least two core tasks and meaning the same thing in each. <code>maxaccepts</code> taught the
+    rule: twelve apps declare it and all twelve do homology search, so it is private to one verb
+    rather than shared.</p>
+    <div class="tablewrap"><table id="commontable"></table></div>
+  </div>
+</section>
+
+<section id="workflows">
+  <div class="sechead"><span class="eyebrow">Workflows</span></div>
+  <h2>A short head and a long tail</h2>
+  <p class="lede">Round 1 reduced 3,965 public narratives to 1,633 distinct app sequences. Asked
+  again over verbs &mdash; with plumbing and reporting steps dropped, and the remainder taken as a
+  set because the corpus records cell order rather than dependency order &mdash; those 1,633
+  become 631 canonical workflows over 2,407 narrative copies.</p>
+  <figure>
+    <div class="fig">
+      <h3 style="margin-bottom:4px">Narrative copies covered, by workflow rank</h3>
+      <div class="chartwrap" id="curvewrap"></div>
+    </div>
+    <figcaption>Each point is one more canonical workflow, taken in order of how many scientists
+    ran it. Read from <b>workflows.jsonl</b>.</figcaption>
+  </figure>
+  <div class="tablewrap"><table id="wftable"></table></div>
+  <figcaption>The twenty most-run canonical workflows. <b>Shapes</b> is how many distinct app
+  sequences reduce to that one workflow &mdash; the redundancy the verbs removed.</figcaption>
+</section>
+
+<section id="gaps">
+  <div class="sechead"><span class="eyebrow">Where it breaks</span></div>
+  <h2>The source under-declares itself</h2>
+  <p class="lede">Every gap below is KBase&rsquo;s, not the planner&rsquo;s. An app that reports its
+  result instead of storing it leaves the chain&rsquo;s end untyped, and nothing downstream can ask
+  for it. This is the port&rsquo;s dominant failure class, and the verb vocabulary localises it:
+  it is not spread across 493 apps, it is thirteen verbs.</p>
+  <figure>
+    <div class="fig" style="padding-bottom:0">
+      <h3 style="margin-bottom:14px">Verbs whose canonical method declares no typed output</h3>
+      <div class="gaps" id="gaplist"></div>
+    </div>
+  </figure>
+  <div class="col">
+    <p id="gapsum"></p>
+    <p><code>extract_bins_as_assemblies</code> extracts assemblies and declares none.
+    <code>run_checkM_lineage_wf</code> reports bin quality and declares none.
+    <code>align_reads_using_hisat2</code> and <code>run_stringtie</code>, the two most-run steps of
+    every RNA-seq narrative in the corpus, declare none between them. A hand-written output
+    override table for these thirteen buys more coverage than anything in the planner.</p>
+  </div>
+</section>
+
+<section id="library">
+  <div class="sechead"><span class="eyebrow">If it were built</span></div>
+  <h2>What a curated library would look like</h2>
+  <div class="col">
+    <ul class="plain">
+      <li><strong>One transform per core task</strong>, in a directory named for its domain group,
+      the way <code>src/metasmith_libraries/transforms/</code> is already organised. 47 scientific
+      transforms in place of 371.</li>
+      <li><strong>Templates naming directories, not masks.</strong> The port ships one committed
+      mask directory per template because 27 apps produce an Assembly and 46 require nothing at
+      all. With one producer per type the ambiguity that forced the mask is gone.</li>
+      <li><strong>Imports as deferred inputs, not transforms.</strong> This is the load-bearing bet
+      and it is untested. The 46 pure sources are the cheapest producer of anything, which is why
+      an unmasked solve answers every target with &ldquo;import it from staging&rdquo;. Making them
+      template inputs removes them from the search entirely, and the <code>qc</code> axis stops an
+      importer answering a target downstream of trimming. Neither claim is proved here.</li>
+      <li><strong>Config as one typed item per task</strong>, carrying a YAML block with a median
+      of four fields. The workflow catalogue is 631 YAML rows against one generic author module,
+      in place of one Python module and one mask directory per workflow.</li>
+    </ul>
+  </div>
+</section>
+
+<footer class="end">
+  <div class="col">
+    <p><strong>This round proposes and does not build.</strong> No transform, type or template was
+    written. The deliverable is nine tables under
+    <code>research/kbase/curation/r2/</code> and a gate that reconciles every one of them against
+    the port&rsquo;s own census, catalog and round&nbsp;1 shapes &mdash; never against itself.
+    Rebuild everything with <code>curate.py</code>; it ends by running <code>check.py</code>, which
+    exits non-zero rather than leaving the tables in a state that does not add up.</p>
+  </div>
+  <div class="filelist" id="files"></div>
+</footer>
+
+</div>
+
+<script id="report-data" type="application/json">/*__DATA__*/</script>
+<script>
+const D = JSON.parse(document.getElementById("report-data").textContent);
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s).replace(/[&<>]/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));
+const n = (v) => v.toLocaleString("en-US");
+
+$("fetched").textContent = D.census_date;
+$("naxes").textContent = D.types.axes;
+
+/* -- the four collapses -- */
+$("collapse").innerHTML = D.funnels.map((f) => {
+  const pct = Math.max(1.2, 100 * f.after / f.before);
+  const ratio = (f.before / f.after).toFixed(1);
+  return `<div class="crow">
+    <div class="axis">${esc(f.axis)}</div>
+    <div class="ctrack">
+      <div class="cbar"><div class="fill" style="width:${pct}%"></div>
+        <span class="ratio num">${ratio}&times; fewer</span></div>
+      <div class="clabels">
+        <span class="after"><span class="num">${n(f.after)}</span> ${esc(f.after_label)}</span>
+        <span class="before"><span class="num">${n(f.before)}</span> ${esc(f.before_label)}</span>
+      </div>
+      <div class="cnote">${esc(f.note)}</div>
+    </div></div>`;
+}).join("");
+
+/* -- the verb table -- */
+(() => {
+  const order = Object.keys(D.groups);
+  const rows = [];
+  rows.push(`<thead><tr>
+    <th>Verb</th><th class="n">Apps</th><th>Canonical method</th><th class="n">Copies</th>
+    <th>Consumes &rarr; produces</th><th class="n">Knobs</th></tr></thead><tbody>`);
+  for (const g of order) {
+    const inGroup = D.verbs.filter((v) => v.group === g);
+    if (!inGroup.length) continue;
+    rows.push(`<tr class="grouphead"><td colspan="6">${esc(g)} &mdash; ${esc(D.groups[g])}</td></tr>`);
+    for (const v of inGroup) {
+      const tags = [];
+      if (v.untyped) tags.push('<span class="tag untyped">no typed output</span>');
+      if (v.plumbing) tags.push('<span class="tag plumb">plumbing</span>');
+      rows.push(`<tr>
+        <td class="verb">${esc(v.task)}${tags.length ? "<br>" + tags.join(" ") : ""}</td>
+        <td class="n">${v.apps}</td>
+        <td class="id">${esc(v.canonical)}</td>
+        <td class="n">${n(v.copies)}</td>
+        <td class="io">${esc(v.consumes.join(", ") || "nothing")}<span class="arrow">&rarr;</span>${esc(v.produces.join(", "))}</td>
+        <td class="n">${v.knobs || ""}</td></tr>`);
+    }
+  }
+  rows.push("</tbody>");
+  $("verbtable").innerHTML = rows.join("");
+})();
+
+$("nontasks").innerHTML = `<div class="tablewrap"><table><tbody>${
+  D.non_tasks.map((t) => `<tr><td class="verb">${esc(t.name)}</td>
+    <td class="n">${t.apps}</td><td>${esc(t.means)}</td></tr>`).join("")}</tbody></table></div>`;
+
+/* -- entity absorption -- */
+(() => {
+  const rows = D.types.absorbed.filter(([, c]) => c > 1);
+  const max = rows[0][1];
+  $("entitytable").innerHTML = `<thead><tr><th>Entity</th><th class="n">Types</th>
+    <th class="magcell">Share of the 121</th><th>Entity</th><th class="n">Types</th>
+    <th class="magcell">&nbsp;</th></tr></thead><tbody>` +
+    (() => {
+      const half = Math.ceil(rows.length / 2);
+      let out = "";
+      for (let i = 0; i < half; i++) {
+        const cell = (r) => r ? `<td class="verb">${esc(r[0])}</td><td class="n">${r[1]}</td>
+          <td class="magcell"><div class="mag"><i style="width:${100 * r[1] / max}%"></i></div></td>`
+          : `<td></td><td></td><td></td>`;
+        out += `<tr>${cell(rows[i])}${cell(rows[i + half])}</tr>`;
+      }
+      return out;
+    })() + "</tbody>";
+})();
+
+/* -- union collapse -- */
+(() => {
+  const u = D.types.unions;
+  const segs = [
+    ["one entity, an axis left free", u.entity, "var(--entity)"],
+    ["one declared family", u.family, "var(--family)"],
+    ["genuinely heterogeneous", u.none, "var(--warn)"],
+  ];
+  $("unionstack").innerHTML = segs.map(([, v, c]) =>
+    `<span style="flex:${v};background:${c}"></span>`).join("");
+  $("unionkey").innerHTML = segs.map(([label, v, c]) =>
+    `<div><span class="swatch" style="background:${c}"></span>
+     <span><b class="num">${v}</b> &nbsp;${esc(label)}</span></div>`).join("");
+  $("families").innerHTML = `<div class="tablewrap"><table><thead><tr>
+    <th>Family</th><th>What it is</th></tr></thead><tbody>` +
+    Object.entries(D.types.family_means).map(([k, v]) =>
+      `<tr><td class="verb">${esc(k)}</td><td>${esc(v)}</td></tr>`).join("") +
+    "</tbody></table></div>";
+})();
+
+/* -- parameter dispositions -- */
+(() => {
+  const total = D.params.declared;
+  const max = Math.max(...D.params.dispositions.map((d) => d.declarations));
+  $("disptable").innerHTML = `<thead><tr><th>Disposition</th><th class="n">Declarations</th>
+    <th class="magcell"></th><th class="n">Names</th><th>What it is</th><th>Belongs in</th>
+    </tr></thead><tbody>` +
+    D.params.dispositions.map((d) => `<tr>
+      <td class="verb">${esc(d.name)}</td>
+      <td class="n">${n(d.declarations)}</td>
+      <td class="magcell"><div class="mag"><i style="width:${100 * d.declarations / max}%;background:${d.name === "knob" ? "var(--entity)" : "var(--seq-2)"}"></i></div></td>
+      <td class="n">${d.names}</td>
+      <td>${esc(d.means)}</td>
+      <td style="color:var(--ink3)">${esc(d.home)}</td></tr>`).join("") + "</tbody>";
+  $("configsum").innerHTML = `Of ${n(total)} declared parameters, ${n(D.params.knobs)} are knobs at
+    all. Keeping only the knobs of each verb&rsquo;s canonical method, and dropping the plumbing
+    verbs, leaves <b class="num">${D.params.curated}</b> config fields over
+    <b class="num">${D.params.curated_names}</b> distinct names in
+    <b class="num">${D.params.config_types}</b> config types &mdash; a median of four fields each.`;
+  $("commontable").innerHTML = `<thead><tr><th>Knob</th><th class="n">Tasks</th><th>Kind</th>
+    <th>What it sets</th></tr></thead><tbody>` +
+    D.params.common.map((c) => `<tr><td class="verb">${esc(c.name)}</td>
+      <td class="n">${c.tasks}</td><td class="id">${esc(c.kind)}</td>
+      <td>${esc(c.means)}</td></tr>`).join("") + "</tbody>";
+})();
+
+/* -- coverage curve -- */
+(() => {
+  const pts = D.workflows.curve;
+  const W = 1000, H = 340, L = 52, R = 22, T = 16, B = 40;
+  const px = (i) => L + (i / pts.length) * (W - L - R);
+  const py = (v) => T + (1 - v / 100) * (H - T - B);
+  const path = pts.map((p, i) => `${i ? "L" : "M"}${px(p[0]).toFixed(1)},${py(p[1]).toFixed(1)}`).join("");
+  const area = `M${px(0).toFixed(1)},${py(0).toFixed(1)}` + path.slice(1) +
+               `L${px(pts.length).toFixed(1)},${py(0).toFixed(1)}Z`;
+  const marks = [25, 50, 80, 90].map((f) => {
+    const hit = pts.find((p) => p[1] >= f);
+    return { f, rank: hit[0], y: py(f), x: px(hit[0]) };
+  });
+  const yticks = [0, 25, 50, 75, 100];
+  const xticks = [0, 100, 200, 300, 400, 500, 600];
+  $("curvewrap").innerHTML = `
+  <svg viewBox="0 0 ${W} ${H}" role="img"
+       aria-label="Cumulative share of narrative copies covered as canonical workflows are added in rank order.">
+    <g font-family="IBM Plex Mono, monospace" font-size="12" fill="var(--ink3)">
+      ${yticks.map((t) => `<g><line x1="${L}" x2="${W - R}" y1="${py(t)}" y2="${py(t)}"
+        stroke="var(--rule)" stroke-width="1"/>
+        <text x="${L - 10}" y="${py(t) + 4}" text-anchor="end">${t}%</text></g>`).join("")}
+      ${xticks.map((t) => `<text x="${px(t)}" y="${H - B + 22}" text-anchor="middle">${t}</text>`).join("")}
+    </g>
+    <path d="${area}" fill="var(--seq-1)" opacity="0.45"/>
+    <path d="${path}" fill="none" stroke="var(--entity)" stroke-width="2"
+          stroke-linejoin="round" stroke-linecap="round"/>
+    ${marks.map((m) => `<g>
+      <line x1="${L}" x2="${m.x}" y1="${m.y}" y2="${m.y}" stroke="var(--warn)"
+            stroke-width="1" stroke-dasharray="3 3"/>
+      <line x1="${m.x}" x2="${m.x}" y1="${m.y}" y2="${py(0)}" stroke="var(--warn)"
+            stroke-width="1" stroke-dasharray="3 3"/>
+      <circle cx="${m.x}" cy="${m.y}" r="4.5" fill="var(--warn)" stroke="var(--surface)"
+              stroke-width="2"/>
+      <text x="${m.x + 11}" y="${m.y + (m.f < 70 ? 19 : -11)}"
+            font-family="IBM Plex Sans Condensed, sans-serif"
+            font-size="13" font-weight="600" fill="var(--ink2)">${m.rank} workflows = ${m.f}%</text>
+    </g>`).join("")}
+    <text x="${(L + W - R) / 2}" y="${H - 2}" text-anchor="middle"
+          font-family="IBM Plex Sans Condensed, sans-serif" font-size="12.5"
+          fill="var(--ink3)" letter-spacing="0.06em">CANONICAL WORKFLOWS, RANKED BY NARRATIVE COPIES</text>
+    <rect id="hitarea" x="${L}" y="${T}" width="${W - L - R}" height="${H - T - B}" fill="transparent"/>
+  </svg><div class="tip" id="tip"></div>`;
+  const svg = $("curvewrap").querySelector("svg");
+  const tip = $("tip");
+  const wrap = $("curvewrap");
+  svg.addEventListener("pointermove", (e) => {
+    const box = svg.getBoundingClientRect();
+    const vx = ((e.clientX - box.left) / box.width) * W;
+    if (vx < L || vx > W - R) { tip.classList.remove("on"); return; }
+    const i = Math.min(pts.length - 1, Math.max(0, Math.round(((vx - L) / (W - L - R)) * pts.length) - 1));
+    const p = pts[i];
+    tip.textContent = `${p[0]} workflows → ${p[1].toFixed(1)}% of copies`;
+    tip.classList.add("on");
+    const wb = wrap.getBoundingClientRect();
+    tip.style.left = Math.min(wb.width - tip.offsetWidth - 4, Math.max(0, e.clientX - wb.left + 12)) + "px";
+    tip.style.top = Math.max(0, e.clientY - wb.top - 34) + "px";
+  });
+  svg.addEventListener("pointerleave", () => tip.classList.remove("on"));
+})();
+
+/* -- top workflows -- */
+$("wftable").innerHTML = `<thead><tr><th class="n">Copies</th><th class="n">Shapes</th>
+  <th>Proposed name</th><th>Core tasks</th><th></th></tr></thead><tbody>` +
+  D.workflows.top.slice(0, 20).filter((w) => w.name).map((w) => `<tr>
+    <td class="n">${w.copies}</td><td class="n">${w.shapes}</td>
+    <td class="verb">${esc(w.name)}</td>
+    <td class="io" style="white-space:normal">${esc(w.tasks.join(" + "))}</td>
+    <td>${w.typed ? "" : '<span class="tag untyped">untyped end</span>'}</td></tr>`).join("") +
+  "</tbody>";
+
+/* -- gaps -- */
+$("gaplist").innerHTML = D.gaps.untyped_verbs.map((g) =>
+  `<div class="gap"><span class="verb">${esc(g.task)}</span>
+   <span class="who">${esc(g.canonical)}</span></div>`).join("");
+$("gapsum").innerHTML = `Beyond those thirteen, one proposed role has no KBase workspace type
+  behind it at all: <code>${esc(D.gaps.no_workspace_type.join(", "))}</code>. Every classifier in
+  the catalog reports its assignment and stores nothing, so a taxonomic classification cannot be
+  named as a target. A further <b class="num">${D.gaps.corpus_apps_absent_from_catalog}</b> apps
+  appear in the narrative corpus and no longer exist in the catalog, so no verb can be assigned to
+  them at all.`;
+
+/* -- file list -- */
+$("files").innerHTML = [
+  ["tasks.yml", "the 54 verbs, their proposed signatures and the rules that assign apps to them"],
+  ["app_tasks.jsonl", "one row per catalog app: verb, evidence, narrative copies, canonical flag"],
+  ["types.yml", "the entities, the twelve property axes and the seven families"],
+  ["type_map.yml / .jsonl", "every workspace type on the grid, and every union resolved"],
+  ["task_io.jsonl", "each verb's proposed signature beside what its apps actually declare"],
+  ["config.yml", "the dispositions, the normalisation rules and the shared knob vocabulary"],
+  ["param_map.jsonl", "one row per declared parameter: normalised name, verb, disposition"],
+  ["workflows.jsonl", "one row per canonical workflow, with its member shapes and copies"],
+  ["check.py", "22 assertions, each joining back to catalog/ or curation/r1/"],
+].map(([f, d]) => `<div class="filerow"><span class="f">${esc(f)}</span>
+  <span class="d">${esc(d)}</span></div>`).join("");
+</script>

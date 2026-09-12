@@ -1,0 +1,182 @@
+manifest:
+  chunkOrfsForAnnotation.py:
+    instance_id: 1e206a6592bfa8b2654934c7a98c5653b5ed25a6b940f80a25022b9901baaa8e1657
+    origin: leaf
+    type: transforms::transform
+  downloadAmrfinderDB.py:
+    instance_id: 1e20ad92abbb8bbe7ed4c02e8e0c0054d3aa5170e58f76f68798c4f4074f7bb185e3
+    origin: leaf
+    type: transforms::transform
+  downloadAnkhWeights.py:
+    instance_id: 1e20b20e3631f0a5bc405b9cb1b7b890ef7b79c72cdaa295417b8d6b7f4bb8d167d8
+    origin: leaf
+    type: transforms::transform
+  downloadAntiSmashDB.py:
+    instance_id: 1e2022f6833e3020bff249c063e6b0cd74fc63761a832af00fc9d97d4fd9ffcefaf9
+    origin: leaf
+    type: transforms::transform
+  downloadBacmetDB.py:
+    instance_id: 1e20ec69124d94f88352c1ac4e77ab034b570aeb3fbeb23e4f49d67430bb87df2559
+    origin: leaf
+    type: transforms::transform
+  downloadBaktaDB.py:
+    instance_id: 1e20c859e2181ab0b9dda677bbe50f0972fc96bfc43c1324e8a4197b690b9f7aa123
+    origin: leaf
+    type: transforms::transform
+  downloadBuscoLineage.py:
+    instance_id: 1e202b8e9f2ee533b543edcdb2acd4ce4eb6c4dd4dcc09760f6d9230c0c062003823
+    origin: leaf
+    type: transforms::transform
+  downloadCardDB.py:
+    instance_id: 1e20674f7f571cbab95c29345c71da5df9a65266fe9f8071cee34414e474b7d4b19c
+    origin: leaf
+    type: transforms::transform
+  downloadCentrifugerDB.py:
+    instance_id: 1e20fe506bde9aff537ec1a695ec4b352a5e017fd8178b8f2f29e53d6a19cd7a82a5
+    origin: leaf
+    type: transforms::transform
+  downloadCrassphageRef.py:
+    instance_id: 1e2066481f8be12c9d44ffbbe924b0d20052695d5767d6a40b7d85a3fb9eca809187
+    origin: leaf
+    type: transforms::transform
+  downloadDramDB.py:
+    instance_id: 1e20357e3f1a5e332a4a916130fae6b790b72f5bf6c085cfb12104dfe7059ae83a68
+    origin: leaf
+    type: transforms::transform
+  downloadESMCWeights.py:
+    instance_id: 1e20d7aab4a82cc20e624dfe760639eaa0015fd6e3f2e56841021b3c680ceee77c6b
+    origin: leaf
+    type: transforms::transform
+  downloadESMFoldWeights.py:
+    instance_id: 1e20cc24c982b072a1920aee15ab3e9e71ddce3cd2af1814f3720a40c4845388b402
+    origin: leaf
+    type: transforms::transform
+  downloadEggnogDB.py:
+    instance_id: 1e20729a3e94c43cc7871df39cc6a26104ee8259708907c59e2131de5c0ad8800edf
+    origin: leaf
+    type: transforms::transform
+  downloadFeastSources.py:
+    instance_id: 1e20d764ae8619755c546df6f249976c59d988d349df79de901883e3b6120571b3a3
+    origin: leaf
+    type: transforms::transform
+  downloadGanon2DB.py:
+    instance_id: 1e20158d69e35bf37843d391336d21dd47b8c9167b5e534dcd359ff67448bb2b01c5
+    origin: leaf
+    type: transforms::transform
+  downloadGtdbDB.py:
+    instance_id: 1e2008ccdae7dbfa8e652812e7dcdaa823ce25614ca8dda8dc474e0730f772c7e9c4
+    origin: leaf
+    type: transforms::transform
+  downloadInterProScanDB.py:
+    instance_id: 1e208b6e8e0527837914041bd1fc6b01c6816aae2121be4c06160b3097f136100cb0
+    origin: leaf
+    type: transforms::transform
+  downloadKofamDB.py:
+    instance_id: 1e20bfbec118e64da460d34fe0d022fc7961c422d219fd1adae5d7d492eacbbd1b3f
+    origin: leaf
+    type: transforms::transform
+  downloadKraken2DB.py:
+    instance_id: 1e202d8be7bd226055bb7dd8a4e487be5d959c302a7ad35e0fbcefca95fe64d55e18
+    origin: leaf
+    type: transforms::transform
+  downloadMegaresDB.py:
+    instance_id: 1e204706c8544e1164be4457384eeaadf98a607ce591252bbabfe85fdb8d3088123e
+    origin: leaf
+    type: transforms::transform
+  downloadMetabuliDB.py:
+    instance_id: 1e203b38e691ee14f3d1fa1fd750c866a69492860157e98d255ac597becf817f16cf
+    origin: leaf
+    type: transforms::transform
+  downloadMetaphlanDB.py:
+    instance_id: 1e2029f7aad910cd367465ea312a1725e30937c1f940ef87198082fde7663157a5cf
+    origin: leaf
+    type: transforms::transform
+  downloadPathofactDB.py:
+    instance_id: 1e2057552715e4a5165d402e52caccedd6f55b100e8e77d74935d59b3173c37ab051
+    origin: leaf
+    type: transforms::transform
+  downloadPhyloflashDB.py:
+    instance_id: 1e203002f33e99a77bb568f8835aaf6a25000dd52178ee3b6e253748e87a67dcbe37
+    origin: leaf
+    type: transforms::transform
+  downloadPredictfDB.py:
+    instance_id: 1e20a39ec4408ac61c75b615f30c96a85aba56d41cb62bce84040501140ad9e2743f
+    origin: leaf
+    type: transforms::transform
+  downloadProtT5XLWeights.py:
+    instance_id: 1e209fda1da1d310bd3c8c274f5c6079a1ac1029a39e0778ca7b8a812112eb6c8a3d
+    origin: leaf
+    type: transforms::transform
+  downloadSaProtWeights.py:
+    instance_id: 1e2084ef2e8b11525bb5b4f5d49c604ccc3140370f14c97244d789efa4408cb0679c
+    origin: leaf
+    type: transforms::transform
+  downloadSilvaDB.py:
+    instance_id: 1e205c93d823b5d3b24b98ab6608ed92ee406c3c1575ebf41bf58639329fb21b7f7a
+    origin: leaf
+    type: transforms::transform
+  downloadSylphDB.py:
+    instance_id: 1e200e02fcde06367967e08ee88381389275b520e890e820b41b185f2dd3307d8dbf
+    origin: leaf
+    type: transforms::transform
+  downloadTcdbDB.py:
+    instance_id: 1e20d6eaae72c84e847e2bd942e3f969ed8344c6ea4278d151d2035b0098e1d74c72
+    origin: leaf
+    type: transforms::transform
+  downloadUniRef50DB.py:
+    instance_id: 1e20a450c587700d5b8f0e9d5b3ada6b2879408e7471e7873517dfc9cb2210482686
+    origin: leaf
+    type: transforms::transform
+  downloadVfdbDB.py:
+    instance_id: 1e20aad7741ae3955f8cb712d0e48ce43911db2f252cf865d87919a1339ded4d10a9
+    origin: leaf
+    type: transforms::transform
+  downloadVirsorter2DB.py:
+    instance_id: 1e20064e933d1d94fb7dd93e5f6f6d1b0bb9d5a0c1bb146ee7215bb250f9eb006102
+    origin: leaf
+    type: transforms::transform
+  dumpNcbiSra.py:
+    instance_id: 1e201d19682ddca8d405da735a0a3109818c8affb43cdae739aa66d3d659e7283ed9
+    origin: leaf
+    type: transforms::transform
+  getNcbiAssembly.py:
+    instance_id: 1e20cd07e690b4baba9615739164b91ac7ba4cbaa91bc8b48381ef086f6e20558ed9
+    origin: leaf
+    type: transforms::transform
+  getNcbiSra.py:
+    instance_id: 1e200242ee6fe7ec4477552fd0d45cfee7465cbb7900af6d2e13543ff697d2c7282f
+    origin: leaf
+    type: transforms::transform
+  interleave_short_reads.py:
+    instance_id: 1e20f45b9f468d5816c1bbb6f14817a3bb6c43bd470ffa2a9611afbce1753c0fab11
+    origin: leaf
+    type: transforms::transform
+  interleave_zipped_short_reads.py:
+    instance_id: 1e20f937732f9375fb62cb1a4a02dfc682e787a050d84e55a02dd85a4852faba7023
+    origin: leaf
+    type: transforms::transform
+  ora2fastq.py:
+    instance_id: 1e2074fadc30c8efc0407ffa899e19489859effb8714665d0e3c15daff8bd1443f16
+    origin: leaf
+    type: transforms::transform
+  pullContainer.py:
+    instance_id: 1e20d914b57f6c9aba3a60781f2e7b392703fc70f58a6a7b07899c8867d035c204a7
+    origin: leaf
+    type: transforms::transform
+  ref_genomad.py:
+    instance_id: 1e20059a4b2ad3080aee7006afb62912da526cb8c7b65cb4deaee2b1ffe70f773fbd
+    origin: leaf
+    type: transforms::transform
+  scatterNcbiAccession.py:
+    instance_id: 1e20009ff0bc0610a8814695424348e94895555c9f20186e6be72e6ae6c365799665
+    origin: leaf
+    type: transforms::transform
+  splitContigsForAmr.py:
+    instance_id: 1e20ffec648fc23c4feb5c8c77cb79d44cfea0e2f8aeda7e7a3dcbab257c1ec63277
+    origin: leaf
+    type: transforms::transform
+  splitOrfsForAmr.py:
+    instance_id: 1e20448b491f8caab31b60fff1d809810592b892491905cf69d82627ef67301f70d6
+    origin: leaf
+    type: transforms::transform
+schema: v1

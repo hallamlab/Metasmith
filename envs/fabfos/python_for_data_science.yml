@@ -1,0 +1,40 @@
+# The conda side of `env::python_for_data_science.env`.
+#
+# That declaration carried only a `container:` key, which makes it unusable under the
+# MAMBA runtime: metasmith selects an env's `conda:` key when the runtime is MAMBA and
+# ASSERTS when the selected key is absent. Four of the six steps in the reference build's
+# acquisition stage require this env, so the whole stage was unrunnable in the only
+# runtime that can run it -- three of its other envs (build-refs-{rdkit,equilibrator,
+# cobra}) are conda-only with no published image, and the runtime is one global setting,
+# not per step.
+#
+# Scoped to what the transforms that ask for this env actually do, which is fetch and
+# reshape small tables:
+#
+#   host_accessions     writes three accession strings          (stdlib only)
+#   literature          git clone + wget + unzip                (the three CLI tools)
+#   kegg_ko_reactions   one urllib call, one pandas join
+#   host_gem            wget a BiGG model JSON
+#   metacyc_licensed    verifies a drop-in and splits two flat-files with pandas
+#   esm_c               resolves an HF revision and downloads the release
+#
+# NOT an attempt to reproduce quay.io/hallamlab/python_for_data_science:1.2.5 package for
+# package. It is the smaller claim that these five transforms run: matching an image's
+# full contents would mean pinning things nothing here imports, and the mismatch would be
+# invisible until a sixth transform relied on one of them.
+name: python_for_data_science
+channels:
+  - conda-forge
+dependencies:
+  - python=3.12
+  - pandas=2.3.*
+  - numpy<2
+  - pyarrow>=24
+  - requests
+  # The three CLI tools literature.py shells out to. wget rather than curl because the
+  # transform's command line is written against wget's flags.
+  - git
+  - wget
+  - unzip
+  # `acquire/esm_c` resolves and downloads the ESM-C release through the hub client.
+  - huggingface_hub

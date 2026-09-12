@@ -1,0 +1,99 @@
+# lookup:: -- the derived tables every metabolism step reads instead of re-parsing.
+#
+# WHY THIS IS NOT interm::. `interm::` is explicitly transient: produced and consumed
+# inside one build, never pinned, never a folder under data/. These are the opposite.
+# They are read by four transforms across three layers, they are what makes the atom
+# node identity ONE artifact rather than five agreeing implementations, and they are
+# worth inspecting after a build to answer "why did this metabolite not resolve" without
+# re-running anything. So they are NAMED, they land in data/processed/lookups/, and
+# REFERENCES.md declares them -- which is what the tier rule requires of anything
+# derived that survives the work directory.
+#
+# WHY NOT ref::. `ref::` ships in the shipped library because a fosmid RUN consumes it.
+# Nothing here is consumed by a run: these exist only while COMPILING R6. Same split
+# build.sh's header draws for `lib::` vs `buildlib::`, applied to data.
+#
+# WHAT THEY REPLACE. Before these, chem_prop.tsv was opened and re-parsed by the
+# extractor, the neural members, the curated member, the direction lane's universe
+# builder and every curation proposer -- 810 MB, six times, with six slightly different
+# ideas of what a trustworthy formula is. reac_xref had TWO loaders with opposite
+# collision policies, only one of which validated the id shape. That is the failure
+# mode these retire: not slowness, but five near-copies of a parse drifting apart while
+# every table still looks well-formed.
+types:
+  lookup_table:
+    properties:
+      _: >-
+        A derived table read by more than one metabolism transform. Pinned and named
+        (data/processed/lookups/), unlike interm::; build-side only, unlike ref::.
+      ext: parquet
+
+  reactions:
+    extends: [lookup_table]
+    properties:
+      _: >-
+        One row per MNXR: the parsed equation (substrates and products as lists, with
+        stoichiometric multiplicity, IN EQUATION ORDER), the balance and transport
+        flags, and the reaction SMILES built once from chem_prop. The SMILES is the
+        column that matters beyond speed -- every mapper must see the SAME string, or
+        the disagreement the ensemble measures between two mappers is partly a
+        disagreement between two SMILES builders. `blockers` names the participants
+        that have no structure, which is what layer 3 works from.
+
+  metabolites:
+    extends: [lookup_table]
+    properties:
+      _: >-
+        The whole chem_prop table, one row per MNXM, plus the two derivations every
+        consumer was making for itself: per-element C/N/S/P counts from the formula
+        (NULL where the formula cannot be trusted -- absent, a `*` polymer, or nested
+        groups) and the InChIKey connectivity block. Whole table, not just reaction
+        participants: the curation lanes search it by name and formula for structured
+        twins, and a twin need not itself appear in any reaction.
+
+  atom_ranks:
+    extends: [lookup_table]
+    properties:
+      _: >-
+        THE NODE IDENTITY CONTRACT, written down. One row per (metabolite, element),
+        carrying the metabolite's canonical SMILES and the CanonicalRankAtoms
+        (breakTies=True) rank of each of its atoms of that element, computed on a
+        sanitised, map-number-stripped molecule. Every layer keys its atoms
+        (mnxm, rank) off THIS table, so four mappers on one rdkit name the same
+        physical atom the same node. Scoped to the reaction universe: a metabolite
+        that appears in no reaction can never be a graph node.
+
+  xrefs:
+    extends: [lookup_table]
+    properties:
+      _: >-
+        chem_xref and reac_xref folded into one long table -- kind, namespace,
+        foreign id, MNX id, description, the source's own equation where it ships one,
+        and n_mnx_for_source. That last column is the point: whether a foreign id maps
+        to more than one MNX id is a FACT, and two loaders disagreeing about whether
+        many-to-one is legal (setdefault vs last-wins) is how the same crosswalk
+        produced two different MetaCyc joins in one build.
+
+  element_counts:
+    extends: [lookup_table]
+    properties:
+      _: >-
+        One row per (metabolite, element): how many atoms of C/N/S/P the species has,
+        taken from its STRUCTURE where it has one, with the route recorded and the
+        number of unspecified residues carried alongside. It exists because a `*`
+        formula states no count while the SMILES beside it states one exactly, so
+        refusing the formula was refusing a species whose atoms are known. NULL still
+        means unknown -- never zero, which is a claim -- and `n_residue` is what keeps
+        an exact count of the explicit atoms from being read as a balance claim about
+        the whole molecule. Consistent with atom_ranks by construction: for a structured
+        participant this count IS len(ranks), and `recount check` asserts it.
+
+  synonyms:
+    extends: [lookup_table]
+    properties:
+      _: >-
+        The structure-supplier index: normalised name keys over MetaNetX's own names
+        and xref descriptions plus ChEBI, ModelSEED and MetaCyc compound names, each
+        row carrying both a conservative and an aggressive normalisation. The fuzzy
+        3-gram index is built in memory from `key_a` rather than stored exploded --
+        same keys, ~40x fewer rows.

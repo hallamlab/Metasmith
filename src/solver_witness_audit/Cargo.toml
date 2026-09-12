@@ -1,0 +1,14 @@
+[package]
+name = "solver_witness_audit"
+version = "0.1.0"
+edition = "2021"
+
+# The dependency points THIS way on purpose. `charon cargo` run in
+# `solver_witness` cannot reach this crate, so "never extracted" is a property of
+# the dependency graph rather than a flag someone can flip. Everything Charon
+# cannot lower -- `String`, `&'static str`, the reporting loops -- lives here.
+[dependencies]
+solver_witness = { path = "../solver_witness" }
+
+[lib]
+path = "src/lib.rs"

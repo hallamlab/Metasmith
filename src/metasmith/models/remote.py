@@ -16,10 +16,6 @@ from ..hashing import KeyGenerator
 from ..logging import Log
 from .paths import DeferredPathError, is_deferred
 
-# Entries a local directory transfer will copy in process before handing the
-# whole thing to rsync instead. Staging moves metadata trees -- a task bundle, a
-# type library -- which are tens of files; a data directory of real results is
-# not what this path is for.
 _LOCAL_TREE_LIMIT = 2048
 
 _globus_domain2uuid: dict[str, str] = {}
@@ -35,8 +31,6 @@ def _get_globus_local_id():
             _globus_local_id = out[0].strip()
     return _globus_local_id
 
-# if in container, globus cli in container while login credentials are mounted
-# since the local endpoint is resolved, do not cache
 @dataclass
 class GlobusSource:
     endpoint: str
@@ -146,14 +140,13 @@ class HttpSource:
     
     @classmethod
     def Parse(cls, address: str):
-        if any(address.startswith(pre) for pre in ["http://", "https://", "ftp://"]): # yes yes, ftp is not http
+        if any(address.startswith(pre) for pre in ["http://", "https://", "ftp://"]):
             return cls(url=address)
         raise ValueError(f"not an http(s) address [{address}]")
     
     def AsSource(self):
         return Source(address=str(self), type=SourceType.HTTP)
 
-# transfer priority
 class SourceType(Enum):
     GLOBUS =    "globus"
     SSH =       "ssh"
@@ -224,24 +217,10 @@ class Source:
         
     @classmethod
     def FromGlobus(cls, url: str):
-        """
-        @url is the link provided by the globus file manager web UI
-        example:
-        https://app.globus.org/file-manager?origin_id=1357abcd-efef-acac-3535-1234567890ab&origin_path=%2F
-        """
         return GlobusSource.Parse(address=url).AsSource()
     
     @classmethod
     def Parse(cls, uri: str) -> Source:
-        """Parse a URI string into a Source. Supports ssh://, http(s)://, globus://, and local paths.
-
-        The ssh form has to round-trip: `SshSource.__str__` renders `ssh://host:path`,
-        and anything that re-saves an agent parses its own stored address back in. A
-        host/path split on `/` does not survive that -- it reads the `:` as part of
-        the host and re-renders a second one, so the address grows a colon on every
-        save. Delegate to `SshSource.Parse`, which owns the `:` form, and keep the
-        older slash form working for addresses written by hand.
-        """
         if uri.startswith("ssh://"):
             rest = uri[len("ssh://"):]
             if ":" in rest:
@@ -253,9 +232,6 @@ class Source:
         elif uri.startswith("http://") or uri.startswith("https://"):
             return cls.FromHttp(uri)
         else:
-            # `~` is how anyone writes a home-relative path, and an agent home is
-            # exactly the kind of path people write that way. Without this it
-            # resolves to a literal directory named `~` under the cwd.
             return cls.FromLocal(Path(uri).expanduser().resolve())
 
     @classmethod
@@ -284,29 +260,21 @@ class Logistics:
         self._queue: list[tuple[Source, Source]] = []
 
     def _check_pures(self, src: Source, dest: Source):
-        # illegal destination types
         assert dest.type not in {SourceType.HTTP}, f"cannot transfer to [{dest.type}]"
         
-        # transfers including cloud must use the same platform
         CLOUD_TYPES = {SourceType.GLOBUS, SourceType.SSH, SourceType.HTTP}
         specified_cloud_types = {x for x in [src.type, dest.type] if x in CLOUD_TYPES}
         assert len(specified_cloud_types) <= 1, f"cannot transfer between [{src.type} -> {dest.type}]"
         
         if len(specified_cloud_types) == 0:
-            dominant = SourceType.DIRECT # including symlinks
+            dominant = SourceType.DIRECT
         else:
             dominant = next(iter(specified_cloud_types))
-            # cloud <-> local must be direct
             cloud, other = (src, dest) if src.type in CLOUD_TYPES else (dest, src)
             assert other.type in CLOUD_TYPES or other.type == SourceType.DIRECT, f"transfer involves [{cloud.type}] so [{other.type}] must be {SourceType.DIRECT}"
         return dominant
 
     def QueueTransfer(self, src: Source, dest: Source):
-        # A deferred path names no file, so a transfer involving one is a bug
-        # upstream -- the stage refusal should already have fired. Said here
-        # too because rsync's own failure for a missing source is a shell exit
-        # code buried in a batch, and nothing else in the transfer path would
-        # notice the shape.
         for role, s in (("source", src), ("destination", dest)):
             if is_deferred(s.GetPath()):
                 raise DeferredPathError(
@@ -326,17 +294,6 @@ class Logistics:
         exclude: list[str]|None = None,
         idle_timeout: float|None = IDLE_TIMEOUT,
     ) -> LogisticsResult:
-        """
-        `exclude` is a list of rsync patterns, relative to each transfer's own
-        root. A pattern containing a slash is anchored there, which is what lets
-        a caller skip one known path without also skipping anything a workflow
-        happened to name similarly deeper in the tree.
-
-        `idle_timeout` bounds the rsync arms by silence -- `-P` keeps a live
-        transfer talking, so a stretch of nothing means the far end is gone.
-        None waits forever. It is not applied to the curl arm, which is silent
-        by construction, nor to globus, which polls.
-        """
         to_dispose: list[LiveShell] = []
         result = LogisticsResult(completed=[], errors=[])
         exclude = list(exclude) if exclude else []
@@ -347,11 +304,6 @@ class Logistics:
 
         with TemporaryDirectory(prefix="msm.") as tmpdir:
             def _execute_local(todo: list[tuple[Source, Source]]):
-                # The shell is made only if something actually needs one. A
-                # LiveShell is a subprocess and two threads, and the round trip
-                # dominates a small copy -- one yml file cost ~45ms of shell for
-                # ~0.1ms of work, which is most of the time it took to make a
-                # workflow (16 type libraries, one transfer each).
                 shell: LiveShell|None = None
                 def _shell():
                     nonlocal shell
@@ -361,39 +313,19 @@ class Logistics:
                         to_dispose.append(shell)
                     return shell
 
-                # What `rsync -auP` does, done in process. The subset is
-                # deliberately narrow -- plain files, symlinks, and directories
-                # of those two -- and everything outside it still goes through
-                # rsync, which owns special files, deletion, and remotes.
-                #
-                # This is latency, not throughput: an rsync is ~45ms of process
-                # spawn on any host and ~0.1ms of actual work on the small
-                # metadata trees staging moves, so a plan that copies a task
-                # dir, a data library and a transform library spent 145ms of
-                # its 170ms waiting for three of them.
                 def _copy_file(src_path: Path, dest_path: Path) -> bool:
-                    if exclude: return False # no notion of patterns here; rsync's
+                    if exclude: return False
                     if src_path.is_symlink() or not src_path.is_file():
                         return False
                     if dest_path.exists() and not dest_path.is_file():
-                        return False  # -> the `rm -r` branch below
+                        return False
                     _write_file(src_path, dest_path)
                     return True
 
                 def _write_file(src_path: Path, dest_path: Path):
-                    # -u: a destination newer than the source is left alone
                     if dest_path.exists() and dest_path.stat().st_mtime > src_path.stat().st_mtime:
                         return
                     dest_path.parent.mkdir(parents=True, exist_ok=True)
-                    # Written aside and moved into place, so an interrupted
-                    # copy cannot leave a truncated file whose mtime is *newer*
-                    # than the source -- which the -u check above would then
-                    # skip forever. copy2 preserves mode and times, which is
-                    # the part of -a that applies to a single file (ownership
-                    # is not preserved by rsync either, unless run as root).
-                    # per pid *and* thread: transfers run on job threads, and two
-                    # of them writing one destination would otherwise share the
-                    # staging name and truncate each other
                     tag = f"{os.getpid()}.{threading.get_ident()}"
                     staged = dest_path.with_name(f".{dest_path.name}.msm.{tag}.part")
                     try:
@@ -411,30 +343,13 @@ class Logistics:
                     dest_path.symlink_to(target)
 
                 def _copy_tree(src_path: Path, dest_path: Path) -> bool:
-                    """`rsync -auP <src>/ <dest>` over a tree, in process.
-
-                    Answers False -- having written nothing -- for any tree it
-                    is not sure of, so the caller can fall back to rsync. The
-                    survey is a separate pass for exactly that reason: a
-                    half-done copy plus a later rsync would be correct, but
-                    "either we did all of it or none of it" is a much easier
-                    contract to reason about at a distance.
-                    """
                     if not src_path.is_dir() or src_path.is_symlink(): return False
                     if dest_path.exists() and not dest_path.is_dir(): return False
-                    # -L resolves symlinks, and following one can walk out of
-                    # the tree entirely; rsync owns that case. Same for excludes
-                    # -- and both checks come before anything is written, so a
-                    # declined tree is handed to rsync whole rather than half done.
                     if exclude: return False
                     if resolve_symlinks and _contains_symlink(src_path): return False
 
                     plan: list[tuple[Path, Path, str]] = []
                     for here, dirs, files in os.walk(src_path, followlinks=False):
-                        # Past a certain size the win is gone -- rsync's own
-                        # walk is faster than ours and its 45ms of startup
-                        # stops mattering -- and holding the plan in memory
-                        # starts to. Bail before it does.
                         if len(plan) > _LOCAL_TREE_LIMIT: return False
                         here = Path(here)
                         rel = here.relative_to(src_path)
@@ -447,11 +362,11 @@ class Logistics:
                             elif entry.is_file():
                                 plan.append((entry, target, "file"))
                             elif entry.is_dir():
-                                continue  # walked into on its own
+                                continue
                             else:
-                                return False  # fifo, socket, device: rsync's
+                                return False
                             if target.exists() and target.is_dir() != entry.is_dir():
-                                return False  # kind changed under us
+                                return False
                     for source, target, kind in plan:
                         if kind == "dir":
                             target.mkdir(parents=True, exist_ok=True)
@@ -505,9 +420,6 @@ class Logistics:
                 return _join
 
             def _execute_globus(todo: list[tuple[Source, Source]]):
-                # Refused rather than ignored: globus has no equivalent, and a
-                # silently-copied excluded path is the failure this argument exists
-                # to prevent.
                 assert not exclude, "globus transfers cannot honour an exclusion"
                 def _to_globus(s: Source):
                     if s.type == SourceType.GLOBUS:
@@ -569,8 +481,8 @@ class Logistics:
                                 continue
                             status = d.get("status")
                             if status not in {"ACTIVE"}:
-                                if status in {"SUCCEEDED"}: completed.extend(batch) # trust globus
-                                tasks.pop(-1) # completed
+                                if status in {"SUCCEEDED"}: completed.extend(batch)
+                                tasks.pop(-1)
                                 continue
                             time.sleep(1)
                     finally:
@@ -605,7 +517,6 @@ class Logistics:
                     batched_ssh[key] = batch
 
                 src_is_dir = {}
-                # prepare for rsync, since it doesn't work if dir <-> file and dest.parent not exists
                 for (src_host, dest_host), batch in batched_ssh.items():
                     with LiveShell() as remote_shell:
                         remote = src_host if src_host != "" else dest_host
@@ -619,23 +530,19 @@ class Logistics:
                             continue
                         for src_s, dest_s, _, _ in batch:
                             src_addr, dest_addr = src_s.CompileAddress(), dest_s.CompileAddress()
-                            if src_host != "": # case: remote -> local
-                                # delete if src.is_dir() != dest.is_dir()
+                            if src_host != "":
                                 res = remote_shell.Exec(f'[[ -e "{src_s.path}" ]] && ([[ -d $(realpath "{src_s.path}") ]] && echo "dir" || echo "file")', history=True)
                                 if any(x in res.out for x in {"file", "dir"}):
                                     src_is_dir[(src_host, src_s.path)] = "dir" in res.out
                                     if dest_s.path.exists():
-                                        if dest_s.path.is_dir() == "dir" in res.out: # is_dir works on symlinks to dirs
+                                        if dest_s.path.is_dir() == "dir" in res.out:
                                             shutil.rmtree(dest_s.path)
-                                # mkdir dest path
                                 dest_s.path.parent.mkdir(exist_ok=True, parents=True)
-                            else: # case: local -> remote
-                                # delete if src.is_dir() != dest.is_dir()
+                            else:
                                 src_is_dir[(src_host, src_s.path)] = src_s.path.is_dir()
                                 if src_s.path.exists():
                                     check = "-f" if src_s.path.is_dir() else "-d"
                                     remote_shell.Exec(f'[[ {check} $(realpath "{dest_s.path}") ]] && rm -r "{dest_s.path}"')
-                                # mkdir dest path
                                 remote_shell.Exec(f'mkdir -p "{dest_s.path.parent}"')
                 shell = LiveShell()
                 shell.RegisterOnErr(lambda x: result.errors.append(f"ssh: {x}"))
@@ -654,10 +561,6 @@ class Logistics:
                             idle_timeout=idle_timeout, what=f"ssh transfer{f' [{label}]' if label else ''}",
                         )
                     completed = []
-                    # One shared LiveShell for all dest-host batches: for remote
-                    # dests we enter via SubShell("ssh host") which pops cleanly
-                    # back to local bash after the batch, so the same shell can
-                    # ssh into the next host. For local dests, plain Path.exists().
                     check_shell = LiveShell()
                     try:
                         check_shell.RegisterOnErr(lambda x: result.errors.append(f"ssh-check: {x}"))
@@ -713,7 +616,7 @@ class Logistics:
             try:
                 _joiners = []
                 for type_category, todo in by_type.items():
-                    exe = { # switch
+                    exe = {
                         SourceType.DIRECT: _execute_local,
                         SourceType.GLOBUS: _execute_globus,
                         SourceType.SSH: _execute_ssh,

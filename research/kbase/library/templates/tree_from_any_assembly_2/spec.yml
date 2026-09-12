@@ -1,0 +1,31 @@
+name: tree_from_any_assembly_2
+description: annotate_genome_assembly -> insert_set_of_genomes_into_species_tree.
+  Seen in 8 public narratives.
+sample_type: kbase::sample
+target_types:
+- kbase::KBaseTrees_Tree
+- kbase::KBaseSearch_GenomeSet
+transform_libraries:
+- w_s0023
+resource_libraries:
+- env
+shared_input_paths: []
+input_library:
+  schema: v1
+  manifest:
+    /msm_deferred/0f9718f29ac74519856d65eb58000db9:
+      type: kbase::study
+      instance_id: 1e2094b5f5de2ed447ffc928c8eebcea638040a5f09284bef4faf4bcb560b5dc492a
+      origin: leaf
+    /msm_deferred/fa5b3bb0516f46e2bd59a0f22de708fe:
+      type: kbase::sample
+      parents:
+        6KN821gk5ZF8@/msm_deferred/0f9718f29ac74519856d65eb58000db9: kbase::study
+      instance_id: 1e20cd1624600ca6df71a8ae55ce8c3061e4e433bd1e342ef280a5c58fd95ccd0604
+      origin: leaf
+    /msm_deferred/fa9cfcd9b1d84ef0998b66bdd61acc24:
+      type: kbase::accepts_33
+      parents:
+        6KN821gk5ZF8@/msm_deferred/fa5b3bb0516f46e2bd59a0f22de708fe: kbase::sample
+      instance_id: 1e204adc1179678cdf7090c0eed4837fc4251d95006f3d8c1e28090bc93940c61373
+      origin: leaf

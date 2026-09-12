@@ -1,0 +1,6 @@
+outs:
+- md5: a3141273cdfa000a0cb237ea0e56e9dd.dir
+  size: 180697512
+  nfiles: 10
+  hash: md5
+  path: rhea

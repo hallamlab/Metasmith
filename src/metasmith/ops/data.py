@@ -1,12 +1,13 @@
-"""Data instance library operations: CRUD on libraries and their items."""
 from __future__ import annotations
 
 import os
 import shutil
 import tempfile
+import time
 from pathlib import Path
 
 from ..hashing import KeyGenerator
+from ..logging import Log
 from ..models.libraries import DataInstanceLibrary
 from ..models.paths import DEFERRED
 from ..models.remote import Source
@@ -51,7 +52,6 @@ def create_library(
 
 
 def _link_or_copy(src, dst, *, follow_symlinks=True):
-    """Hardlink a library-internal file, falling back to a copy across filesystems."""
     try:
         os.link(src, dst)
     except OSError:
@@ -63,21 +63,6 @@ def fork_library(
     dest_path: str,
     fork_id: str | None = None,
 ) -> dict:
-    """Copy a library's manifest to a new location under a fresh fork id.
-
-    A fork is the explicit way to say "treat these inputs as new", and its
-    whole point is to discard cache reuse. It is the expensive path.
-
-    Instance ids are content+path addressed, so they do not change just
-    because the manifest moved. Setting `fork_id` is what makes every leaf
-    id stale, and `DataInstanceLibrary` re-derives them with the fork id
-    folded in. Lineage-derived ids are left alone: those are the hash of
-    how an output was produced, not of where it sits.
-
-    Data is not duplicated: items recorded as absolute paths are only manifest
-    entries, symlinks are preserved as symlinks, and library-internal regular files
-    are hardlinked where the filesystem allows.
-    """
     src = Path(library_path).resolve()
     dest = Path(dest_path).resolve()
     assert src.is_dir(), f"library [{src}] does not exist"
@@ -85,7 +70,7 @@ def fork_library(
     assert not dest.exists() or not any(dest.iterdir()), (
         f"fork destination [{dest}] already exists and is not empty"
     )
-    load_data_lib(src)  # fail before copying if the source is not a valid library
+    load_data_lib(src)
     shutil.copytree(src, dest, symlinks=True, copy_function=_link_or_copy, dirs_exist_ok=True)
 
     lib = DataInstanceLibrary.Load(dest)
@@ -105,19 +90,6 @@ def copy_library(
     dest_path: str,
     type_library_paths: list[str] | None = None,
 ) -> dict:
-    """Copy a library verbatim: same paths, same ids, same key.
-
-    The counterpart to `fork_library`, which exists to *break* identity. This
-    one keeps it, and that is the whole point of the operation: a deferred path
-    is minted once and identity follows the path, so a workflow started from a
-    template inherits its rows rather than re-adding them -- re-adding would
-    mint new paths and plan to a different task key than the one the template's
-    own build asserted.
-
-    `type_library_paths` are attached on top, skipping namespaces the copy
-    already has. A template ships only the type libraries it used; whoever
-    edits the copy needs the rest offered to them.
-    """
     src = Path(library_path).resolve()
     dest = Path(dest_path).resolve()
     assert src.is_dir(), f"library [{src}] does not exist"
@@ -125,7 +97,7 @@ def copy_library(
     assert not dest.exists() or not any(dest.iterdir()), (
         f"copy destination [{dest}] already exists and is not empty"
     )
-    load_data_lib(src)  # fail before copying if the source is not a valid library
+    load_data_lib(src)
     shutil.copytree(src, dest, symlinks=True, copy_function=_link_or_copy, dirs_exist_ok=True)
 
     lib = DataInstanceLibrary.Load(dest)
@@ -145,16 +117,6 @@ def materialize_template(
     dest_path: str,
     type_library_paths: list[str] | None = None,
 ) -> dict:
-    """Build a real library from a template's inline input library.
-
-    The counterpart to `copy_library` for a template stored the new way: there
-    is no directory to `shutil.copytree`, only the data `Spec.Pack` embedded in
-    `spec.yml` (see `DataInstanceLibrary.PackInline`). Every id and path in it
-    is exactly what the template's own build asserted a solve against -- this
-    rebuilds rather than copies, but nothing here mints a new one, so a
-    workflow started from a template still shares its task key rather than
-    being re-added row by row.
-    """
     dest = Path(dest_path).resolve()
     assert not dest.exists() or not any(dest.iterdir()), (
         f"copy destination [{dest}] already exists and is not empty"
@@ -174,24 +136,6 @@ def derive_template_library(
     library_path: str,
     type_library_paths: list[str] | None = None,
 ) -> DataInstanceLibrary:
-    """A deferred copy of a live library: same types and item graph, no paths.
-
-    The counterpart to `materialize_template`, which turns a template's
-    deferred library into a real one. This turns a real one back into a
-    deferred one -- what "save as template" strips is exactly the paths and
-    file content, not the shape: each item keeps its type and its parents, and
-    each parent link is re-pointed at that parent's own freshly minted
-    deferred path, so the derived library solves to the same DAG the source
-    workflow's recipe did.
-
-    A parent recorded against a *different* library than `library_path` itself
-    (rare -- e.g. a resource library entry) is dropped rather than chased: it
-    is out of scope for a first cut of this and a template missing one such
-    edge still solves, just without that one piece of shared lineage. Found by
-    whether the parent's own path is one of this library's items -- not by
-    comparing library keys, which are content-addressed and so are not stable
-    across a save/load round trip the way a path is.
-    """
     src = load_data_lib(library_path)
     dest = Path(tempfile.mkdtemp(prefix="msm-save-template-"))
     lib = DataInstanceLibrary(dest)
@@ -236,16 +180,6 @@ def attach_type_library(
 
 
 def resync_type_libraries(library_path: str, type_library_paths: list[str]) -> dict:
-    """Bring an existing library's type namespaces up to date with the files on disk.
-
-    `create_library`/`materialize_template` add every namespace with
-    `on_exist="skip"`, which is right for a brand-new library -- nothing is
-    there yet to collide with. A library that has been living for a while has
-    the opposite problem: a namespace it already knows (say `ncbi`) may have
-    gained a new type in the standard library since, and `skip` would leave
-    it exactly as stale as it found it. This overwrites instead, one load and
-    one save for every namespace rather than one round trip per namespace.
-    """
     lib = load_data_lib(library_path)
     for tp in type_library_paths:
         lib.AddTypeLibrary(Path(tp).resolve(), on_exist="overwrite")
@@ -254,14 +188,6 @@ def resync_type_libraries(library_path: str, type_library_paths: list[str]) -> d
 
 
 def _lib_for(library_path, lib: DataInstanceLibrary | None):
-    """The library to work on: one handed in, or one loaded for this call.
-
-    Every mutation below loads and saves for itself, which is right for a CLI
-    verb and wrong for a caller making a hundred of them in a row -- both slow
-    and a window in which a failure leaves the library half built. `lib=` is how
-    such a caller (`ops.inputs.sync`) keeps one load and one save while the
-    rules those functions encode stay in one place.
-    """
     return load_data_lib(library_path) if lib is None else lib
 
 
@@ -273,12 +199,6 @@ def add_item(
     save: bool = True,
     lib: DataInstanceLibrary | None = None,
 ) -> dict:
-    """Register a path, or `DEFERRED` for one that is not known yet.
-
-    The constant is accepted by its rendered spelling as well as by identity, so
-    a caller on the far side of yaml or a url can say the same thing this one's
-    caller says without a second vocabulary for it.
-    """
     lib = _lib_for(library_path, lib)
     parent_paths = [Path(p) for p in (parents or [])]
     path = DEFERRED if host_path is DEFERRED or host_path == str(DEFERRED) else Path(host_path)
@@ -286,6 +206,39 @@ def add_item(
     if save:
         lib.Save()
     return {"library": str(library_path), "path": str(rec_path), "dtype": dtype}
+
+
+def cite_pool_item(
+    library_path: str,
+    host_path: str,
+    dtype: str,
+    *,
+    instance_id: str,
+    origin: str = "imported",
+    lineage_payload: bytes | None = None,
+    parents: list[str] | None = None,
+    save: bool = True,
+    lib: DataInstanceLibrary | None = None,
+) -> dict:
+    """Register a pool entry in a library, keeping the identity the pool gave it.
+
+    The path is the agent's. Nothing here opens it, and nothing re-derives the
+    identity -- an import assigned it, and re-deriving would be inventing a
+    second answer to a question the pool has already answered.
+    """
+    lib = _lib_for(library_path, lib)
+    rec_path = lib.RegisterItem(
+        Path(host_path), dtype,
+        instance_id=instance_id, origin=origin,
+        lineage_payload=lineage_payload,
+        parents=[Path(x) for x in (parents or [])],
+    )
+    if save:
+        lib.Save()
+    return {
+        "library": str(library_path), "path": str(rec_path), "dtype": dtype,
+        "instance_id": instance_id, "origin": origin,
+    }
 
 
 def add_value(
@@ -306,12 +259,6 @@ def add_value(
 
 
 def _ancestors_of(lib, start: Path) -> set[Path]:
-    """Every path `start` descends from, walked rather than read off one record.
-
-    `Load` expands the chain, so `lib.parents[p]` is usually already the closure
-    -- but a library built up in memory has only the links that were stated, and
-    the check below has to be right in both cases.
-    """
     seen: set[Path] = set()
     queue = [start]
     while queue:
@@ -324,14 +271,6 @@ def _ancestors_of(lib, start: Path) -> set[Path]:
 
 
 def _assert_acyclic(lib, item: Path, parent_paths: list[str]):
-    """Refuse a lineage that would close a loop.
-
-    The browser filters these out of the menu, but this route is reachable
-    without it, and a cycle is not something the library notices: `AsSamples`
-    walks ancestors *and* their descendants, so a loop makes every mask the
-    whole library, and the expand-on-load / collapse-on-save pair is not
-    defined over one.
-    """
     for raw in parent_paths:
         p = Path(raw)
         assert p != item, f"[{item}] cannot descend from itself"
@@ -362,12 +301,6 @@ def replace_item_parents(
     save: bool = True,
     lib: DataInstanceLibrary | None = None,
 ) -> dict:
-    """The same, but as a replacement: what is not listed is unlinked.
-
-    `set_item_parents` can only ever add, so it cannot express "this no longer
-    descends from that" -- and an editable lineage has to. An empty list clears
-    an item's parents outright.
-    """
     lib = _lib_for(library_path, lib)
     item = Path(item_path)
     assert item in lib.manifest, f"not found [{item_path}]"
@@ -404,18 +337,10 @@ def retype_item(
     save: bool = True,
     lib: DataInstanceLibrary | None = None,
 ) -> dict:
-    """Say the item is a different type, without moving anything.
-
-    Nothing about the row's identity on disk changes: a type is a label on a
-    manifest entry, so this is a manifest edit and the filesystem is never
-    touched. The children keep their lineage -- but the parent *record* each one
-    carries names its parent's type, so those are rebuilt through the one place
-    that knows how to build them, or the old name would be written back out.
-    """
     lib = _lib_for(library_path, lib)
     item = Path(item_path)
     assert item in lib.manifest, f"not found [{item_path}]"
-    lib.GetType(dtype)  # refuse an unknown type before the manifest is touched
+    lib.GetType(dtype)
     was = lib.manifest[item]
     lib.manifest[item] = dtype
     lib._invalidate_endpoint_cache()
@@ -432,15 +357,6 @@ def retype_item(
 
 
 def _relink_children(lib: DataInstanceLibrary, old: Path, new: Path) -> int:
-    """Rebuild the parent record of everything that descends from `old`.
-
-    A parent is stored as metadata carrying the parent's path *and* type, so a
-    re-keyed or retyped parent leaves its children describing something the
-    manifest no longer holds. `Rename` does not chase those down either, which
-    is a latent bug rather than a licence to repeat it. Rebuilding through
-    `SetParentsOf` keeps the record built in one place instead of reaching into
-    the metadata objects.
-    """
     affected = [
         (child, [pm.path for pm in plist])
         for child, plist in lib.parents.items()
@@ -458,25 +374,12 @@ def repoint_item(
     save: bool = True,
     lib: DataInstanceLibrary | None = None,
 ) -> dict:
-    """Point the row at a different path, and be honest about the difference.
-
-    An absolute entry is a *pointer* to the user's own file: re-pointing it is a
-    manifest edit and must not go near the filesystem -- neither the file at the
-    old path nor the one at the new path is ours to move. A relative entry is
-    library-owned (that is what `AddValue` writes), so there the file genuinely
-    is the library's and moving it is the correct behaviour: that case delegates
-    to `Rename`, which is written for it.
-
-    Identity is derived from path and type, so either way the row's instance_id
-    changes and anything downstream of it loses cache reuse.
-    """
     lib = _lib_for(library_path, lib)
     old, new = Path(item_path), Path(new_path)
     assert old in lib.manifest, f"not found [{item_path}]"
     if old == new:
         return {"library": str(library_path), "old": item_path, "new": new_path,
                 "moved": False, "relinked": 0}
-    # a collision is a refusal with a message, not an assertion out of AddItem
     assert new not in lib.manifest, f"[{new}] is already registered here"
     assert old.is_absolute() == new.is_absolute(), (
         f"[{old}] is {'an absolute' if old.is_absolute() else 'a library-relative'} path, "
@@ -485,7 +388,6 @@ def repoint_item(
 
     moved = not old.is_absolute()
     if moved:
-        # library-owned: the file is the library's and the rename is a real move
         lib.Rename(old, new, _save=False)
     else:
         lib.manifest[new] = lib.manifest[old]
@@ -493,13 +395,6 @@ def repoint_item(
         if old in lib.parents:
             lib.parents[new] = lib.parents[old]
             del lib.parents[old]
-        # ...and the identity entry with it. Left behind, the new path has none
-        # at all and `_resolve_instance_meta` falls through to the legacy
-        # `(path, dtype, library key)` derivation -- and the library key is a
-        # hash of the whole packed manifest, so that one row's id would then
-        # move every time any *other* row changed. `Rename` (the branch above)
-        # does this through `_migrate_instance_meta`; this branch has to as
-        # well. Filling in a deferred path is exactly this branch.
         lib._migrate_instance_meta(old, new)
         lib._invalidate_endpoint_cache()
     relinked = _relink_children(lib, old, new)
@@ -546,6 +441,35 @@ def save_library(library_path: str, update_types: bool = True) -> dict:
     return {"library": str(library_path), "saved": True}
 
 
+def pin_library(library_path: str, deep: bool = False) -> dict:
+    lib = load_data_lib(library_path)
+    return lib.Pin(deep=deep)
+
+
+def unpin_library(library_path: str) -> dict:
+    lib = DataInstanceLibrary.Load(library_path, check_pinned_stamps=False)
+    return lib.Unpin()
+
+
+def restamp_library(library_path: str, entry: str | None = None) -> dict:
+    lib = DataInstanceLibrary.Load(library_path, check_pinned_stamps=False)
+    return lib.Restamp([Path(entry)] if entry else None)
+
+
+def invalidate_items(
+    library_path: str, entries: list[str] | None = None, all: bool = False
+) -> dict:
+    lib = load_data_lib(library_path)
+    if not entries and not all:
+        raise ValueError("name at least one entry, or pass all=True")
+    return lib.Invalidate(None if all else [Path(e) for e in entries])
+
+
+def verify_library(library_path: str, deep: bool = False) -> dict:
+    lib = DataInstanceLibrary.Load(library_path, check_pinned_stamps=False)
+    return lib.Verify(deep=deep)
+
+
 def trace_lineage(library_path: str, from_type: str, to_type: str) -> dict:
     lib = load_data_lib(library_path)
     pairs: dict[str, list[str]] = {}
@@ -581,46 +505,58 @@ def import_library(
     on_exist: str = "skip",
     as_image: bool = True,
 ) -> dict:
-    """S7 — Import a library across workspaces, preserving cache identity.
-
-    Transfers the library at `src_uri` into `dest_path` via LoadFrom, then
-    upserts every imported `origin in {"lineage", "imported"}` DataInstance
-    into the destination `task_cache/` as `origin="imported"` rows. Leaf
-    instances are NOT upserted — their identity is unique-per-AddItem and
-    not cache-meaningful. The upserted rows point at the library's files
-    on disk so downstream workflows resolve them as cache hits.
-
-    `cache_root` defaults to `<dest_path>/../task_cache/` to match the
-    agent-home convention; pass an explicit path to override.
-    """
     src = Source.Parse(src_uri)
     dest = Path(dest_path).resolve()
     lib = DataInstanceLibrary.LoadFrom(src, dest, as_image, on_exist)
 
-    from ..caching.layout import (
-        MANIFEST_NAME,
-        default_cache_root,
-        imported_shard_dir,
-    )
+    from ..caching.layout import default_cache_root
 
     if cache_root is None:
         cache_root_path = default_cache_root(dest.parent)
     else:
         cache_root_path = Path(cache_root).resolve()
-    cache_root_path.mkdir(parents=True, exist_ok=True)
 
-    from ..caching.store import CacheStore, encode_manifest
+    admitted = admit_library_items(lib, cache_root_path)
+    return {
+        "library": str(lib.location),
+        "src": src_uri,
+        "item_count": len(lib.manifest),
+        "imported_cache_entries": admitted["admitted"],
+        "skipped_leaf_entries": admitted["skipped_leaf"],
+        "cache_root": str(cache_root_path),
+    }
 
-    store = CacheStore.open(cache_root_path)
+
+def admit_library_items(
+    lib: DataInstanceLibrary,
+    cache_root: Path,
+    *,
+    paths: list[Path] | None = None,
+    include_leaves: bool = False,
+) -> dict:
+    """Register a library's items in the pool, through the pool's write door.
+
+    The item keeps its bytes where they are. What enters the store is the
+    entry: the item's identity, the name of its type, where it sits, and the
+    identities it descends from. Nothing is stat'd beyond the one call that
+    asks how big it is, and nothing is walked -- a folder of six hundred
+    thousand files costs what a single file costs.
+    """
+    from ..caching.admission import IMPORTED, PoolFile, admit
+    from ..caching.store import CacheStore
+
+    cache_root = Path(cache_root)
+    cache_root.mkdir(parents=True, exist_ok=True)
+    store = CacheStore.open(cache_root)
     try:
-        upserts = 0
+        admitted = 0
         skipped_leaf = 0
-        for path in lib.manifest:
+        for path in (paths if paths is not None else list(lib.manifest)):
             meta = lib.instance_meta.get(path)
             if meta is None:
                 continue
             origin = meta.get("origin", "leaf")
-            if origin == "leaf":
+            if origin == "leaf" and not include_leaves:
                 skipped_leaf += 1
                 continue
             instance_id_hex = meta.get("instance_id")
@@ -629,47 +565,341 @@ def import_library(
             try:
                 key = bytes.fromhex(instance_id_hex)
             except ValueError:
-                # Legacy (non-multihash) id; keep the library entry but
-                # skip the cache row since the key shape doesn't match.
                 continue
-            lineage_payload = meta.get("lineage_payload") or b""
-            output_dir = imported_shard_dir(cache_root_path, instance_id_hex)
-            output_root_rel = str(output_dir.relative_to(cache_root_path))
-            output_dir.mkdir(parents=True, exist_ok=True)
-            payload = encode_manifest(
-                cache_key=key,
-                transform_key="",
-                signature="",
-                lineage_payload=lineage_payload,
-                output_files=[{"relpath": str(path)}],
-                out_identities={},
-                index_payload=[],
-            )
-            (output_dir / MANIFEST_NAME).write_bytes(payload)
-            size_bytes = 0
-            try:
-                size_bytes = (lib.location / path).stat().st_size
-            except OSError:
-                pass
-            store.upsert(
+            inst = lib.Get(path)
+            written = admit(
+                cache_root=cache_root,
                 key=key,
-                transform_key="",
-                payload=payload,
-                output_root=output_root_rel,
-                size_bytes=size_bytes,
-                origin="imported",
+                origin=IMPORTED,
+                files=[PoolFile(
+                    dtype_name=inst.dtype_name,
+                    dtype_key=inst.dtype.key,
+                    abspath=str(inst.ResolvePath()),
+                    slot_id=instance_id_hex,
+                    parents=_parent_ids(lib, path),
+                    size=_shallow_size(inst.ResolvePath()),
+                )],
+                lineage_payload=meta.get("lineage_payload") or b"",
+                store=store,
             )
-            upserts += 1
+            if written.status != "failed":
+                admitted += 1
+    finally:
+        store.close()
+    return {
+        "cache_root": str(cache_root),
+        "admitted": admitted,
+        "skipped_leaf": skipped_leaf,
+    }
+
+
+def _parent_ids(lib: DataInstanceLibrary, path: Path) -> list[str]:
+    ids = []
+    for pm in lib.parents.get(path, []):
+        if pm.path not in lib.manifest:
+            continue
+        ids.append(lib.Get(pm.path).instance_id)
+    return sorted(set(ids))
+
+
+def _shallow_size(path: Path) -> int:
+    # One stat, never a walk. A directory reports its own entry size, which is
+    # not what it holds -- the alternative is a tree walk on every import, and
+    # that is the cost this whole design exists to refuse.
+    try:
+        return int(Path(path).stat().st_size)
+    except OSError:
+        return 0
+
+
+def resolve_store_root(
+    agent_home: str | None = None, cache_root: str | None = None,
+) -> Path:
+    """Which pool a store verb acts on.
+
+    The pool lives at an agent's home, because that is where a run's products
+    land. An explicit root wins; otherwise the named agent's, otherwise
+    $AGENT_HOME's.
+    """
+    from ..caching.layout import default_cache_root
+
+    if cache_root is not None:
+        return Path(cache_root).resolve()
+    home = agent_home or os.environ.get("AGENT_HOME")
+    if not home:
+        raise ValueError(
+            "no store: pass --agent-home or --cache-root, or set AGENT_HOME. "
+            "The pool lives at an agent's home."
+        )
+    return default_cache_root(Path(home).resolve())
+
+
+def _resolve_dtype(dtype: str, type_library_paths: list[str] | None):
+    """The endpoint a type name refers to, when anything here can say.
+
+    Given type libraries, an unresolvable name is refused: the caller asked for
+    the check. Given none, the name is taken as declared -- the type is the
+    user's statement of what the file is, and this command never opens the file
+    to second-guess it.
+    """
+    from ..models.libraries import DataTypeLibrary
+
+    if not type_library_paths:
+        return None, False
+    libs = {}
+    for raw in type_library_paths:
+        ns, _sep, tp = str(raw).partition("=")
+        if not tp:
+            ns, tp = "", ns
+        tp = Path(tp).resolve()
+        libs[ns or tp.stem] = DataTypeLibrary.Load(tp)
+    if "::" not in dtype:
+        raise ValueError(f"[{dtype}] is not in the format <namespace>::<type>")
+    ns, name = dtype.split("::", 1)
+    if ns not in libs:
+        raise ValueError(
+            f"namespace [{ns}] is not among the type libraries given: "
+            f"{sorted(libs)}"
+        )
+    if name not in libs[ns]:
+        raise ValueError(f"type [{name}] is not in [{ns}]")
+    return libs[ns][name], True
+
+
+# Path segments that name storage a site expects to delete. A pool under one of
+# them is a delete scheduled against the meaning of every shard built on it.
+_IMPERMANENT = ("scratch", "tmp", "temp")
+
+
+def pool_retention_warning(root: Path) -> str | None:
+    """What an operator needs to hear before the pool is worth anything.
+
+    An imported identity is assigned, so losing the pool loses the only record
+    of what every shard keyed on an import refers to. The pool is not a cache of
+    a calculation and cannot be rebuilt by re-importing: a re-import is a new
+    act and mints new identities, which match nothing that survived.
+
+    So the pool has to outlive the shards, and that makes WHERE it lives a
+    correctness question rather than an operational preference. Scratch
+    filesystems delete on age since creation, not since access, so a pool under
+    one has a delete already scheduled against it -- and the failure is silent
+    and arrives long after the mistake, which is the reason this speaks up at
+    the moment the first thing is imported rather than in a document.
+    """
+    parts = {p.lower() for p in Path(root).parts}
+    hit = sorted(parts & set(_IMPERMANENT))
+    if not hit:
+        return None
+    return (
+        f"the pool at [{root}] sits under [{'/'.join(hit)}]. An imported "
+        "identity is assigned, not derived, so it cannot be rebuilt: if this "
+        "path is purged, every shard keyed on an import here becomes "
+        "unreadable and re-importing mints identities that match none of them. "
+        "Put the agent home on storage that is not swept, or accept that this "
+        "campaign's reuse ends when the path does."
+    )
+
+
+def record_library(lib):
+    """Write a library down and read it back, so its ids become a record.
+
+    A plan refuses a given whose identity the calling process minted, because
+    an invented identity moves on every submission and takes the run directory
+    with it. Saving and loading is what turns a declaration into a record.
+
+    Right for a declaration that is authored once and whose ids nothing will
+    ever reuse: a template's placeholders, a diagram's synthetic inputs, a
+    probe. **Wrong for a campaign's real inputs** -- it will not stop the ids
+    moving the next time the declaration is rebuilt, because nothing outside
+    the file remembers them. Those belong in a pool: see `Agent.PoolGivens`.
+    """
+    from ..models.libraries import DataInstanceLibrary
+
+    lib.Save()
+    return DataInstanceLibrary.Load(lib.location)
+
+
+def import_item(
+    path: str,
+    dtype: str,
+    *,
+    agent_home: str | None = None,
+    cache_root: str | None = None,
+    name: str | None = None,
+    parents: list[str] | None = None,
+    tags: list[str] | None = None,
+    type_library_paths: list[str] | None = None,
+) -> dict:
+    """Register a file or folder the user already has as a pool instance.
+
+    Nothing is copied, moved or read. The item keeps its bytes where they are
+    and the pool records what it is: a freshly minted identity, the type, the
+    name it was given, where it sits, and what it descends from.
+
+    Every call is a separate act and mints a separate identity. Importing one
+    path twice is therefore two entries, which is how a caller says a second
+    declaration is a second thing, and two files handed the same name stay two
+    things rather than collapsing into one. `mint_import_id` carries the whole
+    argument; it reverses what this function used to do.
+
+    An import is a setup act, performed once against a pool. A driver
+    references what is already there and never calls this, which is why an
+    assigned identity costs nothing in cache hits.
+
+    The pool's lifetime is its campaign's. A minted identity cannot be rebuilt,
+    so every shard keyed on this import dies when the pool does, reuse never
+    crosses a campaign boundary, and a measurement comparing two batches needs
+    both of them inside the agent home's retention window.
+    """
+    from ..caching.admission import IMPORTED, PoolFile, admit, mint_import_id
+
+    root = resolve_store_root(agent_home, cache_root)
+    target = Path(path).expanduser().resolve()
+    endpoint, resolved = _resolve_dtype(dtype, type_library_paths)
+    label = name if name is not None else str(target)
+    key_hex = mint_import_id(dtype, label)
+    arrival_ns = time.time_ns()
+    # Once per pool, at the act that first gives it something to lose.
+    if not (root / "cache.sqlite").exists():
+        warning = pool_retention_warning(root)
+        if warning:
+            Log.Warn(warning)
+
+    parent_ids = _resolve_parent_ids(root, parents or [])
+    written = admit(
+        cache_root=root,
+        key=bytes.fromhex(key_hex),
+        origin=IMPORTED,
+        files=[PoolFile(
+            dtype_name=dtype,
+            dtype_key=endpoint.key if endpoint is not None else "",
+            abspath=str(target),
+            slot_id=key_hex,
+            parents=parent_ids,
+            size=_shallow_size(target),
+        )],
+        name=label,
+        imported_at=arrival_ns,
+        tags=tuple(tags or ()),
+    )
+    return {
+        "cache_root": str(root),
+        "path": str(target),
+        "dtype": dtype,
+        "name": label,
+        "instance_id": key_hex,
+        "type_resolved": resolved,
+        "parents": parent_ids,
+        "tags": sorted(set(tags or ())),
+        "status": written.status,
+    }
+
+
+def _resolve_parent_ids(cache_root: Path, parents: list[str]) -> list[str]:
+    """Parents named by instance id, or by a path already in the store.
+
+    A path names the newest entry that claims it, because an import of a path
+    already imported supersedes the earlier declaration. Name the id to reach
+    an older one.
+    """
+    if not parents:
+        return []
+    by_path = store_ids_by_path(cache_root)
+    known = set(by_path.values())
+    out = []
+    for p in parents:
+        if p in known:
+            out.append(p)
+            continue
+        resolved = by_path.get(str(Path(p).expanduser().resolve()))
+        if resolved is None:
+            raise ValueError(
+                f"[{p}] is neither an instance id nor a path in the store at "
+                f"[{cache_root}]. A parent must already be in the pool, or the "
+                "edge it records points at nothing."
+            )
+        out.append(resolved)
+    return sorted(set(out))
+
+
+def store_ids_by_path(cache_root: Path) -> dict:
+    """Every file the store indexes, by where it sits. Needs no type library.
+
+    One path can be claimed by several entries now that an import mints a fresh
+    identity each time, so the newest claim wins -- the same rule the projection
+    applies, for the same reason.
+    """
+    from ..caching.admission import manifest_arrival_ns, manifest_files
+    from ..caching.store import CacheStore, decode_manifest
+
+    root = Path(cache_root)
+    if not (root / "cache.sqlite").exists():
+        return {}
+    store = CacheStore.open(root)
+    try:
+        best: dict[str, tuple] = {}
+        for entry in store.iter_entries():
+            try:
+                manifest = decode_manifest(entry.payload)
+            except Exception:
+                continue
+            arrival = manifest_arrival_ns(manifest, entry.created_at)
+            for f in manifest_files(manifest):
+                iid = f.InstanceId()
+                rank = (arrival, iid)
+                path = str(f.Resolve(entry.output_root))
+                if path not in best or rank > best[path][0]:
+                    best[path] = (rank, iid)
+        return {path: iid for path, (_rank, iid) in best.items()}
     finally:
         store.close()
 
+
+def forget_item(
+    instance_id: str,
+    *,
+    agent_home: str | None = None,
+    cache_root: str | None = None,
+    delete: bool = False,
+) -> dict:
+    """Drop an imported entry from the pool.
+
+    Only the entry. The bytes were never the pool's -- an import indexes a file
+    where the user put it -- so there is nothing here that could delete them,
+    and `--delete` removes the shard, which holds only the manifest.
+    """
+    import shutil as _shutil
+
+    from ..caching.admission import IMPORTED, shard_for
+    from ..caching.store import CacheStore
+
+    root = resolve_store_root(agent_home, cache_root)
+    key = bytes.fromhex(instance_id)
+    store = CacheStore.open(root)
+    try:
+        entry = store.probe(key)
+        if entry is None:
+            return {"cache_root": str(root), "key": instance_id, "found": False}
+        if entry.origin != IMPORTED:
+            raise ValueError(
+                f"[{instance_id}] is a product, not an import. A product is "
+                "reclaimed by `metasmith cache gc`, which knows it can be "
+                "re-derived."
+            )
+        store.tombstone(key)
+        shard = shard_for(root, instance_id, IMPORTED)
+        removed = False
+        if delete and shard.is_dir() and shard.is_relative_to(root):
+            _shutil.rmtree(shard)
+            removed = True
+    finally:
+        store.close()
     return {
-        "library": str(lib.location),
-        "src": src_uri,
-        "item_count": len(lib.manifest),
-        "imported_cache_entries": upserts,
-        "skipped_leaf_entries": skipped_leaf,
-        "cache_root": str(cache_root_path),
+        "cache_root": str(root),
+        "key": instance_id,
+        "found": True,
+        "tombstoned": True,
+        "shard_removed": removed,
     }
 
 
@@ -682,29 +912,9 @@ def show_item_lineage(
     depth: int | None = None,
     include_logs: bool = False,
     render: bool = True,
+    lib: DataInstanceLibrary | None = None,
 ) -> dict:
-    """Describe an item: declared identity, manifest parents, and lineage tree.
-
-    Two different notions of ancestry meet here and they are not
-    interchangeable. `parents` is the *manifest* relationship a user
-    declares and edits -- it is what the GUI's parent picker writes and
-    what its orphan detection reads, and it exists for an input library
-    that has never been run. `rendered` is the *trace-derived* ancestor
-    graph, which only exists for workflow-produced instances and needs a
-    trace index the input library does not have. Returning only the
-    second empties every consumer of the first with no error to notice,
-    which is exactly what happened once.
-
-    S7: the trace walk goes through `get_lineage_of` and renders as JSON
-    or mermaid. `of=PATH` writes to disk; otherwise the rendered text
-    comes back in the dict so the CLI can print it. `include_logs`
-    attaches per-invocation `.command.*` paths via `get_logs_of`.
-
-    `render=False` returns the cheap half only. List endpoints map this
-    over every item in a library and must not pay for a trace walk per
-    item.
-    """
-    lib = load_data_lib(library_path)
+    lib = _lib_for(library_path, lib)
     p = Path(item_path)
     inst = lib.Get(p)
 

@@ -1,0 +1,10 @@
+channels:
+  - hallamlab
+  - bioconda
+  - conda-forge
+dependencies:
+  # Content, not code: no entry point, nothing here runs on its own, and the
+  # engine that imports its transforms is the consumer -- which is why
+  # `metasmith` is NOT a dependency here. It declares this package instead, and
+  # two-way would be a cycle conda cannot solve.
+  - python>=3.12

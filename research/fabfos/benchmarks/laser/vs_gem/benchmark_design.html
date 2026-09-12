@@ -1,0 +1,865 @@
+<title>ECSPr vs Flux Balance on LASER — benchmark design</title>
+
+<style>
+  :root {
+    --paper:      #f1f3f1;
+    --surface:    #ffffff;
+    --surface-2:  #e7eae8;
+    --ink:        #1a1e20;
+    --ink-2:      #414a4c;
+    --ink-3:      #6d7876;
+    --rule:       #ccd3d1;
+    --rule-soft:  #dee3e1;
+    --accent:     #1c5f5a;
+    --accent-2:   #2d867e;
+    --accent-wash:#dcebe8;
+    --signal:     #a94b19;
+    --signal-wash:#f6e3d7;
+    --shadow:     0 1px 0 rgba(26,30,32,.05), 0 8px 28px -20px rgba(26,30,32,.5);
+
+    --serif: Charter, "Bitstream Charter", "Sitka Text", "Iowan Old Style", Cambria, Georgia, serif;
+    --sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", "JetBrains Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper:      #121618;
+      --surface:    #191e20;
+      --surface-2:  #222a2c;
+      --ink:        #e4e9e7;
+      --ink-2:      #b3bebb;
+      --ink-3:      #7f8c89;
+      --rule:       #313b3d;
+      --rule-soft:  #262f31;
+      --accent:     #63b8ae;
+      --accent-2:   #4fa79d;
+      --accent-wash:#17322f;
+      --signal:     #dd8c55;
+      --signal-wash:#3a2519;
+      --shadow:     0 1px 0 rgba(0,0,0,.3), 0 8px 28px -20px rgba(0,0,0,.9);
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --paper:      #121618;
+    --surface:    #191e20;
+    --surface-2:  #222a2c;
+    --ink:        #e4e9e7;
+    --ink-2:      #b3bebb;
+    --ink-3:      #7f8c89;
+    --rule:       #313b3d;
+    --rule-soft:  #262f31;
+    --accent:     #63b8ae;
+    --accent-2:   #4fa79d;
+    --accent-wash:#17322f;
+    --signal:     #dd8c55;
+    --signal-wash:#3a2519;
+    --shadow:     0 1px 0 rgba(0,0,0,.3), 0 8px 28px -20px rgba(0,0,0,.9);
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--serif);
+    font-size: 17px;
+    line-height: 1.62;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* ---------- masthead ---------- */
+
+  .masthead {
+    border-bottom: 1px solid var(--rule);
+    background: var(--surface);
+  }
+  .masthead-inner {
+    max-width: 78rem;
+    margin: 0 auto;
+    padding: 3.4rem 2rem 2.4rem;
+    display: grid;
+    gap: 1.1rem;
+  }
+  .eyebrow {
+    font-family: var(--sans);
+    font-size: .69rem;
+    font-weight: 650;
+    letter-spacing: .16em;
+    text-transform: uppercase;
+    color: var(--accent);
+  }
+  h1 {
+    font-family: var(--sans);
+    font-weight: 700;
+    font-size: clamp(1.9rem, 4.2vw, 3rem);
+    line-height: 1.06;
+    letter-spacing: -.022em;
+    margin: 0;
+    max-width: 22ch;
+    text-wrap: balance;
+  }
+  .deck {
+    font-size: 1.16rem;
+    line-height: 1.5;
+    color: var(--ink-2);
+    max-width: 58ch;
+    margin: 0;
+  }
+  .stamp {
+    display: inline-flex;
+    align-items: center;
+    gap: .55rem;
+    align-self: start;
+    font-family: var(--sans);
+    font-size: .78rem;
+    font-weight: 600;
+    letter-spacing: .01em;
+    color: var(--signal);
+    background: var(--signal-wash);
+    border: 1px solid color-mix(in srgb, var(--signal) 35%, transparent);
+    padding: .38rem .7rem;
+    border-radius: 2px;
+  }
+  .stamp::before {
+    content: "";
+    width: .5rem; height: .5rem;
+    border-radius: 50%;
+    background: var(--signal);
+    flex: none;
+  }
+  .masthead-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0 2.2rem;
+    font-family: var(--mono);
+    font-size: .74rem;
+    color: var(--ink-3);
+    border-top: 1px solid var(--rule-soft);
+    padding-top: 1rem;
+    margin-top: .4rem;
+  }
+  .masthead-meta b { color: var(--ink-2); font-weight: 500; }
+
+  /* ---------- shell ---------- */
+
+  .shell {
+    max-width: 78rem;
+    margin: 0 auto;
+    padding: 3rem 2rem 6rem;
+    display: grid;
+    grid-template-columns: 14rem minmax(0, 1fr);
+    gap: 0 4rem;
+    align-items: start;
+  }
+
+  .rail { position: sticky; top: 2rem; display: grid; gap: 1.8rem; }
+  .rail h2 {
+    font-family: var(--sans);
+    font-size: .67rem;
+    font-weight: 650;
+    letter-spacing: .16em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    margin: 0 0 .7rem;
+    padding-bottom: .45rem;
+    border-bottom: 1px solid var(--rule);
+  }
+  .readout { display: grid; gap: .55rem; }
+  .readout div {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: .6rem;
+    font-family: var(--mono);
+    font-size: .74rem;
+    color: var(--ink-3);
+    line-height: 1.3;
+  }
+  .readout b {
+    color: var(--accent);
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+  }
+  .rail nav { display: grid; gap: .3rem; }
+  .rail nav a {
+    font-family: var(--sans);
+    font-size: .82rem;
+    color: var(--ink-2);
+    text-decoration: none;
+    padding: .16rem 0;
+    border-left: 2px solid transparent;
+    padding-left: .7rem;
+    margin-left: -.7rem;
+    transition: color .12s, border-color .12s;
+  }
+  .rail nav a:hover, .rail nav a:focus-visible {
+    color: var(--accent);
+    border-left-color: var(--accent);
+  }
+
+  main { display: grid; gap: 3.2rem; min-width: 0; }
+
+  /* ---------- sections ---------- */
+
+  section { display: grid; gap: 1.1rem; scroll-margin-top: 2rem; }
+  .sec-head { display: grid; gap: .35rem; border-top: 2px solid var(--ink); padding-top: .8rem; }
+  h2.title {
+    font-family: var(--sans);
+    font-size: 1.42rem;
+    font-weight: 680;
+    letter-spacing: -.014em;
+    line-height: 1.16;
+    margin: 0;
+    text-wrap: balance;
+  }
+  h3 {
+    font-family: var(--sans);
+    font-size: .98rem;
+    font-weight: 650;
+    letter-spacing: -.005em;
+    margin: .9rem 0 -.3rem;
+  }
+  p { margin: 0; max-width: 40rem; }
+  .lede { font-size: 1.06rem; color: var(--ink-2); }
+  ul { margin: 0; padding-left: 1.15rem; max-width: 40rem; display: grid; gap: .5rem; }
+  li::marker { color: var(--accent); }
+  strong { font-weight: 600; }
+  code, .mono {
+    font-family: var(--mono);
+    font-size: .86em;
+    background: var(--surface-2);
+    padding: .08em .34em;
+    border-radius: 2px;
+    color: var(--ink-2);
+  }
+  a { color: var(--accent); }
+
+  /* ---------- provenance chips ---------- */
+
+  .chip {
+    display: inline-block;
+    font-family: var(--sans);
+    font-size: .6rem;
+    font-weight: 650;
+    letter-spacing: .11em;
+    text-transform: uppercase;
+    padding: .12em .42em;
+    border-radius: 2px;
+    vertical-align: .12em;
+    white-space: nowrap;
+  }
+  .chip.m { background: var(--accent-wash); color: var(--accent); }
+  .chip.p { border: 1px solid var(--rule); color: var(--ink-3); }
+  .legend {
+    display: flex; flex-wrap: wrap; gap: .5rem 1.4rem;
+    font-family: var(--sans); font-size: .78rem; color: var(--ink-3);
+    padding: .8rem 1rem;
+    background: var(--surface);
+    border: 1px solid var(--rule-soft);
+    border-radius: 3px;
+  }
+  .legend span { display: inline-flex; align-items: center; gap: .45rem; }
+
+  /* ---------- callout ---------- */
+
+  .callout {
+    background: var(--surface);
+    border: 1px solid var(--rule);
+    border-left: 3px solid var(--accent);
+    border-radius: 3px;
+    padding: 1.1rem 1.3rem;
+    display: grid;
+    gap: .6rem;
+    box-shadow: var(--shadow);
+  }
+  .callout.warn { border-left-color: var(--signal); }
+  .callout .k {
+    font-family: var(--sans);
+    font-size: .66rem;
+    font-weight: 650;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+  }
+  .callout p { max-width: none; }
+
+  blockquote {
+    margin: 0;
+    padding-left: 1.1rem;
+    border-left: 2px solid var(--rule);
+    color: var(--ink-2);
+    font-style: italic;
+    max-width: 40rem;
+  }
+
+  /* ---------- tables ---------- */
+
+  .tw { overflow-x: auto; border: 1px solid var(--rule); border-radius: 3px; background: var(--surface); }
+  table { border-collapse: collapse; width: 100%; font-family: var(--sans); font-size: .84rem; }
+  caption {
+    caption-side: top;
+    text-align: left;
+    font-family: var(--sans);
+    font-size: .72rem;
+    font-weight: 650;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    padding: 0 0 .5rem;
+  }
+  th, td {
+    text-align: left;
+    padding: .55rem .8rem;
+    border-bottom: 1px solid var(--rule-soft);
+    vertical-align: top;
+  }
+  thead th {
+    font-size: .68rem;
+    font-weight: 650;
+    letter-spacing: .09em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    background: var(--surface-2);
+    border-bottom: 1px solid var(--rule);
+    white-space: nowrap;
+  }
+  tbody tr:last-child td { border-bottom: none; }
+  td.num, th.num { text-align: right; font-family: var(--mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  tr.hero td { background: var(--accent-wash); font-weight: 600; }
+  tr.dim td { color: var(--ink-3); }
+  td .sub { display: block; font-size: .74rem; color: var(--ink-3); font-weight: 400; }
+
+  /* ---------- waterfall ---------- */
+
+  .fall { display: grid; gap: .42rem; background: var(--surface); border: 1px solid var(--rule); border-radius: 3px; padding: 1.1rem 1.2rem; }
+  .fall-row { display: grid; grid-template-columns: 12rem minmax(0,1fr) 3.6rem; align-items: center; gap: .8rem; font-family: var(--sans); font-size: .8rem; }
+  .fall-row .lbl { color: var(--ink-2); }
+  .fall-row .lbl em { font-style: normal; color: var(--ink-3); font-size: .74rem; display: block; }
+  .fall-bar { height: .78rem; background: var(--accent); border-radius: 1px; }
+  .fall-bar.ghost { background: var(--surface-2); border: 1px solid var(--rule); }
+  .fall-bar.alt { background: var(--accent-2); opacity: .55; }
+  .fall-row .n { text-align: right; font-family: var(--mono); font-variant-numeric: tabular-nums; color: var(--ink); font-size: .82rem; }
+  @media (max-width: 34rem) { .fall-row { grid-template-columns: 7.5rem minmax(0,1fr) 3rem; } }
+
+  /* ---------- matrix schematic ---------- */
+
+  figure { margin: 0; display: grid; gap: .7rem; }
+  figcaption { font-family: var(--sans); font-size: .78rem; color: var(--ink-3); max-width: 40rem; line-height: 1.5; }
+  figcaption b { color: var(--ink-2); font-weight: 600; }
+  .matrix-wrap {
+    background: var(--surface);
+    border: 1px solid var(--rule);
+    border-radius: 3px;
+    padding: 1.4rem;
+    display: grid;
+    grid-template-columns: auto minmax(0,1fr);
+    grid-template-rows: auto auto;
+    gap: .55rem;
+    align-items: center;
+    max-width: 34rem;
+  }
+  .ax-y {
+    grid-row: 1; grid-column: 1;
+    writing-mode: vertical-rl; transform: rotate(180deg);
+    font-family: var(--sans); font-size: .64rem; font-weight: 650;
+    letter-spacing: .13em; text-transform: uppercase; color: var(--ink-3);
+    justify-self: center;
+  }
+  #matrix { grid-row: 1; grid-column: 2; display: grid; grid-template-columns: repeat(14, 1fr); gap: 2px; }
+  .ax-x { grid-row: 2; grid-column: 2; font-family: var(--sans); font-size: .64rem; font-weight: 650; letter-spacing: .13em; text-transform: uppercase; color: var(--ink-3); text-align: center; }
+  .cell { aspect-ratio: 1; border-radius: 1px; background: var(--surface-2); }
+  .cell.diag { background: var(--accent); box-shadow: 0 0 0 1.5px var(--surface), 0 0 0 2.5px var(--accent); }
+  .mkey { display: flex; flex-wrap: wrap; gap: .4rem 1.2rem; font-family: var(--sans); font-size: .74rem; color: var(--ink-3); }
+  .mkey span { display: inline-flex; align-items: center; gap: .4rem; }
+  .swatch { width: .7rem; height: .7rem; border-radius: 1px; flex: none; }
+
+  /* ---------- task list ---------- */
+
+  .tasks { display: grid; gap: 0; border: 1px solid var(--rule); border-radius: 3px; background: var(--surface); overflow: hidden; }
+  .task { display: grid; grid-template-columns: 3rem minmax(0,1fr) 6.5rem; gap: 1rem; padding: 1rem 1.2rem; border-bottom: 1px solid var(--rule-soft); align-items: start; }
+  .task:last-child { border-bottom: none; }
+  .task .id { font-family: var(--mono); font-size: .82rem; font-weight: 600; color: var(--accent); padding-top: .05rem; }
+  .task .body { display: grid; gap: .3rem; }
+  .task .body h4 { font-family: var(--sans); font-size: .92rem; font-weight: 650; margin: 0; }
+  .task .body p { font-size: .88rem; color: var(--ink-2); max-width: none; line-height: 1.5; }
+  .task .cost { font-family: var(--mono); font-size: .74rem; color: var(--ink-3); text-align: right; font-variant-numeric: tabular-nums; }
+  @media (max-width: 40rem) { .task { grid-template-columns: 2.2rem minmax(0,1fr); } .task .cost { grid-column: 2; text-align: left; } }
+
+  footer {
+    border-top: 1px solid var(--rule);
+    margin-top: 1rem;
+    padding-top: 1.4rem;
+    font-family: var(--mono);
+    font-size: .74rem;
+    color: var(--ink-3);
+    line-height: 1.7;
+  }
+
+  @media (max-width: 62rem) {
+    .shell { grid-template-columns: minmax(0,1fr); gap: 2.4rem; padding-top: 2rem; }
+    .rail { position: static; grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr)); display: grid; gap: 1.6rem 2.4rem; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    * { transition: none !important; animation: none !important; }
+  }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+</style>
+
+<header class="masthead">
+  <div class="masthead-inner">
+    <div class="eyebrow">FabFos · bench-laser · benchmark design</div>
+    <h1>Scoring ECSPr against flux balance on LASER</h1>
+    <p class="deck">The obvious ground-truth metric cannot work on this dataset. This is the argument for why, and the design that replaces it — scoring each published strain design against the designs nobody built.</p>
+    <div class="stamp">Design document — no benchmark results exist yet</div>
+    <div class="masthead-meta">
+      <div><b>dataset</b> data/benchmarks/laser/extraction.tsv</div>
+      <div><b>arms</b> ECSPr×3 · FBA · trivial baseline</div>
+      <div><b>workspace</b> main/benchmarks/laser/vs_gem</div>
+      <div><b>date</b> 2026-08-09</div>
+    </div>
+  </div>
+</header>
+
+<div class="shell">
+
+  <aside class="rail">
+    <div>
+      <h2>Measurement log</h2>
+      <div class="readout">
+        <div><span>LASER observations</span><b>382</b></div>
+        <div><span>after mutation filter</span><b>235</b></div>
+        <div><span>source papers</span><b>175</b></div>
+        <div><span>distinct targets</span><b>116</b></div>
+        <div><span>add reactions</span><b>472</b></div>
+        <div><span>deletions</span><b>222</b></div>
+        <div><span>no heterologous add</span><b>122</b></div>
+        <div><span>deletion-only</span><b>50</b></div>
+        <div><span>topology unchanged</span><b>30</b></div>
+        <div><span>labelled “down”</span><b>2</b></div>
+      </div>
+    </div>
+    <div>
+      <h2>Contents</h2>
+      <nav>
+        <a href="#problem">The metric that cannot work</a>
+        <a href="#pivot">Moving the contrast</a>
+        <a href="#data">What the dataset actually holds</a>
+        <a href="#power">Power on each axis</a>
+        <a href="#arms">The five arms</a>
+        <a href="#scoring">Scoring and nulls</a>
+        <a href="#execution">Execution</a>
+        <a href="#risk">What would falsify this</a>
+      </nav>
+    </div>
+  </aside>
+
+  <main>
+
+    <div class="legend">
+      <span><span class="chip m">measured</span> computed from the real data during design</span>
+      <span><span class="chip p">projected</span> estimate, not yet observed</span>
+    </div>
+
+    <!-- ================= PROBLEM ================= -->
+    <section id="problem">
+      <div class="sec-head">
+        <div class="eyebrow">Problem</div>
+        <h2 class="title">The obvious metric is not weakly powered — it is invalid</h2>
+      </div>
+
+      <p class="lede">The natural test is: apply a condition's genetic edits, rank every metabolite by how much the model says it moved, and check where the measured product lands. Run on 24 real conditions it sits exactly at chance.</p>
+
+      <div class="tw">
+        <table>
+          <caption>Pilot — ECSPr-from-GEM, carbon element, glucose source, 29-metabolite panel, n = 24 conditions <span class="chip m">measured</span></caption>
+          <thead>
+            <tr><th>Statistic</th><th class="num">Observed</th><th class="num">Chance</th><th>Reading</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>Median percentile rank of the true target</td><td class="num">0.50</td><td class="num">0.50</td><td>exactly chance</td></tr>
+            <tr><td>Precision @ 1</td><td class="num">0.083</td><td class="num">0.034</td><td>above, n far too small</td></tr>
+            <tr class="dim"><td>Precision @ 5</td><td class="num">0.208</td><td class="num">0.172</td><td>below chance</td></tr>
+            <tr><td>Fraction with sign(Δ) &gt; 0</td><td class="num">0.625</td><td class="num">—</td><td>no negative class exists</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <p>The instinct is to blame the sample size. That would be the wrong diagnosis. The metric fails for two structural reasons, and neither is fixed by more conditions.</p>
+
+      <h3>LASER has no negatives on the metabolite axis</h3>
+      <p>“They measured lycopene” is not evidence that nothing else moved — it is evidence of what the authors chose to assay. The dataset is a record of screening decisions, not a probing design, so there is no latent negative class to recover. No panel construction, matching scheme or normalisation creates one.</p>
+
+      <h3>The model's response to an addition is close to guaranteed</h3>
+      <p>Rayleigh monotonicity means two-terminal effective conductance rises unconditionally when conductance is added to a network. For the metabolite a design was built to feed, “it went up” therefore carries no information.</p>
+      <p>One nuance matters, because the whole replacement design rests on it: per-metabolite <em>draw</em> under ECSPr's universal-leak formulation is <strong>not</strong> monotone. Source injection is fixed, so metabolites compete for it, and opening a new sink can lower another metabolite's draw. The off-diagonal of the prediction is genuinely two-sided even though the diagonal is not.</p>
+    </section>
+
+    <!-- ================= PIVOT ================= -->
+    <section id="pivot">
+      <div class="sec-head">
+        <div class="eyebrow">Pivot</div>
+        <h2 class="title">Hold the target fixed and vary the design</h2>
+      </div>
+
+      <p class="lede">Negatives cannot come from what LASER measured. They can come from designs LASER did not build. That reframing also happens to ask the question a metabolic engineer actually has — <em>which of these should I build?</em> — rather than the one nobody asks.</p>
+
+      <div class="callout">
+        <div class="k">The object everything reads</div>
+        <p>A <strong>design × target matrix</strong>: <code>M[d,t]</code> is the predicted change of design <em>d</em> at target <em>t</em>, over all designs and all resolvable targets, z-scored within column so a target's baseline reachability cancels. One <code>measure_leak</code> solve returns a draw for every metabolite, so a whole row costs one solve. FBA fills the identical matrix with Δflux.</p>
+      </div>
+
+      <figure>
+        <div class="matrix-wrap">
+          <div class="ax-y">designs</div>
+          <div id="matrix" role="img" aria-label="Schematic of a design by target matrix with the diagonal highlighted"></div>
+          <div class="ax-x">targets</div>
+        </div>
+        <div class="mkey">
+          <span><span class="swatch" style="background:var(--accent)"></span> diagonal — the design's own measured target</span>
+          <span><span class="swatch" style="background:var(--surface-2);border:1px solid var(--rule)"></span> off-diagonal — designs built for something else</span>
+        </div>
+        <figcaption><b>Schematic, not results.</b> Every test in this design is a read of this one matrix. Down a column: does the design built for this product beat designs built for other products, and beat size-matched designs that were never built at all? Across a row: do ECSPr and FBA rank metabolites alike?</figcaption>
+      </figure>
+
+      <h3>Where the negatives come from</h3>
+      <p>Three sources, and the design uses all three because they fail differently.</p>
+      <ul>
+        <li><strong>Synthesised counterfactual designs</strong> — the headline. Draw <code>n_add</code> reactions from the pooled LASER add universe and <code>n_del</code> from the deletion universe, size-matched to the real design. Unlimited n; controls monotonicity by construction, because the counterfactuals add the same number of edges.</li>
+        <li><strong>Other papers' real designs</strong> — the off-diagonal. Stronger negatives, since somebody actually built and published them, but columns are badly imbalanced and edit-set size is uncontrolled. Free: no extra solves.</li>
+        <li><strong>The same paper's alternative arms</strong> — the cleanest comparison possible, same lab and same assay. Measured out at 6 usable series. A case study, not a metric.</li>
+      </ul>
+    </section>
+
+    <!-- ================= DATA ================= -->
+    <section id="data">
+      <div class="sec-head">
+        <div class="eyebrow">Data</div>
+        <h2 class="title">What the dataset actually holds</h2>
+      </div>
+
+      <p class="lede">Every number below was computed from <code>extraction.tsv</code> during this design pass. The filter you specified — drop any condition carrying a gene-level mutation — removes 147 of 382, leaving 235.</p>
+
+      <div class="fall">
+        <div class="fall-row"><div class="lbl">Raw observations</div><div class="fall-bar" style="width:100%"></div><div class="n">382</div></div>
+        <div class="fall-row"><div class="lbl">Mutation filter<em>action <code>mut</code> or seq-level token</em></div><div class="fall-bar" style="width:61.5%"></div><div class="n">235</div></div>
+        <div class="fall-row"><div class="lbl">Non-probe records<em>excludes curated mechanism probes</em></div><div class="fall-bar" style="width:58.9%"></div><div class="n">225</div></div>
+        <div class="fall-row"><div class="lbl">Target in carbon atom universe<em>72 of 116 distinct targets</em></div><div class="fall-bar alt" style="width:44.2%"></div><div class="n">169</div></div>
+        <div class="fall-row"><div class="lbl">Target in GEM baseline graph<em>34 targets — Panel R, GEM arm</em></div><div class="fall-bar alt" style="width:23.3%"></div><div class="n">89</div></div>
+        <div class="fall-row"><div class="lbl">Target in de-novo graph<em>50 targets — Panel R, de-novo arm</em></div><div class="fall-bar alt" style="width:30.9%"></div><div class="n">118</div></div>
+      </div>
+      <figcaption>Waterfall <span class="chip m">measured</span>. The last two rows are why Panel R and Panel C must be reported separately: lycopene (22 obs), isoprene, β-carotene, n-butanol and isobutanol exist in the graph only <em>after</em> a condition's own edits are applied.</figcaption>
+
+      <h3>The labels are degenerate — and that is the whole problem in one row</h3>
+
+      <div class="tw">
+        <table>
+          <caption>Label distribution, 235 surviving conditions <span class="chip m">measured</span></caption>
+          <thead><tr><th>Measured direction</th><th class="num">n</th><th>Consequence</th></tr></thead>
+          <tbody>
+            <tr><td>up</td><td class="num">184</td><td>a constant “up” predictor scores 98.9%</td></tr>
+            <tr><td>unknown</td><td class="num">49</td><td>contributes no rows to the answer key</td></tr>
+            <tr class="dim"><td>down</td><td class="num">2</td><td>directionality is untestable in this dataset</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>Design strata</h3>
+      <p>You asked to pool all 235 and check the strata only if the result looks odd. They are computed regardless and carried as columns on every scored row, so that check needs no second run.</p>
+
+      <div class="tw">
+        <table>
+          <caption>Strata over the 235 surviving conditions <span class="chip m">measured</span></caption>
+          <thead>
+            <tr><th>Stratum</th><th class="num">n</th><th class="num">papers</th><th>Why it is separable</th></tr>
+          </thead>
+          <tbody>
+            <tr class="hero">
+              <td>No heterologous add<span class="sub">50 deletion-only + 72 all-native-add</span></td>
+              <td class="num">122</td><td class="num">86</td>
+              <td>Target is necessarily native; the answer is not readable off the edit list.</td>
+            </tr>
+            <tr>
+              <td>Deletion-only<span class="sub">D-lactate 9 · succinate 8 · ethanol;H₂ 7</span></td>
+              <td class="num">50</td><td class="num">33</td>
+              <td>Pure redistribution — exactly the competition physics ECSPr claims. Sign is genuinely at risk here.</td>
+            </tr>
+            <tr>
+              <td>Add-bearing<span class="sub">85 add-only + 100 mixed</span></td>
+              <td class="num">185</td><td class="num">—</td>
+              <td>The trivial baseline eats much of this; reported with that margin visible.</td>
+            </tr>
+            <tr class="dim">
+              <td>Topology unchanged<span class="sub">no heterologous add, no effective deletion</span></td>
+              <td class="num">30</td><td class="num">—</td>
+              <td>Cannot move above the numerical noise floor. Their own stratum.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="callout warn">
+        <div class="k">Correction carried into the plan</div>
+        <p><code>add_mnxr</code> and <code>del_mnxr</code> are comma-delimited. Split on the wrong character, the no-heterologous-add stratum reads 50 instead of its true 122, and two counts that looked like a discrepancy between tables turn out to be the same bug. The build step asserts the delimiter and re-derives all of these counts as a gate.</p>
+      </div>
+    </section>
+
+    <!-- ================= POWER ================= -->
+    <section id="power">
+      <div class="sec-head">
+        <div class="eyebrow">Power</div>
+        <h2 class="title">Every candidate contrast, sized before committing</h2>
+      </div>
+
+      <p class="lede">The reason the counterfactual null is the headline is not elegance. It is the only axis with enough units to support a corrected significance test.</p>
+
+      <div class="tw">
+        <table>
+          <caption>Contrast axes <span class="chip m">measured</span>, except pool size <span class="chip p">projected</span></caption>
+          <thead>
+            <tr><th>Axis</th><th class="num">Units</th><th>Negative class</th><th>Ascertainment-safe</th><th>Role</th></tr>
+          </thead>
+          <tbody>
+            <tr class="hero">
+              <td>Counterfactual designs</td><td class="num">235 × 500</td>
+              <td>synthesised, size-matched</td><td>yes</td><td><strong>headline</strong></td>
+            </tr>
+            <tr>
+              <td>Other papers' real designs<span class="sub">off-diagonal AUROC per target column</span></td><td class="num">235 designs<br>116 columns</td>
+              <td>234 real designs per column</td><td>yes</td><td>corroborating</td>
+            </tr>
+            <tr>
+              <td>Within-paper design series<span class="sub">shared target, comparable assay, distinct gene sets</span></td><td class="num">6 series<br>61 pairs</td>
+              <td>real, perfectly matched</td><td>yes</td><td>case study only</td>
+            </tr>
+            <tr>
+              <td>Cross-paper, same target &amp; host<span class="sub">fold-change measurements only</span></td><td class="num">15 groups<br>154 pairs</td>
+              <td>real, strain-confounded</td><td>yes</td><td>can confirm, cannot exonerate</td>
+            </tr>
+            <tr class="dim">
+              <td>Metabolite panel ranking<span class="sub">the original proposal</span></td><td class="num">89 obs</td>
+              <td><strong>none, and none obtainable</strong></td><td>no</td><td>described, not scored</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <p>Of 175 source papers, only 23 contribute more than one arm. Requiring a shared target, comparable measurement type and distinct gene sets collapses that to six usable series. Reporting an aggregate Kendall τ over six papers would be theatre; the series are named individually instead.</p>
+
+      <h3>Building the counterfactual pool</h3>
+      <p>Sizes are drawn from the empirical joint <code>(n_add, n_del)</code> distribution of the real designs — heavy-tailed, median 5 total edits, mean 7.4, max 68 <span class="chip m">measured</span> — so the pool covers the observed range by construction rather than by matching after the fact. Counterfactuals pass through the identical edit-application policy, so a counterfactual deletion of an absent reaction no-ops exactly as a real one does.</p>
+      <p>Exact matching on <code>(n_add, n_del)</code> is not affordable: the 235 designs occupy 35 distinct size cells even capped at 5, eight of them singletons. So matching is binned on total edit count crossed with a three-way composition class, and a size-regressed studentised residual is reported alongside — it uses all 500 counterfactuals for every condition and is far better powered where a bin is thin. If the two disagree materially, size dependence is doing the work and the report says so.</p>
+    </section>
+
+    <!-- ================= ARMS ================= -->
+    <section id="arms">
+      <div class="sec-head">
+        <div class="eyebrow">Arms</div>
+        <h2 class="title">Five predictors, one contract</h2>
+      </div>
+
+      <p class="lede">All arms emit the same long-format rows, so a real design and a counterfactual differ only by a flag, and the scorer has no arm-specific branches.</p>
+
+      <div class="tw">
+        <table>
+          <caption>Prediction arms</caption>
+          <thead><tr><th>Arm</th><th>Weights</th><th class="num">Reactions</th><th class="num">C metabolites</th><th class="num">s / solve</th></tr></thead>
+          <tbody>
+            <tr><td>ECSPr from GEM</td><td>uniform 1.0 — a curated model asserts presence, not strength</td><td class="num">2,276</td><td class="num">1,022</td><td class="num">0.79</td></tr>
+            <tr><td>ECSPr de-novo, evidence-weighted</td><td>belief-conserving, normalised within (orf, channel)</td><td class="num">10,478</td><td class="num">6,452</td><td class="num">8.67</td></tr>
+            <tr><td>ECSPr de-novo, uniform</td><td>control — separates “noisier annotation” from “more chemistry”</td><td class="num">10,478</td><td class="num">6,452</td><td class="num">8.67</td></tr>
+            <tr><td>Flux balance</td><td>iML1515 / iECDH10B, growth-coupled, per-record medium</td><td class="num">2,712</td><td class="num">1,877</td><td class="num">0.046</td></tr>
+            <tr><td>Trivial baseline</td><td>“is the target a product of one of this design's added reactions?”</td><td class="num">—</td><td class="num">—</td><td class="num">0</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <p>The trivial baseline runs through the <em>identical</em> counterfactual harness — its own pool of 500, its own BH-corrected significant fraction — so the arms are reported as a margin over it rather than in isolation. Without that, the benchmark measures whether you read the input.</p>
+
+      <h3>Two findings that make the FBA arm non-trivial</h3>
+      <ul>
+        <li>Adding 117 open demand reactions to unmodified iML1515 raises maximum growth from <span class="mono">0.877</span> to <span class="mono">1.384</span> <span class="chip m">measured</span>, because the drains unblock dead-end-limited reactions. Every panel demand is therefore pre-created at bounds <code>(0,0)</code> and a condition is realised by bound flips alone.</li>
+        <li>Inserting a lycopene condition's seven novel reactions irreversibly gives maximum production of <strong>0.0 for every new metabolite</strong>; reversible with two bridges gives <span class="mono">0.959</span> <span class="chip m">measured</span>. MetaNetX writes the carotenoid desaturases in the reductive direction. Reactions insert reversible by default, and that is a measurement, not a style choice.</li>
+      </ul>
+
+      <div class="callout warn">
+        <div class="k">Failure census, computable before a single LP runs</div>
+        <p>Your expectation that flux balance will simply break on some conditions is quantified: <strong>30 of 235</strong> conditions have no effective edit at all, <strong>106 orphan metabolites</strong> span <strong>85 of the 128</strong> genuinely novel reactions, and 344 of 472 distinct add reactions are already native to the host. This is emitted as an ordered failure enum in the output schema, not as a log line.</p>
+      </div>
+    </section>
+
+    <!-- ================= SCORING ================= -->
+    <section id="scoring">
+      <div class="sec-head">
+        <div class="eyebrow">Scoring</div>
+        <h2 class="title">One headline number, three supporting reads</h2>
+      </div>
+
+      <p class="lede">For each condition, take its predicted change at its own resolved target, locate the null distribution of that target's change over the counterfactual designs in its size bin, and compute an empirical p. Benjamini–Hochberg across 235.</p>
+
+      <p>The reported headline is the <strong>fraction significant at q &lt; 0.05</strong> against an expected 5% under the null, with a bootstrap CI resampled at the <em>paper</em> level — <code>Record1420666912.41</code> contributes nine arms and they are not nine independent draws. The median empirical p accompanies it as a threshold-free summary. FBA produces the same number from Δflux, so the head-to-head is direct.</p>
+
+      <p>Two conventions are inherited rather than reinvented: <code>empirical_p</code> and <code>bh_fdr</code> come verbatim from <code>examples/scadc_ecspr_null_score.py</code>, including its <code>(exceed+1)/(n+1)</code> convention and 0.05 threshold.</p>
+
+      <div class="tw">
+        <table>
+          <caption>Reported metrics and the baseline each is meaningless without</caption>
+          <thead><tr><th>Metric</th><th>Read</th><th>Never reported without</th></tr></thead>
+          <tbody>
+            <tr class="hero">
+              <td>Counterfactual significant fraction</td>
+              <td>headline, per arm × element × direction</td>
+              <td>expected 5%, paper-level CI, trivial baseline row</td>
+            </tr>
+            <tr>
+              <td>Off-diagonal AUROC</td>
+              <td>per target column, distribution not pooled</td>
+              <td>the column's positive count</td>
+            </tr>
+            <tr>
+              <td>Conductance vs flux, column-wise</td>
+              <td>do the methods rank <em>designs</em> alike</td>
+              <td>the row-wise read, kept separate</td>
+            </tr>
+            <tr>
+              <td>Conductance vs flux, row-wise</td>
+              <td>do the methods rank <em>metabolites</em> alike</td>
+              <td>the column-wise read, kept separate</td>
+            </tr>
+            <tr>
+              <td>Biomass, label-free</td>
+              <td>FBA Δgrowth vs ECSPr Δprecursor-share</td>
+              <td>unperturbed host and the ONPATH control annotated</td>
+            </tr>
+            <tr>
+              <td>Fold-change correlation</td>
+              <td>diagonal Δ vs log₂ FC, 155 fold rows</td>
+              <td>surviving n after the <code>ok</code> status filter</td>
+            </tr>
+            <tr class="dim">
+              <td>Sign agreement</td>
+              <td>retained because readers expect it</td>
+              <td>the 98.9% constant-predictor baseline</td>
+            </tr>
+            <tr class="dim">
+              <td>Target percentile rank</td>
+              <td>described property, not a score</td>
+              <td>the caption saying this axis has no negatives</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>Four states, not two</h3>
+      <p>A metabolite absent from an arm's graph is a missing panel slot, not a failed prediction — folding it in as zero would let the arm with the smaller graph win by abstention. So <code>ok</code> enters every metric; <code>below_floor</code> enters ranking as tied-at-zero but is excluded from sign and correlation, because the sign of round-off is meaningless; <code>created</code> goes to Panel C only; and <code>not_in_base</code> leaves the denominator entirely.</p>
+      <p>The floor is real and it spans eleven orders of magnitude <span class="chip m">measured</span>: jitter noise sits at <span class="mono">1.3e-14</span>, a one-add/one-delete condition moves <span class="mono">1.8e-13</span>, an eight-deletion condition moves <span class="mono">1.08e-3</span>.</p>
+    </section>
+
+    <!-- ================= EXECUTION ================= -->
+    <section id="execution">
+      <div class="sec-head">
+        <div class="eyebrow">Execution</div>
+        <h2 class="title">Five tasks, in dependency order</h2>
+      </div>
+
+      <div class="tasks">
+        <div class="task">
+          <div class="id">T1</div>
+          <div class="body">
+            <h4>Mapping layer and the coverage waterfall</h4>
+            <p>Submodule init; bake orientation gate; resolve all 116 target strings and every carbon source to MetaNetX through a documented cascade with reviewer-attributed overrides; emit the edit universe and the seeded counterfactual pool. Ships the answer to “how much of LASER is scoreable at all”.</p>
+          </div>
+          <div class="cost">~½ day</div>
+        </div>
+        <div class="task">
+          <div class="id">T2</div>
+          <div class="body">
+            <h4>The ECSPr arms and the counterfactual pool</h4>
+            <p>One in-process driver — not the CLI, which re-reads a 2.4M-row table per call. Three arms, directed and undirected, over 235 real plus 500 synthesised designs, with per-design shard checkpointing and a real log file.</p>
+          </div>
+          <div class="cost">4–5 h compute</div>
+        </div>
+        <div class="task">
+          <div class="id">T3</div>
+          <div class="body">
+            <h4>The flux balance arm</h4>
+            <p>First FBA in this repo. Scaffold over the union of all 472 pooled add reactions so the counterfactual pool never triggers a model rebuild; per-record media; growth-coupled maximisation with an α sweep; ordered failure taxonomy and a <code>--dry-run</code> census.</p>
+          </div>
+          <div class="cost">~1½ h compute</div>
+        </div>
+        <div class="task">
+          <div class="id">T4</div>
+          <div class="body">
+            <h4>Scoring</h4>
+            <p>The arm-agnostic contract, the counterfactual null, the off-diagonal test, strata as columns, paper-level bootstrap, and the per-bin size-distribution gate that separates a real null from a matching artefact.</p>
+          </div>
+          <div class="cost">~½ day</div>
+        </div>
+        <div class="task">
+          <div class="id">T5</div>
+          <div class="body">
+            <h4>Report</h4>
+            <p>Six tables and seven figures. The coverage waterfall is the most important table and every figure caption cites its row; the per-condition forest of observed Δ against its counterfactual null band is the figure that shows <em>which</em> designs each method gets right.</p>
+          </div>
+          <div class="cost">~½ day</div>
+        </div>
+      </div>
+
+      <p>The counterfactual pool is generated once, seeded, recorded in the run manifest, and shared byte-identically by every ECSPr arm and by FBA. Regenerating it per arm would silently void every head-to-head comparison in the report. Total compute is <strong>6–8 hours</strong> <span class="chip p">projected</span>, dominated by the de-novo arms; it checkpoints per design, because this machine kills long jobs.</p>
+    </section>
+
+    <!-- ================= RISK ================= -->
+    <section id="risk">
+      <div class="sec-head">
+        <div class="eyebrow">Risk</div>
+        <h2 class="title">What would falsify this, and what a null would mean</h2>
+      </div>
+
+      <p class="lede">The pilot says the headline may well come back null. The harness is built so that a null is a publishable result with an attribution attached, rather than a number with no explanation.</p>
+
+      <ul>
+        <li><strong>A matching artefact, not a result.</strong> If a size bin's real conditions sit at the top of its range against counterfactuals clustered at the bottom, significance is manufactured. Per-bin size distributions for real versus counterfactual designs are a gate, not an appendix.</li>
+        <li><strong>The direction ensemble rather than the graph.</strong> The undirected arm runs alongside every directed one. Direction ratios span <span class="mono">3e-18</span> to <span class="mono">3.3e17</span> and the Hessian is near-singular; if undirected shows the same result, the finding is about the atom graph, not the ensemble.</li>
+        <li><strong>The method only works where the answer is in the edit list.</strong> The stratification table answers this without a second run — 122 conditions with no heterologous add against 185 add-bearing ones, each with the trivial baseline's margin.</li>
+        <li><strong>Two labelled “down” observations.</strong> Anything depending on separating up from down is a sanity check in this dataset, never a result. Stated in the report rather than discovered by a reader.</li>
+      </ul>
+
+      <div class="callout">
+        <div class="k">The result worth watching</div>
+        <p>The de-novo arms may be more interesting than the GEM arm. De-novo annotation sees 6,452 carbon metabolites against the GEM's 1,022, moving 50 targets and 118 observations into the scoreable panel against the GEM's 34 and 89. A method that has more chemistry to work with getting more of the benchmark is itself the FabFos claim — and it is testable here.</p>
+      </div>
+    </section>
+
+    <footer>
+      Counts marked <span class="chip m">measured</span> were computed from data/benchmarks/laser/extraction.tsv and the host GPR tables during design.<br>
+      No solve, LP or score in this document has been run. Scripts will land in main/benchmarks/laser/vs_gem.
+    </footer>
+
+  </main>
+</div>
+
+<script>
+  // Schematic matrix: deterministic pseudo-texture, diagonal emphasised.
+  (function () {
+    var host = document.getElementById('matrix');
+    if (!host) return;
+    var N = 14;
+    for (var r = 0; r < N; r++) {
+      for (var c = 0; c < N; c++) {
+        var cell = document.createElement('div');
+        cell.className = 'cell';
+        if (r === c) {
+          cell.classList.add('diag');
+        } else {
+          // stable hash so the texture is identical on every render
+          var h = ((r * 73856093) ^ (c * 19349663)) >>> 0;
+          var v = (h % 100) / 100;
+          cell.style.opacity = (0.28 + v * 0.72).toFixed(2);
+        }
+        host.appendChild(cell);
+      }
+    }
+  })();
+</script>

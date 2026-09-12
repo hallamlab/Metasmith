@@ -1,0 +1,34 @@
+types:
+  # JGI raw data inputs
+  jgi_metabolomics_dataset:
+    properties:
+      _: JGI metabolomics dataset directory containing Targeted/ and Untargeted/ subdirectories
+
+  # Processed feature tables
+  metabolomics_feature_table:
+    properties:
+      _: Normalized annotated metabolomics feature matrix (metabolites x samples)
+      Format: CSV
+      ext: csv
+
+  # Differential analysis outputs
+  metabolomics_differential:
+    properties:
+      _: Directory containing per-comparison fold-change/p-value/FDR CSV files and volcano plots
+
+  # Pathway enrichment outputs
+  metabolomics_pathway_enrichment:
+    properties:
+      _: Directory containing KEGG ORA results CSV and enrichment dot plot
+
+  # Metabolic model input
+  metabolic_model_sbml:
+    properties:
+      _: SBML genome-scale metabolic model file
+      Format: SBML
+      ext: xml
+
+  # FBA results
+  metabolomics_fba_results:
+    properties:
+      _: Directory containing per-condition FBA flux CSV and Escher visualization JSON

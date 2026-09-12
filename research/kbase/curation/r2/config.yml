@@ -1,0 +1,208 @@
+# The configuration ontology -- curation round 2.
+#
+# KBase apps declare 2,758 parameters. 873 of them carry a workspace type and are
+# already the type graph's business. The other 1,885 are untyped: thresholds,
+# presets, flags, names, descriptions. The port drops all of them.
+#
+# Metasmith has no parameter primitive. A knob reaches a transform as a typed data
+# item whose content is a config blob -- `lib.AddValue(path, {...}, "ns::type")` --
+# and `src/metasmith_libraries/amplicon_asv_study_from_paired_reads.py` is the
+# precedent, carrying policy arms exactly that way. So proposing a configuration
+# ontology means proposing one config type per core task, and saying which of the
+# 1,885 belong in it.
+#
+# Most of them do not, and that is the finding. A parameter is only a knob when it
+# changes what the method computes. The rest name the output, describe the input,
+# style the report, or point at a file the engine already tracks -- and each of
+# those has a better home than a config blob.
+
+version: r2
+
+# What a config field can hold, derived from the spec's `field_type`.
+kinds:
+  string: {from: [text, textarea], means: free text}
+  flag: {from: [checkbox], means: a boolean, declared with its checked and unchecked values}
+  enum: {from: [dropdown], means: one of a fixed list the spec carries}
+  selection: {from: [textsubdata], means: a choice drawn from inside another input object, such as a feature id}
+  staging_path: {from: [dynamic_dropdown], means: a path the user picks from a live listing}
+
+# Normalisation. A parameter id is camel-cased in one app and snake-cased in the
+# next, and abbreviated in one and spelled out in the next. Fold case first, then
+# expand. Fourteen synonym clusters fall out, `min_contig_len` beside
+# `min_contig_length` being the one that spans the most apps.
+normalisation:
+  case: camelCase and PascalCase are split on the capital, then everything is lowercased
+  abbreviations:
+    len: length
+    num: number
+    desc: description
+    max: maximum
+    min: minimum
+    ident: identity
+    prob: probability
+    seq: sequence
+    tech: technology
+    pct: percent
+    perc: percent
+    thresh: threshold
+    dir: directory
+    db: database
+    id: identifier
+
+# Dispositions. Every declared parameter gets exactly one. `knob` is the only one
+# that reaches a config blob; each of the others names where the information
+# belongs instead.
+#
+# `match` patterns are searched against the NORMALISED name, in file order, and
+# only for parameters the spec marks `ui_class: parameter`. A typed input or an
+# output name is dispositioned by its ui_class before any pattern runs.
+dispositions:
+
+- name: typed_io
+  means: Carries a workspace type. The type graph already models it, so it is not configuration at all.
+  home: the data type graph
+  ui_class: [input]
+
+- name: object_name
+  means: Names the object the app will write. Metasmith names its own outputs from the plan, so nothing supplies this.
+  home: the engine
+  ui_class: [output]
+
+- name: object_metadata
+  means: A label or description attached to the output object for a human reading the workspace.
+  home: nowhere -- a metasmith run records provenance instead
+  match:
+  - "^description$"
+  - "^name$"
+  - "_name$"
+  - "^suffix$"
+  - "_suffix$"
+  - "^publication_"
+  - "^attribute_mapping_name"
+
+- name: input_metadata
+  means: A property of the input data rather than of the method. It belongs on the data type as an axis, which is where the same fact stops being asked for once per app.
+  home: types.yml
+  match:
+  - "^sequencing_technology$"
+  - "^single_genome$"
+  - "^insert_size_"
+  - "^read_orientation_outward$"
+  - "^library_type$"
+  - "^genetic_code$"
+  - "^scientific_name$"
+  - "^taxon"
+  - "^domain$"
+  - "^source$"
+  - "^release$"
+  - "^data_type$"
+  - "^data_scale$"
+  - "^scale$"
+  - "^condition"
+  - "^sample_"
+
+- name: report_style
+  means: How the app renders its report. A workflow that asks for a typed product does not care.
+  home: nowhere
+  match:
+  - "^show_"
+  - "^heatmap"
+  - "^report_"
+  - "^genome_disp_name_config$"
+  - "^plot"
+  - "^color"
+  - "^sort_by"
+  - "^number_of_rows"
+  - "^output_format$"
+  - "^format$"
+
+- name: handled_by_engine
+  means: A path into staging or a workspace reference. Metasmith carries the file itself and its lineage, so the pointer has nothing to point at.
+  home: the engine
+  match:
+  - "staging"
+  - "file_path"
+  - "workspace"
+  - "_ref$"
+  - "_refs$"
+  - "^ws_"
+
+- name: passthrough
+  means: A raw command line the app hands to its tool unread. A config blob may carry it, but nothing can validate it.
+  home: the config blob, unvalidated
+  match:
+  - "^extra_param"
+  - "^extra_arg"
+  - "^additional_"
+  - "^command"
+
+- name: knob
+  means: Changes what the method computes. This is what a task's config type holds.
+  home: the task's config type
+  match:
+  - ".*"
+
+# The shared vocabulary. A knob here is declared by more than one core task and
+# means the same thing in each, so the curated library names it once. Everything
+# else is private to one task and lives in that task's own config type.
+#
+# A name here must be declared by at least two core tasks. `map_params.py` measures
+# that and complains when the corpus disagrees, which is what keeps the list from
+# filling up with knobs that only look general. `maxaccepts` is the case that
+# taught the rule: twelve apps declare it and all twelve do homology search.
+common:
+
+  minimum_contig_length:
+    kind: string
+    means: Discard a contig shorter than this. Declared by assemble, bin, filter_assembly, classify_taxa and identify_virus.
+
+  e_value:
+    kind: string
+    means: The expectation cutoff a homology search reports down to.
+
+  bitscore:
+    kind: string
+    means: The bit score cutoff a homology search reports down to.
+
+  minimum_length:
+    kind: string
+    means: Discard a sequence shorter than this. Declared by annotate, classify_taxa, clean_reads and identify_virus, which is four tasks asking one question four ways.
+
+  minimum_depth:
+    kind: string
+    means: Require this much read coverage before making a call.
+
+  media_supplement_list:
+    kind: string
+    means: Compounds added to the medium before a model is solved. Declared identically by build_model, gapfill_model, predict_phenotype and run_fba.
+
+  custom_bound_list:
+    kind: string
+    means: Flux bounds overriding the model's own, shared by the same four modelling tasks.
+
+  target_reaction:
+    kind: string
+    means: The reaction a modelling task optimises or tests.
+
+  reaction_ko_list:
+    kind: string
+    means: Reactions knocked out before solving.
+
+  feature_ko_list:
+    kind: string
+    means: Genes knocked out before solving.
+
+  minimum_target_flux:
+    kind: string
+    means: The flux the target reaction must reach for a solution to count.
+
+  method:
+    kind: enum
+    means: Which algorithm variant a generic matrix or clustering operation runs.
+
+  dimension:
+    kind: enum
+    means: Whether a matrix operation applies to rows or to columns.
+
+# CAUTION No KBase app declares a thread count. Resource sizing is the platform's,
+# and in metasmith it is a `Resources` field on the transform rather than config.

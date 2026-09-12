@@ -1,0 +1,305 @@
+# fabfos_data:: -- the ORIGINALS tier. One type per SOURCE FOLDER.
+#
+# This is the deliberate opposite of raw.yml's rule, and the reason is the tier
+# boundary rather than a change of mind about granularity. raw:: types one upstream
+# FILE each, so the DAG can show that mnxr_lookup needs reac_prop and reac_xref but
+# not chem_prop. That is the right shape for things a run CONSUMES.
+#
+# These are not that. Each one is a whole upstream distribution, held byte-for-byte
+# as it was served, and its contract is fidelity to the source -- not "which file
+# feeds what". Two consequences follow and both are the point:
+#
+#   * A source that ships files nothing consumes still keeps them. Rhea serves eight
+#     TSVs and the bridge reads two; MetaCyc ships 23,557 files and the AAM reads two.
+#     Under per-file typing the other six and the other 23,555 are untyped and
+#     therefore invisible -- they exist on disk with nothing asserting they should.
+#   * Re-acquiring is one operation per source, so a mirror going down, a licence
+#     changing or a release rolling forward is one transform's problem.
+#
+# The per-file carving -- MetaCyc's two .dat slices, KOfam's untar, the KEGG parse --
+# belongs to the PROCESSED tier. An acquire transform that carved would be doing
+# stage 2's work in stage 1's directory, which is exactly what this reorganisation
+# removes.
+#
+# EVERY SOURCE IS <source>/<release>/. Without it a rolling upstream path puts two
+# different snapshots at one location with nothing to tell them apart, which is not
+# a hypothetical: the previous Rhea snapshot carried no version anywhere and had to
+# be dated by comparing file mtimes against published release dates. Where upstream
+# names its releases the name is READ FROM THE SERVER, never assumed -- and read
+# FIRST, before any bytes are fetched, so a snapshot cannot land unlabelled.
+#
+# The release is not always a number a server hands you, and the four shapes here
+# are worth distinguishing because they are different strengths of claim:
+#
+#   metanetx 4.5      a frozen tree at its own URL -- a true pin
+#   rhea 141          a release-number file served alongside the data
+#   swissprot 2026_02 a release marker (reldate.txt / RELEASE.metalink) for a
+#   uniref 2026_02      `current_release/` path that rolls
+#   kofam 2026-06-30  no release concept at all; the gzip header's MTIME field, the
+#                       only identifying fact carried BY the artifact itself
+#   kegg 119.0        a quarterly number over a CONTINUOUSLY updated endpoint, so
+#                       two pulls in one release need not agree -- weakest of the
+#                       five, which is why the info response is kept alongside
+#   equilibrator 0.7.1  no server to ask: the package version pins the Zenodo DOIs
+#   metacyc 26        a licensed drop-in, versioned by whoever dropped it in
+#
+# WHATEVER UPSTREAM PUBLISHES TO VERIFY WITH IS KEPT IN THE PRODUCT -- MetaNetX's
+# .md5 sidecars, UniProt's RELEASE.metalink, the Zenodo checksums the equilibrator
+# package embeds. They make the transfer checkable at fetch time and re-checkable
+# offline afterwards, by anyone, without trusting the transform that wrote it.
+#
+# NOTHING HERE IS DERIVED. Eight of the ten are downloads with a transform each;
+# the two marked `given` have NO transform and never will.
+types:
+  download:
+    properties:
+      _: >-
+        One upstream source's distribution, acquired verbatim into its own folder
+        under data/originals/. Never parsed, unpacked, filtered or renamed here.
+
+  given:
+    extends: [download]
+    properties:
+      _: >-
+        A folder that CANNOT be fetched -- licensed, or lab-internal with no
+        published source. It is STAGED as an input, never produced: there is no
+        transform, because a transform that only checks a directory it did not
+        create does no work and just moves the failure one step later. A drop-in
+        that is absent or short fails where it is read.
+
+  # -- fetchable -------------------------------------------------------------
+  metanetx:
+    extends: [download]
+    properties:
+      _: >-
+        MetaNetX/MNXref release tree (metanetx/<version>/): chem_prop, chem_xref,
+        reac_prop, reac_xref and their upstream .md5 sidecars. The identity space
+        everything else is expressed in.
+
+  rhea:
+    extends: [download]
+    properties:
+      _: >-
+        Rhea release tree (rhea/<release>/), mirroring the FTP layout: tsv/,
+        ctfiles/, rhea-release.properties and LICENSE.txt. The release number is
+        read from the server, not assumed.
+
+  kofam:
+    extends: [download]
+    properties:
+      _: >-
+        KOfam distribution (kofam/<build-date>/): profiles.tar.gz, ko_list.gz and
+        README, all exactly as served. The tarball is NOT untarred and the list is
+        NOT gunzipped -- both are the processed tier's work. KOfam publishes no
+        release number and no checksums, so the directory is named after the gzip
+        header's MTIME on the profiles -- a stamp carried inside the artifact, so
+        it stays re-derivable offline from the file it names.
+
+  kegg:
+    extends: [download]
+    properties:
+      _: >-
+        KEGG REST bulk link responses (kegg/<release>/), saved as the endpoints
+        returned them (ko:K##### <TAB> rn:R#####). No prefix stripping, no header,
+        no join. REST serves the live database rather than the numbered release, so
+        the info response is kept alongside to date the pull within it.
+
+  uniref:
+    extends: [download]
+    properties:
+      _: >-
+        UniRef50 cluster representative sequences (uniref/<release>/), gzipped as
+        served, with the RELEASE.metalink that names the release and carries the
+        md5 they are verified against.
+
+  swissprot:
+    extends: [download]
+    properties:
+      _: >-
+        UniProtKB/Swiss-Prot complete sequences (swissprot/<release>/) plus both
+        release markers, reldate.txt and RELEASE.metalink. The reviewed half -- the
+        label pool's accessions are exactly this set.
+
+  esm_c:
+    extends: [download]
+    properties:
+      _: >-
+        The ESM-C 600M HuggingFace snapshot (esm_c/<revision>/), tarred as
+        `esmc_600m.tgz` with the repo's own layout inside -- `data/weights/
+        esmc_600m_2024_12_v0.pth` plus config.json and the README, verbatim. The
+        directory is named after the resolved commit sha, read from the server
+        before any bytes move, because `main` rolls. GATED: an account that has
+        accepted the model's terms is the only way to fetch it, so the acquisition
+        refuses without a token rather than writing the 401 body to disk.
+
+  ezpred:
+    extends: [download]
+    properties:
+      _: >-
+        EZpred's two published Zenodo artifacts (ezpred/<release>/): `models.zip`
+        (the enzyme / non-enzyme MLP ensembles) and `Data2.zip` (the label IA
+        tables predict.py reads). The upstream SOURCE tree is NOT here -- it is
+        code, not data, and is vendored in build_references/resources/buildlib/
+        with its DL-only patch, so the originals tier holds only what a URL
+        returns. Zenodo record ids ARE the release, which is why they name the
+        directory.
+
+  equilibrator:
+    extends: [download]
+    properties:
+      _: >-
+        eQuilibrator compound cache (equilibrator/<package-version>/): compounds.sqlite
+        + cc_params.npz, with the Zenodo checksums they are verified against. Pinned
+        explicitly so a build is not silently dependent on the package's first-use
+        fetch.
+
+  chebi:
+    extends: [download]
+    properties:
+      _: >-
+        ChEBI flat files (chebi/rel<N>/): compounds, names and structures as served,
+        gzipped. Taken from `archive/rel<N>/flat_files/`, NOT from the rolling
+        `flat_files/` path -- the archive is frozen at its own URL, so the release
+        number is a true pin rather than a label on whatever is current. Feeds the
+        curation sweep's supplier lane: a name and an accession are the only handles
+        a structureless MetaNetX stub has.
+
+  modelseed:
+    extends: [download]
+    properties:
+      _: >-
+        The ModelSEED biochemistry compound table (modelseed/<commit>/), pinned by the
+        git commit that last touched it. ModelSEED publishes no releases and the file
+        is served from a branch, so the commit sha IS the version -- and it is a
+        stronger pin than a release number, because it names the exact tree.
+
+  genomes:
+    extends: [download]
+    properties:
+      _: >-
+        Per-host NCBI assembly data (genomes/<host>/genome/) and the published
+        curated model where one exists (genomes/<host>/GEM/). The host set is a
+        fact in the transform, not a caller's argument.
+
+  # -- givens ----------------------------------------------------------------
+  metacyc:
+    extends: [given]
+    properties:
+      _: >-
+        The MetaCyc flat-file distribution as dropped in (metacyc/<version>/).
+        Licensed and not redistributable: it is the reason this graph has a given
+        at all. Verified here, never fetched.
+
+  vector:
+    extends: [given]
+    properties:
+      _: >-
+        Cloning vector backbone sequences. Lab-internal and unpublished -- the pCC1
+        record is a Hallam Lab sequencing result, so there is no upstream URL and
+        no transform can produce it.
+
+  # The two below are givens for the same MECHANICAL reason as the drop-ins -- staged,
+  # never produced, no transform -- while living beside the bake they came from rather
+  # than under data/originals/. They are not upstream distributions; they are a previous
+  # run's own records. A run cannot produce the logs it reads: the producer is the
+  # PREVIOUS route, which writes them with `ecspr.bake.aam.runlogs` where it ends.
+  prior_bake_logs:
+    extends: [given]
+    properties:
+      _: >-
+        A previous metabolism bake's per-reaction records -- `indigo_status.tsv`,
+        `indigo_unreturned.tsv`, `attempted/`, and the two derived neural status tables.
+        THE EMPIRICAL HALF OF `aam_forecast`: which reaction Indigo hangs on is not a
+        function of the string and does not need to be, because the last run wrote it
+        down. Coverage may be PARTIAL -- a run that dies leaves nothing about the
+        reactions past where it died -- so a reaction absent from every table was never
+        asked, and the forecast reports that denominator rather than reading absence as
+        success.
+
+  aam_cache:
+    extends: [given]
+    properties:
+      _: >-
+        The mapper members' durable cache, one directory per member holding `cache.tsv`
+        and the attempted-ids sidecars. STAGED EMPTY ON A FIRST RUN and that is the
+        ordinary state: it has no producer, because the thing that writes it is the same
+        lane that reads it. It exists because the in-task cache lives in node-local
+        scratch and is discarded on retry, so a lane OOM-killed two thirds of the way
+        through lost all of it. A cached row is reused only when the SUBMISSION STRING it
+        was produced from is the one this run would send -- a reaction has one id and up
+        to four strings, and serving the wrong one is not staleness but a map of a
+        different molecule filed under this one's name.
+
+  # -- benchmark studies -----------------------------------------------------
+  # One type per STUDY, on the same one-type-per-source-folder rule as the sources
+  # above and for the same reason: a study is where a mirror goes down, a licence
+  # changes or an extraction is revised, so re-acquiring one must not touch the
+  # others. They are pinned together at data/originals/benchmarks.dvc because a
+  # benchmark is only comparable against itself, but pin granularity and type
+  # granularity are independent.
+  #
+  # Three are fetchable. Four are `given` for a reason worth stating plainly: the
+  # publication reports the effect in prose and tables that no fetch turns into a
+  # row, so the acquisition IS a human reading of the paper. Declaring that as a
+  # given is honest; wrapping it in a transform that copies a file would dress a
+  # judgement call up as a download.
+  benchmark_study:
+    extends: [download]
+    properties:
+      _: >-
+        One benchmark study's source material as acquired, under
+        benchmarks/<study>/. The derived, standardised form is data/benchmarks/<study>/.
+
+  bench_laser:
+    extends: [benchmark_study]
+    properties:
+      _: >-
+        The LASER metabolic-engineering database's upstream repository at a pinned
+        commit (benchmarks/laser/). 232 primary papers under one folder -- it is a
+        database of publications, not a publication.
+
+  bench_keio:
+    extends: [benchmark_study]
+    properties:
+      _: >-
+        Baba et al. 2006 (doi:10.1038/msb4100050) -- the Keio single-gene knockout
+        collection's supplementary distribution plus the article full text
+        (benchmarks/keio/).
+
+  bench_eydallin:
+    extends: [benchmark_study]
+    properties:
+      _: >-
+        Eydallin et al. 2010 -- the glycogen-metabolism screen's supplementary table
+        and full text (benchmarks/eydallin/).
+
+  bench_aromatic:
+    extends: [benchmark_study, given]
+    properties:
+      _: >-
+        PMC5583500, extracted by hand (benchmarks/aromatic/). Contrast case: a
+        heterologous aromatic-catabolism route expected to REGISTER.
+
+  bench_pg_anionic:
+    extends: [benchmark_study, given]
+    properties:
+      _: >-
+        Ohta et al. 1981 and Tan et al. 2012, extracted by hand
+        (benchmarks/pg_anionic/). Contrast case: in-base dosage only, expected to
+        NO-OP. Its expectation has been wrong in this tree before -- a "predicted
+        null" that recorded an implementation's no-op rather than the source table's
+        `+`.
+
+  bench_forsberg:
+    extends: [benchmark_study, given]
+    properties:
+      _: >-
+        PMC4711125, extracted by hand (benchmarks/forsberg/). Contrast case: a
+        functionally-selected insert set, the closest cohort here to a fosmid screen.
+
+  bench_fa_supply:
+    extends: [benchmark_study, given]
+    properties:
+      _: >-
+        Bogorad 2013 and Li et al. 2020, extracted by hand (benchmarks/fa_supply/).
+        Contrast case: a parallel edge onto a hub, expected to be SWAMPED.

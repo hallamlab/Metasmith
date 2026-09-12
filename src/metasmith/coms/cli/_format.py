@@ -1,4 +1,3 @@
-"""Output formatting helpers for the CLI."""
 from __future__ import annotations
 
 import json
@@ -9,7 +8,6 @@ from ...logging import Log
 
 
 def emit(args, value: Any) -> None:
-    """Print a result, honoring --json / --quiet."""
     if getattr(args, "quiet", False):
         return
     if getattr(args, "json", False):
@@ -28,7 +26,6 @@ def _pretty(value: Any, indent: int = 0) -> None:
         if not value:
             print(f"{pad}(empty)")
             return
-        # list of dicts → table-ish; otherwise one per line
         if all(isinstance(x, dict) for x in value):
             for i, x in enumerate(value):
                 if i > 0:
@@ -50,6 +47,5 @@ def _pretty(value: Any, indent: int = 0) -> None:
 
 
 def die(message: str, code: int = 1) -> None:
-    """Print an error to stderr and exit non-zero."""
     Log.Error(message)
     sys.exit(code)

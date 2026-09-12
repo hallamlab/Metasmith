@@ -1,15 +1,3 @@
-"""A held-open connection to the agent host.
-
-`AgentShell` is a context manager, not a shell: entering runs the agent's setup
-(source the env, cd to the home root, make the relay reachable) and exiting runs
-its cleanup, so everything in between can assume it is standing in a working
-metasmith installation on the far side.
-
-Its own module because both `Agent` and the mixins that hang off it need to
-construct one, and a class the whole package reaches for should not live inside
-the class it serves.
-"""
-
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
@@ -28,7 +16,7 @@ class AgentShell:
         shell = LiveShell()
         try:
             def _on_out(x: str):
-                Log.Info(f"> {x}\x1b[0;m", timestamp=False) # to escape nextflow colours
+                Log.Info(f"> {x}\x1b[0;m", timestamp=False)
             def _on_err(x: str):
                 Log.Error(f"> {x}", timestamp=False)
             Log.Info(f"connecting to deployed agent")
@@ -39,9 +27,6 @@ class AgentShell:
                 f"cd {self.agent.home.GetPath()}",
                 idle_timeout=PROBE_TIMEOUT, what="cd to agent home",
             )
-            # mamba/native cross no container boundary, so there is no relay to
-            # find or start; requiring one would make those runtimes
-            # undeployable rather than merely un-bounced.
             if self.agent._environment().needs_relay:
                 res = shell.Exec(
                     '[ -e ./relay/msm_relay ] && echo "relay-present"', history=True,
@@ -66,9 +51,6 @@ class AgentShell:
         if self.shell is None: return
         Log.Info(f"closing connection")
         self.agent._run_cleanup(self.shell)
-        # A command that timed out is still running on the far end with an
-        # unclaimed marker, so this shell is spent: the polite `exit` would
-        # only burn its own timeout before we disposed it anyway.
         spent = exc_type is not None and issubclass(exc_type, TimeoutError)
         if self.agent._is_ssh() and not spent:
             try:

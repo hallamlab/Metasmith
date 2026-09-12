@@ -1,0 +1,21 @@
+# Packaging-tool overlay, layered on top of an env created from base.yml by
+# `dev.sh --idev`. NOT a standalone env definition: base.yml owns the runtime
+# dependencies, this file adds only the toolchain that cuts wheels, conda
+# packages and tarballs -- the same split, and the same contents, as
+# src/metasmith/envs/dev.yml, because both repos publish to the same channel
+# and a difference between the two toolchains would show up as a package that
+# builds here and not there.
+#
+# `conda mambabuild` comes from boa; `anaconda upload` from anaconda-client.
+# Without this env, `dev.sh -bc`, `-be` and `-ue` have no build command.
+channels:
+  - conda-forge
+dependencies:
+  - python=3.12
+  - conda-build
+  - boa
+  - anaconda-client
+  - pyyaml
+  - pip
+  - pip:
+    - build

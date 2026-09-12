@@ -1,0 +1,36 @@
+name: single_end_library_from_any_paired_end_library
+description: load_single_end_reads_from_URL -> run_kb_filtlong. Seen in 14 public
+  narratives.
+sample_type: kbase::sample
+target_types:
+- kbase::KBaseAssembly_SingleEndLibrary
+transform_libraries:
+- w_s0011
+resource_libraries:
+- env
+shared_input_paths: []
+input_library:
+  schema: v1
+  manifest:
+    /msm_deferred/00f602f39a2742fd83fd6aa7657734ae:
+      type: kbase::accepts_05
+      parents:
+        H8TCP121dth8@/msm_deferred/e634f6f7d9a94bfbae6f7264e96d41c3: kbase::sample
+      instance_id: 1e20d9c9aa6149526cf941697901753fc234807f7076ae32104213f90cdc51fe5c41
+      origin: leaf
+    /msm_deferred/197a5f537aac4ca2a5de1c544a605407:
+      type: kbase::study
+      instance_id: 1e20ebf29a39c7ba75a011fd5cc1da40b26a3c2a37711eed1ece4b4e13542f4300f9
+      origin: leaf
+    /msm_deferred/7ec4ed91fcf8495fb0b002683ac9c52c:
+      type: kbase::accepts_12
+      parents:
+        H8TCP121dth8@/msm_deferred/e634f6f7d9a94bfbae6f7264e96d41c3: kbase::sample
+      instance_id: 1e204f28b1f321a8dc40d279af6c2d398c670f578f6f745ffaf864b7dec84798aaa1
+      origin: leaf
+    /msm_deferred/e634f6f7d9a94bfbae6f7264e96d41c3:
+      type: kbase::sample
+      parents:
+        H8TCP121dth8@/msm_deferred/197a5f537aac4ca2a5de1c544a605407: kbase::study
+      instance_id: 1e203215f6d10b4666cd8db37e066e4f59ce2737460fecb43efb25d5aa7a5454b862
+      origin: leaf

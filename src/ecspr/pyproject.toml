@@ -1,0 +1,41 @@
+# ECSPr builds as its own project so `pip install -e src/ecspr` is all the dev loop
+# needs and the container can install it without the fabfos wheel. The package IS
+# this directory -- same shape as src/fabfos, one level up from the repo's src/ --
+# so `package-dir` maps the name onto ".".
+#
+# Dependencies are deliberately NOT listed here. They live in env.yml, which the
+# conda recipe and the container image also read; a pip metadata copy would be a
+# second place for them to be wrong, and this package is installed with --no-deps
+# into an env conda already solved.
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ecspr"
+dynamic = ["version"]
+description = "Atom-resolved conductance measurement over metabolic GPR tables"
+# The floor is the direction stack's, not the measurement layer's: `ecspr.bake`
+# runs inside images pinned at 3.11, and a floor above them makes the package
+# uninstallable exactly where the bake needs it.
+requires-python = ">=3.11"
+license = { text = "GPL-3.0" }
+
+[project.scripts]
+ecspr = "ecspr.cli:main"
+
+[tool.setuptools]
+packages = ["ecspr", "ecspr.bake", "ecspr.bake.aam", "ecspr.bake.direction",
+            "ecspr.commands", "ecspr.model"]
+
+[tool.setuptools.package-dir]
+ecspr = "."
+
+[tool.setuptools.package-data]
+# build_hash.txt is gitignored but MUST ship: an installed ecspr reads it to
+# report FULL_VERSION, so leaving it out makes every container claim the bare
+# release segment and a result stops being traceable to a source state.
+ecspr = ["version.txt", "env.yml", "build_hash.txt"]
+
+[tool.setuptools.dynamic]
+version = { file = ["version.txt"] }

@@ -1,21 +1,3 @@
-"""Trace index + telemetry helpers (C8 / G5).
-
-`TraceIndex` parses one `_metasmith/trace.jsonl` (optionally unioning
-across rotated `trace.<session_id>.jsonl` siblings) into in-memory
-indices keyed by `file_instance_id`, `slot_id`, and `task_hash`.
-
-`DataInstanceLibrary` owns one `TraceIndex` when a trace is attached;
-the public telemetry methods (`get_lineage_of`, `get_logs_of`, …) are
-defined on the library class but route through this index for the
-underlying lookups. Keeping the parser separate keeps `libraries.py`
-from ballooning and makes the trace contract a single read site.
-
-Frozen-snapshot semantics: every `LineageNode` returned is a new
-`@dataclass(frozen=True)` chain; holding one across `refresh()` is safe
-— the snapshot reads from the original event list captured at attach
-time.
-"""
-
 from __future__ import annotations
 
 import json
@@ -40,25 +22,10 @@ from .models.lineage import (
 from .logging import Log
 
 
-# 16-byte multihash hex = 32 chars; cache_key hex = 64 chars; instance_ids
-# are 20 hex chars (KeyGenerator l=10). Accept any all-hex string of length
-# >= 8 as an instance_id form.
 _HEX_RE = re.compile(r"^[0-9a-f]{8,}$")
 
 
 class TraceIndex:
-    """In-memory index over a `_metasmith/trace.jsonl` file.
-
-    Construct via `TraceIndex.read(trace_path, across_sessions=False)`.
-    Empty indices (no file) are tolerated so the library API works on
-    library dirs without a trace.
-
-    Raises
-    ------
-    TraceCorruptError
-        A trace.jsonl line is not valid JSON. Reports the byte offset.
-    """
-
     def __init__(self) -> None:
         self.events: list[InvocationEvent] = []
         self.sentinels: list[SessionStart] = []
@@ -123,11 +90,8 @@ class TraceIndex:
             else:
                 self.by_slot.setdefault(p.file_instance_id, []).append(e)
 
-    # ------------------------------------------------------------------
-    # Convenience accessors
 
     def find_event_for_instance(self, instance_id: str) -> Optional[InvocationEvent]:
-        """Latest event that produced `instance_id` as a file or slot."""
         evs = self.by_file.get(instance_id) or self.by_slot.get(instance_id)
         if not evs:
             return None
@@ -143,10 +107,6 @@ class TraceIndex:
         return counts
 
 
-# ---------------------------------------------------------------------------
-# Dispatch helpers
-
-
 def normalize_query_target(
     thing: Any,
     *,
@@ -154,32 +114,18 @@ def normalize_query_target(
     instance_meta: dict[Path, dict],
     location: Path,
 ) -> tuple[str, Optional[Path]]:
-    """Resolve `thing` to (instance_id, manifest_path|None).
-
-    Dispatch order (per plan G5):
-      (a) DataInstance → its `.instance_id`
-      (b) hex-only string → instance_id (no manifest lookup)
-      (c) absolute path → manifest entry
-      (d) Path or relative string → resolve against `location`
-    """
-
-    # (a) DataInstance — avoid an import cycle.
     if hasattr(thing, "instance_id") and hasattr(thing, "dtype"):
         return thing.instance_id, getattr(thing, "path", None)
 
-    # (b) hex form
     if isinstance(thing, str) and _HEX_RE.match(thing):
         return thing, None
 
-    # (c)/(d) path forms
     if isinstance(thing, (str, Path)):
         path = Path(thing)
-        # First try as-is against manifest keys.
         if path in manifest:
             meta = instance_meta.get(path)
             if meta is not None:
                 return meta["instance_id"], path
-        # Resolve against library location, then try relative form.
         if not path.is_absolute():
             abs_path = (location / path).resolve()
         else:
@@ -198,10 +144,6 @@ def normalize_query_target(
     raise InstanceNotFound(f"unsupported query target: {type(thing).__name__}")
 
 
-# ---------------------------------------------------------------------------
-# LineageNode builder
-
-
 def build_lineage_node(
     instance_id: str,
     *,
@@ -210,13 +152,6 @@ def build_lineage_node(
     visited: Optional[set[str]] = None,
     depth_remaining: int = 16,
 ) -> LineageNode:
-    """Walk back through `consumes` building a frozen `LineageNode` tree.
-
-    `visited` blocks cycles (lenient — a revisit yields a leaf-shaped
-    node that names the instance without recursing further). `depth_remaining`
-    is the safety net for accidental DAG explosions.
-    """
-
     if visited is None:
         visited = set()
 
@@ -224,7 +159,6 @@ def build_lineage_node(
     event = index.find_event_for_instance(instance_id)
 
     if event is None or instance_id in visited or depth_remaining <= 0:
-        # Leaf or revisit — return a node with no inputs.
         provenance: Union[InvocationEvent, LeafRecord]
         if event is not None:
             provenance = event
@@ -263,21 +197,11 @@ def build_lineage_node(
 
 
 def _instance_dtype_and_path(library, instance_id: str) -> tuple[str, str]:
-    """Reverse-lookup `instance_id` in the library manifest.
-
-    Returns (dtype_key, path) when found; otherwise ("", "") so the
-    lineage walk doesn't blow up on intermediate ids that never landed
-    in the library (e.g. a transient slot_id).
-    """
     for path, dtype_name in library.manifest.items():
         meta = library.instance_meta.get(path)
         if meta and meta.get("instance_id") == instance_id:
             return dtype_name, str(path)
     return "", ""
-
-
-# ---------------------------------------------------------------------------
-# Log bundle resolution
 
 
 def resolve_log_bundle(
@@ -286,13 +210,6 @@ def resolve_log_bundle(
     index: TraceIndex,
     cache_root: Optional[Path],
 ) -> LogBundle:
-    """Resolve `.command.*` logs for the event that produced `instance_id`.
-
-    Returns a closed-set `LogBundle`. The discriminator is `status`:
-    `not_applicable` for leaves, `legacy_shard_no_logs` for events
-    whose shard lacks the C8 `logs/` subdir, `available` when all four
-    canonical `.command.*` files are present, `missing` otherwise.
-    """
     event = index.find_event_for_instance(instance_id)
     if event is None:
         return LogBundle(status="not_applicable", reason="no producing event")

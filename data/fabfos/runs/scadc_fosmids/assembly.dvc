@@ -1,0 +1,6 @@
+outs:
+- md5: a35481bbd2d5e561e6dd1c9236871ef6.dir
+  size: 205086779
+  nfiles: 424
+  hash: md5
+  path: assembly

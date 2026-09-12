@@ -1,0 +1,6 @@
+name: dram
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - dram=1.5.0

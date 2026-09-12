@@ -17,6 +17,47 @@ class Orchestrator {
     // models/lineage.py's LinPayload.FILES_KEY / PROV_KEY.
     public static final String FILES_KEY = "FILES"
     public static final String PROV_KEY = "PROV"
+    // KEY is the member's cache key, stamped by _route before submission and
+    // read by the task to name and promote its products. Kept in lockstep
+    // with LinPayload.KEY_KEY.
+    public static final String KEY_KEY = "KEY"
+    public static final List RESERVED_KEYS = [FILES_KEY, PROV_KEY, KEY_KEY]
+
+    // Raised when a stream `classify()` proved to be a descendant of the
+    // by-stream delivers an item whose index does not carry the by-key.
+    //
+    // Thrown rather than logged because the alternative is invisible: a
+    // dropped item makes the join emit nothing, an empty channel is not an
+    // error in nextflow, and the DAG simply ends early with every submitted
+    // task at exit 0. Two production runs lost days to exactly that -- one
+    // truncated a nine-step workflow after seven steps, one lost 2 of 34 group
+    // members -- and in both the only trace was a `_dispatchLog` row nothing
+    // reads. A task that is never created cannot fail, so no error strategy
+    // can see it.
+    static class LineageViolation extends RuntimeException {
+        LineageViolation(String message) { super(message) }
+    }
+
+    // The lineage-only view of a task's output index, used by _debatch on the
+    // way out of every process.
+    //
+    // Returns a fresh map and never writes to its argument. A process
+    // declaring N output tuples binds the SAME index object to all N output
+    // channels, and each channel is a separate dataflow operator on its own
+    // thread, so this runs N times over one unsynchronized LinkedHashMap. The
+    // in-place remove() this replaced therefore raced its sibling streams and
+    // _post's `[:]+index` read, and a lost race there does not corrupt the map
+    // visibly -- it yields an EMPTY copy, whose product reaches the next
+    // o.group carrying only its own key and is dropped for lineage violation,
+    // taking the branch of the DAG below it with it. Concurrent readers of a
+    // map nobody writes to are safe; that is the whole fix.
+    //
+    // Shallow by design. The value lists are shared by reference across many
+    // descendant indexes (_collateBatch and _post both copy shallowly) and no
+    // production path mutates one.
+    public static Map stripReserved(index) {
+        return index.findAll((k, v) -> !(k in RESERVED_KEYS))
+    }
 
     private Map index_history
     private Map child2parent
@@ -36,6 +77,15 @@ class Orchestrator {
 
     private void _logDispatch(name, relation, by_hash, item_hash) {
         this._dispatchLog.add([name, relation, by_hash, item_hash])
+    }
+
+    // The lineage keys of an index, without the reserved entries. FILES holds
+    // absolute task-workdir paths and PROV holds nested maps, so an unfiltered
+    // render buries the one fact the reader needs -- which keys the item
+    // actually carries -- under kilobytes of noise.
+    private static String _renderLineage(index) {
+        if (!(index instanceof Map)) return "${index}"
+        return "${stripReserved(index)}"
     }
 
     public void seedParents(Map data) {
@@ -73,7 +123,11 @@ class Orchestrator {
                         group = [group]
                     }
                     return group.collect((item) -> { // map
-                        def v = "${sid}::${item.name}".md5()
+                        // The batch position is where the member sat in the
+                        // task that ran it, not part of what the file is.
+                        // Mirrors LinPayload.canonical_output_name.
+                        def cname = item.name.replaceFirst(/^\d+-/, "1-")
+                        def v = "${sid}::${cname}".md5()
                         // println("post: <$name> $v $item")
                         index = [:]+index // copy the hashmap
                         index[name] = [v]
@@ -123,6 +177,13 @@ class Orchestrator {
     // generator emits `o.asStreams(process_call(...))` instead. Handles both
     // single-output processes (returns a Channel) and multi-output ones
     // (returns an iterable ChannelOut).
+    //
+    // NOTHING INSERTED BETWEEN HERE AND _debatch MAY WRITE TO AN INDEX. The
+    // streams returned by a multi-output process all carry the SAME index
+    // object, so an operator added here -- a .map{} that stamps a key, a
+    // .view{} that sorts a value for printing -- runs once per stream on its
+    // own thread over one shared map, and the losing thread's product is
+    // silently dropped downstream. Read freely; copy before you write.
     public List asStreams(out) {
         if (out instanceof Iterable) {
             def result = []
@@ -138,7 +199,7 @@ class Orchestrator {
         // would be meaningless. Unreachable today (they are stripped before
         // anything re-enters here), but it makes "an index value is a list of
         // hashes" true locally instead of true by argument elsewhere.
-        def keys = indexes.inject([:].keySet(), (result, i) -> result+i.keySet()) - [FILES_KEY, PROV_KEY] // reduce
+        def keys = indexes.inject([:].keySet(), (result, i) -> result+i.keySet()) - RESERVED_KEYS // reduce
         for (key : keys) {
             // if any is missing, use the remainder
             // if remainder different, skip
@@ -256,7 +317,7 @@ class Orchestrator {
     // has to: `errorStrategy 'ignore'` is process-wide (local.nf, slurm.nf),
     // so a dropped task means a key that never reaches its count, and that
     // must degrade to a late flush rather than a hang.
-    public def group(by, streams, targets, batch_size, expected) {
+    private def _grouped(by, streams, targets, expected) {
         def parents = streams.collect((k, s) -> k) as Set
         for (t : targets) {
             def existing = this.child2parent.get(t, java.util.concurrent.ConcurrentHashMap.newKeySet())
@@ -292,7 +353,7 @@ class Orchestrator {
             ]
         })
 
-        return _batch(batch_size, to_group
+        return to_group
         .collect((stream) -> {
             def (name, _stream) = stream
             def relation = stream_relations[name]
@@ -346,12 +407,24 @@ class Orchestrator {
                     }
                     def (_index, _value) = item
                     def by_hashes = _index[by_name]
-                    if (by_hashes == null) {
-                        // Lineage violation: stream is declared as a
-                        // descendant of by_name but the item's index
-                        // doesn't carry by_name. Log and drop.
+                    // An ABSENT key and an EMPTY list are the same defect and
+                    // are treated the same way. The empty list is the more
+                    // dangerous of the two: `by_hashes.each` below iterates
+                    // zero times, so before this check the item vanished
+                    // without even reaching the dispatch log -- which is why
+                    // the run that hit it reported no violations logged while
+                    // items were disappearing.
+                    if (by_hashes == null || by_hashes.size() == 0) {
                         this._logDispatch(_name, "LINEAGE_VIOLATION", null, null)
-                        return []
+                        throw new LineageViolation(
+                            "stream [${_name}] is a declared descendant of "
+                            + "[${by_name}], so every item must carry "
+                            + "[${by_name}] in its index, but [${_value}] "
+                            + "arrived with ${_renderLineage(_index)}. "
+                            + "Grouping it would drop it, and a dropped item "
+                            + "silently truncates the DAG. Fix the producer of "
+                            + "[${_name}] so it propagates its input index."
+                        )
                     }
                     // Bag-insertion dedup guards against retry/replay
                     // duplication, matching the WILDCARD branch.
@@ -412,7 +485,18 @@ class Orchestrator {
                     }
                     def (_index, _value) = item
                     def anc_hashes = _index[anc_key]
-                    if (anc_hashes == null) return []
+                    // Logged, not thrown, unlike DESCENDANT_OF_BY above.
+                    // `_firstSharedAncestor` picks an arbitrary member of the
+                    // ancestor-set intersection, so an item can legitimately
+                    // relate to the by-stream through a different shared
+                    // ancestor than the one keyed on here; raising would be a
+                    // false positive. The drop is still worth seeing, because
+                    // a stream that drops every item is the same truncated DAG
+                    // wearing a weaker relation.
+                    if (anc_hashes == null || anc_hashes.size() == 0) {
+                        this._logDispatch(_name, "LINEAGE_VIOLATION", null, null)
+                        return []
+                    }
                     def item_hash = "$_value".md5()
                     def ready = []
                     anc_hashes.each((h) -> {
@@ -433,7 +517,7 @@ class Orchestrator {
                 .combine(by_stream.flatMap((item) -> {
                     def (_index, _value) = item
                     def anc_hashes = _index[anc_key]
-                    if (anc_hashes == null) return []
+                    if (anc_hashes == null || anc_hashes.size() == 0) return []
                     return anc_hashes.collect((h) -> new Tuple2([h], _index[by]))
                 }), by: 0)
                 .map((combined) -> {
@@ -522,7 +606,120 @@ class Orchestrator {
             def values = groups.collect(channel -> channel.collect(group -> group[-1]))
             common_index[PROV_KEY] = per_item
             return [common_index, *values]
-        }))
+        })
+    }
+
+    public def group(by, streams, targets, batch_size, expected) {
+        return this._batch(batch_size, this._grouped(by, streams, targets, expected))
+    }
+
+    // The cached form. `cache` names the step for the key helper:
+    //   tk, sig      the transform key and signature the key folds
+    //   slk          the channel name of each required slot, in slot order
+    //   cache_root   where the shards are, in this process's coordinates
+    //   cacheable    false sends every member to the real process
+    //   helper       the command that runs metasmith.caching.invocation
+    //   hits_log     the file one JSON line per hit member is appended to
+    //   step, step_name
+    // Returns [misses, hits]: two batched channels in the shape _batch
+    // emits. A miss batch feeds the real process; a hit batch feeds its
+    // `_cached` twin as [indexes, sources], where each source is
+    // [position, shard file, name without its position].
+    public def group(by, streams, targets, batch_size, expected, cache) {
+        return this._route(batch_size, this._grouped(by, streams, targets, expected), cache)
+    }
+
+    // One helper call per batch decides every member of it. The Python side
+    // is the only key implementation; this side only carries its verdict.
+    // A member whose row is missing, a helper that fails, or a non-zero exit
+    // is a miss: the cost of a wrong miss is compute, the cost of a wrong hit
+    // is a wrong result.
+    public static List probeMembers(helper, Map spec) {
+        def json = JsonOutput.toJson(spec)
+        def proc = new ProcessBuilder(helper as List<String>).start()
+        proc.outputStream.withWriter("UTF-8") { w -> w << json }
+        def out = new StringBuilder()
+        def err = new StringBuilder()
+        proc.waitForProcessOutput(out, err)
+        if (proc.exitValue() != 0) {
+            throw new RuntimeException("cache helper failed (${proc.exitValue()}): ${err}")
+        }
+        def rows = out.toString().split("\n").findAll(l -> l.trim().size() > 0).collect(l -> {
+            def parts = l.trim().split(/\|/, 3) as List
+            while (parts.size() < 3) parts << ""
+            return parts
+        })
+        if (rows.size() != spec.members.size()) {
+            throw new RuntimeException("cache helper answered ${rows.size()} rows for ${spec.members.size()} members")
+        }
+        return rows
+    }
+
+    private def _decide(batch, cache) {
+        def members = batch.collect(item -> item[0])
+        def rows = null
+        if (cache.cacheable == true) {
+            try {
+                rows = probeMembers(cache.helper, [
+                    tk: cache.tk, sig: cache.sig, slk: cache.slk,
+                    cache_root: cache.cache_root, members: members,
+                ])
+            } catch (Exception e) {
+                System.err.println("[metasmith] step ${cache.step} (${cache.step_name}): ${e.message}; running every member")
+                rows = null
+            }
+        }
+        return [batch, (0..<batch.size())].transpose().collect((item, i) -> {
+            def index = [:] + item[0]
+            def row = (rows == null) ? ["-", "-", ""] : rows[i]
+            index[KEY_KEY] = row[0]
+            def hit = (row[1] == "hit")
+            if (hit) this._logHit(cache, row[0], row[2], index)
+            return [item: [index, *item[1..-1]], hit: hit, shard: row[2]]
+        })
+    }
+
+    private synchronized void _logHit(cache, key, shard, index) {
+        if (cache.hits_log == null) return
+        def f = new File(cache.hits_log as String)
+        f.parentFile?.mkdirs()
+        f << JsonOutput.toJson([
+            step: cache.step, step_name: cache.step_name, key: key, shard: shard,
+            entry: index.findAll((k, v) -> k != FILES_KEY),
+        ]) << "\n"
+    }
+
+    private def _collateHits(rows) {
+        def collated = this._collateBatch(rows.collect(r -> r.item))
+        def indexes = collated[0]
+        def sources = []
+        rows.eachWithIndex { r, i ->
+            def out = new File(r.shard as String, "out")
+            def files = out.listFiles() ?: []
+            files.sort { a, b -> a.name <=> b.name }.each { f ->
+                sources << [i + 1, f.absolutePath, f.name.replaceFirst(/^\d+-/, "")]
+            }
+        }
+        return [indexes, sources]
+    }
+
+    public def _route(size, channel, cache) {
+        def decided = channel.collate(size).map(batch -> this._decide(batch, cache))
+        def misses = decided
+            .map(rows -> rows.findAll(r -> !r.hit))
+            .filter(rows -> rows.size() > 0)
+            .map(rows -> this._collateBatch(rows.collect(r -> r.item)))
+        def hits = decided
+            .map(rows -> rows.findAll(r -> r.hit))
+            .filter(rows -> rows.size() > 0)
+            .map(rows -> this._collateHits(rows))
+        return [misses, hits]
+    }
+
+    // The outputs of a process and of its `_cached` twin, one mixed channel
+    // per output slot, so downstream sees one producer.
+    public List mixOuts(a, b) {
+        return [a, b].transpose().collect((x, y) -> x.mix(y))
     }
 
     private def _collateBatch(batch) {
@@ -563,11 +760,7 @@ class Orchestrator {
                 // while index is a list of indexes
                 def is_batched = indexes instanceof List
                 indexes = is_batched ? indexes : [indexes]
-                indexes = indexes.collect(index -> {
-                    index.remove(FILES_KEY)
-                    index.remove(PROV_KEY)
-                    return index
-                })
+                indexes = indexes.collect(index -> Orchestrator.stripReserved(index))
                 bag = (bag instanceof List)? bag : [bag]
                 if (!is_batched) {
                     // Non-batched: return the single item directly without numeric-prefix parsing

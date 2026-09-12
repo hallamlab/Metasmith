@@ -1,0 +1,97 @@
+types:
+  cami_gold_standard.py:
+    properties:
+      src: cami_gold_standard
+      usage: command line
+  hierarchical_clustering.py:
+    properties:
+      src: hierarchical_clustering
+      usage: library
+  local:
+    properties:
+      src: local
+      usage: library
+  transcriptomics:
+    properties:
+      src: transcriptomics
+      usage: command line
+  metabolomics:
+    properties:
+      src: metabolomics
+      usage: command line
+  plm:
+    properties:
+      src: plm
+      usage: command line
+  response_surface.py:
+    properties:
+      src: response_surface
+      usage: library
+  pangenome_heatmap.py:
+    properties:
+      src: pangenome_heatmap
+      usage: command line
+
+  # curation round 5 -- the KBase parity transforms whose body is an algorithm
+  kraken_abundance.py:
+    properties:
+      src: kraken_abundance
+      usage: command line
+  ppanggolin_summary.py:
+    properties:
+      src: ppanggolin_summary
+      usage: command line
+  go_overrepresentation.py:
+    properties:
+      src: go_overrepresentation
+      usage: command line
+  expression_clusters.py:
+    properties:
+      src: expression_clusters
+      usage: command line
+  modelling:
+    properties:
+      src: modelling
+      usage: command line
+  extract_noncoding_chunks.py:
+    properties:
+      src: extract_noncoding_chunks
+      usage: command line
+  merge_promotech_results.py:
+    properties:
+      src: merge_promotech_results
+      usage: command line
+  clean_wrapper.py:
+    properties:
+      src: clean_wrapper
+      usage: command line
+  ezpred_wrapper.py:
+    properties:
+      src: ezpred_wrapper
+      usage: command line
+  bsr_histogram.py:
+    properties:
+      src: bsr_histogram
+      usage: command line
+  piler_cr_to_gff3.py:
+    properties:
+      src: piler_cr_to_gff3
+      usage: command line
+ 
+  fabfos_gpr:
+    properties:
+      src: fabfos_gpr
+      usage: command line
+  fabfos_evidence.py:
+    properties:
+      src: fabfos_evidence
+      usage: command line
+  fabfos_embed_transfer.py:
+    properties:
+      src: fabfos_embed_transfer
+      usage: command line
+  # The ECSPr engine used to be vendored here as three loose files staged into a
+  # job as if they were data. It is the `ecspr` conda package now -- declared by
+  # `env::ecspr.env`, invoked as a command -- so a consumer states a dependency
+  # on a version rather than on a copy, and the transform and a benchmark run the
+  # same executable. There is nothing left to stage.

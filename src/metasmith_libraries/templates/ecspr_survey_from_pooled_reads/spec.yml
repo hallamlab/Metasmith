@@ -1,0 +1,110 @@
+name: ecspr_survey_from_pooled_reads
+description: 'Recover fosmid inserts from pooled reads, build their canonical chosen-4
+  GPR
+
+  evidence table, and measure ECSPr conductance over it -- saving the recovered
+
+  inserts, the per-lane annotations and the GPR table as outputs alongside the
+
+  final ecspr::results.'
+sample_type: null
+target_types:
+- fabfos::putative_inserts
+- fabfos::insert_metadata
+- type: sequences::assembly_stats
+  parents:
+  - 0
+- type: annotation::kofamscan_results
+  parents:
+  - 0
+- type: annotation::kofamscan_descriptions
+  parents:
+  - 0
+- type: annotation::clean_predictions
+  parents:
+  - 0
+- type: annotation::diamond_uniref50_results
+  parents:
+  - 0
+- type: annotation::diamond_uniref50_descriptions
+  parents:
+  - 0
+- type: annotation::proteinbert_embeddings
+  parents:
+  - 0
+- type: annotation::gpr_table
+  parents:
+  - 0
+- type: ecspr::results
+  parents:
+  - 0
+transform_libraries:
+- assembly
+- metagenomics
+- logistics
+- functionalAnnotation
+- fabfos
+resource_libraries:
+- env
+- lib
+shared_input_paths: []
+input_library:
+  schema: v1
+  manifest:
+    /msm_deferred/1fc7ca1437814951a27dfcc2820c8c3d:
+      type: ecspr::atom_pairs
+      instance_id: 1e20b9508af357e0139ece1bb8f29fafcbafb80fc1662aaa2f5cd6c44a57bcd60d2e
+      origin: leaf
+    /msm_deferred/351bdb1db9944faa8c903087514741fe:
+      type: fabfos::vector_backbone
+      parents:
+        nkkSVrr6JOUj@experiment.txt: fabfos::experiment
+      instance_id: 1e20bc1103fe1117d6c72d5dec95ac92c7d2adb58de9af18e068059cbd9c5f1a70dd
+      origin: leaf
+    /msm_deferred/38ec194cc9d846f78f8010b502757baa:
+      type: ref::label_transfer_landmarks
+      instance_id: 1e201aa9c60041ae54e36d2a4391b91149a77532e76174ca50a5aad7654b6827a93d
+      origin: leaf
+    /msm_deferred/59ac013d911f4359a77f25e73ca6b563:
+      type: sequences::short_reads_pe
+      parents:
+        nkkSVrr6JOUj@read_metadata.json: sequences::read_metadata
+      instance_id: 1e20027b9995bb898c15a95c27990b0156998c15f2e7baf9b0d9864d4981b839637e
+      origin: leaf
+    /msm_deferred/8a2aa4328b4845afaf62a5bf1551d1e1:
+      type: ref::mnxr_lookup
+      instance_id: 1e2048d5207f8fa9e1a8b94a5d8d5f7acafce99ed7a866ae2647d17100596b3b6c29
+      origin: leaf
+    /msm_deferred/9503f86ca32f4796bde76cf1b06b2adb:
+      type: sequences::background_genome
+      parents:
+        nkkSVrr6JOUj@experiment.txt: fabfos::experiment
+      instance_id: 1e20fa3efe6640d89b8afab37aa8d4cc37625d6f85c71366c6b548260338c4a51de4
+      origin: leaf
+    /msm_deferred/aa0413c0c0a540e1ba01e3bed0e88dcb:
+      type: ecspr::direction_ratios
+      instance_id: 1e20cd0801983a785685a5144e9d47aca6702bbf175c3940db6ea3bd34054c4b82f8
+      origin: leaf
+    /msm_deferred/b9f1b0e81fa94956ae733e9adfc649ff:
+      type: algorithm::fabfos_recovery.py
+      instance_id: 1e20ce9b2e418ee33a3271c8f0c1c2e8c5bbe8ad84d781141c0e1a1100d8db015bea
+      origin: leaf
+    /msm_deferred/f880fa134d8742a9960d1f30edf604fa:
+      type: ecspr::conditions
+      parents:
+        nkkSVrr6JOUj@experiment.txt: fabfos::experiment
+      instance_id: 1e2048d14cc04c459b40b17e5bb8cdcabb2a6080608c2350f1d88dfc16330d908347
+      origin: leaf
+    experiment.txt:
+      type: fabfos::experiment
+      instance_id: 1e20069cc8d5dc3bb4b39ec69f1afc7f9284c3c3ae49c86d5d0b8f882108dc7ca5b2
+      origin: leaf
+    read_metadata.json:
+      type: sequences::read_metadata
+      parents:
+        nkkSVrr6JOUj@experiment.txt: fabfos::experiment
+      instance_id: 1e209dc20bca5cde618adfacea7571be0076d5f230f509b4e645ad860eb7029834ee
+      origin: leaf
+  values:
+    experiment.txt: fosmid_pool_study
+    read_metadata.json: '{"parity": "paired", "length_class": "short"}'

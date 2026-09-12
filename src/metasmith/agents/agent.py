@@ -1,16 +1,3 @@
-"""A metasmith installation on some other host, and how to put one there.
-
-`Agent` is a client-side handle: a home directory reachable over ssh or the
-local filesystem, an environment to run in, and the deploy that makes the two
-true. Everything past deploy -- generating, staging, running, watching -- is
-mixed in from `workflow_ops` and `run_control`, which keeps this module about
-identity and provisioning.
-
-`Deploy` is the largest thing here and deliberately so: it is the one operation
-with no idempotent shortcut, and reading it end to end is how one learns what an
-agent actually needs on the far side.
-"""
-
 from __future__ import annotations
 
 import json
@@ -35,55 +22,28 @@ from ..models.libraries import DataTypeLibrary, TransformInstanceLibrary
 from ..models.remote import GlobusSource, Logistics, Source, SourceType, SshSource
 from ..models.solver import Endpoint, Solution
 from ..models.workflow import BIND_FILE
+from .pool import _PoolAccess
 from .run_control import _RunControl
 from .shell import AgentShell
 from .workflow_ops import _WorkflowOps
 
 
-
 @dataclass
-class Agent(_WorkflowOps, _RunControl):
+class Agent(_WorkflowOps, _RunControl, _PoolAccess):
     home: Source
-    # Stable identity, independent of anything a person types. The default home
-    # is built from this, not from the agent's display name, so renaming an
-    # agent can never relocate the directory it already has on disk. Set once,
-    # at construction, and never reassigned by any save thereafter.
     id: str = field(default_factory=lambda: KeyGenerator().GenerateUID(l=8))
     setup_commands: list[str] = field(default_factory=list)
     container: str = f"docker://quay.io/hallamlab/metasmith:{CONTAINER_TAG}"
     globus_uuid: str|None = None
     runtime: Runtime=Runtime.APPTAINER
     native: bool = False
-    # This host's standing answer to "SIF or unpacked sandbox", applied to the
-    # agent's own image at deploy and to every tool image afterwards. `AUTO`
-    # means try the cheap artifact and fall back on failure, which is right
-    # everywhere until a host proves otherwise; the forced modes are for a
-    # person who knows something the fallback chain cannot observe. A workflow
-    # task may override it for its own steps (StageWorkflow).
     rootfs: Rootfs = Rootfs.AUTO
-    # Extra flags this host needs to expose its GPUs to a tool, appended after
-    # the runtime's own switch. Empty on a normal Linux box; WSL2 needs
-    # ["--bind", "/usr/lib/wsl:/usr/lib/wsl", "--env",
-    #  "LD_LIBRARY_PATH=/usr/lib/wsl/lib"] because apptainer's `--nv` discovery
-    # misses the WSL driver stack. A host fact, so it is declared here rather
-    # than sniffed at run time.
     gpu_args: list[str] = field(default_factory=list)
-    # Which nextflow config preset a run on this agent uses when the caller does
-    # not name one. `None` means the built-in `local`, which is the right answer
-    # for a workstation and the wrong one for every scheduler -- and the caller
-    # that most often names nothing is a person clicking launch, who has no way
-    # to know their cluster needs `slurm`. A property of the machine, so it is
-    # declared on the machine.
     default_preset: str|None = None
-    # Params every run on this agent starts from, layered under whatever the run
-    # itself names. The preset above says *how* to submit; this is where the
-    # facts that preset needs -- the cluster account, the partition -- come from,
-    # and they are properties of the machine for the same reason.
     default_params: dict = field(default_factory=dict)
     real_path: Path|None = None
 
     def _environment(self) -> Environment:
-        # The agent's own Environment — how metasmith itself runs on the host.
         return Environment(
             image=self.container, runtime=self.runtime, native=self.native,
             rootfs=self.rootfs,
@@ -97,16 +57,8 @@ class Agent(_WorkflowOps, _RunControl):
             globus_uuid=self.globus_uuid,
             default_preset=self.default_preset,
             real_path=self.real_path,
-            # Omitted at AUTO, so an agent that never forced a mode keeps a file
-            # identical to the one it had before this field existed -- and stays
-            # loadable by a metasmith that predates it.
             rootfs=None if self.rootfs == Rootfs.AUTO else self.rootfs.name,
         ).items() if v is not None}
-        # Packed outside `optional`, which stringifies everything it writes --
-        # right for the strings above, and silently fatal for a mapping,
-        # which would reload as a quoted Python literal and produce no params at
-        # all. Omitted entirely when empty, so an agent that sets none keeps a
-        # file identical to the one it had before this field existed.
         if self.default_params:
             optional["default_params"] = dict(self.default_params)
         return dict(
@@ -127,15 +79,10 @@ class Agent(_WorkflowOps, _RunControl):
     def Unpack(cls, data):
         data["home"] = Source.Unpack(data["home"])
         data["runtime"] = Runtime[data["runtime"]]
-        # `native` is newer than the original agent.yml format; legacy files
-        # omit it and default to a wrapped (non-native) environment.
         data.setdefault("native", False)
         data.setdefault("gpu_args", [])
-        # newer again; an agent file that never set one names no preset, and
-        # `RunWorkflow` falls back to `local` exactly as it always did
         data.setdefault("default_preset", None)
         data.setdefault("default_params", {})
-        # Written only when forced (see Pack), so its absence IS the default.
         data["rootfs"] = Rootfs[data["rootfs"]] if data.get("rootfs") else Rootfs.AUTO
         k = "real_path"
         if k in data:
@@ -147,16 +94,11 @@ class Agent(_WorkflowOps, _RunControl):
         with open(file_path, "r") as f:
             data = yaml.safe_load(f)
         agent = cls.Unpack(data)
-        # A legacy file has no `id` at all -- `Unpack`'s `cls(**data)` still
-        # produces one, via the dataclass default, but a fresh random one on
-        # every read is not an identity. Persist it the first time so it is
-        # the same id on every read after this one.
         if "id" not in data:
             agent.Save(file_path)
         return agent
     
     def _get_realpath(self):
-        """realpath is resolved upon deployment"""
         assert self.real_path is not None, "not resolved"
         return self.real_path
 
@@ -200,17 +142,8 @@ class Agent(_WorkflowOps, _RunControl):
     def _run_cleanup(self, shell: LiveShell):
         pass
 
-    def Deploy(self, assertive: bool=False, runtime: Runtime|None=None, image: str|None=None, native: bool|None=None, rootfs: Rootfs|str|None=None):
-        # Deploy is the entry point where the runtime is chosen and then
-        # persisted into agent.yml; everything downstream reads it back
-        # transparently. Passing nothing keeps the agent's current runtime.
-        # `native=True` selects the orthogonal "already inside, no wrapper"
-        # mode (not a runtime — composes with one).
-        #
-        # `rootfs` is persisted the same way, which is what makes it a
-        # *tendency* rather than a one-shot: the execute side reloads agent.yml,
-        # so tool images inherit it with no further plumbing. StageWorkflow can
-        # override it for one workflow task.
+    def Deploy(self, assertive: bool=False, runtime: Runtime|None=None, image: str|None=None, native: bool|None=None, rootfs: Rootfs|str|None=None, on_phase=None):
+        _phase = on_phase or (lambda _: None)
         if runtime is not None:
             self.runtime = runtime
         if image is not None:
@@ -261,6 +194,7 @@ class Agent(_WorkflowOps, _RunControl):
                     Log.Error(e)
                 assert len(res.completed) == 1, f"failed to deploy files"
 
+            _phase("connecting")
             _quiet = True
             self._run_setup(shell)
             _quiet = False
@@ -313,12 +247,12 @@ class Agent(_WorkflowOps, _RunControl):
                 f"mkdir -p {p}" for p, _ in container.container.binds
             ]
             do_step("\n".join(_cmds))
-            # Per-host provisioning (image pull + SIF/sandbox decision) is
-            # owned by the Environment so Deploy never branches on a runtime.
-            # Empty for runtimes with nothing to pull (mamba/native).
+            _phase("provisioning")
             for _cmd, _display_cmd in container.ProvisionSteps(agent_home=resolved_agent_home, assertive=assertive):
-                do_step(cmd=_cmd, display_cmd=_display_cmd)
+                res = do_step(cmd=_cmd, display_cmd=_display_cmd)
+                assert res.exit_code in (0, None), f"provisioning step failed (exit={res.exit_code}): {_display_cmd or _cmd}"
 
+            _phase("staging")
             _remote_file(
                 container.RenderMsmWrapper(
                     agent_home=resolved_agent_home,
@@ -331,13 +265,6 @@ class Agent(_WorkflowOps, _RunControl):
                 executable=True,
             )
 
-            # What the home actually resolved to on the host, kept on *this*
-            # agent as well as on the copy that goes with it. The field's whole
-            # description is "resolved upon deployment", and only the remote
-            # copy was ever getting it -- so a caller that saved the agent after
-            # deploying still had `None`, which reads as "never deployed".
-            # `save_agent` clears it again the moment the home is re-pointed,
-            # which is what keeps the two meanings from drifting.
             self.real_path = resolved_agent_home
             _remote_copy = Agent.Unpack(self.Pack())
             _remote_copy.home = Source.FromLocal(resolved_agent_home)
@@ -375,36 +302,16 @@ class Agent(_WorkflowOps, _RunControl):
             )
 
             _sync_remote_files()
-            # Container extraction is the one truly expensive step left;
-            # everything else above is either a no-op (rsync -au on unchanged
-            # files) or self-gated ([ -e {sif} ] for the container pull).
-            # Skip extraction only when its actual output already exists, so
-            # a partial deploy (sif present, relay missing) self-heals on the
-            # next call without needing assertive=True.
-            # Built from the already-resolved absolute path, not the raw
-            # `self.home.GetPath()` -- that one may still carry a literal `~`
-            # (unexpanded, since it's just a Path over the config string),
-            # which double-quoting in the shell checks below would break: bash
-            # does not expand `~` inside double quotes, so the existence
-            # checks would always report the relay missing.
+            _phase("finishing")
             relay_bin = AgentPaths.to_relay(resolved_agent_home)
             if not container.needs_relay:
-                # The relay exists solely to bounce tool launches back across a
-                # container boundary. mamba/native have no boundary, and the
-                # extraction step reads from inside the metasmith container --
-                # which is not running. Nothing to deploy.
                 Log.Info(f"runtime [{self.runtime.name}] needs no relay, skipping container extraction")
             elif "relay-present" in shell.Exec(
                     f'[[ -e "{relay_bin}" ]] && echo "relay-present"', history=True).out and not assertive:
                 Log.Info(f"relay binary present at [{relay_bin}], skipping container extraction")
             else:
-                # Runs *inside* the metasmith container via the msm wrapper, so
-                # the workspace is the container's own view of the agent home.
                 do_step(f"{resolved_agent_home}/msm api deploy_from_container -a workspace={AgentPaths.CONTAINER_HOME_ROOT} architecture=$(uname -m) system=$(uname -s)")
                 res = shell.Exec(f'[[ -e "{relay_bin}" ]] && echo "relay-deployed"', history=True)
                 assert "relay-deployed" in res.out, f"deploy_from_container completed but relay binary missing at [{relay_bin}]"
             self._run_cleanup(shell)
             Log.Info(f"deployed to [{self.home.address}]")
-
-
-

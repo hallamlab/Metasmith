@@ -1,0 +1,496 @@
+types:
+  assembly:
+    properties:
+      Format: FASTA
+      Data: nucleic acid sequence
+      ext: fna
+      origin: assembler
+  contig_batch:
+    properties:
+      _: Fixed-size (~5 Mbp) batch of a per-sample contig FASTA; fans out contig-level annotators (genomad, virsorter2, vibrant, dramv, integron_finder). Distinct sibling of assembly (NOT a subtype, like orf_chunk to orfs) so the solver routes batches only to batch-consuming contig tools, never to whole-assembly consumers. Headers are reversibly sample-prefixed (SG<id>~k141_N) by w4_rebatch.py; w4_recompile.py strips the prefix + regroups results per sample. Naming it -- rather than sequences::assembly -- is also what pairs a contig annotator's output with the exact contig set it ran on, which matters once a tool runs on more than one.
+      Format: FASTA
+      Data: nucleic acid sequence
+      granularity: batch
+      ext: fna
+  putative_genome:
+    properties:
+      Format: FASTA
+      Data: nucleic acid sequence
+      ext: fna
+      genome_scope: single
+  gbk:
+    properties:
+      Format: genbank file
+      ext: gbk
+  gff:
+    properties:
+      Format: gene feature format
+      ext: gff
+  reads:
+    properties:
+      _: DNA reads
+      qc: none
+      Format: FASTQ
+      Data: nucleic acid sequence
+      compression: gzip
+      ext: fq.gz
+      pair_state: complete
+  unpaired_read_half:
+    properties:
+      qc: none
+      Format: FASTQ
+      Data: nucleic acid sequence
+      compression: gzip
+      ext: fq.gz
+      pair_state: half
+  clean_reads:
+    extends:
+    - reads
+    properties:
+      qc: filtered
+  discarded_reads:
+    extends:
+    - reads
+    properties:
+      qc: discarded
+# -----------------------------------------
+# short reads
+  short_reads:
+    extends:
+    - reads
+    properties:
+      read_length: short
+  short_reads_pe:
+    extends:
+    - short_reads
+    properties:
+      parity: interleaved
+  short_reads_se:
+    extends:
+    - short_reads
+    properties:
+      parity: single
+  read_pair:
+    properties:
+      atomic: a pair of read files
+  forward_short_reads:
+    extends:
+    - unpaired_read_half
+    properties:
+      parity: paired end
+      direction: forward
+      read_length: short
+      ext: fq
+      compression: none
+  zipped_forward_short_reads:
+    extends:
+    - unpaired_read_half
+    properties:
+      parity: paired end
+      direction: forward
+      read_length: short
+  reverse_short_reads:
+    extends:
+    - unpaired_read_half
+    properties:
+      parity: paired end
+      direction: reverse
+      qc: none
+      read_length: short
+      ext: fq
+      compression: none
+  zipped_reverse_short_reads:
+    extends:
+    - unpaired_read_half
+    properties:
+      parity: paired end
+      direction: reverse
+      read_length: short
+  forward_ora_reads:
+    extends:
+    - unpaired_read_half
+    properties:
+      parity: paired end
+      direction: forward
+      read_length: short
+      ext: fastq.ora
+      compression: ora
+  reverse_ora_reads:
+    extends:
+    - unpaired_read_half
+    properties:
+      parity: paired end
+      direction: reverse
+      read_length: short
+      ext: fastq.ora
+      compression: ora
+  clean_short_reads:
+    extends:
+    - clean_reads
+    properties:
+      read_length: short
+  discarded_short_reads:
+    extends:
+    - discarded_reads
+    properties:
+      read_length: short
+  clean_short_reads_pe:
+    extends:
+    - clean_short_reads
+    properties:
+      parity: interleaved
+  clean_short_reads_se:
+    extends:
+    - clean_short_reads
+    properties:
+      parity: single
+  host_filtered_short_reads:
+    extends:
+    - clean_short_reads
+    properties:
+      filter: host-removed
+  background_genome:
+    properties:
+      _: host/background reference for read filtering
+      Format: FASTA
+      Data: host genome reference
+      ext: fna
+# -----------------------------------------
+# long reads
+  long_reads:
+    extends:
+    - reads
+    properties:
+      parity: single
+      read_length: long
+  clean_long_reads:
+    extends:
+    - clean_reads
+    properties:
+      parity: single
+      read_length: long
+  100x_long_reads:
+    extends:
+    - clean_long_reads
+    properties:
+      qc: read_depth_stratified
+      coverage: 100x
+  discarded_long_reads:
+    extends:
+    - discarded_reads
+    properties:
+      parity: single
+      read_length: long
+# -----------------------------------------
+# pacbio
+  pacbio_hifi_bam:
+    properties:
+      _: PacBio HiFi reads in BAM format
+      Format: BAM
+      Data: nucleic acid sequence
+      read_length: long
+      parity: single
+      ext: bam
+# -----------------------------------------
+# reports
+  # What the researcher calls one sample. Sits ABOVE `read_metadata` in lineage, so
+  # every read set, alignment and profile made from that sample inherits it, and any
+  # later step can ask which sample a given file descends from.
+  #
+  # `ncbi::genome_name`'s idiom one level down, and here for the same reason: a name is
+  # a fact about intent, and nothing inside a fastq is both unique and readable.
+  # `kraken_abundance` labelled its columns by the staged file's stem for want of this,
+  # and a hybrid isolate said "same sample" only by sharing a `read_metadata` node that
+  # was never named for the job. It lives beside `read_metadata` because that is where
+  # sample identity attaches -- not in `ncbi::`, which is about accessions.
+  #
+  # It has no producer, and that is the design: like `genome_name`, it is supplied as a
+  # deferred template input. Declaring it mandatory somewhere nothing produces it would
+  # take down every target in the spec, not just the one that wanted it -- round 5 saw
+  # that twice. Curation round 6.
+  sample_name:
+    properties:
+      Data: name for a sample, chosen by whoever asked for it
+      arity: 1
+      ext: txt
+
+  read_metadata:
+    properties:
+      _: read metadata
+      fields:
+      - parity        # one of: single, paired
+      - length_class  # one of: short, long
+      ext: json
+
+  read_qc_stats:
+    properties:
+      _: read QC stats
+      fields:
+      - reads
+      - bases
+      - mean_quality
+      - phred_encoding
+      - N50
+      - GC
+      ext: json
+  # fastp's own before/after reports. NOT among curation round 3's 26 proposed types:
+  # round 3 wrote the fastp proposal from the KBase side and gave it
+  # `discarded_short_reads` as its third product, not knowing that the transform was
+  # already written and emits these instead. The written file's signature stands, and it
+  # needs these two declared -- fastp.py sat in `_disabled/` from before they existed.
+  fastp_json_report:
+    properties:
+      _: fastp before/after QC report
+      ext: json
+  fastp_html_report:
+    properties:
+      _: fastp before/after QC report rendering
+      ext: html
+  fastqc_html_report:
+    properties:
+      _: fastqc html report
+      ext: html
+  fastqc_raw_report:
+    properties:
+      _: fastqc raw report
+      ext: zip
+  nanoplot_html_report:
+    properties:
+      _: nanoplot html report
+      ext: html
+  nanoplot_raw_report:
+    properties:
+      _: nanoplot raw report
+      ext: gz
+
+  assembly_stats:
+    properties:
+      _: assembly stats
+      fields:
+      - fraction_reads_mapped
+      - length
+      - N50
+      - GC
+      - number_of_contigs
+      ext: json
+  assembly_per_contig_coverage:
+    properties:
+      _: assembly per contig coverage
+      ext: tsv
+  assembly_per_bp_coverage:
+    properties:
+      _: assembly per bp coverage
+      ext: gz
+# -----------------------------------------
+# assembly
+  miniasm_gfa:
+    properties:
+      _: miniasm rough assembly
+      Format: graphical fragment assembly
+      ext: gfa
+  isolate_assembly:
+    extends:
+    - assembly
+    - putative_genome
+    properties:
+      subject: isolate
+  chromosomal_contig:
+    extends:
+    - putative_genome
+    properties:
+      _: curated single-chromosome contig from a long-read assembly
+      origin: long_read_pseudo_bin
+  hifiasm_meta_assembly:
+    extends:
+    - assembly
+    properties:
+      method: hifiasm-meta
+  flye_assembly:
+    extends:
+    - assembly
+    properties:
+      method: flye
+  megahit_assembly:
+    extends:
+    - assembly
+    properties:
+      method: megahit
+  spades_assembly:
+    extends:
+    - assembly
+    properties:
+      method: spades
+  flye_raw_assembly:
+    extends:
+    - assembly
+    properties:
+      method: flye using raw reads
+# -----------------------------------------
+# assembly graphs -- the assembler's OWN representation of the assembly, kept
+# because the contig FASTA is a lossy read-out of it. A contig FASTA cannot say
+# whether a contig is circular, nor which contigs are adjacent; the graph can.
+# Both assemblers emit one, but they are not the same kind of object:
+#
+#   spades  a single consolidated graph. Its GFA carries S (edges), L (links)
+#           and P (paths) lines. The P lines of
+#           `assembly_graph_with_scaffolds.gfa` are named for SCAFFOLDS, not
+#           for the contigs we ship: measured on a real pool, only 9 of 101
+#           path names matched a `contigs.fasta` record and the NODE numbering
+#           diverged from contig 11 onward. So `contigs.paths` IS a product --
+#           it is the assembler's own statement of which walk each contig is,
+#           and without it a contig can only be located in the graph by
+#           matching on (length, cov), which is inference.
+#           Circularity reads as a self-loop L line whose overlap field states
+#           the exact join length to trim (verified: `L 11 - 11 - 55M` for a
+#           9,055 bp closed element assembled at k=55, and `55M` self-loops on
+#           a real pool).
+#   megahit no final graph exists -- it builds a fresh succinct de Bruijn graph
+#           per k and discards it, so the graph is reconstructed after the fact
+#           by `megahit_toolkit contig2fastg <k> k<k>.contigs.fa` at the largest
+#           k the run actually REACHED (megahit stops early when the graph is
+#           exhausted, so that k is discovered, never assumed to be 141).
+  assembly_graph:
+    properties:
+      _: the assembler's own graph of the assembly it produced -- the structure the contigs were read off, retained so circularity and contig adjacency stay recoverable
+      Data: assembly graph
+      origin: assembler
+  megahit_assembly_graph:
+    extends:
+    - assembly_graph
+    properties:
+      _: megahit's de Bruijn graph at the largest k the run reached, reconstructed from that k's contigs by megahit_toolkit contig2fastg
+      Format: FASTG
+      method: megahit
+      ext: fastg
+  spades_assembly_graph:
+    extends:
+    - assembly_graph
+    properties:
+      _: spades' consolidated assembly graph; its GFA P lines name scaffolds, so the contig->walk mapping comes from the companion spades_contig_paths
+      Format: graphical fragment assembly
+      method: spades
+      ext: gfa
+  spades_contig_paths:
+    properties:
+      _: the walk through spades' assembly graph that each contigs.fasta record corresponds to; meaningless without the graph it indexes
+      Data: assembly graph index
+      Format: spades paths
+      origin: assembler
+      method: spades
+      ext: paths
+# -----------------------------------------
+# metagenomic bins (putative single-genome FASTAs from a binner)
+#
+# A BIN IS NOT AN ASSEMBLY, and this is a decision rather than an oversight. A bin is
+# really a MAPPING of contigs -- which of an assembly's contigs a binner grouped
+# together -- and `binning::*_contig_to_bin_table` is that mapping written down. The
+# FASTA is a materialisation of it, to be avoided wherever it can be: annotation must
+# not sit downstream of a bin, because then every annotation is scoped to one binner's
+# grouping and has to be redone when the grouping changes. Making `bin_fasta` an
+# `assembly` would put it in reach of every assembly consumer in the library, which is
+# exactly the routing this refuses.
+#
+# Rounds 3, 4 and 5 each re-raised the join because the three tests below asserted the
+# negative without saying why. This is why. `test_bin_fasta_not_isa_assembly`,
+# `test_metabat2_bin_fasta_not_isa_assembly` and
+# `test_chromosomal_contig_not_isa_assembly` hold the line; curation round 6 closed it.
+  bin_fasta:
+    extends:
+    - putative_genome
+    properties:
+      _: a single metagenomic bin FASTA file
+  metabat2_bin_fasta:
+    extends:
+    - bin_fasta
+    properties:
+      method: metabat2
+  semibin2_bin_fasta:
+    extends:
+    - bin_fasta
+    properties:
+      method: semibin2
+  comebin_bin_fasta:
+    extends:
+    - bin_fasta
+    properties:
+      method: comebin
+  metawrap_bin_fasta:
+    extends:
+    - bin_fasta
+    properties:
+      method: metawrap
+# -----------------------------------------
+# protein
+  orfs:
+    properties:
+      Format: FASTA
+      Data: protein sequence
+      content: open reading frames
+      granularity: whole   # whole per-sample ORF set; orf_chunk (granularity:chunk) is a
+                           # true sibling, NOT a subtype — without this discriminator orf_chunk
+                           # is a property-superset of orfs and satisfies orfs requirements, so
+                           # whole-sample tools (rgi, amrfinderplus) fan out over every chunk.
+      ext: faa
+  orfs_shard:
+    extends:
+    - orfs
+    properties:
+      _: Length-balanced shard of an ORF FASTA; fans out embedding transforms
+      ext: faa
+  orf_chunk:
+    properties:
+      _: Fixed-size (~5000 ORF) chunk of a per-sample ORF FASTA; fans out CPU/IO-bound annotators (distinct sibling of orfs, like forward_short_reads is to short_reads)
+      Format: FASTA
+      Data: protein sequence
+      content: open reading frames
+      granularity: chunk
+      ext: faa
+  orf_batch:
+    properties:
+      _: Large (~3hr/job-calibrated) batch of a per-sample ORF FASTA; fans out the AMR ORF tools (rgi, amrfinderplus, megares, bacmet, vfdb). Distinct sibling of orfs (granularity:batch, NOT a subtype — like contig_batch to assembly and orf_chunk to orfs) so the solver routes AMR-sized batches to the AMR ORF tools without entangling them with the W2 annotation orf_chunk path (granularity:chunk). Produced in-DAG by splitOrfsForAmr.py (replacing the external w4_rebatch.py); headers reversibly sample-prefixed (SG<id>~k141_N_k) so w4_recompile.py splits on the first '~' to de-prefix + regroup per sample.
+      Format: FASTA
+      Data: protein sequence
+      content: open reading frames
+      granularity: batch
+      ext: faa
+# -----------------------------------------
+# protein structures
+  predicted_structures:
+    properties:
+      _: Predicted protein structures keyed by ORF id (tar of mmCIF files)
+      Format: mmCIF
+      ext: tar.gz
+  structure_3di_tokens:
+    properties:
+      _: Foldseek 3Di token strings per ORF (sequence_id -> 3di)
+      Format: Parquet
+      ext: parquet
+  boltz_structures:
+    properties:
+      _: Boltz-2 predicted structures (tar of mmCIF files)
+      Format: mmCIF
+      ext: tar.gz
+# -----------------------------------------
+# curation round 3 -- KBase parity. See research/kbase/curation/r3/proposals.yml.
+  filtered_assembly:
+    extends:
+    - assembly
+    properties:
+      _: contigs surviving a length or coverage filter
+      filter: length_or_coverage
+  polished_assembly:
+    extends:
+    - assembly
+    properties:
+      _: long-read contigs corrected against a short-read library
+      polish: short_read
+  min_contig_length:
+    properties:
+      _: minimum contig length in bp, the knob a contig filter is run at
+      arity: 1
+      ext: txt
+  variant_calls:
+    properties:
+      _: variant calls against a named reference
+      Format: VCF
+      ext: vcf

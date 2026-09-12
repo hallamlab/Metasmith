@@ -1,15 +1,4 @@
-"""Centralized mock transform code strings for testing.
-
-Each function returns dict[str, str] mapping transform name to Python code string.
-These transforms use Path.write_text() for output (no container needed).
-"""
-
-
 def alignment_transform() -> dict[str, str]:
-    """Alignment: reads + assembly -> bam.
-
-    Assembly has reads as parent in lineage (reads -> assembly).
-    """
     return {
         "alignment": '''
 from pathlib import Path
@@ -42,7 +31,6 @@ TransformInstance(
 
 
 def binner_transforms() -> dict[str, str]:
-    """Binners: assembly + bam -> {metabat2,maxbin2,concoct}_bins."""
     binners = {}
     for method in ["metabat2", "maxbin2", "concoct"]:
         binners[method] = f'''
@@ -76,12 +64,6 @@ TransformInstance(
 
 
 def identity_transform(input_type: str, output_type: str) -> dict[str, str]:
-    """Simple copy transform for pipeline testing.
-
-    Args:
-        input_type: Namespaced input type (e.g. "mock::assembly")
-        output_type: Namespaced output type (e.g. "mock::bam")
-    """
     name = f"identity_{output_type.split('::')[-1]}"
     return {
         name: f'''
@@ -115,11 +97,6 @@ TransformInstance(
 
 
 def batched_transform(batch_size: int = 3) -> dict[str, str]:
-    """Transform exercising context.AsBatch().
-
-    Args:
-        batch_size: Number of items per batch.
-    """
     return {
         "batched": f'''
 from pathlib import Path
@@ -158,13 +135,6 @@ _BRANCH_NAMES = ["a", "b", "c", "d", "e", "f", "g", "h"]
 
 
 def branching_transforms(n: int = 2) -> dict[str, str]:
-    """N producers + merger: assembly -> branch_<letter> for each of N letters,
-    (branch_a + branch_b + ... branch_<n-1>) -> merged.
-
-    Default N=2 preserves the original two-branch contract. N up to 8 is
-    supported by the static `_BRANCH_NAMES` table; callers requesting more
-    branches get a ValueError so the conftest type fixture stays in sync.
-    """
     if not (2 <= n <= len(_BRANCH_NAMES)):
         raise ValueError(
             f"branching_transforms: n must be in [2, {len(_BRANCH_NAMES)}], got {n}"
@@ -228,13 +198,6 @@ TransformInstance(protocol=protocol, model=model, group_by=dep_{primary})
 
 
 def shared_input_transform() -> dict[str, str]:
-    """Shared-input transform: container + assembly -> annotated.
-
-    Container is declared as parent of assembly, so the Orchestrator
-    treats it as a shared/broadcast input (via group()'s parent branch
-    -> .combine()). This replicates the proteinbert topology where a
-    single container instance is broadcast to all per-sample assemblies.
-    """
     return {
         "annotate_with_container": '''
 from pathlib import Path
@@ -267,13 +230,6 @@ TransformInstance(
 
 
 def multi_slot_producer(slots: int = 2) -> dict[str, str]:
-    """Single-input transform with N declared output products (distinct dtypes).
-
-    Each product lives in its own branch via `NewProductGroup` (matches the
-    `branching_transforms` shape), so the planner emits N distinct slots and
-    the orchestrator routes each downstream consumer independently. Drives
-    F1-F4 (fan-out catalog).
-    """
     assert slots >= 1, "multi_slot_producer needs at least one slot"
     slot_lines: list[str] = []
     write_lines: list[str] = []
@@ -316,14 +272,43 @@ TransformInstance(protocol=protocol, model=model, group_by=dep)
     }
 
 
-def group_then_unfold() -> dict[str, str]:
-    """Group-then-unfold pair: T1 groups by root, T2 unfolds via `AsBatch`.
+def multi_product_one_group(products: int = 2) -> dict[str, str]:
+    assert products >= 1, "multi_product_one_group needs at least one product"
+    decls = "\n".join(
+        f'out_{i} = model.AddProduct(lib.GetType("mock::slot_{i}"))'
+        for i in range(products)
+    )
+    writes = "\n    ".join(
+        f'p_{i} = Path("slot_{i}.txt"); p_{i}.write_text("slot {i} content")'
+        for i in range(products)
+    )
+    entry = ", ".join(f"out_{i}: p_{i}" for i in range(products))
+    return {
+        "multi_product_one_group": f'''
+from pathlib import Path
+from metasmith.models.libraries import (
+    TransformInstanceLibrary,
+    TransformInstance,
+    ExecutionContext,
+    ExecutionResult,
+)
+from metasmith.models.solver import Transform
 
-    The first transform consumes a per-sample input keyed by a shared root
-    parent (`group_by=root`) and writes one aggregate output. The second
-    transform iterates `context.AsBatch()` to re-emit per-batch products
-    matching the upstream batch shape. Drives GS1-GS3.
-    """
+lib = TransformInstanceLibrary.ResolveParentLibrary(__file__)
+model = Transform()
+dep = model.AddRequirement(lib.GetType("mock::assembly"))
+{decls}
+
+def protocol(context: ExecutionContext):
+    {writes}
+    return ExecutionResult(manifest=[{{{entry}}}], success=True)
+
+TransformInstance(protocol=protocol, model=model, group_by=dep)
+'''
+    }
+
+
+def group_then_unfold() -> dict[str, str]:
     return {
         "group_aggregate": '''
 from pathlib import Path
@@ -377,13 +362,6 @@ TransformInstance(protocol=protocol, model=model, group_by=dep, batch_size=1)
 
 
 def failing_at_slot_k(k: int = 1, slots: int = 2) -> dict[str, str]:
-    """Multi-slot producer where slot `k` reports failure; other slots succeed.
-
-    Mirrors `multi_slot_producer` but the protocol returns
-    `ExecutionResult(success=False)` for slot `k` while the remaining slots
-    return success. Drives T3 (failure telemetry) and B3 (sibling-branch
-    independence). `k` is 0-indexed; defaults to slot 1.
-    """
     assert slots >= 1, "failing_at_slot_k needs at least one slot"
     assert 0 <= k < slots, f"k={k} out of range for slots={slots}"
     slot_lines: list[str] = []
@@ -430,20 +408,6 @@ def pull_container_transform(
     container_type: str = "mock::container",
     pulled_type: str = "mock::pulled",
 ) -> dict[str, str]:
-    """Prefetch transform: <generic container> -> <pulled>, grouped by the
-    container requirement.
-
-    Mirrors the real container-prefetch step. The single requirement is the
-    *generic* container type, so when given inputs are distinct subtypes that
-    each structurally satisfy it (e.g. provides:bbtools / megahit / seqkit),
-    the solver merges them under one requirement. This is the topology that
-    regressed into a malformed o.group / runtime NPE; see
-    tests/integration/test_multicontainer_groupby.py.
-
-    Args:
-        container_type: Namespaced generic container requirement type.
-        pulled_type: Namespaced produced type.
-    """
     return {
         "pullContainer": f'''
 from pathlib import Path
@@ -475,7 +439,6 @@ TransformInstance(
 
 
 def failing_transform() -> dict[str, str]:
-    """Transform that raises an exception for error-path testing."""
     return {
         "failing": '''
 from pathlib import Path
@@ -501,21 +464,6 @@ TransformInstance(protocol=protocol, model=model, group_by=dep)
 
 
 def labelled_collection() -> dict[str, str]:
-    """A collecting transform that pairs each item with the label it descends from.
-
-    The ppanggolin shape, reduced: a `root` groups everything; each `label` is a
-    user-supplied value under that root; each `assembly` descends from a label
-    and is transformed per-sample into a `bam`. The collecting step then sees N
-    labels and N bams at once and has to say which goes with which.
-
-    Position cannot answer that — the two groups are accumulated independently
-    in task-arrival order — so the protocol asks `SourceOf`, which reads the
-    ancestry each item arrived with. Drives LP6-LP8.
-
-    A label that resolves to nothing is written as `UNPAIRED` rather than
-    skipped, so a regression shows up as a wrong pairing in the output instead
-    of as a shorter file.
-    """
     return {
         "label_item": '''
 from pathlib import Path
@@ -570,4 +518,78 @@ def protocol(context: ExecutionContext):
 
 TransformInstance(protocol=protocol, model=model, group_by=root)
 ''',
+    }
+
+
+# Writes back what the caller said the machine was, so a test can read the
+# parameters a protocol actually received rather than the ones it was passed.
+def params_transform() -> dict[str, str]:
+    return {
+        "params_echo": '''
+from pathlib import Path
+from metasmith.models.libraries import (
+    TransformInstanceLibrary,
+    TransformInstance,
+    ExecutionContext,
+    ExecutionResult,
+)
+from metasmith.models.solver import Transform
+
+lib = TransformInstanceLibrary.ResolveParentLibrary(__file__)
+model = Transform()
+reads = model.AddRequirement(lib.GetType("mock::reads"))
+asm = model.AddRequirement(lib.GetType("mock::assembly"), parents={reads})
+out = model.AddProduct(lib.GetType("mock::bam"))
+
+def protocol(context: ExecutionContext):
+    out_path = Path("aligned.bam")
+    out_path.write_text(
+        f"cpus={context.params.get(\'cpus\')} "
+        f"memory={context.params.get(\'memory\')} "
+        f"attempt={context.params.get(\'attempt\')}"
+    )
+    return ExecutionResult(manifest=[{out: out_path}], success=True)
+
+TransformInstance(
+    protocol=protocol,
+    model=model,
+    group_by=asm,
+)
+'''
+    }
+
+
+# Asks which input its assembly descends from, which is what a collecting transform does
+# to recover a sample label. It needs the slot channels and the per-item provenance that a
+# compiled workflow gets from the orchestrator and a direct run has to synthesise.
+def provenance_transform() -> dict[str, str]:
+    return {
+        "provenance_echo": '''
+from pathlib import Path
+from metasmith.models.libraries import (
+    TransformInstanceLibrary,
+    TransformInstance,
+    ExecutionContext,
+    ExecutionResult,
+)
+from metasmith.models.solver import Transform
+
+lib = TransformInstanceLibrary.ResolveParentLibrary(__file__)
+model = Transform()
+reads = model.AddRequirement(lib.GetType("mock::reads"))
+asm = model.AddRequirement(lib.GetType("mock::assembly"), parents={reads})
+out = model.AddProduct(lib.GetType("mock::bam"))
+
+def protocol(context: ExecutionContext):
+    src = context.SourceOf(context.Input(asm), reads)
+    out_path = Path("aligned.bam")
+    out_path.write_text("NONE" if src is None else src.local.name)
+    return ExecutionResult(manifest=[{out: out_path}], success=True)
+
+TransformInstance(
+    protocol=protocol,
+    model=model,
+    group_by=asm,
+)
+'''
     }

@@ -1,0 +1,30 @@
+manifest:
+  esm_c_weights.py:
+    instance_id: 1e206e075b7fd258b1503a9419a6baf7b6c52364e2c54a9b683f387a49d9c2201aad
+    origin: leaf
+    type: transforms::transform
+  kofam_ref.py:
+    instance_id: 1e20aaddee0b8008bd923aaf8e194d46ca0e732bfacdc39b0eccd356b4883a9185e4
+    origin: leaf
+    type: transforms::transform
+  label_transfer_landmarks.py:
+    instance_id: 1e2083876c7fac91ac2b121201775269647861adaf27d50c6f20df1ecd0de99429fb
+    origin: leaf
+    type: transforms::transform
+  label_transfer_landmarks_esmc.py:
+    instance_id: 1e206060893eb01c209dc9c11a15f925a92d3907421d031f829fbdb825727eb8089f
+    origin: leaf
+    type: transforms::transform
+  mnx_lookups.py:
+    instance_id: 1e209ba06d24db11ede433cfde700eb7c5b5d48c2a06c93df899c9982084c29716cf
+    origin: leaf
+    type: transforms::transform
+  mnxr_lookup.py:
+    instance_id: 1e201d36376b9d68d6dcfd6b7782768cbecb85452f1b56a9a9eac05657a7306476da
+    origin: leaf
+    type: transforms::transform
+  uniref50_dmnd.py:
+    instance_id: 1e20efc529c9fd2f499583a8e9254074aefd7b55452214146b6e4bec56e6a082d9ea
+    origin: leaf
+    type: transforms::transform
+schema: v1
