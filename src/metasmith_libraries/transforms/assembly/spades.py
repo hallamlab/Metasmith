@@ -131,32 +131,80 @@ def protocol(context: ExecutionContext):
     context.ExecWithEnv(env=img_bbt, cmd=_filter_cmd)
 
 
-    # A product check, not an existence check. On 2026-09-11 this transform
-    # produced a published assembly of the right SIZE whose content was wrong:
-    # reformat.sh reported 86,744 records and 81,336,020 bases, and the file
-    # carried 505,012 records and 59,091,548 bases, opening mid-sequence with a
-    # hole at byte 1,236,201 -- exactly the length of NODE_1. Unflushed
-    # writeback, read before the data landed.
+    # A product check, not an existence check -- and now an instrument, because
+    # the thing it catches has not been explained yet.
     #
-    # Everything passed. SPAdes exited 0, reformat.sh printed correct numbers,
-    # and the old predicate here asked only whether the first few lines were
-    # non-empty, which a file with a good first megabyte satisfies. The damage
-    # was then promoted into the cache as a shard a later run would have HIT.
+    # Twice on 2026-09-11, on both corpora, this transform produced an assembly of
+    # the RIGHT SIZE whose first byte was not '>'. On CAMI the published file
+    # carried 505,012 records against reformat.sh's reported 86,744, opened
+    # mid-sequence, and had a hole at byte 1,236,201 -- exactly the length of
+    # NODE_1 as named in the .paths product. On Pratama, reformat.sh reported
+    # 354,787 records and 368,772,773 bases, metasmith stat'd the product at
+    # 369.38 MB, which is right, and the first byte still was not '>'.
     #
-    # So: assert wholeness, cheaply. A FASTA opens with '>' and contains no NUL.
-    # Either check alone would have caught that file.
-    def _whole(path, label):
+    # So the size is correct and visible while the content at offset 0 is not.
+    # That is consistent with a read-after-write visibility problem across the two
+    # apptainer bind mounts of one directory -- the tool container writes through
+    # its /ws, this process reads through its own -- and NOT with a truncated
+    # write. But "consistent with" is not a diagnosis, and the first time round I
+    # asserted unflushed writeback on less evidence than this.
+    #
+    # Hence the shape below. It does not just fail; it records what it saw, and it
+    # re-reads once after a pause so the NEXT occurrence distinguishes the two
+    # remaining explanations by itself:
+    #
+    #   re-read succeeds -> visibility. The bytes arrive late. Then the fix is a
+    #       barrier here, not a change to the assembler, and the run is correct.
+    #   re-read fails the same way -> the file really is wrong on disk, and the
+    #       hex of its first bytes says what was written instead.
+    #
+    # A pass on the retry is reported loudly rather than silently, because a check
+    # that quietly succeeds on a second try is how this would become invisible
+    # again. Everything not on the happy path is logged with its evidence.
+    import os, time
+
+    def _inspect(path, label):
+        """(problem or None, one line of evidence)."""
+        size = os.path.getsize(path) if os.path.exists(path) else -1
         with open(path, "rb") as fh:
-            if fh.read(1) != b">":
-                return f"{label} does not open with '>' -- truncated or offset"
-            fh.seek(0)
+            head = fh.read(4096)
+        if not head:
+            return f"{label} is empty", f"{label}: size={size} head=<empty>"
+        shown = head[:48]
+        gt = head.find(b">")
+        evidence = (f"{label}: size={size} first48={shown.hex()} "
+                    f"ascii={shown.decode('ascii', 'replace')!r} "
+                    f"first_gt_within_4k={gt}")
+        if head[:1] != b">":
+            return f"{label} does not open with '>'", evidence
+        return None, evidence
+
+    def _whole(path, label):
+        problem, evidence = _inspect(path, label)
+        if problem is not None:
+            Log.Error(f"{problem} -- {evidence}")
+            Log.Error(f"{label}: re-reading after a pause to separate visibility from corruption")
+            time.sleep(15)
+            os.sync()
+            problem2, evidence2 = _inspect(path, label)
+            if problem2 is None:
+                Log.Error(f"{label}: RE-READ PASSED. The bytes arrived late, so this was a "
+                          f"visibility problem across the bind mounts and not a bad write. "
+                          f"{evidence2}")
+            else:
+                Log.Error(f"{label}: re-read failed the same way, so the file is wrong on "
+                          f"disk rather than late. {evidence2}")
+                return problem2
+        # Only reached once the file opens correctly. A NUL anywhere in a FASTA is
+        # the other shape the CAMI file had.
+        with open(path, "rb") as fh:
             n = 0
             while True:
                 b = fh.read(1 << 20)
                 if not b:
                     break
                 if b"\x00" in b:
-                    return f"{label} contains NUL at ~{n + b.index(b"\x00")} -- incomplete writeback"
+                    return f"{label} contains NUL at ~{n + b.index(b'\x00')}"
                 n += len(b)
         return None
 
