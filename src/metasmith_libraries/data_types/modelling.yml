@@ -24,6 +24,15 @@ types:
   # The prose is a COMMENT and not a `_` property on purpose: `extends` is a key-wise
   # merge in which the child wins, so a child that restates `_` overwrites the parent's
   # description and stops satisfying the parent it extends.
+  #
+  # TWO PRODUCERS as of the CarveMe route (`transforms/metabolicModelling/carveme_gapfill.py`):
+  # `kbase/gapfill_model/cobra_gapfill.py` answers "what is the fewest reactions this
+  # draft needs, restricted to metabolites it already has" and the CarveMe route answers
+  # "what does an unrestricted MetaNetX universe add" -- deliberately different
+  # questions, not two paths to the same answer. Targets and lineage cannot distinguish
+  # two producers of one type (see `AGENTS.md` "Two producers need a masked library"),
+  # so a template wanting a SPECIFIC one must pin that transform explicitly rather than
+  # name `gapfilled_model` and let the planner choose.
   gapfilled_model:
     extends:
     - metabolic_model
@@ -44,3 +53,47 @@ types:
       _: a BiGG model accession, the way ncbi::assembly_accession is an accession
       arity: 1
       ext: txt
+  # -------------------------------------------------
+  # The CarveMe route: GPR draft -> borrowed biomass -> native transport -> CarveMe
+  # gapfill. Each intermediate stage gets its OWN type with a SINGLE producer, rather
+  # than reusing `metabolic_model` at every step, so a template naming one of these
+  # is unambiguous by construction -- the only deliberately ambiguous join in this
+  # route is the final `gapfilled_model` it shares with `cobra_gapfill.py` (see that
+  # type's comment above).
+  #
+  # CarveMe's OWN universe file, read only for its `Growth` reaction (57 metabolites
+  # over `universe_bacteria.xml.gz`, 64 over `universe_gramneg.xml.gz`) -- never for
+  # its 1,870 BiGG-namespaced transporters, which `carveme_transport.py` deliberately
+  # does not map. `fetch_carveme_universe.py` is its only producer.
+  carveme_universe:
+    properties:
+      _: CarveMe's shipped reaction universe SBML (bacteria or gramneg), borrowed only for its Growth biomass reaction
+      Format: SBML
+      ext: xml.gz
+  # A draft (`metabolic_model`) with CarveMe's `Growth` biomass mapped into MNXM and
+  # added as the objective. Still single-compartment: nothing here can be consumed or
+  # produced yet, because the transport boundary does not exist until the next stage.
+  biomass_model:
+    extends:
+    - metabolic_model
+    properties:
+      carveme_biomass: true
+  # `biomass_model` plus an `e` compartment, the native MNXR transporters and
+  # exchange reactions `carveme_transport.py` decided the medium and biomass
+  # precursors need, and nothing else -- see that script's own comment for why
+  # "nothing else" is the deliberate half of the design.
+  transport_model:
+    extends:
+    - metabolic_model
+    properties:
+      carveme_biomass: true
+      carveme_transport: true
+  # An unrestricted, single-compartment MetaNetX reaction universe for CarveMe's own
+  # gapfill MILP -- the deliberate opposite of `cobra_gapfill.py`'s universe, which
+  # keeps only reactions whose metabolites the draft already has. See
+  # `build_mnx_universe.py`'s docstring for why unrestricted is the point.
+  mnx_gapfill_universe:
+    properties:
+      _: an unrestricted single-compartment MetaNetX reaction universe, for CarveMe's gapfill MILP
+      Format: SBML
+      ext: xml

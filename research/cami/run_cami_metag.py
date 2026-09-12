@@ -74,6 +74,24 @@ DB_PATHS = {
     "ref::kofamscan_ko_list":   DB_ROOT / "kofamscan" / "ko_list.tsv",
 }
 
+# References already staged UNPACKED on the cluster, given as inputs so the plan does
+# not carry a step to fetch what we have. Each entry deletes a download step.
+#
+# Only geNomad qualifies today, and the shortfall is worth writing down because the
+# directory listing looks like a bigger win than it is. Checked 2026-09-11: gtdb,
+# virsorter2 and dram exist under project-rpp/lib as TARBALLS only
+# (gtdb_genomes_reps_r232.tar.gz, virsorter2_data.tar.gz, dram_data.tar.gz). Their
+# consumers want an unpacked database directory, and nothing here unpacks a given
+# tarball, so pointing a `ref::` at one fails the way kofamscan fails when handed
+# profiles.tgz instead of profiles/ -- instantly, on every chunk, reading like a tool
+# failure rather than a wiring mistake. Re-downloading stays the status quo for those
+# until an unpack transform exists or someone unpacks them by hand.
+#
+# iphop, vibrant, vcontact3 and checkv are not on the cluster in any form.
+STAGED_REFS = {
+    "ref::genomad": Path("/scratch/phyberos/databases/genomad"),
+}
+
 AGENT_IMAGE = os.environ.get(
     "MSM_AGENT_IMAGE", "docker://quay.io/hallamlab/metasmith:0.22.1")
 
@@ -226,6 +244,8 @@ def build_inputs(samples):
         )
 
     for dtype, path in DB_PATHS.items():
+        inputs.RegisterItem(path, dtype, instance_id=_stable_id("cami", "ref", dtype, str(path)))
+    for dtype, path in STAGED_REFS.items():
         inputs.RegisterItem(path, dtype, instance_id=_stable_id("cami", "ref", dtype, str(path)))
 
     inputs.Save()
@@ -439,6 +459,8 @@ def build_inputs_pratama(runs, with_gpr_panel=False, with_zenodo_comparison=Fals
         )
 
     for dtype, path in DB_PATHS.items():
+        inputs.RegisterItem(path, dtype, instance_id=_stable_id("pratama", "ref", dtype, str(path)))
+    for dtype, path in STAGED_REFS.items():
         inputs.RegisterItem(path, dtype, instance_id=_stable_id("pratama", "ref", dtype, str(path)))
 
     # annotation::gpr_table's two study-wide references, registered only when the
@@ -676,6 +698,22 @@ def cmd_list_samples(args):
     if args.corpus == "pratama":
         kept, report = enumerate_pratama_runs()
         print(report)
+        # An incomplete corpus does not launch, and this is not tidiness. Run 2's
+        # cross-sample viral tools cluster across EVERY run to define the vOTUs, so a
+        # run that lands later is a re-run of that clustering rather than an append,
+        # and a partial corpus quietly defines a different vOTU set than the one the
+        # comparison is about. A dry run and a stage are still allowed: neither spends
+        # anything, and both are how the wait gets used.
+        n_expected = sum(1 for r in csv.DictReader(PRATAMA_RUNS_TSV.open(), delimiter="\t")
+                         if r["library_layout"] == "PAIRED")
+        if len(kept) < n_expected and not (args.dry_run or args.stage_only or args.allow_partial):
+            print(f"ERROR: {len(kept)} of {n_expected} paired runs have both mates on disk; "
+                  f"the fetch is still in flight.\n"
+                  f"  Waiting is the default because the viral clustering pools across every "
+                  f"run, so the missing ones cannot be added later without redoing it.\n"
+                  f"  --dry-run and --stage-only work now; --allow-partial launches a "
+                  f"deliberately partial corpus.", file=sys.stderr)
+            return 1
         for run, dataset, fwd, rev in kept:
             print(f"{run:14s} {dataset:10s} {fwd}")
         return 0
@@ -923,6 +961,10 @@ def main():
     # a GPU request that failed. The wall is the fix.
     p.add_argument("--variant", default="core", choices=["core", "variant"],
                    help="core: metaSPAdes + MetaWRAP + AMBER. variant: MEGAHIT + three binners + skANI.")
+    p.add_argument("--allow-partial", action="store_true",
+                   help="launch even though runs of the corpus are still downloading; the "
+                        "viral clustering pools across every run, so a partial corpus defines "
+                        "a different vOTU set and cannot be topped up later.")
     p.add_argument("--with-gpr-panel", action="store_true",
                    help="pratama only: add annotation::gpr_table, which pulls KOfamScan, "
                         "CLEAN, DIAMOND UniRef50 and ProteinBERT in behind it and needs "
