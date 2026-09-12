@@ -285,6 +285,12 @@ def build_targets(with_dedup=True, variant="core"):
     if variant == "core":
         binners = ("metawrap",)
     else:
+        # DAS Tool rides the same four-target pattern as a plain binner even
+        # though it is a consolidator: its products are a bin fasta and a
+        # contig2bin table like any other, and its requirement on the other
+        # three tables is satisfied by targets this same list already names.
+        # Adding it here is the whole change -- the planner works out that it
+        # must run after the three and before checkm and amber.
         binners = ("metabat2", "semibin2", "comebin")
 
     bins = [t.Add(f"sequences::{b}_bin_fasta", parents=[asm]) for b in binners]
@@ -299,6 +305,26 @@ def build_targets(with_dedup=True, variant="core"):
     # and cost a slot.
     for tb in tables:
         t.Add("binning::amber_results", parents=[tb])
+    if variant != "core":
+        # DAS Tool consolidates the three binners above, and it is NOT scored by
+        # amber. Three measurements, in order:
+        #   - an amber slot pinned to the DAS Tool table is dropped at solve
+        #     time ("requested but not included in plan -- check if group_by
+        #     dependency can be satisfied"); amber's group_by IS its table.
+        #   - an UNPINNED fourth amber slot solves, but binds to MetaWRAP's
+        #     table and drags a fifth binner into the variant run, leaving DAS
+        #     Tool unscored -- a solve that succeeds and answers the wrong
+        #     question.
+        #   - masking metawrap.py out of the metagenomics library so DAS Tool is
+        #     the only table left for that slot makes the solve fail outright,
+        #     which is what proves amber cannot consume this table rather than
+        #     merely preferring another. DAS Tool's own table pools the three
+        #     binner tables, and amber requires its table to descend from the
+        #     assembly; lineage is ancestral, so the pooled table re-qualifies
+        #     its own producers.
+        # Naming the table keeps DAS Tool explicit rather than incidental (the
+        # aggregator pulls it in either way) and costs no step.
+        t.Add("binning::das_tool_contig_to_bin_table", parents=[asm])
     if with_dedup and variant != "core":
         t.Add("binning_local::cluster_table", parents=[asm])
     return t
