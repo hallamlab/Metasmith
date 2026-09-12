@@ -47,12 +47,15 @@ sys.path.insert(0, str(MLIB))
 from metasmith.python_api import (  # noqa: E402
     DEFERRED, DataInstanceLibrary, Spec, TransformInstanceLibrary,
 )
+from metasmith.python_api import record_library
 
 
 def _lib(build) -> DataInstanceLibrary:
     library = DataInstanceLibrary(Path(tempfile.mkdtemp(prefix="msm-parity-")))
     build(library)
-    return library
+    # Synthetic placeholders for a parity probe: written down here, and that is
+    # the whole of their record.
+    return record_library(library)
 
 
 def _types(lib, *names):

@@ -227,6 +227,8 @@ def cmd_dump_pins(args):
 def _apply_leaf_pins(inputs):
     if os.environ.get("MSM_NO_LEAF_PINS"):
         print("leaf pins DISABLED (MSM_NO_LEAF_PINS set) — upstream steps will miss")
+        print("  the plan will refuse these givens: an identity minted here "
+              "moves on every submission, which is what the pins exist to stop")
         return
     if not LEAF_PINS.exists():
         print(f"no leaf pin file at {LEAF_PINS}; ids will be freshly minted")
@@ -274,6 +276,14 @@ def _apply_leaf_pins(inputs):
                 resized.append(f"{path}: {got} != recorded {want}")
                 continue
         inputs.instance_meta[path]["instance_id"] = rec["instance_id"]
+        # The pin file is this campaign's record of what its inputs are, so an
+        # id taken from it is not something this process invented and the plan
+        # has no business refusing it. A NEW campaign should import into the
+        # agent's pool instead and reference by name -- `Agent.PoolGivens` --
+        # rather than write a second pin file. This one stays as it is because
+        # migrating it would move every id and strand the shards it has already
+        # earned.
+        inputs.instance_meta[path].pop("minted", None)
         applied += 1
 
     if resized:

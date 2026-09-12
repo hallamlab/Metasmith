@@ -66,7 +66,8 @@ from metasmith.python_api import (                                      # noqa: 
 )
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from _driver import (                                                   # noqa: E402
+from _driver import (
+    pin_external_leaf_ids,                                                   # noqa: E402
     landed_products, local_agent, provision_dev_overlay_local, publish_by_type,
 )
 
@@ -171,6 +172,7 @@ def build_inputs(work: Path, lanes_dir: Path, *, placeholder: bool
         print(f"    {dtype:32s} {p.relative_to(REPO)}")
         inputs.AddItem(p, dtype)
 
+    pin_external_leaf_ids(inputs)
     inputs.Save()
     return inputs
 

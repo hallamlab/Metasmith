@@ -82,20 +82,23 @@ def build_agent(args, agent_path: str) -> Agent:
 
 def build_task(smith: Agent, workdir: Path, tag: str, mamba_env: str | None = None,
                also_cpu: bool = False, remote: tuple[str, str] | None = None):
-    inputs = DataInstanceLibrary(workdir / f"{tag}-inputs.xgdb")
-    inputs.AddTypeLibrary(EXAMPLES / "data_types" / "examples.yml")
-    inputs.AddValue("probe", tag, "examples::name")
-    inputs.Save()
+    givens = smith.PoolGivens()
+    givens.Value(f"{tag}/probe", tag, "examples::name")
+    inputs = givens.Build(
+        workdir / f"{tag}-inputs.xgdb",
+        type_library_paths=[EXAMPLES / "data_types" / "examples.yml"],
+    )
 
-    containers = DataInstanceLibrary(workdir / f"{tag}-containers.xgdb")
-    containers.AddTypeLibrary(EXAMPLES / "data_types" / "containers.yml")
-    oci = containers.location / "metasmith.env"
     declaration = (EXAMPLES / "metasmith.env").read_text()
     if mamba_env:
         declaration = re.sub(r"^conda:.*$", f"conda: {mamba_env}", declaration, flags=re.M)
-    oci.write_text(declaration)
-    containers.AddItem(Path("metasmith.env"), "containers::metasmith.env")
-    containers.Save()
+    env_givens = smith.PoolGivens()
+    env_givens.Value(f"{tag}/metasmith.env", declaration,
+                     "containers::metasmith.env")
+    containers = env_givens.Build(
+        workdir / f"{tag}-containers.xgdb",
+        type_library_paths=[EXAMPLES / "data_types" / "containers.yml"],
+    )
 
     transforms = TransformInstanceLibrary.Load(EXAMPLES)
 

@@ -43,6 +43,7 @@ if os.environ.get("MSM_SRC"):
 from metasmith.python_api import (  # noqa: E402
     DEFERRED, DataInstanceLibrary, Spec, TransformInstanceLibrary,
 )
+from metasmith.python_api import record_library
 
 CACHE = REPO / "cache" / "aspire"
 TRANSFORMS = [MLIB / "transforms" / n for n in ("aspire", "logistics")]
@@ -187,7 +188,9 @@ def build_inputs(location: Path, samples: int, on: dict[str, bool],
         for dtype in EXTERNAL_GRAPH:
             inputs.AddItem(DEFERRED, dtype)
 
-    inputs.Save()
+    # Synthetic placeholders, authored here and used nowhere else, so
+    # writing them down is the whole of their record.
+    inputs = record_library(inputs)
     return inputs
 
 

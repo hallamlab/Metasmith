@@ -99,6 +99,7 @@ from metasmith.python_api import (  # noqa: E402
     Agent, Runtime, DataInstanceLibrary, DataTypeLibrary, Source,
     SshSource, TargetBuilder, TransformInstanceLibrary,
 )
+from _driver import pin_external_leaf_ids  # noqa: E402
 
 LIB = resolve_library_root()
 
@@ -220,6 +221,7 @@ def build_inputs(staging: Path, data_root: Path, remote_root: str | None) -> Dat
     if missing:
         raise SystemExit("benchmark tree incomplete:\n  " + "\n  ".join(missing))
 
+    pin_external_leaf_ids(inputs)
     inputs.Save()
     return inputs
 

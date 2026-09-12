@@ -9,6 +9,7 @@ from metasmith.python_api import (
     DataInstanceLibrary, TransformInstanceLibrary,
     TargetBuilder,
 )
+from metasmith.python_api import record_library
 
 MLIB = Path(__file__).resolve().parent.parent
 OUT_DIR = MLIB / "results"
@@ -89,7 +90,9 @@ main.AddItem(mock("contig_to_bin.tsv"), "binning::comebin_contig_to_bin_table", 
 main.AddItem(mock("metaphlan_profile.tsv"), "taxonomy::metaphlan_profile", parents={asm})
 main.AddItem(mock("sample.clean.fq.gz"), "sequences::clean_short_reads", parents={asm})
 main.AddItem(mock("mag_ref"), "binning::derep_mag_ref")
-main.Save()
+# Synthetic placeholders, authored here and used nowhere else, so
+# writing them down is the whole of their record.
+main = record_library(main)
 
 MAIN_TARGETS = [
     "annotation::rgi_results",
@@ -118,7 +121,9 @@ up = new_inputs("upstream")
 asm2 = up.AddItem(mock("u_sample.fna"), "sequences::assembly")
 up.AddItem(mock("u_sample.bam"), "alignment::bam", parents={asm2})
 up.AddItem(mock("u_sample.fq.gz"), "sequences::short_reads", parents={asm2})
-up.Save()
+# Synthetic placeholders, authored here and used nowhere else, so
+# writing them down is the whole of their record.
+up = record_library(up)
 
 UPSTREAM_TARGETS = [
     "sequences::orfs",

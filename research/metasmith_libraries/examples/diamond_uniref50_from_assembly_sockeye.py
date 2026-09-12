@@ -103,13 +103,6 @@ def main():
     out = OUT_DIR.resolve()
     out.mkdir(parents=True, exist_ok=True)
 
-    inputs = DataInstanceLibrary(out / "inputs.xgdb")
-    inputs.AddTypeLibrary(MLIB / "data_types" / "sequences.yml")
-    inputs.AddTypeLibrary(MLIB / "data_types" / "ref.yml")
-    inputs.AddItem(Path(remote_assembly), "sequences::assembly")
-    inputs.AddItem(REMOTE_UNIREF50_DMND, "ref::uniref50_diamond_db")
-    inputs.Save()
-
     smith = Agent(
         home=SshSource(host=HPC_HOST, path=agent_home).AsSource(),
         runtime=Runtime.APPTAINER,
@@ -118,6 +111,19 @@ def main():
 
     print("==> Deploy()", flush=True)
     smith.Deploy()
+
+    # Imported once on the cluster, then cited: the identities are the pool's,
+    # so re-running this driver plans to the same key and nextflow can resume.
+    givens = smith.PoolGivens()
+    givens.Add(Path(remote_assembly), "sequences::assembly",
+               name="diamond_probe/assembly")
+    givens.Add(REMOTE_UNIREF50_DMND, "ref::uniref50_diamond_db",
+               name="diamond_probe/uniref50")
+    inputs = givens.Build(
+        out / "inputs.xgdb",
+        type_library_paths=[MLIB / "data_types" / n
+                            for n in ("sequences.yml", "ref.yml")],
+    )
 
     targets = TargetBuilder()
     targets.Add("annotation::diamond_uniref50_results")

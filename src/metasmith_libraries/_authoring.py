@@ -11,7 +11,7 @@ from typing import Callable
 if os.environ.get("MSM_SRC"):
     sys.path.insert(0, os.environ["MSM_SRC"])
 
-from metasmith.python_api import DataInstanceLibrary, Spec, Template
+from metasmith.python_api import record_library, DataInstanceLibrary, Spec, Template
 
 MLIB = Path(__file__).resolve().parent
 TYPES = MLIB / "data_types"
@@ -36,7 +36,11 @@ def deferred_inputs(
         return Template.Load(spec_path, root=MLIB).spec.input_library
     library = DataInstanceLibrary(Path(tempfile.mkdtemp(prefix=f"msm-template-{name}-")))
     build(library)
-    return library
+    # A template's placeholders are not data in anybody's pool and never will
+    # be: the template IS their record, and authoring is the act that writes
+    # it. Without this the plan refuses them, because the author is the process
+    # that just invented the ids.
+    return record_library(library)
 
 
 def author(module, *, rebuild: bool = False, dag: bool = False) -> Spec:

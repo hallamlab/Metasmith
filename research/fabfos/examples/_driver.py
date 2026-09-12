@@ -88,6 +88,42 @@ def local_agent(work: Path) -> Agent:
                  container=LOCAL_CONTAINER)
 
 
+def pin_external_leaf_ids(inputs) -> None:
+    """Give every given an identity derived from its path, and nothing else.
+
+    The pre-pool workaround, kept deliberately. `Agent.PoolGivens` is what new
+    work uses: it imports once and the pool assigns an identity that is a
+    record rather than a calculation. These drivers stay on the pin because
+    migrating them would move every id and strand the shards the benchmarks
+    they record have already earned.
+
+    The price of the pin is the reason it is not the general answer: the id
+    says where the file is and nothing about what is in it, so replacing a
+    file at a path it already used serves the old shard. Import a second time
+    to say a file is a different thing.
+    """
+    from metasmith.models.libraries.identity import multihash_key
+
+    pinned = 0
+    for path in list(inputs.manifest):
+        p = Path(path)
+        # Every given, not only the ones this host cannot see. A path it CAN
+        # stat gets a stat id, which moves when the file is touched and is
+        # invented outright on a host that reads it differently -- so leaving
+        # those alone left half the task key moving.
+        inputs.instance_meta[p] = {
+            "instance_id": multihash_key(b"external\x00" + str(p).encode("utf-8")).hex(),
+            "origin": "leaf",
+            "lineage_payload": None,
+            "fork_id": inputs.fork_id,
+        }
+        pinned += 1
+    if pinned:
+        inputs.Save()
+        print(f"    pinned {pinned} leaf id(s) -- the task key is now stable "
+              f"across invocations")
+
+
 def provision_dev_overlay_local(agent_home: Path, *, repo: Path = REPO) -> None:
     src = repo / "src" / "metasmith"
     if not (src / "__init__.py").exists():

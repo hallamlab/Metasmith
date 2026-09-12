@@ -81,6 +81,7 @@ from metasmith.python_api import (  # noqa: E402
     Agent, Runtime, DataInstanceLibrary, DataTypeLibrary, SshSource,
     TargetBuilder, TransformInstanceLibrary,
 )
+from _driver import pin_external_leaf_ids  # noqa: E402
 
 LIB = resolve_library_root()
 
@@ -136,6 +137,7 @@ def build_inputs(staging: Path, pools: dict[str, str]) -> DataInstanceLibrary:
         )
         inputs.AddItem(pools[pool], "sequences::host_filtered_short_reads",
                        parents={meta})
+    pin_external_leaf_ids(inputs)
     inputs.Save()
     return inputs
 

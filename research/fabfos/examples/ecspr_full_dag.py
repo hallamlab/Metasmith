@@ -49,6 +49,7 @@ from metasmith.python_api import (  # noqa: E402
     Agent, Runtime, DataInstanceLibrary, DataTypeLibrary, Source,
     TargetBuilder, TransformInstanceLibrary,
 )
+from metasmith.python_api import record_library
 
 LIB = resolve_library_root()
 
@@ -136,7 +137,9 @@ def build_inputs(staging: Path) -> tuple[DataInstanceLibrary, list[str], list[st
     via_library.append("ecspr::ground_null")
 
 
-    inputs.Save()
+    # Synthetic placeholders, authored here and used nowhere else, so
+    # writing them down is the whole of their record.
+    inputs = record_library(inputs)
     return inputs, via_library, via_incumbent
 
 

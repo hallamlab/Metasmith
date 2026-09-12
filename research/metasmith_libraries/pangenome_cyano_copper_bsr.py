@@ -9,6 +9,7 @@ from metasmith.python_api import (
     DataInstanceLibrary, TransformInstanceLibrary,
     TargetBuilder, Resources, Size,
 )
+from metasmith.python_api import record_library
 
 MLIB = Path(__file__).resolve().parent.parent
 BASE = MLIB / "main" / "cache" / "pangenome_cyano_copper_bsr"
@@ -68,7 +69,9 @@ except Exception:
         shutil.copy(faa.resolve(), dest)
         inputs.AddItem(dest.resolve(), "sequences::orfs", parents={group})
         print(f"  staged {genome}.faa")
-    inputs.Save()
+    # Synthetic placeholders, authored here and used nowhere else, so
+    # writing them down is the whole of their record.
+    inputs = record_library(inputs)
 
 resources = [
     DataInstanceLibrary.Load(MLIB / f"resources/{n}")
