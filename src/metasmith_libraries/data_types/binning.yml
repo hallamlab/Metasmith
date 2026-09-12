@@ -114,6 +114,28 @@ types:
       _: AMBER per-bin purity/completeness detail (metrics_per_bin.tsv) for one contig_to_bin_table
       ext: tsv
 
+  # amber.py's two products, but for DAS Tool's pooled table specifically.
+  # amber.py itself cannot be pointed at that one table alone: it requires the
+  # shared contig_to_bin_table supertype, lineage matching is ancestral, and
+  # "descends from the pooled table" cannot be told apart from "is one of the
+  # things the pooled table descends from" -- a target pinned that way is
+  # dropped at solve time rather than narrowed to it (see amber_das_tool.py and
+  # research/cami/run_cami_metag.py's `_build_binning_targets`, which hit this
+  # first). These two types exist so a second, narrower scorer can require the
+  # concrete das_tool_contig_to_bin_table instead: exactly one producer, so a
+  # target naming either type needs no parent pin. Kept distinct from
+  # amber_results/amber_bin_metrics rather than reusing them, because two
+  # transforms producing the same type is the other half of this trap.
+  das_tool_amber_results:
+    properties:
+      _: AMBER genome-binning assessment summary (results.tsv) for DAS Tool's pooled contig_to_bin_table scored against a contig_gold_standard_table
+      ext: tsv
+
+  das_tool_amber_bin_metrics:
+    properties:
+      _: AMBER per-bin purity/completeness detail (metrics_per_bin.tsv) for DAS Tool's pooled contig_to_bin_table
+      ext: tsv
+
   # Dereplicated representative-MAG reference for inStrain option (b): the
   # is_centroid_95==1 bins of a `binning_local::cluster_table`, their contigs
   # concatenated into one FASTA with scaffold names namespaced by bin_id

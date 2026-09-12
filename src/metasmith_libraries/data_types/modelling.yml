@@ -43,6 +43,18 @@ types:
       _: a growth medium as a compound table; a deferred template input
       Format: TSV
       ext: tsv
+  # The `medium` column value a caller selects out of a `media` table, the way
+  # `bigg_model_id` below is an accession rather than a database.
+  # `carveme_from_orfs.py` used to fix this to a literal "M9" in the shell
+  # command because the only worked example carried a single medium named
+  # that; a driver registering a multi-medium table now names the row through
+  # this type instead of editing the transform. `carveme_gapfill.py` still
+  # hardcodes "M9" the same way -- out of scope here, left for a future pass.
+  medium_name:
+    properties:
+      _: a medium name, matching the `medium` column of a modelling::media table; a deferred template input
+      arity: 1
+      ext: txt
   fba_solution:
     properties:
       _: a flux distribution and its objective value, one row per condition
@@ -123,6 +135,43 @@ types:
     - metabolic_model
     properties:
       carveme_from_orfs: true
+  # -------------------------------------------------
+  # The CPLEX parity variant of the metaGEM-parity route above, on the
+  # commercial solver metaGEM itself gap fills with -- see
+  # `carveme_from_orfs_cplex.py`'s own comment for why the CPLEX path is a
+  # SEPARATE transform+type rather than a flag on `carveme_from_orfs.py`: the
+  # shipped path must keep answering `modelling::carveme_model` unconditionally,
+  # and this route is reached only when a target names THIS type by name and a
+  # driver has registered `cplex_installation` -- the same way
+  # `research/cami/run_cami_metag.py` registers its reference database paths.
+  # A DISTINCT product type, not a second producer of `carveme_model`, for the
+  # reason every other stage in this file gives: two producers of one type are
+  # a target the planner can silently answer wrong (see AGENTS.md "Two
+  # producers need a masked library"). `carveme_from_orfs: cplex` -- a
+  # different VALUE from `carveme_model`'s `carveme_from_orfs: true`, the same
+  # trick `orf_chunk`/`orf_batch` use against `orfs`'s `granularity: whole` --
+  # is what keeps this a true sibling rather than a property-superset: an
+  # instance of this type does NOT satisfy a plain `carveme_model` requirement
+  # (the value disagrees), so the shipped path cannot be silently rerouted
+  # here. Both siblings still satisfy the common `metabolic_model` supertype,
+  # which is what lets `memote_score.py` score either lane.
+  carveme_model_cplex:
+    extends:
+    - metabolic_model
+    properties:
+      carveme_from_orfs: cplex
+  # The private, size-uncapped CPLEX 22.2.0.0 Python 3.12 runtime (the `cplex`
+  # and `docplex` packages, already run through `docplex config --upgrade`
+  # against the entitled Studio installation -- the packaged module alone
+  # silently caps at 1000 variables/constraints, CPLEX error 1016). Lives on
+  # the cluster, not in this repo, so a driver `RegisterItem`s a real path the
+  # way `research/cami/run_cami_metag.py`'s `DB_PATHS` does -- never DEFERRED.
+  # `carveme_from_orfs_cplex.py` binds it into the container and puts it on
+  # PYTHONPATH; nothing here copies it to node-local scratch itself, which is
+  # the driver's job (see that transform's comment).
+  cplex_installation:
+    properties:
+      _: a directory holding the full CPLEX 22.2.0.0 Python runtime (cplex + docplex), upgraded past the Community Edition size cap
   # -------------------------------------------------
   # MEMOTE, over EITHER GEM lane -- it requires the common supertype
   # `metabolic_model` rather than `gapfilled_model` or `carveme_model` by name,

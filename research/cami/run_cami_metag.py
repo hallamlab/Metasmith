@@ -11,7 +11,7 @@ deinterleaves. The metadata parity must still read "paired" -- bbduk asserts on
 Pratama arrives as two files (_1.fastq.gz/_2.fastq.gz) per run, so it goes through the
 library's read_pair -> zipped_forward/reverse_short_reads -> interleave_zipped_short_reads
 chain instead, and additionally carries a viral survey (research/viromics's own template)
-pinned to metaSPAdes rather than MEGAHIT. That survey's cross-sample tools pool under one
+pinned to MEGAHIT rather than metaSPAdes. That survey's cross-sample tools pool under one
 shared viromics::contig_study root -- see build_inputs_pratama's docstring for what that
 does to sample enumeration, because it is not what CAMI's per-sample shape would suggest.
 
@@ -306,8 +306,8 @@ def build_targets(with_dedup=True, variant="core"):
     for tb in tables:
         t.Add("binning::amber_results", parents=[tb])
     if variant != "core":
-        # DAS Tool consolidates the three binners above, and it is NOT scored by
-        # amber. Three measurements, in order:
+        # DAS Tool consolidates the three binners above. It cannot be scored by
+        # amber.py itself -- three measurements, in order:
         #   - an amber slot pinned to the DAS Tool table is dropped at solve
         #     time ("requested but not included in plan -- check if group_by
         #     dependency can be satisfied"); amber's group_by IS its table.
@@ -322,9 +322,18 @@ def build_targets(with_dedup=True, variant="core"):
         #     binner tables, and amber requires its table to descend from the
         #     assembly; lineage is ancestral, so the pooled table re-qualifies
         #     its own producers.
+        # amber_das_tool.py (metagenomics/binning/) is what actually scores it:
+        # it requires the CONCRETE das_tool_contig_to_bin_table type rather than
+        # the shared binning::contig_to_bin_table supertype amber.py fans out
+        # over, so there is exactly one producer and no ambiguous slot to pin --
+        # naming the product directly needs no parent, unlike the per-binner
+        # amber targets above. Its products (das_tool_amber_results /
+        # das_tool_amber_bin_metrics) are their own types, so this cannot
+        # collide with or displace the three per-binner amber targets.
         # Naming the table keeps DAS Tool explicit rather than incidental (the
         # aggregator pulls it in either way) and costs no step.
         t.Add("binning::das_tool_contig_to_bin_table", parents=[asm])
+        t.Add("binning::das_tool_amber_results")
     if with_dedup and variant != "core":
         t.Add("binning_local::cluster_table", parents=[asm])
     return t
@@ -527,7 +536,7 @@ def build_inputs_pratama(runs, with_gpr_panel=False, with_zenodo_comparison=Fals
 
 
 def build_targets_pratama(with_gpr_panel=False, with_zenodo_comparison=False):
-    """metaSPAdes (JGI protocol) + MetaWRAP + CheckM2, plus the viral survey.
+    """MEGAHIT + MetaWRAP + CheckM2, plus the viral survey.
 
     The viral block WAS a blind copy of research/viromics/viromics_survey_from_paired_reads.py's
     TARGETS[2:] (2026-09-11) with the assembler re-pointed -- that driver pins
@@ -545,14 +554,12 @@ def build_targets_pratama(with_gpr_panel=False, with_zenodo_comparison=False):
     No AMBER and no cami_contig_truth: Pratama is real data with no simulated ground
     truth to score bins against.
 
-    THE ASSEMBLY CONFLICT, surfaced rather than resolved: Pratama's own metaSPAdes call
-    is `spades.py --meta -k 21,33,55,77 -m 190`, no error-correction pass. `asm` here is
-    the ONE spades transform this library carries, and it runs the DOE JGI protocol
-    instead -- bbcms error correction, `--only-assembler -k 33,55,77,99,127`, a 200 bp
-    seqkit filter -- because that is what batch 1's citable-core framing requires and a
-    second spades transform was rejected before (src/metasmith_libraries/AGENTS.md).
-    Faithful-to-Pratama and citable-core cannot both hold for this step; batch 1 keeps
-    the JGI protocol and the gap is Pratama's real assembly parameters, not a detail.
+    THE ASSEMBLY CONFLICT described here in earlier revisions -- the library's one spades
+    transform running the DOE JGI protocol against Pratama's own untuned metaSPAdes call --
+    no longer applies to this arm. Wave 1 flips run 2 from metaSPAdes to MEGAHIT: `asm` now
+    names `sequences::megahit_assembly`, masked in via `_assembly_without("spades")` in
+    `build_transforms_for_pratama` below, and the metaSPAdes-vs-JGI-protocol gap is moot
+    because this arm no longer runs metaSPAdes at all.
 
     A SECOND, narrower gap in the same spot: Pratama's virus identification runs on
     contigs from metaSPAdes AND a second MEGAHIT assembly of the same reads ("different
@@ -589,7 +596,7 @@ def build_targets_pratama(with_gpr_panel=False, with_zenodo_comparison=False):
     compared to Pratama's 1275 published MAGs.
     """
     t = TargetBuilder()
-    asm = t.Add("sequences::spades_assembly")
+    asm = t.Add("sequences::megahit_assembly")
     frozen = t.Add("viromics::dereplicated_candidate_virus")
 
     # cross-sample tools, pooled on the frozen set (viromics TARGETS[2:9] minus
@@ -631,7 +638,7 @@ def build_targets_pratama(with_gpr_panel=False, with_zenodo_comparison=False):
 def build_transforms_for_pratama():
     return [
         TransformInstanceLibrary.Load(MLIB / "transforms" / "logistics"),
-        _assembly_without("megahit"),
+        _assembly_without("spades"),
         TransformInstanceLibrary.Load(MLIB / "transforms" / "metagenomics"),
         TransformInstanceLibrary.Load(MLIB / "transforms" / "functionalAnnotation"),
         TransformInstanceLibrary.Load(MLIB / "transforms" / "viromics"),
@@ -797,8 +804,8 @@ def cmd_run(args):
     if args.corpus == "pratama":
         if args.variant != "core":
             print("ERROR: --corpus pratama only implements --variant core "
-                  "(metaSPAdes + MetaWRAP + CheckM2 + viral survey); "
-                  "the MEGAHIT/three-binner variant was never asked for and is "
+                  "(MEGAHIT + MetaWRAP + CheckM2 + viral survey); "
+                  "the three-binner variant was never asked for and is "
                   "not wired up.", file=sys.stderr)
             return 1
         kept, report = enumerate_pratama_runs()
@@ -861,9 +868,24 @@ def cmd_run(args):
         if args.stage_only:
             print(f"\n(stage-only; staged as {task.GetKey()})")
             return 0
-        print("ERROR: submission for pratama is not wired up past staging; "
-              "pass --stage-only", file=sys.stderr)
-        return 1
+
+        config = make_slurm_config(comebin_device=args.comebin_device,
+                                  comebin_time=args.comebin_time,
+                                  comebin_cpus=args.comebin_cpus)
+        print(f"Submitting to SLURM (config: {config})...")
+        smith.RunWorkflow(
+            task=task, config_file=config,
+            params=dict(slurmAccount=SLURM_ACCOUNT,
+                        executor=dict(queueSize=500),
+                        process=dict(tries=4, array=25)),
+            resource_overrides={
+                "bbduk":   Resources(memory=Size.GB(64), cpus=16),
+                "megahit": Resources(memory=Size.GB(128), cpus=32,
+                                     duration=Duration(hours=12)),
+            },
+        )
+        print(f"Submitted: {task.GetKey()}")
+        return 0
 
     samples = select(enumerate_samples(), args)
     if not samples:
@@ -957,6 +979,9 @@ def main():
 
     p = sub.add_parser("list-samples")
     p.add_argument("--corpus", default="cami", choices=["cami", "pratama"])
+    p.add_argument("--dry-run", action="store_true")
+    p.add_argument("--stage-only", action="store_true")
+    p.add_argument("--allow-partial", action="store_true")
     p.set_defaults(fn=cmd_list_samples)
 
     sub.add_parser("check-dbs").set_defaults(fn=cmd_check_dbs)

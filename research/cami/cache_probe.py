@@ -67,7 +67,8 @@ def main():
     task = smith.GenerateWorkflow(
         samples=list(inputs.AsSamples("sequences::read_metadata")),
         resources=[containers, inputs],
-        transforms=D.build_transforms(),
+        transforms=D.build_transforms_for(
+            variant="core" if a.assembler == "spades" else "variant"),
         targets=probe_targets(a.binner, a.assembler),
     )
     if not task.ok:
