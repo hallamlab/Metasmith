@@ -226,8 +226,17 @@ than after it.
 addressing bought the thing it was for — a 24 GB DIAMOND database or a 27k-file profiles tree
 costs one stat instead of a full-tree hash — and the price is that a stat-keyed leaf moving
 empties the whole hit set, including downstream steps that never read it. `rsync -a` preserves
-mtimes, so staging does not itself re-key; exposure is external events, and `dvc checkout` under
-a reference tree is the live one.
+mtimes, so staging does not itself re-key; exposure is any event that rewrites an mtime. `dvc
+checkout` under a reference tree is one live case and **`git checkout` is the other**, because
+git stamps every file it writes with the checkout time — so a commit that adds one env to
+`resources/env/` re-keys every member of that library and moves the plan key of every plan that
+requires an `env::` type. Measured on 0.23.0 in one directory: touching every file in
+`resources/env` moved all 12 shipped templates' plan keys with the plan shape identical and only
+the givens differing, while adding an unreferenced type to a shipped `.yml` and recompiling moved
+none of them. The mitigation is `msm data pin` on the library, which `restat_leaf_ids` skips by
+design. **CAUTION** Comparing two copies of a library at different paths proves nothing here: a
+stat-addressed id folds the absolute path, so a copied tree re-keys wholesale for a reason that
+has nothing to do with the change under test.
 
 **Closed for givens at 0.23.0, and still open everywhere else.** A given cited from a pool
 carries an assigned identity, so a `dvc checkout` under a reference tree no longer moves it and
