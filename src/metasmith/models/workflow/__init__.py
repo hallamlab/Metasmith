@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from .steps import WorkflowStep, WorkflowTarget
 from .diagnostics import PlanHint, _diagnose_plan_failure
-from .plan import WorkflowPlan
+from .plan import GivenNotImportedError, WorkflowPlan
 from .cache_decisions import compute_cache_decisions
 from .leaf_identity import restat_leaf_ids
 from .nextflow_codegen import (

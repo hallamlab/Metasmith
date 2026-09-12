@@ -12,6 +12,7 @@ from metasmith.models.libraries import (
 )
 from metasmith.models.solver import Transform
 from metasmith.models.workflow import WorkflowPlan
+from metasmith.testing.pool_fixtures import pool_backed
 
 
 class TestSolverScalingCyanoverse:
@@ -42,6 +43,7 @@ class TestSolverScalingCyanoverse:
                 parents={group},
             )
 
+        pool_backed(inputs)
         inputs.Save()
         return inputs, lib_path
 

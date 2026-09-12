@@ -9,6 +9,7 @@ import yaml
 from ...hashing import KeyGenerator
 from ...logging import Log
 from ..dag_renderer import DagRenderer, Label, LabelMode, NodeKind
+from ..paths import is_deferred
 from ..libraries import (
     DataInstance, DataInstanceLibrary, DataInstanceLibraryView,
     TransformInstance, TransformInstanceLibrary, TransformInstanceLibraryView,
@@ -19,6 +20,77 @@ from ..solver import (
 )
 from .diagnostics import PlanHint, _diagnose_plan_failure
 from .steps import WorkflowStep, WorkflowTarget
+
+
+class GivenNotImportedError(ValueError):
+    """A given's identity was minted here rather than read from a record."""
+
+
+# A given's identity has to be a record, not something this process worked out.
+# `stat_leaf_id` folds the absolute path and the mtime of whatever this process
+# can see, so it moves when the file is touched, and it is invented outright
+# when the path belongs to another host -- which is every input of a run driven
+# from a workstation. `_mint_leaf_id` marks what it invented, `Pack` does not
+# carry the mark, and so the question "did somebody register this here, or did
+# it come from somewhere that already knew?" survives exactly one process.
+#
+# A deferred path is exempt. There is nothing at it yet, so there is nothing to
+# import, and its id is its own name rather than a reading of a filesystem.
+# `StageWorkflow.RefuseIfDeferred` is what catches one that never got a source.
+_OFFENDERS_SHOWN = 20
+
+_NOT_IMPORTED = """\
+a plan's givens are references to data a pool already holds, and {n} of these {is_} not:
+{items}
+Import each one on the agent that will run the plan, then reference it by name:
+
+  metasmith data import <path> --dtype <NS::TYPE> --name <name> --agent-home <home>
+  given = agent.GivenLibrary(["<name>", ...], location=<dir>)
+
+Registering a path here mints an identity from the filesystem this process can
+see. It moves when the file is touched, and it is invented outright when the
+path lives on another host -- which is why the plan key moved on every
+submission and why -resume found nothing. An import assigns an identity once
+and the pool records it, so referencing one costs nothing and never moves."""
+
+
+def _was_minted_here(inst: DataInstance) -> bool:
+    lib = inst.parent_lib
+    meta = getattr(lib, "instance_meta", {}).get(inst.path)
+    return bool(meta and meta.get("minted"))
+
+
+def _refuse_unminted_givens(instances: list[DataInstance]) -> None:
+    """Refuse a given this process registered instead of referencing.
+
+    Scoped to the given path on purpose. A transform registers its own
+    products and its deferred slots in its own library, and those are mints by
+    construction -- they are outputs, not givens, and nothing here sees them.
+    """
+    offenders: list[DataInstance] = []
+    seen: set[str] = set()
+    for inst in instances:
+        if is_deferred(inst.path) or not _was_minted_here(inst):
+            continue
+        # One path can carry several endpoints, and each is its own instance.
+        # The caller has one thing to fix, so name it once.
+        if inst.instance_id in seen:
+            continue
+        seen.add(inst.instance_id)
+        offenders.append(inst)
+    if not offenders:
+        return
+    shown = [
+        f"  [{inst.ResolvePath()}] as [{inst.dtype_name}]"
+        for inst in offenders[:_OFFENDERS_SHOWN]
+    ]
+    if len(offenders) > _OFFENDERS_SHOWN:
+        shown.append(f"  ... and {len(offenders) - _OFFENDERS_SHOWN} more")
+    raise GivenNotImportedError(_NOT_IMPORTED.format(
+        n=len(offenders),
+        is_="is" if len(offenders) == 1 else "are",
+        items="\n".join(shown),
+    ))
 
 
 def CollectSolverInputs(
@@ -63,6 +135,10 @@ def CollectSolverInputs(
             eps.update(lib_eps)
         if len(given_endpoints)>0 and any(g==eps for g in given_endpoints): continue
         given_endpoints.append(eps)
+
+    _refuse_unminted_givens(
+        [inst for insts in given_map.values() for inst in insts]
+    )
 
     transform2inst: dict[Transform, TransformInstance] = {}
     inst2trlib: dict[TransformInstance, TransformInstanceLibrary] = {}

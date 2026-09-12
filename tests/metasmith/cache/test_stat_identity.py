@@ -68,7 +68,9 @@ class TestStatLeafId:
 
 def _task(root: Path):
     types_path = build_types_library(root, TYPE_NAMES)
-    samples = build_samples_library(root, types_path, count=1, input_type="seed")
+    samples = build_samples_library(
+        root, types_path, count=1, input_type="seed", pooled=False,
+    )
     tr_lib = build_transform_library(
         root / "tr", types_path, {"trA": identity_transform_code("trA", "seed", "mid")}
     )
@@ -330,7 +332,9 @@ def _two_plans_over_one_library(root: Path):
     # after that: one stops at `mid`, the other carries on to `end`. Their plan
     # keys differ, so they stage into different directories.
     types_path = build_types_library(root, ("seed", "mid", "end"))
-    samples = build_samples_library(root, types_path, count=2, input_type="seed")
+    samples = build_samples_library(
+        root, types_path, count=2, input_type="seed", pooled=False,
+    )
     tr_lib = build_transform_library(
         root / "tr",
         types_path,

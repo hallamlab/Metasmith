@@ -28,6 +28,7 @@ from metasmith.models.workflow import (
     restat_leaf_ids,
 )
 from metasmith.agents.runner import _rewrite_staged_plan
+from metasmith.testing.pool_fixtures import pool_backed
 
 
 @dataclass(frozen=True)
@@ -57,7 +58,15 @@ def build_samples_library(
     input_type: str,
     namespace: str = "cf",
     shared_root_type: str | None = None,
+    pooled: bool = True,
 ) -> DataInstanceLibrary:
+    """The samples a plan is built from.
+
+    `pooled` is how a driver gets its givens now: import once, reference
+    thereafter. Pass False for a test about leaf identity itself -- the
+    library is saved and loaded back, so its ids are a record rather than
+    this process's mint, which is what the given path checks.
+    """
     lib = DataInstanceLibrary(tmp_path / "samples.xgdb")
     lib.AddTypeLibrary(types_path, namespace=namespace)
 
@@ -83,8 +92,12 @@ def build_samples_library(
             parents=parents or None,
         )
 
+    if pooled:
+        pool_backed(lib)
+        lib.Save()
+        return lib
     lib.Save()
-    return lib
+    return DataInstanceLibrary.Load(lib.location)
 
 
 def build_transform_library(

@@ -25,6 +25,7 @@ from tests.metasmith.flow.conftest import (
     _build_type_lib,
     _make_target_model,
 )
+from metasmith.testing.pool_fixtures import pool_backed
 
 
 def _build_binner_plan(
@@ -41,6 +42,7 @@ def _build_binner_plan(
     (sdir / "aln.bam").write_text("mock bam", encoding="utf-8")
     asm = lib.AddItem(Path("sample_00/assembly.fa"), "mock::assembly")
     lib.AddItem(Path("sample_00/aln.bam"), "mock::bam", parents=[asm])
+    pool_backed(lib)
     lib.Save()
 
     tr_lib = _build_transform_lib(

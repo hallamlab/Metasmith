@@ -45,13 +45,22 @@ class _LeafIdentity:
             "origin": "leaf",
             "lineage_payload": None,
             "fork_id": self.fork_id,
+            # This process invented the number. `Pack` does not carry the flag,
+            # so a library that is saved and loaded again is a record rather
+            # than a mint -- which is the whole difference the given path cares
+            # about. See `plan._refuse_unminted_givens`.
+            "minted": True,
         }
         return self.instance_meta[path]["instance_id"]
 
     def _refork_leaf_id(self, path: Path, entry: dict) -> dict:
+        # A fork moves an identity the library already held, deliberately, to
+        # get a new task key. Like an invalidate it acts on a record rather
+        # than inventing one, so it clears the mint mark the given path reads.
         abs_path = path if path.is_absolute() else self.location / path
         if not os.environ.get("METASMITH_LEAF_RANDOM") and abs_path.exists():
             self._mint_leaf_id(path)
+            self.instance_meta[path].pop("minted", None)
         else:
             seed = f"{entry['instance_id']}\x00fork:{self.fork_id}".encode("utf-8")
             self.instance_meta[path] = {
@@ -89,5 +98,6 @@ class _LeafIdentity:
             "origin": "leaf",
             "lineage_payload": None,
             "fork_id": self.fork_id,
+            "minted": True,
         }
         return self.instance_meta[path]

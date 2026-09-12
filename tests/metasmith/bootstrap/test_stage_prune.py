@@ -11,6 +11,7 @@ from metasmith.models.libraries import (
 )
 from metasmith.models.remote import Source
 from metasmith.models.solver import Endpoint
+from metasmith.testing.pool_fixtures import pool_backed
 
 
 _TRANSFORM = '''\
@@ -142,6 +143,7 @@ def _data_lib(root: Path, types_path: Path) -> DataInstanceLibrary:
     (root/"bundle"/"nested"/"b.txt").write_text("b")
     for name in ["reads.fq", "notes.txt", "bundle"]:
         lib.AddItem(Path(name), f"mock::{name.split('.')[0]}")
+    pool_backed(lib)
     lib.Save()
     return lib
 
@@ -163,6 +165,7 @@ def test_a_symlink_arrives_as_a_symlink(tmp_path):
     lib = _data_lib(tmp_path/"lib", tmp_path/"mock.yml")
     (lib.location/"linked.fq").symlink_to(outside)
     lib.AddItem(Path("linked.fq"), "mock::reads")
+    pool_backed(lib)
     lib.Save()
 
     image = _image(lib, {Path("linked.fq")}, tmp_path/"image")
@@ -191,6 +194,7 @@ def _plan_task(tmp_path, stdlib):
     samples.AddTypeLibrary(seq_types, namespace="seq")
     (samples.location/"in.fq").write_text("reads")
     samples.AddItem(Path("in.fq"), "seq::reads")
+    pool_backed(samples)
     samples.Save()
 
     targets = TargetBuilder()

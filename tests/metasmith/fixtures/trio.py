@@ -9,6 +9,7 @@ audit lane runs it twice to check it reuses the cache.
 from __future__ import annotations
 
 from pathlib import Path
+from metasmith.testing.pool_fixtures import pool_backed
 
 
 TARGETS = [
@@ -39,6 +40,7 @@ def build_inputs(lib_root: Path, at: Path, n: int = 1):
             d.mkdir(parents=True, exist_ok=True)
             (d / "asm.fna").write_text(f">c{i}\nACGTACGTACGT\n", encoding="utf-8")
             lib.AddItem(Path(f"s{i:02}/asm.fna"), "sequences::assembly")
+    pool_backed(lib)
     lib.Save()
     return lib
 
@@ -62,6 +64,7 @@ def build_named_inputs(lib_root: Path, at: Path, names: list[str]):
         if not f.exists():
             f.write_text(f">{name}\nACGTACGTACGT\n", encoding="utf-8")
         lib.AddItem(Path(f"{name}/asm.fna"), "sequences::assembly")
+    pool_backed(lib)
     lib.Save()
     return lib
 
