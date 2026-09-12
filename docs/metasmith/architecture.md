@@ -508,6 +508,19 @@ batch (`python -m metasmith.caching.invocation`, JSON on stdin), which costs abo
 interpreter start-up per call at any batch width. On by default, with a per-transform opt-out
 and the `METASMITH_CACHE=0` kill switch. A helper failure is a miss, never a hit.
 
+**A transform's source text moves the cache and never moves the plan.** Two keys read the same
+transform and ask different questions, and confusing them costs a reuse measurement in whichever
+direction you guess wrong. `Transform.key` is a digest over the requirement and product
+declarations alone, and the plan key is those keys for every step plus the sorted given ids, so
+editing a protocol body or a shell command leaves the plan key and the run directory exactly
+where they were. `_protocol_source_hash` is a digest over the whole definition file, it moves on
+any edit including a comment, and `compute_cache_decisions` folds it into each step's structural
+slot ids. So an edited transform busts its own shards and its descendants' and nothing else.
+Measured on 0.23.0: a command-string edit and a body edit each moved the source hash and left the
+transform key untouched, while adding a requirement moved the transform key. **CAUTION** A plan
+key that moves after a transform edit means the edit changed the model, most often the `env::`
+requirement that a tool change drags along with the command.
+
 **Leaf ids are stat-addressed** — `multihash("stat" ‖ abspath ‖ mtime_ns)`, one stat whether the
 leaf is a file or a 300k-file directory. That is what a transform's own outputs and a staged
 library carry. It is no longer what a *given* carries: a plan refuses a given whose identity the
