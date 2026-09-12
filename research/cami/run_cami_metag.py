@@ -6,7 +6,13 @@ library takes directly: short_reads_pe extends the short_reads that bbduk requir
 nothing deinterleaves. The metadata parity must still read "paired" -- bbduk asserts on
 {single, paired} and turns "paired" into its int=t flag.
 
-Subcommands: list-samples, check-dbs, setup, run [--dry-run], status.
+Subcommands: list-samples, check-dbs, setup, import, run [--dry-run], status.
+
+Inputs enter by import, once, and every run after that references them by name.
+An imported identity is assigned rather than derived, so it does not move between
+submissions -- which is what lets -resume find the run it left. It also cannot be
+rebuilt: the shards this campaign writes die with the agent home that holds the
+pool, and /scratch is swept.
 """
 
 import argparse
@@ -110,62 +116,57 @@ def select(samples, args):
     return samples
 
 
-def _stable_id(*parts: str) -> str:
-    """A leaf id that survives a re-plan, which AddItem's does not.
+TYPE_LIBS = ["sequences.yml", "alignment.yml", "ref.yml", "annotation.yml",
+             "taxonomy.yml", "binning.yml", "binning_local.yml", "env.yml"]
 
-    `AddItem` mints a leaf id by stat-ing the file, and returns a fresh uuid4 when
-    it cannot -- which is every input here, because the reads and the reference
-    databases live on the cluster and this driver runs on a workstation. The plan
-    key hashes the given instances' ids, so two identical submissions minutes apart
-    plan to different keys, Nextflow sees a project it has never run, and `-resume`
-    is discarded. Measured: `daqL9cFU` then `WwhBaN3k` from back-to-back dry runs.
 
-    RegisterItem is the sanctioned way to supply the id instead. Metasmith still
-    re-derives the honest identity at staging time on the host that owns the file,
-    so pinning it here only fixes what the key is hashed over.
+def declare_givens(samples, smith):
+    """Everything this campaign gives a plan, declared for the pool.
+
+    The name is what a later run cites, so it has to be stable and it has to
+    say which sample it belongs to. The identity is not derived from it: two
+    imports under one name are two entries, and citing a name the pool holds
+    is a reference rather than a second import.
     """
-    from metasmith.caching.keys import multihash_key
-    return multihash_key("\x00".join(("cami",) + parts).encode("utf-8")).hex()
-
-
-def build_inputs(samples):
-    CACHE_DIR.mkdir(parents=True, exist_ok=True)
-    inputs = DataInstanceLibrary(CACHE_DIR / "cami_inputs.xgdb")
-    inputs.Purge()
-
-    for tl in ["sequences.yml", "alignment.yml", "ref.yml", "annotation.yml",
-               "taxonomy.yml", "binning.yml", "binning_local.yml", "env.yml"]:
-        inputs.AddTypeLibrary(MLIB / "data_types" / tl)
-
+    givens = smith.PoolGivens()
     for sid, reads in samples:
         # "paired", not "interleaved": bbduk asserts on {single, paired}.
-        meta_value = json.dumps({"parity": "paired", "length_class": "short"})
-        meta_name = f"{sid}_read_metadata.json"
-        (inputs.location / meta_name).write_text(meta_value)
-        meta = inputs.RegisterItem(
-            meta_name, "sequences::read_metadata",
-            # Over the content, so editing the metadata does retire the old plan.
-            instance_id=_stable_id("read_metadata", sid, meta_value),
+        meta = givens.Value(
+            f"cami/{sid}/read_metadata",
+            {"parity": "paired", "length_class": "short"},
+            "sequences::read_metadata", tags=["cami", sid],
         )
-        inputs.RegisterItem(
-            reads, "sequences::short_reads_pe", parents={meta},
-            instance_id=_stable_id("short_reads_pe", sid, str(reads)),
-        )
+        givens.Add(reads, "sequences::short_reads_pe",
+                   name=f"cami/{sid}/reads", parents=[meta], tags=["cami", sid])
         # CAMISIM's per-read truth, sitting beside the reads. NOT
         # binning_gs.tsv: that keys on the CAMI-provided gold-standard-assembly's
         # own contig ids, which our own megahit assembly does not share, so it
         # cannot score our bins directly. See cami_contig_truth.py.
-        truth = reads.parent / "reads_mapping.tsv.gz"
-        inputs.RegisterItem(
-            truth, "binning::cami_read_truth", parents={meta},
-            instance_id=_stable_id("cami_read_truth", sid, str(truth)),
-        )
-
+        givens.Add(reads.parent / "reads_mapping.tsv.gz",
+                   "binning::cami_read_truth",
+                   name=f"cami/{sid}/read_truth", parents=[meta],
+                   tags=["cami", sid])
     for dtype, path in DB_PATHS.items():
-        inputs.RegisterItem(path, dtype, instance_id=_stable_id("ref", dtype, str(path)))
+        givens.Add(path, dtype, name=f"cami/ref/{dtype}",
+                   tags=["cami", "reference"])
+    return givens
 
-    inputs.Save()
-    return inputs
+
+def build_inputs(samples, smith=None, *, ensure=False):
+    """The givens, as references to what the pool already holds.
+
+    `ensure` is the setup act: import whatever the pool lacks, once. Without
+    it a name nobody imported is refused by name, which is the failure a run
+    wants -- importing as a side effect of planning is how a campaign ends up
+    with two identities for one file.
+    """
+    smith = smith or get_agent()
+    CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    return declare_givens(samples, smith).Build(
+        CACHE_DIR / "cami_inputs.xgdb",
+        type_library_paths=[MLIB / "data_types" / tl for tl in TYPE_LIBS],
+        ensure=ensure,
+    )
 
 
 def build_transforms():
@@ -350,6 +351,19 @@ def cmd_setup(args):
     return 0
 
 
+def cmd_import(args):
+    samples = select(enumerate_samples(), args)
+    if not samples:
+        print("ERROR: no samples found; run list-samples", file=sys.stderr)
+        return 1
+    smith = get_agent()
+    found = smith.EnsurePoolEntries(declare_givens(samples, smith).items)
+    print(f"pool holds {len(found)} entries for {len(samples)} sample(s)")
+    for name, iid in sorted(found.items()):
+        print(f"  {name:44s} {iid[:16]}")
+    return 0
+
+
 def cmd_run(args):
     samples = select(enumerate_samples(), args)
     if not samples:
@@ -357,7 +371,13 @@ def cmd_run(args):
         return 1
     print(f"{len(samples)} sample(s): {', '.join(s for s, _ in samples)}")
 
-    inputs = build_inputs(samples)
+    # The givens come from the real agent's pool even on a dry run: reading it
+    # touches nothing, and a plan built against an empty pool would be a
+    # different plan. Staging and submission are what the dry-run agent stands
+    # in for.
+    inputs = build_inputs(samples, ensure=args.import_inputs)
+    smith = (Agent(home=Source.FromLocal(CACHE_DIR / "dryrun_home"), runtime=Runtime.APPTAINER)
+             if args.dry_run else get_agent())
     containers = DataInstanceLibrary.Load(MLIB / "resources" / "env")
     # cami_contig_truth.py requires lib::cami_gold_standard.py, so the resource
     # library has to be given as well as the env one. Without it the chain is
@@ -367,9 +387,6 @@ def cmd_run(args):
     # library reads as a broken driver.
     resource_lib = DataInstanceLibrary.Load(MLIB / "resources" / "lib")
     targets = build_targets(with_dedup=not args.no_dedup)
-
-    smith = (Agent(home=Source.FromLocal(CACHE_DIR / "dryrun_home"), runtime=Runtime.APPTAINER)
-             if args.dry_run else get_agent())
 
     print("Planning workflow...")
     task = smith.GenerateWorkflow(
@@ -448,6 +465,13 @@ def main():
     p.add_argument("--run", action="store_true")
     p.set_defaults(fn=cmd_setup)
 
+    p = sub.add_parser(
+        "import", help="import this campaign's inputs into the agent's pool",
+    )
+    p.add_argument("--sample", nargs="*")
+    p.add_argument("--limit", type=int)
+    p.set_defaults(fn=cmd_import)
+
     p = sub.add_parser("run")
     p.add_argument("--sample", nargs="*")
     p.add_argument("--limit", type=int)
@@ -455,6 +479,9 @@ def main():
     p.add_argument("--stage-only", action="store_true")
     p.add_argument("--no-dedup", action="store_true")
     p.add_argument("--on-exist", default="update", choices=["update", "clear"])
+    p.add_argument("--import-inputs", action="store_true",
+                   help="import anything the pool is missing before planning; "
+                        "the same act as `import`, run inline")
     # cpu by request, with the GPU lane one flag away. Measured on a marine sample,
     # 200 epochs of 70 iterations: 25.0 s/epoch on a 20 GB MIG slice against 145 s/epoch
     # on 64 cores, so the card is worth 5.8x and finishes the whole step in 2 h 20 m
