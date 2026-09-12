@@ -35,6 +35,35 @@ types:
     properties:
       method: metawrap
 
+  # DAS Tool is batch 2's consolidator, standing where metawrap_contig_to_bin_table
+  # stands for batch 1 -- one table over the winning, non-redundant selection across
+  # MetaBAT2, SemiBin2 and COMEBin, not three raw sets. DAS_Tool's own reader treats
+  # every -i table as headerless (`fread(..., header=F)`) and takes literally
+  # whatever sits in row one, so das_tool.py strips a leading "contig\tbin"-style
+  # header off metabat2_contig_to_bin_table and semibin2_contig_to_bin_table before
+  # handing them over -- fed unstripped, DAS_Tool halts with "Contigs of contig2bin
+  # files not found in assembly: contig, contig", checked against real fir output.
+  # This table keeps that header on the way out, like its metabat2/metawrap
+  # siblings, because amber.py already expects it (`fin.readline() # our own
+  # "contig\tbin" header`).
+  das_tool_contig_to_bin_table:
+    extends:
+    - contig_to_bin_table
+    properties:
+      method: das_tool
+
+  # DAS_Tool's own per-bin quality table (<outputbasename>_DASTool_summary.tsv):
+  # bin, bin_set (which input binner it came from), SCG-based completeness/
+  # redundancy and the score that selected it -- from --write_bin_evals. This is
+  # DAS_Tool's own single-copy-gene scoring, not CheckM's marker-lineage placement
+  # and not this library's functional annotation lane (KOfamScan/DIAMOND UniRef50/
+  # CLEAN/ProteinBERT via gpr_4lane.py) -- the two answer different questions
+  # (SCG-count completeness vs. what a gene does) and share no reference or table.
+  das_tool_summary:
+    properties:
+      _: DAS Tool per-bin quality table (DASTool_summary.tsv) -- bin_set, SCG completeness/redundancy and selection score per consolidated bin
+      ext: tsv
+
   # bin_refinement's own CheckM1 table, which comes free with the refinement and
   # is NOT taxonomy::checkm_stats. Two producers of one type cannot be told apart
   # by targets or by lineage, and this table is CheckM1 while that one is CheckM2

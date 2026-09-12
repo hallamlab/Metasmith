@@ -419,6 +419,11 @@ types:
     - bin_fasta
     properties:
       method: metawrap
+  das_tool_bin_fasta:
+    extends:
+    - bin_fasta
+    properties:
+      method: das_tool
 # -----------------------------------------
 # protein
   orfs:
