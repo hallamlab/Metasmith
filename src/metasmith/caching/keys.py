@@ -24,6 +24,15 @@ KEY_PREFIX = bytes([BLAKE3_MULTIHASH_CODE, BLAKE3_DIGEST_LEN])
 # reading of the plan-named staged path to the client's reading of its own copy,
 # so every shard written before this answers to a key nothing will ask for.
 #
+# NOT bumped for the import-identity reversal, and the reason is a campaign's
+# rather than a principle. Every key that reversal touches moves on its own
+# arithmetic, so no shard can be served under a key that now means something
+# else and there is nothing an epoch would protect against. The decisive
+# argument is that a campaign's headline number is the shared-prefix reuse
+# between two batches that must run on one pinned engine: a bump landing
+# between them does not degrade that measurement, it deletes it. Say so before
+# a future bump lands rather than after.
+#
 # DELIBERATELY SEPARATE from LIN_PAYLOAD_VERSION below: the cache epoch tracks
 # cache-key *semantics*, whereas the wire version tracks the Nextflow-channel
 # envelope *shape*. They were one constant until R5; bumping it for the F1

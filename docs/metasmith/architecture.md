@@ -509,27 +509,34 @@ interpreter start-up per call at any batch width. On by default, with a per-tran
 and the `METASMITH_CACHE=0` kill switch. A helper failure is a miss, never a hit.
 
 **Leaf ids are stat-addressed** — `multihash("stat" ‖ abspath ‖ mtime_ns)`, one stat whether the
-leaf is a file or a 300k-file directory. The absolute path belongs to whichever host ran the stat,
-so `StageWorkflow` re-derives every leaf id on the agent before compiling (`restat_leaf_ids`) and
-writes the plan back to `task.yml`: the client that registered an input living on the agent's host
-cannot stat it, and `CollectResults` later joins the trace against that same plan. Re-submitting
-unmodified files at the same paths hits the same shards; two hosts holding identical bytes at
-different paths do not agree, and a same-mtime in-place edit is invisible. A path nothing can stat
-keeps a random per-call id and gets no reuse. `fabfos/refs.py` declares the DVC pin's own md5
-instead, which survives the re-materialisation that moves an mtime. A change below the top node is
-invisible by construction, and `msm data invalidate` is the lever for it: it moves the mtime
-forward and re-mints through the same formula, so client and agent still agree.
+leaf is a file or a 300k-file directory. That is what a transform's own outputs and a staged
+library carry. It is no longer what a *given* carries: a plan refuses a given whose identity the
+calling process minted, because the absolute path belongs to whichever host ran the stat and a
+path nothing can stat used to fall back to a fresh uuid4 per call. Two hosts holding identical
+bytes at different paths still do not agree, and a same-mtime in-place edit is still invisible.
+`StageWorkflow` re-derives every remaining leaf id on the agent before compiling
+(`restat_leaf_ids`) and writes the plan back to `task.yml`, because `CollectResults` later joins
+the trace against that same plan. A change below the top node is invisible by construction, and
+`msm data invalidate` is the lever for it: it moves the mtime forward and re-mints through the
+same formula, so client and agent still agree. Invalidate refuses an imported item and says to
+import again, because an assigned identity has nothing to re-derive.
 
-**CAUTION** A staged leaf's id folds the task key, so only an identical plan reuses its shards.
-`restat_leaf_ids` runs after `StageWorkflow` copies the data libraries into
-`runs/<task key>/_metasmith/task/data/`, so the absolute path it stats carries the task key, and
-the task key is a function of the whole plan. Re-running one plan re-derives every id unchanged
-and hits every shard. Adding a sample mints a new task key, re-paths every staged leaf, and
-changes every member key beneath it, so nothing hits — which is the case the member unit exists
-to serve. An input left outside the workspace keeps a stable id, so the databases named by
-`shared_input_paths` do reuse their shards across plans. Two real runs of the annotation trio
-confirmed both halves. No test covers this: the virtual runtime and the `-stub` docker lane never
-stage one library under two task keys.
+**A given's identity is a record, and the plan refuses one that is not.** `_mint_leaf_id` marks
+what it invented, `Pack` does not carry the mark, and `CollectSolverInputs` refuses anything that
+still carries it — naming `metasmith data import` and the `GivenLibrary` call that replaces the
+registration. So the question survives exactly one process: a library that was saved and loaded
+again is a record, and a library built here and handed straight to the planner is not.
+
+The test is a mint rather than a pool, and that is the limit of the rule rather than an oversight.
+A shipped template's placeholders, the `env` and `containers` libraries, and a DVC-pinned fabfos
+reference all carry recorded leaf ids, and none of them is data a pool should hold — so "imported
+or nothing" would refuse three categories that are right. What no longer passes is an identity
+nobody wrote down. A deferred given is exempt as well: there is nothing at the path yet, and
+`StageWorkflow.RefuseIfDeferred` is what catches one that never got a source.
+
+An invalidate and a fork clear the mark after moving an id, because both act on a record the
+library already held rather than inventing one, and an invalidate has already refused every path
+it could not stat.
 
 **A slot id is structural. It joins a consumer to a producer and carries no inputs.** The
 solver folds a multi-sample run into one *unique case*, so a step has one plan instance whatever
@@ -540,7 +547,24 @@ runs that reach a transform through the same chain of transforms mint the same s
 their sample sets, step orders, or unrelated steps differ, and the member key then decides the
 hit from the ids that member actually consumed. That is what lets sample A hit in run 2 when run
 1 computed it beside B and C and run 2 places it beside X and Y through a changed plan. Slot
-identity holds that up. The staged leaf ids beneath it defeat it today, per the caution above.
+identity holds that up, and a given cited from the pool is what finally lets it: the identity
+underneath was assigned once and does not move with the plan around it.
+
+**The pool is authoritative state, and it dies with the agent home.** An imported identity is
+assigned rather than derived, so nothing can rebuild it: re-importing after a loss mints
+identities that match none of the shards keyed on the old ones. Three consequences, and all three
+arrive silently long after the decision that caused them.
+
+Reuse never crosses a campaign boundary. Every shard a campaign writes on top of its imports dies
+when the pool holding them does. And a measurement comparing two batches has to finish inside the
+agent home's retention window, or the comparison is lost rather than degraded.
+
+So **where an agent home lives is the decision this rests on.** A home on scratch that is swept
+sixty days after creation is a legitimate choice for a campaign that starts and finishes inside
+the window, and it is the wrong choice for anything meant to be re-run later.
+`metasmith data import` warns once when the pool it is about to create sits under a path whose
+name says it is swept, and it warns rather than refuses because that placement is the operator's
+call. Nothing recovers a purged pool.
 
 **A database shard outlives a re-solve and dies with the agent home.** A download step consumes
 only its tool environment, so its key is stat-addressed on the env files under
@@ -612,15 +636,30 @@ a dtype key is a property-set fingerprint and cannot be read back as a type. A p
 live view, not a portable image — its paths are absolute and `MaterializeImage` drops absolute
 entries — so staging a store to a remote agent is a separate and larger job.
 
-**An import is registered by the same act, with a structural identity.** `structural_import_id`
-hashes what the item declares: its type and the name it is given, defaulting to its absolute path.
-Nothing is stat'd, walked, or read, which is why importing a folder of six hundred thousand files
-costs what importing one costs — and is the same reason the type carries the trust, since the type
-*is* the structural input and opening the bytes would answer a question the identity never asked.
-The id deliberately does not fold `CACHE_KEY_VERSION`. Two imports of one path under one type are
-one entry; under a different type or name they are two, because they are two declarations.
-`fabfos/refs.py` supplies its own declaration — the type, the DVC pin md5, and the relative path —
-and mints through this function rather than one of its own.
+**An import assigns an identity rather than deriving one.** `mint_import_id` folds a nonce, so
+every import act is a separate entry and no two are ever the same. Nothing is stat'd, walked or
+read, which is why importing a folder of six hundred thousand files costs what importing one
+costs — and is the same reason the type carries the trust, since the declaration *is* what
+identifies the data and opening the bytes would answer a question the identity never asked.
+
+This reverses what the pool did first, and the reversal is the point. A derived id answered "what
+is this data" with what the caller spelled, and the caller's spelling is not a property of the
+data: two physically separate files declared the same way collapsed into one entry, and a
+re-declaration of one file could not be said at all. The question the pool can actually observe
+is "which act put this here", so that is the question it answers now. Importing one path twice is
+two entries, which is how a caller says the second declaration is a second thing, and the newest
+claim on a path is the one a reference resolves to.
+
+Two things follow and both are recorded in the manifest, because nothing else holds them once the
+id stops carrying the declaration: the `name`, which is what a later reference matches on, and
+`imported_at` in nanoseconds, because two imports of one path inside one second are ordinary and
+`created_at` cannot order them.
+
+The id deliberately does not fold `CACHE_KEY_VERSION`, and no epoch can reach it: an assigned
+identity is not a derivation, so there is nothing an epoch bump could invalidate.
+`fabfos/refs.py` stays on the derived path through `pinned_import_id`, whose payload is frozen,
+because a DVC pin's md5 genuinely is a content address — there the name *is* the identity, and
+`tests/fabfos/test_refs_pin.py` asserts the literals for that reason.
 
 **Collection removes only what it can get back, and only its own.** `gc` refuses a path outside
 the cache root and says which rows it refused. It leaves imports alone entirely: `msm data forget`

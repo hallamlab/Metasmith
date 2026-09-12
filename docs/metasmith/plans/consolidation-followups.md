@@ -55,6 +55,16 @@ Ships unfixed in 0.22.0. That release moves `CACHE_KEY_VERSION` to 5 for an unre
 the unit became one group member's invocation — so the epoch bump users pay for buys nothing
 here, and the migration this entry wants still costs a second one.
 
+**0.23.0 changes the shape of this rather than closing it.** A given is no longer a leaf: its
+identity is assigned by an import and recorded, so no amount of stat'ing is involved and the
+in-place edit does not move it either. The stale hit therefore survives, with a different cause
+and a different fix. Under import the honest statement is that the pool records a declaration and
+never re-reads the data, so changing the bytes under an entry is invisible until somebody imports
+again — which is deliberate, and is what makes a 17 GB reference cost nothing to cite. What is
+missing is any way to notice. The first move is a cheap change detector an operator can run
+against a pool — size and top-level mtime per entry, compared with what the import recorded —
+rather than making a citation re-read the data.
+
 **Cancelling a run during its first minute silently does nothing.** `CancelWorkflow` keys on
 `PID.lock`, which `start.sh` writes only once nextflow is up, while `RUN.token` lands as soon as
 the launcher detaches. Measured on the docker lane: 22:40 for the token, 22:41 for the lock. A
@@ -214,12 +224,16 @@ than after it.
 
 **An external mtime-touching event makes the next run cold, and one file is enough.** Stat
 addressing bought the thing it was for — a 24 GB DIAMOND database or a 27k-file profiles tree
-costs one stat instead of a full-tree hash — and the price is that only leaves inside a given
-data library are stat-keyed, so moving one of them empties the whole hit set, including
-downstream steps that never read it. `rsync -a` preserves mtimes, so staging does not itself
-re-key; exposure is external events, and `dvc checkout` under a reference tree is the live one.
-Mitigation is to pin the library: `restat_leaf_ids()` skips pinned libraries by design. The
-same identity scheme fails the other way under *Open bugs*, and one fix answers both.
+costs one stat instead of a full-tree hash — and the price is that a stat-keyed leaf moving
+empties the whole hit set, including downstream steps that never read it. `rsync -a` preserves
+mtimes, so staging does not itself re-key; exposure is external events, and `dvc checkout` under
+a reference tree is the live one.
+
+**Closed for givens at 0.23.0, and still open everywhere else.** A given cited from a pool
+carries an assigned identity, so a `dvc checkout` under a reference tree no longer moves it and
+the run that follows is warm. What remains stat-keyed is a transform's own outputs and a library
+the agent staged, where `restat_leaf_ids` still runs — and pinning a library is still the
+mitigation there, because it skips pinned libraries by design.
 
 **A mutable container tag can produce a false cache hit.** A container's leaf id addresses the
 docker URL string, not the resolved image digest, so a pinned tag busts the cache on a version
