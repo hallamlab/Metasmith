@@ -97,3 +97,60 @@ types:
       _: an unrestricted single-compartment MetaNetX reaction universe, for CarveMe's gapfill MILP
       Format: SBML
       ext: xml
+  # -------------------------------------------------
+  # The metaGEM-parity route: `carve --fbc2 -g <medium>` run directly on predicted
+  # ORFs -- metaGEM is a Snakemake workflow, not a tool, and THIS is its
+  # reconstruction step. It shares no stage with the CarveMe route above: no
+  # borrowed biomass, no native MNXR transport, no MetaNetX universe -- CarveMe's
+  # own bundled bacteria universe supplies all three internally, the same way it
+  # does for any standalone `carve` invocation. Output ids stay in CarveMe's OWN
+  # BiGG namespace (R_/M_-prefixed, the same prefix every `carve` run produces,
+  # not an artifact of this repo's MNXM pipeline), so nothing here needs
+  # `carveme_gapfill.py`'s `strip_reframed_prefix` step.
+  #
+  # A DISTINCT type from `gapfilled_model`, not a third producer of it -- see
+  # `AGENTS.md` "Two producers need a masked library": that type already has two
+  # producers a template must pin between by naming the transform, and this
+  # route answers a THIRD, again different question ("what does homology to the
+  # BiGG gene set alone support, with no GPR table at all"). It deliberately
+  # carries NO `gapfilled` property, so it satisfies `metabolic_model` -- which
+  # is what `memote_score.py` targets, to score every lane through one
+  # transform -- without silently becoming answerable for a `gapfilled_model`
+  # target the planner would then be free to route here instead of either
+  # existing producer.
+  carveme_model:
+    extends:
+    - metabolic_model
+    properties:
+      carveme_from_orfs: true
+  # -------------------------------------------------
+  # MEMOTE, over EITHER GEM lane -- it requires the common supertype
+  # `metabolic_model` rather than `gapfilled_model` or `carveme_model` by name,
+  # so one transform scores both without knowing either exists. MEMOTE degrades
+  # gracefully with no biomass reaction (skipped tests, not failed ones -- 20
+  # collected vs 10 without one, observed against a draft with no objective), so
+  # scoring a lane ahead of its own gapfill step is not a bug.
+  #
+  # `memote run` and `memote report snapshot` each re-run pytest independently and
+  # neither file carries a top-level score -- the CLI computes it only inside the
+  # report path, by mutating the very results object it renders from. See
+  # `resources/env/memote.env`'s comment and `memote_score.py`'s docstring for
+  # why one test execution here produces all three products below rather than two
+  # (matching MEMOTE's own two CLI commands) or none (the honest fallback the
+  # brief for this type allowed, had reusing MEMOTE's own scorer not been this
+  # direct).
+  memote_report:
+    properties:
+      _: MEMOTE's own HTML report -- `memote report snapshot`'s output, rendered from one test run
+      Format: HTML
+      ext: html
+  memote_results:
+    properties:
+      _: the raw MEMOTE test result, exactly what `memote run --filename result.json.gz` writes -- no score section
+      Format: JSON
+      ext: json.gz
+  memote_score:
+    properties:
+      _: MEMOTE's own total_score plus its per-section breakdown, computed by Report.compute_score() and not re-derived here
+      Format: JSON
+      ext: json
