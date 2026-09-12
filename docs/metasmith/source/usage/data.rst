@@ -247,6 +247,42 @@ The following information is required when adding new data instances:
     xgdb.AddItem("/path/to/original/orfs.faa", "genomics::aa_sequences")
     xgdb.Save()
 
+.. caution::
+
+    A plan will not take these as givens while they are still only registered
+    here. Registering mints an identity from the filesystem this process can
+    see, so it moves when a file is touched and is invented outright when the
+    file lives on the agent's host. The plan key is built from the givens'
+    identities and the run directory is named after the key, so an invented
+    identity throws away the previous run on every submission.
+
+    Data reaches a plan by being imported into the agent's pool once, and cited
+    by name from then on. The import assigns the identity and the pool records
+    it, so citing one costs nothing and never moves:
+
+    .. code-block:: bash
+
+        metasmith data import /path/to/original/contigs.fna \
+            --dtype genomics::contigs --name study/contigs \
+            --agent-home /where/the/agent/lives
+
+    .. code-block:: python
+        :linenos:
+
+        givens = smith.PoolGivens()
+        givens.Add("/path/to/original/contigs.fna", "genomics::contigs",
+                   name="study/contigs")
+        inputs = givens.Build("./inputs.xgdb", type_library_paths=[...])
+
+    ``Build`` imports whatever the pool does not already hold, so running it
+    again is a citation rather than a second import. Importing the same path
+    twice on purpose is how you say a file is a different thing from the one
+    the pool already holds.
+
+    The pool is authoritative state. An assigned identity cannot be rebuilt, so
+    every cached result keyed on an import dies with the agent home that holds
+    the pool, and reuse does not cross from one agent home to another.
+
 Once added, softlinks can by automatically generated for each input file within the XGDB.
 A prefix is added to ensure that file names are unique.
 
