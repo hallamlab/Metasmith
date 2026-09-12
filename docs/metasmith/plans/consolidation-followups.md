@@ -210,6 +210,19 @@ single-sample calibration drivers sat submitting nothing, and both ran normally 
 from a login node. The first move is to start `msm_relay` on the node inside `RenderLauncher`'s
 foreground branch, before it calls `msm api run_workflow`.
 
+**Compiling a resource library silently discards its pin.** `CompileUniqueLibrary` builds a
+fresh `DataInstanceLibrary` over the directory instead of loading the one already there, so
+`_pinned` is None on the new object and every guard that should stop this passes by
+construction — `AddItem` and `Save` both check `is_pinned` and both see False. The write then
+replaces `index.yml` and the `pinned:` block with it. Measured on 0.23.0: pinning
+`resources/env` recorded 98 entries, and `metasmith build all` over the same directory exited 0
+with no warning, left no `pinned:` block, and moved every member id. So the pin is futile
+against exactly the churn it is prescribed for, because the rebuild that rewrites the mtimes is
+also what drops the pin. The first move is for the compile to load the existing library and let
+the guard fire, so a pinned library refuses the rebuild by name and the operator unpins on
+purpose. Reported by the campaign, which reasoned it out from where the pinned block lives
+before anyone measured it.
+
 **A driver that overrides identity after a pipeline has imported leaves pool entries nobody
 cites.** fabfos's pipelines now declare their givens through `Agent.PoolGivens`, which imports
 whatever the pool lacks. A driver may then replace those identities through the `on_inputs` hook,
@@ -233,8 +246,10 @@ git stamps every file it writes with the checkout time — so a commit that adds
 requires an `env::` type. Measured on 0.23.0 in one directory: touching every file in
 `resources/env` moved all 12 shipped templates' plan keys with the plan shape identical and only
 the givens differing, while adding an unreferenced type to a shipped `.yml` and recompiling moved
-none of them. The mitigation is `msm data pin` on the library, which `restat_leaf_ids` skips by
-design. **CAUTION** Comparing two copies of a library at different paths proves nothing here: a
+none of them. `msm data pin` is the prescribed mitigation because `restat_leaf_ids` skips a
+pinned library by design, **but it does not survive the rebuild** — see the entry below, so
+today there is no mitigation for the git-checkout case. **CAUTION** Comparing two copies of a
+library at different paths proves nothing here: a
 stat-addressed id folds the absolute path, so a copied tree re-keys wholesale for a reason that
 has nothing to do with the change under test.
 
