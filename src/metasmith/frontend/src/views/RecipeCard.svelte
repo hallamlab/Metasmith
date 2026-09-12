@@ -38,6 +38,11 @@
     rowUniques = {},
     expansion = null,
     sharedPaths = [],
+    // the agents this project has, and what each one's pool holds, for the
+    // rows that cite a pool entry rather than name a path
+    agentNames = [],
+    pools = {},
+    onpool,
     // the sheet's own strip, rendered under the inputs band by the view above --
     // it belongs inside this box but it is not this card's business
     tableStrip = null,
@@ -344,10 +349,10 @@
      them lit: a slider reads as one thing to flip, and a flip is exactly what
      changing which fields the row shows underneath it is. -->
 {#snippet modeSwitch(row)}
-  <div class="modeswitch" role="group" aria-label="a path or a value">
+  <div class="modeswitch" role="group" aria-label="where this row's data comes from">
     <button
       type="button"
-      class:on={row.row.mode !== 'value'}
+      class:on={row.row.mode !== 'value' && row.row.mode !== 'pool'}
       title="a path on disk"
       onclick={() => onrow?.(row.id, { mode: 'file' })}
     >file</button>
@@ -357,7 +362,60 @@
       title="a literal value"
       onclick={() => onrow?.(row.id, { mode: 'value' })}
     >value</button>
+    <button
+      type="button"
+      class:on={row.row.mode === 'pool'}
+      title="something already imported into an agent's pool"
+      onclick={() => {
+        const agent = row.row.agent || agentNames[0] || ''
+        onrow?.(row.id, { mode: 'pool', agent })
+        onpool?.(agent)
+      }}
+    >pool</button>
   </div>
+{/snippet}
+
+<!-- A pool row names an entry rather than a path, and that is the whole
+     difference: the identity was assigned when the data was imported, so it
+     does not move between one solve and the next and this machine never has to
+     be able to see the file. The type is not asked for -- the import is what
+     said what the data is. -->
+{#snippet poolPicker(row)}
+  {@const agent = row.row.agent || ''}
+  {@const entries = pools[agent] ?? []}
+  {@const match = entries.find((e) => e.name === row.row.ref || e.instance_id === row.row.ref)}
+  <select
+    class="poolagent"
+    value={agent}
+    title="whose pool — a pool lives at one agent's home"
+    onchange={(e) => {
+      onrow?.(row.id, { agent: e.currentTarget.value, ref: '' })
+      onpool?.(e.currentTarget.value)
+    }}
+  >
+    {#if !agentNames.length}
+      <option value="">no agents yet</option>
+    {/if}
+    {#each agentNames as a}
+      <option value={a}>{a}</option>
+    {/each}
+  </select>
+  <input
+    class="grow mono"
+    list={`msm-pool-${row.id}`}
+    placeholder="the name it was imported under"
+    value={row.row.ref ?? ''}
+    oninput={(e) => onrow?.(row.id, { ref: e.currentTarget.value })}
+    onblur={() => oncommit?.(row.id)}
+  />
+  <datalist id={`msm-pool-${row.id}`}>
+    {#each entries as e}
+      <option value={e.name || e.instance_id}>{e.dtype}</option>
+    {/each}
+  </datalist>
+  {#if match}
+    <span class="tag mono" title={match.path}>{match.dtype}</span>
+  {/if}
 {/snippet}
 
 <div class="col" style="gap:10px">
@@ -432,6 +490,14 @@
                 </div>
               {/each}
             {/if}
+          {:else if row.row.mode === 'pool'}
+            <div class="row-item">
+              {@render modeSwitch(row)}
+              {@render poolPicker(row)}
+              <span class="trail">
+                <DeleteControl title="discard this row" onconfirm={() => onremoveRow?.(row.id)} />
+              </span>
+            </div>
           {:else}
             <div class="row-item">
               {@render modeSwitch(row)}
@@ -673,4 +739,5 @@
     font-size: 11px;
   }
   .modeswitch button.on { background: var(--accent); color: var(--panel); }
+  .poolagent { max-width: 12ch; }
 </style>

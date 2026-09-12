@@ -208,6 +208,39 @@ def add_item(
     return {"library": str(library_path), "path": str(rec_path), "dtype": dtype}
 
 
+def cite_pool_item(
+    library_path: str,
+    host_path: str,
+    dtype: str,
+    *,
+    instance_id: str,
+    origin: str = "imported",
+    lineage_payload: bytes | None = None,
+    parents: list[str] | None = None,
+    save: bool = True,
+    lib: DataInstanceLibrary | None = None,
+) -> dict:
+    """Register a pool entry in a library, keeping the identity the pool gave it.
+
+    The path is the agent's. Nothing here opens it, and nothing re-derives the
+    identity -- an import assigned it, and re-deriving would be inventing a
+    second answer to a question the pool has already answered.
+    """
+    lib = _lib_for(library_path, lib)
+    rec_path = lib.RegisterItem(
+        Path(host_path), dtype,
+        instance_id=instance_id, origin=origin,
+        lineage_payload=lineage_payload,
+        parents=[Path(x) for x in (parents or [])],
+    )
+    if save:
+        lib.Save()
+    return {
+        "library": str(library_path), "path": str(rec_path), "dtype": dtype,
+        "instance_id": instance_id, "origin": origin,
+    }
+
+
 def add_value(
     library_path: str,
     name: str,

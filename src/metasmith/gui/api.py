@@ -1063,6 +1063,32 @@ def _given_summary(lib_path: str) -> list[dict]:
     ]
 
 
+def _pool_resolver(project):
+    """Answer a pool row by asking the named agent what it holds.
+
+    One read per agent, cached for the length of a sync: a plan with fifty
+    samples cites fifty entries out of one pool, and asking fifty times over
+    ssh would cost fifty round trips to answer one question.
+    """
+    seen: dict[str, list] = {}
+
+    def resolve(agent: str, ref: str) -> dict:
+        if agent not in seen:
+            if not project.agent_exists(agent):
+                raise ProjectError(
+                    f"[{ref}] cites the pool of an agent named [{agent}], and "
+                    f"there is no such agent here"
+                )
+            seen[agent] = op_agent.read_pool(
+                str(project.agent_path(agent))
+            )["entries"]
+        return op_agent.resolve_pool_refs(
+            str(project.agent_path(agent)), [ref], entries=seen[agent],
+        )[0]
+
+    return resolve
+
+
 @bp.post("/workflows/<name>/generate")
 def generate_workflow(name):
     p = _project()
@@ -1094,7 +1120,9 @@ def generate_workflow(name):
         with LogCapture(job):
             job.emit("PHASE:syncing")
 
-            synced = op_inputs.sync(lib_path, rows, table)
+            synced = op_inputs.sync(
+                lib_path, rows, table, resolve_pool=_pool_resolver(p),
+            )
 
             registered = synced["rows"]
             generated = synced["generated"]
@@ -2013,32 +2041,40 @@ def _agent_store_home(name: str) -> str:
     p = _project()
     if not p.agent_exists(name):
         raise ProjectError(f"no agent named [{name}]")
-    info = _agent_payload(p, name)
-    if info.get("home_type") != "DIRECT":
-        raise ProjectError(
-            f"[{name}] keeps its home on another host, and a store is read "
-            "where it sits. Run the store commands there."
-        )
-    home = info.get("real_path") or info.get("home")
-    if not home:
-        raise ProjectError(f"[{name}] has no home to read a store from")
-    return str(home)
+    path = p.agent_path(name)
+    if not Path(path).is_file():
+        raise ProjectError(f"no agent named [{name}]")
+    return str(path)
 
 
+# Every store verb goes through the agent, so a home on another host is read
+# and written where it sits rather than refused. The agent runs its own
+# metasmith over one ssh command; nothing is fetched and no path in the answer
+# means anything on this machine.
 @bp.get("/agents/<name>/store")
 def agent_store(name):
     q = request.args
-    return jsonify(op_cache.list_cache(
-        agent_home=_agent_store_home(name),
+    out = op_agent.read_pool(
+        _agent_store_home(name),
         origin=q.get("origin") or None,
-        run=q.get("run") or None,
         tag=q.get("tag") or None,
         dtype=q.get("dtype") or None,
-        group_by=q.get("group_by") or None,
-        sort_by=q.get("sort_by") or "created_at",
-        descending=q.get("order", "desc") != "asc",
-        include_tombstoned=q.get("include_tombstoned") == "1",
-    ))
+        name=q.get("name") or None,
+        refs=[r for r in q.getlist("ref") if r] or None,
+    )
+    rows = out.get("entries") or []
+    if q.get("run"):
+        rows = [r for r in rows if r.get("run") == q.get("run")]
+    sort_by = q.get("sort_by") or "created_at"
+    descending = q.get("order", "desc") != "asc"
+    if rows and sort_by in rows[0]:
+        rows.sort(key=lambda r: r.get(sort_by) or 0, reverse=descending)
+    out["entries"] = rows
+    group_by = q.get("group_by") or None
+    if group_by:
+        out["group_by"] = group_by
+        out["groups"] = op_cache._group(rows, group_by)
+    return jsonify(out)
 
 
 @bp.post("/agents/<name>/store/import")
@@ -2048,9 +2084,8 @@ def agent_store_import(name):
     dtype = (b.get("dtype") or "").strip()
     assert path, "a path is required"
     assert dtype, "a type is required -- the declaration is what identifies it"
-    return jsonify(op_data.import_item(
-        path, dtype,
-        agent_home=_agent_store_home(name),
+    return jsonify(op_agent.import_to_pool(
+        _agent_store_home(name), path, dtype,
         name=(b.get("name") or None),
         parents=(b.get("parents") or None),
         tags=(b.get("tags") or None),
@@ -2060,9 +2095,8 @@ def agent_store_import(name):
 @bp.post("/agents/<name>/store/entries/<key>/tags")
 def agent_store_tags(name, key):
     b = _body()
-    return jsonify(op_cache.set_entry_tags(
-        key, list(b.get("tags") or []),
-        agent_home=_agent_store_home(name),
+    return jsonify(op_agent.tag_pool_entry(
+        _agent_store_home(name), key, list(b.get("tags") or []),
         replace=bool(b.get("replace")),
         remove=bool(b.get("remove")),
     ))
@@ -2070,9 +2104,8 @@ def agent_store_tags(name, key):
 
 @bp.delete("/agents/<name>/store/entries/<key>")
 def agent_store_forget(name, key):
-    return jsonify(op_data.forget_item(
-        key,
-        agent_home=_agent_store_home(name),
+    return jsonify(op_agent.forget_pool_entry(
+        _agent_store_home(name), key,
         delete=request.args.get("delete") == "1",
     ))
 

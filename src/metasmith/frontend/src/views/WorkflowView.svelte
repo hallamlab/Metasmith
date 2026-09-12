@@ -43,6 +43,26 @@
   // a readout of what the last solve built the library into, not a form:
   // the recipe's rows are the form
   let items = $state([])
+  // What each agent's pool holds, for the rows that cite one. Read lazily and
+  // once per agent: a recipe with fifty pool rows asks one question, not fifty.
+  let pools = $state({})
+
+  async function loadPool(agent) {
+    if (!agent || pools[agent]) return
+    let entries = []
+    try {
+      const out = await api.get(
+        `/agents/${encodeURIComponent(agent)}/store?origin=imported`,
+      )
+      entries = out.entries ?? []
+    } catch (e) {
+      // A pool that cannot be read is not an error on this page: the row still
+      // works, it just has no list to pick from, and the solve says so.
+      entries = []
+    }
+    pools = { ...pools, [agent]: entries }
+  }
+
   let jobId = $state(null)
   let jobStatus = $state(null)
   let jobPhase = $state(null)
@@ -849,6 +869,8 @@
       column: '',
       name: '',
       values: [{ key: '', value: '', column: '' }],
+      agent: '',
+      ref: '',
       dtype: '',
       parents: [],
       ...extra,
@@ -963,7 +985,11 @@
     // it still occupies the requirement, so pressing apply again does not stamp
     // a second copy; it is reported as blank rather than counted as present.
     const identity = (d) =>
-      String(d.mode === 'value' ? rowEntries(d)[0]?.value : d.path).trim()
+      String(
+        d.mode === 'value' ? rowEntries(d)[0]?.value
+        : d.mode === 'pool' ? d.ref
+        : d.path,
+      ).trim()
     const used = new Set()
 
     function fits(dtype, slot) {
@@ -1003,6 +1029,8 @@
         path: '',
         name: '',
         values: [{ key: '', value: '' }],
+        agent: '',
+        ref: '',
         dtype: slot.as,
         parents: (slot.parents ?? []).map((p) => stands.get(p)).filter(Boolean),
       }
@@ -1287,6 +1315,9 @@
           rows={recipe.rows}
           targets={recipe.targets}
           typeOptions={allTypes}
+          agentNames={(app.agents ?? []).map((a) => a.name)}
+          {pools}
+          onpool={loadPool}
           {counts}
           {sharedPaths}
           columns={table?.columns ?? []}

@@ -53,10 +53,23 @@ def mint_value_path() -> str:
 def row_identity(row: dict) -> str:
     if row.get("mode") == "value":
         return (row.get("name") or "").strip()
+    if row.get("mode") == "pool":
+        return pool_ref(row)
     return (row.get("path") or "").strip()
 
 
+def pool_ref(row: dict) -> str:
+    """Which pool entry a row cites: `<agent>/<name or instance id>`."""
+    agent = (row.get("agent") or "").strip()
+    ref = (row.get("ref") or "").strip()
+    return f"{agent}/{ref}" if agent else ref
+
+
 def registerable(row: dict) -> bool:
+    # A pool row does not carry a type: the import is what said what the data
+    # is, and the row citing it takes that answer rather than repeating it.
+    if row.get("mode") == "pool":
+        return bool((row.get("ref") or "").strip())
     return bool((row.get("dtype") or "").strip())
 
 
@@ -68,6 +81,13 @@ def problems(rows: list[dict], table: dict | None = None) -> list[str]:
         if not isinstance(r, dict) or not registerable(r):
             continue
         label = op_samples.row_label(r)
+        if r.get("mode") == "pool":
+            if not (r.get("agent") or "").strip():
+                out.append(
+                    f"[{pool_ref(r)}] does not say whose pool it is -- a pool "
+                    f"lives at one agent's home"
+                )
+            continue
         if r.get("mode") != "value":
             if table is None and not (r.get("path") or "").strip():
                 out.append(f"[{(r.get('dtype') or '').strip()}] has no path")
@@ -126,6 +146,15 @@ def _desired(rows: list[dict]) -> dict[str, dict]:
                 "legacy": (r.get("name") or "").strip() or None,
                 "value": render_value(entries(r)),
             }
+        elif r.get("mode") == "pool":
+            # The path and the identity both come from the pool, so a row
+            # carries only the reference until `sync` resolves it.
+            out[rid] = {
+                "rid": rid, "dtype": dtype, "mode": "pool",
+                "path": None, "value": None,
+                "agent": (r.get("agent") or "").strip(),
+                "ref": (r.get("ref") or "").strip(),
+            }
         else:
             p = (r.get("path") or "").strip()
             out[rid] = {
@@ -133,6 +162,33 @@ def _desired(rows: list[dict]) -> dict[str, dict]:
                 "path": Path(p) if p else None, "value": None,
             }
     return out
+
+
+def _resolve_pool_rows(want: dict[str, dict], resolve_pool) -> None:
+    refs = [spec for spec in want.values() if spec["mode"] == "pool"]
+    if not refs:
+        return
+    assert resolve_pool is not None, (
+        "a row cites a pool entry and nothing here can read a pool. "
+        "The caller supplies the reader."
+    )
+    for spec in refs:
+        assert spec["ref"], "a pool row needs the name the import recorded"
+        assert spec["agent"], (
+            f"[{spec['ref']}] does not say whose pool it is; a pool lives at "
+            "one agent's home and two agents do not share identities"
+        )
+        entry = resolve_pool(spec["agent"], spec["ref"])
+        spec["path"] = Path(entry["path"])
+        spec["instance_id"] = entry["instance_id"]
+        spec["origin"] = entry.get("origin") or "imported"
+        payload = entry.get("lineage_payload")
+        spec["lineage_payload"] = bytes.fromhex(payload) if payload else None
+        # The pool's declaration wins over whatever the row was typed as: the
+        # import is what said what this is, and a row disagreeing with it is a
+        # row about a different thing.
+        if entry.get("dtype"):
+            spec["dtype"] = entry["dtype"]
 
 
 def _claim(lib, want: dict[str, dict], prior: dict[str, str]) -> dict[str, Path]:
@@ -223,7 +279,17 @@ def sync(
     rows: list[dict],
     table: dict | None = None,
     on_progress=None,
+    resolve_pool=None,
 ) -> dict:
+    """Bring the library in line with the rows.
+
+    `resolve_pool(agent, ref) -> entry` is how a pool row is answered, and the
+    caller supplies it because this layer knows nothing about which agents a
+    project has. The entry it returns is a row of `cache list`: a path, a type
+    and the identity the import assigned. Without it a pool row is refused
+    rather than registered as a plain path, which would mint a second identity
+    for something the pool has already identified.
+    """
     lib = load_data_lib(library_path)
     record = op_samples.read_record(library_path)
     prior_rows = {str(k): str(v) for k, v in (record.get("rows") or {}).items()}
@@ -239,6 +305,7 @@ def sync(
         array_rows, plain_rows = op_samples.array_rows_of(rows), []
 
     want = _desired(plain_rows)
+    _resolve_pool_rows(want, resolve_pool)
     held = _claim(lib, want, prior_rows)
     prior_minted = {
         str(k): {str(kk): str(vv) for kk, vv in (v or {}).items()}
@@ -322,6 +389,14 @@ def sync(
         if spec["mode"] == "value":
             out = op_data.add_value(
                 library_path, mint_value_path(), spec["value"], spec["dtype"],
+                save=False, lib=lib,
+            )
+        elif spec["mode"] == "pool":
+            out = op_data.cite_pool_item(
+                library_path, str(spec["path"]), spec["dtype"],
+                instance_id=spec["instance_id"],
+                origin=spec.get("origin") or "imported",
+                lineage_payload=spec.get("lineage_payload"),
                 save=False, lib=lib,
             )
         else:
@@ -435,7 +510,14 @@ def _problems(lib, want, held, plan, rows, table, array_rows, doomed) -> list[st
         try:
             lib.GetType(spec["dtype"])
         except (AssertionError, ValueError, KeyError):
-            problems.append(f"[{spec['dtype']}] is not a type in this library")
+            if spec["mode"] == "pool":
+                problems.append(
+                    f"[{spec['ref']}] is a [{spec['dtype']}] in the pool, and "
+                    f"that is not a type in this library -- attach the type "
+                    f"library the import declared it against"
+                )
+            else:
+                problems.append(f"[{spec['dtype']}] is not a type in this library")
         if (
             spec["mode"] != "value"
             and spec["path"] is not None

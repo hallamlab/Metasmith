@@ -141,6 +141,11 @@ def detach_table(where: str | Path) -> dict:
 
 
 def bound_fields(row: dict) -> list[tuple[str, str]]:
+    # A pool row binds no column. A sheet expands a row over paths, and a pool
+    # row names an identity rather than a path -- one entry, however many
+    # samples the sheet has.
+    if row.get("mode") == "pool":
+        return []
     if row.get("mode") == "value":
         ents = row_entries(row)
         return [
@@ -183,6 +188,8 @@ def unbound_problems(rows: list[dict]) -> list[dict]:
     for row in rows:
         if not isinstance(row, dict) or not (row.get("dtype") or "").strip():
             continue
+        if row.get("mode") == "pool":
+            continue
         label = row_label(row)
         for field, col in bound_fields(row):
             if not col:
@@ -202,6 +209,8 @@ def row_label(row: dict) -> str:
             text = f"{first['key']}: {text}" if text else first["key"]
         if len(text) > 40:
             text = text[:40] + "\u2026"
+    elif row.get("mode") == "pool":
+        text = (row.get("ref") or "").strip()
     else:
         text = (row.get("path") or "").strip() or column_of(row)
     return text or str(row.get("id"))
@@ -242,6 +251,7 @@ def array_rows_of(rows: list[dict]) -> list[dict]:
     return [
         r for r in rows
         if isinstance(r, dict) and r.get("id") is not None
+        and r.get("mode") != "pool"
         and (r.get("dtype") or "").strip() and is_bound(r)
     ]
 
