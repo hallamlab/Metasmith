@@ -803,6 +803,247 @@ defect, 22 megahit "retries", and B16's cache-unreachable. In every one the meas
 and the sentence built on it was not. The MaxRSS, the ReqMem, the SPAdes log line and the missing
 `withName` selector are all still true as measured.
 
+## B19 — the 97% depth-identity floor DESTROYS METABAT2 ON BOTH ARMS and SEMIBIN2 SURVIVES IT ON BOTH · `jgi_summarize_bam_contig_depths` defaults to `--percentIdentity 97` against 15%-error ONT reads
+
+**CORRECTED 2026-09-13 — MY OWN HEADLINE WAS WRONG. I wrote "E2 long's binning produces ZERO bins".
+It is metabat2 that produces zero; semibin2 produces real bins on the same depth data, on BOTH
+arms. The floor is symmetric; the two binners' RESPONSES to it are not, and that is what makes the
+long-read half of criterion 12 still reportable.**
+
+    OUR ARM, 33hlLu8Q                        REFERENCE ARM, E1 long
+    metabat2  41 indices FAILED, 0 bins      MetaBAT2  82 non-unbinned files, and the three
+              exit 1, the transform refuses            largest are `*.lowDepth.fa.gz` at
+                                                       7,195 / 3,809 / 4,771 contigs, 50-58 MB
+                                                       -- the lowDepth dump, NOT bins. Reports OK.
+    semibin2  41/41 exit 0, 0 failures        SemiBin2  1,335 bin files, 0 named `unbinned`,
+              19-44 bin files per task,                 1,198 over 100 KB, largest 4,075 contigs
+              task dirs 100-180 MB
+
+**THE FAILURE-MODE ASYMMETRY IS ITSELF A FINDING, and it favours our arm.** Given the same ~0.02%
+well-mapped rate, **our metabat2 fails loudly and truthfully with exit 1 and no product, while
+nf-core's writes a `lowDepth.fa.gz` holding thousands of contigs and reports success.** A reader
+counting files in `GenomeBinning/MetaBAT2/` on the reference side would count 164 and conclude it
+binned; 82 are named `unbinned` and the rest are dominated by the lowDepth dump. That is the
+campaign's own signature failure — a green step with no real product — appearing on the reference
+side of the comparison.
+
+**So: report the long-read comparison on SemiBin2, and record MetaBAT2 as lost on both arms for one
+shared cause.** Do NOT report nf-core's MetaBAT2 file count as bins.
+
+    CAUTION my first read of the reference side said "1,413 bins written". The first three files
+    a `find` returned were **20-byte gzips with ZERO contigs** -- `unbinned.remaining.fa.gz` and
+    `unbinned.pooled.fa.gz` placeholders, the same 20-byte-gzip signature as B14's fastp defect.
+    Counting files named `*.fa.gz` counts placeholders. Exclude `unbinned` by name, then check
+    the size distribution, then count contigs in the largest.
+
+
+**Live in E2 long (`33hlLu8Q`) 2026-09-13. Diagnosed by the experimenter. EVERY metabat2 dir in
+the run exits 1.**
+
+    CORRECTION: my "20 distinct indices, about half the samples" was a SNAPSHOT count taken
+    mid-array. By directory it is every metabat2 task in the run. Counting distinct indices is
+    the right discipline against retry inflation, and it still gives a floor rather than a
+    total while an array is live.
+
+    ReqMem 16G · MaxRSS 833,620K-1,379,880K (0.8-1.3 GiB, ~8% of grant) · Elapsed 00:00:59-00:01:28
+    ExitCode 1:0 · array 59652946
+    distinct failing indices: (1)(3)(4)(5)(8)(10)(12)(14)(15)(16)(17)(19)(23)(24)(29)(31)(32)(33)(39)(40)
+
+**The mechanism, read from the 2.15 image's own `--help` rather than inferred.**
+`jgi_summarize_bam_contig_depths` defaults to **`--percentIdentity 97`**. The lane's BAM is
+**minimap2's**, over ONT reads that this campaign has already measured at a **15.4% real error rate**
+(Flye's own `Alignment error rate: 0.154408`, against a NanoSim quality string claiming Q40). Almost
+no alignment clears a 97% identity floor:
+
+    jgi 2.15 ran and reported "Finished"
+    "with 1826529 reads and 231 readsWellMapped"
+    well-mapped counts across the run: 147-753 out of 1.1-2.5 MILLION reads
+
+    CONFIRMED SYMMETRIC ON THE REFERENCE ARM, measured independently on both sides:
+      E1 long, my read of 41 jgi task dirs:  180-290 well mapped of 1.10-1.11 M
+      E1 long, the experimenter's read of
+        METABAT2_JGISUMMARIZEBAMCONTIGDEPTHS_LONGREAD:  490-797 of 1.7-2.4 M
+      33hlLu8Q:                              231 of 1,826,529
+      `--percentIdentity` is passed NOWHERE in E1 long's .command.sh -- the tool's own 97
+      default, because nf-core sets it only when `longread_percentidentity` is given and that
+      defaults to null. Every figure lands at ~0.02% well mapped.
+
+So every contig gets ~0 depth, the whole assembly lands in `lowDepth.fa` (86 MB), metabat2 yields
+**0 bins**, and the e2 transform correctly returns `success=False` — which is why this is a loud
+failure rather than a silent empty bin set. **The tool is behaving exactly as configured; the
+configuration is wrong for long reads.**
+
+**NOT a resource failure, and NOT the image.** The image hypothesis was refuted by a control inside
+the campaign rather than by argument: `WfOlaqLT` (E2 short) declares the **identical two tags** —
+`metabat2:2.15--h986a166_1` and `2.17--hd498684_0` — and its metabat2 ran **208/208** in the same
+agent home. The agent home's `container_images/` holds only megahit, spades and bbtools, and
+`APPTAINER_CACHEDIR` appears nowhere in the task's `.command.sh` or `.command.run`; both facts are
+true and neither is the cause.
+
+**AND IT IS SYMMETRIC, WHICH MAKES IT A PARITY FINDING RATHER THAN ONLY A DEFECT.** nf-core/mag
+5.5.0 passes `--percentIdentity` **only if `longread_percentidentity` is set, and it defaults to
+`null`** — so E1 long inherits the same 97% floor from the same tool. Both arms of the long-read
+comparison are hit identically, exactly as phiX removal turned out to be a measured no-op on both
+sides. So the comparison stays sound; what is at risk is whether either arm recovers any long-read
+MAGs at all.
+
+**THE THRESHOLD, RESEARCHED 2026-09-13. The cited value is 85 and IT IS STILL TOO HIGH HERE.**
+
+`nf-core/mag`'s own `docs/usage.md:468-470` describes our exact symptom and prescribes a number:
+
+> "If you are having trouble with the coverage estimation steps (for example, **the output depths
+> for each bin are all at or near zero**)... By default, alignments are filtered to retain those
+> with 97% percentage identity. This value is good for short read Illumina data, however for
+> certain long read technologies error rates can be much higher. For example, older Oxford
+> Nanopore chemistries can have error rates approaching **15% - 20%**... **For older ONT data, you
+> may wish to look at values of around 85%** to improve coverage estimation."
+
+Corroborated three ways inside the pipeline: `conf/test_full.config:35` sets
+`longread_percentidentity = 85` for their own full-size release test; `nextflow.config:61` has the
+`null` default; `CHANGELOG.md:244` is PR **#873** by @prototaxites, which both documented the
+parameters and set 85 in test_full.
+
+**And MetaBAT2's docs explain why 97 exists**, which is how the change gets justified rather than
+merely made: *"Reads that map imperfectly are excluded when the %ID of the mapping drops below a
+threshold (--percentIdentity=97). MetaBAT is designed to resolve strain variation and mapping reads
+with low %ID indicate that the read actually came from a different strain/species."* It is a
+**strain-discrimination** filter that assumes short-read accuracy. On 20%-error ONT every
+legitimate self-mapping read looks like another species — the filter works exactly as designed, on
+data it was not designed for.
+
+**OUR MEASUREMENT — from the BAMs, per read. RECOMMENDED FLOOR: 80.**
+
+Job 59655322, 4 samples, 2% seeded sample, primary mapped only (`-F 0x904`),
+identity = 100 x (1 - NM/aligned_length) with aligned_length = the sum of CIGAR M/I/D/=/X, i.e. **the
+aligned block with soft clips excluded**. Zero reads missing an NM tag in any sample.
+
+    dataset            reads    mean     p5      p10     p25     p50     p75     p95
+    plant_associated   13,787   85.79   83.36   84.21   85.16   85.96   86.76   88.22
+    plant_associated   13,982   85.81   83.14   84.09   85.12   85.96   86.84   88.45
+    toy_humangut       20,482   88.04   86.19   86.77   87.48   88.17   88.87   89.98
+    toy_humangut       20,195   88.04   86.21   86.75   87.48   88.17   88.86   89.98
+
+    fraction at or above     50       60       70       75       80       85
+    plant (a)             1.0000   1.0000   0.9985   0.9916   0.9822   0.7852
+    plant (b)             1.0000   0.9999   0.9980   0.9891   0.9792   0.7773
+    gut   (a)             1.0000   0.9999   0.9987   0.9959   0.9911   0.9798
+    gut   (b)             1.0000   0.9999   0.9987   0.9954   0.9915   0.9810
+
+**THE MECHANISM IS NOW QUANTITATIVELY CLOSED.** p95 is 88.2-90.0%, so essentially no read reaches
+97 — which is exactly the observed **231 of 1,826,529 = 0.013%**. The floor sits ~9 points above the
+top of the distribution.
+
+**80 retains 97.9-98.2% of plant reads and 99.1-99.2% of gut reads**, and sits ~3 points below
+plant's p5, so it is near no edge of the distribution.
+
+**85 — the value nf-core documents — is NOT symmetric on this corpus**: it keeps 98.0% of gut reads
+and only **77.7-78.5% of plant** ones. A ~22% read loss on one dataset and ~2% on the other, inside
+one lane, is a dataset-dependent coverage bias introduced by the parameter itself. 75 also works
+(98.9-99.6%) but buys nothing over 80 and drifts further from the documented value for no measured
+reason.
+
+Deviations row: *nf-core/mag documents ~85 for older ONT data; measured per-read identity on this
+corpus is 85.8-88.0% (p5 83.1-86.2), where 85 would discard 22% of plant_associated reads and 2% of
+toy_humangut, so the floor was set to 80, retaining >=97.9% in both.*
+
+    RETRACTED, AND IT WAS THE BASIS OF THE WHOLE EARLIER RECOMMENDATION. I first reported identity
+    **76.8-80.1%**, derived from Flye's own `Alignment error rate` (0.228-0.232 plant,
+    0.199-0.203 gut) read as 1 - identity, and recommended 75 on it. **Flye's figure is not that
+    statistic** -- it is computed during Flye's own consensus over raw reads and evidently charges
+    unaligned or clipped portions that an aligned-block identity does not. The gap is large and
+    one-directional: ~6 points on plant, ~8 on gut. The consequence was a recommendation reasoned
+    from the wrong instrument, and it could not have surfaced the plant-versus-gut asymmetry at 85,
+    which is the finding that actually decides the value.
+
+    **A proxy already sitting in a log you are reading is not evidence that it measures what you
+    need.** The BAM was always the right instrument and cost one 50-minute job. Same family as the
+    Q40 quality string that misled both the flye preset and this filter -- one level up, because
+    this time the misleading number was a TOOL'S OWN SUMMARY STATISTIC rather than the data's.
+
+**Disabling the filter is the other defensible option and is arguably cleaner for a benchmark** — it
+removes a parameter from the comparison rather than adding a chosen one. The cost is that genuine
+cross-strain mappings inflate coverage, which a strain-madness-style community would punish; neither
+of these two datasets is that set.
+
+    AND ONE OBSERVATION THAT LINKS THIS TO B12: NanoSim wrote these reads with a FLAT Q40 quality
+    string while their real error is ~20%. That is the same root cause as B12, where the flye
+    preset heuristic read Q40 and chose --pacbio-hifi. **Two independent tools have now been misled
+    by the same synthetic quality string** -- one through a preset, one through an identity filter.
+    Any other tool in these lanes that keys off base quality is suspect for the same reason.
+
+**Owner:** the experimenter, as a T19 row. **Fix direction:** set the floor to 75 (or disable it) on
+the long-read lane, with parity checked against nf-core/mag's own long-read depth arguments —
+and if it is changed on one side it must be changed on both, or the arms diverge on the parameter
+that decides whether a contig is binnable. **No cancellation:** downstream `das_tool` waits on
+comebin regardless, and each retry costs about a minute.
+
+    CAUTION — THE TRAP THAT DEFEATED MY OWN INSTRUMENT TWICE. An ARRAY JOB'S PARENT DIRECTORY
+    CARRIES A `.command.err` THAT BELONGS TO NO TASK. I read `ce/d1811d65…`, found a 60-byte
+    `.command.err` holding only `grep: write error: Broken pipe` / `tr: write error: Broken pipe`,
+    and a 29 KB `.command.out` that is the NODE RELAY's aggregate log -- several `apptainer exec`
+    blocks with different `.bounce.*` files, two different metabat2 tags probed ten seconds apart,
+    and an `'active' file was deleted`. None of it is one task's output, and all of it looked like
+    evidence.
+
+    Then I mapped indices to dirs using nxf.log's `submitted process` lines and got two dirs with
+    NO `.exitcode` and NO `.command.sh` at all, whose only "errors" were
+    `Error: Failed to append to file: $trace_file` -- literal UNEXPANDED shell template text, not
+    a failure.
+
+    **Map a task index to its work directory through nxf.log's `Task completed > … workDir=` line,
+    never through `submitted process`, and never by reading the array parent.** The real dir here
+    is `d6/197a49…`, and it holds jgi's actual output.
+
+## B20 — E2 LONG WILL HANG, NOT COMPLETE: `das_tool` has three hard requirements and metabat2's will never exist · and that closes criterion 12's long-read half IN-PLAN
+
+**Downstream of B19, and a different disposal decision: this run does not fail, it WAITS.**
+
+    p12__das_tool   submitted = 0   completed = 0
+
+The pinned `e2/das_tool.py` (`_metasmith/task/transforms/FVWXPAYrmdVA/das_tool.py`) takes all three
+binner tables as **plain requirements** — no default, no optional marker — grouped by assembly:
+
+    11  mb = AddRequirement(e2::metabat2_contig_to_bin, parents={asm})
+    12  sb = AddRequirement(e2::semibin2_contig_to_bin, parents={asm})
+    13  cb = AddRequirement(e2::comebin_contig_to_bin,  parents={asm})
+    61  group_by=asm
+
+B19 means metabat2's table will never be produced for **any** of the 41 assemblies. So Nextflow
+never satisfies that input channel, the process never submits, **never errors, and never appears in
+a FAILED row.** `p13__checkm2` and `p14__amber` sit behind it. The driver holds its job's wall clock
+indefinitely.
+
+`das_tool` is *also* waiting on comebin — `p05__comebin` is absent from the trace entirely — but
+comebin landing would not release it. metabat2's absence blocks it permanently.
+
+**AND IT CLOSES THE IN-PLAN ROUTE TO A LONG-READ AMBER NUMBER.** The pinned `e2/amber.py`:
+
+     8  table = AddRequirement(e2::das_tool_contig_to_bin, parents={asm})
+    46  group_by=table
+
+and the plan's only amber process is `p14__amber`. **There is no per-binner amber step in this run
+at all** — correct per the principal's correction that the consolidated set is the reported one, but
+it means the consolidated table is the *only* path to a score on that lane.
+
+**Two ways forward, and they are NOT substitutes:**
+
+1. **Fix B19's identity floor.** metabat2 produces a table, das_tool consolidates, `p14__amber`
+   gives a consolidated long-read row in-plan, and the long-read half stays structurally identical
+   to the short-read half. This is what criterion 12 actually asks for.
+2. **Score SemiBin2 post-hoc, out of plan**, with `score_reference_amber.py --contig-to-bin` (the
+   two-column path, verified against both column layouts and byte-identical to the in-plan scorer on
+   the same assignment). Both sides exist today — our semibin2 is 41/41 exit 0 with 19-44 bin files
+   per task; the reference arm has 1,335. But it is a **raw-binner** comparison, an intermediate on
+   both sides, not the MAG set.
+
+**Owner:** the experimenter. **Next action:** decide between the two; (2) is available immediately
+and should be labelled SemiBin2-vs-SemiBin2 on raw bins rather than as criterion 12's answer.
+
+    CAUTION a step with 0 submitted and 0 completed is invisible to every failure-shaped check --
+    no FAILED row, no non-zero exitcode, no ignored-step line, nothing in `.command.err` because
+    there is no task dir. The only signal is the ABSENCE of a submit line for a step that is in
+    `workflow.nf`. Diff the plan's process list against the trace's step names to find one.
+
 ## CLEARED TODAY — kept only so a reader can tell movement from stasis
 
 - **B7, the Pratama MAG comparison — FIXED at the solve level.** MetaWRAP is Pratama's own

@@ -1657,3 +1657,194 @@ campaign has** (104) plus the first measured magnitude of the `--minContig` conf
 **Before endorsing any run-directory deletion, list its `results/` and count each product.** A tree
 that looks like spent intermediate storage can be the sole carrier of a number no ledger holds, and
 the check costs one command.
+
+## When a count does not match, doubt the IDENTIFICATION before you doubt the count.
+
+Twice in one shift a mismatched count was the cheapest available signal that I was looking at the
+wrong objects, and both times I filed it as a loose end instead.
+
+    the abort said "1 files name <run>"      my grep found 3 in task_cache
+      -> the gate does not scan task_cache at all; it matched the run's OWN workflow.nf
+
+    the cache held 70 large fq.gz            my interleave tree held 66 files
+    705.31 GB                                744.04 GB
+    exact byte matches between them: 1 of 66
+      -> they were never the same product. 65 of the 70 are bbduk `clean_short_reads`,
+         the assembler's INPUT, with 65 metaSPAdes tasks live against them.
+
+In both cases I had a correct measurement, an off-by-a-few count, and an explanation for the gap
+("cached task logs also name it", "different gzip settings compress differently"). The explanation
+is the tell: **if you are reaching for a reason the counts differ, the likelier reason is that the
+two sets are not the same set.**
+
+## IDENTIFY A CACHE SHARD FROM ITS MANIFEST, NEVER FROM ITS FILE SHAPE.
+
+Every shard carries `manifest.cbor` beside its `out/`, and `strings` is enough to read it:
+
+    istep_name<name>          the step that produced it        e.g. bbduk_pratama
+    jdtype_name<ns::type>     the product type                 e.g. sequences::clean_short_reads
+    grelpath                  out/<the product filename>
+    gslot_id / gparents / glineage / hconsumes / olineage_payload
+
+I identified 70 shards as interleaved reads because they were ~11 GB `.fq.gz` files and the
+interleave tree has the same size profile. They were bbduk's trimmed output — the direct input to
+megahit and metaSPAdes — and recommending their eviction while 65 metaSPAdes tasks were running
+against them was one dry run away from being acted on.
+
+**A file's extension and size describe its shape. Only the manifest says what it IS.** The same
+applies to the reverse direction: `find task_cache -iname '*downloadX*'` returns zero for every
+step, because the cache is content-addressed — a name search cannot find anything in it, and zero
+reads exactly like nothing being cached.
+
+## An ARRAY JOB'S PARENT DIRECTORY has a `.command.err` that belongs to no task.
+
+Diagnosing the E2-long metabat2 failure, I read `ce/d1811d65…` and found:
+
+    .command.err   60 bytes -- `grep: write error: Broken pipe` / `tr: write error: Broken pipe`
+    .command.out   29 KB -- the NODE RELAY's aggregate log: several `apptainer exec` blocks with
+                   different `.bounce.*` files, two metabat2 tags probed ten seconds apart, and
+                   an `'active' file was deleted`
+
+**None of that is one task's output**, and every line of it looked like evidence. I built two
+hypotheses on it — an image-availability failure and a relay-guard abort — and both were wrong. The
+real cause was in the task's own dir: jgi reporting `1826529 reads and 231 readsWellMapped`.
+
+**Then my second attempt mapped indices to dirs through nxf.log's `submitted process` lines** and
+produced two directories with no `.exitcode` and no `.command.sh`, whose only error text was
+`Error: Failed to append to file: $trace_file` — literal **unexpanded** shell template text, not a
+failure.
+
+    Map a task index to its work dir through nxf.log's  `Task completed > ... work-dir=`  line.
+    Never through `submitted process`, and never by reading the array parent.
+
+Companion to the rules already here: a Slurm array index is not a nextflow task index; `pNN` is a
+per-run plan index; and `sacct --name=nf-p08__clean` returns nothing because Slurm stores the array
+suffix. **Every identifier and every directory in this stack is scoped to something, and the scope
+is never the one you want.**
+
+## ONE nf-core table, TWO contig-id formats: DAS Tool writes the assembler's full FASTA header.
+
+`GenomeBinning/contig_to_bin/contig_to_bin_map.tsv` is gathered by `collectFile` from every
+binner, and they do not agree on what a contig id is:
+
+    DASTool    k141_10 flag=1 multi=2.5908 len=1055     <- MEGAHIT's FULL header, spaces and all
+    MetaBAT2   k141_100008                              <- the bare name
+    COMEBin / SemiBin2   the bare name
+
+`assembly_id` is identical for all four, so a membership test against the assembly's contig
+**names** drops every DAS Tool row while the other three pass. In the reference scorer that silently
+cost the one label that matters — DAS Tool's refined set IS the reported MAG set, per the
+principal's correction that the per-binner sets are intermediates.
+
+    split the contig id at whitespace and take the first token, before any membership test.
+
+**And DAS Tool emits an explicit `…-DASToolUnbinned-….fa` pseudo-bin.** Once the ids match, scoring
+it creates one enormous bin holding every contig refinement rejected — the same hazard as the
+empty-`binner` rows, wearing a name instead of a blank. Drop any `bin_id` containing `unbinned`.
+
+Measured on the rung-1 table, with every row accounted for:
+
+    193,896 rows = 144,998 kept + 48,898 unbinned
+    COMEBin 62,459/62,459 · MetaBAT2 34,562/34,562 · SemiBin2 31,306/31,306
+    DASTool 16,671/65,569        <- the rest is the Unbinned pseudo-bin, correctly dropped
+
+So DAS Tool's refinement keeps about a quarter of what the raw binners assigned. That is a result,
+not a defect, and it is only visible once the ids parse.
+
+## A PER-GROUP TALLY, NOT AN AGGREGATE, IS WHAT CATCHES A LOST GROUP.
+
+The scorer printed `128327 rows over 3 binners … dropped 0 unbinned, 65569 not in this assembly`.
+Every number in that line was correct. Nothing failed. It emitted three labels and read as a
+complete comparison.
+
+**An aggregate drop count cannot show that ONE group lost everything.** The fix is a per-group
+kept/seen line plus an assert that refuses to proceed when a group present in the input contributes
+zero rows:
+
+        COMEBin: 62459 kept of 62459
+        DASTool: 16671 kept of 65569
+    assert not empty, "dropped EVERY row of [...] while keeping other binners"
+
+This is the same shape as the campaign's other silent half-answers — a completion check that counts
+started tasks, a directory created before it is populated, `Task completed` with `exit: 1`. **Any
+instrument that splits its input into groups must report per group and fail on an empty one.**
+
+## AN IMPORT REGISTERS A FILE IN PLACE. Its `size_bytes` in the index is NOT cache-resident bytes.
+
+`_entry_rows` reports 742.1 GB of `sequences::short_reads_pe` in the pratama store. Physically inside
+that store:
+
+    *.fastq.gz  n=1    0.00 GB
+    *.fq.gz     n=74   705.31 GB      <- bbduk's clean_short_reads, a different product entirely
+
+Every imported row's `path` points **out** of the cache and at the original tree:
+
+    34 rows -> /scratch/phyberos/pratama2026/interleaved/reads_2019/...
+    34 rows -> /scratch/phyberos/pratama2026/interleaved/reads_2022/...
+
+**So a large import total is a pointer, not a copy.** Deleting the source tree would destroy the only
+copy of the data AND orphan every index row referencing it. `evict_cache.py`'s refusal to touch
+imports — *"an import may be the only copy of its data"* — is literal.
+
+**And the consuming tasks read the tree directly**, not a shard: `p02__bbduk_pratama` reads
+`interleaved/reads_2022/SRR32696711.fastq.gz`, `p01__seqkit_reads` reads
+`interleaved/reads_2019/ERR3858121.fastq.gz`, both located by `-J nf-<step>` in `.command.run`.
+
+**This pair of trees looked like a duplicate TWICE and was not, for two different reasons:**
+
+1. The cache's 705.31 GB of `.fq.gz` looked like the interleaved reads by size and extension. It is
+   bbduk's trimmed output — **the live assembler input**.
+2. The index's 742.1 GB of imports looked like a second copy by byte total. It is the same bytes,
+   counted through a `path` that leaves the cache.
+
+The discriminator both times was **reading what the manifest or index NAMES** — `dtype_name`,
+`step_name`, `path` — rather than comparing sizes. A byte total tells you nothing about where the
+bytes are.
+
+Companion accounting note: 68 index rows covered **65 distinct filenames** (three duplicate rows)
+against 66 files in the tree, one of which was never imported. Reconcile the counts before drawing
+any conclusion from them — see the count-mismatch rule above.
+
+## A TOOL'S OWN SUMMARY STATISTIC IS NOT THE MEASUREMENT YOU NEED.
+
+To pick `jgi_summarize_bam_contig_depths`' `--percentIdentity` for ONT reads I needed read-to-contig
+identity. Flye prints `Alignment error rate: 0.228` in a log I was already reading, so I used
+`1 - that` and recommended a floor of 75.
+
+Measured from the BAMs instead — primary mapped only, `100 * (1 - NM/aligned_length)` over the CIGAR's
+M/I/D/=/X:
+
+    Flye's error rate implied    identity 76.8-80.1%
+    the BAMs actually say        identity 85.8-88.0%   (p5 83.1-86.2, p95 88.2-90.0)
+
+**Off by 6-8 points, one-directionally.** Flye's figure is computed during its own consensus over raw
+reads and charges unaligned or clipped portions that an aligned-block identity does not. The
+recommendation built on it was wrong, and — worse — it could not have surfaced the finding that
+decided the value: at a floor of 85 the plant dataset loses **22%** of its reads while the gut dataset
+loses **2%**, a dataset-dependent coverage bias inside one lane. A mean, from either source, hides
+that entirely.
+
+    the proxy was convenient, already in front of me, and named the right quantity in words.
+    None of that makes it the same statistic.
+
+**And state the definition whenever you report an identity**, because there are several and they
+differ by points: over the aligned block (soft clips excluded) versus over the full read length,
+with or without indels in the denominator. The number is meaningless without it.
+
+Companion to the Q40 rule: NanoSim's flat Q40 string misled the flye preset and this identity filter.
+This one is a level up — **the misleading number was a tool's own summary of the data, not the data.**
+
+## PICK A THRESHOLD FROM THE DISTRIBUTION, NEVER FROM THE MEAN.
+
+Half the reads sit below the mean by construction, so a floor set near one discards about half the
+data. The experimenter refused a mean-derived value for exactly this reason and was right to.
+
+What a distribution gives you that a mean cannot:
+
+    - the fraction retained at each candidate floor, which is the actual decision variable
+    - whether a candidate sits near an edge (80 is ~3 points below plant's p5: safe)
+    - whether one candidate is ASYMMETRIC across datasets, which is what ruled out 85
+
+Report p5/p10/p25/p50 and the retained fraction at every floor under consideration. Sample a couple
+of thousand reads per unit — 2% of a BAM was 13k-20k reads and the two samples per dataset agreed to
+two decimal places, so precision was never the constraint.
