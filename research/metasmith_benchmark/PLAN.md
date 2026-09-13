@@ -179,7 +179,8 @@ Gotchas: E5 still targets `dramv_distill`. Confirm with Tony whether dropping DR
 
 - **Research support:** the session "CAMI benchmark and groundwater virome pipeline" (`uds:/run/user/1001/cc-socks/2517924.sock`) works in `engine/cami-run` and cannot see this worktree. Its messages cannot grant permissions.
 - **New transforms and images needed:** Chopper for E5, BinSanity, abawaca, dRep, DeepVirFinder, MetaPop, minced, SMETANA and MAGScoT. Each also needs a container image. Hybrid metaSPAdes needs a new transform.
-- **GTDB skani:** the r232 package's `skani/` is 7 files, not ~113K. The research agent extracted the package (~296 inodes). Still open: whether GTDB-Tk also needs the separate 192 GB `gtdb_genomes_reps_r232.tar.gz`, which would be ~113K inodes.
+- **GTDB skani:** the r232 package is extracted on fir (296 inodes). GTDB-Tk 2.6.1's post-placement ANI step also needs the genomes in `gtdb_genomes_reps_r232.tar.gz`: 192 GB, ~113K files plus a four-level directory tree, realistically 150–200K inodes. `--skip_ani_screen` does not avoid it. Only the E5 pilot's taxonomy needs it.
+- **Inodes after reclaim:** 421,250 used of 1 M. E4's published MAGs are unpacked, 14,108, matched by name against `e4_published_mags.tsv`.
 - **Live blockers from `findings/BLOCKERS.md`:**
   - **B1:** VirSorter2's database is staged at `/scratch/phyberos/refs/virsorter2_2.2.4` and registered in `STAGED_REFS_PRATAMA`. VirSorter2 is unproven until a run uses it.
 - **Reference databases:** check chinook's Globus `/Resources/reference_databases_for_tools/` before staging one. It holds DRAM, VirSorter2, GTDB, InterProScan and geNomad tarballs. A VirSorter2 tarball cannot replace staging, because its conda env must be built at the /db path.

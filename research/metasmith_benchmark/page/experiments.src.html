@@ -395,7 +395,7 @@ a.full:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
         <li class="block">The six Nanopore runs stay out of the plan until a hybrid short + Nanopore read set exists as a type, so the solver picks hybrid metaSPAdes for those samples and MEGAHIT for the rest</li>
         <li class="block">Pre-interleaving must finish on fir. Staging refuses until every run passes its read-count check</li>
         <li class="block">The plan downloads the VIBRANT and CheckV databases, and those downloads hang on a compute-node driver</li>
-        <li>MAG taxonomy is out of the plan. GTDB-Tk r232's package, with its skani database, is extracted on fir. Whether 2.6.1 also needs the 192 GB representative genomes is still open</li>
+        <li>MAG taxonomy is out of the plan. GTDB-Tk r232 also needs the 192 GB representative genomes, 150–200K inodes</li>
         <li class="block">MAG recovery is out of the plan: dRep has no transform, and the MetaWRAP recovery transforms (B7) aren't committed</li>
         <li class="block"><b>New transforms</b> to match Pratama: BinSanity, abawaca, DeepVirFinder, MetaPop and minced, each with a container image. Spacer-to-host links wait on minced</li>
         <li class="block">MetaPop needs every run mapped to one shared reference, the study's vOTU catalogue. Today each run maps to its own assembly</li>
@@ -449,10 +449,11 @@ a.full:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
       <div class="proven"><h3>Proven</h3><ul>
         <li>CPLEX solves uncapped inside the CarveMe container on a fir compute node. The open solver ran 1 h 49 m on the smallest bin and never finished</li>
         <li>Corpus scale, from reads: live li2019 run <code>HQ5SrqFe</code> built 131 models with zero failures. A sampled model has 1,968 reactions and 1,376 species</li>
+        <li>All 14,108 published MAGs unpacked on fir, one FASTA each, matched by name against the manifest</li>
         <li>MEMOTE on a real model from that run: consistency 0.894, annotation 0.797 (metabolites) / 0.766 (reactions)</li>
       </ul></div>
       <div class="open"><h3>Open</h3><ul>
-        <li class="block">The published MAGs are being unpacked to one FASTA each by <code>e4_extract_mags.sh</code> (about 14K inodes). The driver can't stage until they land</li>
+        <li class="block">No step batches, so the corpus as one run needs ~635K inodes. The driver must run it in chunks of about 2,000 MAGs</li>
         <li class="block">SMETANA: <b>new transform</b> and container image</li>
         <li><code>metagem_compare.py</code> compares one model pair, so the comparison needs a loop over MAGs, paired by their published names</li>
       </ul></div>
@@ -524,7 +525,7 @@ a.full:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
         <li class="block"><code>skani_dedup</code> takes the aggregator's bin pool per assembly. The MAG matrix needs it on DAS Tool and MAGScoT bins per study</li>
         <li class="block">The 4-lane panel reads whole-assembly ORFs. Running it on MAGs needs a chunker for per-MAG ORFs</li>
         <li class="block">The plans download the VIBRANT, CheckV and iPHoP databases. iPHoP's is about 0.5 TB, with a 3× peak while downloading</li>
-        <li class="block">GTDB-Tk r232: the package is extracted on fir. If GTDB-Tk also needs the 192 GB representative genomes, they cost about 113K inodes</li>
+        <li class="block">GTDB-Tk r232 needs the 192 GB representative genomes as well as its extracted package: 150–200K inodes, and <code>--skip_ani_screen</code> doesn't avoid them. The pilot runs without taxonomy, or waits for them</li>
       </ul></div>
     </div>
     <details class="dag">
