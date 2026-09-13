@@ -102,7 +102,7 @@ all of which are present. Re-adding dbcan needs a working URL, not a re-run.
 **Owner:** orchestrator. **Next action:** none — closed. The Pratama relaunch picks the config
 up at run time. VirSorter2 staging (B1) was released the moment this cleared.
 
-## B4 — nf-core's `contig_to_bin_map.tsv` has not landed  ·  BLOCKS criterion 12's reference half
+## B4 — **CLOSED for E1 LONG 2026-09-13.** `contig_to_bin_map.tsv` gathered: 402,943 rows over 41 assemblies. Still open for E1 SHORT, whose head is being restarted from `947434f0`
 
 **RE-SCOPED 2026-09-13 to E1 short (wave 1). L3 and its rung-1 run are gone; the reference arm is
 now `/scratch/phyberos/bench/e1/{short,long}`, driver pids in `nextflow.pid`.**
@@ -120,21 +120,68 @@ completion proxies: a Slurm output file exists at task start, a directory is cre
 populated.
 
 `mag.nf:467` gathers it driver-side via `collectFile` + `storeDir` only after EVERY binner
-finishes. COMEBin was `CANCELLED` when L3's own `timeout -k 30 10800` wrapper SIGTERM'd a
-healthy driver at exactly 3h00m00s; relaunching with `-resume` and a wall sized to the task.
+finishes, DAS Tool's refined set included. **The gate is unmet and the reason is measured, not
+inferred: E1's COMEBin is still in flight** — job `59654451`, 41 array tasks RUNNING, resolved to
+`bench/e1/long/work` by `WorkDir` rather than by process name.
 
-**Owner:** L3 (`ad8899af8b5a916b0`), watch `buizv86av`. **Next action:** when the table
-lands, `sbatch /scratch/phyberos/score_reference_rung1.sbatch`. Both risky joins are already
+    E1 short   out/GenomeBinning/contig_to_bin/   EMPTY  (storeDir trap, see above)
+    E1 long    out/GenomeBinning/contig_to_bin/   EMPTY
+    find bench/e1 -name contig_to_bin_map.tsv  ->  0
+
+    NOT A FAILURE: a `sacct` sweep shows 4 COMEBIN_RUNCOMEBIN FAILED, and they are NOT E1's.
+    Jobs 59464780_{0,1} and 59468440_{0,1}, **4 cpus / 15 G, dead in 13-15 s** — that is the
+    bundled test-profile resourcing from Sep 12, i.e. the "genuine binner crash" already on
+    record from B3's wave-2 test runs. A `-S 2026-09-12` sweep merges two days and two runs,
+    and `pNN`/process names carry no owner. Resolve by WorkDir before attributing a failure.
+
+**Owner:** nobody — L3 is gone and its rung-1 run is reclaimed; this row is the experimenter's.
+**Next action:** when the table lands, `sbatch /scratch/phyberos/score_reference_rung1.sbatch`. Both risky joins are already
 pre-verified against real bytes: BAM-to-assembly overlap 400,744 of 400,744, and the
 read-name join closes after the mate-suffix strip. Pass `--nfcore-contig-to-bin`, never
 `--contig-to-bin`, and `--lib` must name the FILE.
 
-## B5 — **MEASURED, 4 of 10**: COMEBin at 48 cpus is 6h35m–9h37m, MaxRSS 51.53–61.85 GiB (32% of the 192 GB grant). The two figures previously on record are the two FASTEST tasks
+## B5 — **CLOSED, 10 of 10.** COMEBin at 48 cpus: wall **6h34m43s–11h42m15s**, MaxRSS **51.53–74.41 GiB** (38.8% of the 192 GB grant). Criterion 9 is settled and **wall clock, not memory, is the binding resource**
 
-CAMI rung 1's COMEBin (job 59548383, 48 cpus) has been **PENDING (Resources) since 16:35** —
-queued, not stalled. A Pratama-arm COMEBin IS running healthily at 48 cpus, which gives a
-48-cpu data point but not criterion 9's, since that names a CAMI sample. das_tool and the
-MAG-level AMBER row both wait behind it.
+The range was revised upward **four times**, because every partial reading was a floor presented as
+a range — the first two figures on record were the two FASTEST tasks. No OOM exposure at any point.
+
+**CPU UTILISATION IS 95-96% AT 48 CPUS, measured on all ten, so the width is NOT wasted.**
+`TotalCPU / (Elapsed x 48)`, which is the only thing that answers "would fewer cpus be cheaper":
+
+    idx  elapsed    TotalCPU      eff_cores  util    MaxRSS
+    _0   06:34:43   12-11:47:10   45.57      94.9%   56.1 GiB
+    _1   09:36:57   18-09:40:38   45.93      95.7%   60.2 GiB
+    _2   10:01:39   19-05:05:51   45.98      95.8%   67.0 GiB
+    _3   07:18:08   13-21:59:07   45.74      95.3%   51.5 GiB
+    _4   11:37:17   22-07:50:05   46.11      96.1%   69.4 GiB
+    _5   11:18:38   21-17:39:40   46.12      96.1%   71.7 GiB
+    _6   11:42:15   22-13:00:52   46.22      96.3%   74.4 GiB   <- `76201M`, NOT K
+    _7   10:11:14   19-10:17:25   45.77      95.4%   62.2 GiB
+    _8   08:04:40   15-08:54:02   45.67      95.1%   61.9 GiB
+    _9   11:15:25   21-14:41:54   46.08      96.0%   68.0 GiB
+
+    reference arm, 12 cpus:  13:13:58, TotalCPU 5-18:05:28 = 138.09 cpu-h, 10.44 eff = 87.0%
+
+**So lower width is LESS efficient here, and that refutes the cpu-hour argument for shrinking it
+rather than sizing it.** 300 cpu-h at 95% against 138 cpu-h at 87% cannot be parallel overhead — it
+means ~2.4x different TOTAL WORK, i.e. a different assembly (nf-core's fastp+MEGAHIT against our
+bbduk+MEGAHIT, hence a different contig count). **Dropping to 12 cpus would buy the worse efficiency
+and none of the apparent saving**, because the saving was never a width effect. And the pairing that
+anchors it is unfounded anyway: nothing identifies which B5 index was `marine_sample_0` — `sacct`
+carries no sample name and C1IM6IG3's @SampleIDs are leaf-instance stems — so the defensible
+comparison is against the DISTRIBUTION, not against one element.
+
+    CAUTION `_6`'s MaxRSS is `76201M`. Read as K it is 74 MiB, a 1000x understatement in the
+    direction that makes the ceiling look like it FELL. Check the suffix per ROW, not per table.
+
+**Cross-arm datum, and it is the only one this campaign has for COMEBin resourcing.** The reference
+arm's COMEBin on the same sample (`marine_sample_0`, job 59548173, rung-1 tree) ran **12 cpus / 72 G
+→ wall 13:13:58, MaxRSS 19,614,716K = 18.71 GiB**, i.e. 26% of its own grant. Against our 48-cpu
+51.53–74.41 GiB that is roughly proportional in thread count, which **corroborates the recorded
+finding that the memory is COMEBin's own representation rather than its data** — its protocol calls
+the torch thread setter with the cpu count. Practical consequence: if memory ever binds, cutting
+cpus cuts peak RSS nearly proportionally, at a wall-clock cost (12 cpus took 13h14m against our
+6h35m–11h42m). MaxRSS is on the `.batch` row; the array-task row's column is blank.
 
 **Owner:** L4 (`a6a51efe509e7c8f9`). **Next action:** `sacct MaxRSS` + elapsed once it
 finishes. The reference arm's COMEBin rerun is running under a 16 h limit, which also
@@ -885,6 +932,23 @@ defect, 22 megahit "retries", and B16's cache-unreachable. In every one the meas
 and the sentence built on it was not. The MaxRSS, the ReqMem, the SPAdes log line and the missing
 `withName` selector are all still true as measured.
 
+
+**`-t 16` ANSWERED 2026-09-13 AND IT IS A NEGATIVE: the top-end input exceeds 192 GiB at 16 threads
+just as at 48.**
+
+    48 cpus  MaxRSS 201,318,144K        16 cpus  MaxRSS 201,317,668K
+    the 192 GiB cap is 201,326,592K -- BOTH are ~9 MB under it, i.e. BOTH PINNED AT THE CEILING
+
+    CAUTION do NOT read the matching MaxRSS as "peak memory is not thread-driven". That was an
+    earlier wording here and it is unsupported: two values clipped by the same cap tell you nothing
+    about the demand behind them. How metaSPAdes' peak scales with threads is UNMEASURED.
+
+Job `59656439_1`, 16 cpus, top-end 11.43 GB input: `spades-hammer` exited **OS return value 12
+(ENOMEM)** twice, `hammer_done=0`, **CONTIGS=0** — while Slurm reported **`COMPLETED 0:0`**. So the
+retry ladder (192 -> 384 GB) is the only remedy, and the account-throughput argument for narrowing
+this step is **void** rather than merely weakened: 16 cpus frees no capacity because it produces no
+assembly. `59656439_0` was still running when this was written; the claim is "fails on a top-end
+input", not "fails on every input".
 ## B19 — the 97% depth-identity floor DESTROYS METABAT2 ON BOTH ARMS and SEMIBIN2 SURVIVES IT ON BOTH · `jgi_summarize_bam_contig_depths` defaults to `--percentIdentity 97` against 15%-error ONT reads
 
 **CORRECTED 2026-09-13 — MY OWN HEADLINE WAS WRONG. I wrote "E2 long's binning produces ZERO bins".
@@ -1076,6 +1140,22 @@ comebin regardless, and each retry costs about a minute.
     never through `submitted process`, and never by reading the array parent.** The real dir here
     is `d6/197a49…`, and it holds jgi's actual output.
 
+
+**PROVEN SYMMETRIC FROM PUBLISHED ARTIFACTS ON BOTH ARMS, 2026-09-13.** E1 long's gathered
+`contig_to_bin_map.tsv` (402,943 rows, 41 assemblies) breaks down as
+
+    DASTool  139,650   ·   COMEBin  139,057   ·   SemiBin2  124,235   ·   MetaBAT2  **0**
+
+**MetaBAT2 is absent from the binner column entirely**, against our arm's 41 FAILED metabat2 task
+indices and zero bins. Same ~0.02% well-mapped rate, same 97% `jgi_summarize_bam_contig_depths`
+`--percentIdentity` floor, both arms. This supersedes the earlier softer evidence, where the
+reference side's `GenomeBinning/MetaBAT2/` held 164 files of which 82 were named `unbinned` and the
+largest were `*.lowDepth.fa.gz` — suggestive, but a `*.fa.gz` count also counts 20-byte placeholders.
+
+    NEW DEVIATION FOR THE TABLE: the reference arm's DAS Tool refined from **TWO** binners, not
+    three. If our long-read arm is scored after the B19 fix its DAS Tool consolidates three, so the
+    consolidator was given different inputs on each side. Record it rather than discovering it when
+    the numbers differ.
 ## B20 — E2 LONG WILL HANG, NOT COMPLETE: `das_tool` has three hard requirements and metabat2's will never exist · and that closes criterion 12's long-read half IN-PLAN
 
 **Downstream of B19, and a different disposal decision: this run does not fail, it WAITS.**
@@ -1168,8 +1248,21 @@ same sample** — 0.9734/0.9703/0.0269 against 0.9737/0.9670/0.0280. **Corrected
 of this row called that "the same sample scored by two independent paths agreeing". That is numerical
 closeness stated as an identity, and ARI differs at the third decimal rather than agreeing. For
 C1IM6IG3 there is no identifier to check it against, and the run is deleted so its lineage cannot
-supply one. Job 59660273 tests whether the surviving cami `task_cache` manifests can map an assembly
-instance back to a CAMI sample and salvage the row; **not claimed either way until it returns.**
+supply one. **The salvage is CLOSED as not recovered, with the search incomplete** — measured over all
+20,976 surviving manifests: **369 carry one of the 9 fixture assembly instance ids and 0 of those name
+a CAMI sample**, while **902 manifests do name one and every one sits under `task_cache/imported/`**
+(that count is the positive control, and it passing is what makes the 0 meaningful). So assembly
+lineage and sample names are disjoint in the cache. Whether a multi-hop walk of the `consumes` graph
+joins them is **untested** — `cbor2` is absent on fir. Recorded as *not recovered, search incomplete*,
+never as *does not exist*.
+
+    CAUTION A `consumes` INSTANCE ID IS NOT A CACHE SHARD KEY, and they look alike. Shard dirs are
+    `task_cache/1e/20...` (manifests at DEPTH 3, 19,994 of them; 981 more at depth 4 under
+    `imported/`), and the fixture's ids are `1e20e8c26378...` — same `1e20` prefix. Mapping
+    id -> `1e/<id minus two chars>` resolved **0 of 5** files while `grep -rl` found that same id
+    INSIDE three other manifests, and the walk returned a tidy `NO SAMPLE FOUND` nine times from
+    having opened nothing. The ids are data-item instance ids; they appear inside manifests rather
+    than naming one.
 
 **THE GOLD STANDARD IS LABELLED BY TWO DIFFERENT THINGS DEPENDING ON THE TRANSFORM, and the split is
 per-transform rather than per-library.** Both paths call the SAME `lib::cami_gold_standard.py`, whose

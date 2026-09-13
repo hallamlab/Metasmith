@@ -2012,3 +2012,194 @@ across 65 tasks — while restarting comebin narrower would have competed for th
 **The recoverable-failure note that made declining safe:** if the driver hits its 7-day wall the
 trap cancels and wave 2 resumes from cache, so an overrun costs a relaunch rather than the work.
 Check that a wall overrun is recoverable before treating it as a deadline.
+
+## `src/` is not what a run stages. Check the run's own transform tree.
+
+A run stages its own copy of every transform at `<run>/_metasmith/task/transforms/<id>/`, and a
+lane may run a PINNED transform that differs from the standard library at the same path name.
+Reading `src/metasmith_libraries/...` tells you what the standard library does and nothing about
+which code a live lane executes.
+
+    THE TWO PLACES A PINNED TRANSFORM LIVES -- check BOTH before reporting absence:
+      <run>/_metasmith/task/transforms/<id>/<step>.py                     the staged copy
+      <checkout>/research/metasmith_benchmark/library/transforms/**/<step>.py   the pinned source
+    and the one that will mislead you:
+      <checkout>/src/metasmith_libraries/transforms/**/<step>.py          the STANDARD library
+
+    Measured 2026-09-13: `memote_score.py` carries `export HOME="$PWD"` in **12 of 12** checkouts at
+    the benchmark-library path and in **0 of 12** at the standard path. Grepping the standard path
+    produced a confident "the fix shipped nowhere" about a fix that had shipped everywhere.
+
+Paid for twice, the same way both times. **B12:** the Flye preset defect is real and byte-identical
+in both standard flye transforms, and I asserted E2 long was exposed — it runs a pinned `e2/flye.py`
+with a platform-keyed MODE table and no `mean_quality` branch, so the fix had shipped before the
+alarm. **The @SampleID split:** `cami_contig_truth.py:33` passes `Path(iasm.local).stem` as the
+gold standard's sample name, and I asserted WfOlaqLT's AMBER rows were therefore unattributable and
+proposed a driver mapping table. It runs a pinned `e2/gold_standard.py` whose line 25 passes
+`read_metadata["sample"]`, and its products carry `@SampleID:strain_sample_26`. Both proposals were
+unnecessary.
+
+**And note which file is NOT the discriminator.** Both gold-standard paths call the same
+`lib::cami_gold_standard.py`; the run's own staged copy has the identical `@SampleID:{sample_id}`
+write. The name comes from argv[4], which the *transform* supplies. A shared helper being identical
+on both paths is not evidence the two paths behave the same — look at what the caller passes it.
+
+**VERIFYING A MECHANISM IN A SOURCE FILE IS NOT VERIFYING THAT A RUN REACHES IT.** This is the
+source-level form of the artifact-versus-capability rule, and it sits one level above the
+`GB_ALLSTEPS` requirement: that one catches a change to a shared transform's requirements, this one
+catches reading the wrong copy of the transform entirely.
+
+## A startup validation can reach the NETWORK, and an unused default can kill a run
+
+nf-core/mag 5.5.0 declares `checkm_download_url` with its own default set to a **URL**, and the
+schema marks that param a `file-path` that must exist:
+
+    nextflow.config:170   checkm_download_url = "https://zenodo.org/records/7401545/..."
+    nextflow_schema.json  {"type":"string","format":"file-path","exists":true,
+                           "default":"https://zenodo.org/...", "hidden":true}
+
+nf-schema resolves it through Nextflow's `file()`, which for an `https://` path performs an **HTTP
+HEAD**. So the startup validation pass makes a network request. `run_checkm = false` in our pinned
+config, so **the param is never used** — and validation of an unused, hidden default failed the whole
+run at 6m59s, exit 1, before a single task was submitted (E1 short, job 59656993).
+
+**Measured: the failure was a GLOBAL Zenodo outage, not node egress.** This matters because the
+obvious workaround is wrong:
+
+    fir LOGIN node    checkm tarball 504    zenodo.org root 504
+    the workstation   checkm tarball 504    zenodo.org root 504
+    same workstation  github.com     200    <- positive control
+
+A login node moves ~550 MB/s externally, and `zenodo.org` root is 504 too. **There is no node where
+that validation would have passed**, so moving the head to a login node fixes nothing. The fix is
+`validate_params = false`, which gates only nf-schema's startup pass and is in no task hash.
+
+**The general rule: a pre-flight check that touches the network is a pre-flight check that can fail
+for reasons unrelated to your run, and a hidden default you never set is still validated.** Before
+blaming a launch failure on the cluster, HEAD the URL from two independent hosts with a positive
+control — the same discipline as proving an instrument before believing an empty grep. Same family as
+the `"exists": true` on both sample-sheet read columns that made B3's first sheet unvalidatable, and
+as the engine's own `DownloadSteps` warning that cannot see a non-`ref::` download step.
+
+    AND CHECK WHETHER THE OUTAGE BLOCKS ANYTHING BEFORE RAISING IT. Verified at the time: the
+    Pratama 1,275-MAG archive (`pratama2026/zenodo_17897233{,_unpacked}`), metaGEM's 46/46 published
+    payloads (14,154 files) and the CheckM2 database (3,082,500,605 B) are all on disk, and
+    `grep -il zenodo` over every staged `workflow.nf` returns zero. So no live lane needed a fetch.
+
+## An mtime-preserving writer is invisible to `find -mmin`, and OCI layer unpack is one
+
+When a tree grows and `find -mmin -N` cannot account for it, the writer is **restoring timestamps**,
+not creating fresh ones. `tar -x`, `rsync -a`, `cp -p`/`cp -a` and — the one that bit this campaign —
+**apptainer's OCI layer unpack** all preserve the mtimes inside the archive. A newly written file can
+therefore carry last year's timestamp.
+
+**THE INSTANCE THAT ACTUALLY BIT US: Nextflow's `publishDir` in COPY mode.** A head launched before
+`link` mode copies every published file into `out/`, and the copy **keeps the source mtime**. Measured
+2026-09-13: `bench/` went 70,306 -> 262,068 inodes, driven by E1 long's QUAST_BINS — 166 work dirs
+holding 88,114 inodes (~530 each) plus `out/GenomeBinning/QC` at ~91K — and all 164 QUAST_BINS
+finished together, so the whole thing landed as one burst. `find -mmin -6` over every live run tree,
+both E1 work trees and all three `task_cache`s accounted for ~12K new entries against ~200K of quota
+growth, because the published copies carried their sources' timestamps.
+
+    THE CHEAP GUARD: `skip_quast = true` where QUAST is not in the comparison table. E1 short would
+    have run ~832 QUAST_BINS for ~440K inodes -- nearly half the quota -- and the flag gates QUAST
+    and QUAST_BINS only. Check what a per-BIN step costs before a 208-sample rung, not after.
+
+A second instance of the same class, which cost an hour of wrong diagnosis: a live apptainer pull on
+a login node:
+
+    apptainer.bin pull -F .../wave2_b3_nfcore/apptainer_cache/nxf/<image>.img docker://<image>
+    mksquashfs .../wave2_b3_nfcore/apptainer_tmp/w32/bundle-temp-<n>/...
+
+`apptainer_tmp` is **outside every per-run tree a campaign census walks**, so it is missed twice
+over: invisible to an mtime filter and absent from the directory list. This is the third time that
+same tree has mattered — 263,470 inodes from one mass pull, 111,932 reclaimed later, and now this.
+
+**The pattern is a SPIKE, not a leak:** unpack a rootfs (tens of thousands of inodes), squash it,
+delete. So a census taken between pulls reads near zero — ours read 10,658 — and a 2-minute sample
+sees 44,000/h while a 14-minute fit sees 343,000/h. Neither window is wrong; the process is bursty.
+
+    CHECK, in this order, when inodes climb and the runs look innocent:
+      ps -u <user> -o args= | grep -E 'apptainer|mksquashfs|tar |rsync|cp -[pa]'    on EVERY node
+      find <apptainer_tmp> -xdev \( -type f -o -type d \) | wc -l    twice, minutes apart
+      ls -1t <apptainer_cache>/nxf/*.img | head    -- if the newest is OLD, a pull is landing a
+                                                      NEW image the prepull list never had
+
+**And the durable cause: a prepull inventory goes stale against the running configuration.** 60
+images were prepulled and verified; the checkout then wanted a 61st (`bcftools_htslib`) that
+`images.txt` never listed. Every image beyond the prepulled set is a fresh unpack and a fresh spike.
+Re-derive the list from the RUNNING configuration (`nextflow inspect` on the live profile) rather
+than trusting a list built for an earlier revision or the test profile.
+
+**READ `etime` BEFORE CALLING A PROCESS THE CAUSE.** The worked example above was wrong: that pull
+showed `etime 1-03:32:41` — started the previous day and hung 27 h in the gzip compression test, tree
+holding 32 inodes, incapable of the burst it was blamed for. `ps -o args=` omits elapsed time, so a
+hung process from yesterday is indistinguishable from a busy one. Use `ps -o etime=,args=`, and treat
+a process whose age exceeds the growth window as ruled out by arithmetic before reasoning about it.
+
+Do NOT kill a pull mid-squash to reclaim inodes: a compute node cannot fetch, concurrent pulls crash
+with a Go register dump (the fix is a scratch `APPTAINER_TMPDIR` plus capped concurrency), and an
+interrupted unpack can leave the rootfs tree behind — converting a transient spike into a permanent
+one.
+
+## A watcher written for "either element" exits on the FIRST one and abandons the rest
+
+2026-09-13: `by703zqdb` and its fir-side twin (job 59665019) both watched the `-t 16` array with a
+`term >= 1` condition, reported element `_1`, and **exited** — leaving `_0` running with no capture,
+while `_0`'s outcome was still owed to the experimenter. Nothing failed and nothing warned; the watch
+simply stopped existing, which is the same silence a dead watcher produces.
+
+**The rule: a watcher on an ARRAY must either loop until every element is terminal, or be re-armed
+per element.** "Fire on the first result" is the right design when one result answers the question,
+and the wrong one the moment a second element carries information the first cannot — here `_1` was the
+deliberate top-end input and `_0` bounds the smaller-input side, so they answer different questions.
+
+    the check before arming:  if this fires once and exits, what is left unwatched?
+    and after it fires:       re-read the owed list, not just the event
+
+Same family as the discharged-watcher problem (a watcher whose brief is complete becomes noise) but
+inverted: here the brief was only half complete when the watcher retired itself.
+
+## `grep -B/-A` turns a filtered view into an unfiltered one
+
+2026-09-13: a semibin2-filtered `sacct` view with `-B1 -A1` for context admitted an adjacent
+`carveme_from_orfs_cplex` row, and its 33,543,960K OOM read as semibin2 failing at the 32 G rung —
+which would have undercut the 251-of-251 conclusion drawn in the same breath. The context rows are
+*not* filtered, and they look like they belong because they share the surrounding format.
+
+**Use context flags to READ, never to COUNT or ATTRIBUTE.** If a row is going to carry a claim,
+re-select it without `-B`/`-A` and confirm its own JobName.
+
+**AND CARRY `WorkDir` IN EVERY FAILURE SWEEP.** A JobName names no run: `nf-p10__carveme_from_orfs_cplex`
+appears in three different runs on one day. Add `-o ...,WorkDir` to the `sacct` line and fold it to the
+run id:
+
+    sacct -u <user> -S <date> --parsable2 -n -o JobID,JobName,State,ReqMem,WorkDir \
+    | awk -F'|' '$1 !~ /\.(batch|extern)$/ { n=split($5,a,"/"); run="?";
+        for(i=1;i<=n;i++) if(a[i]=="runs") run=a[i+1]; print run"  "$4"  "$3 }' | sort | uniq -c
+
+**`sacct -o WorkDir` works even after `scontrol` has aged the job out** — measured 2026-09-13:
+`scontrol show job 59598635` returned nothing while `sacct` gave the full path. So a failure is never
+unattributable, and attributing one by name is never necessary. Doing it anyway put an E4 OOM in the
+record that belonged to a stopped li2019 run, and would have contradicted that lane's zero-failure
+result.
+
+Same family as the per-run plan index (`pNN` names no owner) and the `.extern`/`.batch` step rows
+(one job, three rows): every one is a case where the rows next to your answer resemble your answer.
+
+
+## Two runs are not an A/B unless you can NAME what is held constant
+
+2026-09-13, caught twice in one exchange. I compared `carveme_from_orfs_cplex` in HQ5SrqFe (32 G,
+3 failures) against lE94xbfH (16 G, 1,996 successes) and concluded one corpus's bins were harder. The
+runs differ in **bin provenance** (recovered bins vs published MAGs), **plan**, **checkout**, and
+possibly **study membership** — chunk 1 is sorted by study and may not contain the study I named.
+
+**Before comparing two runs, write down what is identical.** If the list is empty or unknown, the
+comparison supports no causal sentence — report each run's numbers separately and leave the reason
+unstated. A difference in outcome across two runs is a difference across everything that differs
+between them.
+
+Same error as `never-ab-across-two-toolchains` in memory (a musl-static build cost 12-15 ms of
+startup and inverted the sign on small payloads), and as the COMEBin 12-cpu-vs-48-cpu figures, which
+were only quotable because the SAMPLE was held constant and were explicitly NOT quotable across bins.
