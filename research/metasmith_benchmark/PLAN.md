@@ -56,6 +56,15 @@ Tony is designing five benchmark experiments for metasmith, and the design page 
 - T7. Render the DAGs onto the page and publish (G3)
 - T8. Commit the workspace
 - T9. Debrief
+- T10. Record Tony's decisions and hand the cluster work to the research agent (G1)
+- T11. Compact
+- T12. Rewrite each card's open list: drop what is decided and move notes out of the issue lists (G1)
+- T13. Build this session's own transform library for E2, to the plan (G2)
+- T14. Model hybrid short plus Nanopore read sets for E3, so the plan picks the assembler per sample (G2)
+- T15. Re-solve, commit and publish (G3)
+- T16. Compact
+- T17. Launch the initial run of E1–E4 and the E5 pilot in parallel (G2)
+- T18. Debrief
 
 ## Approach by task
 
@@ -137,16 +146,25 @@ Run the `debrief` skill.
 - **Studies:** a study is a corpus subset, such as CAMI II mouse gut or Pratama reads_2019. MetaPop, dRep and skANI dedup run per study.
 - **GTDB-Tk r232 skani database:** no re-download. Take it from project space or Globus. Found on chinook's Globus collection (`/Resources/reference_databases_for_tools/GTDB/gtdbtk_r232_data.tar.gz`, no .md5 sibling). The research agent is transferring the tarball to fir, unextracted, because `skani/` is about 113K inodes.
 - **Pratama reads:** pre-interleaved by the research agent.
+- **iPHoP in E5:** kept. The database cost is minimal.
+- **phiX:** disable it in E1 and E2 if nf-core/mag allows (`--keep_phix`). No phiX step anywhere.
+- **Coverage:** no CoverM. `assembly_stats` (minimap2 plus genomecov) gives per-base coverage.
+- **Plan keys:** E5 need not share keys with E2 and E3 for the design. Shared keys are still wanted, to cut runtime.
+- **E5 annotation:** the 4-lane panel replaces DRAM.
+- **Inode reclaim:** the research agent cleans up what its runs left.
+- **E4 extraction:** approved, about 14K inodes.
+- **E1:** Flye is tested. Drivers run on compute nodes where possible (`METASMITH_DRIVER_SLURM=1` for metasmith drivers).
+- **Initial run:** E1–E4 plus the E5 pilot, in parallel, chunked only if inodes force it.
 - **Findings:** kept here in `findings/`. The research agent's authoritative copies stay in `~/scratch/cami_campaign/`.
 
-## Still unsure about
+## Next phase (T10–T18)
 
-- **CoverM:** does coverage move out of `assembly_stats` into CoverM for E5?
-- **Plan keys:** must E5 share plan keys with E2 and E3 up to where they diverge?
-- **DRAM:** did "BLAST" mean replacing DRAM with the 4-lane panel?
-- **iPHoP in E5:** keep it? Its ~0.5 TB database is not on chinook and must be downloaded.
-- **Inode reclaim:** delete the ~178K reclaimable inodes the census found? The largest are `wave2_b3_nfcore/apptainer_tmp` (112K) and cami run `VTuXlulT` (43K).
-- **phiX in E2:** keep phiX removal in E2 for parity, or drop it as a justified difference? It removed 127 of 16.6 M pairs on CAMI marine, 17 of 56.8 M on Pratama ERR3858110 and 0 of 76.3 M on SRR32696677. The hits match phiX174 better than the WA11 reference. Two of Pratama's five phiX contig fragments enter the vOTU catalogue, so dropping the filter needs an alignment check against NC_001422.
+- **T12:** an open item names something that blocks a run or a result. A fact to remember is a note, not an issue. Remove each item a decision below settles. Leave E5's open decisions for after the initial runs.
+- **T13:** write the transforms the E2 plan names, in a library under this folder. Do not bind a library transform just because its types fit. The list: fastp, FastQC, MEGAHIT, bowtie2 binning BAM, MetaBAT2, SemiBin2, COMEBin, DAS Tool, CheckM2, AMBER, Porechop ABI, Chopper, Flye with its preset from the declared platform, minimap2. Size Flye memory from measured peaks (32.68 GiB on plant nano sample 0). Tony judges 128 GB too much.
+- **T14:** a sample's read set is either short paired reads or short plus Nanopore. Declare the hybrid set as a read-set type, the way paired reads are one. The solver then picks hybrid metaSPAdes or MEGAHIT from the type, with no driver branching.
+- **T17:** run E1–E4 in parallel. Chunk samples within an experiment only if the research agent's inode estimate exceeds the project quota. Expect first-run crashes and fix forward.
+
+Gotchas: E5 still targets `dramv_distill`. Confirm with Tony whether dropping DRAM for the 4-lane panel also drops DRAM-v on viral contigs. `e2_cami.py` still lists phiX as a parity gap.
 
 ## Callouts
 
