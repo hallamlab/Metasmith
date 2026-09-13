@@ -108,7 +108,11 @@ Launch lanes that share an agent home one after another. Wait for each to print 
 
 ### Failures and causes
 
-None yet.
+| Lane | Transform | Cause | Fix |
+|---|---|---|---|
+| E5 pratama, job 59635698, key `8Z7x3L7z` | `functionalAnnotation/clean.py`, step 8 | `RunWorkflow` raised `GpuRequirementError` 37 s after launch, before any grid job. CLEAN declares `Gpus.REQUIRED` with 16 GB, and `stage_and_run` never passed `gpus=`. E5 cami shares the driver and would fail the same way. | The driver passes `gpus=FIR_GPU` (one H100, `--gpus-per-node=h100:1`). CLEAN stays, because the table lists it for E5. Relaunch both E5 lanes from the fix's checkout. |
+
+CAUTION the engine's GPU check reports a GPU from a failed probe. On the CPU node fc20637, the error quoted nvidia-smi's own failure text as evidence that "a GPU does appear to be present". `_plan_gpu_requests` tests the probe's output for non-empty text rather than a zero exit. Read that sentence as noise until the engine fixes it.
 
 B14 is closed at scale. E2 short's fastp tasks render `--in1`, `--in2`, `--stdout` and `--detect_adapter_for_pe`, with no `--interleaved_in`. The first 4 finished tasks wrote 1,815,054,668 to 1,816,089,167 B of trimmed reads, where the defect wrote 20 B.
 

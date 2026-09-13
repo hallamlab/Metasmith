@@ -14,7 +14,7 @@ import sys
 from collections import Counter, defaultdict
 from pathlib import Path
 
-from metasmith.python_api import Agent, Source, SshSource, Runtime, TransformInstanceLibrary
+from metasmith.python_api import Agent, Gpu, Size, Source, SshSource, Runtime, TransformInstanceLibrary
 
 HERE = Path(__file__).resolve().parent
 BENCH = HERE.parent
@@ -25,6 +25,7 @@ MLIB = Path(os.environ.get("MSM_LIB", str(REPO / "src" / "metasmith_libraries"))
 
 HPC_HOST = os.environ.get("MSM_HPC_HOST", "fir")
 SLURM_ACCOUNT = os.environ.get("MSM_SLURM_ACCOUNT", "rrg-shallam-ab")
+FIR_GPU = Gpu(memory=Size.GB(80), type="h100")
 AGENT_IMAGE = os.environ.get("MSM_AGENT_IMAGE", "docker://quay.io/hallamlab/metasmith:0.22.1")
 ON_HOST = os.environ.get("BENCH_ON_HOST") == "1"
 FIR_MEM_MB_PER_CPU = 4000
@@ -292,7 +293,7 @@ def make_slurm_config(smith, cache_dir, scaled=None, comebin_cpus=48, comebin_ti
     return out
 
 
-def stage_and_run(smith, task, cache_dir, tag, *, stage_only, params, scaled=None, materialise=False):
+def stage_and_run(smith, task, cache_dir, tag, *, stage_only, params, scaled=None, materialise=False, gpus=None):
     """Stage the plan, then run it, or with `materialise` fetch every image it needs and stop."""
     keys_file = cache_dir / "task_keys.json"
     keys = json.loads(keys_file.read_text()) if keys_file.exists() else {}
@@ -308,7 +309,7 @@ def stage_and_run(smith, task, cache_dir, tag, *, stage_only, params, scaled=Non
     if stage_only:
         print(f"staged {tag} as {task.GetKey()}")
         return
-    smith.RunWorkflow(task=task, config_file=make_slurm_config(smith, cache_dir, scaled),
+    smith.RunWorkflow(task=task, config_file=make_slurm_config(smith, cache_dir, scaled), gpus=gpus,
                       params=dict(slurmAccount=SLURM_ACCOUNT, **params))
     print(f"submitted {tag}: {task.GetKey()}", flush=True)
     if ON_HOST:

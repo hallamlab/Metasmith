@@ -185,7 +185,7 @@ def solve(corpus, samples, args):
         c.stage_and_run(smith, task, CACHE_DIR / corpus, f"{args.tag or 'e5_pilot'}_{corpus}",
                         stage_only=args.stage_only,
                         params=dict(executor=dict(queueSize=500), process=dict(tries=4, array=25), **BINNER_PARAMS),
-                        scaled=SCALED, materialise=args.materialise)
+                        scaled=SCALED, materialise=args.materialise, gpus=c.FIR_GPU)
 
 
 def cmd_list(args):
