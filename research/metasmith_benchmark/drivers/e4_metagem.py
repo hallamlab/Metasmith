@@ -64,8 +64,8 @@ def declare_globals(smith, solver, location, ensure, with_gtdbtk=False):
     if solver == "cplex":
         c.declare_refs(givens, {"modelling::cplex_installation": CPLEX_ROOT})
     if with_gtdbtk:
-        c.declare_refs(givens, {"ref::gtdb": c.STAGED_REFS["ref::gtdb"]})
-    types = [c.MLIB / "data_types" / t for t in ("modelling.yml", "ref.yml")]
+        c.declare_refs(givens, {"ref::gtdb": c.STAGED_REFS["ref::gtdb"], **c.GTDB_GENOMES_IMAGE})
+    types = [c.MLIB / "data_types" / t for t in ("modelling.yml", "ref.yml")] + [c.LIBRARY / "data_types" / "bench.yml"]
     return c.cite(givens, location, types, ensure)
 
 
@@ -117,15 +117,15 @@ def cmd_run(args):
                    DataInstanceLibrary.Load(c.MLIB / "resources" / "lib"), globals_lib],
         transforms=[TransformInstanceLibrary.Load(c.MLIB / "transforms" / "logistics"),
                     TransformInstanceLibrary.Load(c.MLIB / "transforms" / "metabolicModelling"),
-                    TransformInstanceLibrary.Load(c.MLIB / "transforms" / "metagenomics")
-                    .AsView({Path("taxonomy/gtdbtk.py")})],
+                    TransformInstanceLibrary.Load(c.LIBRARY / "transforms" / "bench")
+                    .AsView({Path("gtdbtk_image.py")})],
         targets=build_targets(args.solver, args.with_gtdbtk),
     )
     expected = {"sequences::bin_fasta": len(mags), "modelling::media": 1, "modelling::medium_name": 1}
     if args.solver == "cplex":
         expected["modelling::cplex_installation"] = 1
     if args.with_gtdbtk:
-        expected["ref::gtdb"] = 1
+        expected.update({"ref::gtdb": 1, "bench::gtdb_genomes_image": 1})
     c.check_plan(task, expected)
     c.print_plan(task, 28)
 

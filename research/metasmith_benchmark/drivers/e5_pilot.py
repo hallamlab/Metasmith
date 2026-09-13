@@ -106,7 +106,9 @@ def build_transforms():
         TransformInstanceLibrary.Load(c.MLIB / "transforms" / "logistics"),
         c.assembly_without("spades"),
         # E5 bins with no MetaWRAP. Visible, it answers GTDB-Tk de novo's bare putative_genome slot.
-        metagenomics.AsView({Path("binning/metawrap.py")}, invert=True),
+        # GTDB-Tk comes from the bench library, which reads GTDB's genomes from one image.
+        metagenomics.AsView({Path("binning/metawrap.py"), Path("taxonomy/gtdbtk.py")}, invert=True),
+        TransformInstanceLibrary.Load(c.LIBRARY / "transforms" / "bench"),
         TransformInstanceLibrary.Load(c.MLIB / "transforms" / "functionalAnnotation"),
         TransformInstanceLibrary.Load(c.MLIB / "transforms" / "fabfos"),
         # CCTyper is dropped from every experiment.

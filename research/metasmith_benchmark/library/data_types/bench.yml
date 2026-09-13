@@ -1,0 +1,8 @@
+types:
+  # Types only the benchmark library has. Every property carries `bench`, so no standard transform binds to them.
+
+  gtdb_genomes_image:
+    properties:
+      _: squashfs image of GTDB's skani genome trees, GCF/ and GCA/ at its root, bound over ref::gtdb's skani/database/GCF and GCA
+      bench: gtdb_genomes_image
+      ext: sqfs

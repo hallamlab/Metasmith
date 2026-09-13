@@ -82,6 +82,15 @@ STAGED_REFS = {
     # CAUTION the release directory itself: gtdbtk wants markers/, masks/ and taxonomy/
     # directly under GTDBTK_DATA_PATH, one level shallower than downloadGtdbDB produces.
     "ref::gtdb": Path("/scratch/phyberos/staging/gtdb/release232"),
+    # Copied out of the Pratama task cache, which garbage collection may clear.
+    "ref::vibrant_db": Path("/scratch/phyberos/refs/vibrant_1.2.1"),
+    "ref::checkv_db": Path("/scratch/phyberos/refs/checkv_db"),
+    # The Aug23 build (GTDB r214), which iphop.env's 1.3.3 requires. A Jun25 build needs iPHoP >= 1.4.1.
+    "ref::iphop_db": Path("/scratch/phyberos/viromics_refs/iphop_db/Aug_2023_pub_rw"),
+}
+# GTDB's genome trees as one image, which the bench library's GTDB-Tk binds into ref::gtdb.
+GTDB_GENOMES_IMAGE = {
+    "bench::gtdb_genomes_image": Path("/scratch/phyberos/staging/gtdb/release232_skani_genomes.sqfs"),
 }
 
 # Outside the ref:: namespace, so only libraries that load annotation.yml can declare them.
@@ -166,11 +175,12 @@ def pratama_globals(smith, cache_dir, ensure, with_zenodo_comparison=False):
     every sample's solver group, and samples of different shapes then solve as one case.
     """
     givens = smith.PoolGivens()
-    for refs in (DB_PATHS, STAGED_REFS, STAGED_REFS_PRATAMA):
+    for refs in (DB_PATHS, STAGED_REFS, STAGED_REFS_PRATAMA, GTDB_GENOMES_IMAGE):
         declare_refs(givens, refs)
     if with_zenodo_comparison:
         declare_refs(givens, PRATAMA_PUBLISHED)
     types = [MLIB / "data_types" / t for t in ("ref.yml", "env.yml", "annotation.yml", "pratama.yml")]
+    types.append(LIBRARY / "data_types" / "bench.yml")
     return cite(givens, cache_dir / "pratama_globals.xgdb", types, ensure)
 
 

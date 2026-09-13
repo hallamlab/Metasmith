@@ -40,7 +40,7 @@ RESOURCE_OVERRIDES = {
 # The standard transforms each E3 library transform replaces, by library.
 REPLACED = {
     "assembly": {"bbduk.py", "spades.py"},
-    "metagenomics": {"binning/metawrap.py", "taxonomy/genomad.py"},
+    "metagenomics": {"binning/metawrap.py", "taxonomy/genomad.py", "taxonomy/gtdbtk.py"},
     "functionalAnnotation": {"virsorter2.py", "dramv.py"},
     # CCTyper is dropped from every experiment. Pratama's spacer caller is minced, a gapfill.
     "viromics": {"vibrant.py", "merge_candidate_calls.py", "mmseqs_votu.py", "mmseqs_precluster.py", "cctyper.py",
@@ -88,7 +88,8 @@ def build_transforms():
     std = [lib if name not in REPLACED else lib.AsView({Path(p) for p in REPLACED[name]}, invert=True)
            for name, lib in ((n, TransformInstanceLibrary.Load(c.MLIB / "transforms" / n))
                              for n in ("logistics", "assembly", "metagenomics", "functionalAnnotation", "viromics"))]
-    return [TransformInstanceLibrary.Load(c.LIBRARY / "transforms" / "e3"), *std]
+    return [TransformInstanceLibrary.Load(c.LIBRARY / "transforms" / "e3"),
+            TransformInstanceLibrary.Load(c.LIBRARY / "transforms" / "bench"), *std]
 
 
 def build_targets(with_host_prediction=False, with_gtdbtk=False):
