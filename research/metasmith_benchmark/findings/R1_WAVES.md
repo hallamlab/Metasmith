@@ -153,6 +153,9 @@ CAUTION an empty inode intersection between two file sets does not show that one
 
 - Before the wave, three pre-R1 runs that wave-1 lanes supersede: `iy8YLaGr` (CAMI rung 1), `d6UJuZgF` (Pratama rung 1) and `HQ5SrqFe` (metaGEM li2019). The engine route launched all three, so `scancel --batch --signal=USR1` killed them. That orphaned seven grid jobs: two COMEBin, two DRAM-v (still pending) and three CarveMe. The research agent cancelled all seven by hand. Nothing recoverable was lost, because an orphaned job never writes a cache entry. `C1IM6IG3`'s array covers COMEBin, and E4 covers CarveMe.
 - `C1IM6IG3` (CAMI rung 10) keeps running until COMEBin array `59583112` finishes, because it is B5's only source.
+- During the wave, to reclaim bytes:
+  - Job 59642072 deleted both GTDB source tarballs, 253 GB. Globus holds both.
+  - Jobs 59645430 and 59645431 evicted task-cache entries from superseded runs: 16 cami keys (29.4 GiB, from runs 8PHYZXXD, Yt2ZFop0, Gu9VJmwO, wqjsf1Et and CIeAycog) and 3 pratama keys (18.3 GiB, from 1YR8nokN). Container images and the VirSorter2, VIBRANT and vConTACT3 databases stayed, because only a login node can fetch them again.
 
 ### Fixes and gapfills for wave 2
 
