@@ -160,6 +160,10 @@ Run the `debrief` skill.
 - **E1 phiX:** `keep_phix = true` in `research/cami/nfcore/control.config`, mirrored from the research branch's commit 38068556. E2 has no phiX step, so the change is one-sided.
 - **E1 head:** `sbatch` a script running nextflow, 10 cpus / 48 GB, 7-day wall. Tear down by killing the nextflow PID, never `scancel`, which orphans the grid jobs.
 - **E4 chunks:** about 2,000 MAGs per chunk (7 chunks), pruning each chunk's `nxf_work` after promotion. No E4 transform batches, so the corpus as one run needs ~635K inodes against ~590K free. The other four fit together at ~212K.
+- **H41 MinION run:** resume its fetch.
+- **E3 hybrid reads:** design A, the type fence. The hybrid read set's members are types single-read tools cannot consume, and a hybrid QC transform feeds hybrid metaSPAdes.
+- **GTDB-Tk:** set up in full, including the 192 GB representative genomes. The E5 pilot runs taxonomy with GTDB-Tk or not at all.
+- **E5 DRAM-v and minced:** deferred until E3 reports.
 - **Findings:** kept here in `findings/`. The research agent's authoritative copies stay in `~/scratch/cami_campaign/`.
 
 ## Next phase (T10–T18)
