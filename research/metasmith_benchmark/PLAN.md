@@ -144,3 +144,6 @@ Run the `debrief` skill.
   - **B3:** DRAM staging is incomplete.
   - **B11:** the CarveMe gapfill limit is 2 h, and needs 12 h.
   - **B12:** Flye picks the HiFi preset, which yields no assembly on NanoSim reads. `--nano-raw` works.
+    - **Measured `--nano-raw` run** on plant nano sample 0: 1 h 06 m, 3,186 contigs, N50 96,428, peak memory 32.68 GiB.
+    - **Memory limit:** `flye_raw.py` declares 32 GB, which the scheduler reads as 32 GiB. That run would have been killed for exceeding it. Declare 96–128 GB.
+- **Quota:** only the project quota (`lfs quota -p 83115734 /scratch`, or `diskusage_report`) enforces the 1 M inode limit. The group and user figures count files anywhere on `/scratch` and carry no limit.
