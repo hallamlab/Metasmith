@@ -58,16 +58,95 @@ def read_medium_name(medium_name_path: str) -> str:
     return medium_name
 
 
+def ensure_diamond_index() -> None:
+    """Build CarveMe's BiGG protein index, which the 1.6.1 biocontainer does not ship.
+
+    The image carries `carveme/data/generated/bigg_proteins.faa` and NOT the
+    `bigg_proteins.dmnd` that `carve` scores genes against. Two separate things have to
+    be true for that to matter, and both are:
+
+      1. CarveMe DOES build the index itself on first use -- but that build lives in the
+         command-line entry point's first-run check, not in `maincall`. This module calls
+         `maincall` directly, for the solver-session reasons in the module docstring, so
+         it never reaches the builder.
+      2. Even reached, the builder writes beside the fasta inside site-packages, which is
+         read-only in a container.
+
+    The failure is SILENT. `carve` prints "Failed to run diamond." and returns without
+    raising and without writing an SBML, so the next thing that fails is gapfill, on a
+    draft file that was never created. Measured: every carve invocation in both lanes.
+
+    CarveMe resolves the path as `project_dir + config.get('generated', 'diamond_db')`
+    INSIDE maincall, reading a module-level ConfigParser, so redirecting it is a
+    supported in-process change rather than a patch. The value is concatenated onto
+    `project_dir`, not joined, so it must be relative TO that directory -- hence
+    `os.path.relpath`, which yields the `../..` escape that reaches our writable copy.
+    """
+    import os
+    import subprocess
+    from pathlib import Path
+
+    import carveme
+
+    project_dir = Path(carveme.project_dir)
+    shipped = project_dir / carveme.config.get("generated", "diamond_db")
+    if shipped.exists():
+        return
+
+    fasta = project_dir / carveme.config.get("generated", "fasta_file")
+    assert fasta.exists(), (
+        f"the image ships neither the diamond index [{shipped}] nor the protein fasta "
+        f"[{fasta}] it is built from; this needs a different image, not this workaround"
+    )
+
+    generated = Path.cwd() / "carveme_generated"
+    generated.mkdir(parents=True, exist_ok=True)
+    index = generated / "bigg_proteins.dmnd"
+    if not index.exists():
+        subprocess.run(
+            ["diamond", "makedb", "--in", str(fasta), "--db", str(generated / "bigg_proteins")],
+            check=True,
+        )
+    assert index.exists(), f"diamond makedb reported success and wrote no [{index}]"
+    carveme.config.set("generated", "diamond_db", os.path.relpath(index, project_dir))
+
+
 def carve_and_gapfill(orfs_path: str, media_path: str, medium_name: str, out_path: str) -> None:
     from carveme.cli.carve import maincall as carve_maincall
     from carveme.cli.gapfill import maincall as gapfill_maincall
 
+    ensure_diamond_index()
+
     draft_path = "carveme_from_orfs_draft.xml"
+    # The four scoring weights below are NOT optional and NOT tuning. `carve_maincall`
+    # declares them `default_score=None, uptake_score=None, soft_score=None,
+    # ref_score=None`, and CarveMe's CLI never lets those None values reach it: it
+    # declares each as an argparse option with a real numeric default, all four hidden
+    # behind argparse.SUPPRESS, and passes them in on every call. Calling maincall
+    # directly -- which this module does deliberately, see the module docstring -- skips
+    # that, an unscored reaction's coefficient stays None, and the objective is built with
+    # a None coefficient. SCIP raises AttributeError on NoneType.terms; CPLEX's stricter C
+    # binding raises TypeError on a non-float in the input sequence. Neither message names
+    # the cause.
+    #
+    # These are the CLI's own values, read from its parser rather than chosen:
+    #   --default-score -1.0   --uptake-score 0.0   --soft-score 1.0   --reference-score 0.0
+    #
+    # Same root-cause CLASS as the missing diamond index above: everything the CLI does
+    # between parsing and calling maincall is setup this module has to replicate. That
+    # list, read from the source in full so it does not have to be discovered a third
+    # time, is: derive input_type (we pass it), derive flavor (we pass it), set the
+    # default solver (each caller of this function does its own), run the first-run index
+    # check (ensure_diamond_index above), and pass these four scores. Nothing else.
     carve_maincall(
         inputfile=orfs_path,
         input_type="protein",
         outputfile=draft_path,
         flavor="fbc2",
+        default_score=-1.0,
+        uptake_score=0.0,
+        soft_score=1.0,
+        ref_score=0.0,
         verbose=True,
     )
 

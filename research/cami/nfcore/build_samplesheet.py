@@ -1,14 +1,27 @@
 #!/usr/bin/env python3
 """Build an nf-core/mag 5.5.0 samplesheet from research/cami/samples.tsv.
 
-samples.tsv (229 rows, six CAMI datasets: marine, strain, toy_mousegut,
-toy_hmp_airskinurogenital, toy_hmp_gastrooral, plant_associated) carries only SHORT reads --
-every `reads_path` was verified against the tracked manifest to contain no long-read entry
-(`grep -c long_read samples.tsv` is 0). So the sheet this script writes is short-read-only by
-construction, not by an assumption this script makes: it never emits `long_reads` /
-`long_reads_platform` columns, and control.config's `skip_flye = false` simply never finds
-long reads to act on here. A long-read CAMI II sample sheet is a separate, not-yet-built input
--- see the module docstring's note on `long_reads_platform` below for the value it would need.
+samples.tsv carries 421 rows: 249 short-read (CAMI II's marine, strain, toy_mousegut,
+toy_hmp_airskinurogenital, toy_hmp_gastrooral, plant_associated, plus CAMI III's
+toy_humangut) and 172 long-read. This script filters to the 249 short-read rows BEFORE rung
+selection -- `row["read_type"] == "short"` -- mirroring run_cami_metag.py's own
+`_CORE_SHORT_READ_DATASETS` allowlist so this arm and the metasmith short-read arm stay the
+same corpus, which acceptance criterion 12 depends on. See `filter_core_short_read_rows`
+below; do not select a rung before that filter runs, or long-read rows leak into `--rung all`.
+
+CAMI 2+3 in ONE run is the principal's directive (2026-09-12). `toy_humangut` was previously
+excluded here to keep the corpus at 229; that left 20 samples which are on disk and scoreable
+in neither arm, and made the comparison CAMI II only.
+
+CAUTION counting the rows is not the check. Two arms can each hold 249 samples and hold
+DIFFERENT ones, and nothing in this campaign's verification sees that -- the join between a
+generated table and the scripts reading it is not a property of any plan. The check that
+sees it is diffing the two arms' emitted sample-id lists against each other. So the sheet this
+script writes is short-read-only by construction, not by an assumption this script makes: it
+never emits `long_reads` / `long_reads_platform` columns, and control.config's
+`skip_flye = false` simply never finds long reads to act on here. A long-read CAMI II sample
+sheet is a separate, not-yet-built input -- see the module docstring's note on
+`long_reads_platform` below for the value it would need.
 
 `group` is set to the CAMI dataset name (marine, plant_associated, ...), not left one-per-sample.
 Each dataset's samples are a time series from the same simulated environment, and nf-core/mag's
@@ -92,11 +105,29 @@ def load_rows(samples_tsv: Path) -> list[dict]:
     rows = list(csv.DictReader(samples_tsv.open(), delimiter="\t"))
     if not rows:
         sys.exit(f"ERROR: {samples_tsv} has no data rows")
-    required_cols = {"dataset", "sample_id", "reads_path"}
+    required_cols = {"dataset", "sample_id", "reads_path", "read_type"}
     missing = required_cols - set(rows[0].keys())
     if missing:
         sys.exit(f"ERROR: {samples_tsv} is missing column(s) {sorted(missing)}")
     return rows
+
+
+def filter_core_short_read_rows(rows: list[dict]) -> list[dict]:
+    """The 229-row short-read core/variant corpus, out of samples.tsv's full 421 rows.
+
+    Mirrors run_cami_metag.py's `_CORE_SHORT_READ_DATASETS` allowlist rule (see
+    `enumerate_samples`, ~line 211 there): `read_type == "short"` alone is not enough, because
+    it would also pull in `toy_humangut`'s 20 short-read rows, which exist only to pair with
+    `toy_humangut_long` for a since-settled ancestry test. Keep this rule identical to the
+    driver's -- acceptance criterion 12 compares this arm against the metasmith short-read arm
+    and both must be scoring the same 229 samples. Must run BEFORE rung selection: rung 1 and
+    10 already land inside this filtered set by row order, but --rung all does not.
+    """
+    # CAMI 2+3 in ONE run (principal's directive 2026-09-12): `toy_humangut` is CAMI III's
+    # short-read half and is now INCLUDED, so this is every short-read row -- 249 of them.
+    # The previous `dataset != "toy_humangut"` clause mirrored an exclusion in
+    # run_cami_metag.py that has been removed. Keep this rule identical to that allowlist.
+    return [r for r in rows if r.get("read_type") == "short"]
 
 
 def validate_row(row: dict, lineno: int) -> list[str]:
@@ -186,7 +217,7 @@ def main() -> None:
         else Path(__file__).resolve().parent / f"samplesheet.cami_short_read.rung{args.rung}.csv"
     )
 
-    rows = load_rows(args.samples_tsv)
+    rows = filter_core_short_read_rows(load_rows(args.samples_tsv))
     rung_rows = select_rung(rows, args.rung)
 
     problems = []
