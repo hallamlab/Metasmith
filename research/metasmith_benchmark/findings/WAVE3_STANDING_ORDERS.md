@@ -1877,3 +1877,138 @@ the cache noticing (the B13 withdrawal).
 Companion to the already-recorded rules that a **transform edit** retires shards while **engine code**
 and **driver source** move no plan key: three different artifacts, three different blast radii, and
 only the transform source touches the cache.
+
+## A CONTIG-OVERLAP CHECK CANNOT DETECT A CROSS-SAMPLE PAIRING. Assert the `@SampleID`.
+
+MEGAHIT names contigs `k141_<N>` **independently in every assembly**, so two unrelated assemblies of
+one corpus share almost all of their contig NAMES while sharing none of their sequences. Measured on
+two CAMI rung-10 samples:
+
+    correctly paired gold standard vs das_tool table:  16,392 of 16,393 shared   (99.99%)
+    the WRONG gold standard        vs the same table:  16,351 of 16,393 shared   (99.74%)
+
+**0.25 percentage points apart.** In B21 that cost nine of ten samples their AMBER score with no
+error raised: the scorer joined on name, found near-total overlap, and compared one assembly's bins
+against another assembly's truth.
+
+    the overlap check is NECESSARY and NOT SUFFICIENT. The only field that distinguishes a
+    correct pairing from a colliding one is the gold standard's `@SampleID`.
+
+**So:** anything that accepts a **pre-built** gold standard must assert its `@SampleID` names the
+same assembly the prediction came from. Anything that **builds** its own gold standard from the
+sample's own truth and BAM is safe by construction — but its overlap assert is not what makes it
+safe, and it should not be cited as though it were.
+
+This corrects a claim made repeatedly in this campaign: that the BAM-versus-assembly overlap assert
+in `score_reference_amber.py` is "the guard that cannot be forgotten". It can be passed at 99.7% by
+exactly the error it was written to catch.
+
+## `group_by` PINS ONE INSTANCE. `parents={...}` DOES NOT.
+
+Measured in B21 from nine tasks' own `consumes` records, in a transform whose table and gold
+standard carry the **identical** `parents={asm}` declaration:
+
+    DVPQRF16  sequences::megahit_assembly     -> 1 per task
+    YP3AbZYf  das_tool_contig_to_bin_table    -> 1 per task     <- this is the `group_by` key
+    sJmEEMdm  contig_gold_standard_table      -> **10 per task**
+
+    A `parents={X}` requirement is narrowed to ONE instance when X IS THE `group_by` KEY.
+    It is NOT narrowed when X is merely another parented requirement -- then every
+    ancestrally-compatible candidate is staged into that slot.
+
+    (That is the experimenter's formulation and it is sharper than my first one, which said
+    `parents=` never pins. It does pin -- transitively from the grouping key.)
+
+The only difference between the slot that resolved to 1 and the slot that resolved to 10 is that one
+of them was the grouping key. This is *lineage constraints are ancestral* seen from a new angle —
+every gold standard descends from *an* assembly, so `parents={asm}` never narrows to *this*
+assembly's.
+
+**THE SHAPE THAT PINS, verified at 208-task scale.** `semibin2` and `metabat2` in WfOlaqLT declare
+`asm parents={meta}`, `bam parents={asm}`, `group_by=asm` — and every slot, the BAM included, holds
+exactly **1** instance in every task sampled (2 semibin2 + 2 metabat2 of 208 ok each). Amber's
+broken shape was `group_by=table`: `asm` still resolved to 1 *via the table's ancestry*, but `gold`
+parented to that **unpinned** `asm` took all 10.
+
+**So pinning propagates DOWN from the grouping key to what the key's own ancestry determines — it
+does NOT propagate ACROSS to a sibling parented to one of those ancestors.** The working shape is
+therefore: make the per-sample anchor the `group_by` key, and parent everything that must be
+one-to-one with the sample to that key.
+
+    AND IT MISLEADS IN BOTH DIRECTIONS: the plan's own `sar` metadata reported arity **1** for
+    that slot while the runtime consumed **10**. A plan-time arity is not a runtime guarantee, so
+    do not read `sar` as evidence a slot cannot fan in -- see the arity note above.
+
+    CHECK IT THIS WAY: read a task's `.command.cache` `consumes` and count the ids per slot.
+    Any slot with more than one id, in a transform that expects one, is a fan-in.
+
+## A CACHE RECORD'S `shard` FIELD IS A CONTAINER PATH. Rebuild the host path from `key`.
+
+`.command.cache` records the shard as the path the **task** saw — `/msm_home/task_cache/…` — because
+that is where the agent home is bound inside the container. A tool running on the host and
+`stat`-ing that path finds nothing.
+
+The experimenter's first shard-eviction dry runs qualified **0 of 208** for exactly this reason, and
+a zero from a gate is indistinguishable from "nothing is eligible". The fix is to **derive the host
+shard path from the record's `key`** — the same `shard_dir(cache_root, key.hex())` the engine uses —
+rather than trusting the recorded path.
+
+Same family as the other scope traps here: `pNN` is a per-run plan index, a Slurm array suffix is not
+a nextflow task index, `produces[].relpath` is relative to the SHARD not the task dir, and now a
+record's `shard` is relative to the CONTAINER not the host. **Every path and identifier in this stack
+is expressed in some frame, and it is rarely the frame you are standing in.**
+
+## Tombstoned shards can still appear in `cache list` / `cache explain`.
+
+`probe` reads the shard and short-circuits on the tombstone, so the runtime sees a clean miss. But
+the sqlite index is written by `record_run` at run END — so after a run whose shards were tombstoned
+mid-flight finishes, **the index gains rows for shards that are tombstoned and empty.** An indexed
+row is not evidence a shard can serve. Trust `invocation.probe`, never the index, for reachability.
+
+## FOR A CONCURRENCY COUNT USE `squeue`, NEVER `sacct`. sacct returns one row per job STEP.
+
+A watcher reported **12 comebin tasks RUNNING** when the truth was **4**. It counted
+`sacct -j <array> -n -o State | sort | uniq -c`, and `sacct` emits a row per **step** — the task,
+`.batch` and `.extern` — so 4 tasks read as 12. `squeue` lists one row per array element and gives 4.
+
+    concurrency          ->  squeue -j <array> -h -o '%T' | grep -c '^RUNNING$'
+    per-task accounting  ->  sacct, and filter `grep -vE '\.(batch|extern)'`
+    MaxRSS               ->  sacct, and take it ONLY from the `.batch` row
+
+**The number fed a live decision** — whether a 208-task array at ~9.8 h each finishes inside a 7-day
+driver wall. At the false 12 it was ~7.1 days, marginal; at the true 4 it is **~21 days**, a 3x
+overrun. A 3x over-count in the reassuring direction is the worst shape an instrument error can take.
+
+Third `sacct` trap on record here, and they all come from the same cause — **one row per step, not
+per task**: `JobID%14` truncates `59583112_0.batch` and breaks a `grep -v batch` filter; MaxRSS is
+absent from the array-task row and present on `.batch`; and a naive state tally triples.
+
+    AND A COMPANION EMPTY-RESULT: enumerating a run's arrays from its log with
+    `grep -oE 'submitted process p[0-9]+__comebin[^;]*; jobId: [0-9]+'` found NONE for a run with
+    FIVE live arrays -- the log reads `submitted process p06__comebin (1) > jobId: 59647611;
+    workDir: ...`, so a pattern anchoring the job id at the end matches nothing. A run with five
+    arrays reported as having none, and every derived total came back 0.
+
+## THROUGHPUT HERE IS THE ACCOUNT'S CPU SHARE, NOT ANY ONE STEP'S WIDTH.
+
+Measured at 07:23 by the experimenter from `squeue`/`sprio`: the account was running **~3,800 cpus**
+and **`spades_pratama` alone held 2,256 of them** (47 tasks x 48 cpus). Every pending WfOlaqLT
+comebin array sat at priority 2,075,104 — **above** every spades retry except the one holding the
+Resources reservation — and all of them were PENDING on **(Priority)**, never (Resources).
+
+**So comebin was not narrow because comebin was mis-sized. It was narrow because another step was
+holding half the account's cpus.** Four concurrent comebin tasks against a 208-task array is a
+share problem wearing a sizing problem's clothes.
+
+    before resizing a step because it runs few tasks at once, read WHY its tasks are pending.
+    (Priority) means you are competing with your own account; (Resources) means the cluster.
+    Only the second is a sizing question.
+
+**And the lever is whichever step holds the most cpus, not the one that looks slow.** Here that
+makes a `spades_pratama -t 48 -> -t 16` test the throughput intervention — ~2,080 cpus returned
+across 65 tasks — while restarting comebin narrower would have competed for the same share, killed
+4 running tasks, and recomputed 697 GB of evicted bowtie2 shards.
+
+**The recoverable-failure note that made declining safe:** if the driver hits its 7-day wall the
+trap cancels and wave 2 resumes from cache, so an overrun costs a relaunch rather than the work.
+Check that a wall overrun is recoverable before treating it as a deadline.

@@ -1126,6 +1126,197 @@ and should be labelled SemiBin2-vs-SemiBin2 on raw bins rather than as criterion
     there is no task dir. The only signal is the ABSENCE of a submit line for a step that is in
     `workflow.nf`. Diff the plan's process list against the trace's step names to find one.
 
+## B21 — AMBER'S ASSEMBLY REQUIREMENT IS BARE, SO 9 OF 10 SAMPLES SCORED AGAINST ONE SAMPLE'S GOLD STANDARD · criterion 12's metasmith half is defective on EVERY CAMI arm
+
+**Found 2026-09-13 in `C1IM6IG3` (rung 10) after its `p12__amber_das_tool` completed on all 10
+samples. Diagnosed jointly with the experimenter, whose correction is what cracked it.**
+
+    C1IM6IG3/_metasmith/task/transforms/02176UxZyTrO/binning/amber_das_tool.py
+     37  asm   = model.AddRequirement(lib.GetType("sequences::assembly"))              <- BARE
+     38  table = model.AddRequirement(..."das_tool_contig_to_bin_table", parents={asm})
+     39  gold  = model.AddRequirement(..."contig_gold_standard_table",   parents={asm})
+    100  group_by=table
+
+`asm` carries **no `parents=`** and names the **shared supertype**. `table` and `gold` are parented
+to it, and the grouping key is `table` — so the grouping makes one task per DAS Tool table, but
+nothing constrains `asm` to *that table's own* assembly, and `gold`, parented to `asm`, follows
+whichever assembly `asm` picked.
+
+**`checkm.py`, in the same staged set, uses `group_by=asm` and is unaffected.**
+
+**THE OUTCOME, MEASURED:**
+
+    DVPQRF16 = sequences::megahit_assembly, and the run holds TEN distinct ones:
+      366.9 · 389.3 · **394.8** · 416.3 · 420.3 · 438.6 · 453.6 · 463.5 · 467.3 · 476.6 MB
+    `1fd5a140e91817fb` is exactly one of them (394,800,847 B)
+    AMBER's `Sample` column reads `1-1-1.1fd5a140e91817fb-DVPQRF16` in ALL TEN result rows
+
+    sample file          prec     rec      f1       ari      mis
+    dc84be06c7c26da2   0.9734   0.1413   0.2468   0.9703   0.0269   <- the ONE that is right
+    8e39f8308fe11f67   0.1571   0.0236   0.0410   0.0261   0.9078
+    d9d1decd1378a045   0.1527   0.0255   0.0438   0.0319   0.8898
+    7c9b070299a85b57   0.1541   0.0114   0.0212   0.0427   0.8953
+    8a0591a53b5c2d8b   0.1497   0.0186   0.0330   0.0309   0.9080
+    9a87c1b60af494d0   0.1288   0.0240   0.0404   0.1419   0.8526
+    0482687c336ba7c1   0.1252   0.0094   0.0174   0.0275   0.9030
+    206bddf55ebd6023   0.1243   0.0088   0.0165   0.0147   0.9221
+    bfd4b02454c6b0f9   0.1139   0.0144   0.0256   0.0141   0.9286
+    5ff256308e6b9ad7   0.0940   0.0246   0.0390   0.0106   0.9335
+
+**`dc84be06c7c26da2` is CLOSE to the post-hoc reference-arm DASTool row and is NOT KNOWN to be the
+same sample** — 0.9734/0.9703/0.0269 against 0.9737/0.9670/0.0280. **Corrected:** an earlier version
+of this row called that "the same sample scored by two independent paths agreeing". That is numerical
+closeness stated as an identity, and ARI differs at the third decimal rather than agreeing. For
+C1IM6IG3 there is no identifier to check it against, and the run is deleted so its lineage cannot
+supply one. Job 59660273 tests whether the surviving cami `task_cache` manifests can map an assembly
+instance back to a CAMI sample and salvage the row; **not claimed either way until it returns.**
+
+**THE GOLD STANDARD IS LABELLED BY TWO DIFFERENT THINGS DEPENDING ON THE TRANSFORM, and the split is
+per-transform rather than per-library.** Both paths call the SAME `lib::cami_gold_standard.py`, whose
+line 85 writes `@SampleID:{sample_id}` in both — so reading the lib script tells you nothing about
+which name you get. The caller supplies argv[4]:
+
+    STANDARD library, cami_contig_truth.py:33   sample_id = Path(iasm.local).stem
+                                                -> the ASSEMBLY PRODUCT FILENAME
+    E2's PINNED copy, e2/gold_standard.py:25    sample = json.loads(imeta)["sample"]
+                                                -> the CAMI SAMPLE NAME from read_metadata
+
+    C1IM6IG3   standard library   @SampleID: 1-1-1.1fd5a140e91817fb-DVPQRF16  <- unattributable
+    WfOlaqLT   pinned e2 copy     @SampleID: strain_sample_26 · strain_sample_0 ·
+                                             toy_hmp_airskinurogenital_sample_11 / _14
+    reference  job 59654244       Sample:    marine_sample_0   (all four labels)
+
+**Consequence, and it is narrower than I first reported.** WfOlaqLT and 33hlLu8Q label by CAMI sample
+name — the same namespace `score_reference_amber.py` writes — so their AMBER rows join the reference
+arm's directly on `Sample`. **No mapping table and no transform edit is needed**, and B21's
+`29188ea6` guard comparing @SampleID to read_metadata's `sample` is self-consistent on that path.
+Only C1IM6IG3 is affected, and only because it ran the standard library.
+
+    WITHDRAWN: I claimed B21's fix "does not make the arms pairable" and proposed a driver-emitted
+    mapping table or a `sample_id` change. Both were unnecessary. I verified the mechanism in `src/`
+    and asserted it of a run that stages its OWN pinned transform tree at
+    `<run>/_metasmith/task/transforms/`. Twelfth instance of one shape in this campaign, and the
+    same one as the B12 long-read exposure claim: **verifying a mechanism in a source file is not
+    verifying that a run reaches it.** Check the staged tree, per run, before asserting a
+    source-level mechanism applies to a live lane.
+
+The other nine rows remain the shape of scoring against the wrong truth, not of a harder sample.
+
+**BLAST RADIUS — every CAMI arm, and the expensive one is still catchable:**
+
+    WfOlaqLT (208 short)   FVWXPAYrmdVA/amber.py + P5SuNEsk9Zf1/amber.py, identical bare shape
+                           **p15__amber: 0 submitted, 0 completed — NOT YET RUN**
+    33hlLu8Q (41 long)     identical shape; blocked behind das_tool (B20) regardless
+    C1IM6IG3 (10)          already ran, 9 of 10 mis-scored
+
+**ROOT CAUSE CORRECTED 2026-09-13 — THE ASSEMBLY DID NOT FAN IN. THE GOLD STANDARD DID.**
+
+From each amber task's own `consumes` record, all nine:
+
+    taskdir           3bxaJemW  DVPQRF16   YP3AbZYf   sJmEEMdm
+    (all nine)           1         1          1          10
+
+    DVPQRF16 = sequences::megahit_assembly    -> ONE, and it is that task's OWN assembly
+    YP3AbZYf = das_tool_contig_to_bin_table   -> ONE, correct
+    sJmEEMdm = contig_gold_standard_table     -> **TEN, in every task**
+
+So `group_by=table` worked and `parents={asm}` worked *for the table*. **What failed is that `gold`,
+carrying the IDENTICAL `parents={asm}` declaration, was not pinned to one instance — all ten were
+staged into its slot and AMBER used one of them for every task.**
+
+**THE MEASURED PROPERTY, and it is the generalisable part:**
+
+    `group_by=<X>` pins X to ONE instance per task.
+    A requirement that is merely `parents={...}` is NOT pinned, and where several candidates are
+    ancestrally compatible, ALL of them are staged into that slot.
+
+The table and the gold standard differ in exactly one respect: **the table is the `group_by` key.**
+This is the campaign's own rule arriving from a new direction — *lineage constraints are ancestral,
+a pooled object re-qualifies its own producers*: every gold standard descends from *an* assembly, so
+`parents={asm}` never narrows to *this* assembly's.
+
+**CONSEQUENCE FOR THE FIX: un-baring `asm`, or naming the concrete `sequences::megahit_assembly`,
+will NOT fix this.** `asm` already resolved to exactly one correct instance per task. The earlier
+version of this row said the assembly fanned in; that was wrong and the `consumes` records correct
+it. The fan-in is the gold standard's, and it needs the gold standard pinned — the reliable shape
+being to make the pinned object and the thing that must be one-to-one with it the same object, as
+`checkm.py`'s `group_by=asm` has one bin set per assembly.
+
+**A `@SampleID`-versus-sample guard is still right and does more than first credited**: with ten
+gold standards in the slot it converts a silently wrong score into a loud failure. But it fails nine
+of ten tasks rather than scoring them, because the fan-in is upstream of the guard.
+
+**FIXTURE: `/home/tony/scratch/cami_campaign/B21_FIXTURE.md`** — 119 lines, text only. The nine
+`(table, gold)` pairs keyed by the assembly instance each task recorded consuming, every task's full
+`consumes` record, each pair's amber task and product, and the ten gold standards with their
+`@SampleID`s. The tenth pair is absent benignly: that sample's `cami_contig_truth` was cache-served,
+so it has no `.command.cache` consumes record in this run.
+
+**CLOSED FROM THE ARTIFACTS 2026-09-13 — no re-score needed. The gold standard fanned in, and
+the reason it scored instead of failing is the assembler's own naming scheme.**
+
+**Ten gold standards exist, each naming its own assembly** — so `cami_contig_truth` did its job:
+
+    @SampleID:1-1-1.1fd5a140e91817fb-DVPQRF16  <- 60b34ecc49948339-sJmEEMdm.tsv
+    @SampleID:1-1-1.3279c3e51af0d270-DVPQRF16  ·  3bdd0243c2b3c911  ·  55687a64cf84baa0
+    7a525168e4202941 · 8fc137b33d5f76a2 · 926b3a4a14296136 · bdae07fcd448a348
+    d490be82b65105aa · f0744141d7c4fa01                      (ten distinct)
+
+**AMBER takes its `Sample` column from the gold standard's `@SampleID`, and ALL TEN result rows read
+`1fd5a140e91817fb` — the `@SampleID` of exactly ONE file.** So nine tasks scored their own DAS Tool
+table against assembly `1fd5a140e91817fb`'s truth. That is the defect proven from the artifacts
+rather than inferred from the transform source.
+
+**AND THIS IS WHY IT SCORED ~0.12 INSTEAD OF FAILING, which is the part that matters for every
+guard in this campaign.** MEGAHIT names contigs `k141_<N>` **independently in every assembly**, so
+two unrelated assemblies of one corpus share nearly all of their contig NAMES:
+
+    correctly paired gold vs table:   16,392 of 16,393 shared   (99.99%)
+    the WRONG gold    vs same table:  16,351 of 16,393 shared   (99.74%)
+
+**A contig-overlap check cannot tell those apart.** AMBER joined on name, found near-total overlap,
+and scored one assembly's bins against another's truth for sequences that merely share a label — no
+error, no warning. **The only field that distinguishes them is the `@SampleID`.**
+
+    SO THE GUARD TO ADD IS NOT AN OVERLAP CHECK. Assert that the gold standard's `@SampleID`
+    names the same assembly the prediction was derived from.
+
+    AND THIS IS A BLIND SPOT IN `score_reference_amber.py` TOO. Its BAM-versus-assembly overlap
+    assert -- which this campaign has repeatedly cited as the guard that cannot be forgotten --
+    would pass at ~99.7% on a cross-sample pair. That script is safe by CONSTRUCTION, because it
+    builds the gold standard itself from the sample's own reads_mapping and BAM and so has no
+    pairing step to get wrong; the assert is not what protects it. The limitation is now recorded
+    at the assert site, with a low-overlap warning added.
+
+**No re-score was run**, deliberately: it would only re-derive what the `@SampleID` mismatch proves,
+and it would write bytes at 92.10%. **The nine rows are void; the one row at 0.9734 is real.** All
+nine correctly-paired `(das_tool table, gold standard)` pairs were derived from each task's own
+`.command.cache` `consumes` on the assembly slot and are available in C1IM6IG3 as a regression
+fixture for the fix.
+
+**Owner:** the experimenter, as a T19 item. **Fix, two shapes and they are different experiments:**
+`group_by=asm` the way `checkm.py` does it (one task per assembly, table and gold following); or keep
+`group_by=table` and constrain `asm` — parent it to the table, or drop it if the protocol can take
+contig lengths from the table's own ancestor. Naming the concrete `sequences::megahit_assembly`
+removes the cross-assembler ambiguity but does **not** fix the pairing on its own, because there are
+still ten megahit assemblies.
+
+**C1IM6IG3 MUST NOT BE RECLAIMED** until the re-score is read out: it is the only copy of the ten DAS
+Tool tables, the ten assemblies and the amber outputs needed both to rescue rung 10 post hoc and to
+demonstrate the defect.
+
+    THREE TRAPS IN ONE DIAGNOSIS, ALL MINE.
+    1. I first found "ten identical gold standards staged in every amber task" and nearly filed a
+       fan-in defect on it. **That was `.command.out`, the NODE RELAY's aggregate log**, carrying
+       other tasks' staging from the same node. Third time that file has fooled me in one day,
+       after metabat2 and the array-parent `.command.err`.
+    2. I then read `sar {"...":1,...}` -- slot arity 1 -- as evidence AGAINST a fan-in. **Arity 1
+       means one file per task, not a DISTINCT file per task**: a product bound to every task still
+       shows arity 1. The experimenter caught it, and that correction is what cracked the case.
+    3. The real inputs are **unrecoverable**: `scratch` stages them to node-local `$SLURM_TMPDIR`,
+       so a task dir holds only its outputs. The diagnosis had to come from the results, the
+       product inventory and the transform source -- never from the task dirs.
+
 ## CLEARED TODAY — kept only so a reader can tell movement from stasis
 
 - **B7, the Pratama MAG comparison — FIXED at the solve level.** MetaWRAP is Pratama's own
