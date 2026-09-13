@@ -82,6 +82,7 @@ Commit `f6d01f00`, checkout `/scratch/phyberos/bench/checkout/f6d01f00`. Driver 
   - E4 chunk 1 and E5 metagem launch after the tree goes, which frees 424,034 inodes. The tree goes once `e4_gtdbtest` classifies a MAG through the squashfs image.
   - Launching in two groups departs from the plan's single launch. The plan's run log records why.
 - **GTDB image:** job 59625981 built `release232_skani_genomes.sqfs`, 192 GB. It holds all 199,923 genomes, a count that matches the tree.
+- **GTDB-Tk through the image:** `e4_gtdbtest` (job 59635386, key `Sj7uFNWW`, `--study li2019 --limit 1 --with-gtdbtk`) passed. Its GTDB-Tk task exited 0 with one `Traversing tree` line and no missing-genome error. It classified `SRR7664615_bin.1.s` as `g__Castellaniella` by topology and ANI. The closest placement was GCF_004321985.1 at ANI 88.44, and a related reference was GCA_035572875.1 at 86.91, so skani read genomes through both image binds. That pass cleared the tree deletion.
 - **Probe:** probe2 `Gu9VJmwO` passed at `9525a3a1`.
 - **E1 sheets:** `build_samplesheet.py` with its path check found all 498 read files on fir, and regenerated both sheets byte-identical to the committed ones. The offline preflight (59634205) passed:
   - 5.5.0 resolves locally.
