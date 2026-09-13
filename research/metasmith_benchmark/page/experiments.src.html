@@ -387,13 +387,14 @@ a.full:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
     <div class="status">
       <div class="proven"><h3>Proven</h3><ul>
         <li>VIBRANT, geNomad, CheckV, the candidate merge, prodigal-gv, both MMseqs2 clusterings and the contig length table: products inspected from live run <code>d6UJuZgF</code></li>
+        <li>All 66 paired runs interleaved on fir: 9,521,730,640 records, twice the sum of <code>runs.tsv</code> read counts</li>
         <li>MetaWRAP refinement: 92 bins for one of 66 runs, the largest 5.6 MB across 1,151 contigs</li>
         <li>vOTU recovery method: a 65,640-row skANI table, from one sample and two of three callers</li>
         <li>MAG recovery method, on those 92 bins against the 1,275 published MAGs: 71 of ours and 122 of theirs matched, clustered in H52, the source well. One run proves the method, not the rate</li>
       </ul></div>
       <div class="open"><h3>Open</h3><ul>
         <li class="block">The six Nanopore runs stay out of the plan until a hybrid short + Nanopore read set exists as a type, so the solver picks hybrid metaSPAdes for those samples and MEGAHIT for the rest</li>
-        <li class="block">Pre-interleaving must finish on fir. Staging refuses until every run passes its read-count check</li>
+        <li class="block">Only 5 of the 6 MinION runs are on fir. H41's (SRR32696686) fetch stopped at 44%, and its well supplies 3 of the 17 hybrid assemblies</li>
         <li class="block">The plan downloads the VIBRANT and CheckV databases, and those downloads hang on a compute-node driver</li>
         <li>MAG taxonomy is out of the plan. GTDB-Tk r232 also needs the 192 GB representative genomes, 150–200K inodes</li>
         <li class="block">MAG recovery is out of the plan: dRep has no transform, and the MetaWRAP recovery transforms (B7) aren't committed</li>
