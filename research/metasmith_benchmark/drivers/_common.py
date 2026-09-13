@@ -25,7 +25,9 @@ MLIB = Path(os.environ.get("MSM_LIB", str(REPO / "src" / "metasmith_libraries"))
 
 HPC_HOST = os.environ.get("MSM_HPC_HOST", "fir")
 SLURM_ACCOUNT = os.environ.get("MSM_SLURM_ACCOUNT", "rrg-shallam-ab")
-FIR_GPU = Gpu(memory=Size.GB(80), type="h100")
+# CAUTION the RAC is CPU-only: a GPU step under rrg-shallam-ab is rejected, so GPU steps bill def-shallam_gpu.
+SLURM_GPU_ACCOUNT = os.environ.get("MSM_SLURM_GPU_ACCOUNT", "def-shallam_gpu")
+FIR_GPU = Gpu(memory=Size.GB(40), type="nvidia_h100_80gb_hbm3_3g.40gb", flag="--gres=gpu:")
 AGENT_IMAGE = os.environ.get("MSM_AGENT_IMAGE", "docker://quay.io/hallamlab/metasmith:0.22.1")
 ON_HOST = os.environ.get("BENCH_ON_HOST") == "1"
 FIR_MEM_MB_PER_CPU = 4000
@@ -310,7 +312,7 @@ def stage_and_run(smith, task, cache_dir, tag, *, stage_only, params, scaled=Non
         print(f"staged {tag} as {task.GetKey()}")
         return
     smith.RunWorkflow(task=task, config_file=make_slurm_config(smith, cache_dir, scaled), gpus=gpus,
-                      params=dict(slurmAccount=SLURM_ACCOUNT, **params))
+                      params=dict(slurmAccount=SLURM_ACCOUNT, slurmGpuAccount=SLURM_GPU_ACCOUNT, **params))
     print(f"submitted {tag}: {task.GetKey()}", flush=True)
     if ON_HOST:
         wait_for_run(smith, task.GetKey())
