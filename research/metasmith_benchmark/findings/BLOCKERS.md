@@ -285,6 +285,34 @@ filling index tables. 41 tasks staged, 9 with log content, 42 queued, `--mem 655
 Read profile confirms the long reads: 3.93 Gbp, N50 3,144, N90 1,228, consistent with the
 2,789-2,801 bp medians measured across the CAMI long-read trees.
 
+**PROVEN COMPLETE 2026-09-13: the first assembly landed, and the MEMORY finding is the one B12 was
+not written for.**
+
+    product   1-1-1.090ba0c3d7a125f5-IzISt8qq.fa   117,295,515 B
+    contigs   2,617     total 115,338,976 bp     N50 107,818
+    job       nf-p03__flye_(1)  COMPLETED 00:32:45 at 16 cpus
+    MaxRSS    **34,071,012K = 32.49 GiB**
+    state     2 of 41 ok · 39 running · 0 failed
+
+**Flye's own measurement closes the preset question for good:** `Alignment error rate: 0.228296` and
+`0.152422` — **15.2% and 22.8% real error against a quality string claiming Q40 = 0.01%**, so the
+`AvgQual >= 20` branch was reading a value wrong by three orders of magnitude, not a slightly
+optimistic one.
+
+**AND THE SECOND DEFECT: MaxRSS 34,071,012K against `Size.GB(32)` = 33,554,432K is 101.5%.** Under
+the STANDARD transform's 32 GB declaration this production task would have been **OOM-killed,
+independently of the preset**. The pinned `e2/flye.py`'s `Size.GB(64)` is what makes it survive, at
+50.8% utilisation. So the pin repaired **two** defects and only one of them was the one it targeted.
+
+The memory figure is stable across builds and thread counts: the A/B arm B measured 32.68 GiB at
+8 cpus on Flye **2.9.6**; production is 32.49 GiB at 16 cpus on **2.9.5**. That is a property of the
+workload, not a one-off — so `Size.GB(32)` is wrong for CAMI long reads generally, not just here.
+
+    Not a controlled comparison, but for shape: arm B gave 3,186 contigs / 129,618,595 bp /
+    N50 96,428 at 1h05m41s on plant nano with 2.9.6. Production gives 2,617 / 115,338,976 /
+    N50 107,818 in 32m45s. Fewer, longer contigs and half the wall, on a different sample and
+    a different build.
+
     STILL TO PROVE: a completed assembly's contig count and product size. This shows the preset
     is right, not that the assembly finishes.
 
