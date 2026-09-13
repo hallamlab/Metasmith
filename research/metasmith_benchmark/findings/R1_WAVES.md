@@ -159,6 +159,8 @@ CAUTION an empty inode intersection between two file sets does not show that one
 
 CAUTION project bytes grow when tasks complete, not while they run. Tasks work on node-local scratch, and every open task dir in wave 1 held 0 GB. A completing task unstages its products into `nxf_work`, and promotion writes a second copy into the cache. The rate swung from 0.28 to 2.16 TiB/h as bowtie2's BAMs completed, then back to 0.33 after the fastp prune. Project the bytes from the completion profile of the large-product steps in flight. Fit the slope over 10 minutes or more. A before-and-after quota pair cannot size a deletion while lanes write, so use the deleting tool's own count.
 
+E2 short's gold_standard failed on 15 of 208 samples, all from `mousegut_short_read`. `lib::cami_gold_standard.py` line 41 reads `reads_mapping.tsv.gz` with polars' type inference. It infers `genome_id` as `f64` from mousegut's early rows, such as `190547.0`, then aborts at the first `denovoN` id with `ComputeError: could not parse`. The failure is deterministic, so every retry failed too: 52 work directories for the 15 samples. Under retry-then-ignore the run still reports complete, but those 15 samples get no gold standard and no AMBER result. The other CAMI datasets carry numeric ids throughout, so their 193 tables are unaffected.
+
 ### Stopped
 
 - Before the wave, three pre-R1 runs that wave-1 lanes supersede: `iy8YLaGr` (CAMI rung 1), `d6UJuZgF` (Pratama rung 1) and `HQ5SrqFe` (metaGEM li2019). The engine route launched all three, so `scancel --batch --signal=USR1` killed them. That orphaned seven grid jobs: two COMEBin, two DRAM-v (still pending) and three CarveMe. The research agent cancelled all seven by hand. Nothing recoverable was lost, because an orphaned job never writes a cache entry. `C1IM6IG3`'s array covers COMEBin, and E4 covers CarveMe.
@@ -171,6 +173,7 @@ CAUTION project bytes grow when tasks complete, not while they run. Tasks work o
 ### Fixes and gapfills for wave 2
 
 - Relaunch E5 cami and E5 pratama from `19609c45` or later, so MEMOTE runs the pinned transform. Their finished steps serve from cache.
+- Fix E2's gold standard for mousegut. Copy `lib::cami_gold_standard.py` into the E2 benchmark library as its own resource type. Read `genome_id` and `tax_id` as strings in the copy. Point `e2/gold_standard.py` at the copy. This retires E2's gold_standard and amber entries, which are cheap to recompute, and leaves the standard `cami_contig_truth` untouched.
 - E2 long's Flye is not exposed to B12. It runs the pinned `e2/flye.py`, which takes the mode from the declared platform (`OXFORD_NANOPORE` → `--nano-raw`) and declares 64 GB. B12's quality-derived preset lives in the standard `flye.py` and `flye_raw.py`, which no R1 lane runs. Execution confirms it. A `33hlLu8Q` Flye task renders `--mem 65536M` and `-t 24:00:00`, runs Flye 2.9.5-b1801 on 3.93 Gbp of reads (N50 3,144), and passed "Assembling disjointigs" into k-mer counting and index filling. The HiFi preset aborted at that stage with "No disjointigs were assembled". A completed assembly's contig count and size close the proof.
 
 CAUTION metasmith's protocol does not echo the tool's command, so `.command.log` and `.command.out` carry only the tool's own output. Verify a setting from the tool's banner and progress lines, or from the staged transform.
