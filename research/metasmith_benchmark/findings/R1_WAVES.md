@@ -131,6 +131,8 @@ CAUTION the engine's GPU check reports a GPU from a failed probe. On the CPU nod
 
 B14 is closed at scale. E2 short's fastp tasks render `--in1`, `--in2`, `--stdout` and `--detect_adapter_for_pe`, with no `--interleaved_in`. All 208 tasks wrote 1,811,472,650 to 4,552,026,605 B of trimmed reads, where the defect wrote 20 B.
 
+T9's CarveMe resources render as planned. E4 chunk 1's CarveMe task `(868)` in `lE94xbfH` shows `-c 4`, `-t 12:00:00`, `--mem 16384M` and `--account=rrg-shallam-ab` in its `.command.run`. The run's `workflow.config.nf` has closures over `task.attempt` for both memory and time, so retries climb 16 GB/12 h → 32/24 → 64/48 → 128/96. Failing tasks measured before R1 peaked at 14.63 GiB, so some tasks will need the second attempt. When chunk 1 ends, count its models against the 2,000 MAGs it submitted.
+
 ### Stopped
 
 - Before the wave, three pre-R1 runs that wave-1 lanes supersede: `iy8YLaGr` (CAMI rung 1), `d6UJuZgF` (Pratama rung 1) and `HQ5SrqFe` (metaGEM li2019). The engine route launched all three, so `scancel --batch --signal=USR1` killed them. That orphaned seven grid jobs: two COMEBin, two DRAM-v (still pending) and three CarveMe. The research agent cancelled all seven by hand. Nothing recoverable was lost, because an orphaned job never writes a cache entry. `C1IM6IG3`'s array covers COMEBin, and E4 covers CarveMe.
