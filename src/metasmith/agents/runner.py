@@ -487,6 +487,97 @@ class _Heartbeat:
             next_at = silent + HEARTBEAT_GAPS_S[gap_i]
 
 
+_LINEAGE_POLL_S = 30.0
+
+
+class _LineageReport:
+    """Keeps the lineage report current while nextflow runs.
+
+    Everything the run writes after nextflow exits is lost when the driver is
+    killed first; a report rewritten on a tick keeps what the run reached. It
+    only reads, and nothing it raises reaches the run.
+    """
+
+    def __init__(self, workspace: Path, task, *, extern_home: Path, out_dir: Path):
+        self._args = dict(workspace=workspace, plan=task.plan, out_dir=out_dir)
+        self._extern_home = extern_home
+        self._report = None
+        self._seen = None
+        self._warned: set[str] = set()
+        self._lock = threading.Lock()
+        self._stop = threading.Event()
+        self._thread: threading.Thread | None = None
+
+    def _warn(self, msg: str):
+        if msg not in self._warned:
+            self._warned.add(msg)
+            Log.Warn(f"lineage report: {msg}")
+
+    def _guarded(self, fn):
+        try:
+            return fn()
+        except Exception as e:
+            self._warn(f"{type(e).__name__}: {e}")
+            return None
+
+    def _open(self):
+        from ..caching.layout import default_cache_root
+        from .lineage_report import LineageReport
+
+        self._report = LineageReport(
+            cache_root=default_cache_root(self._extern_home), **self._args,
+        )
+        self._report.write_parents()
+
+    def refresh(self, force: bool = False):
+        if self._report is None:
+            return None
+        with self._lock:
+            # Taken before the rebuild, so a task finishing mid-rebuild still
+            # counts as a change on the next tick.
+            fingerprint = self._report.fingerprint()
+            if not force and fingerprint == self._seen:
+                return None
+            n_rows, truncated = self._report.rebuild()
+            self._seen = fingerprint
+        if truncated:
+            self._warn(f"truncated at [{n_rows}] rows")
+        return n_rows
+
+    def __enter__(self):
+        self._guarded(self._open)
+        self._guarded(lambda: self.refresh(force=True))
+        self._thread = threading.Thread(
+            target=self._loop, name="msm-run-lineage", daemon=True,
+        )
+        self._thread.start()
+        return self
+
+    def __exit__(self, *_):
+        self._stop.set()
+        if self._thread is not None:
+            self._thread.join(timeout=5)
+        n_rows = self._guarded(lambda: self.refresh(force=True))
+        if n_rows is not None:
+            Log.Info(f"lineage report [{n_rows}] row(s) in [{self._args['out_dir']}]")
+        return False
+
+    def _loop(self):
+        while not self._stop.wait(_LINEAGE_POLL_S):
+            self._guarded(self.refresh)
+
+
+def _post_run_step(name: str, failures: list[str], fn):
+    # One broken post-run step must not cost the run the steps after it, nor
+    # the sentinel that says how the run ended.
+    try:
+        return fn()
+    except Exception as e:
+        Log.Error(f"post-run step [{name}] failed: {type(e).__name__}: {e}")
+        failures.append(name)
+        return None
+
+
 _FAILED_STATES = {"FAILED", "ABORTED"}
 
 
@@ -565,7 +656,9 @@ def RunWorkflow(key: str, log_dir: Path, host: str, stub_delay: float):
         shell.RegisterOnErr(Log.Error)
         Log.Info(f"calling nextflow from container")
         stub_param = f"-stub --testSpread={stub_delay:0.3f}" if stub_delay>0 else ""
-        with _Heartbeat(shell, workspace, task):
+        with _Heartbeat(shell, workspace, task), _LineageReport(
+            workspace, task, extern_home=Path(str(extern_home)), out_dir=workspace/log_dir,
+        ):
             shell.Exec(
                 RenderNextflowScript(
                     workspace=workspace, log_dir=log_dir, host=host,
@@ -575,11 +668,20 @@ def RunWorkflow(key: str, log_dir: Path, host: str, stub_delay: float):
                 timeout=None,
             )
 
-    df_tasks = _extract_nxf_task_metadata(workspace/log_dir)
-    if df_tasks is not None:
+    post_run_failures: list[str] = []
+
+    df_tasks = _post_run_step(
+        "task metadata", post_run_failures,
+        lambda: _extract_nxf_task_metadata(workspace/log_dir),
+    )
+
+    def _write_task_metadata():
         nxf_task_meta = workspace/log_dir/"nxf_tasks.csv"
         df_tasks.to_csv(nxf_task_meta, index=False)
         Log.Info(f"extracted task metadata to [{nxf_task_meta}]")
+
+    if df_tasks is not None:
+        _post_run_step("task metadata", post_run_failures, _write_task_metadata)
     else:
         Log.Warn(f"no task metadata extracted from [{workspace/log_dir}]")
 
@@ -613,20 +715,52 @@ def RunWorkflow(key: str, log_dir: Path, host: str, stub_delay: float):
     # directory that survives collection -- after `record_run`, which is what
     # writes the run's member events into it.
     lineage_trace = workspace/"_metasmith"/"trace.jsonl"
-    if lineage_trace.is_file():
-        shutil.copy(lineage_trace, workspace/log_dir/"trace.jsonl")
 
-    Log.Info(f"compiling results")
-    output = CollectResults(
-        task=task,
-        output_path=output_path,
-        inputs_dir=output_path.parent/"inputs",
-    )
-    n_outputs = sum(1 for p in output.manifest if Path(p).is_relative_to(output_path) or not Path(p).is_absolute())
-    extern_output_path = extern_workspace/results_folder
-    external_results_path = path_map.LocalToExternal(output_path)
-    Log.Info(f"[{n_outputs}] outputs for [{key}] at [{external_results_path}]")
+    def _copy_trace():
+        if lineage_trace.is_file():
+            shutil.copy(lineage_trace, workspace/log_dir/"trace.jsonl")
 
+    _post_run_step("trace copy", post_run_failures, _copy_trace)
+
+    def _collect():
+        Log.Info(f"compiling results")
+        output = CollectResults(
+            task=task,
+            output_path=output_path,
+            inputs_dir=output_path.parent/"inputs",
+        )
+        n_outputs = sum(1 for p in output.manifest if Path(p).is_relative_to(output_path) or not Path(p).is_absolute())
+        external_results_path = path_map.LocalToExternal(output_path)
+        Log.Info(f"[{n_outputs}] outputs for [{key}] at [{external_results_path}]")
+        return output
+
+    output = _post_run_step("collect results", post_run_failures, _collect)
+    _post_run_step("log gathering", post_run_failures, lambda: _gather_step_logs(workspace, log_dir, MAIN_LOG, task))
+
+    if output is None:
+        Log.Warn(f"logs not linked to [{output_path}]: results were not collected")
+    else:
+        _post_run_step(
+            "log links", post_run_failures,
+            lambda: _link_logs(output_path/f"{output._path_to_meta}", log_dir),
+        )
+
+    if failed_steps or post_run_failures:
+        # Ignoring a dead step is the right strategy -- one dead annotator must
+        # not destroy an eleven-sample run -- but the run is not a success, and
+        # saying it completed is how a user is told their results are there when
+        # the step that makes them never ran.
+        because = []
+        if failed_steps:
+            because.append(f"with [{len(failed_steps)}] ignored step(s): {', '.join(failed_steps)}")
+        if post_run_failures:
+            because.append(f"with [{len(post_run_failures)}] failed post-run step(s): {', '.join(post_run_failures)}")
+        Log.Error(f"{AgentPaths.RUN_FAILED_SENTINEL} [{StdTime.Timestamp()}] {'; '.join(because)}")
+    else:
+        Log.Info(f"{AgentPaths.RUN_DONE_SENTINEL} [{StdTime.Timestamp()}]")
+
+
+def _gather_step_logs(workspace: Path, log_dir: Path, MAIN_LOG: Path, task):
     Log.Info(f"gathering log files")
     nxf_ids = set()
     nxf_id_len = 9
@@ -659,23 +793,13 @@ def RunWorkflow(key: str, log_dir: Path, host: str, stub_delay: float):
         except:
             continue
 
-    Log.Info(f"linking logs [{log_dir}] to results folder [{output_path}]")
-    output_metadata_path = output_path/f"{output._path_to_meta}"
+
+def _link_logs(output_metadata_path: Path, log_dir: Path):
+    Log.Info(f"linking logs [{log_dir}] to results folder [{output_metadata_path.parent}]")
     (output_metadata_path/f"{log_dir.name}").symlink_to(f"../../{log_dir}")
     latest_link = (output_metadata_path/f"logs.latest")
     if latest_link.exists(): latest_link.unlink()
     latest_link.symlink_to(f"../../{log_dir}")
-    if failed_steps:
-        # Ignoring a dead step is the right strategy -- one dead annotator must
-        # not destroy an eleven-sample run -- but the run is not a success, and
-        # saying it completed is how a user is told their results are there when
-        # the step that makes them never ran.
-        Log.Error(
-            f"{AgentPaths.RUN_FAILED_SENTINEL} [{StdTime.Timestamp()}] with [{len(failed_steps)}]"
-            f" ignored step(s): {', '.join(failed_steps)}"
-        )
-    else:
-        Log.Info(f"{AgentPaths.RUN_DONE_SENTINEL} [{StdTime.Timestamp()}]")
 
 def CheckWorkflow(key: str, index: int|None=None, quiet: bool=False) -> dict:
     task_path = AgentPaths.to_task(key)
