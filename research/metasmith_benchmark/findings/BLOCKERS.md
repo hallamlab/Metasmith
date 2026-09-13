@@ -6,7 +6,7 @@ the append-only record, and a tracker that grows becomes a changelog nobody trus
 Columns: what is blocked · why · who owns it · the exact next action. A row leaves this file
 only when its next action is done AND verified by product.
 
-Last updated 2026-09-12 19:40 PDT (pivot: proving capabilities, not launching).
+Last updated 2026-09-13 04:45 PDT. **Wave 1 is LAUNCHED** — nine lanes running; the capability-proving pivot is over. The binding constraint is now BYTES (16.6 of 18.63 TiB), not inodes (46%).
 
 ---
 
@@ -25,6 +25,8 @@ Last updated 2026-09-12 19:40 PDT (pivot: proving capabilities, not launching).
 those can never agree for any path. Conda envs are not relocatable — activation scripts and
 shebangs bake the prefix — so a prebuilt tarball, including the lab's own
 `virsorter2/virsorter2_data.tar.gz` on chinook, would NOT have fixed this.
+
+**Retry scaling FIXED**: scaled retries now double, matching the transforms' own `2^(n-1)`, so a tail task that needs more than the first attempt's ceiling actually gets it — the flat `withName` block that replaced the preset's `task.attempt` closure had silently removed the ladder.
 
 **Owner:** peer (`msm bench`). **Next action:** register `annotation::virsorter2_db` →
 `/scratch/phyberos/refs/virsorter2_2.2.4` in **`STAGED_REFS_PRATAMA`**, not the shared dict —
@@ -112,7 +114,7 @@ pre-verified against real bytes: BAM-to-assembly overlap 400,744 of 400,744, and
 read-name join closes after the mate-suffix strip. Pass `--nfcore-contig-to-bin`, never
 `--contig-to-bin`, and `--lib` must name the FILE.
 
-## B5 — criterion 9 unmeasured: COMEBin's peak RSS at 48 cpus
+## B5 — **MEASURED, 4 of 10**: COMEBin at 48 cpus is 6h35m–9h37m, MaxRSS 51.53–61.85 GiB (32% of the 192 GB grant). The two figures previously on record are the two FASTEST tasks
 
 CAMI rung 1's COMEBin (job 59548383, 48 cpus) has been **PENDING (Resources) since 16:35** —
 queued, not stalled. A Pratama-arm COMEBin IS running healthily at 48 cpus, which gives a
@@ -124,7 +126,7 @@ finishes. The reference arm's COMEBin rerun is running under a 16 h limit, which
 CLOSED a standing unknown: a task does auto-route past fir's 3 h band. For calibration nf-core's COMEBin on the same sample ran 36+ min healthily, so a
 long COMEBin is not a stall; the real deadlock signature is zero `cluster_res` files.
 
-## B6 — storage gate: the binning inode term is the last unmeasured one
+## B6 — **RESOLVED on both sides.** 149,336 inodes reclaimed from nine dead runs + a one-inode squashfs replacing 424,034. The binning term stays unmeasured and is no longer a gate
 
 Everything else is measured: ordinary task 9 inodes, cached shard ~6, per-bin product shard
 130-170, reference-DB staging 16.5K-31.7K **once per agent home**. L4 measured a whole
@@ -138,6 +140,39 @@ confirmed exactly on two CAMI points (51->63, 57->69). The Pratama run recovers 
 checkm task is ~221 inodes, **3.2x** the CAMI figure, across 66 runs. Bin recovery is a property of
 the sample, not of the pipeline, so a per-sample inode projection taken from CAMI does not transfer
 to Pratama and must be measured per corpus.
+
+**RESOLVED ON BOTH SIDES 2026-09-13, and neither side was the projection.** The gate was never
+going to be closed by measuring the binning term more precisely — it was closed by removing two
+fixed costs.
+
+    reclaim of nine dead run dirs   866,253 -> 716,917   (149,336 freed, task_cache untouched)
+    GTDB reps tree -> one squashfs   a further 424,034 available on deletion
+
+`release232_skani_genomes.sqfs` is 192,112,726,016 bytes holding 199,923 genomes and 224,111
+directories — **424,034 inodes inside, one on the quota.** Genome count verified against the tree
+by the build's own check. `-noD -noF` is correct and its evidence is the 99.98%-of-uncompressed
+figure: the payload is already-gzipped `.fna.gz`, so recompression would spend CPU for nothing.
+
+Two figures I had wrong and had put in front of a budget question: the tree is **424,034** inodes,
+not the 426,970 I was quoting (199,923 + 224,110 + root = 424,034 exactly; the excess was quota
+accounting around the parent path), and the image did **not** build on node-local disk — its log's
+line 2 writes straight to Lustre. Neither changes the decision; the first changes what the deletion
+frees, and the second was an assumption about a script I never opened.
+
+**The binning term remains genuinely unmeasured** and that is now a curiosity rather than a gate:
+149,336 + 424,034 against a ~212K estimate for E1–E4 plus E4's ~308K chunked peak means wave 1 fits
+with room, which is why the experimenter authorised launching before E4 and logged it as a
+deviation. Wave 1 was submitted with the quota gate checked first (725,419, under the 800K stop).
+
+**Owner:** this session. **Next action:** the tree deletion is HELD on e4_gtdbtest (59635386)
+showing a classification row after `Traversing tree to determine classification method`, read from
+the task's own log. Never the Slurm state — 2.6.1's post-placement ANI step is not gated by
+`--skip_ani_screen`, so it can burn 33m44s of MSA masking and pplacer and then die on a missing
+skani reference while its enclosing job exits 0:0. Watcher `bw92l3ega` emits on that line, on
+`Reference genome missing from skani database`, and on a summary product — and deliberately not on
+job state, since state is the one signal that cannot tell those apart.
+
+**Superseded below, kept because how the gate was framed is worth more than the framing was:**
 
 **Owner:** L4, binning began 16:35. **Next action:** `/scratch/phyberos/cami/l4_pilot/inode_census.sh iy8YLaGr`
 once binning completes, files and dirs counted SEPARATELY — a `find -type f` census
@@ -176,7 +211,41 @@ reports; rung 229 explicitly the principal's.
 
 ---
 
-## B11 — `carveme_from_orfs_cplex` times out on 5% of bins  ·  affects criterion 6
+## B11 — **FIXED AND VERIFIED at the level of use.** `carveme_from_orfs_cplex` renders 12 h / 16 GB / 4 cpu with BOTH doubling on `task.attempt`; the retry ladder is intact, not flattened
+
+**FIXED AND VERIFIED AT THE LEVEL OF USE, 2026-09-13.** Read from the rendered `.command.run` of a
+live task in `lE94xbfH` (E4 chunk 1), not from the transform's declaration — a Nextflow config
+selector beats the declaration, so the source cannot answer this:
+
+    #SBATCH -c 4        #SBATCH -t 12:00:00        #SBATCH --mem 16384M
+    #SBATCH --nodes=1 --ntasks=1 --account=rrg-shallam-ab
+
+and the selector in that run's own `workflow.config.nf`:
+
+    withName: '.*__carveme_from_orfs_cplex' {
+        cpus   = 4
+        memory = { 16.GB * (2 ** (task.attempt - 1)) }
+        time   = { 12.h  * (2 ** (task.attempt - 1)) }
+    }
+
+So the ladder is 16 GB / 12 h → 32 / 24 → 64 / 48 → 128 / 96.
+
+**The wall.** 12 h against a measured distribution of min 131 s, p50 380 s, p90 1187 s and a worst
+case just under 2 h — 6× the old wall, so the 5-of-100 biased loss goes to zero.
+
+**The memory, which is the half I had to correct myself on.** My first CarveMe resource report was
+survivorship-biased: I quoted headroom from COMPLETED tasks, and the **failing** tasks reach
+**14.63 GiB of 16**. Attempt 1 therefore has only ~1.37 GiB of margin and some tasks will genuinely
+retry. Attempt 2's 32 GB is **2.2× the observed failing peak**, so the ladder carries it. That is the
+right shape — a tight first attempt retrying into headroom, rather than paying 32 GB across ~2,000
+per-MAG tasks.
+
+**And the retry ladder is intact rather than flattened, which is not automatic.** This project has a
+recorded defect where a flat `withName` block REPLACES the preset's `task.attempt` closure and
+silently removes the ladder: the block reads correctly, attempt 1 runs fine, and a task that needs
+more never gets it. Here both values are closures over `task.attempt`, so the scaling is real. The
+failure mode is invisible until something needs a second attempt, which is why this was worth
+checking rather than assuming.
 
 **Cause.** The transform declares `Duration(hours=2)`. Measured over 100 gapfill tasks in the live
 li2019 run (job 59588214): min 131s, p50 380s, p90 1187s, and **5 of 100 FAILED at the wall**
@@ -196,7 +265,90 @@ Under retry-then-ignore the run reports complete with those models simply absent
 NOT changed mid-run: a transform edit retires that transform's cache shards, and the live run holds
 140 models whose gapfills would all re-run.
 
-## B12 — `flye_raw.py`'s preset heuristic is misled by CAMI's synthetic quality strings
+## B12 — **CLOSED AT EXECUTION.** The preset heuristic misleads BOTH standard flye transforms on CAMI's synthetic Q40, but **no R1 lane runs either** — E2 long uses a pinned platform-keyed `e2/flye.py`, proven running past the disjointig stage
+
+**CLOSED AT EXECUTION 2026-09-13. The pin works on real data, not just in the staged source.**
+A live E2-long task (`33hlLu8Q/nxf_work/b2/fff5a226d45406f267600a5be4e114`), 6 minutes in, from
+the tool's own stdout:
+
+    04:17:10  Starting Flye 2.9.5-b1801
+    04:17:41  Total read length: 3931523370 · Reads N50/N90: 3144 / 1228 · Minimum overlap 1000
+    04:17:41  >>>STAGE: assembly  ·  Assembling disjointigs
+    04:18:09  Counting k-mers:  0% .. 100%
+    04:20:54  Filling index table (1/2)  0% .. 100%
+    04:23:13  Filling index table (2/2)
+
+**That is past the exact stage the HiFi preset died at** — `No disjointigs were assembled`, at
+~9m43s, immediately after "Assembling disjointigs". This task counted k-mers to 100% and is
+filling index tables. 41 tasks staged, 9 with log content, 42 queued, `--mem 65536M`.
+
+Read profile confirms the long reads: 3.93 Gbp, N50 3,144, N90 1,228, consistent with the
+2,789-2,801 bp medians measured across the CAMI long-read trees.
+
+    STILL TO PROVE: a completed assembly's contig count and product size. This shows the preset
+    is right, not that the assembly finishes.
+
+    CAUTION 1 the production image is Flye **2.9.5-b1801**. The A/B that established B12 ran on a
+    hand-pulled **2.9.6-b1802**, a different build. The preset logic is in the transform so the
+    finding holds, but wall times are not comparable to arm B's 1h05m41s.
+
+    CAUTION 2 there is NO `flye` invocation line to grep for. metasmith's protocol does not echo
+    its command, so `.command.log` carries only the tool's own stdout. An hour was spent grepping
+    for a rendered command that can never appear. The banner `Starting Flye 2.9.5-b1801` is the
+    signal -- strictly better evidence than argv, the same way metabat2's `using minContig 1500`
+    banner beat reading its command line.
+
+**WIDENED 2026-09-13: this is BOTH flye transforms, and E2 long's live plan uses the one it was
+not recorded against.** `flye.py` and `flye_raw.py` differ in **exactly three lines**, and none of
+them is the preset logic:
+
+    flye.py      requires sequences::clean_long_reads (parents={oreads}) -> sequences::flye_assembly
+    flye_raw.py  consumes oreads directly                               -> sequences::flye_raw_assembly
+
+The branch is byte-identical in both, and its arithmetic reproduces the failing command exactly:
+`q = min(33, mean_quality)`, so CAMI's NanoSim `AvgQual 40.00` clamps to 33 and
+`10**(-33/10) = 0.000501` — the literal `--read-error 0.000501` that failed twice.
+
+**Cleaning does not rescue it**, which was the one thing that might have. `flye.py` takes reads that
+have been through `porechop_abi` and `chopper`; neither rewrites the quality encoding, and chopper
+filters *out* low-quality reads, so `mean_quality` can only rise. The `>= 20` branch fires either way.
+
+    RETRACTED 2026-09-13, within the hour, and the retraction is mine. The paragraph below
+    claimed E2 long is live-exposed. IT IS NOT. E2 long runs a PINNED `e2/flye.py`, verified in
+    the executing copy at `runs/33hlLu8Q/_metasmith/task/transforms/{FVWXPAYrmdVA,P5SuNEsk9Zf1}/flye.py`
+    (1,584 bytes, against the standard file's 1,863):
+
+        line 13  # read quality: NanoSim writes a flat Q40 over reads that align at ~15% error (B12).
+        line 14  MODE = { "OXFORD_NANOPORE": "--nano-raw", "PACBIO_HIFI": "--pacbio-hifi",
+                          "PACBIO_CLR": "--pacbio-raw" }
+        line 26  mode = MODE[json.loads(...)["platform"]]
+        line 42  Resources(cpus=16, memory=Size.GB(64), duration=Duration(hours=24))
+
+    NO `mean_quality` anywhere, the preset comes from the declared platform, and the pin's own
+    comment cites B12. `Size.GB(64)` is 1.96x the measured 32.68 GiB peak, so the memory concern
+    is answered too. `task/data` holds no flye.py at all, so unlike memote there is no second
+    copy to confuse the check.
+
+    So B12 stands for the STANDARD `flye.py` and `flye_raw.py` and **no R1 lane runs either**.
+    The recommendation I made -- take the preset from the declared platform rather than from a
+    simulator's quality string -- had already shipped before I raised the alarm. I checked the
+    standard transforms, found the defect genuinely present in both, and then asserted the live
+    lane used one of them without looking at what that lane had staged. **Verifying a defect in
+    a source file is not verifying that a run reaches it** -- the same artifact-versus-capability
+    error this campaign keeps making, in the one direction that produces a false alarm rather
+    than a false all-clear.
+
+**Live exposure: E2 long (`33hlLu8Q`), whose step list is**
+`porechop_abi chopper flye minimap2_binning_bam comebin semibin2 metabat2 das_tool gold_standard`
+plus four `checkm2` and one `amber`. When `flye` fails, retry-then-ignore leaves that entire tail
+with nothing to consume and **the run reports complete**. Chopper was still ahead of flye in the
+queue when this was found, so it is predicted rather than discovered.
+
+Both transforms also declare `memory=Size.GB(32)` and `duration=Duration(hours=18)`. The successful
+`--nano-raw` arm measured **MaxRSS 32.68 GiB = 102.1% of the 32 GiB ceiling**, on one sample and not
+the largest of 172; it survived only because 128 GB was allocated deliberately so an OOM could not
+destroy the measurement. So even with the preset fixed the memory declaration is at the edge —
+recommend 96-128 GB. The 18 h wall is ample against a 1h06m success.
 
 **Cause.** `flye_raw.py` reads `mean_quality` from `seqkit AvgQual` and branches
 `q>=20 -> --pacbio-hifi --read-error 10^(-q/10)`, else `--nano-raw`. CAMI's NanoSim-simulated
@@ -224,16 +376,48 @@ retry-then-ignore, reported complete with no long-read assembly whatever.
 Arm B's assembly, inspected rather than counted from the log: **3,186 contigs, 129,618,595 bp,
 N50 96,428, longest 2,295,550, GC 63.51%, mean coverage 18x.**
 
-**AND THE SAME RUN EXPOSED A SECOND DEFECT IN THE SAME TRANSFORM: its declared memory would have
-OOM-KILLED IT.** `flye_raw.py` declares `Size.GB(32)`, which renders `'32.00 GB'`, and both
-Nextflow and Slurm read `G` as 1024-based — Slurm says so in its own submit note. So the ceiling is
-**33,554,432 KiB**, and arm B's MaxRSS was **34,269,012 KiB = 102.1% of it.** It survived only
-because I allocated 128 GB deliberately so a kill could not destroy the measurement. That is ONE
-sample, and not the largest of the 172 in the long arm. Recommend **96-128 GB**.
+**AND THE SAME RUN EXPOSED A SECOND DEFECT IN THE SAME TRANSFORM: its declared memory FAILS ON
+EVERY SAMPLE MEASURED, 4 of 4.** `flye_raw.py` declares `Size.GB(32)` → `'32.00 GB'`, and both
+Nextflow and Slurm read `G` as 1024-based (Slurm says so in its own submit note), so the ceiling is
+**33,554,432 KiB**. Array 59610638 plus the original arm B:
+
+    sample                    input     elapsed    MaxRSS                vs 32 GiB
+    plant_nano_sample_0       1.87 GB   1:05:41    34,269,012 K = 32.68   102.1%
+    plant_nano_sample_10      1.87 GB   1:02:56    35,142,964 K = 33.51   104.7%
+    toy_humangut_sample_0     4.68 GB   1:10:29    35,552,636 K = 33.91   106.0%
+    toy_humangut_sample_16    4.68 GB   1:05:45    34,873,732 K = 33.26   103.9%
+
+All four ran at 8 cpus — the transform's own declared count — under a deliberate 128 GB allocation
+so a kill could not destroy the measurement.
+
+**THE FLATNESS IS THE RESULT, NOT THE RANGE: a 3.8% span across two datasets and a 2.5x difference
+in input size.** Peak RSS is essentially input-independent here, so the peak is a fixed structure
+(repeat graph / k-mer index) rather than something scaling with read volume. Wall clock is equally
+flat, 1:02:56 to 1:10:29. So **64 GB is 1.9x the observed maximum with real headroom** and is what
+E2 now declares; 96-128 GB, which I recommended off one sample, is more than the data asks for.
+
+    CAVEAT all four are CAMI SIMULATED data at 25-29x coverage. A fixed allocation can still have
+    a size above which it grows, and nothing here probes a much larger or more complex library.
+    Well supported for this corpus; not a number to carry to a real long-read metagenome.
 
 **And the heuristic is not merely reading a synthetic value — it is reading one wrong by three
-orders of magnitude.** Arm B's log reports `Alignment error rate: 0.154408`, a **15.4% real error
-rate, about Q8**, against a quality string claiming Q40 = 0.01%. Off by a factor of ~1500.
+orders of magnitude.** Final alignment error rates across all four samples:
+
+    toy_humangut_sample_0   0.124991      toy_humangut_sample_16  0.123047
+    plant_nano_sample_10    0.148195      plant_nano_sample_0     0.154408
+
+12-15%, about Q8-Q9, against quality strings claiming Q40 = 0.01% — off by a factor of ~1000-1500.
+
+**`OXFORD_NANOPORE_HQ` IS RULED OUT for both datasets**, since HQ presets assume a percent or two.
+But the error rate does **NOT** settle ONT versus PacBio for CAMI III: ~12% fits ONT R9 and PacBio
+CLR equally. The shape leans, from Flye's own read stats — `toy_humangut N50 4663 / N90 2637`
+(ratio 1.77, tight, pbsim-like) against `plant_nano 2341 / 711` (ratio 3.29, long-tailed,
+nanosim-like) — so CAMI III leans **PacBio CLR**. A lean from distribution shape, not a
+measurement; nothing on disk names the simulator.
+
+    CAUTION each log prints the alignment error rate TWICE as polishing iterates -- 0.199886 then
+    0.124991 for toy_humangut sample_0, 0.228127 then 0.148195 for plant. The FINAL one is the
+    rate; quoting the first overstates it by ~60%.
 
 **Owner / gate.** The experimenter's driver work. **Next action:** take the preset from
 `read_metadata`'s platform / `length_class`, never from a quality score — a simulator's quality
@@ -266,6 +450,238 @@ arrive through `res`, the same channel that left every *other* param silently in
 bootstrap fix. Confirm from `.command.metadata`, never from the driver's dict.
 
 **Owner:** none — withdrawn. Both rules are in `WAVE3_STANDING_ORDERS.md`.
+
+## B14 — `fastp --detect_adapter_for_pe` + `--interleaved_in` exits 0 writing 20 bytes  ·  FIXED, VERIFIED
+
+**Found by probe 59624780, reproduced in isolation against the pinned image.** With
+`--interleaved_in` there is no `--in2`, so read2 adapter detection tries to open an empty
+filename — `ERROR: Failed to open file: ` — and **fastp exits 0** having written a 20-byte
+(empty) gzip. Four attempts, 23-37 s each. The transform's product check is the only thing that
+caught it.
+
+**Fixed by feeding E2 short the split R1/R2 pairs** (`--in1`/`--in2`, `--detect_adapter_for_pe`
+kept), which is also nf-core's own shape, so it REMOVES a deviation rather than adding one.
+**Verified by probe 59625914:**
+
+    before   23-37 s, exit 0, product 20 bytes
+    after    COMPLETED 19:40, reports success, product 4,546,836,430 bytes
+
+And the peer has since made `fastp` **fail on a pipe error or empty output**, so the exit-0-with-
+nothing shape cannot recur silently in that transform.
+
+**CLOSED AT SCALE 2026-09-13, on live wave-1 tasks rather than a probe.** E2 short (`WfOlaqLT`,
+15 steps) ran 208 fastp tasks against the 208 split pairs. First 38 to land:
+
+    products 1,813,613,892 - 1,817,839,687 bytes, ZERO under 1 MB
+    fastp's own report on one task: Read1 6,656,479 before / 6,656,479 after, same for Read2
+
+Against the defect's 20-byte gzip that is a ~90-million-fold difference, so it is not a marginal
+pass. The full rendered invocation, read from `.command.out` because **`.command.sh` carries only
+the metasmith bootstrap and the tool name**:
+
+    fastp --in1 .../strain_sample_23_R1.fastq.gz --in2 .../strain_sample_23_R2.fastq.gz --stdout
+          --json ... --html ... --thread 6 --detect_adapter_for_pe
+          -q 15 --cut_front --cut_tail --cut_mean_quality 15 --length_required 15
+          2> fastp.log | gzip -c > ....fq.gz || status=$?
+
+    --interleaved_in 0   --detect_adapter_for_pe 2   --in1/--in2/--stdout 2 each
+
+**The fix gives up neither flag I expected it to have to.** `--detect_adapter_for_pe` is kept and
+`--stdout` is kept; the broken combination is dissolved purely by supplying two mates, so
+`--interleaved_in` has nothing to attach to. That is structurally stronger than remembering to omit
+a flag. It also finally settles my retracted hypothesis from the other direction — `--stdout` is
+right there in the working command, so the flag I originally suspected was never the problem.
+
+Read counts unchanged before and after is the expected answer on this corpus, not a sign the filter
+did nothing useful: CAMI is simulated and adapter-free, and the earlier bounding measurement put
+fastp's whole effect at 38 reads dropped for Ns and 8,226 adapter trims out of 33.3 M.
+
+    CAUTION my first hypothesis was that `--stdout` was unsupported with `--interleaved_in` in
+    fastp 1.0.1. Tested in isolation, that pair works fine. Only reproducing the FULL flag set
+    isolated the adapter flag. Reproduce the whole command, not your guess at the relevant part.
+
+## B15 — E5 declares no GPU for CLEAN  ·  BLOCKS both E5 lanes  ·  cause proven, fix is a scope choice
+
+**e5_pratama 59635698 FAILED at 37 s, exit 1:0**, after staging cleanly as `8Z7x3L7z` at 35 steps:
+
+    GpuRequirementError: workflow requires a GPU but none was declared for this run;
+    offending transforms: clean (step 8)
+
+Proven from the run's own artifacts, not from the traceback: `workflow.gpu.json` renders
+`{"p08__clean": {"gpus":"required","gpu_memory_gb":16}}`, `workflow.step_8.meta` carries
+`gpu {"gpus":"required","gpu_memory_gb":16}` with `step_name clean`, and `grep -nE 'gpus|Gpu\('`
+over **both** `e5_pilot.py` and `_common.py` returns nothing — no call site passes `gpus=`. So the
+manifest is correct and the driver simply never declares it. Step 8 is
+`functionalAnnotation/clean.py`, the enzyme-function predictor.
+
+**e5_cami shares the driver and fails identically**, which is why this is a two-lane blocker rather
+than one lane's bad luck.
+
+**Owner:** the experimenter (driver + target set). **Two fixes, and they are different
+experiments:** declare it — `RunWorkflow(..., gpus=Gpu(memory=Size.GB(16)))` via `stage_and_run` —
+or mask `clean` out of the E5 target set. The second is worth checking first: E5 is the taxonomy and
+iPHoP pilot, and CLEAN may be reached transitively as an accidental passenger, exactly as DAS Tool
+entered the Pratama arm because iPHoP was its only consumer. If nothing in E5 reads CLEAN's product,
+masking is free and a GPU lane is not.
+
+**A GOOD failure, and worth saying so because most of tonight's were not.** Loud, fast, honest exit
+code (1:0, not 0:0), names the transform and the step, and it fired inside `RunWorkflow` **before
+any grid job was submitted** — so nothing is orphaned and no teardown is needed. `8Z7x3L7z` is
+staged, so a relaunch resumes rather than restages.
+
+    LATENT ENGINE DEFECT, in the error message itself, and it points the fix the wrong way. The
+    message ends "a GPU does appear to be present on the target [NVIDIA-SMI has failed because it
+    couldn't communicate with the NVIDIA driver...]" -- it quotes nvidia-smi's FAILURE as its
+    evidence that a card is present. `_detect_gpu_on_target` (gpu.py, called at
+    workflow_ops.py:365) is testing for non-empty output rather than a zero exit, so any error
+    text reads as a detected GPU. `fc20637` is an ordinary cpubase node with no card at all. Left
+    as written, that sentence tells the reader to declare a 16 GB GPU on a node that has none.
+    Same family as every other false positive here, inverted: the instrument reports PRESENCE
+    from a failure, where the usual shape is reporting ABSENCE from a broken probe.
+
+## B16 — WITHDRAWN. Not a defect: the index is populated at `record_run`, by design, and the shards serve hits
+
+**WITHDRAWN 2026-09-13 within the hour. I filed this as an engine defect and it is not one.**
+Measured with the engine's own predicate, `caching/invocation.probe(root, bytes.fromhex(key))`:
+
+    1e201b0f49f0  PROBE=HIT  manifest_files=3  out_files=3  tombstone=False
+    1e204aaf9255  PROBE=HIT  manifest_files=3  out_files=3  tombstone=False
+    1e20f3748c39  PROBE=HIT  manifest_files=3  out_files=3  tombstone=False
+    1e2002587689  PROBE=HIT  manifest_files=3  out_files=3  tombstone=False
+    1e207ae9457b  PROBE=HIT  manifest_files=3  out_files=3  tombstone=False
+    ===> 5 of 5 shards SERVE a cache hit
+
+**Why my evidence was worthless: `cache explain` and `cache list` read the sqlite index, and a
+running workflow does not.** `ops/cache.py:explain_cache_entry` calls `CacheStore.probe` (index).
+The runtime calls `python -m metasmith.caching.invocation` (`nextflow_codegen.py:33`,
+`Orchestrator.groovy:621`), whose `probe()` (`invocation.py:102`) reads **only the shard** — no
+tombstone file, a manifest, every file the manifest lists present. Index rows arrive at
+`caching/promote.py:record_run` (line 331), which reads each task's cache record and calls
+`index_shard` for every "promoted" record, and the runner calls it when the run **ends**. So
+`found: False` on a live run's shard is expected, and it accounts for every observation I had,
+including zero tombstones and the physical-minus-index gap.
+
+**The error: I tested reachability with the wrong instrument and then trusted a passing positive
+control to license the conclusion.** The control proved `explain` works — it could not prove
+`explain` was the right question. Two paths read this store and I checked the one a human uses
+rather than the one a task uses.
+
+    WHAT SURVIVES, in weaker form: `cache [promoted]` reports the shard WRITE, and indexing waits
+    for `record_run`. So a driver killed before `record_run` leaves its shards unindexed -- still
+    served to `invocation.probe`, but invisible to `cache list`, `gc` and any accounting built on
+    the index. That is worth knowing when reading a store whose run did not end cleanly, and it
+    is the whole of what this row should have said.
+
+**The 208 matched pairs stand**: WfOlaqLT's fastp products exist in both `nxf_work` and the store,
+identical size, different inode, **625.5 GB duplicated** — and the cache copy is usable. So the
+E2-short prune is sound on both existence and reachability, gated only on the three consumers
+reaching 208 distinct successful indices.
+
+
+**Proven 2026-09-13 with a passing positive control.** After each successful step `bootstrap.py`
+promotes the products and logs `cache [promoted] member [n] key [...]`. The shard directory and the
+product file land on disk. **The index row is never committed.**
+
+    cache explain 1e201b0f49f0f973…   found: FALSE   <- shard dir exists, 4.24 GB
+    cache explain 1e204aaf9255b999…   found: FALSE   <- shard dir exists, 1.69 GB
+    cache list --run WfOlaqLT                  0 entries
+    cache list --dtype e2::trimmed_short_reads 0 entries  (also 0 with --include-tombstoned)
+
+    POSITIVE CONTROL, same command and --cache-root, key taken from the index:
+    cache explain 1e20a9f4a00c89b7…   found: TRUE    origin imported, 25,345,024,406 bytes
+
+So `explain` works and the key format is right; the 208 keys are genuinely absent from the index.
+
+**The products ARE duplicated on disk and the duplicate is unusable.** Matched by filename across
+`runs/WfOlaqLT/nxf_work` and `task_cache`: **208 of 208 names in both, identical size, different
+inode, 625.5 GB**. A `du` says the bytes survive a prune; a lookup misses and re-runs.
+
+**CONSEQUENCES**
+
+1. **The E2-short prune gate must stay HELD regardless of consumer counts.** Deleting the fastp work
+   dirs loses the products in every practical sense. The gate was designed around *existence*; the
+   binding question is *reachability*.
+2. **Wave 2 cannot serve any of wave 1's finished work from cache.** Every relaunch re-runs from
+   scratch unless Nextflow's own `.nextflow/cache` covers it — a different mechanism, valid only
+   within the same work tree.
+3. **~625 GB of orphaned shards** sit in the cami store: written, never indexed, reachable by nothing.
+4. **`cache [promoted]` is not evidence of a usable cache entry.** It reports the write, not the
+   commit. Do not use that line as a success signal.
+
+    THIS ALSO KILLS THE TOMBSTONE HYPOTHESIS and one of my own measurements.
+    cami      1,934 entries / 889.9 GB indexed · 1,419.8 GB physical · TOMBSTONED 0
+    pratama     226 entries / 767.9 GB indexed ·   704.3 GB physical · TOMBSTONED 0
+    Zero tombstones in either store. And pratama's physical is LESS than its indexed bytes,
+    because `size_bytes` records the LOGICAL object and an imported entry is a reference whose
+    bytes live outside the store. So physical-minus-indexed was never a reconcilable quantity --
+    one counts stored bytes including unlisted shards, the other counts logical objects including
+    external ones. My "522 GB unaccounted" was an artifact of subtracting two different measures.
+
+**Owner:** the experimenter (engine). **Next action:** find where the promotion path commits, and
+whether the row is written to a transaction that is never flushed, or written to a store the CLI
+reads from a different root. A shard whose `output_root` is under `task_cache/1e/...` while indexed
+imports sit under `task_cache/imported/1e/...` is worth checking as the discriminator.
+
+## B17 — `gold_standard` fails on mousegut: polars infers `genome_id` as f64 · **COSTS CRITERION 12 FIFTEEN SAMPLES** (15 distinct indices across 52 retry dirs; my first count of 17 was a dir count)
+
+**Live in E2 short (`WfOlaqLT`) 2026-09-13. 17 of 226 non-stub tasks FAILED, all the same cause.**
+
+    **193 exit 0 · 15 exit 1**, counted by DISTINCT TASK INDEX from the run's nxf.log.
+    The 15 failures span **52 work dirs** -- those are retries, and my first report of
+    "17 failed, 97 running" was a DIR count read mid-flight. Third time in one session that
+    retry dirs inflated a count I sent out; count by index, never by directory.
+    failing indices: 93 95 97 98 99 106 115 117 118 122 152 176 184 185 196
+    all 15 ->  work/mousegut_short_read/   ·   all offending values begin with `denovo`
+
+    FIX SITE, identified by the experimenter: `resources/lib/cami_gold_standard.py` **line 41**,
+    the `pl.read_csv(reads_mapping_path, ...)` call that infers types. Read `genome_id` and
+    `tax_id` as strings, and pin the corrected script in the E2 benchmark library rather than
+    editing the standard one, per the no-in-place rule.
+
+    E2 LONG CANNOT HIT THIS, and for a better reason than mousegut being absent from it: every
+    other dataset's `genome_id` is NON-NUMERIC FROM ROW 1, so polars infers a string
+    immediately and never attempts f64. Measured over the first 20k rows of each truth table:
+      plant_long_read_nano    0 denovo   Otu9.0 · RNODE_76_length_3393_cov_4.30851
+      toy_humangut_long_read  0 denovo   pASV1 · ASV387.11
+      marine_long_read        0 denovo   Otu6 · Otu61.1
+      strain_long_read        0 denovo   SP64_S79 · spades_MRSA7231_S7_L001
+      mousegut_short_read   456 denovo   **1684221.0 · 174573.0**  <- numeric head, denovo later
+    mousegut is the ONLY dataset where the inference can go wrong. Its gold_standard is p09 in
+    WfOlaqLT and p08 in 33hlLu8Q, and no other live run has the step at all -- verified before
+    scoping the watcher suppression to p09.
+    all 17 failures ->  work/mousegut_short_read/
+    all 17 offending values begin with  `denovo`
+
+    polars.exceptions.ComputeError: could not parse `denovo9553.0` as dtype `f64`
+      at column 'genome_id' (column number 2)
+
+`cami_gold_standard.py` reads the per-read truth table and **polars infers `genome_id` as `f64` from
+the early rows** — mousegut's ids look numeric, e.g. `190547.0` — then aborts on the first `denovo…`
+string. Reported at 7,579 and 10,493 bytes into two different files, so it is wherever the first
+`denovo` row happens to sit. The other 106 samples pass because their `genome_id` columns are
+numeric throughout.
+
+**FIX, named by polars' own error message: `schema_overrides={'genome_id': pl.Utf8}` on that read**,
+or `infer_schema_length=None` to scan the whole column. A `genome_id` is an identifier and should
+never have been inferred as a float.
+
+**Impact is LOSS OF COVERAGE, not a wrong number** — which is the better of the two failure modes.
+`gold_standard` is upstream of `amber`, so the downstream tasks never run rather than scoring against
+a bad truth table. But criterion 12's AMBER comparison would be reported over 212 samples with 17
+silently absent, and the run reports complete under retry-then-ignore.
+
+**Cheap to recover:** `gold_standard` is a fast step, its inputs (`reads_mapping.tsv.gz` plus our own
+assembly) are untouched, and 106 shards are already promoted — so a relaunch with the corrected
+parser serves 106 from cache and recomputes 17.
+
+    MOUSEGUT IS THE ODD DATASET IN EXACTLY THIS WAY TWICE. It is the only CAMI II set shipping a
+    `gsa_mapping_new.tsv.gz` sibling, and this campaign already established the two disagree on
+    TAXID while agreeing on genome_id. Now it is also the only one with `denovo` ids. Both quirks
+    trace to whatever generated its references. Treat mousegut as the schema canary for any new
+    parser over the CAMI truth tables.
+
+**Owner:** the experimenter (library). **Next action:** the one-argument parser fix, then relaunch
+E2 short; the 17 recompute and nothing else does.
 
 ## CLEARED TODAY — kept only so a reader can tell movement from stasis
 
