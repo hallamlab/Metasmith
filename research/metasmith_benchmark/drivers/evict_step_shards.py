@@ -30,11 +30,16 @@ for rec_file in sorted(work.glob("??/*/.command.cache")):
         if r.get("step_name") != a.step:
             continue
         why = None
-        shard = Path(r.get("shard", "")).resolve() if r.get("shard") else None
+        # The record names the shard by its container path (/msm_home/task_cache/..), so rebuild the
+        # host path from the key the way layout.shard_dir does, and check the record agrees.
+        key = r.get("key", "")
+        shard = root / key[:2] / key[2:] if len(key) > 2 else None
         if r.get("status") != "promoted" or shard is None:
             why = f"status {r.get('status')}"
-        elif root not in shard.parents:
-            why = "shard outside cache root"
+        elif not str(r.get("shard", "")).endswith(f"/{key[:2]}/{key[2:]}"):
+            why = "record shard does not match key"
+        elif not shard.is_dir():
+            why = "shard dir missing"
         elif (shard / "tombstone").exists():
             why = "already tombstoned"
         else:
