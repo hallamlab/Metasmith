@@ -28,7 +28,7 @@ means the product was checked, never the exit code.
 | `cami_contig_truth` (the gold-standard bridge) | **OBSERVED** | 128,677-byte table produced; absent from `results/` BY DESIGN — see the caution below |
 | `metabat2` | **OBSERVED, two scales** | CAMI marine_sample_0: 51 bins at `--minContig 1500`, exit 0, 1m26s. **Pratama groundwater run: 146 bins, exit 0** — a real-soil sample recovers ~3x the bins of a CAMI one |
 | `semibin2` | **OBSERVED, two scales** | CAMI marine_sample_0: 57 bins, exit 0. **Pratama groundwater run: 209 bins, exit 0**, ~10m per task |
-| `comebin` | **UNPROVEN** | never completed. Job 59548383 has been `PENDING (Resources)` at 48 cpus since 16:35 — queued, not stalled. Criterion 9's peak RSS has no number. A Pratama-arm COMEBin IS running healthily at 48 cpus in a different agent home, which will give a 48-cpu data point but NOT criterion 9's, since that names a CAMI sample |
+| `comebin` | **UNPROVEN but RUNNING HEALTHILY** | three instances at 48 cpus past 6 h: 59547695 (Pratama) 6:26, 59548383 (CAMI rung 1) 6:12, 59583112 (CAMI rung 10) 5:39. **Confirmed progressing, not deadlocked** — `.command.log` is 1.14 MB with an mtime of *now* and a live progress bar at `43/70 [01:35<01:00, 2.24s/it]` updating every 2 s. Criterion 9's peak RSS has no number. A Pratama-arm COMEBin IS running healthily at 48 cpus in a different agent home, which will give a 48-cpu data point but NOT criterion 9's, since that names a CAMI sample |
 | `das_tool` | **UNPROVEN** | waits on comebin |
 | `amber` / `amber_das_tool` | **OBSERVED** (per-binner) | MetaBAT2 row: `precision_avg_bp 0.8984`, `recall_avg_bp 0.0775`, `f1_score_bp 0.1428`, `ARI_bp 0.4581`. MAG-level row unproven |
 | `checkm` (CheckM2) | **OBSERVED** | ran TWICE in rung 1, `CheckM2 finished successfully`, real per-bin CSVs inspected: 96.8/9.54, 11.0/0.0, 35.75/5.13 completeness/contamination, `Completeness_Model_Used = Neural Network (Specific Model)`. Product inspected, not the exit code — `checkm.py` ends in `|| true` so it cannot fail its step |
@@ -41,9 +41,11 @@ means the product was checked, never the exit code.
 | `mmseqs_votu`, `mmseqs_precluster` | **OBSERVED** | exit 0, ~1.97 MB each |
 | `contig_length_table` | **OBSERVED** | exit 0, 1.13 MB |
 | `pratama_votu_recovery` | **OBSERVED** | exit 0, **65,640-row skANI table**, header `Ref_file Query_file ANI Align_fraction_ref Align_fraction_query Ref_name Query_name`. This is criterion 2's vOTU recovery comparison against Pratama's published catalogue — the campaign's FIRST real comparison output. CAVEAT: one rung-1 sample, and the catalogue behind it is missing VirSorter2's contribution (that step failed), so it is a two-caller merge rather than the intended three |
-| `dramv` | **BROKEN, cause confirmed** | exit 1 on three attempts, zero products. `Error: Invalid file path or buffer object type: <class 'NoneType'>` — DRAM-v handing a null config entry to a reader. This is the all-null `DRAM.config` manifesting ONE STEP LATER than its cause, which is exactly why that config must be verified by content. Unblocks when B3's staging completes |
+| `dramv` | **BROKEN, cause confirmed** | exit 1 on three attempts, zero products. `Error: Invalid file path or buffer object type: <class 'NoneType'>` — DRAM-v handing a null config entry to a reader. This is the all-null `DRAM.config` manifesting ONE STEP LATER than its cause, which is exactly why that config must be verified by content. **B3 CLEARED 22:09** — the null config entry it choked on is now populated and all five distillation sheets verify by content, so `DRAM-v distill` can run. Still UNPROVEN until a relaunch re-runs it: transform sources are staged per run, but the DRAM config is read at run time from the staged tree, so no relaunch of the *transform* is needed — only of the step |
 | `checkv` | **OBSERVED** | Pratama run, exit 0, 7m08s, 4 TSVs; `quality_summary.tsv` 13,752 rows with the real header (`contig_id, checkv_quality, miuvig_quality, completeness, ...`) |
-| `cctyper`, `blast_spacers_to_contigs`, `skani_dedup`, `aggregator`, `derep_mag_reference`, `pratama_mag_recovery` | **UNPROVEN** | not yet reached — all downstream of the per-binner CheckM2 fan-out still running |
+| `cctyper` | **OBSERVED** | direct run against a real Pratama MetaWRAP bin, exit 0 in 3m35s: prodigal ORFs, **HMMER against all 705 Cas profiles**, minced, then BLAST for arrays near operons. `--db /usr/local/cct_data` is confirmed load-bearing and working — the 705-profile search IS the bundled database being read, which `$CCTYPER_DB` alone would not have given, since that variable is set by a conda `activate.d` hook only a LOGIN shell sources. The bin reported `No CRISPRs found`, which is a RESULT and not a failure, and the protocol's empty-table branch emitted both tables plus a 0-record spacer FASTA exactly as designed. **NOT yet exercised: the spacer header-tagging path**, which needs a bin that actually carries an array — sweep 59608537 closed that (see below), and a follow-up direct run on the five positive bins exercises the tagging |
+| `blast_spacers_to_contigs` | **UNPROVEN** | its `viromics::dereplicated_candidate_virus` subject exists (58.8 MB, published by `d6UJuZgF`), so the only missing input is a non-empty spacer set. Its `n == 0` branch writes a header-only table and returns success, and on MAG data that may well be the PRODUCTION path rather than an edge case — CRISPR arrays are repetitive and are commonly lost in assembly and binning |
+| `skani_dedup`, `aggregator`, `derep_mag_reference`, `pratama_mag_recovery` | **UNPROVEN** | not yet reached — downstream of the per-binner CheckM2 fan-out still running. NOTE `skani_dedup`'s clustering logic IS validated: `metawrap_skani_dedup` is its protocol unchanged but for the requirement and product types, and that was proven in three escalating cases |
 | `vcontact3` | **UNPROVEN, and unreachable IN THIS RUN** | its database twin failed and was swallowed, so the step has no task dir and never will here. The database is now staged and pruned, so a relaunch reaches it |
 | `virsorter2` | **BROKEN, diagnosed** | see Installs; fails on a compute node for a structural reason |
 | `vcontact3` | **UNPROVEN** | was unreachable because its database step failed; now unblocked |
@@ -76,6 +78,183 @@ means the product was checked, never the exit code.
 
 ---
 
+## phiX removal — is it needed on non-human samples?
+
+Asked by the principal. Measured on the live Pratama run `d6UJuZgF`, which assembled ERR3858110
+with bbduk only — metasmith has **no phiX removal anywhere** — so its contigs and viral calls ARE
+the no-filter condition, against real products rather than a new run.
+
+| question | answer |
+|---|---|
+| does a phiX contig assemble without the filter? | **YES, but FRAGMENTED into five**, not one 5.4 kb contig |
+| identity to phiX174 `NC_001422` | **99.0-100.0%** — the Illumina spike-in, not environmental Microviridae |
+| genome covered | 5,021 of 5,386 bp = **93.2%** |
+| geNomad | **CALLS IT**: virus_score 0.9600 / 0.9379, taxonomy `...Petitvirales;Microviridae` at agreement 1.0000, and one gene annotated **`Sinsheimervirus phiX174`** by name (bitscore 419, e-value 4.3e-132) |
+| VIBRANT | **calls none of the five** |
+| enters the vOTU catalogue? | **YES — 2 of 5** (`k141_362813`, `k141_395225`) as their own cluster representatives |
+| catchable post hoc? | **trivially** — minimap2/BLAST vs `NC_001422` finds all five in seconds |
+
+The five fragments: `k141_96811` 40-727, `k141_395225` 730-2316, `k141_362813` 2299-3709,
+`k141_323311` 4004-4589, `k141_351208` 4620-5386.
+
+**CAUTION a naive "drop the ~5,386 bp contig" rule fails** — these are 586-1,587 bp fragments. It
+has to be an alignment check against `NC_001422`. And a VIBRANT-only pipeline would neither remove
+nor flag it.
+
+**REFERENCE FINDING: nf-core/mag's bundled "phiX" reference is NOT phiX174.** It is
+`assets/data/GCA_002596845.1_ASM259684v1_genomic.fna.gz` = `>DQ079895.1 Coliphage WA11`, 5,387 bp,
+against phiX174's 5,386. nf-core's own commented URL says `Enterobacteria_phage_phiX174_sensu_lato`,
+which is how the sensu lato grouping put WA11 there. Measured distance: **skani ANI 93.72%**,
+**minimap2 95.1%** over a whole-genome block. At ~95% a 150 bp phiX174 read carries ~7 mismatches,
+inside bowtie2's default end-to-end tolerance (~15), so the filter still catches true spike-in —
+imprecision, not a functional failure. `BOWTIE2_PHIX_REMOVAL_ALIGN` carries **no `ext.args`**, so it
+runs at pure bowtie2 defaults.
+
+### How many reads the filter would actually remove — MEASURED on real groundwater
+
+`ERR3858110` (H52_1), nf-core's exact command against its own WA11 reference, defaults, mapped
+reads kept instead of deleted:
+
+    56,783,841 pairs; 17 aligned concordantly exactly 1 time; 0 discordantly
+    99 further mates aligned singly   ->  ~133 reads total
+    0.00% overall alignment rate
+    removed pairs, counted from the fastq rather than the log: 17
+
+**17 pairs in 56.8 million — 3 in ten million.** With CAMI's 127 of 16,647,376, the filter is a
+no-op on a simulated corpus AND on a real groundwater metagenome. The second is the stronger of
+the two, since CAMI could be dismissed as having no spike-in to find by construction.
+
+**And the removed reads match phiX174 BETTER THAN THE REFERENCE THAT CAUGHT THEM.** Percent
+identity of the same 34 mapped reads, by NM tag over aligned length:
+
+    vs phiX174 NC_001422   >=99%: 10 (29.4%)   95-99: 14   90-95: 8   80-90: 2
+    vs WA11    DQ079895     >=99%:  0 ( 0.0%)   95-99: 14   90-95: 12  80-90: 8
+
+So there IS genuine phiX174 spike-in in this library, at trace level, and nf-core catches it only
+because ~5% divergence stays inside bowtie2's default tolerance. Genome coverage 3,048 of 5,386 bp
+(56.6%), mean depth 0.95, max 4.
+
+**That depth reconciles the two halves of this section, which look contradictory and are not.**
+~133 reads over 5.4 kb is roughly 3.7x — and a 3.7x assembly is exactly what produces **five
+fragments covering 93.2%** rather than one complete 5,386 bp contig. The trace read count and the
+fragmented contig are the same observation seen twice.
+
+`SRR32696677` (0.2 um viral fraction, 2022), same command:
+
+    76,298,172 pairs; 0 aligned concordantly; 0.00% overall alignment rate
+    removed pairs, counted from the fastq: 0
+
+**ZERO.** So across the two libraries the filter removes **17 pairs out of 133,082,013** — and the
+two differ in a way worth keeping: the 2019 NextSeq run carries trace phiX174, the 2022 run carries
+none at all. Whether a library has spike-in is a property of its sequencing batch, so "no-op" is a
+claim about these libraries rather than about groundwater in general.
+
+    VERDICT for the deviations table: phiX removal is a measured no-op on CAMI (127 of
+    16,647,376 pairs) and on real Pratama groundwater (17 of 133,082,013). It is a genuine
+    methodological difference between the arms and it moves no number that this campaign reports.
+    The successor check still matters: 2 of the 5 assembled phiX fragments DO enter the vOTU
+    catalogue, so removing the filter without an alignment check against NC_001422 inflates it.
+
+## CRISPR recovery on real MAGs — how much does E3's within-survey host lane actually get?
+
+Job 59608537, cctyper's exact transform command over **all 92 published MetaWRAP MAGs** of the
+live Pratama run, 276 tasks COMPLETED, **zero database failures**:
+
+| | |
+|---|---|
+| bins reporting | **92 of 92** |
+| bins carrying a CRISPR array | **5 (5.4%)** |
+| total arrays | 5 |
+| total cas operons | 7 |
+| **total spacers** | **40** |
+
+The five: `1-87-1` 15 spacers (1 array, 2 operons), `1-90-1` 10, `1-8-1` 7, `1-61-1` 5, `1-2-1` 3.
+Two more bins carry a cas operon with no array (`1-84-1`, `1-37-1`, `1-15-1`).
+
+**So one whole sample's MAG set yields 40 spacer queries.** That is expected biology rather than a
+defect — CRISPR arrays are repetitive, and repeats are exactly what an assembler collapses and a
+binner then loses — but it sizes the lane honestly: `blast_spacers_to_contigs` searches tens of
+spacers against the frozen viral set, not thousands, so the within-survey half of host prediction
+contributes very little here. Worth knowing before paying for it.
+
+    CAUTION do NOT read 5.4% as a property of cctyper or of the pipeline. It is a property of
+    MAG-based CRISPR detection on a fragmented groundwater assembly. A spacer set built from the
+    ASSEMBLY rather than from binned MAGs would be larger, and that is a different experiment.
+
+## metaGEM's published MAGs — unpacked for E4, verified by NAME
+
+Job 59610574, `e4_extract_mags.sh`, into `/scratch/phyberos/metagem/published/<study>/mags/<name>.fa`:
+
+| study | MAGs |
+|---|---|
+| li2019 | 172 |
+| korem2015 | 154 |
+| bissett_base | 277 |
+| karlsson2013 | 4,134 |
+| sunagawa2015 (Tara) | 9,371 |
+| **total** | **14,108** |
+
+Diffed as `(study, mag)` pairs against the driver's `e4_published_mags.tsv`: **14,108 shared, 0 in the
+list but absent from disk, 0 on disk but absent from the list.** Counts matching is not names
+matching, and this campaign has already had two sets agree on size while disagreeing on membership.
+
+    CAUTION the first diff reported 1,225 names missing AND the SAME 1,225 extra, with identical
+    first lines on both sides. That is `comm` refusing two files sorted under different locales
+    (the TSV locally, the listing on fir), not a difference. `LC_ALL=C sort` both sides. A set
+    difference whose two halves are the same size and start with the same line is an ordering
+    artifact.
+
+**E4 does not fit the inode quota unbatched.** None of `prodigal_from_bin`,
+`carveme_from_orfs_cplex` or `memote_score` declares `batch_size`, so each MAG is its own task in
+all three steps: 14,108 x 3 = **42,324 tasks**, ~27 transient inodes plus ~18 permanent cache
+inodes per MAG, so **~635K** of which ~254K is cache that cannot be pruned without losing resume.
+Chunk at ~2,000 MAGs and prune each chunk's `nxf_work` after its products are promoted.
+
+## Pratama pre-interleave — all 66 paired runs, verified by content
+
+Array 59607969, 198 tasks all COMPLETED, **zero failures**. Command is
+`interleave_zipped_short_reads.py`'s VERBATIM in `docker..staphb_bbtools..39.49.sif`, so the
+product is what the transform would have made:
+`reformat.sh unbgzip=f in1= in2= out=stdout.fq | pigz -p 16 >`.
+
+    /scratch/phyberos/pratama2026/interleaved/<dataset>/<run>.fastq.gz     originals KEPT
+
+| dataset | runs | bytes | interleaved records |
+|---|---|---|---|
+| `reads_2019` | 32 | 377,129,154,977 | 4,145,108,866 |
+| `reads_2022` | 34 | 366,910,756,889 | 5,376,621,774 |
+| **total** | **66** | **744,039,911,866** | **9,521,730,640** |
+
+66 files, 66 `.ok` stamps, **0 leftover `.partial`**, 0 FAIL lines. Input was 763,924,306,715 bytes.
+
+**Verified three ways, the third independent of the first two.** Each task gated promotion on
+(a) a line count that is a multiple of 4, (b) records == 2 x that run's `runs.tsv read_count`, and
+(c) the first two records being the two mates of one fragment. Then, after the fact and from a
+different source: `2 x sum(read_count)` taken straight from `runs.tsv` over every PAIRED run =
+**9,521,730,640**, matching the sum of the stamps exactly.
+
+**Full-stream gzip integrity is proven BY CONSTRUCTION**, not assumed: the record count is taken
+by decompressing the whole file with `pigz -dc`, so a truncated or corrupt stream cannot reach a
+`.ok` stamp. A failed check leaves the `.partial` unpromoted, so a bad run is **absent** from the
+tree rather than present-and-wrong — which matters because the consumer globs the tree.
+
+Both datasets carry the same header convention, so the `/1` `/2` alternation holds corpus-wide:
+
+    reads_2019   @ERR3858110.1 NB501242:101:HLYN3BGX9:1:11101:11969:1049/1   and /2
+    reads_2022   @SRR32696677.1 A00872:178:HGHN7DMXY:1:1101:2284:1000/1      and /2
+
+Throughput, for sizing a re-run: ~157-267 s to interleave plus ~79-139 s to verify per run at 16
+cpus, 8 concurrent; the whole corpus in about 75 minutes. Declared `Size.GB(8)` was not tested —
+the array ran at 16 GB.
+
+    CAUTION discovered while accounting for the ORIGINAL file count, which came to 137 rather
+    than the 138 a full corpus implies: **SRR32696686 (H41_02um_2022_Nanopore) has no reads on
+    disk.** Its directory is empty and a 5,362,917,376-byte partial of an expected 12,125,303,198
+    sits in `.ena_staging/` -- 44%, fetched and never resumed. So the Pratama long-read set is
+    **5 of 6 MinION runs**, not 6. The PAIRED corpus is unaffected and complete at 66. Also in
+    `.ena_staging/`: a stranded `SRR32696714_1`, harmless (that run was completed by the SRA
+    route) and reclaimable.
+
 ## Installs, staging and infrastructure
 
 | thing | status | notes |
@@ -83,9 +262,9 @@ means the product was checked, never the exit code.
 | Nextflow 26.04.6 | **OBSERVED** | private at `~/bin/nextflow26`, `NXF_HOME=$HOME/.nextflow26`. mag 5.5.0 declares `!>=26.04.0`; fir's newest module is 25.04.6 and dies on a missing nf-schema 2.7.2 |
 | container cache | **OBSERVED** | 14/14 CAMI, 21/21 Pratama, 11/11 metaGEM images present AND `.verified`. Derive the per-arm list from a staged run's own `workflow.env.json`, never from a hand-maintained list |
 | CPLEX 22.2.0 | **OBSERVED** | uncapped solve, 2000 vars / 1999 constraints, in-container, on a compute node, from durable project space. `docplex config --upgrade` is what copies the full runtime — the packaged module alone caps at 1000/1000 with error 1016 and no warning |
-| GTDB r232 | staged, **lane severed** | `--skip_ani_screen` does NOT skip the post-placement ANI step in 2.6.1 (the guard is commented out upstream), so it dies at 33m44s AFTER all the expensive work while the Slurm job exits 0:0 |
-| DRAM 1.5.0 | **staging, unverified** | **verify BY CONTENT**: `prepare_databases` copies an all-null `DRAM.config` as its FIRST action, so an all-null config is the signature of a step that ran and achieved nothing. The five `*_form`/`*_database` sheets are what `DRAM-v distill` cannot run without |
-| VirSorter2 DB | **BROKEN, fix written** | snakemake names its conda env `md5(realpath(conda_prefix)+yaml)[:8]`, so the env name depends on the MOUNT PATH: setup builds it in a per-run work dir, the consumer always binds `/db`, and they can never agree. Build the env under a `/db` bind. `--use-conda-off` is not an escape hatch — the image's own env has no sklearn/pandas/numpy/screed/prodigal/hmmsearch |
+| GTDB r232 | **package LANDED, unextracted**, lane severed | `--skip_ani_screen` does NOT skip the post-placement ANI step in 2.6.1 (the guard is commented out upstream), so it dies at 33m44s AFTER all the expensive work while the Slurm job exits 0:0 | **The full package is now on fir**: `/scratch/phyberos/staging/gtdb/gtdbtk_r232_data.tar.gz`, **60,806,405,195 bytes, byte-exact against the source**, Globus task `2ce839f3-af33-11f1-b981-02ce27bde401`, 0 faults, `--verify-checksum`. Verified by CONTENT, not by size: `tar -tzf` lists `release232/skani/`, `release232/skani/database/sketches.db` and `index.db` — the directory whose absence is the whole defect. **The inode alarm I attached to this was WRONG by four orders of magnitude and the census refutes it.** Job 59610185 listed the whole archive: **296 members total**, of which `release232/skani/` is **7** — two dirs and five files (`create_genome_paths.sh`, `sketches.db`, `index.db`, `markers.bin`, `metadata.tsv`). So extracting skani costs **7 inodes** and the entire package ~296. My ~113K figure came from reading `classify_wf`'s error path `/ref/skani/database/GCF/000/367/345/GCF_000367345.1_genomic.fna.gz` as evidence of a per-genome tree INSIDE this package; those genome files are in **`gtdb_genomes_reps_r232.tar.gz`, a separate 192 GB archive**. **SETTLED, and the reps package IS required.** The package extracted for **296 inodes** as predicted; `release232/skani/database/` holds exactly four files — `sketches.db` 75.27 GB, `markers.bin` 9.86 GB, `index.db` 40 MB, `metadata.tsv` 390 B. And `create_genome_paths.sh` is a **filing tool for genome `.gz` files you place in `database/`**, not a shipper of them: it globs `database/*.gz` and `mv`s each into `database/${f:9:3}/${f:13:3}/${f:16:3}/${f:19:3}/`. So the `GCF/000/367/345/*_genomic.fna.gz` path in classify_wf's error is a layout this script CREATES, and the genomes come from **`gtdb_genomes_reps_r232.tar.gz`, 192 GB** on the same Globus collection. True cost of a usable GTDB-Tk classify: **~113K files PLUS a four-level 3-char directory tree, so 150-200K inodes** — larger than my original wrong figure, because the directory tree was never in it. `--skip_ani_screen` does not avoid it (the guard is commented out upstream in 2.6.1); only `--genes` does, and that changes the input contract while still paying the full pplacer bill. CAVEAT r232 is the one package in that Globus directory with no sibling `.md5`.
+| DRAM 1.5.0 | **OBSERVED, staged, 5/5 sheets** | Its first attempt DIED SILENTLY with 0/5 sheets: `prepare_databases` processes `--select_db` IN ORDER and raises on the first failure, and dbcan's download returned **19,313 bytes of HTML** (`Format tag is '<!DOCTYPE'`), so kofam and pfam landed and everything after dbcan — including all five sheets, which are written at the END of that same call — was never reached. Repaired with `DRAM-setup.py update_dram_forms --output_dir /db`, NOT by re-running `stage_dram.sh`, whose first act copies a blank `CONFIG` over the config and would have erased the 24 GB of kofam/pfam work. All five verified as real TSVs with real headers (580,242 / 579,664 / 2,378 / 11,199 / 21,569 B). **DEVIATION: dbcan is absent, so no CAZyme annotations.** CAUTION the config value is `etc_mdoule_database...tsv` — an upstream TYPO — so a glob for `etc_module_database*` matches nothing |
+| VirSorter2 DB | **OBSERVED, staged** | `/scratch/phyberos/refs/virsorter2_2.2.4`, 11 GB, 28,732 inodes, built in 8 min. snakemake names its conda env `md5(realpath(conda_prefix)+yaml)[:8]`, so the env name depends on the MOUNT PATH: setup builds it in a per-run work dir, the consumer always binds `/db`, and they can never agree for ANY path. Fixed by BUILDING the env under a `/db` bind — envs are not relocatable, so staging a prebuilt one cannot work. Verified by CAPABILITY not presence: `conda_envs/671930f2` exists AND its python imports sklearn 0.22.1 / pandas 1.2.5 / numpy 1.23.5, matching vs2.yaml's pins. `--use-conda-off` is not an escape hatch — the image's own env has no sklearn/pandas/numpy/screed/prodigal/hmmsearch |
 | vConTACT3 DB | **OBSERVED, staged** | `/scratch/phyberos/refs/vcontact3_v230`, pruned of upstream mmseqs build scratch: 6,925 → 1,057 inodes, 404 → 0 dangling symlinks, 5.1 → 3.2 GB |
 | CheckM2 DB | staged | 2.9 GB; the pipeline's own download step runs as a DISPATCHED TASK and would hang forever on a network-less compute node |
 | compute-node drivers | **OBSERVED** | `METASMITH_DRIVER_SLURM=1` is an engine built-in; pass `_CPUS/_MEM/_TIME/_ACCOUNT`. 2 cpus/8 GB died OUT_OF_MEMORY in 65 s because local-executor steps are charged to the driver's job — use 10 cpus / 48 G |
@@ -99,6 +278,9 @@ means the product was checked, never the exit code.
 - **login1 and login2 are dead for any memory-claiming process.** Their 16 GiB per-user cgroup is saturated with page cache; a deliberate 256 MB allocation is killed. `memory.reclaim` is root-only, so it cannot be drained from user space. login3 is the only usable one and it is shared.
 - **`ssh fir` round-robins across the three login nodes.** Any node-specific measurement taken through a bare `ssh fir` has an unknown node; hop explicitly.
 - **Quota is inodes, not bytes.** 457K of 1,000,000 used against 11 of 20 TB. A `find -type f` census under-reports the Lustre project quota by ~12% because directories are inodes. An ordinary task work dir is **9 inodes**. The per-bin law is now CONFIRMED EXACTLY, not estimated: a `checkm` task is **bins + 12** inodes — 51 bins gave 62 files + 1 dir = 63, and 57 bins gave 68 + 1 = 69. So it scales with RECOVERY, which varies by sample; do not multiply one sample by 249 without a range. COMEBin's own task dir is still unmeasured (3 files while queued). Reference-database staging is 16.5K-31.7K per task dir but **once per agent home**.
+- **The lab already mirrors most reference databases on Globus — CHECK THERE BEFORE STAGING ANYTHING.** Collection `2602486c-1e0f-47a0-be15-eec1b0ff0f96` (Projects / `ubcarc#chinook`), `/Resources/reference_databases_for_tools/`: `GTDB/` (gtdbtk r207/r220/r226/r232 packages, `gtdb_genomes_reps_r232.tar.gz`, a `gtdbtk.sif`), `dram/dram_data.tar.gz` 31.2 GB, `virsorter2/virsorter2_data.tar.gz` 3.5 GB, `interproscan/`, `metabuli/`, `MPDB_231223/`, plus genomad, card, vfdb, amrfinderplus, megares, bacmet, tcdb, magref, metaphlan and pathofact tarballs — nearly all with sibling `.md5` files. A chinook→fir transfer moved 1.263 TB at 1.14 GB/s, so this is by far the cheapest source on the network. **CAVEAT a prebuilt tarball does NOT solve VirSorter2**, whose conda env must be BUILT at the `/db` path it will be used from; and `gtdbtk_r232_data.tar.gz` is the one file there with no sibling `.md5`.
+- **A direct run of a transform with `group_by` on its batched requirement processes ONE group.** Eight bins bound with repeated `-i bin=` all staged (eight `✓` lines) and the run then reported `branch [1] of [1]`, with `context.AsBatch()` yielding only the first. Repeated `-i` DOES fan out for `context.InputGroup(...)` — `metawrap_skani_dedup` took 92 bins that way — so the discriminator is `AsBatch` plus `group_by`, not the flag. Loop one invocation per item to test such a transform, and read the `branch [N] of [M]` line rather than assuming the bindings fanned out.
+- **The documented COMEBin deadlock check — "watch for zero `cluster_res` files" — CANNOT be applied from the work dir while `scratch` is set, and three separate instruments lie about a running job.** All three of these read as a deadlock and none of them is evidence: (1) `sacct ... TotalCPU` reports **00:00:00 for a RUNNING job**, because it is accumulated at step end, not live; (2) `sstat` returns a bare header here for every job including a known-active positive control, so it is not a usable instrument on this cluster at all; (3) the work dir holds **no products and no `cluster_res`**, because a real step's outputs live in node-local `NXF_SCRATCH` until the unstage — so they cannot appear there until the task finishes, deadlock or not. `.command.err` does not exist either; the file is `.command.log`. **The one reliable in-flight signal is `.command.log`'s size and mtime plus its tail**, which streams back live. I was one step from reporting three deadlocked COMEBins and criterion 9 unreachable.
 - **`results/` is a TARGET census, not a product census.** A healthy intermediate is absent from it by design.
 - **`dev/libraries.sh -bm` moves EVERY plan key.** It runs `msm build all`, rebuilding leaf instance-ids (path + **mtime**) for every library, not the one you changed. Rebuild scoped: `python -m metasmith build transforms -t <data_types> -r <the one library>`.
 - **`_stable_id` is only stable if the path STRING is.** `run_metagem.py`'s `MEDIUM_TSV` default embeds an absolute checkout path, so **the metaGEM keys are not portable across checkouts** — they reproduce exactly in the original tree and differ in any copy, regardless of content.

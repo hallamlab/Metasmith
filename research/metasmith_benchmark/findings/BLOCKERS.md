@@ -10,34 +10,29 @@ Last updated 2026-09-12 19:40 PDT (pivot: proving capabilities, not launching).
 
 ---
 
-## B1 — VirSorter2 cannot run on a compute node  ·  BLOCKS criterion 2's viral lane
+## B1 — VirSorter2 database  ·  **CLOSED 22:18** — staged, env verified by capability
 
-**Nothing in this campaign runs snakemake as a workflow engine — metasmith drives Nextflow.**
-VirSorter2 2.2.4 *is* a snakemake workflow internally: `virsorter run` shells out to
-`snakemake --snakefile .../virsorter/Snakefile ... --use-conda --conda-prefix <db>/conda_envs`,
-with snakemake 5.26.0 bundled in its own biocontainer. So this is a defect in one tool's
-internals, not in our stack.
+`virsorter setup -d /db -j 8` ran on login3 in **8 minutes** and passed its own verification:
 
-snakemake 5.26 names a conda env `md5(realpath(conda_prefix) + yaml)[:8]`, so **the env name
-depends on where the DB is mounted**. Proven: `md5("/db/conda_envs" + vs2.yaml) = 671930f2`, exactly what the run
-demanded; the staged DB holds `91185d68`, built in a per-run work dir. `downloadVirsorter2DB`
-and `virsorter2.py` can therefore never agree. The run then tries to CREATE the env, which
-needs network, on a node with 0.14 MB/s egress. `--use-conda-off` is not an escape hatch —
-the image's own env has no sklearn/pandas/numpy/screed/prodigal/hmmsearch.
+    ok  Done_all_setup / group / hmm / rbs / conda_envs
+    ok  conda_envs/671930f2   <- the name `virsorter run --db-dir /db` computes
+    env imports: sklearn 0.22.1  pandas 1.2.5  numpy 1.23.5   (vs2.yaml's pins exactly)
+    inodes at DEST: 28,732        11 GB at /scratch/phyberos/refs/virsorter2_2.2.4
 
-**Scope, measured rather than assumed:** only two of the campaign's cached images embed
-snakemake at all — `virsorter 2.2.4` (5.26.0) and `pathofact 2.0` (7.25.0). PathoFact is in
-no launched arm. So the blast radius is exactly one tool, and PathoFact is the only other
-candidate should it ever consume a staged database — on a different snakemake major, so
-re-derive its hash rather than assuming 5.26's scheme. (metaGEM's *published* pipeline is
-also snakemake, but we read its source for parameters and never run it.)
+**The env had to be BUILT under the `/db` bind, not staged.** snakemake 5.26 names a conda env
+`md5(realpath(conda_prefix) + env_yaml_bytes)[:8]`, so the name depends on the mount path;
+`downloadVirsorter2DB` builds it in a per-run work dir while the consumer always binds `/db`, and
+those can never agree for any path. Conda envs are not relocatable — activation scripts and
+shebangs bake the prefix — so a prebuilt tarball, including the lab's own
+`virsorter2/virsorter2_data.tar.gz` on chinook, would NOT have fixed this.
 
-**Owner:** orchestrator. **Gate:** DRAM staging must finish first — login3 is the only node
-that can fetch and is at 10.5 GB of its 16 GiB cgroup carrying L3's driver.
-**Next action:** `bash /scratch/phyberos/stage_virsorter2.sh` detached on login3, then
-register `annotation::virsorter2_db` in `STAGED_REFS_PRATAMA`, re-measure keys, relaunch.
-Afterwards apply the same `/db` bind to `downloadVirsorter2DB` itself — the staging run is
-the test of that mechanism.
+**Owner:** peer (`msm bench`). **Next action:** register `annotation::virsorter2_db` →
+`/scratch/phyberos/refs/virsorter2_2.2.4` in **`STAGED_REFS_PRATAMA`**, not the shared dict —
+an `annotation::` entry in `STAGED_REFS` makes every arm fail to plan with
+`AssertionError: namespace [annotation] not found`, because the five registration sites load
+different type-library lists. Add `annotation.yml` to the globals builder's list, re-measure keys
+(CAMI's three must not move), verify `virsorter2` binds it as exactly one given leaf, and relaunch.
+Afterwards apply the same `/db` bind to `downloadVirsorter2DB` itself — this run is its test.
 
 ## B3 — DRAM staging incomplete  ·  BLOCKS criterion 2's AMG calls  ·  CAUSE NOW PROVEN
 
@@ -57,15 +52,53 @@ worry it might be 48). dbCAN landed. The log now reads `Moved kofam_ko_list to f
 destination, configuration updated` and `Processing pfam`, and the config carries
 **2 search databases** where it carried none. The five sheets come last and remain the gate.
 
-Now in the **mmseqs profile build over Pfam-A.full** — compute, not transfer, and unbounded in
-duration. Memory measured rather than feared: mmseqs oscillates **2.34–3.07 GB** (cycling, not
-climbing), the co-resident nf-core driver is 0.88 GB, so non-reclaimable peaks near 5 GB of the
-16 GiB cap. The page-cache guard has fired **12 times** and held (15 GiB → 12 GiB) with
-**`oom_kill 0`** throughout. login3 stays usable and the 3 h COMEBin on it is not at risk.
+**RESOLVED 22:09 — and the staging had ENDED EARLY AND SILENTLY 1.5 h before I looked, with
+0 of 5 sheets. The watcher did not say so because it asked `pgrep -f stage_dram.sh`, which
+matched its own remote `bash -c` wrapper's argv and reported ALIVE forever.** The stager's log
+ends `DONE 2026-09-12T20:35:52` with `APPTAINER_EXIT=1`, and `ps -u phyberos -o args=` on
+login3 showed no such process at all.
 
-**Owner:** orchestrator · watch `bof1hlf81`. **Next action:** verify BY CONTENT — the five
-`*_form`/`*_database` sheets non-null — then release the VirSorter2 staging (B1), serialized
-behind this on login3.
+**The cause is a non-2xx body becoming the file, this campaign's documented failure shape.**
+`prepare_databases` processes its `--select_db` list in order and RAISES on the first failure,
+and dbcan sat ahead of the sheets:
+
+    The subcommand ['hmmpress', '-f', '/db/dbCAN-HMMdb-V11.txt'] experienced an error:
+    Error: File format problem in trying to open HMM file /db/dbCAN-HMMdb-V11.txt.
+    Format tag is '<!DOCTYPE': unrecognized.
+
+`dbCAN-HMMdb-V11.txt` is **19,313 bytes of HTML** — the upstream URL is dead. So kofam and pfam
+landed (24 GB of Pfam-A.full, the mmseqs profile build, all of it real and kept) and everything
+ORDERED AFTER dbcan — viral, peptidase, vogdb and **all five distillation sheets** — was never
+reached. The sheets are not a separate download; they are written at the end of the same call.
+
+**Fixed with the tool's own narrower subcommand rather than by re-running the whole thing.**
+`DRAM-setup.py update_dram_forms --output_dir /db` fetches exactly the distillate/liquor forms
+and updates the existing config in place. CAUTION: do NOT re-run `stage_dram.sh` to get them —
+its first act is to copy the package's blank `CONFIG` over `/db/DRAM.config`, which would ERASE
+the kofam and pfam entries that took hours to earn.
+
+Verified BY CONTENT, not by exit code — all five are real TSVs with real headers, not HTML:
+
+    genome_summary_form     580,242 B   gene_id|gene_description|module|sheet|header|...
+    module_step_form        579,664 B   gene|ko|module|module_name|path|product_ids|...
+    etc_module_database       2,378 B   module_id|module_name|complex|definition   (20 rows)
+    function_heatmap_form    11,199 B   category|subcategory|function_name|...
+    amg_database             21,569 B   KO|EC|PFAM|gene|module|metabolism|reference|...
+
+and the three search databases plus `pfam_hmm` survived the update. **So `DRAM-v.py distill` can
+now run and criterion 2's AMG calls are reachable.** A backup of the pre-update config is at
+`DRAM.config.bak.1789276148`.
+
+    CAUTION a glob for `etc_module_database*.tsv` matches NOTHING. DRAM's own filename is
+    `etc_mdoule_database.20260912.tsv` -- an upstream typo, carried into the config value.
+    My first content check reported that sheet as empty because of it; the file is fine.
+
+**DEVIATION, stated rather than hidden: dbcan is ABSENT from the staged tree.** DRAM-v annotate
+will produce no CAZyme annotations. The AMG calls need kofam, pfam and the amg_database sheet,
+all of which are present. Re-adding dbcan needs a working URL, not a re-run.
+
+**Owner:** orchestrator. **Next action:** none — closed. The Pratama relaunch picks the config
+up at run time. VirSorter2 staging (B1) was released the moment this cleared.
 
 ## B4 — nf-core's `contig_to_bin_map.tsv` has not landed  ·  BLOCKS criterion 12's reference half
 
@@ -194,6 +227,34 @@ branch is kept; taking the preset from the declared platform removes both at onc
 `read_metadata`'s platform / `length_class`, never from a quality score — a simulator's quality
 string carries no error-model information.
 
+## B13 — WITHDRAWN: COMEBin's 4-hour declaration is overridden, verified on a live task
+
+I raised this as a driver requirement and the peer was right that both drivers already cover it.
+Verified on `iy8YLaGr`'s running COMEBin rather than left as an inference:
+
+    #SBATCH -c 48   -t 72:00:00   --mem 196608M
+    .command.metadata, first line:   res 48/192 GB/1
+
+`make_slurm_config()`'s `withName: '.*__comebin' { cpus = 48; memory = '192 GB'; time = '3d' }`
+reaches **both** Slurm and `context.params`, so `comebin.py`'s declared
+`Duration(hours=4)` never gets to the scheduler. `e2_cami.py` and `e3_pratama.py` both launch
+with that config.
+
+**What is worth keeping is the general rule, not the blocker.** A Nextflow config selector beats
+the transform's own declaration, and the protocol is told the SELECTOR's number — so a transform's
+declared resources are **inert** wherever a selector matches its process name. E2 binds its own
+`library/transforms/e2/comebin.py` declaring 16 cpus / 64 GB / 48 h; its process name also ends
+`__comebin`, so it will run at 48 / 192 GB / 3 d and its own numbers do nothing. Anyone reading
+that file to learn the thread count gets the wrong answer, and editing those numbers will look
+effective and change nothing.
+
+The good half: because the protocol reads the selector's value, COMEBin's torch thread pool stays
+matched to the allocation at 48. That is not automatic — it holds because `cpus` and `memory`
+arrive through `res`, the same channel that left every *other* param silently inert until the
+bootstrap fix. Confirm from `.command.metadata`, never from the driver's dict.
+
+**Owner:** none — withdrawn. Both rules are in `WAVE3_STANDING_ORDERS.md`.
+
 ## CLEARED TODAY — kept only so a reader can tell movement from stasis
 
 - **B7, the Pratama MAG comparison — FIXED at the solve level.** MetaWRAP is Pratama's own
@@ -298,3 +359,19 @@ None is load-bearing for a current acceptance criterion.
 - **The launch-time executor ceiling check is blind** to executor blocks whose values are
   parameter references, which is the shape the Slurm preset uses. A future local step asking
   for more than 8 cpus still aborts at submit with no warning.
+## NOTE ON THIS FILE — B12 and the three tail sections were restored 2026-09-12 23:40
+
+I destroyed them with a careless write: a Python conditional expression that evaluated to
+`s[:i] + head + body`, which truncated everything from B13's original position onward — and B12
+plus CLEARED TODAY, RELAUNCH SEQUENCE and KNOWN LATENT DEFECTS all lived after it. The damaged
+file is kept as `BLOCKERS.md.damaged`.
+
+They are restored from the experimenter's own copy at
+`research/metasmith_benchmark/findings/BLOCKERS.md`, timestamped 21:41, so **those four sections
+are as of 21:41 and do not carry this evening's B1 and B3 closures** — which are current in this
+file's own B1 and B3 rows above. Anything else written into them between 21:41 and 23:40 is lost.
+
+    CAUTION this file is on scratch and is not version controlled. The peer's worktree copy is
+    the only backup, and it exists only because the ledgers are mirrored there. Do not build a
+    multi-step in-place rewrite out of one expression; slice, verify, then write.
+
