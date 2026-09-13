@@ -41,11 +41,15 @@ Close a wave when every lane has failed, or has passed one real step of each kin
 
 ### Cancel stragglers
 
-1. Stop only the tasks whose results the next wave's fixes change. Tasks the fixes do not touch run on, so their results reach the cache.
+1. A stop is per lane, never per task: cancelling a run cancels all its in-flight tasks. Stop a lane only when the next wave's fixes change a step it has not finished. A lane whose remaining steps the fixes do not touch runs on, so its results reach the cache.
 2. Stop an E1 head with `scancel --batch --signal=USR1 <job>`. Its trap sends nextflow TERM.
 3. Stop a metasmith lane with `scancel --batch --signal=USR1 <job>`, which calls `CancelWorkflow`, or with `drivers/runctl.py cancel <corpus> <key>`.
 
 WARNING never use a plain `scancel` on a driver job. It kills the head before nextflow cancels its grid jobs, and those jobs run on with no cache entry.
+
+### Reclaim inodes
+
+The slurm preset keeps every task's work directory (`cleanup = false`), so finished runs hold their inodes. After a lane's run ends and its products are checked, delete that run's nextflow work directory under `<home>/runs/<key>/` as a job. The task cache keeps the results. Check the quota after each deletion, and before every E4 chunk.
 
 ### Fix and gapfill
 

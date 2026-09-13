@@ -4,10 +4,12 @@
 #
 # Submit from a fir login node, from a checkout sync.sh wrote:
 #   sbatch -J <lane> <checkout>/research/metasmith_benchmark/drivers/submit_driver.sbatch \
-#       <checkout> <driver.py> run --launch --import [driver args...]
+#       <checkout> <driver.py> run --materialise --import [driver args...]
+# then, once that job passes, the same line with --launch and no --import.
+# CAUTION one importing job per agent home at a time: concurrent imports lock the pool's sqlite.
 #
-# Stop a run with `runctl.py cancel <corpus> <key>`, never scancel. Slurm sends USR1 30 min
-# before the wall, and the driver turns it into the same cancel.
+# Stop a run with `scancel --batch --signal=USR1 <job>` or `runctl.py cancel <corpus> <key>`, never a
+# plain scancel. Slurm sends USR1 30 min before the wall, and the driver turns it into the same cancel.
 #SBATCH --account=rrg-shallam-ab
 #SBATCH --cpus-per-task=10
 #SBATCH --mem=48G

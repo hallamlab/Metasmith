@@ -108,7 +108,9 @@ def cmd_run(args):
     remote = importing or args.stage_only or args.launch or args.materialise
     smith = c.agent_for("metagem", remote, CACHE_DIR / "dryrun_home")
     ensure = importing or args.import_givens or not remote
-    name = f"chunk{args.chunk}" if args.chunk else "all"
+    # The name keys the inputs library and the task-key record, so it carries every filter.
+    name = "_".join([f"chunk{args.chunk}" if args.chunk else "all", *(args.study or []),
+                     *([f"limit{args.limit}"] if args.limit else [])])
     inputs = declare_givens(smith, mags, ensure, name)
     globals_lib = declare_globals(smith, args.solver, CACHE_DIR / "e4_globals.xgdb", ensure, args.with_gtdbtk)
     if importing:

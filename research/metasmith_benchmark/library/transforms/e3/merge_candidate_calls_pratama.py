@@ -3,9 +3,19 @@
 #
 # Calls are unioned per contig batch, so the two assemblies' overlapping contigs stay separate records.
 # The vOTU clustering downstream is what collapses them.
+import json
 from collections import defaultdict
 from pathlib import Path
 from metasmith.python_api import *
+
+
+def _label(read_pair: Path) -> str:
+    """The run accession a read pair holds. A pool given's file is named for its content hash, not its value."""
+    try:
+        value = json.loads(read_pair.read_text())
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        return read_pair.stem
+    return value if isinstance(value, str) else read_pair.stem
 
 lib   = TransformInstanceLibrary.ResolveParentLibrary(__file__)
 model = Transform()
@@ -89,7 +99,7 @@ def protocol(context: ExecutionContext):
                 contigs = context.SourceOf(call_table, batch)
                 assert sample is not None and contigs is not None, (
                     f"[{call_table.local.name}] lacks a read_pair or contig batch in its lineage")
-                sample_of[contigs.local] = Path(sample.local).stem
+                sample_of[contigs.local] = _label(Path(sample.local))
                 for contig_id, start, end, caller in _read_calls(call_table.local):
                     by_contigs[contigs.local][contig_id].append((start, end, caller))
 

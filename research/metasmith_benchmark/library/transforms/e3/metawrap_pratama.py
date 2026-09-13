@@ -1,6 +1,6 @@
 # Pratama's binning (reproduction_map A5) and refinement (A10), on the metaSPAdes assembly only.
 #
-# `metawrap binning --maxbin2 --metabat2 --concoct`, then `bin_refinement -c 50 -x 10`. Pratama refines
+# `metawrap binning --universal --maxbin2 --metabat2 --concoct`, then `bin_refinement -c 50 -x 10`. Pratama refines
 # twice: round 1 over abawaca and BinSanity, round 2 over metabat2, concoct and round 1's output. Both
 # binners are gapfills, so until they land this runs one round over the three MetaWRAP binners.
 #
@@ -50,7 +50,7 @@ def protocol(context: ExecutionContext):
             | awk '{{ if (int((NR-1)/4) % 2 == 0) print > "reads_1.fastq"; else print > "reads_2.fastq" }}'
         test -s reads_1.fastq && test -s reads_2.fastq
 
-        metawrap binning -o binning -t {threads} -m {mem} -a {iasm.container} \
+        metawrap binning -o binning -t {threads} -m {mem} --universal -a {iasm.container} \
             --metabat2 --maxbin2 --concoct reads_1.fastq reads_2.fastq
         rm reads_1.fastq reads_2.fastq
 

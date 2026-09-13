@@ -57,7 +57,7 @@ The E3 driver loads `library/transforms/e3` and masks each standard transform it
 | metaSPAdes | pinned | `e3/spades_pratama.py`: `--meta -k 21,33,55,77` |
 | metaSPAdes `--nanopore`, hybrid | gapfill 3, wave 2+ | 17 per-run hybrids, and H43 has no MinION run |
 | assembly_stats | matched | standard, on the metaSPAdes assembly |
-| MetaBAT2, MaxBin2, CONCOCT via MetaWRAP | pinned | `e3/metawrap_pratama.py`, on the metaSPAdes assembly only |
+| MetaBAT2, MaxBin2, CONCOCT via MetaWRAP | pinned | `e3/metawrap_pratama.py`: `--universal`, on the metaSPAdes assembly only |
 | BinSanity, abawaca | gapfill 4, wave 3+ | |
 | MetaWRAP bin_refinement, 2 rounds | pinned with 1 round | the second round needs BinSanity and abawaca (gapfill 4) |
 | CheckM inside MetaWRAP | pinned | `binning::metawrap_bin_stats` |
@@ -82,10 +82,11 @@ The E3 driver loads `library/transforms/e3` and masks each standard transform it
 | skANI recovery, vOTUs | matched | `pratama_votu_recovery.py` |
 | skANI recovery, MAGs | gapfill 2, wave 2+ | needs dRep's dereplicated set |
 
-Settings the map does not give, recorded rather than chosen:
-- The map gives no flags for Pratama's second VirSorter2 pass, the one before DRAM-v. `dramv_votus_pratama.py` reuses the per-sample pass's flags.
+Where the map and the authors' own `data/docs/pratama2026/Groundwater_virome/Workflows/` files differ, the Workflows files win:
+- MetaWRAP's first binning pass uses `--universal`, which the map drops. `metawrap_pratama.py` passes it.
+- The DRAM-v prep pass runs CheckV on the vOTUs first, then VirSorter2 with `--seqname-suffix-off --viral-gene-enrich-off --provirus-off --prep-for-dramv` on CheckV's combined output. `dramv_votus_pratama.py` does both.
 - Pratama's `metawrap binning --maxbin2` second pass at 107 markers (map row A6) has no transform.
-- Map row A9 lists round 1 as `-A abawaca -B abawaca -C binsanity`. The duplicate is likely a typo in the source, so gapfill 4 checks the authors' repository before pinning it.
+- Refinement round 1 reads `-A abawaca_BINS_1 -B abawaca_BINS_2 -C binsanity_BINS_1` in the source itself, so two abawaca runs feed it. Gapfill 4 pins it that way.
 
 ## E4: metasmith, from metaGEM's MAGs
 

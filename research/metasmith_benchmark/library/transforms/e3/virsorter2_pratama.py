@@ -16,6 +16,18 @@ out_boundary = model.AddProduct(lib.GetType("annotation::virsorter2_boundary"))
 out_calls    = model.AddProduct(lib.GetType("viromics::virsorter2_candidate_virus"))
 
 GROUPS = "dsDNAphage,ssDNA"
+MIN_LENGTH = 5000
+
+
+def _longest_contig(fasta: Path) -> int:
+    longest = current = 0
+    with open(fasta) as f:
+        for line in f:
+            if line.startswith(">"):
+                longest, current = max(longest, current), 0
+            else:
+                current += len(line.strip())
+    return max(longest, current)
 
 # The boundary table's column set moved between 2.2.x releases, so resolve by name.
 _SEQ   = ("seqname", "seqname_new")
@@ -60,15 +72,19 @@ def protocol(context: ExecutionContext):
     context.ExecWithEnv(env=image, binds=[(idb.external, "/db")], cmd=f"""
         export HOME="$PWD"
         virsorter run --seqfile {iasm.container} --db-dir /db --working-dir vs2_out --jobs {threads} \
-            --include-groups {GROUPS} --keep-original-seq --min-score 0.5 --min-length 5000 all || true
+            --include-groups {GROUPS} --keep-original-seq --min-score 0.5 --min-length {MIN_LENGTH} all || true
     """)
     for product, name in ((out_seqs, "final-viral-combined.fa"), (out_scores, "final-viral-score.tsv"),
                           (out_boundary, "final-viral-boundary.tsv")):
         context.LocalShell(f"cp vs2_out/{name} {outs[product].local} 2>/dev/null || touch {outs[product].local}")
     context.LocalShell("rm -rf vs2_out")
 
-    # A completed run writes the boundary table with a header even when nothing scored.
-    assert outs[out_boundary].local.stat().st_size > 0, "virsorter wrote no final-viral-boundary.tsv"
+    # A completed run writes the boundary table with a header even when nothing scored. A batch with no
+    # contig long enough to score is an empty result, and failing it would drop the merge after retries.
+    if outs[out_boundary].local.stat().st_size == 0:
+        longest = _longest_contig(iasm.local)
+        assert longest < MIN_LENGTH, f"virsorter wrote no final-viral-boundary.tsv on a batch with a {longest} bp contig"
+        Log.Info(f"longest contig {longest} bp, under {MIN_LENGTH}: no VirSorter2 calls in this batch")
     _write_calls(outs[out_boundary].local, outs[out_calls].local)
     return ExecutionResult(manifest=[{p: o.local for p, o in outs.items()}],
                            success=outs[out_calls].local.exists())

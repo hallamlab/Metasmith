@@ -260,9 +260,9 @@ def make_slurm_config(smith, cache_dir, scaled=None, comebin_cpus=48, comebin_ti
     """fir's Slurm preset plus process selectors.
 
     `scaled` maps a transform name to (cpus, GB, hours) for its first attempt, and each retry
-    multiplies memory and time by the attempt number. A flat `withName` value would replace the
-    preset's retry doubling, so a task that needs more than its first grant would fail identically
-    on every retry.
+    doubles memory and time, as a transform's own declaration does. A flat `withName` value would
+    replace that doubling, so a task that needs more than its first grant would fail identically on
+    every retry.
 
     COMEBin gets a quarter node at 4 GB per core. Its training is Amdahl-limited, and ten
     marine samples at 96 cores took 6.5 to 11.7 h, so 3 d covers the slow tail at 48.
@@ -283,7 +283,8 @@ def make_slurm_config(smith, cache_dir, scaled=None, comebin_cpus=48, comebin_ti
     for name, (cpus, gb, hours) in (scaled or {}).items():
         text += "\n".join([
             "process {", f"    withName: '.*__{name}' {{", f"        cpus = {cpus}",
-            f"        memory = {{ {gb}.GB * task.attempt }}", f"        time = {{ {hours}.h * task.attempt }}",
+            f"        memory = {{ {gb}.GB * (2 ** (task.attempt - 1)) }}",
+            f"        time = {{ {hours}.h * (2 ** (task.attempt - 1)) }}",
             "    }", "}", ""])
     cache_dir.mkdir(parents=True, exist_ok=True)
     out = cache_dir / "fir_slurm.config"

@@ -25,11 +25,16 @@ def protocol(context: ExecutionContext):
     cpus = context.params.get("cpus") or 1
 
     context.ExecWithEnv(env=image, cmd=f"""
+        set -o pipefail
+        status=0
         fastp --in1 {ir1.container} --in2 {ir2.container} --stdout \
             --json {ijson.container} --html {ihtml.container} \
             --thread {cpus} --detect_adapter_for_pe {ARGS} \
-            2> fastp.log | gzip -c > {iout.container}
+            2> fastp.log | gzip -c > {iout.container} || status=$?
         cat fastp.log
+        [ "$status" -eq 0 ]
+        # fastp exits 0 on an unreadable mate, so require reads as well as a zero exit.
+        [ "$(zcat {iout.container} | head -c 1 | wc -c)" -eq 1 ]
     """)
 
     return ExecutionResult(
