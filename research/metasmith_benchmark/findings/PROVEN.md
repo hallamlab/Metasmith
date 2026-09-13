@@ -30,6 +30,30 @@ means the product was checked, never the exit code.
 | `semibin2` | **OBSERVED, two scales** | CAMI marine_sample_0: 57 bins, exit 0. **Pratama groundwater run: 209 bins, exit 0**, ~10m per task |
 | `comebin` | **OBSERVED, and criterion 9 HAS numbers** | 4 of 10 tasks of array 59583112 (CAMI rung 10, 48 cpus) terminal, MaxRSS read from the `.batch` rows because the array-task rows carry a blank column: `_0` 06:34:43 / 58,863,944K = **56.14 GiB**; `_1` 09:36:57 / **60.16 GiB**; `_3` 07:18:08 / **51.53 GiB**; `_8` 08:04:40 / **61.85 GiB**. Six still running past 9 h, so both ends may move. **Range so far: wall 6h35m-9h37m, MaxRSS 51.53-61.85 GiB, peak = 32% of the driver derived 192 GB grant** — no OOM exposure, ~3x over-provisioned. CAUTION the figures previously recorded for criterion 9 (6:34:43/56.14 and 7:18:08/51.53) are `_0` and `_3`, **which happen to be the two FASTEST tasks**; adding `_1` and `_8` moved the wall ceiling from 7h18m to 9h37m and the memory ceiling from 56.14 to 61.85 GiB. Do not quote a COMEBin figure as settled until the array is terminal |
 | `das_tool` | **UNPROVEN** | waits on comebin |
+
+> **PRE-PIN BASELINE, recorded 2026-09-13 before run `5vqR1dv8` is reclaimed.** That run is
+> `marine_short_read / sample_0` — **the same sample** the pinned figures above come from — and its
+> metabat2 banner reads `using minContig 2500`, i.e. it predates both the `--minContig 1500` pin and
+> the SemiBin2 seed pin. Counted from its own `results/` bin fastas, so the same sample at two
+> parameter settings:
+>
+> | binner | unpinned (`5vqR1dv8`, Sep 9) | pinned | delta |
+> |---|---|---|---|
+> | metabat2 | **43 bins** (minContig 2500) | 51 bins (minContig 1500) | **+8, +18.6%** |
+> | semibin2 | **56 bins** (random seed) | 57 bins (seed 1) | +1 |
+> | comebin | **104 bins** | *never recorded anywhere* | — |
+>
+> **The metabat2 row quantifies the confound the campaign named and never measured**: nf-core pins a
+> 1500 bp floor and our binner used the tool's own 2500, and on this sample that is eight bins —
+> which is why it could move an AMBER score rather than merely being untidy. One sample, so it is a
+> magnitude and not a coefficient.
+>
+> **The comebin figure is the only bin count this campaign has for COMEBin at all.** Criterion 9's
+> numbers are wall and MaxRSS from array 59583112; nothing recorded how many bins it recovers.
+>
+> That run also holds `annotation-diamond_uniref50_results`, a real 49,151,863-byte TSV dated Sep 9,
+> and `taxonomy-checkm_stats` at 203 files. Recording these is what makes the tree safe to delete:
+> the numbers, not the directory, are the evidence.
 | `amber` / `amber_das_tool` | **OBSERVED** (per-binner) | MetaBAT2 row: `precision_avg_bp 0.8984`, `recall_avg_bp 0.0775`, `f1_score_bp 0.1428`, `ARI_bp 0.4581`. MAG-level row unproven |
 | `checkm` (CheckM2) | **OBSERVED** | ran TWICE in rung 1, `CheckM2 finished successfully`, real per-bin CSVs inspected: 96.8/9.54, 11.0/0.0, 35.75/5.13 completeness/contamination, `Completeness_Model_Used = Neural Network (Specific Model)`. Product inspected, not the exit code — `checkm.py` ends in `|| true` so it cannot fail its step |
 | `vibrant` | **OBSERVED** | Pratama run, exit 0, two instances, four TSVs each at 75 KB–370 KB. Products inspected, not counted |
@@ -295,6 +319,41 @@ the array ran at 16 GB.
 - **Compute nodes cannot fetch.** 0.14 MB/s to github, a hard stall against `ftp.genome.jp` at 19 MB, while a zenodo HEAD returns 200 in 0.61 s. Small requests succeed and large transfers HANG, so a download step neither errors nor progresses — it looks exactly like a driver that is working. Every `labels=["local"]` download step runs wherever the DRIVER runs.
 - **login1 and login2 are dead for any memory-claiming process.** Their 16 GiB per-user cgroup is saturated with page cache; a deliberate 256 MB allocation is killed. `memory.reclaim` is root-only, so it cannot be drained from user space. login3 is the only usable one and it is shared.
 - **`ssh fir` round-robins across the three login nodes.** Any node-specific measurement taken through a bare `ssh fir` has an unknown node; hop explicitly.
+- **BOTH axes bind now, and the inode constants are MEASURED EXACTLY — superseding the estimates in
+  the line below.** At 05:00 on 2026-09-13: **16.650 TiB of 18.63 (89.4%)** and **573,091 inodes of
+  1,000,000 (426,909 free)**. Bytes fit ~0.226 TiB/h; inodes ~50K/h on a five-point 90-minute series
+  (my own two-point 110K/h repeated the too-short-window error I had already been corrected for on
+  bytes — a rate needs a fitted slope over >=12 min on this filesystem). WfOlaqLT's by-step sweep,
+  job 59648954:
+
+      step                  state   tasks   inodes       GB   inodes/task
+      checkm2                ok        53   10,933       0.13   **206.3**
+      semibin2               ok       208    9,145      10.64     44.0
+      metabat2               ok       208    6,797      10.58     32.7
+      megahit / fastqc_trimmed / fastqc_raw / gold_standard
+                             ok    193-208    2,496       —      **12.0**
+      bowtie2_binning_bam    ok       208    2,496   **649.10**   12.0
+      comebin                open     208      624       0.00      3.0
+      TOTAL                         1,764   40,450     693.99
+
+  **An ordinary task dir is EXACTLY 12 inodes** -- not "9 to 12", twelve on the nose across five
+  different steps. An open dir is 3; a failed one is 10.8 because it never wrote products.
+  **checkm2 is 206.3/task** (the `bins + 12` law, ~194 bins average) and is already the largest
+  single consumer at only 53 of 208 tasks -- so it will reach ~43,000 inodes alone, more than the
+  rest of that run combined.
+
+  **WfOlaqLT's whole work tree is only 40,450 inodes, ~7% of the quota used** -- so it is NOT the
+  inode lever. E4 chunk 1's is: **5,900 task dirs for just 18.18 GB**, roughly 65-71K inodes. The
+  two axes want opposite candidates -- **bowtie2 for bytes (649 GB in 2,496 inodes), checkm2 and
+  E4's many small dirs for inodes** -- so the candidate list must be re-sorted whenever the binding
+  axis changes.
+
+  **And a mid-run prune must EMPTY each dir but KEEP `.command.cache`**: `caching/promote.py:record_run`
+  globs `nxf_work/**/.command.cache` at run END to index each shard, copy task logs into it, and
+  write the member's `InvocationEvent` to `trace.jsonl`. Removing it costs the index and the trace
+  while products stay reachable via `invocation.probe` -- a silent loss of bookkeeping, not data.
+  Keeping it is 2 inodes per task instead of ~13, so ~85% of the saving for none of the risk.
+
 - **Quota is inodes, not bytes.** 457K of 1,000,000 used against 11 of 20 TB. A `find -type f` census under-reports the Lustre project quota by ~12% because directories are inodes. An ordinary task work dir is **9 inodes**. The per-bin law is now CONFIRMED EXACTLY, not estimated: a `checkm` task is **bins + 12** inodes — 51 bins gave 62 files + 1 dir = 63, and 57 bins gave 68 + 1 = 69. So it scales with RECOVERY, which varies by sample; do not multiply one sample by 249 without a range. COMEBin's own task dir is still unmeasured (3 files while queued). Reference-database staging is 16.5K-31.7K per task dir but **once per agent home**.
 - **The lab already mirrors most reference databases on Globus — CHECK THERE BEFORE STAGING ANYTHING.** Collection `2602486c-1e0f-47a0-be15-eec1b0ff0f96` (Projects / `ubcarc#chinook`), `/Resources/reference_databases_for_tools/`: `GTDB/` (gtdbtk r207/r220/r226/r232 packages, `gtdb_genomes_reps_r232.tar.gz`, a `gtdbtk.sif`), `dram/dram_data.tar.gz` 31.2 GB, `virsorter2/virsorter2_data.tar.gz` 3.5 GB, `interproscan/`, `metabuli/`, `MPDB_231223/`, plus genomad, card, vfdb, amrfinderplus, megares, bacmet, tcdb, magref, metaphlan and pathofact tarballs — nearly all with sibling `.md5` files. A chinook→fir transfer moved 1.263 TB at 1.14 GB/s, so this is by far the cheapest source on the network. **CAVEAT a prebuilt tarball does NOT solve VirSorter2**, whose conda env must be BUILT at the `/db` path it will be used from; and `gtdbtk_r232_data.tar.gz` is the one file there with no sibling `.md5`.
 - **A direct run of a transform with `group_by` on its batched requirement processes ONE group.** Eight bins bound with repeated `-i bin=` all staged (eight `✓` lines) and the run then reported `branch [1] of [1]`, with `context.AsBatch()` yielding only the first. Repeated `-i` DOES fan out for `context.InputGroup(...)` — `metawrap_skani_dedup` took 92 bins that way — so the discriminator is `AsBatch` plus `group_by`, not the flag. Loop one invocation per item to test such a transform, and read the `branch [N] of [M]` line rather than assuming the bindings fanned out.

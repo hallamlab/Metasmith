@@ -22,7 +22,7 @@ quota() { lfs quota -p 83115734 /scratch | tail -1 | awk '{printf "%.3f TiB, %s 
 
 links=$(find "$PERM" -type l -exec readlink -f {} + 2>/dev/null | grep -c "^$STAGE" || true)
 [ "$links" -eq 0 ] || { echo "ABORT: $links symlinks under $PERM resolve into $STAGE"; exit 1; }
-refs=$(grep -rlF "$STAGE" /scratch/phyberos/*/metasmith/runs/*/workflow.* /scratch/phyberos/bench/checkout/*/research/metasmith_benchmark/drivers 2>/dev/null | wc -l)
+refs=$(grep -rlF "$STAGE" /scratch/phyberos/*/metasmith/runs/*/workflow.* /scratch/phyberos/bench/checkout/*/research/metasmith_benchmark/drivers 2>/dev/null | wc -l || true)
 [ "$refs" -eq 0 ] || { echo "ABORT: $refs files name $STAGE"; exit 1; }
 
 echo "stage $STAGE: $(lfs find "$STAGE" | wc -l) inodes, $(du -sb "$STAGE" | cut -f1) B"

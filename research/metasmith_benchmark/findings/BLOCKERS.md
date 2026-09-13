@@ -711,6 +711,57 @@ parser serves 106 from cache and recomputes 17.
 **Owner:** the experimenter (library). **Next action:** the one-argument parser fix, then relaunch
 E2 short; the 17 recompute and nothing else does.
 
+## B18 — metaSPAdes needs attempt 2 (384 GB) on large Pratama samples · a DEVIATION from the paper's `-m 190`, NOT a lost sample
+
+**RETRACTED AND REWRITTEN 2026-09-13. My first version of this row said "no retry ladder, sample is
+silently lost". That was wrong on both counts and the experimenter corrected it. See the withdrawal
+note at the bottom — it is the fifth instance of one error shape and the most instructive.**
+
+**What is real.** The first metaSPAdes task to reach the hammer stage's peak exceeded its 192 GB
+grant exactly:
+
+    59636440_5  FAILED  01:28:44  MaxRSS 201,318,144K = 191.99 GiB  ReqMem 192G  fc30411
+    SPAdes' own log: "Memory limit set to 182 Gb"
+    == Error == system call for '/usr/local/bin/spades-hammer' finished abnormally,
+                OS return value: 21
+
+**100.0% of the cgroup.** SPAdes reserved its own headroom — an internal limit of 182 Gb out of the
+192 GB grant — and **`spades-hammer` exceeded the cgroup regardless, so the `-m` flag does not
+govern that stage's peak.** That part stands.
+
+**THE LADDER EXISTS AND IT WORKED.** `workflow.resources.nf:38-41` carries
+`memory = { (2**(task.attempt-1)) * 192 GB }`, generated from the transform's own `Resources`. The
+retry was submitted at 05:00:05 at `--mem 393216M -t 48:00:00` and is running. So the sample is not
+lost; it costs a second attempt.
+
+**The real consequence is a parity deviation, not a data loss.** Pratama specified `-m 190`. A
+sample that needs attempt 2 runs at 384 GB, which is **not** what the paper did. That belongs in the
+deviations table, and the experimenter is recording it in R1_WAVES.
+
+**Owner:** the experimenter. **Action:** deviations-table row, not a fix.
+
+---
+
+**HOW I GOT IT WRONG, because the shape is the reusable part.**
+
+1. **I grepped the wrong generated file and read absence as absence.**
+   `grep "withName: '.*spades'" workflow.config.nf` returns nothing — **correctly**, because a
+   transform's own declared `Resources` are emitted to **`workflow.resources.nf`**, a different
+   file. A driver-side `withName` selector is only one of two places a ladder can live, and it is
+   the one a `withName` grep can see. *Checking one of two generated config files is not checking
+   for a selector.*
+
+2. **I mapped a Slurm array index to a nextflow task index by assuming they correspond.** They do
+   not. `59636440_5` is `p05__spades_pratama (6)`. The dir I read as "the retry of (1), identical
+   memory" was **task (1)'s first attempt** — a different sample entirely, so its 196608M was
+   correct rather than a failure to double. **NEW RULE: map a Slurm array index to a nextflow task
+   index through `nxf.log`, never by arithmetic on the suffix.**
+
+**Fifth instance of one error shape in two days** — after B12's live exposure, the megahit scratch
+defect, 22 megahit "retries", and B16's cache-unreachable. In every one the measurement was correct
+and the sentence built on it was not. The MaxRSS, the ReqMem, the SPAdes log line and the missing
+`withName` selector are all still true as measured.
+
 ## CLEARED TODAY — kept only so a reader can tell movement from stasis
 
 - **B7, the Pratama MAG comparison — FIXED at the solve level.** MetaWRAP is Pratama's own

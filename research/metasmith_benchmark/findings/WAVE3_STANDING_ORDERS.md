@@ -1506,3 +1506,154 @@ Two related stumbles from the same hour, both cheap to avoid:
 - `invocation.probe(root, key)` takes **bytes**. A hex string raises
   `'str' object has no attribute 'hex'` — which is an instrument error, not a cache miss, and must
   never be reported as one.
+
+## A rate needs a long BASELINE, not many points. Two readings 2 h apart beat six over 6 min
+
+**First time, bytes.** A 120-second delta read **2.36 TiB/h** and I escalated it as "1.1 hours to
+full". The experimenter's six one-minute samples showed a net of **+0.13 TiB/h**, with individual
+minutes swinging **±9 TiB/h**, because tasks write large temporaries and delete them. The fix was a
+least-squares slope over ≥12 minutes that reports nothing until its window is full.
+
+**Second time, inodes, about two hours later.** Two readings forty minutes apart — 457,277 →
+530,616 — gave **~110K/h** and "roughly 4 hours of headroom". The experimenter's five readings over
+90 minutes gave **~50K/h** and ~8 hours. Same error, same shape, on the other axis, after having
+been shown it once.
+
+**The rule: a rate needs a fitted slope over a window long enough to average the write-and-delete
+cycle, and on this filesystem that is ≥12 minutes.** A two-point delta on any quota axis here is not
+an estimate, it is a sample of whichever phase the tasks happened to be in.
+
+**REFINED 05:10, and the refinement matters because my first phrasing was wrong.** The experimenter
+later measured 334K -> 573,091 inodes over **2.3 hours** = ~100K/h, which vindicated my 40-minute
+110K/h and retired their own 50K/h (taken from gappy monitor bands). So **the problem was never
+"two points" -- it was TOO SHORT AN INTERVAL.** Two readings across a long baseline are an excellent
+estimate; twelve readings across six minutes are noise. What a fitted slope buys on a short window is
+resistance to the write-and-delete swing, not accuracy from sample count.
+
+    The right rule: BASELINE >> the period of whatever oscillates. Here tasks write large
+    temporaries and delete them on a scale of minutes, so a baseline of hours is reliable with two
+    points, and a baseline of minutes needs a fit and is still weak.
+
+I had generalised one correction into a rule broader than the evidence supported, which is its own
+error and worth noticing: **being corrected once is not licence to over-apply the correction.**
+
+And the reason it recurs is worth naming: **a two-point delta feels like a measurement** because both
+endpoints are real. Nothing about the arithmetic signals that the interval is too short. The guard
+has to be structural — refuse to compute a rate until the window is long enough — which is why the
+watcher stays silent below 12 samples rather than reporting a provisional figure.
+
+    BOTH AXES NOW MOVE FOR THE SAME REASON, which is why one watcher should cover both: a binner's
+    bins land in the work dir AND are promoted to a shard, so every bin costs two inodes as well
+    as twice its bytes. Watching bytes alone missed inodes becoming the tighter axis.
+
+## Size a reclaim lever on the axis that binds, not the one you measured first
+
+E4 chunk 1's entire `nxf_work` is **18.18 GB across 5,900 task dirs** — useless as a byte lever
+(under 1% of headroom, a third of one bowtie2 BAM) and excellent as an **inode** lever. E2 long's
+chopper is the mirror image: **111.3 GB in 41 dirs** — a real byte lever worth almost no inodes.
+
+So the candidate list has to be re-sorted whenever the binding axis changes, and the two orderings
+are close to inverted. Inode levers are many small dirs; byte levers are few large files.
+
+A clean chain also makes the gate trivial. E4's is a line with no fan-in — `prodigal_from_bin →
+carveme_from_orfs_cplex → memote_score`, each consumer reading exactly **one** upstream dir — so a
+producer's dirs are prunable the moment its single consumer exits 0. Check the fan-in before building
+a gate: a step with one consumer needs a far simpler gate than one with three.
+
+## A work dir is also RUN-END STATE. Never delete a task's `.command.cache` before its run ends
+
+`caching/promote.py:record_run` builds the cache index at **run end** by globbing
+`nxf_work/**/.command.cache` — one record file per task. For each record it indexes the shard, copies
+the task logs into the shard, and writes that member's `InvocationEvent` to
+`_metasmith/trace.jsonl`.
+
+So a mid-run prune that removes `.command.cache` leaves shards that:
+
+    still serve lookups        -- `invocation.probe` reads the shard, not the index
+    are never INDEXED          -- `cache list`, `gc` and any index-based accounting miss them
+    get no TRACE events        -- which the lineage report and `collect.py`'s TraceIndex read
+
+That is a silent loss of *bookkeeping*, not of data, which makes it the hard kind to notice: the run
+finishes, the products are there and reachable, and only the reporting is short.
+
+**The rule: a mid-run work-dir prune must EMPTY the dir and KEEP `.command.cache`.** That is ~2 inodes
+per task instead of ~13, so it still works as an inode lever — roughly 85% of the saving for none of
+the risk.
+
+    This also sharpens the earlier B16 lesson rather than replacing it. There, `explain` reading
+    the index while the runtime reads the shard meant a shard missing from the index was still
+    reachable -- true, and it is why the products survive. What it does NOT cover is that the
+    index and the trace are BUILT FROM THE WORK DIRS at run end. So "the shard is reachable"
+    answers the data question and says nothing about the bookkeeping question, and those are
+    separate.
+
+**Generalise it: before deleting anything a run wrote, ask what runs at run END.** A work dir looks
+like pure intermediate storage right up to the moment something globs it.
+
+---
+
+## A resource ladder lives in TWO generated files. Grepping one is not checking.
+
+`grep "withName: '.*<step>'" workflow.config.nf` returning nothing does **not** mean a step has no
+`task.attempt` ladder. There are two places a ladder can live and that grep sees only one:
+
+    workflow.config.nf      driver-side `withName` selectors -- what the DRIVER pinned
+    workflow.resources.nf   generated from the TRANSFORM's own `Resources` declaration
+
+B18 was raised as "metaSPAdes has no retry ladder, so the largest samples are silently lost". The
+grep was correct — there is genuinely no driver-side selector for spades — and
+`workflow.resources.nf:38-41` carries `memory = { (2**(task.attempt-1)) * 192 GB }` all along. The
+retry doubled to 384 GB and ran.
+
+**So: read BOTH files, and prefer the run's own rendered `--mem` on the retry attempt to either.**
+And beware the adjacent trap that made the wrong answer feel confirmed — a flat `memory = '192 GB'`
+was present in `workflow.config.nf`, under `withName: '.*__comebin'`. A literal that matches the
+number you expect, under a selector for a different step, reads exactly like the pin you were
+looking for.
+
+## Map a Slurm array index to a nextflow task index through `nxf.log`, NEVER by arithmetic.
+
+`59636440_5` is **`p05__spades_pratama (6)`**, not (1) and not (5). The array suffix and the nextflow
+task index are independent numberings, and there is no offset that converts one to the other
+reliably.
+
+The cost of assuming they correspond: I read a work dir as "task (1)'s retry, rendering an identical
+`--mem`, so the ladder is inert". It was task (1)'s **first attempt** — a different sample, whose
+196608M was correct. One wrong mapping turned a working ladder into a fabricated data-loss blocker.
+
+    grep the run's nxf.log for the array job id to get the task index, then read THAT task's dirs.
+
+This is the fourth member of a family already in these orders: `pNN` is a per-run plan index and
+carries no agent home; a job's owner cannot be read off its name; `sacct --name=nf-p08__clean`
+returns nothing because Slurm stores the array suffix. **Every identifier in this stack is scoped to
+something, and the scope is never the thing you want it to be.**
+
+## A file count is not an inode count wherever hardlinks are possible.
+
+`find <dir> | wc -l` counts path entries. The Lustre project quota counts **inodes**, and a
+hardlinked file is one inode with several names — so unlinking names frees nothing until the last
+one goes.
+
+This matters most for conda trees, which is exactly where reclaim candidates accumulate: conda
+normally builds an environment by **hardlinking out of its package cache**, so deleting the cache
+after building an env can free almost nothing while `find | wc -l` promises tens of thousands.
+
+    find <dir> -type f -links +1 | wc -l     0 means the tree is a full copy; the count is real
+    find <live-tree> -type l -lname '*<dir>*' | wc -l   0 means nothing points back into it
+
+Both were 0 for `_vs2_stage`, so its 32,551 was genuinely reclaimable. Run both before quoting a
+reclaim figure, and remember the already-recorded companion rule: **on a live filesystem the size of
+a deletion is what the deleting tool reports, never what the quota moves** — Lustre's accounting lags
+a large unlink, and a job that samples the quota in the same second reports a negative saving.
+
+## Write the numbers down, THEN delete the tree.
+
+A run directory stops being evidence the moment its measurements are in a ledger, and not before.
+`iy8YLaGr` was deleted only after its CheckM2 law (51 bins → 63 inodes, 57 → 69) was recorded;
+`5vqR1dv8` was inventoried before release and turned out to hold **the only COMEBin bin count this
+campaign has** (104) plus the first measured magnitude of the `--minContig` confound (43 bins at
+2500 against 51 at 1500 on the *same sample*).
+
+**Before endorsing any run-directory deletion, list its `results/` and count each product.** A tree
+that looks like spent intermediate storage can be the sole carrier of a number no ledger holds, and
+the check costs one command.
