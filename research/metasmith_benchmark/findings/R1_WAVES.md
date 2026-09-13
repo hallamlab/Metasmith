@@ -33,6 +33,8 @@ For each failed task, record the lane, the transform, the cause and the fix. Rea
 
 CAUTION `sacct`'s `.batch` rows carry MaxRSS under JobName `batch`. Collect the parent job ids from the run's work directory first. A date-and-name filter also matches earlier attempts.
 
+CAUTION sweep for swallowed steps in `<home>/runs/<key>/_metasmith/logs.<timestamp>/agent.log`, which carries `Submitted process`, `Error is ignored` and `Killed`. The driver's sbatch log under `bench/logs/` has none of these lines, so a sweep of it always reads clean. Check that `Submitted process` counts above zero before trusting a zero.
+
 CAUTION retry-then-ignore reports a lane complete with its products missing. Check each lane's products against its sample count.
 
 ### Close
@@ -100,7 +102,7 @@ Commit `f6d01f00`, checkout `/scratch/phyberos/bench/checkout/f6d01f00`. Driver 
 | E5 pratama | `sbatch -J e5_pratama $S $C e5_pilot.py run --corpus pratama --launch --tag w1` | c0b17bb1, `8Z7x3L7z` | | |
 | E5 metagem | `sbatch -J e5_metagem $S $C e5_pilot.py run --corpus metagem --launch --tag w1` | pending, after E4 chunk 1 | | |
 
-E5 pratama is submitted as job 59635698, after E3 printed `waiting on run`.
+E5 pratama is submitted as job 59635698, after E3 printed `waiting on run`. E5 cami is submitted as job 59636004, after E2 long printed `waiting on run 33hlLu8Q`. The GTDB-Tk pass test `e4_gtdbtest` runs as job 59635386, key `Sj7uFNWW`, 4 steps.
 
 Launch lanes that share an agent home one after another. Wait for each to print `waiting on run` before submitting the next, because each launch re-stages into the home.
 
