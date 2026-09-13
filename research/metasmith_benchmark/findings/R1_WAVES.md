@@ -169,4 +169,6 @@ CAUTION project bytes grow when tasks complete, not while they run. Tasks work o
 ### Fixes and gapfills for wave 2
 
 - Relaunch E5 cami and E5 pratama from `19609c45` or later, so MEMOTE runs the pinned transform. Their finished steps serve from cache.
-- E2 long's Flye is not exposed to B12. It runs the pinned `e2/flye.py`, which takes the mode from the declared platform (`OXFORD_NANOPORE` → `--nano-raw`) and declares 64 GB. B12's quality-derived preset lives in the standard `flye.py` and `flye_raw.py`, which no R1 lane runs. Confirm with the first Flye grid job's rendered flag and `--mem`.
+- E2 long's Flye is not exposed to B12. It runs the pinned `e2/flye.py`, which takes the mode from the declared platform (`OXFORD_NANOPORE` → `--nano-raw`) and declares 64 GB. B12's quality-derived preset lives in the standard `flye.py` and `flye_raw.py`, which no R1 lane runs. Execution confirms it. A `33hlLu8Q` Flye task renders `--mem 65536M` and `-t 24:00:00`, runs Flye 2.9.5-b1801 on 3.93 Gbp of reads (N50 3,144), and passed "Assembling disjointigs" into k-mer counting and index filling. The HiFi preset aborted at that stage with "No disjointigs were assembled". A completed assembly's contig count and size close the proof.
+
+CAUTION metasmith's protocol does not echo the tool's command, so `.command.log` and `.command.out` carry only the tool's own output. Verify a setting from the tool's banner and progress lines, or from the staged transform.
