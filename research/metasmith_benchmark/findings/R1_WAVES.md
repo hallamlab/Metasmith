@@ -122,7 +122,7 @@ CAUTION `rrg-shallam-ab` has no GPU association, so fir rejects a GPU job under 
 
 CAUTION the engine's GPU check reports a GPU from a failed probe. On the CPU node fc20637, the error quoted nvidia-smi's own failure text as evidence that "a GPU does appear to be present". `_plan_gpu_requests` tests the probe's output for non-empty text rather than a zero exit. Read that sentence as noise until the engine fixes it.
 
-B14 is closed at scale. E2 short's fastp tasks render `--in1`, `--in2`, `--stdout` and `--detect_adapter_for_pe`, with no `--interleaved_in`. The first 4 finished tasks wrote 1,815,054,668 to 1,816,089,167 B of trimmed reads, where the defect wrote 20 B.
+B14 is closed at scale. E2 short's fastp tasks render `--in1`, `--in2`, `--stdout` and `--detect_adapter_for_pe`, with no `--interleaved_in`. All 208 tasks wrote 1,811,472,650 to 4,552,026,605 B of trimmed reads, where the defect wrote 20 B.
 
 ### Stopped
 
