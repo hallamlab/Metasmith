@@ -83,7 +83,7 @@ Commit `f6d01f00`, checkout `/scratch/phyberos/bench/checkout/f6d01f00`. Driver 
 
 - **Inodes:** reclaiming nine stale run dirs freed 149,336 inodes. The quota read 716,917 before launch.
   - Seven lanes launched first: E1 short and long, E2 short and long, E3, E5 cami and E5 pratama. They fit under 950K without the GTDB tree deletion.
-  - E4 chunk 1 and E5 metagem launch after the tree goes, which frees 424,034 inodes. The tree goes once `e4_gtdbtest` classifies a MAG through the squashfs image.
+  - E4 chunk 1 and E5 metagem launch after the tree goes, which frees 424,034 inodes. Job 59638488 deleted it in 9 min, and inodes went from 750,788 to 334,075, a net 416,713 while five lanes wrote. `GCF/` and `GCA/` remain as empty mount points, and the sketch files beside them are untouched. Afterwards bytes, not inodes, were the tight axis: 15.46 of 18.63 TB (83%) against inodes at 34%. The tree goes once `e4_gtdbtest` classifies a MAG through the squashfs image.
   - Launching in two groups departs from the plan's single launch. The plan's run log records why.
 - **GTDB image:** job 59625981 built `release232_skani_genomes.sqfs`, 192 GB. It holds all 199,923 genomes, a count that matches the tree.
 - **GTDB-Tk through the image:** `e4_gtdbtest` (job 59635386, key `Sj7uFNWW`, `--study li2019 --limit 1 --with-gtdbtk`) passed. Its GTDB-Tk task exited 0 with one `Traversing tree` line and no missing-genome error. It classified `SRR7664615_bin.1.s` as `g__Castellaniella` by topology and ANI. The closest placement was GCF_004321985.1 at ANI 88.44, and a related reference was GCA_035572875.1 at 86.91, so skani read genomes through both image binds. That pass cleared the tree deletion. One genome cost 17m59s and MaxRSS 90.6 GiB on 8 cpus (grid job 59636007), under the transform's 240 GB declaration.
@@ -104,7 +104,7 @@ Commit `f6d01f00`, checkout `/scratch/phyberos/bench/checkout/f6d01f00`. Driver 
 | E2 short | `sbatch -J e2_short $S $C e2_cami.py run --arm short --launch --tag w1` | f6d01f00, 15 steps (59634082) | `WfOlaqLT` | 59634611 |
 | E2 long | `sbatch -J e2_long $S $C e2_cami.py run --arm long --launch --tag w1` | f6d01f00, 14 steps (59634083) | `33hlLu8Q` | 59634903 |
 | E3 | `sbatch -J e3 $S $C e3_pratama.py run --launch --tag w1` | f6d01f00, 26 steps (59634084) | `Son2YJiI` | 59634612 |
-| E4 chunk 1 | `sbatch -J e4_c1 $S $C e4_metagem.py run --chunk 1 --launch --tag w1` | 19609c45, 3 steps (59638489) | `lE94xbfH` | |
+| E4 chunk 1 | `sbatch -J e4_c1 $S $C e4_metagem.py run --chunk 1 --launch --tag w1` | 19609c45, 3 steps (59638489) | `lE94xbfH` | 59638782 |
 | E5 cami | `sbatch -J e5_cami $S $C e5_pilot.py run --corpus cami --launch --tag w1` | c0b17bb1, `52mAOnXS` | | |
 | E5 pratama | `sbatch -J e5_pratama $S $C e5_pilot.py run --corpus pratama --launch --tag w1` | c0b17bb1, `8Z7x3L7z` | | |
 | E5 metagem | `sbatch -J e5_metagem $S $C e5_pilot.py run --corpus metagem --launch --tag w1` | 19609c45, 36 steps (59638493) | `YzCrdOoF` | |
