@@ -323,7 +323,7 @@ a.full:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
         <li class="block">Long lane: Porechop ABI and Chopper. <b>Two new transforms</b></li>
         <li class="block">Flye preset (B12): <code>flye_raw</code> picks <code>--pacbio-hifi</code> from NanoSim's flat Q40 quality strings, and assembles nothing. The reads measure 15.4% error. Take the preset from the platform declared in <code>read_metadata</code></li>
         <li>Flye memory: <code>flye_raw</code> declares 32 GB, below the 32.68 GiB measured. The driver overrides it to 128 GB</li>
-        <li class="block"><b>To decide:</b> phiX removal. E1 runs it with bowtie2 against Coliphage WA11, which would need a <b>new transform</b>. It removed 127 of 16.6 M pairs on CAMI marine. Keep it for parity, or drop it as a justified difference</li>
+        <li class="block"><b>To decide:</b> phiX removal. E1 runs it with bowtie2 against Coliphage WA11, which would need a <b>new transform</b>. It removed 127 of 16.6 M pairs on CAMI marine, 17 of 56.8 M on Pratama's 2019 NextSeq library and 0 of 76.3 M on a 2022 library. The 2019 hits match phiX174 at ≥99% identity more often than WA11 does, so the filter catches real spike-in only through bowtie2's tolerance. Spike-in varies by sequencing run. Keep it for parity, or drop it as a justified difference</li>
       </ul></div>
     </div>
     <details class="dag">
@@ -510,6 +510,7 @@ a.full:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
         <li>Whether coverage moves out of <code>assembly_stats</code> into CoverM</li>
         <li>Whether E5 must share plan keys with E2 and E3 up to where they diverge. That makes cache reuse measurable</li>
         <li>Whether "BLAST" meant the 4-lane panel in place of DRAM</li>
+        <li>Whether E5 keeps iPHoP. Its database is about 0.5 TB, isn't on chinook's Globus collection, and must be downloaded</li>
       </ul></div>
       <div class="open"><h3>Depends on</h3><ul>
         <li>E2 and E3 landing, since their numbers are the baselines</li>

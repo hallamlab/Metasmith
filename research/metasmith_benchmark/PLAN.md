@@ -144,8 +144,9 @@ Run the `debrief` skill.
 - **CoverM:** does coverage move out of `assembly_stats` into CoverM for E5?
 - **Plan keys:** must E5 share plan keys with E2 and E3 up to where they diverge?
 - **DRAM:** did "BLAST" mean replacing DRAM with the 4-lane panel?
+- **iPHoP in E5:** keep it? Its ~0.5 TB database is not on chinook and must be downloaded.
 - **Inode reclaim:** delete the ~178K reclaimable inodes the census found? The largest are `wave2_b3_nfcore/apptainer_tmp` (112K) and cami run `VTuXlulT` (43K).
-- **phiX in E2:** keep phiX removal in E2 for parity, or drop it as a justified difference? It removed 127 of 16.6 M pairs on CAMI marine.
+- **phiX in E2:** keep phiX removal in E2 for parity, or drop it as a justified difference? It removed 127 of 16.6 M pairs on CAMI marine, 17 of 56.8 M on Pratama ERR3858110 and 0 of 76.3 M on SRR32696677. The hits match phiX174 better than the WA11 reference. Two of Pratama's five phiX contig fragments enter the vOTU catalogue, so dropping the filter needs an alignment check against NC_001422.
 
 ## Callouts
 
