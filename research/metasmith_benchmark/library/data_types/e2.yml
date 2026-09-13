@@ -218,3 +218,8 @@ types:
     properties:
       e2: env
       provides: [py/polars]
+  cami_gold_standard.py:
+    properties:
+      _: "the gold-standard vote with CAMISIM ids read as strings; mousegut's genome_id mixes 190547.0 and denovoN"
+      e2: cami_gold_standard
+      usage: command line

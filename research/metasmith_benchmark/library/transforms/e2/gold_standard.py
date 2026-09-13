@@ -7,7 +7,7 @@ model   = Transform()
 sam     = model.AddRequirement(lib.GetType("e2::minimap2.env"))
 polars  = model.AddRequirement(lib.GetType("e2::polars.env"))
 # The vote score_reference_amber.py runs over E1's contigs, so both arms get the same gold standard.
-vote    = model.AddRequirement(lib.GetType("lib::cami_gold_standard.py"))
+vote    = model.AddRequirement(lib.GetType("e2::cami_gold_standard.py"))
 meta    = model.AddRequirement(lib.GetType("e2::read_metadata"))
 truth   = model.AddRequirement(lib.GetType("e2::read_truth"), parents={meta})
 asm     = model.AddRequirement(lib.GetType("e2::assembly"), parents={meta})
