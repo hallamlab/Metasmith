@@ -47,6 +47,8 @@ CAUTION a task's inputs sit in the FILES manifest of its `.command.sh`, not in s
 
 CAUTION a job array's chunk parent is not a task. Its `.command.run` has `#SBATCH -o /dev/null`, sits at index 1, 101, 201 and so on, lists every member's inputs, and renders `NXF_SCRATCH=''`. Before recording a property of one task, count how many tasks of that step share it. Count completions as distinct successful task indices, not work directories, because retries add directories.
 
+CAUTION a `cache [promoted]` line in a task log shows the shard write only. The index row comes from `record_run` when the run ends normally. A driver stopped before that leaves shards that serve lookups but are absent from `cache list`.
+
 CAUTION retry-then-ignore reports a lane complete with its products missing. Check each lane's products against its sample count.
 
 ### Close
@@ -145,7 +147,9 @@ T9's CarveMe resources render as planned. E4 chunk 1's CarveMe task `(868)` in `
 
 CLEAN's GPU route renders as planned. CLEAN's first grid job on fir renders `-c 4`, `-t 04:00:00`, `--mem 32768M` and `--account=def-shallam_gpu --gres=gpu:nvidia_h100_80gb_hbm3_3g.40gb:1`, and Slurm scheduled it. Only this step bills the GPU account. CarveMe stays on `rrg-shallam-ab`.
 
-A live run's products exist only in its `nxf_work`. In `WfOlaqLT`, the 208 trimmed-read files take 625.5 GB there, and task_cache holds no entry for them. Its one `e2::trimmed_short_reads` lineage entry belongs to probe run `Gu9VJmwO`. Downstream tasks of the same run read the `nxf_work` copy: a running megahit's `.command.sh` FILES manifest names the fastp work directories, with no symlinks and no task_cache path. Reclaim a run's work directories only after the run ends and its products are in the cache. Otherwise the reclaim deletes the only copy.
+A finished task's products exist twice while its run is live: in `nxf_work` and as a promoted cache shard. In `WfOlaqLT`, fastp's 208 trimmed-read files take 625.5 GB in `nxf_work`. The research agent matched each one by name to a shard file of identical size and a different inode, and five task logs show `cache [promoted]`. The index does not list these shards yet. Per-task promotion writes only the shard. `caching/promote.py:record_run` adds the index rows when the run ends. A task lookup does not read the index: `Orchestrator.groovy` runs `caching.invocation`, whose `probe` reads the shard's tombstone, manifest and files. The shards therefore serve a later wave now. Downstream tasks of the same run read the `nxf_work` copy, through the FILES manifest in their `.command.sh`. Prune a step's work directories when every consumer of that step has finished and a sample of its shards passes the probe's checks.
+
+CAUTION `metasmith cache list` and `cache explain` read the index only. For a live run's promoted shard they report nothing, or `found: False`, while the shard serves lookups. They also make the store's physical bytes exceed its indexed bytes. Test reachability with the checks in `invocation.py:probe`.
 
 CAUTION an empty inode intersection between two file sets does not show that one copies the other. Match the files by key or name before calling bytes duplicated. Bytes, not inodes, are R1's tight quota: 16.16 of 18.63 TiB (86.8%) at 04:20 PDT.
 
