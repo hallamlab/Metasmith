@@ -1,10 +1,12 @@
 #!/bin/bash
-# Delete listed nextflow task work directories of one run, to reclaim bytes that task_cache also holds.
+# Empty listed nextflow task work directories of one run, to reclaim bytes and inodes that task_cache also holds.
 #
 #   sbatch <checkout>/research/metasmith_benchmark/drivers/prune_work.sbatch <run dir> <list file>
 #
-# The list holds one work directory per line. Take it from the FILES manifests of the step's
-# consumers, and submit only after every consumer of those directories has finished.
+# The list holds one work directory per line. Build it with _step_refs.py, and submit only after
+# every consumer of those directories has finished.
+# CAUTION each directory keeps its .command.cache. record_run reads that file at run end to index
+# the task's promoted shards and write its trace events.
 # CAUTION a path outside <run dir>/nxf_work/ aborts the job before anything is deleted.
 #SBATCH --account=rrg-shallam-ab
 #SBATCH --cpus-per-task=1
@@ -25,7 +27,8 @@ for d in "${dirs[@]}"; do
 done
 echo "run $RUN: ${#dirs[@]} dirs, $(du -scb "${dirs[@]}" 2>/dev/null | tail -1 | cut -f1) B"
 echo "quota before: $(quota)"
-for d in "${dirs[@]}"; do rm -rf -- "$d"; done
-echo "left: $(for d in "${dirs[@]}"; do [ -e "$d" ] && echo "$d"; done | wc -l)"
+for d in "${dirs[@]}"; do find "$d" -mindepth 1 ! -path "$d/.command.cache" -delete; done
+echo "left with more than .command.cache: $(for d in "${dirs[@]}"; do [ -n "$(find "$d" -mindepth 1 ! -path "$d/.command.cache" -print -quit)" ] && echo "$d"; done | wc -l)"
+echo "kept .command.cache: $(for d in "${dirs[@]}"; do [ -f "$d/.command.cache" ] && echo "$d"; done | wc -l) of ${#dirs[@]}"
 sleep 300
 echo "quota 5 min after: $(quota)"
