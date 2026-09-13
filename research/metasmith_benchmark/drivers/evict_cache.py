@@ -42,7 +42,7 @@ def main():
     args = ap.parse_args()
 
     root = resolve_store_root(agent_home=args.home)
-    wanted = args.keys.read_text().split()
+    wanted = list(dict.fromkeys(args.keys.read_text().split()))
     bad = [k for k in wanted if len(k) % 2 or any(ch not in "0123456789abcdef" for ch in k)]
     if bad:
         raise SystemExit(f"not hex keys, nothing touched: {bad[:3]}")
