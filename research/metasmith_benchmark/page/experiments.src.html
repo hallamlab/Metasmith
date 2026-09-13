@@ -304,9 +304,10 @@ a.full:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
         <li>The same 249 samples as E1, checked name for name, with the same read type per sample</li>
       </ul></div>
       <div><h3>Driver</h3><ul>
-        <li><code>drivers/e2_cami.py</code>, with the short arm (208 samples) and long arm (41 samples) solved separately. Mixing read shapes in one solve collapses cases</li>
-        <li>Short arm: 12 steps, key <code>g6fGjiOb</code>, with fastp and FastQC in place of bbduk and seqkit</li>
-        <li>Long arm: 11 steps, key <code>2gIF6Dea</code>, with <code>flye_raw</code> raised to 128 GB</li>
+        <li><code>drivers/e2_cami.py</code> binds only <code>library/transforms/e2</code>: 16 transforms written from nf-core/mag 5.5.0's own commands, arguments and image tags</li>
+        <li>Short arm, 208 samples: 15 steps, key <code>VybNHmUc</code>. FastQC raw and trimmed → fastp → MEGAHIT → bowtie2 → MetaBAT2 / SemiBin2 / COMEBin → DAS Tool; CheckM2 on all four bin sets; AMBER</li>
+        <li>Long arm, 41 samples: 14 steps, key <code>UGdlvGyP</code>. Porechop ABI → Chopper → Flye → minimap2, then the same tail. Flye and minimap2 take their presets from the platform in each sample's read metadata</li>
+        <li>Not run, because nothing scored reads them: QUAST, NanoPlot and nf-core's standalone Prodigal</li>
         <li>On a compute node: <code>METASMITH_DRIVER_SLURM=1</code>, 10 cpus / 48 GB</li>
       </ul></div>
       <div><h3>Targets / metrics</h3><ul>
@@ -318,30 +319,28 @@ a.full:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
     </div>
     <div class="status">
       <div class="proven"><h3>Proven</h3><ul>
-        <li>Rung 1 (<code>iy8YLaGr</code>): MetaBAT2 wrote 51 bins and SemiBin2 57, products inspected</li>
-        <li>CheckM2 wrote real per-bin values twice. <code>checkm.py</code> ends in <code>|| true</code>, so check the product</li>
-        <li>Driver params reach transforms: <code>--minContig 1500</code> and SemiBin2 seed 1, read from rendered commands</li>
-        <li>Flye <code>--nano-raw</code> on plant sample 0: 1 h 06 m, 3,186 contigs, N50 96,428, peak memory 32.68 GiB</li>
+        <li>Rung 1 on the earlier library (<code>iy8YLaGr</code>): MetaBAT2 wrote 51 bins and SemiBin2 57, products inspected</li>
+        <li>Flye <code>--nano-raw</code> on plant sample 0: 1 h 06 m, 3,186 contigs, N50 96,428, peak memory 32.68 GiB. NanoSim reads align at 15.4% error despite their flat Q40 qualities</li>
       </ul></div>
       <div class="open"><h3>Open</h3><ul>
-        <li class="block">E2 gets its own transform library, written to this plan rather than borrowed because the types fit: fastp, FastQC, MEGAHIT, bowtie2 for the binning BAM, the three binners, DAS Tool, CheckM2, AMBER, Porechop ABI, Chopper, Flye and minimap2</li>
-        <li class="block">Flye takes its preset from the platform declared in <code>read_metadata</code>. The library's <code>flye_raw</code> picks <code>--pacbio-hifi</code> from NanoSim's flat Q40 qualities and assembles nothing (B12)</li>
-        <li class="block">Flye memory: sized from measured peaks, waiting on more long-read samples. One sample peaked at 32.68 GiB, so 128 GB is likely too much</li>
+        <li class="block">No E2 library transform has run yet, and its 16 images must be pulled on fir before a compute-node driver reaches them</li>
+        <li class="block">Flye declares 64 GB until the research agent's three measured peaks land (array 59610638)</li>
+        <li class="block">CAMI III toy human gut's platform, <code>OXFORD_NANOPORE</code> or <code>_HQ</code>, must match E1's sample sheet. Its Flye error rate decides</li>
       </ul></div>
     </div>
     <details class="dag">
-      <summary>Solved workflows <span class="sub">· short arm g6fGjiOb, 12 steps · long arm 2gIF6Dea, 11 steps</span></summary>
+      <summary>Solved workflows <span class="sub">· short arm VybNHmUc, 15 steps · long arm UGdlvGyP, 14 steps</span></summary>
       <div class="dagbody">
         <div class="figs">
           <figure>
             <a class="full" href="https://10.74.81.84:12100/files/home/tony/agentic_workspace/projects/metasmith/engine/bench-run/research/metasmith_benchmark/page/dags/e2_cami_short.dag.svg" target="_blank" rel="noopener">Open full screen ↗</a>
             <div class="figbox">{{SVG:e2_cami_short}}</div>
-            <figcaption>Short arm, 208 samples, solved locally by <code>e2_cami.py run --dag</code>. Triangles are steps and circles are data types. Still different from E1: minimap2 rather than bowtie2 for the binning BAM.</figcaption>
+            <figcaption>Short arm, 208 samples, solved locally by <code>e2_cami.py run --dag</code>. Triangles are steps and circles are data types. Every step is a transform from <code>library/transforms/e2</code>.</figcaption>
           </figure>
           <figure>
             <a class="full" href="https://10.74.81.84:12100/files/home/tony/agentic_workspace/projects/metasmith/engine/bench-run/research/metasmith_benchmark/page/dags/e2_cami_long.dag.svg" target="_blank" rel="noopener">Open full screen ↗</a>
             <div class="figbox">{{SVG:e2_cami_long}}</div>
-            <figcaption>Long arm, 41 Nanopore samples. Still different from E1: no Porechop ABI or Chopper, and <code>flye_raw</code> picks its preset from read quality (B12).</figcaption>
+            <figcaption>Long arm, 41 Nanopore samples. Porechop ABI and Chopper run before Flye, as in E1.</figcaption>
           </figure>
         </div>
       </div>
@@ -396,7 +395,7 @@ a.full:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
         <li class="block">The six Nanopore runs stay out of the plan until a hybrid short + Nanopore read set exists as a type, so the solver picks hybrid metaSPAdes for those samples and MEGAHIT for the rest</li>
         <li class="block">Pre-interleaving must finish on fir. Staging refuses until every run passes its read-count check</li>
         <li class="block">The plan downloads the VIBRANT and CheckV databases, and those downloads hang on a compute-node driver</li>
-        <li class="block">GTDB-Tk r232 needs its skani database, because <code>--skip_ani_screen</code> doesn't skip that check in 2.6.1. The package is transferring from chinook's Globus collection, and its extraction (about 113K inodes) is still to do</li>
+        <li>MAG taxonomy is out of the plan. GTDB-Tk r232's package, with its skani database, is extracted on fir. Whether 2.6.1 also needs the 192 GB representative genomes is still open</li>
         <li class="block">MAG recovery is out of the plan: dRep has no transform, and the MetaWRAP recovery transforms (B7) aren't committed</li>
         <li class="block"><b>New transforms</b> to match Pratama: BinSanity, abawaca, DeepVirFinder, MetaPop and minced, each with a container image. Spacer-to-host links wait on minced</li>
         <li class="block">MetaPop needs every run mapped to one shared reference, the study's vOTU catalogue. Today each run maps to its own assembly</li>
@@ -525,7 +524,7 @@ a.full:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
         <li class="block"><code>skani_dedup</code> takes the aggregator's bin pool per assembly. The MAG matrix needs it on DAS Tool and MAGScoT bins per study</li>
         <li class="block">The 4-lane panel reads whole-assembly ORFs. Running it on MAGs needs a chunker for per-MAG ORFs</li>
         <li class="block">The plans download the VIBRANT, CheckV and iPHoP databases. iPHoP's is about 0.5 TB, with a 3× peak while downloading</li>
-        <li class="block">GTDB-Tk r232's skani database, as for E3</li>
+        <li class="block">GTDB-Tk r232: the package is extracted on fir. If GTDB-Tk also needs the 192 GB representative genomes, they cost about 113K inodes</li>
       </ul></div>
     </div>
     <details class="dag">

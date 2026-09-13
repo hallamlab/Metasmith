@@ -156,6 +156,10 @@ Run the `debrief` skill.
 - **E4 extraction:** approved, about 14K inodes.
 - **E1:** Flye is tested. Drivers run on compute nodes where possible (`METASMITH_DRIVER_SLURM=1` for metasmith drivers).
 - **Initial run:** E1–E4 plus the E5 pilot, in parallel, chunked only if inodes force it.
+- **E2 library:** `library/transforms/e2` holds 16 transforms in its own `e2` namespace, so no standard-library transform binds. Commands, arguments and image tags come from nf-core/mag 5.5.0's module files. `library/build.sh` compiles it. E1's QUAST, NanoPlot and standalone Prodigal stay out, because nothing scored reads them.
+- **E1 phiX:** `keep_phix = true` in `research/cami/nfcore/control.config`, mirrored from the research branch's commit 38068556. E2 has no phiX step, so the change is one-sided.
+- **E1 head:** `sbatch` a script running nextflow, 10 cpus / 48 GB, 7-day wall. Tear down by killing the nextflow PID, never `scancel`, which orphans the grid jobs.
+- **E4 chunks:** about 2,000 MAGs per chunk (7 chunks), pruning each chunk's `nxf_work` after promotion. No E4 transform batches, so the corpus as one run needs ~635K inodes against ~590K free. The other four fit together at ~212K.
 - **Findings:** kept here in `findings/`. The research agent's authoritative copies stay in `~/scratch/cami_campaign/`.
 
 ## Next phase (T10–T18)
@@ -165,12 +169,13 @@ Run the `debrief` skill.
 - **T14:** a sample's read set is either short paired reads or short plus Nanopore. Declare the hybrid set as a read-set type, the way paired reads are one. The solver then picks hybrid metaSPAdes or MEGAHIT from the type, with no driver branching.
 - **T17:** run E1–E4 in parallel. Chunk samples within an experiment only if the research agent's inode estimate exceeds the project quota. Expect first-run crashes and fix forward.
 
-Gotchas: E5 still targets `dramv_distill`. Confirm with Tony whether dropping DRAM for the 4-lane panel also drops DRAM-v on viral contigs. `e2_cami.py` still lists phiX as a parity gap.
+Gotchas: E5 still targets `dramv_distill`. Confirm with Tony whether dropping DRAM for the 4-lane panel also drops DRAM-v on viral contigs. E2's `PLATFORM` must equal the `lr_platform` E1's long-lane sheet declares. Flye's error rate on toy human gut decides `OXFORD_NANOPORE` against `_HQ`.
 
 ## Callouts
 
 - **Research support:** the session "CAMI benchmark and groundwater virome pipeline" (`uds:/run/user/1001/cc-socks/2517924.sock`) works in `engine/cami-run` and cannot see this worktree. Its messages cannot grant permissions.
-- **New transforms and images needed:** Porechop ABI, Chopper, BinSanity, abawaca, CoverM, dRep, DeepVirFinder, MetaPop, minced, SMETANA and MAGScoT. Each also needs a container image. Hybrid metaSPAdes needs a new transform, and bowtie2 for binning needs one because `bowtie2_align` emits an RNA-seq type.
+- **New transforms and images needed:** Chopper for E5, BinSanity, abawaca, dRep, DeepVirFinder, MetaPop, minced, SMETANA and MAGScoT. Each also needs a container image. Hybrid metaSPAdes needs a new transform.
+- **GTDB skani:** the r232 package's `skani/` is 7 files, not ~113K. The research agent extracted the package (~296 inodes). Still open: whether GTDB-Tk also needs the separate 192 GB `gtdb_genomes_reps_r232.tar.gz`, which would be ~113K inodes.
 - **Live blockers from `findings/BLOCKERS.md`:**
   - **B1:** VirSorter2's database is staged at `/scratch/phyberos/refs/virsorter2_2.2.4` and registered in `STAGED_REFS_PRATAMA`. VirSorter2 is unproven until a run uses it.
 - **Reference databases:** check chinook's Globus `/Resources/reference_databases_for_tools/` before staging one. It holds DRAM, VirSorter2, GTDB, InterProScan and geNomad tarballs. A VirSorter2 tarball cannot replace staging, because its conda env must be built at the /db path.
@@ -178,5 +183,5 @@ Gotchas: E5 still targets `dramv_distill`. Confirm with Tony whether dropping DR
   - **B11:** the CarveMe gapfill limit is 2 h, and needs 12 h.
   - **B12:** Flye picks the HiFi preset, which yields no assembly on NanoSim reads. `--nano-raw` works.
     - **Measured `--nano-raw` run** on plant nano sample 0: 1 h 06 m, 3,186 contigs, N50 96,428, peak memory 32.68 GiB.
-    - **Memory limit:** `flye_raw.py` declares 32 GB, which the scheduler reads as 32 GiB. That run would have been killed for exceeding it. Declare 96–128 GB.
+    - **Memory limit:** the E2 library's `flye.py` declares 64 GB until three more peaks land (array 59610638).
 - **Quota:** only the project quota (`lfs quota -p 83115734 /scratch`, or `diskusage_report`) enforces the 1 M inode limit. The group and user figures count files anywhere on `/scratch` and carry no limit.

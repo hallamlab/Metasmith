@@ -11,21 +11,21 @@ HEAD = ["E1 nf-core/mag", "E2 msm<br>matches E1", "Pratama paper", "E3 msm<br>ma
 NEW = "NEW"
 GROUPS = [
     ("Read trimming and filtering", [
-        ("fastp", {"E1": True, "E2": "replaces bbduk; transform exists", "metaGEM": True}, "Tony: E5 takes bbduk"),
+        ("fastp", {"E1": True, "E2": "E2 library", "metaGEM": True}, "Tony: E5 takes bbduk"),
         ("bbduk", {"Pratama": "qtrim=rl, trimq=20, minlen=50", "E3": "Pratama's settings; now qtrim=r, trimq=0", "E5": True}, "fill"),
     ]),
     ("Contaminant removal", [
         ("bowtie2 against phiX", {"E1": "switched off with --keep_phix"}, "Tony: a manual check when a sample needs it, not a pipeline step"),
     ]),
     ("Read QC metrics", [
-        ("FastQC", {"E1": True, "E2": "transform exists"}, "Tony: seqkit for QC"),
+        ("FastQC", {"E1": True, "E2": "raw and trimmed, per mate; E2 library"}, "Tony: seqkit for QC"),
         ("fastp report", {"Pratama": "report only", "E3": "fastp_qc transform exists"}, "Tony: seqkit for QC"),
-        ("seqkit", {"E2": "metasmith read stats", "E3": "metasmith read stats", "E5": True}, "Tony: seqkit for QC"),
+        ("seqkit", {"E3": "metasmith read stats", "E5": True}, "Tony: seqkit for QC"),
     ]),
     ("Long-read processing", [
         ("Guppy basecalling", {"Pratama": "sup model"}, "Parity difference: SRA holds the basecalled FASTQ, so E3 starts after Guppy"),
-        ("Porechop ABI", {"E1": True, "E2": NEW}, "Tony: Chopper is more generic"),
-        ("Chopper", {"E1": True, "E2": NEW, "E5": NEW}, "Tony: more generic than Porechop ABI"),
+        ("Porechop ABI", {"E1": True, "E2": "E2 library"}, "Tony: Chopper is more generic"),
+        ("Chopper", {"E1": True, "E2": "E2 library", "E5": NEW}, "Tony: more generic than Porechop ABI"),
     ]),
     ("Assembly", [
         ("MEGAHIT", {"E1": True, "E2": True, "Pratama": "viral contigs only", "E3": "viral contigs only", "metaGEM": True, "E5": True}, "Performance over metaSPAdes"),
@@ -34,9 +34,9 @@ GROUPS = [
         ("Flye", {"E1": True, "E2": "preset from declared platform; memory from measured peaks", "E5": "preset from declared platform; memory from measured peaks"}, "Tony: long-read assembler"),
     ]),
     ("Read mapping and coverage", [
-        ("bowtie2", {"E1": "short reads", "E2": "NEW: library's bowtie2_align emits an RNA-seq type"}, "Tony: minimap2"),
+        ("bowtie2", {"E1": "short reads", "E2": "short reads; E2 library"}, "Tony: minimap2"),
         ("minimap2", {"E1": "long reads", "E2": "long reads", "E5": True}, "Tony: minimap2 with a coverage step"),
-        ("assembly_stats", {"E2": "minimap2, samtools, bedtools", "E3": "minimap2, samtools, bedtools; per-base coverage", "E5": "per-base coverage"}, "Tony: per-base coverage, better than CoverM"),
+        ("assembly_stats", {"E3": "minimap2, samtools, bedtools; per-base coverage", "E5": "per-base coverage"}, "Tony: per-base coverage, better than CoverM"),
         ("bwa", {"metaGEM": True}, None),
         ("CoverM", {"Pratama": "MAG and vOTU abundance"}, "Tony: assembly_stats gives per-base coverage"),
     ]),
@@ -64,10 +64,10 @@ GROUPS = [
         ("skani_dedup", {"E5": "per study, on DAS Tool and on MAGScoT bins; needs a study grouping"}, "Tony: try all four. Refinement and dereplication are separate steps"),
     ]),
     ("MAG taxonomy", [
-        ("GTDB-Tk", {"Pratama": "r202", "E3": "r232; skani database transferring from Globus", "metaGEM": True, "E4": "r232; skani database transferring from Globus", "E5": "r232; skani database transferring from Globus"}, "Tony: r232 everywhere, even where it breaks parity"),
+        ("GTDB-Tk", {"Pratama": "r202", "E3": "r232; package extracted on fir", "metaGEM": True, "E4": "r232; package extracted on fir", "E5": "r232; package extracted on fir"}, "Tony: r232 everywhere, even where it breaks parity"),
     ]),
     ("Gene calling", [
-        ("Prodigal", {"E1": True, "E2": True, "Pratama": "inside DRAM", "E3": True, "metaGEM": True, "E4": "first step, on published MAGs", "E5": True}, "Tony: both Prodigal and prodigal-gv"),
+        ("Prodigal", {"E1": "standalone, unscored", "Pratama": "inside DRAM", "E3": True, "metaGEM": True, "E4": "first step, on published MAGs", "E5": True}, "Tony: both Prodigal and prodigal-gv"),
         ("prodigal-gv", {"E3": "viral contigs", "E5": True}, "Tony: both Prodigal and prodigal-gv"),
     ]),
     ("Virus identification", [

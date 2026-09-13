@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """E2: nf-core/mag's E1 pipeline on the same 249 CAMI samples, driven by metasmith.
 
-Two arms, solved separately because one solve cannot mix read shapes:
-  short  208 samples: fastp, FastQC, MEGAHIT, MetaBAT2/SemiBin2/COMEBin, DAS Tool, CheckM2, AMBER
-  long   41 Nanopore samples: Flye, the same binners, DAS Tool, CheckM2, AMBER
+Binds only `library/transforms/e2`, whose transforms run nf-core/mag 5.5.0's own commands,
+arguments and images. Two arms, solved separately because one solve cannot mix read shapes:
+  short  208 samples: FastQC, fastp, MEGAHIT, bowtie2, MetaBAT2/SemiBin2/COMEBin, DAS Tool, CheckM2, AMBER
+  long   41 Nanopore samples: Porechop ABI, Chopper, Flye, minimap2, the same binning tail
 
 Solves locally by default and renders one DAG per arm. --stage-only and --launch reach fir
 and need Tony's sign-off.
@@ -20,38 +21,25 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parents[2]
+LIBRARY = HERE.parent / "library"
 CACHE_DIR = Path(os.environ.get("E2_CACHE_DIR", HERE / ".cache" / "e2"))
 os.environ.setdefault("MSM_CACHE_DIR", str(CACHE_DIR))
 sys.path.insert(0, str(REPO / "research" / "cami"))
 
 import run_cami_metag as rcm  # noqa: E402
 from metasmith.python_api import (  # noqa: E402
-    Agent, Source, Runtime, DataInstanceLibrary, TransformInstanceLibrary, Resources, Size, Duration,
+    Agent, Source, Runtime, DataInstanceLibrary, TransformInstanceLibrary, TargetBuilder,
 )
 
 # E1's read choice: long reads where CAMI simulated Nanopore, short reads everywhere else.
 LONG_DATASETS = {"plant_associated_long_nano": "plant_associated", "toy_humangut_long": "toy_humangut"}
+# Must equal the lr_platform E1's sample sheet declares. plant_associated NanoSim aligns at ~15%
+# error, so OXFORD_NANOPORE. toy_humangut waits on the research agent's Flye error rates.
+PLATFORM = {"plant_associated_long_nano": "OXFORD_NANOPORE", "toy_humangut_long": "OXFORD_NANOPORE"}
 EXPECTED = {"short": 208, "long": 41}
 DAG_DIR = HERE.parent / "page" / "dags"
-
-# Not in either plan yet, each needed to match E1 tool for tool.
-PARITY_GAPS = [
-    "bowtie2 BAM for binning coverage (new transform; bowtie2_align emits an RNA-seq type)",
-    "Porechop ABI (new transform)",
-    "Chopper (new transform)",
-    "flye_raw preset from the declared platform, not read quality (B12)",
-    "phiX removal (to decide: keep for parity, or drop)",
-]
-
-BINNER_PARAMS = dict(metabat2_min_contig=1500, metabat2_seed=1, semibin2_min_len=1500, semibin2_seed=1)
-RESOURCE_OVERRIDES = {
-    "short": {
-        "fastp": Resources(memory=Size.GB(32), cpus=16),
-        "megahit": Resources(memory=Size.GB(128), cpus=32, duration=Duration(hours=12)),
-    },
-    # B12: 32.68 GiB peak on plant nano sample 0, over flye_raw's declared 32 GB.
-    "long": {"flye_raw": Resources(memory=Size.GB(128), cpus=32, duration=Duration(hours=24))},
-}
+CHECKM2_DB = Path(os.environ.get(
+    "CHECKM2_DB", "/scratch/phyberos/wave2_b3_nfcore/checkm2_db/CheckM2_database/uniref100.KO.1.dmnd"))
 
 
 def enumerate_arms():
@@ -63,54 +51,88 @@ def enumerate_arms():
     return {"short": short, "long": long_}
 
 
-def short_arm(samples):
-    inputs = rcm.build_inputs(samples)
-    kbase = TransformInstanceLibrary.Load(rcm.MLIB / "transforms" / "kbase")
-    transforms = [
-        TransformInstanceLibrary.Load(rcm.MLIB / "transforms" / "logistics"),
-        rcm._assembly_without("spades", "bbduk", "seqkit_reads"),
-        TransformInstanceLibrary.Load(rcm.MLIB / "transforms" / "metagenomics"),
-        kbase.AsView({Path("clean_reads/fastp.py"), Path("qc_reads/fastqc.py")}),
-    ]
-    targets = rcm.build_targets(with_dedup=False, variant="variant")
-    targets.Add("sequences::fastqc_html_report")
-    expected = {"sequences::short_reads_pe": len(samples), "sequences::read_metadata": len(samples),
-                "binning::cami_read_truth": len(samples)}
-    return inputs, rcm.build_globals(), transforms, targets, expected
+def build_inputs(arm, samples):
+    CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    inputs = DataInstanceLibrary(CACHE_DIR / f"e2_{arm}_inputs.xgdb")
+    inputs.Purge()
+    inputs.AddTypeLibrary(LIBRARY / "data_types" / "e2.yml")
+
+    def register(sid, reads, truth, length_class, platform):
+        value = json.dumps({"sample": sid, "length_class": length_class, "platform": platform})
+        name = f"{sid}_read_metadata.json"
+        (inputs.location / name).write_text(value)
+        meta = inputs.RegisterItem(name, "e2::read_metadata",
+                                   instance_id=rcm._stable_id("e2", "read_metadata", sid, value))
+        inputs.RegisterItem(reads, f"e2::{length_class}_reads", parents={meta},
+                            instance_id=rcm._stable_id("e2", f"{length_class}_reads", sid, str(reads)))
+        if truth is not None:
+            inputs.RegisterItem(truth, "e2::read_truth", parents={meta},
+                                instance_id=rcm._stable_id("e2", "read_truth", sid, str(truth)))
+
+    if arm == "short":
+        for sid, reads in samples:
+            register(sid, reads, reads.parent / "reads_mapping.tsv.gz", "short", "ILLUMINA")
+    else:
+        for sid, reads, truth, dataset in samples:
+            register(sid, reads, truth, "long", PLATFORM[dataset])
+    inputs.Save()
+    return inputs
 
 
-def long_arm(samples):
-    inputs = rcm.build_inputs_long_read(samples)
-    n_truth = sum(1 for s in samples if s[2] is not None)
-    expected = {"sequences::long_reads": len(samples), "sequences::read_metadata": len(samples),
-                "binning::cami_read_truth": n_truth}
-    return (inputs, rcm.build_globals_long_read(), rcm.build_transforms_for_long_read(),
-            rcm.build_targets_long_read(), expected)
+def build_globals():
+    lib = DataInstanceLibrary(CACHE_DIR / "e2_globals.xgdb")
+    lib.Purge()
+    lib.AddTypeLibrary(LIBRARY / "data_types" / "e2.yml")
+    lib.RegisterItem(CHECKM2_DB, "e2::checkm2_database",
+                     instance_id=rcm._stable_id("e2", "checkm2_database", str(CHECKM2_DB)))
+    lib.Save()
+    return lib
+
+
+def build_targets(arm):
+    t = TargetBuilder()
+    if arm == "short":
+        asm = t.Add("e2::megahit_assembly")
+        for report in ("fastqc_raw_reports", "fastqc_trimmed_reports", "fastp_json", "fastp_html"):
+            t.Add(f"e2::{report}")
+    else:
+        asm = t.Add("e2::flye_assembly")
+    # nf-core/mag's control config sends raw and refined bins downstream, so CheckM2 scores all four sets.
+    for binner in ("metabat2", "semibin2", "comebin", "das_tool"):
+        bins = t.Add(f"e2::{binner}_bin", parents=[asm])
+        t.Add(f"e2::{binner}_contig_to_bin", parents=[asm])
+        t.Add("e2::checkm2_quality", parents=[bins])
+    t.Add("e2::das_tool_summary", parents=[asm])
+    t.Add("e2::amber_results")
+    t.Add("e2::amber_bin_metrics")
+    return t
 
 
 def solve(arm, samples, args):
-    inputs, globals_lib, transforms, targets, expected = (short_arm if arm == "short" else long_arm)(samples)
+    inputs = build_inputs(arm, samples)
     remote = args.stage_only or args.launch
     smith = rcm.get_agent("cami" if arm == "short" else "cami_long") if remote else Agent(
         home=Source.FromLocal(CACHE_DIR / f"dryrun_home_{arm}"), runtime=Runtime.APPTAINER)
 
     print(f"\n=== {arm} arm: {len(samples)} samples ===")
     task = smith.GenerateWorkflow(
-        samples=list(inputs.AsSamples("sequences::read_metadata")),
-        resources=[DataInstanceLibrary.Load(rcm.MLIB / "resources" / "env"),
-                   DataInstanceLibrary.Load(rcm.MLIB / "resources" / "lib"), globals_lib],
-        transforms=transforms,
-        targets=targets,
+        samples=list(inputs.AsSamples("e2::read_metadata")),
+        resources=[DataInstanceLibrary.Load(LIBRARY / "resources" / "e2"),
+                   DataInstanceLibrary.Load(rcm.MLIB / "resources" / "lib"), build_globals()],
+        transforms=[TransformInstanceLibrary.Load(LIBRARY / "transforms" / "e2")],
+        targets=build_targets(arm),
     )
     if not task.ok:
         print(f"dropped: {sorted(task.plan.dropped_targets)}", file=sys.stderr)
         rcm._report_plan_failure(task)
-    rcm._assert_given_counts(task, expected)
+    n_truth = len(samples) if arm == "short" else sum(1 for s in samples if s[2] is not None)
+    rcm._assert_given_counts(task, {f"e2::{arm}_reads": len(samples), "e2::read_metadata": len(samples),
+                                    "e2::read_truth": n_truth})
 
     print(f"Plan OK -- {len(task.plan.steps)} steps, key={task.GetKey()}")
     for s in task.plan.steps:
         prods = sorted({i.dtype_name for g in s.produces for i in g})
-        print(f"  {s.order:>2}. {Path(s.transform._path).stem:28s} -> {prods}")
+        print(f"  {s.order:>2}. {Path(s.transform._path).stem:22s} -> {prods}")
 
     if args.dag:
         DAG_DIR.mkdir(parents=True, exist_ok=True)
@@ -131,9 +153,7 @@ def solve(arm, samples, args):
         return
     smith.RunWorkflow(
         task=task, config_file=rcm.make_slurm_config(),
-        params=dict(slurmAccount=rcm.SLURM_ACCOUNT, executor=dict(queueSize=500),
-                    process=dict(tries=4, array=25), **BINNER_PARAMS),
-        resource_overrides=RESOURCE_OVERRIDES[arm],
+        params=dict(slurmAccount=rcm.SLURM_ACCOUNT, executor=dict(queueSize=500), process=dict(tries=4, array=25)),
     )
     print(f"submitted {arm} arm: {task.GetKey()}")
 
@@ -150,9 +170,6 @@ def cmd_run(args):
         samples = arms[arm]
         assert len(samples) == EXPECTED[arm], f"{arm} arm has {len(samples)} samples, E1 has {EXPECTED[arm]}"
         solve(arm, samples[: args.limit] if args.limit else samples, args)
-    print("\nStill needed for parity with E1:")
-    for gap in PARITY_GAPS:
-        print(f"  - {gap}")
     return 0
 
 
