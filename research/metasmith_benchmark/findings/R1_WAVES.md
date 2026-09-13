@@ -47,7 +47,9 @@ Close a wave when every lane has failed, or has passed one real step of each kin
 
 WARNING USR1 is graceful only for jobs submitted through `submit_driver.sbatch`, whose trap forwards it. A driver launched by the engine route (`METASMITH_DRIVER_SLURM=1`, `start.slurm.sh`) has no trap, so USR1 kills it before nextflow cancels its grid jobs. Stop such a driver by removing its `PID.lock` while the driver is alive.
 
-WARNING never use a plain `scancel` on a driver job. It kills the head before nextflow cancels its grid jobs, and those jobs run on with no cache entry.
+Check the job's state with `squeue` before choosing the stop. A PENDING driver job has no driver process, no grid jobs and no `PID.lock`, so a plain `scancel` removes it cleanly.
+
+WARNING never use a plain `scancel` on a driver job that has started. It kills the head before nextflow cancels its grid jobs, and those jobs run on with no cache entry.
 
 ### Reclaim inodes
 
@@ -71,20 +73,28 @@ Commit `f6d01f00`, checkout `/scratch/phyberos/bench/checkout/f6d01f00`. Driver 
 
 ### Gate
 
-- **Inodes:** the project quota read 864,297 of 1M after the w1 materialise jobs, and the wave needs about 212K. Clear GTDB's genome tree, 426,970 inodes, once a GTDB-Tk run through its squashfs image passes. Launch after that.
+- **Inodes:** reclaiming nine stale run dirs freed 149,336 inodes. The quota read 716,917 before launch.
+  - Seven lanes launched first: E1 short and long, E2 short and long, E3, E5 cami and E5 pratama. They fit under 950K without the GTDB tree deletion.
+  - E4 chunk 1 and E5 metagem launch after the tree goes, which frees 424,034 inodes. The tree goes once `e4_gtdbtest` classifies a MAG through the squashfs image.
+  - Launching in two groups departs from the plan's single launch. The plan's run log records why.
+- **GTDB image:** job 59625981 built `release232_skani_genomes.sqfs`, 192 GB. It holds all 199,923 genomes, a count that matches the tree.
 - **Probe:** probe2 `Gu9VJmwO` passed at `9525a3a1`.
-- **E1 sheets:** `build_samplesheet.py` with its path check found all 498 read files on fir, and regenerated both sheets byte-identical to the committed ones. An offline `-preview` of each sheet is pending.
+- **E1 sheets:** `build_samplesheet.py` with its path check found all 498 read files on fir, and regenerated both sheets byte-identical to the committed ones. The offline preflight (59634205) passed:
+  - 5.5.0 resolves locally.
+  - Both `-preview` runs exit 0, with `control.config` applied.
+  - Neither run attempted a fetch.
+  - All 60 images are cached.
 - **Review:** the adversarial review of `c0b17bb1` is triaged in the plan's run log. Its fixes are in `f6d01f00`.
 
 ### Lanes
 
 | Lane | Launch | Materialised | Key | Job |
 |---|---|---|---|---|
-| E1 short | `sbatch -J e1_short $C/research/metasmith_benchmark/drivers/e1_nfcore/run_e1.sbatch $C short` | n/a (pre-pulled images) | | |
-| E1 long | `sbatch -J e1_long $C/research/metasmith_benchmark/drivers/e1_nfcore/run_e1.sbatch $C long` | n/a | | |
-| E2 short | `sbatch -J e2_short $S $C e2_cami.py run --arm short --launch --tag w1` | f6d01f00, 15 steps (59634082) | `WfOlaqLT` | |
-| E2 long | `sbatch -J e2_long $S $C e2_cami.py run --arm long --launch --tag w1` | f6d01f00, 14 steps (59634083) | `33hlLu8Q` | |
-| E3 | `sbatch -J e3 $S $C e3_pratama.py run --launch --tag w1` | f6d01f00, 26 steps (59634084) | `Son2YJiI` | |
+| E1 short | `sbatch -J e1_short $C/research/metasmith_benchmark/drivers/e1_nfcore/run_e1.sbatch $C short` | n/a (pre-pulled images) | | 59634609 |
+| E1 long | `sbatch -J e1_long $C/research/metasmith_benchmark/drivers/e1_nfcore/run_e1.sbatch $C long` | n/a | | 59634610 |
+| E2 short | `sbatch -J e2_short $S $C e2_cami.py run --arm short --launch --tag w1` | f6d01f00, 15 steps (59634082) | `WfOlaqLT` | 59634611 |
+| E2 long | `sbatch -J e2_long $S $C e2_cami.py run --arm long --launch --tag w1` | f6d01f00, 14 steps (59634083) | `33hlLu8Q` | 59634903 |
+| E3 | `sbatch -J e3 $S $C e3_pratama.py run --launch --tag w1` | f6d01f00, 26 steps (59634084) | `Son2YJiI` | 59634612 |
 | E4 chunk 1 | `sbatch -J e4_c1 $S $C e4_metagem.py run --chunk 1 --launch --tag w1` | pending, after e4_gtdbtest | | |
 | E5 cami | `sbatch -J e5_cami $S $C e5_pilot.py run --corpus cami --launch --tag w1` | c0b17bb1, `52mAOnXS` | | |
 | E5 pratama | `sbatch -J e5_pratama $S $C e5_pilot.py run --corpus pratama --launch --tag w1` | c0b17bb1, `8Z7x3L7z` | | |

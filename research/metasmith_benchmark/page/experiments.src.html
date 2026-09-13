@@ -268,24 +268,14 @@ a.full:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
         <li>A failed DAS Tool fails the run instead of exiting zero with empty tables</li>
         <li>A mixed short/long sample sheet validates and previews through both lanes</li>
         <li>Flye on the long lane</li>
+        <li><code>keep_phix = true</code> switches phiX removal off</li>
+        <li>Sample sheets come from E2's own sample list: 208 short-read samples on split R1/R2 pairs (all 208 split and checked against their sources), 41 long-read samples</li>
+        <li>Each sheet runs as its own Nextflow head in a Slurm job, <code>run_e1.sbatch</code>, offline against the pre-pulled images</li>
       </ul></div>
       <div class="open"><h3>Open</h3><ul>
-        <li class="block">phiX removal must be switched off in <code>control.config</code>. The research agent is checking that <code>--keep_phix</code> does it in 5.5.0</li>
-        <li>The Nextflow head runs on login3, the one login node with memory to spare. The research agent is checking whether it can run as a compute-node job</li>
+        <li>No DAG yet. Wave 1's heads write one with <code>-with-dag</code></li>
       </ul></div>
     </div>
-    <details class="dag">
-      <summary>Solved workflow <span class="sub">· nextflow -preview, 41 processes, drawn by the metasmith renderer</span></summary>
-      <div class="dagbody">
-        <div class="figs">
-          <figure>
-            <a class="full" href="https://10.74.81.84:12100/files/home/tony/scratch/bench_run/dags/nfcore_mag_5.5.0.msm.dag.svg" target="_blank" rel="noopener">Open full screen ↗</a>
-            <div class="figbox">{{SVG:nfcore_msm}}</div>
-            <figcaption>The <code>nextflow run nf-core/mag -r 5.5.0 -preview -with-dag dag.dot</code> graph under <code>control.config</code> (a two-row mixed sheet: one Illumina sample, one Nanopore sample), converted automatically and drawn by metasmith's <code>DagRenderer</code>. Triangles are nf-core processes. Each circle is a process output that some later process uses, named after the first channel nextflow names along its path (<code>&lt;process&gt;::out</code> when it names none). Operators are collapsed, and an output links to every process it reaches through them. Nextflow can't see a <code>.map</code> dropping tuple fields, so a few links are wider than the real data flow. Outputs nothing uses, the versions and MultiQC channels, and MultiQC itself are dropped. A step with no used output ends in a filled <code>::out</code> circle. <a href="https://10.74.81.84:12100/files/home/tony/scratch/bench_run/dags/nfcore_mag_5.5.0.dag.svg" target="_blank" rel="noopener">Original mermaid render</a>. SPAdes, MaxBin2, CONCOCT, Prokka and GTDB-Tk are absent because the config skips them.</figcaption>
-          </figure>
-        </div>
-      </div>
-    </details>
   </div>
 </article>
 
@@ -305,10 +295,10 @@ a.full:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
       </ul></div>
       <div><h3>Driver</h3><ul>
         <li><code>drivers/e2_cami.py</code> binds only <code>library/transforms/e2</code>: 16 transforms written from nf-core/mag 5.5.0's own commands, arguments and image tags</li>
-        <li>Short arm, 208 samples: 15 steps, key <code>VybNHmUc</code>. FastQC raw and trimmed → fastp → MEGAHIT → bowtie2 → MetaBAT2 / SemiBin2 / COMEBin → DAS Tool; CheckM2 on all four bin sets; AMBER</li>
-        <li>Long arm, 41 samples: 14 steps, key <code>UGdlvGyP</code>. Porechop ABI → Chopper → Flye → minimap2, then the same tail. Flye and minimap2 take their presets from the platform in each sample's read metadata</li>
+        <li>Short arm, 208 samples on E1's split R1/R2 pairs: 15 steps, key <code>WfOlaqLT</code>. FastQC raw and trimmed → fastp → MEGAHIT → bowtie2 → MetaBAT2 / SemiBin2 / COMEBin → DAS Tool; CheckM2 on all four bin sets; AMBER</li>
+        <li>Long arm, 41 samples: 14 steps, key <code>33hlLu8Q</code>. Porechop ABI → Chopper → Flye → minimap2, then the same tail. Flye and minimap2 take their presets from the platform in each sample's read metadata</li>
         <li>Not run, because nothing scored reads them: QUAST, NanoPlot and nf-core's standalone Prodigal</li>
-        <li>On a compute node: <code>METASMITH_DRIVER_SLURM=1</code>, 10 cpus / 48 GB</li>
+        <li>Runs as a Slurm job on fir through <code>submit_driver.sbatch</code>, 10 cpus / 48 GB</li>
       </ul></div>
       <div><h3>Targets / metrics</h3><ul>
         <li><code>das_tool_amber_results</code> against E1's AMBER on the same gold standard</li>
@@ -323,13 +313,13 @@ a.full:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
         <li>Flye <code>--nano-raw</code> on plant sample 0: 1 h 06 m, 3,186 contigs, N50 96,428, peak memory 32.68 GiB. NanoSim reads align at 15.4% error despite their flat Q40 qualities</li>
       </ul></div>
       <div class="open"><h3>Open</h3><ul>
-        <li class="block">No E2 library transform has run yet, and its 16 images must be pulled on fir before a compute-node driver reaches them</li>
-        <li class="block">Flye declares 64 GB until the research agent's three measured peaks land (array 59610638)</li>
-        <li class="block">CAMI III toy human gut's platform, <code>OXFORD_NANOPORE</code> or <code>_HQ</code>, must match E1's sample sheet. Its Flye error rate decides</li>
+        <li>The first 1-sample probe proved the Slurm driver path, and its fastp wrote nothing: <code>--detect_adapter_for_pe</code> fails silently on interleaved input. The short arm now reads the split pairs, and probe <code>Gu9VJmwO</code> on them passed: fastp wrote 4.55 GB of trimmed reads, and FastQC its reports</li>
+        <li>Each lane's images are fetched by a <code>--materialise</code> job before wave 1</li>
+        <li>Flye declares 64 GB, 1.9× its four measured peaks. Both long-read datasets declare <code>OXFORD_NANOPORE</code>, which for CAMI III toy human gut is an inference</li>
       </ul></div>
     </div>
     <details class="dag">
-      <summary>Solved workflows <span class="sub">· short arm VybNHmUc, 15 steps · long arm UGdlvGyP, 14 steps</span></summary>
+      <summary>Solved workflows <span class="sub">· short arm WfOlaqLT, 15 steps · long arm 33hlLu8Q, 14 steps</span></summary>
       <div class="dagbody">
         <div class="figs">
           <figure>
@@ -353,7 +343,7 @@ a.full:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
   <div class="side">
     <div class="id">E3</div>
     <span class="chip repro">reproduce</span>
-    <div class="shape">runs<span class="total">72</span>66 paired · 6 Nanopore<br>driver<br><b>metasmith</b></div>
+    <div class="shape">metagenomes<span class="total">65</span>+ 6 Nanopore runs<br>driver<br><b>metasmith</b></div>
   </div>
   <div class="main">
     <h2>Pratama 2026 groundwater virome</h2>
@@ -367,15 +357,17 @@ a.full:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
     </div>
     <div class="grid">
       <div><h3>Datasets</h3><ul>
-        <li>66 paired Illumina runs: 32 from 2019, 34 from 2022</li>
+        <li>65 short-read metagenomes, one ENA run each: 31 from 2019, 34 from 2022. ENA's second run of H32 0.2 µm R1 (<code>PNK108_H32_0_2</code>) is left out, as the paper counts that sample once</li>
         <li>6 MinION runs, each reused across its well's 0.2 µm Illumina replicates: 17 hybrid assemblies</li>
         <li>Their Zenodo products: vOTU catalogue, 1,275 MAGs, curated AMG table</li>
       </ul></div>
       <div><h3>Driver</h3><ul>
-        <li><code>drivers/e3_pratama.py</code>, all runs under one shared study root for the viral merge. 66 runs, 21 steps, key <code>rG10GEFE</code></li>
-        <li>MEGAHIT; geNomad + VIBRANT + VirSorter2 → merge → CheckV → MMseqs2 → vConTACT3; DRAM-v; MetaWRAP → CheckM2</li>
+        <li><code>drivers/e3_pratama.py</code>, all runs under one shared study root for the viral merge. 65 runs, 26 steps, key <code>Son2YJiI</code></li>
+        <li>MAG lane: bbduk → metaSPAdes → MetaWRAP, with CheckM inside it → DRAM on the MAGs</li>
+        <li>Viral lane: MEGAHIT and metaSPAdes contigs → geNomad + VIBRANT + VirSorter2 → one merge over both assemblies → CheckV → MMseqs2 → vConTACT3; prodigal-gv; DRAM-v on vOTUs of 10 kb or more</li>
+        <li>Pratama's settings are pinned in <code>library/transforms/e3</code>, which masks the standard transforms it replaces. <code>findings/R1_TABLE_AUDIT.md</code> gives each tool's status</li>
         <li>Staging refuses until every run's interleaved file passes its read-count check</li>
-        <li>Databases on fir: VirSorter2 2.2.4 and DRAM, staged and registered. DRAM has no dbcan, because its download URL is dead. geNomad's database is 1.5.1 against Pratama's 1.11.0</li>
+        <li>Databases on fir: VirSorter2 2.2.4, DRAM, VIBRANT, CheckV and iPHoP (Aug23, checksums verified), all registered, so no plan downloads one. DRAM has no dbcan, because its download URL is dead. geNomad's database is 1.5.1 against Pratama's 1.11.0</li>
       </ul></div>
       <div><h3>Targets / metrics</h3><ul>
         <li>vOTU recovery: the share of their vOTUs matched by skANI</li>
@@ -393,24 +385,22 @@ a.full:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
         <li>MAG recovery method, on those 92 bins against the 1,275 published MAGs: 71 of ours and 122 of theirs matched, clustered in H52, the source well. One run proves the method, not the rate</li>
       </ul></div>
       <div class="open"><h3>Open</h3><ul>
-        <li class="block">The six Nanopore runs stay out of the plan until a hybrid short + Nanopore read set exists as a type, so the solver picks hybrid metaSPAdes for those samples and MEGAHIT for the rest</li>
-        <li class="block">Only 5 of the 6 MinION runs are on fir. H41's (SRR32696686) fetch stopped at 44%, and its well supplies 3 of the 17 hybrid assemblies</li>
-        <li class="block">The plan downloads the VIBRANT and CheckV databases, and those downloads hang on a compute-node driver</li>
-        <li>MAG taxonomy is out of the plan. GTDB-Tk r232 also needs the 192 GB representative genomes, 150–200K inodes</li>
-        <li class="block">MAG recovery is out of the plan: dRep has no transform, and the MetaWRAP recovery transforms (B7) aren't committed</li>
-        <li class="block"><b>New transforms</b> to match Pratama: BinSanity, abawaca, DeepVirFinder, MetaPop and minced, each with a container image. Spacer-to-host links wait on minced</li>
+        <li class="block">The 17 hybrid assemblies wait on a hybrid read-set type and a hybrid metaSPAdes transform. All 6 MinION runs are on fir, and H43 has none</li>
+        <li>GTDB-Tk r232 and iPHoP on the shipped database wait behind <code>--with-gtdbtk</code> and <code>--with-host-prediction</code>. GTDB-Tk reads the genomes from one squashfs image, which frees 427K inodes once a run through it passes</li>
+        <li class="block">MAG recovery, iPHoP on the augmented database and DRAM on dereplicated MAGs wait on dRep. Until then DRAM annotates each sample's refined bins</li>
+        <li class="block">MetaWRAP refines once. Pratama's second round needs BinSanity and abawaca</li>
+        <li class="block"><b>New transforms</b> to match Pratama: BinSanity, abawaca, dRep, DeepVirFinder, MetaPop and minced, each with a container image. Spacer-to-host links wait on minced</li>
         <li class="block">MetaPop needs every run mapped to one shared reference, the study's vOTU catalogue. Today each run maps to its own assembly</li>
-        <li>Pins to match Pratama: bbduk <code>qtrim=rl trimq=20 minlen=50</code>, metaSPAdes k-mers, MetaWRAP 2 rounds, VIBRANT <code>-virome</code>, geNomad flags, VirSorter2 groups, MMseqs2 cov-mode 0, both iPHoP databases, DRAM on MAGs. Drop the SemiBin2/COMEBin ensemble and skANI dedup</li>
       </ul></div>
     </div>
     <details class="dag">
-      <summary>Solved workflow <span class="sub">· rG10GEFE, 21 steps, 66 paired runs</span></summary>
+      <summary>Solved workflow <span class="sub">· Son2YJiI, 26 steps, 65 runs</span></summary>
       <div class="dagbody">
         <div class="figs">
           <figure>
             <a class="full" href="https://10.74.81.84:12100/files/home/tony/agentic_workspace/projects/metasmith/engine/bench-run/research/metasmith_benchmark/page/dags/e3_pratama.dag.svg" target="_blank" rel="noopener">Open full screen ↗</a>
             <div class="figbox">{{SVG:e3_pratama}}</div>
-            <figcaption>Solved locally by <code>e3_pratama.py run --dag</code>. No interleave step, because the reads arrive interleaved. <code>downloadVibrantDB</code> and <code>downloadCheckvDB</code> are still in it.</figcaption>
+            <figcaption>Solved locally by <code>e3_pratama.py run --dag</code>. No interleave step, because the reads arrive interleaved, and no download step, because every database is staged. Both assemblies feed the viral merge, and only metaSPAdes feeds MetaWRAP.</figcaption>
           </figure>
         </div>
       </div>
@@ -434,8 +424,9 @@ a.full:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
         <li>The reads (491 runs, 5.21 TB) are for E5, not E4</li>
       </ul></div>
       <div><h3>Driver</h3><ul>
-        <li><code>drivers/e4_metagem.py</code>, registering the 14,108 published MAGs as bins. 3 steps, key <code>5tRUYUnb</code></li>
-        <li>CarveMe gapfill limit raised to 12 h in the driver (B11). The transform still declares 2 h</li>
+        <li><code>drivers/e4_metagem.py</code>, registering the 14,108 published MAGs as bins in 8 chunks of 2,000 (<code>--chunk</code>), which pool in one agent home. Chunk 1: 3 steps, key <code>@@E4@@</code></li>
+        <li>CarveMe gapfill at 16 GB and 12 h, and each retry doubles both (B11). The transform declares 2 h</li>
+        <li>GTDB-Tk r232 on every MAG with <code>--with-gtdbtk</code>, reading the genomes from one squashfs image</li>
         <li>Prodigal → CarveMe carve, then gapfill on M8 with CPLEX 22.2 → MEMOTE → SMETANA</li>
         <li>Ramp: li2019 → gut → soil → Tara</li>
       </ul></div>
@@ -454,19 +445,19 @@ a.full:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
         <li>MEMOTE on a real model from that run: consistency 0.894, annotation 0.797 (metabolites) / 0.766 (reactions)</li>
       </ul></div>
       <div class="open"><h3>Open</h3><ul>
-        <li class="block">No step batches, so the corpus as one run needs ~635K inodes. The driver must run it in chunks of about 2,000 MAGs</li>
         <li class="block">SMETANA: <b>new transform</b> and container image</li>
+        <li>Each chunk's model count is checked against its 2,000 MAGs, because retry-then-ignore hides failures</li>
         <li><code>metagem_compare.py</code> compares one model pair, so the comparison needs a loop over MAGs, paired by their published names</li>
       </ul></div>
     </div>
     <details class="dag">
-      <summary>Solved workflow <span class="sub">· 5tRUYUnb, 3 steps, from published MAGs</span></summary>
+      <summary>Solved workflow <span class="sub">· chunk 1, @@E4@@, 3 steps, from published MAGs</span></summary>
       <div class="dagbody">
         <div class="figs">
           <figure>
             <a class="full" href="https://10.74.81.84:12100/files/home/tony/agentic_workspace/projects/metasmith/engine/bench-run/research/metasmith_benchmark/page/dags/e4_metagem.dag.svg" target="_blank" rel="noopener">Open full screen ↗</a>
             <div class="figbox">{{SVG:e4_metagem}}</div>
-            <figcaption>Solved locally by <code>e4_metagem.py run --dag</code>: Prodigal on each MAG, CarveMe with CPLEX, then MEMOTE.</figcaption>
+            <figcaption>Chunk 1, solved locally by <code>e4_metagem.py run --chunk 1 --dag</code>: Prodigal on each MAG, CarveMe with CPLEX, then MEMOTE.</figcaption>
           </figure>
         </div>
       </div>
@@ -500,7 +491,7 @@ a.full:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
       <div><h3>Driver</h3><ul>
         <li><code>drivers/e5_pilot.py</code>, one plan per corpus, because a plan gives every sample the same targets</li>
         <li>Pilot samples: CAMI mouse gut, Pratama reads_2019 and metaGEM li2019. Every corpus registers the same study → sample → read pair shape</li>
-        <li>Solved: CAMI 45 steps (<code>ajfZ1MhZ</code>), Pratama 45 (<code>jxG1gehK</code>), metaGEM 46 (<code>FwvpcoFM</code>, which adds the interleave step)</li>
+        <li>Solved: CAMI 35 steps (<code>52mAOnXS</code>), Pratama 35 (<code>8Z7x3L7z</code>), metaGEM 36 (<code>@@E5M@@</code>, which adds the interleave step). GTDB-Tk, GTDB-Tk de novo and iPHoP join with <code>--with-gtdbtk</code></li>
         <li>Filters become masks: a frozen candidate set with thresholds applied as joins, not re-runs</li>
         <li>Studies: a study is a corpus subset, such as CAMI II mouse gut or Pratama reads_2019. MetaPop, dRep and skANI dedup run once per study</li>
         <li>MAG matrix: DAS Tool and MAGScoT bins each go through dRep and skANI dedup, per study, giving 4 MAG sets</li>
@@ -516,32 +507,37 @@ a.full:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
     </div>
     <div class="status">
       <div class="decide"><h3>To decide after the pilot</h3><ul>
-        <li>Whether DRAM-v on the viral contigs goes with DRAM. The plans still target <code>dramv_distill</code></li>
+        <li>Whether DRAM-v on the viral contigs goes with DRAM. It stays out of the plans until E3 reports</li>
         <li>Whether minced stays. Its only E5 use was the BLASTn spacer links, which are dropped</li>
       </ul></div>
       <div class="open"><h3>Depends on</h3><ul>
         <li>E2 and E3 landing, since their numbers are the baselines</li>
-        <li class="block"><b>New transforms</b>: Chopper, MAGScoT, dRep, DeepVirFinder, MetaPop, SMETANA, and minced if it stays. Each also needs a container image</li>
+        <li class="block"><b>New transforms</b>: CheckM2, Chopper, MAGScoT, dRep, DeepVirFinder, MetaPop, SMETANA, and minced if it stays. Each also needs a container image. The standard library has only CheckM 1, which left the plans</li>
+        <li class="block">prodigal-gv on the frozen viral set needs its own product type, or it also answers the assembly's Prodigal target</li>
         <li class="block">A study type that samples declare. <code>viromics::contig_study</code> stands in, but only the viral merge groups by it</li>
         <li class="block"><code>skani_dedup</code> takes the aggregator's bin pool per assembly. The MAG matrix needs it on DAS Tool and MAGScoT bins per study</li>
         <li class="block">The 4-lane panel reads whole-assembly ORFs. Running it on MAGs needs a chunker for per-MAG ORFs</li>
-        <li class="block">The plans download the VIBRANT, CheckV and iPHoP databases. iPHoP's is about 0.5 TB, with a 3× peak while downloading</li>
-        <li class="block">GTDB-Tk r232 needs the 192 GB representative genomes as well as its extracted package: 150–200K inodes, and <code>--skip_ani_screen</code> doesn't avoid them. The pilot runs without taxonomy, or waits for them</li>
+        <li class="block">GTDB-Tk r232 needs its 199,923 representative genomes, which cost 427K inodes as files. They go into one squashfs image, and taxonomy joins the pilot once a GTDB-Tk run through the image passes</li>
       </ul></div>
     </div>
     <details class="dag">
-      <summary>Solved workflows <span class="sub">· one per corpus, 45–46 steps</span></summary>
+      <summary>Solved workflows <span class="sub">· one per corpus, 35–36 steps</span></summary>
       <div class="dagbody">
         <div class="figs">
           <figure>
             <a class="full" href="https://10.74.81.84:12100/files/home/tony/agentic_workspace/projects/metasmith/engine/bench-run/research/metasmith_benchmark/page/dags/e5_pilot_cami.dag.svg" target="_blank" rel="noopener">Open full screen ↗</a>
             <div class="figbox">{{SVG:e5_pilot_cami}}</div>
-            <figcaption>CAMI mouse gut, 3 samples, <code>ajfZ1MhZ</code>. The Pratama plan also has 45 steps. MetaWRAP is masked out, and so is CCTyper.</figcaption>
+            <figcaption>CAMI mouse gut, 3 samples, <code>52mAOnXS</code>. MetaWRAP is masked out, and so is CCTyper.</figcaption>
+          </figure>
+          <figure>
+            <a class="full" href="https://10.74.81.84:12100/files/home/tony/agentic_workspace/projects/metasmith/engine/bench-run/research/metasmith_benchmark/page/dags/e5_pilot_pratama.dag.svg" target="_blank" rel="noopener">Open full screen ↗</a>
+            <div class="figbox">{{SVG:e5_pilot_pratama}}</div>
+            <figcaption>Pratama reads_2019, 3 runs, <code>8Z7x3L7z</code>.</figcaption>
           </figure>
           <figure>
             <a class="full" href="https://10.74.81.84:12100/files/home/tony/agentic_workspace/projects/metasmith/engine/bench-run/research/metasmith_benchmark/page/dags/e5_pilot_metagem.dag.svg" target="_blank" rel="noopener">Open full screen ↗</a>
             <div class="figbox">{{SVG:e5_pilot_metagem}}</div>
-            <figcaption>metaGEM li2019, 3 runs, <code>FwvpcoFM</code>. Its mate files add the interleave step.</figcaption>
+            <figcaption>metaGEM li2019, 3 runs, <code>@@E5M@@</code>. Its mate files add the interleave step.</figcaption>
           </figure>
         </div>
       </div>
