@@ -95,7 +95,7 @@ Where the map and the authors' own `data/docs/pratama2026/Groundwater_virome/Wor
 | Prodigal | matched | `prodigal_from_bin.py`, first step |
 | CarveMe, 12 h | matched | `RESOURCE_OVERRIDES`. T9 makes it scale with the attempt |
 | CPLEX 22.2 | matched | `modelling::cplex_installation` |
-| MEMOTE | matched | `memote_score.py` |
+| MEMOTE | pinned | `modelling/memote_score.py`: the standard transform with `HOME="$PWD"`, so cobrapy can create its cache |
 | GTDB-Tk r232 | gated | `--with-gtdbtk` |
 | SMETANA | gapfill 5, wave 3+ | |
 | skANI recovery | matched: after the run | |
@@ -121,6 +121,7 @@ Where the map and the authors' own `data/docs/pratama2026/Groundwater_virome/Wor
 | VIBRANT, geNomad, VirSorter2, CheckV, MMseqs2, vConTACT3 | matched | standard |
 | DRAM-v, minced | matched: out | decided after E3 reports |
 | KOfamScan, CLEAN, DIAMOND UniRef50, ProteinBERT | matched | standard |
-| CarveMe with the open solver, MEMOTE | matched | standard |
+| CarveMe with the open solver | matched | standard |
+| MEMOTE | pinned | `modelling/memote_score.py`, as in E4 |
 | SMETANA | gapfill 5, wave 3+ | |
 | AMBER, skANI recovery | matched: after the run | |

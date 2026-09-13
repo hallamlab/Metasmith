@@ -111,7 +111,8 @@ def build_transforms():
         TransformInstanceLibrary.Load(c.MLIB / "transforms" / "fabfos"),
         # CCTyper is dropped from every experiment.
         viromics.AsView({Path("cctyper.py")}, invert=True),
-        modelling.AsView({Path("carveme_from_orfs_cplex.py")}, invert=True),
+        modelling.AsView({Path("carveme_from_orfs_cplex.py"), Path("memote_score.py")}, invert=True),
+        TransformInstanceLibrary.Load(c.LIBRARY / "transforms" / "modelling"),
     ]
 
 

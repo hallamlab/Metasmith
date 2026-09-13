@@ -114,6 +114,10 @@ Launch lanes that share an agent home one after another. Wait for each to print 
 |---|---|---|---|
 | E5 pratama, job 59635698, key `8Z7x3L7z` | `functionalAnnotation/clean.py`, step 8 | `RunWorkflow` raised `GpuRequirementError` 37 s after launch, before any grid job. CLEAN declares `Gpus.REQUIRED` with 16 GB, and `stage_and_run` never passed `gpus=`. E5 cami (job 59636004, key `52mAOnXS`) failed the same way at 32 s. | The driver passes `gpus=FIR_GPU`, one MIG 3g.40gb slice (`--gres=gpu:nvidia_h100_80gb_hbm3_3g.40gb:1`), billed to `def-shallam_gpu` through `slurmGpuAccount`. CLEAN stays, because the table lists it for E5. Relaunch both E5 lanes from the fix's checkout. |
 
+| E4 gtdbtest, key `Sj7uFNWW`, and every lane that scores MEMOTE | `metabolicModelling/memote_score.py`, step 4 | `OSError: [Errno 30] Read-only file system: '/home/phyberos'`. cobrapy creates its cache under `$HOME` on import, and `$HOME` points at an unbound path in the container. It is MEMOTE's first run on fir, not a regression, and no branch carried a fix. E5 cami and E5 pratama carry the standard transform and fail the same step this wave. | `library/transforms/modelling/memote_score.py` sets `HOME="$PWD"`. E4 and E5 mask the standard transform. The plan key stays the same: the pinned step has the standard's transform key `PH2q4ubX` and a new protocol source hash. |
+
+CAUTION the solver's `[<type>] resolved by [<library>]` log line names the library that declares the type, not the transform that produces it. Check a pinned step by its `_protocol_source_hash`.
+
 CAUTION `rrg-shallam-ab` has no GPU association, so fir rejects a GPU job under it. The user's only GPU account is `def-shallam_gpu`. CLEAN had never run on fir before wave 1.
 
 CAUTION the engine's GPU check reports a GPU from a failed probe. On the CPU node fc20637, the error quoted nvidia-smi's own failure text as evidence that "a GPU does appear to be present". `_plan_gpu_requests` tests the probe's output for non-empty text rather than a zero exit. Read that sentence as noise until the engine fixes it.

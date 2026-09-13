@@ -122,7 +122,9 @@ def cmd_run(args):
         resources=[DataInstanceLibrary.Load(c.MLIB / "resources" / "env"),
                    DataInstanceLibrary.Load(c.MLIB / "resources" / "lib"), globals_lib],
         transforms=[TransformInstanceLibrary.Load(c.MLIB / "transforms" / "logistics"),
-                    TransformInstanceLibrary.Load(c.MLIB / "transforms" / "metabolicModelling"),
+                    TransformInstanceLibrary.Load(c.MLIB / "transforms" / "metabolicModelling")
+                    .AsView({Path("memote_score.py")}, invert=True),
+                    TransformInstanceLibrary.Load(c.LIBRARY / "transforms" / "modelling"),
                     TransformInstanceLibrary.Load(c.LIBRARY / "transforms" / "bench")
                     .AsView({Path("gtdbtk_image.py")})],
         targets=build_targets(args.solver, args.with_gtdbtk),
