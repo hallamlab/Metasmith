@@ -2,7 +2,7 @@
 
 ## Purpose & Contents
 
-This directory holds what research support established for the five benchmark experiments (E1 nf-core/mag parity, E2 metasmith parity, E3 Pratama, E4 metaGEM, E5 optimized). It holds findings only. The experiment design lives in the "Five Benchmark Experiments" artifact.
+This directory holds what research support established for the five benchmark experiments (E1 nf-core/mag parity, E2 metasmith parity, E3 Pratama, E4 metaGEM, E5 optimized). It holds findings only. The experiment design lives in `../PLAN.md` and the page it builds.
 
 - `PROVEN.md` is the capability inventory. Each transform, nf-core process and install carries an OBSERVED, SOURCE or UNPROVEN status with its evidence.
 - `BLOCKERS.md` lists the active blockers (B1–B12), the relaunch preconditions and the known latent defects.
@@ -27,4 +27,4 @@ All five studies publish MAGs, proteins, assemblies and models on Zenodo. `resea
 
 ## nf-core/mag DAG
 
-`nextflow run nf-core/mag -preview -with-dag dag.dot` is the only export that carries channel names on edges. The `.mmd` export has none, and `dag.verbose` does not add them. `nfcore/dot_to_msm.py` converts the `.dot` graph into metasmith's `DagRenderer` with no hand mapping.
+`nextflow run nf-core/mag -preview -with-dag dag.dot` is the only export that carries channel names on edges. The `.mmd` export has none, and `dag.verbose` does not add them. `research/cami/nfcore/dot_to_msm.py` converts the `.dot` graph into metasmith's `DagRenderer` with no hand mapping.
