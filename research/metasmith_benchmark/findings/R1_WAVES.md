@@ -155,6 +155,8 @@ CAUTION `metasmith cache list` and `cache explain` read the index only. For a li
 
 CAUTION an empty inode intersection between two file sets does not show that one copies the other. Match the files by key or name before calling bytes duplicated. Bytes, not inodes, are R1's tight quota: 16.16 of 18.63 TiB (86.8%) at 04:20 PDT.
 
+CAUTION project bytes grow when tasks complete, not while they run. Tasks work on node-local scratch, and every open task dir in wave 1 held 0 GB. A completing task unstages its products into `nxf_work`, and promotion writes a second copy into the cache. The rate swung from 0.28 to 2.16 TiB/h as bowtie2's BAMs completed, then back to 0.33 after the fastp prune. Project the bytes from the completion profile of the large-product steps in flight. Fit the slope over 10 minutes or more. A before-and-after quota pair cannot size a deletion while lanes write, so use the deleting tool's own count.
+
 ### Stopped
 
 - Before the wave, three pre-R1 runs that wave-1 lanes supersede: `iy8YLaGr` (CAMI rung 1), `d6UJuZgF` (Pratama rung 1) and `HQ5SrqFe` (metaGEM li2019). The engine route launched all three, so `scancel --batch --signal=USR1` killed them. That orphaned seven grid jobs: two COMEBin, two DRAM-v (still pending) and three CarveMe. The research agent cancelled all seven by hand. Nothing recoverable was lost, because an orphaned job never writes a cache entry. `C1IM6IG3`'s array covers COMEBin, and E4 covers CarveMe.
