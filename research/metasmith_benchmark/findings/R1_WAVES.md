@@ -100,9 +100,15 @@ Commit `f6d01f00`, checkout `/scratch/phyberos/bench/checkout/f6d01f00`. Driver 
 | E5 pratama | `sbatch -J e5_pratama $S $C e5_pilot.py run --corpus pratama --launch --tag w1` | c0b17bb1, `8Z7x3L7z` | | |
 | E5 metagem | `sbatch -J e5_metagem $S $C e5_pilot.py run --corpus metagem --launch --tag w1` | pending, after E4 chunk 1 | | |
 
+E5 pratama is submitted as job 59635698, after E3 printed `waiting on run`.
+
 Launch lanes that share an agent home one after another. Wait for each to print `waiting on run` before submitting the next, because each launch re-stages into the home.
 
 ### Failures and causes
+
+None yet.
+
+B14 is closed at scale. E2 short's fastp tasks render `--in1`, `--in2`, `--stdout` and `--detect_adapter_for_pe`, with no `--interleaved_in`. The first 4 finished tasks wrote 1,815,054,668 to 1,816,089,167 B of trimmed reads, where the defect wrote 20 B.
 
 ### Stopped
 
