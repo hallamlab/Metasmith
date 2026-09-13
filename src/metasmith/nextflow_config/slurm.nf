@@ -74,11 +74,22 @@ executor {
     
     // executor = 'hq'                      // todo: consider https://github.com/It4innovations/hyperqueue
 
-    local {
-        cpus = params.localExecutor.cpus
-        memory = params.localExecutor.memory
-        queueSize = params.localExecutor.queueSize
-    }
+    // Local-executor capacity, as FLAT keys rather than a nested `local {}` block.
+    // Nextflow reads `executor.cpus` and `executor.memory` as local-executor-only
+    // settings. `executor { local { ... } }` renders as `executor.local.cpus`, which it
+    // reports as an Unrecognized config option and then DROPS -- so this block never
+    // applied. With it dropped the local executor falls back to the JVM's available
+    // processor count, and the agent runner pins that to 1 with
+    // -XX:ActiveProcessorCount=1 to survive the login node's 512-process cap. Every
+    // `xlocalx` step then asked for the default 4 cpus against 1 available and Nextflow
+    // aborted the entire run: "Process requirement exceeds available CPUs -- req: 4;
+    // avail: 1". Reference-database downloads are exactly those steps, because compute
+    // nodes here have no outbound network.
+    // queueSize is deliberately NOT set: a flat `executor.queueSize` would apply to the
+    // SLURM executor as well and clobber the 100 set above. `executor.cpus` bounds local
+    // concurrency implicitly instead -- 8 cpus against 4-cpu steps is two at a time.
+    cpus = params.localExecutor.cpus
+    memory = params.localExecutor.memory
 }
 
 workflow {

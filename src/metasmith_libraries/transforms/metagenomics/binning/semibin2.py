@@ -17,7 +17,26 @@ def protocol(context: ExecutionContext):
     threads = context.params.get('cpus', 8)
     workdir = "semibin_out"
 
+    # SemiBin2's built-in model. `global` is also nf-core/mag's own default
+    # (`semibin_environment`), so this matches rather than deviates.
     environment = "global"
+
+    # --random-seed is set unconditionally, and like metabat2's --seed this is a
+    # correctness fix rather than a tuning choice: SemiBin2's own help says "the default
+    # is that the seed is set by the system", so without this the SAME inputs give
+    # DIFFERENT bins run to run, and a benchmark arm whose binning is not reproducible
+    # cannot be compared with anything, including itself. nf-core/mag pins
+    # `--random-seed 1` (conf/modules.config, `semibin_rng_seed` default 1), so 1 is both
+    # the reproducible choice and the parity-matching one.
+    seed = context.params.get('semibin2_seed', 1)
+
+    # --min-len is passed ONLY when a caller asks, so SemiBin2's own default behaviour is
+    # preserved for every existing user. Left unset, SemiBin2 derives its floor from
+    # `--ratio` (0.05, relative to 2500 bp) rather than from a fixed length; nf-core/mag
+    # instead passes `--min-len ${params.min_contig_size}`, i.e. 1500. Those are different
+    # rules, not merely different numbers, so a parity caller must pass 1500 explicitly.
+    min_len = context.params.get('semibin2_min_len')
+    min_len_arg = f" --min-len {min_len}" if min_len else ""
 
     _cmd = f"""
             export PATH=/opt/conda/bin:$PATH
@@ -26,6 +45,7 @@ def protocol(context: ExecutionContext):
                 -b {ibam.container} \
                 -o {workdir} \
                 --environment {environment} \
+                --random-seed {seed}{min_len_arg} \
                 -t {threads}
         """
     context.ExecWithEnv(env=image, cmd=_cmd)

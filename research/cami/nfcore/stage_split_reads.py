@@ -11,6 +11,14 @@ decision is the campaign's, not this script's: one sample, then ten, then the re
 script only ever emits and (optionally) submits a job for an explicit RUNG; it refuses to
 build one for the whole corpus without an explicit, separate opt-in (--rung all --i-mean-it).
 
+samples.tsv carries 421 rows, not 229: 172 long-read rows plus CAMI III's 20 `toy_humangut`
+short-read rows were added later for a since-settled ancestry-separation test (see
+`run_cami_metag.py`'s `enumerate_paired_toy_humangut_samples`). This script filters down to
+the 229-row short-read core/variant corpus BEFORE rung selection -- see
+`filter_core_short_read_rows`, which mirrors run_cami_metag.py's own
+`_CORE_SHORT_READ_DATASETS` allowlist -- so `--rung all --i-mean-it` never tries to deinterleave
+a long-read (single-end) file into garbage R1/R2 pairs that would report SPLIT-OK.
+
 Each array task:
   1. Skips a sample whose split R1/R2 already exist, are both non-empty, and whose read counts
      match each other (an interrupted prior split leaves exactly a size-mismatched pair).
@@ -57,6 +65,24 @@ def load_rows(samples_tsv: Path) -> list[dict]:
     if not rows:
         sys.exit(f"ERROR: {samples_tsv} has no data rows")
     return rows
+
+
+def filter_core_short_read_rows(rows: list[dict]) -> list[dict]:
+    """The 229-row short-read core/variant corpus, out of samples.tsv's full 421 rows.
+
+    Mirrors run_cami_metag.py's `_CORE_SHORT_READ_DATASETS` allowlist rule (see
+    `enumerate_samples`, ~line 211 there): `read_type == "short"` alone is not enough, because
+    it would also pull in `toy_humangut`'s 20 short-read rows, which exist only to pair with
+    `toy_humangut_long` for a since-settled ancestry test. Keep this rule identical to the
+    driver's -- the nf-core/mag arm and the metasmith short-read arm must stage the same
+    corpus. Must run BEFORE rung selection, or `--rung all --i-mean-it` tries to deinterleave
+    172 single-end long-read files, which reformat.sh will "succeed" on and produce garbage.
+    """
+    # CAMI 2+3 in ONE run (principal's directive 2026-09-12): `toy_humangut` is CAMI III's
+    # short-read half and is now INCLUDED, so this is every short-read row -- 249 of them.
+    # The previous `dataset != "toy_humangut"` clause mirrored an exclusion in
+    # run_cami_metag.py that has been removed. Keep this rule identical to that allowlist.
+    return [r for r in rows if r.get("read_type") == "short"]
 
 
 def select_rung(rows: list[dict], rung: str, i_mean_it: bool) -> list[dict]:
@@ -169,7 +195,7 @@ def main() -> None:
     ap.add_argument("--out", type=Path, default=None)
     args = ap.parse_args()
 
-    rows = load_rows(args.samples_tsv)
+    rows = filter_core_short_read_rows(load_rows(args.samples_tsv))
     rung_rows = select_rung(rows, args.rung, args.i_mean_it)
     names = [f"{r['dataset']}_{r['sample_id']}" for r in rung_rows]
     print(f"rung '{args.rung}': {len(rung_rows)} sample(s): {', '.join(names)}", file=sys.stderr)

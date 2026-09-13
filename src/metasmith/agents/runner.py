@@ -157,7 +157,22 @@ def RenderNextflowScript(
             export NXF_OFFLINE=TRUE # don't go online and search for latest version
             export OPENBLAS_NUM_THREADS=1
             export OMP_NUM_THREADS=1
-            export NXF_OPTS="-Xms2g -Xmx10g -XX:ActiveProcessorCount=1 -Djdk.virtualThreadScheduler.maxPoolSize=512"
+            # CAUTION the HEAP FLOOR is the number that matters here, not the ceiling, and it
+            # is sized for a shared cgroup rather than for the driver's own appetite. A login
+            # node caps each USER at 16 GiB across every ssh session, and `memory.current` sits
+            # at ~99.5% of that cap permanently on page cache. So a starting JVM's -Xms floor is
+            # a demand for that much INSTANT reclaim, and when reclaim cannot keep up the kernel
+            # OOM-kills instead of waiting. Measured 2026-09-12: two drivers at -Xms2g coexisted
+            # for two hours, a third one starting killed itself AND one of the other two inside
+            # 23 seconds (cgroup memory.events went from oom_kill 0 to 3). Steady-state anon read
+            # 1.01 GB immediately afterwards, so anon does NOT predict this -- the trigger is the
+            # RATE of a new claim, not the total.
+            # Drivers measure under 1 GB resident on plans of ~5,000 tasks, so -Xmx10g was
+            # defensive rather than needed, and the floor cost 2 GB up front for nothing.
+            # Raising either number back makes the driver the most attractive OOM victim on a
+            # shared node; if a driver ever dies with an in-JVM OutOfMemoryError (a DIFFERENT
+            # failure from being Killed), raise -Xmx only.
+            export NXF_OPTS="-Xms512m -Xmx6g -XX:ActiveProcessorCount=1 -Djdk.virtualThreadScheduler.maxPoolSize=512"
             set -m
             nextflow \
                 -config ./{AgentPaths.NXF_RES} \

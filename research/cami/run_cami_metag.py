@@ -45,7 +45,46 @@ CACHE_DIR = Path(os.environ.get("MSM_CACHE_DIR", ROOT / ".cache"))
 HPC_HOST      = os.environ.get("MSM_HPC_HOST", "fir")
 SLURM_ACCOUNT = os.environ.get("MSM_SLURM_ACCOUNT", "rrg-shallam-ab")
 GPU_ACCOUNT   = os.environ.get("MSM_GPU_ACCOUNT", "def-shallam_gpu")
-SETUP_COMMANDS = ["module load apptainer"]
+# Rendered into the run's launcher (start.sh, and start.slurm.sh under
+# METASMITH_DRIVER_SLURM) after the cd into the run workspace -- AND run, one command at a
+# time, in the persistent login-node shell that `Agent._run_setup` opens for every
+# StageWorkflow and RunWorkflow. Two contexts, different working directories, so every
+# line here has to be correct in both.
+#
+# WARNING never `exit` from one of these. An `exit 1` guard here KILLED the orchestrating
+# shell, and the caller saw `TimeoutError: [agent setup command] produced no output for
+# 300s` -- a hang that names no cause. Report and continue; a missing relay fails loudly
+# one step later either way. For the same reason every line must emit something or return
+# promptly, and anything backgrounded needs all three descriptors redirected plus `setsid`,
+# or the shell never sees the command finish.
+#
+# The relay line is what makes the ENGINE'S OWN compute-node driver route usable with the
+# APPTAINER runtime. `METASMITH_DRIVER_SLURM=1` sbatches the driver onto an allocated node,
+# which is the right place for it -- a fir login node's 16 GiB per-user cgroup fills with
+# page cache from our own staging I/O and then SIGKILLs any JVM that claims a heap floor.
+# But the relay is NODE-BOUND: its socket lives in that node's own /tmp and is discovered
+# by hostname, symlinked into the agent home as `relay/<hostname>`. Nothing in the engine's
+# Slurm branch starts one, and `runner.py`'s stage and run paths connect THROUGH it whenever
+# `needs_relay`, which is true for APPTAINER.
+#
+# CAUTION the `[ ! -e ]` guard is load-bearing rather than defensive: starting a second
+# relay on a node that already has one replaces the symlink the first one's driver is using.
+# The agent home is found by walking UP from $PWD looking for relay/msm_relay, so the same
+# line resolves it from the agent home (the login-node shell) and from runs/<key> (the
+# launcher) without either context being named here.
+SETUP_COMMANDS = [
+    "module load apptainer",
+    'MSM_RELAY_HOME="$PWD"; for _ in 1 2 3 4; do'
+    ' [ -x "$MSM_RELAY_HOME/relay/msm_relay" ] && break;'
+    ' MSM_RELAY_HOME="$(dirname "$MSM_RELAY_HOME")"; done',
+    '[ -x "$MSM_RELAY_HOME/relay/msm_relay" ] && [ ! -e "$MSM_RELAY_HOME/relay/$(hostname)" ]'
+    ' && ( cd "$MSM_RELAY_HOME" && setsid ./relay/msm_relay start'
+    ' >"/tmp/msm_relay_$(hostname).log" 2>&1 </dev/null & ); true',
+    'for _ in 1 2 3 4 5 6 7 8 9 10; do'
+    ' [ -e "$MSM_RELAY_HOME/relay/$(hostname)" ] && break; sleep 1; done;'
+    ' echo "relay on $(hostname):'
+    ' $([ -e "$MSM_RELAY_HOME/relay/$(hostname)" ] && echo present || echo MISSING)"',
+]
 
 CAMI_ROOT    = Path(os.environ.get("CAMI_ROOT", "/scratch/phyberos/cami"))
 HPC_MSM_HOME = Path(os.environ.get("MSM_AGENT_HOME", str(CAMI_ROOT / "metasmith")))
@@ -91,6 +130,89 @@ DB_PATHS = {
 # iphop, vibrant, vcontact3 and checkv are not on the cluster in any form.
 STAGED_REFS = {
     "ref::genomad": Path("/scratch/phyberos/databases/genomad"),
+    # GTDB r232's full data package, 15 GB, unpacked. Staged rather than downloaded for
+    # three independent reasons, any one of which would be enough:
+    #   1. downloadGtdbDB's FULL_PKG url is DEAD. GTDB renamed the archive in release232
+    #      from gtdbtk_data.tar.gz to gtdbtk_r232_data.tar.gz; the old name returns 404 and
+    #      the new one 200, both checked directly. REPS_PKG is unaffected (200).
+    #   2. That transform also pulls the ~179 GB representative-genome tarball, and the
+    #      only consumer here, taxonomy/gtdbtk.py, runs `classify_wf --skip_ani_screen`,
+    #      which touches neither the skani sketches nor the reps. The staged tree has
+    #      neither and does not need them.
+    #   3. It is a `local`-labelled step, so it runs on a login node, where the per-user
+    #      cgroup and the local executor's capacity are the binding constraints.
+    # CAUTION the path is the release directory ITSELF, not a parent containing it,
+    # because the consumer exports GTDBTK_DATA_PATH=/ref and gtdbtk expects markers/,
+    # masks/, msa/, pplacer/ and taxonomy/ directly beneath it. downloadGtdbDB's own
+    # product is nested one level deeper (it asserts <out>/release232/skani/database),
+    # so the produced and staged shapes DISAGREE -- a latent defect in that transform,
+    # which has never run against a consumer on any host. Satisfy the consumer.
+    "ref::gtdb": Path("/scratch/phyberos/staging/gtdb/release232"),
+}
+
+# Staged references OUTSIDE the `ref::` namespace, and PRATAMA-ONLY. Kept separate from
+# STAGED_REFS for two reasons, both measured 2026-09-12:
+#
+#  1. Every registration site loads its OWN type-library list, and only the two Pratama
+#     builders load annotation.yml. Putting an `annotation::` entry in STAGED_REFS makes
+#     build_globals and build_globals_long_read fail to plan at all -- the traceback reads
+#     `AssertionError: namespace [annotation] not found`, which names the library rather
+#     than the dict, so it does not point at the dict that caused it.
+#  2. Pratama is the only arm with a DRAM consumer. Registering an unconsumed given in the
+#     CAMI builders risks moving their launch baseline keys, and waves 3 and 4 depend on
+#     those keys not moving for the life of the run.
+STAGED_REFS_PRATAMA = {
+    # DRAM 1.5.0's prepared database tree, so `downloadDramDB` leaves the plan.
+    #
+    # That step carries labels=["local"], so it runs wherever the DRIVER runs -- and the
+    # driver moved to a compute node, where bulk egress does not work. Measured from
+    # fc30220: a zenodo HEAD returns http 200 in 0.61 s, a github tarball moves at
+    # 0.14 MB/s, and ftp.genome.jp STALLS at 19 MB and 0 B/s over two windows, against
+    # ~550 MB/s from a login node. So small requests succeed and large transfers HANG:
+    # the step neither errors nor progresses, and a driver whose only submitted step is
+    # this one looks exactly like a driver that is working.
+    #
+    # Same remedy as ref::gtdb -- stage it, drop the step. The staged tree is built by
+    # /scratch/phyberos/stage_dram.sh, which runs THIS image's own
+    # `DRAM-setup.py prepare_databases` with the identical --select_db set, binding the
+    # output at /db, so DRAM writes its config entries `/db`-prefixed natively. That is
+    # the shape the consumer needs: `dramv` binds this directory at /db and passes
+    # `--config_loc /db/DRAM.config`.
+    #
+    # CAUTION test the config's CONTENT, never its presence, and never the exit code.
+    # DRAM's downloaders log a per-database failure and carry on, and prepare_databases
+    # copies a valid all-null CONFIG as its FIRST action, so a DRAM.config whose entries
+    # are null is the signature of a step that ran and achieved nothing. The five
+    # *_form / *_database sheets are the half that `DRAM-v.py distill` cannot run without,
+    # and their absence surfaces one step after its cause.
+    "annotation::dram_db": Path(os.environ.get(
+        "DRAM_DB_ROOT", "/scratch/phyberos/refs/dram_1.5.0")),
+
+    # vConTACT3's v230 database, so `downloadVcontact3DB` leaves the plan. Same
+    # compute-node-egress reason as DRAM above: that step is labels=["local"] and a
+    # ~3 GB fetch cannot complete where the driver now runs.
+    #
+    # There is a second reason specific to this database, and it is why the staged copy
+    # is not simply the cache shard. The published release ships upstream mmseqs BUILD
+    # SCRATCH -- one `*/*.mmseq_tmp/<run-id>/` per source database -- carrying 404
+    # DANGLING symlinks, which was 5,888 of the product's 6,925 inodes. A directory
+    # product holding a dangling symlink cannot survive the standard task contract:
+    # nextflow's unstage copies with `nxf_fs_copy`'s `cp -fRL`, `-L` dereferences, the
+    # copy fails, and retry-then-ignore swallows it -- so the step reported complete
+    # with no product and vcontact3 plus everything past it dropped silently out of the
+    # run. `logistics/downloadVcontact3DB.py` now prunes that scratch and asserts no
+    # dangling symlink survives; /scratch/phyberos/stage_vcontact3.sbatch applied the
+    # identical prune to the copy we already had, verified 0 dangling and >=1 version
+    # manifest before promoting, and took the tree from 6,925 inodes / 5.1 GB to
+    # 1,057 / 3.2 GB.
+    #
+    # CAUTION nothing reads the pruned scratch -- checked with a python walk over all 17
+    # modules of vcontact3's own package, NOT with grep, because `grep -rl 'def '`
+    # returns 0 of 17 files inside that image and so a zero from grep there is not
+    # evidence. The tmp paths the tool builds at run time are `*.updated.mmseq_clu_tmp`
+    # under its own out_dir and `tempfile.TemporaryDirectory` scratch.
+    "ref::vcontact3_db": Path(os.environ.get(
+        "VCONTACT3_DB_ROOT", "/scratch/phyberos/refs/vcontact3_v230")),
 }
 
 AGENT_IMAGE = os.environ.get(
@@ -102,10 +224,34 @@ AGENT_IMAGE = os.environ.get(
 # meant to track.
 FIR_MEM_MB_PER_CPU = 4000
 
+# Every container `setup --run` pre-pulls. CAUTION this list is NOT derived from the
+# plans, so it drifts silently, and the way it fails is the worst available: a compute-node
+# driver moves 0.14 MB/s externally, so a step whose image is absent from the cache HANGS
+# instead of failing -- measured, it sat for eleven minutes looking like a driver that was
+# working. It was missing das_tool (CAMI, step 16) and ten of Pratama's twenty-one.
+#
+# The authoritative per-arm list is a STAGED RUN's own `workflow.env.json`, which names
+# every env and its container URI for the shape that was actually staged. Re-derive from it
+# rather than from a grep over transform sources:
+#   grep -oE '"container":"[^"]+"' <run>/workflow.env.json | sort -u
+# and check each against the cache, whose naming is the URI with :// -> .. , / -> _ , : -> ..
+# (`/scratch/phyberos/imgcheck.sh` does both for all three arms).
+#
+# Read only by cmd_setup, so it is key-neutral: it is a pull list, not a plan input.
 CONTAINERS = [
+    # shared across all three arms
     "seqkit", "bbtools", "megahit", "samtools", "minimap2", "bedtools",
-    "pprodigal", "diamond", "kofamscan", "polars", "python_for_data_science",
-    "metabat2", "semibin", "comebin", "checkm", "skani", "amber",
+    "pprodigal", "checkm", "polars", "skani",
+    # binning ensemble + scoring (CAMI short read, CAMI long read, Pratama)
+    "metabat2", "semibin", "comebin", "amber", "das_tool", "metawrap",
+    # Pratama viromics lane
+    "vibrant", "virsorter2", "vcontact3", "checkv", "genomad", "dram",
+    "mmseqs2", "cctyper", "blast",
+    # metaGEM reconstruction lane
+    "carveme", "memote",
+    # severed lanes, kept so re-enabling one needs no pull round -- see the taxonomy
+    # and cellular-annotation decisions in the plan's run log
+    "diamond", "kofamscan", "python_for_data_science",
 ]
 
 
@@ -200,18 +346,28 @@ def get_agent(corpus="cami"):
     )
 
 
-# The six CAMI II short-read datasets the core/variant arms have always run
-# against. Kept as an explicit allowlist rather than every samples.tsv row with
-# `read_type == "short"`, because build_samples.py now ALSO discovers
-# toy_humangut's short-read half (added alongside its long-read half purely so
-# the long-read arm can pair them under one read_metadata -- see
-# enumerate_paired_toy_humangut_samples). Filtering on read_type alone would
-# silently grow the core/variant corpus by 20 samples the moment that pairing
-# landed; this allowlist is what keeps those two arms' sample sets exactly what
-# they were before the long-read arm existed.
+# Every short-read dataset the core/variant arms run against: CAMI II's six plus
+# CAMI III's `toy_humangut`. 249 samples.
+#
+# CAMI 2+3 IN ONE RUN is the principal's directive (2026-09-12). `toy_humangut`'s
+# short-read half was previously excluded here, and that exclusion was mine rather
+# than a requirement -- it was introduced because build_samples.py discovers those
+# rows only so the long-read arm can pair them with `toy_humangut_long` under one
+# read_metadata, and I did not want the corpus to grow as a side effect of that
+# pairing landing. Keeping it out meant 20 samples that are on disk and scoreable
+# sat in neither arm, and the comparison covered CAMI II only.
+#
+# CAUTION this allowlist is DUPLICATED, by design, in two nf-core scripts:
+# `nfcore/build_samplesheet.py` and `nfcore/stage_split_reads.py`. All three must
+# change together. If they diverge, the reference arm and the parity arm cover
+# DIFFERENT corpora while both reporting a sample count that looks right -- and no
+# check in this campaign sees it, because the join between a generated table and
+# the scripts that read it is not a property of any plan. The check that does see
+# it is diffing the two arms' emitted sample-id lists against each other.
 _CORE_SHORT_READ_DATASETS = {
     "marine", "strain", "toy_mousegut", "toy_hmp_airskinurogenital",
     "toy_hmp_gastrooral", "plant_associated",
+    "toy_humangut",
 }
 
 
@@ -462,16 +618,41 @@ def build_targets(with_dedup=True, variant="core"):
 
     bins = [t.Add(f"sequences::{b}_bin_fasta", parents=[asm]) for b in binners]
     tables = [t.Add(f"binning::{b}_contig_to_bin_table", parents=[asm]) for b in binners]
-    for b in bins:
-        t.Add("taxonomy::checkm_stats", parents=[b])
-    # One amber target per binner, pinned to that binner's own table, exactly as
-    # checkm_stats is pinned per bin set. Pinned to the assembly instead, the
-    # planner satisfies the slot once and scores ONE binner -- a solve that
-    # succeeds and silently answers a fraction of the question. amber emits both
-    # its products in one step, so naming amber_bin_metrics too would buy nothing
-    # and cost a slot.
-    for tb in tables:
-        t.Add("binning::amber_results", parents=[tb])
+
+    # WHICH BIN SETS GET EVALUATED, and this is a scientific decision rather than a
+    # plumbing one: when a consolidator runs, the MAGs are ITS output. The individual
+    # binners' bin sets are intermediates -- they exist to be consolidated, and a
+    # completeness/contamination or AMBER number computed on one of them is not a
+    # statement about any genome this pipeline reports.
+    #
+    #   core variant    -> metawrap consolidates INTERNALLY, so its own bin set IS the
+    #                      MAG set. It is evaluated.
+    #   other variants  -> das_tool consolidates the three binners, so DAS Tool's bin
+    #                      set is the MAG set and the three are intermediates.
+    #
+    # Nothing is lost by not evaluating them here. Their bin fastas and contig2bin
+    # tables are still named as targets below -- das_tool REQUIRES the three tables, so
+    # they are produced and collected either way -- which means a per-binner AMBER or
+    # CheckM2 pass remains available post hoc at any time, from artifacts the run keeps.
+    # `research/cami/score_reference_amber.py` already scores a two-column table
+    # out-of-plan in a format identical to the in-plan scorer's.
+    #
+    # CAUTION do not "restore symmetry" by adding these back because nf-core/mag is
+    # configured with `post_binning_input = 'both'`. That setting exists so the pinned
+    # binners appear in downstream tables at all; the REPORTED comparison is DAS Tool's
+    # refined set against nf-core's `DASTool` rows, and nf-core publishes its per-binner
+    # contig_to_bin map unconditionally (mag.nf:467, storeDir) whether or not it QCs them.
+    if variant == "core":
+        # One amber target per binner, pinned to that binner's own table, exactly as
+        # checkm_stats is pinned per bin set. Pinned to the assembly instead, the
+        # planner satisfies the slot once and scores ONE binner -- a solve that
+        # succeeds and silently answers a fraction of the question. amber emits both
+        # its products in one step, so naming amber_bin_metrics too would buy nothing
+        # and cost a slot.
+        for b in bins:
+            t.Add("taxonomy::checkm_stats", parents=[b])
+        for tb in tables:
+            t.Add("binning::amber_results", parents=[tb])
     if variant != "core":
         # DAS Tool consolidates the three binners above. It cannot be scored by
         # amber.py itself -- three measurements, in order:
@@ -801,10 +982,10 @@ def build_targets_long_read():
     binners = ("metabat2", "semibin2", "comebin")
     bins = [t.Add(f"sequences::{b}_bin_fasta", parents=[asm_lr]) for b in binners]
     tables = [t.Add(f"binning::{b}_contig_to_bin_table", parents=[asm_lr]) for b in binners]
-    for b in bins:
-        t.Add("taxonomy::checkm_stats", parents=[b])
-    for tb in tables:
-        t.Add("binning::amber_results", parents=[tb])
+    # No per-binner checkm_stats or amber targets: das_tool consolidates these three, so
+    # they are intermediates and DAS Tool's bin set is the MAG set. See build_targets'
+    # note on which bin sets get evaluated; the tables above are still named, so a
+    # per-binner pass remains available post hoc.
     t.Add("binning::das_tool_contig_to_bin_table", parents=[asm_lr])
     t.Add("binning::das_tool_amber_results")
     # Refined bins, published and CheckM2-scored -- see build_targets' identical
@@ -920,6 +1101,48 @@ def enumerate_pratama_runs():
     return kept, report
 
 
+# Pratama's published products, for the recovery comparison. They arrive as zips; these are
+# the unpacked, permanent locations. The SHAPE of each is dictated by the transform that
+# consumes it, not by the archive's layout:
+#   published_votus  a SINGLE multi-fasta. pratama_votu_recovery passes it straight to
+#                    `skani dist --qi -q <file>`, where -q takes one multi-fasta and --qi
+#                    scores each contig inside it as its own genome, so the catalogue has to
+#                    stay pooled exactly as published. 257,252 records, verified by header count.
+#   published_mags   a FLAT DIRECTORY of per-genome fasta. pratama_mag_recovery globs
+#                    `<dir>/*.fasta`, one level and not recursive, so the archive's three
+#                    part-directories are merged into one (425 each, 1275 total, zero filename
+#                    collisions across parts).
+#
+# CAUTION registered with an explicit stable instance_id, and that is the whole point. These
+# two were previously `AddItem(DEFERRED, ...)` with no id, and AddItem mints a fresh uuid4 for
+# any path it cannot stat -- which a DEFERRED path never can. Measured: five consecutive dry
+# runs of --with-zenodo-comparison produced five different plan keys in one untouched tree, so
+# any interruption of a real run discarded the entire cache. A DEFERRED input also carries no
+# data at all, so the two recovery steps could not have produced a comparison either way.
+# Override a path with the env var to point at your own unpack location.
+PRATAMA_PUBLISHED = {
+    "pratama::published_votus": Path(os.environ.get(
+        "PRATAMA_PUBLISHED_VOTUS",
+        "/scratch/phyberos/pratama2026/zenodo_17897233_unpacked/votu/FINAL_groundwater-votu-5k.fasta")),
+    "pratama::published_mags": Path(os.environ.get(
+        "PRATAMA_PUBLISHED_MAGS",
+        "/scratch/phyberos/pratama2026/zenodo_17897233_unpacked/mags")),
+}
+
+
+def _register_pratama_published(lib):
+    """Register the published products with ids identical across every call site.
+
+    Both `build_inputs_pratama` and `build_globals_pratama` register these, and the two must
+    agree: a differing instance_id for one path would present the solver with two distinct
+    given items of the same type. Deriving the id here rather than at each call site makes
+    agreement structural instead of a convention someone has to remember.
+    """
+    for dtype, path in PRATAMA_PUBLISHED.items():
+        lib.RegisterItem(path, dtype,
+                         instance_id=_stable_id("pratama_published", "ref", dtype, str(path)))
+
+
 def build_inputs_pratama(runs, with_gpr_panel=False, with_zenodo_comparison=False):
     """Register every run's reads through the library's paired-reads chain, plus
     one shared viromics::contig_study root the viral survey's cross-sample tools
@@ -993,6 +1216,8 @@ def build_inputs_pratama(runs, with_gpr_panel=False, with_zenodo_comparison=Fals
         inputs.RegisterItem(path, dtype, instance_id=_stable_id("pratama", "ref", dtype, str(path)))
     for dtype, path in STAGED_REFS.items():
         inputs.RegisterItem(path, dtype, instance_id=_stable_id("pratama", "ref", dtype, str(path)))
+    for dtype, path in STAGED_REFS_PRATAMA.items():
+        inputs.RegisterItem(path, dtype, instance_id=_stable_id("pratama", "ref", dtype, str(path)))
 
     # annotation::gpr_table's two study-wide references, registered only when the
     # panel is asked for. DEFERRED because no location for either was sourced on
@@ -1024,8 +1249,7 @@ def build_inputs_pratama(runs, with_gpr_panel=False, with_zenodo_comparison=Fals
     # and this driver's `DB_PATHS` grows a `PRATAMA_ZENODO_*`-style override pointing
     # a real RegisterItem at the unzipped location instead of this DEFERRED stand-in.
     if with_zenodo_comparison:
-        inputs.AddItem(DEFERRED, "pratama::published_mags")
-        inputs.AddItem(DEFERRED, "pratama::published_votus")
+        _register_pratama_published(inputs)
 
     inputs.Save()
     return inputs
@@ -1053,24 +1277,27 @@ def build_globals_pratama(with_gpr_panel=False, with_zenodo_comparison=False):
     CACHE_DIR.mkdir(parents=True, exist_ok=True)
     lib = DataInstanceLibrary(CACHE_DIR / "pratama_globals.xgdb")
     lib.Purge()
-    for tl in ["ref.yml", "env.yml", "pratama.yml"]:
+    # annotation.yml is load-bearing for STAGED_REFS_PRATAMA's dram_db entry; without it
+    # RegisterItem asserts `namespace [annotation] not found` and NO arm plans.
+    for tl in ["ref.yml", "env.yml", "annotation.yml", "pratama.yml"]:
         lib.AddTypeLibrary(MLIB / "data_types" / tl)
     for dtype, path in DB_PATHS.items():
         lib.RegisterItem(path, dtype, instance_id=_stable_id("pratama_globals", "ref", dtype, str(path)))
     for dtype, path in STAGED_REFS.items():
         lib.RegisterItem(path, dtype, instance_id=_stable_id("pratama_globals", "ref", dtype, str(path)))
+    for dtype, path in STAGED_REFS_PRATAMA.items():
+        lib.RegisterItem(path, dtype, instance_id=_stable_id("pratama_globals", "ref", dtype, str(path)))
     if with_gpr_panel:
         lib.AddItem(DEFERRED, "ref::mnxr_lookup")
         lib.AddItem(DEFERRED, "ref::label_transfer_landmarks")
     if with_zenodo_comparison:
-        lib.AddItem(DEFERRED, "pratama::published_mags")
-        lib.AddItem(DEFERRED, "pratama::published_votus")
+        _register_pratama_published(lib)
     lib.Save()
     return lib
 
 
 def build_targets_pratama(with_gpr_panel=False, with_zenodo_comparison=False,
-                          with_host_prediction=False):
+                          with_host_prediction=False, with_cellular_annotation=False):
     """MEGAHIT + MetaWRAP + CheckM2, plus the viral survey.
 
     The viral block WAS a blind copy of research/viromics/viromics_survey_from_paired_reads.py's
@@ -1134,22 +1361,30 @@ def build_targets_pratama(with_gpr_panel=False, with_zenodo_comparison=False,
     asm = t.Add("sequences::megahit_assembly")
     frozen = t.Add("viromics::dereplicated_candidate_virus")
 
-    # This plan has TWO producers of `sequences::orfs` -- prodigal.py on the
-    # whole assembly (line ~1137 below, das_tool's own) and prodigal_gv.py on
-    # `frozen`, the viral set -- and nothing here pins which one the per_sample
-    # annotation targets below (dramv_distill/dram_annotations/gpr_table) get:
-    # they all have a bare `sequences::orfs` requirement, satisfied ancestrally
-    # by whichever producer descends from the same asm/frozen ancestor the
-    # rest of their own dependency chain does. Verified correct by dumping
-    # `s.uses` on a real 47-step plan -- DAS Tool binds prodigal's, the
-    # annotation chain binds prodigal_gv's -- but both descend from the same
-    # assembly, ancestral matching cannot tell them apart in principle, and
-    # nothing here would notice if a future target-set change flipped the
-    # annotation chain onto the whole-assembly ORFs silently. Cheap to verify
-    # again after any change near here; not cheap to pin outright without
-    # narrowing one of the two `sequences::orfs` consumers the way amber.py
-    # was narrowed to `raw_contig_to_bin_table` (see binning.yml), which is
-    # out of scope for this pass.
+    # This plan has TWO producers of `sequences::orfs` -- prodigal.py on the whole
+    # assembly and prodigal_gv.py on `frozen`, the viral set -- and NOTHING PINS
+    # WHICH ONE WINS. Both descend from the same assembly, so ancestral matching
+    # cannot tell them apart even in principle.
+    #
+    # CAUTION this comment previously asserted "the annotation chain binds
+    # prodigal_gv's ... Verified correct". That was true when written and is NOT
+    # true now. On 2026-09-12 an UNRELATED change -- pointing `ref::gtdb` at a
+    # staged tree, which removed a download step -- flipped the chain onto
+    # prodigal's whole-assembly ORFs. Step count stayed 41 both ways and one step
+    # name differed. So do not read the current binding as a defect and flip it
+    # back: the binding is not pinned in either direction, and it moves on changes
+    # that have nothing to do with ORFs.
+    #
+    # The stakes of the flip are an order of magnitude, which is why the expensive
+    # consumer below is now opt-in. One Pratama sample measured 672,121 ORFs from
+    # 401,906 contigs on the whole assembly; the chunker cuts at 5,000, so that is
+    # ~135 chunks per sample and ~8,900 tasks at 66 samples, each declaring 8 cpus
+    # and 64 GB over KOfam + Pfam + dbCAN. Bound to the viral set instead it is a
+    # small fraction of that. Chunk size is NOT the lever -- it trades task count
+    # for per-task runtime and leaves total core-hours unchanged.
+    #
+    # The durable fix is a type fence giving viral ORFs their own type, the same
+    # shape as `raw_contig_to_bin_table` in binning.yml. Out of scope mid-launch.
     #
     # cross-sample tools, pooled on the frozen set (viromics TARGETS[2:9] minus
     # kofamscan_descriptions -- see the docstring)
@@ -1177,8 +1412,20 @@ def build_targets_pratama(with_gpr_panel=False, with_zenodo_comparison=False,
     t.Add("binning_local::cluster_table", parents=[asm])
     if with_zenodo_comparison:
         t.Add("pratama::votu_recovery_table", parents=[frozen])
-    # per-sample viral work that nothing above reaches (viromics TARGETS[10], [12])
-    per_sample = ["annotation::dramv_distill", "annotation::dram_annotations"]
+    # per-sample viral work that nothing above reaches (viromics TARGETS[10], [12]).
+    # dramv_distill is DRAM-v on the viral contigs and IS criterion 2's AMG calls --
+    # always on.
+    per_sample = ["annotation::dramv_distill"]
+    # dram_annotations is the CELLULAR annotation lane and is OPT-IN, for the same
+    # reason host prediction is: it answers no acceptance criterion and it is now the
+    # largest single cost in this arm. Criterion 2 asks for a vOTU catalogue, MAGs and
+    # AMG calls; the AMG calls are DRAM-v's, above. Measured cost when it binds the
+    # whole assembly's ORFs: ~8,900 tasks at 8 cpus and 64 GB, on the order of 36,000
+    # to 71,000 core-hours -- twenty to forty times the de-novo tree this arm already
+    # dropped on exactly this argument. Add it back as a follow-on run against an
+    # assembly that already exists; nothing about it needs to be in the first pass.
+    if with_cellular_annotation:
+        per_sample.append("annotation::dram_annotations")
     if with_gpr_panel:
         per_sample.append("annotation::gpr_table")
     for dtype in per_sample:
@@ -1299,9 +1546,34 @@ def make_slurm_config(comebin_device="cpu", comebin_time="3d", comebin_cpus=48):
     # run before a single task is submitted -- and metasmith still prints `run
     # completed` with zero outputs. Exempting them by name is the narrow fix; the
     # broad one belongs in nextflow_config/slurm.nf.
+    #
+    # DO NOT add `scratch = false` here. It was tried and REMOVED, and the reason is
+    # worth the space because the symptom is convincing.
+    #
+    # The preset sets `scratch` to the node-local SLURM_TMPDIR for every process, so a
+    # twin materialises the cached product into node-local scratch and Nextflow copies
+    # it back with `nxf_fs_copy`'s `cp -fRL`. `-L` DEREFERENCES, so a product tree
+    # carrying a dangling symlink fails with hundreds of `cannot stat` lines naming the
+    # DESTINATION path. `nxf_unstage`'s status becomes the task's, so the twin is retried
+    # and then swallowed by the ignore strategy: the product is silently absent, every
+    # consumer drops out, and the run still reports completed.
+    #
+    # Turning scratch off does stop that, and it halves the twin's I/O -- but it bends
+    # the execution contract for EVERY cached twin to accommodate ONE product's defect,
+    # and the contract is not the thing to bend. Exactly one product ever failed:
+    # vConTACT3's database, which ships upstream mmseqs build scratch containing 404
+    # dangling symlinks. `logistics/downloadVcontact3DB.py` now prunes that scratch in the
+    # protocol that builds the product and asserts no dangling symlink survives, so the
+    # product is valid inside the standard contract.
+    #
+    # Exposure audited before removing the exemption: 1 shard of 4,865 across all three
+    # agent homes held a dangling symlink, and it was that database. If a future reference
+    # product fails its unstage the same way, fix THAT product's protocol -- the check is
+    # `find <shard>/out -xtype l | wc -l`.
     text = base + "\n" + "\n".join(
         ["", "process {", "    withName: '.*__comebin' {", *body, "    }", "}", "",
-         "process {", "    withName: '.*_cached' {", "        array = 0", "    }", "}", ""])
+         "process {", "    withName: '.*_cached' {", "        array = 0",
+         "    }", "}", ""])
     CACHE_DIR.mkdir(parents=True, exist_ok=True)
     out = CACHE_DIR / f"fir_slurm_cami_{comebin_device}comebin.config"
     out.write_text(text)
@@ -1456,7 +1728,8 @@ def cmd_run(args):
         resource_lib = DataInstanceLibrary.Load(MLIB / "resources" / "lib")
         targets = build_targets_pratama(with_gpr_panel=args.with_gpr_panel,
                                         with_zenodo_comparison=args.with_zenodo_comparison,
-                                        with_host_prediction=args.with_host_prediction)
+                                        with_host_prediction=args.with_host_prediction,
+                                        with_cellular_annotation=args.with_cellular_annotation)
 
         smith = (Agent(home=Source.FromLocal(CACHE_DIR / "dryrun_home_pratama"), runtime=Runtime.APPTAINER)
                  if args.dry_run else get_agent("pratama"))
@@ -1520,11 +1793,47 @@ def cmd_run(args):
             task=task, config_file=config,
             params=dict(slurmAccount=SLURM_ACCOUNT,
                         executor=dict(queueSize=500),
-                        process=dict(tries=4, array=25)),
+                        process=dict(tries=4, array=25),
+                        # Per-binner parity with nf-core/mag, audited against its
+                        # conf/modules.config at the pinned 5.5.0 revision. All three
+                        # binners, not just metabat2 -- auditing one of three is how an
+                        # unstated confound survives.
+                        #   metabat2: nf-core `-m 1500` + `--seed 1`; metabat2 itself
+                        #     defaults to 2500 and a RANDOM seed. nf-core passes no `-s`,
+                        #     so minClsSize is 200000 on both sides and is NOT a deviation.
+                        #   semibin2: nf-core `--min-len 1500` + `--random-seed 1`.
+                        #     SemiBin2 unset derives its floor from `--ratio` 0.05 relative
+                        #     to 2500 bp -- a different RULE, not just a different number --
+                        #     and its seed is "set by the system", so our binning was not
+                        #     reproducible run to run. `--environment global` already
+                        #     matched nf-core's own default.
+                        #   comebin: nf-core passes no args at all; ours passes
+                        #     `-b min(usable_contigs, 1024)` and COMEBin's own default is
+                        #     1024, so on any real sample these are IDENTICAL. The clamp
+                        #     only bites on inputs too small for COMEBin to run.
+                        #
+                        # CAUTION these were INERT until bootstrap.py was taught to load
+                        # workflow.params.yml -- a driver's params reached nextflow only.
+                        metabat2_min_contig=1500, metabat2_seed=1,
+                        semibin2_min_len=1500, semibin2_seed=1),
             resource_overrides={
                 "bbduk":   Resources(memory=Size.GB(64), cpus=16),
                 "megahit": Resources(memory=Size.GB(128), cpus=32,
                                      duration=Duration(hours=12)),
+                # A `local`-labelled step runs on a login node, where nextflow's LOCAL
+                # executor admits it only if its request fits `executor.cpus`/`.memory`
+                # (8 cpus, 8 GB in the slurm preset). That admission check is fatal to the
+                # whole session -- it fires before errorStrategy is consulted and cancels
+                # everything already running, on slurm included. downloadDramDB declares
+                # 64 GB, which is the right default for a full DRAM setup but not for the
+                # five databases this transform actually selects: kofam_hmm, kofam_ko_list,
+                # pfam, pfam_hmm and dbcan. No uniref, so no large diamond makedb. Measured
+                # requirement is unknown; 8 GB is the ceiling the local executor allows and
+                # the login node's per-user cgroup is 16 GiB shared, so a larger request
+                # could not be honoured there anyway. Check the product, not the exit code:
+                # success is DRAM.config existing.
+                "downloadDramDB": Resources(cpus=4, memory=Size.GB(8),
+                                            duration=Duration(hours=12)),
             },
         )
         print(f"Submitted: {task.GetKey()}")
@@ -1626,7 +1935,29 @@ def cmd_run(args):
             task=task, config_file=config,
             params=dict(slurmAccount=SLURM_ACCOUNT,
                         executor=dict(queueSize=500),
-                        process=dict(tries=4, array=25)),
+                        process=dict(tries=4, array=25),
+                        # Per-binner parity with nf-core/mag, audited against its
+                        # conf/modules.config at the pinned 5.5.0 revision. All three
+                        # binners, not just metabat2 -- auditing one of three is how an
+                        # unstated confound survives.
+                        #   metabat2: nf-core `-m 1500` + `--seed 1`; metabat2 itself
+                        #     defaults to 2500 and a RANDOM seed. nf-core passes no `-s`,
+                        #     so minClsSize is 200000 on both sides and is NOT a deviation.
+                        #   semibin2: nf-core `--min-len 1500` + `--random-seed 1`.
+                        #     SemiBin2 unset derives its floor from `--ratio` 0.05 relative
+                        #     to 2500 bp -- a different RULE, not just a different number --
+                        #     and its seed is "set by the system", so our binning was not
+                        #     reproducible run to run. `--environment global` already
+                        #     matched nf-core's own default.
+                        #   comebin: nf-core passes no args at all; ours passes
+                        #     `-b min(usable_contigs, 1024)` and COMEBin's own default is
+                        #     1024, so on any real sample these are IDENTICAL. The clamp
+                        #     only bites on inputs too small for COMEBin to run.
+                        #
+                        # CAUTION these were INERT until bootstrap.py was taught to load
+                        # workflow.params.yml -- a driver's params reached nextflow only.
+                        metabat2_min_contig=1500, metabat2_seed=1,
+                        semibin2_min_len=1500, semibin2_seed=1),
             resource_overrides={
                 "bbduk":   Resources(memory=Size.GB(64), cpus=16),
                 "megahit": Resources(memory=Size.GB(128), cpus=32,
@@ -1700,7 +2031,29 @@ def cmd_run(args):
         task=task, config_file=config,
         params=dict(slurmAccount=SLURM_ACCOUNT,
                     executor=dict(queueSize=500),
-                    process=dict(tries=4, array=25)),
+                    process=dict(tries=4, array=25),
+                        # Per-binner parity with nf-core/mag, audited against its
+                        # conf/modules.config at the pinned 5.5.0 revision. All three
+                        # binners, not just metabat2 -- auditing one of three is how an
+                        # unstated confound survives.
+                        #   metabat2: nf-core `-m 1500` + `--seed 1`; metabat2 itself
+                        #     defaults to 2500 and a RANDOM seed. nf-core passes no `-s`,
+                        #     so minClsSize is 200000 on both sides and is NOT a deviation.
+                        #   semibin2: nf-core `--min-len 1500` + `--random-seed 1`.
+                        #     SemiBin2 unset derives its floor from `--ratio` 0.05 relative
+                        #     to 2500 bp -- a different RULE, not just a different number --
+                        #     and its seed is "set by the system", so our binning was not
+                        #     reproducible run to run. `--environment global` already
+                        #     matched nf-core's own default.
+                        #   comebin: nf-core passes no args at all; ours passes
+                        #     `-b min(usable_contigs, 1024)` and COMEBin's own default is
+                        #     1024, so on any real sample these are IDENTICAL. The clamp
+                        #     only bites on inputs too small for COMEBin to run.
+                        #
+                        # CAUTION these were INERT until bootstrap.py was taught to load
+                        # workflow.params.yml -- a driver's params reached nextflow only.
+                        metabat2_min_contig=1500, metabat2_seed=1,
+                        semibin2_min_len=1500, semibin2_seed=1),
         resource_overrides={
             "bbduk":   Resources(memory=Size.GB(64), cpus=16),
             "megahit": Resources(memory=Size.GB(128), cpus=32,
@@ -1786,6 +2139,12 @@ def main():
                         "pratama::published_mags and pratama::published_votus, neither "
                         "of which is unzipped anywhere yet -- the Zenodo record is on "
                         "fir only as the zips it arrived in.")
+    p.add_argument("--with-cellular-annotation", action="store_true",
+                   help="pratama only: add annotation::dram_annotations, the CELLULAR "
+                        "annotation lane. OFF by default and deliberately: it answers no "
+                        "acceptance criterion (the AMG calls are DRAM-v's) and measures at "
+                        "~8,900 tasks of 8 cpus and 64 GB, on the order of 36,000-71,000 "
+                        "core-hours, when it binds the whole assembly's 672,121 ORFs.")
     p.add_argument("--with-host-prediction", action="store_true",
                    help="pratama only: add viromics::host_prediction_genome, which "
                         "pulls gtdbtk_de_novo (32 cpus, 240 GB, a 48 h wall over "

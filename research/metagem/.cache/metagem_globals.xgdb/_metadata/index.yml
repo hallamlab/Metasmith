@@ -1,0 +1,10 @@
+manifest:
+  /home/tony/agentic_workspace/projects/metasmith/engine/cami-run/research/metasmith_libraries/carveme_m8_medium.tsv:
+    instance_id: 1e20f8dbcb0004fc511475a3e00c2190e8c50a8fba8bac138c54966f6247f9c89be2
+    origin: leaf
+    type: modelling::media
+  medium_name.txt:
+    instance_id: 1e2091c9624ac729dc16ef0f7057384b0dc7a79f5964fa959f063057a05739472715
+    origin: leaf
+    type: modelling::medium_name
+schema: v1

@@ -72,7 +72,46 @@ CACHE_DIR = Path(os.environ.get("MSM_CACHE_DIR", ROOT / ".cache"))
 
 HPC_HOST      = os.environ.get("MSM_HPC_HOST", "fir")
 SLURM_ACCOUNT = os.environ.get("MSM_SLURM_ACCOUNT", "rrg-shallam-ab")
-SETUP_COMMANDS = ["module load apptainer"]
+# Rendered into the run's launcher (start.sh, and start.slurm.sh under
+# METASMITH_DRIVER_SLURM) after the cd into the run workspace -- AND run, one command at a
+# time, in the persistent login-node shell that `Agent._run_setup` opens for every
+# StageWorkflow and RunWorkflow. Two contexts, different working directories, so every
+# line here has to be correct in both.
+#
+# WARNING never `exit` from one of these. An `exit 1` guard here KILLED the orchestrating
+# shell, and the caller saw `TimeoutError: [agent setup command] produced no output for
+# 300s` -- a hang that names no cause. Report and continue; a missing relay fails loudly
+# one step later either way. For the same reason every line must emit something or return
+# promptly, and anything backgrounded needs all three descriptors redirected plus `setsid`,
+# or the shell never sees the command finish.
+#
+# The relay line is what makes the ENGINE'S OWN compute-node driver route usable with the
+# APPTAINER runtime. `METASMITH_DRIVER_SLURM=1` sbatches the driver onto an allocated node,
+# which is the right place for it -- a fir login node's 16 GiB per-user cgroup fills with
+# page cache from our own staging I/O and then SIGKILLs any JVM that claims a heap floor.
+# But the relay is NODE-BOUND: its socket lives in that node's own /tmp and is discovered
+# by hostname, symlinked into the agent home as `relay/<hostname>`. Nothing in the engine's
+# Slurm branch starts one, and `runner.py`'s stage and run paths connect THROUGH it whenever
+# `needs_relay`, which is true for APPTAINER.
+#
+# CAUTION the `[ ! -e ]` guard is load-bearing rather than defensive: starting a second
+# relay on a node that already has one replaces the symlink the first one's driver is using.
+# The agent home is found by walking UP from $PWD looking for relay/msm_relay, so the same
+# line resolves it from the agent home (the login-node shell) and from runs/<key> (the
+# launcher) without either context being named here.
+SETUP_COMMANDS = [
+    "module load apptainer",
+    'MSM_RELAY_HOME="$PWD"; for _ in 1 2 3 4; do'
+    ' [ -x "$MSM_RELAY_HOME/relay/msm_relay" ] && break;'
+    ' MSM_RELAY_HOME="$(dirname "$MSM_RELAY_HOME")"; done',
+    '[ -x "$MSM_RELAY_HOME/relay/msm_relay" ] && [ ! -e "$MSM_RELAY_HOME/relay/$(hostname)" ]'
+    ' && ( cd "$MSM_RELAY_HOME" && setsid ./relay/msm_relay start'
+    ' >"/tmp/msm_relay_$(hostname).log" 2>&1 </dev/null & ); true',
+    'for _ in 1 2 3 4 5 6 7 8 9 10; do'
+    ' [ -e "$MSM_RELAY_HOME/relay/$(hostname)" ] && break; sleep 1; done;'
+    ' echo "relay on $(hostname):'
+    ' $([ -e "$MSM_RELAY_HOME/relay/$(hostname)" ] && echo present || echo MISSING)"',
+]
 
 METAGEM_ROOT = Path(os.environ.get("METAGEM_ROOT", "/scratch/phyberos/metagem"))
 HPC_MSM_HOME = Path(os.environ.get("MSM_AGENT_HOME", str(METAGEM_ROOT / "metasmith")))
@@ -210,7 +249,15 @@ def enumerate_runs():
     runs = []
     for (dataset, run), relpaths in sorted(groups.items()):
         relpaths = sorted(relpaths)
-        paths = tuple(METAGEM_ROOT / p for p in relpaths)
+        # METAGEM_ROOT / DATASET / relpath, not METAGEM_ROOT / relpath. The fetcher writes
+        # DEST="$ROOT/$DATASET/$RELPATH" (fetch_array.sbatch), so every read sits one level
+        # deeper than the manifest relpath alone implies. Verified on fir for all four fetched
+        # studies: nothing exists at the flat path, everything at the dataset-prefixed one.
+        # CAUTION this is invisible at plan time. RegisterItem/_stable_id hashes the path
+        # STRING and never stats it -- which is deliberate, since the reads are on the cluster
+        # and this driver runs on a workstation -- so a wrong-but-consistent path plans clean,
+        # reports correct given-leaf counts, and only fails when Nextflow tries to stage a read.
+        paths = tuple(METAGEM_ROOT / dataset / p for p in relpaths)
         if len(paths) == 1:
             runs.append((dataset, run, "single", paths))
         elif len(paths) == 2:
@@ -378,7 +425,18 @@ def build_inputs(runs):
     return inputs
 
 
-def build_globals(with_cplex=False):
+def _solver(args):
+    """Resolve the reconstruction lane, honouring the deprecated --with-cplex alias.
+
+    --with-cplex predates --solver and meant "add the CPLEX lane BESIDE the open
+    one", which is exactly --solver both.
+    """
+    if getattr(args, "with_cplex", False):
+        return "both"
+    return getattr(args, "solver", "open")
+
+
+def build_globals(solver="open"):
     """The study-wide medium table/name (and, opt-in, the CPLEX installation)
     as their OWN small library -- registered exactly like
     research/cami/run_cami_metag.py's DB_PATHS/STAGED_REFS (a real path or a
@@ -449,8 +507,23 @@ def build_globals(with_cplex=False):
     globals_lib.Purge()
     globals_lib.AddTypeLibrary(MLIB / "data_types" / "modelling.yml")
 
+    # The medium table lives IN THE REPO, not on the cluster, so it must NOT be
+    # registered as an external absolute path. StageWorkflow binds an external input's
+    # parent directory into the remote container, and that directory does not exist on
+    # fir -- staging fails with "external input folder(s) must be bound into the remote
+    # container but do not exist on the remote host". Copying the content into the
+    # library and registering the relative name is what medium_name.txt below already
+    # does, and it is correct for any small repo-resident constant.
+    # CAUTION do NOT "fix" this by passing verify_external_paths=False. That turns a
+    # clear staging error into an obscure runtime one: the bind is created pointing at a
+    # path that does not exist on the far side, and the tool fails inside the container
+    # with a missing input instead.
+    # The instance_id stays keyed on the ORIGINAL path string, so a content-identical
+    # fix does not move the plan key.
+    media_file = "media.tsv"
+    (globals_lib.location / media_file).write_text(MEDIUM_TSV.read_text())
     globals_lib.RegisterItem(
-        MEDIUM_TSV, "modelling::media",
+        media_file, "modelling::media",
         instance_id=_stable_id("metagem", "media", str(MEDIUM_TSV)),
     )
     medium_name_file = "medium_name.txt"
@@ -459,7 +532,7 @@ def build_globals(with_cplex=False):
         medium_name_file, "modelling::medium_name",
         instance_id=_stable_id("metagem", "medium_name", MEDIUM_NAME),
     )
-    if with_cplex:
+    if solver in ("cplex", "both"):
         globals_lib.RegisterItem(
             CPLEX_ROOT, "modelling::cplex_installation",
             instance_id=_stable_id("metagem", "cplex_installation", str(CPLEX_ROOT)),
@@ -498,7 +571,7 @@ def build_transforms_for():
     ]
 
 
-def build_targets(with_cplex=False, layout="paired"):
+def build_targets(solver="open", layout="paired"):
     """MEGAHIT, then this lane's binning path, then CarveMe-from-bin-ORFs +
     MEMOTE per MAG. Both `layout` values now reach reconstruction and scoring
     -- see the "REVERSED" paragraph below for why round 2's assembly-only
@@ -624,10 +697,29 @@ def build_targets(with_cplex=False, layout="paired"):
     t.Add("taxonomy::checkm_stats", parents=[bin_fasta])
     bin_orfs = t.Add("sequences::bin_orfs", parents=[bin_fasta])
 
-    model = t.Add("modelling::carveme_model", parents=[bin_orfs])
-    t.Add("modelling::memote_score", parents=[model])
+    # CAUTION `solver` SELECTS the reconstruction lane; it does not merely add one.
+    # Measured 2026-09-12 on li2019/SRR7664615_bin.3.s -- 684 proteins, a 570-reaction
+    # draft, and the SMALLEST bin in that sample's set, so a lower bound on cost:
+    #
+    #   open (SCIP)  draft 10m01s   gap fill 1h49m11s and STILL RUNNING when killed
+    #   cplex        draft  2m25s   gap fill    32m00s, 1.89 MB model written
+    #
+    # So the open solver does not finish gap filling on the cheapest input in the
+    # corpus, against a transform duration of 2 h. Leaving it in the launch plan
+    # means 443 (or 48) tasks that hit their wall, get retried, and are then
+    # swallowed by the run's ignore strategy -- the arm reports complete and
+    # produces no models at all. `solver="cplex"` is therefore a FEASIBILITY
+    # requirement here, not a parity preference; it also happens to be closer to
+    # metaGEM, which used CPLEX 12.8 (unobtainable -- IBM withdrew every release
+    # before 20.1 in March 2021, so 22.2.0 is the deviation to state).
+    #
+    # "both" keeps the original two-lane solver comparison, which is now ANSWERED
+    # by the measurement above and costs a guaranteed timeout per bin to re-run.
+    if solver in ("open", "both"):
+        model = t.Add("modelling::carveme_model", parents=[bin_orfs])
+        t.Add("modelling::memote_score", parents=[model])
 
-    if with_cplex:
+    if solver in ("cplex", "both"):
         cplex_model = t.Add("modelling::carveme_model_cplex", parents=[bin_orfs])
         t.Add("modelling::memote_score", parents=[cplex_model])
 
@@ -653,8 +745,22 @@ def make_slurm_config():
     """
     smith = get_agent()
     base = Path(smith.GetNxfConfigPresets()["slurm"]).read_text()
+    # `array = 0` is the whole appended body, and it is NOT optional: without it
+    # Nextflow aborts on a local-executor process asking for a job array.
+    #
+    # A `scratch = false` exemption used to sit here too, to stop the twin's product
+    # round-tripping through node-local SLURM_TMPDIR and back through
+    # `nxf_fs_copy`'s dereferencing `cp -fRL`. It is REMOVED: the task contract is
+    # fixed, and bending it for every cached twin to accommodate one product's
+    # defect is the wrong layer. The one product that failed was vConTACT3's
+    # database, which ships upstream mmseqs build scratch containing 404 dangling
+    # symlinks; `logistics/downloadVcontact3DB.py` now prunes that scratch and
+    # asserts no dangling symlink survives, so the product is valid inside the
+    # standard contract. Audited exposure before removing this: 0 of 32 shards in
+    # this agent home and 0 of 4,823 in the CAMI home hold a dangling symlink.
     text = base + "\n" + "\n".join(
-        ["", "process {", "    withName: '.*_cached' {", "        array = 0", "    }", "}", ""])
+        ["", "process {", "    withName: '.*_cached' {", "        array = 0",
+         "    }", "}", ""])
     CACHE_DIR.mkdir(parents=True, exist_ok=True)
     out = CACHE_DIR / "fir_slurm_metagem.config"
     out.write_text(text)
@@ -798,13 +904,13 @@ def _run_lane(args, layout, lane_runs, containers, resource_lib, globals_lib):
     paths.
     """
     inputs = build_inputs(lane_runs)
-    targets = build_targets(with_cplex=args.with_cplex, layout=layout)
+    targets = build_targets(solver=_solver(args), layout=layout)
     expected = _expected_leaf_counts(lane_runs)
     # Consumed by carveme_from_orfs[_cplex].py on BOTH layouts now -- neither
     # lane stops short of reconstruction any more, so this is unconditional.
     expected["modelling::media"] = 1
     expected["modelling::medium_name"] = 1
-    if args.with_cplex:
+    if _solver(args) in ("cplex", "both"):
         expected["modelling::cplex_installation"] = 1
 
     smith = (Agent(home=Source.FromLocal(CACHE_DIR / f"dryrun_home_{layout}"), runtime=Runtime.APPTAINER)
@@ -897,7 +1003,7 @@ def cmd_run(args):
               f"and staying IN the model comparison. metaGEM itself splits its binning "
               f"method by read shape the same way; see build_targets's docstring.")
 
-    globals_lib = build_globals(with_cplex=args.with_cplex)
+    globals_lib = build_globals(solver=_solver(args))
     containers = DataInstanceLibrary.Load(MLIB / "resources" / "env")
     # resources/lib, not just resources/env: prodigal_from_bin.py,
     # carveme_from_orfs[_cplex].py and memote_score.py all require `lib::modelling`
@@ -956,12 +1062,17 @@ def main():
     p.add_argument("--dry-run", action="store_true")
     p.add_argument("--stage-only", action="store_true")
     p.add_argument("--on-exist", default="update", choices=["update", "clear"])
+    p.add_argument("--solver", default="open", choices=["open", "cplex", "both"],
+                   help="which reconstruction lane to plan. 'cplex' is what the "
+                        "campaign launches: the open solver does not finish gap "
+                        "filling even on the corpus's smallest bin -- see "
+                        "build_targets's CAUTION for the measurement. 'both' keeps "
+                        "the original two-solver comparison and pays a guaranteed "
+                        "timeout per bin for it. Anything but 'open' needs "
+                        "modelling::cplex_installation to be a real directory on "
+                        "fir; run check-dbs first.")
     p.add_argument("--with-cplex", action="store_true",
-                   help="add the CPLEX parity reconstruction (carveme_model_cplex) "
-                        "and its own MEMOTE score, alongside the shipped open-solver "
-                        "path. Needs modelling::cplex_installation to be a real "
-                        "directory on fir -- see CPLEX_ROOT's comment; run "
-                        "check-dbs first.")
+                   help="deprecated alias for --solver both.")
     p.add_argument("--tag")
     p.set_defaults(fn=cmd_run)
 
