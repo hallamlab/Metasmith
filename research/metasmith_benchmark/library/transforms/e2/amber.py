@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 from metasmith.python_api import *
 
@@ -25,6 +26,12 @@ def protocol(context: ExecutionContext):
         for line in Path(igold.local).read_text().splitlines()
         if line.startswith("@SampleID:")
     )
+    # MEGAHIT names contigs k141_<N> in every assembly, so a gold standard from another sample
+    # shares nearly every contig name with this table. Only @SampleID tells them apart.
+    sample = json.loads(Path(context.Input(meta).local).read_text())["sample"]
+    if sample_id != sample:
+        Log.Error(f"gold standard @SampleID [{sample_id}] is not this group's sample [{sample}]")
+        return ExecutionResult(manifest=[], success=False)
     with open("prediction.tsv", "w") as f:
         f.write(f"@Version:0.9.1\n@SampleID:{sample_id}\n\n@@SEQUENCEID\tBINID\n")
         f.write(Path(itable.local).read_text())
