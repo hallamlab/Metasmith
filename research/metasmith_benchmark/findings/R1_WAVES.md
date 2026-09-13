@@ -39,6 +39,8 @@ CAUTION sweep for swallowed steps in `<home>/runs/<key>/_metasmith/logs.<timesta
 
 CAUTION metasmith renames every product to its content-addressed name, so a search for a tool's own filename (`gtdbtk.bac120.summary.tsv`) finds nothing. Look under `<run>/results/<namespace>-<type>/`.
 
+CAUTION a staged run holds two kinds of `.py` file. `_metasmith/task/transforms/<id>/` holds the transforms that execute. `_metasmith/task/data/<id>/` holds resource payloads such as `lib::modelling`, which carries a copy of the standard `memote_score.py`. Check a pin in `task/transforms/`, or by the step's source hash.
+
 CAUTION retry-then-ignore reports a lane complete with its products missing. Check each lane's products against its sample count.
 
 ### Close
@@ -102,7 +104,7 @@ Commit `f6d01f00`, checkout `/scratch/phyberos/bench/checkout/f6d01f00`. Driver 
 | E2 short | `sbatch -J e2_short $S $C e2_cami.py run --arm short --launch --tag w1` | f6d01f00, 15 steps (59634082) | `WfOlaqLT` | 59634611 |
 | E2 long | `sbatch -J e2_long $S $C e2_cami.py run --arm long --launch --tag w1` | f6d01f00, 14 steps (59634083) | `33hlLu8Q` | 59634903 |
 | E3 | `sbatch -J e3 $S $C e3_pratama.py run --launch --tag w1` | f6d01f00, 26 steps (59634084) | `Son2YJiI` | 59634612 |
-| E4 chunk 1 | `sbatch -J e4_c1 $S $C e4_metagem.py run --chunk 1 --launch --tag w1` | pending, after e4_gtdbtest | | |
+| E4 chunk 1 | `sbatch -J e4_c1 $S $C e4_metagem.py run --chunk 1 --launch --tag w1` | 19609c45, 3 steps (59638489) | `lE94xbfH` | |
 | E5 cami | `sbatch -J e5_cami $S $C e5_pilot.py run --corpus cami --launch --tag w1` | c0b17bb1, `52mAOnXS` | | |
 | E5 pratama | `sbatch -J e5_pratama $S $C e5_pilot.py run --corpus pratama --launch --tag w1` | c0b17bb1, `8Z7x3L7z` | | |
 | E5 metagem | `sbatch -J e5_metagem $S $C e5_pilot.py run --corpus metagem --launch --tag w1` | pending, after E4 chunk 1 | | |
