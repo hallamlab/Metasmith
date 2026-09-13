@@ -324,6 +324,16 @@ errorStrategy's retry branch is guarded by `params.process.tries`, and `maxRetri
 above that threshold or nextflow stops retrying before the strategy asks it to — a `tries` of 1
 makes the retry branch unreachable and sends every first failure straight to `ignore`.
 
+**Everything written after Nextflow exits depends on the driver surviving, so lineage is also
+written while it runs.** `trace.jsonl` and `results/_metadata` are written once, after the exit,
+and a driver killed by a signal writes neither. The lineage report (`lineage.csv` and
+`lineage_parents.csv` in the run's log dir) is rebuilt on a tick from what each task leaves as it
+finishes: its `.command.cache`, the hit log and the shard manifests the hit log names. It is a
+reader and never a source of truth. Nothing reads it back, so a wrong row cannot change what a run
+computes, caches or collects. Each post-run step is guarded on its own, and any failure among them
+ends the run on `RUN_FAILED_SENTINEL` naming the step. Before that guard, one raising step skipped
+every later step and the sentinel with them, and the watcher could only say "errored".
+
 **A run is a process group and a token.** `start.sh` backgrounds the driver under `set -m`, so
 the whole run descends from one process group, and exports `METASMITH_RUN=<task_key>.<timestamp>`,
 which every descendant inherits, docker tool containers carry as the `msm.run` label and
