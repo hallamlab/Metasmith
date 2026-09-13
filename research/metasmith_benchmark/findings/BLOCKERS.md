@@ -6,7 +6,7 @@ the append-only record, and a tracker that grows becomes a changelog nobody trus
 Columns: what is blocked · why · who owns it · the exact next action. A row leaves this file
 only when its next action is done AND verified by product.
 
-Last updated 2026-09-13 04:45 PDT. **Wave 1 is LAUNCHED** — nine lanes running; the capability-proving pivot is over. The binding constraint is now BYTES (16.6 of 18.63 TiB), not inodes (46%).
+Last updated 2026-09-13 06:00 PDT. **Wave 1 is LAUNCHED** — ten drivers running. BYTES are the binding axis (16.68 of 18.63 TiB, 89.5%, fitted ~0.24 TiB/h); inodes are 553K of 1M and FALLING as prunes land. All work-dir prunes are HELD until `prune_work.sbatch` keeps `.command.cache`.
 
 ---
 
@@ -103,6 +103,21 @@ all of which are present. Re-adding dbcan needs a working URL, not a re-run.
 up at run time. VirSorter2 staging (B1) was released the moment this cleared.
 
 ## B4 — nf-core's `contig_to_bin_map.tsv` has not landed  ·  BLOCKS criterion 12's reference half
+
+**RE-SCOPED 2026-09-13 to E1 short (wave 1). L3 and its rung-1 run are gone; the reference arm is
+now `/scratch/phyberos/bench/e1/{short,long}`, driver pids in `nextflow.pid`.**
+
+**MEASURED, and the measurement is a trap worth naming:**
+
+    /scratch/phyberos/bench/e1/short/out/GenomeBinning/contig_to_bin/
+      total 8   -- ONLY . and ..   created 2026-09-13 02:40, EMPTY
+    find bench/e1 -name contig_to_bin_map.tsv  ->  0   (positive control: bench/e1 holds short/ long/)
+
+`storeDir` creates the directory when the channel operation is *declared*, not when it gathers. So
+the path exists, is dated, and holds nothing — **a `test -d` or an `ls` of the parent reads as
+landed.** Check for the FILE, and check it is non-empty. Same family as the campaign's other
+completion proxies: a Slurm output file exists at task start, a directory is created before it is
+populated.
 
 `mag.nf:467` gathers it driver-side via `collectFile` + `storeDir` only after EVERY binner
 finishes. COMEBin was `CANCELLED` when L3's own `timeout -k 30 10800` wrapper SIGTERM'd a
@@ -528,7 +543,33 @@ fastp's whole effect at 38 reads dropped for Ns and 8,226 adapter trims out of 3
     fastp 1.0.1. Tested in isolation, that pair works fine. Only reproducing the FULL flag set
     isolated the adapter flag. Reproduce the whole command, not your guess at the relevant part.
 
-## B15 — E5 declares no GPU for CLEAN  ·  BLOCKS both E5 lanes  ·  cause proven, fix is a scope choice
+## B15 — E5 declares no GPU for CLEAN  ·  **CLOSED AT EXECUTION 2026-09-13.** `def-shallam_gpu` + a 3g.40gb MIG slice; CLEAN 3 of 3 exit 0 with real products
+
+**RESOLVED, verified BY PRODUCT rather than by the run's state.** In `52mAOnXS` (e5_cami):
+
+    p08__clean (1) (2) (3)   job 59642405_{0,1,2}   completed=3  errored=0
+    .exitcode 0 in all three, and each wrote a real TSV:
+      10/7997d289…  5,257,352 B      7d/58a73fcd…  4,042,725 B      8a/b719b39f…  5,932,333 B
+
+**The account was the fix, and it was not the account this campaign uses.** `sacctmgr show assoc`
+gives exactly `def-shallam_cpu`, `def-shallam_gpu`, `rpp-shallam_cpu`, `rrg-shallam-ab_cpu` — so
+**there is no GPU RAC**, and `--account=rrg-shallam-ab` is refused outright ("You may not be a member
+of the specified account"). GPU work goes to `def-shallam_gpu`, which is in better shape than the CPU
+RAC anyway (fairshare 0.2746 at EffectvUsage 0.6839 against 1.000).
+
+**A `3g.40gb` MIG slice is both sufficient and cheaper**: CLEAN asks 16 GB, the slice offers 40, and
+its band carries 60 nodes against a full H100's 30 — `--test-only` put the MIG request **~15 minutes
+earlier** in the queue on otherwise identical requests.
+
+**Still in flight, and NOT this blocker:** `YzCrdOoF` (e5_metagem) and `8Z7x3L7z` (e5_pratama) each
+mention `__clean` but show 0 completed / **0 errored** — queued or running, not failing. The
+declaration defect is fixed; those are progress.
+
+    CAUTION my first query for CLEAN's state read `<run>/nxf.log` and returned NOTHING for all
+    three lanes, which reads exactly like "CLEAN never ran". **There is no `nxf.log` in a run
+    directory** -- the positive control (`ls .../runs/*/nxf.log | wc -l`) returned 0 files. It
+    lives at `_metasmith/logs.latest/nxf.log`, beside `agent.log`, `main.log`, `lineage.csv` and
+    `nxf_trace.tsv`. Seventh empty-grep false reading of this campaign, caught by the control.
 
 **e5_pratama 59635698 FAILED at 37 s, exit 1:0**, after staging cleanly as `8Z7x3L7z` at 35 steps:
 
