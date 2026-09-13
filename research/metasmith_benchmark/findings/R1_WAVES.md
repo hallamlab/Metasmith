@@ -41,6 +41,8 @@ CAUTION metasmith renames every product to its content-addressed name, so a sear
 
 CAUTION a staged run holds two kinds of `.py` file. `_metasmith/task/transforms/<id>/` holds the transforms that execute. `_metasmith/task/data/<id>/` holds resource payloads such as `lib::modelling`, which carries a copy of the standard `memote_score.py`. Check a pin in `task/transforms/`, or by the step's source hash.
 
+CAUTION attribute a grid job to a run by its `WorkDir` (`scontrol show job`), never by its name. `squeue -u phyberos` spans every home, and `nf-pNN__<step>` carries a per-run plan index, not a home. In wave 1, 36 `nf-p02__chopper` jobs read as E5 metagem's belonged to E2 long (`33hlLu8Q`).
+
 CAUTION retry-then-ignore reports a lane complete with its products missing. Check each lane's products against its sample count.
 
 ### Close
@@ -105,8 +107,8 @@ Commit `f6d01f00`, checkout `/scratch/phyberos/bench/checkout/f6d01f00`. Driver 
 | E2 long | `sbatch -J e2_long $S $C e2_cami.py run --arm long --launch --tag w1` | f6d01f00, 14 steps (59634083) | `33hlLu8Q` | 59634903 |
 | E3 | `sbatch -J e3 $S $C e3_pratama.py run --launch --tag w1` | f6d01f00, 26 steps (59634084) | `Son2YJiI` | 59634612 |
 | E4 chunk 1 | `sbatch -J e4_c1 $S $C e4_metagem.py run --chunk 1 --launch --tag w1` | 19609c45, 3 steps (59638489) | `lE94xbfH` | 59638782 |
-| E5 cami | `sbatch -J e5_cami $S $C e5_pilot.py run --corpus cami --launch --tag w1` | c0b17bb1, `52mAOnXS` | | |
-| E5 pratama | `sbatch -J e5_pratama $S $C e5_pilot.py run --corpus pratama --launch --tag w1` | c0b17bb1, `8Z7x3L7z` | | |
+| E5 cami | `sbatch -J e5_cami $S $C e5_pilot.py run --corpus cami --launch --tag w1` | c0b17bb1, 35 steps | `52mAOnXS` | 59636770 |
+| E5 pratama | `sbatch -J e5_pratama $S $C e5_pilot.py run --corpus pratama --launch --tag w1` | c0b17bb1, 35 steps | `8Z7x3L7z` | 59636769 |
 | E5 metagem | `sbatch -J e5_metagem $S $C e5_pilot.py run --corpus metagem --launch --tag w1` | 19609c45, 36 steps (59638493) | `YzCrdOoF` | 59639625 |
 
 Both E5 lanes relaunch from checkout `c18625a4`, which adds the GPU declaration (see Failures). Nothing under `src/` or either library changed from `f6d01f00`, so their keys hold. The relaunches are jobs 59636769 (E5 pratama) and 59636770 (E5 cami). The first E5 pratama was submitted as job 59635698, after E3 printed `waiting on run`. The first E5 cami was submitted as job 59636004, after E2 long printed `waiting on run 33hlLu8Q`. The GTDB-Tk pass test `e4_gtdbtest` runs as job 59635386, key `Sj7uFNWW`, 4 steps.
@@ -135,3 +137,6 @@ B14 is closed at scale. E2 short's fastp tasks render `--in1`, `--in2`, `--stdou
 - `C1IM6IG3` (CAMI rung 10) keeps running until COMEBin array `59583112` finishes, because it is B5's only source.
 
 ### Fixes and gapfills for wave 2
+
+- Relaunch E5 cami and E5 pratama from `19609c45` or later, so MEMOTE runs the pinned transform. Their finished steps serve from cache.
+- E2 long's Flye is not exposed to B12. It runs the pinned `e2/flye.py`, which takes the mode from the declared platform (`OXFORD_NANOPORE` → `--nano-raw`) and declares 64 GB. B12's quality-derived preset lives in the standard `flye.py` and `flye_raw.py`, which no R1 lane runs. Confirm with the first Flye grid job's rendered flag and `--mem`.
