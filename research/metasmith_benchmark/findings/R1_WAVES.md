@@ -168,7 +168,7 @@ E2 short's gold_standard failed on 15 of 208 samples, all from `mousegut_short_r
 - During the wave, to reclaim bytes:
   - Job 59642072 deleted both GTDB source tarballs, 253 GB. Globus holds both.
   - Jobs 59645430 and 59645431 evicted task-cache entries from superseded runs: 16 cami keys (29.4 GiB, from runs 8PHYZXXD, Yt2ZFop0, Gu9VJmwO, wqjsf1Et and CIeAycog) and 3 pratama keys (18.3 GiB, from 1YR8nokN). Container images and the VirSorter2, VIBRANT and vConTACT3 databases stayed, because only a login node can fetch them again.
-  - Job 59646555 pruned 189 of `WfOlaqLT`'s 208 fastp work directories (585,493,847,836 B). A fastp directory is pruned when its megahit, bowtie2_binning_bam and fastqc_trimmed tasks each hold `.exitcode` 0 and no task that reads it is open. The plan DAG shows no other step reads `e2::trimmed_short_reads`. The products stay reachable as promoted shards. The other 19 directories wait on open consumers.
+  - Job 59646555 pruned 189 of `WfOlaqLT`'s 208 fastp work directories (585,493,847,836 B). A fastp directory is pruned when its megahit, bowtie2_binning_bam and fastqc_trimmed tasks each hold `.exitcode` 0 and no task that reads it is open. The plan DAG shows no other step reads `e2::trimmed_short_reads`. The products stay reachable as promoted shards. Job 59648133 pruned the other 19 (86,235,465,647 B) once bowtie2 finished, leaving no fastp work directory in `WfOlaqLT`. The gate is `fir:/scratch/phyberos/_step_refs.py <run> <step> <list> --need STEP ...`.
 
 ### Fixes and gapfills for wave 2
 
