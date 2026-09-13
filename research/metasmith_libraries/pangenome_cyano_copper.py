@@ -8,6 +8,7 @@ from metasmith.python_api import (
     DataInstanceLibrary, TransformInstanceLibrary,
     TargetBuilder, Resources, Size,
 )
+from metasmith.python_api import record_library
 
 MLIB = Path(__file__).resolve().parent.parent
 BASE = MLIB / "main" / "cache" / "pangenome_cyano_copper"
@@ -41,7 +42,9 @@ except Exception:
     for name, acc in PANEL.items():
         nm = inputs.AddValue(f"{name}.name", name, "ncbi::genome_name", parents={group})
         inputs.AddValue(name, acc, "ncbi::assembly_accession", parents={nm})
-    inputs.Save()
+    # Synthetic placeholders, authored here and used nowhere else, so
+    # writing them down is the whole of their record.
+    inputs = record_library(inputs)
 
 resources = [
     DataInstanceLibrary.Load(MLIB / f"resources/{n}")

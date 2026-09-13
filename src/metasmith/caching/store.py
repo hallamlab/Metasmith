@@ -158,10 +158,11 @@ class CacheStore:
             # longer be minted has no such reader, and a `now` stamp would hold
             # the disk for a day after the warning told the user how to free it.
             #
-            # And only derivation keys. An imported entry's key is minted from
-            # what it declares, deliberately outside the epoch, so a bump
-            # invalidates nothing about it -- sweeping it would tombstone what
-            # may be the user's only copy on an unrelated schedule.
+            # And only derivation keys. An imported entry's key is assigned at
+            # the moment of import, not derived from anything, so no epoch can
+            # reach it and a bump invalidates nothing about it -- sweeping it
+            # would tombstone what may be the user's only copy on an unrelated
+            # schedule, and nothing could mint that key again.
             cur = conn.execute(
                 "UPDATE entries SET tombstoned_at = 0 "
                 "WHERE tombstoned_at IS NULL AND origin != 'imported'"

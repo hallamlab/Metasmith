@@ -379,6 +379,9 @@ class DataInstanceLibrary(_LeafIdentity, _StoreTransfer, _PinnedLibrary, _Teleme
         self._refuse_if_pinned("AddItem")
         return self._register(path, dtype, parents, self._mint_leaf_id)
 
+    # The caller supplies the identity, so nothing here invents one and the
+    # given path does not refuse what this produces. That is the route a pool
+    # reference, a published lineage and a DVC content pin all arrive by.
     def RegisterItem(
         self,
         path: Path|str,
@@ -455,7 +458,14 @@ class DataInstanceLibrary(_LeafIdentity, _StoreTransfer, _PinnedLibrary, _Teleme
                 skipped[str(path)] = "not in the library"
                 continue
             entry = self.instance_meta.get(path) or {}
-            if entry.get("origin", "leaf") != "leaf":
+            origin = entry.get("origin", "leaf")
+            if origin == "imported":
+                skipped[str(path)] = (
+                    "imported; its identity is the pool's record, so say the "
+                    "data changed by importing it again"
+                )
+                continue
+            if origin != "leaf":
                 skipped[str(path)] = (
                     "produced by a run; its identity is its lineage"
                 )
@@ -481,6 +491,11 @@ class DataInstanceLibrary(_LeafIdentity, _StoreTransfer, _PinnedLibrary, _Teleme
             moved[str(path)] = {
                 "from": old_id, "to": self._mint_leaf_id(path)
             }
+            # An invalidate is the operator saying this identity moves now, and
+            # it has already refused every path it could not stat. That is an
+            # act on a record, not the invention of one, so the given path has
+            # no business refusing what it produces.
+            self.instance_meta[path].pop("minted", None)
         if moved:
             self.Save()
         return {

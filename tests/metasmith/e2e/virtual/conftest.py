@@ -54,7 +54,11 @@ def mock_samples(tmp_path, mock_types) -> DataInstanceLibrary:
         lib.AddItem(Path(f"{sid}/assembly.fa"), "mock::assembly", parents=[r])
 
     lib.Save()
-    return lib
+    # Load it back rather than handing over the library that minted these ids.
+    # A plan refuses a given whose identity the calling process invented, and a
+    # driver reaches a plan with a library read off disk, so this is the shape
+    # under test rather than a way around the refusal.
+    return DataInstanceLibrary.Load(lib.location)
 
 
 def create_transform_library(

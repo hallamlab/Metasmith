@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from metasmith.caching.admission import IMPORTED, structural_import_id
+from metasmith.caching.admission import IMPORTED, mint_import_id
 from metasmith.caching.layout import CACHE_DIR_NAME
 from metasmith.caching.projection import project_store
 from metasmith.models.libraries import DataTypeLibrary
@@ -33,12 +33,17 @@ def _file(tmp_path: Path, name: str = "ref.fa") -> Path:
 
 
 class TestIdentity:
-    def test_the_same_declaration_is_one_entry(self, tmp_path, store):
+    def test_importing_one_path_twice_is_two_entries(self, tmp_path, store):
+        from metasmith.caching.store import CacheStore
+
         f = _file(tmp_path)
         a = ops.import_item(str(f), "cf::seed", cache_root=str(store))
         b = ops.import_item(str(f), "cf::seed", cache_root=str(store))
-        assert a["instance_id"] == b["instance_id"]
-        assert b["status"] == "exists"
+        assert a["instance_id"] != b["instance_id"]
+        assert a["status"] == b["status"] == "promoted"
+        with CacheStore.open(store) as s:
+            assert s.probe(bytes.fromhex(a["instance_id"])) is not None
+            assert s.probe(bytes.fromhex(b["instance_id"])) is not None
 
     def test_a_different_type_is_a_different_entry(self, tmp_path, store):
         f = _file(tmp_path)
@@ -46,22 +51,78 @@ class TestIdentity:
         b = ops.import_item(str(f), "cf::mid", cache_root=str(store))
         assert a["instance_id"] != b["instance_id"]
 
-    def test_a_name_survives_a_move(self, tmp_path, store):
+    def test_two_files_under_one_name_stay_two_things(self, tmp_path, store):
+        # The case the derived id collapsed: same type, same name, physically
+        # separate files.
         (tmp_path / "a").mkdir()
         (tmp_path / "b").mkdir()
         first = _file(tmp_path / "a", "ref.fa")
         second = _file(tmp_path / "b", "ref.fa")
         a = ops.import_item(str(first), "cf::seed", cache_root=str(store), name="refs/x")
         b = ops.import_item(str(second), "cf::seed", cache_root=str(store), name="refs/x")
-        assert a["instance_id"] == b["instance_id"]
+        assert a["instance_id"] != b["instance_id"]
 
-    def test_nothing_is_read_or_stat_walked(self, tmp_path, store):
-        # The id is a function of the declaration alone: a path that does not
-        # exist mints the same id as one that does.
-        here = structural_import_id("cf::seed", "/nowhere/at/all")
-        assert here == structural_import_id("cf::seed", "/nowhere/at/all")
-        res = ops.import_item("/nowhere/at/all", "cf::seed", cache_root=str(store))
-        assert res["instance_id"] == here
+    def test_the_name_is_recorded_because_the_key_no_longer_carries_it(
+        self, tmp_path, store,
+    ):
+        from metasmith.caching.store import CacheStore, decode_manifest
+
+        f = _file(tmp_path)
+        res = ops.import_item(
+            str(f), "cf::seed", cache_root=str(store), name="refs/x",
+        )
+        with CacheStore.open(store) as s:
+            entry = s.probe(bytes.fromhex(res["instance_id"]))
+        assert decode_manifest(entry.payload)["name"] == "refs/x"
+
+    def test_a_mint_is_a_mint_and_not_a_derivation(self, tmp_path, store):
+        # Nothing is read and nothing is stat-walked, so a path that does not
+        # exist imports -- and it imports to a different id every time.
+        assert mint_import_id("cf::seed", "x") != mint_import_id("cf::seed", "x")
+        a = ops.import_item("/nowhere/at/all", "cf::seed", cache_root=str(store))
+        b = ops.import_item("/nowhere/at/all", "cf::seed", cache_root=str(store))
+        assert a["instance_id"] != b["instance_id"]
+
+    def test_an_identity_outlives_the_filesystem_it_names(self, tmp_path, store):
+        # Touching the file, moving the pool on disk and bumping the cache epoch
+        # all leave an imported id where it was. That is the whole point of the
+        # entry being a record rather than a calculation.
+        import os
+        import shutil
+
+        from metasmith.caching import store as store_mod
+
+        f = _file(tmp_path)
+        res = ops.import_item(str(f), "cf::seed", cache_root=str(store))
+        iid = res["instance_id"]
+
+        os.utime(f, (1, 1))
+        moved = tmp_path / "elsewhere" / "pool"
+        moved.parent.mkdir()
+        shutil.move(str(store), str(moved))
+
+        # `store` binds the epoch at import time, so patching `keys` here would
+        # leave the sweep reading the old number and prove nothing.
+        epoch = store_mod.CACHE_KEY_VERSION
+        try:
+            store_mod.CACHE_KEY_VERSION = epoch + 1
+            assert ops.store_ids_by_path(moved)[str(f)] == iid
+        finally:
+            store_mod.CACHE_KEY_VERSION = epoch
+        assert ops.store_ids_by_path(moved)[str(f)] == iid
+
+    def test_the_newest_import_of_a_path_is_the_one_that_projects(
+        self, tmp_path, store, types,
+    ):
+        # A library manifest is keyed by path, so one of the two has to win. The
+        # later declaration is the current one; the earlier stays in the store,
+        # because shards keyed on it are still valid.
+        f = _file(tmp_path)
+        old = ops.import_item(str(f), "cf::seed", cache_root=str(store))
+        new = ops.import_item(str(f), "cf::seed", cache_root=str(store))
+        proj = project_store(store, types={"cf": DataTypeLibrary.Load(types)})
+        assert proj.library.Get(f).instance_id == new["instance_id"]
+        assert old["instance_id"] in proj.skipped["path already claimed"]
 
     def test_a_folder_costs_what_a_file_costs(self, tmp_path, store, monkeypatch):
         # Not a stopwatch: a wall-clock bound measures the machine. What must
@@ -270,3 +331,43 @@ class TestGrouping:
             assert entry is not None, "the migration tombstoned an entry"
             assert entry.run == ""
             assert entry.tags == ()
+
+
+class TestPoolRetention:
+    """The pool is state, so where it lives is a correctness question.
+
+    An assigned identity cannot be rebuilt. A pool on storage the site sweeps
+    has a delete scheduled against the meaning of every shard keyed on it, and
+    the failure arrives months after the mistake with nothing to diagnose.
+    """
+
+    def test_a_pool_under_a_swept_path_says_so_at_the_first_import(
+        self, tmp_path, caplog,
+    ):
+        home = tmp_path / "scratch" / "someone" / "campaign"
+        home.mkdir(parents=True)
+        f = _file(tmp_path)
+        ops.import_item(str(f), "cf::seed", agent_home=str(home))
+        assert "unreadable" in caplog.text
+        assert "scratch" in caplog.text
+
+    def test_a_pool_on_ordinary_storage_says_nothing(self):
+        # Asked of the classifier rather than of an import, because pytest's
+        # own tmp_path lives under /tmp -- which is a swept path, so an import
+        # there correctly warns and could never show the quiet case.
+        assert ops.pool_retention_warning(
+            Path("/project/def-someone/campaign/task_cache")
+        ) is None
+
+    def test_a_swept_path_is_named_wherever_it_sits(self):
+        msg = ops.pool_retention_warning(Path("/scratch/someone/campaign"))
+        assert msg is not None and "scratch" in msg
+
+    def test_it_is_said_once_and_not_on_every_import(self, tmp_path, caplog):
+        home = tmp_path / "scratch" / "campaign"
+        home.mkdir(parents=True)
+        f = _file(tmp_path)
+        ops.import_item(str(f), "cf::seed", agent_home=str(home))
+        caplog.clear()
+        ops.import_item(str(f), "cf::mid", agent_home=str(home))
+        assert "unreadable" not in caplog.text

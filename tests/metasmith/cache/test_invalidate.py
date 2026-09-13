@@ -26,7 +26,7 @@ from tests.metasmith.cache.fixtures.cache_fixtures import linear_3step
 def _library(tmp_path: Path) -> DataInstanceLibrary:
     types_path = build_types_library(tmp_path, ("seed",))
     return build_samples_library(
-        tmp_path, types_path, count=2, input_type="seed"
+        tmp_path, types_path, count=2, input_type="seed", pooled=False,
     )
 
 
@@ -93,17 +93,28 @@ def test_invalidate_reports_what_it_could_not_do(tmp_path):
     assert set(report["skipped"]) == {str(item), "nothing/here.txt"}
 
 
-def test_invalidating_a_given_moves_the_member_key(tmp_path):
-    """The production path: invalidate, then plan.
+def test_invalidate_refuses_an_import_and_names_the_way_to_move_it(tmp_path):
+    from metasmith.testing.pool_fixtures import pool_backed
 
-    Invalidate is a client-side operation on a library, and it moves the ids the
-    library records. A plan already built holds its own copy of every id and is
-    stale by construction -- staging does not rescue it, because staging leaves
-    an input the client staged itself alone, which is what keeps a leaf's
-    identity independent of the plan around it. So the order that matters is
-    invalidate first, plan second, and that is what this asserts.
+    lib = _library(tmp_path)
+    pool_backed(lib)
+    report = lib.Invalidate()
+
+    assert report["moved"] == {}
+    assert all("importing it again" in why for why in report["skipped"].values())
+
+
+def test_re_importing_a_given_moves_the_member_key(tmp_path):
+    """The production path: import again, then plan.
+
+    An import assigns an identity rather than deriving one, so there is nothing
+    for an invalidate to re-derive. A caller says the data changed by importing
+    it a second time, and the pool records a second entry. A plan already built
+    holds its own copy of every id and is stale by construction, so the order
+    that matters is import first, plan second, and that is what this asserts.
     """
     from metasmith.caching.invocation import member_key
+    from metasmith.testing.pool_fixtures import reimport
     from tests.metasmith.cache._cache_harness import build_workflow_task
 
     task = linear_3step.build_task(tmp_path)
@@ -118,7 +129,11 @@ def test_invalidating_a_given_moves_the_member_key(tmp_path):
 
     before = _first_step_keys(task)
     lib = task.data_libraries[0]
-    assert lib.Invalidate()["moved"], "invalidate moved nothing"
+    before_ids = {p: lib.instance_meta[p]["instance_id"] for p in lib.manifest}
+    reimport(lib)
+    assert all(
+        lib.instance_meta[p]["instance_id"] != before_ids[p] for p in lib.manifest
+    ), "a second import handed back the first import's identity"
 
     replanned = build_workflow_task(
         lib,

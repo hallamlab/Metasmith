@@ -3,9 +3,11 @@ from __future__ import annotations
 import os
 import shutil
 import tempfile
+import time
 from pathlib import Path
 
 from ..hashing import KeyGenerator
+from ..logging import Log
 from ..models.libraries import DataInstanceLibrary
 from ..models.paths import DEFERRED
 from ..models.remote import Source
@@ -204,6 +206,39 @@ def add_item(
     if save:
         lib.Save()
     return {"library": str(library_path), "path": str(rec_path), "dtype": dtype}
+
+
+def cite_pool_item(
+    library_path: str,
+    host_path: str,
+    dtype: str,
+    *,
+    instance_id: str,
+    origin: str = "imported",
+    lineage_payload: bytes | None = None,
+    parents: list[str] | None = None,
+    save: bool = True,
+    lib: DataInstanceLibrary | None = None,
+) -> dict:
+    """Register a pool entry in a library, keeping the identity the pool gave it.
+
+    The path is the agent's. Nothing here opens it, and nothing re-derives the
+    identity -- an import assigned it, and re-deriving would be inventing a
+    second answer to a question the pool has already answered.
+    """
+    lib = _lib_for(library_path, lib)
+    rec_path = lib.RegisterItem(
+        Path(host_path), dtype,
+        instance_id=instance_id, origin=origin,
+        lineage_payload=lineage_payload,
+        parents=[Path(x) for x in (parents or [])],
+    )
+    if save:
+        lib.Save()
+    return {
+        "library": str(library_path), "path": str(rec_path), "dtype": dtype,
+        "instance_id": instance_id, "origin": origin,
+    }
 
 
 def add_value(
@@ -631,6 +666,59 @@ def _resolve_dtype(dtype: str, type_library_paths: list[str] | None):
     return libs[ns][name], True
 
 
+# Path segments that name storage a site expects to delete. A pool under one of
+# them is a delete scheduled against the meaning of every shard built on it.
+_IMPERMANENT = ("scratch", "tmp", "temp")
+
+
+def pool_retention_warning(root: Path) -> str | None:
+    """What an operator needs to hear before the pool is worth anything.
+
+    An imported identity is assigned, so losing the pool loses the only record
+    of what every shard keyed on an import refers to. The pool is not a cache of
+    a calculation and cannot be rebuilt by re-importing: a re-import is a new
+    act and mints new identities, which match nothing that survived.
+
+    So the pool has to outlive the shards, and that makes WHERE it lives a
+    correctness question rather than an operational preference. Scratch
+    filesystems delete on age since creation, not since access, so a pool under
+    one has a delete already scheduled against it -- and the failure is silent
+    and arrives long after the mistake, which is the reason this speaks up at
+    the moment the first thing is imported rather than in a document.
+    """
+    parts = {p.lower() for p in Path(root).parts}
+    hit = sorted(parts & set(_IMPERMANENT))
+    if not hit:
+        return None
+    return (
+        f"the pool at [{root}] sits under [{'/'.join(hit)}]. An imported "
+        "identity is assigned, not derived, so it cannot be rebuilt: if this "
+        "path is purged, every shard keyed on an import here becomes "
+        "unreadable and re-importing mints identities that match none of them. "
+        "Put the agent home on storage that is not swept, or accept that this "
+        "campaign's reuse ends when the path does."
+    )
+
+
+def record_library(lib):
+    """Write a library down and read it back, so its ids become a record.
+
+    A plan refuses a given whose identity the calling process minted, because
+    an invented identity moves on every submission and takes the run directory
+    with it. Saving and loading is what turns a declaration into a record.
+
+    Right for a declaration that is authored once and whose ids nothing will
+    ever reuse: a template's placeholders, a diagram's synthetic inputs, a
+    probe. **Wrong for a campaign's real inputs** -- it will not stop the ids
+    moving the next time the declaration is rebuilt, because nothing outside
+    the file remembers them. Those belong in a pool: see `Agent.PoolGivens`.
+    """
+    from ..models.libraries import DataInstanceLibrary
+
+    lib.Save()
+    return DataInstanceLibrary.Load(lib.location)
+
+
 def import_item(
     path: str,
     dtype: str,
@@ -645,21 +733,37 @@ def import_item(
     """Register a file or folder the user already has as a pool instance.
 
     Nothing is copied, moved or read. The item keeps its bytes where they are
-    and the pool records what it is: an identity minted from the type and the
-    name, the type's own name, where it sits, and what it descends from -- the
-    same four things a run records for a product.
+    and the pool records what it is: a freshly minted identity, the type, the
+    name it was given, where it sits, and what it descends from.
 
-    The identity is structural, so importing the same path under the same type
-    twice yields one entry. Importing it under a different type, or under a
-    different --name, is a different declaration and therefore a second entry.
+    Every call is a separate act and mints a separate identity. Importing one
+    path twice is therefore two entries, which is how a caller says a second
+    declaration is a second thing, and two files handed the same name stay two
+    things rather than collapsing into one. `mint_import_id` carries the whole
+    argument; it reverses what this function used to do.
+
+    An import is a setup act, performed once against a pool. A driver
+    references what is already there and never calls this, which is why an
+    assigned identity costs nothing in cache hits.
+
+    The pool's lifetime is its campaign's. A minted identity cannot be rebuilt,
+    so every shard keyed on this import dies when the pool does, reuse never
+    crosses a campaign boundary, and a measurement comparing two batches needs
+    both of them inside the agent home's retention window.
     """
-    from ..caching.admission import IMPORTED, PoolFile, admit, structural_import_id
+    from ..caching.admission import IMPORTED, PoolFile, admit, mint_import_id
 
     root = resolve_store_root(agent_home, cache_root)
     target = Path(path).expanduser().resolve()
     endpoint, resolved = _resolve_dtype(dtype, type_library_paths)
     label = name if name is not None else str(target)
-    key_hex = structural_import_id(dtype, label)
+    key_hex = mint_import_id(dtype, label)
+    arrival_ns = time.time_ns()
+    # Once per pool, at the act that first gives it something to lose.
+    if not (root / "cache.sqlite").exists():
+        warning = pool_retention_warning(root)
+        if warning:
+            Log.Warn(warning)
 
     parent_ids = _resolve_parent_ids(root, parents or [])
     written = admit(
@@ -674,6 +778,8 @@ def import_item(
             parents=parent_ids,
             size=_shallow_size(target),
         )],
+        name=label,
+        imported_at=arrival_ns,
         tags=tuple(tags or ()),
     )
     return {
@@ -690,7 +796,12 @@ def import_item(
 
 
 def _resolve_parent_ids(cache_root: Path, parents: list[str]) -> list[str]:
-    """Parents named by instance id, or by a path already in the store."""
+    """Parents named by instance id, or by a path already in the store.
+
+    A path names the newest entry that claims it, because an import of a path
+    already imported supersedes the earlier declaration. Name the id to reach
+    an older one.
+    """
     if not parents:
         return []
     by_path = store_ids_by_path(cache_root)
@@ -712,8 +823,13 @@ def _resolve_parent_ids(cache_root: Path, parents: list[str]) -> list[str]:
 
 
 def store_ids_by_path(cache_root: Path) -> dict:
-    """Every file the store indexes, by where it sits. Needs no type library."""
-    from ..caching.admission import manifest_files
+    """Every file the store indexes, by where it sits. Needs no type library.
+
+    One path can be claimed by several entries now that an import mints a fresh
+    identity each time, so the newest claim wins -- the same rule the projection
+    applies, for the same reason.
+    """
+    from ..caching.admission import manifest_arrival_ns, manifest_files
     from ..caching.store import CacheStore, decode_manifest
 
     root = Path(cache_root)
@@ -721,15 +837,20 @@ def store_ids_by_path(cache_root: Path) -> dict:
         return {}
     store = CacheStore.open(root)
     try:
-        out = {}
+        best: dict[str, tuple] = {}
         for entry in store.iter_entries():
             try:
                 manifest = decode_manifest(entry.payload)
             except Exception:
                 continue
+            arrival = manifest_arrival_ns(manifest, entry.created_at)
             for f in manifest_files(manifest):
-                out[str(f.Resolve(entry.output_root))] = f.InstanceId()
-        return out
+                iid = f.InstanceId()
+                rank = (arrival, iid)
+                path = str(f.Resolve(entry.output_root))
+                if path not in best or rank > best[path][0]:
+                    best[path] = (rank, iid)
+        return {path: iid for path, (_rank, iid) in best.items()}
     finally:
         store.close()
 

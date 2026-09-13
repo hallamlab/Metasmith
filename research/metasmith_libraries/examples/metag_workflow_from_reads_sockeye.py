@@ -66,28 +66,41 @@ def main():
     out = OUT_DIR.resolve()
     out.mkdir(parents=True, exist_ok=True)
 
-    inputs = DataInstanceLibrary(out / "inputs.xgdb")
-    for tl in ["sequences.yml", "alignment.yml", "ref.yml", "annotation.yml",
-               "taxonomy.yml", "binning.yml", "binning_local.yml"]:
-        inputs.AddTypeLibrary(MLIB / "data_types" / tl)
-
-    meta = inputs.AddValue("reads_metadata.json", {"parity": "paired", "length_class": "short"}, "sequences::read_metadata")
-    pair = inputs.AddValue("read_pair.txt", "sample_1", "sequences::read_pair", parents={meta})
-    inputs.AddItem(Path(remote_r1), "sequences::zipped_forward_short_reads", parents={pair})
-    inputs.AddItem(Path(remote_r2), "sequences::zipped_reverse_short_reads", parents={pair})
-
-    inputs.AddItem(REMOTE_UNIREF50_DMND,  "ref::uniref50_diamond_db")
-    inputs.AddItem(REMOTE_KOFAM_PROFILES, "ref::kofamscan_profiles")
-    inputs.AddItem(REMOTE_KOFAM_KO_LIST,  "ref::kofamscan_ko_list")
-    inputs.AddItem(REMOTE_METABULI_REF,   "ref::metabuli_ref")
-    inputs.AddItem(REMOTE_GTDB,           "ref::gtdb")
-    inputs.AddItem(REMOTE_PHYLOFLASH_DB,  "ref::phyloflash_db")
-    inputs.Save()
-
     smith = Agent(
         home=SshSource(host=HPC_HOST, path=agent_home).AsSource(),
         runtime=Runtime.APPTAINER,
         setup_commands=SETUP_COMMANDS,
+    )
+
+    # Imported once on the cluster, then cited. The reads and the six reference
+    # databases live on sockeye and this process cannot stat any of them, which
+    # is exactly the case that used to hand out a fresh identity per run.
+    givens = smith.PoolGivens()
+    meta = givens.Value("metag_probe/read_metadata",
+                        {"parity": "paired", "length_class": "short"},
+                        "sequences::read_metadata")
+    pair = givens.Value("metag_probe/read_pair", "sample_1",
+                        "sequences::read_pair", parents=[meta])
+    givens.Add(remote_r1, "sequences::zipped_forward_short_reads",
+               name="metag_probe/reads_1", parents=[pair])
+    givens.Add(remote_r2, "sequences::zipped_reverse_short_reads",
+               name="metag_probe/reads_2", parents=[pair])
+    for path, dtype in (
+        (REMOTE_UNIREF50_DMND,  "ref::uniref50_diamond_db"),
+        (REMOTE_KOFAM_PROFILES, "ref::kofamscan_profiles"),
+        (REMOTE_KOFAM_KO_LIST,  "ref::kofamscan_ko_list"),
+        (REMOTE_METABULI_REF,   "ref::metabuli_ref"),
+        (REMOTE_GTDB,           "ref::gtdb"),
+        (REMOTE_PHYLOFLASH_DB,  "ref::phyloflash_db"),
+    ):
+        givens.Add(path, dtype, name=f"ref/{dtype.replace('::', '__')}")
+    inputs = givens.Build(
+        out / "inputs.xgdb",
+        type_library_paths=[
+            MLIB / "data_types" / tl for tl in
+            ("sequences.yml", "alignment.yml", "ref.yml", "annotation.yml",
+             "taxonomy.yml", "binning.yml", "binning_local.yml")
+        ],
     )
 
     targets = TargetBuilder()

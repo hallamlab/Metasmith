@@ -25,6 +25,7 @@ from metasmith.models.workflow import (
     WorkflowTask,
 )
 from metasmith.testing import mock_transforms as mt
+from metasmith.testing.pool_fixtures import pool_backed
 from metasmith.testing.plan_oracle import PlanExecutionOracle
 from metasmith.testing.virtual_runtime import VirtualE2ERuntime
 
@@ -127,6 +128,7 @@ def _build_samples_lib(
             f"{namespace}::{dtype}",
             parents=parents or None,
         )
+    pool_backed(lib)
     lib.Save()
     return lib
 
@@ -266,6 +268,7 @@ def build_multi_input_plan(tmp_path: Path, slots: int = 2) -> BuiltPlan:
         _write_input(sdir / "assembly.fa", f">a_{i}\nACGTACGT\n")
         r = lib.AddItem(Path(f"{sid}/reads.fq"), "mock::reads")
         lib.AddItem(Path(f"{sid}/assembly.fa"), "mock::assembly", parents=[r])
+    pool_backed(lib)
     lib.Save()
     tr_lib = _build_transform_lib(
         tmp_path / "tr", types_path, mt.alignment_transform()
@@ -422,6 +425,7 @@ def build_labelled_collection_plan(
         sdir.mkdir(parents=True, exist_ok=True)
         _write_input(sdir / "assembly.txt", f">{sid}\nACGT\n")
         lib.AddItem(Path(f"{sid}/assembly.txt"), "mock::assembly", parents=[label])
+    pool_backed(lib)
     lib.Save()
 
     tr_lib = _build_transform_lib(

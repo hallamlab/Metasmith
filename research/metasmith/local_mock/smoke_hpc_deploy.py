@@ -79,15 +79,20 @@ def main(argv=None):
     runs_dir = REPO_ROOT / ".awm" / "data" / "smoke_results"
     runs_dir.mkdir(parents=True, exist_ok=True)
 
-    inputs = DataInstanceLibrary(runs_dir / f"{args.host}-{ts}-inputs.xgdb")
-    inputs.AddTypeLibrary(EXAMPLES / "data_types" / "examples.yml")
-    inputs.AddValue("smoke", args.host, "examples::name")
-    inputs.Save()
+    givens = smith.PoolGivens()
+    givens.Value(f"smoke/{args.host}/{ts}", args.host, "examples::name")
+    inputs = givens.Build(
+        runs_dir / f"{args.host}-{ts}-inputs.xgdb",
+        type_library_paths=[EXAMPLES / "data_types" / "examples.yml"],
+    )
 
-    containers = DataInstanceLibrary(runs_dir / f"{args.host}-{ts}-containers.xgdb")
-    containers.AddTypeLibrary(EXAMPLES / "data_types" / "containers.yml")
-    containers.AddItem(EXAMPLES / "metasmith.oci", "containers::metasmith.oci")
-    containers.Save()
+    env_givens = smith.PoolGivens()
+    env_givens.Add(EXAMPLES / "metasmith.oci", "containers::metasmith.oci",
+                   name="smoke/metasmith.oci")
+    containers = env_givens.Build(
+        runs_dir / f"{args.host}-{ts}-containers.xgdb",
+        type_library_paths=[EXAMPLES / "data_types" / "containers.yml"],
+    )
 
     transforms = TransformInstanceLibrary.Load(EXAMPLES)
     targets = TargetBuilder()

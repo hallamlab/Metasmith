@@ -22,13 +22,14 @@ from ..models.libraries import DataTypeLibrary, TransformInstanceLibrary
 from ..models.remote import GlobusSource, Logistics, Source, SourceType, SshSource
 from ..models.solver import Endpoint, Solution
 from ..models.workflow import BIND_FILE
+from .pool import _PoolAccess
 from .run_control import _RunControl
 from .shell import AgentShell
 from .workflow_ops import _WorkflowOps
 
 
 @dataclass
-class Agent(_WorkflowOps, _RunControl):
+class Agent(_WorkflowOps, _RunControl, _PoolAccess):
     home: Source
     id: str = field(default_factory=lambda: KeyGenerator().GenerateUID(l=8))
     setup_commands: list[str] = field(default_factory=list)

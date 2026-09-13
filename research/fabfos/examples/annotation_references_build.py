@@ -81,7 +81,8 @@ from metasmith.python_api import (                                      # noqa: 
 )
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from _driver import (                                                   # noqa: E402
+from _driver import (
+    pin_external_leaf_ids,                                                   # noqa: E402
     FIR_ACCOUNT, FIR_AGENT_HOME, FIR_CONTAINER, FIR_GPU, FIR_GPU_ACCOUNT, FIR_HOST,
     check_staged_executor, check_tasks, check_walltimes, envs_from_plan, fir_agent,
     landed_products, preflight,
@@ -231,6 +232,7 @@ def build_inputs(work: Path, remote_root: str, given_refs=None) -> DataInstanceL
     for dtype, remote in (given_refs or {}).items():
         print(f"    {dtype:28s} {remote}   (given)")
         inputs.AddItem(remote, dtype)
+    pin_external_leaf_ids(inputs)
     inputs.Save()
     return inputs
 

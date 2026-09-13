@@ -24,6 +24,7 @@ from metasmith.telemetry import TraceIndex
 from tests.metasmith.cache._cache_harness import capture_run, clear_trace
 from tests.metasmith.cache.test_sample_addition import DATABASES, MERGES, PER_SAMPLE
 from tests.metasmith.fixtures.trio import TARGETS, build_named_inputs, solve_trio
+from metasmith.testing.pool_fixtures import pool_backed
 
 
 def _calls(virtual_runtime) -> Counter:
@@ -156,6 +157,7 @@ class TestBatchMembership:
             if not f.exists():
                 f.write_text(f">{name}\nACGT\n", encoding="utf-8")
             lib.AddItem(Path(f"{name}/assembly.txt"), "mock::assembly")
+        pool_backed(lib)
         lib.Save()
         tr_lib = _build_transform_lib(tmp_path / "tr", types_path, mt.batched_transform(batch_size=3))
         plan = _generate_plan(
