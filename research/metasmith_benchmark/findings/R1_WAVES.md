@@ -41,7 +41,9 @@ CAUTION metasmith renames every product to its content-addressed name, so a sear
 
 CAUTION a staged run holds two kinds of `.py` file. `_metasmith/task/transforms/<id>/` holds the transforms that execute. `_metasmith/task/data/<id>/` holds resource payloads such as `lib::modelling`, which carries a copy of the standard `memote_score.py`. Check a pin in `task/transforms/`, or by the step's source hash.
 
-CAUTION attribute a grid job to a run by its `WorkDir` (`scontrol show job`), never by its name. `squeue -u phyberos` spans every home, and `nf-pNN__<step>` carries a per-run plan index, not a home. In wave 1, 36 `nf-p02__chopper` jobs read as E5 metagem's belonged to E2 long (`33hlLu8Q`).
+CAUTION attribute a grid job to a run by its `WorkDir` (`scontrol show job`), never by its name. `squeue -u phyberos` spans every home, and `nf-pNN__<step>` carries a per-run plan index, not a home. In wave 1, 36 `nf-p02__chopper` jobs read as E5 metagem's belonged to E2 long (`33hlLu8Q`). Check the job id is non-empty first: `scontrol show job ""` exits 0 and describes another user's job.
+
+CAUTION a task's inputs sit in the FILES manifest of its `.command.sh`, not in staged symlinks. A search for symlinks in the work directory finds none.
 
 CAUTION retry-then-ignore reports a lane complete with its products missing. Check each lane's products against its sample count.
 
@@ -139,7 +141,7 @@ T9's CarveMe resources render as planned. E4 chunk 1's CarveMe task `(868)` in `
 
 CLEAN's GPU route renders as planned. CLEAN's first grid job on fir renders `-c 4`, `-t 04:00:00`, `--mem 32768M` and `--account=def-shallam_gpu --gres=gpu:nvidia_h100_80gb_hbm3_3g.40gb:1`, and Slurm scheduled it. Only this step bills the GPU account. CarveMe stays on `rrg-shallam-ab`.
 
-Every product is stored twice. In `WfOlaqLT`, 208 trimmed-read files take 625.5 GB in `nxf_work` and task_cache holds its own copies, with no inode shared between the two. `caching/admission.py:_place` tries `os.link` and falls back to a copy when the link fails across the bind layout. So `cleanup = false` doubles every lane's product bytes until its work tree is reclaimed. Bytes, not inodes, are R1's tight quota: 16.16 of 18.63 TiB (86.8%) at 04:20 PDT.
+Every product is stored twice. In `WfOlaqLT`, 208 trimmed-read files take 625.5 GB in `nxf_work` and task_cache holds its own copies, with no inode shared between the two. `caching/admission.py:_place` tries `os.link` and falls back to a copy when the link fails across the bind layout. So `cleanup = false` doubles every lane's product bytes until its work tree is reclaimed. Both copies do a job. Downstream tasks of the same run read the `nxf_work` copy: a running megahit's `.command.sh` FILES manifest names the fastp work directories, with no symlinks and no task_cache path. Reclaim a step's work directories only after its lane's last consumer has finished. Bytes, not inodes, are R1's tight quota: 16.16 of 18.63 TiB (86.8%) at 04:20 PDT.
 
 ### Stopped
 
