@@ -45,5 +45,7 @@ TransformInstance(
     protocol=protocol,
     model=model,
     group_by=asm,
-    resources=Resources(cpus=16, memory=Size.GB(64), duration=Duration(hours=48)),
+    # Inert on fir: make_slurm_config's `.*__comebin` selector sets cpus, memory and time, and
+    # context.params reads the selector's values. Kept equal to them so this file does not mislead.
+    resources=Resources(cpus=48, memory=Size.GB(192), duration=Duration(hours=72)),
 )
