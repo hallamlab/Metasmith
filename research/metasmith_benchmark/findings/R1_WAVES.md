@@ -184,6 +184,7 @@ CAUTION a Slurm array task index is not a nextflow task index. `59636440_5` is `
 - During the wave, to reclaim inodes, `drivers/delete_stage.sbatch` removed two dead trees. The job aborts when a symlink under the named permanent directory resolves into the tree, or when a run's workflow files or a checkout name it. The first submissions, 59650024 and 59650025, exited 1 before deleting anything: under `pipefail` the reference gate's grep failed when it found no match. Fixed at eb8ec9f5.
   - Job 59650208 deleted `_vs2_stage` (32,551 inodes, 2,188,519,136 B). The project went from 552,776 to 525,411 inodes in the next 5 minutes. It was the container work directory of the VirSorter2 staging script, mostly its conda package cache. No symlink under `refs/virsorter2_2.2.4` resolves into it, and no file in it has a second hard link.
   - Job 59651314 deleted `cami/runs/5vqR1dv8` (9,156 inodes, 18,992,848,545 B), the Sep 9 marine sample_0 run. Its first resubmission, 59650210, aborted because the gate matched the run's own `workflow.nf`. The gate now ignores files inside the tree it deletes (5bbee50a). Only a retracted projection cited it. Its three bin counts, including the campaign's only COMEBin bin count, went into `PROVEN.md` first.
+  - Job 59652737 deleted `cami/runs/8PHYZXXD` (182 inodes, 22,387,979,673 B). The run was dead: no `PID.lock`, no Slurm job, and no process group on any login node. Its cache entries were evicted earlier.
 
 ### Fixes and gapfills for wave 2
 
