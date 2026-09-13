@@ -45,6 +45,8 @@ CAUTION attribute a grid job to a run by its `WorkDir` (`scontrol show job`), ne
 
 CAUTION a task's inputs sit in the FILES manifest of its `.command.sh`, not in staged symlinks. A search for symlinks in the work directory finds none.
 
+CAUTION a job array's chunk parent is not a task. Its `.command.run` has `#SBATCH -o /dev/null`, sits at index 1, 101, 201 and so on, lists every member's inputs, and renders `NXF_SCRATCH=''`. Before recording a property of one task, count how many tasks of that step share it. Count completions as distinct successful task indices, not work directories, because retries add directories.
+
 CAUTION retry-then-ignore reports a lane complete with its products missing. Check each lane's products against its sample count.
 
 ### Close
