@@ -103,6 +103,8 @@ Build `drivers/e5_pilot.py` over 9 samples: 3 CAMI, 3 Pratama, 3 metaGEM. Use on
 
 Gotchas: each dereplication target needs its refiner as a target parent, or the solver binds one refiner to both. A study grouping type does not exist yet. `viromics::contig_study` covers only the viral merge.
 
+Result: pilots are toy_mousegut, Pratama reads_2019 and metaGEM li2019, each registered as study → read_metadata → read_pair → reads. CAMI solves to 46 steps (`Kx2S58mW`), Pratama to 46 (`nMUZuaPo`), metaGEM to 47 (`F9eRDpwg`). MetaWRAP is masked out of the metagenomics library, because GTDB-Tk de novo's bare `putative_genome` slot otherwise pulls it in. `skani_dedup` runs on the aggregator's pool, which iPHoP needs. The 4-lane panel requires whole-assembly `sequences::orfs`, so it cannot read `bin_orfs` yet.
+
 ### T7. DAGs and publish
 
 Copy each solved DAG SVG into `page/dags/`, reference it from its card, then build and publish.
@@ -150,8 +152,8 @@ Run the `debrief` skill.
 - **Research support:** the session "CAMI benchmark and groundwater virome pipeline" (`uds:/run/user/1001/cc-socks/2517924.sock`) works in `engine/cami-run` and cannot see this worktree. Its messages cannot grant permissions.
 - **New transforms and images needed:** Porechop ABI, Chopper, BinSanity, abawaca, CoverM, dRep, DeepVirFinder, MetaPop, minced, SMETANA and MAGScoT. Each also needs a container image. Hybrid metaSPAdes needs a new transform, and bowtie2 for binning needs one because `bowtie2_align` emits an RNA-seq type.
 - **Live blockers from `findings/BLOCKERS.md`:**
-  - **B1:** VirSorter2 cannot run on a compute node.
-  - **B3:** DRAM staging is incomplete.
+  - **B1:** VirSorter2 cannot run on a compute node. Its database staging is running on login3.
+  - **B3:** closed. DRAM's five distillation sheets are staged and verified by content. dbcan is absent because its URL is dead, so DRAM-v gives no CAZyme annotations. `dramv` stays unproven until a run re-runs it.
   - **B11:** the CarveMe gapfill limit is 2 h, and needs 12 h.
   - **B12:** Flye picks the HiFi preset, which yields no assembly on NanoSim reads. `--nano-raw` works.
     - **Measured `--nano-raw` run** on plant nano sample 0: 1 h 06 m, 3,186 contigs, N50 96,428, peak memory 32.68 GiB.

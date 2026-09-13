@@ -300,6 +300,8 @@ a.full:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
       </ul></div>
       <div><h3>Driver</h3><ul>
         <li><code>drivers/e2_cami.py</code>, with the short arm (208 samples) and long arm (41 samples) solved separately. Mixing read shapes in one solve collapses cases</li>
+        <li>Short arm: 12 steps, key <code>g6fGjiOb</code>, with fastp and FastQC in place of bbduk and seqkit</li>
+        <li>Long arm: 11 steps, key <code>2gIF6Dea</code>, with <code>flye_raw</code> raised to 128 GB</li>
         <li>On a compute node: <code>METASMITH_DRIVER_SLURM=1</code>, 10 cpus / 48 GB</li>
       </ul></div>
       <div><h3>Targets / metrics</h3><ul>
@@ -317,26 +319,28 @@ a.full:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
         <li>Flye <code>--nano-raw</code> on plant sample 0: 1 h 06 m, 3,186 contigs, N50 96,428, peak memory 32.68 GiB</li>
       </ul></div>
       <div class="open"><h3>To match E1 exactly</h3><ul>
-        <li>Trimming: fastp instead of bbduk. The transform exists</li>
-        <li>Read QC: add FastQC. The transform exists</li>
         <li class="block">Short-read BAM: bowtie2, as in E1. <b>New transform</b>, because <code>bowtie2_align</code> emits an RNA-seq type. This is the one difference that can move AMBER</li>
         <li class="block">Long lane: Porechop ABI and Chopper. <b>Two new transforms</b></li>
         <li class="block">Flye preset (B12): <code>flye_raw</code> picks <code>--pacbio-hifi</code> from NanoSim's flat Q40 quality strings, and assembles nothing. The reads measure 15.4% error. Take the preset from the platform declared in <code>read_metadata</code></li>
-        <li class="block">Flye memory: <code>flye_raw</code> declares 32 GB, below the 32.68 GiB measured. Declare 96–128 GB</li>
+        <li>Flye memory: <code>flye_raw</code> declares 32 GB, below the 32.68 GiB measured. The driver overrides it to 128 GB</li>
         <li class="block"><b>To decide:</b> phiX removal. E1 runs it with bowtie2 against Coliphage WA11, which would need a <b>new transform</b>. It removed 127 of 16.6 M pairs on CAMI marine. Keep it for parity, or drop it as a justified difference</li>
       </ul></div>
     </div>
     <details class="dag">
-      <summary>Solved workflow <span class="sub">· C1IM6IG3, 12 steps, short-read arm</span></summary>
+      <summary>Solved workflows <span class="sub">· short arm g6fGjiOb, 12 steps · long arm 2gIF6Dea, 11 steps</span></summary>
       <div class="dagbody">
         <div class="figs">
           <figure>
-            <a class="full" href="https://10.74.81.84:12100/files/home/tony/scratch/bench_run/dags/C1IM6IG3.dag.svg" target="_blank" rel="noopener">Open full screen ↗</a>
-            <div class="figbox">{{SVG:C1IM6IG3}}</div>
-            <figcaption>Rendered by metasmith at staging (<code>workflow.dag.svg</code>). Rung 10 has the same step set as the 249-sample arm. Triangles are steps and circles are data types. It still shows the E1 differences listed above: bbduk, minimap2 and no phiX step.</figcaption>
+            <a class="full" href="https://10.74.81.84:12100/files/home/tony/agentic_workspace/projects/metasmith/engine/bench-run/research/metasmith_benchmark/page/dags/e2_cami_short.dag.svg" target="_blank" rel="noopener">Open full screen ↗</a>
+            <div class="figbox">{{SVG:e2_cami_short}}</div>
+            <figcaption>Short arm, 208 samples, solved locally by <code>e2_cami.py run --dag</code>. Triangles are steps and circles are data types. Still different from E1: minimap2 rather than bowtie2 for the binning BAM, and no phiX step.</figcaption>
+          </figure>
+          <figure>
+            <a class="full" href="https://10.74.81.84:12100/files/home/tony/agentic_workspace/projects/metasmith/engine/bench-run/research/metasmith_benchmark/page/dags/e2_cami_long.dag.svg" target="_blank" rel="noopener">Open full screen ↗</a>
+            <div class="figbox">{{SVG:e2_cami_long}}</div>
+            <figcaption>Long arm, 41 Nanopore samples. Still different from E1: no Porechop ABI or Chopper, and <code>flye_raw</code> picks its preset from read quality (B12).</figcaption>
           </figure>
         </div>
-        <div class="empty">Long-read arm: no DAG. It has never been staged, and its target set changes once the per-environment read choice is settled.</div>
       </div>
     </details>
   </div>
@@ -365,8 +369,9 @@ a.full:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
         <li>Their Zenodo products: vOTU catalogue, 1,275 MAGs, curated AMG table</li>
       </ul></div>
       <div><h3>Driver</h3><ul>
-        <li><code>drivers/e3_pratama.py</code>, all runs under one shared study root for the viral merge</li>
-        <li>MEGAHIT; geNomad + VIBRANT + VirSorter2 → merge → CheckV → MMseqs2; MetaWRAP → dRep; DRAM-v; vConTACT3</li>
+        <li><code>drivers/e3_pratama.py</code>, all runs under one shared study root for the viral merge. 66 runs, 22 steps, key <code>HOCcka9Z</code></li>
+        <li>MEGAHIT; geNomad + VIBRANT + VirSorter2 → merge → CheckV → MMseqs2 → vConTACT3; DRAM-v; MetaWRAP → CheckM2</li>
+        <li>Staging refuses until every run's interleaved file passes its read-count check</li>
         <li>GTDB-Tk r232 needs its skani database, because <code>--skip_ani_screen</code> doesn't skip that check in 2.6.1. The fir copy lacks <code>skani/</code>, and project space holds none. Find it on Globus rather than re-download the 56.6 GiB package</li>
       </ul></div>
       <div><h3>Targets / metrics</h3><ul>
@@ -387,19 +392,23 @@ a.full:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
         <li class="block">To match Pratama, <b>new transforms</b>: hybrid metaSPAdes, BinSanity, abawaca, CoverM, dRep, DeepVirFinder, MetaPop and minced. All but hybrid metaSPAdes also need a container image. The six Nanopore runs stay out of the plan until hybrid metaSPAdes exists</li>
         <li class="block">MetaPop needs every run mapped to one shared reference, the study's vOTU catalogue. Today each run maps to its own assembly</li>
         <li class="block">Pins to match Pratama: bbduk <code>qtrim=rl trimq=20 minlen=50</code>, metaSPAdes k-mers, MetaWRAP 2 rounds, VIBRANT <code>-virome</code>, geNomad flags, VirSorter2 groups, MMseqs2 cov-mode 0, both iPHoP databases, DRAM on MAGs. Drop the SemiBin2/COMEBin ensemble and skANI dedup</li>
-        <li class="block">VirSorter2 can't run on a compute node (B1), and its failures are ignored</li>
-        <li class="block">No AMG output until DRAM staging finishes (B3). DRAM-v fails on the all-null config, and the run still reports complete</li>
+        <li class="block">MAG recovery is out of the plan: dRep has no transform, and the MetaWRAP recovery transforms (B7) aren't committed</li>
+        <li class="block">Spacer-to-host links wait on minced, the only spacer source once CCTyper is gone</li>
+        <li class="block">VirSorter2 can't run on a compute node (B1). Its database is staging now</li>
+        <li class="block">The plan still downloads the VIBRANT, VirSorter2 and CheckV databases, which hang on a compute-node driver</li>
+        <li>DRAM's database is staged and its five distillation sheets check out (B3). DRAM-v stays unproven until a run re-runs it</li>
+        <li>dbcan is missing from the DRAM database, because its download URL is dead. DRAM-v therefore gives no CAZyme annotations</li>
         <li>Database vintage ceiling: geNomad 1.5.1 vs 1.11.0</li>
       </ul></div>
     </div>
     <details class="dag">
-      <summary>Solved workflow <span class="sub">· 38 steps, current shape with B7</span></summary>
+      <summary>Solved workflow <span class="sub">· HOCcka9Z, 22 steps, 66 paired runs</span></summary>
       <div class="dagbody">
         <div class="figs">
           <figure>
-            <a class="full" href="https://10.74.81.84:12100/files/home/tony/scratch/bench_run/dags/XNG5FppS.dag.svg" target="_blank" rel="noopener">Open full screen ↗</a>
-            <div class="figbox">{{SVG:XNG5FppS}}</div>
-            <figcaption>Staged from the main checkout with <code>--stage-only</code>. Both MAG chains are present: MetaWRAP's own bins through <code>metawrap_skani_dedup</code> → <code>pratama_metawrap_mag_recovery</code>, next to the ensemble chain. <code>downloadVcontact3DB</code> is gone because that database is staged. <code>downloadVirsorter2DB</code>, <code>downloadVibrantDB</code> and <code>downloadCheckvDB</code> still fetch, and a compute-node driver would hang on them. Its key, <code>XNG5FppS</code>, belongs to the main checkout; a launch from <code>launch_frozen</code> will key differently.</figcaption>
+            <a class="full" href="https://10.74.81.84:12100/files/home/tony/agentic_workspace/projects/metasmith/engine/bench-run/research/metasmith_benchmark/page/dags/e3_pratama.dag.svg" target="_blank" rel="noopener">Open full screen ↗</a>
+            <div class="figbox">{{SVG:e3_pratama}}</div>
+            <figcaption>Solved locally by <code>e3_pratama.py run --dag</code>. No interleave step, because the reads arrive interleaved. <code>downloadVibrantDB</code>, <code>downloadVirsorter2DB</code> and <code>downloadCheckvDB</code> are still in it.</figcaption>
           </figure>
         </div>
       </div>
@@ -423,7 +432,8 @@ a.full:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
         <li>The reads (491 runs, 5.21 TB) are for E5, not E4</li>
       </ul></div>
       <div><h3>Driver</h3><ul>
-        <li><code>drivers/e4_metagem.py</code>, registering the published MAGs as bins</li>
+        <li><code>drivers/e4_metagem.py</code>, registering the 14,108 published MAGs as bins. 3 steps, key <code>5tRUYUnb</code></li>
+        <li>CarveMe gapfill limit raised to 12 h in the driver (B11). The transform still declares 2 h</li>
         <li>Prodigal → CarveMe carve, then gapfill on M8 with CPLEX 22.2 → MEMOTE → SMETANA</li>
         <li>Ramp: li2019 → gut → soil → Tara</li>
       </ul></div>
@@ -441,19 +451,19 @@ a.full:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
         <li>MEMOTE on a real model from that run: consistency 0.894, annotation 0.797 (metabolites) / 0.766 (reactions)</li>
       </ul></div>
       <div class="open"><h3>Open</h3><ul>
-        <li class="block">CarveMe gapfill's 2 h limit is too short (B11): 5 of over 100 live tasks hit it and were ignored, dropping the hardest MAGs. Raise it to 12 h</li>
+        <li class="block">The published MAGs sit inside archives. <code>e4_extract_mags.sh</code> unpacks them to one FASTA each, about 14K inodes, and hasn't run</li>
         <li class="block">SMETANA: <b>new transform</b> and container image</li>
         <li><code>metagem_compare.py</code> compares one model pair, so the driver needs a loop over MAGs. Starting from the published MAGs keeps their names, so pairing is by name</li>
       </ul></div>
     </div>
     <details class="dag">
-      <summary>Solved workflow <span class="sub">· HQ5SrqFe, 11 steps, from reads, as launched</span></summary>
+      <summary>Solved workflow <span class="sub">· 5tRUYUnb, 3 steps, from published MAGs</span></summary>
       <div class="dagbody">
         <div class="figs">
           <figure>
-            <a class="full" href="https://10.74.81.84:12100/files/home/tony/scratch/bench_run/dags/HQ5SrqFe.dag.svg" target="_blank" rel="noopener">Open full screen ↗</a>
-            <div class="figbox">{{SVG:HQ5SrqFe}}</div>
-            <figcaption>Rendered at staging for the live run, which starts from reads. The MAG-input run starts at Prodigal, so everything above it here drops out.</figcaption>
+            <a class="full" href="https://10.74.81.84:12100/files/home/tony/agentic_workspace/projects/metasmith/engine/bench-run/research/metasmith_benchmark/page/dags/e4_metagem.dag.svg" target="_blank" rel="noopener">Open full screen ↗</a>
+            <div class="figbox">{{SVG:e4_metagem}}</div>
+            <figcaption>Solved locally by <code>e4_metagem.py run --dag</code>: Prodigal on each MAG, CarveMe with CPLEX, then MEMOTE.</figcaption>
           </figure>
         </div>
       </div>
@@ -480,6 +490,8 @@ a.full:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
       </ul></div>
       <div><h3>Driver</h3><ul>
         <li><code>drivers/e5_pilot.py</code>, one plan per corpus, because a plan gives every sample the same targets</li>
+        <li>Pilot samples: CAMI mouse gut, Pratama reads_2019 and metaGEM li2019. Every corpus registers the same study → sample → read pair shape</li>
+        <li>Solved: CAMI 46 steps (<code>Kx2S58mW</code>), Pratama 46 (<code>nMUZuaPo</code>), metaGEM 47 (<code>F9eRDpwg</code>, which adds the interleave step)</li>
         <li>Filters become masks: a frozen candidate set with thresholds applied as joins, not re-runs</li>
         <li>Studies: a study is a corpus subset, such as CAMI II mouse gut or Pratama reads_2019. MetaPop, dRep and skANI dedup run once per study</li>
         <li>MAG matrix: DAS Tool and MAGScoT bins each go through dRep and skANI dedup, per study, giving 4 MAG sets</li>
@@ -502,14 +514,30 @@ a.full:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
       <div class="open"><h3>Depends on</h3><ul>
         <li>E2 and E3 landing, since their numbers are the baselines</li>
         <li class="block"><b>New transforms</b>: Chopper, MAGScoT, dRep, DeepVirFinder, MetaPop, minced, SMETANA, and CoverM if chosen. Each also needs a container image</li>
-        <li class="block">A study type that samples declare. <code>viromics::contig_study</code> serves only the viral merge, and <code>skani_dedup</code> groups per assembly</li>
+        <li class="block">A study type that samples declare. <code>viromics::contig_study</code> stands in, but only the viral merge groups by it</li>
+        <li class="block"><code>skani_dedup</code> takes the aggregator's bin pool per assembly. The MAG matrix needs it on DAS Tool and MAGScoT bins per study</li>
+        <li class="block">The 4-lane panel reads whole-assembly ORFs. Running it on MAGs needs a chunker for per-MAG ORFs</li>
+        <li class="block">The plans still download the iPHoP, VIBRANT, VirSorter2 and CheckV databases</li>
         <li class="block">GTDB-Tk r232's skani database, still to be found on Globus</li>
         <li>No phiX step. Check for phiX by hand when a sample needs it</li>
       </ul></div>
     </div>
     <details class="dag">
-      <summary>Solved workflow <span class="sub">· not yet solved</span></summary>
-      <div class="dagbody"><div class="empty">No target set exists yet. This fills in once the stages that differ from parity are chosen.</div></div>
+      <summary>Solved workflows <span class="sub">· one per corpus, 46–47 steps</span></summary>
+      <div class="dagbody">
+        <div class="figs">
+          <figure>
+            <a class="full" href="https://10.74.81.84:12100/files/home/tony/agentic_workspace/projects/metasmith/engine/bench-run/research/metasmith_benchmark/page/dags/e5_pilot_cami.dag.svg" target="_blank" rel="noopener">Open full screen ↗</a>
+            <div class="figbox">{{SVG:e5_pilot_cami}}</div>
+            <figcaption>CAMI mouse gut, 3 samples, <code>Kx2S58mW</code>. The Pratama plan also has 46 steps. MetaWRAP is masked out, and so is CCTyper.</figcaption>
+          </figure>
+          <figure>
+            <a class="full" href="https://10.74.81.84:12100/files/home/tony/agentic_workspace/projects/metasmith/engine/bench-run/research/metasmith_benchmark/page/dags/e5_pilot_metagem.dag.svg" target="_blank" rel="noopener">Open full screen ↗</a>
+            <div class="figbox">{{SVG:e5_pilot_metagem}}</div>
+            <figcaption>metaGEM li2019, 3 runs, <code>F9eRDpwg</code>. Its mate files add the interleave step.</figcaption>
+          </figure>
+        </div>
+      </div>
     </details>
   </div>
 </article>
