@@ -4,7 +4,8 @@ from metasmith.python_api import *
 lib     = TransformInstanceLibrary.ResolveParentLibrary(__file__)
 model   = Transform()
 image   = model.AddRequirement(lib.GetType("e2::amber.env"))
-asm     = model.AddRequirement(lib.GetType("e2::assembly"))
+meta    = model.AddRequirement(lib.GetType("e2::read_metadata"))
+asm     = model.AddRequirement(lib.GetType("e2::assembly"), parents={meta})
 table   = model.AddRequirement(lib.GetType("e2::das_tool_contig_to_bin"), parents={asm})
 gold    = model.AddRequirement(lib.GetType("e2::contig_gold_standard"), parents={asm})
 results = model.AddProduct(lib.GetType("e2::amber_results"))
@@ -43,6 +44,6 @@ def protocol(context: ExecutionContext):
 TransformInstance(
     protocol=protocol,
     model=model,
-    group_by=table,
+    group_by=asm,
     resources=Resources(cpus=2, memory=Size.GB(8), duration=Duration(hours=1)),
 )
