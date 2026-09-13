@@ -37,6 +37,8 @@ CAUTION `sacct`'s `.batch` rows carry MaxRSS under JobName `batch`. Collect the 
 
 CAUTION sweep for swallowed steps in `<home>/runs/<key>/_metasmith/logs.<timestamp>/agent.log`, which carries `Submitted process`, `Error is ignored` and `Killed`. The driver's sbatch log under `bench/logs/` has none of these lines, so a sweep of it always reads clean. Check that `Submitted process` counts above zero before trusting a zero.
 
+CAUTION metasmith renames every product to its content-addressed name, so a search for a tool's own filename (`gtdbtk.bac120.summary.tsv`) finds nothing. Look under `<run>/results/<namespace>-<type>/`.
+
 CAUTION retry-then-ignore reports a lane complete with its products missing. Check each lane's products against its sample count.
 
 ### Close
@@ -82,7 +84,7 @@ Commit `f6d01f00`, checkout `/scratch/phyberos/bench/checkout/f6d01f00`. Driver 
   - E4 chunk 1 and E5 metagem launch after the tree goes, which frees 424,034 inodes. The tree goes once `e4_gtdbtest` classifies a MAG through the squashfs image.
   - Launching in two groups departs from the plan's single launch. The plan's run log records why.
 - **GTDB image:** job 59625981 built `release232_skani_genomes.sqfs`, 192 GB. It holds all 199,923 genomes, a count that matches the tree.
-- **GTDB-Tk through the image:** `e4_gtdbtest` (job 59635386, key `Sj7uFNWW`, `--study li2019 --limit 1 --with-gtdbtk`) passed. Its GTDB-Tk task exited 0 with one `Traversing tree` line and no missing-genome error. It classified `SRR7664615_bin.1.s` as `g__Castellaniella` by topology and ANI. The closest placement was GCF_004321985.1 at ANI 88.44, and a related reference was GCA_035572875.1 at 86.91, so skani read genomes through both image binds. That pass cleared the tree deletion.
+- **GTDB-Tk through the image:** `e4_gtdbtest` (job 59635386, key `Sj7uFNWW`, `--study li2019 --limit 1 --with-gtdbtk`) passed. Its GTDB-Tk task exited 0 with one `Traversing tree` line and no missing-genome error. It classified `SRR7664615_bin.1.s` as `g__Castellaniella` by topology and ANI. The closest placement was GCF_004321985.1 at ANI 88.44, and a related reference was GCA_035572875.1 at 86.91, so skani read genomes through both image binds. That pass cleared the tree deletion. One genome cost 17m59s and MaxRSS 90.6 GiB on 8 cpus (grid job 59636007), under the transform's 240 GB declaration.
 - **Probe:** probe2 `Gu9VJmwO` passed at `9525a3a1`.
 - **E1 sheets:** `build_samplesheet.py` with its path check found all 498 read files on fir, and regenerated both sheets byte-identical to the committed ones. The offline preflight (59634205) passed:
   - 5.5.0 resolves locally.
