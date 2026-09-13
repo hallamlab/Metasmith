@@ -165,6 +165,8 @@ E2 short's gold_standard failed on 15 of 208 samples, all from `mousegut_short_r
 
 E3's metaSPAdes sample (6) ran out of memory on its first attempt in `Son2YJiI`. Array task `59636440_5` reached MaxRSS 191.99 GiB of 192 GB after 1:28:44. SPAdes logged `Memory limit set to 182 Gb`, but `spades-hammer` exceeded the cgroup anyway. The retry renders `--mem 393216M` and `-t 48:00:00`. The transform's `Resources(memory=Size.GB(192), duration=Duration(hours=24))` doubles per attempt in `workflow.resources.nf`, and its `-m` follows the task's memory. The 192 GB flat block in `workflow.config.nf` matches only `.*__comebin`. Pratama's published setting is `-m 190`, so a second attempt deviates from it for samples that need it.
 
+E5 metagem `YzCrdOoF`'s `p14__semibin2 (3)` was killed for memory (exit 137) at 16 GB, 5 min 20 s after "Start binning." Its retry, job 59652863, renders `--mem 32768M -t 08:00:00` from `workflow.resources.nf:119–123`. The rendered command carries the parity pins `--random-seed 1 --min-len 1500`.
+
 CAUTION a Slurm array task index is not a nextflow task index. `59636440_5` is `p05__spades_pratama (6)`. Map one to the other through `nxf.log` before reading a sample's retry.
 
 ### Stopped
