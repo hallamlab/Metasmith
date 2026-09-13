@@ -69,7 +69,7 @@ WARNING never use a plain `scancel` on a driver job that has started. It kills t
 
 CAUTION a quota sample taken right after a large unlink reads unchanged, because Lustre's quota accounting lags. Re-sample minutes later before recording what a deletion freed. Judge the growth rate over 10 minutes or more: single minutes swing by several TiB per hour as tasks write and delete temporary files.
 
-CAUTION evict task-cache entries through the store: tombstone each entry, then run `metasmith cache gc --delete`. Never delete shard files by hand. A missing or tombstoned shard reads as a miss (`caching/invocation.py:probe`), so an evicted entry costs only a recompute.
+CAUTION evict task-cache entries through the store with `drivers/evict_cache.py`, which tombstones each listed key and then removes its shard and row. Never delete shard files by hand. Delete work directories with `drivers/prune_work.sbatch`, which refuses any path outside the run's `nxf_work/`. A missing or tombstoned shard reads as a miss (`caching/invocation.py:probe`), so an evicted entry costs only a recompute.
 
 The slurm preset keeps every task's work directory (`cleanup = false`), so finished runs hold their inodes, and bytes that task_cache already holds a copy of. After a lane's run ends and its products are checked, delete that run's nextflow work directory under `<home>/runs/<key>/` as a job. The task cache keeps the results. Check the quota after each deletion, and before every E4 chunk.
 
