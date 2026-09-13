@@ -23,7 +23,7 @@ Every metasmith lane runs as `sbatch -J <lane> $C/research/metasmith_benchmark/d
 1. Commit, then run `drivers/sync.sh`. It refuses a dirty tree, copies the commit to `$C`, and pushes the dev overlay to all three homes.
 
    CAUTION run `sync.sh` from the `feat/engine/bench-run` worktree every wave. It copies with preserved mtimes, and a leaf transform id hashes its path and mtime. A clean checkout of the same commit in another tree has different `_metadata` mtimes, so its sync moves every plan key and forks the cache without a single edit.
-2. Check the project inode quota with `lfs quota -p 83115734 /scratch` (field 6 against field 8). Launch only if the wave's projection keeps it below 950K.
+2. Check the project quota with `lfs quota -p 83115734 /scratch`. Inodes are field 6 against field 8, and the launch criterion is below 950K. Bytes are field 2 against field 4, both in KiB, with a cap of 18.63 TiB.
 3. Import, stage and fetch images: run each lane once with `--materialise --import`. It imports the lane's givens, stages the plan, fetches every image the plan names, and exits. Chain the jobs that share a home with `--dependency=afterok`.
 4. Launch each lane with `--launch --tag w<N>`, without `--import`, once its materialise job has passed. A lane that does not solve is an issue, not a blocker for the others.
 
@@ -83,7 +83,7 @@ Commit `f6d01f00`, checkout `/scratch/phyberos/bench/checkout/f6d01f00`. Driver 
 
 - **Inodes:** reclaiming nine stale run dirs freed 149,336 inodes. The quota read 716,917 before launch.
   - Seven lanes launched first: E1 short and long, E2 short and long, E3, E5 cami and E5 pratama. They fit under 950K without the GTDB tree deletion.
-  - E4 chunk 1 and E5 metagem launch after the tree goes, which frees 424,034 inodes. Job 59638488 deleted it in 9 min, and inodes went from 750,788 to 334,075, a net 416,713 while five lanes wrote. `GCF/` and `GCA/` remain as empty mount points, and the sketch files beside them are untouched. Afterwards bytes, not inodes, were the tight axis: 15.46 of 18.63 TB (83%) against inodes at 34%. The tree goes once `e4_gtdbtest` classifies a MAG through the squashfs image.
+  - E4 chunk 1 and E5 metagem launch after the tree goes, which frees 424,034 inodes. Job 59638488 deleted it in 9 min, and inodes went from 750,788 to 334,075, a net 416,713 while five lanes wrote. `GCF/` and `GCA/` remain as empty mount points, and the sketch files beside them are untouched. Afterwards bytes, not inodes, were the tight axis: 15.46 of 18.63 TiB (83%) against inodes at 34%. The tree goes once `e4_gtdbtest` classifies a MAG through the squashfs image.
   - Launching in two groups departs from the plan's single launch. The plan's run log records why.
 - **GTDB image:** job 59625981 built `release232_skani_genomes.sqfs`, 192 GB. It holds all 199,923 genomes, a count that matches the tree.
 - **GTDB-Tk through the image:** `e4_gtdbtest` (job 59635386, key `Sj7uFNWW`, `--study li2019 --limit 1 --with-gtdbtk`) passed. Its GTDB-Tk task exited 0 with one `Traversing tree` line and no missing-genome error. It classified `SRR7664615_bin.1.s` as `g__Castellaniella` by topology and ANI. The closest placement was GCF_004321985.1 at ANI 88.44, and a related reference was GCA_035572875.1 at 86.91, so skani read genomes through both image binds. That pass cleared the tree deletion. One genome cost 17m59s and MaxRSS 90.6 GiB on 8 cpus (grid job 59636007), under the transform's 240 GB declaration.
