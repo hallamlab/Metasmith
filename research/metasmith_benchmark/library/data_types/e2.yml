@@ -7,11 +7,17 @@ types:
       _: "one sample's read set as JSON: sample, length_class (short|long), platform (ILLUMINA, OXFORD_NANOPORE, OXFORD_NANOPORE_HQ, PACBIO_CLR, PACBIO_HIFI)"
       e2: read_metadata
       ext: json
-  short_reads:
+  # Two mate files, the pair E1's sample sheet names: fastp's adapter detection reads mate 2 only from --in2.
+  short_reads_1:
     properties:
-      _: paired Illumina reads, interleaved in one gzipped FASTQ
-      e2: short_reads
-      ext: fq.gz
+      _: Illumina mate 1, gzipped FASTQ
+      e2: short_reads_1
+      ext: fastq.gz
+  short_reads_2:
+    properties:
+      _: Illumina mate 2, gzipped FASTQ
+      e2: short_reads_2
+      ext: fastq.gz
   long_reads:
     properties:
       _: long reads, one gzipped FASTQ

@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""E4: metaGEM's published MAGs through Prodigal, CarveMe (CPLEX) and MEMOTE.
+"""E4: metaGEM's published MAGs through Prodigal, CarveMe (CPLEX) and MEMOTE, and GTDB-Tk r232.
 
 `run` solves against a local dry-run home and renders the DAG. `import`, `--stage-only`
 and `--launch` act on the fir agent home, from a Slurm job there, after
 e4_extract_mags.sh has unpacked the MAGs.
 
-Subcommands: list, import, run [--study ...] [--limit N] [--dag] [--stage-only | --launch].
+Subcommands: list, import, run [--study ...] [--limit N] [--with-gtdbtk] [--dag] [--stage-only | --launch].
 """
 
 import argparse
@@ -56,14 +56,17 @@ def select(mags, args):
     return mags
 
 
-def declare_globals(smith, solver, location, ensure):
-    """The medium and solver, cited as their own resource library."""
+def declare_globals(smith, solver, location, ensure, with_gtdbtk=False):
+    """The medium, the solver and GTDB, cited as their own resource library."""
     givens = smith.PoolGivens()
     c.add_value(givens, "ref/modelling::media", MEDIUM_TSV.read_text(), "modelling::media", tags=["reference"])
     c.add_value(givens, "ref/modelling::medium_name", MEDIUM_NAME, "modelling::medium_name", tags=["reference"])
     if solver == "cplex":
         c.declare_refs(givens, {"modelling::cplex_installation": CPLEX_ROOT})
-    return c.cite(givens, location, [c.MLIB / "data_types" / "modelling.yml"], ensure)
+    if with_gtdbtk:
+        c.declare_refs(givens, {"ref::gtdb": c.STAGED_REFS["ref::gtdb"]})
+    types = [c.MLIB / "data_types" / t for t in ("modelling.yml", "ref.yml")]
+    return c.cite(givens, location, types, ensure)
 
 
 def declare_givens(smith, mags, ensure):
@@ -73,12 +76,14 @@ def declare_givens(smith, mags, ensure):
     return c.cite(givens, CACHE_DIR / "e4_inputs.xgdb", [c.MLIB / "data_types" / "sequences.yml"], ensure)
 
 
-def build_targets(solver):
+def build_targets(solver, with_gtdbtk=False):
     t = TargetBuilder()
     orfs = t.Add("sequences::bin_orfs")
     model_type = "modelling::carveme_model_cplex" if solver == "cplex" else "modelling::carveme_model"
     model = t.Add(model_type, parents=[orfs])
     t.Add("modelling::memote_score", parents=[model])
+    if with_gtdbtk:
+        t.Add("taxonomy::gtdbtk")
     return t
 
 
@@ -101,7 +106,7 @@ def cmd_run(args):
     smith = c.agent_for("metagem", remote, CACHE_DIR / "dryrun_home")
     ensure = importing or args.import_givens or not remote
     inputs = declare_givens(smith, mags, ensure)
-    globals_lib = declare_globals(smith, args.solver, CACHE_DIR / "e4_globals.xgdb", ensure)
+    globals_lib = declare_globals(smith, args.solver, CACHE_DIR / "e4_globals.xgdb", ensure, args.with_gtdbtk)
     if importing:
         print(f"the pool at {smith.home.GetPath()} holds the givens of {len(mags)} MAGs")
         return 0
@@ -111,12 +116,16 @@ def cmd_run(args):
         resources=[DataInstanceLibrary.Load(c.MLIB / "resources" / "env"),
                    DataInstanceLibrary.Load(c.MLIB / "resources" / "lib"), globals_lib],
         transforms=[TransformInstanceLibrary.Load(c.MLIB / "transforms" / "logistics"),
-                    TransformInstanceLibrary.Load(c.MLIB / "transforms" / "metabolicModelling")],
-        targets=build_targets(args.solver),
+                    TransformInstanceLibrary.Load(c.MLIB / "transforms" / "metabolicModelling"),
+                    TransformInstanceLibrary.Load(c.MLIB / "transforms" / "metagenomics")
+                    .AsView({Path("taxonomy/gtdbtk.py")})],
+        targets=build_targets(args.solver, args.with_gtdbtk),
     )
     expected = {"sequences::bin_fasta": len(mags), "modelling::media": 1, "modelling::medium_name": 1}
     if args.solver == "cplex":
         expected["modelling::cplex_installation"] = 1
+    if args.with_gtdbtk:
+        expected["ref::gtdb"] = 1
     c.check_plan(task, expected)
     c.print_plan(task, 28)
 
@@ -138,9 +147,11 @@ def main():
         p = sub.add_parser(name)
         p.add_argument("--study", nargs="*", help=", ".join(STUDY_ORDER))
         p.add_argument("--limit", type=int, help="first N MAGs per study")
-        p.set_defaults(fn=fn, dag=False, stage_only=False, launch=False, tag=None)
+        p.set_defaults(fn=fn, dag=False, stage_only=False, launch=False, tag=None, with_gtdbtk=False)
         if name != "list":
             p.add_argument("--solver", default="cplex", choices=["cplex", "open"])
+            p.add_argument("--with-gtdbtk", action="store_true",
+                           help="GTDB-Tk r232 on every MAG; needs ref::gtdb's representative genomes")
         if name == "run":
             p.add_argument("--dag", action="store_true", help="render the plan to page/dags/e4_metagem.dag.svg")
             mode = p.add_mutually_exclusive_group()

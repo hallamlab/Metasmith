@@ -25,20 +25,12 @@ sys.path.insert(0, str(HERE.parent))
 import _common as c  # noqa: E402
 import e2_cami  # noqa: E402
 
-SPLIT_ROOT = "/scratch/phyberos/cami_nfcore_split_reads"
-
-
-def split_pair(dataset, sample):
-    return f"{SPLIT_ROOT}/{dataset}/{sample}_R1.fastq.gz", f"{SPLIT_ROOT}/{dataset}/{sample}_R2.fastq.gz"
-
-
 def build_sheets(limit=None):
-    dataset_of = {f"{r['dataset']}_{r['sample_id']}": r["dataset"] for r in c.cami_rows()}
     arms = e2_cami.enumerate_arms()
     short, long_ = [], []
-    for sid, _reads in arms["short"][:limit]:
-        r1, r2 = split_pair(dataset_of[sid], sid)
-        short.append(dict(sample=sid, group=dataset_of[sid], short_reads_1=r1, short_reads_2=r2,
+    for sid, _reads, dataset in arms["short"][:limit]:
+        r1, r2 = c.cami_split_pair(dataset, sid)
+        short.append(dict(sample=sid, group=dataset, short_reads_1=str(r1), short_reads_2=str(r2),
                           short_reads_platform="ILLUMINA"))
     for sid, reads, _truth, dataset in arms["long"][:limit]:
         long_.append(dict(sample=sid, group=dataset, long_reads=str(reads),

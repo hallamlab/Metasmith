@@ -39,7 +39,7 @@ TYPE_LIBS = [c.LIBRARY / "data_types" / "e2.yml"]
 def enumerate_arms():
     rows = c.cami_rows()
     long_replaced = set(LONG_DATASETS.values())
-    short = [(f"{r['dataset']}_{r['sample_id']}", Path(r["reads_path"]))
+    short = [(f"{r['dataset']}_{r['sample_id']}", Path(r["reads_path"]), r["dataset"])
              for r in rows if r["read_type"] == "short" and r["dataset"] not in long_replaced]
     long_ = []
     for r in rows:
@@ -54,7 +54,7 @@ def declare_givens(smith, arm, samples, ensure):
     givens = smith.PoolGivens()
     for sample in samples:
         if arm == "short":
-            sid, reads = sample
+            sid, reads, dataset = sample
             truth, platform = reads.parent / "reads_mapping.tsv.gz", "ILLUMINA"
         else:
             sid, reads, truth, dataset = sample
@@ -63,7 +63,11 @@ def declare_givens(smith, arm, samples, ensure):
         meta = c.add_value(givens, f"e2/{sid}/read_metadata",
                            {"sample": sid, "length_class": arm, "platform": platform},
                            "e2::read_metadata", tags=tags)
-        c.add_file(givens, f"e2/{sid}/reads", reads, f"e2::{arm}_reads", parents=[meta], tags=tags)
+        if arm == "short":
+            for mate, path in zip((1, 2), c.cami_split_pair(dataset, sid)):
+                c.add_file(givens, f"e2/{sid}/reads_{mate}", path, f"e2::short_reads_{mate}", parents=[meta], tags=tags)
+        else:
+            c.add_file(givens, f"e2/{sid}/reads", reads, "e2::long_reads", parents=[meta], tags=tags)
         if truth is not None:
             c.add_file(givens, f"e2/{sid}/read_truth", truth, "e2::read_truth", parents=[meta], tags=tags)
 
@@ -110,7 +114,9 @@ def solve(arm, samples, args):
         targets=build_targets(arm),
     )
     n_truth = len(samples) if arm == "short" else sum(1 for s in samples if s[2] is not None)
-    c.check_plan(task, {f"e2::{arm}_reads": len(samples), "e2::read_metadata": len(samples),
+    reads = {"e2::short_reads_1": len(samples), "e2::short_reads_2": len(samples)} if arm == "short" \
+        else {"e2::long_reads": len(samples)}
+    c.check_plan(task, {**reads, "e2::read_metadata": len(samples),
                         "e2::read_truth": n_truth})
     c.print_plan(task, 22)
     if args.dag:

@@ -34,9 +34,17 @@ EXPECTED_RUNS = 65
 TYPE_LIBS = [c.MLIB / "data_types" / t for t in ("sequences.yml", "viromics.yml")]
 
 RESOURCE_OVERRIDES = {
-    "bbduk": Resources(memory=Size.GB(64), cpus=16),
     "megahit": Resources(memory=Size.GB(128), cpus=32, duration=Duration(hours=12)),
-    "downloadDramDB": Resources(cpus=4, memory=Size.GB(8), duration=Duration(hours=12)),
+}
+
+# The standard transforms each E3 library transform replaces, by library.
+REPLACED = {
+    "assembly": {"bbduk.py", "spades.py"},
+    "metagenomics": {"binning/metawrap.py", "taxonomy/genomad.py"},
+    "functionalAnnotation": {"virsorter2.py", "dramv.py"},
+    # CCTyper is dropped from every experiment. Pratama's spacer caller is minced, a gapfill.
+    "viromics": {"vibrant.py", "merge_candidate_calls.py", "mmseqs_votu.py", "mmseqs_precluster.py", "cctyper.py",
+                 "prodigal_gv.py"},
 }
 
 
@@ -77,40 +85,41 @@ def declare_givens(smith, runs, ensure):
 
 
 def build_transforms():
-    return [
-        TransformInstanceLibrary.Load(c.MLIB / "transforms" / "logistics"),
-        c.assembly_without("spades"),
-        TransformInstanceLibrary.Load(c.MLIB / "transforms" / "metagenomics"),
-        TransformInstanceLibrary.Load(c.MLIB / "transforms" / "functionalAnnotation"),
-        TransformInstanceLibrary.Load(c.MLIB / "transforms" / "viromics"),
-        TransformInstanceLibrary.Load(c.MLIB / "transforms" / "fabfos"),
-    ]
+    std = [lib if name not in REPLACED else lib.AsView({Path(p) for p in REPLACED[name]}, invert=True)
+           for name, lib in ((n, TransformInstanceLibrary.Load(c.MLIB / "transforms" / n))
+                             for n in ("logistics", "assembly", "metagenomics", "functionalAnnotation", "viromics"))]
+    return [TransformInstanceLibrary.Load(c.LIBRARY / "transforms" / "e3"), *std]
 
 
-def build_targets(with_dram_mags=False, with_host_prediction=False):
+def build_targets(with_host_prediction=False, with_gtdbtk=False):
+    """The tool table's E3 column, less its gapfills: BinSanity, abawaca, dRep, DeepVirFinder, MetaPop,
+    minced with its BLASTn spacers, hybrid metaSPAdes, and iPHoP on the augmented database."""
     t = TargetBuilder()
-    asm = t.Add("sequences::megahit_assembly")
-    frozen = t.Add("viromics::dereplicated_candidate_virus")
+    t.Add("sequences::read_qc_stats")
+    t.Add("e3::fastp_report_json")
+    t.Add("e3::fastp_report_html")
 
-    viral = ["viromics::contig_length_table", "viromics::precluster_table",
-             "viromics::votu_cluster_table", "viromics::checkv_contamination",
-             "viromics::vcontact3_network", "pratama::votu_recovery_table"]
+    # MAG lane: metaSPAdes, MetaWRAP (CheckM inside it), DRAM on the MAGs.
+    spades = t.Add("sequences::spades_assembly")
+    for dtype in ("sequences::orfs", "sequences::gff", "sequences::assembly_stats",
+                  "sequences::assembly_per_contig_coverage", "alignment::bam",
+                  "binning::metawrap_contig_to_bin_table", "binning::metawrap_bin_stats",
+                  "e3::mag_dram_annotations", "e3::mag_dram_distill"):
+        t.Add(dtype, parents=[spades])
+    mags = t.Add("sequences::metawrap_bin_fasta", parents=[spades])
+    if with_gtdbtk:
+        t.Add("taxonomy::gtdbtk", parents=[mags])
+
+    # Viral lane: both assemblies' calls pooled into one frozen set.
+    t.Add("sequences::megahit_assembly")
+    frozen = t.Add("viromics::dereplicated_candidate_virus")
+    viral = ["viromics::contig_length_table", "viromics::votu_cluster_table", "viromics::checkv_contamination",
+             "viromics::checkv_quality_summary", "viromics::vcontact3_network", "e3::viral_orfs", "e3::viral_gff",
+             "annotation::dramv_annotations", "annotation::dramv_distill", "pratama::votu_recovery_table"]
     if with_host_prediction:
-        viral.append("viromics::host_prediction_genome")
+        viral.append("e3::host_prediction_genome_default")
     for dtype in viral:
         t.Add(dtype, parents=[frozen])
-
-    per_assembly = ["annotation::dramv_distill", "sequences::orfs", "sequences::gff",
-                    "sequences::assembly_stats", "sequences::assembly_per_contig_coverage", "alignment::bam"]
-    if with_dram_mags:
-        per_assembly.append("annotation::dram_annotations")
-    for dtype in per_assembly:
-        t.Add(dtype, parents=[asm])
-
-    t.Add("sequences::read_qc_stats")
-    mw_bin = t.Add("sequences::metawrap_bin_fasta", parents=[asm])
-    t.Add("binning::metawrap_contig_to_bin_table", parents=[asm])
-    t.Add("taxonomy::checkm_stats", parents=[mw_bin])
     return t
 
 
@@ -149,7 +158,7 @@ def cmd_run(args):
         resources=[DataInstanceLibrary.Load(c.MLIB / "resources" / "env"),
                    DataInstanceLibrary.Load(c.MLIB / "resources" / "lib"), globals_lib],
         transforms=build_transforms(),
-        targets=build_targets(args.with_dram_mags, args.with_host_prediction),
+        targets=build_targets(args.with_host_prediction, args.with_gtdbtk),
     )
     c.check_plan(task, {"viromics::contig_study": 1, "sequences::read_metadata": len(runs),
                         "sequences::read_pair": len(runs), "sequences::short_reads_pe": len(runs)})
@@ -176,12 +185,14 @@ def main():
         p.add_argument("--dataset", nargs="*", help="reads_2019, reads_2022")
         p.add_argument("--limit", type=int)
         p.set_defaults(fn=fn, dag=False, stage_only=False, launch=False, tag=None,
-                       with_dram_mags=False, with_host_prediction=False)
+                       with_host_prediction=False, with_gtdbtk=False)
         if name == "list":
             p.add_argument("--check", action="store_true", help="count verified interleaved files on fir")
         elif name == "run":
-            p.add_argument("--with-dram-mags", action="store_true", help="DRAM on MAGs; needs B3 fixed")
-            p.add_argument("--with-host-prediction", action="store_true", help="iPHoP; pulls GTDB-Tk de novo")
+            p.add_argument("--with-host-prediction", action="store_true",
+                           help="iPHoP on the shipped database; needs ref::iphop_db staged")
+            p.add_argument("--with-gtdbtk", action="store_true",
+                           help="GTDB-Tk on the MAGs; needs ref::gtdb's representative genomes")
             p.add_argument("--dag", action="store_true", help="render the plan to page/dags/e3_pratama.dag.svg")
             mode = p.add_mutually_exclusive_group()
             mode.add_argument("--stage-only", action="store_true")

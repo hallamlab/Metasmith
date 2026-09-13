@@ -1,0 +1,56 @@
+types:
+  # Products only Pratama's pipeline has. Everything else in the E3 library produces standard types,
+  # and the E3 driver masks the standard transform each one replaces.
+
+  fastp_report_json:
+    properties:
+      _: fastp's JSON report on the raw reads, run as a report only (no reads written)
+      e3: fastp_report_json
+      ext: json
+  fastp_report_html:
+    properties:
+      e3: fastp_report_html
+      ext: html
+
+  viral_orfs:
+    properties:
+      _: prodigal-gv proteins for the frozen viral set
+      e3: viral_orfs
+      Format: FASTA
+      Data: amino acid sequence
+      ext: faa
+  viral_gff:
+    properties:
+      _: prodigal-gv gene coordinates for the frozen viral set
+      e3: viral_gff
+      ext: gff
+
+  votu_representatives_10kb:
+    properties:
+      _: the representative of every vOTU at least 10 kb long, cut from the frozen set by the vOTU table
+      e3: votu_representatives_10kb
+      Format: FASTA
+      Data: nucleic acid sequence
+      ext: fna
+
+  mag_dram_annotations:
+    properties:
+      _: DRAM.py annotate over one sample's refined MAGs, annotations.tsv
+      e3: mag_dram_annotations
+      ext: tsv
+  mag_dram_distill:
+    properties:
+      _: DRAM.py distill output directory for the same MAGs
+      e3: mag_dram_distill
+
+  host_prediction_genome_default:
+    properties:
+      _: iPHoP genome-level host call per frozen contig, against the shipped database without this survey's MAGs
+      e3: host_prediction_genome_default
+      Format: CSV
+      ext: csv
+  host_prediction_genus_default:
+    properties:
+      e3: host_prediction_genus_default
+      Format: CSV
+      ext: csv

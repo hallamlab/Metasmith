@@ -12,14 +12,14 @@ NEW = "NEW"
 GROUPS = [
     ("Read trimming and filtering", [
         ("fastp", {"E1": True, "E2": "E2 library", "metaGEM": True}, "Tony: E5 takes bbduk"),
-        ("bbduk", {"Pratama": "qtrim=rl, trimq=20, minlen=50", "E3": "Pratama's settings; now qtrim=r, trimq=0", "E5": True}, "fill"),
+        ("bbduk", {"Pratama": "qtrim=rl, trimq=20, minlen=50", "E3": "Pratama's settings", "E5": True}, "fill"),
     ]),
     ("Contaminant removal", [
         ("bowtie2 against phiX", {"E1": "switched off with --keep_phix"}, "Tony: a manual check when a sample needs it, not a pipeline step"),
     ]),
     ("Read QC metrics", [
         ("FastQC", {"E1": True, "E2": "raw and trimmed, per mate; E2 library"}, "Tony: seqkit for QC"),
-        ("fastp report", {"Pratama": "report only", "E3": "fastp_qc transform exists"}, "Tony: seqkit for QC"),
+        ("fastp report", {"Pratama": "report only", "E3": "report only"}, "Tony: seqkit for QC"),
         ("seqkit", {"E3": "metasmith read stats", "E5": True}, "Tony: seqkit for QC"),
     ]),
     ("Long-read processing", [
@@ -29,7 +29,7 @@ GROUPS = [
     ]),
     ("Assembly", [
         ("MEGAHIT", {"E1": True, "E2": True, "Pratama": "viral contigs only", "E3": "viral contigs only", "metaGEM": True, "E5": True}, "Performance over metaSPAdes"),
-        ("metaSPAdes", {"Pratama": "-k 21,33,55,77", "E3": "spades.py exists; pin k-mers"}, "Performance: MEGAHIT instead"),
+        ("metaSPAdes", {"Pratama": "-k 21,33,55,77", "E3": "-k 21,33,55,77"}, "Performance: MEGAHIT instead"),
         ("metaSPAdes --nanopore (hybrid)", {"Pratama": "per Illumina run, 17 assemblies", "E3": "NEW: spades.py takes short reads only"}, "fill"),
         ("Flye", {"E1": True, "E2": "preset from declared platform; memory from measured peaks", "E5": "preset from declared platform; memory from measured peaks"}, "Tony: long-read assembler"),
     ]),
@@ -51,12 +51,12 @@ GROUPS = [
     ]),
     ("Bin refinement: best bins per sample, from several binners", [
         ("DAS Tool", {"E1": True, "E2": True, "E5": "feeds both dereplicators"}, "Tony: try all four. Refinement and dereplication are separate steps"),
-        ("MetaWRAP bin_refinement", {"Pratama": "2 rounds", "E3": "2 rounds; now 1", "metaGEM": True}, "Tony: MAGScoT"),
+        ("MetaWRAP bin_refinement", {"Pratama": "2 rounds", "E3": "2 rounds; now 1, until BinSanity and abawaca", "metaGEM": True}, "Tony: MAGScoT"),
         ("MetaWRAP reassemble_bins", {"metaGEM": True}, "fill"),
         ("MAGScoT", {"E5": "NEW: feeds both dereplicators"}, "Tony: try all four. Refinement and dereplication are separate steps"),
     ]),
     ("Bin quality", [
-        ("CheckM2", {"E1": True, "E2": True, "E5": True}, "Tony: CheckM2 only"),
+        ("CheckM2", {"E1": True, "E2": True, "E5": "now missing: no standard transform"}, "Tony: CheckM2 only"),
         ("CheckM", {"Pratama": "inside MetaWRAP", "E3": "inside MetaWRAP", "metaGEM": "inside MetaWRAP"}, "Tony: CheckM2 only"),
     ]),
     ("Dereplication: one genome per species, across samples", [
@@ -72,13 +72,13 @@ GROUPS = [
     ]),
     ("Virus identification", [
         ("DeepVirFinder", {"Pratama": True, "E3": NEW, "E5": NEW}, "fill · no transform yet. It runs on CPU, so a GPU isn't what's missing"),
-        ("VIBRANT", {"Pratama": "-virome", "E3": "-virome; now without", "E5": True}, "Taken from Pratama"),
-        ("geNomad", {"Pratama": "two sensitivity flags", "E3": "Pratama's flags; now defaults", "E5": True}, "Taken from Pratama"),
-        ("VirSorter2", {"Pratama": "dsDNAphage, ssDNA", "E3": "Pratama's groups; now wider", "E5": True}, "Taken from Pratama"),
+        ("VIBRANT", {"Pratama": "-virome", "E3": "-virome", "E5": True}, "Taken from Pratama"),
+        ("geNomad", {"Pratama": "two sensitivity flags", "E3": "Pratama's flags", "E5": True}, "Taken from Pratama"),
+        ("VirSorter2", {"Pratama": "dsDNAphage, ssDNA", "E3": "Pratama's groups", "E5": True}, "Taken from Pratama"),
     ]),
     ("Viral genomes", [
         ("CheckV", {"Pratama": True, "E3": True, "E5": True}, "Taken from Pratama"),
-        ("MMseqs2 vOTU clustering", {"Pratama": "cov-mode 0", "E3": "cov-mode 0; now 0 and 1", "E5": True}, "Taken from Pratama"),
+        ("MMseqs2 vOTU clustering", {"Pratama": "cov-mode 0", "E3": "cov-mode 0", "E5": True}, "Taken from Pratama"),
         ("vConTACT3", {"Pratama": "db 220", "E3": True, "E5": True}, "Taken from Pratama"),
         ("MetaPop microdiversity", {"Pratama": True, "E3": "NEW: needs every BAM against one shared reference", "E5": "NEW: per study, every sample mapped to the study's vOTU catalogue"}, "Tony: add"),
         ("DRAM-v (AMGs)", {"Pratama": "manual curation, ≥10 kb", "E3": "no manual curation", "E5": "to decide after the pilot"}, "Taken from Pratama; confirm it goes or stays with DRAM"),
@@ -87,10 +87,10 @@ GROUPS = [
         ("minced", {"Pratama": True, "E3": NEW, "E5": "NEW: to decide after the pilot"}, "Its only E5 use was the dropped BLASTn links"),
         ("BLASTn spacers to contigs", {"Pratama": True, "E3": True}, "Tony: drop in E5"),
         ("GTDB-Tk de novo", {"Pratama": True, "E3": True, "E5": True}, "Taken from Pratama"),
-        ("iPHoP", {"Pratama": "default and extra-MAGs databases", "E3": "both databases; now extra-MAGs only", "E5": True}, "Tony: keep; the database costs little"),
+        ("iPHoP", {"Pratama": "default and extra-MAGs databases", "E3": "both databases; now shipped only, until dRep", "E5": True}, "Tony: keep; the database costs little"),
     ]),
     ("Functional annotation", [
-        ("DRAM (MAGs)", {"Pratama": True, "E3": "on MAGs; now opt-in, whole assembly"}, "Tony: the 4-lane panel replaces DRAM"),
+        ("DRAM (MAGs)", {"Pratama": True, "E3": "on MAGs"}, "Tony: the 4-lane panel replaces DRAM"),
         ("KOfamScan", {"E5": True}, "4-lane panel"),
         ("CLEAN", {"E5": True}, "4-lane panel"),
         ("DIAMOND UniRef50", {"E5": True}, "4-lane panel"),

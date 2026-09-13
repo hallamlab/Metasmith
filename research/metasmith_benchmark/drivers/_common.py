@@ -63,6 +63,8 @@ CAMI_SAMPLES_TSV = REPO / "research" / "cami" / "samples.tsv"
 PRATAMA_RUNS_TSV = REPO / "research" / "pratama2026" / "runs.tsv"
 METAGEM_MANIFEST_TSV = REPO / "research" / "metagem" / "manifest.tsv"
 METAGEM_ROOT = Path(os.environ.get("METAGEM_ROOT", "/scratch/phyberos/metagem"))
+# e1_nfcore/stage_split_reads.py writes these pairs. E1's sheet and E2's short arm both read them.
+CAMI_SPLIT_ROOT = Path(os.environ.get("CAMI_SPLIT_ROOT", "/scratch/phyberos/cami_nfcore_split_reads"))
 
 DB_ROOT = Path("/home/phyberos/project-rpp/lib")
 DB_PATHS = {
@@ -174,6 +176,10 @@ def pratama_globals(smith, cache_dir, ensure, with_zenodo_comparison=False):
 
 def cami_rows():
     return list(csv.DictReader(CAMI_SAMPLES_TSV.open(), delimiter="\t"))
+
+
+def cami_split_pair(dataset, sample):
+    return tuple(CAMI_SPLIT_ROOT / dataset / f"{sample}_R{mate}.fastq.gz" for mate in (1, 2))
 
 
 def pratama_rows():

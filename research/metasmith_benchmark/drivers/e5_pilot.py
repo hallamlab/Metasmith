@@ -47,12 +47,15 @@ MISSING = [
     "SMETANA (new transform)",
     "Chopper (new transform): only for long-read corpora, none in this pilot",
     "CoverM (new transform, if chosen)",
+    "CheckM2 (new transform): the standard library has CheckM 1 only, and E2's CheckM2 is fenced to e2 types",
+    "prodigal-gv on the frozen set: as sequences::orfs it would also answer the assembly's Prodigal target",
+    "DRAM-v and minced: decided after E3 reports",
+    "GTDB-Tk and iPHoP (--with-gtdbtk): wait on ref::gtdb's representative genomes",
 ]
 
 RESOURCE_OVERRIDES = {
     "megahit": Resources(memory=Size.GB(128), cpus=32, duration=Duration(hours=12)),
     "carveme_from_orfs": Resources(memory=Size.GB(16), cpus=4, duration=Duration(hours=12)),
-    "downloadDramDB": Resources(cpus=4, memory=Size.GB(8), duration=Duration(hours=12)),
 }
 BINNER_PARAMS = dict(metabat2_min_contig=1500, metabat2_seed=1, semibin2_min_len=1500, semibin2_seed=1)
 
@@ -112,7 +115,7 @@ def build_transforms():
     ]
 
 
-def build_targets():
+def build_targets(with_gtdbtk=False):
     t = TargetBuilder()
     asm = t.Add("sequences::megahit_assembly")
     t.Add("sequences::read_qc_stats")
@@ -125,8 +128,8 @@ def build_targets():
         t.Add(f"binning::{b}_contig_to_bin_table", parents=[asm])
     mags = t.Add("sequences::das_tool_bin_fasta", parents=[asm])
     t.Add("binning::das_tool_contig_to_bin_table", parents=[asm])
-    t.Add("taxonomy::checkm_stats", parents=[mags])
-    t.Add("taxonomy::gtdbtk", parents=[mags])
+    if with_gtdbtk:
+        t.Add("taxonomy::gtdbtk", parents=[mags])
     t.Add("binning_local::cluster_table", parents=[asm])
 
     bin_orfs = t.Add("sequences::bin_orfs", parents=[mags])
@@ -138,11 +141,13 @@ def build_targets():
         t.Add(dtype, parents=[asm])
 
     frozen = t.Add("viromics::dereplicated_candidate_virus")
-    for dtype in ("viromics::contig_length_table", "viromics::precluster_table",
-                  "viromics::votu_cluster_table", "viromics::checkv_contamination",
-                  "viromics::vcontact3_network", "viromics::host_prediction_genome"):
+    viral = ["viromics::contig_length_table", "viromics::precluster_table", "viromics::votu_cluster_table",
+             "viromics::checkv_contamination", "viromics::vcontact3_network"]
+    if with_gtdbtk:
+        # iPHoP's augmented database needs GTDB-Tk de novo's decorated trees.
+        viral.append("viromics::host_prediction_genome")
+    for dtype in viral:
         t.Add(dtype, parents=[frozen])
-    t.Add("annotation::dramv_distill", parents=[asm])
     return t
 
 
@@ -170,7 +175,7 @@ def solve(corpus, samples, args):
                    DataInstanceLibrary.Load(c.MLIB / "resources" / "lib"),
                    pratama_globals, modelling_globals],
         transforms=build_transforms(),
-        targets=build_targets(),
+        targets=build_targets(args.with_gtdbtk),
     )
     c.check_plan(task, expected_counts(samples))
     c.print_plan(task)
@@ -209,9 +214,11 @@ def main():
     for name in ("import", "run"):
         p = sub.add_parser(name)
         p.add_argument("--corpus", default="all", choices=[*PILOT, "all"])
-        p.set_defaults(fn=cmd_run, dag=False, stage_only=False, launch=False, tag=None)
+        p.set_defaults(fn=cmd_run, dag=False, stage_only=False, launch=False, tag=None, with_gtdbtk=False)
         if name == "run":
             p.add_argument("--dag", action="store_true", help="render each plan to page/dags/e5_pilot_<corpus>.dag.svg")
+            p.add_argument("--with-gtdbtk", action="store_true",
+                           help="GTDB-Tk and iPHoP; needs ref::gtdb's representative genomes")
             mode = p.add_mutually_exclusive_group()
             mode.add_argument("--stage-only", action="store_true")
             mode.add_argument("--launch", action="store_true")

@@ -6,6 +6,7 @@ This directory holds what research support established for the five benchmark ex
 
 - `PROVEN.md` is the capability inventory. Each transform, nf-core process and install carries an OBSERVED, SOURCE or UNPROVEN status with its evidence.
 - `BLOCKERS.md` lists the active blockers (B1–B12), the relaunch preconditions and the known latent defects.
+- `R1_TABLE_AUDIT.md` gives every tool-table cell for E1–E5 its status in R1's drivers: matched, pinned, gated or gapfill.
 - This README records design findings that belong in neither ledger.
 
 CAUTION: research support edits the ledgers in `~/scratch/cami_campaign/` from a different worktree. The copies here are a snapshot. Copy them again before each commit.
@@ -27,4 +28,4 @@ All five studies publish MAGs, proteins, assemblies and models on Zenodo. `resea
 
 ## nf-core/mag DAG
 
-`nextflow run nf-core/mag -preview -with-dag dag.dot` is the only export that carries channel names on edges. The `.mmd` export has none, and `dag.verbose` does not add them. `research/cami/nfcore/dot_to_msm.py` converts the `.dot` graph into metasmith's `DagRenderer` with no hand mapping.
+`nextflow run nf-core/mag -preview -with-dag dag.dot` is the only export that carries channel names on edges. The `.mmd` export has none, and `dag.verbose` does not add them. `drivers/e1_nfcore/dot_to_msm.py` converts the `.dot` graph into metasmith's `DagRenderer` with no hand mapping.
