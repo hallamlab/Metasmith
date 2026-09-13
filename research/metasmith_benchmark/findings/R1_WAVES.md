@@ -63,7 +63,11 @@ WARNING never use a plain `scancel` on a driver job that has started. It kills t
 
 ### Reclaim inodes
 
-The slurm preset keeps every task's work directory (`cleanup = false`), so finished runs hold their inodes. After a lane's run ends and its products are checked, delete that run's nextflow work directory under `<home>/runs/<key>/` as a job. The task cache keeps the results. Check the quota after each deletion, and before every E4 chunk.
+CAUTION a quota sample taken right after a large unlink reads unchanged, because Lustre's quota accounting lags. Re-sample minutes later before recording what a deletion freed. Judge the growth rate over 10 minutes or more: single minutes swing by several TiB per hour as tasks write and delete temporary files.
+
+CAUTION evict task-cache entries through the store: tombstone each entry, then run `metasmith cache gc --delete`. Never delete shard files by hand. A missing or tombstoned shard reads as a miss (`caching/invocation.py:probe`), so an evicted entry costs only a recompute.
+
+The slurm preset keeps every task's work directory (`cleanup = false`), so finished runs hold their inodes, and bytes that task_cache already holds a copy of. After a lane's run ends and its products are checked, delete that run's nextflow work directory under `<home>/runs/<key>/` as a job. The task cache keeps the results. Check the quota after each deletion, and before every E4 chunk.
 
 ### Fix and gapfill
 
@@ -132,6 +136,10 @@ CAUTION the engine's GPU check reports a GPU from a failed probe. On the CPU nod
 B14 is closed at scale. E2 short's fastp tasks render `--in1`, `--in2`, `--stdout` and `--detect_adapter_for_pe`, with no `--interleaved_in`. All 208 tasks wrote 1,811,472,650 to 4,552,026,605 B of trimmed reads, where the defect wrote 20 B.
 
 T9's CarveMe resources render as planned. E4 chunk 1's CarveMe task `(868)` in `lE94xbfH` shows `-c 4`, `-t 12:00:00`, `--mem 16384M` and `--account=rrg-shallam-ab` in its `.command.run`. The run's `workflow.config.nf` has closures over `task.attempt` for both memory and time, so retries climb 16 GB/12 h → 32/24 → 64/48 → 128/96. Failing tasks measured before R1 peaked at 14.63 GiB, so some tasks will need the second attempt. When chunk 1 ends, count its models against the 2,000 MAGs it submitted.
+
+CLEAN's GPU route renders as planned. CLEAN's first grid job on fir renders `-c 4`, `-t 04:00:00`, `--mem 32768M` and `--account=def-shallam_gpu --gres=gpu:nvidia_h100_80gb_hbm3_3g.40gb:1`, and Slurm scheduled it. Only this step bills the GPU account. CarveMe stays on `rrg-shallam-ab`.
+
+Every product is stored twice. In `WfOlaqLT`, 208 trimmed-read files take 625.5 GB in `nxf_work` and task_cache holds its own copies, with no inode shared between the two. `caching/admission.py:_place` tries `os.link` and falls back to a copy when the link fails across the bind layout. So `cleanup = false` doubles every lane's product bytes until its work tree is reclaimed. Bytes, not inodes, are R1's tight quota: 16.16 of 18.63 TiB (86.8%) at 04:20 PDT.
 
 ### Stopped
 
