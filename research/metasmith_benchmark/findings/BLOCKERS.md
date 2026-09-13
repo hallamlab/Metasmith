@@ -210,18 +210,30 @@ simulator's invented quality string is being used as an error-model signal.
 **MEASURED 2026-09-12, and it is worse than "the assemblies differ" — the HiFi branch produces NO
 ASSEMBLY AT ALL.**
 
-    asis    (--pacbio-hifi --read-error 0.000501)  FAILED 9m43s, exit 1, no assembly.fasta
-            ERROR: No disjointigs were assembled - please check if the read type
-                   and genome size parameters are correct
-    nanoraw (--nano-raw)                           RUNNING healthily past the overlap stage
+    arm                                      result      elapsed   MaxRSS
+    A  asis     --pacbio-hifi --read-error   FAILED      0:09:43   21.5 GiB
+    C  hifionly --pacbio-hifi, no error hint FAILED      0:09:57   21.9 GiB
+    B  nanoraw  --nano-raw                   SUCCEEDED   1:05:41   32.68 GiB
 
-Flye names the cause itself. So on CAMI's NanoSim reads the CAMI long arm would have failed EVERY
-Flye step, and under retry-then-ignore reported complete with no long-read assembly whatever.
+Both failures are identical — `ERROR: No disjointigs were assembled - please check if the read
+type and genome size parameters are correct`, then `ERROR: Pipeline aborted`. Flye names the cause
+itself. **So arm C settles what the first A/B could not: the PRESET is the cause, not
+`--read-error`.** On CAMI's NanoSim reads the long arm would have failed EVERY Flye step and, under
+retry-then-ignore, reported complete with no long-read assembly whatever.
 
-**CAVEAT the A/B does not separate two flags.** The `asis` arm varied preset AND `--read-error`
-together, so "the transform's HiFi branch fails, `--nano-raw` works" is what is proven. Arm C
-(job 59601518, `--pacbio-hifi` with no `--read-error`) separates them. It only matters if the HiFi
-branch is kept; taking the preset from the declared platform removes both at once.
+Arm B's assembly, inspected rather than counted from the log: **3,186 contigs, 129,618,595 bp,
+N50 96,428, longest 2,295,550, GC 63.51%, mean coverage 18x.**
+
+**AND THE SAME RUN EXPOSED A SECOND DEFECT IN THE SAME TRANSFORM: its declared memory would have
+OOM-KILLED IT.** `flye_raw.py` declares `Size.GB(32)`, which renders `'32.00 GB'`, and both
+Nextflow and Slurm read `G` as 1024-based — Slurm says so in its own submit note. So the ceiling is
+**33,554,432 KiB**, and arm B's MaxRSS was **34,269,012 KiB = 102.1% of it.** It survived only
+because I allocated 128 GB deliberately so a kill could not destroy the measurement. That is ONE
+sample, and not the largest of the 172 in the long arm. Recommend **96-128 GB**.
+
+**And the heuristic is not merely reading a synthetic value — it is reading one wrong by three
+orders of magnitude.** Arm B's log reports `Alignment error rate: 0.154408`, a **15.4% real error
+rate, about Q8**, against a quality string claiming Q40 = 0.01%. Off by a factor of ~1500.
 
 **Owner / gate.** The experimenter's driver work. **Next action:** take the preset from
 `read_metadata`'s platform / `length_class`, never from a quality score — a simulator's quality
