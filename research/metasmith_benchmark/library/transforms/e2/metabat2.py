@@ -16,19 +16,25 @@ table   = model.AddProduct(lib.GetType("e2::metabat2_contig_to_bin"))
 # nf-core/mag 5.5.0 METABAT2_METABAT2: min_contig_size 1500, metabat_rng_seed 1. Its depth step runs
 # the metabat2 2.15 image, and binning runs 2.17.
 ARGS = "-m 1500 --unbinned --seed 1"
+# jgi depth counts a read only at --percentIdentity 97 by default, which nanopore reads (mean 85.8-88.0%
+# to their contigs) never reach, so every contig lands in lowDepth. E1 long sets
+# longread_percentidentity to the same 80; findings/R1_WAVES.md B19 has the measurement.
+LONG_READ_IDENTITY = 80
 
 
 def protocol(context: ExecutionContext):
     imeta = context.Input(meta)
     iasm = context.Input(asm)
     ibam = context.Input(bam)
-    sample = json.loads(Path(imeta.local).read_text())["sample"]
+    read_set = json.loads(Path(imeta.local).read_text())
+    sample = read_set["sample"]
+    identity = "" if read_set["platform"] == "ILLUMINA" else f"--percentIdentity {LONG_READ_IDENTITY}"
     cpus = context.params.get("cpus") or 1
     prefix = f"MetaBAT2-{sample}"
 
     context.ExecWithEnv(env=depth, cmd=f"""
         export OMP_NUM_THREADS={cpus}
-        jgi_summarize_bam_contig_depths --outputDepth depth.txt {ibam.container}
+        jgi_summarize_bam_contig_depths {identity} --outputDepth depth.txt {ibam.container}
     """)
     context.ExecWithEnv(env=image, cmd=f"""
         metabat2 {ARGS} -i {iasm.container} -a depth.txt -t {cpus} --saveCls -o {prefix}
