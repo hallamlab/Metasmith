@@ -151,6 +151,7 @@ Run the `debrief` skill.
 - **Coverage:** no CoverM. `assembly_stats` (minimap2 plus genomecov) gives per-base coverage.
 - **Plan keys:** E5 need not share keys with E2 and E3 for the design. Shared keys are still wanted, to cut runtime.
 - **E5 annotation:** the 4-lane panel replaces DRAM.
+- **E5 spacers:** BLASTn spacers-to-contigs is dropped. minced in E5 only fed that step, so T12 confirms whether minced goes too.
 - **Inode reclaim:** the research agent cleans up what its runs left.
 - **E4 extraction:** approved, about 14K inodes.
 - **E1:** Flye is tested. Drivers run on compute nodes where possible (`METASMITH_DRIVER_SLURM=1` for metasmith drivers).

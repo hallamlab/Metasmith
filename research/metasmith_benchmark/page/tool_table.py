@@ -85,7 +85,7 @@ GROUPS = [
     ]),
     ("CRISPR spacers and host prediction", [
         ("minced", {"Pratama": True, "E3": NEW, "E5": NEW}, "Tony: add"),
-        ("BLASTn spacers to contigs", {"Pratama": True, "E3": True, "E5": True}, "Taken from Pratama"),
+        ("BLASTn spacers to contigs", {"Pratama": True, "E3": True}, "Tony: drop in E5"),
         ("GTDB-Tk de novo", {"Pratama": True, "E3": True, "E5": True}, "Taken from Pratama"),
         ("iPHoP", {"Pratama": "default and extra-MAGs databases", "E3": "both databases; now extra-MAGs only", "E5": True}, "Taken from Pratama"),
     ]),
