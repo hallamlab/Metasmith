@@ -1848,3 +1848,32 @@ What a distribution gives you that a mean cannot:
 Report p5/p10/p25/p50 and the retained fraction at every floor under consideration. Sample a couple
 of thousand reads per unit — 2% of a BAM was 13k-20k reads and the two samples per dataset agreed to
 two decimal places, so precision was never the constraint.
+
+## RENDERED cpus/memory/time ARE NOT IN THE CACHE KEY. A driver resource change costs nothing.
+
+`caching/invocation.py:76-86` hashes exactly:
+
+    { "v": CACHE_KEY_VERSION,   # 6
+      "tk": transform_key,
+      "sig": signature,
+      "s": slot_key,
+      "b": int(branch),
+      "up": sorted(set(upstream_slot_ids)) }
+
+and `signature` is built at `models/workflow/cache_decisions.py:41` as
+`f"{step.transform._hash}:{protocol_sig}"` — **both properties of the transform SOURCE**, not of what
+the driver rendered.
+
+So the boundary is clean, and it is the one that matters when a run needs resizing mid-campaign:
+
+    a driver-side resource change (withName, --mem, cpus, a narrower width)  ->  invalidates NOTHING
+    editing `Resources(...)` INSIDE a transform                              ->  retires that
+                                                                                 transform's shards
+
+**A driver can be restarted with different resources for free**, keeping every promoted shard. This
+retrospectively explains why COMEBin's 4-hour declaration could be overridden on a live task without
+the cache noticing (the B13 withdrawal).
+
+Companion to the already-recorded rules that a **transform edit** retires shards while **engine code**
+and **driver source** move no plan key: three different artifacts, three different blast radii, and
+only the transform source touches the cache.

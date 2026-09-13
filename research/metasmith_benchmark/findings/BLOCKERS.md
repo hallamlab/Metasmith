@@ -775,13 +775,95 @@ govern that stage's peak.** That part stands.
 retry was submitted at 05:00:05 at `--mem 393216M -t 48:00:00` and is running. So the sample is not
 lost; it costs a second attempt.
 
-**The real consequence is a parity deviation, not a data loss.** Pratama specified `-m 190`. A
-sample that needs attempt 2 runs at 384 GB, which is **not** what the paper did. That belongs in the
-deviations table, and the experimenter is recording it in R1_WAVES.
+**THE REAL CONSEQUENCE IS A CORPUS-WIDE PARITY DEVIATION, NOT A LARGE-SAMPLE ONE — measured
+2026-09-13, and this replaces the original "the largest samples" framing.**
+
+**Input size separates the failures with NO OVERLAP.** Every terminal spades task, with its bbduk
+`clean_short_reads` input:
+
+    bd/bf206af8…  exit 0  196608M   6,552,067,603   <- the ONLY success
+    87/80bf6d66…  exit 1  196608M   8,448,412,814
+    dc/54ff8199…  exit 1  196608M   9,776,002,681
+    20/5933972d…  exit 1  196608M   9,808,533,270
+    01/e65e5331…  exit 1  196608M  11,321,984,114
+    2d/26c210e4…  exit 1  196608M  11,341,404,142
+    44/95031177…  exit 1  196608M  11,428,582,958
+
+So the 192 GB ceiling lies between **6.55 and 8.45 GB** of input. And the corpus:
+
+    n=70  total 705.2 GB  mean 10.07 GB
+    min 6.55 · p25 9.06 · p50 10.31 · p75 11.22 · max 12.86 GB
+    >= 8.0 GB  (at or past the observed threshold):  68 of 70 = 97.1%
+    >  6.55 GB (larger than the success):            70 of 70 = 100%
+    >= 13.1 GB (2x the success, at risk at 384 GB):   0 of 70
+
+**The one sample that succeeded is the single SMALLEST input in the corpus, and 68 of 70 sit at or
+beyond the failure threshold.** So essentially the whole Pratama corpus goes to attempt 2 — ~65 tasks
+at 384 GB on a 48 h wall.
+
+**Deviations row, reworded:** not *"a sample that needs attempt 2 deviates from the paper's
+`-m 190`"* but **"~97% of samples run at 384 GB, so the arm departs from the paper's `-m 190`
+corpus-wide."** That is a materially different claim about the reproduction. Declaring 384 GB as
+attempt 1 would make the deviation explicit and cost one wall per sample instead of two.
+
+    TWO CAVEATS, because the useful half is a projection. The 8 GB threshold is interpolated from
+    SEVEN points and could lie anywhere in 6.55-8.45 GB. And "0 at risk at 384 GB" assumes memory
+    scales roughly linearly with input, which for SPAdes is not guaranteed -- its peak is driven by
+    k-mer graph complexity, so a high-diversity sample can cost more than its byte count suggests.
+    Treat it as a projection to be falsified by the 393216M attempts, not a guarantee.
 
 **Owner:** the experimenter. **Action:** deviations-table row, not a fix.
 
 ---
+
+**WHY PRATAMA'S `-m 190` SUFFICED AND OURS DOES NOT — researched 2026-09-13. IT IS NOT A
+TABLE-FIDELITY DIFFERENCE. Every scientific parameter matches; what is left is operational, and the
+strongest candidate is REDACTED in their methods.**
+
+Their own workflow doc, verbatim
+(`data/docs/pratama2026/Groundwater_virome/Workflows/MetaG_and_MAGs_bioinformatics.md:43-44`):
+
+    module load SPAdes/3.15.2
+    spades.py --meta -o ${sample} -1 ${sample}_R1.fastq.gz -2 ${sample}_R2.fastq.gz \
+              -t INTEGER -k 21,33,55,77 -m 190
+
+Ours, the rendered line from the task that succeeded, plus the tool's own banner:
+
+    spades.py --meta -k 21,33,55,77 -t 48 -m 182 --12 <interleaved.fq.gz> -o spades_ws
+    SPAdes version: 3.15.5
+
+| | ours | theirs |
+|---|---|---|
+| `--meta` | yes | yes |
+| k list | **21,33,55,77** | **21,33,55,77** — identical |
+| `--only-assembler` | **no** | **no** — so `spades-hammer` runs on BOTH sides |
+| pre-normalisation / subsampling / separate error correction | none | **none** |
+| bbduk QC | `ktrim=r qtrim=rl trimq=20 minlen=50 k=23 mink=11 hdist=1` | **the same, character for character** |
+| `-t` | **48** | **`INTEGER` — redacted** |
+| `-m` | 182 | 190 |
+| input packaging | `--12` one interleaved file | `-1`/`-2` split pairs |
+| SPAdes | 3.15.5 | 3.15.2 |
+
+**THE HYPOTHESIS THIS KILLS.** Reproduction-map row A1 records our bbduk as `qtrim=r trimq=0` with
+a derived `minlen`, against Pratama's `qtrim=rl trimq=20 minlen=50` — which would have meant our
+reads carry more low-quality bases, a larger erroneous k-mer space, and therefore a bigger
+`spades-hammer` peak. **That row describes the STANDARD `assembly/bbduk.py`, not the
+`bbduk_pratama` variant E3 actually runs**, and the rendered command proves `bbduk_pratama` is
+Pratama-faithful. We quality-trim identically. The noisier-reads explanation is dead.
+
+**`-t 48` IS THE LEVER, AND THEIR SOURCE IS SILENT ON IT.** `spades-hammer`'s k-mer counting
+allocates per-thread buffers, so 48 threads costs materially more resident memory than 16 or 24 on
+the same input. Their doc writes the literal token `INTEGER`.
+
+**And `-m` does not bound the hammer stage on either side.** We proved it: SPAdes reported
+`Memory limit set to 182 Gb` and hammer exceeded the 192 GiB cgroup regardless. So their run fitting
+is NOT explained by `-m 190`; something reduced the actual peak, and thread count is the candidate
+that does so without touching the science.
+
+**CHEAP DISCRIMINATING TEST, not yet run:** one known-failing sample at `-m 182 -t 16`, otherwise
+unchanged. Fits => the deviation collapses to a thread-count difference, an operational note rather
+than a fidelity claim, and the corpus can run at 192 GB as the paper did. Still OOMs => the cause is
+version or input packaging and the 384 GB rung is the honest answer.
 
 **HOW I GOT IT WRONG, because the shape is the reusable part.**
 
