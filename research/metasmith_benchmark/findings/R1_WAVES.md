@@ -107,7 +107,7 @@ Commit `f6d01f00`, checkout `/scratch/phyberos/bench/checkout/f6d01f00`. Driver 
 | E4 chunk 1 | `sbatch -J e4_c1 $S $C e4_metagem.py run --chunk 1 --launch --tag w1` | 19609c45, 3 steps (59638489) | `lE94xbfH` | 59638782 |
 | E5 cami | `sbatch -J e5_cami $S $C e5_pilot.py run --corpus cami --launch --tag w1` | c0b17bb1, `52mAOnXS` | | |
 | E5 pratama | `sbatch -J e5_pratama $S $C e5_pilot.py run --corpus pratama --launch --tag w1` | c0b17bb1, `8Z7x3L7z` | | |
-| E5 metagem | `sbatch -J e5_metagem $S $C e5_pilot.py run --corpus metagem --launch --tag w1` | 19609c45, 36 steps (59638493) | `YzCrdOoF` | |
+| E5 metagem | `sbatch -J e5_metagem $S $C e5_pilot.py run --corpus metagem --launch --tag w1` | 19609c45, 36 steps (59638493) | `YzCrdOoF` | 59639625 |
 
 Both E5 lanes relaunch from checkout `c18625a4`, which adds the GPU declaration (see Failures). Nothing under `src/` or either library changed from `f6d01f00`, so their keys hold. The relaunches are jobs 59636769 (E5 pratama) and 59636770 (E5 cami). The first E5 pratama was submitted as job 59635698, after E3 printed `waiting on run`. The first E5 cami was submitted as job 59636004, after E2 long printed `waiting on run 33hlLu8Q`. The GTDB-Tk pass test `e4_gtdbtest` runs as job 59635386, key `Sj7uFNWW`, 4 steps.
 
