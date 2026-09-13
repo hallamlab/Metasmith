@@ -278,4 +278,36 @@ def stage_and_run(smith, task, cache_dir, tag, *, stage_only, params, resource_o
     extra = {"resource_overrides": resource_overrides} if resource_overrides else {}
     smith.RunWorkflow(task=task, config_file=make_slurm_config(smith, cache_dir),
                       params=dict(slurmAccount=SLURM_ACCOUNT, **params), **extra)
-    print(f"submitted {tag}: {task.GetKey()}")
+    print(f"submitted {tag}: {task.GetKey()}", flush=True)
+    if ON_HOST:
+        wait_for_run(smith, task.GetKey())
+
+
+def wait_for_run(smith, key, poll_s=60):
+    """Hold the driver job open until the run exits, and cancel the run on USR1 or TERM.
+
+    The launcher backgrounds the run and returns, and a Slurm job that ends kills every
+    process in it. submit_driver.sbatch forwards Slurm's pre-wall USR1 here.
+    CancelWorkflow lets nextflow cancel its grid jobs and keep the tasks that finished.
+    """
+    import signal
+    import time
+    from metasmith.constants import AgentPaths
+
+    workspace = AgentPaths.to_task(key, root=smith.home.GetPath()).parent.parent
+    pgid = int((workspace / AgentPaths.RUN_PGID_FILE).read_text().strip())
+
+    def cancel(signum, _frame):
+        print(f"signal {signum}: cancelling {key}", flush=True)
+        print(json.dumps(smith.CancelWorkflow(key), indent=2, default=str), flush=True)
+
+    for sig in (signal.SIGUSR1, signal.SIGTERM):
+        signal.signal(sig, cancel)
+    print(f"waiting on run {key} (pgid {pgid}) in {workspace}", flush=True)
+    while True:
+        try:
+            os.kill(pgid, 0)
+        except ProcessLookupError:
+            break
+        time.sleep(poll_s)
+    print(f"run {key} exited", flush=True)

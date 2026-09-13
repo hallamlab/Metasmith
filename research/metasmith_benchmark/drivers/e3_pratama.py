@@ -137,7 +137,7 @@ def cmd_run(args):
             sys.exit(f"{len(missing)} runs lack a verified interleaved file: {' '.join(missing)}")
 
     smith = c.agent_for("pratama", remote, CACHE_DIR / "dryrun_home")
-    ensure = importing or not remote
+    ensure = importing or args.import_givens or not remote
     inputs = declare_givens(smith, runs, ensure)
     globals_lib = c.pratama_globals(smith, CACHE_DIR, ensure, with_zenodo_comparison=True)
     if importing:
@@ -187,6 +187,8 @@ def main():
             mode.add_argument("--stage-only", action="store_true")
             mode.add_argument("--launch", action="store_true")
             p.add_argument("--tag")
+            p.add_argument("--import", dest="import_givens", action="store_true",
+                           help="import what the pool lacks before planning, as `import` does")
     args = ap.parse_args()
     return args.fn(args)
 

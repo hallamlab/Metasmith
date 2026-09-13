@@ -1,5 +1,5 @@
 #!/bin/bash
-# research/cami/nfcore/prepull.sh -- convert every nf-core/mag 5.5.0 container to a cached
+# research/metasmith_benchmark/drivers/e1_nfcore/prepull.sh -- convert every nf-core/mag 5.5.0 container to a cached
 # .img BEFORE a single Slurm task submits. fir's compute nodes move under 1 MB/s to any
 # external host, so a task that has to pull hangs rather than fails -- this must run on a
 # login node (the only place on fir with real network) and must finish before run_test.sh

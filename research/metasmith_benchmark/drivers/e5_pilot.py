@@ -156,7 +156,7 @@ def solve(corpus, samples, args):
 
     print(f"\n=== {corpus}: {PILOT[corpus]}, {len(samples)} samples ===")
     smith = c.agent_for(corpus, remote, CACHE_DIR / corpus / "dryrun_home")
-    ensure = importing or not remote
+    ensure = importing or args.import_givens or not remote
     inputs = declare_givens(smith, corpus, samples, ensure)
     pratama_globals = c.pratama_globals(smith, CACHE_DIR / corpus, ensure)
     modelling_globals = e4_metagem.declare_globals(smith, "open", CACHE_DIR / corpus / "e4_globals.xgdb", ensure)
@@ -216,6 +216,8 @@ def main():
             mode.add_argument("--stage-only", action="store_true")
             mode.add_argument("--launch", action="store_true")
             p.add_argument("--tag")
+            p.add_argument("--import", dest="import_givens", action="store_true",
+                           help="import what the pool lacks before planning, as `import` does")
     args = ap.parse_args()
     return args.fn(args)
 

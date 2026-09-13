@@ -99,7 +99,7 @@ def cmd_run(args):
     importing = args.cmd == "import"
     remote = importing or args.stage_only or args.launch
     smith = c.agent_for("metagem", remote, CACHE_DIR / "dryrun_home")
-    ensure = importing or not remote
+    ensure = importing or args.import_givens or not remote
     inputs = declare_givens(smith, mags, ensure)
     globals_lib = declare_globals(smith, args.solver, CACHE_DIR / "e4_globals.xgdb", ensure)
     if importing:
@@ -147,6 +147,8 @@ def main():
             mode.add_argument("--stage-only", action="store_true")
             mode.add_argument("--launch", action="store_true")
             p.add_argument("--tag")
+            p.add_argument("--import", dest="import_givens", action="store_true",
+                           help="import what the pool lacks before planning, as `import` does")
     args = ap.parse_args()
     return args.fn(args)
 

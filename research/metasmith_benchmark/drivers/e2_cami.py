@@ -96,7 +96,7 @@ def solve(arm, samples, args):
     importing = args.cmd == "import"
     remote = importing or args.stage_only or args.launch
     smith = c.agent_for("cami", remote, CACHE_DIR / f"dryrun_home_{arm}")
-    inputs, globals_lib = declare_givens(smith, arm, samples, ensure=importing or not remote)
+    inputs, globals_lib = declare_givens(smith, arm, samples, ensure=importing or args.import_givens or not remote)
     if importing:
         print(f"{arm}: the pool at {smith.home.GetPath()} holds the givens of {len(samples)} samples")
         return
@@ -150,6 +150,8 @@ def main():
             mode.add_argument("--stage-only", action="store_true")
             mode.add_argument("--launch", action="store_true")
             p.add_argument("--tag")
+            p.add_argument("--import", dest="import_givens", action="store_true",
+                           help="import what the pool lacks before planning, as `import` does")
     args = ap.parse_args()
     return args.fn(args)
 
