@@ -1,7 +1,10 @@
 #!/bin/bash
 # Empty listed nextflow task work directories of one run, to reclaim bytes and inodes that task_cache also holds.
 #
-#   sbatch <checkout>/research/metasmith_benchmark/drivers/prune_work.sbatch <run dir> <list file>
+#   sbatch <checkout>/research/metasmith_benchmark/drivers/prune_work.sbatch <run dir> <list file> [work subdir]
+#
+# The work subdir defaults to nxf_work. Pass `work` for an E1 nf-core head.
+# WARNING an emptied nf-core task directory cannot serve -resume. A resumed head reruns that task and every task after it.
 #
 # The list holds one work directory per line. Build it with _step_refs.py, and submit only after
 # every consumer of those directories has finished.
@@ -17,7 +20,7 @@ set -euo pipefail
 
 RUN="$(realpath "$1")"
 LIST="$2"
-WORK="$RUN/nxf_work/"
+WORK="$RUN/${3:-nxf_work}/"
 quota() { lfs quota -p 83115734 /scratch | tail -1 | awk '{printf "%.3f TiB, %s inodes\n", $2/2^30, $6}'; }
 
 mapfile -t dirs < <(grep -v '^\s*$' "$LIST")
