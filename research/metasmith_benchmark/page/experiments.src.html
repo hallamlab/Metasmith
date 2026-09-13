@@ -150,7 +150,7 @@ a.full:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
   <div class="rung opt">
     <div class="eyebrow">Built on all four</div>
     <div class="t">metasmith optimized</div>
-    <p>One merged run of our best pipeline, compared against the parity and reproduction runs, plus what the change costs to rerun.</p>
+    <p>Our best pipeline, piloted on 9 samples, compared against the parity and reproduction runs, plus what the change costs to rerun.</p>
     <div class="ids">E5</div>
   </div>
 </section>
@@ -167,8 +167,8 @@ a.full:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
     <span class="name">CAMI II + CAMI III toy human gut</span>
     <span class="meta">simulated · gold standard per sample · used by E1, E2, E5</span>
   </div>
-  <p class="note">The <b>E1/E2 read</b> column applies your rule: use long reads where they exist, and fall back to short reads where the long reads are simulated PacBio. Every sample gets exactly one read type, so the total stays at 249. Marine, strain madness and plant-associated are the full CAMI II challenge datasets; the others are toy sets.</p>
-  <p class="note"><b>Why only the CAMI III toy set:</b> the full CAMI III Longitudinal Human Gut dataset (9 people × 4 samples, short and long reads) came out on 14 July 2026, but its gold standards are held back while the challenge runs. Assemblies are published 15 October 2026, and the binning challenge closes 31 January 2027. It can't be scored before then (<a href="https://cami-challenge.org/cami-iii-challenges/">CAMI III challenges</a>).</p>
+  <p class="note">The <b>E1/E2 read</b> column gives each sample one read type: long reads where they are Nanopore, short reads where the long reads are simulated PacBio. Marine, strain madness and plant-associated are the full CAMI II challenge datasets. The others are toy sets.</p>
+  <p class="note"><b>Why only the CAMI III toy set:</b> the full CAMI III Longitudinal Human Gut gold standards stay held back until the binning challenge closes on 31 January 2027 (<a href="https://cami-challenge.org/cami-iii-challenges/">CAMI III challenges</a>).</p>
   <div class="scroll">
   <table class="ds">
     <thead><tr><th>Environment</th><th>Round</th><th class="n">Short</th><th>Long reads available</th><th class="n">Long</th><th>E1/E2 read</th></tr></thead>
@@ -209,7 +209,7 @@ a.full:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
     <span class="name">metaGEM · Zorrilla et al. 2021</span>
     <span class="meta">real · five studies · published MAGs and models on Zenodo, 96 GB · used by E4, E5</span>
   </div>
-  <p class="note">E4 starts from metaGEM's published MAGs or assemblies. All five studies publish MAGs, proteins, assemblies and models, and all 46 files are on fir with sizes matching the manifest (MAGs: 134 MB li2019 to 5.1 GB Tara). Tara uses its own file names (<code>tara_mags.tar.gz</code>, <code>tara_protein.gz.tar</code>, …), so read the manifest rather than globbing. E5 runs from reads, so all 491 runs stay staged; Tara's FASTQ conversion is done.</p>
+  <p class="note">E4 starts from the published MAGs. All five studies publish MAGs, proteins, assemblies and models, and all 46 files are on fir with sizes matching the manifest. E5 starts from reads, so all 491 runs stay staged.</p>
   <div class="scroll">
   <table class="ds">
     <thead><tr><th>Study</th><th>Environment</th><th>Layout</th><th class="n">Runs</th><th class="n">Reads</th></tr></thead>
@@ -259,15 +259,14 @@ a.full:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
     <div class="status">
       <div class="proven"><h3>Proven</h3><ul>
         <li>Rung 1 (<code>marine_sample_0</code>) wrote 50 MetaBAT2 bins at <code>min_contig_size</code> 1500</li>
-        <li>A failed DAS Tool now fails the run instead of exiting zero with empty tables</li>
-        <li>A mixed short/long sample sheet validates. The constraint is how samples are grouped</li>
-        <li>This page's DAG: a mixed sheet previews cleanly through both lanes</li>
+        <li>A failed DAS Tool fails the run instead of exiting zero with empty tables</li>
+        <li>A mixed short/long sample sheet validates and previews through both lanes</li>
       </ul></div>
       <div class="open"><h3>Open</h3><ul>
-        <li class="block">Flye has never executed. The long lane is new work: its sample sheet and a Nanopore rung</li>
-        <li class="block">Only login3 can host a driver. The other login nodes are out of memory</li>
-        <li>Contig-to-bin table lands only after COMEBin and DAS Tool finish (B4)</li>
-        <li>CheckM2 on this side is source-confirmed, never observed</li>
+        <li class="block">Long lane never ran: it needs its sample sheet and a Nanopore rung before the full launch</li>
+        <li class="block">Only login3 can host the driver. The other login nodes are out of memory</li>
+        <li>The contig-to-bin table lands only after COMEBin and DAS Tool finish (B4)</li>
+        <li>CheckM2 is source-confirmed, never observed</li>
       </ul></div>
     </div>
     <details class="dag">
@@ -300,8 +299,8 @@ a.full:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
         <li>The same 249 samples as E1, checked name for name, with the same read type per sample</li>
       </ul></div>
       <div><h3>Driver</h3><ul>
-        <li><code>run_cami_metag.py run --corpus cami --variant variant --no-dedup</code>, short arm key <code>M5Nr4zEc</code> (12 steps)</li>
-        <li>Long arm: new target set needed for plant and human gut Nanopore (41 samples). Flye has never run on either cluster, so there's no earlier setup to reuse; the image (<code>staphb/flye:2.9.6</code>) is now cached on fir. The transform as written produced no assembly on plant sample 0; forcing <code>--nano-raw</code> runs (B12)</li>
+        <li><code>drivers/e2_cami.py</code>, with the short arm (208 samples) and long arm (41 samples) solved separately. Mixing read shapes in one solve collapses cases</li>
+        <li>On a compute node: <code>METASMITH_DRIVER_SLURM=1</code>, 10 cpus / 48 GB</li>
       </ul></div>
       <div><h3>Targets / metrics</h3><ul>
         <li><code>das_tool_amber_results</code> against E1's AMBER on the same gold standard</li>
@@ -312,19 +311,19 @@ a.full:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
     </div>
     <div class="status">
       <div class="proven"><h3>Proven</h3><ul>
-        <li>Rung 1 (<code>iy8YLaGr</code>): MetaBAT2 wrote 51 bins and SemiBin2 57, both exit 0 with products inspected</li>
-        <li>CheckM2 ran twice with real per-bin values. Still check the product: <code>checkm.py</code> ends in <code>|| true</code></li>
-        <li>Driver params reach transforms: <code>--minContig 1500</code> and SemiBin2 seed 1 confirmed from rendered commands</li>
-        <li>Rung 10 <code>C1IM6IG3</code> has the same 12 steps as the full-corpus arm, checked step by step by name</li>
+        <li>Rung 1 (<code>iy8YLaGr</code>): MetaBAT2 wrote 51 bins and SemiBin2 57, products inspected</li>
+        <li>CheckM2 wrote real per-bin values twice. <code>checkm.py</code> ends in <code>|| true</code>, so check the product</li>
+        <li>Driver params reach transforms: <code>--minContig 1500</code> and SemiBin2 seed 1, read from rendered commands</li>
+        <li>Flye <code>--nano-raw</code> on plant sample 0: 1 h 06 m, 3,186 contigs, N50 96,428, peak memory 32.68 GiB</li>
       </ul></div>
       <div class="open"><h3>To match E1 exactly</h3><ul>
-        <li>Trimming: switch bbduk to fastp. The transform exists</li>
+        <li>Trimming: fastp instead of bbduk. The transform exists</li>
         <li>Read QC: add FastQC. The transform exists</li>
-        <li class="block">Contaminant removal: add bowtie2 phiX removal. <b>New transform.</b> phiX was 127 of 16.6 M pairs on CAMI marine, but E1 runs it. Use nf-core's reference as-is: it is Coliphage WA11, 95% identical to phiX174, which bowtie2 defaults still catch</li>
-        <li class="block">Short-read BAM: bowtie2, as in E1. <b>New transform</b>: the library's <code>bowtie2_align</code> emits an RNA-seq type. This is the one difference that can move AMBER</li>
-        <li class="block">Long lane: Porechop ABI and Chopper. <b>Two new transforms.</b> No long arm has ever staged</li>
-        <li class="block"><code>flye_raw</code> picks its preset from read quality (B12). CAMI's NanoSim reads claim a flat Q40, but Flye measured a 15.4% alignment error rate, about Q8. So the transform runs <code>--pacbio-hifi</code>, and on plant sample 0 that fails with "No disjointigs were assembled", with or without <code>--read-error</code>. The preset is the cause. <code>--nano-raw</code> runs fine. Retry-then-ignore would report the run complete with zero long-read assemblies. Fix: take the preset from the declared platform in <code>read_metadata</code></li>
-        <li>Driver on a compute node: <code>METASMITH_DRIVER_SLURM=1</code>, 10 cpus / 48 GB</li>
+        <li class="block">Short-read BAM: bowtie2, as in E1. <b>New transform</b>, because <code>bowtie2_align</code> emits an RNA-seq type. This is the one difference that can move AMBER</li>
+        <li class="block">Long lane: Porechop ABI and Chopper. <b>Two new transforms</b></li>
+        <li class="block">Flye preset (B12): <code>flye_raw</code> picks <code>--pacbio-hifi</code> from NanoSim's flat Q40 quality strings, and assembles nothing. The reads measure 15.4% error. Take the preset from the platform declared in <code>read_metadata</code></li>
+        <li class="block">Flye memory: <code>flye_raw</code> declares 32 GB, below the 32.68 GiB measured. Declare 96–128 GB</li>
+        <li class="block"><b>To decide:</b> phiX removal. E1 runs it with bowtie2 against Coliphage WA11, which would need a <b>new transform</b>. It removed 127 of 16.6 M pairs on CAMI marine. Keep it for parity, or drop it as a justified difference</li>
       </ul></div>
     </div>
     <details class="dag">
@@ -348,15 +347,16 @@ a.full:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
   <div class="side">
     <div class="id">E3</div>
     <span class="chip repro">reproduce</span>
-    <div class="shape">runs<span class="total">72</span>66 paired · 6 Nanopore<br>driver<br><b>metasmith</b><br>steps<br><b>35</b> frozen · <b>38</b> with B7</div>
+    <div class="shape">runs<span class="total">72</span>66 paired · 6 Nanopore<br>driver<br><b>metasmith</b></div>
   </div>
   <div class="main">
     <h2>Pratama 2026 groundwater virome</h2>
     <p class="goal"><b>Goal:</b> recover Pratama's published vOTUs, MAGs and AMGs with our own tools. The target is their results, not a literal re-run of their commands.</p>
     <div class="answer">
-      <h3>Nanopore runs: in scope, as per-run hybrid assemblies</h3>
-      <p><b>Decided: do what Pratama did.</b> <code>runs.tsv</code> shows what that was, and it isn't a shared long-read pool. There is one MinION run per well, all from the 0.2 µm fraction. Each is reused in a hybrid metaSPAdes <code>--nanopore</code> assembly with every 0.2 µm 2022 Illumina replicate from the same well: H14, H32, H41, H52 and H53 have 3 each, and H51 has 2. That makes exactly the paper's 17 hybrid assemblies. The 0.1 µm fraction's 17 runs have no Nanopore partner.</p>
-      <p><b>What it takes.</b> The library has no hybrid assembler: <code>spades.py</code> reads short reads only, and Flye reads long reads only. Parity needs a new transform that takes both. On top of that: <code>enumerate_pratama_runs()</code> stops dropping the six runs; their metadata declares single-end long reads; and requirements that must not cross read types need parenting to a specific read or assembly ancestor. The viral merge needs all runs under one shared study root, so the CAMI fix of fully separate metadata per sample isn't available here.</p>
+      <h3>Decided</h3>
+      <p><b>Nanopore runs:</b> do what Pratama did. Each well's one 0.2 µm MinION run pairs with every 0.2 µm 2022 Illumina replicate from that well in a hybrid metaSPAdes <code>--nanopore</code> assembly: 3 each for H14, H32, H41, H52 and H53, and 2 for H51, which gives the paper's 17.</p>
+      <p><b>Parity differences:</b> no Guppy step, because SRA holds the basecalled FASTQ. GTDB-Tk r232 instead of r202. No CCTyper, which none of the reference studies runs.</p>
+      <p><b>Reads:</b> pre-interleaved once on fir, so the plan carries no interleave step.</p>
     </div>
     <div class="grid">
       <div><h3>Datasets</h3><ul>
@@ -365,9 +365,9 @@ a.full:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
         <li>Their Zenodo products: vOTU catalogue, 1,275 MAGs, curated AMG table</li>
       </ul></div>
       <div><h3>Driver</h3><ul>
-        <li><code>run_cami_metag.py</code>, corpus pratama, <code>--with-zenodo-comparison</code>, frozen key <code>mkdyxYeJ</code></li>
-        <li>MEGAHIT; geNomad + VIBRANT + VirSorter2 → merge → CheckV → MMseqs2; MetaWRAP → dereplicate; DRAM-v; vConTACT3</li>
-        <li>GTDB-Tk on r232, the version every experiment uses. That breaks parity with Pratama's r202 on purpose. It still fails 33 m 44 s in without the r232 skani database (<code>--skip_ani_screen</code> doesn't skip that check in 2.6.1). Staging the database costs about 179 GB and 113K inodes</li>
+        <li><code>drivers/e3_pratama.py</code>, all runs under one shared study root for the viral merge</li>
+        <li>MEGAHIT; geNomad + VIBRANT + VirSorter2 → merge → CheckV → MMseqs2; MetaWRAP → dRep; DRAM-v; vConTACT3</li>
+        <li>GTDB-Tk r232 needs its skani database, because <code>--skip_ani_screen</code> doesn't skip that check in 2.6.1. The fir copy lacks <code>skani/</code>, and project space holds none. Find it on Globus rather than re-download the 56.6 GiB package</li>
       </ul></div>
       <div><h3>Targets / metrics</h3><ul>
         <li>vOTU recovery: the share of their vOTUs matched by skANI</li>
@@ -378,24 +378,17 @@ a.full:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
     </div>
     <div class="status">
       <div class="proven"><h3>Proven</h3><ul>
-        <li>Live run <code>d6UJuZgF</code> is through assembly and binning</li>
-        <li>VIBRANT and geNomad: exit 0 on two instances each, TSVs inspected</li>
-        <li>Candidate merge, prodigal-gv, both MMseqs2 clusterings and the contig length table completed, products inspected</li>
-        <li>vOTU recovery ran end to end: a 65,640-row skANI table. It covers one sample with two of three callers, so the method is proven but the number isn't the result</li>
-        <li>MetaWRAP refinement: exit 0, 92 bin FASTAs and 2 tables for one of 66 runs; largest bin 5.6 MB across 1,151 contigs</li>
-        <li>CheckV: exit 0, four TSVs, the largest 13,752 rows</li>
+        <li>VIBRANT, geNomad, CheckV, the candidate merge, prodigal-gv, both MMseqs2 clusterings and the contig length table: products inspected from live run <code>d6UJuZgF</code></li>
+        <li>MetaWRAP refinement: 92 bins for one of 66 runs, the largest 5.6 MB across 1,151 contigs</li>
+        <li>vOTU recovery method: a 65,640-row skANI table, from one sample and two of three callers</li>
+        <li>MAG recovery method, on those 92 bins against the 1,275 published MAGs: 71 of ours and 122 of theirs matched, clustered in H52, the source well. One run proves the method, not the rate</li>
       </ul></div>
       <div class="open"><h3>Open</h3><ul>
-        <li class="block">Nanopore runs not wired in: needs a new hybrid metaSPAdes transform (short + long reads), long-read metadata on the six runs, and read-type-safe requirements under the shared study root</li>
-        <li class="block">To match Pratama, <b>new transforms</b>: hybrid metaSPAdes, BinSanity, abawaca, CoverM, dRep, DeepVirFinder, MetaPop and minced. All but hybrid metaSPAdes also need a new container image</li>
-        <li>Parity differences, decided: no Guppy step (SRA holds the basecalled FASTQ); GTDB-Tk r232 instead of r202</li>
-        <li class="block">MetaPop also needs every sample's BAM against one shared reference. Our BAMs are per sample, against that sample's own assembly</li>
-        <li class="block">To match Pratama, pins: bbduk <code>qtrim=rl trimq=20 minlen=50</code>, metaSPAdes k-mers, MetaWRAP 2 rounds, VIBRANT <code>-virome</code>, geNomad flags, VirSorter2 groups, MMseqs2 cov-mode 0, both iPHoP databases, DRAM on MAGs. Drop what Pratama didn't run: the SemiBin2/COMEBin ensemble, skANI dedup, CCTyper. CCTyper is in none of the reference studies</li>
-        <li class="block">VirSorter2 can't run on a compute node (B1). It failed 3 times in <code>d6UJuZgF</code>, and the failures were ignored</li>
+        <li class="block">To match Pratama, <b>new transforms</b>: hybrid metaSPAdes, BinSanity, abawaca, CoverM, dRep, DeepVirFinder, MetaPop and minced. All but hybrid metaSPAdes also need a container image. The six Nanopore runs stay out of the plan until hybrid metaSPAdes exists</li>
+        <li class="block">MetaPop needs every run mapped to one shared reference, the study's vOTU catalogue. Today each run maps to its own assembly</li>
+        <li class="block">Pins to match Pratama: bbduk <code>qtrim=rl trimq=20 minlen=50</code>, metaSPAdes k-mers, MetaWRAP 2 rounds, VIBRANT <code>-virome</code>, geNomad flags, VirSorter2 groups, MMseqs2 cov-mode 0, both iPHoP databases, DRAM on MAGs. Drop the SemiBin2/COMEBin ensemble and skANI dedup</li>
+        <li class="block">VirSorter2 can't run on a compute node (B1), and its failures are ignored</li>
         <li class="block">No AMG output until DRAM staging finishes (B3). DRAM-v fails on the all-null config, and the run still reports complete</li>
-        <li class="block">vConTACT3 is blocked for good in the live run: its database download failed and was ignored, so the step will never start. The database is now staged, so a relaunch reaches it</li>
-        <li>MetaWRAP MAG chain, run directly on the live run's 92 real bins: <code>metawrap_skani_dedup</code> and <code>metawrap_derep_mag_reference</code> are proven, products inspected. <code>pratama_metawrap_mag_recovery</code> also ran, against the real 1,275-MAG archive: 71 of our 92 MAGs and 122 of Pratama's 1,275 matched, 65 of 132 alignments at ANI ≥ 99 and ≥ 50% aligned both ways. The matches cluster in H52, the well the reads came from (49), ahead of H41 (29). One run of 66, so this proves the method, not the study's recovery rate</li>
-        <li>CCTyper, BLAST spacers, skANI dedup and the aggregator also wait on that fan-out</li>
         <li>Database vintage ceiling: geNomad 1.5.1 vs 1.11.0</li>
       </ul></div>
     </div>
@@ -430,8 +423,7 @@ a.full:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
         <li>The reads (491 runs, 5.21 TB) are for E5, not E4</li>
       </ul></div>
       <div><h3>Driver</h3><ul>
-        <li>Start from metaGEM's published MAGs. The first step is Prodigal</li>
-        <li><code>run_metagem.py</code> needs a MAG-input target set. Keys <code>pBDqLO1u</code> / <code>xlyAYhxT</code> are the from-reads launch and don't carry over</li>
+        <li><code>drivers/e4_metagem.py</code>, registering the published MAGs as bins</li>
         <li>Prodigal → CarveMe carve, then gapfill on M8 with CPLEX 22.2 → MEMOTE → SMETANA</li>
         <li>Ramp: li2019 → gut → soil → Tara</li>
       </ul></div>
@@ -439,24 +431,19 @@ a.full:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
         <li>Reaction and metabolite counts per model</li>
         <li>MEMOTE total score</li>
         <li>Growth on M8, for ours and theirs</li>
-        <li>Proposed: pair our MAGs with metaGEM's published MAGs by skANI, as the Pratama arm's <code>pratama_mag_recovery</code> does, then compare matched models. The recovery fraction is a result too</li>
-        <li>Fallback: compare our models with theirs per run, as distributions, with no pairing</li>
+        <li>Model-to-model comparison against metaGEM's published model for the same MAG</li>
       </ul></div>
     </div>
     <div class="status">
       <div class="proven"><h3>Proven</h3><ul>
-        <li>CPLEX solves uncapped inside the CarveMe container on a fir compute node</li>
-        <li>Split gapfill terminates on CPLEX: 32 min, exit 0, a 1.89 MB model inspected</li>
-        <li>CPLEX is required: the open solver ran 1 h 49 m on the smallest bin and never finished</li>
-        <li>Reconstruction works at corpus scale: the live li2019 run <code>HQ5SrqFe</code> built 131 models with zero failures, 17 still running. 129 are over 100 KB of SBML; a sampled model has 1,968 reactions and 1,376 species, counted from the XML. Models are collected to <code>results/modelling-carveme_model_cplex/</code> (138 and climbing), so they don't depend on the work directory surviving</li>
-        <li>MEMOTE fixed and observed on a real model from that run (job 59593952, 1 m 03 s): <code>report.html</code>, <code>result.json.gz</code> and <code>score.json</code> written, with consistency 0.894 and annotation 0.797 (metabolites) / 0.766 (reactions)</li>
+        <li>CPLEX solves uncapped inside the CarveMe container on a fir compute node. The open solver ran 1 h 49 m on the smallest bin and never finished</li>
+        <li>Corpus scale, from reads: live li2019 run <code>HQ5SrqFe</code> built 131 models with zero failures. A sampled model has 1,968 reactions and 1,376 species</li>
+        <li>MEMOTE on a real model from that run: consistency 0.894, annotation 0.797 (metabolites) / 0.766 (reactions)</li>
       </ul></div>
       <div class="open"><h3>Open</h3><ul>
-        <li class="block">MEMOTE failed on about 100 tasks in the live run: cobrapy writes a cache under <code>$HOME</code>, which is read-only in the container. The fix (<code>export HOME="$PWD"</code>) reaches only a relaunch, so this run ends with models but no scores. Relaunch to score from cached models; the models themselves don't re-run</li>
-        <li class="block">No model has been compared to a published one yet. Bins can't be paired by name: two binnings of the same reads don't produce matching bins, and our outputs carry content hashes, not <code>&lt;SRR&gt;_bin.&lt;n&gt;</code>. <code>metagem_compare.py</code> takes one already-matched pair, so it needs a pairing step and a driver loop first</li>
-        <li class="block">CarveMe gap-fill's 2 h limit is too short (B11): over 100 live tasks, median 380 s, p90 1,187 s, and 5 hit the wall and were ignored. That drops the hardest MAGs first while the run reports complete. Raise to 12 h before the next launch; the live run keeps its 140 models</li>
-        <li class="block">SMETANA, to match metaGEM: <b>new transform</b> and container image</li>
-        <li>Plan keys embed the checkout path, so they reproduce only in <code>launch_frozen</code></li>
+        <li class="block">CarveMe gapfill's 2 h limit is too short (B11): 5 of over 100 live tasks hit it and were ignored, dropping the hardest MAGs. Raise it to 12 h</li>
+        <li class="block">SMETANA: <b>new transform</b> and container image</li>
+        <li><code>metagem_compare.py</code> compares one model pair, so the driver needs a loop over MAGs. Starting from the published MAGs keeps their names, so pairing is by name</li>
       </ul></div>
     </div>
     <details class="dag">
@@ -482,22 +469,22 @@ a.full:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
     <div class="shape">pilot samples<span class="total">9</span>3 CAMI · 3 Pratama · 3 metaGEM<br>driver<br><b>metasmith</b></div>
   </div>
   <div class="main">
-    <h2>metasmith optimized, one merged run</h2>
-    <p class="goal"><b>Goal:</b> show our best pipeline scores better where ground truth exists, finds more where it doesn't, and that the switch costs a definition change rather than a full rerun. E5's tool list is a starting point, and E1–E4 results will reshape it.</p>
+    <h2>metasmith optimized, piloted on 9 samples</h2>
+    <p class="goal"><b>Goal:</b> show our best pipeline scores better where ground truth exists, finds more where it doesn't, and that the switch costs a definition change rather than a full rerun. The tool list is a starting point, and E1–E4 results will reshape it.</p>
     <div class="grid">
       <div><h3>Datasets</h3><ul>
-        <li>Pilot first: 3 samples each from CAMI, Pratama and metaGEM, 9 in all, to test the workflow</li>
+        <li>Pilot: 3 samples each from CAMI, Pratama and metaGEM</li>
         <li>CAMI 2+3: shows whether it's better</li>
         <li>Pratama: shows whether the gain carries to real data</li>
         <li>metaGEM, from reads: shows the model lane on real data</li>
       </ul></div>
       <div><h3>Driver</h3><ul>
-        <li>One merged metasmith run, pilot first. No driver exists yet</li>
+        <li><code>drivers/e5_pilot.py</code>, one plan per corpus, because a plan gives every sample the same targets</li>
         <li>Filters become masks: a frozen candidate set with thresholds applied as joins, not re-runs</li>
-        <li>Candidate lanes: 4-lane GPR table → GEM lane A</li>
-        <li>Study grouping: a study is a subset of a corpus, such as CAMI II mouse gut or Pratama reads_2019. MetaPop, dRep and skANI dedup run once per study, the way paired reads are grouped per sample. <code>viromics::contig_study</code> already does this for the viral merge but covers only viromics, and <code>skani_dedup</code> groups per assembly today</li>
-        <li>MAG matrix: DAS Tool and MAGScoT bins each go through dRep and through skANI dedup, per study, giving 4 MAG sets. Each dereplication target needs its refiner as a parent, or the solver may bind one refiner to both</li>
-        <li>AMBER and skANI run after the run, outside the plan. A plan takes one target list for every sample, and a target it can't build fails the solve. The alternative is one plan per corpus</li>
+        <li>Studies: a study is a corpus subset, such as CAMI II mouse gut or Pratama reads_2019. MetaPop, dRep and skANI dedup run once per study</li>
+        <li>MAG matrix: DAS Tool and MAGScoT bins each go through dRep and skANI dedup, per study, giving 4 MAG sets</li>
+        <li>4-lane annotation panel → CarveMe → MEMOTE → SMETANA</li>
+        <li>AMBER and skANI recovery run after the plan finishes, outside it</li>
       </ul></div>
       <div><h3>Targets / metrics</h3><ul>
         <li>AMBER change vs E2 on CAMI</li>
@@ -508,16 +495,16 @@ a.full:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
     </div>
     <div class="status">
       <div class="decide"><h3>To decide</h3><ul>
-                <li>Whether coverage moves out of <code>assembly_stats</code> into CoverM</li>
-                <li>A phiX check on assembled contigs, before vOTU clustering. Without the filter, one Pratama run assembled phiX174 into 5 fragments at 99–100% identity. geNomad named it and VIBRANT missed it, and 2 fragments became vOTUs. Fragments are 586–1,587 bp, so the check has to align against NC_001422, not look for a 5.4 kb contig</li>
-        <li>Whether it must share plan keys with E2/E3 up to where they diverge. That's what makes cache reuse measurable</li>
+        <li>Whether coverage moves out of <code>assembly_stats</code> into CoverM</li>
+        <li>Whether E5 must share plan keys with E2 and E3 up to where they diverge. That makes cache reuse measurable</li>
+        <li>Whether "BLAST" meant the 4-lane panel in place of DRAM</li>
       </ul></div>
       <div class="open"><h3>Depends on</h3><ul>
         <li>E2 and E3 landing, since their numbers are the baselines</li>
-        <li><b>New transforms</b>: Chopper, MAGScoT, dRep, DeepVirFinder, MetaPop, minced, SMETANA, and CoverM if chosen. Each also needs a container image</li>
-        <li>A study-level grouping type that samples declare, used by MetaPop, dRep and skANI dedup</li>
-        <li>GTDB-Tk r232's skani database: about 179 GB and 113K inodes to stage</li>
-        <li>Parity-arm rules carried over: pins checked from rendered commands, scoring on the consolidated bin set</li>
+        <li class="block"><b>New transforms</b>: Chopper, MAGScoT, dRep, DeepVirFinder, MetaPop, minced, SMETANA, and CoverM if chosen. Each also needs a container image</li>
+        <li class="block">A study type that samples declare. <code>viromics::contig_study</code> serves only the viral merge, and <code>skani_dedup</code> groups per assembly</li>
+        <li class="block">GTDB-Tk r232's skani database, still to be found on Globus</li>
+        <li>No phiX step. Check for phiX by hand when a sample needs it</li>
       </ul></div>
     </div>
     <details class="dag">
@@ -531,7 +518,7 @@ a.full:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 <section class="section-head">
   <div class="eyebrow">E5 swaps</div>
   <h2>What E5 changes from the parity and reproduction runs</h2>
-  <p class="dim">One row per tool, grouped by purpose. A cell names the tool, with its settings underneath, when that run uses it. A blank cell means the run doesn't use it. The E2, E3 and E4 columns show the target: E2 matches E1, E3 matches Pratama, and E4 matches metaGEM from their published MAGs onward. Where our run differs from that target today, the note says "now …". <span class="pick long">new transform</span> marks a tool the library doesn't have. E5 reason is the initial view; the real reasons come once E5 has run. <span class="pick ask">fill</span> marks an open decision. The table scrolls sideways.</p>
+  <p class="dim">One row per tool, grouped by purpose. A cell names the tool, with its settings underneath, when that run uses it. A blank cell means the run doesn't use it. The E2, E3 and E4 columns show the target: E2 matches E1, E3 matches Pratama, and E4 matches metaGEM from their published MAGs onward. Where our run differs from that target today, the note says "now …". <span class="pick long">new transform</span> marks a tool the library doesn't have. E5 reason is the initial view; the real reasons come once E5 has run. The table scrolls sideways.</p>
 </section>
 
 <div class="corpus">
@@ -623,5 +610,5 @@ a.full:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
   </div>
 </div>
 
-<p class="foot">Status corrected against <code>~/scratch/cami_campaign/PROVEN.md</code> by the CAMI research-support session. Proven means observed on real data with the product inspected. Long-read simulators for marine, strain and CAMI III were inferred from read-length distributions over 40,000 reads each, because no setup file on fir names them. Other sources: the campaign plan's run log, <code>BLOCKERS.md</code>, <code>TOOL_FOR_TOOL.md</code>, <code>LAUNCH_BASELINE.txt</code>, <code>research/pratama2026/reproduction_map.md</code>, the Pratama 2026 Methods and workflow repository, and <code>research/metagem/README.md</code>.</p>
+<p class="foot">Status checked against <code>research/metasmith_benchmark/findings/PROVEN.md</code> and <code>BLOCKERS.md</code>, the CAMI research-support session's ledgers. Proven means observed on real data with the product inspected. Long-read simulators for marine, strain and CAMI III were inferred from read-length distributions over 40,000 reads each, because no setup file on fir names them. Other sources: the campaign plan's run log, <code>BLOCKERS.md</code>, <code>TOOL_FOR_TOOL.md</code>, <code>LAUNCH_BASELINE.txt</code>, <code>research/pratama2026/reproduction_map.md</code>, the Pratama 2026 Methods and workflow repository, and <code>research/metagem/README.md</code>.</p>
 </div>

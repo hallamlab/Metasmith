@@ -15,7 +15,7 @@ GROUPS = [
         ("bbduk", {"Pratama": "qtrim=rl, trimq=20, minlen=50", "E3": "Pratama's settings; now qtrim=r, trimq=0", "E5": True}, "fill"),
     ]),
     ("Contaminant removal", [
-        ("bowtie2 against phiX", {"E1": "reference is Coliphage WA11, 95% to phiX174", "E2": NEW}, "Tony: viral identification flags phiX, and whether to remove it depends on the sample. Measured on a Pratama run: geNomad names phiX174, VIBRANT misses it, and 2 of 5 fragments become vOTUs without a check"),
+        ("bowtie2 against phiX", {"E1": "reference is Coliphage WA11, 95% to phiX174", "E2": "NEW: keep for parity, or drop? To decide"}, "Tony: a manual check when a sample needs it, not a pipeline step"),
     ]),
     ("Read QC metrics", [
         ("FastQC", {"E1": True, "E2": "transform exists"}, "Tony: seqkit for QC"),
@@ -31,7 +31,7 @@ GROUPS = [
         ("MEGAHIT", {"E1": True, "E2": True, "Pratama": "viral contigs only", "E3": "viral contigs only", "metaGEM": True, "E5": True}, "Performance over metaSPAdes"),
         ("metaSPAdes", {"Pratama": "-k 21,33,55,77", "E3": "spades.py exists; pin k-mers"}, "Performance: MEGAHIT instead"),
         ("metaSPAdes --nanopore (hybrid)", {"Pratama": "per Illumina run, 17 assemblies", "E3": "NEW: spades.py takes short reads only"}, "fill"),
-        ("Flye", {"E1": True, "E2": "fix preset first: the HiFi preset gives no assembly (B12)", "E5": "preset from declared platform (B12)"}, "Tony: long-read assembler"),
+        ("Flye", {"E1": True, "E2": "preset from declared platform; 96–128 GB (B12)", "E5": "preset from declared platform; 96–128 GB (B12)"}, "Tony: long-read assembler"),
     ]),
     ("Read mapping and coverage", [
         ("bowtie2", {"E1": "short reads", "E2": "NEW: library's bowtie2_align emits an RNA-seq type"}, "Tony: minimap2"),
@@ -64,7 +64,7 @@ GROUPS = [
         ("skani_dedup", {"E5": "per study, on DAS Tool and on MAGScoT bins; needs a study grouping"}, "Tony: try all four. Refinement and dereplication are separate steps"),
     ]),
     ("MAG taxonomy", [
-        ("GTDB-Tk", {"Pratama": "r202", "E3": "r232; lane severed by the ANI-screen bug", "metaGEM": True, "E4": "r232; needs the skani database staged", "E5": "r232; needs the skani database staged"}, "Tony: r232 everywhere, even where it breaks parity"),
+        ("GTDB-Tk", {"Pratama": "r202", "E3": "r232; needs the skani database from Globus", "metaGEM": True, "E4": "r232; needs the skani database from Globus", "E5": "r232; needs the skani database from Globus"}, "Tony: r232 everywhere, even where it breaks parity"),
     ]),
     ("Gene calling", [
         ("Prodigal", {"E1": True, "E2": True, "Pratama": "inside DRAM", "E3": True, "metaGEM": True, "E4": "first step, on published MAGs", "E5": True}, "Tony: both Prodigal and prodigal-gv"),

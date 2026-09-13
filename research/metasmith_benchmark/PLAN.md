@@ -123,7 +123,7 @@ Run the `debrief` skill.
   - **Viruses:** Pratama's viral tools plus DeepVirFinder, MetaPop and minced.
   - **Annotation and models:** the 4-lane annotation panel, CarveMe with an open-source solver, MEMOTE and SMETANA.
 - **Studies:** a study is a corpus subset, such as CAMI II mouse gut or Pratama reads_2019. MetaPop, dRep and skANI dedup run per study.
-- **GTDB-Tk r232 skani database:** staging approved. The package is 56.6 GiB.
+- **GTDB-Tk r232 skani database:** no re-download. Take it from project space or Globus. Project space holds only sylph and centrifuger GTDB indexes, so Globus (chinook) is the remaining place to look. Until then GTDB-Tk classify cannot run.
 - **Pratama reads:** pre-interleaved by the research agent.
 - **Findings:** kept here in `findings/`. The research agent's authoritative copies stay in `~/scratch/cami_campaign/`.
 
