@@ -15,7 +15,7 @@ GROUPS = [
         ("bbduk", {"Pratama": "qtrim=rl, trimq=20, minlen=50", "E3": "Pratama's settings; now qtrim=r, trimq=0", "E5": True}, "fill"),
     ]),
     ("Contaminant removal", [
-        ("bowtie2 against phiX", {"E1": "reference is Coliphage WA11, 95% to phiX174", "E2": "NEW: keep for parity, or drop? To decide"}, "Tony: a manual check when a sample needs it, not a pipeline step"),
+        ("bowtie2 against phiX", {"E1": "switched off with --keep_phix"}, "Tony: a manual check when a sample needs it, not a pipeline step"),
     ]),
     ("Read QC metrics", [
         ("FastQC", {"E1": True, "E2": "transform exists"}, "Tony: seqkit for QC"),
@@ -31,14 +31,14 @@ GROUPS = [
         ("MEGAHIT", {"E1": True, "E2": True, "Pratama": "viral contigs only", "E3": "viral contigs only", "metaGEM": True, "E5": True}, "Performance over metaSPAdes"),
         ("metaSPAdes", {"Pratama": "-k 21,33,55,77", "E3": "spades.py exists; pin k-mers"}, "Performance: MEGAHIT instead"),
         ("metaSPAdes --nanopore (hybrid)", {"Pratama": "per Illumina run, 17 assemblies", "E3": "NEW: spades.py takes short reads only"}, "fill"),
-        ("Flye", {"E1": True, "E2": "preset from declared platform; 96–128 GB (B12)", "E5": "preset from declared platform; 96–128 GB (B12)"}, "Tony: long-read assembler"),
+        ("Flye", {"E1": True, "E2": "preset from declared platform; memory from measured peaks", "E5": "preset from declared platform; memory from measured peaks"}, "Tony: long-read assembler"),
     ]),
     ("Read mapping and coverage", [
         ("bowtie2", {"E1": "short reads", "E2": "NEW: library's bowtie2_align emits an RNA-seq type"}, "Tony: minimap2"),
         ("minimap2", {"E1": "long reads", "E2": "long reads", "E5": True}, "Tony: minimap2 with a coverage step"),
-        ("assembly_stats", {"E2": "minimap2, samtools, bedtools", "E3": "minimap2, samtools, bedtools", "E5": "maybe split coverage out to CoverM"}, "fill"),
+        ("assembly_stats", {"E2": "minimap2, samtools, bedtools", "E3": "minimap2, samtools, bedtools; per-base coverage", "E5": "per-base coverage"}, "Tony: per-base coverage, better than CoverM"),
         ("bwa", {"metaGEM": True}, None),
-        ("CoverM", {"Pratama": "MAG and vOTU abundance", "E3": NEW, "E5": "NEW: maybe, for coverage"}, "fill"),
+        ("CoverM", {"Pratama": "MAG and vOTU abundance"}, "Tony: assembly_stats gives per-base coverage"),
     ]),
     ("Binners", [
         ("MetaBAT2", {"E1": True, "E2": True, "Pratama": True, "E3": "via MetaWRAP", "metaGEM": True, "E5": True}, "Tony: three binners into MAGScoT"),
@@ -81,16 +81,16 @@ GROUPS = [
         ("MMseqs2 vOTU clustering", {"Pratama": "cov-mode 0", "E3": "cov-mode 0; now 0 and 1", "E5": True}, "Taken from Pratama"),
         ("vConTACT3", {"Pratama": "db 220", "E3": True, "E5": True}, "Taken from Pratama"),
         ("MetaPop microdiversity", {"Pratama": True, "E3": "NEW: needs every BAM against one shared reference", "E5": "NEW: per study, every sample mapped to the study's vOTU catalogue"}, "Tony: add"),
-        ("DRAM-v (AMGs)", {"Pratama": "manual curation, ≥10 kb", "E3": "no manual curation", "E5": True}, "Taken from Pratama"),
+        ("DRAM-v (AMGs)", {"Pratama": "manual curation, ≥10 kb", "E3": "no manual curation", "E5": "to decide after the pilot"}, "Taken from Pratama; confirm it goes or stays with DRAM"),
     ]),
     ("CRISPR spacers and host prediction", [
-        ("minced", {"Pratama": True, "E3": NEW, "E5": NEW}, "Tony: add"),
+        ("minced", {"Pratama": True, "E3": NEW, "E5": "NEW: to decide after the pilot"}, "Its only E5 use was the dropped BLASTn links"),
         ("BLASTn spacers to contigs", {"Pratama": True, "E3": True}, "Tony: drop in E5"),
         ("GTDB-Tk de novo", {"Pratama": True, "E3": True, "E5": True}, "Taken from Pratama"),
-        ("iPHoP", {"Pratama": "default and extra-MAGs databases", "E3": "both databases; now extra-MAGs only", "E5": True}, "Taken from Pratama"),
+        ("iPHoP", {"Pratama": "default and extra-MAGs databases", "E3": "both databases; now extra-MAGs only", "E5": True}, "Tony: keep; the database costs little"),
     ]),
     ("Functional annotation", [
-        ("DRAM (MAGs)", {"Pratama": True, "E3": "on MAGs; now opt-in, whole assembly"}, "fill · 4-lane panel instead (Tony wrote BLAST: confirm)"),
+        ("DRAM (MAGs)", {"Pratama": True, "E3": "on MAGs; now opt-in, whole assembly"}, "Tony: the 4-lane panel replaces DRAM"),
         ("KOfamScan", {"E5": True}, "4-lane panel"),
         ("CLEAN", {"E5": True}, "4-lane panel"),
         ("DIAMOND UniRef50", {"E5": True}, "4-lane panel"),

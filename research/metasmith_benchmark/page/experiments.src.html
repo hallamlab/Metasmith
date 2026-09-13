@@ -225,7 +225,13 @@ a.full:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
   </div>
 </div>
 
-<div class="legend"><span class="l-ok">observed on real data</span><span class="l-warn">open, doesn't block launch</span><span class="l-flag">blocks the run, or needs a decision</span></div>
+<section class="section-head">
+  <div class="eyebrow">Initial run</div>
+  <h2>E1–E4 and the E5 pilot launch together</h2>
+  <p class="dim">First runs are expected to crash, and running all five at once surfaces every fix sooner. Samples split into batches within an experiment only if the estimated peak file count exceeds fir's project inode quota of 1 M. Drivers run as compute-node jobs where they can (<code>METASMITH_DRIVER_SLURM=1</code>).</p>
+</section>
+
+<div class="legend"><span class="l-ok">observed on real data</span><span class="l-warn">blocks a result, not the launch</span><span class="l-flag">blocks the run, or needs a decision</span></div>
 
 <!-- E1 -->
 <article class="exp">
@@ -245,7 +251,7 @@ a.full:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
       </ul></div>
       <div><h3>Driver</h3><ul>
         <li>nf-core/mag 5.5.0 at revision <code>56abab5b</code>, <code>control.config</code>, Slurm on fir</li>
-        <li>Short lane: fastp → phiX removal → MEGAHIT → bowtie2</li>
+        <li>Short lane: fastp → MEGAHIT → bowtie2. phiX removal is off</li>
         <li>Long lane: Porechop ABI → Chopper → Flye → minimap2</li>
         <li>Both lanes: MetaBAT2 / SemiBin2 / COMEBin → DAS Tool → CheckM2</li>
       </ul></div>
@@ -261,12 +267,11 @@ a.full:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
         <li>Rung 1 (<code>marine_sample_0</code>) wrote 50 MetaBAT2 bins at <code>min_contig_size</code> 1500</li>
         <li>A failed DAS Tool fails the run instead of exiting zero with empty tables</li>
         <li>A mixed short/long sample sheet validates and previews through both lanes</li>
+        <li>Flye on the long lane</li>
       </ul></div>
       <div class="open"><h3>Open</h3><ul>
-        <li class="block">Long lane never ran: it needs its sample sheet and a Nanopore rung before the full launch</li>
-        <li class="block">Only login3 can host the driver. The other login nodes are out of memory</li>
-        <li>The contig-to-bin table lands only after COMEBin and DAS Tool finish (B4)</li>
-        <li>CheckM2 is source-confirmed, never observed</li>
+        <li class="block">phiX removal must be switched off in <code>control.config</code>. The research agent is checking that <code>--keep_phix</code> does it in 5.5.0</li>
+        <li>The Nextflow head runs on login3, the one login node with memory to spare. The research agent is checking whether it can run as a compute-node job</li>
       </ul></div>
     </div>
     <details class="dag">
@@ -318,12 +323,10 @@ a.full:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
         <li>Driver params reach transforms: <code>--minContig 1500</code> and SemiBin2 seed 1, read from rendered commands</li>
         <li>Flye <code>--nano-raw</code> on plant sample 0: 1 h 06 m, 3,186 contigs, N50 96,428, peak memory 32.68 GiB</li>
       </ul></div>
-      <div class="open"><h3>To match E1 exactly</h3><ul>
-        <li class="block">Short-read BAM: bowtie2, as in E1. <b>New transform</b>, because <code>bowtie2_align</code> emits an RNA-seq type. This is the one difference that can move AMBER</li>
-        <li class="block">Long lane: Porechop ABI and Chopper. <b>Two new transforms</b></li>
-        <li class="block">Flye preset (B12): <code>flye_raw</code> picks <code>--pacbio-hifi</code> from NanoSim's flat Q40 quality strings, and assembles nothing. The reads measure 15.4% error. Take the preset from the platform declared in <code>read_metadata</code></li>
-        <li>Flye memory: <code>flye_raw</code> declares 32 GB, below the 32.68 GiB measured. The driver overrides it to 128 GB</li>
-        <li class="block"><b>To decide:</b> phiX removal. E1 runs it with bowtie2 against Coliphage WA11, which would need a <b>new transform</b>. It removed 127 of 16.6 M pairs on CAMI marine, 17 of 56.8 M on Pratama's 2019 NextSeq library and 0 of 76.3 M on a 2022 library. The 2019 hits match phiX174 at ≥99% identity more often than WA11 does, so the filter catches real spike-in only through bowtie2's tolerance. Spike-in varies by sequencing run. Keep it for parity, or drop it as a justified difference</li>
+      <div class="open"><h3>Open</h3><ul>
+        <li class="block">E2 gets its own transform library, written to this plan rather than borrowed because the types fit: fastp, FastQC, MEGAHIT, bowtie2 for the binning BAM, the three binners, DAS Tool, CheckM2, AMBER, Porechop ABI, Chopper, Flye and minimap2</li>
+        <li class="block">Flye takes its preset from the platform declared in <code>read_metadata</code>. The library's <code>flye_raw</code> picks <code>--pacbio-hifi</code> from NanoSim's flat Q40 qualities and assembles nothing (B12)</li>
+        <li class="block">Flye memory: sized from measured peaks, waiting on more long-read samples. One sample peaked at 32.68 GiB, so 128 GB is likely too much</li>
       </ul></div>
     </div>
     <details class="dag">
@@ -333,7 +336,7 @@ a.full:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
           <figure>
             <a class="full" href="https://10.74.81.84:12100/files/home/tony/agentic_workspace/projects/metasmith/engine/bench-run/research/metasmith_benchmark/page/dags/e2_cami_short.dag.svg" target="_blank" rel="noopener">Open full screen ↗</a>
             <div class="figbox">{{SVG:e2_cami_short}}</div>
-            <figcaption>Short arm, 208 samples, solved locally by <code>e2_cami.py run --dag</code>. Triangles are steps and circles are data types. Still different from E1: minimap2 rather than bowtie2 for the binning BAM, and no phiX step.</figcaption>
+            <figcaption>Short arm, 208 samples, solved locally by <code>e2_cami.py run --dag</code>. Triangles are steps and circles are data types. Still different from E1: minimap2 rather than bowtie2 for the binning BAM.</figcaption>
           </figure>
           <figure>
             <a class="full" href="https://10.74.81.84:12100/files/home/tony/agentic_workspace/projects/metasmith/engine/bench-run/research/metasmith_benchmark/page/dags/e2_cami_long.dag.svg" target="_blank" rel="noopener">Open full screen ↗</a>
@@ -361,6 +364,7 @@ a.full:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
       <p><b>Nanopore runs:</b> do what Pratama did. Each well's one 0.2 µm MinION run pairs with every 0.2 µm 2022 Illumina replicate from that well in a hybrid metaSPAdes <code>--nanopore</code> assembly: 3 each for H14, H32, H41, H52 and H53, and 2 for H51, which gives the paper's 17.</p>
       <p><b>Parity differences:</b> no Guppy step, because SRA holds the basecalled FASTQ. GTDB-Tk r232 instead of r202. No CCTyper, which none of the reference studies runs.</p>
       <p><b>Reads:</b> pre-interleaved once on fir, so the plan carries no interleave step.</p>
+      <p><b>Coverage:</b> no CoverM. <code>assembly_stats</code> (minimap2 and genomecov) gives per-base coverage.</p>
     </div>
     <div class="grid">
       <div><h3>Datasets</h3><ul>
@@ -372,7 +376,7 @@ a.full:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
         <li><code>drivers/e3_pratama.py</code>, all runs under one shared study root for the viral merge. 66 runs, 21 steps, key <code>rG10GEFE</code></li>
         <li>MEGAHIT; geNomad + VIBRANT + VirSorter2 → merge → CheckV → MMseqs2 → vConTACT3; DRAM-v; MetaWRAP → CheckM2</li>
         <li>Staging refuses until every run's interleaved file passes its read-count check</li>
-        <li>GTDB-Tk r232 needs its skani database, because <code>--skip_ani_screen</code> doesn't skip that check in 2.6.1. The 56.6 GiB r232 package, with <code>skani/</code>, is on chinook's Globus collection. Its transfer to fir is running, and extraction (about 113K inodes) waits until a plan needs it</li>
+        <li>Databases on fir: VirSorter2 2.2.4 and DRAM, staged and registered. DRAM has no dbcan, because its download URL is dead. geNomad's database is 1.5.1 against Pratama's 1.11.0</li>
       </ul></div>
       <div><h3>Targets / metrics</h3><ul>
         <li>vOTU recovery: the share of their vOTUs matched by skANI</li>
@@ -389,16 +393,14 @@ a.full:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
         <li>MAG recovery method, on those 92 bins against the 1,275 published MAGs: 71 of ours and 122 of theirs matched, clustered in H52, the source well. One run proves the method, not the rate</li>
       </ul></div>
       <div class="open"><h3>Open</h3><ul>
-        <li class="block">To match Pratama, <b>new transforms</b>: hybrid metaSPAdes, BinSanity, abawaca, CoverM, dRep, DeepVirFinder, MetaPop and minced. All but hybrid metaSPAdes also need a container image. The six Nanopore runs stay out of the plan until hybrid metaSPAdes exists</li>
-        <li class="block">MetaPop needs every run mapped to one shared reference, the study's vOTU catalogue. Today each run maps to its own assembly</li>
-        <li class="block">Pins to match Pratama: bbduk <code>qtrim=rl trimq=20 minlen=50</code>, metaSPAdes k-mers, MetaWRAP 2 rounds, VIBRANT <code>-virome</code>, geNomad flags, VirSorter2 groups, MMseqs2 cov-mode 0, both iPHoP databases, DRAM on MAGs. Drop the SemiBin2/COMEBin ensemble and skANI dedup</li>
+        <li class="block">The six Nanopore runs stay out of the plan until a hybrid short + Nanopore read set exists as a type, so the solver picks hybrid metaSPAdes for those samples and MEGAHIT for the rest</li>
+        <li class="block">Pre-interleaving must finish on fir. Staging refuses until every run passes its read-count check</li>
+        <li class="block">The plan downloads the VIBRANT and CheckV databases, and those downloads hang on a compute-node driver</li>
+        <li class="block">GTDB-Tk r232 needs its skani database, because <code>--skip_ani_screen</code> doesn't skip that check in 2.6.1. The package is transferring from chinook's Globus collection, and its extraction (about 113K inodes) is still to do</li>
         <li class="block">MAG recovery is out of the plan: dRep has no transform, and the MetaWRAP recovery transforms (B7) aren't committed</li>
-        <li class="block">Spacer-to-host links wait on minced, the only spacer source once CCTyper is gone</li>
-        <li class="block">VirSorter2's database is staged at <code>refs/virsorter2_2.2.4</code> and registered (B1). VirSorter2 stays unproven until a run uses it</li>
-        <li class="block">The plan still downloads the VIBRANT and CheckV databases, which hang on a compute-node driver</li>
-        <li>DRAM's database is staged and its five distillation sheets check out (B3). DRAM-v stays unproven until a run re-runs it</li>
-        <li>dbcan is missing from the DRAM database, because its download URL is dead. DRAM-v therefore gives no CAZyme annotations</li>
-        <li>Database vintage ceiling: geNomad 1.5.1 vs 1.11.0</li>
+        <li class="block"><b>New transforms</b> to match Pratama: BinSanity, abawaca, DeepVirFinder, MetaPop and minced, each with a container image. Spacer-to-host links wait on minced</li>
+        <li class="block">MetaPop needs every run mapped to one shared reference, the study's vOTU catalogue. Today each run maps to its own assembly</li>
+        <li>Pins to match Pratama: bbduk <code>qtrim=rl trimq=20 minlen=50</code>, metaSPAdes k-mers, MetaWRAP 2 rounds, VIBRANT <code>-virome</code>, geNomad flags, VirSorter2 groups, MMseqs2 cov-mode 0, both iPHoP databases, DRAM on MAGs. Drop the SemiBin2/COMEBin ensemble and skANI dedup</li>
       </ul></div>
     </div>
     <details class="dag">
@@ -451,9 +453,9 @@ a.full:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
         <li>MEMOTE on a real model from that run: consistency 0.894, annotation 0.797 (metabolites) / 0.766 (reactions)</li>
       </ul></div>
       <div class="open"><h3>Open</h3><ul>
-        <li class="block">The published MAGs sit inside archives. <code>e4_extract_mags.sh</code> unpacks them to one FASTA each, about 14K inodes, and hasn't run</li>
+        <li class="block">The published MAGs are being unpacked to one FASTA each by <code>e4_extract_mags.sh</code> (about 14K inodes). The driver can't stage until they land</li>
         <li class="block">SMETANA: <b>new transform</b> and container image</li>
-        <li><code>metagem_compare.py</code> compares one model pair, so the driver needs a loop over MAGs. Starting from the published MAGs keeps their names, so pairing is by name</li>
+        <li><code>metagem_compare.py</code> compares one model pair, so the comparison needs a loop over MAGs, paired by their published names</li>
       </ul></div>
     </div>
     <details class="dag">
@@ -481,6 +483,12 @@ a.full:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
   <div class="main">
     <h2>metasmith optimized, piloted on 9 samples</h2>
     <p class="goal"><b>Goal:</b> show our best pipeline scores better where ground truth exists, finds more where it doesn't, and that the switch costs a definition change rather than a full rerun. The tool list is a starting point, and E1–E4 results will reshape it.</p>
+    <div class="answer">
+      <h3>Decided</h3>
+      <p><b>Annotation:</b> the 4-lane panel replaces DRAM. <b>Host prediction:</b> iPHoP stays, since its database costs little. BLASTn spacer links are dropped.</p>
+      <p><b>Coverage:</b> no CoverM. <code>assembly_stats</code> gives per-base coverage. <b>phiX:</b> no pipeline step. Check by hand when a sample needs it.</p>
+      <p><b>Plan keys:</b> sharing keys with E2 and E3 is not needed for the design, but is wanted because reused steps cut runtime.</p>
+    </div>
     <div class="grid">
       <div><h3>Datasets</h3><ul>
         <li>Pilot: 3 samples each from CAMI, Pratama and metaGEM</li>
@@ -506,21 +514,18 @@ a.full:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
       </ul></div>
     </div>
     <div class="status">
-      <div class="decide"><h3>To decide</h3><ul>
-        <li>Whether coverage moves out of <code>assembly_stats</code> into CoverM</li>
-        <li>Whether E5 must share plan keys with E2 and E3 up to where they diverge. That makes cache reuse measurable</li>
-        <li>Whether "BLAST" meant the 4-lane panel in place of DRAM</li>
-        <li>Whether E5 keeps iPHoP. Its database is about 0.5 TB, isn't on chinook's Globus collection, and must be downloaded</li>
+      <div class="decide"><h3>To decide after the pilot</h3><ul>
+        <li>Whether DRAM-v on the viral contigs goes with DRAM. The plans still target <code>dramv_distill</code></li>
+        <li>Whether minced stays. Its only E5 use was the BLASTn spacer links, which are dropped</li>
       </ul></div>
       <div class="open"><h3>Depends on</h3><ul>
         <li>E2 and E3 landing, since their numbers are the baselines</li>
-        <li class="block"><b>New transforms</b>: Chopper, MAGScoT, dRep, DeepVirFinder, MetaPop, minced, SMETANA, and CoverM if chosen. Each also needs a container image</li>
+        <li class="block"><b>New transforms</b>: Chopper, MAGScoT, dRep, DeepVirFinder, MetaPop, SMETANA, and minced if it stays. Each also needs a container image</li>
         <li class="block">A study type that samples declare. <code>viromics::contig_study</code> stands in, but only the viral merge groups by it</li>
         <li class="block"><code>skani_dedup</code> takes the aggregator's bin pool per assembly. The MAG matrix needs it on DAS Tool and MAGScoT bins per study</li>
         <li class="block">The 4-lane panel reads whole-assembly ORFs. Running it on MAGs needs a chunker for per-MAG ORFs</li>
-        <li class="block">The plans still download the VIBRANT and CheckV databases, and the iPHoP database, about 0.5 TB with a 3× peak during download</li>
-        <li class="block">GTDB-Tk r232's skani database: on chinook's Globus collection, transfer to fir running</li>
-        <li>No phiX step. Check for phiX by hand when a sample needs it</li>
+        <li class="block">The plans download the VIBRANT, CheckV and iPHoP databases. iPHoP's is about 0.5 TB, with a 3× peak while downloading</li>
+        <li class="block">GTDB-Tk r232's skani database, as for E3</li>
       </ul></div>
     </div>
     <details class="dag">
