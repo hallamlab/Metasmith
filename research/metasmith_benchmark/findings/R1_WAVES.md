@@ -45,6 +45,8 @@ Close a wave when every lane has failed, or has passed one real step of each kin
 2. Stop an E1 head with `scancel --batch --signal=USR1 <job>`. Its trap sends nextflow TERM.
 3. Stop a metasmith lane with `scancel --batch --signal=USR1 <job>`, which calls `CancelWorkflow`, or with `drivers/runctl.py cancel <corpus> <key>`.
 
+WARNING USR1 is graceful only for jobs submitted through `submit_driver.sbatch`, whose trap forwards it. A driver launched by the engine route (`METASMITH_DRIVER_SLURM=1`, `start.slurm.sh`) has no trap, so USR1 kills it before nextflow cancels its grid jobs. Stop such a driver by removing its `PID.lock` while the driver is alive.
+
 WARNING never use a plain `scancel` on a driver job. It kills the head before nextflow cancels its grid jobs, and those jobs run on with no cache entry.
 
 ### Reclaim inodes
@@ -62,3 +64,39 @@ Relaunch from cache under the next wave's tag.
 ### Exit
 
 R1 ends when each experiment has its table's targets, or when every open issue waits on outside work.
+
+## Wave 1
+
+Commit `f6d01f00`, checkout `/scratch/phyberos/bench/checkout/f6d01f00`. Driver jobs set `C` to that checkout and `S=$C/research/metasmith_benchmark/drivers/submit_driver.sbatch`.
+
+### Gate
+
+- **Inodes:** the project quota read 864,297 of 1M after the w1 materialise jobs, and the wave needs about 212K. Clear GTDB's genome tree, 426,970 inodes, once a GTDB-Tk run through its squashfs image passes. Launch after that.
+- **Probe:** probe2 `Gu9VJmwO` passed at `9525a3a1`.
+- **E1 sheets:** `build_samplesheet.py` with its path check found all 498 read files on fir, and regenerated both sheets byte-identical to the committed ones. An offline `-preview` of each sheet is pending.
+- **Review:** the adversarial review of `c0b17bb1` is triaged in the plan's run log. Its fixes are in `f6d01f00`.
+
+### Lanes
+
+| Lane | Launch | Materialised | Key | Job |
+|---|---|---|---|---|
+| E1 short | `sbatch -J e1_short $C/research/metasmith_benchmark/drivers/e1_nfcore/run_e1.sbatch $C short` | n/a (pre-pulled images) | | |
+| E1 long | `sbatch -J e1_long $C/research/metasmith_benchmark/drivers/e1_nfcore/run_e1.sbatch $C long` | n/a | | |
+| E2 short | `sbatch -J e2_short $S $C e2_cami.py run --arm short --launch --tag w1` | f6d01f00, 15 steps (59634082) | `WfOlaqLT` | |
+| E2 long | `sbatch -J e2_long $S $C e2_cami.py run --arm long --launch --tag w1` | f6d01f00, 14 steps (59634083) | `33hlLu8Q` | |
+| E3 | `sbatch -J e3 $S $C e3_pratama.py run --launch --tag w1` | f6d01f00, 26 steps (59634084) | `Son2YJiI` | |
+| E4 chunk 1 | `sbatch -J e4_c1 $S $C e4_metagem.py run --chunk 1 --launch --tag w1` | pending, after e4_gtdbtest | | |
+| E5 cami | `sbatch -J e5_cami $S $C e5_pilot.py run --corpus cami --launch --tag w1` | c0b17bb1, `52mAOnXS` | | |
+| E5 pratama | `sbatch -J e5_pratama $S $C e5_pilot.py run --corpus pratama --launch --tag w1` | c0b17bb1, `8Z7x3L7z` | | |
+| E5 metagem | `sbatch -J e5_metagem $S $C e5_pilot.py run --corpus metagem --launch --tag w1` | pending, after E4 chunk 1 | | |
+
+Launch lanes that share an agent home one after another. Wait for each to print `waiting on run` before submitting the next, because each launch re-stages into the home.
+
+### Failures and causes
+
+### Stopped
+
+- Before the wave, three pre-R1 runs that wave-1 lanes supersede: `iy8YLaGr` (CAMI rung 1), `d6UJuZgF` (Pratama rung 1) and `HQ5SrqFe` (metaGEM li2019). The engine route launched all three, so `scancel --batch --signal=USR1` killed them. That orphaned seven grid jobs: two COMEBin, two DRAM-v (still pending) and three CarveMe. The research agent cancelled all seven by hand. Nothing recoverable was lost, because an orphaned job never writes a cache entry. `C1IM6IG3`'s array covers COMEBin, and E4 covers CarveMe.
+- `C1IM6IG3` (CAMI rung 10) keeps running until COMEBin array `59583112` finishes, because it is B5's only source.
+
+### Fixes and gapfills for wave 2
