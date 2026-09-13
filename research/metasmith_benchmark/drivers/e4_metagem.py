@@ -21,7 +21,7 @@ CACHE_DIR = Path(os.environ.get("E4_CACHE_DIR", HERE / ".cache" / "e4"))
 
 import _common as c  # noqa: E402
 from metasmith.python_api import (  # noqa: E402
-    DataInstanceLibrary, TransformInstanceLibrary, TargetBuilder, Resources, Size, Duration,
+    DataInstanceLibrary, TransformInstanceLibrary, TargetBuilder,
 )
 
 MAG_LIST = HERE / "e4_published_mags.tsv"
@@ -31,10 +31,10 @@ MEDIUM_TSV = c.REPO / "research" / "metasmith_libraries" / "carveme_m8_medium.ts
 MEDIUM_NAME = "M8"
 CPLEX_ROOT = Path(os.environ.get("CPLEX_ROOT", "/home/phyberos/projects/rpp-shallam/phyberos/cplex/cplex_runtime"))
 
-RESOURCE_OVERRIDES = {
-    # B11: 5 of 100+ live gapfills hit the transform's 2 h wall and were ignored.
-    "carveme_from_orfs_cplex": Resources(memory=Size.GB(16), cpus=4, duration=Duration(hours=12)),
-}
+# First-attempt (cpus, GB, hours); the retry gets 32 GB and 24 h. B11: 3.75% of gapfills failed at the
+# transform's 2 h wall or on memory, with MaxRSS up to 14.6 GiB and one OOM at 32 GiB.
+SCALED = {"carveme_from_orfs_cplex": (4, 16, 12)}
+CHUNK_SIZE = 2000
 
 
 def enumerate_mags():
@@ -53,6 +53,9 @@ def select(mags, args):
         for m in mags:
             per_study[m[0]].append(m)
         mags = [m for s in STUDY_ORDER for m in per_study[s][: args.limit]]
+    if args.chunk:
+        # One run of all 14,108 MAGs needs ~635K inodes. Chunks share the metaGEM home, so their results pool.
+        mags = sorted(mags)[(args.chunk - 1) * CHUNK_SIZE: args.chunk * CHUNK_SIZE]
     return mags
 
 
@@ -69,11 +72,11 @@ def declare_globals(smith, solver, location, ensure, with_gtdbtk=False):
     return c.cite(givens, location, types, ensure)
 
 
-def declare_givens(smith, mags, ensure):
+def declare_givens(smith, mags, ensure, name="all"):
     givens = smith.PoolGivens()
     for study, mag, path in mags:
         c.add_file(givens, f"e4/{study}/{mag}", path, "sequences::bin_fasta", tags=["e4", study])
-    return c.cite(givens, CACHE_DIR / "e4_inputs.xgdb", [c.MLIB / "data_types" / "sequences.yml"], ensure)
+    return c.cite(givens, CACHE_DIR / f"e4_inputs_{name}.xgdb", [c.MLIB / "data_types" / "sequences.yml"], ensure)
 
 
 def build_targets(solver, with_gtdbtk=False):
@@ -102,10 +105,11 @@ def cmd_run(args):
     print(f"{len(mags)} MAGs: " + ", ".join(f"{s}={n}" for s, n in Counter(m[0] for m in mags).items()))
 
     importing = args.cmd == "import"
-    remote = importing or args.stage_only or args.launch
+    remote = importing or args.stage_only or args.launch or args.materialise
     smith = c.agent_for("metagem", remote, CACHE_DIR / "dryrun_home")
     ensure = importing or args.import_givens or not remote
-    inputs = declare_givens(smith, mags, ensure)
+    name = f"chunk{args.chunk}" if args.chunk else "all"
+    inputs = declare_givens(smith, mags, ensure, name)
     globals_lib = declare_globals(smith, args.solver, CACHE_DIR / "e4_globals.xgdb", ensure, args.with_gtdbtk)
     if importing:
         print(f"the pool at {smith.home.GetPath()} holds the givens of {len(mags)} MAGs")
@@ -132,9 +136,9 @@ def cmd_run(args):
     if args.dag:
         c.write_dag(task, "e4_metagem", CACHE_DIR)
     if remote:
-        c.stage_and_run(smith, task, CACHE_DIR, args.tag or f"e4_{len(mags)}mags", stage_only=args.stage_only,
+        c.stage_and_run(smith, task, CACHE_DIR, args.tag or f"e4_{name}", stage_only=args.stage_only,
                         params=dict(executor=dict(queueSize=500), process=dict(tries=2, array=100)),
-                        resource_overrides=RESOURCE_OVERRIDES)
+                        scaled=SCALED, materialise=args.materialise)
     else:
         print("(dry run; nothing staged or submitted)")
     return 0
@@ -147,7 +151,9 @@ def main():
         p = sub.add_parser(name)
         p.add_argument("--study", nargs="*", help=", ".join(STUDY_ORDER))
         p.add_argument("--limit", type=int, help="first N MAGs per study")
-        p.set_defaults(fn=fn, dag=False, stage_only=False, launch=False, tag=None, with_gtdbtk=False)
+        p.add_argument("--chunk", type=int, help=f"1-based chunk of {CHUNK_SIZE} MAGs, sorted by study and MAG")
+        p.set_defaults(fn=fn, dag=False, stage_only=False, launch=False, materialise=False, tag=None,
+                       with_gtdbtk=False)
         if name != "list":
             p.add_argument("--solver", default="cplex", choices=["cplex", "open"])
             p.add_argument("--with-gtdbtk", action="store_true",
@@ -157,6 +163,7 @@ def main():
             mode = p.add_mutually_exclusive_group()
             mode.add_argument("--stage-only", action="store_true")
             mode.add_argument("--launch", action="store_true")
+            mode.add_argument("--materialise", action="store_true", help="stage, fetch every image the plan needs, stop")
             p.add_argument("--tag")
             p.add_argument("--import", dest="import_givens", action="store_true",
                            help="import what the pool lacks before planning, as `import` does")

@@ -27,7 +27,7 @@ import _common as c  # noqa: E402
 import e3_pratama  # noqa: E402
 import e4_metagem  # noqa: E402
 from metasmith.python_api import (  # noqa: E402
-    DataInstanceLibrary, TransformInstanceLibrary, TargetBuilder, Resources, Size, Duration,
+    DataInstanceLibrary, TransformInstanceLibrary, TargetBuilder,
 )
 
 PILOT = {"cami": "toy_mousegut", "pratama": "reads_2019", "metagem": "li2019"}
@@ -53,10 +53,8 @@ MISSING = [
     "GTDB-Tk and iPHoP (--with-gtdbtk): wait on ref::gtdb's representative genomes",
 ]
 
-RESOURCE_OVERRIDES = {
-    "megahit": Resources(memory=Size.GB(128), cpus=32, duration=Duration(hours=12)),
-    "carveme_from_orfs": Resources(memory=Size.GB(16), cpus=4, duration=Duration(hours=12)),
-}
+# First-attempt (cpus, GB, hours); retries scale with the attempt.
+SCALED = {"megahit": (32, 128, 12), "carveme_from_orfs": (4, 16, 12)}
 BINNER_PARAMS = dict(metabat2_min_contig=1500, metabat2_seed=1, semibin2_min_len=1500, semibin2_seed=1)
 
 
@@ -155,7 +153,7 @@ def build_targets(with_gtdbtk=False):
 
 def solve(corpus, samples, args):
     importing = args.cmd == "import"
-    remote = importing or args.stage_only or args.launch
+    remote = importing or args.stage_only or args.launch or args.materialise
     if remote and corpus == "pratama":
         missing = e3_pratama.missing_on_fir([(sid, PILOT["pratama"], reads) for sid, reads in samples])
         if missing:
@@ -187,7 +185,7 @@ def solve(corpus, samples, args):
         c.stage_and_run(smith, task, CACHE_DIR / corpus, f"{args.tag or 'e5_pilot'}_{corpus}",
                         stage_only=args.stage_only,
                         params=dict(executor=dict(queueSize=500), process=dict(tries=4, array=25), **BINNER_PARAMS),
-                        resource_overrides=RESOURCE_OVERRIDES)
+                        scaled=SCALED, materialise=args.materialise)
 
 
 def cmd_list(args):
@@ -216,7 +214,8 @@ def main():
     for name in ("import", "run"):
         p = sub.add_parser(name)
         p.add_argument("--corpus", default="all", choices=[*PILOT, "all"])
-        p.set_defaults(fn=cmd_run, dag=False, stage_only=False, launch=False, tag=None, with_gtdbtk=False)
+        p.set_defaults(fn=cmd_run, dag=False, stage_only=False, launch=False, materialise=False, tag=None,
+                       with_gtdbtk=False)
         if name == "run":
             p.add_argument("--dag", action="store_true", help="render each plan to page/dags/e5_pilot_<corpus>.dag.svg")
             p.add_argument("--with-gtdbtk", action="store_true",
@@ -224,6 +223,7 @@ def main():
             mode = p.add_mutually_exclusive_group()
             mode.add_argument("--stage-only", action="store_true")
             mode.add_argument("--launch", action="store_true")
+            mode.add_argument("--materialise", action="store_true", help="stage, fetch every image the plan needs, stop")
             p.add_argument("--tag")
             p.add_argument("--import", dest="import_givens", action="store_true",
                            help="import what the pool lacks before planning, as `import` does")

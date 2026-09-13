@@ -256,8 +256,13 @@ def write_dag(task, stem, cache_dir):
     print(f"dag: {out}")
 
 
-def make_slurm_config(smith, cache_dir, comebin_cpus=48, comebin_time="3d"):
-    """fir's Slurm preset plus two process selectors.
+def make_slurm_config(smith, cache_dir, scaled=None, comebin_cpus=48, comebin_time="3d"):
+    """fir's Slurm preset plus process selectors.
+
+    `scaled` maps a transform name to (cpus, GB, hours) for its first attempt, and each retry
+    multiplies memory and time by the attempt number. A flat `withName` value would replace the
+    preset's retry doubling, so a task that needs more than its first grant would fail identically
+    on every retry.
 
     COMEBin gets a quarter node at 4 GB per core. Its training is Amdahl-limited, and ten
     marine samples at 96 cores took 6.5 to 11.7 h, so 3 d covers the slow tail at 48.
@@ -275,25 +280,35 @@ def make_slurm_config(smith, cache_dir, comebin_cpus=48, comebin_time="3d"):
         f'        clusterOptions = "--nodes=1 --ntasks=1 --account={SLURM_ACCOUNT}"',
         "    }", "}", "",
         "process {", "    withName: '.*_cached' {", "        array = 0", "    }", "}", ""])
+    for name, (cpus, gb, hours) in (scaled or {}).items():
+        text += "\n".join([
+            "process {", f"    withName: '.*__{name}' {{", f"        cpus = {cpus}",
+            f"        memory = {{ {gb}.GB * task.attempt }}", f"        time = {{ {hours}.h * task.attempt }}",
+            "    }", "}", ""])
     cache_dir.mkdir(parents=True, exist_ok=True)
     out = cache_dir / "fir_slurm.config"
     out.write_text(text)
     return out
 
 
-def stage_and_run(smith, task, cache_dir, tag, *, stage_only, params, resource_overrides=None):
+def stage_and_run(smith, task, cache_dir, tag, *, stage_only, params, scaled=None, materialise=False):
+    """Stage the plan, then run it, or with `materialise` fetch every image it needs and stop."""
     keys_file = cache_dir / "task_keys.json"
     keys = json.loads(keys_file.read_text()) if keys_file.exists() else {}
     keys[tag] = task.GetKey()
     keys_file.write_text(json.dumps(keys, indent=2))
 
     smith.StageWorkflow(task, on_exist="update", verify_external_paths=False)
+    if materialise:
+        report = smith.MaterialiseImages(task)
+        print(f"images for {tag} ({task.GetKey()}): {report['fetched']} fetched, "
+              f"{report['already_present']} already present, unknown steps {report['unknown']}", flush=True)
+        return
     if stage_only:
         print(f"staged {tag} as {task.GetKey()}")
         return
-    extra = {"resource_overrides": resource_overrides} if resource_overrides else {}
-    smith.RunWorkflow(task=task, config_file=make_slurm_config(smith, cache_dir),
-                      params=dict(slurmAccount=SLURM_ACCOUNT, **params), **extra)
+    smith.RunWorkflow(task=task, config_file=make_slurm_config(smith, cache_dir, scaled),
+                      params=dict(slurmAccount=SLURM_ACCOUNT, **params))
     print(f"submitted {tag}: {task.GetKey()}", flush=True)
     if ON_HOST:
         wait_for_run(smith, task.GetKey())

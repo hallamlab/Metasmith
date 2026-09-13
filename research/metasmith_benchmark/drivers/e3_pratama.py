@@ -22,7 +22,7 @@ CACHE_DIR = Path(os.environ.get("E3_CACHE_DIR", HERE / ".cache" / "e3"))
 
 import _common as c  # noqa: E402
 from metasmith.python_api import (  # noqa: E402
-    DataInstanceLibrary, TransformInstanceLibrary, TargetBuilder, Resources, Size, Duration,
+    DataInstanceLibrary, TransformInstanceLibrary, TargetBuilder,
 )
 
 INTERLEAVED = Path(os.environ.get("PRATAMA_INTERLEAVED", "/scratch/phyberos/pratama2026/interleaved"))
@@ -33,9 +33,8 @@ EXCLUDED_RUNS = {"ERR3858126"}
 EXPECTED_RUNS = 65
 TYPE_LIBS = [c.MLIB / "data_types" / t for t in ("sequences.yml", "viromics.yml")]
 
-RESOURCE_OVERRIDES = {
-    "megahit": Resources(memory=Size.GB(128), cpus=32, duration=Duration(hours=12)),
-}
+# First-attempt (cpus, GB, hours); retries scale with the attempt.
+SCALED = {"megahit": (32, 128, 12)}
 
 # The standard transforms each E3 library transform replaces, by library.
 REPLACED = {
@@ -140,7 +139,7 @@ def cmd_run(args):
     if not runs:
         sys.exit("no runs selected")
     importing = args.cmd == "import"
-    remote = importing or args.stage_only or args.launch
+    remote = importing or args.stage_only or args.launch or args.materialise
     if remote:
         missing = missing_on_fir(runs)
         if missing:
@@ -172,7 +171,7 @@ def cmd_run(args):
     if remote:
         c.stage_and_run(smith, task, CACHE_DIR, args.tag or f"e3_{len(runs)}runs", stage_only=args.stage_only,
                         params=dict(executor=dict(queueSize=500), process=dict(tries=4, array=25)),
-                        resource_overrides=RESOURCE_OVERRIDES)
+                        scaled=SCALED, materialise=args.materialise)
     else:
         print("(dry run; nothing staged or submitted)")
     return 0
@@ -185,7 +184,7 @@ def main():
         p = sub.add_parser(name)
         p.add_argument("--dataset", nargs="*", help="reads_2019, reads_2022")
         p.add_argument("--limit", type=int)
-        p.set_defaults(fn=fn, dag=False, stage_only=False, launch=False, tag=None,
+        p.set_defaults(fn=fn, dag=False, stage_only=False, launch=False, materialise=False, tag=None,
                        with_host_prediction=False, with_gtdbtk=False)
         if name == "list":
             p.add_argument("--check", action="store_true", help="count verified interleaved files on fir")
@@ -198,6 +197,7 @@ def main():
             mode = p.add_mutually_exclusive_group()
             mode.add_argument("--stage-only", action="store_true")
             mode.add_argument("--launch", action="store_true")
+            mode.add_argument("--materialise", action="store_true", help="stage, fetch every image the plan needs, stop")
             p.add_argument("--tag")
             p.add_argument("--import", dest="import_givens", action="store_true",
                            help="import what the pool lacks before planning, as `import` does")

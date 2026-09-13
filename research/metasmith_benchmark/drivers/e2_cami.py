@@ -98,7 +98,7 @@ def build_targets(arm):
 
 def solve(arm, samples, args):
     importing = args.cmd == "import"
-    remote = importing or args.stage_only or args.launch
+    remote = importing or args.stage_only or args.launch or args.materialise
     smith = c.agent_for("cami", remote, CACHE_DIR / f"dryrun_home_{arm}")
     inputs, globals_lib = declare_givens(smith, arm, samples, ensure=importing or args.import_givens or not remote)
     if importing:
@@ -123,7 +123,8 @@ def solve(arm, samples, args):
         c.write_dag(task, f"e2_cami_{arm}", CACHE_DIR)
     if remote:
         c.stage_and_run(smith, task, CACHE_DIR, f"{args.tag or 'e2'}_{arm}", stage_only=args.stage_only,
-                        params=dict(executor=dict(queueSize=500), process=dict(tries=4, array=25)))
+                        params=dict(executor=dict(queueSize=500), process=dict(tries=4, array=25)),
+                        materialise=args.materialise)
 
 
 def cmd_list(args):
@@ -149,12 +150,13 @@ def main():
         p = sub.add_parser(name)
         p.add_argument("--arm", default="both", choices=["short", "long", "both"])
         p.add_argument("--limit", type=int, help="first N samples per arm")
-        p.set_defaults(fn=cmd_run, dag=False, stage_only=False, launch=False, tag=None)
+        p.set_defaults(fn=cmd_run, dag=False, stage_only=False, launch=False, materialise=False, tag=None)
         if name == "run":
             p.add_argument("--dag", action="store_true", help="render each arm to page/dags/e2_cami_<arm>.dag.svg")
             mode = p.add_mutually_exclusive_group()
             mode.add_argument("--stage-only", action="store_true")
             mode.add_argument("--launch", action="store_true")
+            mode.add_argument("--materialise", action="store_true", help="stage, fetch every image the plan needs, stop")
             p.add_argument("--tag")
             p.add_argument("--import", dest="import_givens", action="store_true",
                            help="import what the pool lacks before planning, as `import` does")
