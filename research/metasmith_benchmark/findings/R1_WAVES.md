@@ -21,6 +21,8 @@ Every metasmith lane runs as `sbatch -J <lane> $C/research/metasmith_benchmark/d
 ### Try
 
 1. Commit, then run `drivers/sync.sh`. It refuses a dirty tree, copies the commit to `$C`, and pushes the dev overlay to all three homes.
+
+   CAUTION run `sync.sh` from the `feat/engine/bench-run` worktree every wave. It copies with preserved mtimes, and a leaf transform id hashes its path and mtime. A clean checkout of the same commit in another tree has different `_metadata` mtimes, so its sync moves every plan key and forks the cache without a single edit.
 2. Check the project inode quota with `lfs quota -p 83115734 /scratch` (field 6 against field 8). Launch only if the wave's projection keeps it below 950K.
 3. Import, stage and fetch images: run each lane once with `--materialise --import`. It imports the lane's givens, stages the plan, fetches every image the plan names, and exits. Chain the jobs that share a home with `--dependency=afterok`.
 4. Launch each lane with `--launch --tag w<N>`, without `--import`, once its materialise job has passed. A lane that does not solve is an issue, not a blocker for the others.
