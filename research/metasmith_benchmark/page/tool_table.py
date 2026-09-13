@@ -64,7 +64,7 @@ GROUPS = [
         ("skani_dedup", {"E5": "per study, on DAS Tool and on MAGScoT bins; needs a study grouping"}, "Tony: try all four. Refinement and dereplication are separate steps"),
     ]),
     ("MAG taxonomy", [
-        ("GTDB-Tk", {"Pratama": "r202", "E3": "r232; needs the skani database from Globus", "metaGEM": True, "E4": "r232; needs the skani database from Globus", "E5": "r232; needs the skani database from Globus"}, "Tony: r232 everywhere, even where it breaks parity"),
+        ("GTDB-Tk", {"Pratama": "r202", "E3": "r232; skani database transferring from Globus", "metaGEM": True, "E4": "r232; skani database transferring from Globus", "E5": "r232; skani database transferring from Globus"}, "Tony: r232 everywhere, even where it breaks parity"),
     ]),
     ("Gene calling", [
         ("Prodigal", {"E1": True, "E2": True, "Pratama": "inside DRAM", "E3": True, "metaGEM": True, "E4": "first step, on published MAGs", "E5": True}, "Tony: both Prodigal and prodigal-gv"),

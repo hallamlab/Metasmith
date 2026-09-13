@@ -213,6 +213,12 @@ STAGED_REFS_PRATAMA = {
     # under its own out_dir and `tempfile.TemporaryDirectory` scratch.
     "ref::vcontact3_db": Path(os.environ.get(
         "VCONTACT3_DB_ROOT", "/scratch/phyberos/refs/vcontact3_v230")),
+
+    # VirSorter2 2.2.4's database, so `downloadVirsorter2DB` leaves the plan. Its conda env
+    # was built under a /db bind, which gives the env hash (671930f2) that
+    # `virsorter run --db-dir /db` computes. An env built at any other path cannot match.
+    "annotation::virsorter2_db": Path(os.environ.get(
+        "VIRSORTER2_DB_ROOT", "/scratch/phyberos/refs/virsorter2_2.2.4")),
 }
 
 AGENT_IMAGE = os.environ.get(

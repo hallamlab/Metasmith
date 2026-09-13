@@ -369,10 +369,10 @@ a.full:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
         <li>Their Zenodo products: vOTU catalogue, 1,275 MAGs, curated AMG table</li>
       </ul></div>
       <div><h3>Driver</h3><ul>
-        <li><code>drivers/e3_pratama.py</code>, all runs under one shared study root for the viral merge. 66 runs, 22 steps, key <code>HOCcka9Z</code></li>
+        <li><code>drivers/e3_pratama.py</code>, all runs under one shared study root for the viral merge. 66 runs, 21 steps, key <code>rG10GEFE</code></li>
         <li>MEGAHIT; geNomad + VIBRANT + VirSorter2 → merge → CheckV → MMseqs2 → vConTACT3; DRAM-v; MetaWRAP → CheckM2</li>
         <li>Staging refuses until every run's interleaved file passes its read-count check</li>
-        <li>GTDB-Tk r232 needs its skani database, because <code>--skip_ani_screen</code> doesn't skip that check in 2.6.1. The fir copy lacks <code>skani/</code>, and project space holds none. Find it on Globus rather than re-download the 56.6 GiB package</li>
+        <li>GTDB-Tk r232 needs its skani database, because <code>--skip_ani_screen</code> doesn't skip that check in 2.6.1. The 56.6 GiB r232 package, with <code>skani/</code>, is on chinook's Globus collection. Its transfer to fir is running, and extraction (about 113K inodes) waits until a plan needs it</li>
       </ul></div>
       <div><h3>Targets / metrics</h3><ul>
         <li>vOTU recovery: the share of their vOTUs matched by skANI</li>
@@ -394,21 +394,21 @@ a.full:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
         <li class="block">Pins to match Pratama: bbduk <code>qtrim=rl trimq=20 minlen=50</code>, metaSPAdes k-mers, MetaWRAP 2 rounds, VIBRANT <code>-virome</code>, geNomad flags, VirSorter2 groups, MMseqs2 cov-mode 0, both iPHoP databases, DRAM on MAGs. Drop the SemiBin2/COMEBin ensemble and skANI dedup</li>
         <li class="block">MAG recovery is out of the plan: dRep has no transform, and the MetaWRAP recovery transforms (B7) aren't committed</li>
         <li class="block">Spacer-to-host links wait on minced, the only spacer source once CCTyper is gone</li>
-        <li class="block">VirSorter2 can't run on a compute node (B1). Its database is staging now</li>
-        <li class="block">The plan still downloads the VIBRANT, VirSorter2 and CheckV databases, which hang on a compute-node driver</li>
+        <li class="block">VirSorter2's database is staged at <code>refs/virsorter2_2.2.4</code> and registered (B1). VirSorter2 stays unproven until a run uses it</li>
+        <li class="block">The plan still downloads the VIBRANT and CheckV databases, which hang on a compute-node driver</li>
         <li>DRAM's database is staged and its five distillation sheets check out (B3). DRAM-v stays unproven until a run re-runs it</li>
         <li>dbcan is missing from the DRAM database, because its download URL is dead. DRAM-v therefore gives no CAZyme annotations</li>
         <li>Database vintage ceiling: geNomad 1.5.1 vs 1.11.0</li>
       </ul></div>
     </div>
     <details class="dag">
-      <summary>Solved workflow <span class="sub">· HOCcka9Z, 22 steps, 66 paired runs</span></summary>
+      <summary>Solved workflow <span class="sub">· rG10GEFE, 21 steps, 66 paired runs</span></summary>
       <div class="dagbody">
         <div class="figs">
           <figure>
             <a class="full" href="https://10.74.81.84:12100/files/home/tony/agentic_workspace/projects/metasmith/engine/bench-run/research/metasmith_benchmark/page/dags/e3_pratama.dag.svg" target="_blank" rel="noopener">Open full screen ↗</a>
             <div class="figbox">{{SVG:e3_pratama}}</div>
-            <figcaption>Solved locally by <code>e3_pratama.py run --dag</code>. No interleave step, because the reads arrive interleaved. <code>downloadVibrantDB</code>, <code>downloadVirsorter2DB</code> and <code>downloadCheckvDB</code> are still in it.</figcaption>
+            <figcaption>Solved locally by <code>e3_pratama.py run --dag</code>. No interleave step, because the reads arrive interleaved. <code>downloadVibrantDB</code> and <code>downloadCheckvDB</code> are still in it.</figcaption>
           </figure>
         </div>
       </div>
@@ -491,7 +491,7 @@ a.full:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
       <div><h3>Driver</h3><ul>
         <li><code>drivers/e5_pilot.py</code>, one plan per corpus, because a plan gives every sample the same targets</li>
         <li>Pilot samples: CAMI mouse gut, Pratama reads_2019 and metaGEM li2019. Every corpus registers the same study → sample → read pair shape</li>
-        <li>Solved: CAMI 46 steps (<code>Kx2S58mW</code>), Pratama 46 (<code>nMUZuaPo</code>), metaGEM 47 (<code>F9eRDpwg</code>, which adds the interleave step)</li>
+        <li>Solved: CAMI 45 steps (<code>ajfZ1MhZ</code>), Pratama 45 (<code>jxG1gehK</code>), metaGEM 46 (<code>FwvpcoFM</code>, which adds the interleave step)</li>
         <li>Filters become masks: a frozen candidate set with thresholds applied as joins, not re-runs</li>
         <li>Studies: a study is a corpus subset, such as CAMI II mouse gut or Pratama reads_2019. MetaPop, dRep and skANI dedup run once per study</li>
         <li>MAG matrix: DAS Tool and MAGScoT bins each go through dRep and skANI dedup, per study, giving 4 MAG sets</li>
@@ -517,24 +517,24 @@ a.full:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
         <li class="block">A study type that samples declare. <code>viromics::contig_study</code> stands in, but only the viral merge groups by it</li>
         <li class="block"><code>skani_dedup</code> takes the aggregator's bin pool per assembly. The MAG matrix needs it on DAS Tool and MAGScoT bins per study</li>
         <li class="block">The 4-lane panel reads whole-assembly ORFs. Running it on MAGs needs a chunker for per-MAG ORFs</li>
-        <li class="block">The plans still download the iPHoP, VIBRANT, VirSorter2 and CheckV databases</li>
-        <li class="block">GTDB-Tk r232's skani database, still to be found on Globus</li>
+        <li class="block">The plans still download the VIBRANT and CheckV databases, and the iPHoP database, about 0.5 TB with a 3× peak during download</li>
+        <li class="block">GTDB-Tk r232's skani database: on chinook's Globus collection, transfer to fir running</li>
         <li>No phiX step. Check for phiX by hand when a sample needs it</li>
       </ul></div>
     </div>
     <details class="dag">
-      <summary>Solved workflows <span class="sub">· one per corpus, 46–47 steps</span></summary>
+      <summary>Solved workflows <span class="sub">· one per corpus, 45–46 steps</span></summary>
       <div class="dagbody">
         <div class="figs">
           <figure>
             <a class="full" href="https://10.74.81.84:12100/files/home/tony/agentic_workspace/projects/metasmith/engine/bench-run/research/metasmith_benchmark/page/dags/e5_pilot_cami.dag.svg" target="_blank" rel="noopener">Open full screen ↗</a>
             <div class="figbox">{{SVG:e5_pilot_cami}}</div>
-            <figcaption>CAMI mouse gut, 3 samples, <code>Kx2S58mW</code>. The Pratama plan also has 46 steps. MetaWRAP is masked out, and so is CCTyper.</figcaption>
+            <figcaption>CAMI mouse gut, 3 samples, <code>ajfZ1MhZ</code>. The Pratama plan also has 45 steps. MetaWRAP is masked out, and so is CCTyper.</figcaption>
           </figure>
           <figure>
             <a class="full" href="https://10.74.81.84:12100/files/home/tony/agentic_workspace/projects/metasmith/engine/bench-run/research/metasmith_benchmark/page/dags/e5_pilot_metagem.dag.svg" target="_blank" rel="noopener">Open full screen ↗</a>
             <div class="figbox">{{SVG:e5_pilot_metagem}}</div>
-            <figcaption>metaGEM li2019, 3 runs, <code>F9eRDpwg</code>. Its mate files add the interleave step.</figcaption>
+            <figcaption>metaGEM li2019, 3 runs, <code>FwvpcoFM</code>. Its mate files add the interleave step.</figcaption>
           </figure>
         </div>
       </div>
