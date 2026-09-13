@@ -145,7 +145,9 @@ T9's CarveMe resources render as planned. E4 chunk 1's CarveMe task `(868)` in `
 
 CLEAN's GPU route renders as planned. CLEAN's first grid job on fir renders `-c 4`, `-t 04:00:00`, `--mem 32768M` and `--account=def-shallam_gpu --gres=gpu:nvidia_h100_80gb_hbm3_3g.40gb:1`, and Slurm scheduled it. Only this step bills the GPU account. CarveMe stays on `rrg-shallam-ab`.
 
-Every product is stored twice. In `WfOlaqLT`, 208 trimmed-read files take 625.5 GB in `nxf_work` and task_cache holds its own copies, with no inode shared between the two. `caching/admission.py:_place` tries `os.link` and falls back to a copy when the link fails across the bind layout. So `cleanup = false` doubles every lane's product bytes until its work tree is reclaimed. Both copies do a job. Downstream tasks of the same run read the `nxf_work` copy: a running megahit's `.command.sh` FILES manifest names the fastp work directories, with no symlinks and no task_cache path. Reclaim a step's work directories only after its lane's last consumer has finished. Bytes, not inodes, are R1's tight quota: 16.16 of 18.63 TiB (86.8%) at 04:20 PDT.
+A live run's products exist only in its `nxf_work`. In `WfOlaqLT`, the 208 trimmed-read files take 625.5 GB there, and task_cache holds no entry for them. Its one `e2::trimmed_short_reads` lineage entry belongs to probe run `Gu9VJmwO`. Downstream tasks of the same run read the `nxf_work` copy: a running megahit's `.command.sh` FILES manifest names the fastp work directories, with no symlinks and no task_cache path. Reclaim a run's work directories only after the run ends and its products are in the cache. Otherwise the reclaim deletes the only copy.
+
+CAUTION an empty inode intersection between two file sets does not show that one copies the other. Match the files by key or name before calling bytes duplicated. Bytes, not inodes, are R1's tight quota: 16.16 of 18.63 TiB (86.8%) at 04:20 PDT.
 
 ### Stopped
 
