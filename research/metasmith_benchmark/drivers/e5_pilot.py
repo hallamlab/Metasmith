@@ -54,7 +54,7 @@ MISSING = [
 ]
 
 # First-attempt (cpus, GB, hours); retries scale with the attempt.
-SCALED = {"megahit": (32, 128, 12), "carveme_from_orfs": (4, 16, 12)}
+SCALED = {"megahit": (32, 128, 12), "carveme_from_orfs": (4, 16, 12), "carveme_from_orfs_cplex": (4, 16, 12)}
 BINNER_PARAMS = dict(metabat2_min_contig=1500, metabat2_seed=1, semibin2_min_len=1500, semibin2_seed=1)
 
 
@@ -96,7 +96,8 @@ def expected_counts(samples):
     return expected
 
 
-def build_transforms():
+def build_transforms(solver="open"):
+    unused_carveme = "carveme_from_orfs.py" if solver == "cplex" else "carveme_from_orfs_cplex.py"
     viromics = TransformInstanceLibrary.Load(c.MLIB / "transforms" / "viromics")
     modelling = TransformInstanceLibrary.Load(c.MLIB / "transforms" / "metabolicModelling")
     metagenomics = TransformInstanceLibrary.Load(c.MLIB / "transforms" / "metagenomics")
@@ -111,12 +112,12 @@ def build_transforms():
         TransformInstanceLibrary.Load(c.MLIB / "transforms" / "fabfos"),
         # CCTyper is dropped from every experiment.
         viromics.AsView({Path("cctyper.py")}, invert=True),
-        modelling.AsView({Path("carveme_from_orfs_cplex.py"), Path("memote_score.py")}, invert=True),
+        modelling.AsView({Path(unused_carveme), Path("memote_score.py")}, invert=True),
         TransformInstanceLibrary.Load(c.LIBRARY / "transforms" / "modelling"),
     ]
 
 
-def build_targets(with_gtdbtk=False):
+def build_targets(with_gtdbtk=False, solver="open"):
     t = TargetBuilder()
     asm = t.Add("sequences::megahit_assembly")
     t.Add("sequences::read_qc_stats")
@@ -134,7 +135,8 @@ def build_targets(with_gtdbtk=False):
     t.Add("binning_local::cluster_table", parents=[asm])
 
     bin_orfs = t.Add("sequences::bin_orfs", parents=[mags])
-    model = t.Add("modelling::carveme_model", parents=[bin_orfs])
+    model_type = "modelling::carveme_model_cplex" if solver == "cplex" else "modelling::carveme_model"
+    model = t.Add(model_type, parents=[bin_orfs])
     t.Add("modelling::memote_score", parents=[model])
 
     for dtype in ("annotation::kofamscan_results", "annotation::diamond_uniref50_results",
@@ -165,7 +167,7 @@ def solve(corpus, samples, args):
     ensure = importing or args.import_givens or not remote
     inputs = declare_givens(smith, corpus, samples, ensure)
     pratama_globals = c.pratama_globals(smith, CACHE_DIR / corpus, ensure)
-    modelling_globals = e4_metagem.declare_globals(smith, "open", CACHE_DIR / corpus / "e4_globals.xgdb", ensure)
+    modelling_globals = e4_metagem.declare_globals(smith, args.solver, CACHE_DIR / corpus / "e4_globals.xgdb", ensure)
     if importing:
         print(f"the pool at {smith.home.GetPath()} holds the givens of {len(samples)} samples")
         return
@@ -175,8 +177,8 @@ def solve(corpus, samples, args):
         resources=[DataInstanceLibrary.Load(c.MLIB / "resources" / "env"),
                    DataInstanceLibrary.Load(c.MLIB / "resources" / "lib"),
                    pratama_globals, modelling_globals],
-        transforms=build_transforms(),
-        targets=build_targets(args.with_gtdbtk),
+        transforms=build_transforms(args.solver),
+        targets=build_targets(args.with_gtdbtk, args.solver),
     )
     c.check_plan(task, expected_counts(samples))
     c.print_plan(task)
@@ -215,6 +217,8 @@ def main():
     for name in ("import", "run"):
         p = sub.add_parser(name)
         p.add_argument("--corpus", default="all", choices=[*PILOT, "all"])
+        # E5 pratama's open-solver gapfill ran past 2 h on 353 of 381 bins; cplex is E4's route.
+        p.add_argument("--solver", default="open", choices=["open", "cplex"])
         p.set_defaults(fn=cmd_run, dag=False, stage_only=False, launch=False, materialise=False, tag=None,
                        with_gtdbtk=False)
         if name == "run":
