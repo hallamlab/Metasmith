@@ -83,6 +83,22 @@ def test_the_row_cap_truncates_and_says_so():
     assert truncated and len(rows) == 2
 
 
+def test_a_fan_in_of_one_type_still_forks_every_parent():
+    parents = [f"s{i}" for i in range(1300)]
+    nodes = _nodes(*[(p, "seed", []) for p in parents], ("m", "b", parents))
+    assert len(_rows(nodes, ["seed", "b"])) == 1300
+
+
+def test_a_fan_in_across_types_stops_forking_and_says_so():
+    # 3 types x 60 parents is 216,000 forks at one node, past FORK_CAP.
+    specs = [(f"{t}{i}", t, []) for t in ("x", "y", "z") for i in range(60)]
+    parents = [nid for nid, _, _ in specs]
+    nodes = _nodes(*specs, ("m", "b", parents))
+    rows, truncated = explode(nodes, ["x", "y", "z", "b"])
+    assert truncated
+    assert rows == [("", "", "", "/m")]
+
+
 def test_the_csv_is_replaced_whole(tmp_path):
     target = tmp_path / "out.csv"
     write_csv_atomic(target, ["a", "b"], [("1", "2")])
