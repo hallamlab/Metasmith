@@ -268,7 +268,7 @@ def write_dag(task, stem, cache_dir):
 # Lustre incidents 26 tasks exited 0 with 0.00% alignment.
 IN_PLACE_STEPS = (
     "fastp", "bbduk_pratama", "megahit", "spades_pratama",
-    "assembly_stats", "assembly_stats_pratama", "porechop_abi", "chopper", "minimap2_binning_bam",
+    "assembly_stats", "porechop_abi", "chopper", "minimap2_binning_bam",
     "metawrap_pratama",
 )
 
