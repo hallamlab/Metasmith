@@ -295,8 +295,8 @@ a.full:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
       </ul></div>
       <div><h3>Driver</h3><ul>
         <li><code>drivers/e2_cami.py</code> binds only <code>library/transforms/e2</code>: 16 transforms written from nf-core/mag 5.5.0's own commands, arguments and image tags</li>
-        <li>Short arm, 208 samples on E1's split R1/R2 pairs: 15 steps, key <code>WfOlaqLT</code>. FastQC raw and trimmed → fastp → MEGAHIT → bowtie2 → MetaBAT2 / SemiBin2 / COMEBin → DAS Tool; CheckM2 on all four bin sets; AMBER</li>
-        <li>Long arm, 41 samples: 14 steps, key <code>33hlLu8Q</code>. Porechop ABI → Chopper → Flye → minimap2, then the same tail. Flye and minimap2 take their presets from the platform in each sample's read metadata</li>
+        <li>Short arm, 208 samples on E1's split R1/R2 pairs: 15 steps, wave-2 key <code>sxDeVO5L</code>. FastQC raw and trimmed → fastp → MEGAHIT → bowtie2 → MetaBAT2 / SemiBin2 / COMEBin → DAS Tool; CheckM2 on all four bin sets; AMBER</li>
+        <li>Long arm, 41 samples: 14 steps, wave-2 key <code>F1yIPPmC</code>. Porechop ABI → Chopper → Flye → minimap2, then the same tail. Flye and minimap2 take their presets from the platform in each sample's read metadata</li>
         <li>Not run, because nothing scored reads them: QUAST, NanoPlot and nf-core's standalone Prodigal</li>
         <li>Runs as a Slurm job on fir through <code>submit_driver.sbatch</code>, 10 cpus / 48 GB</li>
       </ul></div>
@@ -311,6 +311,9 @@ a.full:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
       <div class="proven"><h3>Proven</h3><ul>
         <li>Rung 1 on the earlier library (<code>iy8YLaGr</code>): MetaBAT2 wrote 51 bins and SemiBin2 57, products inspected</li>
         <li>Flye <code>--nano-raw</code> on plant sample 0: 1 h 06 m, 3,186 contigs, N50 96,428, peak memory 32.68 GiB. NanoSim reads align at 15.4% error despite their flat Q40 qualities</li>
+        <li>Wave 2 ran both arms to completion: every step on all 208 short and all 41 long samples, with AMBER scoring each sample against its own gold standard and no <code>unbinned</code> pseudo-bin</li>
+        <li>DAS Tool <code>f1_score_bp</code>, short arm, 208 samples: median 0.089. Strain madness 0.031 (100), mouse gut 0.204 (49), marine 0.187 (10), gastrointestinal/oral 0.393 (20), air/skin/urogenital 0.265 (29). E1's DAS Tool on marine_sample_0 scores 0.224</li>
+        <li>DAS Tool <code>f1_score_bp</code>, long arm, 41 samples: median 0.195 (0.064–0.766). The wave-1 figure of 0.91 scored DAS Tool's unbinned set as a bin and is withdrawn</li>
       </ul></div>
       <div class="open"><h3>Open</h3><ul>
         <li>The first 1-sample probe proved the Slurm driver path, and its fastp wrote nothing: <code>--detect_adapter_for_pe</code> fails silently on interleaved input. The short arm now reads the split pairs, and probe <code>Gu9VJmwO</code> on them passed: fastp wrote 4.55 GB of trimmed reads, and FastQC its reports</li>
@@ -319,13 +322,13 @@ a.full:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
       </ul></div>
     </div>
     <details class="dag">
-      <summary>Solved workflows <span class="sub">· short arm WfOlaqLT, 15 steps · long arm 33hlLu8Q, 14 steps</span></summary>
+      <summary>Solved workflows <span class="sub">· short arm sxDeVO5L, 15 steps · long arm F1yIPPmC, 14 steps</span></summary>
       <div class="dagbody">
         <div class="figs">
           <figure>
             <a class="full" href="https://10.74.81.84:12100/files/home/tony/agentic_workspace/projects/metasmith/engine/bench-run/research/metasmith_benchmark/page/dags/e2_cami_short.dag.svg" target="_blank" rel="noopener">Open full screen ↗</a>
             <div class="figbox">{{SVG:e2_cami_short}}</div>
-            <figcaption>Short arm, 208 samples, solved locally by <code>e2_cami.py run --dag</code>. Triangles are steps and circles are data types. Every step is a transform from <code>library/transforms/e2</code>.</figcaption>
+            <figcaption>Short arm, 208 samples, as staged on fir for wave 2. Triangles are steps and circles are data types. Every step is a transform from <code>library/transforms/e2</code>.</figcaption>
           </figure>
           <figure>
             <a class="full" href="https://10.74.81.84:12100/files/home/tony/agentic_workspace/projects/metasmith/engine/bench-run/research/metasmith_benchmark/page/dags/e2_cami_long.dag.svg" target="_blank" rel="noopener">Open full screen ↗</a>
@@ -362,7 +365,7 @@ a.full:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
         <li>Their Zenodo products: vOTU catalogue, 1,275 MAGs, curated AMG table</li>
       </ul></div>
       <div><h3>Driver</h3><ul>
-        <li><code>drivers/e3_pratama.py</code>, all runs under one shared study root for the viral merge. 65 runs, 26 steps, key <code>Son2YJiI</code></li>
+        <li><code>drivers/e3_pratama.py</code>, all runs under one shared study root for the viral merge. 65 runs, 26 steps, wave-2 key <code>bqyYO0Ip</code></li>
         <li>MAG lane: bbduk → metaSPAdes → MetaWRAP, with CheckM inside it → DRAM on the MAGs</li>
         <li>Viral lane: MEGAHIT and metaSPAdes contigs → geNomad + VIBRANT + VirSorter2 → one merge over both assemblies → CheckV → MMseqs2 → vConTACT3; prodigal-gv; DRAM-v on vOTUs of 10 kb or more</li>
         <li>Pratama's settings are pinned in <code>library/transforms/e3</code>, which masks the standard transforms it replaces. <code>findings/R1_TABLE_AUDIT.md</code> gives each tool's status</li>
@@ -394,13 +397,13 @@ a.full:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
       </ul></div>
     </div>
     <details class="dag">
-      <summary>Solved workflow <span class="sub">· Son2YJiI, 26 steps, 65 runs</span></summary>
+      <summary>Solved workflow <span class="sub">· bqyYO0Ip, 26 steps, 65 runs</span></summary>
       <div class="dagbody">
         <div class="figs">
           <figure>
             <a class="full" href="https://10.74.81.84:12100/files/home/tony/agentic_workspace/projects/metasmith/engine/bench-run/research/metasmith_benchmark/page/dags/e3_pratama.dag.svg" target="_blank" rel="noopener">Open full screen ↗</a>
             <div class="figbox">{{SVG:e3_pratama}}</div>
-            <figcaption>Solved locally by <code>e3_pratama.py run --dag</code>. No interleave step, because the reads arrive interleaved, and no download step, because every database is staged. Both assemblies feed the viral merge, and only metaSPAdes feeds MetaWRAP.</figcaption>
+            <figcaption>As staged on fir for wave 2. No interleave step, because the reads arrive interleaved, and no download step, because every database is staged. Both assemblies feed the viral merge, and only metaSPAdes feeds MetaWRAP.</figcaption>
           </figure>
         </div>
       </div>
@@ -491,7 +494,7 @@ a.full:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
       <div><h3>Driver</h3><ul>
         <li><code>drivers/e5_pilot.py</code>, one plan per corpus, because a plan gives every sample the same targets</li>
         <li>Pilot samples: CAMI mouse gut, Pratama reads_2019 and metaGEM li2019. Every corpus registers the same study → sample → read pair shape</li>
-        <li>Solved: CAMI 35 steps (<code>52mAOnXS</code>), Pratama 35 (<code>8Z7x3L7z</code>), metaGEM 36 (<code>YzCrdOoF</code>, which adds the interleave step). GTDB-Tk, GTDB-Tk de novo and iPHoP join with <code>--with-gtdbtk</code></li>
+        <li>Wave 2, on the CarveMe 1.6.6 pin: CAMI <code>u8oBvJrv</code>, Pratama 35 steps (<code>AvPNgFtP</code>), metaGEM <code>cSBSeNuq</code> (which adds the interleave step). All three finished: 51, 381 and 85 models, each with a MEMOTE score. GTDB-Tk, GTDB-Tk de novo and iPHoP join with <code>--with-gtdbtk</code></li>
         <li>Filters become masks: a frozen candidate set with thresholds applied as joins, not re-runs</li>
         <li>Studies: a study is a corpus subset, such as CAMI II mouse gut or Pratama reads_2019. MetaPop, dRep and skANI dedup run once per study</li>
         <li>MAG matrix: DAS Tool and MAGScoT bins each go through dRep and skANI dedup, per study, giving 4 MAG sets</li>
@@ -527,17 +530,17 @@ a.full:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
           <figure>
             <a class="full" href="https://10.74.81.84:12100/files/home/tony/agentic_workspace/projects/metasmith/engine/bench-run/research/metasmith_benchmark/page/dags/e5_pilot_cami.dag.svg" target="_blank" rel="noopener">Open full screen ↗</a>
             <div class="figbox">{{SVG:e5_pilot_cami}}</div>
-            <figcaption>CAMI mouse gut, 3 samples, <code>52mAOnXS</code>. MetaWRAP is masked out, and so is CCTyper.</figcaption>
+            <figcaption>CAMI mouse gut, 3 samples, <code>u8oBvJrv</code>. MetaWRAP is masked out, and so is CCTyper.</figcaption>
           </figure>
           <figure>
             <a class="full" href="https://10.74.81.84:12100/files/home/tony/agentic_workspace/projects/metasmith/engine/bench-run/research/metasmith_benchmark/page/dags/e5_pilot_pratama.dag.svg" target="_blank" rel="noopener">Open full screen ↗</a>
             <div class="figbox">{{SVG:e5_pilot_pratama}}</div>
-            <figcaption>Pratama reads_2019, 3 runs, <code>8Z7x3L7z</code>.</figcaption>
+            <figcaption>Pratama reads_2019, 3 runs, <code>AvPNgFtP</code>.</figcaption>
           </figure>
           <figure>
             <a class="full" href="https://10.74.81.84:12100/files/home/tony/agentic_workspace/projects/metasmith/engine/bench-run/research/metasmith_benchmark/page/dags/e5_pilot_metagem.dag.svg" target="_blank" rel="noopener">Open full screen ↗</a>
             <div class="figbox">{{SVG:e5_pilot_metagem}}</div>
-            <figcaption>metaGEM li2019, 3 runs, <code>YzCrdOoF</code>. Its mate files add the interleave step.</figcaption>
+            <figcaption>metaGEM li2019, 3 runs, <code>cSBSeNuq</code>. Its mate files add the interleave step.</figcaption>
           </figure>
         </div>
       </div>
