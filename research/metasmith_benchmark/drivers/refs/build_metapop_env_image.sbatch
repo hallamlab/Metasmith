@@ -19,7 +19,9 @@ BASE=/scratch/phyberos/cache/apptainer/docker..quay.io_biocontainers_metapop..1.
 cd "$SLURM_TMPDIR"
 tar -xf "$TAR"
 n_tar=$(find metapop | wc -l)
-mksquashfs metapop "$IMG.tmp" -noappend -no-xattrs -comp zstd -processors "$SLURM_CPUS_PER_TASK" -no-progress
+# CAUTION apptainer's data-image binds read gzip squashfs only: a zstd image fails as "unknown compression
+# algorithm value 6".
+mksquashfs metapop "$IMG.tmp" -noappend -no-xattrs -processors "$SLURM_CPUS_PER_TASK" -no-progress
 n_image=$(unsquashfs -l "$IMG.tmp" | grep -c '^squashfs-root')
 echo "entries: tar $n_tar, image $n_image"
 [ "$n_tar" -eq "$n_image" ]
