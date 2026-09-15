@@ -61,7 +61,6 @@ env {
 
 executor {
     queueSize = params.executor.queueSize
-    submitRateLimit = params.executor.submitRateLimit
     pollInterval = params.executor.pollInterval
     stageInMode = params.executor.stageInMode
 
@@ -72,7 +71,13 @@ executor {
         delay = 1.second
     }
     
-    // executor = 'hq'                      // todo: consider https://github.com/It4innovations/hyperqueue
+    // Scoped to slurm: a flat submitRateLimit also throttles the local executor, where every
+    // cache-hit twin runs, so a relaunch replayed its hits at one per five seconds (hours).
+    $slurm {
+        submitRateLimit = params.executor.submitRateLimit
+    }
+
+    // executor = 'hq'                    // todo: consider https://github.com/It4innovations/hyperqueue
 
     // Local-executor capacity, as FLAT keys rather than a nested `local {}` block.
     // Nextflow reads `executor.cpus` and `executor.memory` as local-executor-only
