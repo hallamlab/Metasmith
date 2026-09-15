@@ -47,7 +47,9 @@ def is_interleaved(reads: Path) -> bool:
 def protocol(context: ExecutionContext):
     reps = {line.split("\t")[0] for line in Path(context.Input(votus).local).read_text().splitlines() if line}
     keep = False
-    with open(context.Input(frozen).local) as src, open("votus.fna", "w") as dst:
+    # MetaPop's --reference lists a directory of FASTA files; a file path fails in os.listdir.
+    Path("ref").mkdir()
+    with open(context.Input(frozen).local) as src, open("ref/votus.fna", "w") as dst:
         for line in src:
             if line.startswith(">"):
                 keep = line[1:].split()[0] in reps
@@ -71,9 +73,9 @@ def protocol(context: ExecutionContext):
             set -euo pipefail
             export PATH=/opt/metapop/bin:$PATH
             mkdir -p bams
-            bowtie2-build --threads {cpus} votus.fna idx > idx.log
+            bowtie2-build --threads {cpus} ref/votus.fna idx > idx.log
             {chr(10).join(steps)}
-            metapop --input_samples $PWD/bams --reference $PWD/votus.fna --norm $PWD/norm.tsv \\
+            metapop --input_samples $PWD/bams --reference $PWD/ref --norm $PWD/norm.tsv \\
                 --threads {cpus} --min_cov 70 --output $PWD/metapop
         """,
     )
