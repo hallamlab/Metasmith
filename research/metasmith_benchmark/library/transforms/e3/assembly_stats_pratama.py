@@ -18,7 +18,6 @@ asm     = model.AddRequirement(lib.GetType("sequences::assembly"), parents={meta
 stats   = model.AddProduct(lib.GetType("sequences::assembly_stats"))
 concov  = model.AddProduct(lib.GetType("sequences::assembly_per_contig_coverage"))
 bpcov   = model.AddProduct(lib.GetType("sequences::assembly_per_bp_coverage"))
-bam     = model.AddProduct(lib.GetType("alignment::bam"))
 
 def protocol(context: ExecutionContext):
     irmeta = context.Input(meta)
@@ -28,7 +27,6 @@ def protocol(context: ExecutionContext):
     istats = context.Output(stats)
     icontig_cov = context.Output(concov)
     ibp_cov = context.Output(bpcov)
-    obam = context.Output(bam)
 
 
     with open(irmeta.local) as j:
