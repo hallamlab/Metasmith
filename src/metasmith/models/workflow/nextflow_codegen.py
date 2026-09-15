@@ -63,6 +63,30 @@ def CachedProcessName(process_name: str) -> str:
     return f"{process_name}_cached"
 
 
+TWIN_SRC, TWIN_DST = "@src@", "@dst@"
+
+
+def TwinHomeBash() -> str:
+    """Bash that sets `h` to the agent home as the twin's own work dir spells it."""
+    return f'h="${{PWD%/{AgentPaths.STAGED}/*}}"'
+
+
+def TwinPlaceBash(external_home: Path, src: str = TWIN_SRC, dst: str = TWIN_DST) -> str:
+    """Bash that places one shard product at `dst`, after `TwinHomeBash` set `h`."""
+    # A driver container binds the agent home at its host path and again at /msm_home. The two
+    # binds share a device, yet a hard link between them fails with EXDEV, so the shard is linked
+    # through the bind the work dir sits on first. A copy costs a product's bytes twice, so say so.
+    return (
+        f"m='{src}'; ln -f \"$h${{m#'{external_home}'}}\" '{dst}' 2>/dev/null"
+        f" || ln -f \"$m\" '{dst}' 2>/dev/null"
+        f" || {{ echo \"cache hit copied, not linked: $m\" >&2; cp -r \"$m\" '{dst}'; }}"
+    )
+
+
+def _groovy_literal_text(bash: str) -> str:
+    return bash.replace("\\", "\\\\").replace('"', '\\"').replace("$", "\\$")
+
+
 @dataclass
 class NextflowGenContext:
     workflow_file: str
@@ -492,6 +516,8 @@ def prepare_nextflow(task, context: NextflowGenContext):
         twin_name = CachedProcessName(process_name)
         _used, produced_archetypes = get_io_signature(step)
         optional = ", optional: true" if len(produced_archetypes) > 1 else ""
+        place = _groovy_literal_text(TwinPlaceBash(context.external_home)) \
+            .replace(TWIN_SRC, "${s[1]}").replace(TWIN_DST, "${s[0]}-${s[2]}")
         src = [
             f"process {twin_name}"+" {",
             TAB+"executor 'local'",
@@ -506,7 +532,8 @@ def prepare_nextflow(task, context: NextflowGenContext):
             "script:",
             '"""',
             f'echo "step {step.order} (cached), sample $index"',
-            "${sources.collect { s -> \"ln -f '${s[1]}' '${s[0]}-${s[2]}' 2>/dev/null || cp -r '${s[1]}' '${s[0]}-${s[2]}'\" }.join('\\n')}",
+            _groovy_literal_text(TwinHomeBash()),
+            "${sources.collect { s -> \"" + place + "\" }.join('\\n')}",
             '"""',
             "}",
             "",

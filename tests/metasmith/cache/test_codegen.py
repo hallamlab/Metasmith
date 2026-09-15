@@ -99,6 +99,68 @@ def test_the_twin_runs_locally_and_never_reuses_a_nextflow_cache(tmp_path):
     assert "tuple val(index), val(sources)" in twin
 
 
+def _twin_bash(tmp_path, agent_home: Path, src: Path, dst: str) -> str:
+    """The twin's placing script for one source, as Groovy would render it for bash."""
+    import re
+
+    task = linear_3step.build_task(tmp_path)
+    workspace = _stage_split_home(task, agent_home)
+    body = (workspace / "workflow.nf").read_text()
+    twin = body[body.index("_cached {"):]
+    twin = twin[:twin.index("\n}\n")]
+    lines = twin.splitlines()
+    home = next(l for l in lines if l.startswith("h="))
+    collect = next(l for l in lines if "sources.collect" in l)
+    place = collect[collect.index('s -> "') + len('s -> "'):collect.rindex('" }.join')]
+    place = place.replace("${s[1]}", str(src)).replace("${s[0]}-${s[2]}", dst)
+    unescape = lambda s: re.sub(r"\\(.)", r"\1", s)
+    return unescape(home) + "\n" + unescape(place) + "\n"
+
+
+def _run_in(workdir: Path, script: str):
+    import subprocess
+
+    return subprocess.run(["bash", "-ue", "-c", script], cwd=workdir, env={"PWD": str(workdir), "PATH": "/usr/bin:/bin"},
+                          capture_output=True, text=True)
+
+
+def test_the_twin_links_a_shard_through_its_own_spelling_of_the_home(tmp_path):
+    from metasmith.constants import AgentPaths
+
+    # The staged home names the shard, but only a second spelling of the home exists here, as
+    # /msm_home does inside the driver container: the link must go through the work dir's spelling.
+    staged_home = tmp_path / "host_home"
+    view = tmp_path / "msm_home"
+    shard = view / "task_cache" / "ab" / "x.fq.gz"
+    shard.parent.mkdir(parents=True)
+    shard.write_text("reads")
+    workdir = view / AgentPaths.STAGED / "run" / "nxf_work" / "aa" / "bb"
+    workdir.mkdir(parents=True)
+
+    script = _twin_bash(tmp_path, staged_home, staged_home / "task_cache" / "ab" / "x.fq.gz", "1-x.fq.gz")
+    assert not (staged_home / "task_cache" / "ab" / "x.fq.gz").exists()
+    done = _run_in(workdir, script)
+
+    assert done.returncode == 0, done.stderr
+    assert done.stderr == ""
+    assert (workdir / "1-x.fq.gz").stat().st_ino == shard.stat().st_ino
+
+
+def test_the_twin_says_so_when_it_copies(tmp_path):
+    home = tmp_path / "home"
+    shard = home / "task_cache" / "ab" / "bins"
+    shard.mkdir(parents=True)
+    (shard / "bin.1.fa").write_text(">c\nA\n")
+    workdir = tmp_path / "elsewhere"
+    workdir.mkdir()
+
+    done = _run_in(workdir, _twin_bash(tmp_path, home, shard, "1-bins"))
+
+    assert done.returncode == 0, done.stderr
+    assert "cache hit copied, not linked" in done.stderr
+    assert (workdir / "1-bins" / "bin.1.fa").read_text() == ">c\nA\n"
+
+
 def test_the_twin_is_in_the_resources_file_the_ceiling_reads(tmp_path):
     from metasmith.agents.ceiling import parse_requests
     from metasmith.constants import AgentPaths
