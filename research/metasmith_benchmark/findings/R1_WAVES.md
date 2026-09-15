@@ -370,6 +370,13 @@ Each item points at its evidence above. Do them in this order.
      - Totals over 41 `rows.tsv`: MetaBAT2 109,005 rows (wave 1's map had 0), DAS Tool 23,762 binned and 117,104 unbinned (wave 1's two-binner map had 23,060 binned). Every sample has MetaBAT2 rows and at least one DAS Tool bin.
      - Merge job 59893281 COMPLETED: `bench/e1/long/b19/contig_to_bin_map.tsv` (56 MB) holds COMEBin 139,057 and SemiBin2 124,235 rows (unchanged from the published map), MetaBAT2 109,005, and DAS Tool 140,866. The published map is untouched.
      - Re-score: `score_reference_e1long_b19.sbatch`, a copy of wave 1's reference scorer with FULL pointing at the merged map and OUT at `reference_amber_long_b19`, scores sample_0 against the same read-truth gold standard as wave 1's reference (DAS Tool f1 0.1731, COMEBin 0.8846).
+     - RESULT, job 59893504 (37 s), `reference_amber_long_b19/plant_associated_long_nano_sample_0/<binner>/results.tsv`, AMBER genome-level `f1_score_bp`:
+       - COMEBin 0.8849 (wave 1: 0.8846), unchanged as expected: same bins, same gold standard.
+       - MetaBAT2 0.4778, the first MetaBAT2 score on E1 long. Wave 1 had no MetaBAT2 bins. Precision_avg_bp 0.868, recall_avg_bp 0.330, 96.7% of bp assigned.
+       - SemiBin2 0.4277.
+       - DAS Tool 0.1805 (wave 1, two binners: 0.1732). Assigned bp 52.0% (was 48.2%), precision_avg_bp 0.894, recall_avg_bp 0.100. DAS Tool keeps high-precision bins at `--score_threshold 0.5` and drops the rest, so the third binner moves its F1 by less than 0.01.
+     - E1 half of B19 DONE. The E2 long half (identity 80 via `e2/metabat2.py`) runs with the E2 long relaunch.
+     - Criterion 12's long-read reference half now has all three binners and the three-binner DAS Tool. Score further samples with the same scorer if the page needs more than sample_0.
    - E1 short was hit in the same window: 8 elements of SemiBin2 array 59892107 failed at 21:14:37 on fc30567 with "Expected file … does not exist" for their staged BAM or contigs. All 8 were retried (attempt 1), and the retries completed. CAUTION control.config returns `finish` on a second failure of one task, which would stop E1 short scheduling new work.
 5. **B21.** Rerun amber on E2 short and long with the fixed `e2/amber.py`.
 6. **B17.** Rerun gold_standard with the E2 pin at 2192c40c.
