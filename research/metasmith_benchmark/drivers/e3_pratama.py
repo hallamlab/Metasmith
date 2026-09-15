@@ -31,7 +31,10 @@ INTERLEAVED = Path(os.environ.get("PRATAMA_INTERLEAVED", "/scratch/phyberos/prat
 # counts once as H32_0_2_1 (ERR3858122).
 EXCLUDED_RUNS = {"ERR3858126"}
 EXPECTED_RUNS = 65
-TYPE_LIBS = [c.MLIB / "data_types" / t for t in ("sequences.yml", "viromics.yml")]
+# ENA's MinION runs as fetched, one per well; not interleaved or otherwise touched.
+RAW_2022 = Path(os.environ.get("PRATAMA_RAW_2022", "/scratch/phyberos/pratama2026/reads_2022"))
+EXPECTED_HYBRIDS = 17
+TYPE_LIBS = [c.MLIB / "data_types" / t for t in ("sequences.yml", "viromics.yml")] + [c.LIBRARY / "data_types" / "e3.yml"]
 
 # First-attempt (cpus, GB, hours); retries scale with the attempt.
 SCALED = {"megahit": (32, 128, 12)}
@@ -69,17 +72,32 @@ def missing_on_fir(runs):
     return out.split()
 
 
+def hybrid_partners():
+    """Illumina run -> its well's MinION file, for every 0.2 um 2022 replicate (Pratama's 17 hybrids)."""
+    rows = c.pratama_rows()
+    minion = {r["sample_alias"].split("_")[0]: RAW_2022 / r["run_accession"] / f"{r['run_accession']}_1.fastq.gz"
+              for r in rows if r["instrument_model"] == "MinION"}
+    partners = {r["run_accession"]: minion[r["sample_alias"][:3]]
+                for r in rows if r["dataset"] == "reads_2022" and r["library_layout"] == "PAIRED"
+                and r["sample_alias"].endswith("02um_2022") and r["sample_alias"][:3] in minion}
+    assert len(partners) == EXPECTED_HYBRIDS, f"{len(partners)} hybrid pairs, Pratama has {EXPECTED_HYBRIDS}"
+    return partners
+
+
 def declare_givens(smith, runs, ensure):
     # One study root: merge_candidate_calls pools every run's calls through read_pair's study parent.
     givens = smith.PoolGivens()
     study = c.add_value(givens, "e3/contig_study", {"logistics": "contig study"},
                         "viromics::contig_study", tags=["e3"])
+    partners = hybrid_partners()
     for run, dataset, reads in runs:
         tags = ["e3", dataset, run]
         meta = c.add_value(givens, f"e3/{run}/read_metadata", {"parity": "paired", "length_class": "short"},
                            "sequences::read_metadata", parents=[study], tags=tags)
         pair = c.add_value(givens, f"e3/{run}/read_pair", run, "sequences::read_pair", parents=[meta], tags=tags)
         c.add_file(givens, f"e3/{run}/reads", reads, "sequences::short_reads_pe", parents=[pair], tags=tags)
+        if run in partners:
+            c.add_file(givens, f"e3/{run}/nanopore", partners[run], "e3::nanopore_reads", parents=[pair], tags=tags)
     return c.cite(givens, CACHE_DIR / "e3_inputs.xgdb", TYPE_LIBS, ensure)
 
 
@@ -93,11 +111,14 @@ def build_transforms():
 
 def build_targets(with_host_prediction=False, with_gtdbtk=False):
     """The tool table's E3 column, less its gapfills: BinSanity, abawaca, dRep, DeepVirFinder, MetaPop,
-    minced with its BLASTn spacers, hybrid metaSPAdes, and iPHoP on the augmented database."""
+    minced with its BLASTn spacers, and iPHoP on the augmented database."""
     t = TargetBuilder()
     t.Add("sequences::read_qc_stats")
     t.Add("e3::fastp_report_json")
     t.Add("e3::fastp_report_html")
+
+    # Hybrid design A: only the 17 runs that carry a MinION partner can produce it.
+    t.Add("e3::hybrid_spades_assembly")
 
     # MAG lane: metaSPAdes, MetaWRAP (CheckM inside it), DRAM on the MAGs.
     spades = t.Add("sequences::spades_assembly")

@@ -25,6 +25,21 @@ types:
       e3: viral_gff
       ext: gff
 
+  # Hybrid design A. Neither type extends a standard read or assembly type, so no standard long-read QC,
+  # assembler or binner binds to them.
+  nanopore_reads:
+    properties:
+      _: a well's 0.2 um 2022 MinION run as ENA serves it (basecalled; Pratama applies no other long-read QC)
+      e3: nanopore_reads
+      ext: fq.gz
+  hybrid_spades_assembly:
+    properties:
+      _: metaSPAdes --nanopore contigs from one 0.2 um 2022 Illumina replicate and its well's MinION run
+      e3: hybrid_spades_assembly
+      Format: FASTA
+      Data: nucleotide sequence
+      ext: fna
+
   votu_representatives_10kb:
     properties:
       _: the representative of every vOTU at least 10 kb long, cut from the frozen set by the vOTU table

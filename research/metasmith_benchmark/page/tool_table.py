@@ -30,7 +30,7 @@ GROUPS = [
     ("Assembly", [
         ("MEGAHIT", {"E1": True, "E2": True, "Pratama": "viral contigs only", "E3": "viral contigs only", "metaGEM": True, "E5": True}, "Performance over metaSPAdes"),
         ("metaSPAdes", {"Pratama": "-k 21,33,55,77", "E3": "-k 21,33,55,77"}, "Performance: MEGAHIT instead"),
-        ("metaSPAdes --nanopore (hybrid)", {"Pratama": "per Illumina run, 17 assemblies", "E3": "NEW: spades.py takes short reads only"}, "fill"),
+        ("metaSPAdes --nanopore (hybrid)", {"Pratama": "per Illumina run, 17 assemblies", "E3": "--meta -m 380 --nanopore, no -k; 17 replicates with their well's MinION run (wave 4)"}, "fill"),
         ("Flye", {"E1": True, "E2": "preset from declared platform; memory from measured peaks", "E5": "preset from declared platform; memory from measured peaks"}, "Tony: long-read assembler"),
     ]),
     ("Read mapping and coverage", [
