@@ -600,20 +600,25 @@ def _failed_steps(df_tasks: "pd.DataFrame | None") -> list[str]:
     # A process is failed if nextflow said so, or if it "completed" with a
     # non-zero code -- the shipped presets end their errorStrategy in `ignore`,
     # which leaves the row behind and carries on.
+    # A retry that passed leaves its failed attempt's row behind too, so a name
+    # counts as failed only when none of its attempts succeeded.
     if df_tasks is None or len(df_tasks) == 0:
         return []
     names: list[str] = []
+    succeeded: set[str] = set()
     for _, row in df_tasks.iterrows():
+        name = str(row.get("name", "")).strip()
         status = str(row.get("status", "")).strip().upper()
         try:
             code = int(str(row.get("exit", "")).strip())
         except (TypeError, ValueError):
             code = 0
         if status in _FAILED_STATES or code != 0:
-            name = str(row.get("name", "")).strip()
             if name and name not in names:
                 names.append(name)
-    return names
+        else:
+            succeeded.add(name)
+    return [n for n in names if n not in succeeded]
 
 
 def RunWorkflow(key: str, log_dir: Path, host: str, stub_delay: float):
