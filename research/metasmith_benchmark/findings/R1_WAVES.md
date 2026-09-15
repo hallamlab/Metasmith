@@ -649,3 +649,22 @@ Bytes climbed from 91.54% at 18:08 to 97.33% at 18:34 PDT fir clock, about 1.5 T
   - E3 rest: `59877065`. It covers 1,373 promoted dirs, each with its shard confirmed on disk, and 1,405 failed or cancelled attempts. It keeps 348 exit-0 dirs that have no `.command.cache`.
   - E5 metagem: `59877066`. 1,954 promoted dirs with shards and 76 failed attempts. It keeps 59 exit-0 dirs that have no cache record.
 - **Wave-2 consequence:** relaunching E3 as it stands rewrites bbduk (653 GB) and every assembly_stats BAM, and promotion stores each a second time. The corpus alone fills most of the free bytes. See queue item 11.
+
+## Wave 2
+
+### Tally
+
+Lane state on 2026-09-15 at 08:50 PDT fir clock. Wave 2 launched lane by lane from 2026-09-14 19:30, not all at once, as fixes landed.
+- **E1 long:** DONE. The B19 rerun ran outside a head over the published assemblies and BAMs. DAS Tool over three binners scores f1_bp 0.1805 on sample_0, and COMEBin 0.8849.
+- **E1 short:** head `59896688` has 3 COMEBin tasks left (marine_sample_3, marine_sample_9, airskinurogenital_sample_19). Replacement head `59906444` waits afterany to run DAS Tool and CheckM2 from cache.
+- **E2 short `sxDeVO5L`:** DONE, 208 samples, with amber on the B21 and B22 fixes. DAS Tool f1_bp median 0.089.
+- **E2 long `F1yIPPmC`:** DONE, 41 samples. DAS Tool f1_bp median 0.195.
+- **E3 `bqyYO0Ip`:** driver `59948529` from 3958dbb2, on its third wave-2 launch. QC, assembly and prodigal are done. MetaWRAP (29), assembly_stats (28), VirSorter2 (64) and geNomad (~245) are running. vOTU clustering, DRAM, iPHoP and GTDB-Tk are still ahead.
+- **E4 chunk 1 `lE94xbfH`:** DONE in wave 1 (1,996 of 2,000 models) and not relaunched. Chunks 2–8 are T21 item 6.
+- **E5 cami `u8oBvJrv`, pratama `AvPNgFtP`, metagem `cSBSeNuq`:** DONE on CarveMe 1.6.6. Models and memote scores match the bins: 51, 381 and 85.
+
+Exit condition: E3 is the only lane short of its table's targets that does not wait on outside work. The T21 gapfills (hybrid assembly, dRep, MAGScoT and the rest) are not yet built.
+
+### E3 stale launch dirs
+
+Lister `59958389` (08:50) found 5,238 `bqyYO0Ip` dirs that the current launch never names. They hold 6,223 inodes: 4,253 empty dirs and 985 dirs holding only `.command.cache`. These are the stubs the 07:10 prune left. No current task references one. Not worth a deletion now. Remove the empty stubs in E3's run-end prune.
