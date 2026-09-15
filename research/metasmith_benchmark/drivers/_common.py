@@ -269,7 +269,6 @@ def write_dag(task, stem, cache_dir):
 IN_PLACE_STEPS = (
     "fastp", "bbduk_pratama", "megahit", "spades_pratama",
     "assembly_stats", "porechop_abi", "chopper", "minimap2_binning_bam",
-    "metawrap_pratama",
 )
 
 
