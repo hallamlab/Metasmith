@@ -15,6 +15,13 @@ out_lifestyle = model.AddProduct(lib.GetType("viromics::vibrant_lifestyle_table"
 out_amgs      = model.AddProduct(lib.GetType("viromics::vibrant_amgs"))
 out_calls     = model.AddProduct(lib.GetType("viromics::vibrant_candidate_virus"))
 
+# VIBRANT_run.py's default -l.
+MIN_LENGTH       = 1000
+QUALITY_HEADER   = "scaffold\ttype\tQuality\n"
+AMG_HEADER       = "protein\tscaffold\tAMG KO\tAMG KO name\tPfam\tPfam name\n"
+LIFESTYLE_HEADER = "call_id\tcontig_id\tlifestyle\tquality\n"
+CALLS_HEADER     = "contig_id\tstart\tend\tcaller\tscore\n"
+
 
 def _read_fasta_lengths(path: Path) -> dict[str, int]:
     lengths, name, n = {}, None, 0
@@ -43,7 +50,7 @@ def _write_lifestyle(quality_tsv: Path, out: Path):
     missing = [c for c in ("scaffold", "type", "Quality") if c not in col]
     assert not missing, f"VIBRANT's genome_quality has no {missing}; header was {sorted(col)}"
     with open(out, "w") as o:
-        o.write("call_id\tcontig_id\tlifestyle\tquality\n")
+        o.write(LIFESTYLE_HEADER)
         for r in rows:
             call = r[col["scaffold"]]
             o.write(f"{call}\t{call.split()[0]}\t{r[col['type']]}\t{r[col['Quality']]}\n")
@@ -60,17 +67,39 @@ def _write_calls(combined_fna: Path, coords_tsv: Path, out: Path):
             fragments[r[col["fragment"]]] = (r[col["scaffold"]], int(r[col["nucleotide start"]]),
                                              int(r[col["nucleotide stop"]]))
     with open(out, "w") as o:
-        o.write("contig_id\tstart\tend\tcaller\tscore\n")
+        o.write(CALLS_HEADER)
         for name, length in _read_fasta_lengths(combined_fna).items():
             scaffold, start, end = fragments.get(name, (name, 1, length))
             # VIBRANT publishes no numeric confidence.
             o.write(f"{scaffold.split()[0]}\t{start}\t{end}\tvibrant\tNA\n")
 
 
+def _longest_contig(fasta: Path) -> int:
+    longest = current = 0
+    with open(fasta) as f:
+        for line in f:
+            if line.startswith(">"):
+                longest, current = max(longest, current), 0
+            else:
+                current += len(line.strip())
+    return max(longest, current)
+
+
 def protocol(context: ExecutionContext):
     ictg = context.Input(contigs)
     iref = context.Input(ref)
     threads = context.params.get("cpus", 8)
+    outs = {p: context.Output(p) for p in (out_quality, out_lifestyle, out_amgs, out_calls)}
+
+    # The splitter sorts contigs by length, so a metaSPAdes assembly's later batches hold only contigs
+    # under VIBRANT's 1 kb floor. VIBRANT then writes no results folder: an empty result, not a failure.
+    longest = _longest_contig(ictg.local)
+    if longest < MIN_LENGTH:
+        Log.Info(f"longest contig {longest} bp, under {MIN_LENGTH}: no VIBRANT calls in this batch")
+        for product, header in ((out_quality, QUALITY_HEADER), (out_amgs, AMG_HEADER),
+                                (out_lifestyle, LIFESTYLE_HEADER), (out_calls, CALLS_HEADER)):
+            outs[product].local.write_text(header)
+        return ExecutionResult(manifest=[{p: o.local for p, o in outs.items()}], success=True)
 
     context.ExecWithEnv(env=image, cmd=f"""
         VIBRANT_run.py -i {ictg.container} -f nucl -virome -folder ./vibrant_out -t {threads} -no_plot \
@@ -86,7 +115,6 @@ def protocol(context: ExecutionContext):
     for p in (quality_tsv, amg_tsv):
         assert p.exists(), f"VIBRANT wrote no {p.name}"
 
-    outs = {p: context.Output(p) for p in (out_quality, out_lifestyle, out_amgs, out_calls)}
     outs[out_quality].local.write_bytes(quality_tsv.read_bytes())
     outs[out_amgs].local.write_bytes(amg_tsv.read_bytes())
     _write_lifestyle(quality_tsv, outs[out_lifestyle].local)
