@@ -331,6 +331,11 @@ Each item points at its evidence above. Do them in this order.
      - Collect succeeded with 1,535 outputs, the first cache-served E5 run to collect since 7e21c5e3's fix.
      - `results/` holds 51 `modelling-carveme_model` and 51 distinct `modelling-memote_score`, so memote closes for cami. Wave 1 had 0 scores, failing on HOME.
      - The run still reports "run failed" with one ignored step, `p35__memote_score (25)`. That task's attempt 1 (`3f/9eec67`) exited 1 on Lustre Errno 108 reading its model, and attempt 2 (`5d/4ab08a`) COMPLETED in 2:08. The failed-step list counts an index with any failed attempt even when a retry passed, so a complete run reads as failed. FIXED on this branch: `runner._failed_steps` drops a name when any of its attempts succeeded, with unit tests in `tests/metasmith/unit/test_failed_steps.py`. It is not synced: the live E5 drivers run 823c6b48's overlay, so the fix ships with the next sync.
+   - E5 PRATAMA CARVEME STARTED, 2026-09-14 ~22:00 fir clock, after 1,891 `_cached` replays (the last were per-bin `p26__prodigal_from_bin_cached`).
+     - 100 `p34__carveme_from_orfs` tasks are RUNNING (array 59897035) at `-t 12:00:00`, `--mem 16384M`.
+     - The first task's `.command.run` stages `_metasmith/task/data/kOylj7BHHODG/carveme_166.env`, which names `quay.io/biocontainers/carveme:1.6.6--pyhdfd78af_1`. So the pin reaches pratama.
+     - Element `_0` runs on fc30557, the node whose Lustre client dropped twice for B19. Its failure retries.
+     - metagem `cSBSeNuq` was still replaying annotation (1,850).
    - E1 short: the last COMEBin (`toy_mousegut_sample_55`, 32 h rung) COMPLETED with exit 0 at 20:10. The head runs MetaBAT2 for the 9 depth-rerun strain samples, then DAS Tool.
    - HiGHS evidence so far comes from the RCA's standalone MPS solves (`carveme_rca/scripts/highs_solve.py`, highspy, 1 thread), not a CarveMe solver class.
      - Gapfill problems: Optimal in 93–652 s on 1.6.1's 3 hard pratama bins, and 436–752 s on E4's 4 CPLEX-dropped MAGs. One stalled bin (`08a18e10`) hit the 1 h limit at a 13% gap.
