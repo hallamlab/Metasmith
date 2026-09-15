@@ -352,6 +352,13 @@ Each item points at its evidence above. Do them in this order.
      - It reads the 41 BAMs in `work/` and the published assemblies, and writes only under `bench/e1/long/b19/`.
      - SemiBin2 and COMEBin contig lists come from the published `contig_to_bin_map.tsv` rows, so those binners are not rerun.
    - DEVIATION to record: nf-core also routes MetaBAT2's unbinned contigs through SPLIT_FASTA into the map (`binning/main.nf:86`). The rerun writes MetaBAT2 rows for binned contigs only. AMBER scores binned contigs, so no binned row changes.
+   - TEST, sample_0 (plant_associated_long_nano_sample_0), job 59891609_0 on fc30605, 1:17 wall, 1.8 GiB:
+     - Depth at identity 80: 747,612 of 1,938,530 reads well mapped (38.6%). At the default 97%, E1 long's own depth task counted about 500 per sample.
+     - 1 of 3,135 contigs has a negative depth (contig_1, about −1.13e8, the same on three reruns). MetaBAT2 warns and skips that contig.
+     - MetaBAT2 formed 35 bins covering 2,485 contigs.
+     - DAS Tool read three lists (MetaBAT2 35 bins, SemiBin2 31, COMEBin 28) and selected 9 bins: 880 contigs, 66.9 Mbp. Wave 1's two-binner DAS Tool binned 769 contigs for this sample. Two of the 9 selected bins are MetaBAT2's.
+   - CAUTION DAS Tool's `_DASTool_contig2bin.tsv` under `--write_unbinned` lists its unbinned set as a bin named `unbinned`, and lists 256 of those contigs twice. The first row builder counted `unbinned` as a real bin. The rows now come from a `rows` mode that re-reads the saved contig2bin, so samples 1–40 (array 59891854, submitted with the first builder) are rebuilt before the merge.
+   - Two test attempts failed on fc30557 on Lustre writes: `cp` EIO, then ESHUTDOWN. The script excludes fc30557 and fc30604 and retries copies 5 × 60 s.
 5. **B21.** Rerun amber on E2 short and long with the fixed `e2/amber.py`.
 6. **B17.** Rerun gold_standard with the E2 pin at 2192c40c.
 7. **Resources, none of which enters a cache key:**

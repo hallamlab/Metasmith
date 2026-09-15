@@ -8,6 +8,7 @@
 #SBATCH -c 12
 #SBATCH --mem=32G
 #SBATCH -t 6:00:00
+#SBATCH --exclude=fc30557,fc30604
 #SBATCH -o /scratch/phyberos/bench/logs/e1_b19_long.%A_%a.out
 set -euo pipefail
 
@@ -20,6 +21,30 @@ IMG=/scratch/phyberos/wave2_b3_nfcore/apptainer_cache/nxf
 METABAT=$IMG/quay.io-biocontainers-metabat2-2.17--hd498684_0.img
 DASTOOL=$IMG/quay.io-biocontainers-das_tool-1.1.7--r44hdfd78af_1.img
 module load apptainer/1.3.5
+
+# Map rows in nf-core's columns. DAS Tool's contig2bin lists its unbinned set as a bin
+# named `unbinned`, some contigs twice, so only a selected bin counts as binned.
+write_rows() {
+    local S=$1 D=$OUT/$1
+    {
+        for f in "$D"/metabat2_bins/*.fa; do
+            [ -e "$f" ] || continue
+            grep '^>' "$f" | sed 's/^>//; s/[[:space:]].*//' | awk -v a="FLYE-$S" -v bin="$(basename "$f")" '{print a "\t" $0 "\tMetaBAT2\t" bin}'
+        done
+        gzip -dc "$E1L/out/Assembly/FLYE/FLYE-$S.assembly.fasta.gz" | awk -v a="FLYE-$S" -v S="$S" -F'\t' '
+            FNR==NR { if ($2 != "unbinned" && !($1 in binned)) binned[$1] = $2; next }
+            /^>/ { c = substr($1, 2); sub(/[[:space:]].*/, "", c)
+                   if (c in binned) print a "\t" c "\tDASTool\tFLYE-DASTool-" S "." binned[c] ".fa"
+                   else print a "\t" c "\tDASTool\tFLYE-DASToolUnbinned-" S ".fa" }
+        ' "$D/FLYE-DASTool-$S"_DASTool_contig2bin.tsv -
+    } > "$D/rows.tsv"
+    awk -F'\t' '{k = $3 (($4 ~ /Unbinned/) ? " unbinned" : " binned"); n[k]++} END {for (k in n) print S, k, n[k]}' S="$S" "$D/rows.tsv"
+}
+
+if [ "$MODE" = rows ]; then
+    tail -n +2 "$SHEET" | cut -d, -f1 | while read -r S; do write_rows "$S"; done
+    exit 0
+fi
 
 if [ "$MODE" = merge ]; then
     n=$(tail -n +2 "$SHEET" | wc -l)
@@ -49,7 +74,7 @@ echo "sample $S bam ${BAMS[0]}"
 
 run() { local img=$1; shift; apptainer exec --no-home --cleanenv --bind "$W" --pwd "$W" "$img" "$@"; }
 # Lustre returns transient EIO on writes from some nodes.
-cpr() { for i in 1 2 3; do cp "$@" && return 0; sleep 30; done; return 1; }
+cpr() { for i in 1 2 3 4 5; do cp "$@" && return 0; sleep 60; done; return 1; }
 
 run "$METABAT" jgi_summarize_bam_contig_depths --percentIdentity 80 --outputDepth "$W/depth.txt" "${BAMS[0]}"
 gzip -c "$W/depth.txt" > "$W/depth.txt.gz"
@@ -74,17 +99,5 @@ run "$DASTOOL" DAS_Tool --write_bins --write_unbinned --write_bin_evals --score_
     -t 12 -i "${lists%,}" -c "$W/asm.fasta" -o "$W/FLYE-DASTool-$S"
 cpr "$W/FLYE-DASTool-$S"_DASTool_contig2bin.tsv "$W/FLYE-DASTool-$S"_DASTool_summary.tsv "$W/FLYE-DASTool-$S"_allBins.eval "$W/FLYE-DASTool-$S"_DASTool.log "$D/"
 
-{
-    for f in "$D"/metabat2_bins/*.fa; do
-        [ -e "$f" ] || continue
-        grep '^>' "$f" | sed 's/^>//; s/[[:space:]].*//' | awk -v a="FLYE-$S" -v bin="$(basename "$f")" '{print a "\tMetaBAT2\t" $0 "\t" bin}'
-    done
-    awk -v a="FLYE-$S" -v S="$S" -F'\t' '
-        FNR==NR { binned[$1] = $2; next }
-        /^>/ { c = substr($1, 2); sub(/[[:space:]].*/, "", c)
-               if (c in binned) print a "\tDASTool\t" c "\tFLYE-DASTool-" S "." binned[c] ".fa"
-               else print a "\tDASTool\t" c "\tFLYE-DASToolUnbinned-" S ".fa" }
-    ' "$D/FLYE-DASTool-$S"_DASTool_contig2bin.tsv "$W/asm.fasta"
-} | awk -F'\t' 'BEGIN{OFS="\t"} {print $1, $3, $2, $4}' > "$D/rows.tsv"
-cut -f3 "$D/rows.tsv" | sort | uniq -c
+write_rows "$S"
 echo DONE
