@@ -101,7 +101,7 @@ GROUPS = [
         ("CPLEX solver", {"metaGEM": True, "E4": "22.2"}, "Open-source solver"),
         ("Open-source solver (SCIP)", {"E5": "runtime risk: an open solver ran 1 h 49 m on the smallest bin without finishing"}, "Open-source solver"),
         ("MEMOTE", {"metaGEM": True, "E4": True, "E5": True}, "fill"),
-        ("SMETANA", {"metaGEM": "detailed, 15 media, CPLEX", "E4": NEW, "E5": "detailed, 15 media, SCIP; one community per sample"}, "Tony: run it"),
+        ("SMETANA", {"metaGEM": "detailed, 15 media, CPLEX", "E4": "detailed, 15 media, CPLEX; one community per sample, li2019 only (per-sample grouping needs re-imported MAG givens)", "E5": "detailed, 15 media, SCIP; one community per sample"}, "Tony: run it"),
     ]),
     ("Scoring", [
         ("AMBER", {"E1": "after the run", "E2": True, "E5": "after the run, outside the plan"}, "Tony: one plan can't give samples different targets"),
