@@ -695,3 +695,42 @@ Lister `59958389` (08:50) found 5,238 `bqyYO0Ip` dirs that the current launch ne
 - **Publish `results/` by hard link: BUILT, not synced.** `slurm.nf` now sets `workflow.output.mode = 'link'`, replacing `'copy'`. Evidence: E3's `results/` held 480 GB of nlink-1 copies, and `runner.py:670` rmtrees and republishes them at every launch. Nextflow's `link` mode calls `mklink(hard:true)` and does not fall back to copy on the default filesystem (`PublishDir.processFileImpl`, `validatePublishMode`). A failed link therefore fails the publish, but `results/` and `nxf_work` sit in one run dir. Test job `59958734` (Nextflow 26, Lustre): the published `product.txt` and its task file share inode 162140358094894002 with nlink 2. CAUTION a `results/` file now shares its inode with the task product and any promoted shard, so an in-place edit changes the cache. Ships with the next sync after E3 ends. On the first launch, check nlink ≥ 2 on a `results/` file. Test dir `/scratch/phyberos/_linktest` (1 MB) goes in the next gated cleanup.
 - **Reuse or remove the previous launch's twin dirs:** open, NOT built. Twins render `cache false` by design, so every relaunch writes a full new set of twin dirs (sxDeVO5L's stale set: 3,920 dirs, 75.9K inodes). Removing the old set at launch is unsafe as a blanket rule: a real task that resumes may still name an old twin dir as its input, and a downstream miss stages from it. Until the engine can tell those apart, run `_stale_launch_dirs.sbatch` (lister plus consumer gate) and a gated prune after a relaunch's replay settles.
 - **Copy record_run task logs once per task dir, not per member: BUILT, not synced.** `promote._copy_task_logs` copies a task dir's four `.command.*` logs into its first member shard and hard-links later members to those copies. Evidence: WfOlaqLT's run end copied logs into 23,004 member shards, and one CheckM2 dir holds ~208 members, at ~5 inodes each (2026-09-14 01:42 entry). A later member now costs 1 inode, its `logs/` dir. The first copy stays a copy, so pruning the task dir still frees its logs. Tests: `tests/metasmith/cache/test_task_logs.py` plus the promote and record_run suites, 16 passed. Ships with the next sync.
+
+## Wave 3
+
+### Queue
+
+Collected 2026-09-15 at 12:00 PDT fir clock. Tony: start wave 3 now, do not wait 48 h, and clean scratch first. E3 `bqyYO0Ip` and the E1 short head run on as stragglers. The binding resource is inodes (930.8K against the 940K hold), not time.
+
+**Order (todo list):** prepare this queue → compact → scratch cleanup → compact → fixes and T16.
+
+**A. Scratch cleanup (before any fix).** Tony's rule: keep the tracked intermediates, meaning task_cache shards, each task's `.command.cache` record and the nextflow resume state of a live run. Delete untracked intermediate work dirs, and failed or superseded runs once they are diagnosed.
+1. Count inodes per top-level dir and per run dir, as a compute job.
+2. Classify each run dir as live (E3 `bqyYO0Ip`, E1 short work), finished-and-collected (wave-2 E2, E5, E1 long), or superseded or failed (wave-1 keys and dead runs).
+3. For finished runs, empty `nxf_work` task dirs with `prune_work.sbatch`, which keeps `.command.cache`. For superseded and failed runs whose failures R1_WAVES records, delete the run dir with `delete_stage.sbatch`. Each step is gated on no job, no PID.lock, and no checkout or run naming it.
+4. Also delete: test dirs (`_linktest`, `_twintest`, `_ratetest` leftovers, `carveme_rca`), stale checkouts no job names, E1 long `work/` once B19's rerun products are confirmed published, and the `_stale_*` lists.
+5. Retired cache shards: a census like 59923194 over all three homes, evicted with `--protect-run` for every live and wave-3 run.
+6. E1 short `work/` (~83K inodes) only after its head and replacement end.
+
+**B. Collect results from the finished lanes.**
+1. E2 short and long: AMBER f1_bp medians for every binner (COMEBin, SemiBin2, MetaBAT2, DAS Tool) and `results/` counts per sample.
+2. E5 cami, pratama, metagem: models, memote and growth counts against bins. HiGHS: settle adoption from the evaluator job 59910958's log.
+3. E1 long: the B19 map scores are recorded. Confirm they cover all 41 samples.
+4. E1 short (when it ends) and E3 (at run end): the close-plan collection.
+
+**C. Diagnose, each to a cause and a fix.**
+1. DAS Tool scores below its own inputs on both arms (E2 short median 0.089; E1 long sample_0 DAS Tool 0.18 against COMEBin 0.88; recall 0.100 at `score_threshold` 0.5). Check whether this is the threshold, the unbinned share, or the scoring.
+2. Lustre Errno 108 and EIO on the bad nodes. A driver's `--exclude` does not reach its grid tasks, so exclusion watchers did the job. Fix: pass the exclude list through `clusterOptionsExtra`.
+3. Silent bad BAMs: `e2/bowtie2_binning_bam.py` checks only that the BAM exists. Add a guard for bowtie2 errors and alignment rate, which retires the E2 bowtie2 entries. Weigh that cost first.
+4. Straddle-mount warning: every lane logs `forcing publishDir 'copy' strategy` (`nextflow_codegen.py:156`). Re-spell through `/msm_home` as twins and promotion do.
+5. Index repair for shards whose `.command.cache` earlier prunes removed (WfOlaqLT fastp, 8Z7x3L7z, qcMKf68s).
+6. E3's first DRAM, iPHoP, GTDB-Tk and vOTU outcomes, at its run end.
+
+**D. Fixes and gapfills to build.**
+1. Tony's refinement redesign (journal 78db76ba): one dereplication step with DAS Tool, MAGScoT, dRep and skani dedup as alternatives, plus reassembly as its own operation. It changes the tool table, T21's text and E5's targets. Settle it before building item 2.
+2. T21 gapfills in order: MAGScoT, dRep, skani dedup with a study grouping type; E3 hybrid metaSPAdes over the 17 pairs; BinSanity and abawaca (E3 MetaWRAP back to 2 rounds); DeepVirFinder, MetaPop, SMETANA; E4 chunks 2–8 within the inode budget.
+3. E5's missing CheckM2 transform.
+4. The unsynced engine fixes: 8a2b94cf (results by hard link) and ec89c740 (task logs linked). Sync each home only when no driver runs in it.
+5. Wave-2 queue items still open: the deviations list (item 9) and the page republish (item 10).
+
+**E. Launch** lane by lane under tag `w3`, with watchers and auto-stops, within the inode budget that A leaves.
