@@ -493,6 +493,8 @@ Each item points at its evidence above. Do them in this order.
    - MetaBAT2 long-read identity floor 80 on both arms, where the tool default is 97 (B19).
    - E5 CarveMe on 1.6.6 with its 600 s solver caps, not the table's 1.6.1: most pratama carving and gapfill solves stop at the cap (item 1).
    - E1 short skips QUAST (`skip_quast`), which the table does not list.
+   - Three E5 pratama CarveMe 1.6.6 models do not grow on M8 (`0740f96883589cac`, `602f2978f85cf135`, `b013f6bcf3c89734`); 514 of 517 grow (item 1).
+   - E2's AMBER drops DAS Tool's `unbinned` pseudo-bin and duplicate contig rows before scoring (B22, item 5). Wave-2 E2 amber scores from before the fix are not reported.
 10. **Page:** republish once T19's re-solves give new keys and DAGs.
 11. **E3 byte budget before any E3 relaunch.** E3 stopped at the quota (see After close). Pick one before relaunching:
     - promote by hard link on a single-mount Lustre, which is the same engine change as hard-link hits;
