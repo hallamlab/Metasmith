@@ -102,7 +102,7 @@ def build_targets(with_host_prediction=False, with_gtdbtk=False):
     # MAG lane: metaSPAdes, MetaWRAP (CheckM inside it), DRAM on the MAGs.
     spades = t.Add("sequences::spades_assembly")
     for dtype in ("sequences::orfs", "sequences::gff", "sequences::assembly_stats",
-                  "sequences::assembly_per_contig_coverage", "alignment::bam",
+                  "sequences::assembly_per_contig_coverage",
                   "binning::metawrap_contig_to_bin_table", "binning::metawrap_bin_stats",
                   "e3::mag_dram_annotations", "e3::mag_dram_distill"):
         t.Add(dtype, parents=[spades])

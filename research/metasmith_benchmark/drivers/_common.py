@@ -262,10 +262,14 @@ def write_dag(task, stem, cache_dir):
 # Steps whose products run to tens of GB. From node-local scratch a product lands on Lustre
 # twice: in the work dir nextflow unstages it to, and in the cache shard promotion copies it
 # into. Run in the work dir, it is written once and the shard hard-links it
-# (promote._link_dir).
+# (promote._link_dir). A selector matches the whole process name, so a pinned transform needs its
+# own entry.
+# bowtie2_binning_bam stays on node-local scratch: in place it read its index from Lustre, and in two
+# Lustre incidents 26 tasks exited 0 with 0.00% alignment.
 IN_PLACE_STEPS = (
-    "fastp", "bbduk_pratama", "megahit", "spades_pratama", "bowtie2_binning_bam",
-    "assembly_stats", "porechop_abi", "chopper", "minimap2_binning_bam", "metawrap_pratama",
+    "fastp", "bbduk_pratama", "megahit", "spades_pratama",
+    "assembly_stats", "assembly_stats_pratama", "porechop_abi", "chopper", "minimap2_binning_bam",
+    "metawrap_pratama",
 )
 
 

@@ -185,21 +185,18 @@ def protocol(context: ExecutionContext):
     with open(istats.local, "w") as j:
         json.dump(assembly_stats, j)
 
-    # A move, not the standard transform's copy: a ~10 GB metaSPAdes BAM left twice in each task dir
-    # filled fir's byte quota during E3's wave 1.
-    Log.Info("moving BAM to output")
-    context.LocalShell(f"mv {bam_file} {obam.local}")
-
-    if temp_sam_path.exists(): temp_sam_path.unlink()
+    # No BAM product: no E3 step reads it, and at ~13 GB per metaSPAdes assembly, stored in the task
+    # dir and its cache shard, it filled fir's byte quota in waves 1 and 2.
+    for tmp in (temp_sam_path, Path(bam_file), Path(f"{bam_file}.csi")):
+        if tmp.exists(): tmp.unlink()
 
     return ExecutionResult(
         manifest=[{
             stats: istats.local,
             concov: icontig_cov.local,
             bpcov: ibp_cov.local,
-            bam: obam.local,
         }],
-        success=obam.local.exists() and icontig_cov.local.exists(),
+        success=icontig_cov.local.exists() and istats.local.exists(),
     )
 
 TransformInstance(
