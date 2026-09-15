@@ -26,3 +26,44 @@ types:
     properties:
       bench: env
       provides: [checkm2]
+
+  # Dereplication: every tool picks one non-redundant set from the three binners' bins. A per-sample
+  # and a per-study type each, so both scopes can be targets in one plan.
+  magscot_contig_to_bin:
+    properties:
+      _: MAGScoT's refined contig-to-bin table for one assembly, over MetaBAT2, SemiBin2 and COMEBin
+      bench: magscot_contig_to_bin
+      ext: tsv
+  magscot_scores:
+    properties:
+      _: MAGScoT's per-bin completeness, contamination and score for the selected bins
+      bench: magscot_scores
+      ext: tsv
+  drep_sample_winners:
+    properties:
+      _: dRep dereplicate over one assembly's bins, one row per input bin with its cluster and whether it won
+      bench: drep_sample_winners
+      ext: tsv
+  drep_study_winners:
+    properties:
+      _: dRep dereplicate over every bin in a study, one row per input bin with its cluster and whether it won
+      bench: drep_study_winners
+      ext: tsv
+  skani_sample_clusters:
+    properties:
+      _: skani ANI clusters at 95 and 99 over one assembly's bins, medoid marked per cluster
+      bench: skani_sample_clusters
+      ext: tsv
+  skani_study_clusters:
+    properties:
+      _: skani ANI clusters at 95 and 99 over every bin in a study, medoid marked per cluster
+      bench: skani_study_clusters
+      ext: tsv
+  drep.env:
+    properties:
+      bench: env
+      provides: [drep]
+  magscot.env:
+    properties:
+      bench: env
+      provides: [magscot]

@@ -36,10 +36,7 @@ TYPE_LIBS = [c.MLIB / "data_types" / t for t in ("sequences.yml", "viromics.yml"
 
 # In the E5 tool list, not reachable in any plan yet.
 MISSING = [
-    "MAGScoT (new transform): the second refiner",
-    "dRep (new transform): the second dereplicator",
-    "skani_dedup over DAS Tool and MAGScoT bins per study: today it takes the aggregator's pool, per assembly",
-    "a study grouping type: viromics::contig_study stands in, and only the viral merge groups by it",
+    "a study grouping type: viromics::contig_study stands in for the viral merge, dRep and skani per study",
     "Prodigal on MAG ORFs for the 4-lane panel: the panel takes whole-assembly ORFs only",
     "DeepVirFinder (new transform)",
     "MetaPop (new transform): every sample mapped to its study's vOTU catalogue",
@@ -136,7 +133,12 @@ def build_targets(with_gtdbtk=False, solver="open"):
     t.Add("bench::checkm2_quality", parents=[mags])
     if with_gtdbtk:
         t.Add("taxonomy::gtdbtk", parents=[mags])
-    t.Add("binning_local::cluster_table", parents=[asm])
+    # Dereplication: DAS Tool above, MAGScoT per sample, and dRep and skani over the same three bin
+    # sets, per sample and per study. The standard skani_dedup reads the CheckM 1 aggregator's pool.
+    for dtype in ("bench::magscot_contig_to_bin", "bench::drep_sample_winners", "bench::skani_sample_clusters"):
+        t.Add(dtype, parents=[asm])
+    for dtype in ("bench::drep_study_winners", "bench::skani_study_clusters"):
+        t.Add(dtype)
 
     bin_orfs = t.Add("sequences::bin_orfs", parents=[mags])
     model_type = "modelling::carveme_model_cplex" if solver == "cplex" else "modelling::carveme_model"
