@@ -322,6 +322,10 @@ Each item points at its evidence above. Do them in this order.
    - Local solves: pratama 35 steps `hAHlhurq`, metagem 36 `fxC68Rwh`, cami 35 `lZPcVoCs`. E4 chunk 1 is unchanged at `4h3Zb0MY`, and memote's transform id is unchanged.
    - cami moves to 1.6.6 too, with its memote relaunch (item 3), so all three corpora share one CarveMe.
    - fir staging from 823c6b48: `mat_e5_pratama` 59879020 COMPLETED in 1:26. Key `AvPNgFtP`, 35 steps, images 1 fetched and 25 present, no unknown steps. The staged `carveme_from_orfs.py` names `carveme:1.6.6--pyhdfd78af_1`. Launched as `e5_pratama` 59880850 with `--tag w2`. metagem 59879021 staged `cSBSeNuq` (36 steps) and cami 59879023 staged `u8oBvJrv` (35 steps), with 0 images fetched and 26 present each. Both stage the same pinned transform `BJ0nETAHYphH`, and both launched with `--tag w2`: metagem 59881354, cami 59881355.
+   - FIRST 1.6.6 VERDICT, E5 cami `u8oBvJrv`, 2026-09-14 ~20:25 PDT fir clock: 52 of 52 `p34__carveme_from_orfs` task dirs exited 0.
+     - Wall time 56–799 s (median 699 s), where 1.6.1 took 48 s–18 min on the same bins.
+     - The staged task names `carveme:1.6.6--pyhdfd78af_1`, and a sampled model carries gapfill annotations.
+     - All 51 `p35__memote_score` tasks were submitted on the pinned memote. Pratama and metagem were still replaying cache hits, since cami has fewer upstream hits.
    - HiGHS evidence so far comes from the RCA's standalone MPS solves (`carveme_rca/scripts/highs_solve.py`, highspy, 1 thread), not a CarveMe solver class.
      - Gapfill problems: Optimal in 93–652 s on 1.6.1's 3 hard pratama bins, and 436–752 s on E4's 4 CPLEX-dropped MAGs. One stalled bin (`08a18e10`) hit the 1 h limit at a 13% gap.
      - Carving problems from the size ladder: the 375, 750 and 1,500 rungs were Optimal (2,974 s, 234 s, 26 s) on one MPS set, but the 3,010 rung and a second set hit the 1 h limit.
