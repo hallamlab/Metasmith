@@ -1,0 +1,345 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="775" height="2140" viewBox="0 0 775 2140">
+<rect width="775" height="2140" fill="#FFFFFF"/>
+<g fill="none" stroke="#666666" stroke-width="1.4" stroke-linejoin="round" stroke-linecap="round">
+<path d="M 531.8,41.3 L 531.8,272.5" stroke="#636EFA"/>
+<path d="M 531.8,41.3 L 531.8,42.1 A 8.4,8.4 0 0 1 523.4,50.5 A 8.4,8.4 0 0 0 514.9,59.0 L 514.9,76.5 A 8.5,8.5 0 0 1 506.5,85.0 L 506.5,85.0 A 8.5,8.5 0 0 0 498.0,93.4 L 498.0,100.3" stroke="#636EFA"/>
+<path d="M 531.8,41.3 L 531.8,42.1 A 8.5,8.5 0 0 1 523.4,50.5 L 506.5,50.5 A 8.5,8.5 0 0 0 498.0,59.0 L 498.0,65.8" stroke="#636EFA"/>
+<path d="M 531.8,41.3 L 531.8,42.1 A 8.5,8.5 0 0 1 523.4,50.5 L 489.6,50.5 A 8.5,8.5 0 0 0 481.1,59.0 L 481.1,134.7" stroke="#636EFA"/>
+<path d="M 531.8,41.3 L 531.8,42.1 A 8.5,8.5 0 0 1 523.4,50.5 L 472.7,50.5 A 8.5,8.5 0 0 0 464.2,59.0 L 464.2,169.2" stroke="#636EFA"/>
+<path d="M 531.8,41.3 L 531.8,42.1 A 8.5,8.5 0 0 1 523.4,50.5 L 455.8,50.5 A 8.5,8.5 0 0 0 447.3,59.0 L 447.3,203.6" stroke="#636EFA"/>
+<path d="M 531.8,41.3 L 531.8,42.1 A 8.5,8.5 0 0 1 523.4,50.5 L 438.9,50.5 A 8.5,8.5 0 0 0 430.4,59.0 L 430.4,238.1" stroke="#636EFA"/>
+<path d="M 531.8,41.3 L 531.8,42.1 A 8.5,8.5 0 0 1 523.4,50.5 L 422.0,50.5 A 8.5,8.5 0 0 0 413.5,59.0 L 413.5,307.0" stroke="#636EFA"/>
+<path d="M 531.8,41.3 L 531.8,42.1 A 8.5,8.5 0 0 1 523.4,50.5 L 405.1,50.5 A 8.5,8.5 0 0 0 396.6,59.0 L 396.6,324.5 A 8.5,8.5 0 0 0 405.1,333.0 L 523.4,333.0 A 8.5,8.5 0 0 1 531.8,341.4 L 531.8,341.4" stroke="#636EFA"/>
+<path d="M 531.8,41.3 L 531.8,42.1 A 8.5,8.5 0 0 1 523.4,50.5 L 388.2,50.5 A 8.5,8.5 0 0 0 379.7,59.0 L 379.7,359.0 A 8.5,8.5 0 0 0 388.2,367.4 L 523.4,367.4 A 8.5,8.5 0 0 1 531.8,375.9 L 531.8,375.9" stroke="#636EFA"/>
+<path d="M 531.8,41.3 L 531.8,42.1 A 8.5,8.5 0 0 1 523.4,50.5 L 371.3,50.5 A 8.5,8.5 0 0 0 362.8,59.0 L 362.8,393.4 A 8.5,8.5 0 0 0 371.3,401.9 L 523.4,401.9 A 8.4,8.4 0 0 1 531.8,410.3 L 531.8,410.3" stroke="#636EFA"/>
+<path d="M 531.8,41.3 L 531.8,42.1 A 8.5,8.5 0 0 1 523.4,50.5 L 354.4,50.5 A 8.5,8.5 0 0 0 345.9,59.0 L 345.9,427.9 A 8.5,8.5 0 0 0 354.4,436.3 L 388.2,436.3 A 8.5,8.5 0 0 1 396.6,444.8 L 396.6,444.8" stroke="#636EFA"/>
+<path d="M 498.0,76.5 L 498.0,83.4 A 8.5,8.5 0 0 0 506.5,91.8 L 506.5,91.8 A 8.5,8.5 0 0 1 514.9,100.3 L 514.9,1599.2 A 8.4,8.4 0 0 0 523.4,1607.6 A 8.4,8.4 0 0 1 531.8,1616.1 L 531.8,1616.8" stroke="#636EFA"/>
+<path d="M 498.0,111.0 L 498.0,1306.8" stroke="#636EFA"/>
+<path d="M 481.1,145.4 L 481.1,1289.1 A 8.4,8.4 0 0 0 489.6,1297.6 A 8.4,8.4 0 0 1 498.0,1306.0 L 498.0,1306.8" stroke="#636EFA"/>
+<path d="M 464.2,179.9 L 464.2,2047.0 A 8.5,8.5 0 0 0 472.7,2055.5 L 523.4,2055.5 A 8.5,8.5 0 0 1 531.8,2063.9 L 531.8,2064.7" stroke="#636EFA"/>
+<path d="M 447.3,214.3 L 447.3,1599.2 A 8.5,8.5 0 0 0 455.8,1607.6 L 523.4,1607.6 A 8.5,8.5 0 0 1 531.8,1616.1 L 531.8,1616.8" stroke="#636EFA"/>
+<path d="M 430.4,248.8 L 430.4,1426.9 A 8.5,8.5 0 0 0 438.9,1435.4 L 523.4,1435.4 A 8.5,8.5 0 0 1 531.8,1443.8 L 531.8,1444.6" stroke="#636EFA"/>
+<path d="M 531.8,283.2 L 531.8,341.4" stroke="#636EFA"/>
+<path d="M 531.8,283.2 L 531.8,283.2 A 8.5,8.5 0 0 1 523.4,291.7 L 422.0,291.7 A 8.5,8.5 0 0 0 413.5,300.1 L 413.5,307.0" stroke="#636EFA"/>
+<path d="M 531.8,283.2 L 531.8,283.2 A 8.5,8.5 0 0 1 523.4,291.7 L 337.5,291.7 A 8.5,8.5 0 0 0 329.0,300.1 L 329.0,359.0 A 8.5,8.5 0 0 0 337.5,367.4 L 523.4,367.4 A 8.5,8.5 0 0 1 531.8,375.9 L 531.8,375.9" stroke="#636EFA"/>
+<path d="M 531.8,283.2 L 531.8,283.2 A 8.5,8.5 0 0 1 523.4,291.7 L 320.6,291.7 A 8.5,8.5 0 0 0 312.1,300.1 L 312.1,393.4 A 8.5,8.5 0 0 0 320.6,401.9 L 523.4,401.9 A 8.4,8.4 0 0 1 531.8,410.3 L 531.8,410.3" stroke="#636EFA"/>
+<path d="M 531.8,283.2 L 531.8,283.2 A 8.5,8.5 0 0 1 523.4,291.7 L 303.7,291.7 A 8.5,8.5 0 0 0 295.2,300.1 L 295.2,427.9 A 8.5,8.5 0 0 0 303.7,436.3 L 388.2,436.3 A 8.5,8.5 0 0 1 396.6,444.8 L 396.6,444.8" stroke="#636EFA"/>
+<path d="M 531.8,283.2 L 531.8,283.2 A 8.5,8.5 0 0 1 523.4,291.7 L 286.8,291.7 A 8.5,8.5 0 0 0 278.3,300.1 L 278.3,462.3 A 8.5,8.5 0 0 0 286.8,470.8 L 523.4,470.8 A 8.5,8.5 0 0 1 531.8,479.2 L 531.8,480.0" stroke="#636EFA"/>
+<path d="M 531.8,283.2 L 531.8,283.2 A 8.5,8.5 0 0 1 523.4,291.7 L 269.9,291.7 A 8.5,8.5 0 0 0 261.4,300.1 L 261.4,634.6 A 8.5,8.5 0 0 0 269.9,643.0 L 523.4,643.0 A 8.5,8.5 0 0 1 531.8,651.5 L 531.8,652.2" stroke="#636EFA"/>
+<path d="M 531.8,283.2 L 531.8,283.2 A 8.5,8.5 0 0 1 523.4,291.7 L 253.0,291.7 A 8.5,8.5 0 0 0 244.5,300.1 L 244.5,703.5 A 8.5,8.5 0 0 0 253.0,711.9 L 523.4,711.9 A 8.5,8.5 0 0 1 531.8,720.4 L 531.8,721.1" stroke="#636EFA"/>
+<path d="M 531.8,283.2 L 531.8,283.2 A 8.5,8.5 0 0 1 523.4,291.7 L 236.1,291.7 A 8.5,8.5 0 0 0 227.6,300.1 L 227.6,772.4 A 8.5,8.5 0 0 0 236.1,780.8 L 388.2,780.8 A 8.5,8.5 0 0 1 396.6,789.3 L 396.6,790.0" stroke="#636EFA"/>
+<path d="M 531.8,283.2 L 531.8,283.2 A 8.5,8.5 0 0 1 523.4,291.7 L 219.2,291.7 A 8.5,8.5 0 0 0 210.7,300.1 L 210.7,944.6 A 8.5,8.5 0 0 0 219.2,953.1 L 523.4,953.1 A 8.5,8.5 0 0 1 531.8,961.5 L 531.8,962.3" stroke="#636EFA"/>
+<path d="M 531.8,283.2 L 531.8,283.2 A 8.5,8.5 0 0 1 523.4,291.7 L 202.3,291.7 A 8.5,8.5 0 0 0 193.8,300.1 L 193.8,1013.5 A 8.5,8.5 0 0 0 202.3,1022.0 L 523.4,1022.0 A 8.5,8.5 0 0 1 531.8,1030.4 L 531.8,1031.2" stroke="#636EFA"/>
+<path d="M 531.8,283.2 L 531.8,283.2 A 8.5,8.5 0 0 1 523.4,291.7 L 185.4,291.7 A 8.5,8.5 0 0 0 176.9,300.1 L 176.9,1082.4 A 8.5,8.5 0 0 0 185.4,1090.9 L 523.4,1090.9 A 8.5,8.5 0 0 1 531.8,1099.3 L 531.8,1100.1" stroke="#636EFA"/>
+<path d="M 531.8,283.2 L 531.8,283.2 A 8.5,8.5 0 0 1 523.4,291.7 L 168.5,291.7 A 8.5,8.5 0 0 0 160.0,300.1 L 160.0,1185.8 A 8.5,8.5 0 0 0 168.5,1194.2 L 523.4,1194.2 A 8.5,8.5 0 0 1 531.8,1202.7 L 531.8,1203.4" stroke="#636EFA"/>
+<path d="M 531.8,283.2 L 531.8,283.2 A 8.5,8.5 0 0 1 523.4,291.7 L 151.6,291.7 A 8.5,8.5 0 0 0 143.1,300.1 L 143.1,1289.1 A 8.5,8.5 0 0 0 151.6,1297.6 L 489.6,1297.6 A 8.5,8.5 0 0 1 498.0,1306.0 L 498.0,1306.8" stroke="#636EFA"/>
+<path d="M 531.8,283.2 L 531.8,283.2 A 8.5,8.5 0 0 1 523.4,291.7 L 134.7,291.7 A 8.5,8.5 0 0 0 126.2,300.1 L 126.2,1426.9 A 8.5,8.5 0 0 0 134.7,1435.4 L 523.4,1435.4 A 8.5,8.5 0 0 1 531.8,1443.8 L 531.8,1444.6" stroke="#636EFA"/>
+<path d="M 531.8,283.2 L 531.8,283.2 A 8.5,8.5 0 0 1 523.4,291.7 L 117.8,291.7 A 8.5,8.5 0 0 0 109.3,300.1 L 109.3,1599.2 A 8.5,8.5 0 0 0 117.8,1607.6 L 523.4,1607.6 A 8.5,8.5 0 0 1 531.8,1616.1 L 531.8,1616.8" stroke="#636EFA"/>
+<path d="M 531.8,283.2 L 531.8,283.2 A 8.5,8.5 0 0 1 523.4,291.7 L 100.9,291.7 A 8.5,8.5 0 0 0 92.4,300.1 L 92.4,1737.0 A 8.5,8.5 0 0 0 100.9,1745.4 L 523.4,1745.4 A 8.5,8.5 0 0 1 531.8,1753.9 L 531.8,1754.6" stroke="#636EFA"/>
+<path d="M 531.8,283.2 L 531.8,283.2 A 8.5,8.5 0 0 1 523.4,291.7 L 84.0,291.7 A 8.5,8.5 0 0 0 75.5,300.1 L 75.5,1874.8 A 8.5,8.5 0 0 0 84.0,1883.2 L 523.4,1883.2 A 8.5,8.5 0 0 1 531.8,1891.7 L 531.8,1892.4" stroke="#636EFA"/>
+<path d="M 531.8,283.2 L 531.8,283.2 A 8.5,8.5 0 0 1 523.4,291.7 L 67.1,291.7 A 8.5,8.5 0 0 0 58.6,300.1 L 58.6,2047.0 A 8.5,8.5 0 0 0 67.1,2055.5 L 523.4,2055.5 A 8.5,8.5 0 0 1 531.8,2063.9 L 531.8,2064.7" stroke="#636EFA"/>
+<path d="M 413.5,317.7 L 413.5,2047.0 A 8.5,8.5 0 0 0 422.0,2055.5 L 523.4,2055.5 A 8.5,8.5 0 0 1 531.8,2063.9 L 531.8,2064.7" stroke="#636EFA"/>
+<path d="M 531.8,352.1 L 531.8,375.9" stroke="#636EFA"/>
+<path d="M 531.8,352.1 A 8.4,8.4 0 0 1 523.4,360.6 L 405.1,360.6 A 8.5,8.5 0 0 0 396.6,369.0 L 396.6,393.4 A 8.5,8.5 0 0 0 405.1,401.9 L 523.4,401.9 A 8.4,8.4 0 0 1 531.8,410.3 L 531.8,410.3" stroke="#636EFA"/>
+<path d="M 531.8,352.1 A 8.4,8.4 0 0 1 523.4,360.6 L 388.2,360.6 A 8.5,8.5 0 0 0 379.7,369.0 L 379.7,462.3 A 8.5,8.5 0 0 0 388.2,470.8 L 523.4,470.8 A 8.5,8.5 0 0 1 531.8,479.2 L 531.8,480.0" stroke="#636EFA"/>
+<path d="M 531.8,352.1 A 8.4,8.4 0 0 1 523.4,360.6 L 337.5,360.6 A 8.5,8.5 0 0 0 329.0,369.0 L 329.0,427.9 A 8.5,8.5 0 0 0 337.5,436.3 L 388.2,436.3 A 8.5,8.5 0 0 1 396.6,444.8 L 396.6,444.8" stroke="#636EFA"/>
+<path d="M 531.8,352.1 A 8.4,8.4 0 0 1 523.4,360.6 L 50.2,360.6 A 8.5,8.5 0 0 0 41.7,369.0 L 41.7,634.6 A 8.5,8.5 0 0 0 50.2,643.0 L 523.4,643.0 A 8.5,8.5 0 0 1 531.8,651.5 L 531.8,652.2" stroke="#636EFA"/>
+<path d="M 531.8,352.1 A 8.4,8.4 0 0 1 523.4,360.6 L 33.3,360.6 A 8.5,8.5 0 0 0 24.8,369.0 L 24.8,703.5 A 8.5,8.5 0 0 0 33.3,711.9 L 523.4,711.9 A 8.5,8.5 0 0 1 531.8,720.4 L 531.8,721.1" stroke="#636EFA"/>
+<path d="M 531.8,386.6 L 531.8,410.3" stroke="#636EFA"/>
+<path d="M 531.8,386.6 L 531.8,386.6 A 8.5,8.5 0 0 1 523.4,395.0 L 405.1,395.0 A 8.5,8.5 0 0 0 396.6,403.5 L 396.6,444.8" stroke="#636EFA"/>
+<path d="M 531.8,386.6 L 531.8,386.6 A 8.5,8.5 0 0 1 523.4,395.0 L 320.6,395.0 A 8.5,8.5 0 0 0 312.1,403.5 L 312.1,462.3 A 8.5,8.5 0 0 0 320.6,470.8 L 523.4,470.8 A 8.5,8.5 0 0 1 531.8,479.2 L 531.8,480.0" stroke="#636EFA"/>
+<path d="M 531.8,421.0 L 531.8,480.0" stroke="#636EFA"/>
+<path d="M 396.6,455.5 L 396.6,462.3 A 8.5,8.5 0 0 0 405.1,470.8 L 523.4,470.8 A 8.5,8.5 0 0 1 531.8,479.2 L 531.8,480.0" stroke="#636EFA"/>
+<path d="M 531.8,489.2 L 531.8,582.6" stroke="#EF553B"/>
+<path d="M 531.8,489.2 L 531.8,489.9 A 8.5,8.5 0 0 1 523.4,498.4 L 405.1,498.4 A 8.5,8.5 0 0 0 396.6,506.8 L 396.6,513.7" stroke="#EF553B"/>
+<path d="M 531.8,489.2 L 531.8,489.9 A 8.5,8.5 0 0 1 523.4,498.4 L 388.2,498.4 A 8.5,8.5 0 0 0 379.7,506.8 L 379.7,548.1" stroke="#EF553B"/>
+<path d="M 531.8,489.2 L 531.8,489.9 A 8.5,8.5 0 0 1 523.4,498.4 L 371.3,498.4 A 8.5,8.5 0 0 0 362.8,506.8 L 362.8,617.0" stroke="#EF553B"/>
+<path d="M 531.8,593.3 L 531.8,652.2" stroke="#EF553B"/>
+<path d="M 362.8,627.7 L 362.8,634.6 A 8.5,8.5 0 0 0 371.3,643.0 L 523.4,643.0 A 8.5,8.5 0 0 1 531.8,651.5 L 531.8,652.2" stroke="#EF553B"/>
+<path d="M 531.8,661.4 L 531.8,685.9" stroke="#636EFA"/>
+<path d="M 531.8,696.6 L 531.8,721.1" stroke="#636EFA"/>
+<path d="M 531.8,730.3 L 531.8,754.8" stroke="#636EFA"/>
+<path d="M 531.8,765.5 L 531.8,962.3" stroke="#636EFA"/>
+<path d="M 531.8,765.5 A 8.4,8.4 0 0 1 523.4,774.0 L 405.1,774.0 A 8.5,8.5 0 0 0 396.6,782.4 L 396.6,790.0" stroke="#636EFA"/>
+<path d="M 531.8,765.5 A 8.4,8.4 0 0 1 523.4,774.0 L 388.2,774.0 A 8.5,8.5 0 0 0 379.7,782.4 L 379.7,1082.4 A 8.5,8.5 0 0 0 388.2,1090.9 L 523.4,1090.9 A 8.5,8.5 0 0 1 531.8,1099.3 L 531.8,1100.1" stroke="#636EFA"/>
+<path d="M 396.6,799.2 L 396.6,892.6" stroke="#EF553B"/>
+<path d="M 396.6,799.2 L 396.6,800.0 A 8.5,8.5 0 0 1 388.2,808.4 L 371.3,808.4 A 8.5,8.5 0 0 0 362.8,816.9 L 362.8,823.7" stroke="#EF553B"/>
+<path d="M 396.6,799.2 L 396.6,800.0 A 8.5,8.5 0 0 1 388.2,808.4 L 354.4,808.4 A 8.5,8.5 0 0 0 345.9,816.9 L 345.9,858.2" stroke="#EF553B"/>
+<path d="M 396.6,799.2 L 396.6,800.0 A 8.5,8.5 0 0 1 388.2,808.4 L 337.5,808.4 A 8.5,8.5 0 0 0 329.0,816.9 L 329.0,927.1" stroke="#EF553B"/>
+<path d="M 396.6,903.3 L 396.6,2047.0 A 8.5,8.5 0 0 0 405.1,2055.5 L 523.4,2055.5 A 8.5,8.5 0 0 1 531.8,2063.9 L 531.8,2064.7" stroke="#EF553B"/>
+<path d="M 329.0,937.8 L 329.0,2047.0 A 8.5,8.5 0 0 0 337.5,2055.5 L 523.4,2055.5 A 8.5,8.5 0 0 1 531.8,2063.9 L 531.8,2064.7" stroke="#EF553B"/>
+<path d="M 531.8,971.5 L 531.8,996.0" stroke="#636EFA"/>
+<path d="M 531.8,1006.7 L 531.8,1031.2" stroke="#636EFA"/>
+<path d="M 531.8,1040.4 L 531.8,1064.9" stroke="#636EFA"/>
+<path d="M 531.8,1075.6 L 531.8,1100.1" stroke="#636EFA"/>
+<path d="M 531.8,1109.3 L 531.8,1133.8" stroke="#EF553B"/>
+<path d="M 531.8,1109.3 L 531.8,1110.0 A 8.5,8.5 0 0 1 523.4,1118.5 L 388.2,1118.5 A 8.5,8.5 0 0 0 379.7,1126.9 L 379.7,1168.2" stroke="#EF553B"/>
+<path d="M 531.8,1144.5 L 531.8,1203.4" stroke="#EF553B"/>
+<path d="M 379.7,1178.9 L 379.7,1185.8 A 8.5,8.5 0 0 0 388.2,1194.2 L 523.4,1194.2 A 8.5,8.5 0 0 1 531.8,1202.7 L 531.8,1203.4" stroke="#EF553B"/>
+<path d="M 379.7,1178.9 L 379.7,1178.9 A 8.4,8.4 0 0 1 371.3,1187.4 A 8.4,8.4 0 0 0 362.8,1195.8 L 362.8,2047.0 A 8.5,8.5 0 0 0 371.3,2055.5 L 523.4,2055.5 A 8.5,8.5 0 0 1 531.8,2063.9 L 531.8,2064.7" stroke="#EF553B"/>
+<path d="M 531.8,1212.6 L 531.8,1271.6" stroke="#00CC96"/>
+<path d="M 531.8,1212.6 L 531.8,1213.4 A 8.5,8.5 0 0 1 523.4,1221.8 L 388.2,1221.8 A 8.5,8.5 0 0 0 379.7,1230.3 L 379.7,1237.1" stroke="#00CC96"/>
+<path d="M 379.7,1247.8 L 379.7,1874.8 A 8.5,8.5 0 0 0 388.2,1883.2 L 523.4,1883.2 A 8.5,8.5 0 0 1 531.8,1891.7 L 531.8,1892.4" stroke="#00CC96"/>
+<path d="M 379.7,1247.8 A 8.5,8.5 0 0 1 371.3,1256.3 L 354.4,1256.3 A 8.5,8.5 0 0 0 345.9,1264.7 L 345.9,1289.1 A 8.5,8.5 0 0 0 354.4,1297.6 L 489.6,1297.6 A 8.5,8.5 0 0 1 498.0,1306.0 L 498.0,1306.8" stroke="#00CC96"/>
+<path d="M 531.8,1282.3 L 531.8,1444.6" stroke="#00CC96"/>
+<path d="M 531.8,1282.3 A 8.5,8.5 0 0 1 523.4,1290.7 L 506.5,1290.7 A 8.5,8.5 0 0 0 498.0,1299.2 L 498.0,1306.8" stroke="#00CC96"/>
+<path d="M 531.8,1282.3 A 8.5,8.5 0 0 1 523.4,1290.7 L 303.7,1290.7 A 8.5,8.5 0 0 0 295.2,1299.2 L 295.2,1874.8 A 8.5,8.5 0 0 0 303.7,1883.2 L 523.4,1883.2 A 8.5,8.5 0 0 1 531.8,1891.7 L 531.8,1892.4" stroke="#00CC96"/>
+<path d="M 498.0,1316.0 L 498.0,1340.5" stroke="#EF553B"/>
+<path d="M 498.0,1316.0 L 498.0,1316.7 A 8.4,8.4 0 0 1 489.6,1325.2 A 8.4,8.4 0 0 0 481.1,1333.6 L 481.1,1374.9" stroke="#EF553B"/>
+<path d="M 498.0,1316.0 L 498.0,1316.7 A 8.5,8.5 0 0 1 489.6,1325.2 L 354.4,1325.2 A 8.5,8.5 0 0 0 345.9,1333.6 L 345.9,1409.4" stroke="#EF553B"/>
+<path d="M 498.0,1351.2 L 498.0,1737.0 A 8.5,8.5 0 0 0 506.5,1745.4 L 523.4,1745.4 A 8.5,8.5 0 0 1 531.8,1753.9 L 531.8,1754.6" stroke="#EF553B"/>
+<path d="M 481.1,1385.6 L 481.1,1737.0 A 8.5,8.5 0 0 0 489.6,1745.4 L 523.4,1745.4 A 8.5,8.5 0 0 1 531.8,1753.9 L 531.8,1754.6" stroke="#EF553B"/>
+<path d="M 345.9,1420.1 L 345.9,1737.0 A 8.5,8.5 0 0 0 354.4,1745.4 L 523.4,1745.4 A 8.5,8.5 0 0 1 531.8,1753.9 L 531.8,1754.6" stroke="#EF553B"/>
+<path d="M 531.8,1453.8 L 531.8,1581.6" stroke="#EF553B"/>
+<path d="M 531.8,1453.8 L 531.8,1454.5 A 8.5,8.5 0 0 1 523.4,1463.0 L 438.9,1463.0 A 8.5,8.5 0 0 0 430.4,1471.4 L 430.4,1478.3" stroke="#EF553B"/>
+<path d="M 531.8,1453.8 L 531.8,1454.5 A 8.5,8.5 0 0 1 523.4,1463.0 L 320.6,1463.0 A 8.5,8.5 0 0 0 312.1,1471.4 L 312.1,1512.7" stroke="#EF553B"/>
+<path d="M 531.8,1453.8 L 531.8,1454.5 A 8.5,8.5 0 0 1 523.4,1463.0 L 286.8,1463.0 A 8.5,8.5 0 0 0 278.3,1471.4 L 278.3,1547.2" stroke="#EF553B"/>
+<path d="M 531.8,1592.3 L 531.8,1616.8" stroke="#EF553B"/>
+<path d="M 531.8,1626.0 L 531.8,1719.4" stroke="#00CC96"/>
+<path d="M 531.8,1626.0 L 531.8,1626.8 A 8.4,8.4 0 0 1 523.4,1635.2 A 8.4,8.4 0 0 0 514.9,1643.7 L 514.9,1650.5" stroke="#00CC96"/>
+<path d="M 531.8,1626.0 L 531.8,1626.8 A 8.5,8.5 0 0 1 523.4,1635.2 L 455.8,1635.2 A 8.5,8.5 0 0 0 447.3,1643.7 L 447.3,1685.0" stroke="#00CC96"/>
+<path d="M 531.8,1730.1 L 531.8,1754.6" stroke="#00CC96"/>
+<path d="M 531.8,1730.1 L 531.8,1730.1 A 8.4,8.4 0 0 1 523.4,1738.6 A 8.4,8.4 0 0 0 514.9,1747.0 L 514.9,1874.8 A 8.4,8.4 0 0 0 523.4,1883.2 A 8.4,8.4 0 0 1 531.8,1891.7 L 531.8,1892.4" stroke="#00CC96"/>
+<path d="M 531.8,1763.8 L 531.8,1857.2" stroke="#AB63FA"/>
+<path d="M 531.8,1763.8 L 531.8,1764.6 A 8.5,8.5 0 0 1 523.4,1773.0 L 506.5,1773.0 A 8.5,8.5 0 0 0 498.0,1781.5 L 498.0,1788.3" stroke="#AB63FA"/>
+<path d="M 531.8,1763.8 L 531.8,1764.6 A 8.5,8.5 0 0 1 523.4,1773.0 L 489.6,1773.0 A 8.5,8.5 0 0 0 481.1,1781.5 L 481.1,1822.8" stroke="#AB63FA"/>
+<path d="M 531.8,1867.9 L 531.8,1892.4" stroke="#AB63FA"/>
+<path d="M 531.8,1901.6 L 531.8,1995.0" stroke="#EF553B"/>
+<path d="M 531.8,1901.6 L 531.8,1902.4 A 8.4,8.4 0 0 1 523.4,1910.8 A 8.4,8.4 0 0 0 514.9,1919.3 L 514.9,1926.1" stroke="#EF553B"/>
+<path d="M 531.8,1901.6 L 531.8,1902.4 A 8.5,8.5 0 0 1 523.4,1910.8 L 506.5,1910.8 A 8.5,8.5 0 0 0 498.0,1919.3 L 498.0,1960.6" stroke="#EF553B"/>
+<path d="M 531.8,1901.6 L 531.8,1902.4 A 8.5,8.5 0 0 1 523.4,1910.8 L 489.6,1910.8 A 8.5,8.5 0 0 0 481.1,1919.3 L 481.1,2029.5" stroke="#EF553B"/>
+<path d="M 531.8,2005.7 L 531.8,2064.7" stroke="#EF553B"/>
+<path d="M 481.1,2040.2 L 481.1,2047.0 A 8.5,8.5 0 0 0 489.6,2055.5 L 523.4,2055.5 A 8.5,8.5 0 0 1 531.8,2063.9 L 531.8,2064.7" stroke="#EF553B"/>
+<path d="M 531.8,2073.9 L 531.8,2098.4" stroke="#636EFA"/>
+</g>
+<g><title>given</title>
+<polygon points="526.5,32.1 537.2,32.1 531.8,41.3" fill="#FFFFFF" stroke="#636EFA" stroke-width="1.5" stroke-linejoin="round"/>
+<text x="544.3" y="41.4" font-family="Arial" font-size="13" fill="#7A7A7A" text-anchor="start">given</text></g>
+<g><title>amplicon::silva_db</title>
+<circle cx="498.0" cy="71.2" r="5.3" fill="#FFFFFF" stroke="#636EFA" stroke-width="1.5"/>
+<text x="544.3" y="65.7" font-family="Arial" font-size="6.5" fill="#8A8A8A" text-anchor="start">amplicon</text>
+<text x="544.3" y="75.9" font-family="Arial" font-size="13" fill="#111111" text-anchor="start">silva_db</text></g>
+<g><title>aspire::contaminant_reference_source</title>
+<circle cx="498.0" cy="105.6" r="5.3" fill="#FFFFFF" stroke="#636EFA" stroke-width="1.5"/>
+<text x="544.3" y="100.2" font-family="Arial" font-size="6.5" fill="#8A8A8A" text-anchor="start">aspire</text>
+<text x="544.3" y="110.3" font-family="Arial" font-size="13" fill="#111111" text-anchor="start">contaminant_reference_source</text></g>
+<g><title>aspire::mito_reference_source</title>
+<circle cx="481.1" cy="140.1" r="5.3" fill="#FFFFFF" stroke="#636EFA" stroke-width="1.5"/>
+<text x="544.3" y="134.6" font-family="Arial" font-size="6.5" fill="#8A8A8A" text-anchor="start">aspire</text>
+<text x="544.3" y="144.8" font-family="Arial" font-size="13" fill="#111111" text-anchor="start">mito_reference_source</text></g>
+<g><title>aspire::sample_metadata</title>
+<circle cx="464.2" cy="174.5" r="5.3" fill="#FFFFFF" stroke="#636EFA" stroke-width="1.5"/>
+<text x="544.3" y="169.1" font-family="Arial" font-size="6.5" fill="#8A8A8A" text-anchor="start">aspire</text>
+<text x="544.3" y="179.2" font-family="Arial" font-size="13" fill="#111111" text-anchor="start">sample_metadata</text></g>
+<g><title>aspire::silva_ref_taxonomy</title>
+<circle cx="447.3" cy="209.0" r="5.3" fill="#FFFFFF" stroke="#636EFA" stroke-width="1.5"/>
+<text x="544.3" y="203.5" font-family="Arial" font-size="6.5" fill="#8A8A8A" text-anchor="start">aspire</text>
+<text x="544.3" y="213.7" font-family="Arial" font-size="13" fill="#111111" text-anchor="start">silva_ref_taxonomy</text></g>
+<g><title>aspire::sina_arb_reference</title>
+<circle cx="430.4" cy="243.4" r="5.3" fill="#FFFFFF" stroke="#636EFA" stroke-width="1.5"/>
+<text x="544.3" y="238.0" font-family="Arial" font-size="6.5" fill="#8A8A8A" text-anchor="start">aspire</text>
+<text x="544.3" y="248.1" font-family="Arial" font-size="13" fill="#111111" text-anchor="start">sina_arb_reference</text></g>
+<g><title>aspire::run</title>
+<circle cx="531.8" cy="277.9" r="5.3" fill="#FFFFFF" stroke="#636EFA" stroke-width="1.5"/>
+<text x="544.3" y="272.4" font-family="Arial" font-size="6.5" fill="#8A8A8A" text-anchor="start">aspire</text>
+<text x="544.3" y="282.6" font-family="Arial" font-size="13" fill="#111111" text-anchor="start">run</text></g>
+<g><title>aspire::sankey_on</title>
+<circle cx="413.5" cy="312.3" r="5.3" fill="#FFFFFF" stroke="#636EFA" stroke-width="1.5"/>
+<text x="544.3" y="306.9" font-family="Arial" font-size="6.5" fill="#8A8A8A" text-anchor="start">aspire</text>
+<text x="544.3" y="317.0" font-family="Arial" font-size="13" fill="#111111" text-anchor="start">sankey_on</text></g>
+<g><title>aspire::sample_id</title>
+<circle cx="531.8" cy="346.8" r="5.3" fill="#FFFFFF" stroke="#636EFA" stroke-width="1.5"/>
+<text x="544.3" y="341.3" font-family="Arial" font-size="6.5" fill="#8A8A8A" text-anchor="start">aspire</text>
+<text x="544.3" y="351.5" font-family="Arial" font-size="13" fill="#111111" text-anchor="start">sample_id</text></g>
+<g><title>sequences::read_pair</title>
+<circle cx="531.8" cy="381.2" r="5.3" fill="#FFFFFF" stroke="#636EFA" stroke-width="1.5"/>
+<text x="544.3" y="375.8" font-family="Arial" font-size="6.5" fill="#8A8A8A" text-anchor="start">sequences</text>
+<text x="544.3" y="385.9" font-family="Arial" font-size="13" fill="#111111" text-anchor="start">read_pair</text></g>
+<g><title>sequences::zipped_forward_short_reads</title>
+<circle cx="531.8" cy="415.7" r="5.3" fill="#FFFFFF" stroke="#636EFA" stroke-width="1.5"/>
+<text x="544.3" y="410.2" font-family="Arial" font-size="6.5" fill="#8A8A8A" text-anchor="start">sequences</text>
+<text x="544.3" y="420.4" font-family="Arial" font-size="13" fill="#111111" text-anchor="start">zipped_forward_short_reads</text></g>
+<g><title>sequences::zipped_reverse_short_reads</title>
+<circle cx="396.6" cy="450.1" r="5.3" fill="#FFFFFF" stroke="#636EFA" stroke-width="1.5"/>
+<text x="544.3" y="444.7" font-family="Arial" font-size="6.5" fill="#8A8A8A" text-anchor="start">sequences</text>
+<text x="544.3" y="454.8" font-family="Arial" font-size="13" fill="#111111" text-anchor="start">zipped_reverse_short_reads</text></g>
+<g><title>1 fastp_qc</title>
+<polygon points="526.5,480.0 537.2,480.0 531.8,489.2" fill="#FFFFFF" stroke="#EF553B" stroke-width="1.5" stroke-linejoin="round"/>
+<text x="544.3" y="489.3" font-family="Arial" font-size="13" fill="#7A7A7A" text-anchor="start">fastp_qc</text></g>
+<g><title>aspire::fastp_report_html</title>
+<circle cx="396.6" cy="519.0" r="5.3" fill="#FFFFFF" stroke="#EF553B" stroke-width="1.5"/>
+<text x="544.3" y="513.6" font-family="Arial" font-size="6.5" fill="#8A8A8A" text-anchor="start">aspire</text>
+<text x="544.3" y="523.7" font-family="Arial" font-size="13" fill="#111111" text-anchor="start">fastp_report_html</text></g>
+<g><title>aspire::fastp_report_json</title>
+<circle cx="379.7" cy="553.5" r="5.3" fill="#FFFFFF" stroke="#EF553B" stroke-width="1.5"/>
+<text x="544.3" y="548.0" font-family="Arial" font-size="6.5" fill="#8A8A8A" text-anchor="start">aspire</text>
+<text x="544.3" y="558.2" font-family="Arial" font-size="13" fill="#111111" text-anchor="start">fastp_report_json</text></g>
+<g><title>aspire::qc_reads_fwd</title>
+<circle cx="531.8" cy="587.9" r="5.3" fill="#FFFFFF" stroke="#EF553B" stroke-width="1.5"/>
+<text x="544.3" y="582.5" font-family="Arial" font-size="6.5" fill="#8A8A8A" text-anchor="start">aspire</text>
+<text x="544.3" y="592.6" font-family="Arial" font-size="13" fill="#111111" text-anchor="start">qc_reads_fwd</text></g>
+<g><title>aspire::qc_reads_rev</title>
+<circle cx="362.8" cy="622.4" r="5.3" fill="#FFFFFF" stroke="#EF553B" stroke-width="1.5"/>
+<text x="544.3" y="616.9" font-family="Arial" font-size="6.5" fill="#8A8A8A" text-anchor="start">aspire</text>
+<text x="544.3" y="627.1" font-family="Arial" font-size="13" fill="#111111" text-anchor="start">qc_reads_rev</text></g>
+<g><title>2 merge_and_filter_reads</title>
+<polygon points="526.5,652.2 537.2,652.2 531.8,661.4" fill="#FFFFFF" stroke="#636EFA" stroke-width="1.5" stroke-linejoin="round"/>
+<text x="544.3" y="661.5" font-family="Arial" font-size="13" fill="#7A7A7A" text-anchor="start">merge_and_filter_reads</text></g>
+<g><title>aspire::filtered_fasta</title>
+<circle cx="531.8" cy="691.3" r="5.3" fill="#FFFFFF" stroke="#636EFA" stroke-width="1.5"/>
+<text x="544.3" y="685.8" font-family="Arial" font-size="6.5" fill="#8A8A8A" text-anchor="start">aspire</text>
+<text x="544.3" y="696.0" font-family="Arial" font-size="13" fill="#111111" text-anchor="start">filtered_fasta</text></g>
+<g><title>3 concat_fastas</title>
+<polygon points="526.5,721.1 537.2,721.1 531.8,730.3" fill="#FFFFFF" stroke="#636EFA" stroke-width="1.5" stroke-linejoin="round"/>
+<text x="544.3" y="730.4" font-family="Arial" font-size="13" fill="#7A7A7A" text-anchor="start">concat_fastas</text></g>
+<g><title>aspire::concat_counts_fasta</title>
+<circle cx="531.8" cy="760.2" r="5.3" fill="#FFFFFF" stroke="#636EFA" stroke-width="1.5"/>
+<text x="544.3" y="754.7" font-family="Arial" font-size="6.5" fill="#8A8A8A" text-anchor="start">aspire</text>
+<text x="544.3" y="764.9" font-family="Arial" font-size="13" fill="#111111" text-anchor="start">concat_counts_fasta</text></g>
+<g><title>5 general_stats</title>
+<polygon points="391.3,790.0 402.0,790.0 396.6,799.2" fill="#FFFFFF" stroke="#EF553B" stroke-width="1.5" stroke-linejoin="round"/>
+<text x="544.3" y="799.3" font-family="Arial" font-size="13" fill="#7A7A7A" text-anchor="start">general_stats</text></g>
+<g><title>aspire::concat_stats</title>
+<circle cx="362.8" cy="829.1" r="5.3" fill="#FFFFFF" stroke="#EF553B" stroke-width="1.5"/>
+<text x="544.3" y="823.6" font-family="Arial" font-size="6.5" fill="#8A8A8A" text-anchor="start">aspire</text>
+<text x="544.3" y="833.8" font-family="Arial" font-size="13" fill="#111111" text-anchor="start">concat_stats</text></g>
+<g><title>aspire::fastp_stats</title>
+<circle cx="345.9" cy="863.5" r="5.3" fill="#FFFFFF" stroke="#EF553B" stroke-width="1.5"/>
+<text x="544.3" y="858.1" font-family="Arial" font-size="6.5" fill="#8A8A8A" text-anchor="start">aspire</text>
+<text x="544.3" y="868.2" font-family="Arial" font-size="13" fill="#111111" text-anchor="start">fastp_stats</text></g>
+<g><title>aspire::fastq_stats</title>
+<circle cx="396.6" cy="898.0" r="5.3" fill="#FFFFFF" stroke="#EF553B" stroke-width="1.5"/>
+<text x="544.3" y="892.5" font-family="Arial" font-size="6.5" fill="#8A8A8A" text-anchor="start">aspire</text>
+<text x="544.3" y="902.7" font-family="Arial" font-size="13" fill="#111111" text-anchor="start">fastq_stats</text></g>
+<g><title>aspire::filtered_stats</title>
+<circle cx="329.0" cy="932.4" r="5.3" fill="#FFFFFF" stroke="#EF553B" stroke-width="1.5"/>
+<text x="544.3" y="927.0" font-family="Arial" font-size="6.5" fill="#8A8A8A" text-anchor="start">aspire</text>
+<text x="544.3" y="937.1" font-family="Arial" font-size="13" fill="#111111" text-anchor="start">filtered_stats</text></g>
+<g><title>4 denoise</title>
+<polygon points="526.5,962.3 537.2,962.3 531.8,971.5" fill="#FFFFFF" stroke="#636EFA" stroke-width="1.5" stroke-linejoin="round"/>
+<text x="544.3" y="971.6" font-family="Arial" font-size="13" fill="#7A7A7A" text-anchor="start">denoise</text></g>
+<g><title>aspire::centroids_fasta</title>
+<circle cx="531.8" cy="1001.3" r="5.3" fill="#FFFFFF" stroke="#636EFA" stroke-width="1.5"/>
+<text x="544.3" y="995.9" font-family="Arial" font-size="6.5" fill="#8A8A8A" text-anchor="start">aspire</text>
+<text x="544.3" y="1006.0" font-family="Arial" font-size="13" fill="#111111" text-anchor="start">centroids_fasta</text></g>
+<g><title>6 chimera_check</title>
+<polygon points="526.5,1031.2 537.2,1031.2 531.8,1040.4" fill="#FFFFFF" stroke="#636EFA" stroke-width="1.5" stroke-linejoin="round"/>
+<text x="544.3" y="1040.5" font-family="Arial" font-size="13" fill="#7A7A7A" text-anchor="start">chimera_check</text></g>
+<g><title>aspire::nochimera_fasta</title>
+<circle cx="531.8" cy="1070.2" r="5.3" fill="#FFFFFF" stroke="#636EFA" stroke-width="1.5"/>
+<text x="544.3" y="1064.8" font-family="Arial" font-size="6.5" fill="#8A8A8A" text-anchor="start">aspire</text>
+<text x="544.3" y="1074.9" font-family="Arial" font-size="13" fill="#111111" text-anchor="start">nochimera_fasta</text></g>
+<g><title>7 create_count_matrix</title>
+<polygon points="526.5,1100.1 537.2,1100.1 531.8,1109.3" fill="#FFFFFF" stroke="#EF553B" stroke-width="1.5" stroke-linejoin="round"/>
+<text x="544.3" y="1109.4" font-family="Arial" font-size="13" fill="#7A7A7A" text-anchor="start">create_count_matrix</text></g>
+<g><title>amplicon::asv_seqs</title>
+<circle cx="531.8" cy="1139.1" r="5.3" fill="#FFFFFF" stroke="#EF553B" stroke-width="1.5"/>
+<text x="544.3" y="1133.7" font-family="Arial" font-size="6.5" fill="#8A8A8A" text-anchor="start">amplicon</text>
+<text x="544.3" y="1143.8" font-family="Arial" font-size="13" fill="#111111" text-anchor="start">asv_seqs</text></g>
+<g><title>amplicon::asv_table</title>
+<circle cx="379.7" cy="1173.6" r="5.3" fill="#FFFFFF" stroke="#EF553B" stroke-width="1.5"/>
+<text x="544.3" y="1168.1" font-family="Arial" font-size="6.5" fill="#8A8A8A" text-anchor="start">amplicon</text>
+<text x="544.3" y="1178.3" font-family="Arial" font-size="13" fill="#111111" text-anchor="start">asv_table</text></g>
+<g><title>8 filter_table</title>
+<polygon points="526.5,1203.4 537.2,1203.4 531.8,1212.6" fill="#FFFFFF" stroke="#00CC96" stroke-width="1.5" stroke-linejoin="round"/>
+<text x="544.3" y="1212.7" font-family="Arial" font-size="13" fill="#7A7A7A" text-anchor="start">filter_table</text></g>
+<g><title>aspire::asv_filtered_counts</title>
+<circle cx="379.7" cy="1242.5" r="5.3" fill="#FFFFFF" stroke="#00CC96" stroke-width="1.5"/>
+<text x="544.3" y="1237.0" font-family="Arial" font-size="6.5" fill="#8A8A8A" text-anchor="start">aspire</text>
+<text x="544.3" y="1247.2" font-family="Arial" font-size="13" fill="#111111" text-anchor="start">asv_filtered_counts</text></g>
+<g><title>aspire::asv_filtered_seqs</title>
+<circle cx="531.8" cy="1276.9" r="5.3" fill="#FFFFFF" stroke="#00CC96" stroke-width="1.5"/>
+<text x="544.3" y="1271.5" font-family="Arial" font-size="6.5" fill="#8A8A8A" text-anchor="start">aspire</text>
+<text x="544.3" y="1281.6" font-family="Arial" font-size="13" fill="#111111" text-anchor="start">asv_filtered_seqs</text></g>
+<g><title>10 mitomaster</title>
+<polygon points="492.7,1306.8 503.4,1306.8 498.0,1316.0" fill="#FFFFFF" stroke="#EF553B" stroke-width="1.5" stroke-linejoin="round"/>
+<text x="544.3" y="1316.1" font-family="Arial" font-size="13" fill="#7A7A7A" text-anchor="start">mitomaster</text></g>
+<g><title>aspire::contaminant_blast6</title>
+<circle cx="498.0" cy="1345.8" r="5.3" fill="#FFFFFF" stroke="#EF553B" stroke-width="1.5"/>
+<text x="544.3" y="1340.4" font-family="Arial" font-size="6.5" fill="#8A8A8A" text-anchor="start">aspire</text>
+<text x="544.3" y="1350.5" font-family="Arial" font-size="13" fill="#111111" text-anchor="start">contaminant_blast6</text></g>
+<g><title>aspire::mito_blast6</title>
+<circle cx="481.1" cy="1380.3" r="5.3" fill="#FFFFFF" stroke="#EF553B" stroke-width="1.5"/>
+<text x="544.3" y="1374.8" font-family="Arial" font-size="6.5" fill="#8A8A8A" text-anchor="start">aspire</text>
+<text x="544.3" y="1385.0" font-family="Arial" font-size="13" fill="#111111" text-anchor="start">mito_blast6</text></g>
+<g><title>aspire::mitomaster_table</title>
+<circle cx="345.9" cy="1414.7" r="5.3" fill="#FFFFFF" stroke="#EF553B" stroke-width="1.5"/>
+<text x="544.3" y="1409.3" font-family="Arial" font-size="6.5" fill="#8A8A8A" text-anchor="start">aspire</text>
+<text x="544.3" y="1419.4" font-family="Arial" font-size="13" fill="#111111" text-anchor="start">mitomaster_table</text></g>
+<g><title>9 sina_trim</title>
+<polygon points="526.5,1444.6 537.2,1444.6 531.8,1453.8" fill="#FFFFFF" stroke="#EF553B" stroke-width="1.5" stroke-linejoin="round"/>
+<text x="544.3" y="1453.9" font-family="Arial" font-size="13" fill="#7A7A7A" text-anchor="start">sina_trim</text></g>
+<g><title>aspire::sina_aligned_seqs</title>
+<circle cx="430.4" cy="1483.6" r="5.3" fill="#FFFFFF" stroke="#EF553B" stroke-width="1.5"/>
+<text x="544.3" y="1478.2" font-family="Arial" font-size="6.5" fill="#8A8A8A" text-anchor="start">aspire</text>
+<text x="544.3" y="1488.3" font-family="Arial" font-size="13" fill="#111111" text-anchor="start">sina_aligned_seqs</text></g>
+<g><title>aspire::sina_log</title>
+<circle cx="312.1" cy="1518.1" r="5.3" fill="#FFFFFF" stroke="#EF553B" stroke-width="1.5"/>
+<text x="544.3" y="1512.6" font-family="Arial" font-size="6.5" fill="#8A8A8A" text-anchor="start">aspire</text>
+<text x="544.3" y="1522.8" font-family="Arial" font-size="13" fill="#111111" text-anchor="start">sina_log</text></g>
+<g><title>aspire::sina_v_regions</title>
+<circle cx="278.3" cy="1552.5" r="5.3" fill="#FFFFFF" stroke="#EF553B" stroke-width="1.5"/>
+<text x="544.3" y="1547.1" font-family="Arial" font-size="6.5" fill="#8A8A8A" text-anchor="start">aspire</text>
+<text x="544.3" y="1557.2" font-family="Arial" font-size="13" fill="#111111" text-anchor="start">sina_v_regions</text></g>
+<g><title>aspire::sina_trimmed_seqs</title>
+<circle cx="531.8" cy="1587.0" r="5.3" fill="#FFFFFF" stroke="#EF553B" stroke-width="1.5"/>
+<text x="544.3" y="1581.5" font-family="Arial" font-size="6.5" fill="#8A8A8A" text-anchor="start">aspire</text>
+<text x="544.3" y="1591.7" font-family="Arial" font-size="13" fill="#111111" text-anchor="start">sina_trimmed_seqs</text></g>
+<g><title>11 taxonomy</title>
+<polygon points="526.5,1616.8 537.2,1616.8 531.8,1626.0" fill="#FFFFFF" stroke="#00CC96" stroke-width="1.5" stroke-linejoin="round"/>
+<text x="544.3" y="1626.1" font-family="Arial" font-size="13" fill="#7A7A7A" text-anchor="start">taxonomy</text></g>
+<g><title>aspire::taxonomy_stats</title>
+<circle cx="514.9" cy="1655.9" r="5.3" fill="#FFFFFF" stroke="#00CC96" stroke-width="1.5"/>
+<text x="544.3" y="1650.4" font-family="Arial" font-size="6.5" fill="#8A8A8A" text-anchor="start">aspire</text>
+<text x="544.3" y="1660.6" font-family="Arial" font-size="13" fill="#111111" text-anchor="start">taxonomy_stats</text></g>
+<g><title>aspire::taxonomy_uppercase_seqs</title>
+<circle cx="447.3" cy="1690.3" r="5.3" fill="#FFFFFF" stroke="#00CC96" stroke-width="1.5"/>
+<text x="544.3" y="1684.9" font-family="Arial" font-size="6.5" fill="#8A8A8A" text-anchor="start">aspire</text>
+<text x="544.3" y="1695.0" font-family="Arial" font-size="13" fill="#111111" text-anchor="start">taxonomy_uppercase_seqs</text></g>
+<g><title>amplicon::asv_taxonomy</title>
+<circle cx="531.8" cy="1724.8" r="5.3" fill="#00CC96" stroke="#2B2B2B" stroke-width="3.0"/>
+<text x="544.3" y="1719.3" font-family="Arial" font-size="6.5" fill="#8A8A8A" text-anchor="start">amplicon</text>
+<text x="544.3" y="1729.5" font-family="Arial" font-size="13" fill="#111111" text-anchor="start">asv_taxonomy</text></g>
+<g><title>12 mito_decontam</title>
+<polygon points="526.5,1754.6 537.2,1754.6 531.8,1763.8" fill="#FFFFFF" stroke="#AB63FA" stroke-width="1.5" stroke-linejoin="round"/>
+<text x="544.3" y="1763.9" font-family="Arial" font-size="13" fill="#7A7A7A" text-anchor="start">mito_decontam</text></g>
+<g><title>aspire::mito_plots</title>
+<circle cx="498.0" cy="1793.7" r="5.3" fill="#FFFFFF" stroke="#AB63FA" stroke-width="1.5"/>
+<text x="544.3" y="1788.2" font-family="Arial" font-size="6.5" fill="#8A8A8A" text-anchor="start">aspire</text>
+<text x="544.3" y="1798.4" font-family="Arial" font-size="13" fill="#111111" text-anchor="start">mito_plots</text></g>
+<g><title>aspire::mito_summary_tables</title>
+<circle cx="481.1" cy="1828.1" r="5.3" fill="#FFFFFF" stroke="#AB63FA" stroke-width="1.5"/>
+<text x="544.3" y="1822.7" font-family="Arial" font-size="6.5" fill="#8A8A8A" text-anchor="start">aspire</text>
+<text x="544.3" y="1832.8" font-family="Arial" font-size="13" fill="#111111" text-anchor="start">mito_summary_tables</text></g>
+<g><title>aspire::nontarget_table</title>
+<circle cx="531.8" cy="1862.6" r="5.3" fill="#FFFFFF" stroke="#AB63FA" stroke-width="1.5"/>
+<text x="544.3" y="1857.1" font-family="Arial" font-size="6.5" fill="#8A8A8A" text-anchor="start">aspire</text>
+<text x="544.3" y="1867.3" font-family="Arial" font-size="13" fill="#111111" text-anchor="start">nontarget_table</text></g>
+<g><title>13 filter_counts</title>
+<polygon points="526.5,1892.4 537.2,1892.4 531.8,1901.6" fill="#FFFFFF" stroke="#EF553B" stroke-width="1.5" stroke-linejoin="round"/>
+<text x="544.3" y="1901.7" font-family="Arial" font-size="13" fill="#7A7A7A" text-anchor="start">filter_counts</text></g>
+<g><title>aspire::counts_filtered</title>
+<circle cx="514.9" cy="1931.5" r="5.3" fill="#EF553B" stroke="#2B2B2B" stroke-width="3.0"/>
+<text x="544.3" y="1926.0" font-family="Arial" font-size="6.5" fill="#8A8A8A" text-anchor="start">aspire</text>
+<text x="544.3" y="1936.2" font-family="Arial" font-size="13" fill="#111111" text-anchor="start">counts_filtered</text></g>
+<g><title>aspire::counts_mito</title>
+<circle cx="498.0" cy="1965.9" r="5.3" fill="#FFFFFF" stroke="#EF553B" stroke-width="1.5"/>
+<text x="544.3" y="1960.5" font-family="Arial" font-size="6.5" fill="#8A8A8A" text-anchor="start">aspire</text>
+<text x="544.3" y="1970.6" font-family="Arial" font-size="13" fill="#111111" text-anchor="start">counts_mito</text></g>
+<g><title>aspire::counts_decon</title>
+<circle cx="531.8" cy="2000.4" r="5.3" fill="#FFFFFF" stroke="#EF553B" stroke-width="1.5"/>
+<text x="544.3" y="1994.9" font-family="Arial" font-size="6.5" fill="#8A8A8A" text-anchor="start">aspire</text>
+<text x="544.3" y="2005.1" font-family="Arial" font-size="13" fill="#111111" text-anchor="start">counts_decon</text></g>
+<g><title>aspire::counts_micro</title>
+<circle cx="481.1" cy="2034.8" r="5.3" fill="#FFFFFF" stroke="#EF553B" stroke-width="1.5"/>
+<text x="544.3" y="2029.4" font-family="Arial" font-size="6.5" fill="#8A8A8A" text-anchor="start">aspire</text>
+<text x="544.3" y="2039.5" font-family="Arial" font-size="13" fill="#111111" text-anchor="start">counts_micro</text></g>
+<g><title>14 sankey</title>
+<polygon points="526.5,2064.7 537.2,2064.7 531.8,2073.9" fill="#FFFFFF" stroke="#636EFA" stroke-width="1.5" stroke-linejoin="round"/>
+<text x="544.3" y="2074.0" font-family="Arial" font-size="13" fill="#7A7A7A" text-anchor="start">sankey</text></g>
+<g><title>aspire::sankey_outputs</title>
+<circle cx="531.8" cy="2103.7" r="5.3" fill="#636EFA" stroke="#2B2B2B" stroke-width="3.0"/>
+<text x="544.3" y="2098.3" font-family="Arial" font-size="6.5" fill="#8A8A8A" text-anchor="start">aspire</text>
+<text x="544.3" y="2108.4" font-family="Arial" font-size="13" fill="#111111" text-anchor="start">sankey_outputs</text></g>
+</svg>
