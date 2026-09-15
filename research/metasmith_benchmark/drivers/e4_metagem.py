@@ -11,6 +11,7 @@ Subcommands: list, import, run [--study ...] [--limit N] [--with-gtdbtk] [--dag]
 import argparse
 import csv
 import os
+import re
 import sys
 from collections import Counter, defaultdict
 from pathlib import Path
@@ -31,6 +32,9 @@ MEDIUM_TSV = c.REPO / "research" / "metasmith_libraries" / "carveme_m8_medium.ts
 MEDIUM_NAME = "M8"
 # metaGEM's workflow/scripts/media_db.tsv, the table its SMETANA rule passes as --mediadb.
 SMETANA_MEDIA_DB = Path(__file__).parent / "refs" / "metagem_media_db.tsv"
+# SMETANA scores one sample's GEMs together, which needs MAG givens under a sample root. Those are new
+# pool entries with new identities, so their models are built again: the lane is one study, not all five.
+SMETANA_STUDY = "li2019"
 CPLEX_ROOT = Path(os.environ.get("CPLEX_ROOT", "/home/phyberos/projects/rpp-shallam/phyberos/cplex/cplex_runtime"))
 
 # First-attempt (cpus, GB, hours); the retry gets 32 GB and 24 h. B11: 3.75% of gapfills failed at the
@@ -89,7 +93,35 @@ def declare_givens(smith, mags, ensure, name="all"):
     return c.cite(givens, CACHE_DIR / f"e4_inputs_{name}.xgdb", [c.MLIB / "data_types" / "sequences.yml"], ensure)
 
 
-def build_targets(solver, with_gtdbtk=False):
+def sample_of(mag):
+    """metaGEM names a MAG for the run it came from: ERR671910.bin.1.orig, ERR260137_bin.1.p."""
+    return re.split(r"[._]bin\.", mag)[0]
+
+
+def declare_smetana_givens(smith, ensure):
+    """SMETANA's own givens: one community root per sample, with that sample's MAGs under it.
+
+    A pool entry's parents are fixed at import, so the ungrouped `e4/<study>/<mag>` givens cannot gain a
+    sample parent; these are separate names, and their models are built again rather than reused. That is
+    why the lane is scoped to one study: 172 CarveMe runs, not 14,108.
+    """
+    givens = smith.PoolGivens()
+    rows = [(s, m, p) for s, m, p in enumerate_mags() if s == SMETANA_STUDY]
+    assert rows, f"no MAGs for {SMETANA_STUDY}"
+    roots = {}
+    for study, mag, path in rows:
+        sample = sample_of(mag)
+        tags = ["e4", "smetana", study, sample]
+        if sample not in roots:
+            roots[sample] = c.add_value(givens, f"e4s/{study}/{sample}", sample, "bench::gem_community", tags=tags)
+        c.add_file(givens, f"e4s/{study}/{sample}/{mag}", path, "sequences::bin_fasta",
+                   parents=[roots[sample]], tags=tags)
+    print(f"SMETANA lane: {len(rows)} {SMETANA_STUDY} MAGs in {len(roots)} samples")
+    return c.cite(givens, CACHE_DIR / "e4_smetana_inputs.xgdb",
+                  [c.MLIB / "data_types" / "sequences.yml", c.LIBRARY / "data_types" / "bench.yml"], ensure)
+
+
+def build_targets(solver, with_gtdbtk=False, with_smetana=False):
     t = TargetBuilder()
     orfs = t.Add("sequences::bin_orfs")
     model_type = "modelling::carveme_model_cplex" if solver == "cplex" else "modelling::carveme_model"
@@ -97,6 +129,8 @@ def build_targets(solver, with_gtdbtk=False):
     t.Add("modelling::memote_score", parents=[model])
     if with_gtdbtk:
         t.Add("taxonomy::gtdbtk")
+    if with_smetana:
+        t.Add("bench::smetana_detailed_cplex", parents=[model])
     return t
 
 
@@ -121,8 +155,13 @@ def cmd_run(args):
     # The name keys the inputs library and the task-key record, so it carries every filter.
     name = "_".join([f"chunk{args.chunk}" if args.chunk else "all", *(args.study or []),
                      *([f"limit{args.limit}"] if args.limit else [])])
-    inputs = declare_givens(smith, mags, ensure, name)
-    globals_lib = declare_globals(smith, args.solver, CACHE_DIR / "e4_globals.xgdb", ensure, args.with_gtdbtk)
+    if args.with_smetana:
+        # Its own sample-rooted inputs library, so the ungrouped MAG givens stay as they are.
+        inputs = declare_smetana_givens(smith, ensure)
+    else:
+        inputs = declare_givens(smith, mags, ensure, name)
+    globals_lib = declare_globals(smith, args.solver, CACHE_DIR / "e4_globals.xgdb", ensure, args.with_gtdbtk,
+                                  with_smetana=args.with_smetana)
     if importing:
         print(f"the pool at {smith.home.GetPath()} holds the givens of {len(mags)} MAGs")
         return 0
@@ -130,16 +169,21 @@ def cmd_run(args):
     task = smith.GenerateWorkflow(
         samples=list(inputs.AsSamples("sequences::bin_fasta")),
         resources=[DataInstanceLibrary.Load(c.MLIB / "resources" / "env"),
-                   DataInstanceLibrary.Load(c.MLIB / "resources" / "lib"), globals_lib],
+                   DataInstanceLibrary.Load(c.MLIB / "resources" / "lib"), globals_lib,
+                   # bench::smetana.env lives here, and nothing produces it.
+                   *([DataInstanceLibrary.Load(c.LIBRARY / "resources" / "bench")] if args.with_smetana else [])],
         transforms=[TransformInstanceLibrary.Load(c.MLIB / "transforms" / "logistics"),
                     TransformInstanceLibrary.Load(c.MLIB / "transforms" / "metabolicModelling")
                     .AsView({Path("memote_score.py")}, invert=True),
                     TransformInstanceLibrary.Load(c.LIBRARY / "transforms" / "modelling"),
                     TransformInstanceLibrary.Load(c.LIBRARY / "transforms" / "bench")
-                    .AsView({Path("gtdbtk_image.py")})],
-        targets=build_targets(args.solver, args.with_gtdbtk),
+                    .AsView({Path("gtdbtk_image.py")} | ({Path("smetana_cplex.py")} if args.with_smetana else set()))],
+        targets=build_targets(args.solver, args.with_gtdbtk, args.with_smetana),
     )
-    expected = {"sequences::bin_fasta": len(mags), "modelling::media": 1, "modelling::medium_name": 1}
+    n_bins = sum(1 for s, _, _ in enumerate_mags() if s == SMETANA_STUDY) if args.with_smetana else len(mags)
+    expected = {"sequences::bin_fasta": n_bins, "modelling::media": 1, "modelling::medium_name": 1}
+    if args.with_smetana:
+        expected["bench::smetana_media_db"] = 1
     if args.solver == "cplex":
         expected["modelling::cplex_installation"] = 1
     if args.with_gtdbtk:
@@ -167,11 +211,14 @@ def main():
         p.add_argument("--limit", type=int, help="first N MAGs per study")
         p.add_argument("--chunk", type=int, help=f"1-based chunk of {CHUNK_SIZE} MAGs, sorted by study and MAG")
         p.set_defaults(fn=fn, dag=False, stage_only=False, launch=False, materialise=False, tag=None,
-                       with_gtdbtk=False)
+                       with_gtdbtk=False, with_smetana=False)
         if name != "list":
             p.add_argument("--solver", default="cplex", choices=["cplex", "open"])
             p.add_argument("--with-gtdbtk", action="store_true",
                            help="GTDB-Tk r232 on every MAG; needs ref::gtdb's representative genomes")
+            p.add_argument("--with-smetana", action="store_true",
+                           help=f"metaGEM's SMETANA lane on {SMETANA_STUDY}: one community per sample, CPLEX. "
+                                "Its own sample-rooted givens, so its CarveMe models are built again.")
         if name == "run":
             p.add_argument("--dag", action="store_true", help="render the plan to page/dags/e4_metagem.dag.svg")
             mode = p.add_mutually_exclusive_group()

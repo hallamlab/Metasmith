@@ -99,6 +99,18 @@ types:
     properties:
       bench: env
       provides: [smetana]
+  # E4's lane. A distinct product type, not a second producer of smetana_detailed: two producers of one
+  # type are a target the planner can answer wrong (AGENTS.md, "Two producers need a masked library").
+  smetana_detailed_cplex:
+    properties:
+      _: SMETANA detailed scores on CPLEX for one sample's community of CarveMe CPLEX models, as metaGEM runs it
+      bench: smetana_detailed_cplex
+      ext: tsv
+  gem_community:
+    properties:
+      _: one sample of published MAGs, the root a SMETANA community groups on (metaGEM scores each sample's GEMs together)
+      bench: gem_community
+      ext: txt
   smetana_media_db:
     properties:
       _: metaGEM's media_db.tsv (medium, description, compound, name), the table its SMETANA rule reads, holding M1 to M16
