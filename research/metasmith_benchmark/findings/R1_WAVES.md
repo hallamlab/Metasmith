@@ -449,6 +449,10 @@ Each item points at its evidence above. Do them in this order.
    - E4's 4 dropped MAGs.
    - E3's 384G attempts.
    - E1 long's loss of resume past porechop.
+   - E1 long B19 rerun outside the head: MetaBAT2 rows cover binned contigs only, where nf-core also maps MetaBAT2's unbinned contigs (item 4).
+   - MetaBAT2 long-read identity floor 80 on both arms, where the tool default is 97 (B19).
+   - E5 CarveMe on 1.6.6 with its 600 s solver caps, not the table's 1.6.1: most pratama carving and gapfill solves stop at the cap (item 1).
+   - E1 short skips QUAST (`skip_quast`), which the table does not list.
 10. **Page:** republish once T19's re-solves give new keys and DAGs.
 11. **E3 byte budget before any E3 relaunch.** E3 stopped at the quota (see After close). Pick one before relaunching:
     - promote by hard link on a single-mount Lustre, which is the same engine change as hard-link hits;
