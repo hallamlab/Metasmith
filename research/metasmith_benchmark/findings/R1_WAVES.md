@@ -335,6 +335,13 @@ Each item points at its evidence above. Do them in this order.
    - E3's 384G attempts.
    - E1 long's loss of resume past porechop.
 10. **Page:** republish once T19's re-solves give new keys and DAGs.
+11. **E3 byte budget before any E3 relaunch.** E3 stopped at the quota (see After close). Pick one before relaunching:
+    - promote by hard link on a single-mount Lustre, which is the same engine change as hard-link hits;
+    - stop the pinned assembly_stats from publishing its BAM when no target consumes it;
+    - prune each finished step's nxf_work on a rolling gate.
+
+    Size the relaunch's peak against free bytes.
+12. **E3 VIBRANT on the viral bins (`p14__vibrant_pratama`).** 64 of 100 tasks exit without VIBRANT's results folder. Read VIBRANT's own log in a failed task dir before changing the transform.
 
 Still in flight at close, and handed to the next session:
 - the `YzCrdOoF` nxf_work prune (about 55 GB), once its driver leaves RUNNING;
@@ -342,3 +349,16 @@ Still in flight at close, and handed to the next session:
 - the byte-writer delta job `59869667`;
 - the E3 bbduk re-gate (653 GB) as MetaWRAP finishes.
 At close, bytes read 91.55% and inodes 876,944.
+
+### After close: the E3 byte fill and stop
+
+Bytes climbed from 91.54% at 18:08 to 97.33% at 18:34 PDT fir clock, about 1.5 TiB/h at peak, with 0.5 TiB left.
+- **Writer:** E3 `p10__assembly_stats`. Each of its ~56 running tasks writes a ~10 GB BAM (minimap2 over the reads, `cp temp.bam` to the output), and promotion copies it again into the pratama task_cache. A ctime scan found 457.5 GB new in `Son2YJiI` nxf_work and 799.6 GB under `pratama2026/metasmith` over 25 min. CAUTION `lfs find -mmin` is not a valid option, and `2>/dev/null` hid the usage error, so the first scan read zero everywhere. Use GNU `find -cmin`, which also catches copies that keep source mtimes.
+- **Stop:** USR1 to the E3 driver `59634612` at 18:33:16. It ended COMPLETED 0:0 at 18:34:59 with `status: cancelled`, `survived: []`, and "nextflow did not exit within 30s of PID.lock removal; its process group was killed". 139 grid jobs were left as orphans of the dead head. I plain-scancelled them. Bytes flattened at 96.96%.
+- **Also failing at the stop, a wave-2 fix:** E3 `p14__vibrant_pratama` failed 64 of 100 array tasks in 1–5 min, and its 64G retries failed too. The transform asserts `VIBRANT wrote no vibrant_out/VIBRANT_<stem>/VIBRANT_results_<stem>`. The first-level `p11` VIBRANT passed 286 of 286. The cause is still unknown.
+- **Prunes** from checkout 471089e8, each on a dead run, keeping `.command.cache`:
+  - `qcMKf68s`: `59869560` DONE. 2,923 dirs, 78.4 GB.
+  - E3 bbduk: `59877058`, 66 dirs, 652.5 GB. Those shards were tombstoned on 2026-09-13, so wave 2 recomputes bbduk either way.
+  - E3 rest: `59877065`. It covers 1,373 promoted dirs, each with its shard confirmed on disk, and 1,405 failed or cancelled attempts. It keeps 348 exit-0 dirs that have no `.command.cache`.
+  - E5 metagem: `59877066`. 1,954 promoted dirs with shards and 76 failed attempts. It keeps 59 exit-0 dirs that have no cache record.
+- **Wave-2 consequence:** relaunching E3 as it stands rewrites bbduk (653 GB) and every assembly_stats BAM, and promotion stores each a second time. The corpus alone fills most of the free bytes. See queue item 11.
