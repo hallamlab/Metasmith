@@ -38,7 +38,7 @@ SCALED = {"megahit": (32, 128, 12)}
 
 # The standard transforms each E3 library transform replaces, by library.
 REPLACED = {
-    "assembly": {"bbduk.py", "spades.py"},
+    "assembly": {"bbduk.py", "spades.py", "assembly_stats.py"},
     "metagenomics": {"binning/metawrap.py", "taxonomy/genomad.py", "taxonomy/gtdbtk.py"},
     "functionalAnnotation": {"virsorter2.py", "dramv.py"},
     # CCTyper is dropped from every experiment. Pratama's spacer caller is minced, a gapfill.
