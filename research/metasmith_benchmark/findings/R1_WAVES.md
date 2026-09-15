@@ -331,6 +331,12 @@ Each item points at its evidence above. Do them in this order.
      - Collect succeeded with 1,535 outputs, the first cache-served E5 run to collect since 7e21c5e3's fix.
      - `results/` holds 51 `modelling-carveme_model` and 51 distinct `modelling-memote_score`, so memote closes for cami. Wave 1 had 0 scores, failing on HOME.
      - The run still reports "run failed" with one ignored step, `p35__memote_score (25)`. That task's attempt 1 (`3f/9eec67`) exited 1 on Lustre Errno 108 reading its model, and attempt 2 (`5d/4ab08a`) COMPLETED in 2:08. The failed-step list counts an index with any failed attempt even when a retry passed, so a complete run reads as failed. FIXED on this branch: `runner._failed_steps` drops a name when any of its attempts succeeded, with unit tests in `tests/metasmith/unit/test_failed_steps.py`. It is not synced: the live E5 drivers run 823c6b48's overlay, so the fix ships with the next sync.
+   - INODES, 2026-09-14 22:07 fir clock: the per-dir delta job 59895806 counted +12.8K in 18.7 min (902,108 → 914,950), about 41K/h.
+     - The growth is AvPNgFtP +5,943, cSBSeNuq +3,852 and E1 short work +1,937. The cami (341K) and pratama (84K) task caches are flat.
+     - Levers taken:
+       - job 59898204 deletes 24 driver checkouts no running or pending job references (~29K inodes; 823c6b48 and 7c446a33-e1 kept);
+       - prune 59898206 empties E5 cami `u8oBvJrv` nxf_work (483 dirs, run ended and collected).
+     - CAUTION `step_refs.py` cannot gate a `_cached` twin's work dir: twins run on the local executor, so their `.command.run` has no `#SBATCH -J` line naming the step.
    - E5 PRATAMA CARVEME STARTED, 2026-09-14 ~22:00 fir clock, after 1,891 `_cached` replays (the last were per-bin `p26__prodigal_from_bin_cached`).
      - 100 `p34__carveme_from_orfs` tasks are RUNNING (array 59897035) at `-t 12:00:00`, `--mem 16384M`.
      - The first task's `.command.run` stages `_metasmith/task/data/kOylj7BHHODG/carveme_166.env`, which names `quay.io/biocontainers/carveme:1.6.6--pyhdfd78af_1`. So the pin reaches pratama.
