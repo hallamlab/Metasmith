@@ -37,6 +37,7 @@ TYPE_LIBS = [c.MLIB / "data_types" / t for t in ("sequences.yml", "viromics.yml"
 # In the E5 tool list, not reachable in any plan yet.
 MISSING = [
     "a study grouping type: viromics::contig_study stands in for the viral merge, dRep and skani per study",
+    "dRep and skani over refined sets (DAS Tool, MAGScoT): they run over the three binners' raw bins, as siblings (D1)",
     "Prodigal on MAG ORFs for the 4-lane panel: the panel takes whole-assembly ORFs only",
     "DeepVirFinder (new transform)",
     "MetaPop (new transform): every sample mapped to its study's vOTU catalogue",

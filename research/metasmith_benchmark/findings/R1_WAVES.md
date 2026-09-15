@@ -791,7 +791,15 @@ Decided 2026-09-15 under autopilot, from Tony's note (journal 78db76ba). After b
 - **Cache:** nothing retires. No dereplicator besides DAS Tool is built yet, and DAS Tool's transform is unchanged.
 - **Built (6a193308), not yet run:** `bench/magscot.py` (per sample, `ikmb/magscot:v1.1`, defaults, GTDB r207 HMMs in the image, the plan's Prodigal ORFs), `bench/drep_sample.py` and `drep_study.py` (dRep 3.7.1, Pratama's `-pa 0.90 -sa 0.99 -comp 50 -con 10`, quality from CheckM2 via `--genomeInfo`), `bench/skani_sample.py` and `skani_study.py` (the standard skani_dedup clustering at 95 and 99 over the three binners' bins). Per study groups by `viromics::contig_study`. Images probed on a fir login node (`cache/apptainer/_derep_probe`).
   - Local E5 cami solve: 39 steps, key `aBEwSFp1`. Against V2ELuag4 it drops the CheckM 1 path (checkm, aggregator, standalone prodigal, skani_dedup) and adds the five dereplicators. CheckM2 and GTDB-Tk transform ids unchanged by the bench rebuild, so V2ELuag4's CheckM2 shards stay hits.
-  - Adversarial review before launch in flight.
+  - Adversarial review triaged (fixes in the next commit; solve unchanged at 39 steps `aBEwSFp1`, CheckM2 id unchanged):
+    1. VERIFIED (by code): if provenance is dropped, dRep pairs no bin to CheckM2 and writes an empty table as success. Now fails when bins exist but none paired, and marks unpaired bins `no_quality`.
+    2. OPEN, check at fir materialise: the quality slot's `parents={bins}` is not the group key, so each drep task may stage every sample's CheckM2 rows (B21 shape). Output stays correct (pairing filters). Check the `sar` count for `bench::checkm2_quality` in `drep_sample`'s step meta.
+    3. VERIFIED: study rows had no sample. Study outputs now carry sample and binner columns, sample from the read_pair value.
+    4. VERIFIED risk: dRep writes no `Cdb.csv` when every genome fails its filters. Guarded; rows marked `filtered`.
+    5. VERIFIED: MISSING list overclaimed. It now records that dRep and skani run over raw bins, not refined sets (D1 design).
+    6. VERIFIED risk: MAGScoT with nothing selected. Guarded with empty tables.
+    7. REJECTED: COMEBin's table is headerless `contig<TAB>bin` (checked in V2ELuag4 results).
+    - NEW, found in that check: E5's ORF headers are `read_pair@…~k141_10056|1_709_1`, so MAGScoT could not map genes to contigs. magscot.py now rewrites headers to `<contig>_<n>` (tested on the real header).
 
 ### E5 CheckM2 (D3)
 

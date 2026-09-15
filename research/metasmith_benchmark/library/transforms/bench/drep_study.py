@@ -2,6 +2,7 @@
 # Settings are Pratama's (MetaG_and_MAGs_bioinformatics.md:104). CheckM2 supplies the quality dRep
 # would otherwise compute with CheckM 1.
 import csv
+import json
 import shutil
 from pathlib import Path
 from metasmith.python_api import *
@@ -19,58 +20,78 @@ for label in ("metabat2", "semibin2", "comebin"):
 out     = model.AddProduct(lib.GetType("bench::drep_study_winners"))
 
 ARGS = "-pa 0.90 -sa 0.99 -comp 50 -con 10"
+COLUMNS = ("genome", "sample", "binner", "primary_cluster", "secondary_cluster", "winner")
+
+
+def sample_label(read_pair: Path) -> str:
+    # A pool given's file is named for its content hash, so the sample id is the file's JSON value.
+    try:
+        value = json.loads(read_pair.read_text())
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        return read_pair.stem
+    return value if isinstance(value, str) else read_pair.stem
 
 
 def protocol(context: ExecutionContext):
     Path("bins").mkdir()
-    info = []
+    genomes, info = {}, {}
     for label, (bins, quality) in sets.items():
         names = {}
         for k, ibin in enumerate(context.InputGroup(bins)):
-            name = f"{label}__{k}_{ibin.local.stem}.fa"
+            source = context.SourceOf(ibin, pair)
+            sample = sample_label(Path(source.local)) if source else "unknown"
+            name = f"{sample}__{label}__{k}_{ibin.local.stem}.fa"
             shutil.copy(ibin.local, Path("bins") / name)
             names[str(ibin.local)] = name
-        paired = 0
+            genomes[name] = (sample, label)
         for iq in context.InputGroup(quality):
             source = context.SourceOf(iq, bins)
             if source is None or str(source.local) not in names:
                 continue
             with open(iq.local, newline="") as f:
                 row = next(csv.DictReader(f, delimiter="\t"))
-            info.append((names[str(source.local)], row["Completeness"], row["Contamination"]))
-            paired += 1
-        missing = len(names) - paired
-        if missing:
-            Log.Warn(f"{label}: {missing} bins have no CheckM2 row; dRep drops them")
+            info[names[str(source.local)]] = (row["Completeness"], row["Contamination"])
 
-    with open("genome_info.csv", "w", newline="") as f:
-        csv.writer(f).writerows([("genome", "completeness", "contamination"), *info])
     ounit = context.Output(out)
-    columns = ("genome", "primary_cluster", "secondary_cluster", "winner")
-    if not info:
-        Log.Warn("no bin with CheckM2 quality; writing an empty table")
-        ounit.local.write_text("\t".join(columns) + "\n")
-        return ExecutionResult(manifest=[{out: ounit.local}], success=True)
+    if genomes and not info:
+        Log.Error(f"none of {len(genomes)} bins paired to a CheckM2 row")
+        return ExecutionResult(manifest=[], success=False)
+    if len(info) < len(genomes):
+        Log.Warn(f"{len(genomes) - len(info)} of {len(genomes)} bins have no CheckM2 row; marked no_quality")
 
-    cpus = context.params.get("cpus") or 1
-    genomes = " ".join(f"bins/{g}" for g, _, _ in info)
-    context.ExecWithEnv(env=image, cmd=f"""
-        export HOME="$PWD" MPLCONFIGDIR="$PWD/.mpl"
-        dRep dereplicate drep_out -p {cpus} {ARGS} --genomeInfo genome_info.csv -g {genomes}
-    """)
+    clusters, winners = {}, set()
+    if info:
+        with open("genome_info.csv", "w", newline="") as f:
+            csv.writer(f).writerows([("genome", "completeness", "contamination"),
+                                     *((g, *q) for g, q in info.items())])
+        Path("genomes.txt").write_text("".join(f"bins/{g}\n" for g in info))
+        cpus = context.params.get("cpus") or 1
+        context.ExecWithEnv(env=image, cmd=f"""
+            export HOME="$PWD" MPLCONFIGDIR="$PWD/.mpl"
+            dRep dereplicate drep_out -p {cpus} {ARGS} --genomeInfo genome_info.csv -g genomes.txt
+        """)
+        # dRep writes no tables when every genome fails its length or quality filter.
+        if Path("drep_out/data_tables/Cdb.csv").exists():
+            with open("drep_out/data_tables/Cdb.csv", newline="") as f:
+                clusters = {r["genome"]: r for r in csv.DictReader(f)}
+            with open("drep_out/data_tables/Wdb.csv", newline="") as f:
+                winners = {r["genome"] for r in csv.DictReader(f)}
+        else:
+            Log.Warn("dRep wrote no Cdb.csv; every genome failed its filters")
 
-    with open("drep_out/data_tables/Cdb.csv", newline="") as f:
-        clusters = {r["genome"]: r for r in csv.DictReader(f)}
-    with open("drep_out/data_tables/Wdb.csv", newline="") as f:
-        winners = {r["genome"] for r in csv.DictReader(f)}
     with open(ounit.local, "w", newline="") as f:
         w = csv.writer(f, delimiter="\t", lineterminator="\n")
-        w.writerow(columns)
-        for genome, _, _ in info:
+        w.writerow(COLUMNS)
+        for genome, (sample, binner) in genomes.items():
             c = clusters.get(genome)
-            # A genome absent from Cdb failed dRep's length or quality filter.
-            w.writerow((genome, c["primary_cluster"] if c else "", c["secondary_cluster"] if c else "",
-                        "filtered" if not c else int(genome in winners)))
+            if genome not in info:
+                status = "no_quality"
+            elif c is None:
+                status = "filtered"
+            else:
+                status = int(genome in winners)
+            w.writerow((genome, sample, binner, c["primary_cluster"] if c else "",
+                        c["secondary_cluster"] if c else "", status))
 
     return ExecutionResult(manifest=[{out: ounit.local}], success=True)
 

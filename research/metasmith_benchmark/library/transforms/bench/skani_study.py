@@ -1,6 +1,7 @@
 # skani ANI clusters over every bin in a study from the three binners, one of four interchangeable
 # dereplicators. Clustering follows the standard skani_dedup.py: single linkage at 95 and 99 ANI,
 # medoid by mean intra-cluster ANI.
+import json
 import shutil
 from pathlib import Path
 from metasmith.python_api import *
@@ -16,7 +17,16 @@ sets    = {label: model.AddRequirement(lib.GetType(f"sequences::{label}_bin_fast
 out     = model.AddProduct(lib.GetType("bench::skani_study_clusters"))
 
 THRESHOLDS = (95.0, 99.0)
-HEADER = "bin_id\tcluster_95\tis_centroid_95\tcluster_99\tis_centroid_99\n"
+HEADER = "bin_id\tsample\tbinner\tcluster_95\tis_centroid_95\tcluster_99\tis_centroid_99\n"
+
+
+def sample_label(read_pair: Path) -> str:
+    # A pool given's file is named for its content hash, so the sample id is the file's JSON value.
+    try:
+        value = json.loads(read_pair.read_text())
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        return read_pair.stem
+    return value if isinstance(value, str) else read_pair.stem
 
 
 def clusters(names, ani, threshold):
@@ -46,12 +56,15 @@ def clusters(names, ani, threshold):
 
 def protocol(context: ExecutionContext):
     Path("bins").mkdir()
-    names = []
+    origin = {}
     for label, dep in sets.items():
         for k, ibin in enumerate(context.InputGroup(dep)):
-            name = f"{label}__{k}_{ibin.local.stem}"
+            source = context.SourceOf(ibin, pair)
+            sample = sample_label(Path(source.local)) if source else "unknown"
+            name = f"{sample}__{label}__{k}_{ibin.local.stem}"
             shutil.copy(ibin.local, Path("bins") / f"{name}.fa")
-            names.append(name)
+            origin[name] = (sample, label)
+    names = list(origin)
     ounit = context.Output(out)
     if not names:
         Log.Warn("no bins; writing an empty table")
@@ -75,7 +88,7 @@ def protocol(context: ExecutionContext):
     with open(ounit.local, "w") as f:
         f.write(HEADER)
         for n in sorted(names):
-            f.write("\t".join([n, *(f"{c[n][0]}\t{c[n][1]}" for c in by_threshold)]) + "\n")
+            f.write("\t".join([n, *origin[n], *(f"{c[n][0]}\t{c[n][1]}" for c in by_threshold)]) + "\n")
 
     return ExecutionResult(manifest=[{out: ounit.local}], success=True)
 
