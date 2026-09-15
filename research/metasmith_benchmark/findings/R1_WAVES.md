@@ -336,6 +336,11 @@ Each item points at its evidence above. Do them in this order.
      - Levers taken:
        - job 59898204 deletes 24 driver checkouts no running or pending job references (~29K inodes; 823c6b48 and 7c446a33-e1 kept);
        - prune 59898206 empties E5 cami `u8oBvJrv` nxf_work (483 dirs, run ended and collected).
+     - LANDED by 22:13:
+       - 59898204 removed 24 checkouts in 1:27. At run time only 7c446a33-e1 and 823c6b48 were referenced, and both were kept.
+       - Prune 59898206 emptied 483 of 483 `u8oBvJrv` dirs (32,067,739,461 B) and kept 102 `.command.cache`.
+       - Quota fell from 916,940 to 882,624 inodes and from 16.760 to 16.730 TiB (89.80%). At ~41K/h, 950K is about 1.6 h away.
+       - NEXT if growth holds: tar-pack E1 long b19's 35 extracted sample dirs (1.9K), then a cami task_cache census by run for superseded entries (244K inodes).
      - CAUTION `step_refs.py` cannot gate a `_cached` twin's work dir: twins run on the local executor, so their `.command.run` has no `#SBATCH -J` line naming the step.
    - E5 PRATAMA CARVEME STARTED, 2026-09-14 ~22:00 fir clock, after 1,891 `_cached` replays (the last were per-bin `p26__prodigal_from_bin_cached`).
      - 100 `p34__carveme_from_orfs` tasks are RUNNING (array 59897035) at `-t 12:00:00`, `--mem 16384M`.
