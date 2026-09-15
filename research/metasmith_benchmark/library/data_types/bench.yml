@@ -59,6 +59,18 @@ types:
       _: skani ANI clusters at 95 and 99 over every bin in a study, medoid marked per cluster
       bench: skani_study_clusters
       ext: tsv
+  viral_orfs:
+    properties:
+      _: prodigal-gv proteins for the frozen viral set
+      bench: viral_orfs
+      Format: FASTA
+      Data: amino acid sequence
+      ext: faa
+  viral_gff:
+    properties:
+      _: prodigal-gv gene coordinates for the frozen viral set
+      bench: viral_gff
+      ext: gff
   drep.env:
     properties:
       bench: env

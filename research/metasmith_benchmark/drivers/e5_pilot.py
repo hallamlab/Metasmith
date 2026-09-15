@@ -45,7 +45,6 @@ MISSING = [
     "SMETANA (new transform)",
     "Chopper (new transform): only for long-read corpora, none in this pilot",
     "CoverM (new transform, if chosen)",
-    "prodigal-gv on the frozen set: as sequences::orfs it would also answer the assembly's Prodigal target",
     "DRAM-v and minced: decided after E3 reports",
     "GTDB-Tk and iPHoP (--with-gtdbtk): wait on ref::gtdb's representative genomes",
 ]
@@ -110,8 +109,8 @@ def build_transforms(solver="open"):
         TransformInstanceLibrary.Load(c.LIBRARY / "transforms" / "bench"),
         TransformInstanceLibrary.Load(c.MLIB / "transforms" / "functionalAnnotation"),
         TransformInstanceLibrary.Load(c.MLIB / "transforms" / "fabfos"),
-        # CCTyper is dropped from every experiment.
-        viromics.AsView({Path("cctyper.py")}, invert=True),
+        # CCTyper is dropped from every experiment. prodigal-gv runs from the bench library (B23).
+        viromics.AsView({Path("cctyper.py"), Path("prodigal_gv.py")}, invert=True),
         modelling.AsView(masked, invert=True),
         TransformInstanceLibrary.Load(c.LIBRARY / "transforms" / "modelling"),
     ]
@@ -134,12 +133,8 @@ def build_targets(with_gtdbtk=False, solver="open"):
     t.Add("bench::checkm2_quality", parents=[mags])
     if with_gtdbtk:
         t.Add("taxonomy::gtdbtk", parents=[mags])
-    # CAUTION keep this target. Without it the solver answers DAS Tool's and MAGScoT's ORF slots with
-    # prodigal-gv's ORFs on the pooled viral set, which descends from every assembly, and drops
-    # whole-assembly Prodigal (B23).
-    t.Add("binning_local::cluster_table", parents=[asm])
     # Dereplication: DAS Tool above, MAGScoT per sample, and dRep and skani over the same three bin
-    # sets, per sample and per study.
+    # sets, per sample and per study. The standard skani_dedup reads the CheckM 1 aggregator's pool.
     for dtype in ("bench::magscot_contig_to_bin", "bench::drep_sample_winners", "bench::skani_sample_clusters"):
         t.Add(dtype, parents=[asm])
     for dtype in ("bench::drep_study_winners", "bench::skani_study_clusters"):
@@ -160,7 +155,7 @@ def build_targets(with_gtdbtk=False, solver="open"):
     if with_gtdbtk:
         # iPHoP's augmented database needs GTDB-Tk de novo's decorated trees.
         viral.append("viromics::host_prediction_genome")
-    for dtype in viral:
+    for dtype in (*viral, "bench::viral_orfs", "bench::viral_gff"):
         t.Add(dtype, parents=[frozen])
     return t
 
