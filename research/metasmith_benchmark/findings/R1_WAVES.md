@@ -346,6 +346,12 @@ Each item points at its evidence above. Do them in this order.
    Two defects follow. A task can exit 0 without writing its cache record. Collect is all-or-nothing on one unaccounted parent. Fix collect to warn and keep the rest, and make a failed record write fail the task so nextflow retries it. This is not about cache-served runs: the hits here were all accounted for.
 3. **E5 cami and pratama memote.** Relaunch on the pinned transform.
 4. **B19 on both arms.** E2 long through `e2/metabat2.py` at identity 80, with the E2 long relaunch. E1 long through the depth, MetaBAT2 and DAS Tool rerun over `work/`.
+   - E1 long ROUTE DECIDED: a standalone array job, `drivers/e1_nfcore/b19_long_rerun.sbatch`, not a head relaunch. A head relaunch with `longread_percentidentity = 80` would rerun from porechop, whose work dirs were pruned, and then all 41 Flye assemblies.
+     - The job mirrors nf-core 5.5.0's rendered commands, read from E1 long's own task dirs: `jgi_summarize_bam_contig_depths --percentIdentity 80` (modules.config:872 spells the flag this way), `metabat2 -m 1500 --unbinned --seed 1 --saveCls`, `Fasta_to_Contig2Bin.sh -e fa`, and `DAS_Tool --write_bins --write_unbinned --write_bin_evals --score_threshold 0.5` over all three binners.
+     - It uses the head's own images from the nf-core apptainer cache (metabat2 2.17, das_tool 1.1.7).
+     - It reads the 41 BAMs in `work/` and the published assemblies, and writes only under `bench/e1/long/b19/`.
+     - SemiBin2 and COMEBin contig lists come from the published `contig_to_bin_map.tsv` rows, so those binners are not rerun.
+   - DEVIATION to record: nf-core also routes MetaBAT2's unbinned contigs through SPLIT_FASTA into the map (`binning/main.nf:86`). The rerun writes MetaBAT2 rows for binned contigs only. AMBER scores binned contigs, so no binned row changes.
 5. **B21.** Rerun amber on E2 short and long with the fixed `e2/amber.py`.
 6. **B17.** Rerun gold_standard with the E2 pin at 2192c40c.
 7. **Resources, none of which enters a cache key:**
@@ -357,7 +363,7 @@ Each item points at its evidence above. Do them in this order.
    - Copy task logs once per task dir in record_run.
    - Exempt `_cached` replays from the submit rate limit. Wave 1's pratama relaunch replayed about 1,700 hits at 1 per 5 s, 2.3 h before any new work. Config can't do it: Nextflow 26.04 reports `executor.$local.submitRateLimit` as an unrecognized option, checked with `nextflow -c <preset> config -flat` on fir. The fix goes in the engine, for example one batched replay process per step.
    - Repair the index for pruned-dir shards (WfOlaqLT fastp, 8Z7x3L7z, qcMKf68s).
-   - Allow hard-link cache hits on a single-mount Lustre.
+   - ~~Allow hard-link cache hits on a single-mount Lustre.~~ The twins already try `ln -f`; node-local scratch made it copy. Closed by item 11's `_cached` scratch selector.
 9. **Deviations to write:**
    - E1 long QUAST, run on the long arm only.
    - The two-binner reference DAS Tool.
@@ -377,6 +383,13 @@ Each item points at its evidence above. Do them in this order.
     - promotion that links from the product's `/msm_home/runs/<key>/nxf_work/…` path, not its `/ws` path.
 
     E2 short has the same trap. Its bowtie2 shards were tombstoned in wave 1 (697 GB), so the relaunch for B21 and B17 reruns bowtie2 before its binners can hit cache. Promotion stores the BAMs again, about 1.4 TB.
+
+    BUILT (uncommitted at writing; ships with the next sync):
+    - Promotion re-spells the task dir under the cache's bind before linking (`caching/fs.py:mount_view`, `caching/promote.py:_link_dir`). It reads mountinfo's root field and falls back to the `/ws` path when the device differs or the dir is outside the home. Tests are in `tests/metasmith/cache/test_mount_view.py`.
+    - `drivers/_common.py:IN_PLACE_STEPS` turns scratch off for the heavy-product steps.
+    - Probe job 59890577 ran in the 0.22.1 agent image with the bootstrap's binds. A direct link `/ws` → `/msm_home` failed with `[Errno 18] Invalid cross-device link`. The `/msm_home/…` spelling linked with nlink 2. Both binds read device `3651:409418`.
+    - SECOND COPY FOUND: cache hits copied too. `_cached` twins run `ln -f <shard> … || cp -r`, but on node-local scratch the link crosses devices. The AvPNgFtP task `00/6e6d62e5…` holds nlink-1 products, and its `.command.run` sets `NXF_SCRATCH` under `SLURM_TMPDIR`. This caused the 19:50 byte rise from the E5 relaunches. Fix: `scratch = false` on the `.*_cached` selector. The driver job binds its work dirs under `/msm_home`, the same bind as the shards, so `ln -f` succeeds there.
+    - CAUTION a hard-linked product shares its inode with the shard. A tool that edits an input in place corrupts the cache entry. Pruning nxf_work or evicting a shard removes only one name.
 12. **E3 VIBRANT on metaSPAdes' contig batches (`p14__vibrant_pratama`).** 64 of 100 tasks exited without VIBRANT's results folder.
     - Cause, measured on a promoted split shard: `splitContigsForAmr` sorts contigs by length into batches of about 240 Mbp. Batches 4–9 of that SPAdes assembly hold no contig of 1 kb or more; batch 5's longest is 497 bp. VIBRANT skips contigs under its default 1,000 bp floor and writes no results folder, and the transform's assert failed the task. MEGAHIT's batches (p11, 286 of 286) passed, because MEGAHIT drops short contigs itself.
     - Pratama runs VIBRANT with no length flag (`Virus_bioinformatics.md`), so the floor is VIBRANT's own.

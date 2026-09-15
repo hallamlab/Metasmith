@@ -259,6 +259,16 @@ def write_dag(task, stem, cache_dir):
     print(f"dag: {out}")
 
 
+# Steps whose products run to tens of GB. From node-local scratch a product lands on Lustre
+# twice: in the work dir nextflow unstages it to, and in the cache shard promotion copies it
+# into. Run in the work dir, it is written once and the shard hard-links it
+# (promote._link_dir).
+IN_PLACE_STEPS = (
+    "fastp", "bbduk_pratama", "megahit", "spades_pratama", "bowtie2_binning_bam",
+    "assembly_stats", "porechop_abi", "chopper", "minimap2_binning_bam", "metawrap_pratama",
+)
+
+
 def make_slurm_config(smith, cache_dir, scaled=None, comebin_cpus=48, comebin_time="3d"):
     """fir's Slurm preset plus process selectors.
 
@@ -271,7 +281,9 @@ def make_slurm_config(smith, cache_dir, scaled=None, comebin_cpus=48, comebin_ti
     marine samples at 96 cores took 6.5 to 11.7 h, so 3 d covers the slow tail at 48.
     The `_cached` twins declare the local executor, which refuses a job array, and the
     preset's label-keyed exemption does not reach them. Without `array = 0` nextflow aborts
-    before submitting anything, and metasmith still reports the run complete.
+    before submitting anything, and metasmith still reports the run complete. On node-local
+    scratch their `ln -f` from the shard crosses devices and falls back to a copy, so a relaunch
+    wrote every hit to Lustre again. In the work dir the link succeeds.
     """
     base = Path(smith.GetNxfConfigPresets()["slurm"]).read_text()
     mem_gb = comebin_cpus * FIR_MEM_MB_PER_CPU // 1000
@@ -282,7 +294,10 @@ def make_slurm_config(smith, cache_dir, scaled=None, comebin_cpus=48, comebin_ti
         f"        time = '{comebin_time}'",
         f'        clusterOptions = "--nodes=1 --ntasks=1 --account={SLURM_ACCOUNT}"',
         "    }", "}", "",
-        "process {", "    withName: '.*_cached' {", "        array = 0", "    }", "}", ""])
+        "process {", "    withName: '.*_cached' {", "        array = 0", "        scratch = false", "    }", "}", ""])
+    for name in IN_PLACE_STEPS:
+        text += "\n".join([
+            "process {", f"    withName: '.*__{name}' {{", "        scratch = false", "    }", "}", ""])
     for name, (cpus, gb, hours) in (scaled or {}).items():
         text += "\n".join([
             "process {", f"    withName: '.*__{name}' {{", f"        cpus = {cpus}",

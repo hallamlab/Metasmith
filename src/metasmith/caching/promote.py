@@ -19,6 +19,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from .admission import PoolFile, index_shard, shard_for, write_shard
+from .fs import mount_view
 from .invocation import KEY_KEY, TOMBSTONE_NAME, consumed_of, read_manifest
 from .layout import logs_dir as _logs_dir
 
@@ -183,6 +184,7 @@ def promote_members(
         int(sf.get("branch_idx", 0)) for sf in meta.slot_files
     } if len({int(sf.get("branch_idx", 0)) for sf in meta.slot_files}) == 1 else set()
     records: list[dict] = []
+    link_dir = _link_dir(cwd, cache_root)
     for member, entry in enumerate(entries):
         position = member + 1
         key_hex = str(entry.get(KEY_KEY, "-") or "-")
@@ -194,7 +196,7 @@ def promote_members(
             if matched is None:
                 continue
             files.append({
-                "src": str(src),
+                "src": str(link_dir / src.name),
                 "relpath": f"out/{LinPayload.canonical_output_name(src.name)}",
                 "slot_id": matched.get("slot_id", ""),
                 "dtype_key": matched.get("dtype_key", ""),
@@ -240,6 +242,20 @@ def promote_members(
         for r in records:
             f.write(json.dumps(r, separators=(",", ":")) + "\n")
     return records
+
+
+def _link_dir(cwd: Path, cache_root: Path) -> Path:
+    """The spelling of `cwd` that shares the cache's mount, so products link instead of copy."""
+    try:
+        anchor = cache_root
+        while not anchor.exists() and anchor != anchor.parent:
+            anchor = anchor.parent
+        view = mount_view(cwd, anchor)
+        if view is not None and view != cwd and view.samefile(cwd):
+            return view
+    except OSError:
+        pass
+    return cwd
 
 
 def _promote_one(
