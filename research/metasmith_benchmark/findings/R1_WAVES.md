@@ -734,3 +734,20 @@ Collected 2026-09-15 at 12:00 PDT fir clock. Tony: start wave 3 now, do not wait
 5. Wave-2 queue items still open: the deviations list (item 9) and the page republish (item 10).
 
 **E. Launch** lane by lane under tag `w3`, with watchers and auto-stops, within the inode budget that A leaves.
+
+### Scratch cleanup
+
+Census `59978965` (11:55 PDT fir clock, 930,981 inodes), per top-level dir: cami 413K (task_cache 310K, raw corpora `cami/work` 16K), bench 169K (E1 short work 84K, E1 long work 29K, E1 short out 28K, checkouts 14K), pratama2026 144K (task_cache 77K, live E3 run 52K), metagem 137K (task_cache 60K, `l2_pilot` 47K, E4 inputs `published` 14K), refs 58K. Finished runs still hold `results/`: sxDeVO5L 45K, F1yIPPmC 12K, lE94xbfH 6K. They stay until collection B reads them.
+
+Kept by rule: every task_cache shard and `.command.cache`, the live E3 run, E1 short work (its replacement head resumes from it), corpora (`cami/work`, `pratama2026/interleaved`, `metagem/published`), refs, criterion-12 scoring (`wave2_b3_nfcore`, `reference_amber*`), `aspire_mock` (another project), and pre-R1 runs OLo3f5V3 and q2TJFf23 (the gate found symlinks into them).
+
+Cleanup job `_w3_cleanup.sbatch` (dry `59980326`, apply `59980742`). Each target is gated on no queued job naming it, no PID.lock, no symlink from any home's task_cache or runs into it, and no run workflow or other checkout naming it. It selected 106K inodes:
+- 23 superseded or dead runs, 52mAOnXS (wave-1 E5 cami, 7K) and 22 pre-R1 or staging runs. Each is tarred into `bench/archive/<key>.tar` without `nxf_work` before deletion, so its logs and results stay citable.
+- Pilots and test dirs: `metagem/l2_pilot` (pre-R1 CarveMe solver pilot, container temp and venv, 47K), `nfcore_probe`, `wave3_l1_pilot`, `carveme_rca`, `_linktest` and 21 smaller test dirs.
+- E1 long `work/` (29K) after moving its 41 Flye assemblies (fasta and gz) and 41 BAMs with indexes to `bench/e1/long/kept_inputs/`.
+- Empty task dirs in finished runs' `nxf_work` (9.7K): sxDeVO5L, F1yIPPmC, AvPNgFtP, cSBSeNuq, u8oBvJrv.
+- Superseded checkouts. CAUTION the dry run's checkout gate matched each checkout's own `.pyc` files and kept 8. Fixed before apply. Kept: 3958dbb2 (E3), 307581f8 (tools), and the two E1 head checkouts.
+
+Apply `59980742` COMPLETED in 13:59: 115,991 inodes selected (the fixed checkout gate added 8 checkouts). Quota 931,240 → 815,884 inodes and 17.121 → 16.979 TiB, read 5 min after. `bench/archive/` holds 24 tars, 23.3 GB. 52mAOnXS.tar is 18.5 GB because its `results/` bin FASTAs went in. The extra `q2TJFf23.tar` is a stray, and its run dir is intact.
+
+Retired-shard census `59980743` (read-only, `_cami_retired_census.py` per home against the runs wave 3 keeps: cami sxDeVO5L, F1yIPPmC, u8oBvJrv; pratama bqyYO0Ip, AvPNgFtP; metagem cSBSeNuq, lE94xbfH). Keys go to `/scratch/phyberos/_w3_retired/<home>/`.
