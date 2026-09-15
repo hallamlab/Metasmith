@@ -2,6 +2,7 @@
 # study's vOTU representatives (the first column of the vOTU membership table, cut from the frozen set).
 # Pratama names no mapper, so bowtie2 maps with defaults and MetaPop's own filters apply after it.
 # Mean π over 100 vOTUs x 1,000 subsamplings is computed after the run from the microdiversity table.
+import gzip
 import json
 import tarfile
 from pathlib import Path
@@ -12,8 +13,9 @@ model   = Transform()
 image   = model.AddRequirement(lib.GetType("bench::metapop.env"))
 envimg  = model.AddRequirement(lib.GetType("bench::metapop_env_image"))
 study   = model.AddRequirement(lib.GetType("viromics::contig_study"))
-meta    = model.AddRequirement(lib.GetType("sequences::read_metadata"), parents={study})
-pair    = model.AddRequirement(lib.GetType("sequences::read_pair"), parents={meta})
+# No read_metadata slot: every sample's metadata file holds the same text, so the grouped task would stage
+# several files under one content-hash name, and nextflow aborts the run on the collision.
+pair    = model.AddRequirement(lib.GetType("sequences::read_pair"), parents={study})
 reads   = model.AddRequirement(lib.GetType("sequences::clean_short_reads"), parents={pair})
 frozen  = model.AddRequirement(lib.GetType("viromics::dereplicated_candidate_virus"))
 votus   = model.AddRequirement(lib.GetType("viromics::votu_cluster_table"), parents={frozen})
@@ -34,6 +36,14 @@ def sample_label(read_pair: Path) -> str:
     return value if isinstance(value, str) and value and "\n" not in value else read_pair.stem
 
 
+def is_interleaved(reads: Path) -> bool:
+    """bbduk writes a paired sample interleaved: records 1 and 2 then share a read name."""
+    with gzip.open(reads, "rt") as f:
+        names = [line.split()[0].removesuffix("/1").removesuffix("/2")
+                 for i, line in zip(range(8), f) if i % 4 == 0]
+    return len(names) == 2 and names[0] == names[1]
+
+
 def protocol(context: ExecutionContext):
     reps = {line.split("\t")[0] for line in Path(context.Input(votus).local).read_text().splitlines() if line}
     keep = False
@@ -48,8 +58,7 @@ def protocol(context: ExecutionContext):
     steps = []
     for unit in context.InputGroup(reads):
         sample = sample_label(Path(context.SourceOf(unit, pair).local))
-        parity = json.loads(Path(context.SourceOf(unit, meta).local).read_text())["parity"]
-        mode = "--interleaved" if parity == "paired" else "-U"
+        mode = "--interleaved" if is_interleaved(unit.local) else "-U"
         steps.append(f"bowtie2 -p {cpus} -x idx {mode} {unit.container} --no-unal 2> bams/{sample}.log"
                      f" | samtools view -b -o bams/{sample}.bam -")
         steps.append(f"printf '%s\\t%s\\n' {sample} $(( $(zcat -f {unit.container} | wc -l) / 4 )) >> norm.tsv")
