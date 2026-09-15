@@ -134,8 +134,12 @@ def build_targets(with_gtdbtk=False, solver="open"):
     t.Add("bench::checkm2_quality", parents=[mags])
     if with_gtdbtk:
         t.Add("taxonomy::gtdbtk", parents=[mags])
+    # CAUTION keep this target. Without it the solver answers DAS Tool's and MAGScoT's ORF slots with
+    # prodigal-gv's ORFs on the pooled viral set, which descends from every assembly, and drops
+    # whole-assembly Prodigal (B23).
+    t.Add("binning_local::cluster_table", parents=[asm])
     # Dereplication: DAS Tool above, MAGScoT per sample, and dRep and skani over the same three bin
-    # sets, per sample and per study. The standard skani_dedup reads the CheckM 1 aggregator's pool.
+    # sets, per sample and per study.
     for dtype in ("bench::magscot_contig_to_bin", "bench::drep_sample_winners", "bench::skani_sample_clusters"):
         t.Add(dtype, parents=[asm])
     for dtype in ("bench::drep_study_winners", "bench::skani_study_clusters"):
