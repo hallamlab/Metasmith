@@ -24,12 +24,16 @@ COLUMNS = ("genome", "sample", "binner", "primary_cluster", "secondary_cluster",
 
 
 def sample_label(read_pair: Path) -> str:
-    # A pool given's file is named for its content hash, so the sample id is the file's JSON value.
+    # A pool given's file is named for its content hash; the sample id is the file's text.
     try:
-        value = json.loads(read_pair.read_text())
-    except (json.JSONDecodeError, UnicodeDecodeError):
+        text = read_pair.read_text().strip()
+    except UnicodeDecodeError:
         return read_pair.stem
-    return value if isinstance(value, str) else read_pair.stem
+    try:
+        value = json.loads(text)
+    except json.JSONDecodeError:
+        value = text
+    return value if isinstance(value, str) and value and "\n" not in value else read_pair.stem
 
 
 def protocol(context: ExecutionContext):
