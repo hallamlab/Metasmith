@@ -32,9 +32,15 @@ def protocol(context: ExecutionContext):
     if sample_id != sample:
         Log.Error(f"gold standard @SampleID [{sample_id}] is not this group's sample [{sample}]")
         return ExecutionResult(manifest=[], success=False)
+    # DAS Tool's contig2bin under --write_unbinned files every leftover contig under a bin named
+    # `unbinned`, and lists some contigs twice. AMBER would score that as one huge bin.
+    rows = dict.fromkeys(
+        line for line in Path(itable.local).read_text().splitlines()
+        if line.strip() and line.split("\t")[-1] != "unbinned"
+    )
     with open("prediction.tsv", "w") as f:
         f.write(f"@Version:0.9.1\n@SampleID:{sample_id}\n\n@@SEQUENCEID\tBINID\n")
-        f.write(Path(itable.local).read_text())
+        f.write("".join(f"{row}\n" for row in rows))
 
     context.ExecWithEnv(env=image, cmd=f"""
         amber.py -g {igold.container} -l {LABEL} -o amber_out --skip_gs prediction.tsv
