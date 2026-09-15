@@ -361,6 +361,10 @@ Each item points at its evidence above. Do them in this order.
 
     Size the relaunch's peak against free bytes.
 
+    Why promotion always copies, read from `<agent home>/lib/msm_bootstrap`: a task's container binds its working directory at `/ws` and the agent home at `/msm_home`. Promotion runs in `/ws` and writes to `/msm_home/task_cache`, two binds of one device. So `os.link` in `caching/admission.py:_place` fails with EXDEV and falls back to `copy2`. Node-local scratch rules out a link as well. A hard-link lever needs both of these:
+    - a scratch-off selector for the heavy-product steps, so the task directory sits under the agent home;
+    - promotion that links from the product's `/msm_home/runs/<key>/nxf_work/…` path, not its `/ws` path.
+
     E2 short has the same trap. Its bowtie2 shards were tombstoned in wave 1 (697 GB), so the relaunch for B21 and B17 reruns bowtie2 before its binners can hit cache. Promotion stores the BAMs again, about 1.4 TB.
 12. **E3 VIBRANT on metaSPAdes' contig batches (`p14__vibrant_pratama`).** 64 of 100 tasks exited without VIBRANT's results folder.
     - Cause, measured on a promoted split shard: `splitContigsForAmr` sorts contigs by length into batches of about 240 Mbp. Batches 4–9 of that SPAdes assembly hold no contig of 1 kb or more; batch 5's longest is 497 bp. VIBRANT skips contigs under its default 1,000 bp floor and writes no results folder, and the transform's assert failed the task. MEGAHIT's batches (p11, 286 of 286) passed, because MEGAHIT drops short contigs itself.
