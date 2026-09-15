@@ -12,7 +12,7 @@ Line numbers refer to `research/aspire/upstream/ASPIRE/asv_pipeline.nf` unless a
 
 ## Tally
 
-46 rows: 29 `match`, 5 `fixed`, 12 `open`.
+46 rows: 30 `match`, 5 `fixed`, 11 `open`.
 
 ## Read spine (rows 1-15)
 
