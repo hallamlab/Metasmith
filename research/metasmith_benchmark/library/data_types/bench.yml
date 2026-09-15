@@ -99,6 +99,11 @@ types:
     properties:
       bench: env
       provides: [smetana]
+  smetana_media_db:
+    properties:
+      _: metaGEM's media_db.tsv (medium, description, compound, name), the table its SMETANA rule reads, holding M1 to M16
+      bench: smetana_media_db
+      ext: tsv
 
   metapop_microdiversity:
     properties:

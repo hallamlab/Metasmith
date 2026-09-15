@@ -178,7 +178,8 @@ def solve(corpus, samples, args):
     inputs = declare_givens(smith, corpus, samples, ensure)
     pratama_globals = c.pratama_globals(smith, CACHE_DIR / corpus, ensure)
     modelling_globals = e4_metagem.declare_globals(smith, args.solver, CACHE_DIR / corpus / "e4_globals.xgdb", ensure,
-                                                   with_checkm2=True, with_metapop=True)
+                                                   with_checkm2=True, with_metapop=True,
+                                                   with_smetana=args.solver == "open")
     if importing:
         print(f"the pool at {smith.home.GetPath()} holds the givens of {len(samples)} samples")
         return

@@ -1,6 +1,6 @@
 # SMETANA over one assembly's community: every CarveMe model built from its DAS Tool MAGs. The call
 # is metaGEM's (`--flavor fbc2 --mediadb media_db.tsv -m <15 media> --detailed`) on SCIP, not CPLEX.
-# The media table is the one CarveMe ships, the table metaGEM copies next to its models.
+# The media table is metaGEM's own media_db.tsv: CarveMe's bundled table has none of M1 to M16.
 import shutil
 from pathlib import Path
 from metasmith.python_api import *
@@ -8,7 +8,7 @@ from metasmith.python_api import *
 lib     = TransformInstanceLibrary.ResolveParentLibrary(__file__)
 model   = Transform()
 image   = model.AddRequirement(lib.GetType("bench::smetana.env"))
-carveme = model.AddRequirement(lib.GetType("bench::carveme_166.env"))
+media   = model.AddRequirement(lib.GetType("bench::smetana_media_db"))
 asm     = model.AddRequirement(lib.GetType("sequences::assembly"))
 mags    = model.AddRequirement(lib.GetType("sequences::das_tool_bin_fasta"), parents={asm})
 orfs    = model.AddRequirement(lib.GetType("sequences::bin_orfs"), parents={mags})
@@ -30,11 +30,9 @@ def protocol(context: ExecutionContext):
         ounit.local.write_text(HEADER)
         return ExecutionResult(manifest=manifest, success=True)
 
-    context.ExecWithEnv(env=carveme, cmd="""
-        cp "$(python -c 'import carveme, os; print(os.path.join(os.path.dirname(carveme.__file__), "data", "input", "media_db.tsv"))')" media_db.tsv
-    """)
     context.ExecWithEnv(env=image, cmd=f"""
-        smetana -o community --flavor fbc2 --mediadb media_db.tsv -m {MEDIA} --detailed --solver scip -v models/*.xml
+        smetana -o community --flavor fbc2 --mediadb {context.Input(media).container} -m {MEDIA} \\
+            --detailed --solver scip -v models/*.xml
     """)
     shutil.move("community_detailed.tsv", ounit.local)
     return ExecutionResult(manifest=manifest, success=ounit.local.exists())

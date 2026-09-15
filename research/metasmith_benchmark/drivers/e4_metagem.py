@@ -29,6 +29,8 @@ PUBLISHED = Path(os.environ.get("METAGEM_PUBLISHED", "/scratch/phyberos/metagem/
 STUDY_ORDER = ["li2019", "korem2015", "karlsson2013", "bissett_base", "sunagawa2015"]
 MEDIUM_TSV = c.REPO / "research" / "metasmith_libraries" / "carveme_m8_medium.tsv"
 MEDIUM_NAME = "M8"
+# metaGEM's workflow/scripts/media_db.tsv, the table its SMETANA rule passes as --mediadb.
+SMETANA_MEDIA_DB = Path(__file__).parent / "refs" / "metagem_media_db.tsv"
 CPLEX_ROOT = Path(os.environ.get("CPLEX_ROOT", "/home/phyberos/projects/rpp-shallam/phyberos/cplex/cplex_runtime"))
 
 # First-attempt (cpus, GB, hours); the retry gets 32 GB and 24 h. B11: 3.75% of gapfills failed at the
@@ -59,8 +61,9 @@ def select(mags, args):
     return mags
 
 
-def declare_globals(smith, solver, location, ensure, with_gtdbtk=False, with_checkm2=False, with_metapop=False):
-    """The medium, the solver, GTDB, CheckM2's database and MetaPop's image, cited as their own resource library."""
+def declare_globals(smith, solver, location, ensure, with_gtdbtk=False, with_checkm2=False, with_metapop=False,
+                    with_smetana=False):
+    """The medium, the solver, GTDB, CheckM2's database, MetaPop's image and SMETANA's media, as one resource library."""
     givens = smith.PoolGivens()
     c.add_value(givens, "ref/modelling::media", MEDIUM_TSV.read_text(), "modelling::media", tags=["reference"])
     c.add_value(givens, "ref/modelling::medium_name", MEDIUM_NAME, "modelling::medium_name", tags=["reference"])
@@ -72,6 +75,9 @@ def declare_globals(smith, solver, location, ensure, with_gtdbtk=False, with_che
         c.declare_refs(givens, {"bench::checkm2_database": c.CHECKM2_DB})
     if with_metapop:
         c.declare_refs(givens, c.METAPOP_ENV_IMAGE)
+    if with_smetana:
+        c.add_value(givens, "ref/bench::smetana_media_db", SMETANA_MEDIA_DB.read_text(), "bench::smetana_media_db",
+                    tags=["reference"])
     types = [c.MLIB / "data_types" / t for t in ("modelling.yml", "ref.yml")] + [c.LIBRARY / "data_types" / "bench.yml"]
     return c.cite(givens, location, types, ensure)
 
