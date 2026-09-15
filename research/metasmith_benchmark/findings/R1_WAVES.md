@@ -364,6 +364,11 @@ Each item points at its evidence above. Do them in this order.
      - One failed on a BAM glob that fc30567 could not see, and one on signal 53 at 0 s on fc30609.
      - Account-wide failures since 20:00 spread over eight fc305xx nodes, led by fc30567 (7) and fc30559 (4). This fits a Lustre client problem across those nodes, not one bad node.
      - REDESIGN at de3e3a0d: a sample's work stays on `$SLURM_TMPDIR`, rows are built there, and only one tar and `rows.tsv` cross to Lustre. The five resubmitted on it (59892980) completed in 1–2 min each.
+   - ALL 41 DONE by ~21:30 fir clock.
+     - Resubmits: 59892233_17, 59892980 (7, 22, 27, 28, 34) and 59893022_26.
+     - Rows job 59893253 rebuilt the 35 samples written under the first builder.
+     - Totals over 41 `rows.tsv`: MetaBAT2 109,005 rows (wave 1's map had 0), DAS Tool 23,762 binned and 117,104 unbinned (wave 1's two-binner map had 23,060 binned). Every sample has MetaBAT2 rows and at least one DAS Tool bin.
+     - Merge job writes `bench/e1/long/b19/contig_to_bin_map.tsv`: the published COMEBin and SemiBin2 rows plus these.
    - E1 short was hit in the same window: 8 elements of SemiBin2 array 59892107 failed at 21:14:37 on fc30567 with "Expected file … does not exist" for their staged BAM or contigs. All 8 were retried (attempt 1), and the retries completed. CAUTION control.config returns `finish` on a second failure of one task, which would stop E1 short scheduling new work.
 5. **B21.** Rerun amber on E2 short and long with the fixed `e2/amber.py`.
 6. **B17.** Rerun gold_standard with the E2 pin at 2192c40c.
