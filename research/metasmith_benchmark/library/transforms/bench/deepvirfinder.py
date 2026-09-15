@@ -12,10 +12,12 @@ out     = model.AddProduct(lib.GetType("bench::deepvirfinder_scores"))
 def protocol(context: ExecutionContext):
     iasm, oscores = context.Input(asm), context.Output(out)
     cpus = context.params.get("cpus") or 1
-    # Theano compiles its kernels on first use and needs a writable cache.
+    # Theano compiles its kernels on first use and needs a writable cache. CAUTION dvf.py predicts in a
+    # multiprocessing pool, and workers sharing one compile directory race for its lock: one task died with
+    # `FileExistsError: ... compiledir_.../lock_dir`. `compiledir_format` gives each worker its own.
     context.ExecWithEnv(env=image, cmd=f"""
         set -euo pipefail
-        export THEANO_FLAGS="base_compiledir=$PWD/theano,floatX=float32" OMP_NUM_THREADS={cpus}
+        export THEANO_FLAGS="base_compiledir=$PWD/theano,compiledir_format=compiledir_%(process_id)s,floatX=float32" OMP_NUM_THREADS={cpus}
         zcat -f {iasm.container} > contigs.fa
         python /DeepVirFinder/dvf.py -i contigs.fa -o dvf -l 1000 -c {cpus}
         mv dvf/contigs.fa_gt1000bp_dvfpred.txt {oscores.container}
