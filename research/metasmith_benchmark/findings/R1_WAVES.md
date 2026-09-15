@@ -313,6 +313,14 @@ No step kind is unproven in any lane except CarveMe on E5's open solver, whose r
 
 Each item points at its evidence above. Do them in this order.
 1. **E5 CarveMe on an open solver.** Pin a bench copy of `carveme_from_orfs` on `quay.io/biocontainers/carveme:1.6.6--pyhdfd78af_1` and mask the standard one (Tony: "1.6.6 first, then add HiGHS"). Relaunch E5 pratama and metagem from cache. Build and test a HiGHS gapfill solver on fir, and adopt it only if it gives better gapfills within about 45 min per MAG.
+   - PINNED at 823c6b48:
+     - `library/transforms/modelling/carveme_from_orfs.py` on `bench::carveme_166.env`;
+     - the env file `library/resources/bench/carveme_166.env`;
+     - build.sh registers modelling's images under `bench`;
+     - `e5_pilot.py` masks the standard transform in every corpus and loads `resources/bench`.
+   - CAUTION a resources dir registers under the type namespace of its name, so an env in `resources/<ns>` must be typed `<ns>::…` and passed to `GenerateWorkflow`. Without the resource, the solve fails on the env.
+   - Local solves: pratama 35 steps `hAHlhurq`, metagem 36 `fxC68Rwh`, cami 35 `lZPcVoCs`. E4 chunk 1 is unchanged at `4h3Zb0MY`, and memote's transform id is unchanged.
+   - cami moves to 1.6.6 too, with its memote relaunch (item 3), so all three corpora share one CarveMe.
 2. **Engine: collect-results KeyError.** It hit `qcMKf68s`. Root cause, traced on fir:
    - `nxf_trace.tsv` holds 368 completed `p34__carveme_from_orfs_cplex` tasks but only 367 promoted records, plus 2 miss events.
    - The odd task is CarveMe (88): work dir `ae/ddf64b…`, array element `59820190_87` on fc30564, the node with this lane's Lustre `cp` EIO errors. It exited 0 and left no `.command.cache` and no shard; no key among the 6,628 pratama shards mints the orphan id.
