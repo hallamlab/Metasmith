@@ -789,6 +789,9 @@ Decided 2026-09-15 under autopilot, from Tony's note (journal 78db76ba). After b
 - **E1/E2 parity:** unchanged. Both run DAS Tool per sample at score threshold 0.5.
 - **E3/E4:** unchanged. MetaWRAP bin_refinement stays as the reproduction's dereplicator.
 - **Cache:** nothing retires. No dereplicator besides DAS Tool is built yet, and DAS Tool's transform is unchanged.
+- **Built (6a193308), not yet run:** `bench/magscot.py` (per sample, `ikmb/magscot:v1.1`, defaults, GTDB r207 HMMs in the image, the plan's Prodigal ORFs), `bench/drep_sample.py` and `drep_study.py` (dRep 3.7.1, Pratama's `-pa 0.90 -sa 0.99 -comp 50 -con 10`, quality from CheckM2 via `--genomeInfo`), `bench/skani_sample.py` and `skani_study.py` (the standard skani_dedup clustering at 95 and 99 over the three binners' bins). Per study groups by `viromics::contig_study`. Images probed on a fir login node (`cache/apptainer/_derep_probe`).
+  - Local E5 cami solve: 39 steps, key `aBEwSFp1`. Against V2ELuag4 it drops the CheckM 1 path (checkm, aggregator, standalone prodigal, skani_dedup) and adds the five dereplicators. CheckM2 and GTDB-Tk transform ids unchanged by the bench rebuild, so V2ELuag4's CheckM2 shards stay hits.
+  - Adversarial review before launch in flight.
 
 ### E5 CheckM2 (D3)
 
