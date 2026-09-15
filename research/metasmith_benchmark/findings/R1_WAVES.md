@@ -344,7 +344,7 @@ Each item points at its evidence above. Do them in this order.
    - E1: the generic retry and the 32 h COMEBin setting stay.
 8. **Engine candidates:**
    - Copy task logs once per task dir in record_run.
-   - Exempt `_cached` replays from the submit rate limit.
+   - Exempt `_cached` replays from the submit rate limit. Wave 1's pratama relaunch replayed about 1,700 hits at 1 per 5 s, 2.3 h before any new work. Config can't do it: Nextflow 26.04 reports `executor.$local.submitRateLimit` as an unrecognized option, checked with `nextflow -c <preset> config -flat` on fir. The fix goes in the engine, for example one batched replay process per step.
    - Repair the index for pruned-dir shards (WfOlaqLT fastp, 8Z7x3L7z, qcMKf68s).
    - Allow hard-link cache hits on a single-mount Lustre.
 9. **Deviations to write:**
