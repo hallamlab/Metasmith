@@ -330,7 +330,7 @@ TABLE: list[T] = [
        ("log", "aspire::sina_log"), ("vreg", "aspire::sina_v_regions")],
       "run",
       note="the .nf calls its input `derep_fasta`, but the workflow body wires "
-           "FILTER_TABLE's filtered ASV sequences in (asv_pipeline.nf:3631). "
+           "FILTER_TABLE's filtered ASV sequences in (asv_pipeline.nf:2630-2631). "
            "The parameter name is legacy; the wiring is what is ported.",
       cpus=16, memory_gb=32, hours=8),
 
@@ -396,7 +396,8 @@ TABLE: list[T] = [
        _r("filtered", "aspire::filtered_stats", "run"),
        _r("raw", "amplicon::asv_table", "run"),
        _r("decon", "aspire::counts_decon", "run"),
-       _r("micro", "aspire::counts_micro", "run")],
+       _r("micro", "aspire::counts_micro", "run"),
+       _r("meta", "aspire::sample_metadata")],
       [("out", "aspire::sankey_outputs")], "run",
       note="`sankey.done` is dropped; the renderings are the output, and "
            "MASTER_SUMMARY reads the directory rather than the sentinel."),
@@ -411,7 +412,7 @@ TABLE: list[T] = [
 
     T("plot_metadata", "PLOT_METADATA", 3793,
       [RUN, _r("fastq", "aspire::fastq_stats", "run"),
-       _r("micro", "aspire::counts_micro", "run"),
+       _r("micro", "aspire::counts_filtered", "run"),
        _r("mito", "aspire::counts_mito", "run"),
        _r("tax", "amplicon::asv_taxonomy", "run"),
        _r("meta", "aspire::sample_metadata")],
@@ -505,7 +506,7 @@ TABLE: list[T] = [
       note="r4 ecology lift: requires the generic `amplicon::survey` grouping node and a bare `amplicon::asv_table` instead of `aspire::run` and `aspire::analysis_counts`, so it is reachable from any count table -- `kbase/profile_abundance/kraken_abundance.py` produces one from kraken2 reports. An ASPIRE run satisfies the survey requirement unchanged. See research/kbase/curation/r4/aspire_topology.md."),
 
     T("outlier_checker", "OUTLIER_CHECKER", 4316,
-      [RUN, _r("clr", "aspire::asv_clr_selected", "run"),
+      [RUN, _r("clr", "aspire::asv_clr_after", "run"),
        _r("md", "aspire::analysis_metadata", "run")],
       [("out", "aspire::outlier_outputs")], "run",
       note="reads the CLR matrix, which only the correction arm produces -- so "
@@ -585,7 +586,8 @@ TABLE: list[T] = [
     T("clustermaps", "CLUSTERMAPS", 5324,
       [RUN, _r("am", "aspire::analysis_asv_meta", "run"),
        _r("md", "aspire::analysis_metadata", "run"),
-       _r("tables", "aspire::indicspecies_tables", "run")],
+       _r("tables", "aspire::indicspecies_tables", "run"),
+       _r("mito", "aspire::counts_mito", "run")],
       [("out", "aspire::clustermap_outputs")], "run", cpus=4, memory_gb=16, hours=3,
       note="the .nf passes a boolean saying whether indicator species ran and "
            "then globs the tables out of a shared directory. The directory is "
@@ -672,7 +674,8 @@ TABLE: list[T] = [
        _r("nf", "aspire::network_node_features", "run"),
        _r("tax", "amplicon::asv_taxonomy", "run"),
        _r("counts", "aspire::analysis_counts", "run"),
-       _r("pairing", "aspire::asv_mag_pairing", "run")],
+       _r("pairing", "aspire::asv_mag_pairing", "run"),
+       _r("magl", "aspire::asv_mag_outputs", "run")],
       [("out", "aspire::asv_mag_network_outputs")], "run", cpus=4, memory_gb=16, hours=4,
       note="the .nf picks the unthresholded or thresholded graph by config "
            "(`asv_mag_network.graph_variant`). Ported against the "

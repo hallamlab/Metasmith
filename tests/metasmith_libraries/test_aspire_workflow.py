@@ -1,6 +1,6 @@
 import pytest
 
-from metasmith.python_api import DEFERRED, Spec, TransformInstanceLibrary
+from metasmith.python_api import DEFERRED, Spec, TransformInstanceLibrary, record_library
 
 from conftest import MLIB
 
@@ -45,8 +45,7 @@ def aspire_inputs(tmp_inputs):
                           "external_node_features"):
                 inputs.AddItem(DEFERRED, f"aspire::{dtype}")
 
-        inputs.Save()
-        return inputs
+        return record_library(inputs)
     return _build
 
 

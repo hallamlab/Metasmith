@@ -20,6 +20,7 @@ nf      = model.AddRequirement(lib.GetType("aspire::network_node_features"), par
 tax     = model.AddRequirement(lib.GetType("amplicon::asv_taxonomy"), parents={run})
 counts  = model.AddRequirement(lib.GetType("aspire::analysis_counts"), parents={run})
 pairing = model.AddRequirement(lib.GetType("aspire::asv_mag_pairing"), parents={run})
+magl    = model.AddRequirement(lib.GetType("aspire::asv_mag_outputs"), parents={run})
 out     = model.AddProduct(lib.GetType("aspire::asv_mag_network_outputs"))
 
 def protocol(context: ExecutionContext):

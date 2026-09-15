@@ -13,7 +13,7 @@ from metasmith.python_api import *
 lib   = TransformInstanceLibrary.ResolveParentLibrary(__file__)
 model = Transform()
 run = model.AddRequirement(lib.GetType("aspire::run"))
-clr = model.AddRequirement(lib.GetType("aspire::asv_clr_selected"), parents={run})
+clr = model.AddRequirement(lib.GetType("aspire::asv_clr_after"), parents={run})
 md  = model.AddRequirement(lib.GetType("aspire::analysis_metadata"), parents={run})
 out = model.AddProduct(lib.GetType("aspire::outlier_outputs"))
 

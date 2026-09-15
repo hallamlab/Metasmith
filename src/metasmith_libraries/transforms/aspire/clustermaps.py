@@ -17,6 +17,7 @@ run    = model.AddRequirement(lib.GetType("aspire::run"))
 am     = model.AddRequirement(lib.GetType("aspire::analysis_asv_meta"), parents={run})
 md     = model.AddRequirement(lib.GetType("aspire::analysis_metadata"), parents={run})
 tables = model.AddRequirement(lib.GetType("aspire::indicspecies_tables"), parents={run})
+mito   = model.AddRequirement(lib.GetType("aspire::counts_mito"), parents={run})
 out    = model.AddProduct(lib.GetType("aspire::clustermap_outputs"))
 
 def protocol(context: ExecutionContext):

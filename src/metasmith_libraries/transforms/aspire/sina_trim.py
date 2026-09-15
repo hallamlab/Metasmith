@@ -2,8 +2,8 @@
 """sina_trim -- SINA_TRIM (asv_pipeline.nf:3322)
 
 the .nf calls its input `derep_fasta`, but the workflow body wires
-FILTER_TABLE's filtered ASV sequences in (asv_pipeline.nf:3631). The parameter
-name is legacy; the wiring is what is ported.
+FILTER_TABLE's filtered ASV sequences in (asv_pipeline.nf:2630-2631). The
+parameter name is legacy; the wiring is what is ported.
 
 Stub: the model is the port, the body only touches its outputs.
 Regenerate with `python transforms/aspire/_generate.py`.

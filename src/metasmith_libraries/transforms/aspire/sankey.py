@@ -19,6 +19,7 @@ filtered = model.AddRequirement(lib.GetType("aspire::filtered_stats"), parents={
 raw      = model.AddRequirement(lib.GetType("amplicon::asv_table"), parents={run})
 decon    = model.AddRequirement(lib.GetType("aspire::counts_decon"), parents={run})
 micro    = model.AddRequirement(lib.GetType("aspire::counts_micro"), parents={run})
+meta     = model.AddRequirement(lib.GetType("aspire::sample_metadata"))
 out      = model.AddProduct(lib.GetType("aspire::sankey_outputs"))
 
 def protocol(context: ExecutionContext):
