@@ -313,7 +313,13 @@ No step kind is unproven in any lane except CarveMe on E5's open solver, whose r
 
 Each item points at its evidence above. Do them in this order.
 1. **E5 CarveMe on an open solver.** Pin a bench copy of `carveme_from_orfs` on `quay.io/biocontainers/carveme:1.6.6--pyhdfd78af_1` and mask the standard one (Tony: "1.6.6 first, then add HiGHS"). Relaunch E5 pratama and metagem from cache. Build and test a HiGHS gapfill solver on fir, and adopt it only if it gives better gapfills within about 45 min per MAG.
-2. **Engine: collect-results KeyError.** It hit `qcMKf68s`, a cache-served run. Reproduce it from that run's trace before any E5 relaunch.
+2. **Engine: collect-results KeyError.** It hit `qcMKf68s`. Root cause, traced on fir:
+   - `nxf_trace.tsv` holds 368 completed `p34__carveme_from_orfs_cplex` tasks but only 367 promoted records, plus 2 miss events.
+   - The odd task is CarveMe (88): work dir `ae/ddf64b…`, array element `59820190_87` on fc30564, the node with this lane's Lustre `cp` EIO errors. It exited 0 and left no `.command.cache` and no shard; no key among the 6,628 pratama shards mints the orphan id.
+   - memote (110) consumed file `394251d5…`, which no trace event produces. `collect.py:147` raises on the first parent nothing accounts for, so the one missing record cost the run all of `results/`.
+   - The cause is "consistent with", not proven: the task's logs were pruned at 18:35, after record_run at 14:09 had already found no record.
+
+   Two defects follow. A task can exit 0 without writing its cache record. Collect is all-or-nothing on one unaccounted parent. Fix collect to warn and keep the rest, and make a failed record write fail the task so nextflow retries it. This is not about cache-served runs: the hits here were all accounted for.
 3. **E5 cami and pratama memote.** Relaunch on the pinned transform.
 4. **B19 on both arms.** E2 long through `e2/metabat2.py` at identity 80, with the E2 long relaunch. E1 long through the depth, MetaBAT2 and DAS Tool rerun over `work/`.
 5. **B21.** Rerun amber on E2 short and long with the fixed `e2/amber.py`.

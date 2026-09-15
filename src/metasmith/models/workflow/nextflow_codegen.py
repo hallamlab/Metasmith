@@ -455,7 +455,9 @@ def prepare_nextflow(task, context: NextflowGenContext):
             f'echo "{external_binds_param}" >{BIND_FILE}',
             f'{context.bootstrap_var}',
             f'bootstrap {context.external_work_var} "{step.order}" ${{params.hostName}}',
-            f'[ "\\$__msm_wd" = "\\$PWD" ] || cp -f {CACHE_RECORD_FILE} "\\$__msm_wd/" 2>/dev/null || true',
+            # A record lost on the way out of scratch leaves an exit-0 task the
+            # trace never sees, so a failed copy fails the task and it retries.
+            f'[ "\\$__msm_wd" = "\\$PWD" ] || [ ! -e {CACHE_RECORD_FILE} ] || cp -f {CACHE_RECORD_FILE} "\\$__msm_wd/" || exit 1',
             f'[ -e .command.success ] && exit 0 || exit 1',
             '"""',
             'stub:',
