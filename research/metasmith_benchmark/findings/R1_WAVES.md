@@ -347,6 +347,8 @@ Each item points at its evidence above. Do them in this order.
      - The first task's `.command.run` stages `_metasmith/task/data/kOylj7BHHODG/carveme_166.env`, which names `quay.io/biocontainers/carveme:1.6.6--pyhdfd78af_1`. So the pin reaches pratama.
      - Element `_0` runs on fc30557, the node whose Lustre client dropped twice for B19. Its failure retries.
      - metagem `cSBSeNuq` was still replaying annotation (1,850).
+   - E5 METAGEM CARVEME STARTED by 22:25 fir clock: 12 `p35__carveme_from_orfs` RUNNING at `-t 12:00:00`, `--mem 16384M`. A task's `.command.out` names `quay.io/biocontainers/carveme:1.6.6--pyhdfd78af_1`, so the pin reaches metagem. At 22:25 neither lane had a nonzero CarveMe exit (pratama 33 exit 0, 260 running).
+   - E1 short, 22:08: SemiBin2 (MEGAHIT-strain_sample_11), job 59897758, exited 1 in 2 s on fc30567, before the exclusion watcher's first pass. The head logged "Execution is retried (1)". A second failure of this task returns `finish`.
    - E1 short: the last COMEBin (`toy_mousegut_sample_55`, 32 h rung) COMPLETED with exit 0 at 20:10. The head runs MetaBAT2 for the 9 depth-rerun strain samples, then DAS Tool.
    - HiGHS evidence so far comes from the RCA's standalone MPS solves (`carveme_rca/scripts/highs_solve.py`, highspy, 1 thread), not a CarveMe solver class.
      - Gapfill problems: Optimal in 93–652 s on 1.6.1's 3 hard pratama bins, and 436–752 s on E4's 4 CPLEX-dropped MAGs. One stalled bin (`08a18e10`) hit the 1 h limit at a 13% gap.
