@@ -49,19 +49,19 @@ GROUPS = [
         ("BinSanity", {"Pratama": True, "E3": NEW}, "fill"),
         ("abawaca", {"Pratama": True, "E3": NEW}, "fill"),
     ]),
-    ("Bin refinement: best bins per sample, from several binners", [
-        ("DAS Tool", {"E1": True, "E2": True, "E5": "feeds both dereplicators"}, "Tony: try all four. Refinement and dereplication are separate steps"),
-        ("MetaWRAP bin_refinement", {"Pratama": "2 rounds", "E3": "2 rounds; now 1, until BinSanity and abawaca", "metaGEM": True}, "Tony: MAGScoT"),
+    ("Dereplication: one non-redundant bin set from overlapping candidates", [
+        ("DAS Tool", {"E1": "per sample", "E2": "per sample", "E5": "NEW: per sample, over all three binners"}, "Tony: four interchangeable dereplicators for one step"),
+        ("MetaWRAP bin_refinement", {"Pratama": "2 rounds, with CheckM filtering", "E3": "2 rounds; now 1, until BinSanity and abawaca", "metaGEM": "with CheckM filtering"}, "Tony: MAGScoT"),
+        ("MAGScoT", {"E5": "NEW: per sample, over all three binners"}, "Tony: four interchangeable dereplicators for one step"),
+        ("dRep", {"Pratama": "across samples", "E3": "NEW: across samples", "E5": "NEW: per sample, and per study"}, "Tony: four interchangeable dereplicators for one step"),
+        ("skani_dedup", {"E5": "per sample, and per study; needs a study grouping"}, "Tony: four interchangeable dereplicators for one step"),
+    ]),
+    ("Reassembly", [
         ("MetaWRAP reassemble_bins", {"metaGEM": True}, "fill"),
-        ("MAGScoT", {"E5": "NEW: feeds both dereplicators"}, "Tony: try all four. Refinement and dereplication are separate steps"),
     ]),
     ("Bin quality", [
         ("CheckM2", {"E1": True, "E2": True, "E5": "now missing: no standard transform"}, "Tony: CheckM2 only"),
         ("CheckM", {"Pratama": "inside MetaWRAP", "E3": "inside MetaWRAP", "metaGEM": "inside MetaWRAP"}, "Tony: CheckM2 only"),
-    ]),
-    ("Dereplication: one genome per species, across samples", [
-        ("dRep", {"Pratama": True, "E3": "NEW: replaces skani_dedup", "E5": "NEW: per study, on DAS Tool and on MAGScoT bins"}, "Tony: try all four. Refinement and dereplication are separate steps"),
-        ("skani_dedup", {"E5": "per study, on DAS Tool and on MAGScoT bins; needs a study grouping"}, "Tony: try all four. Refinement and dereplication are separate steps"),
     ]),
     ("MAG taxonomy", [
         ("GTDB-Tk", {"Pratama": "r202", "E3": "r232; package extracted on fir", "metaGEM": True, "E4": "r232; package extracted on fir", "E5": "r232; package extracted on fir"}, "Tony: r232 everywhere, even where it breaks parity"),

@@ -31,6 +31,10 @@ FIR_GPU = Gpu(memory=Size.GB(40), type="nvidia_h100_80gb_hbm3_3g.40gb", flag="--
 AGENT_IMAGE = os.environ.get("MSM_AGENT_IMAGE", "docker://quay.io/hallamlab/metasmith:0.22.1")
 ON_HOST = os.environ.get("BENCH_ON_HOST") == "1"
 FIR_MEM_MB_PER_CPU = 4000
+# Nodes whose Lustre client failed our tasks with Errno 108, EIO or 0-second starts in R1.
+# A driver job's own --exclude does not reach the grid tasks nextflow submits.
+FIR_BAD_NODES = ("fc30372,fc30557,fc30559,fc30560,fc30564,fc30567,fc30570,fc30604,"
+                 "fc30608,fc30609,fc30622,fc30623,fc30628,fc30640")
 
 # E2's two arms and E5's CAMI pilot share the CAMI home, E3 and E5's Pratama pilot share
 # Pratama's. Each home pays its own reference staging and needs its own dev overlay push.
@@ -295,7 +299,7 @@ def make_slurm_config(smith, cache_dir, scaled=None, comebin_cpus=48, comebin_ti
         f"        cpus = {comebin_cpus}",
         f"        memory = '{mem_gb} GB'",
         f"        time = '{comebin_time}'",
-        f'        clusterOptions = "--nodes=1 --ntasks=1 --account={SLURM_ACCOUNT}"',
+        f'        clusterOptions = "--nodes=1 --ntasks=1 --account={SLURM_ACCOUNT} --exclude={FIR_BAD_NODES}"',
         "    }", "}", "",
         "process {", "    withName: '.*_cached' {", "        array = 0", "        scratch = false", "    }", "}", ""])
     for name in IN_PLACE_STEPS:
@@ -329,6 +333,8 @@ def stage_and_run(smith, task, cache_dir, tag, *, stage_only, params, scaled=Non
     if stage_only:
         print(f"staged {tag} as {task.GetKey()}")
         return
+    params = dict(params)
+    params["process"] = {**params.get("process", {}), "clusterOptionsExtra": f"--exclude={FIR_BAD_NODES}"}
     smith.RunWorkflow(task=task, config_file=make_slurm_config(smith, cache_dir, scaled), gpus=gpus,
                       params=dict(slurmAccount=SLURM_ACCOUNT, slurmGpuAccount=SLURM_GPU_ACCOUNT, **params))
     print(f"submitted {tag}: {task.GetKey()}", flush=True)
