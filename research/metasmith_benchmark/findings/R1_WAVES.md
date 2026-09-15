@@ -214,6 +214,11 @@ E2 long's run ended without refinement or scoring, and its failure report names 
 
 ### Stopped
 
+- 2026-09-15 ~00:40 fir clock, INODE BURST FROM WAVE-2 E2 REPLAYS. Inodes rose 868,502 (00:28) → 909,360 (~00:42). Cached twins cost about 10 inodes each, and a cached directory product (bin sets) cannot be hard-linked, so its twin copies the whole tree; E2 long's cached semibin2 and comebin dirs hold about 209 each. Per-run census 59913034: WfOlaqLT 49,985, F1yIPPmC 21,867, lE94xbfH 21,196, sxDeVO5L 19,084, AvPNgFtP 10,004, qcMKf68s 9,798, 33hlLu8Q 8,779, 8Z7x3L7z 8,556, Son2YJiI 7,999, YzCrdOoF 6,456. Top level: cami 377,839, bench 155,290, metagem 154,772, pratama2026 125,880, refs 56,287.
+  - DECIDED under G5: delete four superseded wave-1 run dirs that no job used, with `delete_stage.sbatch` from checkout b6544e15. Each job is gated on no live workflow or checkout naming the dir and no symlink under its home's task_cache resolving into it. Wave-2 runs replay from task_cache shards, not from these dirs. Their results are superseded: WfOlaqLT's amber was mis-scored (B21), qcMKf68s ran the withdrawn CPLEX CarveMe, 8Z7x3L7z died, and cSBSeNuq replaces YzCrdOoF. The wave-1 counts for them stay in this file.
+  - DONE: qcMKf68s 59913211 (9,798 inodes, 34,348,248,132 B), 8Z7x3L7z 59913212 (8,556, 34,644,106,000 B), YzCrdOoF 59913213 (6,456, 24,641,718,618 B). WfOlaqLT 59913210 (49,985) was still in its symlink gate at 00:45. Quota 884,277 inodes at 00:45.
+  - HELD: 33hlLu8Q and Son2YJiI until E3 relaunches. KEPT: lE94xbfH (E4 chunk 1) and the wave-2 E5 runs.
+
 - Before the wave, three pre-R1 runs that wave-1 lanes supersede: `iy8YLaGr` (CAMI rung 1), `d6UJuZgF` (Pratama rung 1) and `HQ5SrqFe` (metaGEM li2019). The engine route launched all three, so `scancel --batch --signal=USR1` killed them. That orphaned seven grid jobs: two COMEBin, two DRAM-v (still pending) and three CarveMe. The research agent cancelled all seven by hand. Nothing recoverable was lost, because an orphaned job never writes a cache entry. `C1IM6IG3`'s array covers COMEBin, and E4 covers CarveMe.
 - `C1IM6IG3` (CAMI rung 10) keeps running until COMEBin array `59583112` finishes, because it is B5's only source.
 - During the wave, to reclaim bytes:
