@@ -348,6 +348,12 @@ Each item points at its evidence above. Do them in this order.
      - Element `_0` runs on fc30557, the node whose Lustre client dropped twice for B19. Its failure retries.
      - metagem `cSBSeNuq` was still replaying annotation (1,850).
    - E5 METAGEM CARVEME STARTED by 22:25 fir clock: 12 `p35__carveme_from_orfs` RUNNING at `-t 12:00:00`, `--mem 16384M`. A task's `.command.out` names `quay.io/biocontainers/carveme:1.6.6--pyhdfd78af_1`, so the pin reaches metagem. At 22:25 neither lane had a nonzero CarveMe exit (pratama 33 exit 0, 260 running).
+   - E5 PRATAMA `AvPNgFtP` ENDED COMPLETE. Driver 59880850 COMPLETED 0:0 at 23:00:18 (3:35:53).
+     - results/: 381 `sequences-das_tool_bin_fasta`, 381 `sequences-bin_orfs`, 381 `modelling-carveme_model` (CarveMe 1.6.6) and 381 `modelling-memote_score`, all non-empty. Collect wrote 10,501 outputs; 758 members promoted, 4,025 served from shards.
+     - The run reports "failed" with 4 ignored steps (carveme 126, memote 145, 157, 326). Every bin has its model and score, so these are the `_failed_steps` false positive (a retry passed), fixed at 2ccf0e7d.
+     - ALL THREE E5 CORPORA NOW HAVE CARVEME 1.6.6 MODELS FOR EVERY BIN: cami 51, metagem 85, pratama 381. T19 item 1 is done; HiGHS is next on the solver line.
+     - Prune 59905131 (prune_work from 823c6b48, keeps `.command.cache`) empties its 2,931 nxf_work dirs. Gates checked at submit: no PID.lock, driver COMPLETED, no job with an AvPNgFtP work dir.
+     - With both E5 drivers ended, 8a54415f (hard-link promotion, scratch-off selectors) and 2ccf0e7d (`_failed_steps`) are synced to fir. No metasmith driver was live in any home; the E1 short head runs from its own minimal checkout.
    - 22:57 fir: E5 pratama `AvPNgFtP` CarveMe 1.6.6 finished: nxf.log holds 381 `carveme_from_orfs` exit 0 and 1 nonzero (126, Lustre EIO, retried). memote has 371 exit 0 and 10 running. Counts against bins wait for the run end.
    - E5 METAGEM `cSBSeNuq` ENDED COMPLETE. Driver 59881354 COMPLETED 0:0 at ~22:38 (3:10:49).
      - results/: 85 `sequences-das_tool_bin_fasta`, 85 `sequences-bin_orfs`, 85 `modelling-carveme_model` (CarveMe 1.6.6) and 85 `modelling-memote_score`, all non-empty. Collect wrote 6,357 outputs; 169 members promoted, 2,853 served from shards.
