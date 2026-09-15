@@ -9,7 +9,11 @@ MAMBA=${MAMBA:-$HOME/.local/bin/mamba}
 
 for lib in ${*:-e2 e3}; do
     uniques=()
-    [[ -d "$HERE/resources/$lib" ]] && uniques=(-u "$HERE/resources/$lib")
+    # A resources dir registers under the type namespace of its name. modelling pins standard
+    # transforms and has no namespace of its own, so its images are bench's.
+    res=$lib
+    [[ $lib == modelling ]] && res=bench
+    [[ -d "$HERE/resources/$res" ]] && uniques=(-u "$HERE/resources/$res")
     PYTHONPATH="$REPO/src" "$MAMBA" run -n msm python -m metasmith build all \
         -t "$REPO/src/metasmith_libraries/data_types" -t "$HERE/data_types" \
         "${uniques[@]}" \

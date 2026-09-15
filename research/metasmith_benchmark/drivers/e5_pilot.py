@@ -97,7 +97,10 @@ def expected_counts(samples):
 
 
 def build_transforms(solver="open"):
-    unused_carveme = "carveme_from_orfs.py" if solver == "cplex" else "carveme_from_orfs_cplex.py"
+    # The open solver's CarveMe is the bench library's 1.6.6 pin, so the standard 1.6.1 one is always masked.
+    masked = {Path("carveme_from_orfs.py"), Path("memote_score.py")}
+    if solver == "open":
+        masked.add(Path("carveme_from_orfs_cplex.py"))
     viromics = TransformInstanceLibrary.Load(c.MLIB / "transforms" / "viromics")
     modelling = TransformInstanceLibrary.Load(c.MLIB / "transforms" / "metabolicModelling")
     metagenomics = TransformInstanceLibrary.Load(c.MLIB / "transforms" / "metagenomics")
@@ -112,7 +115,7 @@ def build_transforms(solver="open"):
         TransformInstanceLibrary.Load(c.MLIB / "transforms" / "fabfos"),
         # CCTyper is dropped from every experiment.
         viromics.AsView({Path("cctyper.py")}, invert=True),
-        modelling.AsView({Path(unused_carveme), Path("memote_score.py")}, invert=True),
+        modelling.AsView(masked, invert=True),
         TransformInstanceLibrary.Load(c.LIBRARY / "transforms" / "modelling"),
     ]
 
@@ -176,6 +179,7 @@ def solve(corpus, samples, args):
         samples=list(inputs.AsSamples("sequences::read_metadata")),
         resources=[DataInstanceLibrary.Load(c.MLIB / "resources" / "env"),
                    DataInstanceLibrary.Load(c.MLIB / "resources" / "lib"),
+                   DataInstanceLibrary.Load(c.LIBRARY / "resources" / "bench"),
                    pratama_globals, modelling_globals],
         transforms=build_transforms(args.solver),
         targets=build_targets(args.with_gtdbtk, args.solver),

@@ -6,3 +6,8 @@ types:
       _: squashfs image of GTDB's skani genome trees, GCF/ and GCA/ at its root, bound over ref::gtdb's skani/database/GCF and GCA
       bench: gtdb_genomes_image
       ext: sqfs
+
+  carveme_166.env:
+    properties:
+      bench: env
+      provides: [carveme]
