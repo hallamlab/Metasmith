@@ -79,3 +79,23 @@ types:
     properties:
       bench: env
       provides: [magscot]
+
+  deepvirfinder_scores:
+    properties:
+      _: DeepVirFinder's score and p-value per contig of at least 1 kb in one assembly
+      bench: deepvirfinder_scores
+      ext: tsv
+  deepvirfinder.env:
+    properties:
+      bench: env
+      provides: [deepvirfinder]
+
+  smetana_detailed:
+    properties:
+      _: SMETANA detailed scores for one assembly's community of CarveMe models, one row per receiver, donor, compound and medium
+      bench: smetana_detailed
+      ext: tsv
+  smetana.env:
+    properties:
+      bench: env
+      provides: [smetana]

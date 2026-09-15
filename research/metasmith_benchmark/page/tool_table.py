@@ -71,7 +71,7 @@ GROUPS = [
         ("prodigal-gv", {"E3": "viral contigs", "E5": True}, "Tony: both Prodigal and prodigal-gv"),
     ]),
     ("Virus identification", [
-        ("DeepVirFinder", {"Pratama": True, "E3": NEW, "E5": NEW}, "fill · no transform yet. It runs on CPU, so a GPU isn't what's missing"),
+        ("DeepVirFinder", {"Pratama": "-l 1000", "E3": NEW, "E5": "-l 1000; score table only, its calls stay out of the vOTU set (no cut given)"}, "fill"),
         ("VIBRANT", {"Pratama": "-virome", "E3": "-virome", "E5": True}, "Taken from Pratama"),
         ("geNomad", {"Pratama": "two sensitivity flags", "E3": "Pratama's flags", "E5": True}, "Taken from Pratama"),
         ("VirSorter2", {"Pratama": "dsDNAphage, ssDNA", "E3": "Pratama's groups", "E5": True}, "Taken from Pratama"),
@@ -101,7 +101,7 @@ GROUPS = [
         ("CPLEX solver", {"metaGEM": True, "E4": "22.2"}, "Open-source solver"),
         ("Open-source solver (SCIP)", {"E5": "runtime risk: an open solver ran 1 h 49 m on the smallest bin without finishing"}, "Open-source solver"),
         ("MEMOTE", {"metaGEM": True, "E4": True, "E5": True}, "fill"),
-        ("SMETANA", {"metaGEM": True, "E4": NEW, "E5": NEW}, "Tony: run it"),
+        ("SMETANA", {"metaGEM": "detailed, 15 media, CPLEX", "E4": NEW, "E5": "detailed, 15 media, SCIP; one community per sample"}, "Tony: run it"),
     ]),
     ("Scoring", [
         ("AMBER", {"E1": "after the run", "E2": True, "E5": "after the run, outside the plan"}, "Tony: one plan can't give samples different targets"),

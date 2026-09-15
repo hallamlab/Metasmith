@@ -39,10 +39,10 @@ MISSING = [
     "a study grouping type: viromics::contig_study stands in for the viral merge, dRep and skani per study",
     "dRep and skani over refined sets (DAS Tool, MAGScoT): they run over the three binners' raw bins, as siblings (D1)",
     "Prodigal on MAG ORFs for the 4-lane panel: the panel takes whole-assembly ORFs only",
-    "DeepVirFinder (new transform)",
+    "DeepVirFinder calls in the frozen viral set: Pratama gives no score or p-value cut, so only its table is a target",
     "MetaPop (new transform): every sample mapped to its study's vOTU catalogue",
     "minced (new transform): the only spacer source, so spacer_host_links stays out",
-    "SMETANA (new transform)",
+    "SMETANA on CPLEX: E5 runs metaGEM's call on SCIP",
     "Chopper (new transform): only for long-read corpora, none in this pilot",
     "CoverM (new transform, if chosen)",
     "DRAM-v and minced: decided after E3 reports",
@@ -144,11 +144,14 @@ def build_targets(with_gtdbtk=False, solver="open"):
     model_type = "modelling::carveme_model_cplex" if solver == "cplex" else "modelling::carveme_model"
     model = t.Add(model_type, parents=[bin_orfs])
     t.Add("modelling::memote_score", parents=[model])
+    if solver == "open":
+        t.Add("bench::smetana_detailed", parents=[asm])
 
     for dtype in ("annotation::kofamscan_results", "annotation::diamond_uniref50_results",
                   "annotation::clean_predictions", "annotation::proteinbert_embeddings"):
         t.Add(dtype, parents=[asm])
 
+    t.Add("bench::deepvirfinder_scores", parents=[asm])
     frozen = t.Add("viromics::dereplicated_candidate_virus")
     viral = ["viromics::contig_length_table", "viromics::precluster_table", "viromics::votu_cluster_table",
              "viromics::checkv_contamination", "viromics::vcontact3_network"]
