@@ -13,6 +13,7 @@ member to the trace, and brings the sqlite index up to date.
 from __future__ import annotations
 
 import json
+import os
 import re
 import shutil
 from dataclasses import dataclass, field
@@ -329,19 +330,32 @@ def _produced_files(files: list[dict]):
     return out
 
 
-def _copy_task_logs(task_dir: Path, shard: Path) -> None:
+def _copy_task_logs(task_dir: Path, shard: Path, placed: dict[Path, Path]) -> None:
+    # A grouped task promotes hundreds of member shards from one task dir. Copying its logs into
+    # each cost five inodes per member, so the first member gets the copies and the rest link them.
     logs = _logs_dir(shard)
     if logs.exists():
         return
-    srcs = [task_dir / n for n in TASK_LOG_NAMES if (task_dir / n).is_file()]
+    first = placed.get(task_dir)
+    origin = first if first is not None else task_dir
+    srcs = [origin / n for n in TASK_LOG_NAMES if (origin / n).is_file()]
     if not srcs:
         return
     logs.mkdir(parents=True, exist_ok=True)
     for src in srcs:
+        dst = logs / src.name
         try:
-            shutil.copy2(src, logs / src.name)
+            if first is not None:
+                try:
+                    os.link(src, dst)
+                    continue
+                except OSError:
+                    pass
+            shutil.copy2(src, dst)
         except OSError:
             continue
+    if first is None:
+        placed[task_dir] = logs
 
 
 def record_run(*, workspace: Path, cache_root: Path, log: list | None = None) -> dict:
@@ -364,6 +378,7 @@ def record_run(*, workspace: Path, cache_root: Path, log: list | None = None) ->
 
     promoted: list[str] = []
     hits: list[str] = []
+    placed_logs: dict[Path, Path] = {}
     cache_root.mkdir(parents=True, exist_ok=True)
     store = CacheStore.open(cache_root)
     try:
@@ -402,7 +417,7 @@ def record_run(*, workspace: Path, cache_root: Path, log: list | None = None) ->
                             transform_key=meta.transform_key if meta else "",
                             run=run_label,
                         )
-                        _copy_task_logs(rec_file.parent, shard)
+                        _copy_task_logs(rec_file.parent, shard, placed_logs)
                         promoted.append(key_hex)
                     event_status = "promoted" if status == "promoted" else (
                         "fail" if status == "failed" else "miss"
