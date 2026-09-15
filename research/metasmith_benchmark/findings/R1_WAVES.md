@@ -668,3 +668,9 @@ Exit condition: E3 is the only lane short of its table's targets that does not w
 ### E3 stale launch dirs
 
 Lister `59958389` (08:50) found 5,238 `bqyYO0Ip` dirs that the current launch never names. They hold 6,223 inodes: 4,253 empty dirs and 985 dirs holding only `.command.cache`. These are the stubs the 07:10 prune left. No current task references one. Not worth a deletion now. Remove the empty stubs in E3's run-end prune.
+
+### Engine candidates
+
+- **Publish `results/` by hard link: BUILT, not synced.** `slurm.nf` now sets `workflow.output.mode = 'link'`, replacing `'copy'`. Evidence: E3's `results/` held 480 GB of nlink-1 copies, and `runner.py:670` rmtrees and republishes them at every launch. Nextflow's `link` mode calls `mklink(hard:true)` and does not fall back to copy on the default filesystem (`PublishDir.processFileImpl`, `validatePublishMode`). A failed link therefore fails the publish, but `results/` and `nxf_work` sit in one run dir. Test job `59958734` (Nextflow 26, Lustre): the published `product.txt` and its task file share inode 162140358094894002 with nlink 2. CAUTION a `results/` file now shares its inode with the task product and any promoted shard, so an in-place edit changes the cache. Ships with the next sync after E3 ends. On the first launch, check nlink ≥ 2 on a `results/` file. Test dir `/scratch/phyberos/_linktest` (1 MB) goes in the next gated cleanup.
+- **Reuse or remove the previous launch's twin dirs:** open.
+- **Copy record_run task logs once per task dir, not per member:** open.

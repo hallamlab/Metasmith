@@ -102,7 +102,11 @@ workflow {
     output {
         enabled = true
         ignoreErrors = false
-        mode = 'copy'
+        // A hard link, not a copy: a copy stored every product a second time, and a relaunch
+        // rewrote all of them. results/ and nxf_work sit in one run dir, so the link cannot
+        // straddle devices. CAUTION a results/ file shares its inode with the task product and
+        // any promoted shard, so never edit one in place.
+        mode = 'link'
     }
 }
 
