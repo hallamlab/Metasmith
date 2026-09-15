@@ -806,3 +806,8 @@ Order, one lane at a time. Before each next lane, run a gated prune of the previ
 5. E2 short. Old key sxDeVO5L. Only once headroom exceeds ~100K.
 6. E5 pratama, after E3 ends and its run-end prune lands. Old key AvPNgFtP.
 Stop rule unchanged: USR1 the newest wave-3 driver at 940K with no lever landing.
+
+### Lanes
+
+- **Sync:** 4c1b12ee to the cami and metagem homes only (checkout `bench/checkout/4c1b12ee`).
+- **E5 cami:** materialise `59986955` COMPLETED: 40 steps, key `V2ELuag4`, 27 images present, 0 fetched. Driver `59987285` launched at ~13:20 fir clock (`e5_pilot.py run --corpus cami --launch --tag w3`, bad nodes excluded on the driver job). To verify on start: `--exclude` in the run's `workflow.config.nf` and in a grid task's `.command.run`, CheckM2 tasks over the four bin sets, the dev overlay line.
