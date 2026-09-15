@@ -294,3 +294,51 @@ The other live runs' pending run-end log copies are small, measured at 01:55 PDT
 - Rerun E1 long's binning refinement with three binners. E1 long's published `contig_to_bin_map.tsv` has 0 of 402,943 rows from MetaBAT2 (DASTool 139,650, COMEBin 139,057, SemiBin2 124,235), so the reference arm's DAS Tool refined two binners, not three (B19). The rerun takes jgi depth, MetaBAT2 at a floor of 80, and DAS Tool over all three, reading E1 long's `work/` BAMs and Flye assemblies in place. DEVIATION until the rerun lands: the reference DAS Tool consolidated two binners. The research agent's reference AMBER row on the long-read lane (job 59672548, `plant_associated_long_nano_sample_0`, outputs under `/scratch/phyberos/reference_amber_long`) scores that two-binner DAS Tool: precision 0.9021, recall 0.0957, f1 0.1731, ARI 0.8647. COMEBin scores 0.8185, 0.9624, 0.8846, 0.6897, and SemiBin2 0.8085, 0.2947, 0.4320, 0.6272. MetaBAT2 is absent. The bridge voted 3,100 of 3,135 contigs and matched all 721,476 mapped reads, and no table row fell outside the assembly. CAUTION re-measure this row after the rerun before comparing it with the metasmith arm. Read DAS Tool's recall as a two-binner result, not a verdict on refinement. The pattern holds on both read types: DAS Tool has the highest precision and ARI and the lowest recall (short read, marine_sample_0: 0.9737, 0.1262, f1 0.2235, ARI 0.9670), and COMEBin beats it on f1. State that as refinement trading completeness for purity on these corpora. The metasmith arm has no long-read row until B19's fix relaunches E2 long, because its das_tool never submits (B20).
 
 CAUTION metasmith's protocol does not echo the tool's command, so `.command.log` and `.command.out` carry only the tool's own output. Verify a setting from the tool's banner and progress lines, or from the staged transform.
+
+### Close
+
+Wave 1 closed on 2026-09-14 at about 18:30 PDT fir clock, at Tony's instruction ("this run is nearing the end. deferr tasks to next round"), 40 h after launch. The lanes stood as follows.
+- **E1 long:** COMPLETED, 41 samples. MetaBAT2 found no bins at the default identity (B19). The rerun with DAS Tool over three binners is queued.
+- **E1 short:** all 208 samples past QC, assembly and alignment; binning in progress. Head `59868882` from 471089e8 runs on, finishing COMEBin `marine_sample_3` (32 h rung), the 9 depth reruns, then MetaBAT2, DAS Tool and CheckM2.
+- **E2 short `WfOlaqLT`:** COMPLETED, 208 samples, with every step kind passed. The amber pairing bug B21 is fixed but not rerun.
+- **E2 long `33hlLu8Q`:** ended. MetaBAT2 found no bins (B19), so DAS Tool never ran (B20).
+- **E3 `Son2YJiI`:** metaSPAdes 65 of 65 (25 at 192G, 40 at 384G). The driver runs on through the downstream steps: prodigal, assembly_stats, MetaWRAP, the viral callers.
+- **E4 chunk 1 `lE94xbfH`:** COMPLETED. 1,996 of 2,000 CPLEX models and memote scores. The 4 MAGs that dropped out exceeded 36 h, stalled in carving.
+- **E5 cami `52mAOnXS`:** COMPLETED except memote, whose HOME fix is pinned.
+- **E5 pratama:** stopped. The first driver was OOM-killed by the lineage report, which is fixed. The CPLEX relaunch `qcMKf68s` was stopped by Tony's ruling that E5 must use an open solver.
+- **E5 metagem `YzCrdOoF`:** stopped by Tony's decision. 67 of 85 bins got SCIP models and 18 stalled in gapfill.
+No step kind is unproven in any lane except CarveMe on E5's open solver, whose root cause and fix are recorded above.
+
+### Queue for wave 2 (T19)
+
+Each item points at its evidence above. Do them in this order.
+1. **E5 CarveMe on an open solver.** Pin a bench copy of `carveme_from_orfs` on `quay.io/biocontainers/carveme:1.6.6--pyhdfd78af_1` and mask the standard one (Tony: "1.6.6 first, then add HiGHS"). Relaunch E5 pratama and metagem from cache. Build and test a HiGHS gapfill solver on fir, and adopt it only if it gives better gapfills within about 45 min per MAG.
+2. **Engine: collect-results KeyError.** It hit `qcMKf68s`, a cache-served run. Reproduce it from that run's trace before any E5 relaunch.
+3. **E5 cami and pratama memote.** Relaunch on the pinned transform.
+4. **B19 on both arms.** E2 long through `e2/metabat2.py` at identity 80, with the E2 long relaunch. E1 long through the depth, MetaBAT2 and DAS Tool rerun over `work/`.
+5. **B21.** Rerun amber on E2 short and long with the fixed `e2/amber.py`.
+6. **B17.** Rerun gold_standard with the E2 pin at 2192c40c.
+7. **Resources, none of which enters a cache key:**
+   - CLEAN: 12 h on attempt 1.
+   - COMEBin: memory per lane (48 G E2 short, 96 G pratama and marine).
+   - metaSPAdes: keep the 192G to 384G ladder, since half the corpus fits 192G.
+   - E1: the generic retry and the 32 h COMEBin setting stay.
+8. **Engine candidates:**
+   - Copy task logs once per task dir in record_run.
+   - Exempt `_cached` replays from the submit rate limit.
+   - Repair the index for pruned-dir shards (WfOlaqLT fastp, 8Z7x3L7z, qcMKf68s).
+   - Allow hard-link cache hits on a single-mount Lustre.
+9. **Deviations to write:**
+   - E1 long QUAST, run on the long arm only.
+   - The two-binner reference DAS Tool.
+   - E4's 4 dropped MAGs.
+   - E3's 384G attempts.
+   - E1 long's loss of resume past porechop.
+10. **Page:** republish once T19's re-solves give new keys and DAGs.
+
+Still in flight at close, and handed to the next session:
+- the `YzCrdOoF` nxf_work prune (about 55 GB), once its driver leaves RUNNING;
+- the `qcMKf68s` nxf_work prune `59869560`;
+- the byte-writer delta job `59869667`;
+- the E3 bbduk re-gate (653 GB) as MetaWRAP finishes.
+At close, bytes read 91.55% and inodes 876,944.
