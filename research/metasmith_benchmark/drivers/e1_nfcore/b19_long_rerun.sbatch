@@ -47,17 +47,22 @@ mkdir -p "$W"
 gzip -dc "$ASM_GZ" > "$W/asm.fasta"
 echo "sample $S bam ${BAMS[0]}"
 
-run() { local img=$1; shift; apptainer exec --no-home --cleanenv --bind /scratch,"$W" --pwd "$W" "$img" "$@"; }
+run() { local img=$1; shift; apptainer exec --no-home --cleanenv --bind "$W" --pwd "$W" "$img" "$@"; }
+# Lustre returns transient EIO on writes from some nodes.
+cpr() { for i in 1 2 3; do cp "$@" && return 0; sleep 30; done; return 1; }
 
 run "$METABAT" jgi_summarize_bam_contig_depths --percentIdentity 80 --outputDepth "$W/depth.txt" "${BAMS[0]}"
+gzip -c "$W/depth.txt" > "$W/depth.txt.gz"
+cpr "$W/depth.txt.gz" "$D/FLYE-$S-depth.txt.gz"
+# jgi's depth for a long read can go negative on a long contig; MetaBAT2 warns and skips it.
+echo "contigs with a negative depth: $(awk -F'\t' 'NR>1 && ($3<0 || $4<0)' "$W/depth.txt" | wc -l) of $(($(wc -l < "$W/depth.txt") - 1))"
 run "$METABAT" metabat2 -m 1500 --unbinned --seed 1 -i "$W/asm.fasta" -a "$W/depth.txt" -t 12 --saveCls -o "$W/FLYE-MetaBAT2-$S"
 for f in "$W"/FLYE-MetaBAT2-"$S".*.fa; do
     case "$f" in *unbinned*|*lowDepth*|*tooShort*) continue ;; esac
-    cp "$f" "$D/metabat2_bins/"
+    cpr "$f" "$D/metabat2_bins/"
 done
 nbins=$(ls "$D/metabat2_bins" | wc -l)
 echo "metabat2 bins $nbins"
-gzip -c "$W/depth.txt" > "$D/FLYE-$S-depth.txt.gz"
 
 (cd "$D/metabat2_bins" && run "$DASTOOL" Fasta_to_Contig2Bin.sh -i "$D/metabat2_bins" -e fa) > "$D/lists/MetaBAT2.tsv"
 for b in COMEBin SemiBin2; do
@@ -67,7 +72,7 @@ wc -l "$D"/lists/*.tsv
 lists=$(for b in MetaBAT2 SemiBin2 COMEBin; do [ -s "$D/lists/$b.tsv" ] && printf '%s,' "$D/lists/$b.tsv"; done)
 run "$DASTOOL" DAS_Tool --write_bins --write_unbinned --write_bin_evals --score_threshold 0.5 \
     -t 12 -i "${lists%,}" -c "$W/asm.fasta" -o "$W/FLYE-DASTool-$S"
-cp "$W/FLYE-DASTool-$S"_DASTool_contig2bin.tsv "$W/FLYE-DASTool-$S"_DASTool_summary.tsv "$W/FLYE-DASTool-$S"_allBins.eval "$W/FLYE-DASTool-$S"_DASTool.log "$D/"
+cpr "$W/FLYE-DASTool-$S"_DASTool_contig2bin.tsv "$W/FLYE-DASTool-$S"_DASTool_summary.tsv "$W/FLYE-DASTool-$S"_allBins.eval "$W/FLYE-DASTool-$S"_DASTool.log "$D/"
 
 {
     for f in "$D"/metabat2_bins/*.fa; do

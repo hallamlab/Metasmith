@@ -359,6 +359,7 @@ Each item points at its evidence above. Do them in this order.
    - COMEBin: memory per lane (48 G E2 short, 96 G pratama and marine).
    - metaSPAdes: keep the 192G to 384G ladder, since half the corpus fits 192G.
    - E1: the generic retry and the 32 h COMEBin setting stay.
+   - E1 short, 2026-09-14 21:05 fir clock: the MetaBAT2 retry for MEGAHIT-strain_sample_79 (array element 59869055_84, 8c/20G/8h, fc30604) hung before its script wrote a line. It ran 2.5 h with TotalCPU 0, an empty `.command.log` and only `.command.begin`. fc30604 is the node where the E1 short MetaBAT2 `cp` EIO failures happened at 23:31 on 2026-09-13. Plain-scancelled the element (not the head). Exit 143 is in control.config's always-retry codes. If fc30604 keeps hanging tasks, add `--exclude=fc30604` to fir.config's clusterOptions; it is in no task hash.
 8. **Engine candidates:**
    - Copy task logs once per task dir in record_run.
    - Exempt `_cached` replays from the submit rate limit. Wave 1's pratama relaunch replayed about 1,700 hits at 1 per 5 s, 2.3 h before any new work. Config can't do it: Nextflow 26.04 reports `executor.$local.submitRateLimit` as an unrecognized option, checked with `nextflow -c <preset> config -flat` on fir. The fix goes in the engine, for example one batched replay process per step.
