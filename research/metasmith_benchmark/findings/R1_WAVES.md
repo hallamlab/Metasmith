@@ -321,6 +321,11 @@ Each item points at its evidence above. Do them in this order.
    - CAUTION a resources dir registers under the type namespace of its name, so an env in `resources/<ns>` must be typed `<ns>::…` and passed to `GenerateWorkflow`. Without the resource, the solve fails on the env.
    - Local solves: pratama 35 steps `hAHlhurq`, metagem 36 `fxC68Rwh`, cami 35 `lZPcVoCs`. E4 chunk 1 is unchanged at `4h3Zb0MY`, and memote's transform id is unchanged.
    - cami moves to 1.6.6 too, with its memote relaunch (item 3), so all three corpora share one CarveMe.
+   - HiGHS evidence so far comes from the RCA's standalone MPS solves (`carveme_rca/scripts/highs_solve.py`, highspy, 1 thread), not a CarveMe solver class.
+     - Gapfill problems: Optimal in 93–652 s on 1.6.1's 3 hard pratama bins, and 436–752 s on E4's 4 CPLEX-dropped MAGs. One stalled bin (`08a18e10`) hit the 1 h limit at a 13% gap.
+     - Carving problems from the size ladder: the 375, 750 and 1,500 rungs were Optimal (2,974 s, 234 s, 26 s) on one MPS set, but the 3,010 rung and a second set hit the 1 h limit.
+
+     So HiGHS is a candidate for exact gapfill, not for carving. Build the solver class after E5's 1.6.6 results show how far 1.6.6's capped gapfills sit from the optimum.
 2. **Engine: collect-results KeyError.** It hit `qcMKf68s`. Root cause, traced on fir:
    - `nxf_trace.tsv` holds 368 completed `p34__carveme_from_orfs_cplex` tasks but only 367 promoted records, plus 2 miss events.
    - The odd task is CarveMe (88): work dir `ae/ddf64b…`, array element `59820190_87` on fc30564, the node with this lane's Lustre `cp` EIO errors. It exited 0 and left no `.command.cache` and no shard; no key among the 6,628 pratama shards mints the orphan id.
