@@ -750,4 +750,10 @@ Cleanup job `_w3_cleanup.sbatch` (dry `59980326`, apply `59980742`). Each target
 
 Apply `59980742` COMPLETED in 13:59: 115,991 inodes selected (the fixed checkout gate added 8 checkouts). Quota 931,240 → 815,884 inodes and 17.121 → 16.979 TiB, read 5 min after. `bench/archive/` holds 24 tars, 23.3 GB. 52mAOnXS.tar is 18.5 GB because its `results/` bin FASTAs went in. The extra `q2TJFf23.tar` is a stray, and its run dir is intact.
 
-Retired-shard census `59980743` (read-only, `_cami_retired_census.py` per home against the runs wave 3 keeps: cami sxDeVO5L, F1yIPPmC, u8oBvJrv; pratama bqyYO0Ip, AvPNgFtP; metagem cSBSeNuq, lE94xbfH). Keys go to `/scratch/phyberos/_w3_retired/<home>/`.
+Retired-shard census `59980743` (read-only, `_cami_retired_census.py` per home against the runs wave 3 keeps: cami sxDeVO5L, F1yIPPmC, u8oBvJrv; pratama bqyYO0Ip, AvPNgFtP; metagem cSBSeNuq, lE94xbfH). Keys go to `/scratch/phyberos/_w3_retired/<home>/`. It COMPLETED in 15:04 with 0 unread shards. Retired inodes are small: cami 562, pratama 7,589 (vibrant_pratama from before the fix 310 shards, CPLEX CarveMe from qcMKf68s 367, CarveMe 1.6.1 28), metagem 797 (CarveMe 1.6.1 68, metawrap 6). Live shards hold cami 278K, pratama 69K and metagem 53K inodes, so task_cache is no inode lever. Excluded from eviction: `pullContainer` (a refetch needs a login node) and metagem's `gtdbtk_image` (GTDB-Tk gapfills need it).
+
+Eviction dry runs from 307581f8 protected every live run: cami `59982664` would evict 0 (41 refused as F1yIPPmC's amber from before B22, 6 skipped). Not applied. Pratama `59982665` would evict 674 (1.2 GiB, runs Son2YJiI and qcMKf68s), and metagem `59982666` 68 (0.3 GiB, YzCrdOoF). Applies pratama `59983679` (674 evicted) and metagem `59983680` (68 evicted) COMPLETED. Quota 815,902 → 808,335 inodes, 16.981 TiB.
+
+**Result:** 931,240 → 808,335 inodes (−123K) before any wave-3 launch, which leaves 142K under the 950K criterion. The E3 inode auto-stop at 940K stays armed.
+
+Deferred: E1 short `work/` (84K) waits for head `59896688` (3 COMEBin tasks) and replacement `59906444` to end. Finished runs' `results/` (sxDeVO5L 45K, F1yIPPmC 12K) wait for collection B.
