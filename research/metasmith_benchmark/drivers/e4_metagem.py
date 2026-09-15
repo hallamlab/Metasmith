@@ -59,8 +59,8 @@ def select(mags, args):
     return mags
 
 
-def declare_globals(smith, solver, location, ensure, with_gtdbtk=False):
-    """The medium, the solver and GTDB, cited as their own resource library."""
+def declare_globals(smith, solver, location, ensure, with_gtdbtk=False, with_checkm2=False):
+    """The medium, the solver, GTDB and CheckM2's database, cited as their own resource library."""
     givens = smith.PoolGivens()
     c.add_value(givens, "ref/modelling::media", MEDIUM_TSV.read_text(), "modelling::media", tags=["reference"])
     c.add_value(givens, "ref/modelling::medium_name", MEDIUM_NAME, "modelling::medium_name", tags=["reference"])
@@ -68,6 +68,8 @@ def declare_globals(smith, solver, location, ensure, with_gtdbtk=False):
         c.declare_refs(givens, {"modelling::cplex_installation": CPLEX_ROOT})
     if with_gtdbtk:
         c.declare_refs(givens, {"ref::gtdb": c.STAGED_REFS["ref::gtdb"], **c.GTDB_GENOMES_IMAGE})
+    if with_checkm2:
+        c.declare_refs(givens, {"bench::checkm2_database": c.CHECKM2_DB})
     types = [c.MLIB / "data_types" / t for t in ("modelling.yml", "ref.yml")] + [c.LIBRARY / "data_types" / "bench.yml"]
     return c.cite(givens, location, types, ensure)
 

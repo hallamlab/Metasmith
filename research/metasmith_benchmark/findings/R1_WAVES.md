@@ -787,3 +787,20 @@ Decided 2026-09-15 under autopilot, from Tony's note (journal 78db76ba). After b
 - **E1/E2 parity:** unchanged. Both run DAS Tool per sample at score threshold 0.5.
 - **E3/E4:** unchanged. MetaWRAP bin_refinement stays as the reproduction's dereplicator.
 - **Cache:** nothing retires. No dereplicator besides DAS Tool is built yet, and DAS Tool's transform is unchanged.
+
+### E5 CheckM2 (D3)
+
+BUILT. The standard library has CheckM 1 only, and E2's CheckM2 binds to `e2::` types. `library/transforms/bench/checkm2.py` runs E2's CHECKM2_PREDICT over any `sequences::bin_fasta` in batches of 200, producing `bench::checkm2_quality`. Bin file names repeat across samples, so each batch member is prefixed with its batch index. New bench types `checkm2_database`, `checkm2_quality` and `checkm2.env` (the E2 image, `checkm2:1.1.0`). `e4_metagem.declare_globals(with_checkm2=True)` cites `_common.CHECKM2_DB` (the file E2 uses, 3.08 GB on fir). E5 targets CheckM2 over its MetaBAT2, SemiBin2, COMEBin and DAS Tool bin sets. Local solves: E5 cami 40 steps `KOZVlhFB` with four checkm2 steps; E4 chunk 1 unchanged at `4h3Zb0MY`. Cache: new steps only; no E5 entry retires.
+
+### Launch plan (E)
+
+Headroom 142K inodes (808.6K at 12:49 fir clock, criterion 950K). Every relaunch gets a new key, so it writes a full set of twin dirs and republishes `results/`. Costs measured in wave 2: sxDeVO5L's stale twin set 75.9K; E3's relaunch +39K in 10 min; a `_cached` replay ~10–13 inodes. Estimates: E2 short ~80K, E2 long ~22K, E5 cami ~6K, metagem ~25K, pratama ~25K, plus new CheckM2 and amber dirs. The sum (~160K) exceeds the headroom, and E3's run end still has to land.
+
+Order, one lane at a time. Before each next lane, run a gated prune of the previous key's `nxf_work` twins (keep `.command.cache`), and delete its `results/` once the new run has published:
+1. Sync the wave-3 commit to the cami and metagem homes only (no driver runs there). Pratama waits for E3 `bqyYO0Ip` to end.
+2. E5 cami (smallest; proves CheckM2 and the node exclusion in `.command.run`). Old key u8oBvJrv.
+3. E2 long (proves four-binner AMBER at scale). Old key F1yIPPmC.
+4. E5 metagem. Old key cSBSeNuq.
+5. E2 short. Old key sxDeVO5L. Only once headroom exceeds ~100K.
+6. E5 pratama, after E3 ends and its run-end prune lands. Old key AvPNgFtP.
+Stop rule unchanged: USR1 the newest wave-3 driver at 940K with no lever landing.

@@ -47,7 +47,6 @@ MISSING = [
     "SMETANA (new transform)",
     "Chopper (new transform): only for long-read corpora, none in this pilot",
     "CoverM (new transform, if chosen)",
-    "CheckM2 (new transform): the standard library has CheckM 1 only, and E2's CheckM2 is fenced to e2 types",
     "prodigal-gv on the frozen set: as sequences::orfs it would also answer the assembly's Prodigal target",
     "DRAM-v and minced: decided after E3 reports",
     "GTDB-Tk and iPHoP (--with-gtdbtk): wait on ref::gtdb's representative genomes",
@@ -129,10 +128,12 @@ def build_targets(with_gtdbtk=False, solver="open"):
         t.Add(dtype, parents=[asm])
 
     for b in ("metabat2", "semibin2", "comebin"):
-        t.Add(f"sequences::{b}_bin_fasta", parents=[asm])
+        bins = t.Add(f"sequences::{b}_bin_fasta", parents=[asm])
         t.Add(f"binning::{b}_contig_to_bin_table", parents=[asm])
+        t.Add("bench::checkm2_quality", parents=[bins])
     mags = t.Add("sequences::das_tool_bin_fasta", parents=[asm])
     t.Add("binning::das_tool_contig_to_bin_table", parents=[asm])
+    t.Add("bench::checkm2_quality", parents=[mags])
     if with_gtdbtk:
         t.Add("taxonomy::gtdbtk", parents=[mags])
     t.Add("binning_local::cluster_table", parents=[asm])
@@ -170,7 +171,8 @@ def solve(corpus, samples, args):
     ensure = importing or args.import_givens or not remote
     inputs = declare_givens(smith, corpus, samples, ensure)
     pratama_globals = c.pratama_globals(smith, CACHE_DIR / corpus, ensure)
-    modelling_globals = e4_metagem.declare_globals(smith, args.solver, CACHE_DIR / corpus / "e4_globals.xgdb", ensure)
+    modelling_globals = e4_metagem.declare_globals(smith, args.solver, CACHE_DIR / corpus / "e4_globals.xgdb", ensure,
+                                                   with_checkm2=True)
     if importing:
         print(f"the pool at {smith.home.GetPath()} holds the givens of {len(samples)} samples")
         return

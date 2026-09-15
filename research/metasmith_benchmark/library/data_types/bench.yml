@@ -11,3 +11,18 @@ types:
     properties:
       bench: env
       provides: [carveme]
+
+  checkm2_database:
+    properties:
+      _: CheckM2 DIAMOND database file (uniref100.KO.1.dmnd), the file E2's e2::checkm2_database cites
+      bench: checkm2_database
+      ext: dmnd
+  checkm2_quality:
+    properties:
+      _: CheckM2 quality_report.tsv row for one bin, with its header
+      bench: checkm2_quality
+      ext: tsv
+  checkm2.env:
+    properties:
+      bench: env
+      provides: [checkm2]

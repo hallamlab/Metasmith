@@ -31,6 +31,8 @@ FIR_GPU = Gpu(memory=Size.GB(40), type="nvidia_h100_80gb_hbm3_3g.40gb", flag="--
 AGENT_IMAGE = os.environ.get("MSM_AGENT_IMAGE", "docker://quay.io/hallamlab/metasmith:0.22.1")
 ON_HOST = os.environ.get("BENCH_ON_HOST") == "1"
 FIR_MEM_MB_PER_CPU = 4000
+CHECKM2_DB = Path(os.environ.get(
+    "CHECKM2_DB", "/scratch/phyberos/wave2_b3_nfcore/checkm2_db/CheckM2_database/uniref100.KO.1.dmnd"))
 # Nodes whose Lustre client failed our tasks with Errno 108, EIO or 0-second starts in R1.
 # A driver job's own --exclude does not reach the grid tasks nextflow submits.
 FIR_BAD_NODES = ("fc30372,fc30557,fc30559,fc30560,fc30564,fc30567,fc30570,fc30604,"
