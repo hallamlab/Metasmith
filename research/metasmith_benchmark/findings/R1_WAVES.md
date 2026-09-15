@@ -326,6 +326,12 @@ Each item points at its evidence above. Do them in this order.
      - Wall time 56–799 s (median 699 s), where 1.6.1 took 48 s–18 min on the same bins.
      - The staged task names `carveme:1.6.6--pyhdfd78af_1`, and a sampled model carries gapfill annotations.
      - All 51 `p35__memote_score` tasks were submitted on the pinned memote. Pratama and metagem were still replaying cache hits, since cami has fewer upstream hits.
+   - E5 CAMI ENDED: driver 59881355 COMPLETED at 20:24:56 after 57:59.
+     - Cache: 102 members promoted, 597 served from shards.
+     - Collect succeeded with 1,535 outputs, the first cache-served E5 run to collect since 7e21c5e3's fix.
+     - `results/` holds 51 `modelling-carveme_model` and 51 distinct `modelling-memote_score`, so memote closes for cami. Wave 1 had 0 scores, failing on HOME.
+     - The run still reports "run failed" with one ignored step, `p35__memote_score (25)`. That task's attempt 1 (`3f/9eec67`) exited 1 on Lustre Errno 108 reading its model, and attempt 2 (`5d/4ab08a`) COMPLETED in 2:08. The failed-step list counts an index with any failed attempt even when a retry passed, so a complete run reads as failed. Engine candidate (item 8).
+   - E1 short: the last COMEBin (`toy_mousegut_sample_55`, 32 h rung) COMPLETED with exit 0 at 20:10. The head runs MetaBAT2 for the 9 depth-rerun strain samples, then DAS Tool.
    - HiGHS evidence so far comes from the RCA's standalone MPS solves (`carveme_rca/scripts/highs_solve.py`, highspy, 1 thread), not a CarveMe solver class.
      - Gapfill problems: Optimal in 93–652 s on 1.6.1's 3 hard pratama bins, and 436–752 s on E4's 4 CPLEX-dropped MAGs. One stalled bin (`08a18e10`) hit the 1 h limit at a 13% gap.
      - Carving problems from the size ladder: the 375, 750 and 1,500 rungs were Optimal (2,974 s, 234 s, 26 s) on one MPS set, but the 3,010 rung and a second set hit the 1 h limit.
