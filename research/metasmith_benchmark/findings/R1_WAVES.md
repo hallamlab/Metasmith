@@ -811,3 +811,5 @@ Stop rule unchanged: USR1 the newest wave-3 driver at 940K with no lever landing
 
 - **Sync:** 4c1b12ee to the cami and metagem homes only (checkout `bench/checkout/4c1b12ee`).
 - **E5 cami:** materialise `59986955` COMPLETED: 40 steps, key `V2ELuag4`, 27 images present, 0 fetched. Driver `59987285` launched at ~13:20 fir clock (`e5_pilot.py run --corpus cami --launch --tag w3`, bad nodes excluded on the driver job). To verify on start: `--exclude` in the run's `workflow.config.nf` and in a grid task's `.command.run`, CheckM2 tasks over the four bin sets, the dev overlay line.
+  - VERIFIED at 13:04 fir clock: RUNNING since 13:02:42. `workflow.config.nf` carries `--exclude=fc30372…` twice (global block and COMEBin). Grid task `0b/f61c55…/.command.run` carries it, so the node exclusion reaches grid tasks without a watcher. A task log shows `staged dev overlay (… key 1789502194-7290880)`. `p36__checkm2 (1)` submitted as job 59987711. Replay has 485 task dirs at 13:04; inodes 808.6K → 815.2K.
+- **E2 long:** materialise from 4c1b12ee submitted in the cami home once E5 cami printed `waiting on run` (no new givens, no import).
