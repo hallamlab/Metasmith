@@ -348,6 +348,7 @@ Each item points at its evidence above. Do them in this order.
      - Element `_0` runs on fc30557, the node whose Lustre client dropped twice for B19. Its failure retries.
      - metagem `cSBSeNuq` was still replaying annotation (1,850).
    - E5 METAGEM CARVEME STARTED by 22:25 fir clock: 12 `p35__carveme_from_orfs` RUNNING at `-t 12:00:00`, `--mem 16384M`. A task's `.command.out` names `quay.io/biocontainers/carveme:1.6.6--pyhdfd78af_1`, so the pin reaches metagem. At 22:25 neither lane had a nonzero CarveMe exit (pratama 33 exit 0, 260 running).
+   - 22:57 fir: E5 pratama `AvPNgFtP` CarveMe 1.6.6 finished: nxf.log holds 381 `carveme_from_orfs` exit 0 and 1 nonzero (126, Lustre EIO, retried). memote has 371 exit 0 and 10 running. Counts against bins wait for the run end.
    - E5 METAGEM `cSBSeNuq` ENDED COMPLETE. Driver 59881354 COMPLETED 0:0 at ~22:38 (3:10:49).
      - results/: 85 `sequences-das_tool_bin_fasta`, 85 `sequences-bin_orfs`, 85 `modelling-carveme_model` (CarveMe 1.6.6) and 85 `modelling-memote_score`, all non-empty. Collect wrote 6,357 outputs; 169 members promoted, 2,853 served from shards.
      - The run reports "failed" with 2 ignored `p36__memote_score` (15) and (81). FALSE POSITIVE: each failed attempt 1 (exit 1) and passed on retry (59900953, 59901270, exit 0). This is the `_failed_steps` defect fixed at 2ccf0e7d, not yet synced.
