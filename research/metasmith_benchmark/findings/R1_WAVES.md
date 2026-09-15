@@ -665,6 +665,27 @@ Lane state on 2026-09-15 at 08:50 PDT fir clock. Wave 2 launched lane by lane fr
 
 Exit condition: E3 is the only lane short of its table's targets that does not wait on outside work. The T21 gapfills (hybrid assembly, dRep, MAGScoT and the rest) are not yet built.
 
+### Close plan
+
+Decided 2026-09-15 at 11:30 PDT fir clock, after Tony asked where wave 2 closes.
+
+1. **Close point: now, with E3 and E1 short running on.** The close rule already holds. Every lane has passed a real QC, assembly, binning and annotation step, and E3 has 6 MetaWRAP tasks at exit 0 with its viral callers done. The cancel rule keeps both lanes live: no fix in the first wave-3 batch changes a step they have not finished, and E3's remaining steps are evidence wave 3 needs (MetaWRAP, vOTU clustering, DRAM, iPHoP, GTDB-Tk).
+2. **Backstop: the 48 h mark, 2026-09-16 19:30 fir clock.** If E3 is still running then, stop it by USR1 only when a queued wave-3 fix changes a step it has not finished, such as the refinement redesign reaching E3's MetaWRAP. Otherwise it runs on into wave 3.
+3. **Collect** each lane's results against its sample count:
+   - **E1 short:** when its head ends, collect AMBER over 208 samples for every binner. Pair it with E2 short sample by sample for criterion 12.
+   - **E2 short and long:** collect AMBER f1_bp medians for each binner, not just DAS Tool, plus `results/` counts.
+   - **E5:** collect models, memote and growth for all three corpora, and settle HiGHS.
+   - **E3:** at run end, collect MAGs, vOTU tables, DRAM, iPHoP and GTDB-Tk rows, plus an `agent.log` sweep for ignored steps.
+4. **Diagnose**, each with a cause and a fix entered in the wave-3 queue:
+   - DAS Tool scores below its own inputs. E2 short median 0.089, and E1 long sample_0 scores DAS Tool 0.18 against COMEBin 0.88. Check the score threshold and recall.
+   - Wave-2 failures by class: Lustre Errno 108 and EIO on bad nodes (a driver's `--exclude` does not reach its grid tasks); the byte fills from `IN_PLACE_STEPS`; inode bursts from twin dirs and `record_run`; silent bad bowtie2 BAMs (no guard in the transform); the E3 VirSorter2 retries.
+5. **Queue wave 3**, then compact at that seam:
+   - the unsynced engine fixes (8a2b94cf link publish, ec89c740 log links) and the grid-task node exclusion;
+   - Tony's refinement redesign (journal 78db76ba), which settles MAGScoT, dRep and skani dedup before any of them is built;
+   - the ready T21 gapfills: E3 hybrid assembly, BinSanity and abawaca, DeepVirFinder, MetaPop and SMETANA, and E4 chunks 2–8 within the inode budget after E3's run-end prune;
+   - E5's missing CheckM2 transform, the deviations table and the page.
+6. **Launch wave 3** lane by lane under tag `w3`, syncing each agent home only when no driver runs in it.
+
 ### E3 stale launch dirs
 
 Lister `59958389` (08:50) found 5,238 `bqyYO0Ip` dirs that the current launch never names. They hold 6,223 inodes: 4,253 empty dirs and 985 dirs holding only `.command.cache`. These are the stubs the 07:10 prune left. No current task references one. Not worth a deletion now. Remove the empty stubs in E3's run-end prune.
