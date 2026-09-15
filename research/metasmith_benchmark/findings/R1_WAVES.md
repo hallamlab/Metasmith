@@ -359,6 +359,12 @@ Each item points at its evidence above. Do them in this order.
      - DAS Tool read three lists (MetaBAT2 35 bins, SemiBin2 31, COMEBin 28) and selected 9 bins: 880 contigs, 66.9 Mbp. Wave 1's two-binner DAS Tool binned 769 contigs for this sample. Two of the 9 selected bins are MetaBAT2's.
    - CAUTION DAS Tool's `_DASTool_contig2bin.tsv` under `--write_unbinned` lists its unbinned set as a bin named `unbinned`, and lists 256 of those contigs twice. The first row builder counted `unbinned` as a real bin. The rows now come from a `rows` mode that re-reads the saved contig2bin, so samples 1–40 (array 59891854, submitted with the first builder) are rebuilt before the merge.
    - Two test attempts failed on fc30557 on Lustre writes: `cp` EIO, then ESHUTDOWN. The script excludes fc30557 and fc30604 and retries copies 5 × 60 s.
+   - AT SCALE, 2026-09-14 ~21:05–21:20 fir clock: array 59891854 (samples 1–40, 20 at once) had 33 COMPLETED and 7 FAILED.
+     - Five failed on ESHUTDOWN ("Cannot send after transport endpoint shutdown") across fc30559, fc30567 and fc30568, each while copying per-bin FASTA files. A 60 s retry does not recover an evicted client.
+     - One failed on a BAM glob that fc30567 could not see, and one on signal 53 at 0 s on fc30609.
+     - Account-wide failures since 20:00 spread over eight fc305xx nodes, led by fc30567 (7) and fc30559 (4). This fits a Lustre client problem across those nodes, not one bad node.
+     - REDESIGN at de3e3a0d: a sample's work stays on `$SLURM_TMPDIR`, rows are built there, and only one tar and `rows.tsv` cross to Lustre. The five resubmitted on it (59892980) completed in 1–2 min each.
+   - E1 short was hit in the same window: 8 elements of SemiBin2 array 59892107 failed at 21:14:37 on fc30567 with "Expected file … does not exist" for their staged BAM or contigs. All 8 were retried (attempt 1), and the retries completed. CAUTION control.config returns `finish` on a second failure of one task, which would stop E1 short scheduling new work.
 5. **B21.** Rerun amber on E2 short and long with the fixed `e2/amber.py`.
 6. **B17.** Rerun gold_standard with the E2 pin at 2192c40c.
 7. **Resources, none of which enters a cache key:**
