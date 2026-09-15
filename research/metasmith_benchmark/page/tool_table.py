@@ -80,7 +80,7 @@ GROUPS = [
         ("CheckV", {"Pratama": True, "E3": True, "E5": True}, "Taken from Pratama"),
         ("MMseqs2 vOTU clustering", {"Pratama": "cov-mode 0", "E3": "cov-mode 0", "E5": True}, "Taken from Pratama"),
         ("vConTACT3", {"Pratama": "db 220", "E3": True, "E5": True}, "Taken from Pratama"),
-        ("MetaPop microdiversity", {"Pratama": True, "E3": "NEW: needs every BAM against one shared reference", "E5": "NEW: per study, every sample mapped to the study's vOTU catalogue"}, "Tony: add"),
+        ("MetaPop microdiversity", {"Pratama": "--min_cov 70", "E3": "NEW: needs every BAM against one shared reference", "E5": "--min_cov 70; per study, every sample mapped to the study's vOTU representatives with bowtie2"}, "Tony: add"),
         ("DRAM-v (AMGs)", {"Pratama": "manual curation, ≥10 kb", "E3": "no manual curation", "E5": "to decide after the pilot"}, "Taken from Pratama; confirm it goes or stays with DRAM"),
     ]),
     ("CRISPR spacers and host prediction", [

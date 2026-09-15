@@ -101,6 +101,10 @@ STAGED_REFS = {
 GTDB_GENOMES_IMAGE = {
     "bench::gtdb_genomes_image": Path("/scratch/phyberos/staging/gtdb/release232_skani_genomes.sqfs"),
 }
+# MetaPop 0.0.60's conda prefix as one image (drivers/refs/build_metapop_env.sh), bound at /opt/metapop.
+METAPOP_ENV_IMAGE = {
+    "bench::metapop_env_image": Path("/scratch/phyberos/refs/metapop_0.0.60_env.sqfs"),
+}
 
 # Outside the ref:: namespace, so only libraries that load annotation.yml can declare them.
 STAGED_REFS_PRATAMA = {

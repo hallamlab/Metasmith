@@ -40,7 +40,7 @@ MISSING = [
     "dRep and skani over refined sets (DAS Tool, MAGScoT): they run over the three binners' raw bins, as siblings (D1)",
     "Prodigal on MAG ORFs for the 4-lane panel: the panel takes whole-assembly ORFs only",
     "DeepVirFinder calls in the frozen viral set: Pratama gives no score or p-value cut, so only its table is a target",
-    "MetaPop (new transform): every sample mapped to its study's vOTU catalogue",
+    "MetaPop's mean π over 100 vOTUs x 1,000 subsamplings: computed after the run from its table",
     "minced (new transform): the only spacer source, so spacer_host_links stays out",
     "SMETANA on CPLEX: E5 runs metaGEM's call on SCIP",
     "Chopper (new transform): only for long-read corpora, none in this pilot",
@@ -160,6 +160,7 @@ def build_targets(with_gtdbtk=False, solver="open"):
         viral.append("viromics::host_prediction_genome")
     for dtype in (*viral, "bench::viral_orfs", "bench::viral_gff"):
         t.Add(dtype, parents=[frozen])
+    t.Add("bench::metapop_microdiversity")
     return t
 
 
@@ -177,7 +178,7 @@ def solve(corpus, samples, args):
     inputs = declare_givens(smith, corpus, samples, ensure)
     pratama_globals = c.pratama_globals(smith, CACHE_DIR / corpus, ensure)
     modelling_globals = e4_metagem.declare_globals(smith, args.solver, CACHE_DIR / corpus / "e4_globals.xgdb", ensure,
-                                                   with_checkm2=True)
+                                                   with_checkm2=True, with_metapop=True)
     if importing:
         print(f"the pool at {smith.home.GetPath()} holds the givens of {len(samples)} samples")
         return

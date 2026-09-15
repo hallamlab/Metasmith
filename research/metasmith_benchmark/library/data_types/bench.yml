@@ -99,3 +99,23 @@ types:
     properties:
       bench: env
       provides: [smetana]
+
+  metapop_microdiversity:
+    properties:
+      _: MetaPop's global_contig_microdiversity.tsv for a study, every sample mapped to the study's vOTU representatives
+      bench: metapop_microdiversity
+      ext: tsv
+  metapop_results:
+    properties:
+      _: MetaPop's whole output directory for a study, as one archive
+      bench: metapop_results
+      ext: tar.gz
+  metapop.env:
+    properties:
+      bench: env
+      provides: [metapop]
+  metapop_env_image:
+    properties:
+      _: squashfs image of MetaPop 0.0.60's conda prefix with bowtie2, bound at /opt/metapop
+      bench: metapop_env_image
+      ext: sqfs
