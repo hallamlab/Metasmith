@@ -60,7 +60,7 @@ GROUPS = [
         ("MetaWRAP reassemble_bins", {"metaGEM": True}, "fill"),
     ]),
     ("Bin quality", [
-        ("CheckM2", {"E1": True, "E2": True, "E5": "now missing: no standard transform"}, "Tony: CheckM2 only"),
+        ("CheckM2", {"E1": True, "E2": True, "E5": "bench library, on all four bin sets"}, "Tony: CheckM2 only"),
         ("CheckM", {"Pratama": "inside MetaWRAP", "E3": "inside MetaWRAP", "metaGEM": "inside MetaWRAP"}, "Tony: CheckM2 only"),
     ]),
     ("MAG taxonomy", [

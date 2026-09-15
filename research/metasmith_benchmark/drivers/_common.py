@@ -296,8 +296,12 @@ def make_slurm_config(smith, cache_dir, scaled=None, comebin_cpus=48, comebin_ti
     """
     base = Path(smith.GetNxfConfigPresets()["slurm"]).read_text()
     mem_gb = comebin_cpus * FIR_MEM_MB_PER_CPU // 1000
+    # A literal, not params.process.clusterOptionsExtra: config reads params before the -params-file merge.
     text = base + "\n" + "\n".join([
-        "", "process {", "    withName: '.*__comebin' {",
+        "", "process {",
+        f'    clusterOptions = "--nodes=1 --ntasks=1 --account={SLURM_ACCOUNT} --exclude={FIR_BAD_NODES}"',
+        "}", "",
+        "process {", "    withName: '.*__comebin' {",
         f"        cpus = {comebin_cpus}",
         f"        memory = '{mem_gb} GB'",
         f"        time = '{comebin_time}'",
@@ -335,8 +339,6 @@ def stage_and_run(smith, task, cache_dir, tag, *, stage_only, params, scaled=Non
     if stage_only:
         print(f"staged {tag} as {task.GetKey()}")
         return
-    params = dict(params)
-    params["process"] = {**params.get("process", {}), "clusterOptionsExtra": f"--exclude={FIR_BAD_NODES}"}
     smith.RunWorkflow(task=task, config_file=make_slurm_config(smith, cache_dir, scaled), gpus=gpus,
                       params=dict(slurmAccount=SLURM_ACCOUNT, slurmGpuAccount=SLURM_GPU_ACCOUNT, **params))
     print(f"submitted {tag}: {task.GetKey()}", flush=True)

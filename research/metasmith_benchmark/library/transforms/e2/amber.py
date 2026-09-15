@@ -64,7 +64,7 @@ def protocol(context: ExecutionContext):
         amber.py -g {igold.container} -l {labels} -o amber_out --skip_gs {" ".join(predictions)}
         cp amber_out/results.tsv {oresults.container}
         first=1
-        for label in {" ".join(tables)}; do
+        for label in {" ".join(scored)}; do
             f=amber_out/genome/$label/metrics_per_bin.tsv
             if [ $first = 1 ]; then head -1 $f | sed 's/^/Tool\\t/'; first=0; fi
             tail -n +2 $f | sed "s/^/$label\\t/"
