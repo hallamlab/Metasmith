@@ -327,14 +327,21 @@ def make_slurm_config(smith, cache_dir, scaled=None, comebin_cpus=48, comebin_ti
     return out
 
 
-def stage_and_run(smith, task, cache_dir, tag, *, stage_only, params, scaled=None, materialise=False, gpus=None):
-    """Stage the plan, then run it, or with `materialise` fetch every image it needs and stop."""
+def stage_and_run(smith, task, cache_dir, tag, *, stage_only, params, scaled=None, materialise=False, gpus=None,
+                  on_exist="update"):
+    """Stage the plan, then run it, or with `materialise` fetch every image it needs and stop.
+
+    CAUTION `on_exist="update"` re-sends context but KEEPS a transform bundle the run directory already
+    holds. A plan key ignores protocol source (solver model only), so a fix that changes only a protocol
+    re-materialises onto the same key and silently keeps the old bundle: wave 5 staged wave-4 copies of
+    smetana, deepvirfinder and metapop_study that way. Pass `on_exist="clear"` to force a full restage.
+    """
     keys_file = cache_dir / "task_keys.json"
     keys = json.loads(keys_file.read_text()) if keys_file.exists() else {}
     keys[tag] = task.GetKey()
     keys_file.write_text(json.dumps(keys, indent=2))
 
-    smith.StageWorkflow(task, on_exist="update", verify_external_paths=False)
+    smith.StageWorkflow(task, on_exist=on_exist, verify_external_paths=False)
     if materialise:
         report = smith.MaterialiseImages(task)
         print(f"images for {tag} ({task.GetKey()}): {report['fetched']} fetched, "

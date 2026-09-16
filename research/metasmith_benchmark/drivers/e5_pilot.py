@@ -201,7 +201,8 @@ def solve(corpus, samples, args):
         c.stage_and_run(smith, task, CACHE_DIR / corpus, f"{args.tag or 'e5_pilot'}_{corpus}",
                         stage_only=args.stage_only,
                         params=dict(executor=dict(queueSize=500), process=dict(tries=4, array=25), **BINNER_PARAMS),
-                        scaled=SCALED, materialise=args.materialise, gpus=c.FIR_GPU)
+                        scaled=SCALED, materialise=args.materialise, gpus=c.FIR_GPU,
+                        on_exist="clear" if args.restage else "update")
 
 
 def cmd_list(args):
@@ -233,7 +234,7 @@ def main():
         # E5 pratama's open-solver gapfill ran past 2 h on 353 of 381 bins; cplex is E4's route.
         p.add_argument("--solver", default="open", choices=["open", "cplex"])
         p.set_defaults(fn=cmd_run, dag=False, stage_only=False, launch=False, materialise=False, tag=None,
-                       with_gtdbtk=False)
+                       with_gtdbtk=False, restage=False)
         if name == "run":
             p.add_argument("--dag", action="store_true", help="render each plan to page/dags/e5_pilot_<corpus>.dag.svg")
             p.add_argument("--with-gtdbtk", action="store_true",
@@ -242,6 +243,11 @@ def main():
             mode.add_argument("--stage-only", action="store_true")
             mode.add_argument("--launch", action="store_true")
             mode.add_argument("--materialise", action="store_true", help="stage, fetch every image the plan needs, stop")
+            p.add_argument("--restage", action="store_true",
+                           help="clear a previously staged task instead of updating it. A plan key ignores "
+                                "protocol source, so a fix that changes only a protocol restages onto the same "
+                                "key and would otherwise keep the old transform bundle (wave 5 staged wave-4 "
+                                "copies of smetana, deepvirfinder and metapop_study that way).")
             p.add_argument("--tag")
             p.add_argument("--import", dest="import_givens", action="store_true",
                            help="import what the pool lacks before planning, as `import` does")
