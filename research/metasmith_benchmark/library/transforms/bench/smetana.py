@@ -30,11 +30,30 @@ def protocol(context: ExecutionContext):
         ounit.local.write_text(HEADER)
         return ExecutionResult(manifest=manifest, success=True)
 
+    # CAUTION one call with all 15 media runs them SERIALLY in a single core: measured 14 h+ on a
+    # 23-model cami community, and pratama's ~127-model samples would not fit any wall. SMETANA has no
+    # parallelism flag of its own (`-p` perturbs components; `-n` counts perturbation experiments), so the
+    # media run as concurrent invocations here. Each is an independent scenario -- `medium` is a column of
+    # the detailed table -- so the per-medium tables stack with one header and no value changes.
     context.ExecWithEnv(env=image, cmd=f"""
-        smetana -o community --flavor fbc2 --mediadb {context.Input(media).container} -m {MEDIA} \\
-            --detailed --solver scip -v models/*.xml
+        set -uo pipefail
+        pids=""
+        for m in {MEDIA.replace(",", " ")}; do
+            smetana -o "m_$m" --flavor fbc2 --mediadb {context.Input(media).container} -m "$m" \\
+                --detailed --solver scip -v models/*.xml > "m_$m.log" 2>&1 &
+            pids="$pids $!"
+        done
+        rc=0
+        for p in $pids; do wait "$p" || rc=1; done
+        ls -la m_*_detailed.tsv 2>/dev/null || true
+        exit $rc
     """)
-    shutil.move("community_detailed.tsv", ounit.local)
+    tables = sorted(Path().glob("m_*_detailed.tsv"))
+    Log.Info(f"smetana: {len(tables)} of {len(MEDIA.split(','))} media produced a table")
+    with open(ounit.local, "w") as out:
+        for k, table in enumerate(tables):
+            lines = table.read_text().splitlines(keepends=True)
+            out.writelines(lines if k == 0 else lines[1:])
     return ExecutionResult(manifest=manifest, success=ounit.local.exists())
 
 
@@ -42,5 +61,6 @@ TransformInstance(
     protocol=protocol,
     model=model,
     group_by=asm,
-    resources=Resources(cpus=2, memory=Size.GB(32), duration=Duration(hours=48)),
+    # One core and 1.2-1.9 GB per invocation, measured inside a live task; 15 media now run at once.
+    resources=Resources(cpus=16, memory=Size.GB(48), duration=Duration(hours=48)),
 )

@@ -32,12 +32,29 @@ def protocol(context: ExecutionContext):
         ounit.local.write_text(HEADER)
         return ExecutionResult(manifest=manifest, success=True)
 
+    # The media run concurrently, as in the SCIP lane: one call with all 15 runs them serially in a single
+    # core (14 h+ on a 23-model community), and SMETANA has no parallelism flag of its own. Each medium is
+    # an independent scenario -- `medium` is a column of the detailed table -- so the tables stack.
     context.ExecWithEnv(env=image, cmd=f"""
+        set -uo pipefail
         export PYTHONPATH={context.Input(cplex).container}:$PYTHONPATH
-        smetana -o community --flavor fbc2 --mediadb {context.Input(media).container} -m {MEDIA} \\
-            --detailed --solver cplex -v models/*.xml
+        pids=""
+        for m in {MEDIA.replace(",", " ")}; do
+            smetana -o "m_$m" --flavor fbc2 --mediadb {context.Input(media).container} -m "$m" \\
+                --detailed --solver cplex -v models/*.xml > "m_$m.log" 2>&1 &
+            pids="$pids $!"
+        done
+        rc=0
+        for p in $pids; do wait "$p" || rc=1; done
+        ls -la m_*_detailed.tsv 2>/dev/null || true
+        exit $rc
     """)
-    shutil.move("community_detailed.tsv", ounit.local)
+    tables = sorted(Path().glob("m_*_detailed.tsv"))
+    Log.Info(f"smetana_cplex: {len(tables)} of {len(MEDIA.split(','))} media produced a table")
+    with open(ounit.local, "w") as out:
+        for k, table in enumerate(tables):
+            lines = table.read_text().splitlines(keepends=True)
+            out.writelines(lines if k == 0 else lines[1:])
     return ExecutionResult(manifest=manifest, success=ounit.local.exists())
 
 
@@ -45,5 +62,6 @@ TransformInstance(
     protocol=protocol,
     model=model,
     group_by=sample,
-    resources=Resources(cpus=12, memory=Size.GB(32), duration=Duration(hours=48)),
+    # 15 media at once, each one core and ~2 GB; metaGEM's own config asks 12 cores for the serial form.
+    resources=Resources(cpus=16, memory=Size.GB(48), duration=Duration(hours=48)),
 )
