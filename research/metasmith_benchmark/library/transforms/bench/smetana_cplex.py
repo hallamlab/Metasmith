@@ -66,5 +66,8 @@ TransformInstance(
     model=model,
     group_by=sample,
     # 15 media at once, each one core and ~2 GB; metaGEM's own config asks 12 cores for the serial form.
-    resources=Resources(cpus=16, memory=Size.GB(48), duration=Duration(hours=48)),
+    # CAUTION 20 h, not 48: see smetana.py. fir refuses any job over 7.0 days at submit time, so a 48 h
+    # base makes rungs 3 and 4 (192 h, 384 h) unsubmittable, and each ignored submission failure corrupts
+    # nextflow's running counter until the run wedges. 20 h keeps all four rungs (20/40/80/160) legal.
+    resources=Resources(cpus=16, memory=Size.GB(48), duration=Duration(hours=20)),
 )

@@ -65,5 +65,11 @@ TransformInstance(
     model=model,
     group_by=asm,
     # One core and 1.2-1.9 GB per invocation, measured inside a live task; 15 media now run at once.
-    resources=Resources(cpus=16, memory=Size.GB(48), duration=Duration(hours=48)),
+    # CAUTION duration must satisfy base x 2^(tries-1) <= 168 h, because fir refuses ANY job over 7.0
+    # days at submit time ("This job exceeds the maximum walltime of 7.0 days on fir") regardless of
+    # partition -- cpubase_bycore_b6 advertises 28 days and is still refused. At 48 h the ladder asked
+    # 192 h and 384 h on rungs 3 and 4; both were refused, and an ignored SUBMISSION failure decrements
+    # nextflow's running counter without a matching increment (runningCount went to -6, loadCpus -96),
+    # so the monitor never sees the queue drain and the whole run wedges. 20 h keeps every rung legal.
+    resources=Resources(cpus=16, memory=Size.GB(48), duration=Duration(hours=20)),
 )
