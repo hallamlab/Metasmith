@@ -35,5 +35,11 @@ TransformInstance(
     protocol=protocol,
     model=model,
     group_by=meta,
-    resources=Resources(cpus=48, memory=Size.GB(384), duration=Duration(hours=48)),
+    # CAUTION 20 h, not 48. fir refuses ANY job over 7.0 days at submit time (reproduced with
+    # sbatch --test-only; no partition exempts it), and the retry ladder doubles duration as well as
+    # memory, so a 48 h base makes rungs 3 and 4 (192 h, 384 h) unsubmittable. An ignored SUBMISSION
+    # failure then decrements nextflow's running counter with no matching increment and the whole run
+    # wedges -- measured on wave-5 SMETANA (runningCount -6, loadCpus -96). Keep base x 2^3 <= 168 h.
+    # This transform has never run, so retuning it retires no cache.
+    resources=Resources(cpus=48, memory=Size.GB(384), duration=Duration(hours=20)),
 )
