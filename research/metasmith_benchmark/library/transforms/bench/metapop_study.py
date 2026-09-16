@@ -85,8 +85,16 @@ def protocol(context: ExecutionContext):
     else:
         Log.Warn("MetaPop wrote no microdiversity table: no vOTU passed its coverage filters")
         omicro.local.write_text("")
+    # The whole output is 643 MB for three samples, so pratama's 65 would ship tens of GB of intermediates
+    # against a byte quota already at 93%. Keep what a reader needs: the two diversity directories and the
+    # parameter log, which together carry every table the paper's figures come from.
     with tarfile.open(oresults.local, "w:gz") as tar:
-        tar.add("metapop", arcname="metapop")
+        for keep in ("00.Log_and_Parameters", "10.Microdiversity", "11.Macrodiversity"):
+            part = Path("metapop/MetaPop") / keep
+            if part.is_dir():
+                tar.add(part, arcname=f"metapop/MetaPop/{keep}")
+            else:
+                Log.Warn(f"MetaPop wrote no {keep}")
         tar.add("norm.tsv", arcname="norm.tsv")
     return ExecutionResult(manifest=[{micro: omicro.local, results: oresults.local}], success=True)
 
