@@ -50,10 +50,13 @@ def protocol(context: ExecutionContext):
     """)
     tables = sorted(Path().glob("m_*_detailed.tsv"))
     Log.Info(f"smetana: {len(tables)} of {len(MEDIA.split(','))} media produced a table")
-    with open(ounit.local, "w") as out:
+    # CAUTION do not bind this handle to `out`: that is the module-level product, and rebinding it here
+    # makes `out` a function local, so `context.Output(out)` above raises UnboundLocalError before the
+    # tool ever runs. Every task failed in ~10 s that way.
+    with open(ounit.local, "w") as fh:
         for k, table in enumerate(tables):
             lines = table.read_text().splitlines(keepends=True)
-            out.writelines(lines if k == 0 else lines[1:])
+            fh.writelines(lines if k == 0 else lines[1:])
     return ExecutionResult(manifest=manifest, success=ounit.local.exists())
 
 
