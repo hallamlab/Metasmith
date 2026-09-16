@@ -891,6 +891,12 @@ RULES, restated together because I keep re-learning them one at a time:
 
 I ALSO RETRACT an explanation I gave for the failed probe. I said the DVF work dirs were empty because those steps run scratch-on node-local `SLURM_TMPDIR`. MY OWN CHECK REFUTED IT: the dirs hold 5-7 entries each. The scratch-on reasoning is true of SMETANA (verified earlier) but I reused it here without checking, which is the same over-generalising that produced the partition-ceiling and worker-memory errors.
 
+**TRUE REASON, now measured — and it is a rule I have tripped over THREE times.** Every work dir reports `.command.sh: dvf.py=0 smetana=0`. `.command.sh` NEVER CONTAINS THE PROTOCOL BODY: it holds only the apptainer invocation, and the protocol text lives in the bounce script (`_metasmith/.bounce.*`) or is echoed into `.command.out`. My probe selected tasks with `grep -qs "dvf.py" .command.sh`, which matches nothing, so it silently skipped every task and printed an empty list. The same mistake produced an empty metapop grep and an empty "rendered dvf commands" grep earlier today. RULE: to find a task by tool, grep `.command.out` (or resolve the WorkDir from `squeue -o %Z`), NEVER `.command.sh`.
+
+SECOND STRUCTURAL FINDING: all three DVF array elements report the SAME WorkDir (`41/ff9fde12…`) — the array-LAUNCHER dir, which holds the single `.command.out` carrying the one pre-filter count. So having only one count is structural, not watcher dedup as I had assumed; per-element dirs are distinct only once the elements unstage (the earlier failed run had a4/30e301, 25/f126a5, 9a/567ad7). CAUTION `squeue %Z` for an array element gives the launcher dir, not the element's own.
+
+PROGRESS: metagem's SMETANA has STARTED (`60128772_0/_1` RUNNING, 19:57 of a 20 h wall), so both corpora now have smetana running under the fixed protocol.
+
 THE STEP BACK: the pre-filter echo is NOT load-bearing. The fix already has two independent confirmations — the rendered awk tested against a synthetic FASTA carrying the trigger shape, and a live sample reporting 145,469, exactly its prior successful row count. The confirmation that matters arrives for free when the tasks finish: the watcher reports `DVF_EXIT ... rows=`, and the previously-broken sample exiting 0 with ~69,600 rows is STRONGER evidence than an intermediate count, because it is the actual product. Waiting for it instead of probing for it.
 
 15:44 fir clock. W6 METAGEM IS RUNNING EXACTLY THE INTENDED WORK, AND THE PRE-FILTER IS REPORTING.
