@@ -35,7 +35,7 @@ CHECKM2_DB = Path(os.environ.get(
     "CHECKM2_DB", "/scratch/phyberos/wave2_b3_nfcore/checkm2_db/CheckM2_database/uniref100.KO.1.dmnd"))
 # Nodes whose Lustre client failed our tasks with Errno 108, EIO or 0-second starts in R1.
 # A driver job's own --exclude does not reach the grid tasks nextflow submits.
-FIR_BAD_NODES = ("fc30372,fc30557,fc30559,fc30560,fc30564,fc30567,fc30570,fc30604,"
+FIR_BAD_NODES = ("fc30372,fc30557,fc30559,fc30560,fc30564,fc30567,fc30568,fc30570,fc30604,"
                  "fc30608,fc30609,fc30622,fc30623,fc30628,fc30640")
 
 # E2's two arms and E5's CAMI pilot share the CAMI home, E3 and E5's Pratama pilot share
