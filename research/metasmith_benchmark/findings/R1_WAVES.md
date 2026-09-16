@@ -880,7 +880,43 @@ Stop rule unchanged: USR1 the newest wave-3 driver at 940K with no lever landing
   - Hourly check-in 23:54 fir clock: nothing finished, stalled or newly failed. Quota flat at 17.337 TiB (93.06%) and 873,505 inodes (~280/h from E1 short's COMEBin output); no failure line newer than the 22:16 vcontact3 OOM. Drivers up at 6:16:43 and 5:58:40; E3's retries healthy (prodigal_gv 3:43 of 8 h, assembly_stats 16:30 and 4:32 of 24 h, vcontact3's 512 GB attempt still PENDING on Priority) with MetaWRAP down to 3 running / 21 pending.
   - Hourly check-in 03:54 fir clock: THE INODE CLIMB RESUMED, and headroom was restored before it mattered. Inodes went 874,297 (02:49) → 892,741 (03:34) → 900,064 (03:54): ~26K in the hour and still rising ~2.3K per 5 min, leaving ~50K to the 950K criterion, roughly two hours at that rate. Bytes crept with it, 17.339 → 17.372 TiB (93.07% → 93.25%). The timing matches E1 short entering DAS Tool refinement at ~02:54 — 208 samples × 3 binners of `FASTATOCONTIG2BIN` and its successors — but the writer is being NAMED, not assumed: read-only split `60062551` counts each top-level area twice, six minutes apart.
   - THE GATE EARNED ITS KEEP: THE WAVE-5 MATERIALISE STAGED WAVE-4 TRANSFORMS (11:03 fir clock). Both corpora re-materialised onto their EXISTING keys — cami `OgFSQzRS` 43 steps, metagem `AXtXlth9` 44 steps, 31 images present each, both COMPLETED 0:0 — which is expected, since the plan key is built from the solver model and not from protocol source, so all three fixes move instance ids without moving the key. What is NOT acceptable is what the staged plan then contained: `_metasmith/task/transforms/QaocIgjLfHvk/` is dated **Sep 15 17:38** and holds the PRE-FIX sources — `smetana.py` with `cpus=2` and no per-medium loop, `deepvirfinder.py` still exporting `compiledir_format`, `metapop_study.py` without the narrowed archive — and `diff` confirms the staged `smetana.py` DIFFERS from the same file in checkout `70e764b8`. Launching would have re-run the 17 h serial SMETANA and re-failed DeepVirFinder in 16 s.
-  - 14:55 fir clock, hourly check-in. DVF CONFIRMED INPUT-SHAPED AT A THIRD MEMORY SIZE; MY PROBE FAILED ON MY OWN BUG; METAGEM'S DVF LADDER IS EXHAUSTED.
+  - 15:15 fir clock. THE LONG-CONTIG LEAD IS REFUTED, AND THE WEDGE ARITHMETIC IS CONFIRMED EXACTLY.
+
+**PROBE RESULT: the 712 kb contig is INNOCENT.** Re-run against the real image (`/scratch/phyberos/cache/apptainer/docker..multifractal_deepvirfinder..0.1.sif`), all three slices of the broken sample PASSED: 2,000-contig subset exit 0 / 2,001 rows; the longest contig ALONE exit 0 / 2 rows; subset + longest exit 0 / 2,002 rows. So the one feature that singled this sample out does not break DeepVirFinder, and that lead is dead.
+
+**ROOT CAUSE FOUND, and it is an UPSTREAM BUG IN `dvf.py` — reading the source beat bisecting 67,600 contigs.** The encode loop flushes every 100 accepted contigs and CLEARS its buffers:
+
+```
+if len(seqname) % 100 == 0 :
+    pool = multiprocessing.Pool(core_num)
+    head, score, pvalue = zip(*pool.map(pred, range(0, len(code))))
+    pool.close()
+    code = [] ; codeR = [] ; seqname = []
+```
+
+and then, after the loop, the tail block runs `pool.map` UNCONDITIONALLY — the append above it is guarded, the `pool.map` below it is not:
+
+```
+if flag > 0 :
+    if countN/len(seq) <= 0.3 and len(seq) >= cutoff_len :
+        code.append(codefw)          # only if the LAST record passes
+    pool = multiprocessing.Pool(core_num)
+    head, score, pvalue = zip(*pool.map(pred, range(0, len(code))))   # line 212
+```
+
+So `code` is empty at the tail EXACTLY WHEN: the accepted-contig count is a multiple of 100 AND the file's final record is rejected (under `-l` or >30% N). `zip(*pool.map(f, range(0,0)))` is `zip(*[])` -> `ValueError: not enough values to unpack (expected 3, got 0)`.
+
+THE COUNTS CONFIRM IT PRECISELY: broken sample **69,600 accepted — 69,600 % 100 == 0**; the two that worked are 70,116 (%100 = 16) and 145,469 (%100 = 69). And the broken file's last record is one of its ~372,000 contigs under 1000 bp, so it is rejected and never appended. This also explains why MY PROBE PASSED: I fed it pre-filtered files in which every record is accepted, so the tail always appends and `code` is never empty — the probe accidentally removed the trigger.
+
+FIX (transform-side; the bug is inside the image and cannot be patched there): pre-filter the input to exactly what `dvf.py` accepts (>=1000 bp AND <=30% N) before handing it over. Then the final record always appends and the tail `pool.map` always has work. COST: this moves deepvirfinder's id and retires the 5 existing tables (3 cami ~9-15 min each, 2 metagem ~50 min each) — worth it, because the failure is silent-ish and data-dependent. WHY IT GATES PRATAMA: the trigger is ~1-in-100 per sample, so across pratama's 65 samples there is roughly an even chance at least one hits it.
+
+**THE COUNTER-CORRUPTION MECHANISM IS NOW CONFIRMED BY ARITHMETIC, not inference.** Metagem's final stats: `succeededCount=2065; failedCount=16; ignoredCount=4; pendingCount=7; runningCount=-7; loadCpus=-112; retriesCount=12`. `runningCount` is -7 and `loadCpus` is -112 = -7 x 16 cpus. Seven phantom decrements = (3 smetana x 2 unsubmittable rungs) + (1 deepvirfinder x rung 4). Cami's was -6 = 3 x 2 with no DVF failure. The model predicts the number exactly in both runs.
+
+**METAGEM STOPPED CLEANLY BY THE SELF-FIRING GATE.** Job 60126482 polled to `grid=0 trace=0 age=609s`, then sent USR1 at 15:03:04; driver 60100718 ended COMPLETED 0:0 after 3:33:53, PID.lock gone, 0 orphans. Products banked: `bench-deepvirfinder_scores` 2, `bench-metapop_microdiversity` 1, `modelling-carveme_model` 85, `modelling-memote_score` 85. The gate refusing its first attempt (age 153 s) and passing only at 609 s is the mechanism working as designed. HEAD synced to the metagem home; materialise `--restage --tag w6` next.
+
+Quota: inodes 881,420 -> 883,522 (+2,102) from metagem's record_run, bytes flat at 17.418 TiB / 93.49%. w6 SMETANA ×3 still RUNNING at 2:54:23, ZERO retries, ZERO ignores, 17:05 of wall left.
+
+14:55 fir clock, hourly check-in. DVF CONFIRMED INPUT-SHAPED AT A THIRD MEMORY SIZE; MY PROBE FAILED ON MY OWN BUG; METAGEM'S DVF LADDER IS EXHAUSTED.
 
 **Rung 3 settles it: `60111817` FAILED `1:0` after 58:34 at 128 G.** Three attempts, three identical failures, across 32 G / 64 G / 128 G at 55:23 / 58:12 / 58:34 — the runtime does not even move. DeepVirFinder's empty `pool.map` on this sample is memory-independent, full stop.
 
