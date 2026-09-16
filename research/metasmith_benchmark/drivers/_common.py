@@ -350,6 +350,20 @@ def stage_and_run(smith, task, cache_dir, tag, *, stage_only, params, scaled=Non
     if stage_only:
         print(f"staged {tag} as {task.GetKey()}")
         return
+    # fir refuses ANY job over 7.0 days AT SUBMIT TIME, whatever the partition -- reproduced with
+    # `sbatch --test-only`, and note `cpubase_bycore_b6` advertises 28 days yet is still refused.
+    # The retry ladder doubles duration, so a base of B asks B * 2^(attempts-1) on its last rung; at
+    # tries=4 a 48 h base asked 192 h and 384 h, both rejected. An ignored SUBMISSION failure then
+    # decrements nextflow's running-task counter with no matching increment (runs ended at
+    # runningCount -6 and -7), so the monitor never sees the queue drain and the run wedges.
+    # `Resources.AsNextflowFormat` caps the rendered time against this ceiling.
+    # CAUTION it must be a params entry read inside a CLOSURE, never interpolated into the config:
+    # the config is parsed BEFORE the -params-file merge, which is why clusterOptionsExtra had to be
+    # a literal (see make_slurm_config). A closure is evaluated per task, after the merge -- proven
+    # in production by `errorStrategy`, which read tries=4 from the params file rather than the
+    # config's own default of 2.
+    params = dict(params)
+    params["process"] = dict(params.get("process") or {}, max_duration="7days")
     smith.RunWorkflow(task=task, config_file=make_slurm_config(smith, cache_dir, scaled), gpus=gpus,
                       params=dict(slurmAccount=SLURM_ACCOUNT, slurmGpuAccount=SLURM_GPU_ACCOUNT, **params))
     print(f"submitted {tag}: {task.GetKey()}", flush=True)
