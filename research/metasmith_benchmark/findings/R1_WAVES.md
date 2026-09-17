@@ -1564,3 +1564,30 @@ own transforms' entries and disturb nothing else in the plan.
 been imported, which is exactly what "built but not synced" meant for T21 #50. An identity is assigned by the
 import, so nothing on the planning end can mint it; `run --materialise --import` is the documented route, and
 imports run inside the Slurm job because the pool lives in the agent home.
+
+### H. CORRECTION to section F: the engine already clamps every ladder
+
+Section F called six ladders "illegal" and treated three of them as live wedge risks left in place. That
+framing is WRONG, and the staged workflow is what showed it. Every rendered duration is:
+
+    time = { [(2**(task.attempt-1)) * ('<base>' as Duration),
+              ((params.process?.max_duration ?: '3650days') as Duration)].min() }
+
+and `_common.stage_and_run` injects the ceiling UNCONDITIONALLY, for every driver, immediately before
+`RunWorkflow`: `params["process"] = dict(params.get("process") or {}, max_duration="7days")`. So the last
+rung of every ladder renders as at most 7 days, which is exactly fir's submit cap. **No rung is
+unsubmittable, and the wedge class is closed engine-side** -- it was fixed by commit 3547a47c, before this
+session, at zero cache cost. The Elvis default of '3650days' only applies if a caller omits the ceiling,
+which no benchmark driver does.
+
+What this means, stated plainly:
+
+- `e3/spades_pratama` (24 h), `e2/comebin` (72 h) and `e2/flye` (24 h) are **safe as they stand**. Leaving
+  them was the right call, but for a better reason than the one given: not "accepted risk" but "no risk".
+- The three ladders section F changed (iphop, metapop_study, gtdbtk_image) did NOT need changing for
+  safety. They were not harmful -- a lower base still gives more usable attempts before the clamp bites,
+  and the retired caches were empty or ~30 min of recompute -- but the section's reasoning overstated the
+  danger. The check that would have caught this is reading the RENDERED resources, not the declared ones.
+
+CAUTION for any future ladder audit: `base x 2^(tries-1) <= 168 h` is the rule for the DECLARED value only
+if nothing clamps it. Check `workflow.resources.nf` in a staged run before concluding a ladder is unsafe.
