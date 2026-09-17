@@ -1208,3 +1208,85 @@ Hourly check-in 11:54 fir clock. TWO OF THE THREE FIXED TOOLS ARE NOW PROVEN ON 
 - **T21 BinSanity and abawaca: abawaca BLOCKED, BinSanity HELD** (provisional, scoped to what was searched). Pratama's round 1 is `bin_refinement -A abawaca(5 kb) -B abawaca(10 kb) -C BinSanity`; round 2 is `-A metabat2 -B concoct -C round-1 bins` (maxbin2 is run but not refined). abawaca's input comes from `prepare_esom_files.pl` at JGI's `/global/apps/metagenomics/`, which is unpublished: absent from CK7/abawaca (source only, README one paragraph), from bioconda's `abawaca:1.00--h9948957_9` image (only the `abawaca` binary; fir probe), and from GitHub repository search (code search needs auth, not tried). BinSanity 0.5.4 is ready in `binsanity:0.5.4--pyh5e36f6f_0` (Binsanity-profile, Binsanity-wf, featureCounts, checkm; its CheckM needs a database bind). BinSanity alone does not restore round 1, so E3 keeps one round over metabat2, maxbin2 and concoct. Unblock by reconstructing the ESOM `.names`/`.lrn` format from abawaca's `ClusterData.cpp` reader, or by asking the Pratama authors for the script.
   - Local solves: cami 43 `ISt8lhSD`, metagem 44 `HytmTXlK`, pratama 43 `JxU49fU9`; only `metapop_study` added. Materialise needs the image in place first.
 - **Study `sample` column FIXED** (not synced): BhEA2YLt's drep_study and skani_study tables carry `read_pair@393e2a4818cd`, because the pool given's file holds plain text (`SRR7664616`, written by `_common.add_value`), not JSON, and `sample_label` fell back to the stem. `sample_label` now takes the file's text, accepting a JSON string too (tested: plain text, JSON string, JSON object, empty and binary). bench rebuilt: only drep_study and skani_study change id, so those two rerun on the next E5 launch (minutes). P7FelAys (running) and BhEA2YLt keep stem labels; map stems to samples through task.yml's import paths (`imports/e5/<corpus>/<sample>/read_pair@…`) if they are used. Ships with the pratama sync.
+
+## Wave 7
+
+### Queue
+
+Collected 2026-09-16 at 17:15 PDT fir clock, on Tony's instruction: break MetaWRAP into one transform per
+binner plus a refinement stage, break DRAM the same way, fix SMETANA, and stop betting on multi-day jobs
+that may fail. Cancelling the running lanes is authorised.
+
+**The governing defect.** Every long E3 step is a MONOLITH on one wall: `metawrap_pratama` runs bowtie2,
+three binners and CheckM-backed refinement in one 48 h task; `dramv_votus_pratama` runs CheckV, VirSorter2,
+DRAM-v annotate and distill in one 24 h task. A monolith fails whole, retries whole, and sizes its wall for
+the sum of its parts. Worse, both ladders are illegal: 48 h reaches 192 h and 384 h on rungs 3 and 4, and
+24 h reaches 192 h on rung 4, all refused at submit time by fir's 7.0-day cap, which is the wedge class.
+Decomposition fixes the risk, the wall and the ladder at once.
+
+**Cost, measured before deciding.** E3's MetaWRAP lane is 53 of 65 samples exited 0 and banked, with 10
+running. Splitting the transform changes its requirements and hash, so all 53 retire and 65 samples
+recompute through 4 tasks each. DRAM, DRAM-v and SMETANA have produced NOTHING in any wave, so their splits
+retire nothing. E3 needs a relaunch regardless, for the viral-set chunking and the hybrid assembly, so the
+only question MetaWRAP's split settles is replay-from-cache against recompute.
+
+**A. Stop E3 and bank what it has.** Gated USR1 to driver `59948529` (submit_driver route, trap calls
+CancelWorkflow); never a plain scancel. Record the results/ inventory and the per-step exit counts before
+the run dir is touched. E5 cami and metagem KEEP RUNNING: their SMETANA is the reference the per-medium
+decomposition must reproduce, and a 20 h wall is not the multi-day bet this queue is about.
+
+**B. Split MetaWRAP (four transforms, e3 library).**
+1. `metawrap_metabat2_pratama`, `metawrap_maxbin2_pratama`, `metawrap_concoct_pratama`: each runs
+   `metawrap binning --universal -a <asm> --<binner> reads_1 reads_2`, producing a sibling bin type per
+   binner under `e3::` so no standard binner or refiner binds to them.
+2. `metawrap_refine_pratama`: `metawrap bin_refinement -A -B -C` over the three, keeping the existing
+   products `sequences::metawrap_bin_fasta`, `binning::metawrap_contig_to_bin_table` and
+   `binning::metawrap_bin_stats`, so every downstream consumer is unchanged.
+3. CAUTION MetaWRAP's binning module aligns the reads itself into `work_files/`, so three split binners
+   each redo the bowtie2 alignment. Measure that share first. If it dominates, add a
+   `metawrap_align_pratama` producing the sorted BAM and have each binner stage it into `work_files/`
+   before the call. VERIFY against the image's binning.sh that an existing alignment is detected and
+   skipped; do not assume the flag exists.
+4. Walls: sized per binner from wave-1 and wave-2 timings, each satisfying base x 2^3 <= 168 h.
+
+**C. Split DRAM and DRAM-v (per annotator).**
+The staged DRAM 1.5.0 has exactly TWO live annotators. `DRAM.config`'s `search_databases` lists thirteen
+entries and eleven are `None`: kegg, uniref, dbcan, viral, peptidase, vogdb and the four camper entries.
+Only `kofam_hmm` (/db/kofam_profiles.hmm, 7.2 G) and `pfam` (/db/pfam.mmspro, 161 M with a 133 G MSA) are
+set. So B3's "lacks dbCAN" understates it: DRAM here is a two-annotator tool.
+1. MAG lane: `dram_kofam_pratama`, `dram_pfam_pratama`, `dram_distill_pratama`. Each annotator runs
+   `DRAM.py annotate` against a config naming only its own database; distill merges the two annotations
+   tables and runs `DRAM.py distill`.
+2. Viral lane: `dramv_prep_pratama` (CheckV end_to_end then VirSorter2 --prep-for-dramv, the two tools that
+   make up most of the current 24 h), then `dramv_kofam_pratama`, `dramv_pfam_pratama`,
+   `dramv_distill_pratama`.
+3. VERIFY the config-subset route on one small input before building all six: DRAM must skip a database
+   whose config entry is absent rather than abort. Fallback is `--use_*` flags plus a merge.
+
+**D. Fix SMETANA by fanning out per medium.**
+One task runs 15 media as 15 concurrent invocations, which is why its wall is 20 h and why pratama's
+~127-model samples are the open risk. Decompose on the AMR precedent (`splitContigsForAmr` ->
+`integronfinder` -> merge):
+1. `smetana_split_media`: requires the media db and the assembly, group_by=asm, produces 15
+   `bench::smetana_medium` items so each carries the assembly in its lineage.
+2. `smetana_medium`: one medium plus the community's CarveMe models, group_by=medium.
+3. `smetana_merge`: parents={medium}, group_by=asm, InputGroup over the per-medium tables, stacking one
+   header into the existing `bench::smetana_detailed`.
+CAUTION pairing a fanned-out unit with a whole community across two fan-outs is the B23 tie-break hazard.
+Prove the pairing in a LOCAL SOLVE before any sync: each smetana task must see one medium and all of its
+own assembly's models. EQUIVALENCE GATE: the merged table must reproduce the monolith's row set on the
+cami community now running; that run is the reference, which is why it is not cancelled.
+
+**E. Chunk the frozen viral set.** Design confirmed 2026-09-16 04:47 against the AMR precedent and still
+unbuilt: `e3::viral_contig_batch` as a SIBLING type, consumers with group_by=batch, merge per study with
+parents={batch}. It fixes prodigal-gv and CheckV, which share one 4.6 M-contig input and have each already
+walked the ladder. Scientifically safe: both are per-contig, so batches concatenate without changing values.
+
+**F. Ladders and the engine clamp.** Every new transform declares a duration satisfying base x 2^(tries-1)
+<= 168 h. The engine clamp (3547a47c) is committed and unsynced and takes effect at a materialise, so wave
+7 is its first real destination. Its three tests are still unexecuted: no interpreter reachable from this
+session has pytest. Run them wherever one exists before the launch, or record them as unexecuted.
+
+**G. Launch.** Local solve and gate all three drivers, commit, then sync to the pratama home (free once E3
+ends), materialise with --restage, machine-check the gate, and launch E3, E5 pratama, T21 #50 E3 hybrid and
+T21 #51 E4 SMETANA CPLEX together. Inode budget checked before each; criterion 950K, currently 849K.
