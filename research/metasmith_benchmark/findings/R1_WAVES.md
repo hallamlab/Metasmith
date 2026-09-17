@@ -1682,3 +1682,44 @@ metapop_study **20 h** (confirming the ladder fix reached the staged run).
 infeasibility question MEASURABLE rather than extrapolated: on a ~127-model community the 19-compound media
 may still finish while the 74-compound ones do not, and per-medium tasks bank whatever succeeds instead of
 losing all fifteen to one wall. That is the whole point of the decomposition, and it is now under test.
+
+### L. Hourly, 18:55: both lanes running, the replay burst is over, bytes are now the binding axis
+
+**Quota, burst versus trend, from the 5-minute sampler:**
+
+| time | bytes | inodes | delta |
+| --- | --- | --- | --- |
+| 18:24 | 17.419 TiB 93.50% | 887,839 | |
+| 18:29 | 17.410 TiB 93.45% | 873,255 | the reclaim landing |
+| 18:34 | 17.431 TiB 93.57% | 901,011 | **+27,756, the wave-7 replay** |
+| 18:39 | 17.431 TiB 93.57% | 901,022 | +11 |
+| 18:44 | 17.431 TiB 93.57% | 901,500 | +478 |
+| 18:49 | 17.432 TiB 93.57% | 901,523 | +23 |
+| 18:54 | 17.436 TiB 93.59% | 901,603 | +80 |
+
+One burst, then flat: ~+590 inodes over the last 20 min, about 1.8K/h against 48,397 of headroom. Inodes are
+NOT the axis to watch, and no per-top-level census was taken because there is no burst to explain.
+
+**BYTES ARE NOW THE BINDING AXIS.** 17.436 TiB / 93.59%, creeping ~0.05 TiB/h. The 96% stop rule is
+17.885 TiB, which is ~9 h away at this rate -- and the rate will RISE as the three binners and 22 CheckV
+batches write their outputs. TRIGGER, stated in advance: if a later check-in measures the byte rate above
+~0.15 TiB/h, or bytes pass 95%, arm a gated USR1 byte stop on the wave-7 drivers (the proven
+`_e3_byte_stop.sbatch` pattern -- USR1 through the trap, never a plain scancel). Not armed now: a 9 h
+horizon against an hourly cadence gives ample warning, and building it early is the same premature-tooling
+mistake the eviction lever already was.
+
+**Zero new failures since the launch.** Filtering the log by job id (> 60139000) rather than by time gives
+nothing; the only wave-7 entries are my own two materialise jobs at 18:18 and 18:19. CAUTION the log's last
+raw lines look current and are not -- it carries no date field, so `tail` shows 14:58, 16:18 and 16:38
+entries from earlier runs.
+
+**Nothing finished, stalled or failed.** E3 `F3KJbPJK` at 26 min holds 93 queued jobs -- 22
+`checkv_batch_pratama`, 18 `prodigal_gv_batch_pratama`, 17/7/5 across the three binners, plus
+`dramv_checkv`, `vcontact3`, `assembly_stats` and 2 `spades_hybrid_pratama` -- with **errors=0, ignored=0**
+and its 13 replayed product dirs intact. E5 pratama `JtWdzRCY` started at 18:54:36 and has not yet replayed
+(cached=0, errors=0).
+
+**The watcher is alive AND speaking**, which is not the same thing and had failed twice before in this run:
+`watch_w7` (60141230) is RUNNING with a start banner plus a full state snapshot in its log. It reports only
+on change and covers `Error is ignored`, the retry-then-ignore signature that lets a lane report complete
+while its product is missing.
