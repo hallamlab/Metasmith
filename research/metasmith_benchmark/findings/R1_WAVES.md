@@ -1723,3 +1723,45 @@ and its 13 replayed product dirs intact. E5 pratama `JtWdzRCY` started at 18:54:
 `watch_w7` (60141230) is RUNNING with a start banner plus a full state snapshot in its log. It reports only
 on change and covers `Error is ignored`, the retry-then-ignore signature that lets a lane report complete
 while its product is missing.
+
+### M. The E5 replay burst, a lever a wrong path had hidden, and two corrections
+
+**The burst and its plateau.** E5 pratama's replay took inodes 901,603 (18:54) -> 928,727 (18:57) ->
+937,127 (19:00) -> 940,095 (19:01), about +35.5K in six minutes, then FLAT at 940,182. Both wave-7 run
+dirs settled at the same footprint -- `F3KJbPJK` 43,212 and `JtWdzRCY` 42,929 -- so the plateau is a
+property of the replay, not a coincidence. Residual growth is promotion traffic into `task_cache`, ~1-2K/h.
+Framing that keeps this proportionate: **950K is Tony's MARGIN, not the cliff**; the hard limit is
+1,000,000, so 940K left ~60K before writes actually fail, and the criterion was 5-10 h away, not minutes.
+
+**E5 pratama's replay is healthy, by the same decisive check E3 got.** `megahit`, `comebin`, `semibin2`,
+`metabat2`, `kofamscan`, `diamond_uniref50` and `proteinbert` all show **real=0**: the expensive corpus
+steps replay rather than recompute. The real work is new or deliberately retired -- 3 deepvirfinder,
+3 smetana_split_media, 2 carveme (of 381; the rest replayed), 13 checkm2, 1 metapop_study, whose cache MY
+ladder fix retired exactly as predicted.
+
+**A 63K lever that a wrong path had hidden for hours.** `bqyYO0Ip`, the stopped and superseded E3 run,
+holds 63,057 inodes with 53,746 in `nxf_work`, no `PID.lock` and no queued job. It was never measured
+because the earlier run-dir census walked `/scratch/phyberos/<corpus>/metasmith` and so missed
+`pratama2026` entirely -- the same wrong-path mistake recorded in section G, still costing visibility two
+hours later. CAUTION a census over a path that does not exist returns CLEAN, not an error. Also unmeasured
+until now: `AvPNgFtP` 7,833, `OLo3f5V3` 732, `q2TJFf23` 559.
+
+Gated prune submitted as `60141853`. `prune_work.sbatch` gates only the path shape (`<run>/nxf_work/??/`)
+and its own docs say to submit it only once every consumer has finished, so the consumer gating is the
+caller's job and is done in that wrapper: no PID.lock, no queued job, no live workflow file naming it, and
+-- the load-bearing one -- **no symlink from any task_cache or from either live run resolving into it**,
+because both wave-7 lanes are replaying from `task_cache` at this moment.
+
+**Correction 1: my memory diagnosis was wrong.** Section-less note at 18:55 blamed the killed background
+tasks on concurrent poll loops. A LONE single-shot was then killed while the host had 46.4 GiB available,
+zero swap and load 3.0, so that cause is refuted or at best incomplete, and `ps` inside the sandbox sees
+only its own namespace and cannot name the host's consumers. The response is behavioural, not diagnostic:
+**no local sleeping tasks at all** -- fir-side jobs and direct no-sleep queries do the waiting.
+
+**Correction 2: watcher v1 was blind to failures.** It emitted state changes, so it LOOKED healthy, but
+every numeric test died with `integer expression expected`: `$(grep -c X f || echo 0)` emits TWO lines when
+the count is zero, because `grep -c` prints `0` AND exits 1, so the `||` fires as well. Its error and
+`Error is ignored` detection never ran. Fixed in v2 (`60141595`): `grep -c` already prints 0 for a readable
+file, so the guard belongs on a MISSING file, never on exit status. Its inode-band alerting DID work and is
+what caught the 920K crossing. That is the third watcher this run to be alive while structurally mute in
+some part -- always test what a watcher does when the thing it watches FAILS, not only when it progresses.
