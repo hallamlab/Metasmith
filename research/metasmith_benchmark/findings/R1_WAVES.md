@@ -2254,3 +2254,40 @@ member count equals the tree's entry count, then delete. That is how E1 long's Q
   a fault — it cannot start until all three binners finish a sample.
 - E1 short's refinement wave is real and bounded at ~35 tasks, so its 148,063-inode `work` tree stays
   load-bearing for now.
+
+### AA. The E1 short retries are Lustre, the node guard is working, and a tally that lied
+
+E1 short retries at 2.2% — 2,761 submissions against 62 re-submissions — which is healthy, but 46 of
+the 62 are CheckM2 and they share one cause. It is **not** the empty-`DASToolUnbinned`-bin class it
+looks like. The actual error, read from a failed task's `.command.err`:
+
+    BrokenPipeError: [Errno 108] Cannot send after transport endpoint shutdown:
+      'input_bins/MEGAHIT-DASToolUnbinned-toy_mousegut_sample_56.fa.gz'
+
+raised at `os.stat(bin).st_size == 0`. **Errno 108 is a Lustre transport failure**, the same class
+that corrupted the reclaim jobs' in-job `quota()` reads on fc30557 and fc30564. Scope: 17 E1 short
+work dirs carry it. E3's run dir carries **zero**, and E3's driver log has zero errors, so this is
+E1-short-local rather than cluster-wide.
+
+**`e1s_exclude` (`60013553`) is a live guard from the previous session and it is doing its job.** It
+loops every 60 s, finds E1 short's PENDING jobs and stamps `ExcNodeList` with a 15-node bad list
+(`fc30568` was added 2026-09-15). Its structural limit: it can only stamp a job while PENDING, so a
+task already dispatched slips through — which is exactly what the failures are.
+
+**A CORRECTION TO MY OWN ALARM, recorded because the wrong version is the more alarming one.** I
+first tallied failing nodes with `sacct` *without* excluding step rows, got `JobName=batch` for most
+of them, and concluded that seven of the top twelve failing nodes were outside the guard's list —
+i.e. a cluster-wide problem the guard could not track. That tally was counting `.batch` step records
+I had never attributed to a lane or a step. Re-run with **`sacct -X`** (allocation rows only), the
+real picture is 25 failures since 18:00 — 10 CheckM2, 8 RENAME_POSTDASTOOL, 4 DAS_Tool, 2 `mat_e3`,
+1 `prune_batch_gate` — on fc30570 (5), fc30557 (5), fc30560 (3), fc30564 (2), fc30372 (2), fc30206
+(2) and four singles. **Every E1-lane failure is on a node the guard already lists.** Only `fc30618`
+(1) and `fc30206` (2, and those are `mat_e3`, another lane) sit outside it.
+
+**RULE: use `sacct -X` for any per-job tally. A step row carries `JobName=batch`, so a naive
+group-by silently counts the same failure twice and attributes it to nothing.**
+
+Deliberately NOT done: adding `fc30618` to the guard and restarting it. One failure does not justify
+churning a working guard — the same judgement the previous session applied to the watcher's
+double-count, and for the same reason. `fc30618` is recorded here for whenever the guard is next
+rebuilt.
