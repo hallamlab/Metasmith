@@ -1890,3 +1890,31 @@ the measurement that will settle whether ~127-model communities are tractable pe
 consistent with the corrected trend in section O. `prune_work` COMPLETED. No new failures; both lanes
 err=0, ign=0. `metawrap_refine_pratama` is still 0 with 76 binner tasks running, so the MetaWRAP
 decomposition has not yet reached its refinement stage.
+
+### R. A decision point for SMETANA on pratama, set before it is needed
+
+Hour to 20:54 was quiet: no lane finished, stalled or failed; no new failures; E3 results unchanged at 17
+with `metawrap_refine_pratama` still 0 behind 107 running binner tasks; quota gentle at 913,840 inodes
+(~8K/h) and 17.418 TiB / 93.51% (~0.024 TiB/h, 96% about 19 h out).
+
+**The one number that is accumulating is SMETANA's.** `smetana_medium` is 45 submitted, 45 running,
+**0 completed** after ~75 min, and the queue holds NOTHING else for E5 pratama -- every other step of that
+run has already finished (results=37). So this lane is now the only thing the run is waiting on.
+
+Baseline for judging it, measured earlier in this wave on cami's **12-model** community: the 19-compound
+media M15A/M15B finished in ~10 min, and only the four 74-compound media exceeded 5.4 h. Pratama's
+communities are **~127 models**.
+
+**TRIGGER, stated in advance rather than improvised later.** If **zero of the 45 have completed by 23:40
+fir** (4 h in), then even the fastest, smallest medium is running >24x its cami time, the slow media cannot
+plausibly meet a 20 h wall either, and the lane is futile on SCIP -- the only solver E5 can use, since
+ReFramed 1.6.0 offers cplex/gurobi/scip and CPLEX is barred from E5 on publication grounds (section D).
+
+Action at that point: **USR1 the E5 pratama driver** `60141166` (gated route -- the trap calls
+CancelWorkflow; never a plain scancel). That costs nothing but the SMETANA tables, which would not arrive
+anyway, because every other product of the run is already banked. Then record SMETANA-on-pratama as
+infeasible at this community size, which is the escalation already standing for Tony in section D.
+
+If instead some media DO complete, record WHICH and their walls: that is the fan-out delivering partial
+results the monolith could never have banked, and it turns "infeasible" into "feasible for N of 15 media",
+which is a materially better answer to give.
