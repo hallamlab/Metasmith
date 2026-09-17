@@ -1290,3 +1290,40 @@ session has pytest. Run them wherever one exists before the launch, or record th
 **G. Launch.** Local solve and gate all three drivers, commit, then sync to the pratama home (free once E3
 ends), materialise with --restage, machine-check the gate, and launch E3, E5 pratama, T21 #50 E3 hybrid and
 T21 #51 E4 SMETANA CPLEX together. Inode budget checked before each; criterion 950K, currently 849K.
+
+### A. E3 stopped, and what it banked
+
+Driver `59948529` ended **COMPLETED 0:0** after 1-10:03:16, by gated USR1 (submit_driver route, trap calls
+CancelWorkflow). Grid jobs went to 0 within 20 s, `PID.lock` is gone, and the driver's own JSON reads
+`"status": "cancelled", "detail": "PID.lock removed; driver exited"` with `"stopped": []` and
+`"survived": []`, so nothing was orphaned. The `e3_exclude` and `e3_byte_stop` watchers self-terminated with
+the run; `e3_inode_stop` 59953053 outlived its target and was plain-scancelled, which is allowed because it
+is a watcher and not a driver.
+
+`results/` inventory at the stop, which is the record of what wave 7 replays rather than recomputes:
+
+| product | count |
+| --- | --- |
+| sequences-spades_assembly | 65 |
+| sequences-megahit_assembly | 65 |
+| sequences-orfs / sequences-gff | 65 / 65 |
+| sequences-read_qc_stats | 65 |
+| e3-fastp_report_json / _html | 65 / 65 |
+| sequences-assembly_stats | 64 |
+| sequences-assembly_per_contig_coverage | 64 |
+| **sequences-metawrap_bin_fasta** | **3,459** |
+| **binning-metawrap_bin_stats / _contig_to_bin_table** | **54 / 54** |
+| viromics-dereplicated_candidate_virus | 1 |
+| viromics-votu_cluster_table | 1 |
+| viromics-contig_length_table | 1 |
+| e3-viral_orfs / e3-viral_gff | 1 / 1 |
+| pratama-votu_recovery_table | 1 |
+
+So the MetaWRAP retirement is exactly **54 samples and 3,459 bins**, one more sample than the 53 counted
+before the signal. Everything in the QC, assembly, ORF and frozen-viral-set rows survives the splits
+untouched: none of those transforms change, so wave 7 serves them from cache. `assembly_stats` and
+`assembly_per_contig_coverage` are 64 of 65, the straggler being the `(14)` sample that had walked to its
+24 h rung twice.
+
+Never reached in any wave, and therefore still unproven after four waves of E3: DRAM on MAGs, DRAM-v,
+GTDB-Tk, iPHoP, CheckV's quality summary, and vContact3, which never left PENDING at 512 GB.
