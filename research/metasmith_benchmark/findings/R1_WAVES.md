@@ -1827,3 +1827,33 @@ products with coherent sizes and mtimes, the merge's own `assert n_prot > 0`, an
 **The byte guard is verified emitting** (`60142009`): armed banner plus a live `bytes=17.489 TiB
 inodes=940277 live_drivers=2` reading. Every watcher in wave 7 is now confirmed to speak, which took three
 attempts to get right.
+
+### P. The prune landed, and hard links made it worth less in bytes than expected
+
+`prune_work` `60141873` emptied all **8,492** task dirs of the superseded `bqyYO0Ip`, keeping every one of
+the **1,505** `.command.cache` files, with `left with more than .command.cache: 0`. Effect:
+
+| | before | after | delta |
+| --- | --- | --- | --- |
+| inodes | 940,280 | **907,526** | **-32,754** |
+| bytes | 17.489 TiB | **17.397 TiB** | -0.092 TiB |
+| headroom to 950K | 9,720 | **42,474** | |
+
+**CORRECTION to my own estimate.** I predicted this would free bytes "like the earlier prune of this run,
+659 GB". It freed 0.092 TiB against 1,617,824,912,559 B of reported content, because most of that content
+is **hard-linked into task_cache shards** -- the nlink=3 and nlink=4 files measured before the prune --
+and unlinking one of several links frees no space at all. `du` counts the content; only the nlink=1 files
+return bytes. The earlier prune freed far more because much of its content was not yet promoted.
+RULE: size a prune's BYTE yield by its nlink=1 files, not by `du`. Its INODE yield is reliable, because
+every directory entry removed is an inode back.
+
+The inode yield is also less than `nxf_work`'s 53,746, and correctly so: the 8,492 directories themselves
+and their 1,505 kept `.command.cache` files remain, which is what keeps the run re-indexable.
+
+Not pruned, deliberately: `AvPNgFtP` (7,833), `OLo3f5V3` (732), `q2TJFf23` (559). About 9K inodes against
+42K of headroom and a flat trend does not justify further deletion next to a live replay.
+
+Bytes are now 93.40% and FELL through this stretch, so the byte guard `60142009` -- itself verified
+emitting, and it logged the drop -- should stay quiet. Both lanes remain errors=0, ignored=0. CheckV's 22
+batches are still running with `checkv_merge_pratama` not yet started, so the CheckV half of W7.7 is not
+yet proven the way the prodigal-gv half is.
