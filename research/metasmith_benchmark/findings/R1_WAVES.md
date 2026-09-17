@@ -2013,3 +2013,33 @@ watcher already bands at 940K and 945K.
 Two things considered and deliberately NOT done: fixing the watcher's double-count (it over-reports into a
 log read hourly, and churning a working watcher is exactly how v1 broke), and arming a self-firing prune
 (not worth automating 2.3K).
+
+### V. Hourly 22:54: the prune gate failed on my regex; quota now bites tonight
+
+**The lever did NOT land.** Gate `60151700` aborted with `candidate dirs: 0` -- a safe failure that
+pruned nothing, but my fault. Its single regex required the step name to be followed directly by
+` > jobId:`, while nextflow writes `submitted process pNN__name (1) > jobId: ...; workDir: ...`. Fixed by
+extracting in TWO stages (match the step's line, then pull `workDir:` from it), which is robust to that
+variation rather than brittle to it. Resubmitted as **60153129**. Both consumers re-verified COMPLETED.
+
+**Both axes now cross their thresholds TONIGHT, not overnight:**
+
+| | now | rate | crosses |
+| --- | --- | --- | --- |
+| inodes | 933,269 (16,731 left) | ~13K/h | 950K near **00:10** |
+| bytes | 17.557 TiB (94.26%) | ~0.091 TiB/h | 96% near **02:30** |
+
+96% is where the armed guard `60142009` USR1s BOTH drivers, so the prune landing matters. I am not
+raising that threshold: 96% is Tony's stop rule, and weakening a stop rule to avoid tripping it is the
+wrong instinct. If the prune underdelivers, the honest position is that no large lever remains tonight
+(E1 short's 145K `work` is load-bearing while head 59906444 lives) and the guard becomes the backstop --
+which is worth telling Tony, since it is his rule that would fire.
+
+**vcontact3 SUCCEEDED at 256 G** after its 128 G OUT_OF_MEMORY -- the memory ladder worked exactly as
+intended, and with the engine clamp no rung of it can be unsubmittable. `dramv_vs2_prep_pratama` is
+RUNNING, so the DRAM-v chain continues. `metawrap_refine_pratama` is still 0 with roughly 90 of 195
+binner tasks done and 105 running.
+
+**SMETANA: 0 of 45 after ~3h37m.** The 23:17 trigger is 23 minutes away and its precondition is satisfied
+(`metapop_study` COMPLETED). No other new failures; E3's raw error count is still 2, i.e. ONE real
+failure once halved.
