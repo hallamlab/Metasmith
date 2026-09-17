@@ -1857,3 +1857,36 @@ Bytes are now 93.40% and FELL through this stretch, so the byte guard `60142009`
 emitting, and it logged the drop -- should stay quiet. Both lanes remain errors=0, ignored=0. CheckV's 22
 batches are still running with `checkv_merge_pratama` not yet started, so the CheckV half of W7.7 is not
 yet proven the way the prodigal-gv half is.
+
+### Q. W7.7 is proven on BOTH tools, and the SMETANA fan-out is live
+
+**The CheckV half closed, and its row count is the proof.** `checkv_merge_pratama` (job `60143582`)
+COMPLETED exit 0 in 33 s after all 22 `checkv_batch_pratama` slices finished, producing:
+
+| product | bytes | rows |
+| --- | --- | --- |
+| `viromics::checkv_contamination` | 576,831,061 | **4,597,543** |
+| `viromics::checkv_quality_summary` | 809,652,010 | **4,597,543** |
+
+4,597,543 = the frozen set's **4,597,542 contigs plus one header**, exactly. The chunked run reassembled
+the whole set with no contig lost and none duplicated, which is the strongest statement available that
+splitting changed no value. Both halves of W7.7 are now proven in production: prodigal-gv merged at
+19:04, CheckV at 19:41, against a monolith that had failed at 8 h and 16 h walls respectively.
+
+`viromics::checkv_completeness` and `checkv_complete_genomes` are ABSENT from `results/`, and that is
+correct, not a defect: `results/` publishes TARGETS, and the E3 driver's viral list names only
+contamination and quality_summary. The other two are products, promoted to the cache and reachable from
+it. Verified against the driver rather than assumed.
+
+CAUTION a grep of the queue for `checkv` matches `dramv_checkv_pratama` too; the "1 checkv_batch still
+queued" reading was that, not a straggler slice.
+
+**W7.6 is live and correctly shaped**: `smetana_split_media` submitted=3, `smetana_medium` submitted=**45**,
+all 45 running -- exactly 3 samples x 15 media -- with `smetana_merge` correctly not yet started. This is
+the measurement that will settle whether ~127-model communities are tractable per medium.
+
+**Quota is comfortable and both trends are gentle**: inodes 909,762 (40,238 of headroom, ~3.3K/h) and bytes
+17.408 TiB / 93.46% (~0.021 TiB/h) -- an order of magnitude below the 0.22 TiB/h that fired the guard, and
+consistent with the corrected trend in section O. `prune_work` COMPLETED. No new failures; both lanes
+err=0, ign=0. `metawrap_refine_pratama` is still 0 with 76 binner tasks running, so the MetaWRAP
+decomposition has not yet reached its refinement stage.
