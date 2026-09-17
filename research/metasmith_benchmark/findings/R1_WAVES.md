@@ -1790,3 +1790,40 @@ three task caches and from BOTH live runs -- the load-bearing check, since each 
 **Watcher v2 is verified in practice**, not just in intent: 13 lines, **zero `integer expression expected`
 errors**, reporting state changes and catching the 940,000 inode crossing with bytes attached. v1's failure
 detection had never once run.
+
+### O. The viral chunking is PROVEN end to end, and three corrections
+
+**W7.7 worked, in production, in about 35 minutes.** E3 started at 18:29 and the whole chain was done by
+19:04:46: `split_viral_contigs_pratama` submitted=1 -> `prodigal_gv_batch_pratama` submitted=**22** ->
+`prodigal_gv_merge_pratama` submitted=1, with `e3::viral_orfs` 7,520,847,293 B written 19:04:30 and
+`e3::viral_gff` 7,667,721,445 B at 19:04:46. **The monolith this replaced failed 140:0 at its 8 h wall and
+was retried at 16 h, having checkpointed nothing.** 22 slices against the ~23 predicted from 11.0 Gbp at
+500 Mbp -- the boundary falls where contig sizes put it.
+
+CheckV's 22 batches are still running and `checkv_merge_pratama` correctly has not started. Zero errors and
+zero ignored steps on both lanes.
+
+**The prune is delivering.** Mid-flight, `prune_work` `60141873` has already taken inodes 940,280 ->
+914,967 (-25,313) and bytes 17.489 -> 17.413 TiB, with its 8,492 dirs not yet finished. Headroom went from
+9,720 to 35,033.
+
+**Correction 1: the byte rate that fired the trigger was burst-contaminated.** The 0.22 TiB/h spanned the
+E5 replay. The sampler's own intervals tell the real story -- +0.023, +0.027, then **+0.003 TiB in five
+minutes, about 0.036 TiB/h** -- which puts 96% roughly ELEVEN hours out, not 1.8. This is the identical
+burst-versus-trend error this record already warns about for inodes ("take a rate from two close passes,
+not an average over a fan-out"); I applied that lesson to inodes and then failed to apply it to bytes.
+The guard stays armed regardless: it costs nothing and fires only at the threshold.
+
+**Correction 2: refinement has NOT begun.** An earlier note said it had. `metawrap_refine_pratama`
+submitted=**0**; the "2" came from matching process DEFINITIONS rather than submissions -- the same
+counting-the-name-not-the-event mistake as the gate false positives in section K.
+
+**Correction 3: the merge's own count line was not recovered, and the hunt was stopped deliberately.**
+Only 8 task logs postdate 19:00 and none holds `batches ->`, most likely because these tasks scratch to
+node-local `SLURM_TMPDIR` and their Lustre work dir stays empty. There is a precedent in this run for that
+hunt becoming a rabbit hole. The chunking is adequately proven without it: the submission counts, the two
+products with coherent sizes and mtimes, the merge's own `assert n_prot > 0`, and a clean error count.
+
+**The byte guard is verified emitting** (`60142009`): armed banner plus a live `bytes=17.489 TiB
+inodes=940277 live_drivers=2` reading. Every watcher in wave 7 is now confirmed to speak, which took three
+attempts to get right.
