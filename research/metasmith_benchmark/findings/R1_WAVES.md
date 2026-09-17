@@ -2291,3 +2291,89 @@ Deliberately NOT done: adding `fc30618` to the guard and restarting it. One fail
 churning a working guard — the same judgement the previous session applied to the watcher's
 double-count, and for the same reason. `fc30618` is recorded here for whenever the guard is next
 rebuilt.
+
+### BB. E1 is finished and retired, the quota emergency is over, and vConTACT3 is a scale failure
+
+**E1 short completed clean at 02:18:29.** `Pipeline completed successfully`, `NXF_EXIT=0`, and
+`WorkflowStats[succeededCount=3678; failedCount=96; ignoredCount=0; cachedCount=3185;
+retriesCount=96; abortedCount=0]`. Failures 96 against retries 96 and aborted 0 is the shape that
+matters: every failure was re-submitted and none was terminal. `BIN_SUMMARY` and `MULTIQC` both
+exited 0, so the pipeline reached its own end rather than stalling one stage short as it did for
+thirty hours on 2026-09-16.
+
+`MAG_DEPTHS` closed at **832/832**, and the denominator was derived rather than guessed:
+`DASTOOL_FASTATOCONTIG2BIN` ran 623 times = 3 × 208, and `RENAME_POSTDASTOOL` 208 times, so four bin
+groups across 208 samples is 832. A progress fraction whose denominator is assumed is not evidence;
+this one is pinned to two counts from the trace.
+
+**The reclaim, in order, all verified before anything was deleted:**
+
+| step | job | result |
+| --- | --- | --- |
+| tar E1 long, excluding `kept_inputs` | `60160745` | 13,787 members == 13,787 entries, 35,524,648,960 B |
+| delete E1 long's tree | `60161468` | 166 inodes left |
+| delete E1 short's `work` | `60163233` | 177,092 inodes, 1.72 TB |
+| tar E1 short's `out` | `60163234` | 57,253 members == 57,253 entries, 99,136,358,400 B |
+| delete E1 short's `out` | `60164614` | 78 inodes left, the audit trail |
+
+Quota across the whole takeover: **966,691 → 700,977 inodes**, headroom 33,309 → 299,023; bytes
+16.858 TB, **84.3%**, well under the 96% stop. The emergency that opened this plan is closed, and no
+lane was stopped to close it.
+
+**`kept_inputs` was deliberately NOT tarred.** 165 inodes holding 126 GB. Tar-then-delete on the same
+filesystem frees *inodes*, not bytes — the tar occupies what the tree did. So the lever only pays on
+inode-dense, byte-light trees, and spending it on a byte-heavy, inode-cheap one costs a full copy of
+126 GB to recover 165 inodes.
+
+**A delete job was killed by its own instrumentation, and the guard chain is why nothing was lost.**
+`60163212` exited 5:0 at 00:00:00 on `Some errors happened when getting quota info. Some devices may
+be not working or deactivated.` — a transient Lustre MDT error whose non-zero exit propagated through
+`set -euo pipefail` before the script reached its `rm`. Its chained tar job `60163213` was then
+CANCELLED by the `afterok` dependency. Nothing was deleted and nothing was corrupted.
+**RULE: `{ lfs quota -p 83115734 /scratch | tail -1; } || true` — never let a quota read decide
+whether a delete runs.** Read the quota directly for a measurement, never from a sampler log.
+
+One assumption was wrong in the safe direction. `publish_dir_mode = 'link'` implied `out` would be
+hardlinks into `work`, making `work`'s bytes unreclaimable until `out` went too; `stat` reported
+`links=1`, so `out` stands alone and deleting `work` returned its full 1.76 TB.
+
+**vConTACT3 in E3 is a scale failure, not a blip.** `p28__vcontact3` has burned three attempts on
+`memory = { (2**(task.attempt-1)) * ('128.00 GB' as MemoryUnit) }`:
+
+- Attempt 1, `60139581`: OUT_OF_MEMORY at MaxRSS 134,208,560K — its 128 GiB cap — while cleaning up
+  temporary MMseqs2 files for 0.7.
+- Attempt 2, `60148041`: OUT_OF_MEMORY at MaxRSS 268,424,948K — its 256 GiB cap — **later**, at
+  "Building genome network with 4,602,611 contigs and 3,613,684 HMMs / Calculating distances using
+  SqRoot".
+- Attempt 3, `60163155`: running at 512G on fc30267.
+
+Each tier buys a *later failure point*, not a finish. fir can schedule 512 GB (four 768 GB
+`cpubase_interac` nodes, 1152 GB on `gpubase_interac`, one 6144 GB `cpularge_bynode_b6`), but attempt
+4 would ask 1 TB on a 4-day wall. If 512 GB fails, the answer is **chunking, not more memory** — the
+viral chunking already converted monoliths that died at 8 h and 16 h walls into ~35-minute tasks. That
+is a design decision on E3's shape and it is Tony's to make.
+
+**Two corrections on this one task, both mine.** First I called the vConTACT3 failure terminal from a
+trace tally, when the run log plainly carried `Re-submitted process > p28__vcontact3 (1)` as job
+`60148041`. Then I called attempt 2 "survived" because it passed the 01:45:58
+`prokaryotes.profile.pkl.gz` checkpoint — and it died OOM hours after. **A FAILED row is not a
+terminal failure until the log says nothing was re-submitted, and passing a checkpoint is not
+finishing.** Both are the same fault as the four earlier corrections in this file: concluding from a
+number without checking what the number measured.
+
+**`metawrap_refine_pratama` at 0 is a gate, not a fault.** Counted per task from the trace, not from
+`nxf.log`: metabat2 65/65 COMPLETED, concoct 65/65 COMPLETED, maxbin2 57/65 with 8 still running.
+MetaWRAP bin_refinement consumes all three binners for a sample, so it cannot start until the last
+maxbin2 lands — and refine in turn gates DRAM-on-MAGs and GTDB-Tk, the remaining E3 targets. E3 needs
+throughput, not intervention. Also seen running and healthy: `p43__smetana` and `p44__smetana`
+(SMETANA is executing, not blocked), and `p06__spades_hybrid_pratama`, which `R1_TABLE_AUDIT.md`
+still lists as gapfill 3.
+
+**CORRECTION TO THE COMMITTED RECORD.** Commit `00727654` states the E1 short `.exitcode` repair
+failed. It did not — the repair worked on the second poll cycle, `1d7069e4` says so, and E1 short has
+now run to a clean completion. The superseded verdict is left in history rather than rewritten; this
+is the pointer that supersedes it.
+
+`wave2_b3_nfcore` remains off limits. Its 10,660 inodes read as available, and they are not: live E5
+cami (`OgFSQzRS`) and E5 metagem (`AXtXlth9`) still name it in their `_metasmith/task/task.yml`
+manifests.
