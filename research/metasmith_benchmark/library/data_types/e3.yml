@@ -104,6 +104,40 @@ types:
       Format: FASTA
       Data: nucleotide sequence
       ext: fna
+  # Per-batch products. All intermediates: e3::viral_orfs, e3::viral_gff and the four standard
+  # viromics::checkv_* types stay what the E3 driver targets, produced by the merges.
+  viral_orfs_batch:
+    properties:
+      _: prodigal-gv proteins for ONE slice of the frozen viral set
+      e3: viral_orfs_batch
+      Format: FASTA
+      Data: amino acid sequence
+      ext: faa
+  viral_gff_batch:
+    properties:
+      _: prodigal-gv gene coordinates for ONE slice of the frozen viral set
+      e3: viral_gff_batch
+      ext: gff
+  checkv_contamination_batch:
+    properties:
+      _: CheckV contamination.tsv for ONE slice of the frozen viral set
+      e3: checkv_contamination_batch
+      ext: tsv
+  checkv_quality_summary_batch:
+    properties:
+      _: CheckV quality_summary.tsv for ONE slice of the frozen viral set
+      e3: checkv_quality_summary_batch
+      ext: tsv
+  checkv_completeness_batch:
+    properties:
+      _: CheckV completeness.tsv for ONE slice of the frozen viral set
+      e3: checkv_completeness_batch
+      ext: tsv
+  checkv_complete_genomes_batch:
+    properties:
+      _: CheckV complete_genomes.tsv for ONE slice of the frozen viral set
+      e3: checkv_complete_genomes_batch
+      ext: tsv
 
   # Wave 7: DRAM decomposed per annotator. These two are intermediates between annotate and distill;
   # e3::mag_dram_annotations stays the merged table the driver targets.

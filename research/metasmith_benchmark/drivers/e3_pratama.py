@@ -45,8 +45,11 @@ REPLACED = {
     "metagenomics": {"binning/metawrap.py", "taxonomy/genomad.py", "taxonomy/gtdbtk.py"},
     "functionalAnnotation": {"virsorter2.py", "dramv.py"},
     # CCTyper is dropped from every experiment. Pratama's spacer caller is minced, a gapfill.
+    # checkv.py joins the list in wave 7: E3 scores the frozen set in slices (checkv_batch_pratama plus
+    # checkv_merge_pratama), and the pinned merge produces the same four viromics::checkv_* types. Without
+    # the mask the standard whole-set transform would be a second producer of all four.
     "viromics": {"vibrant.py", "merge_candidate_calls.py", "mmseqs_votu.py", "mmseqs_precluster.py", "cctyper.py",
-                 "prodigal_gv.py"},
+                 "prodigal_gv.py", "checkv.py"},
 }
 
 

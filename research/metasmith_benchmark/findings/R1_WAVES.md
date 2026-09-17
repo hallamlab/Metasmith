@@ -1452,3 +1452,54 @@ taken; E5 pratama is gated on E3 regardless, so nothing waits on it today.
 **The equivalence reference is deliberately still running.** cami's monolith task was NOT cancelled: it is
 the only run that will ever produce a whole-table SMETANA result under the old shape, and the merged
 per-medium table has to reproduce it. Its eleven finished per-medium tables already give a partial reference.
+
+### E. The frozen viral set is chunked for its two per-contig callers
+
+**Measured, not estimated.** The frozen set is 11,343,384,184 bytes over 4,597,542 contigs, about 11.0 Gbp.
+Both of its expensive consumers took it whole and both missed their walls: `prodigal_gv_pratama` FAILED
+140:0 at 07:59:01 on its 8 h rung and retried at 16 h, and the standard `checkv` hit its 16 h wall and
+retried at 128 G / 32 h. Neither tool checkpoints, so each retry restarts from zero -- and the earlier
+estimate that prodigal-gv would just clear 8 h was optimistic, because its rate FALLS as it goes (the first
+attempt covered ~2.42 M contigs in 3:59, and extrapolating that first half underestimated the whole).
+
+`split_viral_contigs_pratama` cuts the set at 500 Mbp a slice, about 23 slices of ~200 K contigs, which by
+that same measured rate is ~20-25 min of gene calling and well under an hour of CheckV per slice. The
+records are copied through byte for byte: the frozen headers are already sample-prefixed
+(`sample|contig|start_end`, minted by merge_candidate_calls), so a slice needs no renaming, and the file is
+streamed line by line rather than held in memory.
+
+Both callers become batch -> merge:
+
+- `prodigal_gv_batch_pratama` -> `e3::viral_{orfs,gff}_batch` -> `prodigal_gv_merge_pratama` ->
+  `e3::viral_orfs`, `e3::viral_gff`.
+- `checkv_batch_pratama` -> four `e3::checkv_*_batch` -> `checkv_merge_pratama` -> the four standard
+  `viromics::checkv_*` types.
+
+**Chunking changes no value.** Gene calling is per contig, and every table CheckV writes is one row per
+contig scored against its own database, so a slice's output is identical to those contigs' output inside the
+whole set. A scheduling change, no deviation row.
+
+`e3::viral_contig_batch` is a SIBLING type, never a subtype of `sequences::contig_batch`: a subtype would
+let the standard per-batch callers bind to viral slices, which is the B23 tie-break hazard.
+
+**Two asymmetric driver consequences, one of which needed an edit.** `prodigal_gv.py` was ALREADY masked in
+E3's `REPLACED["viromics"]`, so splitting its pinned replacement needed nothing. CheckV was NOT masked --
+E3 ran the standard whole-set transform -- so `checkv.py` joins that set; without it the pinned merge and
+the standard transform would both produce all four `viromics::checkv_*` types. E5 is untouched: it masks
+`prodigal_gv.py` but not `checkv.py`, and it never loads e3 transforms, so it keeps the standard whole-set
+CheckV over its own frozen set.
+
+**Proven.** Local solve of E3, UNLIMITED: `Plan OK -- 39 steps, key=T9uZ4zXE`, exit 0. Step count 36 -> 39
+(-1 prodigal monolith, +3 stages, +1 net for CheckV). The chain solves as step 24
+`split_viral_contigs_pratama` -> 30 `prodigal_gv_batch_pratama` -> 32 `checkv_batch_pratama` -> 34
+`prodigal_gv_merge_pratama` -> 35 `checkv_merge_pratama`, and the log reads
+`[viromics::checkv_contamination] resolved by [...library/transforms/e3]`, so the mask took and the pinned
+merge is what answers the standard type.
+
+**Both merges fail loudly on a short group.** Each asserts that every batch carries its full set of products
+-- both ORF files, or all four CheckV tables -- because retry-then-ignore reports a lane complete while its
+product is missing, and a batch short one table would silently drop those contigs from that table alone
+while the other three still carried them.
+
+**Walls.** split 4 h, prodigal-gv per batch 8 h, CheckV per batch 8 h, both merges 4 h. Every rung is legal
+(8/16/32/64 <= 168).

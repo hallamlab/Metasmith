@@ -64,13 +64,13 @@ The E3 driver loads `library/transforms/e3` and masks each standard transform it
 | dRep | gapfill 2, wave 2+ | replaces nothing in E3's plan: E3 never runs skani_dedup |
 | GTDB-Tk r232 | gated | `--with-gtdbtk`, on ref::gtdb's representative genomes |
 | Prodigal | matched | standard `prodigal.py`, on the metaSPAdes assembly |
-| prodigal-gv, viral contigs | pinned | `e3/prodigal_gv_pratama.py` under `e3::viral_orfs`. As `sequences::orfs` it answered the metaSPAdes Prodigal target |
+| prodigal-gv, viral contigs | pinned | `e3/prodigal_gv_batch_pratama.py` over `e3::viral_contig_batch` slices, stacked by `e3/prodigal_gv_merge_pratama.py` under `e3::viral_orfs`. As `sequences::orfs` it answered the metaSPAdes Prodigal target |
 | DeepVirFinder | gapfill 5, wave 3+ | |
 | VIBRANT | pinned | `e3/vibrant_pratama.py`: `-virome` |
 | geNomad | pinned | `e3/genomad_pratama.py`: `--splits 48 --min-virus-marker-enrichment 1 --min-virus-hallmarks 1` |
 | VirSorter2 | pinned | `e3/virsorter2_pratama.py`: `dsDNAphage,ssDNA`, no `--prep-for-dramv` |
 | viral merge over both assemblies | pinned | `e3/merge_candidate_calls_pratama.py` |
-| CheckV | matched | standard `checkv.py` |
+| CheckV | pinned | `e3/checkv_batch_pratama.py` per `e3::viral_contig_batch` slice, stacked by `e3/checkv_merge_pratama.py` into the four standard `viromics::checkv_*` types. Standard `checkv.py` is masked, so the merge is their only producer. Same command and settings, one slice at a time |
 | MMseqs2 vOTU clustering | pinned | `e3/mmseqs_votu_pratama.py`: `--min-seq-id 0.95 -c 0.8`, cov-mode left at its default of 0 |
 | vConTACT3 | matched | standard `vcontact3.py` |
 | MetaPop | gapfill 5, wave 3+ | needs every BAM against one shared reference |
@@ -84,7 +84,7 @@ The E3 driver loads `library/transforms/e3` and masks each standard transform it
 
 Where the map and the authors' own `data/docs/pratama2026/Groundwater_virome/Workflows/` files differ, the Workflows files win:
 - MetaWRAP's first binning pass uses `--universal`, which the map drops. `metawrap_pratama.py` passes it.
-- The DRAM-v prep pass runs CheckV on the vOTUs first, then VirSorter2 with `--seqname-suffix-off --viral-gene-enrich-off --provirus-off --prep-for-dramv` on CheckV's combined output. `dramv_votus_pratama.py` does both.
+- The DRAM-v prep pass runs CheckV on the vOTUs first, then VirSorter2 with `--seqname-suffix-off --viral-gene-enrich-off --provirus-off --prep-for-dramv` on CheckV's combined output. `dramv_checkv_pratama.py` and `dramv_vs2_prep_pratama.py` do these as separate stages.
 - Pratama's `metawrap binning --maxbin2` second pass at 107 markers (map row A6) has no transform.
 - Refinement round 1 reads `-A abawaca_BINS_1 -B abawaca_BINS_2 -C binsanity_BINS_1` in the source itself, so two abawaca runs feed it. Gapfill 4 pins it that way.
 
