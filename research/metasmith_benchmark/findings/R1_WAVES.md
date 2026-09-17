@@ -2043,3 +2043,83 @@ binner tasks done and 105 running.
 **SMETANA: 0 of 45 after ~3h37m.** The 23:17 trigger is 23 minutes away and its precondition is satisfied
 (`metapop_study` COMPLETED). No other new failures; E3's raw error count is still 2, i.e. ONE real
 failure once halved.
+
+### W. Cadence change, a lever that never existed, and a 30-hour deadlock (23:20 fir)
+
+**Tony changed the watch cadence.** The hourly check-in was "filling context without being useful", so
+its cron (`5e4c664d`) is DELETED. The 4-hourly backup (`51f23662`) stands as the only timer, and a
+persistent Monitor (`bcllzl6y4`) now carries the watch: it polls every 5 min and emits ONLY on a band
+change -- inode bands at 940K/950K/960K/980K, byte bands at 95%/96%, plus driver, `smetana_medium` and
+`metawrap_refine` counts. Event-driven, not clock-driven, which is what the autopilot SOP asks for and
+what I had been substituting an hourly poll for.
+
+**THE QUOTA SAMPLER I HAD BEEN READING DIED A DAY AGO.** `quota_sampler.59683273.out`'s last line is
+`CANCELLED AT 2026-09-15T16:38:45 DUE TO TIME LIMIT`. Its successor `59958931` has been alive and
+writing elsewhere the whole time. Every quota figure I quoted tonight came from a log whose tail was
+~30 h stale, which is why my numbers drifted low: I reported 933,875 inodes when `lfs` said 938,135.
+**RULE: read `lfs quota -p 83115734 /scratch` directly. A sampler log is a convenience, and a
+convenience that dies silently is worse than no convenience.** I had even recorded the successor's id
+in this file on 2026-09-13 and then kept reading the dead one.
+
+**THE PRUNE LEVER DOES NOT EXIST, AND BOTH OF TONIGHT'S "FIXES" WERE FIXES TO THE WRONG THING.**
+Gate `60153129` ran with my two-stage extraction and reported `candidate dirs: 2`, not 44.
+`prune_work 60153176` then freed **2 dirs, 656,647 B** -- inodes rose across its own window. The cause
+is not the regex, which my second version parsed correctly; it is that **nextflow's nxf.log records ONE
+`submitted process` line per ARRAY, not per task**:
+
+| step | `submitted process` lines | actual grid tasks |
+| --- | --- | --- |
+| `checkv_batch_pratama` | 1 | 14 distinct jobIds |
+| `smetana_medium` | 1 | 45 running |
+
+So no amount of regex work on that log can enumerate per-task work dirs -- the information is not in the
+file. I spent two iterations repairing the parse of a source that cannot answer the question.
+**RULE: enumerate task dirs from the FILESYSTEM, never from nxf.log.** And the dirs are not the prize
+anyway: `F3KJbPJK/nxf_work` holds **3,389 task dirs and ZERO `.exitcode` files**, because these tasks
+scratch to node-local `SLURM_TMPDIR` and leave near-empty stubs on Lustre -- a fact recorded in this
+file twice already and not applied to my own lever sizing.
+
+**SMETANA ON PRATAMA IS CLOSED, AND THE TRIGGER HELD.** At 23:14 the pre-committed condition was met
+exactly as written: longest elapsed **3:53:58**, `smetana_medium` **0 of 45** COMPLETED, precondition
+`metapop_study` COMPLETED satisfied. USR1 to driver `60141166` through the gated route (trap ->
+CancelWorkflow, never a plain scancel). It ended **COMPLETED 0:0 after 4:20:56**, `JtWdzRCY` grid jobs
+**0**, PID.lock absent, **zero orphans**. Recording the result plainly: **SMETANA is infeasible on
+pratama's ~127-model communities under SCIP** -- not one of 45 per-medium tasks finished in 4 h, where
+cami's 12-model community took ~10 min on its cheapest medium. The per-medium fan-out was still the
+right build: it converted "the monolith fails at its wall" into a measurement, and it banks whatever
+succeeds. There is no non-deviating lever left (ReFramed 1.6.0 offers only cplex/gurobi/scip and the
+image carries only pyscipopt), so this stays Tony's call.
+
+**E1 SHORT HAS BEEN DEADLOCKED FOR 30 HOURS ON TWO CORPSES, AND I NEVER ASKED.** Head `59906444` has run
+1d07h holding `bench/e1/short/work` -- **145K inodes, the largest single lever in the project** -- which
+I have repeatedly called "load-bearing while the head lives". Its log says `tasks to be completed: 2`:
+
+| jobId | task | Slurm state | ended | elapsed | node |
+| --- | --- | --- | --- | --- | --- |
+| 60015967 | CHECKM2_PREDICT | FAILED | 2026-09-15T16:29:42 | 00:00:01 | fc30557 |
+| 60062466 | DASTOOL_FASTATOCONTIG2BIN | FAILED | 2026-09-16T03:54:23 | 00:00:00 | fc30557 |
+
+Both died on **fc30557** (a listed bad node) before their scripts ran, so neither wrote `.exitcode`, and
+both work dirs hold only `.command.log/.run/.sh`. These are the LAST TWO TASKS of the run, so repairing
+finishes E1 short rather than killing it -- the lane completes AND the inodes free. I wrote `.exitcode`
+= 1 into both (tmp then mv), the repair proven twice earlier in this run.
+
+**IT DID NOT WORK THIS TIME, AND I AM RECORDING THAT RATHER THAN WAITING ON IT.** A full poll cycle
+elapsed (23:12:27 -> 23:17:27) with both files in place since ~23:14, and nextflow still lists both as
+SUBMITTED. The earlier repairs were picked up within one cycle. Open question for the next session:
+whether nextflow's SLURM queue-status poll is erroring (which would stop it ever marking an absent job
+absent, and would also explain a 30-hour hang that `exitReadTimeout` should have broken in 4.5 min).
+**CAUTION: do not report E1 short as repaired.** The lever is identified, not yet taken.
+
+**Quota at the close, from `lfs` directly: bytes 17.602 TiB (94.50%), inodes 945,260** and climbing
+fast -- 938,135 at 23:08 to 945,260 at 23:19 is ~39K/h, which crosses the 950K criterion within minutes.
+The cause is almost certainly benign and known: `e5_pratama` has left the queue, so this is its run-end
+`record_run` burst copying task logs into shards, the same bounded pattern recorded twice before. 950K
+is Tony's MARGIN; the hard limit is 1,000,000.
+
+**The census to drive the actual cleanup is job `60154258`** (read-only: top-level, second level of the
+big four, and every run dir with liveness). Two earlier attempts failed and both were mine: an ssh
+`du` one-liner that timed out on exactly the four directories that matter, and a resubmit rejected for
+a missing `--account` on a multi-allocation cluster. **The cleanup targets are unknown until it lands**
+-- what I believe from older readings (cami task_cache ~316K, E1 short work 145K, pratama2026 ~151K) is
+a belief, not a measurement.
