@@ -1622,3 +1622,29 @@ failures and 60013900's vcontact3 OOM appear to be recent and are not.
 retries and still no table -- cami remains the equivalence reference. E5 pratama is held until E3's replay
 inode draw is measured, since it shares the pratama home. E4 SMETANA CPLEX cannot be synced while the
 metagem home has a live driver.
+
+### J. The replay plateaued; the eviction lever is shelved as too small
+
+Two close passes, 243 s apart: **901,011 -> 901,019 inodes, +8, about 118/h**. The E3 run dir moved
+42,901 -> 42,970 over the same stretch. So the wave-7 replay is a BURST THAT HAS ENDED, not a trend:
+it settled at ~901K, leaving 48,981 under the 950K criterion. My own projection of a ~920K plateau was
+pessimistic. CAUTION this was measured while ~300 tasks were RUNNING but not yet completing, so inodes
+will step up again as they promote their products; ~300 tasks at ~15 inodes each is ~4.5K, which the
+headroom absorbs.
+
+**The retired-shard eviction is NOT worth building, and the cache index is what showed it.** Grouping
+`entries` by `transform_key` gives `Y74lJtJK`: 54 entries, 4 GB, run `bqyYO0Ip` -- 54 matching the 54
+banked MetaWRAP samples exactly, so that is the retired monolith. But a shard holds many files under one
+`out/`, so its 3,459 bins are ~4K inodes across 54 shards, not the ~31K assumed. A lot of delicate work
+for very little headroom.
+
+Two things that query also settled, both hazards avoided rather than discovered later:
+
+- **Never evict by `run`.** A `transform_key` spans several runs (`,Son2YJiI,bqyYO0Ip`), and `bqyYO0Ip`
+  holds both the retired monoliths AND the 65 assemblies, ORFs and frozen set that wave 7 is replaying
+  from cache right now. Evicting that run would destroy the cache this launch depends on.
+- **One row has an empty `transform_key`: 240 entries, 893 GB.** Those are the corpus imports.
+  `evict_cache.py` refuses imports by design, and it should -- an import may be the only copy of its data.
+
+The real inode mass is elsewhere and both parts are currently untouchable: cami's task_cache at 316K
+(its home has a live driver) and `bench/e1/short/work` at 145K (load-bearing while head 59906444 runs).
