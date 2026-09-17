@@ -1944,3 +1944,36 @@ the DeepVirFinder fix delivering on pratama for the first time, alongside the fu
 bins and tables, viral ORFs and GFF, CheckV contamination and the vConTACT3 network -- 37 product dirs.
 
 So the SMETANA scoring stage is the ONLY part of W7.6 still unproven; its split half is done.
+
+### T. Wave 7's first real failure, a watcher miscount, and an inode trigger
+
+**One task has failed, not two.** `vcontact3` hit OUT_OF_MEMORY at 128 G (job 60139581, 21:09:16) and was
+retried; it is now PENDING at **256 G / 32 cpus / 2-00:00:00**. The memory ladder is working, and the wall
+is the engine clamp doing its job: `min(24 h x 2^1, 7 days)` = 48 h, so no rung of this ladder can be
+unsubmittable. vcontact3 OOM'd at both 128 G and 256 G in earlier waves, so it may climb again; the ladder
+can carry it now.
+
+**CALIBRATION: my watcher's error counter double-counts.** It greps `terminated with an error`, and
+nextflow emits that phrase TWICE per failure -- once in the `ProcessFailedException` line and once in the
+`NOTE: ... -- Execution is retried` line. So `NEW TASK ERRORS 0 -> 2` was one event. The bias is toward
+over-reporting, which is the safe direction for a guard, but halve the number when reading it.
+
+**Progress this hour:** `metapop_study` COMPLETED, which satisfies the precondition attached to the 23:17
+SMETANA trigger in section S -- a USR1 there would now cost only tables that were never going to arrive.
+`dramv_vs2_prep_pratama` is submitted, so the DRAM-v chain has advanced past CheckV (checkv=1, vs2_prep=1,
+kofam=0), and the binners are at 153 running tasks with `metawrap_refine_pratama` still 0.
+
+**SMETANA is still 0 of 45 after ~2h37m.** The 23:17 trigger stands unchanged.
+
+**A SECOND TRIGGER, for inodes, set before it is needed.** Headroom is 29,646 at ~7.7K/h, which reaches the
+950K criterion near 01:45 -- overnight and unattended. At **935,000 inodes**, prune the three remaining
+superseded pratama run dirs (`AvPNgFtP` 7,833, `OLo3f5V3` 732, `q2TJFf23` 559, about 9.1K) using the same
+gated compute job that worked for `bqyYO0Ip`: prove no PID.lock, no queued job, no live workflow naming
+them, and above all NO SYMLINK from any task_cache or live run into them, then submit `prune_work`.
+CAUTION `AvPNgFtP` is E5 pratama's own predecessor and `JtWdzRCY` replays from the shared cache, so the
+symlink gate is not a formality there. If 9.1K proves insufficient, the next lever is E1 short's `work`
+(145K) once head 59906444 ends -- it is load-bearing for `-resume` until then.
+
+Bytes rose to 17.459 TiB / 93.73% (~0.063 TiB/h as the binners write), still under the 0.15 TiB/h trigger,
+with 96% about 7 h out. Queue 224 jobs over 21 distinct groups, all printed -- no truncated listing this
+time.
