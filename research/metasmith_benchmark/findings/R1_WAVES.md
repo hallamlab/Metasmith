@@ -2433,3 +2433,52 @@ realtimes span 1 h to 9 h, their `.command.log`s go silent for hours as a matter
 logged "Finished", went quiet for 7 h 47 m, and exited 0 — and `ps` on both nodes shows
 `run_MaxBin.pl` alive with active children at 100% CPU. `TotalCPU` reads `00:00:00` for a *running*
 step and is not evidence of idleness.
+
+### DD. MetaWRAP refinement RAN — the standing gap since wave 3 is closed
+
+**`p20__metawrap_refine_pratama` started at 06:26:52 on 2026-09-17** as array `60174560_[0-64]`, one
+task per sample, ramping to all 64 remaining tasks running concurrently by 07:03. Its first two tasks
+**COMPLETED, exit 0**: `_2` in 26 m 30 s and `_6` in 36 m 25 s, peak_rss 2.7 GB each, with three `.fna`
+outputs and their tables in the work dir. Zero re-submissions (`grep "Re-submitted process" nxf.log |
+grep p20__` returns nothing).
+
+This is the target four waves failed to reach, and the diagnosis that it was gated rather than broken
+holds exactly: refine ran the moment its third binner finished, without any intervention.
+
+**maxbin2 closed at 65/65, zero failures, zero re-submissions.** The two stragglers this session
+nearly filed as hung finished clean at **09:16:23** and **09:09:20**, exit `0:0`. A direct probe had
+already shown `_63` advancing through MaxBin's iterative re-binning with 508 `.fasta` bins written and
+files landing seconds before the probe. Realtimes across the 65 span **1 h to 9 h** (1h×14, 2h×8,
+3h×8, 4h×10, 5h×6, 6h×5, 7h×2, 8h×5, 9h×5). **That is the third time this wave that log silence was
+read as death and was wrong** — the others being E1 short's 30-hour hang and vConTACT3's checkpoint.
+For this process, hours of silence is the signature of work, not of a stall.
+
+**Refine is the one step this wave that does not pin its grant.** MaxRSS **43,919,108K ≈ 41.9 GiB
+against a 128 G request** — a third of the allocation — where maxbin2's tasks and all three vConTACT3
+attempts ended at exactly their grants. Memory is not a risk on this lane.
+
+A cosmetic wart, recorded so it is not mistaken for a failure later: every refine task's log ends with
+`Fontconfig error: No writable cache directories` and `mv: can't rename 'binning_results.eps'`.
+MetaWRAP's plotting step cannot write its EPS figure inside the container. The task still exits 0 and
+writes its real outputs; the cost is one diagnostic figure.
+
+**A second walltime event, and it is not explained.** `p13__assembly_stats_pratama`, job `60139497`,
+FAILED at 06:29:55 with **exit 140** — 128+12, the `SIGUSR2` that `#SBATCH --signal B:USR2@30` fires
+before the limit — after **11:59:21 against a 12:00:00 wall**. It was re-submitted as `60174715` at
+24 h / 128 G on a cpularge node, so it is not terminal. But the input, SRR32696690 at 7.85 GB, is the
+**second smallest of 34**, median ~10.8 GB. A first suspicion that minimap2 was looping does not
+survive checking — it prints one line per fixed-size batch, and a constant per-batch count over
+uniform reads is normal progress at a steady ~3.96 CPU ratio. So a small sample took over 12 h for a
+reason nothing in this run explains, and the other 64 `p13` rows are `_cached` from a prior run, so
+**there are no peer runtimes anywhere in this run to calibrate against.** If the 24 h retry also times
+out, that is a real problem rather than a slow sample.
+
+**GTDB-Tk is absent from this run's DAG entirely** — the process list is p01–p39 and contains no
+`gtdbtk` and no `checkm` step. That is `--with-gtdbtk` doing its job, and it matches
+`R1_TABLE_AUDIT.md`, which has always listed GTDB-Tk for E3 as **gated**. So "GTDB-Tk has never
+produced output for E3 in five waves" describes a flag that was never set, not a tool that fails —
+the same shape of error as reading refine's zero as breakage. DRAM-on-MAGs (`p21`, `p22`, `p29`) sits
+at 0 rows and ACTIVE with open input queues, which is what 2 of 65 refine tasks should look like.
+
+Driver `60139304` RUNNING throughout. Quota 707,274 inodes / 15.72 TB, drifting by ~1,700 inodes
+across the watch.
