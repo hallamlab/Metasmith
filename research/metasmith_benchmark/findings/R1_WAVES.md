@@ -2230,9 +2230,23 @@ member count equals the tree's entry count, then delete. That is how E1 long's Q
   `smetana_medium.py` only ever receives a *set* of per-MAG GEMs plus one medium. No community-level
   model is built anywhere.
 - The watch is re-armed differently. A local `Monitor` **cannot** be used: it runs in the sandboxed
-  shell where ssh's control socket is refused. The watch is a backgrounded condition-loop waking on
+  shell where ssh's control socket is refused. The watch was a backgrounded condition-loop waking on
   inodes >= 975K, bytes >= 17.850 TiB, or any of the four drivers dying. Cron `51f23662`, which
   re-read the superseded plan, is deleted; `9851e431` replaces it at 4-hourly.
+- **CORRECTION, 00:35: that backgrounded watch was killed "because the system is running low on
+  memory", and the diagnosis is wrong — for the second time in this campaign.** The host had
+  **47 GiB available** of 58 (11 GiB used, 50 GiB buff/cache); only `free` was low, at 881 MiB,
+  which is what a naive check reads. Nothing stray was running: the only containers are the penpot
+  stack and `awm-vpn-ubc`. Section M already refuted this same explanation once — "a lone
+  single-shot died with 46.4 GiB free" — and recorded the behavioural fix, which I then ignored
+  by arming a local sleeping loop anyway. **RULE, now twice-earned: no local sleeping tasks. The
+  waiting belongs in a fir-side job, and the only durable local trigger is a harness cron, which
+  is scheduled rather than resident and therefore survives.** Coverage after the kill is the
+  4-hourly cron `9851e431`, the fir-side byte guard `60142009`, and sampler `59958931`, which has
+  been writing a 5-minute series the whole time.
+- A related note on reading a host: inside the sandbox `ps` sees only its own PID namespace — it
+  reported five processes. Any host-level process or memory question must be asked unsandboxed, or
+  the answer is silently about the wrong machine.
 - All four lane drivers alive at handover: `59906444` e1_short (1d08h), `60106152` e5_cami (11:39),
   `60128162` e5_metagem (8:24), `60139304` e3 (5:27).
 - E3 published 17 product types and is mid-binner: 33 maxbin2, 12 concoct, 2 metabat2, 6 hybrid
