@@ -1540,3 +1540,27 @@ reason, not an oversight.
 That invariance is the check, not a coincidence: a plan key is built from the solver model -- requires and
 produces properties -- so a `Resources` edit cannot move it. It confirms these three edits retire only their
 own transforms' entries and disturb nothing else in the plan.
+
+### G. Three launch-path corrections, all mine, recorded so the next launch avoids them
+
+1. **The pratama agent home is `/scratch/phyberos/pratama2026/metasmith`, not `/scratch/phyberos/pratama/metasmith`.**
+   `_common.py:47` is the authority (`HOMES["pratama"]`), and `sync.sh`'s own default list already spells it
+   correctly. A hand-written `SYNC_HOMES` with the wrong path did NOT fail: `sync.sh` created
+   `/scratch/phyberos/pratama/metasmith/dev/` and reported success, so the overlay never reached the home the
+   driver uses. CAUTION a wrong home path is silent -- it mints a plausible-looking home rather than
+   refusing. Take the path from `HOMES`, or omit `SYNC_HOMES` and let its default stand.
+2. **That wrong path also made a census lie.** A run-dir census walking `/scratch/phyberos/<corpus>/metasmith`
+   for cami, pratama and metagem reported that pratama had NO run dirs, which read as "no live driver, safe to
+   sync". The real home holds `AvPNgFtP`, `bqyYO0Ip`, `OLo3f5V3` and `q2TJFf23`. The conclusion happened to be
+   right -- there is no `PID.lock` there -- but it was right by luck, not by measurement. A census over a path
+   that does not exist returns clean, not an error.
+3. **`--restage` is `e5_pilot.py`'s flag, not `e3_pratama.py`'s.** E3 rejected it with `unrecognized
+   arguments` and the job failed in 26 s. It was unnecessary anyway: E3's key moved from `bqyYO0Ip` to
+   `T9uZ4zXE`, so there is no previously staged task to clear. Restaging matters only when a change leaves the
+   key unchanged, which is the wave-5 case that motivated the flag.
+
+**And one that was not a mistake but a genuine gap:** the first correct materialise still failed, on
+`[e3/SRR32696677/nanopore@610d3d24e1d8] is not in the pool`. The hybrid lane's 17 nanopore givens had never
+been imported, which is exactly what "built but not synced" meant for T21 #50. An identity is assigned by the
+import, so nothing on the planning end can mint it; `run --materialise --import` is the documented route, and
+imports run inside the Slurm job because the pool lives in the agent home.
