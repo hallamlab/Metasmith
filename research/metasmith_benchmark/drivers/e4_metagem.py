@@ -177,7 +177,13 @@ def cmd_run(args):
                     .AsView({Path("memote_score.py")}, invert=True),
                     TransformInstanceLibrary.Load(c.LIBRARY / "transforms" / "modelling"),
                     TransformInstanceLibrary.Load(c.LIBRARY / "transforms" / "bench")
-                    .AsView({Path("gtdbtk_image.py")} | ({Path("smetana_cplex.py")} if args.with_smetana else set()))],
+                    # SMETANA is three transforms, not one: the media are split per medium, scored one
+                    # medium per task, then merged back per sample. The view is a whitelist, so all
+                    # three have to be named or the lane dead-ends at bench::smetana_detailed_cplex.
+                    .AsView({Path("gtdbtk_image.py")} | ({Path("smetana_cplex_split_media.py"),
+                                                          Path("smetana_cplex_medium.py"),
+                                                          Path("smetana_cplex_merge.py")}
+                                                         if args.with_smetana else set()))],
         targets=build_targets(args.solver, args.with_gtdbtk, args.with_smetana),
     )
     n_bins = sum(1 for s, _, _ in enumerate_mags() if s == SMETANA_STUDY) if args.with_smetana else len(mags)

@@ -1364,3 +1364,91 @@ rungs (20/40/80/160 <= 168) and above the whole 48 h monolith's worst case of 13
 **Inodes.** E3's stop drove the expected run-end burst as `record_run` copied task logs into shards:
 848,948 -> 889,949 (+41K), bytes flat at 17.419 TiB (93.50%). That leaves ~60K under the 950K criterion,
 which now sizes the wave-7 launch and makes E1 short's `work/` (~84K) the lever to take once its head ends.
+
+### D. SMETANA is decomposed per medium, on both lanes
+
+**The defect, measured inside a live task rather than inferred.** Wave 6 already ran the 15 media as
+concurrent processes inside one task, and that was not enough: cami's `p43__smetana` (job 60106630_0) was
+still running at 5h26m with four media outstanding. Probing its node-local scratch showed why -- per-medium
+runtime is wildly uneven, and it tracks the medium's COMPOUND COUNT almost monotonically:
+
+| media | compounds | wall |
+| --- | --- | --- |
+| M15A, M15B | 19 | ~10 min |
+| M13 | 24 | ~10 min |
+| M16, M1, M14 | 33-44 | 10-25 min |
+| M2 | 58 | ~2 h |
+| M9, M11, M5, M7 | 69-71 | 1-2.75 h |
+| M3, M4, M8, M10 | 74 | >5.4 h, unfinished |
+
+A 25-minute medium and a 5.4-hour medium shared one task and one 20 h wall. That is worse than slow: eleven
+finished tables were hostage to the four stragglers, and a wall miss discards all fifteen and recomputes
+from zero. Concurrency inside the task cannot fix that, because the task's wall is the slowest medium's wall
+either way. Fanning out banks a fast medium in minutes and retries only a straggler.
+
+CAUTION these tasks scratch to node-local `SLURM_TMPDIR`, so their Lustre work dir is EMPTY while they run.
+Probe a live one with `srun --overlap --jobid=<id>`, not by listing the work dir. Also: `Done.` in a medium's
+log is a true terminal marker (the log ends SCS -> MUS -> MPS -> Done.), so a finished per-medium table is
+complete and safe to merge; an unfinished medium's log is empty.
+
+**The solver lever is dead, and not for a fixable reason.** SMETANA 1.2.1 scores through ReFramed 1.6.0,
+whose solver package holds exactly three backends -- `cplex_solver`, `gurobi_solver`, `scip_solver` -- and
+whose registry resolves to `{'scip': SCIPSolver}`. The image imports only pyscipopt: no highspy, no glpk, no
+optlang. So there is no HiGHS backend to install and a rebuilt image would not help, and of the three
+backends two are commercial with CPLEX ruled out for E5 on publication grounds. **SCIP is the only solver E5
+can ever use here.** Every remaining speed lever (`--no-coupling`, `-g/--global`, fewer media, fewer models)
+changes the science.
+
+**The shape, on the AMR precedent** (`splitContigsForAmr` -> `integronfinder` -> merge), built for both lanes:
+
+- E5 (SCIP, rooted at the assembly): `smetana_split_media` -> 15 `bench::smetana_medium` ->
+  `smetana_medium` (one task per medium) -> `bench::smetana_medium_detailed` -> `smetana_merge` ->
+  `bench::smetana_detailed`.
+- E4 (CPLEX, rooted at `bench::gem_community`): the same three stages with their own sibling medium types,
+  `bench::smetana_cplex_medium` and `bench::smetana_cplex_medium_detailed`, merging to
+  `bench::smetana_detailed_cplex`.
+
+The two lanes get SEPARATE medium types on purpose: sharing one would make the two splits two producers of
+one type, which is a target the planner can answer wrong. Each monolith is DELETED rather than masked, so
+each final type has exactly one producer. Deleting retires nothing -- SMETANA has never produced a table in
+any wave.
+
+The split requires the assembly (or the sample) it never reads, and groups on it. That is what puts the root
+in every medium's LINEAGE, so a per-medium task pairs with its own community and the merge groups back.
+Splitting the media once, globally, would pair a fanned-out medium with a per-assembly community across two
+INDEPENDENT fan-outs -- the B23 tie-break hazard.
+
+**Proven, not assumed.** `drivers/protocol_smoke.py` now walks all six protocol bodies against a stub
+context: 7/7, including a negative control that a 14-of-15 group is REJECTED. The merge asserts its medium
+count precisely because retry-then-ignore reports a lane complete while its product is short, and a
+14-medium table read as a 15-medium one is a silent scientific error. Four local solves, all exit 0:
+
+| lane | steps | key |
+| --- | --- | --- |
+| E5 cami | 43 -> 45 | `wKxqf66l` |
+| E5 pratama | 43 -> 45 | `c7aRX0fq` |
+| E5 metagem | 44 -> 46 | `cpP600ES` |
+| E4 chunk 1 + SMETANA | 4 -> 6 | `SBNRxoDu` |
+
+**One driver edit, in E4 only.** E5 loads the whole bench library, so its target bound unchanged. E4's
+`AsView({...})` over bench is a WHITELIST, so deleting `smetana_cplex.py` dead-ended it with
+`ModuleNotFoundError`; the view now names all three stages. The claim "no driver edit needed" held for the
+MetaWRAP and DRAM splits and for E5, but NOT for E4 -- a whitelist view has to be updated with the split.
+
+Also confirmed in passing: a plan key is built from the solver model (requires and produces properties), not
+from transform mtimes, so rebuilding `bench` did NOT move E5 cami's key (`wKxqf66l` before and after).
+
+**OPEN, AND TONY'S TO DECIDE -- the fan-out does not make pratama feasible.** The fan-out fixes failure
+isolation, retry granularity and scheduling, but it does not shorten any single medium, and the measured
+scaling is bad: 12 models took >5.4 h on a 74-compound medium, while metagem's 29-model community produced
+ZERO of 15 tables in 1h58m with all 15 processes CPU-pinned and its logs repeating `SCS: Failed to find a
+solution for growth of <org_id>`. Pratama's communities are ~127 models. With no solver lever left, E5
+pratama's SMETANA lane will not fit a 20 h per-medium wall, and the base cannot exceed 21 h anyway
+(`base x 2^(tries-1) <= 168 h`). The options all deviate from metaGEM's method -- `--no-coupling` (drops the
+SCS column, which is the expensive MILP), `--global` (MIP/MRO instead of detailed), fewer media, or fewer
+models per community -- so the choice is a science decision, not a scheduling one. Recorded here rather than
+taken; E5 pratama is gated on E3 regardless, so nothing waits on it today.
+
+**The equivalence reference is deliberately still running.** cami's monolith task was NOT cancelled: it is
+the only run that will ever produce a whole-table SMETANA result under the old shape, and the merged
+per-medium table has to reproduce it. Its eleven finished per-medium tables already give a partial reference.

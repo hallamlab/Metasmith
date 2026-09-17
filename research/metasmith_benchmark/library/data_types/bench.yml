@@ -149,3 +149,15 @@ types:
       _: SMETANA detailed scores for one assembly's community on ONE medium, before the per-assembly merge
       bench: smetana_medium_detailed
       ext: tsv
+  # E4's lane gets its OWN medium types, not a share of E5's. Two splits producing one medium type would
+  # be two producers of that type, which is a target the planner can answer wrong.
+  smetana_cplex_medium:
+    properties:
+      _: one growth medium cut from metaGEM's media_db.tsv, scoped to one metaGEM sample's community
+      bench: smetana_cplex_medium
+      ext: tsv
+  smetana_cplex_medium_detailed:
+    properties:
+      _: SMETANA detailed scores on CPLEX for one sample's community on ONE medium, before the per-sample merge
+      bench: smetana_cplex_medium_detailed
+      ext: tsv
