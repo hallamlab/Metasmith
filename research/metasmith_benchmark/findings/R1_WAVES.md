@@ -2377,3 +2377,59 @@ is the pointer that supersedes it.
 `wave2_b3_nfcore` remains off limits. Its 10,660 inodes read as available, and they are not: live E5
 cami (`OgFSQzRS`) and E5 metagem (`AXtXlth9`) still name it in their `_metasmith/task/task.yml`
 manifests.
+
+### CC. vConTACT3's ladder destroyed itself on WALLTIME, not memory
+
+Attempt 3, `60163155`, ended **OUT_OF_MEMORY at 05:44:08** after 03:24:10, MaxRSS 536,857,412K —
+exactly its 512.0 GiB grant — exit `0:125`. It died in `Calculating distances using SqRoot`,
+immediately after `Building genome network with 4,602,611 contigs and 3,613,684 HMMs`. Sampled by
+`sstat` each minute, RSS went 217G → 347G → 373G → 510G → 512G → killed in about five minutes. It
+lasted **5 m 16 s** in the fatal stage against attempt 2's 57 s, which is the same pattern as before:
+a later failure point, not a finish.
+
+**Attempt 4 was created and never ran, and the cause is not what anyone here predicted.** The trace
+carries a fourth `p28` row (task 3385, `native_id` `-`, exit `-`), and `nxf.log` holds only **two**
+`Re-submitted process` lines — checked before calling anything terminal, the rule this file earned
+the hard way. The refusal is in that work dir's `.sbatch.log`:
+
+    sbatch: error: This job exceeds the maximum walltime of 7.0 days on fir.
+    sbatch: error: Batch job submission failed: Unspecified error
+
+Nextflow logged `Error submitting process 'p28__vcontact3 (1)' for execution -- Error is ignored`.
+
+**The ladder doubles `time` alongside `memory`**, and only the memory half was ever discussed:
+
+    memory = { (2**(task.attempt-1)) * ('128.00 GB' as MemoryUnit) }
+    time   = { [(2**(task.attempt-1)) * ('1day' as Duration), ((params.process?.max_duration ?: '3650days') as Duration)].min() }
+
+Granted walltimes confirm it — 1d, 2d, 4d for attempts 1–3 — so attempt 4 asked **8 days against a
+7-day cap** and was refused at submission. `params.process.max_duration` is unset, so the clamp that
+exists was never armed. **Any retry ladder whose `time` doubles past a cluster's wall self-terminates
+at a fixed attempt number regardless of how much memory the site has.** A ladder that looks like a
+memory policy is also a walltime policy.
+
+**Losing `p28` blocks nothing.** Its two products, `D9kWyt09` and `E5piiTv6`, appear in
+`workflow.nf` only inside p28's own process block and the publish plumbing. No other process consumes
+them, so the cost is the assignments CSV and the network TSV, not a downstream target.
+
+**Retries are not resumable, which is why each one costs ~3 h before it can fail.** vConTACT3 writes
+`vcontact3_out` to node-local scratch (`/localscratch/phyberos.60163155.0/…`, confirmed live at
+~46 GB) and every retry gets a fresh work dir, so the tool's own "will resume from AT LEAST this
+point" checkpoint never engages. Staging that directory on Lustre would make a retry cost minutes.
+Fix that before spending a large slot, not after.
+
+**Two corrections to section BB, both from reading the log rather than the tally.** Attempt 1 did not
+die "while cleaning up temporary MMseqs2 files for 0.7" — that was merely its *last log line*. It died
+about 23 minutes later during the profile build, never reaching the `Saving profiles` line that
+attempts 2 and 3 both logged. And "died at its ceiling" is weaker evidence than it reads: all three
+vConTACT3 attempts ended with MaxRSS exactly equal to their grant, but maxbin2 tasks `_22` and `_24`
+also hit exactly their 96 GiB grant **and exited 0**. MaxRSS saturating the request is not by itself
+proof of death by ceiling.
+
+**The refine gate is `p20__metawrap_refine_pratama`, not p12** (p09 prodigal, p10 concoct, p11
+maxbin2, p12 metabat2). It holds 0 trace rows and `status=ACTIVE` with an open input queue, waiting on
+the last two maxbin2 tasks at 63/65. Those two were nearly filed as hung and are not: completed
+realtimes span 1 h to 9 h, their `.command.log`s go silent for hours as a matter of course — `_22`
+logged "Finished", went quiet for 7 h 47 m, and exited 0 — and `ps` on both nodes shows
+`run_MaxBin.pl` alive with active children at 100% CPU. `TotalCPU` reads `00:00:00` for a *running*
+step and is not evidence of idleness.
