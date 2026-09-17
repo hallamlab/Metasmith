@@ -1977,3 +1977,39 @@ symlink gate is not a formality there. If 9.1K proves insufficient, the next lev
 Bytes rose to 17.459 TiB / 93.73% (~0.063 TiB/h as the binners write), still under the 0.15 TiB/h trigger,
 with 96% about 7 h out. Queue 224 jobs over 21 distinct groups, all printed -- no truncated listing this
 time.
+
+### U. CORRECTION to section T: the inode lever is 2.3K, not 9.1K
+
+Section T set a 935,000-inode trigger to prune three superseded pratama run dirs and quoted ~9.1K of
+relief. **That is their TOTAL size; `prune_work` only empties `nxf_work`.** The real figures, from the
+census already taken:
+
+| run dir | total | nxf_work | results |
+| --- | --- | --- | --- |
+| `AvPNgFtP` | 7,833 | **1,777** | 3,508 |
+| `OLo3f5V3` | 732 | **351** | 11 |
+| `q2TJFf23` | 559 | **210** | 9 |
+
+So the prune yields **2,338 inodes**, about 18 minutes of headroom at ~7.7K/h -- not a lever worth
+automating. Recovering the full 9.1K would mean DELETING the run dirs including `results/`, which needs
+each product confirmed superseded and banked in `task_cache` first; `AvPNgFtP` is E5 pratama's own
+predecessor, so that is not a formality.
+
+**The real escalation path, in order:**
+
+1. **At ~940K: prune the LIVE E3 run's completed task dirs behind finished consumers** -- the 22
+   `prodigal_gv_batch` and 22 `checkv_batch` dirs whose merges have COMPLETED are prunable now, and the
+   binner dirs become prunable as `metawrap_refine` consumes them. Gated, keeping `.command.cache`. This is
+   the large, proven lever this run has used repeatedly, and it grows as the wave progresses.
+2. **E1 short's `work` (145K)** the moment head `59906444` ends. It is load-bearing for `-resume` until
+   then, so it is not mine to take early.
+3. The three superseded dirs above, as a top-up rather than a plan.
+
+**And keep the scale honest: 950K is Tony's MARGIN, not the cliff.** The hard limit is 1,000,000. At
+920,354 and ~7.7K/h that is ~10 h away, and the binner tasks that are driving the rate will finish and stop
+driving it. Crossing 950K would be a criterion breach to report, not a failure to panic over -- the
+watcher already bands at 940K and 945K.
+
+Two things considered and deliberately NOT done: fixing the watcher's double-count (it over-reports into a
+log read hourly, and churning a working watcher is exactly how v1 broke), and arming a self-firing prune
+(not worth automating 2.3K).
