@@ -129,7 +129,7 @@ a.full:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 
 <div class="wrap">
 <header>
-  <div class="eyebrow">metasmith benchmark · experiment design · draft for discussion · 2026-09-12</div>
+  <div class="eyebrow">metasmith benchmark · experiment design · draft for discussion · 2026-09-17</div>
   <h1>Five benchmark experiments</h1>
   <p class="lede">Each panel is one run with its own driver. There are three kinds of experiment: <b>reproduce</b> a published result, show metasmith has <b>parity</b> with a reference pipeline, and run the metasmith <b>optimized</b> pipeline. The page has three sections: datasets, the five experiments, and the tools E5 swaps. Each panel opens its solved workflow on request.</p>
 </header>
@@ -271,9 +271,11 @@ a.full:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
         <li><code>keep_phix = true</code> switches phiX removal off</li>
         <li>Sample sheets come from E2's own sample list: 208 short-read samples on split R1/R2 pairs (all 208 split and checked against their sources), 41 long-read samples</li>
         <li>Each sheet runs as its own Nextflow head in a Slurm job, <code>run_e1.sbatch</code>, offline against the pre-pulled images</li>
+        <li><b>Both arms are finished.</b> The short arm completed clean on 2026-09-17: exit 0, 3,678 tasks succeeded and 3,185 cached, 96 failures all re-submitted and none terminal, <code>BIN_SUMMARY</code> and <code>MULTIQC</code> both exit 0. <code>MAG_DEPTHS</code> closed at 832/832 — four bin groups across 208 samples</li>
       </ul></div>
       <div class="open"><h3>Open</h3><ul>
         <li>No DAG yet. Wave 1's heads write one with <code>-with-dag</code></li>
+        <li>E1 is archived and its trees released: <code>e1_long.tar</code> (13,787 members) and <code>e1_short_out.tar</code> (57,253 members), each verified member-for-entry before anything was deleted. Both tars still sit on fir's scratch, so there is no off-site copy yet</li>
       </ul></div>
     </div>
   </div>
@@ -366,7 +368,7 @@ a.full:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
         <li>Their Zenodo products: vOTU catalogue, 1,275 MAGs, curated AMG table</li>
       </ul></div>
       <div><h3>Driver</h3><ul>
-        <li><code>drivers/e3_pratama.py</code>, all runs under one shared study root for the viral merge. 65 runs, 26 steps, wave-2 key <code>bqyYO0Ip</code></li>
+        <li><code>drivers/e3_pratama.py</code>, all runs under one shared study root for the viral merge. 65 runs. Wave 7 runs as <code>F3KJbPJK</code> over 39 planned steps; the wave-2 solve was <code>bqyYO0Ip</code> at 26</li>
         <li>MAG lane: bbduk → metaSPAdes → MetaWRAP, with CheckM inside it → DRAM on the MAGs</li>
         <li>Viral lane: MEGAHIT and metaSPAdes contigs → geNomad + VIBRANT + VirSorter2 → one merge over both assemblies → CheckV → MMseqs2 → vConTACT3; prodigal-gv; DRAM-v on vOTUs of 10 kb or more</li>
         <li>Pratama's settings are pinned in <code>library/transforms/e3</code>, which masks the standard transforms it replaces. <code>findings/R1_TABLE_AUDIT.md</code> gives each tool's status</li>
@@ -387,6 +389,8 @@ a.full:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
         <li>MetaWRAP refinement: 92 bins for one of 66 runs, the largest 5.6 MB across 1,151 contigs</li>
         <li>vOTU recovery method: a 65,640-row skANI table, from one sample and two of three callers</li>
         <li>MAG recovery method, on those 92 bins against the 1,275 published MAGs: 71 of ours and 122 of theirs matched, clustered in H52, the source well. One run proves the method, not the rate</li>
+        <li>Wave 7 binning on <code>F3KJbPJK</code>: MetaBAT2 65/65 and CONCOCT 65/65 complete, MaxBin2 57/65 and still running. MetaWRAP refinement consumes all three per sample, so its absence is a gate rather than a fault — and it in turn gates DRAM on MAGs and GTDB-Tk</li>
+        <li>The viral lane is chunked rather than monolithic: CheckV and prodigal-gv run per contig batch in about 35 minutes each, against monoliths that hit 8 h and 16 h walls. The two merged tables carry 4,597,542 contigs plus a header</li>
       </ul></div>
       <div class="open"><h3>Open</h3><ul>
         <li class="block">The 17 hybrid assemblies wait on a hybrid read-set type and a hybrid metaSPAdes transform. All 6 MinION runs are on fir, and H43 has none</li>
@@ -395,10 +399,11 @@ a.full:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
         <li class="block">MetaWRAP refines once. Pratama's second round needs BinSanity and abawaca</li>
         <li class="block"><b>New transforms</b> to match Pratama: BinSanity, abawaca, dRep, DeepVirFinder, MetaPop and minced, each with a container image. Spacer-to-host links wait on minced</li>
         <li class="block">MetaPop needs every run mapped to one shared reference, the study's vOTU catalogue. Today each run maps to its own assembly</li>
+        <li class="block">vConTACT3 does not fit its memory ladder. Three attempts at 128, 256 and 512 GB: the first two died out of memory at their cap, and the second died <i>later</i> than the first, building a genome network over 4,602,611 contigs and 3,613,684 HMMs. Doubling buys a later failure point, not a finish, so the next step is chunking rather than a fourth tier</li>
       </ul></div>
     </div>
     <details class="dag">
-      <summary>Solved workflow <span class="sub">· bqyYO0Ip, 26 steps, 65 runs</span></summary>
+      <summary>Solved workflow <span class="sub">· wave-2 solve bqyYO0Ip, 26 steps, 65 runs</span></summary>
       <div class="dagbody">
         <div class="figs">
           <figure>
