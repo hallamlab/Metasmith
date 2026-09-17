@@ -2482,3 +2482,70 @@ at 0 rows and ACTIVE with open input queues, which is what 2 of 65 refine tasks 
 
 Driver `60139304` RUNNING throughout. Quota 707,274 inodes / 15.72 TB, drifting by ~1,700 inodes
 across the watch.
+
+### EE. Refine closed 65/65, DRAM fired on the channel close, and pfam is broken at the database
+
+**The array reached terminal state at 09:08:38: 65 COMPLETED, 0 FAILED, and
+`grep -cE 'Re-submitted process > p20__' nxf.log` returns 0.** Nothing was ever retried. Runtimes: 12
+tasks under an hour, 51 in the 1 h bucket, one at 2 h, the longest `_64` at 1:58:26. E3's standing gap
+since wave 3 is now closed with a complete result rather than a first success.
+
+The drain plateaued at 61/65 with the inode count frozen, which looked like a stall and was not: the
+last task, `_61`, was inside CheckM's `pplacer` step with three processes at 99.4% CPU, logging
+"Placing 100 bins into the genome tree with pplacer (be patient)". It exited 0 at 02:04:43 after
+122 m. **That is the fourth time this wave that silence was read as death and was wrong** — after E1
+short's hang, vConTACT3's checkpoint and maxbin2's stragglers. The rule has earned its place: on this
+cluster, check what the process is doing before concluding it has stopped.
+
+**DRAM was gated on the refine channel CLOSING, and fired the instant it did.** At the moment the
+array went terminal, DRAM's queue held 2 with 132 task instantiations; over four minutes
+instantiations went 132 → 155 → 173 → 207 and trace rows 0 → 3 → 6 → 12. The mechanism is in the
+driver: `p21`/`p22` call `o.group(…, k, 1, [:], [tk:…])`, where the `[:]` binds positionally to
+`expected`, so the early-emit branch guarded by `n_expected > 0` never fires and only the close-flush
+path remains. **This also explains, by inference, why DRAM-on-MAGs produced nothing for E3 in five
+waves: if refine never reached all 65, the channel never closed and DRAM was never instantiated at
+all.** Another gate misread as a broken tool.
+
+**But `p21__dram_pfam_pratama` fails deterministically, and the cause is a database that was never
+finished building.** 147 FAILED / 0 COMPLETED across all 65 elements. The error, identical in three
+separate work dirs:
+
+    AttributeError: 'NoneType' object has no attribute 'query'
+      mag_annotator/database_handler.py:211, in get_descriptions
+      reached from run_mmseqs_profile_search, right after "Getting hits from pfam"
+
+The staged `DRAM.config` carries **`"description_db": null`**. The description *source* is present
+(`database_descriptions.pfam_hmm` → `/db/Pfam-A.hmm.dat.gz`), but the SQLite database DRAM builds from
+it does not exist — its own `setup_info` says `"description_db_updated": "Unknown, or Never"`. With a
+null `description_db` the session object is None, and the pfam description lookup dereferences it and
+dies in ~52 seconds.
+
+**It is not a resource fault, and `p22__dram_kofam_pratama` is the discriminator that proves it.**
+Retries at 192 G (doubled from 96 G) failed identically in 52–60 s, while kofam has two COMPLETED at
+23 m 31 s and 25 m 25 s using ~193 MB against a 64 G grant. KOfam reads `kofam_ko_list.tsv` and never
+touches the description DB. So DRAM's staging is not broken in general — pfam specifically is.
+
+**The guard that should have caught this was written for the wrong key.** `mkconfig.py` asserts that
+`search_databases["pfam"]` is non-null and then nulls the other annotators; it never validates
+`description_db`. A setup-time assertion on the wrong field bought 260 runtime failures instead of one
+clear message.
+
+**Distillation cannot run as things stand.** `p29__dram_distill_pratama` requires *both*
+`e3::mag_dram_kofam_annotations` and `e3::mag_dram_pfam_annotations`. Kofam succeeding is not
+sufficient, so p29 sits at 0 rows and will stay there.
+
+**The waste is bounded but the ending is silent, which is the actual risk.**
+`params.process.tries: 4` (`workflow.params.yml` overrides `workflow.config.nf`'s 2, and elements
+already at 3 failures confirm 4 is operative) with
+`errorStrategy = { task.attempt < params.process.tries ? 'retry' : 'ignore' }` caps p21 at 65 × 4 =
+**260 failures**. 147 have happened, `ign21` is still 0, so ~113 futile ~52-second submissions remain
+and then the lane goes quiet **by being ignored** — the same swallow that hid p28's non-submission.
+A lane that ends by `ignore` leaves no failure for a tally to find.
+
+**A second latent problem in the same staged database.** `database_processing.log` shows the dbCAN
+download saved an HTML error page — `Format tag is '<!DOCTYPE': unrecognized` — and `hmmpress` failed
+on it. `dbcan` is null in the config so E3 is unaffected, but **the database build tolerated a corrupt
+download without failing**, which is how `description_db` came to be missing too.
+
+p13's retry `60174715` still RUNNING at 03:10 of its 24 h, so the small-sample anomaly is still
+unresolved. Driver `60139304` RUNNING at 15:11:48. Quota 718,923 inodes / 15.73 TB.
