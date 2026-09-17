@@ -69,3 +69,83 @@ types:
       e3: host_prediction_genus_default
       Format: CSV
       ext: csv
+
+  # Wave 7: MetaWRAP decomposed into one transform per binner plus a refinement stage. Each binner's bins
+  # are a SIBLING type under e3, never a subtype of a standard bin type, so no standard binner, refiner or
+  # dereplicator binds to them and the refinement stage is the only consumer.
+  metawrap_metabat2_bins:
+    properties:
+      _: MetaWRAP's MetaBAT2 bins for one metaSPAdes assembly, as its binning module writes them
+      e3: metawrap_metabat2_bins
+      Format: FASTA
+      Data: nucleotide sequence
+      ext: fa
+  metawrap_maxbin2_bins:
+    properties:
+      _: MetaWRAP's MaxBin2 bins for one metaSPAdes assembly
+      e3: metawrap_maxbin2_bins
+      Format: FASTA
+      Data: nucleotide sequence
+      ext: fa
+  metawrap_concoct_bins:
+    properties:
+      _: MetaWRAP's CONCOCT bins for one metaSPAdes assembly
+      e3: metawrap_concoct_bins
+      Format: FASTA
+      Data: nucleotide sequence
+      ext: fa
+
+  # Wave 7: the frozen viral set split for the per-contig callers. A SIBLING type, never a subtype of
+  # sequences::contig_batch, for the same tie-break reason as B23.
+  viral_contig_batch:
+    properties:
+      _: a slice of the frozen viral set, sized by base pairs, for the per-contig callers to run in parallel
+      e3: viral_contig_batch
+      Format: FASTA
+      Data: nucleotide sequence
+      ext: fna
+
+  # Wave 7: DRAM decomposed per annotator. These two are intermediates between annotate and distill;
+  # e3::mag_dram_annotations stays the merged table the driver targets.
+  mag_dram_kofam_annotations:
+    properties:
+      _: DRAM.py annotate over one sample's refined MAGs against KOfam only, annotations.tsv
+      e3: mag_dram_kofam_annotations
+      ext: tsv
+  mag_dram_pfam_annotations:
+    properties:
+      _: DRAM.py annotate over one sample's refined MAGs against Pfam only, annotations.tsv
+      e3: mag_dram_pfam_annotations
+      ext: tsv
+
+  # Wave 7: DRAM-v decomposed into CheckV, VirSorter2 prep, two annotators and distill. All intermediates;
+  # annotation::dramv_annotations and annotation::dramv_distill stay the products the driver targets.
+  dramv_checkv_combined:
+    properties:
+      _: CheckV's trimmed proviruses and viruses concatenated, the input VirSorter2 preps for DRAM-v
+      e3: dramv_checkv_combined
+      Format: FASTA
+      Data: nucleotide sequence
+      ext: fna
+  dramv_prep_contigs:
+    properties:
+      _: VirSorter2 --prep-for-dramv contigs, final-viral-combined-for-dramv.fa
+      e3: dramv_prep_contigs
+      Format: FASTA
+      Data: nucleotide sequence
+      ext: fa
+  dramv_prep_affi:
+    properties:
+      _: VirSorter2 --prep-for-dramv affi table, viral-affi-contigs-for-dramv.tab
+      e3: dramv_prep_affi
+      ext: tab
+  dramv_kofam_annotations:
+    properties:
+      _: DRAM-v.py annotate over the prepped viral contigs against KOfam only, annotations.tsv
+      e3: dramv_kofam_annotations
+      ext: tsv
+  dramv_pfam_annotations:
+    properties:
+      _: DRAM-v.py annotate over the prepped viral contigs against Pfam only, annotations.tsv
+      e3: dramv_pfam_annotations
+      ext: tsv

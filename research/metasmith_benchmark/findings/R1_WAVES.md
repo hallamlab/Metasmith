@@ -1327,3 +1327,40 @@ untouched: none of those transforms change, so wave 7 serves them from cache. `a
 
 Never reached in any wave, and therefore still unproven after four waves of E3: DRAM on MAGs, DRAM-v,
 GTDB-Tk, iPHoP, CheckV's quality summary, and vContact3, which never left PENDING at 512 GB.
+
+### B, C. The three monoliths are decomposed, and the plan solves
+
+Local solve at the split: **`Plan OK -- 36 steps, key=XMc6fHt2`**, exit 0, no unresolved input and no lineage
+mismatch. Step count went 26 (the monolith plan) -> 30 (MetaWRAP split) -> 36 (both DRAM lanes split). Every
+product the E3 driver targets is produced by the same type as before, so no driver edit was needed and no
+downstream consumer moved.
+
+The chain as solved:
+- MetaWRAP: steps 10, 11, 12 `metawrap_{concoct,maxbin2,metabat2}_pratama` -> step 20
+  `metawrap_refine_pratama`, which still produces `sequences::metawrap_bin_fasta`,
+  `binning::metawrap_contig_to_bin_table` and `binning::metawrap_bin_stats`.
+- DRAM on MAGs: steps 21, 22 `dram_{pfam,kofam}_pratama` -> step 30 `dram_distill_pratama`, still producing
+  `e3::mag_dram_annotations` and `e3::mag_dram_distill`.
+- DRAM-v: step 32 `dramv_checkv_pratama` -> 33 `dramv_vs2_prep_pratama` -> 34, 35 `dramv_{pfam,kofam}_pratama`
+  -> 36 `dramv_distill_pratama`, still producing `annotation::dramv_annotations` and `annotation::dramv_distill`.
+
+CAUTION a first solve with `--limit 2` exited 1, and none of its diagnostics named the split: every failure
+was `pratama::votu_recovery_table` dead-ending at an NCBI accession, plus a kraken2 lineage mismatch. The
+limit registers 2 of 65 runs while the viral lane merges PER STUDY, so the limit was the confound. Solve E3
+unlimited when checking a change to it.
+
+**Duplicated work the splits buy, named rather than hidden.** Each of the three binners re-runs MetaWRAP's
+bwa alignment, and each annotator re-calls ORFs with Prodigal over the same input. Both are the price of
+decomposition. MetaWRAP's own module WOULD reuse an alignment -- binning.sh:24 says so, :211 skips `bwa
+index` when `assembly.fa.bwt` exists, and :232/:242 skip `bwa mem` when `work_files/<sample>.bam` exists --
+but the skip keys on a filename MetaWRAP derives itself, so a mismatch re-aligns SILENTLY. A shared
+alignment transform therefore stays unbuilt until that derivation is verified; adding a quiet failure mode
+to a change whose whole purpose is reducing risk would be a poor trade. The duplicated ORF calls are what
+make the distill merge safe, and the merge asserts a non-empty shared gene index rather than assuming it.
+
+**Walls.** Every new transform declares 20 h, except the two distill steps at 4 h. 20 h is legal on all four
+rungs (20/40/80/160 <= 168) and above the whole 48 h monolith's worst case of 13:38:00 over 54 samples.
+
+**Inodes.** E3's stop drove the expected run-end burst as `record_run` copied task logs into shards:
+848,948 -> 889,949 (+41K), bytes flat at 17.419 TiB (93.50%). That leaves ~60K under the 950K criterion,
+which now sizes the wave-7 launch and makes E1 short's `work/` (~84K) the lever to take once its head ends.

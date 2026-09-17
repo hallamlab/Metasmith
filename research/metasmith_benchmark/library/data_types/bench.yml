@@ -136,3 +136,16 @@ types:
       _: squashfs image of MetaPop 0.0.60's conda prefix with bowtie2, bound at /opt/metapop
       bench: metapop_env_image
       ext: sqfs
+
+  # Wave 7: SMETANA fanned out one task per medium. The medium carries its assembly in its lineage, so a
+  # per-medium task pairs with its own community's models and the merge groups back on the assembly.
+  smetana_medium:
+    properties:
+      _: one growth medium cut from metaGEM's media_db.tsv, scoped to one assembly's community
+      bench: smetana_medium
+      ext: tsv
+  smetana_medium_detailed:
+    properties:
+      _: SMETANA detailed scores for one assembly's community on ONE medium, before the per-assembly merge
+      bench: smetana_medium_detailed
+      ext: tsv

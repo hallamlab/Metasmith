@@ -1,12 +1,12 @@
-# Pratama's binning (reproduction_map A5) and refinement (A10), on the metaSPAdes assembly only.
+# Pratama's refinement (reproduction_map A10): `metawrap bin_refinement -c 50 -x 10` over the three
+# MetaWRAP binners' bins. Split out of the binning monolith so refinement retries without re-binning.
 #
-# `metawrap binning --universal --maxbin2 --metabat2 --concoct`, then `bin_refinement -c 50 -x 10`. Pratama refines
-# twice: round 1 over abawaca and BinSanity, round 2 over metabat2, concoct and round 1's output. Both
-# binners are gapfills, so until they land this runs one round over the three MetaWRAP binners.
+# Pratama refines twice: round 1 over abawaca and BinSanity, round 2 over metabat2, concoct and round 1's
+# output. Both binners are gapfills, so until they land this runs one round over the three MetaWRAP binners.
 #
-# spades_assembly rather than the bare assembly type, so the MEGAHIT assembly (viral lane only) is never binned.
+# The products are unchanged from the monolith this replaces, so every downstream consumer -- DRAM on the
+# MAGs, GTDB-Tk, the recovery table -- binds exactly as before.
 import glob
-import json
 from pathlib import Path
 from metasmith.python_api import *
 
@@ -15,9 +15,10 @@ model = Transform()
 
 # bin_refinement runs CheckM 1, whose database ships inside this image.
 image = model.AddRequirement(lib.GetType("env::metawrap.env"))
-meta  = model.AddRequirement(lib.GetType("sequences::read_metadata"))
-reads = model.AddRequirement(lib.GetType("sequences::clean_short_reads"), parents={meta})
-asm   = model.AddRequirement(lib.GetType("sequences::spades_assembly"), parents={reads})
+asm   = model.AddRequirement(lib.GetType("sequences::spades_assembly"))
+mb2   = model.AddRequirement(lib.GetType("e3::metawrap_metabat2_bins"), parents={asm})
+mx2   = model.AddRequirement(lib.GetType("e3::metawrap_maxbin2_bins"), parents={asm})
+cct   = model.AddRequirement(lib.GetType("e3::metawrap_concoct_bins"), parents={asm})
 
 bin_fasta = model.AddProduct(lib.GetType("sequences::metawrap_bin_fasta"))
 table     = model.AddProduct(lib.GetType("binning::metawrap_contig_to_bin_table"))
@@ -28,11 +29,23 @@ MAX_CONTAMINATION = 10
 CHECKM_FULL_TREE_GB = 40
 
 
+def _stage(context, slot, name: str) -> str:
+    """Write one binner's bins into the directory layout bin_refinement expects."""
+    d = Path(name)
+    d.mkdir(parents=True, exist_ok=True)
+    n = 0
+    for i, handle in enumerate(context.InputGroup(slot)):
+        (d / f"bin_{i:04d}.fa").write_bytes(handle.local.read_bytes())
+        n += 1
+    Log.Info(f"staged {n} bins into {name}")
+    assert n > 0, f"no bins staged into {name}"
+    return name
+
+
 def protocol(context: ExecutionContext):
-    ireads = context.Input(reads)
-    iasm = context.Input(asm)
-    with open(context.Input(meta).local) as j:
-        assert json.load(j)["parity"] == "paired", "MetaWRAP's binning module takes a read pair"
+    a = _stage(context, mb2, "bins_metabat2")
+    b = _stage(context, mx2, "bins_maxbin2")
+    c = _stage(context, cct, "bins_concoct")
 
     threads = context.params.get("cpus", 8)
     mem_gb = context.params.get("memory")
@@ -44,18 +57,9 @@ def protocol(context: ExecutionContext):
         Log.Warn(f"only {mem} GB for bin_refinement: using CheckM's reduced tree (--quick)")
     refine_mem = max(mem, CHECKM_FULL_TREE_GB)
 
-    # MetaWRAP accepts only uncompressed `*_1.fastq` and `*_2.fastq`.
     context.ExecWithEnv(env=image, cmd=f"""
-        zcat -f {ireads.container} \
-            | awk '{{ if (int((NR-1)/4) % 2 == 0) print > "reads_1.fastq"; else print > "reads_2.fastq" }}'
-        test -s reads_1.fastq && test -s reads_2.fastq
-
-        metawrap binning -o binning -t {threads} -m {mem} --universal -a {iasm.container} \
-            --metabat2 --maxbin2 --concoct reads_1.fastq reads_2.fastq
-        rm reads_1.fastq reads_2.fastq
-
         metawrap bin_refinement -o refinement -t {threads} -m {refine_mem} {"--quick" if quick else ""} \
-            -A binning/metabat2_bins -B binning/maxbin2_bins -C binning/concoct_bins \
+            -A {a} -B {b} -C {c} \
             -c {MIN_COMPLETION} -x {MAX_CONTAMINATION}
     """)
 
@@ -93,5 +97,7 @@ TransformInstance(
     protocol=protocol,
     model=model,
     group_by=asm,
-    resources=Resources(cpus=32, memory=Size.GB(240), duration=Duration(hours=48)),
+    # CheckM 1's full tree needs at least 40 GB, and pplacer takes mem // 40 threads. 20 h keeps every
+    # retry rung legal under fir's 7.0-day submit cap.
+    resources=Resources(cpus=16, memory=Size.GB(128), duration=Duration(hours=20)),
 )
