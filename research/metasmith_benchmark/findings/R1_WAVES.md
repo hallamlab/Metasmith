@@ -1918,3 +1918,29 @@ infeasible at this community size, which is the escalation already standing for 
 If instead some media DO complete, record WHICH and their walls: that is the fan-out delivering partial
 results the monolith could never have banked, and it turns "infeasible" into "feasible for N of 15 media",
 which is a materially better answer to give.
+
+### S. CORRECTION to section R: MetaPop is still running, and the trigger time was wrong
+
+Two errors in the decision point recorded minutes ago, both mine.
+
+1. **"Every other step of that run has already finished" is FALSE.** `metapop_study` is still queued
+   (submitted=1, still queued=1). A USR1 at the trigger would therefore also kill MetaPop before it banks
+   `bench::metapop_microdiversity`, so the cost is not "only the SMETANA tables". **Amended action: at the
+   trigger, USR1 only once `metapop_study` has completed; if it is still running, wait for it first.**
+2. **The 4 h mark is 23:17, not 23:40.** The 45 media were submitted at 02:17:52 UTC = **19:17 fir**, and
+   the longest has now run 1:38:16. The trigger is 4 h from 19:17.
+
+**Root cause, and it is a repeat.** I inferred MetaPop's absence from a queue grouping truncated with
+`head -12`, the same way `tail -60` and `head -45` cut earlier answers in this wave. RULE: **absence in a
+truncated listing is not absence.** Either bound the query so the whole answer fits, or ask for the one
+fact directly; never read "not in the visible rows" as "not present".
+
+**What IS verified, and it is good.** `smetana_split_media` COMPLETED **3 of 3** on pratama, so W7.6's
+split stage works at ~127-model scale and its 45 `bench::smetana_medium` tables are banked. They are
+absent from `results/` correctly -- an intermediate type is not a driver target, the same reason the two
+CheckV tables are absent (section Q). `bench-deepvirfinder_scores` holds 3 real tables totalling 23.8 MB,
+the DeepVirFinder fix delivering on pratama for the first time, alongside the full dereplicator set
+(MAGScoT, dRep sample and study, skANI sample and study), CarveMe models, memote scores, all four binners'
+bins and tables, viral ORFs and GFF, CheckV contamination and the vConTACT3 network -- 37 product dirs.
+
+So the SMETANA scoring stage is the ONLY part of W7.6 still unproven; its split half is done.
