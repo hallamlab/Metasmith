@@ -2135,3 +2135,108 @@ behind them. So the 145K-inode lever does NOT open soon -- the lane has real wor
 right outcome (it completes rather than dying) but removes the lever I was about to count on.
 **RULE: give a repair two poll cycles before calling it failed, and never write the verdict into a
 commit on one.** The commit `00727654` carries the wrong verdict; this paragraph is the correction.
+
+### X. Session handover, and the quota reclaimed off the wall (00:02 fir)
+
+A new session took the campaign over. The previous one had ended with its watch dead and both quota
+axes converging, so the first act was measurement, not action.
+
+**The wall was closer than section W recorded.** `lfs` read **964,962 inodes at 23:45:51**, and the
+live sampler gave a sustained rate over a 55-minute baseline — 933,269 at 22:54 to 966,562 at 23:49,
+so **36.3K/h**, not the ~13K/h of section V. Bytes ran 17.557 to 17.691 TiB over the same window,
+**0.146 TiB/h**, putting the 96% guard about 80 minutes out. Headroom was ~33K, i.e. under an hour.
+The 950K margin had already gone.
+
+**The census could not answer in time, and was cancelled.** Job `60154258` ran 31 minutes and emitted
+only its total line; its top-level section was still empty. Seven parallel `find -printf . | wc -c`
+passes answered the same question in about eight minutes:
+
+| path | inodes |
+| --- | --- |
+| `cami/metasmith/task_cache` | 316,014 |
+| `bench/e1/short/work` | 148,063 |
+| `pratama2026/metasmith/task_cache` | 116,392 |
+| `metagem/metasmith/task_cache` | 69,283 |
+| `runs/JtWdzRCY` (dead) | 46,378 (nxf_work 37,204, results 5,791, _metasmith 3,198) |
+| `wave2_b3_nfcore` | 10,660 |
+| `runs/lE94xbfH` (dead) | 6,176 (nxf_work 0, results 6,006) |
+
+**RULE: when a census job is the blocker, parallel targeted counts beat waiting for it.** Two census
+attempts had already failed in this campaign for unrelated reasons.
+
+**The stale-directory theory died on measurement.** `_cami_retired`, `_pratama_retired` and
+`_w3_retired` hold **12, 13 and 26 inodes**. They are named as if they were levers and are not.
+
+**Reclaimed, measured externally because the in-job readings were corrupt.** Five jobs, all COMPLETED
+0:0: `60156218` emptied `JtWdzRCY/nxf_work` (2,990 dirs, 67,557,460,737 B); `60156238/9/40/42`
+deleted `bqyYO0Ip`, `AvPNgFtP`, `OLo3f5V3` and `q2TJFf23`. Quota went **966,691 at 23:51 to 920,263
+settled at 00:01**, a net **-46,428 inodes** against roughly 6K of concurrent lane growth, so about
+52K gross; bytes **17.691 to 17.188 TiB**, a **-0.503 TiB** return that pushed the 96% guard from
+~80 minutes to about five hours out. Integrity checked rather than assumed: `JtWdzRCY`'s `results`
+(40 subdirs), `_metasmith` and `nxf_work` all survive, and every deleted run dir is confirmed absent.
+
+Two defects in the tooling's own reporting, both recorded because they will recur:
+- `prune_work.sbatch`'s `quota before:` printed `0.000 TiB, getting inodes` — its awk parse broke on
+  this node's `lfs` output. **Trust only an external `lfs` read.**
+- It kept `.command.cache` for **0 of 2,990** dirs, because those dirs had none. Harmless here, since
+  the run had already ended normally and `record_run` had indexed its shards — but it means this
+  prune would NOT have been safe on a live run.
+
+A false alarm worth recording: the prune was placed on `fc30557`, a known-bad node, and produced no
+log output for several minutes. That is expected, not a hang — `prune_work.sbatch` runs `du -scb`
+over every listed dir *before* its first echo, then sleeps 300 after deleting. A resubmit was
+prepared and correctly not fired. **RULE: read a script's order of operations before reading its
+silence as a symptom.**
+
+### Y. What the cami cache is actually made of, and why "evict by run" would have destroyed E2
+
+Sizing the E2 offload turned up a fact that changes how eviction must be targeted. `cache.sqlite`
+holds 35,506 live entries for cami, and by run:
+
+| run | entries | GiB |
+| --- | --- | --- |
+| `WfOlaqLT` | 18,280 | 639 |
+| `sxDeVO5L` | 7,765 | 81 |
+| `33hlLu8Q` | 3,547 | 14 |
+| `F1yIPPmC` | 2,562 | 6 |
+| `(empty)` — imports | 1,566 | 1,529 |
+| `MjMN02CK` — **E2 short, 208 samples** | **211** | 0 |
+| `VgUw0A7c` — **E2 long, 41 samples** | **165** | 348 |
+| `OgFSQzRS` — E5 cami, live | 5 | 0 |
+
+E2 short ran 208 samples across ~12 steps and carries 211 entries. The arithmetic only works one
+way: **most of E2's steps were served from cache and never re-tagged, so its real products sit under
+`WfOlaqLT`** — a run whose directory was deleted waves ago. The `run` column records the run that
+first *created* an entry, not the experiment that owns it.
+
+So the standing "never evict by run" rule is sharper than it reads: evicting `WfOlaqLT` would not
+have retired a superseded run, it would have **destroyed the only copy of a finished experiment**.
+Eviction must key on transform lineage, and only after an archive exists. One transform_key,
+`iWfqgZ9M`, holds 29,542 of the 35,506 entries at ~0 GiB apiece and spans four runs, which is the
+same lesson from the other direction.
+
+**Archive route for E2: there is no Globus CLI on fir and `~/.globus` is empty.** The campaign's own
+proven pattern is local — tar to `bench/archive/<key>.tar` excluding `nxf_work`, verify the tar's
+member count equals the tree's entry count, then delete. That is how E1 long's QUAST tree returned
+86,295 inodes.
+
+### Z. Corrections carried forward, and the state at handover
+
+- **SMETANA is not infeasible in general; it is infeasible at Pratama's scale.** E5 cami's
+  `60106630_0` COMPLETED in **10:00:31** and published `bench-smetana_detailed`. So the equivalence
+  reference the per-medium decomposition needed now exists. Two cami tasks and all three metagem
+  tasks were still running at handover. The pipeline is also correct on the modelling constraint:
+  `carveme_from_orfs.py` is `group_by=orfs` on `sequences::bin_orfs`, one GEM per MAG, and
+  `smetana_medium.py` only ever receives a *set* of per-MAG GEMs plus one medium. No community-level
+  model is built anywhere.
+- The watch is re-armed differently. A local `Monitor` **cannot** be used: it runs in the sandboxed
+  shell where ssh's control socket is refused. The watch is a backgrounded condition-loop waking on
+  inodes >= 975K, bytes >= 17.850 TiB, or any of the four drivers dying. Cron `51f23662`, which
+  re-read the superseded plan, is deleted; `9851e431` replaces it at 4-hourly.
+- All four lane drivers alive at handover: `59906444` e1_short (1d08h), `60106152` e5_cami (11:39),
+  `60128162` e5_metagem (8:24), `60139304` e3 (5:27).
+- E3 published 17 product types and is mid-binner: 33 maxbin2, 12 concoct, 2 metabat2, 6 hybrid
+  assemblies. `metawrap_refine_pratama` is still absent from the queue, which is expected rather than
+  a fault — it cannot start until all three binners finish a sample.
+- E1 short's refinement wave is real and bounded at ~35 tasks, so its 148,063-inode `work` tree stays
+  load-bearing for now.
