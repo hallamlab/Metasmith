@@ -1648,3 +1648,37 @@ Two things that query also settled, both hazards avoided rather than discovered 
 
 The real inode mass is elsewhere and both parts are currently untouchable: cami's task_cache at 316K
 (its home has a live driver) and `bench/e1/short/work` at 145K (load-bearing while head 59906444 runs).
+
+### K. E5 pratama gated and launched, and two false alarms from my own gate
+
+Materialise `60140530` COMPLETED 0:0 in 1:17: **`Plan OK -- 45 steps, key=JtWdzRCY`**, 31 images already
+present, 0 fetched, unknown steps []. `--import` registered what the pool lacked, so there was no repeat of
+E3's `not in the pool` failure.
+
+**The gate script reported FAILED and both flags were mine, not the workflow's.** Recorded because a gate
+that cries wolf is worse than none:
+
+1. "smetana monolith present" matched `__smetana_{medium,merge,split_media}_cached` -- the `_cached` TWINS
+   of the three legitimate stages. My exclusion pattern anchored on `$` and did not allow the suffix. The
+   distinct `__smetana*` names are exactly the three stages and their three twins; no monolith.
+2. "das_tool does NOT group prodigal's ORFs" compared the wrong token in the wrong way. `__out_N` is the
+   internal `mixOuts` variable; the channel consumers actually name is the POSTED one, here `_I6GbjXqn`.
+   And it searched a fixed +/-40 line window around the first `__das_tool` match -- the "by file position"
+   mistake this record already warns against.
+
+**B23 checked properly, position-free.** Every `o.group(...)` sits on one line carrying its own `step_name`,
+so the consumers can be grepped directly: das_tool (step 25) and magscot (step 24) BOTH group `_I6GbjXqn`,
+prodigal's ORF channel. `prodigal_gv` has **0 processes**, so no competing ORF producer exists at all;
+prodigal-gv reaches this plan only as `viral_orfs` (step 28) under its own bench type, which is the intended
+post-B23 design. CAUTION `drep_sample` and `skani_sample` do NOT name that channel and correctly so -- they
+dereplicate BINS and are not ORF consumers. A gate that flags them is over-broad.
+
+The staged plan reads correctly end to end: `smetana_split_media` (5) -> `smetana_medium` (44) ->
+`smetana_merge` (45), with the standard whole-set `checkv` at 34 -- right for E5, which never loads e3's
+chunked copies. Walls: smetana_split_media 1 h, smetana_medium 20 h, smetana_merge 2 h, deepvirfinder 20 h,
+metapop_study **20 h** (confirming the ladder fix reached the staged run).
+
+**E5 pratama is 3 samples**, so its SMETANA lane is 45 per-medium tasks, not hundreds. That makes the
+infeasibility question MEASURABLE rather than extrapolated: on a ~127-model community the 19-compound media
+may still finish while the 74-compound ones do not, and per-medium tasks bank whatever succeeds instead of
+losing all fifteen to one wall. That is the whole point of the decomposition, and it is now under test.
