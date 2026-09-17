@@ -1765,3 +1765,28 @@ the count is zero, because `grep -c` prints `0` AND exits 1, so the `||` fires a
 file, so the guard belongs on a MISSING file, never on exit status. Its inode-band alerting DID work and is
 what caught the 920K crossing. That is the third watcher this run to be alive while structurally mute in
 some part -- always test what a watcher does when the thing it watches FAILS, not only when it progresses.
+
+### N. The byte trigger fired, and a USR1 guard is armed on both wave-7 drivers
+
+Bytes went 17.436 TiB (18:54) -> 17.488 TiB (19:08), about **0.22 TiB/h**, crossing the 0.15 TiB/h trigger
+section L recorded an hour earlier. Acted on as written rather than re-argued: the point of writing a
+trigger down in advance is to not talk past it when it fires.
+
+**`_w7_byte_stop.sbatch`, job `60142009`**, polls the quota every 2 min and, at 17.885 TiB (96% of
+18.63 TiB), sends `scancel --batch --signal=USR1` to BOTH wave-7 drivers -- `60139304` (e3) and `60141166`
+(e5_pratama). USR1 only: `submit_driver.sbatch` traps it and calls `CancelWorkflow`, which ends the run
+cleanly; a plain scancel would kill the driver and strand its grid jobs, which the standing orders forbid.
+The guard stands down on its own once both drivers leave the queue.
+
+It may well never fire, and that is the intended outcome: `prune_work` `60141873` is in flight over
+`bqyYO0Ip`'s 8,492 task dirs, and the earlier prune of that same run freed 659 GB as well as 53,617 inodes.
+A guard that costs nothing unless it is needed is the right trade at 1.8 h of projected headroom.
+
+**The prune's gate passed cleanly** (`60141853`, COMPLETED 0:0): zero symlinks into `bqyYO0Ip` from all
+three task caches and from BOTH live runs -- the load-bearing check, since each lane is replaying from
+`task_cache` right now -- plus no PID.lock, no queued job and no live workflow naming it. 1,505
+`.command.cache` files are preserved so the run stays re-indexable.
+
+**Watcher v2 is verified in practice**, not just in intent: 13 lines, **zero `integer expression expected`
+errors**, reporting state changes and catching the 940,000 inode crossing with bytes attached. v1's failure
+detection had never once run.
