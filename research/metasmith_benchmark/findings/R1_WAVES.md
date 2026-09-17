@@ -894,7 +894,13 @@ A CASE I HAD NOT CONSIDERED, surfaced by that check: a STRICT duration renders `
 
 HONEST LIMITATION: **the three tests I wrote have NOT been executed.** No interpreter available to me has pytest — not the client env, not system python3, no venv, no mamba/conda env, and not fir's metasmith image either. The tests are consistent with the verified render, but "written and consistent" is not "passing", and I will not record them as passing.
 
-NOT SYNCED, deliberately: both E5 homes have live drivers, and an overlay pushed into a live home would give later tasks different engine code mid-run. This ships at the next idle seam, together with a `max_duration` entry in the drivers' `params.process` so fir actually receives its 168 h ceiling.
+COMMITTED at 3547a47c with `_common.py` supplying `max_duration="7days"` in `params.process`; the merge is verified against all four caller shapes and preserves `tries`/`array`. Caller ladders confirmed: e5_pilot, e2_cami and e3_pratama use `tries=4`, e4_metagem uses `tries=2` — so the safe base differs per driver (<=21 h at four attempts, <=84 h at two), which is precisely why ONE rendered clamp beats per-transform arithmetic: it holds regardless of the caller.
+
+NOT SYNCED, deliberately: both E5 homes have live drivers, and an overlay pushed into a live home would give later tasks different engine code mid-run.
+
+BE PRECISE ABOUT WHICH SEAM — there are two and they differ. A sync alone does not apply the clamp; it reaches a corpus only at that corpus's next MATERIALISE, because the ladder is rendered into `workflow.config.nf` at launch. Cami and metagem are mid-run on w6 and will NOT pick it up this wave. The first lane that can actually use it is **E5 pratama**, which has never launched and so has no live driver in its home, once E3 ends — then the E3 hybrid. Do not expect wave 6 to carry it.
+
+T21 #48 STAYS OPEN. Its DeepVirFinder half is now proven on both corpora, but SMETANA has never once produced a table in any wave — it died on the media table in w3, on the shadowed handle in w5, and has not yet exited in w6. The task is not done until a detailed table exists.
 
 16:50 fir clock. **THE DEEPVIRFINDER FIX IS CONFIRMED END TO END — THE SAMPLE THAT FAILED THREE TIMES NOW SUCCEEDS.**
 
