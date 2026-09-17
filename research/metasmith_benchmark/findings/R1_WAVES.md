@@ -1503,3 +1503,40 @@ while the other three still carried them.
 
 **Walls.** split 4 h, prodigal-gv per batch 8 h, CheckV per batch 8 h, both merges 4 h. Every rung is legal
 (8/16/32/64 <= 168).
+
+### F. Every ladder audited against fir's submit cap
+
+fir refuses ANY job over 7.0 days at submit time, and effective `tries` is 4, so a transform is legal only
+if `base x 2^3 <= 168 h`, i.e. base <= 21 h. A sweep of every `Duration(...)` in the e2, e3 and bench
+libraries found 61 declarations: **all 23 wave-7 transforms are legal**, the longest reaching 160 h on its
+last rung, and six PRE-EXISTING ones were not.
+
+These are not blanket-fixed, because a declared `Resources` is in the transform hash and editing one retires
+that transform's banked results. Each was decided on its own cost:
+
+| transform | base -> rung 4 | decision | why |
+| --- | --- | --- | --- |
+| `e3/iphop_predict_default_pratama` | 24 -> 192 h | **fixed, 20 h** | never ran in any wave, retires nothing |
+| `bench/metapop_study` | 48 -> 384 h | **fixed, 20 h** | retires 2 tables that recomputed in 18 and 28 min; E5 pratama's MetaPop is in wave 7 |
+| `bench/gtdbtk_image` | 24 -> 192 h | **fixed, 20 h** | consumes the squashfs, never builds it, so it retires one gtdbtest classification |
+| `e3/spades_pratama` | 24 -> 192 h | left | retires all 65 assemblies, which wave 7 replays from cache and never recomputes |
+| `e2/comebin` | 72 -> 576 h | left | retires 208+41 tasks on a lane wave 7 does not launch |
+| `e2/flye` | 24 -> 192 h | left | retires 41 assemblies on a lane wave 7 does not launch |
+
+A lower base is not only safer, it is ROOMIER: 20 h gives four legal attempts reaching 160 h, where 48 h gave
+only 48 and 96 before two refused rungs, and 24 h gave three. The three left are accepted risk with a named
+reason, not an oversight.
+
+**Every lane re-solved after the edits, and every key is unchanged:**
+
+| lane | steps | key |
+| --- | --- | --- |
+| E3 (unlimited) | 39 | `T9uZ4zXE` |
+| E5 cami | 45 | `wKxqf66l` |
+| E5 pratama | 45 | `c7aRX0fq` |
+| E5 metagem | 46 | `cpP600ES` |
+| E4 chunk 1 + SMETANA | 6 | `SBNRxoDu` |
+
+That invariance is the check, not a coincidence: a plan key is built from the solver model -- requires and
+produces properties -- so a `Resources` edit cannot move it. It confirms these three edits retire only their
+own transforms' entries and disturb nothing else in the plan.

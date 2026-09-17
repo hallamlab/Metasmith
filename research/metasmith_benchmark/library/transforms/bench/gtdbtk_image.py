@@ -84,5 +84,5 @@ TransformInstance(
     model=model,
     group_by=asm,
     batch_size=200,
-    resources=Resources(cpus=8, memory=Size.GB(240), duration=Duration(hours=24)),
+    resources=Resources(cpus=8, memory=Size.GB(240), duration=Duration(hours=20)),
 )

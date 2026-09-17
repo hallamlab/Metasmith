@@ -103,5 +103,5 @@ TransformInstance(
     protocol=protocol,
     model=model,
     group_by=study,
-    resources=Resources(cpus=16, memory=Size.GB(64), duration=Duration(hours=48)),
+    resources=Resources(cpus=16, memory=Size.GB(64), duration=Duration(hours=20)),
 )
