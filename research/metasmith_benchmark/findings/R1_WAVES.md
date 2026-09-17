@@ -2123,3 +2123,15 @@ big four, and every run dir with liveness). Two earlier attempts failed and both
 a missing `--account` on a multi-allocation cluster. **The cleanup targets are unknown until it lands**
 -- what I believe from older readings (cami task_cache ~316K, E1 short work 145K, pratama2026 ~151K) is
 a belief, not a measurement.
+
+**CORRECTION, 23:23 fir, to the paragraph immediately above: THE E1 SHORT REPAIR DID WORK.** I called it
+failed after ONE poll cycle; it landed on the SECOND, at 23:21, seven minutes after the write. Both
+dirs now read `.exitcode=1`, and the head has come back to life: `CHECKM2_PREDICT
+(toy_mousegut_sample_2)` is RUNNING as `60154268`, and the DASTool ghost unblocked a whole refinement
+wave -- **13 E1 short grid jobs** queued or running where there were 0, `DASTOOL_DASTOOL` submitting
+across strain and marine samples every ~6 s. E1 short is NOT nearly done as I assumed from `tasks to be
+completed: 2`: that count was two *blocking* tasks, and clearing them released the refinement stage
+behind them. So the 145K-inode lever does NOT open soon -- the lane has real work ahead, which is the
+right outcome (it completes rather than dying) but removes the lever I was about to count on.
+**RULE: give a repair two poll cycles before calling it failed, and never write the verdict into a
+commit on one.** The commit `00727654` carries the wrong verdict; this paragraph is the correction.
