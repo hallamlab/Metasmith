@@ -1591,3 +1591,34 @@ What this means, stated plainly:
 
 CAUTION for any future ladder audit: `base x 2^(tries-1) <= 168 h` is the rule for the DECLARED value only
 if nothing clamps it. Check `workflow.resources.nf` in a staged run before concluding a ladder is unsafe.
+
+### I. Wave 7 launched, and the replay is clean
+
+E3 wave 7 is RUNNING: driver `60139304`, key `F3KJbPJK`, 39 steps, from checkout `6af9d195`, tag w7. The
+driver log reads `submitted w7: F3KJbPJK` then `waiting on run F3KJbPJK (pgid 1320455)`.
+
+**The replay is the check that mattered, and it passed.** 5,883 cached submissions, and ZERO
+`spades_pratama` and ZERO `megahit` jobs in the queue: all 65 assemblies of both assemblers replay from
+cache rather than recomputing, which is what the E3 stop was banked for. Real work submitted so far:
+
+| step | tasks | note |
+| --- | --- | --- |
+| `metawrap_{concoct,maxbin2,metabat2}_pratama` | 65 each | the decomposition executing for the first time |
+| `splitContigsForAmr` (p07, p08) | 65 each | recomputing; their shards did not survive the byte-crisis prunes. Cheap (2 cpu, 8 GB, 2 h) and their outputs' keys are unchanged, so the viral lane below them still replays |
+| `spades_hybrid_pratama` | 6 of 17 | T21 #50 executing for the FIRST time in any wave |
+| `assembly_stats_pratama` | 1 | the one sample that was 64 of 65 |
+
+**Inodes fell this hour** rather than rose: 891,802 -> 873,255 after the reclaim (20,117 from 15 stale
+checkouts, 170 and 9.16 GB from `.tmp` staging leftovers), leaving ~77K under the 950K criterion. Bytes
+17.410 TiB (93.45%), flat. No per-top-level census was taken because inodes are falling, not bursting.
+
+**No lane finished, stalled or newly failed.** The only new lines in the failure log are my own two
+materialise jobs (60137869 `--restage`, 60137915 the pool-import gap), both diagnosed and fixed in section
+G. CAUTION the other entries in that log's tail are from EARLIER DAYS: filtering it with `awk '$1 > "HH:MM"'`
+compares the time field only and silently matches previous days, which is why 60025138's DeepVirFinder
+failures and 60013900's vcontact3 OOM appear to be recent and are not.
+
+**Still waiting:** E5 cami SMETANA ×3 at 6:11 and E5 metagem ×3 at 2:45, both of a 20 h wall with zero
+retries and still no table -- cami remains the equivalence reference. E5 pratama is held until E3's replay
+inode draw is measured, since it shares the pratama home. E4 SMETANA CPLEX cannot be synced while the
+metagem home has a live driver.
