@@ -2549,3 +2549,39 @@ download without failing**, which is how `description_db` came to be missing too
 
 p13's retry `60174715` still RUNNING at 03:10 of its 24 h, so the small-sample anomaly is still
 unresolved. Driver `60139304` RUNNING at 15:11:48. Quota 718,923 inodes / 15.73 TB.
+
+### FF. One null field took out BOTH DRAM lanes, and p13 exhausted its ladder
+
+**`p37__dramv_pfam_pratama` dies of the same fault as `p21`.** Its `.command.err` carries the
+identical trace — `AttributeError: 'NoneType' object has no attribute 'query'` at
+`mag_annotator/database_handler.py:211`, inside the `self.session.query(description_class)`
+comprehension. Four failures, its `tries` exhausted, and it was **ignored at Sep-19 21:03:19**. So the
+single `"description_db": null` in the staged DRAM config blocks **both** annotation lanes: DRAM on
+MAGs *and* DRAM-v on the vOTUs. DRAM-v's AMG table is the Pratama product E3 exists to recover, so
+this one unbuilt SQLite file is what stands between the run and its headline result.
+
+**`p38__dramv_kofam_pratama` has 1 FAILED, and that is NOT explained by `description_db`** — `p22`,
+the same KOfam step on MAGs, completed 65/65 without ever touching the description DB. It needs its own
+diagnosis rather than being folded into the pfam story. `p36__dramv_vs2_prep_pratama` shows 1 COMPLETED
+and 1 FAILED for the same reason: unexamined.
+
+**The only marker that these lanes ended is the ignore count**, now 67 — 65 `p21`, one `p28`, one
+`p37`. No status tally anywhere in the run shows a lane that finished by being ignored, which is why
+this went unnoticed for a day.
+
+**p13 exhausted its ladder without ever finishing.** Attempts 1–3 all ended at exit 140 within a
+minute of their walls: `60139497` 11:59:21 of 12 h at 64 G, `60174715` 23:59:19 of 24 h at 128 G,
+`60380976` 1-23:59:08 of 48 h at 256 G. Attempt 4, `60627413`, is PENDING at **96 h / 512 G** and
+cannot schedule ("Nodes required for job are DOWN, DRAINED or reserved for jobs in higher priority
+partitions"). It is the last attempt, so it ends in silence either way.
+
+**Three timeouts each landing within a minute of the wall is not a resource shortage.** Doubling
+bought ~84 hours of walltime and produced three identical deaths on the second-smallest of 34 inputs,
+so a fifth tier buys more of the same rather than an answer. What the ladder has actually established
+is that this sample does not finish, and nothing in the run explains why the smallest input needs the
+longest run — every other `p13` row is `_cached`, so there is no peer runtime to compare against.
+
+**A correction to my own reporting across several hourly ticks: I called `60380976` "attempt 4". It
+was attempt 3.** The ladder has four tiers here (12 h/64 G → 24 h/128 G → 48 h/256 G → 96 h/512 G),
+and the real attempt 4 only entered the queue on Sep-20. I was counting failures rather than reading
+the re-submission lines, which is the same error shape as every other correction in this file.
