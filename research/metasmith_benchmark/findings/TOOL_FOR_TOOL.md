@@ -1,8 +1,198 @@
 # METASMITH SIDE of acceptance criterion 12's tool-for-tool diff.
-# Generated 2026-09-12T22:25:21Z from /home/tony/scratch/launch_frozen (the frozen launch checkout).
-# The nf-core side is L3's process list. Keep both here so the diff is one command.
-# CAUTION grepping this out of a dry run can return NOTHING when the flags are wrong,
-# and an empty grep is indistinguishable from a failed one. Read the raw output first.
+# Originally generated 2026-09-12T22:25:21Z from /home/tony/scratch/launch_frozen (the frozen
+# launch checkout). That generated material is demoted below, under RETIRED: it describes the
+# standard-library R2 arm nf-core/mag was first diffed against, before E2 got its own pinned
+# transform library (library/transforms/e2/). E2's deliverable was redefined 2026-09-21,
+# verbatim: "Parity in methods. E2 runs E1 with the exact same tools and parameters across short
+# and long reads." Everything from here down to RETIRED is the 2026-09-21 parity audit that
+# answers that redefinition: read from library/transforms/e2/ and library/resources/e2/ at HEAD,
+# from E1's own drivers/e1_nfcore/control.config, fir.config and b19_long_rerun.sbatch, and from
+# the campaign's findings docs (R1_WAVES.md, BLOCKERS.md) -- not from a fresh solver dry run,
+# which this audit was not authorised to launch.
+# CAUTION grepping a dry run's step list out for a diff can return NOTHING when the flags are
+# wrong, and an empty grep is indistinguishable from a failed one; read the raw output first.
+
+## PARITY IN METHODS -- E2's deliverable, audited 2026-09-21
+
+The claim is TRUE with three exceptions. E2 runs E1's own tools, at E1's own versions and
+argument values, on both read types, everywhere this audit could check -- with one real
+methodological gap (lambda-phage removal, long reads only) and open questions about whether a
+thread-count difference on two more tools can move a result. A fourth apparent gap, QUAST, turns
+out not to be one; see CORRECTION 6 in the RETIRED section below.
+
+### Live tool table, short reads
+
+| stage | metasmith E2 | nf-core/mag E1 (control.config) | status |
+|---|---|---|---|
+| read QC report | `fastqc_raw.py` + `fastqc_trimmed.py` | FASTQC_RAW + FASTQC_TRIMMED | PARITY -- same tool, before and after trimming, on both arms |
+| trimming | `fastp.py` | FASTP | PARITY -- `fastp.py:13,16` carries nf-core/mag 5.5.0's own FASTP args verbatim: `-q 15 --cut_front --cut_tail --cut_mean_quality 15 --length_required 15`, `--detect_adapter_for_pe` |
+| depth-profile mapping | `bowtie2_binning_bam.py` (bowtie2) | BOWTIE2_ASSEMBLY_BUILD/_ALIGN | PARITY -- E2's short lane builds its binning BAM with bowtie2, matching nf-core's short lane exactly. (Only the RETIRED arm's `assembly_stats.py` used minimap2 uniformly; see CORRECTION 4 below.) |
+| depth computation | `jgi_summarize_bam_contig_depths` 2.15 | `jgi_summarize_bam_contig_depths` 2.15 | PARITY -- both pin `metabat2:2.15` for this step (`library/resources/e2/jgi_depth.env`) |
+| assembly | megahit | MEGAHIT | PARITY |
+| gene calling | prodigal | PRODIGAL | PARITY |
+| binning | metabat2 (2.17), semibin2, comebin | MetaBAT2 (2.17), SemiBin2, COMEBin | PARITY on tool and version; per-argument table further below |
+| refinement | das_tool | DAS Tool | PARITY -- `--score_threshold 0.5` matches, `-p` absent on both |
+| bin quality | checkm2 | CheckM2 | PARITY -- both run `checkm2 predict`, `--genes` absent on both (`checkm2.py:139-142`) |
+| gold-standard bridge | `gold_standard.py` | `score_reference_amber.py` | shared instrument, not a pipeline stage on either side -- see "Closed by the audit" below |
+| AMBER scoring | `amber.py`, all four labels in one task per assembly | `score_reference_amber.py` | shared instrument (same image, same bridge, same four labels) |
+| assembly-QC report | none | none, as currently configured | CORRECTED -- see CORRECTION 6 |
+
+### Live tool table, long reads
+
+| stage | metasmith E2 | nf-core/mag E1 long | status |
+|---|---|---|---|
+| adapter trimming | porechop_abi | PORECHOP, Nanopore only | PARITY -- both restrict to Nanopore and pass PacBio through untouched (`porechop_abi.py:18-19`) |
+| length / contaminant filter | chopper, `--minlength 1000`, no `--contam` | chopper, `longreads_min_length 1000`, `--contam <lambda>` when `keep_lambda=false` | DEVIATION -- Exception A, below |
+| assembly | flye | Flye | PARITY on tool; thread count OPEN, Exception C |
+| gene calling | prodigal | PRODIGAL | PARITY |
+| depth-profile mapping | `minimap2_binning_bam.py` (minimap2) | minimap2 (long lane) | PARITY |
+| depth computation | `jgi_summarize_bam_contig_depths` 2.15, `--percentIdentity 80` | B19 hand-rerun at `jgi_summarize_bam_contig_depths` 2.17, `--percentIdentity 80` | DEVIATION -- Exception B, below. It is E1's own rerun that is off nf-core's pin, not E2. |
+| binning | metabat2 (2.17), semibin2, comebin | MetaBAT2, SemiBin2, COMEBin | PARITY on tool; per-argument table further below |
+| refinement / bin quality / scoring | same tools and args as short | same tools and args as short | PARITY |
+
+### A. Lambda-phage removal -- the one real methodological breach
+
+E1's long arm removes lambda-phage reads and E2's does not. Per the audit, nf-core/mag resolves
+its own bundled lambda reference (`GCA_000840245.1`) and passes it to chopper as `--contam`
+whenever `keep_lambda` is false; that reading cites `mag.nf:100-103`, and no copy of `mag.nf` is
+present in this worktree, so that specific citation is the audit's own and is NOT independently
+confirmed here. `library/transforms/e2/chopper.py:20`, read directly, confirms E2's half of the
+gap: it runs `chopper --threads {cpus} --minlength {MIN_LENGTH}` with no `--contam` argument at
+all, and no `keep_lambda`-equivalent setting exists anywhere in `library/resources/e2/` or
+`library/transforms/e2/`.
+
+This is the same one-sidedness phiX was found to have, with one difference: phiX was measured
+(127 of 16,647,376 pairs, 0.00%) and then DISABLED on E1 to remove the asymmetry (see the
+RETIRED table below). Lambda was never measured on either arm, and E1's own removal step was
+never turned off to match E2. It is a live, unaddressed asymmetry, not a quibble.
+
+`chopper.py:10`'s own comment currently reads "no lambda reference" -- that is WRONG, and it is
+what let this gap go unrecorded until now. Do not fix that comment on its own. Any edit to
+`chopper.py`, even a comment, rehashes `_protocol_source_hash` (`transforms.py:125`) and cascades
+through `cache_decisions.py`'s `signature` and every downstream `upstream` reference
+(`cache_decisions.py:41,47`), orphaning E2's whole long-arm cache. Fix the comment only as part
+of a real code change that adds `--contam`, not before.
+
+Expected impact on CAMISIM's synthetic reads is near zero -- but that is INFERENCE, not a
+measurement taken on this campaign's own data. The gap cannot be closed from surviving artifacts
+either way: E1 long's chopper logs, which would show whether any reads were ever flagged as
+lambda-like, were inside a `work/` and `out/` tree that no longer exists.
+
+### B. jgi depth version -- E1's own rerun is off nf-core's pin, not E2
+
+E1 long's depth tool and E2's differ by version: 2.17 against 2.15. Read in isolation this looks
+like E2's deviation, and it is the opposite. `library/transforms/e2/metabat2.py:16-17`'s own
+comment states that nf-core/mag 5.5.0's METABAT2_METABAT2 process "runs the metabat2 2.15 image"
+for depth and "binning runs 2.17" -- two different images for two different steps. E2 matches
+that split exactly: `library/resources/e2/jgi_depth.env` pins `metabat2:2.15--h986a166_1` and
+`library/resources/e2/metabat2.env` pins `metabat2:2.17--hd498684_0`.
+
+E1 long's depth number instead comes from `drivers/e1_nfcore/b19_long_rerun.sbatch`, the
+hand-rerun recorded as B19 in `R1_WAVES.md` (E1 long's original MetaBAT2 pass found zero bins at
+the tool's default identity threshold and had to be rerun outside the head). That script sets one
+image variable, `METABAT=$IMG/quay.io-biocontainers-metabat2-2.17--hd498684_0.img` (line 22), and
+uses that SAME image for both `jgi_summarize_bam_contig_depths` (line 86) and `metabat2`
+(line 90). So it is E1's own hand-rerun that departs from nf-core/mag's reference pin, not E2 --
+E2 is the side that matches the pipeline as written.
+
+The scope is narrow: only E1 long's MetaBAT2 and DAS Tool rows are affected (DAS Tool consumes
+MetaBAT2's table). SemiBin2 and COMEBin take the BAM directly and run no depth tool of their own,
+on either arm.
+
+Do not call the difference inert. `b19_long_rerun.sbatch:87` carries its own comment: "jgi's
+depth for a long read can go negative on a long contig; MetaBAT2 warns and skips it" -- a real,
+version-sensitive edge case in long-read depth computation, not a cosmetic version bump.
+
+### C. Three open thread-count questions
+
+Three tools run at different thread counts on E1 and E2 with no other argument difference. None
+of these is resolved -- record them as open, not as waved through.
+
+  * COMEBin: 12 threads on E1 (`R1_WAVES.md` reads "nf-core's `process_high` label scales cpus
+    12, memory 72 GB and time 16 h", and a rendered `.command.run` for E1 short's COMEBin shows
+    `-c 12`), 48 on E2 (`library/transforms/e2/comebin.py`'s own `Resources(cpus=48, ...)`).
+    COMEBin is the best-scoring binner on BOTH arms. Nothing in this repo or in COMEBin's own
+    documentation establishes thread-invariance for its contrastive embedding and Leiden
+    clustering, and the tool exposes no user-facing seed. This one should not be waved through.
+  * Flye: E2 runs at 16 threads (`library/transforms/e2/flye.py`'s own
+    `Resources(cpus=16, ...)`). E1's Flye thread count of 12 is the audit's own reading of
+    nf-core/mag's `conf/base.config`, which is NOT present in this worktree --
+    `drivers/e1_nfcore/fir.config`'s header comment confirms that file "carries realistic
+    per-process cpu/memory/time ... via ... named overrides for MEGAHIT, FLYE,
+    METABAT2_METABAT2, GTDBTK_CLASSIFYWF" but does not give the numbers, so the specific value
+    of 12 for E1's Flye is attributed to the audit here, not independently confirmed in this
+    worktree. Flye sits upstream of the entire long arm, and repeat-graph construction is
+    parallel, so a thread-count difference here has the widest possible blast radius of the
+    three.
+  * SemiBin2: 6 threads on E1 against 8 on E2 (`library/transforms/e2/semibin2.py`'s
+    `Resources(cpus=8, ...)`). E1's figure of 6 is likewise the audit's reading of nf-core's own
+    config and is not confirmed from a file in this worktree. Lowest risk of the three, because
+    `--random-seed 1` matches on both arms (`semibin2.py:30`, and the per-binner table below).
+
+Settling any of these needs a matched-thread rerun -- compute this audit was not authorised to
+spend, and a decision for the orchestrator, not for this document.
+
+By contrast, MEGAHIT's `-m` (memory) difference IS defensibly harmless, and thread count is not
+implicated at all: per the audit's reading of nf-core/mag's own config (not confirmed in this
+worktree), nf-core/mag itself sets `-m` to `40.GB * task.attempt`, so the value already floats
+within E1 between retries. A pipeline that treats its own memory argument as a retry-scaled
+resource, not a fixed method parameter, is not asserting one canonical value for E1 to deviate
+from.
+
+### Closed by the audit, with reason
+
+These are worth recording because each would otherwise sit in a deviations table on a guess.
+
+  * SemiBin2 `--sequencing-type`: CLOSED. `semibin2.py:24,31` derives `seq_type` from the
+    sample's platform (`"short_reads"` / `"long_reads"`) and passes `--sequencing-type` on every
+    call. The per-binner table below is corrected to match; it previously read this row as OPEN
+    (also tracked as BLOCKERS.md's B9, not edited here).
+  * `--environment global`: emitted on BOTH arms, because `control.config`'s
+    `binning_map_mode = 'own'` makes SemiBin2's `sample_count == 1` on every sample. The
+    counterfactual is the valuable part: had E1 used nf-core/mag's own default (`'group'`), E1
+    would have trained a fresh SemiBin2 model per group while E2 used the pretrained one -- a
+    large silent split that does NOT happen here.
+  * `min_contig_size`, `bin_min_size`/`bin_max_size`, and COMEBin's internal bin-count floor:
+    identical or provably no-ops (per-binner table below).
+  * DAS Tool `-p` and CheckM2 `--genes`: absent on both. `das_tool.py:71`'s `ARGS` carries no
+    `-p`, and `checkm2.py:139-142` runs `checkm2 predict` with no `--genes` -- its own comment
+    reads "run as nf-core/mag runs it: no gene-calling workaround."
+  * E2's fastp arguments match nf-core/mag 5.5.0's exactly: `fastp.py:13-16`'s `ARGS` literal and
+    comment state the match directly.
+  * The AMBER row closes by record, not by compute: nf-core/mag 5.5.0 ships no gold-standard
+    binning scorer at all. Its own quality tools (CheckM2, and QUAST when it runs) score against
+    marker sets or assembly contiguity, never against a CAMI-style read-truth gold standard. So
+    there is no nf-core counterpart for AMBER, and the emptiness on that side is a property of
+    the reference pipeline, not a gap in the audit. What makes the two arms' numbers comparable
+    despite that asymmetry is that the INSTRUMENT is shared: same AMBER image, same
+    gold-standard bridge (`gold_standard.py` / `score_reference_amber.py`, both wrapping the same
+    `lib::cami_gold_standard.py` vote script), same sample namespace, same four labels.
+  * Input parity is by construction, not assertion: `drivers/e1_nfcore/build_samplesheet.py:4,29`
+    generates E1's sample sheets from `e2_cami.enumerate_arms()`, the same function that
+    enumerates E2's own corpus, so both arms read the same files.
+
+### What the audit could not verify
+
+  * E1 long's rendered commands from its ORIGINAL run. Its `out/` and `work/` are deleted, so
+    `--contam` (Exception A) and Flye's thread count (Exception C) are source-confirmed, not
+    trace-confirmed, for that run. (E1 long's B19 rerun IS trace-confirmed, directly from
+    `b19_long_rerun.sbatch`, which is a real command script, not a dry-run guess.)
+  * Every E2 rendered command line. No E2 run directory survives, and the surviving shards'
+    `logs/` are empty. The mitigation: no E2 argument is driver-supplied -- each is a literal in
+    its own transform file, so reading the file IS reading the argument, for everything except
+    the resource-derived `-t`/`-m`/`--threads` values. Those come from `context.params`, are
+    exactly the thread-count questions in Exception C, and are unverified for the runs that
+    produced this campaign's published AMBER rows.
+
+================================================================================
+RETIRED: THE STANDARD-LIBRARY R2 ARM. Everything below, through the end of CORRECTION 6, was
+generated 2026-09-12 against `transforms/` (the standard library) and its `assembly_stats.py`,
+`checkm.py` and `metabat2.py` -- NOT `library/transforms/e2/`, which did not exist yet when most
+of this section was written. E2 was later given its own pinned library and this arm was retired.
+Kept here rather than deleted because it carries measurements that were expensive to obtain (the
+phiX no-op at 127 of 16,647,376 pairs; the bbduk adapter figures) and are not reproduced anywhere
+else in this campaign.
+================================================================================
 
 ## R2, CAMI short-read parity arm:  run --corpus cami --variant variant --no-dedup
 Plan OK -- 18 steps across 229 samples, key=me0OiKOi
@@ -86,7 +276,9 @@ this config) with two corrections of my own from the source at the pinned revisi
   BOWTIE2_PHIX_REMOVAL_BUILD/_ALIGN
   MEGAHIT, GUNZIP
   QUAST                                       (per ASSEMBLY -- 2 tasks for 2 assemblies in the
-                                               pilot trace, not per bin; kept deliberately)
+                                               pilot trace, not per bin; kept deliberately.
+                                               Later disabled repo-wide by skip_quast=true; see
+                                               CORRECTION 6.)
   PRODIGAL                                    (mag.nf:278, per assembly)
   BOWTIE2_ASSEMBLY_BUILD/_ALIGN               (own-read mapping; binning_map_mode='own')
   jgi_summarize_bam_contig_depths, METABAT2_METABAT2
@@ -129,8 +321,11 @@ files-per-sample, counting directories separately, because no run has reached bi
 
 NF-CORE PROCESSES WITH NO METASMITH COUNTERPART, so the "every process has a row" check closes:
 
-  QUAST                       assembly statistics. Cosmetic; not on the scored path. State as a
-                              deviation of REPORTING, not of method.
+  QUAST                       assembly statistics. Per CORRECTION 6, does not run on either arm
+                              as currently configured (skip_quast=true), nor in E1 short's own
+                              published results; E1 long's own completed run DID execute it once,
+                              before the config fix landed. Not on the scored path under any
+                              reading.
   CAT_FASTQ                   concatenates a sample's multiple runs. CAMI ships one run per
                               sample, so it is a no-op here.
   GUNZIP, SPLIT_FASTA, RENAME, SEQKIT stats, DEPTHS      plumbing and per-bin bookkeeping.
@@ -183,18 +378,46 @@ and COMEBin take the BAM directly on both sides and run no depth tool of their o
   than the row makes, and it is still the one deviation of the four that can move an AMBER
   score. The rest of the row's difference is DECOMPOSITION: one nf-core process against
   one interior command of a metasmith step.
+  CAUTION this correction describes the RETIRED standard-library arm's `assembly_stats.py`,
+  which used minimap2 uniformly regardless of read type. The pinned `e2/` library used for
+  the live 2026-09-21 audit above has separate `bowtie2_binning_bam.py` (short) and
+  `minimap2_binning_bam.py` (long) transforms, and achieves full aligner parity on both
+  lanes -- see the live tool tables above. That parity was true from `e2/`'s first commit
+  (0149aa95, 2026-09-12), so this correction was already retired-arm-specific the day it
+  was written, not something that later drifted.
 
 CORRECTION 5, on the "no metasmith counterpart" list. `SEQKIT stats` is listed there as
 plumbing. It is not one-sided: metasmith runs seqkit twice, once as step 1
 (`seqkit_reads` over the reads) and once inside assembly_stats
 (`seqkit stat --all --tabular` over the assembly, transforms/assembly/assembly_stats.py:170).
-Move it to a PARITY row. QUAST remains genuinely nf-core-only, so "a deviation of
-REPORTING, not of method" stands for QUAST alone.
+Move it to a PARITY row. QUAST does NOT remain genuinely nf-core-only -- CORRECTION 6, added
+2026-09-21, retires that claim.
   For completeness, metasmith's step 5 `assembly_stats` is a composite of FOUR tools --
   minimap2 (align), samtools (sort/index/flagstat), bedtools genomecov (per-bp coverage)
   and seqkit stat -- against four separate nf-core processes
   (BOWTIE2_ASSEMBLY_BUILD/_ALIGN, DEPTHS, QUAST, SEQKIT). A process-count comparison of
   this stage is meaningless in either direction.
+
+CORRECTION 6, added 2026-09-21, and it retires the campaign's last "genuine deviation" claim
+about QUAST -- with a caveat a flatter version of this correction would have missed. At HEAD,
+`drivers/e1_nfcore/control.config:128` sets `skip_quast = true`, and its own comment states "The
+tool table lists no QUAST, and nothing this campaign scores reads it." `R1_WAVES.md` confirms
+this at the trace level for E1 SHORT: the head restarted specifically to pick up that fix
+"submitted no QUAST process," aside from 19 assembly-QUAST tasks the OLD (pre-fix) head briefly
+started and left running when it was scancelled without completing.
+
+But `R1_WAVES.md` also records, from the same investigation, that E1 LONG's own completed run
+predates that fix and DID execute QUAST and QUAST_BINS to completion -- a real, published tree of
+86,295 files, later archived as `QUAST.tar` -- and states it plainly: "DEVIATION E1 long ran
+QUAST and QUAST_BINS, and E1 short does not." So QUAST's status is not the single flat fact
+either the old table or CORRECTION 5 made it out to be. As CONFIGURED at HEAD, and as E1 short's
+published results were actually produced, QUAST does not run on any arm and touches nothing
+scored. As E1 long's own history actually unfolded, it DID run there once, before the config
+caught up with it. E2 has no QUAST transform on either lane, either way. Since nothing this
+campaign scores reads QUAST's output under any reading of "ran," the table rows above are
+corrected to reflect that QUAST is not a deviation of method between E1 and E2 -- but the
+historical asymmetry inside E1's own two lanes is worth keeping on the record rather than
+erasing it.
 
 STILL UNCONFIRMED FROM A TRACE, and neither is L4's to close alone:
   CheckM2 (nf-core BIN_QC)  -- nf-core rung 1 has not reached binning; GenomeBinning/
@@ -261,7 +484,7 @@ the binners, and it is how the SemiBin2 rows below survived.**
 | SemiBin2 | `--min-len` | `1500` (`min_contig_size`) | not passed -> `--ratio` 0.05 of 2500 bp | **PINNED to 1500** |
 | SemiBin2 | `--random-seed` | `1` (`semibin_rng_seed`) | **not passed -> system-chosen** | **PINNED to 1** |
 | SemiBin2 | `--environment` | `global` (`semibin_environment`) | `global` | matches |
-| SemiBin2 | `--sequencing-type` | `short_reads`/`long_reads` by platform | not passed | **OPEN, long-read lane only** |
+| SemiBin2 | `--sequencing-type` | `short_reads`/`long_reads` by platform | `short_reads`/`long_reads` by platform | **CLOSED 2026-09-21: `semibin2.py:24,31` derives it from platform and passes it on every call** |
 | COMEBin | all args | none passed -> defaults | `-b min(usable_contigs, 1024)` | **not a deviation** (its default IS 1024) |
 | DAS Tool | `--score_threshold` | `0.5` (explicit) | not passed -> `0.5` | matches |
 | DAS Tool | `--search_engine` | `diamond` | `diamond` | matches |
