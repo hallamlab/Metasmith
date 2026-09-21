@@ -40,7 +40,20 @@ CPLEX_ROOT = Path(os.environ.get("CPLEX_ROOT", "/home/phyberos/projects/rpp-shal
 # First-attempt (cpus, GB, hours); the retry gets 32 GB and 24 h. B11: 3.75% of gapfills failed at the
 # transform's 2 h wall or on memory, with MaxRSS up to 14.6 GiB and one OOM at 32 GiB.
 SCALED = {"carveme_from_orfs_cplex": (4, 16, 12)}
-CHUNK_SIZE = 2000
+# Chunk size is a SAFETY lever, not a capacity one. A MAG costs 54.8 inodes while its chunk is live and
+# leaves 17.84 behind, both measured rather than estimated, so the end state after all 12,108 remaining
+# MAGs is ~939,000 of the 1,000,000 inode quota whatever this value is -- the residue term dominates and
+# shrinking a chunk only shrinks the live term, buying at most ~35K of peak relief. What it does buy is
+# room for the guard to sit ABOVE the peak and still warn: at 500 the worst chunk peaks at 958,388, which
+# leaves quota_stop.sbatch's INODE_STOP=970,000 both 11,612 clear of a healthy run and 30,000 short of
+# the wall. At 1000 the peak is 976,888 and no threshold is both, so the guard could only ever be a
+# tripwire that aborts a good chunk. Cost of 500 is 25 chunks instead of 13.
+#
+# CAUTION chunk boundaries are pinned by the tracked e4_published_mags.tsv, not by the filesystem, so
+# changing this renumbers every chunk. The completed run lE94xbfH took sorted(mags)[0:2000] -- 1,996 of
+# 2,000 models banked in metaGEM's task_cache -- which is exactly new chunks 1 through 4. Resume at
+# chunk 5 and run through chunk 29; chunk 29 carries the remaining 108.
+CHUNK_SIZE = 500
 
 
 def enumerate_mags():
