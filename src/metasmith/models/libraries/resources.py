@@ -144,11 +144,21 @@ class Resources:
             # The ceiling therefore comes from params, not from a constant, because codegen runs in
             # the AGENT process and a driver-side setting would never reach it; `params` is readable
             # from a directive closure (the rendered config already uses params.process.tries).
-            # The Elvis default keeps this behaviour-preserving wherever max_duration is unset.
+            # The Elvis default keeps this behaviour-preserving wherever no ceiling is set.
+            #
+            # BOTH spellings are read, and that is not belt-and-braces -- either one alone is dead.
+            # `RunWorkflow(params=<dict>)` passes every key through a parser that splits ANY key
+            # containing an underscore into nested maps, so `{"process": {"max_duration": "24h"}}`
+            # reaches the params file as `process: {max: {duration: 24h}}` and a closure reading
+            # `params.process.max_duration` sees null. That is exactly how E3's vConTACT3 ladder
+            # reached an 8-day rung with a 7-day ceiling set: the clamp was written but never armed,
+            # sbatch refused the submission, and the ignored failure wedged the run. A params FILE
+            # (`params=<Path>`) bypasses that parser, so the flat spelling is what a file delivers.
+            # Keep both until the parser stops splitting underscores.
             _parse_res(
                 self.duration, "<x>", "time",
                 "<x>" if (self.duration is not None and self.duration.unlimited)
-                else "{"+f" [(2**(task.attempt-1)) * (<x> as Duration), ((params.process?.max_duration ?: '3650days') as Duration)].min() "+"}",
+                else "{"+f" [(2**(task.attempt-1)) * (<x> as Duration), ((params.process?.max_duration ?: params.process?.max?.duration ?: '3650days') as Duration)].min() "+"}",
                 "<x>",
             ),
         ] if x is not None]

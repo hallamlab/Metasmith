@@ -276,10 +276,61 @@ def write_dag(task, stem, cache_dir):
 # own entry.
 # bowtie2_binning_bam stays on node-local scratch: in place it read its index from Lustre, and in two
 # Lustre incidents 26 tasks exited 0 with 0.00% alignment.
+#
+# vcontact3_pratama is here for a different reason: it writes vcontact3_out and a
+# `*.profile.pkl.gz` resume checkpoint, and on node-local scratch every retry gets a fresh work
+# dir, so the tool's own checkpoint never engages and each of the 24 h-clamped rungs (6+12+24+24 =
+# 66 h of possible burn per task) restarts from zero. In place, a same-directory relaunch lets the
+# checkpoint pick up where it left off. CAUTION this puts its intermediates on Lustre, and
+# therefore on the project inode/byte quota, which is under pressure -- at N=70,785 genomes that
+# footprint is small next to the wall-clock saved, but it is a quota cost this step did not have
+# before. assembly_stats_pratama is deliberately NOT here despite the same clamp pressure: its
+# ~45 GB SAM/BAM intermediates are better off the quota, on node-local scratch.
 IN_PLACE_STEPS = (
     "fastp", "bbduk_pratama", "megahit", "spades_pratama",
     "assembly_stats", "porechop_abi", "chopper", "minimap2_binning_bam",
+    "vcontact3_pratama",
 )
+
+# No task may exceed 24 h of walltime. Assembly and bin refinement are the only sanctioned
+# exceptions, because both are single-threaded-tail monoliths with no chunking available: hybrid
+# metaSPAdes' six observed tasks ran 7:40 to 15:35 and pinned 384 GiB, and MetaWRAP refinement runs
+# CheckM inside itself.
+#
+# The ceiling is enforced as a params entry, NOT as a constant in the rendered config, because
+# codegen runs in the agent process where a driver-side constant never arrives, and because it has to
+# be read inside a directive CLOSURE -- the config is parsed before the -params-file merge.
+# `Resources.AsNextflowFormat` renders `[scaled, ceiling].min()` around every duration.
+MAX_TASK_DURATION = "24h"
+
+# The sanctioned exceptions, as a transform name -> its own ceiling. A `withName` block overrides the
+# global one for that selector only. Keep this list short and justified: every entry is a task that
+# can occupy a node for longer than a day, and the 7.0-day submit-time cap still applies to the
+# rung it reaches, so base x 2^(tries-1) must stay under 168 h.
+LONG_RUNNING_STEPS = {
+    "spades_pratama": "36h",
+    "spades_hybrid_pratama": "36h",
+    "metawrap_refine_pratama": "36h",
+    "spades": "36h",
+}
+
+# The memory half of the same rule, and it needs its own ceiling because nothing else caps memory:
+# `Resources.AsNextflowFormat` clamps duration against params and leaves memory doubling unbounded.
+# 192 GB is `spades_pratama`'s own declaration, which is the envelope this campaign measured its
+# largest short-read assembly inside; a step asking past it is asking for a grant no result here has
+# ever needed. Unbounded doubling is how assembly_stats_pratama reached a 512 GB rung while failing
+# on walltime at every grant from 64 GB up -- four attempts that tell you memory was never the
+# constraint, and a ladder that answered by asking for eight times more of it.
+MAX_TASK_MEMORY_GB = 192
+
+# Sanctioned exceptions to the memory ceiling, same shape and same discipline as LONG_RUNNING_STEPS.
+# Hybrid metaSPAdes is the one measured case: six tasks at MaxRSS 238-402 GB, so its declared 384 GB
+# is the observation rather than a guess. It is listed for the day something scales it -- it is not
+# in any driver's SCALED today, so its resources come from its own declaration and this dict is
+# currently unused. Keep it that way: an entry here is a claim that a measurement justifies it.
+LARGE_MEMORY_STEPS = {
+    "spades_hybrid_pratama": 384,
+}
 
 
 def make_slurm_config(smith, cache_dir, scaled=None, comebin_cpus=48, comebin_time="3d"):
@@ -300,6 +351,15 @@ def make_slurm_config(smith, cache_dir, scaled=None, comebin_cpus=48, comebin_ti
     """
     base = Path(smith.GetNxfConfigPresets()["slurm"]).read_text()
     mem_gb = comebin_cpus * FIR_MEM_MB_PER_CPU // 1000
+    # comebin_time is clamped against LONG_RUNNING_STEPS the same way the `scaled` loop below clamps
+    # itself, and for the same reason: a `withName` time is a LITERAL, outside the params clamp that
+    # `Resources.AsNextflowFormat` wraps every declared duration in, so an unclamped literal here is a
+    # silent hole in the 24 h rule. COMEBin is not in LONG_RUNNING_STEPS -- it was never made a
+    # sanctioned exception, only defaulted to 3d -- so absent this clamp it ran the 24 h rule was
+    # supposed to bind on. This makes COMEBin 24 h unless someone adds it to LONG_RUNNING_STEPS
+    # deliberately; the point of that dict is that an exception is listed there on purpose, auditably,
+    # and COMEBin never was.
+    comebin_cap = LONG_RUNNING_STEPS.get("comebin", MAX_TASK_DURATION)
     # A literal, not params.process.clusterOptionsExtra: config reads params before the -params-file merge.
     text = base + "\n" + "\n".join([
         "", "process {",
@@ -308,19 +368,34 @@ def make_slurm_config(smith, cache_dir, scaled=None, comebin_cpus=48, comebin_ti
         "process {", "    withName: '.*__comebin' {",
         f"        cpus = {comebin_cpus}",
         f"        memory = '{mem_gb} GB'",
-        f"        time = '{comebin_time}'",
+        f"        time = {{ [('{comebin_time}' as Duration), ('{comebin_cap}' as Duration)].min() }}",
         f'        clusterOptions = "--nodes=1 --ntasks=1 --account={SLURM_ACCOUNT} --exclude={FIR_BAD_NODES}"',
         "    }", "}", "",
         "process {", "    withName: '.*_cached' {", "        array = 0", "        scratch = false", "    }", "}", ""])
     for name in IN_PLACE_STEPS:
         text += "\n".join([
             "process {", f"    withName: '.*__{name}' {{", "        scratch = false", "    }", "}", ""])
+    # A `withName` time is a LITERAL and therefore outside the params clamp that
+    # `Resources.AsNextflowFormat` wraps every declared duration in -- so each one clamps itself here,
+    # or it silently becomes a hole in the 24 h rule. megahit at a 12 h base reached 96 h on rung 4
+    # this way without ever being refused, because 96 h is under fir's 7 d cap and nothing else looked.
     for name, (cpus, gb, hours) in (scaled or {}).items():
+        cap = LONG_RUNNING_STEPS.get(name, MAX_TASK_DURATION)
+        mem_cap = LARGE_MEMORY_STEPS.get(name, MAX_TASK_MEMORY_GB)
         text += "\n".join([
             "process {", f"    withName: '.*__{name}' {{", f"        cpus = {cpus}",
-            f"        memory = {{ {gb}.GB * (2 ** (task.attempt - 1)) }}",
-            f"        time = {{ {hours}.h * (2 ** (task.attempt - 1)) }}",
+            f"        memory = {{ [{gb}.GB * (2 ** (task.attempt - 1)), {mem_cap}.GB].min() }}",
+            f"        time = {{ [{hours}.h * (2 ** (task.attempt - 1)), ('{cap}' as Duration)].min() }}",
             "    }", "}", ""])
+    # The sanctioned exceptions to the 24 h rule. Deliberately FLAT rather than a doubling ladder: the
+    # whole point of an exception is a fixed, auditable ceiling, and for a step that is already the
+    # exception "it missed, so give it twice as long" is the behaviour the rule exists to stop. A step
+    # that cannot assemble or refine inside its ceiling needs a different shape, not another rung.
+    for name, cap in LONG_RUNNING_STEPS.items():
+        if name in (scaled or {}):
+            continue
+        text += "\n".join([
+            "process {", f"    withName: '.*__{name}' {{", f"        time = '{cap}'", "    }", "}", ""])
     cache_dir.mkdir(parents=True, exist_ok=True)
     out = cache_dir / "fir_slurm.config"
     out.write_text(text)
@@ -362,8 +437,17 @@ def stage_and_run(smith, task, cache_dir, tag, *, stage_only, params, scaled=Non
     # a literal (see make_slurm_config). A closure is evaluated per task, after the merge -- proven
     # in production by `errorStrategy`, which read tries=4 from the params file rather than the
     # config's own default of 2.
+    # 24 h, not 7 days. The 7-day value only kept the ladder submittable; the policy is that no task
+    # occupies a node for more than a day, with LONG_RUNNING_STEPS the sanctioned exceptions.
+    #
+    # CAUTION this key reaches nextflow as `process.max.duration`, NOT `process.max_duration`:
+    # `RunWorkflow(params=<dict>)` splits every underscored key into nested maps. The clamp closure in
+    # `Resources.AsNextflowFormat` reads both spellings for that reason. It previously read only the
+    # flat one, so this ceiling was set and never armed -- which is how E3's vConTACT3 ladder asked
+    # 8 days against fir's 7-day cap, had the submission refused, and had the failure swallowed by the
+    # ignore path. Verify with `grep max <run>/workflow.params.yml` after staging, not by reading this.
     params = dict(params)
-    params["process"] = dict(params.get("process") or {}, max_duration="7days")
+    params["process"] = dict(params.get("process") or {}, max_duration=MAX_TASK_DURATION)
     smith.RunWorkflow(task=task, config_file=make_slurm_config(smith, cache_dir, scaled), gpus=gpus,
                       params=dict(slurmAccount=SLURM_ACCOUNT, slurmGpuAccount=SLURM_GPU_ACCOUNT, **params))
     print(f"submitted {tag}: {task.GetKey()}", flush=True)

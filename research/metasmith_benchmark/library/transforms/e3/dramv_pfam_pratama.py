@@ -39,6 +39,11 @@ def protocol(context: ExecutionContext):
     context.ExecWithEnv(env=img_dram, binds=[(idram.external, "/db")], cmd=f"""
         export HOME=/tmp
         python3 mkconfig.py {KEEP} dramv_pfam.config
+        # description_db is null in the staged config; DRAM's own pfam path guards on the handler
+        # object, not its session, and crashes instead of degrading. Built per task, not into the
+        # shared refs dir, whose mtime is a cache key that would re-key 65 done dram_kofam shards
+        # (398.9 measured wall-hours).
+        DRAM-setup.py update_description_db --config_loc dramv_pfam.config --output_loc $PWD/description_db.sqlite --select_db pfam
         DRAM-v.py annotate -i {icontigs.container} -v {iaffi.container} \
             -o dramv_annot --threads {threads} --min_contig_size 1000 --config_loc dramv_pfam.config
         test -s dramv_annot/annotations.tsv

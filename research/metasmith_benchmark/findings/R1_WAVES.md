@@ -1592,6 +1592,18 @@ What this means, stated plainly:
 CAUTION for any future ladder audit: `base x 2^(tries-1) <= 168 h` is the rule for the DECLARED value only
 if nothing clamps it. Check `workflow.resources.nf` in a staged run before concluding a ladder is unsafe.
 
+**CORRECTION, 2026-09-21: the conclusion above is refuted, and the wedge class was not closed.** The
+ceiling was configured but silently inert. `RunWorkflow(params=<dict>)` splits ANY underscored key into
+nested maps (`_parse` in `src/metasmith/agents/workflow_ops.py`), so `_common.stage_and_run`'s
+`max_duration="7days"` arrived on the wire as `process.max.duration`, while the Groovy clamp above reads
+`params.process?.max_duration` -- the flat spelling -- and got null. The Elvis default then took over, and
+'3650days' is not a ceiling. This is exactly how vConTACT3's `p28` attempt 4 asked for 8 days against fir's
+7-day submit cap and was refused, with the refusal swallowed by the `ignore` error strategy (section BB).
+The clamp has since been fixed to read both spellings (`params.process?.max_duration ?:
+params.process?.max?.duration`), pinned by `tests/metasmith/unit/test_unlimited_duration.py`. A reader
+relying on section H's original claim that "no rung is unsubmittable" was relying on a config key that
+never reached the Groovy that was supposed to read it.
+
 ### I. Wave 7 launched, and the replay is clean
 
 E3 wave 7 is RUNNING: driver `60139304`, key `F3KJbPJK`, 39 steps, from checkout `6af9d195`, tag w7. The

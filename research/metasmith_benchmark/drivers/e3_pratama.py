@@ -37,7 +37,29 @@ EXPECTED_HYBRIDS = 17
 TYPE_LIBS = [c.MLIB / "data_types" / t for t in ("sequences.yml", "viromics.yml")] + [c.LIBRARY / "data_types" / "e3.yml"]
 
 # First-attempt (cpus, GB, hours); retries scale with the attempt.
-SCALED = {"megahit": (32, 128, 12)}
+#
+# assembly_stats_pratama and dramv_kofam_pratama were both retried to failure on fir at their
+# transform-declared cpus (4 and 16), and `sacct -X` shows the SAME shape both times: every
+# attempt died exit 140 within ~60 s of its walltime, at every memory grant tried, never OOM.
+# assembly_stats_pratama ran 4 cpus at 64G/12h, 128G/24h, 256G/48h and 512G/96h and failed all
+# four the same way, so the bottleneck is `minimap2 -t 4` against a 45.4 GB interleaved fastq,
+# not memory -- 64 GB back on attempt 1 is what the evidence supports, not a gamble. 32 cpus
+# also brings it back under this campaign's SPAdes envelope (48 cpus / 192 GB / 24 h); the 512
+# GB rung it reached unscaled exceeded that envelope. dramv_kofam_pratama ran 16 cpus at
+# 64G/20h (exit 140 at 19:59:30) and 128G/40h (still running at 1-12:39 when killed) -- same
+# walltime shape, and it spent ~17 h inside kofam hmmsearch, which parallelises well, so cpus
+# is the lever there too.
+#
+# CAUTION the 24 h clamp (MAX_TASK_DURATION, applied in make_slurm_config) and this entry are
+# ONE change, not two. Taken alone, the clamp would cap assembly_stats_pratama's ladder at
+# 12/24/24/24 h -- and it has already failed at 12 h, 24 h AND 48 h, so a clamped ladder with
+# the old cpus/memory would retry three rungs it can never pass and die silently via the
+# `ignore` error strategy, with nothing to say why.
+SCALED = {
+    "megahit": (32, 128, 12),
+    "assembly_stats_pratama": (32, 64, 12),
+    "dramv_kofam_pratama": (48, 64, 12),
+}
 
 # The standard transforms each E3 library transform replaces, by library.
 REPLACED = {
@@ -48,8 +70,13 @@ REPLACED = {
     # checkv.py joins the list in wave 7: E3 scores the frozen set in slices (checkv_batch_pratama plus
     # checkv_merge_pratama), and the pinned merge produces the same four viromics::checkv_* types. Without
     # the mask the standard whole-set transform would be a second producer of all four.
+    # vcontact3.py joins for the same reason and a harder one: the standard transform requires the frozen
+    # set, whose 4,597,542 contigs make vConTACT3's quadratic network and agglomerative stages unservable
+    # at any grant fir has (three OOMs at 128/256/512 GiB; ~38 TiB needed for the dense component matrix).
+    # vcontact3_pratama.py runs the same tool on the 70,785 >=10 kb vOTU representatives and produces the
+    # same two viromics::vcontact3_* types, so without the mask both would answer the network target.
     "viromics": {"vibrant.py", "merge_candidate_calls.py", "mmseqs_votu.py", "mmseqs_precluster.py", "cctyper.py",
-                 "prodigal_gv.py", "checkv.py"},
+                 "prodigal_gv.py", "checkv.py", "vcontact3.py"},
 }
 
 
