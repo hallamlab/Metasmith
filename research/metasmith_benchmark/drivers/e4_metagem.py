@@ -39,17 +39,7 @@ CPLEX_ROOT = Path(os.environ.get("CPLEX_ROOT", "/home/phyberos/projects/rpp-shal
 
 # First-attempt (cpus, GB, hours); the retry gets 32 GB and 24 h. B11: 3.75% of gapfills failed at the
 # transform's 2 h wall or on memory, with MaxRSS up to 14.6 GiB and one OOM at 32 GiB.
-#
-# prodigal: the transform declares 1 h, and chunk 5 measured 60 of 500 MAGs (12%) exceeding it -- array
-# 60866678 went TIMEOUT at 01:00:20 with realtime up to 1h25m. Every one then passed on the retry, whose
-# only change is the doubled 2 h wall, since the ladder does not scale cpus. So the wall is the axis the
-# evidence names and 3 h carries 1.7x over the worst case; leaving cpus at 2 is deliberate, because
-# nothing here measures pprodigal's speedup and a speculative 500-task cpu bump queues far worse under
-# fair share. Unfixed this costs ~120 core-hours and ~1.5 h of wall per chunk, 24 chunks still to run.
-SCALED = {
-    "carveme_from_orfs_cplex": (4, 16, 12),
-    "prodigal_from_bin": (2, 8, 3),
-}
+SCALED = {"carveme_from_orfs_cplex": (4, 16, 12)}
 # Chunk size is a SAFETY lever, not a capacity one. A MAG costs 54.8 inodes while its chunk is live and
 # leaves 17.84 behind, both measured rather than estimated, so the end state after all 12,108 remaining
 # MAGs is ~939,000 of the 1,000,000 inode quota whatever this value is -- the residue term dominates and
