@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Compare E4's GEMs with metaGEM's published GEMs for the same bins.
 
-Reads a TSV of `bin<TAB>path to our SBML` (plain or .gz), pulls each bin's published model out of
-its study's GEM archive, and reports per bin the reaction, metabolite and gene sets, the GPR of every
-shared reaction and the flux bounds of every shared reaction. Run it on fir, where the archives are.
+Reads a TSV of `bin<TAB>path to our SBML` (plain or .gz), or pairs a run's results directory with
+its bins by gene content (--results). Pulls each bin's published model out of its study's GEM
+archive, and reports per bin the reaction, metabolite and gene sets, the GPR of every shared
+reaction and the flux bounds of every shared reaction. Run it on fir, where the archives are.
 """
 
 import argparse
@@ -70,6 +71,34 @@ def published_models(study, bins):
     return found
 
 
+def sanitised(protein_id):
+    return "G_" + "".join(ch if ch.isalnum() else "_" for ch in protein_id)
+
+
+# A model's genes are its bin's protein ids, so the bin whose proteins hold all of them made it.
+# CarveMe's spontaneous pseudo-gene is in no FASTA.
+def pair_by_genes(results, bins, study_of):
+    proteins = {}
+    for b in bins:
+        faa = PUBLISHED / study_of[b] / "proteins" / f"{b}.faa"
+        proteins[b] = {sanitised(line[1:].split()[0]) for line in open(faa) if line.startswith(">")}
+    candidates = {}
+    for xml in sorted(Path(results).iterdir()):
+        genes = {g for g in parse_model(read_sbml(xml))["genes"] if "spontaneous" not in g.lower()}
+        candidates[xml] = sorted(b for b in bins if genes and genes <= proteins[b])
+    pairs, taken = {}, set()
+    for xml, found in sorted(candidates.items(), key=lambda kv: len(kv[1])):
+        free = [b for b in found if b not in taken]
+        if not free:
+            print(f"# no bin for {xml.name} (candidates {found})", file=sys.stderr)
+            continue
+        if len(found) > 1:
+            print(f"# {xml.name} fits {found}, assigned {free[0]}", file=sys.stderr)
+        pairs[free[0]] = str(xml)
+        taken.add(free[0])
+    return pairs
+
+
 def compare(ours, theirs):
     def sets(key):
         a, b = set(ours[key]), set(theirs[key])
@@ -88,13 +117,18 @@ def compare(ours, theirs):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("pairs", help="TSV: bin, path to our SBML")
+    ap.add_argument("pairs", nargs="?", help="TSV: bin, path to our SBML")
+    ap.add_argument("--results", help="a run's results directory of models, paired with --bins by gene content")
+    ap.add_argument("--bins", nargs="*", help="the bins the run carved")
     ap.add_argument("--manifest", default=HERE / "e4_published_proteins.tsv")
     ap.add_argument("--json", help="write the full per-bin differences here")
     args = ap.parse_args()
 
     study_of = {r["bin"]: r["study"] for r in csv.DictReader(open(args.manifest), delimiter="\t")}
-    ours = dict(line.rstrip("\n").split("\t")[:2] for line in open(args.pairs) if line.strip())
+    if args.results:
+        ours = pair_by_genes(args.results, args.bins, study_of)
+    else:
+        ours = dict(line.rstrip("\n").split("\t")[:2] for line in open(args.pairs) if line.strip())
     by_study = defaultdict(list)
     for b in ours:
         by_study[study_of[b]].append(b)
