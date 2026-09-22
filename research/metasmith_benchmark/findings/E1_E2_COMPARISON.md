@@ -123,9 +123,10 @@ planner, and E2's plan is finished and cached.
 
 **The evidence is captured and committed.** `../results/e2/e1e2_slurm_jobs.psv` holds 14,367 rows — every E1
 and E2 Slurm job in the 2026-09-12 → 09-18 window, with `Submit`, `Start`, `End`, `Elapsed`, `ReqCPUS`,
-`AllocCPUS`, `ReqMem` and `WorkDir`. Run-key split: E1 short 7,107, E1 long 1,452, and E2 `WfOlaqLT` 2,324,
-`sxDeVO5L` 1,341, `33hlLu8Q` 467, `F1yIPPmC` 235, `MjMN02CK` 211, `VgUw0A7c` 170. Fuller dumps, including the
-per-step `MaxRSS` rows, are on fir at `/scratch/phyberos/bench/evidence/`.
+`AllocCPUS`, `ReqMem` and `WorkDir`. Run-key split: E1 short 7,122, E1 long 1,452, and E2 `WfOlaqLT` 2,425,
+`sxDeVO5L` 1,341, `33hlLu8Q` 469, `F1yIPPmC` 235, `MjMN02CK` 211, `VgUw0A7c` 170. The per-task tables
+`../results/e1/e1_slurm_tasks.tsv` and `../results/e2/e2_slurm_tasks.tsv` add `.batch` `MaxRSS` and E1's sample
+attribution. The `build_*_slurm_tables.py` beside each rebuilds it from the dumps committed under its `raw/`.
 
 **`WorkDir` is the only field that attributes a task to a run key or to E1 short/long. Do not drop it.**
 
