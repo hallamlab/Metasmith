@@ -7,8 +7,10 @@ the next agent what the archive contains, what state E3 stopped in, and the four
 restore into a silent 2 TB recomputation.
 
 The restore procedure itself is not here. Run `drivers/restore_e3.sh`, which carries the endpoint
-ids, the external-dependency preflight and the verification numbers. This file holds only what the
-script cannot: why each constraint exists, and what the archive is worth.
+ids, the external-dependency preflight and the verification numbers. Run
+`drivers/verify_e3_archive.sh` to check the archive on chinook against the source-side manifest.
+This file holds only what the scripts cannot: why each constraint exists, and what the archive is
+worth.
 
 ## Where it is
 
@@ -94,9 +96,14 @@ Three subtrees stayed behind, and each is either reconstructible or meaningless 
   11 exceptions are `results/_metadata/`, which is archived separately.
 - `metasmith/relay/`, 26 unix sockets pointing into each compute node's `/tmp`.
 
-`.staging/` also stayed behind. It holds 21 truncated partial downloads, every one of which has a
-larger completed counterpart under `reads_2019/` or `reads_2022/`. It is 56 GB of abandoned bytes,
-not data.
+`.staging/` also stayed behind. It holds 20 truncated partial downloads, every one of which has a
+larger completed counterpart under `reads_2019/` or `reads_2022/`. It is 55,992,517,500 bytes of
+abandoned bytes, not data.
+
+**CAUTION** `meta/manifest_full.tsv.gz` lists `.staging` even though the archive omits it. The
+manifest totals 145,220 entries and 3,832,855,343,605 bytes. The archive holds 145,199 entries and
+3,776,862,826,105 bytes. Compare a restored tree against the manifest minus `.staging`, which is
+what `drivers/verify_e3_archive.sh diff` does.
 
 The run's 3,510 per-step logs were symlinks into `nxf_work/` and would have arrived dangling. They
 are dereferenced into `meta/step_logs_Qt0rbV1R.tar.gz`, 3,529 members and no symlinks.

@@ -10,7 +10,7 @@
 # Nothing raises. The run simply recomputes 2 TB of products. The path is hard-coded below for
 # that reason -- do not parameterise it.
 #
-# CAUTION Six external trees are NOT in this archive and must already exist on fir. The script
+# CAUTION Fifteen external paths are NOT in this archive and must already exist on fir. The script
 # checks them and refuses to start when one is missing, because a restore that lands on a
 # missing reference database fails at the far end of a multi-hour transfer.
 set -euo pipefail
@@ -65,7 +65,7 @@ preflight() {
 
     echo "== fir has room =="
     ssh fir 'lfs quota -p 83115734 /scratch' || true
-    echo "the archive needs about 3.83 TB and 145,220 inodes"
+    echo "the archive needs about 3.78 TB and 145,199 inodes"
 
     echo "== the destination must be absent or empty =="
     ssh fir "test -e '$HOME_PATH' && echo 'EXISTS -- resolve before restoring' || echo 'absent, good'"
@@ -97,10 +97,12 @@ verify() {
     echo "expected: $CACHE_ENTRIES / $CACHE_LINEAGE / $CACHE_IMPORTED / 0"
 
     echo "== file count against the archived manifest =="
-    echo "manifest lives at $ARCHIVE/meta/manifest_full.tsv.gz -- 145,220 entries,"
-    echo "110,780 files, 30,929 directories, 3,511 symlinks, 3,832,855,343,605 bytes."
-    ssh fir "find '$HOME_PATH' -path '$HOME_PATH/metasmith/runs/Qt0rbV1R/nxf_work' -prune -o \
-             -path '$HOME_PATH/metasmith/runs/Qt0rbV1R/results' -prune -o -print | wc -l"
+    # CAUTION The manifest at $ARCHIVE/meta/manifest_full.tsv.gz holds 145,220 entries and
+    # 3,832,855,343,605 bytes, but 21 of those entries are `.staging`, which the archive
+    # deliberately skipped. A restored home therefore carries 145,199 entries and
+    # 3,776,862,826,105 bytes: 110,760 files, 30,928 directories, 3,511 symlinks.
+    echo "expected 145199 paths and 3,776,862,826,105 bytes (manifest minus .staging)"
+    ssh fir "find '$HOME_PATH' | wc -l"
 
     echo "== shard count against the index =="
     ssh fir "ls -1 '$HOME_PATH/metasmith/task_cache/1e' | wc -l"
