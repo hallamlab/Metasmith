@@ -39,6 +39,10 @@ META="$(cd "$(dirname "$0")/../results/e3/archive_manifests" && pwd)"
 MANIFEST="$META/manifest_full.tsv.gz"
 WORK="${WORK:-$HOME/.cache/e3_verify}"
 FIR_VERIFY=/scratch/phyberos/bench/e3_verify
+HOME_PATH=/scratch/phyberos/pratama2026
+# The archive task's request time. Anything in the home newer than this was written after the
+# copy began and would read as a difference during the resync.
+ARCHIVE_STARTED="2026-09-22 12:14:08"
 
 # Expected within the diff's scope -- everything under pratama2026/ except task_cache, which
 # `resync` covers instead. The two partitions reconcile: 2,756 + 108,004 files is the manifest's
@@ -52,7 +56,7 @@ EXP_BYTES=1575352318693
 # path diff is scoped to everything else, and the whole set is verified by `resync` instead.
 SKIP_LS="metasmith/task_cache"
 
-usage() { echo "usage: $0 {resync|listing|diff|roundtrip-fetch|roundtrip-check}" >&2; exit 2; }
+usage() { echo "usage: $0 {resync|listing|diff|roundtrip-fetch|roundtrip-check|stamp <task id>}" >&2; exit 2; }
 [ $# -ge 1 ] || usage
 
 # The primary check. Resubmitting the identical batch with --sync-level checksum makes Globus walk
@@ -64,12 +68,31 @@ usage() { echo "usage: $0 {resync|listing|diff|roundtrip-fetch|roundtrip-check}"
 # CAUTION This compares the archive against the source as it stands now, not against the manifest.
 # Run it only while no driver is live, or an unrelated write shows up as a difference.
 resync() {
-    ssh fir 'squeue -u $USER -h -o "%.12i %.20j" | head' > /tmp/e3_squeue.$$ 2>&1 || true
-    if [ -s /tmp/e3_squeue.$$ ]; then
-        echo "refusing: jobs are running on fir, so the source is not quiescent" >&2
-        cat /tmp/e3_squeue.$$ >&2; rm -f /tmp/e3_squeue.$$; exit 1
+    # Quiescence means "nothing writes into the home", not "the cluster is idle". Other scopes
+    # share this account and run jobs of their own that never touch pratama2026. Test the home
+    # itself: no live job rooted in it, and nothing inside it modified since the archive started.
+    # The mtime sweep is slow on Lustre, which is the right cost for a one-time check gating a
+    # 2.24 TB deletion.
+    echo "== jobs rooted in the home =="
+    local rooted
+    rooted=$(ssh fir "squeue -u \$USER -h -o '%i' | while read j; do
+                  scontrol show job \$j 2>/dev/null | tr ' ' '\n' \
+                    | grep -E '^(WorkDir|Command)=' | grep -q '$HOME_PATH' && echo \$j
+              done")
+    if [ -n "$rooted" ]; then
+        echo "refusing: these jobs are rooted in $HOME_PATH" >&2
+        echo "$rooted" >&2; exit 1
     fi
-    rm -f /tmp/e3_squeue.$$
+    echo "  none"
+
+    echo "== anything in the home modified since the archive began =="
+    local touched
+    touched=$(ssh fir "find '$HOME_PATH' -newermt '$ARCHIVE_STARTED' -printf '%T+ %p\n' 2>/dev/null | head -20")
+    if [ -n "$touched" ]; then
+        echo "refusing: the source changed after the archive started" >&2
+        echo "$touched" >&2; exit 1
+    fi
+    echo "  nothing"
     local batch; batch=$(mktemp)
     ssh fir 'bash -s' < "$(dirname "$0")/e3_archive_batch.sh" > "$batch"
     echo "batch lines: $(wc -l < "$batch")"
@@ -241,8 +264,43 @@ roundtrip_check() {
     echo "expected: 11326 / 11083 / 243 / 0"
 }
 
+# Write the stamp that release_e3_scratch.sbatch refuses to run without. It re-reads the resync
+# task from Globus and records PASS only when that task moved zero bytes with no failed subtask.
+# The gate is this code, not anyone's memory of having looked.
+#
+# CAUTION A resync still in flight reads `Subtasks Failed: 0` and `Bytes Transferred: 0`, which is
+# character for character what a passing one reads. The two are distinguishable only by `Status`,
+# so the SUCCEEDED test below is load-bearing rather than belt-and-braces. Checking the byte count
+# alone would stamp a transfer that had not yet started comparing anything.
+stamp() {
+    local task="${2:-}"
+    [ -n "$task" ] || { echo "usage: $0 stamp <resync task id>" >&2; exit 2; }
+    local out status failed bytes
+    out=$("$GLOBUS" task show "$task" 2>&1) || { echo "cannot read task $task" >&2; exit 1; }
+    status=$(echo "$out" | awk -F': *' '/^Status:/{print $2; exit}')
+    failed=$(echo "$out" | awk -F': *' '/^Subtasks Failed:/{print $2; exit}')
+    bytes=$(echo  "$out" | awk -F': *' '/^Bytes Transferred:/{print $2; exit}')
+
+    local result=FAIL
+    if [ "$status" = "SUCCEEDED" ] && [ "$failed" = "0" ] && [ "$bytes" = "0" ]; then
+        result=PASS
+    fi
+    local text
+    text=$(printf 'RESULT=%s\nRESYNC_TASK=%s\nSTATUS=%s\nSUBTASKS_FAILED=%s\nBYTES_TRANSFERRED=%s\nARCHIVE_TASK=%s\nSTAMPED_AT=%s\n' \
+        "$result" "$task" "$status" "$failed" "$bytes" \
+        "c83cf9a3-b6b9-11f1-8511-0effcb3df825" "$(date -Is)")
+    echo "$text"
+    if [ "$result" != PASS ]; then
+        echo "not stamping: the resync did not pass" >&2
+        exit 1
+    fi
+    ssh fir "mkdir -p '$FIR_VERIFY' && cat > '$FIR_VERIFY/VERIFIED'" <<< "$text"
+    echo "stamped $FIR_VERIFY/VERIFIED on fir"
+}
+
 case "$1" in
     resync)          resync ;;
+    stamp)           stamp "$@" ;;
     listing)         listing ;;
     diff)            diff_manifest ;;
     roundtrip-fetch) roundtrip_fetch ;;
