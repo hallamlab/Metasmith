@@ -46,6 +46,17 @@ The 20 ordinary smoke bins (4 per study) were carved with metaGEM's commands and
 
 The remaining gap sits in carve's reaction selection and gapfill, not in annotation. With DIAMOND 0.9.30, 97.5% of genes agree, but about 16% of reactions do not.
 
+The metasmith smoke run of both lanes (runs `6nwwFX7P` and `l1yFJbPC`, fir, 2026-09-22) measured the same 20 bins, plus the two bins whose solves stalled on CarveMe 1.6.1:
+
+| Comparison | Reactions Jaccard | Metabolites Jaccard | Genes Jaccard | Shared reactions with a different gene rule |
+|---|---|---|---|---|
+| Reproduction lane against metaGEM, 20 bins | 0.836 (0.683–0.944) | 0.896 (0.750–0.970) | 0.975 (0.919–0.996) | 2.1% |
+| Reproduction lane against metaGEM, all 22 | 0.824 (0.448–0.944) | 0.892 (0.635–0.970) | 0.977 (0.919–1.000) | 2.0% |
+| Modern lane against metaGEM, all 22 | 0.386 (0.236–0.499) | 0.508 (0.360–0.609) | 0.705 (0.591–0.752) | 27.4% |
+| Modern lane against the reproduction lane, all 22 | 0.388 (0.245–0.507) | 0.516 (0.384–0.615) | 0.706 (0.591–0.755) | not computed |
+
+All 22 bins finished in both lanes, including the two that stalled on CarveMe 1.6.1.
+
 ## Modern lane against E5's GEM lane
 
 The modern lane plans with E5's GEM library as `e5_pilot.py` loads it for `--solver open`: `carveme_from_orfs` on CarveMe 1.6.6 with SCIP, then `memote_score` on MEMOTE 0.17.0. The medium is the same M8 table (`research/metasmith_libraries/carveme_m8_medium.tsv`). It holds metaGEM's 74 M8 compounds exactly, each with uptake bounded at 100.
