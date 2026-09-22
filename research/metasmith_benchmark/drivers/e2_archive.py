@@ -5,6 +5,11 @@
       Read-only. Selects each sample's final products by walking back from its AMBER shard,
       names every file the way nf-core/mag 5.5.0 would, and writes one manifest row per file.
 
+  pack --manifest <manifest.tsv> --cache <task_cache> --dest <dir> (--sample S ... | --index I ...)
+      Hardlinks one sample's files into <dest>/.stage under their archive names, writes one
+      relabelled CheckM2 report per binner, tars it to <dest>/<arm>/<sample>.tar with a listing
+      beside it, and checks every member's name and size against the manifest.
+
 Reads manifest.cbor files and the store's sqlite (opened immutable) directly. Never open this
 store through CacheStore or the `metasmith cache` CLI: both write to it.
 """
@@ -14,7 +19,9 @@ import csv
 import hashlib
 import os
 import re
+import shutil
 import sqlite3
+import subprocess
 import sys
 from collections import Counter, defaultdict
 from pathlib import Path
@@ -241,6 +248,73 @@ def report(rows, seen):
     print(f"{'total':16} {len(rows):7d} {sum(total.values()) / 1e9:9.1f}")
 
 
+def pack(args):
+    with open(args.manifest) as fh:
+        rows = list(csv.DictReader(fh, delimiter="\t"))
+    samples = sorted({r["sample"] for r in rows})
+    chosen = [samples[i] for i in args.index] if args.index else args.sample
+    cache, dest = Path(args.cache), Path(args.dest)
+    failed = 0
+    for sample in chosen:
+        failed += pack_sample(sample, [r for r in rows if r["sample"] == sample], cache, dest)
+    return 1 if failed else 0
+
+
+def pack_sample(sample, rows, cache, dest):
+    arm = rows[0]["arm"]
+    stage = dest / ".stage" / sample
+    if stage.exists():
+        shutil.rmtree(stage)
+    root = stage / sample
+    expected = {}
+    reports = defaultdict(list)
+    for r in rows:
+        src = cache / r["shard"][:2] / r["shard"][2:] / r["relpath"]
+        if r["kind"] == "checkm2":
+            reports[r["archive_name"]].append((r["label"], src))
+            continue
+        target = root / r["archive_name"]
+        target.parent.mkdir(parents=True, exist_ok=True)
+        os.link(src, target)
+        expected[r["archive_name"]] = int(r["bytes"])
+
+    for name, members in reports.items():
+        lines = []
+        for label, src in sorted(members):
+            header, row = src.read_text().splitlines()[:2]
+            lines = lines or [header]
+            lines.append("\t".join([label] + row.split("\t")[1:]))
+        text = "\n".join(lines) + "\n"
+        (root / name).parent.mkdir(parents=True, exist_ok=True)
+        (root / name).write_text(text)
+        expected[name] = len(text.encode())
+
+    with open(root / "MANIFEST.tsv", "w", newline="") as fh:
+        w = csv.DictWriter(fh, fieldnames=FIELDS, delimiter="\t")
+        w.writeheader()
+        w.writerows(rows)
+    expected["MANIFEST.tsv"] = (root / "MANIFEST.tsv").stat().st_size
+
+    tarball = dest / arm / f"{sample}.tar"
+    tarball.parent.mkdir(parents=True, exist_ok=True)
+    subprocess.run(["tar", "-cf", tarball, "-C", stage, sample], check=True)
+    listing = subprocess.run(["tar", "-tvf", tarball], check=True, capture_output=True, text=True).stdout
+    Path(f"{tarball}.list").write_text(listing)
+
+    found = {}
+    for line in listing.splitlines():
+        if line.startswith("-"):
+            f = line.split(None, 5)
+            found[f[5].removeprefix(f"{sample}/")] = int(f[2])
+    shutil.rmtree(stage)
+    bad = sorted(set(expected) ^ set(found)) + sorted(k for k in expected if k in found and expected[k] != found[k])
+    print(f"{sample}: {len(found)} members, {sum(found.values()) / 1e9:.2f} GB, {'OK' if not bad else f'{len(bad)} MISMATCHES'}",
+          flush=True)
+    for k in bad[:20]:
+        print(f"  {k}: expected {expected.get(k)} found {found.get(k)}")
+    return 1 if bad else 0
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -248,6 +322,13 @@ def main():
     p.add_argument("--cache", required=True)
     p.add_argument("--out", required=True)
     p.set_defaults(fn=census)
+    p = sub.add_parser("pack")
+    p.add_argument("--manifest", required=True)
+    p.add_argument("--cache", required=True)
+    p.add_argument("--dest", required=True)
+    p.add_argument("--sample", nargs="*", default=[])
+    p.add_argument("--index", nargs="*", type=int, default=[], help="positions in the sorted sample list")
+    p.set_defaults(fn=pack)
     args = ap.parse_args()
     return args.fn(args)
 
