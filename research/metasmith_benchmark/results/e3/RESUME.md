@@ -128,9 +128,14 @@ the manifest, `results/_metadata/` and `relay/msm_relay`.
 | manifest total | 145,220 | 3,832,855,343,605 |
 | minus `.staging` | −21 | −55,992,517,500 |
 | minus symlinks | −3,511 | 0 |
-| plus `results/_metadata` | +12 | +230,472,594 |
-| plus `relay/msm_relay` | +1 | +1,799,672 |
-| **archive** | **141,701** | **3,777,095,098,371** |
+| minus the manifest's own root row | −1 | 0 |
+| plus `results/_metadata`, 3 directories and 10 files | +13 | +230,472,594 |
+| plus `relay/` and `msm_relay` | +2 | +1,799,672 |
+| **archive** | **141,702** | **3,777,095,098,371** |
+
+The measured destination agrees: `meta/destination_manifest.tsv.gz` lists 3,048 entries outside
+`task_cache`, and `task_cache` contributes 30,651 directories and 108,004 files, which sums to
+141,702 once `metasmith/task_cache` itself is not counted twice.
 
 `drivers/verify_e3_archive.sh diff` applies exactly that arithmetic, and reports extra paths as
 well as absent ones. An unexplained extra means the manifest and the archive describe different
@@ -138,7 +143,7 @@ trees.
 
 **CAUTION** The diff cannot cover `task_cache`. A non-recursive `globus ls` of its single `1e/`
 directory, 11,583 children, does not return within two minutes, and the tree below holds 108,004
-files. So the diff is scoped to the other 2,767 files, and the whole set is verified by
+files. So the diff is scoped to the other 2,756 files, and the whole set is verified by
 `verify_e3_archive.sh resync` instead: resubmitting the identical batch with
 `--sync-level checksum` makes Globus checksum both ends of every file and send only what differs.
 Zero bytes transferred proves the archive matches the source file for file. That check is stronger
