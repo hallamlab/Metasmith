@@ -55,6 +55,16 @@ Ships unfixed in 0.22.0. That release moves `CACHE_KEY_VERSION` to 5 for an unre
 the unit became one group member's invocation — so the epoch bump users pay for buys nothing
 here, and the migration this entry wants still costs a second one.
 
+**0.23.0 changes the shape of this rather than closing it.** A given is no longer a leaf: its
+identity is assigned by an import and recorded, so no amount of stat'ing is involved and the
+in-place edit does not move it either. The stale hit therefore survives, with a different cause
+and a different fix. Under import the honest statement is that the pool records a declaration and
+never re-reads the data, so changing the bytes under an entry is invisible until somebody imports
+again — which is deliberate, and is what makes a 17 GB reference cost nothing to cite. What is
+missing is any way to notice. The first move is a cheap change detector an operator can run
+against a pool — size and top-level mtime per entry, compared with what the import recorded —
+rather than making a citation re-read the data.
+
 **Cancelling a run during its first minute silently does nothing.** `CancelWorkflow` keys on
 `PID.lock`, which `start.sh` writes only once nextflow is up, while `RUN.token` lands as soon as
 the launcher detaches. Measured on the docker lane: 22:40 for the token, 22:41 for the lock. A
@@ -139,16 +149,115 @@ exists.** `TargetBuilder` refuses the same target type with the same *parents*, 
 type — and the same file exercises the same-type-different-parents shape the harness says is
 impossible. Whether it collapses to one plan is a library-design call.
 
+**A corrupt product is promoted into the cache and served as a hit.** A shard's manifest
+attests that a file exists, never that it is whole. Measured on fir: metaSPAdes exited zero,
+`reformat.sh` reported 86,744 records and 81,336,020 bases written, and the product on disk held
+505,012 records and 59,091,548 bases, began mid-sequence, and carried 251 lines with embedded
+nulls. The first null byte sits at offset 1,236,201, which is exactly the length of NODE_1 as
+its own `.paths` product names it — a size-correct file with unflushed holes, read before the
+writeback landed. The companion `.gfa` from the same task begins at `S 3` rather than a header.
+The shard was promoted from the task's own work directory and survived a re-run byte-identical,
+so the damage predates publishing and the copy is faithful. The transform's success predicate
+was a non-emptiness test, which a file with a good first megabyte passes. The first move is to
+decide what a shard attests: a record count the tool already prints costs one number and is the
+only check here that would have caught it.
+
+**Staging does not check that the agent's engine can run the library it is handed.** The
+library and the agent image are version-locked by the tool-environment dispatch API, and nothing
+verifies the lock. A library on the collapsed one-call API staged against a 0.22.1 agent solves
+cleanly, stages cleanly, launches, submits, and then dies in every task with
+`ExecutionContext.ExecWithEnv() got an unexpected keyword argument 'env'` — a Python
+`TypeError` inside a container on a compute node, as far from the cause as a failure can get,
+and reading as a library problem rather than an image problem. At campaign scale that is a whole
+submission. `env/dispatch_scan.py` already knows both arm names; the first move is a
+staging-time check that refuses at the client and names the image version required.
+
+**An unsatisfiable requirement is reported against every target except the one that caused it.**
+A driver that supplies only `resources/env` and never `resources/lib` leaves
+`lib::cami_gold_standard.py` with no producer. The planner explores the whole library and then
+dead-ends at unrelated targets — `ncbi::genome_name` and `sequences::background_genome` — so one
+missing resource library reads as a comprehensively broken driver and sends the reader to edit
+targets that were never wrong. Confidently wrong attribution costs more than no message. The
+first move is to report the requirement that no transform produces, rather than the frontier the
+search happened to end on.
+
+**Publish is forced to copy when one directory is bind-mounted twice.** Metasmith reads a single
+Lustre directory bound at two paths as two mounts, so it cannot hardlink and copies instead.
+Measured: a cache hit on a cleaned-reads step took 45.6s rather than milliseconds, because a hit
+still copies the shard's outputs into the task work directory and those outputs are gigabytes.
+Reuse is near-free in compute and not free in I/O. The first move is to compare device and inode
+rather than path when deciding whether two binds are the same filesystem.
+
+**The dev overlay is a supported mechanism with nothing in the engine that populates it.**
+`agent.py` renders both the `msm` wrapper and `lib/msm_bootstrap` with a conditional bind of
+`$AGENT_HOME/dev/metasmith` over the image's installed package, and the bootstrap stages it
+per node through a flock and a node-local tarball. It works: a 229-sample campaign ran a
+pinned source tree, two API-breaking commits ahead of the image, inside the published 0.22.1
+image, with the collapsed dispatch call executing on a compute node. But every user of it
+hand-rolls the rsync and the tar, and the two can disagree. A tarball that does not match the
+tree beside it fails open to the Lustre read that produced 93 incomplete copies out of 97. The
+first move is a deploy-side verb that writes the tree and its tarball together, so the
+integrity check has something that was built to satisfy it.
+
+**A driver put on a compute node by `METASMITH_DRIVER_SLURM` finds no relay there, and the run
+neither fails nor progresses.** `src/metasmith/bin/sbatch` submits through
+`RemoteShell(AgentPaths.to_local_relay_coms())`, and that path is keyed on the node's own
+hostname. On a compute node it looks for a relay socket named after that node while only the
+login nodes' sockets exist, so every submission is dropped. Nextflow logs `Error submitting ...
+Error is ignored`, the driver stays RUNNING, and nothing reports a failure -- the same silent
+undispatch the resource-ceiling work was written to prevent, one level up. Measured on fir: two
+single-sample calibration drivers sat submitting nothing, and both ran normally when relaunched
+from a login node. The first move is to start `msm_relay` on the node inside `RenderLauncher`'s
+foreground branch, before it calls `msm api run_workflow`.
+
+**Compiling a resource library silently discards its pin.** `CompileUniqueLibrary` builds a
+fresh `DataInstanceLibrary` over the directory instead of loading the one already there, so
+`_pinned` is None on the new object and every guard that should stop this passes by
+construction — `AddItem` and `Save` both check `is_pinned` and both see False. The write then
+replaces `index.yml` and the `pinned:` block with it. Measured on 0.23.0: pinning
+`resources/env` recorded 98 entries, and `metasmith build all` over the same directory exited 0
+with no warning, left no `pinned:` block, and moved every member id. So the pin is futile
+against exactly the churn it is prescribed for, because the rebuild that rewrites the mtimes is
+also what drops the pin. The first move is for the compile to load the existing library and let
+the guard fire, so a pinned library refuses the rebuild by name and the operator unpins on
+purpose. Reported by the campaign, which reasoned it out from where the pinned block lives
+before anyone measured it.
+
+**A driver that overrides identity after a pipeline has imported leaves pool entries nobody
+cites.** fabfos's pipelines now declare their givens through `Agent.PoolGivens`, which imports
+whatever the pool lacks. A driver may then replace those identities through the `on_inputs` hook,
+which is what `cyanoverse_gpr`, `scadc_gpr` and the `nostoc_*` drivers do: they keep
+`pin_external_leaf_ids` so the benchmarks they record stay reproducible rather than having every
+id move once. The import still happened, so the agent's pool accumulates an entry per input that
+no plan ever references. Harmless and confusing. The first move is a `pool=False` on the
+pipelines' `build_inputs`, so a driver that owns its identities says so before the write rather
+than after it.
+
 ## Accepted risks
 
 **An external mtime-touching event makes the next run cold, and one file is enough.** Stat
 addressing bought the thing it was for — a 24 GB DIAMOND database or a 27k-file profiles tree
-costs one stat instead of a full-tree hash — and the price is that only leaves inside a given
-data library are stat-keyed, so moving one of them empties the whole hit set, including
-downstream steps that never read it. `rsync -a` preserves mtimes, so staging does not itself
-re-key; exposure is external events, and `dvc checkout` under a reference tree is the live one.
-Mitigation is to pin the library: `restat_leaf_ids()` skips pinned libraries by design. The
-same identity scheme fails the other way under *Open bugs*, and one fix answers both.
+costs one stat instead of a full-tree hash — and the price is that a stat-keyed leaf moving
+empties the whole hit set, including downstream steps that never read it. `rsync -a` preserves
+mtimes, so staging does not itself re-key; exposure is any event that rewrites an mtime. `dvc
+checkout` under a reference tree is one live case and **`git checkout` is the other**, because
+git stamps every file it writes with the checkout time — so a commit that adds one env to
+`resources/env/` re-keys every member of that library and moves the plan key of every plan that
+requires an `env::` type. Measured on 0.23.0 in one directory: touching every file in
+`resources/env` moved all 12 shipped templates' plan keys with the plan shape identical and only
+the givens differing, while adding an unreferenced type to a shipped `.yml` and recompiling moved
+none of them. `msm data pin` is the prescribed mitigation because `restat_leaf_ids` skips a
+pinned library by design, **but it does not survive the rebuild** — see the entry below, so
+today there is no mitigation for the git-checkout case. **CAUTION** Comparing two copies of a
+library at different paths proves nothing here: a
+stat-addressed id folds the absolute path, so a copied tree re-keys wholesale for a reason that
+has nothing to do with the change under test.
+
+**Closed for givens at 0.23.0, and still open everywhere else.** A given cited from a pool
+carries an assigned identity, so a `dvc checkout` under a reference tree no longer moves it and
+the run that follows is warm. What remains stat-keyed is a transform's own outputs and a library
+the agent staged, where `restat_leaf_ids` still runs — and pinning a library is still the
+mitigation there, because it skips pinned libraries by design.
 
 **A mutable container tag can produce a false cache hit.** A container's leaf id addresses the
 docker URL string, not the resolved image digest, so a pinned tag busts the cache on a version

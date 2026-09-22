@@ -134,10 +134,31 @@ class Resources:
                 "{"+f" (2**(task.attempt-1)) * (<x> as MemoryUnit) "+"}",
                 "<x>",
             ),
+            # CAUTION the retry ladder doubles duration as well as memory, so a base of B reaches
+            # B * 2^(attempts-1) on its last rung. A cluster that refuses over-long jobs AT SUBMIT
+            # TIME then rejects those upper rungs outright -- and an ignored SUBMISSION failure
+            # decrements nextflow's running-task counter with no matching increment, so the monitor
+            # never sees the queue drain and the whole run wedges. Measured on fir, which caps every
+            # job at 7.0 days regardless of partition: a 48 h base asked 192 h and 384 h on rungs 3
+            # and 4, both refused, leaving runs at runningCount -6 and -7.
+            # The ceiling therefore comes from params, not from a constant, because codegen runs in
+            # the AGENT process and a driver-side setting would never reach it; `params` is readable
+            # from a directive closure (the rendered config already uses params.process.tries).
+            # The Elvis default keeps this behaviour-preserving wherever no ceiling is set.
+            #
+            # BOTH spellings are read, and that is not belt-and-braces -- either one alone is dead.
+            # `RunWorkflow(params=<dict>)` passes every key through a parser that splits ANY key
+            # containing an underscore into nested maps, so `{"process": {"max_duration": "24h"}}`
+            # reaches the params file as `process: {max: {duration: 24h}}` and a closure reading
+            # `params.process.max_duration` sees null. That is exactly how E3's vConTACT3 ladder
+            # reached an 8-day rung with a 7-day ceiling set: the clamp was written but never armed,
+            # sbatch refused the submission, and the ignored failure wedged the run. A params FILE
+            # (`params=<Path>`) bypasses that parser, so the flat spelling is what a file delivers.
+            # Keep both until the parser stops splitting underscores.
             _parse_res(
                 self.duration, "<x>", "time",
                 "<x>" if (self.duration is not None and self.duration.unlimited)
-                else "{"+f" (2**(task.attempt-1)) * (<x> as Duration) "+"}",
+                else "{"+f" [(2**(task.attempt-1)) * (<x> as Duration), ((params.process?.max_duration ?: params.process?.max?.duration ?: '3650days') as Duration)].min() "+"}",
                 "<x>",
             ),
         ] if x is not None]

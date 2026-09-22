@@ -16,6 +16,7 @@ from metasmith.models.libraries import (
 from metasmith.models.remote import Source
 from metasmith.models.solver import Endpoint
 from metasmith.models.workflow import NextflowGenContext, WorkflowTask
+from metasmith.testing.pool_fixtures import pool_backed
 from metasmith.testing.virtual_runtime import VirtualE2ERuntime
 
 
@@ -75,6 +76,7 @@ def mock_samples(tmp_path, mock_types) -> DataInstanceLibrary:
         r = lib.AddItem(Path(f"{sid}/reads.fq"), "mock::reads", parents=[m])
         lib.AddItem(Path(f"{sid}/assembly.fa"), "mock::assembly", parents=[r])
 
+    pool_backed(lib)
     lib.Save()
     return lib
 

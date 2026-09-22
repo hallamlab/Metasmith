@@ -58,7 +58,8 @@ from metasmith.python_api import (                                      # noqa: 
 )
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from _driver import (                                                   # noqa: E402
+from _driver import (
+    pin_external_leaf_ids,                                                   # noqa: E402
     FIR_ACCOUNT, FIR_AGENT_HOME, FIR_CONTAINER, FIR_GPU, FIR_GPU_ACCOUNT, FIR_HOST,
     SOCKEYE_ACCOUNT, SOCKEYE_AGENT_HOME, SOCKEYE_CONTAINER, SOCKEYE_GPU,
     SOCKEYE_GPU_ACCOUNT, SOCKEYE_HOST, SOCKEYE_IMAGE_STORE,
@@ -237,6 +238,7 @@ def build_inputs(work: Path, lanes: int, remote_processed: str) -> DataInstanceL
         remote = f"{remote_processed}/{rel}"
         print(f"    {dtype:32s} {remote}")
         inputs.AddItem(remote, dtype)
+    pin_external_leaf_ids(inputs)
     inputs.Save()
     return inputs
 

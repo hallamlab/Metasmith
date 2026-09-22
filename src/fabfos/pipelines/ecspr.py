@@ -93,31 +93,33 @@ def parse_unit(spec: str) -> Unit:
     return Unit(name=name, gpr_table=Path(gpr), conditions=Path(cond))
 
 
-def build_inputs(work: Path, *, units: list[Unit], atom_pairs: Path | None,
+NAMESPACES = ("fabfos", "annotation", "ecspr")
+
+
+def build_inputs(agent, work: Path, *, units: list[Unit], atom_pairs: Path | None,
                   direction_ratios: Path | None, stage: str = "reference",
                   use_pinned_refs: bool = True,
                   ) -> tuple[DataInstanceLibrary, dict[str, Path], "DataInstanceLibrary | None"]:
     lib = common.resolve_library_root()
+    givens = agent.PoolGivens()
+    staging = work / "inputs.xgdb"
 
-    inputs = DataInstanceLibrary(work / "inputs.xgdb")
-    inputs.Purge()
-    for ns in ("fabfos", "annotation", "ecspr"):
-        inputs.AddTypeLibrary(lib / "data_types" / f"{ns}.yml")
-
-    def _add(path: Path, dtype: str, *, name: str, parents=None):
+    def _add(path: Path, dtype: str, *, name: str, parents=()):
+        # The name says what this is to the pipeline, so copy staging and
+        # reference staging reach the same pool entry rather than forking it.
         p = Path(path).expanduser().resolve()
         if stage == "copy":
-            shutil.copy(p, inputs.location / name)
-            inputs.AddItem(name, dtype, parents=parents or set())
-        else:
-            inputs.AddItem(p, dtype, parents=parents or set())
+            staging.mkdir(parents=True, exist_ok=True)
+            shutil.copy(p, staging / name)
+            p = staging / name
+        givens.Add(str(p), dtype, name=name, parents=parents)
 
     for unit in units:
-        exp = inputs.AddValue(f"experiment_{unit.name}.txt", unit.name, "fabfos::experiment")
+        exp = givens.Value(f"experiment_{unit.name}", unit.name, "fabfos::experiment")
         _add(unit.gpr_table, "annotation::gpr_table",
-             name=f"{unit.name}.gpr.parquet", parents={exp})
+             name=f"{unit.name}.gpr.parquet", parents=[exp])
         _add(unit.conditions, "ecspr::conditions",
-             name=f"{unit.name}.conditions.parquet", parents={exp})
+             name=f"{unit.name}.conditions.parquet", parents=[exp])
 
     stubs: dict[str, Path] = {}
     pinned = refs.load_pinned_refs(common.DATA_PROCESSED) if use_pinned_refs else None
@@ -135,10 +137,14 @@ def build_inputs(work: Path, *, units: list[Unit], atom_pairs: Path | None,
         if stage == "copy" and src is not None and Path(src).expanduser().exists():
             _add(Path(src), dtype, name=f"{stem}.parquet")
             continue
-        path, real = common.stage_ref(inputs, work, dtype, given=given, default=default)
+        path, real = common.stage_ref(givens, work, dtype, given=given, default=default)
         if not real:
             stubs[dtype] = path
 
+    inputs = givens.Build(
+        staging,
+        type_library_paths=[lib / "data_types" / f"{ns}.yml" for ns in NAMESPACES],
+    )
     inputs.Save()
     if pinned is not None:
         pinned = refs.refs_view(pinned, set(refs.ECSPR_REFS) & covered - overridden)
@@ -150,8 +156,10 @@ def generate_workflow(work: Path, *, units: list[Unit], atom_pairs: Path | None,
                        agent_env: str | None = None, stage: str = "reference",
                        agent=None, on_inputs=None):
     lib = common.resolve_library_root()
+    if agent is None:
+        agent = common.make_agent(work, runtime, container=agent_env)
     inputs, stubs, pinned_refs = build_inputs(
-        work, units=units, atom_pairs=atom_pairs,
+        agent, work, units=units, atom_pairs=atom_pairs,
         direction_ratios=direction_ratios, stage=stage,
     )
     if on_inputs is not None:
@@ -168,8 +176,6 @@ def generate_workflow(work: Path, *, units: list[Unit], atom_pairs: Path | None,
     targets = TargetBuilder()
     targets.Add("ecspr::results")
 
-    if agent is None:
-        agent = common.make_agent(work, runtime, container=agent_env)
     task = agent.GenerateWorkflow(
         samples=list(inputs.AsSamples("fabfos::experiment")),
         resources=resources,

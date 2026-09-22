@@ -56,7 +56,8 @@ def _make_samples(
         r = lib.AddItem(Path(f"{sid}/reads.fq"), f"{namespace}::reads", parents=[m])
         lib.AddItem(Path(f"{sid}/assembly.fa"), f"{namespace}::assembly", parents=[r])
     lib.Save()
-    return lib
+    # Read it back: a plan refuses a given whose identity this process minted.
+    return DataInstanceLibrary.Load(lib.location)
 
 
 def test_contract_runtime_two_step_linear_identity(tmp_path, monkeypatch):

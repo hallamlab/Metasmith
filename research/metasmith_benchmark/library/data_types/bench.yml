@@ -1,0 +1,163 @@
+types:
+  # Types only the benchmark library has. Every property carries `bench`, so no standard transform binds to them.
+
+  gtdb_genomes_image:
+    properties:
+      _: squashfs image of GTDB's skani genome trees, GCF/ and GCA/ at its root, bound over ref::gtdb's skani/database/GCF and GCA
+      bench: gtdb_genomes_image
+      ext: sqfs
+
+  carveme_166.env:
+    properties:
+      bench: env
+      provides: [carveme]
+
+  checkm2_database:
+    properties:
+      _: CheckM2 DIAMOND database file (uniref100.KO.1.dmnd), the file E2's e2::checkm2_database cites
+      bench: checkm2_database
+      ext: dmnd
+  checkm2_quality:
+    properties:
+      _: CheckM2 quality_report.tsv row for one bin, with its header
+      bench: checkm2_quality
+      ext: tsv
+  checkm2.env:
+    properties:
+      bench: env
+      provides: [checkm2]
+
+  # Dereplication: every tool picks one non-redundant set from the three binners' bins. A per-sample
+  # and a per-study type each, so both scopes can be targets in one plan.
+  magscot_contig_to_bin:
+    properties:
+      _: MAGScoT's refined contig-to-bin table for one assembly, over MetaBAT2, SemiBin2 and COMEBin
+      bench: magscot_contig_to_bin
+      ext: tsv
+  magscot_scores:
+    properties:
+      _: MAGScoT's per-bin completeness, contamination and score for the selected bins
+      bench: magscot_scores
+      ext: tsv
+  drep_sample_winners:
+    properties:
+      _: dRep dereplicate over one assembly's bins, one row per input bin with its cluster and whether it won
+      bench: drep_sample_winners
+      ext: tsv
+  drep_study_winners:
+    properties:
+      _: dRep dereplicate over every bin in a study, one row per input bin with its cluster and whether it won
+      bench: drep_study_winners
+      ext: tsv
+  skani_sample_clusters:
+    properties:
+      _: skani ANI clusters at 95 and 99 over one assembly's bins, medoid marked per cluster
+      bench: skani_sample_clusters
+      ext: tsv
+  skani_study_clusters:
+    properties:
+      _: skani ANI clusters at 95 and 99 over every bin in a study, medoid marked per cluster
+      bench: skani_study_clusters
+      ext: tsv
+  viral_orfs:
+    properties:
+      _: prodigal-gv proteins for the frozen viral set
+      bench: viral_orfs
+      Format: FASTA
+      Data: amino acid sequence
+      ext: faa
+  viral_gff:
+    properties:
+      _: prodigal-gv gene coordinates for the frozen viral set
+      bench: viral_gff
+      ext: gff
+  drep.env:
+    properties:
+      bench: env
+      provides: [drep]
+  magscot.env:
+    properties:
+      bench: env
+      provides: [magscot]
+
+  deepvirfinder_scores:
+    properties:
+      _: DeepVirFinder's score and p-value per contig of at least 1 kb in one assembly
+      bench: deepvirfinder_scores
+      ext: tsv
+  deepvirfinder.env:
+    properties:
+      bench: env
+      provides: [deepvirfinder]
+
+  smetana_detailed:
+    properties:
+      _: SMETANA detailed scores for one assembly's community of CarveMe models, one row per receiver, donor, compound and medium
+      bench: smetana_detailed
+      ext: tsv
+  smetana.env:
+    properties:
+      bench: env
+      provides: [smetana]
+  # E4's lane. A distinct product type, not a second producer of smetana_detailed: two producers of one
+  # type are a target the planner can answer wrong (AGENTS.md, "Two producers need a masked library").
+  smetana_detailed_cplex:
+    properties:
+      _: SMETANA detailed scores on CPLEX for one sample's community of CarveMe CPLEX models, as metaGEM runs it
+      bench: smetana_detailed_cplex
+      ext: tsv
+  gem_community:
+    properties:
+      _: one sample of published MAGs, the root a SMETANA community groups on (metaGEM scores each sample's GEMs together)
+      bench: gem_community
+      ext: txt
+  smetana_media_db:
+    properties:
+      _: metaGEM's media_db.tsv (medium, description, compound, name), the table its SMETANA rule reads, holding M1 to M16
+      bench: smetana_media_db
+      ext: tsv
+
+  metapop_microdiversity:
+    properties:
+      _: MetaPop's global_contig_microdiversity.tsv for a study, every sample mapped to the study's vOTU representatives
+      bench: metapop_microdiversity
+      ext: tsv
+  metapop_results:
+    properties:
+      _: MetaPop's whole output directory for a study, as one archive
+      bench: metapop_results
+      ext: tar.gz
+  metapop.env:
+    properties:
+      bench: env
+      provides: [metapop]
+  metapop_env_image:
+    properties:
+      _: squashfs image of MetaPop 0.0.60's conda prefix with bowtie2, bound at /opt/metapop
+      bench: metapop_env_image
+      ext: sqfs
+
+  # Wave 7: SMETANA fanned out one task per medium. The medium carries its assembly in its lineage, so a
+  # per-medium task pairs with its own community's models and the merge groups back on the assembly.
+  smetana_medium:
+    properties:
+      _: one growth medium cut from metaGEM's media_db.tsv, scoped to one assembly's community
+      bench: smetana_medium
+      ext: tsv
+  smetana_medium_detailed:
+    properties:
+      _: SMETANA detailed scores for one assembly's community on ONE medium, before the per-assembly merge
+      bench: smetana_medium_detailed
+      ext: tsv
+  # E4's lane gets its OWN medium types, not a share of E5's. Two splits producing one medium type would
+  # be two producers of that type, which is a target the planner can answer wrong.
+  smetana_cplex_medium:
+    properties:
+      _: one growth medium cut from metaGEM's media_db.tsv, scoped to one metaGEM sample's community
+      bench: smetana_cplex_medium
+      ext: tsv
+  smetana_cplex_medium_detailed:
+    properties:
+      _: SMETANA detailed scores on CPLEX for one sample's community on ONE medium, before the per-sample merge
+      bench: smetana_cplex_medium_detailed
+      ext: tsv

@@ -12,9 +12,9 @@ code could derive: agreed on by every host that checks out the same pin, and
 indifferent to when the bytes last landed.
 
 A reference is therefore data the user already has, registered under a declared
-type -- which is what `metasmith data import` is, so the id comes from the
-engine's `structural_import_id` and nothing here mints one. What this module
-supplies is the declaration: the type, the pin md5, and the relative path. The
+type, and the id comes from the engine's `pinned_import_id` rather than from
+anything minted here. What this module supplies is the declaration: the type,
+the pin md5, and the relative path. The
 md5 keeps a re-pin moving the id; the relative path is folded in for the same
 reason `_mint_leaf_id` folds it, since one pin covers a whole chunk and
 `kofam_ref/profiles` and `kofam_ref/ko_list.tsv` share an md5.
@@ -70,7 +70,7 @@ import yaml
 
 from metasmith.models.libraries.pinned import PinnedLibraryError
 from metasmith.python_api import DataInstanceLibrary
-from metasmith.caching.admission import structural_import_id
+from metasmith.caching.admission import pinned_import_id
 
 from .constants import RefPaths
 
@@ -135,17 +135,19 @@ def dvc_pin_for(refs_root: Path, rel: str) -> tuple[Path, str] | None:
 def dvc_ref_id(dtype: str, md5: str, rel: str) -> str:
     """A reference's identity: what it is, where it sits, and which pin covers it.
 
-    Minted by the engine's one importer, not here. A reference is data the user
-    already has, registered under a declared type -- the same act
-    `metasmith data import` performs -- and there is one function in the tree
-    that mints that identity.
+    Derived, and it stays derived while an ordinary import does not. The engine
+    assigns a fresh identity to each import act, because the type and the name a
+    caller spelled say nothing about the bytes. A pin does: DVC computed the md5
+    over the real bytes, so the name here IS a content address and every host
+    that checks out the same pin agrees on it. That is a stronger claim than
+    assignment, not a weaker one, which is why this call did not move.
 
     The pin md5 is part of the declaration, so re-pinning changed reference
     data moves the id and every run that consumed it re-runs. The relative path
     is part of it too: one `.dvc` covers a whole chunk, and without the path
     `kofam_ref/profiles` and `kofam_ref/ko_list.tsv` collapse into one identity.
     """
-    return structural_import_id(dtype, f"dvc:{md5}:{rel}")
+    return pinned_import_id(dtype, f"dvc:{md5}:{rel}")
 
 
 #: Where a publish step records the identity its product ALREADY had.

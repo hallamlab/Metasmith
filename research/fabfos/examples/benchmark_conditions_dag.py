@@ -14,6 +14,7 @@ from metasmith.python_api import (                                    # noqa: E4
     TargetBuilder,
     Runtime,
 )
+from metasmith.python_api import record_library
 
 MLIB = REPO / "src" / "metasmith_libraries"
 BREF = REPO / "src" / "fabfos" / "build_references"
@@ -55,7 +56,9 @@ def main() -> int:
             else:
                 at.mkdir(parents=True, exist_ok=True)
         inputs.AddItem(at, dtype)
-    inputs.Save()
+    # Synthetic placeholders, authored here and used nowhere else, so
+    # writing them down is the whole of their record.
+    inputs = record_library(inputs)
 
     resources = [
         DataInstanceLibrary.Load(MLIB / "resources" / "env"),

@@ -13,6 +13,7 @@ from metasmith.models.libraries import (
 )
 from metasmith.models.solver import Endpoint, Transform
 from metasmith.models.workflow import PlanHint, WorkflowPlan
+from metasmith.testing.pool_fixtures import pool_backed
 
 
 @pytest.fixture
@@ -111,6 +112,7 @@ TransformInstance(protocol=protocol, model=model, group_by=dep)
     inputs = DataInstanceLibrary(lib_path)
     inputs.AddTypeLibrary(types_path, namespace="mock")
     inputs.AddValue("sample.a", "x", "mock::a")
+    pool_backed(inputs)
     inputs.Save()
 
     plan = _generate(inputs, tr_lib, "mock::a", "mock::c")
@@ -155,6 +157,7 @@ TransformInstance(protocol=protocol, model=model, group_by=dep)
     inputs = DataInstanceLibrary(lib_path)
     inputs.AddTypeLibrary(types_path, namespace="mock")
     inputs.AddValue("dirty.fq", "x", "mock::raw_reads")
+    pool_backed(inputs)
     inputs.Save()
 
     plan = _generate(inputs, tr_lib, "mock::raw_reads", "mock::assembly")
@@ -227,6 +230,7 @@ TransformInstance(protocol=protocol, model=model, group_by=dep)
     inputs = DataInstanceLibrary(lib_path)
     inputs.AddTypeLibrary(types_path2, namespace="extra")
     inputs.AddValue("u.dat", "x", "extra::totally_other")
+    pool_backed(inputs)
     inputs.Save()
 
     plan = _generate(inputs, tr_lib, "extra::totally_other", "mock::target")
@@ -268,6 +272,7 @@ TransformInstance(protocol=protocol, model=model, group_by=reads)
     inputs.AddTypeLibrary(types_path, namespace="mock")
     inputs.AddValue("sample.meta", "id=1", "mock::meta")
     inputs.AddValue("sample.fq", "reads", "mock::reads")
+    pool_backed(inputs)
     inputs.Save()
 
     plan = _generate(inputs, tr_lib, "mock::reads", "mock::assembly")
@@ -324,6 +329,7 @@ TransformInstance(protocol=protocol, model=model, group_by=dep)
     inputs = DataInstanceLibrary(lib_path)
     inputs.AddTypeLibrary(extra_path, namespace="extra")
     inputs.AddValue("u.dat", "x", "extra::unrelated")
+    pool_backed(inputs)
     inputs.Save()
 
     plan = _generate(inputs, tr_lib, "extra::unrelated", "mock::target")
@@ -371,6 +377,7 @@ TransformInstance(protocol=protocol, model=model, group_by=near)
     inputs = DataInstanceLibrary(lib_path)
     inputs.AddTypeLibrary(inputs_types, namespace="given")
     inputs.AddValue("sample.fq", "x", "given::given_input")
+    pool_backed(inputs)
     inputs.Save()
 
     plan = _generate(inputs, tr_lib, "given::given_input", "mock::target")
@@ -415,6 +422,7 @@ TransformInstance(protocol=protocol, model=model, group_by=dep)
     inputs = DataInstanceLibrary(lib_path)
     inputs.AddTypeLibrary(types_path, namespace="mock")
     inputs.AddValue("sample.fq", "x", "mock::reads")
+    pool_backed(inputs)
     inputs.Save()
 
     plan = _generate(inputs, tr_lib, "mock::reads", "mock::assembly")

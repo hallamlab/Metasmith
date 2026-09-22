@@ -72,7 +72,11 @@ def _as_orf_list(orfs) -> list[Path]:
     return [Path(o).expanduser().resolve() for o in orfs]
 
 
-def build_inputs(work: Path, *, orfs, kofam_profiles: Path | None, kofam_ko_list: Path | None,
+NAMESPACES = ("sequences", "annotation", "ref")
+
+
+def build_inputs(agent, work: Path, *, orfs, kofam_profiles: Path | None,
+                 kofam_ko_list: Path | None,
                   uniref50_db: Path | None, mnxr_lookup: Path | None, landmarks: Path | None,
                   refs_root: "str | Path | None" = None, verify_refs: bool = True,
                   stage_orfs: str = "copy", use_pinned_refs: bool = True,
@@ -87,11 +91,7 @@ def build_inputs(work: Path, *, orfs, kofam_profiles: Path | None, kofam_ko_list
     # `stage_ref` after all -- an un-migrated checkout, `verify_refs=False`, or an
     # override.
     lib = common.resolve_library_root()
-
-    inputs = DataInstanceLibrary(work / "inputs.xgdb")
-    inputs.Purge()
-    for ns in ("sequences", "annotation", "ref"):
-        inputs.AddTypeLibrary(lib / "data_types" / f"{ns}.yml")
+    givens = agent.PoolGivens()
 
     paths = _as_orf_list(orfs) if stage_orfs != "remote" else [
         Path(o) for o in ([orfs] if isinstance(orfs, (str, Path)) else orfs)
@@ -99,14 +99,16 @@ def build_inputs(work: Path, *, orfs, kofam_profiles: Path | None, kofam_ko_list
     stems = [p.name for p in paths]
     if len(set(stems)) != len(stems):
         raise ValueError(f"ORF file names must be distinct; got {stems}")
+    staging = work / "inputs.xgdb"
     for p in paths:
+        target = p
         if stage_orfs == "copy":
-            shutil.copy(p, inputs.location / p.name)
-            inputs.AddItem(p.name, "sequences::orfs")
-        elif stage_orfs == "remote":
-            inputs.AddItem(str(p), "sequences::orfs")
-        else:
-            inputs.AddItem(p, "sequences::orfs")
+            staging.mkdir(parents=True, exist_ok=True)
+            target = staging / p.name
+            shutil.copy(p, target)
+        # The name is the file's own, so a copy and a reference to the same ORFs
+        # are one pool entry and the two staging modes do not fork the campaign.
+        givens.Add(str(target), "sequences::orfs", name=f"orfs/{p.name}")
 
     given = {
         "ref::kofamscan_profiles": kofam_profiles,
@@ -134,11 +136,15 @@ def build_inputs(work: Path, *, orfs, kofam_profiles: Path | None, kofam_ko_list
             default = common.DATA_PROCESSED / rel
         else:
             default = f"{str(refs_root).rstrip('/')}/{rel}"
-        path, real = common.stage_ref(inputs, work, dtype, given=given[dtype],
+        path, real = common.stage_ref(givens, work, dtype, given=given[dtype],
                                       default=default, verify=verify_refs)
         if not real:
             stubs[dtype] = path
 
+    inputs = givens.Build(
+        work / "inputs.xgdb",
+        type_library_paths=[lib / "data_types" / f"{ns}.yml" for ns in NAMESPACES],
+    )
     inputs.Save()
     if pinned is not None:
         pinned = refs.refs_view(pinned, set(REF_LAYOUT) & covered - overridden)
@@ -152,8 +158,10 @@ def generate_workflow(work: Path, *, orfs, kofam_profiles: Path | None, kofam_ko
                        verify_refs: bool = True, stage_orfs: str = "copy",
                        agent: "Agent | None" = None, on_inputs=None):
     lib = common.resolve_library_root()
+    if agent is None:
+        agent = common.make_agent(work, runtime, container=agent_env)
     inputs, stubs, pinned_refs = build_inputs(
-        work, orfs=orfs, kofam_profiles=kofam_profiles, kofam_ko_list=kofam_ko_list,
+        agent, work, orfs=orfs, kofam_profiles=kofam_profiles, kofam_ko_list=kofam_ko_list,
         uniref50_db=uniref50_db, mnxr_lookup=mnxr_lookup, landmarks=landmarks,
         refs_root=refs_root, verify_refs=verify_refs, stage_orfs=stage_orfs,
     )
@@ -171,8 +179,6 @@ def generate_workflow(work: Path, *, orfs, kofam_profiles: Path | None, kofam_ko
     targets = TargetBuilder()
     targets.Add("annotation::gpr_table")
 
-    if agent is None:
-        agent = common.make_agent(work, runtime, container=agent_env)
     task = agent.GenerateWorkflow(
         samples=list(inputs.AsSamples("sequences::orfs")),
         resources=resources,

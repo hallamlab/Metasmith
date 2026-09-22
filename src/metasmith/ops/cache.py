@@ -52,7 +52,7 @@ def _entry_rows(store, *, include_tombstoned: bool) -> list[dict]:
     A step with two products is one entry and two instances, and the thing a
     user sorts, groups and tags against is the instance.
     """
-    from ..caching.admission import manifest_files
+    from ..caching.admission import manifest_files, manifest_lineage
 
     rows: list[dict] = []
     for e in store.iter_entries(include_tombstoned=include_tombstoned):
@@ -62,9 +62,13 @@ def _entry_rows(store, *, include_tombstoned: bool) -> list[dict]:
             manifest = {}
         files = manifest_files(manifest)
         step_name = str(manifest.get("step_name", ""))
+        # An import's key is minted, so two rows for one path are ordinary and
+        # the name is the only thing that tells them apart.
+        name = str(manifest.get("name", ""))
         for f in files or [None]:
             row = {
                 "key": e.key.hex(),
+                "name": name,
                 "origin": e.origin,
                 "run": e.run,
                 "tags": list(e.tags),
@@ -78,6 +82,7 @@ def _entry_rows(store, *, include_tombstoned: bool) -> list[dict]:
                 "instance_id": "",
                 "path": "",
                 "dtype": "",
+                "parents": [],
             }
             if f is not None:
                 row.update({
@@ -85,7 +90,17 @@ def _entry_rows(store, *, include_tombstoned: bool) -> list[dict]:
                     "path": str(f.Resolve(e.output_root)),
                     "dtype": f.dtype_name,
                     "size_bytes": f.size or e.size_bytes,
+                    # The ancestry, as identities. A reader that holds the other
+                    # rows can turn these into paths; one that does not would be
+                    # given edges pointing at nothing.
+                    "parents": list(f.parents),
                 })
+                # Only where there is one, so a listing of imports stays
+                # readable -- a product's payload is a hex blob and every
+                # import's is empty.
+                _index, payload = manifest_lineage(manifest)
+                if payload:
+                    row["lineage_payload"] = bytes(payload).hex()
             rows.append(row)
     return rows
 
@@ -99,6 +114,7 @@ def list_cache(
     run: str | None = None,
     tag: str | None = None,
     dtype: str | None = None,
+    name: str | None = None,
     group_by: str | None = None,
     sort_by: str = "created_at",
     descending: bool = True,
@@ -132,6 +148,8 @@ def list_cache(
         rows = [r for r in rows if tag in r["tags"]]
     if dtype is not None:
         rows = [r for r in rows if r["dtype"] == dtype]
+    if name is not None:
+        rows = [r for r in rows if r["name"] == name]
     rows.sort(key=lambda r: r[sort_by], reverse=descending)
 
     out = {"cache_root": str(root), "entries": rows}

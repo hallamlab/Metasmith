@@ -363,7 +363,7 @@ class TestRunTransformBinding:
             )
         msg = str(excinfo.value)
         assert "filesystem path" in msg
-        assert "metasmith data add-item" in msg
+        assert "metasmith data import" in msg
 
     def test_an_absolute_path_inside_the_library_is_the_same_item(
         self, mock_samples, mock_types, temp_dir, agent_home,
