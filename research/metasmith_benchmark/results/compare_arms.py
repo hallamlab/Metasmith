@@ -4,20 +4,25 @@ reciprocal skani match, and CheckM2 quality across matched MAG pairs.
 Reads compare_arms/raw/*.tsv.gz (gathered from drivers/compare_arms_sample.py) and the per-bin CheckM2
 tables in e1/ and e2/. Writes compare_arms/*.tsv. A MAG's partner in the other arm is the pair that
 maximises ANI x min(AF_e1, AF_e2). Two MAGs match when each is the other's partner and the pair passes
-both thresholds.
+both thresholds. With --markdown, prints the tables findings/E1_E2_REPRODUCTION.md quotes.
 """
 import argparse
 import csv
 import gzip
+import io
 import re
 import statistics
+from collections import Counter
 from pathlib import Path
+
+from reproduction import markdown
 
 HERE = Path(__file__).resolve().parent
 RAW = HERE / "compare_arms" / "raw"
 OUT = HERE / "compare_arms"
 BINNERS = ("DASTool", "COMEBin", "MetaBAT2", "SemiBin2")
 PIPES = ("E1", "E2")
+TIERS = ("high", "medium", "below")
 
 
 def read(path):
@@ -28,7 +33,7 @@ def read(path):
 def write(name, rows, head=None, gz=False):
     rows = list(rows)
     path = OUT / f"{name}.tsv{'.gz' if gz else ''}"
-    with (gzip.open(path, "wt", newline="") if gz else open(path, "w", newline="")) as f:
+    with (io.TextIOWrapper(gzip.GzipFile(path, "wb", mtime=0), newline="") if gz else open(path, "w", newline="")) as f:
         w = csv.DictWriter(f, fieldnames=head or list(rows[0]), delimiter="\t", lineterminator="\n")
         w.writeheader()
         w.writerows(rows)
@@ -180,7 +185,7 @@ def sample_table(per_mag):
             row[f"{p}_matched"] = len(matched)
             row[f"{p}_only"] = len(mine) - len(matched)
             row[f"{p}_bp_matched_frac"] = fmt(sum(r["bp"] for r in matched) / row[f"{p}_bp"]) if row[f"{p}_bp"] else ""
-            for t in ("high", "medium", "below"):
+            for t in TIERS:
                 row[f"{p}_{t}"] = sum(r["tier"] == t for r in mine)
         e2m = [r for r in rs if r["pipeline"] == "E2" and r["matched"]]
         ani = [float(r["ani"]) for r in e2m]
@@ -234,22 +239,76 @@ def summary(asm, per_mag):
             e2m = [r for r in rs if r["pipeline"] == "E2" and r["matched"]]
             row["matched_ani_median"] = fmt(statistics.median(float(r["ani"]) for r in e2m)) if e2m else ""
             row["median_abs_dcompleteness"] = fmt(statistics.median(abs(r["completeness"] - r["partner_completeness"]) for r in e2m), 2) if e2m else ""
+            row["matched_pairs"] = len(e2m)
             row["tier_changed"] = sum(r["tier"] != r["partner_tier"] for r in e2m)
+            row["dcompleteness_gt10"] = sum(abs(r["completeness"] - r["partner_completeness"]) > 10 for r in e2m)
             out.append(row)
     return write("summary", out)
+
+
+def assembly_distribution(asm):
+    metrics = (
+        ("bp fraction in sequence-identical contigs", ".4f",
+         lambda r: min(float(r["e1_shared_bp_frac"]), float(r["e2_shared_bp_frac"]))),
+        ("bp fraction identical or covered at >=99% identity", ".4f",
+         lambda r: min(float(r["e1_bp_frac_identical_or_id99"]), float(r["e2_bp_frac_identical_or_id99"]))),
+        ("contig count difference", "d", lambda r: abs(int(r["e1_contigs"]) - int(r["e2_contigs"]))),
+        ("relative total length difference", ".1e",
+         lambda r: abs(int(r["e1_bp"]) - int(r["e2_bp"])) / int(r["e1_bp"])),
+    )
+    head = ["arm", "samples", "identical", "metric", "min", "p10", "median", "p90", "max"]
+    rows = []
+    for arm in ("short", "long"):
+        a = [r for r in asm if r["arm"] == arm]
+        identical = sum(r["verdict"] != "different" for r in a)
+        for name, spec, f in metrics:
+            xs = sorted(f(r) for r in a)
+            stats = (xs[0], pct(xs, 0.1), statistics.median(xs), pct(xs, 0.9), xs[-1])
+            rows.append([arm, len(a), identical, name, *(format(x, spec if spec != "d" else ".0f") for x in stats)])
+    return head, rows
+
+
+def tier_changes(per_mag):
+    head = ["arm", "E1 tier", "E2 high", "E2 medium", "E2 below"]
+    rows = []
+    for arm in ("short", "long"):
+        c = Counter((r["partner_tier"], r["tier"]) for r in per_mag
+                    if r["arm"] == arm and r["pipeline"] == "E2" and r["matched"])
+        rows += [[arm, t1, *(c[(t1, t2)] for t2 in TIERS)] for t1 in TIERS]
+    return head, rows
+
+
+def matching(summ):
+    head = ["arm", "binner", "E1_mags", "E2_mags", "E1_matched_pct", "E2_matched_pct",
+            "E1_unmatched_high", "E2_unmatched_high", "matched_pairs", "matched_ani_median",
+            "median_abs_dcompleteness", "tier_changed", "dcompleteness_gt10"]
+    return head, [[r[h] for h in head] for r in summ]
+
+
+def causes(rows):
+    head = ["arm", "pipeline", "cause", "mags", "high_quality"]
+    return head, [[r[h] for h in head] for r in rows]
 
 
 def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--min-ani", type=float, default=95.0)
     p.add_argument("--min-af", type=float, default=50.0, help="percent, applied to both directions")
+    p.add_argument("--markdown", action="store_true")
     a = p.parse_args()
     asm = assemblies()
     per_mag = mags(a.min_ani, a.min_af)
     sample_table(per_mag)
-    dastool_causes(per_mag)
-    for r in summary(asm, per_mag):
-        print("\t".join(str(v) for v in r.values()))
+    cause_rows = dastool_causes(per_mag)
+    summ = summary(asm, per_mag)
+    if not a.markdown:
+        for r in summ:
+            print("\t".join(str(v) for v in r.values()))
+        return
+    for name, (head, rows) in (("assemblies", assembly_distribution(asm)), ("matching", matching(summ)),
+                               ("dastool_unmatched_causes", causes(cause_rows)),
+                               ("tier_changes", tier_changes(per_mag))):
+        print(f"## {name}\n\n{markdown(head, rows)}\n")
 
 
 if __name__ == "__main__":

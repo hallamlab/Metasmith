@@ -1,9 +1,9 @@
-arm	binner	samples	assemblies_identical	asm_shared_bp_frac_min/median	asm_bp_frac_id99_min/median	E1_mags	E1_matched_pct	E1_unmatched	E1_unmatched_high	E2_mags	E2_matched_pct	E2_unmatched	E2_unmatched_high	matched_ani_median	median_abs_dcompleteness	tier_changed
-short	DASTool	208	0	0.8791 / 0.9924	0.9683 / 0.9994	2594	94.6	139	16	2614	93.9	159	14	100.0000	0.21	183
-short	COMEBin	208	0	0.8791 / 0.9924	0.9683 / 0.9994	7593	74.8	1913	8	7583	74.9	1903	11	100.0000	0.94	416
-short	MetaBAT2	208	0	0.8791 / 0.9924	0.9683 / 0.9994	4294	96.5	149	0	4300	96.4	155	1	100.0000	0.17	195
-short	SemiBin2	208	0	0.8791 / 0.9924	0.9683 / 0.9994	6626	90.9	602	0	6649	90.6	625	4	100.0000	0.56	196
-long	DASTool	41	0	0.0303 / 0.1105	0.7180 / 0.8045	567	90.8	52	8	567	90.8	52	1	99.9600	1.40	75
-long	COMEBin	41	0	0.0303 / 0.1105	0.7180 / 0.8045	1975	54.3	902	0	2106	50.9	1033	4	99.8600	2.19	126
-long	MetaBAT2	41	0	0.0303 / 0.1105	0.7180 / 0.8045	1790	77.1	410	0	1791	77.1	411	2	99.8300	1.45	142
-long	SemiBin2	41	0	0.0303 / 0.1105	0.7180 / 0.8045	1335	72.4	369	2	1318	73.3	352	1	99.8550	1.55	111
+arm	binner	samples	assemblies_identical	asm_shared_bp_frac_min/median	asm_bp_frac_id99_min/median	E1_mags	E1_matched_pct	E1_unmatched	E1_unmatched_high	E2_mags	E2_matched_pct	E2_unmatched	E2_unmatched_high	matched_ani_median	median_abs_dcompleteness	matched_pairs	tier_changed	dcompleteness_gt10
+short	DASTool	208	0	0.8791 / 0.9924	0.9683 / 0.9994	2594	94.6	139	16	2614	93.9	159	14	100.0000	0.21	2455	183	72
+short	COMEBin	208	0	0.8791 / 0.9924	0.9683 / 0.9994	7593	74.8	1913	8	7583	74.9	1903	11	100.0000	0.94	5680	416	300
+short	MetaBAT2	208	0	0.8791 / 0.9924	0.9683 / 0.9994	4294	96.5	149	0	4300	96.4	155	1	100.0000	0.17	4145	195	88
+short	SemiBin2	208	0	0.8791 / 0.9924	0.9683 / 0.9994	6626	90.9	602	0	6649	90.6	625	4	100.0000	0.56	6024	196	50
+long	DASTool	41	0	0.0303 / 0.1105	0.7180 / 0.8045	567	90.8	52	8	567	90.8	52	1	99.9600	1.40	515	75	46
+long	COMEBin	41	0	0.0303 / 0.1105	0.7180 / 0.8045	1975	54.3	902	0	2106	50.9	1033	4	99.8600	2.19	1073	126	165
+long	MetaBAT2	41	0	0.0303 / 0.1105	0.7180 / 0.8045	1790	77.1	410	0	1791	77.1	411	2	99.8300	1.45	1380	142	143
+long	SemiBin2	41	0	0.0303 / 0.1105	0.7180 / 0.8045	1335	72.4	369	2	1318	73.3	352	1	99.8550	1.55	966	111	108

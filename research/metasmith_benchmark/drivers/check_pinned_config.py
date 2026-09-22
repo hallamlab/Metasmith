@@ -3,7 +3,8 @@
 Every e1_source / e2_source is `path:line`, relative to the nf-core/mag root when prefixed
 `nf-core/mag@5.5.0:` and to the repository root otherwise. The cited line must exist and
 contain the row's e1_evidence / e2_evidence, compared with whitespace runs collapsed. A row's
-status must also agree with its two values.
+status must also agree with its two values. With --markdown, also prints every row whose status is
+not `same` as the table findings/E1_E2_REPRODUCTION.md quotes.
 """
 import argparse
 import csv
@@ -68,6 +69,7 @@ def main():
     parser.add_argument("--nfcore", type=Path, required=True, help="extracted nf-core/mag 5.5.0 source tree")
     parser.add_argument("--repo", type=Path, default=REPO, help=f"repository root (default {REPO})")
     parser.add_argument("--tsv", type=Path, help="default: <repo>/research/metasmith_benchmark/results/pinned_config_diff.tsv")
+    parser.add_argument("--markdown", action="store_true")
     args = parser.parse_args()
     tsv = args.tsv or args.repo / "research/metasmith_benchmark/results/pinned_config_diff.tsv"
     roots = {"nf": args.nfcore, "repo": args.repo}
@@ -100,6 +102,12 @@ def main():
         print(f"{failures} of {len(rows)} rows failed")
         return 1
     print(f"{len(rows)} rows OK: every cited line exists and carries its evidence")
+    if args.markdown:
+        shown = COLUMNS[:6]
+        print("\n| " + " | ".join(shown) + " |\n|" + "---|" * len(shown))
+        for cells in rows:
+            if cells[5] != "same":
+                print("| " + " | ".join(c.replace("|", "\\|") for c in cells[:6]) + " |")
     return 0
 
 
