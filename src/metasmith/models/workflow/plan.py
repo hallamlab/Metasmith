@@ -3,12 +3,13 @@ from __future__ import annotations
 import itertools
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Mapping, Sequence
 
 import yaml
 
 from ...hashing import KeyGenerator
 from ...logging import Log
-from ..dag_renderer import DagRenderer, Label, LabelMode, NodeKind
+from ..dag_renderer import DagMode, DagRenderer, Label, LabelMode, NodeKind
 from ..paths import is_deferred
 from ..libraries import (
     DataInstance, DataInstanceLibrary, DataInstanceLibraryView,
@@ -544,14 +545,14 @@ class WorkflowPlan:
             hints=plan_hints,
         )
 
-    def BuildDAG(self, *, font: str = 'Arial', blacklist_namespaces: set[str]={"lib", "containers", "env"}, show_step_order: bool = False, label_mode: LabelMode = LabelMode.COLUMN, target_sink: bool = False, colour: str = "module", theme: str = "light", background: bool = True) -> DagRenderer:
+    def BuildDAG(self, *, font: str = 'Arial', blacklist_namespaces: set[str]={"lib", "containers", "env"}, show_step_order: bool = False, label_mode: LabelMode = LabelMode.COLUMN, target_sink: bool = False, colour: str = "module", theme: str = "light", background: bool = True, mode: DagMode = DagMode.PLAIN, hide_resources: bool = False, legend_columns: int = 0, monochrome: bool = False, colour_palette: Sequence[str] | None = None, colour_overrides: Mapping[str, str] | None = None) -> DagRenderer:
         def _get_ns(name: str) -> str:
             if "::" in name:
                 ns, _ = name.split("::", maxsplit=1)
                 return ns
             return name
 
-        r = DagRenderer(font=font, label_mode=label_mode, colour=colour, theme=theme, background=background)
+        r = DagRenderer(font=font, label_mode=label_mode, colour=colour, theme=theme, background=background, mode=mode, hide_resources=hide_resources, legend_columns=legend_columns, monochrome=monochrome, colour_palette=colour_palette, colour_overrides=colour_overrides)
         r.add_node(NodeKind.TRANSFORM, "given")
 
         given_inst_names: set[str] = set()
@@ -581,6 +582,33 @@ class WorkflowPlan:
                 r.add_edge("given", inst_name)
                 given_inst_names.add(inst_name)
 
+        given_ids = {x.instance_id for x in self.given}
+
+        def _data_node(x) -> str:
+            """The node a data instance draws as.
+
+            A given is one node per TYPE. Its instance ids are per-sample leaf
+            ids, so a 208-sample plan would otherwise put 208 nodes where the
+            plan means one input.
+
+            Everything a step makes is one node per INSTANCE, because that id is
+            the slot, and a slot is structural: one per branch, and the same
+            whether the plan carries one sample or two hundred. Keying those by
+            type name too is what drew two arms binning their own assembly as a
+            single `binning_bam` fed by both aligners and read by both binners
+            -- a join neither arm runs.
+            """
+            if x.instance_id in given_ids:
+                return x.dtype_name
+            r.add_node(NodeKind.DATA, x.instance_id, _type_label(x.dtype_name))
+            return x.instance_id
+
+        def _type_label(dtype_name: str) -> Label:
+            if "::" in dtype_name:
+                ns, name = dtype_name.split("::", maxsplit=1)
+                return Label(name=name, namespace=ns, full=dtype_name)
+            return Label(name=dtype_name, full=dtype_name)
+
         for step in self.steps:
             transform_name = f"{step.order} {step.transform.name}"
             r.add_node(NodeKind.TRANSFORM, transform_name, Label(
@@ -595,15 +623,42 @@ class WorkflowPlan:
             ]:
                 for d in deps:
                     insts = step.dependency_map[d]
-                    inst_names = {x.dtype_name for x in insts if _get_ns(x.dtype_name) not in blacklist_namespaces}
-                    if len(inst_names) == 0: continue
-                    acc += list(inst_names)
+                    nodes = {
+                        _data_node(x) for x in insts
+                        if _get_ns(x.dtype_name) not in blacklist_namespaces
+                    }
+                    if len(nodes) == 0: continue
+                    acc += list(nodes)
             for name in inputs:
                 r.add_edge(name, transform_name)
             for name in outputs:
                 r.add_edge(transform_name, name)
+            # What the tool asks for, rather than what this step bound it to.
+            # The legend draws a transform once, and a requirement met by a
+            # subtype at four different steps is still one requirement -- only
+            # the library knows the declared name, since a Dependency carries
+            # properties and no name of its own. A dep that signs with lineage
+            # is not in the library under any name; leaving it out is right,
+            # because it is not what the transform declared either.
+            _lib = getattr(step, "transform_library", None)
+            if _lib is not None:
+                def _named(deps):
+                    out = []
+                    for d in deps:
+                        try:
+                            n = _lib.GetName(Endpoint(d.properties))
+                        except KeyError:
+                            continue
+                        if n and _get_ns(n) not in blacklist_namespaces:
+                            out.append(n)
+                    return out
+                r.declare(
+                    transform_name,
+                    _named(step.transform.model.requires),
+                    _named([d for g in step.transform.model.produces for d in g]),
+                )
 
-        target_names = {x.instance.dtype_name for x in self.targets}
+        target_names = {_data_node(x.instance) for x in self.targets}
         for inst_name in given_inst_names:
             if inst_name in target_names: continue
             if r.out_degree(inst_name) == 0:
@@ -615,12 +670,12 @@ class WorkflowPlan:
             r.mark(NodeKind.TARGET, target)
         if target_sink:
             r.add_node(NodeKind.TRANSFORM, "target")
-            for target in {x.instance.dtype_name for x in self.targets}:
+            for target in target_names:
                 r.add_edge(target, "target")
 
         return r
 
-    def RenderDAG(self, path_base: Path|str, format: str ='svg', *, font: str = 'Arial', blacklist_namespaces: set[str]={"lib", "containers", "env"}, show_step_order: bool = False, label_mode: LabelMode = LabelMode.COLUMN, target_sink: bool = False, colour: str = "module", theme: str = "light", background: bool = True):
+    def RenderDAG(self, path_base: Path|str, format: str ='svg', *, font: str = 'Arial', blacklist_namespaces: set[str]={"lib", "containers", "env"}, show_step_order: bool = False, label_mode: LabelMode = LabelMode.COLUMN, target_sink: bool = False, colour: str = "module", theme: str = "light", background: bool = True, mode: DagMode = DagMode.PLAIN, hide_resources: bool = False, legend_columns: int = 0, monochrome: bool = False, colour_palette: Sequence[str] | None = None, colour_overrides: Mapping[str, str] | None = None):
         return self.BuildDAG(
             font=font,
             blacklist_namespaces=blacklist_namespaces,
@@ -630,4 +685,10 @@ class WorkflowPlan:
             colour=colour,
             theme=theme,
             background=background,
+            mode=mode,
+            hide_resources=hide_resources,
+            legend_columns=legend_columns,
+            monochrome=monochrome,
+            colour_palette=colour_palette,
+            colour_overrides=colour_overrides,
         ).render(path_base, format)

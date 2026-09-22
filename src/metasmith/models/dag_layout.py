@@ -114,6 +114,7 @@ def layout(
     spine = _choose_spine(names, parents, fwd_children, weight, descendants)
     owner = _ownership(names, parents, depth)
     lane_width, owned_size = _lane_widths(topo, fwd_children, owner)
+    component_size = _component_sizes(names, fwd_children)
     sig = _signatures(topo, fwd_children, kinds, _SIGNATURE_DEPTH)
     motifs = _motifs(topo, fwd_children, sig)
 
@@ -127,7 +128,7 @@ def layout(
     for jump in _SIDE_BRANCH:
         rows = _row_order(
             names, parents, fwd_children, topo, spine, lane_width, owned_size,
-            jump, motifs, sig,
+            component_size, jump, motifs, sig,
         )
         cand = _compose(
             rows, kinds, _edges, back, fwd_children, depth, weight, spine, motifs
@@ -365,6 +366,30 @@ def _lane_widths(
     return width, size
 
 
+def _component_sizes(names: list[str], children: dict[str, list[str]]) -> dict[str, int]:
+    """Size of the weakly connected component (edges undirected) each node sits in."""
+    adjacent: dict[str, set[str]] = {n: set() for n in names}
+    for n, kids in children.items():
+        for c in kids:
+            adjacent[n].add(c)
+            adjacent[c].add(n)
+    size: dict[str, int] = {}
+    for n in names:
+        if n in size:
+            continue
+        members, stack, seen = [], [n], {n}
+        while stack:
+            cur = stack.pop()
+            members.append(cur)
+            for nxt in adjacent[cur]:
+                if nxt not in seen:
+                    seen.add(nxt)
+                    stack.append(nxt)
+        for m in members:
+            size[m] = len(members)
+    return size
+
+
 def _row_order(
     names: list[str],
     parents: dict[str, list[str]],
@@ -373,6 +398,7 @@ def _row_order(
     spine: set[str],
     lane_width: dict[str, int],
     owned_size: dict[str, int],
+    component_size: dict[str, int],
     jump: int,
     motifs: Sequence[Motif] = (),
     sig: Mapping[str, int] | None = None,
@@ -416,7 +442,11 @@ def _row_order(
         return (canon,) + _plain_rank(n, siblings)
 
     def _root_rank(n: str):
-        return (-owned_size[n], natural_key(n))
+        # Disjoint components sort smallest first; roots sharing one
+        # component (converging on a common descendant) keep the old order
+        # between themselves -- component_size is equal for all of them, so
+        # -owned_size/natural_key alone decide it, same as before.
+        return (component_size[n], -owned_size[n], natural_key(n))
 
     roots = sorted((n for n in names if not parents[n]), key=_root_rank)
     held = set(roots[1:])

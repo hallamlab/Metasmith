@@ -1,0 +1,339 @@
+<title>E2 Plan, Three Ways</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+  /* Palette lifted from the renderer's own two themes (models/dag_renderer.py):
+     the page ground is the plate the SVGs were drawn against, so a diagram sits
+     on the page rather than in a window cut into it. */
+  :root {
+    --ground:  #F7F7F8;
+    --surface: #FFFFFF;
+    --ink:     #1B1E24;
+    --muted:   #6B7484;
+    --faint:   #9AA2AF;
+    --rule:    #E3E3E3;
+    --rule-2:  #EFEFF1;
+    --accent:  #636EFA;
+    --shade:   #F1F1F3;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground:  #15181D;
+      --surface: #1B1E24;
+      --ink:     #DFE3EA;
+      --muted:   #8D97A8;
+      --faint:   #6B7484;
+      --rule:    #2F343D;
+      --rule-2:  #262B33;
+      --accent:  #8B93FB;
+      --shade:   #21262E;
+    }
+  }
+  :root[data-theme="dark"] {
+    --ground:  #15181D;
+    --surface: #1B1E24;
+    --ink:     #DFE3EA;
+    --muted:   #8D97A8;
+    --faint:   #6B7484;
+    --rule:    #2F343D;
+    --rule-2:  #262B33;
+    --accent:  #8B93FB;
+    --shade:   #21262E;
+  }
+
+  body {
+    background: var(--ground);
+    color: var(--ink);
+    font-family: "IBM Plex Sans", system-ui, -apple-system, sans-serif;
+    font-size: 15px;
+    line-height: 1.55;
+    margin: 0;
+  }
+  .wrap {
+    /* wide enough for the legend grid at three columns (1165px for the long
+       arm) plus the frame's own padding, so no panel scrolls sideways */
+    max-width: 1260px;
+    margin: 0 auto;
+    padding-inline: 16px;
+    padding-block: 40px 72px;
+  }
+
+  header { border-bottom: 1px solid var(--rule); padding-bottom: 22px; }
+  .top {
+    display: flex; align-items: flex-start; gap: 16px;
+    justify-content: space-between; flex-wrap: wrap;
+  }
+  h1 {
+    font-size: 26px; font-weight: 600; margin: 0 0 6px;
+    letter-spacing: -0.01em; text-wrap: balance;
+  }
+  .sub { margin: 0; color: var(--muted); max-width: 62ch; }
+  .sub code {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 0.88em; color: var(--ink);
+  }
+
+  .switch {
+    display: flex; gap: 0;
+    border: 1px solid var(--rule); border-radius: 7px;
+    width: fit-content; overflow: hidden; background: var(--surface);
+  }
+  .switch button {
+    font: inherit; font-size: 13px; color: var(--muted);
+    background: transparent; border: 0; cursor: pointer;
+    padding: 7px 14px; border-right: 1px solid var(--rule);
+    white-space: nowrap;
+  }
+  .switch button:last-child { border-right: 0; }
+  .switch button[aria-pressed="true"] { background: var(--shade); color: var(--ink); font-weight: 500; }
+  .switch button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+  .theme { flex: none; }
+  /* the arm switch lives in the plain panel's own heading, because that is the
+     only panel it moves -- the other panels are not one arm's run */
+  .head .switch button { padding: 3px 12px; font-size: 12px; }
+  .tag {
+    font-size: 12px; color: var(--faint);
+    border: 1px solid var(--rule); border-radius: 20px; padding: 1px 10px;
+  }
+
+  section { margin-top: 46px; }
+  .head {
+    display: flex; flex-wrap: wrap; align-items: baseline;
+    gap: 6px 14px; margin-bottom: 4px;
+  }
+  h2 {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 15px; font-weight: 500; margin: 0;
+    color: var(--ink);
+  }
+  .count {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-variant-numeric: tabular-nums;
+    font-size: 12px; color: var(--faint); margin-left: auto;
+  }
+  .what { margin: 0 0 14px; color: var(--muted); font-size: 14px; max-width: 66ch; }
+  .what b { color: var(--ink); font-weight: 500; }
+  .what code {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 0.9em; color: var(--ink);
+  }
+
+  figure {
+    margin: 0;
+    border: 1px solid var(--rule);
+    border-radius: 8px;
+    background: var(--surface);
+  }
+  figure img { display: block; margin: 18px; max-width: none; }
+  .svg-dark { display: none; }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) .svg-light { display: none; }
+    :root:not([data-theme="light"]) .svg-dark  { display: block; }
+  }
+  :root[data-theme="dark"] .svg-light { display: none; }
+  :root[data-theme="dark"] .svg-dark  { display: block; }
+
+  .note {
+    margin-top: 48px; padding-top: 22px;
+    border-top: 1px solid var(--rule);
+    color: var(--muted); font-size: 13.5px; max-width: 70ch;
+  }
+  .note h3 { font-size: 13.5px; font-weight: 600; color: var(--ink); margin: 0 0 8px; }
+  .note p { margin: 0 0 10px; }
+  .note code {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 0.9em; color: var(--ink);
+  }
+  [hidden] { display: none !important; }
+</style>
+
+<div class="wrap">
+  <header>
+    <div class="top">
+      <div>
+        <h1>E2 Plan, Three Ways</h1>
+        <p class="sub">
+          Benchmark arm <b>E2</b> &mdash; nf&#8209;core/mag's pipeline on CAMI, driven by
+          metasmith &mdash; drawn through the modes of <code>DagRenderer</code>. The
+          first panel is one arm's full plan and the switch moves it; the second is a
+          single solve carrying both read shapes; the last is the tool inventory over
+          both arms.
+        </p>
+      </div>
+      <div class="switch theme" role="group" aria-label="theme">
+        <button type="button" data-theme="auto" aria-pressed="true">auto</button>
+        <button type="button" data-theme="light" aria-pressed="false">light</button>
+        <button type="button" data-theme="dark" aria-pressed="false">dark</button>
+      </div>
+    </div>
+  </header>
+
+  <section>
+    <div class="head">
+      <h2>plain</h2>
+      <div class="switch arms" role="group" aria-label="which arm">
+        <button type="button" data-arm="short" aria-pressed="true">short</button>
+        <button type="button" data-arm="long" aria-pressed="false">long</button>
+      </div>
+      <span class="count" id="plain-count"></span>
+    </div>
+    <p class="what">
+      <b>The current style.</b> Every node the plan builds, transforms and data
+      alternating. E2 declares thirteen environments and a database as givens, so the
+      first rows are resources before any read appears. This is the one panel that is
+      a single run, so it is the one the arm switch moves.
+    </p>
+    <figure id="plain-fig"></figure>
+  </section>
+
+  <section>
+    <div class="head">
+      <h2>one solve, both read shapes</h2>
+      <span class="tag">1 short + 1 long sample</span>
+      <span class="count">9 steps &middot; 2 cases</span>
+    </div>
+    <p class="what">
+      <b>A single plan carrying both arms, asked for one <code>e2::comebin_bin</code>.</b>
+      COMEBin names no assembler &mdash; it requires the generic <code>e2::assembly</code>
+      and an <code>e2::binning_bam</code> descended from it &mdash; so both arms can reach
+      it and the solver builds both chains at once. The short arm runs
+      fastp&nbsp;&rarr;&nbsp;MEGAHIT&nbsp;&rarr;&nbsp;bowtie2, the long arm Porechop&nbsp;ABI&nbsp;&rarr;&nbsp;Chopper&nbsp;&rarr;&nbsp;Flye&nbsp;&rarr;&nbsp;minimap2,
+      and <code>comebin</code> is instantiated once per arm on its own BAM. The tool
+      environments are hidden here; they are givens standing outside every sample
+      lineage, and thirteen of them at the top bury the shape.
+    </p>
+    <figure id="single-fig"></figure>
+  </section>
+
+  <section>
+    <div class="head">
+      <h2>legend</h2>
+      <span class="tag">short + long combined</span>
+      <span class="count">16 blocks &middot; from 29 steps</span>
+    </div>
+    <p class="what">
+      <b>One detached block per transform, in a grid of identical boxes.</b> Each block
+      is what the tool <i>declares</i>, not what a step bound it to &mdash; which is why
+      four <code>checkm2</code> steps reading four bin types are one block requiring
+      <code>e2::bin</code>. Over both arms it is the tool inventory: sixteen names,
+      <code>megahit</code> and <code>flye</code> among them.
+    </p>
+    <figure id="legend-fig"></figure>
+  </section>
+
+  <div class="note">
+    <h3>Reading these</h3>
+    <p>
+      A triangle is a transform, a hollow circle a data instance, a filled circle a
+      target. The transform carries the weight and the data recedes: a plan is a
+      sequence of things done, and the types are what they are done to. The layout
+      puts one node per row and routes edges down lanes to its left, so height
+      counts nodes and width counts how many edges are in flight.
+    </p>
+    <p>
+      The legend marks no targets. A block is a signature rather than a run, and an
+      output that happens to be a target of this plan is still just an output of the
+      transform, so every output there draws the same.
+    </p>
+    <p>
+      Only the plain drawing is coloured, on the <code>module</code> scheme: a hue
+      per dominator subtree. That says something across a whole plan and nothing
+      inside a three-node legend block or a bare chain of steps, so the other two
+      are monochrome.
+    </p>
+    <p>
+      <b>A data node is one per slot, not one per type.</b> A given draws once per
+      type, because its instance ids are per-sample and a 208-sample plan would
+      otherwise put 208 circles where the plan means one input. Everything a step
+      makes draws once per <i>instance</i>, because that id is the slot &mdash;
+      structural, one per branch, and the same whether the plan carries one sample or
+      two hundred. Keying those by type name too is what used to draw the two arms'
+      <code>binning_bam</code> as a single circle fed by both aligners and read by
+      both binners, a join neither arm runs. It also collapsed the four
+      <code>checkm2</code> steps onto one output; they now have four, which is why the
+      per-arm counts moved to 58 and 52.
+    </p>
+    <p>
+      <b>What the one-solve panel does not extend to is the full E2 target set.</b>
+      Both arms reach COMEBin because it names no assembler. Ask for
+      <code>e2::megahit_assembly</code>, or for the short-only FastQC and fastp
+      reports, and one arm cannot fill the slot: the merge then substitutes Flye's
+      product for MEGAHIT's and the plan witness catches it as <code>emission</code>.
+      So the two full arms stay two solves &mdash; not because the read shapes cannot
+      mix, but because that target set asks each case for something only the other
+      can make.
+    </p>
+    <p>
+      <code>fastqc_raw</code> sits alone at the top on purpose. It reads only givens
+      and produces a target nothing consumes, so once the data is dropped there is
+      nothing for it to connect to &mdash; it is the only such step in either arm.
+      Disjoint networks are laid out smallest first, which is what brings it to the
+      top rather than leaving it stranded at the bottom looking like a mistake.
+    </p>
+    <p>
+      Plan topology only. The givens here resolve against a copied pool, so the plan
+      key is not E2's published one.
+    </p>
+  </div>
+</div>
+
+<script>
+  const SIZE = {
+    "short_plain":    [848, 2037],
+    "long_plain":     [811, 1830],
+    "single":         [625, 1245],
+    "combined_legend":[1165, 2599],
+  };
+  const PLAIN_COUNT = { short: "58 nodes", long: "52 nodes" };
+
+  function pair(key, alt) {
+    const [w, h] = SIZE[key];
+    return ['light', 'dark'].map((t) =>
+      '<img class="svg-' + t + '" width="' + w + '" height="' + h + '"' +
+      ' loading="lazy" decoding="async"' +
+      ' src="svg/e2_' + key + '_' + t + '.svg" alt="' + alt + '">'
+    ).join('');
+  }
+
+  function draw(arm) {
+    document.getElementById("plain-fig").innerHTML =
+      pair(arm + "_plain", "E2 " + arm + " arm, every node of the plan");
+    document.getElementById("plain-count").textContent = PLAIN_COUNT[arm];
+  }
+
+  document.getElementById("single-fig").innerHTML =
+    pair("single", "one solve carrying a short and a long sample to COMEBin bins");
+  document.getElementById("legend-fig").innerHTML =
+    pair("combined_legend", "E2 both arms, one block per transform");
+
+  function press(group, key, value) {
+    for (const b of document.querySelectorAll(group + " button")) {
+      b.setAttribute("aria-pressed", String(b.dataset[key] === value));
+    }
+  }
+
+  // "auto" is the absence of the attribute, which is what lets the media query
+  // in the stylesheet answer instead.
+  function setTheme(choice) {
+    if (choice === "auto") document.documentElement.removeAttribute("data-theme");
+    else document.documentElement.setAttribute("data-theme", choice);
+    press(".theme", "theme", choice);
+    try { localStorage.setItem("dagviz-theme", choice); } catch (e) { /* private window */ }
+  }
+
+  for (const b of document.querySelectorAll(".theme button")) {
+    b.addEventListener("click", () => setTheme(b.dataset.theme));
+  }
+  for (const b of document.querySelectorAll(".arms button")) {
+    b.addEventListener("click", () => {
+      press(".arms", "arm", b.dataset.arm);
+      draw(b.dataset.arm);
+    });
+  }
+
+  let saved = "auto";
+  try { saved = localStorage.getItem("dagviz-theme") || "auto"; } catch (e) { /* private window */ }
+  setTheme(saved);
+  draw("short");
+</script>

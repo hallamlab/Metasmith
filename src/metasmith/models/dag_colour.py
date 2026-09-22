@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Mapping, Sequence
 
 from .dag_layout import Layout, dominators, natural_key, repeat_motifs
 
@@ -36,7 +37,13 @@ class Colouring:
         return self.edges.get((src, dst), fallback)
 
 
-def colour_layout(lay: Layout, scheme: str = "none") -> Colouring:
+def colour_layout(
+    lay: Layout,
+    scheme: str = "none",
+    *,
+    palette: Sequence[str] | None = None,
+    overrides: Mapping[str, str] | None = None,
+) -> Colouring:
     if scheme in (None, "", "none"):
         return Colouring()
     try:
@@ -45,7 +52,11 @@ def colour_layout(lay: Layout, scheme: str = "none") -> Colouring:
         raise ValueError(
             f"unknown colour scheme {scheme!r}; expected one of {', '.join(SCHEMES)}"
         ) from None
-    nodes = build(lay)
+    nodes = (
+        build(lay, palette=palette or PALETTE, overrides=overrides or {})
+        if scheme == "module"
+        else build(lay)
+    )
     edges = {
         (e.src, e.dst): nodes[e.src]
         for e in lay.edges
@@ -91,7 +102,13 @@ def _module_owner(lay: Layout) -> dict[str, str | None]:
     return owner
 
 
-def _by_module(lay: Layout) -> dict[str, str]:
+def _by_module(
+    lay: Layout,
+    *,
+    palette: Sequence[str] = PALETTE,
+    overrides: Mapping[str, str] | None = None,
+) -> dict[str, str]:
+    overrides = overrides or {}
     names = [n.name for n in lay.nodes]
     owner = _module_owner(lay)
     depth = {n: i for i, n in enumerate(names)}
@@ -109,11 +126,12 @@ def _by_module(lay: Layout) -> dict[str, str]:
     slot: dict[str, int] = {}
     for h in order:
         taken = {slot[x] for x in adjacent[h] if x in slot}
-        slot[h] = next(i for i in range(len(PALETTE) + 1) if i not in taken)
-    return {
-        n: (UNMATCHED if owner[n] is None else PALETTE[slot[owner[n]] % len(PALETTE)])
-        for n in names
-    }
+        slot[h] = next(i for i in range(len(palette) + 1) if i not in taken)
+
+    def hue(h: str) -> str:
+        return overrides.get(h, palette[slot[h] % len(palette)])
+
+    return {n: (UNMATCHED if owner[n] is None else hue(owner[n])) for n in names}
 
 
 def _by_namespace(lay: Layout) -> dict[str, str]:

@@ -245,6 +245,18 @@ def test_disconnected_components_all_appear():
     assert set(_rows(lay)) == {"a", "b", "x", "y"}
 
 
+def test_disjoint_components_are_ordered_smallest_first():
+    lay = _lay([("a", "b"), ("a", "c"), ("a", "d"), ("x", "y")])
+    assert _rows(lay) == ["x", "y", "a", "b", "c", "d"]
+
+
+def test_component_order_tie_break_is_deterministic_and_input_order_independent():
+    edges = [("p", "q"), ("m", "n")]
+    reference = _rows(_lay(edges))
+    assert reference == ["m", "n", "p", "q"]
+    assert _rows(_lay(list(reversed(edges)))) == reference
+
+
 def test_kind_is_carried_through_untouched():
     sentinel = object()
     lay = layout({"a": sentinel, "b": None}, [("a", "b")])

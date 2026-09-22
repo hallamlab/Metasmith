@@ -1,0 +1,15 @@
+# A copy of the driver's dry-run pool, 18 MB, and regenerable by copying it
+# again. `render_e2.py`'s docstring says where from and why it is copied.
+e2cache/
+
+# Solver payloads and replies, written by dump_payload.py on demand.
+payload*.json
+raw_*.json
+rejected.json
+
+# Earlier output formats, superseded by svg/.
+png/
+graphs/
+
+__pycache__/
+.chrome/

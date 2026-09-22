@@ -14,8 +14,9 @@ from .dag_layout import Layout
 
 __all__ = [
     "Style", "Plate", "Label", "LabelMode", "default_label", "dot_escape",
-    "marker_size", "tint", "render_text", "render_svg", "raster_dot",
-    "render_raster", "geometry", "Geometry", "NodeGeometry", "EdgeGeometry",
+    "marker_size", "tint", "render_text", "render_svg", "render_legend",
+    "raster_dot", "render_raster", "geometry", "Geometry", "NodeGeometry",
+    "EdgeGeometry",
 ]
 
 _NO_COLOUR = Colouring()
@@ -37,6 +38,7 @@ class Style:
     stroke: str = "#555555"
     text: str = "#111111"
     muted: str = "#8A8A8A"
+    weight: str = "normal"
     rx: int = 3
     shape: str = "box"
     gv_style: str = "filled"
@@ -53,6 +55,8 @@ class Plate:
     background: str = "#FFFFFF"
     edge: str = "#666666"
     paint_background: bool = True
+    # only the legend draws a rule: the frame around each detached block
+    rule: str = "#E3E3E3"
 
 
 _DEFAULT_PLATE = Plate()
@@ -542,6 +546,22 @@ def render_svg(
         f' viewBox="0 0 {g.width:.0f} {g.height:.0f}">',
         *([f'<rect width="{g.width:.0f}" height="{g.height:.0f}" fill="{plate.background}"/>']
           if plate.paint_background else []),
+        *_svg_body(g, style, font=font, font_size=font_size, colour=colour, plate=plate),
+        "</svg>",
+    ]
+    return "\n".join(parts) + "\n"
+
+
+def _svg_body(
+    g: Geometry,
+    style: Mapping[Any, Style],
+    *,
+    font: str,
+    font_size: float,
+    colour: Colouring,
+    plate: Plate,
+) -> list[str]:
+    parts = [
         f'<g fill="none" stroke="{plate.edge}" stroke-width="1.4"'
         ' stroke-linejoin="round" stroke-linecap="round">',
     ]
@@ -567,8 +587,77 @@ def render_svg(
         parts.append(
             f'<text x="{lx:.1f}" y="{cy + 0.36 * font_size:.1f}"'
             f' font-family="{escape(font)}" font-size="{font_size:.0f}" fill="{st.text}"'
+            f' font-weight="{st.weight}"'
             f' text-anchor="{g.anchor}">{escape(n.label)}</text></g>'
         )
+    return parts
+
+
+def render_legend(
+    blocks: Sequence[tuple[Layout, Mapping[str, Label]]],
+    style: Mapping[Any, Style] | None = None,
+    *,
+    label_mode: LabelMode = LabelMode.COLUMN,
+    max_label_chars: int = DEFAULT_LABEL_CHARS,
+    font: str = "Arial",
+    font_size: float = 13.0,
+    colour: Colouring | None = None,
+    plate: Plate | None = None,
+    columns: int = 0,
+) -> str:
+    """Compose small detached drawings into a grid of identically sized boxes.
+
+    Every block is laid out against the widest block's lane count, so the label
+    column falls at the same x in all of them and the grid reads as one table
+    rather than as a row of unrelated pictures.
+    """
+    style = style or {}
+    colour = colour or _NO_COLOUR
+    plate = plate or _DEFAULT_PLATE
+    if not blocks:
+        return (
+            '<?xml version="1.0" encoding="UTF-8" standalone="no"?>\n'
+            '<svg xmlns="http://www.w3.org/2000/svg" width="0" height="0"'
+            ' viewBox="0 0 0 0"/>\n'
+        )
+
+    lanes = max(lay.width for lay, _ in blocks)
+    geos = [
+        geometry(
+            lay, style, labels=labels, label_mode=label_mode,
+            max_label_chars=max_label_chars, font_size=font_size, min_lanes=lanes,
+        )
+        for lay, labels in blocks
+    ]
+    box_w = max(g.width for g in geos)
+    box_h = max(g.height for g in geos)
+
+    cols = columns if columns > 0 else max(1, round(len(geos) ** 0.5))
+    rows = -(-len(geos) // cols)
+    gap = font_size
+    width = 2 * gap + cols * box_w + (cols - 1) * gap
+    height = 2 * gap + rows * box_h + (rows - 1) * gap
+
+    parts = [
+        '<?xml version="1.0" encoding="UTF-8" standalone="no"?>',
+        f'<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"'
+        f' width="{width:.0f}" height="{height:.0f}"'
+        f' viewBox="0 0 {width:.0f} {height:.0f}">',
+        *([f'<rect width="{width:.0f}" height="{height:.0f}" fill="{plate.background}"/>']
+          if plate.paint_background else []),
+    ]
+    for i, g in enumerate(geos):
+        x = gap + (i % cols) * (box_w + gap)
+        y = gap + (i // cols) * (box_h + gap)
+        parts.append(
+            f'<rect x="{x:.1f}" y="{y:.1f}" width="{box_w:.1f}" height="{box_h:.1f}"'
+            f' rx="{0.5 * font_size:.1f}" fill="none" stroke="{plate.rule}"/>'
+        )
+        # left-aligned so the label columns line up down the grid; centred
+        # vertically so a two-node block does not hang from the top edge
+        parts.append(f'<g transform="translate({x:.1f},{y + (box_h - g.height) / 2:.1f})">')
+        parts += _svg_body(g, style, font=font, font_size=font_size, colour=colour, plate=plate)
+        parts.append("</g>")
     parts.append("</svg>")
     return "\n".join(parts) + "\n"
 
@@ -701,9 +790,12 @@ def _html_label(
             f'<FONT POINT-SIZE="{font_size / 2:.1f}" COLOR="{st.muted}">'
             f'{escape(d.namespace)}</FONT><BR ALIGN="{side}"/>'
         )
+    name = escape(d.name)
+    if st.weight != "normal":
+        name = f"<B>{name}</B>"
     lines.append(
         f'<FONT POINT-SIZE="{font_size:.1f}" COLOR="{st.text}">'
-        f'{escape(d.name)}</FONT><BR ALIGN="{side}"/>'
+        f'{name}</FONT><BR ALIGN="{side}"/>'
     )
     return (
         '<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="0"'

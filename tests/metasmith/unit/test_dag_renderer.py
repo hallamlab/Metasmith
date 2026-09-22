@@ -311,12 +311,11 @@ def test_the_triangle_is_equilateral_and_so_shorter_than_it_is_wide():
     assert abs(height / width - 0.866) < 0.01
 
 
-def test_only_the_solid_target_outline_is_double_weight():
+def test_outline_weight_ranks_data_below_step_below_target():
     step = STYLES[NodeKind.TRANSFORM]
     data = STYLES[NodeKind.DATA]
     target = STYLES[NodeKind.TARGET]
-    assert data.stroke_width == step.stroke_width == 1.5
-    assert target.stroke_width == 3.0
+    assert data.stroke_width < step.stroke_width < target.stroke_width
     r = _three_kinds()
     svg = r.to_svg()
     assert f'stroke-width="{data.stroke_width}"' in svg
@@ -325,6 +324,15 @@ def test_only_the_solid_target_outline_is_double_weight():
     assert f"penwidth={target.stroke_width:g}" in dot
     assert f"penwidth={step.stroke_width:g}" in dot
     assert "penwidth=1.2]" not in dot
+
+
+def test_the_step_label_carries_the_weight_and_the_data_label_recedes():
+    step = STYLES[NodeKind.TRANSFORM]
+    data = STYLES[NodeKind.DATA]
+    assert step.weight != "normal" and data.weight == "normal"
+    svg = _three_kinds().to_svg()
+    assert f'fill="{step.text}" font-weight="{step.weight}"' in svg
+    assert f'fill="{data.text}" font-weight="normal"' in svg
 
 
 def test_a_rail_stops_at_the_shape_it_points_at():

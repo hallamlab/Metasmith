@@ -54,7 +54,7 @@ FORK_EDGES = [{"from": "#a", "to": "#d"}, {"from": "#b", "to": "#d"}]
 
 def test_a_caller_can_fix_the_rows_it_already_has():
     own = _rows(dag_geometry(FORK, FORK_EDGES))
-    mine = ["#c", "#b", "#a", "#d"]
+    mine = ["#a", "#b", "#c", "#d"]
     assert mine != own
     assert _rows(dag_geometry(FORK, FORK_EDGES, order=mine)) == mine
 
