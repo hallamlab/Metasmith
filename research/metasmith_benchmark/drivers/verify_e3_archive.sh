@@ -78,9 +78,15 @@ resync() {
         --label "E3 archive resync verify $(date +%F)"
     rm -f "$batch"
     echo
-    echo "PASS means: SUCCEEDED, Faults 0, Bytes Transferred 0."
+    echo "PASS means: Status SUCCEEDED, Subtasks Failed 0, Bytes Transferred 0."
     echo "Any non-zero byte count names a file the first task did not deliver -- read its"
     echo "successful-transfer list before treating the archive as verified."
+    echo
+    # CAUTION `Faults` counts every transient error the task ever recovered from, and `Details`
+    # keeps reporting the last one. A task that drops a GridFTP connection, retries and delivers
+    # everything still ends SUCCEEDED with Faults 1 and Details CONNECTION_RESET. Judge a task by
+    # Status and Subtasks Failed. Faults is a retry count, not a verdict.
+    echo "Faults is a retry count, not a verdict -- judge by Status and Subtasks Failed."
 }
 
 # Recursive listing of one destination subtree, normalised to "type<TAB>size<TAB>relpath".
