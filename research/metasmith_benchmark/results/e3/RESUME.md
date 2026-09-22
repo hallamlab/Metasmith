@@ -136,6 +136,15 @@ the manifest, `results/_metadata/` and `relay/msm_relay`.
 well as absent ones. An unexplained extra means the manifest and the archive describe different
 trees.
 
+**CAUTION** The diff cannot cover `task_cache`. A non-recursive `globus ls` of its single `1e/`
+directory, 11,583 children, does not return within two minutes, and the tree below holds 108,004
+files. So the diff is scoped to the other 2,767 files, and the whole set is verified by
+`verify_e3_archive.sh resync` instead: resubmitting the identical batch with
+`--sync-level checksum` makes Globus checksum both ends of every file and send only what differs.
+Zero bytes transferred proves the archive matches the source file for file. That check is stronger
+than a path listing, and it repairs as it verifies. `drivers/e3_archive_batch.sh` generates the
+batch, and is the authoritative statement of what the archive contains.
+
 Losing the symlinks costs nothing. 3,510 of them pointed into the excluded `nxf_work/` and would
 have arrived dangling, and their content is dereferenced into `meta/step_logs_Qt0rbV1R.tar.gz`,
 3,529 members and no symlinks -- now the only copy of the per-step logs. The one survivor is

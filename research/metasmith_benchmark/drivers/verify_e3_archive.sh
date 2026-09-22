@@ -1,12 +1,17 @@
 #!/bin/bash
-# Verify E3's chinook archive against the source-side manifest, independently of Globus.
+# Verify E3's chinook archive before releasing the scratch copy. Three checks, in this order.
 #
-# Globus reporting SUCCEEDED proves that every file it decided to send arrived intact. It does
-# not prove that it was offered every file. Only a path-by-path diff against a manifest taken
-# before the transfer catches a subtree that was never enumerated. Run this before deleting
-# anything.
+# Globus reporting SUCCEEDED proves every file it decided to send arrived intact. It does not prove
+# it was offered every file, and that is the failure worth catching.
 #
-# The expected set is the manifest, minus three things and plus three things.
+#   resync           the primary check. Resubmit the identical batch with --sync-level checksum.
+#                    Zero bytes transferred means every source file is at the destination with
+#                    matching content. Covers task_cache, where no listing is tractable.
+#   listing + diff   a path diff against the pre-transfer manifest, for everything except
+#                    task_cache. Catches a subtree dropped by name, and names which one.
+#   roundtrip-*      hashes the three files that exist nowhere else, fetched back from the archive.
+#
+# The diff's expected set is the manifest, minus four things and plus two things.
 #
 # CAUTION The manifest covers the home minus nxf_work/, results/ and relay/, but it still lists
 # `.staging` -- 20 truncated partial downloads the transfer skips. Subtract them.
@@ -35,13 +40,48 @@ MANIFEST="$META/manifest_full.tsv.gz"
 WORK="${WORK:-$HOME/.cache/e3_verify}"
 FIR_VERIFY=/scratch/phyberos/bench/e3_verify
 
-# Expected under pratama2026/ once the three additions and three subtractions are applied.
-EXP_DIRS=30929
-EXP_FILES=110771
-EXP_BYTES=3777095098371
+# Expected within the diff's scope -- everything under pratama2026/ except task_cache, which
+# `resync` covers instead. The two partitions reconcile: 2,756 + 108,004 files is the manifest's
+# 110,760, and 1,575,120,046,427 + 2,201,742,779,678 bytes is its 3,776,862,826,105.
+EXP_DIRS=279
+EXP_FILES=2767
+EXP_BYTES=1575352318693
 
-usage() { echo "usage: $0 {listing|diff|roundtrip-fetch|roundtrip-check}" >&2; exit 2; }
+# `globus ls` cannot see task_cache. A non-recursive listing of its single `1e/` directory, 11,583
+# children, does not return inside two minutes, and the tree below it holds ~138,655 entries. So the
+# path diff is scoped to everything else, and the whole set is verified by `resync` instead.
+SKIP_LS="metasmith/task_cache"
+
+usage() { echo "usage: $0 {resync|listing|diff|roundtrip-fetch|roundtrip-check}" >&2; exit 2; }
 [ $# -ge 1 ] || usage
+
+# The primary check. Resubmitting the identical batch with --sync-level checksum makes Globus walk
+# the source, checksum both ends of every file, and transfer only what differs. SUCCEEDED with
+# `Bytes Transferred: 0` and no faults therefore proves that every source file is present at the
+# destination with matching content -- which is stronger than comparing a path listing, and covers
+# task_cache, where no listing is tractable. It repairs as it verifies: anything absent is sent.
+#
+# CAUTION This compares the archive against the source as it stands now, not against the manifest.
+# Run it only while no driver is live, or an unrelated write shows up as a difference.
+resync() {
+    ssh fir 'squeue -u $USER -h -o "%.12i %.20j" | head' > /tmp/e3_squeue.$$ 2>&1 || true
+    if [ -s /tmp/e3_squeue.$$ ]; then
+        echo "refusing: jobs are running on fir, so the source is not quiescent" >&2
+        cat /tmp/e3_squeue.$$ >&2; rm -f /tmp/e3_squeue.$$; exit 1
+    fi
+    rm -f /tmp/e3_squeue.$$
+    local batch; batch=$(mktemp)
+    ssh fir 'bash -s' < "$(dirname "$0")/e3_archive_batch.sh" > "$batch"
+    echo "batch lines: $(wc -l < "$batch")"
+    "$GLOBUS" transfer --batch "$batch" "$FIR" "$CHINOOK" \
+        --verify-checksum --preserve-timestamp --sync-level checksum --notify off \
+        --label "E3 archive resync verify $(date +%F)"
+    rm -f "$batch"
+    echo
+    echo "PASS means: SUCCEEDED, Faults 0, Bytes Transferred 0."
+    echo "Any non-zero byte count names a file the first task did not deliver -- read its"
+    echo "successful-transfer list before treating the archive as verified."
+}
 
 # Recursive listing of one destination subtree, normalised to "type<TAB>size<TAB>relpath".
 # Globus defaults --recursive-depth-limit to 3; the deepest archive path is 10 components.
@@ -67,17 +107,46 @@ listing() {
     tops=$("$GLOBUS" ls -a -F json "$CHINOOK:$ARCHIVE/pratama2026/" \
            | python3 -c 'import json,sys; [print(e["name"].rstrip("/")) for e in json.load(sys.stdin)["DATA"]]')
     [ -n "$tops" ] || { echo "cannot list $ARCHIVE/pratama2026" >&2; exit 1; }
-    for t in $tops; do list_subtree "$t"; done
+    for t in $tops; do
+        if [ "$t" = "metasmith" ]; then
+            # Descend one level so task_cache can be skipped on its own.
+            local subs
+            subs=$("$GLOBUS" ls -a -F json "$CHINOOK:$ARCHIVE/pratama2026/metasmith/" \
+                   | python3 -c 'import json,sys; [print(e["name"].rstrip("/")) for e in json.load(sys.stdin)["DATA"]]')
+            for s in $subs; do
+                [ "metasmith/$s" = "$SKIP_LS" ] && { echo "skipped metasmith/$s (see SKIP_LS)"; continue; }
+                list_subtree "metasmith/$s"
+            done
+            list_subtree_shallow "metasmith"
+            continue
+        fi
+        list_subtree "$t"
+    done
     list_subtree ""
     echo "listings in $WORK"
+}
+
+# One level only, so metasmith's own children are recorded without descending into task_cache.
+list_subtree_shallow() {
+    local rel="$1" out="$WORK/ls.shallow_${1//\//_}.tsv"
+    [ -s "$out" ] && { echo "cached  $rel (shallow)"; return 0; }
+    "$GLOBUS" ls -a -F json "$CHINOOK:$ARCHIVE/pratama2026/$rel" \
+        | python3 -c '
+import json, sys
+pre = sys.argv[1]
+for e in json.load(sys.stdin)["DATA"]:
+    print("%s\t%s\t%s/%s" % (e["type"], e.get("size") or 0, pre, e["name"].rstrip("/")))
+' "$rel" > "$out.part" && mv "$out.part" "$out"
+    echo "listed  $rel (shallow, $(wc -l < "$out") entries)"
 }
 
 diff_manifest() {
     mkdir -p "$WORK"
     # Expected: manifest minus .staging, minus every symlink, minus the root row; plus the two
     # subtrees that arrived outside the manifest.
-    { zcat "$MANIFEST" | awk -F'\t' '
+    { zcat "$MANIFEST" | awk -F'\t' -v skip="$SKIP_LS" '
         $5 == "" || $1 == "l" || $5 ~ /^\.staging(\/|$)/ { next }
+        index($5, skip "/") == 1 { next }
         { print (($1=="d") ? "dir" : "file") "\t" $2 "\t" $5 }'
       printf 'file\t1799672\tmetasmith/relay/msm_relay\n'
       printf 'dir\t0\tmetasmith/runs/Qt0rbV1R/results\n'
@@ -167,6 +236,7 @@ roundtrip_check() {
 }
 
 case "$1" in
+    resync)          resync ;;
     listing)         listing ;;
     diff)            diff_manifest ;;
     roundtrip-fetch) roundtrip_fetch ;;
