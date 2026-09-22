@@ -370,13 +370,36 @@ Tier B figures above, which counted directory entries too.
 archive size that 208 BAMs at ~3.35 GB each could not fit. The manifests settle it directly: **zero `.bam` and
 zero `.bai` members in either archive.** Not an inference from size — an absence from a complete listing.
 
-So for both arms, any metric requiring E1's alignments means regenerating them. That is ~640-700 GB for the
-short arm's 207 and a smaller long-arm equivalent, and it is the single most expensive line item in the
-metric table. **Check MultiQC first** — `out/multiqc/multiqc_data/` survives on both arms and the short arm's
-plot list includes `bowtie2_pe_plot`, so a per-sample alignment rate may already be recorded. The open
-question is *which* bowtie2 that is: nf-core/mag runs both a host/phiX removal alignment and
-`BOWTIE2_ASSEMBLY_ALIGN`, and only the former is normally in MultiQC. The long arm's MultiQC carries QUAST
-and CheckM2 only, no mapping section at all, so a long-arm mapping rate is not free by this route.
+### …but "% reads mapped" survives anyway on the short arm, for all 208 samples, at zero compute
+
+The BAMs are gone and the metric is not. Job `60959768` extracted both arms' `multiqc_data/` and
+`pipeline_info/` to `/scratch/phyberos/bench/archive/e1_reports/` — 60-odd small files, already on disk, no
+further tar scan needed.
+
+**`out/multiqc/multiqc_data/multiqc_bowtie2_bowtie2-2.yaml` holds 208 entries with `overall_alignment_rate`**,
+plus the full read-pair breakdown (`total_reads`, `paired_aligned_one`, `paired_aligned_multi`,
+`paired_aligned_none`, the discordant and mate-only classes). Distribution over the 208: **min 80.83, median
+97.67, mean 96.55, max 99.90.**
+
+**It is the assembly alignment, not host removal**, and that is checked rather than assumed —
+`multiqc_sources.yaml` names the module `Bowtie2: assembly`, keys every sample `MEGAHIT-<sample>`, and sources
+each from `MEGAHIT-<sample>.bowtie2.log`. That is `BOWTIE2_ASSEMBLY_ALIGN`. A cross-check that the numbers are
+the right ones: `marine_sample_0` reports `paired_total: 16647376`, the same pair count the phiX measurement
+recorded for that sample.
+
+**Comparability caveat, and it is a real one.** E1's figure is bowtie2's own end-of-run summary parsed from
+its log; E2's would be computed from the BAM (`samtools flagstat` or equivalent). Those should agree, but they
+are different instruments and the comparison should say which produced each column — or, better, derive both
+from the same instrument by parsing E2's bowtie2 logs too, if they survive in the cache shards' `logs/`.
+
+**The long arm is not covered.** Its MultiQC consumed **CheckM2 only** — no bowtie2, no minimap2, no mapping
+section of any kind. So a long-arm "% reads mapped" for E1 still needs alignments that do not exist. Scope the
+metric to the short arm, or accept that the long-arm column is E2-only.
+
+Incidentally the long arm's `multiqc_general_stats.yaml` carries `quast_bins-N50` and `quast_bins-Total_length`
+per bin alongside CheckM2 completeness and contamination, so some of the MAG-contiguity and
+completeness/redundancy inputs are in there too — though `quast_bin_summary.tsv` and `checkm2_summary.tsv` in
+the tar are the fuller sources.
 
 ### What long-arm AMBER would need, if it is ever wanted
 
@@ -404,11 +427,11 @@ item needs.
 2. Assembly length and N50 — same call on the contigs FASTA. Recomputing both arms with one tool is more
    comparable than mixing E1's archived QUAST numbers with seqkit numbers.
 3. N MAGs — trivial once (1) and the CheckM2 tables are in hand; the only real decision is the quality gate.
-4. % reads mapped — **the one metric E1 cannot supply from its archives**, because neither tar holds a single
-   BAM. Read `out/multiqc/multiqc_data/` first (extracted by job `60959768` to `archive/e1_reports/`): if its
-   bowtie2 section is the assembly alignment rather than host removal, the short arm is free and only the long
-   arm needs work. Otherwise this metric costs ~640-700 GB of regenerated alignments on the short arm alone,
-   and is the item most worth dropping or scoping down. E2's own BAMs are 1.87-4.89 GB each and are in cache.
+4. % reads mapped — **free on E1's short arm, unavailable on E1's long arm.** All 208 short-arm rates are in
+   `archive/e1_reports/out/multiqc/multiqc_data/multiqc_bowtie2_bowtie2-2.yaml`, confirmed to be the assembly
+   alignment. The long arm's MultiQC has no mapping section and E1's BAMs do not exist, so that column is
+   E2-only unless alignments are regenerated. E2's own BAMs are 1.87-4.89 GB each and are in cache. Move this
+   item up the order — it was costed at ~700 GB and is now a file read.
 5. % of contigs binned — small, three documented traps above.
 6. Completeness / redundancy — no tool run; the work is normalising E1's one concatenated table against E2's
    ~29,542 one-row files and choosing the comparison unit.
