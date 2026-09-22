@@ -7,6 +7,7 @@ This directory holds what research support established for the five benchmark ex
 - `PROVEN.md` is the capability inventory. Each transform, nf-core process and install carries an OBSERVED, SOURCE or UNPROVEN status with its evidence.
 - `BLOCKERS.md` lists the active blockers (B1–B12), the relaunch preconditions and the known latent defects.
 - `R1_TABLE_AUDIT.md` gives every tool-table cell for E1–E5 its status in R1's drivers: matched, pinned, gated or gapfill.
+- `E1_E2_REPRODUCTION.md` is the evidence that E2 reproduces E1: MAGs, AMBER, jobs and the process-to-transform map.
 - This README records design findings that belong in neither ledger.
 
 CAUTION: research support edits the ledgers in `~/scratch/cami_campaign/` from a different worktree. The copies here are a snapshot. Copy them again before each commit.
