@@ -1,6 +1,6 @@
-"""Build the four E1-vs-E2 reproduction tables from the committed result tables.
+"""Build the E1-vs-E2 reproduction tables from the committed result tables.
 
-Writes reproduction_{mags,amber,jobs,steps}.tsv beside this script. With --markdown, also prints
+Writes reproduction_{mags,jobs,steps}.tsv beside this script. With --markdown, also prints
 each table as markdown for findings/E1_E2_REPRODUCTION.md.
 """
 import argparse
@@ -11,7 +11,6 @@ from datetime import datetime
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-SAMPLES = HERE.parents[1] / "cami" / "samples.tsv"
 BINNERS = ("COMEBin", "MetaBAT2", "SemiBin2", "DASTool")
 SCORING = {"amber", "gold_standard"}
 
@@ -20,10 +19,6 @@ def read(path):
     op = gzip.open if path.suffix == ".gz" else open
     with op(path, "rt", newline="") as f:
         return list(csv.DictReader(f, delimiter="\t"))
-
-
-def datasets():
-    return {f"{r['dataset']}_{r['sample_id']}": r["dataset"] for r in read(SAMPLES)}
 
 
 def quartiles(xs):
@@ -76,28 +71,6 @@ def mags():
             for i in range(6):
                 line += [stats["E1"][i], stats["E2"][i]]
             out.append(line)
-    return head, out
-
-
-def amber():
-    ds = datasets()
-    f1 = {}
-    for p, path in (("E1", HERE / "e1" / "e1_amber_summary.tsv"), ("E2", HERE / "e2" / "e2_amber_summary.tsv")):
-        for r in read(path):
-            f1[(p, r["sample"], r["Tool"])] = float(r["f1_score_bp"])
-    arm_of = {r["sample"]: r["arm"] for r in read(HERE / "e1" / "e1_amber_summary.tsv")}
-    rows = [{"sample": s, "dataset": ds[s], "arm": arm_of[s], "binner": b} for (p, s, b) in f1 if p == "E1"]
-    head = ["dataset", "arm", "binner", "samples", "E1_median_f1_bp", "E2_median_f1_bp",
-            "median_paired_diff_E2_minus_E1", "samples_within_0.02"]
-    out = []
-    for d, arm, rs in groups(rows):
-        for b in BINNERS:
-            keys = [r["sample"] for r in rs if r["binner"] == b]
-            a = [f1[("E1", s, b)] for s in keys]
-            e = [f1[("E2", s, b)] for s in keys]
-            diff = [y - x for x, y in zip(a, e)]
-            out.append([d, arm, b, len(keys), f"{statistics.median(a):.4f}", f"{statistics.median(e):.4f}",
-                        f"{statistics.median(diff):+.4f}", sum(abs(x) <= 0.02 for x in diff)])
     return head, out
 
 
@@ -174,7 +147,7 @@ def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--markdown", action="store_true")
     a = p.parse_args()
-    for name, build in (("mags", mags), ("amber", amber), ("jobs", jobs), ("steps", steps)):
+    for name, build in (("mags", mags), ("jobs", jobs), ("steps", steps)):
         head, rows = build()
         write(name, head, rows)
         if a.markdown:

@@ -2,10 +2,9 @@
 
 ## Purpose & Contents
 
-This document records the evidence that E2 reproduces E1. E1 is nf-core/mag 5.5.0, and E2 is metasmith solving the same workflow. Both ran on the same 249 CAMI samples. The document holds four tables and the caveats a reader needs to interpret them:
+This document records the evidence that E2 reproduces E1. E1 is nf-core/mag 5.5.0, and E2 is metasmith solving the same workflow. Both ran on the same 249 CAMI samples. The document holds three tables and the caveats a reader needs to interpret them:
 
 - MAGs per CAMI subset
-- AMBER per CAMI subset
 - jobs and execution time
 - nf-core processes against metasmith transforms
 
@@ -18,19 +17,19 @@ Metasmith solves nf-core/mag's topology process for transform and produces the s
 - **Transforms.** Each nf-core process that runs a tool maps to one E2 transform. There are 10 on the short arm and 9 on the long arm.
 - **Bin counts.** Each arm-by-binner total agrees within 1.3%, except long COMEBin at 6.6%.
 - **Quality.** High-quality MAG counts agree within 2.1% everywhere except long DAS Tool, 258 against 238.
-- **AMBER.** Median `f1_score_bp` agrees within 0.003 on every short binner and within 0.016 on every long binner. The median paired per-sample difference is within 0.005 on all eight arm-by-binner pairs.
 
 The two runs are not byte-identical. The assemblies already differ slightly between runs (see *The assemblies differ slightly between runs*). Every result downstream inherits that difference.
 
+Bin counts and quality tiers are aggregates. A per-MAG pairwise match between the arms is the stronger test, and it is not yet done.
+
 ## Rebuild the tables
 
-Run `python3 research/metasmith_benchmark/results/reproduction.py --markdown` from the repository root. It reads only committed tables and writes `results/reproduction_{mags,amber,jobs,steps}.tsv`. The tables below are its `--markdown` output, unedited.
+Run `python3 research/metasmith_benchmark/results/reproduction.py --markdown` from the repository root. It reads only committed tables and writes `results/reproduction_{mags,jobs,steps}.tsv`. The tables below are its `--markdown` output, unedited.
 
 | input | what it holds | produced by |
 |---|---|---|
 | `results/e1/e1_checkm2.tsv.gz` | one CheckM2 row per scored E1 bin, 26,774 rows, with `source` = `nfcore`, `gapfill` or `b19_rerun` | `drivers/checkm2_tables.py e1` |
 | `results/e2/e2_checkm2.tsv.gz` | one CheckM2 row per E2 bin, 26,928 rows, relabelled to nf-core bin names | `drivers/checkm2_tables.py e2`, read-only over the task cache |
-| `results/{e1,e2}/*_amber_summary.tsv` | AMBER per sample and binner, 996 rows each | `drivers/e1_close_amber.sbatch` for E1, E2's own `amber` transform for E2 |
 | `results/{e1,e2}/*_slurm_tasks.tsv` | one row per Slurm job attempt | `results/{e1,e2}/build_*_slurm_tables.py` |
 
 ## MAGs per CAMI subset
@@ -82,49 +81,6 @@ Quartiles are Q1, median and Q3.
 | all long | long | SemiBin2 | 41 | 1335 / 1318 | 257 / 253 | 334 / 329 | 744 / 736 | 19.4, 48.8, 87.2 / 19.8, 50.0, 87.3 | 0.2, 1.5, 4.2 / 0.2, 1.4, 4.1 |
 | all long | long | DASTool | 41 | 567 / 567 | 258 / 238 | 240 / 254 | 69 / 75 | 72.7, 89.9, 99.0 / 72.2, 88.0, 98.7 | 0.3, 1.2, 2.9 / 0.3, 1.2, 2.7 |
 
-## AMBER per CAMI subset
-
-The metric is AMBER's `f1_score_bp` in genome-binning mode. The paired difference is E2 minus E1 per sample, and its median is shown. The last column counts samples whose two scores are within 0.02.
-
-| dataset | arm | binner | samples | median_f1_bp (E1 / E2) | median_paired_diff_E2_minus_E1 | samples_within_0.02 |
-|---|---|---|---|---|---|---|
-| marine | short | COMEBin | 10 | 0.4295 / 0.4559 | +0.0062 | 6 |
-| marine | short | MetaBAT2 | 10 | 0.1597 / 0.1652 | -0.0003 | 10 |
-| marine | short | SemiBin2 | 10 | 0.1542 / 0.1580 | +0.0018 | 10 |
-| marine | short | DASTool | 10 | 0.1734 / 0.1869 | +0.0090 | 5 |
-| strain | short | COMEBin | 100 | 0.1215 / 0.1205 | +0.0011 | 84 |
-| strain | short | MetaBAT2 | 100 | 0.0611 / 0.0603 | +0.0000 | 98 |
-| strain | short | SemiBin2 | 100 | 0.0527 / 0.0525 | +0.0008 | 98 |
-| strain | short | DASTool | 100 | 0.0301 / 0.0307 | -0.0002 | 95 |
-| toy_hmp_airskinurogenital | short | COMEBin | 29 | 0.5120 / 0.4758 | +0.0001 | 18 |
-| toy_hmp_airskinurogenital | short | MetaBAT2 | 29 | 0.3707 / 0.3723 | -0.0000 | 29 |
-| toy_hmp_airskinurogenital | short | SemiBin2 | 29 | 0.4078 / 0.4066 | -0.0003 | 29 |
-| toy_hmp_airskinurogenital | short | DASTool | 29 | 0.2885 / 0.2646 | -0.0059 | 16 |
-| toy_hmp_gastrooral | short | COMEBin | 20 | 0.5286 / 0.5378 | -0.0003 | 14 |
-| toy_hmp_gastrooral | short | MetaBAT2 | 20 | 0.4104 / 0.4031 | -0.0009 | 20 |
-| toy_hmp_gastrooral | short | SemiBin2 | 20 | 0.4139 / 0.4161 | -0.0003 | 20 |
-| toy_hmp_gastrooral | short | DASTool | 20 | 0.3720 / 0.3927 | +0.0091 | 12 |
-| toy_mousegut | short | COMEBin | 49 | 0.2993 / 0.2993 | -0.0006 | 43 |
-| toy_mousegut | short | MetaBAT2 | 49 | 0.2402 / 0.2394 | -0.0000 | 49 |
-| toy_mousegut | short | SemiBin2 | 49 | 0.2463 / 0.2454 | -0.0002 | 49 |
-| toy_mousegut | short | DASTool | 49 | 0.2018 / 0.2039 | -0.0004 | 47 |
-| all short | short | COMEBin | 208 | 0.1897 / 0.1905 | +0.0004 | 165 |
-| all short | short | MetaBAT2 | 208 | 0.1401 / 0.1385 | -0.0001 | 206 |
-| all short | short | SemiBin2 | 208 | 0.1274 / 0.1260 | +0.0005 | 206 |
-| all short | short | DASTool | 208 | 0.0860 / 0.0889 | -0.0001 | 175 |
-| plant_associated_long_nano | long | COMEBin | 21 | 0.8933 / 0.8996 | +0.0058 | 8 |
-| plant_associated_long_nano | long | MetaBAT2 | 21 | 0.3720 / 0.3774 | -0.0131 | 13 |
-| plant_associated_long_nano | long | SemiBin2 | 21 | 0.4540 / 0.4450 | -0.0005 | 13 |
-| plant_associated_long_nano | long | DASTool | 21 | 0.1161 / 0.1143 | -0.0076 | 8 |
-| toy_humangut_long | long | COMEBin | 20 | 0.9116 / 0.9051 | +0.0012 | 13 |
-| toy_humangut_long | long | MetaBAT2 | 20 | 0.4470 / 0.4474 | +0.0050 | 9 |
-| toy_humangut_long | long | SemiBin2 | 20 | 0.5073 / 0.5208 | +0.0042 | 7 |
-| toy_humangut_long | long | DASTool | 20 | 0.2901 / 0.2939 | +0.0101 | 7 |
-| all long | long | COMEBin | 41 | 0.9047 / 0.9034 | +0.0036 | 21 |
-| all long | long | MetaBAT2 | 41 | 0.4065 / 0.4138 | -0.0044 | 22 |
-| all long | long | SemiBin2 | 41 | 0.4731 / 0.4715 | +0.0028 | 20 |
-| all long | long | DASTool | 41 | 0.2109 / 0.1951 | +0.0029 | 15 |
-
 ## Jobs and execution time
 
 Each row counts every Slurm job attempt the arm submitted, including failed attempts and runs later superseded. `elapsed_h` sums wall time over attempts. `cpu_h` multiplies each attempt's wall time by its allocated CPUs. `first_submit` to `last_end` is the calendar span, including the pauses between resumed sessions.
@@ -174,7 +130,7 @@ CAUTION: Do not compare job counts per tool. E2 batches up to 200 bins per Check
 | long | gold_standard | (scoring, outside nf-core/mag) | 0 / 82 |
 | long | (no transform) | B19_MERGE_BOOKKEEPING + B19_ROWS_BOOKKEEPING + BIN_SUMMARY + CONCAT_CHECKM2_TSV + CONCAT_QUAST_SUMMARY + FASTATOCONTIG2BIN + GUNZIP + MAG_DEPTHS + MAG_DEPTHS_SUMMARY + MULTIQC + NANOPLOT_FILTERED + NANOPLOT_RAW + PRODIGAL + QUAST + QUAST_BINS + RENAME_POSTDASTOOL + RENAME_PREDASTOOL + SEQKIT_STATS + SPLIT_FASTA | 827 / 0 |
 
-Every tool-bearing nf-core process maps to one E2 transform: 10 on the short arm and 9 on the long arm. A transform that stands for two nf-core processes is one tool step split in two by nf-core. For example, `bowtie2_binning_bam` covers the index build and the alignment. The `(no transform)` row lists nf-core's bookkeeping, format-conversion and report processes. E2 folds the conversions its tools need into the transform itself and runs no report steps. `amber` and `gold_standard` are the shared scoring instrument, which nf-core does not ship.
+Every tool-bearing nf-core process maps to one E2 transform: 10 on the short arm and 9 on the long arm. A transform that stands for two nf-core processes is one tool step split in two by nf-core. For example, `bowtie2_binning_bam` covers the index build and the alignment. The `(no transform)` row lists nf-core's bookkeeping, format-conversion and report processes. E2 folds the conversions its tools need into the transform itself and runs no report steps. `amber` and `gold_standard` were E2's scoring steps, which nf-core does not ship (see *AMBER is not evidence of reproduction*).
 
 ## E1 long MetaBAT2 comes from the b19 rerun at jgi 2.17
 
@@ -190,7 +146,7 @@ E1's MetaBAT2 found no bins on `strain_sample_49`. Its depth file has a mean dep
 
 ## E1 short BAMs are regenerated
 
-nf-core did not publish E1's BAMs. `drivers/e1_close_bam.sbatch` regenerated all 208 short BAMs with nf-core's bowtie2 command and image against E1's own MEGAHIT assemblies. The input reads are E2's fastp reads. They equal E1's on all 208 samples by read and base count (`results/e1/e1_e2_fastp_compare.tsv`). Every regenerated bowtie2 log matches E1's MultiQC bowtie2 counts exactly (`results/e1/e1_bam_regeneration_check.tsv`). AMBER's gold standard uses these BAMs to place each read on a contig. They change no bin.
+nf-core did not publish E1's BAMs. `drivers/e1_close_bam.sbatch` regenerated all 208 short BAMs with nf-core's bowtie2 command and image against E1's own MEGAHIT assemblies. The input reads are E2's fastp reads. They equal E1's on all 208 samples by read and base count (`results/e1/e1_e2_fastp_compare.tsv`). Every regenerated bowtie2 log matches E1's MultiQC bowtie2 counts exactly (`results/e1/e1_bam_regeneration_check.tsv`). Only the `strain_sample_49` gapfill consumed them.
 
 ## The assemblies differ slightly between runs
 
@@ -206,11 +162,13 @@ COMEBin runs on 12 threads on E1 and 48 on E2. Flye runs on 12 and 16, and SemiB
 
 ## The dataset mix makes the arm medians incomparable
 
-The short arm holds five datasets and the long arm holds two. `strain` contributes 100 of the 208 short samples and has the lowest AMBER scores, so it pulls the short-arm medians down. Compare E1 with E2 within a row, never one arm with the other.
+The short arm holds five datasets and the long arm holds two. `strain` contributes 100 of the 208 short samples, so it dominates the short-arm totals. Compare E1 with E2 within a row, never one arm with the other.
 
-## Gold-standard ties add up to 0.003 of noise
+## AMBER is not evidence of reproduction
 
-`cami_gold_standard.py` labels each contig with the genome that contributes the most reads. It sorts by read count only, so a tie resolves arbitrarily. Two scorings of the same bins can therefore differ. On the long `sample_0`, 21 of 3,104 contigs changed genome between two runs, and the scores moved by at most 0.003. Both arms use the same script, so the noise is symmetric. Adding `genome_id` to the sort key removes it.
+The claim rests on the tables above, not on AMBER. AMBER scores bins against a gold standard that `cami_gold_standard.py` builds by majority vote of CAMISIM's read truth onto each run's own contigs. A chimeric contig receives one genome at full length. A binner that splits it correctly is penalised, and a worse assembly can score better. The vote cannot see assembly error, so it measures neither run's correctness. E2 drops its `amber` and `gold_standard` steps for this reason.
+
+`results/{e1,e2}/*_amber_summary.tsv` stay committed as a record of the runs. The vote also breaks ties arbitrarily because it sorts by read count only. Adding `genome_id` to the sort key fixes that.
 
 ## Where the data lives
 
