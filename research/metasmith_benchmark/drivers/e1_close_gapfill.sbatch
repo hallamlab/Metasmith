@@ -16,6 +16,7 @@ I=/scratch/phyberos/cache/apptainer
 DB=/scratch/phyberos/wave2_b3_nfcore/checkm2_db/CheckM2_database/uniref100.KO.1.dmnd
 IFS=$'\t' read -r idx arm sample dataset asm_id asm bam reads truth < <(awk -F'\t' -v s=$S '$3==s' $W/sheet.tsv)
 O=$W/gapfill/$S
+ASM=${asm_id%%-*}
 mkdir -p $O
 echo "START $(date -Is) $S on $(hostname)"
 module load apptainer
@@ -26,9 +27,9 @@ run() { apptainer exec --no-home --cleanenv -B /scratch/phyberos -B $SLURM_TMPDI
 run docker..quay.io_biocontainers_metabat2..2.15--h986a166_1.sif \
     "export OMP_NUM_THREADS=$C; jgi_summarize_bam_contig_depths --outputDepth depth.txt $bam"
 run docker..quay.io_biocontainers_metabat2..2.17--hd498684_0.sif \
-    "metabat2 -m 1500 --unbinned --seed 1 -i $asm -a depth.txt -t $C --saveCls -o $asm_id-MetaBAT2-$S"
+    "metabat2 -m 1500 --unbinned --seed 1 -i $asm -a depth.txt -t $C --saveCls -o $ASM-MetaBAT2-$S"
 mkdir -p metabat2_bins
-for f in $asm_id-MetaBAT2-$S.*.fa; do
+for f in $ASM-MetaBAT2-$S.*.fa; do
     n=${f%.fa}; n=${n##*.}
     [[ $n =~ ^[0-9]+$ ]] && mv $f metabat2_bins/
 done
@@ -42,21 +43,21 @@ done
 wc -l MetaBAT2.tsv SemiBin2.tsv COMEBin.tsv
 gunzip -c $asm > contigs.fa
 run docker..quay.io_biocontainers_das_tool..1.1.7--r44hdfd78af_1.sif \
-    "DAS_Tool --write_bins --write_unbinned --write_bin_evals --score_threshold 0.5 -t $C -i MetaBAT2.tsv,SemiBin2.tsv,COMEBin.tsv -c contigs.fa -o $asm_id-DASTool-$S"
+    "DAS_Tool --write_bins --write_unbinned --write_bin_evals --score_threshold 0.5 -t $C -i MetaBAT2.tsv,SemiBin2.tsv,COMEBin.tsv -c contigs.fa -o $ASM-DASTool-$S"
 mkdir -p dastool_bins
-for f in $asm_id-DASTool-${S}_DASTool_bins/*.fa; do [ "$(basename $f .fa)" = unbinned ] || cp $f dastool_bins/; done
+for f in $ASM-DASTool-${S}_DASTool_bins/*.fa; do [ "$(basename $f .fa)" = unbinned ] || cp $f dastool_bins/; done
 echo "DAS Tool bins: $(ls dastool_bins | wc -l)"
 
-for b in metabat2 dastool; do
+for b in MetaBAT2 DASTool; do
     run docker..community.wave.seqera.io_library_checkm2..1.1.0--60f287bc25d7a10d.sif \
-        "checkm2 predict --input ${b}_bins -x fa --output-directory checkm2_$b --threads $C --database_path $DB"
-    cp checkm2_$b/quality_report.tsv $O/$asm_id-$b.quality_report.tsv
+        "checkm2 predict --input ${b,,}_bins -x fa --output-directory checkm2_$b --threads $C --database_path $DB"
+    cp checkm2_$b/quality_report.tsv $O/$ASM-$b-$S.quality_report.tsv
 done
 
 tar -cf $O/bins.tar metabat2_bins dastool_bins
-gzip -c depth.txt > $O/$asm_id-$S-depth.txt.gz
-cp MetaBAT2.tsv SemiBin2.tsv COMEBin.tsv $asm_id-DASTool-${S}_DASTool_contig2bin.tsv $asm_id-DASTool-${S}_DASTool_summary.tsv $O/
+gzip -c depth.txt > $O/$asm_id-depth.txt.gz
+cp MetaBAT2.tsv SemiBin2.tsv COMEBin.tsv $ASM-DASTool-${S}_DASTool_contig2bin.tsv $ASM-DASTool-${S}_DASTool_summary.tsv $O/
 python3 $W/e1_close.py patch --sheet $W/sheet.tsv --maps $W/maps --sample $S --binner MetaBAT2 --contig2bin MetaBAT2.tsv
-python3 $W/e1_close.py patch --sheet $W/sheet.tsv --maps $W/maps --sample $S --binner DASTool --contig2bin $asm_id-DASTool-${S}_DASTool_contig2bin.tsv
+python3 $W/e1_close.py patch --sheet $W/sheet.tsv --maps $W/maps --sample $S --binner DASTool --contig2bin $ASM-DASTool-${S}_DASTool_contig2bin.tsv
 ls -l $O
 echo "EXIT 0 $(date -Is)"
