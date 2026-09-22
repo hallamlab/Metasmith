@@ -29,7 +29,7 @@ def quartiles(xs):
 
 
 def tier(completeness, contamination):
-    if completeness >= 90 and contamination < 5:
+    if completeness > 90 and contamination < 5:
         return "HQ"
     if completeness >= 50 and contamination < 10:
         return "MQ"
