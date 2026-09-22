@@ -10,3 +10,18 @@ types:
     properties:
       e4: env
       provides: [memote]
+  diamond_0930.env:
+    properties:
+      e4: env
+      provides: [diamond]
+
+  carveme_bigg_proteins:
+    properties:
+      _: the BiGG protein FASTA CarveMe 1.2.2 bundles (84,674 sequences, sha256 88c7c9320611d0d1...), the file carveme_init fetched from CarveMe master in 2019-03 to 2020-09
+      e4: carveme_bigg_proteins
+      ext: faa
+  bigg_diamond_db_0930:
+    properties:
+      _: DIAMOND 0.9.30 database built from e4::carveme_bigg_proteins, as carveme_init builds it
+      e4: bigg_diamond_db_0930
+      ext: dmnd

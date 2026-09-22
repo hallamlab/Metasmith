@@ -1,12 +1,16 @@
 #!/usr/bin/env python3
-"""E4: metaGEM's published protein bins to GEMs, with metaGEM's own carve and memote commands.
+"""E4: metaGEM's published protein bins to GEMs, in two lanes.
+
+repro   metaGEM's own carve and memote commands on the versions it ran (DIAMOND 0.9.30, CarveMe 1.2.2,
+        MEMOTE 0.9.13), on CPLEX.
+modern  E5's GEM transforms, unchanged (CarveMe 1.6.6 on SCIP, MEMOTE 0.17.0), for comparison with E5.
 
 `run` solves against a local dry-run home and renders the DAG. `import`, `--materialise`,
 `--stage-only` and `--launch` act on the fir agent home, from a Slurm job there, after
 e4_extract_proteins.sh has unpacked the bins.
 
-Subcommands: list, import, run [--study ...] [--limit N] [--chunk N --chunk-size S] [--dag]
-[--materialise | --stage-only | --launch].
+Subcommands: list, import, run [--lane repro|modern] [--study ...] [--limit N] [--bins ...]
+[--chunk N --chunk-size S] [--dag] [--materialise | --stage-only | --launch].
 """
 
 import argparse
@@ -21,6 +25,7 @@ sys.path.insert(0, str(HERE))
 CACHE_DIR = Path(os.environ.get("E4_CACHE_DIR", HERE / ".cache" / "e4_gems"))
 
 import _common as c  # noqa: E402
+import e4_metagem  # noqa: E402
 from metasmith.python_api import (  # noqa: E402
     DataInstanceLibrary, TransformInstanceLibrary, TargetBuilder,
 )
@@ -32,8 +37,10 @@ STUDY_ORDER = ["li2019", "korem2015", "karlsson2013", "bissett_base", "sunagawa2
 MEDIA_DB = HERE / "refs" / "metagem_media_db.tsv"
 MEDIUM_NAME = "M8"
 CPLEX_ROOT = Path(os.environ.get("CPLEX_ROOT", "/home/phyberos/projects/rpp-shallam/phyberos/cplex/cplex_runtime"))
+# CarveMe 1.2.2's bundled data/input/bigg_proteins.faa, sha256 88c7c932...c997.
+BIGG_PROTEINS = Path(os.environ.get("BIGG_PROTEINS", "/scratch/phyberos/metagem/refs/carveme122_bigg_proteins.faa"))
 EXTRA_CONFIG = HERE / "e4_gems.config.nf"
-STEPS = 3
+STEPS = {"repro": 4, "modern": 2}
 
 
 def enumerate_bins():
@@ -68,9 +75,19 @@ def declare_globals(smith, ensure):
     c.add_value(givens, "ref/bench::metagem_media_db", MEDIA_DB.read_text(), "bench::metagem_media_db",
                 tags=["reference"])
     c.add_value(givens, "ref/modelling::medium_name", MEDIUM_NAME, "modelling::medium_name", tags=["reference"])
-    c.declare_refs(givens, {"modelling::cplex_installation": CPLEX_ROOT})
-    types = [c.MLIB / "data_types" / t for t in ("modelling.yml", "ref.yml")] + [c.LIBRARY / "data_types" / "bench.yml"]
+    c.declare_refs(givens, {"modelling::cplex_installation": CPLEX_ROOT, "e4::carveme_bigg_proteins": BIGG_PROTEINS})
+    types = [c.MLIB / "data_types" / t for t in ("modelling.yml", "ref.yml")]
+    types += [c.LIBRARY / "data_types" / t for t in ("bench.yml", "e4.yml")]
     return c.cite(givens, CACHE_DIR / "e4_gems_globals.xgdb", types, ensure)
+
+
+def modern_transforms():
+    # E5's GEM library for --solver open (e5_pilot.build_transforms): the standard CarveMe and MEMOTE
+    # transforms masked, so the bench library's 1.6.6 carveme_from_orfs and memote_score answer.
+    masked = {Path("carveme_from_orfs.py"), Path("memote_score.py"), Path("carveme_from_orfs_cplex.py")}
+    return [TransformInstanceLibrary.Load(c.MLIB / "transforms" / "logistics"),
+            TransformInstanceLibrary.Load(c.MLIB / "transforms" / "metabolicModelling").AsView(masked, invert=True),
+            TransformInstanceLibrary.Load(c.LIBRARY / "transforms" / "modelling")]
 
 
 def declare_givens(smith, bins, ensure, name):
@@ -80,8 +97,12 @@ def declare_givens(smith, bins, ensure, name):
     return c.cite(givens, CACHE_DIR / f"e4_gems_inputs_{name}.xgdb", [c.MLIB / "data_types" / "sequences.yml"], ensure)
 
 
-def build_targets():
+def build_targets(lane):
     t = TargetBuilder()
+    if lane == "modern":
+        gem = t.Add("modelling::carveme_model")
+        t.Add("modelling::memote_score", parents=[gem])
+        return t
     hits = t.Add("bench::bigg_diamond_hits")
     gem = t.Add("modelling::carveme_model_cplex", parents=[hits])
     t.Add("modelling::memote_report", parents=[gem])
@@ -110,28 +131,41 @@ def cmd_run(args):
     name = "_".join([f"chunk{args.chunk}of{args.chunk_size}" if args.chunk else "all", *(args.study or []),
                      *([f"limit{args.limit}"] if args.limit else []), *(["picked"] if args.bins else [])])
     inputs = declare_givens(smith, bins, ensure, name)
-    globals_lib = declare_globals(smith, ensure)
+    repro_globals = declare_globals(smith, ensure)
+    modern_globals = e4_metagem.declare_globals(smith, "open", CACHE_DIR / "e4_gems_modern_globals.xgdb", ensure)
     if importing:
         print(f"the pool at {smith.home.GetPath()} holds the givens of {len(bins)} bins")
         return 0
 
-    task = smith.GenerateWorkflow(
-        samples=list(inputs.AsSamples("sequences::bin_orfs")),
-        resources=[DataInstanceLibrary.Load(c.LIBRARY / "resources" / "e4"), globals_lib],
-        transforms=[TransformInstanceLibrary.Load(c.MLIB / "transforms" / "logistics"),
-                    TransformInstanceLibrary.Load(c.LIBRARY / "transforms" / "e4")],
-        targets=build_targets(),
-    )
-    c.check_plan(task, {"sequences::bin_orfs": len(bins), "bench::metagem_media_db": 1,
-                        "modelling::medium_name": 1, "modelling::cplex_installation": 1})
+    if args.lane == "modern":
+        task = smith.GenerateWorkflow(
+            samples=list(inputs.AsSamples("sequences::bin_orfs")),
+            resources=[DataInstanceLibrary.Load(c.MLIB / "resources" / "env"),
+                       DataInstanceLibrary.Load(c.MLIB / "resources" / "lib"),
+                       DataInstanceLibrary.Load(c.LIBRARY / "resources" / "bench"), modern_globals],
+            transforms=modern_transforms(),
+            targets=build_targets("modern"),
+        )
+        expected = {"sequences::bin_orfs": len(bins), "modelling::media": 1, "modelling::medium_name": 1}
+    else:
+        task = smith.GenerateWorkflow(
+            samples=list(inputs.AsSamples("sequences::bin_orfs")),
+            resources=[DataInstanceLibrary.Load(c.LIBRARY / "resources" / "e4"), repro_globals],
+            transforms=[TransformInstanceLibrary.Load(c.MLIB / "transforms" / "logistics"),
+                        TransformInstanceLibrary.Load(c.LIBRARY / "transforms" / "e4")],
+            targets=build_targets("repro"),
+        )
+        expected = {"sequences::bin_orfs": len(bins), "bench::metagem_media_db": 1, "modelling::medium_name": 1,
+                    "modelling::cplex_installation": 1, "e4::carveme_bigg_proteins": 1}
+    c.check_plan(task, expected)
     c.print_plan(task, 24)
-    if len(task.plan.steps) != STEPS:
-        sys.exit(f"expected {STEPS} steps, the plan has {len(task.plan.steps)}")
+    if len(task.plan.steps) != STEPS[args.lane]:
+        sys.exit(f"expected {STEPS[args.lane]} steps, the plan has {len(task.plan.steps)}")
 
     if args.dag:
-        c.write_dag(task, "e4_gems", CACHE_DIR)
+        c.write_dag(task, f"e4_gems_{args.lane}", CACHE_DIR)
     if remote:
-        c.stage_and_run(smith, task, CACHE_DIR, args.tag or f"e4g_{name}", stage_only=args.stage_only,
+        c.stage_and_run(smith, task, CACHE_DIR, args.tag or f"e4g_{args.lane}_{name}", stage_only=args.stage_only,
                         params=dict(process=dict(tries=2)), materialise=args.materialise,
                         extra_config=EXTRA_CONFIG)
     else:
@@ -149,10 +183,11 @@ def main():
         p.add_argument("--bins", nargs="*", help="exact metaGEM bin ids, e.g. SRR7664617_bin.15.p")
         p.add_argument("--chunk", type=int, help="1-based chunk of the sorted selection")
         p.add_argument("--chunk-size", type=int, default=2000)
-        p.set_defaults(fn=fn, dag=False, stage_only=False, launch=False, materialise=False, tag=None,
+        p.set_defaults(fn=fn, lane="repro", dag=False, stage_only=False, launch=False, materialise=False, tag=None,
                        import_givens=False)
         if name == "run":
-            p.add_argument("--dag", action="store_true", help="render the plan to page/dags/e4_gems.dag.svg")
+            p.add_argument("--lane", choices=["repro", "modern"], default="repro")
+            p.add_argument("--dag", action="store_true", help="render the plan to page/dags/e4_gems_<lane>.dag.svg")
             mode = p.add_mutually_exclusive_group()
             mode.add_argument("--stage-only", action="store_true")
             mode.add_argument("--launch", action="store_true")

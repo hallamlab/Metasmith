@@ -7,6 +7,7 @@ This directory holds what research support established for the five benchmark ex
 - `PROVEN.md` is the capability inventory. Each transform, nf-core process and install carries an OBSERVED, SOURCE or UNPROVEN status with its evidence.
 - `BLOCKERS.md` lists the active blockers (B1–B12), the relaunch preconditions and the known latent defects.
 - `R1_TABLE_AUDIT.md` gives every tool-table cell for E1–E5 its status in R1's drivers: matched, pinned, gated or gapfill.
+- `E4_REPRODUCTION.md` lists how E4's two GEM lanes differ from metaGEM's original methods and from E5's GEM lane, with the measured parity.
 - This README records design findings that belong in neither ledger.
 
 CAUTION: research support edits the ledgers in `~/scratch/cami_campaign/` from a different worktree. The copies here are a snapshot. Copy them again before each commit.
@@ -24,7 +25,7 @@ CAUTION: `spades.py` reads short reads only and Flye reads long reads only, so p
 
 ## metaGEM published products
 
-All five studies publish MAGs, proteins, assemblies and models on Zenodo. `research/metagem/README.md` lists the records and the fir location. E4 starts from these MAGs. E5 still needs the reads.
+All five studies publish MAGs, proteins, assemblies and models on Zenodo. `research/metagem/README.md` lists the records and the fir location. E4 starts from their protein bins. E5 still needs the reads.
 
 ## nf-core/mag DAG
 
