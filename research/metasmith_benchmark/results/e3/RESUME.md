@@ -3,7 +3,7 @@
 ## Purpose & Contents
 
 E3's agent home left fir on 2026-09-22 and lives on the chinook Globus collection. This file tells
-the next agent what the archive contains, what state E3 stopped in, and the four things that turn a
+the next agent what the archive contains, what state E3 stopped in, and the five things that turn a
 restore into a silent 2 TB recomputation.
 
 The restore procedure itself is not here. Run `drivers/restore_e3.sh`, which carries the endpoint
@@ -17,8 +17,9 @@ worth.
     chinook collection 2602486c-1e0f-47a0-be15-eec1b0ff0f96
     /Workspace_backups/Tony_Liu/fir_bench_e3/
         pratama2026/   the agent home
-        meta/          manifests, index fingerprint, dependency audit, step logs
+        meta/          manifests, index fingerprint, dependency audit, step logs, cache census
         rescue/        p38's kofam annotations, recovered before the run was stopped
+        deps/          the 0.22.1 apptainer image, which lived outside the home
 
 **CAUTION** The archive sits beside `altair/`, not inside it. The nightly `workspace_backup` job
 mirrors into `altair/workspace/` with deletion enabled. An archive placed under that tree is erased
@@ -64,7 +65,7 @@ in `split_viral_contigs_pratama.py` and `checkv_batch_pratama.py`. At k=16 every
 2 h. Stage VOGDB as well. A walltime exception is not a route: it asks ~960 core-hours with 15 of 16
 cores idle and still crashes at the end.
 
-## The four things that cool the cache
+## The five things that cool the cache
 
 1. **Restore to `/scratch/phyberos/pratama2026` and nowhere else.** `given_name(base, declared)`
    returns `f"{base}@{sha256(str(declared))[:12]}"`, folding the absolute path string of every
@@ -79,9 +80,19 @@ cores idle and still crashes at the end.
    `lineage_payload_version 6`, `shard_layout_version 3`. An engine with a higher key version
    mass-tombstones every non-imported row on first open, and a later `gc --delete` then reclaims the
    lot.
-4. **Keep the 15 external paths alive.** They are listed in `restore_e3.sh` and audited in
-   `meta/external_dependencies.txt`. Note that `ref::vibrant_db` was itself copied out of this cache,
-   and that the GTDB skani squashfs's source genome tree is already deleted.
+4. **Run the archived image, not the tag.** `_common.py` names
+   `docker://quay.io/hallamlab/metasmith:0.22.1`, a mutable remote tag, and apptainer resolved it
+   through `APPTAINER_CACHEDIR` to `/scratch/phyberos/cache/apptainer/`, outside the home. So no
+   image was inside the archive set. The 978 MB SIF is archived separately as
+   `deps/docker..quay.io_hallamlab_metasmith..0.22.1.sif`. Restore that file and point
+   `APPTAINER_CACHEDIR` at it. The engine inside it reports version 0.23.0 -- the image tag and the
+   engine version do not agree, so pin the SIF rather than either number.
+5. **Keep the 15 external paths alive.** They are listed in `restore_e3.sh` and audited in
+   `meta/external_dependencies.txt`. `ref::vibrant_db` was itself copied out of this cache, and the
+   GTDB skani squashfs's source genome tree is already deleted. The driver declares three of them
+   through `/home/phyberos/project-rpp`, a symlink to `/project/6004975/phyberos`. `given_name`
+   folds the literal string from the source, so a cache hit survives the symlink going missing.
+   A cache miss does not.
 
 ## Why the archive is smaller than the home
 
@@ -91,22 +102,45 @@ Three subtrees stayed behind, and each is either reconstructible or meaningless 
   never consults it: `invocation.probe` checks for a tombstone, a readable `manifest.cbor` and the
   presence of each manifest relpath, and never opens sqlite. Most of its bytes are hardlinks to
   task_cache content that Globus would have written out a second time.
-- `runs/Qt0rbV1R/results/`, 5,332 inodes and 554 GB. All but 11 files are hardlinks into task_cache.
+- `runs/Qt0rbV1R/results/`, 5,332 inodes and 554 GB. All but 10 files are hardlinks into task_cache.
   Globus does not preserve hardlinks, so archiving this meant a second copy of the same bytes. The
-  11 exceptions are `results/_metadata/`, which is archived separately.
-- `metasmith/relay/`, 26 unix sockets pointing into each compute node's `/tmp`.
+  10 exceptions are `results/_metadata/`, which is archived separately and lands back in place.
+  A restore does not need `results/` anyway: `runner.py` deletes and recreates it before nextflow
+  starts, so nothing ever reads the archived copy.
+- `metasmith/relay/`, 25 unix sockets pointing into each compute node's `/tmp`. **CAUTION** The 26th
+  entry is `msm_relay`, a 1,799,672-byte executable that `SETUP_COMMANDS` starts before every run.
+  The exclusion dropped it. It is archived separately, back in place at
+  `pratama2026/metasmith/relay/msm_relay`. Without it a restored `./msm` prints
+  `relay on <host>: MISSING` rather than failing outright.
 
 `.staging/` also stayed behind. It holds 20 truncated partial downloads, every one of which has a
 larger completed counterpart under `reads_2019/` or `reads_2022/`. It is 55,992,517,500 bytes of
 abandoned bytes, not data.
 
-**CAUTION** `meta/manifest_full.tsv.gz` lists `.staging` even though the archive omits it. The
-manifest totals 145,220 entries and 3,832,855,343,605 bytes. The archive holds 145,199 entries and
-3,776,862,826,105 bytes. Compare a restored tree against the manifest minus `.staging`, which is
-what `drivers/verify_e3_archive.sh diff` does.
+**CAUTION** The manifest is not the archive, in two ways, and comparing a restored tree against it
+raw reports thousands of false absences. `meta/manifest_full.tsv.gz` lists `.staging`, and it lists
+3,511 symlinks that the transfer ran with `recursive_symlinks=ignore` and therefore never wrote at
+all -- neither followed nor recreated. Subtract both. Then add the two subtrees that arrived outside
+the manifest, `results/_metadata/` and `relay/msm_relay`.
 
-The run's 3,510 per-step logs were symlinks into `nxf_work/` and would have arrived dangling. They
-are dereferenced into `meta/step_logs_Qt0rbV1R.tar.gz`, 3,529 members and no symlinks.
+| | entries | bytes |
+|---|---|---|
+| manifest total | 145,220 | 3,832,855,343,605 |
+| minus `.staging` | −21 | −55,992,517,500 |
+| minus symlinks | −3,511 | 0 |
+| plus `results/_metadata` | +12 | +230,472,594 |
+| plus `relay/msm_relay` | +1 | +1,799,672 |
+| **archive** | **141,701** | **3,777,095,098,371** |
+
+`drivers/verify_e3_archive.sh diff` applies exactly that arithmetic, and reports extra paths as
+well as absent ones. An unexplained extra means the manifest and the archive describe different
+trees.
+
+Losing the symlinks costs nothing. 3,510 of them pointed into the excluded `nxf_work/` and would
+have arrived dangling, and their content is dereferenced into `meta/step_logs_Qt0rbV1R.tar.gz`,
+3,529 members and no symlinks -- now the only copy of the per-step logs. The one survivor is
+`_metasmith/logs.latest`, a convenience pointer. No symlink exists anywhere under `task_cache/` or
+`imports/`.
 
 ## What the restore is worth
 
@@ -120,14 +154,23 @@ what makes this archive a round trip rather than a museum piece. It was measured
 regexing all 11,326 payload blobs as raw bytes: only the 243 imported rows name absolute paths, and
 those 15 distinct paths are exactly the external-dependency list.
 
-The expensive work that replays from cache:
+**The cache is a shared store, and E3's own run contributed 132 shards to it.** Grouping the 11,083
+lineage rows by their `run` tag gives 4,398 untagged, 2,284 `JtWdzRCY`, 1,581 `Son2YJiI`, 1,494
+`bqyYO0Ip`, 758 `AvPNgFtP`, 380 `F3KJbPJK`, 299 `qcMKf68s` and 132 `Qt0rbV1R`. That reconciles with
+the finalizer, which promoted 132 members and served 3,510. So E3 wave 8 was itself mostly a replay,
+and this archive protects seven earlier runs' work as well as E3's.
 
-| transform | shards | | transform | shards |
-|---|---|---|---|---|
-| checkm2 | 2,261 | | genomad / virsorter2 / vibrant | 847 each |
-| memote_score | 680 | | diamond_uniref50 / kofamscan / proteinbert | 562 each |
-| prodigal_from_bin / carveme_from_orfs | 381 each | | megahit | 68 |
-| spades_pratama, each metawrap_* | 65 each | | | |
+`meta/cache_census_named.tsv` is the per-transform census: shard count, bytes, step name and
+transform key for all 69 transforms. Step names come from `trace.jsonl`, which only covers this run
+and its hits, so 37 transforms holding 7,413 shards show `?` -- those belong to the runs above,
+whose run directories no longer exist. The largest named lanes are `genomad_pratama` and
+`vibrant_pratama` at 854 shards each, `virsorter2_pratama` at 847, `splitContigsForAmr` at 133, and
+`prodigal`, `megahit` and `seqkit_reads` at 68 each. The two largest lanes overall are unnamed:
+2,261 shards under `632daaHl` and 1,880 under `hWSjG4p7`, both tiny per-shard.
+
+**CAUTION** Do not quote shard counts off the per-run rows of `meta/cache_transform_census.tsv`. It
+is grouped by transform *and run*, so a transform's total is the sum of several rows. Reading a
+single row is how `genomad_pratama` and `vibrant_pratama` were previously recorded as 847.
 
 ## What a resume actually does
 

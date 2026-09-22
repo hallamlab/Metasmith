@@ -20,6 +20,7 @@ CHINOOK=2602486c-1e0f-47a0-be15-eec1b0ff0f96
 FIR=8dec4129-9ab4-451d-a45f-5b4b8471f7a3
 ARCHIVE=/Workspace_backups/Tony_Liu/fir_bench_e3
 HOME_PATH=/scratch/phyberos/pratama2026
+APPTAINER_CACHE=/scratch/phyberos/cache/apptainer
 
 # Taken 2026-09-22 after driver 60837426 exited COMPLETED 0:0. A restored index that does not
 # match these is not the archived index.
@@ -76,10 +77,20 @@ preflight() {
 transfer() {
     preflight
     echo "== submitting =="
-    "$GLOBUS" transfer \
-        "$CHINOOK:$ARCHIVE/pratama2026" "$FIR:$HOME_PATH" \
-        --recursive --verify-checksum --preserve-timestamp --sync-level checksum --notify off \
+    # The image is restored alongside the home rather than into it. `_common.py` names a mutable
+    # remote tag, and apptainer resolved it through APPTAINER_CACHEDIR to a path outside the home,
+    # so nothing in the home carries the image. Point APPTAINER_CACHEDIR at APPTAINER_CACHE after
+    # the restore.
+    local batch; batch=$(mktemp)
+    {
+        echo "--recursive $ARCHIVE/pratama2026 $HOME_PATH"
+        echo "--recursive $ARCHIVE/deps $APPTAINER_CACHE"
+    } > "$batch"
+    cat "$batch"
+    "$GLOBUS" transfer --batch "$batch" "$CHINOOK" "$FIR" \
+        --verify-checksum --preserve-timestamp --sync-level checksum --notify off \
         --label "E3 restore pratama2026 $(date +%F)"
+    rm -f "$batch"
     echo
     echo "poll with: $GLOBUS task show <task id>"
     echo "then run:  $0 verify"
@@ -97,12 +108,20 @@ verify() {
     echo "expected: $CACHE_ENTRIES / $CACHE_LINEAGE / $CACHE_IMPORTED / 0"
 
     echo "== file count against the archived manifest =="
-    # CAUTION The manifest at $ARCHIVE/meta/manifest_full.tsv.gz holds 145,220 entries and
-    # 3,832,855,343,605 bytes, but 21 of those entries are `.staging`, which the archive
-    # deliberately skipped. A restored home therefore carries 145,199 entries and
-    # 3,776,862,826,105 bytes: 110,760 files, 30,928 directories, 3,511 symlinks.
-    echo "expected 145199 paths and 3,776,862,826,105 bytes (manifest minus .staging)"
+    # CAUTION The manifest at $ARCHIVE/meta/manifest_full.tsv.gz is not the archive. It holds
+    # 145,220 entries and 3,832,855,343,605 bytes, but the archive drops `.staging` (21 entries,
+    # 55,992,517,500 bytes) and every symlink (3,511, because the transfer ran with
+    # recursive_symlinks=ignore), and adds results/_metadata (12 entries, 230,472,594 bytes) and
+    # relay/msm_relay (1,799,672 bytes). RESUME.md carries the arithmetic.
+    echo "expected 141701 paths and 3,777,095,098,371 bytes"
     ssh fir "find '$HOME_PATH' | wc -l"
+    ssh fir "du -sb '$HOME_PATH'"
+
+    echo "== the relay executable survived the relay/ exclusion =="
+    ssh fir "test -x '$HOME_PATH/metasmith/relay/msm_relay' && echo ok || echo 'MISSING -- re-extract with deploy_from_container'"
+
+    echo "== the image is where APPTAINER_CACHEDIR will look =="
+    ssh fir "ls -l '$APPTAINER_CACHE/docker..quay.io_hallamlab_metasmith..0.22.1.sif'"
 
     echo "== shard count against the index =="
     ssh fir "ls -1 '$HOME_PATH/metasmith/task_cache/1e' | wc -l"
