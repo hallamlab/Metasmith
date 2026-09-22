@@ -44,12 +44,14 @@ HOME_PATH=/scratch/phyberos/pratama2026
 # copy began and would read as a difference during the resync.
 ARCHIVE_STARTED="2026-09-22 12:14:08"
 
-# Expected within the diff's scope -- everything under pratama2026/ except task_cache, which
-# `resync` covers instead. The two partitions reconcile: 2,756 + 108,004 files is the manifest's
-# 110,760, and 1,575,120,046,427 + 2,201,742,779,678 bytes is its 3,776,862,826,105.
-EXP_DIRS=279
-EXP_FILES=2767
-EXP_BYTES=1575352318693
+# Expected within the diff's scope -- the manifest minus .staging, minus symlinks, minus task_cache
+# (which `resync` covers instead). The partitions reconcile: 2,756 + 108,004 files is the manifest's
+# 110,760, and 1,575,120,046,427 + 2,201,742,779,678 bytes is its 3,776,862,826,105. The two
+# subtrees archived after the manifest was taken are held out of this comparison and counted
+# separately: results/_metadata at 230,472,594 bytes and relay/msm_relay at 1,799,672.
+EXP_DIRS=277
+EXP_FILES=2756
+EXP_BYTES=1575120046427
 
 # `globus ls` cannot see task_cache. A non-recursive listing of its single `1e/` directory, 11,583
 # children, does not return inside two minutes, and the tree below it holds ~138,655 entries. So the
@@ -130,62 +132,85 @@ for e in json.load(sys.stdin)["DATA"]:
     echo "listed  ${rel:-<root>} ($(wc -l < "$out") entries)"
 }
 
+# Directory names only. `globus ls -r` against a regular file returns an error rather than JSON, so
+# recursing into a top-level file such as zenodo.sbatch aborts that listing.
+dirs_in() {  # dirs_in <relpath under pratama2026, or "">
+    "$GLOBUS" ls -a -F json "$CHINOOK:$ARCHIVE/pratama2026${1:+/$1}/" \
+        | python3 -c '
+import json, sys
+for e in json.load(sys.stdin)["DATA"]:
+    if e["type"] == "dir":
+        print(e["name"].rstrip("/"))'
+}
+
 listing() {
-    mkdir -p "$WORK"
-    local tops
-    tops=$("$GLOBUS" ls -a -F json "$CHINOOK:$ARCHIVE/pratama2026/" \
-           | python3 -c 'import json,sys; [print(e["name"].rstrip("/")) for e in json.load(sys.stdin)["DATA"]]')
+    mkdir -p "$WORK" || { echo "cannot write $WORK" >&2; exit 1; }
+    # The root level is listed shallow, never recursive: a recursive listing of pratama2026 would
+    # descend into task_cache, which is exactly the tree no listing can enumerate.
+    list_subtree_shallow ""
+    local tops; tops=$(dirs_in "")
     [ -n "$tops" ] || { echo "cannot list $ARCHIVE/pratama2026" >&2; exit 1; }
     for t in $tops; do
         if [ "$t" = "metasmith" ]; then
             # Descend one level so task_cache can be skipped on its own.
-            local subs
-            subs=$("$GLOBUS" ls -a -F json "$CHINOOK:$ARCHIVE/pratama2026/metasmith/" \
-                   | python3 -c 'import json,sys; [print(e["name"].rstrip("/")) for e in json.load(sys.stdin)["DATA"]]')
-            for s in $subs; do
+            list_subtree_shallow "metasmith"
+            local s
+            for s in $(dirs_in "metasmith"); do
                 [ "metasmith/$s" = "$SKIP_LS" ] && { echo "skipped metasmith/$s (see SKIP_LS)"; continue; }
                 list_subtree "metasmith/$s"
             done
-            list_subtree_shallow "metasmith"
             continue
         fi
         list_subtree "$t"
     done
-    list_subtree ""
     echo "listings in $WORK"
 }
 
-# One level only, so metasmith's own children are recorded without descending into task_cache.
+# One level only, so a level's own children are recorded without descending past them.
 list_subtree_shallow() {
-    local rel="$1" out="$WORK/ls.shallow_${1//\//_}.tsv"
-    [ -s "$out" ] && { echo "cached  $rel (shallow)"; return 0; }
-    "$GLOBUS" ls -a -F json "$CHINOOK:$ARCHIVE/pratama2026/$rel" \
+    # CAUTION The name must start with "ls." -- diff() collects the listings with $WORK/ls.*.tsv,
+    # and a name built by substituting slashes across the whole path mangles $WORK's own slashes
+    # into the basename, silently excluding this listing from the comparison.
+    local rel="$1" out
+    out="$WORK/ls.shallow_$(echo -n "${rel:-__root__}" | tr / _).tsv"
+    [ -s "$out" ] && { echo "cached  ${rel:-<root>} (shallow)"; return 0; }
+    "$GLOBUS" ls -a -F json "$CHINOOK:$ARCHIVE/pratama2026${rel:+/$rel}/" \
         | python3 -c '
 import json, sys
 pre = sys.argv[1]
 for e in json.load(sys.stdin)["DATA"]:
-    print("%s\t%s\t%s/%s" % (e["type"], e.get("size") or 0, pre, e["name"].rstrip("/")))
-' "$rel" > "$out.part" && mv "$out.part" "$out"
-    echo "listed  $rel (shallow, $(wc -l < "$out") entries)"
+    name = e["name"].rstrip("/")
+    print("%s\t%s\t%s" % (e["type"], e.get("size") or 0, (pre + "/" + name) if pre else name))
+' "$rel" > "$out.part" && mv "$out.part" "$out" \
+        || { echo "FAILED  ${rel:-<root>} (shallow)"; rm -f "$out.part"; return 1; }
+    echo "listed  ${rel:-<root>} (shallow, $(wc -l < "$out") entries)"
 }
 
 diff_manifest() {
     mkdir -p "$WORK"
     # Expected: manifest minus .staging, minus every symlink, minus the root row; plus the two
     # subtrees that arrived outside the manifest.
-    { zcat "$MANIFEST" | awk -F'\t' -v skip="$SKIP_LS" '
+    zcat "$MANIFEST" | awk -F'\t' -v skip="$SKIP_LS" '
         $5 == "" || $1 == "l" || $5 ~ /^\.staging(\/|$)/ { next }
         index($5, skip "/") == 1 { next }
-        { print (($1=="d") ? "dir" : "file") "\t" $2 "\t" $5 }'
-      printf 'file\t1799672\tmetasmith/relay/msm_relay\n'
-      printf 'dir\t0\tmetasmith/runs/Qt0rbV1R/results\n'
-      printf 'dir\t0\tmetasmith/runs/Qt0rbV1R/results/_metadata\n'
-    } | LC_ALL=C sort -t$'\t' -k3,3 > "$WORK/expected.tsv"
+        { print (($1=="d") ? "dir" : "file") "\t" $2 "\t" $5 }' \
+      | LC_ALL=C sort -t$'\t' -k3,3 > "$WORK/expected.tsv"
 
-    # Actual: every cached subtree listing. The root listing repeats its children, so dedup.
-    cat "$WORK"/ls.*.tsv | LC_ALL=C sort -t$'\t' -u -k3,3 > "$WORK/actual.tsv"
+    # Actual: every cached subtree listing. A shallow listing repeats its children, so dedup.
+    # The two subtrees archived after the manifest was taken are held out and checked on their own,
+    # rather than transcribing their eleven paths and sizes into this script.
+    cat "$WORK"/ls.*.tsv | LC_ALL=C sort -t$'\t' -u -k3,3 > "$WORK/actual_all.tsv"
+    grep -vE "^[a-z]+	[0-9]+	(metasmith/relay|metasmith/runs/Qt0rbV1R/results)(/|$)" \
+        "$WORK/actual_all.tsv" > "$WORK/actual.tsv"
+    grep -E "^[a-z]+	[0-9]+	(metasmith/relay|metasmith/runs/Qt0rbV1R/results)(/|$)" \
+        "$WORK/actual_all.tsv" > "$WORK/held_out.tsv" || true
 
-    echo "== counts (results/_metadata's 10 files are expected as extras) =="
+    echo "== subtrees archived after the manifest was taken =="
+    awk -F'\t' '{n[$1]++; if($1=="file") b+=$2} END{
+        printf "  %d files, %d dirs, %d bytes (expect 11 files, 4 dirs, 232272266)\n",
+               n["file"], n["dir"], b}' "$WORK/held_out.tsv"
+
+    echo "== counts, with the held-out subtrees excluded from both sides =="
     printf "%-8s %10s %10s\n" "" expected actual
     for t in dir file; do
         printf "%-8s %10d %10d\n" "$t" \
