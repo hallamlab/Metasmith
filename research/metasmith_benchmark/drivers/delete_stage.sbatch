@@ -6,7 +6,7 @@
 # WARNING the deletion cannot be undone.
 # CAUTION the job aborts before deleting anything when a symlink under <permanent dir> resolves into
 # <stage dir>, or when a run's workflow files or a benchmark checkout name <stage dir>.
-#SBATCH --account=rrg-shallam-ab
+#SBATCH --account=rpp-shallam
 #SBATCH --cpus-per-task=1
 #SBATCH --mem=2G
 #SBATCH --time=3:00:00

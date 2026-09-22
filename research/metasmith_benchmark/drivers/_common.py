@@ -24,8 +24,19 @@ DAG_DIR = BENCH / "page" / "dags"
 MLIB = Path(os.environ.get("MSM_LIB", str(REPO / "src" / "metasmith_libraries")))
 
 HPC_HOST = os.environ.get("MSM_HPC_HOST", "fir")
-SLURM_ACCOUNT = os.environ.get("MSM_SLURM_ACCOUNT", "rrg-shallam-ab")
-# CAUTION the RAC is CPU-only: a GPU step under rrg-shallam-ab is rejected, so GPU steps bill def-shallam_gpu.
+# Moved off rrg-shallam-ab on 2026-09-21 (Tony's call) because the RAC's fair share is spent. At the
+# account level rrg-shallam-ab_cpu reads EffectvUsage 1.000000 against 3,584,000 shares and LevelFS 3.31,
+# while rpp-shallam_cpu holds 495,000 shares against a RawUsage 245x smaller -- LevelFS 111.95, and
+# `sreport` finds ZERO cpu-hours on it in the eight days to 2026-09-21. This account is also already where
+# E4's CPLEX runtime lives (see e4_metagem.py's CPLEX_ROOT), so it is not a foreign allocation to this work.
+#
+# NOT MEASURED, and worth knowing before trusting it: `sbatch --test-only` for a single 2-cpu/1 h job
+# predicted the SAME start time under both accounts, because one small job finds backfill either way. The
+# throttle this is meant to lift is aggregate priority across a whole queue, which --test-only does not
+# model. The evidence is the fair-share arithmetic; the confirmation is watching real start latency.
+SLURM_ACCOUNT = os.environ.get("MSM_SLURM_ACCOUNT", "rpp-shallam")
+# CAUTION both RACs are CPU-only: a GPU step under rrg-shallam-ab or rpp-shallam is rejected, and there is
+# no rpp-shallam_gpu association at all, so GPU steps keep billing def-shallam_gpu.
 SLURM_GPU_ACCOUNT = os.environ.get("MSM_SLURM_GPU_ACCOUNT", "def-shallam_gpu")
 FIR_GPU = Gpu(memory=Size.GB(40), type="nvidia_h100_80gb_hbm3_3g.40gb", flag="--gres=gpu:")
 AGENT_IMAGE = os.environ.get("MSM_AGENT_IMAGE", "docker://quay.io/hallamlab/metasmith:0.22.1")

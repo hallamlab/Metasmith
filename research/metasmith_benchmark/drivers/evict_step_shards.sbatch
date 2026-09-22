@@ -3,7 +3,7 @@
 #   sbatch <checkout>/research/metasmith_benchmark/drivers/evict_step_shards.sbatch <checkout> <run dir> <cache root> <step> [--apply]
 # WARNING --apply turns every qualifying shard into a cache miss. Run it without --apply first and read the count.
 # CAUTION Slurm runs a spooled copy of this script, so the checkout comes in as an argument.
-#SBATCH --account=rrg-shallam-ab
+#SBATCH --account=rpp-shallam
 #SBATCH --cpus-per-task=1
 #SBATCH --mem=2G
 #SBATCH --time=3:00:00

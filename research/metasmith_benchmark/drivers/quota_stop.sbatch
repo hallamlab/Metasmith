@@ -30,7 +30,7 @@
 # job id they were hard-wired to and left the campaign unguarded until someone noticed. This one takes
 # many drivers and renews itself across its own wall, so neither a finished driver nor a 24 h limit
 # silently disarms it.
-#SBATCH --account=rrg-shallam-ab
+#SBATCH --account=rpp-shallam
 #SBATCH --cpus-per-task=1
 #SBATCH --mem=1G
 #SBATCH --time=24:00:00

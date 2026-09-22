@@ -3,7 +3,7 @@
 #   sbatch <checkout>/research/metasmith_benchmark/drivers/tombstone_keys.sbatch <checkout> <cache root> <keys file> [--apply]
 # WARNING --apply turns every listed shard into a cache miss. Run it without --apply first.
 # CAUTION Slurm runs a spooled copy of this script, so the checkout comes in as an argument.
-#SBATCH --account=rrg-shallam-ab
+#SBATCH --account=rpp-shallam
 #SBATCH --cpus-per-task=1
 #SBATCH --mem=2G
 #SBATCH --time=0:30:00

@@ -11,7 +11,7 @@
 # CAUTION each directory keeps its .command.cache. record_run reads that file at run end to index
 # the task's promoted shards and write its trace events.
 # CAUTION a path outside <run dir>/nxf_work/ aborts the job before anything is deleted.
-#SBATCH --account=rrg-shallam-ab
+#SBATCH --account=rpp-shallam
 #SBATCH --cpus-per-task=1
 #SBATCH --mem=2G
 #SBATCH --time=3:00:00

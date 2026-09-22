@@ -10,7 +10,7 @@
 #
 # Stop a run with `scancel --batch --signal=USR1 <job>` or `runctl.py cancel <corpus> <key>`, never a
 # plain scancel. Slurm sends USR1 30 min before the wall, and the driver turns it into the same cancel.
-#SBATCH --account=rrg-shallam-ab
+#SBATCH --account=rpp-shallam
 #SBATCH --cpus-per-task=10
 #SBATCH --mem=48G
 #SBATCH --time=7-00:00:00

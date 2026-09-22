@@ -3,7 +3,7 @@
 #   sbatch <checkout>/research/metasmith_benchmark/drivers/repromote_step.sbatch <checkout> <run dir> <cache root> <step> [--exclude FILE] [--bam-min-align PCT] [--apply]
 # Run it without --apply first and read the count.
 # CAUTION Slurm runs a spooled copy of this script, so the checkout comes in as an argument.
-#SBATCH --account=rrg-shallam-ab
+#SBATCH --account=rpp-shallam
 #SBATCH --cpus-per-task=1
 #SBATCH --mem=4G
 #SBATCH --time=3:00:00

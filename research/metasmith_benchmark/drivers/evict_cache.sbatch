@@ -4,7 +4,7 @@
 #   sbatch evict_cache.sbatch <checkout> <agent home> <keys file> [--apply] [--protect-run KEY ...]
 #
 # Submit without --apply first and read the log, then resubmit with --apply.
-#SBATCH --account=rrg-shallam-ab
+#SBATCH --account=rpp-shallam
 #SBATCH --cpus-per-task=1
 #SBATCH --mem=4G
 #SBATCH --time=3:00:00
