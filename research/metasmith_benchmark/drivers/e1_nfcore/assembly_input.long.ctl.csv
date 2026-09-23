@@ -1,0 +1,5 @@
+id,group,assembler,fasta
+plant_associated_long_nano_sample_11,plant_associated_long_nano,Flye,/scratch/phyberos/bench/e1/long/kept_inputs/FLYE-plant_associated_long_nano_sample_11.assembly.fasta
+plant_associated_long_nano_sample_19,plant_associated_long_nano,Flye,/scratch/phyberos/bench/e1/long/kept_inputs/FLYE-plant_associated_long_nano_sample_19.assembly.fasta
+toy_humangut_long_sample_0,toy_humangut_long,Flye,/scratch/phyberos/bench/e1/long/kept_inputs/FLYE-toy_humangut_long_sample_0.assembly.fasta
+toy_humangut_long_sample_6,toy_humangut_long,Flye,/scratch/phyberos/bench/e1/long/kept_inputs/FLYE-toy_humangut_long_sample_6.assembly.fasta
