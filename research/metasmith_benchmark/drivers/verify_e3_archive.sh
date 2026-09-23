@@ -1,15 +1,21 @@
 #!/bin/bash
-# Verify E3's chinook archive before releasing the scratch copy. Three checks, in this order.
+# Verify E3's chinook archive before releasing the scratch copy. Four checks.
 #
 # Globus reporting SUCCEEDED proves every file it decided to send arrived intact. It does not prove
 # it was offered every file, and that is the failure worth catching.
 #
-#   resync           the primary check. Resubmit the identical batch with --sync-level checksum.
-#                    Zero bytes transferred means every source file is at the destination with
-#                    matching content. Covers task_cache, where no listing is tractable.
+#   delivered        cheapest and run first. Counts the archive task's own per-file delivery record.
+#                    Answers "was every file offered" for all 108,004 task_cache files in one API
+#                    call, where a recursive listing of that tree does not return at all.
+#   resync           the strongest. Resubmit the identical batch with --sync-level checksum. Zero
+#                    bytes transferred means every source file is at the destination with matching
+#                    content *now*, which is the part `delivered` cannot speak to. Slow: it reads
+#                    and checksums 3.78 TB on both ends, so hours, and it crawls once it reaches the
+#                    large files. Judge progress by Bytes Transferred staying 0, not by rate.
 #   listing + diff   a path diff against the pre-transfer manifest, for everything except
 #                    task_cache. Catches a subtree dropped by name, and names which one.
-#   roundtrip-*      hashes the three files that exist nowhere else, fetched back from the archive.
+#   roundtrip-*      hashes the three files that exist nowhere else, fetched back from the archive,
+#                    and reads the archived index to confirm it still reports the right counts.
 #
 # The diff's expected set is the manifest, minus four things and plus two things.
 #
@@ -43,6 +49,8 @@ HOME_PATH=/scratch/phyberos/pratama2026
 # The archive task's request time. Anything in the home newer than this was written after the
 # copy began and would read as a difference during the resync.
 ARCHIVE_STARTED="2026-09-22 12:14:08"
+# The archive task itself, whose per-file delivery record `delivered` counts.
+ARCHIVE_TASK=c83cf9a3-b6b9-11f1-8511-0effcb3df825
 
 # Expected within the diff's scope -- the manifest minus .staging, minus symlinks, minus task_cache
 # (which `resync` covers instead). The partitions reconcile: 2,756 + 108,004 files is the manifest's
@@ -58,7 +66,7 @@ EXP_BYTES=1575120046427
 # path diff is scoped to everything else, and the whole set is verified by `resync` instead.
 SKIP_LS="metasmith/task_cache"
 
-usage() { echo "usage: $0 {resync|listing|diff|roundtrip-fetch|roundtrip-check|stamp <task id>}" >&2; exit 2; }
+usage() { echo "usage: $0 {resync|delivered|listing|diff|roundtrip-fetch|roundtrip-check|stamp <task id>}" >&2; exit 2; }
 [ $# -ge 1 ] || usage
 
 # The primary check. Resubmitting the identical batch with --sync-level checksum makes Globus walk
@@ -323,8 +331,44 @@ stamp() {
     echo "stamped $FIR_VERIFY/VERIFIED on fir"
 }
 
+# Globus keeps a per-file record of what each task actually wrote. Counting it answers the one
+# question the path diff cannot reach -- whether every task_cache file was offered and delivered --
+# in a single API call, where a recursive listing of that tree does not return at all. Combined with
+# --verify-checksum on the original transfer, which checksums each file after writing it, and zero
+# failed subtasks, this is per-file evidence for all 108,004 shard files.
+#
+# CAUTION It is evidence about the transfer, not about the destination as it stands now. It cannot
+# see a file deleted or altered after delivery. `resync` is what covers that.
+delivered() {
+    mkdir -p "$WORK"
+    local out="$WORK/successful_transfers.json"
+    [ -s "$out" ] || "$GLOBUS" task show --successful-transfers "$ARCHIVE_TASK" -F json > "$out"
+    python3 - "$out" <<'PY'
+import json, sys, collections
+data = json.load(open(sys.argv[1]))["DATA"]
+c = collections.Counter()
+for e in data:
+    p = e.get("destination_path", "")
+    if "/metasmith/task_cache/" in p:   c["task_cache"] += 1
+    elif "/fir_bench_e3/meta/" in p:    c["meta"] += 1
+    elif "/fir_bench_e3/rescue/" in p:  c["rescue"] += 1
+    else:                               c["pratama2026 outside task_cache"] += 1
+want = {"task_cache": 108004, "pratama2026 outside task_cache": 2756}
+print("delivered entries: %d (expect 110783)" % len(data))
+bad = len(data) != 110783
+for k in sorted(c):
+    mark = ""
+    if k in want:
+        mark = " ok" if c[k] == want[k] else " MISMATCH, expect %d" % want[k]
+        bad = bad or c[k] != want[k]
+    print("  %-34s %6d%s" % (k, c[k], mark))
+sys.exit(1 if bad else 0)
+PY
+}
+
 case "$1" in
     resync)          resync ;;
+    delivered)       delivered ;;
     stamp)           stamp "$@" ;;
     listing)         listing ;;
     diff)            diff_manifest ;;
