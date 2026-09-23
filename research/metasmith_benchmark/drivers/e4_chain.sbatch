@@ -14,7 +14,11 @@
 #   BYTE_STOP_TIB USR1 the live driver at or above this many TiB (default 17.885, the campaign's 96%)
 #   POLL_SECONDS  seconds between polls while a job runs (default 120)
 #   IGNORE_TOLERANCE  ignored steps one lane of one chunk may lose before the chain stops
-#                 (default 1% of CHUNK_SIZE). CarveMe stops at its 6 h cap on a few hard bins.
+#                 (default 1% of CHUNK_SIZE). CarveMe stops at its 6 h cap, and MEMOTE 0.9.13 at
+#                 its 4 h second attempt, on a few hard bins.
+#
+# RESUMING. Phase 2 writes <archive>/<lane>/chunk<N>.launched. A rerun over a lane whose run
+# finished goes straight to the gate and archive, and one whose run did not finish stops.
 #   RENEW         1 to resubmit a successor for the unfinished range before this job's wall (default 1)
 #
 # WHY IT ARCHIVES. The two lanes leave 51 inodes per bin in task_cache, ~720K for 14,105 bins,
@@ -154,6 +158,20 @@ run_lane() {
         return 0
     fi
     log "=== $tag ==="
+    mkdir -p "$ARCHIVE/$lane"
+
+    # A lane whose run already finished resumes at the gate. Re-running phases 1 and 2 would stage a
+    # second run beside the first.
+    local launched_file="$ARCHIVE/$lane/chunk${chunk}.launched"
+    local key nbins p1log p2log
+    if [ -f "$launched_file" ]; then
+        read -r key nbins p1log p2log < "$launched_file"
+        grep -q 'Execution complete' "$HOME_DIR/runs/$key/_metasmith/logs.latest/nxf.log" 2>/dev/null \
+            || die "$tag was launched as $key but its run did not finish -- look before re-running"
+        log "$tag resuming at the gate: run $key finished, $nbins bins"
+        archive_lane "$lane" "$chunk" "$tag" "$key" "$nbins" "$p1log" "$p2log"
+        return 0
+    fi
 
     read_quota || die "cannot read the quota, refusing to start $tag"
     log "pre-flight quota: ${QUOTA_TIB} TiB, ${QUOTA_INODES} inodes (gate at ${INODE_GATE})"
@@ -165,7 +183,7 @@ run_lane() {
     [ -z "$locks" ] || die "the metagem home holds a live driver (PID.lock): $locks"
 
     # --- phase 1: materialise images and import the chunk's bins into the pool ---
-    local p1 p1log key staged got skipped
+    local p1 staged got skipped
     p1="$(sbatch --parsable -J "${tag}_prep" "$SUBMIT" "$CHECKOUT" e4_gems.py \
             run --lane "$lane" --chunk "$chunk" --chunk-size "$CHUNK_SIZE" --materialise --import --tag "$tag")" \
         || die "sbatch refused phase 1 for $tag"
@@ -186,27 +204,36 @@ run_lane() {
     skipped="$(sed -E 's/.*\[([0-9]+)\] skipped.*/\1/' <<<"$staged")"
     [ "${got% *}" = "${got#* }" ] && [ "$skipped" = "0" ] \
         || die "$tag staged ${got% *} of ${got#* } bins with $skipped skipped -- expected all of them"
-    local nbins="${got% *}"
+    nbins="${got% *}"
     log "$tag inputs: $nbins bins"
 
     # --- phase 2: launch. --launch takes NEITHER --materialise NOR --import ---
-    local p2 p2log ign
+    local p2
     p2="$(sbatch --parsable -J "$tag" "$SUBMIT" "$CHECKOUT" e4_gems.py \
             run --lane "$lane" --chunk "$chunk" --chunk-size "$CHUNK_SIZE" --launch --tag "$tag")" \
         || die "sbatch refused phase 2 for $tag"
     log "phase 2 submitted as $p2"
+    p2log="$LOGS/${tag}.${p2}.out"
+    printf '%s %s %s %s\n' "$key" "$nbins" "$p1log" "$p2log" > "$launched_file"
     wait_for "$p2" "$p2" "$tag phase 2"
     [ "$(final_state "$p2")" = "COMPLETED" ] || die "$tag driver $p2 ended $(final_state "$p2") (exit $(exit_code "$p2"))"
+    log "$tag driver $p2 COMPLETED"
 
-    p2log="$LOGS/${tag}.${p2}.out"
-    ign="$(grep -c 'Error is ignored' "$p2log" 2>/dev/null || true)"
+    archive_lane "$lane" "$chunk" "$tag" "$key" "$nbins" "$p1log" "$p2log"
+}
+
+archive_lane() {
+    local lane="$1" chunk="$2" tag="$3" key="$4" nbins="$5" p1log="$6" p2log="$7"
+    local stage="$HOME_DIR/runs/$key" done_file="$ARCHIVE/$lane/chunk${chunk}.done" d n ign
+
+    # Nextflow reports ignored tasks in the run's own log, not in the driver's.
+    ign="$(grep -c 'Error is ignored' "$stage/_metasmith/logs.latest/nxf.log" 2>/dev/null || true)"
     ignored_total=$(( ignored_total + ${ign:-0} ))
-    log "$tag driver $p2 COMPLETED, ${ign:-0} ignored steps (running total ${ignored_total})"
+    log "$tag run $key: ${ign:-0} ignored steps (running total ${ignored_total})"
     (( ${ign:-0} <= IGNORE_TOLERANCE )) \
         || die "$tag lost ${ign} steps, above IGNORE_TOLERANCE ${IGNORE_TOLERANCE} -- a systematic fault, look before chaining further"
 
     # --- gate: every bin has its products in results/, less the ignored ones ---
-    local stage="$HOME_DIR/runs/$key" d n
     [ -d "$stage/results" ] || die "$tag has no results/ at $stage"
     [ -f "$stage/results/_metadata/index.yml" ] || die "$tag results/ has no lineage index -- NOT archiving"
     for d in ${FINAL[$lane]}; do
@@ -217,7 +244,6 @@ run_lane() {
 
     # --- archive: results/ with its lineage index, and the files that say how the run was made ---
     local out="$ARCHIVE/$lane/chunk${chunk}.${key}.tar.zst" members sources
-    mkdir -p "$ARCHIVE/$lane"
     ( cd "$stage" && tar -cf - results workflow.nf workflow.config.nf workflow.resources.nf workflow.params.yml \
         workflow.lineage_of_given.json workflow.dag.svg workflow.step_*.meta ) \
         | zstd -3 -T"${SLURM_CPUS_PER_TASK:-4}" -q -o "$out" || die "$tag archive failed"
