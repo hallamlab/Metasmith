@@ -32,12 +32,14 @@ Four strands, and the leftover parity tasks are the smallest of them.
 - **E4 is on hold.** The chunk chain was cancelled at chunk 10; chunk 10's driver is still running under its
   own guard and will bank its 500 MAGs, after which nothing further launches. **Its stage needs a
   `delete_stage` reclaim by hand once it completes** — the chain would have done that and is gone.
-- **Inodes are the shared budget, and this is why the hold matters.** The project quota is 1,000,000 and sits
-  near 784,000. Extracting E1's bins and assemblies from the tars re-accrues exactly the inodes E1's
-  retirement released, so extraction and E4's remaining chunks were competing for the same resource. With E4
-  held, that budget is the evaluation's.
-- **E3 is still running and is this session's job, not the evaluation's.** Nothing about it needs to be
-  touched.
+- **Bytes are the shared budget, not inodes.** The earlier record had this the other way round. The byte
+  quota is 18.626 TiB with a campaign stop at 17.885 TiB, and on 2026-09-22 the project sat at 17.77 TiB —
+  about 118 GB of headroom — while inodes sat at 706,000 of 1,000,000. Extracting E1's bins and assemblies
+  from the tars costs both, so check the byte line before the inode line.
+- **E3 is archived and its scratch tree is gone.** It closed at 36 of 39 steps on 2026-09-22 and lives on the
+  chinook Globus collection. Nothing about it needs to be touched, and nothing about it is recoverable from
+  fir: to read an E3 product, restore from the archive per `results/e3/RESUME.md`, which must land at
+  `/scratch/phyberos/pratama2026` and nowhere else.
 - **Do not delete `/scratch/phyberos/cami/work`** — it is the CAMI source data, not a work tree.
 - **`cami/metasmith/task_cache` is the only copy of every E2 product except the AMBER tables**, which are now
   in git. Read it, never write to it, and open its sqlite as `file:<path>?immutable=1`.

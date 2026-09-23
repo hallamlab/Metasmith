@@ -85,9 +85,12 @@ resync() {
     # 2.24 TB deletion.
     echo "== jobs rooted in the home =="
     local rooted
+    # CAUTION Use the `if`, not `grep -q … && echo`. A loop body ending in a failed grep makes the
+    # loop exit non-zero; under `set -e` on the remote side that aborts rather than reporting "no
+    # rooted jobs". It looks correct while squeue is empty and breaks the moment anything else runs.
     rooted=$(ssh fir "squeue -u \$USER -h -o '%i' | while read j; do
-                  scontrol show job \$j 2>/dev/null | tr ' ' '\n' \
-                    | grep -E '^(WorkDir|Command)=' | grep -q '$HOME_PATH' && echo \$j
+                  if scontrol show job \$j 2>/dev/null | tr ' ' '\n' \
+                       | grep -E '^(WorkDir|Command)=' | grep -q '$HOME_PATH'; then echo \$j; fi
               done")
     if [ -n "$rooted" ]; then
         echo "refusing: these jobs are rooted in $HOME_PATH" >&2

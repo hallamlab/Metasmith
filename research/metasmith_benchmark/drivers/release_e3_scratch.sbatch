@@ -50,11 +50,19 @@ cat "$STAMP"
 grep -q '^RESULT=PASS$' "$STAMP" || { echo "ABORT: the stamp does not record a pass"; exit 1; }
 
 echo "== nothing is writing to the home =="
+# CAUTION Keep the `if` rather than `grep -q … && echo`. A loop body ending in a failed grep makes
+# the loop exit non-zero, which the command substitution propagates and `set -e` turns into an
+# abort. That reads as "the guard tripped" when it only means the last job checked did not match.
+# It passes whenever squeue is empty and fails as soon as any unrelated job is queued, which is how
+# job 61021319 died at 18:26 with E4's memote arrays running.
 rooted=$(squeue -u "$USER" -h -o '%i' | while read -r j; do
-             scontrol show job "$j" 2>/dev/null | tr ' ' '\n' \
-               | grep -E '^(WorkDir|Command)=' | grep -q "$HOME_PATH" && echo "$j"
+             if scontrol show job "$j" 2>/dev/null | tr ' ' '\n' \
+                  | grep -E '^(WorkDir|Command)=' | grep -q "$HOME_PATH"; then
+                 echo "$j"
+             fi
          done)
 [ -z "$rooted" ] || { echo "ABORT: jobs rooted in the home: $rooted"; exit 1; }
+echo "  none"
 [ ! -e "$HOME_PATH/metasmith/runs/Qt0rbV1R/RUN.pgid" ] || echo "note: RUN.pgid present but no driver holds it"
 touched=$(find "$TARGET" -newermt "$ARCHIVE_STARTED" -print -quit 2>/dev/null || true)
 [ -z "$touched" ] || { echo "ABORT: $touched changed after the archive began"; exit 1; }
