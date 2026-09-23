@@ -156,7 +156,9 @@ Run state for whoever picks this up. Everything above this line is the approved 
 
 **Every task A1-A10 is done. E3 is archived on chinook, verified, and its scratch home is
 deleted.** The watch is ended deliberately: monitor `b8c61qjs2` stopped, cron `9edc5c96` deleted.
-Nothing in this plan is left to execute, and no guard of this run's is armed.
+Nothing in this plan is left to execute, and no guard of this run's is armed. This file is
+registered as artifact 1 at
+`projects/metasmith/engine/bench-run/data/metasmith/plans/12-archive-e3-to-chinook.md`.
 
 What a later session needs is not this section but
 `research/metasmith_benchmark/results/e3/RESUME.md`, which is the restore procedure. The three
@@ -210,6 +212,39 @@ chunking the contig FASTA and affi table at k=16 plus staging VOGDB — and this
 makes that a resume rather than a restart.
 
 ### Run log
+
+**2026-09-23 13:30 PDT. Re-verified the delete a day on, and registered the artifacts properly.**
+`/scratch/phyberos/pratama2026/metasmith` is still gone and all five corpus directories are
+present. Quota reads **15.740 TiB (84.50%) and 549,567 inodes** — 25 GB and 81,315 inodes below
+the post-delete read, so nothing regrew into the space and another scope has since freed more.
+`engine/bench-E4` is consuming the headroom: 696 jobs queued, `e4_chain` 61063638 at 12 h, plus
+`carveme_from_o` arrays. That is its chunk work, not the full corpus, so T16's hold still stands —
+but a later reader should not assume 15.740 TiB is still there.
+
+**The artifact registration failure was mine to fix, not an infrastructure limit, and I called it
+wrong the first time.** `artifact` has one provider, `mira`, whose registry was **completely
+empty** — no projects, no scopes, no artifacts. The error reads "Scope does not exist", which
+invites the conclusion that the scope name is wrong; it is not, since all 43 metasmith scopes
+exist on this node and mira simply keeps a separate store. I read that as infrastructure work and
+routed around it. It is three calls, the first two against `peer="mira"`: `project(verb="ensure")`,
+then `scope(verb="ensure")` with `worktree` passed explicitly — the folder need not be named after
+the scope and ensure will not infer it — then `artifact(verb="register")`.
+
+**CAUTION `path` is relative to the workspace root, not the scope worktree.** My first attempt
+passed `data/metasmith/plans/12-…md`; the correct value is
+`projects/metasmith/engine/bench-run/data/metasmith/plans/12-…md`. A wrong path registers without
+complaint, so this one fails silently rather than loudly.
+
+Registered as **artifact 1** (this run) and **artifact 2** (the R1 campaign run log from T0, which
+had almost certainly failed the same way when T0 claimed success). They are ids 1 and 2 because the
+registry had no prior contents — **anything an earlier session believed it registered is not
+there.** Check with `artifact(verb="search")` before trusting a prior registration. Journal
+addendum `b3b61436-c8a7-4090-a20a-bdc848e138b5` corrects the first journal, which said registration
+was skipped.
+
+The lesson matches the one two entries below: I classified a solvable problem as out of scope after
+a single error message, on the strength of how the message was worded. The cheap check — search the
+registry, then read the schema — settled it in two calls.
 
 **2026-09-23 01:00 PDT. The deletion landed, the prediction held, and the run is closed.**
 Job `61039924` COMPLETED 0:0 in 29:03. `/scratch/phyberos/pratama2026/metasmith` is gone;
