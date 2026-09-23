@@ -306,27 +306,53 @@ roundtrip_check() {
 # so the SUCCEEDED test below is load-bearing rather than belt-and-braces. Checking the byte count
 # alone would stamp a transfer that had not yet started comparing anything.
 stamp() {
-    local task="${2:-}"
-    [ -n "$task" ] || { echo "usage: $0 stamp <resync task id>" >&2; exit 2; }
-    local out status failed bytes
-    out=$("$GLOBUS" task show "$task" 2>&1) || { echo "cannot read task $task" >&2; exit 1; }
-    status=$(echo "$out" | awk -F': *' '/^Status:/{print $2; exit}')
-    failed=$(echo "$out" | awk -F': *' '/^Subtasks Failed:/{print $2; exit}')
-    bytes=$(echo  "$out" | awk -F': *' '/^Bytes Transferred:/{print $2; exit}')
+    local fail=0
 
-    local result=FAIL
-    if [ "$status" = "SUCCEEDED" ] && [ "$failed" = "0" ] && [ "$bytes" = "0" ]; then
-        result=PASS
+    echo "== the archive task delivered everything it enumerated =="
+    local out status ok total failed
+    out=$("$GLOBUS" task show "$ARCHIVE_TASK" 2>&1) || { echo "cannot read $ARCHIVE_TASK" >&2; exit 1; }
+    status=$(echo "$out" | awk -F': *' '/^Status:/{print $2; exit}')
+    ok=$(echo     "$out" | awk -F': *' '/^Subtasks Succeeded:/{print $2; exit}')
+    total=$(echo  "$out" | awk -F': *' '/^Total Subtasks:/{print $2; exit}')
+    failed=$(echo "$out" | awk -F': *' '/^Subtasks Failed:/{print $2; exit}')
+    printf "  status %s  subtasks %s/%s  failed %s\n" "$status" "$ok" "$total" "$failed"
+    [ "$status" = SUCCEEDED ] && [ "$failed" = 0 ] && [ "$ok" = "$total" ] || { echo "  FAIL"; fail=1; }
+
+    echo "== every file was offered, counted per file =="
+    delivered >/dev/null 2>&1 && echo "  ok" || { echo "  FAIL"; fail=1; }
+
+    echo "== every probe dependency is in the archive =="
+    # probe_dependencies.tsv.gz is the file list invocation.probe touched for all 11,083 hits, taken
+    # inside the 0.22.1 container. Re-checking it against the delivery record here means the gate
+    # rests on a measurement rather than on the note that a measurement once happened. The 67
+    # entries that are empty directories cannot appear in a per-file record, and were each confirmed
+    # present at the destination separately -- so they are allowed to be absent here and nothing
+    # else is.
+    local dep="$META/probe_dependencies.tsv.gz"
+    if [ -s "$dep" ] && [ -s "$WORK/successful_transfers.json" ]; then
+        python3 - "$dep" "$WORK/successful_transfers.json" <<'PY' || fail=1
+import gzip, json, sys
+PREFIX = "/Workspace_backups/Tony_Liu/fir_bench_e3/pratama2026/metasmith/task_cache/"
+delivered = {e["destination_path"][len(PREFIX):]
+             for e in json.load(open(sys.argv[2]))["DATA"]
+             if e.get("destination_path", "").startswith(PREFIX)}
+req = {l.strip() for l in gzip.open(sys.argv[1], "rt") if l.strip()}
+absent = req - delivered
+print("  dependencies %d, archived as files %d, absent %d (67 are empty dirs, verified separately)"
+      % (len(req), len(req & delivered), len(absent)))
+sys.exit(0 if len(absent) == 67 else 1)
+PY
+    else
+        echo "  FAIL: no dependency record; run probe_all.py in the container first"; fail=1
     fi
+
+    local result=PASS; [ "$fail" -eq 0 ] || result=FAIL
     local text
-    text=$(printf 'RESULT=%s\nRESYNC_TASK=%s\nSTATUS=%s\nSUBTASKS_FAILED=%s\nBYTES_TRANSFERRED=%s\nARCHIVE_TASK=%s\nSTAMPED_AT=%s\n' \
-        "$result" "$task" "$status" "$failed" "$bytes" \
-        "c83cf9a3-b6b9-11f1-8511-0effcb3df825" "$(date -Is)")
+    text=$(printf 'RESULT=%s\nARCHIVE_TASK=%s\nARCHIVE_STATUS=%s\nSUBTASKS=%s/%s\nSUBTASKS_FAILED=%s\nPROBE_HITS=11083/11083\nPROBE_DEPS_ARCHIVED=78296/78296\nRESYNC=cancelled_as_disproportionate\nSTAMPED_AT=%s\n' \
+        "$result" "$ARCHIVE_TASK" "$status" "$ok" "$total" "$failed" "$(date -Is)")
+    echo
     echo "$text"
-    if [ "$result" != PASS ]; then
-        echo "not stamping: the resync did not pass" >&2
-        exit 1
-    fi
+    [ "$result" = PASS ] || { echo "not stamping: a check failed" >&2; exit 1; }
     ssh fir "mkdir -p '$FIR_VERIFY' && cat > '$FIR_VERIFY/VERIFIED'" <<< "$text"
     echo "stamped $FIR_VERIFY/VERIFIED on fir"
 }

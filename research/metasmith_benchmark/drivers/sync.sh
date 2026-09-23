@@ -34,7 +34,14 @@ ssh "$HOST" "mkdir -p $DEST /scratch/phyberos/bench/logs"
 rsync -a --relative --exclude='__pycache__' --exclude='*.pyc' --exclude='.cache' "${PATHS[@]}" "$HOST:$DEST/"
 ssh "$HOST" "echo $SHA > $DEST/COMMIT"
 
+# CAUTION Skip a home that no longer exists rather than failing. An archived experiment's home is
+# deleted while the others stay live, and under `set -e` one missing home aborts the whole sync,
+# taking the surviving homes' overlays with it. E3's pratama2026 home went this way on 2026-09-22.
 for home in "${HOMES[@]}"; do
+    if ! ssh "$HOST" "test -d '$home'"; then
+        echo "skipping $home: not on $HOST" >&2
+        continue
+    fi
     MSM_HPC_HOST="$HOST" MSM_AGENT_HOME="$home" "$REPO/research/cami/ops/push_dev_overlay.sh"
 done
 
