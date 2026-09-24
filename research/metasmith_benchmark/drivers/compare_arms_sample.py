@@ -3,6 +3,9 @@ sequence, each arm's MAG inventory, and skani E2-vs-E1 pair tables per binner.
 
 Reads E1 from the e1_close sheet and maps, and E2 from the task cache through the archive manifest.
 Never writes the task cache. compare_arms.py turns these files into the comparison tables.
+
+With --side2-sheet and --side2-maps, the E2 slot is a second nf-core run instead (the E1ctl control),
+read the same way as E1. Rows still say E2; compare_arms.py --labels names the run.
 """
 import argparse
 import csv
@@ -128,14 +131,14 @@ def write_rows(path, rows, fieldnames=None):
         w.writerows(rows)
 
 
-def e1_bins(sample_row, maps, outdir, seqs):
+def map_bins(sample_row, maps, outdir, seqs, slot="e1"):
     members = {}
     for r in read_tsv(maps / f"{sample_row['sample']}.tsv"):
         if "unbinned" not in r["bin_id"].lower():
             members.setdefault((r["binner"], bin_stem(r["bin_id"])), []).append(r["contig_id"].split()[0])
     paths = {}
     for (binner, name), contigs in members.items():
-        d = outdir / "e1" / binner
+        d = outdir / slot / binner
         d.mkdir(parents=True, exist_ok=True)
         p = d / f"{name}.fa"
         with open(p, "w") as fh:
@@ -187,8 +190,10 @@ def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--sheet", type=Path, required=True)
     p.add_argument("--maps", type=Path, required=True)
-    p.add_argument("--manifest", type=Path, required=True)
-    p.add_argument("--cache", type=Path, required=True)
+    p.add_argument("--manifest", type=Path)
+    p.add_argument("--cache", type=Path)
+    p.add_argument("--side2-sheet", type=Path)
+    p.add_argument("--side2-maps", type=Path)
     p.add_argument("--skani-sif", required=True)
     p.add_argument("--minimap2-sif", required=True)
     p.add_argument("--index", type=int, required=True)
@@ -196,12 +201,19 @@ def main():
     p.add_argument("--tmp", type=Path, required=True)
     p.add_argument("--outdir", type=Path, required=True)
     a = p.parse_args()
+    nfcore2 = bool(a.side2_sheet and a.side2_maps)
+    if nfcore2 == bool(a.manifest and a.cache):
+        p.error("give either --manifest and --cache, or --side2-sheet and --side2-maps")
 
     row = next(r for r in sheet_rows(a.sheet).values() if int(r["idx"]) == a.index)
     s = row["sample"]
-    rows = [r for r in read_tsv(a.manifest) if r["sample"] == s]
-    asm2, = [r for r in rows if r["kind"] == "assembly"]
-    e2_asm = Path(a.cache, asm2["shard"][:2], asm2["shard"][2:], asm2["relpath"])
+    if nfcore2:
+        row2 = sheet_rows(a.side2_sheet)[s]
+        e2_asm = row2["assembly"]
+    else:
+        rows = [r for r in read_tsv(a.manifest) if r["sample"] == s]
+        asm2, = [r for r in rows if r["kind"] == "assembly"]
+        e2_asm = Path(a.cache, asm2["shard"][:2], asm2["shard"][2:], asm2["relpath"])
     out = a.outdir / s
     out.mkdir(parents=True, exist_ok=True)
 
@@ -213,8 +225,11 @@ def main():
                ["arm", "sample", "pipeline", "contig", "length", "best_target", "identity", "cov_best", "cov_id99"])
     print(f"{s}: assembly done", flush=True)
 
-    e1 = e1_bins(row, a.maps, a.tmp, read_fasta(row["assembly"]))
-    e2 = e2_bins(rows, a.cache, a.tmp)
+    e1 = map_bins(row, a.maps, a.tmp, read_fasta(row["assembly"]))
+    if nfcore2:
+        e2 = map_bins(row2, a.side2_maps, a.tmp, read_fasta(row2["assembly"]), slot="e2")
+    else:
+        e2 = e2_bins(rows, a.cache, a.tmp)
     assert set(e1) == set(e2) == set(BINNERS), (sorted(e1), sorted(e2))
     write_rows(out / "mags.tsv", ({"arm": row["arm"], "sample": s, **r}
                                   for r in [*inventory("E1", e1), *inventory("E2", e2)]))

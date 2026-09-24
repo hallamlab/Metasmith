@@ -5,6 +5,10 @@ Reads compare_arms/raw/*.tsv.gz (gathered from drivers/compare_arms_sample.py) a
 tables in e1/ and e2/. Writes compare_arms/*.tsv. A MAG's partner in the other arm is the pair that
 maximises ANI x min(AF_e1, AF_e2). Two MAGs match when each is the other's partner and the pair passes
 both thresholds. With --markdown, prints the tables findings/E1_E2_REPRODUCTION.md quotes.
+
+--raw, --out, --checkm2 and --samples point the same comparison at another pair of runs or a
+subset of samples. The two runs keep the slots E1 and E2 in every table; --labels names them in
+the markdown and in slots.tsv.
 """
 import argparse
 import csv
@@ -20,6 +24,8 @@ from reproduction import markdown
 HERE = Path(__file__).resolve().parent
 RAW = HERE / "compare_arms" / "raw"
 OUT = HERE / "compare_arms"
+CHECKM2 = {"E1": HERE / "e1" / "e1_checkm2.tsv.gz", "E2": HERE / "e2" / "e2_checkm2.tsv.gz"}
+SAMPLES = None
 BINNERS = ("DASTool", "COMEBin", "MetaBAT2", "SemiBin2")
 PIPES = ("E1", "E2")
 TIERS = ("high", "medium", "below")
@@ -27,7 +33,7 @@ TIERS = ("high", "medium", "below")
 
 def read(path):
     with gzip.open(path, "rt", newline="") as f:
-        return list(csv.DictReader(f, delimiter="\t"))
+        return [r for r in csv.DictReader(f, delimiter="\t") if SAMPLES is None or r["sample"] in SAMPLES]
 
 
 def write(name, rows, head=None, gz=False):
@@ -89,9 +95,9 @@ def partners(pairs, side):
 
 
 def source_bin(name, have):
-    m = re.match(r"^(MEGAHIT|FLYE)-DASTool-[^.]+\.(.+)$", name)
+    m = re.match(r"^(MEGAHIT|FLYE|Flye)-DASTool-[^.]+\.(.+)$", name)
     stem = re.sub(r"_sub$", "", m.group(2) if m else name)
-    m = re.match(r"^(MEGAHIT|FLYE)-(COMEBin|MetaBAT2|SemiBin2)(?:Refined)?-(.+?)[._](\d+)$", stem)
+    m = re.match(r"^(MEGAHIT|FLYE|Flye)-(COMEBin|MetaBAT2|SemiBin2)(?:Refined)?-(.+?)[._](\d+)$", stem)
     asm, binner, sample, i = m.groups()
     hits = [(binner, c) for c in (f"{asm}-{binner}-{sample}.{i}", f"{asm}-{binner}-{sample}_{i}") if (binner, c) in have]
     assert len(hits) == 1, (name, hits)
@@ -124,7 +130,7 @@ def trace_dastool(per_mag):
 def mags(min_ani, min_af):
     inv = read(RAW / "mags.tsv.gz")
     checkm = {}
-    for p, path in (("E1", HERE / "e1" / "e1_checkm2.tsv.gz"), ("E2", HERE / "e2" / "e2_checkm2.tsv.gz")):
+    for p, path in CHECKM2.items():
         for r in read(path):
             checkm[(p, r["sample"], r["binner"], r["bin"])] = (float(r["Completeness"]), float(r["Contamination"]))
     pairs = {}
@@ -163,8 +169,8 @@ def mags(min_ani, min_af):
                 row.update(partner_completeness=pc, partner_contamination=pn, partner_tier=tier(pc, pn))
             per_mag.append(row)
     trace_dastool(per_mag)
-    head = list(per_mag[0]) + ["partner_completeness", "partner_contamination", "partner_tier",
-                               "source_binner", "source_bin", "cause"]
+    head = list(dict.fromkeys(list(per_mag[0]) + ["partner_completeness", "partner_contamination", "partner_tier",
+                                                   "source_binner", "source_bin", "cause"]))
     write("mag_matches", per_mag, head, gz=True)
     write("unmatched_mags", [r for r in per_mag if not r["matched"]], head)
     return per_mag
@@ -291,11 +297,25 @@ def causes(rows):
 
 
 def main():
+    global RAW, OUT, CHECKM2, SAMPLES
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--min-ani", type=float, default=95.0)
     p.add_argument("--min-af", type=float, default=50.0, help="percent, applied to both directions")
     p.add_argument("--markdown", action="store_true")
+    p.add_argument("--raw", type=Path, default=RAW)
+    p.add_argument("--out", type=Path, default=OUT)
+    p.add_argument("--checkm2", nargs=2, type=Path, metavar=("E1_TABLE", "E2_TABLE"))
+    p.add_argument("--samples", type=Path, help="keep only the samples listed one per line")
+    p.add_argument("--labels", nargs=2, default=PIPES, metavar=("E1_RUN", "E2_RUN"))
     a = p.parse_args()
+    RAW, OUT = a.raw, a.out
+    OUT.mkdir(parents=True, exist_ok=True)
+    if a.checkm2:
+        CHECKM2 = dict(zip(PIPES, a.checkm2))
+    if a.samples:
+        SAMPLES = set(a.samples.read_text().split())
+    if tuple(a.labels) != PIPES:
+        write("slots", [{"slot": s, "run": r} for s, r in zip(PIPES, a.labels)])
     asm = assemblies()
     per_mag = mags(a.min_ani, a.min_af)
     sample_table(per_mag)
@@ -308,7 +328,9 @@ def main():
     for name, (head, rows) in (("assemblies", assembly_distribution(asm)), ("matching", matching(summ)),
                                ("dastool_unmatched_causes", causes(cause_rows)),
                                ("tier_changes", tier_changes(per_mag))):
-        print(f"## {name}\n\n{markdown(head, rows)}\n")
+        header, body = markdown(head, rows).split("\n", 1)
+        header = re.sub(r"\bE([12])\b", lambda m: a.labels[int(m.group(1)) - 1], header)
+        print(f"## {name}\n\n{header}\n{body}\n")
 
 
 if __name__ == "__main__":

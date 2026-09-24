@@ -3,6 +3,7 @@
   e1  nf-core's checkm2_summary.tsv (short and long), with the E1 close-out's own reports replacing
       the sets it redid: strain_sample_49 MetaBAT2 and DAS Tool (gapfill), and every long sample's
       b19 MetaBAT2 and three-binner DAS Tool (in place of nf-core's two-binner long DAS Tool).
+      Without --gapfill and --checkm2 it reads nf-core's summaries alone, as for the E1ctl control.
   e2  the one-row CheckM2 files the archive manifest lists, read from the task cache and relabelled.
 """
 import argparse
@@ -39,8 +40,11 @@ def owner(name, samples):
 
 def e1(a):
     samples = sheet(a.sheet)
-    redone = {("strain_sample_49", "MetaBAT2"), ("strain_sample_49", "DASTool")}
-    redone |= {(s, b) for s, r in samples.items() if r["arm"] == "long" for b in ("MetaBAT2", "DASTool")}
+    redone = set()
+    if a.gapfill or a.checkm2:
+        assert a.gapfill and a.checkm2, "--gapfill and --checkm2 go together"
+        redone = {("strain_sample_49", "MetaBAT2"), ("strain_sample_49", "DASTool")}
+        redone |= {(s, b) for s, r in samples.items() if r["arm"] == "long" for b in ("MetaBAT2", "DASTool")}
     rows = []
     for summary in a.nfcore:
         for r in read_tsv(summary):
@@ -51,7 +55,9 @@ def e1(a):
             if (s, b) in redone:
                 continue
             rows.append((s, b, "nfcore", r))
-    reports = glob.glob(os.path.join(a.gapfill, "*", "*.quality_report.tsv")) + glob.glob(os.path.join(a.checkm2, "*.quality_report.tsv"))
+    reports = []
+    if redone:
+        reports = glob.glob(os.path.join(a.gapfill, "*", "*.quality_report.tsv")) + glob.glob(os.path.join(a.checkm2, "*.quality_report.tsv"))
     for path in reports:
         source = "gapfill" if path.startswith(a.gapfill) else "b19_rerun"
         tool, = [b for b in ("MetaBAT2", "DASTool") if f"-{b}-" in os.path.basename(path)]
@@ -95,8 +101,8 @@ def main():
     q = sub.add_parser("e1")
     q.add_argument("--sheet", required=True)
     q.add_argument("--nfcore", nargs="+", required=True)
-    q.add_argument("--gapfill", required=True)
-    q.add_argument("--checkm2", required=True)
+    q.add_argument("--gapfill")
+    q.add_argument("--checkm2")
     q.add_argument("--out", required=True)
     q = sub.add_parser("e2")
     q.add_argument("--manifest", required=True)
