@@ -865,38 +865,45 @@ for raster formats and only as `neato -n2`, which honours our positions and lays
   the only thing keeping them apart. Shorten the id and the three fold into one node — after which
   the layout's cycle-breaker cuts edges to restore acyclicity, silently.
 - **A repeated block is a shape, never a name.** Products are named per instance, so nothing
-  matches as a string; a node's signature is its kind, its **fan-in**, and the sorted multiset of
-  its children's signatures to a bounded depth. Fan-in is in there because without it three
-  unrelated merge steps hash alike and get hoisted 14 rows from their readers. An instance's block
-  is its descendants minus everything its siblings also reach — *not* its dominator subtree, which
-  loses any node with a second parent.
-- **Supply is emitted where it is consumed, not where it is declared.** A reference database is a
-  root that owns nothing; drawn at either end it holds a rail across every module between and
-  drags its consumers with it.
+  matches as a string; a node's signature is its **fan-in** and the sorted multiset of its
+  children's signatures to a bounded depth. Without fan-in, three unrelated merge steps hash alike.
+  An instance's block is its descendants minus everything its siblings also reach — *not* its
+  dominator subtree, which loses any node with a second parent.
 - **Colour is decoration and the layout must never see it.** Every scheme is a pure function of a
-  finished `Layout`. Two opposite jobs share the word: `lane` and `module` are graph colouring
-  (touching things differ), while `repeat` is the reverse — every instance of a motif in one hue.
-  Only the second makes a repetition visible, and only because the layout already put the
-  instances in the same shape.
+  finished `Layout`. Two opposite jobs share the word: `lane` (by column) and `module` are graph
+  colouring (touching things differ), while `repeat` is the reverse — every instance of a motif in
+  one hue. The scheme keeps the name `lane` because the GUI offers it by that name.
 - **`background=False` renders transparent**, for the GUI's card; node fills are untouched, so
   such a drawing is pixel-exact on a card of the theme's colour and only very close on any other.
 
-**Where a pass has two defensible answers, both are drawn and measured.** `measure` returns
-congruence, rail rows, lanes, crossings, detours and module contiguity, and `layout` picks
-symmetry ahead of length. Congruence is *modal* — the largest set of instances arranged alike —
-because mean agreement is too coarse to separate row orders. Prefer adding a candidate to tuning a
-constant. Ceilings are pinned in `tests/metasmith/unit/test_dag_stress.py`; a tuning change is free to
-improve one and has to say so out loud to make one worse.
+**The layout is two integers per node, and the drawer decides nothing.** `Layout` holds a row
+order and a column per node. Runs, bars and routes are derived from those, on half-rows: node row
+`r` sits at `2r`, the band above it at `2r − 1`. A node's run holds its column down to the band of
+its last child, and every edge into a node meets one bar in that band, so a route has at most one
+horizontal leg. A leaf's run ends at `2r + 1`, half-open. End it anywhere later and the next row
+cannot reuse the column. Width is the liveness floor, which a top-down sweep always reaches. The
+packer's choices among free columns only decide where runs sit: a straight drop first, then
+longest-left. The drawer draws every turn as an arc, so an arc is a connection and a straight line
+through a junction is a crossing.
 
-Four things were measured and **rejected**, and the numbers are why they stay rejected: optimal
-Sugiyama layer assignment as a row sort (ranks are right, but many nodes share one, so the branch
-walk's grouping is lost and the drawing costs half again as much rail); sift-based local search on
-that objective (lowers the cost, scatters every cluster to do it); marker-to-label distance as a
-selection term (~11% more crossings across a 300-graph corpus, buys nothing on the metagenomics
-plan); and detour as anything but the last tie-break (crossings cannot see one, and most detours
-are forced). The first two are the general lesson: the objective is a proxy, and it stops agreeing
-with the picture close to its optimum. The last two are kept as *measurements* so either case can
-be re-argued in numbers.
+**The row order is a solve for minimum total edge length.** Total length is the sum over prefixes
+of the edges each prefix cuts, so `_solve_block` runs a beam DP over placed-node sets. A lower
+bound and a greedy ceiling prune it, and `_ORDER_BUDGET` caps the states per layer. `optimal` is
+true only when no layer was truncated. A 100-node graph solves in under a second, and past that
+the order degrades to best-effort rather than failing. Components go smallest first, since
+interleaving two only stretches their edges. Repeated blocks then take one internal order, in a
+post-pass that never costs length: length outranks congruence. Ceilings are pinned
+in `tests/metasmith/unit/test_dag_stress.py`, and a solver change may move them either way.
+
+Two things were considered and **rejected**. A Sidney decomposition cannot split a component: in
+an order-closed set, in-degree minus out-degree sums to minus the edges leaving it, never above
+zero, so the whole component is one block. The old ranking rules, a spine plus supply emitted at
+its consumer, were dropped because they optimised no stated objective.
+
+**Length-neutral nodes gather at the top.** A reference or environment node with one parent and
+one child costs the same total length at any row between them, so the tie-break stacks them under
+their root. Each then holds a long run down to its consumer. That is most of e2's remaining width
+and crossings. Pulling such nodes toward their consumer is an open tie-break, not implemented.
 
 `env` is in `blacklist_namespaces` alongside `lib` and `containers`: an environment is a declared
 dependency like any other, so without it every plan DAG grows an `env::*` node per step. Three
