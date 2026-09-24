@@ -49,6 +49,10 @@ class Style:
     marker_scale: float = 1.0
     stroke_width: float = 1.6
     solid: bool = False
+    # label column only: `indent` shifts the label right, in ems; `heading`
+    # rules the full label column above the label
+    indent: float = 0.0
+    heading: bool = False
 
 
 @dataclass(frozen=True)
@@ -201,6 +205,7 @@ class _Grid:
     width: float
     height: float
     rows_y: tuple[float, ...] = ()
+    label_right: float = 0.0
 
     def x(self, col: int) -> float:
         return self.col_x[col]
@@ -249,7 +254,9 @@ def _grid(
     max_chars: int = DEFAULT_LABEL_CHARS,
     min_lanes: int = 0,
     rows_y: Sequence[float] = (),
+    indents: Mapping[str, float] | None = None,
 ) -> tuple[_Grid, dict[str, _Drawn]]:
+    indents = indents or {}
     lab = _labels_for(lay, labels)
     cols = max(lay.width, min_lanes)
     shift = cols - lay.width
@@ -290,7 +297,10 @@ def _grid(
         column = margin + marker_d + (cols - 1) * lane_pitch + label_pad
         label_x = [column] * cols
         anchor = "start"
-        width = column + max((d.width for d in drawn.values()), default=0.0) + margin
+        width = column + max(
+            (indents.get(n, 0.0) * font_size + d.width for n, d in drawn.items()),
+            default=0.0,
+        ) + margin
 
     return (
         _Grid(
@@ -307,6 +317,7 @@ def _grid(
                 rows_y[-1] + margin if len(rows_y) else 2 * margin + lay.height * row_pitch
             ),
             rows_y=tuple(rows_y),
+            label_right=width - margin,
         ),
         drawn,
     )
@@ -408,6 +419,7 @@ class NodeGeometry:
     label: str
     full: str
     truncated: bool
+    indent: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -430,6 +442,7 @@ class Geometry:
     anchor: str
     nodes: tuple[NodeGeometry, ...]
     edges: tuple[EdgeGeometry, ...]
+    label_right: float = 0.0
 
 
 def geometry(
@@ -446,10 +459,11 @@ def geometry(
 ) -> Geometry:
     style = style or {}
     kinds = kinds or {}
+    indents = _indents(lay, style, kinds, label_mode)
     g, drawn = _grid(
         lay, font_size=font_size, labels=labels,
         mode=label_mode, max_chars=max_label_chars,
-        min_lanes=min_lanes, rows_y=rows_y,
+        min_lanes=min_lanes, rows_y=rows_y, indents=indents,
     )
     nodes = []
     for name in lay.order:
@@ -462,6 +476,7 @@ def geometry(
             cx=g.x(c), cy=g.y(r), label_x=g.label_x[c],
             marker_w=mw, marker_h=mh,
             namespace=d.namespace, label=d.name, full=d.full, truncated=d.truncated,
+            indent=indents.get(name, 0.0) * g.font_size,
         ))
     edges = []
     for src, dst in lay.edges:
@@ -474,7 +489,16 @@ def geometry(
         width=g.width, height=g.height, font_size=g.font_size,
         marker_d=g.marker_d, row_pitch=g.row_pitch, lane_pitch=g.lane_pitch,
         anchor=g.anchor, nodes=tuple(nodes), edges=tuple(edges),
+        label_right=g.label_right,
     )
+
+
+def _indents(
+    lay: Layout, style: Mapping[Any, Style], kinds: Mapping[str, Any], mode: LabelMode,
+) -> dict[str, float]:
+    if mode is not LabelMode.COLUMN:
+        return {}
+    return {n: style.get(kinds.get(n), _DEFAULT_STYLE).indent for n in lay.order}
 
 
 def render_svg(
@@ -532,9 +556,16 @@ def _svg_body(
 
     for n in g.nodes:
         st = style.get(n.kind, _DEFAULT_STYLE)
-        cx, cy, lx = n.cx, n.cy, n.label_x
+        cx, cy, lx = n.cx, n.cy, n.label_x + n.indent
         parts.append(f'<g><title>{escape(n.full)}</title>')
         parts.append(_svg_marker(st, cx, cy, g.marker_d, colour.nodes.get(n.name)))
+        if st.heading and g.anchor == "start":
+            top = cy - (0.78 if n.namespace else 0.36) * font_size
+            y = top - 0.3 * font_size
+            parts.append(
+                f'<line x1="{lx:.1f}" y1="{y:.1f}" x2="{g.label_right:.1f}" y2="{y:.1f}"'
+                f' stroke="{st.text}" stroke-width="1"/>'
+            )
         if n.namespace:
             parts.append(
                 f'<text x="{lx:.1f}" y="{cy - 0.42 * font_size:.1f}"'
@@ -794,9 +825,10 @@ def raster_dot(
     style = style or {}
     colour = colour or _NO_COLOUR
     plate = plate or _DEFAULT_PLATE
+    indents = _indents(lay, style, kinds or {}, label_mode)
     g, drawn = _grid(
         lay, font_size=font_size, labels=labels,
-        mode=label_mode, max_chars=max_label_chars,
+        mode=label_mode, max_chars=max_label_chars, indents=indents,
     )
     lines = [
         "digraph G {",
@@ -824,8 +856,9 @@ def raster_dot(
         )
         box = max(d.width, 1.0)
         half = box / 2 if g.anchor == "start" else -box / 2
+        lx = g.label_x[c] + indents.get(name, 0.0) * font_size
         lines.append(
-            f'  "{prefix}{name}" [pos="{g.label_x[c] + half:.1f},'
+            f'  "{prefix}{name}" [pos="{lx + half:.1f},'
             f'{y:.1f}!", shape="plaintext", style="", width={box / 72:.3f},'
             f' height={2.0 * font_size / 72:.3f},'
             f" label=<{_html_label(d, st, font_size, box, g.anchor)}>];"

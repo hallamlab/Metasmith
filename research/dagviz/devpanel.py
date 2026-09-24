@@ -268,7 +268,8 @@ TEMPLATE = """<title>DAG Lane Strategies</title>
       working tree solves in stages: rows for length, then the fewest
       columns, then the fewest crossings, then the least horizontal travel,
       with no bends allowed at any stage. The solved column says whether its
-      row order and its columns are each proven best.</p>
+      row order and its columns are each proven best. Labels take two inks,
+      step and data; a rule heads each step, and data sits indented.</p>
     <div class="switch" role="group" aria-label="theme">
       <button type="button" data-theme="auto" aria-pressed="true">auto</button>
       <button type="button" data-theme="light" aria-pressed="false">light</button>

@@ -758,7 +758,7 @@ class TestGeometryIsWhatTheSvgDraws:
     def test_every_node_label_lands_at_its_geometry_position(self):
         g, svg = self._geo(load_dag())
         for n in g.nodes:
-            assert f'x="{n.label_x:.1f}" y="{n.cy + 0.36 * 13.0:.1f}"' in svg
+            assert f'x="{n.label_x + n.indent:.1f}" y="{n.cy + 0.36 * 13.0:.1f}"' in svg
 
     def test_a_marker_size_follows_its_style(self):
         g, _ = self._geo(load_dag())

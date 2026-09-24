@@ -61,29 +61,34 @@ def step_blocks(
 # The transform carries the emphasis and the data recedes: a plan is a sequence
 # of things done, and the types are what they are done to. Everything here is
 # one half of that -- the darker ink, the weight, the heavier stroke on one
-# side; the greyer ink and the lighter stroke on the other.
+# side; the greyer ink and the lighter stroke on the other. Text takes exactly
+# two inks, the step's and the data's: a namespace is inked like its name, and
+# a target's label is data. Only a target's marker says it was asked for.
 STYLES: dict[NodeKind, Style] = {
     NodeKind.TRANSFORM: Style(
         marker="▽", ascii_marker="v",
         fill="#FFFFFF", stroke="#2B2B2B", rx=0,
-        text="#111111", muted="#8A8A8A", weight="600",
+        text="#111111", muted="#111111", weight="600",
         shape="triangle", gv_attrs="orientation=180",
         gv_style="filled", ansi="\033[1;36m",
         svg_shape="triangle_down", marker_scale=1.0, stroke_width=2.0,
+        heading=True,
     ),
     NodeKind.DATA: Style(
         marker="○", ascii_marker="o",
         fill="#FFFFFF", stroke="#6E6E6E", rx=0,
-        text="#7A7A7A", muted="#A8A8A8",
+        text="#7A7A7A", muted="#7A7A7A",
         shape="circle", gv_style="filled", ansi="\033[0;37m",
         svg_shape="circle", marker_scale=0.88, stroke_width=1.3,
+        indent=0.8,
     ),
     NodeKind.TARGET: Style(
         marker="●", ascii_marker="*",
         fill="#212121", stroke="#2B2B2B",
+        text="#7A7A7A", muted="#7A7A7A",
         shape="circle", gv_style="filled", ansi="\033[0;97m",
         svg_shape="circle", marker_scale=1.0, stroke_width=1.3,
-        solid=True,
+        solid=True, indent=0.8,
     ),
 }
 
@@ -100,15 +105,15 @@ DARK = Theme(
     styles={
         NodeKind.TRANSFORM: replace(
             STYLES[NodeKind.TRANSFORM],
-            fill="#1B1E24", stroke="#DFE3EA", text="#DFE3EA", muted="#6B7484",
+            fill="#1B1E24", stroke="#DFE3EA", text="#DFE3EA", muted="#DFE3EA",
         ),
         NodeKind.DATA: replace(
             STYLES[NodeKind.DATA],
-            fill="#1B1E24", stroke="#8D97A8", text="#8D97A8", muted="#5F6877",
+            fill="#1B1E24", stroke="#8D97A8", text="#8D97A8", muted="#8D97A8",
         ),
         NodeKind.TARGET: replace(
             STYLES[NodeKind.TARGET],
-            fill="#DFE3EA", stroke="#DFE3EA", text="#DFE3EA", muted="#6B7484",
+            fill="#DFE3EA", stroke="#DFE3EA", text="#8D97A8", muted="#8D97A8",
         ),
     },
 )
