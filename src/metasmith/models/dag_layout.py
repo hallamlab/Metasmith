@@ -1,16 +1,26 @@
+"""A DAG laid out on a grid: one node per row, one column per node's run.
+
+The whole layout is two integers per node, its row and its column. Every
+line in a drawing is derived from them: a node's run holds its column from
+the band above it down to the band above its last child, and every edge into
+a node arrives along one bar in that node's band. Positions along a column
+are half-rows: node row r sits at 2r and its band at 2r - 1.
+"""
+
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
-from typing import Any, Iterable, Mapping, Sequence
+from dataclasses import dataclass, field
+from typing import Iterable, Mapping, Sequence
+
+import numpy as np
 
 __all__ = [
-    "LayoutNode", "LayoutEdge", "Layout", "Metrics", "Motif",
+    "Run", "Feed", "Bar", "Layout", "Metrics", "Motif",
     "layout", "measure", "dominators", "natural_key", "repeat_motifs",
 ]
 
 _DIGITS = re.compile(r"(\d+)")
-_SIDE_BRANCH = (2, 0)
 _SIGNATURE_DEPTH = 3
 
 
@@ -23,126 +33,170 @@ def natural_key(name: str) -> tuple:
 
 
 @dataclass(frozen=True)
-class LayoutNode:
-    name: str
-    kind: Any
-    row: int
-    lane: int
-    depth: int
-    spine: bool
+class Run:
+    """The column a node's output travels down, over half-rows [top, bottom)."""
+
+    node: str
+    col: int
+    top: int
+    bottom: int
+
+    @property
+    def length(self) -> int:
+        return self.bottom - self.top
 
 
 @dataclass(frozen=True)
-class LayoutEdge:
+class Feed:
+    """One parent's arrival at a bar. `turns` when the parent's run ends
+    here and bends into the bar; otherwise the run carries on and branches."""
+
     src: str
-    dst: str
-    lane: int
-    points: tuple[tuple[float, float], ...]
-    back: bool = False
+    col: int
+    turns: bool
+
+
+@dataclass(frozen=True)
+class Bar:
+    node: str
+    col: int
+    band: int
+    feeds: tuple[Feed, ...]
+
+    @property
+    def span(self) -> tuple[int, int]:
+        cols = [self.col] + [f.col for f in self.feeds]
+        return min(cols), max(cols)
 
 
 @dataclass(frozen=True)
 class Layout:
-    nodes: tuple[LayoutNode, ...]
-    edges: tuple[LayoutEdge, ...]
-    width: int
-    height: int
+    order: tuple[str, ...]
+    col: Mapping[str, int]
+    edges: tuple[tuple[str, str], ...]
+    back: tuple[tuple[str, str], ...] = ()
+    width: int = 0
+    optimal: bool = False
+    optimal_columns: bool = False
+    row: dict[str, int] = field(init=False, repr=False, compare=False)
+    children: dict[str, list[str]] = field(init=False, repr=False, compare=False)
+    parents: dict[str, list[str]] = field(init=False, repr=False, compare=False)
+    runs: dict[str, Run] = field(init=False, repr=False, compare=False)
+    bars: dict[str, Bar] = field(init=False, repr=False, compare=False)
 
     def __post_init__(self):
-        object.__setattr__(self, "_index", {n.name: n for n in self.nodes})
+        row = {n: i for i, n in enumerate(self.order)}
+        children: dict[str, list[str]] = {n: [] for n in self.order}
+        parents: dict[str, list[str]] = {n: [] for n in self.order}
+        for src, dst in self.edges:
+            assert row[src] < row[dst], f"edge {src} -> {dst} runs upward"
+            children[src].append(dst)
+            parents[dst].append(src)
+        for kids in children.values():
+            kids.sort(key=row.__getitem__)
+        for ups in parents.values():
+            ups.sort(key=row.__getitem__)
+
+        runs = {}
+        for n, r in row.items():
+            top = 2 * r - 1 if parents[n] else 2 * r
+            bottom = 2 * row[children[n][-1]] - 1 if children[n] else 2 * r + 1
+            runs[n] = Run(n, self.col[n], top, bottom)
+        by_col: dict[int, list[Run]] = {}
+        for run in runs.values():
+            assert 0 <= run.col < self.width, f"{run.node} outside the grid"
+            by_col.setdefault(run.col, []).append(run)
+        for held in by_col.values():
+            held.sort(key=lambda u: u.top)
+            for a, b in zip(held, held[1:]):
+                assert a.bottom <= b.top, f"{a.node} and {b.node} share a column"
+
+        bars = {
+            n: Bar(n, self.col[n], 2 * row[n] - 1, tuple(
+                Feed(p, self.col[p], children[p][-1] == n) for p in parents[n]
+            ))
+            for n in self.order
+            if parents[n]
+        }
+        for name, value in (("row", row), ("children", children), ("parents", parents),
+                            ("runs", runs), ("bars", bars)):
+            object.__setattr__(self, name, value)
 
     @property
-    def index(self) -> dict[str, LayoutNode]:
-        return self._index  # type: ignore[attr-defined]
+    def height(self) -> int:
+        return len(self.order)
 
-    def __getitem__(self, name: str) -> LayoutNode:
-        return self._index[name]  # type: ignore[attr-defined]
+    def live(self, half_row: int) -> list[Run]:
+        return [u for u in self.runs.values() if u.top <= half_row < u.bottom]
 
-    def crossing_lanes(self, row: int) -> frozenset[int]:
-        idx = self.index
-        return frozenset(
-            e.lane
-            for e in self.edges
-            if not e.back and idx[e.src].row < row < idx[e.dst].row
-        )
-
-    def gap_edges(self, row: int) -> tuple[LayoutEdge, ...]:
-        idx = self.index
-        return tuple(
-            e
-            for e in self.edges
-            if not e.back and idx[e.src].row <= row < idx[e.dst].row
-        )
+    def route(self, src: str, dst: str) -> tuple[tuple[int, int], ...]:
+        """(half-row, column) corners of one edge: down the source's run to
+        the target's band, along the bar, and down into the target."""
+        a, b = self.col[src], self.col[dst]
+        band = 2 * self.row[dst] - 1
+        points = [(2 * self.row[src], a)]
+        if a != b:
+            points += [(band, a), (band, b)]
+        return tuple(points + [(2 * self.row[dst], b)])
 
 
 def layout(
-    nodes: Mapping[str, Any] | Sequence[tuple[str, Any]],
+    nodes: Iterable[str],
     edges: Iterable[tuple[str, str]],
     order: Sequence[str] | None = None,
+    blocks: Iterable[Sequence[str]] | None = None,
 ) -> Layout:
-    kinds = dict(nodes)
-    _edges: list[tuple[str, str]] = []
-    seen: set[tuple[str, str]] = set()
-    for src, dst in edges:
-        if (src, dst) in seen:
-            continue
-        seen.add((src, dst))
-        kinds.setdefault(src, None)
-        kinds.setdefault(dst, None)
-        _edges.append((src, dst))
-
-    names = sorted(kinds, key=natural_key)
+    """`blocks` partitions the nodes into runs of consecutive rows, each led
+    by its first member; a node in no block is a block of its own."""
+    names_seen: dict[str, None] = dict.fromkeys(nodes)
+    pairs: list[tuple[str, str]] = []
+    for src, dst in dict.fromkeys(edges):
+        names_seen.setdefault(src)
+        names_seen.setdefault(dst)
+        pairs.append((src, dst))
+    names = sorted(names_seen, key=natural_key)
     if not names:
-        return Layout(nodes=(), edges=(), width=0, height=0)
+        return Layout(order=(), col={}, edges=())
 
-    children = {n: [] for n in names}
-    for src, dst in _edges:
+    children: dict[str, list[str]] = {n: [] for n in names}
+    for src, dst in pairs:
         children[src].append(dst)
     for n in names:
-        children[n] = sorted(set(children[n]), key=natural_key)
-
+        children[n].sort(key=natural_key)
     back = _break_cycles(names, children)
-    fwd_children = {n: [c for c in children[n] if (n, c) not in back] for n in names}
-    parents = {n: [] for n in names}
+    children = {n: [c for c in children[n] if (n, c) not in back] for n in names}
+    parents: dict[str, list[str]] = {n: [] for n in names}
     for n in names:
-        for c in fwd_children[n]:
+        for c in children[n]:
             parents[c].append(n)
 
-    topo = _topological(names, fwd_children, parents)
-    depth = _depths(topo, fwd_children)
-    weight, descendants = _subtree_metrics(topo, fwd_children)
-    spine = _choose_spine(names, parents, fwd_children, weight, descendants)
-    owner = _ownership(names, parents, depth)
-    lane_width, owned_size = _lane_widths(topo, fwd_children, owner)
-    sig = _signatures(topo, fwd_children, kinds, _SIGNATURE_DEPTH)
-    motifs = _motifs(topo, fwd_children, sig)
+    units = _units(blocks, names, children, parents)
+    rows = _given_order(order, names, children, units)
+    optimal = False
+    if rows is None:
+        topo = _topological(names, children, parents)
+        sig = _signatures(topo, children, _SIGNATURE_DEPTH)
+        rows, optimal = _order_rows(names, children, parents, sig, units)
+        rows = _furthest_first(rows, children, parents, units)
+        rows = _congruent(rows, _motifs(topo, children, sig), children, units)
 
-    given = _given_order(order, names, fwd_children)
-    if given is not None:
-        return _compose(
-            given, kinds, _edges, back, fwd_children, depth, weight, spine, motifs,
-        )
-
-    best_key = best_layout = None
-    for jump in _SIDE_BRANCH:
-        rows = _row_order(
-            names, parents, fwd_children, topo, spine, lane_width, owned_size,
-            jump, motifs, sig,
-        )
-        cand = _compose(
-            rows, kinds, _edges, back, fwd_children, depth, weight, spine, motifs
-        )
-        m = measure(cand, motifs)
-        key = (-m.congruent, m.rail_rows, m.lanes, m.crossings)
-        if best_key is None or key < best_key:
-            best_key, best_layout = key, cand
-    return best_layout  # type: ignore[return-value]
+    col, width, packed = _columns(rows, children, parents)
+    at = {n: i for i, n in enumerate(rows)}
+    forward = sorted(
+        ((p, c) for p in names for c in children[p]), key=lambda e: (at[e[0]], at[e[1]])
+    )
+    return Layout(
+        order=tuple(rows), col=col, edges=tuple(forward),
+        back=tuple(e for e in pairs if e in back), width=width, optimal=optimal,
+        optimal_columns=packed,
+    )
 
 
 def _given_order(
     order: Sequence[str] | None,
     names: list[str],
-    fwd_children: dict[str, list[str]],
+    children: dict[str, list[str]],
+    units: list[tuple[str, ...]],
 ) -> list[str] | None:
     if order is None:
         return None
@@ -151,103 +205,426 @@ def _given_order(
         return None
     at = {n: i for i, n in enumerate(rows)}
     for n in rows:
-        if any(at[c] <= at[n] for c in fwd_children[n]):
+        if any(at[c] <= at[n] for c in children[n]):
             return None
+    if not _keeps_units(at, units):
+        return None
     return rows
 
 
-def _compose(
+def _furthest_first(
+    rows: list[str],
+    children: dict[str, list[str]],
+    parents: dict[str, list[str]],
+    units: list[tuple[str, ...]],
+) -> list[str]:
+    """Inside a block, members of equal weight cost the same in any order, so
+    the one used furthest down goes first. Their runs then step down and
+    left in a diagonal instead of in name order."""
+    at = {n: i for i, n in enumerate(rows)}
+    weight = {n: len(parents[n]) - len(children[n]) for n in rows}
+
+    def reach(n):
+        return max((at[c] for c in children[n]), default=-1)
+
+    rows = list(rows)
+    for unit in units:
+        start = min(at[n] for n in unit)
+        span = rows[start:start + len(unit)]
+        i = 0
+        while i < len(span):
+            j = i
+            while j < len(span) and weight[span[j]] == weight[span[i]]:
+                j += 1
+            run = set(span[i:j])
+            if not any(c in run for n in run for c in children[n]):
+                span[i:j] = sorted(span[i:j], key=lambda n: (-reach(n), natural_key(n)))
+            i = j
+        rows[start:start + len(unit)] = span
+    return rows
+
+
+def _keeps_units(row: Mapping[str, int], units: list[tuple[str, ...]]) -> bool:
+    for unit in units:
+        first = row[unit[0]]
+        if sorted(row[n] - first for n in unit) != list(range(len(unit))):
+            return False
+    return True
+
+
+def _units(
+    blocks: Iterable[Sequence[str]] | None,
+    names: list[str],
+    children: dict[str, list[str]],
+    parents: dict[str, list[str]],
+) -> list[tuple[str, ...]]:
+    """The blocks as a partition of every node, each in its row order.
+
+    Total length is the sum over nodes of (in-degree - out-degree) * row. A
+    block's rows are consecutive, so its start adds the same to every order
+    of its members, and the rest is least with the heaviest member first
+    (rearrangement): the order inside a block does not depend on where the
+    block goes. Internal edges still win over weight. A block that an order
+    of whole blocks could not honour, because a path leaves it and comes
+    back, is dissolved.
+    """
+    known = set(names)
+    owner: dict[str, int] = {}
+    groups: list[list[str]] = []
+    for block in blocks or ():
+        members = [n for n in dict.fromkeys(block) if n in known and n not in owner]
+        if len(members) > 1:
+            for n in members:
+                owner[n] = len(groups)
+            groups.append(members)
+    weight = {n: len(parents[n]) - len(children[n]) for n in names}
+
+    def arrange(members: list[str]) -> tuple[str, ...]:
+        inside = set(members)
+        pending = sorted(members, key=lambda n: (-weight[n], natural_key(n)))
+        if not inside & set(parents[members[0]]):
+            pending.remove(members[0])
+            pending.insert(0, members[0])
+        out: list[str] = []
+        while pending:
+            n = next(m for m in pending if all(p in out or p not in inside for p in parents[m]))
+            pending.remove(n)
+            out.append(n)
+        return tuple(out)
+
+    while True:
+        unit_of = {n: owner.get(n, n) for n in names}
+        succ: dict = {u: set() for u in unit_of.values()}
+        indeg = dict.fromkeys(succ, 0)
+        for n in names:
+            for c in children[n]:
+                a, b = unit_of[n], unit_of[c]
+                if a != b and b not in succ[a]:
+                    succ[a].add(b)
+                    indeg[b] += 1
+        ready = [u for u, d in indeg.items() if d == 0]
+        while ready:
+            u = ready.pop()
+            del indeg[u]
+            for v in succ[u]:
+                indeg[v] -= 1
+                if indeg[v] == 0:
+                    ready.append(v)
+        left = set(indeg)
+        sinks = [u for u in left if not succ[u] & left]
+        while sinks:
+            left -= set(sinks)
+            sinks = [u for u in left if not succ[u] & left]
+        stuck = {u for u in left if isinstance(u, int)}
+        if not stuck:
+            break
+        for n in [n for n, g in owner.items() if g in stuck]:
+            del owner[n]
+
+    kept = sorted({g for g in owner.values()})
+    arranged = {g: arrange(groups[g]) for g in kept}
+    return [arranged[owner[n]] if n in owner else (n,) for n in names
+            if n not in owner or arranged[owner[n]][0] == n]
+
+
+# Columns are chosen by a sweep down the rows whose state is the column of
+# every live run: the exact algorithm for storyline crossings (Kostitsyna and
+# Nöllenburg, GD 2015), fixed-parameter in the width. A move's cost depends
+# only on the state and the move, so states holding one arrangement merge.
+# A layer's states are rows of one array, so each layer is a few array
+# operations whatever the budget.
+
+_COLUMN_BUDGET = 400_000
+
+
+def _columns(
     order: list[str],
-    kinds: dict[str, Any],
-    _edges: list[tuple[str, str]],
-    back: set[tuple[str, str]],
-    fwd_children: dict[str, list[str]],
-    depth: dict[str, int],
-    weight: dict[str, int],
-    spine: set[str],
-    motifs: Sequence[Motif] = (),
-) -> Layout:
-    shift: dict[str, tuple[str, str, str]] = {}
-    for m in motifs:
-        inverse = [{m.twin[y]: y for y in b} for b in m.blocks]
-        for i, (head, block) in enumerate(zip(m.heads, m.blocks)):
-            if i == 0:
-                continue
-            for x in block:
-                mate = inverse[i - 1].get(m.twin[x])
-                if mate is not None:
-                    shift[x] = (mate, head, m.heads[i - 1])
-    greedy = _assign_lanes(order, fwd_children, weight, spine)
-    candidates = [greedy, _recolour(order, *greedy[:2])]
-    if shift:
-        candidates.append(_recolour(order, *greedy[:2], shift=shift))
-        even = _assign_lanes(
-            order, fwd_children, weight, spine,
-            _canonical_primaries(motifs, fwd_children, spine, weight),
-        )
-        candidates.append(even)
-        candidates.append(_recolour(order, *even[:2], shift=shift))
+    children: dict[str, list[str]],
+    parents: dict[str, list[str]],
+    budget: int = _COLUMN_BUDGET,
+) -> tuple[dict[str, int], int, bool]:
+    """Give each run a column in stages: as few columns as any packing could,
+    then the fewest crossings, then the least horizontal travel summed over
+    edges, then the columns nearest the labels. A parent whose run goes on
+    below the bar is crossed like any other run: only its last child's bar
+    may pass it.
 
-    best_key = best = None
-    for node_lane, edge_lane, width in candidates:
-        cand = _build(order, kinds, _edges, back, depth, spine, node_lane, edge_lane, width)
-        m = measure(cand, motifs)
-        key = (-m.congruent, width, m.crossings, m.detours)
-        if best_key is None or key < best_key:
-            best_key, best = key, cand
-    return best  # type: ignore[return-value]
+    Every node takes the column of a parent whose run ends at it, so a run
+    never bends into its last child when it could fall straight in. That
+    column is always free, since the parent frees it at the very half-row
+    the node starts, so the rule never costs width.
+
+    Runs are placed in order of their tops, so whatever free column each
+    takes, the width stays the most runs ever live at once. A layer over its
+    budget first drops the states that cannot beat a known assignment, then
+    keeps the best by cost plus a bound on the bars still to come: a node
+    with two parents already placed will cross every run between them that
+    outlives its band. The proof is lost only when a layer is cut; a first
+    pass at a sixteenth of the budget sets the ceiling for the second. A cut
+    beam misses cheap repairs, so an unproven assignment is then polished
+    by moving single runs.
+    """
+    n = len(order)
+    if n == 0:
+        return {}, 0, True
+    row = {v: i for i, v in enumerate(order)}
+    pars = [np.array(sorted(row[p] for p in parents[v]), dtype=np.int32) for v in order]
+    top = np.array([2 * i - 1 if len(pars[i]) else 2 * i for i in range(n)])
+    bottom = np.array([
+        2 * max(row[c] for c in children[v]) - 1 if children[v] else 2 * i + 1
+        for i, v in enumerate(order)
+    ])
+    ending = [[] for _ in range(n)]
+    for i, v in enumerate(order):
+        if children[v]:
+            ending[max(row[c] for c in children[v])].append(i)
+    ending = [np.array(e, dtype=np.int32) for e in ending]
+    live = width = 0
+    for _, delta in sorted([(t, 1) for t in top.tolist()] + [(b, -1) for b in bottom.tolist()]):
+        live += delta
+        width = max(width, live)
+    # a sentinel past the last node answers every lookup of an empty column
+    bottom_of = np.append(bottom, -1)
+    columns = np.arange(width)
+
+    seen = [0] * n
+    waiting: list[list[int]] = []
+    open_now: set[int] = set()
+    for i in range(n):
+        for c in children[order[i]]:
+            j = row[c]
+            seen[j] += 1
+            if seen[j] == 2:
+                open_now.add(j)
+        open_now.discard(i)
+        waiting.append(sorted(open_now))
+
+    def positions(states):
+        at = np.zeros((len(states), n + 1), dtype=np.int64)
+        at[np.arange(len(states))[:, None], states] = columns
+        return at
+
+    def bound(i, states):
+        at = positions(states)
+        ends = bottom_of[states]
+        cross = np.zeros(len(states), dtype=np.int64)
+        bar = np.zeros(len(states), dtype=np.int64)
+        for j in waiting[i]:
+            ups = at[:, [p for p in pars[j] if p <= i]]
+            lo, hi = ups.min(axis=1), ups.max(axis=1)
+            bar += hi - lo
+            between = (columns > lo[:, None]) & (columns < hi[:, None])
+            outlives = ends > 2 * j - 1
+            cross += (between & outlives).sum(axis=1)
+        return cross, bar
+
+    def at_most(score, ceiling):
+        below = np.zeros(len(score), dtype=bool)
+        equal = np.ones(len(score), dtype=bool)
+        for k, c in enumerate(ceiling):
+            below |= equal & (score[:, k] < c)
+            equal &= score[:, k] == c
+        return below | equal
+
+    def run(beam, ceiling):
+        states = np.full((1, width), n, dtype=np.int32)
+        cost = np.zeros((1, 3), dtype=np.int64)
+        back: list[tuple[np.ndarray, np.ndarray]] = []
+        proven = True
+        for i in range(n):
+            cols = np.where(bottom_of[states] <= top[i], n, states)
+            empty = cols == n
+            ups = positions(states)[:, pars[i]] if len(pars[i]) else None
+            prefix = np.zeros((len(cols), width + 1), dtype=np.int64)
+            np.cumsum(~empty, axis=1, out=prefix[:, 1:])
+            allowed = np.isin(states, ending[i]) if len(ending[i]) else empty
+
+            s, c = np.nonzero(allowed)
+            step = np.empty((len(s), 3), dtype=np.int64)
+            if ups is not None:
+                lo = np.minimum(ups.min(axis=1)[s], c)
+                hi = np.maximum(ups.max(axis=1)[s], c)
+                step[:, 0] = np.where(hi > lo + 1, prefix[s, hi] - prefix[s, np.minimum(lo + 1, width)], 0)
+                step[:, 1] = np.abs(ups[s] - c[:, None]).sum(axis=1)
+            else:
+                step[:, 0] = step[:, 1] = 0
+            step[:, 2] = width - 1 - c
+            step += cost[s]
+            nxt = cols[s]
+            nxt[np.arange(len(s)), c] = i
+
+            rank = np.lexsort(step.T[::-1])
+            nxt, step, s, c = nxt[rank], step[rank], s[rank], c[rank]
+            keys = np.ascontiguousarray(nxt).view(np.dtype((np.void, nxt.itemsize * width))).ravel()
+            _, first = np.unique(keys, return_index=True)
+            first.sort()
+            nxt, step, s, c = nxt[first], step[first], s[first], c[first]
+
+            if len(nxt) > beam:
+                cross, bar = bound(i, nxt)
+                score = step.copy()
+                score[:, 0] += cross
+                score[:, 1] += bar
+                if ceiling is not None:
+                    keep = at_most(score, ceiling)
+                    nxt, step, s, c, score = nxt[keep], step[keep], s[keep], c[keep], score[keep]
+                if len(nxt) > beam:
+                    proven = False
+                    best = np.lexsort(score.T[::-1])[:beam]
+                    best.sort()
+                    nxt, step, s, c = nxt[best], step[best], s[best], c[best]
+            if not len(nxt):
+                return None, None, False
+            back.append((s, c))
+            states, cost = nxt, step
+
+        final = int(np.lexsort(cost.T[::-1])[0])
+        col = [0] * n
+        k = final
+        for i in range(n - 1, -1, -1):
+            s, c = back[i]
+            col[i] = int(c[k])
+            k = int(s[k])
+        return col, tuple(int(x) for x in cost[final]), proven
+
+    beam = max(8, budget // (n * width))
+    best, cost, proven = run(max(1, beam // 16), None)
+    if not proven:
+        again, better, done = run(beam, cost)
+        if again is not None and (better < cost or done):
+            best = again
+        proven = done
+    if not proven:
+        best = _improve(top.tolist(), bottom.tolist(), [p.tolist() for p in pars],
+                        [e.tolist() for e in ending], best, width)
+    return {v: best[i] for i, v in enumerate(order)}, width, proven
 
 
-def _build(
-    order: list[str],
-    kinds: dict[str, Any],
-    _edges: list[tuple[str, str]],
-    back: set[tuple[str, str]],
-    depth: dict[str, int],
-    spine: set[str],
-    node_lane: dict[str, int],
-    edge_lane: dict[tuple[str, str], int],
+_IMPROVE_BUDGET = 20_000
+
+
+def _improve(
+    top: list[int],
+    bottom: list[int],
+    pars: list[list[int]],
+    ending: list[list[int]],
+    col: list[int],
     width: int,
-) -> Layout:
-    laid = tuple(
-        LayoutNode(
-            name=n,
-            kind=kinds[n],
-            row=row,
-            lane=node_lane[n],
-            depth=depth[n],
-            spine=n in spine,
-        )
-        for row, n in enumerate(order)
-    )
-    rows = {n.name: n.row for n in laid}
-    lanes = {n.name: n.lane for n in laid}
+    budget: int = _IMPROVE_BUDGET,
+) -> list[int]:
+    """Move a run, or swap two, while that lowers crossings and then travel.
+    A run moves with the stack of runs falling straight out of it, and its
+    head only to a column one of its ending parents holds, so every move
+    keeps the straight rule. A move only touches the bars inside the moved
+    runs' lives, so each trial rescores just those."""
+    n = len(col)
+    col = list(col)
+    last = [-1] * n
+    for j in range(n):
+        for p in ending[j]:
+            last[p] = j
+    lo_h = min(top)
+    grid = [[-1] * width for _ in range(max(bottom) - lo_h + 1)]
+    for v in range(n):
+        for h in range(top[v], bottom[v]):
+            grid[h - lo_h][col[v]] = v
+    overlaps: list[list[int]] = [[] for _ in range(n)]
+    by_top = sorted(range(n), key=top.__getitem__)
+    for a, u in enumerate(by_top):
+        for v in by_top[a + 1:]:
+            if top[v] >= bottom[u]:
+                break
+            overlaps[u].append(v)
+            overlaps[v].append(u)
 
-    routed = []
-    for src, dst in _edges:
-        if (src, dst) in back:
-            routed.append(
-                LayoutEdge(
-                    src=src,
-                    dst=dst,
-                    lane=lanes[src],
-                    points=((rows[src], lanes[src]), (rows[dst], lanes[dst])),
-                    back=True,
-                )
-            )
-            continue
-        j = edge_lane[(src, dst)]
-        routed.append(
-            LayoutEdge(
-                src=src,
-                dst=dst,
-                lane=j,
-                points=_polyline(rows[src], lanes[src], rows[dst], lanes[dst], j),
-            )
-        )
-    routed.sort(key=lambda e: (rows[e.src], e.lane, natural_key(e.dst)))
+    def stack(v):
+        out = [v]
+        while last[out[-1]] >= 0 and col[last[out[-1]]] == col[v]:
+            out.append(last[out[-1]])
+        return out
 
-    return Layout(nodes=laid, edges=tuple(routed), width=max(width, 1), height=len(order))
+    def straight(v):
+        return not ending[v] or any(col[p] == col[v] for p in ending[v])
+
+    def bar(j):
+        if not pars[j]:
+            return 0, 0
+        cols = [col[j]] + [col[p] for p in pars[j]]
+        lo, hi = min(cols), max(cols)
+        cells = grid[2 * j - 1 - lo_h]
+        cross = sum(1 for k in range(lo + 1, hi) if cells[k] >= 0 and cells[k] != j)
+        return cross, sum(abs(col[p] - col[j]) for p in pars[j])
+
+    def score(vs):
+        js = set()
+        for v in vs:
+            js.update(range((top[v] + 1) // 2, (bottom[v] + 1) // 2 + 1))
+        cross = h = 0
+        for j in js:
+            if j < n:
+                x, y = bar(j)
+                cross += x
+                h += y
+        return cross, h, -sum(col[v] for v in vs)
+
+    def lift(vs):
+        for v in vs:
+            for h in range(top[v], bottom[v]):
+                grid[h - lo_h][col[v]] = -1
+
+    def drop(vs, c):
+        for v in vs:
+            col[v] = c
+            for h in range(top[v], bottom[v]):
+                grid[h - lo_h][c] = v
+
+    def free(vs, c):
+        return all(grid[h - lo_h][c] == -1 for v in vs for h in range(top[v], bottom[v]))
+
+    trials = 0
+    improved = True
+    while improved and trials < budget:
+        improved = False
+        for v in range(n):
+            if trials >= budget:
+                break
+            vs = stack(v)
+            for c in range(width):
+                was = col[v]
+                if c == was:
+                    continue
+                trials += 1
+                before = score(vs)
+                lift(vs)
+                if free(vs, c):
+                    drop(vs, c)
+                    if straight(v) and score(vs) < before:
+                        improved = True
+                        break
+                    lift(vs)
+                drop(vs, was)
+            for u in overlaps[v]:
+                vs = stack(v)
+                if u < v or col[u] == col[v] or u in vs:
+                    continue
+                us = stack(u)
+                if v in us:
+                    continue
+                a, b = col[v], col[u]
+                trials += 1
+                both = vs + us
+                before = score(both)
+                lift(both)
+                if free(vs, b) and free(us, a):
+                    drop(vs, b)
+                    drop(us, a)
+                    if straight(v) and straight(u) and score(both) < before:
+                        improved = True
+                        continue
+                    lift(both)
+                drop(vs, a)
+                drop(us, b)
+    return col
 
 
 def _break_cycles(names: list[str], children: dict[str, list[str]]) -> set[tuple[str, str]]:
@@ -295,462 +672,276 @@ def _topological(
     return out
 
 
-def _depths(topo: list[str], children: dict[str, list[str]]) -> dict[str, int]:
-    depth = dict.fromkeys(topo, 0)
-    for n in topo:
-        for c in children[n]:
-            if depth[c] < depth[n] + 1:
-                depth[c] = depth[n] + 1
-    return depth
+# Total edge length is the sum over the gaps between rows of the edges
+# crossing each gap, and the edges crossing a gap depend only on the set of
+# nodes above it. Interleaving two weakly connected components only stretches
+# their edges, so each is solved alone and they are stacked smallest first.
+
+_ORDER_BUDGET = 60_000
 
 
-def _subtree_metrics(
-    topo: list[str], children: dict[str, list[str]]
-) -> tuple[dict[str, int], dict[str, int]]:
-    weight: dict[str, int] = {}
-    reach: dict[str, set[str]] = {}
-    for n in reversed(topo):
-        kids = children[n]
-        weight[n] = 1 + max((weight[c] for c in kids), default=0)
-        below: set[str] = set()
-        for c in kids:
-            below.add(c)
-            below |= reach[c]
-        reach[n] = below
-    return weight, {n: len(s) for n, s in reach.items()}
-
-
-def _choose_spine(
+def _order_rows(
     names: list[str],
-    parents: dict[str, list[str]],
     children: dict[str, list[str]],
-    weight: dict[str, int],
-    descendants: dict[str, int],
-) -> set[str]:
-    roots = [n for n in names if not parents[n]]
-    if not roots:
-        roots = names
-    cur = min(roots, key=lambda n: (-weight[n], -descendants[n], natural_key(n)))
-    path = [cur]
-    while children[cur]:
-        cur = min(
-            children[cur],
-            key=lambda c: (-weight[c], -descendants[c], natural_key(c)),
-        )
-        path.append(cur)
-    return set(path)
-
-
-def _ownership(
-    names: list[str], parents: dict[str, list[str]], depth: dict[str, int]
-) -> dict[str, str]:
-    return {
-        n: max(parents[n], key=lambda p: (depth[p], natural_key(p)))
-        for n in names
-        if parents[n]
-    }
-
-
-def _lane_widths(
-    topo: list[str], children: dict[str, list[str]], owner: dict[str, str]
-) -> tuple[dict[str, int], dict[str, int]]:
-    width: dict[str, int] = {}
-    size: dict[str, int] = {}
-    for n in reversed(topo):
-        owned = [c for c in children[n] if owner.get(c) == n]
-        size[n] = 1 + sum(size[c] for c in owned)
-        costs = sorted(width[c] if owner.get(c) == n else 1 for c in children[n])
-        k = len(costs)
-        width[n] = max([1] + [(k - 1 - i) + w for i, w in enumerate(costs)])
-    return width, size
-
-
-def _row_order(
-    names: list[str],
     parents: dict[str, list[str]],
-    children: dict[str, list[str]],
-    topo: list[str],
-    spine: set[str],
-    lane_width: dict[str, int],
-    owned_size: dict[str, int],
-    jump: int,
-    motifs: Sequence[Motif] = (),
-    sig: Mapping[str, int] | None = None,
-) -> list[str]:
-    sig = sig or {}
-    pending = {n: len(parents[n]) for n in names}
-    emitted: set[str] = set()
+    sig: Mapping[str, int],
+    units: list[tuple[str, ...]],
+) -> tuple[list[str], bool]:
+    unit_of = {n: u for u in units for n in u}
+    comps = _components(names, children, parents, unit_of)
+    comps.sort(key=lambda c: (len(c), sorted(sig[n] for n in c), natural_key(c[0])))
     order: list[str] = []
-    row_of: dict[str, int] = {}
-
-    class_of: dict[str, Motif] = {}
-    instance_of: dict[str, int] = {}
-    for m in motifs:
-        for i, b in enumerate(m.blocks):
-            for x in b:
-                class_of[x] = m
-                instance_of[x] = i
-
-    def _plain_rank(n: str, siblings: list[str]):
-        if not children[n]:
-            tier = 0
-        elif n in spine:
-            tier = 2
-        else:
-            biggest = max(owned_size[s] for s in siblings)
-            small = owned_size[n] * jump <= biggest - owned_size[n]
-            tier = 1 if jump and small else 3
-        return (tier, lane_width[n], natural_key(n))
-
-    child_order: dict[tuple[int, int], int] = {}
-    for m in motifs:
-        for x in m.blocks[0]:
-            kids = sorted(children[x], key=lambda c: _plain_rank(c, children[x]))
-            for i, c in enumerate(kids):
-                child_order.setdefault((sig[x], sig[c]), i)
-
-    def _rank(parent: str, n: str, siblings: list[str]):
-        canon = 0
-        if parent in class_of:
-            canon = child_order.get((sig[parent], sig[n]), len(siblings))
-        return (canon,) + _plain_rank(n, siblings)
-
-    def _root_rank(n: str):
-        return (-owned_size[n], natural_key(n))
-
-    roots = sorted((n for n in names if not parents[n]), key=_root_rank)
-    held = set(roots[1:])
-    supply: set[str] = set()
-    for n in topo:
-        if parents[n]:
-            if all(p in supply for p in parents[n]):
-                supply.add(n)
-        elif n in held:
-            supply.add(n)
-
-    stack: list[str] = []
-    blocked: list[str] = []
-    forced: set[str] = set()
-
-    def _gated(n: str) -> bool:
-        if n in forced:
-            return False
-        spread: dict[int, set[int]] = {}
-        for p in parents[n]:
-            m = class_of.get(p)
-            if m is not None:
-                spread.setdefault(id(m), set()).add(instance_of[p])
-        for p in parents[n]:
-            m = class_of.get(p)
-            if m is None or len(spread[id(m)]) < 2:
-                continue
-            if any(x not in emitted for b in m.blocks for x in b):
-                return True
-        return False
-
-    def _release() -> None:
-        ready = [n for n in blocked if n not in emitted and not _gated(n)]
-        if not ready:
-            return
-        for n in ready:
-            blocked.remove(n)
-        stack.extend(reversed(sorted(ready, key=natural_key)))
-
-    def _emit(n: str) -> None:
-        emitted.add(n)
-        order.append(n)
-        row_of[n] = len(order) - 1
-        kids = sorted(children[n], key=lambda c: _rank(n, c, children[n]))
-        for c in kids:
-            pending[c] -= 1
-        stack.extend(reversed(kids))
-        _release()
-
-    def _hoist_to(n: str, chain: list[str]) -> int | None:
-        m = class_of.get(n)
-        if m is None or len(m.heads) < 2:
-            return None
-        at = min((row_of[h] for h in m.heads if h in row_of), default=None)
-        if at is None:
-            return None
-        inside = set(chain)
-        for x in chain:
-            for p in parents[x]:
-                if p not in inside and row_of.get(p, -1) >= at:
-                    return None
-        return at
-
-    def _pull(n: str) -> bool:
-        unmet = [p for p in parents[n] if p not in emitted]
-        if not unmet or any(p not in supply for p in unmet):
-            return False
-        chain: list[str] = []
-        seen: set[str] = set()
-
-        def _visit(x: str) -> None:
-            if x in emitted or x in seen:
-                return
-            seen.add(x)
-            for p in sorted(parents[x], key=natural_key):
-                _visit(p)
-            chain.append(x)
-
-        for p in sorted(unmet, key=natural_key):
-            _visit(p)
-        at = _hoist_to(n, chain)
-        mark = len(order)
-        for x in chain:
-            _emit(x)
-        if at is not None and at < mark:
-            moved = order[mark:]
-            del order[mark:]
-            order[at:at] = moved
-            row_of.clear()
-            row_of.update({x: i for i, x in enumerate(order)})
-        return True
-
-    remaining = list(roots[1:])
-    stack += roots[:1]
-    while True:
-        while stack:
-            n = stack.pop()
-            if n in emitted:
-                continue
-            if pending[n] > 0 and not _pull(n):
-                continue
-            if pending[n] == 0:
-                if _gated(n):
-                    if n not in blocked:
-                        blocked.append(n)
-                    continue
-                _emit(n)
-        remaining = [n for n in remaining if n not in emitted]
-        if remaining and len(order) < len(names):
-            stack.append(remaining.pop(0))
-            continue
-        blocked[:] = [n for n in blocked if n not in emitted]
-        if blocked:
-            forced.update(blocked)
-            stack.extend(reversed(sorted(blocked, key=natural_key)))
-            blocked.clear()
-            continue
-        break
-
-    if len(order) < len(names):
-        order += [n for n in topo if n not in emitted]
-    return order
+    optimal = True
+    for comp in comps:
+        inside = set(comp)
+        seq, proven = _solve_component(
+            comp, children, parents, units=[u for u in units if u[0] in inside]
+        )
+        order += seq
+        optimal = optimal and proven
+    return order, optimal
 
 
-def _canonical_primaries(
-    motifs: Sequence[Motif],
+def _components(
+    names: list[str],
     children: dict[str, list[str]],
-    spine: set[str],
-    weight: dict[str, int],
-) -> dict[str, str]:
-    out: dict[str, str] = {}
-    for m in motifs:
-        inverse = [{m.twin[y]: y for y in b} for b in m.blocks]
-        for x in m.blocks[0]:
-            if not children[x]:
-                continue
-            first = _primary_child(children[x], spine, weight)
-            for inv in inverse[1:]:
-                here, mate = inv.get(x), inv.get(first)
-                if here is not None and mate is not None:
-                    out[here] = mate
+    parents: dict[str, list[str]],
+    unit_of: Mapping[str, tuple[str, ...]] | None = None,
+) -> list[list[str]]:
+    rank = {n: i for i, n in enumerate(names)}
+    seen: set[str] = set()
+    out = []
+    for n in names:
+        if n in seen:
+            continue
+        seen.add(n)
+        members, stack = [], [n]
+        while stack:
+            cur = stack.pop()
+            members.append(cur)
+            mates = list(unit_of[cur]) if unit_of else []
+            for nxt in children[cur] + parents[cur] + mates:
+                if nxt not in seen:
+                    seen.add(nxt)
+                    stack.append(nxt)
+        out.append(sorted(members, key=rank.__getitem__))
     return out
 
 
-def _primary_child(kids: list[str], spine: set[str], weight: dict[str, int]) -> str:
-    return min(kids, key=lambda c: (0 if c in spine else 1, -weight[c], natural_key(c)))
-
-
-def _assign_lanes(
-    order: list[str],
+def _solve_component(
+    comp: list[str],
     children: dict[str, list[str]],
-    weight: dict[str, int],
-    spine: set[str],
-    primary_of: Mapping[str, str] | None = None,
-) -> tuple[dict[str, int], dict[tuple[str, str], int], int]:
-    primary_of = primary_of or {}
-    rows = {n: i for i, n in enumerate(order)}
-    reserved: list[tuple[str, str] | None] = []
-    node_lane: dict[str, int] = {}
-    edge_lane: dict[tuple[str, str], int] = {}
-    width = 0
+    parents: dict[str, list[str]],
+    budget: int = _ORDER_BUDGET,
+    units: list[tuple[str, ...]] | None = None,
+) -> tuple[list[str], bool]:
+    """The order of one component with the least total edge length.
 
-    def _free(exclude: int | None = None) -> int:
-        for i, slot in enumerate(reserved):
-            if slot is None and i != exclude:
-                return i
-        reserved.append(None)
-        return len(reserved) - 1
+    Total length is the sum over gaps of the edges crossing them, and the
+    edges crossing a gap depend only on the set placed above it, so orders
+    reaching the same set merge: a DP over placed sets. A move places a whole
+    block, which is ready once every parent outside it is. A state's bound
+    adds one row per edge not yet begun, and gives the targets of edges
+    already open distinct rows, busiest first; a target still waiting on a
+    parent cannot take the next row. It bounds every order of single nodes,
+    so it bounds the block orders among them. States above a known order's
+    length go safely. The proof is lost only when a layer still exceeds its
+    budget after that, so a first pass at a sixteenth of the budget sets a
+    tighter ceiling for the second. Among equal lengths the order first by
+    name wins.
+    """
+    k = len(comp)
+    at = {n: i for i, n in enumerate(comp)}
+    groups = [tuple(at[n] for n in u) for u in units] if units else [(i,) for i in range(k)]
+    if len(groups) == 1:
+        return [comp[i] for i in groups[0]], True
+    ups = [sum(1 << at[p] for p in parents[n]) for n in comp]
+    kids = [[at[c] for c in children[n]] for n in comp]
+    indeg = [len(parents[n]) for n in comp]
+    outdeg = [len(children[n]) for n in comp]
+    top = max(indeg)
+    roots = sum(1 << i for i in range(k) if indeg[i] == 0)
+    waiting = [(d, sum(1 << i for i in range(k) if indeg[i] == d)) for d in range(top, 0, -1)]
 
-    for n in order:
-        claimed = [i for i, slot in enumerate(reserved) if slot is not None and slot[0] == n]
-        if claimed:
-            lane = claimed[0]
-            for i in claimed:
-                edge_lane[(reserved[i][1], n)] = i  # type: ignore[index]
-                reserved[i] = None
-        else:
-            lane = _free()
-            reserved[lane] = None
-        node_lane[n] = lane
+    lead = {g[0]: j for j, g in enumerate(groups)}
+    mask = [sum(1 << i for i in g) for g in groups]
+    ext = [0] * len(groups)
+    delta = [0] * len(groups)
+    inner = [0] * len(groups)
+    begins = [0] * len(groups)
+    for j, g in enumerate(groups):
+        for i in g:
+            ext[j] |= ups[i]
+            delta[j] += outdeg[i] - indeg[i]
+            inner[j] += delta[j]
+            begins[j] += outdeg[i]
+        ext[j] &= ~mask[j]
 
-        kids = children[n]
-        if kids:
-            primary = primary_of.get(n) or _primary_child(kids, spine, weight)
-            if primary not in kids:
-                primary = _primary_child(kids, spine, weight)
-            reserved[lane] = (primary, n)
-            for c in sorted(kids, key=lambda c: rows[c]):
-                if c != primary:
-                    reserved[_free(exclude=lane)] = (c, n)
+    def ready(placed, avail):
+        for v in _bits(avail):
+            j = lead.get(v)
+            if j is not None and ext[j] & ~placed == 0:
+                yield j
 
-        width = max(width, len(reserved))
-        while reserved and reserved[-1] is None:
-            reserved.pop()
+    def bound(hist, avail, unbegun):
+        total, rank = 0, 1
+        for c in range(top, 0, -1):
+            m = hist[c]
+            if m:
+                total += c * (m * rank + m * (m - 1) // 2)
+                rank += m
+        first = next((d for d, m in waiting if avail & m), 0)
+        if first:
+            total -= first * sum(hist[first:]) + sum(c * hist[c] for c in range(1, first))
+        return total + unbegun
 
-    return node_lane, edge_lane, width
+    def step(placed, avail, hist, v):
+        nxt = placed | (1 << v)
+        avail &= ~(1 << v)
+        hist = list(hist)
+        hist[indeg[v]] -= 1
+        for c in kids[v]:
+            x = (ups[c] & placed).bit_count()
+            hist[x] -= 1
+            hist[x + 1] += 1
+            if ups[c] & ~nxt == 0:
+                avail |= 1 << c
+        hist[0] = 0
+        return nxt, avail, tuple(hist)
+
+    def place(placed, avail, hist, j):
+        for v in groups[j]:
+            placed, avail, hist = step(placed, avail, hist, v)
+        return placed, avail, hist
+
+    start = (0, 0, 0, roots, (0,) * (top + 2), sum(outdeg))
+
+    def run(width, ceiling):
+        states = [start]
+        back: list[dict[int, tuple[int, int]]] = []
+        proven = True
+        for _ in groups:
+            reached: dict[int, tuple] = {}
+            for rank, (placed, cost, cut, avail, hist, unbegun) in enumerate(states):
+                for j in ready(placed, avail):
+                    nxt = placed | mask[j]
+                    total = cost + len(groups[j]) * cut + inner[j]
+                    cur = reached.get(nxt)
+                    if cur is None or total < cur[1]:
+                        reached[nxt] = ((rank, j), total, cut + delta[j], rank, j)
+            layer = []
+            for nxt, (key, cost, cut, rank, j) in reached.items():
+                placed, _, _, avail, hist, unbegun = states[rank]
+                _, avail, hist = place(placed, avail, hist, j)
+                unbegun -= begins[j]
+                score = cost + bound(hist, avail, unbegun)
+                if score <= ceiling:
+                    layer.append((key, score, (nxt, cost, cut, avail, hist, unbegun), placed, j))
+            layer.sort(key=lambda item: item[0])
+            if len(layer) > width:
+                proven = False
+                keep = sorted(range(len(layer)), key=lambda i: (layer[i][1], i))[:width]
+                layer = [layer[i] for i in sorted(keep)]
+            back.append({s[0]: (placed, j) for _, _, s, placed, j in layer})
+            states = [s for _, _, s, _, _ in layer]
+        if not states:
+            return None, None, False
+        seq, placed = [], states[0][0]
+        for t in range(len(groups) - 1, -1, -1):
+            placed, j = back[t][placed]
+            seq.append(j)
+        seq.reverse()
+        return seq, states[0][1], proven
+
+    greedy, placed, avail, hist, ceiling, cut = [], 0, roots, start[4], 0, 0
+    for _ in groups:
+        j = max(ready(placed, avail), key=lambda j: (-delta[j] / len(groups[j]), -j))
+        greedy.append(j)
+        ceiling += len(groups[j]) * cut + inner[j]
+        cut += delta[j]
+        placed, avail, hist = place(placed, avail, hist, j)
+
+    best, proven = greedy, False
+    width = max(8, budget // len(groups))
+    for width in (max(1, width // 16), width):
+        seq, cost, done = run(width, ceiling)
+        if seq is not None and (cost < ceiling or done):
+            best, ceiling = seq, cost
+        if done:
+            proven = True
+            break
+    return [comp[i] for j in best for i in groups[j]], proven
 
 
-def _recolour(
+def _bits(mask: int):
+    while mask:
+        low = mask & -mask
+        yield low.bit_length() - 1
+        mask ^= low
+
+
+def _congruent(
     order: list[str],
-    node_lane: dict[str, int],
-    edge_lane: dict[tuple[str, str], int],
-    shift: Mapping[str, tuple[str, str, str]] | None = None,
-) -> tuple[dict[str, int], dict[tuple[str, str], int], int]:
-    shift = shift or {}
-    rows = {n: i for i, n in enumerate(order)}
-    def _links(u: str, v: str, j: int) -> bool:
-        return j == node_lane[u] == node_lane[v]
+    motifs: Sequence[Motif],
+    children: dict[str, list[str]],
+    units: list[tuple[str, ...]] = (),
+) -> list[str]:
+    """Give repeated subgraphs one internal order wherever that costs no length.
 
-    inbound: dict[str, str] = {}
-    for (u, v), j in edge_lane.items():
-        if _links(u, v, j):
-            inbound[v] = u
+    Each instance's order, read through the twin map, is replayed onto the
+    rows every other instance already holds; a replay is kept only if it
+    respects precedence and the blocks, and does not lengthen the total. The
+    instance whose order the most others can adopt sets the pattern.
+    """
+    edges = [(p, c) for p in order for c in children[p]]
+    units = [u for u in units if len(u) > 1]
 
-    strand_of: dict[str, int] = {}
-    strands: list[list[int]] = []
-    for n in order:
-        if n in inbound:
-            s = strand_of[inbound[n]]
-            strands[s][1] = rows[n]
-        else:
-            s = len(strands)
-            strands.append([rows[n], rows[n]])
-        strand_of[n] = s
+    def length(r):
+        return sum(r[c] - r[p] for p, c in edges)
 
-    items: list[tuple[int, int, object]] = [
-        (lo, hi, ("strand", i)) for i, (lo, hi) in enumerate(strands)
-    ]
-    free_rails: set[tuple[str, str]] = set()
-    for (u, v), j in edge_lane.items():
-        if _links(u, v, j):
-            continue
-        lo, hi = rows[u] + 1, rows[v] - 1
-        if lo > hi:
-            free_rails.add((u, v))
-        else:
-            items.append((lo, hi, ("rail", (u, v))))
+    def valid(r):
+        return all(r[p] < r[c] for p, c in edges) and _keeps_units(r, units)
 
-    end_of_lane: list[int] = []
-    new_node: dict[str, int] = {}
-    new_edge: dict[tuple[str, str], int] = {}
-
-    def _offset(x: str) -> int | None:
-        info = shift.get(x)
-        if info is None:
-            return None
-        _, head, ref = info
-        if head not in new_node or ref not in new_node:
-            return None
-        return new_node[head] - new_node[ref]
-
-    for lo, hi, item in sorted(items, key=lambda t: (t[0], t[1], _item_key(t[2]))):
-        kind, key = item  # type: ignore[misc]
-        want = None
-        if kind == "strand":
-            head = order[lo]
-            was = node_lane[head]
-            info, delta = shift.get(head), _offset(head)
-            if info is not None and delta is not None and info[0] != head:
-                base = new_node.get(info[0])
-                want = None if base is None else base + delta
-        else:
-            was = edge_lane[key]  # type: ignore[index]
-            u, v = key  # type: ignore[misc]
-            iu, iv, delta = shift.get(u), shift.get(v), _offset(u)
-            if iu is not None and iv is not None and delta is not None:
-                mate = (iu[0], iv[0])
-                if iu[1] == iv[1] and mate != (u, v):
-                    base = new_edge.get(mate)
-                    want = None if base is None else base + delta
-        if want is not None and want < 0:
-            want = None
-        if want is not None and want >= len(end_of_lane):
-            end_of_lane += [-1] * (want + 1 - len(end_of_lane))
-        for cand in (want, was):
-            if cand is not None and cand < len(end_of_lane) and end_of_lane[cand] < lo:
-                lane = cand
-                break
-        else:
-            lane = next(
-                (i for i, end in enumerate(end_of_lane) if end < lo), len(end_of_lane)
+    row = {n: i for i, n in enumerate(order)}
+    for m in motifs:
+        best = None
+        for pi, pattern in enumerate(m.blocks):
+            r = dict(row)
+            seq = [m.twin[x] for x in sorted(pattern, key=r.__getitem__)]
+            for qi, block in enumerate(m.blocks):
+                if qi == pi:
+                    continue
+                inverse = {m.twin[y]: y for y in block}
+                slots = sorted(r[y] for y in block)
+                trial = dict(r)
+                for slot, canon in zip(slots, seq):
+                    trial[inverse[canon]] = slot
+                if valid(trial) and length(trial) <= length(r):
+                    r = trial
+            same = sum(
+                [m.twin[x] for x in sorted(b, key=r.__getitem__)] == seq for b in m.blocks
             )
-        if lane == len(end_of_lane):
-            end_of_lane.append(hi)
-        else:
-            end_of_lane[lane] = hi
-        if kind == "strand":
-            for n in order[lo:hi + 1]:
-                if strand_of[n] == key:
-                    new_node[n] = lane
-        else:
-            new_edge[key] = lane  # type: ignore[index]
-
-    for (u, v), j in edge_lane.items():
-        if (u, v) in new_edge:
-            continue
-        new_edge[(u, v)] = new_node[v] if (u, v) in free_rails else new_node[u]
-    return new_node, new_edge, max(len(end_of_lane), 1)
-
-
-def _item_key(item) -> tuple:
-    kind, key = item
-    return (kind, key) if kind == "strand" else (kind, natural_key(key[0]), natural_key(key[1]))
-
-
-def _polyline(
-    row_src: int, lane_src: int, row_dst: int, lane_dst: int, lane: int
-) -> tuple[tuple[float, float], ...]:
-    points: list[tuple[float, float]] = [(float(row_src), float(lane_src))]
-    if lane != lane_src:
-        points += [(row_src + 0.5, float(lane_src)), (row_src + 0.5, float(lane))]
-    if lane != lane_dst:
-        points += [(row_dst - 0.5, float(lane)), (row_dst - 0.5, float(lane_dst))]
-    points.append((float(row_dst), float(lane_dst)))
-    return tuple(points)
+            key = (-same, length(r), pi)
+            if best is None or key < best[0]:
+                best = (key, r)
+        row = best[1]
+    return sorted(order, key=row.__getitem__)
 
 
 @dataclass(frozen=True)
 class Metrics:
-    rail_rows: int
-    lanes: int
-    longest_rail: int
+    length: int
+    width: int
     crossings: int
-    modules: int
-    contiguous: int
-    module_spread: int
+    off_right: int
+    drops: int
+    disorder: int
+    hlen: int = 0
+    bends: int = 0
     repeats: int = 0
     congruent: int = 0
-    marker_lanes: int = 0
-    detours: int = 0
-
-    @property
-    def contiguity(self) -> float:
-        return self.contiguous / self.modules if self.modules else 1.0
+    optimal: bool = False
+    optimal_columns: bool = False
 
     @property
     def congruence(self) -> float:
@@ -758,83 +949,58 @@ class Metrics:
 
     def __str__(self) -> str:
         return (
-            f"rail={self.rail_rows} lanes={self.lanes} longest={self.longest_rail}"
-            f" markers={self.marker_lanes} crossings={self.crossings}"
-            f" detours={self.detours}"
-            f" modules={self.contiguous}/{self.modules} ({self.contiguity:.0%})"
-            f" spread={self.module_spread}"
-            f" repeats={self.congruent}/{self.repeats} ({self.congruence:.0%})"
+            f"length={self.length} width={self.width} crossings={self.crossings}"
+            f" hlen={self.hlen} bends={self.bends} off_right={self.off_right} drops={self.drops}"
+            f" disorder={self.disorder} repeats={self.congruent}/{self.repeats}"
+            f" optimal={self.optimal} optimal_columns={self.optimal_columns}"
         )
 
 
 def measure(lay: Layout, motifs: Sequence[Motif] | None = None) -> Metrics:
-    idx = lay.index
-    forward = [e for e in lay.edges if not e.back]
-    spans = [idx[e.dst].row - idx[e.src].row for e in forward]
+    """`crossings` counts runs a bar passes over, a parent that goes on
+    below it included; `hlen` sums every edge's horizontal travel;
+    `disorder` counts pairs of runs live together with the one reaching
+    further down on the left, an earlier start breaking a tie; `drops`
+    counts parents whose run falls straight into their last child; `bends`
+    counts nodes some run ends at that none falls straight into."""
+    crossings = drops = hlen = 0
+    for bar in lay.bars.values():
+        lo, hi = bar.span
+        hlen += sum(abs(f.col - bar.col) for f in bar.feeds)
+        crossings += sum(
+            1 for u in lay.live(bar.band) if lo < u.col < hi and u.node != bar.node
+        )
+        drops += sum(1 for f in bar.feeds if f.turns and f.col == bar.col)
 
-    crossings = 0
-    for row in range(max(lay.height - 1, 0)):
-        triples = []
-        for e in lay.gap_edges(row):
-            src, dst = idx[e.src], idx[e.dst]
-            triples.append((
-                src.lane if src.row == row else e.lane,
-                e.lane,
-                dst.lane if dst.row == row + 1 else e.lane,
-            ))
-        for i, a in enumerate(triples):
-            for b in triples[i + 1:]:
-                crossings += sum(
-                    1 for k in (0, 1) if (a[k] - b[k]) * (a[k + 1] - b[k + 1]) < 0
-                )
-
-    names = [n.name for n in lay.nodes]
-    parents: dict[str, list[str]] = {n: [] for n in names}
-    for e in forward:
-        parents[e.dst].append(e.src)
-    idom = dominators(names, parents)
-    kids: dict[str, list[str]] = {n: [] for n in names}
-    for n, d in idom.items():
-        if d is not None:
-            kids[d].append(n)
-
-    rows = {n.name: n.row for n in lay.nodes}
-    modules = contiguous = spread = 0
-    for head in names:
-        block = _dom_subtree(head, kids)
-        if len(block) < 3:
-            continue
-        modules += 1
-        span = [rows[n] for n in block]
-        gap = max(span) - min(span) + 1 - len(block)
-        spread += gap
-        contiguous += gap == 0
+    bends = sum(
+        1 for bar in lay.bars.values()
+        if any(f.turns for f in bar.feeds) and not any(f.turns and f.col == bar.col for f in bar.feeds)
+    )
+    runs = sorted(lay.runs.values(), key=lambda u: u.top)
+    disorder = 0
+    for i, a in enumerate(runs):
+        for b in runs[i + 1:]:
+            if b.top >= a.bottom:
+                break
+            left, right = (a, b) if a.col < b.col else (b, a)
+            disorder += (left.bottom, -left.top) > (right.bottom, -right.top)
 
     if motifs is None:
         motifs = repeat_motifs(lay)
     repeats, congruent = _congruence(lay, motifs)
-
     return Metrics(
-        rail_rows=sum(spans),
-        lanes=lay.width,
-        longest_rail=max(spans, default=0),
+        length=sum(lay.row[c] - lay.row[p] for p, c in lay.edges),
+        width=lay.width,
         crossings=crossings,
-        modules=modules,
-        contiguous=contiguous,
-        module_spread=spread,
+        off_right=sum(lay.width - 1 - c for c in lay.col.values()),
+        drops=drops,
+        disorder=disorder,
+        hlen=hlen,
+        bends=bends,
         repeats=repeats,
         congruent=congruent,
-        marker_lanes=sum(n.lane for n in lay.nodes),
-        detours=sum(
-            1
-            for e in lay.edges
-            if not e.back
-            and not (
-                min(lay[e.src].lane, lay[e.dst].lane)
-                <= e.lane
-                <= max(lay[e.src].lane, lay[e.dst].lane)
-            )
-        ),
+        optimal=lay.optimal,
+        optimal_columns=lay.optimal_columns,
     )
 
 
@@ -861,15 +1027,6 @@ def dominators(names: list[str], parents: dict[str, list[str]]) -> dict[str, str
     return {n: (None if idom[n] == top else idom[n]) for n in names}
 
 
-def _dom_subtree(head: str, kids: dict[str, list[str]]) -> list[str]:
-    out, stack = [], [head]
-    while stack:
-        n = stack.pop()
-        out.append(n)
-        stack += kids[n]
-    return out
-
-
 @dataclass(frozen=True)
 class Motif:
     heads: tuple[str, ...]
@@ -881,31 +1038,17 @@ class Motif:
         return frozenset().union(*self.blocks)
 
 
-def _kind_key(kind: Any) -> Any:
-    try:
-        hash(kind)
-    except TypeError:
-        return repr(kind)
-    return kind
-
-
-def _signatures(
-    topo: list[str],
-    children: dict[str, list[str]],
-    kinds: Mapping[str, Any],
-    depth: int,
-) -> dict[str, int]:
+def _signatures(topo: list[str], children: dict[str, list[str]], depth: int) -> dict[str, int]:
     fan_in: dict[str, int] = dict.fromkeys(topo, 0)
     for n in topo:
         for c in children[n]:
             fan_in[c] += 1
-    own = {n: (_kind_key(kinds.get(n)), fan_in[n]) for n in topo}
     ids: dict[tuple, int] = {}
-    sig = {n: ids.setdefault((own[n],), len(ids)) for n in topo}
+    sig = {n: ids.setdefault((fan_in[n],), len(ids)) for n in topo}
     for _ in range(depth):
         sig = {
             n: ids.setdefault(
-                (own[n], tuple(sorted(sig[c] for c in children[n]))), len(ids)
+                (fan_in[n], tuple(sorted(sig[c] for c in children[n]))), len(ids)
             )
             for n in topo
         }
@@ -989,26 +1132,18 @@ def _motifs(
 
 
 def repeat_motifs(lay: Layout, depth: int = _SIGNATURE_DEPTH) -> tuple[Motif, ...]:
-    names = [n.name for n in lay.nodes]
-    kinds = {n.name: n.kind for n in lay.nodes}
-    children: dict[str, list[str]] = {n: [] for n in names}
-    for e in lay.edges:
-        if not e.back:
-            children[e.src].append(e.dst)
-    for n in names:
-        children[n].sort(key=natural_key)
-    return _motifs(names, children, _signatures(names, children, kinds, depth))
+    names = list(lay.order)
+    children = {n: sorted(lay.children[n], key=natural_key) for n in names}
+    return _motifs(names, children, _signatures(names, children, depth))
 
 
 def _congruence(lay: Layout, motifs: Sequence[Motif]) -> tuple[int, int]:
-    rows = {n.name: n.row for n in lay.nodes}
-    lanes = {n.name: n.lane for n in lay.nodes}
     total = matched = 0
     for m in motifs:
         seen: dict[frozenset, int] = {}
         for head, block in zip(m.heads, m.blocks):
             shape = frozenset(
-                (rows[x] - rows[head], lanes[x] - lanes[head], m.twin[x])
+                (lay.row[x] - lay.row[head], lay.col[x] - lay.col[head], m.twin[x])
                 for x in block
             )
             seen[shape] = seen.get(shape, 0) + 1
