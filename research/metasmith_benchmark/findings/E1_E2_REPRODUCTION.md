@@ -9,6 +9,7 @@ This document records the evidence that E2 reproduces E1. E1 is nf-core/mag 5.5.
 - the assemblies compared by sequence
 - the MAGs matched pairwise across runs, and why unmatched DAS Tool MAGs are unmatched
 - quality tier changes across matched MAGs
+- the run-to-run control, E1 rerun against itself with new binner seeds
 - MAG counts and CheckM2 quality per CAMI subset
 - jobs, execution time and nf-core processes against metasmith steps
 - why AMBER is not part of the claim
@@ -17,11 +18,12 @@ Paths are relative to `research/metasmith_benchmark/`. `E1_E2_COMPARISON.md` hol
 
 ## Result
 
-E2 reproduces E1 to within the run-to-run variation of the assemblers. The two runs are not identical.
+E2 reproduces E1. On the short arm E2 disagrees with E1 no more than E1 disagrees with a rerun of itself, for every binner except SemiBin2. On the long arm E2 disagrees more, and the excess follows the assembly difference. The two runs are not identical.
 
 - **Workflow.** Every tool call in E1 has a counterpart step in E2, with the same arguments except threads, memory and the deviations listed below.
 - **Assemblies.** No sample's assembly is identical between the runs. On the short arm the median sample holds 99.2% of its bases in contigs whose sequence is identical in both runs. The reads going into MEGAHIT are identical, so this is MEGAHIT's own variation. The long arm shares far less exact sequence, and most of it still aligns at 99% identity or better.
 - **MAGs.** DAS Tool is the headline binner. 94.6% of E1's short-arm DAS Tool MAGs and 93.9% of E2's have a reciprocal skani partner in the other run, and 90.8% of each on the long arm. Matched pairs have a median ANI of 99.96 to 100.
+- **Control.** E1ctl reran E1 on 25 samples with E1's own assemblies and new binner seeds. Its short-arm DAS Tool MAGs match E1's at 95.6% and 94.1%, against 96.0% and 95.2% for E2 on the same samples.
 - **Unmatched MAGs.** 38 of the 39 high-quality DAS Tool MAGs without a partner come from a binner bin that does match across runs. The other run's DAS Tool kept a different bin for it.
 
 ## Rebuild the tables
@@ -30,7 +32,9 @@ Run these from the repository root. The tables below are their output, unedited.
 
 1. Run `python3 research/metasmith_benchmark/results/reproduction.py --markdown`. It prints the CheckM2, jobs and steps tables.
 2. Run `python3 research/metasmith_benchmark/results/compare_arms.py --markdown`. It prints the assembly, matching, cause and tier tables.
-3. Run `python3 research/metasmith_benchmark/drivers/check_pinned_config.py --nfcore <nf-core/mag tree> --markdown`. It checks every row of the configuration diff against its cited source, then prints the rows that are not `same`. The nf-core/mag tree is commit `56abab5b`, from fir `~/.nextflow/assets/nf-core/mag`.
+3. Run `python3 research/metasmith_benchmark/results/compare_arms.py --raw research/metasmith_benchmark/results/compare_arms_ctl/raw --out research/metasmith_benchmark/results/compare_arms_ctl/e1_e1ctl --checkm2 research/metasmith_benchmark/results/e1/e1_checkm2.tsv.gz research/metasmith_benchmark/results/compare_arms_ctl/e1ctl_checkm2.tsv.gz --labels E1 E1ctl --markdown`. It prints the control's tables.
+4. Run `python3 research/metasmith_benchmark/results/compare_arms.py --samples research/metasmith_benchmark/results/compare_arms_ctl/samples.txt --out research/metasmith_benchmark/results/compare_arms_ctl/e1_e2 --markdown`. It prints E1 against E2 on the control's samples.
+5. Run `python3 research/metasmith_benchmark/drivers/check_pinned_config.py --nfcore <nf-core/mag tree> --markdown`. It checks every row of the configuration diff against its cited source, then prints the rows that are not `same`. The nf-core/mag tree is commit `56abab5b`, from fir `~/.nextflow/assets/nf-core/mag`.
 
 | input | what it holds | produced by |
 |---|---|---|
@@ -41,6 +45,8 @@ Run these from the repository root. The tables below are their output, unedited.
 | `results/compare_arms/raw/contig_matches.tsv.gz` | per unshared contig: its best minimap2 hit in the other assembly and its coverage at 99% identity or better | same |
 | `results/compare_arms/raw/mags.tsv.gz` | every MAG of both runs with its contig and base counts | same |
 | `results/compare_arms/raw/skani_pairs.tsv.gz` | skani ANI and alignment fractions, every E2 MAG against every E1 MAG of the same sample and binner | same |
+| `results/compare_arms_ctl/raw/*.tsv.gz` | the same four tables for E1 against E1ctl, with E1ctl in the E2 columns | `drivers/compare_arms_sample.py --side2-sheet`, one fir task per sample from `drivers/compare_arms_ctl.sbatch` |
+| `results/compare_arms_ctl/e1ctl_checkm2.tsv.gz` | one CheckM2 row per E1ctl bin, from nf-core's own CheckM2 | `drivers/compare_arms_ctl.sbatch prep` |
 | `results/pinned_config_diff.tsv` | 193 rows, one per tool argument, each value cited to a source line | built by hand, checked by `drivers/check_pinned_config.py` |
 
 `compare_arms.py` writes `results/compare_arms/`: `assemblies.tsv` and `per_sample.tsv` per sample, `mag_matches.tsv.gz` per MAG, `unmatched_mags.tsv`, `dastool_unmatched_causes.tsv` and `summary.tsv`.
@@ -166,7 +172,7 @@ On the long arm the reads are not identical, because E1 removed lambda-phage rea
 | long | MetaBAT2 | 1790 / 1791 | 77.1 / 77.1 | 0 / 2 | 1380 | 99.8300 | 1.45 | 142 | 143 |
 | long | SemiBin2 | 1335 / 1318 | 72.4 / 73.3 | 2 / 1 | 966 | 99.8550 | 1.55 | 111 | 108 |
 
-The ANI of matched pairs is near 100 by construction and says little. The unmatched share carries the signal. COMEBin matches least on both arms. It has no seed, and its thread count differs fourfold. Every long-arm binner matches less than its short-arm counterpart, which follows the larger assembly difference.
+The ANI of matched pairs is near 100 by construction and says little. The unmatched share carries the signal. COMEBin matches least on both arms. The control shows this is COMEBin's own variation. On the short arm, with identical assemblies and threads, E1's COMEBin MAGs match E1ctl's no better than E2's. Every long-arm binner matches less than its short-arm counterpart, which follows the larger assembly difference.
 
 ## Unmatched DAS Tool MAGs
 
@@ -189,7 +195,7 @@ A DAS Tool MAG is one binner's bin, sometimes trimmed. Its name gives the source
 | short | E2 | source bins matched, DAS Tool trimmed them differently | 2 | 0 |
 | short | E2 | source bins matched, other arm's DAS Tool dropped its partner | 115 | 14 |
 
-38 of the 39 high-quality unmatched MAGs are "dropped its partner". The binners agree, and DAS Tool's selection differs. On the short arm it happens in both directions, 16 in E1 against 14 in E2. This fits DAS Tool's selection responding to small input differences, not a defect on one side. On the long arm it is one-sided, 8 against 0. The E1 long DAS Tool inputs include the b19 MetaBAT2 bins, so the inputs differ by design there. The same row holds the one large high-quality gap in the CheckM2 table, 258 against 238.
+38 of the 39 high-quality unmatched MAGs are "dropped its partner". The binners agree, and DAS Tool's selection differs. On the short arm it happens in both directions, 16 in E1 against 14 in E2. This fits DAS Tool's selection responding to small input differences, not a defect on one side. The control shows the same cause, 8 against 11, on 21 samples with the assemblies held fixed. On the long arm it is one-sided, 8 against 0. The E1 long DAS Tool inputs include the b19 MetaBAT2 bins, so the inputs differ by design there. The same row holds the one large high-quality gap in the CheckM2 table, 258 against 238.
 
 ## Quality tier changes across matched MAGs
 
@@ -205,6 +211,50 @@ Each cell counts matched pairs by the E1 MAG's tier and its E2 partner's tier. T
 | long | below | 8 | 84 | 1726 |
 
 1,444 of the 22,238 matched pairs change tier, and 39 of them cross two tiers. 972 pairs differ in completeness by more than 10 points.
+
+## Run-to-run control
+
+E1ctl measures how much nf-core/mag disagrees with itself. It reruns E1 on 25 samples with E1's configuration, and differs from E1 in three ways:
+
+- **Assemblies.** E1ctl bins E1's own assemblies, passed with `--assembly_input`. All 25 score byte-identical. The control therefore measures binning variation only. E1 against E2 also carries assembly variation.
+- **Seeds.** MetaBAT2 and SemiBin2 run with seed 2, against 1 in E1 and E2. COMEBin and DAS Tool expose no seed.
+- **Long depth.** `drivers/e1_nfcore/control_long.config` computes long-arm depth with jgi 2.17 at `--percentIdentity 80`, as E1's b19 rerun did. DAS Tool chooses from all three binners, as the b19 rerun did.
+
+The samples are a stratified 10% of each CAMI dataset, rounded to the nearest sample, at least one per dataset: 21 short and 4 long. `drivers/e1_nfcore/control_subset.py` draws them with a fixed seed. `results/compare_arms_ctl/samples.txt` lists them.
+
+CAUTION: nf-core/mag 5.5.0 sends an assembly to its long-read depth process only when the assembler is `FLYE` (`subworkflows/local/binning/main.nf:36`), but `--assembly_input` accepts only `Flye`. E1ctl's long assemblies therefore take the short-read depth process, and their bins are named `Flye-*`. `control_long.config` configures both depth processes. `drivers/compare_arms_ctl.sbatch` maps the `Flye-*` names to E1's `FLYE-*`.
+
+E1 against E1ctl, with E1ctl in the second column of each pair:
+
+| arm | binner | mags (E1 / E1ctl) | matched_pct (E1 / E1ctl) | unmatched_high (E1 / E1ctl) | matched_pairs | matched_ani_median | median_abs_dcompleteness | tier_changed | dcompleteness_gt10 |
+|---|---|---|---|---|---|---|---|---|---|
+| short | DASTool | 249 / 253 | 95.6 / 94.1 | 2 / 0 | 238 | 100.0000 | 0.08 | 18 | 9 |
+| short | COMEBin | 728 / 714 | 75.8 / 77.3 | 2 / 1 | 552 | 100.0000 | 1.14 | 45 | 33 |
+| short | MetaBAT2 | 408 / 410 | 93.6 / 93.2 | 0 / 0 | 382 | 100.0000 | 0.18 | 16 | 14 |
+| short | SemiBin2 | 651 / 657 | 95.7 / 94.8 | 0 / 0 | 623 | 100.0000 | 0.07 | 5 | 4 |
+| long | DASTool | 59 / 60 | 100.0 / 98.3 | 0 / 0 | 59 | 100.0000 | 0.39 | 7 | 4 |
+| long | COMEBin | 200 / 218 | 66.0 / 60.6 | 0 / 0 | 132 | 100.0000 | 0.84 | 8 | 9 |
+| long | MetaBAT2 | 165 / 165 | 95.2 / 95.2 | 0 / 0 | 157 | 100.0000 | 0.00 | 2 | 6 |
+| long | SemiBin2 | 128 / 138 | 63.3 / 58.7 | 0 / 0 | 81 | 100.0000 | 1.29 | 14 | 8 |
+
+E1 against E2 on the same 25 samples:
+
+| arm | binner | mags (E1 / E2) | matched_pct (E1 / E2) | unmatched_high (E1 / E2) | matched_pairs | matched_ani_median | median_abs_dcompleteness | tier_changed | dcompleteness_gt10 |
+|---|---|---|---|---|---|---|---|---|---|
+| short | DASTool | 249 / 251 | 96.0 / 95.2 | 0 / 1 | 239 | 100.0000 | 0.22 | 18 | 9 |
+| short | COMEBin | 728 / 703 | 76.9 / 79.7 | 1 / 1 | 560 | 100.0000 | 1.00 | 50 | 39 |
+| short | MetaBAT2 | 408 / 406 | 96.1 / 96.6 | 0 / 0 | 392 | 100.0000 | 0.16 | 15 | 7 |
+| short | SemiBin2 | 651 / 649 | 90.2 / 90.4 | 0 / 0 | 587 | 100.0000 | 0.56 | 21 | 4 |
+| long | DASTool | 59 / 56 | 86.4 / 91.1 | 0 / 0 | 51 | 99.9200 | 1.42 | 5 | 4 |
+| long | COMEBin | 200 / 220 | 55.5 / 50.5 | 0 / 1 | 111 | 99.7800 | 1.59 | 13 | 13 |
+| long | MetaBAT2 | 165 / 166 | 76.4 / 75.9 | 0 / 0 | 126 | 99.7800 | 1.83 | 18 | 14 |
+| long | SemiBin2 | 128 / 139 | 71.9 / 66.2 | 0 / 0 | 92 | 99.8500 | 2.36 | 15 | 13 |
+
+- **Short arm.** E2 matches E1 as closely as E1ctl does for DAS Tool, COMEBin and MetaBAT2. MetaBAT2 matches better against E2, because E1 and E2 share seed 1 and E1ctl does not. SemiBin2 is the exception: 90.2% and 90.4% against E2, 95.7% and 94.8% against E1ctl.
+- **Long arm.** E2 matches E1 less than E1ctl does for DAS Tool, COMEBin and MetaBAT2. MetaBAT2 falls from 95.2% to 76.4% although its seed is the same in E1 and E2. The long assemblies of E1 and E2 share 11.9% of their bases in identical contigs at the median, and E1ctl shares 100%. The long-arm gap therefore follows the assembly difference, not binning variation.
+- **SemiBin2 on the long arm** matches E1ctl at only 63.3% and 58.7%, less than it matches E2. A new seed moves it more than a new assembly does.
+
+The long arm has four samples, so its percentages move by several points per sample. Tier changes follow the same pattern: 84 of 1,795 short-arm matched pairs change tier against E1ctl, and 104 of 1,778 against E2.
 
 ## MAGs per CAMI subset
 
@@ -325,5 +375,6 @@ E2 drops its `amber` and `gold_standard` steps for this reason. `results/{e1,e2}
 - **E2 products.** Chinook `/Workspace_backups/Tony_Liu/fir_bench_e1_e2/e2/` holds one tar per sample: reads, assembly, BAM, four bin sets, contig-to-bin tables and CheckM2. `results/e2/archive_manifest.tsv.gz` lists each file by task-cache shard.
 - **E1 archive tars.** `e1/` on chinook holds `e1_short_out.tar`, `e1_long.tar`, their manifests and `long_kept_inputs/`.
 - **E1 close-out products.** `e1/e1_close/` on chinook holds the regenerated BAMs, the gapfill, the rebuilt long bins, the CheckM2 reports and the AMBER outputs.
-- **Pairwise comparison.** fir `/scratch/phyberos/bench/compare_arms/<sample>/` holds the per-sample files that `results/compare_arms/raw/` gathers.
+- **E1ctl products.** `e1ctl/` on chinook holds `e1ctl_short.tar` and `e1ctl_long.tar`, each with `out/`, `reports/` and `.nextflow.log`, and their manifests. `drivers/archive_e1ctl.sbatch` builds them. E1ctl's `work/` is deleted.
+- **Pairwise comparison.** fir `/scratch/phyberos/bench/compare_arms/<sample>/` holds the per-sample files that `results/compare_arms/raw/` gathers. `compare_arms_ctl/<sample>/` does the same for the control.
 - **Originals on fir.** The same files stay on fir under `/scratch/phyberos/bench/`.
