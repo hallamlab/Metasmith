@@ -345,8 +345,9 @@ def _columns(
 ) -> tuple[dict[str, int], int, bool]:
     """Give each run a column, as few columns as any packing could, choosing
     among those the fewest crossings, then the runs reaching furthest down
-    furthest right, then the shortest bars, then the columns nearest the
-    labels.
+    furthest right, then the least horizontal travel summed over edges, then
+    the columns nearest the labels. A parent whose run goes on below the bar
+    is crossed like any other run: only its last child's bar may pass it.
 
     Runs are placed in order of their tops, so whatever free column each
     takes, the width stays the most runs ever live at once. A layer over its
@@ -390,11 +391,6 @@ def _columns(
         open_now.discard(i)
         waiting.append(sorted(open_now))
 
-    def feeds(j):
-        mask = np.zeros(n + 1, dtype=bool)
-        mask[pars[j]] = True
-        return mask
-
     def positions(states):
         at = np.zeros((len(states), n + 1), dtype=np.int64)
         at[np.arange(len(states))[:, None], states] = columns
@@ -410,7 +406,7 @@ def _columns(
             lo, hi = ups.min(axis=1), ups.max(axis=1)
             bar += hi - lo
             between = (columns > lo[:, None]) & (columns < hi[:, None])
-            outlives = (ends > 2 * j - 1) & ~feeds(j)[states]
+            outlives = ends > 2 * j - 1
             cross += (between & outlives).sum(axis=1)
         return cross, bar
 
@@ -433,7 +429,7 @@ def _columns(
             size = reach[i]
             ups = positions(states)[:, pars[i]] if len(pars[i]) else None
             prefix = np.zeros((len(cols), width + 1), dtype=np.int64)
-            blocking = ~empty & ~feeds(i)[cols]
+            blocking = ~empty
             np.cumsum(blocking, axis=1, out=prefix[:, 1:])
             longer = np.zeros_like(prefix)
             np.cumsum(~empty & (reach_of[cols] > size), axis=1, out=longer[:, 1:])
@@ -446,7 +442,7 @@ def _columns(
             if ups is not None:
                 lo = np.minimum(ups.min(axis=1)[s], c)
                 hi = np.maximum(ups.max(axis=1)[s], c)
-                step[:, 2] = hi - lo
+                step[:, 2] = np.abs(ups[s] - c[:, None]).sum(axis=1)
                 step[:, 0] = np.where(hi > lo + 1, prefix[s, hi] - prefix[s, np.minimum(lo + 1, width)], 0)
             else:
                 step[:, 0] = step[:, 2] = 0
@@ -530,7 +526,6 @@ def _improve(
     for v in range(n):
         for h in range(top[v], bottom[v]):
             grid[h - lo_h][col[v]] = v
-    feeding = [set(p) for p in pars]
     overlaps: list[list[int]] = [[] for _ in range(n)]
     by_top = sorted(range(n), key=top.__getitem__)
     for a, u in enumerate(by_top):
@@ -548,9 +543,9 @@ def _improve(
         cells = grid[2 * j - 1 - lo_h]
         cross = sum(
             1 for k in range(lo + 1, hi)
-            if cells[k] >= 0 and cells[k] != j and cells[k] not in feeding[j]
+            if cells[k] >= 0 and cells[k] != j
         )
-        return cross, hi - lo
+        return cross, sum(abs(col[p] - col[j]) for p in pars[j])
 
     def disorder(v, c):
         out = 0
@@ -969,18 +964,17 @@ class Metrics:
 
 
 def measure(lay: Layout, motifs: Sequence[Motif] | None = None) -> Metrics:
-    """`crossings` counts runs a bar passes over; `hlen` sums the bars'
-    spans; `disorder` counts pairs of runs live together with the one
-    reaching further down on the left, an earlier start breaking a tie; `drops` counts parents whose run falls straight into their last
-    child."""
+    """`crossings` counts runs a bar passes over, a parent that goes on
+    below it included; `hlen` sums every edge's horizontal travel;
+    `disorder` counts pairs of runs live together with the one reaching
+    further down on the left, an earlier start breaking a tie; `drops`
+    counts parents whose run falls straight into their last child."""
     crossings = drops = hlen = 0
     for bar in lay.bars.values():
         lo, hi = bar.span
-        hlen += hi - lo
-        feeding = {f.src for f in bar.feeds}
+        hlen += sum(abs(f.col - bar.col) for f in bar.feeds)
         crossings += sum(
-            1 for u in lay.live(bar.band)
-            if lo < u.col < hi and u.node != bar.node and u.node not in feeding
+            1 for u in lay.live(bar.band) if lo < u.col < hi and u.node != bar.node
         )
         drops += sum(1 for f in bar.feeds if f.turns and f.col == bar.col)
 

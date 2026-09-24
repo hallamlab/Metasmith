@@ -903,12 +903,13 @@ order: length outranks congruence.
 is the price of keeping outputs under their step, not a solver regression.
 
 **The columns are a second solve, for crossings, then long runs on the right, then horizontal
-length.** The cost is that tuple, compared lexicographically, among minimum-width assignments
-only. A crossing is a live run strictly inside a bar's span that is neither its target nor a
-parent. A run is longer when it reaches further down, and an earlier start breaks a tie. Raw
-length would rank a root above a run it only outlives by a row. Long-right outranks horizontal
-length because length alone puts a fan-out's source at the median of its outputs, which is
-shorter and reads as unsorted.
+travel.** The cost is that tuple, compared lexicographically, among minimum-width assignments
+only. A crossing is a live run strictly inside a bar's span other than its target. That includes
+a parent whose run continues below the bar, because the drawing shows it as a four-way junction.
+A run is longer when it reaches further down, and an earlier start breaks a tie. Raw length would
+rank a root above a run it only outlives by a row. Travel is every edge's horizontal distance,
+summed, so a line that doubles back pays twice. Long-right outranks travel because travel alone
+puts a fan-out's source at the median of its outputs, which reads as unsorted.
 `_columns` is the sweep of Kostitsyna and Nöllenburg (GD 2015) for storyline crossings,
 fixed-parameter in the width. A state is the column of every live run, and each term depends only
 on the state and the next placement, so equal states merge. A beam caps each layer, a first pass

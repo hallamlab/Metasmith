@@ -595,7 +595,7 @@ def test_golden_three_way_fan_in():
          ("checkm2", "qc")],
     )
     # contigs leaves on one run, not three: each binner branches off it in a
-    # diagonal, and the last drops straight in.
+    # diagonal, and checkm2 sits under the middle one, the least travel.
     assert r.to_text() == (
         "○      contigs\n"
         "├───┐\n"
@@ -603,9 +603,9 @@ def test_golden_three_way_fan_in():
         "├─┐ │\n"
         "│ ▽ │  metabat2\n"
         "▽ │ │  semibin2\n"
-        "└─┴─┤\n"
-        "    ▽  checkm2\n"
-        "    ○  qc\n"
+        "└─┼─┘\n"
+        "  ▽    checkm2\n"
+        "  ○    qc\n"
     )
 
 

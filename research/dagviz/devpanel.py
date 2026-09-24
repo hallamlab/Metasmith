@@ -85,23 +85,11 @@ def _metric(m: L.Metrics, seconds: float) -> str:
 
 
 def _release_hlen(lay) -> int:
-    """Horizontal ink: jogs that share a half-row overlap, so take the union
-    per half-row rather than summing each edge's travel."""
-    lines: dict[float, list[tuple[float, float]]] = {}
-    for e in lay.edges:
-        if e.back:
-            continue
-        for (y0, x0), (y1, x1) in zip(e.points, e.points[1:]):
-            if y0 == y1 and x0 != x1:
-                lines.setdefault(y0, []).append((min(x0, x1), max(x0, x1)))
-    ink = 0.0
-    for spans in lines.values():
-        end = float("-inf")
-        for lo, hi in sorted(spans):
-            if hi > end:
-                ink += hi - max(lo, end)
-                end = hi
-    return round(ink)
+    return round(sum(
+        abs(x1 - x0)
+        for e in lay.edges if not e.back
+        for (y0, x0), (y1, x1) in zip(e.points, e.points[1:]) if y0 == y1
+    ))
 
 
 def cell(nodes, edges) -> tuple[str, str, str]:
@@ -273,9 +261,10 @@ TEMPLATE = """<title>DAG Lane Strategies</title>
     <h1>DAG Lane Strategies</h1>
     <p class="lede">Same graph through the release engine and the working tree.
       Both are drawn at one row pitch, so a case is one height in both columns.
-      Length is total edge length in rows. Horizontal is the total length of
-      the horizontal lines, in columns. The solved column says whether its row
-      order and its columns are each proven best.</p>
+      Length is total edge length in rows. Horizontal is every edge's
+      sideways travel, summed, in columns. A crossing is a run a bar passes,
+      a parent that continues below the bar included. The solved column says
+      whether its row order and its columns are each proven best.</p>
     <div class="switch" role="group" aria-label="theme">
       <button type="button" data-theme="auto" aria-pressed="true">auto</button>
       <button type="button" data-theme="light" aria-pressed="false">light</button>

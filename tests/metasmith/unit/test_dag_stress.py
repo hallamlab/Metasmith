@@ -83,8 +83,8 @@ def test_the_drawing_does_not_get_more_expensive(dag):
     assert m.optimal
     assert m.length <= 457
     assert m.width <= 7
-    assert m.crossings <= 2
-    assert m.hlen <= 81
+    assert m.crossings <= 11
+    assert m.hlen <= 93
     assert m.congruent >= 3
 
 

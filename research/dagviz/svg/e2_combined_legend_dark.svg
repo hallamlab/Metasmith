@@ -3,12 +3,12 @@
 <rect x="13.0" y="13.0" width="354.2" height="351.0" rx="6.5" fill="none" stroke="#2F343D"/>
 <g transform="translate(13.0,59.8)">
 <g fill="none" stroke="#8D97A8" stroke-width="1.4" stroke-linejoin="round" stroke-linecap="round">
-<path d="M 126.2,39.8 L 126.2,124.1"/>
-<path d="M 109.3,71.0 L 109.3,104.7 A 8.4,8.4 0 0 0 117.8,113.1 A 8.4,8.4 0 0 1 126.2,121.5 L 126.2,124.1"/>
-<path d="M 92.4,102.2 L 92.4,104.6 A 8.5,8.5 0 0 0 100.9,113.1 L 117.8,113.1 A 8.5,8.5 0 0 1 126.2,121.5 L 126.2,124.1"/>
-<path d="M 126.2,133.3 L 126.2,135.9 A 8.4,8.4 0 0 1 117.8,144.3 A 8.4,8.4 0 0 0 109.3,152.8 L 109.3,155.2"/>
-<path d="M 126.2,133.3 L 126.2,167.1 A 8.4,8.4 0 0 1 117.8,175.5 A 8.4,8.4 0 0 0 109.3,183.9 L 109.3,186.4"/>
-<path d="M 126.2,133.3 L 126.2,217.6"/>
+<path d="M 126.2,39.8 L 126.2,104.7 A 8.4,8.4 0 0 1 117.8,113.1 A 8.4,8.4 0 0 0 109.3,121.5 L 109.3,124.1"/>
+<path d="M 109.3,71.0 L 109.3,124.1"/>
+<path d="M 92.4,102.2 L 92.4,104.6 A 8.5,8.5 0 0 0 100.9,113.1 A 8.5,8.5 0 0 1 109.3,121.5 L 109.3,124.1"/>
+<path d="M 109.3,133.3 L 109.3,135.9 A 8.5,8.5 0 0 1 100.9,144.3 A 8.5,8.5 0 0 0 92.4,152.8 L 92.4,155.2"/>
+<path d="M 109.3,133.3 L 109.3,167.1 A 8.5,8.5 0 0 1 100.9,175.5 A 8.5,8.5 0 0 0 92.4,183.9 L 92.4,186.4"/>
+<path d="M 109.3,133.3 L 109.3,217.6"/>
 </g>
 <g><title>e2::read_metadata</title>
 <circle cx="126.2" cy="35.1" r="4.7" fill="#1B1E24" stroke="#8D97A8" stroke-width="1.3"/>
@@ -23,28 +23,28 @@
 <text x="138.7" y="92.0" font-family="Arial" font-size="6.5" fill="#5F6877" text-anchor="start">e2</text>
 <text x="138.7" y="102.2" font-family="Arial" font-size="13" fill="#8D97A8" font-weight="normal" text-anchor="start">short_reads_2</text></g>
 <g><title>fastp</title>
-<polygon points="120.9,124.1 131.6,124.1 126.2,133.3" fill="#1B1E24" stroke="#DFE3EA" stroke-width="2.0" stroke-linejoin="round"/>
+<polygon points="104.0,124.1 114.7,124.1 109.3,133.3" fill="#1B1E24" stroke="#DFE3EA" stroke-width="2.0" stroke-linejoin="round"/>
 <text x="138.7" y="133.4" font-family="Arial" font-size="13" fill="#DFE3EA" font-weight="600" text-anchor="start">fastp</text></g>
 <g><title>e2::fastp_html</title>
-<circle cx="109.3" cy="159.9" r="4.7" fill="#1B1E24" stroke="#8D97A8" stroke-width="1.3"/>
+<circle cx="92.4" cy="159.9" r="4.7" fill="#1B1E24" stroke="#8D97A8" stroke-width="1.3"/>
 <text x="138.7" y="154.4" font-family="Arial" font-size="6.5" fill="#5F6877" text-anchor="start">e2</text>
 <text x="138.7" y="164.6" font-family="Arial" font-size="13" fill="#8D97A8" font-weight="normal" text-anchor="start">fastp_html</text></g>
 <g><title>e2::fastp_json</title>
-<circle cx="109.3" cy="191.1" r="4.7" fill="#1B1E24" stroke="#8D97A8" stroke-width="1.3"/>
+<circle cx="92.4" cy="191.1" r="4.7" fill="#1B1E24" stroke="#8D97A8" stroke-width="1.3"/>
 <text x="138.7" y="185.6" font-family="Arial" font-size="6.5" fill="#5F6877" text-anchor="start">e2</text>
 <text x="138.7" y="195.8" font-family="Arial" font-size="13" fill="#8D97A8" font-weight="normal" text-anchor="start">fastp_json</text></g>
 <g><title>e2::trimmed_short_reads</title>
-<circle cx="126.2" cy="222.3" r="4.7" fill="#1B1E24" stroke="#8D97A8" stroke-width="1.3"/>
+<circle cx="109.3" cy="222.3" r="4.7" fill="#1B1E24" stroke="#8D97A8" stroke-width="1.3"/>
 <text x="138.7" y="216.8" font-family="Arial" font-size="6.5" fill="#5F6877" text-anchor="start">e2</text>
 <text x="138.7" y="227.0" font-family="Arial" font-size="13" fill="#8D97A8" font-weight="normal" text-anchor="start">trimmed_short_reads</text></g>
 </g>
 <rect x="380.2" y="13.0" width="354.2" height="351.0" rx="6.5" fill="none" stroke="#2F343D"/>
 <g transform="translate(380.2,91.0)">
 <g fill="none" stroke="#8D97A8" stroke-width="1.4" stroke-linejoin="round" stroke-linecap="round">
-<path d="M 126.2,39.8 L 126.2,124.1"/>
-<path d="M 109.3,71.0 L 109.3,104.7 A 8.4,8.4 0 0 0 117.8,113.1 A 8.4,8.4 0 0 1 126.2,121.5 L 126.2,124.1"/>
-<path d="M 92.4,102.2 L 92.4,104.6 A 8.5,8.5 0 0 0 100.9,113.1 L 117.8,113.1 A 8.5,8.5 0 0 1 126.2,121.5 L 126.2,124.1"/>
-<path d="M 126.2,133.3 L 126.2,155.2"/>
+<path d="M 126.2,39.8 L 126.2,104.7 A 8.4,8.4 0 0 1 117.8,113.1 A 8.4,8.4 0 0 0 109.3,121.5 L 109.3,124.1"/>
+<path d="M 109.3,71.0 L 109.3,124.1"/>
+<path d="M 92.4,102.2 L 92.4,104.6 A 8.5,8.5 0 0 0 100.9,113.1 A 8.5,8.5 0 0 1 109.3,121.5 L 109.3,124.1"/>
+<path d="M 109.3,133.3 L 109.3,155.2"/>
 </g>
 <g><title>e2::read_metadata</title>
 <circle cx="126.2" cy="35.1" r="4.7" fill="#1B1E24" stroke="#8D97A8" stroke-width="1.3"/>
@@ -59,10 +59,10 @@
 <text x="138.7" y="92.0" font-family="Arial" font-size="6.5" fill="#5F6877" text-anchor="start">e2</text>
 <text x="138.7" y="102.2" font-family="Arial" font-size="13" fill="#8D97A8" font-weight="normal" text-anchor="start">short_reads_2</text></g>
 <g><title>fastqc_raw</title>
-<polygon points="120.9,124.1 131.6,124.1 126.2,133.3" fill="#1B1E24" stroke="#DFE3EA" stroke-width="2.0" stroke-linejoin="round"/>
+<polygon points="104.0,124.1 114.7,124.1 109.3,133.3" fill="#1B1E24" stroke="#DFE3EA" stroke-width="2.0" stroke-linejoin="round"/>
 <text x="138.7" y="133.4" font-family="Arial" font-size="13" fill="#DFE3EA" font-weight="600" text-anchor="start">fastqc_raw</text></g>
 <g><title>e2::fastqc_raw_reports</title>
-<circle cx="126.2" cy="159.9" r="4.7" fill="#1B1E24" stroke="#8D97A8" stroke-width="1.3"/>
+<circle cx="109.3" cy="159.9" r="4.7" fill="#1B1E24" stroke="#8D97A8" stroke-width="1.3"/>
 <text x="138.7" y="154.4" font-family="Arial" font-size="6.5" fill="#5F6877" text-anchor="start">e2</text>
 <text x="138.7" y="164.6" font-family="Arial" font-size="13" fill="#8D97A8" font-weight="normal" text-anchor="start">fastqc_raw_reports</text></g>
 </g>
@@ -115,10 +115,10 @@
 <rect x="380.2" y="377.0" width="354.2" height="351.0" rx="6.5" fill="none" stroke="#2F343D"/>
 <g transform="translate(380.2,455.0)">
 <g fill="none" stroke="#8D97A8" stroke-width="1.4" stroke-linejoin="round" stroke-linecap="round">
-<path d="M 126.2,39.8 L 126.2,124.1"/>
-<path d="M 109.3,71.0 L 109.3,104.7 A 8.4,8.4 0 0 0 117.8,113.1 A 8.4,8.4 0 0 1 126.2,121.5 L 126.2,124.1"/>
-<path d="M 92.4,102.2 L 92.4,104.6 A 8.5,8.5 0 0 0 100.9,113.1 L 117.8,113.1 A 8.5,8.5 0 0 1 126.2,121.5 L 126.2,124.1"/>
-<path d="M 126.2,133.3 L 126.2,155.2"/>
+<path d="M 126.2,39.8 L 126.2,104.7 A 8.4,8.4 0 0 1 117.8,113.1 A 8.4,8.4 0 0 0 109.3,121.5 L 109.3,124.1"/>
+<path d="M 109.3,71.0 L 109.3,124.1"/>
+<path d="M 92.4,102.2 L 92.4,104.6 A 8.5,8.5 0 0 0 100.9,113.1 A 8.5,8.5 0 0 1 109.3,121.5 L 109.3,124.1"/>
+<path d="M 109.3,133.3 L 109.3,155.2"/>
 </g>
 <g><title>e2::megahit_assembly</title>
 <circle cx="126.2" cy="35.1" r="4.7" fill="#1B1E24" stroke="#8D97A8" stroke-width="1.3"/>
@@ -133,21 +133,21 @@
 <text x="138.7" y="92.0" font-family="Arial" font-size="6.5" fill="#5F6877" text-anchor="start">e2</text>
 <text x="138.7" y="102.2" font-family="Arial" font-size="13" fill="#8D97A8" font-weight="normal" text-anchor="start">trimmed_short_reads</text></g>
 <g><title>bowtie2_binning_bam</title>
-<polygon points="120.9,124.1 131.6,124.1 126.2,133.3" fill="#1B1E24" stroke="#DFE3EA" stroke-width="2.0" stroke-linejoin="round"/>
+<polygon points="104.0,124.1 114.7,124.1 109.3,133.3" fill="#1B1E24" stroke="#DFE3EA" stroke-width="2.0" stroke-linejoin="round"/>
 <text x="138.7" y="133.4" font-family="Arial" font-size="13" fill="#DFE3EA" font-weight="600" text-anchor="start">bowtie2_binning_bam</text></g>
 <g><title>e2::binning_bam</title>
-<circle cx="126.2" cy="159.9" r="4.7" fill="#1B1E24" stroke="#8D97A8" stroke-width="1.3"/>
+<circle cx="109.3" cy="159.9" r="4.7" fill="#1B1E24" stroke="#8D97A8" stroke-width="1.3"/>
 <text x="138.7" y="154.4" font-family="Arial" font-size="6.5" fill="#5F6877" text-anchor="start">e2</text>
 <text x="138.7" y="164.6" font-family="Arial" font-size="13" fill="#8D97A8" font-weight="normal" text-anchor="start">binning_bam</text></g>
 </g>
 <rect x="747.5" y="377.0" width="354.2" height="351.0" rx="6.5" fill="none" stroke="#2F343D"/>
 <g transform="translate(747.5,439.4)">
 <g fill="none" stroke="#8D97A8" stroke-width="1.4" stroke-linejoin="round" stroke-linecap="round">
-<path d="M 126.2,39.8 L 126.2,124.1"/>
-<path d="M 109.3,71.0 L 109.3,104.7 A 8.4,8.4 0 0 0 117.8,113.1 A 8.4,8.4 0 0 1 126.2,121.5 L 126.2,124.1"/>
-<path d="M 92.4,102.2 L 92.4,104.6 A 8.5,8.5 0 0 0 100.9,113.1 L 117.8,113.1 A 8.5,8.5 0 0 1 126.2,121.5 L 126.2,124.1"/>
-<path d="M 126.2,133.3 L 126.2,135.9 A 8.4,8.4 0 0 1 117.8,144.3 A 8.4,8.4 0 0 0 109.3,152.8 L 109.3,155.2"/>
-<path d="M 126.2,133.3 L 126.2,186.4"/>
+<path d="M 126.2,39.8 L 126.2,104.7 A 8.4,8.4 0 0 1 117.8,113.1 A 8.4,8.4 0 0 0 109.3,121.5 L 109.3,124.1"/>
+<path d="M 109.3,71.0 L 109.3,124.1"/>
+<path d="M 92.4,102.2 L 92.4,104.6 A 8.5,8.5 0 0 0 100.9,113.1 A 8.5,8.5 0 0 1 109.3,121.5 L 109.3,124.1"/>
+<path d="M 109.3,133.3 L 109.3,135.9 A 8.5,8.5 0 0 1 100.9,144.3 A 8.5,8.5 0 0 0 92.4,152.8 L 92.4,155.2"/>
+<path d="M 109.3,133.3 L 109.3,186.4"/>
 </g>
 <g><title>e2::assembly</title>
 <circle cx="126.2" cy="35.1" r="4.7" fill="#1B1E24" stroke="#8D97A8" stroke-width="1.3"/>
@@ -162,25 +162,25 @@
 <text x="138.7" y="92.0" font-family="Arial" font-size="6.5" fill="#5F6877" text-anchor="start">e2</text>
 <text x="138.7" y="102.2" font-family="Arial" font-size="13" fill="#8D97A8" font-weight="normal" text-anchor="start">read_metadata</text></g>
 <g><title>comebin</title>
-<polygon points="120.9,124.1 131.6,124.1 126.2,133.3" fill="#1B1E24" stroke="#DFE3EA" stroke-width="2.0" stroke-linejoin="round"/>
+<polygon points="104.0,124.1 114.7,124.1 109.3,133.3" fill="#1B1E24" stroke="#DFE3EA" stroke-width="2.0" stroke-linejoin="round"/>
 <text x="138.7" y="133.4" font-family="Arial" font-size="13" fill="#DFE3EA" font-weight="600" text-anchor="start">comebin</text></g>
 <g><title>e2::comebin_bin</title>
-<circle cx="109.3" cy="159.9" r="4.7" fill="#1B1E24" stroke="#8D97A8" stroke-width="1.3"/>
+<circle cx="92.4" cy="159.9" r="4.7" fill="#1B1E24" stroke="#8D97A8" stroke-width="1.3"/>
 <text x="138.7" y="154.4" font-family="Arial" font-size="6.5" fill="#5F6877" text-anchor="start">e2</text>
 <text x="138.7" y="164.6" font-family="Arial" font-size="13" fill="#8D97A8" font-weight="normal" text-anchor="start">comebin_bin</text></g>
 <g><title>e2::comebin_contig_to_bin</title>
-<circle cx="126.2" cy="191.1" r="4.7" fill="#1B1E24" stroke="#8D97A8" stroke-width="1.3"/>
+<circle cx="109.3" cy="191.1" r="4.7" fill="#1B1E24" stroke="#8D97A8" stroke-width="1.3"/>
 <text x="138.7" y="185.6" font-family="Arial" font-size="6.5" fill="#5F6877" text-anchor="start">e2</text>
 <text x="138.7" y="195.8" font-family="Arial" font-size="13" fill="#8D97A8" font-weight="normal" text-anchor="start">comebin_contig_to_bin</text></g>
 </g>
 <rect x="13.0" y="741.0" width="354.2" height="351.0" rx="6.5" fill="none" stroke="#2F343D"/>
 <g transform="translate(13.0,803.4)">
 <g fill="none" stroke="#8D97A8" stroke-width="1.4" stroke-linejoin="round" stroke-linecap="round">
-<path d="M 126.2,39.8 L 126.2,124.1"/>
-<path d="M 109.3,71.0 L 109.3,104.7 A 8.4,8.4 0 0 0 117.8,113.1 A 8.4,8.4 0 0 1 126.2,121.5 L 126.2,124.1"/>
-<path d="M 92.4,102.2 L 92.4,104.6 A 8.5,8.5 0 0 0 100.9,113.1 L 117.8,113.1 A 8.5,8.5 0 0 1 126.2,121.5 L 126.2,124.1"/>
-<path d="M 126.2,133.3 L 126.2,135.9 A 8.4,8.4 0 0 1 117.8,144.3 A 8.4,8.4 0 0 0 109.3,152.8 L 109.3,155.2"/>
-<path d="M 126.2,133.3 L 126.2,186.4"/>
+<path d="M 126.2,39.8 L 126.2,104.7 A 8.4,8.4 0 0 1 117.8,113.1 A 8.4,8.4 0 0 0 109.3,121.5 L 109.3,124.1"/>
+<path d="M 109.3,71.0 L 109.3,124.1"/>
+<path d="M 92.4,102.2 L 92.4,104.6 A 8.5,8.5 0 0 0 100.9,113.1 A 8.5,8.5 0 0 1 109.3,121.5 L 109.3,124.1"/>
+<path d="M 109.3,133.3 L 109.3,135.9 A 8.5,8.5 0 0 1 100.9,144.3 A 8.5,8.5 0 0 0 92.4,152.8 L 92.4,155.2"/>
+<path d="M 109.3,133.3 L 109.3,186.4"/>
 </g>
 <g><title>e2::assembly</title>
 <circle cx="126.2" cy="35.1" r="4.7" fill="#1B1E24" stroke="#8D97A8" stroke-width="1.3"/>
@@ -195,25 +195,25 @@
 <text x="138.7" y="92.0" font-family="Arial" font-size="6.5" fill="#5F6877" text-anchor="start">e2</text>
 <text x="138.7" y="102.2" font-family="Arial" font-size="13" fill="#8D97A8" font-weight="normal" text-anchor="start">read_metadata</text></g>
 <g><title>semibin2</title>
-<polygon points="120.9,124.1 131.6,124.1 126.2,133.3" fill="#1B1E24" stroke="#DFE3EA" stroke-width="2.0" stroke-linejoin="round"/>
+<polygon points="104.0,124.1 114.7,124.1 109.3,133.3" fill="#1B1E24" stroke="#DFE3EA" stroke-width="2.0" stroke-linejoin="round"/>
 <text x="138.7" y="133.4" font-family="Arial" font-size="13" fill="#DFE3EA" font-weight="600" text-anchor="start">semibin2</text></g>
 <g><title>e2::semibin2_bin</title>
-<circle cx="109.3" cy="159.9" r="4.7" fill="#1B1E24" stroke="#8D97A8" stroke-width="1.3"/>
+<circle cx="92.4" cy="159.9" r="4.7" fill="#1B1E24" stroke="#8D97A8" stroke-width="1.3"/>
 <text x="138.7" y="154.4" font-family="Arial" font-size="6.5" fill="#5F6877" text-anchor="start">e2</text>
 <text x="138.7" y="164.6" font-family="Arial" font-size="13" fill="#8D97A8" font-weight="normal" text-anchor="start">semibin2_bin</text></g>
 <g><title>e2::semibin2_contig_to_bin</title>
-<circle cx="126.2" cy="191.1" r="4.7" fill="#1B1E24" stroke="#8D97A8" stroke-width="1.3"/>
+<circle cx="109.3" cy="191.1" r="4.7" fill="#1B1E24" stroke="#8D97A8" stroke-width="1.3"/>
 <text x="138.7" y="185.6" font-family="Arial" font-size="6.5" fill="#5F6877" text-anchor="start">e2</text>
 <text x="138.7" y="195.8" font-family="Arial" font-size="13" fill="#8D97A8" font-weight="normal" text-anchor="start">semibin2_contig_to_bin</text></g>
 </g>
 <rect x="380.2" y="741.0" width="354.2" height="351.0" rx="6.5" fill="none" stroke="#2F343D"/>
 <g transform="translate(380.2,803.4)">
 <g fill="none" stroke="#8D97A8" stroke-width="1.4" stroke-linejoin="round" stroke-linecap="round">
-<path d="M 126.2,39.8 L 126.2,124.1"/>
-<path d="M 109.3,71.0 L 109.3,104.7 A 8.4,8.4 0 0 0 117.8,113.1 A 8.4,8.4 0 0 1 126.2,121.5 L 126.2,124.1"/>
-<path d="M 92.4,102.2 L 92.4,104.6 A 8.5,8.5 0 0 0 100.9,113.1 L 117.8,113.1 A 8.5,8.5 0 0 1 126.2,121.5 L 126.2,124.1"/>
-<path d="M 126.2,133.3 L 126.2,135.9 A 8.4,8.4 0 0 1 117.8,144.3 A 8.4,8.4 0 0 0 109.3,152.8 L 109.3,155.2"/>
-<path d="M 126.2,133.3 L 126.2,186.4"/>
+<path d="M 126.2,39.8 L 126.2,104.7 A 8.4,8.4 0 0 1 117.8,113.1 A 8.4,8.4 0 0 0 109.3,121.5 L 109.3,124.1"/>
+<path d="M 109.3,71.0 L 109.3,124.1"/>
+<path d="M 92.4,102.2 L 92.4,104.6 A 8.5,8.5 0 0 0 100.9,113.1 A 8.5,8.5 0 0 1 109.3,121.5 L 109.3,124.1"/>
+<path d="M 109.3,133.3 L 109.3,135.9 A 8.5,8.5 0 0 1 100.9,144.3 A 8.5,8.5 0 0 0 92.4,152.8 L 92.4,155.2"/>
+<path d="M 109.3,133.3 L 109.3,186.4"/>
 </g>
 <g><title>e2::assembly</title>
 <circle cx="126.2" cy="35.1" r="4.7" fill="#1B1E24" stroke="#8D97A8" stroke-width="1.3"/>
@@ -228,26 +228,26 @@
 <text x="138.7" y="92.0" font-family="Arial" font-size="6.5" fill="#5F6877" text-anchor="start">e2</text>
 <text x="138.7" y="102.2" font-family="Arial" font-size="13" fill="#8D97A8" font-weight="normal" text-anchor="start">read_metadata</text></g>
 <g><title>metabat2</title>
-<polygon points="120.9,124.1 131.6,124.1 126.2,133.3" fill="#1B1E24" stroke="#DFE3EA" stroke-width="2.0" stroke-linejoin="round"/>
+<polygon points="104.0,124.1 114.7,124.1 109.3,133.3" fill="#1B1E24" stroke="#DFE3EA" stroke-width="2.0" stroke-linejoin="round"/>
 <text x="138.7" y="133.4" font-family="Arial" font-size="13" fill="#DFE3EA" font-weight="600" text-anchor="start">metabat2</text></g>
 <g><title>e2::metabat2_bin</title>
-<circle cx="109.3" cy="159.9" r="4.7" fill="#1B1E24" stroke="#8D97A8" stroke-width="1.3"/>
+<circle cx="92.4" cy="159.9" r="4.7" fill="#1B1E24" stroke="#8D97A8" stroke-width="1.3"/>
 <text x="138.7" y="154.4" font-family="Arial" font-size="6.5" fill="#5F6877" text-anchor="start">e2</text>
 <text x="138.7" y="164.6" font-family="Arial" font-size="13" fill="#8D97A8" font-weight="normal" text-anchor="start">metabat2_bin</text></g>
 <g><title>e2::metabat2_contig_to_bin</title>
-<circle cx="126.2" cy="191.1" r="4.7" fill="#1B1E24" stroke="#8D97A8" stroke-width="1.3"/>
+<circle cx="109.3" cy="191.1" r="4.7" fill="#1B1E24" stroke="#8D97A8" stroke-width="1.3"/>
 <text x="138.7" y="185.6" font-family="Arial" font-size="6.5" fill="#5F6877" text-anchor="start">e2</text>
 <text x="138.7" y="195.8" font-family="Arial" font-size="13" fill="#8D97A8" font-weight="normal" text-anchor="start">metabat2_contig_to_bin</text></g>
 </g>
 <rect x="747.5" y="741.0" width="354.2" height="351.0" rx="6.5" fill="none" stroke="#2F343D"/>
 <g transform="translate(747.5,787.8)">
 <g fill="none" stroke="#8D97A8" stroke-width="1.4" stroke-linejoin="round" stroke-linecap="round">
-<path d="M 126.2,39.8 L 126.2,186.5"/>
-<path d="M 109.3,71.0 L 109.3,167.1 A 8.4,8.4 0 0 0 117.8,175.5 A 8.4,8.4 0 0 1 126.2,183.9 L 126.2,186.5"/>
-<path d="M 92.4,102.2 L 92.4,167.1 A 8.5,8.5 0 0 0 100.9,175.5 L 117.8,175.5 A 8.5,8.5 0 0 1 126.2,183.9 L 126.2,186.5"/>
-<path d="M 75.5,133.4 L 75.5,167.1 A 8.5,8.5 0 0 0 84.0,175.5 L 117.8,175.5 A 8.5,8.5 0 0 1 126.2,183.9 L 126.2,186.5"/>
-<path d="M 58.6,164.6 L 58.6,167.1 A 8.5,8.5 0 0 0 67.1,175.5 L 117.8,175.5 A 8.5,8.5 0 0 1 126.2,183.9 L 126.2,186.5"/>
-<path d="M 126.2,195.7 L 126.2,217.6"/>
+<path d="M 126.2,39.8 L 126.2,167.1 A 8.5,8.5 0 0 1 117.8,175.5 L 100.9,175.5 A 8.5,8.5 0 0 0 92.4,183.9 L 92.4,186.5"/>
+<path d="M 109.3,71.0 L 109.3,167.1 A 8.5,8.5 0 0 1 100.9,175.5 A 8.5,8.5 0 0 0 92.4,183.9 L 92.4,186.5"/>
+<path d="M 92.4,102.2 L 92.4,186.5"/>
+<path d="M 75.5,133.4 L 75.5,167.1 A 8.5,8.5 0 0 0 84.0,175.5 A 8.5,8.5 0 0 1 92.4,183.9 L 92.4,186.5"/>
+<path d="M 58.6,164.6 L 58.6,167.1 A 8.5,8.5 0 0 0 67.1,175.5 L 84.0,175.5 A 8.5,8.5 0 0 1 92.4,183.9 L 92.4,186.5"/>
+<path d="M 92.4,195.7 L 92.4,217.6"/>
 </g>
 <g><title>e2::assembly</title>
 <circle cx="126.2" cy="35.1" r="4.7" fill="#1B1E24" stroke="#8D97A8" stroke-width="1.3"/>
@@ -270,24 +270,24 @@
 <text x="138.7" y="154.4" font-family="Arial" font-size="6.5" fill="#5F6877" text-anchor="start">e2</text>
 <text x="138.7" y="164.6" font-family="Arial" font-size="13" fill="#8D97A8" font-weight="normal" text-anchor="start">read_truth</text></g>
 <g><title>gold_standard</title>
-<polygon points="120.9,186.5 131.6,186.5 126.2,195.7" fill="#1B1E24" stroke="#DFE3EA" stroke-width="2.0" stroke-linejoin="round"/>
+<polygon points="87.1,186.5 97.8,186.5 92.4,195.7" fill="#1B1E24" stroke="#DFE3EA" stroke-width="2.0" stroke-linejoin="round"/>
 <text x="138.7" y="195.8" font-family="Arial" font-size="13" fill="#DFE3EA" font-weight="600" text-anchor="start">gold_standard</text></g>
 <g><title>e2::contig_gold_standard</title>
-<circle cx="126.2" cy="222.3" r="4.7" fill="#1B1E24" stroke="#8D97A8" stroke-width="1.3"/>
+<circle cx="92.4" cy="222.3" r="4.7" fill="#1B1E24" stroke="#8D97A8" stroke-width="1.3"/>
 <text x="138.7" y="216.8" font-family="Arial" font-size="6.5" fill="#5F6877" text-anchor="start">e2</text>
 <text x="138.7" y="227.0" font-family="Arial" font-size="13" fill="#8D97A8" font-weight="normal" text-anchor="start">contig_gold_standard</text></g>
 </g>
 <rect x="13.0" y="1105.0" width="354.2" height="351.0" rx="6.5" fill="none" stroke="#2F343D"/>
 <g transform="translate(13.0,1120.6)">
 <g fill="none" stroke="#8D97A8" stroke-width="1.4" stroke-linejoin="round" stroke-linecap="round">
-<path d="M 126.2,39.8 L 126.2,186.5"/>
-<path d="M 109.3,71.0 L 109.3,167.1 A 8.4,8.4 0 0 0 117.8,175.5 A 8.4,8.4 0 0 1 126.2,183.9 L 126.2,186.5"/>
-<path d="M 92.4,102.2 L 92.4,167.1 A 8.5,8.5 0 0 0 100.9,175.5 L 117.8,175.5 A 8.5,8.5 0 0 1 126.2,183.9 L 126.2,186.5"/>
-<path d="M 75.5,133.4 L 75.5,167.1 A 8.5,8.5 0 0 0 84.0,175.5 L 117.8,175.5 A 8.5,8.5 0 0 1 126.2,183.9 L 126.2,186.5"/>
-<path d="M 58.6,164.6 L 58.6,167.1 A 8.5,8.5 0 0 0 67.1,175.5 L 117.8,175.5 A 8.5,8.5 0 0 1 126.2,183.9 L 126.2,186.5"/>
-<path d="M 126.2,195.7 L 126.2,198.2 A 8.4,8.4 0 0 1 117.8,206.7 A 8.4,8.4 0 0 0 109.3,215.1 L 109.3,217.6"/>
-<path d="M 126.2,195.7 L 126.2,229.4 A 8.4,8.4 0 0 1 117.8,237.9 A 8.4,8.4 0 0 0 109.3,246.3 L 109.3,248.8"/>
-<path d="M 126.2,195.7 L 126.2,280.0"/>
+<path d="M 126.2,39.8 L 126.2,167.1 A 8.5,8.5 0 0 1 117.8,175.5 L 100.9,175.5 A 8.5,8.5 0 0 0 92.4,183.9 L 92.4,186.5"/>
+<path d="M 109.3,71.0 L 109.3,167.1 A 8.5,8.5 0 0 1 100.9,175.5 A 8.5,8.5 0 0 0 92.4,183.9 L 92.4,186.5"/>
+<path d="M 92.4,102.2 L 92.4,186.5"/>
+<path d="M 75.5,133.4 L 75.5,167.1 A 8.5,8.5 0 0 0 84.0,175.5 A 8.5,8.5 0 0 1 92.4,183.9 L 92.4,186.5"/>
+<path d="M 58.6,164.6 L 58.6,167.1 A 8.5,8.5 0 0 0 67.1,175.5 L 84.0,175.5 A 8.5,8.5 0 0 1 92.4,183.9 L 92.4,186.5"/>
+<path d="M 92.4,195.7 L 92.4,198.2 A 8.5,8.5 0 0 1 84.0,206.7 A 8.5,8.5 0 0 0 75.5,215.1 L 75.5,217.6"/>
+<path d="M 92.4,195.7 L 92.4,229.4 A 8.5,8.5 0 0 1 84.0,237.9 A 8.5,8.5 0 0 0 75.5,246.3 L 75.5,248.8"/>
+<path d="M 92.4,195.7 L 92.4,280.0"/>
 </g>
 <g><title>e2::assembly</title>
 <circle cx="126.2" cy="35.1" r="4.7" fill="#1B1E24" stroke="#8D97A8" stroke-width="1.3"/>
@@ -310,18 +310,18 @@
 <text x="138.7" y="154.4" font-family="Arial" font-size="6.5" fill="#5F6877" text-anchor="start">e2</text>
 <text x="138.7" y="164.6" font-family="Arial" font-size="13" fill="#8D97A8" font-weight="normal" text-anchor="start">semibin2_contig_to_bin</text></g>
 <g><title>das_tool</title>
-<polygon points="120.9,186.5 131.6,186.5 126.2,195.7" fill="#1B1E24" stroke="#DFE3EA" stroke-width="2.0" stroke-linejoin="round"/>
+<polygon points="87.1,186.5 97.8,186.5 92.4,195.7" fill="#1B1E24" stroke="#DFE3EA" stroke-width="2.0" stroke-linejoin="round"/>
 <text x="138.7" y="195.8" font-family="Arial" font-size="13" fill="#DFE3EA" font-weight="600" text-anchor="start">das_tool</text></g>
 <g><title>e2::das_tool_bin</title>
-<circle cx="109.3" cy="222.3" r="4.7" fill="#1B1E24" stroke="#8D97A8" stroke-width="1.3"/>
+<circle cx="75.5" cy="222.3" r="4.7" fill="#1B1E24" stroke="#8D97A8" stroke-width="1.3"/>
 <text x="138.7" y="216.8" font-family="Arial" font-size="6.5" fill="#5F6877" text-anchor="start">e2</text>
 <text x="138.7" y="227.0" font-family="Arial" font-size="13" fill="#8D97A8" font-weight="normal" text-anchor="start">das_tool_bin</text></g>
 <g><title>e2::das_tool_contig_to_bin</title>
-<circle cx="109.3" cy="253.5" r="4.7" fill="#1B1E24" stroke="#8D97A8" stroke-width="1.3"/>
+<circle cx="75.5" cy="253.5" r="4.7" fill="#1B1E24" stroke="#8D97A8" stroke-width="1.3"/>
 <text x="138.7" y="248.0" font-family="Arial" font-size="6.5" fill="#5F6877" text-anchor="start">e2</text>
 <text x="138.7" y="258.2" font-family="Arial" font-size="13" fill="#8D97A8" font-weight="normal" text-anchor="start">das_tool_contig_to_bin</text></g>
 <g><title>e2::das_tool_summary</title>
-<circle cx="126.2" cy="284.7" r="4.7" fill="#1B1E24" stroke="#8D97A8" stroke-width="1.3"/>
+<circle cx="92.4" cy="284.7" r="4.7" fill="#1B1E24" stroke="#8D97A8" stroke-width="1.3"/>
 <text x="138.7" y="279.2" font-family="Arial" font-size="6.5" fill="#5F6877" text-anchor="start">e2</text>
 <text x="138.7" y="289.4" font-family="Arial" font-size="13" fill="#8D97A8" font-weight="normal" text-anchor="start">das_tool_summary</text></g>
 </g>
@@ -351,15 +351,15 @@
 <rect x="747.5" y="1105.0" width="354.2" height="351.0" rx="6.5" fill="none" stroke="#2F343D"/>
 <g transform="translate(747.5,1105.0)">
 <g fill="none" stroke="#8D97A8" stroke-width="1.4" stroke-linejoin="round" stroke-linecap="round">
-<path d="M 126.2,39.8 L 126.2,248.9"/>
-<path d="M 109.3,71.0 L 109.3,229.4 A 8.4,8.4 0 0 0 117.8,237.9 A 8.4,8.4 0 0 1 126.2,246.3 L 126.2,248.9"/>
-<path d="M 92.4,102.2 L 92.4,229.4 A 8.5,8.5 0 0 0 100.9,237.9 L 117.8,237.9 A 8.5,8.5 0 0 1 126.2,246.3 L 126.2,248.9"/>
-<path d="M 75.5,133.4 L 75.5,229.4 A 8.5,8.5 0 0 0 84.0,237.9 L 117.8,237.9 A 8.5,8.5 0 0 1 126.2,246.3 L 126.2,248.9"/>
-<path d="M 58.6,164.6 L 58.6,229.4 A 8.5,8.5 0 0 0 67.1,237.9 L 117.8,237.9 A 8.5,8.5 0 0 1 126.2,246.3 L 126.2,248.9"/>
-<path d="M 41.7,195.8 L 41.7,229.4 A 8.5,8.5 0 0 0 50.2,237.9 L 117.8,237.9 A 8.5,8.5 0 0 1 126.2,246.3 L 126.2,248.9"/>
-<path d="M 24.8,227.0 L 24.8,229.4 A 8.5,8.5 0 0 0 33.3,237.9 L 117.8,237.9 A 8.5,8.5 0 0 1 126.2,246.3 L 126.2,248.9"/>
-<path d="M 126.2,258.1 L 126.2,260.7 A 8.4,8.4 0 0 1 117.8,269.1 A 8.4,8.4 0 0 0 109.3,277.6 L 109.3,280.0"/>
-<path d="M 126.2,258.1 L 126.2,311.2"/>
+<path d="M 126.2,39.8 L 126.2,229.4 A 8.5,8.5 0 0 1 117.8,237.9 L 84.0,237.9 A 8.5,8.5 0 0 0 75.5,246.3 L 75.5,248.9"/>
+<path d="M 109.3,71.0 L 109.3,229.4 A 8.5,8.5 0 0 1 100.9,237.9 L 84.0,237.9 A 8.5,8.5 0 0 0 75.5,246.3 L 75.5,248.9"/>
+<path d="M 92.4,102.2 L 92.4,229.4 A 8.5,8.5 0 0 1 84.0,237.9 A 8.5,8.5 0 0 0 75.5,246.3 L 75.5,248.9"/>
+<path d="M 75.5,133.4 L 75.5,248.9"/>
+<path d="M 58.6,164.6 L 58.6,229.4 A 8.4,8.4 0 0 0 67.1,237.9 A 8.4,8.4 0 0 1 75.5,246.3 L 75.5,248.9"/>
+<path d="M 41.7,195.8 L 41.7,229.4 A 8.5,8.5 0 0 0 50.2,237.9 L 67.1,237.9 A 8.5,8.5 0 0 1 75.5,246.3 L 75.5,248.9"/>
+<path d="M 24.8,227.0 L 24.8,229.4 A 8.5,8.5 0 0 0 33.3,237.9 L 67.1,237.9 A 8.5,8.5 0 0 1 75.5,246.3 L 75.5,248.9"/>
+<path d="M 75.5,258.1 L 75.5,260.7 A 8.4,8.4 0 0 1 67.1,269.1 A 8.4,8.4 0 0 0 58.6,277.6 L 58.6,280.0"/>
+<path d="M 75.5,258.1 L 75.5,311.2"/>
 </g>
 <g><title>e2::assembly</title>
 <circle cx="126.2" cy="35.1" r="4.7" fill="#1B1E24" stroke="#8D97A8" stroke-width="1.3"/>
@@ -390,14 +390,14 @@
 <text x="138.7" y="216.8" font-family="Arial" font-size="6.5" fill="#5F6877" text-anchor="start">e2</text>
 <text x="138.7" y="227.0" font-family="Arial" font-size="13" fill="#8D97A8" font-weight="normal" text-anchor="start">semibin2_contig_to_bin</text></g>
 <g><title>amber</title>
-<polygon points="120.9,248.9 131.6,248.9 126.2,258.1" fill="#1B1E24" stroke="#DFE3EA" stroke-width="2.0" stroke-linejoin="round"/>
+<polygon points="70.2,248.9 80.9,248.9 75.5,258.1" fill="#1B1E24" stroke="#DFE3EA" stroke-width="2.0" stroke-linejoin="round"/>
 <text x="138.7" y="258.2" font-family="Arial" font-size="13" fill="#DFE3EA" font-weight="600" text-anchor="start">amber</text></g>
 <g><title>e2::amber_bin_metrics</title>
-<circle cx="109.3" cy="284.7" r="4.7" fill="#1B1E24" stroke="#8D97A8" stroke-width="1.3"/>
+<circle cx="58.6" cy="284.7" r="4.7" fill="#1B1E24" stroke="#8D97A8" stroke-width="1.3"/>
 <text x="138.7" y="279.2" font-family="Arial" font-size="6.5" fill="#5F6877" text-anchor="start">e2</text>
 <text x="138.7" y="289.4" font-family="Arial" font-size="13" fill="#8D97A8" font-weight="normal" text-anchor="start">amber_bin_metrics</text></g>
 <g><title>e2::amber_results</title>
-<circle cx="126.2" cy="315.9" r="4.7" fill="#1B1E24" stroke="#8D97A8" stroke-width="1.3"/>
+<circle cx="75.5" cy="315.9" r="4.7" fill="#1B1E24" stroke="#8D97A8" stroke-width="1.3"/>
 <text x="138.7" y="310.4" font-family="Arial" font-size="6.5" fill="#5F6877" text-anchor="start">e2</text>
 <text x="138.7" y="320.6" font-family="Arial" font-size="13" fill="#8D97A8" font-weight="normal" text-anchor="start">amber_results</text></g>
 </g>
@@ -473,10 +473,10 @@
 <rect x="13.0" y="1833.0" width="354.2" height="351.0" rx="6.5" fill="none" stroke="#2F343D"/>
 <g transform="translate(13.0,1911.0)">
 <g fill="none" stroke="#8D97A8" stroke-width="1.4" stroke-linejoin="round" stroke-linecap="round">
-<path d="M 126.2,39.8 L 126.2,124.1"/>
-<path d="M 109.3,71.0 L 109.3,104.7 A 8.4,8.4 0 0 0 117.8,113.1 A 8.4,8.4 0 0 1 126.2,121.5 L 126.2,124.1"/>
-<path d="M 92.4,102.2 L 92.4,104.6 A 8.5,8.5 0 0 0 100.9,113.1 L 117.8,113.1 A 8.5,8.5 0 0 1 126.2,121.5 L 126.2,124.1"/>
-<path d="M 126.2,133.3 L 126.2,155.2"/>
+<path d="M 126.2,39.8 L 126.2,104.7 A 8.4,8.4 0 0 1 117.8,113.1 A 8.4,8.4 0 0 0 109.3,121.5 L 109.3,124.1"/>
+<path d="M 109.3,71.0 L 109.3,124.1"/>
+<path d="M 92.4,102.2 L 92.4,104.6 A 8.5,8.5 0 0 0 100.9,113.1 A 8.5,8.5 0 0 1 109.3,121.5 L 109.3,124.1"/>
+<path d="M 109.3,133.3 L 109.3,155.2"/>
 </g>
 <g><title>e2::filtered_long_reads</title>
 <circle cx="126.2" cy="35.1" r="4.7" fill="#1B1E24" stroke="#8D97A8" stroke-width="1.3"/>
@@ -491,10 +491,10 @@
 <text x="138.7" y="92.0" font-family="Arial" font-size="6.5" fill="#5F6877" text-anchor="start">e2</text>
 <text x="138.7" y="102.2" font-family="Arial" font-size="13" fill="#8D97A8" font-weight="normal" text-anchor="start">read_metadata</text></g>
 <g><title>minimap2_binning_bam</title>
-<polygon points="120.9,124.1 131.6,124.1 126.2,133.3" fill="#1B1E24" stroke="#DFE3EA" stroke-width="2.0" stroke-linejoin="round"/>
+<polygon points="104.0,124.1 114.7,124.1 109.3,133.3" fill="#1B1E24" stroke="#DFE3EA" stroke-width="2.0" stroke-linejoin="round"/>
 <text x="138.7" y="133.4" font-family="Arial" font-size="13" fill="#DFE3EA" font-weight="600" text-anchor="start">minimap2_binning_bam</text></g>
 <g><title>e2::binning_bam</title>
-<circle cx="126.2" cy="159.9" r="4.7" fill="#1B1E24" stroke="#8D97A8" stroke-width="1.3"/>
+<circle cx="109.3" cy="159.9" r="4.7" fill="#1B1E24" stroke="#8D97A8" stroke-width="1.3"/>
 <text x="138.7" y="154.4" font-family="Arial" font-size="6.5" fill="#5F6877" text-anchor="start">e2</text>
 <text x="138.7" y="164.6" font-family="Arial" font-size="13" fill="#8D97A8" font-weight="normal" text-anchor="start">binning_bam</text></g>
 </g>
