@@ -3,7 +3,7 @@ from xml.etree import ElementTree
 import pytest
 
 from metasmith.models.dag_layout import measure, repeat_motifs
-from metasmith.models.dag_renderer import LabelMode, NodeKind
+from metasmith.models.dag_renderer import DagMode, LabelMode, NodeKind
 
 from tests.metasmith.fixtures import load_dag
 
@@ -77,13 +77,32 @@ def test_the_requested_outputs_are_marked_on_the_nodes(dag):
 
 def test_the_drawing_does_not_get_more_expensive(dag):
     # Release drew this graph in 549 rail rows, 14 lanes and 242 crossings.
-    # The row order is not proven shortest here, so a solver change can move
-    # these either way.
+    # The row order is proven shortest under the step blocks; the columns are
+    # not proven, so a solver change can move those either way.
     m = measure(dag.layout())
-    assert m.length <= 445
+    assert m.optimal
+    assert m.length <= 457
     assert m.width <= 7
-    assert m.crossings <= 30
+    assert m.crossings <= 2
+    assert m.hlen <= 77
     assert m.congruent >= 3
+
+
+@pytest.mark.parametrize("mode", [DagMode.PLAIN, DagMode.COLLAPSED, DagMode.STEPS])
+def test_every_step_has_its_own_outputs_directly_below_it(mode):
+    r = load_dag(mode=mode)
+    nodes, edges = r._graph()
+    lay = r.layout()
+    producers = {}
+    for src, dst in edges:
+        producers.setdefault(dst, set()).add(src)
+    for step, kind in nodes.items():
+        if kind is not NodeKind.TRANSFORM:
+            continue
+        own = [n for n, k in nodes.items()
+               if k is not NodeKind.TRANSFORM and producers.get(n) == {step}]
+        rows = sorted(lay.row[n] for n in own)
+        assert rows == list(range(lay.row[step] + 1, lay.row[step] + 1 + len(own))), step
 
 
 BINNERS = ("comebin", "semibin2", "metabat2")

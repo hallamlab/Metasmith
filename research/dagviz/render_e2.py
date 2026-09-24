@@ -230,5 +230,30 @@ def main(arms=("short", "long")):
         )
 
 
+def dump_graphs(arms=("short", "long")):
+    """The graphs `cases.py` draws in the dev panel, environments kept."""
+    import json
+
+    out = HERE / "graphs"
+    out.mkdir(exist_ok=True)
+    for arm in arms:
+        plan = plan_for(arm)
+        r = plan.BuildDAG(blacklist_namespaces={"lib", "containers"})
+        nodes, edges = r._graph()
+        labels = r.labels
+        path = out / f"e2_{arm}.graph.json"
+        path.write_text(json.dumps({
+            "arm": arm,
+            "n_steps": len(plan.steps),
+            "nodes": [{"name": n, "kind": k.name, "label": vars(labels[n])}
+                      for n, k in nodes.items()],
+            "edges": edges,
+        }, indent=1), encoding="utf-8")
+        print(f"{path.name}  {len(plan.steps)} steps, {len(nodes)} nodes")
+
+
 if __name__ == "__main__":
-    main(tuple(sys.argv[1:]) or ("short", "long"))
+    if sys.argv[1:2] == ["graphs"]:
+        dump_graphs(tuple(sys.argv[2:]) or ("short", "long"))
+    else:
+        main(tuple(sys.argv[1:]) or ("short", "long"))

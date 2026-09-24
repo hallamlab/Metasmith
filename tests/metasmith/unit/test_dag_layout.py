@@ -1,8 +1,9 @@
+import itertools
 import random
 
 import pytest
 
-from metasmith.models.dag_layout import layout, measure, natural_key, repeat_motifs
+from metasmith.models.dag_layout import Layout, layout, measure, natural_key, repeat_motifs
 
 
 def _lay(edges, nodes=()):
@@ -62,7 +63,104 @@ def _sparse_dag(seed, n):
     return names, edges
 
 
+def _step_blocks(seed, names, edges):
+    """Random blocks shaped like a step and its outputs: a head and some of
+    its children, no two of them joined by an edge."""
+    rng = random.Random(seed)
+    linked = set(edges)
+    blocks, taken = [], set()
+    for head in rng.sample(names, len(names)):
+        if head in taken:
+            continue
+        members = [head]
+        for c in (c for p, c in edges if p == head and c not in taken):
+            if rng.random() < 0.7 and all((c, m) not in linked and (m, c) not in linked
+                                          for m in members[1:]):
+                members.append(c)
+        taken |= set(members)
+        blocks.append(members)
+    return blocks
+
+
+def _shortest_in_blocks(names, edges, blocks):
+    """The least total length over orders that keep every block contiguous,
+    head first, by a DP over placed blocks that tries every internal order."""
+    at = {n: i for i, n in enumerate(names)}
+    ups = [0] * len(names)
+    out = [0] * len(names)
+    for p, c in edges:
+        ups[at[c]] |= 1 << at[p]
+        out[at[p]] += 1
+    ins = [bin(u).count("1") for u in ups]
+    units = [[at[n] for n in b] for b in blocks]
+    best = {0: (0, 0)}
+    for _ in units:
+        nxt = {}
+        for placed, (cost, cut) in best.items():
+            for unit in units:
+                if placed >> unit[0] & 1:
+                    continue
+                for tail in itertools.permutations(unit[1:]):
+                    seq, done, total, c, ok = [unit[0], *tail], placed, cost, cut, True
+                    for v in seq:
+                        if ups[v] & ~done:
+                            ok = False
+                            break
+                        c += out[v] - ins[v]
+                        total += c
+                        done |= 1 << v
+                    if ok and (done not in nxt or total < nxt[done][0]):
+                        nxt[done] = (total, c)
+        best = nxt
+    return next(iter(best.values()))[0]
+
+
+def _keeps_blocks(lay, blocks):
+    for block in blocks:
+        rows = sorted(lay.row[n] for n in block)
+        if rows != list(range(rows[0], rows[0] + len(block))) or lay.row[block[0]] != rows[0]:
+            return False
+    return True
+
+
 # -- the row order -----------------------------------------------------------
+
+
+@pytest.mark.parametrize("seed", range(200))
+def test_the_row_order_is_the_shortest_that_keeps_every_block_whole(seed):
+    names, edges = _random_dag(seed, 3 + seed % 7, (0.15, 0.3, 0.5)[seed % 3])
+    blocks = _step_blocks(seed, names, edges)
+    lay = layout(names, edges, blocks=blocks)
+    assert lay.optimal
+    assert _keeps_blocks(lay, blocks)
+    assert _length(lay) == _shortest_in_blocks(names, list(lay.edges), blocks)
+
+
+def test_a_step_keeps_its_outputs_directly_below_it():
+    edges = [("reads", "qc"), ("qc", "clean"), ("qc", "report"), ("clean", "asm"),
+             ("asm", "contigs"), ("asm", "graph"), ("reads", "map"), ("contigs", "map")]
+    blocks = [["qc", "clean", "report"], ["asm", "contigs", "graph"]]
+    lay = layout([], edges, blocks=blocks)
+    assert _keeps_blocks(lay, blocks)
+
+
+def test_inside_a_block_the_most_used_output_comes_last():
+    edges = [("s", "busy"), ("s", "idle"), ("busy", "x"), ("busy", "y")]
+    lay = layout([], edges, blocks=[["s", "busy", "idle"]])
+    assert _rows(lay)[:3] == ["s", "idle", "busy"]
+
+
+def test_a_block_a_path_would_have_to_leave_and_reenter_is_dissolved():
+    edges = [("a", "x"), ("x", "b")]
+    lay = layout([], edges, blocks=[["a", "b"]])
+    assert _rows(lay) == ["a", "x", "b"]
+
+
+def test_an_order_that_splits_a_block_is_declined():
+    edges = [("s", "o"), ("r", "t")]
+    lay = layout([], edges, order=["s", "r", "o", "t"], blocks=[["s", "o"]])
+    assert _keeps_blocks(lay, [["s", "o"]])
+
 
 
 @pytest.mark.parametrize("seed", range(300))
@@ -323,10 +421,44 @@ def test_a_last_child_takes_its_parents_column_as_a_straight_drop():
     assert measure(lay).drops == 2
 
 
-def test_the_longer_run_goes_left():
+def test_the_longer_run_goes_right():
     lay = _lay([("r", "short"), ("r", "long1"), ("long1", "long2"), ("long2", "long3")])
-    assert lay.col["long1"] < lay.col["short"]
+    assert lay.col["long1"] > lay.col["short"]
     assert measure(lay).disorder == 0
+
+
+def _best_columns(lay):
+    """Every assignment of the runs to the layout's columns in which no two
+    runs sharing a column overlap, scored as the solver scores them."""
+    names = list(lay.order)
+    spans = [(lay.runs[n].top, lay.runs[n].bottom) for n in names]
+    best = None
+    for cols in itertools.product(range(lay.width), repeat=len(names)):
+        if any(cols[i] == cols[j] and spans[i][0] < spans[j][1] and spans[j][0] < spans[i][1]
+               for i in range(len(names)) for j in range(i)):
+            continue
+        trial = Layout(order=lay.order, col=dict(zip(names, cols)), edges=lay.edges,
+                       width=lay.width)
+        m = measure(trial, motifs=())
+        key = (m.crossings, m.hlen, m.disorder, m.off_right)
+        best = key if best is None or key < best else best
+    return best
+
+
+@pytest.mark.parametrize("seed", range(120))
+def test_the_columns_are_the_best_there_are(seed):
+    names, edges = _random_dag(1000 + seed, 3 + seed % 5, (0.3, 0.5)[seed % 2])
+    lay = layout(names, edges)
+    if lay.width ** len(names) > 50_000:
+        pytest.skip("too many assignments to enumerate")
+    m = measure(lay, motifs=())
+    assert lay.optimal_columns
+    assert (m.crossings, m.hlen, m.disorder, m.off_right) == _best_columns(lay)
+
+
+def test_a_bar_goes_round_a_run_rather_than_over_it():
+    lay = _lay(_SHAPES["join"])
+    assert measure(lay).crossings == 0
 
 
 def test_runs_sharing_a_column_never_overlap():

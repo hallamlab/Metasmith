@@ -1,0 +1,766 @@
+{
+ "arm": "long",
+ "n_steps": 11,
+ "nodes": [
+  {
+   "name": "given",
+   "kind": "TRANSFORM",
+   "label": {
+    "name": "given",
+    "namespace": "",
+    "full": "given"
+   }
+  },
+  {
+   "name": "e2::read_metadata",
+   "kind": "DATA",
+   "label": {
+    "name": "read_metadata",
+    "namespace": "e2",
+    "full": "e2::read_metadata"
+   }
+  },
+  {
+   "name": "e2::long_reads",
+   "kind": "DATA",
+   "label": {
+    "name": "long_reads",
+    "namespace": "e2",
+    "full": "e2::long_reads"
+   }
+  },
+  {
+   "name": "e2::read_truth",
+   "kind": "DATA",
+   "label": {
+    "name": "read_truth",
+    "namespace": "e2",
+    "full": "e2::read_truth"
+   }
+  },
+  {
+   "name": "e2::amber.env",
+   "kind": "DATA",
+   "label": {
+    "name": "amber.env",
+    "namespace": "e2",
+    "full": "e2::amber.env"
+   }
+  },
+  {
+   "name": "e2::cami_gold_standard.py",
+   "kind": "DATA",
+   "label": {
+    "name": "cami_gold_standard.py",
+    "namespace": "e2",
+    "full": "e2::cami_gold_standard.py"
+   }
+  },
+  {
+   "name": "e2::checkm2.env",
+   "kind": "DATA",
+   "label": {
+    "name": "checkm2.env",
+    "namespace": "e2",
+    "full": "e2::checkm2.env"
+   }
+  },
+  {
+   "name": "e2::chopper.env",
+   "kind": "DATA",
+   "label": {
+    "name": "chopper.env",
+    "namespace": "e2",
+    "full": "e2::chopper.env"
+   }
+  },
+  {
+   "name": "e2::comebin.env",
+   "kind": "DATA",
+   "label": {
+    "name": "comebin.env",
+    "namespace": "e2",
+    "full": "e2::comebin.env"
+   }
+  },
+  {
+   "name": "e2::das_tool.env",
+   "kind": "DATA",
+   "label": {
+    "name": "das_tool.env",
+    "namespace": "e2",
+    "full": "e2::das_tool.env"
+   }
+  },
+  {
+   "name": "e2::flye.env",
+   "kind": "DATA",
+   "label": {
+    "name": "flye.env",
+    "namespace": "e2",
+    "full": "e2::flye.env"
+   }
+  },
+  {
+   "name": "e2::jgi_depth.env",
+   "kind": "DATA",
+   "label": {
+    "name": "jgi_depth.env",
+    "namespace": "e2",
+    "full": "e2::jgi_depth.env"
+   }
+  },
+  {
+   "name": "e2::metabat2.env",
+   "kind": "DATA",
+   "label": {
+    "name": "metabat2.env",
+    "namespace": "e2",
+    "full": "e2::metabat2.env"
+   }
+  },
+  {
+   "name": "e2::minimap2.env",
+   "kind": "DATA",
+   "label": {
+    "name": "minimap2.env",
+    "namespace": "e2",
+    "full": "e2::minimap2.env"
+   }
+  },
+  {
+   "name": "e2::polars.env",
+   "kind": "DATA",
+   "label": {
+    "name": "polars.env",
+    "namespace": "e2",
+    "full": "e2::polars.env"
+   }
+  },
+  {
+   "name": "e2::porechop_abi.env",
+   "kind": "DATA",
+   "label": {
+    "name": "porechop_abi.env",
+    "namespace": "e2",
+    "full": "e2::porechop_abi.env"
+   }
+  },
+  {
+   "name": "e2::semibin2.env",
+   "kind": "DATA",
+   "label": {
+    "name": "semibin2.env",
+    "namespace": "e2",
+    "full": "e2::semibin2.env"
+   }
+  },
+  {
+   "name": "e2::checkm2_database",
+   "kind": "DATA",
+   "label": {
+    "name": "checkm2_database",
+    "namespace": "e2",
+    "full": "e2::checkm2_database"
+   }
+  },
+  {
+   "name": "1 porechop_abi",
+   "kind": "TRANSFORM",
+   "label": {
+    "name": "porechop_abi",
+    "namespace": "",
+    "full": "1 porechop_abi"
+   }
+  },
+  {
+   "name": "x64b2OscWA",
+   "kind": "DATA",
+   "label": {
+    "name": "adapter_trimmed_long_reads",
+    "namespace": "e2",
+    "full": "e2::adapter_trimmed_long_reads"
+   }
+  },
+  {
+   "name": "2 chopper",
+   "kind": "TRANSFORM",
+   "label": {
+    "name": "chopper",
+    "namespace": "",
+    "full": "2 chopper"
+   }
+  },
+  {
+   "name": "jhAkY91Y1H",
+   "kind": "DATA",
+   "label": {
+    "name": "filtered_long_reads",
+    "namespace": "e2",
+    "full": "e2::filtered_long_reads"
+   }
+  },
+  {
+   "name": "3 flye",
+   "kind": "TRANSFORM",
+   "label": {
+    "name": "flye",
+    "namespace": "",
+    "full": "3 flye"
+   }
+  },
+  {
+   "name": "tKBL3NeHVx",
+   "kind": "TARGET",
+   "label": {
+    "name": "flye_assembly",
+    "namespace": "e2",
+    "full": "e2::flye_assembly"
+   }
+  },
+  {
+   "name": "4 minimap2_binning_bam",
+   "kind": "TRANSFORM",
+   "label": {
+    "name": "minimap2_binning_bam",
+    "namespace": "",
+    "full": "4 minimap2_binning_bam"
+   }
+  },
+  {
+   "name": "owUF22Uvdv",
+   "kind": "DATA",
+   "label": {
+    "name": "binning_bam",
+    "namespace": "e2",
+    "full": "e2::binning_bam"
+   }
+  },
+  {
+   "name": "5 comebin",
+   "kind": "TRANSFORM",
+   "label": {
+    "name": "comebin",
+    "namespace": "",
+    "full": "5 comebin"
+   }
+  },
+  {
+   "name": "RIZ1JqgMRu",
+   "kind": "TARGET",
+   "label": {
+    "name": "comebin_bin",
+    "namespace": "e2",
+    "full": "e2::comebin_bin"
+   }
+  },
+  {
+   "name": "SLoquZz1pi",
+   "kind": "TARGET",
+   "label": {
+    "name": "comebin_contig_to_bin",
+    "namespace": "e2",
+    "full": "e2::comebin_contig_to_bin"
+   }
+  },
+  {
+   "name": "6 semibin2",
+   "kind": "TRANSFORM",
+   "label": {
+    "name": "semibin2",
+    "namespace": "",
+    "full": "6 semibin2"
+   }
+  },
+  {
+   "name": "kAH2CfHIGI",
+   "kind": "TARGET",
+   "label": {
+    "name": "semibin2_bin",
+    "namespace": "e2",
+    "full": "e2::semibin2_bin"
+   }
+  },
+  {
+   "name": "tPIkU0MFB4",
+   "kind": "TARGET",
+   "label": {
+    "name": "semibin2_contig_to_bin",
+    "namespace": "e2",
+    "full": "e2::semibin2_contig_to_bin"
+   }
+  },
+  {
+   "name": "7 metabat2",
+   "kind": "TRANSFORM",
+   "label": {
+    "name": "metabat2",
+    "namespace": "",
+    "full": "7 metabat2"
+   }
+  },
+  {
+   "name": "YIHtwjsGaF",
+   "kind": "TARGET",
+   "label": {
+    "name": "metabat2_bin",
+    "namespace": "e2",
+    "full": "e2::metabat2_bin"
+   }
+  },
+  {
+   "name": "ZTAnshVAFS",
+   "kind": "TARGET",
+   "label": {
+    "name": "metabat2_contig_to_bin",
+    "namespace": "e2",
+    "full": "e2::metabat2_contig_to_bin"
+   }
+  },
+  {
+   "name": "8 gold_standard",
+   "kind": "TRANSFORM",
+   "label": {
+    "name": "gold_standard",
+    "namespace": "",
+    "full": "8 gold_standard"
+   }
+  },
+  {
+   "name": "QAxQo0iTNy",
+   "kind": "DATA",
+   "label": {
+    "name": "contig_gold_standard",
+    "namespace": "e2",
+    "full": "e2::contig_gold_standard"
+   }
+  },
+  {
+   "name": "9 das_tool",
+   "kind": "TRANSFORM",
+   "label": {
+    "name": "das_tool",
+    "namespace": "",
+    "full": "9 das_tool"
+   }
+  },
+  {
+   "name": "hbzMbKqiC2",
+   "kind": "TARGET",
+   "label": {
+    "name": "das_tool_bin",
+    "namespace": "e2",
+    "full": "e2::das_tool_bin"
+   }
+  },
+  {
+   "name": "RpFp7nmY5E",
+   "kind": "TARGET",
+   "label": {
+    "name": "das_tool_contig_to_bin",
+    "namespace": "e2",
+    "full": "e2::das_tool_contig_to_bin"
+   }
+  },
+  {
+   "name": "HgzRMoei0l",
+   "kind": "TARGET",
+   "label": {
+    "name": "das_tool_summary",
+    "namespace": "e2",
+    "full": "e2::das_tool_summary"
+   }
+  },
+  {
+   "name": "10 checkm2",
+   "kind": "TRANSFORM",
+   "label": {
+    "name": "checkm2",
+    "namespace": "",
+    "full": "10 checkm2"
+   }
+  },
+  {
+   "name": "Yaxkv3jd0P",
+   "kind": "TARGET",
+   "label": {
+    "name": "checkm2_quality",
+    "namespace": "e2",
+    "full": "e2::checkm2_quality"
+   }
+  },
+  {
+   "name": "11 amber",
+   "kind": "TRANSFORM",
+   "label": {
+    "name": "amber",
+    "namespace": "",
+    "full": "11 amber"
+   }
+  },
+  {
+   "name": "t8xQ8BVVIl",
+   "kind": "TARGET",
+   "label": {
+    "name": "amber_results",
+    "namespace": "e2",
+    "full": "e2::amber_results"
+   }
+  },
+  {
+   "name": "yG279lbdMf",
+   "kind": "TARGET",
+   "label": {
+    "name": "amber_bin_metrics",
+    "namespace": "e2",
+    "full": "e2::amber_bin_metrics"
+   }
+  }
+ ],
+ "edges": [
+  [
+   "given",
+   "e2::read_metadata"
+  ],
+  [
+   "e2::read_metadata",
+   "e2::long_reads"
+  ],
+  [
+   "given",
+   "e2::long_reads"
+  ],
+  [
+   "e2::read_metadata",
+   "e2::read_truth"
+  ],
+  [
+   "given",
+   "e2::read_truth"
+  ],
+  [
+   "given",
+   "e2::amber.env"
+  ],
+  [
+   "given",
+   "e2::cami_gold_standard.py"
+  ],
+  [
+   "given",
+   "e2::checkm2.env"
+  ],
+  [
+   "given",
+   "e2::chopper.env"
+  ],
+  [
+   "given",
+   "e2::comebin.env"
+  ],
+  [
+   "given",
+   "e2::das_tool.env"
+  ],
+  [
+   "given",
+   "e2::flye.env"
+  ],
+  [
+   "given",
+   "e2::jgi_depth.env"
+  ],
+  [
+   "given",
+   "e2::metabat2.env"
+  ],
+  [
+   "given",
+   "e2::minimap2.env"
+  ],
+  [
+   "given",
+   "e2::polars.env"
+  ],
+  [
+   "given",
+   "e2::porechop_abi.env"
+  ],
+  [
+   "given",
+   "e2::semibin2.env"
+  ],
+  [
+   "given",
+   "e2::checkm2_database"
+  ],
+  [
+   "e2::porechop_abi.env",
+   "1 porechop_abi"
+  ],
+  [
+   "e2::read_metadata",
+   "1 porechop_abi"
+  ],
+  [
+   "e2::long_reads",
+   "1 porechop_abi"
+  ],
+  [
+   "1 porechop_abi",
+   "x64b2OscWA"
+  ],
+  [
+   "e2::chopper.env",
+   "2 chopper"
+  ],
+  [
+   "e2::read_metadata",
+   "2 chopper"
+  ],
+  [
+   "x64b2OscWA",
+   "2 chopper"
+  ],
+  [
+   "2 chopper",
+   "jhAkY91Y1H"
+  ],
+  [
+   "e2::flye.env",
+   "3 flye"
+  ],
+  [
+   "e2::read_metadata",
+   "3 flye"
+  ],
+  [
+   "jhAkY91Y1H",
+   "3 flye"
+  ],
+  [
+   "3 flye",
+   "tKBL3NeHVx"
+  ],
+  [
+   "e2::minimap2.env",
+   "4 minimap2_binning_bam"
+  ],
+  [
+   "e2::read_metadata",
+   "4 minimap2_binning_bam"
+  ],
+  [
+   "jhAkY91Y1H",
+   "4 minimap2_binning_bam"
+  ],
+  [
+   "tKBL3NeHVx",
+   "4 minimap2_binning_bam"
+  ],
+  [
+   "4 minimap2_binning_bam",
+   "owUF22Uvdv"
+  ],
+  [
+   "e2::comebin.env",
+   "5 comebin"
+  ],
+  [
+   "e2::read_metadata",
+   "5 comebin"
+  ],
+  [
+   "tKBL3NeHVx",
+   "5 comebin"
+  ],
+  [
+   "owUF22Uvdv",
+   "5 comebin"
+  ],
+  [
+   "5 comebin",
+   "RIZ1JqgMRu"
+  ],
+  [
+   "5 comebin",
+   "SLoquZz1pi"
+  ],
+  [
+   "e2::semibin2.env",
+   "6 semibin2"
+  ],
+  [
+   "e2::read_metadata",
+   "6 semibin2"
+  ],
+  [
+   "tKBL3NeHVx",
+   "6 semibin2"
+  ],
+  [
+   "owUF22Uvdv",
+   "6 semibin2"
+  ],
+  [
+   "6 semibin2",
+   "kAH2CfHIGI"
+  ],
+  [
+   "6 semibin2",
+   "tPIkU0MFB4"
+  ],
+  [
+   "e2::jgi_depth.env",
+   "7 metabat2"
+  ],
+  [
+   "e2::metabat2.env",
+   "7 metabat2"
+  ],
+  [
+   "e2::read_metadata",
+   "7 metabat2"
+  ],
+  [
+   "tKBL3NeHVx",
+   "7 metabat2"
+  ],
+  [
+   "owUF22Uvdv",
+   "7 metabat2"
+  ],
+  [
+   "7 metabat2",
+   "YIHtwjsGaF"
+  ],
+  [
+   "7 metabat2",
+   "ZTAnshVAFS"
+  ],
+  [
+   "e2::minimap2.env",
+   "8 gold_standard"
+  ],
+  [
+   "e2::polars.env",
+   "8 gold_standard"
+  ],
+  [
+   "e2::cami_gold_standard.py",
+   "8 gold_standard"
+  ],
+  [
+   "e2::read_metadata",
+   "8 gold_standard"
+  ],
+  [
+   "e2::read_truth",
+   "8 gold_standard"
+  ],
+  [
+   "tKBL3NeHVx",
+   "8 gold_standard"
+  ],
+  [
+   "owUF22Uvdv",
+   "8 gold_standard"
+  ],
+  [
+   "8 gold_standard",
+   "QAxQo0iTNy"
+  ],
+  [
+   "e2::das_tool.env",
+   "9 das_tool"
+  ],
+  [
+   "e2::read_metadata",
+   "9 das_tool"
+  ],
+  [
+   "tKBL3NeHVx",
+   "9 das_tool"
+  ],
+  [
+   "ZTAnshVAFS",
+   "9 das_tool"
+  ],
+  [
+   "tPIkU0MFB4",
+   "9 das_tool"
+  ],
+  [
+   "SLoquZz1pi",
+   "9 das_tool"
+  ],
+  [
+   "9 das_tool",
+   "hbzMbKqiC2"
+  ],
+  [
+   "9 das_tool",
+   "RpFp7nmY5E"
+  ],
+  [
+   "9 das_tool",
+   "HgzRMoei0l"
+  ],
+  [
+   "e2::checkm2.env",
+   "10 checkm2"
+  ],
+  [
+   "e2::checkm2_database",
+   "10 checkm2"
+  ],
+  [
+   "hbzMbKqiC2",
+   "10 checkm2"
+  ],
+  [
+   "10 checkm2",
+   "Yaxkv3jd0P"
+  ],
+  [
+   "e2::amber.env",
+   "11 amber"
+  ],
+  [
+   "e2::read_metadata",
+   "11 amber"
+  ],
+  [
+   "tKBL3NeHVx",
+   "11 amber"
+  ],
+  [
+   "QAxQo0iTNy",
+   "11 amber"
+  ],
+  [
+   "ZTAnshVAFS",
+   "11 amber"
+  ],
+  [
+   "tPIkU0MFB4",
+   "11 amber"
+  ],
+  [
+   "SLoquZz1pi",
+   "11 amber"
+  ],
+  [
+   "RpFp7nmY5E",
+   "11 amber"
+  ],
+  [
+   "11 amber",
+   "t8xQ8BVVIl"
+  ],
+  [
+   "11 amber",
+   "yG279lbdMf"
+  ]
+ ]
+}

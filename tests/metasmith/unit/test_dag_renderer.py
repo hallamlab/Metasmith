@@ -311,15 +311,15 @@ def test_the_triangle_is_equilateral_and_so_shorter_than_it_is_wide():
     assert abs(height / width - 0.866) < 0.01
 
 
-def test_outline_weight_ranks_data_below_step_below_target():
+def test_a_target_is_outlined_like_data_and_only_the_step_is_heavy():
     step = STYLES[NodeKind.TRANSFORM]
     data = STYLES[NodeKind.DATA]
     target = STYLES[NodeKind.TARGET]
-    assert data.stroke_width < step.stroke_width < target.stroke_width
+    assert data.stroke_width == target.stroke_width < step.stroke_width
     r = _three_kinds()
     svg = r.to_svg()
     assert f'stroke-width="{data.stroke_width}"' in svg
-    assert f'stroke-width="{target.stroke_width}"' in svg
+    assert f'stroke-width="{step.stroke_width}"' in svg
     dot = r.to_raster_dot()
     assert f"penwidth={target.stroke_width:g}" in dot
     assert f"penwidth={step.stroke_width:g}" in dot
@@ -577,12 +577,12 @@ def test_golden_diamond():
         [("a", "l"), ("a", "r"), ("l", "j"), ("r", "j")],
     )
     assert r.to_text() == (
-        "  ○  a\n"
-        "┌─┤\n"
-        "▽ │  l\n"
-        "│ ▽  r\n"
-        "├─┘\n"
-        "○    j\n"
+        "○    a\n"
+        "├─┐\n"
+        "│ ▽  l\n"
+        "▽ │  r\n"
+        "└─┤\n"
+        "  ○  j\n"
     )
 
 
@@ -598,14 +598,14 @@ def test_golden_three_way_fan_in():
     # the last drops straight in.
     assert r.to_text() == (
         "  ○    contigs\n"
-        "┌─┤\n"
-        "▽ │    comebin\n"
-        "│ ├─┐\n"
-        "│ │ ▽  metabat2\n"
+        "  ├─┐\n"
+        "  │ ▽  comebin\n"
+        "┌─┤ │\n"
+        "▽ │ │  metabat2\n"
         "│ ▽ │  semibin2\n"
-        "├─┴─┘\n"
-        "▽      checkm2\n"
-        "○      qc\n"
+        "└─┴─┤\n"
+        "    ▽  checkm2\n"
+        "    ○  qc\n"
     )
 
 
@@ -617,14 +617,14 @@ def test_golden_wide_fan_out():
     # Four consumers, two columns: the source's run, and one column each
     # consumer takes in turn after the one above it ends.
     assert r.to_text() == (
-        "▽    given\n"
-        "├─┐\n"
-        "│ ○  std::input_0\n"
-        "├─┐\n"
-        "│ ○  std::input_1\n"
-        "├─┐\n"
-        "│ ○  std::input_2\n"
-        "○    std::input_3\n"
+        "  ▽  given\n"
+        "┌─┤\n"
+        "○ │  std::input_0\n"
+        "┌─┤\n"
+        "○ │  std::input_1\n"
+        "┌─┤\n"
+        "○ │  std::input_2\n"
+        "  ○  std::input_3\n"
     )
 
 

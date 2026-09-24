@@ -120,8 +120,22 @@ def test_a_named_shape_is_unambiguous(edges):
     assert_rails_are_unambiguous(lay)
 
 
+def _random_blocks(seed, names):
+    """Any partition at all, including blocks no order could keep whole."""
+    rng = random.Random(-seed)
+    pool = rng.sample(names, len(names))
+    blocks = []
+    while pool:
+        size = rng.choice((1, 2, 3))
+        blocks.append(pool[:size])
+        pool = pool[size:]
+    return blocks
+
+
 @pytest.mark.parametrize("seed", range(600))
 def test_a_random_dag_keeps_the_grid_and_one_path_per_edge(seed):
-    lay = layout(*_random_dag(seed))
+    names, edges = _random_dag(seed)
+    blocks = _random_blocks(seed, names) if seed // 3 % 3 == 0 else None
+    lay = layout(names, edges, blocks=blocks)
     assert_grid_invariants(lay)
     assert_rails_are_unambiguous(lay)

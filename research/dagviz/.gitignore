@@ -9,7 +9,6 @@ rejected.json
 
 # Earlier output formats, superseded by svg/.
 png/
-graphs/
 
 __pycache__/
 .chrome/

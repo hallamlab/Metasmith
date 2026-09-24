@@ -26,6 +26,11 @@ from baseline import BASELINE_COMMIT, dag_draw as base_draw, dag_layout as base_
 from metasmith.models.dag_layout import layout as new_layout  # noqa: E402
 from metasmith.models.dag_renderer import DagRenderer, Label, NodeKind  # noqa: E402
 
+
+def _base(nodes, edges, order=None, blocks=None):
+    return base_layout.layout(nodes, edges, order)
+
+
 T, D = NodeKind.TRANSFORM, NodeKind.DATA
 
 # The shape the rule was argued over: megahit's assembly and bowtie2's BAM both
@@ -61,7 +66,7 @@ def build(nodes, edges) -> DagRenderer:
 def side_by_side(name: str) -> str:
     r = build(*CASES[name])
 
-    DR.layout = base_layout.layout
+    DR.layout = _base
     DR.render_text = lambda *a, kinds=None, **k: base_draw.render_text(*a, **k)
     old, old_m = r.to_text(), base_layout.measure(base_layout.layout(*r._graph()))
 
@@ -100,7 +105,7 @@ def render_pairs(out: Path) -> None:
     out.mkdir(parents=True, exist_ok=True)
     for case in CASES:
         for engine, lay, draw in (
-            ("old", base_layout.layout, base_draw),
+            ("old", _base, base_draw),
             ("new", new_layout, live_draw),
         ):
             for theme in ("light", "dark"):

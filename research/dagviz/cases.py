@@ -102,17 +102,17 @@ case(
 
 
 def _plan(arm: str):
+    """`python render_e2.py graphs` writes these from the current solve."""
     import json
     from pathlib import Path
 
-    from metasmith.models.dag_renderer import NodeKind
+    from metasmith.models.dag_renderer import Label, NodeKind
 
     g = json.loads((Path(__file__).parent / f"graphs/e2_{arm}.graph.json").read_text())
-    short = lambda n: n.removeprefix("e2::")  # noqa: E731
     case(
         f"e2_{arm}", f"the real E2 {arm}-read plan: {g['n_steps']} steps, every env a given",
-        [(NodeKind[n["kind"]], short(n["name"])) for n in g["nodes"]],
-        [(short(a), short(b)) for a, b in g["edges"]],
+        [(NodeKind[n["kind"]], n["name"], Label(**n["label"])) for n in g["nodes"]],
+        [tuple(e) for e in g["edges"]],
     )
 
 

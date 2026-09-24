@@ -882,28 +882,52 @@ order and a column per node. Runs, bars and routes are derived from those, on ha
 its last child, and every edge into a node meets one bar in that band, so a route has at most one
 horizontal leg. A leaf's run ends at `2r + 1`, half-open. End it anywhere later and the next row
 cannot reuse the column. Width is the liveness floor, which a top-down sweep always reaches. The
-packer's choices among free columns only decide where runs sit: a straight drop first, then
-longest-left. The drawer draws every turn as an arc, so an arc is a connection and a straight line
-through a junction is a crossing.
+drawer draws every turn as an arc, so an arc is a connection and a straight line through a
+junction is a crossing.
 
-**The row order is a solve for minimum total edge length.** Total length is the sum over prefixes
-of the edges each prefix cuts, so `_solve_block` runs a beam DP over placed-node sets. A lower
-bound and a greedy ceiling prune it, and `_ORDER_BUDGET` caps the states per layer. `optimal` is
-true only when no layer was truncated. A 100-node graph solves in under a second, and past that
-the order degrades to best-effort rather than failing. Components go smallest first, since
+**The row order is a solve for minimum total edge length over blocks.** `layout` takes an optional
+partition of the nodes into blocks. `DagRenderer` passes one per step, holding the step and each
+node whose only producer is that step. A node with two producers cannot sit under both, so it
+stands alone. A block takes consecutive rows, head first. Total length is the sum over nodes of
+in-degree minus out-degree times row, so inside a block the heaviest member goes first
+(rearrangement inequality) whatever the block's position. The order inside a block is therefore
+fixed before the search. `_solve_component` then runs a beam DP over placed sets, one move per
+block. The node-level lower bound stays admissible, because block-respecting orders are a subset.
+`optimal` is true only when no layer was truncated. Components go smallest first, since
 interleaving two only stretches their edges. Repeated blocks then take one internal order, in a
-post-pass that never costs length: length outranks congruence. Ceilings are pinned
-in `tests/metasmith/unit/test_dag_stress.py`, and a solver change may move them either way.
+post-pass that never costs length: length outranks congruence.
 
-Two things were considered and **rejected**. A Sidney decomposition cannot split a component: in
-an order-closed set, in-degree minus out-degree sums to minus the edges leaving it, never above
-zero, so the whole component is one block. The old ranking rules, a spine plus supply emitted at
-its consumer, were dropped because they optimised no stated objective.
+**CAUTION** Blocks raise the minimum length. On e2 they cost about 30% length and four columns
+over the unconstrained order. That is the price of keeping outputs under their step, not a
+solver regression.
 
-**Length-neutral nodes gather at the top.** A reference or environment node with one parent and
-one child costs the same total length at any row between them, so the tie-break stacks them under
-their root. Each then holds a long run down to its consumer. That is most of e2's remaining width
-and crossings. Pulling such nodes toward their consumer is an open tie-break, not implemented.
+**The columns are a second solve, for crossings, then horizontal length, then long runs on the
+right.** The cost is that tuple, compared lexicographically, among minimum-width assignments only.
+A crossing is a live run strictly inside a bar's span that is neither its target nor a parent.
+`_columns` is the sweep of Kostitsyna and Nöllenburg (GD 2015) for storyline crossings,
+fixed-parameter in the width. A state is the column of every live run, and each term depends only
+on the state and the next placement, so equal states merge. A beam caps each layer, a first pass
+at a sixteenth of the beam sets a ceiling, and `optimal_columns` is true only when no layer was
+cut. An unproven result is polished by `_improve`, which relocates one run or swaps two. That
+removes about 40% of what the beam leaves on e2.
+
+Two things were considered and **rejected**:
+
+- **The storyline ILP of Gronemann et al. (GD 2016)**, solved with HiGHS. It still held 285
+  crossings on e2_long after 60 s, where the sweep reaches about 40 in under a second.
+- **A Sidney decomposition of the row order.** It cannot split a component: in an order-closed
+  set, in-degree minus out-degree sums to minus the edges leaving it, never above zero, so the
+  whole component is one block.
+
+A 100-node graph takes about 0.8 s, rows and columns together, and the 1 s budget is pinned in
+`tests/metasmith/perf/`. Past that the result degrades to best-effort rather than failing.
+Ceilings are pinned in `tests/metasmith/unit/test_dag_stress.py`, and a solver change may move
+them either way.
+
+**The long runs on e2 are the `given` block.** Every reference and environment node is an output
+of `given`, so its block stacks them at the top. Each then holds a run down to its consumer. That
+is most of e2's width and crossings, and it is also why long-right rarely decides there: moving a
+long run right crosses the bars it passes.
 
 `env` is in `blacklist_namespaces` alongside `lib` and `containers`: an environment is a declared
 dependency like any other, so without it every plan DAG grows an `env::*` node per step. Three

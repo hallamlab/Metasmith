@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 from enum import Enum, auto
 from pathlib import Path
-from typing import Mapping, Sequence
+from typing import Iterable, Mapping, Sequence
 
 from .dag_colour import SCHEMES, Colouring, colour_layout
 from .dag_draw import (
@@ -40,6 +40,24 @@ class DagMode(Enum):
 SYNTHETIC = ("given", "target")
 
 
+def step_blocks(
+    nodes: Mapping[str, NodeKind], edges: Iterable[tuple[str, str]]
+) -> list[list[str]]:
+    """Each step with the data only it produces, for the rows under it. Data
+    with two producers cannot sit under both, so it stands alone."""
+    producers: dict[str, set[str]] = {}
+    for src, dst in edges:
+        producers.setdefault(dst, set()).add(src)
+    blocks = {n: [n] for n, kind in nodes.items() if kind is NodeKind.TRANSFORM}
+    for name, kind in nodes.items():
+        made_by = producers.get(name, ())
+        if kind is not NodeKind.TRANSFORM and len(made_by) == 1:
+            (step,) = made_by
+            if step in blocks:
+                blocks[step].append(name)
+    return list(blocks.values())
+
+
 # The transform carries the emphasis and the data recedes: a plan is a sequence
 # of things done, and the types are what they are done to. Everything here is
 # one half of that -- the darker ink, the weight, the heavier stroke on one
@@ -63,8 +81,8 @@ STYLES: dict[NodeKind, Style] = {
     NodeKind.TARGET: Style(
         marker="●", ascii_marker="*",
         fill="#212121", stroke="#2B2B2B",
-        shape="circle", gv_style="filled", ansi="\033[1;37m",
-        svg_shape="circle", marker_scale=1.0, stroke_width=3.0,
+        shape="circle", gv_style="filled", ansi="\033[0;97m",
+        svg_shape="circle", marker_scale=1.0, stroke_width=1.3,
         solid=True,
     ),
 }
@@ -185,7 +203,7 @@ class DagRenderer:
 
     def layout(self, order: Sequence[str] | None = None) -> Layout:
         nodes, edges = self._graph()
-        return layout(nodes, edges, order)
+        return layout(nodes, edges, order, step_blocks(nodes, edges))
 
     def _graph(self) -> tuple[dict[str, NodeKind], list[tuple[str, str]]]:
         if self._mode in (DagMode.COLLAPSED, DagMode.STEPS):
@@ -281,7 +299,8 @@ class DagRenderer:
         order: list[str] = []
         sig: dict[str, tuple[set[str], set[str]]] = {}
         hue_of: dict[str, str] = {}
-        base = self.colouring(layout(self._nodes, self._edges))
+        whole = layout(self._nodes, self._edges, blocks=step_blocks(self._nodes, self._edges))
+        base = self.colouring(whole)
 
         for name, kind in self._nodes.items():
             if kind is not NodeKind.TRANSFORM or name in SYNTHETIC:
@@ -323,7 +342,7 @@ class DagRenderer:
                 edges.append((tid, name))
             if hue_of.get(key):
                 nodes_hue[tid] = hue_of[key]
-            blocks.append((layout(block, edges), lab, block))
+            blocks.append((layout(block, edges, blocks=step_blocks(block, edges)), lab, block))
 
         tinted = Colouring(
             nodes=nodes_hue,

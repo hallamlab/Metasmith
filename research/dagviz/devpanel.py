@@ -13,11 +13,14 @@ about either beyond iterating them.
 
 import sys
 import time
+from contextlib import contextmanager
+from dataclasses import replace
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 
+import metasmith.models.dag_draw as D  # noqa: E402
 import metasmith.models.dag_layout as L  # noqa: E402
 import metasmith.models.dag_renderer as DR  # noqa: E402
 from cases import CASES  # noqa: E402
@@ -29,14 +32,40 @@ _LAYOUT, _RENDER = DR.layout, DR.render_svg
 
 ENGINES = [
     ("release", "v0.23: a lane per edge, then repacked"),
-    ("solved", "rows solved for total edge length, runs packed to the fewest columns"),
+    ("solved", "a step's outputs under it, rows solved for total edge length;"
+               " columns for crossings, then horizontal length"),
 ]
+
+
+@contextmanager
+def one_row_pitch():
+    """Both drawers at the release row pitch, so a case is one height in both
+    columns. Release needs the taller pitch: its jogs sit a tenth of a gap
+    from the rows, inside the markers at the working tree's pitch."""
+    grids = [(m, m._grid) for m in (D, release_draw)]
+
+    def pinned(orig):
+        def _grid(lay, **k):
+            g, drawn = orig(lay, **k)
+            pitch = max(2.4 * g.font_size,
+                        (g.lane_pitch + g.marker_d) / (1 - 2 * release_draw.BAND))
+            return replace(g, row_pitch=pitch,
+                           height=2 * g.margin + lay.height * pitch), drawn
+        return _grid
+
+    for m, orig in grids:
+        m._grid = pinned(orig)
+    try:
+        yield
+    finally:
+        for m, orig in grids:
+            m._grid = orig
 
 
 def build(nodes, edges, theme: str) -> DagRenderer:
     r = DagRenderer(colour="none", theme=theme, background=False)
-    for kind, name in nodes:
-        r.add_node(kind, name, Label(name=name))
+    for kind, name, *label in nodes:
+        r.add_node(kind, name, *label or [Label(name=name)])
     for a, b in edges:
         r.add_edge(a, b)
     return r
@@ -49,14 +78,36 @@ def _svgs(nodes, edges) -> list[str]:
 
 def _metric(m: L.Metrics, seconds: float) -> str:
     proof = "optimal" if m.optimal else "unproven"
+    columns = "optimal" if m.optimal_columns else "unproven"
     return (f"{m.length} length · {m.width} columns · {m.crossings} crossings"
-            f" · {m.off_right} off-right · {proof} · {seconds:.2f}s")
+            f" · {m.hlen} horizontal · rows {proof} · columns {columns}"
+            f" · {seconds:.2f}s")
+
+
+def _release_hlen(lay) -> int:
+    """Horizontal ink: jogs that share a half-row overlap, so take the union
+    per half-row rather than summing each edge's travel."""
+    lines: dict[float, list[tuple[float, float]]] = {}
+    for e in lay.edges:
+        if e.back:
+            continue
+        for (y0, x0), (y1, x1) in zip(e.points, e.points[1:]):
+            if y0 == y1 and x0 != x1:
+                lines.setdefault(y0, []).append((min(x0, x1), max(x0, x1)))
+    ink = 0.0
+    for spans in lines.values():
+        end = float("-inf")
+        for lo, hi in sorted(spans):
+            if hi > end:
+                ink += hi - max(lo, end)
+                end = hi
+    return round(ink)
 
 
 def cell(nodes, edges) -> tuple[str, str, str]:
     graph = build(nodes, edges, "light")._graph()
     t = time.perf_counter()
-    lay = L.layout(*graph)
+    lay = L.layout(*graph, blocks=DR.step_blocks(*graph))
     seconds = time.perf_counter() - t
     return (*_svgs(nodes, edges), _metric(L.measure(lay), seconds))
 
@@ -68,7 +119,8 @@ def release_cell(nodes, edges) -> tuple[str, str, str]:
     line for line; the two differ only in how disjoint components are ordered.
     Its crossings count lane swaps between rows, not bars over runs.
     """
-    DR.layout = release_layout.layout
+    DR.layout = lambda nodes, edges, order=None, blocks=None: release_layout.layout(
+        nodes, edges, order)
     DR.render_svg = lambda *a, kinds=None, **k: release_draw.render_svg(*a, **k)
     try:
         svgs = _svgs(nodes, edges)
@@ -79,12 +131,13 @@ def release_cell(nodes, edges) -> tuple[str, str, str]:
     finally:
         DR.layout, DR.render_svg = _LAYOUT, _RENDER
     return (*svgs, f"{m.rail_rows} length · {m.lanes} columns · {m.crossings} crossings"
-                   f" · {m.marker_lanes} off-right · {seconds:.2f}s")
+                   f" · {_release_hlen(lay)} horizontal · {seconds:.2f}s")
 
 
 def moved(nodes, edges, option) -> L.Layout:
     """The solved layout with some columns set by hand, the rest kept."""
-    base = L.layout(*build(nodes, edges, "light")._graph())
+    graph = build(nodes, edges, "light")._graph()
+    base = L.layout(*graph, blocks=DR.step_blocks(*graph))
     col = dict(base.col) | option.nodes
     return L.Layout(order=base.order, col=col, edges=base.edges, back=base.back,
                     width=max(col.values()) + 1)
@@ -219,8 +272,10 @@ TEMPLATE = """<title>DAG Lane Strategies</title>
   <div class="top">
     <h1>DAG Lane Strategies</h1>
     <p class="lede">Same graph through the release engine and the working tree.
-      Length is total edge length in rows; the solved column says whether its
-      row order is proven shortest.</p>
+      Both are drawn at one row pitch, so a case is one height in both columns.
+      Length is total edge length in rows. Horizontal is the total length of
+      the horizontal lines, in columns. The solved column says whether its row
+      order and its columns are each proven best.</p>
     <div class="switch" role="group" aria-label="theme">
       <button type="button" data-theme="auto" aria-pressed="true">auto</button>
       <button type="button" data-theme="light" aria-pressed="false">light</button>
@@ -256,6 +311,8 @@ TEMPLATE = """<title>DAG Lane Strategies</title>
 
 if __name__ == "__main__":
     out = HERE / "dev.html"
-    out.write_text(page(), encoding="utf-8")
+    with one_row_pitch():
+        html = page()
+    out.write_text(html, encoding="utf-8")
     print(f"{out}  ({out.stat().st_size // 1024} KiB)"
           f"  {len(CASES)} cases x {len(ENGINES)} engines")
