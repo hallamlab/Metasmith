@@ -421,29 +421,30 @@ def test_a_last_child_takes_its_parents_column_as_a_straight_drop():
     assert measure(lay).drops == 2
 
 
-def test_the_longer_run_goes_right():
-    lay = _lay([("r", "short"), ("r", "long1"), ("long1", "long2"), ("long2", "long3")])
-    assert lay.col["long1"] > lay.col["short"]
-    assert measure(lay).disorder == 0
+@pytest.mark.parametrize("seed", range(200))
+def test_no_node_bends_away_from_every_run_ending_at_it(seed):
+    names, edges = _random_dag(3000 + seed, 6 + seed % 30, (0.15, 0.3, 0.5)[seed % 3])
+    lay = layout(names, edges)
+    for bar in lay.bars.values():
+        if any(f.turns for f in bar.feeds):
+            assert any(f.turns and f.col == bar.col for f in bar.feeds), bar.node
+    assert measure(lay, motifs=()).bends == 0
 
 
-def test_a_fan_out_to_steps_down_the_page_is_a_diagonal():
+def test_a_fan_out_to_steps_down_the_page_crosses_nothing():
     uses = {"db": "bin", "env_bin": "bin", "env_asm": "asm", "env_qc": "qc", "reads": "qc"}
     edges = [("given", x) for x in uses] + [(x, s) for x, s in uses.items()]
     edges += [("qc", "clean"), ("clean", "asm"), ("asm", "contigs"), ("contigs", "bin"),
               ("clean", "bin")]
     blocks = [["given", *uses], ["qc", "clean"], ["asm", "contigs"]]
-    lay = layout([], edges, blocks=blocks)
-    assert lay.order[:6] == ("given", "db", "env_bin", "env_asm", "env_qc", "reads")
-    outs = [lay.col[x] for x in lay.order[1:6]]
-    assert outs == sorted(outs, reverse=True)
-    assert lay.col["given"] == min(lay.col.values())
-    assert measure(lay).crossings == 0
+    m = measure(layout([], edges, blocks=blocks))
+    assert (m.crossings, m.bends, m.optimal_columns) == (0, 0, True)
 
 
 def _best_columns(lay):
     """Every assignment of the runs to the layout's columns in which no two
-    runs sharing a column overlap, scored as the solver scores them."""
+    runs sharing a column overlap and no node bends, scored as the solver
+    scores them."""
     names = list(lay.order)
     spans = [(lay.runs[n].top, lay.runs[n].bottom) for n in names]
     best = None
@@ -454,7 +455,9 @@ def _best_columns(lay):
         trial = Layout(order=lay.order, col=dict(zip(names, cols)), edges=lay.edges,
                        width=lay.width)
         m = measure(trial, motifs=())
-        key = (m.crossings, m.disorder, m.hlen, m.off_right)
+        if m.bends:
+            continue
+        key = (m.crossings, m.hlen, m.off_right)
         best = key if best is None or key < best else best
     return best
 
@@ -467,7 +470,7 @@ def test_the_columns_are_the_best_there_are(seed):
         pytest.skip("too many assignments to enumerate")
     m = measure(lay, motifs=())
     assert lay.optimal_columns
-    assert (m.crossings, m.disorder, m.hlen, m.off_right) == _best_columns(lay)
+    assert (m.crossings, m.hlen, m.off_right) == _best_columns(lay)
 
 
 def test_a_bar_goes_round_a_run_rather_than_over_it():

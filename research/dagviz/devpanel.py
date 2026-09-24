@@ -80,7 +80,7 @@ def _metric(m: L.Metrics, seconds: float) -> str:
     proof = "optimal" if m.optimal else "unproven"
     columns = "optimal" if m.optimal_columns else "unproven"
     return (f"{m.length} length · {m.width} columns · {m.crossings} crossings"
-            f" · {m.hlen} horizontal · rows {proof} · columns {columns}"
+            f" · {m.hlen} horizontal · {m.bends} bends · rows {proof} · columns {columns}"
             f" · {seconds:.2f}s")
 
 
@@ -263,8 +263,12 @@ TEMPLATE = """<title>DAG Lane Strategies</title>
       Both are drawn at one row pitch, so a case is one height in both columns.
       Length is total edge length in rows. Horizontal is every edge's
       sideways travel, summed, in columns. A crossing is a run a bar passes,
-      a parent that continues below the bar included. The solved column says
-      whether its row order and its columns are each proven best.</p>
+      a parent that continues below the bar included. A bend is a node that
+      ends a parent's run without sitting in that parent's column. The
+      working tree solves in stages: rows for length, then the fewest
+      columns, then the fewest crossings, then the least horizontal travel,
+      with no bends allowed at any stage. The solved column says whether its
+      row order and its columns are each proven best.</p>
     <div class="switch" role="group" aria-label="theme">
       <button type="button" data-theme="auto" aria-pressed="true">auto</button>
       <button type="button" data-theme="light" aria-pressed="false">light</button>

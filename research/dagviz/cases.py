@@ -100,6 +100,13 @@ case(
        ("bin", "bins")],
 )
 
+case(
+    "straight_costs", "the smallest graph where no bends costs a crossing: n6 must sit under n0, so n4's bar passes n0",
+    [(D, f"n{i}") for i in range(8)],
+    [("n0", "n2"), ("n0", "n4"), ("n0", "n5"), ("n0", "n6"), ("n1", "n3"), ("n1", "n7"),
+     ("n2", "n4"), ("n2", "n7"), ("n6", "n7")],
+)
+
 
 def _plan(arm: str):
     """`python render_e2.py graphs` writes these from the current solve."""

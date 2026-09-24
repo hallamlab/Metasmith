@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import shutil
 import subprocess
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 from math import atan2, cos, pi, sin
 from pathlib import Path
@@ -416,6 +416,7 @@ class EdgeGeometry:
     dst: str
     back: bool
     d: str
+    path: tuple = field(default=(), compare=False, repr=False)
 
 
 @dataclass(frozen=True)
@@ -462,13 +463,13 @@ def geometry(
             marker_w=mw, marker_h=mh,
             namespace=d.namespace, label=d.name, full=d.full, truncated=d.truncated,
         ))
-    edges = [
-        EdgeGeometry(
-            src=src, dst=dst, back=False,
-            d=_svg_path(*_pixel_path(lay, src, dst, g, style, kinds)),
-        )
-        for src, dst in lay.edges
-    ] + [EdgeGeometry(src=src, dst=dst, back=True, d="") for src, dst in lay.back]
+    edges = []
+    for src, dst in lay.edges:
+        points, arcs = _pixel_path(lay, src, dst, g, style, kinds)
+        edges.append(EdgeGeometry(
+            src=src, dst=dst, back=False, d=_svg_path(points, arcs), path=(points, arcs),
+        ))
+    edges += [EdgeGeometry(src=src, dst=dst, back=True, d="") for src, dst in lay.back]
     return Geometry(
         width=g.width, height=g.height, font_size=g.font_size,
         marker_d=g.marker_d, row_pitch=g.row_pitch, lane_pitch=g.lane_pitch,
@@ -520,14 +521,13 @@ def _svg_body(
 ) -> list[str]:
     parts = [
         f'<g fill="none" stroke="{plate.edge}" stroke-width="1.4"'
-        ' stroke-linejoin="round" stroke-linecap="round">',
+        ' stroke-linejoin="round" stroke-linecap="butt">',
     ]
-    for e in g.edges:
-        if e.back:
-            continue
-        hue = colour.edges.get((e.src, e.dst))
+    for hue, d in _strokes(
+        (colour.edges.get((e.src, e.dst)), *e.path) for e in g.edges if not e.back
+    ):
         stroke = f' stroke="{hue}"' if hue else ""
-        parts.append(f'<path d="{e.d}"{stroke}/>')
+        parts.append(f'<path d="{d}"{stroke}/>')
     parts.append("</g>")
 
     for n in g.nodes:
@@ -617,6 +617,117 @@ def render_legend(
         parts.append("</g>")
     parts.append("</svg>")
     return "\n".join(parts) + "\n"
+
+
+def _strokes(edges) -> list[tuple[str | None, str]]:
+    """Every edge's path as pieces drawn once each, rejoined into paths.
+
+    Edges retrace each other: every child of a node runs down the same
+    column, and every parent of a node shares its bar. An antialiased
+    stroke drawn twice darkens its own edge, so a shared stretch looks
+    thicker than a lone one. Straight pieces are cut at every point any
+    piece touches and painted in draw order, the last edge over a stretch
+    giving its colour, as when every edge was stroked. Pieces then rejoin
+    where they meet in pairs, and through a junction wherever two carry
+    straight on, so a corner is a join inside one path and never two
+    strokes meeting end to end.
+    """
+    def q(p):
+        return round(p[0], 2), round(p[1], 2)
+
+    lines: dict[tuple[str, float], list[tuple[float, float, int]]] = {}
+    arcs: dict[tuple, tuple[int, _Arc]] = {}
+    hues: list[str | None] = []
+    ends: set[tuple[float, float]] = set()
+    loose: list[tuple[int, tuple, tuple]] = []
+    for order, (hue, points, curves) in enumerate(edges):
+        hues.append(hue)
+        for i, (a, b) in enumerate(zip(points, points[1:])):
+            a, b = q(a), q(b)
+            if a == b:
+                continue
+            ends.update((a, b))
+            if i in curves:
+                arcs[(a, b, round(curves[i].radius, 2), curves[i].sweep)] = (order, curves[i])
+            elif a[0] == b[0]:
+                lines.setdefault(("v", a[0]), []).append((*sorted((a[1], b[1])), order))
+            elif a[1] == b[1]:
+                lines.setdefault(("h", a[1]), []).append((*sorted((a[0], b[0])), order))
+            else:
+                loose.append((order, a, b))
+
+    pieces: list[tuple[tuple, tuple, str | None, _Arc | None]] = []
+    for (axis, at), spans in lines.items():
+        cuts = {c for lo, hi, _ in spans for c in (lo, hi)}
+        cuts |= {p[1] if axis == "v" else p[0] for p in ends if p[0 if axis == "v" else 1] == at}
+        cuts = sorted(cuts)
+        for lo, hi in zip(cuts, cuts[1:]):
+            owner = max((o for a, b, o in spans if a <= lo and hi <= b), default=None)
+            if owner is not None:
+                pa, pb = ((at, lo), (at, hi)) if axis == "v" else ((lo, at), (hi, at))
+                pieces.append((pa, pb, hues[owner], None))
+    for (a, b, _, _), (order, arc) in arcs.items():
+        pieces.append((a, b, hues[order], arc))
+    for order, a, b in loose:
+        pieces.append((a, b, hues[order], None))
+
+    def heading(k, at):
+        a, b, _, arc = pieces[k]
+        other = b if at == a else a
+        if arc is None:
+            dx, dy = other[0] - at[0], other[1] - at[1]
+        else:
+            rx, ry = at[0] - arc.centre[0], at[1] - arc.centre[1]
+            dx, dy = -ry, rx
+            if dx * (other[0] - at[0]) + dy * (other[1] - at[1]) < 0:
+                dx, dy = -dx, -dy
+        norm = (dx * dx + dy * dy) ** 0.5 or 1.0
+        return dx / norm, dy / norm
+
+    touching: dict[tuple, list[int]] = {}
+    for k, (a, b, _, _) in enumerate(pieces):
+        touching.setdefault(a, []).append(k)
+        touching.setdefault(b, []).append(k)
+    onward: dict[tuple[int, tuple], int] = {}
+    for at, ks in touching.items():
+        if len(ks) == 2 and pieces[ks[0]][2] == pieces[ks[1]][2]:
+            onward[(ks[0], at)], onward[(ks[1], at)] = ks[1], ks[0]
+            continue
+        free = list(ks)
+        while free:
+            k = free.pop(0)
+            hk = heading(k, at)
+            for m in free:
+                hm = heading(m, at)
+                if pieces[m][2] == pieces[k][2] and hk[0] * hm[0] + hk[1] * hm[1] < -0.999:
+                    free.remove(m)
+                    onward[(k, at)], onward[(m, at)] = m, k
+                    break
+
+    def step(k, start):
+        a, b, _, arc = pieces[k]
+        end = b if start == a else a
+        if arc is None:
+            return end, f"L {end[0]:.1f},{end[1]:.1f}"
+        sweep = arc.sweep if start == a else 1 - arc.sweep
+        return end, f"A {arc.radius:.1f},{arc.radius:.1f} 0 0 {sweep} {end[0]:.1f},{end[1]:.1f}"
+
+    drawn = [False] * len(pieces)
+    out = []
+    starts = [(k, p) for k, (a, b, _, _) in enumerate(pieces) for p in (a, b) if (k, p) not in onward]
+    starts += [(k, pieces[k][0]) for k in range(len(pieces))]
+    for k, at in starts:
+        if drawn[k]:
+            continue
+        hue = pieces[k][2]
+        d = [f"M {at[0]:.1f},{at[1]:.1f}"]
+        while k is not None and not drawn[k]:
+            drawn[k] = True
+            at, move = step(k, at)
+            d.append(move)
+            k = onward.get((k, at))
+        out.append((hue, " ".join(d)))
+    return out
 
 
 def _svg_path(points: list[tuple[float, float]], arcs: dict[int, _Arc]) -> str:

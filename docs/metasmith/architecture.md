@@ -885,6 +885,14 @@ cannot reuse the column. Width is the liveness floor, which a top-down sweep alw
 drawer draws every turn as an arc, so an arc is a connection and a straight line through a
 junction is a crossing.
 
+**The SVG draws each stretch of line once.** Edges retrace each other: every child of a node runs
+down the same column, and every parent of a node shares its bar. An antialiased stroke drawn twice
+darkens its own edge, so a shared stretch reads thicker at some zooms. `_strokes` cuts every
+straight piece at each point another piece touches, keeps one piece per stretch, and rejoins the
+pieces into paths. They rejoin where two meet, and through a junction where two carry straight on.
+A corner is then a join inside one path, and the caps are butt, so no two strokes overlap end to
+end. `Geometry` still carries one path per edge, because the GUI highlights edges one at a time.
+
 **The row order is a solve for minimum total edge length over blocks.** `layout` takes an optional
 partition of the nodes into blocks. `DagRenderer` passes one per step, holding the step and each
 node whose only producer is that step. A node with two producers cannot sit under both, so it
@@ -896,26 +904,27 @@ block. The node-level lower bound stays admissible, because block-respecting ord
 `optimal` is true only when no layer was truncated. Components go smallest first, since
 interleaving two only stretches their edges. Two post-passes follow, and neither costs length.
 Members of equal weight inside a block cost the same in any order, so the one used furthest down
-goes first, which lets their runs fall in a diagonal. Repeated blocks then take one internal
-order: length outranks congruence.
+goes first. Repeated blocks then take one internal order: length outranks congruence.
 
 **CAUTION** Blocks raise the minimum length, by about 7% on e2 over the unconstrained order. That
 is the price of keeping outputs under their step, not a solver regression.
 
-**The columns are a second solve, for crossings, then long runs on the right, then horizontal
-travel.** The cost is that tuple, compared lexicographically, among minimum-width assignments
-only. A crossing is a live run strictly inside a bar's span other than its target. That includes
-a parent whose run continues below the bar, because the drawing shows it as a four-way junction.
-A run is longer when it reaches further down, and an earlier start breaks a tie. Raw length would
-rank a root above a run it only outlives by a row. Travel is every edge's horizontal distance,
-summed, so a line that doubles back pays twice. Long-right outranks travel because travel alone
-puts a fan-out's source at the median of its outputs, which reads as unsorted.
+**The columns are solved in stages: fewest columns, then fewest crossings, then least horizontal
+travel, with no bends.** Each stage holds the earlier ones at their optimum, which a lexicographic
+cost does in one pass. A crossing is a live run strictly inside a bar's span other than its
+target. That includes a parent whose run continues below the bar, because the drawing shows it as
+a four-way junction. Travel is every edge's horizontal distance, summed, so a line that doubles
+back pays twice. The rule against bends is hard: a node that ends a parent's run takes the column
+of one such parent, so no run turns into its last child when it could fall straight in. It never
+costs width, since the parent frees that column at the very half-row the node starts. It can cost
+a crossing, and the dagviz case `straight_costs` is the smallest graph where it does. One more
+column would win that crossing back, but width outranks crossings.
 `_columns` is the sweep of Kostitsyna and Nöllenburg (GD 2015) for storyline crossings,
 fixed-parameter in the width. A state is the column of every live run, and each term depends only
 on the state and the next placement, so equal states merge. A beam caps each layer, a first pass
 at a sixteenth of the beam sets a ceiling, and `optimal_columns` is true only when no layer was
-cut. An unproven result is polished by `_improve`, which relocates one run or swaps two. That
-removes about 40% of what the beam leaves on e2.
+cut. An unproven result is polished by `_improve`, which relocates one run or swaps two. A run
+moves with every run stacked straight below it, or the move would open a bend.
 
 Two things were considered and **rejected**:
 

@@ -482,14 +482,13 @@ def test_every_corner_is_an_arc():
     r = DagRenderer()
     r.add_edge("root", "left")
     r.add_edge("root", "right")
-    bent = [
-        p for p in r.to_svg().splitlines()
-        if p.startswith("<path") and len(_edge_paths(p)[0]) > 2
-    ]
-    assert bent, "the fan-out should have produced a jog"
-    assert all(" A " in p for p in bent)
-    assert all("A" not in p.split('d="')[1] for p in r.to_svg().splitlines()
-               if p.startswith("<path") and p not in bent)
+    legs = _legs(r.to_svg())
+    assert any(kind == "A" for path in legs for kind, _, _ in path), "the fan-out should jog"
+    for path in legs:
+        for (k1, a1, b1), (k2, a2, b2) in zip(path, path[1:]):
+            if k1 == k2 == "L":
+                turn = (b1[0] - a1[0]) * (b2[1] - a2[1]) - (b1[1] - a1[1]) * (b2[0] - a2[0])
+                assert abs(turn) < 1e-6, "two straight legs meet at a sharp corner"
 
 
 def test_every_horizontal_leg_sits_midway_above_its_target():
@@ -544,6 +543,30 @@ def _edge_paths(svg: str) -> list[list[tuple[float, float]]]:
     return out
 
 
+def _legs(svg: str) -> list[list[tuple[str, tuple[float, float], tuple[float, float]]]]:
+    """Each drawn path as (command, from, to) legs; an arc's radius pair is skipped."""
+    out = []
+    for line in svg.splitlines():
+        if not line.startswith("<path"):
+            continue
+        legs, at, kind, pairs = [], None, None, 0
+        for tok in line.split('d="')[1].split('"')[0].split():
+            if tok[0].isalpha():
+                kind, pairs = tok, 0
+                continue
+            if "," not in tok:
+                continue
+            pairs += 1
+            if kind == "A" and pairs == 1:
+                continue
+            point = tuple(map(float, tok.split(",")))
+            if kind != "M":
+                legs.append((kind, at, point))
+            at = point
+        out.append(legs)
+    return out
+
+
 def _build(nodes, edges) -> DagRenderer:
     r = DagRenderer()
     for kind, name in nodes:
@@ -577,10 +600,10 @@ def test_golden_diamond():
         [("a", "l"), ("a", "r"), ("l", "j"), ("r", "j")],
     )
     assert r.to_text() == (
-        "○    a\n"
-        "├─┐\n"
-        "│ ▽  l\n"
-        "▽ │  r\n"
+        "  ○  a\n"
+        "┌─┤\n"
+        "▽ │  l\n"
+        "│ ▽  r\n"
         "└─┤\n"
         "  ○  j\n"
     )
@@ -594,15 +617,15 @@ def test_golden_three_way_fan_in():
          ("metabat2", "checkm2"), ("semibin2", "checkm2"), ("comebin", "checkm2"),
          ("checkm2", "qc")],
     )
-    # contigs leaves on one run, not three: each binner branches off it in a
-    # diagonal, and checkm2 sits under the middle one, the least travel.
+    # contigs leaves on one run, not three, and falls straight into the last
+    # binner; checkm2 falls straight out of the middle one, the least travel.
     assert r.to_text() == (
-        "○      contigs\n"
-        "├───┐\n"
-        "│   ▽  comebin\n"
-        "├─┐ │\n"
-        "│ ▽ │  metabat2\n"
-        "▽ │ │  semibin2\n"
+        "  ○    contigs\n"
+        "  ├─┐\n"
+        "  │ ▽  comebin\n"
+        "┌─┤ │\n"
+        "▽ │ │  metabat2\n"
+        "│ ▽ │  semibin2\n"
         "└─┼─┘\n"
         "  ▽    checkm2\n"
         "  ○    qc\n"
@@ -617,14 +640,14 @@ def test_golden_wide_fan_out():
     # Four consumers, two columns: the source's run, and one column each
     # consumer takes in turn after the one above it ends.
     assert r.to_text() == (
-        "  ▽  given\n"
-        "┌─┤\n"
-        "○ │  std::input_0\n"
-        "┌─┤\n"
-        "○ │  std::input_1\n"
-        "┌─┤\n"
-        "○ │  std::input_2\n"
-        "  ○  std::input_3\n"
+        "▽    given\n"
+        "├─┐\n"
+        "│ ○  std::input_0\n"
+        "├─┐\n"
+        "│ ○  std::input_1\n"
+        "├─┐\n"
+        "│ ○  std::input_2\n"
+        "○    std::input_3\n"
     )
 
 
@@ -694,12 +717,39 @@ class TestGeometryIsWhatTheSvgDraws:
         g, svg = self._geo(load_dag())
         assert f'width="{g.width:.0f}" height="{g.height:.0f}"' in svg
 
-    def test_every_edge_path_is_drawn_verbatim(self):
+    def test_every_stretch_of_every_edge_is_drawn_once(self):
         g, svg = self._geo(load_dag())
         drawn = [e for e in g.edges if not e.back]
         assert drawn, "the fixture has forward edges"
+        straight: dict[tuple, list[tuple[float, float]]] = {}
+        arcs = []
+        for path in _legs(svg):
+            for kind, a, b in path:
+                if kind == "A":
+                    arcs.append((a, b))
+                else:
+                    axis = ("v", a[0]) if a[0] == b[0] else ("h", a[1])
+                    k = 1 if axis[0] == "v" else 0
+                    straight.setdefault(axis, []).append(tuple(sorted((a[k], b[k]))))
+        assert len(arcs) == len(set(arcs))
+        for spans in straight.values():
+            spans.sort()
+            assert all(x[1] <= y[0] + 0.05 for x, y in zip(spans, spans[1:]))
         for e in drawn:
-            assert f'd="{e.d}"' in svg
+            points, curves = e.path
+            for i, (a, b) in enumerate(zip(points, points[1:])):
+                if i in curves or a == b:
+                    continue
+                vertical = abs(a[0] - b[0]) < 1e-9
+                axis = ("v", round(a[0], 1)) if vertical else ("h", round(a[1], 1))
+                k = 1 if vertical else 0
+                lo, hi = sorted((a[k], b[k]))
+                covered = sorted(straight[axis])
+                reach = lo
+                for x, y in covered:
+                    if x <= reach + 0.15:
+                        reach = max(reach, y)
+                assert reach >= hi - 0.15, (e.src, e.dst)
 
     def test_a_back_edge_carries_no_path_and_is_not_drawn(self):
         g, _ = self._geo(load_dag())

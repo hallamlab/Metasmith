@@ -343,11 +343,16 @@ def _columns(
     parents: dict[str, list[str]],
     budget: int = _COLUMN_BUDGET,
 ) -> tuple[dict[str, int], int, bool]:
-    """Give each run a column, as few columns as any packing could, choosing
-    among those the fewest crossings, then the runs reaching furthest down
-    furthest right, then the least horizontal travel summed over edges, then
-    the columns nearest the labels. A parent whose run goes on below the bar
-    is crossed like any other run: only its last child's bar may pass it.
+    """Give each run a column in stages: as few columns as any packing could,
+    then the fewest crossings, then the least horizontal travel summed over
+    edges, then the columns nearest the labels. A parent whose run goes on
+    below the bar is crossed like any other run: only its last child's bar
+    may pass it.
+
+    Every node takes the column of a parent whose run ends at it, so a run
+    never bends into its last child when it could fall straight in. That
+    column is always free, since the parent frees it at the very half-row
+    the node starts, so the rule never costs width.
 
     Runs are placed in order of their tops, so whatever free column each
     takes, the width stays the most runs ever live at once. A layer over its
@@ -369,14 +374,17 @@ def _columns(
         2 * max(row[c] for c in children[v]) - 1 if children[v] else 2 * i + 1
         for i, v in enumerate(order)
     ])
-    reach = _reach(top, bottom, n)
+    ending = [[] for _ in range(n)]
+    for i, v in enumerate(order):
+        if children[v]:
+            ending[max(row[c] for c in children[v])].append(i)
+    ending = [np.array(e, dtype=np.int32) for e in ending]
     live = width = 0
     for _, delta in sorted([(t, 1) for t in top.tolist()] + [(b, -1) for b in bottom.tolist()]):
         live += delta
         width = max(width, live)
     # a sentinel past the last node answers every lookup of an empty column
     bottom_of = np.append(bottom, -1)
-    reach_of = np.append(reach, 0)
     columns = np.arange(width)
 
     seen = [0] * n
@@ -420,34 +428,27 @@ def _columns(
 
     def run(beam, ceiling):
         states = np.full((1, width), n, dtype=np.int32)
-        cost = np.zeros((1, 4), dtype=np.int64)
+        cost = np.zeros((1, 3), dtype=np.int64)
         back: list[tuple[np.ndarray, np.ndarray]] = []
         proven = True
         for i in range(n):
             cols = np.where(bottom_of[states] <= top[i], n, states)
             empty = cols == n
-            size = reach[i]
             ups = positions(states)[:, pars[i]] if len(pars[i]) else None
             prefix = np.zeros((len(cols), width + 1), dtype=np.int64)
-            blocking = ~empty
-            np.cumsum(blocking, axis=1, out=prefix[:, 1:])
-            longer = np.zeros_like(prefix)
-            np.cumsum(~empty & (reach_of[cols] > size), axis=1, out=longer[:, 1:])
-            shorter = ~empty & (reach_of[cols] < size)
-            after = np.zeros_like(prefix)
-            after[:, :-1] = np.cumsum(shorter[:, ::-1], axis=1)[:, ::-1]
+            np.cumsum(~empty, axis=1, out=prefix[:, 1:])
+            allowed = np.isin(states, ending[i]) if len(ending[i]) else empty
 
-            s, c = np.nonzero(empty)
-            step = np.empty((len(s), 4), dtype=np.int64)
+            s, c = np.nonzero(allowed)
+            step = np.empty((len(s), 3), dtype=np.int64)
             if ups is not None:
                 lo = np.minimum(ups.min(axis=1)[s], c)
                 hi = np.maximum(ups.max(axis=1)[s], c)
-                step[:, 2] = np.abs(ups[s] - c[:, None]).sum(axis=1)
                 step[:, 0] = np.where(hi > lo + 1, prefix[s, hi] - prefix[s, np.minimum(lo + 1, width)], 0)
+                step[:, 1] = np.abs(ups[s] - c[:, None]).sum(axis=1)
             else:
-                step[:, 0] = step[:, 2] = 0
-            step[:, 1] = longer[s, c] + after[s, c + 1]
-            step[:, 3] = width - 1 - c
+                step[:, 0] = step[:, 1] = 0
+            step[:, 2] = width - 1 - c
             step += cost[s]
             nxt = cols[s]
             nxt[np.arange(len(s)), c] = i
@@ -463,7 +464,7 @@ def _columns(
                 cross, bar = bound(i, nxt)
                 score = step.copy()
                 score[:, 0] += cross
-                score[:, 2] += bar
+                score[:, 1] += bar
                 if ceiling is not None:
                     keep = at_most(score, ceiling)
                     nxt, step, s, c, score = nxt[keep], step[keep], s[keep], c[keep], score[keep]
@@ -494,14 +495,9 @@ def _columns(
             best = again
         proven = done
     if not proven:
-        best = _improve(top.tolist(), bottom.tolist(), [p.tolist() for p in pars], best, width)
+        best = _improve(top.tolist(), bottom.tolist(), [p.tolist() for p in pars],
+                        [e.tolist() for e in ending], best, width)
     return {v: best[i] for i, v in enumerate(order)}, width, proven
-
-
-def _reach(top: np.ndarray, bottom: np.ndarray, n: int) -> np.ndarray:
-    """Ranks runs by how far down they reach, then by how early they start.
-    Length alone would call a root longer than a run it outlives by a row."""
-    return bottom * (2 * n + 4) - top
 
 
 _IMPROVE_BUDGET = 20_000
@@ -511,16 +507,22 @@ def _improve(
     top: list[int],
     bottom: list[int],
     pars: list[list[int]],
+    ending: list[list[int]],
     col: list[int],
     width: int,
     budget: int = _IMPROVE_BUDGET,
 ) -> list[int]:
-    """Move one run, or swap two, while that lowers the cost the sweep
-    minimises. A move only touches the bars inside the moved runs' lives
-    and the pairs they overlap, so each trial rescores just those."""
+    """Move a run, or swap two, while that lowers crossings and then travel.
+    A run moves with the stack of runs falling straight out of it, and its
+    head only to a column one of its ending parents holds, so every move
+    keeps the straight rule. A move only touches the bars inside the moved
+    runs' lives, so each trial rescores just those."""
     n = len(col)
     col = list(col)
-    reach = _reach(np.array(top), np.array(bottom), n).tolist()
+    last = [-1] * n
+    for j in range(n):
+        for p in ending[j]:
+            last[p] = j
     lo_h = min(top)
     grid = [[-1] * width for _ in range(max(bottom) - lo_h + 1)]
     for v in range(n):
@@ -535,54 +537,49 @@ def _improve(
             overlaps[u].append(v)
             overlaps[v].append(u)
 
+    def stack(v):
+        out = [v]
+        while last[out[-1]] >= 0 and col[last[out[-1]]] == col[v]:
+            out.append(last[out[-1]])
+        return out
+
+    def straight(v):
+        return not ending[v] or any(col[p] == col[v] for p in ending[v])
+
     def bar(j):
         if not pars[j]:
             return 0, 0
         cols = [col[j]] + [col[p] for p in pars[j]]
         lo, hi = min(cols), max(cols)
         cells = grid[2 * j - 1 - lo_h]
-        cross = sum(
-            1 for k in range(lo + 1, hi)
-            if cells[k] >= 0 and cells[k] != j
-        )
+        cross = sum(1 for k in range(lo + 1, hi) if cells[k] >= 0 and cells[k] != j)
         return cross, sum(abs(col[p] - col[j]) for p in pars[j])
 
-    def disorder(v, c):
-        out = 0
-        for m in overlaps[v]:
-            d = col[m]
-            out += (d < c and reach[m] > reach[v]) or (d > c and reach[m] < reach[v])
-        return out
-
-    def bars_of(vs):
+    def score(vs):
         js = set()
         for v in vs:
             js.update(range((top[v] + 1) // 2, (bottom[v] + 1) // 2 + 1))
-        return [j for j in js if j < n]
-
-    def score(vs):
         cross = h = 0
-        for j in bars_of(vs):
-            x, y = bar(j)
-            cross += x
-            h += y
-        dis = sum(disorder(v, col[v]) for v in vs)
-        if len(vs) == 2 and vs[1] in overlaps[vs[0]]:
-            u, v = vs
-            dis -= (col[u] < col[v] and reach[u] > reach[v]) or (col[u] > col[v] and reach[u] < reach[v])
-        return cross, dis, h, -sum(col[v] for v in vs)
+        for j in js:
+            if j < n:
+                x, y = bar(j)
+                cross += x
+                h += y
+        return cross, h, -sum(col[v] for v in vs)
 
-    def place(v, c):
-        for h in range(top[v], bottom[v]):
-            grid[h - lo_h][col[v]] = -1
-        col[v] = c
-        for h in range(top[v], bottom[v]):
-            grid[h - lo_h][c] = v
+    def lift(vs):
+        for v in vs:
+            for h in range(top[v], bottom[v]):
+                grid[h - lo_h][col[v]] = -1
 
-    def free(v, c, ignore=-1):
-        return all(
-            grid[h - lo_h][c] in (-1, v, ignore) for h in range(top[v], bottom[v])
-        )
+    def drop(vs, c):
+        for v in vs:
+            col[v] = c
+            for h in range(top[v], bottom[v]):
+                grid[h - lo_h][c] = v
+
+    def free(vs, c):
+        return all(grid[h - lo_h][c] == -1 for v in vs for h in range(top[v], bottom[v]))
 
     trials = 0
     improved = True
@@ -591,48 +588,43 @@ def _improve(
         for v in range(n):
             if trials >= budget:
                 break
+            vs = stack(v)
             for c in range(width):
-                if c == col[v] or not free(v, c):
+                was = col[v]
+                if c == was:
                     continue
                 trials += 1
-                was, before = col[v], score([v])
-                place(v, c)
-                if score([v]) < before:
-                    improved = True
-                else:
-                    place(v, was)
+                before = score(vs)
+                lift(vs)
+                if free(vs, c):
+                    drop(vs, c)
+                    if straight(v) and score(vs) < before:
+                        improved = True
+                        break
+                    lift(vs)
+                drop(vs, was)
             for u in overlaps[v]:
-                if u < v or col[u] == col[v]:
+                vs = stack(v)
+                if u < v or col[u] == col[v] or u in vs:
+                    continue
+                us = stack(u)
+                if v in us:
                     continue
                 a, b = col[v], col[u]
-                if not (free(v, b, u) and free(u, a, v)):
-                    continue
                 trials += 1
-                before = score([v, u])
-                for h in range(top[v], bottom[v]):
-                    grid[h - lo_h][a] = -1
-                for h in range(top[u], bottom[u]):
-                    grid[h - lo_h][b] = -1
-                col[v], col[u] = b, a
-                for h in range(top[v], bottom[v]):
-                    grid[h - lo_h][b] = v
-                for h in range(top[u], bottom[u]):
-                    grid[h - lo_h][a] = u
-                if score([v, u]) < before:
-                    improved = True
-                else:
-                    for h in range(top[v], bottom[v]):
-                        grid[h - lo_h][b] = -1
-                    for h in range(top[u], bottom[u]):
-                        grid[h - lo_h][a] = -1
-                    col[v], col[u] = a, b
-                    for h in range(top[v], bottom[v]):
-                        grid[h - lo_h][a] = v
-                    for h in range(top[u], bottom[u]):
-                        grid[h - lo_h][b] = u
+                both = vs + us
+                before = score(both)
+                lift(both)
+                if free(vs, b) and free(us, a):
+                    drop(vs, b)
+                    drop(us, a)
+                    if straight(v) and straight(u) and score(both) < before:
+                        improved = True
+                        continue
+                    lift(both)
+                drop(vs, a)
+                drop(us, b)
     return col
-
-
 
 
 def _break_cycles(names: list[str], children: dict[str, list[str]]) -> set[tuple[str, str]]:
@@ -945,6 +937,7 @@ class Metrics:
     drops: int
     disorder: int
     hlen: int = 0
+    bends: int = 0
     repeats: int = 0
     congruent: int = 0
     optimal: bool = False
@@ -957,7 +950,7 @@ class Metrics:
     def __str__(self) -> str:
         return (
             f"length={self.length} width={self.width} crossings={self.crossings}"
-            f" hlen={self.hlen} off_right={self.off_right} drops={self.drops}"
+            f" hlen={self.hlen} bends={self.bends} off_right={self.off_right} drops={self.drops}"
             f" disorder={self.disorder} repeats={self.congruent}/{self.repeats}"
             f" optimal={self.optimal} optimal_columns={self.optimal_columns}"
         )
@@ -968,7 +961,8 @@ def measure(lay: Layout, motifs: Sequence[Motif] | None = None) -> Metrics:
     below it included; `hlen` sums every edge's horizontal travel;
     `disorder` counts pairs of runs live together with the one reaching
     further down on the left, an earlier start breaking a tie; `drops`
-    counts parents whose run falls straight into their last child."""
+    counts parents whose run falls straight into their last child; `bends`
+    counts nodes some run ends at that none falls straight into."""
     crossings = drops = hlen = 0
     for bar in lay.bars.values():
         lo, hi = bar.span
@@ -978,6 +972,10 @@ def measure(lay: Layout, motifs: Sequence[Motif] | None = None) -> Metrics:
         )
         drops += sum(1 for f in bar.feeds if f.turns and f.col == bar.col)
 
+    bends = sum(
+        1 for bar in lay.bars.values()
+        if any(f.turns for f in bar.feeds) and not any(f.turns and f.col == bar.col for f in bar.feeds)
+    )
     runs = sorted(lay.runs.values(), key=lambda u: u.top)
     disorder = 0
     for i, a in enumerate(runs):
@@ -998,6 +996,7 @@ def measure(lay: Layout, motifs: Sequence[Motif] | None = None) -> Metrics:
         drops=drops,
         disorder=disorder,
         hlen=hlen,
+        bends=bends,
         repeats=repeats,
         congruent=congruent,
         optimal=lay.optimal,
