@@ -1,0 +1,22 @@
+{
+ "short": {
+  "e1_processes": 23,
+  "e1_tool_processes": 12,
+  "e2_steps": 15,
+  "tools": 10,
+  "same_tools": true,
+  "checkm2_steps": 4,
+  "scoring_steps": 2,
+  "same_reachability": true
+ },
+ "long": {
+  "e1_processes": 27,
+  "e1_tool_processes": 11,
+  "e2_steps": 14,
+  "tools": 9,
+  "same_tools": true,
+  "checkm2_steps": 4,
+  "scoring_steps": 2,
+  "same_reachability": true
+ }
+}
