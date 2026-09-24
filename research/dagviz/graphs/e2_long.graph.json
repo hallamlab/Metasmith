@@ -62,7 +62,7 @@
    "label": {
     "name": "porechop_abi",
     "namespace": "",
-    "full": "1 porechop_abi"
+    "full": "porechop_abi"
    }
   },
   {
@@ -80,7 +80,7 @@
    "label": {
     "name": "chopper",
     "namespace": "",
-    "full": "2 chopper"
+    "full": "chopper"
    }
   },
   {
@@ -98,7 +98,7 @@
    "label": {
     "name": "flye",
     "namespace": "",
-    "full": "3 flye"
+    "full": "flye"
    }
   },
   {
@@ -116,7 +116,7 @@
    "label": {
     "name": "minimap2_binning_bam",
     "namespace": "",
-    "full": "4 minimap2_binning_bam"
+    "full": "minimap2_binning_bam"
    }
   },
   {
@@ -134,7 +134,7 @@
    "label": {
     "name": "comebin",
     "namespace": "",
-    "full": "5 comebin"
+    "full": "comebin"
    }
   },
   {
@@ -161,7 +161,7 @@
    "label": {
     "name": "semibin2",
     "namespace": "",
-    "full": "6 semibin2"
+    "full": "semibin2"
    }
   },
   {
@@ -188,7 +188,7 @@
    "label": {
     "name": "metabat2",
     "namespace": "",
-    "full": "7 metabat2"
+    "full": "metabat2"
    }
   },
   {
@@ -215,7 +215,7 @@
    "label": {
     "name": "gold_standard",
     "namespace": "",
-    "full": "8 gold_standard"
+    "full": "gold_standard"
    }
   },
   {
@@ -233,7 +233,7 @@
    "label": {
     "name": "das_tool",
     "namespace": "",
-    "full": "9 das_tool"
+    "full": "das_tool"
    }
   },
   {
@@ -269,7 +269,7 @@
    "label": {
     "name": "checkm2",
     "namespace": "",
-    "full": "10 checkm2"
+    "full": "checkm2"
    }
   },
   {
@@ -287,7 +287,7 @@
    "label": {
     "name": "amber",
     "namespace": "",
-    "full": "11 amber"
+    "full": "amber"
    }
   },
   {

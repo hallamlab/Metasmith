@@ -612,10 +612,11 @@ class WorkflowPlan:
 
         for step in self.steps:
             transform_name = f"{step.order} {step.transform.name}"
+            tool = step.transform.name or step.transform.GetKey()
             r.add_node(NodeKind.TRANSFORM, transform_name, Label(
-                name=step.transform.name or step.transform.GetKey(),
+                name=tool,
                 namespace=f"step {step.order}" if show_step_order else "",
-                full=transform_name,
+                full=transform_name if show_step_order else tool,
             ))
             inputs, outputs = [], []
             for acc, deps in [
