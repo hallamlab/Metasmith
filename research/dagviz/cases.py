@@ -106,14 +106,22 @@ def _plan(arm: str):
     import json
     from pathlib import Path
 
-    from metasmith.models.dag_renderer import Label, NodeKind
+    from metasmith.models.dag_renderer import DagMode, DagRenderer, Label, NodeKind
 
     g = json.loads((Path(__file__).parent / f"graphs/e2_{arm}.graph.json").read_text())
-    case(
-        f"e2_{arm}", f"the real E2 {arm}-read plan: {g['n_steps']} steps, every env a given",
-        [(NodeKind[n["kind"]], n["name"], Label(**n["label"])) for n in g["nodes"]],
-        [tuple(e) for e in g["edges"]],
-    )
+    nodes = [(NodeKind[n["kind"]], n["name"], Label(**n["label"])) for n in g["nodes"]]
+    edges = [tuple(e) for e in g["edges"]]
+    case(f"e2_{arm}", f"the real E2 {arm}-read plan: {g['n_steps']} steps,"
+         " tool environments blacklisted", nodes, edges)
+
+    r = DagRenderer(mode=DagMode.STEPS)
+    for kind, name, label in nodes:
+        r.add_node(kind, name, label)
+    for a, b in edges:
+        r.add_edge(a, b)
+    kept, bypassed = r._graph()
+    case(f"e2_{arm}_steps", "the same plan, steps only: data bypassed",
+         [(k, n, r.labels[n]) for n, k in kept.items()], bypassed)
 
 
 _plan("short")

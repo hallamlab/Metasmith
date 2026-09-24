@@ -48,129 +48,12 @@
    }
   },
   {
-   "name": "e2::amber.env",
-   "kind": "DATA",
-   "label": {
-    "name": "amber.env",
-    "namespace": "e2",
-    "full": "e2::amber.env"
-   }
-  },
-  {
-   "name": "e2::bowtie2.env",
-   "kind": "DATA",
-   "label": {
-    "name": "bowtie2.env",
-    "namespace": "e2",
-    "full": "e2::bowtie2.env"
-   }
-  },
-  {
    "name": "e2::cami_gold_standard.py",
    "kind": "DATA",
    "label": {
     "name": "cami_gold_standard.py",
     "namespace": "e2",
     "full": "e2::cami_gold_standard.py"
-   }
-  },
-  {
-   "name": "e2::checkm2.env",
-   "kind": "DATA",
-   "label": {
-    "name": "checkm2.env",
-    "namespace": "e2",
-    "full": "e2::checkm2.env"
-   }
-  },
-  {
-   "name": "e2::comebin.env",
-   "kind": "DATA",
-   "label": {
-    "name": "comebin.env",
-    "namespace": "e2",
-    "full": "e2::comebin.env"
-   }
-  },
-  {
-   "name": "e2::das_tool.env",
-   "kind": "DATA",
-   "label": {
-    "name": "das_tool.env",
-    "namespace": "e2",
-    "full": "e2::das_tool.env"
-   }
-  },
-  {
-   "name": "e2::fastp.env",
-   "kind": "DATA",
-   "label": {
-    "name": "fastp.env",
-    "namespace": "e2",
-    "full": "e2::fastp.env"
-   }
-  },
-  {
-   "name": "e2::fastqc.env",
-   "kind": "DATA",
-   "label": {
-    "name": "fastqc.env",
-    "namespace": "e2",
-    "full": "e2::fastqc.env"
-   }
-  },
-  {
-   "name": "e2::jgi_depth.env",
-   "kind": "DATA",
-   "label": {
-    "name": "jgi_depth.env",
-    "namespace": "e2",
-    "full": "e2::jgi_depth.env"
-   }
-  },
-  {
-   "name": "e2::megahit.env",
-   "kind": "DATA",
-   "label": {
-    "name": "megahit.env",
-    "namespace": "e2",
-    "full": "e2::megahit.env"
-   }
-  },
-  {
-   "name": "e2::metabat2.env",
-   "kind": "DATA",
-   "label": {
-    "name": "metabat2.env",
-    "namespace": "e2",
-    "full": "e2::metabat2.env"
-   }
-  },
-  {
-   "name": "e2::minimap2.env",
-   "kind": "DATA",
-   "label": {
-    "name": "minimap2.env",
-    "namespace": "e2",
-    "full": "e2::minimap2.env"
-   }
-  },
-  {
-   "name": "e2::polars.env",
-   "kind": "DATA",
-   "label": {
-    "name": "polars.env",
-    "namespace": "e2",
-    "full": "e2::polars.env"
-   }
-  },
-  {
-   "name": "e2::semibin2.env",
-   "kind": "DATA",
-   "label": {
-    "name": "semibin2.env",
-    "namespace": "e2",
-    "full": "e2::semibin2.env"
    }
   },
   {
@@ -502,67 +385,11 @@
   ],
   [
    "given",
-   "e2::amber.env"
-  ],
-  [
-   "given",
-   "e2::bowtie2.env"
-  ],
-  [
-   "given",
    "e2::cami_gold_standard.py"
   ],
   [
    "given",
-   "e2::checkm2.env"
-  ],
-  [
-   "given",
-   "e2::comebin.env"
-  ],
-  [
-   "given",
-   "e2::das_tool.env"
-  ],
-  [
-   "given",
-   "e2::fastp.env"
-  ],
-  [
-   "given",
-   "e2::fastqc.env"
-  ],
-  [
-   "given",
-   "e2::jgi_depth.env"
-  ],
-  [
-   "given",
-   "e2::megahit.env"
-  ],
-  [
-   "given",
-   "e2::metabat2.env"
-  ],
-  [
-   "given",
-   "e2::minimap2.env"
-  ],
-  [
-   "given",
-   "e2::polars.env"
-  ],
-  [
-   "given",
-   "e2::semibin2.env"
-  ],
-  [
-   "given",
    "e2::checkm2_database"
-  ],
-  [
-   "e2::fastp.env",
-   "1 fastp"
   ],
   [
    "e2::read_metadata",
@@ -589,10 +416,6 @@
    "9slFAhs56f"
   ],
   [
-   "e2::fastqc.env",
-   "2 fastqc_raw"
-  ],
-  [
    "e2::read_metadata",
    "2 fastqc_raw"
   ],
@@ -609,10 +432,6 @@
    "x9tCaTbbhm"
   ],
   [
-   "e2::fastqc.env",
-   "3 fastqc_trimmed"
-  ],
-  [
    "e2::read_metadata",
    "3 fastqc_trimmed"
   ],
@@ -625,10 +444,6 @@
    "qEEWAzom8B"
   ],
   [
-   "e2::megahit.env",
-   "4 megahit"
-  ],
-  [
    "e2::read_metadata",
    "4 megahit"
   ],
@@ -639,10 +454,6 @@
   [
    "4 megahit",
    "KXA7mZh5uO"
-  ],
-  [
-   "e2::bowtie2.env",
-   "5 bowtie2_binning_bam"
   ],
   [
    "e2::read_metadata",
@@ -659,10 +470,6 @@
   [
    "5 bowtie2_binning_bam",
    "xPxBb1yX71"
-  ],
-  [
-   "e2::comebin.env",
-   "6 comebin"
   ],
   [
    "e2::read_metadata",
@@ -685,10 +492,6 @@
    "jlZ7aE1Cok"
   ],
   [
-   "e2::semibin2.env",
-   "7 semibin2"
-  ],
-  [
    "e2::read_metadata",
    "7 semibin2"
   ],
@@ -709,14 +512,6 @@
    "uzwhNoDBn4"
   ],
   [
-   "e2::jgi_depth.env",
-   "8 metabat2"
-  ],
-  [
-   "e2::metabat2.env",
-   "8 metabat2"
-  ],
-  [
    "e2::read_metadata",
    "8 metabat2"
   ],
@@ -735,14 +530,6 @@
   [
    "8 metabat2",
    "TLpDXUFAO8"
-  ],
-  [
-   "e2::minimap2.env",
-   "9 gold_standard"
-  ],
-  [
-   "e2::polars.env",
-   "9 gold_standard"
   ],
   [
    "e2::cami_gold_standard.py",
@@ -767,10 +554,6 @@
   [
    "9 gold_standard",
    "y3NuiZB4Wx"
-  ],
-  [
-   "e2::das_tool.env",
-   "10 das_tool"
   ],
   [
    "e2::read_metadata",
@@ -805,10 +588,6 @@
    "wasFMTuhVF"
   ],
   [
-   "e2::checkm2.env",
-   "11 checkm2"
-  ],
-  [
    "e2::checkm2_database",
    "11 checkm2"
   ],
@@ -819,10 +598,6 @@
   [
    "11 checkm2",
    "bPsI6ibpC2"
-  ],
-  [
-   "e2::amber.env",
-   "12 amber"
   ],
   [
    "e2::read_metadata",

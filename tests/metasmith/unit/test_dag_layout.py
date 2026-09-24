@@ -427,6 +427,20 @@ def test_the_longer_run_goes_right():
     assert measure(lay).disorder == 0
 
 
+def test_a_fan_out_to_steps_down_the_page_is_a_diagonal():
+    uses = {"db": "bin", "env_bin": "bin", "env_asm": "asm", "env_qc": "qc", "reads": "qc"}
+    edges = [("given", x) for x in uses] + [(x, s) for x, s in uses.items()]
+    edges += [("qc", "clean"), ("clean", "asm"), ("asm", "contigs"), ("contigs", "bin"),
+              ("clean", "bin")]
+    blocks = [["given", *uses], ["qc", "clean"], ["asm", "contigs"]]
+    lay = layout([], edges, blocks=blocks)
+    assert lay.order[:6] == ("given", "db", "env_bin", "env_asm", "env_qc", "reads")
+    outs = [lay.col[x] for x in lay.order[1:6]]
+    assert outs == sorted(outs, reverse=True)
+    assert lay.col["given"] == min(lay.col.values())
+    assert measure(lay).crossings == 0
+
+
 def _best_columns(lay):
     """Every assignment of the runs to the layout's columns in which no two
     runs sharing a column overlap, scored as the solver scores them."""
@@ -440,7 +454,7 @@ def _best_columns(lay):
         trial = Layout(order=lay.order, col=dict(zip(names, cols)), edges=lay.edges,
                        width=lay.width)
         m = measure(trial, motifs=())
-        key = (m.crossings, m.hlen, m.disorder, m.off_right)
+        key = (m.crossings, m.disorder, m.hlen, m.off_right)
         best = key if best is None or key < best else best
     return best
 
@@ -453,7 +467,7 @@ def test_the_columns_are_the_best_there_are(seed):
         pytest.skip("too many assignments to enumerate")
     m = measure(lay, motifs=())
     assert lay.optimal_columns
-    assert (m.crossings, m.hlen, m.disorder, m.off_right) == _best_columns(lay)
+    assert (m.crossings, m.disorder, m.hlen, m.off_right) == _best_columns(lay)
 
 
 def test_a_bar_goes_round_a_run_rather_than_over_it():

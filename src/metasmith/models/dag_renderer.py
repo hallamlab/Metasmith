@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 from enum import Enum, auto
 from pathlib import Path
-from typing import Iterable, Mapping, Sequence
+from typing import Any, Iterable, Mapping, Sequence
 
 from .dag_colour import SCHEMES, Colouring, colour_layout
 from .dag_draw import (
@@ -129,7 +129,7 @@ class DagRenderer:
         theme: str = "light",
         background: bool = True,
         mode: DagMode = DagMode.PLAIN,
-        hide_resources: bool = False,
+        blacklist: Iterable[Any] = (),
         legend_columns: int = 0,
         monochrome: bool = False,
         colour_palette: Sequence[str] | None = None,
@@ -154,21 +154,26 @@ class DagRenderer:
             theme_obj = replace(theme_obj, plate=replace(theme_obj.plate, paint_background=False))
         self._theme = theme_obj
         self._mode = mode
-        self._hide_resources = hide_resources
+        self._blacklist = tuple(blacklist)
         self._legend_columns = legend_columns
         self._monochrome = monochrome
         self._colour_palette = colour_palette
         self._colour_overrides = colour_overrides
         self._nodes: dict[str, NodeKind] = {}
         self._labels: dict[str, Label] = {}
+        self._dtypes: dict[str, Any] = {}
         self._edges: list[tuple[str, str]] = []
         self._seen_edges: set[tuple[str, str]] = set()
         self._declared: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {}
 
-    def add_node(self, kind: NodeKind, name: str, label: Label | None = None) -> None:
+    def add_node(
+        self, kind: NodeKind, name: str, label: Label | None = None, dtype: Any = None,
+    ) -> None:
         self._nodes.setdefault(name, kind)
         if label is not None:
             self._labels.setdefault(name, label)
+        if dtype is not None:
+            self._dtypes.setdefault(name, dtype)
 
     def mark(self, kind: NodeKind, name: str) -> None:
         if name in self._nodes:
@@ -189,31 +194,62 @@ class DagRenderer:
     def remove_node(self, name: str) -> None:
         self._nodes.pop(name, None)
         self._labels.pop(name, None)
+        self._dtypes.pop(name, None)
         self._edges = [e for e in self._edges if name not in e]
         self._seen_edges = {e for e in self._seen_edges if name not in e}
 
-    def declare(self, name: str, requires: Sequence[str], produces: Sequence[str]) -> None:
+    def declare(
+        self, name: str, requires: Sequence[str], produces: Sequence[str],
+        dtypes: Mapping[str, Any] | None = None,
+    ) -> None:
         """Record what a transform asks for and makes *as declared*, not as bound.
 
         The legend wants the tool's own signature. A step binds a requirement to
         one concrete type, so four `checkm2` steps reading four bin types are one
         transform requiring `e2::bin` -- which only the declaration says.
         """
-        self._declared[name] = (tuple(requires), tuple(produces))
+        for n, t in (dtypes or {}).items():
+            self._dtypes.setdefault(n, t)
+        self._declared[name] = (
+            tuple(n for n in requires if not self._blacklisted(n)),
+            tuple(n for n in produces if not self._blacklisted(n)),
+        )
 
     def layout(self, order: Sequence[str] | None = None) -> Layout:
         nodes, edges = self._graph()
         return layout(nodes, edges, order, step_blocks(nodes, edges))
 
     def _graph(self) -> tuple[dict[str, NodeKind], list[tuple[str, str]]]:
+        nodes, edges = self._cut()
         if self._mode in (DagMode.COLLAPSED, DagMode.STEPS):
-            return self._collapse()
-        return dict(self._nodes), list(self._edges)
+            return self._collapse(nodes, edges)
+        return nodes, edges
 
-    def _neighbours(self) -> tuple[dict[str, list[str]], dict[str, list[str]]]:
-        preds: dict[str, list[str]] = {n: [] for n in self._nodes}
-        succs: dict[str, list[str]] = {n: [] for n in self._nodes}
-        for src, dst in self._edges:
+    def _blacklisted(self, name: str) -> bool:
+        dtype = self._dtypes.get(name)
+        return dtype is not None and any(dtype.IsA(t) for t in self._blacklist)
+
+    def _cut(self) -> tuple[dict[str, NodeKind], list[tuple[str, str]]]:
+        """Delete every node whose type is a blacklisted type, with its edges.
+
+        Nothing is wired around a cut node. A synthetic root left with no
+        edges goes as well, since it stands for nothing on its own.
+        """
+        nodes = {n: k for n, k in self._nodes.items() if not self._blacklisted(n)}
+        edges = [(a, b) for a, b in self._edges if a in nodes and b in nodes]
+        touched = {n for e in edges for n in e}
+        for n in SYNTHETIC:
+            if n in nodes and n not in touched and len(nodes) > 1:
+                del nodes[n]
+        return nodes, edges
+
+    @staticmethod
+    def _neighbours(
+        nodes: Mapping[str, NodeKind], edges: Sequence[tuple[str, str]],
+    ) -> tuple[dict[str, list[str]], dict[str, list[str]]]:
+        preds: dict[str, list[str]] = {n: [] for n in nodes}
+        succs: dict[str, list[str]] = {n: [] for n in nodes}
+        for src, dst in edges:
             succs[src].append(dst)
             preds[dst].append(src)
         return preds, succs
@@ -221,7 +257,9 @@ class DagRenderer:
     def _is_data(self, name: str) -> bool:
         return self._nodes.get(name) in (NodeKind.DATA, NodeKind.TARGET)
 
-    def _collapse(self) -> tuple[dict[str, NodeKind], list[tuple[str, str]]]:
+    def _collapse(
+        self, nodes: dict[str, NodeKind], edges: list[tuple[str, str]],
+    ) -> tuple[dict[str, NodeKind], list[tuple[str, str]]]:
         """Absorb intermediate data into the step that produced it.
 
         In COLLAPSED mode what survives is the steps, plus the two ends: the
@@ -232,9 +270,9 @@ class DagRenderer:
         between steps go.
         """
         hide_data = self._mode is DagMode.STEPS
-        preds, succs = self._neighbours()
+        preds, succs = self._neighbours(nodes, edges)
         drop: set[str] = set()
-        for name, kind in self._nodes.items():
+        for name, kind in nodes.items():
             if not self._is_data(name):
                 # with the data gone, the synthetic roots connect nothing to
                 # nothing: `given` would fan out to every step that reads an
@@ -248,17 +286,9 @@ class DagRenderer:
                 continue
             elif "given" not in preds[name]:
                 drop.add(name)                      # an intermediate product
-            elif self._hide_resources and not any(self._is_data(p) for p in preds[name]) \
-                    and not any(self._is_data(s) for s in succs[name]):
-                # A given standing alone in the given lineage. The graph is
-                # bipartite, so this catches every given that no other given
-                # descends from -- an environment and a read alike, since
-                # nothing structural tells them apart. Only a given that is a
-                # parent type of another given survives.
-                drop.add(name)
 
-        nodes = {n: k for n, k in self._nodes.items() if n not in drop}
-        edges: list[tuple[str, str]] = []
+        kept = {n: k for n, k in nodes.items() if n not in drop}
+        bypassed: list[tuple[str, str]] = []
         seen: set[tuple[str, str]] = set()
 
         # Hiding all data drops whole chains at once (given -> data -> step), so
@@ -281,28 +311,29 @@ class DagRenderer:
             walk(start)
             return out
 
-        for src in self._nodes:
+        for src in nodes:
             if src in drop:
                 continue
             for dst in survivors(src):
                 if src == dst or (src, dst) in seen:
                     continue
                 seen.add((src, dst))
-                edges.append((src, dst))
-        return nodes, edges
+                bypassed.append((src, dst))
+        return kept, bypassed
 
     def _legend_blocks(
         self,
     ) -> tuple[list[tuple[Layout, dict[str, Label], dict[str, NodeKind]]], Colouring]:
-        preds, succs = self._neighbours()
+        nodes, edges = self._cut()
+        preds, succs = self._neighbours(nodes, edges)
         labels = self.labels
         order: list[str] = []
         sig: dict[str, tuple[set[str], set[str]]] = {}
         hue_of: dict[str, str] = {}
-        whole = layout(self._nodes, self._edges, blocks=step_blocks(self._nodes, self._edges))
+        whole = layout(nodes, edges, blocks=step_blocks(nodes, edges))
         base = self.colouring(whole)
 
-        for name, kind in self._nodes.items():
+        for name, kind in nodes.items():
             if kind is not NodeKind.TRANSFORM or name in SYNTHETIC:
                 continue
             key = labels[name].name

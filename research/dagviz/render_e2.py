@@ -45,7 +45,13 @@ import e2_cami as e2  # noqa: E402
 from metasmith.models.dag_renderer import (  # noqa: E402
     SYNTHETIC, DagMode, DagRenderer, Label, NodeKind,
 )
+from metasmith.models.solver import Endpoint  # noqa: E402
 from metasmith.python_api import DataInstanceLibrary, TransformInstanceLibrary  # noqa: E402
+
+# E2's tool environments live in its own namespace, so the engine's `env`
+# namespace default misses them. Each carries `e2: env`, and a type holding only
+# that property is a supertype of every one of them.
+E2_ENV = Endpoint.Unpack({"properties": {"e2": "env"}})
 
 # name -> the DagRenderer keywords that make it. Only the plain drawing is
 # coloured: the `module` scheme is a hue per dominator subtree, which says
@@ -67,17 +73,14 @@ from metasmith.python_api import DataInstanceLibrary, TransformInstanceLibrary  
 # topology, and there merging on type name would fuse the two arms' binning
 # tails into steps neither arm runs -- so every computed type is fenced behind
 # the arm that computed it and only the givens stay shared.
-PER_ARM = {"plain": dict(mode=DagMode.PLAIN, colour="module")}
+PER_ARM = {"plain": dict(mode=DagMode.PLAIN, colour="module", blacklist=[E2_ENV])}
 COMBINED = {
     "steps": dict(mode=DagMode.STEPS, colour="module", monochrome=True,
                   merge=False),
     "legend": dict(mode=DagMode.LEGEND, legend_columns=3, colour="module",
-                   monochrome=True, merge=True),
+                   monochrome=True, merge=True, blacklist=[E2_ENV]),
 }
-# The one-solve panel. `hide_resources` drops the tool environments: they are
-# givens standing outside every sample lineage, and thirteen of them at the top
-# bury the thing this picture is of.
-SINGLE = dict(mode=DagMode.PLAIN, hide_resources=True, colour="module")
+SINGLE = dict(mode=DagMode.PLAIN, colour="module", blacklist=[E2_ENV])
 
 
 def plan_for(arm: str):
@@ -151,7 +154,7 @@ def _canonical_ids(r: DagRenderer, arm: str, merge: bool) -> dict[str, str]:
     read the same metadata, the same references and the same tool
     environments, and compute nothing in common.
     """
-    preds, succs = r._neighbours()
+    preds, succs = r._neighbours(r._nodes, r._edges)
     labels = r.labels
     out: dict[str, str] = {}
 
@@ -181,7 +184,8 @@ def combine(sources: dict[str, DagRenderer], merge: bool = False, **kw) -> DagRe
         labels = src.labels
         for n, kind in src._nodes.items():
             L = labels[n]
-            r.add_node(kind, ids[n], Label(name=L.name, namespace=L.namespace))
+            r.add_node(kind, ids[n], Label(name=L.name, namespace=L.namespace),
+                       dtype=src._dtypes.get(n))
             if kind is NodeKind.TARGET:
                 # setdefault kept whatever the first arm said; a target in any
                 # arm is a target of the union
@@ -189,7 +193,8 @@ def combine(sources: dict[str, DagRenderer], merge: bool = False, **kw) -> DagRe
         for a, b in src._edges:
             r.add_edge(ids[a], ids[b])
         for n, (requires, produces) in src._declared.items():
-            r.declare(ids[n], requires, produces)
+            r.declare(ids[n], requires, produces,
+                      {t: src._dtypes[t] for t in (*requires, *produces) if t in src._dtypes})
     return r
 
 
@@ -231,14 +236,14 @@ def main(arms=("short", "long")):
 
 
 def dump_graphs(arms=("short", "long")):
-    """The graphs `cases.py` draws in the dev panel, environments kept."""
+    """The graphs `cases.py` draws in the dev panel, environments cut."""
     import json
 
     out = HERE / "graphs"
     out.mkdir(exist_ok=True)
     for arm in arms:
         plan = plan_for(arm)
-        r = plan.BuildDAG(blacklist_namespaces={"lib", "containers"})
+        r = plan.BuildDAG(blacklist=[E2_ENV])
         nodes, edges = r._graph()
         labels = r.labels
         path = out / f"e2_{arm}.graph.json"

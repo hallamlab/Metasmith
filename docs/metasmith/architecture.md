@@ -894,16 +894,21 @@ in-degree minus out-degree times row, so inside a block the heaviest member goes
 fixed before the search. `_solve_component` then runs a beam DP over placed sets, one move per
 block. The node-level lower bound stays admissible, because block-respecting orders are a subset.
 `optimal` is true only when no layer was truncated. Components go smallest first, since
-interleaving two only stretches their edges. Repeated blocks then take one internal order, in a
-post-pass that never costs length: length outranks congruence.
+interleaving two only stretches their edges. Two post-passes follow, and neither costs length.
+Members of equal weight inside a block cost the same in any order, so the one used furthest down
+goes first, which lets their runs fall in a diagonal. Repeated blocks then take one internal
+order: length outranks congruence.
 
-**CAUTION** Blocks raise the minimum length. On e2 they cost about 30% length and four columns
-over the unconstrained order. That is the price of keeping outputs under their step, not a
-solver regression.
+**CAUTION** Blocks raise the minimum length, by about 7% on e2 over the unconstrained order. That
+is the price of keeping outputs under their step, not a solver regression.
 
-**The columns are a second solve, for crossings, then horizontal length, then long runs on the
-right.** The cost is that tuple, compared lexicographically, among minimum-width assignments only.
-A crossing is a live run strictly inside a bar's span that is neither its target nor a parent.
+**The columns are a second solve, for crossings, then long runs on the right, then horizontal
+length.** The cost is that tuple, compared lexicographically, among minimum-width assignments
+only. A crossing is a live run strictly inside a bar's span that is neither its target nor a
+parent. A run is longer when it reaches further down, and an earlier start breaks a tie. Raw
+length would rank a root above a run it only outlives by a row. Long-right outranks horizontal
+length because length alone puts a fan-out's source at the median of its outputs, which is
+shorter and reads as unsorted.
 `_columns` is the sweep of Kostitsyna and Nöllenburg (GD 2015) for storyline crossings,
 fixed-parameter in the width. A state is the column of every live run, and each term depends only
 on the state and the next placement, so equal states merge. A beam caps each layer, a first pass
@@ -924,14 +929,19 @@ A 100-node graph takes about 0.8 s, rows and columns together, and the 1 s budge
 Ceilings are pinned in `tests/metasmith/unit/test_dag_stress.py`, and a solver change may move
 them either way.
 
-**The long runs on e2 are the `given` block.** Every reference and environment node is an output
-of `given`, so its block stacks them at the top. Each then holds a run down to its consumer. That
-is most of e2's width and crossings, and it is also why long-right rarely decides there: moving a
-long run right crosses the bars it passes.
+**A blacklist cuts, and `DagMode.STEPS` bypasses.** `DagRenderer(blacklist=...)` takes types and
+deletes every node whose type `IsA` one of them, with its edges. Nothing is wired around a cut
+node. `DagMode.STEPS` is the opposite: it drops every data node and wires each step to the steps
+its data fed. Pass a generic type to cut a whole family. A type holding only `e2: env` is a
+supertype of every E2 environment.
 
 `env` is in `blacklist_namespaces` alongside `lib` and `containers`: an environment is a declared
 dependency like any other, so without it every plan DAG grows an `env::*` node per step. Three
 defaults have to agree — `BuildDAG`, `RenderDAG`, and `ops.workflow.render_dag`.
+
+**CAUTION** The namespace default catches only the standard library's environments. A library
+that declares environments in its own namespace, as E2 does, reaches the drawing unless the caller
+blacklists its generic environment type.
 
 ## Versioning
 

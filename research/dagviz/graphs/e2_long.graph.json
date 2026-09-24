@@ -39,120 +39,12 @@
    }
   },
   {
-   "name": "e2::amber.env",
-   "kind": "DATA",
-   "label": {
-    "name": "amber.env",
-    "namespace": "e2",
-    "full": "e2::amber.env"
-   }
-  },
-  {
    "name": "e2::cami_gold_standard.py",
    "kind": "DATA",
    "label": {
     "name": "cami_gold_standard.py",
     "namespace": "e2",
     "full": "e2::cami_gold_standard.py"
-   }
-  },
-  {
-   "name": "e2::checkm2.env",
-   "kind": "DATA",
-   "label": {
-    "name": "checkm2.env",
-    "namespace": "e2",
-    "full": "e2::checkm2.env"
-   }
-  },
-  {
-   "name": "e2::chopper.env",
-   "kind": "DATA",
-   "label": {
-    "name": "chopper.env",
-    "namespace": "e2",
-    "full": "e2::chopper.env"
-   }
-  },
-  {
-   "name": "e2::comebin.env",
-   "kind": "DATA",
-   "label": {
-    "name": "comebin.env",
-    "namespace": "e2",
-    "full": "e2::comebin.env"
-   }
-  },
-  {
-   "name": "e2::das_tool.env",
-   "kind": "DATA",
-   "label": {
-    "name": "das_tool.env",
-    "namespace": "e2",
-    "full": "e2::das_tool.env"
-   }
-  },
-  {
-   "name": "e2::flye.env",
-   "kind": "DATA",
-   "label": {
-    "name": "flye.env",
-    "namespace": "e2",
-    "full": "e2::flye.env"
-   }
-  },
-  {
-   "name": "e2::jgi_depth.env",
-   "kind": "DATA",
-   "label": {
-    "name": "jgi_depth.env",
-    "namespace": "e2",
-    "full": "e2::jgi_depth.env"
-   }
-  },
-  {
-   "name": "e2::metabat2.env",
-   "kind": "DATA",
-   "label": {
-    "name": "metabat2.env",
-    "namespace": "e2",
-    "full": "e2::metabat2.env"
-   }
-  },
-  {
-   "name": "e2::minimap2.env",
-   "kind": "DATA",
-   "label": {
-    "name": "minimap2.env",
-    "namespace": "e2",
-    "full": "e2::minimap2.env"
-   }
-  },
-  {
-   "name": "e2::polars.env",
-   "kind": "DATA",
-   "label": {
-    "name": "polars.env",
-    "namespace": "e2",
-    "full": "e2::polars.env"
-   }
-  },
-  {
-   "name": "e2::porechop_abi.env",
-   "kind": "DATA",
-   "label": {
-    "name": "porechop_abi.env",
-    "namespace": "e2",
-    "full": "e2::porechop_abi.env"
-   }
-  },
-  {
-   "name": "e2::semibin2.env",
-   "kind": "DATA",
-   "label": {
-    "name": "semibin2.env",
-    "namespace": "e2",
-    "full": "e2::semibin2.env"
    }
   },
   {
@@ -440,63 +332,11 @@
   ],
   [
    "given",
-   "e2::amber.env"
-  ],
-  [
-   "given",
    "e2::cami_gold_standard.py"
   ],
   [
    "given",
-   "e2::checkm2.env"
-  ],
-  [
-   "given",
-   "e2::chopper.env"
-  ],
-  [
-   "given",
-   "e2::comebin.env"
-  ],
-  [
-   "given",
-   "e2::das_tool.env"
-  ],
-  [
-   "given",
-   "e2::flye.env"
-  ],
-  [
-   "given",
-   "e2::jgi_depth.env"
-  ],
-  [
-   "given",
-   "e2::metabat2.env"
-  ],
-  [
-   "given",
-   "e2::minimap2.env"
-  ],
-  [
-   "given",
-   "e2::polars.env"
-  ],
-  [
-   "given",
-   "e2::porechop_abi.env"
-  ],
-  [
-   "given",
-   "e2::semibin2.env"
-  ],
-  [
-   "given",
    "e2::checkm2_database"
-  ],
-  [
-   "e2::porechop_abi.env",
-   "1 porechop_abi"
   ],
   [
    "e2::read_metadata",
@@ -511,10 +351,6 @@
    "x64b2OscWA"
   ],
   [
-   "e2::chopper.env",
-   "2 chopper"
-  ],
-  [
    "e2::read_metadata",
    "2 chopper"
   ],
@@ -527,10 +363,6 @@
    "jhAkY91Y1H"
   ],
   [
-   "e2::flye.env",
-   "3 flye"
-  ],
-  [
    "e2::read_metadata",
    "3 flye"
   ],
@@ -541,10 +373,6 @@
   [
    "3 flye",
    "tKBL3NeHVx"
-  ],
-  [
-   "e2::minimap2.env",
-   "4 minimap2_binning_bam"
   ],
   [
    "e2::read_metadata",
@@ -561,10 +389,6 @@
   [
    "4 minimap2_binning_bam",
    "owUF22Uvdv"
-  ],
-  [
-   "e2::comebin.env",
-   "5 comebin"
   ],
   [
    "e2::read_metadata",
@@ -587,10 +411,6 @@
    "SLoquZz1pi"
   ],
   [
-   "e2::semibin2.env",
-   "6 semibin2"
-  ],
-  [
    "e2::read_metadata",
    "6 semibin2"
   ],
@@ -611,14 +431,6 @@
    "tPIkU0MFB4"
   ],
   [
-   "e2::jgi_depth.env",
-   "7 metabat2"
-  ],
-  [
-   "e2::metabat2.env",
-   "7 metabat2"
-  ],
-  [
    "e2::read_metadata",
    "7 metabat2"
   ],
@@ -637,14 +449,6 @@
   [
    "7 metabat2",
    "ZTAnshVAFS"
-  ],
-  [
-   "e2::minimap2.env",
-   "8 gold_standard"
-  ],
-  [
-   "e2::polars.env",
-   "8 gold_standard"
   ],
   [
    "e2::cami_gold_standard.py",
@@ -669,10 +473,6 @@
   [
    "8 gold_standard",
    "QAxQo0iTNy"
-  ],
-  [
-   "e2::das_tool.env",
-   "9 das_tool"
   ],
   [
    "e2::read_metadata",
@@ -707,10 +507,6 @@
    "HgzRMoei0l"
   ],
   [
-   "e2::checkm2.env",
-   "10 checkm2"
-  ],
-  [
    "e2::checkm2_database",
    "10 checkm2"
   ],
@@ -721,10 +517,6 @@
   [
    "10 checkm2",
    "Yaxkv3jd0P"
-  ],
-  [
-   "e2::amber.env",
-   "11 amber"
   ],
   [
    "e2::read_metadata",

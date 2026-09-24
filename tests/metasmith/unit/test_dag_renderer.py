@@ -594,15 +594,15 @@ def test_golden_three_way_fan_in():
          ("metabat2", "checkm2"), ("semibin2", "checkm2"), ("comebin", "checkm2"),
          ("checkm2", "qc")],
     )
-    # contigs leaves on one run, not three: each binner branches off it, and
-    # the last drops straight in.
+    # contigs leaves on one run, not three: each binner branches off it in a
+    # diagonal, and the last drops straight in.
     assert r.to_text() == (
-        "  ○    contigs\n"
-        "  ├─┐\n"
-        "  │ ▽  comebin\n"
-        "┌─┤ │\n"
-        "▽ │ │  metabat2\n"
-        "│ ▽ │  semibin2\n"
+        "○      contigs\n"
+        "├───┐\n"
+        "│   ▽  comebin\n"
+        "├─┐ │\n"
+        "│ ▽ │  metabat2\n"
+        "▽ │ │  semibin2\n"
         "└─┴─┤\n"
         "    ▽  checkm2\n"
         "    ○  qc\n"

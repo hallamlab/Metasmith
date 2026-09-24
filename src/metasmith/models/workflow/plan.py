@@ -3,7 +3,7 @@ from __future__ import annotations
 import itertools
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Mapping, Sequence
+from typing import Iterable, Mapping, Sequence
 
 import yaml
 
@@ -545,14 +545,14 @@ class WorkflowPlan:
             hints=plan_hints,
         )
 
-    def BuildDAG(self, *, font: str = 'Arial', blacklist_namespaces: set[str]={"lib", "containers", "env"}, show_step_order: bool = False, label_mode: LabelMode = LabelMode.COLUMN, target_sink: bool = False, colour: str = "module", theme: str = "light", background: bool = True, mode: DagMode = DagMode.PLAIN, hide_resources: bool = False, legend_columns: int = 0, monochrome: bool = False, colour_palette: Sequence[str] | None = None, colour_overrides: Mapping[str, str] | None = None) -> DagRenderer:
+    def BuildDAG(self, *, font: str = 'Arial', blacklist_namespaces: set[str]={"lib", "containers", "env"}, show_step_order: bool = False, label_mode: LabelMode = LabelMode.COLUMN, target_sink: bool = False, colour: str = "module", theme: str = "light", background: bool = True, mode: DagMode = DagMode.PLAIN, blacklist: Iterable[Endpoint] = (), legend_columns: int = 0, monochrome: bool = False, colour_palette: Sequence[str] | None = None, colour_overrides: Mapping[str, str] | None = None) -> DagRenderer:
         def _get_ns(name: str) -> str:
             if "::" in name:
                 ns, _ = name.split("::", maxsplit=1)
                 return ns
             return name
 
-        r = DagRenderer(font=font, label_mode=label_mode, colour=colour, theme=theme, background=background, mode=mode, hide_resources=hide_resources, legend_columns=legend_columns, monochrome=monochrome, colour_palette=colour_palette, colour_overrides=colour_overrides)
+        r = DagRenderer(font=font, label_mode=label_mode, colour=colour, theme=theme, background=background, mode=mode, blacklist=blacklist, legend_columns=legend_columns, monochrome=monochrome, colour_palette=colour_palette, colour_overrides=colour_overrides)
         r.add_node(NodeKind.TRANSFORM, "given")
 
         given_inst_names: set[str] = set()
@@ -579,6 +579,7 @@ class WorkflowPlan:
                     pinsts = [i for i in k2names[p] if i in shown_parents] # type: ignore
                     for pname in pinsts:
                         r.add_edge(pname, inst_name)
+                r.add_node(NodeKind.DATA, inst_name, dtype=e)
                 r.add_edge("given", inst_name)
                 given_inst_names.add(inst_name)
 
@@ -600,7 +601,7 @@ class WorkflowPlan:
             """
             if x.instance_id in given_ids:
                 return x.dtype_name
-            r.add_node(NodeKind.DATA, x.instance_id, _type_label(x.dtype_name))
+            r.add_node(NodeKind.DATA, x.instance_id, _type_label(x.dtype_name), dtype=x.dtype)
             return x.instance_id
 
         def _type_label(dtype_name: str) -> Label:
@@ -642,20 +643,24 @@ class WorkflowPlan:
             # because it is not what the transform declared either.
             _lib = getattr(step, "transform_library", None)
             if _lib is not None:
+                named: dict[str, Endpoint] = {}
                 def _named(deps):
                     out = []
                     for d in deps:
+                        t = Endpoint(d.properties)
                         try:
-                            n = _lib.GetName(Endpoint(d.properties))
+                            n = _lib.GetName(t)
                         except KeyError:
                             continue
                         if n and _get_ns(n) not in blacklist_namespaces:
                             out.append(n)
+                            named[n] = t
                     return out
                 r.declare(
                     transform_name,
                     _named(step.transform.model.requires),
                     _named([d for g in step.transform.model.produces for d in g]),
+                    named,
                 )
 
         target_names = {_data_node(x.instance) for x in self.targets}
@@ -675,7 +680,7 @@ class WorkflowPlan:
 
         return r
 
-    def RenderDAG(self, path_base: Path|str, format: str ='svg', *, font: str = 'Arial', blacklist_namespaces: set[str]={"lib", "containers", "env"}, show_step_order: bool = False, label_mode: LabelMode = LabelMode.COLUMN, target_sink: bool = False, colour: str = "module", theme: str = "light", background: bool = True, mode: DagMode = DagMode.PLAIN, hide_resources: bool = False, legend_columns: int = 0, monochrome: bool = False, colour_palette: Sequence[str] | None = None, colour_overrides: Mapping[str, str] | None = None):
+    def RenderDAG(self, path_base: Path|str, format: str ='svg', *, font: str = 'Arial', blacklist_namespaces: set[str]={"lib", "containers", "env"}, show_step_order: bool = False, label_mode: LabelMode = LabelMode.COLUMN, target_sink: bool = False, colour: str = "module", theme: str = "light", background: bool = True, mode: DagMode = DagMode.PLAIN, blacklist: Iterable[Endpoint] = (), legend_columns: int = 0, monochrome: bool = False, colour_palette: Sequence[str] | None = None, colour_overrides: Mapping[str, str] | None = None):
         return self.BuildDAG(
             font=font,
             blacklist_namespaces=blacklist_namespaces,
@@ -686,7 +691,7 @@ class WorkflowPlan:
             theme=theme,
             background=background,
             mode=mode,
-            hide_resources=hide_resources,
+            blacklist=blacklist,
             legend_columns=legend_columns,
             monochrome=monochrome,
             colour_palette=colour_palette,

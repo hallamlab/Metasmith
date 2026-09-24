@@ -1,6 +1,14 @@
 import pytest
 
 from metasmith.models.dag_renderer import DagMode, DagRenderer, Label, NodeKind
+from metasmith.models.solver import Endpoint
+
+
+def _type(**props) -> Endpoint:
+    return Endpoint.Unpack({"properties": props})
+
+
+ENV = _type(e2="env")
 
 
 def _plan() -> dict:
@@ -37,11 +45,20 @@ def _plan() -> dict:
     )
 
 
+DTYPES = {
+    "e2::read_metadata": _type(e2="read_metadata"),
+    "e2::reads": _type(e2="reads", platform="illumina"),
+    "e2::fastp.env": _type(e2="env", provides="fastp"),
+    "e2::trimmed": _type(e2="trimmed"),
+    "e2::contigs": _type(e2="contigs"),
+}
+
+
 def _build(**kwargs) -> DagRenderer:
     plan = _plan()
     r = DagRenderer(**kwargs)
     for kind, name, label in plan["nodes"]:
-        r.add_node(kind, name, label)
+        r.add_node(kind, name, label, dtype=DTYPES.get(name))
     for src, dst in plan["edges"]:
         r.add_edge(src, dst)
     return r
@@ -65,13 +82,28 @@ def test_collapsed_absorbs_the_intermediate_but_keeps_both_ends():
     assert ("s0", "s1") in edges
 
 
-def test_hide_resources_keeps_a_given_that_sits_in_a_type_lineage():
-    # An environment has no data on either side of it and goes; a read has its
-    # parent type above it and stays. That lineage edge is the whole of the
-    # distinction -- without it the rule would take the reads too.
-    nodes, _ = _graph(mode=DagMode.COLLAPSED, hide_resources=True)
+def test_a_blacklisted_type_cuts_every_subtype_and_wires_nothing_around_it():
+    nodes, edges = _graph(blacklist=[ENV])
     assert "e2::fastp.env" not in nodes
-    assert {"e2::read_metadata", "e2::reads"} <= nodes
+    assert {"e2::read_metadata", "e2::reads", "s0"} <= nodes
+    assert not any("e2::fastp.env" in e for e in edges)
+    assert ("given", "s0") not in edges
+
+
+def test_a_blacklist_leaves_a_type_that_is_not_its_subtype():
+    nodes, _ = _graph(blacklist=[_type(e2="env", provides="megahit")])
+    assert "e2::fastp.env" in nodes
+
+
+def test_a_given_with_nothing_left_under_it_goes_too():
+    nodes, _ = _graph(blacklist=[_type(e2="read_metadata"), _type(e2="reads"), ENV])
+    assert "given" not in nodes
+
+
+def test_steps_mode_on_a_blacklisted_graph_bypasses_what_is_left():
+    nodes, edges = _graph(mode=DagMode.STEPS, blacklist=[ENV])
+    assert nodes == {"s0", "s1"}
+    assert edges == {("s0", "s1")}
 
 
 def test_steps_mode_leaves_the_steps_and_wires_them_through():
