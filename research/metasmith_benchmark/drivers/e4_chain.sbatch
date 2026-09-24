@@ -16,10 +16,14 @@
 #   IGNORE_TOLERANCE  ignored steps one lane of one chunk may lose before the chain stops
 #                 (default 1% of CHUNK_SIZE). CarveMe stops at its 6 h cap, and MEMOTE 0.9.13 at
 #                 its 4 h second attempt, on a few hard bins.
-#
-# RESUMING. Phase 2 writes <archive>/<lane>/chunk<N>.launched. A rerun over a lane whose run
-# finished goes straight to the gate and archive, and one whose run did not finish stops.
 #   RENEW         1 to resubmit a successor for the unfinished range before this job's wall (default 1)
+#
+# RESUMING. Phase 2 writes <archive>/<lane>/chunk<N>.launched. A rerun over a launched lane waits
+# on its driver while that is live, then goes to the gate and archive. One whose run died stops.
+#
+# STAGGERING. Two chains may run disjoint chunk ranges in the one home at once: each run has its
+# own stage and PID.lock, and the cache takes concurrent writers. Each chain guards the quota for
+# its own driver only, so size INODE_STOP for both lanes' peaks together.
 #
 # WHY IT ARCHIVES. The two lanes leave 51 inodes per bin in task_cache, ~720K for 14,105 bins,
 # against ~330K of room. So each finished lane is tarred with its lineage index, and then its cache
@@ -37,7 +41,8 @@
 # Phase 2 is `--launch` with NEITHER `--materialise` NOR `--import`.
 #
 # CAUTION one importing job per agent home at a time, because concurrent imports lock the pool's
-# sqlite. This script is sequential by construction.
+# sqlite. A chain holds its phase 1 until no other e4g_*_prep job is queued, which serialises two
+# chains only when their starts are staggered: two checks in the same poll can both pass.
 #
 # This does NOT sync. Run sync.sh by hand before submitting if the checkout changed, and never into a
 # home that holds a live driver.
@@ -160,12 +165,19 @@ run_lane() {
     log "=== $tag ==="
     mkdir -p "$ARCHIVE/$lane"
 
-    # A lane whose run already finished resumes at the gate. Re-running phases 1 and 2 would stage a
-    # second run beside the first.
+    # A launched lane resumes: it waits on its driver if that is still live, then goes to the gate.
+    # Re-running phases 1 and 2 would stage a second run beside the first.
     local launched_file="$ARCHIVE/$lane/chunk${chunk}.launched"
-    local key nbins p1log p2log
+    local key nbins p1log p2log p2
     if [ -f "$launched_file" ]; then
         read -r key nbins p1log p2log < "$launched_file"
+        p2="$(basename "$p2log" .out)"
+        p2="${p2##*.}"
+        if alive "$p2"; then
+            log "$tag resuming on live driver $p2 (run $key)"
+            wait_for "$p2" "$p2" "$tag phase 2"
+            [ "$(final_state "$p2")" = "COMPLETED" ] || die "$tag driver $p2 ended $(final_state "$p2") (exit $(exit_code "$p2"))"
+        fi
         grep -q 'Execution complete' "$HOME_DIR/runs/$key/_metasmith/logs.latest/nxf.log" 2>/dev/null \
             || die "$tag was launched as $key but its run did not finish -- look before re-running"
         log "$tag resuming at the gate: run $key finished, $nbins bins"
@@ -173,14 +185,15 @@ run_lane() {
         return 0
     fi
 
+    while squeue -u "$USER" -h -o '%j' | grep -qE '^e4g_[a-z]+_c[0-9]+_prep$'; do
+        log "$tag waiting: another lane is importing"
+        sleep "$POLL_SECONDS"
+    done
+
     read_quota || die "cannot read the quota, refusing to start $tag"
     log "pre-flight quota: ${QUOTA_TIB} TiB, ${QUOTA_INODES} inodes (gate at ${INODE_GATE})"
     (( QUOTA_INODES < INODE_GATE )) || die "inodes ${QUOTA_INODES} >= INODE_GATE ${INODE_GATE} -- $tag is NOT started"
     (( $(awk -v a="$QUOTA_TIB" -v b="$BYTE_STOP_TIB" 'BEGIN{print (a<b)}') )) || die "bytes ${QUOTA_TIB} TiB >= ${BYTE_STOP_TIB} -- $tag is NOT started"
-
-    local locks
-    locks="$(find "$HOME_DIR" -maxdepth 3 -name PID.lock 2>/dev/null | head -5)" || true
-    [ -z "$locks" ] || die "the metagem home holds a live driver (PID.lock): $locks"
 
     # --- phase 1: materialise images and import the chunk's bins into the pool ---
     local p1 staged got skipped
@@ -208,7 +221,6 @@ run_lane() {
     log "$tag inputs: $nbins bins"
 
     # --- phase 2: launch. --launch takes NEITHER --materialise NOR --import ---
-    local p2
     p2="$(sbatch --parsable -J "$tag" "$SUBMIT" "$CHECKOUT" e4_gems.py \
             run --lane "$lane" --chunk "$chunk" --chunk-size "$CHUNK_SIZE" --launch --tag "$tag")" \
         || die "sbatch refused phase 2 for $tag"
