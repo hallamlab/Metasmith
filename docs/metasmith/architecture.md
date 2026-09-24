@@ -875,6 +875,9 @@ for raster formats and only as `neato -n2`, which honours our positions and lays
   one hue. The scheme keeps the name `lane` because the GUI offers it by that name.
 - **`background=False` renders transparent**, for the GUI's card; node fills are untouched, so
   such a drawing is pixel-exact on a card of the theme's colour and only very close on any other.
+- **A data label's indent is `NodeGeometry.indent`, never folded into `label_x`.** In the label
+  column every node shares one `label_x`, and `DagRail.svelte` takes its gutter from the first
+  node's. Fold the indent in and the GUI's gutter shifts whenever the first row is data.
 
 **The layout is two integers per node, and the drawer decides nothing.** `Layout` holds a row
 order and a column per node. Runs, bars and routes are derived from those, on half-rows: node row
