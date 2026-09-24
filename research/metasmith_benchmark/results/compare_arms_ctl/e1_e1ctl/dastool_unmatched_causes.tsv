@@ -1,0 +1,7 @@
+arm	pipeline	cause	mags	high_quality
+long	E2	source bins matched, other arm's DAS Tool dropped its partner	1	0
+short	E1	source bin unmatched	3	1
+short	E1	source bins matched, other arm's DAS Tool dropped its partner	8	1
+short	E2	source bin unmatched	3	0
+short	E2	source bins matched, DAS Tool trimmed them differently	1	0
+short	E2	source bins matched, other arm's DAS Tool dropped its partner	11	0

@@ -291,9 +291,10 @@ def matching(summ):
     return head, [[r[h] for h in head] for r in summ]
 
 
-def causes(rows):
+def causes(rows, labels):
     head = ["arm", "pipeline", "cause", "mags", "high_quality"]
-    return head, [[r[h] for h in head] for r in rows]
+    run = dict(zip(PIPES, labels))
+    return head, [[run.get(r[h], r[h]) if h == "pipeline" else r[h] for h in head] for r in rows]
 
 
 def main():
@@ -326,7 +327,7 @@ def main():
             print("\t".join(str(v) for v in r.values()))
         return
     for name, (head, rows) in (("assemblies", assembly_distribution(asm)), ("matching", matching(summ)),
-                               ("dastool_unmatched_causes", causes(cause_rows)),
+                               ("dastool_unmatched_causes", causes(cause_rows, a.labels)),
                                ("tier_changes", tier_changes(per_mag))):
         header, body = markdown(head, rows).split("\n", 1)
         header = re.sub(r"\bE([12])\b", lambda m: a.labels[int(m.group(1)) - 1], header)
