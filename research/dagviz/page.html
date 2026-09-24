@@ -51,8 +51,8 @@
     margin: 0;
   }
   .wrap {
-    /* wide enough for the legend grid at three columns (1165px for the long
-       arm) plus the frame's own padding, so no panel scrolls sideways */
+    /* wide enough for the legend grid at three columns (1165px) plus the
+       frame's own padding, so no panel scrolls sideways */
     max-width: 1260px;
     margin: 0 auto;
     padding-inline: 16px;
@@ -134,6 +134,34 @@
   :root[data-theme="dark"] .svg-light { display: none; }
   :root[data-theme="dark"] .svg-dark  { display: block; }
 
+  /* The slot table. Not a card: it is the caption the steps figure cannot
+     write on itself, so it shares the figure's left edge and carries rules
+     rather than a border. */
+  .slots { margin-top: 18px; overflow-x: auto; }
+  table {
+    border-collapse: collapse;
+    font-size: 13.5px;
+    min-width: 34rem;
+  }
+  th, td {
+    text-align: left; padding: 5px 20px 5px 0;
+    border-bottom: 1px solid var(--rule-2);
+    vertical-align: top;
+  }
+  thead th {
+    font-size: 11.5px; font-weight: 500; letter-spacing: 0.06em;
+    text-transform: uppercase; color: var(--faint);
+    border-bottom: 1px solid var(--rule);
+  }
+  th[scope="row"] { font-weight: 400; color: var(--muted); }
+  td code {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 0.92em;
+  }
+  /* the shared tail: one value spanning both arms, so the eye reads "same" */
+  .same { color: var(--muted); font-style: italic; }
+  .none { color: var(--faint); }
+
   .note {
     margin-top: 48px; padding-top: 22px;
     border-top: 1px solid var(--rule);
@@ -145,6 +173,16 @@
     font-family: "IBM Plex Mono", ui-monospace, monospace;
     font-size: 0.9em; color: var(--ink);
   }
+  /* The rail comparison: one graph drawn twice, side by side. */
+  .rails { display: flex; flex-wrap: wrap; gap: 18px; margin: 0 0 24px; }
+  .rails figure { flex: 1 1 16rem; padding: 14px 16px 18px; }
+  .rails figcaption {
+    font-size: 11.5px; letter-spacing: 0.06em; text-transform: uppercase;
+    color: var(--faint); margin-bottom: 6px;
+  }
+  .rails figure img { margin: 0; max-width: 100%; }
+  td.n { font-variant-numeric: tabular-nums; }
+
   [hidden] { display: none !important; }
 </style>
 
@@ -156,9 +194,9 @@
         <p class="sub">
           Benchmark arm <b>E2</b> &mdash; nf&#8209;core/mag's pipeline on CAMI, driven by
           metasmith &mdash; drawn through the modes of <code>DagRenderer</code>. The
-          first panel is one arm's full plan and the switch moves it; the second is a
-          single solve carrying both read shapes; the last is the tool inventory over
-          both arms.
+          first panel is one arm&rsquo;s full plan and the switch moves it, then how
+          the layout assigns its lanes; the third is both arms as bare step chains;
+          the last is the tool inventory over both.
         </p>
       </div>
       <div class="switch theme" role="group" aria-label="theme">
@@ -189,34 +227,109 @@
 
   <section>
     <div class="head">
-      <h2>one solve, both read shapes</h2>
-      <span class="tag">1 short + 1 long sample</span>
-      <span class="count">9 steps &middot; 2 cases</span>
+      <h2>rails</h2>
+      <span class="tag">lane assignment</span>
+      <span class="count">32 lanes &rarr; 21, short arm</span>
     </div>
     <p class="what">
-      <b>A single plan carrying both arms, asked for one <code>e2::comebin_bin</code>.</b>
-      COMEBin names no assembler &mdash; it requires the generic <code>e2::assembly</code>
-      and an <code>e2::binning_bam</code> descended from it &mdash; so both arms can reach
-      it and the solver builds both chains at once. The short arm runs
-      fastp&nbsp;&rarr;&nbsp;MEGAHIT&nbsp;&rarr;&nbsp;bowtie2, the long arm Porechop&nbsp;ABI&nbsp;&rarr;&nbsp;Chopper&nbsp;&rarr;&nbsp;Flye&nbsp;&rarr;&nbsp;minimap2,
-      and <code>comebin</code> is instantiated once per arm on its own BAM. The tool
-      environments are hidden here; they are givens standing outside every sample
-      lineage, and thirteen of them at the top bury the shape.
+      <b>A lane may be shared, but only by edges that agree on one end.</b> A
+      <b>bus</b> shares its source and may branch, shedding a consumer at each row;
+      a <b>funnel</b> shares its target and may absorb but not branch. A lane whose
+      edges agree on neither cannot be read: follow it up from a consumer and it
+      arrives at two producers. <code>e2::assembly</code> feeds five consumers and
+      used to hold five parallel rails; it now holds one.
     </p>
-    <figure id="single-fig"></figure>
+    <div class="rails">
+      <figure>
+        <figcaption>a lane per edge &mdash; three lanes</figcaption>
+        <img class="svg-light" width="151" height="315" src="svg/minimal_binning_old_light.svg" alt="four-tool binning core, a lane reserved per edge">
+        <img class="svg-dark"  width="151" height="315" src="svg/minimal_binning_old_dark.svg"  alt="four-tool binning core, a lane reserved per edge">
+      </figure>
+      <figure>
+        <figcaption>bundled &mdash; two lanes</figcaption>
+        <img class="svg-light" width="134" height="315" src="svg/minimal_binning_new_light.svg" alt="four-tool binning core, the assembly on one bus">
+        <img class="svg-dark"  width="134" height="315" src="svg/minimal_binning_new_dark.svg"  alt="four-tool binning core, the assembly on one bus">
+      </figure>
+    </div>
+    <p class="what">
+      Bundling wins on that shape and loses on a bare fan-out, where four columns
+      read as one-feeding-four and one column reads as a chain. Which strategy wins
+      where is being worked case by case in the
+      <a href="https://claude.ai/artifact/5tfhbLixuswd4K12vc35ZC">lane-strategy panel</a>;
+      the engine frozen at <code>b7c2a2e8</code> stays runnable at
+      <code>research/dagviz/baseline/</code> until that settles.
+    </p>
+    <div class="slots">
+      <table>
+        <thead>
+          <tr><th scope="col">panel</th><th scope="col">lanes</th><th scope="col">crossings</th></tr>
+        </thead>
+        <tbody>
+          <tr><th scope="row">plain, short</th><td class="n">32 &rarr; 21</td><td class="n">691 &rarr; 813</td></tr>
+          <tr><th scope="row">plain, long</th><td class="n">28 &rarr; 19</td><td class="n">564 &rarr; 664</td></tr>
+          <tr><th scope="row">steps</th><td class="n">10 &rarr; 6</td><td class="n">83 &rarr; 80</td></tr>
+          <tr><th scope="row">legend</th><td class="n">59 &rarr; 33</td><td class="n">2421 &rarr; 2341</td></tr>
+          <tr><th scope="row">one solve, both arms</th><td class="n">23 &rarr; 13</td><td class="n">219 &rarr; 281</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <div class="head">
+      <h2>steps</h2>
+      <span class="tag">short + long, full plans</span>
+      <span class="count">23 steps &middot; 12 + 11</span>
+    </div>
+    <p class="what">
+      <b>Both arms with the data dropped &mdash; and the answer to whether they are the
+      same pipeline is yes.</b> Under the substitution
+      <code>fastp&rarr;chopper</code>, <code>megahit&rarr;flye</code>,
+      <code>bowtie2&rarr;minimap2</code>, thirteen of each arm's fourteen private
+      edges map one&#8209;to&#8209;one onto the other's, and the two chains run the same
+      seven&#8209;step tail in the same order. What is left over is one pendant node
+      each: the short arm hangs a <code>fastqc_trimmed</code> report off its trimmer,
+      the long arm puts a <code>porechop_abi</code> stage in front of its own.
+      <code>fastqc_raw</code> is the short arm's third extra &mdash; it reads only
+      givens and nothing consumes what it makes, so it connects to nothing at all.
+    </p>
+    <figure id="steps-fig"></figure>
+    <div class="slots">
+      <table>
+        <caption class="what" style="caption-side: bottom; margin-top: 12px;">
+          The same ten slots, filled by different tools in three of them. Read the
+          rules as the isomorphism the picture above is showing.
+        </caption>
+        <thead>
+          <tr><th scope="col">slot</th><th scope="col">short</th><th scope="col">long</th></tr>
+        </thead>
+        <tbody>
+          <tr><th scope="row">adapter removal</th><td class="none">&mdash; folded into fastp</td><td><code>porechop_abi</code></td></tr>
+          <tr><th scope="row">trim / filter</th><td><code>fastp</code></td><td><code>chopper</code></td></tr>
+          <tr><th scope="row">read QC report</th><td><code>fastqc_raw</code>, <code>fastqc_trimmed</code></td><td class="none">&mdash; none</td></tr>
+          <tr><th scope="row">assembly</th><td><code>megahit</code></td><td><code>flye</code></td></tr>
+          <tr><th scope="row">read mapping</th><td><code>bowtie2_binning_bam</code></td><td><code>minimap2_binning_bam</code></td></tr>
+          <tr><th scope="row">binning</th><td colspan="2" class="same"><code>metabat2</code>, <code>semibin2</code>, <code>comebin</code> &mdash; both arms</td></tr>
+          <tr><th scope="row">refinement</th><td colspan="2" class="same"><code>das_tool</code> &mdash; both arms</td></tr>
+          <tr><th scope="row">bin quality</th><td colspan="2" class="same"><code>checkm2</code> &mdash; both arms</td></tr>
+          <tr><th scope="row">truth</th><td colspan="2" class="same"><code>gold_standard</code> &mdash; both arms</td></tr>
+          <tr><th scope="row">scoring</th><td colspan="2" class="same"><code>amber</code> &mdash; both arms</td></tr>
+        </tbody>
+      </table>
+    </div>
   </section>
 
   <section>
     <div class="head">
       <h2>legend</h2>
       <span class="tag">short + long combined</span>
-      <span class="count">16 blocks &middot; from 29 steps</span>
+      <span class="count">16 blocks &middot; from 23 steps</span>
     </div>
     <p class="what">
       <b>One detached block per transform, in a grid of identical boxes.</b> Each block
-      is what the tool <i>declares</i>, not what a step bound it to &mdash; which is why
-      four <code>checkm2</code> steps reading four bin types are one block requiring
-      <code>e2::bin</code>. Over both arms it is the tool inventory: sixteen names,
+      is what the tool <i>declares</i>, not what a step bound it to &mdash; so
+      <code>checkm2</code> is one block requiring <code>e2::bin</code>, whichever bin
+      set a run hands it. Over both arms it is the tool inventory: sixteen names,
       <code>megahit</code> and <code>flye</code> among them.
     </p>
     <figure id="legend-fig"></figure>
@@ -243,49 +356,80 @@
       are monochrome.
     </p>
     <p>
+      <b>The steps panel keeps the two arms apart on purpose.</b> Both arms name their
+      binner output <code>e2::comebin_bin</code>, so a union keyed on type name folds
+      their tails into one &mdash; binners fed by both assemblers, a join neither arm
+      runs. Every computed type is fenced behind the arm that computed it and only the
+      givens stay shared, which is the truth: the arms read the same metadata, the same
+      references and the same tool environments, and compute nothing in common. The
+      isomorphism is in the shape of the two chains, not in shared nodes.
+    </p>
+    <p>
+      <b>CheckM2 runs on the consolidated set only.</b> DAS&nbsp;Tool's input is the three
+      binners' raw bins; those exist to be consolidated, so a CheckM2 row on one of them
+      describes an intermediate rather than a genome the pipeline reports. That removed
+      three steps per arm. It is a deliberate divergence from E1, which runs
+      <code>postbinning_input = 'both'</code> and therefore scores all four sets &mdash;
+      but that setting is there to keep the pinned binners present in nf&#8209;core/mag's
+      downstream tables, since <code>refined_bins_only</code> empties every one of them.
+      Parity is DAS&nbsp;Tool against DAS&nbsp;Tool. The per-binner bins and
+      contig&#8209;to&#8209;bin tables are still built, because DAS&nbsp;Tool requires
+      them, so a per-binner pass stays available after the fact.
+    </p>
+    <p>
       <b>A data node is one per slot, not one per type.</b> A given draws once per
       type, because its instance ids are per-sample and a 208-sample plan would
       otherwise put 208 circles where the plan means one input. Everything a step
       makes draws once per <i>instance</i>, because that id is the slot &mdash;
       structural, one per branch, and the same whether the plan carries one sample or
-      two hundred. Keying those by type name too is what used to draw the two arms'
-      <code>binning_bam</code> as a single circle fed by both aligners and read by
-      both binners, a join neither arm runs. It also collapsed the four
-      <code>checkm2</code> steps onto one output; they now have four, which is why the
-      per-arm counts moved to 58 and 52.
+      two hundred.
     </p>
     <p>
-      <b>What the one-solve panel does not extend to is the full E2 target set.</b>
-      Both arms reach COMEBin because it names no assembler. Ask for
-      <code>e2::megahit_assembly</code>, or for the short-only FastQC and fastp
-      reports, and one arm cannot fill the slot: the merge then substitutes Flye's
-      product for MEGAHIT's and the plan witness catches it as <code>emission</code>.
-      So the two full arms stay two solves &mdash; not because the read shapes cannot
-      mix, but because that target set asks each case for something only the other
-      can make.
+      <b>One solve can carry both read shapes.</b> Asked for a single
+      <code>e2::comebin_bin</code> &mdash; which names no assembler, requiring the generic
+      <code>e2::assembly</code> and a BAM descended from it &mdash; both arms reach it and
+      the solver returns nine steps with COMEBin instantiated once per arm. What defeats
+      the full target set is not the read shapes but a slot only one arm can fill:
+      <code>e2::megahit_assembly</code>, and the short-only FastQC and fastp reports.
+      So these two full plans stay two solves.
     </p>
     <p>
-      <code>fastqc_raw</code> sits alone at the top on purpose. It reads only givens
-      and produces a target nothing consumes, so once the data is dropped there is
-      nothing for it to connect to &mdash; it is the only such step in either arm.
-      Disjoint networks are laid out smallest first, which is what brings it to the
-      top rather than leaving it stranded at the bottom looking like a mistake.
+      <b>What the rule would not allow.</b> The complaint that started it was that
+      <code>megahit</code>'s assembly and the bowtie2 BAM take separate rails into
+      <code>metabat2</code>, and that the BAM should merge into metabat2's. It cannot:
+      the assembly's rail is a bus serving five consumers, and a bus may not absorb.
+      Nor can the assembly's edge move onto the BAM's rail &mdash; a funnel can only
+      form at or below its lowest source, and the assembly is made well above the BAM.
+      What the rule gives instead is that each of those two nodes now leaves on
+      <i>one</i> rail rather than five and three, which is where the width was.
     </p>
     <p>
-      Plan topology only. The givens here resolve against a copied pool, so the plan
-      key is not E2's published one.
+      <b>Stating the rule found three ways the drawing was already lying.</b> A rail
+      was packed by whole rows although it occupies half a row past each end, so two
+      unrelated rails that merely touched shared a lane and overlapped for a full row.
+      A rail between neighbouring rows emitted its corner twice, which read as a
+      zero-length sideways step and kinked the leg off true. And a sideways jog was
+      banded by the direction it travelled rather than by which end it belonged to, so
+      a rightward departure and a rightward arrival met at a point &mdash; a line you
+      could follow from one step's producer into a different step's consumer. On 200
+      random DAGs, 77 drawings broke the rule before and none after.
+    </p>
+    <p>
+      Plan topology only. The givens here resolve against a copied pool and this
+      worktree compiles its own library metadata, so the plan key is not E2's
+      published one.
     </p>
   </div>
 </div>
 
 <script>
   const SIZE = {
-    "short_plain":    [848, 2037],
-    "long_plain":     [811, 1830],
-    "single":         [625, 1245],
+    "short_plain":    [561, 1830],
+    "long_plain":     [557, 1624],
+    "combined_steps": [292, 831],
     "combined_legend":[1165, 2599],
   };
-  const PLAIN_COUNT = { short: "58 nodes", long: "52 nodes" };
+  const PLAIN_COUNT = { short: "12 steps · 52 nodes", long: "11 steps · 46 nodes" };
 
   function pair(key, alt) {
     const [w, h] = SIZE[key];
@@ -302,8 +446,8 @@
     document.getElementById("plain-count").textContent = PLAIN_COUNT[arm];
   }
 
-  document.getElementById("single-fig").innerHTML =
-    pair("single", "one solve carrying a short and a long sample to COMEBin bins");
+  document.getElementById("steps-fig").innerHTML =
+    pair("combined_steps", "both E2 arms as step chains, transforms only");
   document.getElementById("legend-fig").innerHTML =
     pair("combined_legend", "E2 both arms, one block per transform");
 

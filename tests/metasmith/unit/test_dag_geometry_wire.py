@@ -91,7 +91,7 @@ def test_a_lane_floor_moves_the_gutter_and_not_the_shape(geo):
     shift = wide["nodes"][0]["cx"] - geo["nodes"][0]["cx"]
     assert shift > 0
     for a, b in zip(geo["nodes"], wide["nodes"]):
-        assert a["lane"] == b["lane"] and a["row"] == b["row"]
+        assert a["col"] == b["col"] and a["row"] == b["row"]
         assert b["cx"] - a["cx"] == pytest.approx(shift)
 
 

@@ -273,7 +273,9 @@ class DagRenderer:
                 edges.append((src, dst))
         return nodes, edges
 
-    def _legend_blocks(self) -> tuple[list[tuple[Layout, dict[str, Label]]], Colouring]:
+    def _legend_blocks(
+        self,
+    ) -> tuple[list[tuple[Layout, dict[str, Label], dict[str, NodeKind]]], Colouring]:
         preds, succs = self._neighbours()
         labels = self.labels
         order: list[str] = []
@@ -299,7 +301,7 @@ class DagRenderer:
             hue_of.setdefault(key, base.nodes.get(name, ""))
             order.append(key)
 
-        blocks: list[tuple[Layout, dict[str, Label]]] = []
+        blocks: list[tuple[Layout, dict[str, Label], dict[str, NodeKind]]] = []
         nodes_hue: dict[str, str] = dict(base.nodes)
         for key in order:
             ins, outs = sig[key]
@@ -321,14 +323,14 @@ class DagRenderer:
                 edges.append((tid, name))
             if hue_of.get(key):
                 nodes_hue[tid] = hue_of[key]
-            blocks.append((layout(block, edges), lab))
+            blocks.append((layout(block, edges), lab, block))
 
         tinted = Colouring(
             nodes=nodes_hue,
             edges={
                 (a, b): nodes_hue[a]
-                for lay, _ in blocks
-                for a, b in ((e.src, e.dst) for e in lay.edges if not e.back)
+                for lay, _, _ in blocks
+                for a, b in lay.edges
                 if a in nodes_hue
             },
         )
@@ -366,7 +368,7 @@ class DagRenderer:
         self._reject_legend("text")
         lay = self.layout()
         return render_text(
-            lay, self._theme.styles, labels=self.labels,
+            lay, self._theme.styles, kinds=self._nodes, labels=self.labels,
             unicode=unicode, color=color,
             colour=self.colouring(lay),
         )
@@ -382,7 +384,8 @@ class DagRenderer:
     ) -> Geometry:
         lay = lay or self.layout()
         return _geometry(
-            lay, self._theme.styles, labels=self.labels, label_mode=self._label_mode,
+            lay, self._theme.styles, kinds=self._nodes, labels=self.labels,
+            label_mode=self._label_mode,
             font_size=font_size, max_label_chars=max_label_chars,
             min_lanes=min_lanes, rows_y=rows_y,
         )
@@ -397,7 +400,7 @@ class DagRenderer:
             )
         lay = self.layout()
         return render_svg(
-            lay, self._theme.styles, labels=self.labels,
+            lay, self._theme.styles, kinds=self._nodes, labels=self.labels,
             label_mode=self._label_mode, font=self._font,
             colour=self.colouring(lay), plate=self._theme.plate,
         )
@@ -413,7 +416,7 @@ class DagRenderer:
         self._reject_legend("raster")
         lay = self.layout()
         return raster_dot(
-            lay, self._theme.styles, labels=self.labels,
+            lay, self._theme.styles, kinds=self._nodes, labels=self.labels,
             label_mode=self._label_mode, font=self._font,
             colour=self.colouring(lay), plate=self._theme.plate,
         )

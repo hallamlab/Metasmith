@@ -57,20 +57,16 @@ def colour_layout(
         if scheme == "module"
         else build(lay)
     )
-    edges = {
-        (e.src, e.dst): nodes[e.src]
-        for e in lay.edges
-        if not e.back and e.src in nodes
-    }
+    edges = {(src, dst): nodes[src] for src, dst in lay.edges if src in nodes}
     return Colouring(nodes=nodes, edges=edges)
 
 
 def _by_lane(lay: Layout) -> dict[str, str]:
-    return {n.name: PALETTE[n.lane % len(PALETTE)] for n in lay.nodes}
+    return {n: PALETTE[c % len(PALETTE)] for n, c in lay.col.items()}
 
 
 def _by_repeat(lay: Layout) -> dict[str, str]:
-    out = {n.name: UNMATCHED for n in lay.nodes}
+    out = {n: UNMATCHED for n in lay.order}
     for i, m in enumerate(repeat_motifs(lay)):
         hue = PALETTE[i % len(PALETTE)]
         for x in m.nodes:
@@ -79,12 +75,8 @@ def _by_repeat(lay: Layout) -> dict[str, str]:
 
 
 def _module_owner(lay: Layout) -> dict[str, str | None]:
-    names = [n.name for n in lay.nodes]
-    parents: dict[str, list[str]] = {n: [] for n in names}
-    for e in lay.edges:
-        if not e.back:
-            parents[e.dst].append(e.src)
-    idom = dominators(names, parents)
+    names = list(lay.order)
+    idom = dominators(names, lay.parents)
 
     size: dict[str, int] = dict.fromkeys(names, 1)
     for n in reversed(names):
@@ -109,7 +101,7 @@ def _by_module(
     overrides: Mapping[str, str] | None = None,
 ) -> dict[str, str]:
     overrides = overrides or {}
-    names = [n.name for n in lay.nodes]
+    names = list(lay.order)
     owner = _module_owner(lay)
     depth = {n: i for i, n in enumerate(names)}
     order = sorted(
@@ -117,8 +109,8 @@ def _by_module(
         key=lambda h: (depth[h], natural_key(h)),
     )
     adjacent: dict[str, set[str]] = {h: set() for h in order}
-    for e in lay.edges:
-        a, b = owner[e.src], owner[e.dst]
+    for src, dst in lay.edges:
+        a, b = owner[src], owner[dst]
         if a is not None and b is not None and a != b:
             adjacent[a].add(b)
             adjacent[b].add(a)
@@ -136,16 +128,16 @@ def _by_module(
 
 def _by_namespace(lay: Layout) -> dict[str, str]:
     spaces = sorted(
-        {n.name.split("::", 1)[0] for n in lay.nodes if "::" in n.name}
+        {n.split("::", 1)[0] for n in lay.order if "::" in n}
     )
     slot = {ns: i for i, ns in enumerate(spaces)}
     return {
-        n.name: (
-            PALETTE[slot[n.name.split("::", 1)[0]] % len(PALETTE)]
-            if "::" in n.name
+        n: (
+            PALETTE[slot[n.split("::", 1)[0]] % len(PALETTE)]
+            if "::" in n
             else UNMATCHED
         )
-        for n in lay.nodes
+        for n in lay.order
     }
 
 

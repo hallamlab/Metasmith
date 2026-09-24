@@ -22,7 +22,8 @@ __all__ = [
 _NO_COLOUR = Colouring()
 
 DEFAULT_LABEL_CHARS = 32
-BAND = 0.10
+# where a node's band sits in the gap above it, as a fraction of the gap
+BAND = 0.5
 
 
 class LabelMode(Enum):
@@ -93,7 +94,7 @@ def marker_size(st: Style, marker_d: float) -> tuple[float, float]:
 
 def _labels_for(lay: Layout, labels: Mapping[str, Label] | None) -> dict[str, Label]:
     labels = labels or {}
-    return {n.name: labels.get(n.name) or default_label(n.name) for n in lay.nodes}
+    return {n: labels.get(n) or default_label(n) for n in lay.order}
 
 
 _UP, _DOWN, _LEFT, _RIGHT = 1, 2, 4, 8
@@ -108,33 +109,18 @@ _GLYPHS_ASCII = {
 }
 
 
-def _column(lane: int, columns: int) -> int:
-    return columns - 2 - 2 * lane
-
-
-def _paint(pairs, columns: int) -> list[int]:
-    mask = [0] * columns
-    for a, b in pairs:
-        ca, cb = _column(a, columns), _column(b, columns)
-        if ca == cb:
-            mask[ca] |= _UP | _DOWN
-            continue
-        lo, hi = (ca, cb) if cb > ca else (cb, ca)
-        if cb > ca:
-            mask[ca] |= _UP | _RIGHT
-            mask[cb] |= _DOWN | _LEFT
-        else:
-            mask[ca] |= _UP | _LEFT
-            mask[cb] |= _DOWN | _RIGHT
-        for c in range(lo + 1, hi):
-            mask[c] |= _LEFT | _RIGHT
-    return mask
+def _paint(mask: list[int], lo: int, hi: int) -> None:
+    mask[2 * lo] |= _RIGHT
+    mask[2 * hi] |= _LEFT
+    for c in range(2 * lo + 1, 2 * hi):
+        mask[c] |= _LEFT | _RIGHT
 
 
 def render_text(
     lay: Layout,
     style: Mapping[Any, Style] | None = None,
     *,
+    kinds: Mapping[str, Any] | None = None,
     labels: Mapping[str, Label] | None = None,
     unicode: bool = True,
     color: bool = False,
@@ -143,40 +129,41 @@ def render_text(
     if lay.height == 0:
         return ""
     style = style or {}
+    kinds = kinds or {}
     colour = colour or _NO_COLOUR
     lab = _labels_for(lay, labels)
     glyphs = _GLYPHS if unicode else _GLYPHS_ASCII
-    columns = 2 * lay.width
-    label_col = columns + 1
+    columns = 2 * lay.width - 1
     arrow = "↺" if unicode else "^"
 
     back_from: dict[str, list[str]] = {}
-    for e in lay.edges:
-        if e.back:
-            back_from.setdefault(e.src, []).append(e.dst)
+    for src, dst in lay.back:
+        back_from.setdefault(src, []).append(dst)
 
     out: list[str] = []
-    for node in lay.nodes:
-        st = style.get(node.kind, _DEFAULT_STYLE)
-        mask = _paint([(c, c) for c in sorted(lay.crossing_lanes(node.row))], columns)
+    for r, name in enumerate(lay.order):
+        bar = lay.bars.get(name)
+        if bar is not None and bar.span[0] < bar.span[1]:
+            out.append("".join(glyphs[m] for m in _connector(lay, bar, columns)).rstrip())
+        elif bar is None and r and lay.col[lay.order[r - 1]] == lay.col[name]:
+            mask = [0] * columns
+            for u in lay.live(2 * r - 1):
+                mask[2 * u.col] |= _UP | _DOWN
+            out.append("".join(glyphs[m] for m in mask).rstrip())
+        st = style.get(kinds.get(name), _DEFAULT_STYLE)
+        mask = [0] * columns
+        for u in lay.live(2 * r):
+            mask[2 * u.col] |= _UP | _DOWN
         cells = [glyphs[m] for m in mask]
-        cells[_column(node.lane, columns)] = st.marker if unicode else st.ascii_marker
-        line = "".join(cells) + " " * (label_col - columns)
-        escape_ = _ansi(colour.nodes.get(node.name)) or st.ansi
+        c = 2 * lay.col[name]
+        cells[c] = st.marker if unicode else st.ascii_marker
+        escape_ = _ansi(colour.nodes.get(name)) or st.ansi
         if color and escape_:
-            c = _column(node.lane, columns)
-            line = f"{line[:c]}{escape_}{line[c]}\033[0m{line[c + 1:]}"
-        label = lab[node.name].full
-        if node.name in back_from:
-            label += "  " + " ".join(
-                f"{arrow} {lab[d].full}" for d in sorted(back_from[node.name])
-            )
-        out.append((line + label).rstrip())
-
-        if node.row == lay.height - 1:
-            continue
-        for connector in _connectors(lay, node.row, columns):
-            out.append("".join(glyphs[m] for m in connector).rstrip())
+            cells[c] = f"{escape_}{cells[c]}\033[0m"
+        label = lab[name].full
+        if name in back_from:
+            label += "  " + " ".join(f"{arrow} {lab[d].full}" for d in sorted(back_from[name]))
+        out.append(("".join(cells) + "  " + label).rstrip())
     return "\n".join(out) + "\n"
 
 
@@ -188,35 +175,22 @@ def _ansi(hex_colour: str | None) -> str:
     return f"\033[38;2;{r};{g};{b}m"
 
 
-def _connectors(lay: Layout, row: int, columns: int) -> list[list[int]]:
-    segments = []
-    for e in lay.gap_edges(row):
-        src, dst = lay[e.src], lay[e.dst]
-        top = src.lane if src.row == row else e.lane
-        bottom = dst.lane if dst.row == row + 1 else e.lane
-        segments.append((top, e.lane, bottom))
-
-    fan_out = any(top != mid for top, mid, _ in segments)
-    fan_in = any(mid != bottom for _, mid, bottom in segments)
-    if fan_out and fan_in:
-        return [
-            _paint([(top, mid) for top, mid, _ in segments], columns),
-            _paint([(mid, bottom) for _, mid, bottom in segments], columns),
-        ]
-    if fan_out:
-        return [_paint([(top, mid) for top, mid, _ in segments], columns)]
-    if fan_in:
-        return [_paint([(mid, bottom) for _, mid, bottom in segments], columns)]
-
-    here, below = lay.nodes[row].lane, lay.nodes[row + 1].lane
-    if here == below and here not in {mid for _, mid, _ in segments}:
-        return [_paint([(mid, mid) for _, mid, _ in segments], columns)]
-    return []
+def _connector(lay: Layout, bar, columns: int) -> list[int]:
+    mask = [0] * columns
+    feeding = {f.src for f in bar.feeds}
+    for u in lay.live(bar.band):
+        if u.node != bar.node and u.node not in feeding:
+            mask[2 * u.col] |= _UP | _DOWN
+    for f in bar.feeds:
+        mask[2 * f.col] |= _UP if f.turns else _UP | _DOWN
+    mask[2 * bar.col] |= _DOWN
+    _paint(mask, *bar.span)
+    return mask
 
 
 @dataclass(frozen=True)
 class _Grid:
-    lane_x: tuple[float, ...]
+    col_x: tuple[float, ...]
     label_x: tuple[float, ...]
     anchor: str
     row_pitch: float
@@ -228,23 +202,20 @@ class _Grid:
     height: float
     rows_y: tuple[float, ...] = ()
 
-    def x(self, lane: float) -> float:
-        return self.lane_x[int(lane)]
+    def x(self, col: int) -> float:
+        return self.col_x[col]
 
-    def y(self, row: float) -> float:
+    def y(self, row: int) -> float:
         if not self.rows_y:
             return self.margin + (row + 0.5) * self.row_pitch
-        lo = int(row)
-        frac = row - lo
-        top = self.rows_y[min(lo, len(self.rows_y) - 1)]
-        return top + frac * (self.rows_y[min(lo + 1, len(self.rows_y) - 1)] - top)
+        return self.rows_y[row]
 
-    def gap(self, row: float) -> float:
-        if not self.rows_y:
-            return self.row_pitch
-        lo = int(row)
-        top = self.rows_y[min(lo, len(self.rows_y) - 1)]
-        return self.rows_y[min(lo + 1, len(self.rows_y) - 1)] - top or self.row_pitch
+    def half(self, half_row: int) -> float:
+        """y of a half-row: a node's row when even, the band above it when odd."""
+        if half_row % 2 == 0:
+            return self.y(half_row // 2)
+        below = (half_row + 1) // 2
+        return self.y(below) - BAND * (self.y(below) - self.y(below - 1))
 
 
 @dataclass(frozen=True)
@@ -280,18 +251,19 @@ def _grid(
     rows_y: Sequence[float] = (),
 ) -> tuple[_Grid, dict[str, _Drawn]]:
     lab = _labels_for(lay, labels)
-    lanes = max(lay.width, min_lanes)
+    cols = max(lay.width, min_lanes)
+    shift = cols - lay.width
     char_w = font_size * 0.58
     marker_d = 0.82 * font_size
     lane_pitch = 1.30 * font_size
     label_pad = 0.55 * font_size
 
     drawn: dict[str, _Drawn] = {}
-    for n in lay.nodes:
-        L = lab[n.name]
+    for n in lay.order:
+        L = lab[n]
         ns, ns_cut = _clip(L.namespace, 2 * max_chars)
         name, name_cut = _clip(L.name, max_chars)
-        drawn[n.name] = _Drawn(
+        drawn[n] = _Drawn(
             namespace=ns,
             name=name,
             full=L.full,
@@ -300,35 +272,30 @@ def _grid(
         )
 
     margin = 1.5 * font_size
-    row_pitch = max(2.4 * font_size, (lane_pitch + marker_d) / (1 - 2 * BAND))
+    row_pitch = max(2.4 * font_size, lane_pitch + marker_d)
     if mode is LabelMode.BESIDE:
-        col_w = [lane_pitch] * lanes
-        for n in lay.nodes:
-            need = marker_d + label_pad + drawn[n.name].width
-            col_w[n.lane] = max(col_w[n.lane], need)
-        lane_x = [0.0] * lanes
-        label_x = [0.0] * lanes
-        cursor = margin
-        for lane in range(lanes - 1, -1, -1):
-            lane_x[lane] = cursor + col_w[lane] - marker_d / 2
-            label_x[lane] = lane_x[lane] - marker_d / 2 - label_pad
-            cursor += col_w[lane]
+        col_w = [lane_pitch] * cols
+        for n in lay.order:
+            c = lay.col[n] + shift
+            col_w[c] = max(col_w[c], marker_d + label_pad + drawn[n].width)
+        col_x, label_x, cursor = [], [], margin
+        for w in col_w:
+            col_x.append(cursor + w - marker_d / 2)
+            label_x.append(col_x[-1] - marker_d / 2 - label_pad)
+            cursor += w
         anchor = "end"
         width = cursor + margin
     else:
-        lane_x = [
-            margin + marker_d / 2 + (lanes - 1 - i) * lane_pitch
-            for i in range(lanes)
-        ]
-        column = margin + marker_d + (lanes - 1) * lane_pitch + label_pad
-        label_x = [column] * lanes
+        col_x = [margin + marker_d / 2 + c * lane_pitch for c in range(cols)]
+        column = margin + marker_d + (cols - 1) * lane_pitch + label_pad
+        label_x = [column] * cols
         anchor = "start"
         width = column + max((d.width for d in drawn.values()), default=0.0) + margin
 
     return (
         _Grid(
-            lane_x=tuple(lane_x),
-            label_x=tuple(label_x),
+            col_x=tuple(col_x[shift:]),
+            label_x=tuple(label_x[shift:]),
             anchor=anchor,
             row_pitch=row_pitch,
             lane_pitch=lane_pitch,
@@ -345,31 +312,17 @@ def _grid(
     )
 
 
-def _jog_roles(lay: Layout, edge) -> list[int]:
-    roles = [0] * len(edge.points)
-    for i, ((row, lane), (next_row, next_lane)) in enumerate(
-        zip(edge.points, edge.points[1:])
-    ):
-        if row != next_row:
-            continue
-        roles[i] = roles[i + 1] = -1 if next_lane > lane else 1
-    return roles
-
-
 def _pixel_path(
     lay: Layout,
-    edge,
+    src: str,
+    dst: str,
     g: _Grid,
-    style: Mapping[Any, Style] | None = None,
-) -> list[tuple[float, float]]:
-    style = style or {}
-    roles = _jog_roles(lay, edge)
-    points = [
-        (g.x(lane), g.y(row) + roles[i] * BAND * g.gap(row))
-        for i, (row, lane) in enumerate(edge.points)
-    ]
-    top = style.get(lay[edge.src].kind, _DEFAULT_STYLE)
-    bot = style.get(lay[edge.dst].kind, _DEFAULT_STYLE)
+    style: Mapping[Any, Style],
+    kinds: Mapping[str, Any],
+) -> tuple[list[tuple[float, float]], dict[int, _Arc]]:
+    points = [(g.x(c), g.half(h)) for h, c in lay.route(src, dst)]
+    top = style.get(kinds.get(src), _DEFAULT_STYLE)
+    bot = style.get(kinds.get(dst), _DEFAULT_STYLE)
     points[0] = (points[0][0], points[0][1] + marker_size(top, g.marker_d)[1] / 2)
     points[-1] = (points[-1][0], points[-1][1] - marker_size(bot, g.marker_d)[1] / 2)
     return _round_corners(points, g.lane_pitch / 2)
@@ -445,7 +398,7 @@ class NodeGeometry:
     name: str
     kind: Any
     row: int
-    lane: int
+    col: int
     cx: float
     cy: float
     label_x: float
@@ -482,6 +435,7 @@ def geometry(
     lay: Layout,
     style: Mapping[Any, Style] | None = None,
     *,
+    kinds: Mapping[str, Any] | None = None,
     labels: Mapping[str, Label] | None = None,
     label_mode: LabelMode = LabelMode.COLUMN,
     max_label_chars: int = DEFAULT_LABEL_CHARS,
@@ -490,29 +444,31 @@ def geometry(
     rows_y: Sequence[float] = (),
 ) -> Geometry:
     style = style or {}
+    kinds = kinds or {}
     g, drawn = _grid(
         lay, font_size=font_size, labels=labels,
         mode=label_mode, max_chars=max_label_chars,
         min_lanes=min_lanes, rows_y=rows_y,
     )
     nodes = []
-    for node in lay.nodes:
-        st = style.get(node.kind, _DEFAULT_STYLE)
-        d = drawn[node.name]
-        mw, mh = marker_size(st, g.marker_d)
+    for name in lay.order:
+        kind = kinds.get(name)
+        d = drawn[name]
+        mw, mh = marker_size(style.get(kind, _DEFAULT_STYLE), g.marker_d)
+        c, r = lay.col[name], lay.row[name]
         nodes.append(NodeGeometry(
-            name=node.name, kind=node.kind, row=node.row, lane=node.lane,
-            cx=g.x(node.lane), cy=g.y(node.row), label_x=g.label_x[node.lane],
+            name=name, kind=kind, row=r, col=c,
+            cx=g.x(c), cy=g.y(r), label_x=g.label_x[c],
             marker_w=mw, marker_h=mh,
             namespace=d.namespace, label=d.name, full=d.full, truncated=d.truncated,
         ))
     edges = [
         EdgeGeometry(
-            src=e.src, dst=e.dst, back=e.back,
-            d="" if e.back else _svg_path(*_pixel_path(lay, e, g, style)),
+            src=src, dst=dst, back=False,
+            d=_svg_path(*_pixel_path(lay, src, dst, g, style, kinds)),
         )
-        for e in lay.edges
-    ]
+        for src, dst in lay.edges
+    ] + [EdgeGeometry(src=src, dst=dst, back=True, d="") for src, dst in lay.back]
     return Geometry(
         width=g.width, height=g.height, font_size=g.font_size,
         marker_d=g.marker_d, row_pitch=g.row_pitch, lane_pitch=g.lane_pitch,
@@ -524,6 +480,7 @@ def render_svg(
     lay: Layout,
     style: Mapping[Any, Style] | None = None,
     *,
+    kinds: Mapping[str, Any] | None = None,
     labels: Mapping[str, Label] | None = None,
     label_mode: LabelMode = LabelMode.COLUMN,
     max_label_chars: int = DEFAULT_LABEL_CHARS,
@@ -536,7 +493,7 @@ def render_svg(
     colour = colour or _NO_COLOUR
     plate = plate or _DEFAULT_PLATE
     g = geometry(
-        lay, style, labels=labels, label_mode=label_mode,
+        lay, style, kinds=kinds, labels=labels, label_mode=label_mode,
         max_label_chars=max_label_chars, font_size=font_size,
     )
     parts = [
@@ -594,7 +551,7 @@ def _svg_body(
 
 
 def render_legend(
-    blocks: Sequence[tuple[Layout, Mapping[str, Label]]],
+    blocks: Sequence[tuple[Layout, Mapping[str, Label], Mapping[str, Any]]],
     style: Mapping[Any, Style] | None = None,
     *,
     label_mode: LabelMode = LabelMode.COLUMN,
@@ -607,7 +564,7 @@ def render_legend(
 ) -> str:
     """Compose small detached drawings into a grid of identically sized boxes.
 
-    Every block is laid out against the widest block's lane count, so the label
+    Every block is laid out against the widest block's column count, so the label
     column falls at the same x in all of them and the grid reads as one table
     rather than as a row of unrelated pictures.
     """
@@ -621,21 +578,21 @@ def render_legend(
             ' viewBox="0 0 0 0"/>\n'
         )
 
-    lanes = max(lay.width for lay, _ in blocks)
+    cols = max(lay.width for lay, _, _ in blocks)
     geos = [
         geometry(
-            lay, style, labels=labels, label_mode=label_mode,
-            max_label_chars=max_label_chars, font_size=font_size, min_lanes=lanes,
+            lay, style, kinds=kinds, labels=labels, label_mode=label_mode,
+            max_label_chars=max_label_chars, font_size=font_size, min_lanes=cols,
         )
-        for lay, labels in blocks
+        for lay, labels, kinds in blocks
     ]
     box_w = max(g.width for g in geos)
     box_h = max(g.height for g in geos)
 
-    cols = columns if columns > 0 else max(1, round(len(geos) ** 0.5))
-    rows = -(-len(geos) // cols)
+    per_row = columns if columns > 0 else max(1, round(len(geos) ** 0.5))
+    rows = -(-len(geos) // per_row)
     gap = font_size
-    width = 2 * gap + cols * box_w + (cols - 1) * gap
+    width = 2 * gap + per_row * box_w + (per_row - 1) * gap
     height = 2 * gap + rows * box_h + (rows - 1) * gap
 
     parts = [
@@ -647,8 +604,8 @@ def render_legend(
           if plate.paint_background else []),
     ]
     for i, g in enumerate(geos):
-        x = gap + (i % cols) * (box_w + gap)
-        y = gap + (i // cols) * (box_h + gap)
+        x = gap + (i % per_row) * (box_w + gap)
+        y = gap + (i // per_row) * (box_h + gap)
         parts.append(
             f'<rect x="{x:.1f}" y="{y:.1f}" width="{box_w:.1f}" height="{box_h:.1f}"'
             f' rx="{0.5 * font_size:.1f}" fill="none" stroke="{plate.rule}"/>'
@@ -714,6 +671,7 @@ def raster_dot(
     lay: Layout,
     style: Mapping[Any, Style] | None = None,
     *,
+    kinds: Mapping[str, Any] | None = None,
     labels: Mapping[str, Label] | None = None,
     label_mode: LabelMode = LabelMode.COLUMN,
     max_label_chars: int = DEFAULT_LABEL_CHARS,
@@ -737,14 +695,16 @@ def raster_dot(
         f'edge  [fontname="{font}", color="{plate.edge}", dir="none"];',
     ]
     prefix = _label_prefix(lay)
-    for node in lay.nodes:
-        st = style.get(node.kind, _DEFAULT_STYLE)
-        d = drawn[node.name]
-        x, y = g.x(node.lane), g.height - g.y(node.row)
+    kinds = kinds or {}
+    for name in lay.order:
+        st = style.get(kinds.get(name), _DEFAULT_STYLE)
+        d = drawn[name]
+        c = lay.col[name]
+        x, y = g.x(c), g.height - g.y(lay.row[name])
         w, h = marker_size(st, g.marker_d)
-        fill, stroke = tint(st, colour.nodes.get(node.name))
+        fill, stroke = tint(st, colour.nodes.get(name))
         lines.append(
-            f'  "{node.name}" [pos="{x:.1f},{y:.1f}!", label="",'
+            f'  "{name}" [pos="{x:.1f},{y:.1f}!", label="",'
             f' width={w / 72:.3f}, height={h / 72:.3f},'
             f' penwidth={st.stroke_width:g},'
             f' shape="{st.shape}", style="{st.gv_style}",'
@@ -754,28 +714,28 @@ def raster_dot(
         box = max(d.width, 1.0)
         half = box / 2 if g.anchor == "start" else -box / 2
         lines.append(
-            f'  "{prefix}{node.name}" [pos="{g.label_x[node.lane] + half:.1f},'
+            f'  "{prefix}{name}" [pos="{g.label_x[c] + half:.1f},'
             f'{y:.1f}!", shape="plaintext", style="", width={box / 72:.3f},'
             f' height={2.0 * font_size / 72:.3f},'
             f" label=<{_html_label(d, st, font_size, box, g.anchor)}>];"
         )
-    for e in lay.edges:
-        if e.back:
-            lines.append(f'  "{e.src}" -> "{e.dst}" [style="dashed"];')
-            continue
+    for src, dst in lay.edges:
         pts = [
-            (x, g.height - y) for x, y in _flatten(*_pixel_path(lay, e, g, style))
+            (x, g.height - y)
+            for x, y in _flatten(*_pixel_path(lay, src, dst, g, style, kinds))
         ]
-        hue = colour.edges.get((e.src, e.dst))
+        hue = colour.edges.get((src, dst))
         tone = f', color="{hue}"' if hue else ""
-        lines.append(f'  "{e.src}" -> "{e.dst}" [pos="{_spline(pts)}"{tone}];')
+        lines.append(f'  "{src}" -> "{dst}" [pos="{_spline(pts)}"{tone}];')
+    for src, dst in lay.back:
+        lines.append(f'  "{src}" -> "{dst}" [style="dashed"];')
     lines.append("}")
     return "\n".join(lines)
 
 
 def _label_prefix(lay: Layout) -> str:
     prefix = "__label__"
-    while any(n.name.startswith(prefix) for n in lay.nodes):
+    while any(n.startswith(prefix) for n in lay.order):
         prefix = "_" + prefix
     return prefix
 

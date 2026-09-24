@@ -5,7 +5,7 @@ import pytest
 
 from tests.metasmith.fixtures import load_dag
 
-from metasmith.models.dag_draw import geometry, marker_size
+from metasmith.models.dag_draw import marker_size
 from metasmith.models.dag_renderer import (
     DARK, STYLES, THEMES, DagRenderer, Label, LabelMode, NodeKind,
 )
@@ -101,7 +101,7 @@ def test_same_named_steps_stay_distinct_nodes():
         r.add_node(NodeKind.TRANSFORM, f"{i} checkm", Label(name="checkm"))
         r.add_edge(f"bins::from_binner_{i}", f"{i} checkm")
         r.add_edge(f"{i} checkm", f"qc::stats_{i}")
-    assert len(r.layout().nodes) == 9
+    assert r.layout().height == 9
     assert r.to_text().count("checkm") == 3
 
 
@@ -343,10 +343,10 @@ def test_a_rail_stops_at_the_shape_it_points_at():
     g, _ = dd._grid(lay, font_size=13.0, labels=r.labels)
     tri = dd.marker_size(STYLES[NodeKind.TRANSFORM], g.marker_d)[1] / 2
     circ = dd.marker_size(STYLES[NodeKind.DATA], g.marker_d)[1] / 2
-    into_step = next(e for e in lay.edges if e.dst == "step1")
-    pts = dd._pixel_path(lay, into_step, g, STYLES)[0]
-    assert abs(pts[0][1] - (g.y(lay["thing"].row) + circ)) < 0.05
-    assert abs(pts[-1][1] - (g.y(lay["step1"].row) - tri)) < 0.05
+    into_step = next(e for e in lay.edges if e[1] == "step1")
+    pts = dd._pixel_path(lay, *into_step, g, STYLES, r._nodes)[0]
+    assert abs(pts[0][1] - (g.y(lay.row["thing"]) + circ)) < 0.05
+    assert abs(pts[-1][1] - (g.y(lay.row["step1"]) - tri)) < 0.05
     assert tri < circ
 
 
@@ -492,65 +492,37 @@ def test_every_corner_is_an_arc():
                if p.startswith("<path") and p not in bent)
 
 
-def test_the_two_directions_of_travel_land_in_different_bands():
+def test_every_horizontal_leg_sits_midway_above_its_target():
     r = DagRenderer()
-    r.add_edge("a", "b")
-    r.add_edge("a", "c")
-    r.add_edge("b", "d")
-    r.add_edge("c", "d")
-    ys = {y for pts in _edge_paths(r.to_svg()) for _, y in pts}
-    assert len(ys) > 4
+    for i in range(4):
+        r.add_edge("root", f"child_{i}")
+        r.add_edge(f"child_{i}", "join")
+    g = r.geometry()
+    ys = sorted(n.cy for n in g.nodes)
+    bands = {round((a + b) / 2, 1) for a, b in zip(ys, ys[1:])}
+    flats = {
+        round(a[1], 1)
+        for pts in _edge_paths(r.to_svg())
+        for a, b in zip(pts, pts[1:])
+        if a[1] == b[1] and a[0] != b[0]
+    }
+    assert flats and flats <= bands
 
 
-def test_a_jog_is_banded_by_the_way_it_travels():
-    from metasmith.models import dag_draw as dd
-
-    r = _build(
-        [(D, "a"), (T, "l"), (T, "r"), (D, "j")],
-        [("a", "l"), ("a", "r"), ("l", "j"), ("r", "j")],
-    )
-    lay = r.layout()
-    g, _ = dd._grid(lay, font_size=13.0, labels=r.labels)
-    e = next(x for x in lay.edges if (x.src, x.dst) == ("r", "j"))
-    assert lay["j"].lane < lay["r"].lane
-
-    pts = dd._pixel_path(lay, e, g, STYLES)[0]
-    lo, hi = sorted((g.x(lay["r"].lane), g.x(lay["j"].lane)))
-    band = [y for x, y in pts if lo < x < hi]
-    assert band, "the jog should have left a point between the two lanes"
-    assert all(y > g.y(lay["r"].row + 0.5) for y in band)
-
-    down = next(x for x in lay.edges if (x.src, x.dst) == ("a", "r"))
-    assert down.lane > lay["a"].lane
-    pts = dd._pixel_path(lay, down, g, STYLES)[0]
-    lo, hi = sorted((g.x(lay["a"].lane), g.x(down.lane)))
-    band = [y for x, y in pts if lo < x < hi]
-    assert band and all(y < g.y(lay["a"].row + 0.5) for y in band)
-
-
-def test_rails_travelling_the_same_way_share_one_line():
-    from metasmith.models import dag_draw as dd
-
-    r = load_dag()
-    lay = r.layout()
-    g, _ = dd._grid(lay, font_size=13.0, labels=r.labels)
-
-    runs = {}
-    for e in lay.edges:
-        pts = [
-            (g.x(lane), g.y(row) + role * dd.BAND * g.gap(row))
-            for role, (row, lane) in zip(dd._jog_roles(lay, e), e.points)
-        ]
-        for (x0, y0), (x1, y1) in zip(pts, pts[1:]):
-            if y0 != y1 or x0 == x1:
-                continue
-            runs.setdefault((round(y0, 6), x1 < x0), []).append(f"{e.src}->{e.dst}")
-
-    by_gap = {}
-    for (y, leftward), names in runs.items():
-        by_gap.setdefault((round(y / g.row_pitch), leftward), set()).add(y)
-    split = {k: v for k, v in by_gap.items() if len(v) > 1}
-    assert not split, f"same-direction rails at different heights: {split}"
+def test_two_lines_meet_only_where_they_share_an_end():
+    # A point shared by several edges is a line they share, and a line may
+    # only be shared by edges that agree on one end: all out of one source,
+    # or all into one target.
+    lay = load_dag().layout()
+    meeting: dict[tuple[int, int], list[tuple[str, str]]] = {}
+    for src, dst in lay.edges:
+        for p in lay.route(src, dst):
+            meeting.setdefault(p, []).append((src, dst))
+    for p, edges in meeting.items():
+        if len(edges) < 2:
+            continue
+        shared = set(edges[0]).intersection(*(set(x) for x in edges[1:]))
+        assert shared, f"{sorted(edges)} meet at {p} sharing no node"
 
 
 def _edge_paths(svg: str) -> list[list[tuple[float, float]]]:
@@ -607,10 +579,10 @@ def test_golden_diamond():
     assert r.to_text() == (
         "  ○  a\n"
         "┌─┤\n"
-        "│ ▽  l\n"
-        "▽ │  r\n"
-        "└─┤\n"
-        "  ○  j\n"
+        "▽ │  l\n"
+        "│ ▽  r\n"
+        "├─┘\n"
+        "○    j\n"
     )
 
 
@@ -622,15 +594,18 @@ def test_golden_three_way_fan_in():
          ("metabat2", "checkm2"), ("semibin2", "checkm2"), ("comebin", "checkm2"),
          ("checkm2", "qc")],
     )
+    # contigs leaves on one run, not three: each binner branches off it, and
+    # the last drops straight in.
     assert r.to_text() == (
-        "    ○  contigs\n"
-        "┌─┬─┤\n"
-        "│ ▽ │  metabat2\n"
-        "│ │ ▽  comebin\n"
-        "▽ │ │  semibin2\n"
-        "└─┴─┤\n"
-        "    ▽  checkm2\n"
-        "    ○  qc\n"
+        "  ○    contigs\n"
+        "┌─┤\n"
+        "▽ │    comebin\n"
+        "│ ├─┐\n"
+        "│ │ ▽  metabat2\n"
+        "│ ▽ │  semibin2\n"
+        "├─┴─┘\n"
+        "▽      checkm2\n"
+        "○      qc\n"
     )
 
 
@@ -639,13 +614,17 @@ def test_golden_wide_fan_out():
         [(T, "given")] + [(D, f"std::input_{i}") for i in range(4)],
         [("given", f"std::input_{i}") for i in range(4)],
     )
+    # Four consumers, two columns: the source's run, and one column each
+    # consumer takes in turn after the one above it ends.
     assert r.to_text() == (
-        "      ▽  given\n"
-        "┌─┬─┬─┤\n"
-        "│ │ │ ○  std::input_0\n"
-        "│ │ ○    std::input_1\n"
-        "│ ○      std::input_2\n"
-        "○        std::input_3\n"
+        "▽    given\n"
+        "├─┐\n"
+        "│ ○  std::input_0\n"
+        "├─┐\n"
+        "│ ○  std::input_1\n"
+        "├─┐\n"
+        "│ ○  std::input_2\n"
+        "○    std::input_3\n"
     )
 
 
@@ -709,9 +688,7 @@ def test_every_theme_renders_every_scheme():
 
 class TestGeometryIsWhatTheSvgDraws:
     def _geo(self, r):
-        lay = r.layout()
-        geo = geometry(lay, r._theme.styles, labels=r.labels, label_mode=r._label_mode)
-        return geo, r.to_svg()
+        return r.geometry(), r.to_svg()
 
     def test_the_canvas_is_the_geometry_canvas(self):
         g, svg = self._geo(load_dag())

@@ -30,8 +30,13 @@ import sys
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-BENCH = Path("/home/tony/agentic_workspace/projects/metasmith/engine/bench-run")
-DRIVERS = BENCH / "research/metasmith_benchmark/drivers"
+# This worktree's own drivers, not the bench-run scope's. `_common` derives the
+# library and the metasmith_libraries root from its own __file__, so whichever
+# copy is imported decides the whole tree these pictures are of -- and reading a
+# sibling worktree meant the artifact showed that scope's uncommitted state
+# rather than this branch's. Override with MSM_DRIVERS to render another tree.
+DRIVERS = Path(os.environ.get(
+    "MSM_DRIVERS", HERE.parents[1] / "research/metasmith_benchmark/drivers"))
 os.environ.setdefault("E2_CACHE_DIR", str(HERE / "e2cache"))
 sys.path.insert(0, str(DRIVERS))
 
@@ -64,6 +69,8 @@ from metasmith.python_api import DataInstanceLibrary, TransformInstanceLibrary  
 # the arm that computed it and only the givens stay shared.
 PER_ARM = {"plain": dict(mode=DagMode.PLAIN, colour="module")}
 COMBINED = {
+    "steps": dict(mode=DagMode.STEPS, colour="module", monochrome=True,
+                  merge=False),
     "legend": dict(mode=DagMode.LEGEND, legend_columns=3, colour="module",
                    monochrome=True, merge=True),
 }

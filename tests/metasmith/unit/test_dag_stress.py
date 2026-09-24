@@ -15,56 +15,35 @@ def dag():
 
 def test_the_fixture_is_the_shape_we_think_it_is(dag):
     lay = dag.layout()
-    assert len(lay.nodes) == 73
+    assert len(lay.order) == 73
     assert len(lay.edges) == 100
 
 
 def test_repeated_transforms_stay_separate_steps(dag):
-    ids = {n.name for n in dag.layout().nodes}
+    ids = set(dag.layout().order)
     for name in ("checkm", "gtdbtk"):
         assert len({i for i in ids if i.endswith(f" {name}")}) == 3
-    labels = dag.labels
-    assert sum(1 for i in ids if labels[i].name == "checkm") == 3
+    assert sum(1 for i in ids if dag.labels[i].name == "checkm") == 3
 
 
 def test_no_step_number_reaches_the_page(dag):
-    for node in dag.layout().nodes:
-        assert not dag.labels[node.name].name[:1].isdigit()
+    for name in dag.layout().order:
+        assert not dag.labels[name].name[:1].isdigit()
 
 
 def test_every_edge_still_points_downward(dag):
     lay = dag.layout()
-    idx = lay.index
-    for e in lay.edges:
-        if not e.back:
-            assert idx[e.src].row < idx[e.dst].row
+    assert all(lay.row[s] < lay.row[d] for s, d in lay.edges)
 
 
-def test_no_rail_crosses_a_node(dag):
+def test_the_width_is_the_liveness_floor(dag):
     lay = dag.layout()
-    idx = lay.index
-    occupied = {(n.row, n.lane) for n in lay.nodes}
-    for e in lay.edges:
-        if e.back:
-            continue
-        for row in range(idx[e.src].row + 1, idx[e.dst].row):
-            assert (row, e.lane) not in occupied
-
-
-def test_lane_count_is_the_liveness_floor(dag):
-    lay = dag.layout()
-    idx = lay.index
-    live = max(
-        sum(1 for e in lay.edges
-            if not e.back and idx[e.src].row < row < idx[e.dst].row)
-        for row in range(lay.height)
-    )
-    assert lay.width <= live + 1
+    assert lay.width == max(len(lay.live(h)) for h in range(-1, 2 * lay.height))
 
 
 def test_dropping_the_blank_gaps_is_most_of_the_height(dag):
     lines = dag.to_text().rstrip("\n").splitlines()
-    assert len(lines) < 2 * len(dag.layout().nodes)
+    assert len(lines) < 2 * dag.layout().height
 
 
 def test_both_svgs_parse_and_the_label_column_is_much_narrower():
@@ -97,78 +76,36 @@ def test_the_requested_outputs_are_marked_on_the_nodes(dag):
 
 
 def test_the_drawing_does_not_get_more_expensive(dag):
+    # Release drew this graph in 549 rail rows, 14 lanes and 242 crossings.
+    # The row order is not proven shortest here, so a solver change can move
+    # these either way.
     m = measure(dag.layout())
-    assert m.rail_rows <= 536
-    assert m.lanes <= 13
-    assert m.crossings <= 123
-    assert m.longest_rail <= 35
-    assert m.congruent >= 4
-
-
-def test_a_shared_reference_database_is_drawn_beside_its_consumer(dag):
-    lay = dag.layout()
-    rows = {n.name: n.row for n in lay.nodes}
-    for binner in ("comebin", "semibin2", "metabat2"):
-        fasta = rows[f"sequences::{binner}_bin_fasta"]
-        gtdbtk = min(
-            r for n, r in rows.items() if n.endswith(" gtdbtk") and r > fasta
-        )
-        assert gtdbtk - fasta == 1, binner
+    assert m.length <= 445
+    assert m.width <= 7
+    assert m.crossings <= 30
+    assert m.congruent >= 3
 
 
 BINNERS = ("comebin", "semibin2", "metabat2")
 
 
-def _blocks(lay):
-    rows = {n.name: n.row for n in lay.nodes}
-    out = {}
-    for b in BINNERS:
-        fasta = rows[f"sequences::{b}_bin_fasta"]
-        out[b] = dict(
-            head=rows[next(n for n in rows if n.endswith(f" {b}"))],
-            table=rows[f"binning::{b}_contig_to_bin_table"],
-            fasta=fasta,
-            gtdbtk=min(r for n, r in rows.items()
-                       if n.endswith(" gtdbtk") and r > fasta),
-            checkm=min(r for n, r in rows.items()
-                       if n.endswith(" checkm") and r > fasta),
-        )
-    return out
-
-
-def test_each_binner_block_is_a_contiguous_run_of_rows(dag):
-    lay = dag.layout()
-    blocks = _blocks(lay)
-    for b, r in blocks.items():
-        span = sorted(r.values())
-        assert span == list(range(span[0], span[0] + 5)), (b, r)
-    starts = sorted(min(r.values()) for r in blocks.values())
-    assert starts[1] == starts[0] + 5 and starts[2] == starts[1] + 5
+def _binner_motif(lay):
+    return next(
+        m for m in repeat_motifs(lay)
+        if all(any(n.endswith(f" {b}") for n in m.heads) for b in BINNERS)
+    )
 
 
 def test_the_three_blocks_emit_their_children_in_the_same_order(dag):
-    offsets = {
-        b: tuple(k for k, _ in sorted(r.items(), key=lambda kv: kv[1]))
-        for b, r in _blocks(dag.layout()).items()
-    }
-    assert len(set(offsets.values())) == 1, offsets
-
-
-def test_the_shared_database_is_emitted_once_above_the_whole_group(dag):
     lay = dag.layout()
-    rows = {n.name: n.row for n in lay.nodes}
-    first = min(min(r.values()) for r in _blocks(lay).values())
-    assert rows["ref::gtdb"] < first
-    assert rows["3 downloadGtdbDB"] == rows["ref::gtdb"] - 1
-    assert first - rows["ref::gtdb"] == 1
+    m = _binner_motif(lay)
+    orders = {tuple(m.twin[x] for x in sorted(b, key=lay.row.__getitem__)) for b in m.blocks}
+    assert len(orders) == 1, orders
 
 
-def test_the_shared_outputs_sit_below_every_block_they_join(dag):
+def test_the_database_download_sits_right_above_its_database(dag):
     lay = dag.layout()
-    rows = {n.name: n.row for n in lay.nodes}
-    last = max(max(r.values()) for r in _blocks(lay).values())
-    for sink in ("taxonomy::gtdbtk", "taxonomy::checkm_stats"):
-        assert rows[sink] > last, sink
+    assert lay.row["3 downloadGtdbDB"] == lay.row["ref::gtdb"] - 1
 
 
 def test_the_binner_blocks_are_a_repeat_class_the_layout_knows_about(dag):

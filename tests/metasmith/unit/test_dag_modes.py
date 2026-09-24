@@ -152,5 +152,4 @@ def _isolated_step_plan() -> DagRenderer:
 
 def test_a_component_of_one_step_is_drawn_before_the_bigger_pipeline():
     lay = _isolated_step_plan().layout()
-    rows = {n.name: n.row for n in lay.nodes}
-    assert rows["fastqc_raw"] < rows["s0"] < rows["s1"]
+    assert lay.row["fastqc_raw"] < lay.row["s0"] < lay.row["s1"]

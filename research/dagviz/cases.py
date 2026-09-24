@@ -1,0 +1,120 @@
+"""Small graphs that each isolate one thing the layout has to get right.
+
+Keep them minimal. A case earns its place by being the smallest graph on which
+two lane strategies disagree, so that when a panel cell looks wrong it is
+obvious what made it wrong. Real plans go at the end, as the check that a rule
+tuned on toys survives contact.
+"""
+
+from metasmith.models.dag_renderer import NodeKind
+
+T, D = NodeKind.TRANSFORM, NodeKind.DATA
+
+
+def _chain(*names):
+    return [(a, b) for a, b in zip(names, names[1:])]
+
+
+CASES: dict[str, tuple[str, list, list]] = {}
+
+
+def case(name: str, note: str, nodes, edges):
+    CASES[name] = (note, nodes, edges)
+
+
+case(
+    "chain", "nothing to decide: one column, no jogs",
+    [(T, "a"), (D, "b"), (T, "c"), (D, "d")],
+    _chain("a", "b", "c", "d"),
+)
+
+case(
+    "fanout", "one source, four leaves — each should hang off the stem",
+    [(T, "given")] + [(D, f"input_{i}") for i in range(4)],
+    [("given", f"input_{i}") for i in range(4)],
+)
+
+case(
+    "k22", "a,b each feed c,d — two buses that must cross two funnels",
+    [(T, "a"), (T, "b"), (T, "c"), (T, "d")],
+    [("a", "c"), ("a", "d"), ("b", "c"), ("b", "d")],
+)
+
+case(
+    "fanin", "four leaves into one — the mirror of fanout, joining the stem early",
+    [(D, f"part_{i}") for i in range(4)] + [(T, "merge"), (D, "whole")],
+    [(f"part_{i}", "merge") for i in range(4)] + [("merge", "whole")],
+)
+
+case(
+    "diamond", "the smallest branch-and-join: does the lane come back",
+    [(D, "a"), (T, "l"), (T, "r"), (D, "j")],
+    [("a", "l"), ("a", "r"), ("l", "j"), ("r", "j")],
+)
+
+case(
+    "two_diamonds", "stacked joins: does width ratchet or recycle",
+    [(D, "a"), (T, "l1"), (T, "r1"), (D, "m"), (T, "l2"), (T, "r2"), (D, "z")],
+    [("a", "l1"), ("a", "r1"), ("l1", "m"), ("r1", "m"),
+     ("m", "l2"), ("m", "r2"), ("l2", "z"), ("r2", "z")],
+)
+
+case(
+    "binning", "four tools: a real bus and two real funnels — bundling wins here",
+    [(T, "megahit"), (D, "assembly"), (T, "bowtie2"), (D, "bam"),
+     (T, "metabat2"), (D, "bins"), (T, "das_tool"), (D, "mags")],
+    [("megahit", "assembly"),
+     ("assembly", "bowtie2"), ("assembly", "metabat2"), ("assembly", "das_tool"),
+     ("bowtie2", "bam"), ("bam", "metabat2"),
+     ("metabat2", "bins"), ("bins", "das_tool"), ("das_tool", "mags")],
+)
+
+case(
+    "three_binners", "the shape E2 actually has: one assembly, three binners, one merge",
+    [(D, "assembly"), (D, "bam")]
+    + [(T, b) for b in ("metabat2", "semibin2", "comebin")]
+    + [(D, f"{b}_bins") for b in ("metabat2", "semibin2", "comebin")]
+    + [(T, "das_tool"), (D, "mags")],
+    [("assembly", b) for b in ("metabat2", "semibin2", "comebin")]
+    + [("bam", b) for b in ("metabat2", "semibin2", "comebin")]
+    + [(b, f"{b}_bins") for b in ("metabat2", "semibin2", "comebin")]
+    + [(f"{b}_bins", "das_tool") for b in ("metabat2", "semibin2", "comebin")]
+    + [("das_tool", "mags")],
+)
+
+case(
+    "resources", "fan-out straight into fan-in — the two stems want opposite sides",
+    [(T, "given")] + [(D, f"env_{i}") for i in range(6)] + [(T, "step"), (D, "out")],
+    [("given", f"env_{i}") for i in range(6)]
+    + [(f"env_{i}", "step") for i in range(6)] + [("step", "out")],
+)
+
+case(
+    "resources_mixed", "tool envs and a database fanned out from given, each into a different step",
+    [(T, "given"), (D, "reads"), (D, "env_qc"), (D, "env_asm"), (D, "env_bin"), (D, "db"),
+     (T, "qc"), (D, "clean"), (T, "asm"), (D, "contigs"), (T, "bin"), (D, "bins")],
+    [("given", x) for x in ("reads", "env_qc", "env_asm", "env_bin", "db")]
+    + [("reads", "qc"), ("env_qc", "qc"), ("qc", "clean"),
+       ("clean", "asm"), ("env_asm", "asm"), ("asm", "contigs"),
+       ("contigs", "bin"), ("clean", "bin"), ("env_bin", "bin"), ("db", "bin"),
+       ("bin", "bins")],
+)
+
+
+def _plan(arm: str):
+    import json
+    from pathlib import Path
+
+    from metasmith.models.dag_renderer import NodeKind
+
+    g = json.loads((Path(__file__).parent / f"graphs/e2_{arm}.graph.json").read_text())
+    short = lambda n: n.removeprefix("e2::")  # noqa: E731
+    case(
+        f"e2_{arm}", f"the real E2 {arm}-read plan: {g['n_steps']} steps, every env a given",
+        [(NodeKind[n["kind"]], short(n["name"])) for n in g["nodes"]],
+        [(short(a), short(b)) for a, b in g["edges"]],
+    )
+
+
+_plan("short")
+_plan("long")
