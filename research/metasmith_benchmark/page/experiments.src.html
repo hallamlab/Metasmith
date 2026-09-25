@@ -129,7 +129,7 @@ a.full:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 
 <div class="wrap">
 <header>
-  <div class="eyebrow">metasmith benchmark · experiment design · draft for discussion · 2026-09-17</div>
+  <div class="eyebrow">metasmith benchmark · experiment design · draft for discussion · 2026-09-25</div>
   <h1>Five benchmark experiments</h1>
   <p class="lede">Each panel is one run with its own driver. There are three kinds of experiment: <b>reproduce</b> a published result, show metasmith has <b>parity</b> with a reference pipeline, and run the metasmith <b>optimized</b> pipeline. The page has three sections: datasets, the five experiments, and the tools E5 swaps. Each panel opens its solved workflow on request.</p>
 </header>
@@ -197,7 +197,7 @@ a.full:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
     <tbody>
       <tr><td>reads_2019</td><td>Illumina NextSeq 500</td><td>paired</td><td class="n">32</td><td>Assembly, binning, virus calling</td></tr>
       <tr><td>reads_2022</td><td>Illumina NovaSeq 6000</td><td>paired</td><td class="n">34</td><td>Assembly, binning, virus calling</td></tr>
-      <tr><td>reads_2022 Nanopore</td><td>MinION, R9.4.1, Guppy sup</td><td>single, long</td><td class="n">6</td><td>Hybrid metaSPAdes assemblies: each run paired with every 0.2 µm 2022 Illumina replicate from its well, giving 17 assemblies (wells H14 H32 H41 H51 H52 H53). E3 does the same</td></tr>
+      <tr><td>reads_2022 Nanopore</td><td>MinION, R9.4.1, Guppy sup</td><td>single, long</td><td class="n">6</td><td>Hybrid metaSPAdes assemblies: each run paired with every 0.2 µm 2022 Illumina replicate from its well, giving 17 assemblies (wells H14 H32 H41 H51 H52 H53). E3 declares the same 17, and its last run built 6 (see E3)</td></tr>
     </tbody>
     <tfoot><tr><td>Total</td><td></td><td></td><td class="n">72</td><td>The paper counts 65 short-read plus 6 long-read metagenomes. E3 uses all 72</td></tr></tfoot>
   </table>
@@ -368,9 +368,9 @@ a.full:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
         <li>Their Zenodo products: vOTU catalogue, 1,275 MAGs, curated AMG table</li>
       </ul></div>
       <div><h3>Driver</h3><ul>
-        <li><code>drivers/e3_pratama.py</code>, all runs under one shared study root for the viral merge. 65 runs. Wave 7 runs as <code>F3KJbPJK</code> over 39 planned steps; the wave-2 solve was <code>bqyYO0Ip</code> at 26</li>
-        <li>MAG lane: bbduk → metaSPAdes → MetaWRAP, with CheckM inside it → DRAM on the MAGs</li>
-        <li>Viral lane: MEGAHIT and metaSPAdes contigs → geNomad + VIBRANT + VirSorter2 → one merge over both assemblies → CheckV → MMseqs2 → vConTACT3; prodigal-gv; DRAM-v on vOTUs of 10 kb or more</li>
+        <li><code>drivers/e3_pratama.py</code>, all runs under one shared study root for the viral merge. 65 runs. Last run: wave 8, <code>Qt0rbV1R</code>, 39 steps. Re-solved on 2026-09-25 against the engine with the new DAG renderer: the same 39 steps in the same order, and 41 with <code>--with-host-prediction --with-gtdbtk</code></li>
+        <li>MAG lane: bbduk → metaSPAdes → MetaWRAP's three binners → one MetaWRAP refinement, with CheckM inside it → DRAM on the MAGs. Hybrid metaSPAdes <code>--nanopore</code> runs beside it and feeds nothing downstream</li>
+        <li>Viral lane: MEGAHIT and metaSPAdes contigs → geNomad + VIBRANT + VirSorter2 → one merge over both assemblies → CheckV → MMseqs2 → vConTACT3 on the vOTU representatives of 10 kb or more; prodigal-gv; DRAM-v on the same 10 kb set</li>
         <li>Pratama's settings are pinned in <code>library/transforms/e3</code>, which masks the standard transforms it replaces. <code>findings/R1_TABLE_AUDIT.md</code> gives each tool's status</li>
         <li>Staging refuses until every run's interleaved file passes its read-count check</li>
         <li>Databases on fir: VirSorter2 2.2.4, DRAM, VIBRANT, CheckV and iPHoP (Aug23, checksums verified), all registered, so no plan downloads one. DRAM has no dbcan, because its download URL is dead. geNomad's database is 1.5.1 against Pratama's 1.11.0</li>
@@ -389,27 +389,35 @@ a.full:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
         <li>MetaWRAP refinement: 92 bins for one of 66 runs, the largest 5.6 MB across 1,151 contigs</li>
         <li>vOTU recovery method: a 65,640-row skANI table, from one sample and two of three callers</li>
         <li>MAG recovery method, on those 92 bins against the 1,275 published MAGs: 71 of ours and 122 of theirs matched, clustered in H52, the source well. One run proves the method, not the rate</li>
-        <li>Wave 7 binning on <code>F3KJbPJK</code>: MetaBAT2 65/65 and CONCOCT 65/65 complete, MaxBin2 57/65 and still running. MetaWRAP refinement consumes all three per sample, so its absence is a gate rather than a fault — and it in turn gates DRAM on MAGs and GTDB-Tk</li>
-        <li>The viral lane is chunked rather than monolithic: CheckV and prodigal-gv run per contig batch in about 35 minutes each, against monoliths that hit 8 h and 16 h walls. The two merged tables carry 4,597,542 contigs plus a header</li>
+        <li><b>Wave 8 (<code>Qt0rbV1R</code>) completed steps 1–36</b>: 3,642 tasks, 0 unignored errors. That covers QC, both assemblies, all three binners and the refinement on 65/65, DRAM on the MAGs, the viral callers, the merge, CheckV, MMseqs2 and vConTACT3</li>
+        <li>The frozen candidate set holds 4,597,542 contigs (the paper reports 4,708,626). MMseqs2 gives 3,292,226 vOTUs. 70,785 of them have a representative of 10 kb or more (the paper reports 82,807), and 97.8% sit below the cut and get no taxonomy</li>
+        <li>vConTACT3 finished in 59 minutes at 48 GB once it was fed the 70,785 representatives instead of the whole 4.6 M-contig set. Of 70,828 query genomes, 66,929 get a genus and 66,824 a family, and only 105 land in a named ICTV family</li>
+        <li>The viral lane is chunked rather than monolithic: CheckV and prodigal-gv run per contig batch in about 35 minutes each, against monoliths that hit 8 h and 16 h walls</li>
+        <li>The home is archived to chinook (<code>/Workspace_backups/Tony_Liu/fir_bench_e3/</code>, 141,702 entries, 3.78 TB), verified by checksum resync, and fir scratch is released (2.03 TiB). <code>results/e3/RESUME.md</code> holds the five constraints a restore must keep to reuse the cache</li>
       </ul></div>
       <div class="open"><h3>Open</h3><ul>
-        <li class="block">The 17 hybrid assemblies wait on a hybrid read-set type and a hybrid metaSPAdes transform. All 6 MinION runs are on fir, and H43 has none</li>
-        <li>GTDB-Tk r232 and iPHoP on the shipped database wait behind <code>--with-gtdbtk</code> and <code>--with-host-prediction</code>. GTDB-Tk reads the genomes from one squashfs image, which frees 427K inodes once a run through it passes</li>
+        <li class="block"><b>DRAM-v, steps 37–39, never finished.</b> DRAM-v writes its GenBank output in time quadratic in contigs, about 57 h for 58,593 contigs in one call against the 24 h cap. The distill step would crash anyway, because the staged DRAM database has no VOGDB. The route in <code>RESUME.md</code>: chunk the contigs and the affi table 16 ways, and stage VOGDB</li>
+        <li class="block"><b>Only 6 of the 17 hybrid assemblies were built.</b> The driver declares 17 pairings, and a local solve holds 17 distinct Nanopore inputs. Fir built one per MinION file, which suggests the 17 declarations collapse to 6 inputs on fir, where the files are readable. That cause is inferred, not checked</li>
+        <li><b>No recovery number yet.</b> The vOTU recovery table exists as a raw skANI table, about 3 GB, with no rate computed from it. MAG recovery needs dRep, and the AMG comparison needs DRAM-v</li>
+        <li>vConTACT3's assignments, the viral taxonomy call, are in the task cache but not in <code>results/</code>, because the target list names only the network. Declaring them re-keys the plan (question 12 in the R1 run log)</li>
+        <li>The paper's virus curation is not in the plan: its four CheckV-based keep rules, CheckV host-region trimming before clustering, and the ≥100 kb genomic-island filter. MMseqs2 clusters the untrimmed merge, so this changes the vOTU set itself rather than a join over it</li>
+        <li>DeepVirFinder is built but not a target. The paper's Methods give its cut as score ≥0.9 and p ≤0.05, while the transform's header says Pratama gives none</li>
+        <li>VirSorter2 runs with <code>--keep-original-seq</code>, but the call writer takes the trimmed boundaries first, so the merge extracts VirSorter2's trimmed region. Unchecked against a real 2.2.4 boundary table</li>
+        <li>GTDB-Tk r232 and iPHoP on the shipped database wait behind <code>--with-gtdbtk</code> and <code>--with-host-prediction</code>. The default iPHoP pass reads the whole frozen set, not the 10 kb vOTUs the paper uses</li>
         <li class="block">MAG recovery, iPHoP on the augmented database and DRAM on dereplicated MAGs wait on dRep. Until then DRAM annotates each sample's refined bins</li>
         <li class="block">MetaWRAP refines once. Pratama's second round needs BinSanity and abawaca</li>
         <li class="block"><b>New transforms</b> to match Pratama: BinSanity, abawaca, dRep, DeepVirFinder, MetaPop and minced, each with a container image. Spacer-to-host links wait on minced</li>
         <li class="block">MetaPop needs every run mapped to one shared reference, the study's vOTU catalogue. Today each run maps to its own assembly</li>
-        <li class="block">vConTACT3 does not fit its memory ladder. Three attempts at 128, 256 and 512 GB: the first two died out of memory at their cap, and the second died <i>later</i> than the first, building a genome network over 4,602,611 contigs and 3,613,684 HMMs. Doubling buys a later failure point, not a finish, so the next step is chunking rather than a fourth tier</li>
       </ul></div>
     </div>
     <details class="dag">
-      <summary>Solved workflow <span class="sub">· wave-2 solve bqyYO0Ip, 26 steps, 65 runs</span></summary>
+      <summary>Solved workflow <span class="sub">· wave 8's 39 steps, re-solved 2026-09-25, 65 runs</span></summary>
       <div class="dagbody">
         <div class="figs">
           <figure>
-            <a class="full" href="https://10.74.81.84:12100/files/home/tony/agentic_workspace/projects/metasmith/engine/bench-run/research/metasmith_benchmark/page/dags/e3_pratama.dag.svg" target="_blank" rel="noopener">Open full screen ↗</a>
+            <a class="full" href="https://10.74.81.84:12100/files/home/tony/agentic_workspace/projects/metasmith/engine/bench-E3/research/metasmith_benchmark/page/dags/e3_pratama.dag.svg" target="_blank" rel="noopener">Open full screen ↗</a>
             <div class="figbox">{{SVG:e3_pratama}}</div>
-            <figcaption>As staged on fir for wave 2. No interleave step, because the reads arrive interleaved, and no download step, because every database is staged. Both assemblies feed the viral merge, and only metaSPAdes feeds MetaWRAP.</figcaption>
+            <figcaption>The driver as it stands, drawn by the new renderer. No interleave step, because the reads arrive interleaved, and no download step, because every database is staged. Both assemblies feed the viral merge, and only metaSPAdes feeds MetaWRAP.</figcaption>
           </figure>
         </div>
       </div>
