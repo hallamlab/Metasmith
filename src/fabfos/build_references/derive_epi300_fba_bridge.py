@@ -378,7 +378,18 @@ def anchor_chain(dh: list[Feature], epi: list[Feature], epi_len: int):
     return d0, chain
 
 
-def classify(d: Feature, e: Feature) -> tuple[str, float] | None:
+def encodes_whole(d: Feature, e: Feature, genome: str) -> bool:
+    # proV is the case: EPI300's PGAP flags it "missing C-terminus" while the chromosome
+    # carries DH10B's whole gene, byte for byte. The two annotations disagree about a
+    # lesion both strains share, so the gene is not lost in EPI300.
+    if len(e.parts) != 1:
+        return False
+    n, p = len(d.nt), e.five_prime
+    seq = genome[p - 1:p - 1 + n] if e.strand > 0 else revcomp(genome[p - n:p])
+    return seq == d.nt
+
+
+def classify(d: Feature, e: Feature, genome: str) -> tuple[str, float] | None:
     if d.intact and e.intact:
         if d.protein == e.protein:
             return "identical_protein", 1.0
@@ -389,10 +400,15 @@ def classify(d: Feature, e: Feature) -> tuple[str, float] | None:
         return None
     if d.pseudo and e.pseudo:
         return "pseudo_both", ident
-    return ("pseudo_epi300_only", ident) if e.pseudo else ("pseudo_dh10b_only", ident)
+    if not e.pseudo:
+        return "pseudo_dh10b_only", ident
+    if encodes_whole(d, e, genome):
+        return "pseudo_annotation_only", ident
+    return "pseudo_epi300_only", ident
 
 
-def place(dh_features, epi: list[Feature], d0: int, chain, epi_len: int):
+def place(dh_features, epi: list[Feature], d0: int, chain, epi_genome: str):
+    epi_len = len(epi_genome)
     hs = [h for h, _ in chain]
     by_kind_strand = defaultdict(list)
     for e in epi:
@@ -411,7 +427,7 @@ def place(dh_features, epi: list[Feature], d0: int, chain, epi_len: int):
             key=lambda t: t[0])
         cands = [c for c in cands if c[0] <= SEARCH_KB * 1000]
         for drift, e in cands:
-            c = classify(d, e)
+            c = classify(d, e, epi_genome)
             if c:
                 placed[id(d)] = (e, c[0], c[1], drift)
                 break
@@ -451,7 +467,7 @@ def resolve():
     d0, chain = anchor_chain(dh, epi, len(epi_genome))
 
     wanted = [f for r in res.values() for f in r.dh]
-    placed = place(wanted, epi, d0, chain, len(epi_genome))
+    placed = place(wanted, epi, d0, chain, epi_genome)
 
     taken = {id(v[0]) for v in placed.values()}
     for r in res.values():
@@ -501,6 +517,8 @@ def report(genes, res, epi):
         classes = {c for *_, c, _, _ in [(x[0], x[1], x[2], x[3], x[4]) for x in r.evidence]}
         if "pseudo_epi300_only" in classes:
             outcomes["pseudo in EPI300 only"] += 1
+        elif "pseudo_annotation_only" in classes:
+            outcomes["pseudo in EPI300's annotation only, DNA identical"] += 1
         elif classes & {"pseudo_both", "pseudo_fragment"}:
             outcomes["pseudo in both"] += 1
         elif len(r.epi) > 1:
@@ -677,8 +695,8 @@ def main() -> int:
     report(genes, res, epi)
 
     orfs = {r.gene: [e.fid for e in r.epi] for r in res.values()}
-    lost_in_epi = {e.fid for r in res.values() for d, e, *_ in r.evidence
-                   if d.intact and e.pseudo}
+    lost_in_epi = {e.fid for r in res.values() for d, e, cls, *_ in r.evidence
+                   if d.intact and e.pseudo and cls != "pseudo_annotation_only"}
     everything = {e.fid for e in epi} | {SPONTANEOUS}
     rewritten = [(rid, rewrite_rule(rule, orfs)) for rid, rule in rules]
     model_live = live_reactions(rules, set(genes))

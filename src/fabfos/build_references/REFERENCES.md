@@ -653,15 +653,22 @@ model of their own**: EPI300 borrows DH10B's, AG1 borrows DH1's. W3110 is in the
 no GEM at all — it is where an ASKA clone's SEQUENCE comes from, not a strain a model is
 read against.
 
-**EPI300's borrow of DH10B's model is not free.** `proV` and `fhuA` are pseudogenes in
-EPI300 — both in AND clauses, so seven transport reactions go dark, and nothing else in
-the model's 1,327 genes differs. Earlier work here recorded the edit list as empty, which
-was reachable two ways and wrong both times: a pseudogene is a CDS with no
-`/protein_id`, so a check keyed on the protein accession never sees one, and the two
-strains share no id space, so a locus-tag join instead reads 1,272 of 1,304 genes as
-deleted. The join that means something is the protein — exact sequence where it matches,
-symbol otherwise. `check_epi300_identity.py` asserts the edit list IS that pair costing
-those seven reactions, rather than asserting it is empty.
+**EPI300's borrow of DH10B's model costs one gene.** An ISVsa5 insertion splits EPI300's
+`fhuA` — the `tonA` of its genotype — and three ferric-siderophore uptake reactions go
+dark. Nothing else in the model's 1,327 genes differs. The edit list was misread twice:
+
+1. As empty. A pseudogene is a CDS with no `/protein_id`, so a check keyed on the
+   protein accession never sees one. A locus-tag join fails the other way, since the
+   strains share no id space and 1,272 of 1,304 genes then read as deleted.
+2. As `proV` and `fhuA`, costing seven reactions. EPI300's annotation flags `proV`
+   pseudo, but its chromosome carries DH10B's whole gene base for base. Both strains
+   share a lesion that ends ProV at 340 of K-12's 400 residues. Only DH10B's older
+   annotation calls it intact.
+
+A pseudo flag is therefore not evidence of a difference between the strains. DNA is.
+`check_epi300_identity.py` asserts the edit list is exactly `fhuA`. It classes a gene
+whose whole DH10B sequence sits verbatim in EPI300 as annotation-only, and asserts that
+set is exactly `proV`.
 
 That protein join answers "which reactions go dark" but cannot key read counts: it
 collapses the 42 genes of DH10B's duplicated ~113 kb block onto one copy, and it cannot

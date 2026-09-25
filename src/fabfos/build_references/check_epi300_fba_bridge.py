@@ -28,7 +28,8 @@ from derive_epi300_fba_bridge import (DH10B_GENOME, EPI300_GENOME, EPI300_SEQ,  
 FILES = {"iECDH10B_1368.json", f"{EPI300_SEQ}.fna", f"{EPI300_SEQ}.gbk",
          "epi300_genes.fna", "epi300_genes.gtf", "gpr_gem_epi300.csv", "README.md"}
 PSEUDO_IN_BOTH = {"ECDH10B_1939", "fruB", "mglA", "ytfT", "gatZ", "mhpD", "nupG", "nrfB"}
-PSEUDO_IN_EPI300_ONLY = {"proV", "ECDH10B_0130"}
+PSEUDO_IN_EPI300_ONLY = {"ECDH10B_0130"}
+PSEUDO_IN_ANNOTATION_ONLY = {"proV"}
 SPLIT = {"nupG", "nrfB", "ECDH10B_0130"}
 START_VARIANTS = {"ECDH10B_1259", "ECDH10B_1354"}
 N_DUPLICATED = 42
@@ -201,7 +202,7 @@ def main() -> int:
           f"{len(dup)} duplicated genes map to two intact ORFs, the split genes "
           f"{sorted(two - dup)} to two pieces, nothing to more")
     with_pseudo = {g for g, o in orfs_of.items() if o & pseudo_fid}
-    check(with_pseudo == PSEUDO_IN_BOTH | PSEUDO_IN_EPI300_ONLY,
+    check(with_pseudo == PSEUDO_IN_BOTH | PSEUDO_IN_EPI300_ONLY | PSEUDO_IN_ANNOTATION_ONLY,
           f"the model genes with a pseudo EPI300 ORF are exactly {sorted(with_pseudo)}")
 
     _, dh = read_genbank(DH10B_GENOME / "NC_010473.1.gbk")
@@ -243,7 +244,7 @@ def main() -> int:
     epi_live = {r for r in model_live if r in rewritten and
                 rule_holds(rewritten[r], (set(fasta) | {SPONTANEOUS}) - lost_orfs)}
     check(model_live - epi_live == EXPECTED_LOST_REACTIONS,
-          f"EPI300 loses exactly the seven proV/fhuA reactions: {sorted(model_live - epi_live)}")
+          f"EPI300 loses exactly the three fhuA reactions: {sorted(model_live - epi_live)}")
 
     print()
     for p in problems:

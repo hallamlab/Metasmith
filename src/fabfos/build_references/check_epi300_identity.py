@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import re
 import sys
 from collections import Counter
 from pathlib import Path
@@ -13,11 +14,11 @@ BORROWER = "e_coli_epi300"
 
 BOUNDARY_AA = 20
 
-EXPECTED_BROKEN = {"proV", "fhuA"}
-EXPECTED_LOST_REACTIONS = {
-    "PROabcpp", "CRNabcpp", "CRNDabcpp", "CTBTabcpp",
-    "FE3HOXtonex", "FECRMtonex", "FEOXAMtonex",
-}
+EXPECTED_BROKEN = {"fhuA"}
+EXPECTED_LOST_REACTIONS = {"FE3HOXtonex", "FECRMtonex", "FEOXAMtonex"}
+# EPI300's annotation flags these pseudo, yet its chromosome carries DH10B's whole gene
+# verbatim: an annotation disagreement, not a lesion EPI300 has and DH10B lacks.
+EXPECTED_ANNOTATION_ONLY = {"proV"}
 
 
 def read_proteome(faa: Path) -> dict[str, str]:
@@ -56,6 +57,7 @@ def read_cds(gbk: Path) -> list[dict]:
         if line.startswith("CDS "):
             flush()
             cur.clear()
+            cur["location"] = line[4:].strip()
             in_cds = True
             continue
         if not in_cds:
@@ -85,6 +87,19 @@ def index_by_id(cds: list[dict]) -> dict[str, str]:
 def pseudo_names(cds: list[dict]) -> set[str]:
     return {c[k] for c in cds if c.get("pseudo")
             for k in ("locus", "old_locus", "gene") if c.get(k)}
+
+
+def read_chromosome(fna: Path) -> str:
+    return "".join(l.strip() for l in fna.read_text().splitlines()
+                   if not l.startswith(">")).upper()
+
+
+def cds_dna(c: dict, chrom: str) -> str | None:
+    m = re.fullmatch(r"(complement\()?<?(\d+)\.\.>?(\d+)\)?", c.get("location", ""))
+    if not m:
+        return None
+    nt = chrom[int(m.group(2)) - 1:int(m.group(3))]
+    return nt.translate(str.maketrans("ACGT", "TGCA"))[::-1] if m.group(1) else nt
 
 
 def model_genes(gem: Path) -> list[str]:
@@ -130,17 +145,19 @@ def main() -> int:
     genes = model_genes(gems[0])
     print(f"{gems[0].name}: {len(genes):,} genes\n")
 
-    cds, idx, prot = {}, {}, {}
+    cds, idx, prot, chrom = {}, {}, {}, {}
     for host in (GEM_HOST, BORROWER):
         g = a.genomes / host / "genome"
         gbk = sorted(g.glob("*.gbk"))
         faa = sorted(g.glob("*.faa"))
-        if len(gbk) != 1 or len(faa) != 1:
-            print(f"FAIL: {host} does not have exactly one .gbk and one .faa under {g}")
+        fna = sorted(g.glob("*.fna"))
+        if len(gbk) != 1 or len(faa) != 1 or len(fna) != 1:
+            print(f"FAIL: {host} does not have exactly one .gbk, .faa and .fna under {g}")
             return 1
         cds[host] = read_cds(gbk[0])
         idx[host] = index_by_id(cds[host])
         prot[host] = read_proteome(faa[0])
+        chrom[host] = read_chromosome(fna[0])
         print(f"{host:16s} {len(cds[host]):,} CDS, {len(idx[host]):,} gene keys, "
               f"{len(prot[host]):,} proteins")
 
@@ -167,7 +184,9 @@ def main() -> int:
                       if c.get("protein_id")}
 
     pseudo = pseudo_names(cds[BORROWER])
+    cds_for_pid = {c["protein_id"]: c for c in cds[GEM_HOST] if c.get("protein_id")}
     missing, changed, copy_diff, boundary, pseudogenised = [], [], [], [], []
+    annotation_only = []
     matched_by = Counter()
     for g in resolved:
         pid_a = idx[GEM_HOST][g]
@@ -181,7 +200,12 @@ def main() -> int:
             pid_b, how = by_symbol[sym], "symbol"
         if pid_b is None:
             if sym in pseudo or g in pseudo:
-                pseudogenised.append((g, sym))
+                dna = cds_dna(cds_for_pid[pid_a], chrom[GEM_HOST])
+                rc = dna and dna.translate(str.maketrans("ACGT", "TGCA"))[::-1]
+                if dna and (dna in chrom[BORROWER] or rc in chrom[BORROWER]):
+                    annotation_only.append((g, sym))
+                else:
+                    pseudogenised.append((g, sym))
             else:
                 missing.append((g, sym, pid_a))
             continue
@@ -200,6 +224,8 @@ def main() -> int:
 
     print(f"\n  1a. absent from {BORROWER}      : {len(missing):,}")
     print(f"  1b. PSEUDOGENE in {BORROWER}   : {len(pseudogenised):,}")
+    print(f"  1c. pseudo in {BORROWER}'s annotation, DNA identical to {GEM_HOST}: "
+          f"{len(annotation_only):,}   (not broken) {annotation_only}")
     print(f"  2. changed beyond {BOUNDARY_AA} aa        : {len(changed):,}")
     print(f"  3. copy number differs         : {len(copy_diff):,}")
     print(f"  4. annotation-boundary only    : {len(boundary):,}   (allowed)")
@@ -232,6 +258,11 @@ def main() -> int:
             f"the broken-gene set changed: found {sorted(found_broken)}, declared "
             f"{sorted(EXPECTED_BROKEN)}. benchmark/host_gpr_gem.py drops a FIXED list of "
             f"reactions on the strength of this measurement, so the two have to agree.")
+    found_annotation_only = {s or g for g, s in annotation_only}
+    if found_annotation_only != EXPECTED_ANNOTATION_ONLY:
+        problems.append(
+            f"the annotation-only set changed: found {sorted(found_annotation_only)}, "
+            f"declared {sorted(EXPECTED_ANNOTATION_ONLY)}")
     found_lost = {rid for rid, _ in lost}
     if found_lost != EXPECTED_LOST_REACTIONS:
         problems.append(
@@ -262,8 +293,8 @@ def main() -> int:
                 problems.append(
                     f"{BORROWER}'s table is not {GEM_HOST}'s. They read the same model "
                     f"through the same resolver and the only measured difference is "
-                    f"seven transport reactions, which are outside the benchmark's atom "
-                    f"universe -- so any difference here is invented rather than "
+                    f"fhuA's three transport reactions, which are outside the benchmark's "
+                    f"atom universe -- so any difference here is invented rather than "
                     f"measured.")
 
     print()

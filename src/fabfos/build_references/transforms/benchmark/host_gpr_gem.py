@@ -4,11 +4,10 @@ import shlex
 # to whichever it picked while the task count still reads correct.
 #
 # EPI300 borrows DH10B's model and AG1 borrows DH1's, and the borrow is not
-# free: `proV` and `fhuA` are pseudogenes in EPI300, both inside AND clauses, so
-# seven transport reactions go dark. A pseudogene is a CDS with no
-# `/protein_id`, so a check keyed on the protein accession never sees one --
-# which is why `check_epi300_identity.py` asserts this exact list rather than
-# asserting emptiness.
+# free: `fhuA` is split by an insertion in EPI300 and three transport reactions
+# go dark. A pseudogene is a CDS with no `/protein_id`, so a check keyed on the
+# protein accession never sees one -- which is why `check_epi300_identity.py`
+# asserts this exact list rather than asserting emptiness.
 #
 # Needs cobra to open the model, so it cannot run inside the pinned ecspr image.
 from metasmith.python_api import *
@@ -47,18 +46,19 @@ GEM_SOURCE = {
 # is declared in acquire/genomes.py: a caller who could pass a different edit list could
 # make two runs of "the reference build" mean different things.
 #
-# EMPTY FOR EPI300, AND THE MEASUREMENT BEHIND IT IS NOT. `proV` and `fhuA` are
-# pseudogenes in EPI300 and intact in DH10B, both sit in AND clauses, and seven of the
-# model's reactions therefore go dark: PROabcpp, CRNabcpp, CRNDabcpp, CTBTabcpp (the ProU
-# osmoprotectant ABC transporter) and FE3HOXtonex, FECRMtonex, FEOXAMtonex (the
-# ferrichrome TonB-dependent receptor -- a broken fhuA being the classic
-# T1-phage-resistance marker in a cloning strain). check_epi300_identity.py still asserts
-# that exact set, because a difference that drifts without failing is the failure mode
-# this whole check exists for.
+# EMPTY FOR EPI300, AND THE MEASUREMENT BEHIND IT IS NOT. `fhuA` is split by an ISVsa5
+# insertion in EPI300 and intact in DH10B, it sits in AND clauses, and three of the
+# model's reactions therefore go dark: FE3HOXtonex, FECRMtonex, FEOXAMtonex (the
+# ferrichrome TonB-dependent receptor -- a broken fhuA, `tonA`, being the classic
+# T1-phage-resistance marker in a cloning strain). EPI300's annotation also flags `proV`
+# pseudo, but its DNA is DH10B's verbatim, so that is a disagreement between two
+# annotations rather than between two strains. check_epi300_identity.py asserts both
+# sets, because a difference that drifts without failing is the failure mode this whole
+# check exists for.
 #
-# ALL SEVEN ARE TRANSPORT, WHICH IS WHY THE LIST IS EMPTY RATHER THAN THOSE SEVEN. The
+# ALL THREE ARE TRANSPORT, WHICH IS WHY THE LIST IS EMPTY RATHER THAN THOSE THREE. The
 # benchmark excludes transport from the atom universe (buildlib::bench_universe.py), so
-# all seven are already marked out of universe and carry no edge either way. Editing them
+# all three are already marked out of universe and carry no edge either way. Editing them
 # out would move no measurement while making the two tables differ, so the honest table is
 # DH10B's read faithfully under the EPI300 tag.
 #
