@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import argparse
 import bisect
+import json
 import os
 import re
 import sys
@@ -50,6 +51,7 @@ MIN_NT_IDENTITY = 0.95
 SEARCH_KB = 20
 NEIGHBOUR_KB = 5
 BUILD_ID = "gem_iECDH10B_1368_epi300"
+MODEL_ID = "EPI300"
 EXTENSIONS = ("attribution", "feature", "universe")
 LANE_SET = "curated"
 
@@ -204,7 +206,8 @@ def read_faa(path: Path) -> dict[str, tuple[str, str]]:
             locus = m.group(1)
             if locus in out:
                 raise SystemExit(f"{path.name}: locus_tag {locus} appears twice")
-            out[locus] = (line[1:].split()[0], [])
+            # NCBI's `lcl|` prefix goes: cobra's GPR parser reads `|` as `or`.
+            out[locus] = (line[1:].split()[0].removeprefix("lcl|"), [])
         else:
             out[locus][1].append(line.strip())
     return {k: (i, "".join(s)) for k, (i, s) in out.items()}
@@ -231,7 +234,7 @@ def load_genome(gbk: Path, faa: Path, seqname: str) -> tuple[str, list[Feature]]
                 if not same:
                     bad.append(f.locus)
         else:
-            f.fid = f"lcl|{seqname}_{f.kind.lower()}_{f.locus}"
+            f.fid = f"{seqname}_{f.kind.lower()}_{f.locus}"
     if bad:
         raise SystemExit(f"{gbk.name}: {len(bad)} intact CDS do not translate to their "
                          f".faa protein, e.g. {bad[:5]}. The location parser or the "
@@ -628,6 +631,36 @@ def gtf_records(e: Feature, genome_len: int) -> list[str]:
     return rows
 
 
+def write_epi300_model(res, epi, out: Path):
+    m = json.loads(GEM.read_text())
+    orfs = {r.gene: [e.fid for e in sorted(r.epi, key=lambda f: f.five_prime)]
+            for r in res.values() if r.route != "spontaneous"}
+    model_gene_of = {fid: g for g, ids in orfs.items() for fid in ids}
+    feature = {e.fid: e for e in epi}
+    used = set()
+    for r in m["reactions"]:
+        rule = published_rule(rewrite_rule(r.get("gene_reaction_rule") or "", orfs)) or ""
+        r["gene_reaction_rule"] = rule
+        used |= rule_genes(rule)
+        if r["id"] in EXPECTED_LOST_REACTIONS:
+            r["lower_bound"] = r["upper_bound"] = 0.0
+    m["genes"] = [{"id": fid, "name": feature[fid].gene or "",
+                   "notes": {"model_gene": [model_gene_of[fid]],
+                             "pseudo": ["true" if feature[fid].pseudo else "false"]},
+                   "annotation": {"locus_tag": [feature[fid].locus]}}
+                  for fid in sorted(used)]
+    m["id"] = MODEL_ID
+    m["name"] = f"{MODEL_ID}: {GEM.stem} on {EPI300_SEQ} ORFs"
+    m["notes"] = {
+        "derived_from": [f"{GEM.stem} (BiGG; Monk et al. 2013, PMID 24277855)"],
+        "genome": [f"{EPI300_SEQ} (GCF_052692645.1)"],
+        "closed_reactions": sorted(EXPECTED_LOST_REACTIONS),
+        "closed_because": ["fhuA is split by an ISVsa5 insertion in EPI300"],
+        "builder": ["src/fabfos/build_references/derive_epi300_fba_bridge.py"],
+    }
+    write_atomic(out / f"{MODEL_ID}.json", json.dumps(m))
+
+
 def write_outputs(genes, rules, res, epi, epi_genome, out: Path):
     import numpy as np
     import pandas as pd
@@ -678,6 +711,7 @@ def write_outputs(genes, rules, res, epi, epi_genome, out: Path):
     tmp = out / "gpr_gem_epi300.csv.tmp"
     df.to_csv(tmp, index=False)
     os.replace(tmp, out / "gpr_gem_epi300.csv")
+    write_epi300_model(res, epi, out)
     print(f"\nwrote {out}: {len(epi_sorted):,} genes in FASTA and GTF, {len(df):,} GPR rows "
           f"({(df['feature_kind'] == 'gem_gene').sum():,} gem_gene over "
           f"{df.loc[df['feature_kind'] == 'gem_gene', 'orf'].nunique():,} ORFs)", flush=True)

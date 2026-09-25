@@ -673,8 +673,10 @@ set is exactly `proV`.
 That protein join answers "which reactions go dark" but cannot key read counts: it
 collapses the 42 genes of DH10B's duplicated ~113 kb block onto one copy, and it cannot
 see a pseudogene. `derive_epi300_fba_bridge.py` maps by position on a collinear anchor
-chain instead, confirmed by sequence, and writes `runs/e_coli_dh10b/fba/` — the model, a
-gene FASTA and GTF, and `gpr_gem.parquet` re-keyed onto EPI300 ORF ids.
+chain instead, confirmed by sequence, and writes `runs/e_coli_dh10b/fba/` — a gene FASTA
+and GTF, `gpr_gem.parquet` re-keyed onto EPI300 ORF ids, and `EPI300.json`, the model
+moved onto those ORFs with fhuA's reactions closed. Its ids drop NCBI's `lcl|` prefix,
+which cobra's rule parser would read as `or`.
 `check_epi300_fba_bridge.py` asserts it, and the folder's README carries the method and
 every disagreement between the model and the genome.
 

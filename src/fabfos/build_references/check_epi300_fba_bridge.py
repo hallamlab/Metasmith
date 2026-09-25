@@ -23,9 +23,10 @@ from check_epi300_identity import (EXPECTED_LOST_REACTIONS, model_genes,  # noqa
 from derive_epi300_fba_bridge import (DH10B_GENOME, EPI300_GENOME, EPI300_SEQ,  # noqa: E402
                                       EVIDENCE_LIB, EXTENSIONS, GEM, GPR_GEM, LANE_SET,
                                       OUT, SPONTANEOUS, parse_location, read_faa,
-                                      read_genbank, revcomp, rule_tokens, translate)
+                                      read_genbank, revcomp, rule_genes, rule_tokens,
+                                      translate)
 
-FILES = {"iECDH10B_1368.json", f"{EPI300_SEQ}.fna", f"{EPI300_SEQ}.gbk",
+FILES = {"iECDH10B_1368.json", "EPI300.json", f"{EPI300_SEQ}.fna", f"{EPI300_SEQ}.gbk",
          "epi300_genes.fna", "epi300_genes.gtf", "gpr_gem_epi300.csv", "README.md"}
 PSEUDO_IN_BOTH = {"ECDH10B_1939", "fruB", "mglA", "ytfT", "gatZ", "mhpD", "nupG", "nrfB"}
 PSEUDO_IN_EPI300_ONLY = {"ECDH10B_0130"}
@@ -245,6 +246,35 @@ def main() -> int:
                 rule_holds(rewritten[r], (set(fasta) | {SPONTANEOUS}) - lost_orfs)}
     check(model_live - epi_live == EXPECTED_LOST_REACTIONS,
           f"EPI300 loses exactly the three fhuA reactions: {sorted(model_live - epi_live)}")
+
+    print("EPI300.json")
+    import cobra
+    epi_m = cobra.io.load_json_model(str(fba / "EPI300.json"))
+    dh_m = cobra.io.load_json_model(str(GEM))
+    check(not any("|" in i for i in set(fasta) | orf_set), "no ORF id carries a '|'")
+    check([r.id for r in epi_m.reactions] == [r.id for r in dh_m.reactions] and
+          [m.id for m in epi_m.metabolites] == [m.id for m in dh_m.metabolites] and
+          all({m.id: c for m, c in a.metabolites.items()} ==
+              {m.id: c for m, c in b.metabolites.items()}
+              for a, b in zip(epi_m.reactions, dh_m.reactions)),
+          "same reactions, metabolites and stoichiometry as iECDH10B_1368")
+    moved = {r.id for r, s in zip(epi_m.reactions, dh_m.reactions) if r.bounds != s.bounds}
+    check(moved == EXPECTED_LOST_REACTIONS and
+          all(epi_m.reactions.get_by_id(r).bounds == (0, 0) for r in moved),
+          f"bounds differ only on the fhuA reactions, closed ({sorted(moved)})")
+    import json
+    # Read from the file, not from cobra, which drops redundant outer brackets on load.
+    written = {r["id"]: r["gene_reaction_rule"]
+               for r in json.loads((fba / "EPI300.json").read_text())["reactions"]}
+    bad_rule = [r.id for r in epi_m.reactions
+                if written[r.id] != rewritten.get(r.id, "")
+                or {g.id for g in r.genes} != set(rule_genes(written[r.id]))]
+    check(not bad_rule, f"every gene rule equals the CSV's and cobra parses it into exactly "
+                        f"its ORFs ({bad_rule[:3]})")
+    check({g.id for g in epi_m.genes} <= set(fasta), "every model gene is a FASTA id")
+    mu_e, mu_d = epi_m.slim_optimize(), dh_m.slim_optimize()
+    check(mu_e > 0 and abs(mu_e - mu_d) < 1e-6,
+          f"grows on the model's default bounds as iECDH10B_1368 does ({mu_e:.4f} vs {mu_d:.4f})")
 
     print()
     for p in problems:
