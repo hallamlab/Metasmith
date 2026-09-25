@@ -132,4 +132,17 @@ def _plan(arm: str):
 
 
 _plan("short")
+
+
+def _demo():
+    note, nodes, edges = CASES["e2_short"]
+    drop = {name for _, name, label in nodes
+            if label.name in ("cami_gold_standard.py", "gold_standard", "contig_gold_standard",
+                              "amber", "amber_results", "amber_bin_metrics")}
+    case("e2_short_demo", "the E2 short-read plan with no gold standard and no AMBER",
+         [n for n in nodes if n[1] not in drop],
+         [e for e in edges if not drop & set(e)])
+
+
+_demo()
 _plan("long")
