@@ -135,7 +135,7 @@ _plan("short")
 
 
 def _demo():
-    from dataclasses import replace
+    from metasmith.models.dag_renderer import Label
 
     note, nodes, edges = CASES["e2_short"]
     drop = {name for _, name, label in nodes
@@ -143,14 +143,9 @@ def _demo():
                               "contig_gold_standard", "amber", "amber_results",
                               "amber_bin_metrics")}
 
-    def relabel(label):
-        if label.namespace != "e2":
-            return label
-        return replace(label, namespace="metagenomics", full=f"metagenomics::{label.name}")
-
     case("e2_short_demo", "the E2 short-read plan with no truth, gold standard or AMBER,"
-         " in the metagenomics namespace",
-         [(k, n, relabel(l)) for k, n, l in nodes if n not in drop],
+         " drawn with show_namespaces=False",
+         [(k, n, Label(name=l.name)) for k, n, l in nodes if n not in drop],
          [e for e in edges if not drop & set(e)])
 
 
