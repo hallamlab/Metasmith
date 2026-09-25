@@ -4,7 +4,11 @@
 #
 # The run-to-run control (E1ctl) is the same head with a third argument `ctl`: the subset
 # sheets control_subset.py wrote, E1's own assemblies as --assembly_input, and new seeds.
+# `ctl2` (E1ctl2) is the same design on the same sheets at a third pair of seeds.
 #   sbatch -J e1ctl_short .../run_e1.sbatch <checkout> short ctl
+#
+# The head refuses to start near the project's inode or byte quota: reaching either fails every
+# writer in the project, other agents' runs included.
 #
 # The head cannot fetch. Before the first submission, on a login node: prepull.sh finishes, and
 # `NXF_HOME=$HOME/.nextflow26 nextflow26 info nf-core/mag` resolves revision 5.5.0 locally.
@@ -24,16 +28,28 @@ ARM="$2"
 VARIANT="${3:-}"
 HERE="$CHECKOUT/research/metasmith_benchmark/drivers/e1_nfcore"
 WORK="/scratch/phyberos/bench/e1$VARIANT/$ARM"
-SHEET="$HERE/samplesheet.$ARM${VARIANT:+.$VARIANT}.csv"
 EXTRA=()
-if [ "$VARIANT" = ctl ]; then
-    EXTRA=(-c "$HERE/control_seed.config" --assembly_input "$HERE/assembly_input.$ARM.ctl.csv")
-    [ "$ARM" = long ] && EXTRA+=(-c "$HERE/control_long.config")
-elif [ -n "$VARIANT" ]; then
-    echo "unknown variant: $VARIANT" >&2
-    exit 2
-fi
+case "$VARIANT" in
+    "") SHEET="$HERE/samplesheet.$ARM.csv" ;;
+    ctl|ctl2)
+        SHEET="$HERE/samplesheet.$ARM.ctl.csv"
+        SEED_CONFIG="$HERE/control_seed.config"
+        [ "$VARIANT" = ctl2 ] && SEED_CONFIG="$HERE/control_seed3.config"
+        EXTRA=(-c "$SEED_CONFIG" --assembly_input "$HERE/assembly_input.$ARM.ctl.csv")
+        [ "$ARM" = long ] && EXTRA+=(-c "$HERE/control_long.config")
+        ;;
+    *) echo "unknown variant: $VARIANT" >&2; exit 2 ;;
+esac
 JOB="${SLURM_JOB_ID}"
+
+MAX_INODES=950000
+MAX_KBYTES=18900000000
+read -r kbytes inodes < <(lfs quota -q -p 83115734 /scratch | awk '{gsub(/\*/, ""); print $2, $6}')
+echo "project quota: $inodes inodes, $kbytes KB"
+if [ "$inodes" -gt "$MAX_INODES" ] || [ "$kbytes" -gt "$MAX_KBYTES" ]; then
+    echo "refusing to start: over $MAX_INODES inodes or $MAX_KBYTES KB" >&2
+    exit 3
+fi
 
 # nextflow26 runs on the module's Java.
 module load nextflow/25.04.6 apptainer/1.3.5
