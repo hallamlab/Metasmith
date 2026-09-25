@@ -32,12 +32,14 @@ Four strands, and the leftover parity tasks are the smallest of them.
 - **E4 is on hold.** The chunk chain was cancelled at chunk 10; chunk 10's driver is still running under its
   own guard and will bank its 500 MAGs, after which nothing further launches. **Its stage needs a
   `delete_stage` reclaim by hand once it completes** — the chain would have done that and is gone.
-- **Inodes are the shared budget, and this is why the hold matters.** The project quota is 1,000,000 and sits
-  near 784,000. Extracting E1's bins and assemblies from the tars re-accrues exactly the inodes E1's
-  retirement released, so extraction and E4's remaining chunks were competing for the same resource. With E4
-  held, that budget is the evaluation's.
-- **E3 is still running and is this session's job, not the evaluation's.** Nothing about it needs to be
-  touched.
+- **Bytes are the shared budget, not inodes.** The earlier record had this the other way round. The byte
+  quota is 18.626 TiB with a campaign stop at 17.885 TiB, and on 2026-09-22 the project sat at 17.77 TiB —
+  about 118 GB of headroom — while inodes sat at 706,000 of 1,000,000. Extracting E1's bins and assemblies
+  from the tars costs both, so check the byte line before the inode line.
+- **E3 is archived and its scratch tree is gone.** It closed at 36 of 39 steps on 2026-09-22 and lives on the
+  chinook Globus collection. Nothing about it needs to be touched, and nothing about it is recoverable from
+  fir: to read an E3 product, restore from the archive per `results/e3/RESUME.md`, which must land at
+  `/scratch/phyberos/pratama2026` and nowhere else.
 - **Do not delete `/scratch/phyberos/cami/work`** — it is the CAMI source data, not a work tree.
 - **`cami/metasmith/task_cache` is the only copy of every E2 product except the AMBER tables**, which are now
   in git. Read it, never write to it, and open its sqlite as `file:<path>?immutable=1`.
@@ -341,19 +343,65 @@ Confirmed in the partial listing: `GenomeBinning/QC/checkm2_summary.tsv` plus 28
 (all four binners, all 208 samples, one file), MetaBAT2 (4,288) and DAS Tool (2,595) bins, depth tables, and
 per-sample DAS Tool summaries.
 
-`out/Assembly/` and `out/multiqc/` lie beyond where the bounded listing stopped. They were certainly *produced*
-— E1 short's surviving trace shows MEGAHIT 208, SEQKIT_STATS 624, BIN_SUMMARY 1, CONCAT_CHECKM2_TSV 1,
-MAG_DEPTHS 851, MULTIQC 1, PRODIGAL 208, and zero QUAST — but their survival into the tar is **inferred, not
-listed**.
+`out/Assembly/` and `out/multiqc/` **survived** — 835 and 164 members respectively. That was inferred here
+before; it is now listed.
 
-### An unresolved contradiction on E1 short's BAMs
+### Both archives are now fully listed, and the manifests are permanent
 
-`control.config:160` sets `save_assembly_mapped_reads = true`, which should have published every
-`BOWTIE2_ASSEMBLY_ALIGN` BAM into `out/`. But `e1_short_out.tar` is 99.1 GB for the whole of `out/`, and at
-E2's measured ~3.35 GB mean BAM, 208 BAMs alone would be ~700 GB. **They cannot be in a 99 GB archive.**
-Either they never reached `out/`, or they were removed before the tar was taken. Unresolved. Either way the
-practical consequence is the same: **scoring E1 short means regenerating ~207 BAMs at ~640-700 GB**, because
-the assemblies survive and the alignments do not.
+Job `60958550` listed both tars end to end and left `e1_long.manifest.txt` and `e1_short_out.manifest.txt`
+beside them in `/scratch/phyberos/bench/archive/`. **Query those files rather than the tars** — a member
+question is now a `grep`, not a sequential read. Listing cost 37 s for the long tar and 425 s for the short
+one, both far below the "don't spend a sequential read" rule this document previously carried.
+
+| | long (13,787 members) | short (57,253 members) |
+| --- | --- | --- |
+| `out/Assembly/` | 1,151 | 835 |
+| `out/multiqc/` | 33 | 164 |
+| `.bam` / `.bai` | **0 / 0** | **0 / 0** |
+| bin FASTAs COMEBin | 1,975 | 7,593 |
+| bin FASTAs SemiBin2 | 1,335 | 6,699 |
+| bin FASTAs DAS Tool | 564 | 2,594 |
+| bin FASTAs MetaBAT2 | **0** (see B19 above) | 4,287 |
+
+Bin counts here are regular files matching `<binner>/bins/*.fa[sta][.gz]`, so they run slightly below the
+Tier B figures above, which counted directory entries too.
+
+### E1's BAMs are gone — measured, no longer a contradiction
+
+`control.config:160` sets `save_assembly_mapped_reads = true`, and the earlier reading inferred from the 99 GB
+archive size that 208 BAMs at ~3.35 GB each could not fit. The manifests settle it directly: **zero `.bam` and
+zero `.bai` members in either archive.** Not an inference from size — an absence from a complete listing.
+
+### …but "% reads mapped" survives anyway on the short arm, for all 208 samples, at zero compute
+
+The BAMs are gone and the metric is not. Job `60959768` extracted both arms' `multiqc_data/` and
+`pipeline_info/` to `/scratch/phyberos/bench/archive/e1_reports/` — 60-odd small files, already on disk, no
+further tar scan needed.
+
+**`out/multiqc/multiqc_data/multiqc_bowtie2_bowtie2-2.yaml` holds 208 entries with `overall_alignment_rate`**,
+plus the full read-pair breakdown (`total_reads`, `paired_aligned_one`, `paired_aligned_multi`,
+`paired_aligned_none`, the discordant and mate-only classes). Distribution over the 208: **min 80.83, median
+97.67, mean 96.55, max 99.90.**
+
+**It is the assembly alignment, not host removal**, and that is checked rather than assumed —
+`multiqc_sources.yaml` names the module `Bowtie2: assembly`, keys every sample `MEGAHIT-<sample>`, and sources
+each from `MEGAHIT-<sample>.bowtie2.log`. That is `BOWTIE2_ASSEMBLY_ALIGN`. A cross-check that the numbers are
+the right ones: `marine_sample_0` reports `paired_total: 16647376`, the same pair count the phiX measurement
+recorded for that sample.
+
+**Comparability caveat, and it is a real one.** E1's figure is bowtie2's own end-of-run summary parsed from
+its log; E2's would be computed from the BAM (`samtools flagstat` or equivalent). Those should agree, but they
+are different instruments and the comparison should say which produced each column — or, better, derive both
+from the same instrument by parsing E2's bowtie2 logs too, if they survive in the cache shards' `logs/`.
+
+**The long arm is not covered.** Its MultiQC consumed **CheckM2 only** — no bowtie2, no minimap2, no mapping
+section of any kind. So a long-arm "% reads mapped" for E1 still needs alignments that do not exist. Scope the
+metric to the short arm, or accept that the long-arm column is E2-only.
+
+Incidentally the long arm's `multiqc_general_stats.yaml` carries `quast_bins-N50` and `quast_bins-Total_length`
+per bin alongside CheckM2 completeness and contamination, so some of the MAG-contiguity and
+completeness/redundancy inputs are in there too — though `quast_bin_summary.tsv` and `checkm2_summary.tsv` in
+the tar are the fuller sources.
 
 ### What long-arm AMBER would need, if it is ever wanted
 
@@ -381,7 +429,11 @@ item needs.
 2. Assembly length and N50 — same call on the contigs FASTA. Recomputing both arms with one tool is more
    comparable than mixing E1's archived QUAST numbers with seqkit numbers.
 3. N MAGs — trivial once (1) and the CheckM2 tables are in hand; the only real decision is the quality gate.
-4. % reads mapped — small code, large I/O. E1 short's 208 BAMs are ~700 GB; E2's are 1.87-4.89 GB each.
+4. % reads mapped — **free on E1's short arm, unavailable on E1's long arm.** All 208 short-arm rates are in
+   `archive/e1_reports/out/multiqc/multiqc_data/multiqc_bowtie2_bowtie2-2.yaml`, confirmed to be the assembly
+   alignment. The long arm's MultiQC has no mapping section and E1's BAMs do not exist, so that column is
+   E2-only unless alignments are regenerated. E2's own BAMs are 1.87-4.89 GB each and are in cache. Move this
+   item up the order — it was costed at ~700 GB and is now a file read.
 5. % of contigs binned — small, three documented traps above.
 6. Completeness / redundancy — no tool run; the work is normalising E1's one concatenated table against E2's
    ~29,542 one-row files and choosing the comparison unit.

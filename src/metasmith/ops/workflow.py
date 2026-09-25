@@ -116,7 +116,7 @@ def render_dag(
     return {"task_key": task_key, "format": format, "path": str(rendered)}
 
 
-GEOMETRY_VERSION = 2
+GEOMETRY_VERSION = 3
 
 _WIRE_KINDS = {
     "transform": NodeKind.TRANSFORM,
@@ -166,7 +166,7 @@ def serialize_geometry(
     lay = renderer.layout(order)
     rows_y: list[float] = []
     if row_y:
-        ys = [row_y.get(n.name) for n in lay.nodes]
+        ys = [row_y.get(n) for n in lay.order]
         if all(y is not None for y in ys):
             rows_y = [float(y) for y in ys]  # type: ignore[arg-type]
     geo = renderer.geometry(
@@ -182,7 +182,7 @@ def serialize_geometry(
         "anchor": geo.anchor,
         "nodes": [
             {
-                "id": n.name, "kind": n.kind.name.lower(), "row": n.row, "lane": n.lane,
+                "id": n.name, "kind": n.kind.name.lower(), "row": n.row, "col": n.col,
                 "cx": n.cx, "cy": n.cy, "label_x": n.label_x,
                 "marker_w": n.marker_w, "marker_h": n.marker_h,
                 "namespace": n.namespace, "label": n.label,
