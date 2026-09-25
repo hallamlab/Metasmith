@@ -663,6 +663,14 @@ deleted. The join that means something is the protein — exact sequence where i
 symbol otherwise. `check_epi300_identity.py` asserts the edit list IS that pair costing
 those seven reactions, rather than asserting it is empty.
 
+That protein join answers "which reactions go dark" but cannot key read counts: it
+collapses the 42 genes of DH10B's duplicated ~113 kb block onto one copy, and it cannot
+see a pseudogene. `derive_epi300_fba_bridge.py` maps by position on a collinear anchor
+chain instead, confirmed by sequence, and writes `runs/e_coli_dh10b/fba/` — the model, a
+gene FASTA and GTF, and `gpr_gem.parquet` re-keyed onto EPI300 ORF ids.
+`check_epi300_fba_bridge.py` asserts it, and the folder's README carries the method and
+every disagreement between the model and the genome.
+
 **AG1's borrow of DH1's is not free either, and there is no genome to compare.** AG1 is
 absent from NCBI, so the licence is the genotype Qimron et al. state — seven markers —
 and `check_ag1_identity.py` measures each against the model rather than reasoning about
