@@ -5,7 +5,7 @@ import pytest
 
 from tests.metasmith.fixtures import load_dag
 
-from metasmith.models.dag_draw import geometry, marker_size
+from metasmith.models.dag_draw import marker_size
 from metasmith.models.dag_renderer import (
     DARK, STYLES, THEMES, DagRenderer, Label, LabelMode, NodeKind,
 )
@@ -101,7 +101,7 @@ def test_same_named_steps_stay_distinct_nodes():
         r.add_node(NodeKind.TRANSFORM, f"{i} checkm", Label(name="checkm"))
         r.add_edge(f"bins::from_binner_{i}", f"{i} checkm")
         r.add_edge(f"{i} checkm", f"qc::stats_{i}")
-    assert len(r.layout().nodes) == 9
+    assert r.layout().height == 9
     assert r.to_text().count("checkm") == 3
 
 
@@ -311,20 +311,28 @@ def test_the_triangle_is_equilateral_and_so_shorter_than_it_is_wide():
     assert abs(height / width - 0.866) < 0.01
 
 
-def test_only_the_solid_target_outline_is_double_weight():
+def test_a_target_is_outlined_like_data_and_only_the_step_is_heavy():
     step = STYLES[NodeKind.TRANSFORM]
     data = STYLES[NodeKind.DATA]
     target = STYLES[NodeKind.TARGET]
-    assert data.stroke_width == step.stroke_width == 1.5
-    assert target.stroke_width == 3.0
+    assert data.stroke_width == target.stroke_width < step.stroke_width
     r = _three_kinds()
     svg = r.to_svg()
     assert f'stroke-width="{data.stroke_width}"' in svg
-    assert f'stroke-width="{target.stroke_width}"' in svg
+    assert f'stroke-width="{step.stroke_width}"' in svg
     dot = r.to_raster_dot()
     assert f"penwidth={target.stroke_width:g}" in dot
     assert f"penwidth={step.stroke_width:g}" in dot
     assert "penwidth=1.2]" not in dot
+
+
+def test_the_step_label_carries_the_weight_and_the_data_label_recedes():
+    step = STYLES[NodeKind.TRANSFORM]
+    data = STYLES[NodeKind.DATA]
+    assert step.weight != "normal" and data.weight == "normal"
+    svg = _three_kinds().to_svg()
+    assert f'fill="{step.text}" font-weight="{step.weight}"' in svg
+    assert f'fill="{data.text}" font-weight="normal"' in svg
 
 
 def test_a_rail_stops_at_the_shape_it_points_at():
@@ -335,10 +343,10 @@ def test_a_rail_stops_at_the_shape_it_points_at():
     g, _ = dd._grid(lay, font_size=13.0, labels=r.labels)
     tri = dd.marker_size(STYLES[NodeKind.TRANSFORM], g.marker_d)[1] / 2
     circ = dd.marker_size(STYLES[NodeKind.DATA], g.marker_d)[1] / 2
-    into_step = next(e for e in lay.edges if e.dst == "step1")
-    pts = dd._pixel_path(lay, into_step, g, STYLES)[0]
-    assert abs(pts[0][1] - (g.y(lay["thing"].row) + circ)) < 0.05
-    assert abs(pts[-1][1] - (g.y(lay["step1"].row) - tri)) < 0.05
+    into_step = next(e for e in lay.edges if e[1] == "step1")
+    pts = dd._pixel_path(lay, *into_step, g, STYLES, r._nodes)[0]
+    assert abs(pts[0][1] - (g.y(lay.row["thing"]) + circ)) < 0.05
+    assert abs(pts[-1][1] - (g.y(lay.row["step1"]) - tri)) < 0.05
     assert tri < circ
 
 
@@ -474,75 +482,46 @@ def test_every_corner_is_an_arc():
     r = DagRenderer()
     r.add_edge("root", "left")
     r.add_edge("root", "right")
-    bent = [
-        p for p in r.to_svg().splitlines()
-        if p.startswith("<path") and len(_edge_paths(p)[0]) > 2
-    ]
-    assert bent, "the fan-out should have produced a jog"
-    assert all(" A " in p for p in bent)
-    assert all("A" not in p.split('d="')[1] for p in r.to_svg().splitlines()
-               if p.startswith("<path") and p not in bent)
+    legs = _legs(r.to_svg())
+    assert any(kind == "A" for path in legs for kind, _, _ in path), "the fan-out should jog"
+    for path in legs:
+        for (k1, a1, b1), (k2, a2, b2) in zip(path, path[1:]):
+            if k1 == k2 == "L":
+                turn = (b1[0] - a1[0]) * (b2[1] - a2[1]) - (b1[1] - a1[1]) * (b2[0] - a2[0])
+                assert abs(turn) < 1e-6, "two straight legs meet at a sharp corner"
 
 
-def test_the_two_directions_of_travel_land_in_different_bands():
+def test_every_horizontal_leg_sits_midway_above_its_target():
     r = DagRenderer()
-    r.add_edge("a", "b")
-    r.add_edge("a", "c")
-    r.add_edge("b", "d")
-    r.add_edge("c", "d")
-    ys = {y for pts in _edge_paths(r.to_svg()) for _, y in pts}
-    assert len(ys) > 4
+    for i in range(4):
+        r.add_edge("root", f"child_{i}")
+        r.add_edge(f"child_{i}", "join")
+    g = r.geometry()
+    ys = sorted(n.cy for n in g.nodes)
+    bands = {round((a + b) / 2, 1) for a, b in zip(ys, ys[1:])}
+    flats = {
+        round(a[1], 1)
+        for pts in _edge_paths(r.to_svg())
+        for a, b in zip(pts, pts[1:])
+        if a[1] == b[1] and a[0] != b[0]
+    }
+    assert flats and flats <= bands
 
 
-def test_a_jog_is_banded_by_the_way_it_travels():
-    from metasmith.models import dag_draw as dd
-
-    r = _build(
-        [(D, "a"), (T, "l"), (T, "r"), (D, "j")],
-        [("a", "l"), ("a", "r"), ("l", "j"), ("r", "j")],
-    )
-    lay = r.layout()
-    g, _ = dd._grid(lay, font_size=13.0, labels=r.labels)
-    e = next(x for x in lay.edges if (x.src, x.dst) == ("r", "j"))
-    assert lay["j"].lane < lay["r"].lane
-
-    pts = dd._pixel_path(lay, e, g, STYLES)[0]
-    lo, hi = sorted((g.x(lay["r"].lane), g.x(lay["j"].lane)))
-    band = [y for x, y in pts if lo < x < hi]
-    assert band, "the jog should have left a point between the two lanes"
-    assert all(y > g.y(lay["r"].row + 0.5) for y in band)
-
-    down = next(x for x in lay.edges if (x.src, x.dst) == ("a", "r"))
-    assert down.lane > lay["a"].lane
-    pts = dd._pixel_path(lay, down, g, STYLES)[0]
-    lo, hi = sorted((g.x(lay["a"].lane), g.x(down.lane)))
-    band = [y for x, y in pts if lo < x < hi]
-    assert band and all(y < g.y(lay["a"].row + 0.5) for y in band)
-
-
-def test_rails_travelling_the_same_way_share_one_line():
-    from metasmith.models import dag_draw as dd
-
-    r = load_dag()
-    lay = r.layout()
-    g, _ = dd._grid(lay, font_size=13.0, labels=r.labels)
-
-    runs = {}
-    for e in lay.edges:
-        pts = [
-            (g.x(lane), g.y(row) + role * dd.BAND * g.gap(row))
-            for role, (row, lane) in zip(dd._jog_roles(lay, e), e.points)
-        ]
-        for (x0, y0), (x1, y1) in zip(pts, pts[1:]):
-            if y0 != y1 or x0 == x1:
-                continue
-            runs.setdefault((round(y0, 6), x1 < x0), []).append(f"{e.src}->{e.dst}")
-
-    by_gap = {}
-    for (y, leftward), names in runs.items():
-        by_gap.setdefault((round(y / g.row_pitch), leftward), set()).add(y)
-    split = {k: v for k, v in by_gap.items() if len(v) > 1}
-    assert not split, f"same-direction rails at different heights: {split}"
+def test_two_lines_meet_only_where_they_share_an_end():
+    # A point shared by several edges is a line they share, and a line may
+    # only be shared by edges that agree on one end: all out of one source,
+    # or all into one target.
+    lay = load_dag().layout()
+    meeting: dict[tuple[int, int], list[tuple[str, str]]] = {}
+    for src, dst in lay.edges:
+        for p in lay.route(src, dst):
+            meeting.setdefault(p, []).append((src, dst))
+    for p, edges in meeting.items():
+        if len(edges) < 2:
+            continue
+        shared = set(edges[0]).intersection(*(set(x) for x in edges[1:]))
+        assert shared, f"{sorted(edges)} meet at {p} sharing no node"
 
 
 def _edge_paths(svg: str) -> list[list[tuple[float, float]]]:
@@ -561,6 +540,30 @@ def _edge_paths(svg: str) -> list[list[tuple[float, float]]]:
         if pending is not None:
             points.append(pending)
         out.append(points)
+    return out
+
+
+def _legs(svg: str) -> list[list[tuple[str, tuple[float, float], tuple[float, float]]]]:
+    """Each drawn path as (command, from, to) legs; an arc's radius pair is skipped."""
+    out = []
+    for line in svg.splitlines():
+        if not line.startswith("<path"):
+            continue
+        legs, at, kind, pairs = [], None, None, 0
+        for tok in line.split('d="')[1].split('"')[0].split():
+            if tok[0].isalpha():
+                kind, pairs = tok, 0
+                continue
+            if "," not in tok:
+                continue
+            pairs += 1
+            if kind == "A" and pairs == 1:
+                continue
+            point = tuple(map(float, tok.split(",")))
+            if kind != "M":
+                legs.append((kind, at, point))
+            at = point
+        out.append(legs)
     return out
 
 
@@ -599,8 +602,8 @@ def test_golden_diamond():
     assert r.to_text() == (
         "  ○  a\n"
         "┌─┤\n"
-        "│ ▽  l\n"
-        "▽ │  r\n"
+        "▽ │  l\n"
+        "│ ▽  r\n"
         "└─┤\n"
         "  ○  j\n"
     )
@@ -614,15 +617,18 @@ def test_golden_three_way_fan_in():
          ("metabat2", "checkm2"), ("semibin2", "checkm2"), ("comebin", "checkm2"),
          ("checkm2", "qc")],
     )
+    # contigs leaves on one run, not three, and falls straight into the last
+    # binner; checkm2 falls straight out of the middle one, the least travel.
     assert r.to_text() == (
-        "    ○  contigs\n"
-        "┌─┬─┤\n"
-        "│ ▽ │  metabat2\n"
-        "│ │ ▽  comebin\n"
-        "▽ │ │  semibin2\n"
-        "└─┴─┤\n"
-        "    ▽  checkm2\n"
-        "    ○  qc\n"
+        "  ○    contigs\n"
+        "  ├─┐\n"
+        "  │ ▽  comebin\n"
+        "┌─┤ │\n"
+        "▽ │ │  metabat2\n"
+        "│ ▽ │  semibin2\n"
+        "└─┼─┘\n"
+        "  ▽    checkm2\n"
+        "  ○    qc\n"
     )
 
 
@@ -631,13 +637,17 @@ def test_golden_wide_fan_out():
         [(T, "given")] + [(D, f"std::input_{i}") for i in range(4)],
         [("given", f"std::input_{i}") for i in range(4)],
     )
+    # Four consumers, two columns: the source's run, and one column each
+    # consumer takes in turn after the one above it ends.
     assert r.to_text() == (
-        "      ▽  given\n"
-        "┌─┬─┬─┤\n"
-        "│ │ │ ○  std::input_0\n"
-        "│ │ ○    std::input_1\n"
-        "│ ○      std::input_2\n"
-        "○        std::input_3\n"
+        "▽    given\n"
+        "├─┐\n"
+        "│ ○  std::input_0\n"
+        "├─┐\n"
+        "│ ○  std::input_1\n"
+        "├─┐\n"
+        "│ ○  std::input_2\n"
+        "○    std::input_3\n"
     )
 
 
@@ -701,20 +711,45 @@ def test_every_theme_renders_every_scheme():
 
 class TestGeometryIsWhatTheSvgDraws:
     def _geo(self, r):
-        lay = r.layout()
-        geo = geometry(lay, r._theme.styles, labels=r.labels, label_mode=r._label_mode)
-        return geo, r.to_svg()
+        return r.geometry(), r.to_svg()
 
     def test_the_canvas_is_the_geometry_canvas(self):
         g, svg = self._geo(load_dag())
         assert f'width="{g.width:.0f}" height="{g.height:.0f}"' in svg
 
-    def test_every_edge_path_is_drawn_verbatim(self):
+    def test_every_stretch_of_every_edge_is_drawn_once(self):
         g, svg = self._geo(load_dag())
         drawn = [e for e in g.edges if not e.back]
         assert drawn, "the fixture has forward edges"
+        straight: dict[tuple, list[tuple[float, float]]] = {}
+        arcs = []
+        for path in _legs(svg):
+            for kind, a, b in path:
+                if kind == "A":
+                    arcs.append((a, b))
+                else:
+                    axis = ("v", a[0]) if a[0] == b[0] else ("h", a[1])
+                    k = 1 if axis[0] == "v" else 0
+                    straight.setdefault(axis, []).append(tuple(sorted((a[k], b[k]))))
+        assert len(arcs) == len(set(arcs))
+        for spans in straight.values():
+            spans.sort()
+            assert all(x[1] <= y[0] + 0.05 for x, y in zip(spans, spans[1:]))
         for e in drawn:
-            assert f'd="{e.d}"' in svg
+            points, curves = e.path
+            for i, (a, b) in enumerate(zip(points, points[1:])):
+                if i in curves or a == b:
+                    continue
+                vertical = abs(a[0] - b[0]) < 1e-9
+                axis = ("v", round(a[0], 1)) if vertical else ("h", round(a[1], 1))
+                k = 1 if vertical else 0
+                lo, hi = sorted((a[k], b[k]))
+                covered = sorted(straight[axis])
+                reach = lo
+                for x, y in covered:
+                    if x <= reach + 0.15:
+                        reach = max(reach, y)
+                assert reach >= hi - 0.15, (e.src, e.dst)
 
     def test_a_back_edge_carries_no_path_and_is_not_drawn(self):
         g, _ = self._geo(load_dag())
@@ -723,7 +758,7 @@ class TestGeometryIsWhatTheSvgDraws:
     def test_every_node_label_lands_at_its_geometry_position(self):
         g, svg = self._geo(load_dag())
         for n in g.nodes:
-            assert f'x="{n.label_x:.1f}" y="{n.cy + 0.36 * 13.0:.1f}"' in svg
+            assert f'x="{n.label_x + n.indent:.1f}" y="{n.cy + 0.36 * 13.0:.1f}"' in svg
 
     def test_a_marker_size_follows_its_style(self):
         g, _ = self._geo(load_dag())

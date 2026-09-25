@@ -12,6 +12,7 @@ from __future__ import annotations
 import csv
 import itertools
 import json
+import math
 import os
 import re
 import threading
@@ -29,6 +30,8 @@ PARENTS_CSV = "lineage_parents.csv"
 GIVEN_LINEAGE_FILE = "workflow.lineage_of_given.json"
 SELF_ID_KEY = "__self__"
 ROW_CAP = 2_000_000
+FORK_CAP = 10_000
+STACK_CAP = 2_000_000
 
 
 @dataclass(frozen=True)
@@ -176,10 +179,16 @@ def explode(nodes: dict[str, Node], columns: list[str], cap: int = ROW_CAP) -> t
     a branch that would put a second, different path into a filled column is
     not a combination that exists and is dropped. A diamond reaches one
     ancestor by two routes with the same path, so it never forks.
+
+    The forks at one node are the product of its per-type parent counts, so a
+    fan-in over hundreds of parents of several types multiplies past any row
+    cap before a row is written. Such a node keeps the row filled so far and
+    stops walking up, and the report counts as truncated.
     """
     index = {c: i for i, c in enumerate(columns)}
     referenced = {p for n in nodes.values() for p in n.parents}
     rows: set[tuple[str, ...]] = set()
+    truncated = False
     for leaf in sorted(i for i in nodes if i not in referenced):
         stack = [((), frozenset(), (leaf,))]
         while stack:
@@ -212,10 +221,16 @@ def explode(nodes: dict[str, Node], columns: list[str], cap: int = ROW_CAP) -> t
             by_type: dict[str, list[str]] = {}
             for p in dict.fromkeys(frontier):
                 by_type.setdefault(nodes[p].dtype_name, []).append(p)
+            if math.prod(len(v) for v in by_type.values()) > FORK_CAP or len(stack) > STACK_CAP:
+                truncated = True
+                rows.add(tuple(cells.get(i, "") for i in range(len(columns))))
+                if len(rows) >= cap:
+                    return sorted(rows), True
+                continue
             state = tuple(sorted(cells.items()))
             for choice in itertools.product(*by_type.values()):
                 stack.append((state, seen, choice))
-    return sorted(rows), False
+    return sorted(rows), truncated
 
 
 def write_csv_atomic(path: Path, header: list[str], rows) -> None:

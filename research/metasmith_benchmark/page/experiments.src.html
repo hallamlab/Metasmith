@@ -1,0 +1,654 @@
+<title>Five Benchmark Experiments</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+:root{
+  --ground:#eef0ec; --surface:#ffffff; --sunk:#f5f6f3; --figure:#ffffff;
+  --ink:#15191a; --muted:#566063; --line:#d6dbd6; --line-soft:#e6e9e5;
+  --accent:#1d6a73;
+  --ok:#2d7a4c; --warn:#9a6310; --flag:#b1402c;
+  --t-repro:#1d6a73; --t-parity:#6a4fa3; --t-opt:#9a6310;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --ground:#0e1213; --surface:#161b1d; --sunk:#121718; --figure:#f1f3f2;
+    --ink:#e0e6e5; --muted:#94a0a2; --line:#2a3233; --line-soft:#212829;
+    --accent:#6cc0c8;
+    --ok:#6cc08f; --warn:#dca54c; --flag:#ec7f68;
+    --t-repro:#6cc0c8; --t-parity:#ac93e6; --t-opt:#dca54c;
+  }
+}
+:root[data-theme="dark"]{
+  --ground:#0e1213; --surface:#161b1d; --sunk:#121718; --figure:#f1f3f2;
+  --ink:#e0e6e5; --muted:#94a0a2; --line:#2a3233; --line-soft:#212829;
+  --accent:#6cc0c8;
+  --ok:#6cc08f; --warn:#dca54c; --flag:#ec7f68;
+  --t-repro:#6cc0c8; --t-parity:#ac93e6; --t-opt:#dca54c;
+}
+*{box-sizing:border-box}
+body{background:var(--ground);color:var(--ink);margin:0;
+  font:400 15px/1.55 "IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  padding-block:40px 72px;padding-left:20px;padding-right:20px}
+.wrap{max-width:1000px;margin:0 auto;display:flex;flex-direction:column;gap:28px}
+code{font:400 .86em/1.4 "JetBrains Mono",ui-monospace,monospace;background:var(--sunk);border:1px solid var(--line-soft);padding:0 4px;border-radius:3px;overflow-wrap:anywhere}
+.eyebrow{font:500 11px/1 "JetBrains Mono",ui-monospace,monospace;letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
+h1{font:600 38px/1.1 "Barlow Semi Condensed",sans-serif;margin:10px 0 0;text-wrap:balance}
+h2{font:600 26px/1.15 "Barlow Semi Condensed",sans-serif;margin:0;text-wrap:balance}
+h3{font:500 11px/1.3 "JetBrains Mono",ui-monospace,monospace;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin:0 0 6px}
+p{margin:0;max-width:70ch}
+.lede{color:var(--muted);margin-top:12px;font-size:16px}
+.lede b{color:var(--ink);font-weight:500}
+.section-head{display:flex;flex-direction:column;gap:6px}
+
+/* ladder */
+.ladder{display:grid;grid-template-columns:repeat(3,1fr);border:1px solid var(--line);border-radius:8px;overflow:hidden;background:var(--surface)}
+.rung{padding:16px 18px;display:flex;flex-direction:column;gap:6px;border-right:1px solid var(--line)}
+.rung:last-child{border-right:0}
+.rung .t{font:600 18px/1.2 "Barlow Semi Condensed",sans-serif}
+.rung p{font-size:13.5px;color:var(--muted)}
+.rung .ids{font:500 12px/1.4 "JetBrains Mono",monospace}
+.rung.repro .t{color:var(--t-repro)} .rung.parity .t{color:var(--t-parity)} .rung.opt .t{color:var(--t-opt)}
+@media (max-width:760px){.ladder{grid-template-columns:1fr}.rung{border-right:0;border-bottom:1px solid var(--line)}.rung:last-child{border-bottom:0}}
+
+/* datasets */
+.corpus{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:20px 22px;display:flex;flex-direction:column;gap:12px}
+.corpus-head{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:4px 16px}
+.corpus-head .name{font:600 21px/1.2 "Barlow Semi Condensed",sans-serif}
+.corpus-head .meta{font:400 12.5px/1.4 "JetBrains Mono",monospace;color:var(--muted)}
+.scroll{overflow-x:auto}
+table.ds{width:100%;border-collapse:collapse;font-size:13.5px;font-variant-numeric:tabular-nums}
+table.ds th{text-align:left;font:500 10.5px/1.3 "JetBrains Mono",monospace;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);padding:0 12px 7px 0;border-bottom:1px solid var(--line);vertical-align:bottom;white-space:nowrap}
+table.ds td{padding:8px 12px 8px 0;border-bottom:1px solid var(--line-soft);vertical-align:top}
+table.ds tr:last-child td{border-bottom:0}
+table.ds td.n{text-align:right;white-space:nowrap}
+table.ds th.n{text-align:right}
+table.ds tfoot td{border-top:1px solid var(--line);border-bottom:0;font-weight:500}
+.pick{font:500 11px/1 "JetBrains Mono",monospace;padding:3px 6px;border-radius:3px;border:1px solid currentColor;white-space:nowrap}
+.pick.long{color:var(--t-repro)} .pick.short{color:var(--muted)} .pick.ask{color:var(--flag)}
+.dim{color:var(--muted)}
+table.swaps{min-width:1180px;font-size:13px}
+table.swaps td.absent{color:var(--muted);text-decoration:line-through;text-decoration-color:var(--line);opacity:.65}
+table.swaps th[scope="row"]{text-align:left;font:500 13px/1.35 "IBM Plex Sans",sans-serif;letter-spacing:0;text-transform:none;color:var(--ink);padding:8px 12px 8px 0;border-bottom:1px solid var(--line-soft);white-space:normal;vertical-align:top;position:sticky;left:0;background:var(--surface);min-width:150px}
+table.swaps tr.grp th{text-align:left;font:600 15px/1.2 "Barlow Semi Condensed",sans-serif;letter-spacing:0;text-transform:none;color:var(--accent);padding:16px 0 6px;border-bottom:1px solid var(--line);white-space:normal}
+table.swaps tbody tr.grp:first-child th{padding-top:4px}
+.pick.long{white-space:nowrap}
+.note{font-size:13px;color:var(--muted);max-width:none}
+
+/* panels */
+.exp{background:var(--surface);border:1px solid var(--line);border-radius:8px;display:grid;grid-template-columns:132px minmax(0,1fr)}
+.side{padding:20px 16px;border-right:1px solid var(--line);background:var(--sunk);display:flex;flex-direction:column;gap:10px;border-radius:8px 0 0 8px}
+.side .id{font:600 34px/1 "Barlow Semi Condensed",sans-serif}
+.chip{align-self:flex-start;font:500 10.5px/1 "JetBrains Mono",monospace;letter-spacing:.08em;text-transform:uppercase;padding:5px 7px;border-radius:3px;border:1px solid currentColor}
+.chip.repro{color:var(--t-repro)} .chip.parity{color:var(--t-parity)} .chip.opt{color:var(--t-opt)}
+.shape{font:400 12px/1.5 "JetBrains Mono",monospace;color:var(--muted);font-variant-numeric:tabular-nums}
+.shape b{color:var(--ink);font-weight:500}
+.shape .total{font:600 30px/1 "Barlow Semi Condensed",sans-serif;color:var(--ink);display:block;margin-top:2px}
+.main{padding:22px 24px;display:flex;flex-direction:column;gap:18px;min-width:0}
+.goal{font-size:16px}
+.goal b{font-weight:600}
+.grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:18px}
+.grid ul,.status ul{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:5px;font-size:14px}
+.grid li{padding-left:12px;position:relative}
+.grid li::before{content:"";position:absolute;left:0;top:.7em;width:5px;height:1px;background:var(--muted)}
+.status{display:grid;grid-template-columns:1fr 1fr;gap:18px;padding-top:16px;border-top:1px solid var(--line-soft)}
+.status li{padding-left:14px;border-left:2px solid var(--line);font-size:13.5px}
+.status .proven li{border-left-color:var(--ok)}
+.status .open li{border-left-color:var(--warn)}
+.status .open li.block,.status .decide li{border-left-color:var(--flag)}
+.answer{background:var(--sunk);border:1px solid var(--line-soft);border-radius:6px;padding:14px 16px;display:flex;flex-direction:column;gap:8px;font-size:14px}
+.answer p{max-width:none}
+
+details.dag{border-top:1px solid var(--line-soft);padding-top:12px}
+details.dag summary{cursor:pointer;font:500 12.5px/1.4 "JetBrains Mono",monospace;color:var(--accent);list-style:none;display:flex;gap:8px;align-items:baseline;flex-wrap:wrap}
+details.dag summary::-webkit-details-marker{display:none}
+details.dag summary::before{content:"▸";transition:transform .15s}
+details.dag[open] summary::before{transform:rotate(90deg)}
+details.dag summary .sub{color:var(--muted)}
+details.dag summary:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+.dagbody{display:flex;flex-direction:column;gap:12px;margin-top:12px}
+.figs{display:flex;flex-wrap:wrap;gap:14px}
+figure{margin:0;display:flex;flex-direction:column;gap:6px;min-width:0;flex:1 1 300px}
+.figbox{background:var(--figure);border:1px solid var(--line-soft);border-radius:6px;overflow:auto;max-height:560px;padding:8px}
+.figbox svg{display:block;max-width:none;height:auto}
+.figbox pre.mermaid{margin:0;background:transparent;color:#15191a}
+figcaption{font-size:12.5px;color:var(--muted)}
+a.full{align-self:flex-start;font:500 12.5px/1.4 "JetBrains Mono",monospace;color:var(--accent);text-decoration:none;border:1px solid var(--line);border-radius:4px;padding:4px 8px;background:var(--surface)}
+a.full:hover{border-color:var(--accent)}
+a.full:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.empty{font-size:13.5px;color:var(--muted);padding:14px 16px;border:1px dashed var(--line);border-radius:6px}
+@media (prefers-reduced-motion: reduce){details.dag summary::before{transition:none}}
+@media (max-width:820px){
+  .exp{grid-template-columns:1fr}
+  .side{border-right:0;border-bottom:1px solid var(--line);flex-direction:row;flex-wrap:wrap;align-items:center;gap:10px 18px;border-radius:8px 8px 0 0}
+  .grid,.status{grid-template-columns:1fr}
+}
+.legend{display:flex;flex-wrap:wrap;gap:8px 20px;font-size:12.5px;color:var(--muted)}
+.legend span::before{content:"";display:inline-block;width:10px;height:10px;margin-right:6px;vertical-align:-1px;border-left:2px solid}
+.legend .l-ok::before{border-color:var(--ok)} .legend .l-warn::before{border-color:var(--warn)} .legend .l-flag::before{border-color:var(--flag)}
+.foot{color:var(--muted);font-size:12.5px;border-top:1px solid var(--line);padding-top:14px}
+</style>
+
+<div class="wrap">
+<header>
+  <div class="eyebrow">metasmith benchmark · experiment design · draft for discussion · 2026-09-17</div>
+  <h1>Five benchmark experiments</h1>
+  <p class="lede">Each panel is one run with its own driver. There are three kinds of experiment: <b>reproduce</b> a published result, show metasmith has <b>parity</b> with a reference pipeline, and run the metasmith <b>optimized</b> pipeline. The page has three sections: datasets, the five experiments, and the tools E5 swaps. Each panel opens its solved workflow on request.</p>
+</header>
+
+<section class="ladder" aria-label="How the five experiments relate">
+  <div class="rung parity">
+    <div class="eyebrow">Ground truth exists</div>
+    <div class="t">Parity on CAMI 2+3</div>
+    <p>nf-core/mag runs as itself, then metasmith runs the identical pipeline. Only the driver differs. AMBER scores both against the same gold standard.</p>
+    <div class="ids">E1 → E2</div>
+  </div>
+  <div class="rung repro">
+    <div class="eyebrow">Published products exist</div>
+    <div class="t">Reproduce the papers</div>
+    <p>Recover what Pratama and metaGEM published, using our own tools. We do not re-run their methods verbatim.</p>
+    <div class="ids">E3 · E4</div>
+  </div>
+  <div class="rung opt">
+    <div class="eyebrow">Built on all four</div>
+    <div class="t">metasmith optimized</div>
+    <p>Our best pipeline, piloted on 9 samples, compared against the parity and reproduction runs, plus what the change costs to rerun.</p>
+    <div class="ids">E5</div>
+  </div>
+</section>
+
+<!-- DATASETS -->
+<section class="section-head">
+  <div class="eyebrow">Datasets</div>
+  <h2>Corpora and read types</h2>
+  <p class="dim">Counts are samples (CAMI) or sequencing runs (Pratama, metaGEM), read from each corpus's own table: <code>research/cami/samples.tsv</code>, <code>research/pratama2026/runs.tsv</code>, <code>research/metagem/manifest.tsv</code>.</p>
+</section>
+
+<div class="corpus">
+  <div class="corpus-head">
+    <span class="name">CAMI II + CAMI III toy human gut</span>
+    <span class="meta">simulated · gold standard per sample · used by E1, E2, E5</span>
+  </div>
+  <p class="note">The <b>E1/E2 read</b> column gives each sample one read type: long reads where they are Nanopore, short reads where the long reads are simulated PacBio. Marine, strain madness and plant-associated are the full CAMI II challenge datasets. The others are toy sets.</p>
+  <p class="note"><b>Why only the CAMI III toy set:</b> the full CAMI III Longitudinal Human Gut gold standards stay held back until the binning challenge closes on 31 January 2027 (<a href="https://cami-challenge.org/cami-iii-challenges/">CAMI III challenges</a>).</p>
+  <div class="scroll">
+  <table class="ds">
+    <thead><tr><th>Environment</th><th>Round</th><th class="n">Short</th><th>Long reads available</th><th class="n">Long</th><th>E1/E2 read</th></tr></thead>
+    <tbody>
+      <tr><td>Marine</td><td>CAMI II challenge</td><td class="n">10</td><td>PacBio-like: length profile matches pbsim exactly, max 10,616 bp <span class="dim">(measured; not documented on disk)</span></td><td class="n">10</td><td><span class="pick short">short · 10</span></td></tr>
+      <tr><td>Strain madness</td><td>CAMI II challenge</td><td class="n">100</td><td>PacBio-like: same pbsim profile, max 10,616 bp <span class="dim">(measured)</span></td><td class="n">100</td><td><span class="pick short">short · 100</span></td></tr>
+      <tr><td>Plant-associated</td><td>CAMI II challenge</td><td class="n">21</td><td>Both, sample-matched to short by ID:<br>Nanopore (NanoSim) and PacBio (pbsim)</td><td class="n">21 + 21</td><td><span class="pick long">long · nano · 21</span></td></tr>
+      <tr><td>Human microbiome: air, skin, urogenital</td><td>CAMI II toy</td><td class="n">29</td><td>pbsim, in the manifest but not unpacked on fir</td><td class="n dim">—</td><td><span class="pick short">short · 29</span></td></tr>
+      <tr><td>Human microbiome: gastrointestinal, oral</td><td>CAMI II toy</td><td class="n">20</td><td>pbsim, in the manifest but not unpacked on fir</td><td class="n dim">—</td><td><span class="pick short">short · 20</span></td></tr>
+      <tr><td>Mouse gut</td><td>CAMI II toy</td><td class="n">49</td><td>pbsim, in the manifest but not unpacked on fir</td><td class="n dim">—</td><td><span class="pick short">short · 49</span></td></tr>
+      <tr><td>Human gut</td><td>CAMI III toy</td><td class="n">20</td><td>Simulated Oxford Nanopore, R10 chemistry, average 3,998 bp per <a href="https://cami-challenge.org/datasets/toy-human-gut/">CAMI</a> (simulator not named). Measured on fir: median 3,843 bp, max 16,066 bp</td><td class="n">20</td><td><span class="pick long">long · nano · 20</span></td></tr>
+    </tbody>
+    <tfoot><tr><td>Total</td><td></td><td class="n">249</td><td></td><td class="n">172 on fir</td><td>249 samples · 41 long, 208 short</td></tr></tfoot>
+  </table>
+  </div>
+</div>
+
+<div class="corpus">
+  <div class="corpus-head">
+    <span class="name">Pratama 2026 · groundwater virome</span>
+    <span class="meta">real · Hainich CZE wells · published products on Zenodo · used by E3, E5</span>
+  </div>
+  <div class="scroll">
+  <table class="ds">
+    <thead><tr><th>Read set</th><th>Instrument</th><th>Layout</th><th class="n">Runs</th><th>Pratama used it for</th></tr></thead>
+    <tbody>
+      <tr><td>reads_2019</td><td>Illumina NextSeq 500</td><td>paired</td><td class="n">32</td><td>Assembly, binning, virus calling</td></tr>
+      <tr><td>reads_2022</td><td>Illumina NovaSeq 6000</td><td>paired</td><td class="n">34</td><td>Assembly, binning, virus calling</td></tr>
+      <tr><td>reads_2022 Nanopore</td><td>MinION, R9.4.1, Guppy sup</td><td>single, long</td><td class="n">6</td><td>Hybrid metaSPAdes assemblies: each run paired with every 0.2 µm 2022 Illumina replicate from its well, giving 17 assemblies (wells H14 H32 H41 H51 H52 H53). E3 does the same</td></tr>
+    </tbody>
+    <tfoot><tr><td>Total</td><td></td><td></td><td class="n">72</td><td>The paper counts 65 short-read plus 6 long-read metagenomes. E3 uses all 72</td></tr></tfoot>
+  </table>
+  </div>
+</div>
+
+<div class="corpus">
+  <div class="corpus-head">
+    <span class="name">metaGEM · Zorrilla et al. 2021</span>
+    <span class="meta">real · five studies · published MAGs and models on Zenodo, 96 GB · used by E4, E5</span>
+  </div>
+  <p class="note">E4 starts from the published MAGs. All five studies publish MAGs, proteins, assemblies and models, and all 46 files are on fir with sizes matching the manifest. E5 starts from reads, so all 491 runs stay staged.</p>
+  <div class="scroll">
+  <table class="ds">
+    <thead><tr><th>Study</th><th>Environment</th><th>Layout</th><th class="n">Runs</th><th class="n">Reads</th></tr></thead>
+    <tbody>
+      <tr><td>li2019 <span class="dim">PRJNA485196</span></td><td>Peanut rhizosphere</td><td>paired</td><td class="n">6</td><td class="n">23.8 GB</td></tr>
+      <tr><td>korem2015 <span class="dim">PRJEB9718</span></td><td>Gut, lab culture</td><td>single</td><td class="n">48</td><td class="n">25.4 GB</td></tr>
+      <tr><td>karlsson2013 <span class="dim">PRJEB1786</span></td><td>Human gut</td><td>paired</td><td class="n">145</td><td class="n">412.8 GB</td></tr>
+      <tr><td>bissett_base <span class="dim">PRJEB7626</span></td><td>Australian bulk soil</td><td>paired</td><td class="n">46</td><td class="n">457.5 GB</td></tr>
+      <tr><td>sunagawa2015 <span class="dim">PRJEB1787</span></td><td>Tara Oceans</td><td>paired</td><td class="n">246</td><td class="n">4,294.9 GB</td></tr>
+    </tbody>
+    <tfoot><tr><td>Total</td><td></td><td>443 paired · 48 single</td><td class="n">491</td><td class="n">5.21 TB</td></tr></tfoot>
+  </table>
+  </div>
+</div>
+
+<section class="section-head">
+  <div class="eyebrow">Initial run</div>
+  <h2>E1–E4 and the E5 pilot launch together</h2>
+  <p class="dim">First runs are expected to crash, and running all five at once surfaces every fix sooner. Samples split into batches within an experiment only if the estimated peak file count exceeds fir's project inode quota of 1 M. Drivers run as compute-node jobs where they can (<code>METASMITH_DRIVER_SLURM=1</code>).</p>
+</section>
+
+<div class="legend"><span class="l-ok">observed on real data</span><span class="l-warn">blocks a result, not the launch</span><span class="l-flag">blocks the run, or needs a decision</span></div>
+
+<!-- E1 -->
+<article class="exp">
+  <div class="side">
+    <div class="id">E1</div>
+    <span class="chip parity">parity · control</span>
+    <div class="shape">samples<span class="total">249</span>driver<br><b>nf-core/mag 5.5.0</b></div>
+  </div>
+  <div class="main">
+    <h2>CAMI 2+3 through nf-core/mag, short and long reads</h2>
+    <p class="goal"><b>Goal:</b> run somebody else's pipeline as itself, using long reads where CAMI has usable ones, scored against ground truth. This is the reference point for every parity claim.</p>
+    <div class="grid">
+      <div><h3>Datasets</h3><ul>
+        <li>All 249 CAMI 2+3 samples, one read type each (see Datasets)</li>
+        <li>Long, 41 samples: plant-associated Nanopore (21) and CAMI III human gut Nanopore (20)</li>
+        <li>Short, 208 samples: marine, strain, three toy sets</li>
+      </ul></div>
+      <div><h3>Driver</h3><ul>
+        <li>nf-core/mag 5.5.0 at revision <code>56abab5b</code>, <code>control.config</code>, Slurm on fir</li>
+        <li>Short lane: fastp → MEGAHIT → bowtie2. phiX removal is off</li>
+        <li>Long lane: Porechop ABI → Chopper → Flye → minimap2</li>
+        <li>Both lanes: MetaBAT2 / SemiBin2 / COMEBin → DAS Tool → CheckM2</li>
+      </ul></div>
+      <div><h3>Targets / metrics</h3><ul>
+        <li><code>contig_to_bin_map.tsv</code>, DAS Tool bins</li>
+        <li>AMBER on the consolidated bin set, via <code>score_reference_amber.py</code></li>
+        <li>CheckM2 completeness and contamination</li>
+        <li>Wall time and core-hours per stage</li>
+      </ul></div>
+    </div>
+    <div class="status">
+      <div class="proven"><h3>Proven</h3><ul>
+        <li>Rung 1 (<code>marine_sample_0</code>) wrote 50 MetaBAT2 bins at <code>min_contig_size</code> 1500</li>
+        <li>A failed DAS Tool fails the run instead of exiting zero with empty tables</li>
+        <li>A mixed short/long sample sheet validates and previews through both lanes</li>
+        <li>Flye on the long lane</li>
+        <li><code>keep_phix = true</code> switches phiX removal off</li>
+        <li>Sample sheets come from E2's own sample list: 208 short-read samples on split R1/R2 pairs (all 208 split and checked against their sources), 41 long-read samples</li>
+        <li>Each sheet runs as its own Nextflow head in a Slurm job, <code>run_e1.sbatch</code>, offline against the pre-pulled images</li>
+        <li><b>Both arms are finished.</b> The short arm completed clean on 2026-09-17: exit 0, 3,678 tasks succeeded and 3,185 cached, 96 failures all re-submitted and none terminal, <code>BIN_SUMMARY</code> and <code>MULTIQC</code> both exit 0. <code>MAG_DEPTHS</code> closed at 832/832 — four bin groups across 208 samples</li>
+      </ul></div>
+      <div class="open"><h3>Open</h3><ul>
+        <li>No DAG yet. Wave 1's heads write one with <code>-with-dag</code></li>
+        <li>E1 is archived and its trees released: <code>e1_long.tar</code> (13,787 members) and <code>e1_short_out.tar</code> (57,253 members), each verified member-for-entry before anything was deleted. Both tars still sit on fir's scratch, so there is no off-site copy yet</li>
+      </ul></div>
+    </div>
+  </div>
+</article>
+
+<!-- E2 -->
+<article class="exp">
+  <div class="side">
+    <div class="id">E2</div>
+    <span class="chip parity">parity · msm</span>
+    <div class="shape">samples<span class="total">249</span>driver<br><b>metasmith</b></div>
+  </div>
+  <div class="main">
+    <h2>The same pipeline, driven by metasmith</h2>
+    <p class="goal"><b>Goal:</b> match E1 exactly except for the driver: same samples, same read type per sample, same tools, same parameters. Any difference in the AMBER score then belongs to the driver.</p>
+    <div class="grid">
+      <div><h3>Datasets</h3><ul>
+        <li>The same 249 samples as E1, checked name for name, with the same read type per sample</li>
+      </ul></div>
+      <div><h3>Driver</h3><ul>
+        <li><code>drivers/e2_cami.py</code> binds only <code>library/transforms/e2</code>: 16 transforms written from nf-core/mag 5.5.0's own commands, arguments and image tags</li>
+        <li>Short arm, 208 samples on E1's split R1/R2 pairs: 15 steps, wave-3 key <code>MjMN02CK</code>. FastQC raw and trimmed → fastp → MEGAHIT → bowtie2 → MetaBAT2 / SemiBin2 / COMEBin → DAS Tool; CheckM2 on all four bin sets; AMBER on all four bin sets</li>
+        <li>Long arm, 41 samples: 14 steps, wave-3 key <code>VgUw0A7c</code>. Porechop ABI → Chopper → Flye → minimap2, then the same tail. Flye and minimap2 take their presets from the platform in each sample's read metadata</li>
+        <li>Not run, because nothing scored reads them: QUAST, NanoPlot and nf-core's standalone Prodigal</li>
+        <li>Runs as a Slurm job on fir through <code>submit_driver.sbatch</code>, 10 cpus / 48 GB</li>
+      </ul></div>
+      <div><h3>Targets / metrics</h3><ul>
+        <li><code>das_tool_amber_results</code> against E1's AMBER on the same gold standard</li>
+        <li>Tool-for-tool diff with zero unexplained rows</li>
+        <li>Every parity pin read from the rendered <code>.command.out</code></li>
+        <li>Wall time and core-hours against E1</li>
+      </ul></div>
+    </div>
+    <div class="status">
+      <div class="proven"><h3>Proven</h3><ul>
+        <li>Rung 1 on the earlier library (<code>iy8YLaGr</code>): MetaBAT2 wrote 51 bins and SemiBin2 57, products inspected</li>
+        <li>Flye <code>--nano-raw</code> on plant sample 0: 1 h 06 m, 3,186 contigs, N50 96,428, peak memory 32.68 GiB. NanoSim reads align at 15.4% error despite their flat Q40 qualities</li>
+        <li>Wave 2 ran both arms to completion: every step on all 208 short and all 41 long samples, with AMBER scoring each sample against its own gold standard and no <code>unbinned</code> pseudo-bin</li>
+        <li>Wave 3 scores all four bin sets. Median <code>f1_score_bp</code>, short arm, 208 samples: COMEBin 0.190, MetaBAT2 0.139, SemiBin2 0.126, DAS Tool 0.089. Strain madness is lowest (COMEBin 0.121, DAS Tool 0.031) and gastrointestinal/oral highest (0.538, 0.393). E1's DAS Tool on marine_sample_0 scores 0.224</li>
+        <li>Median <code>f1_score_bp</code>, long arm, 41 samples: COMEBin 0.903, SemiBin2 0.471, MetaBAT2 0.414, DAS Tool 0.195. E1 long's sample 0 gives the same order (0.885, 0.428, 0.478, 0.18)</li>
+        <li>DAS Tool scores below its best input on 208 of 208 short samples. At <code>score_threshold</code> 0.5, nf-core/mag's default, it keeps high-precision bins (precision 0.957 short, 0.952 long) and drops most of each genome (assigned bp 0.295 short). The wave-1 figure of 0.91 scored DAS Tool's unbinned set as a bin and is withdrawn</li>
+      </ul></div>
+      <div class="open"><h3>Open</h3><ul>
+        <li>The first 1-sample probe proved the Slurm driver path, and its fastp wrote nothing: <code>--detect_adapter_for_pe</code> fails silently on interleaved input. The short arm now reads the split pairs, and probe <code>Gu9VJmwO</code> on them passed: fastp wrote 4.55 GB of trimmed reads, and FastQC its reports</li>
+        <li>Each lane's images are fetched by a <code>--materialise</code> job before wave 1</li>
+        <li>Flye declares 64 GB, 1.9× its four measured peaks. Both long-read datasets declare <code>OXFORD_NANOPORE</code>, which for CAMI III toy human gut is an inference</li>
+      </ul></div>
+    </div>
+    <details class="dag">
+      <summary>Solved workflows <span class="sub">· short arm MjMN02CK, 15 steps · long arm VgUw0A7c, 14 steps</span></summary>
+      <div class="dagbody">
+        <div class="figs">
+          <figure>
+            <a class="full" href="https://10.74.81.84:12100/files/home/tony/agentic_workspace/projects/metasmith/engine/bench-run/research/metasmith_benchmark/page/dags/e2_cami_short.dag.svg" target="_blank" rel="noopener">Open full screen ↗</a>
+            <div class="figbox">{{SVG:e2_cami_short}}</div>
+            <figcaption>Short arm, 208 samples, as staged on fir for wave 3. Triangles are steps and circles are data types. Every step is a transform from <code>library/transforms/e2</code>.</figcaption>
+          </figure>
+          <figure>
+            <a class="full" href="https://10.74.81.84:12100/files/home/tony/agentic_workspace/projects/metasmith/engine/bench-run/research/metasmith_benchmark/page/dags/e2_cami_long.dag.svg" target="_blank" rel="noopener">Open full screen ↗</a>
+            <div class="figbox">{{SVG:e2_cami_long}}</div>
+            <figcaption>Long arm, 41 Nanopore samples. Porechop ABI and Chopper run before Flye, as in E1.</figcaption>
+          </figure>
+        </div>
+      </div>
+    </details>
+  </div>
+</article>
+
+<!-- E3 -->
+<article class="exp">
+  <div class="side">
+    <div class="id">E3</div>
+    <span class="chip repro">reproduce</span>
+    <div class="shape">metagenomes<span class="total">65</span>+ 6 Nanopore runs<br>driver<br><b>metasmith</b></div>
+  </div>
+  <div class="main">
+    <h2>Pratama 2026 groundwater virome</h2>
+    <p class="goal"><b>Goal:</b> recover Pratama's published vOTUs, MAGs and AMGs with our own tools. The target is their results, not a literal re-run of their commands.</p>
+    <div class="answer">
+      <h3>Decided</h3>
+      <p><b>Nanopore runs:</b> do what Pratama did. Each well's one 0.2 µm MinION run pairs with every 0.2 µm 2022 Illumina replicate from that well in a hybrid metaSPAdes <code>--nanopore</code> assembly: 3 each for H14, H32, H41, H52 and H53, and 2 for H51, which gives the paper's 17.</p>
+      <p><b>Parity differences:</b> no Guppy step, because SRA holds the basecalled FASTQ. GTDB-Tk r232 instead of r202. No CCTyper, which none of the reference studies runs.</p>
+      <p><b>Reads:</b> pre-interleaved once on fir, so the plan carries no interleave step.</p>
+      <p><b>Coverage:</b> no CoverM. <code>assembly_stats</code> (minimap2 and genomecov) gives per-base coverage.</p>
+    </div>
+    <div class="grid">
+      <div><h3>Datasets</h3><ul>
+        <li>65 short-read metagenomes, one ENA run each: 31 from 2019, 34 from 2022. ENA's second run of H32 0.2 µm R1 (<code>PNK108_H32_0_2</code>) is left out, as the paper counts that sample once</li>
+        <li>6 MinION runs, each reused across its well's 0.2 µm Illumina replicates: 17 hybrid assemblies</li>
+        <li>Their Zenodo products: vOTU catalogue, 1,275 MAGs, curated AMG table</li>
+      </ul></div>
+      <div><h3>Driver</h3><ul>
+        <li><code>drivers/e3_pratama.py</code>, all runs under one shared study root for the viral merge. 65 runs. Wave 7 runs as <code>F3KJbPJK</code> over 39 planned steps; the wave-2 solve was <code>bqyYO0Ip</code> at 26</li>
+        <li>MAG lane: bbduk → metaSPAdes → MetaWRAP, with CheckM inside it → DRAM on the MAGs</li>
+        <li>Viral lane: MEGAHIT and metaSPAdes contigs → geNomad + VIBRANT + VirSorter2 → one merge over both assemblies → CheckV → MMseqs2 → vConTACT3; prodigal-gv; DRAM-v on vOTUs of 10 kb or more</li>
+        <li>Pratama's settings are pinned in <code>library/transforms/e3</code>, which masks the standard transforms it replaces. <code>findings/R1_TABLE_AUDIT.md</code> gives each tool's status</li>
+        <li>Staging refuses until every run's interleaved file passes its read-count check</li>
+        <li>Databases on fir: VirSorter2 2.2.4, DRAM, VIBRANT, CheckV and iPHoP (Aug23, checksums verified), all registered, so no plan downloads one. DRAM has no dbcan, because its download URL is dead. geNomad's database is 1.5.1 against Pratama's 1.11.0</li>
+      </ul></div>
+      <div><h3>Targets / metrics</h3><ul>
+        <li>vOTU recovery: the share of their vOTUs matched by skANI</li>
+        <li>MAG recovery against their 1,275, from MetaWRAP's own dereplicated bins</li>
+        <li>AMG call overlap, raw calls vs their curated calls</li>
+        <li>Recovery, not identity, for all three</li>
+      </ul></div>
+    </div>
+    <div class="status">
+      <div class="proven"><h3>Proven</h3><ul>
+        <li>VIBRANT, geNomad, CheckV, the candidate merge, prodigal-gv, both MMseqs2 clusterings and the contig length table: products inspected from live run <code>d6UJuZgF</code></li>
+        <li>All 66 paired runs interleaved on fir: 9,521,730,640 records, twice the sum of <code>runs.tsv</code> read counts</li>
+        <li>MetaWRAP refinement: 92 bins for one of 66 runs, the largest 5.6 MB across 1,151 contigs</li>
+        <li>vOTU recovery method: a 65,640-row skANI table, from one sample and two of three callers</li>
+        <li>MAG recovery method, on those 92 bins against the 1,275 published MAGs: 71 of ours and 122 of theirs matched, clustered in H52, the source well. One run proves the method, not the rate</li>
+        <li>Wave 7 binning on <code>F3KJbPJK</code>: MetaBAT2 65/65 and CONCOCT 65/65 complete, MaxBin2 57/65 and still running. MetaWRAP refinement consumes all three per sample, so its absence is a gate rather than a fault — and it in turn gates DRAM on MAGs and GTDB-Tk</li>
+        <li>The viral lane is chunked rather than monolithic: CheckV and prodigal-gv run per contig batch in about 35 minutes each, against monoliths that hit 8 h and 16 h walls. The two merged tables carry 4,597,542 contigs plus a header</li>
+      </ul></div>
+      <div class="open"><h3>Open</h3><ul>
+        <li class="block">The 17 hybrid assemblies wait on a hybrid read-set type and a hybrid metaSPAdes transform. All 6 MinION runs are on fir, and H43 has none</li>
+        <li>GTDB-Tk r232 and iPHoP on the shipped database wait behind <code>--with-gtdbtk</code> and <code>--with-host-prediction</code>. GTDB-Tk reads the genomes from one squashfs image, which frees 427K inodes once a run through it passes</li>
+        <li class="block">MAG recovery, iPHoP on the augmented database and DRAM on dereplicated MAGs wait on dRep. Until then DRAM annotates each sample's refined bins</li>
+        <li class="block">MetaWRAP refines once. Pratama's second round needs BinSanity and abawaca</li>
+        <li class="block"><b>New transforms</b> to match Pratama: BinSanity, abawaca, dRep, DeepVirFinder, MetaPop and minced, each with a container image. Spacer-to-host links wait on minced</li>
+        <li class="block">MetaPop needs every run mapped to one shared reference, the study's vOTU catalogue. Today each run maps to its own assembly</li>
+        <li class="block">vConTACT3 does not fit its memory ladder. Three attempts at 128, 256 and 512 GB: the first two died out of memory at their cap, and the second died <i>later</i> than the first, building a genome network over 4,602,611 contigs and 3,613,684 HMMs. Doubling buys a later failure point, not a finish, so the next step is chunking rather than a fourth tier</li>
+      </ul></div>
+    </div>
+    <details class="dag">
+      <summary>Solved workflow <span class="sub">· wave-2 solve bqyYO0Ip, 26 steps, 65 runs</span></summary>
+      <div class="dagbody">
+        <div class="figs">
+          <figure>
+            <a class="full" href="https://10.74.81.84:12100/files/home/tony/agentic_workspace/projects/metasmith/engine/bench-run/research/metasmith_benchmark/page/dags/e3_pratama.dag.svg" target="_blank" rel="noopener">Open full screen ↗</a>
+            <div class="figbox">{{SVG:e3_pratama}}</div>
+            <figcaption>As staged on fir for wave 2. No interleave step, because the reads arrive interleaved, and no download step, because every database is staged. Both assemblies feed the viral merge, and only metaSPAdes feeds MetaWRAP.</figcaption>
+          </figure>
+        </div>
+      </div>
+    </details>
+  </div>
+</article>
+
+<!-- E4 -->
+<article class="exp">
+  <div class="side">
+    <div class="id">E4</div>
+    <span class="chip repro">reproduce</span>
+    <div class="shape">studies<span class="total">5</span>published MAGs<br>driver<br><b>metasmith</b></div>
+  </div>
+  <div class="main">
+    <h2>metaGEM metabolic models</h2>
+    <p class="goal"><b>Goal:</b> reproduce metaGEM's published genome-scale models with our own tools, starting from their published MAGs.</p>
+    <div class="grid">
+      <div><h3>Datasets</h3><ul>
+        <li>Published MAGs, assemblies and models from all five studies: 96 GB on Zenodo, all on fir</li>
+        <li>The reads (491 runs, 5.21 TB) are for E5, not E4</li>
+      </ul></div>
+      <div><h3>Driver</h3><ul>
+        <li><code>drivers/e4_metagem.py</code>, registering the 14,108 published MAGs as bins in 8 chunks of 2,000 (<code>--chunk</code>), which pool in one agent home. Chunk 1: 3 steps, key <code>lE94xbfH</code></li>
+        <li>CarveMe gapfill at 16 GB and 12 h, and each retry doubles both (B11). The transform declares 2 h</li>
+        <li>GTDB-Tk r232 on every MAG with <code>--with-gtdbtk</code>, reading the genomes from one squashfs image</li>
+        <li>Prodigal → CarveMe carve, then gapfill on M8 with CPLEX 22.2 → MEMOTE → SMETANA</li>
+        <li>Ramp: li2019 → gut → soil → Tara</li>
+      </ul></div>
+      <div><h3>Targets / metrics</h3><ul>
+        <li>Reaction and metabolite counts per model</li>
+        <li>MEMOTE total score</li>
+        <li>Growth on M8, for ours and theirs</li>
+        <li>Model-to-model comparison against metaGEM's published model for the same MAG</li>
+      </ul></div>
+    </div>
+    <div class="status">
+      <div class="proven"><h3>Proven</h3><ul>
+        <li>CPLEX solves uncapped inside the CarveMe container on a fir compute node. The open solver ran 1 h 49 m on the smallest bin and never finished</li>
+        <li>Corpus scale, from reads: live li2019 run <code>HQ5SrqFe</code> built 131 models with zero failures. A sampled model has 1,968 reactions and 1,376 species</li>
+        <li>All 14,108 published MAGs unpacked on fir, one FASTA each, matched by name against the manifest</li>
+        <li>MEMOTE on a real model from that run: consistency 0.894, annotation 0.797 (metabolites) / 0.766 (reactions)</li>
+      </ul></div>
+      <div class="open"><h3>Open</h3><ul>
+        <li class="block">SMETANA: <b>new transform</b> and container image</li>
+        <li>Each chunk's model count is checked against its 2,000 MAGs, because retry-then-ignore hides failures</li>
+        <li><code>metagem_compare.py</code> compares one model pair, so the comparison needs a loop over MAGs, paired by their published names</li>
+      </ul></div>
+    </div>
+    <details class="dag">
+      <summary>Solved workflow <span class="sub">· chunk 1, lE94xbfH, 3 steps, from published MAGs</span></summary>
+      <div class="dagbody">
+        <div class="figs">
+          <figure>
+            <a class="full" href="https://10.74.81.84:12100/files/home/tony/agentic_workspace/projects/metasmith/engine/bench-run/research/metasmith_benchmark/page/dags/e4_metagem.dag.svg" target="_blank" rel="noopener">Open full screen ↗</a>
+            <div class="figbox">{{SVG:e4_metagem}}</div>
+            <figcaption>Chunk 1, solved locally by <code>e4_metagem.py run --chunk 1 --dag</code>: Prodigal on each MAG, CarveMe with CPLEX, then MEMOTE.</figcaption>
+          </figure>
+        </div>
+      </div>
+    </details>
+  </div>
+</article>
+
+<!-- E5 -->
+<article class="exp">
+  <div class="side">
+    <div class="id">E5</div>
+    <span class="chip opt">optimized</span>
+    <div class="shape">pilot samples<span class="total">9</span>3 CAMI · 3 Pratama · 3 metaGEM<br>driver<br><b>metasmith</b></div>
+  </div>
+  <div class="main">
+    <h2>metasmith optimized, piloted on 9 samples</h2>
+    <p class="goal"><b>Goal:</b> show our best pipeline scores better where ground truth exists, finds more where it doesn't, and that the switch costs a definition change rather than a full rerun. The tool list is a starting point, and E1–E4 results will reshape it.</p>
+    <div class="answer">
+      <h3>Decided</h3>
+      <p><b>Annotation:</b> the 4-lane panel replaces DRAM. <b>Host prediction:</b> iPHoP stays, since its database costs little. BLASTn spacer links are dropped.</p>
+      <p><b>Coverage:</b> no CoverM. <code>assembly_stats</code> gives per-base coverage. <b>phiX:</b> no pipeline step. Check by hand when a sample needs it.</p>
+      <p><b>Plan keys:</b> sharing keys with E2 and E3 is not needed for the design, but is wanted because reused steps cut runtime.</p>
+    </div>
+    <div class="grid">
+      <div><h3>Datasets</h3><ul>
+        <li>Pilot: 3 samples each from CAMI, Pratama and metaGEM</li>
+        <li>CAMI 2+3: shows whether it's better</li>
+        <li>Pratama: shows whether the gain carries to real data</li>
+        <li>metaGEM, from reads: shows the model lane on real data</li>
+      </ul></div>
+      <div><h3>Driver</h3><ul>
+        <li><code>drivers/e5_pilot.py</code>, one plan per corpus, because a plan gives every sample the same targets</li>
+        <li>Pilot samples: CAMI mouse gut, Pratama reads_2019 and metaGEM li2019. Every corpus registers the same study → sample → read pair shape</li>
+        <li>Wave 2, on the CarveMe 1.6.6 pin: CAMI <code>u8oBvJrv</code>, Pratama 35 steps (<code>AvPNgFtP</code>), metaGEM <code>cSBSeNuq</code> (which adds the interleave step). All three finished: 51, 381 and 85 models, each with a MEMOTE score. GTDB-Tk, GTDB-Tk de novo and iPHoP join with <code>--with-gtdbtk</code></li>
+        <li>Wave 3 adds the dereplicators: CAMI <code>P7FelAys</code> (40 steps) and metaGEM <code>BhEA2YLt</code> (41) finished, with CheckM2, CarveMe and MEMOTE served from cache. Pratama waits on E3's run</li>
+        <li>Filters become masks: a frozen candidate set with thresholds applied as joins, not re-runs</li>
+        <li>Studies: a study is a corpus subset, such as CAMI II mouse gut or Pratama reads_2019. MetaPop runs once per study</li>
+        <li>Dereplication: DAS Tool, MAGScoT, dRep and skANI dedup are four interchangeable dereplicators over the same three binners' bins, each a sibling of the others. dRep and skANI run per sample and per study. MAGScoT kept 13–24 bins per CAMI sample and 35–43 per metaGEM sample</li>
+        <li>4-lane annotation panel → CarveMe → MEMOTE → SMETANA</li>
+        <li>AMBER and skANI recovery run after the plan finishes, outside it</li>
+      </ul></div>
+      <div><h3>Targets / metrics</h3><ul>
+        <li>AMBER change vs E2 on CAMI</li>
+        <li>Recovery change vs E3 on Pratama</li>
+        <li>Model change vs E4</li>
+        <li>Cost: shared-prefix fraction reused from the parity caches, and task-hours saved</li>
+      </ul></div>
+    </div>
+    <div class="status">
+      <div class="decide"><h3>To decide after the pilot</h3><ul>
+        <li>Whether DRAM-v on the viral contigs goes with DRAM. It stays out of the plans until E3 reports</li>
+        <li>Whether minced stays. Its only E5 use was the BLASTn spacer links, which are dropped</li>
+      </ul></div>
+      <div class="open"><h3>Depends on</h3><ul>
+        <li>E2 and E3 landing, since their numbers are the baselines</li>
+        <li class="block"><b>New transforms</b>: DeepVirFinder, MetaPop, SMETANA, and minced if it stays. Each also needs a container image. CheckM2, MAGScoT, dRep and skANI dedup are built and ran in wave 3</li>
+        <li>prodigal-gv on the frozen viral set now writes its own product type (<code>bench::viral_orfs</code>). Before that it answered DAS Tool's and MAGScoT's ORF input (B23), and DAS Tool failed on all 3 metaGEM samples</li>
+        <li class="block">A study type that samples declare. <code>viromics::contig_study</code> stands in, grouping the viral merge and the per-study dereplicators</li>
+        <li class="block">The 4-lane panel reads whole-assembly ORFs. Running it on MAGs needs a chunker for per-MAG ORFs</li>
+        <li class="block">GTDB-Tk r232 needs its 199,923 representative genomes, which cost 427K inodes as files. They go into one squashfs image, and taxonomy joins the pilot once a GTDB-Tk run through the image passes</li>
+      </ul></div>
+    </div>
+    <details class="dag">
+      <summary>Solved workflows <span class="sub">· one per corpus, 35–41 steps</span></summary>
+      <div class="dagbody">
+        <div class="figs">
+          <figure>
+            <a class="full" href="https://10.74.81.84:12100/files/home/tony/agentic_workspace/projects/metasmith/engine/bench-run/research/metasmith_benchmark/page/dags/e5_pilot_cami.dag.svg" target="_blank" rel="noopener">Open full screen ↗</a>
+            <div class="figbox">{{SVG:e5_pilot_cami}}</div>
+            <figcaption>CAMI mouse gut, 3 samples, wave 3 <code>P7FelAys</code>. MetaWRAP is masked out, and so are CCTyper and the standard prodigal-gv.</figcaption>
+          </figure>
+          <figure>
+            <a class="full" href="https://10.74.81.84:12100/files/home/tony/agentic_workspace/projects/metasmith/engine/bench-run/research/metasmith_benchmark/page/dags/e5_pilot_pratama.dag.svg" target="_blank" rel="noopener">Open full screen ↗</a>
+            <div class="figbox">{{SVG:e5_pilot_pratama}}</div>
+            <figcaption>Pratama reads_2019, 3 runs, wave 2 <code>AvPNgFtP</code> (no dereplicators yet).</figcaption>
+          </figure>
+          <figure>
+            <a class="full" href="https://10.74.81.84:12100/files/home/tony/agentic_workspace/projects/metasmith/engine/bench-run/research/metasmith_benchmark/page/dags/e5_pilot_metagem.dag.svg" target="_blank" rel="noopener">Open full screen ↗</a>
+            <div class="figbox">{{SVG:e5_pilot_metagem}}</div>
+            <figcaption>metaGEM li2019, 3 runs, wave 3 <code>BhEA2YLt</code>. Its mate files add the interleave step.</figcaption>
+          </figure>
+        </div>
+      </div>
+    </details>
+  </div>
+</article>
+
+<!-- E5 SWAPS -->
+<section class="section-head">
+  <div class="eyebrow">E5 swaps</div>
+  <h2>What E5 changes from the parity and reproduction runs</h2>
+  <p class="dim">One row per tool, grouped by purpose. A cell names the tool, with its settings underneath, when that run uses it. A blank cell means the run doesn't use it. The E2, E3 and E4 columns show the target: E2 matches E1, E3 matches Pratama, and E4 matches metaGEM from their published MAGs onward. Where our run differs from that target today, the note says "now …". <span class="pick long">new transform</span> marks a tool the library doesn't have. E5 reason is the initial view; the real reasons come once E5 has run. The table scrolls sideways.</p>
+</section>
+
+<div class="corpus">
+  <div class="scroll">
+  <table class="ds swaps">
+    <thead><tr><th>Tool</th><th>E1 nf-core/mag</th><th>E2 msm<br>matches E1</th><th>Pratama paper</th><th>E3 msm<br>matches Pratama</th><th>metaGEM paper</th><th>E4 msm<br>from metaGEM MAGs</th><th>E5</th><th>E5 reason</th></tr></thead>
+    <tbody>
+      <tr class="grp"><th colspan="9" scope="rowgroup">Read trimming and filtering</th></tr>
+      <tr><th scope="row">fastp</th><td>fastp</td><td>fastp<br><span class="dim">replaces bbduk; transform exists</span></td><td class="absent"></td><td class="absent"></td><td>fastp</td><td class="absent"></td><td class="absent"></td><td>Tony: E5 takes bbduk</td></tr>
+      <tr><th scope="row">bbduk</th><td class="absent"></td><td class="absent"></td><td>bbduk<br><span class="dim">qtrim=rl, trimq=20, minlen=50</span></td><td>bbduk<br><span class="dim">Pratama&#x27;s settings; now qtrim=r, trimq=0</span></td><td class="absent"></td><td class="absent"></td><td>bbduk</td><td></td></tr>
+      <tr class="grp"><th colspan="9" scope="rowgroup">Contaminant removal</th></tr>
+      <tr><th scope="row">bowtie2 against phiX</th><td>bowtie2 against phiX<br><span class="dim">reference is Coliphage WA11, 95% to phiX174</span></td><td>bowtie2 against phiX <span class="pick long">new transform</span></td><td class="absent"></td><td class="absent"></td><td class="absent"></td><td class="absent"></td><td class="absent"></td><td>Tony: viral identification flags phiX, and whether to remove it depends on the sample. Measured on a Pratama run: geNomad names phiX174, VIBRANT misses it, and 2 of 5 fragments become vOTUs without a check</td></tr>
+      <tr class="grp"><th colspan="9" scope="rowgroup">Read QC metrics</th></tr>
+      <tr><th scope="row">FastQC</th><td>FastQC</td><td>FastQC<br><span class="dim">transform exists</span></td><td class="absent"></td><td class="absent"></td><td class="absent"></td><td class="absent"></td><td class="absent"></td><td>Tony: seqkit for QC</td></tr>
+      <tr><th scope="row">fastp report</th><td class="absent"></td><td class="absent"></td><td>fastp report<br><span class="dim">report only</span></td><td>fastp report<br><span class="dim">fastp_qc transform exists</span></td><td class="absent"></td><td class="absent"></td><td class="absent"></td><td>Tony: seqkit for QC</td></tr>
+      <tr><th scope="row">seqkit</th><td class="absent"></td><td>seqkit<br><span class="dim">metasmith read stats</span></td><td class="absent"></td><td>seqkit<br><span class="dim">metasmith read stats</span></td><td class="absent"></td><td class="absent"></td><td>seqkit</td><td>Tony: seqkit for QC</td></tr>
+      <tr class="grp"><th colspan="9" scope="rowgroup">Long-read processing</th></tr>
+      <tr><th scope="row">Guppy basecalling</th><td class="absent"></td><td class="absent"></td><td>Guppy basecalling<br><span class="dim">sup model</span></td><td class="absent"></td><td class="absent"></td><td class="absent"></td><td class="absent"></td><td>Parity difference: SRA holds the basecalled FASTQ, so E3 starts after Guppy</td></tr>
+      <tr><th scope="row">Porechop ABI</th><td>Porechop ABI</td><td>Porechop ABI <span class="pick long">new transform</span></td><td class="absent"></td><td class="absent"></td><td class="absent"></td><td class="absent"></td><td class="absent"></td><td>Tony: Chopper is more generic</td></tr>
+      <tr><th scope="row">Chopper</th><td>Chopper</td><td>Chopper <span class="pick long">new transform</span></td><td class="absent"></td><td class="absent"></td><td class="absent"></td><td class="absent"></td><td>Chopper <span class="pick long">new transform</span></td><td>Tony: more generic than Porechop ABI</td></tr>
+      <tr class="grp"><th colspan="9" scope="rowgroup">Assembly</th></tr>
+      <tr><th scope="row">MEGAHIT</th><td>MEGAHIT</td><td>MEGAHIT</td><td>MEGAHIT<br><span class="dim">viral contigs only</span></td><td>MEGAHIT<br><span class="dim">viral contigs only</span></td><td>MEGAHIT</td><td class="absent"></td><td>MEGAHIT</td><td>Performance over metaSPAdes</td></tr>
+      <tr><th scope="row">metaSPAdes</th><td class="absent"></td><td class="absent"></td><td>metaSPAdes<br><span class="dim">-k 21,33,55,77</span></td><td>metaSPAdes<br><span class="dim">spades.py exists; pin k-mers</span></td><td class="absent"></td><td class="absent"></td><td class="absent"></td><td>Performance: MEGAHIT instead</td></tr>
+      <tr><th scope="row">metaSPAdes --nanopore (hybrid)</th><td class="absent"></td><td class="absent"></td><td>metaSPAdes --nanopore (hybrid)<br><span class="dim">per Illumina run, 17 assemblies</span></td><td>metaSPAdes --nanopore (hybrid) <span class="pick long">new transform</span><br><span class="dim">spades.py takes short reads only</span></td><td class="absent"></td><td class="absent"></td><td class="absent"></td><td></td></tr>
+      <tr><th scope="row">Flye</th><td>Flye</td><td>Flye<br><span class="dim">fix preset first: the HiFi preset gives no assembly (B12)</span></td><td class="absent"></td><td class="absent"></td><td class="absent"></td><td class="absent"></td><td>Flye<br><span class="dim">preset from declared platform (B12)</span></td><td>Tony: long-read assembler</td></tr>
+      <tr class="grp"><th colspan="9" scope="rowgroup">Read mapping and coverage</th></tr>
+      <tr><th scope="row">bowtie2</th><td>bowtie2<br><span class="dim">short reads</span></td><td>bowtie2 <span class="pick long">new transform</span><br><span class="dim">library&#x27;s bowtie2_align emits an RNA-seq type</span></td><td class="absent"></td><td class="absent"></td><td class="absent"></td><td class="absent"></td><td class="absent"></td><td>Tony: minimap2</td></tr>
+      <tr><th scope="row">minimap2</th><td>minimap2<br><span class="dim">long reads</span></td><td>minimap2<br><span class="dim">long reads</span></td><td class="absent"></td><td class="absent"></td><td class="absent"></td><td class="absent"></td><td>minimap2</td><td>Tony: minimap2 with a coverage step</td></tr>
+      <tr><th scope="row">assembly_stats</th><td class="absent"></td><td>assembly_stats<br><span class="dim">minimap2, samtools, bedtools</span></td><td class="absent"></td><td>assembly_stats<br><span class="dim">minimap2, samtools, bedtools</span></td><td class="absent"></td><td class="absent"></td><td>assembly_stats<br><span class="dim">maybe split coverage out to CoverM</span></td><td></td></tr>
+      <tr><th scope="row">bwa</th><td class="absent"></td><td class="absent"></td><td class="absent"></td><td class="absent"></td><td>bwa</td><td class="absent"></td><td class="absent"></td><td></td></tr>
+      <tr><th scope="row">CoverM</th><td class="absent"></td><td class="absent"></td><td>CoverM<br><span class="dim">MAG and vOTU abundance</span></td><td>CoverM <span class="pick long">new transform</span></td><td class="absent"></td><td class="absent"></td><td>CoverM <span class="pick long">new transform</span><br><span class="dim">maybe, for coverage</span></td><td></td></tr>
+      <tr class="grp"><th colspan="9" scope="rowgroup">Binners</th></tr>
+      <tr><th scope="row">MetaBAT2</th><td>MetaBAT2</td><td>MetaBAT2</td><td>MetaBAT2</td><td>MetaBAT2<br><span class="dim">via MetaWRAP</span></td><td>MetaBAT2</td><td class="absent"></td><td>MetaBAT2</td><td>Tony: three binners into MAGScoT</td></tr>
+      <tr><th scope="row">MaxBin2</th><td class="absent"></td><td class="absent"></td><td>MaxBin2</td><td>MaxBin2<br><span class="dim">via MetaWRAP</span></td><td>MaxBin2</td><td class="absent"></td><td class="absent"></td><td>Tony: three binners into MAGScoT</td></tr>
+      <tr><th scope="row">CONCOCT</th><td class="absent"></td><td class="absent"></td><td>CONCOCT</td><td>CONCOCT<br><span class="dim">via MetaWRAP</span></td><td>CONCOCT</td><td class="absent"></td><td class="absent"></td><td>Tony: three binners into MAGScoT</td></tr>
+      <tr><th scope="row">SemiBin2</th><td>SemiBin2</td><td>SemiBin2</td><td class="absent"></td><td class="absent"></td><td class="absent"></td><td class="absent"></td><td>SemiBin2</td><td>Tony: three binners into MAGScoT</td></tr>
+      <tr><th scope="row">COMEBin</th><td>COMEBin</td><td>COMEBin</td><td class="absent"></td><td class="absent"></td><td class="absent"></td><td class="absent"></td><td>COMEBin</td><td>Tony: three binners into MAGScoT</td></tr>
+      <tr><th scope="row">BinSanity</th><td class="absent"></td><td class="absent"></td><td>BinSanity</td><td>BinSanity <span class="pick long">new transform</span></td><td class="absent"></td><td class="absent"></td><td class="absent"></td><td></td></tr>
+      <tr><th scope="row">abawaca</th><td class="absent"></td><td class="absent"></td><td>abawaca</td><td>abawaca <span class="pick long">new transform</span></td><td class="absent"></td><td class="absent"></td><td class="absent"></td><td></td></tr>
+      <tr class="grp"><th colspan="9" scope="rowgroup">Bin refinement: best bins per sample, from several binners</th></tr>
+      <tr><th scope="row">DAS Tool</th><td>DAS Tool</td><td>DAS Tool</td><td class="absent"></td><td class="absent"></td><td class="absent"></td><td class="absent"></td><td>DAS Tool<br><span class="dim">feeds both dereplicators</span></td><td>Tony: try all four. Refinement and dereplication are separate steps</td></tr>
+      <tr><th scope="row">MetaWRAP bin_refinement</th><td class="absent"></td><td class="absent"></td><td>MetaWRAP bin_refinement<br><span class="dim">2 rounds</span></td><td>MetaWRAP bin_refinement<br><span class="dim">2 rounds; now 1</span></td><td>MetaWRAP bin_refinement</td><td class="absent"></td><td class="absent"></td><td>Tony: MAGScoT</td></tr>
+      <tr><th scope="row">MetaWRAP reassemble_bins</th><td class="absent"></td><td class="absent"></td><td class="absent"></td><td class="absent"></td><td>MetaWRAP reassemble_bins</td><td class="absent"></td><td class="absent"></td><td></td></tr>
+      <tr><th scope="row">MAGScoT</th><td class="absent"></td><td class="absent"></td><td class="absent"></td><td class="absent"></td><td class="absent"></td><td class="absent"></td><td>MAGScoT <span class="pick long">new transform</span><br><span class="dim">feeds both dereplicators</span></td><td>Tony: try all four. Refinement and dereplication are separate steps</td></tr>
+      <tr class="grp"><th colspan="9" scope="rowgroup">Bin quality</th></tr>
+      <tr><th scope="row">CheckM2</th><td>CheckM2</td><td>CheckM2</td><td class="absent"></td><td class="absent"></td><td class="absent"></td><td class="absent"></td><td>CheckM2</td><td>Tony: CheckM2 only</td></tr>
+      <tr><th scope="row">CheckM</th><td class="absent"></td><td class="absent"></td><td>CheckM<br><span class="dim">inside MetaWRAP</span></td><td>CheckM<br><span class="dim">inside MetaWRAP</span></td><td>CheckM<br><span class="dim">inside MetaWRAP</span></td><td class="absent"></td><td class="absent"></td><td>Tony: CheckM2 only</td></tr>
+      <tr class="grp"><th colspan="9" scope="rowgroup">Dereplication: one genome per species, across samples</th></tr>
+      <tr><th scope="row">dRep</th><td class="absent"></td><td class="absent"></td><td>dRep</td><td>dRep <span class="pick long">new transform</span><br><span class="dim">replaces skani_dedup</span></td><td class="absent"></td><td class="absent"></td><td>dRep <span class="pick long">new transform</span><br><span class="dim">per study, on DAS Tool and on MAGScoT bins</span></td><td>Tony: try all four. Refinement and dereplication are separate steps</td></tr>
+      <tr><th scope="row">skani_dedup</th><td class="absent"></td><td class="absent"></td><td class="absent"></td><td class="absent"></td><td class="absent"></td><td class="absent"></td><td>skani_dedup<br><span class="dim">per study, on DAS Tool and on MAGScoT bins; needs a study grouping</span></td><td>Tony: try all four. Refinement and dereplication are separate steps</td></tr>
+      <tr class="grp"><th colspan="9" scope="rowgroup">MAG taxonomy</th></tr>
+      <tr><th scope="row">GTDB-Tk</th><td class="absent"></td><td class="absent"></td><td>GTDB-Tk<br><span class="dim">r202</span></td><td>GTDB-Tk<br><span class="dim">r232; lane severed by the ANI-screen bug</span></td><td>GTDB-Tk</td><td>GTDB-Tk<br><span class="dim">r232; needs the skani database staged</span></td><td>GTDB-Tk<br><span class="dim">r232; needs the skani database staged</span></td><td>Tony: r232 everywhere, even where it breaks parity</td></tr>
+      <tr class="grp"><th colspan="9" scope="rowgroup">Gene calling</th></tr>
+      <tr><th scope="row">Prodigal</th><td>Prodigal</td><td>Prodigal</td><td>Prodigal<br><span class="dim">inside DRAM</span></td><td>Prodigal</td><td>Prodigal</td><td>Prodigal<br><span class="dim">first step, on published MAGs</span></td><td>Prodigal</td><td>Tony: both Prodigal and prodigal-gv</td></tr>
+      <tr><th scope="row">prodigal-gv</th><td class="absent"></td><td class="absent"></td><td class="absent"></td><td>prodigal-gv<br><span class="dim">viral contigs</span></td><td class="absent"></td><td class="absent"></td><td>prodigal-gv</td><td>Tony: both Prodigal and prodigal-gv</td></tr>
+      <tr class="grp"><th colspan="9" scope="rowgroup">Virus identification</th></tr>
+      <tr><th scope="row">DeepVirFinder</th><td class="absent"></td><td class="absent"></td><td>DeepVirFinder</td><td>DeepVirFinder <span class="pick long">new transform</span></td><td class="absent"></td><td class="absent"></td><td>DeepVirFinder <span class="pick long">new transform</span></td><td><span class="dim">no transform yet. It runs on CPU, so a GPU isn&#x27;t what&#x27;s missing</span></td></tr>
+      <tr><th scope="row">VIBRANT</th><td class="absent"></td><td class="absent"></td><td>VIBRANT<br><span class="dim">-virome</span></td><td>VIBRANT<br><span class="dim">-virome; now without</span></td><td class="absent"></td><td class="absent"></td><td>VIBRANT</td><td>Taken from Pratama</td></tr>
+      <tr><th scope="row">geNomad</th><td class="absent"></td><td class="absent"></td><td>geNomad<br><span class="dim">two sensitivity flags</span></td><td>geNomad<br><span class="dim">Pratama&#x27;s flags; now defaults</span></td><td class="absent"></td><td class="absent"></td><td>geNomad</td><td>Taken from Pratama</td></tr>
+      <tr><th scope="row">VirSorter2</th><td class="absent"></td><td class="absent"></td><td>VirSorter2<br><span class="dim">dsDNAphage, ssDNA</span></td><td>VirSorter2<br><span class="dim">Pratama&#x27;s groups; now wider</span></td><td class="absent"></td><td class="absent"></td><td>VirSorter2</td><td>Taken from Pratama</td></tr>
+      <tr class="grp"><th colspan="9" scope="rowgroup">Viral genomes</th></tr>
+      <tr><th scope="row">CheckV</th><td class="absent"></td><td class="absent"></td><td>CheckV</td><td>CheckV</td><td class="absent"></td><td class="absent"></td><td>CheckV</td><td>Taken from Pratama</td></tr>
+      <tr><th scope="row">MMseqs2 vOTU clustering</th><td class="absent"></td><td class="absent"></td><td>MMseqs2 vOTU clustering<br><span class="dim">cov-mode 0</span></td><td>MMseqs2 vOTU clustering<br><span class="dim">cov-mode 0; now 0 and 1</span></td><td class="absent"></td><td class="absent"></td><td>MMseqs2 vOTU clustering</td><td>Taken from Pratama</td></tr>
+      <tr><th scope="row">vConTACT3</th><td class="absent"></td><td class="absent"></td><td>vConTACT3<br><span class="dim">db 220</span></td><td>vConTACT3</td><td class="absent"></td><td class="absent"></td><td>vConTACT3</td><td>Taken from Pratama</td></tr>
+      <tr><th scope="row">MetaPop microdiversity</th><td class="absent"></td><td class="absent"></td><td>MetaPop microdiversity</td><td>MetaPop microdiversity <span class="pick long">new transform</span><br><span class="dim">needs every BAM against one shared reference</span></td><td class="absent"></td><td class="absent"></td><td>MetaPop microdiversity <span class="pick long">new transform</span><br><span class="dim">per study, every sample mapped to the study&#x27;s vOTU catalogue</span></td><td>Tony: add</td></tr>
+      <tr><th scope="row">DRAM-v (AMGs)</th><td class="absent"></td><td class="absent"></td><td>DRAM-v (AMGs)<br><span class="dim">manual curation, ≥10 kb</span></td><td>DRAM-v (AMGs)<br><span class="dim">no manual curation</span></td><td class="absent"></td><td class="absent"></td><td>DRAM-v (AMGs)</td><td>Taken from Pratama</td></tr>
+      <tr class="grp"><th colspan="9" scope="rowgroup">CRISPR spacers and host prediction</th></tr>
+      <tr><th scope="row">minced</th><td class="absent"></td><td class="absent"></td><td>minced</td><td>minced <span class="pick long">new transform</span></td><td class="absent"></td><td class="absent"></td><td>minced <span class="pick long">new transform</span></td><td>Tony: add</td></tr>
+      <tr><th scope="row">BLASTn spacers to contigs</th><td class="absent"></td><td class="absent"></td><td>BLASTn spacers to contigs</td><td>BLASTn spacers to contigs</td><td class="absent"></td><td class="absent"></td><td>BLASTn spacers to contigs</td><td>Taken from Pratama</td></tr>
+      <tr><th scope="row">GTDB-Tk de novo</th><td class="absent"></td><td class="absent"></td><td>GTDB-Tk de novo</td><td>GTDB-Tk de novo</td><td class="absent"></td><td class="absent"></td><td>GTDB-Tk de novo</td><td>Taken from Pratama</td></tr>
+      <tr><th scope="row">iPHoP</th><td class="absent"></td><td class="absent"></td><td>iPHoP<br><span class="dim">default and extra-MAGs databases</span></td><td>iPHoP<br><span class="dim">both databases; now extra-MAGs only</span></td><td class="absent"></td><td class="absent"></td><td>iPHoP</td><td>Taken from Pratama</td></tr>
+      <tr class="grp"><th colspan="9" scope="rowgroup">Functional annotation</th></tr>
+      <tr><th scope="row">DRAM (MAGs)</th><td class="absent"></td><td class="absent"></td><td>DRAM (MAGs)</td><td>DRAM (MAGs)<br><span class="dim">on MAGs; now opt-in, whole assembly</span></td><td class="absent"></td><td class="absent"></td><td class="absent"></td><td><span class="dim">4-lane panel instead (Tony wrote BLAST: confirm)</span></td></tr>
+      <tr><th scope="row">KOfamScan</th><td class="absent"></td><td class="absent"></td><td class="absent"></td><td class="absent"></td><td class="absent"></td><td class="absent"></td><td>KOfamScan</td><td>4-lane panel</td></tr>
+      <tr><th scope="row">CLEAN</th><td class="absent"></td><td class="absent"></td><td class="absent"></td><td class="absent"></td><td class="absent"></td><td class="absent"></td><td>CLEAN</td><td>4-lane panel</td></tr>
+      <tr><th scope="row">DIAMOND UniRef50</th><td class="absent"></td><td class="absent"></td><td class="absent"></td><td class="absent"></td><td class="absent"></td><td class="absent"></td><td>DIAMOND UniRef50</td><td>4-lane panel</td></tr>
+      <tr><th scope="row">ProteinBERT</th><td class="absent"></td><td class="absent"></td><td class="absent"></td><td class="absent"></td><td class="absent"></td><td class="absent"></td><td>ProteinBERT</td><td>4-lane panel</td></tr>
+      <tr class="grp"><th colspan="9" scope="rowgroup">Metabolic models</th></tr>
+      <tr><th scope="row">CarveMe</th><td class="absent"></td><td class="absent"></td><td class="absent"></td><td class="absent"></td><td>CarveMe</td><td>CarveMe<br><span class="dim">12 h gapfill limit (B11)</span></td><td>CarveMe</td><td></td></tr>
+      <tr><th scope="row">CPLEX solver</th><td class="absent"></td><td class="absent"></td><td class="absent"></td><td class="absent"></td><td>CPLEX solver</td><td>CPLEX solver<br><span class="dim">22.2</span></td><td class="absent"></td><td>Open-source solver</td></tr>
+      <tr><th scope="row">Open-source solver (SCIP)</th><td class="absent"></td><td class="absent"></td><td class="absent"></td><td class="absent"></td><td class="absent"></td><td class="absent"></td><td>Open-source solver (SCIP)<br><span class="dim">runtime risk: an open solver ran 1 h 49 m on the smallest bin without finishing</span></td><td>Open-source solver</td></tr>
+      <tr><th scope="row">MEMOTE</th><td class="absent"></td><td class="absent"></td><td class="absent"></td><td class="absent"></td><td>MEMOTE</td><td>MEMOTE</td><td>MEMOTE</td><td></td></tr>
+      <tr><th scope="row">SMETANA</th><td class="absent"></td><td class="absent"></td><td class="absent"></td><td class="absent"></td><td>SMETANA</td><td>SMETANA <span class="pick long">new transform</span></td><td>SMETANA <span class="pick long">new transform</span></td><td>Tony: run it</td></tr>
+      <tr class="grp"><th colspan="9" scope="rowgroup">Scoring</th></tr>
+      <tr><th scope="row">AMBER</th><td>AMBER<br><span class="dim">after the run</span></td><td>AMBER</td><td class="absent"></td><td class="absent"></td><td class="absent"></td><td class="absent"></td><td>AMBER<br><span class="dim">after the run, outside the plan</span></td><td>Tony: one plan can&#x27;t give samples different targets</td></tr>
+      <tr><th scope="row">skANI recovery vs published</th><td class="absent"></td><td class="absent"></td><td class="absent"></td><td>skANI recovery vs published<br><span class="dim">vOTUs, MAGs</span></td><td class="absent"></td><td>skANI recovery vs published<br><span class="dim">planned</span></td><td>skANI recovery vs published<br><span class="dim">after the run, outside the plan</span></td><td>Tony: one plan can&#x27;t give samples different targets</td></tr>
+    </tbody>
+  </table>
+  </div>
+</div>
+
+<p class="foot">Status checked against <code>research/metasmith_benchmark/findings/PROVEN.md</code> and <code>BLOCKERS.md</code>, the CAMI research-support session's ledgers. Proven means observed on real data with the product inspected. Long-read simulators for marine, strain and CAMI III were inferred from read-length distributions over 40,000 reads each, because no setup file on fir names them. Other sources: the campaign plan's run log, <code>BLOCKERS.md</code>, <code>TOOL_FOR_TOOL.md</code>, <code>LAUNCH_BASELINE.txt</code>, <code>research/pratama2026/reproduction_map.md</code>, the Pratama 2026 Methods and workflow repository, and <code>research/metagem/README.md</code>.</p>
+</div>

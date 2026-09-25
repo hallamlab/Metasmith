@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Mapping, Sequence
 
 from .dag_layout import Layout, dominators, natural_key, repeat_motifs
 
@@ -36,7 +37,13 @@ class Colouring:
         return self.edges.get((src, dst), fallback)
 
 
-def colour_layout(lay: Layout, scheme: str = "none") -> Colouring:
+def colour_layout(
+    lay: Layout,
+    scheme: str = "none",
+    *,
+    palette: Sequence[str] | None = None,
+    overrides: Mapping[str, str] | None = None,
+) -> Colouring:
     if scheme in (None, "", "none"):
         return Colouring()
     try:
@@ -45,21 +52,21 @@ def colour_layout(lay: Layout, scheme: str = "none") -> Colouring:
         raise ValueError(
             f"unknown colour scheme {scheme!r}; expected one of {', '.join(SCHEMES)}"
         ) from None
-    nodes = build(lay)
-    edges = {
-        (e.src, e.dst): nodes[e.src]
-        for e in lay.edges
-        if not e.back and e.src in nodes
-    }
+    nodes = (
+        build(lay, palette=palette or PALETTE, overrides=overrides or {})
+        if scheme == "module"
+        else build(lay)
+    )
+    edges = {(src, dst): nodes[src] for src, dst in lay.edges if src in nodes}
     return Colouring(nodes=nodes, edges=edges)
 
 
 def _by_lane(lay: Layout) -> dict[str, str]:
-    return {n.name: PALETTE[n.lane % len(PALETTE)] for n in lay.nodes}
+    return {n: PALETTE[c % len(PALETTE)] for n, c in lay.col.items()}
 
 
 def _by_repeat(lay: Layout) -> dict[str, str]:
-    out = {n.name: UNMATCHED for n in lay.nodes}
+    out = {n: UNMATCHED for n in lay.order}
     for i, m in enumerate(repeat_motifs(lay)):
         hue = PALETTE[i % len(PALETTE)]
         for x in m.nodes:
@@ -68,12 +75,8 @@ def _by_repeat(lay: Layout) -> dict[str, str]:
 
 
 def _module_owner(lay: Layout) -> dict[str, str | None]:
-    names = [n.name for n in lay.nodes]
-    parents: dict[str, list[str]] = {n: [] for n in names}
-    for e in lay.edges:
-        if not e.back:
-            parents[e.dst].append(e.src)
-    idom = dominators(names, parents)
+    names = list(lay.order)
+    idom = dominators(names, lay.parents)
 
     size: dict[str, int] = dict.fromkeys(names, 1)
     for n in reversed(names):
@@ -91,8 +94,14 @@ def _module_owner(lay: Layout) -> dict[str, str | None]:
     return owner
 
 
-def _by_module(lay: Layout) -> dict[str, str]:
-    names = [n.name for n in lay.nodes]
+def _by_module(
+    lay: Layout,
+    *,
+    palette: Sequence[str] = PALETTE,
+    overrides: Mapping[str, str] | None = None,
+) -> dict[str, str]:
+    overrides = overrides or {}
+    names = list(lay.order)
     owner = _module_owner(lay)
     depth = {n: i for i, n in enumerate(names)}
     order = sorted(
@@ -100,8 +109,8 @@ def _by_module(lay: Layout) -> dict[str, str]:
         key=lambda h: (depth[h], natural_key(h)),
     )
     adjacent: dict[str, set[str]] = {h: set() for h in order}
-    for e in lay.edges:
-        a, b = owner[e.src], owner[e.dst]
+    for src, dst in lay.edges:
+        a, b = owner[src], owner[dst]
         if a is not None and b is not None and a != b:
             adjacent[a].add(b)
             adjacent[b].add(a)
@@ -109,25 +118,26 @@ def _by_module(lay: Layout) -> dict[str, str]:
     slot: dict[str, int] = {}
     for h in order:
         taken = {slot[x] for x in adjacent[h] if x in slot}
-        slot[h] = next(i for i in range(len(PALETTE) + 1) if i not in taken)
-    return {
-        n: (UNMATCHED if owner[n] is None else PALETTE[slot[owner[n]] % len(PALETTE)])
-        for n in names
-    }
+        slot[h] = next(i for i in range(len(palette) + 1) if i not in taken)
+
+    def hue(h: str) -> str:
+        return overrides.get(h, palette[slot[h] % len(palette)])
+
+    return {n: (UNMATCHED if owner[n] is None else hue(owner[n])) for n in names}
 
 
 def _by_namespace(lay: Layout) -> dict[str, str]:
     spaces = sorted(
-        {n.name.split("::", 1)[0] for n in lay.nodes if "::" in n.name}
+        {n.split("::", 1)[0] for n in lay.order if "::" in n}
     )
     slot = {ns: i for i, ns in enumerate(spaces)}
     return {
-        n.name: (
-            PALETTE[slot[n.name.split("::", 1)[0]] % len(PALETTE)]
-            if "::" in n.name
+        n: (
+            PALETTE[slot[n.split("::", 1)[0]] % len(PALETTE)]
+            if "::" in n
             else UNMATCHED
         )
-        for n in lay.nodes
+        for n in lay.order
     }
 
 

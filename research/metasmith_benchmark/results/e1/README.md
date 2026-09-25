@@ -1,0 +1,51 @@
+# What survives of E1 in this repo
+
+E1's two arms live as tar archives on fir at `/scratch/phyberos/bench/archive/e1_long.tar` (35.5 GB, 13,787
+members) and `e1_short_out.tar` (99.1 GB, 57,253 members), with a full member manifest beside each
+(`e1_*.manifest.txt`, written by job `60958550`). **Ask the manifests, not the tars** — a member question is a
+grep, where a listing costs 37 s on the long archive and 425 s on the short one.
+
+Only one extracted table is committed here, because it is the only surviving copy of something the comparison
+needs and the archive cannot cheaply serve per-sample.
+
+## `e1_short_bowtie2_assembly_align.tsv`
+
+208 rows, one per short-arm sample. E1's read-mapping rates against its own MEGAHIT assemblies.
+
+**This is `BOWTIE2_ASSEMBLY_ALIGN`, not host or phiX removal.** Checked, not assumed: MultiQC's
+`multiqc_sources.yaml` names the module `Bowtie2: assembly` and sources each row from
+`MEGAHIT-<sample>.bowtie2.log`. nf-core/mag also runs a removal alignment, and confusing the two would
+silently compare the wrong thing.
+
+Derived from `out/multiqc/multiqc_data/multiqc_bowtie2_bowtie2-2.yaml` inside `e1_short_out.tar`, extracted by
+job `60959768` to `/scratch/phyberos/bench/archive/e1_reports/` along with both arms' full `multiqc_data/` and
+`pipeline_info/`. Columns other than `assembler` and `sample` are MultiQC's own bowtie2 fields.
+
+`overall_alignment_rate` is bowtie2's own figure and is reproducible from the other columns:
+
+    rate = 100 * (2*(paired_aligned_one + paired_aligned_multi + paired_aligned_discord_one)
+                  + paired_aligned_mate_one + paired_aligned_mate_multi) / (2 * paired_total)
+
+Verified on `marine_sample_0`: 28,686,587 / 33,294,752 = 86.16%, matching the reported value exactly.
+
+Distribution over the 208: min 80.83, median 97.67, mean 96.55, max 99.90.
+
+## Why this table and nothing else
+
+**E1's BAMs do not exist.** Both manifests report zero `.bam` and zero `.bai` members — measured, not inferred
+from archive size. So `% reads mapped` could not be recomputed from E1's alignments at any price short of
+regenerating ~640-700 GB of them, and this MultiQC table is the whole of E1's surviving mapping evidence.
+
+**The long arm has no counterpart.** Its MultiQC consumed CheckM2 only — no bowtie2, no minimap2, no mapping
+section. A long-arm mapping rate for E1 does not exist in any form.
+
+Everything else the comparison needs — bin FASTAs, `checkm2_summary.tsv`, `quast_bin_summary.tsv`,
+`contig_to_bin_map.tsv`, Flye `assembly_info.txt`, `bin_summary.tsv` — is in the tars and is better read from
+there than duplicated here. `findings/E1_E2_COMPARISON.md` says what is in which archive and what it costs.
+
+## Comparability warning
+
+These rates come from parsing bowtie2's end-of-run log. The E2 side of the same metric would most naturally
+come from the BAM via `samtools flagstat`. Those are different instruments and should agree but need not
+exactly. Either label each column with its source, or parse E2's own bowtie2 logs from its cache shards so
+both columns come from the same instrument.

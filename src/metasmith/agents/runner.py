@@ -157,7 +157,22 @@ def RenderNextflowScript(
             export NXF_OFFLINE=TRUE # don't go online and search for latest version
             export OPENBLAS_NUM_THREADS=1
             export OMP_NUM_THREADS=1
-            export NXF_OPTS="-Xms2g -Xmx10g -XX:ActiveProcessorCount=1 -Djdk.virtualThreadScheduler.maxPoolSize=512"
+            # CAUTION the HEAP FLOOR is the number that matters here, not the ceiling, and it
+            # is sized for a shared cgroup rather than for the driver's own appetite. A login
+            # node caps each USER at 16 GiB across every ssh session, and `memory.current` sits
+            # at ~99.5% of that cap permanently on page cache. So a starting JVM's -Xms floor is
+            # a demand for that much INSTANT reclaim, and when reclaim cannot keep up the kernel
+            # OOM-kills instead of waiting. Measured 2026-09-12: two drivers at -Xms2g coexisted
+            # for two hours, a third one starting killed itself AND one of the other two inside
+            # 23 seconds (cgroup memory.events went from oom_kill 0 to 3). Steady-state anon read
+            # 1.01 GB immediately afterwards, so anon does NOT predict this -- the trigger is the
+            # RATE of a new claim, not the total.
+            # Drivers measure under 1 GB resident on plans of ~5,000 tasks, so -Xmx10g was
+            # defensive rather than needed, and the floor cost 2 GB up front for nothing.
+            # Raising either number back makes the driver the most attractive OOM victim on a
+            # shared node; if a driver ever dies with an in-JVM OutOfMemoryError (a DIFFERENT
+            # failure from being Killed), raise -Xmx only.
+            export NXF_OPTS="-Xms512m -Xmx6g -XX:ActiveProcessorCount=1 -Djdk.virtualThreadScheduler.maxPoolSize=512"
             set -m
             nextflow \
                 -config ./{AgentPaths.NXF_RES} \
@@ -585,20 +600,25 @@ def _failed_steps(df_tasks: "pd.DataFrame | None") -> list[str]:
     # A process is failed if nextflow said so, or if it "completed" with a
     # non-zero code -- the shipped presets end their errorStrategy in `ignore`,
     # which leaves the row behind and carries on.
+    # A retry that passed leaves its failed attempt's row behind too, so a name
+    # counts as failed only when none of its attempts succeeded.
     if df_tasks is None or len(df_tasks) == 0:
         return []
     names: list[str] = []
+    succeeded: set[str] = set()
     for _, row in df_tasks.iterrows():
+        name = str(row.get("name", "")).strip()
         status = str(row.get("status", "")).strip().upper()
         try:
             code = int(str(row.get("exit", "")).strip())
         except (TypeError, ValueError):
             code = 0
         if status in _FAILED_STATES or code != 0:
-            name = str(row.get("name", "")).strip()
             if name and name not in names:
                 names.append(name)
-    return names
+        else:
+            succeeded.add(name)
+    return [n for n in names if n not in succeeded]
 
 
 def RunWorkflow(key: str, log_dir: Path, host: str, stub_delay: float):

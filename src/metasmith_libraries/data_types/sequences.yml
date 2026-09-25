@@ -419,6 +419,11 @@ types:
     - bin_fasta
     properties:
       method: metawrap
+  das_tool_bin_fasta:
+    extends:
+    - bin_fasta
+    properties:
+      method: das_tool
 # -----------------------------------------
 # protein
   orfs:
@@ -452,6 +457,24 @@ types:
       Data: protein sequence
       content: open reading frames
       granularity: batch
+      ext: faa
+  # ORFs called on ONE metagenomic bin (one putative genome), the way metaGEM
+  # reconstructs a model per MAG rather than per assembly. A true SIBLING of
+  # `orfs`, NOT a subtype -- same reasoning as `orf_chunk`/`orf_batch` above:
+  # `granularity: bin` differs in VALUE from `orfs`'s `granularity: whole`, so
+  # this type does not satisfy a plain `sequences::orfs` requirement and is not
+  # satisfied by the whole-assembly (`metagenomics/prodigal.py`) or viral
+  # frozen-set (`viromics/prodigal_gv.py`) producers. Without this
+  # discriminator `metabolicModelling/carveme_from_orfs.py`'s reconstruction
+  # requirement would be answerable from either of those -- an ambiguity a
+  # target cannot resolve (see AGENTS.md "Two producers need a masked
+  # library"). `metabolicModelling/prodigal_from_bin.py` is the sole producer.
+  bin_orfs:
+    properties:
+      Format: FASTA
+      Data: protein sequence
+      content: open reading frames
+      granularity: bin
       ext: faa
 # -----------------------------------------
 # protein structures

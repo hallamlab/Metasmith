@@ -458,6 +458,50 @@ def StageAndRunTransform(workspace: Path, step_index: int, host: str, stage_root
         Log.Info(f"step [{step_index}:{step_name}]")
 
         params = {}
+
+        # Open the channel from a driver's `RunWorkflow(params=...)` to a transform's
+        # `context.params`. Without this there is NO such channel: that dict reaches
+        # nextflow only, and `context.params` is built purely from `.command.metadata`
+        # below, which carries just res/gpu/rootfs. So every `context.params.get(key,
+        # default)` for a driver-supplied key silently returned its default.
+        #
+        # CAUTION this is why it survived two gates and a live campaign: a `.get` whose
+        # DEFAULT equals the value the driver meant to pin is indistinguishable from a
+        # delivered pin. metabat2's `--seed` read correctly (default 1 == pinned 1) while
+        # `--minContig` used the transform's own 2500 against a pinned 1500 -- and 1500 is
+        # what nf-core/mag uses, so a parity comparison was confounded by a 1000 bp
+        # binning floor while the driver source plainly showed the pin.
+        #
+        # `workflow_ops`' `_parse` splits every key on `_` and nests it, which is correct
+        # for a config selector (`process_array` -> `params.process.array`). So both
+        # spellings are offered here: the nested dict as nextflow received it, and every
+        # `_`-joined path, which is the spelling the driver wrote. The join is not a
+        # perfect inverse -- `executor=dict(queueSize=4)` also yields `executor_queueSize`
+        # -- but an extra key nobody reads costs nothing.
+        #
+        # Applied BEFORE the metadata block on purpose: cpus/memory/attempt/gpus/rootfs
+        # describe what the executor actually granted, so a params file must never
+        # override them.
+        try:
+            import yaml as _yaml
+            _pf = workspace/AgentPaths.NXF_PARAMS
+            if _pf.exists():
+                with open(_pf) as f:
+                    _raw = _yaml.safe_load(f) or {}
+                def _flatten(d: dict, prefix: str = ""):
+                    for k, v in d.items():
+                        key = f"{prefix}_{k}" if prefix else str(k)
+                        if isinstance(v, dict):
+                            yield (key, v)
+                            yield from _flatten(v, key)
+                        else:
+                            yield (key, v)
+                if isinstance(_raw, dict):
+                    params.update(dict(_flatten(_raw)))
+                    Log.Info(f"params from [{AgentPaths.NXF_PARAMS}]: {sorted(k for k in params)}")
+        except Exception as e:
+            Log.Warn(f"could not read params from [{AgentPaths.NXF_PARAMS}]: {e}")
+
         raw_meta = {}
         try:
             with open(METADATA_FILE) as f:

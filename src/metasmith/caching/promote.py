@@ -13,12 +13,14 @@ member to the trace, and brings the sqlite index up to date.
 from __future__ import annotations
 
 import json
+import os
 import re
 import shutil
 from dataclasses import dataclass, field
 from pathlib import Path
 
 from .admission import PoolFile, index_shard, shard_for, write_shard
+from .fs import mount_view
 from .invocation import KEY_KEY, TOMBSTONE_NAME, consumed_of, read_manifest
 from .layout import logs_dir as _logs_dir
 
@@ -183,6 +185,7 @@ def promote_members(
         int(sf.get("branch_idx", 0)) for sf in meta.slot_files
     } if len({int(sf.get("branch_idx", 0)) for sf in meta.slot_files}) == 1 else set()
     records: list[dict] = []
+    link_dir = _link_dir(cwd, cache_root)
     for member, entry in enumerate(entries):
         position = member + 1
         key_hex = str(entry.get(KEY_KEY, "-") or "-")
@@ -194,7 +197,7 @@ def promote_members(
             if matched is None:
                 continue
             files.append({
-                "src": str(src),
+                "src": str(link_dir / src.name),
                 "relpath": f"out/{LinPayload.canonical_output_name(src.name)}",
                 "slot_id": matched.get("slot_id", ""),
                 "dtype_key": matched.get("dtype_key", ""),
@@ -240,6 +243,20 @@ def promote_members(
         for r in records:
             f.write(json.dumps(r, separators=(",", ":")) + "\n")
     return records
+
+
+def _link_dir(cwd: Path, cache_root: Path) -> Path:
+    """The spelling of `cwd` that shares the cache's mount, so products link instead of copy."""
+    try:
+        anchor = cache_root
+        while not anchor.exists() and anchor != anchor.parent:
+            anchor = anchor.parent
+        view = mount_view(cwd, anchor)
+        if view is not None and view != cwd and view.samefile(cwd):
+            return view
+    except OSError:
+        pass
+    return cwd
 
 
 def _promote_one(
@@ -313,19 +330,32 @@ def _produced_files(files: list[dict]):
     return out
 
 
-def _copy_task_logs(task_dir: Path, shard: Path) -> None:
+def _copy_task_logs(task_dir: Path, shard: Path, placed: dict[Path, Path]) -> None:
+    # A grouped task promotes hundreds of member shards from one task dir. Copying its logs into
+    # each cost five inodes per member, so the first member gets the copies and the rest link them.
     logs = _logs_dir(shard)
     if logs.exists():
         return
-    srcs = [task_dir / n for n in TASK_LOG_NAMES if (task_dir / n).is_file()]
+    first = placed.get(task_dir)
+    origin = first if first is not None else task_dir
+    srcs = [origin / n for n in TASK_LOG_NAMES if (origin / n).is_file()]
     if not srcs:
         return
     logs.mkdir(parents=True, exist_ok=True)
     for src in srcs:
+        dst = logs / src.name
         try:
-            shutil.copy2(src, logs / src.name)
+            if first is not None:
+                try:
+                    os.link(src, dst)
+                    continue
+                except OSError:
+                    pass
+            shutil.copy2(src, dst)
         except OSError:
             continue
+    if first is None:
+        placed[task_dir] = logs
 
 
 def record_run(*, workspace: Path, cache_root: Path, log: list | None = None) -> dict:
@@ -348,6 +378,7 @@ def record_run(*, workspace: Path, cache_root: Path, log: list | None = None) ->
 
     promoted: list[str] = []
     hits: list[str] = []
+    placed_logs: dict[Path, Path] = {}
     cache_root.mkdir(parents=True, exist_ok=True)
     store = CacheStore.open(cache_root)
     try:
@@ -386,7 +417,7 @@ def record_run(*, workspace: Path, cache_root: Path, log: list | None = None) ->
                             transform_key=meta.transform_key if meta else "",
                             run=run_label,
                         )
-                        _copy_task_logs(rec_file.parent, shard)
+                        _copy_task_logs(rec_file.parent, shard, placed_logs)
                         promoted.append(key_hex)
                     event_status = "promoted" if status == "promoted" else (
                         "fail" if status == "failed" else "miss"

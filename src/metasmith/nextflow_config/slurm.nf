@@ -61,7 +61,6 @@ env {
 
 executor {
     queueSize = params.executor.queueSize
-    submitRateLimit = params.executor.submitRateLimit
     pollInterval = params.executor.pollInterval
     stageInMode = params.executor.stageInMode
 
@@ -72,13 +71,30 @@ executor {
         delay = 1.second
     }
     
-    // executor = 'hq'                      // todo: consider https://github.com/It4innovations/hyperqueue
-
-    local {
-        cpus = params.localExecutor.cpus
-        memory = params.localExecutor.memory
-        queueSize = params.localExecutor.queueSize
+    // Scoped to slurm: a flat submitRateLimit also throttles the local executor, where every
+    // cache-hit twin runs, so a relaunch replayed its hits at one per five seconds (hours).
+    $slurm {
+        submitRateLimit = params.executor.submitRateLimit
     }
+
+    // executor = 'hq'                    // todo: consider https://github.com/It4innovations/hyperqueue
+
+    // Local-executor capacity, as FLAT keys rather than a nested `local {}` block.
+    // Nextflow reads `executor.cpus` and `executor.memory` as local-executor-only
+    // settings. `executor { local { ... } }` renders as `executor.local.cpus`, which it
+    // reports as an Unrecognized config option and then DROPS -- so this block never
+    // applied. With it dropped the local executor falls back to the JVM's available
+    // processor count, and the agent runner pins that to 1 with
+    // -XX:ActiveProcessorCount=1 to survive the login node's 512-process cap. Every
+    // `xlocalx` step then asked for the default 4 cpus against 1 available and Nextflow
+    // aborted the entire run: "Process requirement exceeds available CPUs -- req: 4;
+    // avail: 1". Reference-database downloads are exactly those steps, because compute
+    // nodes here have no outbound network.
+    // queueSize is deliberately NOT set: a flat `executor.queueSize` would apply to the
+    // SLURM executor as well and clobber the 100 set above. `executor.cpus` bounds local
+    // concurrency implicitly instead -- 8 cpus against 4-cpu steps is two at a time.
+    cpus = params.localExecutor.cpus
+    memory = params.localExecutor.memory
 }
 
 workflow {
@@ -86,7 +102,11 @@ workflow {
     output {
         enabled = true
         ignoreErrors = false
-        mode = 'copy'
+        // A hard link, not a copy: a copy stored every product a second time, and a relaunch
+        // rewrote all of them. results/ and nxf_work sit in one run dir, so the link cannot
+        // straddle devices. CAUTION a results/ file shares its inode with the task product and
+        // any promoted shard, so never edit one in place.
+        mode = 'link'
     }
 }
 

@@ -5,6 +5,9 @@ lib     = TransformInstanceLibrary.ResolveParentLibrary(__file__)
 model   = Transform()
 img_bbt = model.AddRequirement(lib.GetType("env::bbtools.env"))
 img_sp  = model.AddRequirement(lib.GetType("env::spades.env"))
+# The length filter. NOT bbtools: reformat.sh shreds its own output on this
+# input -- see the comment above the filter command.
+img_sqk = model.AddRequirement(lib.GetType("env::seqkit.env"))
 meta    = model.AddRequirement(lib.GetType("sequences::read_metadata"))
 reads   = model.AddRequirement(lib.GetType("sequences::clean_short_reads"), parents={meta})
 out     = model.AddProduct(lib.GetType("sequences::spades_assembly"))
@@ -115,21 +118,134 @@ def protocol(context: ExecutionContext):
 
     # "Contigs that are smaller than 200 bp are discarded."
     #
-    # A separate pass with BBTools' reformat.sh rather than hand-rolled FASTA
-    # parsing; img_bbt is already a requirement so this adds no dependency. Only
-    # the contigs product is filtered. The graph and contigs.paths describe the
-    # FULL assembly and are kept unfiltered, because the graph's path names are
+    # seqkit, NOT BBTools' reformat.sh, and the reason is a measured defect rather
+    # than a preference. reformat.sh SHREDS its output on assembly-shaped FASTA
+    # while reporting success. Reproduced on a real 19,937-contig megahit assembly
+    # on fir, deterministically, byte-identical across threads=1/4, -Xmx4g, and
+    # with the jdk.incubator.vector module disabled:
+    #
+    #   in   19,937 records, opens '>'
+    #   out  "Output: 19937 reads (100.00%) 19165202 bases (100.00%)" -- and a file
+    #        that opens 'C' mid-sequence, carries 100,690 lines starting with '>',
+    #        repeats one 70-char block over and over at its head, and truncates
+    #        headers mid-string: ">k141_289528 flag=1 mu", ">k141_289540 fla".
+    #   seqkit, same input, same filter: 19,937 records, opens '>'. Correct.
+    #
+    # This is the whole of the assembly corruption chased on 2026-09-11. It is not
+    # the engine, not the bind mounts, not the page cache, not publish-by-copy, and
+    # not the dev overlay -- all of which were suspected in turn and cleared. The
+    # product check below caught it twice and was right both times.
+    #
+    # The protocol specifies the FILTER, not the tool: "Contigs that are smaller
+    # than 200 bp are discarded" names no program, so seqkit satisfies it exactly
+    # and the substitution is recorded in REFERENCES.md rather than hidden.
+    #
+    # Only the contigs product is filtered. The graph and contigs.paths describe
+    # the FULL assembly and are kept unfiltered, because the graph's path names are
     # scaffold names that would no longer line up with a post-filter contig set.
     _filter_cmd = f"""\
-            reformat.sh in=spades_ws/contigs.fasta out=filtered_contigs.fasta minlength=200
-            [[ $(head filtered_contigs.fasta | wc -c) -ne 0 ]] && mv filtered_contigs.fasta {iout.container} || echo "assembly was empty after length filter"
+            seqkit seq --min-len 200 spades_ws/contigs.fasta > filtered_contigs.fasta
+            [[ $(head -c 1 filtered_contigs.fasta) == ">" ]] && mv filtered_contigs.fasta {iout.container} || echo "assembly was empty or malformed after the length filter"
+        """
+    context.ExecWithEnv(env=img_sqk, cmd=_filter_cmd)
+
+    # The graph and the paths are plain moves and stay with bbtools' image only
+    # because they need no tool at all; any shell would do.
+    _collect_cmd = f"""\
             # The graph only exists once the run reaches the end, so its absence
             # alongside present contigs means a truncated run, not an empty one.
             [[ -s spades_ws/assembly_graph_with_scaffolds.gfa ]] && mv spades_ws/assembly_graph_with_scaffolds.gfa {igraph.container} || echo "no assembly graph was written"
             [[ -s spades_ws/contigs.paths ]] && mv spades_ws/contigs.paths {ipaths.container} || echo "no contig paths were written"
         """
-    context.ExecWithEnv(env=img_bbt, cmd=_filter_cmd)
+    context.ExecWithEnv(env=img_bbt, cmd=_collect_cmd)
 
+
+    # A product check, not an existence check -- and now an instrument, because
+    # the thing it catches has not been explained yet.
+    #
+    # Twice on 2026-09-11, on both corpora, this transform produced an assembly of
+    # the RIGHT SIZE whose first byte was not '>'. On CAMI the published file
+    # carried 505,012 records against reformat.sh's reported 86,744, opened
+    # mid-sequence, and had a hole at byte 1,236,201 -- exactly the length of
+    # NODE_1 as named in the .paths product. On Pratama, reformat.sh reported
+    # 354,787 records and 368,772,773 bases, metasmith stat'd the product at
+    # 369.38 MB, which is right, and the first byte still was not '>'.
+    #
+    # So the size is correct and visible while the content at offset 0 is not.
+    # That is consistent with a read-after-write visibility problem across the two
+    # apptainer bind mounts of one directory -- the tool container writes through
+    # its /ws, this process reads through its own -- and NOT with a truncated
+    # write. But "consistent with" is not a diagnosis, and the first time round I
+    # asserted unflushed writeback on less evidence than this.
+    #
+    # Hence the shape below. It does not just fail; it records what it saw, and it
+    # re-reads once after a pause so the NEXT occurrence distinguishes the two
+    # remaining explanations by itself:
+    #
+    #   re-read succeeds -> visibility. The bytes arrive late. Then the fix is a
+    #       barrier here, not a change to the assembler, and the run is correct.
+    #   re-read fails the same way -> the file really is wrong on disk, and the
+    #       hex of its first bytes says what was written instead.
+    #
+    # A pass on the retry is reported loudly rather than silently, because a check
+    # that quietly succeeds on a second try is how this would become invisible
+    # again. Everything not on the happy path is logged with its evidence.
+    import os, time
+
+    def _inspect(path, label):
+        """(problem or None, one line of evidence)."""
+        size = os.path.getsize(path) if os.path.exists(path) else -1
+        with open(path, "rb") as fh:
+            head = fh.read(4096)
+        if not head:
+            return f"{label} is empty", f"{label}: size={size} head=<empty>"
+        shown = head[:48]
+        gt = head.find(b">")
+        evidence = (f"{label}: size={size} first48={shown.hex()} "
+                    f"ascii={shown.decode('ascii', 'replace')!r} "
+                    f"first_gt_within_4k={gt}")
+        if head[:1] != b">":
+            return f"{label} does not open with '>'", evidence
+        return None, evidence
+
+    def _whole(path, label):
+        problem, evidence = _inspect(path, label)
+        if problem is not None:
+            Log.Error(f"{problem} -- {evidence}")
+            Log.Error(f"{label}: re-reading after a pause to separate visibility from corruption")
+            time.sleep(15)
+            os.sync()
+            problem2, evidence2 = _inspect(path, label)
+            if problem2 is None:
+                Log.Error(f"{label}: RE-READ PASSED. The bytes arrived late, so this was a "
+                          f"visibility problem across the bind mounts and not a bad write. "
+                          f"{evidence2}")
+            else:
+                # NOT "wrong on disk". A re-read goes through the same mount and
+                # can be served from the same stale page cache, so this rules out
+                # a short-lived lag and nothing more. The in-container probe above
+                # is what separates a bad file from a bad view.
+                Log.Error(f"{label}: re-read failed identically after 15s and a sync, so this "
+                          f"is not a brief lag. Compare MSM_PROBE_IN_CONTAINER above: if that "
+                          f"shows '>', the bytes are fine and this process's view of them is "
+                          f"not. {evidence2}")
+                return problem2
+        # Only reached once the file opens correctly. A NUL anywhere in a FASTA is
+        # the other shape the CAMI file had.
+        with open(path, "rb") as fh:
+            n = 0
+            while True:
+                b = fh.read(1 << 20)
+                if not b:
+                    break
+                if b"\x00" in b:
+                    return f"{label} contains NUL at ~{n + b.index(b'\x00')}"
+                n += len(b)
+        return None
+
+    problems = [m for m in (_whole(iout.local, "assembly"),) if m]
+    for m in problems:
+        Log.Error(m)
 
     return ExecutionResult(
         manifest=[
@@ -139,7 +255,8 @@ def protocol(context: ExecutionContext):
                 paths: ipaths.local,
             },
         ],
-        success=iout.local.exists() and igraph.local.exists() and ipaths.local.exists(),
+        success=(not problems
+                 and iout.local.exists() and igraph.local.exists() and ipaths.local.exists()),
     )
 
 TransformInstance(

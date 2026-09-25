@@ -865,42 +865,96 @@ for raster formats and only as `neato -n2`, which honours our positions and lays
   the only thing keeping them apart. Shorten the id and the three fold into one node — after which
   the layout's cycle-breaker cuts edges to restore acyclicity, silently.
 - **A repeated block is a shape, never a name.** Products are named per instance, so nothing
-  matches as a string; a node's signature is its kind, its **fan-in**, and the sorted multiset of
-  its children's signatures to a bounded depth. Fan-in is in there because without it three
-  unrelated merge steps hash alike and get hoisted 14 rows from their readers. An instance's block
-  is its descendants minus everything its siblings also reach — *not* its dominator subtree, which
-  loses any node with a second parent.
-- **Supply is emitted where it is consumed, not where it is declared.** A reference database is a
-  root that owns nothing; drawn at either end it holds a rail across every module between and
-  drags its consumers with it.
+  matches as a string; a node's signature is its **fan-in** and the sorted multiset of its
+  children's signatures to a bounded depth. Without fan-in, three unrelated merge steps hash alike.
+  An instance's block is its descendants minus everything its siblings also reach — *not* its
+  dominator subtree, which loses any node with a second parent.
 - **Colour is decoration and the layout must never see it.** Every scheme is a pure function of a
-  finished `Layout`. Two opposite jobs share the word: `lane` and `module` are graph colouring
-  (touching things differ), while `repeat` is the reverse — every instance of a motif in one hue.
-  Only the second makes a repetition visible, and only because the layout already put the
-  instances in the same shape.
+  finished `Layout`. Two opposite jobs share the word: `lane` (by column) and `module` are graph
+  colouring (touching things differ), while `repeat` is the reverse — every instance of a motif in
+  one hue. The scheme keeps the name `lane` because the GUI offers it by that name.
 - **`background=False` renders transparent**, for the GUI's card; node fills are untouched, so
   such a drawing is pixel-exact on a card of the theme's colour and only very close on any other.
+- **A data label's indent is `NodeGeometry.indent`, never folded into `label_x`.** In the label
+  column every node shares one `label_x`, and `DagRail.svelte` takes its gutter from the first
+  node's. Fold the indent in and the GUI's gutter shifts whenever the first row is data.
 
-**Where a pass has two defensible answers, both are drawn and measured.** `measure` returns
-congruence, rail rows, lanes, crossings, detours and module contiguity, and `layout` picks
-symmetry ahead of length. Congruence is *modal* — the largest set of instances arranged alike —
-because mean agreement is too coarse to separate row orders. Prefer adding a candidate to tuning a
-constant. Ceilings are pinned in `tests/metasmith/unit/test_dag_stress.py`; a tuning change is free to
-improve one and has to say so out loud to make one worse.
+**The layout is two integers per node, and the drawer decides nothing.** `Layout` holds a row
+order and a column per node. Runs, bars and routes are derived from those, on half-rows: node row
+`r` sits at `2r`, the band above it at `2r − 1`. A node's run holds its column down to the band of
+its last child, and every edge into a node meets one bar in that band, so a route has at most one
+horizontal leg. A leaf's run ends at `2r + 1`, half-open. End it anywhere later and the next row
+cannot reuse the column. Width is the liveness floor, which a top-down sweep always reaches. The
+drawer draws every turn as an arc, so an arc is a connection and a straight line through a
+junction is a crossing.
 
-Four things were measured and **rejected**, and the numbers are why they stay rejected: optimal
-Sugiyama layer assignment as a row sort (ranks are right, but many nodes share one, so the branch
-walk's grouping is lost and the drawing costs half again as much rail); sift-based local search on
-that objective (lowers the cost, scatters every cluster to do it); marker-to-label distance as a
-selection term (~11% more crossings across a 300-graph corpus, buys nothing on the metagenomics
-plan); and detour as anything but the last tie-break (crossings cannot see one, and most detours
-are forced). The first two are the general lesson: the objective is a proxy, and it stops agreeing
-with the picture close to its optimum. The last two are kept as *measurements* so either case can
-be re-argued in numbers.
+**The SVG draws each stretch of line once.** Edges retrace each other: every child of a node runs
+down the same column, and every parent of a node shares its bar. An antialiased stroke drawn twice
+darkens its own edge, so a shared stretch reads thicker at some zooms. `_strokes` cuts every
+straight piece at each point another piece touches, keeps one piece per stretch, and rejoins the
+pieces into paths. They rejoin where two meet, and through a junction where two carry straight on.
+A corner is then a join inside one path, and the caps are butt, so no two strokes overlap end to
+end. `Geometry` still carries one path per edge, because the GUI highlights edges one at a time.
+
+**The row order is a solve for minimum total edge length over blocks.** `layout` takes an optional
+partition of the nodes into blocks. `DagRenderer` passes one per step, holding the step and each
+node whose only producer is that step. A node with two producers cannot sit under both, so it
+stands alone. A block takes consecutive rows, head first. Total length is the sum over nodes of
+in-degree minus out-degree times row, so inside a block the heaviest member goes first
+(rearrangement inequality) whatever the block's position. The order inside a block is therefore
+fixed before the search. `_solve_component` then runs a beam DP over placed sets, one move per
+block. The node-level lower bound stays admissible, because block-respecting orders are a subset.
+`optimal` is true only when no layer was truncated. Components go smallest first, since
+interleaving two only stretches their edges. Two post-passes follow, and neither costs length.
+Members of equal weight inside a block cost the same in any order, so the one used furthest down
+goes first. Repeated blocks then take one internal order: length outranks congruence.
+
+**CAUTION** Blocks raise the minimum length, by about 7% on e2 over the unconstrained order. That
+is the price of keeping outputs under their step, not a solver regression.
+
+**The columns are solved in stages: fewest columns, then fewest crossings, then least horizontal
+travel, with no bends.** Each stage holds the earlier ones at their optimum, which a lexicographic
+cost does in one pass. A crossing is a live run strictly inside a bar's span other than its
+target. That includes a parent whose run continues below the bar, because the drawing shows it as
+a four-way junction. Travel is every edge's horizontal distance, summed, so a line that doubles
+back pays twice. The rule against bends is hard: a node that ends a parent's run takes the column
+of one such parent, so no run turns into its last child when it could fall straight in. It never
+costs width, since the parent frees that column at the very half-row the node starts. It can cost
+a crossing, and the dagviz case `straight_costs` is the smallest graph where it does. One more
+column would win that crossing back, but width outranks crossings.
+`_columns` is the sweep of Kostitsyna and Nöllenburg (GD 2015) for storyline crossings,
+fixed-parameter in the width. A state is the column of every live run, and each term depends only
+on the state and the next placement, so equal states merge. A beam caps each layer, a first pass
+at a sixteenth of the beam sets a ceiling, and `optimal_columns` is true only when no layer was
+cut. An unproven result is polished by `_improve`, which relocates one run or swaps two. A run
+moves with every run stacked straight below it, or the move would open a bend.
+
+Two things were considered and **rejected**:
+
+- **The storyline ILP of Gronemann et al. (GD 2016)**, solved with HiGHS. It still held 285
+  crossings on e2_long after 60 s, where the sweep reaches about 40 in under a second.
+- **A Sidney decomposition of the row order.** It cannot split a component: in an order-closed
+  set, in-degree minus out-degree sums to minus the edges leaving it, never above zero, so the
+  whole component is one block.
+
+A 100-node graph takes about 0.8 s, rows and columns together, and the 1 s budget is pinned in
+`tests/metasmith/perf/`. Past that the result degrades to best-effort rather than failing.
+Ceilings are pinned in `tests/metasmith/unit/test_dag_stress.py`, and a solver change may move
+them either way.
+
+**A blacklist cuts, and `DagMode.STEPS` bypasses.** `DagRenderer(blacklist=...)` takes types and
+deletes every node whose type `IsA` one of them, with its edges. Nothing is wired around a cut
+node. `DagMode.STEPS` is the opposite: it drops every data node and wires each step to the steps
+its data fed. Pass a generic type to cut a whole family. A type holding only `e2: env` is a
+supertype of every E2 environment.
 
 `env` is in `blacklist_namespaces` alongside `lib` and `containers`: an environment is a declared
 dependency like any other, so without it every plan DAG grows an `env::*` node per step. Three
 defaults have to agree — `BuildDAG`, `RenderDAG`, and `ops.workflow.render_dag`.
+
+**CAUTION** The namespace default catches only the standard library's environments. A library
+that declares environments in its own namespace, as E2 does, reaches the drawing unless the caller
+blacklists its generic environment type.
 
 ## Versioning
 
