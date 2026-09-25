@@ -1,6 +1,6 @@
 #!/bin/bash
-# Tar one E1ctl arm's products (out/, reports/, .nextflow.log) for chinook, and check the tar holds every entry.
-#   sbatch archive_e1ctl.sbatch <short|long>
+# Tar one control arm's products (out/, reports/, .nextflow.log) for chinook, and check the tar holds every entry.
+#   sbatch archive_e1ctl.sbatch <short|long> [run=e1ctl]
 #SBATCH --account=rpp-shallam
 #SBATCH --cpus-per-task=1
 #SBATCH --mem=4G
@@ -8,8 +8,9 @@
 #SBATCH --output=/scratch/phyberos/bench/logs/archive_e1ctl.%j.out
 set -euo pipefail
 ARM=$1
-S=/scratch/phyberos/bench/e1ctl/$ARM
-ARCHIVE=/scratch/phyberos/bench/archive/e1ctl_$ARM.tar
+RUN=${2:-e1ctl}
+S=/scratch/phyberos/bench/$RUN/$ARM
+ARCHIVE=/scratch/phyberos/bench/archive/${RUN}_$ARM.tar
 
 cd "$S"
 tar -cf "$ARCHIVE" out reports .nextflow.log
