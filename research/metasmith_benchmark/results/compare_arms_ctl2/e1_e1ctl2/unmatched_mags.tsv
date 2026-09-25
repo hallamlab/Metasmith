@@ -40,11 +40,11 @@ long	plant_associated_long_nano_sample_19	COMEBin	E2	Flye-COMEBin-plant_associat
 long	plant_associated_long_nano_sample_19	COMEBin	E2	Flye-COMEBin-plant_associated_long_nano_sample_19.1504	608361	11.52	3.97	below	FLYE-COMEBin-plant_associated_long_nano_sample_19.0	100.00	8.80	7.33	True	False						
 long	plant_associated_long_nano_sample_19	COMEBin	E2	Flye-COMEBin-plant_associated_long_nano_sample_19.1810	875472	11.87	0.0	below	FLYE-COMEBin-plant_associated_long_nano_sample_19.1118	100.00	100.00	15.10	False	False						
 long	plant_associated_long_nano_sample_19	COMEBin	E2	Flye-COMEBin-plant_associated_long_nano_sample_19.1812	777460	16.04	0.03	below	FLYE-COMEBin-plant_associated_long_nano_sample_19.853	100.00	100.00	16.64	False	False						
+long	plant_associated_long_nano_sample_19	DASTool	E1	FLYE-DASTool-plant_associated_long_nano_sample_19.FLYE-COMEBin-plant_associated_long_nano_sample_19.1758	808318	17.19	0.29	below	Flye-MetaBAT2Refined-plant_associated_long_nano_sample_19.20	100.00	100.00	11.97	True	False				COMEBin	FLYE-COMEBin-plant_associated_long_nano_sample_19.1758	source bins matched, other arm's DAS Tool dropped its partner
+long	plant_associated_long_nano_sample_19	DASTool	E2	Flye-MetaBAT2Refined-plant_associated_long_nano_sample_19.20	6757618	90.23	6.57	medium	FLYE-DASTool-plant_associated_long_nano_sample_19.FLYE-COMEBin-plant_associated_long_nano_sample_19.1758	100.00	11.97	100.00	True	False				MetaBAT2	Flye-MetaBAT2-plant_associated_long_nano_sample_19.20	source bins matched, other arm's DAS Tool dropped its partner
 long	plant_associated_long_nano_sample_19	MetaBAT2	E1	FLYE-MetaBAT2-plant_associated_long_nano_sample_19.8	332938	4.99	0.01	below	Flye-MetaBAT2-plant_associated_long_nano_sample_19.8	99.99	99.96	37.93	False	False						
-long	plant_associated_long_nano_sample_19	MetaBAT2	E2	Flye-MetaBAT2-plant_associated_long_nano_sample_19.31	234015	3.18	0.0	below	FLYE-MetaBAT2-plant_associated_long_nano_sample_19.9	99.99	100.00	2.75	False	False						
-long	plant_associated_long_nano_sample_19	MetaBAT2	E2	Flye-MetaBAT2-plant_associated_long_nano_sample_19.14	932066	11.39	0.11	below	FLYE-MetaBAT2-plant_associated_long_nano_sample_19.9	100.00	99.78	10.91	False	False						
 long	plant_associated_long_nano_sample_19	MetaBAT2	E2	Flye-MetaBAT2-plant_associated_long_nano_sample_19.9	232708	3.57	0.0	below	FLYE-MetaBAT2-plant_associated_long_nano_sample_19.12	100.00	58.40	25.25	False	False						
-long	plant_associated_long_nano_sample_19	MetaBAT2	E2	Flye-MetaBAT2-plant_associated_long_nano_sample_19.30	383767	3.44	0.0	below	FLYE-MetaBAT2-plant_associated_long_nano_sample_19.2	99.99	100.00	7.72	False	False						
+long	plant_associated_long_nano_sample_19	MetaBAT2	E2	Flye-MetaBAT2-plant_associated_long_nano_sample_19.29	383767	3.44	0.0	below	FLYE-MetaBAT2-plant_associated_long_nano_sample_19.2	99.99	100.00	7.72	False	False						
 long	plant_associated_long_nano_sample_19	SemiBin2	E2	Flye-SemiBin2-plant_associated_long_nano_sample_19_15	3925128	58.7	13.71	below	FLYE-SemiBin2-plant_associated_long_nano_sample_19_1	100.00	100.00	39.99	False	False						
 long	toy_humangut_long_sample_0	COMEBin	E1	FLYE-COMEBin-toy_humangut_long_sample_0.3239	1151398	11.08	4.04	below	Flye-COMEBin-toy_humangut_long_sample_0.3213	100.00	49.11	78.34	True	False						
 long	toy_humangut_long_sample_0	COMEBin	E1	FLYE-COMEBin-toy_humangut_long_sample_0.3260	1969456	8.49	8.15	below	Flye-COMEBin-toy_humangut_long_sample_0.4806	98.89	27.75	20.62	False	False						
@@ -98,10 +98,10 @@ long	toy_humangut_long_sample_0	COMEBin	E2	Flye-COMEBin-toy_humangut_long_sample
 long	toy_humangut_long_sample_0	COMEBin	E2	Flye-COMEBin-toy_humangut_long_sample_0.4928	441770	8.08	0.02	below	FLYE-COMEBin-toy_humangut_long_sample_0.4890	100.00	99.96	37.99	True	False						
 long	toy_humangut_long_sample_0	COMEBin	E2	Flye-COMEBin-toy_humangut_long_sample_0.4930	301638	6.72	0.0	below	FLYE-COMEBin-toy_humangut_long_sample_0.4847	100.00	100.00	42.74	True	False						
 long	toy_humangut_long_sample_0	DASTool	E1	FLYE-DASTool-toy_humangut_long_sample_0.FLYE-COMEBin-toy_humangut_long_sample_0.4283_sub	2312515	80.86	8.22	medium	Flye-MetaBAT2Refined-toy_humangut_long_sample_0.4	85.94	16.68	24.86	False	False				COMEBin	FLYE-COMEBin-toy_humangut_long_sample_0.4283	source bins matched, other arm's DAS Tool dropped its partner
-long	toy_humangut_long_sample_0	MetaBAT2	E1	FLYE-MetaBAT2-toy_humangut_long_sample_0.41	291926	4.39	0.01	below	Flye-MetaBAT2-toy_humangut_long_sample_0.1	100.00	99.71	23.28	False	False						
 long	toy_humangut_long_sample_0	MetaBAT2	E1	FLYE-MetaBAT2-toy_humangut_long_sample_0.47	346881	4.45	0.01	below	Flye-MetaBAT2-toy_humangut_long_sample_0.24	97.93	77.14	9.40	False	False						
 long	toy_humangut_long_sample_0	MetaBAT2	E1	FLYE-MetaBAT2-toy_humangut_long_sample_0.51	381503	14.87	0.04	below	Flye-MetaBAT2-toy_humangut_long_sample_0.43	100.00	99.93	14.38	False	False						
-long	toy_humangut_long_sample_0	MetaBAT2	E2	Flye-MetaBAT2-toy_humangut_long_sample_0.50	293331	2.48	0.0	below	FLYE-MetaBAT2-toy_humangut_long_sample_0.37	86.00	11.64	3.40	False	False						
+long	toy_humangut_long_sample_0	MetaBAT2	E2	Flye-MetaBAT2-toy_humangut_long_sample_0.39	211531	3.84	0.0	below	FLYE-MetaBAT2-toy_humangut_long_sample_0.3	99.99	37.99	19.44	False	False						
+long	toy_humangut_long_sample_0	MetaBAT2	E2	Flye-MetaBAT2-toy_humangut_long_sample_0.52	293331	2.48	0.0	below	FLYE-MetaBAT2-toy_humangut_long_sample_0.37	86.00	11.64	3.40	False	False						
 long	toy_humangut_long_sample_6	COMEBin	E1	FLYE-COMEBin-toy_humangut_long_sample_6.0	299824	6.68	0.0	below	Flye-COMEBin-toy_humangut_long_sample_6.0	100.00	99.23	15.58	False	False						
 long	toy_humangut_long_sample_6	COMEBin	E1	FLYE-COMEBin-toy_humangut_long_sample_6.675	2962848	47.63	11.84	below	Flye-COMEBin-toy_humangut_long_sample_6.1845	100.00	25.96	33.72	True	False						
 long	toy_humangut_long_sample_6	COMEBin	E1	FLYE-COMEBin-toy_humangut_long_sample_6.944	859723	10.54	0.17	below	Flye-COMEBin-toy_humangut_long_sample_6.5442	99.99	23.06	50.09	True	False						
@@ -268,9 +268,8 @@ short	marine_sample_8	COMEBin	E2	MEGAHIT-COMEBin-marine_sample_8.48499	244311	4.
 short	marine_sample_8	COMEBin	E2	MEGAHIT-COMEBin-marine_sample_8.11549	416655	5.95	0.02	below	MEGAHIT-COMEBin-marine_sample_8.18043	100.00	93.47	36.07	True	False						
 short	marine_sample_8	COMEBin	E2	MEGAHIT-COMEBin-marine_sample_8.49224	249397	7.18	0.0	below	MEGAHIT-COMEBin-marine_sample_8.18621	100.00	84.30	5.24	False	False						
 short	marine_sample_8	DASTool	E1	MEGAHIT-COMEBinRefined-marine_sample_8.50524_sub	3487057	99.94	11.98	below					False	False				COMEBin	MEGAHIT-COMEBin-marine_sample_8.50524	source bins matched, other arm's DAS Tool dropped its partner
-short	marine_sample_8	MetaBAT2	E2	MEGAHIT-MetaBAT2-marine_sample_8.11	4828636	64.94	26.6	below	MEGAHIT-MetaBAT2-marine_sample_8.7	100.00	98.07	20.57	False	False						
-short	marine_sample_8	MetaBAT2	E2	MEGAHIT-MetaBAT2-marine_sample_8.4	246656	6.15	0.0	below	MEGAHIT-MetaBAT2-marine_sample_8.17	100.00	98.49	3.84	False	False						
-short	marine_sample_8	MetaBAT2	E2	MEGAHIT-MetaBAT2-marine_sample_8.8	451488	8.27	0.11	below	MEGAHIT-MetaBAT2-marine_sample_8.34	100.00	100.00	8.01	False	False						
+short	marine_sample_8	MetaBAT2	E2	MEGAHIT-MetaBAT2-marine_sample_8.11	3594548	54.06	15.87	below	MEGAHIT-MetaBAT2-marine_sample_8.7	100.00	98.10	15.32	False	False						
+short	marine_sample_8	MetaBAT2	E2	MEGAHIT-MetaBAT2-marine_sample_8.6	245128	5.53	0.0	below	MEGAHIT-MetaBAT2-marine_sample_8.17	100.00	99.03	3.84	False	False						
 short	marine_sample_8	SemiBin2	E1	MEGAHIT-SemiBin2-marine_sample_8_8	714136	10.15	0.25	below	MEGAHIT-SemiBin2-marine_sample_8_8	100.00	46.73	88.42	True	False						
 short	marine_sample_8	SemiBin2	E1	MEGAHIT-SemiBin2-marine_sample_8_153	201543	6.46	0.09	below	MEGAHIT-SemiBin2-marine_sample_8_91	100.00	30.39	4.88	False	False						
 short	marine_sample_8	SemiBin2	E1	MEGAHIT-SemiBin2-marine_sample_8_22	208040	5.25	0.0	below					False	False						
@@ -282,9 +281,7 @@ short	marine_sample_8	SemiBin2	E2	MEGAHIT-SemiBin2-marine_sample_8_239	246484	4.
 short	strain_sample_12	COMEBin	E1	MEGAHIT-COMEBin-strain_sample_12.4951	627003	11.81	0.55	below	MEGAHIT-COMEBin-strain_sample_12.0	100.00	69.69	25.83	False	False						
 short	strain_sample_12	COMEBin	E2	MEGAHIT-COMEBin-strain_sample_12.5717	825403	14.06	0.59	below	MEGAHIT-COMEBin-strain_sample_12.0	99.83	51.33	22.54	False	False						
 short	strain_sample_12	MetaBAT2	E1	MEGAHIT-MetaBAT2-strain_sample_12.10	211924	4.45	0.07	below					False	False						
-short	strain_sample_12	MetaBAT2	E1	MEGAHIT-MetaBAT2-strain_sample_12.1	344100	7.35	0.0	below	MEGAHIT-MetaBAT2-strain_sample_12.12	100.00	36.30	48.59	True	False						
-short	strain_sample_12	MetaBAT2	E2	MEGAHIT-MetaBAT2-strain_sample_12.12	257062	5.78	0.05	below	MEGAHIT-MetaBAT2-strain_sample_12.1	100.00	48.59	36.30	True	False						
-short	strain_sample_12	MetaBAT2	E2	MEGAHIT-MetaBAT2-strain_sample_12.4	227855	6.27	0.0	below	MEGAHIT-MetaBAT2-strain_sample_12.1	100.00	39.59	26.21	False	False						
+short	strain_sample_12	MetaBAT2	E1	MEGAHIT-MetaBAT2-strain_sample_12.1	344100	7.35	0.0	below	MEGAHIT-MetaBAT2-strain_sample_12.6	100.00	89.04	32.63	False	False						
 short	strain_sample_12	SemiBin2	E1	MEGAHIT-SemiBin2-strain_sample_12_38	374410	8.3	0.0	below	MEGAHIT-SemiBin2-strain_sample_12_14	100.00	36.37	19.63	False	False						
 short	strain_sample_12	SemiBin2	E2	MEGAHIT-SemiBin2-strain_sample_12_5	222118	5.62	0.0	below	MEGAHIT-SemiBin2-strain_sample_12_14	100.00	1.69	0.67	False	False						
 short	strain_sample_12	SemiBin2	E2	MEGAHIT-SemiBin2-strain_sample_12_26	288362	8.03	0.0	below	MEGAHIT-SemiBin2-strain_sample_12_8	91.13	0.95	0.11	False	False						
@@ -404,14 +401,15 @@ short	strain_sample_69	COMEBin	E2	MEGAHIT-COMEBin-strain_sample_69.5717	295029	7
 short	strain_sample_69	COMEBin	E2	MEGAHIT-COMEBin-strain_sample_69.6819	443605	9.16	0.21	below	MEGAHIT-COMEBin-strain_sample_69.10536	100.00	79.17	12.96	False	False						
 short	strain_sample_69	DASTool	E1	MEGAHIT-COMEBinRefined-strain_sample_69.1152	2667407	78.46	3.67	medium					False	False				COMEBin	MEGAHIT-COMEBin-strain_sample_69.1152	source bin unmatched
 short	strain_sample_69	DASTool	E1	MEGAHIT-COMEBinRefined-strain_sample_69.10536	2709110	95.43	3.24	high					False	False				COMEBin	MEGAHIT-COMEBin-strain_sample_69.10536	source bins matched, other arm's DAS Tool dropped its partner
-short	strain_sample_69	MetaBAT2	E1	MEGAHIT-MetaBAT2-strain_sample_69.5	217110	6.79	0.0	below	MEGAHIT-MetaBAT2-strain_sample_69.8	100.00	100.00	4.94	False	False						
+short	strain_sample_69	MetaBAT2	E1	MEGAHIT-MetaBAT2-strain_sample_69.5	217110	6.79	0.0	below	MEGAHIT-MetaBAT2-strain_sample_69.9	100.00	84.01	4.18	False	False						
+short	strain_sample_69	MetaBAT2	E2	MEGAHIT-MetaBAT2-strain_sample_69.2	259423	6.46	0.01	below	MEGAHIT-MetaBAT2-strain_sample_69.6	94.98	2.10	0.13	False	False						
 short	strain_sample_69	SemiBin2	E2	MEGAHIT-SemiBin2-strain_sample_69_51	437272	5.86	0.06	below	MEGAHIT-SemiBin2-strain_sample_69_26	100.00	64.61	25.30	False	False						
 short	strain_sample_72	COMEBin	E1	MEGAHIT-COMEBin-strain_sample_72.7109	1312291	17.87	3.3	below	MEGAHIT-COMEBin-strain_sample_72.6235	99.97	82.19	37.48	False	False						
 short	strain_sample_72	COMEBin	E1	MEGAHIT-COMEBin-strain_sample_72.0	1719211	25.8	6.61	below	MEGAHIT-COMEBin-strain_sample_72.0	100.00	66.97	35.40	False	False						
 short	strain_sample_72	COMEBin	E1	MEGAHIT-COMEBin-strain_sample_72.905	501274	9.19	0.17	below	MEGAHIT-COMEBin-strain_sample_72.0	100.00	92.82	14.31	False	False						
 short	strain_sample_72	COMEBin	E2	MEGAHIT-COMEBin-strain_sample_72.0	3252433	39.5	6.01	below	MEGAHIT-COMEBin-strain_sample_72.3379	100.00	47.79	46.65	False	False						
 short	strain_sample_72	COMEBin	E2	MEGAHIT-COMEBin-strain_sample_72.7293	258664	6.99	0.0	below	MEGAHIT-COMEBin-strain_sample_72.5568	100.00	99.95	4.94	False	False						
-short	strain_sample_72	MetaBAT2	E1	MEGAHIT-MetaBAT2-strain_sample_72.7	278236	5.85	0.01	below	MEGAHIT-MetaBAT2-strain_sample_72.5	100.00	100.00	10.56	False	False						
+short	strain_sample_72	MetaBAT2	E1	MEGAHIT-MetaBAT2-strain_sample_72.7	278236	5.85	0.01	below	MEGAHIT-MetaBAT2-strain_sample_72.5	100.00	100.00	10.51	False	False						
 short	strain_sample_72	SemiBin2	E1	MEGAHIT-SemiBin2-strain_sample_72_10	609631	10.95	0.22	below	MEGAHIT-SemiBin2-strain_sample_72_22	100.00	42.06	98.97	True	False						
 short	strain_sample_72	SemiBin2	E2	MEGAHIT-SemiBin2-strain_sample_72_27	219544	5.16	0.02	below					False	False						
 short	strain_sample_72	SemiBin2	E2	MEGAHIT-SemiBin2-strain_sample_72_11	248698	5.33	0.07	below	MEGAHIT-SemiBin2-strain_sample_72_29	100.00	3.68	1.87	False	False						
@@ -452,7 +450,7 @@ short	strain_sample_79	COMEBin	E2	MEGAHIT-COMEBin-strain_sample_79.4923	5009805	
 short	strain_sample_79	COMEBin	E2	MEGAHIT-COMEBin-strain_sample_79.7079	3361606	34.65	8.08	below	MEGAHIT-COMEBin-strain_sample_79.4600	100.00	30.36	98.05	True	False						
 short	strain_sample_79	DASTool	E1	MEGAHIT-COMEBinRefined-strain_sample_79.8112	755458	59.05	5.02	medium	MEGAHIT-COMEBinRefined-strain_sample_79.2898	100.00	99.22	14.47	True	False				COMEBin	MEGAHIT-COMEBin-strain_sample_79.8112	source bin unmatched
 short	strain_sample_79	DASTool	E2	MEGAHIT-COMEBinRefined-strain_sample_79.2898	5181226	94.08	17.55	below	MEGAHIT-COMEBinRefined-strain_sample_79.8112	100.00	14.47	99.22	True	False				COMEBin	MEGAHIT-COMEBin-strain_sample_79.2898	source bin unmatched
-short	strain_sample_79	MetaBAT2	E1	MEGAHIT-MetaBAT2-strain_sample_79.12	315693	9.27	0.03	below	MEGAHIT-MetaBAT2-strain_sample_79.11	100.00	25.17	15.37	False	False						
+short	strain_sample_79	MetaBAT2	E1	MEGAHIT-MetaBAT2-strain_sample_79.12	315693	9.27	0.03	below	MEGAHIT-MetaBAT2-strain_sample_79.11	100.00	28.12	16.87	False	False						
 short	strain_sample_79	SemiBin2	E1	MEGAHIT-SemiBin2-strain_sample_79_23	484861	6.52	0.08	below	MEGAHIT-SemiBin2-strain_sample_79_8	97.78	3.70	5.23	False	False						
 short	strain_sample_79	SemiBin2	E1	MEGAHIT-SemiBin2-strain_sample_79_22	203599	4.81	0.07	below	MEGAHIT-SemiBin2-strain_sample_79_24	100.00	54.20	31.40	True	False						
 short	strain_sample_79	SemiBin2	E2	MEGAHIT-SemiBin2-strain_sample_79_24	351383	7.7	0.01	below	MEGAHIT-SemiBin2-strain_sample_79_22	100.00	31.40	54.20	True	False						
@@ -467,8 +465,8 @@ short	strain_sample_83	COMEBin	E2	MEGAHIT-COMEBin-strain_sample_83.3280	1026361	
 short	strain_sample_83	COMEBin	E2	MEGAHIT-COMEBin-strain_sample_83.7298	758113	14.92	0.89	below	MEGAHIT-COMEBin-strain_sample_83.2250	100.00	74.76	40.20	False	False						
 short	strain_sample_83	COMEBin	E2	MEGAHIT-COMEBin-strain_sample_83.1538	814411	11.1	0.44	below	MEGAHIT-COMEBin-strain_sample_83.5978	99.97	36.33	33.97	True	False						
 short	strain_sample_83	COMEBin	E2	MEGAHIT-COMEBin-strain_sample_83.1852	1178315	22.48	1.29	below	MEGAHIT-COMEBin-strain_sample_83.1839	99.99	40.33	54.15	True	False						
-short	strain_sample_83	MetaBAT2	E1	MEGAHIT-MetaBAT2-strain_sample_83.2	276394	5.61	0.01	below	MEGAHIT-MetaBAT2-strain_sample_83.7	99.85	46.82	3.48	False	False						
-short	strain_sample_83	MetaBAT2	E1	MEGAHIT-MetaBAT2-strain_sample_83.9	242360	6.54	0.0	below	MEGAHIT-MetaBAT2-strain_sample_83.5	98.23	7.42	0.52	False	False						
+short	strain_sample_83	MetaBAT2	E1	MEGAHIT-MetaBAT2-strain_sample_83.2	276394	5.61	0.01	below	MEGAHIT-MetaBAT2-strain_sample_83.7	99.86	50.84	3.71	False	False						
+short	strain_sample_83	MetaBAT2	E1	MEGAHIT-MetaBAT2-strain_sample_83.9	242360	6.54	0.0	below	MEGAHIT-MetaBAT2-strain_sample_83.5	96.65	3.46	0.24	False	False						
 short	strain_sample_83	SemiBin2	E1	MEGAHIT-SemiBin2-strain_sample_83_24	200436	4.39	0.0	below	MEGAHIT-SemiBin2-strain_sample_83_7	100.00	1.74	1.19	False	False						
 short	strain_sample_83	SemiBin2	E1	MEGAHIT-SemiBin2-strain_sample_83_5	202737	6.49	0.0	below	MEGAHIT-SemiBin2-strain_sample_83_19	100.00	4.70	1.84	False	False						
 short	strain_sample_83	SemiBin2	E1	MEGAHIT-SemiBin2-strain_sample_83_10	200707	6.53	0.0	below	MEGAHIT-SemiBin2-strain_sample_83_3	96.77	0.96	0.65	False	False						
@@ -480,9 +478,8 @@ short	strain_sample_88	COMEBin	E1	MEGAHIT-COMEBin-strain_sample_88.5726	453079	8
 short	strain_sample_88	COMEBin	E1	MEGAHIT-COMEBin-strain_sample_88.4565	1211014	20.42	0.34	below	MEGAHIT-COMEBin-strain_sample_88.7440	99.98	48.88	64.77	True	False						
 short	strain_sample_88	COMEBin	E2	MEGAHIT-COMEBin-strain_sample_88.7236	475550	12.38	0.24	below	MEGAHIT-COMEBin-strain_sample_88.4951	99.98	66.01	11.87	False	False						
 short	strain_sample_88	COMEBin	E2	MEGAHIT-COMEBin-strain_sample_88.7440	913941	14.92	0.43	below	MEGAHIT-COMEBin-strain_sample_88.4565	99.98	64.77	48.88	True	False						
-short	strain_sample_88	MetaBAT2	E1	MEGAHIT-MetaBAT2-strain_sample_88.3	242584	8.03	0.01	below	MEGAHIT-MetaBAT2-strain_sample_88.1	100.00	99.92	28.24	False	False						
+short	strain_sample_88	MetaBAT2	E1	MEGAHIT-MetaBAT2-strain_sample_88.3	242584	8.03	0.01	below	MEGAHIT-MetaBAT2-strain_sample_88.1	100.00	99.92	28.41	False	False						
 short	strain_sample_88	MetaBAT2	E1	MEGAHIT-MetaBAT2-strain_sample_88.4	254432	5.95	0.02	below					False	False						
-short	strain_sample_88	MetaBAT2	E2	MEGAHIT-MetaBAT2-strain_sample_88.3	204724	5.74	0.0	below	MEGAHIT-MetaBAT2-strain_sample_88.6	93.15	2.67	0.15	False	False						
 short	strain_sample_88	SemiBin2	E2	MEGAHIT-SemiBin2-strain_sample_88_18	294906	7.68	0.02	below	MEGAHIT-SemiBin2-strain_sample_88_5	95.52	1.24	0.81	False	False						
 short	strain_sample_93	COMEBin	E1	MEGAHIT-COMEBin-strain_sample_93.3199	921032	18.24	9.83	below	MEGAHIT-COMEBin-strain_sample_93.5305	100.00	87.31	30.08	False	False						
 short	strain_sample_93	COMEBin	E1	MEGAHIT-COMEBin-strain_sample_93.2283	1919904	22.54	2.73	below	MEGAHIT-COMEBin-strain_sample_93.2768	100.00	95.22	34.74	True	False						
@@ -497,9 +494,9 @@ short	strain_sample_93	COMEBin	E1	MEGAHIT-COMEBin-strain_sample_93.979	483121	9.
 short	strain_sample_93	COMEBin	E1	MEGAHIT-COMEBin-strain_sample_93.7480	823859	15.35	0.23	below	MEGAHIT-COMEBin-strain_sample_93.7155	100.00	90.08	16.36	False	False						
 short	strain_sample_93	COMEBin	E2	MEGAHIT-COMEBin-strain_sample_93.2768	5262825	49.45	7.43	below	MEGAHIT-COMEBin-strain_sample_93.2283	100.00	34.74	95.22	True	False						
 short	strain_sample_93	COMEBin	E2	MEGAHIT-COMEBin-strain_sample_93.0	3124180	29.67	5.15	below	MEGAHIT-COMEBin-strain_sample_93.0	99.99	43.15	87.70	True	False						
-short	strain_sample_93	MetaBAT2	E1	MEGAHIT-MetaBAT2-strain_sample_93.1	330600	4.34	0.07	below	MEGAHIT-MetaBAT2-strain_sample_93.7	100.00	8.96	10.35	False	False						
-short	strain_sample_93	MetaBAT2	E1	MEGAHIT-MetaBAT2-strain_sample_93.3	319417	5.86	0.14	below	MEGAHIT-MetaBAT2-strain_sample_93.8	99.66	42.25	25.61	True	False						
-short	strain_sample_93	MetaBAT2	E2	MEGAHIT-MetaBAT2-strain_sample_93.8	527067	7.77	0.02	below	MEGAHIT-MetaBAT2-strain_sample_93.3	99.66	25.61	42.25	True	False						
+short	strain_sample_93	MetaBAT2	E1	MEGAHIT-MetaBAT2-strain_sample_93.1	330600	4.34	0.07	below	MEGAHIT-MetaBAT2-strain_sample_93.8	100.00	3.55	4.34	False	False						
+short	strain_sample_93	MetaBAT2	E1	MEGAHIT-MetaBAT2-strain_sample_93.3	319417	5.86	0.14	below	MEGAHIT-MetaBAT2-strain_sample_93.2	99.55	43.07	25.93	True	False						
+short	strain_sample_93	MetaBAT2	E2	MEGAHIT-MetaBAT2-strain_sample_93.2	530597	7.35	0.04	below	MEGAHIT-MetaBAT2-strain_sample_93.3	99.55	25.93	43.07	True	False						
 short	strain_sample_93	MetaBAT2	E2	MEGAHIT-MetaBAT2-strain_sample_93.10	204797	4.25	0.0	below	MEGAHIT-MetaBAT2-strain_sample_93.9	93.59	7.82	0.34	False	False						
 short	strain_sample_93	SemiBin2	E1	MEGAHIT-SemiBin2-strain_sample_93_13	694917	14.08	0.05	below	MEGAHIT-SemiBin2-strain_sample_93_8	100.00	75.88	13.01	False	False						
 short	toy_hmp_airskinurogenital_sample_20	COMEBin	E1	MEGAHIT-COMEBin-toy_hmp_airskinurogenital_sample_20.19554	5971745	90.36	4.16	high	MEGAHIT-COMEBin-toy_hmp_airskinurogenital_sample_20.15691	100.00	49.09	99.60	True	False						
@@ -520,10 +517,10 @@ short	toy_hmp_airskinurogenital_sample_20	COMEBin	E2	MEGAHIT-COMEBin-toy_hmp_air
 short	toy_hmp_airskinurogenital_sample_20	COMEBin	E2	MEGAHIT-COMEBin-toy_hmp_airskinurogenital_sample_20.3823	419996	10.91	1.56	below	MEGAHIT-COMEBin-toy_hmp_airskinurogenital_sample_20.4612	100.00	54.97	7.62	False	False						
 short	toy_hmp_airskinurogenital_sample_20	COMEBin	E2	MEGAHIT-COMEBin-toy_hmp_airskinurogenital_sample_20.18761	672812	12.58	0.16	below	MEGAHIT-COMEBin-toy_hmp_airskinurogenital_sample_20.7704	100.00	53.11	17.11	False	False						
 short	toy_hmp_airskinurogenital_sample_20	COMEBin	E2	MEGAHIT-COMEBin-toy_hmp_airskinurogenital_sample_20.32023	262456	7.62	0.0	below	MEGAHIT-COMEBin-toy_hmp_airskinurogenital_sample_20.32058	100.00	100.00	7.99	False	False						
-short	toy_hmp_airskinurogenital_sample_20	DASTool	E1	MEGAHIT-COMEBinRefined-toy_hmp_airskinurogenital_sample_20.29282	2760020	90.7	7.04	medium	MEGAHIT-MetaBAT2Refined-toy_hmp_airskinurogenital_sample_20.28_sub	100.00	11.53	3.75	False	False				COMEBin	MEGAHIT-COMEBin-toy_hmp_airskinurogenital_sample_20.29282	source bins matched, other arm's DAS Tool dropped its partner
+short	toy_hmp_airskinurogenital_sample_20	DASTool	E1	MEGAHIT-COMEBinRefined-toy_hmp_airskinurogenital_sample_20.29282	2760020	90.7	7.04	medium	MEGAHIT-MetaBAT2Refined-toy_hmp_airskinurogenital_sample_20.29_sub	100.00	12.52	4.10	False	False				COMEBin	MEGAHIT-COMEBin-toy_hmp_airskinurogenital_sample_20.29282	source bins matched, other arm's DAS Tool dropped its partner
 short	toy_hmp_airskinurogenital_sample_20	DASTool	E2	MEGAHIT-COMEBinRefined-toy_hmp_airskinurogenital_sample_20.9927	2258338	74.54	4.41	medium					False	False				COMEBin	MEGAHIT-COMEBin-toy_hmp_airskinurogenital_sample_20.9927	source bins matched, other arm's DAS Tool dropped its partner
-short	toy_hmp_airskinurogenital_sample_20	MetaBAT2	E2	MEGAHIT-MetaBAT2-toy_hmp_airskinurogenital_sample_20.20	241871	8.0	0.0	below	MEGAHIT-MetaBAT2-toy_hmp_airskinurogenital_sample_20.29	100.00	99.24	19.85	False	False						
-short	toy_hmp_airskinurogenital_sample_20	MetaBAT2	E2	MEGAHIT-MetaBAT2-toy_hmp_airskinurogenital_sample_20.13	237567	8.9	0.0	below					False	False						
+short	toy_hmp_airskinurogenital_sample_20	MetaBAT2	E2	MEGAHIT-MetaBAT2-toy_hmp_airskinurogenital_sample_20.20	250974	7.19	0.0	below	MEGAHIT-MetaBAT2-toy_hmp_airskinurogenital_sample_20.29	100.00	99.50	20.65	False	False						
+short	toy_hmp_airskinurogenital_sample_20	MetaBAT2	E2	MEGAHIT-MetaBAT2-toy_hmp_airskinurogenital_sample_20.16	239723	9.12	0.0	below					False	False						
 short	toy_hmp_airskinurogenital_sample_20	SemiBin2	E1	MEGAHIT-SemiBin2-toy_hmp_airskinurogenital_sample_20_74	350329	7.36	0.65	below	MEGAHIT-SemiBin2-toy_hmp_airskinurogenital_sample_20_12	100.00	62.26	3.90	False	False						
 short	toy_hmp_airskinurogenital_sample_28	COMEBin	E1	MEGAHIT-COMEBin-toy_hmp_airskinurogenital_sample_28.2097	1024520	41.77	0.01	below	MEGAHIT-COMEBin-toy_hmp_airskinurogenital_sample_28.1968	99.99	66.03	33.00	False	False						
 short	toy_hmp_airskinurogenital_sample_28	COMEBin	E2	MEGAHIT-COMEBin-toy_hmp_airskinurogenital_sample_28.1943	880173	46.85	0.0	below	MEGAHIT-COMEBin-toy_hmp_airskinurogenital_sample_28.0	99.99	100.00	10.26	False	False						
@@ -540,7 +537,6 @@ short	toy_hmp_airskinurogenital_sample_8	COMEBin	E2	MEGAHIT-COMEBin-toy_hmp_airs
 short	toy_hmp_airskinurogenital_sample_8	COMEBin	E2	MEGAHIT-COMEBin-toy_hmp_airskinurogenital_sample_8.9658	226632	5.86	0.16	below	MEGAHIT-COMEBin-toy_hmp_airskinurogenital_sample_8.4807	100.00	38.13	19.66	False	False						
 short	toy_hmp_airskinurogenital_sample_8	COMEBin	E2	MEGAHIT-COMEBin-toy_hmp_airskinurogenital_sample_8.11530	235078	4.47	0.01	below	MEGAHIT-COMEBin-toy_hmp_airskinurogenital_sample_8.262	100.00	98.67	20.24	False	False						
 short	toy_hmp_airskinurogenital_sample_8	DASTool	E2	MEGAHIT-COMEBinRefined-toy_hmp_airskinurogenital_sample_8.3747	1567319	74.06	7.64	medium					False	False				COMEBin	MEGAHIT-COMEBin-toy_hmp_airskinurogenital_sample_8.3747	source bins matched, other arm's DAS Tool dropped its partner
-short	toy_hmp_airskinurogenital_sample_8	MetaBAT2	E1	MEGAHIT-MetaBAT2-toy_hmp_airskinurogenital_sample_8.14	1067269	55.66	3.2	medium	MEGAHIT-MetaBAT2-toy_hmp_airskinurogenital_sample_8.17	100.00	100.00	39.34	False	False						
 short	toy_hmp_gastrooral_sample_1	COMEBin	E1	MEGAHIT-COMEBin-toy_hmp_gastrooral_sample_1.13116	4108097	66.65	8.28	medium	MEGAHIT-COMEBin-toy_hmp_gastrooral_sample_1.11506	100.00	48.17	81.52	True	False						
 short	toy_hmp_gastrooral_sample_1	COMEBin	E1	MEGAHIT-COMEBin-toy_hmp_gastrooral_sample_1.27813	364627	8.48	0.01	below	MEGAHIT-COMEBin-toy_hmp_gastrooral_sample_1.27839	100.00	11.40	11.40	True	False						
 short	toy_hmp_gastrooral_sample_1	COMEBin	E1	MEGAHIT-COMEBin-toy_hmp_gastrooral_sample_1.16100	315231	8.14	0.0	below	MEGAHIT-COMEBin-toy_hmp_gastrooral_sample_1.29591	100.00	23.59	31.73	True	False						
@@ -567,8 +563,10 @@ short	toy_hmp_gastrooral_sample_1	COMEBin	E2	MEGAHIT-COMEBin-toy_hmp_gastrooral_
 short	toy_hmp_gastrooral_sample_1	COMEBin	E2	MEGAHIT-COMEBin-toy_hmp_gastrooral_sample_1.29745	724285	13.21	0.02	below	MEGAHIT-COMEBin-toy_hmp_gastrooral_sample_1.26900	99.99	100.00	16.17	False	False						
 short	toy_hmp_gastrooral_sample_1	DASTool	E1	MEGAHIT-COMEBinRefined-toy_hmp_gastrooral_sample_1.3767_sub	3769229	83.25	8.33	medium	MEGAHIT-COMEBinRefined-toy_hmp_gastrooral_sample_1.25527	100.00	1.33	1.69	False	False				COMEBin	MEGAHIT-COMEBin-toy_hmp_gastrooral_sample_1.3767	source bins matched, other arm's DAS Tool dropped its partner
 short	toy_hmp_gastrooral_sample_1	DASTool	E1	MEGAHIT-COMEBinRefined-toy_hmp_gastrooral_sample_1.27581	4605737	99.99	5.76	medium					False	False				COMEBin	MEGAHIT-COMEBin-toy_hmp_gastrooral_sample_1.27581	source bins matched, other arm's DAS Tool dropped its partner
-short	toy_hmp_gastrooral_sample_1	DASTool	E2	MEGAHIT-COMEBinRefined-toy_hmp_gastrooral_sample_1.5899_sub	213386	9.28	0.77	below	MEGAHIT-COMEBinRefined-toy_hmp_gastrooral_sample_1.8303_sub	100.00	6.01	0.32	False	False				COMEBin	MEGAHIT-COMEBin-toy_hmp_gastrooral_sample_1.5899	source bin unmatched
-short	toy_hmp_gastrooral_sample_1	MetaBAT2	E2	MEGAHIT-MetaBAT2-toy_hmp_gastrooral_sample_1.5	265850	6.25	0.0	below	MEGAHIT-MetaBAT2-toy_hmp_gastrooral_sample_1.1	100.00	53.56	5.20	False	False						
+short	toy_hmp_gastrooral_sample_1	DASTool	E2	MEGAHIT-COMEBinRefined-toy_hmp_gastrooral_sample_1.5899_sub	211821	9.27	0.77	below	MEGAHIT-COMEBinRefined-toy_hmp_gastrooral_sample_1.8303_sub	100.00	6.06	0.32	False	False				COMEBin	MEGAHIT-COMEBin-toy_hmp_gastrooral_sample_1.5899	source bin unmatched
+short	toy_hmp_gastrooral_sample_1	MetaBAT2	E1	MEGAHIT-MetaBAT2-toy_hmp_gastrooral_sample_1.16	1540023	43.19	0.22	below	MEGAHIT-MetaBAT2-toy_hmp_gastrooral_sample_1.20	100.00	47.44	99.37	True	False						
+short	toy_hmp_gastrooral_sample_1	MetaBAT2	E2	MEGAHIT-MetaBAT2-toy_hmp_gastrooral_sample_1.20	735181	18.76	0.13	below	MEGAHIT-MetaBAT2-toy_hmp_gastrooral_sample_1.16	100.00	99.37	47.44	True	False						
+short	toy_hmp_gastrooral_sample_1	MetaBAT2	E2	MEGAHIT-MetaBAT2-toy_hmp_gastrooral_sample_1.5	261105	6.19	0.0	below	MEGAHIT-MetaBAT2-toy_hmp_gastrooral_sample_1.1	100.00	51.48	4.91	False	False						
 short	toy_hmp_gastrooral_sample_1	SemiBin2	E1	MEGAHIT-SemiBin2-toy_hmp_gastrooral_sample_1_119	242676	7.1	0.0	below	MEGAHIT-SemiBin2-toy_hmp_gastrooral_sample_1_5	100.00	24.63	3.38	False	False						
 short	toy_hmp_gastrooral_sample_1	SemiBin2	E1	MEGAHIT-SemiBin2-toy_hmp_gastrooral_sample_1_68	245199	7.37	0.0	below	MEGAHIT-SemiBin2-toy_hmp_gastrooral_sample_1_3	100.00	13.89	13.06	False	False						
 short	toy_hmp_gastrooral_sample_6	COMEBin	E1	MEGAHIT-COMEBin-toy_hmp_gastrooral_sample_6.21361	283214	21.93	7.45	below	MEGAHIT-COMEBin-toy_hmp_gastrooral_sample_6.26711	100.00	7.25	7.63	False	False						
@@ -660,9 +658,9 @@ short	toy_mousegut_sample_20	COMEBin	E2	MEGAHIT-COMEBin-toy_mousegut_sample_20.1
 short	toy_mousegut_sample_20	COMEBin	E2	MEGAHIT-COMEBin-toy_mousegut_sample_20.20491	212577	5.14	0.01	below	MEGAHIT-COMEBin-toy_mousegut_sample_20.20122	99.99	100.00	3.90	False	False						
 short	toy_mousegut_sample_20	DASTool	E2	MEGAHIT-COMEBinRefined-toy_mousegut_sample_20.0	2822068	79.85	6.16	medium					False	False				COMEBin	MEGAHIT-COMEBin-toy_mousegut_sample_20.0	source bins matched, other arm's DAS Tool dropped its partner
 short	toy_mousegut_sample_20	DASTool	E2	MEGAHIT-COMEBinRefined-toy_mousegut_sample_20.4519	4417161	84.4	6.61	medium					False	False				COMEBin	MEGAHIT-COMEBin-toy_mousegut_sample_20.4519	source bins matched, other arm's DAS Tool dropped its partner
-short	toy_mousegut_sample_20	MetaBAT2	E1	MEGAHIT-MetaBAT2-toy_mousegut_sample_20.11	306819	5.17	0.05	below	MEGAHIT-MetaBAT2-toy_mousegut_sample_20.5	99.92	31.91	1.11	False	False						
-short	toy_mousegut_sample_20	MetaBAT2	E2	MEGAHIT-MetaBAT2-toy_mousegut_sample_20.23	1431232	20.36	4.51	below	MEGAHIT-MetaBAT2-toy_mousegut_sample_20.17	100.00	97.84	28.57	False	False						
-short	toy_mousegut_sample_20	MetaBAT2	E2	MEGAHIT-MetaBAT2-toy_mousegut_sample_20.6	232015	6.64	0.0	below					False	False						
+short	toy_mousegut_sample_20	MetaBAT2	E1	MEGAHIT-MetaBAT2-toy_mousegut_sample_20.11	306819	5.17	0.05	below	MEGAHIT-MetaBAT2-toy_mousegut_sample_20.5	99.94	52.89	1.76	False	False						
+short	toy_mousegut_sample_20	MetaBAT2	E2	MEGAHIT-MetaBAT2-toy_mousegut_sample_20.21	1148613	17.31	4.89	below	MEGAHIT-MetaBAT2-toy_mousegut_sample_20.17	100.00	97.47	22.84	False	False						
+short	toy_mousegut_sample_20	MetaBAT2	E2	MEGAHIT-MetaBAT2-toy_mousegut_sample_20.6	232100	6.9	0.0	below					False	False						
 short	toy_mousegut_sample_20	MetaBAT2	E2	MEGAHIT-MetaBAT2-toy_mousegut_sample_20.9	454224	15.18	0.0	below	MEGAHIT-MetaBAT2-toy_mousegut_sample_20.19	100.00	99.35	20.51	False	False						
 short	toy_mousegut_sample_20	SemiBin2	E1	MEGAHIT-SemiBin2-toy_mousegut_sample_20_6	230641	5.18	0.0	below	MEGAHIT-SemiBin2-toy_mousegut_sample_20_5	100.00	58.81	24.20	False	False						
 short	toy_mousegut_sample_20	SemiBin2	E1	MEGAHIT-SemiBin2-toy_mousegut_sample_20_5	254719	4.12	0.02	below	MEGAHIT-SemiBin2-toy_mousegut_sample_20_5	100.00	96.74	43.97	True	False						
@@ -673,9 +671,7 @@ short	toy_mousegut_sample_52	COMEBin	E1	MEGAHIT-COMEBin-toy_mousegut_sample_52.1
 short	toy_mousegut_sample_52	COMEBin	E2	MEGAHIT-COMEBin-toy_mousegut_sample_52.16134	360556	7.33	0.07	below	MEGAHIT-COMEBin-toy_mousegut_sample_52.15356	100.00	37.19	33.62	True	False						
 short	toy_mousegut_sample_52	COMEBin	E2	MEGAHIT-COMEBin-toy_mousegut_sample_52.14984	577060	14.11	0.02	below	MEGAHIT-COMEBin-toy_mousegut_sample_52.5408	100.00	83.52	26.97	False	False						
 short	toy_mousegut_sample_52	MetaBAT2	E1	MEGAHIT-MetaBAT2-toy_mousegut_sample_52.13	259647	6.55	0.0	below					False	False						
-short	toy_mousegut_sample_52	MetaBAT2	E2	MEGAHIT-MetaBAT2-toy_mousegut_sample_52.11	319997	8.52	0.0	below	MEGAHIT-MetaBAT2-toy_mousegut_sample_52.10	100.00	38.45	0.84	False	False						
-short	toy_mousegut_sample_52	MetaBAT2	E2	MEGAHIT-MetaBAT2-toy_mousegut_sample_52.10	280335	8.7	0.0	below	MEGAHIT-MetaBAT2-toy_mousegut_sample_52.2	100.00	99.64	9.74	False	False						
-short	toy_mousegut_sample_52	MetaBAT2	E2	MEGAHIT-MetaBAT2-toy_mousegut_sample_52.19	222690	5.45	0.0	below	MEGAHIT-MetaBAT2-toy_mousegut_sample_52.11	100.00	100.00	7.29	False	False						
+short	toy_mousegut_sample_52	MetaBAT2	E2	MEGAHIT-MetaBAT2-toy_mousegut_sample_52.11	292871	9.09	0.0	below	MEGAHIT-MetaBAT2-toy_mousegut_sample_52.2	100.00	99.66	10.18	False	False						
 short	toy_mousegut_sample_52	SemiBin2	E1	MEGAHIT-SemiBin2-toy_mousegut_sample_52_72	269336	5.25	0.03	below	MEGAHIT-SemiBin2-toy_mousegut_sample_52_47	100.00	74.01	30.43	False	False						
 short	toy_mousegut_sample_52	SemiBin2	E2	MEGAHIT-SemiBin2-toy_mousegut_sample_52_79	349144	6.66	0.08	below	MEGAHIT-SemiBin2-toy_mousegut_sample_52_47	100.00	76.33	37.40	False	False						
 short	toy_mousegut_sample_53	COMEBin	E1	MEGAHIT-COMEBin-toy_mousegut_sample_53.22278	480784	10.2	0.06	below	MEGAHIT-COMEBin-toy_mousegut_sample_53.18632	100.00	78.48	38.06	False	False						
@@ -687,12 +683,10 @@ short	toy_mousegut_sample_53	COMEBin	E2	MEGAHIT-COMEBin-toy_mousegut_sample_53.1
 short	toy_mousegut_sample_53	COMEBin	E2	MEGAHIT-COMEBin-toy_mousegut_sample_53.19436	1096564	14.92	3.89	below	MEGAHIT-COMEBin-toy_mousegut_sample_53.21892	100.00	18.90	54.90	True	False						
 short	toy_mousegut_sample_53	COMEBin	E2	MEGAHIT-COMEBin-toy_mousegut_sample_53.22269	2265092	29.73	1.02	below	MEGAHIT-COMEBin-toy_mousegut_sample_53.16000	100.00	92.35	41.55	False	False						
 short	toy_mousegut_sample_53	DASTool	E1	MEGAHIT-COMEBinRefined-toy_mousegut_sample_53.9081_sub	1529840	59.64	4.89	medium					False	False				COMEBin	MEGAHIT-COMEBin-toy_mousegut_sample_53.9081	source bins matched, other arm's DAS Tool dropped its partner
-short	toy_mousegut_sample_53	MetaBAT2	E1	MEGAHIT-MetaBAT2-toy_mousegut_sample_53.23	3582687	70.4	5.57	medium	MEGAHIT-MetaBAT2-toy_mousegut_sample_53.19	100.00	75.32	47.82	False	False						
-short	toy_mousegut_sample_53	MetaBAT2	E1	MEGAHIT-MetaBAT2-toy_mousegut_sample_53.17	228030	4.83	0.06	below	MEGAHIT-MetaBAT2-toy_mousegut_sample_53.4	100.00	90.33	6.49	False	False						
-short	toy_mousegut_sample_53	MetaBAT2	E2	MEGAHIT-MetaBAT2-toy_mousegut_sample_53.3	864909	20.28	0.24	below	MEGAHIT-MetaBAT2-toy_mousegut_sample_53.23	100.00	99.40	24.00	False	False						
-short	toy_mousegut_sample_53	MetaBAT2	E2	MEGAHIT-MetaBAT2-toy_mousegut_sample_53.5	211391	5.81	0.0	below	MEGAHIT-MetaBAT2-toy_mousegut_sample_53.11	100.00	98.60	13.76	False	False						
-short	toy_mousegut_sample_53	MetaBAT2	E2	MEGAHIT-MetaBAT2-toy_mousegut_sample_53.2	428858	9.75	0.13	below	MEGAHIT-MetaBAT2-toy_mousegut_sample_53.2	100.00	95.75	8.50	False	False						
-short	toy_mousegut_sample_53	MetaBAT2	E2	MEGAHIT-MetaBAT2-toy_mousegut_sample_53.11	617526	10.6	0.37	below	MEGAHIT-MetaBAT2-toy_mousegut_sample_53.10	99.99	100.00	11.66	False	False						
+short	toy_mousegut_sample_53	MetaBAT2	E1	MEGAHIT-MetaBAT2-toy_mousegut_sample_53.23	3582687	70.4	5.57	medium	MEGAHIT-MetaBAT2-toy_mousegut_sample_53.17	100.00	77.06	48.30	False	False						
+short	toy_mousegut_sample_53	MetaBAT2	E1	MEGAHIT-MetaBAT2-toy_mousegut_sample_53.17	228030	4.83	0.06	below	MEGAHIT-MetaBAT2-toy_mousegut_sample_53.4	100.00	94.18	6.53	False	False						
+short	toy_mousegut_sample_53	MetaBAT2	E2	MEGAHIT-MetaBAT2-toy_mousegut_sample_53.14	807267	19.14	0.21	below	MEGAHIT-MetaBAT2-toy_mousegut_sample_53.23	100.00	99.27	22.37	False	False						
+short	toy_mousegut_sample_53	MetaBAT2	E2	MEGAHIT-MetaBAT2-toy_mousegut_sample_53.5	365704	8.05	0.03	below	MEGAHIT-MetaBAT2-toy_mousegut_sample_53.10	100.00	98.52	6.80	False	False						
 short	toy_mousegut_sample_53	SemiBin2	E1	MEGAHIT-SemiBin2-toy_mousegut_sample_53_52	215349	5.36	0.01	below	MEGAHIT-SemiBin2-toy_mousegut_sample_53_31	100.00	1.67	1.19	False	False						
 short	toy_mousegut_sample_53	SemiBin2	E2	MEGAHIT-SemiBin2-toy_mousegut_sample_53_62	263750	4.65	0.04	below	MEGAHIT-SemiBin2-toy_mousegut_sample_53_10	89.44	16.96	5.27	False	False						
 short	toy_mousegut_sample_53	SemiBin2	E2	MEGAHIT-SemiBin2-toy_mousegut_sample_53_36	224265	4.58	0.0	below	MEGAHIT-SemiBin2-toy_mousegut_sample_53_7	100.00	18.72	2.55	False	False						
@@ -746,7 +740,7 @@ short	toy_mousegut_sample_57	COMEBin	E2	MEGAHIT-COMEBin-toy_mousegut_sample_57.2
 short	toy_mousegut_sample_57	COMEBin	E2	MEGAHIT-COMEBin-toy_mousegut_sample_57.19648	227079	7.83	0.02	below	MEGAHIT-COMEBin-toy_mousegut_sample_57.2037	100.00	86.02	3.89	False	False						
 short	toy_mousegut_sample_57	COMEBin	E2	MEGAHIT-COMEBin-toy_mousegut_sample_57.10779	295708	5.83	0.0	below	MEGAHIT-COMEBin-toy_mousegut_sample_57.29972	100.00	86.09	7.85	False	False						
 short	toy_mousegut_sample_57	DASTool	E1	MEGAHIT-COMEBinRefined-toy_mousegut_sample_57.25235	3727062	86.13	4.03	medium					False	False				COMEBin	MEGAHIT-COMEBin-toy_mousegut_sample_57.25235	source bins matched, other arm's DAS Tool dropped its partner
-short	toy_mousegut_sample_57	MetaBAT2	E1	MEGAHIT-MetaBAT2-toy_mousegut_sample_57.25	716422	16.89	0.88	below	MEGAHIT-MetaBAT2-toy_mousegut_sample_57.9	100.00	68.75	12.23	False	False						
+short	toy_mousegut_sample_57	MetaBAT2	E1	MEGAHIT-MetaBAT2-toy_mousegut_sample_57.25	716422	16.89	0.88	below	MEGAHIT-MetaBAT2-toy_mousegut_sample_57.10	100.00	68.75	12.23	False	False						
 short	toy_mousegut_sample_57	SemiBin2	E1	MEGAHIT-SemiBin2-toy_mousegut_sample_57_18	643537	13.34	0.1	below	MEGAHIT-SemiBin2-toy_mousegut_sample_57_3	100.00	62.70	16.43	False	False						
 short	toy_mousegut_sample_57	SemiBin2	E1	MEGAHIT-SemiBin2-toy_mousegut_sample_57_86	224074	5.65	0.01	below	MEGAHIT-SemiBin2-toy_mousegut_sample_57_27	100.00	12.70	4.46	False	False						
 short	toy_mousegut_sample_57	SemiBin2	E1	MEGAHIT-SemiBin2-toy_mousegut_sample_57_46	218480	4.92	0.01	below					False	False						
