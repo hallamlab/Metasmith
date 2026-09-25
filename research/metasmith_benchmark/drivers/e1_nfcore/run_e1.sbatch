@@ -7,6 +7,10 @@
 # `ctl2` (E1ctl2) is the same design on the same sheets at a third pair of seeds.
 #   sbatch -J e1ctl_short .../run_e1.sbatch <checkout> short ctl
 #
+# Seeds go on the command line. nf-core renders MetaBAT2's ext.args as a plain string while it
+# parses its own config, so a params block in a -c file arrives too late and --seed stays 1.
+# E1ctl's MetaBAT2 therefore ran at seed 1, and `ctl` records that rather than the 2 it asked for.
+#
 # The head refuses to start near the project's inode or byte quota: reaching either fails every
 # writer in the project, other agents' runs included.
 #
@@ -33,9 +37,9 @@ case "$VARIANT" in
     "") SHEET="$HERE/samplesheet.$ARM.csv" ;;
     ctl|ctl2)
         SHEET="$HERE/samplesheet.$ARM.ctl.csv"
-        SEED_CONFIG="$HERE/control_seed.config"
-        [ "$VARIANT" = ctl2 ] && SEED_CONFIG="$HERE/control_seed3.config"
-        EXTRA=(-c "$SEED_CONFIG" --assembly_input "$HERE/assembly_input.$ARM.ctl.csv")
+        SEEDS=(--metabat_rng_seed 1 --semibin_rng_seed 2)
+        [ "$VARIANT" = ctl2 ] && SEEDS=(--metabat_rng_seed 3 --semibin_rng_seed 3)
+        EXTRA=("${SEEDS[@]}" --assembly_input "$HERE/assembly_input.$ARM.ctl.csv")
         [ "$ARM" = long ] && EXTRA+=(-c "$HERE/control_long.config")
         ;;
     *) echo "unknown variant: $VARIANT" >&2; exit 2 ;;
