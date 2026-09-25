@@ -209,7 +209,7 @@ a.full:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
     <span class="name">metaGEM · Zorrilla et al. 2021</span>
     <span class="meta">real · five studies · published MAGs and models on Zenodo, 96 GB · used by E4, E5</span>
   </div>
-  <p class="note">E4 starts from the published MAGs. All five studies publish MAGs, proteins, assemblies and models, and all 46 files are on fir with sizes matching the manifest. E5 starts from reads, so all 491 runs stay staged.</p>
+  <p class="note">E4 starts from the published protein bins. All five studies publish MAGs, proteins, assemblies and models, and all 46 files are on fir with sizes matching the manifest. E5 starts from reads, so all 491 runs stay staged.</p>
   <div class="scroll">
   <table class="ds">
     <thead><tr><th>Study</th><th>Environment</th><th>Layout</th><th class="n">Runs</th><th class="n">Reads</th></tr></thead>
@@ -422,51 +422,51 @@ a.full:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
   <div class="side">
     <div class="id">E4</div>
     <span class="chip repro">reproduce</span>
-    <div class="shape">studies<span class="total">5</span>published MAGs<br>driver<br><b>metasmith</b></div>
+    <div class="shape">protein bins<span class="total">14,105</span>5 studies · 2 lanes<br>driver<br><b>metasmith</b></div>
   </div>
   <div class="main">
     <h2>metaGEM metabolic models</h2>
-    <p class="goal"><b>Goal:</b> reproduce metaGEM's published genome-scale models with our own tools, starting from their published MAGs.</p>
+    <p class="goal"><b>Goal:</b> rebuild metaGEM's published genome-scale models from their published protein bins, on metaGEM's own CarveMe, DIAMOND and MEMOTE, and again on E5's GEM transforms for comparison with E5.</p>
     <div class="grid">
       <div><h3>Datasets</h3><ul>
-        <li>Published MAGs, assemblies and models from all five studies: 96 GB on Zenodo, all on fir</li>
+        <li>metaGEM's 14,105 published protein bins, CheckM's Prodigal in single mode, from all five studies</li>
+        <li>metaGEM's 14,087 published GEMs, for the comparison</li>
         <li>The reads (491 runs, 5.21 TB) are for E5, not E4</li>
       </ul></div>
       <div><h3>Driver</h3><ul>
-        <li><code>drivers/e4_metagem.py</code>, registering the 14,108 published MAGs as bins in 8 chunks of 2,000 (<code>--chunk</code>), which pool in one agent home. Chunk 1: 3 steps, key <code>lE94xbfH</code></li>
-        <li>CarveMe gapfill at 16 GB and 12 h, and each retry doubles both (B11). The transform declares 2 h</li>
-        <li>GTDB-Tk r232 on every MAG with <code>--with-gtdbtk</code>, reading the genomes from one squashfs image</li>
-        <li>Prodigal → CarveMe carve, then gapfill on M8 with CPLEX 22.2 → MEMOTE → SMETANA</li>
-        <li>Ramp: li2019 → gut → soil → Tara</li>
+        <li><code>drivers/e4_gems.py --lane repro|modern</code>, 7 chunks of 2,015 bins, run by <code>drivers/e4_chain.sbatch</code></li>
+        <li>Reproduction lane, 4 steps: DIAMOND 0.9.30 database → <code>--more-sensitive --top 10</code> → CarveMe 1.2.2 carve and gapfill on M8, CPLEX 22.2, 6 h, no retry → MEMOTE 0.9.13</li>
+        <li>Modern lane, 2 steps: E5's <code>carveme_from_orfs</code> (CarveMe 1.6.6, SCIP) → <code>memote_score</code> (MEMOTE 0.17.0)</li>
+        <li>Each finished lane is archived with its lineage index, and its cache entries and run directory are removed</li>
       </ul></div>
       <div><h3>Targets / metrics</h3><ul>
-        <li>Reaction and metabolite counts per model</li>
-        <li>MEMOTE total score</li>
-        <li>Growth on M8, for ours and theirs</li>
-        <li>Model-to-model comparison against metaGEM's published model for the same MAG</li>
+        <li>Model count against metaGEM's 14,087, naming every missing bin</li>
+        <li>Per bin, against the published GEM: reaction, metabolite and gene Jaccard, and gene rules</li>
       </ul></div>
     </div>
     <div class="status">
       <div class="proven"><h3>Proven</h3><ul>
-        <li>CPLEX solves uncapped inside the CarveMe container on a fir compute node. The open solver ran 1 h 49 m on the smallest bin and never finished</li>
-        <li>Corpus scale, from reads: live li2019 run <code>HQ5SrqFe</code> built 131 models with zero failures. A sampled model has 1,968 reactions and 1,376 species</li>
-        <li>All 14,108 published MAGs unpacked on fir, one FASTA each, matched by name against the manifest</li>
-        <li>MEMOTE on a real model from that run: consistency 0.894, annotation 0.797 (metabolites) / 0.766 (reactions)</li>
+        <li>Finished 2026-09-25. Reproduction lane 14,102 models, 14,088 MEMOTE results. Modern lane 14,097 models, each with a MEMOTE score</li>
+        <li>Both lanes built a model for all 18 bins metaGEM has no GEM for. Every bin either lane missed has a published GEM</li>
+        <li>Reproduction lane against metaGEM, median over 14,084 bins: reactions 0.840, metabolites 0.902, genes 0.976. 2.1% of shared reactions have a different gene rule</li>
+        <li>Modern lane against metaGEM, median over 14,079 bins: reactions 0.409, metabolites 0.531, genes 0.706</li>
       </ul></div>
       <div class="open"><h3>Open</h3><ul>
-        <li class="block">SMETANA: <b>new transform</b> and container image</li>
-        <li>Each chunk's model count is checked against its 2,000 MAGs, because retry-then-ignore hides failures</li>
-        <li><code>metagem_compare.py</code> compares one model pair, so the comparison needs a loop over MAGs, paired by their published names</li>
+        <li>No model matches its published GEM exactly. CPLEX 12.8 cannot be obtained, and carve on CPLEX 22.2 changes up to 25 reactions between reruns of one bin</li>
+        <li>The archives are the only copy of the models. A new plan recomputes every step</li>
       </ul></div>
     </div>
     <details class="dag">
-      <summary>Solved workflow <span class="sub">· chunk 1, lE94xbfH, 3 steps, from published MAGs</span></summary>
+      <summary>Solved workflows <span class="sub">· one per lane</span></summary>
       <div class="dagbody">
         <div class="figs">
           <figure>
-            <a class="full" href="https://10.74.81.84:12100/files/home/tony/agentic_workspace/projects/metasmith/engine/bench-run/research/metasmith_benchmark/page/dags/e4_metagem.dag.svg" target="_blank" rel="noopener">Open full screen ↗</a>
-            <div class="figbox">{{SVG:e4_metagem}}</div>
-            <figcaption>Chunk 1, solved locally by <code>e4_metagem.py run --chunk 1 --dag</code>: Prodigal on each MAG, CarveMe with CPLEX, then MEMOTE.</figcaption>
+            <div class="figbox">{{SVG:e4_gems_repro}}</div>
+            <figcaption>Reproduction lane: the BiGG database built once with DIAMOND 0.9.30, then annotation, carve and gapfill, and MEMOTE per bin.</figcaption>
+          </figure>
+          <figure>
+            <div class="figbox">{{SVG:e4_gems_modern}}</div>
+            <figcaption>Modern lane: E5's CarveMe and MEMOTE transforms, unchanged.</figcaption>
           </figure>
         </div>
       </div>
@@ -558,13 +558,13 @@ a.full:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 <section class="section-head">
   <div class="eyebrow">E5 swaps</div>
   <h2>What E5 changes from the parity and reproduction runs</h2>
-  <p class="dim">One row per tool, grouped by purpose. A cell names the tool, with its settings underneath, when that run uses it. A blank cell means the run doesn't use it. The E2, E3 and E4 columns show the target: E2 matches E1, E3 matches Pratama, and E4 matches metaGEM from their published MAGs onward. Where our run differs from that target today, the note says "now …". <span class="pick long">new transform</span> marks a tool the library doesn't have. E5 reason is the initial view; the real reasons come once E5 has run. The table scrolls sideways.</p>
+  <p class="dim">One row per tool, grouped by purpose. A cell names the tool, with its settings underneath, when that run uses it. A blank cell means the run doesn't use it. The E2, E3 and E4 columns show the target: E2 matches E1, E3 matches Pratama, and E4 matches metaGEM from their published proteins onward. Where our run differs from that target today, the note says "now …". <span class="pick long">new transform</span> marks a tool the library doesn't have. E5 reason is the initial view; the real reasons come once E5 has run. The table scrolls sideways.</p>
 </section>
 
 <div class="corpus">
   <div class="scroll">
   <table class="ds swaps">
-    <thead><tr><th>Tool</th><th>E1 nf-core/mag</th><th>E2 msm<br>matches E1</th><th>Pratama paper</th><th>E3 msm<br>matches Pratama</th><th>metaGEM paper</th><th>E4 msm<br>from metaGEM MAGs</th><th>E5</th><th>E5 reason</th></tr></thead>
+    <thead><tr><th>Tool</th><th>E1 nf-core/mag</th><th>E2 msm<br>matches E1</th><th>Pratama paper</th><th>E3 msm<br>matches Pratama</th><th>metaGEM paper</th><th>E4 msm<br>from metaGEM proteins</th><th>E5</th><th>E5 reason</th></tr></thead>
     <tbody>
       <tr class="grp"><th colspan="9" scope="rowgroup">Read trimming and filtering</th></tr>
       <tr><th scope="row">fastp</th><td>fastp</td><td>fastp<br><span class="dim">replaces bbduk; transform exists</span></td><td class="absent"></td><td class="absent"></td><td>fastp</td><td class="absent"></td><td class="absent"></td><td>Tony: E5 takes bbduk</td></tr>

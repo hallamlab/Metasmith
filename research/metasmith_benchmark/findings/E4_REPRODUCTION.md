@@ -2,7 +2,7 @@
 
 ## Purpose & Contents
 
-E4 rebuilds metaGEM's genome-scale models (GEMs) from metaGEM's own published protein bins, in two lanes. This file records every known difference between each lane and what it is compared against, with the evidence for each. It holds findings only. `drivers/e4_gems.py` is the source of truth for the commands, and the env files under `library/resources/e4/` pin the images.
+E4 rebuilds metaGEM's genome-scale models (GEMs) from metaGEM's own published protein bins, in two lanes. This file records every known difference between each lane and what it is compared against, with the evidence for each, and the full run's counts and parity. It holds findings only. `drivers/e4_gems.py` is the source of truth for the commands, and the env files under `library/resources/e4/` pin the images. The per-bin tables are in `results/e4/`.
 
 - **Reproduction lane** (`--lane repro`): metaGEM's methods and materials, as close as fir allows.
 - **Modern lane** (`--lane modern`): E5's GEM transforms, unchanged, for comparison with E5.
@@ -56,6 +56,48 @@ The metasmith smoke run of both lanes (runs `6nwwFX7P` and `l1yFJbPC`, fir, 2026
 | Modern lane against the reproduction lane, all 22 | 0.388 (0.245–0.507) | 0.516 (0.384–0.615) | 0.706 (0.591–0.755) | not computed |
 
 All 22 bins finished in both lanes, including the two that stalled on CarveMe 1.6.1.
+
+## Full run
+
+Both lanes ran over all 14,105 bins on fir, 2026-09-22 to 2026-09-25, in 7 chunks of 2,015 (`drivers/e4_chain.sbatch`). `drivers/e4_tally.sbatch` counted the products and compared every model with metaGEM's published GEM for its bin.
+
+| | metaGEM | Reproduction lane | Modern lane |
+|---|---|---|---|
+| Models | 14,087 | 14,102 | 14,097 |
+| MEMOTE results | not compared | 14,088 | 14,097 |
+| Bins with no model | 18 | 3 | 8 |
+
+metaGEM published no GEM for 18 of its 14,105 protein bins. Both lanes built a model for all 18. They are karlsson2013 `ERR260137_bin.8.p`, `ERR260166_bin.15.s`, `ERR260175_bin.22.s`, `ERR260193_bin.16.s`, `ERR260227_bin.13.s`, `ERR260256_bin.31.s` and `ERR260269_bin.6.p`, sunagawa2015 `ERR598968_bin.63.s`, `ERR599010_bin.4.p`, `ERR599032_bin.37.p`, `ERR599102_bin.23.s`, `ERR599109_bin.22.s` and `ERR599156_bin.36.o`, and bissett_base `ERR671910_bin.15.o`, `ERR671913_bin.3.o`, `ERR671914_bin.8.s`, `ERR671925_bin.6.o` and `ERR687894_bin.4.o`.
+
+Every bin either lane missed has a published GEM:
+- Reproduction lane, no model: sunagawa2015 `ERR599115_bin.46.s`, `ERR599130_bin.8.o` and `ERR599162_bin.33.s`.
+- Reproduction lane, a model but no MEMOTE result: karlsson2013 `ERR260138_bin.8.p`, `ERR260148_bin.22.p`, `ERR260182_bin.14.s`, `ERR260232_bin.11.p`, `ERR260233_bin.17.s` and `ERR260263_bin.23.o`, and sunagawa2015 `ERR598980_bin.21.s`, `ERR598988_bin.35.p`, `ERR598993_bin.48.s`, `ERR599038_bin.54.p`, `ERR599063_bin.9.p`, `ERR599064_bin.27.s`, `ERR599139_bin.46.s` and `ERR599146_bin.4.s`. MEMOTE runs for 2 h, with one retry at 4 h. All three in chunk 1 stopped at the 4 h limit.
+- Modern lane, no model: karlsson2013 `ERR260174_bin.4.s`, and sunagawa2015 `ERR598965_bin.21.o`, `ERR598978_bin.7.o`, `ERR598984_bin.22.p`, `ERR598993_bin.59.s`, `ERR599057_bin.15.s`, `ERR599057_bin.42.s` and `ERR599176_bin.8.s`.
+
+CAUTION the archives keep `results/` and the workflow files, not the Nextflow logs. So the cause of each missing model is not recorded. The reproduction lane caps carve at 6 h with no retry, and the modern lane caps each SCIP solve at 600 s.
+
+Parity against metaGEM's published GEMs, as medians over the bins both sides have, with the range in parentheses:
+
+| Lane | Bins | Reactions Jaccard | Metabolites Jaccard | Genes Jaccard | Shared reactions with a different gene rule |
+|---|---|---|---|---|---|
+| Reproduction | 14,084 | 0.840 (0.446–0.993) | 0.902 (0.544–1.000) | 0.976 (0.813–1.000) | 2.1% |
+| Modern | 14,079 | 0.409 (0.165–0.688) | 0.531 (0.289–0.791) | 0.706 (0.455–0.818) | 25.7% |
+
+The full run matches the smoke bins (0.836 reactions and 0.975 genes on 20 bins). No model is identical to its published GEM, in either lane. In the reproduction lane, 214 models reach reaction Jaccard 0.95. The median model has 1,345 reactions in both the reproduction lane and metaGEM, and 1,287 in the modern lane. The medians hold per study:
+
+| Study | Bins | Reproduction reactions / genes | Modern reactions / genes |
+|---|---|---|---|
+| bissett_base | 269 | 0.832 / 0.971 | 0.412 / 0.707 |
+| karlsson2013 | 4,127 | 0.840 / 0.973 | 0.416 / 0.707 |
+| korem2015 | 154 | 0.820 / 0.961 | 0.442 / 0.688 |
+| li2019 | 172 | 0.870 / 0.972 | 0.432 / 0.700 |
+| sunagawa2015 | 9,362 | 0.839 / 0.977 | 0.405 / 0.705 |
+
+The modern lane's karlsson2013 and sunagawa2015 rows cover one and four fewer bins, respectively.
+
+### Storage
+
+WARNING the chunk archives are the only copy of E4's products. `/scratch/phyberos/metagem/e4_gems_archive/<lane>/chunk<N>.<key>.tar.zst` holds each lane's `results/` with its lineage index, `_metadata/index.yml`, and the workflow files. After a lane was archived, its cache entries and its run directory were removed. The two lanes would have left about 720K inodes in the cache against about 330K of room, so Tony chose archiving per chunk (2026-09-22). A new plan over the same bins recomputes every step. It cannot reuse the archive.
 
 ## Modern lane against E5's GEM lane
 
