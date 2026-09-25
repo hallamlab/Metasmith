@@ -2,7 +2,7 @@
 
 ## Purpose & Contents
 
-E4 rebuilds metaGEM's genome-scale models (GEMs) from metaGEM's own published protein bins, in two lanes. This file records every known difference between each lane and what it is compared against, with the evidence for each, and the full run's counts and parity. It holds findings only. `drivers/e4_gems.py` is the source of truth for the commands, and the env files under `library/resources/e4/` pin the images. The per-bin tables are in `results/e4/`.
+E4 rebuilds metaGEM's genome-scale models (GEMs) from metaGEM's own published protein bins, in two lanes. This file records every known difference between each lane and what it is compared against, with the evidence for each. It also holds the full run's counts, parity and GEM quality, and which of metaGEM's published claims E4 reproduces. It holds findings only. `drivers/e4_gems.py` is the source of truth for the commands, and the env files under `library/resources/e4/` pin the images. The per-bin tables are in `results/e4/`.
 
 - **Reproduction lane** (`--lane repro`): metaGEM's methods and materials, as close as fir allows.
 - **Modern lane** (`--lane modern`): E5's GEM transforms, unchanged, for comparison with E5.
@@ -14,7 +14,7 @@ Both lanes start from the same 14,105 protein bins (`drivers/e4_published_protei
 metaGEM's versions come from its repository at d5c6eed0 (2020-06-29), the state it was in when it packed the Tara GEMs. `metaBAGpipes_env.yml` there pins every package. The `diamond>=2.0.6` pin in later commits dates from 2021-01 and does not describe the published GEMs.
 
 These match metaGEM exactly:
-- CarveMe 1.2.2 and framed 0.5.1. The published GEMs say "built with CarveMe version 1.2.2".
+- CarveMe 1.2.2. The published GEMs say "built with CarveMe version 1.2.2".
 - DIAMOND 0.9.30, build `h56fc30b_0`, as the biocontainers image of the same build string.
 - The BiGG data. `carveme_init` fetched it from CarveMe's `master`. That only worked between 2019-03 and 2020-09-16, because it also fetched two RefSeq tables `master` held in that window alone. Every file `carve` reads in protein mode was byte-identical on `master` from 2017-10 to 2021-03-03, and is byte-identical to the 1.2.2 wheel's copy.
 - The DIAMOND database. `carveme_init_db` runs `carveme_init`'s `diamond makedb` on DIAMOND 0.9.30. The `.dmnd` CarveMe 1.2.2 ships predates 0.9.30 and does not open in it, so metaGEM must have rebuilt it too.
@@ -28,7 +28,7 @@ These differ:
 |---|---|---|---|---|
 | MILP solver | CPLEX 12.8 | CPLEX 22.2 | fir has no other CPLEX, and 12.8 cannot be obtained | carve's MILP picks a different optimum. See the parity table. |
 | Python stack under CarveMe | Python 3.6.7, pandas 1.0.1, numpy 1.18.1, scipy 1.4.1 | Python 3.12, pandas 2.2.3, numpy 1.26.4, scipy 1.13.1 | CPLEX 22.2's Python API on fir exists for 3.12 only | not separated from the solver's effect. pandas orders tied gene scores. |
-| framed | 0.5.1 as released | 0.5.1 with a 5-line patch | Python 3.12 and CPLEX 22 reject 0.5.1 as released | none intended. The patch changes container types only: two `collections.abc` imports, lists where CPLEX 22 rejects tuples and sets, and `html.escape` for the removed `cgi.escape`. Without the last, framed drops every SBML note without failing. |
+| framed | 0.5.2's SBML writer, although `metaBAGpipes_env.yml` pins 0.5.1 | 0.5.1 with a 5-line patch | 0.5.1 is CarveMe 1.2.2's pin. Python 3.12 and CPLEX 22 reject it as released. | The SBML only. See [The published GEMs carry what framed 0.5.2 writes](#the-published-gems-carry-what-framed-052-writes). The patch changes container types only: two `collections.abc` imports, lists where CPLEX 22 rejects tuples and sets, and `html.escape` for the removed `cgi.escape`. Without the last, framed drops every SBML note without failing. |
 | python-libsbml | unpinned, from PyPI in 2020 | 5.20.4 | no Python 3.12 build of an older one | not measured. It reads and writes the SBML only. |
 | MEMOTE's dependencies | unpinned `pip install --user` | PyPI as it stood on 2019-12-05, the 0.9.13 release day | reproducible, and the closest thing to an unpinned install of that era | not measured |
 | DIAMOND threads | all cores of metaGEM's node | all 192 cores fir reports, in a 4-CPU job | CarveMe passes no `--threads` | none. DIAMOND's output does not depend on threads. |
@@ -64,7 +64,7 @@ Both lanes ran over all 14,105 bins on fir, 2026-09-22 to 2026-09-25, in 7 chunk
 | | metaGEM | Reproduction lane | Modern lane |
 |---|---|---|---|
 | Models | 14,087 | 14,102 | 14,097 |
-| MEMOTE results | not compared | 14,088 | 14,097 |
+| MEMOTE results | 14,015 | 14,088 | 14,097 |
 | Bins with no model | 18 | 3 | 8 |
 
 metaGEM published no GEM for 18 of its 14,105 protein bins. Both lanes built a model for all 18. They are karlsson2013 `ERR260137_bin.8.p`, `ERR260166_bin.15.s`, `ERR260175_bin.22.s`, `ERR260193_bin.16.s`, `ERR260227_bin.13.s`, `ERR260256_bin.31.s` and `ERR260269_bin.6.p`, sunagawa2015 `ERR598968_bin.63.s`, `ERR599010_bin.4.p`, `ERR599032_bin.37.p`, `ERR599102_bin.23.s`, `ERR599109_bin.22.s` and `ERR599156_bin.36.o`, and bissett_base `ERR671910_bin.15.o`, `ERR671913_bin.3.o`, `ERR671914_bin.8.s`, `ERR671925_bin.6.o` and `ERR687894_bin.4.o`.
@@ -98,6 +98,111 @@ The modern lane's karlsson2013 and sunagawa2015 rows cover one and four fewer bi
 ### Storage
 
 WARNING the chunk archives are the only copy of E4's products. `/scratch/phyberos/metagem/e4_gems_archive/<lane>/chunk<N>.<key>.tar.zst` holds each lane's `results/` with its lineage index, `_metadata/index.yml`, and the workflow files. After a lane was archived, its cache entries and its run directory were removed. The two lanes would have left about 720K inodes in the cache against about 330K of room, so Tony chose archiving per chunk (2026-09-22). A new plan over the same bins recomputes every step. It cannot reuse the archive.
+
+## GEM quality
+
+metaGEM's paper publishes no MEMOTE score and no growth fraction (Zorrilla 2021, Discussion). It calls its models "FBA-ready" and "quality checked for basic functionality". metaGEM did publish its per-test MEMOTE 0.9.13 results for 14,015 of its 14,087 GEMs, as `published/<study>/memote_*.csv[.gz]`. E4 compares every model against those.
+
+- `drivers/e4_quality.py` tabulates the three sources per bin into `results/e4/quality_{metagem,repro,modern}.tsv` (fir job 61520978).
+- `drivers/e4_quality_sample.py` re-scores a sample of 40 bins per study on common ground into `results/e4/quality_sample.tsv` (fir jobs 61526575 and 61527887). 198 of the 200 bins finished. Two stalled for over 18 minutes in MEMOTE's blocked-reaction test and were cancelled: karlsson2013 `ERR260172_bin.9.s` and bissett_base `ERR671936_bin.4.o`.
+- `drivers/e4_quality_compare.py` prints every number in this section.
+
+CAUTION: the modern lane archived MEMOTE's score only, not its per-test result. Its per-test values cannot be recovered without rerunning MEMOTE.
+
+### The published GEMs carry what framed 0.5.2 writes
+
+Every published GEM sampled, two per study, sets `fbc:chemicalFormula` on every species. The GEMs also set `fbc:charge` on each species whose notes hold an integer CHARGE. framed 0.5.1 writes neither, because the code is commented out. framed 0.5.2 (2019-05-22) is the only release that writes them. Its only other change is the text of a warning. The reproduction lane runs 0.5.1, CarveMe 1.2.2's own pin, so its SBML holds formulas and charges in the notes only.
+
+metaGEM's `metaBAGpipes_env.yml` at d5c6eed0 pins `framed==0.5.1`. The Tutorial GEMs committed in that repository carry no `fbc:chemicalFormula`, which fits that pin. The published GEMs, including the Tara GEMs packed on 2020-06-29, do carry it. So the published GEMs came from an environment the file does not describe. The carve itself is unaffected: the reaction, gene and gene-rule content is the same whichever framed writes it.
+
+The missing attributes change four MEMOTE results. Without them, MEMOTE 0.9.13 counts every metabolic reaction as mass-unbalanced and finds no transport reactions. It still reports no metabolite without a formula, so it reads the notes somewhere. The exact code path was not traced. `e4_quality_sample.py` restores both attributes from the notes exactly as framed 0.5.2 writes them. This closes the four gaps:
+
+| MEMOTE 0.9.13 test, median | metaGEM | Reproduction as run | Reproduction, attributes restored |
+|---|---|---|---|
+| Mass-unbalanced reactions (fraction) | 0.424 | 1.000 | 0.428 |
+| Transport reactions | 364 | 0 | 358 |
+| Purely metabolic reactions | 913 | 1,243 | 907 |
+| Transport reactions with no gene rule (fraction) | 0.336 | 1.000 | 0.332 |
+
+These are medians over the 198-bin sample. The "as run" column covers all 200 bins.
+
+### Reproduction lane against metaGEM
+
+MEMOTE 0.9.13 on both sides, paired over the 13,999 bins that both scored. The table omits the four tests above.
+
+| Test | metaGEM median | Reproduction median | Median paired difference |
+|---|---|---|---|
+| Reactions | 1,345 | 1,345 | +8 |
+| Metabolites | 993 | 991 | +4 |
+| Genes | 489 | 488 | 0 |
+| Stoichiometrically inconsistent metabolites (fraction) | 0.0037 | 0.0036 | 0.0000 |
+| Charge-unbalanced reactions (fraction) | 0 | 0 | 0 |
+| Unbounded flux in the default medium (fraction) | 0.305 | 0.304 | +0.003 |
+| Universally blocked reactions (fraction) | 0.0166 | 0.0150 | −0.0008 |
+| Dead-end metabolites | 0 | 0 | 0 |
+| Orphan metabolites | 0 | 0 | 0 |
+| Stoichiometrically balanced cycles (fraction) | 0.062 | 0.061 | −0.0007 |
+| Growth rate in the default medium (h⁻¹) | 34.2 | 35.1 | +0.41 |
+| Reactions with no gene rule (fraction) | 0.245 | 0.247 | +0.004 |
+| Missing essential biomass precursors | 1 | 1 | 0 |
+
+Every model on both sides grows in MEMOTE's default medium: 14,015 of 14,015 for metaGEM and 14,088 of 14,088 for the reproduction lane. That medium is the one the SBML's own exchange bounds define. The medians hold per study except in size. korem2015's reproduction models are smaller, by a median of 58.5 reactions. sunagawa2015's are larger, by 12. A paired difference inside carve's own spread of 0 to 25 reactions per re-carve is not a difference.
+
+### Modern lane against metaGEM
+
+MEMOTE 0.17 has a different test suite and scoring from 0.9.13, so the two versions' results are not comparable. The sample scores metaGEM's GEMs and the restored reproduction models with the modern lane's own `memote_score.py`. The modern column is the lane's archived score for the same 198 bins.
+
+| MEMOTE 0.17 score, median | metaGEM | Reproduction, attributes restored | Modern lane |
+|---|---|---|---|
+| Total | 0.219 | 0.218 | 0.833 |
+| Consistency | 0.467 | 0.466 | 0.904 |
+| Metabolite annotation | 0.25 | 0.25 | 0.819 |
+| Reaction annotation | 0.25 | 0.25 | 0.775 |
+| Gene annotation | 0 | 0 | 0.333 |
+| SBO terms | 0 | 0 | 0.909 |
+
+- The restored reproduction models score as metaGEM's do: median paired difference −0.0001 on the total.
+- The modern lane scores higher on the total in 198 of 198 bins, and on consistency in 191.
+- Over all 14,097 modern models the median total is 0.858 and the median consistency 0.914.
+
+CarveMe 1.2.2 writes its cross-references as SBML notes and writes no SBO terms. That fits its zero SBO score and low annotation scores. The consistency gap cannot be traced to single tests, because the modern lane's per-test results were not archived.
+
+CAUTION: MEMOTE scores consistency and annotation, not biological accuracy (Lieven 2020). A higher modern score does not mean better predictions. The modern models are also the less similar to metaGEM's (reaction Jaccard 0.409). For scale, gapseq's benchmark reports a CarveMe MEMOTE total of 0.32 on MEMOTE 0.10.2 (Zimmermann 2021, Table 1).
+
+### The paper's claims
+
+Sources: Zorrilla et al. 2021, NAR 49:e126, main text and supplement.
+
+| Claim | Paper | E4 |
+|---|---|---|
+| GEMs built | 14,087 | Reproduced. The published archives hold 14,087. The reproduction lane built 14,102 and the modern lane 14,097, including the 18 bins metaGEM has no GEM for. |
+| T2D gut GEMs | 4,127 from 137 metagenomes | Reproduced. The karlsson2013 archive holds 4,127. Over its 4,134 bins, the reproduction lane built 4,134 and the modern lane 4,133. |
+| Lab-culture MAGs | 154 MQ MAGs | Reproduced. korem2015 has 154 bins, and all 154 have a model in every source. The paper cites this set as a 7-species lab culture, not as gut samples. |
+| The GEMs themselves | CarveMe 1.2.2 on CPLEX 12.8 | Reproduced with a stated difference. Median reaction Jaccard is 0.840 and gene Jaccard 0.976 against metaGEM's GEMs. carve on CPLEX 22.2 is not deterministic. |
+| Per-test MEMOTE results | published as tables, not in the paper | Reproduced once framed 0.5.2's attributes are restored. Every compared median agrees within carve's spread. |
+| "FBA-ready" | no growth fraction given | Measured. Every metaGEM and reproduction-lane model grows in MEMOTE's default medium. |
+| Size against EMBL, AGORA and KBase GEMs | reactions 3.7%, 21.1% and 44.3% apart | Not reached. E4 has no reference collection. E4's sizes equal metaGEM's (median 1,345 reactions). |
+| Jaccard to held-out reference GEMs | 4.2% average difference from EMBL | Not reached. It needs the EMBL GEMs. |
+| Pan-metabolism | core is 38.5–57.6% of the pan-genome | Not reached. |
+| AGORA EC overlap | 48.9–69% over 165 species | Not reached. |
+| SMETANA, T2D against NGT | 22 compounds, 27 donors and 27 receivers | Not reached. E4 ran no SMETANA. |
+
+### How the field judges a GEM
+
+The field judges an automatic reconstruction three ways: its consistency, its similarity to a curated model, and how well it predicts measured phenotypes.
+
+| Metric | Sources | Needs phenotype data | E4 |
+|---|---|---|---|
+| MEMOTE consistency and annotation score | Lieven 2020 | no | measured |
+| Blocked reactions, dead ends, orphans, energy-generating cycles | Lieven 2020, Mendoza 2019, Heinken 2023 | no | measured, except energy-generating cycles, which MEMOTE 0.9.13 skipped on every model |
+| Jaccard of reactions, metabolites and genes to a curated model | Mendoza 2019, Machado 2018 | no | against metaGEM's GEMs only |
+| Growth on a defined medium | Machado 2018 | no | measured in MEMOTE's default medium |
+| Carbon-source use (Biolog, ProTraits) | Machado 2018, Zimmermann 2021 | yes | not measurable |
+| Gene essentiality | Machado 2018, Zimmermann 2021 | yes | not measurable |
+| Enzyme activity (BacDive), uptake and secretion (NJC19, Madin) | Zimmermann 2021, Heinken 2023 | yes | not measurable |
+| Fermentation products | Zimmermann 2021 | yes, from literature | not measurable |
+
+On those phenotype benchmarks, CarveMe predicts less well than gapseq and AGORA2. Across 14,931 phenotypes, gapseq reports accuracy 0.66 for CarveMe against 0.80 for itself (Zimmermann 2021, Table 1). No E4 measurement tests prediction.
 
 ## Modern lane against E5's GEM lane
 
