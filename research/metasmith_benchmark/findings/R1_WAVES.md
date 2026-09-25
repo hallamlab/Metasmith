@@ -2597,3 +2597,43 @@ longest run — every other `p13` row is `_cached`, so there is no peer runtime 
 was attempt 3.** The ladder has four tiers here (12 h/64 G → 24 h/128 G → 48 h/256 G → 96 h/512 G),
 and the real attempt 4 only entered the queue on Sep-20. I was counting failures rather than reading
 the re-submission lines, which is the same error shape as every other correction in this file.
+
+### GG. E4's two GEM lanes finished over all 14,105 protein bins, archived per chunk
+
+E4 reran from metaGEM's published protein bins in two lanes, reproduction and modern
+(`findings/E4_REPRODUCTION.md`). Tony chose to archive per chunk (2026-09-22): the lanes would have
+left ~720K inodes in the metagem cache against ~330K of room. `drivers/e4_chain.sbatch` ran 7 chunks of
+2,015 bins in the metagem home. After each lane it tarred `results/` with the lineage index, evicted
+the lane's cache entries by run key, and deleted its stage.
+
+**Reclaim first.** Evict `61012392` removed old E4's 14,886 cache entries (43.3 GiB), and delete
+`61012393` removed `runs/QIStKVhb`. Quota went from 824,597 to 692,030 inodes.
+
+| Chunk | Reproduction key | Modern key | Lost (repro / modern) |
+|---|---|---|---|
+| 1 | `8Fk2UJbh` | `zy115XRa` | 3 / 1 |
+| 2 | `hCwu3Ha4` | `EP8PLNR0` | 2 / 0 |
+| 3 | `2XDzU7pi` | `nC2cpsDx` | 1 / 0 |
+| 4 | `8q0l8meE` | `BpXF9RBr` | 3 / 4 |
+| 5 | `TRZvPEtN` | `Z5lvsh6S` | 3 / 2 |
+| 6 | `1a3rbmkq` | `0bB9WEG6` | 1 / 0 |
+| 7 | `LLQFPHZH` | `uGXfazWl` | 4 / 1 |
+
+Chains `61012395`, `61063638`, `61228056`, then `61303965` (chunks 4–6, renewed as `61479881`) beside
+`61303967` (chunk 7). A reproduction lane took 7.0–7.7 h, a modern lane 1.2–1.6 h.
+
+**The chain stopped chunk 1 un-archived, and it was my bug.** Three MEMOTE tasks hit the 4 h retry
+and were ignored. The chain counted `Error is ignored` in the driver's Slurm log, which never holds
+it, so its gate saw 2,012 of 2,015 MEMOTE results with 0 ignored. Fix `22b27563`: count from the run's
+own `nxf.log`, and record each lane's plan key in `chunk<N>.launched` so a rerun resumes at the gate.
+
+**Staggered from chunk 5, at Tony's suggestion.** A run's `PID.lock` is per stage, not per home, and
+the cache takes concurrent writers, so only the pool import must take turns. Commit `cb902909` drops
+the home-wide `PID.lock` refusal, holds phase 1 while another `e4g_*_prep` job is queued, and resumes
+a launched lane by waiting on its live driver. Two chains then ran chunks 5–6 and 7 side by side. The
+reproduction peak stayed under 705K inodes, and the ETA moved from ~17:30 to ~07:00 on 2026-09-25.
+
+**Tally** (`e4_tally.sbatch`, job `61479987`, checkout `0843e646`): reproduction lane 14,102 models and
+14,088 MEMOTE results, modern lane 14,097 of each, against metaGEM's 14,087 GEMs. Reproduction parity
+over 14,084 bins: reactions 0.840, genes 0.976. The quota after the last lane was 617,021 inodes and
+15.907 TiB. The archives, 20 GB in all, sit in `/scratch/phyberos/metagem/e4_gems_archive/`.

@@ -1,5 +1,8 @@
 # Pratama et al. 2026 vs. the library, step by step
 
+CAUTION: this map predates the pinned `e3` transform library. For what E3's plan runs today, read
+`research/metasmith_benchmark/findings/E3_PARITY.md`.
+
 Authority order per `data/docs/pratama2026/SOURCES.txt` and `.awm/context.md`: the
 authors' own workflow repository (`data/docs/pratama2026/Groundwater_virome/Workflows/`)
 over the Methods prose (`PMC12960796.xml` / `s41467-026-68914-2.pdf`) whenever the two

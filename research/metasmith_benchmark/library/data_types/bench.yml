@@ -117,6 +117,18 @@ types:
       bench: smetana_media_db
       ext: tsv
 
+  # E4's GEM lane: metaGEM's `carve -g` call, split at the DIAMOND search it runs internally.
+  bigg_diamond_hits:
+    properties:
+      _: DIAMOND blastp of one bin's proteins against CarveMe's BiGG proteins with CarveMe's own arguments, the table `carve --diamond` reads
+      bench: bigg_diamond_hits
+      ext: tsv
+  metagem_media_db:
+    properties:
+      _: metaGEM's media_db.tsv (medium, description, compound, name), the table its carve rule passes as --mediadb
+      bench: metagem_media_db
+      ext: tsv
+
   metapop_microdiversity:
     properties:
       _: MetaPop's global_contig_microdiversity.tsv for a study, every sample mapped to the study's vOTU representatives

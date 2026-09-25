@@ -360,7 +360,7 @@ def prepare_nextflow(task, context: NextflowGenContext):
         memory_is_strict = res is not None and res.memory is not None and res.memory.strict
         if duration_is_strict and memory_is_strict:
             src_res += [
-                "errorStrategy 'ignore'"
+                "errorStrategy = 'ignore'"
             ]
         used_archetypes, produced_archetypes = get_io_signature(step)
         dep_in = {

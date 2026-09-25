@@ -414,7 +414,7 @@ def make_slurm_config(smith, cache_dir, scaled=None, comebin_cpus=48, comebin_ti
 
 
 def stage_and_run(smith, task, cache_dir, tag, *, stage_only, params, scaled=None, materialise=False, gpus=None,
-                  on_exist="update"):
+                  on_exist="update", extra_config=None):
     """Stage the plan, then run it, or with `materialise` fetch every image it needs and stop.
 
     CAUTION `on_exist="update"` re-sends context but KEEPS a transform bundle the run directory already
@@ -459,7 +459,12 @@ def stage_and_run(smith, task, cache_dir, tag, *, stage_only, params, scaled=Non
     # ignore path. Verify with `grep max <run>/workflow.params.yml` after staging, not by reading this.
     params = dict(params)
     params["process"] = dict(params.get("process") or {}, max_duration=MAX_TASK_DURATION)
-    smith.RunWorkflow(task=task, config_file=make_slurm_config(smith, cache_dir, scaled), gpus=gpus,
+    config = make_slurm_config(smith, cache_dir, scaled)
+    if extra_config is not None:
+        # Appended last, so its literals win. `array` and `submitRateLimit` read params outside a
+        # closure in slurm.nf, and only a literal in the file reaches them.
+        config.write_text(config.read_text() + "\n" + Path(extra_config).read_text())
+    smith.RunWorkflow(task=task, config_file=config, gpus=gpus,
                       params=dict(slurmAccount=SLURM_ACCOUNT, slurmGpuAccount=SLURM_GPU_ACCOUNT, **params))
     print(f"submitted {tag}: {task.GetKey()}", flush=True)
     if ON_HOST:

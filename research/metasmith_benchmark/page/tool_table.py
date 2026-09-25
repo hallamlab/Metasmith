@@ -3,7 +3,7 @@ import html
 
 RUNS = ["E1", "E2", "Pratama", "E3", "metaGEM", "E4", "E5"]
 HEAD = ["E1 nf-core/mag", "E2 msm<br>matches E1", "Pratama paper", "E3 msm<br>matches Pratama",
-        "metaGEM paper", "E4 msm<br>from metaGEM MAGs", "E5"]
+        "metaGEM paper", "E4 msm<br>from metaGEM proteins", "E5"]
 
 # (tool, {run: cell}, E5 reason). A run missing from the dict doesn't use the tool.
 # Cell: True, a settings note, NEW / "NEW: note" for a tool the library lacks, or "fill".
@@ -64,10 +64,10 @@ GROUPS = [
         ("CheckM", {"Pratama": "inside MetaWRAP", "E3": "inside MetaWRAP", "metaGEM": "inside MetaWRAP"}, "Tony: CheckM2 only"),
     ]),
     ("MAG taxonomy", [
-        ("GTDB-Tk", {"Pratama": "r202", "E3": "r232; package extracted on fir", "metaGEM": True, "E4": "r232; package extracted on fir", "E5": "r232; package extracted on fir"}, "Tony: r232 everywhere, even where it breaks parity"),
+        ("GTDB-Tk", {"Pratama": "r202", "E3": "r232; package extracted on fir", "metaGEM": True, "E5": "r232; package extracted on fir"}, "Tony: r232 everywhere, even where it breaks parity"),
     ]),
     ("Gene calling", [
-        ("Prodigal", {"E1": "standalone, unscored", "Pratama": "inside DRAM", "E3": True, "metaGEM": True, "E4": "first step, on published MAGs", "E5": True}, "Tony: both Prodigal and prodigal-gv"),
+        ("Prodigal", {"E1": "standalone, unscored", "Pratama": "inside DRAM", "E3": True, "metaGEM": True, "E4": "not rerun: metaGEM's published proteins, from CheckM's Prodigal in single mode", "E5": True}, "Tony: both Prodigal and prodigal-gv"),
         ("prodigal-gv", {"E3": "viral contigs", "E5": True}, "Tony: both Prodigal and prodigal-gv"),
     ]),
     ("Virus identification", [
@@ -97,15 +97,16 @@ GROUPS = [
         ("ProteinBERT", {"E5": True}, "4-lane panel"),
     ]),
     ("Metabolic models", [
-        ("CarveMe", {"metaGEM": True, "E4": "12 h gapfill limit (B11)", "E5": True}, "fill"),
-        ("CPLEX solver", {"metaGEM": True, "E4": "22.2"}, "Open-source solver"),
-        ("Open-source solver (SCIP)", {"E5": "runtime risk: an open solver ran 1 h 49 m on the smallest bin without finishing"}, "Open-source solver"),
-        ("MEMOTE", {"metaGEM": True, "E4": True, "E5": True}, "fill"),
-        ("SMETANA", {"metaGEM": "detailed, 15 media, CPLEX", "E4": "detailed, 15 media, CPLEX; one community per sample, li2019 only (per-sample grouping needs re-imported MAG givens)", "E5": "detailed, 15 media, SCIP; one community per sample"}, "Tony: run it"),
+        ("CarveMe", {"metaGEM": "1.2.2", "E4": "repro lane: 1.2.2 with metaGEM's arguments, DIAMOND 0.9.30, 6 h cap, no retry; modern lane: 1.6.6 as E5", "E5": "1.6.6"}, "fill"),
+        ("CPLEX solver", {"metaGEM": "12.8", "E4": "22.2, repro lane"}, "Open-source solver"),
+        ("Open-source solver (SCIP)", {"E4": "modern lane, 600 s per solve", "E5": "runtime risk: an open solver ran 1 h 49 m on the smallest bin without finishing"}, "Open-source solver"),
+        ("MEMOTE", {"metaGEM": "0.9.13", "E4": "repro lane 0.9.13, modern lane 0.17.0", "E5": "0.17.0"}, "fill"),
+        ("SMETANA", {"metaGEM": "detailed, 15 media, CPLEX", "E5": "detailed, 15 media, SCIP; one community per sample"}, "Tony: run it"),
     ]),
     ("Scoring", [
         ("AMBER", {"E1": "after the run", "E2": True, "E5": "after the run, outside the plan"}, "Tony: one plan can't give samples different targets"),
-        ("skANI recovery vs published", {"E3": "vOTUs, MAGs", "E4": "planned", "E5": "after the run, outside the plan"}, "Tony: one plan can't give samples different targets"),
+        ("GEM parity vs published", {"E4": "per bin: reaction, metabolite and gene Jaccard, and GPR"}, None),
+        ("skANI recovery vs published", {"E3": "vOTUs, MAGs", "E5": "after the run, outside the plan"}, "Tony: one plan can't give samples different targets"),
     ]),
 ]
 
