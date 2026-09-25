@@ -4,9 +4,10 @@
         src/fabfos/build_references/derive_epi300_fba_bridge.py [--dry-run]
 
 Writes data/fabfos/runs/e_coli_dh10b/fba/: the DH10B model and EPI300's chromosome and
-GenBank record (hardlinked), every EPI300 gene as nucleotide FASTA and GTF, and
-gpr_gem_epi300.csv -- EPI300's gpr_gem table re-keyed from model gene ids onto EPI300
-ORF ids. check_epi300_fba_bridge.py asserts the result.
+GenBank record (hardlinked), every EPI300 gene as nucleotide FASTA and GTF, EPI300.json
+(the model with its rules on EPI300 ORF ids and fhuA's reactions closed), and
+gpr_gem_epi300.csv -- one row per ORF and open reaction, parsed from EPI300.json.
+check_epi300_fba_bridge.py asserts the result.
 
 The model's genes carry DH10B's 2008 locus tags, EPI300's annotation carries its own,
 and no id is shared. Each model gene is therefore resolved in two hops:
@@ -565,16 +566,6 @@ def rewrite_rule(rule: str, orfs: dict[str, list[str]]) -> str:
     return re.sub(r"\( | \)", lambda m: m.group(0).strip(), " ".join(out))
 
 
-def published_rule(rule: str) -> str | None:
-    # The CSV's rules name ORFs only. Every model rule that mentions s0001 is satisfied by
-    # s0001 alone, i.e. always live, and an empty rule already evaluates that way.
-    if SPONTANEOUS not in rule_genes(rule):
-        return rule or None
-    if not rule_holds(rule, {SPONTANEOUS}):
-        raise SystemExit(f"s0001 is not a sufficient alternative in {rule!r}")
-    return None
-
-
 def live_reactions(rules, present: set[str]) -> set[str]:
     return {rid for rid, rule in rules if rule_holds(rule, present)}
 
@@ -631,24 +622,22 @@ def gtf_records(e: Feature, genome_len: int) -> list[str]:
     return rows
 
 
-def write_epi300_model(res, epi, out: Path):
+def write_epi300_model(orfs, model_gene_of, epi, out: Path) -> dict:
     m = json.loads(GEM.read_text())
-    orfs = {r.gene: [e.fid for e in sorted(r.epi, key=lambda f: f.five_prime)]
-            for r in res.values() if r.route != "spontaneous"}
-    model_gene_of = {fid: g for g, ids in orfs.items() for fid in ids}
     feature = {e.fid: e for e in epi}
     used = set()
     for r in m["reactions"]:
-        rule = published_rule(rewrite_rule(r.get("gene_reaction_rule") or "", orfs)) or ""
+        rule = rewrite_rule(r.get("gene_reaction_rule") or "", orfs)
         r["gene_reaction_rule"] = rule
         used |= rule_genes(rule)
         if r["id"] in EXPECTED_LOST_REACTIONS:
             r["lower_bound"] = r["upper_bound"] = 0.0
+    spontaneous = [g for g in m["genes"] if g["id"] == SPONTANEOUS]
     m["genes"] = [{"id": fid, "name": feature[fid].gene or "",
                    "notes": {"model_gene": [model_gene_of[fid]],
                              "pseudo": ["true" if feature[fid].pseudo else "false"]},
                    "annotation": {"locus_tag": [feature[fid].locus]}}
-                  for fid in sorted(used)]
+                  for fid in sorted(used - {SPONTANEOUS})] + spontaneous
     m["id"] = MODEL_ID
     m["name"] = f"{MODEL_ID}: {GEM.stem} on {EPI300_SEQ} ORFs"
     m["notes"] = {
@@ -659,11 +648,36 @@ def write_epi300_model(res, epi, out: Path):
         "builder": ["src/fabfos/build_references/derive_epi300_fba_bridge.py"],
     }
     write_atomic(out / f"{MODEL_ID}.json", json.dumps(m))
+    return m
 
 
-def write_outputs(genes, rules, res, epi, epi_genome, out: Path):
+def gpr_table(model: dict, model_gene_of, symbol, fe):
     import numpy as np
     import pandas as pd
+    # The model carries no MNXR crosswalk, so the reaction-level columns come from the
+    # benchmark's table, where they are constant per reaction.
+    src = pd.read_parquet(GPR_GEM)
+    per_reaction = src.drop(columns=["orf", "gene", "feature_kind", "feature_name",
+                                     "gpr_rule"]) \
+        .drop_duplicates("intermediate_id").set_index("intermediate_id")
+    rows = []
+    for r in model["reactions"]:
+        if r["id"] in EXPECTED_LOST_REACTIONS:
+            continue
+        rule = r["gene_reaction_rule"]
+        common = dict(per_reaction.loc[r["id"]], intermediate_id=r["id"],
+                      build_id=BUILD_ID, feature_kind="gem_gene", gpr_rule=rule)
+        for fid in sorted(rule_genes(rule) - {SPONTANEOUS}):
+            rows.append(dict(common, orf=fid, gene=symbol[fid],
+                             feature_name=model_gene_of[fid]))
+    df = pd.DataFrame(rows, columns=fe.schema_for(EXTENSIONS))
+    df["llr"] = df["llr"].astype(np.float64)
+    df["in_atom_universe"] = df["in_atom_universe"].astype(bool)
+    return df.sort_values(fe.grain_key(EXTENSIONS), kind="mergesort",
+                          na_position="last").reset_index(drop=True)
+
+
+def write_outputs(res, epi, epi_genome, out: Path):
     sys.path.insert(0, str(EVIDENCE_LIB))
     import fabfos_evidence as fe
 
@@ -681,40 +695,16 @@ def write_outputs(genes, rules, res, epi, epi_genome, out: Path):
 
     orfs = {r.gene: [e.fid for e in sorted(r.epi, key=lambda f: f.five_prime)]
             for r in res.values() if r.route != "spontaneous"}
-    symbol = {e.fid: e.gene for e in epi}
-    src = pd.read_parquet(GPR_GEM)
-    rows = []
-    for row in src.to_dict("records"):
-        row["build_id"] = BUILD_ID
-        if row["feature_kind"] != "gem_gene":
-            rows.append(row)
-            continue
-        model_gene = row["orf"]
-        row["gpr_rule"] = rewrite_rule(row["gpr_rule"], orfs)
-        row["feature_name"] = model_gene
-        if model_gene == SPONTANEOUS:
-            row["gene"] = None
-            rows.append(row)
-            continue
-        for fid in orfs[model_gene]:
-            rows.append(dict(row, orf=fid, gene=symbol[fid]))
-    df = pd.DataFrame(rows, columns=fe.schema_for(EXTENSIONS))
-    df["llr"] = df["llr"].astype(np.float64)
-    df["in_atom_universe"] = df["in_atom_universe"].astype(bool)
-    df = df.sort_values(fe.grain_key(EXTENSIONS), kind="mergesort",
-                        na_position="last").reset_index(drop=True)
-    ids = {e.fid for e in epi} | {SPONTANEOUS} | \
-        set(df.loc[df["feature_kind"] == "ruleless", "orf"])
-    fe.validate_gpr(df, LANE_SET, ids, src["source"].iloc[0], EXTENSIONS)
-    df["orf"] = df["orf"].where(df["orf"].isin({e.fid for e in epi}), None)
-    df["gpr_rule"] = df["gpr_rule"].map(lambda r: published_rule(r) if isinstance(r, str) else None)
+    model_gene_of = {fid: g for g, ids in orfs.items() for fid in ids}
+    model = write_epi300_model(orfs, model_gene_of, epi, out)
+    df = gpr_table(model, model_gene_of, {e.fid: e.gene for e in epi}, fe)
+    fe.validate_gpr(df, LANE_SET, {e.fid for e in epi}, df["source"].iloc[0], EXTENSIONS)
     tmp = out / "gpr_gem_epi300.csv.tmp"
     df.to_csv(tmp, index=False)
     os.replace(tmp, out / "gpr_gem_epi300.csv")
-    write_epi300_model(res, epi, out)
     print(f"\nwrote {out}: {len(epi_sorted):,} genes in FASTA and GTF, {len(df):,} GPR rows "
-          f"({(df['feature_kind'] == 'gem_gene').sum():,} gem_gene over "
-          f"{df.loc[df['feature_kind'] == 'gem_gene', 'orf'].nunique():,} ORFs)", flush=True)
+          f"over {df['intermediate_id'].nunique():,} reactions and "
+          f"{df['orf'].nunique():,} ORFs", flush=True)
 
 
 def main() -> int:
@@ -745,7 +735,7 @@ def main() -> int:
                          f"{sorted(EXPECTED_LOST_REACTIONS)}")
 
     if not a.dry_run:
-        write_outputs(genes, rules, res, epi, epi_genome, a.out)
+        write_outputs(res, epi, epi_genome, a.out)
     return 0
 
 

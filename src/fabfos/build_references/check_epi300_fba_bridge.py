@@ -23,7 +23,7 @@ from check_epi300_identity import (EXPECTED_LOST_REACTIONS, model_genes,  # noqa
 from derive_epi300_fba_bridge import (DH10B_GENOME, EPI300_GENOME, EPI300_SEQ,  # noqa: E402
                                       EVIDENCE_LIB, EXTENSIONS, GEM, GPR_GEM, LANE_SET,
                                       OUT, SPONTANEOUS, parse_location, read_faa,
-                                      read_genbank, revcomp, rule_genes, rule_tokens,
+                                      read_genbank, revcomp, rule_genes,
                                       translate)
 
 FILES = {"iECDH10B_1368.json", "EPI300.json", f"{EPI300_SEQ}.fna", f"{EPI300_SEQ}.gbk",
@@ -34,7 +34,7 @@ PSEUDO_IN_ANNOTATION_ONLY = {"proV"}
 SPLIT = {"nupG", "nrfB", "ECDH10B_0130"}
 START_VARIANTS = {"ECDH10B_1259", "ECDH10B_1354"}
 N_DUPLICATED = 42
-NULLABLE = ("orf", "gene", "mnxr", "feature_name", "gpr_rule")
+NULLABLE = ("gene", "mnxr", "feature_name", "gpr_rule")
 
 problems: list[str] = []
 
@@ -155,51 +155,52 @@ def main() -> int:
     src = pd.read_parquet(GPR_GEM)
     df = read_csv_as_parquet_dtypes(fba / "gpr_gem_epi300.csv", src)
     check(list(df.columns) == list(src.columns), "same 19 columns in the same order")
-    no_orf = df["orf"].isna()
-    spont = df["feature_name"] == SPONTANEOUS
-    check((no_orf == ((df["feature_kind"] == "ruleless") | spont)).all(),
-          "orf is empty exactly on the ruleless and s0001 rows")
-    check(set(df.loc[~no_orf, "orf"]) <= set(fasta), "every non-empty orf is a FASTA id")
-    placeholder = df.assign(orf=df["orf"].fillna(
-        df["feature_name"].where(spont, df["intermediate_id"])))
-    ids = set(fasta) | {SPONTANEOUS} | set(src.loc[src["feature_kind"] == "ruleless", "orf"])
+    check(df["orf"].notna().all() and set(df["orf"]) <= set(fasta),
+          "every orf is a FASTA id, none empty")
+    check((df["feature_kind"] == "gem_gene").all() and df["gpr_rule"].notna().all(),
+          "every row is a gene row with a rule")
     try:
-        fe.validate_gpr(placeholder, LANE_SET, ids, src["source"].iloc[0], EXTENSIONS)
-        check(True, "validate_gpr accepts the table read back with the parquet dtypes, once "
-                    "empty orfs carry the schema's placeholder again")
+        fe.validate_gpr(df, LANE_SET, set(fasta), src["source"].iloc[0], EXTENSIONS)
+        check(True, "validate_gpr accepts the table read back with the parquet dtypes")
     except SystemExit as e:
         check(False, f"validate_gpr: {e}")
-    check(set(df["intermediate_id"]) == set(src["intermediate_id"]) and
-          set(df["mnxr"].dropna()) == set(src["mnxr"].dropna()),
-          "the reaction set and the MNXR set equal gpr_gem.parquet's")
+    import json
+    # Read from the file, not from cobra, which drops redundant outer brackets on load.
+    written = {r["id"]: r["gene_reaction_rule"]
+               for r in json.loads((fba / "EPI300.json").read_text())["reactions"]}
+    expected_rows = {(rid, o) for rid, rule in written.items()
+                     if rid not in EXPECTED_LOST_REACTIONS
+                     for o in rule_genes(rule) - {SPONTANEOUS}}
+    got_rows = set(zip(df["intermediate_id"], df["orf"]))
+    check(got_rows == expected_rows and len(df) == len(got_rows),
+          f"one row per ORF in each EPI300.json rule, fhuA's closed reactions left out "
+          f"({len(got_rows):,} rows over {df['intermediate_id'].nunique():,} reactions)")
+    check(all(written[r] == g for r, g in zip(df["intermediate_id"], df["gpr_rule"])),
+          "every gpr_rule is EPI300.json's rule for that reaction, verbatim")
     keep = ["intermediate_id", "mnxr", "in_atom_universe", "projection_via"]
-    a_ = src[src.feature_kind == "gem_gene"].assign(g=lambda d: d["orf"])[keep + ["g"]]
-    b_ = df[df.feature_kind == "gem_gene"].assign(g=lambda d: d["feature_name"])[keep + ["g"]]
-    check(a_.drop_duplicates().sort_values(keep + ["g"]).reset_index(drop=True).equals(
-          b_.drop_duplicates().sort_values(keep + ["g"]).reset_index(drop=True)),
-          "every (model gene, reaction) row of the parquet survives with its MNXR and universe flag")
-    r_ = ["intermediate_id", "mnxr", "in_atom_universe"]
-    check(src[src.feature_kind == "ruleless"][r_].reset_index(drop=True).equals(
-          df[df.feature_kind == "ruleless"][r_].reset_index(drop=True)),
-          "ruleless rows keep their reaction, MNXR and universe flag")
-    orf_set = set(df["orf"].dropna())
-    stray_tokens = {t for r in df["gpr_rule"].dropna() for t in rule_tokens(r)
-                    if t not in ("(", ")", "and", "or") and t not in orf_set}
-    check(not stray_tokens, f"every gpr_rule token is an orf in the table ({sorted(stray_tokens)[:3]})")
+    ref = src[keep].drop_duplicates().set_index("intermediate_id")
+    mine = df[keep].drop_duplicates().set_index("intermediate_id")
+    check(mine.index.is_unique and mine.equals(ref.loc[mine.index]),
+          "every reaction keeps gpr_gem.parquet's MNXR, projection and universe flag")
+    orf_set = set(df["orf"])
 
     print("mapping")
     genes = model_genes(GEM)
-    orfs_of = df[df.feature_kind == "gem_gene"].dropna(subset=["orf"]) \
-        .groupby("feature_name")["orf"].agg(set)
+    epi_json = json.loads((fba / "EPI300.json").read_text())
+    orfs_of = defaultdict(set)
+    for g in epi_json["genes"]:
+        if g["id"] != SPONTANEOUS:
+            orfs_of[g["notes"]["model_gene"][0]].add(g["id"])
     real = [g for g in genes if g != SPONTANEOUS]
-    check(all(g in orfs_of for g in real), f"all {len(real):,} real model genes map to at "
-                                           f"least one EPI300 ORF")
-    check(SPONTANEOUS not in orfs_of and spont.any(), "s0001 keeps its rows and maps to no ORF")
+    check(set(orfs_of) == set(real), f"all {len(real):,} real model genes map to at least "
+                                     f"one EPI300 ORF in EPI300.json, and nothing else does")
+    check(all(o in orfs_of[g] for g, o in zip(df["feature_name"], df["orf"])),
+          "every row's feature_name is its ORF's model gene in EPI300.json")
     pseudo_fid = {fid for fid, (d, _) in fasta.items() if "[pseudo=true]" in d}
     two = {g for g, o in orfs_of.items() if len(o) == 2}
     dup = {g for g in two if not (orfs_of[g] & pseudo_fid)}
     check(len(dup) == N_DUPLICATED and two - dup == SPLIT and
-          all(len(o) <= 2 for o in orfs_of),
+          all(len(o) <= 2 for o in orfs_of.values()),
           f"{len(dup)} duplicated genes map to two intact ORFs, the split genes "
           f"{sorted(two - dup)} to two pieces, nothing to more")
     with_pseudo = {g for g, o in orfs_of.items() if o & pseudo_fid}
@@ -229,21 +230,25 @@ def main() -> int:
 
     print("rules")
     rules = dict(model_rules(GEM))
-    rewritten = dict(zip(df["intermediate_id"], df["gpr_rule"].fillna("")))
+    check(set(written) == set(rules) and
+          all(bool(rules[r]) == bool(written[r]) for r in rules) and
+          all((SPONTANEOUS in rule_genes(rules[r])) == (SPONTANEOUS in rule_genes(written[r]))
+              for r in rules),
+          "EPI300.json has a rule exactly where the model does, and keeps every s0001")
     rng = random.Random(0)
     diverged = set()
     for _ in range(300):
-        on = {g for g in genes if rng.random() < 0.8} | {SPONTANEOUS}
-        on_orfs = {o for g in on for o in orfs_of.get(g, ())}
+        on = {g for g in genes if rng.random() < 0.8}
+        on_orfs = {o for g in on for o in orfs_of.get(g, ())} | ({SPONTANEOUS} & on)
         for rid, rule in rules.items():
-            if rid in rewritten and rule_holds(rule, on) != rule_holds(rewritten[rid], on_orfs):
+            if rule_holds(rule, on) != rule_holds(written[rid], on_orfs):
                 diverged.add(rid)
-    check(not diverged, f"rewritten rules agree with the model's under 300 random gene sets "
-                        f"({sorted(diverged)[:3]})")
+    check(not diverged, f"rewritten rules agree with the model's under 300 random gene sets, "
+                        f"s0001 included ({sorted(diverged)[:3]})")
     lost_orfs = {o for g in PSEUDO_IN_EPI300_ONLY for o in orfs_of[g]}
     model_live = {r for r, rule in rules.items() if rule_holds(rule, set(genes))}
-    epi_live = {r for r in model_live if r in rewritten and
-                rule_holds(rewritten[r], (set(fasta) | {SPONTANEOUS}) - lost_orfs)}
+    epi_live = {r for r in model_live
+                if rule_holds(written[r], (set(fasta) | {SPONTANEOUS}) - lost_orfs)}
     check(model_live - epi_live == EXPECTED_LOST_REACTIONS,
           f"EPI300 loses exactly the three fhuA reactions: {sorted(model_live - epi_live)}")
 
@@ -262,16 +267,13 @@ def main() -> int:
     check(moved == EXPECTED_LOST_REACTIONS and
           all(epi_m.reactions.get_by_id(r).bounds == (0, 0) for r in moved),
           f"bounds differ only on the fhuA reactions, closed ({sorted(moved)})")
-    import json
-    # Read from the file, not from cobra, which drops redundant outer brackets on load.
-    written = {r["id"]: r["gene_reaction_rule"]
-               for r in json.loads((fba / "EPI300.json").read_text())["reactions"]}
     bad_rule = [r.id for r in epi_m.reactions
-                if written[r.id] != rewritten.get(r.id, "")
-                or {g.id for g in r.genes} != set(rule_genes(written[r.id]))]
-    check(not bad_rule, f"every gene rule equals the CSV's and cobra parses it into exactly "
-                        f"its ORFs ({bad_rule[:3]})")
-    check({g.id for g in epi_m.genes} <= set(fasta), "every model gene is a FASTA id")
+                if {g.id for g in r.genes} != set(rule_genes(written[r.id]))]
+    check(not bad_rule, f"cobra parses every rule into exactly its tokens ({bad_rule[:3]})")
+    check({g.id for g in epi_m.genes} - {SPONTANEOUS} <= set(fasta) and
+          SPONTANEOUS in {g.id for g in epi_m.genes},
+          f"every model gene is a FASTA id, except s0001 as in iECDH10B_1368 "
+          f"({len(epi_m.genes):,} genes)")
     mu_e, mu_d = epi_m.slim_optimize(), dh_m.slim_optimize()
     check(mu_e > 0 and abs(mu_e - mu_d) < 1e-6,
           f"grows on the model's default bounds as iECDH10B_1368 does ({mu_e:.4f} vs {mu_d:.4f})")
