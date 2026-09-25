@@ -12,6 +12,7 @@ import csv
 import gzip
 import json
 import os
+import statistics
 import sys
 import tarfile
 import xml.etree.ElementTree as ET
@@ -57,18 +58,18 @@ def read_sbml(path):
     return gzip.decompress(raw) if raw[:2] == b"\x1f\x8b" else raw
 
 
+# Yielded one at a time: a study holds up to 9,371 models, too many to hold decompressed.
 def published_models(study, bins):
     wanted = set(bins)
-    found = {}
     with tarfile.open(PUBLISHED / study / GEM_ARCHIVE.get(study, "GEMs.tar.gz"), "r|gz") as tar:
         for member in tar:
             name = os.path.basename(member.name).removesuffix(".gz").removesuffix(".xml")
             if member.isfile() and name in wanted:
                 raw = tar.extractfile(member).read()
-                found[name] = gzip.decompress(raw) if raw[:2] == b"\x1f\x8b" else raw
-                if len(found) == len(wanted):
+                yield name, gzip.decompress(raw) if raw[:2] == b"\x1f\x8b" else raw
+                wanted.discard(name)
+                if not wanted:
                     break
-    return found
 
 
 def sanitised(protein_id):
@@ -135,10 +136,10 @@ def main():
 
     results = {}
     for study, bins in by_study.items():
-        theirs = published_models(study, bins)
+        for b, theirs in published_models(study, bins):
+            results[b] = compare(parse_model(read_sbml(ours[b])), parse_model(theirs))
         for b in bins:
-            results[b] = compare(parse_model(read_sbml(ours[b])), parse_model(theirs[b])) if b in theirs \
-                else {"missing_published": True}
+            results.setdefault(b, {"missing_published": True})
 
     cols = ("reactions", "metabolites", "genes")
     print("bin\tstudy\t" + "\t".join(f"{k}_ours\t{k}_theirs\t{k}_shared" for k in cols)
@@ -150,6 +151,20 @@ def main():
             continue
         print(f"{b}\t{study_of[b]}\t" + "\t".join(f"{r[k]['ours']}\t{r[k]['theirs']}\t{r[k]['shared']}" for k in cols)
               + f"\t{len(r['gpr_differs'])}\t{len(r['bounds_differ'])}\t{r['identical']}")
+    compared = [r for r in results.values() if not r.get("missing_published")]
+    if compared:
+        def spread(values):
+            return f"{statistics.median(values):.3f} ({min(values):.3f}-{max(values):.3f})"
+
+        def jaccard(r, k):
+            union = r[k]["ours"] + r[k]["theirs"] - r[k]["shared"]
+            return r[k]["shared"] / union if union else 1.0
+
+        print(f"# {len(compared)} bins compared, {len(results) - len(compared)} with no published GEM", file=sys.stderr)
+        for k in cols:
+            print(f"# {k} Jaccard median {spread([jaccard(r, k) for r in compared])}", file=sys.stderr)
+        gpr = [100 * len(r["gpr_differs"]) / r["reactions"]["shared"] for r in compared if r["reactions"]["shared"]]
+        print(f"# shared reactions with a different GPR, median {statistics.median(gpr):.1f}%", file=sys.stderr)
     if args.json:
         Path(args.json).write_text(json.dumps(results, indent=1))
     return 0 if all(r.get("identical") for r in results.values()) else 1
