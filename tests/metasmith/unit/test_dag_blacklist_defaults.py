@@ -25,7 +25,7 @@ def test_ops_render_dag_falls_back_to_the_same_set():
         )
 
 
-def test_a_real_plan_renders_no_env_nodes(tmp_path):
+def _one_step_plan(tmp_path):
     from tests.metasmith.cache._cache_harness import (
         build_samples_library,
         build_transform_library,
@@ -39,9 +39,18 @@ def test_a_real_plan_renders_no_env_nodes(tmp_path):
     tr_lib = build_transform_library(
         tmp_path / "tr", types_path, {"tr": identity_transform_code("tr", "seed", "out")}
     )
-    task = build_workflow_task(
+    return build_workflow_task(
         samples, tr_lib, sample_type="seed", target_specs=[("out_target", {"out"})]
-    )
+    ).plan
 
-    text = task.plan.BuildDAG().to_text()
+
+def test_a_real_plan_renders_no_env_nodes(tmp_path):
+    text = _one_step_plan(tmp_path).BuildDAG().to_text()
     assert "env::" not in text, f"env plumbing rendered into the DAG:\n{text}"
+
+
+def test_show_namespaces_off_strips_every_label(tmp_path):
+    plan = _one_step_plan(tmp_path)
+    assert any(l.namespace for l in plan.BuildDAG().labels.values())
+    labels = plan.BuildDAG(show_namespaces=False).labels.values()
+    assert not any(l.namespace or "::" in l.full for l in labels)

@@ -545,7 +545,7 @@ class WorkflowPlan:
             hints=plan_hints,
         )
 
-    def BuildDAG(self, *, font: str = 'Arial', blacklist_namespaces: set[str]={"lib", "containers", "env"}, show_step_order: bool = False, label_mode: LabelMode = LabelMode.COLUMN, target_sink: bool = False, colour: str = "module", theme: str = "light", background: bool = True, mode: DagMode = DagMode.PLAIN, blacklist: Iterable[Endpoint] = (), legend_columns: int = 0, monochrome: bool = False, colour_palette: Sequence[str] | None = None, colour_overrides: Mapping[str, str] | None = None) -> DagRenderer:
+    def BuildDAG(self, *, font: str = 'Arial', blacklist_namespaces: set[str]={"lib", "containers", "env"}, show_step_order: bool = False, show_namespaces: bool = True, label_mode: LabelMode = LabelMode.COLUMN, target_sink: bool = False, colour: str = "module", theme: str = "light", background: bool = True, mode: DagMode = DagMode.PLAIN, blacklist: Iterable[Endpoint] = (), legend_columns: int = 0, monochrome: bool = False, colour_palette: Sequence[str] | None = None, colour_overrides: Mapping[str, str] | None = None) -> DagRenderer:
         def _get_ns(name: str) -> str:
             if "::" in name:
                 ns, _ = name.split("::", maxsplit=1)
@@ -553,6 +553,14 @@ class WorkflowPlan:
             return name
 
         r = DagRenderer(font=font, label_mode=label_mode, colour=colour, theme=theme, background=background, mode=mode, blacklist=blacklist, legend_columns=legend_columns, monochrome=monochrome, colour_palette=colour_palette, colour_overrides=colour_overrides)
+        def _type_label(dtype_name: str) -> Label:
+            if "::" in dtype_name:
+                ns, name = dtype_name.split("::", maxsplit=1)
+                if not show_namespaces:
+                    return Label(name=name)
+                return Label(name=name, namespace=ns, full=dtype_name)
+            return Label(name=dtype_name, full=dtype_name)
+
         r.add_node(NodeKind.TRANSFORM, "given")
 
         given_inst_names: set[str] = set()
@@ -579,7 +587,7 @@ class WorkflowPlan:
                     pinsts = [i for i in k2names[p] if i in shown_parents] # type: ignore
                     for pname in pinsts:
                         r.add_edge(pname, inst_name)
-                r.add_node(NodeKind.DATA, inst_name, dtype=e)
+                r.add_node(NodeKind.DATA, inst_name, _type_label(inst_name), dtype=e)
                 r.add_edge("given", inst_name)
                 given_inst_names.add(inst_name)
 
@@ -603,12 +611,6 @@ class WorkflowPlan:
                 return x.dtype_name
             r.add_node(NodeKind.DATA, x.instance_id, _type_label(x.dtype_name), dtype=x.dtype)
             return x.instance_id
-
-        def _type_label(dtype_name: str) -> Label:
-            if "::" in dtype_name:
-                ns, name = dtype_name.split("::", maxsplit=1)
-                return Label(name=name, namespace=ns, full=dtype_name)
-            return Label(name=dtype_name, full=dtype_name)
 
         for step in self.steps:
             transform_name = f"{step.order} {step.transform.name}"
@@ -681,11 +683,12 @@ class WorkflowPlan:
 
         return r
 
-    def RenderDAG(self, path_base: Path|str, format: str ='svg', *, font: str = 'Arial', blacklist_namespaces: set[str]={"lib", "containers", "env"}, show_step_order: bool = False, label_mode: LabelMode = LabelMode.COLUMN, target_sink: bool = False, colour: str = "module", theme: str = "light", background: bool = True, mode: DagMode = DagMode.PLAIN, blacklist: Iterable[Endpoint] = (), legend_columns: int = 0, monochrome: bool = False, colour_palette: Sequence[str] | None = None, colour_overrides: Mapping[str, str] | None = None):
+    def RenderDAG(self, path_base: Path|str, format: str ='svg', *, font: str = 'Arial', blacklist_namespaces: set[str]={"lib", "containers", "env"}, show_step_order: bool = False, show_namespaces: bool = True, label_mode: LabelMode = LabelMode.COLUMN, target_sink: bool = False, colour: str = "module", theme: str = "light", background: bool = True, mode: DagMode = DagMode.PLAIN, blacklist: Iterable[Endpoint] = (), legend_columns: int = 0, monochrome: bool = False, colour_palette: Sequence[str] | None = None, colour_overrides: Mapping[str, str] | None = None):
         return self.BuildDAG(
             font=font,
             blacklist_namespaces=blacklist_namespaces,
             show_step_order=show_step_order,
+            show_namespaces=show_namespaces,
             label_mode=label_mode,
             target_sink=target_sink,
             colour=colour,
