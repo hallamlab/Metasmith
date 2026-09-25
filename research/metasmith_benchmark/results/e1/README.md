@@ -5,8 +5,17 @@ members) and `e1_short_out.tar` (99.1 GB, 57,253 members), with a full member ma
 (`e1_*.manifest.txt`, written by job `60958550`). **Ask the manifests, not the tars** — a member question is a
 grep, where a listing costs 37 s on the long archive and 425 s on the short one.
 
-Only one extracted table is committed here, because it is the only surviving copy of something the comparison
-needs and the archive cannot cheaply serve per-sample.
+The tables here are the E1 side of `findings/E1_E2_REPRODUCTION.md`, which says what each one feeds.
+
+| file | what it is |
+|---|---|
+| `e1_slurm_tasks.tsv`, `e1_runtime_by_process.tsv` | one row per Slurm attempt, and its per-process summary, from `build_e1_slurm_tables.py` |
+| `e1_short_bowtie2_assembly_align.tsv` | E1's own mapping rates, from MultiQC (below) |
+| `e1_e2_fastp_compare.tsv`, `e1_e2_assembly_compare.tsv` | E1 against E2 on post-fastp reads and on assemblies |
+| `e1_bam_regeneration_check.tsv` | regenerated short BAMs' bowtie2 counts against E1's MultiQC |
+| `mag_gaps.tsv` | every E1 sample-by-binner gap, with its cause and what closed it |
+| `e1_checkm2.tsv.gz` | one CheckM2 row per scored bin, from `drivers/checkm2_tables.py e1` |
+| `e1_amber_summary.tsv`, `e1_amber_bin_metrics.tsv` | AMBER per sample and binner, and per bin, from `drivers/e1_close_amber.sbatch` |
 
 ## `e1_short_bowtie2_assembly_align.tsv`
 
@@ -30,18 +39,14 @@ Verified on `marine_sample_0`: 28,686,587 / 33,294,752 = 86.16%, matching the re
 
 Distribution over the 208: min 80.83, median 97.67, mean 96.55, max 99.90.
 
-## Why this table and nothing else
+## Why it matters
 
-**E1's BAMs do not exist.** Both manifests report zero `.bam` and zero `.bai` members — measured, not inferred
-from archive size. So `% reads mapped` could not be recomputed from E1's alignments at any price short of
-regenerating ~640-700 GB of them, and this MultiQC table is the whole of E1's surviving mapping evidence.
+**nf-core did not publish E1's short BAMs.** Both manifests report zero `.bam` members. The 208 short BAMs were
+regenerated with nf-core's own bowtie2 command, and this table is what proves them faithful: every regenerated
+log reproduces these counts exactly (`e1_bam_regeneration_check.tsv`).
 
 **The long arm has no counterpart.** Its MultiQC consumed CheckM2 only — no bowtie2, no minimap2, no mapping
-section. A long-arm mapping rate for E1 does not exist in any form.
-
-Everything else the comparison needs — bin FASTAs, `checkm2_summary.tsv`, `quast_bin_summary.tsv`,
-`contig_to_bin_map.tsv`, Flye `assembly_info.txt`, `bin_summary.tsv` — is in the tars and is better read from
-there than duplicated here. `findings/E1_E2_COMPARISON.md` says what is in which archive and what it costs.
+section. E1's long BAMs survive in `long/kept_inputs/` instead.
 
 ## Comparability warning
 

@@ -1,13 +1,14 @@
 # E2's AMBER results
 
-The two tables here are the only copy of E2's scores outside `fir:/scratch/phyberos/cami/metasmith/task_cache`,
-which is itself the only copy of E2's computed products — E2's run directories are gone. Everything else about
-E2 (assemblies, BAMs, bins, CheckM2) still lives only in that cache.
+E2's run directories are gone. Its computed products live in `fir:/scratch/phyberos/cami/metasmith/task_cache`
+and, packed one tar per sample, on chinook at `/Workspace_backups/Tony_Liu/fir_bench_e1_e2/e2/`.
+`archive_manifest.tsv.gz` maps every archived file to its cache shard.
 
 | file | rows | what it is |
 | --- | --- | --- |
 | `e2_amber_summary.tsv` | 996 = 249 samples x 4 binners | one row per (sample, binner), AMBER's genome-binning summary |
 | `e2_amber_bin_metrics.tsv` | 26,928 | one row per bin |
+| `e2_checkm2.tsv.gz` | 26,928 | one CheckM2 row per bin, relabelled to nf-core's bin name by `drivers/checkm2_tables.py e2` |
 
 `arm`, `run_key` and `sample` are prepended by the extractor; every other column is AMBER's own. Each row's
 sample field was cross-checked against the sample resolved from its shard before the row was emitted.

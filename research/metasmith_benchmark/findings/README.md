@@ -9,6 +9,7 @@ This directory holds what research support established for the five benchmark ex
 - `R1_TABLE_AUDIT.md` gives every tool-table cell for E1–E5 its status in R1's drivers: matched, pinned, gated or gapfill.
 - `E3_PARITY.md` compares each Pratama 2026 step with E3's solved plan, and lists the plan's heuristic values and open gaps.
 - `E4_REPRODUCTION.md` lists how E4's two GEM lanes differ from metaGEM's original methods and from E5's GEM lane, with the measured parity.
+- `E1_E2_REPRODUCTION.md` is the evidence that E2 reproduces E1: deviations, the pinned configuration diff, assemblies and MAGs compared pairwise, CheckM2 per subset, jobs and the process-to-step map.
 - This README records design findings that belong in neither ledger.
 
 CAUTION: research support edits the ledgers in `~/scratch/cami_campaign/` from a different worktree. The copies here are a snapshot. Copy them again before each commit.
