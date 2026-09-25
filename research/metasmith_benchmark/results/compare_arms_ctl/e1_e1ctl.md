@@ -19,15 +19,16 @@
 | short | COMEBin | 728 / 714 | 75.8 / 77.3 | 2 / 1 | 552 | 100.0000 | 1.14 | 45 | 33 |
 | short | MetaBAT2 | 408 / 410 | 93.6 / 93.2 | 0 / 0 | 382 | 100.0000 | 0.18 | 16 | 14 |
 | short | SemiBin2 | 651 / 657 | 95.7 / 94.8 | 0 / 0 | 623 | 100.0000 | 0.07 | 5 | 4 |
-| long | DASTool | 59 / 60 | 100.0 / 98.3 | 0 / 0 | 59 | 100.0000 | 0.39 | 7 | 4 |
-| long | COMEBin | 200 / 218 | 66.0 / 60.6 | 0 / 0 | 132 | 100.0000 | 0.84 | 8 | 9 |
+| long | DASTool | 59 / 57 | 94.9 / 98.2 | 0 / 0 | 56 | 100.0000 | 0.00 | 4 | 2 |
+| long | COMEBin | 200 / 212 | 71.0 / 67.0 | 0 / 0 | 142 | 100.0000 | 0.71 | 6 | 11 |
 | long | MetaBAT2 | 165 / 165 | 95.2 / 95.2 | 0 / 0 | 157 | 100.0000 | 0.00 | 2 | 6 |
-| long | SemiBin2 | 128 / 138 | 63.3 / 58.7 | 0 / 0 | 81 | 100.0000 | 1.29 | 14 | 8 |
+| long | SemiBin2 | 128 / 134 | 97.7 / 93.3 | 0 / 0 | 125 | 100.0000 | 0.00 | 4 | 5 |
 
 ## dastool_unmatched_causes
 
 | arm | pipeline | cause | mags | high_quality |
 |---|---|---|---|---|
+| long | E1 | source bins matched, other arm's DAS Tool dropped its partner | 3 | 0 |
 | long | E1ctl | source bins matched, other arm's DAS Tool dropped its partner | 1 | 0 |
 | short | E1 | source bin unmatched | 3 | 1 |
 | short | E1 | source bins matched, other arm's DAS Tool dropped its partner | 8 | 1 |
@@ -42,7 +43,7 @@
 | short | high | 534 | 23 | 2 |
 | short | medium | 20 | 478 | 17 |
 | short | below | 1 | 21 | 699 |
-| long | high | 85 | 5 | 1 |
-| long | medium | 6 | 104 | 11 |
-| long | below | 0 | 8 | 209 |
+| long | high | 90 | 1 | 0 |
+| long | medium | 4 | 122 | 3 |
+| long | below | 0 | 8 | 252 |
 
