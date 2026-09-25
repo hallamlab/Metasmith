@@ -544,6 +544,16 @@ def rewrite_rule(rule: str, orfs: dict[str, list[str]]) -> str:
     return re.sub(r"\( | \)", lambda m: m.group(0).strip(), " ".join(out))
 
 
+def published_rule(rule: str) -> str | None:
+    # The CSV's rules name ORFs only. Every model rule that mentions s0001 is satisfied by
+    # s0001 alone, i.e. always live, and an empty rule already evaluates that way.
+    if SPONTANEOUS not in rule_genes(rule):
+        return rule or None
+    if not rule_holds(rule, {SPONTANEOUS}):
+        raise SystemExit(f"s0001 is not a sufficient alternative in {rule!r}")
+    return None
+
+
 def live_reactions(rules, present: set[str]) -> set[str]:
     return {rid for rid, rule in rules if rule_holds(rule, present)}
 
@@ -555,6 +565,9 @@ def write_atomic(path: Path, text: str):
 
 
 def link_original(src: Path, dst: Path):
+    # rename(2) onto another name for the same inode is a no-op that leaves tmp behind.
+    if dst.exists() and os.path.samefile(src, dst):
+        return
     tmp = dst.with_name(dst.name + ".tmp")
     if tmp.exists():
         tmp.unlink()
@@ -642,6 +655,8 @@ def write_outputs(genes, rules, res, epi, epi_genome, out: Path):
     ids = {e.fid for e in epi} | {SPONTANEOUS} | \
         set(df.loc[df["feature_kind"] == "ruleless", "orf"])
     fe.validate_gpr(df, LANE_SET, ids, src["source"].iloc[0], EXTENSIONS)
+    df["orf"] = df["orf"].where(df["orf"].isin({e.fid for e in epi}), None)
+    df["gpr_rule"] = df["gpr_rule"].map(lambda r: published_rule(r) if isinstance(r, str) else None)
     tmp = out / "gpr_gem_epi300.csv.tmp"
     df.to_csv(tmp, index=False)
     os.replace(tmp, out / "gpr_gem_epi300.csv")

@@ -32,7 +32,7 @@ PSEUDO_IN_EPI300_ONLY = {"proV", "ECDH10B_0130"}
 SPLIT = {"nupG", "nrfB", "ECDH10B_0130"}
 START_VARIANTS = {"ECDH10B_1259", "ECDH10B_1354"}
 N_DUPLICATED = 42
-NULLABLE = ("gene", "mnxr", "feature_name", "gpr_rule")
+NULLABLE = ("orf", "gene", "mnxr", "feature_name", "gpr_rule")
 
 problems: list[str] = []
 
@@ -153,10 +153,18 @@ def main() -> int:
     src = pd.read_parquet(GPR_GEM)
     df = read_csv_as_parquet_dtypes(fba / "gpr_gem_epi300.csv", src)
     check(list(df.columns) == list(src.columns), "same 19 columns in the same order")
-    ids = set(fasta) | {SPONTANEOUS} | set(df.loc[df["feature_kind"] == "ruleless", "orf"])
+    no_orf = df["orf"].isna()
+    spont = df["feature_name"] == SPONTANEOUS
+    check((no_orf == ((df["feature_kind"] == "ruleless") | spont)).all(),
+          "orf is empty exactly on the ruleless and s0001 rows")
+    check(set(df.loc[~no_orf, "orf"]) <= set(fasta), "every non-empty orf is a FASTA id")
+    placeholder = df.assign(orf=df["orf"].fillna(
+        df["feature_name"].where(spont, df["intermediate_id"])))
+    ids = set(fasta) | {SPONTANEOUS} | set(src.loc[src["feature_kind"] == "ruleless", "orf"])
     try:
-        fe.validate_gpr(df, LANE_SET, ids, src["source"].iloc[0], EXTENSIONS)
-        check(True, "validate_gpr accepts the table read back with the parquet dtypes")
+        fe.validate_gpr(placeholder, LANE_SET, ids, src["source"].iloc[0], EXTENSIONS)
+        check(True, "validate_gpr accepts the table read back with the parquet dtypes, once "
+                    "empty orfs carry the schema's placeholder again")
     except SystemExit as e:
         check(False, f"validate_gpr: {e}")
     check(set(df["intermediate_id"]) == set(src["intermediate_id"]) and
@@ -168,24 +176,23 @@ def main() -> int:
     check(a_.drop_duplicates().sort_values(keep + ["g"]).reset_index(drop=True).equals(
           b_.drop_duplicates().sort_values(keep + ["g"]).reset_index(drop=True)),
           "every (model gene, reaction) row of the parquet survives with its MNXR and universe flag")
-    r_ = ["orf", "intermediate_id", "mnxr", "in_atom_universe"]
+    r_ = ["intermediate_id", "mnxr", "in_atom_universe"]
     check(src[src.feature_kind == "ruleless"][r_].reset_index(drop=True).equals(
           df[df.feature_kind == "ruleless"][r_].reset_index(drop=True)),
-          "ruleless rows are unchanged")
-    orf_set = set(df["orf"])
+          "ruleless rows keep their reaction, MNXR and universe flag")
+    orf_set = set(df["orf"].dropna())
     stray_tokens = {t for r in df["gpr_rule"].dropna() for t in rule_tokens(r)
                     if t not in ("(", ")", "and", "or") and t not in orf_set}
     check(not stray_tokens, f"every gpr_rule token is an orf in the table ({sorted(stray_tokens)[:3]})")
-    gene_orfs = set(df.loc[df.feature_kind == "gem_gene", "orf"]) - {SPONTANEOUS}
-    check(gene_orfs <= set(fasta), "every gem_gene orf other than s0001 is a FASTA id")
 
     print("mapping")
     genes = model_genes(GEM)
-    orfs_of = df[df.feature_kind == "gem_gene"].groupby("feature_name")["orf"].agg(set)
+    orfs_of = df[df.feature_kind == "gem_gene"].dropna(subset=["orf"]) \
+        .groupby("feature_name")["orf"].agg(set)
     real = [g for g in genes if g != SPONTANEOUS]
     check(all(g in orfs_of for g in real), f"all {len(real):,} real model genes map to at "
                                            f"least one EPI300 ORF")
-    check(orfs_of.get(SPONTANEOUS) == {SPONTANEOUS}, "s0001 maps to no ORF")
+    check(SPONTANEOUS not in orfs_of and spont.any(), "s0001 keeps its rows and maps to no ORF")
     pseudo_fid = {fid for fid, (d, _) in fasta.items() if "[pseudo=true]" in d}
     two = {g for g, o in orfs_of.items() if len(o) == 2}
     dup = {g for g in two if not (orfs_of[g] & pseudo_fid)}
@@ -224,7 +231,7 @@ def main() -> int:
     rng = random.Random(0)
     diverged = set()
     for _ in range(300):
-        on = {g for g in genes if rng.random() < 0.8}
+        on = {g for g in genes if rng.random() < 0.8} | {SPONTANEOUS}
         on_orfs = {o for g in on for o in orfs_of.get(g, ())}
         for rid, rule in rules.items():
             if rid in rewritten and rule_holds(rule, on) != rule_holds(rewritten[rid], on_orfs):
