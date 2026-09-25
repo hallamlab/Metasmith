@@ -132,4 +132,22 @@ def _plan(arm: str):
 
 
 _plan("short")
+
+
+def _demo():
+    from metasmith.models.dag_renderer import Label
+
+    note, nodes, edges = CASES["e2_short"]
+    drop = {name for _, name, label in nodes
+            if label.name in ("cami_gold_standard.py", "read_truth", "gold_standard",
+                              "contig_gold_standard", "amber", "amber_results",
+                              "amber_bin_metrics")}
+
+    case("e2_short_demo", "the E2 short-read plan with no truth, gold standard or AMBER,"
+         " drawn with show_namespaces=False",
+         [(k, n, Label(name=l.name)) for k, n, l in nodes if n not in drop],
+         [e for e in edges if not drop & set(e)])
+
+
+_demo()
 _plan("long")
