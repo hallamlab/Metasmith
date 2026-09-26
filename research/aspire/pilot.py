@@ -37,6 +37,7 @@ from metasmith.python_api import (  # noqa: E402
     DEFERRED, Agent, DataInstanceLibrary, Runtime, Source, TransformInstanceLibrary,
     record_library,
 )
+from metasmith.models.dag_renderer import DagMode  # noqa: E402
 
 MOCK = Path(os.environ.get("ASPIRE_MOCK", "/scratch/phyberos/aspire_mock/mock_dataset"))
 CACHE_DIR = Path(os.environ.get("ASPIRE_PILOT_CACHE", REPO / "cache" / "aspire" / "pilot"))
@@ -204,7 +205,10 @@ def cmd_run(args):
         DAG_DIR.mkdir(parents=True, exist_ok=True)
         # RenderDAG reads a dotted basename's suffix as the format, so the stem carries no dot.
         stem = f"pilot_{args.case}_{args.parity}"
-        print(f"dag: {task.plan.RenderDAG(str(DAG_DIR / stem), format='svg', show_step_order=True)}")
+        for mode, suffix in ((DagMode.PLAIN, ""), (DagMode.STEPS, "_steps"), (DagMode.LEGEND, "_legend")):
+            path = task.plan.RenderDAG(str(DAG_DIR / f"{stem}{suffix}"), format="svg",
+                                       show_step_order=True, mode=mode)
+            print(f"dag: {path}")
     return 0
 
 

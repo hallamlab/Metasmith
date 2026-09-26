@@ -4,10 +4,15 @@ from metasmith.python_api import DEFERRED, Spec, TransformInstanceLibrary, recor
 
 from conftest import MLIB
 
-SWITCHES = ("augmentation", "batch_correction", "indicspecies", "spieceasi",
-            "network_modules", "asv_mag_link", "graph_network", "sankey")
-DEFAULT_ON = {"indicspecies", "spieceasi", "network_modules", "asv_mag_link",
-              "graph_network", "sankey"}
+PRESET = MLIB.parents[1] / "research" / "aspire" / "presets" / "aspire.yml"
+SWITCHES = ("indicspecies", "spieceasi", "network_modules", "asv_mag_link",
+            "graph_network", "sankey")
+DEFAULT_ON = set(SWITCHES)
+REFERENCES = ("aspire::sample_metadata", "aspire::sina_arb_reference",
+              "aspire::silva_ref_taxonomy", "aspire::mito_reference_source",
+              "aspire::contaminant_reference_source", "amplicon::silva_db",
+              "amplicon::silva_nb_classifier")
+CORE = ["amplicon::asv_taxonomy", "aspire::counts_clean", "aspire::read_fate"]
 
 
 @pytest.fixture(scope="module")
@@ -20,20 +25,27 @@ def aspire_transforms(mlib):
 
 @pytest.fixture
 def aspire_inputs(tmp_inputs):
-    def _build(on=DEFAULT_ON, samples=2):
+    def _build(on=DEFAULT_ON, samples=2, parity="paired"):
         inputs = tmp_inputs(["aspire.yml", "amplicon.yml", "sequences.yml"])
         run = inputs.AddValue("run.txt", "test_study", "aspire::run")
+        inputs.AddValue("params.yml", PRESET.read_text(), "aspire::params", parents={run})
+        # Reads hang off the sample name, not its read_metadata: a given four
+        # ancestors deep loses its read_pair link in the solver.
         for i in range(1, samples + 1):
-            sid = inputs.AddValue(f"sample_{i}.txt", f"sample_{i}",
-                                  "aspire::sample_id", parents={run})
-            pair = inputs.AddValue(f"read_pair_{i}.txt", f"sample_{i}",
-                                   "sequences::read_pair", parents={sid})
-            inputs.AddItem(DEFERRED, "sequences::zipped_forward_short_reads", parents={pair})
-            inputs.AddItem(DEFERRED, "sequences::zipped_reverse_short_reads", parents={pair})
+            name = inputs.AddValue(f"sample_{i}.txt", f"sample_{i}",
+                                   "sequences::sample_name", parents={run})
+            inputs.AddValue(f"read_metadata_{i}.json",
+                            {"parity": parity, "length_class": "short"},
+                            "sequences::read_metadata", parents={name})
+            if parity == "paired":
+                pair = inputs.AddValue(f"read_pair_{i}.txt", f"sample_{i}",
+                                       "sequences::read_pair", parents={name})
+                inputs.AddItem(DEFERRED, "sequences::zipped_forward_short_reads", parents={pair})
+                inputs.AddItem(DEFERRED, "sequences::zipped_reverse_short_reads", parents={pair})
+            else:
+                inputs.AddItem(DEFERRED, "sequences::short_reads_se", parents={name})
 
-        for dtype in ("aspire::sample_metadata", "aspire::sina_arb_reference",
-                      "aspire::silva_ref_taxonomy", "aspire::mito_reference_source",
-                      "aspire::contaminant_reference_source", "amplicon::silva_db"):
+        for dtype in REFERENCES:
             inputs.AddItem(DEFERRED, dtype)
 
         for base in SWITCHES:
@@ -68,17 +80,20 @@ def picked(task, transforms):
         for lib in transforms
         for path, ti in lib.IterateTransforms()
     }
-    return {names.get(s.transform.model.key, "?") for s in task.plan.steps}
+    return [names.get(s.transform.model.key, "?") for s in task.plan.steps]
 
 
 class TestAspireTopology:
-    def test_core_spine_solves(self, aspire_transforms, aspire_inputs):
-        task = solve(aspire_inputs(), aspire_transforms,
-                     ["amplicon::asv_taxonomy", "aspire::counts_filtered"])
-        assert task.ok, f"core spine did not solve: dropped {sorted(task.plan.dropped_targets)}"
+    # A plan step fans out per sample at run time, so each row appears once.
+    @pytest.mark.parametrize("parity, interleaves", [("paired", 1), ("single", 0)])
+    def test_core_spine_solves(self, aspire_transforms, aspire_inputs, parity, interleaves):
+        task = solve(aspire_inputs(samples=3, parity=parity), aspire_transforms, CORE)
+        assert task.ok, f"[{parity}] core did not solve: dropped {sorted(task.plan.dropped_targets)}"
         steps = picked(task, aspire_transforms)
-        assert {"fastp_qc", "concat_fastas", "create_count_matrix", "taxonomy",
-                "filter_counts"} <= steps, steps
+        assert steps.count("interleave_zipped_short_reads") == interleaves, steps
+        for row in ("fastp_qc", "merge_and_filter_reads", "denoise"):
+            assert steps.count(row) == 1, steps
+        assert {"taxonomy", "curate", "read_accounting"} <= set(steps), steps
 
     def test_master_summary_solves(self, aspire_transforms, aspire_inputs):
         task = solve(aspire_inputs(), aspire_transforms, ["aspire::master_long"])
@@ -96,10 +111,6 @@ class TestAspireTopology:
 
 
 @pytest.mark.parametrize("base, on_transform, off_transform, targets", [
-    ("augmentation", "group_label_augmentation", "augmentation_passthrough",
-     ["aspire::analysis_metadata"]),
-    ("batch_correction", "asv_batch_correction", "batch_correction_passthrough",
-     ["aspire::analysis_counts"]),
     ("indicspecies", "indicspecies", "indicspecies_absent",
      ["aspire::clustermap_outputs"]),
     ("spieceasi", "spieceasi", "spieceasi_external",
@@ -121,7 +132,7 @@ class TestPolicySwitches:
             f"[{base}={'on' if enabled else 'off'}] did not solve: "
             f"dropped {sorted(task.plan.dropped_targets)}"
         )
-        return picked(task, aspire_transforms)
+        return set(picked(task, aspire_transforms))
 
     def test_on_arm_selected(self, aspire_transforms, aspire_inputs,
                              base, on_transform, off_transform, targets):

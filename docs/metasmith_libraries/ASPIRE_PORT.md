@@ -22,7 +22,7 @@ done rather than getting a note saying so.
 ## The table is the source
 
 `transforms/aspire/_generate.py` holds one row per ported process and writes both
-`data_types/aspire.yml` and all 50 stubs. Collapsing two nodes is a table edit
+`data_types/aspire.yml` and all 37 stubs. Collapsing two nodes is a table edit
 and a regenerate, which is the whole reason it exists — this pass is for looking
 at the DAG and deciding what to merge. Once the bodies become real protocols,
 regenerating would clobber them; stop running it then.
@@ -30,7 +30,7 @@ regenerating would clobber them; stop running it then.
 Each row carries the `.nf` process and line it came from, so the port stays
 auditable against the source.
 
-## Three things the port does to the pipeline
+## What the port does to the pipeline
 
 **`.done` sentinels are not ported.** Roughly a quarter of ASPIRE's edges are
 ordering barriers, with the real data crossing by absolute path into a shared
@@ -43,7 +43,7 @@ Nextflow expressed those by *rebinding* the variable eleven consumers read;
 Metasmith has no rebinding. So both arms produce the same consumer-facing type,
 and each requires a different sibling token — `aspire::sankey_on` versus
 `aspire::sankey_off`. The driver registers exactly one, the losing arm has zero
-candidates for its token slot, and it is never instantiated. Eight switches work
+candidates for its token slot, and it is never instantiated. Six switches work
 this way.
 
 That mechanism is why `data_types/aspire.yml` writes the token types with
@@ -53,60 +53,88 @@ restates any key the parent set — the `_:` description included — silently s
 satisfying the parent. A list is a set union, so subsumption always holds.
 `python transforms/aspire/_generate.py --lint` asserts it for every edge.
 
-**Plot-only processes are folded into the transform that computed their tables.**
-Four of the 45: `INDICSPECIES_PLOTS` and `INDICSPECIES_ALIGNED_PLOTS` into
-`INDICSPECIES`, `ASV_META_FROM_CORRECTED` into `ASV_BATCH_CORRECTION`, and
-`RELABEL_FILTERED` into `CONCAT_FASTAS`.
+**Processes are folded along method boundaries, not Nextflow ones.** Module 1
+is ten rows for eighteen processes: `denoise` holds relabelling, concatenation,
+dereplication, UNOISE, the chimera check and read mapping, and `curate` holds
+`MITO_DECONTAM` and `FILTER_COUNTS`. A row is what an alternative method would
+replace whole. Plot-only processes fold into the row that computed their tables.
+`research/aspire/contracts.md` records every fold against its upstream lines.
 
-## The run keystone
+**Augmentation, batch correction and the outlier checker are not ported.** Both
+stages default off and sit outside the reads-to-ASV pipeline. The outlier checker
+reads only batch correction's CLR table.
 
-`aspire::run` is a value the driver registers once, `aspire::sample_id` hangs off
-it, and read pairs hang off those. Per-sample stages `group_by=sample_id`; the
-collector at `CONCAT_FASTAS` groups by `run`, which is what makes the study
-fan-in expressible at all. Everything past that point is a singleton.
+**Thresholds are a typed input.** Every module-1 row requires `aspire::params`, a
+YAML file the driver registers under `run`. `research/aspire/presets/` offers the
+tool defaults and ASPIRE's study values under the same keys. **CAUTION:** a 0
+there means off, where upstream's Groovy `?:` would substitute the code default.
 
-Every transform requires `run` even where its protocol never opens it — that is
-what puts `run` in each product's lineage, so a downstream `parents={run}`
-constraint has something to resolve against.
+## The sample chain
+
+`aspire::run` is a value the driver registers once. Each sample is a
+`sequences::sample_name` under it, carrying a `sequences::read_metadata` and its
+reads side by side. Per-sample rows `group_by` the name, and `denoise` groups by
+`run`, which makes the study fan-in expressible at all.
+
+Every transform requires `run` even where its protocol never opens it. That puts
+`run` in each product's lineage, so a downstream `parents={run}` constraint has
+something to resolve against.
+
+**The reads are siblings of `read_metadata`, not its children.** A given four
+ancestors deep (`run`, name, metadata, `read_pair`) loses its link to the
+`read_pair` in the solver, and `interleave_zipped_short_reads` gets no candidates.
+Any three-level chain solves. Nest the reads again only once the engine handles
+that depth.
+
+## Where the parities join
+
+Paired and single-end reads join at `sequences::short_reads`, the type the rest of
+the library already shares. A paired sample is given as zipped halves under a
+`sequences::read_pair` and reaches it through `logistics/interleave_zipped_short_reads`.
+A single-end sample is given as `short_reads_se`, which already is one. `fastp_qc`
+and `merge_and_filter_reads` read the parity off `read_metadata` at run time.
+
+**A study has one parity.** In one sample view the solver reaches `short_reads`
+by the cheaper route only, so a mixed study plans without the interleave step and
+its paired samples never reach the ASV table. The plan still reports success.
+Split into per-sample views, the study becomes two solver cases, and the `run`
+fan-in solves in neither. The pilot's given-count check is what catches the first.
+
+**The long-read seam is the ASV table.** `denoise` emits `amplicon::asv_table`
+and `amplicon::asv_seqs`, the way assembly emits `sequences::assembly`. A
+long-read denoiser that produces those two types slots in under everything
+downstream.
 
 ## Looking at it
 
     python research/aspire/aspire_asv_pipeline.py --switches
-    python research/aspire/aspire_asv_pipeline.py all --dag
+    python research/aspire/aspire_asv_pipeline.py default --parity single --dag
+    python research/aspire/pilot.py run --parity paired --dag
 
-Solve only: no agent, no staging, no execution, and every input is `DEFERRED`.
-`--on`/`--off` move the switches and the rendered DAG changes with them.
-`pytest tests/metasmith_libraries/test_aspire_workflow.py` is the same thing as assertions, including
-one case per switch checking that the chosen arm is in the plan and the other is
-not.
+The first two solve only: every input is `DEFERRED`. The pilot plans over the
+mock dataset's fir paths and draws the full, step-only and legend views under
+`research/aspire/reports/dag/`. `--on`/`--off` move the switches, and `--preset`
+picks the thresholds. `tests/metasmith_libraries/test_aspire_workflow.py` holds the same
+checks as assertions: both parities, and one case per switch arm.
 
 ## Known-rough, for the next pass
 
-- The eight token pairs and their nine off-arm producers are machinery ASPIRE
-  does not visibly have, and are where the port is most reducible: several stages
-  are optional only because the `.nf` needed a flag, and once the planner selects
-  by target some tokens can go.
+- Every transform is a stub. The topology, types and settings are the port, and
+  no row has a protocol or an environment yet.
+- The six token pairs and their six off-arm producers are machinery ASPIRE does
+  not visibly have. Several stages are optional only because the `.nf` needed a
+  flag, and once the planner selects by target some tokens can go.
+- `aspire::analysis_counts` does not carry `amplicon::asv_table`'s properties, so
+  the rows lifted onto `amplicon::survey` bind `denoise`'s raw table. The fix is
+  a type-graph decision, recorded in `research/aspire/contracts.md`.
+- `curate` models no negative controls and no lab contaminant set beyond the
+  contaminant FASTA it already takes. A negative-control evidence input is the
+  next addition there.
 - `GROUP_POWER_ANALYSIS` is one Nextflow task hiding a bash driver, three Python
   drivers, six analysis scripts and an R script. It is the one candidate for
   *expansion* rather than collapse.
-- `master_summary_optional_slot` exists because `asv_pipeline.nf:2792` fills that
-  slot with an empty placeholder unconditionally. It is a dead slot, now visible.
-- **`transforms/amplicon` is NOT retired here**, which reverses the decision this
-  port arrived with. It proposed moving `qiime2_taxonomy.py` and `blast_map_asvs.py`
-  into `transforms/aspire/_disabled/` and deleting their tests, on the reasoning
-  that `qiime2_taxonomy` is very nearly `TAXONOMY` and `blast_map_asvs` a cousin of
-  `ASV_MAG_LINK`. Both readings are right, and both replacements are stubs: nothing
-  under `transforms/aspire/` declares an environment or a container, and every
-  protocol `touch`es its outputs and reports success. Trading two transforms that
-  run for fifty that cannot would have been a downgrade dressed as a migration.
-
-  They cost nothing to keep. The two families are never registered in the same
-  solve — `test_aspire_workflow.py` loads `transforms/{aspire,logistics}` and
-  `test_amplicon_workflow.py` loads `transforms/amplicon` — so the duplicate
-  producers of `amplicon::asv_taxonomy` cannot make either plan ambiguous. Retire
-  them when the stub that supersedes each one has a protocol, one at a time, and
-  say so here.
-
-  `data_types/amplicon.yml` is shared either way: `asv_table`, `asv_seqs`,
-  `asv_taxonomy` and `silva_db` are the vocabulary this pipeline has in common
-  with the rest of the library.
+- `transforms/amplicon/blast_map_asvs.py` stays as the optional ASV-to-assembly
+  placement, a cousin of `ASV_MAG_LINK`. The placeholder lane's taxonomy transform
+  is gone, and its NB-plus-consensus merge rule lives in the `taxonomy` row's note.
+  `data_types/amplicon.yml` is the vocabulary this pipeline shares with the rest of
+  the library.
