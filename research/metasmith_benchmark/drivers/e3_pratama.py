@@ -33,6 +33,8 @@ EXCLUDED_RUNS = {"ERR3858126"}
 EXPECTED_RUNS = 65
 # ENA's MinION runs as fetched, one per well; not interleaved or otherwise touched.
 RAW_2022 = Path(os.environ.get("PRATAMA_RAW_2022", "/scratch/phyberos/pratama2026/reads_2022"))
+# One hard link per hybrid pairing, staged by stage_hybrid_pairs.sh -- see hybrid_partners().
+HYBRID_PAIRS = Path(os.environ.get("PRATAMA_HYBRID_PAIRS", "/scratch/phyberos/pratama2026/hybrid_pairs"))
 EXPECTED_HYBRIDS = 17
 TYPE_LIBS = [c.MLIB / "data_types" / t for t in ("sequences.yml", "viromics.yml")] + [c.LIBRARY / "data_types" / "e3.yml"]
 
@@ -82,16 +84,33 @@ def missing_on_fir(runs):
     return out.split()
 
 
-def hybrid_partners():
-    """Illumina run -> its well's MinION file, for every 0.2 um 2022 replicate (Pratama's 17 hybrids)."""
+def hybrid_pairings():
+    """(illumina_run, minion_run) for every 0.2 um 2022 replicate paired with its well's MinION run.
+
+    The pure well-matching this and hybrid_partners() share, factored out so a test -- and
+    stage_hybrid_pairs.sh's own test -- can check the 17 pairs without touching a path.
+    """
     rows = c.pratama_rows()
-    minion = {r["sample_alias"].split("_")[0]: RAW_2022 / r["run_accession"] / f"{r['run_accession']}_1.fastq.gz"
+    minion = {r["sample_alias"].split("_")[0]: r["run_accession"]
               for r in rows if r["instrument_model"] == "MinION"}
-    partners = {r["run_accession"]: minion[r["sample_alias"][:3]]
-                for r in rows if r["dataset"] == "reads_2022" and r["library_layout"] == "PAIRED"
-                and r["sample_alias"].endswith("02um_2022") and r["sample_alias"][:3] in minion}
-    assert len(partners) == EXPECTED_HYBRIDS, f"{len(partners)} hybrid pairs, Pratama has {EXPECTED_HYBRIDS}"
-    return partners
+    pairs = [(r["run_accession"], minion[r["sample_alias"][:3]])
+             for r in rows if r["dataset"] == "reads_2022" and r["library_layout"] == "PAIRED"
+             and r["sample_alias"].endswith("02um_2022") and r["sample_alias"][:3] in minion]
+    assert len(pairs) == EXPECTED_HYBRIDS, f"{len(pairs)} hybrid pairs, Pratama has {EXPECTED_HYBRIDS}"
+    return pairs
+
+
+def hybrid_partners():
+    """Illumina run -> its own hard-linked copy of its well's MinION file (Pratama's 17 hybrids).
+
+    A distinct path per pairing, not the shared RAW_2022 source and not a symlink to it: the given
+    library's manifest is keyed by path (pool.py's GivenLibrary, transfer.py's Unpack), and importing
+    resolves symlinks to their target (ops.data's `Path(path).resolve()`) before that key is taken --
+    so three Illumina replicates sharing one MinION run would collapse to a single given however they
+    are named. A hard link is a second directory entry for the same bytes that `resolve()` does not
+    walk through, so it alone keeps the 17 pairings 17 distinct paths. stage_hybrid_pairs.sh creates them.
+    """
+    return {run: HYBRID_PAIRS / f"{run}__{minion_run}.fastq.gz" for run, minion_run in hybrid_pairings()}
 
 
 def declare_givens(smith, runs, ensure):
@@ -178,7 +197,8 @@ def cmd_run(args):
         targets=build_targets(),
     )
     c.check_plan(task, {"viromics::contig_study": 1, "sequences::read_metadata": len(runs),
-                        "sequences::read_pair": len(runs), "sequences::short_reads_pe": len(runs)})
+                        "sequences::read_pair": len(runs), "sequences::short_reads_pe": len(runs),
+                        "e3::nanopore_reads": EXPECTED_HYBRIDS})
     c.print_plan(task)
     interleave = [s for s in task.plan.steps if Path(s.transform._path).stem == "interleave_zipped_short_reads"]
     assert not interleave, "the plan interleaves reads that are registered pre-interleaved"
