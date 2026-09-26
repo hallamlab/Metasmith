@@ -1,7 +1,7 @@
-# The frozen viral set from BOTH of a sample's assemblies, as Pratama pooled metaSPAdes and MEGAHIT
+# The frozen viral set from every one of a sample's assembly lanes, as Pratama pooled each assembler's
 # calls before clustering. The standard merge binds one assembly per sample.
 #
-# Calls are unioned per contig batch, so the two assemblies' overlapping contigs stay separate records.
+# Calls are unioned per contig batch, so overlapping contigs from different lanes stay separate records.
 # The vOTU clustering downstream is what collapses them.
 import json
 from collections import defaultdict
@@ -24,20 +24,30 @@ image = model.AddRequirement(lib.GetType("env::seqkit.env"))
 study = model.AddRequirement(lib.GetType("viromics::contig_study"))
 pair  = model.AddRequirement(lib.GetType("sequences::read_pair"), parents={study})
 
-# One (batch slot, three caller slots) per assembler. The batch slots share a type and differ by parent,
-# which is what keeps them two slots.
-LANES = []
-for assembler in ("spades_assembly", "megahit_assembly"):
-    asm = model.AddRequirement(lib.GetType(f"sequences::{assembler}"), parents={pair})
+# The lane label enters frozen_id: a sample's hybrid and short-read metaSPAdes contigs share NODE_ names.
+LANES = {
+    "spades": "sequences::spades_assembly",
+    "megahit": "sequences::megahit_assembly",
+}
+CALLERS = (
+    "viromics::genomad_candidate_virus",
+    "viromics::virsorter2_candidate_virus",
+    "viromics::vibrant_candidate_virus",
+)
+
+# One (batch slot, caller slots) per lane. The batch slots share a type and differ by parent, which is
+# what keeps them separate slots.
+SLOTS = []
+for lane, assembly_type in LANES.items():
+    asm = model.AddRequirement(lib.GetType(assembly_type), parents={pair})
     batch = model.AddRequirement(lib.GetType("sequences::contig_batch"), parents={asm})
-    callers = tuple(model.AddRequirement(lib.GetType(f"viromics::{c}_candidate_virus"), parents={batch})
-                    for c in ("genomad", "virsorter2", "vibrant"))
-    LANES.append((batch, callers))
+    callers = tuple(model.AddRequirement(lib.GetType(c), parents={batch}) for c in CALLERS)
+    SLOTS.append((lane, batch, callers))
 
 out_frozen = model.AddProduct(lib.GetType("viromics::dereplicated_candidate_virus"))
 out_prov   = model.AddProduct(lib.GetType("viromics::candidate_call_provenance"))
 
-PROV_HEADER = "\t".join(["frozen_id", "sample", "source_contig", "start", "end", "length", "callers"]) + "\n"
+PROV_HEADER = "\t".join(["frozen_id", "sample", "lane", "source_contig", "start", "end", "length", "callers"]) + "\n"
 
 
 def _read_calls(path: Path):
@@ -91,8 +101,8 @@ def _extract(context, contigs_path: Path, regions: Path, k: int) -> dict:
 def protocol(context: ExecutionContext):
     # Grouped slots arrive in arbitrary order, so pair them by lineage, never by index.
     by_contigs = defaultdict(lambda: defaultdict(list))
-    sample_of = {}
-    for batch, callers in LANES:
+    sample_of, lane_of = {}, {}
+    for lane, batch, callers in SLOTS:
         for slot in callers:
             for call_table in context.InputGroup(slot):
                 sample = context.SourceOf(call_table, pair)
@@ -100,6 +110,7 @@ def protocol(context: ExecutionContext):
                 assert sample is not None and contigs is not None, (
                     f"[{call_table.local.name}] lacks a read_pair or contig batch in its lineage")
                 sample_of[contigs.local] = _label(Path(sample.local))
+                lane_of[contigs.local] = lane
                 for contig_id, start, end, caller in _read_calls(call_table.local):
                     by_contigs[contigs.local][contig_id].append((start, end, caller))
 
@@ -109,7 +120,7 @@ def protocol(context: ExecutionContext):
     with open(ofrozen.local, "w") as fasta, open(oprov.local, "w") as prov:
         prov.write(PROV_HEADER)
         for k, (contigs_path, per_contig) in enumerate(sorted(by_contigs.items())):
-            sample = sample_of[contigs_path]
+            sample, lane = sample_of[contigs_path], lane_of[contigs_path]
             regions = Path(f"regions_{k}.bed")
             wanted = []
             with open(regions, "w") as rf:
@@ -127,11 +138,11 @@ def protocol(context: ExecutionContext):
                 if seq is None:
                     Log.Warn(f"[{sample}] {contig_id}:{start}-{end} was called but not extracted")
                     continue
-                frozen_id = f"{sample}|{contig_id}|{start}_{end}"
+                frozen_id = f"{sample}|{lane}|{contig_id}|{start}_{end}"
                 fasta.write(f">{frozen_id}\n")
                 for i in range(0, len(seq), 70):
                     fasta.write(seq[i:i + 70] + "\n")
-                prov.write("\t".join([frozen_id, sample, contig_id, str(start), str(end),
+                prov.write("\t".join([frozen_id, sample, lane, contig_id, str(start), str(end),
                                       str(end - start + 1), ",".join(callers)]) + "\n")
                 n_frozen += 1
 

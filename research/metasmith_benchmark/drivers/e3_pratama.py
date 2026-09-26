@@ -37,28 +37,8 @@ EXPECTED_HYBRIDS = 17
 TYPE_LIBS = [c.MLIB / "data_types" / t for t in ("sequences.yml", "viromics.yml")] + [c.LIBRARY / "data_types" / "e3.yml"]
 
 # First-attempt (cpus, GB, hours); retries scale with the attempt.
-#
-# assembly_stats_pratama and dramv_kofam_pratama were both retried to failure on fir at their
-# transform-declared cpus (4 and 16), and `sacct -X` shows the SAME shape both times: every
-# attempt died exit 140 within ~60 s of its walltime, at every memory grant tried, never OOM.
-# assembly_stats_pratama ran 4 cpus at 64G/12h, 128G/24h, 256G/48h and 512G/96h and failed all
-# four the same way, so the bottleneck is `minimap2 -t 4` against a 45.4 GB interleaved fastq,
-# not memory -- 64 GB back on attempt 1 is what the evidence supports, not a gamble. 32 cpus
-# also brings it back under this campaign's SPAdes envelope (48 cpus / 192 GB / 24 h); the 512
-# GB rung it reached unscaled exceeded that envelope. dramv_kofam_pratama ran 16 cpus at
-# 64G/20h (exit 140 at 19:59:30) and 128G/40h (still running at 1-12:39 when killed) -- same
-# walltime shape, and it spent ~17 h inside kofam hmmsearch, which parallelises well, so cpus
-# is the lever there too.
-#
-# CAUTION the 24 h clamp (MAX_TASK_DURATION, applied in make_slurm_config) and this entry are
-# ONE change, not two. Taken alone, the clamp would cap assembly_stats_pratama's ladder at
-# 12/24/24/24 h -- and it has already failed at 12 h, 24 h AND 48 h, so a clamped ladder with
-# the old cpus/memory would retry three rungs it can never pass and die silently via the
-# `ignore` error strategy, with nothing to say why.
 SCALED = {
     "megahit": (32, 128, 12),
-    "assembly_stats_pratama": (32, 64, 12),
-    "dramv_kofam_pratama": (48, 64, 12),
 }
 
 # The standard transforms each E3 library transform replaces, by library.
@@ -139,9 +119,7 @@ def build_transforms():
             TransformInstanceLibrary.Load(c.LIBRARY / "transforms" / "bench"), *std]
 
 
-def build_targets(with_host_prediction=False, with_gtdbtk=False):
-    """The tool table's E3 column, less its gapfills: BinSanity, abawaca, dRep, DeepVirFinder, MetaPop,
-    minced with its BLASTn spacers, and iPHoP on the augmented database."""
+def build_targets():
     t = TargetBuilder()
     t.Add("sequences::read_qc_stats")
     t.Add("e3::fastp_report_json")
@@ -149,27 +127,14 @@ def build_targets(with_host_prediction=False, with_gtdbtk=False):
 
     # Hybrid design A: only the 17 runs that carry a MinION partner can produce it.
     t.Add("e3::hybrid_spades_assembly")
-
-    # MAG lane: metaSPAdes, MetaWRAP (CheckM inside it), DRAM on the MAGs.
-    spades = t.Add("sequences::spades_assembly")
-    for dtype in ("sequences::orfs", "sequences::gff", "sequences::assembly_stats",
-                  "sequences::assembly_per_contig_coverage",
-                  "binning::metawrap_contig_to_bin_table", "binning::metawrap_bin_stats",
-                  "e3::mag_dram_annotations", "e3::mag_dram_distill"):
-        t.Add(dtype, parents=[spades])
-    mags = t.Add("sequences::metawrap_bin_fasta", parents=[spades])
-    if with_gtdbtk:
-        t.Add("taxonomy::gtdbtk", parents=[mags])
-
-    # Viral lane: both assemblies' calls pooled into one frozen set.
+    t.Add("sequences::spades_assembly")
     t.Add("sequences::megahit_assembly")
+
+    # Every assembly lane's calls pooled into one frozen set, then scored and clustered to vOTUs.
     frozen = t.Add("viromics::dereplicated_candidate_virus")
-    viral = ["viromics::contig_length_table", "viromics::votu_cluster_table", "viromics::checkv_contamination",
-             "viromics::checkv_quality_summary", "viromics::vcontact3_network", "e3::viral_orfs", "e3::viral_gff",
-             "annotation::dramv_annotations", "annotation::dramv_distill", "pratama::votu_recovery_table"]
-    if with_host_prediction:
-        viral.append("e3::host_prediction_genome_default")
-    for dtype in viral:
+    for dtype in ("viromics::contig_length_table", "viromics::votu_cluster_table",
+                  "viromics::checkv_contamination", "viromics::checkv_quality_summary",
+                  "pratama::votu_recovery_table"):
         t.Add(dtype, parents=[frozen])
     return t
 
@@ -207,9 +172,10 @@ def cmd_run(args):
     task = smith.GenerateWorkflow(
         samples=list(inputs.AsSamples("sequences::read_metadata")),
         resources=[DataInstanceLibrary.Load(c.MLIB / "resources" / "env"),
-                   DataInstanceLibrary.Load(c.MLIB / "resources" / "lib"), globals_lib],
+                   DataInstanceLibrary.Load(c.MLIB / "resources" / "lib"),
+                   DataInstanceLibrary.Load(c.LIBRARY / "resources" / "bench"), globals_lib],
         transforms=build_transforms(),
-        targets=build_targets(args.with_host_prediction, args.with_gtdbtk),
+        targets=build_targets(),
     )
     c.check_plan(task, {"viromics::contig_study": 1, "sequences::read_metadata": len(runs),
                         "sequences::read_pair": len(runs), "sequences::short_reads_pe": len(runs)})
@@ -235,15 +201,10 @@ def main():
         p = sub.add_parser(name)
         p.add_argument("--dataset", nargs="*", help="reads_2019, reads_2022")
         p.add_argument("--limit", type=int)
-        p.set_defaults(fn=fn, dag=False, stage_only=False, launch=False, materialise=False, tag=None,
-                       with_host_prediction=False, with_gtdbtk=False)
+        p.set_defaults(fn=fn, dag=False, stage_only=False, launch=False, materialise=False, tag=None)
         if name == "list":
             p.add_argument("--check", action="store_true", help="count verified interleaved files on fir")
         elif name == "run":
-            p.add_argument("--with-host-prediction", action="store_true",
-                           help="iPHoP on the shipped database; needs ref::iphop_db staged")
-            p.add_argument("--with-gtdbtk", action="store_true",
-                           help="GTDB-Tk on the MAGs; needs ref::gtdb's representative genomes")
             p.add_argument("--dag", action="store_true", help="render the plan to page/dags/e3_pratama.dag.svg")
             mode = p.add_mutually_exclusive_group()
             mode.add_argument("--stage-only", action="store_true")
