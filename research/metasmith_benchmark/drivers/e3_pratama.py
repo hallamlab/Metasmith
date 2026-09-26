@@ -130,12 +130,18 @@ def build_targets():
     t.Add("sequences::spades_assembly")
     t.Add("sequences::megahit_assembly")
 
-    # Every assembly lane's calls pooled into one frozen set, then scored and clustered to vOTUs.
+    # Every assembly lane's calls pooled into one frozen set and scored at the pool level, then
+    # curated, host-trimmed and clustered to vOTUs; the >=5 kb representatives go through the
+    # island filter to the final published-catalogue shape, scored against Pratama's vOTUs again.
     frozen = t.Add("viromics::dereplicated_candidate_virus")
-    for dtype in ("viromics::contig_length_table", "viromics::votu_cluster_table",
-                  "viromics::checkv_contamination", "viromics::checkv_quality_summary",
-                  "pratama::votu_recovery_table"):
+    for dtype in ("viromics::contig_length_table", "viromics::checkv_contamination",
+                  "viromics::checkv_quality_summary", "pratama::votu_recovery_table"):
         t.Add(dtype, parents=[frozen])
+
+    curated = t.Add("e3::curated_candidate_virus", parents=[frozen])
+    t.Add("viromics::votu_cluster_table", parents=[curated])
+    final = t.Add("e3::final_votu_representatives", parents=[curated])
+    t.Add("e3::final_votu_recovery_table", parents=[final])
     return t
 
 

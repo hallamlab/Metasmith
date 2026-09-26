@@ -21,12 +21,19 @@ out_contamination = model.AddProduct(lib.GetType("e3::checkv_contamination_batch
 out_quality       = model.AddProduct(lib.GetType("e3::checkv_quality_summary_batch"))
 out_completeness  = model.AddProduct(lib.GetType("e3::checkv_completeness_batch"))
 out_complete      = model.AddProduct(lib.GetType("e3::checkv_complete_genomes_batch"))
+out_viruses       = model.AddProduct(lib.GetType("e3::checkv_viruses_batch"))
+out_proviruses    = model.AddProduct(lib.GetType("e3::checkv_proviruses_batch"))
 
+# viruses.fna and proviruses.fna are the same end_to_end run's other two outputs -- curation
+# needs the sequences, not just the tables, so they are kept alongside the four TSVs rather
+# than re-run through a second CheckV pass.
 WANTED = {
     out_contamination: "contamination.tsv",
     out_quality: "quality_summary.tsv",
     out_completeness: "completeness.tsv",
     out_complete: "complete_genomes.tsv",
+    out_viruses: "viruses.fna",
+    out_proviruses: "proviruses.fna",
 }
 
 
@@ -46,8 +53,8 @@ def protocol(context: ExecutionContext):
         src = Path(work) / name
         o = context.Output(prod)
         assert src.exists(), (
-            f"checkv wrote no {name}. end_to_end produces all four together, so a missing one means the "
-            "run stopped part way rather than that this table was not applicable.")
+            f"checkv wrote no {name}. end_to_end produces all six together, so a missing one means the "
+            "run stopped part way rather than that this file was not applicable.")
         o.local.write_bytes(src.read_bytes())
         outs[prod] = o
 
