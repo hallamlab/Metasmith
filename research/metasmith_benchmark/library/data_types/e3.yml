@@ -202,3 +202,61 @@ types:
       _: DRAM-v.py annotate over the prepped viral contigs against Pfam only, annotations.tsv
       e3: dramv_pfam_annotations
       ext: tsv
+
+  # Curation (Filtering 2), CheckV host trimming, and the island filter that follows clustering.
+  # viromics::dereplicated_candidate_virus stays the raw frozen pool; everything below describes
+  # what Filtering 2 keeps and trims, and what the >=5 kb published catalogue looks like after
+  # the island filter removes its mobile-element vOTUs.
+  checkv_viruses_batch:
+    properties:
+      _: CheckV's viruses.fna for ONE slice of the frozen set -- every contig CheckV did not trim
+      e3: checkv_viruses_batch
+      Format: FASTA
+      Data: nucleotide sequence
+      ext: fna
+  checkv_proviruses_batch:
+    properties:
+      _: CheckV's proviruses.fna for ONE slice -- the excised, host-trimmed provirus regions, each named <contig_id>_<n>
+      e3: checkv_proviruses_batch
+      Format: FASTA
+      Data: nucleotide sequence
+      ext: fna
+  curated_candidate_virus_batch:
+    properties:
+      _: ONE slice of the frozen set after Filtering 2's gene-content keep rule and CheckV host trimming
+      e3: curated_candidate_virus_batch
+      Format: FASTA
+      Data: nucleotide sequence
+      ext: fna
+  curated_candidate_virus:
+    properties:
+      _: the curated, host-trimmed viral set pooled across every slice -- what MMseqs2 clusters into vOTUs, in place of the raw frozen pool
+      e3: curated_candidate_virus
+      Format: FASTA
+      Data: nucleotide sequence
+      ext: fna
+  votu_representatives:
+    properties:
+      _: one representative per vOTU cluster of the curated set, length >= 5 kb, before the island filter
+      e3: votu_representatives
+      Format: FASTA
+      Data: nucleotide sequence
+      ext: fna
+  genomad_island_genes:
+    properties:
+      _: geNomad annotate's gene table for vOTU representatives >= 100 kb, the island filter's evidence
+      e3: genomad_island_genes
+      ext: tsv
+  final_votu_representatives:
+    properties:
+      _: the >= 5 kb vOTU representative set after the island filter -- the paper's published catalogue shape
+      e3: final_votu_representatives
+      Format: FASTA
+      Data: nucleotide sequence
+      ext: fna
+  final_votu_recovery_table:
+    properties:
+      _: skani recovery of Pratama's published vOTUs against the final vOTU representative set (the island-filtered, >=5 kb catalogue), distinct from the frozen-set pool-level score
+      e3: final_votu_recovery_table
+      Format: TSV
+      ext: tsv
