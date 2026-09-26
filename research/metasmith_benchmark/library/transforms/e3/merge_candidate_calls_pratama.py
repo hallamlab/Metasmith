@@ -28,6 +28,7 @@ pair  = model.AddRequirement(lib.GetType("sequences::read_pair"), parents={study
 LANES = {
     "spades": "sequences::spades_assembly",
     "megahit": "sequences::megahit_assembly",
+    "hybrid": "e3::hybrid_spades_assembly",
 }
 CALLERS = (
     "viromics::genomad_candidate_virus",
