@@ -39,7 +39,7 @@ MISSING = [
     "a study grouping type: viromics::contig_study stands in for the viral merge, dRep and skani per study",
     "dRep and skani over refined sets (DAS Tool, MAGScoT): they run over the three binners' raw bins, as siblings (D1)",
     "Prodigal on MAG ORFs for the 4-lane panel: the panel takes whole-assembly ORFs only",
-    "DeepVirFinder calls in the frozen viral set: Pratama gives no score or p-value cut, so only its table is a target",
+    "DeepVirFinder calls in the frozen viral set: Pratama's Methods cut is score >= 0.9 and p-value <= 0.05 (E3 applies it via e3::deepvirfinder_pratama); E5 still only targets the raw score table",
     "MetaPop's mean π over 100 vOTUs x 1,000 subsamplings: computed after the run from its table",
     "minced (new transform): the only spacer source, so spacer_host_links stays out",
     "SMETANA on CPLEX: E5 runs metaGEM's call on SCIP",

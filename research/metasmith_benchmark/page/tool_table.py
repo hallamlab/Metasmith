@@ -71,7 +71,7 @@ GROUPS = [
         ("prodigal-gv", {"E3": "viral contigs", "E5": True}, "Tony: both Prodigal and prodigal-gv"),
     ]),
     ("Virus identification", [
-        ("DeepVirFinder", {"Pratama": "-l 1000", "E3": NEW, "E5": "-l 1000; score table only, its calls stay out of the vOTU set (no cut given)"}, "fill"),
+        ("DeepVirFinder", {"Pratama": "-l 1000", "E3": "score >= 0.9, p <= 0.05 (Pratama's Methods cut)", "E5": "-l 1000; score table only, its calls stay out of the vOTU set (Pratama's cut: score >= 0.9, p <= 0.05)"}, "fill"),
         ("VIBRANT", {"Pratama": "-virome", "E3": "-virome", "E5": True}, "Taken from Pratama"),
         ("geNomad", {"Pratama": "two sensitivity flags", "E3": "Pratama's flags", "E5": True}, "Taken from Pratama"),
         ("VirSorter2", {"Pratama": "dsDNAphage, ssDNA", "E3": "Pratama's groups", "E5": True}, "Taken from Pratama"),
