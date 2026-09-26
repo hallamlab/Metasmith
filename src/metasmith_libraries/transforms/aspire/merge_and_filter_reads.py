@@ -3,10 +3,11 @@
 
 Folded in: MERGE_READS (asv_pipeline.nf:3179)
 
-r4 fold. Two vsearch calls on one sample, back to back: --fastq_mergepairs
-then --fastq_filter. The merged pair had exactly one consumer and is not a
-target anyone names -- what a reader wants from the merge is its RATE, and
-GENERAL_STATS reports that, not this file.
+Branches on `parity`. Paired: `vsearch --fastq_mergepairs` (settings under
+`merge:`) then `--fastq_filter` (under `filter:`). Single-end: the filter
+alone. The merged pair is not a product; what a reader wants from the merge is
+its rate, which goes in the per-sample count file beside the filtered reads
+for read_accounting.
 
 Stub: the model is the port, the body only touches its outputs.
 Regenerate with `python transforms/aspire/_generate.py`.
@@ -17,14 +18,17 @@ from metasmith.python_api import *
 lib   = TransformInstanceLibrary.ResolveParentLibrary(__file__)
 model = Transform()
 run      = model.AddRequirement(lib.GetType("aspire::run"))
-sid      = model.AddRequirement(lib.GetType("aspire::sample_id"), parents={run})
-fwd      = model.AddRequirement(lib.GetType("aspire::qc_reads_fwd"), parents={sid})
-rev      = model.AddRequirement(lib.GetType("aspire::qc_reads_rev"), parents={sid})
+name     = model.AddRequirement(lib.GetType("sequences::sample_name"), parents={run})
+meta     = model.AddRequirement(lib.GetType("sequences::read_metadata"), parents={name})
+qc       = model.AddRequirement(lib.GetType("aspire::qc_reads"), parents={name})
+params   = model.AddRequirement(lib.GetType("aspire::params"), parents={run})
 filtered = model.AddProduct(lib.GetType("aspire::filtered_fasta"))
+counts   = model.AddProduct(lib.GetType("aspire::read_counts"))
 
 def protocol(context: ExecutionContext):
     made = {
         filtered: context.Output(filtered),
+        counts: context.Output(counts),
     }
     for key, path in made.items():
         make = 'mkdir -p' if key in _DIRECTORY_PRODUCTS else 'touch'
@@ -39,7 +43,7 @@ _DIRECTORY_PRODUCTS = set()
 TransformInstance(
     protocol=protocol,
     model=model,
-    group_by=sid,
+    group_by=name,
     resources=Resources(
         cpus=4,
         memory=Size.GB(4),

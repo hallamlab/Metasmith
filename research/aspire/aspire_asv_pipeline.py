@@ -6,17 +6,31 @@ with no cluster access. It exists to answer one question while the port is still
 stubs: does the topology in `transforms/aspire/` close, and does the picture look
 like the pipeline?
 
-    python research/aspire/aspire_asv_pipeline.py            # the core spine
-    python research/aspire/aspire_asv_pipeline.py all --dag  # everything, as an SVG
+    python research/aspire/aspire_asv_pipeline.py                # Ryan's core set
+    python research/aspire/aspire_asv_pipeline.py all --dag      # everything, as an SVG
+    python research/aspire/aspire_asv_pipeline.py --parity single --preset tool_defaults
 
 Paths are irrelevant to a plan, so every input is `DEFERRED` and nothing here is
 opened. The library examples under `research/metasmith_libraries/examples/` drive real
 clusters and refuse to start until their site config is filled in; this one has
 no site config to fill.
 
+## Parity and presets
+
+Each sample is a `sequences::sample_name` with its `sequences::read_metadata` and its reads beneath it.
+A paired sample is given as zipped halves under a `sequences::read_pair`, and the plan
+interleaves them; a single-end sample is given as `sequences::short_reads_se`.
+`--preset` picks which file under `presets/` is registered as `aspire::params`.
+
+A study has one parity, as a fabfos experiment does. In one sample view the solver
+reaches `sequences::short_reads` by the cheaper route only, so a mixed study plans
+without the interleave step and its paired samples never reach the ASV table. Split
+into per-sample views it becomes two solver cases, and the run-level fan-in then
+solves in neither.
+
 ## The switches
 
-ASPIRE has ~35 config toggles. The eight that have downstream consumers cannot
+ASPIRE has ~35 config toggles. The six that have downstream consumers cannot
 be config here, because Metasmith has no way to rebind the channel eleven
 consumers read -- so each is a pair of mutually exclusive input tokens, and
 which one this driver registers is what selects the arm. `--on`/`--off` move
@@ -46,6 +60,7 @@ from metasmith.python_api import (  # noqa: E402
 from metasmith.python_api import record_library
 
 CACHE = REPO / "cache" / "aspire"
+PRESETS = Path(__file__).resolve().parent / "presets"
 TRANSFORMS = [MLIB / "transforms" / n for n in ("aspire", "logistics")]
 
 _spec = importlib.util.spec_from_file_location(
@@ -56,8 +71,6 @@ _spec.loader.exec_module(TOPOLOGY)
 SWITCHES: dict[str, str] = {base: desc for base, desc in TOPOLOGY.POLICIES}
 
 DEFAULT_ON = {
-    "augmentation": False,
-    "batch_correction": False,
     "indicspecies": True,
     "spieceasi": True,
     "network_modules": True,
@@ -76,6 +89,7 @@ REFERENCES = [
     "aspire::mito_reference_source",
     "aspire::contaminant_reference_source",
     "amplicon::silva_db",
+    "amplicon::silva_nb_classifier",
 ]
 EXTERNAL_GRAPH = [
     "aspire::external_graph_all",
@@ -84,10 +98,19 @@ EXTERNAL_GRAPH = [
 ]
 
 
+PARITIES = ("paired", "single")
+
+
+def read_metadata(parity: str) -> dict:
+    return {"parity": parity, "length_class": "short"}
+
+
 def given_types(on: dict[str, bool]) -> set[str]:
     given = {
-        "aspire::run", "aspire::sample_id", "sequences::read_pair",
-        "sequences::zipped_forward_short_reads", "sequences::zipped_reverse_short_reads",
+        "aspire::run", "aspire::params",
+        "sequences::sample_name", "sequences::read_metadata",
+        # the join: a logistics interleave step or a given single-end file, either way
+        "sequences::short_reads",
         *REFERENCES,
     }
     given |= {f"aspire::{b}_{'on' if v else 'off'}" for b, v in on.items()}
@@ -97,12 +120,12 @@ def given_types(on: dict[str, bool]) -> set[str]:
 
 
 def reachable_leaves(on: dict[str, bool]) -> list[str]:
+    """One product per reachable row that nothing downstream consumes."""
+    have = given_types(on)
     enabled = [r for r in TOPOLOGY.TABLE
-               if not any(d in ALL_TOKENS and d not in given_types(on)
-                          for _v, d, _p in r.requires)]
+               if not any(d in ALL_TOKENS and d not in have for _v, d, _p in r.requires)]
     consumed = {d for r in enabled for _v, d, _p in r.requires}
 
-    have = given_types(on)
     while True:
         grew = False
         for row in enabled:
@@ -115,22 +138,37 @@ def reachable_leaves(on: dict[str, bool]) -> list[str]:
 
     leaves = []
     for row in enabled:
-        if any(d in consumed for _v, d in row.products): continue
         if not all(d in have for _v, d, _p in row.requires): continue
-        leaves.append(row.products[0][1])
+        loose = [d for _v, d in row.products if d not in consumed]
+        if loose and loose[0] not in leaves:
+            leaves.append(loose[0])
     return leaves
 
 
 CASES: dict[str, list[str]] = {
+    # Ryan's core set: reads to curated ASVs, the read accounting, and the three
+    # analyses he keeps on by default.
+    "default": [
+        "amplicon::asv_table",
+        "amplicon::asv_taxonomy",
+        "aspire::counts_clean",
+        "aspire::read_fate",
+        "aspire::sankey_outputs",
+        "aspire::analysis_metadata",
+        "aspire::grouping_diagnostics_outputs",
+        "aspire::power_analysis_outputs",
+        "aspire::collectors_outputs",
+    ],
     "core": [
         "amplicon::asv_taxonomy",
-        "aspire::counts_filtered",
+        "aspire::counts_clean",
+        "aspire::read_fate",
         "aspire::sankey_outputs",
     ],
     "mito": [
         "aspire::mito_summary_tables",
         "aspire::mito_plots",
-        "aspire::counts_micro",
+        "aspire::counts_removed",
     ],
     "metadata": [
         "aspire::analysis_metadata",
@@ -160,8 +198,8 @@ def targets_for(case: str, on: dict[str, bool]) -> list[str]:
     return reachable_leaves(on) if case == "all" else CASES[case]
 
 
-def build_inputs(location: Path, samples: int, on: dict[str, bool],
-                 download_silva: bool) -> DataInstanceLibrary:
+def build_inputs(location: Path, samples: int, parity: str, on: dict[str, bool],
+                 preset: str, download_silva: bool) -> DataInstanceLibrary:
     if location.exists(): shutil.rmtree(location)
     inputs = DataInstanceLibrary(location)
     inputs.Purge()
@@ -169,13 +207,20 @@ def build_inputs(location: Path, samples: int, on: dict[str, bool],
         inputs.AddTypeLibrary(MLIB / "data_types" / ns)
 
     run = inputs.AddValue("run.txt", "aspire_study", "aspire::run")
+    inputs.AddValue("params.yml", (PRESETS / f"{preset}.yml").read_text(),
+                    "aspire::params", parents={run})
     for i in range(1, samples + 1):
-        sid = inputs.AddValue(f"sample_{i}.txt", f"sample_{i}",
-                              "aspire::sample_id", parents={run})
-        pair = inputs.AddValue(f"read_pair_{i}.txt", f"sample_{i}",
-                               "sequences::read_pair", parents={sid})
-        inputs.AddItem(DEFERRED, "sequences::zipped_forward_short_reads", parents={pair})
-        inputs.AddItem(DEFERRED, "sequences::zipped_reverse_short_reads", parents={pair})
+        name = inputs.AddValue(f"sample_{i}.txt", f"sample_{i}",
+                               "sequences::sample_name", parents={run})
+        meta = inputs.AddValue(f"read_metadata_{i}.json", read_metadata(parity),
+                               "sequences::read_metadata", parents={name})
+        if parity == "paired":
+            pair = inputs.AddValue(f"read_pair_{i}.txt", f"sample_{i}",
+                                   "sequences::read_pair", parents={name})
+            inputs.AddItem(DEFERRED, "sequences::zipped_forward_short_reads", parents={pair})
+            inputs.AddItem(DEFERRED, "sequences::zipped_reverse_short_reads", parents={pair})
+        else:
+            inputs.AddItem(DEFERRED, "sequences::short_reads_se", parents={name})
 
     for dtype in REFERENCES:
         if dtype == "amplicon::silva_db" and download_silva: continue
@@ -205,10 +250,14 @@ def transform_names() -> dict[str, str]:
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("case", nargs="?", default="core", choices=sorted(CASES),
-                    help="which slice of the pipeline to ask for (default: core)")
-    ap.add_argument("--samples", type=int, default=3,
-                    help="how many samples to fan out over (default: 3)")
+    ap.add_argument("case", nargs="?", default="default", choices=sorted(CASES),
+                    help="which slice of the pipeline to ask for (default: default)")
+    ap.add_argument("--samples", type=int, default=4,
+                    help="how many samples to fan out over (default: 4)")
+    ap.add_argument("--parity", choices=PARITIES, default="paired",
+                    help="every sample paired or every sample single-end (default: paired)")
+    ap.add_argument("--preset", choices=sorted(p.stem for p in PRESETS.glob("*.yml")),
+                    default="aspire", help="the aspire::params file (default: aspire)")
     ap.add_argument("--on", action="append", default=[], metavar="SWITCH",
                     help="turn a switch on; repeatable, see --switches")
     ap.add_argument("--off", action="append", default=[], metavar="SWITCH",
@@ -240,11 +289,12 @@ def main() -> int:
 
     targets = targets_for(args.case, on)
     flags = " ".join(f"{'+' if v else '-'}{k}" for k, v in on.items())
-    print(f"[{args.case}] {len(targets)} target(s), {args.samples} sample(s)")
+    print(f"[{args.case}] {len(targets)} target(s), {args.samples} sample(s) "
+          f"({args.parity}), preset {args.preset}")
     print(f"  switches: {flags}")
 
-    inputs = build_inputs(CACHE / f"aspire_{args.case}.xgdb", args.samples, on,
-                          args.download_silva)
+    inputs = build_inputs(CACHE / f"aspire_{args.case}.xgdb", args.samples, args.parity, on,
+                          args.preset, args.download_silva)
     spec = Spec(
         input_library=inputs,
         target_types=targets,
@@ -271,7 +321,7 @@ def main() -> int:
         print(f"    {i:2d}. {names.get(key, f'<unmapped {key}>')}")
 
     if args.dag:
-        out = REPO / "research/aspire/reports/dag" / f"{args.case}"
+        out = REPO / "research/aspire/reports/dag" / f"{args.case}_{args.parity}"
         out.parent.mkdir(parents=True, exist_ok=True)
         print(f"  dag: {task.plan.RenderDAG(str(out), format='svg')}")
     return 0

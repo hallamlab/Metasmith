@@ -12,15 +12,12 @@ from metasmith.python_api import *
 
 lib   = TransformInstanceLibrary.ResolveParentLibrary(__file__)
 model = Transform()
-run      = model.AddRequirement(lib.GetType("aspire::run"))
-policy   = model.AddRequirement(lib.GetType("aspire::sankey_on"), parents={run})
-fastq    = model.AddRequirement(lib.GetType("aspire::fastq_stats"), parents={run})
-filtered = model.AddRequirement(lib.GetType("aspire::filtered_stats"), parents={run})
-raw      = model.AddRequirement(lib.GetType("amplicon::asv_table"), parents={run})
-decon    = model.AddRequirement(lib.GetType("aspire::counts_decon"), parents={run})
-micro    = model.AddRequirement(lib.GetType("aspire::counts_micro"), parents={run})
-meta     = model.AddRequirement(lib.GetType("aspire::sample_metadata"))
-out      = model.AddProduct(lib.GetType("aspire::sankey_outputs"))
+run     = model.AddRequirement(lib.GetType("aspire::run"))
+policy  = model.AddRequirement(lib.GetType("aspire::sankey_on"), parents={run})
+fate    = model.AddRequirement(lib.GetType("aspire::read_fate"), parents={run})
+removed = model.AddRequirement(lib.GetType("aspire::counts_removed"), parents={run})
+meta    = model.AddRequirement(lib.GetType("aspire::sample_metadata"))
+out     = model.AddProduct(lib.GetType("aspire::sankey_outputs"))
 
 def protocol(context: ExecutionContext):
     made = {

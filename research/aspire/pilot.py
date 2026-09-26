@@ -7,11 +7,14 @@ campaign's would. Nothing is staged or launched: the transforms are still stubs,
 and this driver exists to show the topology over real inputs.
 
     python research/aspire/pilot.py list
-    python research/aspire/pilot.py run --case all --dag
+    python research/aspire/pilot.py run --dag                     # the default case, paired
+    python research/aspire/pilot.py run --parity single --preset tool_defaults
 
-The mock ships no SINA ARB reference, SILVA taxonomy or SILVA database. Those
-three stay DEFERRED placeholders in their own resource library, since a pool
-entry has to name a path that exists.
+`--parity single` gives each sample's R1 alone as single-end reads.
+
+The mock ships no SINA ARB reference, SILVA taxonomy, SILVA database or NB
+classifier. Those four stay DEFERRED placeholders in their own resource library,
+since a pool entry has to name a path that exists.
 """
 
 import argparse
@@ -27,8 +30,8 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 
 from aspire_asv_pipeline import (  # noqa: E402
-    CASES, DEFAULT_ON, EXTERNAL_GRAPH, MLIB, REPO, SWITCHES, TRANSFORMS, targets_for,
-    transform_names,
+    CASES, DEFAULT_ON, EXTERNAL_GRAPH, MLIB, PARITIES, PRESETS, REPO, SWITCHES, TRANSFORMS,
+    read_metadata, targets_for, transform_names,
 )
 from metasmith.python_api import (  # noqa: E402
     DEFERRED, Agent, DataInstanceLibrary, Runtime, Source, TransformInstanceLibrary,
@@ -51,21 +54,24 @@ MOCK_REFERENCES = {
     "aspire::mito_reference_source": MOCK / "references" / "mitochondria.fasta",
     "aspire::contaminant_reference_source": MOCK / "references" / "contaminants.fasta",
 }
-ABSENT_REFERENCES = ["aspire::sina_arb_reference", "aspire::silva_ref_taxonomy", "amplicon::silva_db"]
+ABSENT_REFERENCES = ["aspire::sina_arb_reference", "aspire::silva_ref_taxonomy", "amplicon::silva_db",
+                     "amplicon::silva_nb_classifier"]
 
 
-def given_name(base, declared):
-    """A pool name that moves when what it declares moves, so a moved file never cites a stale entry."""
-    return f"{base}@{hashlib.sha256(str(declared).encode()).hexdigest()[:12]}"
+def given_name(base, declared, dtype, parents):
+    """A pool name that moves when what it declares, its type or its parents move. The pool keeps
+    an entry's lineage under its name, so a reused name re-cites the old parents."""
+    key = json.dumps([str(declared), dtype, sorted(str(p) for p in parents)])
+    return f"{base}@{hashlib.sha256(key.encode()).hexdigest()[:12]}"
 
 
-def add_file(givens, base, path, dtype, **kw):
-    return givens.Add(path, dtype, name=given_name(base, path), **kw)
+def add_file(givens, base, path, dtype, parents=(), **kw):
+    return givens.Add(path, dtype, name=given_name(base, path, dtype, parents), parents=list(parents), **kw)
 
 
-def add_value(givens, base, content, dtype, **kw):
+def add_value(givens, base, content, dtype, parents=(), **kw):
     text = content if isinstance(content, str) else json.dumps(content, sort_keys=True)
-    return givens.Value(given_name(base, text), text, dtype, **kw)
+    return givens.Value(given_name(base, text, dtype, parents), text, dtype, parents=list(parents), **kw)
 
 
 def cite(givens, location):
@@ -73,22 +79,30 @@ def cite(givens, location):
     return givens.Build(location, type_library_paths=TYPE_LIBS, ensure=True)
 
 
-def declare_study(smith, on):
-    """The study view: run, its samples and reads, and the policy tokens, all hanging off run."""
+def declare_study(smith, on, parity, preset):
+    """The study view: run, params, policy tokens, and under each sample its metadata and reads."""
     ns = f"aspire/{STUDY}"
     givens = smith.PoolGivens()
     run = add_value(givens, f"{ns}/run", STUDY, "aspire::run", tags=["aspire", STUDY])
+    add_file(givens, f"{ns}/params/{preset}", PRESETS / f"{preset}.yml", "aspire::params",
+             parents=[run], tags=["aspire", STUDY])
     for sid in SAMPLES:
         tags = ["aspire", STUDY, sid]
-        sample = add_value(givens, f"{ns}/{sid}/sample_id", sid, "aspire::sample_id", parents=[run], tags=tags)
-        pair = add_value(givens, f"{ns}/{sid}/read_pair", sid, "sequences::read_pair", parents=[sample], tags=tags)
-        for mate, dtype in (("R1", "zipped_forward_short_reads"), ("R2", "zipped_reverse_short_reads")):
-            add_file(givens, f"{ns}/{sid}/{dtype}", MOCK / "fastq" / f"{sid}_{mate}.fastq.gz",
-                     f"sequences::{dtype}", parents=[pair], tags=tags)
+        name = add_value(givens, f"{ns}/{sid}/sample_name", sid, "sequences::sample_name", parents=[run], tags=tags)
+        add_value(givens, f"{ns}/{sid}/read_metadata/{parity}", read_metadata(parity),
+                  "sequences::read_metadata", parents=[name], tags=tags)
+        if parity == "paired":
+            pair = add_value(givens, f"{ns}/{sid}/read_pair", sid, "sequences::read_pair", parents=[name], tags=tags)
+            for mate, dtype in (("R1", "zipped_forward_short_reads"), ("R2", "zipped_reverse_short_reads")):
+                add_file(givens, f"{ns}/{sid}/{dtype}", MOCK / "fastq" / f"{sid}_{mate}.fastq.gz",
+                         f"sequences::{dtype}", parents=[pair], tags=tags)
+        else:
+            add_file(givens, f"{ns}/{sid}/short_reads_se", MOCK / "fastq" / f"{sid}_R1.fastq.gz",
+                     "sequences::short_reads_se", parents=[name], tags=tags)
     for base, enabled in on.items():
         arm = "on" if enabled else "off"
         add_value(givens, f"{ns}/policy/{base}", arm, f"aspire::{base}_{arm}", parents=[run], tags=["aspire", STUDY])
-    return cite(givens, CACHE_DIR / "study.xgdb")
+    return cite(givens, CACHE_DIR / f"study_{parity}_{preset}.xgdb")
 
 
 def declare_references(smith):
@@ -114,12 +128,15 @@ def declare_placeholders(on):
     return record_library(lib)
 
 
-def expected_givens():
-    """The study givens every case consumes. `plan.given` holds only what a step reads, so a
+def expected_givens(parity):
+    """The study givens the module-1 steps consume. `plan.given` holds only what a step reads, so a
     policy token outside the case's slice is absent by design and is not counted."""
     n = len(SAMPLES)
-    return {"aspire::run": 1, "sequences::read_pair": n,
-            "sequences::zipped_forward_short_reads": n, "sequences::zipped_reverse_short_reads": n}
+    reads = ({"sequences::read_pair": n, "sequences::zipped_forward_short_reads": n,
+              "sequences::zipped_reverse_short_reads": n} if parity == "paired"
+             else {"sequences::short_reads_se": n})
+    return {"aspire::run": 1, "aspire::params": 1, "sequences::sample_name": n,
+            "sequences::read_metadata": n, **reads}
 
 
 def check_plan(task, expected):
@@ -164,9 +181,10 @@ def cmd_run(args):
         targets = list(dict.fromkeys(named + targets_for("all", on)))
     else:
         targets = targets_for(args.case, on)
-    print(f"[{args.case}] {len(targets)} target(s), {len(SAMPLES)} samples")
+    print(f"[{args.case}] {len(targets)} target(s), {len(SAMPLES)} {args.parity} samples, "
+          f"preset {args.preset}")
     smith = Agent(home=Source.FromLocal(CACHE_DIR / "dryrun_home"), runtime=Runtime.APPTAINER)
-    study = declare_study(smith, on)
+    study = declare_study(smith, on, args.parity, args.preset)
     task = smith.GenerateWorkflow(
         samples=list(study.AsSamples("aspire::run")),
         resources=[DataInstanceLibrary.Load(MLIB / "resources" / "env"),
@@ -175,7 +193,7 @@ def cmd_run(args):
         targets=targets,
         max_iter=args.max_iter, max_refine=args.max_refine, seed=args.seed,
     )
-    check_plan(task, expected_givens())
+    check_plan(task, expected_givens(args.parity))
 
     names = transform_names()
     print(f"Plan OK: {len(task.plan.steps)} steps, key={task.GetKey()}")
@@ -185,8 +203,8 @@ def cmd_run(args):
     if args.dag:
         DAG_DIR.mkdir(parents=True, exist_ok=True)
         # RenderDAG reads a dotted basename's suffix as the format, so the stem carries no dot.
-        stem = "pilot" if args.case == "all" else f"pilot_{args.case}"
-        print(f"dag: {task.plan.RenderDAG(str(DAG_DIR / stem), format='svg')}")
+        stem = f"pilot_{args.case}_{args.parity}"
+        print(f"dag: {task.plan.RenderDAG(str(DAG_DIR / stem), format='svg', show_step_order=True)}")
     return 0
 
 
@@ -195,7 +213,9 @@ def main():
     sub = ap.add_subparsers(dest="cmd", required=True)
     sub.add_parser("list", help="print the pilot samples and references")
     run = sub.add_parser("run", help="solve the pilot against a local dry-run home")
-    run.add_argument("--case", default="all", choices=sorted(CASES))
+    run.add_argument("--case", default="default", choices=sorted(CASES))
+    run.add_argument("--parity", choices=PARITIES, default="paired")
+    run.add_argument("--preset", choices=sorted(p.stem for p in PRESETS.glob("*.yml")), default="aspire")
     run.add_argument("--on", action="append", default=[], metavar="SWITCH")
     run.add_argument("--off", action="append", default=[], metavar="SWITCH")
     run.add_argument("--dag", action="store_true", help=f"render the plan under {DAG_DIR}")

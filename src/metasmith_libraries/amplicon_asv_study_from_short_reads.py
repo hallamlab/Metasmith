@@ -1,10 +1,15 @@
 #!/usr/bin/env python3
-# The eight ASPIRE switches with downstream consumers are inputs, not
+# The six ASPIRE switches with downstream consumers are inputs, not
 # configuration: there is no way to rebind the channel their consumers read.
 # Each is a pair of mutually exclusive tokens and registering one arm selects it
 # -- the losing arm's transform has zero candidates for its token slot, so the
 # solver never instantiates it. They hang off `run` so a driver that split the
 # library by sample could not mask them out from under the stages that need them.
+#
+# The sample is paired. A single-end study registers `sequences::short_reads_se`
+# under the sample name in place of the read pair, and the same targets solve
+# without the interleave step. A study has one parity: research/aspire/
+# aspire_asv_pipeline.py says why a mixed one cannot plan.
 #
 # `amplicon::silva_db` is deliberately NOT an input: withheld, the plan grows a
 # download step for it, which is the one reference a user should not have to find.
@@ -14,11 +19,13 @@ import sys
 import _authoring as A
 from metasmith.python_api import DEFERRED, Spec
 
-NAME = "amplicon_asv_study_from_paired_reads"
+NAME = "amplicon_asv_study_from_short_reads"
 DESCRIPTION = """
-ASPIRE amplicon spine from paired short reads: QC, denoise, dereplicate,
-chimera check, study-wide fan-in to an ASV count table, SILVA taxonomy,
-abundance filtering and a read-fate sankey.
+ASPIRE amplicon study from paired or single-end short reads: fastp QC, merge and
+quality filter, a study-wide UNOISE denoise to an ASV table, SILVA taxonomy,
+non-target curation, read accounting with a read-fate sankey, and the core
+analyses. Settings come from one aspire::params YAML; research/aspire/presets/
+holds a tool-defaults and an ASPIRE preset.
 """
 
 _spec = importlib.util.spec_from_file_location(
@@ -27,8 +34,6 @@ _TOPOLOGY = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_TOPOLOGY)
 
 SWITCHES = {
-    "augmentation": False,
-    "batch_correction": False,
     "indicspecies": True,
     "spieceasi": True,
     "network_modules": True,
@@ -43,12 +48,19 @@ REFERENCES = [
     "aspire::silva_ref_taxonomy",
     "aspire::mito_reference_source",
     "aspire::contaminant_reference_source",
+    "amplicon::silva_nb_classifier",
 ]
 
 TARGETS = [
+    "amplicon::asv_table",
     "amplicon::asv_taxonomy",
-    "aspire::counts_filtered",
+    "aspire::counts_clean",
+    "aspire::read_fate",
     "aspire::sankey_outputs",
+    "aspire::analysis_metadata",
+    "aspire::grouping_diagnostics_outputs",
+    "aspire::power_analysis_outputs",
+    "aspire::collectors_outputs",
 ]
 
 
@@ -65,10 +77,13 @@ def build_spec(rebuild: bool = False) -> Spec:
         for tl in ("aspire.yml", "amplicon.yml", "sequences.yml"):
             lib.AddTypeLibrary(A.TYPES / tl)
         run = lib.AddValue("run.txt", "aspire_study", "aspire::run")
-        sid = lib.AddValue("sample_1.txt", "sample_1", "aspire::sample_id",
-                           parents={run})
+        lib.AddItem(DEFERRED, "aspire::params", parents={run})
+        name = lib.AddValue("sample_1.txt", "sample_1", "sequences::sample_name",
+                            parents={run})
+        lib.AddValue("read_metadata_1.json", {"parity": "paired", "length_class": "short"},
+                     "sequences::read_metadata", parents={name})
         pair = lib.AddValue("read_pair_1.txt", "sample_1", "sequences::read_pair",
-                            parents={sid})
+                            parents={name})
         lib.AddItem(DEFERRED, "sequences::zipped_forward_short_reads", parents={pair})
         lib.AddItem(DEFERRED, "sequences::zipped_reverse_short_reads", parents={pair})
         for dtype in REFERENCES:

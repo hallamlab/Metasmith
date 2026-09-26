@@ -61,7 +61,9 @@ TYPE_SECTIONS: list[tuple[str, dict]] = [
                  # A cross-file `extends:` would say this more plainly and is forbidden --
                  # test_type_hierarchy.py::test_no_cross_file_extends.
                  logistics="to group per-sample abundance profiles into one count table"),
-        "sample_id": t(VALUE, "label for one sequenced sample within an ASPIRE run", ext="txt"),
+        # Module 1's settings, one YAML keyed by step. research/aspire/presets/ holds the
+        # two presets: tool defaults, and the values ASPIRE's own study configs use.
+        "params": t(FILE, "ASPIRE read-to-ASV settings, keyed by step", ext="yml"),
     }),
     ("study-level inputs the .nf read out of its config", {
         "sample_metadata": t(FILE, "study metadata table, one row per sample", ext="tsv"),
@@ -71,16 +73,15 @@ TYPE_SECTIONS: list[tuple[str, dict]] = [
         "contaminant_reference_source": t(FILE, "contaminant/biofilm reference sequences for the contaminant BLAST database", ext="fasta"),
     }),
     ("per-sample read processing", {
-        "qc_reads_fwd": t(FILE, "fastp-trimmed forward reads for one sample", ext="fastq.gz"),
-        "qc_reads_rev": t(FILE, "fastp-trimmed reverse reads for one sample", ext="fastq.gz"),
+        # Interleaved for a paired sample, single-end otherwise; the parity is in the
+        # sample's read_metadata, as it is for every short-read consumer in the library.
+        "qc_reads": t(FILE, "fastp-trimmed amplicon reads for one sample", ext="fastq.gz"),
         "fastp_report_json": t(FILE, "fastp QC report for one sample", ext="json"),
         "fastp_report_html": t(FILE, "fastp QC report rendering for one sample", ext="html"),
-        "filtered_fasta": t(FILE, "quality-filtered merged reads for one sample", ext="fasta.gz"),
+        "filtered_fasta": t(FILE, "quality-filtered amplicon reads for one sample, merged when paired", ext="fasta.gz"),
+        "read_counts": t(FILE, "per-sample read counts after merging and after quality filtering", ext="tsv"),
     }),
     ("the run-level ASV spine", {
-        "concat_counts_fasta": t(FILE, "all samples' filtered reads concatenated with sample-relabelled headers, for counting", ext="fasta.gz"),
-        "centroids_fasta": t(FILE, "UNOISE denoised centroids", ext="fasta.gz"),
-        "nochimera_fasta": t(FILE, "chimera-filtered centroids", ext="fasta.gz"),
         "asv_filtered_counts": t(FILE, "ASV count matrix after prevalence and depth filtering", ext="tsv"),
         "asv_filtered_seqs": t(FILE, "ASV representative sequences surviving table filtering", ext="fasta.gz"),
     }),
@@ -96,27 +97,18 @@ TYPE_SECTIONS: list[tuple[str, dict]] = [
         "mitomaster_table": t(FILE, "MitoMaster classification of each ASV", ext="tsv"),
         "mito_blast6": t(FILE, "ASV hits against the mitochondrial database", ext="tsv"),
         "contaminant_blast6": t(FILE, "ASV hits against the contaminant database", ext="tsv"),
-        "nontarget_table": t(FILE, "master table of ASVs judged non-target (mitochondrial or contaminant)", ext="tsv"),
         "mito_summary_tables": t(DIR, "per-category summaries of the non-target call"),
         "mito_plots": t(DIR, "renderings of the non-target call"),
     }),
-    ("count partitioning", {
-        "counts_filtered": t(FILE, "ASV counts after non-target removal", ext="tsv"),
-        "counts_micro": t(FILE, "ASV counts restricted to microbial ASVs", ext="tsv"),
-        "counts_mito": t(FILE, "ASV counts restricted to mitochondrial ASVs", ext="tsv"),
-        "counts_decon": t(FILE, "ASV counts with contaminant ASVs removed", ext="tsv"),
+    ("curation", {
+        "counts_clean": t(FILE, "ASV counts with every non-target ASV removed", ext="tsv"),
+        "counts_removed": t(FILE, "the counts curation removed, one reason per ASV", ext="tsv"),
     }),
-    ("read-accounting statistics", {
-        "fastq_stats": t(FILE, "per-sample raw read counts", ext="tsv"),
-        "fastp_stats": t(FILE, "per-sample post-fastp read counts", ext="tsv"),
-        "filtered_stats": t(FILE, "per-sample post-filter read counts", ext="tsv"),
-        "concat_stats": t(FILE, "per-sample read counts entering the concatenated pool", ext="tsv"),
+    ("read accounting", {
+        "read_fate": t(FILE, "per-sample read counts at every stage from raw reads to clean counts", ext="tsv"),
         "sankey_outputs": t(DIR, "read-fate sankey renderings"),
     }),
     ("metadata joins", {
-        "metadata_micro": t(FILE, "study metadata joined to microbial read accounting", ext="tsv"),
-        "asv_meta_micro": t(FILE, "long-form ASV table joined to metadata and taxonomy, microbial", ext="tsv"),
-        "asv_final_micro": t(FILE, "analysis-ready microbial ASV count matrix", ext="tsv"),
         "metadata_mito": t(FILE, "study metadata joined to mitochondrial read accounting", ext="tsv"),
         "asv_meta_mito": t(FILE, "long-form ASV table joined to metadata and taxonomy, mitochondrial", ext="tsv"),
         "asv_final_mito": t(FILE, "analysis-ready mitochondrial ASV count matrix", ext="tsv"),
@@ -126,37 +118,20 @@ TYPE_SECTIONS: list[tuple[str, dict]] = [
         "soft_assignments": t(FILE, "soft group-label assignments for samples missing a hard label", ext="tsv"),
         "soft_validation": t(FILE, "per-sample validation of the soft label assignment", ext="tsv"),
         "soft_validation_summary": t(FILE, "summary of soft label assignment quality", ext="tsv"),
-        "augmentation_audit": t(FILE, "record of which metadata rows the soft labels changed", ext="tsv"),
     }),
     ("the three consumer-facing analysis channels", {
-        "analysis_metadata": t(FILE, "the metadata table every downstream analysis reads, augmented or not", ext="tsv"),
-        "stage_asv_meta": t(FILE, "the ASV metadata table after label augmentation and before batch correction", ext="tsv"),
-        "analysis_asv_meta": t(FILE, "the ASV metadata table every downstream analysis reads, corrected or not", ext="tsv"),
+        "analysis_metadata": t(FILE, "study metadata joined to the microbial read accounting, as every analysis reads it", ext="tsv"),
+        "analysis_asv_meta": t(FILE, "long-form microbial ASV table joined to metadata and taxonomy, as every analysis reads it", ext="tsv"),
         # r4: deliberately NOT a property superset of `amplicon::asv_table`, and so
         # deliberately not what the lifted ecology transforms read. Making it one would
         # let `filter_table` -- which requires `amplicon::asv_table` -- consume its own
-        # descendant, which is the trap `asv_batch_correction` already documents below.
-        # See research/kbase/curation/r4/aspire_topology.md.
-        "analysis_counts": t(FILE, "the ASV count matrix every downstream analysis reads, corrected or not", ext="tsv"),
-    }),
-    ("batch correction diagnostics", {
-        "asv_clr_selected": t(FILE, "CLR-transformed counts for the selected feature set", ext="tsv"),
-        "asv_clr_after": t(FILE, "CLR-transformed counts after ConQuR correction", ext="tsv"),
-        "asv_corrected_counts": t(FILE, "ConQuR-corrected relative abundances", ext="tsv"),
-        "asv_corrected_counts_int": t(FILE, "ConQuR-corrected counts with a pseudocount, integer-valued", ext="tsv"),
-        "asv_selected_counts": t(FILE, "relative abundances for the selected feature set", ext="tsv"),
-        "correction_decision": t(FILE, "per-feature record of whether correction was applied", ext="tsv"),
-        "correction_countspace_plot": t(FILE, "count-space preservation check for the correction", ext="png"),
-        "correction_countspace_metrics": t(FILE, "count-space preservation metrics for the correction", ext="tsv"),
-        "correction_umap_plot": t(FILE, "UMAP before and after correction", ext="png"),
-        "correction_stats": t(FILE, "batch correction summary statistics", ext="tsv"),
-        "umap_hdbscan_results": t(FILE, "UMAP embedding with HDBSCAN cluster assignments", ext="tsv"),
+        # descendant. See research/kbase/curation/r4/aspire_topology.md.
+        "analysis_counts": t(FILE, "the microbial ASV count matrix every analysis reads", ext="tsv"),
     }),
     ("terminal analyses", {
         "upset_plots": t(DIR, "UpSet renderings of metadata group overlap"),
         "bubble_plots": t(DIR, "taxonomic bubble plot renderings"),
         "umap_plots": t(DIR, "UMAP clustering renderings"),
-        "outlier_outputs": t(DIR, "sample outlier diagnostics"),
         "collectors_outputs": t(DIR, "collector's curve renderings"),
         "diversity_outputs": t(DIR, "alpha and beta diversity results and renderings"),
         "voc_correlation_outputs": t(DIR, "ASV to volatile-compound correlation results"),
@@ -210,8 +185,6 @@ TYPE_SECTIONS: list[tuple[str, dict]] = [
 
 
 POLICIES: list[tuple[str, str]] = [
-    ("augmentation", "apply soft group labels to the metadata before analysis"),
-    ("batch_correction", "run ConQuR batch correction over the ASV counts"),
     ("indicspecies", "run indicator species analysis"),
     ("spieceasi", "infer the co-occurrence network with SpiecEasi rather than supplying one"),
     ("network_modules", "detect modules in the co-occurrence network"),
@@ -254,74 +227,66 @@ def _r(var, dtype, *parents):
     return (var, dtype, tuple(parents))
 
 
+# A sample is a `sequences::sample_name` under the run, with its read_metadata and its reads
+# both directly beneath it. Parity lives in the read_metadata JSON and is read at run time,
+# as megahit.py does. A paired sample's zipped halves reach `sequences::short_reads` through
+# logistics/interleave_zipped_short_reads.py; a single-end sample is given as
+# `sequences::short_reads_se`, which is one. That is the join, and everything from
+# `fastp_qc` on is parity-blind at plan time.
+#
+# The reads are NOT under the read_metadata, as they are in fabfos. A given with four
+# ancestors (run, name, metadata, pair) loses the link to its read_pair on the solver's
+# given lineage, and the interleave step then has no candidates. Three solve.
+NAME = _r("name", "sequences::sample_name", "run")
+META = _r("meta", "sequences::read_metadata", "name")
+PARAMS = _r("params", "aspire::params", "run")
+
+
 TABLE: list[T] = [
     T("fastp_qc", "FASTP_QC", 3121,
-      [RUN,
-       _r("sid", "aspire::sample_id", "run"),
-       _r("pair", "sequences::read_pair", "sid"),
-       _r("r1", "sequences::zipped_forward_short_reads", "pair"),
-       _r("r2", "sequences::zipped_reverse_short_reads", "pair")],
-      [("fwd", "aspire::qc_reads_fwd"), ("rev", "aspire::qc_reads_rev"),
+      [RUN, NAME, META, _r("reads", "sequences::short_reads", "name"), PARAMS],
+      [("qc", "aspire::qc_reads"),
        ("rjson", "aspire::fastp_report_json"), ("rhtml", "aspire::fastp_report_html")],
-      "sid", cpus=4, hours=2),
+      "name", cpus=4, hours=2,
+      note="Reads `parity` from the read_metadata JSON: `--interleaved_in` for a paired "
+           "sample, plain `-i` for a single-end one. Settings under `fastp:` in the params "
+           "file. The product is an aspire type on purpose, so the shipped "
+           "kbase/clean_reads/fastp.py and bbduk cannot answer for this slot with their "
+           "own trimming."),
 
     T("merge_and_filter_reads", "FILTER_READS", 3221,
-      [RUN, _r("sid", "aspire::sample_id", "run"),
-       _r("fwd", "aspire::qc_reads_fwd", "sid"), _r("rev", "aspire::qc_reads_rev", "sid")],
-      [("filtered", "aspire::filtered_fasta")], "sid", folds=("MERGE_READS@3179",),
-      note="r4 fold. Two vsearch calls on one sample, back to back: "
-           "--fastq_mergepairs then --fastq_filter. The merged pair had exactly one "
-           "consumer and is not a target anyone names -- what a reader wants from the "
-           "merge is its RATE, and GENERAL_STATS reports that, not this file.",
+      [RUN, NAME, META, _r("qc", "aspire::qc_reads", "name"), PARAMS],
+      [("filtered", "aspire::filtered_fasta"), ("counts", "aspire::read_counts")],
+      "name", folds=("MERGE_READS@3179",),
+      note="Branches on `parity`. Paired: `vsearch --fastq_mergepairs` (settings under "
+           "`merge:`) then `--fastq_filter` (under `filter:`). Single-end: the filter "
+           "alone. The merged pair is not a product; what a reader wants from the merge is "
+           "its rate, which goes in the per-sample count file beside the filtered reads "
+           "for read_accounting.",
       cpus=4, hours=2),
 
-    T("concat_fastas", "CONCAT_FASTAS", 3274,
-      [RUN, _r("sid", "aspire::sample_id", "run"),
-       _r("filtered", "aspire::filtered_fasta", "sid")],
-      [("counts_fa", "aspire::concat_counts_fasta")],
-      "run", folds=("RELABEL_FILTERED@3248",),
-      note="r4 collapse: this emitted the same reads twice, differing only in whether "
-           "the headers carry the sample label, and vsearch --derep_fulllength does not "
-           "read headers -- so one file serves both consumers and `aspire::concat_fasta` "
-           "is gone. The row stays: it is the study fan-in, which is a structural event "
-           "and not staging. "
-           "The study fan-in: group_by=run collapses every sample's filtered "
-           "reads into one task. RELABEL_FILTERED is folded in -- it is a "
-           "header rewrite over a file this transform already reads, and "
-           "keeping it separate and optional would add a third rebinding "
-           "switch for a sed. The real protocol names each sequence from the "
-           "sample_id its fasta descends from (context.SourceOf), never from "
-           "the position of the file in the group.",
-      cpus=2, hours=2),
-
     T("denoise", "DENOISE", 3367,
-      [RUN, _r("concat", "aspire::concat_counts_fasta", "run")],
-      [("centroids", "aspire::centroids_fasta")], "run", folds=("DEREPLICATE@3298",),
-      note="r4 fold. `vsearch --derep_fulllength` is a precondition of --cluster_unoise, "
-           "not a result: a dereplicated FASTA is a compression of its input and had one "
-           "consumer, which was this. The UNOISE centroids are the first thing in this "
-           "stretch a person asks for, and they stay a product.",
-      cpus=8, memory_gb=16, hours=4),
-
-    T("chimera_check", "CHIMERA_CHECK", 3393,
-      [RUN, _r("centroids", "aspire::centroids_fasta", "run")],
-      [("nochi", "aspire::nochimera_fasta")], "run", cpus=8, memory_gb=16, hours=4),
-
-    T("create_count_matrix", "CREATE_COUNT_MATRIX", 3417,
-      [RUN, _r("counts_fa", "aspire::concat_counts_fasta", "run"),
-       _r("nochi", "aspire::nochimera_fasta", "run")],
+      [RUN, NAME, _r("filtered", "aspire::filtered_fasta", "name"), PARAMS],
       [("counts", "amplicon::asv_table"), ("seqs", "amplicon::asv_seqs")],
       "run",
-      note="the two generic ASV types this pipeline shares with the rest of "
-           "the library: a sample-by-ASV count matrix and the representative "
-           "sequences behind it.",
-      cpus=8, memory_gb=16, hours=4),
+      folds=("RELABEL_FILTERED@3248", "CONCAT_FASTAS@3274", "DEREPLICATE@3298",
+             "CHIMERA_CHECK@3393", "CREATE_COUNT_MATRIX@3417"),
+      note="The study fan-in, and the one place reads become ASVs. Relabel each sample's "
+           "headers from the sample_name its fasta descends from (context.SourceOf, never "
+           "the position in the group), concatenate, `--derep_fulllength`, "
+           "`--cluster_unoise` (under `unoise:`), `--uchime3_denovo`, then "
+           "`--usearch_global` of the pooled reads against the non-chimeric centroids "
+           "(under `count:`). Every intermediate had exactly one consumer. The two "
+           "products are the library's generic ASV types, so this is the seam a long-read "
+           "denoiser joins at, the way both read lengths meet at `sequences::assembly`.",
+      cpus=8, memory_gb=16, hours=6),
 
     T("filter_table", "FILTER_TABLE", 3444,
       [RUN, _r("counts", "amplicon::asv_table", "run"),
-       _r("seqs", "amplicon::asv_seqs", "run")],
+       _r("seqs", "amplicon::asv_seqs", "run"), PARAMS],
       [("fcounts", "aspire::asv_filtered_counts"), ("fseqs", "aspire::asv_filtered_seqs")],
-      "run"),
+      "run",
+      note="Sample depth and ASV prevalence cuts, under `table_filter:`."),
 
     T("sina_trim", "SINA_TRIM", 3322,
       [RUN, _r("fseqs", "aspire::asv_filtered_seqs", "run"),
@@ -336,14 +301,20 @@ TABLE: list[T] = [
 
     T("taxonomy", "TAXONOMY", 3470,
       [RUN, _r("trimmed", "aspire::sina_trimmed_seqs", "run"),
+       _r("nb", "amplicon::silva_nb_classifier"),
        _r("refseqs", "amplicon::silva_db"), _r("reftax", "aspire::silva_ref_taxonomy")],
       [("tax", "amplicon::asv_taxonomy"), ("upper", "aspire::taxonomy_uppercase_seqs"),
        ("stats", "aspire::taxonomy_stats")],
       "run",
-      note="the SILVA reference used to be fetched during Groovy config "
-           "parsing, before any process ran. Here it is an ordinary input, so "
-           "the planner either takes the one the driver supplies or reaches "
-           "for transforms/logistics/downloadSilvaDB.",
+      note="Absorbs the retired placeholder lane's amplicon/qiime2_taxonomy.py. Its "
+           "method, for the protocol pass: `qiime feature-classifier classify-sklearn` "
+           "with the NB classifier, then `classify-consensus-vsearch` against the SILVA "
+           "sequences and taxonomy (perc-identity 0.70, min-consensus 0.51, maxaccepts "
+           "10, maxrejects 10), and a merge that keeps the NB call unless it is "
+           "Unassigned or Unclassified, falls back to the vsearch call, and records which "
+           "one won. Columns: Feature ID, Taxon, Confidence, Source. That file fetched "
+           "SILVA 138-99 with wget inside the protocol; here all three references are "
+           "typed inputs.",
       cpus=8, memory_gb=16, hours=6),
 
     T("mitomaster", "MITOMASTER", 3544,
@@ -361,42 +332,42 @@ TABLE: list[T] = [
            "-- so the two reference FASTAs move up here.",
       cpus=8, memory_gb=16, hours=6),
 
-    T("mito_decontam", "MITO_DECONTAM", 3595,
-      [RUN, _r("master", "aspire::mitomaster_table", "run"),
-       _r("mhits", "aspire::mito_blast6", "run"),
-       _r("chits", "aspire::contaminant_blast6", "run"),
-       _r("tax", "amplicon::asv_taxonomy", "run")],
-      [("nontarget", "aspire::nontarget_table"),
-       ("summaries", "aspire::mito_summary_tables"), ("plots", "aspire::mito_plots")],
-      "run",
-      note="the .nf emits the summaries and plots as optional globs; declared "
-           "unconditionally here, since a Metasmith product is not optional."),
-
-    T("filter_counts", "FILTER_COUNTS", 3637,
+    T("curate", "MITO_DECONTAM", 3595,
       [RUN, _r("fcounts", "aspire::asv_filtered_counts", "run"),
        _r("fseqs", "aspire::asv_filtered_seqs", "run"),
        _r("tax", "amplicon::asv_taxonomy", "run"),
-       _r("nontarget", "aspire::nontarget_table", "run")],
-      [("filtered", "aspire::counts_filtered"), ("micro", "aspire::counts_micro"),
-       ("mito", "aspire::counts_mito"), ("decon", "aspire::counts_decon")],
-      "run"),
+       _r("master", "aspire::mitomaster_table", "run"),
+       _r("mhits", "aspire::mito_blast6", "run"),
+       _r("chits", "aspire::contaminant_blast6", "run"),
+       PARAMS],
+      [("clean", "aspire::counts_clean"), ("removed", "aspire::counts_removed"),
+       ("summaries", "aspire::mito_summary_tables"), ("plots", "aspire::mito_plots")],
+      "run", folds=("FILTER_COUNTS@3637",),
+      note="Decides every non-target call and applies it in one step. The .nf split "
+           "this in two and partitioned the result into four count tables; here there "
+           "are two, the counts kept and the counts removed, and each removed ASV carries "
+           "its reason (mitochondrial, contaminant, below abundance, taxonomy). "
+           "Thresholds under `curate:`. Negative controls are not modelled yet; they "
+           "belong here as a second evidence input beside the contaminant hits."),
 
-    T("general_stats", "GENERAL_STATS", 3755,
-      [RUN, _r("counts_fa", "aspire::concat_counts_fasta", "run")],
-      [("fastq", "aspire::fastq_stats"), ("fastp", "aspire::fastp_stats"),
-       ("filtered", "aspire::filtered_stats"), ("concat", "aspire::concat_stats")],
-      "run",
-      note="the .nf reaches into the publish directories for the per-stage "
-           "read counts and takes the concatenated fasta only as an ordering "
-           "barrier. Ported as declared: the barrier is the one real edge."),
+    T("read_accounting", "GENERAL_STATS", 3755,
+      [RUN, NAME,
+       _r("rjson", "aspire::fastp_report_json", "name"),
+       _r("rcounts", "aspire::read_counts", "name"),
+       _r("raw", "amplicon::asv_table", "run"),
+       _r("clean", "aspire::counts_clean", "run"),
+       _r("removed", "aspire::counts_removed", "run")],
+      [("fate", "aspire::read_fate")], "run",
+      note="One row per sample, one column per stage: raw and post-fastp from the fastp "
+           "report, merged and filtered from the per-sample count file, mapped from the "
+           "ASV table, then kept and removed by reason. The .nf read these out of other "
+           "processes' publish directories behind an ordering barrier; every one is now a "
+           "declared input."),
 
     T("sankey", "SANKEY", 3687,
       [RUN, _r("policy", "aspire::sankey_on", "run"),
-       _r("fastq", "aspire::fastq_stats", "run"),
-       _r("filtered", "aspire::filtered_stats", "run"),
-       _r("raw", "amplicon::asv_table", "run"),
-       _r("decon", "aspire::counts_decon", "run"),
-       _r("micro", "aspire::counts_micro", "run"),
+       _r("fate", "aspire::read_fate", "run"),
+       _r("removed", "aspire::counts_removed", "run"),
        _r("meta", "aspire::sample_metadata")],
       [("out", "aspire::sankey_outputs")], "run",
       note="`sankey.done` is dropped; the renderings are the output, and "
@@ -411,85 +382,30 @@ TABLE: list[T] = [
            "consumer's requirement stays unconditional either way."),
 
     T("plot_metadata", "PLOT_METADATA", 3793,
-      [RUN, _r("fastq", "aspire::fastq_stats", "run"),
-       _r("micro", "aspire::counts_filtered", "run"),
-       _r("mito", "aspire::counts_mito", "run"),
+      [RUN, _r("fate", "aspire::read_fate", "run"),
+       _r("clean", "aspire::counts_clean", "run"),
+       _r("removed", "aspire::counts_removed", "run"),
        _r("tax", "amplicon::asv_taxonomy", "run"),
        _r("meta", "aspire::sample_metadata")],
-      [("md_micro", "aspire::metadata_micro"), ("am_micro", "aspire::asv_meta_micro"),
-       ("af_micro", "aspire::asv_final_micro"), ("md_mito", "aspire::metadata_mito"),
+      [("md", "aspire::analysis_metadata"), ("am", "aspire::analysis_asv_meta"),
+       ("counts", "aspire::analysis_counts"), ("md_mito", "aspire::metadata_mito"),
        ("am_mito", "aspire::asv_meta_mito"), ("af_mito", "aspire::asv_final_mito")],
       "run", cpus=4, memory_gb=16, hours=3,
-      note="the join that turns counts into an analysis table. Everything "
-           "downstream of here reads one of the three consumer-facing channels, "
-           "not these directly."),
+      note="The join that turns counts into analysis tables, and now the only producer "
+           "of the three consumer-facing channels. The .nf rebound those channels "
+           "through label augmentation and batch correction; both are off by default, "
+           "outside the reads-to-ASV pipeline, and not ported. The mitochondrial "
+           "tables come from the removed counts whose reason is mitochondrial."),
 
     T("grouping_diagnostics", "GROUPING_DIAGNOSTICS", 4929,
-      [RUN, _r("md", "aspire::metadata_micro", "run"),
-       _r("counts", "aspire::asv_final_micro", "run")],
+      [RUN, _r("md", "aspire::analysis_metadata", "run"),
+       _r("counts", "aspire::analysis_counts", "run")],
       [("out", "aspire::grouping_diagnostics_outputs"),
        ("assign", "aspire::soft_assignments"), ("valid", "aspire::soft_validation"),
        ("vsum", "aspire::soft_validation_summary")],
       "run", cpus=4, memory_gb=16, hours=4,
-      note="reads the pre-augmentation metadata deliberately -- it is what "
-           "produces the soft labels augmentation applies. The .nf rebinds its "
-           "counts input to the corrected matrix at asv_pipeline.nf:2915, after "
-           "the call site, so that rebinding is dead and is not ported."),
-
-    T("group_label_augmentation", "GROUP_LABEL_AUGMENTATION", 4986,
-      [RUN, _r("policy", "aspire::augmentation_on", "run"),
-       _r("md", "aspire::metadata_micro", "run"),
-       _r("am", "aspire::asv_meta_micro", "run"),
-       _r("assign", "aspire::soft_assignments", "run"),
-       _r("vsum", "aspire::soft_validation_summary", "run")],
-      [("out_md", "aspire::analysis_metadata"), ("out_am", "aspire::stage_asv_meta"),
-       ("audit", "aspire::augmentation_audit")],
-      "run",
-      note="the `on` arm of the augmentation switch. In the .nf this stage "
-           "reassigns the eleven `metaMicroFor*` and `asvMetaFor*` variables "
-           "(asv_pipeline.nf:2872-2892); here it produces the shared "
-           "consumer-facing types instead, and the token decides which "
-           "producer exists."),
-
-    T("augmentation_passthrough", None, None,
-      [RUN, _r("policy", "aspire::augmentation_off", "run"),
-       _r("md", "aspire::metadata_micro", "run"),
-       _r("am", "aspire::asv_meta_micro", "run")],
-      [("out_md", "aspire::analysis_metadata"), ("out_am", "aspire::stage_asv_meta")],
-      "run",
-      note="the `off` arm: the metadata tables reach the analyses unchanged."),
-
-    T("asv_batch_correction", "ASV_BATCH_CORRECTION", 4101,
-      [RUN, _r("policy", "aspire::batch_correction_on", "run"),
-       _r("md", "aspire::analysis_metadata", "run"),
-       _r("am", "aspire::stage_asv_meta", "run"),
-       _r("counts", "aspire::asv_final_micro", "run")],
-      [("out_counts", "aspire::analysis_counts"), ("out_am", "aspire::analysis_asv_meta"),
-       ("clr_sel", "aspire::asv_clr_selected"), ("clr_after", "aspire::asv_clr_after"),
-       ("corr", "aspire::asv_corrected_counts"), ("corr_int", "aspire::asv_corrected_counts_int"),
-       ("sel", "aspire::asv_selected_counts"), ("decision", "aspire::correction_decision"),
-       ("cs_plot", "aspire::correction_countspace_plot"),
-       ("cs_metrics", "aspire::correction_countspace_metrics"),
-       ("umap_plot", "aspire::correction_umap_plot"),
-       ("stats", "aspire::correction_stats"), ("umap_res", "aspire::umap_hdbscan_results")],
-      "run", folds=("ASV_META_FROM_CORRECTED@4246",),
-      cpus=8, memory_gb=32, hours=8,
-      note="the `on` arm of the batch correction switch. ASV_META_FROM_CORRECTED "
-           "is folded in: it is a second table derived from the same corrected "
-           "counts, gated on the same flag, and separating it would need a "
-           "third arm for the case where correction ran but nothing downstream "
-           "wanted the corrected ASV metadata. It requires the pre-correction "
-           "counts type, never the shared consumer-facing one -- requiring the "
-           "shared type would let the solver chain this transform into itself."),
-
-    T("batch_correction_passthrough", None, None,
-      [RUN, _r("policy", "aspire::batch_correction_off", "run"),
-       _r("am", "aspire::stage_asv_meta", "run"),
-       _r("counts", "aspire::asv_final_micro", "run")],
-      [("out_counts", "aspire::analysis_counts"), ("out_am", "aspire::analysis_asv_meta")],
-      "run",
-      note="the `off` arm: the uncorrected counts and ASV metadata reach the "
-           "analyses unchanged."),
+      note="The soft labels are still computed and reported. Nothing applies them: "
+           "GROUP_LABEL_AUGMENTATION, their only consumer in the .nf, is not ported."),
 
     T("plot_upset", "PLOT_UPSET", 3927,
       [RUN, _r("md", "aspire::analysis_metadata", "run")],
@@ -504,14 +420,6 @@ TABLE: list[T] = [
        _r("am", "aspire::analysis_asv_meta", "survey")],
       [("out", "aspire::umap_plots")], "survey", cpus=2, memory_gb=8,
       note="r4 ecology lift: requires the generic `amplicon::survey` grouping node and a bare `amplicon::asv_table` instead of `aspire::run` and `aspire::analysis_counts`, so it is reachable from any count table -- `kbase/profile_abundance/kraken_abundance.py` produces one from kraken2 reports. An ASPIRE run satisfies the survey requirement unchanged. See research/kbase/curation/r4/aspire_topology.md."),
-
-    T("outlier_checker", "OUTLIER_CHECKER", 4316,
-      [RUN, _r("clr", "aspire::asv_clr_after", "run"),
-       _r("md", "aspire::analysis_metadata", "run")],
-      [("out", "aspire::outlier_outputs")], "run",
-      note="reads the CLR matrix, which only the correction arm produces -- so "
-           "this stage needs batch correction on, exactly as in the .nf, "
-           "without a token of its own."),
 
     T("collectors_curve", "COLLECTORS_CURVE", 4364,
       [RUN, _r("counts", "aspire::analysis_counts", "run"),
@@ -587,7 +495,7 @@ TABLE: list[T] = [
       [RUN, _r("am", "aspire::analysis_asv_meta", "run"),
        _r("md", "aspire::analysis_metadata", "run"),
        _r("tables", "aspire::indicspecies_tables", "run"),
-       _r("mito", "aspire::counts_mito", "run")],
+       _r("removed", "aspire::counts_removed", "run")],
       [("out", "aspire::clustermap_outputs")], "run", cpus=4, memory_gb=16, hours=3,
       note="the .nf passes a boolean saying whether indicator species ran and "
            "then globs the tables out of a shared directory. The directory is "

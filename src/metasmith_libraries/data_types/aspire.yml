@@ -10,10 +10,10 @@ types:
       _: one ASPIRE study; the grouping parent every stage descends from
       ext: txt
       logistics: to group per-sample abundance profiles into one count table
-  sample_id:
+  params:
     properties:
-      _: label for one sequenced sample within an ASPIRE run
-      ext: txt
+      _: ASPIRE read-to-ASV settings, keyed by step
+      ext: yml
 # -- study-level inputs the .nf read out of its config --
   sample_metadata:
     properties:
@@ -36,13 +36,9 @@ types:
       _: contaminant/biofilm reference sequences for the contaminant BLAST database
       ext: fasta
 # -- per-sample read processing --
-  qc_reads_fwd:
+  qc_reads:
     properties:
-      _: fastp-trimmed forward reads for one sample
-      ext: fastq.gz
-  qc_reads_rev:
-    properties:
-      _: fastp-trimmed reverse reads for one sample
+      _: fastp-trimmed amplicon reads for one sample
       ext: fastq.gz
   fastp_report_json:
     properties:
@@ -54,21 +50,13 @@ types:
       ext: html
   filtered_fasta:
     properties:
-      _: quality-filtered merged reads for one sample
+      _: quality-filtered amplicon reads for one sample, merged when paired
       ext: fasta.gz
+  read_counts:
+    properties:
+      _: per-sample read counts after merging and after quality filtering
+      ext: tsv
 # -- the run-level ASV spine --
-  concat_counts_fasta:
-    properties:
-      _: all samples' filtered reads concatenated with sample-relabelled headers, for counting
-      ext: fasta.gz
-  centroids_fasta:
-    properties:
-      _: UNOISE denoised centroids
-      ext: fasta.gz
-  nochimera_fasta:
-    properties:
-      _: chimera-filtered centroids
-      ext: fasta.gz
   asv_filtered_counts:
     properties:
       _: ASV count matrix after prevalence and depth filtering
@@ -115,10 +103,6 @@ types:
     properties:
       _: ASV hits against the contaminant database
       ext: tsv
-  nontarget_table:
-    properties:
-      _: master table of ASVs judged non-target (mitochondrial or contaminant)
-      ext: tsv
   mito_summary_tables:
     properties:
       _: per-category summaries of the non-target call
@@ -127,57 +111,25 @@ types:
     properties:
       _: renderings of the non-target call
       Data: directory
-# -- count partitioning --
-  counts_filtered:
+# -- curation --
+  counts_clean:
     properties:
-      _: ASV counts after non-target removal
+      _: ASV counts with every non-target ASV removed
       ext: tsv
-  counts_micro:
+  counts_removed:
     properties:
-      _: ASV counts restricted to microbial ASVs
+      _: the counts curation removed, one reason per ASV
       ext: tsv
-  counts_mito:
+# -- read accounting --
+  read_fate:
     properties:
-      _: ASV counts restricted to mitochondrial ASVs
-      ext: tsv
-  counts_decon:
-    properties:
-      _: ASV counts with contaminant ASVs removed
-      ext: tsv
-# -- read-accounting statistics --
-  fastq_stats:
-    properties:
-      _: per-sample raw read counts
-      ext: tsv
-  fastp_stats:
-    properties:
-      _: per-sample post-fastp read counts
-      ext: tsv
-  filtered_stats:
-    properties:
-      _: per-sample post-filter read counts
-      ext: tsv
-  concat_stats:
-    properties:
-      _: per-sample read counts entering the concatenated pool
+      _: per-sample read counts at every stage from raw reads to clean counts
       ext: tsv
   sankey_outputs:
     properties:
       _: read-fate sankey renderings
       Data: directory
 # -- metadata joins --
-  metadata_micro:
-    properties:
-      _: study metadata joined to microbial read accounting
-      ext: tsv
-  asv_meta_micro:
-    properties:
-      _: long-form ASV table joined to metadata and taxonomy, microbial
-      ext: tsv
-  asv_final_micro:
-    properties:
-      _: analysis-ready microbial ASV count matrix
-      ext: tsv
   metadata_mito:
     properties:
       _: study metadata joined to mitochondrial read accounting
@@ -207,71 +159,18 @@ types:
     properties:
       _: summary of soft label assignment quality
       ext: tsv
-  augmentation_audit:
-    properties:
-      _: record of which metadata rows the soft labels changed
-      ext: tsv
 # -- the three consumer-facing analysis channels --
   analysis_metadata:
     properties:
-      _: the metadata table every downstream analysis reads, augmented or not
-      ext: tsv
-  stage_asv_meta:
-    properties:
-      _: the ASV metadata table after label augmentation and before batch correction
+      _: study metadata joined to the microbial read accounting, as every analysis reads it
       ext: tsv
   analysis_asv_meta:
     properties:
-      _: the ASV metadata table every downstream analysis reads, corrected or not
+      _: long-form microbial ASV table joined to metadata and taxonomy, as every analysis reads it
       ext: tsv
   analysis_counts:
     properties:
-      _: the ASV count matrix every downstream analysis reads, corrected or not
-      ext: tsv
-# -- batch correction diagnostics --
-  asv_clr_selected:
-    properties:
-      _: CLR-transformed counts for the selected feature set
-      ext: tsv
-  asv_clr_after:
-    properties:
-      _: CLR-transformed counts after ConQuR correction
-      ext: tsv
-  asv_corrected_counts:
-    properties:
-      _: ConQuR-corrected relative abundances
-      ext: tsv
-  asv_corrected_counts_int:
-    properties:
-      _: ConQuR-corrected counts with a pseudocount, integer-valued
-      ext: tsv
-  asv_selected_counts:
-    properties:
-      _: relative abundances for the selected feature set
-      ext: tsv
-  correction_decision:
-    properties:
-      _: per-feature record of whether correction was applied
-      ext: tsv
-  correction_countspace_plot:
-    properties:
-      _: count-space preservation check for the correction
-      ext: png
-  correction_countspace_metrics:
-    properties:
-      _: count-space preservation metrics for the correction
-      ext: tsv
-  correction_umap_plot:
-    properties:
-      _: UMAP before and after correction
-      ext: png
-  correction_stats:
-    properties:
-      _: batch correction summary statistics
-      ext: tsv
-  umap_hdbscan_results:
-    properties:
-      _: UMAP embedding with HDBSCAN cluster assignments
+      _: the microbial ASV count matrix every analysis reads
       ext: tsv
 # -- terminal analyses --
   upset_plots:
@@ -285,10 +184,6 @@ types:
   umap_plots:
     properties:
       _: UMAP clustering renderings
-      Data: directory
-  outlier_outputs:
-    properties:
-      _: sample outlier diagnostics
       Data: directory
   collectors_outputs:
     properties:
@@ -458,36 +353,6 @@ types:
 # List-form properties, deliberately: mapping-form `extends:` is a key-wise
 # merge the child wins, so a child restating any of the parent's keys stops
 # satisfying it. A list is a set union, so subsumption always holds.
-  augmentation_policy:
-    properties:
-      - aspire-policy-augmentation
-  # do not apply soft group labels to the metadata before analysis
-  augmentation_off:
-    extends:
-      - augmentation_policy
-    properties:
-      - aspire-policy-augmentation-off
-  # apply soft group labels to the metadata before analysis
-  augmentation_on:
-    extends:
-      - augmentation_policy
-    properties:
-      - aspire-policy-augmentation-on
-  batch_correction_policy:
-    properties:
-      - aspire-policy-batch-correction
-  # do not run ConQuR batch correction over the ASV counts
-  batch_correction_off:
-    extends:
-      - batch_correction_policy
-    properties:
-      - aspire-policy-batch-correction-off
-  # run ConQuR batch correction over the ASV counts
-  batch_correction_on:
-    extends:
-      - batch_correction_policy
-    properties:
-      - aspire-policy-batch-correction-on
   indicspecies_policy:
     properties:
       - aspire-policy-indicspecies

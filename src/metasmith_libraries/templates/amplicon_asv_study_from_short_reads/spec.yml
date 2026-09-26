@@ -1,0 +1,142 @@
+name: amplicon_asv_study_from_short_reads
+description: 'ASPIRE amplicon study from paired or single-end short reads: fastp QC,
+  merge and
+
+  quality filter, a study-wide UNOISE denoise to an ASV table, SILVA taxonomy,
+
+  non-target curation, read accounting with a read-fate sankey, and the core
+
+  analyses. Settings come from one aspire::params YAML; research/aspire/presets/
+
+  holds a tool-defaults and an ASPIRE preset.'
+sample_type: null
+target_types:
+- amplicon::asv_table
+- amplicon::asv_taxonomy
+- aspire::counts_clean
+- aspire::read_fate
+- aspire::sankey_outputs
+- aspire::analysis_metadata
+- aspire::grouping_diagnostics_outputs
+- aspire::power_analysis_outputs
+- aspire::collectors_outputs
+transform_libraries:
+- aspire
+- logistics
+resource_libraries:
+- env
+shared_input_paths: []
+input_library:
+  schema: v1
+  manifest:
+    /msm_deferred/0a36343763dc4e2a9a517cd7af7149a5:
+      type: aspire::silva_ref_taxonomy
+      instance_id: 1e20880dd3b657c1702881b8229dd62e9992c9f697c2e516d56c3717faa3aee31c2e
+      origin: leaf
+    /msm_deferred/1a6e6471f5a74b8ea89d681a712c41da:
+      type: sequences::zipped_forward_short_reads
+      parents:
+        Z8JZqKX7gAf1@read_pair_1.txt: sequences::read_pair
+      instance_id: 1e2070a73d9fc559e588464510940ceee65b38977368a4157f49e1ce95a5c6e6dc93
+      origin: leaf
+    /msm_deferred/3a8b5a82ad89472585cfba4af1469bcc:
+      type: sequences::zipped_reverse_short_reads
+      parents:
+        Z8JZqKX7gAf1@read_pair_1.txt: sequences::read_pair
+      instance_id: 1e206399cce6736d04527fbb86c181ec5d58160e7b5c5d2e3a372dcc61d9bcb4e868
+      origin: leaf
+    /msm_deferred/60de77638ae944d79c8fa491c41a7cb5:
+      type: aspire::contaminant_reference_source
+      instance_id: 1e20ca9db8db5741830a77c58bfe76d05dda48842ab09f3724df4160fb890c6c5f4d
+      origin: leaf
+    /msm_deferred/6771b163b07142a09d67a6d0cbf21f75:
+      type: aspire::sina_arb_reference
+      instance_id: 1e208012a123e6e2eaf77b6bce95941eddab4a6502954469a1bf465b7c1f351ea959
+      origin: leaf
+    /msm_deferred/b6b7fd70f155485997d6cdfd2cd49318:
+      type: amplicon::silva_nb_classifier
+      instance_id: 1e2069fc5dd051a4669e9ea7137d80bd518c7899dbb6f7af20d6fbf045313f549684
+      origin: leaf
+    /msm_deferred/bfa7d3a4b78749a6a5b2d5b9cd8dc261:
+      type: aspire::sample_metadata
+      instance_id: 1e2033eaf3defd5a0e0957b2a7605d8863b4b27bec60ae90f3d889ae0c44e9a40a39
+      origin: leaf
+    /msm_deferred/c08dfabcd92d4e55bd91788a4279ed03:
+      type: aspire::mito_reference_source
+      instance_id: 1e2073697b5bef0da921acedd3a277ec40d7d4f192d3daf887420c733aca6f9ca0d3
+      origin: leaf
+    /msm_deferred/fce2c10f8db44663a8427ed6234f86f8:
+      type: aspire::params
+      parents:
+        Z8JZqKX7gAf1@run.txt: aspire::run
+      instance_id: 1e2049c8986af470a9b6ed2d441623d87ae5145984392c1f1acb42e32c032d457243
+      origin: leaf
+    policy_asv_mag_link.txt:
+      type: aspire::asv_mag_link_on
+      parents:
+        Z8JZqKX7gAf1@run.txt: aspire::run
+      instance_id: 1e2062cfa105b6ac316408e2855489640324d70b8a840b52a06ab746a13d38cea170
+      origin: leaf
+    policy_graph_network.txt:
+      type: aspire::graph_network_on
+      parents:
+        Z8JZqKX7gAf1@run.txt: aspire::run
+      instance_id: 1e20b6ba7ba229525e188d5e35a177d63462a6da21769d9c2a243a0a7297866bfef7
+      origin: leaf
+    policy_indicspecies.txt:
+      type: aspire::indicspecies_on
+      parents:
+        Z8JZqKX7gAf1@run.txt: aspire::run
+      instance_id: 1e203a3e5b77bf079b9641b2ce78c7c5c8acdfda87cc1ee4a499de89a39bde931892
+      origin: leaf
+    policy_network_modules.txt:
+      type: aspire::network_modules_on
+      parents:
+        Z8JZqKX7gAf1@run.txt: aspire::run
+      instance_id: 1e20287ae7ad21b7c29032968b03c29fbf15b67a56b324a12ef0b78cabb20a838723
+      origin: leaf
+    policy_sankey.txt:
+      type: aspire::sankey_on
+      parents:
+        Z8JZqKX7gAf1@run.txt: aspire::run
+      instance_id: 1e205200155f8c3341c5b9cd4c200d85842a9fa8b004af78c105af3fe0269753e324
+      origin: leaf
+    policy_spieceasi.txt:
+      type: aspire::spieceasi_on
+      parents:
+        Z8JZqKX7gAf1@run.txt: aspire::run
+      instance_id: 1e20d8aa7e05bc301fff646d6de60d1a4f947b33ec6189b36772340536cb04a0da9a
+      origin: leaf
+    read_metadata_1.json:
+      type: sequences::read_metadata
+      parents:
+        Z8JZqKX7gAf1@sample_1.txt: sequences::sample_name
+      instance_id: 1e20b30ea559a1d164187761eb03945fabc554fdf0f3b66b3b5f09c34db34307e997
+      origin: leaf
+    read_pair_1.txt:
+      type: sequences::read_pair
+      parents:
+        Z8JZqKX7gAf1@sample_1.txt: sequences::sample_name
+      instance_id: 1e20b969fb33cdccfb1c5a7a0c052783141114a9f028003427affcc3cb2dbec3d005
+      origin: leaf
+    run.txt:
+      type: aspire::run
+      instance_id: 1e206b218687720cb5d8cab2772a8384721ccef8bb0533ef3c0a7d644640efcaab29
+      origin: leaf
+    sample_1.txt:
+      type: sequences::sample_name
+      parents:
+        Z8JZqKX7gAf1@run.txt: aspire::run
+      instance_id: 1e203bec896deb02ba62264905c8e8056f29a8d6af9e77edc83b832af53a4490daae
+      origin: leaf
+  values:
+    policy_asv_mag_link.txt: 'on'
+    policy_graph_network.txt: 'on'
+    policy_indicspecies.txt: 'on'
+    policy_network_modules.txt: 'on'
+    policy_sankey.txt: 'on'
+    policy_spieceasi.txt: 'on'
+    read_metadata_1.json: '{"parity": "paired", "length_class": "short"}'
+    read_pair_1.txt: sample_1
+    run.txt: aspire_study
+    sample_1.txt: sample_1

@@ -716,7 +716,11 @@ def record_library(lib):
     from ..models.libraries import DataInstanceLibrary
 
     lib.Save()
-    return DataInstanceLibrary.Load(lib.location)
+    recorded = DataInstanceLibrary.Load(lib.location)
+    # index.yml keeps a copy of each type library, not where it came from, and a
+    # template packs the source path. Without this a --rebuild cannot save.
+    recorded._type_sources = dict(lib._type_sources)
+    return recorded
 
 
 def import_item(
