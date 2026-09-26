@@ -33,6 +33,7 @@ CALLERS = (
     "viromics::genomad_candidate_virus",
     "viromics::virsorter2_candidate_virus",
     "viromics::vibrant_candidate_virus",
+    "e3::deepvirfinder_candidate_virus",
 )
 
 # One (batch slot, caller slots) per lane. The batch slots share a type and differ by parent, which is

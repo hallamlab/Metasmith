@@ -48,6 +48,25 @@ types:
       Data: nucleic acid sequence
       ext: fna
 
+  # Pratama's fourth viral caller (reproduction_map B1), pooled by merge_candidate_calls_pratama
+  # alongside the viromics::*_candidate_virus siblings genomad/virsorter2/vibrant already produce.
+  # A plain sibling rather than `extends: [candidate_virus]`: extends only resolves within the one
+  # yml file being compiled, and candidate_virus lives in metasmith_libraries' viromics.yml -- so
+  # the shape is duplicated here rather than inherited.
+  deepvirfinder_candidate_virus:
+    properties:
+      _: normalised viral call -- one row per called interval, 1-based inclusive, in the original assembly's contig coordinates
+      e3: deepvirfinder_candidate_virus
+      Format: TSV
+      fields:
+      - contig_id
+      - start
+      - end
+      - caller
+      - score
+      caller: deepvirfinder
+      ext: tsv
+
   mag_dram_annotations:
     properties:
       _: DRAM.py annotate over one sample's refined MAGs, annotations.tsv
