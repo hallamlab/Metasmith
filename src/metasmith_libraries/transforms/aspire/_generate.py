@@ -6,11 +6,11 @@ is the port of that wiring into a typed graph: `TABLE` has one row per ported
 process, and running this module writes both `data_types/aspire.yml` and every
 stub transform under `transforms/aspire/`.
 
-Why a generator rather than fifty hand-written files: this pass exists to *look*
-at the topology and decide what to merge, so collapsing two nodes has to be a
-table edit, not a sweep. Once the stub bodies start becoming real protocols this
-module stops being authoritative -- regenerating would clobber them. Delete it
-then, or keep it as the record of where each transform came from.
+The table stays the one source of topology and of `aspire.yml`, including for
+transforms with real bodies. A file that begins with `BANNER` is a stub and is
+rewritten on every run; a file without it is hand-written and is never touched.
+A row edit therefore has to be mirrored by hand in a real body, and `--lint`
+fails until the body's requirements, products and grouping match its row.
 
 Three things the port does to the source pipeline, each recorded per row:
 
@@ -31,7 +31,9 @@ Three things the port does to the source pipeline, each recorded per row:
 Run it:
 
     python transforms/aspire/_generate.py            # write types + stubs
-    python transforms/aspire/_generate.py --lint      # check extends: subsumption
+    python transforms/aspire/_generate.py --lint      # check subsumption and real bodies
+
+`--lint` loads the compiled library, so run `dev/libraries.sh -bm` after a regenerate.
 """
 
 from __future__ import annotations
@@ -678,15 +680,34 @@ def _stub(row: T) -> str:
     return "".join(head + body)
 
 
+def is_stub(path: Path) -> bool:
+    with path.open() as f:
+        return f.readline() == BANNER
+
+
+def hand_written() -> list[T]:
+    return [row for row in TABLE
+            if (HERE / f"{row.name}.py").exists() and not is_stub(HERE / f"{row.name}.py")]
+
+
 def write_stubs() -> int:
-    existing = {p.name for p in HERE.glob("*.py") if not p.name.startswith("_")}
     wanted = {f"{row.name}.py" for row in TABLE}
-    for stale in sorted(existing - wanted):
-        (HERE / stale).unlink()
-        print(f"  removed stale stub: {stale}")
+    for path in sorted(HERE.glob("*.py")):
+        if path.name.startswith("_") or path.name in wanted:
+            continue
+        if is_stub(path):
+            path.unlink()
+            print(f"  removed stale stub: {path.name}")
+        else:
+            print(f"  WARNING: hand-written {path.name} has no row", file=sys.stderr)
+    n = 0
     for row in TABLE:
-        (HERE / f"{row.name}.py").write_text(_stub(row))
-    return len(TABLE)
+        path = HERE / f"{row.name}.py"
+        if path.exists() and not is_stub(path):
+            continue
+        path.write_text(_stub(row))
+        n += 1
+    return n
 
 
 def check_table() -> None:
@@ -739,6 +760,42 @@ def lint_extends() -> None:
     print(f"  extends: {edges} edge(s) all subsume")
 
 
+def _signature(endpoint) -> tuple:
+    return (frozenset(endpoint.properties),
+            frozenset(_signature(p) for p in endpoint.parents))
+
+
+def _row_signature(row: T, lib) -> tuple:
+    slots = {var: (dtype, parents) for var, dtype, parents in row.requires}
+
+    def sig(var):
+        dtype, parents = slots[var]
+        return (frozenset(lib.GetType(dtype).properties), frozenset(sig(p) for p in parents))
+
+    requires = sorted((sig(var) for var in slots), key=repr)
+    products = sorted((frozenset(lib.GetType(d).properties) for _v, d in row.products), key=repr)
+    return requires, products, sig(row.group_by)
+
+
+def check_hand_written() -> None:
+    rows = hand_written()
+    if not rows:
+        return
+    from metasmith.python_api import TransformInstanceLibrary  # noqa: E402
+
+    lib = TransformInstanceLibrary.Load(HERE)
+    for row in rows:
+        ti = lib.GetTransform(f"{row.name}.py")
+        requires = sorted((_signature(r) for r in ti.model.requires), key=repr)
+        products = sorted((frozenset(p.properties) for group in ti.model.produces for p in group),
+                          key=repr)
+        got = (requires, products, _signature(ti.group_by))
+        want = _row_signature(row, lib)
+        for label, g, w in zip(("requirements", "products", "group_by"), got, want):
+            assert g == w, f"[{row.name}] hand-written {label} differ from its row"
+    print(f"  hand-written: {len(rows)} bod(ies) match their rows")
+
+
 if __name__ == "__main__":
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--lint", action="store_true",
@@ -746,7 +803,9 @@ if __name__ == "__main__":
     args = ap.parse_args()
 
     if args.lint:
+        check_table()
         lint_extends()
+        check_hand_written()
         raise SystemExit(0)
 
     check_table()
@@ -755,7 +814,6 @@ if __name__ == "__main__":
     ported = sum(1 for r in TABLE if r.source)
     folded = sum(len(r.folds) for r in TABLE)
     print(f"  data_types/aspire.yml: {n_types} types")
-    print(f"  transforms/aspire/:    {n_stubs} stubs "
-          f"({ported} ported .nf processes + {folded} folded into them, "
-          f"{n_stubs - ported} port artifacts)")
+    print(f"  transforms/aspire/:    {n_stubs} stubs written, {len(hand_written())} hand-written kept "
+          f"({ported} ported .nf processes + {folded} folded into them)")
     lint_extends()

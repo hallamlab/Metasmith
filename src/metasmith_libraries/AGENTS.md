@@ -226,11 +226,12 @@ worth knowing when you change something they share, because it is also the only 
 "did it still run?" is a question the repository can answer.
 `research/kbase/curation/r5/runs.md` is that record; `transforms/kbase/README.md` says the rest.
 
-**`transforms/aspire/` is generated and is the one exception to the hand-edited surface
-above.** `transforms/aspire/_generate.py` holds one row per transform and writes both the
-transform files and `data_types/aspire.yml`. Edit the row, regenerate, then run
-`_generate.py --lint`. A hand edit to a generated file survives until the next regenerate
-and no longer. Dropping a transform means dropping its types from the same table, because
-`aspire.yml` is rewritten from the table wholesale. **CAUTION** every body there is still a
-stub, which is the condition the generator's authority rests on. The first real protocol
-body ends it, and the generator's own docstring says so.
+**`transforms/aspire/` is generated from one table.** `transforms/aspire/_generate.py` holds one
+row per transform and writes both `data_types/aspire.yml` and every stub transform. Edit the row,
+regenerate, then run `dev/libraries.sh -bm`, then `_generate.py --lint`. The generator rewrites
+only files that begin with its banner. A file without the banner is a real body and is never
+touched, so a row edit must be mirrored in that body by hand. **CAUTION** delete the banner line
+when you write a real body, or the next regenerate replaces it with a stub. `--lint` fails until
+each real body's requirements, products and grouping match its row. Dropping a transform means
+dropping its types from the same table, because `aspire.yml` is rewritten from the table
+wholesale.
