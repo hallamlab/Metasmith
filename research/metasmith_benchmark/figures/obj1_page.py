@@ -72,6 +72,15 @@ def match_rates():
     return out
 
 
+def control_spread():
+    """Per arm and binner, each control sample's share of nf-core's bins matched by its rerun."""
+    out = defaultdict(list)
+    for r in rows(RES / "compare_arms_ctl/e1_e1ctl/per_sample.tsv"):
+        if int(r["E1_mags"]):
+            out[f'{r["arm"]}/{r["binner"]}'].append(round(100 * int(r["E1_matched"]) / int(r["E1_mags"]), 2))
+    return {k: sorted(v) for k, v in out.items()}
+
+
 def tiers():
     t = defaultdict(lambda: [0] * 6)
     cols = ["E1_high", "E1_medium", "E1_below", "E2_high", "E2_medium", "E2_below"]
@@ -100,8 +109,8 @@ def assemblies():
 
 
 def main():
-    data = dict(dag=json.loads((HERE / "f1/summary.json").read_text()), tasks=task_counts(), runtime=runtime(), match=match_rates(), tiers=tiers(),
-                edges=edge_check(), assemblies=assemblies(), binners=BINNERS)
+    data = dict(dag=json.loads((HERE / "f1/summary.json").read_text()), tasks=task_counts(), runtime=runtime(),
+                match=match_rates(), spread=control_spread(), tiers=tiers(), edges=edge_check(), assemblies=assemblies(), binners=BINNERS)
     OUT.mkdir(exist_ok=True)
     template = (HERE / "obj1_template.html").read_text()
     (OUT / "index.html").write_text(template.replace("/*DATA*/null", json.dumps(data, separators=(",", ":"))))
