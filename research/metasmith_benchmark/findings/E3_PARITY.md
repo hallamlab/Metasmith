@@ -11,7 +11,7 @@ The paper's authority, highest first:
 2. Supplementary Fig. 1 (`MOESM1`, page 2), for the curation counts.
 3. The Methods section of `data/docs/pratama2026/PMC12960796.xml`.
 
-Paths below are relative to `research/metasmith_benchmark/`, except `S/`, which is `src/metasmith_libraries/transforms/`. Line numbers are as of commit `a2814562`.
+Paths below are relative to `research/metasmith_benchmark/`, except `S/`, which is `src/metasmith_libraries/transforms/`. Line numbers are as of the commit that last changed this file.
 
 ## The plan
 
@@ -29,7 +29,7 @@ These are recorded decisions, not gaps:
 - Reads enter pre-interleaved from fir scratch.
 - ERR3858126 is excluded. It is a second run of H32's 0.2 µm R1 metagenome, which the paper counts once as H32_0_2_1 (`drivers/e3_pratama.py:29-32`).
 - The curation keep rules follow Supplementary Fig. 1, not the Methods. The Methods add a fourth rule, length ≥ 1 kb, which would keep nearly every contig. Supp Fig 1 omits it.
-- The island filter uses Antonio's pattern list from `10_filtering_3.sh`, not the paper's shorter list. The paper names no annotation tool, so geNomad's `annotate` supplies the gene annotations.
+- The island filter matches the paper's categories only, not Antonio's broader list from `10_filtering_3.sh`. The paper names no annotation tool, so geNomad's `annotate` supplies the gene annotations. A transposon counts by its transposase.
 
 ## Read QC and assembly
 
@@ -51,15 +51,35 @@ Status: **match** is the same command and settings. **version** is the same comm
 | VIBRANT | `-f nucl -virome` | `e3/vibrant_pratama.py:105` | match | Adds `-no_plot`. VIBRANT 1.2.1. |
 | geNomad (VB 34) | `end-to-end --cleanup --splits 48 --min-virus-marker-enrichment 1 --min-virus-hallmarks 1` | `e3/genomad_pratama.py:48-49` | version | Same flags. geNomad 1.11.0 against 1.5.1. Database unpinned. |
 | VirSorter2 | `--include-groups dsDNAphage,ssDNA --keep-original-seq --min-score 0.5 --min-length 5000` | `e3/virsorter2_pratama.py:40-69` | version | Same flags. `\|\|full` and `\|\|lt2gene` calls span the whole contig, and partial calls use `full_bp_*`. VirSorter2 2.2.4 against 2.2.3. |
-| Pooling | every caller on every assembly | `e3/merge_candidate_calls_pratama.py:28-38` | differs | 3 lanes (metaSPAdes, MEGAHIT, hybrid metaSPAdes) × 4 callers. Overlapping or abutting calls on one contig merge to their union. Each record is named `sample\|lane\|contig\|start_end`. |
+| Pooling | every caller on every assembly, one record per caller | `e3/merge_candidate_calls_pratama.py:28-38,69-72` | match | 3 lanes (metaSPAdes, MEGAHIT, hybrid metaSPAdes) × 4 callers. Each caller's call is its own record with its own boundaries, named `sample\|lane\|caller\|contig\|start_end`, as the published names carry sample, caller and assembler. |
 | CheckV (VB 58) | `end_to_end` | `e3/checkv_batch_pratama.py` + `checkv_merge_pratama.py` | match | CheckV 1.0.3, database unpinned. |
 | Curation (Supp Fig 1) | keep if > 0 viral genes, or 0 viral and 0 host genes, or ≥ 75% unknown genes; CheckV host trimming; spot checks | `e3/curate_trim_batch_pratama.py:29-34` + `curate_merge_pratama.py` | differs | Gene counts come from CheckV's quality summary. A kept provirus enters as its trimmed region from `proviruses.fna`, every other kept contig whole from `viruses.fna`. No spot checks. The paper goes from 4,717,962 to 4,708,626 here. |
-| MMseqs2 (VB 50) | `easy-cluster --min-seq-id 0.95 -c 0.8` | `e3/mmseqs_votu_pratama.py:22` | match | Clusters the curated set. |
+| MMseqs2 (VB 50) | `easy-cluster --min-seq-id 0.95 -c 0.8` | `e3/mmseqs_votu_pratama.py:22` | match | Clusters the curated set. CAUTION: the Methods describe 80% coverage of the shorter sequence, but the workflow file's command uses cov-mode 0, which needs 80% of both. The command wins by the authority order. Under the Methods' wording a short call nested in a long one would cluster with it. |
 | vOTUs ≥ 5 kb | | `e3/votu_representatives_pratama.py:14` | match | |
-| Island filter (Methods) | drop vOTUs > 100 kb carrying transposon, LPS, endonuclease, integrase or plasmid-stability genes | `e3/genomad_island_annotate_pratama.py:18-36` + `island_filter_pratama.py:22-65` | differs | Antonio's list adds partition, `parA`, `parB`, toxin-antitoxin, `relE`, `hipA` and `stability`. It matches case-insensitively, so `parA` also hits words such as "separation". Expect more removals than the paper's 562. |
+| Island filter (Methods) | drop vOTUs > 100 kb carrying transposon, LPS, endonuclease, integrase or plasmid-stability genes | `e3/genomad_island_annotate_pratama.py:18-36` + `island_filter_pratama.py:22-39` | match | The paper's categories, matched case-insensitively over geNomad's annotation columns. The paper removed 562. |
 | Recovery | | `S/viromics/pratama_votu_recovery.py:31-32`, `e3/final_votu_recovery_pratama.py:22-23` | | skani of the published vOTUs against the pooled set and against the final ≥ 5 kb set. |
 
 The published names carry sample, assembler and caller, so recovery can be scored per lane and per caller. By assembler, the published set holds 113,105 metaSPAdes, 112,924 MEGAHIT and 31,223 hybrid vOTUs. By caller, it holds 105,001 VIBRANT, 89,689 geNomad, 52,601 VirSorter2 and 9,961 DeepVirFinder vOTUs.
+
+## Tool versions
+
+Pratama's versions are the ones the Methods state. E3 keeps its current versions by decision.
+
+| Tool | Pratama | E3 |
+|---|---|---|
+| BBMap (bbduk) | 39.01 | 39.49 |
+| fastp | not stated | 1.0.1 |
+| SPAdes, short-read and hybrid | 3.15.2 | 3.15.5 |
+| MEGAHIT | 1.1.3 | 1.2.9 |
+| Guppy | 6.0.1, sup model | not run |
+| geNomad | 1.5.1 | 1.11.0 |
+| VirSorter2 | 2.2.3 | 2.2.4 |
+| VIBRANT | 1.2.1 | 1.2.1 |
+| DeepVirFinder | 1.0 | image `multifractal/deepvirfinder:0.1`, code version not reported |
+| CheckV | not stated | 1.0.3 |
+| MMseqs2 | not stated | 17.b804f |
+| SeqKit, skani | not used | 2.13.0, 0.2.2 |
+| Databases | not stated | geNomad and CheckV unpinned, VIBRANT built for 1.2.1, VirSorter2 built for 2.2.4 (`drivers/_common.py:100-131`) |
 
 ## Out of scope
 
@@ -74,10 +94,8 @@ These values change what the plan produces. Each is a choice the paper does not 
 | Value | Where | Paper |
 |---|---|---|
 | MinION–Illumina pairing by well and `02um_2022` | `drivers/e3_pratama.py:87-100` | 17 hybrids |
-| Interval union: overlapping or abutting calls merge | `e3/merge_candidate_calls_pratama.py:69-78` | not stated |
 | Unknown fraction = (genes − viral − host) / genes, from CheckV | `e3/curate_trim_batch_pratama.py:34` | not stated |
 | Island annotation by `genomad annotate` | `e3/genomad_island_annotate_pratama.py:36` | not stated |
-| Database versions: geNomad and CheckV unpinned, VirSorter2 2.2.4 | `drivers/_common.py:100-131` | see the tables above |
 | skani `--min-af 15` for vOTU recovery | `S/viromics/pratama_votu_recovery.py:32` | not applicable |
 
 ## Resource heuristics

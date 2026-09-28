@@ -1,8 +1,8 @@
 # The frozen viral set from every one of a sample's assembly lanes, as Pratama pooled each assembler's
 # calls before clustering. The standard merge binds one assembly per sample.
 #
-# Calls are unioned per contig batch, so overlapping contigs from different lanes stay separate records.
-# The vOTU clustering downstream is what collapses them.
+# Each caller's call is its own record, as in Pratama's pool: two callers on one contig give two
+# records with their own boundaries, and only the vOTU clustering downstream collapses them.
 import json
 from collections import defaultdict
 from pathlib import Path
@@ -49,7 +49,7 @@ for lane, assembly_type in LANES.items():
 out_frozen = model.AddProduct(lib.GetType("viromics::dereplicated_candidate_virus"))
 out_prov   = model.AddProduct(lib.GetType("viromics::candidate_call_provenance"))
 
-PROV_HEADER = "\t".join(["frozen_id", "sample", "lane", "source_contig", "start", "end", "length", "callers"]) + "\n"
+PROV_HEADER = "\t".join(["frozen_id", "sample", "lane", "caller", "source_contig", "start", "end", "length"]) + "\n"
 
 
 def _read_calls(path: Path):
@@ -66,16 +66,10 @@ def _read_calls(path: Path):
     return rows
 
 
-def _union(intervals):
-    """Merge overlapping or abutting 1-based inclusive intervals, keeping every caller."""
-    merged = []
-    for start, end, caller in sorted(intervals):
-        if merged and start <= merged[-1][1] + 1:
-            prev_start, prev_end, callers = merged[-1]
-            merged[-1] = (prev_start, max(prev_end, end), callers | {caller})
-        else:
-            merged.append((start, end, {caller}))
-    return merged
+def _plan_extraction(per_contig):
+    regions = sorted({(c, s, e) for c, calls in per_contig.items() for s, e, _ in calls})
+    records = sorted({(c, s, e, caller) for c, calls in per_contig.items() for s, e, caller in calls})
+    return regions, records
 
 
 def _extract(context, contigs_path: Path, regions: Path, k: int) -> dict:
@@ -124,31 +118,29 @@ def protocol(context: ExecutionContext):
         for k, (contigs_path, per_contig) in enumerate(sorted(by_contigs.items())):
             sample, lane = sample_of[contigs_path], lane_of[contigs_path]
             regions = Path(f"regions_{k}.bed")
-            wanted = []
+            spans, wanted = _plan_extraction(per_contig)
+            n_calls += len(wanted)
             with open(regions, "w") as rf:
-                for contig_id, intervals in sorted(per_contig.items()):
-                    for start, end, callers in _union(intervals):
-                        n_calls += 1
-                        # BED is 0-based half-open: the start converts and the end does not.
-                        rf.write(f"{contig_id}\t{start - 1}\t{end}\n")
-                        wanted.append((contig_id, start, end, sorted(callers)))
+                for contig_id, start, end in spans:
+                    # BED is 0-based half-open: the start converts and the end does not.
+                    rf.write(f"{contig_id}\t{start - 1}\t{end}\n")
             if not wanted:
                 continue
             got = _extract(context, contigs_path, regions, k)
-            for contig_id, start, end, callers in wanted:
+            for contig_id, start, end, caller in wanted:
                 seq = got.get((contig_id, start, end))
                 if seq is None:
                     Log.Warn(f"[{sample}] {contig_id}:{start}-{end} was called but not extracted")
                     continue
-                frozen_id = f"{sample}|{lane}|{contig_id}|{start}_{end}"
+                frozen_id = f"{sample}|{lane}|{caller}|{contig_id}|{start}_{end}"
                 fasta.write(f">{frozen_id}\n")
                 for i in range(0, len(seq), 70):
                     fasta.write(seq[i:i + 70] + "\n")
-                prov.write("\t".join([frozen_id, sample, lane, contig_id, str(start), str(end),
-                                      str(end - start + 1), ",".join(callers)]) + "\n")
+                prov.write("\t".join([frozen_id, sample, lane, caller, contig_id, str(start), str(end),
+                                      str(end - start + 1)]) + "\n")
                 n_frozen += 1
 
-    Log.Info(f"{n_calls} merged calls over {len(by_contigs)} contig batches -> {n_frozen} frozen contigs")
+    Log.Info(f"{n_calls} calls over {len(by_contigs)} contig batches -> {n_frozen} frozen records")
     return ExecutionResult(manifest=[{out_frozen: ofrozen.local, out_prov: oprov.local}],
                            success=ofrozen.local.exists() and oprov.local.exists())
 

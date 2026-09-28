@@ -116,14 +116,14 @@ def test_split_provirus_id_rejects_an_unknown_base(curate_module):
 
 
 # ---------------------------------------------------------------------------
-# The island filter's pattern list, over every column Antonio's script reads
+# The island filter's pattern list (the paper's categories), over every column Antonio's script reads
 
 @pytest.mark.parametrize("column,value", [
     ("marker", "integrase"),
     ("annotation_description", "putative transposase"),
     ("annotation_accessions", "PF01527_transposase"),
-    ("annotation_conjscan", "parA"),
-    ("annotation_amr", "toxin-antitoxin system"),
+    ("annotation_conjscan", "glycosyltransferase family 2"),
+    ("annotation_amr", "plasmid stability protein StbB"),
     ("taxname", "Integrase family"),
 ])
 def test_bad_pattern_matches_every_read_column(island_module, tmp_path, column, value):
@@ -144,6 +144,16 @@ def test_bad_pattern_does_not_match_ordinary_annotation(island_module, tmp_path)
     path = tmp_path / "genes.tsv"
     path.write_text("\t".join(header) + "\n" + "\t".join(row) + "\n")
 
+    assert island_module._bad_contigs(path, known_ids={"ctg_100kb"}) == set()
+
+
+@pytest.mark.parametrize("value", ["chromosome partitioning protein ParA", "type II toxin-antitoxin system RelE",
+                                   "DNA separation protein"])
+def test_antonios_extra_patterns_no_longer_match(island_module, tmp_path, value):
+    header = ["gene"] + list(island_module.ANNOTATION_COLUMNS)
+    row = ["ctg_100kb_1", "-", value, "-", "-", "-", "-"]
+    path = tmp_path / "genes.tsv"
+    path.write_text("\t".join(header) + "\n" + "\t".join(row) + "\n")
     assert island_module._bad_contigs(path, known_ids={"ctg_100kb"}) == set()
 
 

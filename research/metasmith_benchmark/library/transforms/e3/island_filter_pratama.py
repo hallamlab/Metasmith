@@ -1,6 +1,6 @@
 # Methods P43: remove a vOTU representative if it is >=100 kb AND geNomad's annotate table
-# calls one of its genes island-associated -- Antonio's pattern list (10_filtering_3.sh:29-41),
-# read over the columns his script reads (:72-82). A vOTU below 100 kb was never annotated
+# calls one of its genes island-associated -- the paper's categories only, read over the
+# columns Antonio's 10_filtering_3.sh reads (:72-82). A vOTU below 100 kb was never annotated
 # (genomad_island_annotate_pratama's own gate), so its absence from the gene table already is
 # the length gate; nothing here re-checks length against the genes table.
 #
@@ -21,18 +21,20 @@ out   = model.AddProduct(lib.GetType("e3::final_votu_representatives"))
 
 ISLAND_LENGTH_BP = 100_000
 
-# Antonio's 10_filtering_3.sh:29-41, verbatim.
+# The Methods' categories: transposons, lipopolysaccharide genes (glycosyltransferase, nucleotidyl
+# transferase, carbohydrate kinase, nucleotide sugar epimerase), endonuclease, integrase and plasmid
+# stability. Antonio's list (10_filtering_3.sh:29-41) adds partition, toxin-antitoxin and a bare
+# "stability", which the paper does not name. A transposon is annotated by its transposase.
 BAD_PATTERNS = re.compile(
-    r"transposase|transposon|"
-    r"glycosyltransferase|glycosyl transferase|"
+    r"transpos(?:on|ase)|"
+    r"lipopolysaccharide|\blps\b|"
+    r"glycosyl.?transferase|"
     r"nucleotidyl.?transferase|"
     r"carbohydrate kinase|"
-    r"nucleotide sugar epimerase|"
-    r"lipopolysaccharide|lps|"
+    r"nucleotide.?sugar epimerase|"
     r"endonuclease|"
     r"integrase|"
-    r"plasmid stability|partition protein|parA|parB|"
-    r"toxin.?antitoxin|relE|hipA|stability",
+    r"plasmid stability",
     re.IGNORECASE,
 )
 # 10_filtering_3.sh:72-82.
