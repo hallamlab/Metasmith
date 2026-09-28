@@ -853,6 +853,13 @@ behaviour are readable in `src/metasmith/gui/` and `src/metasmith/frontend/`.
 - **A section id is spelled in three places**: `SECTIONS`, the per-section key in `app.selected`,
   and — through `SECTIONS` — what the url hash is validated against. An id added to only the first
   falls back to the first tab on reload, with nothing to say why.
+- **The page reaches its API by a relative `api/` path.** Routing is hash-only, so the page is
+  always at the root of wherever it is mounted, and a reverse proxy can serve it under a prefix.
+  An absolute `/api` works on localhost and breaks only behind such a proxy.
+- **A tutorial step names its control by a `data-tour` attribute** in the view that draws it.
+  Renaming or removing one breaks nothing visible: the step shows its `waiting` text and never
+  completes. A tab keeps its last selection, so a step that asks for something new compares
+  against what was open when it began, never against "something is selected".
 
 ## DAG rendering
 
