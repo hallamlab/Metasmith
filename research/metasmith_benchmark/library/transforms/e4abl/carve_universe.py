@@ -35,8 +35,14 @@ def protocol(context: ExecutionContext):
     icplex   = context.Input(cplex)
     iout     = context.Output(out)
 
-    # carve_bigg, carving from 1.6.6's universe.
+    # carve_bigg, carving from 1.6.6's universe. 1.2.2 loads a universe in its config's default flavor,
+    # cobra, which reads bounds from kinetic laws. 1.6.6's universe is fbc2, and framed then leaves every
+    # bound None and fails. Loaded as fbc2 it has the same id convention and the same 0/None bounds as
+    # 1.2.2's own. --fbc2 sets the output flavor, so the default reaches only the universe load.
     context.ExecWithEnv(env=image, cmd=SWAP_GPRS.format(gprs=igprs.container, cplex=icplex.container) + f"""
+        rm pkg/carveme/config.cfg
+        sed 's/^default_flavor = cobra$/default_flavor = fbc2/' "$PD/config.cfg" > pkg/carveme/config.cfg
+        python -c 'from carveme import config; f = config.get("sbml", "default_flavor"); print("universe flavor", f); assert f == "fbc2", f'
         carve --diamond {ihits.container} \
             -g $(cat {imedium.container}) \
             -v \

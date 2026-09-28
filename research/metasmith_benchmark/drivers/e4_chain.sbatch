@@ -198,7 +198,7 @@ run_lane() {
         return 0
     fi
 
-    while squeue -u "$USER" -h -o '%j' | grep -qE '^e4[ga]_[a-z]+_c[0-9]+_prep$'; do
+    while squeue -u "$USER" -h -o '%j' | grep -qE '^e4[a-z]_[a-z]+_c[0-9]+_prep$'; do
         log "$tag waiting: another lane is importing"
         sleep "$POLL_SECONDS"
     done
