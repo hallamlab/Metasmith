@@ -65,6 +65,9 @@ HOMES = {
 # WARNING never `exit` from a line here. It kills the agent's shell, and the caller sees
 # only a 300 s timeout.
 # CAUTION the `[ ! -e ]` guard keeps a second relay from replacing a running one's symlink.
+# CAUTION deploy a home with `deploy_home`, never `get_agent(...).Deploy`. Deploy writes these
+# lines into the home's lib/agent.yml, every task shell then runs them, and the echo's extra
+# line fails the task's one-line `pwd` check before the tool starts.
 SETUP_COMMANDS = [
     "module load apptainer",
     'MSM_RELAY_HOME="$PWD"; for _ in 1 2 3 4; do'
@@ -146,6 +149,13 @@ def get_agent(corpus):
     source = Source.FromLocal(home) if ON_HOST else SshSource(host=HPC_HOST, path=home).AsSource()
     return Agent(home=source, container=AGENT_IMAGE, runtime=Runtime.APPTAINER,
                  setup_commands=SETUP_COMMANDS)
+
+
+def deploy_home(corpus):
+    home = HOMES[corpus]
+    source = Source.FromLocal(home) if ON_HOST else SshSource(host=HPC_HOST, path=home).AsSource()
+    Agent(home=source, container=AGENT_IMAGE, runtime=Runtime.APPTAINER,
+          setup_commands=SETUP_COMMANDS[:1]).Deploy(assertive=True)
 
 
 def agent_for(corpus, remote, dryrun_home):
