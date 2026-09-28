@@ -8,7 +8,7 @@ run, assembled alone. 31 from 2019 and 34 from 2022 make Pratama's 65.
 and `--launch` act on the fir agent home, from a Slurm job there, and refuse until every
 run's interleave .ok stamp exists.
 
-Subcommands: list [--check], import, run [--dataset ...] [--limit N] [--dag] [--stage-only | --launch].
+Subcommands: list [--check], import, run [--runs ...] [--dataset ...] [--limit N] [--dag] [--stage-only | --launch].
 """
 
 import argparse
@@ -71,6 +71,10 @@ def enumerate_runs():
 
 
 def select(runs, args):
+    if args.runs:
+        unknown = set(args.runs) - {r[0] for r in runs}
+        assert not unknown, f"not among the {len(runs)} short-read runs: {sorted(unknown)}"
+        runs = [r for r in runs if r[0] in args.runs]
     if args.dataset:
         runs = [r for r in runs if r[1] in args.dataset]
     if args.limit:
@@ -204,7 +208,7 @@ def cmd_run(args):
     )
     c.check_plan(task, {"viromics::contig_study": 1, "sequences::read_metadata": len(runs),
                         "sequences::read_pair": len(runs), "sequences::short_reads_pe": len(runs),
-                        "e3::nanopore_reads": EXPECTED_HYBRIDS})
+                        "e3::nanopore_reads": sum(1 for r, _, _ in runs if r in hybrid_partners())})
     c.print_plan(task)
     interleave = [s for s in task.plan.steps if Path(s.transform._path).stem == "interleave_zipped_short_reads"]
     assert not interleave, "the plan interleaves reads that are registered pre-interleaved"
@@ -225,6 +229,7 @@ def main():
     sub = ap.add_subparsers(dest="cmd", required=True)
     for name, fn in (("list", cmd_list), ("import", cmd_run), ("run", cmd_run)):
         p = sub.add_parser(name)
+        p.add_argument("--runs", nargs="*", help="run accessions, e.g. a hybrid pilot")
         p.add_argument("--dataset", nargs="*", help="reads_2019, reads_2022")
         p.add_argument("--limit", type=int)
         p.set_defaults(fn=fn, dag=False, stage_only=False, launch=False, materialise=False, tag=None)
