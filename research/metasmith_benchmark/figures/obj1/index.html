@@ -15,7 +15,7 @@
   --accent: #0e6a70;
   --s1: #2a78d6;
   --s2: #eb6834;
-  --g1: #2a78d6; --g2: #eb6834; --g3: #1baf7a; --g4: #eda100; --g5: #e87ba4; --g6: #008300; --gb: #8a8a8a;
+  --g1: #2a78d6; --g2: #eb6834; --g3: #1baf7a; --g4: #eda100; --gb: #8a8a8a;
   --ring: #fcfcfd;
   --sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
   --cond: "IBM Plex Sans Condensed", "IBM Plex Sans", system-ui, sans-serif;
@@ -35,7 +35,7 @@
     --accent: #5cc4c9;
     --s1: #3987e5;
     --s2: #d95926;
-    --g1: #3987e5; --g2: #d95926; --g3: #199e70; --g4: #c98500; --g5: #d55181; --g6: #008300; --gb: #7a7f88;
+    --g1: #3987e5; --g2: #d95926; --g3: #199e70; --g4: #c98500; --gb: #7a7f88;
     --ring: #171b21;
   }
   :root:not([data-theme="light"]) .light-only { display: none; }
@@ -54,7 +54,7 @@
   --accent: #5cc4c9;
   --s1: #3987e5;
   --s2: #d95926;
-  --g1: #3987e5; --g2: #d95926; --g3: #199e70; --g4: #c98500; --g5: #d55181; --g6: #008300; --gb: #7a7f88;
+  --g1: #3987e5; --g2: #d95926; --g3: #199e70; --g4: #c98500; --gb: #7a7f88;
   --ring: #171b21;
 }
 :root[data-theme="dark"] .light-only { display: none; }
@@ -152,10 +152,10 @@ footer { font-size: 13px; color: var(--muted); display: grid; gap: 6px; border-t
     <div class="sec-head">
       <div class="eyebrow">1 · workflow</div>
       <h2>The solved plan is nf-core's pipeline, step for step</h2>
-      <p class="muted">Steps only: each data node is folded into the step that produces it. Left, nextflow's own DAG of the E1 run, cut to the processes that ran on that arm. Right, the plan metasmith solved for E2, which is the plan that ran. All four are drawn by metasmith's DAG renderer at the same scale, and a pipeline stage has the same colour in each. The plan's two scoring steps against the CAMI gold standard are left out, because nf-core has no counterpart to them.</p>
+      <p class="muted">Steps only: each data node is folded into the step that produces it. Left, nextflow's own DAG of the E1 run, cut to the processes that ran on that arm. Right, the plan metasmith solved for E2, which is the plan that ran. All four are drawn by metasmith's DAG renderer at the same scale, and a step's function has the same colour in each. The full graphs, with their data, are at the end of the page. The plan's two scoring steps against the CAMI gold standard are left out, because nf-core has no counterpart to them.</p>
     </div>
-    <div class="legend" id="stage-legend"></div>
-    <div class="dags" id="dags"></div>
+    <div class="legend stage-legend"></div>
+    <div class="dags" id="dags-steps"></div>
     <ul class="notes" id="dag-notes"></ul>
   </section>
 
@@ -183,6 +183,16 @@ footer { font-size: 13px; color: var(--muted); display: grid; gap: 6px; border-t
     <div class="panels" id="match-panels"></div>
     <details><summary>Match rates as a table</summary><div class="tbl-wrap"><table id="match-table"></table></div></details>
     <ul class="notes" id="bin-notes"></ul>
+  </section>
+
+  <section id="full">
+    <div class="sec-head">
+      <div class="eyebrow">3 · full graphs</div>
+      <h2>The same four graphs, with their data</h2>
+      <p class="muted">Each step's products take its colour, so a step can be followed from nf-core to metasmith by function. Uncoloured nodes are the inputs each pipeline is given.</p>
+    </div>
+    <div class="legend stage-legend"></div>
+    <div class="dags" id="dags-full"></div>
   </section>
 
   <footer>
@@ -225,20 +235,22 @@ footer { font-size: 13px; color: var(--muted); display: grid; gap: 6px; border-t
   };
 
   // 1 · DAG grid
-  const STAGES = [["read QC", "g1"], ["assembly", "g2"], ["read mapping", "g3"], ["binning", "g4"],
-    ["refinement", "g5"], ["bin quality", "g6"], ["nf-core bookkeeping and reports", "gb"]];
-  $("stage-legend").innerHTML = STAGES.map(([n, c]) => `<span><i style="background:var(--${c})"></i>${n}</span>`).join("");
+  const STAGES = [["read processing and QC", "g1"], ["assembly and read mapping", "g2"], ["binning and DAS Tool", "g3"],
+    ["CheckM2", "g4"], ["nf-core bookkeeping and reports", "gb"]];
+  document.querySelectorAll(".stage-legend").forEach((l) => { l.innerHTML = STAGES.map(([n, c]) => `<span><i style="background:var(--${c})"></i>${n}</span>`).join(""); });
   const SIDE = { e1: "nf-core/mag 5.5.0", e2: "metasmith, solved" };
   const cap = (side, arm) => {
     const s = DATA.dag[arm];
     return side === "e1" ? `${s.e1_processes} processes ran · ${s.e1_tool_processes} run a tool`
       : `${s.e2_steps} steps · ${s.tools} tools, ${s.checkm2_steps} CheckM2 steps`;
   };
-  const img = (side, arm) => ["light", "dark"].map((th) =>
-    `<img class="${th}-only" src="dags/${side}_${arm}_steps_${th}.svg" alt="${SIDE[side]} steps, ${ARM[arm].toLowerCase()}">`).join("");
-  $("dags").innerHTML = `<div class="col-head">${SIDE.e1}</div><div class="col-head">${SIDE.e2}</div>` +
+  const img = (side, arm, tag) => ["light", "dark"].map((th) =>
+    `<img class="${th}-only" src="dags/${side}_${arm}${tag}_${th}.svg" alt="${SIDE[side]}${tag ? " steps" : ""}, ${ARM[arm].toLowerCase()}">`).join("");
+  const grid = (tag) => `<div class="col-head">${SIDE.e1}</div><div class="col-head">${SIDE.e2}</div>` +
     ARMS.flatMap((arm) => ["e1", "e2"].map((side) =>
-      `<figure class="dag"><figcaption><b>${ARM[arm]} · ${N[arm]} samples</b><span>${cap(side, arm)}</span></figcaption>${img(side, arm)}</figure>`)).join("");
+      `<figure class="dag"><figcaption><b>${ARM[arm]} · ${N[arm]} samples</b><span>${cap(side, arm)}</span></figcaption>${img(side, arm, tag)}</figure>`)).join("");
+  $("dags-steps").innerHTML = grid("_steps");
+  $("dags-full").innerHTML = grid("");
   $("dag-notes").innerHTML = [
     `<b>Same tools, same order.</b> Contracted to the steps that run a tool, both graphs hold the same ${DATA.dag.short.tools} tools on short reads and ${DATA.dag.long.tools} on long reads, with the same reachability between them.`,
     `<b>Grey steps</b> are nf-core's bookkeeping and report processes: decompression, renaming, seqkit, FASTA splitting, depth summaries, Prodigal, QUAST and NanoPlot. metasmith does the format conversions inside each transform and runs no report steps.`,

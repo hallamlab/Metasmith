@@ -30,30 +30,30 @@
 <polygon points="36.4,92.9 47.1,92.9 41.7,102.1" fill="#FFFFFF" stroke="#eb6834" stroke-width="2.0" stroke-linejoin="round"/>
 <text x="88.0" y="102.2" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">flye</text></g>
 <g><title>minimap2_binning_bam</title>
-<polygon points="53.3,124.1 64.0,124.1 58.6,133.3" fill="#FFFFFF" stroke="#1baf7a" stroke-width="2.0" stroke-linejoin="round"/>
+<polygon points="53.3,124.1 64.0,124.1 58.6,133.3" fill="#FFFFFF" stroke="#eb6834" stroke-width="2.0" stroke-linejoin="round"/>
 <text x="88.0" y="133.4" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">minimap2_binning_bam</text></g>
 <g><title>comebin</title>
-<polygon points="70.2,155.3 80.9,155.3 75.5,164.5" fill="#FFFFFF" stroke="#eda100" stroke-width="2.0" stroke-linejoin="round"/>
+<polygon points="70.2,155.3 80.9,155.3 75.5,164.5" fill="#FFFFFF" stroke="#1baf7a" stroke-width="2.0" stroke-linejoin="round"/>
 <text x="88.0" y="164.6" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">comebin</text></g>
 <g><title>semibin2</title>
-<polygon points="19.5,186.5 30.2,186.5 24.8,195.7" fill="#FFFFFF" stroke="#eda100" stroke-width="2.0" stroke-linejoin="round"/>
+<polygon points="19.5,186.5 30.2,186.5 24.8,195.7" fill="#FFFFFF" stroke="#1baf7a" stroke-width="2.0" stroke-linejoin="round"/>
 <text x="88.0" y="195.8" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">semibin2</text></g>
 <g><title>metabat2</title>
-<polygon points="53.3,217.7 64.0,217.7 58.6,226.9" fill="#FFFFFF" stroke="#eda100" stroke-width="2.0" stroke-linejoin="round"/>
+<polygon points="53.3,217.7 64.0,217.7 58.6,226.9" fill="#FFFFFF" stroke="#1baf7a" stroke-width="2.0" stroke-linejoin="round"/>
 <text x="88.0" y="227.0" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">metabat2</text></g>
 <g><title>das_tool</title>
-<polygon points="36.4,248.9 47.1,248.9 41.7,258.1" fill="#FFFFFF" stroke="#e87ba4" stroke-width="2.0" stroke-linejoin="round"/>
+<polygon points="36.4,248.9 47.1,248.9 41.7,258.1" fill="#FFFFFF" stroke="#1baf7a" stroke-width="2.0" stroke-linejoin="round"/>
 <text x="88.0" y="258.2" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">das_tool</text></g>
 <g><title>checkm2</title>
-<polygon points="70.2,280.1 80.9,280.1 75.5,289.3" fill="#FFFFFF" stroke="#008300" stroke-width="2.0" stroke-linejoin="round"/>
+<polygon points="70.2,280.1 80.9,280.1 75.5,289.3" fill="#FFFFFF" stroke="#eda100" stroke-width="2.0" stroke-linejoin="round"/>
 <text x="88.0" y="289.4" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">checkm2</text></g>
 <g><title>checkm2</title>
-<polygon points="19.5,311.3 30.2,311.3 24.8,320.5" fill="#FFFFFF" stroke="#008300" stroke-width="2.0" stroke-linejoin="round"/>
+<polygon points="19.5,311.3 30.2,311.3 24.8,320.5" fill="#FFFFFF" stroke="#eda100" stroke-width="2.0" stroke-linejoin="round"/>
 <text x="88.0" y="320.6" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">checkm2</text></g>
 <g><title>checkm2</title>
-<polygon points="53.3,342.5 64.0,342.5 58.6,351.7" fill="#FFFFFF" stroke="#008300" stroke-width="2.0" stroke-linejoin="round"/>
+<polygon points="53.3,342.5 64.0,342.5 58.6,351.7" fill="#FFFFFF" stroke="#eda100" stroke-width="2.0" stroke-linejoin="round"/>
 <text x="88.0" y="351.8" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">checkm2</text></g>
 <g><title>checkm2</title>
-<polygon points="36.4,373.7 47.1,373.7 41.7,382.9" fill="#FFFFFF" stroke="#008300" stroke-width="2.0" stroke-linejoin="round"/>
+<polygon points="36.4,373.7 47.1,373.7 41.7,382.9" fill="#FFFFFF" stroke="#eda100" stroke-width="2.0" stroke-linejoin="round"/>
 <text x="88.0" y="383.0" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">checkm2</text></g>
 </svg>

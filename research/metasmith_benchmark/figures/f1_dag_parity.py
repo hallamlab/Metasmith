@@ -2,9 +2,9 @@
 
 E1's graph is nextflow's own `-with-dag` output (results/e1/dag/), projected to the processes that ran on
 that arm. E2's graph is the plan `drivers/e2_cami.py` solves, which is the plan that ran: CheckM2 on all four
-bin sets. Both are drawn steps-only by the same DagRenderer, every step coloured by its pipeline stage
-from one palette, so a stage reads the same in all four graphs and nf-core's bookkeeping stands out in
-grey. E2's two scoring steps against the CAMI gold standard, and the inputs only they read, are cut out:
+bin sets. Both are drawn in full and steps-only by the same DagRenderer, every step coloured by its function
+from one palette, so a function reads the same in all eight graphs and nf-core's bookkeeping stands out
+in grey. E2's two scoring steps against the CAMI gold standard, and the inputs only they read, are cut out:
 nf-core has no counterpart to them.
 
 The edge check contracts both graphs to the tool-bearing steps E2 has a transform for, then compares edges
@@ -32,23 +32,22 @@ import render_e2  # noqa: E402
 from metasmith.models.dag_colour import Colouring  # noqa: E402
 from metasmith.models.dag_renderer import DagMode, DagRenderer, NodeKind  # noqa: E402
 
-# the page's categorical slots 1-6 in pipeline order, stepped per theme; bookkeeping is neutral
+# the page's categorical slots 1-4 in pipeline order, stepped per theme; bookkeeping is neutral
 STAGES = {
-    "read QC": ("#2a78d6", "#3987e5"),
-    "assembly": ("#eb6834", "#d95926"),
-    "read mapping": ("#1baf7a", "#199e70"),
-    "binning": ("#eda100", "#c98500"),
-    "refinement": ("#e87ba4", "#d55181"),
-    "bin quality": ("#008300", "#008300"),
+    "read processing and QC": ("#2a78d6", "#3987e5"),
+    "assembly and read mapping": ("#eb6834", "#d95926"),
+    "binning and refinement": ("#1baf7a", "#199e70"),
+    "bin quality": ("#eda100", "#c98500"),
     "nf-core bookkeeping and reports": ("#8a8a8a", "#7a7f88"),
 }
 TRANSFORM_STAGE = {
-    "fastqc_raw": "read QC", "fastp": "read QC", "fastqc_trimmed": "read QC",
-    "porechop_abi": "read QC", "chopper": "read QC",
-    "megahit": "assembly", "flye": "assembly",
-    "bowtie2_binning_bam": "read mapping", "minimap2_binning_bam": "read mapping",
-    "metabat2": "binning", "semibin2": "binning", "comebin": "binning",
-    "das_tool": "refinement", "checkm2": "bin quality",
+    "fastqc_raw": "read processing and QC", "fastp": "read processing and QC",
+    "fastqc_trimmed": "read processing and QC", "porechop_abi": "read processing and QC",
+    "chopper": "read processing and QC",
+    "megahit": "assembly and read mapping", "flye": "assembly and read mapping",
+    "bowtie2_binning_bam": "assembly and read mapping", "minimap2_binning_bam": "assembly and read mapping",
+    "metabat2": "binning and refinement", "semibin2": "binning and refinement", "comebin": "binning and refinement",
+    "das_tool": "binning and refinement", "checkm2": "bin quality",
 }
 SCORING = {"gold_standard", "amber"}
 
@@ -193,11 +192,12 @@ def main():
     rows, summary = [], {}
     for arm in ("short", "long"):
         for theme in ("light", "dark"):
-            kw = dict(theme=theme, background=False, mode=DagMode.STEPS)
-            r1, t1, s1 = e1_graph(arm, **kw)
-            r2, t2 = e2_graph(arm, **kw)
-            paint(r1, s1, theme).render(OUT / f"e1_{arm}_steps_{theme}", "svg")
-            paint(r2, {n: TRANSFORM_STAGE[t] for n, t in t2.items()}, theme).render(OUT / f"e2_{arm}_steps_{theme}", "svg")
+            for mode, tag in ((DagMode.PLAIN, ""), (DagMode.STEPS, "_steps")):
+                kw = dict(theme=theme, background=False, mode=mode)
+                r1, t1, s1 = e1_graph(arm, **kw)
+                r2, t2 = e2_graph(arm, **kw)
+                paint(r1, s1, theme).render(OUT / f"e1_{arm}{tag}_{theme}", "svg")
+                paint(r2, {n: TRANSFORM_STAGE[t] for n, t in t2.items()}, theme).render(OUT / f"e2_{arm}{tag}_{theme}", "svg")
             r1, t1, _ = e1_graph(arm)
             r2, t2 = e2_graph(arm)
 
