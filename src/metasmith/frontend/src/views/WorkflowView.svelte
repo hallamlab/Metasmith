@@ -1345,6 +1345,7 @@
           <button
             class="primary"
             onclick={solve}
+            data-tour="solve"
             disabled={solving || settingUp || recipe.targets.length === 0 || blankTarget || dupTarget || !!tableProblem}
           >
             {#if solving}<Spinner />{/if}
@@ -1455,7 +1456,7 @@
            success/failure/pending. Kept apart from the solve card above (the
            action) and the stage-and-run card below (what a successful plan
            unlocks). -->
-      <div class="card col" style="gap:10px">
+      <div class="card col" style="gap:10px" data-tour="plan">
         {#if !wf.planned}
           <h3>plan</h3>
           <p class="small muted">
@@ -1466,7 +1467,7 @@
           <div class="spread">
             <div class="row">
               <h3>plan</h3>
-              <span class="tag ok">success</span>
+              <span class="tag ok" data-tour="plan-ok">success</span>
             </div>
             <div class="row">
               <span class="tag ok">{wf.step_count} step(s)</span>
@@ -1754,7 +1755,7 @@
       </div>
 
       {#if wf.success}
-      <div class="card col" style="gap:10px">
+      <div class="card col" style="gap:10px" data-tour="stage-run">
         <h3>stage and run</h3>
         <!-- Pre-filled from the agent, so what will be sent is on the screen
              rather than implied. Editing a row here changes this run only;
@@ -1774,6 +1775,7 @@
         <Field label="agent">
           <select
             bind:value={agentChoice}
+            data-tour="run-agent"
             onchange={(e) => {
               seedFromAgent(e.currentTarget.value)
               setLastAgent(e.currentTarget.value)
@@ -1842,6 +1844,7 @@
           <button
             class="primary"
             onclick={launch}
+            data-tour="launch"
             disabled={!agentChoice || launching || settingUp || recipeProblems.length > 0 || !!liveRun}
           >
             {launching ? 'launching…' : 'stage and run'}

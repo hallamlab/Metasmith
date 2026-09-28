@@ -58,7 +58,7 @@
   }
 </script>
 
-<div class="strip" class:on={attached}>
+<div class="strip" class:on={attached} data-tour="sample-sheet">
   {#if !attached}
     <div class="row wrap">
       <label class="filebtn small">

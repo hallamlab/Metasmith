@@ -250,6 +250,7 @@
           {/if}
           ping
         </button>
+        <span class="anchor" data-tour="agent-deploy">
         <SplitButton
           label={deploying ? 'deploying…' : 'deploy'}
           disabled={problems.length > 0 || deploying}
@@ -260,6 +261,7 @@
             onclick: () => deploy(true),
           }]}
         />
+        </span>
       </div>
     </div>
 
@@ -340,6 +342,7 @@
 {/if}
 
 <style>
+  .anchor { display: inline-flex; }
   .link {
     background: none;
     border: none;

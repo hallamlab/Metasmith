@@ -30,6 +30,8 @@
   import NewWorkflow from './components/NewWorkflow.svelte'
   import ShareIn from './components/ShareIn.svelte'
   import StatusDot from './components/StatusDot.svelte'
+  import TourLayer from './components/TourLayer.svelte'
+  import TourMenu from './components/TourMenu.svelte'
   import SshHost from './views/SshHost.svelte'
   import SshEditor from './views/SshEditor.svelte'
   import SshNew from './views/SshNew.svelte'
@@ -261,7 +263,12 @@
 
     <nav>
       {#each SECTIONS as s}
-        <button class="tab" class:on={app.section === s.id} onclick={() => selectSection(s.id)}>
+        <button
+          class="tab"
+          class:on={app.section === s.id}
+          onclick={() => selectSection(s.id)}
+          data-tour={`tab-${s.id}`}
+        >
           {s.label}
         </button>
       {/each}
@@ -280,6 +287,8 @@
         <CopyButton text={app.project.root} label="copy the project path" />
       {/if}
     </div>
+
+    <TourMenu />
 
     <!-- the glyph is the theme you would switch *to*, not the one showing, and
          the title says so. Outside the project check for the same reason the
@@ -379,7 +388,7 @@
       >
         {#snippet actions()}
           <button class="small" onclick={() => (importing = true)} title={IMPORT_TITLE}>import</button>
-          <button class="small" disabled={creating} onclick={newAgent}>+ agent</button>
+          <button class="small" disabled={creating} onclick={newAgent} data-tour="new-agent">+ agent</button>
         {/snippet}
         {#snippet row(item)}
           <div class="spread">
@@ -444,7 +453,7 @@
       >
         {#snippet actions()}
           <button class="small" onclick={() => (importing = true)} title={IMPORT_TITLE}>import</button>
-          <button class="small" onclick={() => (choosing = true)}>+ workflow</button>
+          <button class="small" onclick={() => (choosing = true)} data-tour="new-workflow">+ workflow</button>
         {/snippet}
         {#snippet row(item)}
           <div class="spread">
@@ -570,6 +579,8 @@
 {#if choosing}
   <NewWorkflow onclose={() => (choosing = false)} />
 {/if}
+
+<TourLayer />
 
 <style>
   .shell { display: flex; flex-direction: column; height: 100vh; }

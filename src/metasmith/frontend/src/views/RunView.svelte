@@ -483,7 +483,7 @@
       {/if}
     </div>
 
-    <div class="card col" style="gap:8px">
+    <div class="card col" style="gap:8px" data-tour="run-steps">
       <div class="spread">
         <h3>steps</h3>
         <div class="row" style="gap:8px; align-items:center">
@@ -555,7 +555,7 @@
       {/if}
     </div>
 
-    <div class="card col" style="gap:8px">
+    <div class="card col" style="gap:8px" data-tour="run-results">
       <h3>results</h3>
       {#if !results?.collected}
         <p class="small muted">
@@ -567,7 +567,7 @@
           <CopyButton text={results?.path} label="copy the results path" />
         </div>
         <div>
-          <button onclick={collect} disabled={rec.live}>collect results</button>
+          <button onclick={collect} disabled={rec.live} data-tour="collect">collect results</button>
         </div>
       {:else if results.error}
         <p class="small muted">
@@ -577,7 +577,7 @@
         <!-- What was asked for, before what came back: a folder with files in
              it looks like a success until it is read against the request. -->
         {#if results.targets?.length}
-          <table class="small targets">
+          <table class="small targets" data-tour="results-collected">
             <thead><tr><th></th><th>requested output</th><th>delivered</th></tr></thead>
             <tbody>
               {#each results.targets as t}

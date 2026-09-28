@@ -171,6 +171,7 @@
 <Modal title="new workflow" subtitle="start from a template, or from nothing" {onclose}>
   <div
     class="stage"
+    data-tour="template-preview"
     class:panning={!!drag}
     role="application"
     aria-label="template diagram — scroll to zoom, drag to pan"
@@ -208,7 +209,7 @@
   <label class="col small">
     <span class="muted">template</span>
     <div class="row">
-      <select bind:value={picked}>
+      <select bind:value={picked} data-tour="template-select">
         <option value="">blank</option>
         {#each templates as t (t.name)}
           <option value={t.name}>{t.name}</option>
@@ -225,7 +226,7 @@
 
   {#snippet footer()}
     <button onclick={() => onclose?.()}>cancel</button>
-    <button class="primary" disabled={creating || drawing} onclick={create}>create</button>
+    <button class="primary" disabled={creating || drawing} onclick={create} data-tour="template-create">create</button>
   {/snippet}
 </Modal>
 
