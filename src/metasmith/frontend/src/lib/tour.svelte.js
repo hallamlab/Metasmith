@@ -1,4 +1,5 @@
 import { TUTORIALS } from './tutorials/index.js'
+import { app } from './state.svelte.js'
 
 // Which tutorial is open and where in it you are. Kept across a reload because
 // the steps between here and a result include a deploy and a run, and a reload
@@ -8,8 +9,10 @@ const KEY = 'metasmith.tour'
 function restore() {
   try {
     const raw = JSON.parse(localStorage.getItem(KEY) ?? 'null')
-    if (raw && TUTORIALS.some((t) => t.id === raw.id)) {
-      return { id: raw.id, step: Number(raw.step) || 0, minimized: !!raw.minimized, nav: raw.nav ?? null }
+    const t = raw && TUTORIALS.find((t) => t.id === raw.id)
+    if (t) {
+      const step = Math.max(0, Math.min(t.steps.length - 1, Math.trunc(Number(raw.step)) || 0))
+      return { id: raw.id, step, minimized: !!raw.minimized, nav: raw.nav ?? null }
     }
     return { id: null, step: 0, minimized: false, nav: raw?.nav ?? null }
   } catch {
@@ -46,7 +49,7 @@ export const currentStep = () => tutorial()?.steps[tour.step] ?? null
 
 function enter(direction) {
   tour.arrived = direction
-  currentStep()?.enter?.(tourCtx)
+  currentStep()?.enter?.(tourCtx, app)
   save()
 }
 
@@ -87,9 +90,9 @@ export function setMinimized(v) {
   save()
 }
 
-export function setNavPosition(pos) {
+export function setNavPosition(pos, persist = true) {
   tour.nav = pos
-  save()
+  if (persist) save()
 }
 
 /** The element a step points at, or null while it is not on screen.

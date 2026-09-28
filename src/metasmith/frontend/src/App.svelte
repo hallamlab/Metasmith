@@ -255,7 +255,7 @@
 </script>
 
 <div class="shell">
-  <header>
+  <header data-tour="header">
     <div class="brand">
       <img class="wordmark" src={wordmark} alt="Metasmith" />
       {#if app.project}<span class="ver mono">{app.project.version}</span>{/if}

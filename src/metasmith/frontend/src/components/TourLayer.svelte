@@ -94,7 +94,7 @@
       if (d && !done && armed && s.advance !== false && !advanceTimer) {
         advanceTimer = setTimeout(() => {
           advanceTimer = null
-          if (stepKey === key) nextStep()
+          if (stepKey === key && done) nextStep()
         }, ADVANCE_MS)
       }
       done = d
@@ -133,13 +133,16 @@
     const r = rect
     const cx = r.left + r.width / 2
     const cy = r.top + r.height / 2
+    // a card over the tab bar would hide the next step's control
+    const headerBottom = document.querySelector('[data-tour="header"]')?.getBoundingClientRect().bottom ?? 0
+    const ceiling = r.top >= headerBottom ? headerBottom + EDGE : EDGE
     const at = {
-      right: () => ({ x: r.left + r.width + PAD + GAP, y: clamp(cy - h / 2, EDGE, vh - h - EDGE) }),
-      left: () => ({ x: r.left - PAD - GAP - w, y: clamp(cy - h / 2, EDGE, vh - h - EDGE) }),
+      right: () => ({ x: r.left + r.width + PAD + GAP, y: clamp(cy - h / 2, ceiling, vh - h - EDGE) }),
+      left: () => ({ x: r.left - PAD - GAP - w, y: clamp(cy - h / 2, ceiling, vh - h - EDGE) }),
       bottom: () => ({ x: clamp(cx - w / 2, EDGE, vw - w - EDGE), y: r.top + r.height + PAD + GAP }),
       top: () => ({ x: clamp(cx - w / 2, EDGE, vw - w - EDGE), y: r.top - PAD - GAP - h }),
     }
-    const fits = (p) => p.x >= EDGE && p.y >= EDGE && p.x + w <= vw - EDGE && p.y + h <= vh - EDGE
+    const fits = (p) => p.x >= EDGE && p.y >= ceiling && p.x + w <= vw - EDGE && p.y + h <= vh - EDGE
     for (const side of [step?.placement, 'right', 'bottom', 'left', 'top']) {
       if (!side || !at[side]) continue
       const p = at[side]()
@@ -177,10 +180,12 @@
   }
   function dragMove(e) {
     if (!drag || drag.id !== e.pointerId) return
-    setNavPosition({ x: e.clientX - drag.dx, y: e.clientY - drag.dy })
+    setNavPosition({ x: e.clientX - drag.dx, y: e.clientY - drag.dy }, false)
   }
   function dragEnd(e) {
-    if (drag?.id === e.pointerId) drag = null
+    if (drag?.id !== e.pointerId) return
+    drag = null
+    setNavPosition(tour.nav)
   }
 
   // backticks in a step's prose are code, and nothing else is markup

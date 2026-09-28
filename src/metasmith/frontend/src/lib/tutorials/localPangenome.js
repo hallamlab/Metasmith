@@ -24,8 +24,14 @@ function boundTo(type, column) {
   return mode === 'value' && [...el.querySelectorAll('select')].some((s) => s.value === column)
 }
 
+// A remembered selection is not an action: the tabs keep what was last open,
+// so steps that ask for something new compare against what was there when
+// the step opened.
+const names = (list, key = (x) => x.name) => new Set(list.map(key))
+const runId = (r) => `${r.workflow}/${r.name}`
+
 const selectedAgent = (app) => app.agents.find((a) => a.name === app.selected.agents)
-const selectedRun = (app) => app.runs.find((r) => `${r.workflow}/${r.name}` === app.selected.runs)
+const selectedRun = (app) => app.runs.find((r) => runId(r) === app.selected.runs)
 
 export default {
   id: 'local-pangenome',
@@ -64,7 +70,9 @@ export default {
         'Already have a local agent? Click it in the list instead.',
       ],
       do: 'click `+ agent`',
-      done: (_c, app) => app.section === 'agents' && !!app.selected.agents,
+      enter: (c, app) => (c.agentAtEntry = app.selected.agents ?? null),
+      done: (c, app) =>
+        app.section === 'agents' && !!app.selected.agents && app.selected.agents !== c.agentAtEntry,
     },
     {
       chapter: 'agent',
@@ -149,8 +157,13 @@ export default {
       placement: 'top',
       body: ['The workflow gets a made-up name. Rename it any time by double-clicking the name.'],
       do: 'click `create`',
-      done: (_c, app) =>
-        app.section === 'workflows' && !!app.selected.workflows && !$('[data-tour="template-select"]'),
+      enter: (c, app) => (c.workflowsBefore = names(app.workflows)),
+      done: (c, app) =>
+        app.section === 'workflows' &&
+        !!app.selected.workflows &&
+        !!c.workflowsBefore &&
+        !c.workflowsBefore.has(app.selected.workflows) &&
+        !$('[data-tour="template-select"]'),
       waiting: 'Click `+ workflow` and choose the template again.',
     },
     {
@@ -238,7 +251,7 @@ export default {
       placement: 'right',
       body: ['Agents that are not ready yet are listed but greyed out, with the reason beside them. An agent has to be deployed before it can run anything.'],
       do: 'choose the agent you deployed',
-      done: () => !!$('[data-tour="run-agent"]')?.value,
+      done: (_c, app) => !!app.selected.agents && $('[data-tour="run-agent"]')?.value === app.selected.agents,
       waiting: 'Solve the workflow first — running unlocks once there is a plan.',
     },
     {
@@ -250,7 +263,9 @@ export default {
         'Staging copies the plan and its inputs into the agent\'s home; then Nextflow runs the steps. You are taken to the run\'s own page.',
       ],
       do: 'click `stage and run`',
-      done: (_c, app) => app.section === 'runs' && !!app.selected.runs,
+      enter: (c, app) => (c.runsBefore = names(app.runs, runId)),
+      done: (c, app) =>
+        app.section === 'runs' && !!app.selected.runs && !!c.runsBefore && !c.runsBefore.has(app.selected.runs),
     },
     {
       chapter: 'run',
@@ -273,7 +288,7 @@ export default {
       body: ['Results stay in the agent\'s home until you collect them into this project.'],
       do: 'click `collect results`',
       done: () => !!$('[data-tour="results-collected"]'),
-      waiting: 'Collect is on the run\'s page, under results.',
+      waiting: 'Collect is on the run\'s page, under results. If it reported an error, read it there, then press next.',
     },
     {
       chapter: 'run',
