@@ -63,81 +63,81 @@
 <path d="M 75.5,635.0 A 8.5,8.5 0 0 0 84.0,643.5"/>
 </g>
 <g><title>nanoplot_raw</title>
-<polygon points="154.7,30.5 165.4,30.5 160.0,39.7" fill="#FFFFFF" stroke="#8a8a8a" stroke-width="2.0" stroke-linejoin="round"/>
+<polygon points="154.7,30.5 165.4,30.5 160.0,39.7" fill="#8a8a8a" stroke="#fcfcfd" stroke-width="1.0" stroke-linejoin="round"/>
 <text x="172.5" y="39.8" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">nanoplot_raw</text></g>
 <g><title>porechop_abi</title>
-<polygon points="137.8,61.7 148.5,61.7 143.1,70.9" fill="#FFFFFF" stroke="#2a78d6" stroke-width="2.0" stroke-linejoin="round"/>
+<polygon points="137.8,61.7 148.5,61.7 143.1,70.9" fill="#2a78d6" stroke="#fcfcfd" stroke-width="1.0" stroke-linejoin="round"/>
 <text x="172.5" y="71.0" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">porechop_abi</text></g>
 <g><title>chopper</title>
-<polygon points="137.8,92.9 148.5,92.9 143.1,102.1" fill="#FFFFFF" stroke="#2a78d6" stroke-width="2.0" stroke-linejoin="round"/>
+<polygon points="137.8,92.9 148.5,92.9 143.1,102.1" fill="#2a78d6" stroke="#fcfcfd" stroke-width="1.0" stroke-linejoin="round"/>
 <text x="172.5" y="102.2" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">chopper</text></g>
 <g><title>nanoplot_filtered</title>
-<polygon points="154.7,124.1 165.4,124.1 160.0,133.3" fill="#FFFFFF" stroke="#8a8a8a" stroke-width="2.0" stroke-linejoin="round"/>
+<polygon points="154.7,124.1 165.4,124.1 160.0,133.3" fill="#8a8a8a" stroke="#fcfcfd" stroke-width="1.0" stroke-linejoin="round"/>
 <text x="172.5" y="133.4" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">nanoplot_filtered</text></g>
 <g><title>flye</title>
-<polygon points="104.0,155.3 114.7,155.3 109.3,164.5" fill="#FFFFFF" stroke="#eb6834" stroke-width="2.0" stroke-linejoin="round"/>
+<polygon points="104.0,155.3 114.7,155.3 109.3,164.5" fill="#eb6834" stroke="#fcfcfd" stroke-width="1.0" stroke-linejoin="round"/>
 <text x="172.5" y="164.6" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">flye</text></g>
 <g><title>gunzip_longread_assemblies</title>
-<polygon points="104.0,186.5 114.7,186.5 109.3,195.7" fill="#FFFFFF" stroke="#8a8a8a" stroke-width="2.0" stroke-linejoin="round"/>
+<polygon points="104.0,186.5 114.7,186.5 109.3,195.7" fill="#8a8a8a" stroke="#fcfcfd" stroke-width="1.0" stroke-linejoin="round"/>
 <text x="172.5" y="195.8" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">gunzip_longread_assemblies</text></g>
 <g><title>quast</title>
-<polygon points="120.9,217.7 131.6,217.7 126.2,226.9" fill="#FFFFFF" stroke="#8a8a8a" stroke-width="2.0" stroke-linejoin="round"/>
+<polygon points="120.9,217.7 131.6,217.7 126.2,226.9" fill="#8a8a8a" stroke="#fcfcfd" stroke-width="1.0" stroke-linejoin="round"/>
 <text x="172.5" y="227.0" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">quast</text></g>
 <g><title>minimap2_assembly_index</title>
-<polygon points="120.9,248.9 131.6,248.9 126.2,258.1" fill="#FFFFFF" stroke="#eb6834" stroke-width="2.0" stroke-linejoin="round"/>
+<polygon points="120.9,248.9 131.6,248.9 126.2,258.1" fill="#eb6834" stroke="#fcfcfd" stroke-width="1.0" stroke-linejoin="round"/>
 <text x="172.5" y="258.2" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">minimap2_assembly_index</text></g>
 <g><title>minimap2_assembly_align</title>
-<polygon points="120.9,280.1 131.6,280.1 126.2,289.3" fill="#FFFFFF" stroke="#eb6834" stroke-width="2.0" stroke-linejoin="round"/>
+<polygon points="120.9,280.1 131.6,280.1 126.2,289.3" fill="#eb6834" stroke="#fcfcfd" stroke-width="1.0" stroke-linejoin="round"/>
 <text x="172.5" y="289.4" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">minimap2_assembly_align</text></g>
 <g><title>metabat2_jgisummarizebamcontigdepths_longread</title>
-<polygon points="154.7,311.3 165.4,311.3 160.0,320.5" fill="#FFFFFF" stroke="#1baf7a" stroke-width="2.0" stroke-linejoin="round"/>
+<polygon points="154.7,311.3 165.4,311.3 160.0,320.5" fill="#1baf7a" stroke="#fcfcfd" stroke-width="1.0" stroke-linejoin="round"/>
 <text x="172.5" y="320.6" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">metabat2_jgisummarizebamcontigd…</text></g>
 <g><title>comebin_runcomebin</title>
-<polygon points="19.5,342.5 30.2,342.5 24.8,351.7" fill="#FFFFFF" stroke="#1baf7a" stroke-width="2.0" stroke-linejoin="round"/>
+<polygon points="19.5,342.5 30.2,342.5 24.8,351.7" fill="#1baf7a" stroke="#fcfcfd" stroke-width="1.0" stroke-linejoin="round"/>
 <text x="172.5" y="351.8" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">comebin_runcomebin</text></g>
 <g><title>metabat2_metabat2</title>
-<polygon points="53.3,373.7 64.0,373.7 58.6,382.9" fill="#FFFFFF" stroke="#1baf7a" stroke-width="2.0" stroke-linejoin="round"/>
+<polygon points="53.3,373.7 64.0,373.7 58.6,382.9" fill="#1baf7a" stroke="#fcfcfd" stroke-width="1.0" stroke-linejoin="round"/>
 <text x="172.5" y="383.0" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">metabat2_metabat2</text></g>
 <g><title>semibin_singleeasybin</title>
-<polygon points="87.1,404.9 97.8,404.9 92.4,414.1" fill="#FFFFFF" stroke="#1baf7a" stroke-width="2.0" stroke-linejoin="round"/>
+<polygon points="87.1,404.9 97.8,404.9 92.4,414.1" fill="#1baf7a" stroke="#fcfcfd" stroke-width="1.0" stroke-linejoin="round"/>
 <text x="172.5" y="414.2" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">semibin_singleeasybin</text></g>
 <g><title>seqkit_stats</title>
-<polygon points="36.4,436.1 47.1,436.1 41.7,445.3" fill="#FFFFFF" stroke="#8a8a8a" stroke-width="2.0" stroke-linejoin="round"/>
+<polygon points="36.4,436.1 47.1,436.1 41.7,445.3" fill="#8a8a8a" stroke="#fcfcfd" stroke-width="1.0" stroke-linejoin="round"/>
 <text x="172.5" y="445.4" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">seqkit_stats</text></g>
 <g><title>rename_predastool</title>
-<polygon points="70.2,467.3 80.9,467.3 75.5,476.5" fill="#FFFFFF" stroke="#8a8a8a" stroke-width="2.0" stroke-linejoin="round"/>
+<polygon points="70.2,467.3 80.9,467.3 75.5,476.5" fill="#8a8a8a" stroke="#fcfcfd" stroke-width="1.0" stroke-linejoin="round"/>
 <text x="172.5" y="476.6" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">rename_predastool</text></g>
 <g><title>dastool_fastatocontig2bin</title>
-<polygon points="70.2,498.5 80.9,498.5 75.5,507.7" fill="#FFFFFF" stroke="#8a8a8a" stroke-width="2.0" stroke-linejoin="round"/>
+<polygon points="70.2,498.5 80.9,498.5 75.5,507.7" fill="#8a8a8a" stroke="#fcfcfd" stroke-width="1.0" stroke-linejoin="round"/>
 <text x="172.5" y="507.8" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">dastool_fastatocontig2bin</text></g>
 <g><title>dastool_dastool</title>
-<polygon points="120.9,529.7 131.6,529.7 126.2,538.9" fill="#FFFFFF" stroke="#1baf7a" stroke-width="2.0" stroke-linejoin="round"/>
+<polygon points="120.9,529.7 131.6,529.7 126.2,538.9" fill="#1baf7a" stroke="#fcfcfd" stroke-width="1.0" stroke-linejoin="round"/>
 <text x="172.5" y="539.0" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">dastool_dastool</text></g>
 <g><title>rename_postdastool</title>
-<polygon points="120.9,560.9 131.6,560.9 126.2,570.1" fill="#FFFFFF" stroke="#8a8a8a" stroke-width="2.0" stroke-linejoin="round"/>
+<polygon points="120.9,560.9 131.6,560.9 126.2,570.1" fill="#8a8a8a" stroke="#fcfcfd" stroke-width="1.0" stroke-linejoin="round"/>
 <text x="172.5" y="570.2" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">rename_postdastool</text></g>
 <g><title>split_fasta</title>
-<polygon points="70.2,592.1 80.9,592.1 75.5,601.3" fill="#FFFFFF" stroke="#8a8a8a" stroke-width="2.0" stroke-linejoin="round"/>
+<polygon points="70.2,592.1 80.9,592.1 75.5,601.3" fill="#8a8a8a" stroke="#fcfcfd" stroke-width="1.0" stroke-linejoin="round"/>
 <text x="172.5" y="601.4" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">split_fasta</text></g>
 <g><title>mag_depths</title>
-<polygon points="154.7,623.3 165.4,623.3 160.0,632.5" fill="#FFFFFF" stroke="#8a8a8a" stroke-width="2.0" stroke-linejoin="round"/>
+<polygon points="154.7,623.3 165.4,623.3 160.0,632.5" fill="#8a8a8a" stroke="#fcfcfd" stroke-width="1.0" stroke-linejoin="round"/>
 <text x="172.5" y="632.6" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">mag_depths</text></g>
 <g><title>checkm2_predict</title>
-<polygon points="104.0,654.5 114.7,654.5 109.3,663.7" fill="#FFFFFF" stroke="#eda100" stroke-width="2.0" stroke-linejoin="round"/>
+<polygon points="104.0,654.5 114.7,654.5 109.3,663.7" fill="#4a3aa7" stroke="#fcfcfd" stroke-width="1.0" stroke-linejoin="round"/>
 <text x="172.5" y="663.8" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">checkm2_predict</text></g>
 <g><title>quast_bins</title>
-<polygon points="70.2,685.7 80.9,685.7 75.5,694.9" fill="#FFFFFF" stroke="#8a8a8a" stroke-width="2.0" stroke-linejoin="round"/>
+<polygon points="70.2,685.7 80.9,685.7 75.5,694.9" fill="#8a8a8a" stroke="#fcfcfd" stroke-width="1.0" stroke-linejoin="round"/>
 <text x="172.5" y="695.0" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">quast_bins</text></g>
 <g><title>concat_checkm2_tsv</title>
-<polygon points="104.0,716.9 114.7,716.9 109.3,726.1" fill="#FFFFFF" stroke="#8a8a8a" stroke-width="2.0" stroke-linejoin="round"/>
+<polygon points="104.0,716.9 114.7,716.9 109.3,726.1" fill="#8a8a8a" stroke="#fcfcfd" stroke-width="1.0" stroke-linejoin="round"/>
 <text x="172.5" y="726.2" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">concat_checkm2_tsv</text></g>
 <g><title>concat_quast_summary</title>
-<polygon points="70.2,748.1 80.9,748.1 75.5,757.3" fill="#FFFFFF" stroke="#8a8a8a" stroke-width="2.0" stroke-linejoin="round"/>
+<polygon points="70.2,748.1 80.9,748.1 75.5,757.3" fill="#8a8a8a" stroke="#fcfcfd" stroke-width="1.0" stroke-linejoin="round"/>
 <text x="172.5" y="757.4" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">concat_quast_summary</text></g>
 <g><title>mag_depths_summary</title>
-<polygon points="154.7,779.3 165.4,779.3 160.0,788.5" fill="#FFFFFF" stroke="#8a8a8a" stroke-width="2.0" stroke-linejoin="round"/>
+<polygon points="154.7,779.3 165.4,779.3 160.0,788.5" fill="#8a8a8a" stroke="#fcfcfd" stroke-width="1.0" stroke-linejoin="round"/>
 <text x="172.5" y="788.6" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">mag_depths_summary</text></g>
 <g><title>bin_summary</title>
-<polygon points="104.0,810.5 114.7,810.5 109.3,819.7" fill="#FFFFFF" stroke="#8a8a8a" stroke-width="2.0" stroke-linejoin="round"/>
+<polygon points="104.0,810.5 114.7,810.5 109.3,819.7" fill="#8a8a8a" stroke="#fcfcfd" stroke-width="1.0" stroke-linejoin="round"/>
 <text x="172.5" y="819.8" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">bin_summary</text></g>
 </svg>

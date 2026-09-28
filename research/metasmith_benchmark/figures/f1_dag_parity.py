@@ -18,6 +18,7 @@ import json
 import os
 import sys
 from collections import defaultdict
+from dataclasses import replace
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -32,12 +33,12 @@ import render_e2  # noqa: E402
 from metasmith.models.dag_colour import Colouring  # noqa: E402
 from metasmith.models.dag_renderer import DagMode, DagRenderer, NodeKind  # noqa: E402
 
-# the page's categorical slots 1-4 in pipeline order, stepped per theme; bookkeeping is neutral
+# the page's categorical slots 1-3 and 7 (violet) in pipeline order, stepped per theme; bookkeeping is neutral
 STAGES = {
     "read processing and QC": ("#2a78d6", "#3987e5"),
     "assembly and read mapping": ("#eb6834", "#d95926"),
     "binning and refinement": ("#1baf7a", "#199e70"),
-    "bin quality": ("#eda100", "#c98500"),
+    "bin quality": ("#4a3aa7", "#9085e9"),
     "nf-core bookkeeping and reports": ("#8a8a8a", "#7a7f88"),
 }
 TRANSFORM_STAGE = {
@@ -49,6 +50,9 @@ TRANSFORM_STAGE = {
     "metabat2": "binning and refinement", "semibin2": "binning and refinement", "comebin": "binning and refinement",
     "das_tool": "binning and refinement", "checkm2": "bin quality",
 }
+# a filled step is ringed in the page's surface colour; the given step takes the ink
+PAGE_SURFACE = ("#fcfcfd", "#171b21")
+INK = ("#2b2b2b", "#dfe3ea")
 SCORING = {"gold_standard", "amber"}
 # gene calling on the assemblies: an annotation step outside the binning pipeline both arms compare
 E1_DROPPED = {"PRODIGAL"}
@@ -133,12 +137,18 @@ def drop_scoring(r):
 
 
 def paint(r, stage, theme):
-    """Colour every step by its stage and every product by its producer's."""
-    nodes = {n: STAGES[s][theme == "dark"] for n, s in stage.items()}
+    """Colour every step by its stage and every product by its producer's; steps are drawn filled."""
+    dark = theme == "dark"
+    nodes = {n: STAGES[s][dark] for n, s in stage.items()}
     for a, b in r._edges:
         if a in nodes and b not in nodes and r._nodes[b] is not NodeKind.TRANSFORM:
             nodes[b] = nodes[a]
     edges = {(a, b): nodes[a] for a, b in r._edges if a in nodes}
+    if "given" in r._nodes:
+        nodes["given"] = INK[dark]
+    styles = r._theme.styles
+    step = replace(styles[NodeKind.TRANSFORM], solid=True, stroke=PAGE_SURFACE[dark], stroke_width=1.0)
+    r._theme = replace(r._theme, styles={**styles, NodeKind.TRANSFORM: step})
     r.colouring = lambda lay=None: Colouring(nodes=nodes, edges=edges)
     return r
 
