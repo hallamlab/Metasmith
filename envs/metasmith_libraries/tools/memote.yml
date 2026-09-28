@@ -1,0 +1,6 @@
+name: memote
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - memote=0.17.0

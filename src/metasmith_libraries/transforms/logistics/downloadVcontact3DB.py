@@ -1,3 +1,4 @@
+import shutil
 from pathlib import Path
 from metasmith.python_api import *
 
@@ -51,6 +52,38 @@ def protocol(context: ExecutionContext):
     # would double a two-gigabyte reference for nothing.
     for archive in list(staged.glob("*.tar.gz")) + list(staged.glob("*.tar.xz")):
         archive.unlink()
+    # vConTACT3's published release ships its mmseqs BUILD SCRATCH: one
+    # `<source_db>.mmseq_tmp/<run-id>/` per source database, holding `aln_step*` chunks,
+    # macOS `._*` metadata files, and -- on v230 -- 404 DANGLING symlinks. That subtree is
+    # 5,888 of the product's 6,925 inodes and a large share of its 5.1 GB.
+    #
+    # Nothing reads it. vcontact3's own package contains no reference to `mmseq_tmp`,
+    # checked with a python walk over all 17 of its modules rather than with grep, because
+    # grep inside that image returns zero matches even for `def ` and so cannot be trusted
+    # there. The database's own version manifest does not name it either. The tmp paths the
+    # tool DOES build at run time are `*.updated.mmseq_clu_tmp` under its own out_dir and
+    # `tempfile.TemporaryDirectory` scratch -- different names, different place.
+    #
+    # CAUTION this prune is a CORRECTNESS requirement, not housekeeping. A directory
+    # product holding a dangling symlink cannot survive the standard task contract:
+    # nextflow's unstage copies with `nxf_fs_copy`'s `cp -fRL`, `-L` dereferences, the copy
+    # fails, and retry-then-ignore swallows it -- so the step reports complete with no
+    # product and every consumer downstream silently drops out. The first fix attempted was
+    # to turn `scratch` off for cached twins, which bends the execution environment for
+    # every twin to work around one product's defect. The contract is fixed; the product is
+    # what has to be made valid inside it.
+    scratch_dirs = sorted(staged.glob("*/*.mmseq_tmp"))
+    for d in scratch_dirs:
+        shutil.rmtree(d)
+    Log.Info(f"pruned {len(scratch_dirs)} mmseqs build-scratch dir(s) from the database")
+
+    dangling = sorted(p for p in staged.rglob("*") if p.is_symlink() and not p.exists())
+    assert not dangling, (
+        f"{len(dangling)} dangling symlink(s) remain under the product, e.g. "
+        f"{[str(p.relative_to(staged)) for p in dangling[:3]]}. A directory product with a "
+        "dangling symlink fails its unstage and the failure is swallowed by "
+        "retry-then-ignore, so this must fail loudly here instead.")
+
     versions = sorted(staged.glob("[0-9][0-9][0-9].json"))
     assert versions, f"vcontact3 staged no version json, only {sorted(p.name for p in staged.iterdir())}"
     Log.Info(f"vcontact3 database versions staged: {[p.stem for p in versions]}")

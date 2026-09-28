@@ -1,0 +1,6 @@
+name: das_tool
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - das_tool=1.1.7

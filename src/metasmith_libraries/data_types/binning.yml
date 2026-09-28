@@ -8,32 +8,78 @@ types:
       _: contig to bin assignment table
       ext: tsv
 
-  metabat2_contig_to_bin_table:
+  # amber.py's own requirement type -- see its comment. Every table a single
+  # binner produces directly extends this; a POOLED table that consolidates
+  # several binners' tables (das_tool_contig_to_bin_table) deliberately does
+  # NOT, even though it also extends contig_to_bin_table. Ancestral lineage
+  # matching cannot tell "descends from binner B's table" apart from "is a
+  # pool that B's table itself descends from" -- ONLY the type system can, so
+  # this is the type-level fence amber.py's fan-out requirement stands behind
+  # instead of the shared, broader contig_to_bin_table. Extend this on any
+  # future single-binner table; never extend it on a consolidator's.
+  raw_contig_to_bin_table:
     extends:
     - contig_to_bin_table
+    properties:
+      _: contig to bin assignment table produced by exactly one binner, prior to any cross-binner consolidation
+
+  metabat2_contig_to_bin_table:
+    extends:
+    - raw_contig_to_bin_table
     properties:
       method: metabat2
 
   semibin2_contig_to_bin_table:
     extends:
-    - contig_to_bin_table
+    - raw_contig_to_bin_table
     properties:
       method: semibin2
 
   comebin_contig_to_bin_table:
     extends:
-    - contig_to_bin_table
+    - raw_contig_to_bin_table
     properties:
       method: comebin
 
   # MetaWRAP is one step, not three: its bin_refinement consolidates MetaBAT2,
   # MaxBin2 and CONCOCT into a single set, and that consolidated set is what is
-  # used. The three raw bin sets are not products here.
+  # used. The three raw bin sets are not products here -- so unlike DAS Tool,
+  # this table extends raw_contig_to_bin_table too: it is the only table batch
+  # 1 ever produces, and amber.py must still be able to fan out onto it.
   metawrap_contig_to_bin_table:
+    extends:
+    - raw_contig_to_bin_table
+    properties:
+      method: metawrap
+
+  # DAS Tool is batch 2's consolidator, standing where metawrap_contig_to_bin_table
+  # stands for batch 1 -- one table over the winning, non-redundant selection across
+  # MetaBAT2, SemiBin2 and COMEBin, not three raw sets. DAS_Tool's own reader treats
+  # every -i table as headerless (`fread(..., header=F)`) and takes literally
+  # whatever sits in row one, so das_tool.py strips a leading "contig\tbin"-style
+  # header off metabat2_contig_to_bin_table and semibin2_contig_to_bin_table before
+  # handing them over -- fed unstripped, DAS_Tool halts with "Contigs of contig2bin
+  # files not found in assembly: contig, contig", checked against real fir output.
+  # This table keeps that header on the way out, like its metabat2/metawrap
+  # siblings, because amber.py already expects it (`fin.readline() # our own
+  # "contig\tbin" header`).
+  das_tool_contig_to_bin_table:
     extends:
     - contig_to_bin_table
     properties:
-      method: metawrap
+      method: das_tool
+
+  # DAS_Tool's own per-bin quality table (<outputbasename>_DASTool_summary.tsv):
+  # bin, bin_set (which input binner it came from), SCG-based completeness/
+  # redundancy and the score that selected it -- from --write_bin_evals. This is
+  # DAS_Tool's own single-copy-gene scoring, not CheckM's marker-lineage placement
+  # and not this library's functional annotation lane (KOfamScan/DIAMOND UniRef50/
+  # CLEAN/ProteinBERT via gpr_4lane.py) -- the two answer different questions
+  # (SCG-count completeness vs. what a gene does) and share no reference or table.
+  das_tool_summary:
+    properties:
+      _: DAS Tool per-bin quality table (DASTool_summary.tsv) -- bin_set, SCG completeness/redundancy and selection score per consolidated bin
+      ext: tsv
 
   # bin_refinement's own CheckM1 table, which comes free with the refinement and
   # is NOT taxonomy::checkm_stats. Two producers of one type cannot be told apart
@@ -83,6 +129,28 @@ types:
   amber_bin_metrics:
     properties:
       _: AMBER per-bin purity/completeness detail (metrics_per_bin.tsv) for one contig_to_bin_table
+      ext: tsv
+
+  # amber.py's two products, but for DAS Tool's pooled table specifically.
+  # amber.py itself cannot be pointed at that one table alone: it requires the
+  # shared contig_to_bin_table supertype, lineage matching is ancestral, and
+  # "descends from the pooled table" cannot be told apart from "is one of the
+  # things the pooled table descends from" -- a target pinned that way is
+  # dropped at solve time rather than narrowed to it (see amber_das_tool.py and
+  # research/cami/run_cami_metag.py's `_build_binning_targets`, which hit this
+  # first). These two types exist so a second, narrower scorer can require the
+  # concrete das_tool_contig_to_bin_table instead: exactly one producer, so a
+  # target naming either type needs no parent pin. Kept distinct from
+  # amber_results/amber_bin_metrics rather than reusing them, because two
+  # transforms producing the same type is the other half of this trap.
+  das_tool_amber_results:
+    properties:
+      _: AMBER genome-binning assessment summary (results.tsv) for DAS Tool's pooled contig_to_bin_table scored against a contig_gold_standard_table
+      ext: tsv
+
+  das_tool_amber_bin_metrics:
+    properties:
+      _: AMBER per-bin purity/completeness detail (metrics_per_bin.tsv) for DAS Tool's pooled contig_to_bin_table
       ext: tsv
 
   # Dereplicated representative-MAG reference for inStrain option (b): the
