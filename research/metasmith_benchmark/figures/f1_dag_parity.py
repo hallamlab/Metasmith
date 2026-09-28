@@ -54,6 +54,8 @@ TRANSFORM_STAGE = {
 PAGE_SURFACE = ("#fcfcfd", "#171b21")
 INK = ("#2b2b2b", "#dfe3ea")
 SCORING = {"gold_standard", "amber"}
+# reports and bookkeeping kept out of the steps-only grid, on whichever side has them
+STEPS_HIDDEN = {"fastqc_raw", "fastqc_trimmed", "seqkit_stats", "split_fasta", "mag_depths", "mag_depths_summary"}
 # gene calling on the assemblies: an annotation step outside the binning pipeline both arms compare
 E1_DROPPED = {"PRODIGAL"}
 
@@ -136,6 +138,25 @@ def drop_scoring(r):
             r.remove_node(n)
 
 
+def drop_steps(r, names):
+    """Cut the named steps and their products, then every input left feeding nothing."""
+    gone = {n for n, k in r._nodes.items() if k is NodeKind.TRANSFORM and r.labels[n].name in names}
+    gone |= {b for a, b in r._edges if a in gone and r._nodes[b] is not NodeKind.TRANSFORM}
+    for n in gone:
+        r.remove_node(n)
+    while True:
+        dead = [n for n, k in r._nodes.items() if k is not NodeKind.TRANSFORM and r.out_degree(n) == 0
+                and not any(b == n for _, b in r._edges)]
+        if not dead:
+            return r
+        for n in dead:
+            r.remove_node(n)
+
+
+def n_steps(r):
+    return sum(1 for n, k in r._nodes.items() if k is NodeKind.TRANSFORM and n != "given")
+
+
 def paint(r, stage, theme):
     """Colour every step by its stage and every product by its producer's; steps are drawn filled."""
     dark = theme == "dark"
@@ -208,6 +229,10 @@ def main():
                 kw = dict(theme=theme, background=False, mode=mode)
                 r1, t1, s1 = e1_graph(arm, **kw)
                 r2, t2 = e2_graph(arm, **kw)
+                if mode is DagMode.STEPS:
+                    drop_steps(r1, STEPS_HIDDEN)
+                    drop_steps(r2, STEPS_HIDDEN)
+                    shown = dict(e1_steps_shown=n_steps(r1), e2_steps_shown=n_steps(r2))
                 paint(r1, s1, theme).render(OUT / f"e1_{arm}{tag}_{theme}", "svg")
                 paint(r2, {n: TRANSFORM_STAGE[t] for n, t in t2.items()}, theme).render(OUT / f"e2_{arm}{tag}_{theme}", "svg")
             r1, t1, _ = e1_graph(arm)
@@ -229,7 +254,7 @@ def main():
         summary[arm] = dict(e1_processes=n_proc, e1_tool_processes=sum(1 for t in t1.values() if t),
                             e2_steps=n_step, tools=len(tools1), same_tools=tools1 == tools2,
                             checkm2_steps=sum(1 for t in t2.values() if t == "checkm2"),
-                            same_reachability=c1 == c2)
+                            same_reachability=c1 == c2, **shown)
         print(f"  same tools: {tools1 == tools2}   E1-only {sorted(tools1 - tools2)}   E2-only {sorted(tools2 - tools1)}")
         print(f"  tool edges: both {len(e1 & e2)}, E1-only {len(e1 - e2)}, E2-only {len(e2 - e1)}")
         print(f"  reachability identical: {c1 == c2}   transitive reduction identical: {reduction(e1) == reduction(e2)}")

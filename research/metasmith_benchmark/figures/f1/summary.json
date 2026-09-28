@@ -6,7 +6,9 @@
   "tools": 10,
   "same_tools": true,
   "checkm2_steps": 4,
-  "same_reachability": true
+  "same_reachability": true,
+  "e1_steps_shown": 16,
+  "e2_steps_shown": 11
  },
  "long": {
   "e1_processes": 26,
@@ -15,6 +17,8 @@
   "tools": 9,
   "same_tools": true,
   "checkm2_steps": 4,
-  "same_reachability": true
+  "same_reachability": true,
+  "e1_steps_shown": 22,
+  "e2_steps_shown": 12
  }
 }

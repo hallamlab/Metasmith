@@ -163,7 +163,7 @@ footer { font-size: 13px; color: var(--muted); display: grid; gap: 6px; border-t
     <div class="sec-head">
       <div class="eyebrow">1 · workflow</div>
       <h2>The solved plan is nf-core's pipeline, step for step</h2>
-      <p class="muted">Steps only: each data node is folded into the step that produces it. Left, nextflow's own DAG of the E1 run, cut to the processes that ran on that arm. Right, the plan metasmith solved for E2, which is the plan that ran. All four are drawn by metasmith's DAG renderer at the same scale, and a step's function has the same colour in each. The full graphs, with their data, are at the end of the page. The plan's two scoring steps against the CAMI gold standard are left out, because nf-core has no counterpart to them, and so is nf-core's Prodigal gene calling.</p>
+      <p class="muted">Steps only: each data node is folded into the step that produces it. Left, nextflow's own DAG of the E1 run, cut to the processes that ran on that arm. Right, the plan metasmith solved for E2, which is the plan that ran. All four are drawn by metasmith's DAG renderer at the same scale, and a step's function has the same colour in each. This grid also leaves out the FastQC reports, and nf-core's seqkit statistics, FASTA splitting and depth summaries. The full graphs at the end of the page keep every step, with its data. The plan's two scoring steps against the CAMI gold standard are left out, because nf-core has no counterpart to them, and so is nf-core's Prodigal gene calling.</p>
     </div>
     <div class="legend stage-legend"></div>
     <div class="dags" id="dags-steps"></div>
@@ -264,8 +264,9 @@ footer { font-size: 13px; color: var(--muted); display: grid; gap: 6px; border-t
     ["CheckM2", "g4"], ["nf-core bookkeeping and reports", "gb"]];
   document.querySelectorAll(".stage-legend").forEach((l) => { l.innerHTML = STAGES.map(([n, c]) => `<span><i style="background:var(--${c})"></i>${n}</span>`).join(""); });
   const SIDE = { e1: "nf-core/mag 5.5.0", e2: "metasmith, solved" };
-  const cap = (side, arm) => {
+  const cap = (side, arm, tag) => {
     const s = DATA.dag[arm];
+    if (tag) return side === "e1" ? `${s.e1_steps_shown} processes shown` : `${s.e2_steps_shown} steps shown`;
     return side === "e1" ? `${s.e1_processes} processes shown · ${s.e1_tool_processes} run a tool`
       : `${s.e2_steps} steps · ${s.tools} tools, ${s.checkm2_steps} CheckM2 steps`;
   };
@@ -273,7 +274,7 @@ footer { font-size: 13px; color: var(--muted); display: grid; gap: 6px; border-t
     `<img class="${th}-only" src="dags/${side}_${arm}${tag}_${th}.svg" alt="${SIDE[side]}${tag ? " steps" : ""}, ${ARM[arm].toLowerCase()}">`).join("");
   const grid = (tag) => `<div class="col-head">${SIDE.e1}</div><div class="col-head">${SIDE.e2}</div>` +
     ARMS.flatMap((arm) => ["e1", "e2"].map((side) =>
-      `<figure class="dag"><figcaption><b>${ARM[arm]} · ${N[arm]} samples</b><span>${cap(side, arm)}</span></figcaption>${img(side, arm, tag)}</figure>`)).join("");
+      `<figure class="dag"><figcaption><b>${ARM[arm]} · ${N[arm]} samples</b><span>${cap(side, arm, tag)}</span></figcaption>${img(side, arm, tag)}</figure>`)).join("");
   $("dags-steps").innerHTML = grid("_steps");
   $("dags-full").innerHTML = grid("");
   $("dag-notes").innerHTML = [
