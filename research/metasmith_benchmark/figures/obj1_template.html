@@ -152,7 +152,7 @@ footer { font-size: 13px; color: var(--muted); display: grid; gap: 6px; border-t
     <div class="sec-head">
       <div class="eyebrow">1 · workflow</div>
       <h2>The solved plan is nf-core's pipeline, step for step</h2>
-      <p class="muted">Steps only: each data node is folded into the step that produces it. Left, nextflow's own DAG of the E1 run, cut to the processes that ran on that arm. Right, the plan metasmith solved for E2, which is the plan that ran. All four are drawn by metasmith's DAG renderer at the same scale, and a step's function has the same colour in each. The full graphs, with their data, are at the end of the page. The plan's two scoring steps against the CAMI gold standard are left out, because nf-core has no counterpart to them.</p>
+      <p class="muted">Steps only: each data node is folded into the step that produces it. Left, nextflow's own DAG of the E1 run, cut to the processes that ran on that arm. Right, the plan metasmith solved for E2, which is the plan that ran. All four are drawn by metasmith's DAG renderer at the same scale, and a step's function has the same colour in each. The full graphs, with their data, are at the end of the page. The plan's two scoring steps against the CAMI gold standard are left out, because nf-core has no counterpart to them, and so is nf-core's Prodigal gene calling.</p>
     </div>
     <div class="legend stage-legend"></div>
     <div class="dags" id="dags-steps"></div>
@@ -241,7 +241,7 @@ footer { font-size: 13px; color: var(--muted); display: grid; gap: 6px; border-t
   const SIDE = { e1: "nf-core/mag 5.5.0", e2: "metasmith, solved" };
   const cap = (side, arm) => {
     const s = DATA.dag[arm];
-    return side === "e1" ? `${s.e1_processes} processes ran · ${s.e1_tool_processes} run a tool`
+    return side === "e1" ? `${s.e1_processes} processes shown · ${s.e1_tool_processes} run a tool`
       : `${s.e2_steps} steps · ${s.tools} tools, ${s.checkm2_steps} CheckM2 steps`;
   };
   const img = (side, arm, tag) => ["light", "dark"].map((th) =>
@@ -253,7 +253,7 @@ footer { font-size: 13px; color: var(--muted); display: grid; gap: 6px; border-t
   $("dags-full").innerHTML = grid("");
   $("dag-notes").innerHTML = [
     `<b>Same tools, same order.</b> Contracted to the steps that run a tool, both graphs hold the same ${DATA.dag.short.tools} tools on short reads and ${DATA.dag.long.tools} on long reads, with the same reachability between them.`,
-    `<b>Grey steps</b> are nf-core's bookkeeping and report processes: decompression, renaming, seqkit, FASTA splitting, depth summaries, Prodigal, QUAST and NanoPlot. metasmith does the format conversions inside each transform and runs no report steps.`,
+    `<b>Grey steps</b> are nf-core's bookkeeping and report processes: decompression, renaming, seqkit, FASTA splitting, depth summaries, QUAST and NanoPlot. metasmith does the format conversions inside each transform and runs no report steps.`,
     `<b>Two processes, one step.</b> <code>bowtie2_binning_bam</code> holds BUILD and ALIGN, <code>minimap2_binning_bam</code> holds INDEX and ALIGN, and <code>metabat2</code> holds the depth table and MetaBAT2.`,
     `<b>CheckM2</b> is one nf-core process over all four bin sets, and one plan step per bin set.`,
   ].map((s) => `<li>${s}</li>`).join("");

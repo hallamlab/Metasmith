@@ -1,6 +1,6 @@
 {
  "short": {
-  "e1_processes": 23,
+  "e1_processes": 22,
   "e1_tool_processes": 12,
   "e2_steps": 13,
   "tools": 10,
@@ -9,7 +9,7 @@
   "same_reachability": true
  },
  "long": {
-  "e1_processes": 27,
+  "e1_processes": 26,
   "e1_tool_processes": 11,
   "e2_steps": 12,
   "tools": 9,

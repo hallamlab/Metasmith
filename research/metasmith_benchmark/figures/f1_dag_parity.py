@@ -5,7 +5,7 @@ that arm. E2's graph is the plan `drivers/e2_cami.py` solves, which is the plan 
 bin sets. Both are drawn in full and steps-only by the same DagRenderer, every step coloured by its function
 from one palette, so a function reads the same in all eight graphs and nf-core's bookkeeping stands out
 in grey. E2's two scoring steps against the CAMI gold standard, and the inputs only they read, are cut out:
-nf-core has no counterpart to them.
+nf-core has no counterpart to them. E1's Prodigal is cut out too.
 
 The edge check contracts both graphs to the tool-bearing steps E2 has a transform for, then compares edges
 and reachability. Writes figures/f1/.
@@ -50,6 +50,8 @@ TRANSFORM_STAGE = {
     "das_tool": "binning and refinement", "checkm2": "bin quality",
 }
 SCORING = {"gold_standard", "amber"}
+# gene calling on the assemblies: an annotation step outside the binning pipeline both arms compare
+E1_DROPPED = {"PRODIGAL"}
 
 # nextflow's DAG names a process by its module; the trace table names it by its last segment
 DOT_TO_TRACE = {
@@ -82,7 +84,7 @@ def e1_graph(arm, mode=DagMode.PLAIN, **kw):
     def keep_proc(p):
         if p == "given":
             return True
-        if OTHER_ARM[arm] in p:
+        if OTHER_ARM[arm] in p or p in E1_DROPPED:
             return False
         return DOT_TO_TRACE.get(p, p) in ran
 
