@@ -13,8 +13,8 @@
   --grid: #e6e9ee;
   --axis: #c3c8d0;
   --accent: #0e6a70;
-  --s1: #2a78d6;
-  --s2: #eb6834;
+  --s1: #212121;
+  --s2: #636efa;
   --g1: #2a78d6; --g2: #eb6834; --g3: #1baf7a; --g4: #4a3aa7; --gb: #8a8a8a;
   --ring: #fcfcfd;
   --sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
@@ -33,8 +33,8 @@
     --grid: #232830;
     --axis: #3a414c;
     --accent: #5cc4c9;
-    --s1: #3987e5;
-    --s2: #d95926;
+    --s1: #d9dce1;
+    --s2: #636efa;
     --g1: #3987e5; --g2: #d95926; --g3: #199e70; --g4: #9085e9; --gb: #7a7f88;
     --ring: #171b21;
   }
@@ -52,8 +52,8 @@
   --grid: #232830;
   --axis: #3a414c;
   --accent: #5cc4c9;
-  --s1: #3987e5;
-  --s2: #d95926;
+  --s1: #d9dce1;
+  --s2: #636efa;
   --g1: #3987e5; --g2: #d95926; --g3: #199e70; --g4: #9085e9; --gb: #7a7f88;
   --ring: #171b21;
 }
@@ -188,7 +188,7 @@ footer { font-size: 13px; color: var(--muted); display: grid; gap: 6px; border-t
 
     <div class="sub-head">
       <h3>Share of nf-core's bins reproduced</h3>
-      <p class="muted">The blue band is nf-core against itself: a second nf-core run on 25 of the samples, over E1's own assemblies, with a new MetaBAT2 and SemiBin2 seed. The line spans every sample, the box the middle half, and the tick is the pooled share. The orange point is nf-core against metasmith, pooled over all 249 samples.</p>
+      <p class="muted">The open circles are nf-core against itself, one per sample: a second nf-core run on 25 of the samples, over E1's own assemblies, with a new MetaBAT2 and SemiBin2 seed. The line joins them into nf-core's own range. The blue point beside it is nf-core against metasmith, pooled over all 249 samples.</p>
     </div>
     <div class="legend" id="match-legend"></div>
     <div class="panels" id="match-panels"></div>
@@ -325,33 +325,30 @@ footer { font-size: 13px; color: var(--muted); display: grid; gap: 6px; border-t
       return `<tr><td>${a}</td><td>${NAMES[b]}</td><td class="n">${fmt(t.e1_hq)}</td><td class="n">${fmt(t.e2_hq)}</td><td class="n muted">${delta(t.e1_hq, t.e2_hq)}</td><td class="n">${fmt(t.e1_mq)}</td><td class="n">${fmt(t.e2_mq)}</td><td class="n muted">${delta(t.e1_mq, t.e2_mq)}</td></tr>`;
     })).join("") + "</tbody>";
 
-  // 2b · reproduced share: the control's per-sample spread, and one pooled point for metasmith
+  // 2b · reproduced share: every rerun sample as an open circle on its range, metasmith pooled as one point
   const M = DATA.match, SP = DATA.spread;
-  const quant = (v, q) => { const p = (v.length - 1) * q, i = Math.floor(p); return v[i] + (v[Math.min(i + 1, v.length - 1)] - v[i]) * (p - i); };
   $("match-legend").innerHTML =
-    `<span><svg width="34" height="14" aria-hidden="true"><line x1="1" x2="33" y1="7" y2="7" style="stroke:var(--s1)" stroke-width="1.5"/><rect x="9" y="2" width="16" height="10" rx="3" style="fill:var(--s1)" opacity=".35"/><line x1="18" x2="18" y1="0" y2="14" style="stroke:var(--s1)" stroke-width="2"/></svg>nf-core vs its own rerun · 25 samples</span>` +
-    `<span><i style="background:var(--s2)"></i>nf-core vs metasmith · all 249 samples</span>`;
+    `<span><svg width="14" height="30" aria-hidden="true"><line x1="7" x2="7" y1="4" y2="26" style="stroke:var(--s1)" stroke-width="1.5"/><circle cx="7" cy="5" r="3.5" style="fill:var(--surface);stroke:var(--s1)" stroke-width="1.5"/><circle cx="7" cy="16" r="3.5" style="fill:var(--surface);stroke:var(--s1)" stroke-width="1.5"/><circle cx="7" cy="25" r="3.5" style="fill:var(--surface);stroke:var(--s1)" stroke-width="1.5"/></svg>nf-core vs its own rerun · one circle per sample, 25 samples</span>` +
+    `<span><i style="background:var(--s2)"></i>nf-core vs metasmith · all 249 samples pooled</span>`;
   function matchChart(arm, host) {
-    const W = Math.max(300, host.clientWidth), labelW = 84, right = 14, rowH = 46, top = 6, axisH = 26;
-    const H = top + DATA.binners.length * rowH + axisH, lo = 0, hi = 100;
-    const x = (v) => labelW + (W - labelW - right) * (v - lo) / (hi - lo);
+    const W = Math.max(300, host.clientWidth), left = 44, right = 6, top = 10, plotH = 260, axisH = 28, H = top + plotH + axisH;
+    const y = (v) => top + plotH * (1 - v / 100);
     const svg = el("svg", { viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": `Share of nf-core's bins reproduced, ${ARM[arm]}` });
-    for (let v = lo; v <= hi; v += 20) {
-      el("line", { x1: x(v), x2: x(v), y1: top, y2: top + DATA.binners.length * rowH, class: "grid" }, svg);
-      txt(v + "%", { x: x(v), y: H - 8, "text-anchor": "middle", class: "tick" }, svg);
+    for (let v = 0; v <= 100; v += 20) {
+      el("line", { x1: left, x2: W - right, y1: y(v), y2: y(v), class: v ? "grid" : "base" }, svg);
+      txt(v + "%", { x: left - 8, y: y(v) + 4, "text-anchor": "end", class: "tick" }, svg);
     }
+    const groupW = (W - left - right) / DATA.binners.length, off = Math.min(12, groupW * 0.14);
     DATA.binners.forEach((b, i) => {
-      const key = `${arm}/${b}`, m = M[key], v = SP[key], cy = top + i * rowH + rowH / 2;
+      const key = `${arm}/${b}`, m = M[key], v = SP[key], cx = left + groupW * (i + 0.5);
       const g = el("g", { class: "row" }, svg);
-      txt(NAMES[b], { x: labelW - 12, y: cy + 4, "text-anchor": "end" }, g);
-      const [mn, q1, q3, mx] = [v[0], quant(v, 0.25), quant(v, 0.75), v[v.length - 1]];
-      el("line", { x1: x(mn), x2: x(mx), y1: cy, y2: cy, style: "stroke:var(--s1)", "stroke-width": 1.5 }, g);
-      el("rect", { x: x(q1) - 1, y: cy - 7, width: x(q3) - x(q1) + 2, height: 14, rx: 3, style: "fill:var(--s1)", opacity: 0.35 }, g);
-      el("line", { x1: x(m.ctl.e1), x2: x(m.ctl.e1), y1: cy - 10, y2: cy + 10, style: "stroke:var(--s1)", "stroke-width": 2 }, g);
-      el("circle", { cx: x(m.e2_all.e1), cy, r: 5.5, class: "s2 mk" }, g);
-      const hit = el("rect", { x: 0, y: top + i * rowH, width: W, height: rowH, class: "hit" }, g);
+      txt(NAMES[b], { x: cx, y: H - 8, "text-anchor": "middle" }, g);
+      el("line", { x1: cx - off, x2: cx - off, y1: y(v[0]), y2: y(v[v.length - 1]), style: "stroke:var(--s1)", "stroke-width": 1.5 }, g);
+      v.forEach((p) => el("circle", { cx: cx - off, cy: y(p), r: 3.5, style: "fill:var(--surface);stroke:var(--s1)", "stroke-width": 1.5 }, g));
+      el("circle", { cx: cx + off, cy: y(m.e2_all.e1), r: 5.5, class: "s2 mk" }, g);
+      const hit = el("rect", { x: cx - groupW / 2, y: top, width: groupW, height: plotH, class: "hit" }, g);
       hover(hit, `<b>${NAMES[b]}, ${ARM[arm].toLowerCase()}</b><br>` +
-        `nf-core vs its rerun, ${v.length} samples: ${mn.toFixed(0)}–${mx.toFixed(0)}% per sample, middle half ${q1.toFixed(0)}–${q3.toFixed(0)}%, pooled ${m.ctl.e1.toFixed(1)}% of ${fmt(m.ctl.e1_mags)} bins<br>` +
+        `nf-core vs its rerun, ${v.length} samples: ${v[0].toFixed(0)}–${v[v.length - 1].toFixed(0)}% per sample, pooled ${m.ctl.e1.toFixed(1)}% of ${fmt(m.ctl.e1_mags)} bins<br>` +
         `nf-core vs metasmith, ${N[arm]} samples: ${m.e2_all.e1.toFixed(1)}% of ${fmt(m.e2_all.e1_mags)} bins`);
     });
     host.replaceChildren(svg);
@@ -368,9 +365,9 @@ footer { font-size: 13px; color: var(--muted); display: grid; gap: 6px; border-t
   const maxRel = (arm) => Math.max(...DATA.binners.flatMap((b) => { const t = TI[`${arm}/${b}`]; return ["hq", "mq"].map((q) => Math.abs(t[`e1_${q}`] - t[`e2_${q}`]) / t[`e1_${q}`]); }));
   $("bin-notes").innerHTML = [
     `<b>Bin counts.</b> On short reads every tier of every bin set is within ${(100 * maxRel("short")).toFixed(1)}% of nf-core's count. On long reads the largest difference is ${(100 * maxRel("long")).toFixed(1)}%, in DAS Tool's high-quality bins.`,
-    `<b>Short reads.</b> Every metasmith point sits inside nf-core's own per-sample range. DAS Tool and COMEBin are within ${Math.max(gapPts("DASTool"), gapPts("COMEBin")).toFixed(1)} points of the pooled rerun. MetaBAT2 sits above it, because E1 and E2 share its seed and the rerun does not. SemiBin2 is ${gapPts("SemiBin2").toFixed(1)} points below it.`,
-    `<b>Long reads</b> match less well, and the gap follows the assembly. E1 removed lambda-phage reads before Flye and E2 did not, and Flye ran on different thread counts, so the long assemblies share a median ${pct(A.long.exact_med)} of their bases in identical contigs. Short assemblies share ${pct(A.short.exact_med)}. The rerun reused E1's assemblies, so its band has no assembly difference in it.`,
-    `The long-read rerun has four samples, so its band is narrow by chance.`,
+    `<b>Short reads.</b> Every metasmith point sits inside nf-core's own per-sample range. DAS Tool and COMEBin are within ${Math.max(gapPts("DASTool"), gapPts("COMEBin")).toFixed(1)} points of the rerun's pooled share, which the tooltip gives. MetaBAT2 sits above it, because E1 and E2 share its seed and the rerun does not. SemiBin2 is ${gapPts("SemiBin2").toFixed(1)} points below it.`,
+    `<b>Long reads</b> match less well, and the gap follows the assembly. E1 removed lambda-phage reads before Flye and E2 did not, and Flye ran on different thread counts, so the long assemblies share a median ${pct(A.long.exact_med)} of their bases in identical contigs. Short assemblies share ${pct(A.short.exact_med)}. The rerun reused E1's assemblies, so its range has no assembly difference in it.`,
+    `The long-read rerun has four samples, so its range is narrow by chance.`,
   ].map((s) => `<li>${s}</li>`).join("");
 
   function draw() { ARMS.forEach((a) => { tierChart(a, $(`tier-${a}`)); matchChart(a, $(`match-${a}`)); }); }
