@@ -47,7 +47,7 @@ Status: **match** is the same command and settings. **version** is the same comm
 
 | Paper step | Paper setting | E3 transform | Status | Difference |
 |---|---|---|---|---|
-| DeepVirFinder (VB 19) | `-l 1000`, then score ≥ 0.9 and p ≤ 0.05 (Methods) | `e3/deepvirfinder_pratama.py:14-16,104` | differs | Same length and cut. Contigs with more than 30% N are dropped before scoring (`:94`). |
+| DeepVirFinder (VB 19) | `-l 1000`, then score ≥ 0.9 and p ≤ 0.05 (Methods) | `e3/deepvirfinder_pratama.py:14-16,104` | match | Same length and cut. The transform drops contigs over 30% N before `dvf.py` sees them (`:94`). That is `dvf.py`'s own rule, applied early to dodge its crash when the accepted count is a multiple of 100 and the last record is rejected. |
 | VIBRANT | `-f nucl -virome` | `e3/vibrant_pratama.py:105` | match | Adds `-no_plot`. VIBRANT 1.2.1. |
 | geNomad (VB 34) | `end-to-end --cleanup --splits 48 --min-virus-marker-enrichment 1 --min-virus-hallmarks 1` | `e3/genomad_pratama.py:48-49` | version | Same flags. geNomad 1.11.0 against 1.5.1. Database unpinned. |
 | VirSorter2 | `--include-groups dsDNAphage,ssDNA --keep-original-seq --min-score 0.5 --min-length 5000` | `e3/virsorter2_pratama.py:40-69` | version | Same flags. `\|\|full` and `\|\|lt2gene` calls span the whole contig, and partial calls use `full_bp_*`. VirSorter2 2.2.4 against 2.2.3. |
@@ -74,7 +74,6 @@ These values change what the plan produces. Each is a choice the paper does not 
 | Value | Where | Paper |
 |---|---|---|
 | MinION–Illumina pairing by well and `02um_2022` | `drivers/e3_pratama.py:87-100` | 17 hybrids |
-| DeepVirFinder drops contigs over 30% N | `e3/deepvirfinder_pratama.py:94` | not stated |
 | Interval union: overlapping or abutting calls merge | `e3/merge_candidate_calls_pratama.py:69-78` | not stated |
 | Unknown fraction = (genes − viral − host) / genes, from CheckV | `e3/curate_trim_batch_pratama.py:34` | not stated |
 | Island annotation by `genomad annotate` | `e3/genomad_island_annotate_pratama.py:36` | not stated |
