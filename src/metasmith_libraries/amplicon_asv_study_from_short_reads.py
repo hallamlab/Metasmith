@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# The six ASPIRE switches with downstream consumers are inputs, not
+# The four ASPIRE switches with downstream consumers are inputs, not
 # configuration: there is no way to rebind the channel their consumers read.
 # Each is a pair of mutually exclusive tokens and registering one arm selects it
 # -- the losing arm's transform has zero candidates for its token slot, so the
@@ -12,7 +12,7 @@
 # aspire_asv_pipeline.py says why a mixed one cannot plan.
 #
 # `amplicon::silva_db` is deliberately NOT an input: withheld, the plan grows a
-# download step for it, which is the one reference a user should not have to find.
+# download step for the whole SILVA bundle, which a user should not have to assemble.
 import importlib.util
 import sys
 
@@ -34,21 +34,16 @@ _TOPOLOGY = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_TOPOLOGY)
 
 SWITCHES = {
-    "indicspecies": True,
     "spieceasi": True,
     "network_modules": True,
     "asv_mag_link": True,
     "graph_network": True,
-    "sankey": True,
 }
 
 REFERENCES = [
     "aspire::sample_metadata",
-    "aspire::sina_arb_reference",
-    "aspire::silva_ref_taxonomy",
     "aspire::mito_reference_source",
     "aspire::contaminant_reference_source",
-    "amplicon::silva_nb_classifier",
 ]
 
 TARGETS = [

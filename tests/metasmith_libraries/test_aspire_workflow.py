@@ -5,13 +5,10 @@ from metasmith.python_api import DEFERRED, Spec, TransformInstanceLibrary, recor
 from conftest import MLIB
 
 PRESET = MLIB.parents[1] / "research" / "aspire" / "presets" / "aspire.yml"
-SWITCHES = ("indicspecies", "spieceasi", "network_modules", "asv_mag_link",
-            "graph_network", "sankey")
+SWITCHES = ("spieceasi", "network_modules", "asv_mag_link", "graph_network")
 DEFAULT_ON = set(SWITCHES)
-REFERENCES = ("aspire::sample_metadata", "aspire::sina_arb_reference",
-              "aspire::silva_ref_taxonomy", "aspire::mito_reference_source",
-              "aspire::contaminant_reference_source", "amplicon::silva_db",
-              "amplicon::silva_nb_classifier")
+REFERENCES = ("aspire::sample_metadata", "aspire::mito_reference_source",
+              "aspire::contaminant_reference_source", "amplicon::silva_db")
 CORE = ["amplicon::asv_taxonomy", "aspire::counts_clean", "aspire::read_fate"]
 
 
@@ -98,7 +95,8 @@ class TestAspireTopology:
     def test_master_summary_solves(self, aspire_transforms, aspire_inputs):
         task = solve(aspire_inputs(), aspire_transforms, ["aspire::master_long"])
         assert task.ok, f"master summary did not solve: dropped {sorted(task.plan.dropped_targets)}"
-        assert "master_summary" in picked(task, aspire_transforms)
+        steps = picked(task, aspire_transforms)
+        assert {"master_summary", "sankey", "indicspecies"} <= set(steps), steps
 
     def test_solve_is_reproducible(self, aspire_transforms, aspire_inputs):
         inputs = aspire_inputs()
@@ -111,8 +109,6 @@ class TestAspireTopology:
 
 
 @pytest.mark.parametrize("base, on_transform, off_transform, targets", [
-    ("indicspecies", "indicspecies", "indicspecies_absent",
-     ["aspire::clustermap_outputs"]),
     ("spieceasi", "spieceasi", "spieceasi_external",
      ["aspire::network_outputs"]),
     ("network_modules", "network_modules", "network_modules_absent",
@@ -120,8 +116,6 @@ class TestAspireTopology:
     ("asv_mag_link", "asv_mag_link", "asv_mag_link_absent",
      ["aspire::network_outputs"]),
     ("graph_network", "graph_network", "graph_network_absent",
-     ["aspire::master_long"]),
-    ("sankey", "sankey", "sankey_absent",
      ["aspire::master_long"]),
 ])
 class TestPolicySwitches:

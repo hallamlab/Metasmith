@@ -30,7 +30,7 @@ solves in neither.
 
 ## The switches
 
-ASPIRE has ~35 config toggles. The six that have downstream consumers cannot
+ASPIRE has ~35 config toggles. The four whose off arm still feeds a consumer cannot
 be config here, because Metasmith has no way to rebind the channel eleven
 consumers read -- so each is a pair of mutually exclusive input tokens, and
 which one this driver registers is what selects the arm. `--on`/`--off` move
@@ -71,12 +71,10 @@ _spec.loader.exec_module(TOPOLOGY)
 SWITCHES: dict[str, str] = {base: desc for base, desc in TOPOLOGY.POLICIES}
 
 DEFAULT_ON = {
-    "indicspecies": True,
     "spieceasi": True,
     "network_modules": True,
     "asv_mag_link": True,
     "graph_network": True,
-    "sankey": True,
 }
 
 
@@ -84,12 +82,9 @@ ALL_TOKENS = {f"aspire::{b}_{arm}" for b in SWITCHES for arm in ("on", "off")}
 
 REFERENCES = [
     "aspire::sample_metadata",
-    "aspire::sina_arb_reference",
-    "aspire::silva_ref_taxonomy",
     "aspire::mito_reference_source",
     "aspire::contaminant_reference_source",
     "amplicon::silva_db",
-    "amplicon::silva_nb_classifier",
 ]
 EXTERNAL_GRAPH = [
     "aspire::external_graph_all",

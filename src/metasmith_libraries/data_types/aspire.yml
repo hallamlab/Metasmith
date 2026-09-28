@@ -19,14 +19,6 @@ types:
     properties:
       _: study metadata table, one row per sample
       ext: tsv
-  sina_arb_reference:
-    properties:
-      _: SILVA ARB reference SINA aligns against
-      ext: arb
-  silva_ref_taxonomy:
-    properties:
-      _: SILVA reference taxonomy map for taxonomy assignment
-      ext: tsv
   mito_reference_source:
     properties:
       _: mitochondrial reference sequences for the mito BLAST database
@@ -353,21 +345,6 @@ types:
 # List-form properties, deliberately: mapping-form `extends:` is a key-wise
 # merge the child wins, so a child restating any of the parent's keys stops
 # satisfying it. A list is a set union, so subsumption always holds.
-  indicspecies_policy:
-    properties:
-      - aspire-policy-indicspecies
-  # do not run indicator species analysis
-  indicspecies_off:
-    extends:
-      - indicspecies_policy
-    properties:
-      - aspire-policy-indicspecies-off
-  # run indicator species analysis
-  indicspecies_on:
-    extends:
-      - indicspecies_policy
-    properties:
-      - aspire-policy-indicspecies-on
   spieceasi_policy:
     properties:
       - aspire-policy-spieceasi
@@ -428,18 +405,3 @@ types:
       - graph_network_policy
     properties:
       - aspire-policy-graph-network-on
-  sankey_policy:
-    properties:
-      - aspire-policy-sankey
-  # do not render the read-fate sankey
-  sankey_off:
-    extends:
-      - sankey_policy
-    properties:
-      - aspire-policy-sankey-off
-  # render the read-fate sankey
-  sankey_on:
-    extends:
-      - sankey_policy
-    properties:
-      - aspire-policy-sankey-on

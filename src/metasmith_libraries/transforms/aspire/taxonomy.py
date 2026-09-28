@@ -8,7 +8,8 @@ sequences and taxonomy (perc-identity 0.70, min-consensus 0.51, maxaccepts 10,
 maxrejects 10), and a merge that keeps the NB call unless it is Unassigned or
 Unclassified, falls back to the vsearch call, and records which one won.
 Columns: Feature ID, Taxon, Confidence, Source. That file fetched SILVA 138-99
-with wget inside the protocol; here all three references are typed inputs.
+with wget inside the protocol; here the classifier, sequences and taxonomy
+come from the one `amplicon::silva_db` bundle, as SINA's ARB file does.
 
 Stub: the model is the port, the body only touches its outputs.
 Regenerate with `python transforms/aspire/_generate.py`.
@@ -20,9 +21,7 @@ lib   = TransformInstanceLibrary.ResolveParentLibrary(__file__)
 model = Transform()
 run     = model.AddRequirement(lib.GetType("aspire::run"))
 trimmed = model.AddRequirement(lib.GetType("aspire::sina_trimmed_seqs"), parents={run})
-nb      = model.AddRequirement(lib.GetType("amplicon::silva_nb_classifier"))
-refseqs = model.AddRequirement(lib.GetType("amplicon::silva_db"))
-reftax  = model.AddRequirement(lib.GetType("aspire::silva_ref_taxonomy"))
+silva   = model.AddRequirement(lib.GetType("amplicon::silva_db"))
 tax     = model.AddProduct(lib.GetType("amplicon::asv_taxonomy"))
 upper   = model.AddProduct(lib.GetType("aspire::taxonomy_uppercase_seqs"))
 stats   = model.AddProduct(lib.GetType("aspire::taxonomy_stats"))

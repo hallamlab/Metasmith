@@ -23,11 +23,8 @@ types:
       _: SILVA SSURef NR99 database source URL
   silva_db:
     properties:
-      _: SILVA SSURef NR99 reference database formatted for VSEARCH
-  silva_nb_classifier:
-    properties:
-      _: Pre-trained QIIME2 naive Bayes classifier for SILVA
-      ext: qza
+      _: SILVA SSU NR99 reference bundle -- ARB file for SINA, QIIME2 reference sequences and taxonomy, and the naive Bayes classifier
+      Data: directory
   asv_taxonomy:
     properties:
       _: ASV taxonomy classifications

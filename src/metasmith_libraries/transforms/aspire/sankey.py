@@ -13,7 +13,6 @@ from metasmith.python_api import *
 lib   = TransformInstanceLibrary.ResolveParentLibrary(__file__)
 model = Transform()
 run     = model.AddRequirement(lib.GetType("aspire::run"))
-policy  = model.AddRequirement(lib.GetType("aspire::sankey_on"), parents={run})
 fate    = model.AddRequirement(lib.GetType("aspire::read_fate"), parents={run})
 removed = model.AddRequirement(lib.GetType("aspire::counts_removed"), parents={run})
 meta    = model.AddRequirement(lib.GetType("aspire::sample_metadata"))

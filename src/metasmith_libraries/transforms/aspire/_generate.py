@@ -67,8 +67,6 @@ TYPE_SECTIONS: list[tuple[str, dict]] = [
     }),
     ("study-level inputs the .nf read out of its config", {
         "sample_metadata": t(FILE, "study metadata table, one row per sample", ext="tsv"),
-        "sina_arb_reference": t(FILE, "SILVA ARB reference SINA aligns against", ext="arb"),
-        "silva_ref_taxonomy": t(FILE, "SILVA reference taxonomy map for taxonomy assignment", ext="tsv"),
         "mito_reference_source": t(FILE, "mitochondrial reference sequences for the mito BLAST database", ext="fasta"),
         "contaminant_reference_source": t(FILE, "contaminant/biofilm reference sequences for the contaminant BLAST database", ext="fasta"),
     }),
@@ -185,12 +183,10 @@ TYPE_SECTIONS: list[tuple[str, dict]] = [
 
 
 POLICIES: list[tuple[str, str]] = [
-    ("indicspecies", "run indicator species analysis"),
     ("spieceasi", "infer the co-occurrence network with SpiecEasi rather than supplying one"),
     ("network_modules", "detect modules in the co-occurrence network"),
     ("asv_mag_link", "link ASVs to MAGs"),
     ("graph_network", "render and overlay the co-occurrence network"),
-    ("sankey", "render the read-fate sankey"),
 ]
 
 
@@ -290,7 +286,7 @@ TABLE: list[T] = [
 
     T("sina_trim", "SINA_TRIM", 3322,
       [RUN, _r("fseqs", "aspire::asv_filtered_seqs", "run"),
-       _r("ref", "aspire::sina_arb_reference")],
+       _r("silva", "amplicon::silva_db")],
       [("trimmed", "aspire::sina_trimmed_seqs"), ("aligned", "aspire::sina_aligned_seqs"),
        ("log", "aspire::sina_log"), ("vreg", "aspire::sina_v_regions")],
       "run",
@@ -301,8 +297,7 @@ TABLE: list[T] = [
 
     T("taxonomy", "TAXONOMY", 3470,
       [RUN, _r("trimmed", "aspire::sina_trimmed_seqs", "run"),
-       _r("nb", "amplicon::silva_nb_classifier"),
-       _r("refseqs", "amplicon::silva_db"), _r("reftax", "aspire::silva_ref_taxonomy")],
+       _r("silva", "amplicon::silva_db")],
       [("tax", "amplicon::asv_taxonomy"), ("upper", "aspire::taxonomy_uppercase_seqs"),
        ("stats", "aspire::taxonomy_stats")],
       "run",
@@ -313,8 +308,8 @@ TABLE: list[T] = [
            "10, maxrejects 10), and a merge that keeps the NB call unless it is "
            "Unassigned or Unclassified, falls back to the vsearch call, and records which "
            "one won. Columns: Feature ID, Taxon, Confidence, Source. That file fetched "
-           "SILVA 138-99 with wget inside the protocol; here all three references are "
-           "typed inputs.",
+           "SILVA 138-99 with wget inside the protocol; here the classifier, sequences and "
+           "taxonomy come from the one `amplicon::silva_db` bundle, as SINA's ARB file does.",
       cpus=8, memory_gb=16, hours=6),
 
     T("mitomaster", "MITOMASTER", 3544,
@@ -365,21 +360,12 @@ TABLE: list[T] = [
            "declared input."),
 
     T("sankey", "SANKEY", 3687,
-      [RUN, _r("policy", "aspire::sankey_on", "run"),
-       _r("fate", "aspire::read_fate", "run"),
+      [RUN, _r("fate", "aspire::read_fate", "run"),
        _r("removed", "aspire::counts_removed", "run"),
        _r("meta", "aspire::sample_metadata")],
       [("out", "aspire::sankey_outputs")], "run",
       note="`sankey.done` is dropped; the renderings are the output, and "
            "MASTER_SUMMARY reads the directory rather than the sentinel."),
-
-    T("sankey_absent", None, None,
-      [RUN, _r("policy", "aspire::sankey_off", "run")],
-      [("out", "aspire::sankey_outputs")], "run",
-      note="the `sankey.enabled = false` arm. In the .nf, MASTER_SUMMARY's "
-           "sankey slot is filled with a zero-row placeholder file at "
-           "asv_pipeline.nf:2790; here the placeholder gets a producer, so the "
-           "consumer's requirement stays unconditional either way."),
 
     T("plot_metadata", "PLOT_METADATA", 3793,
       [RUN, _r("fate", "aspire::read_fate", "run"),
@@ -433,8 +419,7 @@ TABLE: list[T] = [
       note="r4 ecology lift: requires the generic `amplicon::survey` grouping node and a bare `amplicon::asv_table` instead of `aspire::run` and `aspire::analysis_counts`, so it is reachable from any count table -- `kbase/profile_abundance/kraken_abundance.py` produces one from kraken2 reports. An ASPIRE run satisfies the survey requirement unchanged. See research/kbase/curation/r4/aspire_topology.md."),
 
     T("indicspecies", "INDICSPECIES", 4518,
-      [SURVEY, _r("policy", "aspire::indicspecies_on", "survey"),
-       _r("md", "aspire::analysis_metadata", "survey"),
+      [SURVEY, _r("md", "aspire::analysis_metadata", "survey"),
        _r("counts", "amplicon::asv_table", "survey")],
       [("g1sum", "aspire::indicspecies_group1_summary"),
        ("g2sum", "aspire::indicspecies_group2_summary"),
@@ -445,15 +430,6 @@ TABLE: list[T] = [
        ("aligned", "aspire::indicspecies_aligned_plots")],
       "survey", folds=("INDICSPECIES_PLOTS@4608", "INDICSPECIES_ALIGNED_PLOTS@4792"),
       cpus=8, memory_gb=32, hours=12, note=LIFT_NOTE_2),
-
-    T("indicspecies_absent", None, None,
-      [SURVEY, _r("policy", "aspire::indicspecies_off", "survey")],
-      [("tables", "aspire::indicspecies_tables"),
-       ("g1sum", "aspire::indicspecies_group1_summary")],
-      "survey",
-      note=LIFT_NOTE_2 + " the `off` arm. The .nf substitutes a zero-row placeholder at five "
-           "call sites (asv_pipeline.nf:2660, 2661, 2983, 2984, 3036); one "
-           "producer covers all of them."),
 
     T("voc_correlation", "VOC_CORRELATION", 4827,
       [RUN, _r("am", "aspire::analysis_asv_meta", "run"),

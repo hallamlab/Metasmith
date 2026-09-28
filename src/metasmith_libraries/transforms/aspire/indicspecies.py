@@ -19,7 +19,6 @@ from metasmith.python_api import *
 lib   = TransformInstanceLibrary.ResolveParentLibrary(__file__)
 model = Transform()
 survey  = model.AddRequirement(lib.GetType("amplicon::survey"))
-policy  = model.AddRequirement(lib.GetType("aspire::indicspecies_on"), parents={survey})
 md      = model.AddRequirement(lib.GetType("aspire::analysis_metadata"), parents={survey})
 counts  = model.AddRequirement(lib.GetType("amplicon::asv_table"), parents={survey})
 g1sum   = model.AddProduct(lib.GetType("aspire::indicspecies_group1_summary"))

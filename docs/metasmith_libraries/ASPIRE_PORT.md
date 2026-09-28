@@ -41,10 +41,11 @@ file where the consumer opened one, a directory where it scanned one. Nothing in
 **Optional stages with downstream consumers are gated on a policy token.**
 Nextflow expressed those by *rebinding* the variable eleven consumers read;
 Metasmith has no rebinding. So both arms produce the same consumer-facing type,
-and each requires a different sibling token — `aspire::sankey_on` versus
-`aspire::sankey_off`. The driver registers exactly one, the losing arm has zero
-candidates for its token slot, and it is never instantiated. Six switches work
-this way.
+and each requires a different sibling token — `aspire::graph_network_on` versus
+`aspire::graph_network_off`. The driver registers exactly one, the losing arm has zero
+candidates for its token slot, and it is never instantiated. Four switches work
+this way. A stage whose off arm only fed its consumers an empty placeholder has no
+switch: `sankey` and `indicspecies` run whenever a target needs them.
 
 That mechanism is why `data_types/aspire.yml` writes the token types with
 **list-form** `properties:` while everything else uses the mapping form.
@@ -121,7 +122,7 @@ checks as assertions: both parities, and one case per switch arm.
 
 - Every transform is a stub. The topology, types and settings are the port, and
   no row has a protocol or an environment yet.
-- The six token pairs and their six off-arm producers are machinery ASPIRE does
+- The four token pairs and their four off-arm producers are machinery ASPIRE does
   not visibly have. Several stages are optional only because the `.nf` needed a
   flag, and once the planner selects by target some tokens can go.
 - `aspire::analysis_counts` does not carry `amplicon::asv_table`'s properties, so

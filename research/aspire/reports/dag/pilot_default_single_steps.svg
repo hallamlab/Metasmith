@@ -82,24 +82,24 @@
 <line x1="121.8" y1="333.1" x2="287.7" y2="333.1" stroke="#111111" stroke-width="1"/>
 <text x="121.8" y="341.6" font-family="Arial" font-size="6.5" fill="#111111" text-anchor="start">step 11</text>
 <text x="121.8" y="351.8" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">plot_metadata</text></g>
-<g><title>14 indicspecies</title>
+<g><title>12 indicspecies</title>
 <polygon points="87.1,373.7 97.8,373.7 92.4,382.9" fill="#FFFFFF" stroke="#636EFA" stroke-width="2.0" stroke-linejoin="round"/>
 <line x1="121.8" y1="364.3" x2="287.7" y2="364.3" stroke="#111111" stroke-width="1"/>
-<text x="121.8" y="372.8" font-family="Arial" font-size="6.5" fill="#111111" text-anchor="start">step 14</text>
+<text x="121.8" y="372.8" font-family="Arial" font-size="6.5" fill="#111111" text-anchor="start">step 12</text>
 <text x="121.8" y="383.0" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">indicspecies</text></g>
 <g><title>15 group_power_analysis</title>
 <polygon points="87.1,404.9 97.8,404.9 92.4,414.1" fill="#FFFFFF" stroke="#636EFA" stroke-width="2.0" stroke-linejoin="round"/>
 <line x1="121.8" y1="395.5" x2="287.7" y2="395.5" stroke="#111111" stroke-width="1"/>
 <text x="121.8" y="404.0" font-family="Arial" font-size="6.5" fill="#111111" text-anchor="start">step 15</text>
 <text x="121.8" y="414.2" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">group_power_analysis</text></g>
-<g><title>12 collectors_curve</title>
+<g><title>13 collectors_curve</title>
 <polygon points="87.1,436.1 97.8,436.1 92.4,445.3" fill="#FFFFFF" stroke="#00CC96" stroke-width="2.0" stroke-linejoin="round"/>
 <line x1="121.8" y1="426.7" x2="287.7" y2="426.7" stroke="#111111" stroke-width="1"/>
-<text x="121.8" y="435.2" font-family="Arial" font-size="6.5" fill="#111111" text-anchor="start">step 12</text>
+<text x="121.8" y="435.2" font-family="Arial" font-size="6.5" fill="#111111" text-anchor="start">step 13</text>
 <text x="121.8" y="445.4" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">collectors_curve</text></g>
-<g><title>13 grouping_diagnostics</title>
+<g><title>14 grouping_diagnostics</title>
 <polygon points="70.2,467.3 80.9,467.3 75.5,476.5" fill="#FFFFFF" stroke="#00CC96" stroke-width="2.0" stroke-linejoin="round"/>
 <line x1="121.8" y1="457.9" x2="287.7" y2="457.9" stroke="#111111" stroke-width="1"/>
-<text x="121.8" y="466.4" font-family="Arial" font-size="6.5" fill="#111111" text-anchor="start">step 13</text>
+<text x="121.8" y="466.4" font-family="Arial" font-size="6.5" fill="#111111" text-anchor="start">step 14</text>
 <text x="121.8" y="476.6" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">grouping_diagnostics</text></g>
 </svg>

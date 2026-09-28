@@ -12,9 +12,8 @@ and this driver exists to show the topology over real inputs.
 
 `--parity single` gives each sample's R1 alone as single-end reads.
 
-The mock ships no SINA ARB reference, SILVA taxonomy, SILVA database or NB
-classifier. Those four stay DEFERRED placeholders in their own resource library,
-since a pool entry has to name a path that exists.
+The mock ships no SILVA bundle. It stays a DEFERRED placeholder in its own resource
+library, since a pool entry has to name a path that exists.
 """
 
 import argparse
@@ -55,8 +54,7 @@ MOCK_REFERENCES = {
     "aspire::mito_reference_source": MOCK / "references" / "mitochondria.fasta",
     "aspire::contaminant_reference_source": MOCK / "references" / "contaminants.fasta",
 }
-ABSENT_REFERENCES = ["aspire::sina_arb_reference", "aspire::silva_ref_taxonomy", "amplicon::silva_db",
-                     "amplicon::silva_nb_classifier"]
+ABSENT_REFERENCES = ["amplicon::silva_db"]
 
 
 def given_name(base, declared, dtype, parents):

@@ -244,7 +244,7 @@ def a5b_cooccurrence_network():
         lib.AddItem(DEFERRED, "amplicon::asv_taxonomy", parents={survey})
         # The ASPIRE policy tokens are inputs, not configuration -- each is a pair of
         # mutually exclusive types and registering one arm is how a stage is selected.
-        for token in ("spieceasi_on", "indicspecies_on", "network_modules_on",
+        for token in ("spieceasi_on", "network_modules_on",
                       "asv_mag_link_off", "graph_network_on"):
             lib.AddValue(f"policy_{token}.txt", token, f"aspire::{token}",
                          parents={survey})
