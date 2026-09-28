@@ -188,7 +188,7 @@ footer { font-size: 13px; color: var(--muted); display: grid; gap: 6px; border-t
 
     <div class="sub-head">
       <h3>Share of nf-core's bins reproduced</h3>
-      <p class="muted">The open circles are nf-core against itself. Two control reruns, E1ctl and E1ctl2, binned E1's own assemblies for 25 of the samples. E1ctl changed SemiBin2's seed, and E1ctl2 changed MetaBAT2's and SemiBin2's. Each circle is one of the three pairs among E1 and the two reruns, and the line spans them. The blue point beside it is E1 against metasmith over all 249 samples. Each value is the share of the first run's bins with a partner in the second.</p>
+      <p class="muted">The ticks are nf-core against itself. Two control reruns, E1ctl and E1ctl2, binned E1's own assemblies for 25 of the samples. E1ctl changed SemiBin2's seed, and E1ctl2 changed MetaBAT2's and SemiBin2's. Each tick is one of the three pairs among E1 and the two reruns, and the line spans them. The blue point below it is E1 against metasmith over all 249 samples. Each value is the share of the first run's bins with a partner in the second.</p>
     </div>
     <div class="legend" id="match-legend"></div>
     <div class="panels" id="match-panels"></div>
@@ -327,27 +327,27 @@ footer { font-size: 13px; color: var(--muted); display: grid; gap: 6px; border-t
 
   // 2b · reproduced share: the three nf-core pairs as open circles joined by their range, metasmith as one point
   const M = DATA.match;
-  const circles = (n, st) => Array.from({ length: n }, (_, k) => `<circle cx="7" cy="${5 + k * 10}" r="3.5" style="fill:var(--surface);stroke:var(--s1)" stroke-width="1.5"/>`).join("");
+  const ticks = [6, 14, 26].map((x) => `<line x1="${x}" x2="${x}" y1="1" y2="13" style="stroke:var(--s1)" stroke-width="2"/>`).join("");
   $("match-legend").innerHTML =
-    `<span><svg width="14" height="30" aria-hidden="true"><line x1="7" x2="7" y1="5" y2="25" style="stroke:var(--s1)" stroke-width="1.5"/>${circles(3)}</svg>nf-core vs nf-core · the three pairs of E1, E1ctl and E1ctl2, 25 samples</span>` +
+    `<span><svg width="32" height="14" aria-hidden="true"><line x1="6" x2="26" y1="7" y2="7" style="stroke:var(--s1)" stroke-width="1.5"/>${ticks}</svg>nf-core vs nf-core · the three pairs of E1, E1ctl and E1ctl2, 25 samples</span>` +
     `<span><i style="background:var(--s2)"></i>nf-core vs metasmith · all 249 samples</span>`;
   function matchChart(arm, host) {
-    const W = Math.max(300, host.clientWidth), left = 44, right = 6, top = 10, plotH = 260, axisH = 28, H = top + plotH + axisH;
-    const y = (v) => top + plotH * (1 - v / 100);
+    const W = Math.max(300, host.clientWidth), labelW = 84, right = 14, rowH = 50, top = 6, axisH = 26;
+    const H = top + DATA.binners.length * rowH + axisH, lo = 40, hi = 100;
+    const x = (v) => labelW + (W - labelW - right) * (v - lo) / (hi - lo);
     const svg = el("svg", { viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": `Share of nf-core's bins reproduced, ${ARM[arm]}` });
-    for (let v = 0; v <= 100; v += 20) {
-      el("line", { x1: left, x2: W - right, y1: y(v), y2: y(v), class: v ? "grid" : "base" }, svg);
-      txt(v + "%", { x: left - 8, y: y(v) + 4, "text-anchor": "end", class: "tick" }, svg);
+    for (let v = lo; v <= hi; v += 10) {
+      el("line", { x1: x(v), x2: x(v), y1: top, y2: top + DATA.binners.length * rowH, class: "grid" }, svg);
+      txt(v + "%", { x: x(v), y: H - 8, "text-anchor": "middle", class: "tick" }, svg);
     }
-    const groupW = (W - left - right) / DATA.binners.length, off = Math.min(12, groupW * 0.14);
     DATA.binners.forEach((b, i) => {
-      const m = M[`${arm}/${b}`], v = m.self.map((p) => p.pct), cx = left + groupW * (i + 0.5);
+      const m = M[`${arm}/${b}`], v = m.self.map((p) => p.pct), cy = top + i * rowH + rowH / 2, off = 7;
       const g = el("g", { class: "row" }, svg);
-      txt(NAMES[b], { x: cx, y: H - 8, "text-anchor": "middle" }, g);
-      el("line", { x1: cx - off, x2: cx - off, y1: y(Math.min(...v)), y2: y(Math.max(...v)), style: "stroke:var(--s1)", "stroke-width": 1.5 }, g);
-      v.forEach((p) => el("circle", { cx: cx - off, cy: y(p), r: 4, style: "fill:var(--surface);stroke:var(--s1)", "stroke-width": 1.5 }, g));
-      el("circle", { cx: cx + off, cy: y(m.e2.pct), r: 5.5, class: "s2 mk" }, g);
-      const hit = el("rect", { x: cx - groupW / 2, y: top, width: groupW, height: plotH, class: "hit" }, g);
+      txt(NAMES[b], { x: labelW - 12, y: cy + 4, "text-anchor": "end" }, g);
+      el("line", { x1: x(Math.min(...v)), x2: x(Math.max(...v)), y1: cy - off, y2: cy - off, style: "stroke:var(--s1)", "stroke-width": 1.5 }, g);
+      v.forEach((p) => el("line", { x1: x(p), x2: x(p), y1: cy - off - 6, y2: cy - off + 6, style: "stroke:var(--s1)", "stroke-width": 2 }, g));
+      el("circle", { cx: x(m.e2.pct), cy: cy + off, r: 5.5, class: "s2 mk" }, g);
+      const hit = el("rect", { x: 0, y: top + i * rowH, width: W, height: rowH, class: "hit" }, g);
       hover(hit, `<b>${NAMES[b]}, ${ARM[arm].toLowerCase()}</b><br>` +
         m.self.map((p) => `${p.pair}: ${p.pct.toFixed(1)}% of ${fmt(p.mags)} bins`).join("<br>") +
         `<br>E1 vs metasmith, ${m.e2.samples} samples: ${m.e2.pct.toFixed(1)}% of ${fmt(m.e2.mags)} bins`);
