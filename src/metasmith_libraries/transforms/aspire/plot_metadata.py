@@ -1,9 +1,10 @@
 # plot_metadata -- PLOT_METADATA (asv_pipeline.nf:3793), upstream's plot_metadata.py over a
 # laid-out tree, grouped by the sheet's first label with no control subtraction.
 #
-# A study with no mitochondrial ASV gets no mito block from the script, which upstream marks
-# optional. Here the three mito products are written header-only instead, so a consumer
-# reads an empty table rather than finding nothing.
+# The script's mito block raises on a table with no mitochondrial ASV, and upstream passes
+# --make-mito unconditionally, which only a host-associated study survives. Here the block
+# runs only when the table has rows, and the three mito products are otherwise written
+# header-only, so a consumer reads an empty table rather than finding nothing.
 #
 # analysis.min_level_size is applied last, to the tables the analyses read.
 
@@ -60,6 +61,8 @@ def protocol(context: ExecutionContext):
             --fate {context.Input(fate).container} --label "{label}" \
             --clean {context.Input(clean).container} --removed {context.Input(removed).container} \
             --out {L}
+        mito=""
+        if [ "$(wc -l < {L}/mito/ASVs/ASV_target.mito.tsv)" -gt 1 ]; then mito=--make-mito; fi
         python {iscripts.container}/plot_metadata.py --data-dir $PWD/{L} --sub-dir . \
             --metadata $PWD/{L}/metadata.tsv --sample-manifest $PWD/{L}/manifest.tsv \
             --taxonomy {context.Input(tax).container} \
@@ -67,7 +70,7 @@ def protocol(context: ExecutionContext):
             --asv-mito $PWD/{L}/mito/ASVs/ASV_target.mito.tsv \
             --fastq-stats $PWD/{L}/stats/fastq_stats.tsv \
             --sample-id-col "{sid_col}" --group1-col "{label}" --color-col Color \
-            --subtraction-groups "" --make-micro --make-mito --verbose
+            --subtraction-groups "" --make-micro $mito --verbose
         {copies}
         python {iscripts.container}/upstream_layout.py blank --sheet {istudy.container} \
             --min-level-size {min_level} {outs[md].container} {outs[am].container} \

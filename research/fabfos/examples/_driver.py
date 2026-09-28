@@ -291,8 +291,10 @@ def check_schedulable(host: str, account: str, overrides: dict, *,
     return 1
 
 
-def check_tasks(host: str, agent_home: str, task_key: str) -> int:
-    csv_glob = f"{agent_home}/runs/{task_key}/_metasmith/logs.*/nxf_tasks.csv"
+def check_tasks(host: str, agent_home: str, task_key: str, *, attempt: str = "*") -> int:
+    # attempt="latest" reads only the newest launch, whose csv also lists every task it
+    # served from the cache; the default unions every attempt, so any retried failure counts.
+    csv_glob = f"{agent_home}/runs/{task_key}/_metasmith/logs.{attempt}/nxf_tasks.csv"
     out = ssh_once(host, f"cat {csv_glob} 2>/dev/null | sort -u")
     rows = [ln for ln in out.splitlines() if ln and not ln.startswith("task_id,")]
     failed = [ln for ln in rows if "FAILED" in ln]

@@ -3,7 +3,9 @@
 # MitoMaster itself posts every ASV to mitomap.org, and compute nodes have no internet. The
 # table is written header-only, which is upstream's own `run_mitomaster: false` output, and
 # mito_checker.py reads it as no MitoMaster calls. The image's gzip is busybox, which has no
-# `-f` passthrough, so an uncompressed reference is read with cat.
+# `-f` passthrough, so an uncompressed reference is read with cat. A reference is staged into
+# the work dir under its own file name, so the screens' copies take a prefix: writing to that
+# name writes through the link into the reference.
 
 from metasmith.python_api import *
 
@@ -28,8 +30,8 @@ def protocol(context: ExecutionContext):
     screens = ""
     for name, src, out in (("mito", mito_src, imhits), ("contaminants", cont_src, ichits)):
         screens += f"""
-        case {context.Input(src).container} in *.gz) gzip -cd {context.Input(src).container} ;; *) cat {context.Input(src).container} ;; esac > {name}.fasta
-        makeblastdb -in {name}.fasta -dbtype nucl -parse_seqids -out {name}_db
+        case {context.Input(src).container} in *.gz) gzip -cd {context.Input(src).container} ;; *) cat {context.Input(src).container} ;; esac > screen_{name}.fasta
+        makeblastdb -in screen_{name}.fasta -dbtype nucl -parse_seqids -out {name}_db
         blastn -query asvs.fasta -db {name}_db -outfmt "{BLAST6}" -out {out.container} -num_threads {threads}
         """
     context.ExecWithEnv(env=image, cmd=f"""\
@@ -37,7 +39,7 @@ def protocol(context: ExecutionContext):
         gzip -cd {context.Input(fseqs).container} > asvs.fasta
         {screens}
         printf 'Sequence_ID\\thaplo\\n' > {imaster.container}
-        rm -f asvs.fasta mito.fasta contaminants.fasta mito_db.* contaminants_db.*
+        rm -f asvs.fasta screen_*.fasta mito_db.* contaminants_db.*
     """)
 
     return ExecutionResult(

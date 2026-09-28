@@ -66,7 +66,7 @@ def main():
         if p != "Cyanobacteria":
             failures.append(f"{sid}: top phylum is {p}, not Cyanobacteria")
 
-    isa = product(results, "aspire::indicspecies_results").parent
+    isa = product(results, "aspire::indicspecies_results")
     for kind in ("results", "summary"):
         if not (isa / f"culture_indicator_species_{kind}.tsv").exists():
             failures.append(f"indicspecies_results: no culture_indicator_species_{kind}.tsv")

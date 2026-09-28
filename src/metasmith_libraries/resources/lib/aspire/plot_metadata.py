@@ -398,6 +398,8 @@ def add_taxonomy(long_asv: pd.DataFrame, tax_df: pd.DataFrame) -> pd.DataFrame:
             tax_map[lvl].append(parts[lvl])
     for lvl, vals in tax_map.items():
         merged[lvl] = vals
+    # pandas 2.2 drops the index name when many rows per ASV join one taxonomy row.
+    merged.index.name = 'ASV_ID'
     return merged.reset_index()
 
 

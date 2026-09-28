@@ -2,6 +2,7 @@
 #
 # Two renderings, as upstream: the samples that reached the clean table, and every sample
 # of the sheet. The flows split by the sheet's first label.
+# kaleido's headless Chromium renders the static images and wants a writable home.
 
 from metasmith.python_api import *
 
@@ -34,6 +35,7 @@ def protocol(context: ExecutionContext):
         """
     context.ExecWithEnv(env=image, cmd=f"""\
         set -euo pipefail
+        export HOME=$PWD
         mkdir -p {iout.container}
         python {iscripts.container}/upstream_layout.py sankey --sheet {istudy.container} \
             --fate {context.Input(fate).container} --label "{label}" --out {L}

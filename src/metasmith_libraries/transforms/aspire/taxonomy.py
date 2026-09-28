@@ -1,4 +1,8 @@
 # taxonomy -- TAXONOMY (asv_pipeline.nf:3470), upstream's qiime_vs_classifier.py unchanged.
+#
+# QIIME's plugin load imports umap, whose numba functions cache beside themselves unless
+# NUMBA_CACHE_DIR names somewhere writable. The image's site-packages is read-only under
+# apptainer, and `--no-home` leaves no home to fall back on.
 
 from metasmith.python_api import *
 
@@ -19,6 +23,7 @@ def protocol(context: ExecutionContext):
     isilva = context.Input(silva)
     context.ExecWithEnv(env=image, cmd=f"""\
         set -euo pipefail
+        export HOME=$PWD NUMBA_CACHE_DIR=$PWD/.numba
         gzip -cd {context.Input(trimmed).container} \
             | awk '/^>/ {{ print; next }} {{ print toupper($0) }}' > upper.fasta
         python {context.Input(scripts).container}/qiime_vs_classifier.py \

@@ -2,7 +2,8 @@
 #
 # SINA writes its search index beside the reference it is given, and the bundle may sit on
 # a read-only filesystem. So the bundle's files are linked into the work directory first: an
-# index the bundle already carries is reused, and a missing one is built here.
+# index the bundle already carries is reused, and a missing one is built here, which takes
+# about ten minutes. ARB also needs a writable $HOME, which `apptainer --no-home` withholds.
 
 import yaml
 from metasmith.python_api import *
@@ -33,7 +34,8 @@ def protocol(context: ExecutionContext):
 
     context.ExecWithEnv(env=sina, cmd=f"""\
         set -euo pipefail
-        for f in {isilva.container}/silva.arb*; do ln -sf "$f" .; done
+        export HOME=$PWD
+        for f in {isilva.container}/silva.arb {isilva.container}/silva.sidx; do if [ -e "$f" ]; then ln -sf "$f" .; fi; done
         gzip -cd {context.Input(fseqs).container} > asvs.fasta
         sina -i asvs.fasta -o aligned.fasta -r silva.arb -v -p {threads} --log-file {ilog.container}
     """)

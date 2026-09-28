@@ -95,6 +95,7 @@ def test_the_twin_runs_locally_and_never_reuses_a_nextflow_cache(tmp_path):
     twin = body[body.index("_cached {"):]
     twin = twin[:twin.index("\n}\n")]
     assert "executor 'local'" in twin
+    assert "array 0" in twin, "the local executor refuses a job array"
     assert "cache false" in twin
     assert "tuple val(index), val(sources)" in twin
 

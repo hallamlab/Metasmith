@@ -511,7 +511,9 @@ def prepare_nextflow(task, context: NextflowGenContext):
         # products into its work dir under the member's position. Nextflow then
         # publishes and traces it like any other task, and no scheduler saw it.
         # No `stub:` block: under `-stub` the copy is still the twin's whole job,
-        # and a touched stand-in cannot serve a directory product.
+        # and a touched stand-in cannot serve a directory product. `array 0` overrides a
+        # preset's catch-all `process { array = N }`, which the local executor refuses at
+        # compile time, killing the whole run before any task starts.
         process_name = NextflowProcessName(step.order, step.transform.name)
         twin_name = CachedProcessName(process_name)
         _used, produced_archetypes = get_io_signature(step)
@@ -521,6 +523,7 @@ def prepare_nextflow(task, context: NextflowGenContext):
         src = [
             f"process {twin_name}"+" {",
             TAB+"executor 'local'",
+            TAB+"array 0",
             TAB+"cache false",
             "input:",
             TAB+"tuple val(index), val(sources)",

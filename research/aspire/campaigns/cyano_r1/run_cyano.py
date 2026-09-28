@@ -4,7 +4,7 @@
     python research/aspire/campaigns/cyano_r1/run_cyano.py list
     python research/aspire/campaigns/cyano_r1/run_cyano.py stage-reads
     python research/aspire/campaigns/cyano_r1/run_cyano.py stage-refs
-    python research/aspire/campaigns/cyano_r1/run_cyano.py side-load-image
+    python research/aspire/campaigns/cyano_r1/run_cyano.py side-load-images
     python research/aspire/campaigns/cyano_r1/run_cyano.py check-refs
     python research/aspire/campaigns/cyano_r1/run_cyano.py run [--plan-only]
     python research/aspire/campaigns/cyano_r1/run_cyano.py status
@@ -14,7 +14,7 @@ Every download runs on the login node, since compute nodes have no internet. Con
 sockeye through the awm ssh domain first; every ssh here rides that connection.
 
 `stage-refs` needs the mock's mitochondrial and contaminant FASTAs locally (ASPIRE_MOCK_REFS),
-and `side-load-image` needs the aspire image built locally (docker/aspire/dev.sh --build).
+and `side-load-images` needs the aspire image built locally (docker/aspire/dev.sh --build).
 """
 
 import argparse
@@ -31,8 +31,8 @@ sys.path.insert(0, str(REPO / "research" / "aspire"))
 
 from _driver import (  # noqa: E402
     SOCKEYE_ACCOUNT, SOCKEYE_HOST, SOCKEYE_IMAGE_STORE, check_schedulable,
-    check_staged_executor, check_tasks, pin_external_leaf_ids, provision_dev_overlay_remote,
-    retrieve, sockeye_agent, ssh_once,
+    check_staged_executor, check_tasks, envs_from_plan, pin_external_leaf_ids,
+    provision_dev_overlay_remote, retrieve, sockeye_agent, ssh_once,
 )
 from aspire_asv_pipeline import read_metadata  # noqa: E402
 from metasmith.python_api import (  # noqa: E402
@@ -107,19 +107,49 @@ def cmd_stage_refs(_):
     return cmd_check_refs(_)
 
 
-def cmd_side_load_image(_):
-    tar = WORK / "aspire.tar"
-    WORK.mkdir(parents=True, exist_ok=True)
-    subprocess.run(["docker", "save", "-o", str(tar), ASPIRE_IMAGE], check=True)
-    remote_tar = f"{ROOT}/aspire.tar"
-    subprocess.run(["rsync", "-a", str(tar), f"{HOST}:{remote_tar}"], check=True)
-    sif = f"{IMAGE_STORE}/docker.._{ASPIRE_IMAGE.replace(':', '..').replace('/', '_')}.sif"
-    print(ssh_once(HOST, f"""set -e
-module load gcc/9.4.0 apptainer/1.3.1
-export APPTAINER_TMPDIR={ROOT}/apptainer_tmp; mkdir -p $APPTAINER_TMPDIR
-apptainer build --force {sif} docker-archive://{remote_tar}
-apptainer exec --no-home --cleanenv {sif} true && : > {sif}.verified
-rm {remote_tar}; ls -la {sif}*""").strip())
+def sif_name(uri: str) -> str:
+    return uri.replace("://", "..").replace(":", "..").replace("/", "_") + ".sif"
+
+
+def plan_images(task) -> list[str]:
+    uris = [CONTAINER]
+    for name in envs_from_plan(task):
+        for line in (MLIB / "resources" / "env" / name).read_text().splitlines():
+            if line.startswith("container:"):
+                uris.append(line.split(":", 1)[1].strip())
+    return uris
+
+
+def cmd_side_load_images(_):
+    # Built here, not on the login node: unpacking layers onto sockeye's GPFS scratch takes most
+    # of an hour per image, and a dropped ssh session kills the build with it.
+    uris = plan_images(plan(agent()))
+    present = ssh_once(HOST, "; ".join(f"[ -e {IMAGE_STORE}/{sif_name(u)}.verified ] && echo {u}"
+                                       for u in uris) + "; true").split()
+    tmp = WORK / "apptainer_tmp"
+    tmp.mkdir(parents=True, exist_ok=True)
+    env = {**os.environ, "APPTAINER_TMPDIR": str(tmp)}
+    for uri in uris:
+        if uri in present:
+            print(f"present  {uri}")
+            continue
+        sif = WORK / sif_name(uri)
+        if not sif.exists():
+            source, tar = uri, WORK / "aspire.tar"
+            if uri == f"docker://{ASPIRE_IMAGE}":
+                subprocess.run(["docker", "save", "-o", str(tar), ASPIRE_IMAGE], check=True)
+                source = f"docker-archive://{tar}"
+            partial = sif.with_suffix(".partial")
+            subprocess.run(["apptainer", "build", "--force", str(partial), source], check=True, env=env)
+            partial.rename(sif)
+            tar.unlink(missing_ok=True)
+        remote = f"{IMAGE_STORE}/{sif.name}"
+        subprocess.run(["rsync", "-a", "--partial", "-e", "ssh -o BatchMode=yes", str(sif),
+                        f"{HOST}:{remote}"], check=True)
+        ssh_once(HOST, f"module load gcc/9.4.0 apptainer/1.3.1 && "
+                       f"apptainer exec --no-home --cleanenv {remote} true && : > {remote}.verified")
+        sif.unlink()
+        print(f"loaded   {uri}")
     return 0
 
 
@@ -223,13 +253,13 @@ def cmd_status(_):
     print(f"status: {result['status']}")
     for line in result["tail"]:
         print(f"    {line}")
-    return check_tasks(HOST, AGENT_HOME, task.GetKey())
+    return check_tasks(HOST, AGENT_HOME, task.GetKey(), attempt="latest")
 
 
 def cmd_retrieve(_):
     smith = agent()
     task = plan(smith)
-    if check_tasks(HOST, AGENT_HOME, task.GetKey()):
+    if check_tasks(HOST, AGENT_HOME, task.GetKey(), attempt="latest"):
         return 1
     retrieve(HOST, smith.GetResultSource(task).GetPath(), LOCAL_RESULTS)
     return 0
@@ -238,14 +268,14 @@ def cmd_retrieve(_):
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="cmd", required=True)
-    for name in ("list", "stage-reads", "stage-refs", "side-load-image", "check-refs", "status", "retrieve"):
+    for name in ("list", "stage-reads", "stage-refs", "side-load-images", "check-refs", "status", "retrieve"):
         sub.add_parser(name)
     run = sub.add_parser("run")
     run.add_argument("--plan-only", action="store_true")
     args = ap.parse_args()
     return {
         "list": cmd_list, "stage-reads": cmd_stage_reads, "stage-refs": cmd_stage_refs,
-        "side-load-image": cmd_side_load_image, "check-refs": cmd_check_refs, "run": cmd_run,
+        "side-load-images": cmd_side_load_images, "check-refs": cmd_check_refs, "run": cmd_run,
         "status": cmd_status, "retrieve": cmd_retrieve,
     }[args.cmd](args)
 
