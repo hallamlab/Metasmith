@@ -188,7 +188,7 @@ footer { font-size: 13px; color: var(--muted); display: grid; gap: 6px; border-t
 
     <div class="sub-head">
       <h3>Share of nf-core's bins reproduced</h3>
-      <p class="muted">The open circles are nf-core against itself, one per sample: a second nf-core run on 25 of the samples, over E1's own assemblies, with a new MetaBAT2 and SemiBin2 seed. The line joins them into nf-core's own range. The blue point beside it is nf-core against metasmith, pooled over all 249 samples.</p>
+      <p class="muted">The open circles are nf-core against itself. Two control reruns, E1ctl and E1ctl2, binned E1's own assemblies for 25 of the samples. E1ctl changed SemiBin2's seed, and E1ctl2 changed MetaBAT2's and SemiBin2's. Each circle is one of the three pairs among E1 and the two reruns, and the line spans them. The blue point beside it is E1 against metasmith over all 249 samples. Each value is the share of the first run's bins with a partner in the second.</p>
     </div>
     <div class="legend" id="match-legend"></div>
     <div class="panels" id="match-panels"></div>
@@ -325,11 +325,12 @@ footer { font-size: 13px; color: var(--muted); display: grid; gap: 6px; border-t
       return `<tr><td>${a}</td><td>${NAMES[b]}</td><td class="n">${fmt(t.e1_hq)}</td><td class="n">${fmt(t.e2_hq)}</td><td class="n muted">${delta(t.e1_hq, t.e2_hq)}</td><td class="n">${fmt(t.e1_mq)}</td><td class="n">${fmt(t.e2_mq)}</td><td class="n muted">${delta(t.e1_mq, t.e2_mq)}</td></tr>`;
     })).join("") + "</tbody>";
 
-  // 2b · reproduced share: every rerun sample as an open circle on its range, metasmith pooled as one point
-  const M = DATA.match, SP = DATA.spread;
+  // 2b · reproduced share: the three nf-core pairs as open circles joined by their range, metasmith as one point
+  const M = DATA.match;
+  const circles = (n, st) => Array.from({ length: n }, (_, k) => `<circle cx="7" cy="${5 + k * 10}" r="3.5" style="fill:var(--surface);stroke:var(--s1)" stroke-width="1.5"/>`).join("");
   $("match-legend").innerHTML =
-    `<span><svg width="14" height="30" aria-hidden="true"><line x1="7" x2="7" y1="4" y2="26" style="stroke:var(--s1)" stroke-width="1.5"/><circle cx="7" cy="5" r="3.5" style="fill:var(--surface);stroke:var(--s1)" stroke-width="1.5"/><circle cx="7" cy="16" r="3.5" style="fill:var(--surface);stroke:var(--s1)" stroke-width="1.5"/><circle cx="7" cy="25" r="3.5" style="fill:var(--surface);stroke:var(--s1)" stroke-width="1.5"/></svg>nf-core vs its own rerun · one circle per sample, 25 samples</span>` +
-    `<span><i style="background:var(--s2)"></i>nf-core vs metasmith · all 249 samples pooled</span>`;
+    `<span><svg width="14" height="30" aria-hidden="true"><line x1="7" x2="7" y1="5" y2="25" style="stroke:var(--s1)" stroke-width="1.5"/>${circles(3)}</svg>nf-core vs nf-core · the three pairs of E1, E1ctl and E1ctl2, 25 samples</span>` +
+    `<span><i style="background:var(--s2)"></i>nf-core vs metasmith · all 249 samples</span>`;
   function matchChart(arm, host) {
     const W = Math.max(300, host.clientWidth), left = 44, right = 6, top = 10, plotH = 260, axisH = 28, H = top + plotH + axisH;
     const y = (v) => top + plotH * (1 - v / 100);
@@ -340,34 +341,39 @@ footer { font-size: 13px; color: var(--muted); display: grid; gap: 6px; border-t
     }
     const groupW = (W - left - right) / DATA.binners.length, off = Math.min(12, groupW * 0.14);
     DATA.binners.forEach((b, i) => {
-      const key = `${arm}/${b}`, m = M[key], v = SP[key], cx = left + groupW * (i + 0.5);
+      const m = M[`${arm}/${b}`], v = m.self.map((p) => p.pct), cx = left + groupW * (i + 0.5);
       const g = el("g", { class: "row" }, svg);
       txt(NAMES[b], { x: cx, y: H - 8, "text-anchor": "middle" }, g);
-      el("line", { x1: cx - off, x2: cx - off, y1: y(v[0]), y2: y(v[v.length - 1]), style: "stroke:var(--s1)", "stroke-width": 1.5 }, g);
-      v.forEach((p) => el("circle", { cx: cx - off, cy: y(p), r: 3.5, style: "fill:var(--surface);stroke:var(--s1)", "stroke-width": 1.5 }, g));
-      el("circle", { cx: cx + off, cy: y(m.e2_all.e1), r: 5.5, class: "s2 mk" }, g);
+      el("line", { x1: cx - off, x2: cx - off, y1: y(Math.min(...v)), y2: y(Math.max(...v)), style: "stroke:var(--s1)", "stroke-width": 1.5 }, g);
+      v.forEach((p) => el("circle", { cx: cx - off, cy: y(p), r: 4, style: "fill:var(--surface);stroke:var(--s1)", "stroke-width": 1.5 }, g));
+      el("circle", { cx: cx + off, cy: y(m.e2.pct), r: 5.5, class: "s2 mk" }, g);
       const hit = el("rect", { x: cx - groupW / 2, y: top, width: groupW, height: plotH, class: "hit" }, g);
       hover(hit, `<b>${NAMES[b]}, ${ARM[arm].toLowerCase()}</b><br>` +
-        `nf-core vs its rerun, ${v.length} samples: ${v[0].toFixed(0)}–${v[v.length - 1].toFixed(0)}% per sample, pooled ${m.ctl.e1.toFixed(1)}% of ${fmt(m.ctl.e1_mags)} bins<br>` +
-        `nf-core vs metasmith, ${N[arm]} samples: ${m.e2_all.e1.toFixed(1)}% of ${fmt(m.e2_all.e1_mags)} bins`);
+        m.self.map((p) => `${p.pair}: ${p.pct.toFixed(1)}% of ${fmt(p.mags)} bins`).join("<br>") +
+        `<br>E1 vs metasmith, ${m.e2.samples} samples: ${m.e2.pct.toFixed(1)}% of ${fmt(m.e2.mags)} bins`);
     });
     host.replaceChildren(svg);
   }
-  $("match-panels").innerHTML = ARMS.map((a) => `<div class="panel"><div class="panel-head"><b>${ARM[a]}</b><span>rerun on ${SP[`${a}/DASTool`].length} samples · metasmith on ${N[a]}</span></div><div class="chart" id="match-${a}"></div></div>`).join("");
-  $("match-table").innerHTML = `<thead><tr><th>arm</th><th>binner</th><th class="n">rerun, per sample</th><th class="n">rerun, pooled</th><th class="n">metasmith, pooled</th></tr></thead><tbody>` +
+  $("match-panels").innerHTML = ARMS.map((a) => `<div class="panel"><div class="panel-head"><b>${ARM[a]}</b><span>nf-core pairs on ${M[`${a}/DASTool`].self[0].samples} samples · metasmith on ${N[a]}</span></div><div class="chart" id="match-${a}"></div></div>`).join("");
+  $("match-table").innerHTML = `<thead><tr><th>arm</th><th>binner</th>${M["short/DASTool"].self.map((p) => `<th class="n">${p.pair}</th>`).join("")}<th class="n">E1 vs metasmith</th></tr></thead><tbody>` +
     ARMS.flatMap((a) => DATA.binners.map((b) => {
-      const k = `${a}/${b}`, m = M[k], v = SP[k];
-      return `<tr><td>${a}</td><td>${NAMES[b]}</td><td class="n">${v[0].toFixed(0)}–${v[v.length - 1].toFixed(0)}%</td><td class="n">${m.ctl.e1.toFixed(1)}%</td><td class="n">${m.e2_all.e1.toFixed(1)}%</td></tr>`;
+      const m = M[`${a}/${b}`];
+      return `<tr><td>${a}</td><td>${NAMES[b]}</td>${m.self.map((p) => `<td class="n">${p.pct.toFixed(1)}%</td>`).join("")}<td class="n">${m.e2.pct.toFixed(1)}%</td></tr>`;
     })).join("") + "</tbody>";
 
   const A = DATA.assemblies, pct = (v) => (100 * v).toFixed(v > 0.99 ? 2 : 1) + "%";
-  const gapPts = (b) => M[`short/${b}`].ctl.e1 - M[`short/${b}`].e2_all.e1;
   const maxRel = (arm) => Math.max(...DATA.binners.flatMap((b) => { const t = TI[`${arm}/${b}`]; return ["hq", "mq"].map((q) => Math.abs(t[`e1_${q}`] - t[`e2_${q}`]) / t[`e1_${q}`]); }));
+  const lo = (a, b) => Math.min(...M[`${a}/${b}`].self.map((p) => p.pct));
+  const hi = (a, b) => Math.max(...M[`${a}/${b}`].self.map((p) => p.pct));
+  const inside = (a) => DATA.binners.filter((b) => M[`${a}/${b}`].e2.pct >= lo(a, b) && M[`${a}/${b}`].e2.pct <= hi(a, b));
+  const below = (a) => DATA.binners.filter((b) => M[`${a}/${b}`].e2.pct < lo(a, b));
+  const names = (bs) => bs.map((b) => NAMES[b]).join(bs.length > 2 ? ", " : " and ").replace(/, ([^,]*)$/, " and $1");
   $("bin-notes").innerHTML = [
     `<b>Bin counts.</b> On short reads every tier of every bin set is within ${(100 * maxRel("short")).toFixed(1)}% of nf-core's count. On long reads the largest difference is ${(100 * maxRel("long")).toFixed(1)}%, in DAS Tool's high-quality bins.`,
-    `<b>Short reads.</b> Every metasmith point sits inside nf-core's own per-sample range. DAS Tool and COMEBin are within ${Math.max(gapPts("DASTool"), gapPts("COMEBin")).toFixed(1)} points of the rerun's pooled share, which the tooltip gives. MetaBAT2 sits above it, because E1 and E2 share its seed and the rerun does not. SemiBin2 is ${gapPts("SemiBin2").toFixed(1)} points below it.`,
-    `<b>Long reads</b> match less well, and the gap follows the assembly. E1 removed lambda-phage reads before Flye and E2 did not, and Flye ran on different thread counts, so the long assemblies share a median ${pct(A.long.exact_med)} of their bases in identical contigs. Short assemblies share ${pct(A.short.exact_med)}. The rerun reused E1's assemblies, so its range has no assembly difference in it.`,
-    `The long-read rerun has four samples, so its range is narrow by chance.`,
+    `<b>Short reads.</b> metasmith falls inside nf-core's own range for ${names(inside("short"))}. ` +
+      below("short").map((b) => `${NAMES[b]} is ${(lo("short", b) - M[`short/${b}`].e2.pct).toFixed(1)} points below it`).join(", and ") + ".",
+    `<b>Long reads.</b> metasmith falls below every nf-core pair for ${names(below("long"))}. The gap follows the assembly. E1 removed lambda-phage reads before Flye and E2 did not, and Flye ran on different thread counts, so the long assemblies share a median ${pct(A.long.exact_med)} of their bases in identical contigs. Short assemblies share ${pct(A.short.exact_med)}. Every nf-core pair bins E1's own assemblies, so its range has no assembly difference in it.`,
+    `<b>What the pairs vary.</b> E1ctl and E1ctl2 differ from each other only in their binner seeds. Both skip nf-core's read QC and map untrimmed reads, so a pair against E1 also varies the reads. The long-read pairs cover four samples.`,
   ].map((s) => `<li>${s}</li>`).join("");
 
   function draw() { ARMS.forEach((a) => { tierChart(a, $(`tier-${a}`)); matchChart(a, $(`match-${a}`)); }); }
