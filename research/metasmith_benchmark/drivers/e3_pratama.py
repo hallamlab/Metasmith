@@ -38,9 +38,21 @@ HYBRID_PAIRS = Path(os.environ.get("PRATAMA_HYBRID_PAIRS", "/scratch/phyberos/pr
 EXPECTED_HYBRIDS = 17
 TYPE_LIBS = [c.MLIB / "data_types" / t for t in ("sequences.yml", "viromics.yml")] + [c.LIBRARY / "data_types" / "e3.yml"]
 
-# First-attempt (cpus, GB, hours); retries scale with the attempt.
+# First-attempt (cpus, GB, hours); retries double memory and time. Sized to the MaxRSS and wall that
+# sacct recorded for waves 1-8 (September 2026), so the first grant covers p90 and the doubled one the
+# tail. CAUTION bbduk's -Xmx and MEGAHIT's --memory follow the grant, so their RSS measures the grant,
+# not the need. Their sizes come from spanish-lakes, whose bbduk ran at 2 cpus / 32 GB and MEGAHIT at
+# 8 / 32 on every sample. The two metaSPAdes lanes keep their declarations: 40 of 65 short-read
+# assemblies failed at 192 GB and finished at 384, and hybrid peaked at 238-402 GB.
 SCALED = {
-    "megahit": (32, 128, 12),
+    "seqkit_reads": (2, 4, 1),              # MaxRSS 1.5 GB
+    "bbduk_pratama": (4, 16, 2),
+    "megahit": (16, 64, 12),
+    "deepvirfinder_pratama": (8, 16, 6),    # MaxRSS 8.2 GB, 1.7 h at 16 cpus
+    "vibrant_pratama": (8, 16, 4),          # MaxRSS 7.3 GB, 0.8 h
+    "virsorter2_pratama": (8, 16, 8),       # MaxRSS 5.0 GB, 4.7 h
+    "genomad_pratama": (8, 16, 6),          # MaxRSS 11.3 GB, 2.2 h at 16 cpus
+    "genomad_island_annotate_pratama": (8, 16, 6),
 }
 
 # The standard transforms each E3 library transform replaces, by library.
