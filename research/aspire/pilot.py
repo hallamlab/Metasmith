@@ -187,6 +187,7 @@ def cmd_run(args):
     task = smith.GenerateWorkflow(
         samples=list(study.AsSamples("aspire::study_metadata")),
         resources=[DataInstanceLibrary.Load(MLIB / "resources" / "env"),
+                   DataInstanceLibrary.Load(MLIB / "resources" / "lib"),
                    declare_references(smith), declare_placeholders(on)],
         transforms=[TransformInstanceLibrary.Load(t) for t in TRANSFORMS],
         targets=targets,

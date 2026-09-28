@@ -92,7 +92,7 @@ def build_spec(rebuild: bool = False) -> Spec:
         sample_type=None,
         target_types=TARGETS,
         transform_libraries=A.transforms("aspire", "logistics"),
-        resource_libraries=[A.envs()],
+        resource_libraries=[A.envs(), A.MLIB / "resources" / "lib"],
     )
 
 

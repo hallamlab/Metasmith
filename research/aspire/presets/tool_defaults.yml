@@ -34,6 +34,10 @@ unoise:
 count:
   identity: 0.999
 
+sina:
+  regions: [V4]             # upstream's code default
+  trim_to: V4               # upstream's code default: the first region
+
 table_filter:
   min_sample_sum: 0
   min_asv_sum: 0

@@ -298,7 +298,7 @@ def main() -> int:
         input_library=inputs,
         target_types=targets,
         transform_libraries=TRANSFORMS,
-        resource_libraries=[MLIB / "resources" / "env"],
+        resource_libraries=[MLIB / "resources" / "env", MLIB / "resources" / "lib"],
         sample_type=None,
     )
     task = spec.Solve(max_iter=args.max_iter, max_refine=args.max_refine, seed=args.seed)

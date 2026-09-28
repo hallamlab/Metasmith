@@ -36,6 +36,10 @@ unoise:
 count:
   identity: 0.999         # usearch_global --id has no default; hardcoded upstream
 
+sina:
+  regions: [V4-V5, V5, V4]  # shipped config; ASPIRE's own primers are 515F-Y/926R
+  trim_to: V4-V5            # shipped config
+
 table_filter:
   min_sample_sum: 5000    # reads per sample; Thompson 2017 (Earth Microbiome Project) rarefies at 5000. The mock config uses 1000
   min_asv_sum: 0.01       # percent of all reads; what upstream actually runs when the config says 0

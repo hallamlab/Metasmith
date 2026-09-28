@@ -62,7 +62,7 @@ def solve(inputs, transforms, targets):
         input_library=inputs,
         target_types=list(targets),
         transform_libraries=transforms,
-        resource_libraries=[MLIB / "resources" / "env"],
+        resource_libraries=[MLIB / "resources" / "env", MLIB / "resources" / "lib"],
         # One study, one view. Splitting by sample would hand the collecting
         # transform one sample at a time.
         sample_type=None,

@@ -257,20 +257,20 @@ TABLE: list[T] = [
       "meta", folds=("MERGE_READS@3179",),
       note="Branches on `parity`. Paired: `vsearch --fastq_mergepairs` (settings under "
            "`merge:`) then `--fastq_filter` (under `filter:`). Single-end: the filter "
-           "alone. The merged pair is not a product; what a reader wants from the merge is "
-           "its rate, which goes in the per-sample count file beside the filtered reads "
-           "for read_accounting.",
+           "alone. The filter relabels every read `<sample>.<n>;sample=<sample>` from the "
+           "read_metadata's `sample` key, which is RELABEL_FILTERED's job upstream: the "
+           "sample is known here without any lineage lookup. The merged pair is not a "
+           "product; its rate goes in the per-sample count file for read_accounting.",
       cpus=4, hours=2),
 
     T("denoise", "DENOISE", 3367,
       [STUDY, META, _r("filtered", "aspire::filtered_fasta", "meta"), PARAMS],
       [("counts", "amplicon::asv_table"), ("seqs", "amplicon::asv_seqs")],
       "study",
-      folds=("RELABEL_FILTERED@3248", "CONCAT_FASTAS@3274", "DEREPLICATE@3298",
+      folds=("CONCAT_FASTAS@3274", "DEREPLICATE@3298",
              "CHIMERA_CHECK@3393", "CREATE_COUNT_MATRIX@3417"),
-      note="The study fan-in, and the one place reads become ASVs. Relabel each sample's "
-           "headers from the `sample` key of the read_metadata its fasta descends from (context.SourceOf, never "
-           "the position in the group), concatenate, `--derep_fulllength`, "
+      note="The study fan-in, and the one place reads become ASVs. Concatenate the "
+           "relabelled reads, `--derep_fulllength`, "
            "`--cluster_unoise` (under `unoise:`), `--uchime3_denovo`, then "
            "`--usearch_global` of the pooled reads against the non-chimeric centroids "
            "(under `count:`). Every intermediate had exactly one consumer. The two "
@@ -287,7 +287,7 @@ TABLE: list[T] = [
 
     T("sina_trim", "SINA_TRIM", 3322,
       [STUDY, _r("fseqs", "aspire::asv_filtered_seqs", "study"),
-       _r("silva", "amplicon::silva_db")],
+       _r("silva", "amplicon::silva_db"), PARAMS],
       [("trimmed", "aspire::sina_trimmed_seqs"), ("aligned", "aspire::sina_aligned_seqs"),
        ("log", "aspire::sina_log"), ("vreg", "aspire::sina_v_regions")],
       "study",
@@ -302,15 +302,10 @@ TABLE: list[T] = [
       [("tax", "amplicon::asv_taxonomy"), ("upper", "aspire::taxonomy_uppercase_seqs"),
        ("stats", "aspire::taxonomy_stats")],
       "study",
-      note="Absorbs the retired placeholder lane's amplicon/qiime2_taxonomy.py. Its "
-           "method, for the protocol pass: `qiime feature-classifier classify-sklearn` "
-           "with the NB classifier, then `classify-consensus-vsearch` against the SILVA "
-           "sequences and taxonomy (perc-identity 0.70, min-consensus 0.51, maxaccepts "
-           "10, maxrejects 10), and a merge that keeps the NB call unless it is "
-           "Unassigned or Unclassified, falls back to the vsearch call, and records which "
-           "one won. Columns: Feature ID, Taxon, Confidence, Source. That file fetched "
-           "SILVA 138-99 with wget inside the protocol; here the classifier, sequences and "
-           "taxonomy come from the one `amplicon::silva_db` bundle, as SINA's ARB file does.",
+      note="Upstream's method: QIIME2 `classify-consensus-vsearch` of the uppercased "
+           "trimmed sequences against the SILVA sequences and taxonomy in the "
+           "`amplicon::silva_db` bundle, through qiime_vs_classifier.py. Columns: "
+           "Feature ID, Taxon, Consensus. The bundle's naive Bayes classifier is unused.",
       cpus=8, memory_gb=16, hours=6),
 
     T("mitomaster", "MITOMASTER", 3544,
@@ -325,7 +320,10 @@ TABLE: list[T] = [
            "each had one consumer, which was this transform. The standard library "
            "already treats that as inside-the-transform work -- "
            "amplicon/blast_map_asvs.py runs makeblastdb and then blastn in one protocol "
-           "-- so the two reference FASTAs move up here.",
+           "-- so the two reference FASTAs move up here. MitoMaster itself is not run: "
+           "it posts every ASV to mitomap.org, and compute nodes have no internet. The "
+           "table is written header-only, which is upstream's own `run_mitomaster: false` "
+           "output, so the mitochondrial call rests on the BLAST hits and the taxonomy.",
       cpus=8, memory_gb=16, hours=6),
 
     T("curate", "MITO_DECONTAM", 3595,
@@ -365,7 +363,9 @@ TABLE: list[T] = [
        _r("removed", "aspire::counts_removed", "study")],
       [("out", "aspire::sankey_outputs")], "study",
       note="`sankey.done` is dropped; the renderings are the output, and "
-           "MASTER_SUMMARY reads the directory rather than the sentinel."),
+           "MASTER_SUMMARY reads the directory rather than the sentinel. The stage counts "
+           "come from the read fate, laid out as upstream's stats files, and the flows "
+           "split by the sheet's first label."),
 
     T("plot_metadata", "PLOT_METADATA", 3793,
       [STUDY, _r("fate", "aspire::read_fate", "study"),
@@ -784,9 +784,13 @@ def check_hand_written() -> None:
     from metasmith.python_api import TransformInstanceLibrary  # noqa: E402
 
     lib = TransformInstanceLibrary.Load(HERE)
+    # A real body adds its environments and scripts, which the table does not model.
+    tooling = {frozenset(e.properties) for ns in ("env", "lib") if ns in lib.types
+               for e in lib.types[ns].types.values()}
     for row in rows:
         ti = lib.GetTransform(f"{row.name}.py")
-        requires = sorted((_signature(r) for r in ti.model.requires), key=repr)
+        requires = sorted((_signature(r) for r in ti.model.requires
+                           if frozenset(r.properties) not in tooling), key=repr)
         products = sorted((frozenset(p.properties) for group in ti.model.produces for p in group),
                           key=repr)
         got = (requires, products, _signature(ti.group_by))
