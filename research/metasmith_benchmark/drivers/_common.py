@@ -57,6 +57,7 @@ HOMES = {
     "cami": Path("/scratch/phyberos/cami/metasmith"),
     "pratama": Path("/scratch/phyberos/pratama2026/metasmith"),
     "metagem": Path("/scratch/phyberos/metagem/metasmith"),
+    "e4abl": Path("/scratch/phyberos/e4_ablation/metasmith"),
 }
 
 # Each line runs twice: in the agent's persistent shell from the home, and in the run's
