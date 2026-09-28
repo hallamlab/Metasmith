@@ -33,15 +33,15 @@ These are recorded decisions, not gaps:
 
 ## Read QC and assembly
 
-Status: **match** is the same command and settings. **differs** is the same tool with a setting or version that differs. **substitute** is a different tool or shape that produces the same type. **missing** has no step in the plan.
+Status: **match** is the same command and settings. **version** is the same command and settings under another tool version. **differs** is the same tool with a setting or behaviour that differs. **substitute** is a different tool or shape that produces the same type. **missing** has no step in the plan. Memory, threads, batching and file staging never count as a difference. The resource heuristics below list them.
 
 | Paper step | Paper setting | E3 transform | Status | Difference |
 |---|---|---|---|---|
-| bbduk (MD 15-30) | `ktrim=r qtrim=rl trimq=20 minlen=50 k=23 mink=11 hdist=1` | `library/transforms/e3/bbduk_pratama.py:22-24` | differs | Same trimming flags. No stats file, image's `adapters.fa`, `-Xmx` is 0.85 × grant, bbtools 39.49 against 39.01. |
+| bbduk (MD 15-30) | `ktrim=r qtrim=rl trimq=20 minlen=50 k=23 mink=11 hdist=1` | `library/transforms/e3/bbduk_pratama.py:22-24` | differs | Same trimming flags. No stats file, and the image's `adapters.fa`. bbtools 39.49 against 39.01. |
 | fastp report (MD 35) | `-R -j -h -w` | `e3/fastp_report_pratama.py:22` | match | Report only, as in the paper. fastp 1.0.1. |
-| metaSPAdes (MD 44) | `--meta -k 21,33,55,77 -m 190` | `e3/spades_pratama.py:19,24` | differs | `-m` is 0.95 × grant: 182 GB, then 364 GB on retry. SPAdes 3.15.5 against 3.15.2. |
-| MEGAHIT (MD 52) | defaults | `S/assembly/megahit.py:28-31` | differs | `--memory` 0.85 × grant. MEGAHIT 1.2.9 against 1.1.3. |
-| Hybrid metaSPAdes (MD 146) | `--meta -m 380 --nanopore` | `e3/spades_hybrid_pratama.py:23,28` | differs | `-m` is min(380, 0.95 × grant) = 364. |
+| metaSPAdes (MD 44) | `--meta -k 21,33,55,77 -m 190` | `e3/spades_pratama.py:24` | version | SPAdes 3.15.5 against 3.15.2. |
+| MEGAHIT (MD 52) | defaults | `S/assembly/megahit.py:28-31` | version | MEGAHIT 1.2.9 against 1.1.3. |
+| Hybrid metaSPAdes (MD 146) | `--meta -m 380 --nanopore` | `e3/spades_hybrid_pratama.py:28` | version | SPAdes 3.15.5 against 3.15.2. |
 
 ## Viral identification and vOTUs
 
@@ -49,10 +49,10 @@ Status: **match** is the same command and settings. **differs** is the same tool
 |---|---|---|---|---|
 | DeepVirFinder (VB 19) | `-l 1000`, then score ≥ 0.9 and p ≤ 0.05 (Methods) | `e3/deepvirfinder_pratama.py:14-16,104` | differs | Same length and cut. Contigs with more than 30% N are dropped before scoring (`:94`). |
 | VIBRANT | `-f nucl -virome` | `e3/vibrant_pratama.py:105` | match | Adds `-no_plot`. VIBRANT 1.2.1. |
-| geNomad (VB 34) | `end-to-end --cleanup --splits 48 --min-virus-marker-enrichment 1 --min-virus-hallmarks 1` | `e3/genomad_pratama.py:48-49` | differs | Same flags. geNomad 1.11.0 against 1.5.1. Database unpinned. |
-| VirSorter2 | `--include-groups dsDNAphage,ssDNA --keep-original-seq --min-score 0.5 --min-length 5000` | `e3/virsorter2_pratama.py:40-69` | differs | Same flags. `\|\|full` and `\|\|lt2gene` calls span the whole contig, and partial calls use `full_bp_*`. VirSorter2 2.2.4 against 2.2.3. |
+| geNomad (VB 34) | `end-to-end --cleanup --splits 48 --min-virus-marker-enrichment 1 --min-virus-hallmarks 1` | `e3/genomad_pratama.py:48-49` | version | Same flags. geNomad 1.11.0 against 1.5.1. Database unpinned. |
+| VirSorter2 | `--include-groups dsDNAphage,ssDNA --keep-original-seq --min-score 0.5 --min-length 5000` | `e3/virsorter2_pratama.py:40-69` | version | Same flags. `\|\|full` and `\|\|lt2gene` calls span the whole contig, and partial calls use `full_bp_*`. VirSorter2 2.2.4 against 2.2.3. |
 | Pooling | every caller on every assembly | `e3/merge_candidate_calls_pratama.py:28-38` | differs | 3 lanes (metaSPAdes, MEGAHIT, hybrid metaSPAdes) × 4 callers. Overlapping or abutting calls on one contig merge to their union. Each record is named `sample\|lane\|contig\|start_end`. |
-| CheckV (VB 58) | `end_to_end` | `e3/checkv_batch_pratama.py` + `checkv_merge_pratama.py` | differs | Runs on the pooled set in slices. CheckV 1.0.3, database unpinned. |
+| CheckV (VB 58) | `end_to_end` | `e3/checkv_batch_pratama.py` + `checkv_merge_pratama.py` | match | CheckV 1.0.3, database unpinned. |
 | Curation (Supp Fig 1) | keep if > 0 viral genes, or 0 viral and 0 host genes, or ≥ 75% unknown genes; CheckV host trimming; spot checks | `e3/curate_trim_batch_pratama.py:29-34` + `curate_merge_pratama.py` | differs | Gene counts come from CheckV's quality summary. A kept provirus enters as its trimmed region from `proviruses.fna`, every other kept contig whole from `viruses.fna`. No spot checks. The paper goes from 4,717,962 to 4,708,626 here. |
 | MMseqs2 (VB 50) | `easy-cluster --min-seq-id 0.95 -c 0.8` | `e3/mmseqs_votu_pratama.py:22` | match | Clusters the curated set. |
 | vOTUs ≥ 5 kb | | `e3/votu_representatives_pratama.py:14` | match | |
@@ -73,10 +73,7 @@ These values change what the plan produces. Each is a choice the paper does not 
 
 | Value | Where | Paper |
 |---|---|---|
-| metaSPAdes `-m` = 0.95 × grant | `e3/spades_pratama.py:19` | 190 |
-| Hybrid `-m` = min(380, 0.95 × grant) | `e3/spades_hybrid_pratama.py:23` | 380 |
 | MinION–Illumina pairing by well and `02um_2022` | `drivers/e3_pratama.py:87-100` | 17 hybrids |
-| 240 Mbp per contig batch | `S/logistics/splitContigsForAmr.py:10`, `e3/split_hybrid_contigs_pratama.py:15` | none. The paper calls on whole assemblies. |
 | DeepVirFinder drops contigs over 30% N | `e3/deepvirfinder_pratama.py:94` | not stated |
 | Interval union: overlapping or abutting calls merge | `e3/merge_candidate_calls_pratama.py:69-78` | not stated |
 | Unknown fraction = (genes − viral − host) / genes, from CheckV | `e3/curate_trim_batch_pratama.py:34` | not stated |
@@ -87,6 +84,9 @@ These values change what the plan produces. Each is a choice the paper does not 
 ## Resource heuristics
 
 These size tasks and do not change the results. Where one does, the scientific table lists it.
+- Assembler memory flags follow the grant: metaSPAdes `-m` 0.95 × grant (`e3/spades_pratama.py:19`, paper 190), hybrid `-m` min(380, 0.95 × grant) (`e3/spades_hybrid_pratama.py:23`, paper 380), MEGAHIT `--memory` 0.85 × grant, bbduk `-Xmx` 0.85 × grant.
+- Callers run on 240 Mbp contig batches (`S/logistics/splitContigsForAmr.py:10`, `e3/split_hybrid_contigs_pratama.py:15`), and CheckV on 500 Mbp slices of the pool. The paper runs each on the whole set.
+- CAUTION: geNomad's score calibration estimates the composition of each input file, so a 240 Mbp batch can shift a borderline geNomad score slightly. The other callers score each contig on its own.
 - Declared cpus, GB and hours live in each transform's resources. The largest are metaSPAdes 48/192/24 and hybrid 48/384/20.
 - The driver scales MEGAHIT past its declaration to 32/128/12 (`drivers/e3_pratama.py:42-44`).
 - Each retry doubles memory and time (`drivers/_common.py:398-399`). Time clamps at 24 h (`:315`), except 36 h for metaSPAdes and hybrid (`:321-326`). Memory clamps at 192 GB for scaled steps only (`:335`).
