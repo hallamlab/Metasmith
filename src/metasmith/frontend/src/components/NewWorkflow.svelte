@@ -194,7 +194,7 @@
         onload={center}
         draggable="false"
         style={`transform: translate(${tx}px, ${ty}px) scale(${scale})`}
-        src={`/api/templates/${picked}/dag?theme=${ui.theme}&v=${stamp}`}
+        src={`api/templates/${picked}/dag?theme=${ui.theme}&v=${stamp}`}
         alt={`what ${picked} builds`}
       />
     {:else}

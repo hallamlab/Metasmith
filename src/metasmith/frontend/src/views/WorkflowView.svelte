@@ -689,7 +689,7 @@
     downloading = format
     await attempt(async () => {
       const url =
-        `/api/workflows/${name}/dag?theme=${dlTheme}&background=${dlFilled ? 1 : 0}`
+        `api/workflows/${name}/dag?theme=${dlTheme}&background=${dlFilled ? 1 : 0}`
       const res = await fetch(url)
       // fetch resolves on a 404 as happily as on a 200, and a saved error page
       // named `plan.svg` is the worst possible way to find that out
