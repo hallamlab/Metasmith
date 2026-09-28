@@ -72,6 +72,11 @@ p { margin: 0; max-width: 68ch; }
 .muted { color: var(--ink-2); }
 code, .mono { font-family: var(--mono); font-size: 0.88em; }
 header { display: grid; gap: 16px; }
+.topbar { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+.seg { display: inline-flex; border: 1px solid var(--rule); border-radius: 8px; padding: 3px; background: var(--surface); gap: 3px; }
+.seg button { font: 500 13px var(--sans); color: var(--ink-2); background: none; border: 0; border-radius: 6px; padding: 4px 12px; cursor: pointer; }
+.seg button[aria-pressed="true"] { background: var(--grid); color: var(--ink); }
+.seg button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .lede { font-size: 17px; color: var(--ink-2); }
 
 section { display: grid; gap: 20px; }
@@ -143,7 +148,13 @@ footer { font-size: 13px; color: var(--muted); display: grid; gap: 6px; border-t
 
 <div class="wrap">
   <header>
-    <div class="eyebrow">metasmith benchmark · objective 1 · E1 vs E2 on CAMI II</div>
+    <div class="topbar">
+      <div class="eyebrow">metasmith benchmark · objective 1 · E1 vs E2 on CAMI II</div>
+      <div class="seg" id="theme" role="group" aria-label="Theme">
+        <button type="button" data-theme="light">Light</button>
+        <button type="button" data-theme="dark">Dark</button>
+      </div>
+    </div>
     <h1>Does metasmith reproduce nf-core/mag?</h1>
     <p class="lede">E1 ran nf-core/mag 5.5.0 on 249 CAMI II samples: 208 short-read and 41 nanopore. E2 ran the same pipeline as a plan metasmith solved from a library of the same tool calls.</p>
   </header>
@@ -219,6 +230,20 @@ footer { font-size: 13px; color: var(--muted); display: grid; gap: 6px; border-t
   const ARM = { short: "Short reads", long: "Long reads" };
   const ARMS = ["short", "long"];
   const N = { short: 208, long: 41 };
+
+  const root = document.documentElement;
+  const osDark = matchMedia("(prefers-color-scheme: dark)");
+  function setTheme(t) {
+    if (t) root.dataset.theme = t;
+    const now = root.dataset.theme || (osDark.matches ? "dark" : "light");
+    document.querySelectorAll("#theme button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.theme === now)));
+  }
+  try { setTheme(localStorage.getItem("obj1-theme")); } catch (e) { setTheme(null); }
+  osDark.addEventListener("change", () => setTheme(null));
+  document.querySelectorAll("#theme button").forEach((b) => b.addEventListener("click", () => {
+    setTheme(b.dataset.theme);
+    try { localStorage.setItem("obj1-theme", b.dataset.theme); } catch (e) {}
+  }));
 
   const tip = $("tip");
   function showTip(ev, html) {
