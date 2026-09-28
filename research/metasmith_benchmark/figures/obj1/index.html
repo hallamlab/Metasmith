@@ -188,7 +188,7 @@ footer { font-size: 13px; color: var(--muted); display: grid; gap: 6px; border-t
 
     <div class="sub-head">
       <h3>Share of nf-core's bins reproduced</h3>
-      <p class="muted">The ticks are nf-core against itself. Two control reruns, E1ctl and E1ctl2, binned E1's own assemblies for 25 of the samples. E1ctl changed SemiBin2's seed, and E1ctl2 changed MetaBAT2's and SemiBin2's. Each tick is one of the three pairs among E1 and the two reruns, and the line spans them. The blue point below it is E1 against metasmith over all 249 samples. Each value is the share of the first run's bins with a partner in the second.</p>
+      <p class="muted">The ticks are nf-core against itself. Two control reruns, E1ctl and E1ctl2, binned E1's own assemblies for 25 of the samples. E1ctl changed SemiBin2's seed, and E1ctl2 changed MetaBAT2's and SemiBin2's. Each tick is one of the three pairs among E1 and the two reruns, and the line spans them. The blue point on the same line is E1 against metasmith over all 249 samples. Each value is the share of the first run's bins with a partner in the second.</p>
     </div>
     <div class="legend" id="match-legend"></div>
     <div class="panels" id="match-panels"></div>
@@ -341,12 +341,13 @@ footer { font-size: 13px; color: var(--muted); display: grid; gap: 6px; border-t
       txt(v + "%", { x: x(v), y: H - 8, "text-anchor": "middle", class: "tick" }, svg);
     }
     DATA.binners.forEach((b, i) => {
-      const m = M[`${arm}/${b}`], v = m.self.map((p) => p.pct), cy = top + i * rowH + rowH / 2, off = 7;
+      const m = M[`${arm}/${b}`], v = m.self.map((p) => p.pct), cy = top + i * rowH + rowH / 2;
       const g = el("g", { class: "row" }, svg);
       txt(NAMES[b], { x: labelW - 12, y: cy + 4, "text-anchor": "end" }, g);
-      el("line", { x1: x(Math.min(...v)), x2: x(Math.max(...v)), y1: cy - off, y2: cy - off, style: "stroke:var(--s1)", "stroke-width": 1.5 }, g);
-      v.forEach((p) => el("line", { x1: x(p), x2: x(p), y1: cy - off - 6, y2: cy - off + 6, style: "stroke:var(--s1)", "stroke-width": 2 }, g));
-      el("circle", { cx: x(m.e2.pct), cy: cy + off, r: 5.5, class: "s2 mk" }, g);
+      // the point goes under the ticks so a pair it overlaps stays visible
+      el("circle", { cx: x(m.e2.pct), cy, r: 5.5, class: "s2" }, g);
+      el("line", { x1: x(Math.min(...v)), x2: x(Math.max(...v)), y1: cy, y2: cy, style: "stroke:var(--s1)", "stroke-width": 1.5 }, g);
+      v.forEach((p) => el("line", { x1: x(p), x2: x(p), y1: cy - 7, y2: cy + 7, style: "stroke:var(--s1)", "stroke-width": 2 }, g));
       const hit = el("rect", { x: 0, y: top + i * rowH, width: W, height: rowH, class: "hit" }, g);
       hover(hit, `<b>${NAMES[b]}, ${ARM[arm].toLowerCase()}</b><br>` +
         m.self.map((p) => `${p.pair}: ${p.pct.toFixed(1)}% of ${fmt(p.mags)} bins`).join("<br>") +
